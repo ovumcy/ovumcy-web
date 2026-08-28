@@ -24,7 +24,7 @@
   <a href="https://github.com/ovumcy/ovumcy-web/commits/main"><img src="https://img.shields.io/github/last-commit/ovumcy/ovumcy-web" alt="Last Commit"></a>
   <a href="https://www.gnu.org/licenses/agpl-3.0"><img src="https://img.shields.io/badge/License-AGPL%20v3-blue.svg" alt="License: AGPL v3"></a>
   <a href="https://pkg.go.dev/github.com/ovumcy/ovumcy-web"><img src="https://pkg.go.dev/badge/github.com/ovumcy/ovumcy-web.svg" alt="Go Reference"></a>
-  <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go" alt="Go Version"></a>
+  <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.26.6+-00ADD8?logo=go" alt="Go Version"></a>
   <a href="https://github.com/ovumcy/ovumcy-web/actions/workflows/docker-image.yml"><img src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker" alt="Docker"></a>
   <a href="https://github.com/ovumcy/ovumcy-web/blob/main/docs/self-hosted.md"><img src="https://img.shields.io/badge/Self--hosted-yes-2ea44f" alt="Self-hosted"></a>
   <a href="https://github.com/ovumcy/ovumcy-web#privacy-and-security"><img src="https://img.shields.io/badge/Telemetry-none-2ea44f" alt="No telemetry"></a>
@@ -118,7 +118,7 @@ No — you run it yourself, on your own server, with no vendor account in the mi
 
 ### Where is the data stored?
 
-On the server you deploy Ovumcy to, and nowhere else. SQLite is the default and works out of the box; PostgreSQL is there when you want it for a more involved setup.
+On the server you deploy Ovumcy to. SQLite is the default and works out of the box; PostgreSQL is there when you want it for a more involved setup. Nothing leaves that server unless you switch it on yourself: the optional webhook reminders POST the predicted dates to a URL you choose, and a calendar app you point at the `.ics` feed fetches those dates onto whatever servers it runs on.
 
 ### Does Ovumcy use analytics or ad trackers?
 
@@ -324,7 +324,7 @@ For production-style setups:
 
 Requirements:
 
-- Go 1.26+
+- Go 1.26.6+
 - Node.js 22+
 
 ```bash
@@ -484,7 +484,8 @@ Project structure:
 - `internal/db` - persistence and migrations
 - `web/` - templates, JavaScript, and CSS assets
 
-CI runs staticcheck, `go vet`, tests, and frontend build on pushes and pull requests.
+CI runs staticcheck, `go vet`, tests, and the frontend build on pull requests and on the merge queue's validation of the commit that lands.
+The post-merge run on `main` deliberately skips that work — the queue already proved this exact commit — and executes only the lanes the queue does not: cross-browser e2e, image smoke, and the Postgres smoke test.
 Dedicated security workflows run CodeQL plus `gosec`, `govulncheck`, Trivy filesystem/container scanning, and publish a CycloneDX image SBOM artifact for each scan run.
 
 Beyond plain unit and integration tests, the suite uses property-based tests,

@@ -21,6 +21,8 @@ npm ci
 go test ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/... -timeout 20m
 go run ./scripts/archcheck
 npm run lint:js
+npm run lint:types
+npm run test:unit
 npm run build
 ```
 
@@ -82,7 +84,7 @@ Security issues should not be reported publicly. Use [SECURITY.md](SECURITY.md).
 
 - Keep changes scoped and atomic.
 - Add/adjust tests for behavioral changes.
-- `internal/i18n/locales/en.json` is the canonical source for UI strings. When you add or rename strings, mirror the change in `ru.json`, `es.json`, `fr.json`, `de.json`, and `it.json` (the six locales advertised as supported in the README). If you cannot provide a native translation for a non-`en` locale, copy the English string verbatim and leave a `TODO(<locale>)` next to it so the gap is visible in review and search.
+- `internal/i18n/locales/en.json` is the canonical source for UI strings. When you add or rename strings, mirror the change in `ru.json`, `es.json`, `fr.json`, `de.json`, and `it.json` (the six locales advertised as supported in the README). If you cannot provide a native translation for a non-`en` locale, copy the English string verbatim and list the copied keys and their locales in the pull request description. The gap cannot be marked in the file itself: the locale files are strict JSON parsed at boot, so a comment breaks startup, an extra key fails `TestLocaleKeysParity`, and a marker inside the value is no longer the verbatim English string.
 - Do not introduce legacy compatibility paths unless explicitly required.
 - When cutting a release, bump every release-tag mention in README.md (intro blurb, Docker quick
   start image tag, cosign/attestation/SBOM verification examples, Releases section) to the new tag.
@@ -149,9 +151,10 @@ header plus the entry:
   fragment nor a new `## [` heading in `CHANGELOG.md`, and it names the file and the problem when a
   fragment has an unknown section header or no entry text.
 - Dependency updates opened by Dependabot are exempt: the check stays required for them but returns
-  success without a fragment, since the bot cannot write one. Their entries reach the changelog at
-  release time instead — the `### Dependencies` section is assembled from the dependency bumps that
-  merged, not from fragments.
+  success without a fragment, since the bot cannot write one. Nothing collects their entries
+  automatically either: at release time the `### Dependencies` section is compiled from
+  `git log <last-tag>..HEAD` over the Dependabot merges and entered as one fragment before
+  `assemble` runs — a step of the release checklist, not of the gate.
 
 ## Commit Style
 

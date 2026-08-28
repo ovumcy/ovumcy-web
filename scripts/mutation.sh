@@ -9,8 +9,8 @@
 #
 # Modes:
 #   baseline        Full run over the high-value packages. Slow (hours). Run
-#                   locally or nightly; writes per-package JSON under .tmp/mutation/
-#                   and a committed score summary under .mutation/.
+#                   locally or by the weekly CI job; writes per-package JSON under
+#                   .tmp/mutation/ and a committed score summary under .mutation/.
 #   diff [ref]      Mutate only code changed vs <ref> (default origin/main).
 #                   Fast enough for CI. Advisory: never fails the build.
 #   verify-shards   Proves every registered shard partition is exact — for each
