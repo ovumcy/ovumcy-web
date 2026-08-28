@@ -4,7 +4,7 @@ _Part of the [Ovumcy security policy](../../SECURITY.md)._
 
 ## Data Inventory
 
-What Ovumcy persists per account and per record. All storage is in the operator's configured SQLite file or Postgres database; nothing is sent to any external service unless the owner explicitly enables an integration (OIDC sign-in, or webhook reminders — see [docs/notifications.md](../notifications.md)), and the one **pull-based** egress path — the `.ics` calendar feed, which a calendar client of the owner's choosing polls — is likewise armed only when the owner generates its subscribe URL. This paragraph is the canonical egress statement; README and the GDPR guide defer to it.
+What Ovumcy persists per account and per record. All storage is in the operator's configured SQLite file or Postgres database; nothing is sent to any external service unless the owner explicitly enables an integration (OIDC sign-in, or webhook reminders — see [docs/notifications.md](../notifications.md)), and the one **pull-based** egress path — the `.ics` calendar feed, which a calendar client of the owner's choosing polls — is likewise armed only when the owner generates its subscribe URL. Of the three, the webhook and the feed are the two standing paths that carry **health-derived** data to a third party (`SECURITY.md`'s "exactly two"); the OIDC exchange carries identity, never the health record. This paragraph is the canonical egress statement; README defers to it explicitly, and the GDPR guide's data-inventory section points here.
 
 **`users`** — one row per account:
 
@@ -49,7 +49,7 @@ What Ovumcy persists per account and per record. All storage is in the operator'
 - **Revokes the calendar feed**: NULLs `calendar_feed_selector` and both verifier columns, so a subscribe URL issued earlier stops resolving and answers `404`. Calendar clients holding it need a fresh URL from Settings.
 - Atomically bumps `auth_session_version`, invalidating every other auth cookie for the account. The originating device is re-issued a fresh cookie inline so the user stays signed in there.
 
-`clear-data` does **not** touch email, password hash, recovery code hash, role, display name, OIDC identity links, TOTP state, onboarding status, or the interface language (`interface_language`) — the language the owner reads the product in is not part of the health record, and resetting it would answer a wipe by switching the interface back to the operator default. The two reveal consumption marks also stand: they record that a secret was disclosed, and the wipe revokes the feed and leaves the recovery code alone rather than minting fresh secrets, so there is no new outstanding reveal for them to track. Account deletion removes the row, and with it every column named here.
+`clear-data` does **not** touch email, password hash, recovery code hash, role, display name, OIDC identity links, TOTP state, onboarding status, or the interface language (`interface_language`) — the language the owner reads the product in is not part of the health record, and resetting it would answer a wipe by switching the interface back to the operator default. The two reveal consumption marks also stand, and for a sharper reason than bookkeeping: NULL is the **armed** value, so resetting them here would answer a wipe by re-arming a reveal for a sealed cookie the client may still hold — only the write that mints a fresh secret clears a mark. Account deletion removes the row, and with it every column named here.
 
 **`DELETE /api/v1/users/current`** removes the account entirely:
 
