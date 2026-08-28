@@ -328,6 +328,11 @@ jobs:
       GOLANGCI_LINT_VERSION: v2.12.2
       # git SHA for v1.7.12: 914e7df21a07ef503a81201c76d2b11c789d3fca (verified via go list -m -json)
       ACTIONLINT_VERSION: v1.7.12
+      # git SHA for v1.6.0: 5348b744d0983d85713295ea08a20cca1654a45e (verified via go list -m -json)
+      # Not in the binary cache below: the licenses step runs it via `go run
+      # <module>@version`, which is version-exact by construction and needs no
+      # verify line.
+      GO_LICENSES_VERSION: v1.6.0
 
     steps:
       - name: Checkout
@@ -452,6 +457,18 @@ jobs:
       # list in sync with `go list ./...`.
       - name: Staticcheck
         run: '"$(go env GOPATH)/bin/staticcheck" ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/...'
+
+      # THIRD_PARTY_LICENSES.md's Go-module section is generated, and a
+      # generated compliance list drifts the day a dependency moves: this
+      # regenerates the report over the binary's own build graph and refuses a
+      # tree whose committed block disagrees. pipefail makes a go-licenses
+      # failure fail the step rather than hand licensesdoc an empty report —
+      # though the empty report is refused too, so either half failing is loud.
+      - name: Licenses inventory matches the dependency graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          go run "github.com/google/go-licenses@$GO_LICENSES_VERSION" report ./cmd/ovumcy | go run ./scripts/licensesdoc -check
 
       - name: Install deadcode
         if: steps.go-tools.outputs.cache-hit != 'true'
