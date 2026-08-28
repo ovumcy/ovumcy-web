@@ -208,6 +208,7 @@ components:
           example:
             error: "too many requests"
             error_detail: { key: "too many requests", category: "rate_limited", target: "global" }
+            retry_after_seconds: 60
     InternalError:
       description: Unexpected server error.
       content:
@@ -291,6 +292,13 @@ components:
           example: "invalid credentials"
         error_detail:
           $ref: '#/components/schemas/ApiErrorDetail'
+        retry_after_seconds:
+          type: integer
+          minimum: 1
+          description: >-
+            Present only on a `429`: an extension member echoing the
+            `Retry-After` header, so it inherits that header's bound of whole
+            seconds no larger than the configured window.
       additionalProperties: false
 
     ApiErrorDetail:
