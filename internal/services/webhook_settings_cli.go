@@ -36,7 +36,7 @@ type WebhookSettingsView struct {
 	// Host is the destination hostname only (e.g. "ntfy.example.io"), or "" when
 	// no endpoint is configured. It is the single form of a webhook URL that may
 	// appear in operator output — never the scheme/path/query/token.
-	Host             string
+	Host            string
 	NotifyPeriod    bool
 	NotifyOvulation bool
 	// ReminderLeadDays is the lead window IN FORCE — always clamped through

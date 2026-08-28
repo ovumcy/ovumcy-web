@@ -116,8 +116,10 @@ func WebhookReminderSettingsFromNotifyRecord(record models.WebhookNotifyRecord) 
 // The decision, in order:
 //
 //   - Webhook delivery disabled ⇒ nothing.
+//
 //   - Build cycle stats from the owner's logs via the SAME path the dashboard
 //     uses (BuildCycleStatsFromLogs, which needs no repositories).
+//
 //   - In-app predictions suppressed (DashboardPredictionDisabled — the owner's
 //     unpredictable-cycle mode — stats.PregnancyPaused, or DashboardCycleOverdue
 //     — the running cycle is past the account's reference length by more than a
@@ -137,17 +139,20 @@ func WebhookReminderSettingsFromNotifyRecord(record models.WebhookNotifyRecord) 
 //     projected next-period date — different from the stale watermark — so the
 //     next legitimate reminder fires exactly once and its own watermark then
 //     covers it.
+//
 //   - Resolve "today" as the owner-local calendar day (DateAtLocation) and the
 //     median-first projection cycle length the dashboard feeds to its predictions
 //     (DashboardProjectionCycleLength — the same statistic as stats.NextPeriodStart,
 //     NOT the average-first staleness reference), then take the dashboard's own
 //     upcoming prediction (DashboardUpcomingPredictions) for the authoritative
 //     next-period and ovulation dates + flags.
+//
 //   - period-soon: emitted when NotifyPeriod is on, the next period start is
 //     known, and it falls within [today, today+leadDays] (inclusive) — i.e. not
 //     in the past and not beyond the window. Its cycle anchor is the next period
 //     start itself (definitionally the start of the next cycle). Skipped when the
 //     incoming period watermark already equals that anchor.
+//
 //   - ovulation-soon: emitted when NotifyOvulation is on and ovulation is
 //     calculable (not impossible, non-zero) and within the same window. Its cycle
 //     anchor is the start of the cycle the ovulation belongs to (derived with the

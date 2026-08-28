@@ -22,16 +22,16 @@ var (
 )
 
 type DayEntryInput struct {
-	IsPeriod              bool
-	Flow                  string
-	Mood                  int
-	SexActivity           string
-	BBT                   *float64
-	CervicalMucus         string
-	PregnancyTest         string
-	CycleFactorKeys       []string
-	Notes                 string
-	SymptomIDs            []uint
+	IsPeriod        bool
+	Flow            string
+	Mood            int
+	SexActivity     string
+	BBT             *float64
+	CervicalMucus   string
+	PregnancyTest   string
+	CycleFactorKeys []string
+	Notes           string
+	SymptomIDs      []uint
 	// ConfirmCycleStart carries the owner's answer to the inline question the
 	// day form asks next to the period toggle ("does a new cycle begin here?").
 	// It is set only for an explicit yes: an untouched control writes nothing.
