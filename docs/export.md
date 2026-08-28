@@ -17,7 +17,7 @@ GET /api/v1/exports/json?from=2026-01-01&to=2026-05-31
 Cookie: ovumcy_auth=...
 ```
 
-Response headers: `Content-Disposition: attachment; filename="ovumcy-export-<timestamp>.json"`, `Content-Type: application/json`.
+Response headers: `Content-Disposition: attachment; filename=ovumcy-export-<timestamp>.json`, `Content-Type: application/json`. The filename is unquoted, as the server emits it.
 
 Response body:
 
@@ -76,7 +76,7 @@ Field semantics:
 | `bbt` | float | Basal body temperature in Celsius, always — storage is canonical Celsius regardless of the account's display unit, and export emits the stored value unconverted. Emitted only when measured; the key is absent on unmeasured days. On import, an absent key, an explicit `null`, or a legacy `0` are all read as "not measured". |
 | `cervical_mucus` | string | One of `none`, `dry`, `moist`, `creamy`, `eggwhite`. |
 | `pregnancy_test` | string | One of `none`, `negative`, `positive`. |
-| `cycle_factors` | array of strings | Free-form factor keys recorded that day (e.g. `stress`, `travel`, `illness`). |
+| `cycle_factors` | array of strings | Factor keys recorded that day, from the closed catalog `stress`, `illness`, `travel`, `sleep_disruption`, `medication_change`. Any other key is dropped on import. |
 | `symptoms` | object of booleans | Flags for the 16 built-in symptoms. Always present, even when all false. |
 | `other_symptoms` | array of strings | Names of owner-managed custom symptoms recorded that day. |
 | `notes` | string | Free-text note. |
@@ -92,7 +92,7 @@ GET /api/v1/exports/csv?from=2026-01-01&to=2026-05-31
 Cookie: ovumcy_auth=...
 ```
 
-Response headers: `Content-Disposition: attachment; filename="ovumcy-export-<timestamp>.csv"`, `Content-Type: text/csv`.
+Response headers: `Content-Disposition: attachment; filename=ovumcy-export-<timestamp>.csv`, `Content-Type: text/csv`. The filename is unquoted, as the server emits it.
 
 Columns (in order, single header row):
 
@@ -111,8 +111,8 @@ Cell semantics:
 - `Swelling` was appended after `Constipation` (the last symptom column at the time) rather than at the very end of the file; every column at or after `Cycle factors` therefore shifted one position to the right for files generated after this change. Downstream consumers reading columns by position (not by header name) must account for the shift.
 - `Flow`, `Sex activity`, `Cervical mucus`, `Pregnancy test` are human-readable, capitalized labels (e.g. `Spotting`, `Protected`, `Egg white`, `Negative`), not the same lowercase enum strings used by the JSON export.
 - `BBT (C)` is always the stored value in Celsius; storage is canonical Celsius regardless of the account's display unit, and export emits it unconverted. The cell is empty on days with no measurement. The header keeps the literal text `BBT (C)` for stability even though it always holds Celsius.
-- `Cycle factors` is a `;`-separated list of factor keys; empty when none were recorded.
-- `Other` is a `;`-separated list of owner-managed custom symptom names; empty when none.
+- `Cycle factors` is a `; `-separated list of the same human-readable labels the app shows (`Stress`, `Illness`, `Travel`, `Sleep disruption`, `Medication change`) — not the lowercase keys the JSON export emits; empty when none were recorded.
+- `Other` is a `; `-separated list of owner-managed custom symptom names; empty when none.
 - `Notes` is the free-text note; the CSV writer quotes the cell as needed.
 - CSV-injection mitigation: `Cycle factors`, `Other`, and `Notes` are the only cells built from user-entered text. If such a cell (after stripping leading spaces) starts with `=`, `+`, `-`, `@`, or a tab/CR/LF, a leading `'` is prepended so spreadsheet apps do not interpret it as a formula.
 - `Pregnancy test` was introduced after the 1.1.1 layout and appended after the original columns so existing column positions stay stable, per the stability rule below.

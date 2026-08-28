@@ -4,6 +4,8 @@ This document defines the privacy-safe hero demo pack for Ovumcy.
 
 The goal is to keep one reusable asset set for README screenshots, release notes, and short walkthrough clips without ever relying on a live public instance.
 
+The pack is the six stills under `docs/screenshots/` plus the recorded first-run clip `docs/demo.gif` (with `docs/demo.mp4` as its source copy), which the README embeds as its hero. Both halves are generated: `scripts/take-screenshots.mjs` writes the six stills, `scripts/record-demo.mjs` writes the GIF and the MP4. Regenerate through those scripts — the Capture Checklist below is the manual description of what they do and the privacy review they cannot do for you.
+
 ## Core Flow
 
 Use these assets in this order when building a short walkthrough or landing-page demo:
@@ -27,7 +29,7 @@ This sequence matches the current product story: create an account, log today qu
 
 ## Asset Guidance
 
-The current asset pack is intentionally static-first:
+The still half of the pack is intentionally static-first:
 
 - `register.jpg` covers the first-run entry point.
 - `dashboard.jpg` covers the primary daily logging surface.
@@ -35,6 +37,7 @@ The current asset pack is intentionally static-first:
 - `settings-export.jpg` covers data ownership and export.
 - `install-prompt.png` covers phone install CTA behavior.
 - `dark-theme.jpg` covers the dark theme option.
+- `demo.gif` covers the first-run flow in motion; it is the one recorded asset, and every privacy rule in this document applies to it exactly as to a still.
 
 For short release clips or social cuts, prefer stitching these assets together over recording a live server session unless a release specifically needs motion.
 
@@ -43,7 +46,8 @@ For short release clips or social cuts, prefer stitching these assets together o
 When regenerating the pack:
 
 1. Start a local instance with a private demo account and seeded sample data.
-2. Capture the four authenticated surfaces from that local instance.
+2. Capture the four authenticated surfaces from that local instance (`node scripts/take-screenshots.mjs`, which needs an already-onboarded account and its cookie).
 3. Capture the mobile install prompt on `/login` with a mobile viewport and a synthetic `beforeinstallprompt` event.
 4. Capture the dark theme surface with the dark theme option enabled.
-5. Review every frame for accidental PII before publishing.
+5. Re-record the clip if the first-run flow changed (`node scripts/record-demo.mjs`, which needs ffmpeg and a built app).
+6. Review every frame for accidental PII before publishing — the GIF frame by frame, not only the stills.

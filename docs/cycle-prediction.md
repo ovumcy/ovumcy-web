@@ -3,7 +3,9 @@
 This document describes, in full, how ovumcy estimates ovulation, the fertile
 window, and the next period. It exists so that anyone — users, contributors,
 auditors — can read exactly what the app computes and verify it against the
-code. The worked examples below are mirrored 1:1 by automated reference tests
+code. It covers what is computed; whether a given estimate is *shown* is a
+separate gate, and the one that withholds the whole fertility half until the
+account completes its first cycle is described under "First cycle" below. The worked examples below are mirrored 1:1 by automated reference tests
 (`internal/services/cycles_reference_test.go`), so the documentation and the
 implementation cannot silently drift apart.
 
@@ -102,7 +104,7 @@ These are the exact cases asserted by the reference tests.
   being the gap between two detected period starts). The median is used rather
   than the mean, so a single missed-log gap that merges two cycles cannot skew
   the estimate. When there is not enough history, the owner's configured value
-  is used.
+  is used — for the next-period estimate only; see "First cycle" below.
 - **Luteal phase** defaults to the fixed 14-day model value, but is refined for
   the owner when their logs carry enough signal: when basal body temperature or
   cervical-mucus entries let the app infer the ovulation-to-next-period length
@@ -156,6 +158,30 @@ then there is nothing physiologically meaningful to draw. Even a confirmed
 shift remains an estimate (±1–2 days), never a fact: prospective studies find
 BBT alone identifies the ovulation day imperfectly, so treat the marker as
 indicative, not diagnostic.
+
+## First cycle — what is computed but not shown
+
+The math above runs from the first day logged, but a projection whose only source
+is the onboarding cycle-length slider is a configuration default wearing the
+clothes of a measurement. Until the account completes **one** cycle
+(`CompletedCycleCount >= 1` — the same count the stats page reports as "based on N
+completed cycles"), the whole fertility half of the projection is withheld:
+
+- the ovulation date, the fertile window and the peak-fertility band on the
+  calendar grid;
+- the ovulation events in the `.ics` feed;
+- the ovulation reminder in the webhook pass;
+- the ovulation banner on the dashboard.
+
+The next-period estimate survives, with its own estimate qualifier — its anchor is
+a date the owner actually recorded. The same suppression applies whenever
+predictions are switched off for the account. Predicate:
+`FertilityProjectionSuppressed` (`internal/services/dashboard_cycle.go`); every one
+of the four surfaces is pinned by
+`TestFirstCycleFloorSuppressesFertilityOnEverySurface`.
+
+Everything below and above describes the numbers themselves — the floor decides
+whether they reach a surface, never what they are.
 
 ## Assumptions and limitations
 
