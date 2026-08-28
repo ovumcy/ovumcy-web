@@ -2,9 +2,22 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"strings"
 	"testing"
 )
+
+// overriddenReportRows reproduces the go-licenses rows for every overridden
+// package, exactly as the override entries pin them. Every fixture that must
+// PASS includes them, because tableFromReport refuses an override that
+// matched no reported row.
+func overriddenReportRows() []string {
+	rows := make([]string, 0, len(overrides))
+	for pkg, override := range overrides {
+		rows = append(rows, fmt.Sprintf("%s,%s,%s", pkg, override.reportedURL, override.reportedLicense))
+	}
+	return rows
+}
 
 // TestTableFromReportNormalizesSortsAndSkipsOwnModule pins the three transform
 // properties the committed inventory depends on: the own module's row never
@@ -13,11 +26,11 @@ import (
 // block is identical whichever OS generated it, and rows sort by package path
 // so regeneration is order-stable.
 func TestTableFromReportNormalizesSortsAndSkipsOwnModule(t *testing.T) {
-	report := strings.Join([]string{
+	report := strings.Join(append([]string{
 		`github.com/zzz/last,https://example.com/zzz/LICENSE,MIT`,
 		`github.com/ovumcy/ovumcy-web,https://github.com/ovumcy/ovumcy-web/blob/HEAD/LICENSE,AGPL-3.0`,
 		`github.com/aaa/first/sub,https://example.com/aaa\sub\LICENSE,BSD-3-Clause`,
-	}, "\n")
+	}, overriddenReportRows()...), "\n")
 
 	table, err := tableFromReport(bufio.NewScanner(strings.NewReader(report)))
 	if err != nil {
@@ -83,22 +96,45 @@ func TestTableFromReportRefusesAnEmptyReport(t *testing.T) {
 }
 
 // TestTableFromReportAppliesARecordedOverride is the passing half: an
-// override replaces the reported row unconditionally, covering both the
+// override pinned to the exact reported row replaces it, covering both the
 // unclassifiable case (mathutil) and the misclassified case (libc, which
 // go-licenses reports as MIT via a notices file).
 func TestTableFromReportAppliesARecordedOverride(t *testing.T) {
-	table, err := tableFromReport(bufio.NewScanner(strings.NewReader(strings.Join([]string{
-		"modernc.org/mathutil,Unknown,Unknown",
-		"modernc.org/libc,https://gitlab.com/cznic/libc/blob/v1.73.4/LICENSE-3RD-PARTY.md,MIT",
-	}, "\n"))))
+	table, err := tableFromReport(bufio.NewScanner(strings.NewReader(strings.Join(overriddenReportRows(), "\n"))))
 	if err != nil {
 		t.Fatalf("tableFromReport: %v", err)
 	}
 	if !strings.Contains(table, "cznic/mathutil/-/blob/v1.7.1/LICENSE") {
 		t.Fatalf("expected the mathutil override to apply, got:\n%s", table)
 	}
-	if strings.Contains(table, "MIT") || strings.Contains(table, "LICENSE-3RD-PARTY") {
-		t.Fatalf("expected the libc misclassification to be replaced, got:\n%s", table)
+	if strings.Contains(table, "MIT") || strings.Contains(table, "LICENSE-3RD-PARTY") || strings.Contains(table, "LICENSE-GO") {
+		t.Fatalf("expected the libc and memory misclassifications to be replaced, got:\n%s", table)
+	}
+}
+
+// TestTableFromReportRefusesAStaleOverride: a version bump moves the reported
+// URL of an overridden module; the override must refuse rather than emit the
+// old hand-pinned row over a report it was never verified against.
+func TestTableFromReportRefusesAStaleOverride(t *testing.T) {
+	rows := overriddenReportRows()
+	for i, row := range rows {
+		if strings.HasPrefix(row, "modernc.org/libc,") {
+			rows[i] = "modernc.org/libc,https://gitlab.com/cznic/libc/blob/v1.74.0/LICENSE-3RD-PARTY.md,MIT"
+		}
+	}
+	if _, err := tableFromReport(bufio.NewScanner(strings.NewReader(strings.Join(rows, "\n")))); err == nil || !strings.Contains(err.Error(), "modernc.org/libc") {
+		t.Fatalf("expected a stale-override refusal naming libc, got %v", err)
+	}
+}
+
+// TestTableFromReportRefusesAnUnmatchedOverride: an override whose package
+// left the graph (or whose row go-licenses renamed) must refuse, so a rename
+// cannot quietly resurrect the wrong license.
+func TestTableFromReportRefusesAnUnmatchedOverride(t *testing.T) {
+	rows := overriddenReportRows()[1:] // drop one overridden row entirely
+	rows = append(rows, "github.com/other/pkg,https://example.com/LICENSE,MIT")
+	if _, err := tableFromReport(bufio.NewScanner(strings.NewReader(strings.Join(rows, "\n")))); err == nil || !strings.Contains(err.Error(), "matched no reported row") {
+		t.Fatalf("expected an unmatched-override refusal, got %v", err)
 	}
 }
 
