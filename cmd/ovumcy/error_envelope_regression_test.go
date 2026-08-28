@@ -242,17 +242,20 @@ func TestLanguageSwitchRejectionAnswersThroughTheEnvelope(t *testing.T) {
 // caller's Accept/HX-Request headers and carries localized copy, which would let
 // an anonymous caller pick the shape of the answer on a surface that has no UI.
 //
-// The exemption is per ROUTE, not per status: the calendar feed answers
-// text/calendar or a bare status, and never a body a calendar client would have
-// to parse. Splitting it — an enveloped 429 next to a body-less 404 — would put
-// two shapes on one endpoint, which is the mixed format the envelope exists to
-// prevent.
+// The feed's exemption covers its NOT-FOUND answer, not the route wholesale:
+// the 404 must stay one fixed, cause-free status-text body ("Not Found") for a
+// malformed token, an unknown selector, a wrong verifier and a disabled feed
+// alike, so it cannot take an envelope that varies with the caller's headers.
+// Its per-IP 429 is the opposite case — a 429 keeps one shape app-wide, so the
+// feed's limiter answers the shared envelope with retry_after_seconds like
+// every other (RespondCalendarFeedRateLimited), and this sweep never sees it:
+// the probe token provokes only the 404.
 var envelopeExemptRoutes = map[string]string{
 	"GET /healthz": "liveness probe: a fixed one-word JSON body in both outcomes, parsed by the container health check",
 	"GET /readyz":  "readiness probe: a fixed one-word JSON body in both outcomes, and it must never name the engine, the path, or the error",
-	"GET /calendar/feed/:token.ics": "cookieless .ics feed: one identical body-less 404 for a malformed token, an unknown selector, " +
-		"a wrong verifier and a disabled feed alike (docs/SECURITY_INVARIANTS.md -> Calendar feed subscription), and a bare 429 " +
-		"carrying only Retry-After past its per-IP budget",
+	"GET /calendar/feed/:token.ics": "cookieless .ics feed: one identical, cause-free 404 — the fixed status-text body — for a malformed " +
+		"token, an unknown selector, a wrong verifier and a disabled feed alike (docs/SECURITY_INVARIANTS.md -> Calendar feed " +
+		"subscription); its per-IP 429 answers the shared limiter envelope like every other route",
 }
 
 // TestEveryRejectionOutsideTheDeclaredExemptionsCarriesTheEnvelope walks the
@@ -351,8 +354,9 @@ func concreteEnvelopeProbePath(routePath string) string {
 // both outcomes: they are unauthenticated, so a localized envelope would put
 // translated text — and a shape that varies with the caller's Accept header —
 // on the surface an operator's probe parses. The feed's half of the same
-// contract is `TestCalendarFeedRateLimitHandlerReturnsBare429AndRedactsToken`
-// and `TestCalendarFeedReturnsBare404WithoutOracleForBadTokens`.
+// contract is `TestCalendarFeedReturnsBare404WithoutOracleForBadTokens`; its
+// 429 answers the shared limiter envelope, owned by the rate-limit negotiation
+// tests.
 func TestProbeEndpointsKeepFixedOneWordBodies(t *testing.T) {
 	app := newCSRFGuardTestApp(t)
 

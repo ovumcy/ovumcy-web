@@ -267,22 +267,24 @@ components:
         single CSRF exemption is named rather than left implied. `GET /healthz`
         and `GET /readyz` answer a fixed one-word JSON body in both outcomes,
         and the read-only calendar feed `GET /calendar/feed/{token}.ics` answers
-        a bare status with no body at all: `404` for every unknown, malformed or
-        revoked token, and `429` past its per-IP budget, carrying only
-        `Retry-After`. None of the three is part of this specification (`/healthz`
-        and `/readyz` are documented below as a courtesy; the feed is a page
-        route), and none is consumed by a client of this API — the probes are
-        parsed by an operator's health check, the feed by a calendar
-        application. The envelope negotiates its shape from the caller's
-        `Accept`/`HX-Request` headers and carries localized copy, so putting it
-        on a public cookieless surface would let an anonymous caller choose the
-        shape of the answer; the feed's `404` is additionally required to stay
-        one identical body-less answer for a malformed token, an unknown
-        selector, a wrong verifier and a disabled feed alike (see
+        its not-found path with the fixed status-text body `Not Found`: one
+        identical, cause-free `404` for a malformed token, an unknown selector,
+        a wrong verifier and a disabled feed alike (see
         [docs/SECURITY_INVARIANTS.md](SECURITY_INVARIANTS.md) → *Calendar feed
-        subscription*). The exemption is per route, not per status: the feed
-        serves `text/calendar` or a bare status, never two body shapes on one
-        endpoint.
+        subscription*). The feed's per-IP `429` is not part of the exemption:
+        its limiter answers the shared envelope with `retry_after_seconds`,
+        exactly as on every other route. None of the three is part of this
+        specification (`/healthz` and `/readyz` are documented below as a
+        courtesy; the feed is a page route), and none is consumed by a client
+        of this API — the probes are parsed by an operator's health check, the
+        feed by a calendar application. The envelope negotiates its shape from
+        the caller's `Accept`/`HX-Request` headers and carries localized copy,
+        so putting it on a public cookieless surface would let an anonymous
+        caller choose the shape of the answer; the feed's `404` is additionally
+        required to stay one identical, cause-free answer whatever refused the
+        token. The exemption covers the not-found answer, never a route
+        wholesale: the feed serves `text/calendar` on success and the one fixed
+        `404` body on refusal, and its `429` keeps the app-wide limiter shape.
       required: [error, error_detail]
       properties:
         error:
