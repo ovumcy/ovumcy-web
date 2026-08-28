@@ -13,11 +13,12 @@
 // build rather than silently un-truing the file's completeness claim.
 //
 // The transform is deliberately deterministic across platforms: go-licenses
-// joins URL path segments with the OS separator, so a report generated on
-// Windows carries backslashes inside otherwise-remote URLs; every backslash in
-// the URL column is normalized to a forward slash before the rows are sorted,
-// and a URL that still is not a portable https link is refused rather than
-// committed as a dead or machine-local link.
+// joins URL path segments with the OS separator (measured on Windows: remote
+// https URLs arrive with backslashes inside the path), so every backslash in
+// the URL column is normalized to a forward slash before the rows are sorted.
+// Any URL-column shape that is not a portable https link after that — the
+// literal Unknown, a filesystem path, whatever a future release emits — is
+// refused rather than committed as a dead or machine-local link.
 package main
 
 import (
@@ -39,20 +40,35 @@ const (
 )
 
 // overrides records the packages whose go-licenses row is wrong or missing,
-// with the classification a human made by reading the pinned version's
-// license files. An entry replaces the reported row unconditionally, so it
-// covers both failure shapes — a row go-licenses cannot classify (Unknown in
-// either column) and a row it classifies incorrectly. The URLs pin the module
-// version by hand; a version bump of an overridden module must update its URL
-// here, which the -check diff surfaces because the row is part of the block.
-var overrides = map[string]struct{ url, license string }{
+// with the correction a human made by reading the pinned version's license
+// files. An override is pinned to the exact row go-licenses reports
+// (post-normalization): if the reported row changes — a version bump moves the
+// URL, or a go-licenses release starts classifying differently — the override
+// no longer matches and the run refuses instead of silently emitting a stale
+// hand-pinned row, so every change to an overridden module passes through a
+// human re-read. An override whose key matches no reported row refuses too,
+// so a renamed row cannot quietly resurrect the wrong license.
+var overrides = map[string]struct{ reportedURL, reportedLicense, url, license string }{
 	// Standard BSD-3-Clause text; go-licenses cannot classify the layout and
 	// reports Unknown/Unknown.
-	"modernc.org/mathutil": {url: "https://gitlab.com/cznic/mathutil/-/blob/v1.7.1/LICENSE", license: "BSD-3-Clause"},
+	"modernc.org/mathutil": {
+		reportedURL: "Unknown", reportedLicense: "Unknown",
+		url: "https://gitlab.com/cznic/mathutil/-/blob/v1.7.1/LICENSE", license: "BSD-3-Clause",
+	},
 	// go-licenses picks LICENSE-3RD-PARTY.md (a notices file) and calls the
 	// module MIT; the module's own root LICENSE is the standard BSD-3-Clause
 	// text ("The Libc Authors").
-	"modernc.org/libc": {url: "https://gitlab.com/cznic/libc/-/blob/v1.73.4/LICENSE", license: "BSD-3-Clause"},
+	"modernc.org/libc": {
+		reportedURL: "https://gitlab.com/cznic/libc/blob/v1.73.4/LICENSE-3RD-PARTY.md", reportedLicense: "MIT",
+		url: "https://gitlab.com/cznic/libc/-/blob/v1.73.4/LICENSE", license: "BSD-3-Clause",
+	},
+	// Same shape with a coincidentally matching name: go-licenses links
+	// LICENSE-GO (the Go project's license, carried for stdlib-derived code)
+	// while the module's own grant is the root LICENSE ("The Memory Authors").
+	"modernc.org/memory": {
+		reportedURL: "https://gitlab.com/cznic/memory/blob/v1.11.0/LICENSE-GO", reportedLicense: "BSD-3-Clause",
+		url: "https://gitlab.com/cznic/memory/-/blob/v1.11.0/LICENSE", license: "BSD-3-Clause",
+	},
 }
 
 func main() {
@@ -100,6 +116,7 @@ func main() {
 // markdown table body, sorted by package path.
 func tableFromReport(scanner *bufio.Scanner) (string, error) {
 	rows := make([]string, 0, 64)
+	applied := make(map[string]bool, len(overrides))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
@@ -114,7 +131,11 @@ func tableFromReport(scanner *bufio.Scanner) (string, error) {
 			continue
 		}
 		if override, ok := overrides[pkg]; ok {
+			if url != override.reportedURL || license != override.reportedLicense {
+				return "", fmt.Errorf("the override for %q was verified against a report of (%s, %q) but go-licenses now reports (%s, %q) — re-read the pinned version's license files and update the override", pkg, override.reportedLicense, override.reportedURL, license, url)
+			}
 			url, license = override.url, override.license
+			applied[pkg] = true
 		} else if license == "Unknown" || url == "Unknown" {
 			return "", fmt.Errorf("go-licenses reports %q as %s at %q and no override is recorded — read the pinned version's license file and add one", pkg, license, url)
 		}
@@ -128,6 +149,11 @@ func tableFromReport(scanner *bufio.Scanner) (string, error) {
 	}
 	if len(rows) == 0 {
 		return "", fmt.Errorf("the report on stdin is empty — run go-licenses report ./cmd/ovumcy and pipe its output in")
+	}
+	for pkg := range overrides {
+		if !applied[pkg] {
+			return "", fmt.Errorf("the override for %q matched no reported row — the dependency left the graph or go-licenses renamed its row; re-verify and update or remove the override", pkg)
+		}
 	}
 	sort.Strings(rows)
 	return "| Package | License | Text |\n| --- | --- | --- |\n" + strings.Join(rows, "\n"), nil

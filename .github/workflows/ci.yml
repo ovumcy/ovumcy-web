@@ -1069,6 +1069,13 @@ jobs:
               # guard's own package, so a rename cannot leave this filter
               # pointing at nothing.
               runbook_changes="$(printf '%s\n' "$files" | grep -E '^docs/self-hosted\.md$' || true)"
+              # Second not-inert document, same shape: test-go-analysis
+              # regenerates the licenses report and refuses a stale committed
+              # THIRD_PARTY_LICENSES.md block, so an edit to the inventory
+              # alone must still run the lane that judges it — otherwise a
+              # hand edit lands ungated. Detected here beside the runbook and
+              # consumed at `run_core` below for the same reason.
+              licenses_changes="$(printf '%s\n' "$files" | grep -E '^THIRD_PARTY_LICENSES\.md$' || true)"
               if [ -z "$app_changes" ]; then
                 run_e2e=false
                 if [ -n "$runbook_changes" ]; then
@@ -1114,6 +1121,10 @@ jobs:
             run_core=true
             echo "the executed operator runbook changed: the Go lanes run for it, the browser lanes do not."
           fi
+          if [ -n "${licenses_changes:-}" ]; then
+            run_core=true
+            echo "the licenses inventory changed: the Go lanes run so the analysis lane can judge the committed block."
+          fi
           if [ "$EVENT_NAME" = "push" ]; then
             run_core=false
             echo "push to main: the merge queue already ran the core suite on this exact commit; running only the lanes it skips."
@@ -1139,19 +1150,13 @@ jobs:
             fi
             # Browser-spec-only: the e2e allowlist plus the docs/meta one.
             beyond_specs="$(printf '%s\n' "$files" | grep -vE '^(e2e/|docs/|\.clusterfuzzlite/|LICENSE$|\.gitignore$|\.gitattributes$|.*\.md$)' || true)"
-            # THIRD_PARTY_LICENSES.md matches the `.*\.md$` excuse, but it is
-            # the one markdown file a Go lane GUARDS: test-go-analysis
-            # regenerates the licenses report and refuses a stale committed
-            # block. An edit to the inventory alone must therefore still run
-            # the lane that judges it, or a hand edit lands ungated.
-            licenses_changes="$(printf '%s\n' "$files" | grep -E '^THIRD_PARTY_LICENSES\.md$' || true)"
-            # The runbook force above reaches `run_core`, and this slice would
-            # take it straight back: `beyond_specs` excuses every `^docs/`
-            # path, so without the second half of this condition a
-            # runbook-only diff would clear the Go lanes again — the very
-            # lanes that run the guard reading it. The licenses inventory is
-            # the same shape for `run_unit` specifically.
-            if [ -z "$beyond_specs" ] && [ -z "${runbook_changes:-}" ] && [ -z "$licenses_changes" ]; then
+            # The runbook and licenses forces above reach `run_core`, and this
+            # slice would take them straight back: `beyond_specs` excuses
+            # every `^docs/` path and every `.md` file, so without the second
+            # and third halves of this condition a runbook-only or
+            # inventory-only diff would clear the Go lanes again — the very
+            # lanes that run the guards reading them.
+            if [ -z "$beyond_specs" ] && [ -z "${runbook_changes:-}" ] && [ -z "${licenses_changes:-}" ]; then
               run_unit=false
               echo "browser specs only: the Go suite reports success without running."
             fi
