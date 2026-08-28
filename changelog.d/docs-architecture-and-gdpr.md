@@ -15,5 +15,5 @@
   are unreachable from outside the binary, so the doc now names what exists (scoped direct SQL,
   or a feature request) and scopes "no built-in scheduler" to retention, since the reminder
   scheduler exists; the restore-drill anecdote, which no dated record backs, is replaced by the
-  mechanism statement; the `/privacy` paragraph defers the complete egress enumeration (feed
-  included) to the canonical statement in `docs/security/data-handling.md`. No behaviour changes.
+  mechanism statement; the `/privacy` paragraph defers the egress enumeration to the canonical
+  statement in `docs/security/data-handling.md`. No behaviour changes.
