@@ -1,10 +1,16 @@
 // Command licensesdoc maintains the generated Go-module section of
 // THIRD_PARTY_LICENSES.md from a go-licenses CSV report. The go-licenses
 // version is pinned in exactly one place — GO_LICENSES_VERSION in the
-// test-go-analysis job of .github/workflows/ci.yml:
+// test-go-analysis job of .github/workflows/ci.yml. The report is taken over
+// the SHIPPED binary's build graph — GOOS=linux, CGO_ENABLED=0, the
+// Dockerfile's build environment — because the graph is GOOS-dependent
+// (measured 2026-08-28: github.com/ncruces/go-strftime enters only off-linux),
+// and go run would cross-compile the tool itself under that env, so install
+// first and run the host binary with the env set:
 //
-//	go run github.com/google/go-licenses@<GO_LICENSES_VERSION> report ./cmd/ovumcy | go run ./scripts/licensesdoc -write
-//	go run github.com/google/go-licenses@<GO_LICENSES_VERSION> report ./cmd/ovumcy | go run ./scripts/licensesdoc -check
+//	go install github.com/google/go-licenses@<GO_LICENSES_VERSION>
+//	GOOS=linux CGO_ENABLED=0 go-licenses report ./cmd/ovumcy | go run ./scripts/licensesdoc -write
+//	GOOS=linux CGO_ENABLED=0 go-licenses report ./cmd/ovumcy | go run ./scripts/licensesdoc -check
 //
 // -write rewrites the block between the BEGIN/END markers in place; -check
 // exits non-zero when the committed block differs from what the report on
@@ -41,13 +47,14 @@ const (
 
 // overrides records the packages whose go-licenses row is wrong or missing,
 // with the correction a human made by reading the pinned version's license
-// files. An override is pinned to the exact row go-licenses reports
-// (post-normalization): if the reported row changes — a version bump moves the
-// URL, or a go-licenses release starts classifying differently — the override
-// no longer matches and the run refuses instead of silently emitting a stale
-// hand-pinned row, so every change to an overridden module passes through a
-// human re-read. An override whose key matches no reported row refuses too,
-// so a renamed row cannot quietly resurrect the wrong license.
+// files. Two guards keep an override from outliving its verification: it is
+// pinned to the exact row go-licenses reports (post-normalization), so a
+// changed report — a moved URL, a reclassification — refuses instead of
+// silently emitting the stale hand-pinned row; and the version its URL embeds
+// is checked against go.mod, which catches a bump even for a row whose
+// reported shape is the version-free Unknown/Unknown. An override whose key
+// matches no reported row refuses too, so a renamed row cannot quietly
+// resurrect the wrong license.
 var overrides = map[string]struct{ reportedURL, reportedLicense, url, license string }{
 	// Standard BSD-3-Clause text; go-licenses cannot classify the layout and
 	// reports Unknown/Unknown.
@@ -80,6 +87,16 @@ func main() {
 		os.Exit(2)
 	}
 
+	goMod, err := os.ReadFile("go.mod")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "licensesdoc: %v\n", err)
+		os.Exit(1)
+	}
+	if err := verifyOverridePins(string(goMod)); err != nil {
+		fmt.Fprintf(os.Stderr, "licensesdoc: %v\n", err)
+		os.Exit(1)
+	}
+
 	table, err := tableFromReport(bufio.NewScanner(os.Stdin))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "licensesdoc: %v\n", err)
@@ -99,7 +116,7 @@ func main() {
 
 	if *check {
 		if current != table {
-			fmt.Fprintf(os.Stderr, "licensesdoc: %s is stale — regenerate it (the go-licenses version is GO_LICENSES_VERSION in .github/workflows/ci.yml):\n\n    go run github.com/google/go-licenses@<GO_LICENSES_VERSION> report ./cmd/ovumcy | go run ./scripts/licensesdoc -write\n\n%s\n", inventoryPath, diffSummary(current, table))
+			fmt.Fprintf(os.Stderr, "licensesdoc: %s is stale — regenerate it (the go-licenses version is GO_LICENSES_VERSION in .github/workflows/ci.yml; the env pins the shipped binary's graph):\n\n    go install github.com/google/go-licenses@<GO_LICENSES_VERSION>\n    GOOS=linux CGO_ENABLED=0 go-licenses report ./cmd/ovumcy | go run ./scripts/licensesdoc -write\n\n%s\n", inventoryPath, diffSummary(current, table))
 			os.Exit(1)
 		}
 		fmt.Println("licensesdoc: inventory matches the dependency report.")
@@ -110,6 +127,31 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Printf("licensesdoc: wrote the generated block in %s.\n", inventoryPath)
+}
+
+// verifyOverridePins refuses any override whose hand-pinned URL does not
+// embed the version go.mod requires for that module. This is what makes a
+// version bump loud for an override whose REPORTED row carries no version at
+// all (mathutil's Unknown/Unknown): the reported-row pin cannot see the bump,
+// but the go.mod requirement moved, and the stale URL no longer names it.
+func verifyOverridePins(goMod string) error {
+	for pkg, override := range overrides {
+		var version string
+		for line := range strings.SplitSeq(goMod, "\n") {
+			fields := strings.Fields(strings.TrimSpace(line))
+			if len(fields) >= 2 && fields[0] == pkg {
+				version = fields[1]
+				break
+			}
+		}
+		if version == "" {
+			return fmt.Errorf("the override for %q names a module go.mod does not require — remove the override or fix its key", pkg)
+		}
+		if !strings.Contains(override.url, "/"+version+"/") {
+			return fmt.Errorf("the override URL for %q (%s) does not embed go.mod's required version %s — the module was bumped; re-read its license files and update the override", pkg, override.url, version)
+		}
+	}
+	return nil
 }
 
 // tableFromReport turns go-licenses CSV rows (package,url,license) into the

@@ -19,8 +19,10 @@
   hand-corrects the rows `go-licenses` gets wrong — `modernc.org/mathutil` (unclassifiable
   standard BSD-3-Clause text), `modernc.org/libc` (misreported as MIT via a notices file) and
   `modernc.org/memory` (linked to the Go project's LICENSE-GO instead of the module's own
-  grant) — with each override pinned to the exact reported row, so a version bump or a renamed
-  row refuses loudly instead of silently keeping the stale hand-pinned link; the generator also
-  refuses any Unknown or non-https license link rather than committing a dead or machine-local
-  one. An inventory-only edit forces the Go lanes on, so a hand edit cannot dodge the gate. No
-  behaviour changes.
+  grant) — with each override pinned twice, to the exact reported row and to the version go.mod
+  requires (the second pin is what makes a bump loud even for a row reported as
+  version-free `Unknown`); the generator also refuses any Unknown or non-https license link
+  rather than committing a dead or machine-local one. The report is taken over the shipped
+  binary's build graph (`GOOS=linux`, `CGO_ENABLED=0`, the Dockerfile's build environment) —
+  the graph is GOOS-dependent, so an unpinned host graph differs by a row. An inventory-only
+  edit forces the Go lanes on, so a hand edit cannot dodge the gate. No behaviour changes.
