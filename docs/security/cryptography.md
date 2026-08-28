@@ -8,12 +8,6 @@ Sensitive per-account fields written through `security.EncryptField` (`users.tot
 
 A legacy decrypt path exists for ciphertexts written by Ovumcy versions before aad binding was introduced. The new code transparently re-encrypts those values under the aad-bound format on the next successful 2FA login. Operators do not need to take any explicit migration step; the upgrade happens lazily and without revoking the user's current session.
 
-### Login: `requires_totp` reveals 2FA status
-
-`POST /api/v1/sessions` returns `{"requires_totp": true}` when the supplied password is correct and the account has TOTP enabled, and `{"ok": true}` plus a session cookie otherwise. A credential-dump attacker can use this to triage accounts by whether they have a second factor.
-
-This is inherent to any password-then-TOTP flow that gates the second factor on account state — any uniform response that hides the difference either silently grants access without verifying TOTP (downgrade attack) or unconditionally rejects accounts without TOTP (lockout). The per-account rate limiter (`AuthAttemptPolicy`) and the recovery-code re-auth requirements bound the value of knowing the 2FA status.
-
 ## Cookies
 
 Ovumcy uses only first-party cookies. Cookies marked **Sealed** are encrypted with AES-256-GCM under a key derived from `SECRET_KEY` via HKDF-SHA256 and bound to the cookie name through the AEAD authentication tag, so a value from one cookie cannot be reused as another. `Secure` defaults to the operator's `COOKIE_SECURE` setting unless noted otherwise.
@@ -21,7 +15,7 @@ Ovumcy uses only first-party cookies. Cookies marked **Sealed** are encrypted wi
 | Name | Purpose | TTL | Path | HttpOnly | SameSite | Secure | Sealed |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `ovumcy_auth` | Session token carrying user id, role, and `auth_session_version` | 30 days (persistent) with remember-me, otherwise a browser-session cookie (underlying token TTL 7 days) | `/` | yes | Lax | `COOKIE_SECURE` | yes |
-| `ovumcy_csrf` | CSRF double-submit token matched against the `csrf_token` form field on every state-changing request | browser session | `/` | yes | Lax | `COOKIE_SECURE` | no |
+| `ovumcy_csrf` | CSRF double-submit token matched against the `csrf_token` form field on every state-changing request | 1 hour (persistent; refreshed on every response — the `IdleTimeout` pin deliberately preserves the Fiber v2 `Expiration=1h` lifetime) | `/` | yes | Lax | `COOKIE_SECURE` | no |
 | `ovumcy_lang` | User-selected UI language code. Not the only carrier since migration 034: an explicit choice in `Settings` is also stored on the account (`users.interface_language`), and every sign-in re-issues this cookie from that column | 1 year | `/` | no (JS-readable for i18n) | Lax | `COOKIE_SECURE` | no |
 | `ovumcy_tz` | Client IANA timezone for server-side calendar math | 1 year | `/` | no (JS-writable, server-validated) | Lax | `COOKIE_SECURE` | no |
 | `ovumcy_flash` | One-shot UI message between redirects | 5 minutes | `/` | yes | Lax | `COOKIE_SECURE` | yes |
@@ -72,4 +66,4 @@ The sealed-cookie and field-crypto HKDF label pairs live next to the shared AEAD
 
 Plan secret rotation as planned maintenance, communicate it in advance, and consider asking users to disable 2FA before the rotation window.
 
-**If the secret is lost entirely (not rotated, gone with no backup):** this is distinct from a planned rotation because there is no old key to coordinate a migration from. Every `users.totp_secret` ciphertext becomes permanently unrecoverable — HKDF derivation means the encryption key only ever existed as a function of `SECRET_KEY`, and there is no escrow. Every sealed cookie and session invalidates, same as a rotation. Affected users follow the same recovery options above (password + recovery code, then re-enrolment; or operator reset), except that a user with `local_auth_enabled=false`, and equally a user who has forgotten the password or kept no recovery code, has no self-service option and requires an operator-run `ovumcy reset-password <email>`. Total secret loss should be treated as a data-loss incident, not routine key rotation.
+**If the secret is lost entirely (not rotated, gone with no backup):** this is distinct from a planned rotation because there is no old key to coordinate a migration from. Every `users.totp_secret` ciphertext becomes permanently unrecoverable — HKDF derivation means the encryption key only ever existed as a function of `SECRET_KEY`, and there is no escrow. Every sealed cookie and session invalidates, same as a rotation — as do the armed calendar-feed MACs, the feed key epoch and the in-memory rate-limit identity counters. Affected users follow the same recovery options above (password + recovery code, then re-enrolment; or operator reset). An account that signs in through a linked OIDC identity keeps its self-service path even here: the `(issuer, subject)` link is stored in plaintext and the OIDC state cookies are minted under the *current* key, so a fresh provider sign-in still works — such an account loses at most a TOTP enrollment, which it re-enrols. A user who has forgotten the password or kept no recovery code — and has no linked OIDC identity to sign in through — has no self-service option and requires an operator-run `ovumcy reset-password <email>`. Total secret loss should be treated as a data-loss incident, not routine key rotation.
