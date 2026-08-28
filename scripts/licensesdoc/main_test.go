@@ -67,10 +67,9 @@ func TestTableFromReportRefusesAnUnknownWithoutAnOverride(t *testing.T) {
 	}
 }
 
-// TestTableFromReportRefusesANonHTTPSLink: a URL column carrying a local
-// filesystem path (go-licenses falls back to the module-cache path when it
-// cannot derive a remote URL) must be refused, not committed as a
-// machine-local link.
+// TestTableFromReportRefusesANonHTTPSLink: a URL column carrying anything
+// that is not a portable https link (here a filesystem path) must be
+// refused, not committed as a machine-local link.
 func TestTableFromReportRefusesANonHTTPSLink(t *testing.T) {
 	row := `example.com/local,C:\Users\someone\go\pkg\mod\example.com\local@v1.0.0\LICENSE,MIT`
 	if _, err := tableFromReport(bufio.NewScanner(strings.NewReader(row))); err == nil || !strings.Contains(err.Error(), "example.com/local") {
@@ -135,6 +134,26 @@ func TestTableFromReportRefusesAnUnmatchedOverride(t *testing.T) {
 	rows = append(rows, "github.com/other/pkg,https://example.com/LICENSE,MIT")
 	if _, err := tableFromReport(bufio.NewScanner(strings.NewReader(strings.Join(rows, "\n")))); err == nil || !strings.Contains(err.Error(), "matched no reported row") {
 		t.Fatalf("expected an unmatched-override refusal, got %v", err)
+	}
+}
+
+// TestVerifyOverridePinsCatchesABumpedModule is the guard the reported-row
+// pin cannot provide for a version-free Unknown/Unknown row: the override URL
+// must embed the version go.mod requires, so bumping an overridden module
+// refuses until a human re-reads its license files.
+func TestVerifyOverridePinsCatchesABumpedModule(t *testing.T) {
+	current := "module example\n\nrequire (\n\tmodernc.org/mathutil v1.7.1 // indirect\n\tmodernc.org/libc v1.73.4 // indirect\n\tmodernc.org/memory v1.11.0 // indirect\n)\n"
+	if err := verifyOverridePins(current); err != nil {
+		t.Fatalf("expected the pinned versions to verify, got %v", err)
+	}
+
+	bumped := strings.Replace(current, "modernc.org/mathutil v1.7.1", "modernc.org/mathutil v1.8.0", 1)
+	if err := verifyOverridePins(bumped); err == nil || !strings.Contains(err.Error(), "modernc.org/mathutil") {
+		t.Fatalf("expected a bumped-module refusal naming mathutil, got %v", err)
+	}
+
+	if err := verifyOverridePins("module example\n"); err == nil {
+		t.Fatal("expected a refusal when go.mod no longer requires an overridden module")
 	}
 }
 

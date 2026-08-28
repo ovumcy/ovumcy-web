@@ -460,15 +460,23 @@ jobs:
 
       # THIRD_PARTY_LICENSES.md's Go-module section is generated, and a
       # generated compliance list drifts the day a dependency moves: this
-      # regenerates the report over the binary's own build graph and refuses a
-      # tree whose committed block disagrees. pipefail makes a go-licenses
-      # failure fail the step rather than hand licensesdoc an empty report —
-      # though the empty report is refused too, so either half failing is loud.
+      # regenerates the report over the SHIPPED binary's build graph and
+      # refuses a tree whose committed block disagrees. The graph is pinned to
+      # the Dockerfile's build environment (GOOS=linux, CGO_ENABLED=0) because
+      # the graph is GOOS-dependent — measured 2026-08-28:
+      # github.com/ncruces/go-strftime enters only off-linux, so a table
+      # generated on a Windows host differed from this runner's by one row.
+      # The tool is installed into a scratch GOBIN so the cached ~/go/bin
+      # keeps holding exactly the four pinned analysis binaries the verify
+      # step above asserts. pipefail makes a go-licenses failure fail the
+      # step rather than hand licensesdoc an empty report — though the empty
+      # report is refused too, so either half failing is loud.
       - name: Licenses inventory matches the dependency graph
         shell: bash
         run: |
           set -euo pipefail
-          go run "github.com/google/go-licenses@$GO_LICENSES_VERSION" report ./cmd/ovumcy | go run ./scripts/licensesdoc -check
+          GOBIN="$RUNNER_TEMP/licenses-bin" go install "github.com/google/go-licenses@$GO_LICENSES_VERSION"
+          GOOS=linux CGO_ENABLED=0 "$RUNNER_TEMP/licenses-bin/go-licenses" report ./cmd/ovumcy | go run ./scripts/licensesdoc -check
 
       - name: Install deadcode
         if: steps.go-tools.outputs.cache-hit != 'true'
@@ -1080,6 +1088,8 @@ jobs:
                 run_e2e=false
                 if [ -n "$runbook_changes" ]; then
                   verdict="documentation-only change that touches the executed operator runbook: the browser e2e jobs and the race lanes report success without running, and the Go lanes run for it."
+                elif [ -n "$licenses_changes" ]; then
+                  verdict="documentation-only change that touches the licenses inventory: the browser e2e jobs and the race lanes report success without running, and the Go lanes run so the analysis lane can judge the committed block."
                 else
                   verdict="docs/meta-only change: the browser e2e jobs and the unit/race battery report success without running."
                 fi
