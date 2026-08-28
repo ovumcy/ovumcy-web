@@ -12,10 +12,11 @@
   track — the rest of the cycle the coloured phase segments were drawn on — measured **1.34:1**
   against the card behind it, where WCAG 1.4.11 puts a meaningful graphic at 3:1, so the ring
   dissolved into the card in the dark; this pass raised it to 3.38:1/3.95:1. Wave 4 later replaced
-  the ring itself with the cycle ribbon (see the wave-4 cycle-ribbon entry), which carries its own
-  contrast: the phase band is explicitly *not* held to 3:1 (it is redundant to the day marks and
-  status text around it), so this ring's numbers describe a component this release no longer
-  contains.
+  the ring itself with a cycle ribbon — one cell per day carrying the phase, the fertile window and
+  entry marks along the band — which carries its own contrast: only the period and ovulation cells,
+  the two a reader looks for, are held to the 3:1 floor; the recessive follicular/luteal pair
+  deliberately isn't, since the ribbon is redundant to the day marks and status text around it. This
+  ring's numbers describe a track this release no longer contains.
 - **The dark cycle card no longer carried a pale smudge in its top-right corner from the
   light-theme glow tints.** Two decorative corner glows kept their warm light-theme paper tints on
   the dark card, lifting it by up to **3.27:1** and 1.71:1 — a decoration painted as loudly as a

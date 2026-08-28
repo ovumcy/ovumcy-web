@@ -5,4 +5,4 @@
   exercised since the `.ics` feed landed. The mutation section's claim that `internal/api` is the
   largest package went with it: `internal/services` is bigger and is sharded the same 5 ways. The
   header's test counts were corrected in the same pass; they are dropped entirely by the companion
-  entry "`TESTING.md` no longer states test counts that go stale," which supersedes that half.
+  entry "`TESTING.md` no longer states test counts that go stale.", which supersedes that half.
