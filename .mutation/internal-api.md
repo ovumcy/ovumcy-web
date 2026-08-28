@@ -87,9 +87,15 @@ combined row above):
 | internal_api_4 | 115 | 52 | 46 | 68.86% | 78.40% |
 | internal_api_5 | 92 | 18 | 18 | 83.64% | 85.94% |
 
-## Survivors — not yet triaged
+## Survivors of the `a6d7e41` run — history, backlog closed
 
-Unlike `internal-services.md`/`internal-security.md`, the 128 survivors here are
+**Superseded, kept for the reasoning.** The section that follows records the state
+at the `a6d7e41` run above. The exhaustive verification of 2026-07-12 triaged every
+survivor of the later v1.8.0 baseline per-mutant, and the post-hardening re-measure
+(**97.3%**, 18 lived) is the current canonical figure — so the follow-up this section
+asks for has happened, and neither the 128 count nor the 79.22% describes the tree.
+
+Unlike `internal-services.md`/`internal-security.md`, the 128 survivors here were
 **not** individually triaged into "real gap" vs. "documented equivalent mutant"
 yet — that requires a source-level equivalence review per mutant (apply the
 mutation, confirm no test fails, judge whether it's reachable), which is a
