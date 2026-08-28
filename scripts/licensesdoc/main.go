@@ -1,10 +1,10 @@
 // Command licensesdoc maintains the generated Go-module section of
-// THIRD_PARTY_LICENSES.md from a go-licenses CSV report.
+// THIRD_PARTY_LICENSES.md from a go-licenses CSV report. The go-licenses
+// version is pinned in exactly one place — GO_LICENSES_VERSION in the
+// test-go-analysis job of .github/workflows/ci.yml:
 //
-// Usage:
-//
-//	go run github.com/google/go-licenses@v1.6.0 report ./cmd/ovumcy | go run ./scripts/licensesdoc -write
-//	go run github.com/google/go-licenses@v1.6.0 report ./cmd/ovumcy | go run ./scripts/licensesdoc -check
+//	go run github.com/google/go-licenses@<GO_LICENSES_VERSION> report ./cmd/ovumcy | go run ./scripts/licensesdoc -write
+//	go run github.com/google/go-licenses@<GO_LICENSES_VERSION> report ./cmd/ovumcy | go run ./scripts/licensesdoc -check
 //
 // -write rewrites the block between the BEGIN/END markers in place; -check
 // exits non-zero when the committed block differs from what the report on
@@ -13,8 +13,11 @@
 // build rather than silently un-truing the file's completeness claim.
 //
 // The transform is deliberately deterministic across platforms: go-licenses
-// emits OS-native path separators inside license URLs, so every backslash in
-// the URL column is normalized to a forward slash before the rows are sorted.
+// joins URL path segments with the OS separator, so a report generated on
+// Windows carries backslashes inside otherwise-remote URLs; every backslash in
+// the URL column is normalized to a forward slash before the rows are sorted,
+// and a URL that still is not a portable https link is refused rather than
+// committed as a dead or machine-local link.
 package main
 
 import (
@@ -35,13 +38,21 @@ const (
 	ownModule = "github.com/ovumcy/ovumcy-web"
 )
 
-// unknownOverrides records the packages go-licenses cannot classify, with the
-// classification a human made by reading the license file. A row is consulted
-// only when the report says Unknown, so a later go-licenses release that
-// learns to classify one of these simply stops consulting it.
-var unknownOverrides = map[string]struct{ url, license string }{
-	// Standard BSD-3-Clause text; go-licenses fails on the LICENSE layout.
-	"modernc.org/mathutil": {url: "https://gitlab.com/cznic/mathutil/-/blob/master/LICENSE", license: "BSD-3-Clause"},
+// overrides records the packages whose go-licenses row is wrong or missing,
+// with the classification a human made by reading the pinned version's
+// license files. An entry replaces the reported row unconditionally, so it
+// covers both failure shapes — a row go-licenses cannot classify (Unknown in
+// either column) and a row it classifies incorrectly. The URLs pin the module
+// version by hand; a version bump of an overridden module must update its URL
+// here, which the -check diff surfaces because the row is part of the block.
+var overrides = map[string]struct{ url, license string }{
+	// Standard BSD-3-Clause text; go-licenses cannot classify the layout and
+	// reports Unknown/Unknown.
+	"modernc.org/mathutil": {url: "https://gitlab.com/cznic/mathutil/-/blob/v1.7.1/LICENSE", license: "BSD-3-Clause"},
+	// go-licenses picks LICENSE-3RD-PARTY.md (a notices file) and calls the
+	// module MIT; the module's own root LICENSE is the standard BSD-3-Clause
+	// text ("The Libc Authors").
+	"modernc.org/libc": {url: "https://gitlab.com/cznic/libc/-/blob/v1.73.4/LICENSE", license: "BSD-3-Clause"},
 }
 
 func main() {
@@ -72,7 +83,7 @@ func main() {
 
 	if *check {
 		if current != table {
-			fmt.Fprintf(os.Stderr, "licensesdoc: %s is stale — regenerate it:\n\n    go run github.com/google/go-licenses@v1.6.0 report ./cmd/ovumcy | go run ./scripts/licensesdoc -write\n\n%s\n", inventoryPath, diffSummary(current, table))
+			fmt.Fprintf(os.Stderr, "licensesdoc: %s is stale — regenerate it (the go-licenses version is GO_LICENSES_VERSION in .github/workflows/ci.yml):\n\n    go run github.com/google/go-licenses@<GO_LICENSES_VERSION> report ./cmd/ovumcy | go run ./scripts/licensesdoc -write\n\n%s\n", inventoryPath, diffSummary(current, table))
 			os.Exit(1)
 		}
 		fmt.Println("licensesdoc: inventory matches the dependency report.")
@@ -102,12 +113,13 @@ func tableFromReport(scanner *bufio.Scanner) (string, error) {
 		if pkg == ownModule || strings.HasPrefix(pkg, ownModule+"/") {
 			continue
 		}
-		if license == "Unknown" {
-			override, ok := unknownOverrides[pkg]
-			if !ok {
-				return "", fmt.Errorf("go-licenses cannot classify %q and no override is recorded — read its license file and add one", pkg)
-			}
+		if override, ok := overrides[pkg]; ok {
 			url, license = override.url, override.license
+		} else if license == "Unknown" || url == "Unknown" {
+			return "", fmt.Errorf("go-licenses reports %q as %s at %q and no override is recorded — read the pinned version's license file and add one", pkg, license, url)
+		}
+		if !strings.HasPrefix(url, "https://") {
+			return "", fmt.Errorf("license URL for %q is not a portable https link (%q) — a compliance table must not carry a dead or machine-local link; record an override", pkg, url)
 		}
 		rows = append(rows, fmt.Sprintf("| `%s` | %s | [license text](%s) |", pkg, license, url))
 	}

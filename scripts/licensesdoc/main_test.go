@@ -40,25 +40,78 @@ func TestTableFromReportNormalizesSortsAndSkipsOwnModule(t *testing.T) {
 }
 
 // TestTableFromReportRefusesAnUnknownWithoutAnOverride keeps the override map
-// honest in the failing direction: a dependency go-licenses cannot classify
-// must stop the generator with a message naming the package, never emit an
-// "Unknown" row into a compliance document.
+// honest in the failing direction: a dependency go-licenses cannot classify —
+// in either column — must stop the generator with a message naming the
+// package, never emit an "Unknown" row into a compliance document.
 func TestTableFromReportRefusesAnUnknownWithoutAnOverride(t *testing.T) {
-	_, err := tableFromReport(bufio.NewScanner(strings.NewReader("example.com/mystery,Unknown,Unknown")))
-	if err == nil || !strings.Contains(err.Error(), "example.com/mystery") {
+	for name, row := range map[string]string{
+		"both unknown":            "example.com/mystery,Unknown,Unknown",
+		"url unknown license not": "example.com/mystery,Unknown,MIT",
+	} {
+		if _, err := tableFromReport(bufio.NewScanner(strings.NewReader(row))); err == nil || !strings.Contains(err.Error(), "example.com/mystery") {
+			t.Fatalf("%s: expected a refusal naming the package, got %v", name, err)
+		}
+	}
+}
+
+// TestTableFromReportRefusesANonHTTPSLink: a URL column carrying a local
+// filesystem path (go-licenses falls back to the module-cache path when it
+// cannot derive a remote URL) must be refused, not committed as a
+// machine-local link.
+func TestTableFromReportRefusesANonHTTPSLink(t *testing.T) {
+	row := `example.com/local,C:\Users\someone\go\pkg\mod\example.com\local@v1.0.0\LICENSE,MIT`
+	if _, err := tableFromReport(bufio.NewScanner(strings.NewReader(row))); err == nil || !strings.Contains(err.Error(), "example.com/local") {
 		t.Fatalf("expected a refusal naming the package, got %v", err)
 	}
 }
 
-// TestTableFromReportAppliesARecordedOverride is the passing half: the one
-// recorded Unknown resolves to its hand-classified license and URL.
+// TestTableFromReportRefusesAMalformedLine: a row that is not three
+// comma-separated fields stops the generator loudly.
+func TestTableFromReportRefusesAMalformedLine(t *testing.T) {
+	if _, err := tableFromReport(bufio.NewScanner(strings.NewReader("only,two"))); err == nil {
+		t.Fatal("expected a refusal for a malformed line")
+	}
+}
+
+// TestTableFromReportRefusesAnEmptyReport: the CI step leans on this — a
+// failed go-licenses half that produces no rows must fail the check rather
+// than compare an empty table.
+func TestTableFromReportRefusesAnEmptyReport(t *testing.T) {
+	if _, err := tableFromReport(bufio.NewScanner(strings.NewReader("\n\n"))); err == nil {
+		t.Fatal("expected a refusal for an empty report")
+	}
+}
+
+// TestTableFromReportAppliesARecordedOverride is the passing half: an
+// override replaces the reported row unconditionally, covering both the
+// unclassifiable case (mathutil) and the misclassified case (libc, which
+// go-licenses reports as MIT via a notices file).
 func TestTableFromReportAppliesARecordedOverride(t *testing.T) {
-	table, err := tableFromReport(bufio.NewScanner(strings.NewReader("modernc.org/mathutil,Unknown,Unknown")))
+	table, err := tableFromReport(bufio.NewScanner(strings.NewReader(strings.Join([]string{
+		"modernc.org/mathutil,Unknown,Unknown",
+		"modernc.org/libc,https://gitlab.com/cznic/libc/blob/v1.73.4/LICENSE-3RD-PARTY.md,MIT",
+	}, "\n"))))
 	if err != nil {
 		t.Fatalf("tableFromReport: %v", err)
 	}
-	if !strings.Contains(table, "BSD-3-Clause") || !strings.Contains(table, "cznic/mathutil") {
+	if !strings.Contains(table, "cznic/mathutil/-/blob/v1.7.1/LICENSE") {
 		t.Fatalf("expected the mathutil override to apply, got:\n%s", table)
+	}
+	if strings.Contains(table, "MIT") || strings.Contains(table, "LICENSE-3RD-PARTY") {
+		t.Fatalf("expected the libc misclassification to be replaced, got:\n%s", table)
+	}
+}
+
+// TestDiffSummaryNamesBothDirections pins the -check failure output: a row
+// only in the committed block reads as stale, a row only in the fresh report
+// reads as missing.
+func TestDiffSummaryNamesBothDirections(t *testing.T) {
+	summary := diffSummary("shared\nold-only", "shared\nnew-only")
+	if !strings.Contains(summary, "missing: new-only") || !strings.Contains(summary, "stale:   old-only") {
+		t.Fatalf("diffSummary must name both directions, got:\n%s", summary)
+	}
+	if strings.Contains(summary, "shared") {
+		t.Fatalf("diffSummary must not name unchanged rows, got:\n%s", summary)
 	}
 }
 
