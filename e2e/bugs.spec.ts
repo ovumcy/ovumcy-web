@@ -345,7 +345,8 @@ test.describe('Bug regressions', () => {
       // end — and a month whose last day closes the grid's final week renders
       // no trailing cells at all (2026-02-28 is such a Saturday) — so the
       // assertion runs in preFertileDay's OWN month view, which always
-      // renders it; the day's state is per-day, not per-view.
+      // renders it; with no logged days, the cell's state is the same in
+      // either view.
       await page.goto(`/calendar?month=${preFertileDay.slice(0, 7)}`);
       await expect(page.locator(`button[data-day="${preFertileDay}"]`)).toHaveAttribute('data-calendar-state', 'default');
     });

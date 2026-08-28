@@ -10,6 +10,7 @@
   `lastPeriodStart = today−3` and well clear of the predicted next period. The same class lived in
   the baseline-period test in `bugs.spec.ts`, whose `preFertileDay = today+1` crosses into the
   next month at month end and is unrendered whenever the old month's last day closes the grid's
-  final week (next trigger: 2026-02-28, a Saturday) — that assertion now runs in `preFertileDay`'s
-  own month view, where the cell always exists and the per-day state is unchanged. Test-only
+  final week (2026-02-28 was such a Saturday; the next is 2026-10-31) — that assertion now runs in
+  `preFertileDay`'s own month view, where the cell always exists and the per-day state is
+  unchanged. Test-only
   change.
