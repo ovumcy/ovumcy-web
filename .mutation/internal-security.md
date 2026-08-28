@@ -68,13 +68,17 @@ verification, TLS bootstrap) is exercised by the end-to-end OIDC lanes
 `go test`, so those lines survive or show "not covered" here while being covered
 at the e2e layer.
 
-## Documented survivors
+## Documented survivors of run `28837779621` — history
+
+**Superseded, kept for the reasoning.** The canonical state is the post-hardening
+re-measure above — **97.8%**, 3 lived — so the eight below are that run's survivor
+set, not a current count, and their line numbers track `oidc.go` as it stood then.
 
 The 8 mutants below survived run `28837779621`. Relative to the prior
 `28758365493` set, `oidc.go:613` was **killed** this round (re-triaged from
 equivalent to a real gap — see the score note above); the rest carry the same
 argument as before (equivalent, or reachable only through the e2e OIDC lanes,
-not `go test`). Line numbers track the current `oidc.go`.
+not `go test`).
 
 ### Equivalent mutants
 
