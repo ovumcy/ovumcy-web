@@ -202,6 +202,10 @@ components:
             error_detail: { key: "symptom name already exists", category: "conflict", target: "settings_form" }
     RateLimited:
       description: Rate limit exceeded.
+      headers:
+        Retry-After:
+          description: Whole seconds until the budget refills; `retry_after_seconds` echoes it.
+          schema: { type: integer, minimum: 1 }
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ApiError' }
