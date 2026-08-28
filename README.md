@@ -390,6 +390,9 @@ AUDIT_LOG_ENABLED=false
 # RATE_LIMIT_FORGOT_PASSWORD_WINDOW=1h
 # RATE_LIMIT_LOGOUT_MAX=60
 # RATE_LIMIT_LOGOUT_WINDOW=15m
+# Per-account (identity-keyed) logout budget, separate from the per-IP pair above
+# RATE_LIMIT_LOGOUT_ACCOUNT_MAX=20
+# RATE_LIMIT_LOGOUT_ACCOUNT_WINDOW=15m
 # RATE_LIMIT_API_MAX=300
 # RATE_LIMIT_API_WINDOW=1m
 # Calendar feed: kept well below the API budget on purpose — every request costs
