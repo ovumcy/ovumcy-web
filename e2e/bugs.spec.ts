@@ -340,6 +340,13 @@ test.describe('Bug regressions', () => {
       // configuration default behind it is suppressed rather than qualified. The
       // predicted period days asserted above stay — their anchor is the last
       // period start the owner entered, and only the length falls back.
+      //
+      // preFertileDay is today+1, which crosses into the next month at month
+      // end — and a month whose last day closes the grid's final week renders
+      // no trailing cells at all (2026-02-28 is such a Saturday) — so the
+      // assertion runs in preFertileDay's OWN month view, which always
+      // renders it; the day's state is per-day, not per-view.
+      await page.goto(`/calendar?month=${preFertileDay.slice(0, 7)}`);
       await expect(page.locator(`button[data-day="${preFertileDay}"]`)).toHaveAttribute('data-calendar-state', 'default');
     });
 
