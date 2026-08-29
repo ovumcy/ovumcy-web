@@ -329,7 +329,10 @@ func assemble(root, version, date string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	tail = updateReleaseLinks(tail, version)
+	tail, linkWarning := updateReleaseLinks(tail, version)
+	if linkWarning != "" {
+		fmt.Fprintln(os.Stderr, "changelogd assemble: WARNING: "+linkWarning)
+	}
 
 	merged := map[string][]string{}
 	frozen, err := parseSections(changelogFile+" [Unreleased]", strings.Join(stripPointerLine(unreleased), "\n"))
@@ -408,20 +411,27 @@ func splitChangelog(content string) (head, unreleased, tail []string, err error)
 // in sync with a newly cut release: the release gets its own compare link,
 // inserted right above the previous top entry, and "[Unreleased]" moves to
 // compare against it instead of the release being cut. It is a no-op when
-// tail carries no such block (assembling into a changelog that predates the
+// tail carries no "[Unreleased]:" line at all (a changelog that predates the
 // convention) or already lists this version — a rerun for a version that was
-// already assembled, or corrected by hand, leaves the block untouched.
-func updateReleaseLinks(tail []string, version string) []string {
+// already assembled, or corrected by hand, leaves the block untouched. When a
+// "[Unreleased]:" line exists but its format has drifted from
+// unreleasedLinkPattern, it returns tail untouched plus a non-empty warning
+// instead of failing silently — a caller drops the update on the floor with
+// no signal otherwise, which is the exact defect this function exists to fix.
+func updateReleaseLinks(tail []string, version string) ([]string, string) {
 	newLabel := "[" + version + "]:"
 	for _, line := range tail {
 		if strings.HasPrefix(line, newLabel) {
-			return tail
+			return tail, ""
 		}
 	}
 	for i, line := range tail {
+		if !strings.HasPrefix(line, "[Unreleased]:") {
+			continue
+		}
 		m := unreleasedLinkPattern.FindStringSubmatch(line)
 		if m == nil {
-			continue
+			return tail, fmt.Sprintf("release-link block not updated: %q does not match the expected format", line)
 		}
 		base, prevTag := m[1], m[2]
 		newTag := "v" + version
@@ -430,9 +440,9 @@ func updateReleaseLinks(tail []string, version string) []string {
 		out = append(out, "[Unreleased]: "+base+newTag+"...HEAD")
 		out = append(out, "["+version+"]: "+base+prevTag+"..."+newTag)
 		out = append(out, tail[i+1:]...)
-		return out
+		return out, ""
 	}
-	return tail
+	return tail, ""
 }
 
 // stripPointerLine drops the pointer that stands in for the entries assembly
