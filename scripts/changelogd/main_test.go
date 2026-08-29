@@ -455,7 +455,10 @@ func TestAssembleCarriesTheRepositoryBacklogVerbatim(t *testing.T) {
 	if !strings.HasPrefix(got, strings.Join(head, "\n")+"\n\n"+pointerLine+"\n\n## [99.0.0] - 2026-12-31\n") {
 		t.Fatalf("assembled head is wrong:\n%s", firstLines(got, 12))
 	}
-	wantTail := updateReleaseLinks(tail, "99.0.0")
+	wantTail, warning := updateReleaseLinks(tail, "99.0.0")
+	if warning != "" {
+		t.Fatalf("the repository's own link block should match the expected format, got warning %q", warning)
+	}
 	if !strings.HasSuffix(got, strings.Join(wantTail, "\n")) {
 		t.Fatal("everything below the released sections, other than the link block's own update, must be untouched")
 	}
@@ -477,7 +480,7 @@ func TestUpdateReleaseLinksInsertsTheNewVersionAndMovesUnreleased(t *testing.T) 
 		"[Unreleased]: https://example.com/o/r/compare/v1.0.0...HEAD",
 		"[1.0.0]: https://example.com/o/r/releases/tag/v1.0.0",
 	}
-	got := updateReleaseLinks(tail, "1.1.0")
+	got, warning := updateReleaseLinks(tail, "1.1.0")
 	want := []string{
 		"## [1.0.0] - 2026-01-01",
 		"",
@@ -492,6 +495,9 @@ func TestUpdateReleaseLinksInsertsTheNewVersionAndMovesUnreleased(t *testing.T) 
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("updateReleaseLinks =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
+	if warning != "" {
+		t.Fatalf("expected no warning on a well-formed link block, got %q", warning)
+	}
 }
 
 func TestUpdateReleaseLinksIsANoOpWhenTheVersionAlreadyHasALink(t *testing.T) {
@@ -500,17 +506,37 @@ func TestUpdateReleaseLinksIsANoOpWhenTheVersionAlreadyHasALink(t *testing.T) {
 		"[1.1.0]: https://example.com/o/r/compare/v1.0.0...v1.1.0",
 		"[1.0.0]: https://example.com/o/r/releases/tag/v1.0.0",
 	}
-	got := updateReleaseLinks(tail, "1.1.0")
+	got, warning := updateReleaseLinks(tail, "1.1.0")
 	if strings.Join(got, "\n") != strings.Join(tail, "\n") {
 		t.Fatalf("a rerun for a version that already has a link must not change the block:\n%s", strings.Join(got, "\n"))
+	}
+	if warning != "" {
+		t.Fatalf("expected no warning when the version already has a link, got %q", warning)
 	}
 }
 
 func TestUpdateReleaseLinksIsANoOpWithoutALinkBlock(t *testing.T) {
 	tail := []string{"## [1.0.0] - 2026-01-01", "", "### Added", "", "- **The first release.**"}
-	got := updateReleaseLinks(tail, "1.1.0")
+	got, warning := updateReleaseLinks(tail, "1.1.0")
 	if strings.Join(got, "\n") != strings.Join(tail, "\n") {
 		t.Fatalf("a changelog with no link block must be left untouched:\n%s", strings.Join(got, "\n"))
+	}
+	if warning != "" {
+		t.Fatalf("expected no warning when there is no link block at all, got %q", warning)
+	}
+}
+
+func TestUpdateReleaseLinksWarnsInsteadOfFailingSilentlyOnADriftedFormat(t *testing.T) {
+	tail := []string{
+		"[Unreleased]: https://example.com/o/r/compare/v1.0...HEAD",
+		"[1.0.0]: https://example.com/o/r/releases/tag/v1.0.0",
+	}
+	got, warning := updateReleaseLinks(tail, "1.1.0")
+	if strings.Join(got, "\n") != strings.Join(tail, "\n") {
+		t.Fatalf("a block the pattern cannot parse must be left untouched:\n%s", strings.Join(got, "\n"))
+	}
+	if warning == "" {
+		t.Fatal("expected a warning when the [Unreleased] line does not match the expected format")
 	}
 }
 
