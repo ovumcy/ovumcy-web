@@ -69,6 +69,12 @@ var sectionOrder = []string{
 
 var versionPattern = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
 
+// unreleasedLinkPattern matches the Keep a Changelog reference-style link line
+// for "[Unreleased]", e.g.
+// "[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v1.9.2...HEAD".
+// Group 1 is everything through "compare/", group 2 the previous release tag.
+var unreleasedLinkPattern = regexp.MustCompile(`^\[Unreleased\]: (.+/compare/)(v\d+\.\d+\.\d+)\.\.\.HEAD$`)
+
 func main() {
 	if len(os.Args) < 2 {
 		fatalf("usage: changelogd <check|assemble> [flags]")
@@ -323,6 +329,7 @@ func assemble(root, version, date string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	tail = updateReleaseLinks(tail, version)
 
 	merged := map[string][]string{}
 	frozen, err := parseSections(changelogFile+" [Unreleased]", strings.Join(stripPointerLine(unreleased), "\n"))
@@ -395,6 +402,37 @@ func splitChangelog(content string) (head, unreleased, tail []string, err error)
 		}
 	}
 	return lines[:start+1], lines[start+1 : end], lines[end:], nil
+}
+
+// updateReleaseLinks keeps the trailing Keep a Changelog reference-link block
+// in sync with a newly cut release: the release gets its own compare link,
+// inserted right above the previous top entry, and "[Unreleased]" moves to
+// compare against it instead of the release being cut. It is a no-op when
+// tail carries no such block (assembling into a changelog that predates the
+// convention) or already lists this version — a rerun for a version that was
+// already assembled, or corrected by hand, leaves the block untouched.
+func updateReleaseLinks(tail []string, version string) []string {
+	newLabel := "[" + version + "]:"
+	for _, line := range tail {
+		if strings.HasPrefix(line, newLabel) {
+			return tail
+		}
+	}
+	for i, line := range tail {
+		m := unreleasedLinkPattern.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		base, prevTag := m[1], m[2]
+		newTag := "v" + version
+		out := make([]string, 0, len(tail)+1)
+		out = append(out, tail[:i]...)
+		out = append(out, "[Unreleased]: "+base+newTag+"...HEAD")
+		out = append(out, "["+version+"]: "+base+prevTag+"..."+newTag)
+		out = append(out, tail[i+1:]...)
+		return out
+	}
+	return tail
 }
 
 // stripPointerLine drops the pointer that stands in for the entries assembly

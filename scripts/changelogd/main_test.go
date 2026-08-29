@@ -455,13 +455,83 @@ func TestAssembleCarriesTheRepositoryBacklogVerbatim(t *testing.T) {
 	if !strings.HasPrefix(got, strings.Join(head, "\n")+"\n\n"+pointerLine+"\n\n## [99.0.0] - 2026-12-31\n") {
 		t.Fatalf("assembled head is wrong:\n%s", firstLines(got, 12))
 	}
-	if !strings.HasSuffix(got, strings.Join(tail, "\n")) {
-		t.Fatal("everything below the released sections must be untouched")
+	wantTail := updateReleaseLinks(tail, "99.0.0")
+	if !strings.HasSuffix(got, strings.Join(wantTail, "\n")) {
+		t.Fatal("everything below the released sections, other than the link block's own update, must be untouched")
 	}
 	for section, body := range frozen {
 		if !strings.Contains(got, body) {
 			t.Errorf("the frozen %s body did not survive assembly verbatim", section)
 		}
+	}
+}
+
+func TestUpdateReleaseLinksInsertsTheNewVersionAndMovesUnreleased(t *testing.T) {
+	tail := []string{
+		"## [1.0.0] - 2026-01-01",
+		"",
+		"### Added",
+		"",
+		"- **The first release.**",
+		"",
+		"[Unreleased]: https://example.com/o/r/compare/v1.0.0...HEAD",
+		"[1.0.0]: https://example.com/o/r/releases/tag/v1.0.0",
+	}
+	got := updateReleaseLinks(tail, "1.1.0")
+	want := []string{
+		"## [1.0.0] - 2026-01-01",
+		"",
+		"### Added",
+		"",
+		"- **The first release.**",
+		"",
+		"[Unreleased]: https://example.com/o/r/compare/v1.1.0...HEAD",
+		"[1.1.0]: https://example.com/o/r/compare/v1.0.0...v1.1.0",
+		"[1.0.0]: https://example.com/o/r/releases/tag/v1.0.0",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("updateReleaseLinks =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+func TestUpdateReleaseLinksIsANoOpWhenTheVersionAlreadyHasALink(t *testing.T) {
+	tail := []string{
+		"[Unreleased]: https://example.com/o/r/compare/v1.1.0...HEAD",
+		"[1.1.0]: https://example.com/o/r/compare/v1.0.0...v1.1.0",
+		"[1.0.0]: https://example.com/o/r/releases/tag/v1.0.0",
+	}
+	got := updateReleaseLinks(tail, "1.1.0")
+	if strings.Join(got, "\n") != strings.Join(tail, "\n") {
+		t.Fatalf("a rerun for a version that already has a link must not change the block:\n%s", strings.Join(got, "\n"))
+	}
+}
+
+func TestUpdateReleaseLinksIsANoOpWithoutALinkBlock(t *testing.T) {
+	tail := []string{"## [1.0.0] - 2026-01-01", "", "### Added", "", "- **The first release.**"}
+	got := updateReleaseLinks(tail, "1.1.0")
+	if strings.Join(got, "\n") != strings.Join(tail, "\n") {
+		t.Fatalf("a changelog with no link block must be left untouched:\n%s", strings.Join(got, "\n"))
+	}
+}
+
+func TestAssembleUpdatesTheReleaseLinkBlock(t *testing.T) {
+	dir := t.TempDir()
+	content := fixtureChangelog + "\n[Unreleased]: https://example.com/o/r/compare/v1.0.0...HEAD\n[1.0.0]: https://example.com/o/r/releases/tag/v1.0.0\n"
+	writeFile(t, dir, "CHANGELOG.md", content)
+	writeFile(t, dir, "changelog.d/a.md", "### Added\n\n- **A new thing.**\n")
+
+	if _, err := assemble(dir, "1.1.0", "2026-02-02"); err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	got := readFile(t, dir, "CHANGELOG.md")
+	if !strings.Contains(got, "[Unreleased]: https://example.com/o/r/compare/v1.1.0...HEAD\n") {
+		t.Fatalf("the Unreleased link was not moved to compare against the new release:\n%s", got)
+	}
+	if !strings.Contains(got, "[1.1.0]: https://example.com/o/r/compare/v1.0.0...v1.1.0\n") {
+		t.Fatalf("the new release did not get its own compare link:\n%s", got)
+	}
+	if !strings.Contains(got, "[1.0.0]: https://example.com/o/r/releases/tag/v1.0.0\n") {
+		t.Fatalf("the previous release's own link must survive untouched:\n%s", got)
 	}
 }
 
