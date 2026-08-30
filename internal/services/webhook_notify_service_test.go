@@ -1123,8 +1123,8 @@ func TestNotifyDecisionMatchesDashboardWithInferredLutealPhase(t *testing.T) {
 		{Date: day("2025-01-29"), IsPeriod: true, Flow: models.FlowMedium},
 		{Date: day("2025-02-26"), IsPeriod: true, Flow: models.FlowMedium},
 
-		// Cycle 1 (Jan1→Jan29): coverline window Jan1-6, rise Jan19-21 →
-		// ovulation Jan18 (day before first high), luteal = Jan29-Jan18 = 11.
+		// Cycle 1 (Jan1→Jan29, 28 days): coverline window Jan1-6, rise Jan19-21 →
+		// ovulation Jan18 (day before first high) = cycle day 18, luteal = 28-18 = 10.
 		{Date: day("2025-01-01"), BBT: new(36.20)},
 		{Date: day("2025-01-02"), BBT: new(36.20)},
 		{Date: day("2025-01-03"), BBT: new(36.20)},
@@ -1135,8 +1135,8 @@ func TestNotifyDecisionMatchesDashboardWithInferredLutealPhase(t *testing.T) {
 		{Date: day("2025-01-20"), BBT: new(36.50)},
 		{Date: day("2025-01-21"), BBT: new(36.50)},
 
-		// Cycle 2 (Jan29→Feb26): coverline window Jan29-Feb3, rise Feb16-18 →
-		// ovulation Feb15, luteal = Feb26-Feb15 = 11.
+		// Cycle 2 (Jan29→Feb26, 28 days): coverline window Jan29-Feb3, rise Feb16-18 →
+		// ovulation Feb15 = cycle day 18, luteal = 28-18 = 10.
 		{Date: day("2025-01-29"), BBT: new(36.20)},
 		{Date: day("2025-01-30"), BBT: new(36.20)},
 		{Date: day("2025-01-31"), BBT: new(36.20)},
@@ -1148,10 +1148,10 @@ func TestNotifyDecisionMatchesDashboardWithInferredLutealPhase(t *testing.T) {
 		{Date: day("2025-02-18"), BBT: new(36.50)},
 	}
 
-	// now = Feb26 + 15 days: with a 28-day cycle and the inferred 11-day luteal
-	// phase, ovulation is projected at Feb26+17 = Mar15 — 2 days out, inside a
-	// 3-day lead window. The record's own stored LutealPhase (14) is
-	// deliberately different from the inferred value (11), so the assertion
+	// now = Feb26 + 15 days: with a 28-day cycle and the inferred 10-day luteal
+	// phase, ovulation is projected on cycle day 18 = Feb26+17 = Mar15 — 2 days
+	// out, inside a 3-day lead window. The record's own stored LutealPhase (14)
+	// is deliberately different from the inferred value (10), so the assertion
 	// only passes if the inference actually ran.
 	now := day("2025-02-26").AddDate(0, 0, 15)
 	last := day("2025-02-26")
@@ -1183,8 +1183,8 @@ func TestNotifyDecisionMatchesDashboardWithInferredLutealPhase(t *testing.T) {
 		LastPeriodStart: record.LastPeriodStart,
 	}
 	stats := NewStatsService(nil, nil).BuildCycleStatsFromLogs(&fullUser, logs, now, time.UTC)
-	if stats.LutealPhase != 11 {
-		t.Fatalf("test setup: expected dashboard path to infer luteal phase 11, got %d", stats.LutealPhase)
+	if stats.LutealPhase != 10 {
+		t.Fatalf("test setup: expected dashboard path to infer luteal phase 10, got %d", stats.LutealPhase)
 	}
 	today := DateAtLocation(now, time.UTC)
 	cycleLength := DashboardCycleReferenceLength(&fullUser, stats)

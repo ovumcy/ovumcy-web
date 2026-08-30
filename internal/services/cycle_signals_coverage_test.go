@@ -82,7 +82,7 @@ func TestCycleSignals_InferUserLutealPhase_FewerThanThreeStartsReturnsDefault(t 
 func TestCycleSignals_InferUserLutealPhase_ExactlyThreeStartsIsAccepted(t *testing.T) {
 	// Exactly 3 observed starts is the minimum the >=3 guard accepts — the
 	// positive complement of ...FewerThanThreeStartsReturnsDefault. The fixture
-	// builds 3 starts with two BBT-confirmed 14-day luteal phases.
+	// builds 3 starts with two BBT-confirmed ovulations on cycle day 15.
 	// Cycles: Jan1→Jan29 (28 days), Jan29→Feb26 (28 days).
 	logs := cyclesignalsCovBuildLutealLogs(t)
 
@@ -90,8 +90,8 @@ func TestCycleSignals_InferUserLutealPhase_ExactlyThreeStartsIsAccepted(t *testi
 	if !ok {
 		t.Fatal("expected ok=true: exactly 3 observed starts must be accepted")
 	}
-	if phase != 14 {
-		t.Fatalf("expected inferred luteal phase 14, got %d", phase)
+	if phase != 13 {
+		t.Fatalf("expected inferred luteal phase 13, got %d", phase)
 	}
 }
 
@@ -128,9 +128,10 @@ func TestCycleSignals_InferUserLutealPhase_LastStartPairIsIncluded(t *testing.T)
 
 func TestCycleSignals_InferUserLutealPhase_OutOfRangeLutealLengthIsSkipped(t *testing.T) {
 	// Three starts: Jan1, Jan29, Feb26 (28-day cycles).
-	// Cycle 1 (Jan1→Jan29): first high Jan16 → ovulation Jan15 → luteal = 14 (valid).
-	// Cycle 2 (Jan29→Feb26): first high Feb23 → ovulation Feb22 → luteal = 4
-	// (< minLutealPhaseDays → skipped).
+	// Cycle 1 (Jan1→Jan29): first high Jan16 → ovulation Jan15 = cycle day 15 →
+	// luteal = 28-15 = 13 (valid).
+	// Cycle 2 (Jan29→Feb26): first high Feb23 → ovulation Feb22 = cycle day 25 →
+	// luteal = 28-25 = 3 (< minLutealPhaseDays → skipped).
 	//
 	// With only 1 valid luteal length (< 2), must return default, false.
 	day := func(s string) time.Time { return cyclesignalsCovDay(t, s) }
@@ -178,8 +179,9 @@ func TestCycleSignals_InferUserLutealPhase_OutOfRangeLutealLengthIsSkipped(t *te
 func TestCycleSignals_InferUserLutealPhase_LutealLengthOverTwentyIsSkipped(t *testing.T) {
 	// Cycle where ovulation is very early → luteal > 20 → skipped.
 	// Three starts: Jan1, Jan29, Feb26.
-	// Cycle 1: first high Jan8 → ovulation Jan7 → luteal = Jan29−Jan7 = 22 (> 20 → skipped).
-	// Cycle 2: first high Feb13 → ovulation Feb12 → luteal = 14 (valid).
+	// Cycle 1: first high Jan8 → ovulation Jan7 = cycle day 7 → luteal = 28-7 = 21
+	// (> maxPlausibleLutealPhaseDays → skipped).
+	// Cycle 2: first high Feb13 → ovulation Feb12 = cycle day 15 → luteal = 13 (valid).
 	// Only 1 valid → default, false.
 	day := func(s string) time.Time { return cyclesignalsCovDay(t, s) }
 
@@ -189,7 +191,7 @@ func TestCycleSignals_InferUserLutealPhase_LutealLengthOverTwentyIsSkipped(t *te
 		{Date: day("2025-02-26"), IsPeriod: true, Flow: models.FlowMedium},
 
 		// Cycle 1 BBT — coverline window Jan1-6 then rise Jan8-10
-		// (ovulation = Jan8−1 = Jan7; luteal = Jan29−Jan7 = 22 > 20).
+		// (ovulation = Jan8−1 = Jan7 = cycle day 7; luteal = 28-7 = 21 > 20).
 		{Date: day("2025-01-01"), BBT: new(36.20)},
 		{Date: day("2025-01-02"), BBT: new(36.20)},
 		{Date: day("2025-01-03"), BBT: new(36.20)},
@@ -681,16 +683,17 @@ func TestCycleSignals_InferEggWhiteOvulationDate_PeakOnLastCycleDayClampsToPeak(
 // ---------------------------------------------------------------------------
 
 func TestCycleSignals_InferUserLutealPhase_CorrectValueFromBBT(t *testing.T) {
-	// Two cycles with BBT-confirmed ovulation, each yielding luteal ~14 days.
+	// Two cycles with BBT-confirmed ovulation on cycle day 15 of 28.
 	logs := cyclesignalsCovBuildLutealLogs(t)
 	phase, ok := InferUserLutealPhase(logs, time.UTC)
 	if !ok {
 		t.Fatalf("expected ok=true")
 	}
 	// Both cycles have their BBT rise on day 16, so ovulation is day 15 of a
-	// 28-day cycle (the day before the shift) → luteal = 14.
-	if phase != 14 {
-		t.Fatalf("expected inferred luteal phase 14, got %d", phase)
+	// 28-day cycle (the day before the shift) → luteal = 28-15 = 13, the value
+	// that feeds CalcOvulationDay(28, 13) back to cycle day 15.
+	if phase != 13 {
+		t.Fatalf("expected inferred luteal phase 13, got %d", phase)
 	}
 }
 
@@ -758,7 +761,7 @@ func cyclesignalsCovBuildLutealLogs(t *testing.T) []models.DailyLog {
 		{Date: day("2025-01-16"), BBT: new(36.50)},
 		{Date: day("2025-01-17"), BBT: new(36.50)},
 		{Date: day("2025-01-18"), BBT: new(36.50)},
-		// ovulation = Jan16−1 = Jan15; Jan29 − Jan15 = 14 days → luteal=14 ✓
+		// ovulation = Jan16−1 = Jan15 = cycle day 15 → luteal = 28-15 = 13 ✓
 
 		// === Cycle 2 BBT: Jan29→Feb26 ===
 		// 6-day coverline window (days 1-6): max = 36.20
@@ -772,7 +775,7 @@ func cyclesignalsCovBuildLutealLogs(t *testing.T) []models.DailyLog {
 		{Date: day("2025-02-13"), BBT: new(36.50)},
 		{Date: day("2025-02-14"), BBT: new(36.50)},
 		{Date: day("2025-02-15"), BBT: new(36.50)},
-		// ovulation = Feb13−1 = Feb12; Feb26 − Feb12 = 14 days → luteal=14 ✓
+		// ovulation = Feb13−1 = Feb12 = cycle day 15 → luteal = 28-15 = 13 ✓
 	}
 	return logs
 }

@@ -94,6 +94,13 @@ func ResolveLutealPhase(value int) int {
 // periodStart is cycle day 1. Example: a 28-day cycle with a 14-day luteal
 // phase predicts ovulation on cycle day 14, so a cycle that starts on
 // March 10, 2026 maps to March 23, 2026.
+//
+// The luteal phase this consumes is the count of days that FOLLOW ovulation —
+// cycle days 15 through 28 in that example — and NOT the calendar span from the
+// ovulation date to the next period start, which counts the ovulation day itself
+// and is one day longer. calcLutealPhase is the inverse under exactly that
+// reading; the two directions have to move together, or an ovulation observed on
+// a cycle day trains a value that predicts the day before it.
 func CalcOvulationDay(cycleLen, lutealPhase int) (int, bool) {
 	if cycleLen < minLutealPhaseDays+minOvulationCycleDay {
 		return 0, false
@@ -123,6 +130,23 @@ func CalcOvulationDay(cycleLen, lutealPhase int) (int, bool) {
 		return 0, false
 	}
 	return ovDay, ovulationExact
+}
+
+// calcLutealPhase is the inverse of CalcOvulationDay's arithmetic: given a cycle
+// length and the one-based cycle day an ovulation was OBSERVED on, it returns
+// the luteal-phase parameter that makes CalcOvulationDay reproduce that same
+// cycle day. It is the single place the observed→parameter direction is spelled
+// out, so the personalized path cannot drift away from the predicting one.
+//
+// The round trip is exact while the result stays inside the range
+// CalcOvulationDay supports: below minLutealPhaseDays, or above the cycle
+// reserve, that function clamps and reports ovulationExact=false, which is the
+// designed signal rather than a failure of this inverse. InferUserLutealPhase
+// filters its samples to the plausible window before any of them reaches a
+// prediction.
+// Regression: TestLutealPhaseRoundTrip_ReferenceVectors.
+func calcLutealPhase(cycleLen, ovulationDay int) int {
+	return cycleLen - ovulationDay
 }
 
 // CycleWindowPrediction is the named-field result of PredictCycleWindow.

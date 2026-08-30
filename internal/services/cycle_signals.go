@@ -56,7 +56,16 @@ func InferUserLutealPhase(logs []models.DailyLog, location *time.Location) (int,
 			continue
 		}
 
-		lutealLength := CalendarDaysBetween(ovulationDate, nextStart)
+		// Derive the parameter through the inverse of the prediction's own
+		// arithmetic rather than measuring the calendar span to nextStart. That
+		// span counts the ovulation day itself, so it runs one day longer than
+		// the luteal phase CalcOvulationDay consumes, and feeding it back in
+		// predicted the day BEFORE the observed ovulation on an identical next
+		// cycle — the personalized path shifted ovulation and both fertile-window
+		// edges one day early on every surface that renders them.
+		cycleLength := CalendarDaysBetween(start, nextStart)
+		ovulationCycleDay := CalendarDaysBetween(start, ovulationDate) + 1
+		lutealLength := calcLutealPhase(cycleLength, ovulationCycleDay)
 		if lutealLength < minLutealPhaseDays || lutealLength > maxPlausibleLutealPhaseDays {
 			continue
 		}

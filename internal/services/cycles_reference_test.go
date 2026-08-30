@@ -139,6 +139,50 @@ func TestCalcOvulationDay_ReferenceVectors(t *testing.T) {
 	}
 }
 
+// TestLutealPhaseRoundTrip_ReferenceVectors pins the inverse direction of the
+// same arithmetic: given the cycle day an ovulation was OBSERVED on,
+// calcLutealPhase must return the parameter CalcOvulationDay maps back to that
+// very day. Every row is also a row of the "Step 2a" table in
+// docs/cycle-prediction.md.
+//
+// This crossing is the whole point. Each direction is self-consistent on its
+// own, so only a test that runs one into the other can catch them disagreeing
+// about whether the ovulation day itself belongs to the luteal phase — the
+// disagreement that put every personalized prediction one day early.
+func TestLutealPhaseRoundTrip_ReferenceVectors(t *testing.T) {
+	cases := []struct {
+		name              string
+		cycleLen          int
+		observedOvulation int
+		wantLuteal        int
+	}{
+		{"28-day cycle, ovulation on day 14 is the 14-day model default", 28, 14, 14},
+		{"28-day cycle, ovulation on day 15", 28, 15, 13},
+		{"short 21-day cycle, ovulation on day 8", 21, 8, 13},
+		{"long 35-day cycle, ovulation on day 21", 35, 21, 14},
+		{"long 40-day cycle, ovulation on day 26", 40, 26, 14},
+		{"30-day cycle, ovulation on day 20 lands on the 10-day floor", 30, 20, 10},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			gotLuteal := calcLutealPhase(tc.cycleLen, tc.observedOvulation)
+			if gotLuteal != tc.wantLuteal {
+				t.Fatalf("calcLutealPhase(%d,%d) = %d, want %d",
+					tc.cycleLen, tc.observedOvulation, gotLuteal, tc.wantLuteal)
+			}
+			gotDay, gotExact := CalcOvulationDay(tc.cycleLen, gotLuteal)
+			if !gotExact {
+				t.Errorf("CalcOvulationDay(%d,%d) reported a clamped estimate for a luteal phase derived from a real observation",
+					tc.cycleLen, gotLuteal)
+			}
+			if gotDay != tc.observedOvulation {
+				t.Fatalf("round trip broken: ovulation observed on cycle day %d inferred luteal %d, which predicts cycle day %d",
+					tc.observedOvulation, gotLuteal, gotDay)
+			}
+		})
+	}
+}
+
 // TestCyclePrediction_GoldenVectors asserts every vector in the shared fixture
 // against PredictCycleWindow (and the next-period formula), so the Go source of
 // truth and ovumcy-app's TypeScript port cannot drift apart without failing CI
