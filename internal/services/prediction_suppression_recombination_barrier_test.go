@@ -61,14 +61,18 @@ var predictionSuppressionSignals = map[string]string{
 // is not this one, and exempting it by name would hand the class a hiding place.
 const predictionSuppressionPredicateFile = "internal/services/dashboard_cycle.go"
 
-// predictionSuppressionSweptTrees are the layers a display decision can be made
-// in: the business layer that resolves it and the transport layer that publishes
-// it. Each is walked to its LEAVES rather than read one directory deep — a sweep
-// that stops at the top level answers about today's file layout instead of about
-// the class, and goes quietly green the day these files are split into packages.
+// predictionSuppressionSweptTrees is every package the binary is built from,
+// walked to its leaves.
+//
+// Naming the two layers a display decision is made in TODAY — services and api —
+// would have been a sweep about this file layout rather than about the class:
+// DashboardCycleContext and both predicates are exported, so any package can
+// read them, and a decision that moves to a third one takes the barrier's
+// silence with it. The same reasoning retires the one-directory-deep read a
+// package list invites.
 var predictionSuppressionSweptTrees = []string{
-	"internal/services",
-	"internal/api",
+	"internal",
+	"cmd",
 }
 
 // predictionSuppressionResidual is one sanctioned site: the signals the entry
@@ -171,6 +175,106 @@ func TestNoSurfaceRecombinesTheSuppressionSignals(t *testing.T) {
 		if !matched[key] {
 			t.Fatalf("residual %q no longer describes a site combining %s — drop the entry, or write the one the tree now holds, rather than leaving the map describing a tree that has moved on", key, sanctioned.signals)
 		}
+	}
+}
+
+// TestTheSweepKnowsEverySignalThePredicatesDisjoin ties the list above to the
+// predicates themselves.
+//
+// The list is a second spelling of what PredictionsSuppressed and
+// FertilityProjectionSuppressed already disjoin, and a second spelling that
+// nothing compares is exactly the failure this barrier exists to prevent, one
+// level up: a fifth signal added to a predicate would leave the sweep counting
+// it as an ordinary operand, so a surface combining it with a known signal would
+// read as naming one signal and pass. The predicate file is read either way, so
+// the comparison costs one parse.
+func TestTheSweepKnowsEverySignalThePredicatesDisjoin(t *testing.T) {
+	root := predictionSuppressionRepoRoot(t)
+
+	source, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(predictionSuppressionPredicateFile)))
+	if err != nil {
+		t.Fatalf("read %s: %v", predictionSuppressionPredicateFile, err)
+	}
+	fileSet := token.NewFileSet()
+	file, parseErr := parser.ParseFile(fileSet, predictionSuppressionPredicateFile, source, 0)
+	if parseErr != nil {
+		t.Fatalf("parse %s: %v", predictionSuppressionPredicateFile, parseErr)
+	}
+
+	for _, predicate := range []string{"PredictionsSuppressed", "FertilityProjectionSuppressed"} {
+		disjuncts := predictionSuppressionDisjunctsOf(t, file, predicate)
+		// Anchored on the shape rather than on a count that would freeze the
+		// predicate: a return that stopped being a disjunction, or a renamed
+		// predicate, must not read as "nothing to check".
+		if len(disjuncts) < 2 {
+			t.Fatalf("%s returned %d disjunct(s) — either it no longer combines the signals, or the sweep is reading the wrong function, and its verdict about the signal list is vacuous", predicate, len(disjuncts))
+		}
+		for _, name := range disjuncts {
+			if _, known := predictionSuppressionSignals[name]; !known {
+				t.Fatalf("%s disjoins %q, which predictionSuppressionSignals does not list — the sweep would read it as an ordinary operand, so a surface combining it with a known signal passes silently. Add it, under the meaning it carries", predicate, name)
+			}
+		}
+	}
+}
+
+// predictionSuppressionDisjunctsOf names the head of every operand of the
+// boolean expression one predicate returns: the function called, or the field
+// read. Those heads are the signals, in the spelling the sweep matches on.
+func predictionSuppressionDisjunctsOf(t *testing.T, file *ast.File, predicate string) []string {
+	t.Helper()
+
+	for _, decl := range file.Decls {
+		function, isFunction := decl.(*ast.FuncDecl)
+		if !isFunction || function.Name.Name != predicate || function.Body == nil {
+			continue
+		}
+		var heads []string
+		ast.Inspect(function.Body, func(node ast.Node) bool {
+			ret, isReturn := node.(*ast.ReturnStmt)
+			if !isReturn || len(ret.Results) != 1 {
+				return true
+			}
+			for _, operand := range predictionSuppressionOperands(ret.Results[0]) {
+				if head := predictionSuppressionHead(operand); head != "" {
+					heads = append(heads, head)
+				}
+			}
+			return true
+		})
+		return heads
+	}
+	t.Fatalf("%s is not declared in %s — the predicates moved and this check is about a function nobody has", predicate, predictionSuppressionPredicateFile)
+	return nil
+}
+
+// predictionSuppressionOperands flattens a boolean expression into its leaves.
+func predictionSuppressionOperands(expr ast.Expr) []ast.Expr {
+	switch typed := expr.(type) {
+	case *ast.BinaryExpr:
+		if typed.Op != token.LAND && typed.Op != token.LOR {
+			return []ast.Expr{expr}
+		}
+		return append(predictionSuppressionOperands(typed.X), predictionSuppressionOperands(typed.Y)...)
+	case *ast.ParenExpr:
+		return predictionSuppressionOperands(typed.X)
+	case *ast.UnaryExpr:
+		return predictionSuppressionOperands(typed.X)
+	default:
+		return []ast.Expr{expr}
+	}
+}
+
+// predictionSuppressionHead is the name one operand is built on.
+func predictionSuppressionHead(expr ast.Expr) string {
+	switch typed := expr.(type) {
+	case *ast.CallExpr:
+		return predictionSuppressionHead(typed.Fun)
+	case *ast.SelectorExpr:
+		return typed.Sel.Name
+	case *ast.Ident:
+		return typed.Name
+	default:
+		return ""
 	}
 }
 
