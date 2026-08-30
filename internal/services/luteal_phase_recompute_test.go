@@ -361,24 +361,44 @@ func TestDeriveUserLutealPhaseIsTheOneRuleTheCacheIsWrittenBy(t *testing.T) {
 }
 
 func TestLutealPhaseRecomputeTreatsANilFallbackLocationAsUTC(t *testing.T) {
-	// The constructor's nil guard. A caller with no server zone to hand over —
-	// any test, and any future wiring that resolves the zone later — must not
-	// reach resolveOwnerLocation with a nil fallback, which would hand a nil
-	// *time.Location to the derivation. Pinned by behaviour rather than by
-	// reading the field back: the pass must correct the row exactly as it does
-	// under an explicit UTC.
+	// The constructor's nil guard, asserted where it actually lives.
+	//
+	// Checking it through the pass's OUTPUT would prove nothing: every layer
+	// below already defaults nil to UTC — resolveOwnerLocation hands the
+	// fallback straight back for an empty stored timezone, and
+	// InferUserLutealPhase opens with its own nil check — so the row corrects to
+	// the same value whether the guard is there or not. A behavioural assertion
+	// here would cover the two lines and be unable to fail when they are
+	// deleted, which is a fixture agreeing with itself.
+	//
+	// So the field is read back. That is white-box on purpose: the guard's whole
+	// job is to normalise at the boundary so a nil never travels further, and
+	// the only way to see that is at the boundary.
 	logs := lutealRoundTripLogs(t, lutealRecomputeOrigin, 28, []int{14, 14}, lutealSignalEggWhite)
 
 	appState := &stubLutealRecomputeAppState{}
 	users := &stubLutealRecomputeUserStore{rows: []models.LutealPhaseRecomputeRow{{ID: 9, LutealPhase: 15}}}
 	logStore := &stubLutealRecomputeLogStore{logs: map[uint][]models.DailyLog{9: logs}}
 
-	if _, err := NewLutealPhaseRecomputer(appState, users, logStore, nil).Run(context.Background()); err != nil {
-		t.Fatalf("Run with a nil fallback location: %v", err)
+	recomputer := NewLutealPhaseRecomputer(appState, users, logStore, nil)
+	// Reported as nil-or-not, never by printing the zone: %v on a nil
+	// *time.Location prints "UTC", so the obvious message renders the failure as
+	// "want UTC, got UTC" and reads like a bug in the test. Same family as the
+	// rule against judging the Local token by the loaded zone's String().
+	if recomputer.fallbackLocation == nil {
+		t.Fatal("a nil fallback location must be normalised at construction; it was stored as nil")
+	}
+	if recomputer.fallbackLocation != time.UTC {
+		t.Fatalf("a nil fallback location must be normalised to UTC, got the zone named %q", recomputer.fallbackLocation.String())
 	}
 
+	// And the pass still runs on it, so the normalised zone is one the
+	// derivation accepts rather than merely non-nil.
+	if _, err := recomputer.Run(context.Background()); err != nil {
+		t.Fatalf("Run with a nil fallback location: %v", err)
+	}
 	if len(users.updates) != 1 || users.updates[0].value != 14 {
-		t.Fatalf("a nil fallback location must behave as UTC, got %+v", users.updates)
+		t.Fatalf("the pass must still correct the row, got %+v", users.updates)
 	}
 }
 
