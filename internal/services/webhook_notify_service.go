@@ -413,11 +413,13 @@ func hostOnly(rawURL string) string {
 // back to the injected location when it is empty or unusable. It never calls
 // time.Now(); it only resolves a zone.
 //
-// It is the single owner-timezone resolver for BOTH request-free egress passes —
-// the webhook notify pass and the .ics calendar feed — so the two can never
-// disagree about which calendar day an owner is on. Neither carries a request
-// timezone worth trusting (a cron pass has no request at all, and a calendar
-// client sends neither the timezone header nor the cookie), which is exactly the
+// It is the single owner-timezone resolver for every request-free pass — the two
+// egress passes (the webhook notify pass and the .ics calendar feed) and the
+// one-shot boot recompute of the derived luteal-phase cache
+// (LutealPhaseRecomputer) — so none of them can disagree about which calendar day
+// an owner is on. None carries a request timezone worth trusting (a cron pass has
+// no request at all, a calendar client sends neither the timezone header nor the
+// cookie, and a boot pass runs before a listener exists), which is exactly the
 // case users.timezone is persisted for.
 //
 // The "Local" token is rejected by INPUT, mirroring api.parseRequestTimezone:

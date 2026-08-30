@@ -275,6 +275,30 @@ func (repo *UserRepository) ListAllForNotify(ctx context.Context) ([]models.Webh
 	return records, nil
 }
 
+// ListOwnerLutealPhaseRows returns the per-owner projection the one-shot boot
+// recompute of the derived luteal-phase cache walks
+// (services.LutealPhaseRecomputer): the id it may update, the stored timezone it
+// resolves the owner's calendar day at without a browser request, and the stored
+// estimate it compares the recomputed value against. Three columns and nothing
+// else — the pass reads day logs through DailyLogRepository, so it never needs a
+// sensitive users column.
+//
+// Scoped to owner rows: luteal_phase is meaningless for any other role, and the
+// column CHECK still admits 'partner' even though both account-creating methods
+// refuse it. Ordered by id so a pass and its retry walk the same sequence.
+func (repo *UserRepository) ListOwnerLutealPhaseRows(ctx context.Context) ([]models.LutealPhaseRecomputeRow, error) {
+	rows := make([]models.LutealPhaseRecomputeRow, 0)
+	if err := repo.database.WithContext(ctx).
+		Model(&models.User{}).
+		Select("id", "timezone", "luteal_phase").
+		Where("role = ?", models.RoleOwner).
+		Order("id ASC").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
 // webhookWatermarkColumns maps a reminder kind to its watermark column. Only
 // these two kinds have a watermark; any other value is rejected so a typo can
 // never write an unexpected column.

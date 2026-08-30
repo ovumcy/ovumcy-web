@@ -49,11 +49,14 @@ func main() {
 	database := mustOpenDatabase(config.DatabaseConfig)
 	i18nManager := mustNewI18nManager(config.DefaultLanguage)
 	repositories := db.NewRepositories(database)
-	// Both boot passes must run after mustOpenDatabase (migrations applied) and
-	// before any listener exists: no feed poll can race the revocation, and no
-	// request can observe a half-repaired identity.
+	// All three boot passes must run after mustOpenDatabase (migrations applied)
+	// and before any listener exists: no feed poll can race the revocation, no
+	// request can observe a half-repaired identity, and no surface can render a
+	// prediction from a luteal-phase estimate the upgrade has not corrected yet.
+	// The third does not fail the boot — see recomputeDerivedLutealPhases.
 	mustEnforceCalendarFeedKeyRotation(repositories, []byte(config.SecretKey))
 	mustRenormalizeAuthEmails(repositories)
+	recomputeDerivedLutealPhases(repositories, location)
 	dependencies := bootstrap.BuildDependencies(repositories, []byte(config.SecretKey), i18nManager, bootstrapOptions(config))
 	handler := mustNewHandler(config, i18nManager, dependencies)
 	app := newFiberApp(config, handler)
@@ -180,6 +183,28 @@ func mustRenormalizeAuthEmails(repositories *db.Repositories) {
 	}
 }
 
+// recomputeDerivedLutealPhases runs the one-shot boot pass that rewrites the
+// derived users.luteal_phase cache under the corrected personalized inference,
+// so an account whose logs no longer support an inference stops predicting
+// ovulation a day early. The decision logic lives (tested) in
+// services.LutealPhaseRecomputer; this wrapper wires repositories and prints the
+// operator-facing line.
+//
+// Deliberately NOT a must* wrapper, unlike the two passes above: the column is a
+// derived cache with a safe fallback, so a storage error must not turn into an
+// instance that will not start. It is logged, the marker stays unwritten, and the
+// next boot retries.
+func recomputeDerivedLutealPhases(repositories *db.Repositories, location *time.Location) {
+	recomputer := services.NewLutealPhaseRecomputer(repositories.AppState, repositories.Users, repositories.DailyLogs, location)
+	outcome, err := recomputer.Run(context.Background())
+	if err != nil {
+		log.Printf("luteal-phase recompute failed: %v (retried on the next start)", err)
+	}
+	if message := lutealPhaseRecomputeStartupMessage(outcome); message != "" {
+		log.Print(message)
+	}
+}
+
 // calendarFeedRotationStartupMessage renders the operator-facing startup line
 // for a detected rotation, and stays quiet ("") for the routine cases — first
 // boot and an unchanged key — so the startup banner is stable run to run.
@@ -209,6 +234,23 @@ func authEmailRenormalizeStartupMessage(outcome services.AuthEmailRenormalizeOut
 		return fmt.Sprintf("auth email repair: %d stored email(s) rewritten to their bare address", outcome.Renormalized)
 	}
 	return fmt.Sprintf("auth email repair: %d stored email(s) rewritten to their bare address, %d left for operator review (duplicate mailbox or unparseable) — see docs/self-hosted.md, Troubleshooting", outcome.Renormalized, skipped)
+}
+
+// lutealPhaseRecomputeStartupMessage renders the operator-facing startup line
+// for the one-shot luteal-phase recompute, and stays quiet ("") when there was
+// nothing to do — the startup banner must be stable run to run. Counts only:
+// a per-account estimate is health data and must not reach logs.
+func lutealPhaseRecomputeStartupMessage(outcome services.LutealPhaseRecomputeOutcome) string {
+	if outcome.AlreadyDone {
+		return ""
+	}
+	if outcome.Corrected == 0 && outcome.Failed == 0 {
+		return ""
+	}
+	if outcome.Failed == 0 {
+		return fmt.Sprintf("luteal-phase recompute: %d stored estimate(s) corrected", outcome.Corrected)
+	}
+	return fmt.Sprintf("luteal-phase recompute: %d stored estimate(s) corrected, %d account(s) could not be read or written — retried on the next start", outcome.Corrected, outcome.Failed)
 }
 
 func mustNewI18nManager(defaultLanguage string) *i18n.Manager {

@@ -84,6 +84,24 @@ func InferUserLutealPhase(logs []models.DailyLog, location *time.Location) (int,
 	return int(math.Round(averageInts(lutealLengths))), true
 }
 
+// DeriveUserLutealPhase is the single rule the derived users.luteal_phase cache
+// is written by: the personalized inference when the owner's logs support one,
+// and defaultLutealPhaseDays when they do not.
+//
+// All three writers of that column go through it — a day save
+// (DayService.refreshDerivedCycleSettings), a bulk restore
+// (ImportService.refreshDerivedCycleSettings) and the one-shot boot recompute
+// (LutealPhaseRecomputer) — so no two of them can disagree about what the column
+// should hold for the same logs. That disagreement is not hypothetical: the boot
+// recompute exists because the stored values and the inference that produced
+// them had drifted a day apart.
+func DeriveUserLutealPhase(logs []models.DailyLog, location *time.Location) int {
+	if lutealPhase, refined := InferUserLutealPhase(logs, location); refined {
+		return lutealPhase
+	}
+	return defaultLutealPhaseDays
+}
+
 func inferObservedOvulationDate(logs []models.DailyLog, cycleStart time.Time, nextStart time.Time, location *time.Location) time.Time {
 	bbtDate := inferBBTOvulationDate(logs, cycleStart, nextStart, location)
 	if !bbtDate.IsZero() {

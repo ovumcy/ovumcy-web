@@ -726,12 +726,8 @@ func (service *DayService) refreshDerivedCycleSettings(ctx context.Context, user
 		return
 	}
 
-	lutealPhase, ok := InferUserLutealPhase(logs, location)
-	if !ok {
-		lutealPhase = defaultLutealPhaseDays
-	}
 	if err := service.users.UpdateByID(ctx, userID, map[string]any{
-		"luteal_phase": lutealPhase,
+		"luteal_phase": DeriveUserLutealPhase(logs, location),
 	}); err != nil {
 		log.Printf("refreshDerivedCycleSettings: update luteal_phase for user %d failed: %v", userID, err)
 	}

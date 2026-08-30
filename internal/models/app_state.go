@@ -25,13 +25,23 @@ const AppStateKeyCalendarFeedKeyEpoch = "calendar_feed_key_epoch"
 // after the pass completes; its presence makes every later boot skip the scan.
 const AppStateKeyAuthEmailRenormalizeV1 = "auth_email_renormalize.v1"
 
+// AppStateKeyLutealPhaseRecomputeV1 marks the one-shot boot pass that recomputed
+// the derived users.luteal_phase cache after the personalized luteal inference
+// was corrected: rows written under the old convention hold a value one day too
+// long, and an account whose logs no longer support an inference would keep
+// predicting ovulation a day early forever. Written once after a pass in which
+// no row failed; its presence makes every later boot skip the scan, and deleting
+// the row forces one more pass.
+const AppStateKeyLutealPhaseRecomputeV1 = "luteal_phase_recompute.v1"
+
 // AppState is one row of the process-level key/value store (migration 028).
 // It holds runtime bookkeeping, NEVER special-category health data, and is not
 // scoped by user_id — it is deliberately outside the users table. Value is
 // opaque TEXT with a single writer per key: the scheduler goroutine owns
 // last_reminder_run_date, while the boot-time key-rotation sentinel
-// (calendar_feed_key_epoch) and the one-shot email renormalizer
-// (auth_email_renormalize.v1) write their markers before the server starts
+// (calendar_feed_key_epoch), the one-shot email renormalizer
+// (auth_email_renormalize.v1) and the one-shot luteal-phase recompute
+// (luteal_phase_recompute.v1) write their markers before the server starts
 // serving (never concurrently with it).
 type AppState struct {
 	Key       string    `gorm:"column:key;primaryKey"`
