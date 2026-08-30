@@ -163,18 +163,18 @@ func TestLutealPhaseRoundTrip_ReferenceVectors(t *testing.T) {
 		wantDay           int
 		wantExact         bool
 	}{
-		{"28-day cycle, ovulation on day 14 is the 14-day model default", 28, 14, 14, 14, true},
-		{"28-day cycle, ovulation on day 15", 28, 15, 13, 15, true},
-		{"short 21-day cycle, ovulation on day 8", 21, 8, 13, 8, true},
-		{"long 35-day cycle, ovulation on day 21", 35, 21, 14, 21, true},
-		{"long 40-day cycle, ovulation on day 26", 40, 26, 14, 26, true},
-		{"30-day cycle, ovulation on day 20 lands on the 10-day floor", 30, 20, 10, 20, true},
+		{name: "28-day cycle, ovulation on day 14 is the 14-day model default", cycleLen: 28, observedOvulation: 14, wantLuteal: 14, wantDay: 14, wantExact: true},
+		{name: "28-day cycle, ovulation on day 15", cycleLen: 28, observedOvulation: 15, wantLuteal: 13, wantDay: 15, wantExact: true},
+		{name: "short 21-day cycle, ovulation on day 8", cycleLen: 21, observedOvulation: 8, wantLuteal: 13, wantDay: 8, wantExact: true},
+		{name: "long 35-day cycle, ovulation on day 21", cycleLen: 35, observedOvulation: 21, wantLuteal: 14, wantDay: 21, wantExact: true},
+		{name: "long 40-day cycle, ovulation on day 26", cycleLen: 40, observedOvulation: 26, wantLuteal: 14, wantDay: 26, wantExact: true},
+		{name: "30-day cycle, ovulation on day 20 lands on the 10-day floor", cycleLen: 30, observedOvulation: 20, wantLuteal: 10, wantDay: 20, wantExact: true},
 		// The exception the invariant carries. An ovulation observed on day 4 of a
 		// 15-day cycle implies an 11-day luteal phase: physiologically ordinary,
 		// admitted by the plausibility window, and still more than the cycle can
 		// hold, since the reserve caps the parameter at cycleLength-5 = 10. The
 		// round trip does NOT return day 4 here, and must not pretend to.
-		{"15-day cycle, an observation the cycle cannot hold", 15, 4, 11, 5, false},
+		{name: "15-day cycle, an observation the cycle cannot hold", cycleLen: 15, observedOvulation: 4, wantLuteal: 11, wantDay: 5, wantExact: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
