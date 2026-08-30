@@ -27,6 +27,18 @@ import (
 // genuinely needs a detached context (a goroutine outliving its request) has to
 // say so here, and that is the point: it becomes a decision someone makes on
 // purpose rather than a line that slips in.
+// detachesFromTheCaller names the context constructors that leave a call
+// unreachable by the caller's deadline. Background and TODO are the obvious
+// pair. WithoutCancel is the one worth spelling out: it keeps the values and
+// drops cancellation and the deadline, so it reads like careful context
+// threading while doing exactly what the other two do — and a boot pass written
+// with it would ignore its storage budget while looking correct.
+var detachesFromTheCaller = map[string]bool{
+	"Background":    true,
+	"TODO":          true,
+	"WithoutCancel": true,
+}
+
 func TestServicesNeverReRootAContext(t *testing.T) {
 	paths, err := filepath.Glob("*.go")
 	if err != nil {
@@ -56,6 +68,25 @@ func TestServicesNeverReRootAContext(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parse %s: %v", path, err)
 		}
+
+		// The detection below keys on the spelling `context.X`, so first make
+		// that spelling a property this guard enforces rather than one it
+		// assumes: an aliased or dot import would let a re-rooting call through
+		// under a different name. A rule keyed on a spelling is not keyed on the
+		// thing, and the tell is a class that grows by one pattern per audit.
+		for _, imported := range file.Imports {
+			if imported.Path == nil || imported.Path.Value != `"context"` {
+				continue
+			}
+			if imported.Name != nil {
+				violations = append(violations, violation{
+					file: path,
+					line: fileSet.Position(imported.Pos()).Line,
+					call: "imports context under the name " + imported.Name.Name + ", which puts any re-rooting call in this file beyond the check below",
+				})
+			}
+		}
+
 		ast.Inspect(file, func(node ast.Node) bool {
 			call, ok := node.(*ast.CallExpr)
 			if !ok {
@@ -69,13 +100,13 @@ func TestServicesNeverReRootAContext(t *testing.T) {
 			if !ok || pkg.Name != "context" {
 				return true
 			}
-			if selector.Sel.Name != "Background" && selector.Sel.Name != "TODO" {
+			if !detachesFromTheCaller[selector.Sel.Name] {
 				return true
 			}
 			violations = append(violations, violation{
 				file: path,
 				line: fileSet.Position(call.Pos()).Line,
-				call: "context." + selector.Sel.Name + "()",
+				call: "re-roots the context with context." + selector.Sel.Name + "()",
 			})
 			return true
 		})
@@ -93,6 +124,6 @@ func TestServicesNeverReRootAContext(t *testing.T) {
 	}
 
 	for _, found := range violations {
-		t.Errorf("%s:%d re-roots the context with %s — a boot pass reached through here would ignore its storage budget, and a request-scoped call would ignore its cancellation", found.file, found.line, found.call)
+		t.Errorf("%s:%d %s — a boot pass reached through here would ignore its storage budget, and a request-scoped call would ignore its cancellation", found.file, found.line, found.call)
 	}
 }
