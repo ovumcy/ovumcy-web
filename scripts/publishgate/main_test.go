@@ -50,39 +50,70 @@ const publishJob = "publish-image"
 // just as much, and would leave a check that reads the actual list green.
 var wantNeeds = []string{"e2e", "e2e-postgres-smoke", "image-smoke", "race", "test"}
 
+// eventDisjunction is the ONE `||` the gate is allowed to hold: the two events
+// that may publish. Everything else has to be a conjunction, and gateProblems
+// enforces exactly that — a clause wrapped in an `||` still carries the
+// substring the per-dependency check matches on while no longer gating
+// anything, which is the one way those checks read green over a reopened gate.
+// Spelled with the same spacing the workflow uses: rewritten differently it is
+// not recognised, its own `||` survives into the check, and the condition is
+// referred back to a reader rather than guessed at.
+const eventDisjunction = "(github.event_name == 'push' || github.event_name == 'workflow_dispatch')"
+
 var (
 	jobHeader   = regexp.MustCompile(`(?m)^  [A-Za-z0-9_.-]+:[ \t]*$`)
-	needsEntry  = regexp.MustCompile(`(?m)^[ \t]*-[ \t]+([A-Za-z0-9_.-]+)[ \t]*$`)
+	needsEntry  = regexp.MustCompile(`^-[ \t]+([A-Za-z0-9_.-]+)$`)
+	plainName   = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 	foldMarker  = regexp.MustCompile(`^[>|][-+]?[ \t]*`)
 	whitespaces = regexp.MustCompile(`[ \t\n\r]+`)
 )
 
-// TestPublishImageGateOverridesTheImplicitSuccessAndJudgesEveryDependency is
-// the whole package: both halves of the gate, over every job the publish
-// actually depends on.
+// TestPublishImageGateOverridesTheImplicitSuccessAndJudgesEveryDependency reads
+// the real workflow and judges the gate it declares.
 func TestPublishImageGateOverridesTheImplicitSuccessAndJudgesEveryDependency(t *testing.T) {
 	block := jobBlock(t)
-	condition := jobField(t, block, "if")
 	needs := jobNeeds(t, block)
 
+	for _, problem := range gateProblems(jobField(t, block, "if"), needs) {
+		t.Errorf("%s, job %q: %s", workflowPath, publishJob, problem)
+	}
+
+	sort.Strings(needs)
+	if strings.Join(needs, ",") != strings.Join(wantNeeds, ",") {
+		t.Errorf("%s: %q now depends on %v, not on %v — a dependency dropped from `needs:` also disappears from the checks above, which read that same list, so the change has to be judged here by hand",
+			workflowPath, publishJob, needs, wantNeeds)
+	}
+}
+
+// gateProblems is the judgement itself, over a condition and the dependency
+// list it is supposed to gate on. It is separated from the workflow it reads so
+// that the rules can be proven against conditions this repository does not
+// contain — a guard whose only input is the tree it passes on has never been
+// shown to fail for the right reason.
+func gateProblems(condition string, needs []string) []string {
+	var problems []string
+
 	if !strings.Contains(condition, "!cancelled()") {
-		t.Errorf("%s: the `if` of %q holds no status-check function (%q), so GitHub supplies the implicit `success()` — which reads the whole ancestor graph and is false on every push to `main`, skipping the publish inside a green run",
-			workflowPath, publishJob, condition)
+		problems = append(problems, "the `if` holds no status-check function ("+condition+"), so GitHub supplies the implicit `success()` — which reads the whole ancestor graph and is false on every push to `main`, skipping the publish inside a green run")
 	}
 
 	for _, job := range needs {
 		clause := "needs." + job + ".result == 'success'"
 		if !strings.Contains(condition, clause) {
-			t.Errorf("%s: the `if` of %q does not carry %q, so a %q that FAILED still publishes: `!cancelled()` suppresses the implicit `success()` for every dependency at once, and nothing else judges them",
-				workflowPath, publishJob, clause, job)
+			problems = append(problems, "the `if` does not carry "+clause+", so a "+job+" that FAILED still publishes: `!cancelled()` suppresses the implicit `success()` for every dependency at once, and nothing else judges them")
 		}
 	}
 
-	sort.Strings(needs)
-	if strings.Join(needs, ",") != strings.Join(wantNeeds, ",") {
-		t.Errorf("%s: %q now depends on %v, not on %v — a dependency dropped from `needs:` also disappears from the loop above, which reads that same list, so the change has to be judged here by hand",
-			workflowPath, publishJob, needs, wantNeeds)
+	// The clauses above are substrings, and a substring survives being wrapped
+	// in an `||` — `(needs.image-smoke.result == 'success' || <anything>)` reads
+	// green above while gating on nothing. Requiring the condition to be a pure
+	// conjunction apart from the two publishing events is what closes that: any
+	// other `||` is refused here and judged by a reader.
+	if strings.Contains(strings.Replace(condition, eventDisjunction, "<events>", 1), "||") {
+		problems = append(problems, "the `if` holds an `||` beyond the two publishing events ("+condition+"), and a clause inside an `||` gates on nothing while still reading as present — write the gate as a conjunction, or judge this condition by hand")
 	}
+
+	return problems
 }
 
 // jobBlock returns the text of the publish job, from its header to the next job
@@ -115,14 +146,38 @@ func jobBlock(t *testing.T) string {
 func jobNeeds(t *testing.T, block string) []string {
 	t.Helper()
 
+	needs := parseNeeds(jobFieldLines(t, block, "needs"))
+	if len(needs) == 0 {
+		t.Fatalf("%s: %q lists no dependencies, so it is gated on nothing at all", workflowPath, publishJob)
+	}
+	return needs
+}
+
+// parseNeeds reads a dependency list in any of the three spellings YAML allows
+// for it. All three are the same list to GitHub, so all three have to be the
+// same list here: a reader that knew only the block sequence would report "no
+// dependencies at all" over a workflow that in fact declares five, and the
+// per-dependency checks would never run.
+func parseNeeds(lines []string) []string {
 	var needs []string
-	for _, line := range jobFieldLines(t, block, "needs") {
+
+	if inline := strings.TrimSpace(strings.Join(lines, " ")); strings.HasPrefix(inline, "[") {
+		for _, item := range strings.Split(strings.Trim(inline, "[]"), ",") {
+			if name := strings.TrimSpace(item); plainName.MatchString(name) {
+				needs = append(needs, name)
+			}
+		}
+		return needs
+	}
+
+	for _, line := range lines {
 		if match := needsEntry.FindStringSubmatch(line); match != nil {
 			needs = append(needs, match[1])
 		}
 	}
-	if len(needs) == 0 {
-		t.Fatalf("%s: %q lists no dependencies, so it is gated on nothing at all", workflowPath, publishJob)
+	if len(needs) == 0 && len(lines) == 1 && plainName.MatchString(lines[0]) {
+		// `needs: one-job`, the single-dependency spelling.
+		return []string{lines[0]}
 	}
 	return needs
 }
@@ -170,6 +225,92 @@ func jobFieldLines(t *testing.T, block, key string) []string {
 		t.Fatalf("%s: %q has no `%s:` key", workflowPath, publishJob, key)
 	}
 	return value
+}
+
+// goodCondition rebuilds the shape the workflow declares out of wantNeeds, so
+// the fixtures below cannot drift away from the dependency set the guard is
+// written around.
+func goodCondition() string {
+	clauses := []string{"!cancelled()", eventDisjunction, "github.ref == 'refs/heads/main'"}
+	for _, job := range wantNeeds {
+		clauses = append(clauses, "needs."+job+".result == 'success'")
+	}
+	return "${{ " + strings.Join(clauses, " && ") + " }}"
+}
+
+// TestGateProblemsRefusesEveryShapeThatReadsGreenWhileGatingOnNothing proves the
+// rules against conditions this repository does not contain. The workflow test
+// above can only ever show that today's condition passes; these fixtures are
+// what show the guard refuses the ones it exists to refuse — including the
+// `||` wrap, which every substring check in it would otherwise walk straight
+// past.
+func TestGateProblemsRefusesEveryShapeThatReadsGreenWhileGatingOnNothing(t *testing.T) {
+	good := goodCondition()
+
+	for _, testCase := range []struct {
+		name      string
+		condition string
+		want      int
+	}{
+		{"the shape the workflow declares", good, 0},
+		{
+			"no status function, so GitHub adds the implicit success()",
+			strings.Replace(good, "!cancelled() && ", "", 1),
+			1,
+		},
+		{
+			"one dependency unjudged",
+			strings.Replace(good, " && needs.image-smoke.result == 'success'", "", 1),
+			1,
+		},
+		{
+			"a clause wrapped in an `||`, which leaves the substring in place",
+			strings.Replace(good, "needs.image-smoke.result == 'success'",
+				"(needs.image-smoke.result == 'success' || github.event_name == 'workflow_dispatch')", 1),
+			1,
+		},
+		{
+			"the whole conjunction bypassed by an actor check",
+			strings.Replace(good, "${{ ", "${{ github.actor == 'someone' || ", 1),
+			1,
+		},
+		{
+			"the event disjunction respelled, which this guard refuses to read",
+			strings.Replace(good, eventDisjunction, "(github.event_name=='push'||github.event_name=='workflow_dispatch')", 1),
+			1,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			got := gateProblems(testCase.condition, wantNeeds)
+			if len(got) != testCase.want {
+				t.Fatalf("got %d problems %q, want %d", len(got), got, testCase.want)
+			}
+		})
+	}
+}
+
+// TestParseNeedsReadsEveryYAMLSpellingOfADependencyList holds the reader to all
+// three spellings. A reader that knew only one of them would report the gate as
+// depending on nothing over a reformatted but identical workflow, and skip
+// every per-dependency check on the way.
+func TestParseNeedsReadsEveryYAMLSpellingOfADependencyList(t *testing.T) {
+	for _, testCase := range []struct {
+		name  string
+		lines []string
+		want  string
+	}{
+		{"block sequence", []string{"", "- test", "- image-smoke"}, "test,image-smoke"},
+		{"flow sequence", []string{"[test, image-smoke]"}, "test,image-smoke"},
+		{"flow sequence folded over two lines", []string{"[test,", "image-smoke]"}, "test,image-smoke"},
+		{"a single dependency as a scalar", []string{"test"}, "test"},
+		{"an empty list", []string{""}, ""},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			if got := strings.Join(parseNeeds(testCase.lines), ","); got != testCase.want {
+				t.Fatalf("got %q, want %q", got, testCase.want)
+			}
+		})
+	}
 }
 
 // repoRoot walks up from the test's working directory to the module root.
