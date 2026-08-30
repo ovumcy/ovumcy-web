@@ -45,10 +45,14 @@ func TestServicesNeverReRootAContext(t *testing.T) {
 		t.Fatalf("glob package files: %v", err)
 	}
 
+	// message is the WHOLE sentence, not a fragment sharing a suffix. The two
+	// kinds this sweep reports have different consequences — a re-rooting call
+	// drops a deadline, an aliased import only hides one from the check — and a
+	// shared tail would accuse the second of the first's damage.
 	type violation struct {
-		file string
-		line int
-		call string
+		file    string
+		line    int
+		message string
 	}
 	var violations []violation
 	walked := 0
@@ -80,9 +84,9 @@ func TestServicesNeverReRootAContext(t *testing.T) {
 			}
 			if imported.Name != nil {
 				violations = append(violations, violation{
-					file: path,
-					line: fileSet.Position(imported.Pos()).Line,
-					call: "imports context under the name " + imported.Name.Name + ", which puts any re-rooting call in this file beyond the check below",
+					file:    path,
+					line:    fileSet.Position(imported.Pos()).Line,
+					message: "imports context under the name " + imported.Name.Name + " — this is not itself a dropped deadline, but it puts every call in this file beyond the spelling the check below matches on, so import context under its own name",
 				})
 			}
 		}
@@ -104,9 +108,9 @@ func TestServicesNeverReRootAContext(t *testing.T) {
 				return true
 			}
 			violations = append(violations, violation{
-				file: path,
-				line: fileSet.Position(call.Pos()).Line,
-				call: "re-roots the context with context." + selector.Sel.Name + "()",
+				file:    path,
+				line:    fileSet.Position(call.Pos()).Line,
+				message: "re-roots the context with context." + selector.Sel.Name + "() — a boot pass reached through here would ignore its storage budget, and a request-scoped call would ignore its cancellation; take a ctx parameter instead",
 			})
 			return true
 		})
@@ -124,6 +128,6 @@ func TestServicesNeverReRootAContext(t *testing.T) {
 	}
 
 	for _, found := range violations {
-		t.Errorf("%s:%d %s — a boot pass reached through here would ignore its storage budget, and a request-scoped call would ignore its cancellation", found.file, found.line, found.call)
+		t.Errorf("%s:%d %s", found.file, found.line, found.message)
 	}
 }
