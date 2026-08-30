@@ -71,17 +71,32 @@ var predictionSuppressionSweptTrees = []string{
 	"internal/api",
 }
 
+// predictionSuppressionResidual is one sanctioned site: the signals the entry
+// was written ABOUT, and why that particular combination is not the class above.
+//
+// The signals are part of the match, not decoration. An entry that matched on
+// the site alone would forgive whatever single recombination happened to be
+// standing there — so a refactor that turns the sanctioned line into a predicate
+// call and gives the same function a NEW gate would inherit the exemption
+// written for the old one, with the reason beside it now describing nothing.
+type predictionSuppressionResidual struct {
+	signals string
+	reason  string
+}
+
 // predictionSuppressionResiduals are the sites that combine two signals ON
-// PURPOSE, each with the reason it is not the class above. It is a ratchet, not
-// an allowlist: a site may only leave this map, a new entry needs the same kind
-// of reason written beside it, and an entry forgives exactly ONE recombination
-// in the function it names — a second one there is a new gate, and the entry
-// must not cover the very site it was never written about.
-var predictionSuppressionResiduals = map[string]string{
-	"internal/services/dashboard_view_service.go:resolveDashboardTimingFrame": "" +
-		"the bridge line names no date, so it is not a claim any gate withholds: it asks whether the " +
-		"account has predictions at all, and it cannot read the fertility gate because the first-cycle " +
-		"floor IS the state it is shown in — a gate carrying that floor would gate the bridge on itself",
+// PURPOSE. It is a ratchet, not an allowlist: an entry may only leave this map,
+// a new one needs the same kind of reason written beside it, and an entry
+// forgives exactly ONE recombination — of exactly its own signals — in the
+// function it names.
+var predictionSuppressionResiduals = map[string]predictionSuppressionResidual{
+	"internal/services/dashboard_view_service.go:resolveDashboardTimingFrame": {
+		signals: "the zero-completed-cycle floor + unpredictable-cycle mode",
+		reason: "" +
+			"the bridge line names no date, so it is not a claim any gate withholds: it asks whether the " +
+			"account has predictions at all, and it cannot read the fertility gate because the first-cycle " +
+			"floor IS the state it is shown in — a gate carrying that floor would gate the bridge on itself",
+	},
 }
 
 // predictionSuppressionFinding is one recombination: the site that owns it, the
@@ -95,8 +110,14 @@ type predictionSuppressionFinding struct {
 	signals []string
 }
 
+// combined is the finding's signals in the one spelling a residual is written
+// in, so the entry and the site are compared as the same kind of thing.
+func (finding predictionSuppressionFinding) combined() string {
+	return strings.Join(finding.signals, " + ")
+}
+
 func (finding predictionSuppressionFinding) String() string {
-	return fmt.Sprintf("  %s  line %d combines %s", finding.key, finding.line, strings.Join(finding.signals, " + "))
+	return fmt.Sprintf("  %s  line %d combines %s", finding.key, finding.line, finding.combined())
 }
 
 // TestNoSurfaceRecombinesTheSuppressionSignals fails when a file outside the
@@ -125,7 +146,8 @@ func TestNoSurfaceRecombinesTheSuppressionSignals(t *testing.T) {
 
 	var unexplained []string
 	for _, finding := range findings {
-		if _, sanctioned := predictionSuppressionResiduals[finding.key]; sanctioned && perSite[finding.key] == 1 {
+		sanctioned, hasEntry := predictionSuppressionResiduals[finding.key]
+		if hasEntry && sanctioned.signals == finding.combined() && perSite[finding.key] == 1 {
 			continue
 		}
 		unexplained = append(unexplained, finding.String())
@@ -136,10 +158,18 @@ func TestNoSurfaceRecombinesTheSuppressionSignals(t *testing.T) {
 	}
 
 	// A residual that no longer describes a site is a lie the next reader
-	// inherits, so the ratchet is checked in both directions.
-	for key := range predictionSuppressionResiduals {
-		if perSite[key] == 0 {
-			t.Fatalf("residual %q names a recombination that is no longer there — drop the entry rather than leaving the map describing a tree that has moved on", key)
+	// inherits, so the ratchet is checked in both directions — and against the
+	// SIGNALS, since a site whose combination changed is a different gate under
+	// an old exemption, not the one the reason beside it explains.
+	matched := make(map[string]bool, len(predictionSuppressionResiduals))
+	for _, finding := range findings {
+		if sanctioned, hasEntry := predictionSuppressionResiduals[finding.key]; hasEntry && sanctioned.signals == finding.combined() {
+			matched[finding.key] = true
+		}
+	}
+	for key, sanctioned := range predictionSuppressionResiduals {
+		if !matched[key] {
+			t.Fatalf("residual %q no longer describes a site combining %s — drop the entry, or write the one the tree now holds, rather than leaving the map describing a tree that has moved on", key, sanctioned.signals)
 		}
 	}
 }
@@ -198,6 +228,25 @@ func gate(ctx C, stats S) bool {
 	}
 	if hits[0].key != hits[1].key {
 		t.Fatalf("both gates sit in the same function, so they must share a key: %q vs %q", hits[0].key, hits[1].key)
+	}
+
+	// Same method name, different receivers: one site each, or neither can be
+	// sanctioned without forgiving the other.
+	const sameNameTwoTypes = `package fixture
+
+func (v dashboardView) render(stats S) bool { return v.PredictionDisabled || stats.PregnancyPaused }
+
+func (s *statsView) render(stats S) bool { return s.AwaitingFirstCycle || stats.PregnancyPaused }
+`
+	methods := predictionSuppressionScanSource(t, "fix/methods.go", sameNameTwoTypes)
+	if len(methods) != 2 {
+		t.Fatalf("both methods recombine, so both must be reported, got %d: %v", len(methods), methods)
+	}
+	if methods[0].key == methods[1].key {
+		t.Fatalf("methods on different types are different sites — the receiver belongs in the key: %q", methods[0].key)
+	}
+	if methods[0].key != "fix/methods.go:dashboardView.render" || methods[1].key != "fix/methods.go:statsView.render" {
+		t.Fatalf("a method's key names its receiver type: %q, %q", methods[0].key, methods[1].key)
 	}
 }
 
@@ -372,6 +421,12 @@ func predictionSuppressionSignalsIn(expr ast.Expr) []string {
 // file scope when it sits outside every function body. The placeholder carries
 // no space: a key is compared whole, and one that reads as two words invites a
 // residual written the natural way and matched by nothing.
+//
+// A METHOD is named with its receiver type. Without it, two same-named methods
+// on different types in one file share a key: the per-site count then reads two
+// unrelated gates as one site twice over, no residual can ever apply to either,
+// and the only way to green the tree is to rename a method — a barrier whose
+// correct state is unreachable is the one that gets deleted rather than obeyed.
 func predictionSuppressionEnclosing(file *ast.File, pos token.Pos) string {
 	name := "file-scope"
 	for _, decl := range file.Decls {
@@ -380,8 +435,32 @@ func predictionSuppressionEnclosing(file *ast.File, pos token.Pos) string {
 			continue
 		}
 		name = function.Name.Name
+		if receiver := predictionSuppressionReceiver(function); receiver != "" {
+			name = receiver + "." + name
+		}
 	}
 	return name
+}
+
+// predictionSuppressionReceiver is the receiver type's name, pointer or value,
+// or the empty string for a plain function.
+func predictionSuppressionReceiver(function *ast.FuncDecl) string {
+	if function.Recv == nil || len(function.Recv.List) == 0 {
+		return ""
+	}
+	expr := function.Recv.List[0].Type
+	if star, isPointer := expr.(*ast.StarExpr); isPointer {
+		expr = star.X
+	}
+	// A generic receiver is written `T[P]`; the type is the thing being indexed,
+	// and the parameter says nothing about which declaration this is.
+	if index, isIndexed := expr.(*ast.IndexExpr); isIndexed {
+		expr = index.X
+	}
+	if ident, isIdent := expr.(*ast.Ident); isIdent {
+		return ident.Name
+	}
+	return ""
 }
 
 func predictionSuppressionRepoRoot(t *testing.T) string {

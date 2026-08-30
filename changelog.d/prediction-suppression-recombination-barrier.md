@@ -14,9 +14,12 @@ flagging those would red every honest call site. One site is carried as a
 sanctioned residual with its reason: the dashboard's first-cycle bridge line
 names no date, so no gate withholds it, and it cannot read the fertility gate
 because the first-cycle floor is the state it is shown in. A residual forgives
-exactly one recombination in the function it names — a second gate written there
-is reported beside it, since an entry must not cover the site it was never
-written about.
+exactly one recombination in the function it names, and only of the signals the
+entry was written about: a second gate there, or the same site rewritten to
+combine a different pair, is reported beside it rather than inheriting an
+exemption whose stated reason no longer describes it. Sites are keyed by path
+and function, with a method's receiver type included, so two same-named methods
+in one file stay two sites.
 
 Both swept layers are walked to their leaves rather than one directory deep: a
 sweep that stops at the top level answers about today's file layout instead of
