@@ -75,11 +75,12 @@ func lutealRoundTripLogs(origin time.Time, cycleLength int, ovulationCycleDays [
 	return logs
 }
 
-// assertLutealRoundTrip runs the full loop the owner-facing surfaces run: infer
-// the parameter from the logged signal, then predict with it on a cycle of the
-// same length and check the prediction lands back on the observed cycle day —
-// as a day number, as a date, and as the fertile window's peak edge.
-func assertLutealRoundTrip(t *testing.T, logs []models.DailyLog, location *time.Location, cycleLength, wantOvulationCycleDay int) int {
+// assertLutealRoundTrip runs the loop the owner-facing surfaces run: infer the
+// parameter from the logged signal, then predict with it on the fixture's own
+// in-progress cycle (nextCycleStart, the last start the logs carry) and check
+// the prediction lands back on the observed cycle day — as a day number, as a
+// date, and as the fertile window's peak edge.
+func assertLutealRoundTrip(t *testing.T, logs []models.DailyLog, location *time.Location, cycleLength, wantOvulationCycleDay int, nextCycleStart time.Time) int {
 	t.Helper()
 
 	luteal, refined := InferUserLutealPhase(logs, location)
@@ -101,12 +102,11 @@ func assertLutealRoundTrip(t *testing.T, logs []models.DailyLog, location *time.
 	}
 
 	// The same trip as a date, through the function the surfaces actually call.
-	nextStart := dateOnly(time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC))
-	window := PredictCycleWindow(nextStart, cycleLength, luteal)
+	window := PredictCycleWindow(nextCycleStart, cycleLength, luteal)
 	if !window.Calculable {
-		t.Fatalf("PredictCycleWindow(%s, %d, %d) returned no window", nextStart.Format("2006-01-02"), cycleLength, luteal)
+		t.Fatalf("PredictCycleWindow(%s, %d, %d) returned no window", nextCycleStart.Format("2006-01-02"), cycleLength, luteal)
 	}
-	wantDate := dateOnly(nextStart.AddDate(0, 0, wantOvulationCycleDay-1))
+	wantDate := dateOnly(nextCycleStart.AddDate(0, 0, wantOvulationCycleDay-1))
 	if !window.OvulationDate.Equal(wantDate) {
 		t.Errorf("predicted ovulation date = %s, want %s", window.OvulationDate.Format("2006-01-02"), wantDate.Format("2006-01-02"))
 	}
@@ -149,8 +149,11 @@ func TestInferredLutealPhaseRoundTripsThroughPrediction(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
+			// Two signalled cycles plus the in-progress third, which is the one a
+			// prediction is actually made for.
 			logs := lutealRoundTripLogs(origin, testCase.cycleLength, []int{testCase.ovulationCycleDay, testCase.ovulationCycleDay}, testCase.kind)
-			assertLutealRoundTrip(t, logs, time.UTC, testCase.cycleLength, testCase.ovulationCycleDay)
+			nextCycleStart := origin.AddDate(0, 0, 2*testCase.cycleLength)
+			assertLutealRoundTrip(t, logs, time.UTC, testCase.cycleLength, testCase.ovulationCycleDay, nextCycleStart)
 		})
 	}
 }
@@ -169,19 +172,24 @@ func TestInferredLutealPhaseRoundTripsAcrossSeveralSamples(t *testing.T) {
 	origin := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	logs := lutealRoundTripLogs(origin, cycleLength, []int{14, 15, 16}, lutealSignalBBT)
 
-	luteal := assertLutealRoundTrip(t, logs, time.UTC, cycleLength, 15)
+	luteal := assertLutealRoundTrip(t, logs, time.UTC, cycleLength, 15, origin.AddDate(0, 0, 3*cycleLength))
 	if luteal != 13 {
 		t.Errorf("inferred luteal phase = %d, want 13 (mean of samples 14, 13, 12)", luteal)
 	}
 }
 
-// TestInferredLutealPhaseRoundTripsAcrossDSTAndTimezones runs the same loop in
-// zones whose clocks move inside the observed cycles. Both quantities the
-// inference measures — the cycle length and the ovulation's offset from the
-// cycle start — are calendar-day counts taken through CalendarDaysBetween, so a
-// transition between the two endpoints must not shorten either: the inferred
-// parameter, and therefore the predicted cycle day, must be identical to the
-// UTC run.
+// TestInferredLutealPhaseRoundTripsAcrossDSTAndTimezones runs the loop in zones
+// whose clocks move inside the observed cycles. Both quantities the INFERENCE
+// measures — the cycle length and the ovulation's offset from the cycle start —
+// are calendar-day counts taken through CalendarDaysBetween, so a transition
+// between the two endpoints must not shorten either: the inferred parameter, and
+// therefore the predicted cycle day, must be identical to the UTC run.
+//
+// The inference is the half that runs in the zone. PredictCycleWindow re-anchors
+// its own operands to UTC midnight (dateOnly), so the date leg is
+// zone-independent by construction rather than by test; the location-aware
+// projection layer above it is pinned separately by
+// TestCycleProjection_GoldenVectors, whose fixture carries its own DST vector.
 func TestInferredLutealPhaseRoundTripsAcrossDSTAndTimezones(t *testing.T) {
 	t.Parallel()
 
@@ -214,7 +222,8 @@ func TestInferredLutealPhaseRoundTripsAcrossDSTAndTimezones(t *testing.T) {
 			}
 
 			logs := lutealRoundTripLogs(testCase.origin, cycleLength, []int{testCase.observed, testCase.observed}, testCase.kind)
-			zoned := assertLutealRoundTrip(t, logs, location, cycleLength, testCase.observed)
+			nextCycleStart := CalendarDay(testCase.origin.AddDate(0, 0, 2*cycleLength), location)
+			zoned := assertLutealRoundTrip(t, logs, location, cycleLength, testCase.observed, nextCycleStart)
 
 			utc, refined := InferUserLutealPhase(logs, time.UTC)
 			if !refined {
@@ -224,5 +233,55 @@ func TestInferredLutealPhaseRoundTripsAcrossDSTAndTimezones(t *testing.T) {
 				t.Errorf("inferred luteal phase = %d in %s but %d in UTC: the location changed a calendar-day count", zoned, testCase.zone, utc)
 			}
 		})
+	}
+}
+
+// TestInferredLutealPhaseReachesTheOwnerSurfacesThroughTheBaseline closes the
+// loop the tests above leave open. ApplyUserCycleBaseline is what every
+// owner-facing surface goes through, and it is the only place that chooses
+// between the live inference and the value persisted in users.luteal_phase.
+//
+// That column is a derived cache — DayService and ImportService write it from
+// InferUserLutealPhase — so a row left behind by an OLDER inference is exactly
+// the shape the precedence has to survive: the stored value here is the
+// one-day-too-long 14 a pre-fix day save would have written for these very logs,
+// and the projection must ignore it in favour of the corrected 13.
+func TestInferredLutealPhaseReachesTheOwnerSurfacesThroughTheBaseline(t *testing.T) {
+	t.Parallel()
+
+	const cycleLength = 28
+	origin := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	logs := lutealRoundTripLogs(origin, cycleLength, []int{15, 15}, lutealSignalBBT)
+
+	// Cycle starts Jan 1, Jan 29 and Feb 26; today sits inside the third.
+	now := time.Date(2026, time.March, 3, 9, 0, 0, 0, time.UTC)
+	user := models.User{
+		ID:          1,
+		Role:        models.RoleOwner,
+		CycleLength: cycleLength,
+		LutealPhase: 14,
+	}
+
+	stats := ApplyUserCycleBaseline(&user, logs, BuildCycleStats(logs, now), now, time.UTC)
+
+	if stats.LutealPhase != 13 {
+		t.Fatalf("stats.LutealPhase = %d, want 13: the live inference must win over the persisted column", stats.LutealPhase)
+	}
+	if !stats.OvulationExact {
+		t.Error("stats.OvulationExact = false; a luteal phase this inference accepted fits a 28-day cycle exactly")
+	}
+
+	// The third cycle starts Feb 26, so its cycle day 15 is March 12. The stale
+	// 14 would have named March 11 — the whole defect, in one assertion.
+	wantOvulation := time.Date(2026, time.March, 12, 0, 0, 0, 0, time.UTC)
+	if !stats.OvulationDate.Equal(wantOvulation) {
+		t.Errorf("stats.OvulationDate = %s, want %s", stats.OvulationDate.Format("2006-01-02"), wantOvulation.Format("2006-01-02"))
+	}
+	if !stats.FertilityWindowEnd.Equal(wantOvulation) {
+		t.Errorf("stats.FertilityWindowEnd = %s, want %s", stats.FertilityWindowEnd.Format("2006-01-02"), wantOvulation.Format("2006-01-02"))
+	}
+	wantFertilityStart := wantOvulation.AddDate(0, 0, -5)
+	if !stats.FertilityWindowStart.Equal(wantFertilityStart) {
+		t.Errorf("stats.FertilityWindowStart = %s, want %s", stats.FertilityWindowStart.Format("2006-01-02"), wantFertilityStart.Format("2006-01-02"))
 	}
 }

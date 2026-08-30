@@ -35,6 +35,12 @@ const (
 // from the sample rather than clamped into it. The prediction-time bound is a
 // different quantity — maxSupportedLutealPhase (cycles.go), computed from the
 // cycle length.
+//
+// Both ends bound the parameter in CalcOvulationDay's reading of it: the count
+// of days that FOLLOW ovulation. They are NOT bounds on the calendar span from
+// the ovulation date to the next period start, which is one day longer — a
+// sample at this floor is an ovulation on cycle day cycleLength-10, not one
+// ten calendar days before the next period.
 const maxPlausibleLutealPhaseDays = 20
 
 func InferUserLutealPhase(logs []models.DailyLog, location *time.Location) (int, bool) {

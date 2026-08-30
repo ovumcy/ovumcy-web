@@ -21,11 +21,12 @@ import (
 //
 // A vector's `lutealPhase` input carries the model's own reading of that
 // parameter: the count of days that FOLLOW ovulation, so a 28-day cycle with a
-// 14 ovulates on cycle day 14. Step 5 below pins that reading against
-// calcLutealPhase rather than leaving it implied by the expected dates, because
-// the other reading — the calendar span from the ovulation date to the next
-// period start, which is one day longer — is what the personalized luteal
-// inference had silently adopted.
+// 14 ovulates on cycle day 14 — not the calendar span from the ovulation date to
+// the next period start, which is one day longer and is the reading the
+// personalized luteal inference had silently adopted. The round trip between the
+// two directions is pinned by TestLutealPhaseRoundTrip_ReferenceVectors; what
+// step 5 below adds is narrower and specific to these vectors: that each one
+// exercises the exact arithmetic rather than the reserve clamp.
 //
 // The section is a NEW top-level key ("projection"), so ovumcy-app's existing
 // reference test — which decodes only "vectors" — keeps passing against a
@@ -158,27 +159,25 @@ func TestCycleProjection_GoldenVectors(t *testing.T) {
 			// exact DashboardUpcomingPredictions sequence). The roll is applied to
 			// a SEPARATE anchor so it cannot disturb the displayed next-period
 			// from step 3.
-			ovulationAnchor := cycleStart
 			window := PredictCycleWindow(cycleStart, predictionLength, vector.Input.LutealPhase)
 			if window.Calculable && window.OvulationDate.Before(today) {
-				ovulationAnchor = ShiftCycleStartToFutureOvulation(cycleStart, window.OvulationDate, predictionLength, today)
-				window = PredictCycleWindow(ovulationAnchor, predictionLength, vector.Input.LutealPhase)
+				shifted := ShiftCycleStartToFutureOvulation(cycleStart, window.OvulationDate, predictionLength, today)
+				window = PredictCycleWindow(shifted, predictionLength, vector.Input.LutealPhase)
 			}
 			if !window.Calculable {
 				t.Fatalf("projected ovulation window not calculable for input %+v", vector.Input)
 			}
 			assertProjectionDay(t, "ovulation date", window.OvulationDate, vector.Expected.OvulationDate)
 
-			// 5. Indexing pin: invert the projected ovulation's own cycle day
-			// back through calcLutealPhase and it must return the fixture's
-			// lutealPhase input. That is the direction the personalized path
-			// travels — an observed ovulation trains the parameter — and it is
-			// where the two readings of "luteal phase" diverge by exactly one
-			// day, on the DST vector as much as on the plain ones.
-			ovulationCycleDay := CalendarDaysBetween(ovulationAnchor, window.OvulationDate) + 1
-			if got := calcLutealPhase(predictionLength, ovulationCycleDay); got != vector.Input.LutealPhase {
-				t.Errorf("inverting ovulation cycle day %d over a %d-day cycle gives luteal %d, but the vector's input is %d",
-					ovulationCycleDay, predictionLength, got, vector.Input.LutealPhase)
+			// 5. Each vector must exercise the exact arithmetic, not the
+			// reserve clamp: a lutealPhase that no longer fits its cycle length
+			// would still produce a date, and the vector would then be pinning
+			// maxSupportedLutealPhase instead of the model. Nothing else here
+			// distinguishes the two, because a clamped window is calculable and
+			// its date is stable.
+			if _, exact := CalcOvulationDay(predictionLength, vector.Input.LutealPhase); !exact {
+				t.Errorf("luteal phase %d does not fit a %d-day cycle exactly, so this vector pins the clamp rather than the projection",
+					vector.Input.LutealPhase, predictionLength)
 			}
 		})
 	}
