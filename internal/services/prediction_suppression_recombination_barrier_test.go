@@ -215,6 +215,28 @@ func TestTheSweepKnowsEverySignalThePredicatesDisjoin(t *testing.T) {
 			}
 		}
 	}
+
+	// A guard in front of the disjunction is an ordinary edit, and the reader
+	// must survive it: the literal a guard returns is not a signal, and asking
+	// for it to be registered as one would red the tree over a correct change.
+	const guarded = `package fixture
+
+func PredictionsSuppressed(user *U, stats S) bool {
+	if user == nil {
+		return false
+	}
+	return DashboardPredictionDisabled(user) || stats.PregnancyPaused
+}
+`
+	fixtureSet := token.NewFileSet()
+	fixture, fixtureErr := parser.ParseFile(fixtureSet, "fix/guarded.go", guarded, 0)
+	if fixtureErr != nil {
+		t.Fatalf("parse the guarded fixture: %v", fixtureErr)
+	}
+	heads := predictionSuppressionDisjunctsOf(t, fixture, "PredictionsSuppressed")
+	if len(heads) != 2 || heads[0] != "DashboardPredictionDisabled" || heads[1] != "PregnancyPaused" {
+		t.Fatalf("a guard's return is not a disjunct — expected the two signals, got %v", heads)
+	}
 }
 
 // predictionSuppressionDisjunctsOf names the head of every operand of the
@@ -234,7 +256,17 @@ func predictionSuppressionDisjunctsOf(t *testing.T, file *ast.File, predicate st
 			if !isReturn || len(ret.Results) != 1 {
 				return true
 			}
-			for _, operand := range predictionSuppressionOperands(ret.Results[0]) {
+			// Only the return that COMBINES is the predicate's answer about its
+			// signals. A guard's `return false` is a return like any other to
+			// the walk, and reading its literal as an operand would demand that
+			// `false` be registered as a suppression signal — a barrier that
+			// reds on a correct nil-check, asking for nonsense, is one that gets
+			// deleted rather than obeyed.
+			binary, isBinary := ret.Results[0].(*ast.BinaryExpr)
+			if !isBinary || (binary.Op != token.LAND && binary.Op != token.LOR) {
+				return true
+			}
+			for _, operand := range predictionSuppressionOperands(binary) {
 				if head := predictionSuppressionHead(operand); head != "" {
 					heads = append(heads, head)
 				}
