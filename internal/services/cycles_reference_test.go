@@ -169,11 +169,12 @@ func TestLutealPhaseRoundTrip_ReferenceVectors(t *testing.T) {
 		{"long 35-day cycle, ovulation on day 21", 35, 21, 14, 21, true},
 		{"long 40-day cycle, ovulation on day 26", 40, 26, 14, 26, true},
 		{"30-day cycle, ovulation on day 20 lands on the 10-day floor", 30, 20, 10, 20, true},
-		// A mucus peak on cycle day 1 of a short cycle: ovulation is estimated at
-		// peak+1, the implied luteal phase is 19, which the plausibility window
-		// admits and a 21-day cycle cannot hold (its reserve caps it at 16). The
-		// round trip does NOT return day 2 here, and must not pretend to.
-		{"short 21-day cycle, an observation the cycle cannot hold", 21, 2, 19, 5, false},
+		// The exception the invariant carries. An ovulation observed on day 4 of a
+		// 15-day cycle implies an 11-day luteal phase: physiologically ordinary,
+		// admitted by the plausibility window, and still more than the cycle can
+		// hold, since the reserve caps the parameter at cycleLength-5 = 10. The
+		// round trip does NOT return day 4 here, and must not pretend to.
+		{"15-day cycle, an observation the cycle cannot hold", 15, 4, 11, 5, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
