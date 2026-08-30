@@ -83,12 +83,11 @@ predicts a different day than the one observed. What using one buys:
 > implies no longer fits the cycle, in which case Step 2's clamp applies and the
 > prediction is marked non-exact.
 
-The exception is not hypothetical, which is why the table below carries a row
-for it: a cervical-mucus peak on the first day of a short cycle implies a luteal
-phase the cycle cannot hold, and the reserve clamp is what stops the estimate
-from landing before cycle day 5.
-
-The table below is asserted row for row by
+The exception is not hypothetical, so the table below carries a row for it: on a
+15-day cycle an ovulation observed on day 4 implies an 11-day luteal phase, which
+is physiologically ordinary and still more than that cycle can hold, and the
+reserve clamp is what stops the estimate from landing before cycle day 5. The
+table is asserted row for row by
 `TestLutealPhaseRoundTrip_ReferenceVectors`. The invariant itself is a claim
 about the *observation* path, so it is pinned where that path runs, by
 `TestInferredLutealPhaseRoundTripsThroughPrediction` and
@@ -107,7 +106,7 @@ out of the logs and worked out which argument to hand them.
 | 35 | day 21 | 14 | day 21 |
 | 40 | day 26 | 14 | day 26 |
 | 30 | day 20 | 10 (equal to the floor, not clamped to it) | day 20 |
-| 21 | day 2  | 19, clamped to 16 by Step 2 | day 5 (non-exact) |
+| 15 | day 4  | 11, clamped to 10 by Step 2 | day 5 (non-exact) |
 
 The parameter counts the days that *follow* ovulation, so it is one day shorter
 than the calendar span from the ovulation date to the next period start — that
