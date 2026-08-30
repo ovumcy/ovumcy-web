@@ -76,11 +76,19 @@ observedLuteal = cycleLength − observedOvulationDay
 ```
 
 Both directions have to use one indexing, or an observation trains a value that
-predicts a different day than the one observed. The invariant that buys, pinned
-by `TestLutealPhaseRoundTrip_ReferenceVectors`:
+predicts a different day than the one observed. What using one buys:
 
 > An ovulation observed on cycle day **N** predicts cycle day **N** again on a
 > next cycle of the same length.
+
+The table below is asserted row for row by
+`TestLutealPhaseRoundTrip_ReferenceVectors`. The invariant itself is a claim
+about the *observation* path, so it is pinned where that path runs, by
+`TestInferredLutealPhaseRoundTripsThroughPrediction` and
+`TestInferredLutealPhaseReachesTheOwnerSurfacesThroughTheBaseline`: those read an
+ovulation out of logged temperature or mucus entries and follow it all the way to
+a rendered date. A test of the two formulas alone cannot see the drift, because
+each formula stayed correct while they disagreed about the other.
 
 | cycleLength | observed ovulation | → lutealPhase | → predicted ovulation |
 |-------------|--------------------|---------------|-----------------------|
@@ -89,7 +97,7 @@ by `TestLutealPhaseRoundTrip_ReferenceVectors`:
 | 21 | day 8  | 13 | day 8  |
 | 35 | day 21 | 14 | day 21 |
 | 40 | day 26 | 14 | day 26 |
-| 30 | day 20 | 10 (the floor) | day 20 |
+| 30 | day 20 | 10 (equal to the floor, not clamped to it) | day 20 |
 
 The parameter counts the days that *follow* ovulation, so it is one day shorter
 than the calendar span from the ovulation date to the next period start — that
