@@ -1,9 +1,9 @@
 ### Fixed
 
 - **`ghcr.io/ovumcy/ovumcy-web:latest` follows `main` again.** The CI job that publishes it was
-  skipped on every push to `main` while the run itself reported green, so `latest`, `main` and the
-  `sha-…` tag they share all still pointed at one image 242 commits behind the head of `main`, and
-  the head carried no tag of its own. The job's condition named only the event and the branch, so
+  skipped on every push to `main` while the run itself reported green, so `latest`, `main` and a
+  `sha-…` tag all still resolved to one image, 242 commits behind the head of `main`, and the head
+  carried no tag of its own. The job's condition named only the event and the branch, so
   it rested on the predicate GitHub supplies when a condition names no job status of its own. On a
   push to `main` every lane below the five gates the publish depends on is deliberately skipped,
   because the merge queue has already run them on that exact commit, and the publish was skipped

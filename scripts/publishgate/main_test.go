@@ -14,11 +14,12 @@
 // That is the outcome and not the mechanism, and the mechanism is not settled
 // here: an implicit `success()` ranging over the whole ancestor graph, and a
 // skip propagating transitively past a gate that rescued only itself with
-// `!cancelled()`, predict those six runs identically. ci.yml says the same
-// where the gate lives, and says what a reader must probe before building a
-// second gate on either reading. What the rules below need is narrower than
-// that question and true under both answers: the condition must stop resting
-// on an implicit predicate at all.
+// `!cancelled()`, predict those six runs identically — as they do every other
+// job shape this workflow currently has. ci.yml says the same where the gate
+// lives, and says what to settle before a second gate is built on either
+// reading. What the rules below need is narrower than that question and true
+// under both answers: the condition must stop resting on an implicit predicate
+// at all.
 //
 // Nothing reported that skip while it was happening. A skipped job is a
 // satisfied check, and a tag that never appeared in a registry is not a signal

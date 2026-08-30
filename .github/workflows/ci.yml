@@ -1733,10 +1733,12 @@ jobs:
     # function receives is evaluated over the whole ancestor graph rather than
     # over the direct `needs:`; or a skip propagates transitively, so a gate
     # that rescues ITSELF with `!cancelled()` does not rescue what depends on
-    # it. DO NOT BUILD A SECOND GATE ON EITHER READING WITHOUT PROBING IT: the
-    # two answer differently for a job whose ancestors are skipped while its
-    # own `if` does name a status function — which is exactly the shape the
-    # five gates above have.
+    # it. Every job shape in this workflow today is explained by both, the five
+    # gates above included — they run, and each reading says so for its own
+    # reason — so nothing here is evidence either way. DO NOT BUILD A SECOND
+    # GATE ON WHICHEVER READING SOUNDS RIGHT: work out first whether the two
+    # differ for the shape you are about to write, and probe it on a throwaway
+    # branch if they do.
     #
     # The condition below is correct under either reading, which is why it did
     # not wait for that probe. `!cancelled()` suppresses the implicit predicate
