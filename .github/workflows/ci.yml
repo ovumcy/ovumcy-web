@@ -1738,18 +1738,15 @@ jobs:
     # own `if` does name a status function — which is exactly the shape the
     # five gates above have.
     #
-    # The condition below is correct under both, which is why it did not wait
-    # for that probe: `!cancelled()` suppresses the implicit predicate whatever
-    # it ranges over, and the five results are then judged here rather than
-    # inferred from anything.
-    #
-    # `!cancelled()` is what suppresses the implicit `success()`; on its own it
-    # would publish off a FAILED gate, so the five results are then required by
-    # name. `success` and nothing else — `skipped` must not publish either,
-    # which is what keeps a docs-only push to `main` (there `run_e2e` is false,
-    # so `image-smoke` never boots the image) from publishing an image no smoke
-    # test looked at. Such a push leaves `latest` on the previous commit, which
-    # carries the identical image.
+    # The condition below is correct under either reading, which is why it did
+    # not wait for that probe. `!cancelled()` suppresses the implicit predicate
+    # whatever that predicate ranges over; on its own it would then publish off
+    # a FAILED gate, so the five results are required by name and judged here
+    # rather than inferred from anything. `success` and nothing else — `skipped`
+    # must not publish either, which is what keeps a docs-only push to `main`
+    # (there `run_e2e` is false, so `image-smoke` never boots the image) from
+    # publishing an image no smoke test looked at. Such a push leaves `latest`
+    # on the previous commit, which carries the identical image.
     if: >-
       ${{ !cancelled()
       && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
