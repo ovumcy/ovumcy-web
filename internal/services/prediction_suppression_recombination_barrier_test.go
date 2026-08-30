@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -35,7 +36,7 @@ import (
 // question and stays legal — flagging those would red every honest call site
 // and the barrier would be deleted within a week.
 //
-// WHAT IT CANNOT SEE, stated here and repeated in the failure text. A
+// WHAT IT CANNOT SEE, stated here and repeated in the failure text: a
 // recombination assembled through intermediate variables — `disabled := …` on
 // one line and `disabled || awaiting` on the next — reads as one signal per
 // expression and passes. So does one built in a template: the owner templates
@@ -55,21 +56,27 @@ var predictionSuppressionSignals = map[string]string{
 }
 
 // predictionSuppressionPredicateFile declares the predicates, so it is the one
-// file whose whole job is to combine them.
-const predictionSuppressionPredicateFile = "dashboard_cycle.go"
+// file whose whole job is to combine them. It is matched by its full path from
+// the module root, not by base name: a same-named file in some later subpackage
+// is not this one, and exempting it by name would hand the class a hiding place.
+const predictionSuppressionPredicateFile = "internal/services/dashboard_cycle.go"
 
-// predictionSuppressionSweptPackages are the layers a display decision can be
-// made in: the business layer that resolves it and the transport layer that
-// publishes it.
-var predictionSuppressionSweptPackages = []string{
+// predictionSuppressionSweptTrees are the layers a display decision can be made
+// in: the business layer that resolves it and the transport layer that publishes
+// it. Each is walked to its LEAVES rather than read one directory deep — a sweep
+// that stops at the top level answers about today's file layout instead of about
+// the class, and goes quietly green the day these files are split into packages.
+var predictionSuppressionSweptTrees = []string{
 	"internal/services",
 	"internal/api",
 }
 
 // predictionSuppressionResiduals are the sites that combine two signals ON
 // PURPOSE, each with the reason it is not the class above. It is a ratchet, not
-// an allowlist: a site may only leave this map, and a new entry needs the same
-// kind of reason written beside it.
+// an allowlist: a site may only leave this map, a new entry needs the same kind
+// of reason written beside it, and an entry forgives exactly ONE recombination
+// in the function it names — a second one there is a new gate, and the entry
+// must not cover the very site it was never written about.
 var predictionSuppressionResiduals = map[string]string{
 	"internal/services/dashboard_view_service.go:resolveDashboardTimingFrame": "" +
 		"the bridge line names no date, so it is not a claim any gate withholds: it asks whether the " +
@@ -77,15 +84,30 @@ var predictionSuppressionResiduals = map[string]string{
 		"floor IS the state it is shown in — a gate carrying that floor would gate the bridge on itself",
 }
 
+// predictionSuppressionFinding is one recombination: the site that owns it, the
+// line it sits on, and the signals it combines. The key is carried as a field
+// rather than parsed back out of the printed line — a key recovered from prose
+// breaks on the first site whose name holds a space, and the sanctioned-site
+// lookup would then miss silently.
+type predictionSuppressionFinding struct {
+	key     string
+	line    int
+	signals []string
+}
+
+func (finding predictionSuppressionFinding) String() string {
+	return fmt.Sprintf("  %s  line %d combines %s", finding.key, finding.line, strings.Join(finding.signals, " + "))
+}
+
 // TestNoSurfaceRecombinesTheSuppressionSignals fails when a file outside the
 // predicate file builds a suppression gate out of two or more signals.
 func TestNoSurfaceRecombinesTheSuppressionSignals(t *testing.T) {
 	root := predictionSuppressionRepoRoot(t)
 
-	var findings []string
+	var findings []predictionSuppressionFinding
 	scanned := 0
-	for _, pkg := range predictionSuppressionSweptPackages {
-		files, hits := predictionSuppressionScanPackage(t, root, pkg)
+	for _, tree := range predictionSuppressionSweptTrees {
+		files, hits := predictionSuppressionScanTree(t, root, tree)
 		scanned += files
 		findings = append(findings, hits...)
 	}
@@ -96,26 +118,27 @@ func TestNoSurfaceRecombinesTheSuppressionSignals(t *testing.T) {
 		t.Fatal("the sweep parsed no Go file — its verdict is about a tree nobody looked at")
 	}
 
+	perSite := make(map[string]int, len(findings))
+	for _, finding := range findings {
+		perSite[finding.key]++
+	}
+
 	var unexplained []string
 	for _, finding := range findings {
-		if _, sanctioned := predictionSuppressionResiduals[predictionSuppressionKey(finding)]; sanctioned {
+		if _, sanctioned := predictionSuppressionResiduals[finding.key]; sanctioned && perSite[finding.key] == 1 {
 			continue
 		}
-		unexplained = append(unexplained, finding)
+		unexplained = append(unexplained, finding.String())
 	}
 	if len(unexplained) > 0 {
 		sort.Strings(unexplained)
-		t.Fatalf("a suppression gate is being rebuilt from its disjuncts outside %s — call PredictionsSuppressed or FertilityProjectionSuppressed, or read the decision the cycle context already resolved (docs/SECURITY_INVARIANTS.md -> medical safety):\n%s\n(the sweep reads ONE boolean expression at a time: a recombination split across intermediate variables, or assembled in a template, is invisible to it)", predictionSuppressionPredicateFile, strings.Join(unexplained, "\n"))
+		t.Fatalf("a suppression gate is being rebuilt from its disjuncts outside %s — call PredictionsSuppressed or FertilityProjectionSuppressed, or read the decision the cycle context already resolved (docs/SECURITY_INVARIANTS.md -> medical safety):\n%s\n(a residual forgives ONE recombination in the function it names, so a second one there lands here beside it; and the sweep reads ONE boolean expression at a time, so a recombination split across intermediate variables, or assembled in a template, is invisible to it)", predictionSuppressionPredicateFile, strings.Join(unexplained, "\n"))
 	}
 
 	// A residual that no longer describes a site is a lie the next reader
 	// inherits, so the ratchet is checked in both directions.
-	present := make(map[string]bool, len(findings))
-	for _, finding := range findings {
-		present[predictionSuppressionKey(finding)] = true
-	}
 	for key := range predictionSuppressionResiduals {
-		if !present[key] {
+		if perSite[key] == 0 {
 			t.Fatalf("residual %q names a recombination that is no longer there — drop the entry rather than leaving the map describing a tree that has moved on", key)
 		}
 	}
@@ -145,6 +168,15 @@ func bridge(user U, stats S) bool {
 	return !DashboardPredictionDisabled(user) && DashboardAwaitingFirstCycle(stats)
 }
 `
+	const twiceInOneFunction = `package fixture
+
+func gate(ctx C, stats S) bool {
+	if ctx.PredictionDisabled || stats.PregnancyPaused {
+		return true
+	}
+	return ctx.AwaitingFirstCycle && !ctx.PredictionDisabled
+}
+`
 
 	if hits := predictionSuppressionScanSource(t, "fix/recombined.go", recombined); len(hits) != 1 {
 		t.Fatalf("two signals in one expression must be reported exactly once, got %d: %v", len(hits), hits)
@@ -157,56 +189,115 @@ func bridge(user U, stats S) bool {
 	if hits := predictionSuppressionScanSource(t, "fix/negated.go", negated); len(hits) != 1 {
 		t.Fatalf("a negated signal is still that signal — expected one finding, got %d: %v", len(hits), hits)
 	}
-}
-
-// predictionSuppressionKey reduces a finding line to its file:function key, the
-// shape the residual map is written in.
-func predictionSuppressionKey(finding string) string {
-	trimmed := strings.TrimSpace(finding)
-	if space := strings.Index(trimmed, " "); space > 0 {
-		return trimmed[:space]
+	// Two gates in one function share a key, which is what a residual is keyed
+	// by: they must arrive as two findings, or the count that keeps one entry
+	// from forgiving both has nothing to count.
+	hits := predictionSuppressionScanSource(t, "fix/twice.go", twiceInOneFunction)
+	if len(hits) != 2 {
+		t.Fatalf("two separate gates in one function must be reported twice, got %d: %v", len(hits), hits)
 	}
-	return trimmed
+	if hits[0].key != hits[1].key {
+		t.Fatalf("both gates sit in the same function, so they must share a key: %q vs %q", hits[0].key, hits[1].key)
+	}
 }
 
-// predictionSuppressionScanPackage reports how many non-test files it parsed
-// and one finding line per recombination in them.
-func predictionSuppressionScanPackage(t *testing.T, root string, pkg string) (int, []string) {
+// TestPredictionSuppressionBarrierReadsATreeToItsLeaves walks a synthesized tree
+// rather than the repository's, because what it pins is the sweep's REACH: the
+// first spelling read one directory deep, so a display file moved into a
+// subpackage would have gone unread while every anchor still reported a tree
+// that had been looked at.
+func TestPredictionSuppressionBarrierReadsATreeToItsLeaves(t *testing.T) {
+	const clean = `package top
+
+func gate(ctx C, count int) bool { return ctx.PredictionDisabled || count == 0 }
+`
+	const recombined = `package nested
+
+func gate(ctx C, stats S) bool { return ctx.PredictionDisabled || stats.PregnancyPaused }
+`
+	root := t.TempDir()
+	predictionSuppressionWriteFixture(t, root, "internal/services/top.go", clean)
+	predictionSuppressionWriteFixture(t, root, "internal/services/nested/deep.go", recombined)
+	// testdata holds inputs, not surfaces: a recombination written there is a
+	// fixture deciding nothing, and Go does not build it.
+	predictionSuppressionWriteFixture(t, root, "internal/services/testdata/sample.go", recombined)
+
+	parsed, findings := predictionSuppressionScanTree(t, root, "internal/services")
+	if parsed != 2 {
+		t.Fatalf("the two buildable files must both be parsed and testdata skipped, parsed %d", parsed)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("the subpackage recombination must be the one finding, got %d: %v", len(findings), findings)
+	}
+	if findings[0].key != "internal/services/nested/deep.go:gate" {
+		t.Fatalf("a finding is keyed by its path from the module root: %q", findings[0].key)
+	}
+}
+
+func predictionSuppressionWriteFixture(t *testing.T, root string, relative string, source string) {
 	t.Helper()
 
-	dir := filepath.Join(root, filepath.FromSlash(pkg))
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("read %s: %v", pkg, err)
+	path := filepath.Join(root, filepath.FromSlash(relative))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create %s: %v", filepath.Dir(relative), err)
 	}
+	if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+		t.Fatalf("write %s: %v", relative, err)
+	}
+}
+
+// predictionSuppressionScanTree reports how many non-test files it parsed under
+// one tree and one finding per recombination in them.
+func predictionSuppressionScanTree(t *testing.T, root string, tree string) (int, []predictionSuppressionFinding) {
+	t.Helper()
 
 	parsed := 0
-	var findings []string
-	for _, entry := range entries {
-		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		if name == predictionSuppressionPredicateFile {
-			continue
-		}
-		source, err := os.ReadFile(filepath.Join(dir, name))
+	var findings []predictionSuppressionFinding
+	walkErr := filepath.WalkDir(filepath.Join(root, filepath.FromSlash(tree)), func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
-			t.Fatalf("read %s/%s: %v", pkg, name, err)
+			return err
+		}
+		if entry.IsDir() {
+			// testdata holds inputs, not surfaces, and Go itself does not build
+			// it — a fixture there deciding nothing must not read as a defect.
+			if entry.Name() == "testdata" {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			return nil
+		}
+		relative, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			return relErr
+		}
+		display := filepath.ToSlash(relative)
+		if display == predictionSuppressionPredicateFile {
+			return nil
+		}
+		source, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
 		}
 		parsed++
-		findings = append(findings, predictionSuppressionScanSource(t, pkg+"/"+name, string(source))...)
+		findings = append(findings, predictionSuppressionScanSource(t, display, string(source))...)
+		return nil
+	})
+	if walkErr != nil {
+		t.Fatalf("walk %s: %v", tree, walkErr)
 	}
 	if parsed == 0 {
-		t.Fatalf("%s yielded no non-test Go file — the sweep read nothing and its verdict about this package is vacuous", pkg)
+		t.Fatalf("%s yielded no non-test Go file — the sweep read nothing and its verdict about this tree is vacuous", tree)
 	}
 	return parsed, findings
 }
 
-// predictionSuppressionScanSource reports one line per boolean expression in
+// predictionSuppressionScanSource reports one finding per boolean expression in
 // the file naming two or more distinct suppression signals, keyed by the
 // enclosing function so a residual survives the line moving.
-func predictionSuppressionScanSource(t *testing.T, display string, source string) []string {
+func predictionSuppressionScanSource(t *testing.T, display string, source string) []predictionSuppressionFinding {
 	t.Helper()
 
 	fileSet := token.NewFileSet()
@@ -215,7 +306,7 @@ func predictionSuppressionScanSource(t *testing.T, display string, source string
 		t.Fatalf("parse %s: %v", display, err)
 	}
 
-	var findings []string
+	var findings []predictionSuppressionFinding
 	nested := make(map[ast.Node]bool)
 	ast.Inspect(file, func(node ast.Node) bool {
 		binary, isBinary := node.(*ast.BinaryExpr)
@@ -228,7 +319,7 @@ func predictionSuppressionScanSource(t *testing.T, display string, source string
 		// The whole boolean tree is one gate, so the OUTERMOST expression is the
 		// finding and its operands are marked off: reporting an inner `a || b`
 		// beside the `(a || b) && c` that contains it would name one defect
-		// twice and leave the residual map ambiguous about which it forgives.
+		// twice, and the per-site count below would read one gate as two.
 		ast.Inspect(binary, func(inner ast.Node) bool {
 			if inner != node {
 				nested[inner] = true
@@ -240,13 +331,11 @@ func predictionSuppressionScanSource(t *testing.T, display string, source string
 			return true
 		}
 		sort.Strings(signals)
-		findings = append(findings, fmt.Sprintf(
-			"  %s:%s  line %d combines %s",
-			display,
-			predictionSuppressionEnclosing(file, binary.Pos()),
-			fileSet.Position(binary.Pos()).Line,
-			strings.Join(signals, " + "),
-		))
+		findings = append(findings, predictionSuppressionFinding{
+			key:     display + ":" + predictionSuppressionEnclosing(file, binary.Pos()),
+			line:    fileSet.Position(binary.Pos()).Line,
+			signals: signals,
+		})
 		return true
 	})
 	return findings
@@ -280,9 +369,11 @@ func predictionSuppressionSignalsIn(expr ast.Expr) []string {
 }
 
 // predictionSuppressionEnclosing names the function a position sits in, or the
-// file scope when it sits outside every function body.
+// file scope when it sits outside every function body. The placeholder carries
+// no space: a key is compared whole, and one that reads as two words invites a
+// residual written the natural way and matched by nothing.
 func predictionSuppressionEnclosing(file *ast.File, pos token.Pos) string {
-	name := "(file scope)"
+	name := "file-scope"
 	for _, decl := range file.Decls {
 		function, isFunction := decl.(*ast.FuncDecl)
 		if !isFunction || pos < function.Pos() || pos > function.End() {

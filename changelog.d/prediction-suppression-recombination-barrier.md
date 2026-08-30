@@ -13,7 +13,15 @@ settings flag — is a surface asking its own question and stays legal, and
 flagging those would red every honest call site. One site is carried as a
 sanctioned residual with its reason: the dashboard's first-cycle bridge line
 names no date, so no gate withholds it, and it cannot read the fertility gate
-because the first-cycle floor is the state it is shown in.
+because the first-cycle floor is the state it is shown in. A residual forgives
+exactly one recombination in the function it names — a second gate written there
+is reported beside it, since an entry must not cover the site it was never
+written about.
+
+Both swept layers are walked to their leaves rather than one directory deep: a
+sweep that stops at the top level answers about today's file layout instead of
+about the class, and would go quietly green the day these files are split into
+packages.
 
 Two limits are stated in the barrier and repeated in its failure text. A
 recombination assembled through intermediate variables reads as one signal per
