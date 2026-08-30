@@ -2,8 +2,8 @@
 
 - **`ghcr.io/ovumcy/ovumcy-web:latest` follows `main` again.** The CI job that publishes it was
   skipped on every push to `main` while the run itself reported green, so `latest`, `main` and the
-  newest `sha-…` tag all still pointed at one image 242 commits old, and no `sha-<commit>` tag had
-  been created for any commit since. The job's condition named only the event and the branch, and
+  `sha-…` tag they share all still pointed at one image 242 commits behind the head of `main`, and
+  the head carried no tag of its own. The job's condition named only the event and the branch, and
   a condition holding no status-check function is given an implicit `success()` — which is false
   once an ancestor job was skipped. On a push to `main` every lane below the five gates the
   publish depends on is deliberately skipped, because the merge queue has already run them on that
