@@ -15,7 +15,11 @@
   unchanged and still differs per pass: the feed-rotation check and the email repair stop the boot,
   because a feed left armed or an account left unable to sign in is worse than an instance that
   refuses to start, while the luteal-phase recompute logs the failure, leaves its marker unwritten
-  and lets the server start, since it maintains a cache with a safe fallback.
+  and lets the server start, since it maintains a cache with a safe fallback. The budget is per
+  pass and the passes run in sequence, so the worst case for a start as a whole is fifteen minutes
+  rather than five — size a container healthcheck start period against that. The operator runbook
+  gains a troubleshooting entry naming the message, what to look at, and the fact that a start
+  cut short this way loses nothing: every pass is safe to interrupt and safe to repeat.
 
 ### Internal
 
