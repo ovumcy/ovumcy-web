@@ -1715,19 +1715,33 @@ jobs:
     # the same way, since the Docker Image workflow no longer accepts one.
     #
     # THE `if` MUST CARRY A STATUS FUNCTION, AND THE FIVE RESULTS BY NAME.
-    # An `if` holding no status-check function is given an implicit `success()`,
-    # and a skip propagates transitively: a gate that rescues ITSELF with
-    # `!cancelled()` does not rescue what depends on it. Every one of the five
-    # jobs above is such a gate, and all five report `success` on `push` — but
-    # their own dependencies (`test-go-shard`, `test-go-rest`,
-    # `test-go-analysis`, `coverage-merge`, `test-frontend`, both race lanes)
-    # are `skipped` there, because `changes` clears `run_core` on `push` by
-    # design. So the implicit `success()` was false on every push to `main` and
-    # this job was skipped while the run stayed green — measured across runs
-    # 33217555948, 33213567903, 33188023148, 32905532451, 32882518209 and
-    # 32853636750: `skipped` in all six, `started_at == completed_at`. At
+    #
+    # What was MEASURED, which is the outcome and not the mechanism: with an
+    # `if` naming only the event and the ref, this job was `skipped` on every
+    # push to `main` while the run stayed green. Runs 33217555948, 33213567903,
+    # 33188023148, 32905532451, 32882518209 and 32853636750 — `skipped` in all
+    # six, `started_at == completed_at`, and in each of them all five jobs in
+    # `needs:` reported `success`. What those five have in common is that their
+    # OWN dependencies (`test-go-shard`, `test-go-rest`, `test-go-analysis`,
+    # `coverage-merge`, `test-frontend`, both race lanes) are `skipped` on
+    # `push`, because `changes` clears `run_core` there by design. At
     # `4b3c01d7`, `latest`, `main` and `sha-3891c0f` all pointed at one index
     # 242 commits behind `main`, and `sha-4b3c01d` did not exist at all.
+    #
+    # Two mechanisms explain that equally well, and nothing here has separated
+    # them. Either the implicit `success()` an `if` without a status-check
+    # function receives is evaluated over the whole ancestor graph rather than
+    # over the direct `needs:`; or a skip propagates transitively, so a gate
+    # that rescues ITSELF with `!cancelled()` does not rescue what depends on
+    # it. DO NOT BUILD A SECOND GATE ON EITHER READING WITHOUT PROBING IT: the
+    # two answer differently for a job whose ancestors are skipped while its
+    # own `if` does name a status function — which is exactly the shape the
+    # five gates above have.
+    #
+    # The condition below is correct under both, which is why it did not wait
+    # for that probe: `!cancelled()` suppresses the implicit predicate whatever
+    # it ranges over, and the five results are then judged here rather than
+    # inferred from anything.
     #
     # `!cancelled()` is what suppresses the implicit `success()`; on its own it
     # would publish off a FAILED gate, so the five results are then required by

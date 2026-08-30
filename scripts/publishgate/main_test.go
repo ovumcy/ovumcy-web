@@ -3,17 +3,22 @@
 //
 // `publish-image` in .github/workflows/ci.yml is the only path by which
 // `ghcr.io/<repo>:latest` follows `main`. It lists five jobs in `needs:` and
-// carried an `if` naming only the event and the ref. With no status-check
-// function in it, GitHub supplies the implicit `success()` — and a skip
-// propagates transitively, while a gate that rescues ITSELF with `!cancelled()`
-// does not rescue what depends on it. All five gates report `success` on
-// `push`, but every lane beneath them is skipped there (`changes` clears
-// `run_core` on `push` by design), so the implicit predicate was false and the
-// publish job was skipped inside a run that reported green. Six consecutive
-// runs — 33217555948, 33213567903, 33188023148, 32905532451, 32882518209,
-// 32853636750 — show it `skipped` with `started_at == completed_at`, and at
-// `4b3c01d7` the registry's `latest`, `main` and `sha-3891c0f` all pointed at
-// one index 242 commits behind `main`.
+// carried an `if` naming only the event and the ref, with no status-check
+// function in it. Six consecutive runs — 33217555948, 33213567903,
+// 33188023148, 32905532451, 32882518209, 32853636750 — show it `skipped` with
+// `started_at == completed_at` while all five of those jobs reported
+// `success`, every lane beneath them skipped because `changes` clears
+// `run_core` on `push` by design; and at `4b3c01d7` the registry's `latest`,
+// `main` and `sha-3891c0f` all pointed at one index 242 commits behind `main`.
+//
+// That is the outcome and not the mechanism, and the mechanism is not settled
+// here: an implicit `success()` ranging over the whole ancestor graph, and a
+// skip propagating transitively past a gate that rescued only itself with
+// `!cancelled()`, predict those six runs identically. ci.yml says the same
+// where the gate lives, and says what a reader must probe before building a
+// second gate on either reading. What the rules below need is narrower than
+// that question and true under both answers: the condition must stop resting
+// on an implicit predicate at all.
 //
 // Nothing in a green CI run says so. A skipped job is a satisfied check, and a
 // tag that never appeared in a registry is not a signal any workflow reads, so
