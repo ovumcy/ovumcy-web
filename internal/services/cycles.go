@@ -144,7 +144,13 @@ func CalcOvulationDay(cycleLen, lutealPhase int) (int, bool) {
 // designed signal rather than a failure of this inverse. InferUserLutealPhase
 // filters its samples to the plausible window before any of them reaches a
 // prediction.
-// Regression: TestLutealPhaseRoundTrip_ReferenceVectors.
+//
+// Regression: TestInferredLutealPhaseRoundTripsThroughPrediction and
+// TestInferredLutealPhaseReachesTheOwnerSurfacesThroughTheBaseline. NOT
+// TestLutealPhaseRoundTrip_ReferenceVectors — that one mirrors the doc's Step 2a
+// table over this function and CalcOvulationDay, both of which stay correct when
+// the defect returns: it lived in how InferUserLutealPhase derives the argument,
+// so restoring the span reading leaves those vectors green.
 func calcLutealPhase(cycleLen, ovulationDay int) int {
 	return cycleLen - ovulationDay
 }
