@@ -1717,16 +1717,18 @@ jobs:
     # THE `if` MUST CARRY A STATUS FUNCTION, AND THE FIVE RESULTS BY NAME.
     #
     # What was MEASURED, which is the outcome and not the mechanism: with an
-    # `if` naming only the event and the ref, this job was `skipped` on every
-    # push to `main` while the run stayed green. Runs 33217555948, 33213567903,
-    # 33188023148, 32905532451, 32882518209 and 32853636750 — `skipped` in all
-    # six, `started_at == completed_at`, and in each of them all five jobs in
-    # `needs:` reported `success`. What those five have in common is that their
-    # OWN dependencies (`test-go-shard`, `test-go-rest`, `test-go-analysis`,
-    # `coverage-merge`, `test-frontend`, both race lanes) are `skipped` on
-    # `push`, because `changes` clears `run_core` there by design. At
-    # `4b3c01d7`, `latest`, `main` and `sha-3891c0f` all pointed at one index
-    # 242 commits behind `main`, and `sha-4b3c01d` did not exist at all.
+    # `if` naming only the event and the ref, this job was `skipped` while the
+    # run stayed green in every push run examined — 33217555948, 33213567903,
+    # 33188023148, 32905532451, 32882518209 and 32853636750, `skipped` in all
+    # six with `started_at == completed_at`, and in each of them all five jobs
+    # in `needs:` reported `success`. What those five have in common is that
+    # their OWN dependencies (`test-go-shard`, `test-go-rest`,
+    # `test-go-analysis`, `coverage-merge`, `test-frontend`, both race lanes)
+    # are `skipped` on `push`, because `changes` clears `run_core` there
+    # unconditionally — which is also why this holds for every push and not
+    # only for those six: nothing about a particular commit takes part in it.
+    # At `4b3c01d7`, `latest`, `main` and `sha-3891c0f` all pointed at one
+    # index 242 commits behind `main`, and `sha-4b3c01d` did not exist at all.
     #
     # Two mechanisms explain that equally well, and nothing here has separated
     # them. Either the implicit `success()` an `if` without a status-check
