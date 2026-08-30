@@ -87,8 +87,10 @@ about the *observation* path, so it is pinned where that path runs, by
 `TestInferredLutealPhaseRoundTripsThroughPrediction` and
 `TestInferredLutealPhaseReachesTheOwnerSurfacesThroughTheBaseline`: those read an
 ovulation out of logged temperature or mucus entries and follow it all the way to
-a rendered date. A test of the two formulas alone cannot see the drift, because
-each formula stayed correct while they disagreed about the other.
+a rendered date. A test of the two formulas alone could never have caught the
+drift, and not by oversight: they are exact inverses by construction, so the pair
+always agrees. What drifted was a third thing — the step that read an ovulation
+out of the logs and worked out which argument to hand them.
 
 | cycleLength | observed ovulation | → lutealPhase | → predicted ovulation |
 |-------------|--------------------|---------------|-----------------------|
