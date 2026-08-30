@@ -437,5 +437,5 @@ func (service *ImportService) refreshDerivedCycleSettings(ctx context.Context, u
 	if err != nil {
 		return
 	}
-	_ = service.users.UpdateByID(ctx, userID, map[string]any{"luteal_phase": DeriveUserLutealPhase(logs, location)})
+	_ = service.users.UpdateByID(ctx, userID, map[string]any{"luteal_phase": deriveUserLutealPhase(logs, location)})
 }

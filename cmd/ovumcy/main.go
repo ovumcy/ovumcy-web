@@ -250,7 +250,7 @@ func lutealPhaseRecomputeStartupMessage(outcome services.LutealPhaseRecomputeOut
 	if outcome.Failed == 0 {
 		return fmt.Sprintf("luteal-phase recompute: %d stored estimate(s) corrected", outcome.Corrected)
 	}
-	return fmt.Sprintf("luteal-phase recompute: %d stored estimate(s) corrected, %d account(s) could not be read or written — retried on the next start", outcome.Corrected, outcome.Failed)
+	return fmt.Sprintf("luteal-phase recompute: %d stored estimate(s) corrected, %d account(s) could not be read or written — retried on the next start, and a count that repeats across starts is a durable fault to investigate", outcome.Corrected, outcome.Failed)
 }
 
 func mustNewI18nManager(defaultLanguage string) *i18n.Manager {

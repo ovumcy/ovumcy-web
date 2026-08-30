@@ -12,8 +12,10 @@
   three recorded cycle starts, or fewer than two cycles with a usable ovulation signal — refreshes
   nothing and would have kept predicting a day early indefinitely.
 
-  The first start after the upgrade now recomputes the stored estimate for every owner from their
-  own logs, before the server accepts a request, and records a marker so it never runs again.
+  The first start after the upgrade now recomputes the stored estimate from each owner's own logs,
+  before the server accepts a request. It records a marker once it has been through every account
+  without a failure, so it runs once; an account it could not read or write is skipped, counted in
+  the startup line, and picked up by the next start rather than left behind.
   Nothing an owner typed is touched: the value has no settings field and no onboarding step behind
   it — it is derived from the day logs alone, and this recomputes it from the same logs the
   dashboard reads. An account with no usable signal lands on the 14-day default the product ships
@@ -37,6 +39,6 @@
   restore and the new boot recompute each decided for themselves what the cached estimate should be
   — run the inference, fall back to the default — and a disagreement between the stored values and
   the inference that produced them is exactly the defect the recompute exists to repair. All three
-  now call `DeriveUserLutealPhase`, so no two of them can drift apart again. The boot pass resolves
+  now call one unexported helper, so no two of them can drift apart again. The boot pass resolves
   each owner's calendar day through the same `resolveOwnerLocation` the webhook pass and the
   calendar feed use, rather than adding a second owner-timezone resolver.

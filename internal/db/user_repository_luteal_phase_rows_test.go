@@ -60,3 +60,26 @@ func TestListOwnerLutealPhaseRowsProjectsWhatTheRecomputeDecidesOn(t *testing.T)
 		}
 	}
 }
+
+// TestListOwnerLutealPhaseRowsSurfacesAStorageFailure holds the query's error
+// path open. The recompute treats an unreadable listing as a reason to abort
+// without writing its done-marker, so the next boot retries the whole pass; a
+// method that swallowed the error and returned an empty slice would instead read
+// as "no owners to repair" and let the marker land on an instance where nothing
+// was walked — the repair lost silently and for good.
+func TestListOwnerLutealPhaseRowsSurfacesAStorageFailure(t *testing.T) {
+	database := openSQLiteForMigrationBootstrapTest(t, filepath.Join(t.TempDir(), "luteal-rows-error.db"))
+	repository := NewUserRepository(database)
+
+	if err := database.Exec("DROP TABLE users").Error; err != nil {
+		t.Fatalf("drop users: %v", err)
+	}
+
+	rows, err := repository.ListOwnerLutealPhaseRows(context.Background())
+	if err == nil {
+		t.Fatalf("a query against a missing table must return an error, got rows=%+v", rows)
+	}
+	if rows != nil {
+		t.Fatalf("a failed listing must return no rows, got %+v", rows)
+	}
+}
