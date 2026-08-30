@@ -45,9 +45,29 @@ const (
 // as the coverline window, then three consecutive elevated days start the day
 // AFTER ovulation, because the thermal shift follows ovulation. That needs
 // ovulationCycleDay >= 6 and ovulationCycleDay+3 <= cycleLength. The egg-white
-// layout is the peak-day rule read backwards: ovulation is peak + 1, so the
-// peak sits on the day before.
-func lutealRoundTripLogs(origin time.Time, cycleLength int, ovulationCycleDays []int, kind lutealSignalKind) []models.DailyLog {
+// layout is the peak-day rule read backwards: ovulation is peak + 1, so the peak
+// sits on the day before, which needs ovulationCycleDay >= 2.
+//
+// Those bounds are checked rather than merely documented. A case built outside
+// them yields no detectable shift, and InferUserLutealPhase then declines to
+// refine — a failure that reads as a defect in the production inference instead
+// of as a fixture built outside its own range.
+func lutealRoundTripLogs(t *testing.T, origin time.Time, cycleLength int, ovulationCycleDays []int, kind lutealSignalKind) []models.DailyLog {
+	t.Helper()
+
+	for _, ovulationCycleDay := range ovulationCycleDays {
+		switch {
+		case kind == lutealSignalEggWhite && ovulationCycleDay < 2:
+			t.Fatalf("fixture: egg-white ovulation on cycle day %d leaves no room for the peak day before it", ovulationCycleDay)
+		case kind == lutealSignalBBT && ovulationCycleDay < bbtCoverlineWindow:
+			t.Fatalf("fixture: BBT ovulation on cycle day %d starts the elevated run before the %d-day coverline window is full", ovulationCycleDay, bbtCoverlineWindow)
+		case kind == lutealSignalBBT && ovulationCycleDay+bbtElevatedStreakDays > cycleLength:
+			t.Fatalf("fixture: BBT ovulation on cycle day %d leaves fewer than %d days for the elevated run inside a %d-day cycle", ovulationCycleDay, bbtElevatedStreakDays, cycleLength)
+		case ovulationCycleDay > cycleLength:
+			t.Fatalf("fixture: ovulation on cycle day %d falls outside a %d-day cycle", ovulationCycleDay, cycleLength)
+		}
+	}
+
 	logs := make([]models.DailyLog, 0, (len(ovulationCycleDays)+1)*11)
 	for cycle := range len(ovulationCycleDays) + 1 {
 		start := origin.AddDate(0, 0, cycle*cycleLength)
@@ -151,7 +171,7 @@ func TestInferredLutealPhaseRoundTripsThroughPrediction(t *testing.T) {
 
 			// Two signalled cycles plus the in-progress third, which is the one a
 			// prediction is actually made for.
-			logs := lutealRoundTripLogs(origin, testCase.cycleLength, []int{testCase.ovulationCycleDay, testCase.ovulationCycleDay}, testCase.kind)
+			logs := lutealRoundTripLogs(t, origin, testCase.cycleLength, []int{testCase.ovulationCycleDay, testCase.ovulationCycleDay}, testCase.kind)
 			nextCycleStart := origin.AddDate(0, 0, 2*testCase.cycleLength)
 			assertLutealRoundTrip(t, logs, time.UTC, testCase.cycleLength, testCase.ovulationCycleDay, nextCycleStart)
 		})
@@ -170,7 +190,7 @@ func TestInferredLutealPhaseRoundTripsAcrossSeveralSamples(t *testing.T) {
 
 	const cycleLength = 28
 	origin := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
-	logs := lutealRoundTripLogs(origin, cycleLength, []int{14, 15, 16}, lutealSignalBBT)
+	logs := lutealRoundTripLogs(t, origin, cycleLength, []int{14, 15, 16}, lutealSignalBBT)
 
 	luteal := assertLutealRoundTrip(t, logs, time.UTC, cycleLength, 15, origin.AddDate(0, 0, 3*cycleLength))
 	if luteal != 13 {
@@ -221,7 +241,7 @@ func TestInferredLutealPhaseRoundTripsAcrossDSTAndTimezones(t *testing.T) {
 				t.Skipf("tz database unavailable for %q: %v", testCase.zone, err)
 			}
 
-			logs := lutealRoundTripLogs(testCase.origin, cycleLength, []int{testCase.observed, testCase.observed}, testCase.kind)
+			logs := lutealRoundTripLogs(t, testCase.origin, cycleLength, []int{testCase.observed, testCase.observed}, testCase.kind)
 			nextCycleStart := CalendarDay(testCase.origin.AddDate(0, 0, 2*cycleLength), location)
 			zoned := assertLutealRoundTrip(t, logs, location, cycleLength, testCase.observed, nextCycleStart)
 
@@ -251,7 +271,7 @@ func TestInferredLutealPhaseReachesTheOwnerSurfacesThroughTheBaseline(t *testing
 
 	const cycleLength = 28
 	origin := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
-	logs := lutealRoundTripLogs(origin, cycleLength, []int{15, 15}, lutealSignalBBT)
+	logs := lutealRoundTripLogs(t, origin, cycleLength, []int{15, 15}, lutealSignalBBT)
 
 	// Cycle starts Jan 1, Jan 29 and Feb 26; today sits inside the third.
 	now := time.Date(2026, time.March, 3, 9, 0, 0, 0, time.UTC)
@@ -283,5 +303,16 @@ func TestInferredLutealPhaseReachesTheOwnerSurfacesThroughTheBaseline(t *testing
 	wantFertilityStart := wantOvulation.AddDate(0, 0, -5)
 	if !stats.FertilityWindowStart.Equal(wantFertilityStart) {
 		t.Errorf("stats.FertilityWindowStart = %s, want %s", stats.FertilityWindowStart.Format("2006-01-02"), wantFertilityStart.Format("2006-01-02"))
+	}
+
+	// Only the fertility half of the projection moves. The next-period date is
+	// the cycle start plus the predicted length and never touches the luteal
+	// phase — it is also the one estimate anchored on a day the owner actually
+	// recorded, and the one that survives every suppression gate, so a change
+	// that reached it would be a scope violation rather than a fix.
+	wantNextPeriod := time.Date(2026, time.March, 26, 0, 0, 0, 0, time.UTC)
+	if !stats.NextPeriodStart.Equal(wantNextPeriod) {
+		t.Errorf("stats.NextPeriodStart = %s, want %s: the luteal phase must not reach the next-period estimate",
+			stats.NextPeriodStart.Format("2006-01-02"), wantNextPeriod.Format("2006-01-02"))
 	}
 }
