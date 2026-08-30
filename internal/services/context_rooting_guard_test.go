@@ -9,24 +9,6 @@ import (
 	"testing"
 )
 
-// TestServicesNeverReRootAContext refuses context.Background and context.TODO
-// anywhere in this package's production files.
-//
-// It is the middle link of the chain the boot-pass storage budget rides on.
-// cmd/ovumcy bounds each boot pass with a deadline and a guard there proves the
-// pass RECEIVES it; internal/db proves a cancelled context aborts the query. A
-// service in between that re-rooted to context.Background would break the chain
-// without breaking either of those tests: the deadline would never reach
-// storage, a stuck database would hang the boot exactly as it did before the
-// budget existed, and every test would stay green.
-//
-// The rule is not new, only unenforced here. persistence.md already requires a
-// ctx parameter over context.Background for repositories, and this package held
-// to it on its own — the sweep found zero occurrences when it was written, which
-// is why it can be an outright refusal rather than an allowlist. A service that
-// genuinely needs a detached context (a goroutine outliving its request) has to
-// say so here, and that is the point: it becomes a decision someone makes on
-// purpose rather than a line that slips in.
 // detachesFromTheCaller names the context constructors that leave a call
 // unreachable by the caller's deadline. Background and TODO are the obvious
 // pair. WithoutCancel is the one worth spelling out: it keeps the values and
@@ -39,6 +21,27 @@ var detachesFromTheCaller = map[string]bool{
 	"WithoutCancel": true,
 }
 
+// TestServicesNeverReRootAContext refuses every constructor in
+// detachesFromTheCaller anywhere in this package's production files, and
+// refuses an aliased or dot import of context on top — without which the
+// spelling the call check matches on would be an assumption rather than a
+// property.
+//
+// It is the middle link of the chain the boot-pass storage budget rides on.
+// cmd/ovumcy bounds each boot pass with a deadline and a guard there proves the
+// pass RECEIVES it; internal/db proves a cancelled context aborts the query. A
+// service in between that re-rooted its context would break the chain without
+// breaking either of those tests: the deadline would never reach storage, a
+// stuck database would hang the boot exactly as it did before the budget
+// existed, and every test would stay green.
+//
+// The rule is not new, only unenforced here. persistence.md already requires a
+// ctx parameter over context.Background for repositories, and this package held
+// to it on its own — the sweep found zero occurrences when it was written, which
+// is why it can be an outright refusal rather than an allowlist. A service that
+// genuinely needs a detached context (a goroutine outliving its request) has to
+// say so here, and that is the point: it becomes a decision someone makes on
+// purpose rather than a line that slips in.
 func TestServicesNeverReRootAContext(t *testing.T) {
 	paths, err := filepath.Glob("*.go")
 	if err != nil {
