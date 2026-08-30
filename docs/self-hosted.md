@@ -592,7 +592,7 @@ Two cases are left untouched, counted in the same log line, and cannot sign in u
 
 ### The server exits during startup instead of coming up
 
-Three passes run on every start, after the migrations and before the server begins serving: the calendar-feed key-rotation check, the auth-email repair described above, and the luteal-phase recompute. Each is allowed **five minutes** to get an answer from the database, so a database that accepts the connection and then stops responding ends the start with an error naming the pass instead of leaving the process alive, silent and not listening — which is what it used to do, and which a container healthcheck can only ever report as "starting".
+Three passes run on every start, after the migrations and before the server begins serving: the calendar-feed key-rotation check, the auth-email repair described above, and the luteal-phase recompute. Each pass is allowed **five minutes** end to end — not per query, so a pass making many individually fast queries can still reach it — after which a database that accepts the connection and then stops responding ends the start with an error naming the pass, instead of leaving the process alive, silent and not listening — which is what it used to do, and which a container healthcheck can only ever report as "starting".
 
 The log line names the pass and carries the storage error underneath it — typically `context deadline exceeded`, though the exact wording comes from the database driver and a Postgres server cancelling an in-flight statement may word it differently.
 

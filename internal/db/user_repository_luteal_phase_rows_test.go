@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -81,5 +82,36 @@ func TestListOwnerLutealPhaseRowsSurfacesAStorageFailure(t *testing.T) {
 	}
 	if rows != nil {
 		t.Fatalf("a failed listing must return no rows, got %+v", rows)
+	}
+}
+
+// TestListOwnerLutealPhaseRowsHonoursItsContext is what makes the boot pass's
+// storage budget more than decoration.
+//
+// cmd/ovumcy bounds every boot pass with a deadline, and a guard there proves
+// each pass RECEIVES a bounded context. Nothing there can prove the work stops
+// when it fires — that rests on this layer threading ctx into GORM through
+// WithContext, which is a property of the query and belongs here. A method
+// added later that builds its own query without it would leave the budget inert
+// while every check in cmd/ovumcy stayed green.
+func TestListOwnerLutealPhaseRowsHonoursItsContext(t *testing.T) {
+	database := openSQLiteForMigrationBootstrapTest(t, filepath.Join(t.TempDir(), "luteal-rows-ctx.db"))
+	repository := NewUserRepository(database)
+
+	if err := repository.Create(context.Background(), &models.User{
+		Email: "ctx@example.com", PasswordHash: "hash", Role: models.RoleOwner, LutealPhase: 15,
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	rows, err := repository.ListOwnerLutealPhaseRows(cancelled)
+	if err == nil {
+		t.Fatalf("a cancelled context must abort the listing, got %d row(s)", len(rows))
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want it to carry context.Canceled so a boot deadline actually cuts the pass short", err)
 	}
 }
