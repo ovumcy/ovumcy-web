@@ -126,6 +126,10 @@ Auxiliary short-lived tables (`register_pickup_tokens` ≤ 5 min, `oidc_logout_s
 
 Restoring the data volume from a backup returns the database to its state at backup time, including `calendar_feed_selector` and the verifier columns. If an owner revoked or rotated their calendar-feed subscription after that backup was taken, restoring from it resurrects the old subscribe URL — a direct consequence of restoring the feed columns, not a theoretical edge. After any restore, re-check `Settings → Calendar feed` for every owner and revoke or regenerate the feed again if it should no longer be armed.
 
+## Backup Restore and Erasure
+
+Restoring the data volume from a backup returns the database to its state at backup time — including any rows a `clear-data` or account-deletion request removed *after* that backup was taken. Neither operation leaves a tombstone or a log entry inside the database itself; it deletes the rows and nothing else, so a restore has no way to tell that an erasure ran and cannot re-apply it. An operator who restores from a pre-erasure backup to recover from an unrelated incident will silently undo a data subject's erasure request along with it, without either party being aware. Keep erasure requests recorded outside the database (a ticket system, an operator log with its own retention) and re-apply any request timestamped after the backup once a restore completes. See [self-hosted.md → Post-Restore Verification](self-hosted.md#post-restore-verification) for the full restore checklist, including the analogous calendar-feed case below.
+
 ## Cookie Consent (ePrivacy)
 
 Ovumcy uses only first-party functional cookies (auth, CSRF, language, timezone, flash, OIDC state, recovery, reset). All are strictly necessary for the requested service and therefore do not require an ePrivacy consent banner. The full inventory is in [`Cookies`](security/cryptography.md#cookies). The language cookie is also mirrored on the account (`users.interface_language`) so a signed-in owner keeps their language on a new device; it is a display preference, stored under the same lawful basis as the rest of the account settings.
