@@ -148,6 +148,37 @@ func mustOpenDatabase(databaseConfig db.Config) *gorm.DB {
 	return database
 }
 
+// bootPassStorageBudget bounds how long any one boot repair or sentinel pass may
+// wait on storage before the boot stops waiting for it.
+//
+// The passes run after migrations and before any listener exists, each on its
+// own context. Without a deadline a database that accepts the call and then
+// never answers — a SQLite file locked by another process, a Postgres endpoint
+// that connects and stalls — leaves the process alive and silent forever: no
+// listener, no refusal, and a container healthcheck that can only keep
+// reporting "starting". That is strictly worse than failing, because an
+// operator can read a refusal and cannot read a hang.
+//
+// The value is deliberately far above any plausible pass, because the failure
+// this introduces is the opposite one: a budget set near the real cost turns a
+// slow start into a broken start. The heaviest of the three reads every owner's
+// day logs once, and on the SQLite baseline that is a handful of accounts over a
+// few thousand rows with the write lock uncontended, since nothing is serving
+// yet. Five minutes is around two orders of magnitude of headroom, so reaching
+// it means storage is stuck rather than slow — which is the case each pass's own
+// failure policy should then decide, and they decide it differently: the two
+// must* wrappers stop the boot, the luteal recompute logs and lets the server
+// start.
+const bootPassStorageBudget = 5 * time.Minute
+
+// bootPassContext returns the bounded context a boot pass runs under, together
+// with the cancel its caller must defer. It exists so the three passes cannot
+// drift apart on the budget or on whether they have one at all — three inline
+// copies of the same WithTimeout is the shape that drifts.
+func bootPassContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), bootPassStorageBudget)
+}
+
 // mustEnforceCalendarFeedKeyRotation runs the boot-time calendar-feed
 // key-rotation sentinel: when SECRET_KEY (or the feed-MAC label set) changed
 // since the previous boot, it disarms the legacy pre-032 feed rows whose
@@ -156,8 +187,10 @@ func mustOpenDatabase(databaseConfig db.Config) *gorm.DB {
 // services.CalendarFeedRotationSentinel; this wrapper only wires repositories,
 // fails the boot hard on an error, and prints the operator-facing line.
 func mustEnforceCalendarFeedKeyRotation(repositories *db.Repositories, secretKey []byte) {
+	ctx, cancel := bootPassContext()
+	defer cancel()
 	sentinel := services.NewCalendarFeedRotationSentinel(repositories.AppState, repositories.Users, secretKey)
-	outcome, err := sentinel.Enforce(context.Background())
+	outcome, err := sentinel.Enforce(ctx)
 	if err != nil {
 		log.Fatalf("calendar-feed key-rotation check failed: %v", err) // codecov:ignore -- reachable only when the DB fails between migration and this first read
 	}
@@ -173,8 +206,10 @@ func mustEnforceCalendarFeedKeyRotation(repositories *db.Repositories, secretKey
 // services.AuthEmailRenormalizer; this wrapper wires repositories, fails the
 // boot hard on a storage error, and prints the operator-facing line.
 func mustRenormalizeAuthEmails(repositories *db.Repositories) {
+	ctx, cancel := bootPassContext()
+	defer cancel()
 	renormalizer := services.NewAuthEmailRenormalizer(repositories.AppState, repositories.Users)
-	outcome, err := renormalizer.Run(context.Background())
+	outcome, err := renormalizer.Run(ctx)
 	if err != nil {
 		log.Fatalf("auth email renormalization failed: %v", err) // codecov:ignore -- reachable only when the DB fails between migration and this first read
 	}
@@ -195,8 +230,10 @@ func mustRenormalizeAuthEmails(repositories *db.Repositories) {
 // instance that will not start. It is logged, the marker stays unwritten, and the
 // next boot retries.
 func recomputeDerivedLutealPhases(repositories *db.Repositories, location *time.Location) {
+	ctx, cancel := bootPassContext()
+	defer cancel()
 	recomputer := services.NewLutealPhaseRecomputer(repositories.AppState, repositories.Users, repositories.DailyLogs, location)
-	outcome, err := recomputer.Run(context.Background())
+	outcome, err := recomputer.Run(ctx)
 	if err != nil {
 		log.Printf("luteal-phase recompute failed: %v (retried on the next start)", err)
 	}
