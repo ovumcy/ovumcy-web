@@ -285,7 +285,17 @@ func (repo *UserRepository) ListAllForNotify(ctx context.Context) ([]models.Webh
 //
 // Scoped to owner rows: luteal_phase is meaningless for any other role, and the
 // column CHECK still admits 'partner' even though both account-creating methods
-// refuse it. Ordered by id so a pass and its retry walk the same sequence.
+// refuse it. Narrowing the population to one value is safe here for a reason
+// worth stating, since a filter that silently drops a row leaves that account on
+// its stale estimate forever: the column is NOT NULL and its CHECK admits only
+// 'owner' and 'partner', so 'owner' is the whole of the population this pass is
+// meant to walk. There is no NULL row, no empty-string row and no third spelling
+// for the predicate to exclude by accident.
+//
+// Ordered by id for a stable listing the projection test can assert against.
+// The pass itself does not depend on the order: it derives and writes each row
+// independently, with no batching and no resume point, so a retry re-derives
+// every row whatever sequence it sees.
 func (repo *UserRepository) ListOwnerLutealPhaseRows(ctx context.Context) ([]models.LutealPhaseRecomputeRow, error) {
 	rows := make([]models.LutealPhaseRecomputeRow, 0)
 	if err := repo.database.WithContext(ctx).

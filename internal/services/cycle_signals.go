@@ -84,7 +84,7 @@ func InferUserLutealPhase(logs []models.DailyLog, location *time.Location) (int,
 	return int(math.Round(averageInts(lutealLengths))), true
 }
 
-// DeriveUserLutealPhase is the single rule the derived users.luteal_phase cache
+// deriveUserLutealPhase is the single rule the derived users.luteal_phase cache
 // is written by: the personalized inference when the owner's logs support one,
 // and defaultLutealPhaseDays when they do not.
 //
@@ -95,7 +95,14 @@ func InferUserLutealPhase(logs []models.DailyLog, location *time.Location) (int,
 // should hold for the same logs. That disagreement is not hypothetical: the boot
 // recompute exists because the stored values and the inference that produced
 // them had drifted a day apart.
-func DeriveUserLutealPhase(logs []models.DailyLog, location *time.Location) int {
+//
+// Unexported on purpose. All three writers live in this package, and the column
+// has no other legitimate writer: an exported derivation would let a surface
+// outside the package compute the value and store it without going through one
+// of them, which is the drift this function exists to close. Callers that need
+// the value for DISPLAY read it through ApplyUserCycleBaseline, which re-infers
+// over the log window it was handed.
+func deriveUserLutealPhase(logs []models.DailyLog, location *time.Location) int {
 	if lutealPhase, refined := InferUserLutealPhase(logs, location); refined {
 		return lutealPhase
 	}

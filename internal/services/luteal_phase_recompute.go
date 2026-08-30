@@ -39,6 +39,16 @@ type LutealPhaseRecomputeOutcome struct {
 	// Failed counts rows whose logs could not be read or whose update failed.
 	// They are skipped rather than aborting the pass, and a non-zero count
 	// leaves the marker unwritten so the next boot walks everyone again.
+	//
+	// That retry is unconditional and has no attempt cap, which is the deliberate
+	// trade: writing the marker despite a failure would abandon the unrepaired
+	// rows silently and forever, while retrying costs one scan per boot. The
+	// price is real, though — a row that fails PERMANENTLY (a log row that always
+	// errors on read, an update a constraint always refuses) makes every later
+	// boot re-list every owner and re-read every owner's logs, before the
+	// listener opens, for as long as it stays broken. A count that repeats across
+	// boots is the tell, and it is a durable fault to investigate, not a
+	// transient one to wait out.
 	Failed int64
 }
 
@@ -137,7 +147,7 @@ func (recomputer *LutealPhaseRecomputer) Run(ctx context.Context) (LutealPhaseRe
 			continue
 		}
 
-		derived := DeriveUserLutealPhase(logs, resolveOwnerLocation(row.Timezone, recomputer.fallbackLocation))
+		derived := deriveUserLutealPhase(logs, resolveOwnerLocation(row.Timezone, recomputer.fallbackLocation))
 		if derived == row.LutealPhase {
 			continue
 		}

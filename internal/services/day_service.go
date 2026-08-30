@@ -727,7 +727,7 @@ func (service *DayService) refreshDerivedCycleSettings(ctx context.Context, user
 	}
 
 	if err := service.users.UpdateByID(ctx, userID, map[string]any{
-		"luteal_phase": DeriveUserLutealPhase(logs, location),
+		"luteal_phase": deriveUserLutealPhase(logs, location),
 	}); err != nil {
 		log.Printf("refreshDerivedCycleSettings: update luteal_phase for user %d failed: %v", userID, err)
 	}

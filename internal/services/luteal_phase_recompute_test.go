@@ -352,10 +352,56 @@ func TestDeriveUserLutealPhaseIsTheOneRuleTheCacheIsWrittenBy(t *testing.T) {
 	// contract is exactly two branches, and both are pinned here so a future
 	// edit cannot quietly change what an un-inferable account stores.
 	refinable := lutealRoundTripLogs(t, lutealRecomputeOrigin, 28, []int{14, 14}, lutealSignalEggWhite)
-	if got := DeriveUserLutealPhase(refinable, time.UTC); got != 14 {
-		t.Fatalf("DeriveUserLutealPhase on refinable logs = %d, want 14", got)
+	if got := deriveUserLutealPhase(refinable, time.UTC); got != 14 {
+		t.Fatalf("deriveUserLutealPhase on refinable logs = %d, want 14", got)
 	}
-	if got := DeriveUserLutealPhase(nil, time.UTC); got != defaultLutealPhaseDays {
-		t.Fatalf("DeriveUserLutealPhase with no logs = %d, want %d", got, defaultLutealPhaseDays)
+	if got := deriveUserLutealPhase(nil, time.UTC); got != defaultLutealPhaseDays {
+		t.Fatalf("deriveUserLutealPhase with no logs = %d, want %d", got, defaultLutealPhaseDays)
+	}
+}
+
+func TestLutealPhaseRecomputeTreatsANilFallbackLocationAsUTC(t *testing.T) {
+	// The constructor's nil guard. A caller with no server zone to hand over —
+	// any test, and any future wiring that resolves the zone later — must not
+	// reach resolveOwnerLocation with a nil fallback, which would hand a nil
+	// *time.Location to the derivation. Pinned by behaviour rather than by
+	// reading the field back: the pass must correct the row exactly as it does
+	// under an explicit UTC.
+	logs := lutealRoundTripLogs(t, lutealRecomputeOrigin, 28, []int{14, 14}, lutealSignalEggWhite)
+
+	appState := &stubLutealRecomputeAppState{}
+	users := &stubLutealRecomputeUserStore{rows: []models.LutealPhaseRecomputeRow{{ID: 9, LutealPhase: 15}}}
+	logStore := &stubLutealRecomputeLogStore{logs: map[uint][]models.DailyLog{9: logs}}
+
+	if _, err := NewLutealPhaseRecomputer(appState, users, logStore, nil).Run(context.Background()); err != nil {
+		t.Fatalf("Run with a nil fallback location: %v", err)
+	}
+
+	if len(users.updates) != 1 || users.updates[0].value != 14 {
+		t.Fatalf("a nil fallback location must behave as UTC, got %+v", users.updates)
+	}
+}
+
+func TestLutealPhaseRecomputeReportsAMarkerItCouldNotWrite(t *testing.T) {
+	// The corrections have already landed when Set fails, so the pass returns
+	// both the error AND the count: the operator line must still say what was
+	// repaired, and the caller must still learn the marker is missing. The next
+	// boot then re-walks, agrees with every row and writes the marker on its own,
+	// which is why an unwritten marker costs a scan and never a wrong value.
+	logs := lutealRoundTripLogs(t, lutealRecomputeOrigin, 28, []int{14, 14}, lutealSignalEggWhite)
+
+	appState := &stubLutealRecomputeAppState{setErr: errLutealRecomputeStub}
+	users := &stubLutealRecomputeUserStore{rows: []models.LutealPhaseRecomputeRow{{ID: 4, LutealPhase: 15}}}
+	logStore := &stubLutealRecomputeLogStore{logs: map[uint][]models.DailyLog{4: logs}}
+
+	outcome, err := NewLutealPhaseRecomputer(appState, users, logStore, time.UTC).Run(context.Background())
+	if !errors.Is(err, errLutealRecomputeStub) {
+		t.Fatalf("Run error = %v, want the marker write failure", err)
+	}
+	if outcome.Corrected != 1 {
+		t.Fatalf("outcome = %+v, want the correction that already landed to be reported", outcome)
+	}
+	if appState.markerWritten() {
+		t.Fatal("a failed Set must leave no marker behind")
 	}
 }
