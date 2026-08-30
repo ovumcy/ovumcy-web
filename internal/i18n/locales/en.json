@@ -189,7 +189,7 @@
   "settings.age_group.hint": "Optional. Stored with your profile; predictions use only your own cycle history.",
   "settings.age_group.unspecified": "Prefer not to say",
   "settings.age_group.under_40": "Under 40",
-  "settings.age_group.40_to_45": "40-45",
+  "settings.age_group.40_to_45": "40-44",
   "settings.age_group.45_plus": "45+",
   "stats.perimenopause_hint": "After 45, cycles often become less predictable. If you notice persistent differences of 7 or more days between consecutive cycles, that can be an early sign of perimenopause — consider speaking with a healthcare professional.",
   "stats.short_cycle_notice": "Several of your recent cycles are shorter than 24 days. Cycles this short are less common — consider discussing them with a doctor.",
