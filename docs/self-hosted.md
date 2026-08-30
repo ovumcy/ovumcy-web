@@ -590,6 +590,20 @@ Two cases are left untouched, counted in the same log line, and cannot sign in u
 - another account already answers to the same bare address (two accounts on one mailbox — previously possible because the duplicate check compared stored forms): the oldest account keeps the address; review the leftover with `ovumcy users list` (it shows the stored legacy form) and remove or re-home it deliberately — the repair never deletes anything;
 - the stored value cannot be reduced to a plain address at all (for example a quoted local part).
 
+### The server exits during startup instead of coming up
+
+Three passes run on every start, after the migrations and before the server begins serving: the calendar-feed key-rotation check, the auth-email repair described above, and the luteal-phase recompute. Each is allowed **five minutes** to get an answer from the database, so a database that accepts the connection and then stops responding ends the start with an error naming the pass instead of leaving the process alive, silent and not listening — which is what it used to do, and which a container healthcheck can only ever report as "starting".
+
+The log line names the pass and carries the storage error underneath it — typically `context deadline exceeded`, though the exact wording comes from the database driver and a Postgres server cancelling an in-flight statement may word it differently.
+
+Five minutes is roughly two orders of magnitude above what these passes cost on a healthy instance, so reaching it means storage is stuck rather than slow. Check the database first: for SQLite, whether another process still holds the file (a stray container, a backup job, a copy in progress); for Postgres, whether the endpoint is accepting connections and then stalling.
+
+A start cut short this way loses nothing, but not because the pass stopped cleanly — it stops wherever it was, and the accounts it had already reached stay changed. What makes that safe is that every change a pass makes is one it would make again, and the marker that would stop it from running next time is written only after a complete pass. So the interrupted pass simply runs again on the next start, re-reaches the rows it already fixed, agrees with them, and finishes the rest.
+
+Two of the three end the start on failure, deliberately: a calendar feed left armed after a key rotation, or an account left unable to sign in, is worse than an instance that refuses to come up. The luteal-phase recompute does not — it logs `luteal-phase recompute failed … (retried on the next start)` and lets the server start, because it maintains a derived cache with a safe fallback. A count that repeats across starts there is a durable fault worth investigating rather than a transient one to wait out.
+
+Because the budget is per pass and the passes are sequential, the worst case for the start as a whole is fifteen minutes. Size a container healthcheck start period or a deployment timeout against that, not against five.
+
 ## Common Operator Scenarios
 
 - Moving from local/private to public HTTPS:

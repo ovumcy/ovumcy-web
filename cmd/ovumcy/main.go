@@ -169,6 +169,20 @@ func mustOpenDatabase(databaseConfig db.Config) *gorm.DB {
 // failure policy should then decide, and they decide it differently: the two
 // must* wrappers stop the boot, the luteal recompute logs and lets the server
 // start.
+//
+// The budget is PER PASS and the passes run in sequence, so the boot's own worst
+// case is this value times the number of passes — fifteen minutes today, not
+// five. Size a healthcheck start period or a deployment timeout against that
+// product, not against this constant.
+//
+// It also makes every pass one that can stop half-done, which each pass must
+// already survive, and all three do: the feed sentinel records its epoch only
+// after disarming, so an interrupted run re-detects the rotation next boot; the
+// email repair leaves its marker unwritten and every rewrite is idempotent; the
+// luteal recompute counts a cut-off row as a failure, which withholds the marker
+// for the same reason. A pass added here that writes its marker first, or whose
+// per-row work is not idempotent, cannot take this budget as given — the budget
+// assumes interruptibility that such a pass would not have.
 const bootPassStorageBudget = 5 * time.Minute
 
 // bootPassContext returns the bounded context a boot pass runs under, together
