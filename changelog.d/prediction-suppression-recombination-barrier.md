@@ -21,10 +21,17 @@ exemption whose stated reason no longer describes it. Sites are keyed by path
 and function, with a method's receiver type included, so two same-named methods
 in one file stay two sites.
 
-Both swept layers are walked to their leaves rather than one directory deep: a
-sweep that stops at the top level answers about today's file layout instead of
-about the class, and would go quietly green the day these files are split into
-packages.
+Every package the binary is built from is walked to its leaves, rather than the
+two layers a display decision happens to be made in today: the cycle context and
+both predicates are exported, so a decision that moves to a third package would
+otherwise take the barrier's silence with it.
+
+The list of signals is checked against the predicates themselves — every operand
+`PredictionsSuppressed` and `FertilityProjectionSuppressed` disjoin must appear
+in it. A list maintained by hand beside the thing it copies is the same failure
+one level up: a fifth signal added to a predicate would leave the sweep counting
+it as an ordinary operand, and a surface combining it with a known signal would
+read as naming only one.
 
 Two limits are stated in the barrier and repeated in its failure text. A
 recombination assembled through intermediate variables reads as one signal per
