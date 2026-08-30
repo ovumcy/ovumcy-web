@@ -150,18 +150,30 @@ func TestCalcOvulationDay_ReferenceVectors(t *testing.T) {
 // about whether the ovulation day itself belongs to the luteal phase — the
 // disagreement that put every personalized prediction one day early.
 func TestLutealPhaseRoundTrip_ReferenceVectors(t *testing.T) {
+	// wantDay is the cycle day the round trip lands on and wantExact says whether
+	// it got there without Step 2's reserve clamp. They are separate fields
+	// because the last row is the exception the invariant carries: an observation
+	// can imply a luteal phase the cycle cannot hold, and there the clamp is the
+	// designed answer rather than a broken round trip.
 	cases := []struct {
 		name              string
 		cycleLen          int
 		observedOvulation int
 		wantLuteal        int
+		wantDay           int
+		wantExact         bool
 	}{
-		{"28-day cycle, ovulation on day 14 is the 14-day model default", 28, 14, 14},
-		{"28-day cycle, ovulation on day 15", 28, 15, 13},
-		{"short 21-day cycle, ovulation on day 8", 21, 8, 13},
-		{"long 35-day cycle, ovulation on day 21", 35, 21, 14},
-		{"long 40-day cycle, ovulation on day 26", 40, 26, 14},
-		{"30-day cycle, ovulation on day 20 lands on the 10-day floor", 30, 20, 10},
+		{"28-day cycle, ovulation on day 14 is the 14-day model default", 28, 14, 14, 14, true},
+		{"28-day cycle, ovulation on day 15", 28, 15, 13, 15, true},
+		{"short 21-day cycle, ovulation on day 8", 21, 8, 13, 8, true},
+		{"long 35-day cycle, ovulation on day 21", 35, 21, 14, 21, true},
+		{"long 40-day cycle, ovulation on day 26", 40, 26, 14, 26, true},
+		{"30-day cycle, ovulation on day 20 lands on the 10-day floor", 30, 20, 10, 20, true},
+		// A mucus peak on cycle day 1 of a short cycle: ovulation is estimated at
+		// peak+1, the implied luteal phase is 19, which the plausibility window
+		// admits and a 21-day cycle cannot hold (its reserve caps it at 16). The
+		// round trip does NOT return day 2 here, and must not pretend to.
+		{"short 21-day cycle, an observation the cycle cannot hold", 21, 2, 19, 5, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -171,13 +183,17 @@ func TestLutealPhaseRoundTrip_ReferenceVectors(t *testing.T) {
 					tc.cycleLen, tc.observedOvulation, gotLuteal, tc.wantLuteal)
 			}
 			gotDay, gotExact := CalcOvulationDay(tc.cycleLen, gotLuteal)
-			if !gotExact {
-				t.Errorf("CalcOvulationDay(%d,%d) reported a clamped estimate for a luteal phase derived from a real observation",
-					tc.cycleLen, gotLuteal)
+			if gotExact != tc.wantExact {
+				t.Errorf("CalcOvulationDay(%d,%d) exact = %t, want %t",
+					tc.cycleLen, gotLuteal, gotExact, tc.wantExact)
 			}
-			if gotDay != tc.observedOvulation {
-				t.Fatalf("round trip broken: ovulation observed on cycle day %d inferred luteal %d, which predicts cycle day %d",
-					tc.observedOvulation, gotLuteal, gotDay)
+			if gotDay != tc.wantDay {
+				t.Fatalf("round trip: ovulation observed on cycle day %d inferred luteal %d, which predicts cycle day %d, want %d",
+					tc.observedOvulation, gotLuteal, gotDay, tc.wantDay)
+			}
+			if tc.wantExact && gotDay != tc.observedOvulation {
+				t.Fatalf("round trip broken: an exact fit must land back on the observed cycle day %d, got %d",
+					tc.observedOvulation, gotDay)
 			}
 		})
 	}
