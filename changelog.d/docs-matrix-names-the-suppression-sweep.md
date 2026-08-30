@@ -9,6 +9,9 @@
   answerable to the predicates themselves, so a signal added to `PredictionsSuppressed` or
   `FertilityProjectionSuppressed` reaches every surface at once instead of being missed at one.
   Both are named: a claim held by two tests that credits one invites the deletion of the other.
+  `docs/SECURITY_INVARIANTS.md` gains the rule the row is about. Its medical-safety section stated
+  only the disclaimer, while production code and the sweep's own failure text send readers there
+  for the suppression floor — the pointer resolved to a document that did not carry it.
   The row states what the sweep cannot see, too: it reads one Go expression at a time, so a gate
   assembled across intermediate variables, or in a template, is outside its reach. No behaviour,
   test or invariant changes — the claim was already enforced and is now findable from the document
