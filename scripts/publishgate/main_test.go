@@ -20,14 +20,15 @@
 // that question and true under both answers: the condition must stop resting
 // on an implicit predicate at all.
 //
-// Nothing in a green CI run says so. A skipped job is a satisfied check, and a
-// tag that never appeared in a registry is not a signal any workflow reads, so
-// the failure is silent by construction and stayed silent for 242 commits.
-// This guard is the signal, and it holds the condition to four things at once —
-// each one alone reads green over a gate the other three would catch:
+// Nothing reported that skip while it was happening. A skipped job is a
+// satisfied check, and a tag that never appeared in a registry is not a signal
+// any workflow reads, so the failure was silent by construction and stayed
+// silent for 242 commits. This guard is the signal, and it holds the condition
+// to four things at once — each one alone reads green over a gate the other
+// three would catch:
 //
-//   - the status override, `!cancelled()`, which is what suppresses the
-//     implicit `success()` this whole finding came from;
+//   - the status override, `!cancelled()`, which is what stops the condition
+//     resting on the implicit predicate at all;
 //   - an explicit `success` requirement per dependency, because `!cancelled()`
 //     on its own publishes off a FAILED gate — read off the job's own `needs:`
 //     list, so a sixth dependency added without a sixth clause fails here;
