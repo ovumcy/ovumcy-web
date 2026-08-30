@@ -130,9 +130,11 @@ func periodLogsOn(days ...time.Time) []models.DailyLog {
 
 // eggWhiteLutealLogs builds four 30-day cycles whose only ovulation signal is
 // egg-white mucus, placed so every cycle's inferred luteal phase is exactly
-// lutealLength days. Ovulation is estimated at peak day + 1, so the peak sits
-// lutealLength+1 days before the next cycle start. No BBT values are recorded,
-// which keeps the thermal detector out of the inference.
+// lutealLength days. Working backwards: the luteal phase counts the days that
+// FOLLOW ovulation, so the ovulation lands on cycle day 30-lutealLength, which
+// is lutealLength+1 days before the next cycle start; ovulation is estimated at
+// peak day + 1, so the peak sits one day earlier still. No BBT values are
+// recorded, which keeps the thermal detector out of the inference.
 func eggWhiteLutealLogs(lutealLength int) []models.DailyLog {
 	const cycleLength = 30
 	const cycleCount = 4
@@ -149,7 +151,7 @@ func eggWhiteLutealLogs(lutealLength int) []models.DailyLog {
 			continue
 		}
 		nextStart := start.AddDate(0, 0, cycleLength)
-		peak := nextStart.AddDate(0, 0, -(lutealLength + 1))
+		peak := nextStart.AddDate(0, 0, -(lutealLength + 2))
 		logs = append(logs, models.DailyLog{Date: peak, CervicalMucus: models.CervicalMucusEggWhite})
 	}
 	return logs

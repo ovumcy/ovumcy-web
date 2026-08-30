@@ -24,15 +24,16 @@ implementation cannot silently drift apart.
 |-------|---------|--------|
 | `periodStart` | First day of the current menstrual period (cycle day 1) | Detected from logged period days |
 | `cycleLength` | Length of the cycle in days | Median of observed cycles, or the user's configured value |
-| `lutealPhase` | Days from ovulation to the next period | **14-day** default, refined toward the owner's own value from logged BBT / cervical-mucus signals when enough cycles carry them |
+| `lutealPhase` | Days that **follow** ovulation, up to and including the day before the next period | **14-day** default, refined toward the owner's own value from logged BBT / cervical-mucus signals when enough cycles carry them |
 
 ## The model
 
-The model rests on one physiological assumption: **the luteal phase (ovulation →
-next period) is relatively stable per person** — modelled at ~14 days by default,
-and refined toward the owner's own value when logged signals allow — while the
-follicular phase (period → ovulation) absorbs the variation in cycle length. So
-ovulation is counted *backwards* from the next expected period.
+The model rests on one physiological assumption: **the luteal phase (the days
+after ovulation, up to the next period) is relatively stable per person** —
+modelled at ~14 days by default, and refined toward the owner's own value when
+logged signals allow — while the follicular phase (period → ovulation) absorbs
+the variation in cycle length. So ovulation is counted *backwards* from the next
+expected period.
 
 ### Constants
 
@@ -63,6 +64,38 @@ if ovulationDay < 5:                      no prediction
 
 `periodStart` is cycle day 1, so the ovulation **date** is
 `periodStart + (ovulationDay − 1)` days.
+
+### Step 2a — the same arithmetic, run backwards
+
+Personalization travels this arithmetic in the other direction: an ovulation
+*observed* from logged signals is turned back into the `lutealPhase` the step
+above consumes. That is Step 2 solved for the luteal phase, and nothing more:
+
+```
+observedLuteal = cycleLength − observedOvulationDay
+```
+
+Both directions have to use one indexing, or an observation trains a value that
+predicts a different day than the one observed. The invariant that buys, pinned
+by `TestLutealPhaseRoundTrip_ReferenceVectors`:
+
+> An ovulation observed on cycle day **N** predicts cycle day **N** again on a
+> next cycle of the same length.
+
+| cycleLength | observed ovulation | → lutealPhase | → predicted ovulation |
+|-------------|--------------------|---------------|-----------------------|
+| 28 | day 14 | 14 (the model default) | day 14 |
+| 28 | day 15 | 13 | day 15 |
+| 21 | day 8  | 13 | day 8  |
+| 35 | day 21 | 14 | day 21 |
+| 40 | day 26 | 14 | day 26 |
+| 30 | day 20 | 10 (the floor) | day 20 |
+
+The parameter counts the days that *follow* ovulation, so it is one day shorter
+than the calendar span from the ovulation date to the next period start — that
+span counts the ovulation day itself. Measuring that span and feeding it back in
+as the parameter moved every personalized prediction one day early, the
+ovulation date and both fertile-window edges alike.
 
 ### Step 3 — fertile window
 
@@ -108,9 +141,9 @@ These are the exact cases asserted by the reference tests.
   is used — for the next-period estimate only; see "First cycle" below.
 - **Luteal phase** defaults to the fixed 14-day model value, but is refined for
   the owner when their logs carry enough signal: when basal body temperature or
-  cervical-mucus entries let the app infer the ovulation-to-next-period length
-  across several cycles, the average of those observed luteal lengths replaces
-  the default. A cycle whose inferred luteal length falls outside a
+  cervical-mucus entries place the ovulation inside past cycles, each of those
+  observations becomes a luteal length by Step 2a and the average of them
+  replaces the default. A cycle whose inferred luteal length falls outside a
   physiological 10–20 day window is **discarded**, not pulled to the nearest
   edge of it — an implausible inference is treated as a bad reading rather than
   as a 10 or a 20 — and the refinement needs at least two surviving cycles, so
