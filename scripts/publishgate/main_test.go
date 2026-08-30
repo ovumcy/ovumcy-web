@@ -18,12 +18,26 @@
 // Nothing in a green CI run says so. A skipped job is a satisfied check, and a
 // tag that never appeared in a registry is not a signal any workflow reads, so
 // the failure is silent by construction and stayed silent for 242 commits.
-// This guard is the signal. It asserts the two halves that only work together —
-// the status override that suppresses the implicit `success()`, and an explicit
-// `success` requirement per dependency, since `!cancelled()` alone would publish
-// off a FAILED gate — and it reads the requirements off the job's own `needs:`
-// list, so a sixth dependency added without a sixth clause is a failure here
-// rather than a hole in the gate.
+// This guard is the signal, and it holds the condition to four things at once —
+// each one alone reads green over a gate the other three would catch:
+//
+//   - the status override, `!cancelled()`, which is what suppresses the
+//     implicit `success()` this whole finding came from;
+//   - an explicit `success` requirement per dependency, because `!cancelled()`
+//     on its own publishes off a FAILED gate — read off the job's own `needs:`
+//     list, so a sixth dependency added without a sixth clause fails here;
+//   - no `||` beyond the two publishing events, because those requirements are
+//     substrings and a substring survives being wrapped in one, which would
+//     leave the check above green over a clause that gates on nothing;
+//   - that `needs:` list itself against the five the gate was designed around,
+//     since a dependency dropped from it also drops out of the check that reads
+//     it.
+//
+// Each rule refuses a shape rather than approving one, so a condition this
+// package cannot read is a failure and not a pass — including a respelled event
+// disjunction, which is referred back to a reader instead of being guessed at.
+// gateProblems is where all four live, away from the workflow they read, so
+// they can be proven against conditions this repository does not contain.
 package publishgate
 
 import (
@@ -109,8 +123,17 @@ func gateProblems(condition string, needs []string) []string {
 	// green above while gating on nothing. Requiring the condition to be a pure
 	// conjunction apart from the two publishing events is what closes that: any
 	// other `||` is refused here and judged by a reader.
+	//
+	// The refusal is deliberate even when the new `||` is CORRECT. The one
+	// change that is known to want a second one is making a dependency
+	// skip-tolerant — `(needs.image-smoke.result == 'success' || … ==
+	// 'skipped')`, so that a docs-only push, where the image is never booted,
+	// publishes anyway. That is a real decision about what may reach the
+	// registry unsmoked, and it must not ride in as a `||` this file waves
+	// through, so the message names both knobs rather than leaving the reader
+	// to find them.
 	if strings.Contains(strings.Replace(condition, eventDisjunction, "<events>", 1), "||") {
-		problems = append(problems, "the `if` holds an `||` beyond the two publishing events ("+condition+"), and a clause inside an `||` gates on nothing while still reading as present — write the gate as a conjunction, or judge this condition by hand")
+		problems = append(problems, "the `if` holds an `||` beyond the two publishing events ("+condition+"), and a clause inside an `||` gates on nothing while still reading as present. Two knobs, and the right one depends on which change this is: a respelled event disjunction is fixed by matching `eventDisjunction` in this file to the workflow's exact spelling; a deliberately skip-tolerant dependency is a decision to publish an image no smoke test booted, and belongs in this function as its own rule, next to the per-dependency check it weakens")
 	}
 
 	return problems
@@ -267,6 +290,15 @@ func TestGateProblemsRefusesEveryShapeThatReadsGreenWhileGatingOnNothing(t *test
 			"a clause wrapped in an `||`, which leaves the substring in place",
 			strings.Replace(good, "needs.image-smoke.result == 'success'",
 				"(needs.image-smoke.result == 'success' || github.event_name == 'workflow_dispatch')", 1),
+			1,
+		},
+		{
+			// The change the guard is most likely to meet, and it is refused on
+			// purpose: publishing an image the smoke test never booted is a
+			// decision, not a spelling.
+			"a dependency made skip-tolerant",
+			strings.Replace(good, "needs.image-smoke.result == 'success'",
+				"(needs.image-smoke.result == 'success' || needs.image-smoke.result == 'skipped')", 1),
 			1,
 		},
 		{
