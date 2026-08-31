@@ -145,6 +145,11 @@ func (recomputer *LutealPhaseRecomputer) Run(ctx context.Context) (LutealPhaseRe
 		return LutealPhaseRecomputeOutcome{}, err
 	}
 
+	// One instant for the whole pass: the owners' calendar days are resolved
+	// from it in their own zones, but a pass that re-read the clock per owner
+	// could straddle midnight and bound two owners at two different days.
+	passNow := recomputer.now()
+
 	var outcome LutealPhaseRecomputeOutcome
 	for _, row := range rows {
 		logs, err := recomputer.logs.ListByUser(ctx, row.ID)
@@ -164,7 +169,7 @@ func (recomputer *LutealPhaseRecomputer) Run(ctx context.Context) (LutealPhaseRe
 		// create. The bound is the same shape every other surface uses
 		// (filterLogsNotAfter against the owner's calendar day).
 		location := resolveOwnerLocation(row.Timezone, recomputer.fallbackLocation)
-		today := DateAtLocation(recomputer.now(), location)
+		today := DateAtLocation(passNow, location)
 		derived := deriveUserLutealPhase(filterLogsNotAfter(logs, today), location)
 		if derived == row.LutealPhase {
 			continue
