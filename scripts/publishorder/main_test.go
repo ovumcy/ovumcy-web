@@ -43,6 +43,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/ovumcy/ovumcy-web/scripts/workflowfile"
 )
 
 const (
@@ -58,9 +60,8 @@ const (
 )
 
 var (
-	jobHeader = regexp.MustCompile(`(?m)^  [A-Za-z0-9_.-]+:[ \t]*$`)
-	stepName  = regexp.MustCompile(`(?m)^      - name: (.+)$`)
-	envEntry  = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*): (.*)$`)
+	stepName = regexp.MustCompile(`(?m)^      - name: (.+)$`)
+	envEntry = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*): (.*)$`)
 )
 
 // digest is what the fixtures sign and promote; otherDigest is what a public
@@ -488,7 +489,7 @@ func stepNames(t *testing.T) []string {
 	t.Helper()
 
 	var names []string
-	for _, match := range stepName.FindAllStringSubmatch(jobBlock(t, publishWorkflow, publishJob), -1) {
+	for _, match := range stepName.FindAllStringSubmatch(workflowfile.Job(t, publishWorkflow, publishJob), -1) {
 		names = append(names, strings.TrimSpace(match[1]))
 	}
 	if len(names) == 0 {
@@ -502,7 +503,7 @@ func stepNames(t *testing.T) []string {
 func stepBlock(t *testing.T, name string) string {
 	t.Helper()
 
-	block := jobBlock(t, publishWorkflow, publishJob)
+	block := workflowfile.Job(t, publishWorkflow, publishJob)
 	header := "      - name: " + name + "\n"
 	start := strings.Index(block, header)
 	if start < 0 {
@@ -577,49 +578,4 @@ func stepScript(t *testing.T, name string) string {
 		script = append(script, strings.TrimPrefix(line, "          "))
 	}
 	return strings.Join(script, "\n")
-}
-
-// jobBlock returns the text of one job, from its header to the next job header
-// at the same indentation. It fails closed: a renamed job is a failure here,
-// never a silently empty search.
-func jobBlock(t *testing.T, workflow, job string) string {
-	t.Helper()
-
-	raw, err := os.ReadFile(filepath.Join(repoRoot(t), filepath.FromSlash(workflow)))
-	if err != nil {
-		t.Fatalf("read %s: %v", workflow, err)
-	}
-	content := strings.ReplaceAll(string(raw), "\r\n", "\n")
-
-	header := "\n  " + job + ":\n"
-	start := strings.Index(content, header)
-	if start < 0 {
-		t.Fatalf("%s: no job named %q", workflow, job)
-	}
-	rest := content[start+len(header):]
-
-	if next := jobHeader.FindStringIndex(rest); next != nil {
-		return rest[:next[0]]
-	}
-	return rest
-}
-
-// repoRoot walks up from the test's working directory to the module root.
-func repoRoot(t *testing.T) string {
-	t.Helper()
-
-	dir, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			t.Fatalf("go.mod not found above %s", dir)
-		}
-		dir = parent
-	}
 }

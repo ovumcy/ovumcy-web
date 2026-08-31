@@ -48,18 +48,18 @@
 package publishgate
 
 import (
-	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/ovumcy/ovumcy-web/scripts/workflowfile"
 )
 
 // workflowPath is the workflow that owns both the publish job and the five
 // jobs it gates on: `needs:` cannot cross a workflow boundary, which is why the
 // gate lives there rather than beside the publish itself.
-var workflowPath = filepath.Join(".github", "workflows", "ci.yml")
+const workflowPath = ".github/workflows/ci.yml"
 
 // publishJob is the job whose `if` this package guards.
 const publishJob = "publish-image"
@@ -82,7 +82,6 @@ var wantNeeds = []string{"e2e", "e2e-postgres-smoke", "image-smoke", "race", "te
 const eventDisjunction = "(github.event_name == 'push' || github.event_name == 'workflow_dispatch')"
 
 var (
-	jobHeader   = regexp.MustCompile(`(?m)^  [A-Za-z0-9_.-]+:[ \t]*$`)
 	needsEntry  = regexp.MustCompile(`^-[ \t]+([A-Za-z0-9_.-]+)$`)
 	plainName   = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 	foldMarker  = regexp.MustCompile(`^[>|][-+]?[ \t]*`)
@@ -92,7 +91,7 @@ var (
 // TestPublishImageGateOverridesTheImplicitSuccessAndJudgesEveryDependency reads
 // the real workflow and judges the gate it declares.
 func TestPublishImageGateOverridesTheImplicitSuccessAndJudgesEveryDependency(t *testing.T) {
-	block := jobBlock(t)
+	block := workflowfile.Job(t, workflowPath, publishJob)
 	needs := jobNeeds(t, block)
 
 	for _, problem := range gateProblems(jobField(t, block, "if"), needs) {
@@ -144,31 +143,6 @@ func gateProblems(condition string, needs []string) []string {
 	}
 
 	return problems
-}
-
-// jobBlock returns the text of the publish job, from its header to the next job
-// header at the same indentation. It fails closed: a renamed or moved job is a
-// failure here, never a silently empty search.
-func jobBlock(t *testing.T) string {
-	t.Helper()
-
-	raw, err := os.ReadFile(filepath.Join(repoRoot(t), workflowPath))
-	if err != nil {
-		t.Fatalf("read %s: %v", workflowPath, err)
-	}
-	content := strings.ReplaceAll(string(raw), "\r\n", "\n")
-
-	header := "\n  " + publishJob + ":\n"
-	start := strings.Index(content, header)
-	if start < 0 {
-		t.Fatalf("%s: no job named %q — the publish path was renamed or removed, and this guard would judge nothing", workflowPath, publishJob)
-	}
-	rest := content[start+len(header):]
-
-	if next := jobHeader.FindStringIndex(rest); next != nil {
-		return rest[:next[0]]
-	}
-	return rest
 }
 
 // jobNeeds reads the job's dependency list off the workflow rather than
@@ -349,25 +323,5 @@ func TestParseNeedsReadsEveryYAMLSpellingOfADependencyList(t *testing.T) {
 				t.Fatalf("got %q, want %q", got, testCase.want)
 			}
 		})
-	}
-}
-
-// repoRoot walks up from the test's working directory to the module root.
-func repoRoot(t *testing.T) string {
-	t.Helper()
-
-	dir, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			t.Fatalf("go.mod not found above %s", dir)
-		}
-		dir = parent
 	}
 }
