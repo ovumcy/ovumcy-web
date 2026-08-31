@@ -309,10 +309,10 @@ webhook as part of an install script that also runs `ovumcy users create`).
     remaining reminders; they arrive on the next run. (The lead-time form is
     different: it skips the write when what you submit matches the value the page
     was rendered with, so re-submitting it unchanged normally costs nothing.) The
-    exception is a lead time of
-    **0 days**, where a reminder is due on one calendar day only — no later run
-    still covers it, so that cycle's reminder is skipped rather than delayed. On
-    a zero-day lead time, change settings at an hour the pass is not running.
+    exception is a lead time of **0 days**, where a reminder is due on one
+    calendar day only — no later run still covers it, so that cycle's reminder is
+    skipped rather than delayed. On a zero-day lead time, change settings at an
+    hour the pass is not running.
 - A pass never fails all owners because of one bad owner: a decrypt failure, a
   load failure, or a delivery failure for one owner is logged (owner id and
   host only) and the pass continues to the next owner.
