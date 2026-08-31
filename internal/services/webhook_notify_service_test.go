@@ -104,6 +104,10 @@ type watermarkWrite struct {
 // claimExpected and releaseRestored record the prior-value argument of each call,
 // so a test can assert the claim is compared against — and the release restores —
 // the watermark the pass's snapshot actually carried.
+// claimEpochs records the revocation epoch each claim was handed, so a test can
+// assert the pass pins the epoch its OWN snapshot carried — the value the
+// repository compares a revocation against — rather than a constant or a fresher
+// re-read that would agree with whatever the revocation just wrote.
 type stubNotifyRepo struct {
 	records         []models.WebhookNotifyRecord
 	listErr         error
@@ -114,6 +118,7 @@ type stubNotifyRepo struct {
 	watermarks      []watermarkWrite
 	releases        []watermarkWrite
 	claimExpected   []*time.Time
+	claimEpochs     []int
 	releaseRestored []*time.Time
 }
 
@@ -124,10 +129,11 @@ func (stub *stubNotifyRepo) ListAllForNotify(context.Context) ([]models.WebhookN
 	return stub.records, nil
 }
 
-func (stub *stubNotifyRepo) ClaimWebhookWatermark(_ context.Context, userID uint, reminderType string, anchor time.Time, previous *time.Time) (bool, error) {
+func (stub *stubNotifyRepo) ClaimWebhookWatermark(_ context.Context, userID uint, reminderType string, anchor time.Time, previous *time.Time, configVersion int) (bool, error) {
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
 	stub.claimExpected = append(stub.claimExpected, previous)
+	stub.claimEpochs = append(stub.claimEpochs, configVersion)
 	if stub.claimErr != nil {
 		return false, stub.claimErr
 	}
@@ -912,6 +918,39 @@ func TestNotifyClaimsAgainstTheWatermarkItsSnapshotCarried(t *testing.T) {
 	}
 	if repo.releaseRestored[0] == nil || !repo.releaseRestored[0].Equal(stale) {
 		t.Fatalf("the release must restore what the claim replaced (%s), got %v", stale, repo.releaseRestored[0])
+	}
+}
+
+// TestNotifyClaimsAgainstTheRevocationEpochItsSnapshotCarried is the wiring half
+// of the revocation guard (finding PRIV-1 / SEC-01). The repository refuses a
+// claim whose epoch has been overtaken, but that refusal is only reachable if the
+// pass hands it the epoch from the SAME snapshot everything else about this send
+// came from — the enabled flag, the per-kind opt-in, and the URL it is about to
+// POST to. A pass passing a constant, or re-reading a fresher value at claim
+// time, would agree with whatever a revocation had just written: the check would
+// still be present in the SQL and inert in practice.
+func TestNotifyClaimsAgainstTheRevocationEpochItsSnapshotCarried(t *testing.T) {
+	now := time.Date(2026, 3, 12, 9, 0, 0, 0, time.UTC)
+	record := dueRecord(1, "https://a.example/hook", now, 26)
+	// A value no zero-valued field and no counter starting at one could produce.
+	record.WebhookConfigVersion = 7
+	repo := &stubNotifyRepo{records: []models.WebhookNotifyRecord{record}}
+	logs := stubLogReader{byUser: map[uint][]models.DailyLog{1: {periodStartLog(1, *record.LastPeriodStart)}}}
+	deliverer := &stubDeliverer{}
+	service := newTestNotifyService(repo, logs, stubDecryptor{}, deliverer)
+
+	report, err := service.RunOnce(context.Background(), now, time.UTC, false)
+	if err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+	if report.Sent != 1 {
+		t.Fatalf("expected the reminder to be delivered, got sent=%d", report.Sent)
+	}
+	if len(repo.claimEpochs) != 1 {
+		t.Fatalf("expected exactly one claim, got %d", len(repo.claimEpochs))
+	}
+	if repo.claimEpochs[0] != record.WebhookConfigVersion {
+		t.Fatalf("the claim must pin the snapshot's revocation epoch %d, got %d", record.WebhookConfigVersion, repo.claimEpochs[0])
 	}
 }
 

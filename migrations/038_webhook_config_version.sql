@@ -1,0 +1,30 @@
+-- Webhook revocation epoch (finding PRIV-1 / SEC-01): a monotonic per-owner
+-- counter that moves on every write to an owner's webhook configuration, so a
+-- notify pass holding a stale snapshot can be told apart from one holding the
+-- configuration that is current at the moment it tries to send.
+--
+-- The notify pass takes its whole decision from one snapshot read at the start
+-- of the pass and claims each send only later, so between the two the owner can
+-- disable delivery, replace the endpoint, remove it, or clear all data. The
+-- per-kind watermark alone cannot see any of that: a settings save deliberately
+-- leaves the watermarks where they are, and a clear-data wipe NULLs them, which
+-- re-opens the first-ever-claim branch of the claim predicate. Either way the
+-- stale snapshot could still win its claim and POST health data to an endpoint
+-- the owner had already been told was revoked.
+--
+-- webhook_config_version closes that window. Every write that changes what
+-- delivery would mean -- a settings save, a disable, a remove, a clear-data
+-- wipe -- increments it in the same statement that performs the write, and the
+-- claim pins the value the claiming pass's snapshot carried. Monotonic on
+-- purpose: clear-data ADVANCES the counter rather than resetting it, because a
+-- reset would hand a revoked snapshot its own value back.
+--
+-- Existing rows start at 0, which is the right value: the claim also pins
+-- webhook_enabled, so a revocation performed BEFORE this migration is still
+-- honoured by the first pass after the upgrade.
+--
+-- The migration runner skips any ADD COLUMN whose column already exists, so
+-- this file is idempotent across clean installs and rolling deploys. Rollback
+-- (forward-only repo) is documented in the commit body, not here.
+
+ALTER TABLE users ADD COLUMN webhook_config_version INTEGER NOT NULL DEFAULT 0;

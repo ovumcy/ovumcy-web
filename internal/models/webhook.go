@@ -64,6 +64,15 @@ type WebhookNotifyRecord struct {
 	WebhookNotifyOvulation bool   `gorm:"column:webhook_notify_ovulation"`
 	ReminderLeadDays       int    `gorm:"column:reminder_lead_days"`
 
+	// WebhookConfigVersion is the revocation epoch of the settings above at the
+	// instant this snapshot was read. The pass hands it back to
+	// ClaimWebhookWatermark, which refuses the claim when the stored value has
+	// moved on — so a snapshot taken before the owner disabled delivery, replaced
+	// or removed the endpoint, or cleared their data can no longer reach that
+	// endpoint. It is a coordination value, not a setting: nothing in the pass
+	// decides anything from it except whether its own claim still applies.
+	WebhookConfigVersion int `gorm:"column:webhook_config_version"`
+
 	// Per-kind watermarks (cycle-start anchor a reminder was last sent for).
 	WebhookPeriodLastSentCycleStart    *time.Time `gorm:"column:webhook_period_last_sent_cycle_start;type:date"`
 	WebhookOvulationLastSentCycleStart *time.Time `gorm:"column:webhook_ovulation_last_sent_cycle_start;type:date"`

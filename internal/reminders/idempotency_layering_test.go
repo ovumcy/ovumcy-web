@@ -35,7 +35,9 @@ import (
 // The two writers mirror the repository exactly. The claim is the conditional
 // UPDATE ... WHERE id = ? AND col IS <the value the pass read> — one row affected
 // means this pass owns the send, zero rows means the column moved since the
-// snapshot, so another pass owns it. The release is the compare-and-set back,
+// snapshot, so another pass owns it. The claim also pins the owner.s
+// revocation epoch, so a pass whose snapshot predates a settings save, a disable,
+// an endpoint change or a clear-data wipe loses it and delivers nothing. The release is the compare-and-set back,
 // conditional on the column still holding the anchor this pass wrote.
 //
 // snapshot, when set, turns ListAllForNotify into a rendezvous: no caller leaves
@@ -62,11 +64,15 @@ func (r *statefulNotifyRepo) ListAllForNotify(context.Context) ([]models.Webhook
 	return out, nil
 }
 
-func (r *statefulNotifyRepo) ClaimWebhookWatermark(_ context.Context, userID uint, reminderType string, anchor time.Time, previous *time.Time) (bool, error) {
+func (r *statefulNotifyRepo) ClaimWebhookWatermark(_ context.Context, userID uint, reminderType string, anchor time.Time, previous *time.Time, configVersion int) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	column := r.column(userID, reminderType)
 	if column == nil {
+		return false, nil
+	}
+	if !r.epochMatches(userID, configVersion) {
+		// The owner revoked the configuration this pass read: it may not send.
 		return false, nil
 	}
 	if !sameWatermark(*column, previous) {
@@ -101,6 +107,19 @@ func (r *statefulNotifyRepo) ReleaseWebhookWatermark(_ context.Context, userID u
 	}
 	*column = previous
 	return nil
+}
+
+// epochMatches reports whether the owner's stored revocation epoch is still the
+// one the claiming pass's snapshot carried — the stub's spelling of the claim's
+// "webhook_config_version = ?" predicate. An unknown owner cannot match, which
+// is the fail-closed direction for an egress path.
+func (r *statefulNotifyRepo) epochMatches(userID uint, configVersion int) bool {
+	for i := range r.records {
+		if r.records[i].ID == userID {
+			return r.records[i].WebhookConfigVersion == configVersion
+		}
+	}
+	return false
 }
 
 // column returns a pointer to the watermark field of one owner's record, or nil

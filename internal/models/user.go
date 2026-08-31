@@ -147,6 +147,19 @@ type User struct {
 	// once the predicted event is within this many days of "today". Default 3
 	// matches services.DashboardReminderBannerWindowDays; bounded 0–14 at save.
 	ReminderLeadDays int `gorm:"column:reminder_lead_days;not null;default:3"`
+	// WebhookConfigVersion is the monotonic REVOCATION EPOCH of the block above
+	// (migration 038): every write that changes what delivery would mean — a
+	// settings save, a disable, a remove, a clear-data wipe — increments it in
+	// the same statement that performs the write, and the notify pass's
+	// pre-delivery watermark claim pins the value its own snapshot carried. It is
+	// therefore not a preference and never rendered: it exists so a pass that
+	// read the configuration BEFORE a revocation cannot win a claim and POST to
+	// the endpoint the owner has since revoked.
+	//
+	// Monotonic, never reset: ClearAllDataAndResetSettings advances it like every
+	// other writer, because handing a revoked snapshot its own value back is
+	// exactly the window this column closes.
+	WebhookConfigVersion int `gorm:"column:webhook_config_version;not null;default:0"`
 	// Calendar (.ics) feed subscription token (slice 1: storage only). Backs a
 	// pull-based feed URL whose path carries a bearer capability token; a
 	// calendar client polls it for the owner's own cycle events. Every column in
