@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -32,18 +33,34 @@ import (
 // owner's configuration changes underneath it. revoke is called before the logs
 // are returned, which models a pass that had already read everything it needs
 // and is now on its way to the claim.
+// The mutex matches its neighbours in this package (stubDeliverer,
+// stubNotifyRepo): the pass is sequential today, so nothing races, but a stub
+// that mutates state without one is the odd one out here and would race
+// silently the first time a case drives two passes at once — which is exactly
+// what internal/reminders already does to the other stubs.
 type revokingLogReader struct {
+	mu     sync.Mutex
 	logs   []models.DailyLog
 	revoke func()
 	done   bool
 }
 
 func (reader *revokingLogReader) ListByUser(_ context.Context, _ uint) ([]models.DailyLog, error) {
-	if !reader.done && reader.revoke != nil {
+	reader.mu.Lock()
+	fire := !reader.done && reader.revoke != nil
+	if fire {
 		reader.done = true
+	}
+	logs := reader.logs
+	reader.mu.Unlock()
+
+	// The revocation runs OUTSIDE the lock: it writes to the same database the
+	// pass is reading, and holding a test stub's mutex across that would invent a
+	// serialization the production path does not have.
+	if fire {
 		reader.revoke()
 	}
-	return reader.logs, nil
+	return logs, nil
 }
 
 // webhookRevocationFixture is one armed owner on a real database, at a moment
@@ -60,7 +77,7 @@ type webhookRevocationFixture struct {
 	now      time.Time
 }
 
-const ownerEndpoint = "https://revoked.example/hook"
+const ownerEndpoint = "https://owner.example/hook"
 
 func newWebhookRevocationFixture(t *testing.T, name string) webhookRevocationFixture {
 	t.Helper()
