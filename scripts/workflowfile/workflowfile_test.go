@@ -116,10 +116,10 @@ func TestJobHeadersCountsOnlyTheJobs(t *testing.T) {
 }
 
 func TestRepoRootFindsTheModuleRoot(t *testing.T) {
-	root := RepoRoot(t)
+	root := repoRoot(t)
 
 	if _, err := os.Stat(filepath.Join(root, "go.mod")); err != nil {
-		t.Fatalf("RepoRoot returned %s, which holds no go.mod: %v", root, err)
+		t.Fatalf("repoRoot returned %s, which holds no go.mod: %v", root, err)
 	}
 }
 

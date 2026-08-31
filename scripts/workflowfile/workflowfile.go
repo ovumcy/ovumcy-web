@@ -39,8 +39,11 @@ var jobHeader = regexp.MustCompile(`(?m)^  [A-Za-z0-9_.-]+:[ \t]*$`)
 // nothing downstream notices.
 const jobsKey = "\njobs:\n"
 
-// RepoRoot walks up from the test's working directory to the module root.
-func RepoRoot(t *testing.T) string {
+// repoRoot walks up from the test's working directory to the module root. It
+// is not exported: every caller reaches a workflow through `Read`, which joins
+// the path itself, and a guard handed the root would join its own — the
+// duplication this package exists to end.
+func repoRoot(t *testing.T) string {
 	t.Helper()
 
 	dir, err := os.Getwd()
@@ -65,7 +68,7 @@ func RepoRoot(t *testing.T) string {
 func Read(t *testing.T, workflow string) string {
 	t.Helper()
 
-	raw, err := os.ReadFile(filepath.Join(RepoRoot(t), filepath.FromSlash(workflow)))
+	raw, err := os.ReadFile(filepath.Join(repoRoot(t), filepath.FromSlash(workflow)))
 	if err != nil {
 		t.Fatalf("read %s: %v", workflow, err)
 	}
