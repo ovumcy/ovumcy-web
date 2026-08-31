@@ -415,8 +415,21 @@ func TestTheCallerCeilingCoversEveryScopeTheCalledWorkflowDeclares(t *testing.T)
 	}
 	content := strings.ReplaceAll(string(raw), "\r\n", "\n")
 
+	blocks := strings.Split(content, "\n    permissions:\n")[1:]
+
+	// One block per job, or this guard is covering only the jobs it happened to
+	// recognise. Finding SOME is the dangerous outcome, not finding none: the
+	// scopes it did read still compare cleanly, so a job whose block is written
+	// in a shape this reader walks past asks for whatever it likes and the
+	// guard reports green — the defect it exists to catch, one job over.
+	jobs := jobHeader.FindAllString(content[strings.Index(content, "\njobs:\n"):], -1)
+	if len(blocks) != len(jobs) {
+		t.Fatalf("%s has %d jobs and %d job-level `permissions:` blocks this guard can read. Every job's block has to be readable here, because the ones it cannot see are the ones that widen unnoticed — write the block in the usual shape, or teach this reader the new one",
+			gateWorkflow, len(jobs), len(blocks))
+	}
+
 	requested := map[string]string{}
-	for _, block := range strings.Split(content, "\n    permissions:\n")[1:] {
+	for _, block := range blocks {
 		for scope, level := range declaredPermissions(t, "\n    permissions:\n"+block) {
 			if permissionRank[level] > permissionRank[requested[scope]] {
 				requested[scope] = level
