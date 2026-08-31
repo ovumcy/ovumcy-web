@@ -139,10 +139,11 @@ jobs:
           # `merge_group`, so it reports `success` there with every step gated
           # off. Measured on 6a95d01d, whose two suites the endpoints below
           # return side by side: `image-smoke` `skipped` in the queue suite
-          # (87906745947) and real in the one that ran on `main` (87908743276);
-          # and 3 s in the queue run against 240 s on push for the Postgres
-          # lane, same commit (2026-08-18, run 32081210308). Their real verdict
-          # is in the push, release or dispatch run, which is `RUN_HEAVY`.
+          # (87906745947) and real in the one that ran on `main` (87908743276).
+          # And for the Postgres lane, 2026-08-18, same commit: 3 s in queue run
+          # 32081210308 with every step gated off, 240 s in push run 32081716803
+          # doing the work. Their real verdict is in the push, release or
+          # dispatch run, which is `RUN_HEAVY`.
           #
           # Reading a lane off the run where its own gate never looked at the
           # diff is what the split exists to stop. This step used to read the
