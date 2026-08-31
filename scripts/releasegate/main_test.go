@@ -370,7 +370,11 @@ func TestTheSplitStillRestsOnWhatCiActuallyDoes(t *testing.T) {
 				gateWorkflow + " reads `test`, `race` and `e2e` from the merge-queue run BECAUSE the push run's verdict for them is vacuous; if the push run now does that work, re-derive the split before changing it",
 		},
 		{
-			text: "carries no base to diff against",
+			// The `*)` arm, matched as code rather than by the verdict
+			// sentence beside it: the fact is that `push` reaches a branch
+			// which clears the base, and a message can be preserved through
+			// exactly the rework this premise needs to notice.
+			text: "            *)\n              base=\"\"",
 			claim: "a push to `main` now has a base to diff against, so `run_e2e` may go false there. " +
 				gateWorkflow + " requires `success` from `image-smoke` in the push run BECAUSE that lane runs on every push whatever the diff touched; if it can now be skipped, that requirement blocks a documentation-only release tag forever",
 		},
@@ -379,6 +383,87 @@ func TestTheSplitStillRestsOnWhatCiActuallyDoes(t *testing.T) {
 			t.Errorf("%s, job %q: %s", rollingWorkflow, changesJob, premise.claim)
 		}
 	}
+}
+
+// permissionRank orders the three values a scope can take. A caller grants a
+// ceiling, so `read` where the called job wants `write` is as broken as an
+// absent scope.
+var permissionRank = map[string]int{"none": 0, "read": 1, "write": 2}
+
+var permissionEntry = regexp.MustCompile(`^      ([a-z-]+): (none|read|write)$`)
+
+// TestTheCallerCeilingCoversEveryScopeTheCalledWorkflowDeclares is the guard for
+// a defect this very change nearly shipped: the gate gained `actions: read` and
+// ci.yml's `publish-image` — which reaches this workflow through
+// `uses: ./.github/workflows/docker-image.yml` — kept the ceiling it had.
+//
+// A reusable workflow's job cannot request a scope its caller does not hold, and
+// the refusal lands on the CALL rather than on the job that asked, so it does
+// not matter that the tag gate is skipped on that path. What it costs is the
+// whole publish: `:latest` stops following `main`, which is the failure closed
+// one pull request before this one. The comment at the caller says so; this is
+// what makes it true.
+func TestTheCallerCeilingCoversEveryScopeTheCalledWorkflowDeclares(t *testing.T) {
+	ceiling := declaredPermissions(t, jobBlock(t, rollingWorkflow, rollingJob))
+	if len(ceiling) == 0 {
+		t.Fatalf("%s, job %q declares no `permissions:` block, so it grants the called workflow the repository default and this comparison would pass over anything", rollingWorkflow, rollingJob)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(repoRoot(t), filepath.FromSlash(gateWorkflow)))
+	if err != nil {
+		t.Fatalf("read %s: %v", gateWorkflow, err)
+	}
+	content := strings.ReplaceAll(string(raw), "\r\n", "\n")
+
+	requested := map[string]string{}
+	for _, block := range strings.Split(content, "\n    permissions:\n")[1:] {
+		for scope, level := range declaredPermissions(t, "\n    permissions:\n"+block) {
+			if permissionRank[level] > permissionRank[requested[scope]] {
+				requested[scope] = level
+			}
+		}
+	}
+	if len(requested) == 0 {
+		t.Fatalf("%s declares no job-level `permissions:` at all, which this guard reads as its own failure rather than as nothing to check", gateWorkflow)
+	}
+
+	for _, scope := range sortedKeys(requested) {
+		if permissionRank[ceiling[scope]] < permissionRank[requested[scope]] {
+			t.Errorf("%s declares `%s: %s`, and %s's %q grants `%s: %s`. A caller cannot grant a called workflow more than it holds, and the shortfall fails the CALL, not the job that asked — so the publish stops entirely and `:latest` stops following `main`. Add the scope to that job's `permissions:` block",
+				gateWorkflow, scope, requested[scope], rollingWorkflow, rollingJob, scope, orNone(ceiling[scope]))
+		}
+	}
+}
+
+// declaredPermissions reads one `permissions:` mapping out of a job block.
+func declaredPermissions(t *testing.T, block string) map[string]string {
+	t.Helper()
+
+	marker := "    permissions:\n"
+	start := strings.Index(block, marker)
+	if start < 0 {
+		return nil
+	}
+
+	granted := map[string]string{}
+	for _, line := range strings.Split(block[start+len(marker):], "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "#") {
+			continue
+		}
+		match := permissionEntry.FindStringSubmatch(line)
+		if match == nil {
+			break
+		}
+		granted[match[1]] = match[2]
+	}
+	return granted
+}
+
+func orNone(level string) string {
+	if level == "" {
+		return "none"
+	}
+	return level
 }
 
 // runGate executes the extracted script with `gh` and `git` shadowed by shell
