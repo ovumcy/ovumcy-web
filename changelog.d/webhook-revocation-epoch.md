@@ -19,6 +19,12 @@
   One limit is worth stating plainly, because it cannot be closed from here: a request that has
   already left cannot be recalled. If the pass had sent the POST at the moment the setting changed,
   that one request completes. What is guaranteed is that no new request begins under settings the
-  owner has revoked. `docs/notifications.md` says the same thing where an operator will meet it.
+  owner has revoked.
+
+  The counter also moves for a save that edited nothing, so a save landing while the pass runs
+  costs that pass its remaining reminders for that owner. They arrive on the next run — except
+  at a lead time of zero days, where a reminder is due on a single calendar day and no later run
+  still covers it, so that cycle's reminder is skipped. `docs/notifications.md` states
+  both limits where an operator will meet them.
 
   Schema: adds `users.webhook_config_version` (migration 038, both engines).

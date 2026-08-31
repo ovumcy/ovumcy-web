@@ -33,11 +33,13 @@ import (
 // owner's configuration changes underneath it. revoke is called before the logs
 // are returned, which models a pass that had already read everything it needs
 // and is now on its way to the claim.
-// The mutex matches its neighbours in this package (stubDeliverer,
-// stubNotifyRepo): the pass is sequential today, so nothing races, but a stub
-// that mutates state without one is the odd one out here and would race
-// silently the first time a case drives two passes at once — which is exactly
-// what internal/reminders already does to the other stubs.
+//
+// The mutex follows this package's convention rather than a present need: the
+// pass walks owners sequentially, so nothing races today, but every other
+// mutating stub here (stubDeliverer, stubNotifyRepo) carries one, and a reader
+// that did not would be the single spot a later concurrent case races on.
+// internal/reminders drives genuinely overlapping passes, but through its own
+// stubs — these are package-private to services and it never sees them.
 type revokingLogReader struct {
 	mu     sync.Mutex
 	logs   []models.DailyLog
