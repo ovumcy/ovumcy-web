@@ -150,3 +150,60 @@ func TestDashboardOvulationLineLeavesSuppressionAlone(t *testing.T) {
 		t.Fatalf("suppressed account still renders an ovulation date (%s): a confirmed shift must not be a way around the gate", CalendarDayKey(context.DisplayOvulationDate))
 	}
 }
+
+// TestDashboardOvulationLineOutranksTheIrregularRange and its sibling below
+// cover the two ways the dashboard expresses PROJECTION uncertainty. Neither is
+// a suppression gate, and neither is about a day the temperatures have already
+// named — but both used to discard the confirmed date, leaving the calendar
+// marking a day the dashboard would not name. The calendar gates this signal on
+// FertilityProjectionSuppressed alone, which neither cohort here meets.
+func TestDashboardOvulationLineOutranksTheIrregularRange(t *testing.T) {
+	user, logs, stats, today := confirmedOvulationFixture(t)
+	// dashboardIrregularPredictionRangeEnabled: irregular, >= 3 completed
+	// cycles, and a real min/max spread.
+	user.IrregularCycle = true
+	stats.MinCycleLength = 25
+	stats.MaxCycleLength = 33
+
+	context := BuildDashboardCycleContext(user, logs, stats, today, time.UTC)
+
+	if context.DisplayOvulationUseRange {
+		t.Error("a confirmed ovulation must be named as a day, not widened into a range built from cycle-length spread")
+	}
+	if got := CalendarDayKey(context.DisplayOvulationDate); got != "2026-03-11" {
+		t.Fatalf("dashboard ovulation line = %s, want 2026-03-11 for an irregular account whose temperatures confirmed the day", got)
+	}
+}
+
+func TestDashboardOvulationLineOutranksTheThinHistoryWithholding(t *testing.T) {
+	user, logs, stats, today := confirmedOvulationFixture(t)
+	// dashboardNeedsOvulationData: irregular with fewer than three completed
+	// cycles. One completed cycle keeps the first-cycle floor from firing, so
+	// the calendar still marks the detector's day.
+	user.IrregularCycle = true
+	stats.CompletedCycleCount = 1
+
+	context := BuildDashboardCycleContext(user, logs, stats, today, time.UTC)
+
+	if got := CalendarDayKey(context.DisplayOvulationDate); got != "2026-03-11" {
+		t.Fatalf("dashboard ovulation line = %s, want 2026-03-11: \"needs more cycles\" is about a projection, not about a recorded thermal shift", got)
+	}
+}
+
+// TestConfirmedOvulationStopsAtTheFirstCycleFloor is the other side: the
+// calendar withholds the BBT pass entirely under FertilityProjectionSuppressed,
+// so the resolver must too, or the dashboard would name a day the grid refuses
+// to mark — the same divergence pointing the other way.
+func TestConfirmedOvulationStopsAtTheFirstCycleFloor(t *testing.T) {
+	user, logs, stats, today := confirmedOvulationFixture(t)
+	stats.CompletedCycleCount = 0
+
+	if _, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, today, time.UTC); ok {
+		t.Fatal("with no completed cycle the fertility projection is suppressed on every surface, so nothing may be confirmed here either")
+	}
+
+	context := BuildDashboardCycleContext(user, logs, stats, today, time.UTC)
+	if got := CalendarDayKey(context.DisplayOvulationDate); got == "2026-03-11" {
+		t.Fatal("the dashboard must not name the detector's day while the calendar withholds it under the first-cycle floor")
+	}
+}
