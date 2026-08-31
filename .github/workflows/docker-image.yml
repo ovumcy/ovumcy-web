@@ -68,8 +68,14 @@ jobs:
     if: ${{ github.ref_type == 'tag' }}
     runs-on: ubuntu-latest
     permissions:
-      # `checks: read` is the whole of the widening, and it lives here, not on
-      # the publish job below, which keeps exactly the permissions it had.
+      # `actions: read` and `checks: read` are the whole of the widening, and
+      # both live here, not on the publish job below, which keeps exactly the
+      # permissions it had. `actions: read` is what lets the step below ask
+      # which EVENT produced each run on the tagged commit; without it the only
+      # discriminator left is `head_branch`, which cannot tell the push run on
+      # `main` from a scheduled or manually dispatched one, and can recognise
+      # the merge-queue run only by a ref-name convention.
+      actions: read
       checks: read
       contents: read
 
@@ -110,112 +116,165 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          # Exactly the five ci.yml's `publish-image` requires before it lets
-          # `:latest` follow `main`. Three of them would have made the RELEASE
-          # path more permissive than the rolling one: a commit whose
-          # `image-smoke` or `e2e-postgres-smoke` failed correctly holds
-          # `:latest` back, and tagging that same commit would then have shipped
-          # a signed, attested release image anyway.
+          # The five ci.yml's `publish-image` requires before it lets `:latest`
+          # follow `main`, split by WHERE each one's verdict is real. The split
+          # is not a preference about which run to trust; it is ci.yml's own
+          # gating read back.
           #
-          # Being contained in main is not enough on its own to imply these, and
-          # neither is the merge queue's verdict. Measured on 6a95d01d, whose
-          # two suites the endpoint below returns side by side: in the QUEUE
-          # suite (87906745947, head_branch `gh-readonly-queue/main/pr-542-…`)
-          # `image-smoke` is `skipped` — it gates on the event and the queue is
-          # not one — while `e2e-postgres-smoke` reports `success` there with
-          # its own steps gated off by `RUN_HEAVY`, which is a green with no
-          # work behind it. Only the suite that ran on `main` itself
-          # (87908743276) carries a real verdict for either. So the gate asks
-          # that suite, and no other.
-          REQUIRED_CHECKS: test race e2e e2e-postgres-smoke image-smoke
+          # `test`, `race` and `e2e` are thin gates over lanes that `changes`
+          # clears with `run_core`, and a `push` to `main` clears it
+          # UNCONDITIONALLY — "the merge queue already ran the core suite on
+          # this exact commit", ci.yml's own words where it does so. So in the
+          # push run all three report `success` in seconds with every lane
+          # beneath them skipped: measured at 4b3c01d7 at 4 s, 2 s and 4 s. That
+          # green carries no work, and it is that green on EVERY push, so
+          # nothing about a particular commit takes part in it. Their real
+          # verdict is in the `merge_group` run, which this rebase queue
+          # produces on the byte-identical SHA.
+          #
+          # `e2e-postgres-smoke` and `image-smoke` are the other half of the
+          # same sentence: they are exactly what the queue does NOT run.
+          # `image-smoke` gates on the event, so the queue run reports it
+          # `skipped`; `e2e-postgres-smoke`'s own `RUN_HEAVY` excludes
+          # `merge_group`, so it reports `success` there with every step gated
+          # off — 3 s against 240 s on push, same commit. Their real verdict is
+          # in the push, release or dispatch run, which is what `RUN_HEAVY` is.
+          #
+          # Reading a lane off the run where its own gate never looked at the
+          # diff is what the split exists to stop. This step used to read the
+          # `main`-branch suite for all five and accept `skipped` from it for
+          # all five, which is both halves of one contradiction: it refused the
+          # queue's verdict as untrustworthy, and then accepted a push-run green
+          # whose only justification WAS that the queue had already run.
+          QUEUE_CHECKS: test race e2e
+          HEAVY_CHECKS: e2e-postgres-smoke image-smoke
         run: |
           set -euo pipefail
 
           sha="$(git rev-parse "${GITHUB_SHA}^{commit}")"
 
-          # Which suites ran on `main` ITSELF. A merge-queue run lives on a
-          # `gh-readonly-queue/...` ref, so its head_branch is never `main`,
-          # and this is the only field that separates the two — the check_suite
-          # object nested in a check-run response carries an id and nothing
-          # else (probed 2026-08-21).
+          # Which runs exist for this commit, and under which EVENT. The event
+          # is the discriminator, not `head_branch`: a scheduled run and a
+          # manually dispatched one both carry `head_branch: main`, and a queue
+          # run is otherwise recognisable only by a ref-name convention.
+          # `check_suite_id` is what ties a run to the check runs below (probed
+          # 2026-08-31 on 5049126f: `CI merge_group 90335713116` and `CI push
+          # 90335932105` — one commit, two suites, side by side).
           #
-          # Asking for this FIRST is what closes the window between the merge
-          # landing and the push run's suite being created. In that window the
-          # queue suite is the only one on the sha, and it reports `image-smoke`
-          # as `skipped`, which the judging below accepts — so a tag pushed
-          # there would have published a release image for a commit `image-smoke`
-          # never looked at. A suite that exists but has not finished is already
-          # safe: its conclusions are null, mapped to `pending` below, and
-          # `pending` refuses. The hole was strictly the suite that did not
-          # exist yet, and an absent suite is now its own refusal.
-          main_suite_ids="$(
+          # This is what `actions: read` on the job above buys.
+          workflow_runs="$(
             gh api --paginate \
-              "repos/${GITHUB_REPOSITORY}/commits/${sha}/check-suites?per_page=100" \
-              --jq '.check_suites[] | select(.head_branch == "main") | .id'
+              "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${sha}&per_page=100" \
+              --jq '.workflow_runs[] | [.event, (.check_suite_id | tostring)] | @tsv'
           )"
 
-          if [ -z "$main_suite_ids" ]; then
-            echo "::error::no check suite for ${sha} ran on \`main\` itself — only the merge queue's, if any. The lanes that judge a release image (\`image-smoke\`, \`e2e-postgres-smoke\`) run on the push to \`main\`, not in the queue, so this commit has no verdict from them yet. Wait for that run to finish, then re-push the tag."
+          echo "workflow runs on ${sha} (event, check suite):"
+          printf '%s\n' "$workflow_runs"
+
+          suite_ids_for_events() {
+            printf '%s\n' "$workflow_runs" | awk -F'\t' -v want="$1" '
+              BEGIN { n = split(want, a, " "); for (i = 1; i <= n; i++) keep[a[i]] = 1 }
+              keep[$1] { print $2 }
+            ' | sort -u
+          }
+
+          # `RUN_HEAVY` spelled out: the three events under which the image
+          # lanes actually execute. Keeping all three rather than `push` alone
+          # is what leaves an operator a way to produce that evidence for a
+          # commit whose push run was lost — dispatch CI on `main` and the lanes
+          # run, because an event carrying no base to diff against leaves
+          # `run_e2e` in the running direction.
+          queue_suite_ids="$(suite_ids_for_events "merge_group")"
+          heavy_suite_ids="$(suite_ids_for_events "push release workflow_dispatch")"
+
+          if [ -z "$queue_suite_ids" ]; then
+            echo "::error::no merge-queue run exists for ${sha}. \`${QUEUE_CHECKS}\` are the lanes the push to \`main\` clears unconditionally, so the queue run is the only place their verdict is real — and a commit that reached \`main\` without one has never had those lanes run against its own diff. Merge it through the queue, or dispatch CI on \`main\` for it, then re-push the tag."
+            exit 1
+          fi
+
+          if [ -z "$heavy_suite_ids" ]; then
+            echo "::error::no push, release or workflow_dispatch run exists for ${sha}. \`${HEAVY_CHECKS}\` are exactly the lanes the merge queue does not run, so those events are the only place their verdict is real. Wait for the push run to finish, or dispatch CI on \`main\` for this commit, then re-push the tag."
             exit 1
           fi
 
           # The endpoint's default `filter=latest` returns the most recent run
           # per name PER CHECK SUITE, so each of these names appears once per
-          # suite on the sha. Every row from a `main` suite is judged, never the
-          # first one found: taking the first would make the verdict depend on
-          # the order the API happened to return.
-          runs="$(
+          # suite on the sha. Every row is judged, never the first: taking the
+          # first would make the verdict depend on the order the API happened to
+          # return.
+          check_runs="$(
             gh api --paginate \
               "repos/${GITHUB_REPOSITORY}/commits/${sha}/check-runs?per_page=100" \
               --jq '.check_runs[] | [(.check_suite.id | tostring), .name, .conclusion // "pending"] | @tsv'
           )"
 
-          main_runs="$(
-            printf '%s\n' "$runs" | awk -F'\t' -v ids="$(printf '%s ' $main_suite_ids)" '
+          conclusions_in() {
+            printf '%s\n' "$check_runs" | awk -F'\t' -v ids="$(printf '%s ' $1)" -v want="$2" '
               BEGIN { n = split(ids, a, " "); for (i = 1; i <= n; i++) if (a[i] != "") keep[a[i]] = 1 }
-              keep[$1] { print $2 "\t" $3 }
+              keep[$1] && $2 == want { print $3 }
             '
-          )"
-
-          echo "check runs on ${sha} from a suite that ran on main:"
-          printf '%s\n' "$main_runs"
+          }
 
           failed=0
-          for name in $REQUIRED_CHECKS; do
-            conclusions="$(printf '%s\n' "$main_runs" | awk -F'\t' -v n="$name" '$1 == n { print $2 }')"
 
-            if [ -z "$conclusions" ]; then
-              echo "::error::no \`${name}\` check run exists for ${sha} in a suite that ran on \`main\`. A tag push starts no CI run of its own, so this commit's checks must already have run there."
+          # `success` and nothing else, in the run where the lane ran. `skipped`
+          # is refused here even where the lane may legitimately have been
+          # cleared for the diff: a release image is being signed off, the
+          # cleared lane is one of the five that hold `:latest` back, and this
+          # gate cannot tell a lane cleared by `changes` from one skipped
+          # because its run was cancelled. `pending` is not `skipped` either —
+          # a queued or still-running check is no verdict at all.
+          judge() {
+            judge_conclusions="$(conclusions_in "$1" "$2")"
+
+            if [ -z "$judge_conclusions" ]; then
+              echo "::error::no \`$2\` check run exists for ${sha} in $3. A tag push starts no CI run of its own, so this commit's checks must already have run there."
               failed=1
-              continue
+              return
             fi
 
-            # `skipped` passes, here and for the same reason ci.yml's own `test`
-            # gate accepts it: the `changes` job decided that run did not need
-            # the lane — a decision not to run, not a failure to run — and it
-            # clears a lane only for a diff that cannot reach it. Insisting on
-            # `success` would block a tag on a docs-only commit forever, since
-            # `image-smoke` gates on `run_e2e` and is skipped on the push there
-            # too. What made `skipped` unsafe was reading it off the QUEUE
-            # suite, which is no longer consulted. `pending` is not `skipped` —
-            # a queued or still-running check is no verdict, and this refuses.
             while IFS= read -r conclusion; do
+              [ -n "$conclusion" ] || continue
+              if [ "$conclusion" != "success" ]; then
+                echo "::error::a \`$2\` check run in $3 for ${sha} concluded \"${conclusion}\", and only \`success\` clears a release tag."
+                failed=1
+              fi
+            done <<< "$judge_conclusions"
+          }
+
+          for name in $QUEUE_CHECKS; do
+            judge "$queue_suite_ids" "$name" "the merge-queue run"
+          done
+
+          for name in $HEAVY_CHECKS; do
+            judge "$heavy_suite_ids" "$name" "the push, release or dispatch run"
+          done
+
+          # The push run's verdict for the queue-judged three is vacuous, not
+          # meaningless. Every lane under them is cleared there, so `success` is
+          # the only shape it can take, and `skipped` the only other one a
+          # cancelled run can leave. Anything else means a lane that was
+          # supposed to be cleared ran and failed, and this gate does not walk
+          # past that just because it reads the real verdict elsewhere.
+          for name in $QUEUE_CHECKS; do
+            while IFS= read -r conclusion; do
+              [ -n "$conclusion" ] || continue
               case "$conclusion" in
                 success|skipped) ;;
                 *)
-                  echo "::error::a \`${name}\` check run on ${sha} concluded \"${conclusion}\"."
+                  echo "::error::a \`${name}\` check run in the push, release or dispatch run for ${sha} concluded \"${conclusion}\" — every lane beneath it is cleared on that event, so nothing there should have been able to fail."
                   failed=1
                   ;;
               esac
-            done <<< "$conclusions"
+            done <<< "$(conclusions_in "$heavy_suite_ids" "$name")"
           done
 
           if [ "$failed" -ne 0 ]; then
-            echo "::error::refusing to publish a release image for ${GITHUB_REF_NAME}: the required checks on ${sha} are not green."
+            echo "::error::refusing to publish a release image for ${GITHUB_REF_NAME}: the required checks on ${sha} are not green in the run where their verdict is real."
             exit 1
           fi
 
-          echo "every required check (${REQUIRED_CHECKS}) passed on ${sha}."
+          echo "every required check passed where its verdict is real: ${QUEUE_CHECKS} in the merge-queue run, ${HEAVY_CHECKS} in the push, release or dispatch run."
 
   publish:
     needs:
