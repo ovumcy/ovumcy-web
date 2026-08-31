@@ -294,8 +294,8 @@ webhook as part of an install script that also runs `ovumcy users create`).
 - **Turning the webhook off takes effect immediately — including while a pass is
   already running.** A pass reads every owner's settings once, at the start, and
   sends each reminder some time later, so a change you make in between has to
-  reach it. Disabling delivery, replacing the endpoint, removing it, and clearing
-  all your data each mark the settings the running pass is holding as superseded,
+  reach it. Disabling delivery, replacing the endpoint, removing it, changing the
+  reminder lead time, and clearing all your data each mark the settings the running pass is holding as superseded,
   and the claim it takes just before every request is refused once that has
   happened. A pass still working through the owner list therefore cannot deliver
   to an endpoint you have just removed.

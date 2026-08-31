@@ -149,8 +149,9 @@ type User struct {
 	ReminderLeadDays int `gorm:"column:reminder_lead_days;not null;default:3"`
 	// WebhookConfigVersion is the monotonic REVOCATION EPOCH of the block above
 	// (migration 038): every write that changes what delivery would mean — a
-	// settings save, a disable, a remove, a clear-data wipe — increments it in
-	// the same statement that performs the write, and the notify pass's
+	// settings save, a disable, a remove, a change to the shared reminder lead
+	// window, a clear-data wipe — increments it in the same statement that
+	// performs the write, and the notify pass's
 	// pre-delivery watermark claim pins the value its own snapshot carried. It is
 	// therefore not a preference and never rendered: it exists so a pass that
 	// read the configuration BEFORE a revocation cannot win a claim and POST to

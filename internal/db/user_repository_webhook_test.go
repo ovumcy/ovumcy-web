@@ -197,6 +197,12 @@ func TestListAllForNotifyReturnsWhitelistedColumns(t *testing.T) {
 	if other.WebhookPeriodLastSentCycleStart != nil {
 		t.Fatalf("expected second record nil period watermark, got %v", other.WebhookPeriodLastSentCycleStart)
 	}
+	// The untouched owner pins the other direction: an epoch the projection
+	// returned as a constant would satisfy the first record.s assertion above and
+	// still hand every owner.s claim one owner.s epoch.
+	if other.WebhookConfigVersion != 0 {
+		t.Fatalf("expected second record webhook_config_version=0 for an owner whose settings were never saved, got %d", other.WebhookConfigVersion)
+	}
 }
 
 // TestClearAllDataResetsWebhookColumns proves a clear-data wipe disarms

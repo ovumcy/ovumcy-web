@@ -212,8 +212,21 @@ func (repo *UserRepository) UpdateInterfaceLanguage(ctx context.Context, userID 
 // only. Like the webhook-settings save path it deliberately does NOT bump
 // auth_session_version — a reminder preference is not a change to the account's
 // security posture, so no active session should be revoked.
+//
+// It DOES advance webhook_config_version, for the same reason SaveWebhookSettings
+// does. reminder_lead_days is SHARED: it is a dashboard-banner preference AND one
+// of the columns ListAllForNotify projects, and decideDueReminders decides from
+// it — narrowing the window from seven days to zero is the owner saying "not this
+// early", and a pass holding the seven-day snapshot would otherwise still deliver
+// against it. That is a smaller blast radius than a revoked endpoint and the same
+// class, so this write joins the epoch rather than being excused from it: a rule
+// applied at two of its three write sites is what leaves the third reachable.
+// Regression: TestUpdateReminderLeadDaysAdvancesTheRevocationEpoch.
 func (repo *UserRepository) UpdateReminderLeadDays(ctx context.Context, userID uint, leadDays int) error {
-	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Update("reminder_lead_days", leadDays).Error
+	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+		"reminder_lead_days":     leadDays,
+		"webhook_config_version": gorm.Expr("webhook_config_version + 1"),
+	}).Error
 }
 
 // SaveWebhookSettings persists an owner's webhook notification settings
@@ -238,6 +251,16 @@ func (repo *UserRepository) UpdateReminderLeadDays(ctx context.Context, userID u
 // back to a snapshot that already held it. Regression:
 // TestSaveWebhookSettingsAdvancesTheRevocationEpoch,
 // TestClaimWebhookWatermarkIsLostAfterTheOwnerDisabledDelivery.
+//
+// The advance is UNCONDITIONAL, including for a save that changes nothing — the
+// settings form re-submitted untouched. The cost is bounded and the alternative
+// is not: an in-flight pass loses its claim and retries on the next pass, at
+// worst a day's delay on the daily scheduler, whereas comparing against the
+// stored row to decide whether this save "counts" would put the revocation
+// behind a value judgement made from a row read a moment earlier. An egress
+// gate errs toward refusing. (SettingsService.SaveReminderLeadDays skips its own
+// no-op UPDATE before reaching persistence, so the equivalent saving is already
+// taken where it can be taken safely.)
 func (repo *UserRepository) SaveWebhookSettings(ctx context.Context, userID uint, settings models.WebhookSettingsColumns) error {
 	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
 		"webhook_enabled":          settings.Enabled,
@@ -414,9 +437,13 @@ func canonicalWatermarkAnchor(cycleAnchor time.Time) time.Time {
 // The watermark alone is NOT the whole predicate, because it cannot see a
 // revocation. configVersion is the webhook_config_version the same snapshot
 // carried, and it is pinned too: every write to an owner's webhook configuration
-// — a settings save, a disable, an endpoint replacement or removal, a clear-data
-// wipe — advances that column in the statement that performs it, so a claim
-// presenting the previous epoch matches no row. Without it the two revocation
+// — a settings save, a disable, an endpoint replacement or removal, a change to
+// the shared reminder lead window, a clear-data wipe — advances that column in
+// the statement that performs it, so a claim presenting the previous epoch
+// matches no row. That list is the complete set of writers, not an illustration:
+// SaveWebhookSettings, UpdateReminderLeadDays and
+// ClearAllDataAndResetSettings are the three, and a fourth added later owes the
+// same advance. Without it the two revocation
 // shapes both survive the watermark check: a settings save deliberately leaves
 // the watermarks untouched, so the stale snapshot's compare-and-set still holds,
 // and a clear-data wipe NULLs them, which re-opens the first-ever-claim branch
