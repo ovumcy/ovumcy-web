@@ -86,22 +86,45 @@ func Job(t *testing.T, workflow, job string) string {
 	return block
 }
 
-// JobHeaders returns every job header in content, which is how a caller counts
-// the jobs a workflow declares without re-deriving what a header looks like.
-func JobHeaders(content string) []string {
-	return jobHeader.FindAllString(content, -1)
+// JobHeaders returns every job header a workflow declares. It takes the whole
+// document and scopes itself, so a caller counting jobs does not re-derive
+// either what a header looks like or where the job section starts — both of
+// which this package already had to decide in order to cut one job out.
+func JobHeaders(t *testing.T, content string) []string {
+	t.Helper()
+
+	section, err := jobSection(content)
+	if err != nil {
+		t.Fatalf("%v, so there is nothing here to count", err)
+	}
+	return jobHeader.FindAllString(section, -1)
+}
+
+// jobSection returns the document from its `jobs:` key onward, which is the
+// only region a job header may be looked for in.
+func jobSection(content string) (string, error) {
+	// The key is anchored on a LINE, not on a preceding newline: a workflow
+	// whose very first line is `jobs:` has no newline in front of it, and a
+	// reader that demanded one would report a document that has the key as a
+	// document that has none — true about the search, false about the file.
+	prefixed := "\n" + content
+
+	at := strings.Index(prefixed, jobsKey)
+	if at < 0 {
+		return "", fmt.Errorf("no `jobs:` key")
+	}
+	// The trailing newline of `jobs:` is kept, because it is the one a job
+	// header is matched against.
+	return prefixed[at+len(jobsKey)-1:], nil
 }
 
 // jobIn is Job's whole answer, kept out of the `*testing.T` wrapper so its
 // refusals can be tested rather than only triggered.
 func jobIn(content, job string) (string, error) {
-	jobsAt := strings.Index(content, jobsKey)
-	if jobsAt < 0 {
-		return "", fmt.Errorf("no `jobs:` key, so there is nothing here a job named %q could be declared in", job)
+	section, err := jobSection(content)
+	if err != nil {
+		return "", fmt.Errorf("%w, so there is nothing here a job named %q could be declared in", err, job)
 	}
-	// The trailing newline of `jobs:` is kept, because it is the one the job
-	// header below is matched against.
-	section := content[jobsAt+len(jobsKey)-1:]
 
 	header := "\n  " + job + ":\n"
 	start := strings.Index(section, header)
