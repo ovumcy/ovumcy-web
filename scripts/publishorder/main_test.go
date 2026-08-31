@@ -300,6 +300,10 @@ func defaultRegistry() registry {
 // all for a reference outside the repository this run signed.
 func TestPromotionWritesOnlyTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 	job := workflowfile.Job(t, publishWorkflow, publishJob)
+	// Asked for HERE rather than inside each case: a skip taken per subtest
+	// leaves this test reporting PASS with every case skipped, and the package
+	// line reading `ok` over assertions none of which were made.
+	bash := requireBash(t)
 
 	for _, testCase := range []struct {
 		name        string
@@ -395,7 +399,7 @@ func TestPromotionWritesOnlyTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			output, writes, err := runStep(t, job, promoteStep, map[string]string{
+			output, writes, err := runStep(t, bash, job, promoteStep, map[string]string{
 				"DIGEST":            digest,
 				"TAG_REFS":          testCase.tags,
 				"IMAGE_NAME":        imageName,
@@ -456,6 +460,7 @@ func TestPromotionWritesOnlyTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 // an operator resolves is the artifact the signature covers.
 func TestThePublicCheckRefusesAnAliasThatIsNotTheSignedDigest(t *testing.T) {
 	job := workflowfile.Job(t, publishWorkflow, publishJob)
+	bash := requireBash(t)
 	tags := "ghcr.io/ovumcy/ovumcy-web:v2.0.0\nghcr.io/ovumcy/ovumcy-web:latest"
 
 	for _, testCase := range []struct {
@@ -514,7 +519,7 @@ func TestThePublicCheckRefusesAnAliasThatIsNotTheSignedDigest(t *testing.T) {
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			output, _, err := runStep(t, job, publicStep, map[string]string{
+			output, _, err := runStep(t, bash, job, publicStep, map[string]string{
 				"DIGEST":     digest,
 				"TAG_REFS":   tags,
 				"IMAGE_NAME": imageName,
@@ -620,10 +625,16 @@ func requireShellTool(t *testing.T, bash, name, probe, want string) {
 
 	output, err := exec.Command(bash, "-c", probe).Output()
 	got := strings.TrimSpace(string(output))
-	if err == nil && got == want {
-		return
+
+	// Two outcomes, and the message says which: a tool that is absent or dies
+	// is not a tool that ran and answered wrongly, and one report carrying both
+	// appends a `<nil>` error to the second.
+	switch {
+	case err != nil:
+		requireOrSkip(t, name, fmt.Errorf("`%s` did not run: %v", probe, err))
+	case got != want:
+		requireOrSkip(t, name, fmt.Errorf("`%s` answered %q, not %q", probe, got, want))
 	}
-	requireOrSkip(t, name, fmt.Errorf("`%s` answered %q, not %q: %v", probe, got, want, err))
 }
 
 // requireOrSkip is this package's one rule about a tool the publish steps run
@@ -650,12 +661,10 @@ func requireOrSkip(t *testing.T, name string, err error) {
 //
 // It returns the tags the script wrote, in the order it wrote them, read off
 // the stub's own log.
-func runStep(t *testing.T, job, step string, env map[string]string, reg registry) (string, []string, error) {
+func runStep(t *testing.T, bash, job, step string, env map[string]string, reg registry) (string, []string, error) {
 	t.Helper()
 
 	script := stepScript(t, job, step)
-
-	bash := requireBash(t)
 
 	dir := filepath.ToSlash(t.TempDir())
 	resolves := ""
