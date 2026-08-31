@@ -182,18 +182,23 @@ func PredictCycleWindow(periodStart time.Time, cycleLength int, lutealPhase int)
 		return CycleWindowPrediction{}
 	}
 
-	nextPeriodStart := dateOnly(periodStart.AddDate(0, 0, cycleLength))
+	// The step is taken from a UTC anchor rather than from whatever anchor
+	// periodStart arrived with. dateOnly AFTER the step is too late: the calendar
+	// passes a request-zone midnight here, and AddDate resolves a skipped local
+	// midnight backward into the previous day before dateOnly ever sees it.
+	periodStartDay := dateOnly(periodStart)
+	nextPeriodStart := periodStartDay.AddDate(0, 0, cycleLength)
 	// ovulationDay is one-based relative to periodStart (cycle day 1).
-	ovulationDate := dateOnly(periodStart.AddDate(0, 0, ovulationDay-1))
+	ovulationDate := periodStartDay.AddDate(0, 0, ovulationDay-1)
 	if !ovulationDate.Before(nextPeriodStart) {
 		// codecov:ignore -- defensive invariant: CalcOvulationDay caps ovulationDay at
 		// cycleLen-minLutealPhaseDays, so ovulationDate is always strictly before nextPeriodStart.
 		return CycleWindowPrediction{}
 	}
 
-	fertilityStart := dateOnly(ovulationDate.AddDate(0, 0, -5))
+	fertilityStart := ovulationDate.AddDate(0, 0, -5)
 	if fertilityStart.Before(periodStart) {
-		fertilityStart = dateOnly(periodStart)
+		fertilityStart = periodStartDay
 	}
 
 	return CycleWindowPrediction{

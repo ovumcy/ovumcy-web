@@ -159,7 +159,7 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 	if err != nil {
 		return DashboardViewData{}, err
 	}
-	yesterday := today.AddDate(0, 0, -1)
+	yesterday := AddCalendarDays(today, -1, location)
 	yesterdayHasData, err := service.days.DayHasDataForDate(ctx, user.ID, yesterday, location)
 	if err != nil {
 		return DashboardViewData{}, fmt.Errorf("%w: %v", ErrDashboardViewLoadDayState, err)

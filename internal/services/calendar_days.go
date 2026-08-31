@@ -213,7 +213,7 @@ func appendCurrentBaselinePreFertile(preFertileMap map[string]bool, stats CycleS
 
 	cycleStart := CalendarDay(stats.LastPeriodStart, location)
 	periodLength := predictedPeriodLength(stats.AveragePeriodLength)
-	preFertileStart := cycleStart.AddDate(0, 0, periodLength)
+	preFertileStart := AddCalendarDays(cycleStart, periodLength, location)
 
 	fertilityStart := CalendarDay(stats.FertilityWindowStart, location)
 	if fertilityStart.IsZero() {
@@ -225,7 +225,7 @@ func appendCurrentBaselinePreFertile(preFertileMap map[string]bool, stats CycleS
 		fertilityStart = window.FertilityWindowStart
 	}
 
-	preFertileEnd := fertilityStart.AddDate(0, 0, -1)
+	preFertileEnd := AddCalendarDays(fertilityStart, -1, location)
 	appendCalendarDateRange(preFertileMap, preFertileStart, preFertileEnd)
 }
 
@@ -328,7 +328,7 @@ func appendPredictedCycles(predictedPeriodMap map[string]bool, preFertileMap map
 	// shapes (01:00 local against 00:00). Compared as instants, a projected
 	// cycle falling exactly on the last grid day reads as past the grid and its
 	// markers are never painted.
-	for cycleStart := CalendarDay(stats.NextPeriodStart, location); CalendarDaysBetween(cycleStart, gridEnd) >= 0; cycleStart = cycleStart.AddDate(0, 0, predictedCycleLength) {
+	for cycleStart := CalendarDay(stats.NextPeriodStart, location); CalendarDaysBetween(cycleStart, gridEnd) >= 0; cycleStart = AddCalendarDays(cycleStart, predictedCycleLength, location) {
 		appendPredictedPeriod(predictedPeriodMap, cycleStart, predictedPeriodLength)
 		if includeFertility {
 			appendPredictedWindow(preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, cycleStart, predictedCycleLength, predictedPeriodLength, stats.LutealPhase)
@@ -372,7 +372,7 @@ func appendHistoricalCycles(preFertileMap map[string]bool, fertilityEdgeMap map[
 		if !window.Calculable {
 			continue
 		}
-		preFertileStart := cycleStart.AddDate(0, 0, periodLength)
+		preFertileStart := AddCalendarDays(cycleStart, periodLength, location)
 		preFertileEnd := window.FertilityWindowStart.AddDate(0, 0, -1)
 		appendCalendarDateRange(preFertileMap, preFertileStart, preFertileEnd)
 		ovulationMap[window.OvulationDate.Format("2006-01-02")] = true
