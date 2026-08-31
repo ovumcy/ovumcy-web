@@ -26,6 +26,11 @@ materials, all produced by this repository's GitHub Actions and pushed to the re
 running an image you can confirm it was built by this repository's CI from this source, rather
 than substituted or tampered with.
 
+The tag is written last. The release workflow pushes the image by digest under no tag at all, signs
+and attests that digest, reads both back from the registry, and only then points `vX.Y.Z` and
+`latest` at it — so a tag that resolves at all resolves to a signed digest, and a failure anywhere
+in that sequence leaves no public tag rather than an unsigned release.
+
 Verify the signature (substitute the tag you are pulling for `vX.Y.Z`):
 
 ```bash
