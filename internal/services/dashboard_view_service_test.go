@@ -586,7 +586,7 @@ func TestResolveDashboardTimingFrameGatesTheOvulationEstimateOnEverySuppression(
 			if testCase.mutateStats != nil {
 				testCase.mutateStats(&stats)
 			}
-			frame := resolveDashboardTimingFrame(user, BuildDashboardCycleContext(user, stats, today, time.UTC), visibility)
+			frame := resolveDashboardTimingFrame(user, BuildDashboardCycleContext(user, nil, stats, today, time.UTC), visibility)
 			if frame.ShowOvulationEstimate != testCase.wantEstimate {
 				t.Fatalf("expected ovulation estimate=%v, got %v", testCase.wantEstimate, frame.ShowOvulationEstimate)
 			}

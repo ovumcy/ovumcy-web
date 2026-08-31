@@ -172,7 +172,7 @@ func assertWebhookOvulationReminder(t *testing.T, user *models.User, logs []mode
 func assertDashboardOvulationBanner(t *testing.T, user *models.User, stats CycleStats, today time.Time, location *time.Location, testCase firstCycleFloorCase) {
 	t.Helper()
 
-	cycleContext := BuildDashboardCycleContext(user, stats, today, location)
+	cycleContext := BuildDashboardCycleContext(user, nil, stats, today, location)
 	if got, want := cycleContext.FertilitySuppressed, FertilityProjectionSuppressed(user, stats); got != want {
 		t.Errorf("banner: cycle context carries FertilitySuppressed = %v, want the shared predicate's %v", got, want)
 	}

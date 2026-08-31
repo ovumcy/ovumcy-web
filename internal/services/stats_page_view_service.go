@@ -131,7 +131,7 @@ func (service *StatsService) BuildStatsPageViewData(ctx context.Context, user *m
 	showShortCycleNotice := shouldShowStatsShortCycleNotice(user, completedCycleLengths)
 	showLongCycleNotice := shouldShowStatsLongCycleNotice(user, completedCycleLengths)
 	showPerimenopauseHint := shouldShowStatsPerimenopauseHint(user)
-	cycleContext := BuildDashboardCycleContext(user, baseData.stats, DateAtLocation(now, location), location)
+	cycleContext := BuildDashboardCycleContext(user, baseData.logs, baseData.stats, DateAtLocation(now, location), location)
 	// The stats phase card reads the suppression the cycle context already
 	// resolved, not DashboardPredictionDisabled(user) on its own: the
 	// unpredictable-cycle setting is one signal among several, and a pregnancy

@@ -18,7 +18,7 @@ func TestBuildDashboardCycleContextFlagsNextPeriodNeedsDataForSparseIrregularUse
 	}
 	today := mustParseDashboardDay(t, "2026-03-10")
 
-	context := BuildDashboardCycleContext(user, stats, today, time.UTC)
+	context := BuildDashboardCycleContext(user, nil, stats, today, time.UTC)
 	if !context.DisplayNextPeriodNeedsData {
 		t.Fatalf("expected sparse irregular mode (IrregularCycle, <3 completed cycles, non-zero projected next period) to flag DisplayNextPeriodNeedsData=true")
 	}

@@ -24,7 +24,7 @@ func TestMR3Dash_IrregularRangeEnabledWhenMinEqualsMax(t *testing.T) {
 		NextPeriodStart:     mr3dashDay(t, "2026-07-01"),
 	}
 
-	cycleContext := BuildDashboardCycleContext(user, stats, today, location)
+	cycleContext := BuildDashboardCycleContext(user, nil, stats, today, location)
 
 	if !cycleContext.DisplayNextPeriodUseRange {
 		t.Fatalf("expected irregular next-period range enabled when MinCycleLength==MaxCycleLength")

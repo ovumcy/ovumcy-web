@@ -293,7 +293,7 @@ func TestDashboardCycleIrregularRangeRequiresIrregularFlag(t *testing.T) {
 		MaxCycleLength:      36,
 		AverageCycleLength:  30,
 	}
-	ctx := BuildDashboardCycleContext(user, stats, mustParseDashboardDay(t, "2026-03-20"), time.UTC)
+	ctx := BuildDashboardCycleContext(user, nil, stats, mustParseDashboardDay(t, "2026-03-20"), time.UTC)
 	if ctx.DisplayNextPeriodUseRange && ctx.DisplayOvulationUseRange {
 		t.Fatal("expected no irregular range when IrregularCycle=false")
 	}
@@ -310,7 +310,7 @@ func TestDashboardCycleIrregularRangeRequiresThreeCompletedCycles(t *testing.T) 
 		AverageCycleLength:  30,
 		NextPeriodStart:     mustParseDashboardDay(t, "2026-04-01"),
 	}
-	ctx := BuildDashboardCycleContext(user, stats, mustParseDashboardDay(t, "2026-03-20"), time.UTC)
+	ctx := BuildDashboardCycleContext(user, nil, stats, mustParseDashboardDay(t, "2026-03-20"), time.UTC)
 	if ctx.DisplayNextPeriodUseRange {
 		t.Fatal("expected no irregular prediction range with CompletedCycleCount=2")
 	}
@@ -327,7 +327,7 @@ func TestDashboardCycleIrregularRangeRequiresPositiveMinLength(t *testing.T) {
 		AverageCycleLength:  30,
 		NextPeriodStart:     mustParseDashboardDay(t, "2026-04-01"),
 	}
-	ctx := BuildDashboardCycleContext(user, stats, mustParseDashboardDay(t, "2026-03-20"), time.UTC)
+	ctx := BuildDashboardCycleContext(user, nil, stats, mustParseDashboardDay(t, "2026-03-20"), time.UTC)
 	if ctx.DisplayNextPeriodUseRange {
 		t.Fatal("expected no irregular range when MinCycleLength=0")
 	}
@@ -344,7 +344,7 @@ func TestDashboardCycleIrregularRangeRequiresMaxGeMin(t *testing.T) {
 		AverageCycleLength:  28,
 		NextPeriodStart:     mustParseDashboardDay(t, "2026-04-01"),
 	}
-	ctx := BuildDashboardCycleContext(user, stats, mustParseDashboardDay(t, "2026-03-20"), time.UTC)
+	ctx := BuildDashboardCycleContext(user, nil, stats, mustParseDashboardDay(t, "2026-03-20"), time.UTC)
 	if ctx.DisplayNextPeriodUseRange {
 		t.Fatal("expected no irregular range when MaxCycleLength < MinCycleLength")
 	}
@@ -413,7 +413,7 @@ func TestDashboardCycleNeedsNextPeriodDataRequiresIrregularFlag(t *testing.T) {
 		AverageCycleLength:  28,
 		NextPeriodStart:     mustParseDashboardDay(t, "2026-03-29"),
 	}
-	ctx := BuildDashboardCycleContext(user, stats, mustParseDashboardDay(t, "2026-03-10"), time.UTC)
+	ctx := BuildDashboardCycleContext(user, nil, stats, mustParseDashboardDay(t, "2026-03-10"), time.UTC)
 	if ctx.DisplayNextPeriodNeedsData {
 		t.Fatal("expected DisplayNextPeriodNeedsData=false when IrregularCycle=false")
 	}
@@ -430,7 +430,7 @@ func TestDashboardCycleNeedsNextPeriodDataRequiresFewCycles(t *testing.T) {
 		AverageCycleLength:  30,
 		NextPeriodStart:     mustParseDashboardDay(t, "2026-04-01"),
 	}
-	ctx := BuildDashboardCycleContext(user, stats, mustParseDashboardDay(t, "2026-03-20"), time.UTC)
+	ctx := BuildDashboardCycleContext(user, nil, stats, mustParseDashboardDay(t, "2026-03-20"), time.UTC)
 	if ctx.DisplayNextPeriodNeedsData {
 		t.Fatal("expected DisplayNextPeriodNeedsData=false when CompletedCycleCount=3")
 	}
@@ -447,7 +447,7 @@ func TestDashboardCycleNeedsNextPeriodDataRequiresNonZeroNextPeriod(t *testing.T
 		AverageCycleLength:  28,
 		NextPeriodStart:     time.Time{}, // also zero
 	}
-	ctx := BuildDashboardCycleContext(user, stats, mustParseDashboardDay(t, "2026-03-10"), time.UTC)
+	ctx := BuildDashboardCycleContext(user, nil, stats, mustParseDashboardDay(t, "2026-03-10"), time.UTC)
 	if ctx.DisplayNextPeriodNeedsData {
 		t.Fatal("expected DisplayNextPeriodNeedsData=false when nextPeriodStart resolves to zero")
 	}
@@ -492,7 +492,7 @@ func TestDashboardCycleNeedsOvulationDataRequiresIrregularFlag(t *testing.T) {
 		CompletedCycleCount: 1,
 		AverageCycleLength:  28,
 	}
-	ctx := BuildDashboardCycleContext(user, stats, mustParseDashboardDay(t, "2026-03-10"), time.UTC)
+	ctx := BuildDashboardCycleContext(user, nil, stats, mustParseDashboardDay(t, "2026-03-10"), time.UTC)
 	if ctx.DisplayOvulationNeedsData {
 		t.Fatal("expected DisplayOvulationNeedsData=false when IrregularCycle=false")
 	}
@@ -507,7 +507,7 @@ func TestDashboardCycleNeedsOvulationDataRequiresFewCycles(t *testing.T) {
 		MaxCycleLength:      36,
 		AverageCycleLength:  30,
 	}
-	ctx := BuildDashboardCycleContext(user, stats, mustParseDashboardDay(t, "2026-03-20"), time.UTC)
+	ctx := BuildDashboardCycleContext(user, nil, stats, mustParseDashboardDay(t, "2026-03-20"), time.UTC)
 	if ctx.DisplayOvulationNeedsData {
 		t.Fatal("expected DisplayOvulationNeedsData=false when CompletedCycleCount=3")
 	}
@@ -521,7 +521,7 @@ func TestDashboardCycleNeedsOvulationDataRequiresNonZeroLastPeriodStart(t *testi
 		CompletedCycleCount: 1,
 		AverageCycleLength:  28,
 	}
-	ctx := BuildDashboardCycleContext(user, stats, mustParseDashboardDay(t, "2026-03-10"), time.UTC)
+	ctx := BuildDashboardCycleContext(user, nil, stats, mustParseDashboardDay(t, "2026-03-10"), time.UTC)
 	if ctx.DisplayOvulationNeedsData {
 		t.Fatal("expected DisplayOvulationNeedsData=false when LastPeriodStart is zero")
 	}

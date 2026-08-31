@@ -143,7 +143,7 @@ func TestLateCycleNoticeStateMatrix(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			notice := BuildDashboardCycleContext(testCase.user, testCase.stats, today, time.UTC).LateCycle
+			notice := BuildDashboardCycleContext(testCase.user, nil, testCase.stats, today, time.UTC).LateCycle
 
 			expectVisible := testCase.expectVisible || testCase.expectKey != ""
 			if notice.Visible != expectVisible {

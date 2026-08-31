@@ -86,7 +86,7 @@ func TestBuildDashboardCycleContext(t *testing.T) {
 	}
 	today := mustParseDashboardDay(t, "2026-03-11")
 
-	context := BuildDashboardCycleContext(user, stats, today, time.UTC)
+	context := BuildDashboardCycleContext(user, nil, stats, today, time.UTC)
 	if context.CycleDayReference != 28 {
 		t.Fatalf("expected cycle day reference 28, got %d", context.CycleDayReference)
 	}
@@ -140,7 +140,7 @@ func TestBuildDashboardCycleContextWithholdsTheWindowOnceTheCycleIsOverdue(t *te
 	}
 	today := mustParseDashboardDay(t, "2026-03-17")
 
-	context := BuildDashboardCycleContext(user, stats, today, time.UTC)
+	context := BuildDashboardCycleContext(user, nil, stats, today, time.UTC)
 	if context.CycleDayReference != 28 {
 		t.Fatalf("expected cycle day reference 28, got %d", context.CycleDayReference)
 	}
@@ -206,7 +206,7 @@ func TestBuildDashboardCycleContextKeepsTheWindowAtExactlyTheLateThreshold(t *te
 	}
 	today := mustParseDashboardDay(t, "2026-03-16")
 
-	context := BuildDashboardCycleContext(user, stats, today, time.UTC)
+	context := BuildDashboardCycleContext(user, nil, stats, today, time.UTC)
 	if context.CycleDayWarning {
 		t.Fatalf("expected cycle day 35 against a 28-day reference to stay inside the threshold")
 	}
@@ -246,7 +246,7 @@ func TestBuildDashboardCycleContextUsesRangeForIrregularMode(t *testing.T) {
 	}
 	today := mustParseDashboardDay(t, "2026-03-20")
 
-	context := BuildDashboardCycleContext(user, stats, today, time.UTC)
+	context := BuildDashboardCycleContext(user, nil, stats, today, time.UTC)
 	if !context.DisplayNextPeriodUseRange {
 		t.Fatalf("expected irregular mode to use prediction range")
 	}
@@ -380,7 +380,7 @@ func TestBuildDashboardCycleContextShowsDataDrivenRangeForRegularUserWithVariabi
 	}
 	today := mustParseDashboardDay(t, "2026-03-14")
 
-	context := BuildDashboardCycleContext(user, stats, today, time.UTC)
+	context := BuildDashboardCycleContext(user, nil, stats, today, time.UTC)
 	if !context.DisplayNextPeriodUseRange {
 		t.Fatalf("expected data-driven prediction range for a regular user with measurable variability")
 	}
@@ -465,7 +465,7 @@ func TestBuildDashboardCycleContextDisablesPredictionsForUnpredictableMode(t *te
 		MedianCycleLength: 28,
 	}
 
-	context := BuildDashboardCycleContext(user, stats, mustParseDashboardDay(t, "2026-03-13"), time.UTC)
+	context := BuildDashboardCycleContext(user, nil, stats, mustParseDashboardDay(t, "2026-03-13"), time.UTC)
 	if !context.PredictionDisabled {
 		t.Fatalf("expected unpredictable mode to disable dashboard predictions")
 	}
@@ -485,7 +485,7 @@ func TestBuildDashboardCycleContextPausesPredictionsForPregnancy(t *testing.T) {
 		PregnancyPaused:   true,
 	}
 
-	context := BuildDashboardCycleContext(user, stats, mustParseDashboardDay(t, "2026-03-13"), time.UTC)
+	context := BuildDashboardCycleContext(user, nil, stats, mustParseDashboardDay(t, "2026-03-13"), time.UTC)
 	if !context.PregnancyPaused {
 		t.Fatalf("expected pregnancy pause to be reflected on the cycle context")
 	}
@@ -504,7 +504,7 @@ func TestBuildDashboardCycleContextPregnancyPauseOutranksUnpredictableMode(t *te
 		PregnancyPaused: true,
 	}
 
-	context := BuildDashboardCycleContext(user, stats, mustParseDashboardDay(t, "2026-03-13"), time.UTC)
+	context := BuildDashboardCycleContext(user, nil, stats, mustParseDashboardDay(t, "2026-03-13"), time.UTC)
 	if !context.PregnancyPaused {
 		t.Fatalf("expected pregnancy pause to take priority over unpredictable mode")
 	}
@@ -520,7 +520,7 @@ func TestBuildDashboardCycleContextNeedsOvulationDataForIrregularModeWithFewerTh
 		OvulationDate:       mustParseDashboardDay(t, "2026-03-19"),
 	}
 
-	context := BuildDashboardCycleContext(user, stats, mustParseDashboardDay(t, "2026-03-10"), time.UTC)
+	context := BuildDashboardCycleContext(user, nil, stats, mustParseDashboardDay(t, "2026-03-10"), time.UTC)
 	if !context.DisplayOvulationNeedsData {
 		t.Fatalf("expected irregular mode with sparse data to defer ovulation estimate")
 	}

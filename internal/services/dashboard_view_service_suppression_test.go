@@ -193,7 +193,7 @@ func TestBuildDashboardCycleContextPausesTheNextPeriodEstimateForAnOverdueIrregu
 				t.Fatalf("fixture: DashboardCycleOverdue = %v, want %v", got, testCase.wantOverdue)
 			}
 
-			cycleContext := BuildDashboardCycleContext(user, stats, today, time.UTC)
+			cycleContext := BuildDashboardCycleContext(user, nil, stats, today, time.UTC)
 			if cycleContext.NextPeriodEstimatePaused != testCase.wantOverdue {
 				t.Errorf("NextPeriodEstimatePaused = %v, want %v", cycleContext.NextPeriodEstimatePaused, testCase.wantOverdue)
 			}
