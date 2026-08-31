@@ -25,7 +25,8 @@
   while the pass runs costs that pass its remaining reminders for that owner. They arrive on the
   next run — except at a lead time of zero days, where a reminder is due on a single calendar day
   and no later run still covers it, so that cycle's reminder is skipped. (The lead-time form skips
-  the save outright when the value has not moved, so it costs nothing.) `docs/notifications.md`
-  states both limits where an owner will meet them.
+  the write when the submitted value matches the one the page was rendered with, so re-submitting
+  it unchanged normally costs nothing.) `docs/notifications.md` states both limits where an owner
+  will meet them.
 
   Schema: adds `users.webhook_config_version` (migration 038, both engines).

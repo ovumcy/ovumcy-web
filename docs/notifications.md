@@ -307,8 +307,9 @@ webhook as part of an install script that also runs `ovumcy users create`).
   - Saving the **webhook** settings counts as a change even when you edited
     nothing, so a save landing while the pass runs costs you that pass's
     remaining reminders; they arrive on the next run. (The lead-time form is
-    different: it skips the save entirely when the value has not moved, so
-    re-submitting it unchanged costs nothing.) The exception is a lead time of
+    different: it skips the write when what you submit matches the value the page
+    was rendered with, so re-submitting it unchanged normally costs nothing.) The
+    exception is a lead time of
     **0 days**, where a reminder is due on one calendar day only — no later run
     still covers it, so that cycle's reminder is skipped rather than delayed. On
     a zero-day lead time, change settings at an hour the pass is not running.
