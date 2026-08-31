@@ -24,5 +24,10 @@
   from the push, release or manually dispatched run. `success` is the only conclusion that clears a
   tag in either half — `skipped` and a still-running check are both refusals now — and a failure
   anywhere still fails the workflow with no bypass, so a tag that cannot be verified does not
-  publish. The remedy for a blocked tag is unchanged: make the commit green, then delete and
-  re-push the tag.
+  publish.
+
+  A refused tag says which half refused it, because the two have different remedies. A missing or
+  unfinished push run is waited out, or produced by running CI on the commit by hand. A missing
+  merge-queue run is not: that run exists only for a commit the queue built, so nothing an operator
+  starts will create one, and the answer is to tag a commit that reached `main` through the queue.
+  Either way the tag is deleted and re-pushed once the evidence is there.
