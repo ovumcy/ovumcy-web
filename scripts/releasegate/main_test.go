@@ -460,7 +460,13 @@ func declaredPermissions(t *testing.T, block string) map[string]string {
 
 	granted := map[string]string{}
 	for _, line := range strings.Split(block[start+len(marker):], "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "#") {
+		// Comments and blank lines are skipped, never stopped at. A blank line
+		// between grouped entries is legal and unremarkable, and stopping there
+		// would drop every scope below it — read as the called workflow's
+		// request that is the silent direction, since a scope nobody collected
+		// is a scope nobody checks the ceiling for. What ends the block is a key
+		// at the job's own indentation, which is not an entry and not blank.
+		if trimmed := strings.TrimSpace(line); trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
 		match := permissionEntry.FindStringSubmatch(line)
