@@ -148,14 +148,21 @@ type User struct {
 	// matches services.DashboardReminderBannerWindowDays; bounded 0–14 at save.
 	ReminderLeadDays int `gorm:"column:reminder_lead_days;not null;default:3"`
 	// WebhookConfigVersion is the monotonic REVOCATION EPOCH of the block above
-	// (migration 038): every write that changes what delivery would mean — a
-	// settings save, a disable, a remove, a change to the shared reminder lead
-	// window, a clear-data wipe — increments it in the same statement that
-	// performs the write, and the notify pass's
-	// pre-delivery watermark claim pins the value its own snapshot carried. It is
-	// therefore not a preference and never rendered: it exists so a pass that
-	// read the configuration BEFORE a revocation cannot win a claim and POST to
-	// the endpoint the owner has since revoked.
+	// (migration 038). Every write to the owner's DELIVERY CONFIGURATION — the
+	// block above plus the shared reminder lead window: a settings save, a
+	// disable, an endpoint replacement or removal, a change to the lead window, a
+	// clear-data wipe — increments it in the same statement that performs the
+	// write, and the notify pass's pre-delivery watermark claim pins the value its
+	// own snapshot carried. It is therefore not a preference and never rendered:
+	// it exists so a pass that read the configuration BEFORE a revocation cannot
+	// win a claim and POST to the endpoint the owner has since revoked.
+	//
+	// Its scope is deliberately WHETHER, WHERE and HOW EARLY delivery happens —
+	// not what the reminder would say. A cycle-data edit, a timezone capture or a
+	// language change moves what a reminder announces and leaves this column
+	// alone: those are inputs to the prediction, not a gesture withdrawing
+	// consent to deliver, and a moved cycle is already the watermark
+	// compare-and-set's own subject.
 	//
 	// Monotonic, never reset: ClearAllDataAndResetSettings advances it like every
 	// other writer, because handing a revoked snapshot its own value back is
