@@ -445,8 +445,11 @@ jobs:
       # what exists after this step is addressable only by a digest nobody has
       # been handed. The tags are added at the end, from the manifest bytes that
       # already hash to that digest, and only once the signature and the
-      # provenance attestation on it have been verified. The failure path leaves
-      # an untagged manifest and no public alias.
+      # provenance attestation on it have been verified. A failure before those
+      # writes leaves an untagged manifest and no public alias at all; one
+      # during them can leave the aliases written before it, and every alias
+      # that exists points at the signed digest — which is the guarantee, and
+      # it holds either way.
       - name: Push the image by digest, under no public tag
         id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
