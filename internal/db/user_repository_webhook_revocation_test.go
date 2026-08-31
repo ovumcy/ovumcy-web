@@ -381,19 +381,22 @@ func TestReleaseWebhookWatermarkLeavesAClearDataWipeAlone(t *testing.T) {
 	}
 }
 
-// TestClaimWebhookWatermarkIsRefusedWhileDeliveryIsDisabled pins the fail-closed
-// floor under the epoch. A row can carry a revocation the epoch never saw: every
-// row existing before migration 038 starts at epoch 0, so an owner who disabled
-// delivery before the upgrade has a disarmed row at the same epoch the first
-// post-upgrade pass will read. webhook_enabled is pinned for exactly that case —
-// and it would also hold if some later path ever wrote the flag without
-// advancing the epoch.
+// TestClaimWebhookWatermarkIsRefusedWhileDeliveryIsDisabled pins this layer's
+// own floor, and it is worth being exact about what that floor is for. No
+// reachable path needs it today: the notify pass returns before the claim for an
+// owner whose snapshot says delivery is off, and every write that turns delivery
+// off also advances the epoch. The pin exists against the two shapes that bypass
+// that step — a future caller of ClaimWebhookWatermark that does not make the
+// pass's early return, and a path that writes webhook_enabled without advancing
+// the epoch. This case is what keeps the predicate from being quietly dropped as
+// redundant before either shape arrives.
 func TestClaimWebhookWatermarkIsRefusedWhileDeliveryIsDisabled(t *testing.T) {
 	repo := openWebhookRepoForTest(t)
 	user := createUserForTimezoneTest(t, repo, "wh-revoke-preepoch@example.com")
 
 	// Disarm the row WITHOUT going through the save path, so the epoch stays
-	// exactly where the pass's snapshot found it: the pre-038 revoked row.
+	// exactly where a claiming pass's snapshot found it. That is the shape the
+	// pin is for: a disarmed row the epoch cannot tell apart from an armed one.
 	if err := repo.database.Model(&models.User{}).Where("id = ?", user.ID).
 		Update("webhook_enabled", false).Error; err != nil {
 		t.Fatalf("seed a disarmed row: %v", err)
