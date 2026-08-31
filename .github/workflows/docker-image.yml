@@ -638,7 +638,18 @@ jobs:
                 ;;
             esac
 
-            printf -v tags '%s%s\n' "${tags}" "${ref##*:}"
+            # The two passes must agree on how many tags there are. This
+            # prefix matches a reference with nothing after the colon, which
+            # yields an empty tag that the write loop's own blank-line guard
+            # would then drop in silence — publishing fewer aliases than this
+            # run goes on to report.
+            tag="${ref##*:}"
+            if [ -z "$tag" ]; then
+              echo "::error::the metadata step produced ${ref}, which names this image and no tag."
+              exit 1
+            fi
+
+            printf -v tags '%s%s\n' "${tags}" "${tag}"
           done <<< "${TAG_REFS}"
 
           while IFS= read -r tag; do
@@ -677,6 +688,15 @@ jobs:
           IMAGE_PATH: ${{ steps.image.outputs.path }}
         run: |
           set -euo pipefail
+
+          # The promotion refuses an empty list before it writes anything,
+          # and this step does not rely on that having happened: handed one, it
+          # would loop zero times and report a release verified having resolved
+          # no alias at all.
+          if [ -z "$(printf '%s' "${TAG_REFS}" | tr -d '[:space:]')" ]; then
+            echo "::error::there is no public tag to verify, so nothing here would be checked and the release would be reported published regardless."
+            exit 1
+          fi
 
           token_body="$(mktemp)"
           manifest_headers="$(mktemp)"

@@ -417,6 +417,17 @@ func TestPromotionWritesOnlyTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 			wantContentType: "application/vnd.oci.image.index.v1+json",
 		},
 		{
+			// This image, and no tag. It passes the prefix check, yields an
+			// empty tag, and would be dropped in silence between the two
+			// passes — a release published under fewer names than the run goes
+			// on to report.
+			name:        "a reference naming this image and no tag",
+			tags:        "ghcr.io/ovumcy/ovumcy-web:v2.0.0\nghcr.io/ovumcy/ovumcy-web:",
+			registry:    defaultRegistry(),
+			wantRefusal: true,
+			wantError:   "names this image and no tag",
+		},
+		{
 			// No space after the header name. A reader that matches the name as
 			// a whitespace field stops finding it, and the step then refuses a
 			// manifest whose media type is right there.
@@ -574,6 +585,20 @@ func TestThePublicCheckRefusesAnAliasThatIsNotTheSignedDigest(t *testing.T) {
 				r.terseHeaders = true
 				return r
 			}(),
+		},
+		{
+			// An empty list. The promotion refuses one before it writes
+			// anything; asked on its own, this step would loop zero times and
+			// report the release verified having resolved no alias at all.
+			name: "no public tag to verify",
+			registry: func() registry {
+				r := defaultRegistry()
+				r.resolves = map[string]string{"v2.0.0": digest, "latest": digest}
+				return r
+			}(),
+			tags:        "\n",
+			wantRefusal: true,
+			wantError:   "no public tag to verify",
 		},
 		{
 			// This check answers about the image the run signed. Nothing
