@@ -1,0 +1,19 @@
+### Security
+
+- **A published image tag now exists only once the image under it is signed.** Every release image
+  is Cosign-signed and carries a SLSA build-provenance attestation and an SBOM, and the verification
+  commands in the README and the security policy are the way to check it. The publish job produced
+  that state in the wrong order: it pushed the image under its public tags — `vX.Y.Z`, `latest`,
+  `main`, `sha-…` — and installed Cosign, signed and attested afterwards, with a check that the
+  image pulls anonymously in between. Anything failing after the push left the workflow red and the
+  release already resolvable by anyone, unsigned and without provenance. A red workflow retracts
+  nothing; nothing deletes a tag that already answers.
+
+  The image is now pushed by digest and given no tag at all. It is signed and attested at that
+  digest, both are read back from the registry, and only then are the public tags written — from the
+  manifest bytes that already hash to the signed digest, so a tag cannot come to point at anything
+  else. Every tag is then checked to be anonymously pullable and to resolve to that same digest.
+  Nothing about verifying a release changes for an operator: the same `cosign verify` and
+  `gh attestation verify` commands apply to the same tags. What changes is that a failure anywhere
+  in that sequence now leaves an untagged manifest and no public alias, instead of a release nobody
+  can verify.

@@ -63,8 +63,10 @@ jobs:
     #
     # The discriminator is the ref TYPE, not the event name: inside a called
     # workflow `github.event_name` is the CALLER's event — `push` there too —
-    # while `github.ref` stays the caller's ref, `refs/heads/main`. The same
-    # distinction the "Select public image reference" step below already draws.
+    # while `github.ref` stays the caller's ref, `refs/heads/main`. The publish
+    # job below needs no such distinction any more: it promotes whatever tags
+    # the metadata step derived from the event, and the release tag and
+    # `:latest` differ only in that list.
     if: ${{ github.ref_type == 'tag' }}
     runs-on: ubuntu-latest
     permissions:
@@ -400,15 +402,29 @@ jobs:
         # category would only overwrite it.
         run: docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "${{ env.TRIVY_IMAGE }}" image --scanners vuln --skip-version-check --severity HIGH,CRITICAL --ignore-unfixed --format table --exit-code 1 ovumcy-publish-scan:${{ github.sha }}
 
-      - name: Build and push Docker image
+      # NOTHING PUBLIC EXISTS UNTIL THE SIGNATURE DOES. The push used to carry
+      # `steps.meta.outputs.tags` — `vX.Y.Z`, `latest`, `main`, `sha-…` — so the
+      # public aliases were created by the push itself, and `Install Cosign`,
+      # `Sign Docker image` and `Attest build provenance` all ran AFTER it. A
+      # failure in any of them turned the workflow red with the release already
+      # anonymously pullable under its own version tag, unsigned and with no
+      # provenance, which is precisely what README.md tells an operator every
+      # published image carries. A red workflow is not a retraction: nothing
+      # removes a tag that is already resolvable.
+      #
+      # `push-by-digest=true` pushes the index and gives it no tag at all, so
+      # what exists after this step is addressable only by a digest nobody has
+      # been handed. The tags are added at the end, from the manifest bytes that
+      # already hash to that digest, and only once the signature and the
+      # provenance attestation on it have been verified. The failure path leaves
+      # an untagged manifest and no public alias.
+      - name: Push the image by digest, under no public tag
         id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: Dockerfile
-          push: true
           platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           # Stamp the commit sha into the binary (main.buildVersion) so the
           # published image serves a per-release asset cache-bust token.
@@ -417,39 +433,173 @@ jobs:
           sbom: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # `name-canonical` is what `push-by-digest` requires to know the
+          # repository it is pushing into without a tag to read it from. `tags:`
+          # and `push:` are deliberately absent: either one would put a public
+          # alias back in front of the signature.
+          outputs: type=image,name=ghcr.io/${{ github.repository }},push-by-digest=true,name-canonical=true,push=true
 
-      - name: Select public image reference
-        id: public_ref
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Sign the pushed digest
+        env:
+          IMAGE_DIGEST: ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "$IMAGE_DIGEST"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ghcr.io/${{ github.repository }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Verify the signature and provenance before promoting
+        # Signing and attesting are two API calls that reported success; this is
+        # the first step that reads back what an operator would read. It runs
+        # BEFORE the tags exist, so a signature that does not verify costs a red
+        # workflow and an untagged manifest rather than a release.
+        #
+        # The identity is matched by prefix rather than by ref, because this
+        # workflow signs under two of them: `refs/tags/vX.Y.Z` on a release and
+        # `refs/heads/main` when ci.yml calls it for `:latest`. README.md pins
+        # the tag form, which is the stricter question an operator asks about a
+        # release; this is the workflow asserting its own identity.
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE_DIGEST: ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
 
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          cosign verify \
+            --certificate-identity-regexp "^https://github\.com/${GITHUB_REPOSITORY}/\.github/workflows/docker-image\.yml@" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "$IMAGE_DIGEST"
 
-          echo "value=latest" >> "$GITHUB_OUTPUT"
+          gh attestation verify "oci://${IMAGE_DIGEST}" --repo "${GITHUB_REPOSITORY}"
 
-      - name: Verify anonymous GHCR pull access
+          echo "signature and provenance verified on ${IMAGE_DIGEST}, which may now be promoted."
+
+      - name: Promote the signed digest to its public tags
+        # The promotion is a registry tag write and nothing else: the manifest
+        # bytes fetched by digest are PUT back under each tag unchanged, so a
+        # tag cannot come to point at anything but the digest that was just
+        # signed. Rebuilding the index here — `imagetools create`, a second
+        # `build-push-action` with `tags:` — would reopen the hole from the
+        # other side, since a re-created index need not hash to the digest the
+        # signature covers.
         shell: bash
         env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAG_REFS: ${{ steps.meta.outputs.tags }}
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+          MANIFEST_ACCEPT: application/vnd.oci.image.index.v1+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.docker.distribution.manifest.v2+json
+        run: |
+          set -euo pipefail
+
+          if [ -z "$(printf '%s' "${TAG_REFS}" | tr -d '[:space:]')" ]; then
+            echo "::error::the metadata step produced no tag to promote, so this run would publish a digest nothing points at. Check the \`docker/metadata-action\` step's \`tags:\` for the event that started this run."
+            exit 1
+          fi
+
+          manifest="$(mktemp)"
+          headers="$(mktemp)"
+          trap 'rm -f "$manifest" "$headers"' EXIT
+
+          token="$(
+            curl -sSL -u "${REGISTRY_USER}:${REGISTRY_PASSWORD}" \
+              "https://ghcr.io/token?service=ghcr.io&scope=repository:${GITHUB_REPOSITORY}:pull,push" \
+              | python3 -c 'import json, sys; print(json.load(sys.stdin).get("token", ""))'
+          )"
+
+          if [ -z "$token" ]; then
+            echo "::error::GHCR returned no push token for ${GITHUB_REPOSITORY}. The digest is pushed and signed but carries no public tag; nothing was published."
+            exit 1
+          fi
+
+          manifest_status="$(
+            curl -sSLo "$manifest" -D "$headers" -w '%{http_code}' \
+              -H "Authorization: Bearer ${token}" \
+              -H "Accept: ${MANIFEST_ACCEPT}" \
+              "https://ghcr.io/v2/${GITHUB_REPOSITORY}/manifests/${DIGEST}"
+          )"
+
+          if [ "$manifest_status" != "200" ]; then
+            echo "::error::reading the signed manifest ${DIGEST} back returned HTTP ${manifest_status}."
+            cat "$manifest"
+            exit 1
+          fi
+
+          # The tag write must declare the same media type the manifest was
+          # stored under, or the registry stores a different object and the
+          # digest changes with it.
+          content_type="$(tr -d '\r' < "$headers" | awk 'tolower($1) == "content-type:" { print $2 }' | tail -1)"
+
+          if [ -z "$content_type" ]; then
+            echo "::error::GHCR returned the signed manifest with no Content-Type, so the tag write has no media type to declare."
+            exit 1
+          fi
+
+          while IFS= read -r ref; do
+            [ -n "$ref" ] || continue
+
+            # Every reference the metadata step emits must live in the
+            # repository that was just signed. A `tags:` entry pointing
+            # somewhere else would otherwise be promoted unexamined.
+            case "$ref" in
+              "ghcr.io/${GITHUB_REPOSITORY}:"*) tag="${ref##*:}" ;;
+              *)
+                echo "::error::the metadata step produced ${ref}, which is not a tag of ghcr.io/${GITHUB_REPOSITORY}. Nothing outside the repository this run signed is promoted."
+                exit 1
+                ;;
+            esac
+
+            put_status="$(
+              curl -sS -o /dev/null -w '%{http_code}' -X PUT \
+                -H "Authorization: Bearer ${token}" \
+                -H "Content-Type: ${content_type}" \
+                --data-binary "@${manifest}" \
+                "https://ghcr.io/v2/${GITHUB_REPOSITORY}/manifests/${tag}"
+            )"
+
+            if [ "$put_status" != "201" ]; then
+              echo "::error::promoting ${DIGEST} to ${ref} returned HTTP ${put_status}. Earlier tags in this run may already point at the signed digest; the tags that failed do not exist."
+              exit 1
+            fi
+
+            echo "${ref} -> ${DIGEST}"
+          done <<< "${TAG_REFS}"
+
+      - name: Verify every public tag anonymously and against the signed digest
+        # Two questions, and the release is not published until both answer.
+        # Anonymous reachability is the older one: a package that is not linked
+        # to this repository, or whose visibility is private, leaves a release
+        # nobody outside can pull. The digest comparison is the one this
+        # ordering exists for — it is what says the alias an operator resolves
+        # is the artifact the signature and the provenance were issued against,
+        # rather than something that merely got there afterwards.
+        shell: bash
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAG_REFS: ${{ steps.meta.outputs.tags }}
           IMAGE_NAME: ghcr.io/${{ github.repository }}
-          IMAGE_REF: ${{ steps.public_ref.outputs.value }}
+          MANIFEST_ACCEPT: application/vnd.oci.image.index.v1+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.docker.distribution.manifest.v2+json
         run: |
           set -euo pipefail
 
           token_body="$(mktemp)"
-          manifest_body="$(mktemp)"
-          trap 'rm -f "$token_body" "$manifest_body"' EXIT
+          manifest_headers="$(mktemp)"
+          trap 'rm -f "$token_body" "$manifest_headers"' EXIT
 
           token_status="$(
             curl -sSLo "$token_body" -w '%{http_code}' \
               "https://ghcr.io/token?service=ghcr.io&scope=repository:${GITHUB_REPOSITORY}:pull"
           )"
 
-          if [[ "$token_status" != "200" ]]; then
-            echo "::error::Anonymous GHCR token request for ${IMAGE_NAME}:${IMAGE_REF} returned HTTP ${token_status}. Ensure the package is linked to ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY} and that the package visibility is set to public."
+          if [ "$token_status" != "200" ]; then
+            echo "::error::Anonymous GHCR token request for ${IMAGE_NAME} returned HTTP ${token_status}. Ensure the package is linked to ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY} and that the package visibility is set to public."
             cat "$token_body"
             exit 1
           fi
@@ -458,34 +608,34 @@ jobs:
             python3 -c 'import json, pathlib, sys; body = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")); print(body.get("token", ""))' "$token_body"
           )"
 
-          if [[ -z "$token" ]]; then
-            echo "::error::Anonymous GHCR token response for ${IMAGE_NAME}:${IMAGE_REF} did not include a bearer token."
+          if [ -z "$token" ]; then
+            echo "::error::Anonymous GHCR token response for ${IMAGE_NAME} did not include a bearer token."
             cat "$token_body"
             exit 1
           fi
 
-          manifest_status="$(
-            curl -sSLo "$manifest_body" -w '%{http_code}' \
-              -H "Authorization: Bearer ${token}" \
-              -H "Accept: application/vnd.oci.image.index.v1+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.docker.distribution.manifest.v2+json" \
-              "https://ghcr.io/v2/${GITHUB_REPOSITORY}/manifests/${IMAGE_REF}"
-          )"
+          while IFS= read -r ref; do
+            [ -n "$ref" ] || continue
+            tag="${ref##*:}"
 
-          if [[ "$manifest_status" != "200" ]]; then
-            echo "::error::Anonymous GHCR manifest request for ${IMAGE_NAME}:${IMAGE_REF} returned HTTP ${manifest_status}. Ensure the package is publicly pullable before considering this release published."
-            cat "$manifest_body"
-            exit 1
-          fi
+            head_status="$(
+              curl -sS -o /dev/null -D "$manifest_headers" -w '%{http_code}' -I \
+                -H "Authorization: Bearer ${token}" \
+                -H "Accept: ${MANIFEST_ACCEPT}" \
+                "https://ghcr.io/v2/${GITHUB_REPOSITORY}/manifests/${tag}"
+            )"
 
-      - name: Install Cosign
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+            if [ "$head_status" != "200" ]; then
+              echo "::error::Anonymous GHCR manifest request for ${ref} returned HTTP ${head_status}. Ensure the package is publicly pullable before considering this release published."
+              exit 1
+            fi
 
-      - name: Sign Docker image
-        run: cosign sign --yes ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
+            published="$(tr -d '\r' < "$manifest_headers" | awk 'tolower($1) == "docker-content-digest:" { print $2 }' | tail -1)"
 
-      - name: Attest build provenance
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-name: ghcr.io/${{ github.repository }}
-          subject-digest: ${{ steps.build.outputs.digest }}
-          push-to-registry: true
+            if [ "$published" != "$DIGEST" ]; then
+              echo "::error::${ref} resolves to ${published:-nothing}, not to the signed digest ${DIGEST}. The signature and the provenance attestation cover the digest, so an alias pointing anywhere else is an unsigned release however green this run is."
+              exit 1
+            fi
+
+            echo "${ref} is anonymously pullable and resolves to ${DIGEST}."
+          done <<< "${TAG_REFS}"
