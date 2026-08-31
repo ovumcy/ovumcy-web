@@ -184,6 +184,15 @@ jobs:
           # commit whose push run was lost — dispatch CI on `main` and the lanes
           # run, because an event carrying no base to diff against leaves
           # `run_e2e` in the running direction.
+          #
+          # The event is the whole filter, and the `head_branch == "main"` test
+          # this step used to carry is deliberately gone rather than kept beside
+          # it. That test existed to exclude the queue's suite, which the event
+          # now names outright; as a second condition it would be wrong, since a
+          # `release` run's head_branch is the tag. And it would add nothing: a
+          # run selected here already has this commit as its head_sha, so it ran
+          # on this exact tree, and for all three events `changes` finds no base
+          # to diff against and leaves `run_e2e` true whatever ref carried it.
           queue_suite_ids="$(suite_ids_for_events "merge_group")"
           heavy_suite_ids="$(suite_ids_for_events "push release workflow_dispatch")"
 
@@ -207,6 +216,14 @@ jobs:
               "repos/${GITHUB_REPOSITORY}/commits/${sha}/check-runs?per_page=100" \
               --jq '.check_runs[] | [(.check_suite.id | tostring), .name, .conclusion // "pending"] | @tsv'
           )"
+
+          # Printed whole, and before any judgement: the errors below name one
+          # context at a time, and a refusal is only diagnosable next to what the
+          # suites actually carried — a renamed context and an absent one read
+          # identically otherwise. The suite column joins to the run listing
+          # above, which is where the event for each suite is.
+          echo "check runs on ${sha} (check suite, name, conclusion):"
+          printf '%s\n' "$check_runs"
 
           conclusions_in() {
             printf '%s\n' "$check_runs" | awk -F'\t' -v ids="$(printf '%s ' $1)" -v want="$2" '
