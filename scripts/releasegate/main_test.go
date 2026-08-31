@@ -422,7 +422,12 @@ func TestTheCallerCeilingCoversEveryScopeTheCalledWorkflowDeclares(t *testing.T)
 	// scopes it did read still compare cleanly, so a job whose block is written
 	// in a shape this reader walks past asks for whatever it likes and the
 	// guard reports green — the defect it exists to catch, one job over.
-	jobs := jobHeader.FindAllString(content[strings.Index(content, "\njobs:\n"):], -1)
+	jobsAt := strings.Index(content, "\njobs:\n")
+	if jobsAt < 0 {
+		t.Fatalf("%s has no `jobs:` key this reader can find, so it cannot count the jobs it is supposed to have read a block for", gateWorkflow)
+	}
+
+	jobs := jobHeader.FindAllString(content[jobsAt:], -1)
 	if len(blocks) != len(jobs) {
 		t.Fatalf("%s has %d jobs and %d job-level `permissions:` blocks this guard can read. Every job's block has to be readable here, because the ones it cannot see are the ones that widen unnoticed — write the block in the usual shape, or teach this reader the new one",
 			gateWorkflow, len(jobs), len(blocks))
