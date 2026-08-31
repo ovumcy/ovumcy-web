@@ -30,9 +30,14 @@
 // reimplements what it guards proves only that two copies agree, and the two
 // copies drift; and this failure was silent for as long as it existed, because
 // a release image nobody pulled is not a signal any workflow reads.
+//
+// The split is only correct while ci.yml still behaves the way it is read here,
+// so that reading is asserted too — the two premises live in another file, and
+// nothing else would notice them changing.
 package releasegate
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -53,6 +58,7 @@ const (
 
 	rollingWorkflow = ".github/workflows/ci.yml"
 	rollingJob      = "publish-image"
+	changesJob      = "changes"
 )
 
 // The two env keys the step splits the required checks across. They are read
@@ -83,13 +89,10 @@ type checkRun struct {
 type scenario struct {
 	name string
 	// runs maps a check-suite id to the event that produced it, exactly what
-	// `actions/runs?head_sha=` reports.
-	runs map[string]string
-	// The `head_branch` of each suite, which is what the gate used to select on
-	// and no longer does. Kept in the fixtures because the pre-fix script reads
-	// it, so these same scenarios drive both shapes and show which one refuses.
-	branches map[string]string
-	checks   []checkRun
+	// `actions/runs?head_sha=` reports. The event is the whole of what the gate
+	// selects on, so it is the whole of what a fixture states.
+	runs   map[string]string
+	checks []checkRun
 	// wantRefusal is what the gate owes this state of the world.
 	wantRefusal bool
 }
@@ -160,13 +163,6 @@ func bothRuns() map[string]string {
 	return map[string]string{queueSuite: "merge_group", pushSuite: "push"}
 }
 
-func bothBranches() map[string]string {
-	return map[string]string{
-		queueSuite: "gh-readonly-queue/main/pr-650-1bba31433dbbb1474f7d6e21e43ff2597ed4d8a2",
-		pushSuite:  "main",
-	}
-}
-
 // TestReleaseTagGateJudgesEachLaneWhereItActuallyRan runs the workflow's own
 // script over states of the API this repository has held and states it must
 // refuse. Three of these are the finding: a `skipped` accepted with no queue
@@ -178,10 +174,9 @@ func TestReleaseTagGateJudgesEachLaneWhereItActuallyRan(t *testing.T) {
 
 	for _, testCase := range []scenario{
 		{
-			name:     "a normally merged commit, both runs present",
-			runs:     bothRuns(),
-			branches: bothBranches(),
-			checks:   merged(),
+			name:   "a normally merged commit, both runs present",
+			runs:   bothRuns(),
+			checks: merged(),
 		},
 		{
 			// The finding. `test` carries no verdict on the push run whatever
@@ -189,17 +184,15 @@ func TestReleaseTagGateJudgesEachLaneWhereItActuallyRan(t *testing.T) {
 			// tag published on nothing at all.
 			name:        "`test` skipped on the push run and no merge-queue run exists",
 			runs:        map[string]string{pushSuite: "push"},
-			branches:    map[string]string{pushSuite: "main"},
 			checks:      withConclusion(greenPush(pushSuite), pushSuite, "test", "skipped"),
 			wantRefusal: true,
 		},
 		{
 			// The same `skipped`, with the evidence. Refusing this one too
 			// would be a gate that cannot be satisfied rather than a gate.
-			name:     "`test` skipped on the push run, the merge-queue run carries its verdict",
-			runs:     bothRuns(),
-			branches: bothBranches(),
-			checks:   withConclusion(merged(), pushSuite, "test", "skipped"),
+			name:   "`test` skipped on the push run, the merge-queue run carries its verdict",
+			runs:   bothRuns(),
+			checks: withConclusion(merged(), pushSuite, "test", "skipped"),
 		},
 		{
 			// The vacuous green in full: the queue found a real race and the
@@ -207,8 +200,25 @@ func TestReleaseTagGateJudgesEachLaneWhereItActuallyRan(t *testing.T) {
 			// lane beneath it is cleared there.
 			name:        "the merge-queue run failed a lane the push run reports green",
 			runs:        bothRuns(),
-			branches:    bothBranches(),
 			checks:      withConclusion(merged(), queueSuite, "race", "failure"),
+			wantRefusal: true,
+		},
+		{
+			// `skipped` in the QUEUE run, which is the half the fix moved the
+			// verdict to. The gate jobs carry `if: !cancelled()`, so they run
+			// and report even when every lane beneath them is cleared —
+			// `skipped` there means the run was cancelled outright, and a
+			// cancelled run is not a verdict. Without this fixture, restoring
+			// `success|skipped` on the queue half would read green here.
+			name:        "`test` skipped in the merge-queue run",
+			runs:        bothRuns(),
+			checks:      withConclusion(merged(), queueSuite, "test", "skipped"),
+			wantRefusal: true,
+		},
+		{
+			name:        "`e2e` still running in the merge-queue run",
+			runs:        bothRuns(),
+			checks:      withConclusion(merged(), queueSuite, "e2e", "pending"),
 			wantRefusal: true,
 		},
 		{
@@ -216,38 +226,33 @@ func TestReleaseTagGateJudgesEachLaneWhereItActuallyRan(t *testing.T) {
 			// there is the absence of the only verdict that exists.
 			name:        "`image-smoke` skipped on the push run",
 			runs:        bothRuns(),
-			branches:    bothBranches(),
 			checks:      withConclusion(merged(), pushSuite, "image-smoke", "skipped"),
 			wantRefusal: true,
 		},
 		{
 			name:        "`e2e-postgres-smoke` still running on the push run",
 			runs:        bothRuns(),
-			branches:    bothBranches(),
 			checks:      withConclusion(merged(), pushSuite, "e2e-postgres-smoke", "pending"),
 			wantRefusal: true,
 		},
 		{
 			name:        "the push run has not been created yet",
 			runs:        map[string]string{queueSuite: "merge_group"},
-			branches:    map[string]string{queueSuite: bothBranches()[queueSuite]},
 			checks:      greenQueue(queueSuite),
 			wantRefusal: true,
 		},
 		{
 			// `RUN_HEAVY` is push, release and dispatch alike, so a dispatched
-			// run on `main` carries a real verdict for the image lanes and the
-			// gate takes it. This is the operator's way out when a push run is
-			// lost to the one-pending-run-per-group rule.
-			name:     "the push run was lost and CI was dispatched on main instead",
-			runs:     map[string]string{queueSuite: "merge_group", dispatchSuite: "workflow_dispatch"},
-			branches: map[string]string{queueSuite: bothBranches()[queueSuite], dispatchSuite: "main"},
-			checks:   append(greenQueue(queueSuite), greenPush(dispatchSuite)...),
+			// run carries a real verdict for the image lanes and the gate takes
+			// it. This is the operator's way out when a push run is lost to the
+			// one-pending-run-per-group rule.
+			name:   "the push run was lost and CI was dispatched instead",
+			runs:   map[string]string{queueSuite: "merge_group", dispatchSuite: "workflow_dispatch"},
+			checks: append(greenQueue(queueSuite), greenPush(dispatchSuite)...),
 		},
 		{
 			name:        "`e2e` never reported in the merge-queue run",
 			runs:        bothRuns(),
-			branches:    bothBranches(),
 			checks:      without(merged(), queueSuite, "e2e"),
 			wantRefusal: true,
 		},
@@ -256,7 +261,6 @@ func TestReleaseTagGateJudgesEachLaneWhereItActuallyRan(t *testing.T) {
 			// which the core lanes ever judged its diff.
 			name:        "no run of any kind exists for the commit",
 			runs:        map[string]string{},
-			branches:    map[string]string{},
 			checks:      nil,
 			wantRefusal: true,
 		},
@@ -310,6 +314,41 @@ func TestReleaseTagGateRequiresExactlyWhatTheRollingPathRequires(t *testing.T) {
 	}
 }
 
+// TestTheSplitStillRestsOnWhatCiActuallyDoes asserts the two facts about ci.yml
+// the split is derived from. Neither lives in the workflow this package
+// otherwise reads, and neither would announce itself when it changed:
+//
+//   - `push` clears `run_core` unconditionally. That is the whole reason
+//     `test`, `race` and `e2e` are read from the merge-queue run. Were it to
+//     stop, those three would carry a real verdict on the push too and this
+//     gate would be refusing tags on a mechanism that no longer exists.
+//   - `push` carries no base to diff against, so `run_e2e` stays true. That is
+//     the whole reason `image-smoke` may be required to be `success` rather
+//     than tolerated as `skipped` on a documentation-only commit.
+func TestTheSplitStillRestsOnWhatCiActuallyDoes(t *testing.T) {
+	block := jobBlock(t, rollingWorkflow, changesJob)
+
+	for _, premise := range []struct {
+		text  string
+		claim string
+	}{
+		{
+			text: "if [ \"$EVENT_NAME\" = \"push\" ]; then\n            run_core=false",
+			claim: "a push to `main` no longer clears `run_core` unconditionally. " +
+				gateWorkflow + " reads `test`, `race` and `e2e` from the merge-queue run BECAUSE the push run's verdict for them is vacuous; if the push run now does that work, re-derive the split before changing it",
+		},
+		{
+			text: "carries no base to diff against",
+			claim: "a push to `main` now has a base to diff against, so `run_e2e` may go false there. " +
+				gateWorkflow + " requires `success` from `image-smoke` in the push run BECAUSE that lane runs on every push whatever the diff touched; if it can now be skipped, that requirement blocks a documentation-only release tag forever",
+		},
+	} {
+		if !strings.Contains(block, premise.text) {
+			t.Errorf("%s, job %q: %s", rollingWorkflow, changesJob, premise.claim)
+		}
+	}
+}
+
 // runGate executes the extracted script with `gh` and `git` shadowed by shell
 // functions serving the scenario. Functions rather than stub executables on
 // PATH: a bash function shadows an external command everywhere the script could
@@ -317,16 +356,13 @@ func TestReleaseTagGateRequiresExactlyWhatTheRollingPathRequires(t *testing.T) {
 //
 // The stubs answer the endpoint, not the `--jq` — they emit the rows the gate's
 // own projection would produce. So these fixtures prove which rows the gate
-// judges and how, and NOT that its jq expressions are spelled right; the
-// endpoint each call goes to is pinned, because an unrecognised URL is an error
-// here rather than an empty answer.
+// judges and how, and NOT that its jq expressions are spelled right. The
+// endpoints themselves are pinned hard: anything the gate asks for other than
+// the two it is written around is an error here, which is what makes a return
+// to the `check-suites`-by-`head_branch` shape fail loudly rather than be
+// served.
 func runGate(t *testing.T, script string, env map[string]string, state scenario) (string, error) {
 	t.Helper()
-
-	bash, err := exec.LookPath("bash")
-	if err != nil {
-		t.Skipf("bash is required to run the gate's own script as the workflow runs it: %v", err)
-	}
 
 	dir := t.TempDir()
 	write := func(name, content string) string {
@@ -334,41 +370,40 @@ func runGate(t *testing.T, script string, env map[string]string, state scenario)
 		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 			t.Fatalf("write %s: %v", name, err)
 		}
-		return filepath.ToSlash(path)
+		return shellQuote(filepath.ToSlash(path))
 	}
 
-	var workflowRuns, checkRuns, mainSuites strings.Builder
+	var workflowRuns, checkRuns strings.Builder
 	for _, suite := range sortedKeys(state.runs) {
 		workflowRuns.WriteString(state.runs[suite] + "\t" + suite + "\n")
-	}
-	for _, suite := range sortedKeys(state.branches) {
-		if state.branches[suite] == "main" {
-			mainSuites.WriteString(suite + "\n")
-		}
 	}
 	for _, row := range state.checks {
 		checkRuns.WriteString(row.suite + "\t" + row.name + "\t" + row.conclusion + "\n")
 	}
 
-	preamble := "" +
-		"gh() {\n" +
-		"  url=\"\"\n" +
-		"  for arg in \"$@\"; do case \"$arg\" in repos/*) url=\"$arg\";; esac; done\n" +
-		"  case \"$url\" in\n" +
-		"    */actions/runs*) cat " + write("workflow_runs.tsv", workflowRuns.String()) + " ;;\n" +
-		"    */check-runs*) cat " + write("check_runs.tsv", checkRuns.String()) + " ;;\n" +
-		"    */check-suites*) cat " + write("main_suites.tsv", mainSuites.String()) + " ;;\n" +
-		"    *) echo \"the gate called an endpoint this fixture does not serve: $*\" >&2; return 1 ;;\n" +
-		"  esac\n" +
-		"}\n" +
-		"git() {\n" +
-		"  case \"${1:-}\" in\n" +
-		"    rev-parse) printf '%s\\n' \"$GITHUB_SHA\" ;;\n" +
-		"    *) echo \"the gate ran an unexpected git command: $*\" >&2; return 1 ;;\n" +
-		"  esac\n" +
-		"}\n"
+	preamble := strings.Join([]string{
+		`gh() {`,
+		`  url=""`,
+		`  for arg in "$@"; do case "$arg" in repos/*) url="$arg";; esac; done`,
+		`  case "$url" in`,
+		`    */actions/runs*) cat ` + write("workflow_runs.tsv", workflowRuns.String()) + ` ;;`,
+		`    */check-runs*) cat ` + write("check_runs.tsv", checkRuns.String()) + ` ;;`,
+		`    *) echo "the gate called an endpoint this fixture does not serve: $*" >&2; return 1 ;;`,
+		`  esac`,
+		`}`,
+		`git() {`,
+		`  case "${1:-}" in`,
+		`    rev-parse) printf '%s\n' "$GITHUB_SHA" ;;`,
+		`    *) echo "the gate ran an unexpected git command: $*" >&2; return 1 ;;`,
+		`  esac`,
+		`}`,
+		"",
+	}, "\n")
 
-	command := exec.Command(bash, "-c", preamble+script)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	command := exec.CommandContext(ctx, bashPath(t), "-c", preamble+script)
 	command.Env = append(os.Environ(),
 		"GITHUB_SHA=5049126faa3152cced900c304c3640e4ec724ba5",
 		"GITHUB_REPOSITORY=ovumcy/ovumcy-web",
@@ -379,20 +414,30 @@ func runGate(t *testing.T, script string, env map[string]string, state scenario)
 		command.Env = append(command.Env, key+"="+value)
 	}
 
-	done := make(chan struct{})
-	timer := time.AfterFunc(2*time.Minute, func() {
-		if command.Process != nil {
-			_ = command.Process.Kill()
-		}
-		close(done)
-	})
 	output, err := command.CombinedOutput()
-	if timer.Stop() {
-		close(done)
-	}
-	<-done
-
 	return string(output), err
+}
+
+// bashPath locates the shell the workflow's `shell: bash` steps are written
+// for. Absent it, there is nothing to run the gate's own script under, and a
+// skip is honest where a Go reimplementation would not be.
+func bashPath(t *testing.T) string {
+	t.Helper()
+
+	path, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skipf("bash is required to run the gate's own script as the workflow runs it: %v", err)
+	}
+	return path
+}
+
+// shellQuote makes a path safe to paste into the stub preamble. A temporary
+// directory is named after the test, and a name this file gains later may put a
+// space in it — unquoted, the stub would then `cat` two paths that do not
+// exist, and the resulting refusal would read as the gate's rather than the
+// harness's.
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }
 
 func sortedKeys(m map[string]string) []string {

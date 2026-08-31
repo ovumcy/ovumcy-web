@@ -1746,11 +1746,19 @@ jobs:
     # not wait for that probe. `!cancelled()` suppresses the implicit predicate
     # whatever that predicate ranges over; on its own it would then publish off
     # a FAILED gate, so the five results are required by name and judged here
-    # rather than inferred from anything. `success` and nothing else — `skipped`
-    # must not publish either, which is what keeps a docs-only push to `main`
-    # (there `run_e2e` is false, so `image-smoke` never boots the image) from
-    # publishing an image no smoke test looked at. Such a push leaves `latest`
-    # on the previous commit, which carries the identical image.
+    # rather than inferred from anything. `success` and nothing else: `skipped`
+    # must not publish, because a lane that did not run is not a lane that
+    # passed, and a required check reads the same either way.
+    #
+    # It is NOT true that a docs-only push leaves `image-smoke` skipped, which
+    # this comment used to say. `changes` only judges a diff for an event that
+    # carries a base — a pull request or a merge group — and `push` carries
+    # none, so it takes the fail-safe branch and `run_e2e` stays true there
+    # whatever the commit touched. `image-smoke` and `e2e-postgres-smoke`
+    # therefore boot the image on EVERY push to `main`: measured on 5049126f, a
+    # documentation-only merge, where `image-smoke` reports `success` in the
+    # push run. Only `run_core` is cleared on push, and it clears the other
+    # three lanes.
     if: >-
       ${{ !cancelled()
       && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
@@ -1761,14 +1769,17 @@ jobs:
       && needs.e2e-postgres-smoke.result == 'success'
       && needs.image-smoke.result == 'success' }}
     # A caller cannot grant a called workflow more than it holds, so this must
-    # match the permissions the publish job declares — plus `checks: read`, for
-    # the tag gate that workflow now runs ahead of the publish. That gate is
-    # skipped on this path (it is the tag path's substitute for the `needs:`
-    # above, which cannot cross a workflow boundary), but the ceiling has to
-    # cover a job the called workflow declares whether or not it runs. The
-    # publish job itself is unaffected: its own permissions block does not list
-    # `checks`, so it still receives none.
+    # match the permissions the publish job declares — plus `actions: read` and
+    # `checks: read`, for the tag gate that workflow runs ahead of the publish.
+    # That gate is skipped on this path (it is the tag path's substitute for the
+    # `needs:` above, which cannot cross a workflow boundary), but the ceiling
+    # has to cover a job the called workflow declares whether or not it runs: a
+    # scope requested below the ceiling fails the CALL, not the skipped job, and
+    # would stop `:latest` following `main` again. The publish job itself is
+    # unaffected: its own permissions block lists neither, so it still receives
+    # neither.
     permissions:
+      actions: read
       artifact-metadata: write
       attestations: write
       checks: read
