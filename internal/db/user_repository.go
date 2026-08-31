@@ -457,13 +457,18 @@ func canonicalWatermarkAnchor(cycleAnchor time.Time) time.Time {
 // had already been told was revoked. The epoch is what makes the constitution's
 // "containment survives state transitions" true across this one.
 //
-// webhook_enabled and the kind's own opt-in are pinned as well, and deliberately
-// not as a restatement of the epoch. They are the fail-closed floor: they hold
-// for a row revoked BEFORE migration 038 (every such row starts at epoch 0, so
-// the epoch alone would not notice), and they would still refuse the claim if a
-// path were ever added that wrote those columns without advancing the epoch.
-// Regression: TestClaimWebhookWatermarkIsLostAfterTheOwnerDisabledDelivery,
-// TestClaimWebhookWatermarkIsRefusedWhileDeliveryIsDisabled.
+// webhook_enabled and the kind's own opt-in are pinned as well, and the honest
+// reason is narrower than it first reads: today no reachable path needs them.
+// The notify pass returns before the claim for an owner whose snapshot says
+// delivery is off, and every write that turns delivery off also advances the
+// epoch, so both shapes are already refused a step earlier. They are here as
+// this layer's own floor, against the two things that would bypass that step —
+// a future caller of this method that does not make the pass's early return,
+// and a path that writes those columns without advancing the epoch. An egress
+// claim already reading the row is cheap to make state its whole condition and
+// expensive to retrofit once something depends on it not doing so. Regression:
+// TestClaimWebhookWatermarkIsRefusedWhileDeliveryIsDisabled,
+// TestClaimWebhookWatermarkIsRefusedForAKindTheOwnerOptedOutOf.
 //
 // What this does NOT cover, stated plainly because it cannot be fixed here: a
 // request already in flight. The claim precedes the POST, so a revocation that
