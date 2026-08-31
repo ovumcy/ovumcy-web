@@ -136,7 +136,19 @@ func inferBBTOvulationDate(logs []models.DailyLog, cycleStart time.Time, nextSta
 		ovulationCycleDay = firstHighDay
 	}
 	// codecov:ignore:end
-	return cycleStart.AddDate(0, 0, ovulationCycleDay-1)
+
+	// The day step runs over UTC-anchored days rather than from the request-zone
+	// anchor cycleStart carries: where a DST jump lands on midnight
+	// (America/Santiago 2026-09-06, America/Havana 2026-03-08) local midnight
+	// does not exist on that date, and AddDate resolves the missing wall clock
+	// BACKWARD into the previous calendar day. Stepped from the zone anchor the
+	// estimate names the day BEFORE the one the detector found — and that day is
+	// no longer only a luteal sample: it is also the calendar grid's solid
+	// ovulation marker. calendarGridBounds leaves the zone for the same reason.
+	// Every consumer reads this value as a calendar day only
+	// (CalendarDaysBetween in the luteal inference, CalendarDayKey on the grid),
+	// so re-anchoring it moves no date on any surface.
+	return dateOnly(cycleStart).AddDate(0, 0, ovulationCycleDay-1)
 }
 
 // detectBBTShiftFirstHighDay is the one shared "3-over-6" detector: luteal
@@ -255,9 +267,18 @@ func inferEggWhiteOvulationDate(logs []models.DailyLog, cycleStart time.Time, ne
 	// fertility signal, and ovulation most commonly follows it by about a day.
 	// Estimate ovulation as the day after the peak, clamped to stay before the
 	// next cycle start (a peak on the final cycle day keeps the peak day itself).
-	estimated := lastEggWhite.AddDate(0, 0, 1)
-	if !estimated.Before(nextStart) {
-		return lastEggWhite
+	//
+	// Step and clamp both leave the request zone, for the reason spelled out in
+	// inferBBTOvulationDate: stepping from the zone anchor lands on the previous
+	// calendar day whenever the peak's successor is a day whose local midnight a
+	// DST jump skips. Once the step is UTC-anchored the clamp has to leave the
+	// zone too — compared as instants, a UTC-anchored day reads as EARLIER than
+	// the same day anchored in a UTC-minus zone, so the clamp would let the
+	// estimate land on the next cycle start itself.
+	peakDay := dateOnly(lastEggWhite)
+	estimated := peakDay.AddDate(0, 0, 1)
+	if CalendarDaysBetween(estimated, nextStart) <= 0 {
+		return peakDay
 	}
 	return estimated
 }
