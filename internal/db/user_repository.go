@@ -210,9 +210,9 @@ func (repo *UserRepository) UpdateInterfaceLanguage(ctx context.Context, userID 
 // (SettingsService) is responsible for passing an already-clamped value
 // (services.NormalizeReminderLeadDays); this method writes that column and the
 // revocation epoch below, and no other setting. Like the webhook-settings save
-// path it deliberately does NOT bump
-// auth_session_version — a reminder preference is not a change to the account's
-// security posture, so no active session should be revoked.
+// path it deliberately does NOT bump auth_session_version — a reminder
+// preference is not a change to the account's security posture, so no active
+// session should be revoked.
 //
 // It DOES advance webhook_config_version, for the same reason SaveWebhookSettings
 // does. reminder_lead_days is SHARED: it is a dashboard-banner preference AND one
@@ -222,7 +222,11 @@ func (repo *UserRepository) UpdateInterfaceLanguage(ctx context.Context, userID 
 // against it. That is a smaller blast radius than a revoked endpoint and the same
 // class, so this write joins the epoch rather than being excused from it: a rule
 // applied at two of its three write sites is what leaves the third reachable.
-// Regression: TestUpdateReminderLeadDaysAdvancesTheRevocationEpoch.
+//
+// The cost of joining it is SaveWebhookSettings' cost, and this is the path that
+// can set the lead window to zero, where that cost is worst: read it there before
+// changing anything here. Regression:
+// TestUpdateReminderLeadDaysAdvancesTheRevocationEpoch.
 func (repo *UserRepository) UpdateReminderLeadDays(ctx context.Context, userID uint, leadDays int) error {
 	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
 		"reminder_lead_days":     leadDays,

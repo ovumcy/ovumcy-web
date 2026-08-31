@@ -44,8 +44,8 @@ import (
 // The claim carries a second job the watermark cannot do: REVOCATION. The
 // snapshot is minutes old by the time a POST leaves, and in that window the
 // owner can disable delivery, replace or remove the endpoint, narrow the shared
-// reminder lead window, or clear their
-// data — none of which moves a watermark (a settings save deliberately leaves
+// reminder lead window, or clear their data — none of which moves a watermark
+// (a settings save deliberately leaves
 // them alone) and one of which, clear-data, NULLs them and so re-opens the
 // first-ever-claim branch. Each of those writes advances the owner's
 // webhook_config_version in the same statement, and the claim pins the epoch its
@@ -86,9 +86,9 @@ type NotifyUserRepository interface {
 	// claim is lost when the stored epoch has moved since. That is the thing a
 	// watermark cannot express: an owner disabling delivery, replacing or
 	// removing the endpoint, narrowing the shared reminder lead window, or
-	// clearing their data moves none of the values
-	// above, yet must stop a pass that read the old configuration from reaching
-	// the old endpoint. false therefore means "another pass owns this send OR the
+	// clearing their data moves none of the values above, yet must stop a pass
+	// that read the old configuration from reaching the old endpoint. false
+	// therefore means "another pass owns this send OR the
 	// configuration this pass read is no longer the owner's" — the caller treats
 	// both the same way, by not delivering.
 	ClaimWebhookWatermark(ctx context.Context, userID uint, reminderType string, cycleAnchor time.Time, previous *time.Time, configVersion int) (bool, error)
