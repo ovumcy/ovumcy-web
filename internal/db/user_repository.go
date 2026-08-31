@@ -254,14 +254,22 @@ func (repo *UserRepository) UpdateReminderLeadDays(ctx context.Context, userID u
 // TestClaimWebhookWatermarkIsLostAfterTheOwnerDisabledDelivery.
 //
 // The advance is UNCONDITIONAL, including for a save that changes nothing — the
-// settings form re-submitted untouched. The cost is bounded and the alternative
-// is not: an in-flight pass loses its claim and retries on the next pass, at
-// worst a day's delay on the daily scheduler, whereas comparing against the
-// stored row to decide whether this save "counts" would put the revocation
-// behind a value judgement made from a row read a moment earlier. An egress
-// gate errs toward refusing. (SettingsService.SaveReminderLeadDays skips its own
-// no-op UPDATE before reaching persistence, so the equivalent saving is already
-// taken where it can be taken safely.)
+// settings form re-submitted untouched. The alternative is worse: comparing
+// against the stored row to decide whether this save "counts" would put a
+// revocation behind a value judgement made from a row read a moment earlier, and
+// an egress gate errs toward refusing. (SettingsService.SaveReminderLeadDays
+// skips its own no-op UPDATE before reaching persistence, so that saving is
+// already taken where it can be taken safely.)
+//
+// The cost, stated at its worst rather than its typical: an in-flight pass loses
+// its claim, and the reminder waits for a pass whose due-set still covers the
+// anchor. At the default lead window that is the next day. At a lead window of
+// ZERO — reachable, MinReminderLeadDays is 0 — the due test is
+// "daysUntil >= 0 && daysUntil <= leadDays" (reminderWithinWindow), so the
+// anchor is due on exactly one calendar day and there is no later pass to
+// retry it: a save landing inside that one pass drops that cycle's reminder.
+// Losing a reminder the owner was mid-way through reconfiguring is the
+// fail-closed direction, but it is a dropped reminder and not a delay.
 func (repo *UserRepository) SaveWebhookSettings(ctx context.Context, userID uint, settings models.WebhookSettingsColumns) error {
 	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
 		"webhook_enabled":          settings.Enabled,
