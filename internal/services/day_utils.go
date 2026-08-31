@@ -147,6 +147,34 @@ func CalendarDaysBetween(from time.Time, to time.Time) int {
 	return int(end.Sub(start).Hours() / 24)
 }
 
+// AddCalendarDays returns the calendar day `days` after `day` (negative steps
+// backward), start-of-day in `location`. It is the counterpart of
+// CalendarDaysBetween — that one MEASURES a calendar-day distance, this one
+// WALKS one — and the single stepping point for code that is not already
+// walking a run of days through forEachCalendarDay.
+//
+// `day.AddDate(0, 0, n)` is not that. AddDate re-enters time.Date in the
+// receiver's own location, so where the resulting day's local midnight does not
+// exist (America/Santiago 2026-09-06, America/Havana 2026-03-08) it resolves
+// the missing wall clock BACKWARD and returns the PREVIOUS calendar day at
+// 23:00. Every reader that then takes the calendar components — CalendarDayKey,
+// a map key, a rendered date — is handed the wrong day, one day a year per
+// affected zone, silently.
+//
+// The step therefore runs over UTC-anchored days, where no midnight is ever
+// skipped, and the result is resolved back into `location` through the single
+// construction point. Keeping the caller's anchor is deliberate: these values
+// are routinely ordered against other location-midnight values, and returning a
+// UTC-midnight one would trade this defect for the cross-anchor comparison
+// defect (issue #48 class) the barrier's shape (b) exists to catch.
+func AddCalendarDays(day time.Time, days int, location *time.Location) time.Time {
+	if day.IsZero() {
+		return time.Time{}
+	}
+	stepped := dateOnly(day).AddDate(0, 0, days)
+	return CalendarDay(stepped, location)
+}
+
 // uniqueSymptomIDs returns a day's symptom ids in their stored order with
 // repeats removed. Every surface that COUNTS symptoms per day walks the slice
 // through this (or through uniqueKnownSymptomIDs, which filters unknown ids on

@@ -169,9 +169,9 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 		events = append(events, calendarFeedEvent{kind: kind, date: date})
 	}
 	for cycle := range calendarFeedProjectionCycles {
-		anchor := CalendarDay(cycleStart.AddDate(0, 0, cycle*cycleLength), input.Location)
+		anchor := AddCalendarDays(cycleStart, cycle*cycleLength, input.Location)
 
-		nextPeriodStart := CalendarDay(anchor.AddDate(0, 0, cycleLength), input.Location)
+		nextPeriodStart := AddCalendarDays(anchor, cycleLength, input.Location)
 		if !nextPeriodStart.Before(today) {
 			appendEvent("period", nextPeriodStart)
 		}

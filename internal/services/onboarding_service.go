@@ -218,7 +218,7 @@ func OnboardingDateBounds(now time.Time, location *time.Location) (time.Time, ti
 	}
 
 	today := DateAtLocation(now.In(location), location)
-	return today.AddDate(0, 0, -OnboardingStartDateWindowDays), today
+	return AddCalendarDays(today, -OnboardingStartDateWindowDays, location), today
 }
 
 func RequiresOnboarding(user *models.User) bool {

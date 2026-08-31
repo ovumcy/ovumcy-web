@@ -80,7 +80,7 @@ func shouldBuildStatsCycleFactorExplanation(user *models.User, logs []models.Dai
 
 func collectStatsCycleFactorCounts(logs []models.DailyLog, now time.Time, location *time.Location) map[string]int {
 	today := DateAtLocation(now, location)
-	windowStart := today.AddDate(0, 0, -(statsCycleFactorContextWindowDays - 1))
+	windowStart := AddCalendarDays(today, -(statsCycleFactorContextWindowDays - 1), location)
 	counts := make(map[string]int, len(supportedDayCycleFactorKeys))
 	for _, logEntry := range logs {
 		logDay := CalendarDay(logEntry.Date, location)

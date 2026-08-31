@@ -70,7 +70,8 @@ const calendarDayConstructionPoint = "internal/services/day_utils.go:StartOfCale
 // match the sweep EXACTLY: an entry that no longer matches anything fails too,
 // so a fixed site cannot leave a stale exemption behind.
 var calendarDayBarrierAllowlist = map[string]string{
-	"internal/reminders/next_run.go:fireOnCalendarDay:calendar day built in a location": "deliberate carve-out: a scheduling instant at a runtime hour, not a calendar day, and the two lines below it check the requested date survived and fall back to services.StartOfCalendarDay when it did not.",
+	"internal/reminders/next_run.go:fireOnCalendarDay:calendar day built in a location":                                      "deliberate carve-out: a scheduling instant at a runtime hour, not a calendar day, and the two lines below it check the requested date survived and fall back to services.StartOfCalendarDay when it did not.",
+	"internal/services/calendar_feed_service.go:CalendarFeedService.ResolveFeed:calendar day stepped from a location anchor": "deliberate carve-out: a step of whole YEARS producing the lower bound of the log fetch window, not a calendar date anyone reads. The one-sided normalization widens the window by a day and never narrows it, and FetchLogsForUser re-resolves both bounds through DayRange.",
 }
 
 // calendarDayBarrierBlindSpots is what this sweep provably cannot see. It is
@@ -81,6 +82,7 @@ var calendarDayBarrierBlindSpots = []string{
 	"a location expression is anything that is not the literal time.UTC, so a variable that happens to hold time.UTC at run time counts as a location",
 	"a local whose anchor is not the FIRST result of a multi-value call, and a local ever assigned something unclassifiable or two different anchors, is deliberately left unknown — the sweep prefers missing a site to flagging a safe one",
 	"only Before/After/Equal/Sub are read as ordering; a comparison expressed some other way (sorting by UnixNano, a switch on Sub's sign through a helper) is invisible",
+	"shape (c) reads the same local anchors as shape (b): a step whose receiver is a parameter, a struct field (stats.LastPeriodStart) or a range variable is unclassified and therefore never flagged, so the stepping class is covered only where the anchor is built in the same function",
 	"non-Go surfaces are out of scope: the JavaScript bundle and the templates are not parsed here",
 }
 
@@ -91,6 +93,7 @@ const (
 	calendarDayBarrierFileFloor        = 200
 	calendarDayBarrierDateCallFloor    = 6
 	calendarDayBarrierCompareCallFloor = 40
+	calendarDayBarrierAddDateCallFloor = 40
 )
 
 // calendarDayFinding is one flagged site.
@@ -106,6 +109,7 @@ type calendarDayBarrierScan struct {
 	files        int
 	dateCalls    int
 	compareCalls int
+	addDateCalls int
 }
 
 // TestCalendarDayConstructionBarrier is the sweep. Every flagged site must
@@ -123,6 +127,9 @@ func TestCalendarDayConstructionBarrier(t *testing.T) {
 	}
 	if scan.compareCalls < calendarDayBarrierCompareCallFloor {
 		t.Fatalf("the sweep saw %d time ordering call(s), fewer than the floor of %d — it is no longer reading the comparison shape it exists to read", scan.compareCalls, calendarDayBarrierCompareCallFloor)
+	}
+	if scan.addDateCalls < calendarDayBarrierAddDateCallFloor {
+		t.Fatalf("the sweep saw %d AddDate call(s), fewer than the floor of %d — it is no longer reading the stepping shape it exists to read", scan.addDateCalls, calendarDayBarrierAddDateCallFloor)
 	}
 
 	unexplained := make([]calendarDayFinding, 0, len(scan.findings))
@@ -166,6 +173,7 @@ func calendarDayBarrierGuidance() string {
 	builder.WriteString("How to clear a finding:\n")
 	builder.WriteString("  - building a calendar day: take the calendar components and call services.StartOfCalendarDay, or its wrappers CalendarDay (a date-only stored value), DateAtLocation (a real instant) or ParseDayDate (a YYYY-MM-DD input). Never time.Date/time.ParseInLocation with a non-UTC location: where a zone's midnight does not exist, both normalize the value into the previous calendar day.\n")
 	builder.WriteString("  - comparing calendar days: use CalendarDaysBetween, which re-anchors both operands to UTC midnight of their own calendar day. A location midnight and a UTC midnight name the same day and are different instants, so Before/After/Equal between them is wrong every day in every non-UTC zone.\n")
+	builder.WriteString("  - stepping calendar days: step from a UTC anchor — dateOnly(day).AddDate(0, 0, n), or forEachCalendarDay for a run of days. AddDate re-enters time.Date in the receiver's own location, so a step landing on a date whose local midnight the zone skips returns the previous calendar day at 23:00 instead.\n")
 	builder.WriteString("  - the site is genuinely an INSTANT (a TTL, an expiry, a freshness window, a half-open range bound): say so in calendarDayBarrierAllowlist. Adding a line there is a deliberate act and owes a one-line reason, not a bare path.\n")
 	builder.WriteString("What this sweep cannot see, so a green run is not a cleared tree:\n")
 	for _, blindSpot := range calendarDayBarrierBlindSpots {
@@ -317,6 +325,32 @@ func inspectCalendarDayFile(fileSet *token.FileSet, file *ast.File, relative str
 				key:      relative + ":" + enclosing + ":calendar days compared across midnight anchors",
 				position: where,
 				detail:   fmt.Sprintf("%s between a %s-anchored value and a %s-anchored one: the two name the same calendar day and are different instants.", selector.Sel.Name, calendarDayAnchorName(left), calendarDayAnchorName(right)),
+			})
+			return true
+		})
+
+		// Shape (c): a calendar-day STEP taken from a location anchor. Shares
+		// this function's anchor map with shape (b) for the same reason — the
+		// receiver's anchor is only knowable from the function's own locals.
+		ast.Inspect(function.Body, func(inner ast.Node) bool {
+			call, isCall := inner.(*ast.CallExpr)
+			if !isCall || len(call.Args) != 3 {
+				return true
+			}
+			selector, isSelector := call.Fun.(*ast.SelectorExpr)
+			if !isSelector || selector.Sel.Name != "AddDate" || calendarDayIsPackageIdent(selector.X) {
+				return true
+			}
+			scan.addDateCalls++
+
+			if calendarDayClassify(selector.X, anchors) != anchorLocation {
+				return true
+			}
+			where, enclosing := position(call)
+			scan.findings = append(scan.findings, calendarDayFinding{
+				key:      relative + ":" + enclosing + ":calendar day stepped from a location anchor",
+				position: where,
+				detail:   "AddDate re-enters time.Date in the receiver's location: where the resulting day's local midnight does not exist (America/Santiago 2026-09-06, America/Havana 2026-03-08) it normalizes BACKWARD, so the step names the previous calendar day.",
 			})
 			return true
 		})
@@ -492,7 +526,14 @@ func calendarDayClassify(expr ast.Expr, anchors map[string]anchorClass) anchorCl
 		if selector, ok := node.Fun.(*ast.SelectorExpr); ok && !calendarDayIsPackageIdent(selector.X) {
 			switch selector.Sel.Name {
 			case "AddDate":
-				// A whole number of calendar days keeps the anchor.
+				// The anchor is carried through — but only because a step taken
+				// from a location anchor is itself shape (c) and flagged at its
+				// own call site. AddDate re-enters time.Date in the receiver's
+				// location, so on a date whose local midnight the zone skips it
+				// does NOT keep the anchor: it returns the previous calendar day
+				// at 23:00. Reading the result as "same anchor, later day" is
+				// exactly how the class spread, and this line is only sound
+				// standing next to that finding.
 				return calendarDayClassify(selector.X, anchors)
 			case "UTC":
 				return anchorUTC
@@ -506,6 +547,7 @@ func calendarDayClassify(expr ast.Expr, anchors map[string]anchorClass) anchorCl
 // calendarDayLocationArgument maps each construction helper to the index of its
 // *time.Location argument. dateOnly takes none: it is UTC by definition.
 var calendarDayLocationArgument = map[string]int{
+	"AddCalendarDays":      2,
 	"CalendarDay":          1,
 	"DateAtLocation":       1,
 	"StartOfCalendarDay":   3,

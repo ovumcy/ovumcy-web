@@ -154,5 +154,5 @@ func SettingsCycleStartDateBounds(now time.Time, location *time.Location) (time.
 		location = time.UTC
 	}
 	today := DateAtLocation(now.In(location), location)
-	return today.AddDate(0, 0, -SettingsCycleStartWindowDays), today
+	return AddCalendarDays(today, -SettingsCycleStartWindowDays, location), today
 }

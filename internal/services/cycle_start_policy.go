@@ -29,7 +29,7 @@ func manualCycleStartMaxDate(now time.Time, location *time.Location) time.Time {
 		location = time.UTC
 	}
 	today := DateAtLocation(now.In(location), location)
-	return today.AddDate(0, 0, manualCycleStartFutureDays)
+	return AddCalendarDays(today, manualCycleStartFutureDays, location)
 }
 
 func IsAllowedManualCycleStartDate(day time.Time, now time.Time, location *time.Location) bool {
@@ -62,7 +62,7 @@ func ResolveManualCycleStartPolicy(user *models.User, logs []models.DailyLog, da
 		ConflictDate: findCompetingCycleStart(logs, targetDay, location),
 	}
 
-	previousStart := LatestCycleStartAnchorBeforeOrOn(user, logs, targetDay.AddDate(0, 0, -1), location)
+	previousStart := LatestCycleStartAnchorBeforeOrOn(user, logs, AddCalendarDays(targetDay, -1, location), location)
 	if previousStart.IsZero() {
 		return policy
 	}
