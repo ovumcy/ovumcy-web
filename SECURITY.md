@@ -44,7 +44,7 @@ cosign verify ghcr.io/ovumcy/ovumcy-web:vX.Y.Z \
 Verify the build provenance with the GitHub CLI:
 
 ```bash
-gh attestation verify oci://ghcr.io/ovumcy/ovumcy-web:vX.Y.Z --owner ovumcy
+gh attestation verify oci://ghcr.io/ovumcy/ovumcy-web:vX.Y.Z --repo ovumcy/ovumcy-web
 ```
 
 A failed check means the image was not produced by this repository's release workflow. Do not run it.
