@@ -3,13 +3,20 @@
 -- aligned across engines.
 --
 -- webhook_config_version is the monotonic revocation epoch of an owner's
--- webhook configuration: every settings save, disable, remove and clear-data
--- wipe increments it in the same statement that performs the write, and the
--- pre-delivery watermark claim pins the value the claiming pass's snapshot
+-- delivery configuration. Three writers advance it, each in the same statement
+-- that performs its own write, and that is the COMPLETE set rather than an
+-- illustration -- a fourth added later owes the same advance:
+-- SaveWebhookSettings (a save, a disable, an endpoint replacement, a removal),
+-- UpdateReminderLeadDays (the shared banner-and-webhook lead window, which the
+-- notify pass places its reminder from), and ClearAllDataAndResetSettings.
+--
+-- The pre-delivery watermark claim pins the value the claiming pass's snapshot
 -- carried, so a pass that read the configuration before a revocation can no
 -- longer win a claim and POST to the revoked endpoint. Clear-data ADVANCES the
 -- counter rather than resetting it, because a reset would hand a revoked
--- snapshot its own value back.
+-- snapshot its own value back. Existing rows start at 0 and nothing is owed to
+-- them: migrations run at boot before the listener, so no pass spans the
+-- upgrade. ClaimWebhookWatermark carries the whole predicate.
 --
 -- ALTER TABLE ADD COLUMN IF NOT EXISTS keeps the migration idempotent across
 -- the postgres test bootstrap and rolling deploys (in addition to the runner's
