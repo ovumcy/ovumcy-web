@@ -197,7 +197,7 @@ jobs:
           heavy_suite_ids="$(suite_ids_for_events "push release workflow_dispatch")"
 
           if [ -z "$queue_suite_ids" ]; then
-            echo "::error::no merge-queue run exists for ${sha}. \`${QUEUE_CHECKS}\` are the lanes the push to \`main\` clears unconditionally, so the queue run is the only place their verdict is real — and a commit that reached \`main\` without one has never had those lanes run against its own diff. Merge it through the queue, or dispatch CI on \`main\` for it, then re-push the tag."
+            echo "::error::no merge-queue run exists for ${sha}. \`${QUEUE_CHECKS}\` are the lanes the push to \`main\` clears unconditionally, so the queue run is the only place their verdict is real, and this commit has none — nothing has run those lanes against its own diff. There is nothing to wait for and no run to start: a \`merge_group\` run exists only for a commit the queue built, so tag one that reached \`main\` through the queue."
             exit 1
           fi
 

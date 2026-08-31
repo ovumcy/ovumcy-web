@@ -236,6 +236,38 @@ func TestReleaseTagGateJudgesEachLaneWhereItActuallyRan(t *testing.T) {
 			wantRefusal: true,
 		},
 		{
+			// Every row is judged, never the newest or the first, and this is
+			// the case that decides which: a failed push run and a dispatched
+			// one that passed sit side by side, both of them heavy evidence.
+			// Taking either one alone would let a smoke failure be re-run away.
+			//
+			// The passing rows come FIRST in this fixture on purpose. A gate
+			// that stopped at the first match per name would read green over
+			// the failure and this scenario would prove nothing; with the
+			// failure last, only a gate that judges every row refuses.
+			name: "a failed push run and a later dispatch run that passed",
+			runs: map[string]string{
+				queueSuite:    "merge_group",
+				pushSuite:     "push",
+				dispatchSuite: "workflow_dispatch",
+			},
+			checks: append(
+				append(greenQueue(queueSuite), greenPush(dispatchSuite)...),
+				withConclusion(greenPush(pushSuite), pushSuite, "image-smoke", "failure")...),
+			wantRefusal: true,
+		},
+		{
+			// The heavy run's verdict for a queue-judged lane is vacuous, and
+			// vacuous is not the same as ignored: every lane beneath `test` is
+			// cleared on push, so a FAILURE there is a lane that ran when it
+			// should not have been able to, and the gate does not walk past it
+			// merely because it reads the real verdict elsewhere.
+			name:        "`test` failed in the push run, where its lanes are cleared",
+			runs:        bothRuns(),
+			checks:      withConclusion(merged(), pushSuite, "test", "failure"),
+			wantRefusal: true,
+		},
+		{
 			name:        "the push run has not been created yet",
 			runs:        map[string]string{queueSuite: "merge_group"},
 			checks:      greenQueue(queueSuite),

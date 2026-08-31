@@ -1774,8 +1774,9 @@ jobs:
     # That gate is skipped on this path (it is the tag path's substitute for the
     # `needs:` above, which cannot cross a workflow boundary), but the ceiling
     # has to cover a job the called workflow declares whether or not it runs: a
-    # scope requested below the ceiling fails the CALL, not the skipped job, and
-    # would stop `:latest` following `main` again. The publish job itself is
+    # scope this list does not carry fails the CALL, not the skipped job that
+    # asked for it, and would stop `:latest` following `main` again — so a
+    # permission ADDED over there is a line owed here. The publish job itself is
     # unaffected: its own permissions block lists neither, so it still receives
     # neither.
     permissions:
