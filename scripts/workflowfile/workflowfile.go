@@ -17,6 +17,7 @@
 package workflowfile
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -29,6 +30,14 @@ import (
 // counting all of them both rest on it, so they cannot disagree about what a
 // job header looks like.
 var jobHeader = regexp.MustCompile(`(?m)^  [A-Za-z0-9_.-]+:[ \t]*$`)
+
+// jobsKey is where the search for a job starts. Two-space indentation is not
+// on its own the mark of a job: `on:` nests `push:` and `workflow_call:` at
+// exactly that depth, so a reader that searched the whole document would hand
+// back a trigger block for a job named `push` — a silently WRONG block rather
+// than the silently empty one this package refuses. The block is non-empty, so
+// nothing downstream notices.
+const jobsKey = "\njobs:\n"
 
 // RepoRoot walks up from the test's working directory to the module root.
 func RepoRoot(t *testing.T) string {
@@ -70,23 +79,39 @@ func Read(t *testing.T, workflow string) string {
 func Job(t *testing.T, workflow, job string) string {
 	t.Helper()
 
-	content := Read(t, workflow)
-
-	header := "\n  " + job + ":\n"
-	start := strings.Index(content, header)
-	if start < 0 {
-		t.Fatalf("%s: no job named %q — it was renamed or removed, and this guard would judge nothing", workflow, job)
+	block, err := jobIn(Read(t, workflow), job)
+	if err != nil {
+		t.Fatalf("%s: %v", workflow, err)
 	}
-	rest := content[start+len(header):]
-
-	if next := jobHeader.FindStringIndex(rest); next != nil {
-		return rest[:next[0]]
-	}
-	return rest
+	return block
 }
 
 // JobHeaders returns every job header in content, which is how a caller counts
 // the jobs a workflow declares without re-deriving what a header looks like.
 func JobHeaders(content string) []string {
 	return jobHeader.FindAllString(content, -1)
+}
+
+// jobIn is Job's whole answer, kept out of the `*testing.T` wrapper so its
+// refusals can be tested rather than only triggered.
+func jobIn(content, job string) (string, error) {
+	jobsAt := strings.Index(content, jobsKey)
+	if jobsAt < 0 {
+		return "", fmt.Errorf("no `jobs:` key, so there is nothing here a job named %q could be declared in", job)
+	}
+	// The trailing newline of `jobs:` is kept, because it is the one the job
+	// header below is matched against.
+	section := content[jobsAt+len(jobsKey)-1:]
+
+	header := "\n  " + job + ":\n"
+	start := strings.Index(section, header)
+	if start < 0 {
+		return "", fmt.Errorf("no job named %q — it was renamed or removed, and this guard would judge nothing", job)
+	}
+	rest := section[start+len(header):]
+
+	if next := jobHeader.FindStringIndex(rest); next != nil {
+		return rest[:next[0]], nil
+	}
+	return rest, nil
 }
