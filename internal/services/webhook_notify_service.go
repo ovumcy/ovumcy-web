@@ -41,6 +41,18 @@ import (
 // to after Deliver, both delivered. The claim is the coordination point with
 // slice-1's watermark columns; it is the only mutual exclusion the pass has.
 //
+// The claim carries a second job the watermark cannot do: REVOCATION. The
+// snapshot is minutes old by the time a POST leaves, and in that window the
+// owner can disable delivery, replace or remove the endpoint, or clear their
+// data — none of which moves a watermark (a settings save deliberately leaves
+// them alone) and one of which, clear-data, NULLs them and so re-opens the
+// first-ever-claim branch. Each of those writes advances the owner's
+// webhook_config_version in the same statement, and the claim pins the epoch its
+// own snapshot carried, so a revoked configuration can no longer win a claim.
+// The line this holds is "no NEW request begins under a revoked configuration";
+// a request already on the wire when the revocation lands cannot be recalled,
+// which is documented for operators rather than papered over here.
+//
 // The cost, stated plainly: claiming first turns a returned delivery error into a
 // retry but a HARD KILL between claim and release into a permanent skip. A pass
 // that dies mid-POST — host reboot, OOM kill, container eviction, an interrupted
@@ -68,7 +80,16 @@ type NotifyUserRepository interface {
 	// lost whenever the column moved at all since that snapshot — not only when it
 	// moved to this same anchor. false means another pass owns the send.
 	// cycleAnchor is canonicalized to UTC-midnight by the repo.
-	ClaimWebhookWatermark(ctx context.Context, userID uint, reminderType string, cycleAnchor time.Time, previous *time.Time) (bool, error)
+	//
+	// configVersion is the revocation epoch the SAME snapshot carried, and the
+	// claim is lost when the stored epoch has moved since. That is the thing a
+	// watermark cannot express: an owner disabling delivery, replacing or
+	// removing the endpoint, or clearing their data moves none of the values
+	// above, yet must stop a pass that read the old configuration from reaching
+	// the old endpoint. false therefore means "another pass owns this send OR the
+	// configuration this pass read is no longer the owner's" — the caller treats
+	// both the same way, by not delivering.
+	ClaimWebhookWatermark(ctx context.Context, userID uint, reminderType string, cycleAnchor time.Time, previous *time.Time, configVersion int) (bool, error)
 	// ReleaseWebhookWatermark restores the watermark to previous after the delivery
 	// a claim covered failed, conditional on the column still holding cycleAnchor.
 	// previous must be the same value handed to ClaimWebhookWatermark, which is
@@ -301,8 +322,16 @@ func (service *WebhookNotifyService) processOwner(
 		// this pass's snapshot carried: it is what the claim compares against — so a
 		// pass whose snapshot has been overtaken loses rather than writing the column
 		// backwards — and it is what a failed delivery restores.
+		//
+		// record.WebhookConfigVersion is pinned alongside it, and it is the SAME
+		// snapshot's value on purpose: everything this loop is about to send was
+		// decided from that snapshot — the enabled flag, the per-kind opt-in, the
+		// decrypted URL above — so the claim has to ask whether THAT configuration
+		// is still the owner's, not whether some configuration is. Re-reading the
+		// row here to get a fresher epoch would defeat the check by agreeing with
+		// whatever the revocation just wrote.
 		previousWatermark := watermarkForReminderType(settings, reminder.Type)
-		claimed, err := service.users.ClaimWebhookWatermark(ctx, record.ID, reminder.Type, reminder.CycleAnchor, previousWatermark)
+		claimed, err := service.users.ClaimWebhookWatermark(ctx, record.ID, reminder.Type, reminder.CycleAnchor, previousWatermark, record.WebhookConfigVersion)
 		if err != nil {
 			// Owner id only: the reminder type is a health specific, and this line
 			// lands in whatever log the pass was started from. Nothing was delivered
@@ -314,9 +343,15 @@ func (service *WebhookNotifyService) processOwner(
 			continue
 		}
 		if !claimed {
-			// A concurrent pass owns this send. The reminder is being delivered —
-			// just not by us — so this is a skip, not a failure, and delivering it
-			// anyway is exactly the duplicate egress the claim exists to prevent.
+			// Either a concurrent pass owns this send — the reminder is being
+			// delivered, just not by us — or the owner revoked the configuration this
+			// pass read, and there is nothing left to deliver to. Both are a skip
+			// rather than a failure, and in both cases sending anyway is exactly the
+			// egress the claim exists to prevent: a duplicate in the first case, a
+			// POST to a revoked endpoint in the second. The pass deliberately does not
+			// distinguish them, because the log line it could write would have to name
+			// the owner whose endpoint was revoked, and the correct action is
+			// identical.
 			report.SkippedIdempotent++
 			continue
 		}

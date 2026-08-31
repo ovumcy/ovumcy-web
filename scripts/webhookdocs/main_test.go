@@ -162,6 +162,14 @@ var claimAnchors = []claimAnchor{
 		why:  "delivery-pass idempotency, not a privacy or egress invariant: the mirror states what may leave the instance, not how often a reminder is retried",
 	},
 	{
+		name: "a completed revocation holds against a pass already running",
+		row:  "revocation the owner completed",
+		mirror: []string{
+			"revocation epoch",
+			"no new request begins under a revoked configuration",
+		},
+	},
+	{
 		name: "undecryptable URL is skipped",
 		row:  "fails to decrypt",
 		why:  "the mirror states the SECRET_KEY-rotation consequence as one class; the per-owner skip is delivery behaviour, and the canonical per-domain table is docs/security/cryptography.md",

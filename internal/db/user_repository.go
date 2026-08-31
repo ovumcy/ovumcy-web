@@ -225,6 +225,19 @@ func (repo *UserRepository) UpdateReminderLeadDays(ctx context.Context, userID u
 // to the account's security posture, so no active session should be revoked.
 // It does not clear the *_last_sent_cycle_start watermarks — those are owned by
 // the future notify pass, not by a settings edit.
+//
+// It DOES advance webhook_config_version, the revocation epoch, in the same
+// statement. This is the one thing a settings save owes the notify pass, and it
+// is owed precisely BECAUSE the watermarks are left alone: a save is also how an
+// owner disables delivery, replaces the endpoint or removes it, and a pass that
+// snapshotted the previous configuration would otherwise still satisfy the
+// watermark compare-and-set and POST to the endpoint the owner was just told was
+// gone. Riding the same UPDATE is what makes "the save landed" and "no older
+// snapshot can still send" one event rather than two. Advancing (not stamping a
+// value the caller chose) keeps it monotonic per row, so no epoch is ever handed
+// back to a snapshot that already held it. Regression:
+// TestSaveWebhookSettingsAdvancesTheRevocationEpoch,
+// TestClaimWebhookWatermarkIsLostAfterTheOwnerDisabledDelivery.
 func (repo *UserRepository) SaveWebhookSettings(ctx context.Context, userID uint, settings models.WebhookSettingsColumns) error {
 	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
 		"webhook_enabled":          settings.Enabled,
@@ -232,6 +245,7 @@ func (repo *UserRepository) SaveWebhookSettings(ctx context.Context, userID uint
 		"webhook_notify_period":    settings.NotifyPeriod,
 		"webhook_notify_ovulation": settings.NotifyOvulation,
 		"reminder_lead_days":       settings.ReminderLeadDays,
+		"webhook_config_version":   gorm.Expr("webhook_config_version + 1"),
 	}).Error
 }
 
@@ -246,6 +260,13 @@ func (repo *UserRepository) SaveWebhookSettings(ctx context.Context, userID uint
 // This is a dedicated method, NOT an overload of LoadSettingsByID (which stays
 // the single settings whitelist). webhook_url is returned as CIPHERTEXT;
 // decrypt via WebhookSettingsService.DecryptWebhookURL.
+//
+// webhook_config_version rides the projection because the snapshot is the whole
+// problem: everything below is read once, at the start of the pass, and acted on
+// minutes later. The epoch is what lets ClaimWebhookWatermark tell an act-on-it
+// pass whose configuration is still current from one whose owner has since
+// revoked delivery, so it is not an extra column so much as the timestamp of the
+// rest of them.
 func (repo *UserRepository) ListAllForNotify(ctx context.Context) ([]models.WebhookNotifyRecord, error) {
 	records := make([]models.WebhookNotifyRecord, 0)
 	if err := repo.database.WithContext(ctx).
@@ -265,6 +286,7 @@ func (repo *UserRepository) ListAllForNotify(ctx context.Context) ([]models.Webh
 			"webhook_notify_period",
 			"webhook_notify_ovulation",
 			"reminder_lead_days",
+			"webhook_config_version",
 			"webhook_period_last_sent_cycle_start",
 			"webhook_ovulation_last_sent_cycle_start",
 		).
@@ -309,12 +331,29 @@ func (repo *UserRepository) ListOwnerLutealPhaseRows(ctx context.Context) ([]mod
 	return rows, nil
 }
 
-// webhookWatermarkColumns maps a reminder kind to its watermark column. Only
-// these two kinds have a watermark; any other value is rejected so a typo can
-// never write an unexpected column.
-var webhookWatermarkColumns = map[string]string{
-	models.WebhookReminderTypePeriod:    "webhook_period_last_sent_cycle_start",
-	models.WebhookReminderTypeOvulation: "webhook_ovulation_last_sent_cycle_start",
+// webhookKindColumns names the two per-kind columns a claim needs: the
+// watermark it compares and sets, and the per-kind opt-in it pins so a kind the
+// owner has switched off cannot be claimed.
+type webhookKindColumns struct {
+	watermark string
+	optIn     string
+}
+
+// webhookWatermarkColumns maps a reminder kind to its columns. Only these two
+// kinds have a watermark; any other value is rejected so a typo can never write
+// an unexpected column. Both columns of a kind live in ONE entry rather than in
+// two maps keyed alike: a kind present in one map and missing from the other
+// would silently drop half of the predicate below, which is the failure this
+// pairing cannot have.
+var webhookWatermarkColumns = map[string]webhookKindColumns{
+	models.WebhookReminderTypePeriod: {
+		watermark: "webhook_period_last_sent_cycle_start",
+		optIn:     "webhook_notify_period",
+	},
+	models.WebhookReminderTypeOvulation: {
+		watermark: "webhook_ovulation_last_sent_cycle_start",
+		optIn:     "webhook_notify_ovulation",
+	},
 }
 
 // canonicalWatermarkAnchor reduces a cycle anchor to UTC midnight, the single
@@ -372,26 +411,61 @@ func canonicalWatermarkAnchor(cycleAnchor time.Time) time.Time {
 // error — the caller skips the send instead of duplicating it. Same shape as the
 // TOTP replay guard's "totp_last_used_step < ?" below.
 //
+// The watermark alone is NOT the whole predicate, because it cannot see a
+// revocation. configVersion is the webhook_config_version the same snapshot
+// carried, and it is pinned too: every write to an owner's webhook configuration
+// — a settings save, a disable, an endpoint replacement or removal, a clear-data
+// wipe — advances that column in the statement that performs it, so a claim
+// presenting the previous epoch matches no row. Without it the two revocation
+// shapes both survive the watermark check: a settings save deliberately leaves
+// the watermarks untouched, so the stale snapshot's compare-and-set still holds,
+// and a clear-data wipe NULLs them, which re-opens the first-ever-claim branch
+// outright. Either way the pass would POST health data to an endpoint the owner
+// had already been told was revoked. The epoch is what makes the constitution's
+// "containment survives state transitions" true across this one.
+//
+// webhook_enabled and the kind's own opt-in are pinned as well, and deliberately
+// not as a restatement of the epoch. They are the fail-closed floor: they hold
+// for a row revoked BEFORE migration 038 (every such row starts at epoch 0, so
+// the epoch alone would not notice), and they would still refuse the claim if a
+// path were ever added that wrote those columns without advancing the epoch.
+// Regression: TestClaimWebhookWatermarkIsLostAfterTheOwnerDisabledDelivery,
+// TestClaimWebhookWatermarkIsRefusedWhileDeliveryIsDisabled.
+//
+// What this does NOT cover, stated plainly because it cannot be fixed here: a
+// request already in flight. The claim precedes the POST, so a revocation that
+// lands after the claim won and before the response returns cannot recall a
+// request already on the wire. The guarantee is that no NEW request begins under
+// a configuration the owner has revoked. Stated for operators in
+// docs/notifications.md.
+//
 // It touches only the one watermark column: NOT auth_session_version (taking a
-// send claim is not a security-posture change) and NOT any other setting.
-func (repo *UserRepository) ClaimWebhookWatermark(ctx context.Context, userID uint, reminderType string, cycleAnchor time.Time, previous *time.Time) (bool, error) {
-	column, ok := webhookWatermarkColumns[reminderType]
+// send claim is not a security-posture change), NOT the epoch it reads, and NOT
+// any other setting.
+func (repo *UserRepository) ClaimWebhookWatermark(ctx context.Context, userID uint, reminderType string, cycleAnchor time.Time, previous *time.Time, configVersion int) (bool, error) {
+	columns, ok := webhookWatermarkColumns[reminderType]
 	if !ok {
 		return false, fmt.Errorf("unknown webhook reminder type %q", reminderType)
 	}
 	anchorUTC := canonicalWatermarkAnchor(cycleAnchor)
 
+	// The opt-in and enabled flags are bound as parameters rather than written as
+	// TRUE/1 literals: the two dialects spell a boolean differently, and the
+	// driver already knows which.
+	claim := repo.database.WithContext(ctx).Model(&models.User{}).
+		Where("id = ? AND webhook_config_version = ? AND webhook_enabled = ? AND "+columns.optIn+" = ?",
+			userID, configVersion, true, true)
+
 	// Two spellings rather than one expression with a NULL-valued parameter: SQL
 	// equality against NULL is never true in any dialect, so "column = ?" with a
 	// NULL bind would silently match no row and lose every first-ever claim.
-	claim := repo.database.WithContext(ctx).Model(&models.User{})
 	if previous == nil || previous.IsZero() {
-		claim = claim.Where("id = ? AND "+column+" IS NULL", userID)
+		claim = claim.Where(columns.watermark + " IS NULL")
 	} else {
-		claim = claim.Where("id = ? AND "+column+" = ?", userID, *previous)
+		claim = claim.Where(columns.watermark+" = ?", *previous)
 	}
 
-	result := claim.Update(column, anchorUTC)
+	result := claim.Update(columns.watermark, anchorUTC)
 	if result.Error != nil {
 		return false, result.Error
 	}
@@ -416,8 +490,16 @@ func (repo *UserRepository) ClaimWebhookWatermark(ctx context.Context, userID ui
 // this pass never saw. It is written verbatim, not canonicalized — "unchanged"
 // means the exact value that was there. A nil previous restores SQL NULL (never
 // sent yet). A zero-row outcome is normal and not an error.
+//
+// It deliberately does NOT pin webhook_config_version the way the claim does,
+// and the asymmetry is the point: the claim gates EGRESS, the release only puts
+// a column back. A revocation that lands between claim and release must not
+// leave the watermark standing on a send that never happened — that would
+// suppress the reminder for good on a configuration the owner may re-arm. Where
+// the revocation was a clear-data wipe the watermark is already NULL, so the
+// "column = anchor" predicate matches nothing and the wipe stands untouched.
 func (repo *UserRepository) ReleaseWebhookWatermark(ctx context.Context, userID uint, reminderType string, cycleAnchor time.Time, previous *time.Time) error {
-	column, ok := webhookWatermarkColumns[reminderType]
+	columns, ok := webhookWatermarkColumns[reminderType]
 	if !ok {
 		return fmt.Errorf("unknown webhook reminder type %q", reminderType)
 	}
@@ -427,8 +509,8 @@ func (repo *UserRepository) ReleaseWebhookWatermark(ctx context.Context, userID 
 		restored = *previous
 	}
 	return repo.database.WithContext(ctx).Model(&models.User{}).
-		Where("id = ? AND "+column+" = ?", userID, anchorUTC).
-		Updates(map[string]any{column: restored}).Error
+		Where("id = ? AND "+columns.watermark+" = ?", userID, anchorUTC).
+		Updates(map[string]any{columns.watermark: restored}).Error
 }
 
 // SaveCalendarFeedToken sets (creates or rotates) the calendar-feed token
@@ -907,6 +989,18 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 			// per-kind watermarks so no stale reminder fires against the freshly
 			// emptied account. The per-kind opt-ins return to their column
 			// defaults (both true) to match a fresh account.
+			//
+			// webhook_config_version is the one webhook column that ADVANCES
+			// instead of resetting, and it has to: NULLing the watermarks is
+			// precisely what re-opens the claim predicate's first-ever-send
+			// branch, so a notify pass that snapshotted this owner before the
+			// wipe would find its claim satisfied again and POST to the endpoint
+			// this statement just erased. Advancing the epoch in the same
+			// UPDATE is what makes the erasure hold against a pass already in
+			// flight; resetting it to zero would hand that snapshot its own
+			// value back and reopen the window from the other side. Regression:
+			// TestClaimWebhookWatermarkIsLostAfterClearData,
+			// TestClearAllDataAdvancesTheWebhookRevocationEpoch.
 			"webhook_enabled":                         false,
 			"webhook_url":                             "",
 			"webhook_notify_period":                   true,
@@ -914,6 +1008,7 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 			"webhook_period_last_sent_cycle_start":    nil,
 			"webhook_ovulation_last_sent_cycle_start": nil,
 			"reminder_lead_days":                      models.DefaultReminderLeadDays,
+			"webhook_config_version":                  gorm.Expr("webhook_config_version + 1"),
 			// Calendar (.ics) feed token: a clear-data wipe revokes the feed by
 			// NULLing all three columns (selector plus both verifier columns —
 			// the MAC arrived with migration 032, after this comment was

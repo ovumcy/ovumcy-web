@@ -1321,6 +1321,10 @@ func assertUsersSchemaReconciled(t *testing.T, database *gorm.DB) {
 		"webhook_period_last_sent_cycle_start",
 		"webhook_ovulation_last_sent_cycle_start",
 		"reminder_lead_days",
+		// Webhook revocation epoch (migration 038): the monotonic per-owner
+		// counter the pre-delivery watermark claim pins, so a notify pass that
+		// snapshotted a configuration the owner has since revoked cannot send.
+		"webhook_config_version",
 		// Calendar (.ics) feed subscription token (migration 029) plus the keyed
 		// verifier authenticator that superseded bcrypt on the verify path
 		// (migration 032; the bcrypt column stays for pre-032 rows and rollback).

@@ -291,6 +291,19 @@ webhook as part of an install script that also runs `ovumcy users create`).
   daily schedule and never worry about double-notifying an owner because a
   previous run overlapped, was re-triggered, or ran twice due to a scheduler
   misconfiguration.
+- **Turning the webhook off takes effect immediately — including while a pass is
+  already running.** A pass reads every owner's settings once, at the start, and
+  sends each reminder some time later, so a change you make in between has to
+  reach it. Disabling delivery, replacing the endpoint, removing it, and clearing
+  all your data each mark the settings the running pass is holding as superseded,
+  and the claim it takes just before every request is refused once that has
+  happened. A pass still working through the owner list therefore cannot deliver
+  to an endpoint you have just removed.
+  - The one thing this cannot do is recall a request that has already left. If
+    the pass had already sent the POST at the moment you changed the setting,
+    that one request completes — nothing can unsend it. Every request after it is
+    refused. If the destination matters for a secret you are rotating, treat the
+    old endpoint as having possibly received one final reminder.
 - A pass never fails all owners because of one bad owner: a decrypt failure, a
   load failure, or a delivery failure for one owner is logged (owner id and
   host only) and the pass continues to the next owner.
