@@ -619,19 +619,30 @@ jobs:
             exit 1
           fi
 
+          # Every reference the metadata step emits must live in the repository
+          # that was just signed, and the WHOLE list is judged before the first
+          # write. Caught inside the write loop instead, a foreign entry in
+          # second place would leave the first tag published and the run red —
+          # a half-published release, which is the state this whole ordering
+          # exists to make impossible. The empty-list check above runs up front
+          # for the same reason.
+          tags=""
           while IFS= read -r ref; do
             [ -n "$ref" ] || continue
 
-            # Every reference the metadata step emits must live in the
-            # repository that was just signed. A `tags:` entry pointing
-            # somewhere else would otherwise be promoted unexamined.
             case "$ref" in
-              "${IMAGE_NAME}:"*) tag="${ref##*:}" ;;
+              "${IMAGE_NAME}:"*) ;;
               *)
-                echo "::error::the metadata step produced ${ref}, which is not a tag of ${IMAGE_NAME}. Nothing outside the repository this run signed is promoted."
+                echo "::error::the metadata step produced ${ref}, which is not a tag of ${IMAGE_NAME}. Nothing outside the repository this run signed is promoted, and nothing at all is promoted from a list carrying one."
                 exit 1
                 ;;
             esac
+
+            printf -v tags '%s%s\n' "${tags}" "${ref##*:}"
+          done <<< "${TAG_REFS}"
+
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
 
             put_status="$(
               curl -sS --connect-timeout 10 --max-time 120 --retry 3 --retry-delay 2 --retry-all-errors \
@@ -643,12 +654,12 @@ jobs:
             )"
 
             if [ "$put_status" != "201" ]; then
-              echo "::error::promoting ${DIGEST} to ${ref} returned HTTP ${put_status}. Earlier tags in this run may already point at the signed digest; the tags that failed do not exist."
+              echo "::error::promoting ${DIGEST} to ${IMAGE_NAME}:${tag} returned HTTP ${put_status}. Earlier tags in this run may already point at the signed digest; the tags that failed do not exist."
               exit 1
             fi
 
-            echo "${ref} -> ${DIGEST}"
-          done <<< "${TAG_REFS}"
+            echo "${IMAGE_NAME}:${tag} -> ${DIGEST}"
+          done <<< "${tags}"
 
       - name: Verify every public tag anonymously and against the signed digest
         # Two questions, and the release is not published until both answer.

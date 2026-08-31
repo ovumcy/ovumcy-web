@@ -315,7 +315,13 @@ func TestPromotionWritesOnlyTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 		tags        string
 		registry    registry
 		wantRefusal bool
-		wantWrites  []string
+		// wantError is the substring of the step's own `::error::` line that
+		// names the branch this fixture is about. A refusal fixture that only
+		// asked whether the step failed would pass on a failure for any other
+		// reason, which is the guard reporting green over the branch it exists
+		// to hold.
+		wantError  string
+		wantWrites []string
 		// wantContentType is what the tag write must declare when that is not
 		// simply what the registry answered with.
 		wantContentType string
@@ -333,36 +339,43 @@ func TestPromotionWritesOnlyTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 			tags:        "\n",
 			registry:    defaultRegistry(),
 			wantRefusal: true,
+			wantError:   "produced no tag to promote",
 		},
 		{
 			name:        "a reference outside the repository this run signed",
 			tags:        "ghcr.io/ovumcy/ovumcy-web:v2.0.0\ndocker.io/someone/else:latest",
 			registry:    defaultRegistry(),
 			wantRefusal: true,
+			wantError:   "is not a tag of",
 		},
 		{
 			name:        "the registry refuses the tag write",
 			tags:        "ghcr.io/ovumcy/ovumcy-web:v2.0.0",
 			registry:    func() registry { r := defaultRegistry(); r.putStatus = "400"; return r }(),
 			wantRefusal: true,
+			wantError:   "returned HTTP 400",
+			wantWrites:  []string{"v2.0.0"},
 		},
 		{
 			name:        "the signed manifest cannot be read back",
 			tags:        "ghcr.io/ovumcy/ovumcy-web:v2.0.0",
 			registry:    func() registry { r := defaultRegistry(); r.manifestStatus = "404"; return r }(),
 			wantRefusal: true,
+			wantError:   "reading the signed manifest",
 		},
 		{
 			name:        "the registry returns the manifest with no media type",
 			tags:        "ghcr.io/ovumcy/ovumcy-web:v2.0.0",
 			registry:    func() registry { r := defaultRegistry(); r.contentType = ""; return r }(),
 			wantRefusal: true,
+			wantError:   "no Content-Type",
 		},
 		{
 			name:        "GHCR issues no push token",
 			tags:        "ghcr.io/ovumcy/ovumcy-web:v2.0.0",
 			registry:    func() registry { r := defaultRegistry(); r.emptyToken = true; return r }(),
 			wantRefusal: true,
+			wantError:   "returned no push token",
 		},
 		{
 			// 200 and a token is the only shape that may proceed. A status the
@@ -371,6 +384,7 @@ func TestPromotionWritesOnlyTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 			tags:        "ghcr.io/ovumcy/ovumcy-web:v2.0.0",
 			registry:    func() registry { r := defaultRegistry(); r.tokenStatus = "403"; return r }(),
 			wantRefusal: true,
+			wantError:   "HTTP 403 for a push token",
 		},
 		{
 			// The media type is not a constant, and the tag write has to echo
@@ -426,18 +440,22 @@ func TestPromotionWritesOnlyTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 				"REGISTRY_PASSWORD": "stub",
 			}, testCase.registry)
 
+			// Judged for every case, refusal included: what the step wrote
+			// before it gave up is the difference between a failure that
+			// published nothing and one that left a half-promoted release.
+			if strings.Join(writes, ",") != strings.Join(testCase.wantWrites, ",") {
+				t.Fatalf("wrote tags %v, want %v\n%s", writes, testCase.wantWrites, output)
+			}
+
 			if testCase.wantRefusal {
 				if err == nil {
 					t.Fatalf("the promotion published this and owed a refusal.\n%s", output)
 				}
+				requireRefusalReason(t, output, testCase.wantError)
 				return
 			}
 			if err != nil {
 				t.Fatalf("the promotion refused a release it owes: %v\n%s", err, output)
-			}
-
-			if strings.Join(writes, ",") != strings.Join(testCase.wantWrites, ",") {
-				t.Fatalf("wrote tags %v, want %v\n%s", writes, testCase.wantWrites, output)
 			}
 			// Every write must carry the manifest read back by digest, under
 			// the media type it was read back with. A promotion that PUTs other
@@ -488,6 +506,9 @@ func TestThePublicCheckRefusesAnAliasThatIsNotTheSignedDigest(t *testing.T) {
 		// themselves rather than about what they resolve to.
 		tags        string
 		wantRefusal bool
+		// wantError names the branch, so a refusal for another reason is not
+		// mistaken for this one.
+		wantError string
 	}{
 		{
 			name: "both aliases resolve to the signed digest",
@@ -505,6 +526,7 @@ func TestThePublicCheckRefusesAnAliasThatIsNotTheSignedDigest(t *testing.T) {
 				return r
 			}(),
 			wantRefusal: true,
+			wantError:   "not to the signed digest",
 		},
 		{
 			name: "an alias is not anonymously readable",
@@ -515,6 +537,7 @@ func TestThePublicCheckRefusesAnAliasThatIsNotTheSignedDigest(t *testing.T) {
 				return r
 			}(),
 			wantRefusal: true,
+			wantError:   "Anonymous GHCR manifest request",
 		},
 		{
 			name: "the anonymous token request is refused",
@@ -525,6 +548,7 @@ func TestThePublicCheckRefusesAnAliasThatIsNotTheSignedDigest(t *testing.T) {
 				return r
 			}(),
 			wantRefusal: true,
+			wantError:   "Anonymous GHCR token request",
 		},
 		{
 			// 200 with no token in the body. The status alone is not the
@@ -537,6 +561,7 @@ func TestThePublicCheckRefusesAnAliasThatIsNotTheSignedDigest(t *testing.T) {
 				return r
 			}(),
 			wantRefusal: true,
+			wantError:   "did not include a bearer token",
 		},
 		{
 			// No space after the header name. The promotion reads its own
@@ -562,6 +587,7 @@ func TestThePublicCheckRefusesAnAliasThatIsNotTheSignedDigest(t *testing.T) {
 			}(),
 			tags:        "ghcr.io/ovumcy/ovumcy-web:v2.0.0\ndocker.io/someone/else:latest",
 			wantRefusal: true,
+			wantError:   "is not a tag of",
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -577,10 +603,14 @@ func TestThePublicCheckRefusesAnAliasThatIsNotTheSignedDigest(t *testing.T) {
 				"IMAGE_PATH": imagePath,
 			}, testCase.registry)
 
-			if testCase.wantRefusal && err == nil {
-				t.Fatalf("the check passed a release it owes a refusal.\n%s", output)
+			if testCase.wantRefusal {
+				if err == nil {
+					t.Fatalf("the check passed a release it owes a refusal.\n%s", output)
+				}
+				requireRefusalReason(t, output, testCase.wantError)
+				return
 			}
-			if !testCase.wantRefusal && err != nil {
+			if err != nil {
 				t.Fatalf("the check refused a release it owes: %v\n%s", err, output)
 			}
 		})
@@ -702,6 +732,23 @@ func requireOrSkip(t *testing.T, name string, err error) {
 		t.Fatalf("%s is required to run the publish steps as the workflow runs them, and this guard proves nothing without it: %v", name, err)
 	}
 	t.Skipf("%s is required to run the publish steps as the workflow runs them: %v", name, err)
+}
+
+// requireRefusalReason holds a refusal to the branch its fixture is about. A
+// case that asked only whether the step failed would pass on a failure for any
+// other reason — a stub endpoint that stopped being served, an `mktemp` that
+// did not, a variable `set -u` no longer finds — and eleven of these fixtures
+// exist to pin one branch each. An empty expectation is refused rather than
+// matched, because `strings.Contains(anything, "")` is true.
+func requireRefusalReason(t *testing.T, output, want string) {
+	t.Helper()
+
+	if want == "" {
+		t.Fatalf("this fixture expects a refusal and names no message, so it would pass on a refusal for any reason at all.\n%s", output)
+	}
+	if !strings.Contains(output, want) {
+		t.Fatalf("the step refused, but not for the reason this fixture is about: no message carrying %q.\n%s", want, output)
+	}
 }
 
 // runStep executes one extracted step with `curl` and `python3` shadowed by
