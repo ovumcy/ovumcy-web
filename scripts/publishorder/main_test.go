@@ -19,12 +19,19 @@
 // from the manifest bytes that already hash to the signed digest, which is what
 // makes the promotion incapable of pointing a tag anywhere else.
 //
-// Two things are guarded here, because either one alone reads green over the
+// Three things are guarded here, because any one alone reads green over the
 // defect:
 //
-//   - the ORDER, statically: nothing that can create a public tag may precede
-//     the signature. A guard that only tested the promotion script would pass
-//     over a `tags:` quietly restored to the push;
+//   - the ORDER, statically, and with it the STEP LIST that runs before the
+//     promotion. Searching earlier steps for `steps.meta.outputs.tags` catches
+//     a step that reads the derived list and misses one that spells a tag out;
+//     nothing can enumerate every way a step might write a tag, so the window
+//     is closed from the other end instead — a step that appears in it and is
+//     not on the reviewed list fails, whatever it does;
+//   - what the three steps between the push and the promotion ACT ON. The
+//     order rule reads their names, and a name is all it reads: a signing step
+//     emptied to `echo ok` keeps its place in the sequence and its position
+//     proves nothing;
 //   - the PROMOTION and the VERIFICATION, by running their real scripts over a
 //     stubbed registry. A guard that only read the order would pass over a
 //     promotion that writes a tag it never checked, or a verification that
@@ -41,6 +48,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -73,11 +82,21 @@ const (
 	otherDigest = "sha256:99999999999999999999999999999999999999999999999999999999deadbeef"
 )
 
+// The image the fixtures run against. The workflow derives both from
+// `github.repository`, lowercased; the two spellings are what the steps
+// consume — the full reference a tag is checked to belong to, and the registry
+// path an API call is made against.
+const (
+	imageName = "ghcr.io/ovumcy/ovumcy-web"
+	imagePath = "ovumcy/ovumcy-web"
+)
+
 // TestNoPublicTagIsCreatedBeforeTheSignature is the order rule. It is written
 // against the step LIST rather than against any one step's text: the defect was
 // not a wrong step, it was three correct steps in the wrong order.
 func TestNoPublicTagIsCreatedBeforeTheSignature(t *testing.T) {
-	steps := stepNames(t)
+	job := workflowfile.Job(t, publishWorkflow, publishJob)
+	steps := stepNames(t, job)
 	index := func(name string) int {
 		for i, step := range steps {
 			if step == name {
@@ -121,7 +140,7 @@ func TestNoPublicTagIsCreatedBeforeTheSignature(t *testing.T) {
 	// comment above this step explains push-by-digest at length, so a check
 	// reading it would stay green over an `outputs:` line that had lost the
 	// option — the guard would then be satisfied by its own rationale.
-	block := withoutComments(stepBlock(t, pushStep))
+	block := withoutComments(stepBlock(t, job, pushStep))
 	if !strings.Contains(block, "push-by-digest=true") {
 		t.Errorf("%s, step %q does not push by digest, so the push itself names the image and the ordering above buys nothing", publishWorkflow, pushStep)
 	}
@@ -144,16 +163,98 @@ func TestNoPublicTagIsCreatedBeforeTheSignature(t *testing.T) {
 		if i >= promote {
 			break
 		}
-		if strings.Contains(withoutComments(stepBlock(t, name)), "steps.meta.outputs.tags") {
+		if strings.Contains(withoutComments(stepBlock(t, job, name)), "steps.meta.outputs.tags") {
 			t.Errorf("%s, job %q: step %q reads the public tag list and runs before %q. Only the promotion may hold those names",
 				publishWorkflow, publishJob, name, promoteStep)
 		}
 	}
 }
 
-// withoutComments drops whole-line YAML comments. It is deliberately not a
-// shell-comment stripper: a `#` inside a `run:` script is the script's, and
-// nothing here judges those.
+// TestOnlyReviewedStepsRunBeforeThePromotion closes the window from the other
+// end. The rule above asks whether a step READS the derived tag list, which is
+// how the defect was actually written; a step that spells `<image>:latest` out
+// and pushes it reads nothing and creates the same public alias before the
+// signature. No pattern can enumerate every way a step might write a tag, so
+// what is pinned instead is which steps may run there at all: a step added to
+// that window fails here until it is put on this list deliberately, and putting
+// it on the list is the review this guard exists to force.
+func TestOnlyReviewedStepsRunBeforeThePromotion(t *testing.T) {
+	job := workflowfile.Job(t, publishWorkflow, publishJob)
+	steps := stepNames(t, job)
+
+	promote := slices.Index(steps, promoteStep)
+	if promote < 0 {
+		t.Fatalf("%s, job %q: no step named %q, so this guard cannot find the window it is meant to hold", publishWorkflow, publishJob, promoteStep)
+	}
+
+	want := []string{
+		"Checkout",
+		"Set up QEMU",
+		"Set up Docker Buildx",
+		"Log in to Docker Hub",
+		"Log in to GHCR",
+		"Resolve the registry image name",
+		"Extract Docker metadata",
+		"Build runtime image for the pre-publish scan",
+		"Pull Trivy image",
+		"Scan the image before publishing it",
+		pushStep,
+		"Install Cosign",
+		signStep,
+		attestStep,
+		verifyStep,
+	}
+
+	if got := steps[:promote]; !slices.Equal(got, want) {
+		t.Errorf("%s, job %q runs these steps before %q:\n  %v\nand this guard has reviewed:\n  %v\nEvery step in that window runs while the digest is signed but nothing public points at it, so a new one there has to be read for whether it can create a tag — then added here. Reordering or removing one is the same question in reverse",
+			publishWorkflow, publishJob, promoteStep, got, want)
+	}
+}
+
+// TestTheSigningStepsActOnThePushedDigest reads what the three steps between
+// the push and the promotion actually do. Their ORDER is held above, and order
+// is all it holds: `Verify the signature and provenance before promoting`
+// emptied to an `echo` keeps its name and its place, and the promotion then
+// runs gated on nothing while every ordering assertion still passes.
+func TestTheSigningStepsActOnThePushedDigest(t *testing.T) {
+	job := workflowfile.Job(t, publishWorkflow, publishJob)
+
+	for _, want := range []struct {
+		step     string
+		contains []string
+		because  string
+	}{
+		{
+			step:     signStep,
+			contains: []string{"cosign sign", "steps.build.outputs.digest"},
+			because:  "the signature has to cover the digest this run pushed, and nothing else names it",
+		},
+		{
+			step:     attestStep,
+			contains: []string{"subject-digest: ${{ steps.build.outputs.digest }}"},
+			because:  "provenance attested for another subject is provenance the published digest does not carry",
+		},
+		{
+			step:     verifyStep,
+			contains: []string{"cosign verify", "gh attestation verify", "steps.build.outputs.digest"},
+			because:  "signing and attesting are two API calls that reported success; this step is the only one that reads either back, and the promotion below is gated on it",
+		},
+	} {
+		block := withoutComments(stepBlock(t, job, want.step))
+		for _, needle := range want.contains {
+			if !strings.Contains(block, needle) {
+				t.Errorf("%s, step %q does not carry %q. %s", publishWorkflow, want.step, needle, want.because)
+			}
+		}
+	}
+}
+
+// withoutComments drops every whole-line comment, YAML and shell alike. Both
+// are stripped for one reason: these steps carry long ones, and the comment
+// above the push names `steps.meta.outputs.tags` precisely because that is what
+// it used to carry — a rule that read comments would fire on the sentence
+// explaining why the code does not do the thing. An inline `#` is left where it
+// is; it belongs to the command on that line, and nothing here judges those.
 func withoutComments(block string) string {
 	var kept []string
 	for _, line := range strings.Split(block, "\n") {
@@ -197,6 +298,8 @@ func defaultRegistry() registry {
 // written from something other than the bytes that were signed, or written at
 // all for a reference outside the repository this run signed.
 func TestPromotionWritesOnlyTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
+	job := workflowfile.Job(t, publishWorkflow, publishJob)
+
 	for _, testCase := range []struct {
 		name        string
 		tags        string
@@ -248,11 +351,36 @@ func TestPromotionWritesOnlyTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 			registry:    func() registry { r := defaultRegistry(); r.emptyToken = true; return r }(),
 			wantRefusal: true,
 		},
+		{
+			// 200 and a token is the only shape that may proceed. A status the
+			// step does not read is a token it would go on to use.
+			name:        "GHCR refuses the push token request",
+			tags:        "ghcr.io/ovumcy/ovumcy-web:v2.0.0",
+			registry:    func() registry { r := defaultRegistry(); r.tokenStatus = "403"; return r }(),
+			wantRefusal: true,
+		},
+		{
+			// The media type is not a constant, and the tag write has to echo
+			// whatever the read-back returned: a hardcoded one stores a
+			// different object under the tag, and the digest changes with it.
+			// This fixture is the one that fails if the PUT stops carrying the
+			// GET's Content-Type.
+			name: "the registry stores the manifest as a Docker v2 list",
+			tags: "ghcr.io/ovumcy/ovumcy-web:v2.0.0",
+			registry: func() registry {
+				r := defaultRegistry()
+				r.contentType = "application/vnd.docker.distribution.manifest.list.v2+json"
+				return r
+			}(),
+			wantWrites: []string{"v2.0.0"},
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			output, writes, err := runStep(t, promoteStep, map[string]string{
+			output, writes, err := runStep(t, job, promoteStep, map[string]string{
 				"DIGEST":            digest,
 				"TAG_REFS":          testCase.tags,
+				"IMAGE_NAME":        imageName,
+				"IMAGE_PATH":        imagePath,
 				"REGISTRY_USER":     "github-actions",
 				"REGISTRY_PASSWORD": "stub",
 			}, testCase.registry)
@@ -270,13 +398,29 @@ func TestPromotionWritesOnlyTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 			if strings.Join(writes, ",") != strings.Join(testCase.wantWrites, ",") {
 				t.Fatalf("wrote tags %v, want %v\n%s", writes, testCase.wantWrites, output)
 			}
-			// Every write must carry the manifest read back by digest. A
-			// promotion that PUTs anything else would pass the check above and
-			// still point the alias at an unsigned object.
+			// Every write must carry the manifest read back by digest, under
+			// the media type it was read back with. A promotion that PUTs other
+			// bytes points the alias at an unsigned object; one that PUTs the
+			// right bytes under the wrong media type has the registry store a
+			// different object, which is the same failure by another route.
+			// Both pass every check above.
+			bodies, types := 0, 0
 			for _, line := range strings.Split(output, "\n") {
-				if strings.HasPrefix(line, "PUT-BODY ") && !strings.Contains(line, digest) {
-					t.Fatalf("a tag was written from bytes other than the signed manifest: %q", line)
+				if rest, ok := strings.CutPrefix(line, "PUT-BODY "); ok {
+					bodies++
+					if !strings.Contains(rest, digest) {
+						t.Fatalf("a tag was written from bytes other than the signed manifest: %q", line)
+					}
 				}
+				if rest, ok := strings.CutPrefix(line, "PUT-CT "); ok {
+					types++
+					if strings.TrimSpace(rest) != testCase.registry.contentType {
+						t.Fatalf("a tag was written declaring %q, and the signed manifest was read back as %q. The registry stores what the write declares, so a tag written under another media type is a different object at a different digest", strings.TrimSpace(rest), testCase.registry.contentType)
+					}
+				}
+			}
+			if bodies != len(testCase.wantWrites) || types != len(testCase.wantWrites) {
+				t.Fatalf("the stub logged %d bodies and %d media types for %d tag writes, so the two assertions above judged fewer writes than happened.\n%s", bodies, types, len(testCase.wantWrites), output)
 			}
 		})
 	}
@@ -287,6 +431,7 @@ func TestPromotionWritesOnlyTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 // the digest comparison is the new half, and it is the one that says the alias
 // an operator resolves is the artifact the signature covers.
 func TestThePublicCheckRefusesAnAliasThatIsNotTheSignedDigest(t *testing.T) {
+	job := workflowfile.Job(t, publishWorkflow, publishJob)
 	tags := "ghcr.io/ovumcy/ovumcy-web:v2.0.0\nghcr.io/ovumcy/ovumcy-web:latest"
 
 	for _, testCase := range []struct {
@@ -345,10 +490,11 @@ func TestThePublicCheckRefusesAnAliasThatIsNotTheSignedDigest(t *testing.T) {
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			output, _, err := runStep(t, publicStep, map[string]string{
+			output, _, err := runStep(t, job, publicStep, map[string]string{
 				"DIGEST":     digest,
 				"TAG_REFS":   tags,
-				"IMAGE_NAME": "ghcr.io/ovumcy/ovumcy-web",
+				"IMAGE_NAME": imageName,
+				"IMAGE_PATH": imagePath,
 			}, testCase.registry)
 
 			if testCase.wantRefusal && err == nil {
@@ -369,13 +515,22 @@ func TestThePublicCheckRefusesAnAliasThatIsNotTheSignedDigest(t *testing.T) {
 //
 // It returns the tags the script wrote, in the order it wrote them, read off
 // the stub's own log.
-func runStep(t *testing.T, step string, env map[string]string, reg registry) (string, []string, error) {
+func runStep(t *testing.T, job, step string, env map[string]string, reg registry) (string, []string, error) {
 	t.Helper()
 
-	script := stepScript(t, step)
+	script := stepScript(t, job, step)
 
 	bash, err := exec.LookPath("bash")
 	if err != nil {
+		// A guard that reports green because it could not look is worse than
+		// none: these two tests carry every assertion about what the promotion
+		// and the public check actually do, and a skip satisfies the suite the
+		// same way a pass does. The only place that may skip is a Windows
+		// developer machine without Git Bash; anywhere a verdict decides a
+		// merge, a missing bash is a failure.
+		if runtime.GOOS != "windows" || os.Getenv("CI") != "" {
+			t.Fatalf("bash is required to run the publish steps as the workflow runs them, and this guard proves nothing without it: %v", err)
+		}
 		t.Skipf("bash is required to run the publish steps as the workflow runs them: %v", err)
 	}
 
@@ -392,11 +547,15 @@ func runStep(t *testing.T, step string, env map[string]string, reg registry) (st
 		"GITHUB_SERVER_URL=https://github.com",
 		"STUB_DIR="+dir,
 	)
-	// The step's own `env:` first, so a constant it declares there — the Accept
-	// header listing the manifest media types, say — reaches the script exactly
-	// as the workflow supplies it rather than being restated here. The fixture's
+	// The workflow's own constants first — the job's `env:`, then the step's —
+	// so a constant declared there, the Accept header listing the manifest
+	// media types being the one that matters, reaches the script exactly as the
+	// workflow supplies it rather than being restated here. The fixture's
 	// values come after and win, since Go's exec keeps the last binding.
-	for key, value := range declaredEnv(t, step) {
+	for key, value := range jobEnv(job) {
+		command.Env = append(command.Env, key+"="+value)
+	}
+	for key, value := range declaredEnv(t, job, step) {
 		command.Env = append(command.Env, key+"="+value)
 	}
 	for key, value := range env {
@@ -439,14 +598,19 @@ func stubRegistry(dir string, reg registry, resolves string) string {
 		`printf '%s' ` + shellQuote(tokenValue) + ` > ` + shellQuote(dir+"/token_value.txt"),
 		`python3() { cat > /dev/null 2>&1 || true; cat "$STUB_DIR/token_value.txt"; printf '\n'; }`,
 		`curl() {`,
-		`  local out="" dump="" method=GET url="" body=""`,
+		`  local out="" dump="" method=GET url="" body="" content_type=""`,
 		`  while [ $# -gt 0 ]; do`,
 		`    case "$1" in`,
 		`      -sSLo|-o|--output) out="$2"; shift 2 ;;`,
 		`      -D|--dump-header) dump="$2"; shift 2 ;;`,
 		`      -X) method="$2"; shift 2 ;;`,
 		`      -I) method=HEAD; shift ;;`,
-		`      -w|-u|-H) shift 2 ;;`,
+		// `-H` is read rather than discarded: the media type the tag write
+		// declares is the difference between storing the signed manifest and
+		// storing a different object under the same tag, and it travels in a
+		// header. The credential and the bounds are consumed and ignored.
+		`      -H) case "$2" in Content-Type:*) content_type="${2#Content-Type: }" ;; esac; shift 2 ;;`,
+		`      -w|-u|-K|--connect-timeout|--max-time|--retry|--retry-delay) shift 2 ;;`,
 		`      --data-binary) body="${2#@}"; shift 2 ;;`,
 		`      -*) shift ;;`,
 		`      *) url="$1"; shift ;;`,
@@ -465,6 +629,7 @@ func stubRegistry(dir string, reg registry, resolves string) string {
 		`      if [ "$method" = PUT ]; then`,
 		`        printf 'PUT-TAG %s\n' "$tag" >&2`,
 		`        printf 'PUT-BODY %s\n' "$(cat "$body")" >&2`,
+		`        printf 'PUT-CT %s\n' "$content_type" >&2`,
 		`        printf '%s' ` + shellQuote(reg.putStatus) + `; return 0`,
 		`      fi`,
 		`      resolved="$(awk -v t="$tag" '$1 == t { print $2 }' "$STUB_DIR/resolves.txt")"`,
@@ -485,11 +650,11 @@ func shellQuote(value string) string {
 
 // stepNames lists the publish job's steps in the order the workflow declares
 // them, which is the order they run in.
-func stepNames(t *testing.T) []string {
+func stepNames(t *testing.T, job string) []string {
 	t.Helper()
 
 	var names []string
-	for _, match := range stepName.FindAllStringSubmatch(workflowfile.Job(t, publishWorkflow, publishJob), -1) {
+	for _, match := range stepName.FindAllStringSubmatch(job, -1) {
 		names = append(names, strings.TrimSpace(match[1]))
 	}
 	if len(names) == 0 {
@@ -500,16 +665,15 @@ func stepNames(t *testing.T) []string {
 
 // stepBlock returns the text of one step, from its `- name:` line to the next
 // step at the same indentation.
-func stepBlock(t *testing.T, name string) string {
+func stepBlock(t *testing.T, job, name string) string {
 	t.Helper()
 
-	block := workflowfile.Job(t, publishWorkflow, publishJob)
 	header := "      - name: " + name + "\n"
-	start := strings.Index(block, header)
+	start := strings.Index(job, header)
 	if start < 0 {
 		t.Fatalf("%s, job %q: no step named %q", publishWorkflow, publishJob, name)
 	}
-	rest := block[start+len(header):]
+	rest := job[start+len(header):]
 
 	if next := stepName.FindStringIndex(rest); next != nil {
 		return rest[:next[0]]
@@ -523,11 +687,27 @@ func stepBlock(t *testing.T, name string) string {
 // belong to the step and not to this file: restating them here would let the
 // workflow's Accept header or its tag list drift away from what the fixtures
 // exercise, with both sides still green.
-func declaredEnv(t *testing.T, step string) map[string]string {
+func declaredEnv(t *testing.T, job, step string) map[string]string {
 	t.Helper()
 
-	block := stepBlock(t, step)
-	marker := "        env:\n"
+	return envConstants(stepBlock(t, job, step), "\n        env:\n", "          ")
+}
+
+// jobEnv returns the same for the job's own `env:`, which is where a constant
+// both registry steps must agree on belongs — one of them declaring a media
+// type the other does not accept is a promotion the public check will not
+// resolve, with both halves reading green here.
+func jobEnv(job string) map[string]string {
+	return envConstants(job, "\n    env:\n", "      ")
+}
+
+// envConstants reads one `env:` mapping out of a block, minus the entries whose
+// value is a workflow expression — those are the run's own context and the
+// fixtures supply them instead. What is left is the constants the workflow
+// declares, which belong to it and not to this file: restating them here would
+// let the Accept header drift away from what the fixtures exercise, with both
+// sides still green.
+func envConstants(block, marker, keyIndent string) map[string]string {
 	start := strings.Index(block, marker)
 	if start < 0 {
 		return nil
@@ -538,10 +718,10 @@ func declaredEnv(t *testing.T, step string) map[string]string {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		if !strings.HasPrefix(line, "          ") {
+		if !strings.HasPrefix(line, keyIndent) {
 			break
 		}
-		entry := strings.TrimPrefix(line, "          ")
+		entry := strings.TrimPrefix(line, keyIndent)
 		if strings.HasPrefix(entry, "#") || strings.HasPrefix(entry, " ") {
 			continue
 		}
@@ -556,10 +736,10 @@ func declaredEnv(t *testing.T, step string) map[string]string {
 
 // stepScript returns one step's `run:` block, dedented the way GitHub hands it
 // to bash.
-func stepScript(t *testing.T, name string) string {
+func stepScript(t *testing.T, job, name string) string {
 	t.Helper()
 
-	block := stepBlock(t, name)
+	block := stepBlock(t, job, name)
 	marker := "        run: |\n"
 	start := strings.Index(block, marker)
 	if start < 0 {
