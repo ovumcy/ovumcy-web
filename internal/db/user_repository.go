@@ -208,8 +208,9 @@ func (repo *UserRepository) UpdateInterfaceLanguage(ctx context.Context, userID 
 // UpdateReminderLeadDays persists the owner's shared reminder lead window
 // (users.reminder_lead_days, issue #123) scoped strictly to userID. The caller
 // (SettingsService) is responsible for passing an already-clamped value
-// (services.NormalizeReminderLeadDays); this method writes the single column
-// only. Like the webhook-settings save path it deliberately does NOT bump
+// (services.NormalizeReminderLeadDays); this method writes that column and the
+// revocation epoch below, and no other setting. Like the webhook-settings save
+// path it deliberately does NOT bump
 // auth_session_version — a reminder preference is not a change to the account's
 // security posture, so no active session should be revoked.
 //
@@ -440,10 +441,15 @@ func canonicalWatermarkAnchor(cycleAnchor time.Time) time.Time {
 // — a settings save, a disable, an endpoint replacement or removal, a change to
 // the shared reminder lead window, a clear-data wipe — advances that column in
 // the statement that performs it, so a claim presenting the previous epoch
-// matches no row. That list is the complete set of writers, not an illustration:
-// SaveWebhookSettings, UpdateReminderLeadDays and
+// matches no row. That list is the complete set of writers, not an
+// illustration: SaveWebhookSettings, UpdateReminderLeadDays and
 // ClearAllDataAndResetSettings are the three, and a fourth added later owes the
-// same advance. Without it the two revocation
+// same advance. It covers WHETHER, WHERE and HOW EARLY delivery happens and
+// deliberately not what the reminder would say — a cycle-data edit or a
+// timezone capture moves the prediction, which is the watermark
+// compare-and-set's own subject, not this column's.
+//
+// Without the epoch the two revocation
 // shapes both survive the watermark check: a settings save deliberately leaves
 // the watermarks untouched, so the stale snapshot's compare-and-set still holds,
 // and a clear-data wipe NULLs them, which re-opens the first-ever-claim branch

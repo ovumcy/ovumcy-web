@@ -43,7 +43,8 @@ import (
 //
 // The claim carries a second job the watermark cannot do: REVOCATION. The
 // snapshot is minutes old by the time a POST leaves, and in that window the
-// owner can disable delivery, replace or remove the endpoint, or clear their
+// owner can disable delivery, replace or remove the endpoint, narrow the shared
+// reminder lead window, or clear their
 // data — none of which moves a watermark (a settings save deliberately leaves
 // them alone) and one of which, clear-data, NULLs them and so re-opens the
 // first-ever-claim branch. Each of those writes advances the owner's
@@ -84,7 +85,8 @@ type NotifyUserRepository interface {
 	// configVersion is the revocation epoch the SAME snapshot carried, and the
 	// claim is lost when the stored epoch has moved since. That is the thing a
 	// watermark cannot express: an owner disabling delivery, replacing or
-	// removing the endpoint, or clearing their data moves none of the values
+	// removing the endpoint, narrowing the shared reminder lead window, or
+	// clearing their data moves none of the values
 	// above, yet must stop a pass that read the old configuration from reaching
 	// the old endpoint. false therefore means "another pass owns this send OR the
 	// configuration this pass read is no longer the owner's" — the caller treats
