@@ -601,8 +601,18 @@ jobs:
 
           # The tag write must declare the same media type the manifest was
           # stored under, or the registry stores a different object and the
-          # digest changes with it.
-          content_type="$(tr -d '\r' < "$headers" | awk 'tolower($1) == "content-type:" { print $2 }' | tail -1)"
+          # digest changes with it. Parameters are dropped: a `Content-Type` may
+          # carry one (`; charset=utf-8`), the registry stores the object under
+          # the media type alone, and a tag written with a parameter attached
+          # names something else at another digest — the very failure this line
+          # exists to prevent. The header name is split on its colon rather than
+          # read as a field, so a server that omits the space after it is read
+          # rather than refused.
+          content_type="$(
+            tr -d '\r' < "$headers" \
+              | awk 'tolower($0) ~ /^content-type:/ { sub(/^[^:]*:[ \t]*/, ""); sub(/[ \t]*;.*$/, ""); sub(/[ \t]+$/, ""); print }' \
+              | tail -1
+          )"
 
           if [ -z "$content_type" ]; then
             echo "::error::GHCR returned the signed manifest with no Content-Type, so the tag write has no media type to declare."

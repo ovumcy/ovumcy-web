@@ -44,6 +44,7 @@
 package publishorder
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -306,6 +307,9 @@ func TestPromotionWritesOnlyTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 		registry    registry
 		wantRefusal bool
 		wantWrites  []string
+		// wantContentType is what the tag write must declare when that is not
+		// simply what the registry answered with.
+		wantContentType string
 	}{
 		{
 			name:       "a release tag and its aliases",
@@ -374,6 +378,21 @@ func TestPromotionWritesOnlyTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 			}(),
 			wantWrites: []string{"v2.0.0"},
 		},
+		{
+			// A media type may arrive with a parameter. The registry stores the
+			// object under the type alone, so a tag written with the parameter
+			// still attached names a different object at a different digest —
+			// which is what echoing the media type was supposed to prevent.
+			name: "the registry answers with a charset parameter",
+			tags: "ghcr.io/ovumcy/ovumcy-web:v2.0.0",
+			registry: func() registry {
+				r := defaultRegistry()
+				r.contentType = "application/vnd.oci.image.index.v1+json; charset=utf-8"
+				return r
+			}(),
+			wantWrites:      []string{"v2.0.0"},
+			wantContentType: "application/vnd.oci.image.index.v1+json",
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			output, writes, err := runStep(t, job, promoteStep, map[string]string{
@@ -404,6 +423,11 @@ func TestPromotionWritesOnlyTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 			// right bytes under the wrong media type has the registry store a
 			// different object, which is the same failure by another route.
 			// Both pass every check above.
+			wantContentType := testCase.wantContentType
+			if wantContentType == "" {
+				wantContentType = testCase.registry.contentType
+			}
+
 			bodies, types := 0, 0
 			for _, line := range strings.Split(output, "\n") {
 				if rest, ok := strings.CutPrefix(line, "PUT-BODY "); ok {
@@ -414,8 +438,8 @@ func TestPromotionWritesOnlyTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 				}
 				if rest, ok := strings.CutPrefix(line, "PUT-CT "); ok {
 					types++
-					if strings.TrimSpace(rest) != testCase.registry.contentType {
-						t.Fatalf("a tag was written declaring %q, and the signed manifest was read back as %q. The registry stores what the write declares, so a tag written under another media type is a different object at a different digest", strings.TrimSpace(rest), testCase.registry.contentType)
+					if strings.TrimSpace(rest) != wantContentType {
+						t.Fatalf("a tag was written declaring %q, and the signed manifest was stored as %q. The registry stores what the write declares, so a tag written under another media type is a different object at a different digest", strings.TrimSpace(rest), wantContentType)
 					}
 				}
 			}
@@ -507,6 +531,94 @@ func TestThePublicCheckRefusesAnAliasThatIsNotTheSignedDigest(t *testing.T) {
 	}
 }
 
+// TestTheTokenParseReadsWhatTheRegistryReturned runs the one-liner both
+// registry steps pull the bearer token out of the registry's answer with.
+// `stubRegistry` shadows `python3` deliberately — what those fixtures decide is
+// which requests each step makes and how it judges the answers — so this is the
+// only place the parse itself executes. It also holds the two steps to ONE
+// spelling of it: two implementations of one job in one job drift, and no
+// fixture that stubs them both can tell.
+func TestTheTokenParseReadsWhatTheRegistryReturned(t *testing.T) {
+	job := workflowfile.Job(t, publishWorkflow, publishJob)
+
+	parse := tokenParseLine(t, job, promoteStep)
+	if public := tokenParseLine(t, job, publicStep); public != parse {
+		t.Fatalf("the two registry steps parse the token differently:\n  %s\n  %s", parse, public)
+	}
+
+	bash := requireCommand(t, "bash", nil, "")
+	requireCommand(t, "python3", []string{"-c", "print('ok')"}, "ok")
+
+	for _, testCase := range []struct {
+		name string
+		body string
+		want string
+	}{
+		{name: "the registry issues a token", body: `{"token": "stub-token"}`, want: "stub-token"},
+		// 200 with no token in it. Both steps branch on the empty string, so
+		// what the parse returns here is what arms that branch.
+		{name: "the answer carries no token", body: `{}`, want: ""},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			path := filepath.ToSlash(filepath.Join(t.TempDir(), "token.json"))
+			if err := os.WriteFile(path, []byte(testCase.body), 0o600); err != nil {
+				t.Fatalf("write the fixture answer: %v", err)
+			}
+
+			output, err := exec.Command(bash, "-c", "set -euo pipefail\ntoken_body="+shellQuote(path)+"\n"+parse).Output()
+			if err != nil {
+				t.Fatalf("the token parse failed on %s: %v", testCase.body, err)
+			}
+			if got := strings.TrimSpace(string(output)); got != testCase.want {
+				t.Errorf("the token parse read %q out of %s, want %q", got, testCase.body, testCase.want)
+			}
+		})
+	}
+}
+
+// tokenParseLine returns the line of a step's script that parses the token,
+// read off the workflow rather than restated here.
+func tokenParseLine(t *testing.T, job, step string) string {
+	t.Helper()
+
+	for _, line := range strings.Split(stepScript(t, job, step), "\n") {
+		if strings.Contains(line, "python3 -c") {
+			return strings.TrimSpace(line)
+		}
+	}
+	t.Fatalf("%s, step %q no longer parses the token with `python3 -c`, so this guard would run nothing", publishWorkflow, step)
+	return ""
+}
+
+// requireCommand is this package's one rule about a tool the publish steps run
+// through: a guard that reports green because it could not look is worse than
+// none, so only a Windows developer machine may skip, and anywhere a verdict
+// decides a merge a missing tool is a failure.
+//
+// `probe` runs the command before trusting it. Windows ships a `python3` on
+// PATH that is an advert for the store rather than an interpreter, and it
+// answers `LookPath` exactly as a real one does.
+func requireCommand(t *testing.T, name string, probe []string, want string) string {
+	t.Helper()
+
+	path, err := exec.LookPath(name)
+	if err == nil && want != "" {
+		output, probeErr := exec.Command(path, probe...).Output()
+		if got := strings.TrimSpace(string(output)); probeErr != nil || got != want {
+			err = fmt.Errorf("%s at %s answered %q, not %q: %v", name, path, got, want, probeErr)
+		}
+	}
+	if err == nil {
+		return path
+	}
+
+	if runtime.GOOS != "windows" || os.Getenv("CI") != "" {
+		t.Fatalf("%s is required to run the publish steps as the workflow runs them, and this guard proves nothing without it: %v", name, err)
+	}
+	t.Skipf("%s is required to run the publish steps as the workflow runs them: %v", name, err)
+	return ""
+}
+
 // runStep executes one extracted step with `curl` and `python3` shadowed by
 // shell functions serving the stubbed registry. Functions rather than stub
 // executables on PATH: a bash function shadows an external command everywhere
@@ -520,19 +632,7 @@ func runStep(t *testing.T, job, step string, env map[string]string, reg registry
 
 	script := stepScript(t, job, step)
 
-	bash, err := exec.LookPath("bash")
-	if err != nil {
-		// A guard that reports green because it could not look is worse than
-		// none: these two tests carry every assertion about what the promotion
-		// and the public check actually do, and a skip satisfies the suite the
-		// same way a pass does. The only place that may skip is a Windows
-		// developer machine without Git Bash; anywhere a verdict decides a
-		// merge, a missing bash is a failure.
-		if runtime.GOOS != "windows" || os.Getenv("CI") != "" {
-			t.Fatalf("bash is required to run the publish steps as the workflow runs them, and this guard proves nothing without it: %v", err)
-		}
-		t.Skipf("bash is required to run the publish steps as the workflow runs them: %v", err)
-	}
+	bash := requireCommand(t, "bash", nil, "")
 
 	dir := filepath.ToSlash(t.TempDir())
 	resolves := ""

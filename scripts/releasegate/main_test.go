@@ -419,7 +419,7 @@ func TestTheCallerCeilingCoversEveryScopeTheCalledWorkflowDeclares(t *testing.T)
 	// scopes it did read still compare cleanly, so a job whose block is written
 	// in a shape this reader walks past asks for whatever it likes and the
 	// guard reports green — the defect it exists to catch, one job over.
-	jobs := workflowfile.JobHeaders(t, content)
+	jobs := workflowfile.JobHeaders(t, gateWorkflow, content)
 	if len(blocks) != len(jobs) {
 		t.Fatalf("%s has %d jobs and %d job-level `permissions:` blocks this guard can read. Every job's block has to be readable here, because the ones it cannot see are the ones that widen unnoticed — write the block in the usual shape, or teach this reader the new one",
 			gateWorkflow, len(jobs), len(blocks))
