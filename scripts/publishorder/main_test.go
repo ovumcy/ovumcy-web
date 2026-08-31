@@ -41,6 +41,10 @@
 //     shadows it everywhere else. It is the only place the line both registry
 //     steps pull the bearer token out of the registry's answer with is
 //     executed at all, and it holds the two steps to one spelling of it;
+//   - the IMAGE NAME every later step reads, by running the step that derives
+//     it. The fixtures below hand `IMAGE_NAME` and `IMAGE_PATH` in as values,
+//     which is what makes them fixtures — and what would otherwise leave the
+//     line computing them the one `run:` block in the job nothing executes;
 //   - the READER this file reaches all of that through. `envConstants` takes a
 //     constant off the workflow rather than restating it, and a step block
 //     begins straight after the line naming the step — so a step whose first
@@ -70,6 +74,7 @@ const (
 	publishWorkflow = ".github/workflows/docker-image.yml"
 	publishJob      = "publish"
 
+	resolveStep = "Resolve the registry image name"
 	pushStep    = "Push the image by digest, under no public tag"
 	signStep    = "Sign the pushed digest"
 	attestStep  = "Attest build provenance"
@@ -203,7 +208,7 @@ func TestOnlyReviewedStepsRunBeforeThePromotion(t *testing.T) {
 		"Set up Docker Buildx",
 		"Log in to Docker Hub",
 		"Log in to GHCR",
-		"Resolve the registry image name",
+		resolveStep,
 		"Extract Docker metadata",
 		"Build runtime image for the pre-publish scan",
 		"Pull Trivy image",
@@ -646,6 +651,66 @@ func TestThePublicCheckRefusesAnAliasThatIsNotTheSignedDigest(t *testing.T) {
 			}
 			if err != nil {
 				t.Fatalf("the check refused a release it owes: %v\n%s", err, output)
+			}
+		})
+	}
+}
+
+// TestTheImageNameIsDerivedOnceAndLowercased runs the step the push, both
+// cosign steps, the promotion and the public check all read their image from.
+// Every other test supplies that name rather than deriving it, so without this
+// one a change to the formula — a stray suffix, the wrong variable, the
+// repository left in its own case — would be reported by the registry and by
+// nothing here.
+func TestTheImageNameIsDerivedOnceAndLowercased(t *testing.T) {
+	job := workflowfile.Job(t, publishWorkflow, publishJob)
+	bash := requireBash(t)
+	script := stepScript(t, job, resolveStep)
+
+	for _, testCase := range []struct {
+		name       string
+		repository string
+		wantPath   string
+		wantName   string
+	}{
+		{
+			name:       "this repository",
+			repository: "ovumcy/ovumcy-web",
+			wantPath:   imagePath,
+			wantName:   imageName,
+		},
+		{
+			// GHCR refuses an uppercase path and `docker/metadata-action`
+			// lowercases the name it is handed, so a fork under an owner with
+			// capitals is where a raw `github.repository` and the derived tags
+			// would name two different images.
+			name:       "an owner with capitals",
+			repository: "MyOrg/Ovumcy-Web",
+			wantPath:   "myorg/ovumcy-web",
+			wantName:   "ghcr.io/myorg/ovumcy-web",
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			outputs := filepath.ToSlash(filepath.Join(t.TempDir(), "outputs"))
+
+			command := exec.Command(bash, "-c", script)
+			command.Env = append(os.Environ(),
+				"GITHUB_REPOSITORY="+testCase.repository,
+				"GITHUB_OUTPUT="+outputs,
+			)
+			if combined, err := command.CombinedOutput(); err != nil {
+				t.Fatalf("the step failed on %q: %v\n%s", testCase.repository, err, combined)
+			}
+
+			written, err := os.ReadFile(outputs)
+			if err != nil {
+				t.Fatalf("the step wrote no outputs at all: %v", err)
+			}
+			for _, want := range []string{"path=" + testCase.wantPath, "name=" + testCase.wantName} {
+				if !strings.Contains(string(written), want) {
+					t.Errorf("the step derived %q from %q, and no line of it is %q",
+						strings.TrimSpace(string(written)), testCase.repository, want)
+				}
 			}
 		})
 	}
