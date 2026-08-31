@@ -295,15 +295,22 @@ webhook as part of an install script that also runs `ovumcy users create`).
   already running.** A pass reads every owner's settings once, at the start, and
   sends each reminder some time later, so a change you make in between has to
   reach it. Disabling delivery, replacing the endpoint, removing it, changing the
-  reminder lead time, and clearing all your data each mark the settings the running pass is holding as superseded,
-  and the claim it takes just before every request is refused once that has
-  happened. A pass still working through the owner list therefore cannot deliver
-  to an endpoint you have just removed.
+  reminder lead time, and clearing all your data each mark the settings the
+  running pass is holding as superseded, and the claim it takes just before every
+  request is refused once that has happened. A pass still working through the
+  owner list therefore cannot deliver to an endpoint you have just removed.
   - The one thing this cannot do is recall a request that has already left. If
     the pass had already sent the POST at the moment you changed the setting,
     that one request completes — nothing can unsend it. Every request after it is
     refused. If the destination matters for a secret you are rotating, treat the
     old endpoint as having possibly received one final reminder.
+  - Saving the settings counts as a change even when nothing was edited, so a
+    save landing while the pass runs costs that pass its remaining reminders for
+    that owner; they arrive on the next run. The exception is a lead time of
+    **0 days**, where a reminder is due on one calendar day only — there is no
+    later run that still covers it, so that cycle's reminder is skipped rather
+    than delayed. On a zero-day lead time, change settings at an hour the pass
+    is not running.
 - A pass never fails all owners because of one bad owner: a decrypt failure, a
   load failure, or a delivery failure for one owner is logged (owner id and
   host only) and the pass continues to the next owner.
