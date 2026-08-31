@@ -546,8 +546,8 @@ func TestTheTokenParseReadsWhatTheRegistryReturned(t *testing.T) {
 		t.Fatalf("the two registry steps parse the token differently:\n  %s\n  %s", parse, public)
 	}
 
-	bash := requireCommand(t, "bash", nil, "")
-	requireCommand(t, "python3", []string{"-c", "print('ok')"}, "ok")
+	bash := requireBash(t)
+	requireShellTool(t, bash, "python3", `python3 -c "print('ok')"`, "ok")
 
 	for _, testCase := range []struct {
 		name string
@@ -590,33 +590,56 @@ func tokenParseLine(t *testing.T, job, step string) string {
 	return ""
 }
 
-// requireCommand is this package's one rule about a tool the publish steps run
+// requireBash returns a bash that has answered for itself. Being on PATH is not
+// the test — every fixture in this package runs through it, so it is asked to
+// produce a known byte before anything is judged by what it does.
+func requireBash(t *testing.T) string {
+	t.Helper()
+
+	path, err := exec.LookPath("bash")
+	if err == nil {
+		output, probeErr := exec.Command(path, "-c", "printf ok").Output()
+		if got := strings.TrimSpace(string(output)); probeErr != nil || got != "ok" {
+			err = fmt.Errorf("%s answered %q, not \"ok\": %v", path, got, probeErr)
+		}
+	}
+	requireOrSkip(t, "bash", err)
+	return path
+}
+
+// requireShellTool checks a tool THROUGH the shell that will reach it, which is
+// the only resolution that answers the question being asked. Go's `LookPath`
+// and bash's own lookup genuinely disagree on Windows — Go honours `PATHEXT`
+// and finds a `.bat`, bash wants an extensionless file — so a tool validated
+// through Go need not be the one a step's script runs. Windows also ships a
+// `python3` that is a store advert and answers a lookup exactly as an
+// interpreter does, which is why answering at all is not the test: it has to
+// say the right thing.
+func requireShellTool(t *testing.T, bash, name, probe, want string) {
+	t.Helper()
+
+	output, err := exec.Command(bash, "-c", probe).Output()
+	got := strings.TrimSpace(string(output))
+	if err == nil && got == want {
+		return
+	}
+	requireOrSkip(t, name, fmt.Errorf("`%s` answered %q, not %q: %v", probe, got, want, err))
+}
+
+// requireOrSkip is this package's one rule about a tool the publish steps run
 // through: a guard that reports green because it could not look is worse than
 // none, so only a Windows developer machine may skip, and anywhere a verdict
 // decides a merge a missing tool is a failure.
-//
-// `probe` runs the command before trusting it. Windows ships a `python3` on
-// PATH that is an advert for the store rather than an interpreter, and it
-// answers `LookPath` exactly as a real one does.
-func requireCommand(t *testing.T, name string, probe []string, want string) string {
+func requireOrSkip(t *testing.T, name string, err error) {
 	t.Helper()
 
-	path, err := exec.LookPath(name)
-	if err == nil && want != "" {
-		output, probeErr := exec.Command(path, probe...).Output()
-		if got := strings.TrimSpace(string(output)); probeErr != nil || got != want {
-			err = fmt.Errorf("%s at %s answered %q, not %q: %v", name, path, got, want, probeErr)
-		}
-	}
 	if err == nil {
-		return path
+		return
 	}
-
 	if runtime.GOOS != "windows" || os.Getenv("CI") != "" {
 		t.Fatalf("%s is required to run the publish steps as the workflow runs them, and this guard proves nothing without it: %v", name, err)
 	}
 	t.Skipf("%s is required to run the publish steps as the workflow runs them: %v", name, err)
-	return ""
 }
 
 // runStep executes one extracted step with `curl` and `python3` shadowed by
@@ -632,7 +655,7 @@ func runStep(t *testing.T, job, step string, env map[string]string, reg registry
 
 	script := stepScript(t, job, step)
 
-	bash := requireCommand(t, "bash", nil, "")
+	bash := requireBash(t)
 
 	dir := filepath.ToSlash(t.TempDir())
 	resolves := ""
