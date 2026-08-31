@@ -110,7 +110,7 @@ func TestJobInReadsAWorkflowThatOpensOnJobs(t *testing.T) {
 // included them would tell a caller comparing jobs against something else that
 // it is short of entries it never had.
 func TestJobHeadersCountsOnlyTheJobs(t *testing.T) {
-	if headers := JobHeaders(t, fixture); len(headers) != 3 {
+	if headers := JobHeaders(t, "fixture.yml", fixture); len(headers) != 3 {
 		t.Errorf("JobHeaders found %d headers, want the 3 jobs the fixture declares — `on:`'s `push:` and `workflow_call:` sit at the same indentation and are not jobs: %q", len(headers), headers)
 	}
 }

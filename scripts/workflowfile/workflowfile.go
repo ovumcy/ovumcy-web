@@ -90,12 +90,16 @@ func Job(t *testing.T, workflow, job string) string {
 // document and scopes itself, so a caller counting jobs does not re-derive
 // either what a header looks like or where the job section starts — both of
 // which this package already had to decide in order to cut one job out.
-func JobHeaders(t *testing.T, content string) []string {
+func JobHeaders(t *testing.T, workflow, content string) []string {
 	t.Helper()
 
 	section, err := jobSection(content)
 	if err != nil {
-		t.Fatalf("%v, so there is nothing here to count", err)
+		// The name is carried separately because this takes content rather than
+		// a path: a caller reading more than one workflow — releasegate reads
+		// two — gets a refusal it can attribute, which is the whole use of a
+		// guard that exists to say which file drifted.
+		t.Fatalf("%s: %v, so there is nothing here to count", workflow, err)
 	}
 	return jobHeader.FindAllString(section, -1)
 }
