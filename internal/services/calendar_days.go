@@ -331,7 +331,7 @@ func appendPredictedCycles(predictedPeriodMap map[string]bool, preFertileMap map
 	for cycleStart := CalendarDay(stats.NextPeriodStart, location); CalendarDaysBetween(cycleStart, gridEnd) >= 0; cycleStart = AddCalendarDays(cycleStart, predictedCycleLength, location) {
 		appendPredictedPeriod(predictedPeriodMap, cycleStart, predictedPeriodLength)
 		if includeFertility {
-			appendPredictedWindow(preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, cycleStart, predictedCycleLength, predictedPeriodLength, stats.LutealPhase)
+			appendPredictedWindow(preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, cycleStart, predictedCycleLength, predictedPeriodLength, stats.LutealPhase, location)
 		}
 	}
 }
@@ -386,13 +386,18 @@ func appendPredictedPeriod(predictedPeriodMap map[string]bool, cycleStart time.T
 	})
 }
 
-func appendPredictedWindow(preFertileMap map[string]bool, fertilityEdgeMap map[string]bool, fertilityPeakMap map[string]bool, ovulationMap map[string]bool, cycleStart time.Time, predictedCycleLength int, predictedPeriodLength int, lutealPhase int) {
+func appendPredictedWindow(preFertileMap map[string]bool, fertilityEdgeMap map[string]bool, fertilityPeakMap map[string]bool, ovulationMap map[string]bool, cycleStart time.Time, predictedCycleLength int, predictedPeriodLength int, lutealPhase int, location *time.Location) {
 	window := PredictCycleWindow(cycleStart, predictedCycleLength, ResolveLutealPhase(lutealPhase))
 	if !window.Calculable {
 		return
 	}
 
-	preFertileStart := cycleStart.AddDate(0, 0, predictedPeriodLength)
+	// cycleStart arrives from appendPredictedCycles as a REQUEST-ZONE midnight,
+	// so this step needs the same treatment as its siblings; location is
+	// threaded in for it. window.FertilityWindowStart on the next line is a
+	// PredictCycleWindow output and therefore already UTC-anchored, where the
+	// step is exact — the two lines look asymmetric because their operands are.
+	preFertileStart := AddCalendarDays(cycleStart, predictedPeriodLength, location)
 	preFertileEnd := window.FertilityWindowStart.AddDate(0, 0, -1)
 	appendCalendarDateRange(preFertileMap, preFertileStart, preFertileEnd)
 	ovulationMap[window.OvulationDate.Format("2006-01-02")] = true
