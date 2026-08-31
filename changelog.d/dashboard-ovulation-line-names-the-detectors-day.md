@@ -14,7 +14,16 @@
 
   The line now names the confirmed day, and — because that day is usually already behind you — it is
   shown as past rather than announced as upcoming. Both surfaces resolve the day through one shared
-  reader, so a single shift can no longer produce two dates. Nothing here changes *whether* an
-  estimate is shown: an account with predictions turned off, a paused pregnancy estimate, or an
-  overdue cycle withholds the ovulation estimate exactly as before, and a recorded shift is not a way
-  around that. With no shift recorded, the projected day is shown unchanged.
+  reader, so a single shift can no longer produce two dates.
+
+  A measurement also outranks the two ways the dashboard expresses how uncertain a *projection* is: a
+  confirmed day is named as a day rather than widened into the range shown for irregular cycles, and
+  it is not withheld under "needs more cycles". Neither of those is about a day the temperatures have
+  already named, and both used to hide it while the calendar went on marking it — for irregular
+  cycles, the very accounts the model serves worst.
+
+  Nothing here changes *whether* an estimate is shown. An account with predictions turned off, a
+  paused pregnancy estimate, an overdue cycle, or an account that has not completed a single cycle
+  yet withholds the ovulation estimate exactly as before, on the dashboard and the calendar alike —
+  they now read that decision from one place instead of each applying it separately. With no shift
+  recorded, the projected day is shown unchanged.

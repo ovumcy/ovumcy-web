@@ -66,10 +66,16 @@ type dashboardPredictionDisplay struct {
 	ovulationRangeStart  time.Time
 	ovulationRangeEnd    time.Time
 	ovulationUseRange    bool
-	ovulationNeedsData   bool
-	ovulationExact       bool
-	ovulationImpossible  bool
-	estimatePaused       bool
+	// ovulationConfirmed marks ovulationDate as a MEASUREMENT (a detected
+	// thermal shift) rather than a projection. The two representations that
+	// exist to express projection uncertainty — the irregular-cycle range and
+	// the thin-history "needs more cycles" withholding — read it and stand
+	// down, because neither is about a day the temperatures already named.
+	ovulationConfirmed  bool
+	ovulationNeedsData  bool
+	ovulationExact      bool
+	ovulationImpossible bool
+	estimatePaused      bool
 }
 
 func DashboardPredictionDisabled(user *models.User) bool {
@@ -426,6 +432,7 @@ func buildDashboardPredictionDisplay(user *models.User, logs []models.DailyLog, 
 	// had placed several days earlier.
 	if confirmed, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, today, location); ok {
 		display.ovulationDate = confirmed
+		display.ovulationConfirmed = true
 	}
 	// The prompt is not a projection: with no recorded start there is no date
 	// to withhold and nothing for the overdue signal to be about, so it answers
@@ -490,6 +497,23 @@ func applyDashboardPredictionRanges(display dashboardPredictionDisplay, user *mo
 	if !dashboardIrregularPredictionRangeEnabled(user, stats) {
 		return display
 	}
+	// A confirmed ovulation outranks the range. The range expresses the SPREAD
+	// of a projection, and there is no projection left to express once the
+	// temperatures have named the day — it is built from cycle-length spread and
+	// need not even contain that day. Discarding a measurement for it would
+	// leave the dashboard and the calendar naming different things again, for
+	// the cohort whose model is weakest. The next-period range above is
+	// untouched: that projection is still a projection.
+	// A confirmed ovulation outranks the range. The range expresses the SPREAD
+	// of a projection, and there is no projection left to express once the
+	// temperatures have named the day — it is built from cycle-length spread and
+	// need not even contain that day. Discarding a measurement for it would
+	// leave the dashboard and the calendar naming different things again, for
+	// the cohort whose model is weakest. The next-period range above is
+	// untouched: that projection is still a projection.
+	if display.ovulationConfirmed {
+		return display
+	}
 	display.ovulationRangeStart, display.ovulationRangeEnd, display.ovulationUseRange = DashboardOvulationRange(
 		display.nextPeriodRangeStart,
 		display.nextPeriodRangeEnd,
@@ -504,7 +528,13 @@ func applyDashboardPredictionRanges(display dashboardPredictionDisplay, user *mo
 }
 
 func finalizeDashboardPredictionDisplay(display dashboardPredictionDisplay) dashboardPredictionDisplay {
-	if !display.ovulationNeedsData {
+	if !display.ovulationNeedsData || display.ovulationConfirmed {
+		// "Needs more cycles" is about a projection built on thin history. A
+		// detected thermal shift is not that projection, and the calendar gates
+		// the same signal on FertilityProjectionSuppressed alone — which this
+		// cohort (irregular, one or two completed cycles) does not meet, so
+		// withholding here while the grid marks the day is the same divergence
+		// this pair of surfaces was just brought into agreement over.
 		return display
 	}
 	display.ovulationDate = time.Time{}
