@@ -46,6 +46,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ovumcy/ovumcy-web/scripts/workflowfile"
 )
 
 // The workflow, the job, and the step whose script is under test. Each is
@@ -70,7 +72,6 @@ const (
 )
 
 var (
-	jobHeader  = regexp.MustCompile(`(?m)^  [A-Za-z0-9_.-]+:[ \t]*$`)
 	stepHeader = regexp.MustCompile(`(?m)^      - name: `)
 	envEntry   = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*): (.*)$`)
 	needsEntry = regexp.MustCompile(`^      - ([A-Za-z0-9_.-]+)$`)
@@ -358,7 +359,7 @@ func TestReleaseTagGateRequiresExactlyWhatTheRollingPathRequires(t *testing.T) {
 //     the whole reason `image-smoke` may be required to be `success` rather
 //     than tolerated as `skipped` on a documentation-only commit.
 func TestTheSplitStillRestsOnWhatCiActuallyDoes(t *testing.T) {
-	block := jobBlock(t, rollingWorkflow, changesJob)
+	block := workflowfile.Job(t, rollingWorkflow, changesJob)
 
 	for _, premise := range []struct {
 		text  string
@@ -404,16 +405,12 @@ var permissionEntry = regexp.MustCompile(`^      ([a-z-]+): (none|read|write)$`)
 // one pull request before this one. The comment at the caller says so; this is
 // what makes it true.
 func TestTheCallerCeilingCoversEveryScopeTheCalledWorkflowDeclares(t *testing.T) {
-	ceiling := declaredPermissions(t, jobBlock(t, rollingWorkflow, rollingJob))
+	ceiling := declaredPermissions(t, workflowfile.Job(t, rollingWorkflow, rollingJob))
 	if len(ceiling) == 0 {
 		t.Fatalf("%s, job %q declares no `permissions:` block, so it grants the called workflow the repository default and this comparison would pass over anything", rollingWorkflow, rollingJob)
 	}
 
-	raw, err := os.ReadFile(filepath.Join(repoRoot(t), filepath.FromSlash(gateWorkflow)))
-	if err != nil {
-		t.Fatalf("read %s: %v", gateWorkflow, err)
-	}
-	content := strings.ReplaceAll(string(raw), "\r\n", "\n")
+	content := workflowfile.Read(t, gateWorkflow)
 
 	blocks := strings.Split(content, "\n    permissions:\n")[1:]
 
@@ -427,7 +424,7 @@ func TestTheCallerCeilingCoversEveryScopeTheCalledWorkflowDeclares(t *testing.T)
 		t.Fatalf("%s has no `jobs:` key this reader can find, so it cannot count the jobs it is supposed to have read a block for", gateWorkflow)
 	}
 
-	jobs := jobHeader.FindAllString(content[jobsAt:], -1)
+	jobs := workflowfile.JobHeaders(content[jobsAt:])
 	if len(blocks) != len(jobs) {
 		t.Fatalf("%s has %d jobs and %d job-level `permissions:` blocks this guard can read. Every job's block has to be readable here, because the ones it cannot see are the ones that widen unnoticed — write the block in the usual shape, or teach this reader the new one",
 			gateWorkflow, len(jobs), len(blocks))
@@ -661,7 +658,7 @@ func stepEnv(t *testing.T) map[string]string {
 func stepBlock(t *testing.T) string {
 	t.Helper()
 
-	block := jobBlock(t, gateWorkflow, gateJob)
+	block := workflowfile.Job(t, gateWorkflow, gateJob)
 	header := "      - name: " + gateStep + "\n"
 	start := strings.Index(block, header)
 	if start < 0 {
@@ -681,7 +678,7 @@ func stepBlock(t *testing.T) string {
 func rollingNeeds(t *testing.T) []string {
 	t.Helper()
 
-	block := jobBlock(t, rollingWorkflow, rollingJob)
+	block := workflowfile.Job(t, rollingWorkflow, rollingJob)
 	marker := "    needs:\n"
 	start := strings.Index(block, marker)
 	if start < 0 {
@@ -700,49 +697,4 @@ func rollingNeeds(t *testing.T) []string {
 		t.Fatalf("%s, job %q lists no dependencies, so there is nothing to hold the release gate to", rollingWorkflow, rollingJob)
 	}
 	return needs
-}
-
-// jobBlock returns the text of one job, from its header to the next job header
-// at the same indentation. It fails closed: a renamed job is a failure here,
-// never a silently empty search.
-func jobBlock(t *testing.T, workflow, job string) string {
-	t.Helper()
-
-	raw, err := os.ReadFile(filepath.Join(repoRoot(t), filepath.FromSlash(workflow)))
-	if err != nil {
-		t.Fatalf("read %s: %v", workflow, err)
-	}
-	content := strings.ReplaceAll(string(raw), "\r\n", "\n")
-
-	header := "\n  " + job + ":\n"
-	start := strings.Index(content, header)
-	if start < 0 {
-		t.Fatalf("%s: no job named %q", workflow, job)
-	}
-	rest := content[start+len(header):]
-
-	if next := jobHeader.FindStringIndex(rest); next != nil {
-		return rest[:next[0]]
-	}
-	return rest
-}
-
-// repoRoot walks up from the test's working directory to the module root.
-func repoRoot(t *testing.T) string {
-	t.Helper()
-
-	dir, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			t.Fatalf("go.mod not found above %s", dir)
-		}
-		dir = parent
-	}
 }
