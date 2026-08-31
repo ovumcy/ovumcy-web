@@ -19,8 +19,9 @@
 // from the manifest bytes that already hash to the signed digest, which is what
 // makes the promotion incapable of pointing a tag anywhere else.
 //
-// Three things are guarded here, because any one alone reads green over the
-// defect:
+// What is guarded here, each because the others alone read green over the
+// defect. Deliberately not opened with a count: the list has grown four times
+// and a number in front of it is one more claim to keep true.
 //
 //   - the ORDER, statically, and with it the STEP LIST that runs before the
 //     promotion. Searching earlier steps for `steps.meta.outputs.tags` catches
@@ -35,7 +36,15 @@
 //   - the PROMOTION and the VERIFICATION, by running their real scripts over a
 //     stubbed registry. A guard that only read the order would pass over a
 //     promotion that writes a tag it never checked, or a verification that
-//     accepts an alias resolving to a digest nobody signed.
+//     accepts an alias resolving to a digest nobody signed;
+//   - the TOKEN PARSE, against a real interpreter rather than that stub, which
+//     shadows it everywhere else. It is the only place the line both registry
+//     steps pull the bearer token out of the registry's answer with is
+//     executed at all, and it holds the two steps to one spelling of it;
+//   - the READER this file reaches all of that through. `envConstants` takes a
+//     constant off the workflow rather than restating it, and a step block
+//     begins straight after the line naming the step — so a step whose first
+//     key is `env:` has no newline in front of it to match on.
 //
 // What is NOT provable here is the end-to-end negative — breaking Cosign on a
 // real tag push and observing that no public alias appears. That needs a
