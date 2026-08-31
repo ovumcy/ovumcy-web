@@ -92,19 +92,26 @@ func TestJobInRefusesRatherThanAnsweringAboutSomethingElse(t *testing.T) {
 	}
 }
 
-func TestJobHeadersCountsTheJobsAndNothingElse(t *testing.T) {
-	jobsAt := strings.Index(fixture, "\njobs:\n")
-	if jobsAt < 0 {
-		t.Fatal("the fixture has no `jobs:` key")
+// TestJobInReadsAWorkflowThatOpensOnJobs is the line-anchoring case. The key is
+// there, so a refusal would be the reader describing its own search rather than
+// the document it was handed.
+func TestJobInReadsAWorkflowThatOpensOnJobs(t *testing.T) {
+	block, err := jobIn("jobs:\n  only:\n    runs-on: ubuntu-latest\n", "only")
+	if err != nil {
+		t.Fatalf("jobIn refused a workflow whose first line is `jobs:`: %v", err)
 	}
+	if !strings.Contains(block, "runs-on: ubuntu-latest") {
+		t.Errorf("the block returned is not the job's:\n%s", block)
+	}
+}
 
-	if headers := JobHeaders(fixture[jobsAt:]); len(headers) != 3 {
-		t.Errorf("JobHeaders found %d job headers, want 3: %q", len(headers), headers)
-	}
-	// Asked of the whole document it also sees `on:`'s children, which is why
-	// the caller that counts jobs slices from `jobs:` first.
-	if headers := JobHeaders(fixture); len(headers) <= 3 {
-		t.Errorf("JobHeaders over the whole document found %d headers, and the two under `on:` should be among them: %q", len(headers), headers)
+// TestJobHeadersCountsOnlyTheJobs is the counting half of the question jobIn
+// answers: `on:` nests two keys at a job's own indentation, and a count that
+// included them would tell a caller comparing jobs against something else that
+// it is short of entries it never had.
+func TestJobHeadersCountsOnlyTheJobs(t *testing.T) {
+	if headers := JobHeaders(t, fixture); len(headers) != 3 {
+		t.Errorf("JobHeaders found %d headers, want the 3 jobs the fixture declares — `on:`'s `push:` and `workflow_call:` sit at the same indentation and are not jobs: %q", len(headers), headers)
 	}
 }
 

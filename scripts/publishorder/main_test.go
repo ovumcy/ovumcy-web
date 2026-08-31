@@ -701,6 +701,20 @@ func jobEnv(job string) map[string]string {
 	return envConstants(job, "\n    env:\n", "      ")
 }
 
+// TestEnvConstantsReadsABlockThatOpensOnEnv is the shape `Sign the pushed
+// digest` is written in: a step block begins straight after the line naming the
+// step, so its first key has no newline in front of it. A reader that missed
+// one would hand a fixture none of the workflow's constants, and `set -u` would
+// then report it as the script's fault rather than the reader's.
+func TestEnvConstantsReadsABlockThatOpensOnEnv(t *testing.T) {
+	const accept = "application/vnd.oci.image.index.v1+json"
+	block := "        env:\n          MANIFEST_ACCEPT: " + accept + "\n        run: |\n"
+
+	if got := envConstants(block, "\n        env:\n", "          ")["MANIFEST_ACCEPT"]; got != accept {
+		t.Errorf("envConstants read %q out of a block whose first key is `env:`, want %q", got, accept)
+	}
+}
+
 // envConstants reads one `env:` mapping out of a block, minus the entries whose
 // value is a workflow expression — those are the run's own context and the
 // fixtures supply them instead. What is left is the constants the workflow
@@ -708,13 +722,20 @@ func jobEnv(job string) map[string]string {
 // let the Accept header drift away from what the fixtures exercise, with both
 // sides still green.
 func envConstants(block, marker, keyIndent string) map[string]string {
-	start := strings.Index(block, marker)
+	// The marker carries a leading newline so that an `env:` at a deeper
+	// indentation cannot match, and the block is prefixed with one so that a
+	// block whose FIRST key is `env:` still can — a step block begins straight
+	// after the line naming the step, and `Sign the pushed digest` is written
+	// exactly that way.
+	prefixed := "\n" + block
+
+	start := strings.Index(prefixed, marker)
 	if start < 0 {
 		return nil
 	}
 
 	env := map[string]string{}
-	for _, line := range strings.Split(block[start+len(marker):], "\n") {
+	for _, line := range strings.Split(prefixed[start+len(marker):], "\n") {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
