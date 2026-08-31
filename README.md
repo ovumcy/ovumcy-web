@@ -275,7 +275,7 @@ Tagged releases from `v0.7.1` onward publish under the GHCR namespace `ghcr.io/o
 ```bash
 # 1. Cosign signature — pins the signer identity (this workflow) and the OIDC issuer
 cosign verify \
-  --certificate-identity-regexp '^https://github.com/ovumcy/ovumcy-web/\.github/workflows/docker-image\.yml@refs/tags/v' \
+  --certificate-identity-regexp '^https://github\.com/ovumcy/ovumcy-web/\.github/workflows/docker-image\.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   ghcr.io/ovumcy/ovumcy-web:v1.9.2
 

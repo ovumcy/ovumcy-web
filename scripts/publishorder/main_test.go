@@ -703,6 +703,15 @@ func TestTheIdentityPatternPinsEveryCharacterOfTheRepository(t *testing.T) {
 			wantPattern: `^https://github\.com/ovumcy/ovumcy-web[.]v2/\.github/workflows/docker-image\.yml@`,
 		},
 		{
+			// An owner with capitals, which is the only shape that can tell the
+			// identity apart from the lowercased image path. Both assertions
+			// below are about it: the pattern and the attestation lookup carry
+			// the repository as GitHub records it, not as GHCR requires it.
+			name:        "an owner with capitals",
+			repository:  "MyOrg/Ovumcy-Web",
+			wantPattern: `^https://github\.com/MyOrg/Ovumcy-Web/\.github/workflows/docker-image\.yml@`,
+		},
+		{
 			// Anything the substitution cannot reach is refused rather than
 			// spliced in and matched loosely.
 			name:        "a name this pattern cannot escape",
@@ -731,6 +740,17 @@ func TestTheIdentityPatternPinsEveryCharacterOfTheRepository(t *testing.T) {
 			if !strings.Contains(string(output), testCase.wantPattern) {
 				t.Errorf("the identity handed to cosign for %q carries no %q:\n%s",
 					testCase.repository, testCase.wantPattern, output)
+			}
+
+			// The attestation is looked up by the repository in its own case,
+			// deliberately: the OIDC subject carries it that way, while five of
+			// the six steps around this one read the lowercased path. Tidying
+			// that difference away would fail the lookup in a fork under an
+			// owner with capitals, with an error naming the attestation rather
+			// than the case.
+			want := "GH attestation verify oci://" + imageName + "@" + digest + " --repo " + testCase.repository
+			if !strings.Contains(string(output), want) {
+				t.Errorf("the attestation lookup for %q is not %q:\n%s", testCase.repository, want, output)
 			}
 		})
 	}

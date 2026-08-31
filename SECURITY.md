@@ -38,7 +38,7 @@ Verify the signature (substitute the tag you are pulling for `vX.Y.Z`):
 ```bash
 cosign verify ghcr.io/ovumcy/ovumcy-web:vX.Y.Z \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  --certificate-identity-regexp '^https://github.com/ovumcy/ovumcy-web/\.github/workflows/docker-image\.yml@'
+  --certificate-identity-regexp '^https://github\.com/ovumcy/ovumcy-web/\.github/workflows/docker-image\.yml@'
 ```
 
 Verify the build provenance with the GitHub CLI:
