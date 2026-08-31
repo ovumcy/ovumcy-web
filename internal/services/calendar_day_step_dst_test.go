@@ -209,3 +209,52 @@ func TestBuildCalendarDayStatesProjectsACycleOntoTheSkippedMidnightDay(t *testin
 		t.Error("2026-09-05 must NOT be painted: the projected cycle starts on 09-06, and painting it here means the step normalized backward off the skipped midnight")
 	}
 }
+
+// TestBuildCalendarDayStatesStartsAProjectedPreFertileRunOnTheSkippedMidnightDay
+// covers the one stepping site whose anchor the barrier cannot classify:
+// appendPredictedWindow receives cycleStart as a parameter, so the sweep leaves
+// it unknown and the conversion had to be found by reading. The pre-fertile run
+// begins periodLength days after the projected cycle start, and when that lands
+// on the skipped midnight the whole run shifted a day earlier — shading a day
+// that is still a projected PERIOD day as pre-fertile, and dropping the run's
+// last day.
+func TestBuildCalendarDayStatesStartsAProjectedPreFertileRunOnTheSkippedMidnightDay(t *testing.T) {
+	santiago := santiagoTestLocation(t)
+
+	user := &models.User{WeekStartsOn: models.WeekStartMonday}
+	monthStart := time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2026, time.August, 25, 15, 0, 0, 0, time.UTC)
+
+	// The projected cycle starts 2026-09-01 and its period runs five days
+	// (09-01..09-05), so the pre-fertile run starts on 09-06 — the skipped
+	// midnight.
+	stats := CycleStats{
+		CompletedCycleCount: 3,
+		MedianCycleLength:   28,
+		AverageCycleLength:  28,
+		AveragePeriodLength: 5,
+		LutealPhase:         14,
+		CurrentCycleDay:     22,
+		LastPeriodStart:     time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC),
+		NextPeriodStart:     time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC),
+	}
+
+	days := BuildCalendarDayStates(user, monthStart, nil, stats, now, santiago)
+
+	preFertile := make(map[string]bool, len(days))
+	predicted := make(map[string]bool, len(days))
+	for _, day := range days {
+		preFertile[day.DateString] = day.IsPreFertile
+		predicted[day.DateString] = day.IsPredicted
+	}
+
+	if !preFertile["2026-09-06"] {
+		t.Error("2026-09-06 is the first pre-fertile day of the projected cycle and must be shaded as one")
+	}
+	if preFertile["2026-09-05"] {
+		t.Error("2026-09-05 is the last projected PERIOD day and must not be shaded pre-fertile: shading it means the step normalized backward off the skipped midnight")
+	}
+	if !predicted["2026-09-05"] {
+		t.Error("2026-09-05 must still be a projected period day")
+	}
+}
