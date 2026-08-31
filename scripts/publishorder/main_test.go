@@ -282,6 +282,11 @@ type registry struct {
 	// headStatus what that read returns.
 	resolves   map[string]string
 	headStatus string
+	// terseHeaders drops the space after a header name. A server may write one
+	// that way, and a reader matching the name as a whitespace-delimited field
+	// silently stops finding the header at all — which reads as the header
+	// being absent rather than as the reader being wrong.
+	terseHeaders bool
 }
 
 func defaultRegistry() registry {
@@ -397,6 +402,19 @@ func TestPromotionWritesOnlyTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 			wantWrites:      []string{"v2.0.0"},
 			wantContentType: "application/vnd.oci.image.index.v1+json",
 		},
+		{
+			// No space after the header name. A reader that matches the name as
+			// a whitespace field stops finding it, and the step then refuses a
+			// manifest whose media type is right there.
+			name: "the registry writes the header with no space after its name",
+			tags: "ghcr.io/ovumcy/ovumcy-web:v2.0.0",
+			registry: func() registry {
+				r := defaultRegistry()
+				r.terseHeaders = true
+				return r
+			}(),
+			wantWrites: []string{"v2.0.0"},
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			output, writes, err := runStep(t, bash, job, promoteStep, map[string]string{
@@ -464,8 +482,11 @@ func TestThePublicCheckRefusesAnAliasThatIsNotTheSignedDigest(t *testing.T) {
 	tags := "ghcr.io/ovumcy/ovumcy-web:v2.0.0\nghcr.io/ovumcy/ovumcy-web:latest"
 
 	for _, testCase := range []struct {
-		name        string
-		registry    registry
+		name     string
+		registry registry
+		// tags overrides the pair above when a case is about the references
+		// themselves rather than about what they resolve to.
+		tags        string
 		wantRefusal bool
 	}{
 		{
@@ -517,11 +538,41 @@ func TestThePublicCheckRefusesAnAliasThatIsNotTheSignedDigest(t *testing.T) {
 			}(),
 			wantRefusal: true,
 		},
+		{
+			// No space after the header name. The promotion reads its own
+			// header this way already; a check that reads its one differently
+			// finds nothing and calls a correct tag unsigned.
+			name: "the registry writes the digest header with no space",
+			registry: func() registry {
+				r := defaultRegistry()
+				r.resolves = map[string]string{"v2.0.0": digest, "latest": digest}
+				r.terseHeaders = true
+				return r
+			}(),
+		},
+		{
+			// This check answers about the image the run signed. Nothing
+			// foreign reaches it while the promotion runs first and refuses
+			// one, and that is a fact about the step before it.
+			name: "a reference outside the image this run signed",
+			registry: func() registry {
+				r := defaultRegistry()
+				r.resolves = map[string]string{"v2.0.0": digest, "latest": digest}
+				return r
+			}(),
+			tags:        "ghcr.io/ovumcy/ovumcy-web:v2.0.0\ndocker.io/someone/else:latest",
+			wantRefusal: true,
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
+			refs := testCase.tags
+			if refs == "" {
+				refs = tags
+			}
+
 			output, _, err := runStep(t, bash, job, publicStep, map[string]string{
 				"DIGEST":     digest,
-				"TAG_REFS":   tags,
+				"TAG_REFS":   refs,
 				"IMAGE_NAME": imageName,
 				"IMAGE_PATH": imagePath,
 			}, testCase.registry)
@@ -722,6 +773,13 @@ func stubRegistry(dir string, reg registry, resolves string) string {
 		token, tokenValue = `{}`, ""
 	}
 
+	// The space after a header name is optional in HTTP, and both steps read a
+	// header, so the fixture can write one either way.
+	space := " "
+	if reg.terseHeaders {
+		space = ""
+	}
+
 	return strings.Join([]string{
 		`STUB_MANIFEST=` + shellQuote(dir+"/manifest.json"),
 		`printf '{"signed":"` + digest + `"}' > "$STUB_MANIFEST"`,
@@ -754,7 +812,7 @@ func stubRegistry(dir string, reg registry, resolves string) string {
 		`      printf '%s' ` + shellQuote(reg.tokenStatus) + `; return 0 ;;`,
 		`    *"/manifests/sha256:"*)`,
 		`      [ -n "$out" ] && cp "$STUB_MANIFEST" "$out"`,
-		`      [ -n "$dump" ] && printf 'HTTP/2 %s\r\nContent-Type: %s\r\n' ` + shellQuote(reg.manifestStatus) + ` ` + shellQuote(reg.contentType) + ` > "$dump"`,
+		`      [ -n "$dump" ] && printf 'HTTP/2 %s\r\nContent-Type:` + space + `%s\r\n' ` + shellQuote(reg.manifestStatus) + ` ` + shellQuote(reg.contentType) + ` > "$dump"`,
 		`      printf '%s' ` + shellQuote(reg.manifestStatus) + `; return 0 ;;`,
 		`    *"/manifests/"*)`,
 		`      tag="${url##*/manifests/}"`,
@@ -765,7 +823,7 @@ func stubRegistry(dir string, reg registry, resolves string) string {
 		`        printf '%s' ` + shellQuote(reg.putStatus) + `; return 0`,
 		`      fi`,
 		`      resolved="$(awk -v t="$tag" '$1 == t { print $2 }' "$STUB_DIR/resolves.txt")"`,
-		`      [ -n "$dump" ] && printf 'HTTP/2 %s\r\nDocker-Content-Digest: %s\r\n' ` + shellQuote(reg.headStatus) + ` "$resolved" > "$dump"`,
+		`      [ -n "$dump" ] && printf 'HTTP/2 %s\r\nDocker-Content-Digest:` + space + `%s\r\n' ` + shellQuote(reg.headStatus) + ` "$resolved" > "$dump"`,
 		`      printf '%s' ` + shellQuote(reg.headStatus) + `; return 0 ;;`,
 		`  esac`,
 		`  printf 'the step called an endpoint this fixture does not serve: %s\n' "$url" >&2`,

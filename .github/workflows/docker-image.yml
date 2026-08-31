@@ -695,7 +695,19 @@ jobs:
 
           while IFS= read -r ref; do
             [ -n "$ref" ] || continue
-            tag="${ref##*:}"
+
+            # The promotion refuses a reference outside this image before it
+            # writes anything, so nothing foreign reaches here today. That is a
+            # reason about the step before this one: asked on its own, this
+            # check would otherwise report on a tag of the signed image while
+            # the metadata step had named someone else's registry.
+            case "$ref" in
+              "${IMAGE_NAME}:"*) tag="${ref##*:}" ;;
+              *)
+                echo "::error::the metadata step produced ${ref}, which is not a tag of ${IMAGE_NAME}. This check reports on tags of the image this run signed and on nothing else."
+                exit 1
+                ;;
+            esac
 
             head_status="$(
               curl -sS --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors \
@@ -710,7 +722,16 @@ jobs:
               exit 1
             fi
 
-            published="$(tr -d '\r' < "$manifest_headers" | awk 'tolower($1) == "docker-content-digest:" { print $2 }' | tail -1)"
+            # Read the same way the promotion reads its own header, and for
+            # the same reason: the name is split on its colon, so a server that
+            # omits the space after it is read rather than refused. There is no
+            # parameter to drop here — a digest header carries none — which is
+            # the one line of that rule this one does not need.
+            published="$(
+              tr -d '\r' < "$manifest_headers" \
+                | awk 'tolower($0) ~ /^docker-content-digest:/ { sub(/^[^:]*:[ \t]*/, ""); sub(/[ \t]+$/, ""); print }' \
+                | tail -1
+            )"
 
             if [ "$published" != "$DIGEST" ]; then
               echo "::error::${ref} resolves to ${published:-nothing}, not to the signed digest ${DIGEST}. The signature and the provenance attestation cover the digest, so an alias pointing anywhere else is an unsigned release however green this run is."
