@@ -48,7 +48,7 @@ func (reader *revokingLogReader) ListByUser(_ context.Context, _ uint) ([]models
 
 // webhookRevocationFixture is one armed owner on a real database, at a moment
 // when a period reminder is due: last period 26 days ago on a 28-day cycle, with
-// a 3-day lead window. revokedEndpoint is the URL the pass would POST to — the
+// a 3-day lead window. ownerEndpoint is the URL the pass would POST to — the
 // stub decryptor echoes the stored ciphertext, so the stored value IS the
 // destination and a delivery is unambiguous about which configuration produced
 // it.
@@ -60,7 +60,7 @@ type webhookRevocationFixture struct {
 	now      time.Time
 }
 
-const revokedEndpoint = "https://revoked.example/hook"
+const ownerEndpoint = "https://revoked.example/hook"
 
 func newWebhookRevocationFixture(t *testing.T, name string) webhookRevocationFixture {
 	t.Helper()
@@ -78,7 +78,7 @@ func newWebhookRevocationFixture(t *testing.T, name string) webhookRevocationFix
 
 	if err := repo.SaveWebhookSettings(context.Background(), owner.ID, models.WebhookSettingsColumns{
 		Enabled:          true,
-		EncryptedURL:     revokedEndpoint,
+		EncryptedURL:     ownerEndpoint,
 		NotifyPeriod:     true,
 		NotifyOvulation:  false, // one deterministic reminder, not two
 		ReminderLeadDays: 3,
@@ -95,9 +95,8 @@ func newWebhookRevocationFixture(t *testing.T, name string) webhookRevocationFix
 	}
 }
 
-// runPassWithRevocation runs one real notify pass over the fixture, performing
-// revoke in the window between the snapshot and the claim. A nil revoke is the
-// control run.
+// runPass runs one real notify pass over the fixture, performing revoke in the
+// window between the snapshot and the claim. A nil revoke is the control run.
 func (fixture webhookRevocationFixture) runPass(t *testing.T, revoke func()) (NotifyReport, *stubDeliverer) {
 	t.Helper()
 
@@ -126,8 +125,8 @@ func TestNotifyPassDeliversWhenTheConfigurationStands(t *testing.T) {
 		t.Fatalf("expected the armed owner's reminder to be delivered, got sent=%d due=%d skipped=%d", report.Sent, report.Due, report.SkippedIdempotent)
 	}
 	deliveries := deliverer.deliveries()
-	if len(deliveries) != 1 || deliveries[0].url != revokedEndpoint {
-		t.Fatalf("expected exactly one delivery to %s, got %+v", revokedEndpoint, deliveries)
+	if len(deliveries) != 1 || deliveries[0].url != ownerEndpoint {
+		t.Fatalf("expected exactly one delivery to %s, got %+v", ownerEndpoint, deliveries)
 	}
 }
 
@@ -151,7 +150,7 @@ func TestNotifyPassCannotDeliverAfterTheOwnerRevoked(t *testing.T) {
 			revoke: func(t *testing.T, fixture webhookRevocationFixture) {
 				if err := fixture.repo.SaveWebhookSettings(context.Background(), fixture.ownerID, models.WebhookSettingsColumns{
 					Enabled:          false,
-					EncryptedURL:     revokedEndpoint,
+					EncryptedURL:     ownerEndpoint,
 					NotifyPeriod:     true,
 					NotifyOvulation:  false,
 					ReminderLeadDays: 3,
@@ -198,6 +197,19 @@ func TestNotifyPassCannotDeliverAfterTheOwnerRevoked(t *testing.T) {
 			}
 			if report.Failed != 0 {
 				t.Fatalf("a revoked send is a skip, not a failure the operator must chase: failed=%d", report.Failed)
+			}
+
+			// "Nothing was delivered" is the assertion this case is about, and on
+			// its own it is also what a pass that decided nothing was due would
+			// report. Pin that the reminder WAS due and that the claim is what
+			// withheld it, so a fixture decaying under the revoking reader — a
+			// drifted anchor, a lead window that stops covering it — turns this
+			// case red instead of green for the wrong reason.
+			if report.Due != 1 {
+				t.Fatalf("expected the reminder to be due and refused at the claim, got due=%d", report.Due)
+			}
+			if report.SkippedIdempotent < 1 {
+				t.Fatalf("expected the lost claim to be counted as a skip, got skipped=%d", report.SkippedIdempotent)
 			}
 
 			// The claim must also have left no trace: a watermark standing for a

@@ -83,6 +83,52 @@ func TestSaveWebhookSettingsAdvancesTheRevocationEpoch(t *testing.T) {
 	}
 }
 
+// TestUpdateReminderLeadDaysAdvancesTheRevocationEpoch covers the third writer,
+// which is the one easy to leave out: reminder_lead_days is shared with the
+// in-app dashboard banner, so it does not read like webhook configuration — and
+// it is, because ListAllForNotify projects it and the notify decision uses it to
+// place the reminder. An owner narrowing the window from seven days to zero is
+// saying "not this early", and a pass holding the seven-day snapshot must not
+// deliver against it. A rule applied at two of its three write sites is what
+// leaves the third reachable.
+func TestUpdateReminderLeadDaysAdvancesTheRevocationEpoch(t *testing.T) {
+	repo := openWebhookRepoForTest(t)
+	user := createUserForTimezoneTest(t, repo, "wh-epoch-leaddays@example.com")
+
+	snapshotEpoch := armWebhookForClaimTest(t, repo, user.ID)
+	anchor := time.Date(2026, time.August, 20, 0, 0, 0, 0, time.UTC)
+
+	if err := repo.UpdateReminderLeadDays(context.Background(), user.ID, 0); err != nil {
+		t.Fatalf("narrow the lead window: %v", err)
+	}
+
+	after := reloadUserForWebhook(t, repo, user.ID)
+	if after.WebhookConfigVersion <= snapshotEpoch {
+		t.Fatalf("a lead-window change must advance the epoch: before=%d after=%d", snapshotEpoch, after.WebhookConfigVersion)
+	}
+	if after.ReminderLeadDays != 0 {
+		t.Fatalf("the lead window itself must still be written, got %d", after.ReminderLeadDays)
+	}
+
+	claimed, err := repo.ClaimWebhookWatermark(context.Background(), user.ID, models.WebhookReminderTypePeriod, anchor, nil, snapshotEpoch)
+	if err != nil {
+		t.Fatalf("a lost claim is a normal outcome, not an error: %v", err)
+	}
+	if claimed {
+		t.Fatal("a pass holding the owner's previous lead window must lose its claim")
+	}
+
+	// Positive anchor: a pass that read the narrowed window still delivers what
+	// that window admits.
+	claimed, err = repo.ClaimWebhookWatermark(context.Background(), user.ID, models.WebhookReminderTypePeriod, anchor, nil, after.WebhookConfigVersion)
+	if err != nil {
+		t.Fatalf("current-window claim: %v", err)
+	}
+	if !claimed {
+		t.Fatal("a pass holding the owner's current lead window must win its claim")
+	}
+}
+
 // TestSaveWebhookSettingsEpochIsScopedToTheOwner proves the advance is a
 // per-owner value, not a shared counter: one owner's save must not move another
 // owner's epoch, or every household member's in-flight pass would lose its claim
@@ -261,6 +307,77 @@ func TestClaimWebhookWatermarkIsLostAfterClearData(t *testing.T) {
 	}
 	if !claimed {
 		t.Fatal("an owner who re-arms delivery after a wipe must still receive reminders")
+	}
+}
+
+// TestReleaseWebhookWatermarkStillRestoresAfterARevocation pins the asymmetry
+// the release's docstring claims: it deliberately does NOT pin the epoch. The
+// claim gates egress and must fail closed; the release only puts a column back,
+// and refusing it would leave a watermark standing for a send that never
+// happened — suppressing that cycle's reminder for good if the owner re-arms
+// delivery. Without this case, "complete the symmetry" is a one-line edit that
+// nothing goes red for.
+func TestReleaseWebhookWatermarkStillRestoresAfterARevocation(t *testing.T) {
+	repo := openWebhookRepoForTest(t)
+	user := createUserForTimezoneTest(t, repo, "wh-release-revoked@example.com")
+
+	epoch := armWebhookForClaimTest(t, repo, user.ID)
+	anchor := time.Date(2026, time.September, 3, 0, 0, 0, 0, time.UTC)
+	if claimed, err := repo.ClaimWebhookWatermark(context.Background(), user.ID, models.WebhookReminderTypePeriod, anchor, nil, epoch); err != nil || !claimed {
+		t.Fatalf("fixture precondition: the claim must be won, got claimed=%v err=%v", claimed, err)
+	}
+
+	// The delivery fails, and the owner disables the webhook before the release
+	// lands. The release must still happen: nothing was delivered.
+	if err := repo.SaveWebhookSettings(context.Background(), user.ID, models.WebhookSettingsColumns{
+		Enabled:          false,
+		EncryptedURL:     "opaque-ciphertext-stand-in",
+		NotifyPeriod:     true,
+		NotifyOvulation:  true,
+		ReminderLeadDays: models.DefaultReminderLeadDays,
+	}); err != nil {
+		t.Fatalf("disable delivery: %v", err)
+	}
+	if err := repo.ReleaseWebhookWatermark(context.Background(), user.ID, models.WebhookReminderTypePeriod, anchor, nil); err != nil {
+		t.Fatalf("release after a revocation: %v", err)
+	}
+	after := reloadUserForWebhook(t, repo, user.ID)
+	if after.WebhookPeriodLastSentCycleStart != nil {
+		t.Fatalf("the release must still undo a claim whose delivery failed, got %v", after.WebhookPeriodLastSentCycleStart)
+	}
+}
+
+// TestReleaseWebhookWatermarkLeavesAClearDataWipeAlone is the other half of the
+// same docstring: where the revocation was a clear-data wipe, the watermark is
+// already NULL, so the release's own "column = anchor" compare-and-set matches
+// nothing and the wipe stands. A release that wrote unconditionally would put a
+// value back onto a row the owner had just emptied.
+func TestReleaseWebhookWatermarkLeavesAClearDataWipeAlone(t *testing.T) {
+	repo := openWebhookRepoForTest(t)
+	user := createUserForTimezoneTest(t, repo, "wh-release-wiped@example.com")
+
+	epoch := armWebhookForClaimTest(t, repo, user.ID)
+	first := time.Date(2026, time.September, 3, 0, 0, 0, 0, time.UTC)
+	second := first.AddDate(0, 0, 28)
+	if claimed, err := repo.ClaimWebhookWatermark(context.Background(), user.ID, models.WebhookReminderTypePeriod, first, nil, epoch); err != nil || !claimed {
+		t.Fatalf("fixture precondition: the first claim must be won, got claimed=%v err=%v", claimed, err)
+	}
+	// A second claim so the release carries a NON-NULL previous: a release that
+	// ignored its predicate would write that value back, which is observable.
+	if claimed, err := repo.ClaimWebhookWatermark(context.Background(), user.ID, models.WebhookReminderTypePeriod, second, &first, epoch); err != nil || !claimed {
+		t.Fatalf("fixture precondition: the second claim must be won, got claimed=%v err=%v", claimed, err)
+	}
+
+	if err := repo.ClearAllDataAndResetSettings(context.Background(), user.ID); err != nil {
+		t.Fatalf("ClearAllDataAndResetSettings: %v", err)
+	}
+	if err := repo.ReleaseWebhookWatermark(context.Background(), user.ID, models.WebhookReminderTypePeriod, second, &first); err != nil {
+		t.Fatalf("release against a wiped row: %v", err)
+	}
+
+	after := reloadUserForWebhook(t, repo, user.ID)
+	if after.WebhookPeriodLastSentCycleStart != nil {
+		t.Fatalf("a release must not put a watermark back onto a row clear-data emptied, got %v", after.WebhookPeriodLastSentCycleStart)
 	}
 }
 

@@ -2,9 +2,10 @@
 
 - **Turning a webhook off now also stops the reminder pass that is already running.**
   The pass reads every owner's notification settings once, at the start of its run, and sends each
-  reminder some time later. Everything an owner can do to revoke it — switching delivery off,
-  replacing the endpoint, removing it, clearing all their data — changed only settings the running
-  pass had already read past, so a pass in that window could still POST a period or ovulation
+  reminder some time later. Everything an owner can do to narrow or revoke it — switching delivery
+  off, replacing the endpoint, removing it, shortening how far ahead reminders arrive, clearing all
+  their data — changed only settings the running pass had already read past, so a pass in that
+  window could still POST a period or ovulation
   reminder to the endpoint the owner had just been told was gone. The per-reminder watermark could
   not catch it: a settings save deliberately leaves the watermarks alone, and a clear-data wipe
   clears them, which put the pass back on its "nothing sent yet" path and let it send.
