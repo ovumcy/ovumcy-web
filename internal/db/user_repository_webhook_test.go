@@ -198,8 +198,8 @@ func TestListAllForNotifyReturnsWhitelistedColumns(t *testing.T) {
 		t.Fatalf("expected second record nil period watermark, got %v", other.WebhookPeriodLastSentCycleStart)
 	}
 	// The untouched owner pins the other direction: an epoch the projection
-	// returned as a constant would satisfy the first record.s assertion above and
-	// still hand every owner.s claim one owner.s epoch.
+	// returned as a constant would satisfy the first record's assertion above
+	// and still hand every owner's claim one owner's epoch.
 	if other.WebhookConfigVersion != 0 {
 		t.Fatalf("expected second record webhook_config_version=0 for an owner whose settings were never saved, got %d", other.WebhookConfigVersion)
 	}
@@ -373,11 +373,22 @@ func TestClaimWebhookWatermarkRejectsUnknownType(t *testing.T) {
 // TestClaimWebhookWatermarkScopedToUser proves the watermark write is strictly
 // scoped to the target user id: advancing owner A's watermark never touches owner
 // B's row (the household-multi-owner isolation boundary).
+//
+// Owner B is armed IDENTICALLY to owner A, and that is what makes the case
+// mean anything now that the claim predicate carries more than an id. B's row
+// satisfies every other conjunct — same epoch, delivery on, the period kind
+// opted in — so the id is the only thing between A's claim and B's watermark. A
+// disarmed B would be excluded by the enabled pin instead, and a claim that had
+// lost its "id = ?" would leave this case green.
 func TestClaimWebhookWatermarkScopedToUser(t *testing.T) {
 	repo := openWebhookRepoForTest(t)
 	owner := createUserForTimezoneTest(t, repo, "wh-wm-owner@example.com")
-	epoch := armWebhookForClaimTest(t, repo, owner.ID)
 	other := createUserForTimezoneTest(t, repo, "wh-wm-other@example.com")
+	epoch := armWebhookForClaimTest(t, repo, owner.ID)
+	otherEpoch := armWebhookForClaimTest(t, repo, other.ID)
+	if epoch != otherEpoch {
+		t.Fatalf("fixture assumption broken: both owners must sit at the same epoch so it cannot be what excludes owner B, got %d and %d", epoch, otherEpoch)
+	}
 
 	anchor := time.Date(2026, time.May, 20, 0, 0, 0, 0, time.UTC)
 	if _, err := repo.ClaimWebhookWatermark(context.Background(), owner.ID, models.WebhookReminderTypePeriod, anchor, nil, epoch); err != nil {
@@ -387,6 +398,12 @@ func TestClaimWebhookWatermarkScopedToUser(t *testing.T) {
 	otherAfter := reloadUserForWebhook(t, repo, other.ID)
 	if otherAfter.WebhookPeriodLastSentCycleStart != nil {
 		t.Fatalf("owner B's watermark must be untouched, got %v", otherAfter.WebhookPeriodLastSentCycleStart)
+	}
+	// Positive anchor: owner A's own claim did land, so the isolation half above
+	// cannot pass on a claim that writes nothing at all.
+	ownerAfter := reloadUserForWebhook(t, repo, owner.ID)
+	if ownerAfter.WebhookPeriodLastSentCycleStart == nil || !ownerAfter.WebhookPeriodLastSentCycleStart.UTC().Equal(anchor) {
+		t.Fatalf("expected owner A's watermark at %s, got %v", anchor, ownerAfter.WebhookPeriodLastSentCycleStart)
 	}
 }
 

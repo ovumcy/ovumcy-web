@@ -35,9 +35,10 @@ import (
 // The two writers mirror the repository exactly. The claim is the conditional
 // UPDATE ... WHERE id = ? AND col IS <the value the pass read> — one row affected
 // means this pass owns the send, zero rows means the column moved since the
-// snapshot, so another pass owns it. The claim also pins the owner.s
-// revocation epoch, so a pass whose snapshot predates a settings save, a disable,
-// an endpoint change or a clear-data wipe loses it and delivers nothing. The release is the compare-and-set back,
+// snapshot, so another pass owns it. The claim also pins the owner's revocation
+// epoch, so a pass whose snapshot predates a settings save, a disable, an
+// endpoint change, a lead-window change or a clear-data wipe loses it and
+// delivers nothing. The release is the compare-and-set back,
 // conditional on the column still holding the anchor this pass wrote.
 //
 // snapshot, when set, turns ListAllForNotify into a rendezvous: no caller leaves
