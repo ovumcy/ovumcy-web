@@ -415,10 +415,10 @@ func appendCurrentCycleBBTSignal(user *models.User, logs []models.DailyLog, stat
 		return
 	}
 
-	ovulationSignal := inferBBTOvulationDate(filterLogsNotAfter(logs, today), cycleStart, CalendarDay(stats.NextPeriodStart, location), location)
+	ovulationSignal, confirmed := ConfirmedCurrentCycleOvulation(user, logs, stats, today, location)
 	projectedKey := CalendarDayKey(stats.OvulationDate)
 	delete(ovulationMap, projectedKey)
-	if ovulationSignal.IsZero() {
+	if !confirmed {
 		tentativeOvulationMap[projectedKey] = true
 		return
 	}

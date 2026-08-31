@@ -66,7 +66,7 @@ func (service *CalendarViewService) BuildCalendarPageViewData(ctx context.Contex
 	minMonth := CalendarMinimumNavigableMonth(user, location)
 	prevMonth, nextMonth := CalendarAdjacentMonthValuesWithinBounds(monthStart, minMonth)
 	dayStates := BuildCalendarDayStates(user, monthStart, logs, stats, now, location)
-	cycleContext := BuildDashboardCycleContext(user, stats, DateAtLocation(now, location), location)
+	cycleContext := BuildDashboardCycleContext(user, logs, stats, DateAtLocation(now, location), location)
 	cycleFactorExplanation, hasCycleFactorExplanation := buildStatsCycleFactorExplanation(user, statsLogs, stats, now, location)
 	predictionExplanation := BuildOwnerPredictionExplanation(user, cycleContext, hasCycleFactorExplanation && len(cycleFactorExplanation.HintFactorKeys) > 0)
 

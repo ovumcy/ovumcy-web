@@ -322,7 +322,7 @@ func DashboardUpcomingPredictions(stats CycleStats, user *models.User, today tim
 	return prediction
 }
 
-func BuildDashboardCycleContext(user *models.User, stats CycleStats, today time.Time, location *time.Location) DashboardCycleContext {
+func BuildDashboardCycleContext(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) DashboardCycleContext {
 	// The tier is a property of the account's history, so it is resolved before
 	// the suppression branches and carried by every one of them: a context that
 	// reported "not awaiting" merely because predictions are off would disable
@@ -356,7 +356,7 @@ func BuildDashboardCycleContext(user *models.User, stats CycleStats, today time.
 	cycleDayWarning := DashboardCycleDayLooksLong(stats.CurrentCycleDay, cycleDayReference)
 	cycleStaleAnchor := DashboardCycleStaleAnchor(user, stats, location)
 	cycleDataStale := DashboardCycleDataLooksStale(cycleStaleAnchor, today, cycleDayReference)
-	display := buildDashboardPredictionDisplay(user, stats, today, location)
+	display := buildDashboardPredictionDisplay(user, logs, stats, today, location)
 
 	return DashboardCycleContext{
 		CycleDayReference:           cycleDayReference,
@@ -390,7 +390,7 @@ func BuildDashboardCycleContext(user *models.User, stats CycleStats, today time.
 // dashboard renders, withholding the whole projected window once
 // DashboardCycleOverdue reports the cycle is past its reference length by more
 // than a week.
-func buildDashboardPredictionDisplay(user *models.User, stats CycleStats, today time.Time, location *time.Location) dashboardPredictionDisplay {
+func buildDashboardPredictionDisplay(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) dashboardPredictionDisplay {
 	prediction := DashboardUpcomingPredictions(
 		stats,
 		user,
@@ -407,6 +407,25 @@ func buildDashboardPredictionDisplay(user *models.User, stats CycleStats, today 
 		ovulationNeedsData:  dashboardNeedsOvulationData(user, stats),
 		ovulationExact:      prediction.OvulationExact,
 		ovulationImpossible: prediction.OvulationImpossible,
+	}
+
+	// A detected thermal shift CONFIRMS an ovulation that has already happened,
+	// so the line names the day the temperatures point at — the same day the
+	// calendar's solid marker and the stats chart name — rather than a projection
+	// that observation has superseded. Both surfaces resolve it through
+	// ConfirmedCurrentCycleOvulation so they cannot disagree.
+	//
+	// This substitution deliberately sits ABOVE the suppression branches and
+	// changes only WHICH day is named, never whether a day is named at all: what
+	// may render is prediction-display.md's subject, and a confirmed observation
+	// must not become a way around a gate. dashboardOvulationInPast then reads
+	// the substituted date, so a confirmed ovulation already behind the owner is
+	// rendered as past instead of announced as upcoming — which is the whole
+	// defect: on the projected day itself the difference to today was zero, the
+	// anchor never shifted, and the line declared an ovulation the temperatures
+	// had placed several days earlier.
+	if confirmed, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, today, location); ok {
+		display.ovulationDate = confirmed
 	}
 	// The prompt is not a projection: with no recorded start there is no date
 	// to withhold and nothing for the overdue signal to be about, so it answers

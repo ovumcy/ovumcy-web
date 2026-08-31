@@ -303,7 +303,7 @@ func TestBuildDashboardCycleContextKeepsTodaysOvulationOutOfThePastWarning(t *te
 				CurrentCycleDay:     14,
 			}
 
-			context := BuildDashboardCycleContext(user, stats, today, location)
+			context := BuildDashboardCycleContext(user, nil, stats, today, location)
 			if got := CalendarDayKey(context.DisplayOvulationDate); got != ovulationDay {
 				t.Fatalf("displayed ovulation date = %s, want %s", got, ovulationDay)
 			}

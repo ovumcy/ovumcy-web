@@ -122,6 +122,38 @@ func deriveUserLutealPhase(logs []models.DailyLog, now time.Time, location *time
 	return defaultLutealPhaseDays
 }
 
+// ConfirmedCurrentCycleOvulation reports the day the shared "3-over-6" thermal
+// detector CONFIRMS for the owner's CURRENT cycle, and whether it found one.
+//
+// A detected shift names an ovulation that has already happened; it never
+// predicts one. Every surface that may show a confirmed ovulation resolves it
+// here — the calendar's solid marker and the dashboard's ovulation line — so the
+// two cannot name different days for one shift. That divergence is not
+// hypothetical: the grid and the stats chart named two days for one shift until
+// the marker was moved onto the detector's own date, and the dashboard line was
+// left behind on the model's date by that same change.
+//
+// The logs are bounded at the owner's today first: a reading recorded against a
+// future date must not confirm an ovulation that has not happened. The caller
+// supplies today so that a surface which has already resolved it does not
+// resolve a second, possibly different one.
+func ConfirmedCurrentCycleOvulation(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (time.Time, bool) {
+	if user == nil || !user.TrackBBT || stats.LastPeriodStart.IsZero() || stats.OvulationDate.IsZero() || stats.NextPeriodStart.IsZero() {
+		return time.Time{}, false
+	}
+
+	cycleStart := CalendarDay(stats.LastPeriodStart, location)
+	if CalendarDaysBetween(cycleStart, today) < 0 {
+		return time.Time{}, false
+	}
+
+	signal := inferBBTOvulationDate(filterLogsNotAfter(logs, today), cycleStart, CalendarDay(stats.NextPeriodStart, location), location)
+	if signal.IsZero() {
+		return time.Time{}, false
+	}
+	return signal, true
+}
+
 func inferObservedOvulationDate(logs []models.DailyLog, cycleStart time.Time, nextStart time.Time, location *time.Location) time.Time {
 	bbtDate := inferBBTOvulationDate(logs, cycleStart, nextStart, location)
 	if !bbtDate.IsZero() {

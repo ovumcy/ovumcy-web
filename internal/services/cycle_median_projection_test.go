@@ -109,7 +109,7 @@ func TestMedianProjectionAgreesAcrossSurfaces(t *testing.T) {
 	assertDay("stats.NextPeriodStart", stats.NextPeriodStart, medianNext)
 
 	// 2. Dashboard hero displayed next-period.
-	cycleContext := BuildDashboardCycleContext(user, stats, today, loc)
+	cycleContext := BuildDashboardCycleContext(user, nil, stats, today, loc)
 	assertDay("DisplayNextPeriodStart", cycleContext.DisplayNextPeriodStart, medianNext)
 
 	// 3. Webhook period reminder anchor/event (lead wide enough to cover 28 days).
