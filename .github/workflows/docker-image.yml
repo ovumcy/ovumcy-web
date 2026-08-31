@@ -137,8 +137,12 @@ jobs:
           # `image-smoke` gates on the event, so the queue run reports it
           # `skipped`; `e2e-postgres-smoke`'s own `RUN_HEAVY` excludes
           # `merge_group`, so it reports `success` there with every step gated
-          # off — 3 s against 240 s on push, same commit. Their real verdict is
-          # in the push, release or dispatch run, which is what `RUN_HEAVY` is.
+          # off. Measured on 6a95d01d, whose two suites the endpoints below
+          # return side by side: `image-smoke` `skipped` in the queue suite
+          # (87906745947) and real in the one that ran on `main` (87908743276);
+          # and 3 s in the queue run against 240 s on push for the Postgres
+          # lane, same commit (2026-08-18, run 32081210308). Their real verdict
+          # is in the push, release or dispatch run, which is `RUN_HEAVY`.
           #
           # Reading a lane off the run where its own gate never looked at the
           # diff is what the split exists to stop. This step used to read the
@@ -157,9 +161,13 @@ jobs:
           # is the discriminator, not `head_branch`: a scheduled run and a
           # manually dispatched one both carry `head_branch: main`, and a queue
           # run is otherwise recognisable only by a ref-name convention.
-          # `check_suite_id` is what ties a run to the check runs below (probed
-          # 2026-08-31 on 5049126f: `CI merge_group 90335713116` and `CI push
-          # 90335932105` — one commit, two suites, side by side).
+          #
+          # It has to be asked HERE, of the runs, and carried down by
+          # `check_suite_id`, because the check-run response cannot answer it:
+          # the `check_suite` object nested in one carries an id and nothing
+          # else (probed 2026-08-21). Probed again 2026-08-31 on 5049126f,
+          # where this endpoint returns `CI merge_group 90335713116` and `CI
+          # push 90335932105` — one commit, two suites, side by side.
           #
           # This is what `actions: read` on the job above buys.
           workflow_runs="$(
