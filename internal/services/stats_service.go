@@ -76,7 +76,25 @@ func (service *StatsService) BuildCycleStatsForRange(ctx context.Context, user *
 // dereferenced. Here the property is structural: there is no receiver to hold a
 // nil store, so a future line that needs one cannot compile into this function
 // unnoticed.
+//
+// The three passes run over ONE timeline, bounded at the owner's today. Only
+// BuildCycleStats bounded its own input (cycles.go, filterLogsNotAfter); the
+// baseline and the pregnancy pause were handed the raw set, so a day logged
+// ahead of today reached two of the three. ResolvePregnancyPause is where that
+// cost something: it lifts a pause on ANY cycle start later than the positive
+// test and has no today of its own, while manualCycleStartFutureDays lets an
+// owner record a start two days ahead. The surfaces that looked safe were safe
+// by accident — the dashboard and the .ics feed pre-bound the set they pass
+// (FilterLogsByDateRange, the fetched range), and the webhook notify pass, the
+// one surface that speaks to a destination outside the instance, passes the
+// whole stored history. So a positive test today plus a permitted start
+// tomorrow left the owner paused everywhere they could look and unpaused in the
+// payload leaving the instance. Bounding here rather than at each caller is what
+// makes "one timeline" a property of the derivation instead of a habit of three
+// call sites: suppression is the floor, and a floor one surface stands a day in
+// front of is not one.
 func BuildCycleStatsFromLogs(user *models.User, logs []models.DailyLog, now time.Time, location *time.Location) CycleStats {
+	logs = filterLogsNotAfter(logs, DateAtLocation(now, location))
 	stats := BuildCycleStats(logs, now)
 	stats = ApplyUserCycleBaseline(user, logs, stats, now, location)
 	if _, paused := ResolvePregnancyPause(logs); paused {

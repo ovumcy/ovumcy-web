@@ -302,3 +302,46 @@ func TestResolveDayFeedbackFertileMessageOnWindowStartInUTCPlusZone(t *testing.T
 		t.Fatalf("expected fertile message on window start in UTC+9, got %q", state.MessageKey)
 	}
 }
+
+// TestResolveDayFeedbackKeepsThePauseWhenTomorrowsCycleStartIsLogged is this
+// policy's half of the one-timeline rule. It resolves the pregnancy pause from
+// its own read of the owner's whole stored history rather than through
+// BuildCycleStatsFromLogs, so bounding that derivation alone would have left
+// this surface reading a cycle start recorded for TOMORROW as today's
+// resumption — the save message announcing that predictions were back while the
+// dashboard beside it still showed the pause.
+func TestResolveDayFeedbackKeepsThePauseWhenTomorrowsCycleStartIsLogged(t *testing.T) {
+	logs := newDayLogRepositoryStub()
+	service := NewDayService(logs, &dayUserRepositoryStub{})
+
+	today := mustParseDayFeedbackDate(t, "2026-03-12")
+	logs.entries["2026-02-14"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-02-14"), IsPeriod: true, CycleStart: true}
+	logs.entries["2026-03-12"] = models.DailyLog{UserID: 10, Date: today, PregnancyTest: models.PregnancyTestPositive}
+	// Permitted by manualCycleStartFutureDays, and part of no timeline that has
+	// happened yet.
+	logs.entries["2026-03-13"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-03-13"), IsPeriod: true, CycleStart: true}
+
+	state, err := service.ResolveDayFeedback(context.Background(), &models.User{ID: 10}, today, today, time.UTC)
+	if err != nil {
+		t.Fatalf("ResolveDayFeedback() unexpected error: %v", err)
+	}
+	if state.MessageKey != daySaveMessagePregnancyPaused {
+		t.Fatalf("expected the pause to hold against a cycle start logged for tomorrow, got %q", state.MessageKey)
+	}
+
+	// Control: move that start into the past and the pause lifts here too, so
+	// this case cannot pass against a policy that simply always reports a pause.
+	resumedLogs := newDayLogRepositoryStub()
+	resumedService := NewDayService(resumedLogs, &dayUserRepositoryStub{})
+	resumedLogs.entries["2026-02-14"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-02-14"), IsPeriod: true, CycleStart: true}
+	resumedLogs.entries["2026-03-10"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-03-10"), PregnancyTest: models.PregnancyTestPositive}
+	resumedLogs.entries["2026-03-11"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-03-11"), IsPeriod: true, CycleStart: true}
+
+	resumedState, err := resumedService.ResolveDayFeedback(context.Background(), &models.User{ID: 10}, today, today, time.UTC)
+	if err != nil {
+		t.Fatalf("ResolveDayFeedback() after a real resumption: %v", err)
+	}
+	if resumedState.MessageKey == daySaveMessagePregnancyPaused {
+		t.Fatalf("a cycle start already in the past lifts the pause, got %q", resumedState.MessageKey)
+	}
+}

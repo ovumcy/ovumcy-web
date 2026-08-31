@@ -33,11 +33,20 @@ func (service *DayService) ResolveDayFeedback(ctx context.Context, user *models.
 
 	day = DateAtLocation(day, location)
 	today := DateAtLocation(now, location)
-	stats := BuildCycleStats(logs, today)
+	// The same today-bounded timeline BuildCycleStatsFromLogs derives from, for
+	// the same reason: ResolvePregnancyPause lifts a pause on ANY cycle start
+	// later than the positive test and has no today of its own, while manual
+	// entry permits a start two days ahead. On the raw set that start decides
+	// today, and this message would tell the owner their predictions had resumed
+	// while every other surface still showed the pause. The two warnings below
+	// keep the full set on purpose — each asks about the day being edited, not
+	// about what the account's timeline supports today.
+	timeline := filterLogsNotAfter(logs, today)
+	stats := BuildCycleStats(timeline, today)
 	// BuildCycleStats does not resolve the pregnancy pause itself (mirrors
 	// StatsService.BuildCycleStatsFromLogs); resolve it here so the save
 	// message can explain the paused predictions.
-	if _, paused := ResolvePregnancyPause(logs); paused {
+	if _, paused := ResolvePregnancyPause(timeline); paused {
 		stats.PregnancyPaused = true
 	}
 	entry, err := service.FetchLogByDate(ctx, user.ID, day, location)

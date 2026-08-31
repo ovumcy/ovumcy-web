@@ -1219,3 +1219,69 @@ func TestNotifyUsesOwnerPersistedTimezone(t *testing.T) {
 		t.Fatalf("expected 1 owner scanned, got %d", report.OwnersScanned)
 	}
 }
+
+// TestNotifyKeepsThePregnancyPauseWhenTomorrowsCycleStartIsLogged pins the one
+// surface that speaks outside the instance to the timeline the owner sees. The
+// notify pass loads the owner's WHOLE stored history, while the dashboard and
+// the .ics feed pass a set already bounded at today; ResolvePregnancyPause lifts
+// a pause on any cycle start later than the positive test and has no today of
+// its own, and manual entry permits a start up to two days ahead. So a positive
+// test today plus a start recorded for tomorrow left the owner reading "paused"
+// on every screen while this pass decided the pregnancy was over and sent
+// period-soon to their endpoint. Nothing may leave, and no watermark may be
+// claimed for what did not leave.
+func TestNotifyKeepsThePregnancyPauseWhenTomorrowsCycleStartIsLogged(t *testing.T) {
+	now := time.Date(2026, 3, 12, 9, 0, 0, 0, time.UTC)
+	today := notifyDay(2026, time.March, 12)
+	record := dueRecord(1, "https://a.example/hook", now, 26)
+
+	history := []models.DailyLog{
+		periodStartLog(1, *record.LastPeriodStart),
+		{UserID: 1, Date: today, PregnancyTest: models.PregnancyTestPositive},
+		// Permitted by manualCycleStartFutureDays (up to two days ahead), and not
+		// part of any timeline that has happened yet.
+		periodStartLog(1, today.AddDate(0, 0, 1)),
+	}
+
+	repo := &stubNotifyRepo{records: []models.WebhookNotifyRecord{record}}
+	deliverer := &stubDeliverer{}
+	service := newTestNotifyService(repo, stubLogReader{byUser: map[uint][]models.DailyLog{1: history}}, stubDecryptor{}, deliverer)
+
+	report, err := service.RunOnce(context.Background(), now, time.UTC, false)
+	if err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+	if report.Due != 0 || report.Sent != 0 {
+		t.Fatalf("a paused owner must produce no reminder at all, got due=%d sent=%d", report.Due, report.Sent)
+	}
+	if len(deliverer.deliveries()) != 0 {
+		t.Fatalf("delivered a reminder for a paused owner: %#v", deliverer.deliveries())
+	}
+	if len(repo.writes()) != 0 {
+		t.Fatalf("claimed a watermark for a reminder that never left: %#v", repo.writes())
+	}
+	if report.SkippedIdempotent != 0 {
+		t.Fatalf("the pause is a suppression, not a watermark skip (skipped=%d)", report.SkippedIdempotent)
+	}
+
+	// Control: the same owner, the same instant, with the positive test BEFORE
+	// the recorded cycle start. That is a real resumption, so the pass must speak
+	// — otherwise this case would be green against a pass that had simply
+	// stopped sending anything, or against a fixture that was never due.
+	resumedRecord := dueRecord(1, "https://a.example/hook", now, 26)
+	resumedHistory := []models.DailyLog{
+		{UserID: 1, Date: today.AddDate(0, 0, -30), PregnancyTest: models.PregnancyTestPositive},
+		periodStartLog(1, *resumedRecord.LastPeriodStart),
+	}
+	resumedRepo := &stubNotifyRepo{records: []models.WebhookNotifyRecord{resumedRecord}}
+	resumedDeliverer := &stubDeliverer{}
+	resumedService := newTestNotifyService(resumedRepo, stubLogReader{byUser: map[uint][]models.DailyLog{1: resumedHistory}}, stubDecryptor{}, resumedDeliverer)
+
+	resumedReport, err := resumedService.RunOnce(context.Background(), now, time.UTC, false)
+	if err != nil {
+		t.Fatalf("RunOnce after a real resumption: %v", err)
+	}
+	if resumedReport.Sent == 0 {
+		t.Fatalf("a cycle start already in the past lifts the pause, expected a reminder, got due=%d sent=%d", resumedReport.Due, resumedReport.Sent)
+	}
+}
