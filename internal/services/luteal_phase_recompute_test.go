@@ -425,3 +425,99 @@ func TestLutealPhaseRecomputeReportsAMarkerItCouldNotWrite(t *testing.T) {
 		t.Fatal("a failed Set must leave no marker behind")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// The pass reads OBSERVED history, and manualCycleStartFutureDays lets an owner
+// record a cycle start up to two days ahead. ObservedCycleStarts takes such a
+// start as the boundary of the last observed cycle, so an unbounded read
+// derives the cached column from a day that has not happened yet — while the
+// display path re-infers over a today-bounded window. The two then disagree by
+// construction, which is the drift this pass exists to remove.
+// ---------------------------------------------------------------------------
+
+// lutealRecomputeFutureStartLogs builds three 28-day cycles whose ovulation
+// falls on cycle day 14 (luteal 14 in each), then a FOURTH cycle start 32 days
+// after the third. Read unbounded, that fourth start closes a third cycle and
+// contributes a luteal sample of 32-14 = 18, pulling the average to 15. Read
+// bounded at a today before it, the fourth start is not history yet and the
+// answer stays 14. It returns the logs and that fourth start's date.
+func lutealRecomputeFutureStartLogs(t *testing.T) ([]models.DailyLog, time.Time) {
+	t.Helper()
+
+	starts := []time.Time{
+		lutealRecomputeOrigin,
+		lutealRecomputeOrigin.AddDate(0, 0, 28),
+		lutealRecomputeOrigin.AddDate(0, 0, 56),
+	}
+	fourthStart := starts[2].AddDate(0, 0, 32)
+
+	logs := make([]models.DailyLog, 0, len(starts)*3+2)
+	for _, start := range starts {
+		logs = append(logs,
+			models.DailyLog{Date: start, IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+			models.DailyLog{Date: start.AddDate(0, 0, 1), IsPeriod: true, Flow: models.FlowMedium},
+			// Egg-white peak on cycle day 13 puts ovulation on cycle day 14.
+			models.DailyLog{Date: start.AddDate(0, 0, 12), CervicalMucus: models.CervicalMucusEggWhite},
+		)
+	}
+	logs = append(logs,
+		models.DailyLog{Date: fourthStart, IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+		models.DailyLog{Date: fourthStart.AddDate(0, 0, 1), IsPeriod: true, Flow: models.FlowMedium},
+	)
+	return logs, fourthStart
+}
+
+// runLutealRecomputeAt drives one pass with the clock pinned to `now`.
+func runLutealRecomputeAt(t *testing.T, logs []models.DailyLog, storedLutealPhase int, now time.Time) (*stubLutealRecomputeUserStore, LutealPhaseRecomputeOutcome) {
+	t.Helper()
+
+	appState := &stubLutealRecomputeAppState{}
+	users := &stubLutealRecomputeUserStore{rows: []models.LutealPhaseRecomputeRow{{ID: 7, LutealPhase: storedLutealPhase}}}
+	logStore := &stubLutealRecomputeLogStore{logs: map[uint][]models.DailyLog{7: logs}}
+
+	recomputer := NewLutealPhaseRecomputer(appState, users, logStore, time.UTC)
+	recomputer.now = func() time.Time { return now }
+
+	outcome, err := recomputer.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	return users, outcome
+}
+
+func TestLutealPhaseRecomputeIgnoresACycleStartRecordedAhead(t *testing.T) {
+	logs, fourthStart := lutealRecomputeFutureStartLogs(t)
+
+	// Anti-vacuity: the unbounded reading of these same logs really does answer
+	// 15, so a green result below is the bound working rather than a fixture
+	// that could only ever say 14.
+	assertInferenceSupports(t, logs, 15, true)
+
+	// Today is the day before the fourth start: the owner recorded it ahead,
+	// exactly as manualCycleStartFutureDays permits.
+	users, outcome := runLutealRecomputeAt(t, logs, 14, fourthStart.AddDate(0, 0, -1))
+
+	if len(users.updates) != 0 {
+		t.Fatalf("a cycle start recorded ahead must not move the stored column, got %+v", users.updates)
+	}
+	if outcome.Corrected != 0 || outcome.Failed != 0 {
+		t.Fatalf("outcome = %+v, want no correction and no failure", outcome)
+	}
+}
+
+func TestLutealPhaseRecomputeUsesACycleStartOnceItHasHappened(t *testing.T) {
+	logs, fourthStart := lutealRecomputeFutureStartLogs(t)
+	assertInferenceSupports(t, logs, 15, true)
+
+	// The control for the case above: the same start, one day in the PAST, is
+	// observed history and must move the column. Without this pair the bound
+	// could be a blanket refusal to read the last cycle at all.
+	users, outcome := runLutealRecomputeAt(t, logs, 14, fourthStart.AddDate(0, 0, 1))
+
+	if len(users.updates) != 1 || users.updates[0] != (lutealPhaseUpdate{userID: 7, value: 15}) {
+		t.Fatalf("a cycle start already in the past must move the column to 15, got %+v", users.updates)
+	}
+	if outcome.Corrected != 1 || outcome.Failed != 0 {
+		t.Fatalf("outcome = %+v, want one correction", outcome)
+	}
+}

@@ -105,6 +105,12 @@ type LutealPhaseRecomputer struct {
 	users            lutealPhaseRecomputeUserStore
 	logs             lutealPhaseRecomputeLogStore
 	fallbackLocation *time.Location
+	// now is the clock the per-owner today is read from. It exists so the pass
+	// can be driven from a fixed instant in tests; production leaves it at
+	// time.Now. It is not a constructor parameter because a boot pass has no
+	// request to take an instant from, and widening the exported signature for
+	// a test seam would push that decision onto every caller.
+	now func() time.Time
 }
 
 // NewLutealPhaseRecomputer wires the pass. fallbackLocation is the zone used for
@@ -119,7 +125,7 @@ func NewLutealPhaseRecomputer(
 	if fallbackLocation == nil {
 		fallbackLocation = time.UTC
 	}
-	return &LutealPhaseRecomputer{appState: appState, users: users, logs: logs, fallbackLocation: fallbackLocation}
+	return &LutealPhaseRecomputer{appState: appState, users: users, logs: logs, fallbackLocation: fallbackLocation, now: time.Now}
 }
 
 // Run executes the pass and returns the outcome for the startup line. It returns
@@ -147,7 +153,19 @@ func (recomputer *LutealPhaseRecomputer) Run(ctx context.Context) (LutealPhaseRe
 			continue
 		}
 
-		derived := deriveUserLutealPhase(logs, resolveOwnerLocation(row.Timezone, recomputer.fallbackLocation))
+		// Bound the history at the owner's own today before deriving. The column
+		// is a summary of OBSERVED cycles, and manualCycleStartFutureDays lets an
+		// owner record a cycle start up to two days ahead; ObservedCycleStarts
+		// takes such a start as the boundary of the last observed cycle, so an
+		// unbounded read derives the column from a day that has not happened yet.
+		// The display path re-infers over a today-bounded window, so leaving this
+		// one unbounded makes the stored value and the live inference disagree BY
+		// CONSTRUCTION — which is the drift this pass exists to remove, not to
+		// create. The bound is the same shape every other surface uses
+		// (filterLogsNotAfter against the owner's calendar day).
+		location := resolveOwnerLocation(row.Timezone, recomputer.fallbackLocation)
+		today := DateAtLocation(recomputer.now(), location)
+		derived := deriveUserLutealPhase(filterLogsNotAfter(logs, today), location)
 		if derived == row.LutealPhase {
 			continue
 		}
