@@ -41,6 +41,10 @@
 //     shadows it everywhere else. It is the only place the line both registry
 //     steps pull the bearer token out of the registry's answer with is
 //     executed at all, and it holds the two steps to one spelling of it;
+//   - the IDENTITY PATTERN the signature is checked against, by running the
+//     verify step with `cosign` and `gh` shadowed. The repository is spliced
+//     into a regular expression there, and a dot left unescaped in it matches
+//     any character — in the one field that check exists to pin;
 //   - the IMAGE NAME every later step reads, by running the step that derives
 //     it. The fixtures below hand `IMAGE_NAME` and `IMAGE_PATH` in as values,
 //     which is what makes them fixtures — and what would otherwise leave the
@@ -651,6 +655,82 @@ func TestThePublicCheckRefusesAnAliasThatIsNotTheSignedDigest(t *testing.T) {
 			}
 			if err != nil {
 				t.Fatalf("the check refused a release it owes: %v\n%s", err, output)
+			}
+		})
+	}
+}
+
+// TestTheIdentityPatternPinsEveryCharacterOfTheRepository runs the verify step
+// with `cosign` and `gh` shadowed, which is the only way to read the pattern
+// this workflow hands its own signer-identity check.
+//
+// The escape is the reason: `\.` needs four backslashes to survive a
+// double-quoted expansion and produced a bare dot at every smaller count, so
+// the substitution turns each one into `[.]` instead — the same regex with
+// nothing to decay. That reasoning lived in a comment with no test under it,
+// and someone simplifying it back reinstates an unescaped dot in the field that
+// says which workflow signed the image.
+func TestTheIdentityPatternPinsEveryCharacterOfTheRepository(t *testing.T) {
+	job := workflowfile.Job(t, publishWorkflow, publishJob)
+	bash := requireBash(t)
+	script := stepScript(t, job, verifyStep)
+
+	// Shadowed the way `curl` and `python3` are: a function reaches the script
+	// wherever it could reach the real command, and logging the arguments is
+	// what makes the pattern readable at all.
+	preamble := strings.Join([]string{
+		`cosign() { printf 'COSIGN %s\n' "$*" >&2; }`,
+		`gh() { printf 'GH %s\n' "$*" >&2; }`,
+	}, "\n")
+
+	for _, testCase := range []struct {
+		name        string
+		repository  string
+		wantPattern string
+		wantRefusal bool
+	}{
+		{
+			name:        "this repository",
+			repository:  "ovumcy/ovumcy-web",
+			wantPattern: `^https://github\.com/ovumcy/ovumcy-web/\.github/workflows/docker-image\.yml@`,
+		},
+		{
+			// GitHub allows a dot in a repository name. Unescaped it matches
+			// any character, so a certificate issued for `ovumcy-webXv2` would
+			// satisfy a check meant to accept only `ovumcy-web.v2`.
+			name:        "a repository name carrying a dot",
+			repository:  "ovumcy/ovumcy-web.v2",
+			wantPattern: `^https://github\.com/ovumcy/ovumcy-web[.]v2/\.github/workflows/docker-image\.yml@`,
+		},
+		{
+			// Anything the substitution cannot reach is refused rather than
+			// spliced in and matched loosely.
+			name:        "a name this pattern cannot escape",
+			repository:  "ovumcy/ovumcy web",
+			wantRefusal: true,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			command := exec.Command(bash, "-c", preamble+"\n"+script)
+			command.Env = append(os.Environ(),
+				"GITHUB_REPOSITORY="+testCase.repository,
+				"IMAGE_DIGEST="+imageName+"@"+digest,
+			)
+			output, err := command.CombinedOutput()
+
+			if testCase.wantRefusal {
+				if err == nil {
+					t.Fatalf("the step accepted a repository name it cannot escape.\n%s", output)
+				}
+				requireRefusalReason(t, string(output), "cannot escape")
+				return
+			}
+			if err != nil {
+				t.Fatalf("the step failed on %q: %v\n%s", testCase.repository, err, output)
+			}
+			if !strings.Contains(string(output), testCase.wantPattern) {
+				t.Errorf("the identity handed to cosign for %q carries no %q:\n%s",
+					testCase.repository, testCase.wantPattern, output)
 			}
 		})
 	}
