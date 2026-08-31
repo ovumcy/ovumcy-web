@@ -411,13 +411,21 @@ func appendCurrentCycleBBTSignal(user *models.User, logs []models.DailyLog, stat
 	}
 
 	ovulationSignal := inferBBTOvulationDate(filterLogsNotAfter(logs, today), cycleStart, CalendarDay(stats.NextPeriodStart, location), location)
-	if !ovulationSignal.IsZero() {
+	projectedKey := CalendarDayKey(stats.OvulationDate)
+	delete(ovulationMap, projectedKey)
+	if ovulationSignal.IsZero() {
+		tentativeOvulationMap[projectedKey] = true
 		return
 	}
 
-	key := CalendarDayKey(stats.OvulationDate)
-	delete(ovulationMap, key)
-	tentativeOvulationMap[key] = true
+	// A detected shift CONFIRMS an ovulation that has already happened; it never
+	// predicts one. So the solid marker belongs on the day the detector named,
+	// not on the projection that day just superseded. Leaving it on
+	// stats.OvulationDate is how the grid and the stats chart came to name two
+	// different days for one shift: probableOvulationMarkerIndex marks the same
+	// firstHighDay-1 day this inference returns, so the chart moved and only the
+	// grid stayed behind on the model's date.
+	ovulationMap[CalendarDayKey(ovulationSignal)] = true
 }
 
 func buildCalendarDayState(day time.Time, monthStart time.Time, todayKey string, latestLogByDate map[string]models.DailyLog, hasDataMap map[string]bool, predictions calendarPredictionMaps) CalendarDayState {

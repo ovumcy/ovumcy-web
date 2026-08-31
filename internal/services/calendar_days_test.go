@@ -759,6 +759,12 @@ func TestBuildCalendarDayStatesSeparatesFertilityEdgeAndPeak(t *testing.T) {
 	}
 }
 
+// This fixture's projected ovulation day and the detector's confirmed day are
+// the SAME date (Mar 15), so it says only that a shift leaves a solid marker
+// standing somewhere — it cannot see which of the two days carries it. The day
+// the marker lands on is pinned by
+// TestBuildCalendarDayStatesMovesConfirmedOvulationToTheDetectorsDay below,
+// whose two dates differ on purpose.
 func TestBuildCalendarDayStatesKeepsConfirmedOvulationWhenBBTHasShift(t *testing.T) {
 	monthStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
 	now := time.Date(2026, time.March, 18, 0, 0, 0, 0, time.UTC)
@@ -793,6 +799,72 @@ func TestBuildCalendarDayStatesKeepsConfirmedOvulationWhenBBTHasShift(t *testing
 	}
 	if ovulationDay.IsTentativeOvulation {
 		t.Fatalf("expected tentative ovulation marker to stay off when BBT shift exists")
+	}
+}
+
+// A detected BBT shift confirms an ovulation that already happened, so the grid
+// must mark the day the shared 3-over-6 detector named — not the day the model
+// projected before the temperatures arrived. The two surfaces that read one
+// detector are checked against each other here: the calendar's solid marker and
+// the stats chart's marker index.
+func TestBuildCalendarDayStatesMovesConfirmedOvulationToTheDetectorsDay(t *testing.T) {
+	monthStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
+	cycleStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2026, time.March, 20, 0, 0, 0, 0, time.UTC)
+
+	// Cycle day 1 is Mar 1, so a 28-day cycle with a 14-day luteal phase projects
+	// ovulation onto cycle day 14 (Mar 14). The recorded temperatures put the
+	// 3-over-6 shift on cycle days 18-20 (Mar 18-20), which confirms cycle day 17
+	// (Mar 17) — three days off the projection, on purpose.
+	logs := []models.DailyLog{
+		// 6-day coverline window (max 36.43) on cycle days 12-17.
+		{Date: time.Date(2026, time.March, 12, 7, 0, 0, 0, time.UTC), BBT: new(36.40)},
+		{Date: time.Date(2026, time.March, 13, 7, 0, 0, 0, time.UTC), BBT: new(36.42)},
+		{Date: time.Date(2026, time.March, 14, 7, 0, 0, 0, time.UTC), BBT: new(36.41)},
+		{Date: time.Date(2026, time.March, 15, 7, 0, 0, 0, time.UTC), BBT: new(36.39)},
+		{Date: time.Date(2026, time.March, 16, 7, 0, 0, 0, time.UTC), BBT: new(36.43)},
+		{Date: time.Date(2026, time.March, 17, 7, 0, 0, 0, time.UTC), BBT: new(36.42)},
+		// Three-day rise, the third at least 0.2 °C over the coverline.
+		{Date: time.Date(2026, time.March, 18, 7, 0, 0, 0, time.UTC), BBT: new(36.66)},
+		{Date: time.Date(2026, time.March, 19, 7, 0, 0, 0, time.UTC), BBT: new(36.67)},
+		{Date: time.Date(2026, time.March, 20, 7, 0, 0, 0, time.UTC), BBT: new(36.69)},
+	}
+
+	stats := CycleStats{
+		CompletedCycleCount:  1,
+		LastPeriodStart:      cycleStart,
+		NextPeriodStart:      time.Date(2026, time.March, 29, 0, 0, 0, 0, time.UTC),
+		OvulationDate:        time.Date(2026, time.March, 14, 0, 0, 0, 0, time.UTC),
+		FertilityWindowStart: time.Date(2026, time.March, 9, 0, 0, 0, 0, time.UTC),
+		FertilityWindowEnd:   time.Date(2026, time.March, 14, 0, 0, 0, 0, time.UTC),
+	}
+
+	days := BuildCalendarDayStates(&models.User{TrackBBT: true}, monthStart, logs, stats, now, time.UTC)
+
+	confirmedDay := findCalendarDayStateByDateString(t, days, "2026-03-17")
+	if !confirmedDay.IsOvulation {
+		t.Fatalf("expected the detector's day to carry the solid ovulation marker, got %#v", confirmedDay)
+	}
+	if confirmedDay.IsTentativeOvulation {
+		t.Fatalf("expected the confirmed day to be solid, not tentative, got %#v", confirmedDay)
+	}
+
+	projectedDay := findCalendarDayStateByDateString(t, days, "2026-03-14")
+	if projectedDay.IsOvulation {
+		t.Fatalf("expected the superseded projection to lose the ovulation marker, got %#v", projectedDay)
+	}
+	if projectedDay.IsTentativeOvulation {
+		t.Fatalf("expected the superseded projection to carry no ovulation marker at all, got %#v", projectedDay)
+	}
+
+	// Same logs, same detector: the stats chart marker must name the same day.
+	chart := buildCurrentCycleBBTChart("en", stats, logs, now, time.UTC)
+	if !chart.HasMarker {
+		t.Fatalf("expected the stats chart to carry a marker for the same logs")
+	}
+	chartMarkerDate := CalendarDayKey(cycleStart.AddDate(0, 0, chart.MarkerIndex))
+	if chartMarkerDate != "2026-03-17" {
+		t.Fatalf("stats chart marker is on %s, calendar marker on 2026-03-17", chartMarkerDate)
 	}
 }
 
