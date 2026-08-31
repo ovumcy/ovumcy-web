@@ -15,16 +15,18 @@ import (
 // watermark compare-and-set cannot see what happens in that window: a settings
 // save deliberately leaves the watermarks alone, and a clear-data wipe NULLs
 // them, which re-opens the claim's first-ever-send branch outright. So an owner
-// could disable delivery, replace or remove the endpoint, or erase their data,
-// be told it succeeded, and still have a pass already in flight POST their
-// predicted health data to the endpoint they had just revoked.
+// could disable delivery, replace or remove the endpoint, narrow how far ahead
+// reminders arrive, or erase their data, be told it succeeded, and still have a
+// pass already in flight POST their predicted health data to the endpoint they
+// had just revoked.
 //
 // webhook_config_version is the monotonic revocation epoch that closes it. Every
-// write to an owner's webhook configuration advances it in the same statement,
+// write to an owner's delivery configuration advances it in the same statement,
 // and the claim pins the value the claiming pass's snapshot carried. The tests
-// below are the three revocation triggers, each as an explicit interleaving —
-// snapshot, then revoke, then claim — plus the monotonicity the whole thing
-// rests on and the two fail-closed pins that hold even when the epoch does not
+// below are each revocation the owner can perform, written as an explicit
+// interleaving — snapshot, then revoke, then claim — plus the three writers'
+// advances, the monotonicity the whole thing rests on, the release side's
+// deliberate asymmetry, and the two pins that hold even when the epoch does not
 // move.
 
 // armWebhookForClaimTest turns delivery on for an owner with both reminder kinds
@@ -392,7 +394,7 @@ func TestReleaseWebhookWatermarkLeavesAClearDataWipeAlone(t *testing.T) {
 // redundant before either shape arrives.
 func TestClaimWebhookWatermarkIsRefusedWhileDeliveryIsDisabled(t *testing.T) {
 	repo := openWebhookRepoForTest(t)
-	user := createUserForTimezoneTest(t, repo, "wh-revoke-preepoch@example.com")
+	user := createUserForTimezoneTest(t, repo, "wh-revoke-disarmed-row@example.com")
 
 	// Disarm the row WITHOUT going through the save path, so the epoch stays
 	// exactly where a claiming pass's snapshot found it. That is the shape the
