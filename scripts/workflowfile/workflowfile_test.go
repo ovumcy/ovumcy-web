@@ -140,7 +140,12 @@ func TestReadNormalisesLineEndings(t *testing.T) {
 func TestJobReadsAJobOutOfARealWorkflow(t *testing.T) {
 	block := Job(t, ".github/workflows/docker-image.yml", "publish")
 
-	if !strings.Contains(block, "      - name: Checkout\n") {
-		t.Errorf("the publish job read back carries no steps:\n%s", block)
+	// `runs-on:` and not a step name: what this package answers for is that a
+	// job's body comes back from a real file, and the name of the publish job's
+	// first step is a fact about the release pipeline. Asserted here, renaming
+	// it would redden a package that reads YAML and knows nothing about
+	// publishing — where `publishorder`'s pinned step list already reports it.
+	if !strings.Contains(block, "\n    runs-on: ") {
+		t.Errorf("the publish job read back carries no `runs-on:`, so this is not a job body:\n%s", block)
 	}
 }

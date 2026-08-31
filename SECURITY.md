@@ -28,8 +28,10 @@ than substituted or tampered with.
 
 The tag is written last. The release workflow pushes the image by digest under no tag at all, signs
 and attests that digest, reads both back from the registry, and only then points `vX.Y.Z` and
-`latest` at it — so a tag that resolves at all resolves to a signed digest, and a failure anywhere
-in that sequence leaves no public tag rather than an unsigned release.
+`latest` at it — so a tag that resolves at all resolves to a signed digest. A failure before the tags
+are written leaves none of them; one during the write can leave the tags written before it, and
+those resolve to the signed digest like any other. There is no failure that produces an unsigned
+one.
 
 Verify the signature (substitute the tag you are pulling for `vX.Y.Z`):
 
