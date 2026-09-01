@@ -102,7 +102,14 @@
                 {{else if .DisplayOvulationDate.IsZero}}
                   {{.NoDataLabel}}
                 {{else}}
-                  {{printf (t .Messages "dashboard.ovulation_estimate") (formatLocalizedDate .Lang .DisplayOvulationDate "display")}}{{if not .DisplayOvulationExact}} <span class="journal-muted" data-dashboard-ovulation-approximate>{{t .Messages "dashboard.ovulation_approximate"}}</span>{{end}}
+                {{/* The approximate marker rides DisplayOvulationExact, which
+                     reports whether CalcOvulationDay had to CLAMP the luteal
+                     phase into a short cycle — a property of the projection's
+                     arithmetic. A measured day did not come out of that
+                     arithmetic, so the marker says nothing about it, and a
+                     recorded shift captioned "approximately" reads as the app
+                     doubting a reading the owner took. */}}
+                  {{printf (t .Messages "dashboard.ovulation_estimate") (formatLocalizedDate .Lang .DisplayOvulationDate "display")}}{{if and (not .DisplayOvulationExact) (not .DisplayOvulationConfirmed)}} <span class="journal-muted" data-dashboard-ovulation-approximate>{{t .Messages "dashboard.ovulation_approximate"}}</span>{{end}}
                 {{end}}
               </span>
             </span>
