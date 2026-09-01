@@ -48,7 +48,7 @@ type DashboardViewService struct {
 // pregnancy pause and an overdue cycle all rendered "Fertile window" — the last
 // two beside the very notice saying the account's predictions are off.
 //
-// Stats is the PUBLISHED copy, cleared by publishedStatsForOwner: the gate and
+// Stats is the PUBLISHED copy, cleared by PublishedStats: the gate and
 // the data behind it move together, so a partial that forgets the gate renders
 // nothing rather than the raw classification. Every builder in
 // BuildDashboardViewData still reads the uncleared stats, because each applies
@@ -180,10 +180,10 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 		reminderBanner = BuildDashboardReminderBanner(cycleContext, today, user.ReminderLeadDays)
 	}
 
-	// The same helper the stats page publishes through, so the two surfaces
-	// cannot drift apart on what a suppressed tier is allowed to carry. Every
-	// builder above still reads the uncleared stats.
-	publishedStats := publishedStatsForOwner(user, stats)
+	// The same helper the stats page and the JSON API publish through, so the
+	// surfaces cannot drift apart on what a suppressed tier is allowed to carry.
+	// Every builder above still reads the uncleared stats.
+	publishedStats, _ := PublishedStats(user, stats)
 
 	return DashboardViewData{
 		Stats:                             publishedStats,

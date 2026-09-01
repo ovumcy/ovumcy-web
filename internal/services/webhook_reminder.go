@@ -189,11 +189,14 @@ func decideDueReminders(user *models.User, settings WebhookReminderSettings, log
 	// runs the dashboard's stats derivation (baseline + pregnancy-pause
 	// resolution) without constructing — and without depending on never
 	// dereferencing — a store-less service.
-	stats := BuildCycleStatsFromLogs(user, logs, now, location)
+	// Published through the one adapter every projection surface shares, so this
+	// pass holds the same cleared stats /stats and the JSON API publish, and reads
+	// the verdict it returns rather than asking the predicates a second time.
+	stats, suppression := PublishedStats(user, BuildCycleStatsFromLogs(user, logs, now, location))
 
 	// Medical-safety gate: if the app suppresses predictions, emit nothing. The
 	// three signals are read through the predicate every surface shares.
-	if PredictionsSuppressed(user, stats) {
+	if suppression.PredictionsSuppressed {
 		return nil, 0
 	}
 
@@ -224,7 +227,7 @@ func decideDueReminders(user *models.User, settings WebhookReminderSettings, log
 	// moved onto the measured one. ConfirmedOvulationSupersedes bounds that to
 	// the confirmation's own cycle, so a projection that has rolled into the next
 	// one still sends.
-	if !FertilityProjectionSuppressed(user, stats) &&
+	if !suppression.FertilitySuppressed &&
 		!ConfirmedOvulationSupersedes(user, logs, stats, prediction.OvulationDate, today, location) {
 		due, ok, watermarked := decideOvulationReminder(stats, settings, prediction, today, cycleLength, leadDays)
 		if ok {
