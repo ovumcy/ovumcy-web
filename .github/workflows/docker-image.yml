@@ -423,8 +423,10 @@ jobs:
       - name: Scan the image before publishing it
         # Same gate as security.yml's required `trivy-image` check — same
         # scanner, severity threshold and `--exit-code 1`; no `--ignore-unfixed`
-        # here either, for the same reason as trivy-fs/trivy-image there — an
-        # unfixed CRITICAL must still hold the publish back.
+        # here either. Not for Security-tab parity — this step's own output is
+        # a table, never uploaded there, see below — but so an unfixed
+        # CRITICAL still holds the publish back the same way it holds the
+        # required check back.
         # That check lives in another workflow and so cannot be a `needs:` of
         # this job; repeating the scan here against the exact artifact is what
         # keeps an unscanned image from reaching the registry. Output is a table
