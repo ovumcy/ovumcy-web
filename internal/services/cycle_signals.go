@@ -164,6 +164,32 @@ func ConfirmedCurrentCycleOvulation(user *models.User, logs []models.DailyLog, s
 	return signal, true
 }
 
+// ConfirmedOvulationSupersedes reports whether a PROJECTED ovulation day is one
+// the owner's temperatures have already answered.
+//
+// The on-screen surfaces replace such a day with the measured one. The two
+// surfaces that leave the instance — the .ics feed and the webhook reminder —
+// cannot: both exist to announce a day that is still ahead, and a shift confirms
+// a day that is behind. Announcing the projection anyway is how they came to
+// name a different day than the dashboard and the grid for one shift, on the day
+// the difference is largest: the projected day itself.
+//
+// The bound is the confirmation's own window. ConfirmedCurrentCycleOvulation
+// reads the CURRENT cycle only, so a projection that has already rolled into the
+// next cycle is about a day this shift says nothing about, and suppressing it
+// would withhold a reminder the account is owed. Callers pass each projected day
+// they are about to announce rather than deciding per surface: a rule restated
+// twice is a rule that can disagree with itself.
+func ConfirmedOvulationSupersedes(user *models.User, logs []models.DailyLog, stats CycleStats, projected time.Time, today time.Time, location *time.Location) bool {
+	if projected.IsZero() {
+		return false
+	}
+	if _, confirmed := ConfirmedCurrentCycleOvulation(user, logs, stats, today, location); !confirmed {
+		return false
+	}
+	return CalendarDaysBetween(projected, CalendarDay(stats.NextPeriodStart, location)) > 0
+}
+
 func inferObservedOvulationDate(logs []models.DailyLog, cycleStart time.Time, nextStart time.Time, location *time.Location) time.Time {
 	bbtDate := inferBBTOvulationDate(logs, cycleStart, nextStart, location)
 	if !bbtDate.IsZero() {

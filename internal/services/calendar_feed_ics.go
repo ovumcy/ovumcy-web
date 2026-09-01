@@ -182,7 +182,14 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 		// needs a calendar-day comparison, or the ovulation event disappears from
 		// the feed on the ovulation day itself in every UTC-minus zone (issue #48
 		// class).
-		if includeOvulation && window.Calculable && CalendarDaysBetween(window.OvulationDate, today) <= 0 {
+		// A confirmed thermal shift outranks the projection it supersedes. The feed
+		// publishes an ovulation only while it is still ahead, so once the current
+		// cycle's shift has named the day, this cycle's projected event is a second
+		// date for one shift going out to a calendar client that keeps it —
+		// ConfirmedOvulationSupersedes bounds that to the confirmation's own cycle,
+		// so the later projected cycles here are untouched.
+		if includeOvulation && window.Calculable && CalendarDaysBetween(window.OvulationDate, today) <= 0 &&
+			!ConfirmedOvulationSupersedes(user, input.Logs, stats, window.OvulationDate, today, input.Location) {
 			appendEvent("ovulation", CalendarDay(window.OvulationDate, input.Location))
 		}
 	}
