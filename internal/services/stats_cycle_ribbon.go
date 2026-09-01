@@ -172,7 +172,7 @@ func statsCycleRibbonRow(cycle completedCycleSpan, axisDays int, luteal int, sho
 			continue
 		}
 
-		date := AddCalendarDays(cycle.Start, day-1, time.UTC)
+		date := AddCalendarDays(cycle.Start, day-1, cycle.Start.Location())
 		isPeriod := day <= cycle.PeriodLength
 		cell := StatsCycleRibbonDay{
 			Day:      day,
