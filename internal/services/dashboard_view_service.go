@@ -498,7 +498,7 @@ func firstMissingTrackedDay(logs []models.DailyLog, today time.Time, lookbackDay
 		logByDay[CalendarDay(logEntry.Date, location).Format("2006-01-02")] = true
 	}
 
-	startDay := today.AddDate(0, 0, -lookbackDays)
+	startDay := AddCalendarDays(today, -lookbackDays, location)
 	if !trackingStart.IsZero() {
 		trackingStartDay := DateAtLocation(trackingStart, location)
 		if trackingStartDay.After(startDay) {
@@ -510,7 +510,7 @@ func firstMissingTrackedDay(logs []models.DailyLog, today time.Time, lookbackDay
 	}
 	missedCount := 0
 	firstMissing := time.Time{}
-	for day := startDay; day.Before(today); day = day.AddDate(0, 0, 1) {
+	for day := startDay; day.Before(today); day = AddCalendarDays(day, 1, location) {
 		if logByDay[day.Format("2006-01-02")] {
 			continue
 		}

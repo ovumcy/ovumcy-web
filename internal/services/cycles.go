@@ -390,7 +390,7 @@ func applyPredictedCycleStats(stats *CycleStats) {
 		stats.LutealPhase = defaultLutealPhaseDays
 	}
 
-	stats.NextPeriodStart = dateOnly(stats.LastPeriodStart.AddDate(0, 0, predictionCycleLength))
+	stats.NextPeriodStart = AddCalendarDays(stats.LastPeriodStart, predictionCycleLength, time.UTC)
 	window := PredictCycleWindow(
 		stats.LastPeriodStart,
 		predictionCycleLength,
@@ -484,7 +484,7 @@ func resolveCyclePhase(stats CycleStats, logs []models.DailyLog, today time.Time
 		if periodLength <= 0 {
 			periodLength = models.DefaultPeriodLength
 		}
-		periodEnd := CalendarDay(stats.LastPeriodStart.AddDate(0, 0, periodLength-1), opts.location)
+		periodEnd := AddCalendarDays(stats.LastPeriodStart, periodLength-1, opts.location)
 		if betweenInclusive(today, stats.LastPeriodStart, periodEnd) {
 			return "menstrual"
 		}

@@ -93,7 +93,7 @@ const (
 	calendarDayBarrierFileFloor        = 200
 	calendarDayBarrierDateCallFloor    = 6
 	calendarDayBarrierCompareCallFloor = 40
-	calendarDayBarrierAddDateCallFloor = 40
+	calendarDayBarrierStepCallFloor    = 40
 )
 
 // calendarDayFinding is one flagged site.
@@ -109,7 +109,7 @@ type calendarDayBarrierScan struct {
 	files        int
 	dateCalls    int
 	compareCalls int
-	addDateCalls int
+	stepCalls    int
 }
 
 // TestCalendarDayConstructionBarrier is the sweep. Every flagged site must
@@ -128,8 +128,8 @@ func TestCalendarDayConstructionBarrier(t *testing.T) {
 	if scan.compareCalls < calendarDayBarrierCompareCallFloor {
 		t.Fatalf("the sweep saw %d time ordering call(s), fewer than the floor of %d — it is no longer reading the comparison shape it exists to read", scan.compareCalls, calendarDayBarrierCompareCallFloor)
 	}
-	if scan.addDateCalls < calendarDayBarrierAddDateCallFloor {
-		t.Fatalf("the sweep saw %d AddDate call(s), fewer than the floor of %d — it is no longer reading the stepping shape it exists to read", scan.addDateCalls, calendarDayBarrierAddDateCallFloor)
+	if scan.stepCalls < calendarDayBarrierStepCallFloor {
+		t.Fatalf("the sweep saw %d calendar-day step(s), fewer than the floor of %d — it is no longer reading the stepping shape it exists to read", scan.stepCalls, calendarDayBarrierStepCallFloor)
 	}
 
 	unexplained := make([]calendarDayFinding, 0, len(scan.findings))
@@ -341,7 +341,7 @@ func inspectCalendarDayFile(fileSet *token.FileSet, file *ast.File, relative str
 			if !isSelector || selector.Sel.Name != "AddDate" || calendarDayIsPackageIdent(selector.X) {
 				return true
 			}
-			scan.addDateCalls++
+			scan.stepCalls++
 
 			if calendarDayClassify(selector.X, anchors) != anchorLocation {
 				return true
@@ -352,6 +352,23 @@ func inspectCalendarDayFile(fileSet *token.FileSet, file *ast.File, relative str
 				position: where,
 				detail:   "AddDate re-enters time.Date in the receiver's location: where the resulting day's local midnight does not exist (America/Santiago 2026-09-06, America/Havana 2026-03-08) it normalizes BACKWARD, so the step names the previous calendar day.",
 			})
+			return true
+		})
+
+		// The floor counts converted steps as well. Counting only AddDate would
+		// tie the anti-vacuity anchor to the very thing the sweep judges: every
+		// site fixed lowers it, so a fully converted tree would fail as "discovery
+		// is broken" — which is exactly what happened once this class was swept.
+		// A guard's floor must not depend on the data it judges
+		// (`.claude/rules/testing.md`).
+		ast.Inspect(function.Body, func(inner ast.Node) bool {
+			call, isCall := inner.(*ast.CallExpr)
+			if !isCall || len(call.Args) != 3 {
+				return true
+			}
+			if strings.TrimPrefix(calendarDayCalleeName(call.Fun), "services.") == "AddCalendarDays" {
+				scan.stepCalls++
+			}
 			return true
 		})
 		return true

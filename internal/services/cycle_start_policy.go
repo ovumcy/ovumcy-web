@@ -81,7 +81,7 @@ func ResolveManualCycleStartPolicy(user *models.User, logs []models.DailyLog, da
 }
 
 func potentialImplantationGapDays(user *models.User, logs []models.DailyLog, targetDay time.Time, previousStart time.Time) (int, bool) {
-	filtered := filterLogsNotAfter(logs, targetDay.AddDate(0, 0, -1))
+	filtered := filterLogsNotAfter(logs, AddCalendarDays(targetDay, -1, targetDay.Location()))
 	stats := BuildCycleStats(filtered, targetDay.Add(-time.Second))
 	cycleLength := predictedCycleLength(stats.MedianCycleLength, stats.AverageCycleLength)
 	// codecov:ignore:start -- unreachable from this caller, kept as a floor for
@@ -161,7 +161,7 @@ func cycleStartGapSuggestsNewCycle(user *models.User, logs []models.DailyLog, lo
 		return false
 	}
 
-	anchor := LatestCycleStartAnchorBeforeOrOn(user, logs, day.AddDate(0, 0, -1), location)
+	anchor := LatestCycleStartAnchorBeforeOrOn(user, logs, AddCalendarDays(day, -1, location), location)
 	if anchor.IsZero() {
 		return false
 	}
