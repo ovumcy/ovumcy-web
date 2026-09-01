@@ -54,6 +54,9 @@ func runUsersCommand(databaseConfig db.Config, args []string, input io.Reader, o
 		_ = sqlDB.Close()
 	}()
 
+	// `users delete` takes the account row and its calendar feed with it, so
+	// this process has to be able to record that removal outside the database.
+	warnAboutAnUnreachableCalendarFeedFence(os.Stderr)
 	repositories := buildRepositories(database)
 	service := services.NewOperatorUserService(repositories.Users, services.NewAuthService(repositories.Users))
 

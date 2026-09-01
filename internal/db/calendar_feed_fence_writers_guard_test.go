@@ -37,6 +37,17 @@ var alwaysAdvancingWriters = map[string]string{
 	"DeleteAccountAndRelatedData": "the erased account's feed leaves with its row, and a restore brings both back together",
 }
 
+// advanceBeforeTheWrite are the writers whose advance must precede their row
+// write, because there the write IS the revocation and a fence left behind it
+// is the window a restore reopens. Every other writer advances after, so that a
+// failed fence write cannot refuse an unrelated credential rotation or erasure.
+// The split is the load-bearing part of the ordering rule, so it is asserted
+// rather than left to the comment on advanceCalendarFeedFence.
+var advanceBeforeTheWrite = map[string]bool{
+	"SaveCalendarFeedToken":  true,
+	"ClearCalendarFeedToken": true,
+}
+
 // TestEveryCalendarFeedWriterAdvancesTheRestoreFence is the completeness guard
 // the fence depends on. The fence can only see a restore if every change to the
 // armed-feed set was recorded outside the database; one writer that skips the
@@ -60,20 +71,27 @@ func TestEveryCalendarFeedWriterAdvancesTheRestoreFence(t *testing.T) {
 
 	writers := map[string]bool{}
 	advances := map[string]bool{}
+	advancesFirst := map[string]bool{}
 	for _, declaration := range parsed.Decls {
 		function, ok := declaration.(*ast.FuncDecl)
 		if !ok || function.Body == nil {
 			continue
 		}
+		name := function.Name.Name
 		body := string(source[fileSet.Position(function.Body.Pos()).Offset:fileSet.Position(function.Body.End()).Offset])
-		if strings.Contains(body, "advanceCalendarFeedFence(ctx)") {
-			advances[function.Name.Name] = true
+		advanceAt := strings.Index(body, "advanceCalendarFeedFence(ctx)")
+		if advanceAt >= 0 {
+			advances[name] = true
 		}
+		columnAt := -1
 		for _, column := range calendarFeedAccessColumns {
-			if strings.Contains(body, column) {
-				writers[function.Name.Name] = true
-				break
+			if at := strings.Index(body, column); at >= 0 && (columnAt < 0 || at < columnAt) {
+				columnAt = at
+				writers[name] = true
 			}
+		}
+		if advanceAt >= 0 && columnAt >= 0 && advanceAt < columnAt {
+			advancesFirst[name] = true
 		}
 	}
 
@@ -103,6 +121,27 @@ func TestEveryCalendarFeedWriterAdvancesTheRestoreFence(t *testing.T) {
 	for name, reason := range alwaysAdvancingWriters {
 		if !advances[name] {
 			t.Fatalf("%s must advance the restore fence (%s)", name, reason)
+		}
+	}
+
+	// The ordering rule, both ways. A revocation path that advances after its
+	// row write reopens the window a restore crosses; any other path that
+	// advances before it lets a failed fence write refuse a credential rotation
+	// or an erasure that has nothing to do with calendar feeds.
+	for name := range writers {
+		if _, exempt := exemptCalendarFeedWriters[name]; exempt {
+			continue
+		}
+		switch {
+		case advanceBeforeTheWrite[name] && !advancesFirst[name]:
+			t.Fatalf("%s is a revocation path: it must advance the fence BEFORE its row write, or a crash between the two leaves the row revoked and the fence not, which a restore then undoes", name)
+		case !advanceBeforeTheWrite[name] && advancesFirst[name]:
+			t.Fatalf("%s clears the feed only as a side effect: advancing before its row write would refuse the whole operation whenever the fence write fails", name)
+		}
+	}
+	for name := range advanceBeforeTheWrite {
+		if !writers[name] {
+			t.Fatalf("%s no longer writes a feed access column: the ordering entry names a function this rule can no longer be about", name)
 		}
 	}
 

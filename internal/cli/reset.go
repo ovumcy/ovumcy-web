@@ -84,6 +84,9 @@ func runResetPasswordCommand(databaseConfig db.Config, email string, prompt pass
 		return errors.New("password is required")
 	}
 
+	// A forced reset force-clears the owner's calendar feed, so this process has
+	// to be able to record that removal outside the database.
+	warnAboutAnUnreachableCalendarFeedFence(os.Stderr)
 	repositories := buildRepositories(database)
 	authService := services.NewAuthService(repositories.Users)
 	if err := authService.ForceResetPasswordByEmail(context.Background(), normalizedEmail, string(newPassword)); err != nil {

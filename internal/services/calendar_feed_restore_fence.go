@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
@@ -82,16 +83,18 @@ type CalendarFeedRestoreFence struct {
 	users    calendarFeedRestoreFenceUserStore
 	anchor   calendarFeedRestoreFenceAnchor
 	// writing makes one update of the pair atomic against every other update
-	// from this process. Both halves are written one after the other, so two
+	// through THIS fence. Both halves are written one after the other, so two
 	// concurrent revocations could otherwise interleave — file from one, marker
 	// from the other — and leave the halves holding different tokens, which the
 	// next boot reads as a restore and answers by disarming every armed feed.
 	//
-	// It is a process-local lock, and that is the honest limit of it: the
-	// operator CLI writes the same fence from its own process, so a `reset` or
-	// `users delete` racing a request in the server is still a tear this cannot
-	// prevent. Those subcommands are operator-driven and rare; the request paths
-	// are the ones that run concurrently by construction.
+	// The lock covers one instance, not one path, so a binary must build ONE
+	// fence and share it: bootstrap.BuildRepositories returns the fence it
+	// attached for exactly that reason, and a second BuildRepositories call over
+	// the same path would hand out a second mutex that guards nothing against
+	// the first. The operator CLI is a separate process and therefore outside
+	// this lock too — rare and operator-driven, where the request paths run
+	// concurrently by construction.
 	writing sync.Mutex
 }
 
@@ -159,12 +162,22 @@ func (fence *CalendarFeedRestoreFence) Enforce(ctx context.Context) (CalendarFee
 // nothing. Advancing on the change itself is the same shape the webhook
 // revocation epoch uses, for the same reason.
 //
-// A failure to write the FILE half is not returned. It is answered instead, by
-// letting the database half move on alone: the two now disagree, which is the
-// state the next boot disarms every feed for. An owner's revocation must not be
-// refused because a volume could not be written, and a fence that cannot record
-// the revocation has to fail closed rather than report success. Only a database
-// failure reaches the caller, whose own write is failing for the same reason.
+// A failure to write the FILE half is never returned — an owner's revocation
+// must not be refused because a volume could not be written — but the two
+// reasons it can fail are answered differently:
+//
+//   - NOT CONFIGURED at all. Nothing is recorded, on either half. An instance
+//     with no fence already disarms every armed feed on every boot (Enforce's
+//     unanchored path), so containment is complete without this write, and
+//     moving the database half alone would only add a per-request write and a
+//     disagreement the boot pass never reads.
+//   - Configured but unwritable — a broken mount, a full disk. The database
+//     half moves on ALONE, deliberately: the halves now disagree, and the next
+//     boot answers that by disarming. A fence that cannot record a revocation
+//     has to fail closed rather than report success.
+//
+// Only a database failure reaches the caller, whose own write is failing for
+// the same reason.
 func (fence *CalendarFeedRestoreFence) Advance(ctx context.Context) error {
 	fence.writing.Lock()
 	defer fence.writing.Unlock()
@@ -173,7 +186,9 @@ func (fence *CalendarFeedRestoreFence) Advance(ctx context.Context) error {
 	if err != nil {
 		return err // codecov:ignore -- crypto/rand failure; unreachable without an OS-level entropy fault
 	}
-	_ = fence.anchor.Write(token)
+	if err := fence.anchor.Write(token); errors.Is(err, security.ErrCalendarFeedFenceNotConfigured) {
+		return nil
+	}
 	return fence.appState.Set(ctx, models.AppStateKeyCalendarFeedRestoreFence, token)
 }
 

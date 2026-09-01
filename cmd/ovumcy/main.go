@@ -74,7 +74,7 @@ func main() {
 	// launched with `go` inside Start, so it can neither delay app.Listen nor
 	// touch served/app shutdown. schedulerDone closes when it has fully drained
 	// (an already-closed channel when the scheduler is disabled).
-	schedulerDone := startReminderScheduler(sigCtx, config, database, i18nManager)
+	schedulerDone := startReminderScheduler(sigCtx, config, repositories, i18nManager)
 
 	logStartup(config)
 	err = runServer(app, ":"+config.Port)
@@ -113,17 +113,21 @@ func runServer(app *fiber.App, address string) error {
 // `ovumcy notify` CLI uses (bootstrap.BuildNotifyService) plus the app_state
 // marker repository, and observes sigCtx for shutdown.
 //
+// It takes the repositories main already built rather than building its own:
+// building a second set would attach a second calendar-feed restore fence over
+// the same path, and that fence's lock covers one instance, so two of them
+// serialize nothing against each other.
+//
 // codecov:ignore:start -- main() composition-root wiring; the scheduler logic
 // (nextRun, catch-up, marker, drain) is unit-tested in internal/reminders and
 // this glue only assembles boot-built collaborators.
-func startReminderScheduler(sigCtx context.Context, config runtimeConfig, database *gorm.DB, i18nManager *i18n.Manager) <-chan struct{} {
+func startReminderScheduler(sigCtx context.Context, config runtimeConfig, repositories *db.Repositories, i18nManager *i18n.Manager) <-chan struct{} {
 	if !config.ReminderScheduler.Enabled {
 		closed := make(chan struct{})
 		close(closed)
 		return closed
 	}
 
-	repositories, _ := bootstrap.BuildRepositories(database, config.CalendarFeedFencePath)
 	notifyService := bootstrap.BuildNotifyService(repositories, []byte(config.SecretKey), i18nManager, config.WebhookBlockPrivate)
 	scheduler := reminders.New(notifyService, repositories.AppState, reminders.Config{
 		Hour:     config.ReminderScheduler.Hour,

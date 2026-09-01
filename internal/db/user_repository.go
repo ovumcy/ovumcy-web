@@ -40,20 +40,25 @@ func NewUserRepository(database *gorm.DB) *UserRepository {
 // mistake costs more, and the two cases genuinely differ:
 //
 //   - SaveCalendarFeedToken and ClearCalendarFeedToken advance FIRST. There the
-//     write IS the revocation, so the fence must never be behind it: a crash in
-//     the window would otherwise leave a revocation recorded only inside the
-//     database, which a restore then undoes — the whole defect. Advancing first
-//     inverts that. A crash leaves the fence ahead, the next boot disarms, and
-//     the owner's intent is enforced by the thing that was going to enforce it
-//     anyway. Its own failure mode — a failed row write behind an advanced
-//     fence — costs one round of re-generated subscribe URLs.
+//     write IS the revocation, and the rule is that the fence may never be
+//     BEHIND the row state. Advancing after leaves a window in which the row
+//     says revoked and the fence does not, and a restore across that window
+//     revives the feed — the defect this whole mechanism exists for. Advancing
+//     first cannot produce it: a crash in the window leaves the fence ahead of
+//     a row that never changed, which is a still-armed feed and a revocation
+//     the owner never saw succeed, so they retry it.
+//
+//     Note what this does NOT rest on. After an advance the two halves AGREE,
+//     so no later boot disarms on its account; the safety comes from the
+//     ordering itself, never from a boot-time backstop.
 //   - Everything else advances AFTER. There the feed clear is a side effect of
 //     a credential rotation, a clear-data wipe or an erasure, and advancing
-//     first would let one failed password change disarm the feeds of every
-//     owner on the instance. That blast radius is not worth closing a window
-//     these paths only touch incidentally, and their own containment does not
-//     rest on the feed (the same statement bumps auth_session_version). The
-//     window is named as a residual risk rather than engineered away.
+//     first would refuse the whole operation whenever the fence's own write
+//     fails — a password change blocked by a calendar-feed marker. That trade
+//     is not worth closing a window these paths only touch incidentally, and
+//     their containment does not rest on the feed (the same statement bumps
+//     auth_session_version). The window is named as a residual risk rather
+//     than engineered away.
 //
 // Deliberately NOT called by the two boot-time bulk disarms: the restore fence
 // records its own token immediately after its disarm, and the key-rotation
