@@ -240,8 +240,8 @@ func DashboardPredictionRange(user *models.User, stats CycleStats, predictedStar
 	}
 
 	if dashboardIrregularPredictionRangeEnabled(user, stats) {
-		return CalendarDay(stats.LastPeriodStart.AddDate(0, 0, stats.MinCycleLength), location),
-			CalendarDay(stats.LastPeriodStart.AddDate(0, 0, stats.MaxCycleLength), location),
+		return AddCalendarDays(stats.LastPeriodStart, stats.MinCycleLength, location),
+			AddCalendarDays(stats.LastPeriodStart, stats.MaxCycleLength, location),
 			true
 	}
 
@@ -249,8 +249,8 @@ func DashboardPredictionRange(user *models.User, stats CycleStats, predictedStar
 	if spanDays <= 0 {
 		return time.Time{}, time.Time{}, false
 	}
-	return CalendarDay(predictedStart.AddDate(0, 0, -spanDays), location),
-		CalendarDay(predictedStart.AddDate(0, 0, spanDays), location),
+	return AddCalendarDays(predictedStart, -spanDays, location),
+		AddCalendarDays(predictedStart, spanDays, location),
 		true
 }
 
@@ -260,8 +260,8 @@ func DashboardOvulationRange(nextPeriodRangeStart time.Time, nextPeriodRangeEnd 
 	}
 
 	resolvedLutealPhase := ResolveLutealPhase(lutealPhase)
-	rangeStart := CalendarDay(nextPeriodRangeStart.AddDate(0, 0, -resolvedLutealPhase), location)
-	rangeEnd := CalendarDay(nextPeriodRangeEnd.AddDate(0, 0, -resolvedLutealPhase), location)
+	rangeStart := AddCalendarDays(nextPeriodRangeStart, -resolvedLutealPhase, location)
+	rangeEnd := AddCalendarDays(nextPeriodRangeEnd, -resolvedLutealPhase, location)
 	if rangeEnd.Before(rangeStart) {
 		return time.Time{}, time.Time{}, false
 	}
@@ -299,7 +299,7 @@ func DashboardUpcomingPredictions(stats CycleStats, user *models.User, today tim
 		return prediction
 	}
 
-	prediction.NextPeriodStart = CalendarDay(cycleStart.AddDate(0, 0, cycleLength), today.Location())
+	prediction.NextPeriodStart = AddCalendarDays(cycleStart, cycleLength, today.Location())
 	window := PredictCycleWindow(cycleStart, cycleLength, stats.LutealPhase)
 	// window.OvulationDate is a UTC-midnight date-only value while today is a
 	// location-midnight working value, so the two are compared as calendar days
@@ -503,7 +503,7 @@ func dashboardNextPeriodEnd(nextPeriodStart time.Time, stats CycleStats, locatio
 		return time.Time{}
 	}
 
-	return CalendarDay(nextPeriodStart.AddDate(0, 0, periodLength-1), location)
+	return AddCalendarDays(nextPeriodStart, periodLength-1, location)
 }
 
 func dashboardNextPeriodInPast(display dashboardPredictionDisplay, today time.Time) bool {

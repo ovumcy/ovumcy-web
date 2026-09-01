@@ -103,7 +103,7 @@ func buildStatsCycleFactorSnapshots(logs []models.DailyLog, completedCycles []co
 		}
 		snapshots = append(snapshots, statsCycleFactorCycleSnapshot{
 			Start:          cycle.Start,
-			End:            cycle.NextStart.AddDate(0, 0, -1),
+			End:            AddCalendarDays(cycle.NextStart, -1, cycle.NextStart.Location()),
 			CycleLength:    cycle.CycleLength,
 			ComparisonKind: classifyStatsCycleFactorComparison(stats, cycle.CycleLength),
 			FactorKeys:     factorKeys,

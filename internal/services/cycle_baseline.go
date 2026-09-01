@@ -80,7 +80,7 @@ func applyProjectedBaseline(stats *CycleStats, cycleLength int, lutealPhase int,
 		return
 	}
 
-	stats.NextPeriodStart = CalendarDay(stats.LastPeriodStart.AddDate(0, 0, predictionCycleLength), location)
+	stats.NextPeriodStart = AddCalendarDays(stats.LastPeriodStart, predictionCycleLength, location)
 	stats.LutealPhase = ResolveLutealPhase(lutealPhase)
 
 	window := PredictCycleWindow(
@@ -135,7 +135,7 @@ func ProjectCycleStart(lastPeriodStart time.Time, cycleLength int, today time.Ti
 
 	elapsedDays := CalendarDaysBetween(lastPeriodStart, today)
 	cyclesElapsed := elapsedDays / cycleLength
-	projectedStart := CalendarDay(lastPeriodStart.AddDate(0, 0, cyclesElapsed*cycleLength), today.Location())
+	projectedStart := AddCalendarDays(lastPeriodStart, cyclesElapsed*cycleLength, today.Location())
 	projectedCycleDay := (elapsedDays % cycleLength) + 1
 	return projectedStart, projectedCycleDay, true
 }
@@ -152,7 +152,7 @@ func ShiftCycleStartToFutureOvulation(cycleStart time.Time, ovulationDate time.T
 	}
 	lagDays := CalendarDaysBetween(ovulationDate, today)
 	shiftCycles := lagDays/cycleLength + 1
-	return CalendarDay(cycleStart.AddDate(0, 0, shiftCycles*cycleLength), today.Location())
+	return AddCalendarDays(cycleStart, shiftCycles*cycleLength, today.Location())
 }
 
 func sameCalendarDay(a time.Time, b time.Time) bool {

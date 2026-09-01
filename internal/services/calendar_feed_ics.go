@@ -212,7 +212,7 @@ func renderCalendarFeedICS(events []calendarFeedEvent, disclaimer string, now ti
 
 func writeCalendarFeedEvent(b *strings.Builder, event calendarFeedEvent, stamp string, disclaimer string) {
 	start := event.date.Format(calendarFeedDateLayout)
-	end := event.date.AddDate(0, 0, 1).Format(calendarFeedDateLayout)
+	end := AddCalendarDays(event.date, 1, event.date.Location()).Format(calendarFeedDateLayout)
 
 	writeICSLine(b, "BEGIN:VEVENT")
 	// UID is a pure function of (kind, date) — stable across renders/polls at

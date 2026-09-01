@@ -258,3 +258,46 @@ func TestBuildCalendarDayStatesStartsAProjectedPreFertileRunOnTheSkippedMidnight
 		t.Error("2026-09-05 must still be a projected period day")
 	}
 }
+
+// TestDashboardUpcomingPredictionsNameTheSkippedMidnightDay covers the chain the
+// barrier is blind to: every anchor here crosses a function boundary as a
+// PARAMETER, so the sweep leaves it unclassified and the conversion had to be
+// found by walking callers. stats.LastPeriodStart is a REQUEST-ZONE midnight on
+// every owner-facing surface — latestCycleStartAnchorBeforeOrOn builds it with
+// CalendarDay — and ProjectCycleStart passes that anchor straight on, so the
+// dashboard's own next-period date was stepped in the request zone.
+func TestDashboardUpcomingPredictionsNameTheSkippedMidnightDay(t *testing.T) {
+	santiago := santiagoTestLocation(t)
+
+	testCases := []struct {
+		name     string
+		location *time.Location
+	}{
+		{name: "santiago, west of UTC", location: santiago},
+		{name: "control: UTC", location: time.UTC},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			// 2026-08-09 plus a 28-day cycle is 2026-09-06 — the skipped midnight.
+			lastPeriodStart := CalendarDay(cyclesignalsCovDay(t, "2026-08-09"), testCase.location)
+			today := DateAtLocation(time.Date(2026, time.August, 20, 15, 0, 0, 0, time.UTC), testCase.location)
+
+			user := &models.User{ID: 1, Role: models.RoleOwner}
+			stats := CycleStats{
+				CompletedCycleCount: 3,
+				MedianCycleLength:   28,
+				AverageCycleLength:  28,
+				AveragePeriodLength: 5,
+				LutealPhase:         14,
+				CurrentCycleDay:     12,
+				LastPeriodStart:     lastPeriodStart,
+			}
+
+			prediction := DashboardUpcomingPredictions(stats, user, today, 28)
+			if got := CalendarDayKey(prediction.NextPeriodStart); got != "2026-09-06" {
+				t.Fatalf("dashboard next period = %s, want 2026-09-06: the projection must not be stepped from a location midnight the zone skips", got)
+			}
+		})
+	}
+}

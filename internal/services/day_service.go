@@ -390,7 +390,7 @@ func (service *DayService) clearAutoFilledNeighborsIfBare(ctx context.Context, u
 }
 
 func (service *DayService) shouldClearAutoFilledNeighbors(ctx context.Context, userID uint, dayStart time.Time, location *time.Location) (bool, error) {
-	previousDay := dayStart.AddDate(0, 0, -1)
+	previousDay := AddCalendarDays(dayStart, -1, location)
 	previousEntry, err := service.FetchLogByDate(ctx, userID, previousDay, location)
 	if err != nil {
 		return false, err
@@ -412,7 +412,7 @@ func (service *DayService) ClearAutoFilledPeriodNeighbors(ctx context.Context, u
 	}
 
 	for offset := 1; offset < periodLength; offset++ {
-		targetDay := CalendarDay(startDay.AddDate(0, 0, offset), location)
+		targetDay := AddCalendarDays(startDay, offset, location)
 		dayRangeStart, dayRangeEnd := DayRange(targetDay, location)
 		entry, found, err := service.logs.FindByUserAndDayRange(ctx, userID, dayRangeStart, dayRangeEnd)
 		if err != nil {
@@ -602,7 +602,7 @@ func (service *DayService) ShouldAutoFillPeriodDays(ctx context.Context, userID 
 		return false, nil
 	}
 
-	previousDay := dayStart.AddDate(0, 0, -1)
+	previousDay := AddCalendarDays(dayStart, -1, location)
 	previousEntry, err := service.FetchLogByDate(ctx, userID, previousDay, location)
 	if err != nil {
 		return false, err
@@ -624,7 +624,7 @@ func (service *DayService) AutoFillFollowingPeriodDays(ctx context.Context, user
 
 	today := DateAtLocation(now, location)
 	for offset := 1; offset < periodLength; offset++ {
-		targetDay := CalendarDay(startDay.AddDate(0, 0, offset), location)
+		targetDay := AddCalendarDays(startDay, offset, location)
 		if !today.IsZero() && targetDay.After(today) {
 			break
 		}
@@ -673,7 +673,7 @@ func (service *DayService) hasPeriodInRecentDays(ctx context.Context, userID uin
 		return false, nil
 	}
 	for offset := 1; offset <= lookbackDays; offset++ {
-		previousDay := day.AddDate(0, 0, -offset)
+		previousDay := AddCalendarDays(day, -offset, location)
 		entry, err := service.FetchLogByDate(ctx, userID, previousDay, location)
 		if err != nil {
 			return false, err
