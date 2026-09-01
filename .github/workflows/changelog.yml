@@ -34,6 +34,7 @@ jobs:
         if: env.RUN_GATE == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           # The gate diffs the branch against its base, so it needs history.
           fetch-depth: 0
 
@@ -47,7 +48,19 @@ jobs:
       - name: Check changelog fragment
         if: env.RUN_GATE == 'true'
         env:
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
           BASE_REF: origin/${{ github.event.pull_request.base.ref }}
         run: |
-          git fetch --no-tags origin ${{ github.event.pull_request.base.ref }}
+          git fetch --no-tags origin "$PR_BASE_REF"
           go run ./scripts/changelogd check
+
+      - name: Fail on unhandled trigger
+        # RUN_GATE is exactly `pull_request AND not dependabot`, so this only
+        # fires if a future edit breaks that exhaustiveness, or an event this
+        # workflow's `on:` doesn't declare somehow reaches it. Without this,
+        # such a run has no step at all: the job goes green having verified
+        # nothing, and changelog-fragment is a required check.
+        if: env.RUN_GATE != 'true' && github.event_name != 'merge_group' && !(github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]')
+        run: |
+          echo "::error::changelog-fragment matched no known branch (event=${{ github.event_name }}, RUN_GATE=${{ env.RUN_GATE }}) — refusing to report success having verified nothing."
+          exit 1

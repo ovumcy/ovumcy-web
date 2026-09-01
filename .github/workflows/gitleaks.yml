@@ -34,6 +34,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           # Full history so the scheduled/push run also re-checks commits that
           # were already merged, matching CodeQL/security's full-checkout scope.
           # gitleaks itself is pointed at full history via --log-opts=--all below.

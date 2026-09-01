@@ -285,10 +285,21 @@ merge_shards() {
   local base="${1:?merge-shards requires a slug base (internal_api | internal_services)}"
   local in_dir="${2:-.tmp/mutation-shards}"
   local out_file="${3:-$TMP_DIR/${base}.json}"
+  # -expect reuses the SHARDED_PKGS registry above as the single source of
+  # truth for how many shards this base owes — the same count verify-shards
+  # already checks the partition against — so a shard whose guard failed and
+  # whose upload was skipped makes the merge fail loudly instead of quietly
+  # publishing a partial report under the complete report's name.
+  local expect
+  expect="$(shard_pkg_field "$base" count)" || {
+    echo "error: '$base' is not a registered sharded package (see SHARDED_PKGS)" >&2
+    exit 1
+  }
   go run ./scripts/mutationmerge \
     -in "$in_dir" \
     -glob "${base}_*.json" \
-    -out "$out_file"
+    -out "$out_file" \
+    -expect "$expect"
 }
 
 main() {
