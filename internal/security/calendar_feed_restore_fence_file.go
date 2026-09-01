@@ -24,6 +24,13 @@ const (
 	calendarFeedFenceLabel = "calendar feed restore fence"
 )
 
+// CalendarFeedFencePathEnv names the variable that points at the fence file.
+// It is declared once, here beside the reader, because the server and the
+// operator CLI must resolve the SAME fence: a CLI reading a different name
+// silently writes only the database half, and the server's next boot reads that
+// as a restore and disarms every armed feed.
+const CalendarFeedFencePathEnv = "CALENDAR_FEED_FENCE_PATH"
+
 // ErrCalendarFeedFenceNotConfigured is returned by both halves of the anchor
 // when no path was supplied. It is a normal operator state, never a boot
 // failure: the caller answers it by disarming feeds, not by exiting.

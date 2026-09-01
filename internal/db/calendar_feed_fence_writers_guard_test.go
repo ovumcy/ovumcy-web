@@ -106,10 +106,17 @@ func TestEveryCalendarFeedWriterAdvancesTheRestoreFence(t *testing.T) {
 		}
 	}
 
-	// A stale exemption is an exemption nobody can see is stale.
-	for name := range exemptCalendarFeedWriters {
+	// A stale exemption is an exemption nobody can see is stale — and an
+	// exemption that quietly started advancing is worse, because the two boot
+	// disarms run INSIDE the fence's own pass: an advance there would write a
+	// token in the middle of Enforce, between the disarm and the token Enforce
+	// is about to record. The exemption is a rule in both directions.
+	for name, reason := range exemptCalendarFeedWriters {
 		if !writers[name] {
 			t.Fatalf("exempt writer %s no longer writes a feed access column: drop the exemption rather than leaving it standing", name)
+		}
+		if advances[name] {
+			t.Fatalf("%s advances the restore fence although it is exempt (%s): remove the advance or the exemption, not neither", name, reason)
 		}
 	}
 }

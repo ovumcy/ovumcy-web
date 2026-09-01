@@ -164,7 +164,7 @@ func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 		// No default: an unset value must reach the fence as "not configured" so
 		// it fails closed. A default path would guess at a mount the operator
 		// never made and turn a loud refusal into a fence that silently vanishes.
-		CalendarFeedFencePath: strings.TrimSpace(os.Getenv("CALENDAR_FEED_FENCE_PATH")),
+		CalendarFeedFencePath: strings.TrimSpace(os.Getenv(security.CalendarFeedFencePathEnv)),
 		RegistrationMode:      registrationMode,
 		CookieSecure:          cookieSecure,
 		HSTSEnabled:           hstsEnabled,

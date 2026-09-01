@@ -36,9 +36,24 @@ func NewUserRepository(database *gorm.DB) *UserRepository {
 }
 
 // advanceCalendarFeedFence is called by every write that changes which calendar
-// feeds are armed, AFTER the write itself succeeded — a fence advanced for a
-// change that never landed would disarm every feed on the next boot for
-// nothing.
+// feeds are armed. Where it sits relative to that write is decided by which
+// mistake costs more, and the two cases genuinely differ:
+//
+//   - SaveCalendarFeedToken and ClearCalendarFeedToken advance FIRST. There the
+//     write IS the revocation, so the fence must never be behind it: a crash in
+//     the window would otherwise leave a revocation recorded only inside the
+//     database, which a restore then undoes — the whole defect. Advancing first
+//     inverts that. A crash leaves the fence ahead, the next boot disarms, and
+//     the owner's intent is enforced by the thing that was going to enforce it
+//     anyway. Its own failure mode — a failed row write behind an advanced
+//     fence — costs one round of re-generated subscribe URLs.
+//   - Everything else advances AFTER. There the feed clear is a side effect of
+//     a credential rotation, a clear-data wipe or an erasure, and advancing
+//     first would let one failed password change disarm the feeds of every
+//     owner on the instance. That blast radius is not worth closing a window
+//     these paths only touch incidentally, and their own containment does not
+//     rest on the feed (the same statement bumps auth_session_version). The
+//     window is named as a residual risk rather than engineered away.
 //
 // Deliberately NOT called by the two boot-time bulk disarms: the restore fence
 // records its own token immediately after its disarm, and the key-rotation
@@ -623,15 +638,17 @@ func (repo *UserRepository) ReleaseWebhookWatermark(ctx context.Context, userID 
 // means a mint can never leave a token armed with a stale mark that would refuse
 // its own reveal.
 func (repo *UserRepository) SaveCalendarFeedToken(ctx context.Context, userID uint, columns models.CalendarFeedTokenColumns) error {
-	if err := repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+	// Fence first: see advanceCalendarFeedFence. A rotation retires the previous
+	// token, so this write is a revocation as much as ClearCalendarFeedToken is.
+	if err := repo.advanceCalendarFeedFence(ctx); err != nil {
+		return err
+	}
+	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
 		"calendar_feed_selector":      columns.Selector,
 		"calendar_feed_verifier_hash": columns.VerifierHash,
 		"calendar_feed_verifier_mac":  columns.VerifierMAC,
 		"calendar_feed_revealed_at":   nil,
-	}).Error; err != nil {
-		return err
-	}
-	return repo.advanceCalendarFeedFence(ctx)
+	}).Error
 }
 
 // ClaimCalendarFeedReveal atomically claims the one-time reveal of the owner's
@@ -708,14 +725,17 @@ func (repo *UserRepository) BackfillCalendarFeedVerifierMAC(ctx context.Context,
 // account's login security posture. Uses a typed nil so the columns become SQL
 // NULL (feed off), matching the "both NULL = off" default.
 func (repo *UserRepository) ClearCalendarFeedToken(ctx context.Context, userID uint) error {
-	if err := repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+	// Fence first: see advanceCalendarFeedFence. This write IS the revocation,
+	// so the fence has to be ahead of it — a crash in between then leaves the
+	// owner's intent enforced at the next boot instead of lost.
+	if err := repo.advanceCalendarFeedFence(ctx); err != nil {
+		return err
+	}
+	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
 		"calendar_feed_selector":      nil,
 		"calendar_feed_verifier_hash": nil,
 		"calendar_feed_verifier_mac":  nil,
-	}).Error; err != nil {
-		return err
-	}
-	return repo.advanceCalendarFeedFence(ctx)
+	}).Error
 }
 
 // DisarmCalendarFeedTokensWithoutMAC clears the feed-token columns of every row
