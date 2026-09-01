@@ -184,10 +184,16 @@ func ConfirmedOvulationSupersedes(user *models.User, logs []models.DailyLog, sta
 	if projected.IsZero() {
 		return false
 	}
-	if _, confirmed := ConfirmedCurrentCycleOvulation(user, logs, stats, today, location); !confirmed {
+	// The window bound answers first because it is the cheap half. The feed asks
+	// this once per projected cycle, and only the current one can ever be the
+	// subject; running the detector first re-read the owner's whole history —
+	// filterLogsNotAfter copies the slice — for every later cycle, to reach an
+	// answer this line then discarded.
+	if CalendarDaysBetween(projected, CalendarDay(stats.NextPeriodStart, location)) <= 0 {
 		return false
 	}
-	return CalendarDaysBetween(projected, CalendarDay(stats.NextPeriodStart, location)) > 0
+	_, confirmed := ConfirmedCurrentCycleOvulation(user, logs, stats, today, location)
+	return confirmed
 }
 
 func inferObservedOvulationDate(logs []models.DailyLog, cycleStart time.Time, nextStart time.Time, location *time.Location) time.Time {
