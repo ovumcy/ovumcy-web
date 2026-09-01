@@ -3,7 +3,10 @@ package services
 import (
 	"context"
 	"errors"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
@@ -380,6 +383,154 @@ func TestCalendarFeedRestoreFenceAdvanceBreaksTheFenceWhenTheFileRefuses(t *test
 	if !outcome.Unanchored || outcome.DisarmedFeeds != 2 {
 		t.Fatalf("the next boot must disarm; got %+v", outcome)
 	}
+}
+
+// TestCalendarFeedRestoreFenceConcurrentAdvancesLeaveTheHalvesAgreeing pins the
+// one thing the two writes cannot be trusted to do on their own. They run one
+// after the other, so without serialization two concurrent revocations can land
+// as the file from one and the marker from the other — halves that disagree
+// with nothing restored, which the next boot answers by disarming every armed
+// feed on the instance. The doubles carry their own locks, so what fails here
+// is the fence's serialization and not a data race inside the test.
+func TestCalendarFeedRestoreFenceConcurrentAdvancesLeaveTheHalvesAgreeing(t *testing.T) {
+	appState := &serializedFenceAppState{}
+	anchor := &serializedFenceAnchor{}
+	fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor)
+
+	var waiting sync.WaitGroup
+	for range 16 {
+		waiting.Add(1)
+		go func() {
+			defer waiting.Done()
+			if err := fence.Advance(context.Background()); err != nil {
+				t.Errorf("Advance: %v", err)
+			}
+		}()
+	}
+	waiting.Wait()
+
+	if appState.last() == "" {
+		t.Fatal("no advance reached app_state")
+	}
+	if anchor.last() != appState.last() {
+		t.Fatalf("the halves must end on the same token; file %q, app_state %q", anchor.last(), appState.last())
+	}
+}
+
+// TestCalendarFeedRestoreFenceAdvanceIsMutuallyExclusive states the property
+// the end-state test above can only sample: no two advances are ever inside the
+// pair of writes at once. It is the positive anchor for that test, because a
+// pair of interleaved writes can happen to end on the same token and read as a
+// pass — the anchor asserts the mechanism instead of one of its outcomes.
+//
+// The anchor's Write announces that it was entered and then waits, briefly, for
+// a second entrant. A serialized fence cannot produce one, because the second
+// caller is still queued on the lock, so the wait times out and that timeout IS
+// the proof. An unserialized fence produces it immediately and fails here.
+func TestCalendarFeedRestoreFenceAdvanceIsMutuallyExclusive(t *testing.T) {
+	anchor := &overlapDetectingFenceAnchor{}
+	fence := NewCalendarFeedRestoreFence(&serializedFenceAppState{}, &stubFenceUserStore{}, anchor)
+
+	var waiting sync.WaitGroup
+	for range 2 {
+		waiting.Add(1)
+		go func() {
+			defer waiting.Done()
+			if err := fence.Advance(context.Background()); err != nil {
+				t.Errorf("Advance: %v", err)
+			}
+		}()
+	}
+	waiting.Wait()
+
+	if anchor.overlapped.Load() {
+		t.Fatal("two advances were inside the pair of writes at once: they can then leave the file holding one token and app_state another, which the next boot disarms every armed feed for")
+	}
+	// The counter has to have moved, or the anchor was never entered and the
+	// assertion above is about nothing.
+	if anchor.entries.Load() != 2 {
+		t.Fatalf("expected both advances to reach the anchor, got %d", anchor.entries.Load())
+	}
+}
+
+// overlapDetectingFenceAnchor counts how many callers are inside Write at once.
+// It holds the window open long enough that a caller which is NOT queued on a
+// lock is certain to arrive during it, so a false pass would need a scheduler
+// that never runs the second goroutine for 150 ms.
+type overlapDetectingFenceAnchor struct {
+	mutex      sync.Mutex
+	value      string
+	inside     atomic.Int32
+	entries    atomic.Int32
+	overlapped atomic.Bool
+}
+
+func (s *overlapDetectingFenceAnchor) Read() (string, bool, error) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	return s.value, s.value != "", nil
+}
+
+func (s *overlapDetectingFenceAnchor) Write(value string) error {
+	s.entries.Add(1)
+	if s.inside.Add(1) > 1 {
+		s.overlapped.Store(true)
+	}
+	time.Sleep(150 * time.Millisecond)
+	s.inside.Add(-1)
+
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	s.value = value
+	return nil
+}
+
+type serializedFenceAppState struct {
+	mutex sync.Mutex
+	value string
+}
+
+func (s *serializedFenceAppState) Get(_ context.Context, _ string) (string, bool, error) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	return s.value, s.value != "", nil
+}
+
+func (s *serializedFenceAppState) Set(_ context.Context, _ string, value string) error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	s.value = value
+	return nil
+}
+
+func (s *serializedFenceAppState) last() string {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	return s.value
+}
+
+type serializedFenceAnchor struct {
+	mutex sync.Mutex
+	value string
+}
+
+func (s *serializedFenceAnchor) Read() (string, bool, error) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	return s.value, s.value != "", nil
+}
+
+func (s *serializedFenceAnchor) Write(value string) error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	s.value = value
+	return nil
+}
+
+func (s *serializedFenceAnchor) last() string {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	return s.value
 }
 
 // countingFenceUserStore returns a different row count per call, so a test can

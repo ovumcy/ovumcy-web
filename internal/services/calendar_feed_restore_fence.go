@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"sync"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/security"
@@ -80,6 +81,18 @@ type CalendarFeedRestoreFence struct {
 	appState calendarFeedRestoreFenceAppState
 	users    calendarFeedRestoreFenceUserStore
 	anchor   calendarFeedRestoreFenceAnchor
+	// writing makes one update of the pair atomic against every other update
+	// from this process. Both halves are written one after the other, so two
+	// concurrent revocations could otherwise interleave — file from one, marker
+	// from the other — and leave the halves holding different tokens, which the
+	// next boot reads as a restore and answers by disarming every armed feed.
+	//
+	// It is a process-local lock, and that is the honest limit of it: the
+	// operator CLI writes the same fence from its own process, so a `reset` or
+	// `users delete` racing a request in the server is still a tear this cannot
+	// prevent. Those subcommands are operator-driven and rare; the request paths
+	// are the ones that run concurrently by construction.
+	writing sync.Mutex
 }
 
 // NewCalendarFeedRestoreFence wires the fence.
@@ -104,6 +117,13 @@ func NewCalendarFeedRestoreFence(appState calendarFeedRestoreFenceAppState, user
 // after it leaves the halves disagreeing, which re-runs the pass — while the
 // reverse would record agreement the file never reached.
 func (fence *CalendarFeedRestoreFence) Enforce(ctx context.Context) (CalendarFeedRestoreFenceOutcome, error) {
+	// Held across the whole pass, so record's two writes cannot interleave with
+	// an Advance. Nothing serves yet when this runs, so it never contends;
+	// taking it keeps the invariant in one place instead of in a comment about
+	// boot ordering that a later caller could invalidate.
+	fence.writing.Lock()
+	defer fence.writing.Unlock()
+
 	anchored, anchorFound, err := fence.anchor.Read()
 	if err != nil {
 		return fence.disarmUnanchored(ctx, err, 0)
@@ -146,6 +166,9 @@ func (fence *CalendarFeedRestoreFence) Enforce(ctx context.Context) (CalendarFee
 // the revocation has to fail closed rather than report success. Only a database
 // failure reaches the caller, whose own write is failing for the same reason.
 func (fence *CalendarFeedRestoreFence) Advance(ctx context.Context) error {
+	fence.writing.Lock()
+	defer fence.writing.Unlock()
+
 	token, err := security.NewCalendarFeedFenceToken()
 	if err != nil {
 		return err // codecov:ignore -- crypto/rand failure; unreachable without an OS-level entropy fault
