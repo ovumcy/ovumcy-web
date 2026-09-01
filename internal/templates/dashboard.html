@@ -92,7 +92,12 @@
                   {{t .Messages "dashboard.ovulation_unavailable"}}
                 {{else if .DisplayOvulationUseRange}}
                   {{printf (t .Messages "dashboard.ovulation_range") (formatLocalizedDate .Lang .DisplayOvulationRangeStart "display") (formatLocalizedDate .Lang .DisplayOvulationRangeEnd "display")}}
-                {{else if .DisplayOvulationNeedsData}}
+                {{/* "Needs more cycles" is about a projection built on thin
+                     history, so a day the temperatures already named outranks
+                     it — the calendar grid marks that day for this same cohort,
+                     and a caption here would be the two surfaces disagreeing
+                     again. */}}
+                {{else if and .DisplayOvulationNeedsData (not .DisplayOvulationConfirmed)}}
                   {{t .Messages "dashboard.ovulation_need_cycles"}}
                 {{else if .DisplayOvulationDate.IsZero}}
                   {{.NoDataLabel}}
