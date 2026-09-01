@@ -155,6 +155,13 @@ jobs:
           # whose only justification WAS that the queue had already run.
           QUEUE_CHECKS: test race e2e
           HEAVY_CHECKS: e2e-postgres-smoke image-smoke
+          # `e2e-cross-browser` is deliberately absent from both lists, not an
+          # omission: ci.yml:1512 marks it non-required and publish-image's own
+          # `needs:` excludes it for the same reason (deferred, slower
+          # cross-browser coverage, non-blocking by design). This gate mirrors
+          # exactly the five checks publish-image requires — see the comment
+          # above `QUEUE_CHECKS` — so a release tag is held to the same bar as
+          # `:latest`, no stricter. Re-verified against HEAD 2026-09-01.
         run: |
           set -euo pipefail
 
