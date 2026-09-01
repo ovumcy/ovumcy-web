@@ -27,23 +27,11 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
-// calendarStepHavanaLocation is the second midnight-skipping zone. Named for
-// this file rather than shared: santiagoTestLocation already exists in the
-// package, and a second generic helper would collide with one added elsewhere.
-func calendarStepHavanaLocation(t *testing.T) *time.Location {
-	t.Helper()
-	location, err := time.LoadLocation("America/Havana")
-	if err != nil {
-		t.Fatalf("load America/Havana: %v", err)
-	}
-	return location
-}
-
 // TestAddCalendarDaysCrossesASkippedMidnight pins the helper every converted
 // site now routes through.
 func TestAddCalendarDaysCrossesASkippedMidnight(t *testing.T) {
 	santiago := santiagoTestLocation(t)
-	havana := calendarStepHavanaLocation(t)
+	havana := havanaTestLocation(t)
 
 	testCases := []struct {
 		name     string
