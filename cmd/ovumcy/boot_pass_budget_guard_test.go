@@ -55,9 +55,9 @@ func TestBootPassContextCarriesAStorageBudget(t *testing.T) {
 // measured anything rather than reporting success.
 func TestEveryBootPassRunsOnTheBoundedContext(t *testing.T) {
 	const (
-		windowOpens  = "NewRepositories"
+		windowOpens  = "BuildRepositories"
 		windowCloses = "BuildDependencies"
-		knownPasses  = 3
+		knownPasses  = 4
 	)
 
 	fileSet := token.NewFileSet()

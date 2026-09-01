@@ -11,6 +11,7 @@ services:
       - REGISTRATION_MODE=${REGISTRATION_MODE:-open}
       - DB_DRIVER=${DB_DRIVER:-sqlite}
       - DB_PATH=/app/data/ovumcy.db
+      - CALENDAR_FEED_FENCE_PATH=/app/fence/calendar-feed.fence
       - DATABASE_URL=${DATABASE_URL:-}
       - COOKIE_SECURE=${COOKIE_SECURE:-false}
       - HSTS_ENABLED=${HSTS_ENABLED:-}
@@ -62,6 +63,12 @@ services:
       - /tmp
     volumes:
       - ovumcy_data:/app/data
+      # The calendar-feed restore fence. Deliberately a SEPARATE volume from the
+      # database: it is how the app tells a restored backup from the database it
+      # replaced, so it only works while your backups leave it out. Do not archive
+      # it, do not restore it, and do not point it at the data volume. Losing it
+      # costs one round of re-generated subscribe URLs and nothing else.
+      - ovumcy_fence:/app/fence
       # Optional: mount a file-backed app secret and set SECRET_KEY_FILE=/run/secrets/ovumcy_secret_key in .env
       # - ./secrets/ovumcy_secret_key:/run/secrets/ovumcy_secret_key:ro
       # Optional: mount a private OIDC CA bundle and set OIDC_CA_FILE=/run/certs/oidc-provider-ca.pem in .env
@@ -79,3 +86,5 @@ services:
 volumes:
   ovumcy_data:
     name: ovumcy_data
+  ovumcy_fence:
+    name: ovumcy_fence

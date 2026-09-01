@@ -29,6 +29,7 @@ services:
       SECRET_KEY: ${SECRET_KEY:-}
       SECRET_KEY_FILE: ${SECRET_KEY_FILE:-}
       DATABASE_URL: postgres://${POSTGRES_USER:-ovumcy}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-ovumcy}?sslmode=disable
+      CALENDAR_FEED_FENCE_PATH: /app/fence/calendar-feed.fence
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       OIDC_ENABLED: ${OIDC_ENABLED:-false}
       OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-}
@@ -59,10 +60,16 @@ services:
     read_only: true
     tmpfs:
       - /tmp
-    # Optional: mount a file-backed app secret and set SECRET_KEY_FILE=/run/secrets/ovumcy_secret_key in .env
-    # volumes:
-    #   - ./secrets/ovumcy_secret_key:/run/secrets/ovumcy_secret_key:ro
-    #   - ./certs/oidc-provider-ca.pem:/run/certs/oidc-provider-ca.pem:ro
+    volumes:
+      # The calendar-feed restore fence. Deliberately a SEPARATE volume from the
+      # database: it is how the app tells a restored backup from the database it
+      # replaced, so it only works while your backups leave it out. Do not archive
+      # it, do not restore it, and do not point it at the data volume. Losing it
+      # costs one round of re-generated subscribe URLs and nothing else.
+      - ovumcy_fence:/app/fence
+      # Optional: mount a file-backed app secret and set SECRET_KEY_FILE=/run/secrets/ovumcy_secret_key in .env
+      # - ./secrets/ovumcy_secret_key:/run/secrets/ovumcy_secret_key:ro
+      # - ./certs/oidc-provider-ca.pem:/run/certs/oidc-provider-ca.pem:ro
     healthcheck:
       test: ["CMD", "/app/ovumcy", "healthcheck"]
       interval: 30s
@@ -75,3 +82,4 @@ services:
 
 volumes:
   postgres_data:
+  ovumcy_fence:

@@ -29,6 +29,14 @@ type runtimeConfig struct {
 	RateLimits       rateLimitSettings
 	Proxy            proxySettings
 	AuditLogEnabled  bool
+	// CalendarFeedFencePath is CALENDAR_FEED_FENCE_PATH: the file the boot-time
+	// restore fence keeps its non-rollbackable half in. It has to live OUTSIDE
+	// whatever a database backup captures — that is the whole mechanism — so it
+	// is an operator-supplied path rather than one the app derives: only the
+	// operator knows which of their mounts their backups skip. Empty (the
+	// default for a bare binary; the image sets it) means no fence, which fails
+	// closed: every armed calendar feed is disarmed on every boot.
+	CalendarFeedFencePath string
 	// WebhookBlockPrivate mirrors the off-by-default WEBHOOK_BLOCK_PRIVATE_ADDRESSES
 	// egress gate the notify CLI reads, so the built-in scheduler wires the same
 	// deliverer hardening.
@@ -148,15 +156,19 @@ func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 	}
 
 	return runtimeConfig{
-		Location:         location,
-		SecretKey:        secretKey,
-		DatabaseConfig:   databaseConfig,
-		Port:             port,
-		DefaultLanguage:  getEnv("DEFAULT_LANGUAGE", "en"),
-		RegistrationMode: registrationMode,
-		CookieSecure:     cookieSecure,
-		HSTSEnabled:      hstsEnabled,
-		OIDC:             oidcConfig,
+		Location:        location,
+		SecretKey:       secretKey,
+		DatabaseConfig:  databaseConfig,
+		Port:            port,
+		DefaultLanguage: getEnv("DEFAULT_LANGUAGE", "en"),
+		// No default: an unset value must reach the fence as "not configured" so
+		// it fails closed. A default path would guess at a mount the operator
+		// never made and turn a loud refusal into a fence that silently vanishes.
+		CalendarFeedFencePath: strings.TrimSpace(os.Getenv("CALENDAR_FEED_FENCE_PATH")),
+		RegistrationMode:      registrationMode,
+		CookieSecure:          cookieSecure,
+		HSTSEnabled:           hstsEnabled,
+		OIDC:                  oidcConfig,
 		RateLimits: rateLimitSettings{
 			LoginMax:             getEnvInt("RATE_LIMIT_LOGIN_MAX", 8),
 			LoginWindow:          getEnvDuration("RATE_LIMIT_LOGIN_WINDOW", 15*time.Minute),

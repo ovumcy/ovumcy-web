@@ -124,7 +124,11 @@ Auxiliary short-lived tables (`register_pickup_tokens` ≤ 5 min, `oidc_logout_s
 
 ## Backup Restore and the Calendar Feed
 
-Restoring the data volume from a backup returns the database to its state at backup time, including `calendar_feed_selector` and the verifier columns. If an owner revoked or rotated their calendar-feed subscription after that backup was taken, restoring from it resurrects the old subscribe URL — a direct consequence of restoring the feed columns, not a theoretical edge. After any restore, re-check `Settings → Calendar feed` for every owner and revoke or regenerate the feed again if it should no longer be armed.
+Restoring the data volume from a backup returns the database to its state at backup time, including `calendar_feed_selector` and the verifier columns. If an owner revoked or rotated their calendar-feed subscription after that backup was taken, those columns come back exactly as they were, and the old subscribe URL would work again.
+
+Ovumcy answers that itself rather than asking the operator to remember. A **restore fence** keeps a marker outside the database — a file in a location your database backups do not capture, configured with `CALENDAR_FEED_FENCE_PATH` and mounted by the bundled compose stacks — and advances it on every change to the set of armed feeds. A restored database carries an older marker than the file does, and the instance disarms every armed calendar feed on the boot that follows, before it accepts a request. Owners re-generate their subscribe URL from `Settings → Calendar feed`; nothing that was revoked comes back.
+
+Two consequences worth knowing. A restore disarms every armed feed on the instance, not only the one that was revoked, because the fence records that feed state moved on, not which owner's row moved. And an instance with no fence available at all — no mount, no variable — falls back to disarming every armed feed on every start, and says so in its startup log: without somewhere to keep the marker, a restored backup cannot be told from the database it replaced. Do not include the fence location in your database backups, and do not restore it alongside them: a fence restored together with the database agrees with it, and agreement is what the mechanism reads as "nothing was rolled back".
 
 ## Backup Restore and Erasure
 

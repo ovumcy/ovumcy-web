@@ -10,12 +10,47 @@ import (
 	"gorm.io/gorm"
 )
 
+// CalendarFeedFence records, OUTSIDE the database, that the set of armed
+// calendar feeds just changed. Every write below that arms, rotates or removes
+// a feed calls it, in the same shape and for the same reason the webhook
+// revocation epoch is advanced by every writer of a delivery configuration: a
+// revocation that exists only inside the database is undone by restoring a
+// backup taken before it, and the restored rows carry no sign that it happened.
+//
+// Implemented by services.CalendarFeedRestoreFence; declared here so this layer
+// depends on the behaviour rather than on the layer above it.
+type CalendarFeedFence interface {
+	Advance(ctx context.Context) error
+}
+
 type UserRepository struct {
 	database *gorm.DB
+	// calendarFeedFence is nil in tests and in any binary that provably never
+	// changes feed state; the advance is then a no-op. Production wiring goes
+	// through bootstrap.BuildRepositories, which always attaches one.
+	calendarFeedFence CalendarFeedFence
 }
 
 func NewUserRepository(database *gorm.DB) *UserRepository {
 	return &UserRepository{database: database}
+}
+
+// advanceCalendarFeedFence is called by every write that changes which calendar
+// feeds are armed, AFTER the write itself succeeded — a fence advanced for a
+// change that never landed would disarm every feed on the next boot for
+// nothing.
+//
+// Deliberately NOT called by the two boot-time bulk disarms: the restore fence
+// records its own token immediately after its disarm, and the key-rotation
+// sentinel's disarm is answered by the key epoch, which a restore brings back
+// together with the rows it belongs to. Nor by BackfillCalendarFeedVerifierMAC,
+// which neither grants nor removes access — it rewrites a derived column for a
+// token that already verified, on a read path taken by every first poll.
+func (repo *UserRepository) advanceCalendarFeedFence(ctx context.Context) error {
+	if repo.calendarFeedFence == nil {
+		return nil
+	}
+	return repo.calendarFeedFence.Advance(ctx)
 }
 
 func (repo *UserRepository) CountUsers(ctx context.Context) (int64, error) {
@@ -588,12 +623,15 @@ func (repo *UserRepository) ReleaseWebhookWatermark(ctx context.Context, userID 
 // means a mint can never leave a token armed with a stale mark that would refuse
 // its own reveal.
 func (repo *UserRepository) SaveCalendarFeedToken(ctx context.Context, userID uint, columns models.CalendarFeedTokenColumns) error {
-	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+	if err := repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
 		"calendar_feed_selector":      columns.Selector,
 		"calendar_feed_verifier_hash": columns.VerifierHash,
 		"calendar_feed_verifier_mac":  columns.VerifierMAC,
 		"calendar_feed_revealed_at":   nil,
-	}).Error
+	}).Error; err != nil {
+		return err
+	}
+	return repo.advanceCalendarFeedFence(ctx)
 }
 
 // ClaimCalendarFeedReveal atomically claims the one-time reveal of the owner's
@@ -670,11 +708,14 @@ func (repo *UserRepository) BackfillCalendarFeedVerifierMAC(ctx context.Context,
 // account's login security posture. Uses a typed nil so the columns become SQL
 // NULL (feed off), matching the "both NULL = off" default.
 func (repo *UserRepository) ClearCalendarFeedToken(ctx context.Context, userID uint) error {
-	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+	if err := repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
 		"calendar_feed_selector":      nil,
 		"calendar_feed_verifier_hash": nil,
 		"calendar_feed_verifier_mac":  nil,
-	}).Error
+	}).Error; err != nil {
+		return err
+	}
+	return repo.advanceCalendarFeedFence(ctx)
 }
 
 // DisarmCalendarFeedTokensWithoutMAC clears the feed-token columns of every row
@@ -696,6 +737,35 @@ func (repo *UserRepository) ClearCalendarFeedToken(ctx context.Context, userID u
 func (repo *UserRepository) DisarmCalendarFeedTokensWithoutMAC(ctx context.Context) (int64, error) {
 	result := repo.database.WithContext(ctx).Model(&models.User{}).
 		Where("calendar_feed_selector IS NOT NULL AND calendar_feed_selector != '' AND (calendar_feed_verifier_mac IS NULL OR calendar_feed_verifier_mac = '')").
+		Updates(map[string]any{
+			"calendar_feed_selector":      nil,
+			"calendar_feed_verifier_hash": nil,
+			"calendar_feed_verifier_mac":  nil,
+		})
+	return result.RowsAffected, result.Error
+}
+
+// DisarmAllCalendarFeedTokens clears the feed-token columns of EVERY armed row,
+// whatever its verifier generation. The boot-time restore fence calls it when
+// the database turns out not to be the one this instance last ran with — a
+// backup restore, or a fence that was recreated.
+//
+// The wider predicate is what the trigger demands, and is the one difference
+// from DisarmCalendarFeedTokensWithoutMAC above. That sentinel narrows to
+// MAC-less rows because its trigger IS a changed SECRET_KEY, which already
+// turns every MAC-bearing row into a hard refusal. A restore changes no key:
+// selector, bcrypt hash and MAC all come back valid together, and every armed
+// row — legacy or current — would serve its old subscribe URL again. Narrowing
+// here would leave exactly the rows the finding is about.
+//
+// calendar_feed_revealed_at is deliberately left standing, as in every other
+// disarm: whether the owner has already been shown a URL is a separate fact
+// from whether one is armed. Like every feed-token write it does not bump
+// auth_session_version — a feed capability is not a login credential — and the
+// row count feeds the startup log.
+func (repo *UserRepository) DisarmAllCalendarFeedTokens(ctx context.Context) (int64, error) {
+	result := repo.database.WithContext(ctx).Model(&models.User{}).
+		Where("calendar_feed_selector IS NOT NULL AND calendar_feed_selector != ''").
 		Updates(map[string]any{
 			"calendar_feed_selector":      nil,
 			"calendar_feed_verifier_hash": nil,
@@ -752,14 +822,17 @@ func (repo *UserRepository) FindByCalendarFeedSelector(ctx context.Context, sele
 // of a token that no longer resolves would only make a retained sealed cookie
 // presentable again. Regression: TestEveryRecoveryCodeMintClearsItsRevealMark.
 func (repo *UserRepository) UpdateRecoveryCodeHashAndRevokeSessions(ctx context.Context, userID uint, recoveryHash string) error {
-	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+	if err := repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
 		"recovery_code_hash":          recoveryHash,
 		"recovery_code_revealed_at":   nil,
 		"calendar_feed_selector":      nil,
 		"calendar_feed_verifier_hash": nil,
 		"calendar_feed_verifier_mac":  nil,
 		"auth_session_version":        gorm.Expr("auth_session_version + 1"),
-	}).Error
+	}).Error; err != nil {
+		return err
+	}
+	return repo.advanceCalendarFeedFence(ctx)
 }
 
 func (repo *UserRepository) UpdatePasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, mustChangePassword bool) error {
@@ -785,7 +858,7 @@ func (repo *UserRepository) UpdatePasswordAndRevokeSessions(ctx context.Context,
 // force-rotate-on-recovery rule: any feed URL that may have leaked is cleared in
 // the same write that resets the credential and revokes sessions.
 func (repo *UserRepository) ForceResetPasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string) error {
-	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+	if err := repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
 		"password_hash":               passwordHash,
 		"must_change_password":        true,
 		"local_auth_enabled":          true,
@@ -793,7 +866,10 @@ func (repo *UserRepository) ForceResetPasswordAndRevokeSessions(ctx context.Cont
 		"calendar_feed_verifier_hash": nil,
 		"calendar_feed_verifier_mac":  nil,
 		"auth_session_version":        gorm.Expr("auth_session_version + 1"),
-	}).Error
+	}).Error; err != nil {
+		return err
+	}
+	return repo.advanceCalendarFeedFence(ctx)
 }
 
 // UpdatePasswordHashOnly rewrites only the password_hash column without bumping
@@ -870,7 +946,7 @@ func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx c
 	if result.RowsAffected == 0 {
 		return ErrResetTokenAlreadyConsumed
 	}
-	return nil
+	return repo.advanceCalendarFeedFence(ctx)
 }
 
 func (repo *UserRepository) BumpAuthSessionVersion(ctx context.Context, userID uint) error {
@@ -981,7 +1057,7 @@ func (repo *UserRepository) SaveOnboardingStep2(ctx context.Context, userID uint
 }
 
 func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, userID uint) error {
-	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("user_id = ?", userID).Delete(&models.DailyLog{}).Error; err != nil {
 			return err
 		}
@@ -1086,7 +1162,10 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 			// gesture would not actually sign other devices out.
 			"auth_session_version": gorm.Expr("auth_session_version + 1"),
 		}).Error
-	})
+	}); err != nil {
+		return err
+	}
+	return repo.advanceCalendarFeedFence(ctx)
 }
 
 func (repo *UserRepository) DeleteAccountAndRelatedData(ctx context.Context, userID uint) error {
@@ -1130,7 +1209,10 @@ func (repo *UserRepository) DeleteAccountAndRelatedData(ctx context.Context, use
 	// The error is intentionally dropped here: a purge failure must not turn
 	// a completed erasure into a reported failure.
 	_ = repo.database.WithContext(ctx).Where("expires_at <= ?", time.Now().UTC()).Delete(&models.OIDCLogoutState{}).Error
-	return nil
+	// The erased account's feed left with its row, which is a removal like any
+	// other: a restore that brings the account back brings its subscribe URL
+	// back with it.
+	return repo.advanceCalendarFeedFence(ctx)
 }
 
 func (repo *UserRepository) CompleteOnboarding(ctx context.Context, userID uint, startDay time.Time, periodLength int, autoPeriodFill bool) error {

@@ -48,12 +48,16 @@ func main() {
 	config := mustLoadRuntimeConfig(location)
 	database := mustOpenDatabase(config.DatabaseConfig)
 	i18nManager := mustNewI18nManager(config.DefaultLanguage)
-	repositories := db.NewRepositories(database)
-	// All three boot passes must run after mustOpenDatabase (migrations applied)
+	repositories, calendarFeedFence := bootstrap.BuildRepositories(database, config.CalendarFeedFencePath)
+	// All four boot passes must run after mustOpenDatabase (migrations applied)
 	// and before any listener exists: no feed poll can race the revocation, no
 	// request can observe a half-repaired identity, and no surface can render a
 	// prediction from a luteal-phase estimate the upgrade has not corrected yet.
-	// The third does not fail the boot — see recomputeDerivedLutealPhases.
+	// The fourth does not fail the boot — see recomputeDerivedLutealPhases.
+	// The restore fence runs first because its disarm is the wider one: it
+	// answers "is this even the database that holds my revocations", which the
+	// key-rotation sentinel behind it assumes.
+	mustEnforceCalendarFeedRestoreFence(calendarFeedFence)
 	mustEnforceCalendarFeedKeyRotation(repositories, []byte(config.SecretKey))
 	mustRenormalizeAuthEmails(repositories)
 	recomputeDerivedLutealPhases(repositories, location)
@@ -119,7 +123,7 @@ func startReminderScheduler(sigCtx context.Context, config runtimeConfig, databa
 		return closed
 	}
 
-	repositories := db.NewRepositories(database)
+	repositories, _ := bootstrap.BuildRepositories(database, config.CalendarFeedFencePath)
 	notifyService := bootstrap.BuildNotifyService(repositories, []byte(config.SecretKey), i18nManager, config.WebhookBlockPrivate)
 	scheduler := reminders.New(notifyService, repositories.AppState, reminders.Config{
 		Hour:     config.ReminderScheduler.Hour,
@@ -193,6 +197,28 @@ func bootPassContext() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), bootPassStorageBudget)
 }
 
+// mustEnforceCalendarFeedRestoreFence runs the boot-time calendar-feed restore
+// fence: when the fence file outside the database disagrees with the marker
+// inside it, this database is not the one this instance last ran with — a
+// backup restore under an unchanged SECRET_KEY, the case the key-rotation
+// sentinel below structurally cannot see — and every armed feed is disarmed
+// before a listener exists. The decision logic lives (tested) in
+// services.CalendarFeedRestoreFence; this wrapper wires repositories and the
+// file anchor, fails the boot on a DATABASE error, and prints the
+// operator-facing line. An unusable fence is not a boot failure: it disarms and
+// says so, on every start, until the mount is there.
+func mustEnforceCalendarFeedRestoreFence(fence *services.CalendarFeedRestoreFence) {
+	ctx, cancel := bootPassContext()
+	defer cancel()
+	outcome, err := fence.Enforce(ctx)
+	if err != nil {
+		log.Fatalf("calendar-feed restore fence failed: %v", err) // codecov:ignore -- reachable only when the DB fails between migration and this first read
+	}
+	if message := calendarFeedRestoreFenceStartupMessage(outcome); message != "" {
+		log.Print(message)
+	}
+}
+
 // mustEnforceCalendarFeedKeyRotation runs the boot-time calendar-feed
 // key-rotation sentinel: when SECRET_KEY (or the feed-MAC label set) changed
 // since the previous boot, it disarms the legacy pre-032 feed rows whose
@@ -254,6 +280,25 @@ func recomputeDerivedLutealPhases(repositories *db.Repositories, location *time.
 	if message := lutealPhaseRecomputeStartupMessage(outcome); message != "" {
 		log.Print(message)
 	}
+}
+
+// calendarFeedRestoreFenceStartupMessage renders the operator-facing startup
+// line for the restore fence. It stays quiet ("") only for the one routine case
+// — both halves agreed — so a stable banner still means the fence is arming
+// each start. Counts only, never a selector or a subscribe URL.
+func calendarFeedRestoreFenceStartupMessage(outcome services.CalendarFeedRestoreFenceOutcome) string {
+	switch {
+	case outcome.Unanchored:
+		// Both patterns are single literals on purpose: a pattern assembled from
+		// concatenated pieces is invisible to go vet's printf checker, and the
+		// locale-format guard refuses one for that reason.
+		return fmt.Sprintf("calendar-feed restore fence unavailable (%v): %d armed calendar feed(s) disarmed, and every start will disarm again. Mount a persistent directory that is NOT part of any database backup and point CALENDAR_FEED_FENCE_PATH at a file inside it (see docs/self-hosted.md → Calendar Feed Restore Fence); without it a restored backup cannot be told from the database it replaced", outcome.UnanchoredCause, outcome.DisarmedFeeds)
+	case outcome.ContinuityBroken:
+		return fmt.Sprintf("calendar-feed restore fence: this database is not the one this instance last wrote (backup restore, or a recreated fence): %d armed calendar feed(s) disarmed; owners re-generate subscribe URLs from settings", outcome.DisarmedFeeds)
+	case outcome.FirstBoot:
+		return "calendar-feed restore fence armed: a later restore of a backup taken before a revocation will disarm calendar feeds automatically"
+	}
+	return ""
 }
 
 // calendarFeedRotationStartupMessage renders the operator-facing startup line

@@ -36,7 +36,7 @@ WORKDIR /app
 RUN apk add --no-cache tzdata ca-certificates \
     && addgroup -S -g 10001 ovumcy \
     && adduser -S -D -H -u 10001 -G ovumcy -h /app ovumcy \
-    && mkdir -p /app/data
+    && mkdir -p /app/data /app/fence
 
 FROM scratch AS runtime
 WORKDIR /app
@@ -45,12 +45,20 @@ COPY --from=runtime-assets /etc/passwd /etc/group /etc/
 COPY --from=runtime-assets /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=runtime-assets /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=runtime-assets --chown=10001:10001 /app/data /app/data
+# /app/fence is the mountpoint for the calendar-feed restore fence. It is a
+# SECOND persistent location on purpose: the fence proves the database in
+# front of the app is the one this instance last wrote, so it only works
+# while it stays out of every database backup. Left unmounted the directory
+# is on the read-only layer, the fence cannot be written, and the app
+# disarms every armed calendar feed on each start and says so.
+COPY --from=runtime-assets --chown=10001:10001 /app/fence /app/fence
 COPY --from=builder --chown=10001:10001 /out/ovumcy /app/ovumcy
 
 USER 10001:10001
 
 EXPOSE 8080
 ENV DB_PATH=/app/data/ovumcy.db
+ENV CALENDAR_FEED_FENCE_PATH=/app/fence/calendar-feed.fence
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD ["/app/ovumcy", "healthcheck"]
 CMD ["/app/ovumcy"]
