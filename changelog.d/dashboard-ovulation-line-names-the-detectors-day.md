@@ -24,6 +24,12 @@
   already named, and both used to hide it while the calendar went on marking it — for irregular
   cycles, the very accounts the model serves worst.
 
+  One thing does stop appearing, and that is the point of the change: the dashboard's "ovulation is
+  coming" reminder no longer counts down to a day the temperatures have already placed behind you.
+  It counted down to the projection, so on the projected day it announced an ovulation as arriving
+  today while the calendar beside it marked the same one several days earlier. With no shift
+  recorded it counts down exactly as before.
+
   Nothing here changes *whether* an estimate is shown. An account with predictions turned off, a
   paused pregnancy estimate, an overdue cycle, or an account that has not completed a single cycle
   yet withholds the ovulation estimate exactly as before, on the dashboard and the calendar alike —

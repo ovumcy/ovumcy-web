@@ -114,6 +114,37 @@ func TestDashboardOvulationLineNamesTheConfirmedDay(t *testing.T) {
 	}
 }
 
+// TestConfirmedOvulationStopsTheCountdownBanner is the one thing this pass makes
+// STOP appearing, so it is asserted rather than left to be noticed. The banner
+// counts down to DisplayOvulationDate, and on the projected day it announced an
+// ovulation as arriving today while the calendar marked the same one several
+// days back — announcing a day the temperatures have already placed behind the
+// owner is the defect, not a side effect of fixing it. The control is the same
+// cycle with no thermal evidence, where the countdown is exactly as it was.
+func TestConfirmedOvulationStopsTheCountdownBanner(t *testing.T) {
+	user, logs, stats, today := confirmedOvulationFixture(t)
+
+	confirmedContext := BuildDashboardCycleContext(user, logs, stats, today, time.UTC)
+	if banner := BuildDashboardReminderBanner(confirmedContext, today, 3); banner.Show && banner.Kind == DashboardReminderBannerKindOvulation {
+		t.Fatalf("the banner counted down to an ovulation the temperatures placed behind the owner: %+v", banner)
+	}
+
+	// Same cycle, temperatures removed: the projected day is today, so the
+	// countdown must still be there — without this the assertion above would
+	// also pass for a banner that had simply stopped working.
+	periodOnly := make([]models.DailyLog, 0, len(logs))
+	for _, entry := range logs {
+		if entry.BBT == nil {
+			periodOnly = append(periodOnly, entry)
+		}
+	}
+	controlContext := BuildDashboardCycleContext(user, periodOnly, stats, today, time.UTC)
+	banner := BuildDashboardReminderBanner(controlContext, today, 3)
+	if !banner.Show || banner.Kind != DashboardReminderBannerKindOvulation {
+		t.Fatalf("control: with no shift recorded the ovulation countdown must still show, got %+v", banner)
+	}
+}
+
 // TestDashboardOvulationLineKeepsTheProjectionWithoutAShift is the control: the
 // same cycle with no thermal evidence must still name the projected day and
 // must not be reported as past. Without it the assertion above would also pass
