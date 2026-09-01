@@ -631,3 +631,67 @@ func calendarDayIsPackageIdent(expr ast.Expr) bool {
 		return false
 	}
 }
+
+// calendarDayBarrierShapeCFixture is the sweep's own positive-and-negative pair
+// for the stepping shape, parsed from source this test owns rather than found in
+// the tree.
+//
+// Without it the shape's only live positive example is an allowlist entry, so the
+// day that site is converted the classifier stops being exercised and the barrier
+// passes while measuring nothing — the anti-vacuity anchor would depend on the
+// data it judges, which `.claude/rules/testing.md` forbids. The floors do not
+// cover this: they prove the parser SEES steps, not that the classifier still
+// tells a location anchor from a UTC one.
+const calendarDayBarrierShapeCFixture = `package sample
+
+import "time"
+
+func steppedFromALocationAnchor(value time.Time, location *time.Location) time.Time {
+	anchor := CalendarDay(value, location)
+	return anchor.AddDate(0, 0, 5)
+}
+
+func steppedFromAUTCAnchor(value time.Time) time.Time {
+	anchor := dateOnly(value)
+	return anchor.AddDate(0, 0, 5)
+}
+
+func steppedFromAnExplicitUTCConstruction(value time.Time) time.Time {
+	anchor := CalendarDay(value, time.UTC)
+	return anchor.AddDate(0, 0, 5)
+}
+`
+
+func TestCalendarDayBarrierClassifiesTheSteppingShape(t *testing.T) {
+	t.Parallel()
+
+	fileSet := token.NewFileSet()
+	parsed, err := parser.ParseFile(fileSet, "sample.go", calendarDayBarrierShapeCFixture, 0)
+	if err != nil {
+		t.Fatalf("parse fixture: %v", err)
+	}
+
+	scan := calendarDayBarrierScan{}
+	inspectCalendarDayFile(fileSet, parsed, "sample.go", &scan)
+
+	stepping := make(map[string]bool, len(scan.findings))
+	for _, finding := range scan.findings {
+		if strings.HasSuffix(finding.key, ":calendar day stepped from a location anchor") {
+			stepping[finding.key] = true
+		}
+	}
+
+	wantFlagged := "sample.go:steppedFromALocationAnchor:calendar day stepped from a location anchor"
+	if !stepping[wantFlagged] {
+		t.Errorf("the sweep no longer flags a step taken from a location anchor; stepping findings = %v", stepping)
+	}
+	for _, mustNotFlag := range []string{"steppedFromAUTCAnchor", "steppedFromAnExplicitUTCConstruction"} {
+		key := "sample.go:" + mustNotFlag + ":calendar day stepped from a location anchor"
+		if stepping[key] {
+			t.Errorf("%s steps from a UTC anchor and must not be flagged", mustNotFlag)
+		}
+	}
+	if scan.stepCalls < 3 {
+		t.Errorf("the fixture holds three steps; the sweep counted %d, so it is not reading them", scan.stepCalls)
+	}
+}
