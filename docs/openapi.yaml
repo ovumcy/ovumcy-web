@@ -686,11 +686,10 @@ components:
           enum: [menstrual, follicular, ovulation, luteal, unknown]
           description: >-
             Phase taxonomy. "Fertile" is a status, never a phase — see
-            `current_fertility`. `follicular`, `ovulation` and `luteal` are
-            positions relative to the projected ovulation date, so they read
-            `unknown` whenever `suppression.fertility` is true — the same gate
-            that nulls the date itself; `menstrual` follows recorded period days
-            and stays.
+            `current_fertility`. The phase is the axis orthogonal to fertility
+            and is reported in every state, including one where the projected
+            dates are withheld — so a phase may be named beside a null
+            `ovulation_date`. Read `suppression` for why the date is absent.
         current_fertility:
           type: string
           enum: [fertile, not_fertile, unknown]
