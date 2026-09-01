@@ -158,7 +158,10 @@ func (service *ImportService) ImportJSON(ctx context.Context, userID uint, raw [
 		return ImportResult{}, err
 	}
 
-	service.refreshDerivedCycleSettings(ctx, userID, location)
+	// A restore carries no instant of its own; the derived column must still be
+	// bounded at the owner's today, so the clock is read here rather than
+	// threaded through the import route for this one line.
+	service.refreshDerivedCycleSettings(ctx, userID, time.Now(), location)
 
 	return ImportResult{Added: added, Skipped: skipped, Rejected: rejected}, nil
 }
@@ -429,7 +432,7 @@ func resolveImportSymptomIDs(flags ExportSymptomFlags, otherNames []string, buil
 // refreshDerivedCycleSettings recomputes the owner's luteal-phase estimate once
 // after a bulk restore. Mirrors DayService.refreshDerivedCycleSettings; kept as
 // a best-effort side effect (a failure here never fails the import).
-func (service *ImportService) refreshDerivedCycleSettings(ctx context.Context, userID uint, location *time.Location) {
+func (service *ImportService) refreshDerivedCycleSettings(ctx context.Context, userID uint, now time.Time, location *time.Location) {
 	if service == nil || service.users == nil || service.logs == nil {
 		return
 	}
@@ -437,5 +440,5 @@ func (service *ImportService) refreshDerivedCycleSettings(ctx context.Context, u
 	if err != nil {
 		return
 	}
-	_ = service.users.UpdateByID(ctx, userID, map[string]any{"luteal_phase": deriveUserLutealPhase(logs, location)})
+	_ = service.users.UpdateByID(ctx, userID, map[string]any{"luteal_phase": deriveUserLutealPhase(logs, now, location)})
 }

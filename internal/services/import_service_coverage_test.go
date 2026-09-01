@@ -143,11 +143,11 @@ func TestImportServiceEmptySymptomNamesIgnored(t *testing.T) {
 // nil logs, the guard must also write NOTHING, so a fall-through cannot hide
 // behind "it did not panic".
 func TestImportServiceRefreshNilGuards(t *testing.T) {
-	(&ImportService{}).refreshDerivedCycleSettings(context.Background(), 1, time.UTC)
+	(&ImportService{}).refreshDerivedCycleSettings(context.Background(), 1, time.Now(), time.UTC)
 
 	users := &importRecordingUsers{}
 	NewImportService(nil, users, &importStubReconciler{}, nil).
-		refreshDerivedCycleSettings(context.Background(), 1, time.UTC)
+		refreshDerivedCycleSettings(context.Background(), 1, time.Now(), time.UTC)
 	if len(users.updates) != 0 {
 		t.Fatalf("expected the nil-logs guard to write nothing, got %d update(s)", len(users.updates))
 	}
@@ -176,7 +176,7 @@ func TestImportServiceRefreshUpdatesOnSuccess(t *testing.T) {
 	users := &importRecordingUsers{}
 	// listErr nil => ListByUser succeeds; the refresh must proceed to UpdateByID.
 	svc := &ImportService{logs: &importStubLogs{}, users: users}
-	svc.refreshDerivedCycleSettings(context.Background(), 7, time.UTC)
+	svc.refreshDerivedCycleSettings(context.Background(), 7, time.Now(), time.UTC)
 
 	if len(users.updates) != 1 {
 		t.Fatalf("expected one luteal_phase update on the success path, got %d", len(users.updates))

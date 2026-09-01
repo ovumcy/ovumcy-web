@@ -287,7 +287,7 @@ func (service *DayService) UpsertDayEntryWithAutoFillAt(ctx context.Context, use
 		return models.DailyLog{}, err
 	}
 
-	service.refreshDerivedCycleSettings(ctx, userID, location)
+	service.refreshDerivedCycleSettings(ctx, userID, now, location)
 	return entry, nil
 }
 
@@ -439,7 +439,11 @@ func (service *DayService) DeleteDayEntry(ctx context.Context, userID uint, day 
 	if err := service.DeleteDailyLogByDate(ctx, userID, day, location); err != nil {
 		return ErrDeleteDayFailed
 	}
-	service.refreshDerivedCycleSettings(ctx, userID, location)
+	// DeleteDayEntry carries no instant of its own — the transport never needed
+	// one — and the derived column must still be bounded at the owner's today.
+	// Reading the clock here keeps that bound rather than threading `now` through
+	// the delete route for this one line.
+	service.refreshDerivedCycleSettings(ctx, userID, time.Now(), location)
 	return nil
 }
 
@@ -492,7 +496,7 @@ func (service *DayService) MarkCycleStartManually(ctx context.Context, userID ui
 	}); err != nil {
 		return err
 	}
-	service.refreshDerivedCycleSettings(ctx, userID, location)
+	service.refreshDerivedCycleSettings(ctx, userID, now, location)
 
 	return nil
 }
@@ -715,7 +719,7 @@ func (service *DayService) clearCompetingCycleStarts(ctx context.Context, userID
 	return nil
 }
 
-func (service *DayService) refreshDerivedCycleSettings(ctx context.Context, userID uint, location *time.Location) {
+func (service *DayService) refreshDerivedCycleSettings(ctx context.Context, userID uint, now time.Time, location *time.Location) {
 	if service == nil || service.users == nil || service.logs == nil {
 		return
 	}
@@ -727,7 +731,7 @@ func (service *DayService) refreshDerivedCycleSettings(ctx context.Context, user
 	}
 
 	if err := service.users.UpdateByID(ctx, userID, map[string]any{
-		"luteal_phase": deriveUserLutealPhase(logs, location),
+		"luteal_phase": deriveUserLutealPhase(logs, now, location),
 	}); err != nil {
 		log.Printf("refreshDerivedCycleSettings: update luteal_phase for user %d failed: %v", userID, err)
 	}

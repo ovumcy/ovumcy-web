@@ -352,10 +352,10 @@ func TestDeriveUserLutealPhaseIsTheOneRuleTheCacheIsWrittenBy(t *testing.T) {
 	// contract is exactly two branches, and both are pinned here so a future
 	// edit cannot quietly change what an un-inferable account stores.
 	refinable := lutealRoundTripLogs(t, lutealRecomputeOrigin, 28, []int{14, 14}, lutealSignalEggWhite)
-	if got := deriveUserLutealPhase(refinable, time.UTC); got != 14 {
+	if got := deriveUserLutealPhase(refinable, time.Now(), time.UTC); got != 14 {
 		t.Fatalf("deriveUserLutealPhase on refinable logs = %d, want 14", got)
 	}
-	if got := deriveUserLutealPhase(nil, time.UTC); got != defaultLutealPhaseDays {
+	if got := deriveUserLutealPhase(nil, time.Now(), time.UTC); got != defaultLutealPhaseDays {
 		t.Fatalf("deriveUserLutealPhase with no logs = %d, want %d", got, defaultLutealPhaseDays)
 	}
 }
@@ -519,5 +519,44 @@ func TestLutealPhaseRecomputeUsesACycleStartOnceItHasHappened(t *testing.T) {
 	}
 	if outcome.Corrected != 1 || outcome.Failed != 0 {
 		t.Fatalf("outcome = %+v, want one correction", outcome)
+	}
+}
+
+// TestEveryWriterOfTheColumnBoundsTheHistoryAtToday is the class guard for the
+// pair above. The column has three writers — a day save, a bulk restore and this
+// boot pass — and deriveUserLutealPhase is the single rule all three route
+// through, which is why the today bound lives there rather than in one caller's
+// fetch. Bounding one writer alone would be worse than bounding none: the boot
+// pass would correct the column and the next day save would put the
+// future-dated value straight back.
+//
+// The day-save path is exercised here because it is the one that runs most
+// often; the restore path shares the same derivation call and the compiler now
+// requires an instant from both, so neither can silently drop the bound.
+func TestEveryWriterOfTheColumnBoundsTheHistoryAtToday(t *testing.T) {
+	logs, fourthStart := lutealRecomputeFutureStartLogs(t)
+	assertInferenceSupports(t, logs, 15, true)
+
+	logStore := newDayLogRepositoryStub()
+	for _, entry := range logs {
+		entry.UserID = 10
+		logStore.entries[CalendarDayKey(entry.Date)] = entry
+	}
+	users := &dayUserRepositoryStub{settings: models.User{LutealPhase: 14}}
+	service := NewDayService(logStore, users)
+
+	// Today is the day before the fourth start: the owner recorded it ahead,
+	// exactly as manualCycleStartFutureDays permits.
+	service.refreshDerivedCycleSettings(context.Background(), 10, fourthStart.AddDate(0, 0, -1), time.UTC)
+	if users.settings.LutealPhase != 14 {
+		t.Fatalf("a day save derived luteal_phase = %d from a cycle start recorded ahead, want 14", users.settings.LutealPhase)
+	}
+
+	// Control: once that start is in the past it is observed history and must
+	// move the column, or the bound would be a blanket refusal to read the last
+	// cycle rather than a today bound.
+	service.refreshDerivedCycleSettings(context.Background(), 10, fourthStart.AddDate(0, 0, 1), time.UTC)
+	if users.settings.LutealPhase != 15 {
+		t.Fatalf("a day save after that start has happened derived luteal_phase = %d, want 15", users.settings.LutealPhase)
 	}
 }

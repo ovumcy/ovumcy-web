@@ -609,7 +609,7 @@ func TestDayService_RefreshDerivedCycleSettings_NilUsersNoOp(t *testing.T) {
 		users: nil,
 	}
 
-	service.refreshDerivedCycleSettings(context.Background(), 10, time.UTC)
+	service.refreshDerivedCycleSettings(context.Background(), 10, time.Now(), time.UTC)
 
 	if logs.listCalls != 0 {
 		t.Fatalf("expected the nil-users guard to return before reading logs, got %d ListByUser call(s)", logs.listCalls)
@@ -625,7 +625,7 @@ func TestDayService_RefreshDerivedCycleSettings_NilLogsNoOp(t *testing.T) {
 		users: users,
 	}
 
-	service.refreshDerivedCycleSettings(context.Background(), 10, time.UTC)
+	service.refreshDerivedCycleSettings(context.Background(), 10, time.Now(), time.UTC)
 
 	if users.updateCalls != 0 {
 		t.Fatalf("expected the nil-logs guard to write nothing, got %d UpdateByID call(s)", users.updateCalls)
@@ -659,7 +659,7 @@ func TestDayService_RefreshDerivedCycleSettings_EmptyLogSetPersistsDefaultLuteal
 	users := &dayserviceCovUserStub{settings: models.User{PeriodLength: 5}}
 	service := dayserviceCovNewService(logs, users)
 
-	service.refreshDerivedCycleSettings(context.Background(), 10, time.UTC)
+	service.refreshDerivedCycleSettings(context.Background(), 10, time.Now(), time.UTC)
 
 	if logs.listCalls != 1 {
 		t.Fatalf("expected the refresh to read the log set exactly once, got %d call(s)", logs.listCalls)
