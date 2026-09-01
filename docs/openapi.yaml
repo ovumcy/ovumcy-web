@@ -686,7 +686,10 @@ components:
           enum: [menstrual, follicular, ovulation, luteal, unknown]
           description: >-
             Phase taxonomy. "Fertile" is a status, never a phase — see
-            `current_fertility`.
+            `current_fertility`. `follicular`, `ovulation` and `luteal` are
+            positions relative to the projected ovulation date, so they read
+            `unknown` whenever `suppression.predictions` is true; `menstrual`
+            follows recorded period days and stays.
         current_fertility:
           type: string
           enum: [fertile, not_fertile, unknown]

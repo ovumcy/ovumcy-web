@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/ovumcy/ovumcy-web/internal/i18n"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 	"golang.org/x/net/html"
@@ -34,6 +35,12 @@ type statsOverviewState struct {
 	// seed puts the owner into the state and returns nothing: the endpoint reads
 	// the same database the page does.
 	seed func(t *testing.T, database *gorm.DB, user models.User, today time.Time)
+	// history is the cycle starts to record, in days back from today. A state
+	// with none is the zero-completed-cycle tier; every other state carries real
+	// history, because the stats page renders its empty state instead of its stat
+	// cards without one — and a parity check against a page that rendered nothing
+	// is a comparison that never happened.
+	history []int
 	// wantReasons are the reasons the payload must NAME. Several signals can hold
 	// at once (a paused owner with no completed cycle names two), so this is a
 	// containment check, never an equality one.
@@ -56,7 +63,8 @@ func statsOverviewStates() []statsOverviewState {
 			wantNextPeriodSet: true,
 		},
 		{
-			name: "active pregnancy pause",
+			name:    "active pregnancy pause",
+			history: []int{62, 34, 6},
 			seed: func(t *testing.T, database *gorm.DB, user models.User, today time.Time) {
 				seedStatsOverviewLog(t, database, models.DailyLog{
 					UserID:        user.ID,
@@ -69,7 +77,8 @@ func statsOverviewStates() []statsOverviewState {
 			wantFertility:   true,
 		},
 		{
-			name: "unpredictable cycle mode",
+			name:    "unpredictable cycle mode",
+			history: []int{62, 34, 6},
 			seed: func(t *testing.T, database *gorm.DB, user models.User, today time.Time) {
 				updateStatsOverviewUser(t, database, user, map[string]any{"unpredictable_cycle": true})
 			},
@@ -78,7 +87,10 @@ func statsOverviewStates() []statsOverviewState {
 			wantFertility:   true,
 		},
 		{
-			name: "cycle overdue past its own reference length",
+			// The history is itself overdue: the anchor is the latest recorded
+			// start, so a recent one would end the state this case is about.
+			name:    "cycle overdue past its own reference length",
+			history: []int{90, 62, 45},
 			seed: func(t *testing.T, database *gorm.DB, user models.User, today time.Time) {
 				updateStatsOverviewUser(t, database, user, map[string]any{
 					"last_period_start": today.AddDate(0, 0, -45),
@@ -96,6 +108,7 @@ func TestStatsOverviewWithholdsEveryProjectionItsGatesRefuse(t *testing.T) {
 		t.Run(state.name, func(t *testing.T) {
 			app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
 			user, authCookie, today := newStatsOverviewOwner(t, app, database, "overview-"+strings.ReplaceAll(state.name, " ", "-")+"@example.com")
+			seedStatsOverviewCycleHistory(t, database, user, today, state.history...)
 			state.seed(t, database, user, today)
 
 			body, payload := fetchStatsOverview(t, app, authCookie)
@@ -138,6 +151,12 @@ func TestStatsOverviewWithholdsEveryProjectionItsGatesRefuse(t *testing.T) {
 				t.Fatal("last_period_start is null — a recorded anchor is not a projection and no gate withholds it")
 			}
 
+			// A phase label whose only source is the cleared ovulation date would
+			// state the withheld claim in a word — "ovulation" beside a null date.
+			if state.wantPredictions && payload.CurrentPhase != "menstrual" && payload.CurrentPhase != "unknown" {
+				t.Fatalf("current_phase = %q while every projected date is withheld", payload.CurrentPhase)
+			}
+
 			assertStatsOverviewFraming(t, payload)
 			assertNoInstantTimestamps(t, body)
 		})
@@ -150,7 +169,7 @@ func TestStatsOverviewWithholdsEveryProjectionItsGatesRefuse(t *testing.T) {
 func TestStatsOverviewPublishesAWholeProjectionWhenNothingSuppressesIt(t *testing.T) {
 	app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
 	user, authCookie, today := newStatsOverviewOwner(t, app, database, "overview-unsuppressed@example.com")
-	seedStatsOverviewCycleHistory(t, database, user, today)
+	seedStatsOverviewCycleHistory(t, database, user, today, 62, 34, 6)
 
 	_, payload := fetchStatsOverview(t, app, authCookie)
 
@@ -174,19 +193,28 @@ func TestStatsOverviewPublishesAWholeProjectionWhenNothingSuppressesIt(t *testin
 // suppressed tier may carry. The page is read at its rendered hook rather than
 // at a view flag — a context field is not a rendered value, and a page can
 // answer on a sibling branch first.
+//
+// The page renders that hook only in the tiers that have a fertility status —
+// unpredictable-cycle mode takes the facts-only branch instead — so a missing
+// hook cannot be a failure. It also cannot be allowed to read as agreement:
+// counting the comparisons and requiring at least one is what keeps a renamed
+// attribute, or a widened facts-only branch, from turning all four subtests into
+// a green report about nothing.
 func TestStatsOverviewAgreesWithTheStatsPageOnFertility(t *testing.T) {
+	compared := 0
+
 	for _, state := range statsOverviewStates() {
 		t.Run(state.name, func(t *testing.T) {
 			app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
 			user, authCookie, today := newStatsOverviewOwner(t, app, database, "parity-"+strings.ReplaceAll(state.name, " ", "-")+"@example.com")
+			seedStatsOverviewCycleHistory(t, database, user, today, state.history...)
 			state.seed(t, database, user, today)
 
 			_, payload := fetchStatsOverview(t, app, authCookie)
 			document := fetchStatsPageDocument(t, app, authCookie)
 
-			// The page renders the fertility status only in the tier that has one;
-			// where it does, the two surfaces must name the same value.
 			if node := findHTMLNodeWithAttr(document, "data-fertility-status"); node != nil {
+				compared++
 				if rendered := htmlAttr(node, "data-fertility-status"); rendered != payload.CurrentFertility {
 					t.Fatalf("the page renders fertility %q while the API publishes %q", rendered, payload.CurrentFertility)
 				}
@@ -195,6 +223,73 @@ func TestStatsOverviewAgreesWithTheStatsPageOnFertility(t *testing.T) {
 				t.Fatal("the page names a fertile window while the API suppresses the fertility half")
 			}
 		})
+	}
+
+	if compared == 0 {
+		t.Fatal("no state rendered data-fertility-status — this test compared nothing, and would have passed the same way if the two surfaces disagreed everywhere")
+	}
+}
+
+// TestStatsOverviewAgreesWithTheStatsPageOnAPublishedProjection is the parity
+// case with something to publish: both surfaces name a fertility status, and the
+// page carries the fertile-window line the API's own status implies. The
+// suppressed states above can be satisfied by two surfaces that publish nothing;
+// this one cannot.
+func TestStatsOverviewAgreesWithTheStatsPageOnAPublishedProjection(t *testing.T) {
+	app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
+	user, authCookie, today := newStatsOverviewOwner(t, app, database, "parity-unsuppressed@example.com")
+	seedStatsOverviewCycleHistory(t, database, user, today, 62, 34, 6)
+
+	_, payload := fetchStatsOverview(t, app, authCookie)
+	document := fetchStatsPageDocument(t, app, authCookie)
+
+	node := findHTMLNodeWithAttr(document, "data-fertility-status")
+	if node == nil {
+		t.Fatal("the page rendered no fertility status for an owner whose projection is published")
+	}
+	if rendered := htmlAttr(node, "data-fertility-status"); rendered != payload.CurrentFertility {
+		t.Fatalf("the page renders fertility %q while the API publishes %q", rendered, payload.CurrentFertility)
+	}
+	if payload.Suppression.Fertility {
+		t.Fatalf("an owner with observed cycles got the fertility gate: %v", payload.Suppression.Reasons)
+	}
+
+	// The window line is the page's own consequence of that status, so the two
+	// must not disagree about whether today is inside the fertile window.
+	renderedWindow := findHTMLNodeWithAttr(document, "data-fertile-window") != nil
+	if renderedWindow != (payload.CurrentFertility == services.FertilityStatusFertile) {
+		t.Fatalf("the page renders the fertile-window line = %v while the API publishes fertility %q", renderedWindow, payload.CurrentFertility)
+	}
+}
+
+// TestStatsOverviewCarriesTheDisclaimerWithoutTheLanguageMiddleware pins the
+// framing against its own wiring.
+//
+// The disclaimer is resolved from the per-request catalogue, which
+// LanguageMiddleware fills. Every other test here mounts that middleware, so
+// none of them can see what happens without it — and the fallback in
+// translateMessage renders a miss as the KEY, which would publish the literal
+// "medical.disclaimer" as the owner-visible safety text with the whole suite
+// green. Here the resolver runs against a request that carries no catalogue at
+// all, which is what a route reached ahead of that middleware would hand it.
+func TestStatsOverviewCarriesTheDisclaimerWithoutTheLanguageMiddleware(t *testing.T) {
+	manager, err := i18n.NewManager("en")
+	if err != nil {
+		t.Fatalf("init i18n: %v", err)
+	}
+	handler := &Handler{i18n: manager}
+
+	app := fiber.New()
+	app.Get("/probe", func(c fiber.Ctx) error {
+		return c.SendString(handler.medicalDisclaimer(c))
+	})
+
+	response := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, "/probe", nil))
+	assertStatusCode(t, response, http.StatusOK)
+	disclaimer := mustReadBodyString(t, response.Body)
+
+	if disclaimer == medicalDisclaimerMessageKey || strings.TrimSpace(disclaimer) == "" {
+		t.Fatalf("disclaimer = %q with no request catalogue — the payload must fall back to the server's default language, not to the key", disclaimer)
 	}
 }
 
@@ -215,10 +310,13 @@ func newStatsOverviewOwner(t *testing.T, app *fiber.App, database *gorm.DB, emai
 // seedStatsOverviewCycleHistory records three explicit cycle starts, which is
 // what lifts the zero-completed-cycle floor: the projection then rests on
 // observed lengths rather than on the onboarding setting.
-func seedStatsOverviewCycleHistory(t *testing.T, database *gorm.DB, user models.User, today time.Time) {
+func seedStatsOverviewCycleHistory(t *testing.T, database *gorm.DB, user models.User, today time.Time, daysBackList ...int) {
 	t.Helper()
 
-	for _, daysBack := range []int{62, 34, 6} {
+	if len(daysBackList) == 0 {
+		return
+	}
+	for _, daysBack := range daysBackList {
 		seedStatsOverviewLog(t, database, models.DailyLog{
 			UserID:     user.ID,
 			Date:       today.AddDate(0, 0, -daysBack),
