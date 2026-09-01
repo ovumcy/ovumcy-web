@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/db"
 	"github.com/ovumcy/ovumcy-web/internal/i18n"
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/security"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 	"gorm.io/gorm"
 )
@@ -511,4 +513,56 @@ func readBodyString(t *testing.T, response *http.Response) string {
 		t.Fatalf("read body: %v", err)
 	}
 	return buf.String()
+}
+
+// TestCalendarFeedRestoredBackupStopsServingARevokedURL is the HTTP tail of the
+// restore fence: the finding said a restored backup makes a revoked subscribe
+// URL serve the calendar again, and this is that URL, at the real route, after
+// the boot pass a restore now runs through.
+//
+// The restore is staged from the fence's own side, which is the honest side to
+// stage it from: the fence file is the half a restore does NOT roll back, so
+// "the database went back a generation" and "the file moved on without it" are
+// one state, not two. SECRET_KEY never changes here — that is the whole point,
+// since the key-epoch sentinel would have caught it if it did.
+func TestCalendarFeedRestoredBackupStopsServingARevokedURL(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "feed-restore@example.com", "StrongPass1", true)
+	token := armCalendarFeedForUser(t, database, user.ID)
+	repositories := db.NewRepositories(database)
+	fencePath := filepath.Join(t.TempDir(), "calendar-feed.fence")
+	fence := security.NewCalendarFeedFenceFile(fencePath)
+
+	// The instance boots once with this database, arming the fence.
+	if _, err := services.NewCalendarFeedRestoreFence(repositories.AppState, repositories.Users, fence).Enforce(t.Context()); err != nil {
+		t.Fatalf("first Enforce: %v", err)
+	}
+	if response := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, calendarFeedURL(token), nil)); response.StatusCode != http.StatusOK {
+		t.Fatalf("precondition lost: the armed feed must serve before the restore, got %d", response.StatusCode)
+	}
+
+	// The owner revokes, the operator restores a backup taken before that. The
+	// rows and the app_state marker come back together; the fence file does not.
+	if err := fence.Write("a-generation-this-database-never-saw"); err != nil {
+		t.Fatalf("stage the restore: %v", err)
+	}
+
+	outcome, err := services.NewCalendarFeedRestoreFence(repositories.AppState, repositories.Users, fence).Enforce(t.Context())
+	if err != nil {
+		t.Fatalf("boot Enforce after restore: %v", err)
+	}
+	if !outcome.ContinuityBroken || outcome.DisarmedFeeds != 1 {
+		t.Fatalf("the restore must disarm the one armed feed, got %+v", outcome)
+	}
+
+	restored := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, calendarFeedURL(token), nil))
+	if restored.StatusCode != http.StatusNotFound {
+		t.Fatalf("the pre-restore subscribe URL must 404 after the restore, got %d", restored.StatusCode)
+	}
+	// And it must 404 the same way an unrelated token does: a distinguishable
+	// refusal would tell a holder of the leaked URL that it once was real.
+	unrelated := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, calendarFeedURL("ZZZZZZZZZZZZZZZZ"+token[16:]), nil))
+	if fingerprintFeedResponse(t, restored) != fingerprintFeedResponse(t, unrelated) {
+		t.Fatal("a disarmed token must be indistinguishable from an unknown one")
+	}
 }

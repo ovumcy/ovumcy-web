@@ -16,6 +16,7 @@ Ovumcy's supported self-hosted baseline is a single application instance with a 
 **Running it**
 - [Health Checks by Deployment Mode](#health-checks-by-deployment-mode) — [operator CLI](#running-the-operator-cli-against-the-container) · [Concurrency on the SQLite Baseline](#concurrency-on-the-sqlite-baseline) · [Secret Handling and Rotation](#secret-handling-and-rotation)
 - [Backup and Restore Contract](#backup-and-restore-contract) — [volume backup](#docker-named-volume-backup), [volume restore](#docker-named-volume-restore), [post-restore verification](#post-restore-verification)
+- [Calendar Feed Restore Fence](#calendar-feed-restore-fence)
 - [Safe Upgrade Procedure](#safe-upgrade-procedure) · [Downgrade Caveats](#downgrade-caveats)
 
 **When something breaks**
@@ -27,6 +28,7 @@ Supported baseline assumptions:
 
 - One Ovumcy instance per private deployment.
 - Persistent storage for `/app/data`.
+- A second, separate persistent location for `/app/fence`, which must **not** be part of your database backups. It holds the calendar-feed restore fence: [Calendar Feed Restore Fence](#calendar-feed-restore-fence).
 - HTTPS termination at a trusted reverse proxy or load balancer.
 - `COOKIE_SECURE=true` when traffic is served over HTTPS.
 - `TRUST_PROXY_ENABLED=true` only when Ovumcy is actually behind your own trusted reverse proxy.
@@ -97,6 +99,7 @@ These settings are valid, but they are not required for a safe first deployment:
 - rate-limit variables if you need stricter or looser local policy — every endpoint's default and its two variable names are tabulated in [docs/security/auth-policy-and-rate-limits.md](security/auth-policy-and-rate-limits.md)
 - `AUDIT_LOG_ENABLED` (default `false`) if you want per-action security-event lines for incident investigation. They stay on the host and never leave it, but they carry `user_id` and role, so treat the resulting stream as the same sensitivity class as the database and plan retention for it. Full contract in [docs/security/logging.md](security/logging.md).
 - optional OIDC variables when you want the login page to offer external sign-in: `OIDC_ENABLED`, `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URL`, `OIDC_CA_FILE`, `OIDC_LOGIN_MODE`, `OIDC_RESPONSE_MODE`, `OIDC_AUTO_PROVISION`, `OIDC_AUTO_PROVISION_ALLOWED_DOMAINS`, `OIDC_LOGOUT_MODE`, and `OIDC_POST_LOGOUT_REDIRECT_URL`. Leave `OIDC_RESPONSE_MODE` at its `form_post` default; set it to `query` only for providers that cannot form-post the callback (Dex, better-auth, Pocket ID <2.7) — the code then travels in the callback URL, inert without the PKCE verifier but logged by proxies. See [docs/oidc.md → Response mode](oidc.md#response-mode).
+- `CALENDAR_FEED_FENCE_PATH` (the image sets `/app/fence/calendar-feed.fence`) only for a non-standard layout, or when you run the binary outside compose. What it is and why the location matters: [Calendar Feed Restore Fence](#calendar-feed-restore-fence)
 - `PROXY_HEADER` (default `X-Forwarded-For`) — set it to the header your trusted proxy overwrites with the real client IP; the example stacks set `X-Real-IP`
 - `DB_DRIVER=postgres` plus `DATABASE_URL=...` when you intentionally move the app runtime to Postgres, either through the bundled local/private Postgres stack or an operator-managed database service
 - `WEBHOOK_BLOCK_PRIVATE_ADDRESSES` (default `false`) only if you want the scheduled `ovumcy notify` webhook-reminder pass to refuse delivery to private/loopback/link-local targets (including RFC 6598 CGNAT `100.64.0.0/10`, `0.0.0.0/8`, `fec0::/10`, `64:ff9b:1::/48`, every IPv6 transition form wrapping a private IPv4 — NAT64, 6to4, Teredo, IPv4-compatible and IPv4-translated — and every other range the IANA special-purpose registries record as not globally reachable, such as RFC 2544 benchmarking space, the documentation prefixes and the reserved `240.0.0.0/4`); leave it unset for the common case of a self-hosted ntfy/Gotify instance on the same LAN. See [docs/notifications.md](notifications.md) for enabling and scheduling webhook notifications.
@@ -325,6 +328,7 @@ The supported self-hosted backup contract is intentionally narrow:
 - Back up the SQLite data volume before every upgrade and before any manual recovery work.
 - Treat every backup archive as sensitive health data.
 - Keep `.env` and the application secret backup (`SECRET_KEY` value or the file behind `SECRET_KEY_FILE`) separate from the SQLite data archive.
+- **Do not back up the `ovumcy_fence` volume, and never restore it alongside the database.** It is not data — losing it costs one round of re-generated calendar-feed subscribe URLs and nothing else — and restoring it together with the database is the one action that defeats it. See [Calendar Feed Restore Fence](#calendar-feed-restore-fence).
 - Expect existing auth-related cookies to become invalid if you restore data with a different application secret.
 - The SQLite database runs in WAL mode, so the data volume can also hold `ovumcy.db-wal` and `ovumcy.db-shm` next to `ovumcy.db`. The whole-volume archive flow below captures all three together — necessary, but on a running instance not sufficient. `tar` reads the three files one after another, and a checkpoint landing between the read of `ovumcy.db` and the read of `ovumcy.db-wal` writes the WAL into the main database file *after* that file was read, then empties the WAL *before* it is read: the archive carries all three files and is still missing a commit that was in the database before the backup began. Stop the app before you archive the data volume — or take the archive from an atomic snapshot of it rather than from the live volume. The same applies, for the same reason, if you copy individual files instead; stopping the app also checkpoints the WAL into the main database file.
 
@@ -448,8 +452,31 @@ After restore:
 4. Sign in and confirm the records are there: open the calendar on a month you know had entries before the backup, or download `Settings → Export` and compare it against an export taken before the restore. Do this even when the app looks perfectly healthy — every signal above stays green on an empty database.
 5. Confirm the records are the ones **from the backup**, not the ones that were already in place. Before starting the restore, name a signal that is known to differ between the current database and the backup — the entry count for a month you edited since the dump was taken, a specific entry that exists in only one of the two — and check that signal afterwards. Phrase it so it can fail: "the calendar still shows entries" passes on a restore that did nothing, while "July shows 12 entries, not the 3 it showed an hour ago" does not. If you cannot name a differing signal, take a `Settings → Export` immediately before the restore and diff it against one taken after; an export that comes back unchanged after restoring a different generation of data is the failure, not a reassurance.
 6. If you restored with a different `SECRET_KEY`, expect existing auth sessions and sealed cookies to be invalid and require a fresh sign-in. Read that expectation carefully against step 4, because the two failures look similar for one screen and mean opposite things: with a changed key your **password still works** (password hashes do not depend on `SECRET_KEY`) and you are merely signed out — 2FA is the part that breaks, and the recovery path for it is in [Secret Handling and Rotation](#secret-handling-and-rotation). A sign-in that is rejected as *wrong credentials* is not a key symptom at all; it means the account is not in the restored database, which is step 4 failing.
-7. Re-check your own `Settings → Calendar feed`, and tell every other owner on this instance to re-check theirs. A restore also returns the feed columns to their state at backup time, so a subscription an owner revoked or rotated *after* that backup was taken comes back live at its old subscribe URL — it has to be revoked or regenerated again if it should no longer be armed. Only the account itself can see or change that: every account is the sole owner of its own data, so there is no operator surface that shows another owner's feed, and an owner nobody tells keeps a live subscription they believe they revoked. This is a different trigger from the `SECRET_KEY` rotation above, which disarms feeds instead: [docs/gdpr.md → Backup Restore and the Calendar Feed](gdpr.md#backup-restore-and-the-calendar-feed).
+7. Expect every armed calendar feed to be gone, and tell the owners on this instance to re-generate theirs from `Settings → Calendar feed`. A restore returns the feed columns to their state at backup time, so a subscription an owner revoked or rotated *after* that backup was taken would otherwise come back live at its old URL; the [restore fence](#calendar-feed-restore-fence) disarms all of them on the boot that follows instead, before the instance accepts a request. Read the startup log to confirm it did: a line naming the disarmed count is the fence working. A line saying the fence is *unavailable* means it disarmed for a different reason — it has nowhere to keep its marker — and that it will keep disarming on every start until you mount one. Only the account itself can arm a feed again: every account is the sole owner of its own data, so there is no operator surface that regenerates another owner's subscription. Detail: [docs/gdpr.md → Backup Restore and the Calendar Feed](gdpr.md#backup-restore-and-the-calendar-feed).
 8. If the backup you restored predates a `clear-data` or account deletion, that erasure did not happen in the restored database — the records it was meant to remove are back, exactly as calendar-feed columns are. `clear-data` and account deletion have no server-side memory of having run once outside the rows they touched, so nothing in the restored data flags that an owner asked to erase it. Check the operator's own request log or ticket history for any clear-data/delete-account request timestamped after the backup, and re-apply it manually if one exists. Detail: [docs/gdpr.md → Backup Restore and Erasure](gdpr.md#backup-restore-and-erasure).
+
+## Calendar Feed Restore Fence
+
+An owner who revokes their `.ics` calendar feed expects the old subscribe URL to be dead for good. A database restore would undo that on its own: the feed columns come back exactly as the backup holds them, and nothing in the restored rows records that a revocation ever happened.
+
+Ovumcy closes that itself. It keeps a marker in two places — one inside the database, one in a file at `CALENDAR_FEED_FENCE_PATH` — and advances both together on every change to the set of armed feeds. A restore rolls back only the copy inside the database, so the two disagree, and the instance answers that on its next boot by disarming every armed calendar feed before the listener starts. Owners re-generate their subscribe URLs; nothing that was revoked comes back.
+
+The whole mechanism rests on where that file lives:
+
+- **It must be outside whatever your database backups capture.** The bundled compose stacks mount a separate `ovumcy_fence` volume for it, which the documented backup and restore commands never touch. A fence kept inside the data volume comes back with the database, agrees with it, and detects nothing.
+- **Never back it up, and never restore it.** It carries no health data and no secrets — it is an opaque marker — and losing it costs one round of re-generated subscribe URLs. Restoring it beside the database is the one action that defeats the fence.
+- **Nothing else depends on it.** Feeds are all it protects, so losing the fence volume disarms feeds on the next start and touches nothing else.
+
+What happens when:
+
+| Situation | What the instance does |
+| --- | --- |
+| Ordinary restart | Both markers agree. Nothing is disarmed, nothing is logged. |
+| First start of a new installation, or the first start after upgrading to the release that added the fence | The marker is written to both places. Nothing is disarmed — an upgrade is not a restore, and armed feeds keep working. |
+| A database restore, or a fence volume that was recreated | Every armed calendar feed is disarmed, and the startup log names the count. |
+| No fence available at all (no mount, `CALENDAR_FEED_FENCE_PATH` unset, or the path not writable) | Every armed calendar feed is disarmed **on every start**, and the startup log says so and names the variable. The instance still boots and everything else works; the calendar feed is effectively unavailable until you mount a fence. |
+
+If you run the binary outside compose, point `CALENDAR_FEED_FENCE_PATH` at a file in a directory your database backups skip. If you deliberately do not use the calendar feed you can leave it unset — the fence then has nothing to protect, and the startup line is its only effect.
 
 ## Safe Upgrade Procedure
 

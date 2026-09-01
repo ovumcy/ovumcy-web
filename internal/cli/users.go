@@ -54,7 +54,7 @@ func runUsersCommand(databaseConfig db.Config, args []string, input io.Reader, o
 		_ = sqlDB.Close()
 	}()
 
-	repositories := db.NewRepositories(database)
+	repositories := buildRepositories(database)
 	service := services.NewOperatorUserService(repositories.Users, services.NewAuthService(repositories.Users))
 
 	switch subcommand {

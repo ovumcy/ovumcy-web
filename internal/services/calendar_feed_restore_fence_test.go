@@ -1,0 +1,411 @@
+package services
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/ovumcy/ovumcy-web/internal/models"
+)
+
+// stubFenceAppState is an in-memory app_state with injectable errors and a
+// shared call journal (with stubFenceUserStore and stubFenceAnchor) so the
+// ordering the fence promises — disarm, then the file, then the row — is
+// asserted rather than assumed.
+type stubFenceAppState struct {
+	values  map[string]string
+	getErr  error
+	setErr  error
+	journal *[]string
+}
+
+func (s *stubFenceAppState) Get(_ context.Context, key string) (string, bool, error) {
+	if s.getErr != nil {
+		return "", false, s.getErr
+	}
+	value, ok := s.values[key]
+	return value, ok, nil
+}
+
+func (s *stubFenceAppState) Set(_ context.Context, key string, value string) error {
+	if s.setErr != nil {
+		return s.setErr
+	}
+	if s.journal != nil {
+		*s.journal = append(*s.journal, "set")
+	}
+	if s.values == nil {
+		s.values = map[string]string{}
+	}
+	s.values[key] = value
+	return nil
+}
+
+type stubFenceUserStore struct {
+	disarmed  int64
+	disarmErr error
+	callCount int
+	journal   *[]string
+}
+
+func (s *stubFenceUserStore) DisarmAllCalendarFeedTokens(_ context.Context) (int64, error) {
+	s.callCount++
+	if s.journal != nil {
+		*s.journal = append(*s.journal, "disarm")
+	}
+	if s.disarmErr != nil {
+		return 0, s.disarmErr
+	}
+	return s.disarmed, nil
+}
+
+type stubFenceAnchor struct {
+	value    string
+	found    bool
+	readErr  error
+	writeErr error
+	written  string
+	journal  *[]string
+}
+
+func (s *stubFenceAnchor) Read() (string, bool, error) {
+	if s.readErr != nil {
+		return "", false, s.readErr
+	}
+	return s.value, s.found, nil
+}
+
+func (s *stubFenceAnchor) Write(value string) error {
+	if s.writeErr != nil {
+		return s.writeErr
+	}
+	if s.journal != nil {
+		*s.journal = append(*s.journal, "anchor")
+	}
+	s.written = value
+	s.value, s.found = value, true
+	return nil
+}
+
+const fenceTestToken = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+
+// TestCalendarFeedRestoreFenceFirstBootArmsWithoutDisarming pins the one case
+// that must NOT revoke anything: neither half holds a token, so this is a new
+// installation or the first start after the fence shipped. Disarming here would
+// make the upgrade itself break every armed subscription, which is a different
+// defect from the one the fence exists for.
+func TestCalendarFeedRestoreFenceFirstBootArmsWithoutDisarming(t *testing.T) {
+	appState := &stubFenceAppState{values: map[string]string{}}
+	users := &stubFenceUserStore{disarmed: 7}
+	anchor := &stubFenceAnchor{}
+
+	outcome, err := NewCalendarFeedRestoreFence(appState, users, anchor).Enforce(context.Background())
+	if err != nil {
+		t.Fatalf("Enforce: %v", err)
+	}
+	if !outcome.FirstBoot || outcome.ContinuityBroken || outcome.Unanchored {
+		t.Fatalf("expected a first-boot outcome, got %+v", outcome)
+	}
+	if users.callCount != 0 {
+		t.Fatalf("first boot must not disarm; disarm ran %d time(s)", users.callCount)
+	}
+	if anchor.written == "" {
+		t.Fatal("first boot must write the fence file")
+	}
+	if got := appState.values[models.AppStateKeyCalendarFeedRestoreFence]; got != anchor.written {
+		t.Fatalf("both halves must hold the same token; file %q, app_state %q", anchor.written, got)
+	}
+}
+
+// TestCalendarFeedRestoreFenceAgreementIsANoOp pins the routine restart: the
+// halves agree, so nothing is disarmed and no token is re-minted. Re-minting on
+// every boot would be harmless but would hide a real mismatch behind churn.
+func TestCalendarFeedRestoreFenceAgreementIsANoOp(t *testing.T) {
+	appState := &stubFenceAppState{values: map[string]string{
+		models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken,
+	}}
+	users := &stubFenceUserStore{disarmed: 7}
+	anchor := &stubFenceAnchor{value: fenceTestToken, found: true}
+
+	outcome, err := NewCalendarFeedRestoreFence(appState, users, anchor).Enforce(context.Background())
+	if err != nil {
+		t.Fatalf("Enforce: %v", err)
+	}
+	if outcome != (CalendarFeedRestoreFenceOutcome{}) {
+		t.Fatalf("a matching fence must be a no-op, got %+v", outcome)
+	}
+	if users.callCount != 0 {
+		t.Fatalf("a matching fence must not disarm; disarm ran %d time(s)", users.callCount)
+	}
+	if anchor.written != "" {
+		t.Fatalf("a matching fence must not be rewritten, got %q", anchor.written)
+	}
+}
+
+// TestCalendarFeedRestoreFenceDisarmsWhenTheHalvesDisagree is the finding
+// itself, at the unit level: the file kept the token this run minted while the
+// database came back holding an older one, which is what restoring a backup
+// taken before a revocation looks like under an UNCHANGED SECRET_KEY. Every
+// armed feed goes, and the disarm is ordered before either half of the new
+// token is recorded.
+func TestCalendarFeedRestoreFenceDisarmsWhenTheHalvesDisagree(t *testing.T) {
+	journal := []string{}
+	appState := &stubFenceAppState{
+		values:  map[string]string{models.AppStateKeyCalendarFeedRestoreFence: "an-older-generation"},
+		journal: &journal,
+	}
+	users := &stubFenceUserStore{disarmed: 3, journal: &journal}
+	anchor := &stubFenceAnchor{value: fenceTestToken, found: true, journal: &journal}
+
+	outcome, err := NewCalendarFeedRestoreFence(appState, users, anchor).Enforce(context.Background())
+	if err != nil {
+		t.Fatalf("Enforce: %v", err)
+	}
+	if !outcome.ContinuityBroken || outcome.DisarmedFeeds != 3 {
+		t.Fatalf("expected 3 feeds disarmed on a broken fence, got %+v", outcome)
+	}
+	if got := appState.values[models.AppStateKeyCalendarFeedRestoreFence]; got == "an-older-generation" || got != anchor.written {
+		t.Fatalf("both halves must be re-minted together; file %q, app_state %q", anchor.written, got)
+	}
+	if want := []string{"disarm", "anchor", "set"}; !equalStrings(journal, want) {
+		t.Fatalf("ordering must be %v, got %v", want, journal)
+	}
+}
+
+// TestCalendarFeedRestoreFenceDisarmsWhenOnlyOneHalfHasAToken covers the two
+// asymmetric shapes, both of which mean the database in front of the app is not
+// the one the fence was written against. Restoring a pre-fence backup leaves the
+// file holding a token and the database holding none; a fence volume the
+// operator recreated leaves the mirror image.
+func TestCalendarFeedRestoreFenceDisarmsWhenOnlyOneHalfHasAToken(t *testing.T) {
+	cases := []struct {
+		name   string
+		stored map[string]string
+		anchor *stubFenceAnchor
+	}{
+		{
+			name:   "a backup predating the fence, restored under a running instance",
+			stored: map[string]string{},
+			anchor: &stubFenceAnchor{value: fenceTestToken, found: true},
+		},
+		{
+			name:   "the fence volume was recreated while the database stayed",
+			stored: map[string]string{models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken},
+			anchor: &stubFenceAnchor{},
+		},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			appState := &stubFenceAppState{values: testCase.stored}
+			users := &stubFenceUserStore{disarmed: 2}
+
+			outcome, err := NewCalendarFeedRestoreFence(appState, users, testCase.anchor).Enforce(context.Background())
+			if err != nil {
+				t.Fatalf("Enforce: %v", err)
+			}
+			if !outcome.ContinuityBroken || outcome.DisarmedFeeds != 2 {
+				t.Fatalf("expected the feeds disarmed, got %+v", outcome)
+			}
+			if users.callCount != 1 {
+				t.Fatalf("expected exactly one disarm, got %d", users.callCount)
+			}
+		})
+	}
+}
+
+// TestCalendarFeedRestoreFenceWithoutAnAnchorDisarmsAndRecordsNothing pins the
+// fail-closed default. An unreadable fence — no CALENDAR_FEED_FENCE_PATH, no
+// mount behind it — cannot prove this database still holds the revocations this
+// instance performed, so every armed feed goes and NO marker is written: writing
+// one would make the next boot, still unanchored, look like agreement.
+func TestCalendarFeedRestoreFenceWithoutAnAnchorDisarmsAndRecordsNothing(t *testing.T) {
+	notConfigured := errors.New("CALENDAR_FEED_FENCE_PATH is not set")
+	appState := &stubFenceAppState{values: map[string]string{}}
+	users := &stubFenceUserStore{disarmed: 4}
+
+	outcome, err := NewCalendarFeedRestoreFence(appState, users, &stubFenceAnchor{readErr: notConfigured}).Enforce(context.Background())
+	if err != nil {
+		t.Fatalf("an unusable fence must not fail the boot: %v", err)
+	}
+	if !outcome.Unanchored || outcome.DisarmedFeeds != 4 {
+		t.Fatalf("expected an unanchored disarm of 4, got %+v", outcome)
+	}
+	if !errors.Is(outcome.UnanchoredCause, notConfigured) {
+		t.Fatalf("the outcome must carry the cause for the startup line, got %v", outcome.UnanchoredCause)
+	}
+	if len(appState.values) != 0 {
+		t.Fatalf("an unanchored pass must record no marker, got %v", appState.values)
+	}
+}
+
+// TestCalendarFeedRestoreFenceUnwritableAnchorDisarmsOnAFirstBoot is the
+// upgrade case an operator hits by pulling the new image without adding the
+// mount: the missing directory reads as "no token yet", so only the WRITE can
+// discover it. The pass must fall back to the same fail-closed disarm rather
+// than reporting a first boot it never recorded.
+func TestCalendarFeedRestoreFenceUnwritableAnchorDisarmsOnAFirstBoot(t *testing.T) {
+	unwritable := errors.New("read-only file system")
+	appState := &stubFenceAppState{values: map[string]string{}}
+	users := &stubFenceUserStore{disarmed: 5}
+
+	outcome, err := NewCalendarFeedRestoreFence(appState, users, &stubFenceAnchor{writeErr: unwritable}).Enforce(context.Background())
+	if err != nil {
+		t.Fatalf("an unwritable fence must not fail the boot: %v", err)
+	}
+	if !outcome.Unanchored || outcome.DisarmedFeeds != 5 {
+		t.Fatalf("expected an unanchored disarm of 5, got %+v", outcome)
+	}
+	if len(appState.values) != 0 {
+		t.Fatalf("a fence that was never written must record no marker, got %v", appState.values)
+	}
+}
+
+// TestCalendarFeedRestoreFenceUnwritableAnchorCountsEachRowOnce guards the one
+// arithmetic the two disarm sites share: when the write fails AFTER a
+// continuity-broken disarm has already run, the second (idempotent) disarm
+// reports zero rows and the total must stay the count of rows actually cleared.
+func TestCalendarFeedRestoreFenceUnwritableAnchorCountsEachRowOnce(t *testing.T) {
+	appState := &stubFenceAppState{values: map[string]string{
+		models.AppStateKeyCalendarFeedRestoreFence: "an-older-generation",
+	}}
+	users := &countingFenceUserStore{counts: []int64{6, 0}}
+
+	outcome, err := NewCalendarFeedRestoreFence(appState, users, &stubFenceAnchor{
+		value: fenceTestToken, found: true, writeErr: errors.New("read-only file system"),
+	}).Enforce(context.Background())
+	if err != nil {
+		t.Fatalf("Enforce: %v", err)
+	}
+	if !outcome.Unanchored || outcome.DisarmedFeeds != 6 {
+		t.Fatalf("expected 6 rows counted once, got %+v", outcome)
+	}
+}
+
+// TestCalendarFeedRestoreFencePropagatesDatabaseFailures separates the two
+// failure classes the fence deliberately treats differently: a DATABASE error
+// is returned and fails the boot, and a failed disarm must leave the stored
+// marker untouched so the whole pass retries on the next start.
+func TestCalendarFeedRestoreFencePropagatesDatabaseFailures(t *testing.T) {
+	readFailure := errors.New("app_state read failed")
+	if _, err := NewCalendarFeedRestoreFence(
+		&stubFenceAppState{getErr: readFailure},
+		&stubFenceUserStore{},
+		&stubFenceAnchor{value: fenceTestToken, found: true},
+	).Enforce(context.Background()); !errors.Is(err, readFailure) {
+		t.Fatalf("expected the app_state read failure, got %v", err)
+	}
+
+	disarmFailure := errors.New("disarm failed")
+	appState := &stubFenceAppState{values: map[string]string{
+		models.AppStateKeyCalendarFeedRestoreFence: "an-older-generation",
+	}}
+	anchor := &stubFenceAnchor{value: fenceTestToken, found: true}
+	if _, err := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{disarmErr: disarmFailure}, anchor).Enforce(context.Background()); !errors.Is(err, disarmFailure) {
+		t.Fatalf("expected the disarm failure, got %v", err)
+	}
+	if got := appState.values[models.AppStateKeyCalendarFeedRestoreFence]; got != "an-older-generation" {
+		t.Fatalf("a failed disarm must keep the old marker, got %q", got)
+	}
+	if anchor.written != "" {
+		t.Fatalf("a failed disarm must not write the fence file, got %q", anchor.written)
+	}
+}
+
+// TestCalendarFeedRestoreFenceAdvanceMovesBothHalvesTogether pins what makes
+// the boot comparison able to see a restore at all. A token minted once per
+// boot agrees with any backup taken during that same boot — and the supported
+// procedure takes the backup with the app stopped, so that is the ordinary
+// case, not a corner. Advancing on the change itself is what puts the backup's
+// copy behind the file's.
+func TestCalendarFeedRestoreFenceAdvanceMovesBothHalvesTogether(t *testing.T) {
+	appState := &stubFenceAppState{values: map[string]string{
+		models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken,
+	}}
+	anchor := &stubFenceAnchor{value: fenceTestToken, found: true}
+	fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor)
+
+	if err := fence.Advance(context.Background()); err != nil {
+		t.Fatalf("Advance: %v", err)
+	}
+
+	advanced := appState.values[models.AppStateKeyCalendarFeedRestoreFence]
+	if advanced == fenceTestToken || advanced == "" {
+		t.Fatalf("the database half must move to a fresh token, got %q", advanced)
+	}
+	if anchor.written != advanced {
+		t.Fatalf("both halves must hold the same token; file %q, app_state %q", anchor.written, advanced)
+	}
+
+	// And the boot that follows sees an ordinary restart, not a restore.
+	outcome, err := fence.Enforce(context.Background())
+	if err != nil {
+		t.Fatalf("Enforce after Advance: %v", err)
+	}
+	if outcome != (CalendarFeedRestoreFenceOutcome{}) {
+		t.Fatalf("a boot after an advance must be a no-op, got %+v", outcome)
+	}
+}
+
+// TestCalendarFeedRestoreFenceAdvanceBreaksTheFenceWhenTheFileRefuses pins the
+// fail-closed half. An owner revoking a feed must not be refused because a
+// volume could not be written, and the revocation must not be reported as
+// durable when it is not. Letting the database half move on ALONE satisfies
+// both: the call succeeds, the halves now disagree, and the next boot answers
+// that by disarming every feed.
+func TestCalendarFeedRestoreFenceAdvanceBreaksTheFenceWhenTheFileRefuses(t *testing.T) {
+	appState := &stubFenceAppState{values: map[string]string{
+		models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken,
+	}}
+	anchor := &stubFenceAnchor{value: fenceTestToken, found: true, writeErr: errors.New("read-only file system")}
+	// Row counts per call, as the real bulk disarm reports them: the rows go on
+	// the first pass and the second finds none.
+	users := &countingFenceUserStore{counts: []int64{2, 0}}
+	fence := NewCalendarFeedRestoreFence(appState, users, anchor)
+
+	if err := fence.Advance(context.Background()); err != nil {
+		t.Fatalf("a revocation must not fail because the fence file refused: %v", err)
+	}
+	if anchor.value != fenceTestToken {
+		t.Fatalf("the file half must be left where it was, got %q", anchor.value)
+	}
+	if appState.values[models.AppStateKeyCalendarFeedRestoreFence] == fenceTestToken {
+		t.Fatal("the database half must move on alone, so the halves disagree")
+	}
+
+	outcome, err := fence.Enforce(context.Background())
+	if err != nil {
+		t.Fatalf("Enforce: %v", err)
+	}
+	if !outcome.Unanchored || outcome.DisarmedFeeds != 2 {
+		t.Fatalf("the next boot must disarm; got %+v", outcome)
+	}
+}
+
+// countingFenceUserStore returns a different row count per call, so a test can
+// tell one disarm's rows from the next call's.
+type countingFenceUserStore struct {
+	counts []int64
+	calls  int
+}
+
+func (s *countingFenceUserStore) DisarmAllCalendarFeedTokens(_ context.Context) (int64, error) {
+	count := int64(0)
+	if s.calls < len(s.counts) {
+		count = s.counts[s.calls]
+	}
+	s.calls++
+	return count, nil
+}
+
+func equalStrings(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for index := range got {
+		if got[index] != want[index] {
+			return false
+		}
+	}
+	return true
+}

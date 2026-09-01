@@ -84,7 +84,7 @@ func runResetPasswordCommand(databaseConfig db.Config, email string, prompt pass
 		return errors.New("password is required")
 	}
 
-	repositories := db.NewRepositories(database)
+	repositories := buildRepositories(database)
 	authService := services.NewAuthService(repositories.Users)
 	if err := authService.ForceResetPasswordByEmail(context.Background(), normalizedEmail, string(newPassword)); err != nil {
 		switch {

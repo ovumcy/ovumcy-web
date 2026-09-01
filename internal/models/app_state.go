@@ -18,6 +18,18 @@ const AppStateKeyLastReminderRunDate = "last_reminder_run_date"
 // through its key-independent bcrypt hash.
 const AppStateKeyCalendarFeedKeyEpoch = "calendar_feed_key_epoch"
 
+// AppStateKeyCalendarFeedRestoreFence is the app_state key under which the
+// boot-time restore fence records the token identifying the run of this
+// instance that last wrote this database. Its twin lives OUTSIDE the database
+// (security.CalendarFeedFenceFile, an operator-mounted path no database backup
+// carries), which is the whole point: the key-epoch value above is restored
+// together with the feed columns, so it can never disagree with them, while
+// this one survives the restore and disagrees with the rolled-back copy. A
+// mismatch means the database is not the one this instance last ran with — a
+// restore, or a recreated fence — and every armed feed is disarmed, MAC or not,
+// because SECRET_KEY did not change and each of them would still verify.
+const AppStateKeyCalendarFeedRestoreFence = "calendar_feed_restore_fence"
+
 // AppStateKeyAuthEmailRenormalizeV1 marks the one-shot boot pass that rewrote
 // auth emails stored by the pre-strict normalizer (which kept a whole
 // display-name-decorated input verbatim) down to the bare parsed address, so
@@ -39,7 +51,8 @@ const AppStateKeyLutealPhaseRecomputeV1 = "luteal_phase_recompute.v1"
 // scoped by user_id — it is deliberately outside the users table. Value is
 // opaque TEXT with a single writer per key: the scheduler goroutine owns
 // last_reminder_run_date, while the boot-time key-rotation sentinel
-// (calendar_feed_key_epoch), the one-shot email renormalizer
+// (calendar_feed_key_epoch), the boot-time restore fence
+// (calendar_feed_restore_fence), the one-shot email renormalizer
 // (auth_email_renormalize.v1) and the one-shot luteal-phase recompute
 // (luteal_phase_recompute.v1) write their markers before the server starts
 // serving (never concurrently with it).
