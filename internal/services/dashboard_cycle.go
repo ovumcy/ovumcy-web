@@ -197,6 +197,70 @@ func DashboardAwaitingFirstCycle(stats CycleStats) bool {
 	return stats.CompletedCycleCount < 1
 }
 
+// SuppressionReason names ONE medical-safety signal that withheld a projection,
+// in a stable spelling a client outside the instance may branch on. The strings
+// are wire values: rename one and every consumer's branch goes quiet, so treat
+// them as a published contract, not as labels.
+type SuppressionReason string
+
+const (
+	SuppressionReasonUnpredictableCycle SuppressionReason = "unpredictable_cycle"
+	SuppressionReasonPregnancyPause     SuppressionReason = "pregnancy_pause"
+	SuppressionReasonCycleOverdue       SuppressionReason = "cycle_overdue"
+	SuppressionReasonAwaitingFirstCycle SuppressionReason = "awaiting_first_cycle"
+)
+
+// PredictionSuppression is the resolved verdict of the two predicates above plus
+// the reasons behind it. The two booleans are the DECISION and are read off the
+// predicates, never rebuilt from the signals; Reasons only EXPLAINS a decision
+// already made, which is why a surface gates on the booleans and publishes the
+// reasons.
+//
+// The fields carry the predicates' own names on purpose: the recombination sweep
+// recognises a signal by the identifier that names it
+// (prediction_suppression_recombination_barrier_test.go), so a caller that ORs
+// these two back together is flagged exactly as one spelling the disjuncts out
+// would be.
+type PredictionSuppression struct {
+	PredictionsSuppressed bool
+	FertilitySuppressed   bool
+	Reasons               []SuppressionReason
+}
+
+// ResolvePredictionSuppression answers what a surface may publish and why. It
+// lives in this file because it is the only place the four signals may be named
+// together: everywhere else they are read through the two predicates.
+//
+// Reasons is ordered by the predicate the signal belongs to — the three
+// whole-projection signals first, the fertility-only floor last — so a payload
+// diffed between two releases moves only when the state does. A verdict may
+// carry no reason at all: neither predicate is suppressing, which is the
+// ordinary case.
+//
+// A fifth signal added to either predicate MUST get its reason here, or the
+// payload says "suppressed" with nothing naming why.
+// TestEverySuppressionSignalHasAPublishedReason fails until it does.
+func ResolvePredictionSuppression(user *models.User, stats CycleStats) PredictionSuppression {
+	verdict := PredictionSuppression{
+		PredictionsSuppressed: PredictionsSuppressed(user, stats),
+		FertilitySuppressed:   FertilityProjectionSuppressed(user, stats),
+	}
+
+	if DashboardPredictionDisabled(user) {
+		verdict.Reasons = append(verdict.Reasons, SuppressionReasonUnpredictableCycle)
+	}
+	if stats.PregnancyPaused {
+		verdict.Reasons = append(verdict.Reasons, SuppressionReasonPregnancyPause)
+	}
+	if DashboardCycleOverdue(user, stats) {
+		verdict.Reasons = append(verdict.Reasons, SuppressionReasonCycleOverdue)
+	}
+	if DashboardAwaitingFirstCycle(stats) {
+		verdict.Reasons = append(verdict.Reasons, SuppressionReasonAwaitingFirstCycle)
+	}
+	return verdict
+}
+
 func DashboardCycleDayLooksLong(currentDay int, referenceLength int) bool {
 	if currentDay <= 0 || referenceLength <= 0 {
 		return false

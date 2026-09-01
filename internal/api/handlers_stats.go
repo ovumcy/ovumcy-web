@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 func (handler *Handler) GetStatsOverview(c fiber.Ctx) error {
@@ -19,5 +20,10 @@ func (handler *Handler) GetStatsOverview(c fiber.Ctx) error {
 		return handler.respondMappedError(c, statsFetchErrorSpec())
 	}
 
-	return c.JSON(stats)
+	// The same adapter /stats and the dashboard publish through: this endpoint
+	// used to serialize the domain struct, so every date those pages withhold
+	// left the instance as JSON (medical safety — suppression is the floor).
+	published, suppression := services.PublishedStats(user, stats)
+
+	return c.JSON(newStatsOverviewResponse(published, suppression, translateMessage(currentMessages(c), medicalDisclaimerMessageKey)))
 }

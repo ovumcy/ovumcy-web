@@ -644,10 +644,161 @@ components:
     StatsOverview:
       type: object
       description: |
-        Aggregate statistics for the current owner. The field set evolves
-        between releases — treat unknown fields as informational, do not error
-        on them.
-      additionalProperties: true
+        Aggregate cycle statistics for the current owner.
+
+        Recorded history — the observed cycle lengths, the last period start,
+        the current cycle day — is published in every state. Every PROJECTED
+        date is `null` while the projection it belongs to is suppressed: read
+        `suppression` for whether and why. The instance withholds a claim it
+        cannot stand behind rather than qualifying it, so an absent date is a
+        decision, never a gap in the data.
+      required:
+        - current_cycle_day
+        - current_phase
+        - current_fertility
+        - average_cycle_length
+        - median_cycle_length
+        - min_cycle_length
+        - max_cycle_length
+        - cycle_length_std_dev
+        - completed_cycle_count
+        - average_period_length
+        - last_cycle_length
+        - last_period_length
+        - luteal_phase
+        - last_period_start
+        - next_period_start
+        - ovulation_date
+        - ovulation_exact
+        - ovulation_impossible
+        - fertility_window_start
+        - fertility_window_end
+        - pregnancy_paused
+        - suppression
+        - disclaimer
+        - disclaimer_key
+      properties:
+        current_cycle_day:
+          type: integer
+          description: Day of the running cycle, 1-based. `0` before any cycle anchor exists.
+        current_phase:
+          type: string
+          enum: [menstrual, follicular, ovulation, luteal, unknown]
+          description: >-
+            Phase taxonomy. "Fertile" is a status, never a phase — see
+            `current_fertility`.
+        current_fertility:
+          type: string
+          enum: [fertile, not_fertile, unknown]
+          description: >-
+            Whether today falls inside the predicted fertile window — the axis
+            orthogonal to `current_phase`. `unknown` whenever
+            `suppression.fertility` is true.
+        average_cycle_length:
+          type: number
+          format: double
+        median_cycle_length:
+          type: integer
+        min_cycle_length:
+          type: integer
+        max_cycle_length:
+          type: integer
+        cycle_length_std_dev:
+          type: number
+          format: double
+        completed_cycle_count:
+          type: integer
+          description: >-
+            Completed cycles observed. Zero is the first-cycle floor: the
+            fertility half of the projection has nothing but the onboarding
+            cycle-length setting behind it and is suppressed.
+        average_period_length:
+          type: number
+          format: double
+        last_cycle_length:
+          type: integer
+        last_period_length:
+          type: integer
+        luteal_phase:
+          type: integer
+          description: Days following ovulation; per-owner when inferable, else the 14-day default.
+        last_period_start:
+          type: string
+          format: date
+          nullable: true
+          description: Recorded anchor, not a projection. Null only when no cycle start is known.
+        next_period_start:
+          type: string
+          format: date
+          nullable: true
+          description: Projected. Null when `suppression.predictions` is true.
+        ovulation_date:
+          type: string
+          format: date
+          nullable: true
+          description: Projected. Null when `suppression.fertility` is true.
+        ovulation_exact:
+          type: boolean
+          description: >-
+            The ovulation date is anchored on an observation rather than on the
+            cycle-length fallback. Always false when `ovulation_date` is null.
+        ovulation_impossible:
+          type: boolean
+          description: No ovulation can be placed in the running cycle at all.
+        fertility_window_start:
+          type: string
+          format: date
+          nullable: true
+          description: Projected. Null when `suppression.fertility` is true.
+        fertility_window_end:
+          type: string
+          format: date
+          nullable: true
+          description: Projected. Null when `suppression.fertility` is true.
+        pregnancy_paused:
+          type: boolean
+          description: >-
+            A positive pregnancy test with no later cycle start. One of the
+            signals behind `suppression`.
+        suppression:
+          $ref: '#/components/schemas/StatsOverviewSuppression'
+        disclaimer:
+          type: string
+          description: >-
+            The medical-safety disclaimer in the owner's interface language.
+            Render it wherever any of these values is shown.
+        disclaimer_key:
+          type: string
+          description: >-
+            Stable catalogue key of `disclaimer` (`medical.disclaimer`), so a
+            client can branch on it without parsing translated prose.
+      additionalProperties: false
+
+    StatsOverviewSuppression:
+      type: object
+      description: |
+        Why the payload withholds a projection. `predictions` covers every
+        projected date; `fertility` covers the fertility half only (ovulation
+        date and fertile window) and is true whenever `predictions` is.
+      required: [predictions, fertility, reasons]
+      properties:
+        predictions:
+          type: boolean
+        fertility:
+          type: boolean
+        reasons:
+          type: array
+          description: >-
+            Signals that hold right now — possibly several at once, possibly
+            none. Never null.
+          items:
+            type: string
+            enum:
+              - unpredictable_cycle
+              - pregnancy_pause
+              - cycle_overdue
+              - awaiting_first_cycle
+      additionalProperties: false
 
     ExportJSONEntry:
       type: object

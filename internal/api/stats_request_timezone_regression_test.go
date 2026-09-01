@@ -37,15 +37,19 @@ func TestStatsOverviewUsesRequestTimezoneForCycleContext(t *testing.T) {
 	response := mustAppResponse(t, app, request)
 	assertStatusCode(t, response, http.StatusOK)
 
-	payload := services.CycleStats{}
+	payload := StatsOverviewResponse{}
 	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode stats overview payload: %v", err)
 	}
 
-	gotLastPeriodStart := services.DateAtLocation(payload.LastPeriodStart.In(location), location).Format("2006-01-02")
+	if payload.LastPeriodStart == nil {
+		t.Fatal("expected a recorded last_period_start, got null")
+	}
+	// The wire value is a calendar day, so the request timezone shows in the
+	// published date itself rather than in the reader's conversion of an instant.
 	wantLastPeriodStart := localToday.Format("2006-01-02")
-	if gotLastPeriodStart != wantLastPeriodStart {
-		t.Fatalf("expected request-local last_period_start %q, got %q", wantLastPeriodStart, gotLastPeriodStart)
+	if *payload.LastPeriodStart != wantLastPeriodStart {
+		t.Fatalf("expected request-local last_period_start %q, got %q", wantLastPeriodStart, *payload.LastPeriodStart)
 	}
 }
 

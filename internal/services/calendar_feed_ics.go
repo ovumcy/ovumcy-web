@@ -120,7 +120,10 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 	// BuildCycleStatsFromLogs runs precisely the dashboard's stats derivation
 	// (baseline + pregnancy-pause resolution) without a store, exactly as
 	// DecideDueReminders does.
-	stats := BuildCycleStatsFromLogs(user, input.Logs, input.Now, input.Location)
+	// Published through the one adapter every projection surface shares, so the
+	// feed holds the same cleared stats the pages and the JSON API publish, and
+	// reads the verdict it returns rather than asking the predicates again.
+	stats, suppression := PublishedStats(user, BuildCycleStatsFromLogs(user, input.Logs, input.Now, input.Location))
 
 	// Medical-safety suppression gate: if the app suppresses predictions, emit
 	// nothing. Unpredictable-cycle mode, a pregnancy pause, OR an overdue cycle
@@ -129,7 +132,7 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 	// suppress on their own, and they are read here through the one predicate
 	// every surface shares. The feed carries prediction events only, so this is
 	// the empty-but-well-formed VCALENDAR path.
-	if PredictionsSuppressed(user, stats) {
+	if suppression.PredictionsSuppressed {
 		return nil
 	}
 
@@ -137,7 +140,7 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 	// cycle behind it, the projected ovulation day is the onboarding slider, and
 	// this feed sends it off the instance into a calendar client that keeps it
 	// long after the app would correct it (FertilityProjectionSuppressed).
-	includeOvulation := !FertilityProjectionSuppressed(user, stats)
+	includeOvulation := !suppression.FertilitySuppressed
 
 	today := DateAtLocation(input.Now, input.Location)
 	cycleLength := DashboardProjectionCycleLength(user, stats)
