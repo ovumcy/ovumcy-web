@@ -18,11 +18,12 @@
     fertility half specifically is (`fertility`), and why (`reasons`: `unpredictable_cycle`,
     `pregnancy_pause`, `cycle_overdue`, `awaiting_first_cycle`). A withheld date is a decision the
     payload names, not a gap to guess at.
-  - `current_phase` reports `unknown` instead of `follicular` / `ovulation` / `luteal` while
-    predictions are withheld: those three name today's position relative to the projected ovulation
-    date, so publishing one beside a withheld date stated the same claim in a word. `menstrual`
-    follows recorded period days and is unaffected, as is the phase shown to an account with no
-    completed cycle yet, which is anchored on a recorded start.
+  - `current_phase` reports `unknown` instead of `follicular` / `ovulation` / `luteal` whenever the
+    ovulation date is withheld: those three name today's position relative to it, so publishing one
+    beside a withheld date stated the same claim in a word. `menstrual` follows recorded period days
+    and is unaffected. This also applies before the first completed cycle, where the projected day
+    has only the onboarding cycle-length setting behind it — the stats page and the dashboard show
+    the same `unknown` there now.
   - `disclaimer` carries the medical-safety line in the account's language, with `disclaimer_key`
     beside it for clients that would rather branch on a stable key than on translated text.
   - The field set is now fixed and documented in `docs/openapi.yaml`, which lists every field

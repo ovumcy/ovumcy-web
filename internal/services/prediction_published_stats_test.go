@@ -237,8 +237,8 @@ func TestPublishedStatsClearsEveryDateItsVerdictRefuses(t *testing.T) {
 // date states the withheld claim in a word.
 //
 // The three cases are the whole rule: a projection-derived phase goes, a
-// recorded one stays, and the fertility-only tier keeps its phase because that
-// floor withholds the fertility half alone.
+// recorded one stays, and the fertility-only tier clears it too — the day those
+// labels are read off is exactly what that floor withholds.
 func TestPublishedStatsDropsAPhaseWhoseOnlySourceIsTheClearedProjection(t *testing.T) {
 	paused := func(phase string) CycleStats {
 		stats := publishedStatsBase()
@@ -257,7 +257,7 @@ func TestPublishedStatsDropsAPhaseWhoseOnlySourceIsTheClearedProjection(t *testi
 	}{
 		{name: "projected phase under the whole-projection gate", stats: paused(cyclePhaseOvulation), want: cyclePhaseUnknown},
 		{name: "recorded phase under the whole-projection gate", stats: paused(cyclePhaseMenstrual), want: cyclePhaseMenstrual},
-		{name: "projected phase under the first-cycle floor", stats: firstCycle, want: cyclePhaseFollicular},
+		{name: "projected phase under the first-cycle floor", stats: firstCycle, want: cyclePhaseUnknown},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			published, _ := PublishedStats(&models.User{}, testCase.stats)

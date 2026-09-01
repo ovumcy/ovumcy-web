@@ -48,6 +48,13 @@ type statsOverviewState struct {
 	wantPredictions   bool
 	wantFertility     bool
 	wantNextPeriodSet bool
+	// wantsFertilityHook says the stats page renders data-fertility-status in
+	// this tier, so the parity subtest knows whether an absent hook is the page
+	// answering on another branch or the comparison silently not happening. It is
+	// asserted per state rather than counted across them: a counter read after
+	// t.Run would be both unsynchronised and read too early the day a subtest
+	// takes t.Parallel.
+	wantsFertilityHook bool
 }
 
 func statsOverviewStates() []statsOverviewState {
@@ -61,6 +68,8 @@ func statsOverviewStates() []statsOverviewState {
 			wantPredictions:   false,
 			wantFertility:     true,
 			wantNextPeriodSet: true,
+			// No history, so the page renders its empty state instead of the cards.
+			wantsFertilityHook: false,
 		},
 		{
 			name:    "active pregnancy pause",
@@ -75,6 +84,9 @@ func statsOverviewStates() []statsOverviewState {
 			wantReasons:     []string{"pregnancy_pause"},
 			wantPredictions: true,
 			wantFertility:   true,
+			// A pause reports PredictionDisabled through the cycle context, so the
+			// page takes the same facts-only branch unpredictable mode does.
+			wantsFertilityHook: false,
 		},
 		{
 			name:    "unpredictable cycle mode",
@@ -85,6 +97,9 @@ func statsOverviewStates() []statsOverviewState {
 			wantReasons:     []string{"unpredictable_cycle"},
 			wantPredictions: true,
 			wantFertility:   true,
+			// Unpredictable mode is the page's facts-only tier: it publishes no
+			// fertility status at all, which is the stricter answer.
+			wantsFertilityHook: false,
 		},
 		{
 			// The history is itself overdue: the anchor is the latest recorded
@@ -99,6 +114,10 @@ func statsOverviewStates() []statsOverviewState {
 			wantReasons:     []string{"cycle_overdue"},
 			wantPredictions: true,
 			wantFertility:   true,
+			// The overdue tier is the one that suppresses the projection and still
+			// renders a status, so it is where the two surfaces must agree on the
+			// value rather than both on silence.
+			wantsFertilityHook: true,
 		},
 	}
 }
@@ -153,7 +172,9 @@ func TestStatsOverviewWithholdsEveryProjectionItsGatesRefuse(t *testing.T) {
 
 			// A phase label whose only source is the cleared ovulation date would
 			// state the withheld claim in a word — "ovulation" beside a null date.
-			if state.wantPredictions && payload.CurrentPhase != "menstrual" && payload.CurrentPhase != "unknown" {
+			// Every state here suppresses the fertility half, which is the gate that
+			// clears the day those three labels are positions relative to.
+			if payload.CurrentPhase != "menstrual" && payload.CurrentPhase != "unknown" {
 				t.Fatalf("current_phase = %q while every projected date is withheld", payload.CurrentPhase)
 			}
 
@@ -196,13 +217,11 @@ func TestStatsOverviewPublishesAWholeProjectionWhenNothingSuppressesIt(t *testin
 //
 // The page renders that hook only in the tiers that have a fertility status —
 // unpredictable-cycle mode takes the facts-only branch instead — so a missing
-// hook cannot be a failure. It also cannot be allowed to read as agreement:
-// counting the comparisons and requiring at least one is what keeps a renamed
-// attribute, or a widened facts-only branch, from turning all four subtests into
-// a green report about nothing.
+// hook cannot be a failure everywhere. It also cannot be allowed to read as
+// agreement: each state DECLARES whether the page publishes one, so a renamed
+// attribute or a widened facts-only branch reds the states that must render it
+// rather than turning every subtest into a green report about nothing.
 func TestStatsOverviewAgreesWithTheStatsPageOnFertility(t *testing.T) {
-	compared := 0
-
 	for _, state := range statsOverviewStates() {
 		t.Run(state.name, func(t *testing.T) {
 			app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
@@ -213,8 +232,11 @@ func TestStatsOverviewAgreesWithTheStatsPageOnFertility(t *testing.T) {
 			_, payload := fetchStatsOverview(t, app, authCookie)
 			document := fetchStatsPageDocument(t, app, authCookie)
 
-			if node := findHTMLNodeWithAttr(document, "data-fertility-status"); node != nil {
-				compared++
+			node := findHTMLNodeWithAttr(document, "data-fertility-status")
+			if (node != nil) != state.wantsFertilityHook {
+				t.Fatalf("the page rendered data-fertility-status = %v, want %v — with no hook this test compares nothing and would pass the same way if the two surfaces disagreed", node != nil, state.wantsFertilityHook)
+			}
+			if node != nil {
 				if rendered := htmlAttr(node, "data-fertility-status"); rendered != payload.CurrentFertility {
 					t.Fatalf("the page renders fertility %q while the API publishes %q", rendered, payload.CurrentFertility)
 				}
@@ -223,10 +245,6 @@ func TestStatsOverviewAgreesWithTheStatsPageOnFertility(t *testing.T) {
 				t.Fatal("the page names a fertile window while the API suppresses the fertility half")
 			}
 		})
-	}
-
-	if compared == 0 {
-		t.Fatal("no state rendered data-fertility-status — this test compared nothing, and would have passed the same way if the two surfaces disagreed everywhere")
 	}
 }
 
@@ -277,20 +295,37 @@ func TestStatsOverviewCarriesTheDisclaimerWithoutTheLanguageMiddleware(t *testin
 	if err != nil {
 		t.Fatalf("init i18n: %v", err)
 	}
-	handler := &Handler{i18n: manager}
+	probe := func(t *testing.T, handler *Handler) string {
+		t.Helper()
 
-	app := fiber.New()
-	app.Get("/probe", func(c fiber.Ctx) error {
-		return c.SendString(handler.medicalDisclaimer(c))
+		app := fiber.New()
+		app.Get("/probe", func(c fiber.Ctx) error {
+			return c.SendString(handler.medicalDisclaimer(c))
+		})
+
+		response := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, "/probe", nil))
+		assertStatusCode(t, response, http.StatusOK)
+		return mustReadBodyString(t, response.Body)
+	}
+
+	t.Run("falls back to the server's default language", func(t *testing.T) {
+		disclaimer := probe(t, &Handler{i18n: manager})
+
+		if disclaimer == medicalDisclaimerMessageKey || strings.TrimSpace(disclaimer) == "" {
+			t.Fatalf("disclaimer = %q with no request catalogue — the payload must fall back to the server's default language, not to the key", disclaimer)
+		}
 	})
 
-	response := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, "/probe", nil))
-	assertStatusCode(t, response, http.StatusOK)
-	disclaimer := mustReadBodyString(t, response.Body)
-
-	if disclaimer == medicalDisclaimerMessageKey || strings.TrimSpace(disclaimer) == "" {
-		t.Fatalf("disclaimer = %q with no request catalogue — the payload must fall back to the server's default language, not to the key", disclaimer)
-	}
+	// A handler with no catalogue at all is never production — NewHandler takes a
+	// manager — only a partially wired test one. It answers empty rather than
+	// panicking, matching what the egress adapter does with a nil manager, and
+	// never the key: an empty string is visibly missing framing, while the key
+	// would read as framing that happens to be untranslated.
+	t.Run("a handler with no catalogue answers empty, never the key", func(t *testing.T) {
+		if disclaimer := probe(t, &Handler{}); disclaimer != "" {
+			t.Fatalf("disclaimer = %q with no i18n manager, want empty", disclaimer)
+		}
+	})
 }
 
 func newStatsOverviewOwner(t *testing.T, app *fiber.App, database *gorm.DB, email string) (models.User, string, time.Time) {

@@ -53,12 +53,12 @@ func PublishedStats(user *models.User, stats CycleStats) (CycleStats, Prediction
 		stats.FertilityWindowStart = time.Time{}
 		stats.FertilityWindowEnd = time.Time{}
 		stats.CurrentFertility = FertilityStatusUnknown
-	}
-	if suppression.PredictionsSuppressed {
-		stats.NextPeriodStart = time.Time{}
 		if projectedCyclePhase(stats.CurrentPhase) {
 			stats.CurrentPhase = cyclePhaseUnknown
 		}
+	}
+	if suppression.PredictionsSuppressed {
+		stats.NextPeriodStart = time.Time{}
 	}
 	return stats, suppression
 }
@@ -73,10 +73,13 @@ func PublishedStats(user *models.User, stats CycleStats) (CycleStats, Prediction
 // the date was withheld for — a client reading "ovulation" learns the day it
 // asked about, from a payload that answered null.
 //
-// It is the whole-projection gate that clears these, not the fertility one: the
-// zero-completed-cycle tier deliberately keeps the phase, which follows the
-// recorded anchor and is why DashboardAwaitingFirstCycle withholds the fertility
-// half alone.
+// It is the FERTILITY gate that clears these, the same one that clears the date
+// they are read off — including in the zero-completed-cycle tier, where the
+// projected ovulation day has only the onboarding cycle-length setting behind
+// it. DashboardAwaitingFirstCycle's "the phase stays, it follows the recorded
+// anchor" holds for menstrual, which does follow one; for the other three the
+// anchor reaches them only through the projection this tier withholds, so
+// keeping them published the withheld day in a word.
 func projectedCyclePhase(phase string) bool {
 	switch phase {
 	case cyclePhaseFollicular, cyclePhaseOvulation, cyclePhaseLuteal:
