@@ -428,7 +428,7 @@ func TestCalendarFeedRestoreFenceConcurrentAdvancesLeaveTheHalvesAgreeing(t *tes
 // caller is still queued on the lock, so the wait times out and that timeout IS
 // the proof. An unserialized fence produces it immediately and fails here.
 func TestCalendarFeedRestoreFenceAdvanceIsMutuallyExclusive(t *testing.T) {
-	anchor := &overlapDetectingFenceAnchor{}
+	anchor := newOverlapDetectingFenceAnchor()
 	fence := NewCalendarFeedRestoreFence(&serializedFenceAppState{}, &stubFenceUserStore{}, anchor)
 
 	var waiting sync.WaitGroup
@@ -441,6 +441,17 @@ func TestCalendarFeedRestoreFenceAdvanceIsMutuallyExclusive(t *testing.T) {
 			}
 		}()
 	}
+
+	// Wait for the first caller to be inside, then give the second one the same
+	// chance to arrive. Serialized, it cannot: it is queued on the fence's lock
+	// while this one is held here.
+	<-anchor.arrived
+	select {
+	case <-anchor.arrived:
+		anchor.overlapped.Store(true)
+	case <-time.After(500 * time.Millisecond):
+	}
+	close(anchor.release)
 	waiting.Wait()
 
 	if anchor.overlapped.Load() {
@@ -453,16 +464,27 @@ func TestCalendarFeedRestoreFenceAdvanceIsMutuallyExclusive(t *testing.T) {
 	}
 }
 
-// overlapDetectingFenceAnchor counts how many callers are inside Write at once.
-// It holds the window open long enough that a caller which is NOT queued on a
-// lock is certain to arrive during it, so a false pass would need a scheduler
-// that never runs the second goroutine for 150 ms.
+// overlapDetectingFenceAnchor counts how many callers are inside Write at once,
+// and holds the first one there until the test releases it. The wait is a
+// handshake rather than a sleep on purpose: a fixed delay would let an
+// unserialized fence pass whenever the second goroutine happened to be
+// scheduled late, which is the one direction this guard must not be wrong in.
+// The bound exists only so a serialized run terminates.
 type overlapDetectingFenceAnchor struct {
 	mutex      sync.Mutex
 	value      string
 	inside     atomic.Int32
 	entries    atomic.Int32
 	overlapped atomic.Bool
+	arrived    chan struct{}
+	release    chan struct{}
+}
+
+func newOverlapDetectingFenceAnchor() *overlapDetectingFenceAnchor {
+	return &overlapDetectingFenceAnchor{
+		arrived: make(chan struct{}, 2),
+		release: make(chan struct{}),
+	}
 }
 
 func (s *overlapDetectingFenceAnchor) Read() (string, bool, error) {
@@ -476,7 +498,14 @@ func (s *overlapDetectingFenceAnchor) Write(value string) error {
 	if s.inside.Add(1) > 1 {
 		s.overlapped.Store(true)
 	}
-	time.Sleep(150 * time.Millisecond)
+	s.arrived <- struct{}{}
+	// Wait to be released, so the first caller is still INSIDE while the test
+	// looks. A serialized fence keeps the second caller on the lock and never
+	// closes this, hence the bound.
+	select {
+	case <-s.release:
+	case <-time.After(2 * time.Second):
+	}
 	s.inside.Add(-1)
 
 	s.mutex.Lock()
