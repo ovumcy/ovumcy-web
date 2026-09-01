@@ -18,7 +18,7 @@
 // that means the partition and the merge have gone out of sync, so this
 // fails loudly rather than silently keeping one copy.
 //
-// Usage: mutationmerge -in <dir> -glob <pattern> -out <file>
+// Usage: mutationmerge -in <dir> -glob <pattern> -out <file> [-expect <n>]
 package main
 
 import (
@@ -44,10 +44,11 @@ func main() {
 	inDir := flag.String("in", "", "directory to search for shard JSON reports")
 	pattern := flag.String("glob", "*.json", "glob (relative to -in) matching shard report files")
 	outPath := flag.String("out", "", "path to write the merged JSON report")
+	expect := flag.Int("expect", 0, "expected number of shard report files; 0 disables the check")
 	flag.Parse()
 
 	if *inDir == "" || *outPath == "" {
-		fatalf("usage: mutationmerge -in <dir> -glob <pattern> -out <file>")
+		fatalf("usage: mutationmerge -in <dir> -glob <pattern> -out <file> [-expect <n>]")
 	}
 
 	matches, err := findShardFiles(*inDir, *pattern)
@@ -56,6 +57,16 @@ func main() {
 	}
 	if len(matches) == 0 {
 		fatalf("no shard report files matched %s under %s — nothing to merge", *pattern, *inDir)
+	}
+	// A shard whose "Verify mutation output was produced" guard fails still
+	// leaves the merge free to run (mutation-merge's own `if: always()`), and
+	// its upload is `if-no-files-found: ignore` — so a missing shard is
+	// otherwise invisible here: mergeReports below only checks go_module
+	// agreement and file_name overlap, neither of which a missing FILE trips.
+	// Without this, the merge would fold N-1 shards into a report published
+	// under the same canonical name a complete run uses, reading as whole.
+	if *expect > 0 && len(matches) != *expect {
+		fatalf("found %d shard report(s) under %s, expected %d — a shard's guard likely failed and its upload was skipped; refusing to publish a partial report as if it were complete", len(matches), *inDir, *expect)
 	}
 
 	merged, err := mergeReports(matches)
