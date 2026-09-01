@@ -175,6 +175,13 @@ func TestDashboardOvulationLineOutranksTheIrregularRange(t *testing.T) {
 	}
 }
 
+// TestDashboardOvulationLineOutranksTheThinHistoryWithholding pins the CONTEXT
+// only. It cannot see the surface: dashboard.html tests
+// DisplayOvulationNeedsData before the branch that names a date, so a date left
+// here is not yet a date the owner reads. The rendered slot is
+// TestDashboardNamesTheConfirmedDayForTheThinHistoryCohort's subject
+// (internal/api), and the two are a pair — this one alone was green through the
+// whole defect.
 func TestDashboardOvulationLineOutranksTheThinHistoryWithholding(t *testing.T) {
 	user, logs, stats, today := confirmedOvulationFixture(t)
 	// dashboardNeedsOvulationData: irregular with fewer than three completed

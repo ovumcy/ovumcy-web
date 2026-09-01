@@ -45,6 +45,15 @@ type DashboardCycleContext struct {
 	DisplayOvulationRangeEnd    time.Time
 	DisplayOvulationUseRange    bool
 	DisplayOvulationNeedsData   bool
+	// DisplayOvulationConfirmed marks DisplayOvulationDate as a MEASUREMENT.
+	// The dashboard reads it before the "needs more cycles" branch: that caption
+	// is about a projection built on thin history, and the calendar grid — gated
+	// on FertilityProjectionSuppressed alone — already marks the detector's day
+	// for this same cohort. The hero ring and the reminder banner deliberately
+	// keep gating on DisplayOvulationNeedsData: the ring is projection
+	// arithmetic, and the banner counts down to a day still ahead, neither of
+	// which a past measurement answers.
+	DisplayOvulationConfirmed   bool
 	DisplayOvulationExact       bool
 	DisplayOvulationImpossible  bool
 	NextPeriodEstimatePaused    bool
@@ -382,6 +391,7 @@ func BuildDashboardCycleContext(user *models.User, logs []models.DailyLog, stats
 		DisplayOvulationRangeEnd:    display.ovulationRangeEnd,
 		DisplayOvulationUseRange:    display.ovulationUseRange,
 		DisplayOvulationNeedsData:   display.ovulationNeedsData,
+		DisplayOvulationConfirmed:   display.ovulationConfirmed,
 		DisplayOvulationExact:       display.ovulationExact,
 		DisplayOvulationImpossible:  display.ovulationImpossible,
 		NextPeriodEstimatePaused:    display.estimatePaused,
@@ -504,13 +514,6 @@ func applyDashboardPredictionRanges(display dashboardPredictionDisplay, user *mo
 	// leave the dashboard and the calendar naming different things again, for
 	// the cohort whose model is weakest. The next-period range above is
 	// untouched: that projection is still a projection.
-	// A confirmed ovulation outranks the range. The range expresses the SPREAD
-	// of a projection, and there is no projection left to express once the
-	// temperatures have named the day — it is built from cycle-length spread and
-	// need not even contain that day. Discarding a measurement for it would
-	// leave the dashboard and the calendar naming different things again, for
-	// the cohort whose model is weakest. The next-period range above is
-	// untouched: that projection is still a projection.
 	if display.ovulationConfirmed {
 		return display
 	}
@@ -535,6 +538,14 @@ func finalizeDashboardPredictionDisplay(display dashboardPredictionDisplay) dash
 		// cohort (irregular, one or two completed cycles) does not meet, so
 		// withholding here while the grid marks the day is the same divergence
 		// this pair of surfaces was just brought into agreement over.
+		//
+		// Keeping the date is only half of it: the dashboard template tests
+		// DisplayOvulationNeedsData BEFORE the branch that names a date, so the
+		// caption wins over any date this function leaves behind. The template
+		// therefore reads DisplayOvulationConfirmed alongside it. Regression:
+		// TestDashboardNamesTheConfirmedDayForTheThinHistoryCohort renders the
+		// page rather than reading the context, which is what a context-level
+		// assertion could not tell apart.
 		return display
 	}
 	display.ovulationDate = time.Time{}

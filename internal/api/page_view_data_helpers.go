@@ -40,6 +40,7 @@ func (handler *Handler) buildDashboardViewData(ctx context.Context, user *models
 		"DisplayOvulationRangeEnd":              viewData.CycleContext.DisplayOvulationRangeEnd,
 		"DisplayOvulationUseRange":              viewData.CycleContext.DisplayOvulationUseRange,
 		"DisplayOvulationNeedsData":             viewData.CycleContext.DisplayOvulationNeedsData,
+		"DisplayOvulationConfirmed":             viewData.CycleContext.DisplayOvulationConfirmed,
 		"DisplayOvulationExact":                 viewData.CycleContext.DisplayOvulationExact,
 		"DisplayOvulationImpossible":            viewData.CycleContext.DisplayOvulationImpossible,
 		"NextPeriodEstimatePaused":              viewData.CycleContext.NextPeriodEstimatePaused,
