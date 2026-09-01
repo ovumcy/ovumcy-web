@@ -571,6 +571,16 @@ func dashboardNextPeriodInPast(display dashboardPredictionDisplay, today time.Ti
 }
 
 func dashboardOvulationInPast(display dashboardPredictionDisplay, today time.Time) bool {
+	// The amber notice is about a PROJECTION the model still points at after the
+	// day has gone by. A measured ovulation being behind the owner is the normal
+	// state of every cycle from the shift until the next period, so reading it as
+	// that notice would raise a standing false alarm — for about a fortnight per
+	// cycle, on exactly the accounts whose data is best. DashboardUpcomingPredictions
+	// rolls a projected ovulation forward the moment it is past, which is why this
+	// branch had no other way to be true before the confirmed day reached it.
+	if display.ovulationConfirmed {
+		return false
+	}
 	if display.ovulationUseRange {
 		// Both bounds come from DashboardOvulationRange, which builds them with
 		// CalendarDay in the request location, so this pair already shares

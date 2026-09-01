@@ -76,6 +76,22 @@ func TestConfirmedCurrentCycleOvulationReadsTheDetectorsDay(t *testing.T) {
 	}
 }
 
+// TestConfirmedOvulationIgnoresACycleStartRecordedAhead pins the last guard in
+// the resolver. manualCycleStartFutureDays lets an owner record a cycle start up
+// to two days ahead, and a cycle that has not begun cannot have ovulated: the
+// window handed to the detector would run backwards from a start later than the
+// readings. The calendar reaches the resolver behind its own copy of this test,
+// so without this the guard is only exercised through a surface that can no
+// longer fail it.
+func TestConfirmedOvulationIgnoresACycleStartRecordedAhead(t *testing.T) {
+	user, logs, stats, today := confirmedOvulationFixture(t)
+	stats.LastPeriodStart = today.AddDate(0, 0, 2)
+
+	if _, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, today, time.UTC); ok {
+		t.Fatal("a cycle start recorded ahead of today must confirm nothing")
+	}
+}
+
 func TestDashboardOvulationLineNamesTheConfirmedDay(t *testing.T) {
 	user, logs, stats, today := confirmedOvulationFixture(t)
 
@@ -84,8 +100,17 @@ func TestDashboardOvulationLineNamesTheConfirmedDay(t *testing.T) {
 	if got := CalendarDayKey(context.DisplayOvulationDate); got != "2026-03-11" {
 		t.Fatalf("dashboard ovulation line = %s, want 2026-03-11: the temperatures confirm that day and the calendar marker already names it", got)
 	}
-	if !context.OvulationInPast {
-		t.Fatal("a confirmed ovulation three days behind the owner must render as past, not as still upcoming")
+	// OvulationInPast drives the amber "date is already in the past" notice,
+	// which is about a PROJECTION the model still points at after its day has
+	// gone by. A measured ovulation is behind the owner for the whole luteal
+	// phase by design, so reporting it here would leave that warning standing
+	// for a fortnight of every cycle — and DashboardUpcomingPredictions rolls a
+	// projected ovulation forward the moment it is past, which is why this flag
+	// had no other way to be true. The line still NAMES the past day; it just
+	// does not flag it. Rendered pair:
+	// TestDashboardNamesTheConfirmedDayForTheThinHistoryCohort (internal/api).
+	if context.OvulationInPast {
+		t.Fatal("a confirmed ovulation must not raise the stale-projection notice")
 	}
 }
 
