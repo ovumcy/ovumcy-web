@@ -25,5 +25,5 @@ func (handler *Handler) GetStatsOverview(c fiber.Ctx) error {
 	// left the instance as JSON (medical safety — suppression is the floor).
 	published, suppression := services.PublishedStats(user, stats)
 
-	return c.JSON(newStatsOverviewResponse(published, suppression, translateMessage(currentMessages(c), medicalDisclaimerMessageKey)))
+	return c.JSON(newStatsOverviewResponse(published, suppression, handler.medicalDisclaimer(c)))
 }

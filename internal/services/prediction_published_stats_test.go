@@ -231,6 +231,44 @@ func TestPublishedStatsClearsEveryDateItsVerdictRefuses(t *testing.T) {
 	}
 }
 
+// TestPublishedStatsDropsAPhaseWhoseOnlySourceIsTheClearedProjection covers the
+// label half of the clearing. Three of the five phases are today's position
+// relative to the projected ovulation date, so publishing one beside a cleared
+// date states the withheld claim in a word.
+//
+// The three cases are the whole rule: a projection-derived phase goes, a
+// recorded one stays, and the fertility-only tier keeps its phase because that
+// floor withholds the fertility half alone.
+func TestPublishedStatsDropsAPhaseWhoseOnlySourceIsTheClearedProjection(t *testing.T) {
+	paused := func(phase string) CycleStats {
+		stats := publishedStatsBase()
+		stats.PregnancyPaused = true
+		stats.CurrentPhase = phase
+		return stats
+	}
+	firstCycle := publishedStatsBase()
+	firstCycle.CompletedCycleCount = 0
+	firstCycle.CurrentPhase = cyclePhaseFollicular
+
+	for _, testCase := range []struct {
+		name  string
+		stats CycleStats
+		want  string
+	}{
+		{name: "projected phase under the whole-projection gate", stats: paused(cyclePhaseOvulation), want: cyclePhaseUnknown},
+		{name: "recorded phase under the whole-projection gate", stats: paused(cyclePhaseMenstrual), want: cyclePhaseMenstrual},
+		{name: "projected phase under the first-cycle floor", stats: firstCycle, want: cyclePhaseFollicular},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			published, _ := PublishedStats(&models.User{}, testCase.stats)
+
+			if published.CurrentPhase != testCase.want {
+				t.Fatalf("current phase = %q, want %q", published.CurrentPhase, testCase.want)
+			}
+		})
+	}
+}
+
 // TestPublishedStatsLeavesAnUnsuppressedProjectionWhole pins the other end: with
 // no signal holding, the adapter is the identity and the verdict names nothing.
 // Without it, a clearing rule that fired unconditionally would pass every

@@ -56,6 +56,32 @@ func PublishedStats(user *models.User, stats CycleStats) (CycleStats, Prediction
 	}
 	if suppression.PredictionsSuppressed {
 		stats.NextPeriodStart = time.Time{}
+		if projectedCyclePhase(stats.CurrentPhase) {
+			stats.CurrentPhase = cyclePhaseUnknown
+		}
 	}
 	return stats, suppression
+}
+
+// projectedCyclePhase reports that a phase label's only source is the projected
+// ovulation date — the field cleared above.
+//
+// resolveCyclePhase (cycles.go) answers "menstrual" from recorded period days
+// and "unknown" when it cannot place an ovulation at all; the other three are
+// today's position relative to stats.OvulationDate and say nothing else. So
+// publishing one beside a cleared ovulation date states in a word the very claim
+// the date was withheld for — a client reading "ovulation" learns the day it
+// asked about, from a payload that answered null.
+//
+// It is the whole-projection gate that clears these, not the fertility one: the
+// zero-completed-cycle tier deliberately keeps the phase, which follows the
+// recorded anchor and is why DashboardAwaitingFirstCycle withholds the fertility
+// half alone.
+func projectedCyclePhase(phase string) bool {
+	switch phase {
+	case cyclePhaseFollicular, cyclePhaseOvulation, cyclePhaseLuteal:
+		return true
+	default:
+		return false
+	}
 }

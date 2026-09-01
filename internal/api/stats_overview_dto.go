@@ -3,6 +3,7 @@ package api
 import (
 	"time"
 
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
@@ -18,6 +19,27 @@ const statsOverviewDateLayout = "2006-01-02"
 // prose, and a test asserting the copy alone goes quiet the day the wording
 // changes.
 const medicalDisclaimerMessageKey = "medical.disclaimer"
+
+// medicalDisclaimer resolves the safety framing for this request, falling back
+// to the server's default language when the request carries no catalogue.
+//
+// The fallback is not defensive padding. currentMessages answers an empty map
+// whenever LanguageMiddleware has not run for a route, and translateMessage
+// renders a miss as the key itself — which is what a template wants and is
+// exactly wrong here: the payload would carry the literal "medical.disclaimer"
+// where the owner-visible safety text belongs, with nothing failing. A surface
+// that must not go silent carries its own fallback, which is the second return
+// value lookupMessage exists for.
+func (handler *Handler) medicalDisclaimer(c fiber.Ctx) string {
+	if disclaimer, ok := lookupMessage(currentMessages(c), medicalDisclaimerMessageKey); ok {
+		return disclaimer
+	}
+	if handler.i18n == nil {
+		return ""
+	}
+	disclaimer, _ := lookupMessage(handler.i18n.Messages(handler.i18n.DefaultLanguage()), medicalDisclaimerMessageKey)
+	return disclaimer
+}
 
 // StatsOverviewSuppression is the machine-readable half of the medical-safety
 // decision: WHETHER a projection was withheld, and WHY.
