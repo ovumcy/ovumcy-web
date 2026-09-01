@@ -134,7 +134,10 @@ jobs:
           image: ${{ env.TRIVY_IMAGE }}
 
       - name: Run Trivy filesystem scan
-        run: docker run --rm -v "${{ github.workspace }}:/work" -w /work "${{ env.TRIVY_IMAGE }}" fs --scanners vuln --skip-version-check --severity HIGH,CRITICAL --ignore-unfixed --include-dev-deps --skip-dirs .tmp --skip-dirs web/static --format sarif --output .tmp/security/trivy-fs.sarif --exit-code 1 .
+        # No --ignore-unfixed: this SARIF is also what the Security tab shows
+        # (upload step below), so a CRITICAL with no upstream fix yet must
+        # stay visible in both the gate and the tab, not disappear from each.
+        run: docker run --rm -v "${{ github.workspace }}:/work" -w /work "${{ env.TRIVY_IMAGE }}" fs --scanners vuln --skip-version-check --severity HIGH,CRITICAL --include-dev-deps --skip-dirs .tmp --skip-dirs web/static --format sarif --output .tmp/security/trivy-fs.sarif --exit-code 1 .
 
       - name: Upload Trivy filesystem SARIF
         if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
@@ -205,7 +208,9 @@ jobs:
           image: ${{ env.TRIVY_IMAGE }}
 
       - name: Run Trivy image scan
-        run: docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "${{ github.workspace }}:/work" -w /work "${{ env.TRIVY_IMAGE }}" image --scanners vuln --skip-version-check --severity HIGH,CRITICAL --ignore-unfixed --format sarif --output .tmp/security/trivy-image.sarif --exit-code 1 ovumcy-security:${{ github.sha }}
+        # No --ignore-unfixed: same reason as trivy-fs above — this SARIF feeds
+        # the Security tab, so an unfixed CRITICAL must stay visible there too.
+        run: docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "${{ github.workspace }}:/work" -w /work "${{ env.TRIVY_IMAGE }}" image --scanners vuln --skip-version-check --severity HIGH,CRITICAL --format sarif --output .tmp/security/trivy-image.sarif --exit-code 1 ovumcy-security:${{ github.sha }}
 
       - name: Pull Trivy image for SBOM
         # Generate CycloneDX SBOM below runs `if: always()` so it still executes
