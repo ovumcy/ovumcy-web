@@ -112,6 +112,25 @@ func TestConfirmedOvulationLeavesTheNextCyclesProjectionAlone(t *testing.T) {
 	}
 }
 
+// TestConfirmedOvulationSupersedesNothingWithoutAProjectedDay covers the branch
+// the webhook reaches. decideDueReminders asks this BEFORE
+// decideOvulationReminder's own OvulationImpossible gate, and
+// DashboardUpcomingPredictions leaves OvulationDate zero exactly there — a
+// cycle too short to seat the luteal phase at all.
+//
+// The guard is load-bearing rather than defensive: a zero date is year 1, so the
+// window bound below it reads as comfortably before this cycle's end and passes,
+// the detector then confirms, and the answer would come back true for a day that
+// does not exist.
+func TestConfirmedOvulationSupersedesNothingWithoutAProjectedDay(t *testing.T) {
+	user, logs, now := outboundConfirmedFixture(t, true)
+	stats := BuildCycleStatsFromLogs(user, logs, now, time.UTC)
+
+	if ConfirmedOvulationSupersedes(user, logs, stats, time.Time{}, now, time.UTC) {
+		t.Fatal("a projection with no day of its own cannot be one a shift superseded")
+	}
+}
+
 func TestCalendarFeedWithholdsAnOvulationTheTemperaturesHaveAnswered(t *testing.T) {
 	user, logs, now := outboundConfirmedFixture(t, true)
 
