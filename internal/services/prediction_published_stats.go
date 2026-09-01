@@ -33,7 +33,7 @@ import (
 // FertilityProjectionSuppressed reads fields this function empties.
 //
 // CurrentPhase is NOT cleared, and that is a decision rather than an omission.
-// Phase and fertility are orthogonal axes here (services-cycle.md, #416): the
+// Phase and fertility are orthogonal axes here (#416): the
 // taxonomy is menstrual/follicular/ovulation/luteal/unknown and "fertile" is a
 // status, never a phase — so a phase label is not the window-or-fertility claim
 // the medical-safety invariant withholds. It also cannot be cleared HERE alone:

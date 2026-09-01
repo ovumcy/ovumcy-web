@@ -477,7 +477,7 @@ func detectCyclePhase(stats CycleStats, logs []models.DailyLog, today time.Time)
 
 func resolveCyclePhase(stats CycleStats, logs []models.DailyLog, today time.Time, opts cyclePhaseOptions) string {
 	if periodLoggedOnDay(logs, today) {
-		return cyclePhaseMenstrual
+		return "menstrual"
 	}
 	if opts.includeProjectedPeriod && !stats.LastPeriodStart.IsZero() {
 		periodLength := int(stats.AveragePeriodLength + 0.5)
@@ -486,32 +486,20 @@ func resolveCyclePhase(stats CycleStats, logs []models.DailyLog, today time.Time
 		}
 		periodEnd := AddCalendarDays(stats.LastPeriodStart, periodLength-1, opts.location)
 		if betweenInclusive(today, stats.LastPeriodStart, periodEnd) {
-			return cyclePhaseMenstrual
+			return "menstrual"
 		}
 	}
 	if stats.OvulationImpossible || stats.OvulationDate.IsZero() {
-		return cyclePhaseUnknown
+		return "unknown"
 	}
 	if sameDay(today, stats.OvulationDate) {
-		return cyclePhaseOvulation
+		return "ovulation"
 	}
 	if today.Before(stats.OvulationDate) {
-		return cyclePhaseFollicular
+		return "follicular"
 	}
-	return cyclePhaseLuteal
+	return "luteal"
 }
-
-// The phase taxonomy resolveCyclePhase answers in. Only menstrual and unknown
-// stand on their own: the other three are today's position relative to the
-// projected ovulation date, which is why a surface publishing a projection
-// clears them with it (prediction_published_stats.go).
-const (
-	cyclePhaseMenstrual  = "menstrual"
-	cyclePhaseFollicular = "follicular"
-	cyclePhaseOvulation  = "ovulation"
-	cyclePhaseLuteal     = "luteal"
-	cyclePhaseUnknown    = "unknown"
-)
 
 // Fertility status is the axis orthogonal to CurrentPhase: whether today falls
 // inside the predicted fertile window. "Fertile" is a status, never a phase —
