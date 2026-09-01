@@ -899,7 +899,13 @@ jobs:
     # state — the `test` gate judges coverage-merge for exactly that reason.
     needs:
       - coverage-merge
-    if: github.event_name == 'pull_request'
+    # REL-6: this is a REQUIRED check, but it used to run only on
+    # `pull_request` — in the merge_group suite that actually decides queue
+    # admission it reported `skipped`, and a skipped required check is
+    # satisfied. `coverage-merge` above carries no such restriction, so the
+    # profile this gate needs already exists in that suite; it just never
+    # consumed it.
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     permissions:
       contents: read
 
@@ -921,17 +927,46 @@ jobs:
           name: coverage-out
           path: .
 
-      - name: Fetch base branch
-        run: git fetch --no-tags origin ${{ github.event.pull_request.base.ref }}
+      - name: Determine base ref
+        # `pull_request.base.ref` does not exist under `merge_group` — the
+        # queue's base commit lives in `merge_group.base_sha` instead. Mirrors
+        # the same split (and the same fetch-if-absent caution) the `changes`
+        # job already makes below. Exported via $GITHUB_ENV, and every fetch
+        # uses a quoted shell variable rather than splicing the expression
+        # into the command directly.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          QUEUE_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "merge_group" ]; then
+            base="$QUEUE_BASE_SHA"
+            if [ -z "$base" ]; then
+              echo "::error::no base commit in the merge_group payload"
+              exit 1
+            fi
+            if ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+              git fetch --no-tags origin "$base" || true
+            fi
+            if ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+              echo "::error::merge_group base commit $base unreachable after fetch"
+              exit 1
+            fi
+            echo "BASE_REF=$base" >> "$GITHUB_ENV"
+          else
+            git fetch --no-tags origin "$PR_BASE_REF"
+            echo "BASE_REF=origin/$PR_BASE_REF" >> "$GITHUB_ENV"
+          fi
 
       - name: Enforce patch coverage
         # Fails when a modified, coverable Go line is not covered by tests. This
         # is the in-CI, self-contained replacement for the external codecov patch
         # status, which can stall and deadlock a required check. See
         # scripts/patchcov for the gate logic (test files and tooling excluded).
+        # BASE_REF comes from the step above, already resolved for the event.
         env:
           COVERAGE_FILE: coverage.out
-          BASE_REF: origin/${{ github.event.pull_request.base.ref }}
         run: go run ./scripts/patchcov
 
   changes:

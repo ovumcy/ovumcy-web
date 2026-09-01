@@ -422,14 +422,16 @@ jobs:
 
       - name: Scan the image before publishing it
         # Same gate as security.yml's required `trivy-image` check — same
-        # scanner, severity threshold, `--ignore-unfixed` and `--exit-code 1`.
+        # scanner, severity threshold and `--exit-code 1`; no `--ignore-unfixed`
+        # here either, for the same reason as trivy-fs/trivy-image there — an
+        # unfixed CRITICAL must still hold the publish back.
         # That check lives in another workflow and so cannot be a `needs:` of
         # this job; repeating the scan here against the exact artifact is what
         # keeps an unscanned image from reaching the registry. Output is a table
         # rather than SARIF because the Security tab entry for this commit
         # already comes from `trivy-image`; a second upload under the same
         # category would only overwrite it.
-        run: docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "${{ env.TRIVY_IMAGE }}" image --scanners vuln --skip-version-check --severity HIGH,CRITICAL --ignore-unfixed --format table --exit-code 1 ovumcy-publish-scan:${{ github.sha }}
+        run: docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "${{ env.TRIVY_IMAGE }}" image --scanners vuln --skip-version-check --severity HIGH,CRITICAL --format table --exit-code 1 ovumcy-publish-scan:${{ github.sha }}
 
       # NOTHING PUBLIC EXISTS UNTIL THE SIGNATURE DOES. The push used to carry
       # `steps.meta.outputs.tags` — `vX.Y.Z`, `latest`, `main`, `sha-…` — so the
