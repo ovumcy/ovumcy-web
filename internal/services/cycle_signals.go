@@ -148,13 +148,6 @@ func ConfirmedCurrentCycleOvulation(user *models.User, logs []models.DailyLog, s
 	// (FertilityProjectionSuppressed = unpredictable · pregnancy-paused ·
 	// overdue, plus the first-cycle floor), read once instead of restated —
 	// prediction-display.md forbids a surface recombining the signals itself.
-
-	// The gate lives HERE rather than at each surface, so the calendar and the
-	// dashboard cannot gate the same signal differently. It is the same
-	// predicate the calendar already wrapped this pass in
-	// (FertilityProjectionSuppressed = unpredictable · pregnancy-paused ·
-	// overdue, plus the first-cycle floor), read once instead of restated —
-	// prediction-display.md forbids a surface recombining the signals itself.
 	if FertilityProjectionSuppressed(user, stats) {
 		return time.Time{}, false
 	}
