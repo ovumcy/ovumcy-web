@@ -121,4 +121,14 @@ func TestDashboardNamesTheConfirmedDayForTheThinHistoryCohort(t *testing.T) {
 	if projected := services.LocalizedDateDisplay("en", today); strings.Contains(slot, projected) {
 		t.Fatalf("the ovulation slot still names the projected day %q: %q", projected, slot)
 	}
+
+	// The amber notice is about a projection the model still points at after the
+	// day has gone by. A measured ovulation is behind the owner for the whole
+	// luteal phase by design, so reading it as that notice would leave the
+	// warning standing for a fortnight of every cycle. The next period is
+	// fifteen days out in this fixture, so its own in-past branch cannot be what
+	// keeps this quiet.
+	if dashboardElementByDataAttr(document, "data-dashboard-prediction-past") != nil {
+		t.Fatal("a confirmed ovulation must not raise the stale-projection notice")
+	}
 }

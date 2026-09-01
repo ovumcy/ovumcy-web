@@ -12,9 +12,11 @@
   several days earlier. For someone reading the two together to time anything, that is the
   difference between "today still counts" and "this window has closed".
 
-  The line now names the confirmed day, and — because that day is usually already behind you — it is
-  shown as past rather than announced as upcoming. Both surfaces resolve the day through one shared
-  reader, so a single shift can no longer produce two dates.
+  The line now names the confirmed day, which is usually already behind you, instead of announcing
+  one as upcoming. It does not raise the "date is already in the past" notice while doing so: that
+  notice is about an estimate the app is still pointing at after its day has gone by, and a measured
+  ovulation being behind you is simply what the rest of a cycle looks like. Both surfaces resolve the
+  day through one shared reader, so a single shift can no longer produce two dates.
 
   A measurement also outranks the two ways the dashboard expresses how uncertain a *projection* is: a
   confirmed day is named as a day rather than widened into the range shown for irregular cycles, and
