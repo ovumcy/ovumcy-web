@@ -154,20 +154,20 @@ func TestImportMut_RefreshNilGuardsShortCircuitPerClause(t *testing.T) {
 	// this clause and dereferences service.users on a nil receiver.
 	assertNoPanic("nil receiver", func() {
 		var svc *ImportService
-		svc.refreshDerivedCycleSettings(ctx, 1, time.UTC)
+		svc.refreshDerivedCycleSettings(ctx, 1, time.Now(), time.UTC)
 	})
 
 	// Clause 2: users == nil (logs non-nil and returning data). Negating
 	// `service.users == nil` lets the method reach users.UpdateByID on nil.
 	assertNoPanic("nil users", func() {
 		svc := &ImportService{logs: importmutDataLogs{}, users: nil}
-		svc.refreshDerivedCycleSettings(ctx, 1, time.UTC)
+		svc.refreshDerivedCycleSettings(ctx, 1, time.Now(), time.UTC)
 	})
 
 	// Clause 3: logs == nil (users non-nil). Negating `service.logs == nil`
 	// lets the method reach logs.ListByUser on nil.
 	assertNoPanic("nil logs", func() {
 		svc := &ImportService{logs: nil, users: importStubUsers{}}
-		svc.refreshDerivedCycleSettings(ctx, 1, time.UTC)
+		svc.refreshDerivedCycleSettings(ctx, 1, time.Now(), time.UTC)
 	})
 }

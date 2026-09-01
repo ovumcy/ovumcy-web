@@ -158,19 +158,10 @@ func (recomputer *LutealPhaseRecomputer) Run(ctx context.Context) (LutealPhaseRe
 			continue
 		}
 
-		// Bound the history at the owner's own today before deriving. The column
-		// is a summary of OBSERVED cycles, and manualCycleStartFutureDays lets an
-		// owner record a cycle start up to two days ahead; ObservedCycleStarts
-		// takes such a start as the boundary of the last observed cycle, so an
-		// unbounded read derives the column from a day that has not happened yet.
-		// The display path re-infers over a today-bounded window, so leaving this
-		// one unbounded makes the stored value and the live inference disagree BY
-		// CONSTRUCTION — which is the drift this pass exists to remove, not to
-		// create. The bound is the same shape every other surface uses
-		// (filterLogsNotAfter against the owner's calendar day).
+		// deriveUserLutealPhase bounds the history at the owner's own today; this
+		// pass supplies the instant and the zone it is read in.
 		location := resolveOwnerLocation(row.Timezone, recomputer.fallbackLocation)
-		today := DateAtLocation(passNow, location)
-		derived := deriveUserLutealPhase(filterLogsNotAfter(logs, today), location)
+		derived := deriveUserLutealPhase(logs, passNow, location)
 		if derived == row.LutealPhase {
 			continue
 		}

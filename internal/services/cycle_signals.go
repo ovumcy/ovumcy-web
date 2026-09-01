@@ -102,8 +102,21 @@ func InferUserLutealPhase(logs []models.DailyLog, location *time.Location) (int,
 // of them, which is the drift this function exists to close. Callers that need
 // the value for DISPLAY read it through ApplyUserCycleBaseline, which re-infers
 // over the log window it was handed.
-func deriveUserLutealPhase(logs []models.DailyLog, location *time.Location) int {
-	if lutealPhase, refined := InferUserLutealPhase(logs, location); refined {
+//
+// The today bound lives HERE, not in each writer's fetch. The column summarizes
+// OBSERVED cycles, and manualCycleStartFutureDays lets an owner record a cycle
+// start up to two days ahead; ObservedCycleStarts takes such a start as the
+// boundary of the last observed cycle, so an unbounded read derives the column
+// from a day that has not happened yet. Bounding one writer would be worse than
+// bounding none: the boot recompute would correct the column and the next day
+// save would put the future-dated value straight back, which is precisely the
+// disagreement the paragraph above promises cannot happen. `now` is a required
+// parameter for the same reason — a writer cannot omit the bound by forgetting
+// it. Same shape as the pregnancy pause (`prediction-display.md`): the bound
+// belongs to the derivation, never to the caller's fetch.
+func deriveUserLutealPhase(logs []models.DailyLog, now time.Time, location *time.Location) int {
+	observed := filterLogsNotAfter(logs, DateAtLocation(now, location))
+	if lutealPhase, refined := InferUserLutealPhase(observed, location); refined {
 		return lutealPhase
 	}
 	return defaultLutealPhaseDays
