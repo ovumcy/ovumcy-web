@@ -170,12 +170,12 @@ func TestStatsOverviewWithholdsEveryProjectionItsGatesRefuse(t *testing.T) {
 				t.Fatal("last_period_start is null — a recorded anchor is not a projection and no gate withholds it")
 			}
 
-			// A phase label whose only source is the cleared ovulation date would
-			// state the withheld claim in a word — "ovulation" beside a null date.
-			// Every state here suppresses the fertility half, which is the gate that
-			// clears the day those three labels are positions relative to.
-			if payload.CurrentPhase != "menstrual" && payload.CurrentPhase != "unknown" {
-				t.Fatalf("current_phase = %q while every projected date is withheld", payload.CurrentPhase)
+			// current_phase is the axis orthogonal to fertility (#416), so it is
+			// published in every tier and is NOT withheld with the dates — it is
+			// pinned here against the spec's enum so a suppressed payload cannot
+			// answer with something no client is told to expect.
+			if !containsString([]string{"menstrual", "follicular", "ovulation", "luteal", "unknown"}, payload.CurrentPhase) {
+				t.Fatalf("current_phase = %q, which the published enum does not name", payload.CurrentPhase)
 			}
 
 			assertStatsOverviewFraming(t, payload)

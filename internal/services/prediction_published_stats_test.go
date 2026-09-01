@@ -231,39 +231,23 @@ func TestPublishedStatsClearsEveryDateItsVerdictRefuses(t *testing.T) {
 	}
 }
 
-// TestPublishedStatsDropsAPhaseWhoseOnlySourceIsTheClearedProjection covers the
-// label half of the clearing. Three of the five phases are today's position
-// relative to the projected ovulation date, so publishing one beside a cleared
-// date states the withheld claim in a word.
+// TestPublishedStatsKeepsThePhaseTheProjectionDoesNotSpeakFor pins the
+// orthogonality rather than leaving it to a comment.
 //
-// The three cases are the whole rule: a projection-derived phase goes, a
-// recorded one stays, and the fertility-only tier clears it too — the day those
-// labels are read off is exactly what that floor withholds.
-func TestPublishedStatsDropsAPhaseWhoseOnlySourceIsTheClearedProjection(t *testing.T) {
-	paused := func(phase string) CycleStats {
-		stats := publishedStatsBase()
-		stats.PregnancyPaused = true
-		stats.CurrentPhase = phase
-		return stats
-	}
-	firstCycle := publishedStatsBase()
-	firstCycle.CompletedCycleCount = 0
-	firstCycle.CurrentPhase = cyclePhaseFollicular
-
-	for _, testCase := range []struct {
-		name  string
-		stats CycleStats
-		want  string
-	}{
-		{name: "projected phase under the whole-projection gate", stats: paused(cyclePhaseOvulation), want: cyclePhaseUnknown},
-		{name: "recorded phase under the whole-projection gate", stats: paused(cyclePhaseMenstrual), want: cyclePhaseMenstrual},
-		{name: "projected phase under the first-cycle floor", stats: firstCycle, want: cyclePhaseUnknown},
-	} {
+// The phase axis is menstrual/follicular/ovulation/luteal/unknown and "fertile"
+// is a status, never a phase (#416), so a phase label is not the
+// window-or-fertility claim the medical-safety invariant withholds. Clearing it
+// here would also split one dashboard across two answers: the hero rebuilds its
+// own phase from the cycle geometry and the header prefers the hero's, so the
+// published copy would read "unknown" beside a header naming a phase. Whoever
+// reaches for that clearing next meets this test first.
+func TestPublishedStatsKeepsThePhaseTheProjectionDoesNotSpeakFor(t *testing.T) {
+	for _, testCase := range publishedStatsCases() {
 		t.Run(testCase.name, func(t *testing.T) {
-			published, _ := PublishedStats(&models.User{}, testCase.stats)
+			published, _ := PublishedStats(testCase.user, testCase.stats)
 
-			if published.CurrentPhase != testCase.want {
-				t.Fatalf("current phase = %q, want %q", published.CurrentPhase, testCase.want)
+			if published.CurrentPhase != testCase.stats.CurrentPhase {
+				t.Fatalf("current phase = %q, want the derivation's own %q", published.CurrentPhase, testCase.stats.CurrentPhase)
 			}
 		})
 	}

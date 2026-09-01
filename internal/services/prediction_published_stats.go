@@ -32,6 +32,17 @@ import (
 // asks the predicates a second time can be holding cleared stats by then, and
 // FertilityProjectionSuppressed reads fields this function empties.
 //
+// CurrentPhase is NOT cleared, and that is a decision rather than an omission.
+// Phase and fertility are orthogonal axes here (services-cycle.md, #416): the
+// taxonomy is menstrual/follicular/ovulation/luteal/unknown and "fertile" is a
+// status, never a phase — so a phase label is not the window-or-fertility claim
+// the medical-safety invariant withholds. It also cannot be cleared HERE alone:
+// the dashboard hero rebuilds its own phase from the cycle geometry
+// (dashboardCycleHeroCurrentPhase) and the header prefers the hero's, so
+// emptying the published copy splits one page across two answers. A client
+// reading a phase beside a null ovulation date has the suppression object to
+// tell it why the date is absent.
+//
 // RECORDED history — observed cycle lengths, the last period start, the current
 // cycle day — is never touched: it is fact, not projection, and the "facts only"
 // tier exists precisely to keep showing it. Only the PUBLISHED copy is cleared;
@@ -53,38 +64,9 @@ func PublishedStats(user *models.User, stats CycleStats) (CycleStats, Prediction
 		stats.FertilityWindowStart = time.Time{}
 		stats.FertilityWindowEnd = time.Time{}
 		stats.CurrentFertility = FertilityStatusUnknown
-		if projectedCyclePhase(stats.CurrentPhase) {
-			stats.CurrentPhase = cyclePhaseUnknown
-		}
 	}
 	if suppression.PredictionsSuppressed {
 		stats.NextPeriodStart = time.Time{}
 	}
 	return stats, suppression
-}
-
-// projectedCyclePhase reports that a phase label's only source is the projected
-// ovulation date — the field cleared above.
-//
-// resolveCyclePhase (cycles.go) answers "menstrual" from recorded period days
-// and "unknown" when it cannot place an ovulation at all; the other three are
-// today's position relative to stats.OvulationDate and say nothing else. So
-// publishing one beside a cleared ovulation date states in a word the very claim
-// the date was withheld for — a client reading "ovulation" learns the day it
-// asked about, from a payload that answered null.
-//
-// It is the FERTILITY gate that clears these, the same one that clears the date
-// they are read off — including in the zero-completed-cycle tier, where the
-// projected ovulation day has only the onboarding cycle-length setting behind
-// it. DashboardAwaitingFirstCycle's "the phase stays, it follows the recorded
-// anchor" holds for menstrual, which does follow one; for the other three the
-// anchor reaches them only through the projection this tier withholds, so
-// keeping them published the withheld day in a word.
-func projectedCyclePhase(phase string) bool {
-	switch phase {
-	case cyclePhaseFollicular, cyclePhaseOvulation, cyclePhaseLuteal:
-		return true
-	default:
-		return false
-	}
 }

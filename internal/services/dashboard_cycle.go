@@ -190,16 +190,10 @@ func FertilityProjectionSuppressed(user *models.User, stats CycleStats) bool {
 // account recorded: the fertile window and the ovulation date are the settings
 // default projected forward. Showing them at the same confidence as a measured
 // window is the estimate-presented-as-fact the medical-safety invariant forbids,
-// so the header withholds them until one cycle has been observed. The
-// next-period estimate stays: it already carries its own estimate qualifier and
-// is anchored on a start the owner recorded.
-//
-// The phase stays only where it follows that recorded anchor. Menstrual does;
-// follicular, ovulation and luteal are today's position relative to the
-// projected ovulation day, so a published copy clears them with the day itself
-// (PublishedStats) — a phase left standing beside a withheld date states the
-// same claim in a word. The header's own phase text is unaffected: it reads the
-// uncleared stats and applies its own rule.
+// so the header withholds them until one cycle has been observed. The phase and
+// the next-period estimate stay: the phase is the axis orthogonal to fertility
+// (#416) rather than a claim this tier withholds, and the next-period item
+// already carries its own estimate qualifier.
 func DashboardAwaitingFirstCycle(stats CycleStats) bool {
 	return stats.CompletedCycleCount < 1
 }
