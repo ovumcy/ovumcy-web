@@ -196,14 +196,16 @@ test.describe('Onboarding flow', () => {
       localeText('en', 'onboarding.step1.yesterday')
     );
 
-    const yesterday = shiftISODate(today, -1);
-    await onboardingShortcut(page, 'yesterday').focus();
-    await page.keyboard.press('Enter');
-    await expect(transport).toHaveValue(yesterday);
-    await expect(onboardingDayCell(page, yesterday)).toHaveAttribute('aria-pressed', 'true');
-
     // Grid cells are real buttons with the date as their accessible name and a
     // tap target well above the 24 px floor.
+    //
+    // This runs BEFORE the yesterday shortcut on purpose. Selecting a date moves
+    // the grid to that date's month, so on the first of a month "yesterday" is
+    // the previous month and today's cell leaves the DOM entirely — the grid
+    // renders one month, without the neighbouring days. Asserted after the
+    // shortcut, this block passed on 30 or 31 days of the month and failed on
+    // the first, which is how it went green for months and then broke on
+    // 2026-09-01 with no code change behind it.
     const todayCell = onboardingDayCell(page, today);
     expect(await todayCell.evaluate((node) => node.tagName)).toBe('BUTTON');
     const expectedName = await page.evaluate(
@@ -218,6 +220,15 @@ test.describe('Onboarding flow', () => {
     const cellBox = await todayCell.boundingBox();
     expect(cellBox!.width).toBeGreaterThanOrEqual(24);
     expect(cellBox!.height).toBeGreaterThanOrEqual(24);
+
+    const yesterday = shiftISODate(today, -1);
+    await onboardingShortcut(page, 'yesterday').focus();
+    await page.keyboard.press('Enter');
+    await expect(transport).toHaveValue(yesterday);
+    await expect(onboardingDayCell(page, yesterday)).toHaveAttribute('aria-pressed', 'true');
+    // The grid followed the selection: on the first of a month that is the
+    // previous month, and the shortcut must still land on the right day.
+    await expect(picker).toHaveAttribute('data-onboarding-visible-month', yesterday.slice(0, 7));
 
     await selectOnboardingStartDate(page, today);
     await onboardingStepOneSubmit(page).click();
