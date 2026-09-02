@@ -80,7 +80,6 @@ func requireSameOriginNavigation(refuse fiber.Handler) fiber.Handler {
 		// `empty`. Every other destination — image, iframe, object, script, and
 		// the rest — is an embed no flow into these routes produces, and is the
 		// shape that would spend the one-time value with nothing on screen.
-		//
 		dest := strings.TrimSpace(c.Get(headerSecFetchDest))
 		if dest != "" && !strings.EqualFold(dest, secFetchDestDocument) && !strings.EqualFold(dest, secFetchDestEmpty) {
 			return refuse(c)
