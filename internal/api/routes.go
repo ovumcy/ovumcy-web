@@ -112,7 +112,7 @@ func registerPageRoutes(app *fiber.App, handler *Handler) {
 	app.Get(oidcLogoutBridgePath, handler.ShowOIDCLogoutBridge)
 	app.Get(oidcLogoutBridgeRedirectPath, handler.RedirectOIDCLogout)
 	app.Get("/register", handler.ShowRegisterPage)
-	app.Get("/register/welcome", handler.PickupRegister)
+	app.Get(registerPickupNextPath, requireSameOriginNavigation(handler.refuseRegisterPickupNavigation), handler.PickupRegister)
 	app.Get("/recovery-code", handler.ShowRecoveryCodePage)
 	app.Get("/forgot-password", handler.ShowForgotPasswordPage)
 	app.Get("/reset-password", handler.ShowResetPasswordPage)
@@ -146,7 +146,19 @@ func registerPageRoutes(app *fiber.App, handler *Handler) {
 	// One-time reveal of the freshly generated/rotated .ics subscribe URL. The
 	// URL (a secret) is read from the sealed one-time cookie, shown once, then
 	// the cookie is cleared; a refresh redirects back to /settings.
-	app.Get("/settings/calendar-feed", handler.AuthRequired, handler.ShowCalendarFeedRevealPage)
+	app.Get(calendarFeedRevealPath, handler.AuthRequired, requireSameOriginNavigation(handler.refuseCalendarFeedRevealNavigation), handler.ShowCalendarFeedRevealPage)
+}
+
+// navigationGuardedRoutes names every route that carries
+// requireSameOriginNavigation. The set is declared rather than derived because
+// nothing in the route table says which GET mutates state — so a route joining
+// the class has to be written down here, and
+// TestNavigationGuardedRoutesAreExactlyTheDeclaredSet refuses both drifts: a
+// guard silently dropped from a route, and a route silently guarded without
+// being named.
+var navigationGuardedRoutes = []string{
+	fiber.MethodGet + " " + registerPickupNextPath,
+	fiber.MethodGet + " " + calendarFeedRevealPath,
 }
 
 func sendNoContent(c fiber.Ctx) error {

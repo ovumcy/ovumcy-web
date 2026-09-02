@@ -243,6 +243,16 @@ func (handler *Handler) logEgressError(c fiber.Ctx, kind healthEgressKind, spec 
 	handler.logAuditDomainError(c, healthEgressDomain, kind.action, spec, kind.target, kind.detailFields()...)
 }
 
+// logEgressDenied audits an egress refused before it produced anything, where
+// the refusal is answered by the surface's own redirect rather than a mapped
+// error — so there is no APIErrorSpec for logEgressError to read the outcome and
+// the reason from. Both values stay in the vocabulary the spec-driven path
+// already emits for a 4xx, so no operator filter has to learn anything new.
+func (handler *Handler) logEgressDenied(c fiber.Ctx, kind healthEgressKind, reason string) {
+	fields := append(kind.detailFields(), securityEventField("reason", reason))
+	handler.logAuditDomainEvent(c, healthEgressDomain, kind.action, "denied", kind.target, fields...)
+}
+
 // failEgress is the common tail of egress handlers: log the denied/failed audit
 // event and respond with the mapped error.
 func (handler *Handler) failEgress(c fiber.Ctx, kind healthEgressKind, spec APIErrorSpec) error {

@@ -178,6 +178,19 @@ func (handler *Handler) ShowCalendarFeedRevealPage(c fiber.Ctx) error {
 	})
 }
 
+// refuseCalendarFeedRevealNavigation is the same-origin navigation guard's exit
+// for GET /settings/calendar-feed: the page's own lost-race exit, back to
+// /settings where the owner can rotate and try again.
+//
+// It deliberately does NOT clear the reveal cookie. Clearing it would hand the
+// forged request the very outcome the guard exists to deny — the owner's one
+// reveal destroyed by someone else's link — where the refusal alone leaves the
+// sealed URL and the unclaimed mark both intact for the owner's own visit.
+func (handler *Handler) refuseCalendarFeedRevealNavigation(c fiber.Ctx) error {
+	handler.logEgressDenied(c, calendarFeedRevealEgress, "cross_origin_navigation")
+	return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+}
+
 // calendarFeedSubscribeURL builds the absolute subscribe URL for a freshly
 // minted token from the request's own base URL (scheme + host) so a self-hosted
 // instance reveals a URL that works from the owner's network without any
