@@ -145,10 +145,24 @@ func ParseDayBBTRawWithUnit(raw string, unit string) (*float64, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid day bbt: %w", err)
 	}
-	if NormalizeTemperatureUnit(unit) == TemperatureUnitFahrenheit {
-		value = fahrenheitToCelsius(value)
+	return ConvertDayBBTToStorage(&value, unit), nil
+}
+
+// ConvertDayBBTToStorage takes a BBT value already expressed in the account's
+// chosen unit and converts it to the canonical stored Celsius form. It is the
+// unit-conversion half of ParseDayBBTRawWithUnit, factored out so the JSON
+// bind path — which parses its own float via encoding/json rather than a form
+// string — converts and rounds identically instead of writing whatever unit
+// the caller sent straight to storage.
+func ConvertDayBBTToStorage(value *float64, unit string) *float64 {
+	if value == nil {
+		return nil
 	}
-	return normalizeStoredDayBBT(&value), nil
+	converted := *value
+	if NormalizeTemperatureUnit(unit) == TemperatureUnitFahrenheit {
+		converted = fahrenheitToCelsius(converted)
+	}
+	return normalizeStoredDayBBT(&converted)
 }
 
 // normalizeStoredDayBBT collapses any non-measurement (nil or a non-positive
