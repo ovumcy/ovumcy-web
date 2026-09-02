@@ -316,15 +316,47 @@ export async function measureGraphicContrast(
   graphic: Locator,
   surface: Locator,
   label: string,
-  property: 'stroke' | 'fill' | 'background-color' = 'stroke'
+  property: 'stroke' | 'fill' | 'background-color' | 'background' = 'stroke'
 ): Promise<ContrastMeasurement> {
-  const paint = await graphic.evaluate(
-    (node: Element, name: string) => window.getComputedStyle(node).getPropertyValue(name).trim(),
-    property
-  );
-  const graphicColor = parseCssColor(paint);
-  if (graphicColor === null) {
-    throw new Error(`${label}: unresolvable ${property} ${paint}`);
+  let graphicColors: Rgba[];
+  let paintDescription: string;
+
+  if (property === 'background') {
+    // Unlike 'background-color', this mode also resolves a background-image
+    // layer painted on top of it (the ribbon's predicted-flow hatch and
+    // start-window gradient are both background-image) — 'background-color'
+    // alone reads the phase's base fill and stays blind to that overlay, so a
+    // cell that also carries one of those flags is measured as if it did not.
+    const graphicPainted = await readPaintedSurface(graphic);
+    if (!graphicPainted.measurable) {
+      throw new Error(`${label}: the graphic is unmeasurable (${graphicPainted.reason})`);
+    }
+    const stops = backgroundStops(graphicPainted.backgroundColor, graphicPainted.backgroundImage);
+    graphicColors = stops.map((source) => {
+      const parsed = parseCssColor(source);
+      if (parsed === null) {
+        throw new Error(`${label}: unresolvable graphic paint stop ${source}`);
+      }
+      return parsed;
+    });
+    if (graphicColors.length === 0) {
+      throw new Error(
+        `${label}: the graphic paints no background of its own ` +
+          `(background-color: ${graphicPainted.backgroundColor}, background-image: ${graphicPainted.backgroundImage})`
+      );
+    }
+    paintDescription = `background-color: ${graphicPainted.backgroundColor}, background-image: ${graphicPainted.backgroundImage}`;
+  } else {
+    const paint = await graphic.evaluate(
+      (node: Element, name: string) => window.getComputedStyle(node).getPropertyValue(name).trim(),
+      property
+    );
+    const graphicColor = parseCssColor(paint);
+    if (graphicColor === null) {
+      throw new Error(`${label}: unresolvable ${property} ${paint}`);
+    }
+    graphicColors = [graphicColor];
+    paintDescription = paint;
   }
 
   const painted = await readPaintedSurface(surface);
@@ -340,15 +372,22 @@ export async function measureGraphicContrast(
     );
   }
 
-  const stops: ContrastStop[] = surfaceStops.map((stop) => ({
-    source: stop.source,
-    painted: formatRgb(stop.color),
-    ratio: contrastRatio(flattenOver(graphicColor, stop.color), stop.color),
-  }));
+  // Every graphic stop against every surface stop: a reader gets whichever
+  // pairing they land on, so the weakest pairing is the one that matters.
+  const stops: ContrastStop[] = [];
+  for (const graphicColor of graphicColors) {
+    for (const stop of surfaceStops) {
+      stops.push({
+        source: stop.source,
+        painted: formatRgb(stop.color),
+        ratio: contrastRatio(flattenOver(graphicColor, stop.color), stop.color),
+      });
+    }
+  }
 
   return {
     label,
-    color: paint,
+    color: paintDescription,
     backgroundColor: painted.backgroundColor,
     backgroundImage: painted.backgroundImage,
     stops,

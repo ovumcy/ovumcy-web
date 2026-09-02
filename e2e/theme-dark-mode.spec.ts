@@ -212,39 +212,69 @@ test.describe('Theme mode', () => {
       'data-cycle-ribbon-visible',
       'true'
     );
+
+    // All four phases, measured with 'background' (not 'background-color') so
+    // a cell that also carries data-predicted-flow or data-start-window — both
+    // painted as background-image, layered on top of the phase's own fill —
+    // is not measured as if that overlay were absent. Restricted to a cell
+    // carrying neither flag, so this pins the phase's OWN fill, the same
+    // quantity input.css's own contrast comment documents.
+    const phases = ['menstrual', 'follicular', 'ovulation', 'luteal'] as const;
+    const cleanPhaseCell = (phase: (typeof phases)[number]) =>
+      header
+        .locator(
+          `[data-cycle-ribbon-day][data-phase="${phase}"]:not([data-predicted-flow="true"]):not([data-start-window="true"])`
+        )
+        .first();
+
     // The two phases a reader looks for — the period itself and the ovulation
     // day — carry the 3:1 non-text floor against the card in both themes. The
     // recessive pair (follicular, luteal) deliberately does not: the band is a
     // redundant aria-hidden graphic whose every fact is stated in the status
     // line, and levelling all four collapses them into one luminance where
-    // neighbouring phases stop being separable at all.
-    const menstrual = header.locator('[data-cycle-ribbon-day][data-phase="menstrual"]').first();
-    await expect(menstrual).toHaveCount(1);
+    // neighbouring phases stop being separable at all (docs: input.css, the
+    // calendar phase/state colours comment). The exception is on the two
+    // recessive phases specifically, not on skipping their measurement — both
+    // are asserted below, just against different floors.
+    const exemptFromTheFloor = new Set(['follicular', 'luteal']);
 
-    const darkContrast = await measureGraphicContrast(
-      menstrual,
-      header,
-      'cycle ribbon menstrual (dark)',
-      'background-color'
-    );
-    expect(darkContrast.worstRatio, describeContrast(darkContrast)).toBeGreaterThanOrEqual(
-      WCAG_AA_GRAPHIC_CONTRAST
-    );
+    for (const phase of phases) {
+      const cell = cleanPhaseCell(phase);
+      await expect(cell).toHaveCount(1);
 
-    // Anti-vacuity: the same reader has to resolve the light theme's cell too.
+      const darkContrast = await measureGraphicContrast(
+        cell,
+        header,
+        `cycle ribbon ${phase} (dark)`,
+        'background'
+      );
+      // Dark theme's lightness ladder clears the floor on all four phases.
+      expect(darkContrast.worstRatio, describeContrast(darkContrast)).toBeGreaterThanOrEqual(
+        WCAG_AA_GRAPHIC_CONTRAST
+      );
+    }
+
+    // Anti-vacuity: the same reader has to resolve the light theme's cells too.
     // A reader that silently stopped resolving anything would pass the dark
-    // assertion above by measuring nothing at all.
+    // assertions above by measuring nothing at all.
     await applyTheme(page, 'light');
-    const lightContrast = await measureGraphicContrast(
-      menstrual,
-      header,
-      'cycle ribbon menstrual (light)',
-      'background-color'
-    );
-    expect(lightContrast.stops.length, describeContrast(lightContrast)).toBeGreaterThan(0);
-    expect(lightContrast.worstRatio, describeContrast(lightContrast)).toBeGreaterThanOrEqual(
-      WCAG_AA_GRAPHIC_CONTRAST
-    );
+
+    for (const phase of phases) {
+      const cell = cleanPhaseCell(phase);
+      const lightContrast = await measureGraphicContrast(
+        cell,
+        header,
+        `cycle ribbon ${phase} (light)`,
+        'background'
+      );
+      expect(lightContrast.stops.length, describeContrast(lightContrast)).toBeGreaterThan(0);
+      if (exemptFromTheFloor.has(phase)) {
+        continue;
+      }
+      expect(lightContrast.worstRatio, describeContrast(lightContrast)).toBeGreaterThanOrEqual(
+        WCAG_AA_GRAPHIC_CONTRAST
+      );
+    }
 
     await logoutViaAPI(page);
   });
