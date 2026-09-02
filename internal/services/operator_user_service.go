@@ -152,6 +152,15 @@ func (service *OperatorUserService) SetEmailByID(ctx context.Context, userID uin
 		return models.OperatorUserSummary{}, models.OperatorUserSummary{}, err
 	}
 
+	// A re-run with the address the row already carries is a no-op, not a
+	// repair, and it must not reach the write: that write bumps
+	// auth_session_version, so a scripted retry would sign the owner out of the
+	// session they had just signed into. Byte equality, deliberately: a stored
+	// value that only differs in case IS a repair and must go through.
+	if normalizedEmail == before.Email {
+		return before, before, nil
+	}
+
 	taken, err := service.users.ExistsByNormalizedEmailExcludingUser(ctx, normalizedEmail, userID)
 	if err != nil {
 		return models.OperatorUserSummary{}, models.OperatorUserSummary{}, fmt.Errorf("%w: %v", ErrOperatorUserLookupFailed, err)

@@ -403,6 +403,10 @@ func runUsersSetEmail(service *services.OperatorUserService, args []string, outp
 	if output == nil {
 		output = os.Stdout
 	}
+	if before.Email == after.Email {
+		_, _ = fmt.Fprintf(output, "Account id=%d (role=%s) already answers to %s; nothing was changed and no session was revoked.\n", before.ID, before.Role, after.Email)
+		return nil
+	}
 	// %q on the stored value: a legacy row's decorated form differs from the
 	// address it contains, and the operator needs to see which one moved.
 	_, _ = fmt.Fprintf(output, "Account id=%d (role=%s) re-homed: %q → %s\n", before.ID, before.Role, before.Email, after.Email)
