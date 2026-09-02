@@ -16,7 +16,9 @@ import (
 // pointer per member so an absent member is distinguishable from a zero one. It
 // is the single declaration of the member set: the JSON arm binds into it and
 // the form arm reads its json tags, so a member added here reaches both without
-// a second list to keep in step.
+// a second list to keep in step. patchCarriesOnlyUsageGoal is the one place that
+// still names the members by hand, and it is held to this shape by the sweep
+// TestGoalOnlyShortcutYieldsToEveryOtherMember rather than by derivation.
 type cycleSettingsPatchProbe struct {
 	CycleLength        *int    `json:"cycle_length"`
 	PeriodLength       *int    `json:"period_length"`
