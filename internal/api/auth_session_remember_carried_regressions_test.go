@@ -21,50 +21,79 @@ import (
 // The choice is read back off the live token's own lifetime rather than from a
 // new claim: the session already records it, and a second source of truth is a
 // second thing to get wrong.
-func TestChangingThePasswordKeepsTheRememberedDevice(t *testing.T) {
-	for _, testCase := range []struct {
+func TestPostureChangesKeepTheRememberedDevice(t *testing.T) {
+	// Both re-issue sites are here on purpose. The password change goes through
+	// refreshCurrentSession, which every other posture change shares; the
+	// recovery-code regeneration mints its own cookie because it owns its own
+	// error scope, and is exactly the site a fix applied only to the shared
+	// helper would have missed.
+	postureChanges := []struct {
+		change string
+		path   string
+		method string
+		form   url.Values
+	}{
+		{
+			change: "password change",
+			path:   "/api/v1/users/current/password",
+			method: http.MethodPut,
+			form: url.Values{
+				"current_password": {"StrongPass1"},
+				"new_password":     {"EvenStronger2"},
+				"confirm_password": {"EvenStronger2"},
+			},
+		},
+		{
+			change: "recovery code regeneration",
+			path:   "/api/v1/users/current/recovery-code",
+			method: http.MethodPost,
+			form:   url.Values{"password": {"StrongPass1"}},
+		},
+	}
+	choices := []struct {
 		name           string
 		remember       bool
 		wantRemembered bool
 	}{
 		{name: "remembered session stays remembered", remember: true, wantRemembered: true},
 		{name: "session-scoped stays session-scoped", remember: false},
-	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			app, database := newOnboardingTestAppWithCSRF(t)
-			user := createOnboardingTestUser(t, database, "remember-carried-"+strings.ReplaceAll(testCase.name, " ", "-")+"@example.com", "StrongPass1", true)
+	}
 
-			authCookie, initial := loginWithRememberChoice(t, app, user.Email, "StrongPass1", testCase.remember)
-			if remembered := !initial.Expires.IsZero(); remembered != testCase.wantRemembered {
-				t.Fatalf("login itself did not honour the choice: remembered=%t, want %t", remembered, testCase.wantRemembered)
-			}
+	for _, postureChange := range postureChanges {
+		for _, testCase := range choices {
+			t.Run(postureChange.change+"/"+testCase.name, func(t *testing.T) {
+				app, database := newOnboardingTestAppWithCSRF(t)
+				email := "remember-carried-" + strings.ReplaceAll(postureChange.change+"-"+testCase.name, " ", "-") + "@example.com"
+				user := createOnboardingTestUser(t, database, email, "StrongPass1", true)
 
-			csrfCookie, csrfToken := loadSettingsCSRFContext(t, app, authCookie)
-			form := url.Values{
-				"current_password": {"StrongPass1"},
-				"new_password":     {"EvenStronger2"},
-				"confirm_password": {"EvenStronger2"},
-				"csrf_token":       {csrfToken},
-			}
-			request := httptest.NewRequest(http.MethodPut, "/api/v1/users/current/password", strings.NewReader(form.Encode()))
-			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-			request.Header.Set("Cookie", settingsCookieHeader(authCookie, csrfCookie))
-			response := mustAppResponse(t, app, request)
-
-			reissued := responseCookie(response.Cookies(), authCookieName)
-			if reissued == nil || strings.TrimSpace(reissued.Value) == "" {
-				t.Fatalf("expected the password change to re-issue the session, got %#v", reissued)
-			}
-			remembered := !reissued.Expires.IsZero()
-			if remembered != testCase.wantRemembered {
-				t.Fatalf("expected the re-issued cookie remembered=%t, got %t (expires %v)", testCase.wantRemembered, remembered, reissued.Expires)
-			}
-			if remembered {
-				if remaining := time.Until(reissued.Expires); remaining < 29*24*time.Hour {
-					t.Fatalf("expected the re-issue to carry the remembered lifetime, got %s", remaining)
+				authCookie, initial := loginWithRememberChoice(t, app, user.Email, "StrongPass1", testCase.remember)
+				if remembered := !initial.Expires.IsZero(); remembered != testCase.wantRemembered {
+					t.Fatalf("login itself did not honour the choice: remembered=%t, want %t", remembered, testCase.wantRemembered)
 				}
-			}
-		})
+
+				csrfCookie, csrfToken := loadSettingsCSRFContext(t, app, authCookie)
+				form := cloneFormValues(postureChange.form)
+				form.Set("csrf_token", csrfToken)
+				request := httptest.NewRequest(postureChange.method, postureChange.path, strings.NewReader(form.Encode()))
+				request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+				request.Header.Set("Cookie", settingsCookieHeader(authCookie, csrfCookie))
+				response := mustAppResponse(t, app, request)
+
+				reissued := responseCookie(response.Cookies(), authCookieName)
+				if reissued == nil || strings.TrimSpace(reissued.Value) == "" {
+					t.Fatalf("expected %s to re-issue the session, got %#v", postureChange.change, reissued)
+				}
+				remembered := !reissued.Expires.IsZero()
+				if remembered != testCase.wantRemembered {
+					t.Fatalf("expected the re-issued cookie remembered=%t, got %t (expires %v)", testCase.wantRemembered, remembered, reissued.Expires)
+				}
+				if remembered {
+					if remaining := time.Until(reissued.Expires); remaining < 29*24*time.Hour {
+						t.Fatalf("expected the re-issue to carry the remembered lifetime, got %s", remaining)
+					}
+				}
+			})
+		}
 	}
 }
 

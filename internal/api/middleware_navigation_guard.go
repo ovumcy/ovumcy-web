@@ -82,8 +82,15 @@ func requireSameOriginNavigation(refuse fiber.Handler) fiber.Handler {
 		// `empty`. Every other destination — image, iframe, object, script, and
 		// the rest — is an embed no flow into these routes produces, and is the
 		// shape that would spend the one-time value with nothing on screen.
+		//
+		// An ABSENT destination is admitted rather than refused, and that is the
+		// monotone rule again applied per header rather than to the family as a
+		// whole: a proxy that forwards Sec-Fetch-Site and strips Sec-Fetch-Dest
+		// would otherwise refuse every request forever, which is the lockout this
+		// design rejects. Only a destination the browser actually stated, and
+		// stated as something no client of these routes has, is a refusal.
 		dest := strings.TrimSpace(c.Get(headerSecFetchDest))
-		if !strings.EqualFold(dest, secFetchDestDocument) && !strings.EqualFold(dest, secFetchDestEmpty) {
+		if dest != "" && !strings.EqualFold(dest, secFetchDestDocument) && !strings.EqualFold(dest, secFetchDestEmpty) {
 			return refuse(c)
 		}
 		// A speculative load carries the full navigation shape — same-origin,
