@@ -153,6 +153,18 @@ func (handler *Handler) ShowForgotPasswordPage(c fiber.Ctx) error {
 }
 
 func (handler *Handler) ShowResetPasswordPage(c fiber.Ctx) error {
+	// The N+1 site of the redeem gate in ResetPassword, and the sibling of
+	// ShowForgotPasswordPage above: with local public auth off, the only reset
+	// that still has a redeem is the forced one, so a recovery-minted form — and
+	// the cookieless page that offers to start one — must not render either. The
+	// cookie is read only when the gate can fire, so the ordinary configuration
+	// pays nothing; an absent cookie reads as not forced and takes the same exit.
+	if !handler.localPublicAuthEnabled() {
+		if _, forced := handler.readResetPasswordCookie(c); !forced {
+			handler.clearResetPasswordCookie(c)
+			return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
+		}
+	}
 	flash := handler.popFlashCookie(c)
 	data := handler.buildResetPasswordPageData(c, currentMessages(c), flash)
 	return handler.render(c, "reset_password", data)
