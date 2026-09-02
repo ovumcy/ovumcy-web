@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/security"
 )
 
 // Calendar (.ics) feed subscription — settings lifecycle (slice 4).
@@ -45,12 +46,16 @@ var ErrCalendarFeedTokenPersist = errors.New("calendar feed token persist")
 // settings lifecycle needs. SaveCalendarFeedToken writes (creates or rotates)
 // the two feed-token columns; ClearCalendarFeedToken NULLs them (revoke).
 // Neither bumps auth_session_version — a feed capability is per-surface, not an
-// account credential. FindByID lets the status projection read the current
-// selector without exposing any verifier plaintext (none is stored).
+// account credential.
 type CalendarFeedSettingsRepository interface {
 	SaveCalendarFeedToken(ctx context.Context, userID uint, columns models.CalendarFeedTokenColumns) error
 	ClearCalendarFeedToken(ctx context.Context, userID uint) error
-	FindByID(ctx context.Context, userID uint) (models.User, error)
+	// LoadSettingsByID is the single controlled settings projection, and the
+	// status read below goes through it rather than through a whole-row read so
+	// the two claim watermarks never enter memory on a render path at all.
+	// Growing that projection is pinned by
+	// TestLoadSettingsProjectionSelectsExactlyTheseColumns.
+	LoadSettingsByID(ctx context.Context, userID uint) (models.User, error)
 	// ClaimCalendarFeedReveal atomically consumes the owner's one-time reveal of
 	// the subscribe URL, returning true only for the call that consumed it.
 	// SaveCalendarFeedToken re-arms it in the same statement that mints a token
@@ -131,22 +136,55 @@ func (service *CalendarFeedSettingsService) ClaimFeedReveal(ctx context.Context,
 }
 
 // CalendarFeedStatus is the render-safe projection the settings view uses. It
-// reports ONLY whether a feed is currently configured — never the token, the
-// selector, or a URL — so a normal settings load can show "configured" without
-// any secret ever reaching the page.
+// carries no token, no selector and no URL, so a normal settings load can
+// describe the feed without any secret reaching the page.
+//
+// Known is the field a load failure needs. Without it the zero value said
+// "no feed configured", which is a claim about the ROW made by a read that never
+// saw the row -- and the one claim an owner would act on by generating a second
+// token beside a first one that still works.
+//
+// RevealedAt marks the one-time reveal as CONSUMED. It is emphatically not a
+// fetch record: polls of the .ics feed are deliberately unaudited, and no field
+// here can say whether anyone ever subscribed.
+//
+// KeyEpoch is the row's stamp and CurrentKeyEpoch the value this instance
+// derives from its running SECRET_KEY. Their comparison is the only honest thing
+// that can be said about whether the issued link still resolves: the verifier
+// plaintext is not stored and its MAC cannot be recomputed, so the presence of a
+// selector proves the row exists and nothing more. CurrentKeyEpoch is empty when
+// the epoch could not be derived, and a comparison against an empty value is
+// never treated as a match.
 type CalendarFeedStatus struct {
-	Configured bool
+	Known           bool
+	Configured      bool
+	RevealedAt      *time.Time
+	KeyEpoch        string
+	CurrentKeyEpoch string
 }
 
-// BuildFeedStatus derives the configured/not-configured projection for an
-// owner's stored feed selector, scoped to userID. A non-empty selector means a
-// feed is armed. The verifier plaintext is never stored and never read here, so
-// this seam cannot leak the token. On a load error it reports not-configured so
-// the settings page still renders.
+// BuildFeedStatus derives the render-safe feed projection for an owner, scoped
+// to userID. The verifier plaintext is never stored and never read here, so this
+// seam cannot leak the token. A load error yields the zero value, whose Known is
+// false: the caller must render "unknown", never "not configured".
 func (service *CalendarFeedSettingsService) BuildFeedStatus(ctx context.Context, userID uint) CalendarFeedStatus {
-	user, err := service.users.FindByID(ctx, userID)
+	user, err := service.users.LoadSettingsByID(ctx, userID)
 	if err != nil {
 		return CalendarFeedStatus{}
 	}
-	return CalendarFeedStatus{Configured: strings.TrimSpace(user.CalendarFeedSelector) != ""}
+	// A derivation failure (no SECRET_KEY) leaves CurrentKeyEpoch empty, which the
+	// state machine reads as "cannot judge" rather than as a mismatch: telling an
+	// owner their link was issued under a superseded key because this process
+	// could not derive its own epoch would be a guess wearing a fact's clothes.
+	currentEpoch, epochErr := security.CalendarFeedKeyEpoch(service.secretKey)
+	if epochErr != nil {
+		currentEpoch = ""
+	}
+	return CalendarFeedStatus{
+		Known:           true,
+		Configured:      strings.TrimSpace(user.CalendarFeedSelector) != "",
+		RevealedAt:      user.CalendarFeedRevealedAt,
+		KeyEpoch:        strings.TrimSpace(user.CalendarFeedKeyEpoch),
+		CurrentKeyEpoch: currentEpoch,
+	}
 }

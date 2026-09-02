@@ -43,6 +43,13 @@ type Options struct {
 	LogoutAttempts *AttemptLimit
 	// AuditLogEnabled gates the per-action security-event audit stream.
 	AuditLogEnabled bool
+	// OutboundDeliveryEnabled says whether this instance runs the built-in
+	// reminder pass at all (REMINDER_SCHEDULER_ENABLED, off by default). It is
+	// wired here rather than read where it is rendered so the settings surface
+	// receives a DOMAIN fact and not a configuration lookup: on a default
+	// instance every webhook column is inert, and a surface that called such a
+	// row "armed" would claim a capability the process does not have.
+	OutboundDeliveryEnabled bool
 }
 
 // i18nDisclaimerProvider adapts the i18n Manager to services.NotifyCopyProvider:
@@ -138,6 +145,7 @@ func BuildDependencies(repositories *db.Repositories, secretKey []byte, i18nMana
 		services.DefaultSettingsReauthAttemptsWindow,
 	)
 	webhookSettingsService := services.NewWebhookSettingsService(repositories.Users, secretKey)
+	egressLedgerService := services.NewEgressLedgerService(webhookSettingsService, calendarFeedSettingsService, opts.OutboundDeliveryEnabled)
 	totpService := services.NewTOTPService(repositories.Users, secretKey, attemptLimiter)
 	oidcLogoutStateService := services.NewOIDCLogoutStateService(repositories.OIDCLogout)
 
@@ -170,7 +178,7 @@ func BuildDependencies(repositories *db.Repositories, secretKey []byte, i18nMana
 		ExportService:          exportService,
 		ImportService:          importService,
 		SettingsService:        settingsService,
-		SettingsViewService:    services.NewSettingsViewService(settingsService, exportService, symptomService, webhookSettingsService, calendarFeedSettingsService),
+		SettingsViewService:    services.NewSettingsViewService(settingsService, exportService, symptomService, egressLedgerService),
 		WebhookSettingsService: webhookSettingsService,
 		OnboardingService:      services.NewOnboardingService(repositories.Users),
 		SetupService:           services.NewSetupService(repositories.Users),

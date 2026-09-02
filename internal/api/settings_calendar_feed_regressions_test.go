@@ -145,8 +145,13 @@ func TestCalendarFeedGenerateRevealsURLOnceAndNeverAgain(t *testing.T) {
 		t.Fatal("settings page must never re-render the feed token")
 	}
 	settingsDoc := mustParseHTMLDocument(t, settingsBody)
-	if htmlElementByAttr(settingsDoc, "data-calendar-feed-status", "configured") == nil {
-		t.Fatal("expected the settings feed status to report 'configured'")
+	// A freshly minted link is stamped with the epoch this instance derives from
+	// its own key, which is the only state in which the ledger says the link can
+	// still be cut off here. It deliberately does not say the link is "active":
+	// the verifier is not stored and its MAC cannot be recomputed, so that is not
+	// a claim this code could ever be shown wrong about.
+	if htmlElementByAttr(settingsDoc, "data-egress-feed-state", "issued_current_key") == nil {
+		t.Fatal("expected the settings feed state to report 'issued_current_key'")
 	}
 }
 
@@ -627,7 +632,7 @@ func (failingCalendarFeedRepo) SaveCalendarFeedToken(context.Context, uint, mode
 func (failingCalendarFeedRepo) ClearCalendarFeedToken(context.Context, uint) error {
 	return errors.New("clear failed")
 }
-func (failingCalendarFeedRepo) FindByID(context.Context, uint) (models.User, error) {
+func (failingCalendarFeedRepo) LoadSettingsByID(context.Context, uint) (models.User, error) {
 	return models.User{}, nil
 }
 func (failingCalendarFeedRepo) ClaimCalendarFeedReveal(context.Context, uint, time.Time) (bool, error) {
@@ -666,7 +671,7 @@ func (savingCalendarFeedRepo) SaveCalendarFeedToken(context.Context, uint, model
 	return nil
 }
 func (savingCalendarFeedRepo) ClearCalendarFeedToken(context.Context, uint) error { return nil }
-func (savingCalendarFeedRepo) FindByID(context.Context, uint) (models.User, error) {
+func (savingCalendarFeedRepo) LoadSettingsByID(context.Context, uint) (models.User, error) {
 	return models.User{}, nil
 }
 func (savingCalendarFeedRepo) ClaimCalendarFeedReveal(context.Context, uint, time.Time) (bool, error) {

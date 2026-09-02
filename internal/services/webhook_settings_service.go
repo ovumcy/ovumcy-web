@@ -32,6 +32,14 @@ const (
 // through an error string into a log or response.
 var ErrWebhookURLInvalid = errors.New("webhook url invalid")
 
+// ErrWebhookURLUnreadable is returned when an operation needs the plaintext of a
+// stored endpoint that this instance can no longer open -- the usual cause being
+// a rotated or replaced SECRET_KEY. It is deliberately NOT raised by the paths
+// that REMOVE or REPLACE the endpoint: a destination the instance cannot read is
+// still one the owner may withdraw, and refusing there would leave the row
+// permanently stuck. It never carries the ciphertext or the decrypt error text.
+var ErrWebhookURLUnreadable = errors.New("webhook url unreadable")
+
 // aadForWebhookURL returns the additional-authenticated-data binding an
 // encrypted webhook URL to a single user's row. It parallels aadForTOTPSecret
 // (a deliberately separate helper, not a shared one): including the user id
@@ -86,6 +94,10 @@ type WebhookSettingsFormUpdate struct {
 type WebhookSettingsRepository interface {
 	SaveWebhookSettings(ctx context.Context, userID uint, settings models.WebhookSettingsColumns) error
 	LoadSettingsByID(ctx context.Context, userID uint) (models.User, error)
+	// RemoveWebhookDestination withdraws the endpoint WITHOUT touching the
+	// per-kind opt-ins or the shared lead window, which SaveWebhookSettings
+	// cannot express: it writes all three unconditionally.
+	RemoveWebhookDestination(ctx context.Context, userID uint) error
 }
 
 // WebhookSettingsService owns the business logic for persisting an owner's
@@ -347,38 +359,70 @@ func (service *WebhookSettingsService) DecryptWebhookURL(userID uint, encryptedU
 	return plaintext, nil
 }
 
-// WebhookURLDisplay is the ONLY webhook-endpoint projection the settings surface
-// may render. The stored URL is a secret (it can embed an ntfy/Gotify token), so
-// it is never echoed back into an HTML value/attribute: Configured says whether a
-// deliverable endpoint exists, and Host carries at most the hostname
-// (u.Hostname() — never scheme, path, query, or userinfo). A ciphertext that
-// fails to open still counts as Configured=true (an endpoint is stored) but with
-// an empty Host, so the UI shows "configured" without leaking or fabricating a
-// host.
+// WebhookURLReadability names what this instance can honestly say about a stored
+// endpoint ciphertext, and it is a THREE-valued answer because the row admits
+// three genuinely different situations. Collapsing the last two into one boolean
+// is what let an endpoint the instance can no longer open render beside the word
+// "configured": the owner reads a capability the instance does not have.
+type WebhookURLReadability string
+
+const (
+	// WebhookURLAbsent -- no ciphertext is stored.
+	WebhookURLAbsent WebhookURLReadability = "absent"
+	// WebhookURLUnreadable -- a ciphertext is stored and this instance cannot
+	// open it. The usual cause is a rotated or replaced SECRET_KEY. Delivery
+	// cannot happen and no host can be named.
+	WebhookURLUnreadable WebhookURLReadability = "unreadable"
+	// WebhookURLReadable -- the ciphertext opened. Host carries the result, and
+	// an EMPTY Host here is its own fact (a stored value that names no host), not
+	// the same fact as an unopenable ciphertext.
+	WebhookURLReadable WebhookURLReadability = "readable"
+)
+
+// WebhookURLDisplay is the ONLY webhook-endpoint projection any surface may
+// render. The stored URL is a secret (it can embed an ntfy/Gotify token), so it
+// is never echoed back into an HTML value/attribute, a JSON body, or operator
+// output: Readability says what the instance knows about the stored value, and
+// Host carries at most the hostname (u.Hostname() -- never scheme, path, query,
+// or userinfo).
 type WebhookURLDisplay struct {
-	Configured bool
-	Host       string
+	Readability WebhookURLReadability
+	Host        string
 }
 
-// BuildWebhookURLDisplay derives the render-safe status/host projection for a
-// stored webhook_url ciphertext, scoped to userID (the AAD binds the ciphertext
-// to the owner). It decrypts only to extract the hostname and deliberately
-// discards the rest of the URL, so no caller can obtain the full secret through
-// this seam. An empty stored value yields the zero value (not configured). A
-// ciphertext that fails to open is reported as configured-but-hostless rather
-// than as an error: the settings page must still render, and the owner can
-// re-save to restore a decryptable endpoint.
+// BuildWebhookURLDisplay derives the render-safe projection for a stored
+// webhook_url ciphertext, scoped to userID (the AAD binds the ciphertext to the
+// owner). It decrypts only to extract the hostname and deliberately discards the
+// rest of the URL, so no caller can obtain the full secret through this seam.
+//
+// A ciphertext that fails to open reports WebhookURLUnreadable rather than an
+// error: the settings page must still render, and the owner needs to be told
+// which of the two situations they are in -- re-save to restore a decryptable
+// endpoint, or withdraw it. The failure is never surfaced as an error VALUE
+// either, because the decrypt error's text is not something a page or an
+// operator log may carry.
 func (service *WebhookSettingsService) BuildWebhookURLDisplay(userID uint, encryptedURL string) WebhookURLDisplay {
 	if strings.TrimSpace(encryptedURL) == "" {
-		return WebhookURLDisplay{}
+		return WebhookURLDisplay{Readability: WebhookURLAbsent}
 	}
 	plaintext, err := service.DecryptWebhookURL(userID, encryptedURL)
 	if err != nil {
-		return WebhookURLDisplay{Configured: true}
+		return WebhookURLDisplay{Readability: WebhookURLUnreadable}
 	}
-	// hostOnly is the package's single URL-hostname redaction rule — the same one
+	// hostOnly is the package's single URL-hostname redaction rule -- the same one
 	// the notify pass and the CLI print through. Keeping one implementation is
 	// what makes a hardening of "what is safe to show" reach every surface at
 	// once; this display used to carry its own byte-identical copy.
-	return WebhookURLDisplay{Configured: true, Host: hostOnly(plaintext)}
+	return WebhookURLDisplay{Readability: WebhookURLReadable, Host: hostOnly(plaintext)}
+}
+
+// RemoveWebhookDestination withdraws the owner's endpoint and leaves the
+// per-kind opt-ins and the shared lead window exactly where the owner set them.
+// It never decrypts the ciphertext it clears, which is what keeps an unreadable
+// endpoint revocable, and it is the only write path that expresses "remove the
+// destination" on its own -- SaveWebhookSettings always writes the kinds and the
+// lead window too, so a thin caller reaching for it would silently narrow the
+// window to zero.
+func (service *WebhookSettingsService) RemoveWebhookDestination(ctx context.Context, userID uint) error {
+	return service.users.RemoveWebhookDestination(ctx, userID)
 }

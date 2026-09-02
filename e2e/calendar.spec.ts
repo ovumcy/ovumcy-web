@@ -263,7 +263,8 @@ test.describe('Calendar page', () => {
   // uses `hx-confirm`, which htmx gates on. The template-level guard against the
   // whole class is TestNoTemplateElementMixesHTMXRequestWithDataConfirm; the
   // sibling cancel-is-inert tests cover the other gated surfaces in
-  // settings-profile-cycle.spec.ts and settings-calendar-feed.spec.ts.
+  // settings-profile-cycle.spec.ts, settings-calendar-feed.spec.ts, and
+  // settings-webhook.spec.ts.
   test('cancelling the delete confirmation leaves the day entry intact', async ({ page }) => {
     await registerOwnerOnCalendar(page, 'calendar-delete-cancel');
 

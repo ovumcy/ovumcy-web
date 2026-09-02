@@ -469,5 +469,8 @@ func bootstrapOptions(config runtimeConfig) bootstrap.Options {
 		// edge limiter in server.go.
 		LogoutAttempts:  &bootstrap.AttemptLimit{Max: config.RateLimits.LogoutAccountMax, Window: config.RateLimits.LogoutAccountWindow},
 		AuditLogEnabled: config.AuditLogEnabled,
+		// The same flag that decides whether the scheduler runs decides what the
+		// settings surface may claim about webhook delivery.
+		OutboundDeliveryEnabled: config.ReminderScheduler.Enabled,
 	}
 }

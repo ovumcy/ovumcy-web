@@ -282,11 +282,13 @@ func TestWebhookSettingsPageNeverRendersStoredURL(t *testing.T) {
 		}
 	}
 
-	// The status hook must report configured, and the hostname (non-secret) may
-	// appear — proving the section renders without the secret.
+	// The state hook must report a stored, readable endpoint, and the hostname
+	// (non-secret) may appear — proving the section renders without the secret.
+	// This test app leaves REMINDER_SCHEDULER_ENABLED off, as a default instance
+	// does, so the honest state is that nothing will be delivered from here.
 	document := mustParseHTMLDocument(t, body)
-	if htmlElementByAttr(document, "data-webhook-status", "configured") == nil {
-		t.Fatal("expected the webhook status hook to report 'configured'")
+	if htmlElementByAttr(document, "data-egress-webhook-state", "outbound_disabled") == nil {
+		t.Fatal("expected the webhook state hook to report 'outbound_disabled'")
 	}
 	if !strings.Contains(body, host) {
 		t.Fatalf("expected the non-secret hostname %q to be shown as status", host)

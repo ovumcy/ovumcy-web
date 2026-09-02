@@ -10,20 +10,24 @@ import {
   registerOwnerViaUI,
 } from './support/auth-helpers';
 
-// Browser coverage for the read-only .ics feed lifecycle. The subscribe URL is
-// the one sanctioned secret-in-URL carve-out (calendar clients send no cookie,
-// so the path token is the auth), and its browser-visible contract is that the
-// URL is WRITE-ONLY: it appears on the dedicated reveal page exactly once and is
-// never rendered again — not on settings, not on a reload, not on a second visit
-// to the reveal page. Backend regressions pin the server side; this spec pins
-// what the owner's browser actually receives.
+// Browser coverage for the read-only .ics feed lifecycle — the calendar half of
+// the egress ledger, the merged owner-only card that also carries the webhook
+// (settings-webhook.spec.ts covers that half). The subscribe URL is the one
+// sanctioned secret-in-URL carve-out (calendar clients send no cookie, so the
+// path token is the auth), and its browser-visible contract is that the URL is
+// WRITE-ONLY: it appears on the dedicated reveal page exactly once and is never
+// rendered again — not on settings, not on a reload, not on a second visit to
+// the reveal page. Backend regressions pin the server side; this spec pins what
+// the owner's browser actually receives. The reveal page itself is untouched by
+// the settings-card merge, so its hooks (data-calendar-feed-reveal and friends)
+// are unchanged below.
 //
 // The absence assertions below are anchored positively inside the same test: the
 // very hook asserted missing on /settings ([data-calendar-feed-url]) is asserted
 // PRESENT on the reveal page a few lines earlier, so a dead hook cannot make the
 // negatives pass for the wrong reason.
 
-const FEED_SECTION = '#settings-calendar-feed';
+const EGRESS_CARD = '#settings-egress';
 const FEED_URL_HOOK = '[data-calendar-feed-url]';
 const SUBSCRIBE_URL_PATTERN = /^https?:\/\/[^/]+\/calendar\/feed\/[^/]+\.ics$/;
 
@@ -46,8 +50,16 @@ async function registerOwnerAndOpenSettings(page: Page, prefix: string): Promise
   await expect(page).toHaveURL(/\/settings$/);
 }
 
+/** The calendar-feed half of the merged card: `[data-egress-path="calendar-feed"]`. */
 function feedSection(page: Page): Locator {
-  return page.locator(FEED_SECTION);
+  return page.locator(EGRESS_CARD).locator('[data-egress-path="calendar-feed"]');
+}
+
+// `data-egress-feed-state` lives on the same wrapper div `feedSection` already
+// selects (`[data-egress-path="calendar-feed"]`), not on a descendant, so the
+// state is asserted on that element directly rather than via a nested lookup.
+async function expectFeedState(page: Page, state: string): Promise<void> {
+  await expect(feedSection(page)).toHaveAttribute('data-egress-feed-state', state);
 }
 
 /**
@@ -183,10 +195,7 @@ test.describe('Settings: calendar feed one-time reveal', () => {
     await registerOwnerAndOpenSettings(page, 'calendar-feed-reveal-once');
 
     // Disarmed baseline: only the generate affordance exists and no URL is shown.
-    await expect(feedSection(page).locator('[data-calendar-feed-status]')).toHaveAttribute(
-      'data-calendar-feed-status',
-      'not-configured'
-    );
+    await expectFeedState(page, 'none');
     await expect(feedSection(page).locator('[data-settings-calendar-feed-rotate]')).toHaveCount(0);
     await expect(feedSection(page).locator('[data-settings-calendar-feed-revoke]')).toHaveCount(0);
     await expect(page.locator(FEED_URL_HOOK)).toHaveCount(0);
@@ -200,11 +209,9 @@ test.describe('Settings: calendar feed one-time reveal', () => {
     await leaveRevealPage(page);
 
     // Armed settings page: status flips, the lifecycle controls swap — and the
-    // URL is gone from the DOM entirely.
-    await expect(feedSection(page).locator('[data-calendar-feed-status]')).toHaveAttribute(
-      'data-calendar-feed-status',
-      'configured'
-    );
+    // URL is gone from the DOM entirely. A freshly generated link is signed
+    // under the key this instance uses now, hence issued_current_key.
+    await expectFeedState(page, 'issued_current_key');
     await expect(feedSection(page).locator('[data-settings-calendar-feed-generate]')).toHaveCount(0);
     await expect(feedSection(page).locator('[data-settings-calendar-feed-rotate]')).toBeVisible();
     await expect(feedSection(page).locator('[data-settings-calendar-feed-revoke]')).toBeVisible();
@@ -257,14 +264,11 @@ test.describe('Settings: calendar feed one-time reveal', () => {
     await submitAndAwait(page, 'DELETE', '/api/v1/users/current/calendar-feed', () =>
       acceptConfirmDialog(page)
     );
-    await expect(page.locator('#settings-calendar-feed-status .status-ok')).toBeVisible();
+    await expect(page.locator('#settings-egress-status .status-ok')).toBeVisible();
 
     await page.reload();
     await expect(page).toHaveURL(/\/settings$/);
-    await expect(feedSection(page).locator('[data-calendar-feed-status]')).toHaveAttribute(
-      'data-calendar-feed-status',
-      'not-configured'
-    );
+    await expectFeedState(page, 'none');
     await expect(feedSection(page).locator('[data-settings-calendar-feed-generate]')).toBeVisible();
     await expect(feedSection(page).locator('[data-settings-calendar-feed-rotate]')).toHaveCount(0);
     await expect(feedSection(page).locator('[data-settings-calendar-feed-revoke]')).toHaveCount(0);
@@ -326,10 +330,7 @@ test.describe('Settings: calendar feed one-time reveal', () => {
     // Still armed, and — the assertion that would have caught the original
     // defect — the ORIGINAL subscribe URL still serves, so neither cancelled
     // action rotated or revoked it behind the owner's back.
-    await expect(feedSection(page).locator('[data-calendar-feed-status]')).toHaveAttribute(
-      'data-calendar-feed-status',
-      'configured'
-    );
+    await expectFeedState(page, 'issued_current_key');
     const afterCancel = await page.request.get(armed.url, { headers: apiOriginHeader(page) });
     expect(afterCancel.status(), 'a cancelled rotate/revoke must leave the URL working').toBe(200);
 
@@ -339,7 +340,7 @@ test.describe('Settings: calendar feed one-time reveal', () => {
     await submitAndAwait(page, 'DELETE', '/api/v1/users/current/calendar-feed', () =>
       acceptConfirmDialog(page)
     );
-    await expect(page.locator('#settings-calendar-feed-status .status-ok')).toBeVisible();
+    await expect(page.locator('#settings-egress-status .status-ok')).toBeVisible();
 
     const afterAccept = await page.request.get(armed.url, { headers: apiOriginHeader(page) });
     expect(afterAccept.status(), 'an accepted revoke must kill the URL').toBe(404);

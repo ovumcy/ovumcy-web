@@ -722,8 +722,8 @@ test.describe('Settings: profile and cycle', () => {
   // symptom anyway. The control now uses `hx-confirm`, which htmx gates on. The
   // template-level guard against the whole class is
   // TestNoTemplateElementMixesHTMXRequestWithDataConfirm; the sibling
-  // cancel-is-inert tests cover the other gated surfaces in calendar.spec.ts and
-  // settings-calendar-feed.spec.ts.
+  // cancel-is-inert tests cover the other gated surfaces in calendar.spec.ts,
+  // settings-calendar-feed.spec.ts, and settings-webhook.spec.ts.
   test('cancelling the hide confirmation keeps the custom symptom active', async ({ page }) => {
     await registerOwnerAndOpenSettings(page, 'settings-custom-symptom-hide-cancel');
 

@@ -39,6 +39,7 @@ func registerV1APIRoutes(app *fiber.App, handler *Handler) {
 	usersCurrent.Patch("/interface", handler.OwnerOnly, handler.UpdateInterfaceSettings)
 	usersCurrent.Patch("/tracking", handler.OwnerOnly, handler.UpdateTrackingSettings)
 	usersCurrent.Post("/webhook", handler.OwnerOnly, handler.UpdateWebhookSettings)
+	usersCurrent.Delete("/webhook", handler.OwnerOnly, handler.RemoveWebhookDestination)
 	usersCurrent.Post("/calendar-feed", handler.OwnerOnly, handler.GenerateCalendarFeed)
 	usersCurrent.Post("/calendar-feed/rotate", handler.OwnerOnly, handler.RotateCalendarFeed)
 	usersCurrent.Delete("/calendar-feed", handler.OwnerOnly, handler.RevokeCalendarFeed)

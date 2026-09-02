@@ -1,0 +1,223 @@
+{{define "settings_egress_section_content"}}
+  {{/* One card for both outbound paths. They were two, and a heading state that
+       is an automaton over BOTH — "something here needs attention" outranks
+       "something here is enabled" — cannot be assembled from two cards that each
+       only know their own half.
+
+       This card replaces ITSELF through htmx (hx-swap="outerHTML"), so every
+       control below targets #settings-egress and the server re-renders the whole
+       thing from a read taken after the write. A response that swapped only the
+       status line would leave a state sentence the write had just falsified
+       standing beside a fresh success message.
+
+       The medical-safety disclaimer is rendered ONCE here, for the merged
+       section, and stays in the body beside the configuration it qualifies: a
+       closed card hides the two together. */}}
+  <details class="card settings-section p-4 sm:p-5 space-y-4" id="settings-egress" data-settings-section data-success-toast="true" data-egress-section-state="{{.Egress.Section}}" open>
+    <summary class="settings-section-summary">
+      <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "broadcast"}}</span> {{t .Messages "settings.egress.title"}}</h2>
+    </summary>
+
+    <div>
+      <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.egress.subtitle"}}</p>
+      <p class="field-label mt-2" data-egress-section-status data-egress-state-key="{{.Egress.SectionKey}}">{{t .Messages .Egress.SectionKey}}</p>
+      <p class="journal-muted mt-1 text-sm" data-egress-disclaimer>{{t .Messages "medical.disclaimer"}}</p>
+    </div>
+
+    {{/* ---------- webhook reminders ---------- */}}
+    <div class="space-y-3" data-egress-path="webhook" data-egress-webhook-state="{{.Egress.Webhook.State}}">
+      <h3 class="field-label"><span aria-hidden="true">{{template "icon" "bell"}}</span> {{t .Messages "settings.webhook.title"}}</h3>
+      <p class="journal-muted text-sm">{{t .Messages "settings.webhook.subtitle"}}</p>
+
+      <p class="field-label" data-egress-webhook-status data-egress-state-key="{{.Egress.Webhook.StateKey}}">{{t .Messages .Egress.Webhook.StateKey}}</p>
+      {{if .Egress.Webhook.Host}}
+      <p class="journal-muted text-sm">{{t .Messages "settings.egress.host_label"}} <span data-egress-webhook-host>{{.Egress.Webhook.Host}}</span></p>
+      {{end}}
+      {{/* The one timestamp this path can prove, and it comes only from
+           webhook_last_delivered_at — written after a 2xx. The value lives in the
+           datetime attribute and in its own element, never inside the translated
+           sentence, so no locale has to interpolate a date. */}}
+      <p class="journal-muted text-sm" data-egress-webhook-evidence>{{t .Messages .Egress.Webhook.EvidenceKey}}{{if .Egress.Webhook.EvidenceISO}} <time datetime="{{.Egress.Webhook.EvidenceISO}}" data-egress-webhook-delivered-at>{{.Egress.Webhook.EvidenceText}}</time>{{end}}</p>
+
+      <div>
+        <p class="field-label">{{t .Messages "settings.egress.payload_heading"}}</p>
+        <ul class="journal-muted text-sm" data-egress-webhook-payload>
+          {{range .Egress.Webhook.PayloadKeys}}<li>{{t $.Messages .}}</li>{{end}}
+        </ul>
+      </div>
+
+      <form
+        action="/api/v1/users/current/webhook"
+        method="post"
+        hx-post="/api/v1/users/current/webhook"
+        hx-target="#settings-egress"
+        hx-swap="outerHTML"
+        class="space-y-4"
+        data-settings-webhook-form
+        data-save-feedback>
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+        <div class="space-y-2">
+          <label class="field-label" for="settings-webhook-url">{{t .Messages "settings.webhook.url_label"}}</label>
+          <input
+            type="url"
+            id="settings-webhook-url"
+            name="webhook_url"
+            class="input-field"
+            inputmode="url"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+            data-settings-webhook-url
+            placeholder="{{t .Messages "settings.webhook.url_placeholder"}}">
+          <p class="journal-muted text-sm">{{t .Messages "settings.webhook.url_hint"}}</p>
+        </div>
+
+        <div class="settings-toggle-list">
+          <label
+            class="period-toggle"
+            data-binary-toggle
+            data-active="{{if .Egress.Enabled}}true{{else}}false{{end}}"
+            data-webhook-setting="enabled">
+            <input type="checkbox" name="webhook_enabled" value="true" data-binary-toggle-input {{if .Egress.Enabled}}checked{{end}}>
+            <span class="period-toggle-copy settings-tracking-toggle-copy">
+              <span class="period-toggle-main"><span aria-hidden="true">{{template "icon" "broadcast"}}</span> {{t .Messages "settings.webhook.enabled"}}</span>
+              <span class="journal-muted text-sm">{{t .Messages "settings.webhook.enabled_hint"}}</span>
+            </span>
+          </label>
+
+          <label
+            class="period-toggle"
+            data-binary-toggle
+            data-active="{{if .Egress.NotifyPeriod}}true{{else}}false{{end}}"
+            data-webhook-setting="notify-period">
+            <input type="checkbox" name="webhook_notify_period" value="true" data-binary-toggle-input {{if .Egress.NotifyPeriod}}checked{{end}}>
+            <span class="period-toggle-copy settings-tracking-toggle-copy">
+              <span class="period-toggle-main"><span aria-hidden="true">{{template "icon" "drop"}}</span> {{t .Messages "settings.webhook.notify_period"}}</span>
+            </span>
+          </label>
+
+          <label
+            class="period-toggle"
+            data-binary-toggle
+            data-active="{{if .Egress.NotifyOvulation}}true{{else}}false{{end}}"
+            data-webhook-setting="notify-ovulation">
+            <input type="checkbox" name="webhook_notify_ovulation" value="true" data-binary-toggle-input {{if .Egress.NotifyOvulation}}checked{{end}}>
+            <span class="period-toggle-copy settings-tracking-toggle-copy">
+              <span class="period-toggle-main"><span aria-hidden="true">{{template "icon" "egg"}}</span> {{t .Messages "settings.webhook.notify_ovulation"}}</span>
+            </span>
+          </label>
+        </div>
+
+        <div class="settings-form-actions">
+          <button
+            type="submit"
+            class="btn-secondary"
+            data-settings-webhook-save
+            data-save-button
+            data-saving-label="{{t .Messages "common.saving"}}">{{t .Messages "settings.webhook.save"}}</button>
+        </div>
+      </form>
+
+      {{/* Withdrawing the endpoint is its own request, not a checkbox on the
+           save. The save writes the shared lead window and both per-kind opt-ins
+           whatever the owner touched, and it cannot act at all on a row this
+           instance can no longer decrypt — which is exactly the row an owner
+           most needs to withdraw. */}}
+      {{if .Egress.WebhookRemovable}}
+      <div class="settings-form-actions">
+        <form
+          action="/api/v1/users/current/webhook"
+          method="post"
+          hx-delete="/api/v1/users/current/webhook"
+          hx-target="#settings-egress"
+          hx-swap="outerHTML"
+          hx-confirm="{{t .Messages "settings.egress.webhook.confirm_remove"}}"
+          data-confirm-accept="{{t .Messages "settings.egress.webhook.remove"}}"
+          data-settings-webhook-remove>
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <button type="submit" class="btn-secondary">{{t .Messages "settings.egress.webhook.remove"}}</button>
+        </form>
+      </div>
+      {{end}}
+    </div>
+
+    {{/* ---------- calendar (.ics) feed ---------- */}}
+    <div class="space-y-3" data-egress-path="calendar-feed" data-egress-feed-state="{{.Egress.Feed.State}}">
+      <h3 class="field-label"><span aria-hidden="true">{{template "icon" "calendar"}}</span> {{t .Messages "settings.calendar_feed.title"}}</h3>
+      <p class="journal-muted text-sm">{{t .Messages "settings.calendar_feed.subtitle"}}</p>
+
+      <p class="field-label" data-egress-feed-status data-egress-state-key="{{.Egress.Feed.StateKey}}">{{t .Messages .Egress.Feed.StateKey}}</p>
+      {{/* The reveal mark, and nothing else. There is no fetch count, no "last
+           opened" and no rotation history here: polls of the feed are
+           deliberately unaudited, so no field exists that could answer them. */}}
+      <p class="journal-muted text-sm" data-egress-feed-evidence>{{t .Messages .Egress.Feed.EvidenceKey}}{{if .Egress.Feed.EvidenceISO}} <time datetime="{{.Egress.Feed.EvidenceISO}}" data-egress-feed-revealed-at>{{.Egress.Feed.EvidenceText}}</time>{{end}}</p>
+      <p class="journal-muted text-sm" data-egress-feed-hint>{{t .Messages "settings.calendar_feed.url_hint"}}</p>
+
+      <div>
+        <p class="field-label">{{t .Messages "settings.egress.payload_heading"}}</p>
+        <ul class="journal-muted text-sm" data-egress-feed-payload>
+          {{range .Egress.Feed.PayloadKeys}}<li>{{t $.Messages .}}</li>{{end}}
+        </ul>
+      </div>
+
+      {{if .Egress.FeedActionable}}
+      <div class="settings-form-actions">
+        {{if .Egress.FeedTokenPresent}}
+        <form
+          action="/api/v1/users/current/calendar-feed/rotate"
+          method="post"
+          hx-post="/api/v1/users/current/calendar-feed/rotate"
+          hx-target="#settings-egress"
+          hx-swap="outerHTML"
+          hx-confirm="{{t .Messages "settings.calendar_feed.confirm_rotate"}}"
+          data-confirm-accept="{{t .Messages "settings.calendar_feed.rotate"}}"
+          data-settings-calendar-feed-rotate>
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <button type="submit" class="btn-secondary">{{t .Messages "settings.calendar_feed.rotate"}}</button>
+        </form>
+
+        <form
+          action="/api/v1/users/current/calendar-feed"
+          method="post"
+          hx-delete="/api/v1/users/current/calendar-feed"
+          hx-target="#settings-egress"
+          hx-swap="outerHTML"
+          hx-confirm="{{t .Messages "settings.calendar_feed.confirm_revoke"}}"
+          data-confirm-accept="{{t .Messages "settings.calendar_feed.revoke"}}"
+          data-settings-calendar-feed-revoke>
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <button type="submit" class="btn-secondary">{{t .Messages "settings.calendar_feed.revoke"}}</button>
+        </form>
+        {{else}}
+        <form
+          action="/api/v1/users/current/calendar-feed"
+          method="post"
+          hx-post="/api/v1/users/current/calendar-feed"
+          hx-target="#settings-egress"
+          hx-swap="outerHTML"
+          data-settings-calendar-feed-generate>
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <button type="submit" class="btn-secondary">{{t .Messages "settings.calendar_feed.generate"}}</button>
+        </form>
+        {{end}}
+      </div>
+      {{end}}
+    </div>
+
+    {{/* ONE status island for the whole section. Two of them — one per path —
+         would give the card two aria-live regions announcing over each other,
+         and the toast module reads .status-ok from inside the swap target, which
+         only one of the two could be. */}}
+    <div id="settings-egress-status" class="save-status text-sm" aria-live="polite">
+      {{if .EgressStatusKey}}
+      <div class="status-ok" data-flash-key="{{.EgressStatusKey}}" data-flash-status="success">
+        <span class="toast-message-wrap">
+          <span class="toast-icon" aria-hidden="true">✓</span>
+          <span class="toast-message">{{t .Messages .EgressStatusKey}}</span>
+        </span>
+      </div>
+      {{end}}
+    </div>
+  </details>
+{{end}}

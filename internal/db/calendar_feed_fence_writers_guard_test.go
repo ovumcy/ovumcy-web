@@ -84,6 +84,19 @@ func TestEveryCalendarFeedWriterAdvancesTheRestoreFence(t *testing.T) {
 		// below, which is the load-bearing half of this guard.
 		advanceAt := -1
 		columnAt := -1
+		// A function that issues no write statement cannot be a writer, however
+		// many feed columns it names. The settings projection names
+		// calendar_feed_selector in its Select list because the egress ledger has
+		// to read it, and a name-only scan reported that READ as a write that
+		// forgot to advance the fence. The verb test is what separates the two,
+		// and it stays inside the scan rather than becoming an exemption: an
+		// exemption without a reason is how this guard would quietly turn into an
+		// allowlist for whatever was easiest to skip. A Select naming the columns
+		// a following Updates writes is still caught, because that function does
+		// issue a write.
+		if !functionIssuesAWrite(function) {
+			continue
+		}
 		ast.Inspect(function.Body, func(node ast.Node) bool {
 			switch typed := node.(type) {
 			case *ast.CallExpr:
@@ -191,4 +204,38 @@ func sortedNamesOf(set map[string]bool) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// gormWriteVerbs are the calls through which this repository actually writes a
+// row. The list is deliberately generous: a false positive here only makes the
+// guard look at a function it would have looked at before, while a false
+// negative would hide a real writer.
+var gormWriteVerbs = map[string]bool{
+	"Updates":       true,
+	"Update":        true,
+	"UpdateColumn":  true,
+	"UpdateColumns": true,
+	"Save":          true,
+	"Create":        true,
+	"Delete":        true,
+	"Exec":          true,
+}
+
+// functionIssuesAWrite reports whether the body reaches any statement that can
+// change a row.
+func functionIssuesAWrite(function *ast.FuncDecl) bool {
+	writes := false
+	ast.Inspect(function.Body, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if ok && gormWriteVerbs[selector.Sel.Name] {
+			writes = true
+			return false
+		}
+		return true
+	})
+	return writes
 }

@@ -197,20 +197,26 @@ func printWebhookStatus(output io.Writer, email string, view services.WebhookSet
 	_, _ = fmt.Fprintf(output, "  reminder lead days: %d\n", view.ReminderLeadDays)
 }
 
-// webhookEndpointStatus renders the endpoint line: "not configured" when no
-// endpoint is stored, otherwise "configured (host <host>)" with the HOST ONLY.
-// It never renders the full URL or token.
+// webhookEndpointStatus renders the endpoint line with the HOST ONLY, never the
+// full URL or token. It answers the three situations the row admits separately:
+// nothing stored, something stored this instance cannot open, and an endpoint it
+// can. The middle one used to be unreachable here because the resolve path
+// failed before printing anything, which hid the only row an operator has to act
+// on.
 func webhookEndpointStatus(view services.WebhookSettingsView) string {
-	if !view.Configured {
+	switch view.Readability {
+	case services.WebhookURLAbsent:
 		return "not configured"
+	case services.WebhookURLUnreadable:
+		return "stored, unreadable by this instance (SECRET_KEY changed?) — set a new endpoint or clear it"
 	}
 	host := strings.TrimSpace(view.Host)
-	// codecov:ignore:start -- unreachable via any real flow: a stored endpoint
-	// always passed ValidateWebhookURL (which requires a host), so the derived
-	// host is never empty here. Kept as a fail-safe so a hostless value reports
-	// "configured" without leaking rather than printing an empty host.
+	// codecov:ignore:start -- not reachable from a save: ValidateWebhookURL
+	// requires a host, so a row written by this application always yields one. A
+	// restored or hand-edited row can still carry a hostless value, and this
+	// reports it without leaking rather than printing an empty host.
 	if host == "" {
-		return "configured"
+		return "configured, no host"
 	}
 	// codecov:ignore:end
 	return fmt.Sprintf("configured (host %s)", host)

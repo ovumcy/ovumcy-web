@@ -148,6 +148,7 @@ var settingsStatusTranslationKeys = map[string]string{
 	"interface_updated":       "settings.success.interface_updated",
 	"tracking_updated":        "settings.success.tracking_updated",
 	"webhook_updated":         "settings.success.webhook_updated",
+	"webhook_removed":         "settings.success.webhook_removed",
 	"calendar_feed_generated": "settings.success.calendar_feed_generated",
 	"calendar_feed_rotated":   "settings.success.calendar_feed_rotated",
 	"calendar_feed_revoked":   "settings.success.calendar_feed_revoked",

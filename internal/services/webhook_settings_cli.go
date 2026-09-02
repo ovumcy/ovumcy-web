@@ -27,12 +27,14 @@ type WebhookOwnerReader interface {
 // webhook settings for operator surfaces (the CLI show/set output). It carries
 // the toggle state, the lead window, and — for the endpoint — only the HOST,
 // never the full URL, path, query, or userinfo (which can embed an ntfy/Gotify
-// token). Configured reports whether any endpoint ciphertext is stored.
+// token). Readability reports what this instance can say about the stored ciphertext.
 type WebhookSettingsView struct {
-	// Configured is true when an endpoint ciphertext is stored (independent of
-	// whether delivery is currently enabled).
-	Configured bool
-	Enabled    bool
+	// Readability is the same three-valued answer the web surface renders --
+	// absent, unreadable, readable -- and for the same reason: an endpoint this
+	// instance can no longer open is not the same fact as one it can, and the
+	// operator is the person who has to act on the difference.
+	Readability WebhookURLReadability
+	Enabled     bool
 	// Host is the destination hostname only (e.g. "ntfy.example.io"), or "" when
 	// no endpoint is configured. It is the single form of a webhook URL that may
 	// appear in operator output — never the scheme/path/query/token.
@@ -151,6 +153,13 @@ func (service *WebhookSettingsCLIService) ApplyWebhookSettings(ctx context.Conte
 	case webhookURLClear:
 		update.URL = ""
 	case webhookURLKeep:
+		// A keep-merge is the one action that needs the plaintext. On a row this
+		// instance cannot open there is nothing to keep, and re-persisting the
+		// empty string would silently delete the endpoint the operator asked to
+		// leave alone. Set or clear it explicitly instead.
+		if current.Readability == WebhookURLUnreadable {
+			return WebhookSettingsView{}, ErrWebhookURLUnreadable
+		}
 		update.URL = currentURL
 	default:
 		// codecov:ignore -- unreachable: URLAction is only ever one of the three
@@ -194,24 +203,28 @@ func (service *WebhookSettingsCLIService) resolveOwner(ctx context.Context, emai
 		return models.User{}, WebhookSettingsView{}, "", ErrWebhookOwnerNotFound
 	}
 
+	// One projection rule for both surfaces. This path used to fail outright on a
+	// ciphertext it could not open, which left the operator unable to SEE the
+	// broken row and unable to clear it -- the one situation the CLI exists for.
+	// It now reports the same three-valued readability the settings page renders;
+	// only the merge that genuinely needs the plaintext refuses, below.
+	display := service.settings.BuildWebhookURLDisplay(owner.ID, owner.WebhookURL)
 	plaintextURL := ""
-	host := ""
-	configured := strings.TrimSpace(owner.WebhookURL) != ""
-	if configured {
-		// Decrypt once; the plaintext is returned to the caller for a URL-keeping
-		// merge and used here only to derive the host.
+	if display.Readability == WebhookURLReadable {
+		// Decrypt once more only where the plaintext is actually needed: a
+		// URL-keeping merge re-persists the existing endpoint unchanged. The
+		// display above deliberately discards it.
 		plaintext, decryptErr := service.settings.DecryptWebhookURL(owner.ID, owner.WebhookURL)
 		if decryptErr != nil {
-			return models.User{}, WebhookSettingsView{}, "", fmt.Errorf("decrypt current webhook url: %w", decryptErr)
+			return models.User{}, WebhookSettingsView{}, "", ErrWebhookURLUnreadable
 		}
 		plaintextURL = plaintext
-		host = hostOnly(plaintext)
 	}
 
 	view := WebhookSettingsView{
-		Configured:      configured,
+		Readability:     display.Readability,
 		Enabled:         owner.WebhookEnabled,
-		Host:            host,
+		Host:            display.Host,
 		NotifyPeriod:    owner.WebhookNotifyPeriod,
 		NotifyOvulation: owner.WebhookNotifyOvulation,
 		// Clamped, exactly as viewFromUpdate and DecideDueReminders clamp it: the
@@ -243,8 +256,12 @@ func validateWebhookUpdateForDryRun(update WebhookSettingsUpdate) error {
 // view mirrors what a subsequent ResolveWebhookSettings would report.
 func viewFromUpdate(update WebhookSettingsUpdate) WebhookSettingsView {
 	trimmedURL := strings.TrimSpace(update.URL)
+	readability := WebhookURLAbsent
+	if trimmedURL != "" {
+		readability = WebhookURLReadable
+	}
 	return WebhookSettingsView{
-		Configured:       trimmedURL != "",
+		Readability:      readability,
 		Enabled:          update.Enabled,
 		Host:             hostOnly(trimmedURL),
 		NotifyPeriod:     update.NotifyPeriod,

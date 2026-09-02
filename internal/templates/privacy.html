@@ -42,6 +42,13 @@
   <section class="card p-5 sm:p-6 space-y-3" data-privacy-section="third-parties">
     <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "plug"}}</span> {{t .Messages "privacy.third_parties.title"}}</h2>
     <p class="journal-muted">{{t .Messages "privacy.third_parties.body"}}</p>
+    {{/* One link, and only for a signed-in reader: /privacy is unauthenticated,
+         so anything about THIS instance's configuration rendered here would be a
+         disclosure. The link carries no state — the ledger itself is behind the
+         owner gate. */}}
+    {{if .CurrentUser}}
+    <p class="journal-muted"><a class="inline-link" href="/settings#settings-egress" data-privacy-ledger-link>{{t .Messages "privacy.third_parties.ledger_link"}}</a></p>
+    {{end}}
   </section>
 
   <section class="card p-5 sm:p-6 space-y-3" data-privacy-section="open-source">
