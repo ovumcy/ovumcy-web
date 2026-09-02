@@ -10,15 +10,16 @@
   through SSO, which is precisely what still works in `oidc_only`, so refusing it would strand the
   owner with no way to clear the flag.
 
-- **Two pages that spend a one-time value now require a real navigation.** `/register/welcome`
-  exchanges the registration hand-off for a session, and `/settings/calendar-feed` reveals the
-  subscribe URL exactly once; both are ordinary page loads, and a browser sends cookies with a page
-  load started from someone else's site. Neither could be made to hand anything to that site — the
+- **The pages that spend a one-time value now check who asked.** `/register/welcome` exchanges the
+  registration hand-off for a session, `/settings/calendar-feed` reveals the subscribe URL exactly
+  once, and the recovery code is shown exactly once on its own page and inline after signing up; all
+  of them are ordinary page loads, and a browser sends cookies with a page load started from someone
+  else's site. Neither could be made to hand anything to that site — the
   single-use marks behind them already saw to that — but both could be made to *burn* a value the
   owner had not seen yet: a link that quietly finished her registration, or spent her one look at
-  the subscribe URL. Both pages now check who started the request and answer anything but a
-  first-party navigation the way they answer a stale one, leaving the value unspent for the owner's
-  own visit. A first-party app fetching those pages the documented way still gets them, and a browser
+  the subscribe URL or the recovery code. Each of them now checks who started the request and
+  answers anything but a first-party one the way it answers a stale one, leaving the value unspent
+  for the owner's own visit. A first-party app fetching those pages the documented way still gets them, and a browser
   too old to say who started a request is served as before.
 
 - **A recovery reset no longer remembers a device nobody chose.** Signing in remembers a browser
