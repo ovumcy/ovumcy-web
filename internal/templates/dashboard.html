@@ -162,23 +162,26 @@
       {{/* The cycle ribbon. One cell per day of the axis, in cycle order: the
            phase colours, the fertile window, the days a period may start on and
            the days this account actually recorded, all drawn from the calendar's
-           own --cal-* source so the two screens cannot disagree. It is
-           aria-hidden because every fact it encodes is stated in the status line
-           above it — the ribbon is the picture of that sentence, not a second
-           source. */}}
+           own --cal-* source so the two screens cannot disagree. The status line
+           above states the aggregate (today's phase, the next-period window, the
+           ovulation estimate), but two per-day facts — which days fall in the
+           predicted start window and which were actually logged — exist only
+           here, so each cell carries its own accessible name instead of the
+           ribbon being aria-hidden. */}}
       <div
         class="dashboard-cycle-ribbon-wrap"
         data-dashboard-cycle-ribbon
         data-cycle-ribbon-visible="{{if .CycleHero.Visible}}true{{else}}false{{end}}">
         {{if .CycleHero.Visible}}
-        <div class="dashboard-cycle-ribbon" aria-hidden="true">
+        <div class="dashboard-cycle-ribbon">
           {{range .CycleHero.Days}}
           <span
             class="dashboard-cycle-ribbon-day"
             data-cycle-ribbon-day="{{.Day}}"
             data-phase="{{.Phase}}"
+            role="img"
+            aria-label="{{t $.Messages "dashboard.cycle_day"}} {{.Day}}: {{phaseLabel $.Messages .Phase}}{{if .IsStartWindow}}, {{t $.Messages "calendar.legend.start_window"}}{{end}}{{if .IsLogged}}, {{t $.Messages "calendar.data_logged"}}{{end}}"
             {{if .IsToday}}data-today="true"{{end}}
-            {{if .IsProjected}}data-projected="true"{{end}}
             {{if .IsPredictedFlow}}data-predicted-flow="true"{{end}}
             {{if .IsFertile}}data-fertile="true"{{end}}
             {{if .IsFertilePeak}}data-fertile-peak="true"{{end}}
