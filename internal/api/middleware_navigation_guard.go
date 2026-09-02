@@ -14,11 +14,13 @@ const (
 	headerSecFetchSite = "Sec-Fetch-Site"
 	headerSecFetchMode = "Sec-Fetch-Mode"
 	headerSecFetchDest = "Sec-Fetch-Dest"
+	headerSecPurpose   = "Sec-Purpose"
 
 	secFetchSiteSameOrigin = "same-origin"
 	secFetchSiteNone       = "none"
 	secFetchModeNavigate   = "navigate"
 	secFetchDestDocument   = "document"
+	secPurposePrefetch     = "prefetch"
 )
 
 // requireSameOriginNavigation guards a GET route that consumes something
@@ -73,6 +75,15 @@ func requireSameOriginNavigation(refuse fiber.Handler) fiber.Handler {
 			return refuse(c)
 		}
 		if !strings.EqualFold(strings.TrimSpace(c.Get(headerSecFetchDest)), secFetchDestDocument) {
+			return refuse(c)
+		}
+		// A speculative load carries the full navigation shape — same-origin,
+		// navigate, document — and is the one request that reaches here without
+		// anybody having decided to go. Nothing links to either guarded route, so
+		// this costs no real flow; it is here because a browser or an extension
+		// that starts prefetching one would otherwise spend the owner's one-time
+		// value on her behalf, and the guard would have no way to tell.
+		if strings.Contains(strings.ToLower(c.Get(headerSecPurpose)), secPurposePrefetch) {
 			return refuse(c)
 		}
 		return c.Next()
