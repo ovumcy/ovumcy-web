@@ -638,7 +638,7 @@ func calendarDayIsPackageIdent(expr ast.Expr) bool {
 // Without it the shape's only live positive example is an allowlist entry, so the
 // day that site is converted the classifier stops being exercised and the barrier
 // passes while measuring nothing — the anti-vacuity anchor would depend on the
-// data it judges, which a guard's floor must never do. The floors do not
+// data it judges, which an anti-vacuity anchor must never do. The floors do not
 // cover this: they prove the parser SEES steps, not that the classifier still
 // tells a location anchor from a UTC one.
 const calendarDayBarrierShapeCFixture = `package sample
