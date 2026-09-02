@@ -15,13 +15,22 @@
 --
 -- webhook_config_version closes that window. Three writers advance it, each in
 -- the same statement that performs its own write, and that is the COMPLETE set
--- rather than an illustration -- a fourth added later owes the same advance:
+-- of DELIVERY CONFIGURATION writers rather than an illustration -- a later one
+-- owes the same advance:
 --
 --   * SaveWebhookSettings -- a save, a disable, an endpoint replacement, a
 --     removal.
 --   * UpdateReminderLeadDays -- the shared banner-and-webhook lead window, which
 --     ListAllForNotify projects and the notify decision places the reminder from.
 --   * ClearAllDataAndResetSettings.
+--
+-- What obliges a writer is what it CHANGES, never that it touched the users row.
+-- MarkWebhookDelivered (migration 039) writes that row after a 2xx and must NOT
+-- advance this column: it records that delivery happened, changing neither
+-- WHETHER, WHERE nor HOW EARLY it happens. Advancing there would also break the
+-- pass doing the delivering -- the epoch is pinned once per owner OUTSIDE the
+-- reminder loop, so a bump after a period delivery loses the ovulation claim of
+-- that same pass.
 --
 -- The claim pins the value the claiming pass's snapshot carried. Monotonic on
 -- purpose: clear-data ADVANCES the counter rather than resetting it, because a

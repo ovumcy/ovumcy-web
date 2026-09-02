@@ -1,0 +1,57 @@
+-- Postgres mirror of migrations/039_delivery_mark_and_feed_key_epoch.sql (item
+-- 23, privacy ledger). Same version number and basename so schema history stays
+-- aligned across engines.
+--
+-- NO BACKFILL, both columns, and the reason is the same one that makes them
+-- worth adding.
+--
+-- webhook_last_delivered_at is the only honest record that a delivery was
+-- ACCEPTED. The two watermarks this schema already carries
+-- (webhook_period_last_sent_cycle_start, webhook_ovulation_last_sent_cycle_start)
+-- are not that: each is a compare-and-set value written BEFORE the POST, holding
+-- a CYCLE ANCHOR rather than a clock reading, and it stands unchanged for a send
+-- that was never accepted until the failure path puts it back. Seeding this
+-- column from max() of the two would write a claim time as a delivery time on
+-- every upgraded row and make that lie permanent. An upgraded instance says "no
+-- delivery recorded" until one is, which is the true statement.
+--
+-- It is written in exactly one place -- MarkWebhookDelivered, after a 2xx,
+-- pinned to the webhook_config_version the delivering pass read -- cleared in
+-- the same UPDATE that writes webhook_url whenever the destination changes, is
+-- removed, or its stored ciphertext no longer opens, and cleared by the
+-- clear-data wipe alongside both watermarks.
+--
+-- calendar_feed_key_epoch holds the opaque identifier of the verification regime
+-- a feed token was minted under (security.CalendarFeedKeyEpoch, derived from
+-- SECRET_KEY). No value can be recomputed for a token minted before this
+-- migration: the epoch of the key that signed it is recorded nowhere, and
+-- deriving it from the CURRENT key would assert that every legacy row was minted
+-- under the running regime -- the one claim the column exists to be able to
+-- deny. NULL means "issued before this was recorded". It is stamped only by
+-- SaveCalendarFeedToken, in the same UPDATE as the token triple, so no new
+-- writer of a feed access column appears. Revoke and both bulk disarms leave it
+-- alone.
+--
+-- CORRECTION to migration 038. That file names SaveWebhookSettings,
+-- UpdateReminderLeadDays and ClearAllDataAndResetSettings as the COMPLETE set of
+-- webhook_config_version writers and says a fourth added later owes the same
+-- advance. The rule is about writers of the DELIVERY CONFIGURATION, not about
+-- writers of the users row. MarkWebhookDelivered is the second kind and must NOT
+-- advance the epoch: the epoch is pinned once per owner OUTSIDE the reminder
+-- loop, and advancing it after a period delivery would make that same pass lose
+-- the ovulation claim it is about to take. A later writer owes the advance if
+-- and only if it changes WHETHER, WHERE or HOW EARLY delivery happens.
+--
+-- Neither column is indexed: both are read one row at a time, by owner id, on
+-- the settings path.
+--
+-- ALTER TABLE ADD COLUMN IF NOT EXISTS keeps the migration idempotent across the
+-- postgres test bootstrap and rolling deploys (in addition to the runner's own
+-- already-exists skip). Rollback (forward-only repo) is documented in the commit
+-- body, not here.
+--
+-- NOTE: keep prose in this file free of semicolons -- the migration runner
+-- splits statements on the semicolon character without stripping SQL comments.
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS webhook_last_delivered_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS calendar_feed_key_epoch TEXT;

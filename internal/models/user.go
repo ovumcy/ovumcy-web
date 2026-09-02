@@ -142,6 +142,25 @@ type User struct {
 	// Nil until the first send. Stored as UTC-midnight DATE like LastPeriodStart.
 	WebhookPeriodLastSentCycleStart    *time.Time `gorm:"column:webhook_period_last_sent_cycle_start;type:date"`
 	WebhookOvulationLastSentCycleStart *time.Time `gorm:"column:webhook_ovulation_last_sent_cycle_start;type:date"`
+	// WebhookLastDeliveredAt is the only column in this block that records a
+	// DELIVERY (migration 039). The two watermarks above do not and cannot: each
+	// is claimed BEFORE the POST, holds a cycle anchor rather than a clock
+	// reading, and stands for a send that was never accepted until the failure
+	// path puts it back. This one is written in exactly one place — after the
+	// notify pass gets a 2xx, by MarkWebhookDelivered, pinned to the
+	// WebhookConfigVersion that pass read — so it can never be derived from, or
+	// confused with, a claim.
+	//
+	// Nil means "no delivery recorded", which is a statement about this
+	// instance's records and NOT about history: rows that predate migration 039
+	// are nil and were never backfilled, because the only values available to
+	// backfill from are the watermarks.
+	//
+	// It is cleared in the same UPDATE that writes webhook_url whenever the
+	// destination changes, is removed, or its ciphertext no longer opens, and by
+	// a clear-data wipe alongside both watermarks: a mark must never outlive the
+	// endpoint it was about.
+	WebhookLastDeliveredAt *time.Time `gorm:"column:webhook_last_delivered_at"`
 	// ReminderLeadDays is the SHARED lead window (in days) for BOTH the in-app
 	// dashboard banner (issue #123) and webhook reminders: a reminder surfaces
 	// once the predicted event is within this many days of "today". Default 3
@@ -230,6 +249,26 @@ type User struct {
 	// that may still be held). Account erasure removes them with the row.
 	RecoveryCodeRevealedAt *time.Time `gorm:"column:recovery_code_revealed_at"`
 	CalendarFeedRevealedAt *time.Time `gorm:"column:calendar_feed_revealed_at"`
+	// CalendarFeedKeyEpoch records WHICH verification regime the stored token was
+	// minted under (migration 039): the opaque security.CalendarFeedKeyEpoch value
+	// derived from the SECRET_KEY in force at the mint. It is stamped only by
+	// SaveCalendarFeedToken, in the same UPDATE as the token triple above, so
+	// arming and recording what armed it are one event and no new writer of a feed
+	// access column exists.
+	//
+	// It answers the one health question this row can answer honestly. The
+	// verifier is not stored in the clear and its MAC cannot be recomputed, so
+	// "does this token still verify" is genuinely unknown here — but "was it
+	// minted under the key this process is running" is knowable, and it is what
+	// decides whether the owner can still retire the URL they handed out.
+	//
+	// EMPTY means "issued before this was recorded" and never "minted under the
+	// current key": rows older than migration 039 were not backfilled, because
+	// the only value available to backfill from is the CURRENT epoch, which would
+	// assert exactly the thing the column exists to be able to deny. Revoke and
+	// both bulk disarms leave it alone — they clear the token, and a stamp
+	// without a token states nothing.
+	CalendarFeedKeyEpoch string `gorm:"column:calendar_feed_key_epoch"`
 }
 
 // CalendarFeedTokenColumns is the transport-free narrow view of the three stored
@@ -248,4 +287,11 @@ type CalendarFeedTokenColumns struct {
 	Selector     string
 	VerifierHash string
 	VerifierMAC  string
+	// KeyEpoch is the opaque identifier of the verification regime this token was
+	// minted under (security.CalendarFeedKeyEpoch). It is derived at mint, beside
+	// VerifierMAC and from the same key, and written in the same UPDATE as the
+	// triple above — so a token and the record of what signed it can never
+	// disagree. The verify path builds this struct too and leaves it empty: it
+	// compares the MAC, and the epoch is not part of verification.
+	KeyEpoch string
 }

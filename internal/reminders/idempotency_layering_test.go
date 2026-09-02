@@ -50,6 +50,11 @@ type statefulNotifyRepo struct {
 	mu       sync.Mutex
 	records  []models.WebhookNotifyRecord
 	snapshot *sync.WaitGroup
+	// delivered models webhook_last_delivered_at per owner. It is deliberately
+	// NOT reflected back into the notify projection: the pass never reads the
+	// delivery mark, and a stub that fed it back would hide a projection that
+	// started to.
+	delivered map[uint]time.Time
 }
 
 func (r *statefulNotifyRepo) ListAllForNotify(context.Context) ([]models.WebhookNotifyRecord, error) {
@@ -107,6 +112,27 @@ func (r *statefulNotifyRepo) ReleaseWebhookWatermark(_ context.Context, userID u
 		return nil
 	}
 	*column = previous
+	return nil
+}
+
+// MarkWebhookDelivered mirrors the repository's second write: the epoch the
+// delivering pass pinned must still be the stored one, and the stamp only moves
+// forward. It advances no epoch and touches no watermark, which is what lets the
+// overlap test below assert that recording a delivery cannot cost this same pass
+// its next claim.
+func (r *statefulNotifyRepo) MarkWebhookDelivered(_ context.Context, userID uint, deliveredAt time.Time, configVersion int) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.epochMatches(userID, configVersion) {
+		return nil
+	}
+	if r.delivered == nil {
+		r.delivered = map[uint]time.Time{}
+	}
+	if existing, ok := r.delivered[userID]; ok && !deliveredAt.After(existing) {
+		return nil
+	}
+	r.delivered[userID] = deliveredAt
 	return nil
 }
 

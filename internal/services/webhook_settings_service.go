@@ -184,6 +184,9 @@ func validateWebhookAuthority(parsed *url.URL) error {
 //   - The URL is encrypted with security.EncryptField, aad-bound to userID, and
 //     only the ciphertext is handed to persistence. An empty URL (disabled with
 //     no endpoint) is stored as an empty string, not encrypted.
+//   - The delivery mark's fate travels with the write: unless this save can
+//     prove the destination is unchanged, it asks the same UPDATE to NULL
+//     webhook_last_delivered_at. See destinationNotProvablyUnchanged.
 //
 // It does not bump auth_session_version: a notification-preference change is not
 // a security-posture change.
@@ -196,6 +199,9 @@ func (service *WebhookSettingsService) SaveWebhookSettings(ctx context.Context, 
 	}
 
 	trimmedURL := strings.TrimSpace(update.URL)
+	// destination is the PLAINTEXT this save will store, in the same validated
+	// form the previous save stored its own, so the two are comparable below.
+	destination := ""
 	switch {
 	case update.Enabled:
 		validated, err := ValidateWebhookURL(trimmedURL)
@@ -207,6 +213,7 @@ func (service *WebhookSettingsService) SaveWebhookSettings(ctx context.Context, 
 			return fmt.Errorf("webhook url encrypt failed: %w", err)
 		}
 		columns.EncryptedURL = ciphertext
+		destination = validated
 	case trimmedURL == "":
 		// Disabled and no endpoint supplied: clear any stored ciphertext.
 		columns.EncryptedURL = ""
@@ -224,9 +231,46 @@ func (service *WebhookSettingsService) SaveWebhookSettings(ctx context.Context, 
 			return fmt.Errorf("webhook url encrypt failed: %w", err)
 		}
 		columns.EncryptedURL = ciphertext
+		destination = validated
 	}
+	columns.ClearLastDeliveredAt = service.destinationNotProvablyUnchanged(ctx, userID, destination)
 
 	return service.users.SaveWebhookSettings(ctx, userID, columns)
+}
+
+// destinationNotProvablyUnchanged decides the fate of the delivery mark for the
+// save about to run: true asks persistence to NULL webhook_last_delivered_at in
+// the same UPDATE that writes the new webhook_url.
+//
+// The question is deliberately asked in the negative. The mark says "a delivery
+// to your endpoint was accepted", so keeping it is a claim about one specific
+// destination and may only survive where this instance can PROVE the destination
+// is the one the mark was about. Everything else clears it: a replaced URL, a
+// removed one, a row that could not be read, and a stored ciphertext that no
+// longer opens — after a SECRET_KEY rotation the previous destination is not
+// merely different, it is unknowable, and the ledger must not assert about it.
+//
+// The comparison is on PLAINTEXT because ciphertext cannot answer it: every save
+// re-encrypts under a fresh nonce, so a toggle-only save that re-stores the very
+// same endpoint yields bytes that differ from the stored ones. Keeping the mark
+// across exactly that save is the whole reason this comparison exists instead of
+// a blanket clear on every write of the column.
+//
+// It reads the row itself rather than taking the verdict from its callers: this
+// is the one choke point every webhook save passes through, and a rule placed in
+// the callers would hold at the two that exist today and be missed by the third.
+// A read error clears rather than fails the save — an owner's save is not
+// refused over the fate of a display mark.
+func (service *WebhookSettingsService) destinationNotProvablyUnchanged(ctx context.Context, userID uint, destination string) bool {
+	current, err := service.users.LoadSettingsByID(ctx, userID)
+	if err != nil {
+		return true
+	}
+	stored, err := service.DecryptWebhookURL(userID, current.WebhookURL)
+	if err != nil {
+		return true
+	}
+	return stored != destination
 }
 
 // SaveWebhookSettingsFromForm applies a write-only-field save from the settings

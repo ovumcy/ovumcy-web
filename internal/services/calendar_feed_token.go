@@ -74,7 +74,9 @@ const (
 //
 // A missing secretKey is a hard failure, never a token with an empty MAC: an
 // empty MAC means "minted before migration 032, verify via bcrypt", so minting
-// one would silently pin a fresh subscription to the slow path forever.
+// one would silently pin a fresh subscription to the slow path forever. The same
+// applies to KeyEpoch (migration 039), which the persisted row reads as "issued
+// before this was recorded" when empty — a fresh mint must never claim that.
 func GenerateCalendarFeedToken(secretKey []byte) (fullToken string, columns models.CalendarFeedTokenColumns, err error) {
 	selector, err := security.RandomString(calendarFeedSelectorLength, calendarFeedAlphabet)
 	if err != nil {
@@ -92,10 +94,18 @@ func GenerateCalendarFeedToken(secretKey []byte) (fullToken string, columns mode
 	if err != nil {
 		return "", models.CalendarFeedTokenColumns{}, err // codecov:ignore -- bcrypt only errors on an out-of-range cost
 	}
+	// The epoch of the regime this token is minted under, derived here rather than
+	// at the write so it comes from the SAME key that just produced the MAC. A
+	// stamp taken later could name a key that no longer signs this token.
+	keyEpoch, err := security.CalendarFeedKeyEpoch(secretKey)
+	if err != nil {
+		return "", models.CalendarFeedTokenColumns{}, err
+	}
 	return selector + verifier, models.CalendarFeedTokenColumns{
 		Selector:     selector,
 		VerifierHash: string(hash),
 		VerifierMAC:  verifierMAC,
+		KeyEpoch:     keyEpoch,
 	}, nil
 }
 

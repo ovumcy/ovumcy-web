@@ -24,6 +24,19 @@ type WebhookSettingsColumns struct {
 	NotifyPeriod     bool
 	NotifyOvulation  bool
 	ReminderLeadDays int
+	// ClearLastDeliveredAt asks the same UPDATE that writes EncryptedURL to NULL
+	// webhook_last_delivered_at (migration 039). It is the caller's judgement
+	// because only the caller can make it: persistence stores ciphertext and
+	// cannot tell a re-encryption of the same endpoint from a different one. The
+	// service sets it whenever it cannot PROVE the destination is unchanged — a
+	// replaced URL, a removed one, or a stored ciphertext that no longer opens.
+	//
+	// False, the zero value, means "leave the mark standing", which is what a
+	// toggle-only save wants. A caller that forgets the field therefore keeps a
+	// mark that may now be about a different endpoint, and that is why the rule is
+	// pinned by enumerating the writers of webhook_url rather than by this
+	// comment: TestEveryWebhookURLWriterDecidesTheDeliveryMark.
+	ClearLastDeliveredAt bool
 }
 
 // WebhookNotifyRecord is the read projection returned by ListAllForNotify: the

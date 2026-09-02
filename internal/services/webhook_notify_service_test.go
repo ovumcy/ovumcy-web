@@ -108,18 +108,38 @@ type watermarkWrite struct {
 // assert the pass pins the epoch its OWN snapshot carried — the value the
 // repository compares a revocation against — rather than a constant or a fresher
 // re-read that would agree with whatever the revocation just wrote.
+//
+// marked models the webhook_last_delivered_at COLUMN (migration 039) rather than
+// just recording calls, so a test can read the row mid-pass and see NULL where
+// the real column would be NULL. deliveryMarks records every call including the
+// ones the modelled compare-and-set refuses, which is how a test tells "not
+// called" apart from "called and correctly discarded". epochs, when set, is the
+// stored revocation epoch per owner: a mark whose configVersion no longer
+// matches it is discarded exactly as the repository would discard it. markErr
+// makes the mark write fail after the delivery already succeeded.
 type stubNotifyRepo struct {
 	records         []models.WebhookNotifyRecord
 	listErr         error
 	claimErr        error
 	claimLost       bool
 	releaseErr      error
+	markErr         error
+	epochs          map[uint]int
 	mu              sync.Mutex
 	watermarks      []watermarkWrite
 	releases        []watermarkWrite
 	claimExpected   []*time.Time
 	claimEpochs     []int
 	releaseRestored []*time.Time
+	deliveryMarks   []deliveryMark
+	marked          map[uint]time.Time
+}
+
+// deliveryMark records one MarkWebhookDelivered call, refused or not.
+type deliveryMark struct {
+	userID        uint
+	at            time.Time
+	configVersion int
 }
 
 func (stub *stubNotifyRepo) ListAllForNotify(context.Context) ([]models.WebhookNotifyRecord, error) {
@@ -157,6 +177,47 @@ func (stub *stubNotifyRepo) ReleaseWebhookWatermark(_ context.Context, userID ui
 		}
 	}
 	return stub.releaseErr
+}
+
+func (stub *stubNotifyRepo) MarkWebhookDelivered(_ context.Context, userID uint, deliveredAt time.Time, configVersion int) error {
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	stub.deliveryMarks = append(stub.deliveryMarks, deliveryMark{userID: userID, at: deliveredAt, configVersion: configVersion})
+	if stub.markErr != nil {
+		return stub.markErr
+	}
+	// The modelled column carries the repository's own compare-and-set: the
+	// pinned epoch must still be the stored one, and the stamp must move forward.
+	if stub.epochs != nil {
+		if stored, known := stub.epochs[userID]; known && stored != configVersion {
+			return nil
+		}
+	}
+	if stub.marked == nil {
+		stub.marked = map[uint]time.Time{}
+	}
+	if existing, ok := stub.marked[userID]; ok && !deliveredAt.After(existing) {
+		return nil
+	}
+	stub.marked[userID] = deliveredAt
+	return nil
+}
+
+// markedAt reports the modelled webhook_last_delivered_at of one owner; the
+// second return is false while the column would still be NULL.
+func (stub *stubNotifyRepo) markedAt(userID uint) (time.Time, bool) {
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	at, ok := stub.marked[userID]
+	return at, ok
+}
+
+func (stub *stubNotifyRepo) marks() []deliveryMark {
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	out := make([]deliveryMark, len(stub.deliveryMarks))
+	copy(out, stub.deliveryMarks)
+	return out
 }
 
 func (stub *stubNotifyRepo) writes() []watermarkWrite {
