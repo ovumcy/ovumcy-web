@@ -40,9 +40,11 @@ type CycleSettingsPatch struct {
 	UnpredictableCycle *bool
 	AgeGroup           *string
 	UsageGoal          *string
-	// A nil LastPeriodStart leaves the stored anchor alone; a non-nil empty
-	// string clears it. The two are distinct answers and neither is the other's
-	// default.
+	// A nil LastPeriodStart leaves the stored anchor alone, and so does an
+	// empty string: that is what the JSON surface has always meant by it, and
+	// this change is not the place to give an existing spelling a destructive
+	// new reading. Clearing the anchor stays a form-surface operation, which
+	// says it with a present-but-empty field.
 	LastPeriodStart *string
 }
 
@@ -93,7 +95,7 @@ func (service *SettingsService) ResolveCycleSettingsPatch(current *models.User, 
 	if patch.UsageGoal != nil {
 		resolved.UsageGoal = *patch.UsageGoal
 	}
-	if patch.LastPeriodStart != nil {
+	if patch.LastPeriodStart != nil && strings.TrimSpace(*patch.LastPeriodStart) != "" {
 		resolved.LastPeriodStartRaw = *patch.LastPeriodStart
 		resolved.LastPeriodStartSet = true
 	}

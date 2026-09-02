@@ -303,12 +303,12 @@ func TestStepupReauthMaxAgeConstant(t *testing.T) {
 
 // --- handlers_settings_cycle_helpers.go ---
 
-// TestUpdateCycleSettings_JSONBodyPersistsLastPeriodStart pins the JSON-body
-// `input.LastPeriodStart != ""` decision (handlers_settings_cycle_helpers.go:22):
-// a non-empty last_period_start supplied via a JSON body must mark the field as
-// set so it is validated and persisted. Negating to `== ""` drops the flag for a
-// real date, so the start date is silently ignored. Uses a no-CSRF app to isolate
-// JSON body parsing/negotiation (per the testing rules).
+// TestUpdateCycleSettings_JSONBodyPersistsLastPeriodStart pins the non-empty
+// decision in `SettingsService.ResolveCycleSettingsPatch`: a non-empty
+// last_period_start supplied via a JSON body must mark the field as set so it is
+// validated and persisted. Negating it drops the flag for a real date, so the
+// start date is silently ignored. Uses a no-CSRF app to isolate JSON body
+// parsing/negotiation (per the testing rules).
 func TestUpdateCycleSettings_JSONBodyPersistsLastPeriodStart(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "settings-cycle-json@example.com", "StrongPass1", true)

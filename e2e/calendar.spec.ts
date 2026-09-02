@@ -623,9 +623,10 @@ test.describe('Calendar page', () => {
     const csrf = (await page.locator('meta[name="csrf-token"]').getAttribute('content')) ?? '';
 
     async function patchUsageGoal(goal: string): Promise<void> {
-      // parseCycleSettingsInput validates cycle_length / period_length even
-      // on a partial JSON patch — resend the full default snapshot with the
-      // UsageGoal override.
+      // A body carrying the goal and nothing else takes the dashboard quick
+      // switch's one-column path. This spec wants the ordinary partial save, so
+      // it sends the geometry alongside the goal; every member it omits would
+      // keep its stored value either way.
       const response = await page.request.patch('/api/v1/users/current/cycle', {
         headers: { ...apiOriginHeader(page), 'X-CSRF-Token': csrf, 'Content-Type': 'application/json' },
         data: {
