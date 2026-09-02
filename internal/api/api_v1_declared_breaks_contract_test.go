@@ -102,8 +102,11 @@ func TestRecoveryResetNamesTheV1BodyItNoLongerAccepts(t *testing.T) {
 		}
 		defer func() { _ = response.Body.Close() }()
 
-		if key := errorKeyFromEnvelope(t, response.Body); key == "recovery reset requires the account password" {
-			t.Fatalf("an empty password was answered as a stale-client refusal")
+		if response.StatusCode != http.StatusBadRequest {
+			t.Fatalf("expected status 400 for an empty password, got %d", response.StatusCode)
+		}
+		if key := errorKeyFromEnvelope(t, response.Body); key != "invalid recovery code" {
+			t.Fatalf("expected the uniform credential refusal, got error key %q", key)
 		}
 	})
 
@@ -123,8 +126,11 @@ func TestRecoveryResetNamesTheV1BodyItNoLongerAccepts(t *testing.T) {
 		}
 		defer func() { _ = response.Body.Close() }()
 
-		if key := errorKeyFromEnvelope(t, response.Body); key == "recovery reset requires the account password" {
-			t.Fatalf("the form transport answered a question it cannot ask")
+		if response.StatusCode != http.StatusBadRequest {
+			t.Fatalf("expected status 400 for a form body without a password, got %d", response.StatusCode)
+		}
+		if key := errorKeyFromEnvelope(t, response.Body); key != "invalid recovery code" {
+			t.Fatalf("the form transport answered a question it cannot ask: %q", key)
 		}
 	})
 }
