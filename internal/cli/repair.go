@@ -71,10 +71,7 @@ func runRepairCommand(databaseConfig db.Config, args []string, output io.Writer)
 	// the only command that opens a database of unknown schema version, so "not
 	// an Ovumcy database" is a mistake only it can make and only it can name.
 	if err := repository.RequireSymptomCatalogue(context.Background()); err != nil {
-		return fmt.Errorf(
-			"%s: %w. Point DB_DRIVER and DB_PATH (or DATABASE_URL) at the instance's own database — a SQLite path that does not exist is not refused, the driver creates an empty database there",
-			describeRepairTarget(databaseConfig), err,
-		)
+		return fmt.Errorf("%s: %w%s", describeRepairTarget(databaseConfig), err, repairPreconditionRemedy(err))
 	}
 
 	service := services.NewSymptomDuplicateRepairService(repository)
@@ -82,6 +79,32 @@ func runRepairCommand(databaseConfig db.Config, args []string, output io.Writer)
 		return runSymptomNamesRepairApply(service, output)
 	}
 	return runSymptomNamesRepairInspect(service, output)
+}
+
+// repairPreconditionRemedy is what to do about each way the precondition can
+// fail, which are different mistakes and take different answers.
+//
+// It advises only on the two verdicts it actually recognises, and says nothing
+// otherwise. A default arm here would attach one of them to every failure the
+// precondition can ever grow — starting with the one it already has: a database
+// that stopped answering carries its own cause, and appending "check your
+// DB_PATH" to it would send the operator to audit a connection setting that was
+// correct, which is what the schema probe was taught to stop doing.
+//
+// A schema older than migration 004 is likewise not a wrong database. The way
+// forward there is to start the instance, which carries the schema up; that may
+// stop again on migration 037, and this command is then the answer, now with
+// the column it needs, so the loop closes rather than sending the operator in a
+// circle.
+func repairPreconditionRemedy(err error) string {
+	switch {
+	case errors.Is(err, db.ErrSymptomCatalogueTooOld):
+		return ". Start the instance once to carry the schema forward; if it stops on migration 037, run this repair again"
+	case errors.Is(err, db.ErrSymptomCatalogueAbsent):
+		return ". Point DB_DRIVER and DB_PATH (or DATABASE_URL) at the instance's own database — a SQLite path that does not exist is not refused, the driver creates an empty database there"
+	default:
+		return ""
+	}
 }
 
 // describeRepairTarget names the database the operator actually reached, so a

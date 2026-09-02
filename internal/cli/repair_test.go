@@ -255,6 +255,103 @@ func TestRepairNamesAWrongDatabaseRatherThanTheMissingTable(t *testing.T) {
 	}
 }
 
+// TestRepairRefusesASchemaOlderThanTheColumnsItReads is the half a table check
+// alone does not cover.
+//
+// This is the one command that opens a database at an UNKNOWN schema version,
+// so "symptom_types exists" does not mean "the schema this repair reads
+// exists": archived_at arrives three migrations later and is what decides which
+// row of a group survives. Left to the query, a schema that old answers with
+// the engine's own `no such column` — the same unreadable refusal the table
+// check was added to prevent, one level down.
+func TestRepairRefusesASchemaOlderThanTheColumnsItReads(t *testing.T) {
+	t.Parallel()
+
+	config := db.Config{Driver: db.DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "schema-001.db")}
+	seedSymptomCatalogueAsMigration001Created(t, config)
+
+	err := runRepairCommand(config, []string{"symptom-names"}, nil)
+	if err == nil {
+		t.Fatal("expected a pre-004 schema to be refused")
+	}
+	if !errors.Is(err, db.ErrSymptomCatalogueTooOld) {
+		t.Fatalf("expected the too-old sentinel, got %v", err)
+	}
+
+	message := err.Error()
+	if !strings.Contains(message, "archived_at") {
+		t.Fatalf("the refusal must name the column it is short of, got: %s", message)
+	}
+	if !strings.Contains(message, "Start the instance") {
+		t.Fatalf("an old schema is carried forward by a start, not by fixing a path, got: %s", message)
+	}
+	if strings.Contains(message, "DB_PATH") {
+		t.Fatalf("an old schema is not a wrong path and must not be reported as one, got: %s", message)
+	}
+	for _, leak := range []string{"no such column", "SELECT"} {
+		if strings.Contains(message, leak) {
+			t.Fatalf("the refusal must not read as a schema fault, %q is in: %s", leak, message)
+		}
+	}
+}
+
+// seedSymptomCatalogueAsMigration001Created builds symptom_types with exactly
+// the columns migration 001 gave it, through the non-migrating open so nothing
+// carries the schema forward behind the test's back.
+func seedSymptomCatalogueAsMigration001Created(t *testing.T, config db.Config) {
+	t.Helper()
+
+	database, err := db.OpenDatabaseWithoutMigrations(config)
+	if err != nil {
+		t.Fatalf("open without migrations: %v", err)
+	}
+	defer closeDatabase(t, database)
+
+	if err := database.Exec(`
+CREATE TABLE symptom_types (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  icon TEXT NOT NULL,
+  color TEXT NOT NULL,
+  is_builtin BOOLEAN NOT NULL DEFAULT 0
+)`).Error; err != nil {
+		t.Fatalf("create the migration 001 catalogue: %v", err)
+	}
+}
+
+// TestRepairAdvisesOnlyOnTheVerdictsItRecognises keeps the two schema answers
+// from leaking onto a failure that is neither.
+//
+// A database that stopped answering carries its own cause; appending "check
+// your DB_PATH" to it would send the operator to audit a connection setting
+// that was correct, which is exactly what the schema probe below the CLI was
+// taught to stop doing.
+func TestRepairAdvisesOnlyOnTheVerdictsItRecognises(t *testing.T) {
+	t.Parallel()
+
+	for _, testCase := range []struct {
+		Name   string
+		Err    error
+		Advice string
+	}{
+		{Name: "a wrong database is sent to its path", Err: db.ErrSymptomCatalogueAbsent, Advice: "DB_PATH"},
+		{Name: "an old schema is sent to a start", Err: db.ErrSymptomCatalogueTooOld, Advice: "Start the instance"},
+	} {
+		t.Run(testCase.Name, func(t *testing.T) {
+			t.Parallel()
+
+			if remedy := repairPreconditionRemedy(fmt.Errorf("wrapped: %w", testCase.Err)); !strings.Contains(remedy, testCase.Advice) {
+				t.Fatalf("expected advice naming %q, got %q", testCase.Advice, remedy)
+			}
+		})
+	}
+
+	if remedy := repairPreconditionRemedy(errors.New("cannot read the schema of this database: connection refused")); remedy != "" {
+		t.Fatalf("a failure that is neither verdict must carry no advice, got %q", remedy)
+	}
+}
+
 // TestRepairNamesThePostgresTargetWithoutItsCredentials is the same refusal on
 // the other engine, where naming the target verbatim would print a password.
 func TestRepairNamesThePostgresTargetWithoutItsCredentials(t *testing.T) {
