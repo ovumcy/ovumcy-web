@@ -10,7 +10,9 @@
   The endpoint is now the partial update its verb promises: a member the body carries is written
   (including one carrying `false` or `""`, which is a value, not an absence), and a member it omits
   is left exactly as it stands. What changes for a client that was relying on the old behaviour: to
-  clear a flag or a bracket, send it explicitly rather than leaving it out.
+  clear a flag or a bracket, send it explicitly rather than leaving it out. The one body that is
+  refused rather than accepted is one naming no member at all: it asks for no change, and a save
+  that changed nothing should not be recorded as one.
 
   The save now writes only the columns the request named, rather than the whole row, so this holds
   between two overlapping requests as well as inside one: a save of the cycle lengths can no longer
