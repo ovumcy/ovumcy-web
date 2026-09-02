@@ -942,6 +942,10 @@ components:
         the two lengths alone rewrote `usage_goal` to `health` and `age_group`
         to unknown.
 
+        A body that names none of these members is refused with `400
+        invalid settings input` rather than answered `200`: it asks for no
+        change, and a save that changed nothing must not be recorded as one.
+
         The bundled settings form is not affected and is not described by this
         schema: it submits every control it owns on every save, and an unchecked
         box submits nothing at all, so a form body carries no absence to honour
