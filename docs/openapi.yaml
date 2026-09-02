@@ -384,7 +384,10 @@ components:
         Answer of an auth step that succeeded but is not finished: the server
         sealed a one-time cookie and names where the client must go to spend it.
         `next_step` is the stable programmatic name of that stage; `next_path` is
-        the page serving it.
+        the page serving it. The enum is exactly the two stages reached this way
+        (`POST /api/v1/users` and `POST /api/v1/password-resets/redeem`) — the
+        calendar-feed reveal names a stage too and has its own schema, so a new
+        stage extends the enum only if it also answers with this shape.
       required: [ok, next_step, next_path]
       properties:
         ok:
@@ -446,6 +449,23 @@ components:
           type: boolean
           default: false
           description: When true, the issued `ovumcy_auth` cookie carries an explicit ~7-day Expires. Otherwise the cookie is browser-session-scoped.
+      additionalProperties: false
+
+    RecoveryCodeRequiredResponse:
+      type: object
+      description: >-
+        Step 1 of `POST /api/v1/password-resets`: the body named `email` alone,
+        so nothing was started and the caller must repeat the request with
+        `recovery_code` and `password`. Carries no `next_path` — the step is the
+        same endpoint again, not another one.
+      required: [ok, next_step]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        next_step:
+          type: string
+          enum: [recovery_code]
       additionalProperties: false
 
     LoginTOTPRequiredResponse:
@@ -1524,11 +1544,22 @@ paths:
       responses:
         '200':
           description: |
-            Reset cookie issued. Sent when `Accept: application/json` is set; the
-            browser surface gets the `303` below instead.
+            Sent when `Accept: application/json` is set; the browser surface gets
+            the `303` below instead. Two shapes, one per step of the flow — see
+            `ForgotPasswordRequest`.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/OkResponse' }
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/RecoveryCodeRequiredResponse'
+                  - $ref: '#/components/schemas/OkResponse'
+              examples:
+                recoveryCodeRequired:
+                  summary: Step 1 — email alone; nothing started yet
+                  value: { ok: true, next_step: "recovery_code" }
+                resetCookieIssued:
+                  summary: Step 2 — reset cookie issued
+                  value: { ok: true }
         '303':
           description: Redirect to `/reset-password` with a sealed reset cookie.
         '400':
