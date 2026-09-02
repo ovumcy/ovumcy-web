@@ -17,7 +17,7 @@ Ovumcy's supported self-hosted baseline is a single application instance with a 
 - [Health Checks by Deployment Mode](#health-checks-by-deployment-mode) — [operator CLI](#running-the-operator-cli-against-the-container) · [Concurrency on the SQLite Baseline](#concurrency-on-the-sqlite-baseline) · [Secret Handling and Rotation](#secret-handling-and-rotation)
 - [Backup and Restore Contract](#backup-and-restore-contract) — [volume backup](#docker-named-volume-backup), [volume restore](#docker-named-volume-restore), [post-restore verification](#post-restore-verification)
 - [Calendar Feed Restore Fence](#calendar-feed-restore-fence)
-- [Safe Upgrade Procedure](#safe-upgrade-procedure) · [Downgrade Caveats](#downgrade-caveats)
+- [Safe Upgrade Procedure](#safe-upgrade-procedure) · [Downgrade Caveats](#downgrade-caveats) · [Duplicate rows that refuse a migration](#duplicate-rows-that-refuse-a-migration)
 
 **When something breaks**
 - [Troubleshooting Baseline](#troubleshooting-baseline) · [Common Operator Scenarios](#common-operator-scenarios) · [Advanced Deployment Path](#advanced-deployment-path)
@@ -284,6 +284,8 @@ printf '%s\n' "$NEW_PASSWORD" | docker exec -i ovumcy /app/ovumcy reset-password
 
 Use the scripted form when you need to recover several accounts at once — for example after a `SECRET_KEY` rotation, where every 2FA-enabled owner needs a way back in.
 
+Every subcommand above applies any pending migrations first, exactly as the server does, so none of them runs on a database a migration is refusing. The one that does is `ovumcy repair`, which exists for that case and opens the database without applying anything; it is also the only one you reach with `docker compose run` rather than `docker exec`, because the container it would attach to is not up. See [Duplicate rows that refuse a migration](#duplicate-rows-that-refuse-a-migration).
+
 For the public reverse-proxy stacks, do not treat a missing host-level `127.0.0.1:8080` listener as a problem. In the preferred deployment model, that port is intentionally not published to the host at all.
 
 ## Concurrency on the SQLite Baseline
@@ -517,7 +519,74 @@ Migrations are forward-only. There is no `down.sql` and no automated rollback pa
 
 - **The one-shot luteal-phase recompute** is not a migration but changes stored data on the same boot, so it belongs in the same list. The personalized luteal-phase estimate in `users.luteal_phase` used to be measured one day too long, which moved the predicted ovulation date and both fertile-window edges a day earlier for owners who had logged enough BBT or cervical-mucus signal to earn one. The first boot of the corrected version recomputes that column from each owner's own logs and records a marker in `app_state` once it has been through every account without a failure, so it normally runs exactly once; an account it could not read or write is skipped and picked up by the next boot, and the startup line reports how many. Nothing an owner typed is touched: the column has no input surface and is derived from the day logs alone. A downgrade does not restore the previous values and does not need to — the older binary re-derives the column under its own convention the next time the owner saves a day or restores an export, and until then the only difference is a prediction one day apart. Restore from a pre-upgrade backup only if you need the previous values back immediately.
 
+- **Migrations `032`, `034` and `035` are plain additive schema changes** — a nullable calendar-feed verifier column beside the one it replaces, an interface-language column defaulting to "never chosen", and a column DEFAULT restated on PostgreSQL only. An older binary ignores all three and keeps working; `032` in particular leaves the previous `calendar_feed_verifier_hash` column in place and still written, precisely so a rollback keeps verifying every existing feed token. Nothing to do in either direction.
+
+- **Migration `033_purge_unattributed_oidc_logout_states.sql` deletes rows**, the only migration in this range that does. They are pre-031 OIDC logout states with a NULL `user_id`, which account deletion could never reach and which expire on their own within 7 days. A downgrade does not bring them back and does not need them: nothing reads a logout state after its TTL, and their absence is the point of the migration. No owner data is involved.
+
+- **Migration `036_secret_reveal_consumption_marks.sql` is additive, but a downgrade turns off what it enforces.** The columns record that the recovery code and the calendar-feed subscribe URL have been shown once. A binary that predates 036 does not write them, so while you are downgraded a client that kept the sealed reveal cookie can be shown either secret again. Re-upgrading resumes recording from that moment; it cannot know about a reveal that happened while the older binary was running. Treat a downgrade past 036 as a window in which "shown exactly once" is not enforced, and rotate the calendar feed afterwards if that matters to the owners on the instance.
+
+- **Migration `038_webhook_config_version.sql` is additive with the same shape of gap.** The counter lets a reminder pass tell a stale delivery snapshot from the current one. An older binary does not bump it, so while you are downgraded a notify pass can still deliver against a configuration the owner changed mid-pass. The column keeps its value across the downgrade and the protection resumes on re-upgrade.
+
+- **Migration `037_symptom_name_uniqueness.sql` is downgrade-safe and upgrade-fragile, which is the reverse of the entries above.** The index it adds is simply ignored by an older binary — except that the index is still enforced by the database, so a duplicate name an older binary would have answered with "symptom name already exists" comes back to it as an unrecognized constraint error instead. Going the other way is where it bites: if the database already held two symptoms one account had under the same name, the upgrade refuses this migration and the instance does not start. That is deliberate and loses nothing, and it has its own runbook — [Duplicate rows that refuse a migration](#duplicate-rows-that-refuse-a-migration).
+
 If you need to downgrade through a migration above, restore the database from a backup taken before that migration was applied. An entry that is a one-shot pass rather than a migration states its own remedy, which is weaker — its bullet says whether a restore is needed at all. Keep an "upgrade-paired" backup file alongside the image-tag bump in your runbook so a rollback in either direction is a single restore-from-backup step.
+
+## Duplicate rows that refuse a migration
+
+A migration that adds a **unique** index checks first, and refuses if the database already holds rows the index cannot cover. It names every conflicting group, writes nothing, rolls its transaction back, and ends the start. That refusal is the safe outcome — the only ways to make room would be to delete or merge somebody's rows, and a schema change is not consent to do either — but it does mean the instance stays down until you resolve it.
+
+The startup log line looks like this:
+
+```
+refusing migration 037_symptom_name_uniqueness.sql: table symptom_types already
+holds rows that unique index idx_symptom_types_user_name_unique on (user_id,
+lower(name)) cannot cover ...
+```
+
+Resolve it **offline**. There is no running application to fix the data in — this refusal is what stopped it — and every other operator subcommand opens the database the same way and meets the same refusal. The `repair` subcommand is the exception: it opens the database without applying migrations, so it can reach exactly the state that is stuck.
+
+`ovumcy repair` on its own lists the repairs the binary carries. Each one inspects and reports by default and changes nothing until `--apply`.
+
+### Repairing duplicate symptom names
+
+1. **Stop the service.** The container restarts on its own otherwise, and a repair must not run beside a boot attempt.
+
+```bash
+docker compose stop ovumcy
+```
+
+2. **Back up the database.** Follow [Docker Named Volume Backup](#docker-named-volume-backup). This step is not optional: the repair removes rows, and there is no undo other than this archive.
+
+3. **Inspect.** This changes nothing and prints the plan — which symptom each account keeps and which rows fold into it:
+
+```bash
+docker compose run --rm ovumcy /app/ovumcy repair symptom-names
+```
+
+It exits non-zero while duplicates remain, so an upgrade script can gate on it. Read the plan before the next step.
+
+4. **Apply.** For each group the kept symptom absorbs the others: every day log that named an absorbed symptom is re-pointed at the kept one first, in the same transaction that removes the rows, so no day loses what the owner recorded and a day that named both ends up naming one:
+
+```bash
+docker compose run --rm ovumcy /app/ovumcy repair symptom-names --apply
+```
+
+5. **Start the service** and confirm the migration applied:
+
+```bash
+docker compose up -d
+docker compose logs ovumcy | tail -n 40
+```
+
+Running the repair a second time finds nothing and reports so, which is also what a partly-failed run leaves behind — the merge is one transaction, so a failure changes nothing and can simply be repeated.
+
+What the repair does **not** do: it never edits a name, and it never chooses between two different symptoms. It only collapses rows an account holds under the *same* name, which is a state a normal request could never have produced. The kept row is the one still reachable by the owner — an active row before an archived one, a built-in before a custom one, and the oldest of what remains. That order matters because a built-in symptom cannot be renamed, hidden or removed from Settings, so leaving a second built-in behind would leave the owner a duplicate in the day-entry picker with no way to clear it.
+
+One caveat if you ever move a SQLite instance to Postgres. The index folds names with the database's own `lower()`, and so does this repair — which is what makes one command correct on either engine. But the two engines do not fold alike: PostgreSQL folds by locale, SQLite folds ASCII only. Two symptom names differing only in the case of a non-ASCII letter are therefore one name to PostgreSQL and two to SQLite, so a database this repair reports clean on SQLite can still refuse the migration once its rows are in PostgreSQL. Run the inspection again after the import, before you conclude the move went through.
+
+For the Postgres stacks, run the same commands from the example stack's directory; `docker compose run` starts the database container the app depends on.
+
+If you run the binary outside compose, the command is the same with the same `DB_DRIVER`/`DB_PATH` (or `DATABASE_URL`) environment the server uses. It needs no `SECRET_KEY` and does not touch the calendar-feed fence.
 
 ## Troubleshooting Baseline
 
@@ -619,6 +688,8 @@ Two cases are left untouched, counted in the same log line, and cannot sign in u
 - the stored value cannot be reduced to a plain address at all (for example a quoted local part).
 
 ### The server exits during startup instead of coming up
+
+Read the last line first: a start that ends with `refusing migration ...` is not one of the cases below. That is a migration declining to run against data it cannot cover, before any of these passes exists, and it is resolved with the instance down — [Duplicate rows that refuse a migration](#duplicate-rows-that-refuse-a-migration).
 
 Three passes run on every start, after the migrations and before the server begins serving: the calendar-feed key-rotation check, the auth-email repair described above, and the luteal-phase recompute. Each pass is allowed **five minutes** end to end — not per query, so a pass making many individually fast queries can still reach it — after which a database that accepts the connection and then stops responding ends the start with an error naming the pass, instead of leaving the process alive, silent and not listening — which is what it used to do, and which a container healthcheck can only ever report as "starting".
 

@@ -51,6 +51,29 @@ func (config Config) Validate() error {
 }
 
 func OpenDatabase(config Config) (*gorm.DB, error) {
+	return openDatabase(config, true)
+}
+
+// OpenDatabaseWithoutMigrations opens the same pool and applies nothing.
+//
+// It exists for the offline repair path, and only for it. A migration that
+// refuses — the per-owner symptom-name index meeting rows it cannot cover — ends
+// every boot AND every other operator subcommand, because all of them reach the
+// database through OpenDatabase and therefore through the same refusal. An
+// operator told to fix the data "through the application" would have no
+// application to fix it with, so the one subcommand whose job is to make the
+// migration applicable has to be able to open a database the migration has not
+// been applied to.
+//
+// What it returns is a database of UNKNOWN schema version, older than the binary
+// by however many migrations are pending. A caller may touch only tables and
+// columns that predate the migration that is stuck, and must never assume a
+// column a pending migration adds. Everything else keeps using OpenDatabase.
+func OpenDatabaseWithoutMigrations(config Config) (*gorm.DB, error) {
+	return openDatabase(config, false)
+}
+
+func openDatabase(config Config, applyMigrations bool) (*gorm.DB, error) {
 	normalized := config.normalized()
 	if err := normalized.Validate(); err != nil {
 		return nil, err
@@ -73,7 +96,7 @@ func OpenDatabase(config Config) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	// The caller owns the handle only when OpenDatabase returns one: every caller
+	// The caller owns the handle only when this function returns one: every caller
 	// (cmd/ovumcy, internal/cli) closes the pool it received and has nothing to
 	// close when it gets an error back. So a failure AFTER the connection is open
 	// has to release the pool here, or the sql.DB — and on SQLite the open
@@ -88,8 +111,10 @@ func OpenDatabase(config Config) (*gorm.DB, error) {
 		}
 	}()
 
-	if err := applyEmbeddedMigrations(database, normalized.Driver); err != nil {
-		return nil, fmt.Errorf("apply embedded migrations: %w", err)
+	if applyMigrations {
+		if err := applyEmbeddedMigrations(database, normalized.Driver); err != nil {
+			return nil, fmt.Errorf("apply embedded migrations: %w", err)
+		}
 	}
 
 	handedToCaller = true

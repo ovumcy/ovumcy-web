@@ -319,6 +319,13 @@ type duplicateGroup struct {
 // consent to lose part of it. So the migration refuses, prints the groups, and
 // leaves every row exactly where it was for the owner to resolve.
 //
+// What it must not do is send the operator somewhere this refusal has already
+// closed. The refusal ends the boot, so there is no running application to
+// resolve the groups in — and every other operator subcommand opens the database
+// through OpenDatabase and meets the same refusal. The message therefore names
+// the offline route (`ovumcy repair`, on OpenDatabaseWithoutMigrations) and the
+// runbook, and nothing that needs a started instance.
+//
 // The check derives its query from the statement rather than from a list of
 // migrations, so it covers the next unique index as well as this one, and it
 // runs only for a statement that actually asks for one. NULL keys are excluded
@@ -355,7 +362,7 @@ func refuseUniqueIndexOverExistingDuplicates(database *gorm.DB, migration embedd
 	}
 
 	return fmt.Errorf(
-		"refusing migration %s: table %s already holds rows that unique index %s on (%s) cannot cover, and this migration never deletes, merges or rewrites a row to make room for it. Conflicting group(s), keyed as (%s): %s. Nothing was written: the migration was rolled back and the database is unchanged. Resolve each group by renaming or removing the extra rows through the application, then start it again",
+		"refusing migration %s: table %s already holds rows that unique index %s on (%s) cannot cover, and this migration never deletes, merges or rewrites a row to make room for it. Conflicting group(s), keyed as (%s): %s. Nothing was written: the migration was rolled back and the database is unchanged. This refusal is also what stops the server, so it has to be resolved with the instance down, never through the running application: back up the database, then run `ovumcy repair`, which lists the repairs this binary carries and reports what it would change before changing anything. Runbook: docs/self-hosted.md, \"Duplicate rows that refuse a migration\"",
 		migration.Name,
 		intent.Table,
 		intent.IndexName,
