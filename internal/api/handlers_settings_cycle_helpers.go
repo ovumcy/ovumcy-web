@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -11,19 +12,53 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-// cycleSettingsMemberNames are the wire names of every member this endpoint
-// writes, in one place: both the goal-only predicate and the JSON patch read
-// presence over the same set, so a member added to one and not the other cannot
-// go unnoticed.
-var cycleSettingsMemberNames = []string{
-	"cycle_length",
-	"period_length",
-	"auto_period_fill",
-	"irregular_cycle",
-	"unpredictable_cycle",
-	"age_group",
-	"usage_goal",
-	"last_period_start",
+// cycleSettingsPatchProbe is the wire shape of a cycle-settings body, one
+// pointer per member so an absent member is distinguishable from a zero one. It
+// is the single declaration of the member set: the JSON arm binds into it and
+// the form arm reads its json tags, so a member added here reaches both without
+// a second list to keep in step.
+type cycleSettingsPatchProbe struct {
+	CycleLength        *int    `json:"cycle_length"`
+	PeriodLength       *int    `json:"period_length"`
+	AutoPeriodFill     *bool   `json:"auto_period_fill"`
+	IrregularCycle     *bool   `json:"irregular_cycle"`
+	UnpredictableCycle *bool   `json:"unpredictable_cycle"`
+	AgeGroup           *string `json:"age_group"`
+	UsageGoal          *string `json:"usage_goal"`
+	LastPeriodStart    *string `json:"last_period_start"`
+}
+
+// cycleSettingsMemberNames are those wire names, derived rather than retyped.
+var cycleSettingsMemberNames = cycleSettingsProbeMemberNames()
+
+func cycleSettingsProbeMemberNames() []string {
+	probeType := reflect.TypeOf(cycleSettingsPatchProbe{})
+	names := make([]string, 0, probeType.NumField())
+	for index := range probeType.NumField() {
+		if name := probeType.Field(index).Tag.Get("json"); name != "" {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+// patchCarriesOnlyUsageGoal reports whether the goal is the one member the body
+// names. It is a separate function so the sweep can drive it field by field:
+// a member added to cycleSettingsPatchProbe and forgotten here would send a body
+// carrying it back down the one-column path, dropping it — the very defect the
+// partial save exists to end. Regression:
+// TestGoalOnlyShortcutYieldsToEveryOtherMember.
+func patchCarriesOnlyUsageGoal(patch services.CycleSettingsPatch) bool {
+	if patch.UsageGoal == nil {
+		return false
+	}
+	return patch.CycleLength == nil &&
+		patch.PeriodLength == nil &&
+		patch.AutoPeriodFill == nil &&
+		patch.IrregularCycle == nil &&
+		patch.UnpredictableCycle == nil &&
+		patch.AgeGroup == nil &&
+		patch.LastPeriodStart == nil
 }
 
 // goalOnlyCycleSettingsRequest reports whether the request body carries the
@@ -35,12 +70,7 @@ var cycleSettingsMemberNames = []string{
 func goalOnlyCycleSettingsRequest(c fiber.Ctx) (string, bool) {
 	patch, ok := cycleSettingsPatchFromJSON(c)
 	if ok {
-		if patch.UsageGoal == nil {
-			return "", false
-		}
-		if patch.CycleLength != nil || patch.PeriodLength != nil || patch.AutoPeriodFill != nil ||
-			patch.IrregularCycle != nil || patch.UnpredictableCycle != nil || patch.AgeGroup != nil ||
-			patch.LastPeriodStart != nil {
+		if !patchCarriesOnlyUsageGoal(patch) {
 			return "", false
 		}
 		return strings.TrimSpace(*patch.UsageGoal), true
@@ -68,16 +98,7 @@ func cycleSettingsPatchFromJSON(c fiber.Ctx) (services.CycleSettingsPatch, bool)
 	if !hasJSONBody(c) {
 		return services.CycleSettingsPatch{}, false
 	}
-	probe := struct {
-		CycleLength        *int    `json:"cycle_length"`
-		PeriodLength       *int    `json:"period_length"`
-		AutoPeriodFill     *bool   `json:"auto_period_fill"`
-		IrregularCycle     *bool   `json:"irregular_cycle"`
-		UnpredictableCycle *bool   `json:"unpredictable_cycle"`
-		AgeGroup           *string `json:"age_group"`
-		UsageGoal          *string `json:"usage_goal"`
-		LastPeriodStart    *string `json:"last_period_start"`
-	}{}
+	probe := cycleSettingsPatchProbe{}
 	if err := c.Bind().Body(&probe); err != nil {
 		return services.CycleSettingsPatch{}, false
 	}

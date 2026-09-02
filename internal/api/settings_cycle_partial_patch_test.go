@@ -5,11 +5,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 func patchCycleSettingsJSON(t *testing.T, app *fiber.App, authCookie string, body string) *http.Response {
@@ -215,5 +217,34 @@ func TestCycleSettingsFormSaveStaysAFullSnapshot(t *testing.T) {
 	}
 	if persisted.IrregularCycle || persisted.AutoPeriodFill {
 		t.Fatalf("an unchecked box did not clear its flag: irregular=%v auto_fill=%v", persisted.IrregularCycle, persisted.AutoPeriodFill)
+	}
+}
+
+// TestGoalOnlyShortcutYieldsToEveryOtherMember is the no-allowlist sweep behind
+// the goal-only shortcut: for EVERY member the wire shape declares other than
+// the goal itself, a body carrying that member beside the goal must leave the
+// one-column path. It derives its roster from cycleSettingsPatchProbe rather
+// than a list, so a member added to the shape and forgotten in the predicate
+// fails here by name instead of being silently dropped by the shortcut.
+func TestGoalOnlyShortcutYieldsToEveryOtherMember(t *testing.T) {
+	goal := models.UsageGoalAvoid
+	probeType := reflect.TypeOf(cycleSettingsPatchProbe{})
+
+	for index := range probeType.NumField() {
+		field := probeType.Field(index)
+		if field.Name == "UsageGoal" {
+			continue
+		}
+
+		patch := services.CycleSettingsPatch{UsageGoal: &goal}
+		member := reflect.ValueOf(&patch).Elem().FieldByName(field.Name)
+		if !member.IsValid() {
+			t.Fatalf("%s is declared on the wire shape but not on services.CycleSettingsPatch", field.Name)
+		}
+		member.Set(reflect.New(member.Type().Elem()))
+
+		if patchCarriesOnlyUsageGoal(patch) {
+			t.Fatalf("a body carrying %s beside the goal still took the one-column path, which drops it", field.Tag.Get("json"))
+		}
 	}
 }
