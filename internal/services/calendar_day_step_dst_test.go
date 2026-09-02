@@ -17,8 +17,8 @@ package services
 // user-visible surfaces that were stepping by hand.
 //
 // The zone must be west of UTC — east-of-UTC zones normalize a missing midnight
-// forward and keep the date, so the same fixture there is green about nothing
-// (`.claude/rules/testing.md`). Every case carries a UTC control.
+// forward and keep the date, so the same fixture there is green about nothing.
+// Every case carries a UTC control.
 
 import (
 	"testing"

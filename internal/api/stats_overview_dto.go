@@ -7,17 +7,16 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-// statsOverviewDateLayout is the wire spelling of every date in this payload
-// (api.md: YYYY-MM-DD, never an RFC 3339 instant). A cycle date is a calendar
-// day, and serializing it as an instant published a timezone the owner never
-// chose along with it.
+// statsOverviewDateLayout is the wire spelling of every date in this payload:
+// YYYY-MM-DD, never an RFC 3339 instant. A cycle date is a calendar day, and
+// serializing it as an instant published a timezone the owner never chose along
+// with it.
 const statsOverviewDateLayout = "2006-01-02"
 
 // medicalDisclaimerMessageKey is the single catalogue entry every predictive
-// surface renders. The API sends the resolved text AND the key, per api.md's
-// stable-key-beside-localized-copy rule: a client cannot branch on translated
-// prose, and a test asserting the copy alone goes quiet the day the wording
-// changes.
+// surface renders. The API sends the resolved text AND the key, because a
+// client cannot branch on translated prose, and a test asserting the copy alone
+// goes quiet the day the wording changes.
 const medicalDisclaimerMessageKey = "medical.disclaimer"
 
 // medicalDisclaimer resolves the safety framing for this request, falling back

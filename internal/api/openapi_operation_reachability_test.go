@@ -24,10 +24,9 @@ import (
 // emittable across the WHOLE server, which passes even when a status is
 // emittable only by an operation that never declared it — a 429 the spec
 // forgot is invisible to a check that only asks whether 429 appears anywhere
-// in internal/. Two real drifts of exactly that shape shipped for a release
-// (four re-auth-budget endpoints undeclaring 429; the "OpenAPI spec contract"
-// rule in .claude/rules/api.md — governance-update, 2026-09-02 — has the
-// prose).
+// in internal/. Two real drifts of exactly that shape shipped for a release:
+// four re-auth-budget endpoints undeclaring 429. The spec contract binds each
+// operation separately — every operation declares every status it can emit.
 //
 // This test is deliberately one-directional, the same way its sibling is:
 // under-declaration (emittable but not declared) is what it asserts, because
@@ -202,7 +201,7 @@ const maxReachDepth = 8
 // because they are cross-cutting rather than a decision the operation's own
 // business logic makes: 500 is the universal default arm of every domain
 // error-mapping switch (already documented centrally, not per-operation, by
-// api.md's ErrorHandler total-resolution rule and
+// the ErrorHandler's total-resolution contract and
 // TestOpenAPIDocumentsEveryTransportStatusTheEnvelopeCovers); 303 is emitted
 // by the shared JSON/HTMX content-negotiation helper any handler MAY reach
 // regardless of its own logic, and the spec's own preamble scopes documented

@@ -35,8 +35,8 @@ var detachesFromTheCaller = map[string]bool{
 // stuck database would hang the boot exactly as it did before the budget
 // existed, and every test would stay green.
 //
-// The rule is not new, only unenforced here. persistence.md already requires a
-// ctx parameter over context.Background for repositories, and this package held
+// The rule is not new, only unenforced here. Repositories already take a ctx
+// parameter rather than rooting one at context.Background, and this package held
 // to it on its own — the sweep found zero occurrences when it was written, which
 // is why it can be an outright refusal rather than an allowlist. A service that
 // genuinely needs a detached context (a goroutine outliving its request) has to

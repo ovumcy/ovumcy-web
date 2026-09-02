@@ -11,11 +11,10 @@ import (
 
 // The OIDC link-pending cookie hands a user from a partial OIDC callback to
 // the password-confirmation page, carrying enough state to finish the link
-// without re-running the OIDC exchange. testing.md AEAD-sealed cookie rules
-// require every sealed-cookie purpose to lock the four AAD-binding invariants:
-// round-trip, cross-purpose AAD, byte tamper, key rotation. Expiry and
-// minimum-payload checks are added because validAt() also gates handler
-// behavior.
+// without re-running the OIDC exchange. Every sealed-cookie purpose locks the
+// four AAD-binding invariants: round-trip, cross-purpose AAD, byte tamper, key
+// rotation. Expiry and minimum-payload checks are added because validAt() also
+// gates handler behavior.
 
 func newOIDCLinkPendingTestPayload(t *testing.T, now time.Time) oidcLinkPendingPayload {
 	t.Helper()
