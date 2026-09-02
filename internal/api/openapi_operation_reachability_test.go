@@ -290,6 +290,14 @@ func (reach *statusReach) walk(node ast.Node, emitsStatuses bool, depth int, gua
 			if !nonJSONSurfaceGuard(typed.Cond) {
 				return true
 			}
+			// Only the BODY is the HTML arm. The guard itself still runs on
+			// every request, so its init and condition are walked like any
+			// other code — skipping them would drop a status, or a sentinel a
+			// later mapper arm depends on, that the JSON surface does reach.
+			if typed.Init != nil {
+				reach.walk(typed.Init, emitsStatuses, depth, guards)
+			}
+			reach.walk(typed.Cond, emitsStatuses, depth, guards)
 			if typed.Else != nil {
 				reach.walk(typed.Else, emitsStatuses, depth, guards)
 			}
