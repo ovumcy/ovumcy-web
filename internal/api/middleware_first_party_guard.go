@@ -28,15 +28,18 @@ const (
 // initiator for a browser's own prefetch sends an operator after an attacker who
 // was never there.
 const (
-	navigationRefusedOffOriginInitiator = "off_origin_initiator"
-	navigationRefusedUnsupportedDest    = "unsupported_destination"
-	navigationRefusedSpeculativeLoad    = "speculative_load"
+	firstPartyRefusedOffOriginInitiator = "off_origin_initiator"
+	firstPartyRefusedUnsupportedDest    = "unsupported_destination"
+	firstPartyRefusedSpeculativeLoad    = "speculative_load"
 )
 
-// requireSameOriginNavigation guards a GET route that consumes something
+// requireFirstPartyRequest guards a GET route that consumes something
 // one-time — a reveal mark, a pickup nonce — and therefore mutates state on a
 // method the CSRF middleware never validates, because a safe method is not
-// supposed to mutate anything. Moving the mutation to POST is the answer the
+// supposed to mutate anything. It asks whether the request is FIRST-PARTY, not
+// whether it is a navigation: a client following the published next_path fetches,
+// and refusing it would narrow the API for nothing (see the destination rule
+// below). Moving the mutation to POST is the answer the
 // method contract wants, but both such routes are the landing pages of a
 // redirect-after-POST whose shape is published in docs/openapi.yaml (the
 // register 303 and the calendar-feed `next_path`), so that is a spec change and
@@ -79,7 +82,7 @@ const (
 // already answers, and stays audited in that route's existing vocabulary. It
 // receives the reason the check that fired states, because only the guard knows
 // which one did.
-func requireSameOriginNavigation(refuse func(fiber.Ctx, string) error) fiber.Handler {
+func requireFirstPartyRequest(refuse func(fiber.Ctx, string) error) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		// "none" is a load with no initiator document: a typed URL, a bookmark,
 		// a restored tab. "same-site" is refused along with "cross-site" —
@@ -87,7 +90,7 @@ func requireSameOriginNavigation(refuse func(fiber.Ctx, string) error) fiber.Han
 		// subdomain is another origin here too.
 		site := strings.TrimSpace(c.Get(headerSecFetchSite))
 		if site != "" && !strings.EqualFold(site, secFetchSiteSameOrigin) && !strings.EqualFold(site, secFetchSiteNone) {
-			return refuse(c, navigationRefusedOffOriginInitiator)
+			return refuse(c, firstPartyRefusedOffOriginInitiator)
 		}
 		// A page load is `document`; a client following the published next_path is
 		// `empty`. Every other destination — image, iframe, object, script, and
@@ -95,7 +98,7 @@ func requireSameOriginNavigation(refuse func(fiber.Ctx, string) error) fiber.Han
 		// shape that would spend the one-time value with nothing on screen.
 		dest := strings.TrimSpace(c.Get(headerSecFetchDest))
 		if dest != "" && !strings.EqualFold(dest, secFetchDestDocument) && !strings.EqualFold(dest, secFetchDestEmpty) {
-			return refuse(c, navigationRefusedUnsupportedDest)
+			return refuse(c, firstPartyRefusedUnsupportedDest)
 		}
 		// A speculative load wears the navigation's own shape — same-origin,
 		// document — and is the one request reaching here that nobody decided to
@@ -104,7 +107,7 @@ func requireSameOriginNavigation(refuse func(fiber.Ctx, string) error) fiber.Han
 		// would otherwise spend the owner's one-time value on her behalf, and the
 		// two checks above cannot tell.
 		if strings.Contains(strings.ToLower(c.Get(headerSecPurpose)), secPurposePrefetch) {
-			return refuse(c, navigationRefusedSpeculativeLoad)
+			return refuse(c, firstPartyRefusedSpeculativeLoad)
 		}
 		return c.Next()
 	}
