@@ -64,9 +64,14 @@ func jsonBodyOmitsPassword(c fiber.Ctx) bool {
 	probe := struct {
 		Password *string `json:"password"`
 	}{}
+	// codecov:ignore:start -- unreachable: the caller decoded this same body into
+	// forgotPasswordInput before calling, and this probe is a strict subset of it
+	// whose single member accepts everything that bind accepted, plus null. A
+	// body that reaches here has already decoded once.
 	if err := c.Bind().Body(&probe); err != nil {
 		return false
 	}
+	// codecov:ignore:end
 	return probe.Password == nil
 }
 
