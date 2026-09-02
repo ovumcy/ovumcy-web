@@ -82,10 +82,11 @@ func TestOpenAPIOperationsDeclareEveryStatusTheirOwnHandlerChainCanEmit(t *testi
 		seen[operation] = true
 
 		emittable := make(map[int]bool)
+		visited := make(map[*ast.FuncDecl]bool)
 		for _, h := range route.Handlers {
 			name := handlerFuncName(h)
-			if decl, ok := funcs[name]; ok {
-				collectReachableStatuses(decl, funcs, statusByIdentifier, emittable, make(map[string]bool), 0)
+			for _, decl := range funcs[name] {
+				collectReachableStatuses(decl, funcs, statusByIdentifier, emittable, visited, 0)
 			}
 		}
 
@@ -134,14 +135,18 @@ func handlerFuncName(h fiber.Handler) string {
 }
 
 // parseAPIPackageFuncs parses every non-test .go file directly under dir and
-// indexes each top-level func and each method on *Handler by its bare name.
-// Two distinct functions sharing a name (none do today) would merge into one
-// entry — an over-approximation, which is the safe direction for a
-// missing-declaration check.
-func parseAPIPackageFuncs(t *testing.T, dir string) map[string]*ast.FuncDecl {
+// indexes each top-level func and each method by its bare name. A name is
+// keyed to a SLICE, not a single decl: this package has real same-name
+// collisions across distinct receivers (validAt on five different sealed-
+// cookie payload types, matchesState on two), and a bare-map index that
+// overwrote on collision would silently drop whichever declaration parsed
+// last — the wrong direction for a check whose whole point is not
+// under-claiming what a name can reach. collectReachableStatuses walks every
+// decl a name resolves to.
+func parseAPIPackageFuncs(t *testing.T, dir string) map[string][]*ast.FuncDecl {
 	t.Helper()
 	fset := token.NewFileSet()
-	funcs := make(map[string]*ast.FuncDecl)
+	funcs := make(map[string][]*ast.FuncDecl)
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -161,7 +166,7 @@ func parseAPIPackageFuncs(t *testing.T, dir string) map[string]*ast.FuncDecl {
 			if !ok || fn.Body == nil {
 				continue
 			}
-			funcs[fn.Name.Name] = fn
+			funcs[fn.Name.Name] = append(funcs[fn.Name.Name], fn)
 		}
 	}
 	if len(funcs) == 0 {
@@ -172,9 +177,13 @@ func parseAPIPackageFuncs(t *testing.T, dir string) map[string]*ast.FuncDecl {
 
 // collectReachableStatuses walks decl's body, recording every fiber.Status*
 // selector it finds directly and recursing into every call to another
-// function/method this package defines, up to maxReachDepth hops. visited
-// guards both infinite recursion (mutual calls) and repeated work across the
-// route's handler chain.
+// function/method this package defines, up to maxReachDepth hops. visited is
+// keyed by *ast.FuncDecl, not by name: two distinct declarations can share a
+// bare name (parseAPIPackageFuncs' own doc comment has the confirmed
+// collisions), and a name-keyed visited set would mark the whole name walked
+// after the first same-named decl, silently skipping every other body that
+// name resolves to. Keying by decl guards infinite recursion (mutual calls)
+// and repeated work across the route's handler chain without that loss.
 const maxReachDepth = 8
 
 // crossCuttingStatus lists statuses excluded from the per-operation check
@@ -194,11 +203,11 @@ var crossCuttingStatus = map[int]bool{
 	http.StatusSeeOther:            true,
 }
 
-func collectReachableStatuses(decl *ast.FuncDecl, funcs map[string]*ast.FuncDecl, statusByIdentifier map[string]int, out map[int]bool, visited map[string]bool, depth int) {
-	if decl == nil || decl.Body == nil || visited[decl.Name.Name] || depth > maxReachDepth {
+func collectReachableStatuses(decl *ast.FuncDecl, funcs map[string][]*ast.FuncDecl, statusByIdentifier map[string]int, out map[int]bool, visited map[*ast.FuncDecl]bool, depth int) {
+	if decl == nil || decl.Body == nil || visited[decl] || depth > maxReachDepth {
 		return
 	}
-	visited[decl.Name.Name] = true
+	visited[decl] = true
 
 	ast.Inspect(decl.Body, func(n ast.Node) bool {
 		switch node := n.(type) {
@@ -209,15 +218,15 @@ func collectReachableStatuses(decl *ast.FuncDecl, funcs map[string]*ast.FuncDecl
 				}
 			}
 		case *ast.CallExpr:
+			var calleeName string
 			switch fn := node.Fun.(type) {
 			case *ast.Ident:
-				if callee, ok := funcs[fn.Name]; ok {
-					collectReachableStatuses(callee, funcs, statusByIdentifier, out, visited, depth+1)
-				}
+				calleeName = fn.Name
 			case *ast.SelectorExpr:
-				if callee, ok := funcs[fn.Sel.Name]; ok {
-					collectReachableStatuses(callee, funcs, statusByIdentifier, out, visited, depth+1)
-				}
+				calleeName = fn.Sel.Name
+			}
+			for _, callee := range funcs[calleeName] {
+				collectReachableStatuses(callee, funcs, statusByIdentifier, out, visited, depth+1)
 			}
 		}
 		return true
