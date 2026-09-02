@@ -51,10 +51,23 @@ func TestDashboardStatusHeaderCarriesTheSegmentedRingForStableCycleContext(t *te
 	if dashboardElementByDataAttr(header, "data-dashboard-cycle-day") == nil {
 		t.Fatal("expected the cycle day beside the ribbon")
 	}
-	if htmlFindElement(ribbon, func(node *html.Node) bool {
+	dayOne := htmlFindElement(ribbon, func(node *html.Node) bool {
 		return node.Type == html.ElementNode && htmlAttr(node, "data-cycle-ribbon-day") == "1"
-	}) == nil {
+	})
+	if dayOne == nil {
 		t.Fatal("expected the ribbon to run from cycle day 1")
+	}
+	// The ribbon used to be aria-hidden outright; per-day facts like
+	// data-logged and data-start-window have no textual equivalent
+	// elsewhere on the page, so each cell now needs its own accessible name.
+	if htmlHasAttr(ribbon, "aria-hidden") {
+		t.Fatal("expected the ribbon to be exposed to assistive tech, not aria-hidden")
+	}
+	if got := htmlAttr(dayOne, "role"); got != "img" {
+		t.Fatalf("expected the ribbon day to carry role=img, got %q", got)
+	}
+	if got := htmlAttr(dayOne, "aria-label"); got == "" {
+		t.Fatal("expected the ribbon day to carry a non-empty aria-label")
 	}
 	if dashboardElementByDataAttr(header, "data-dashboard-status-line") == nil {
 		t.Fatal("expected the single status line inside the status header")
