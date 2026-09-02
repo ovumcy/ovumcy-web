@@ -51,8 +51,7 @@ func (handler *Handler) claimRecoveryCodeReveal(c fiber.Ctx, userID uint) bool {
 	if err != nil || !claimed {
 		// Both recovery surfaces claim through this helper, so auditing the
 		// refusal here covers the dedicated page and the inline register block
-		// together — the calendar-feed reveal is the third site of the same
-		// class and audits its own refusal for the same reason.
+		// together — the calendar-feed reveal audits its own for the same reason.
 		if err != nil {
 			handler.logEgressFailure(c, recoveryCodeRevealEgress, "reveal_claim_failed") // codecov:ignore -- the claim errors only on a storage fault, which the authenticated user load reaches first
 		} else {
