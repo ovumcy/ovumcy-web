@@ -115,6 +115,14 @@ func (handler *Handler) parseCycleSettingsInput(c fiber.Ctx, user *models.User) 
 			return services.CycleSettingsUpdate{}, "invalid settings input"
 		}
 		resolved := handler.settingsService.ResolveCycleSettingsPatch(user, patch)
+		// A body naming no member at all is refused rather than answered 200.
+		// Before the save became partial it was refused too — as an out-of-range
+		// cycle_length — and accepting it now would audit a cycle-settings change
+		// that did not happen, which is the one thing the mutation log must not
+		// say. SaveCycleSettings keeps its own empty-update floor underneath.
+		if resolved.Present == (services.CycleSettingsMembers{}) && !resolved.LastPeriodStartSet {
+			return services.CycleSettingsUpdate{}, "invalid settings input"
+		}
 		update, err := handler.settingsService.ValidateCycleSettings(resolved, time.Now().In(location), location)
 		if err != nil {
 			return services.CycleSettingsUpdate{}, cycleSettingsValidationErrorKey(err)
