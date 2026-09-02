@@ -13,10 +13,10 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// secFetchHeaders is one browser's account of who started a request. The three
-// shapes below are the ones that decide the guard: a top-level navigation the
-// owner performed on this origin, the same navigation started from someone
-// else's page, and a subresource load that is not a navigation at all.
+// secFetchHeaders is one browser's account of who started a request. The shapes
+// below are the ones that decide the guard: a page load the owner performed on
+// this origin, a first-party client fetching the published next_path, the same
+// load started from someone else's page, an embed, and a speculative load.
 type secFetchHeaders struct {
 	site    string
 	mode    string
@@ -28,6 +28,7 @@ var (
 	sameOriginNavigation = secFetchHeaders{site: "same-origin", mode: "navigate", dest: "document"}
 	crossSiteNavigation  = secFetchHeaders{site: "cross-site", mode: "navigate", dest: "document"}
 	sameOriginFetch      = secFetchHeaders{site: "same-origin", mode: "cors", dest: "empty"}
+	sameOriginImage      = secFetchHeaders{site: "same-origin", mode: "no-cors", dest: "image"}
 	// A speculative load wears the navigation's own clothes and is separated
 	// from it by Sec-Purpose alone.
 	sameOriginPrefetch = secFetchHeaders{site: "same-origin", mode: "navigate", dest: "document", purpose: "prefetch;prerender"}
@@ -35,7 +36,7 @@ var (
 
 func (headers secFetchHeaders) applyTo(request *http.Request) {
 	request.Header.Set(headerSecFetchSite, headers.site)
-	request.Header.Set(headerSecFetchMode, headers.mode)
+	request.Header.Set("Sec-Fetch-Mode", headers.mode)
 	request.Header.Set(headerSecFetchDest, headers.dest)
 	if headers.purpose != "" {
 		request.Header.Set(headerSecPurpose, headers.purpose)
@@ -89,7 +90,7 @@ func TestRegisterPickupRefusesForeignNavigationWithoutSpendingTheNonce(t *testin
 		headers secFetchHeaders
 	}{
 		{name: "cross-site navigation", headers: crossSiteNavigation},
-		{name: "same-origin fetch", headers: sameOriginFetch},
+		{name: "same-origin embed", headers: sameOriginImage},
 		{name: "same-origin prefetch", headers: sameOriginPrefetch},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -132,7 +133,7 @@ func TestCalendarFeedRevealRefusesForeignNavigationWithoutSpendingTheMark(t *tes
 		headers secFetchHeaders
 	}{
 		{name: "cross-site navigation", headers: crossSiteNavigation},
-		{name: "same-origin fetch", headers: sameOriginFetch},
+		{name: "same-origin embed", headers: sameOriginImage},
 		{name: "same-origin prefetch", headers: sameOriginPrefetch},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -168,6 +169,28 @@ func TestCalendarFeedRevealRefusesForeignNavigationWithoutSpendingTheMark(t *tes
 				t.Fatal("expected the owner's own navigation to still reveal the subscribe URL")
 			}
 		})
+	}
+}
+
+// TestNavigationGuardAdmitsTheFirstPartyFetchOfThePublishedNextPath holds the
+// half of the contract the refusals must not eat. Both guarded routes ARE the
+// `next_path` docs/openapi.yaml tells a JSON client to follow, and such a client
+// fetches rather than navigates — Sec-Fetch-Dest: empty. Refusing it would make
+// the guard narrow the published API, and it would buy nothing against injected
+// same-origin script, which reaches the same value through a window it opens.
+func TestNavigationGuardAdmitsTheFirstPartyFetchOfThePublishedNextPath(t *testing.T) {
+	t.Parallel()
+
+	app, _ := newOnboardingTestApp(t)
+	pickupCookie := registerAndExtractPickupCookie(t, app, "pickup-guard-next-path@example.com")
+
+	accepted := pickupRegisterWithHeaders(t, app, pickupCookie, sameOriginFetch)
+	assertStatusCode(t, accepted, http.StatusSeeOther)
+	if location := accepted.Header.Get("Location"); location != "/register" {
+		t.Fatalf("expected a first-party fetch of next_path to complete the pickup, got %q", location)
+	}
+	if authCookie := responseCookie(accepted.Cookies(), authCookieName); authCookie == nil || strings.TrimSpace(authCookie.Value) == "" {
+		t.Fatalf("expected a first-party fetch of next_path to mint a session, got %#v", authCookie)
 	}
 }
 

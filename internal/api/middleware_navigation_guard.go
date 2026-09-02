@@ -12,14 +12,13 @@ import (
 // document.
 const (
 	headerSecFetchSite = "Sec-Fetch-Site"
-	headerSecFetchMode = "Sec-Fetch-Mode"
 	headerSecFetchDest = "Sec-Fetch-Dest"
 	headerSecPurpose   = "Sec-Purpose"
 
 	secFetchSiteSameOrigin = "same-origin"
 	secFetchSiteNone       = "none"
-	secFetchModeNavigate   = "navigate"
 	secFetchDestDocument   = "document"
+	secFetchDestEmpty      = "empty"
 	secPurposePrefetch     = "prefetch"
 )
 
@@ -39,6 +38,17 @@ const (
 // Lax permits is a cross-site TOP-LEVEL navigation, which carries the cookies in
 // full; that is the request this guard refuses, and Sec-Fetch-Site names it
 // exactly.
+//
+// SAME-ORIGIN requests are judged by destination, not by whether they are a
+// navigation. Both routes are the published `next_path` a JSON client is told to
+// follow (docs/openapi.yaml), so a first-party client fetching one must not be
+// turned away; `empty` is the destination such a fetch carries. Refusing it
+// bought less than it looked: injected same-origin script that wanted the value
+// would open the route in a window and read it out of the same-origin document,
+// which wears `document` and passes. What is worth refusing is the destination no
+// client of these routes ever has — `image`, `iframe`, `object` and their
+// siblings — because those are the shapes that spend a one-time value with
+// nothing rendered for anybody to notice.
 //
 // The guard is deliberately MONOTONE. When the browser speaks Fetch Metadata we
 // obey it; when the header family is absent entirely — a browser older than
@@ -68,21 +78,20 @@ func requireSameOriginNavigation(refuse fiber.Handler) fiber.Handler {
 		if !strings.EqualFold(site, secFetchSiteSameOrigin) && !strings.EqualFold(site, secFetchSiteNone) {
 			return refuse(c)
 		}
-		// Site alone would still admit a same-origin fetch() or <img>, which no
-		// flow into these pages produces and which a compromised same-origin
-		// surface could use to spend the one-time value out from under the owner.
-		if !strings.EqualFold(strings.TrimSpace(c.Get(headerSecFetchMode)), secFetchModeNavigate) {
-			return refuse(c)
-		}
-		if !strings.EqualFold(strings.TrimSpace(c.Get(headerSecFetchDest)), secFetchDestDocument) {
+		// A page load is `document`; a client following the published next_path is
+		// `empty`. Every other destination — image, iframe, object, script, and
+		// the rest — is an embed no flow into these routes produces, and is the
+		// shape that would spend the one-time value with nothing on screen.
+		dest := strings.TrimSpace(c.Get(headerSecFetchDest))
+		if !strings.EqualFold(dest, secFetchDestDocument) && !strings.EqualFold(dest, secFetchDestEmpty) {
 			return refuse(c)
 		}
 		// A speculative load carries the full navigation shape — same-origin,
-		// navigate, document — and is the one request that reaches here without
-		// anybody having decided to go. Nothing links to either guarded route, so
-		// this costs no real flow; it is here because a browser or an extension
-		// that starts prefetching one would otherwise spend the owner's one-time
-		// value on her behalf, and the guard would have no way to tell.
+		// document — and is the one request that reaches here without anybody
+		// having decided to go. Nothing links to either guarded route, so this
+		// costs no real flow; it is here because a browser or an extension that
+		// starts prefetching one would otherwise spend the owner's one-time value
+		// on her behalf, and the guard would have no way to tell.
 		if strings.Contains(strings.ToLower(c.Get(headerSecPurpose)), secPurposePrefetch) {
 			return refuse(c)
 		}
