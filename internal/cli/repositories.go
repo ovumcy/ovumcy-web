@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,13 @@ import (
 	"gorm.io/gorm"
 )
 
+// calendarFeedFencePath resolves the fence location once, so the value a
+// subcommand warns about is provably the value its repositories were built
+// with.
+func calendarFeedFencePath() string {
+	return strings.TrimSpace(os.Getenv(security.CalendarFeedFencePathEnv))
+}
+
 // buildRepositories is every CLI subcommand's repository set.
 //
 // It exists so no subcommand reaches db.NewRepositories directly: two of them
@@ -20,12 +28,11 @@ import (
 // through one constructor keeps that from depending on which subcommand an
 // operator happened to run.
 //
-// The fence path comes from the same variable the server reads, because both
-// must resolve the SAME fence. Whether this process can actually reach it is
-// the subject of calendarFeedFenceWarning, which the two feed-affecting
-// subcommands raise and the others deliberately do not.
+// Whether this process can actually reach the fence is the subject of
+// calendarFeedFenceWarning, which the two feed-affecting subcommands raise and
+// the others deliberately do not.
 func buildRepositories(database *gorm.DB) *db.Repositories {
-	repositories, _ := bootstrap.BuildRepositories(database, strings.TrimSpace(os.Getenv(security.CalendarFeedFencePathEnv)))
+	repositories, _ := bootstrap.BuildRepositories(database, calendarFeedFencePath())
 	return repositories
 }
 
@@ -39,30 +46,53 @@ func buildRepositories(database *gorm.DB) *db.Repositories {
 // silent, because the operator would otherwise read that disarm as a backup
 // restore nobody performed.
 //
-// It answers two shapes, because both produce that disarm and only one of them
-// looks wrong: the variable unset, and the variable set to a path whose
-// directory does not exist here — which is what copying the container's
-// /app/fence value into a host shell gives. It deliberately does not try to
-// WRITE a probe: the fence file is the server's, and a subcommand has no
-// business advancing it just to find out whether it could.
+// The probe is deliberately narrow. It answers "unset", and it answers an
+// ABSOLUTE path whose directory is not there — which is what copying the
+// container's /app/fence value into a host shell gives. It says nothing about a
+// relative path: that resolves against the working directory, which is the
+// server's and not this process's, so a missing directory here would be no
+// evidence at all and the warning would cry wolf. Nor does it WRITE a probe:
+// the fence file is the server's, and a subcommand has no business advancing it
+// just to find out whether it could.
 func calendarFeedFenceWarning(fencePath string) string {
 	fencePath = strings.TrimSpace(fencePath)
-	if fencePath == "" {
-		return "warning: " + security.CalendarFeedFencePathEnv + " is not set in this shell, so a command that changes calendar-feed state records it only inside the database. The server disarms every armed calendar feed on its next start as a result. Run the operator CLI where the server's fence is visible (the runbook uses `docker compose exec`), or set the variable to the same path the server uses."
-	}
-	if info, err := os.Stat(filepath.Dir(filepath.Clean(fencePath))); err != nil || !info.IsDir() {
-		return "warning: " + security.CalendarFeedFencePathEnv + " points at " + fencePath + ", whose directory does not exist in this process, so a command that changes calendar-feed state records it only inside the database. The server disarms every armed calendar feed on its next start as a result. A container path copied into a host shell is the usual cause; run the operator CLI through `docker compose exec` instead."
+
+	const consequence = ", so a command that changes calendar-feed state records it only inside the database. " +
+		"The server disarms every armed calendar feed on its next start as a result. " +
+		"Run the operator CLI where the server's fence is visible (the runbook uses `docker compose exec`), " +
+		"or set the variable to the same path the server uses."
+
+	switch {
+	case fencePath == "":
+		return "warning: " + security.CalendarFeedFencePathEnv + " is not set in this shell" + consequence
+	case rootedPath(fencePath) && !directoryExists(filepath.Dir(filepath.Clean(fencePath))):
+		return "warning: " + security.CalendarFeedFencePathEnv + " points at " + fencePath + ", whose directory does not exist in this process" + consequence
 	}
 	return ""
 }
 
+// rootedPath reports whether the path names a location independent of the
+// working directory. filepath.IsAbs is not enough on its own: this CLI is
+// developed on Windows, where it demands a drive letter and therefore calls
+// `/app/fence/calendar-feed.fence` relative — which is precisely the value an
+// operator copies out of a compose file, and precisely the case the probe
+// exists to catch. A leading separator settles it on either platform.
+func rootedPath(path string) bool {
+	return filepath.IsAbs(path) || strings.HasPrefix(path, "/") || strings.HasPrefix(path, `\`)
+}
+
+func directoryExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
 // warnAboutAnUnreachableCalendarFeedFence prints that warning, if there is one,
-// for a subcommand that is about to remove calendar-feed access. Subcommands
-// that cannot change feed state stay silent on purpose — a line that appears on
+// for a subcommand about to remove calendar-feed access. Subcommands that
+// cannot change feed state stay silent on purpose — a line that appears on
 // every `notify` run from cron is a line nobody reads beside the `reset` that
 // will actually cause a disarm.
-func warnAboutAnUnreachableCalendarFeedFence(errOutput *os.File) {
-	if warning := calendarFeedFenceWarning(os.Getenv(security.CalendarFeedFencePathEnv)); warning != "" {
-		_, _ = errOutput.WriteString(warning + "\n")
+func warnAboutAnUnreachableCalendarFeedFence(errOutput io.Writer) {
+	if warning := calendarFeedFenceWarning(calendarFeedFencePath()); warning != "" {
+		_, _ = io.WriteString(errOutput, warning+"\n")
 	}
 }

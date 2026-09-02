@@ -49,13 +49,15 @@ const AppStateKeyLutealPhaseRecomputeV1 = "luteal_phase_recompute.v1"
 // AppState is one row of the process-level key/value store (migration 028).
 // It holds runtime bookkeeping, NEVER special-category health data, and is not
 // scoped by user_id — it is deliberately outside the users table. Value is
-// opaque TEXT with a single writer per key: the scheduler goroutine owns
-// last_reminder_run_date, while the boot-time key-rotation sentinel
-// (calendar_feed_key_epoch), the boot-time restore fence
-// (calendar_feed_restore_fence), the one-shot email renormalizer
-// (auth_email_renormalize.v1) and the one-shot luteal-phase recompute
-// (luteal_phase_recompute.v1) write their markers before the server starts
-// serving (never concurrently with it).
+// opaque TEXT with a single writer per key. Most of those writers run before
+// the server serves: the key-rotation sentinel (calendar_feed_key_epoch), the
+// one-shot email renormalizer (auth_email_renormalize.v1) and the one-shot
+// luteal-phase recompute (luteal_phase_recompute.v1) all record their marker
+// after their boot pass and never again. The scheduler goroutine owns
+// last_reminder_run_date. calendar_feed_restore_fence is the one key written
+// WHILE SERVING — every write that arms, rotates or removes a calendar feed
+// advances it, which is what lets a restore be seen at all — so it is a single
+// writer but not a boot marker, and the fence serializes its own writes.
 type AppState struct {
 	Key       string    `gorm:"column:key;primaryKey"`
 	Value     string    `gorm:"column:value;not null"`

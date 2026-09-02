@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/security"
 )
 
 // stubFenceAppState is an in-memory app_state with injectable errors and a
@@ -347,6 +348,29 @@ func TestCalendarFeedRestoreFenceAdvanceMovesBothHalvesTogether(t *testing.T) {
 	}
 	if outcome != (CalendarFeedRestoreFenceOutcome{}) {
 		t.Fatalf("a boot after an advance must be a no-op, got %+v", outcome)
+	}
+}
+
+// TestCalendarFeedRestoreFenceAdvanceRecordsNothingWithoutAFence pins the
+// opposite of the case below, and the two only make sense together. A fence
+// that is not CONFIGURED needs no record at all: Enforce's unanchored path
+// already disarms every armed feed on every boot, so writing the database half
+// alone would add a per-request write and a disagreement nothing ever reads.
+// A fence that is configured but unwritable is the case below, and there the
+// database half moving alone IS the answer.
+func TestCalendarFeedRestoreFenceAdvanceRecordsNothingWithoutAFence(t *testing.T) {
+	appState := &stubFenceAppState{values: map[string]string{}}
+	anchor := &stubFenceAnchor{writeErr: security.ErrCalendarFeedFenceNotConfigured}
+	fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor)
+
+	if err := fence.Advance(context.Background()); err != nil {
+		t.Fatalf("an unconfigured fence must not fail a revocation: %v", err)
+	}
+	if len(appState.values) != 0 {
+		t.Fatalf("an unconfigured fence must record nothing, got %v", appState.values)
+	}
+	if anchor.written != "" {
+		t.Fatalf("an unconfigured fence must write no file, got %q", anchor.written)
 	}
 }
 
