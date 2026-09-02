@@ -53,14 +53,14 @@ type DashboardCycleContext struct {
 	// keep gating on DisplayOvulationNeedsData: the ring is projection
 	// arithmetic, and the banner counts down to a day still ahead, neither of
 	// which a past measurement answers.
-	DisplayOvulationConfirmed   bool
-	DisplayOvulationExact       bool
-	DisplayOvulationImpossible  bool
-	NextPeriodEstimatePaused    bool
-	AwaitingFirstCycle          bool
-	FertilitySuppressed         bool
-	NextPeriodInPast            bool
-	OvulationInPast             bool
+	DisplayOvulationConfirmed  bool
+	DisplayOvulationExact      bool
+	DisplayOvulationImpossible bool
+	NextPeriodEstimatePaused   bool
+	AwaitingFirstCycle         bool
+	FertilitySuppressed        bool
+	NextPeriodInPast           bool
+	OvulationInPast            bool
 }
 
 type dashboardPredictionDisplay struct {
