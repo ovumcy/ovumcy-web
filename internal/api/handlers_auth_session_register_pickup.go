@@ -176,9 +176,9 @@ func (handler *Handler) PickupRegister(c fiber.Ctx) error {
 // never real. This one refuses the REQUEST and leaves a good cookie standing.
 // Clearing it would hand the forged navigation the outcome the guard exists to
 // deny: the owner arriving to find her hand-off gone.
-func (handler *Handler) refuseRegisterPickupNavigation(c fiber.Ctx) error {
+func (handler *Handler) refuseRegisterPickupNavigation(c fiber.Ctx, reason string) error {
 	handler.setFlashCookie(c, FlashPayload{AuthError: "register pickup unavailable"})
-	handler.logSecurityEvent(c, "auth.register_pickup", "redirect_signin", securityEventField("reason", "cross_origin_navigation"))
+	handler.logSecurityEvent(c, "auth.register_pickup", "redirect_signin", securityEventField("reason", reason))
 	return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 }
 

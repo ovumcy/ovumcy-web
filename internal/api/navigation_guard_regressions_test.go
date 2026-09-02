@@ -143,14 +143,15 @@ func TestRegisterPickupRefusesForeignNavigationWithoutSpendingTheNonce(t *testin
 // outcome the guard exists to deny.
 func TestCalendarFeedRevealRefusesForeignNavigationWithoutSpendingTheMark(t *testing.T) {
 	for _, testCase := range []struct {
-		name    string
-		headers secFetchHeaders
+		name       string
+		headers    secFetchHeaders
+		wantReason string
 	}{
-		{name: "cross-site navigation", headers: crossSiteNavigation},
-		{name: "same-origin embed", headers: sameOriginImage},
-		{name: "same-origin prefetch", headers: sameOriginPrefetch},
-		{name: "embed with the site header stripped", headers: strippedSiteEmbed},
-		{name: "prefetch with the site header stripped", headers: strippedSitePrefetch},
+		{name: "cross-site navigation", headers: crossSiteNavigation, wantReason: navigationRefusedOffOriginInitiator},
+		{name: "same-origin embed", headers: sameOriginImage, wantReason: navigationRefusedUnsupportedDest},
+		{name: "same-origin prefetch", headers: sameOriginPrefetch, wantReason: navigationRefusedSpeculativeLoad},
+		{name: "embed with the site header stripped", headers: strippedSiteEmbed, wantReason: navigationRefusedUnsupportedDest},
+		{name: "prefetch with the site header stripped", headers: strippedSitePrefetch, wantReason: navigationRefusedSpeculativeLoad},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			ctx := newSettingsSecurityTestContextWithOptions(t, "feed-reveal-guard-"+strings.ReplaceAll(testCase.name, " ", "-")+"@example.com",
@@ -176,7 +177,13 @@ func TestCalendarFeedRevealRefusesForeignNavigationWithoutSpendingTheMark(t *tes
 			if retracted := responseCookie(refused.Cookies(), calendarFeedRevealCookieName); retracted != nil && strings.TrimSpace(retracted.Value) == "" {
 				t.Fatal("a refused navigation must not retract the owner's reveal cookie")
 			}
-			assertHealthEgressAudited(t, logOutput, "settings.calendar_feed_reveal", "denied", "calendar_feed")
+			// The reason must name the check that actually fired. A prefetch
+			// reported as a cross-origin attempt sends an operator after an
+			// attacker who was never there.
+			deniedLine := assertHealthEgressAudited(t, logOutput, "settings.calendar_feed_reveal", "denied", "calendar_feed")
+			if !strings.Contains(deniedLine, `reason="`+testCase.wantReason+`"`) {
+				t.Fatalf("expected the refusal to be audited as %q, got %q", testCase.wantReason, deniedLine)
+			}
 
 			accepted, acceptedBody, _ := revealCalendarFeedWithHeaders(t, ctx.app, ctx.authCookie, sealed.Value, sameOriginNavigation)
 			defer func() { _ = accepted.Body.Close() }()
