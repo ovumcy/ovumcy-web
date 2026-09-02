@@ -2203,6 +2203,39 @@ paths:
                 error_detail: { key: "invalid webhook url", category: "validation", target: "settings_form" }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+    delete:
+      tags: [settings]
+      summary: Withdraw the stored webhook endpoint (owner only).
+      description: |
+        Withdraws the owner's delivery endpoint and switches delivery off, in one
+        request. It writes only the endpoint columns: the two per-kind notify
+        toggles and the shared `reminder_lead_days` window are left exactly where
+        the owner set them, because withdrawing an address is not a request to
+        forget which reminders they wanted or how early. It advances the
+        revocation epoch in the same statement, so a delivery pass already
+        holding the previous configuration loses its claim rather than posting to
+        a withdrawn endpoint, and it clears the accepted-delivery mark, which
+        describes an endpoint that no longer exists.
+
+        It never decrypts the stored ciphertext, which is what makes an endpoint
+        this instance can no longer read (after a `SECRET_KEY` rotation) still
+        withdrawable. Idempotent. Does NOT bump `auth_session_version`.
+      responses:
+        '200':
+          description: Endpoint withdrawn.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500':
+          description: Persistence failed. Carries no endpoint.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "failed to update webhook settings"
+                error_detail: { key: "failed to update webhook settings", category: "internal", target: "global" }
 
   /api/v1/users/current/calendar-feed:
     post:

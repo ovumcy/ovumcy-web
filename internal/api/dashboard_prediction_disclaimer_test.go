@@ -71,7 +71,14 @@ func TestSettingsEgressSurfacesRenderPredictionDisclaimer(t *testing.T) {
 
 	body := fetchPageBody(t, app, "/settings", authCookie)
 	document := mustParseHTMLDocument(t, body)
-	for _, hook := range []string{`data-webhook-disclaimer`, `data-calendar-feed-disclaimer`} {
+	// The two egress sections merged into one, so the surface count is one and
+	// the assertion is exact in both directions: the sentence must be there, and
+	// it must be there once. A merged card that repeated it would not be extra
+	// safety, and the constitution's requirement was never a count of copies.
+	if occurrences := strings.Count(body, "data-egress-disclaimer"); occurrences != 1 {
+		t.Fatalf("expected exactly one egress disclaimer surface, found %d", occurrences)
+	}
+	for _, hook := range []string{`data-egress-disclaimer`} {
 		elements := htmlFindElements(document, func(node *html.Node) bool {
 			return node.Type == html.ElementNode && htmlHasAttr(node, hook)
 		})

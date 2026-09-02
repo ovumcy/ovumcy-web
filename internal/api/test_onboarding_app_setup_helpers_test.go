@@ -53,6 +53,11 @@ type onboardingTestAppOptions struct {
 	// a fault-injecting repository has to wrap the real one to stay a day
 	// service in every other respect.
 	dayService func(database *gorm.DB) *services.DayService
+	// outboundDeliveryEnabled mirrors REMINDER_SCHEDULER_ENABLED. It ships off,
+	// and an app left at the default renders every readable webhook row as
+	// "this instance sends no reminders" -- correct, and the reason the egress
+	// matrix has to be able to turn it on to reach the states behind it.
+	outboundDeliveryEnabled bool
 }
 
 func newOnboardingTestAppWithOptions(t *testing.T, options onboardingTestAppOptions) (*fiber.App, *gorm.DB) {
@@ -134,12 +139,13 @@ func newTestHandlerDependencies(database *gorm.DB, i18nManager *i18n.Manager, op
 	// the default attempt limits, an empty (disabled) OIDC config, and—unlike
 	// production—leave LogoutAttempts unset to keep the auth-service default.
 	dependencies := bootstrap.BuildDependencies(db.NewRepositories(database), []byte(testAppSecretKey), i18nManager, bootstrap.Options{
-		RegistrationMode:    registrationMode,
-		OIDCConfig:          security.OIDCConfig{},
-		OIDCServiceOverride: appOptions.oidcService,
-		LoginAttempts:       bootstrap.AttemptLimit{Max: services.DefaultLoginAttemptsLimit, Window: services.DefaultLoginAttemptsWindow},
-		RecoveryAttempts:    bootstrap.AttemptLimit{Max: services.DefaultRecoveryAttemptsLimit, Window: time.Hour},
-		AuditLogEnabled:     appOptions.auditLogEnabled,
+		RegistrationMode:        registrationMode,
+		OIDCConfig:              security.OIDCConfig{},
+		OIDCServiceOverride:     appOptions.oidcService,
+		LoginAttempts:           bootstrap.AttemptLimit{Max: services.DefaultLoginAttemptsLimit, Window: services.DefaultLoginAttemptsWindow},
+		RecoveryAttempts:        bootstrap.AttemptLimit{Max: services.DefaultRecoveryAttemptsLimit, Window: time.Hour},
+		AuditLogEnabled:         appOptions.auditLogEnabled,
+		OutboundDeliveryEnabled: appOptions.outboundDeliveryEnabled,
 	})
 	if appOptions.dayService != nil {
 		dependencies.DayService = appOptions.dayService(database)

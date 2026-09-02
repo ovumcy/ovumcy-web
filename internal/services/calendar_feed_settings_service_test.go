@@ -73,7 +73,8 @@ func (s *stubCalendarFeedSettingsRepo) ClearCalendarFeedToken(_ context.Context,
 	return nil
 }
 
-func (s *stubCalendarFeedSettingsRepo) FindByID(_ context.Context, userID uint) (models.User, error) {
+func (s *stubCalendarFeedSettingsRepo) LoadSettingsByID(_ context.Context, userID uint) (models.User, error) {
+	s.findUserID = userID
 	if s.findErr != nil {
 		return models.User{}, s.findErr
 	}

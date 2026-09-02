@@ -14,8 +14,7 @@
     <a href="#settings-cycle" class="settings-section-nav-link"><span aria-hidden="true">{{template "icon" "calendar"}}</span> {{t .Messages "settings.cycle.title"}}</a>
     <a href="#settings-symptoms" class="settings-section-nav-link"><span aria-hidden="true">{{template "icon" "list"}}</span> {{t .Messages "settings.symptoms.title"}}</a>
     <a href="#settings-tracking" class="settings-section-nav-link"><span aria-hidden="true">{{template "icon" "flask"}}</span> {{t .Messages "settings.tracking.title"}}</a>
-    <a href="#settings-webhook" class="settings-section-nav-link"><span aria-hidden="true">{{template "icon" "bell"}}</span> {{t .Messages "settings.webhook.title"}}</a>
-    <a href="#settings-calendar-feed" class="settings-section-nav-link"><span aria-hidden="true">{{template "icon" "calendar"}}</span> {{t .Messages "settings.calendar_feed.title"}}</a>
+    <a href="#settings-egress" class="settings-section-nav-link"><span aria-hidden="true">{{template "icon" "broadcast"}}</span> {{t .Messages "settings.egress.title"}}</a>
     <a href="#settings-interface" class="settings-section-nav-link"><span aria-hidden="true">{{template "icon" "sliders"}}</span> {{t .Messages "settings.interface.title"}}</a>
     <a href="#settings-account" class="settings-section-nav-link"><span aria-hidden="true">{{template "icon" "user"}}</span> {{t .Messages "settings.account.title"}}</a>
     <a href="#settings-data" class="settings-section-nav-link"><span aria-hidden="true">{{template "icon" "folder"}}</span> {{t .Messages "settings.data.title"}}</a>
@@ -51,9 +50,7 @@
   {{if eq .CurrentUser.Role "owner"}}
   {{template "settings_tracking_section_content" .}}
 
-  {{template "settings_webhook_section_content" .}}
-
-  {{template "settings_calendar_feed_section_content" .}}
+  {{template "settings_egress_section_content" .}}
   {{end}}
 
   {{template "settings_interface_section_content" .}}

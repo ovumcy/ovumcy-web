@@ -93,7 +93,6 @@ var domAttrConsumerResidual = map[string]string{
 	"data-settings-reminders-save":     "reminder settings save button",
 
 	// Copy surfaces carrying a hook with no spec behind it.
-	"data-calendar-feed-hint":       "calendar-feed URL hint",
 	"data-calendar-month-label":     "calendar month label",
 	"data-import-status":            "import status container; the id is what the request targets",
 	"data-pwa-install-title":        "superseded by the data-pwa-install-title-key sibling the spec asserts",

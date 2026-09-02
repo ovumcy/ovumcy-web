@@ -31,22 +31,14 @@ type SettingsViewSymptomProvider interface {
 	FetchSymptoms(ctx context.Context, userID uint) ([]models.SymptomType, error)
 }
 
-// SettingsViewWebhookStatusBuilder is the narrow seam the settings view uses to
-// turn a stored webhook_url ciphertext into the render-safe status/host
-// projection. *WebhookSettingsService satisfies it. Kept as an interface so the
-// view service never holds the secret key directly and tests can stub the
-// projection without encryption.
-type SettingsViewWebhookStatusBuilder interface {
-	BuildWebhookURLDisplay(userID uint, encryptedURL string) WebhookURLDisplay
-}
-
-// SettingsViewCalendarFeedStatusBuilder is the narrow seam the settings view
-// uses to learn whether an owner's .ics feed is currently configured. It
-// returns ONLY a configured/not-configured flag — never the token, selector, or
-// a URL — so a normal settings load never surfaces the feed secret.
-// *CalendarFeedSettingsService satisfies it.
-type SettingsViewCalendarFeedStatusBuilder interface {
-	BuildFeedStatus(ctx context.Context, userID uint) CalendarFeedStatus
+// SettingsViewEgressLedgerBuilder is the single seam the settings view reads the
+// egress ledger through. It replaced two — a webhook status builder and a feed
+// status builder — because the heading state is an automaton over BOTH paths and
+// cannot be assembled from two independently rendered halves. *EgressLedgerService
+// satisfies it. Kept as an interface so the view service holds neither the secret
+// key nor the runtime configuration.
+type SettingsViewEgressLedgerBuilder interface {
+	BuildEgressLedger(ctx context.Context, user models.User) EgressLedger
 }
 
 type SettingsViewInput struct {
@@ -107,26 +99,21 @@ type SettingsPageViewData struct {
 	Symptoms                SettingsSymptomsViewData
 	HasOwnerExportViewState bool
 	HasOwnerSymptomsView    bool
-	// Webhook notification settings (issue #124). WebhookURLConfigured /
-	// WebhookURLHost are the ONLY endpoint projection rendered — the stored URL
-	// (a secret) is never surfaced. WebhookURLHost is at most the hostname.
-	WebhookEnabled         bool
-	WebhookNotifyPeriod    bool
-	WebhookNotifyOvulation bool
-	WebhookURLConfigured   bool
-	WebhookURLHost         string
-	// Calendar (.ics) feed subscription (slice 4). Only the configured flag is
-	// rendered — never the token or the subscribe URL, which are shown exactly
-	// once on generation via a sealed one-time reveal, mirroring recovery codes.
-	CalendarFeedConfigured bool
+	// Egress is the owner-only account of the webhook and .ics paths — their
+	// states, the one timestamp each can prove, and what each carries off the
+	// instance. It rides the optional-block convention: a session that is not
+	// this row's owner leaves HasOwnerEgressLedger false and Egress zero, and the
+	// api layer projects NOTHING from it, so the absence reaches the page as an
+	// absent key rather than as a false one.
+	Egress               EgressLedger
+	HasOwnerEgressLedger bool
 }
 
 type SettingsViewService struct {
-	settings           SettingsViewLoader
-	export             SettingsViewExportBuilder
-	symptoms           SettingsViewSymptomProvider
-	webhookStatus      SettingsViewWebhookStatusBuilder
-	calendarFeedStatus SettingsViewCalendarFeedStatusBuilder
+	settings SettingsViewLoader
+	export   SettingsViewExportBuilder
+	symptoms SettingsViewSymptomProvider
+	egress   SettingsViewEgressLedgerBuilder
 }
 
 type settingsStatusKeys struct {
@@ -135,13 +122,12 @@ type settingsStatusKeys struct {
 	successKey             string
 }
 
-func NewSettingsViewService(settings SettingsViewLoader, export SettingsViewExportBuilder, symptoms SettingsViewSymptomProvider, webhookStatus SettingsViewWebhookStatusBuilder, calendarFeedStatus SettingsViewCalendarFeedStatusBuilder) *SettingsViewService {
+func NewSettingsViewService(settings SettingsViewLoader, export SettingsViewExportBuilder, symptoms SettingsViewSymptomProvider, egressLedger SettingsViewEgressLedgerBuilder) *SettingsViewService {
 	return &SettingsViewService{
-		settings:           settings,
-		export:             export,
-		symptoms:           symptoms,
-		webhookStatus:      webhookStatus,
-		calendarFeedStatus: calendarFeedStatus,
+		settings: settings,
+		export:   export,
+		symptoms: symptoms,
+		egress:   egressLedger,
 	}
 }
 
@@ -210,6 +196,10 @@ func buildResolvedSettingsUser(user *models.User, persisted models.User, today t
 	resolvedUser.WebhookURL = persisted.WebhookURL
 	resolvedUser.WebhookNotifyPeriod = persisted.WebhookNotifyPeriod
 	resolvedUser.WebhookNotifyOvulation = persisted.WebhookNotifyOvulation
+	// The delivery mark rides the SAME projection as the columns above it: the
+	// session user is a copy taken at sign-in and would answer "no delivery has
+	// been recorded" for every owner whose delivery happened afterwards.
+	resolvedUser.WebhookLastDeliveredAt = persisted.WebhookLastDeliveredAt
 	resolvedUser.LastPeriodStart = persisted.LastPeriodStart
 
 	lastPeriodStart := ""
@@ -256,8 +246,7 @@ func buildSettingsPageBaseViewData(user models.User, lastPeriodStart string, tod
 }
 
 func (service *SettingsViewService) populateOwnerSettingsViewData(ctx context.Context, viewData *SettingsPageViewData, language string, today time.Time, location *time.Location) error {
-	service.populateOwnerWebhookViewData(viewData)
-	service.populateOwnerCalendarFeedViewData(ctx, viewData)
+	service.populateOwnerEgressLedger(ctx, viewData)
 
 	if service.symptoms != nil {
 		symptomsViewData, err := service.BuildSettingsSymptomsViewData(ctx, &viewData.CurrentUser)
@@ -281,35 +270,18 @@ func (service *SettingsViewService) populateOwnerSettingsViewData(ctx context.Co
 	return nil
 }
 
-// populateOwnerWebhookViewData sets the webhook toggles and the render-safe
-// URL status (configured + host) on the owner's settings view. The stored URL
-// is a secret, so only the projection from BuildWebhookURLDisplay is copied —
-// never the ciphertext or plaintext URL. Without a webhook status builder the
-// toggles still populate but the URL status stays "not configured".
-func (service *SettingsViewService) populateOwnerWebhookViewData(viewData *SettingsPageViewData) {
-	viewData.WebhookEnabled = viewData.CurrentUser.WebhookEnabled
-	viewData.WebhookNotifyPeriod = viewData.CurrentUser.WebhookNotifyPeriod
-	viewData.WebhookNotifyOvulation = viewData.CurrentUser.WebhookNotifyOvulation
-
-	if service.webhookStatus == nil {
+// populateOwnerEgressLedger builds the owner's egress account and marks the
+// optional block present. Nothing from the ledger — no state, no timestamp, no
+// host — reaches the view data unless this runs, and this runs only past the
+// owner gate. Without a ledger builder the flag stays false and the block is
+// absent rather than empty, which is what keeps a partially wired instance from
+// rendering "nothing is configured" about paths it never looked at.
+func (service *SettingsViewService) populateOwnerEgressLedger(ctx context.Context, viewData *SettingsPageViewData) {
+	if service.egress == nil {
 		return
 	}
-	display := service.webhookStatus.BuildWebhookURLDisplay(viewData.CurrentUser.ID, viewData.CurrentUser.WebhookURL)
-	viewData.WebhookURLConfigured = display.Configured
-	viewData.WebhookURLHost = display.Host
-}
-
-// populateOwnerCalendarFeedViewData sets the render-safe .ics feed status
-// (configured vs not) on the owner's settings view. It surfaces ONLY the
-// boolean — never the token or the subscribe URL — so a normal settings load
-// (or any revisit) can never re-render the secret; the URL is shown exactly once
-// on generation via a sealed one-time reveal. Without a status builder the flag
-// stays false (not configured).
-func (service *SettingsViewService) populateOwnerCalendarFeedViewData(ctx context.Context, viewData *SettingsPageViewData) {
-	if service.calendarFeedStatus == nil {
-		return
-	}
-	viewData.CalendarFeedConfigured = service.calendarFeedStatus.BuildFeedStatus(ctx, viewData.CurrentUser.ID).Configured
+	viewData.Egress = service.egress.BuildEgressLedger(ctx, viewData.CurrentUser)
+	viewData.HasOwnerEgressLedger = true
 }
 
 func (service *SettingsViewService) buildOwnerExportViewData(ctx context.Context, userID uint, language string, today time.Time, location *time.Location) (SettingsExportViewData, error) {
@@ -385,6 +357,39 @@ func compareISODate(left string, right string) int {
 	default:
 		return 1
 	}
+}
+
+// ErrSettingsViewLoadEgress wraps a failure to re-read the owner's settings row
+// while rebuilding the egress block.
+var ErrSettingsViewLoadEgress = errors.New("settings view load egress")
+
+// BuildSettingsEgressViewData rebuilds the owner's egress ledger from a FRESH
+// read of the settings row, and it exists so a mutation's response can be built
+// from what the database now holds rather than from what the request intended.
+// The distinction is the whole point: a response assembled from the caller's
+// intent renders a proposition the write it is reporting has just falsified, and
+// it does so most convincingly on success.
+//
+// It re-reads deliberately. Handing it the caller's stale user would make the
+// read-count identical to a response built from intent, which is exactly the
+// difference the guard exists to see.
+//
+// A non-owner receives the zero ledger and no error: the gate is the role, and
+// this method is reachable from a route that already refused a non-owner.
+// Regression: TestEveryEgressMutationRebuildsItsBlockFromAReadAfterTheWrite.
+func (service *SettingsViewService) BuildSettingsEgressViewData(ctx context.Context, user *models.User) (EgressLedger, error) {
+	if user == nil || user.Role != models.RoleOwner || service.egress == nil {
+		return EgressLedger{}, nil
+	}
+
+	reloaded, err := service.settings.LoadSettings(ctx, user.ID)
+	if err != nil {
+		return EgressLedger{}, fmt.Errorf("%w: %v", ErrSettingsViewLoadEgress, err)
+	}
+	reloaded.ID = user.ID
+	reloaded.Role = user.Role
+
+	return service.egress.BuildEgressLedger(ctx, reloaded), nil
 }
 
 func (service *SettingsViewService) BuildSettingsSymptomsViewData(ctx context.Context, user *models.User) (SettingsSymptomsViewData, error) {

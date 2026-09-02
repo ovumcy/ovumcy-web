@@ -55,15 +55,19 @@ func (handler *Handler) buildSettingsViewData(c fiber.Ctx, user *models.User, fl
 		"ShowHistoricalPhases":   viewData.ShowHistoricalPhases,
 		"WeekStartsOn":           viewData.WeekStartsOn,
 		"ReminderLeadDays":       viewData.ReminderLeadDays,
-		"WebhookEnabled":         viewData.WebhookEnabled,
-		"WebhookNotifyPeriod":    viewData.WebhookNotifyPeriod,
-		"WebhookNotifyOvulation": viewData.WebhookNotifyOvulation,
-		"WebhookURLConfigured":   viewData.WebhookURLConfigured,
-		"WebhookURLHost":         viewData.WebhookURLHost,
-		"CalendarFeedConfigured": viewData.CalendarFeedConfigured,
 		"LastPeriodStart":        viewData.LastPeriodStart,
 		"TodayISO":               viewData.TodayISO,
 		"CycleStartMinISO":       viewData.CycleStartMinISO,
+	}
+
+	// The egress account is projected only past the owner gate, and as ONE key.
+	// The six flat keys it replaced were set unconditionally: a session that was
+	// not this row's owner received the endpoint's configured flag, its host, and
+	// the feed's configured flag as FALSE values rather than as absent ones, and a
+	// false value is still an answer to a question that session may not ask.
+	// Regression: TestSettingsViewDataNamesNoEgressKeyForANonOwner.
+	if viewData.HasOwnerEgressLedger {
+		data["Egress"] = buildSettingsEgressView(c, viewData.Egress)
 	}
 
 	if viewData.HasOwnerExportViewState {

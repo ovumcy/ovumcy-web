@@ -22,6 +22,10 @@ type stubWebhookRepo struct {
 	loadUser     models.User
 	loadErr      error
 	loadCalls    int
+
+	removedUserID uint
+	removeErr     error
+	removeCalls   int
 }
 
 func (s *stubWebhookRepo) SaveWebhookSettings(_ context.Context, userID uint, settings models.WebhookSettingsColumns) error {
@@ -34,6 +38,12 @@ func (s *stubWebhookRepo) SaveWebhookSettings(_ context.Context, userID uint, se
 func (s *stubWebhookRepo) LoadSettingsByID(_ context.Context, _ uint) (models.User, error) {
 	s.loadCalls++
 	return s.loadUser, s.loadErr
+}
+
+func (s *stubWebhookRepo) RemoveWebhookDestination(_ context.Context, userID uint) error {
+	s.removeCalls++
+	s.removedUserID = userID
+	return s.removeErr
 }
 
 const webhookTestSecretKey = "test-secret-key-32-bytes-padding!"
@@ -548,24 +558,26 @@ func TestSaveWebhookSettingsFromFormLoadErrorPropagates(t *testing.T) {
 	}
 }
 
-// TestBuildWebhookURLDisplay covers the render-safe status/host projection: it
-// exposes the hostname only (never the path/query/userinfo secret), reports
-// not-configured for an empty value, and reports configured-but-hostless for a
-// ciphertext that will not open.
+// TestBuildWebhookURLDisplay covers the render-safe readability/host projection:
+// it exposes the hostname only (never the path/query/userinfo secret), reports
+// absent for an empty value, and reports UNREADABLE — not merely hostless — for
+// a ciphertext that will not open. The last distinction is the point: a stored
+// value this instance cannot read and one it can read but that names no host are
+// different situations with different remedies.
 func TestBuildWebhookURLDisplay(t *testing.T) {
 	const userID = 31
 	svc, _ := newWebhookServiceForTest()
 
 	// Not configured.
-	if got := svc.BuildWebhookURLDisplay(userID, ""); got.Configured || got.Host != "" {
-		t.Fatalf("empty stored value should be not-configured, got %+v", got)
+	if got := svc.BuildWebhookURLDisplay(userID, ""); got.Readability != WebhookURLAbsent || got.Host != "" {
+		t.Fatalf("empty stored value should be absent, got %+v", got)
 	}
 
 	// Configured: host only, secret path/query/userinfo dropped.
 	ciphertext := storeWebhookURLForForm(t, userID, "https://user:s3cr3t@ntfy.example.com:8443/topic?token=abc123")
 	got := svc.BuildWebhookURLDisplay(userID, ciphertext)
-	if !got.Configured {
-		t.Fatal("expected configured=true for a stored endpoint")
+	if got.Readability != WebhookURLReadable {
+		t.Fatalf("expected a readable endpoint, got %q", got.Readability)
 	}
 	if got.Host != "ntfy.example.com" {
 		t.Fatalf("expected host-only 'ntfy.example.com', got %q", got.Host)
@@ -574,26 +586,29 @@ func TestBuildWebhookURLDisplay(t *testing.T) {
 		t.Fatalf("host projection leaked non-host components: %q", got.Host)
 	}
 
-	// Configured but un-openable (wrong-aad ciphertext): configured, no host.
+	// Stored but un-openable (wrong-aad ciphertext): unreadable, no host. It must
+	// NOT report the same readability as the parse-failure case below, which is
+	// what a single boolean made it do.
 	otherOwnerCiphertext := storeWebhookURLForForm(t, userID+1, "https://ntfy.example.com/topic")
 	unopenable := svc.BuildWebhookURLDisplay(userID, otherOwnerCiphertext)
-	if !unopenable.Configured || unopenable.Host != "" {
-		t.Fatalf("un-openable ciphertext should be configured-but-hostless, got %+v", unopenable)
+	if unopenable.Readability != WebhookURLUnreadable || unopenable.Host != "" {
+		t.Fatalf("un-openable ciphertext should be unreadable and hostless, got %+v", unopenable)
 	}
 }
 
 // TestBuildWebhookURLDisplayUnparseableStoredURLHasNoHost covers the
-// hostOnly parse-error branch: a stored (decryptable) value that url.Parse
-// rejects yields configured-but-hostless rather than leaking or crashing. A
-// control character makes url.Parse fail.
+// hostOnly parse-error branch: a stored value that DECRYPTS but that url.Parse
+// rejects is readable-with-no-host, which the ledger renders as "unusable" —
+// distinct from the unreadable case above. A control character makes url.Parse
+// fail.
 func TestBuildWebhookURLDisplayUnparseableStoredURLHasNoHost(t *testing.T) {
 	const userID = 33
 	svc, _ := newWebhookServiceForTest()
 	// Seal a value that decrypts fine but is not a parseable URL (control char).
 	ciphertext := storeWebhookURLForForm(t, userID, "http://ntfy.example.com/\x7f")
 	got := svc.BuildWebhookURLDisplay(userID, ciphertext)
-	if !got.Configured {
-		t.Fatal("expected configured=true for a stored (decryptable) value")
+	if got.Readability != WebhookURLReadable {
+		t.Fatalf("expected a readable value for a stored decryptable URL, got %q", got.Readability)
 	}
 	if got.Host != "" {
 		t.Fatalf("expected empty host for an unparseable stored URL, got %q", got.Host)

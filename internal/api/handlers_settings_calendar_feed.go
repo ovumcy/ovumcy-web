@@ -123,17 +123,12 @@ func (handler *Handler) RevokeCalendarFeed(c fiber.Ctx) error {
 		return handler.failMutation(c, calendarFeedRevokeMutation, settingsCalendarFeedUpdateErrorSpec())
 	}
 
-	status := services.SettingsCalendarFeedRevokedStatus
 	handler.logMutationSuccess(c, calendarFeedRevokeMutation)
-
-	if acceptsJSON(c) {
-		return c.JSON(fiber.Map{"ok": true, "status": status})
-	}
-	if isHTMX(c) {
-		return c.SendString(htmxSettingsSuccessMarkup(c, status, "Calendar feed turned off."))
-	}
-	handler.setFlashCookie(c, FlashPayload{SettingsSuccess: status})
-	return redirectOrJSON(c, "/settings")
+	// The answer is the whole egress block rebuilt from a read taken after this
+	// write, not a toast swapped in beside the sentence the write just made
+	// false. Before the ledger, an HTMX revoke replaced the status island alone
+	// and left "a link is issued" standing next to "the feed was turned off".
+	return handler.respondEgressMutation(c, user, services.SettingsCalendarFeedRevokedStatus)
 }
 
 // ShowCalendarFeedRevealPage renders the subscribe URL exactly once. It reads

@@ -13,13 +13,16 @@
 -- its claim and POST health data to an endpoint the owner had already been told
 -- was revoked.
 --
--- webhook_config_version closes that window. Three writers advance it, each in
+-- webhook_config_version closes that window. Four writers advance it, each in
 -- the same statement that performs its own write, and that is the COMPLETE set
 -- of DELIVERY CONFIGURATION writers rather than an illustration -- a later one
 -- owes the same advance:
 --
 --   * SaveWebhookSettings -- a save, a disable, an endpoint replacement, a
 --     removal.
+--   * RemoveWebhookDestination -- withdrawing the endpoint on its own, which the
+--     save above cannot express without also writing reminder_lead_days and both
+--     per-kind opt-ins.
 --   * UpdateReminderLeadDays -- the shared banner-and-webhook lead window, which
 --     ListAllForNotify projects and the notify decision places the reminder from.
 --   * ClearAllDataAndResetSettings.

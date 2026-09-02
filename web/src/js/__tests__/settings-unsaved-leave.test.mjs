@@ -101,15 +101,16 @@ function settingsPage() {
       </form>
     </details>
 
-    <details id="settings-webhook" data-settings-section open>
+    <details id="settings-egress" data-settings-section open>
       <form action="/api/v1/users/current/webhook" method="post" hx-post="/api/v1/users/current/webhook" data-settings-webhook-form>
         <input type="hidden" name="csrf_token" value="test-token">
         <input type="url" id="settings-webhook-url" name="webhook_url" value="">
         <button type="submit">Save webhook</button>
       </form>
-    </details>
-
-    <details id="settings-calendar-feed" data-settings-section open>
+      <form hx-delete="/api/v1/users/current/webhook" hx-confirm="Withdraw?" data-settings-webhook-remove>
+        <input type="hidden" name="csrf_token" value="test-token">
+        <button type="submit">Withdraw endpoint</button>
+      </form>
       <form hx-post="/api/v1/users/current/calendar-feed">
         <input type="hidden" name="csrf_token" value="test-token">
         <button type="submit">Enable feed</button>

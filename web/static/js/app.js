@@ -1655,6 +1655,22 @@
     });
   }
 
+  // The status island is not always the swap target. A settings section that
+  // replaces itself (hx-swap="outerHTML" onto the card) targets the card, and the
+  // island lives inside it — so every handler below resolves the container rather
+  // than testing the target's own class. Before this, a card-level swap silently
+  // skipped the toast, the auto-clear AND the error rendering: the request
+  // succeeded or failed and the page said nothing either way.
+  function statusContainerFor(target) {
+    if (!target || !target.classList) {
+      return null;
+    }
+    if (target.classList.contains("save-status")) {
+      return target;
+    }
+    return target.querySelector ? target.querySelector(".save-status") : null;
+  }
+
   function renderErrorStatus(target, text) {
     target.textContent = "";
     var block = document.createElement("div");
@@ -2059,9 +2075,9 @@
     });
 
     document.body.addEventListener("htmx:beforeRequest", function (event) {
-      var target = event && event.detail ? event.detail.target : null;
-      if (target && target.classList && target.classList.contains("save-status")) {
-        delete target.dataset.toastShown;
+      var statusTarget = statusContainerFor(event && event.detail ? event.detail.target : null);
+      if (statusTarget) {
+        delete statusTarget.dataset.toastShown;
       }
       setSaveButtonState(getSaveFeedbackFormFromEvent(event), true);
     });
@@ -2077,8 +2093,8 @@
     });
 
     document.body.addEventListener("htmx:afterSwap", function (event) {
-      var target = event && event.detail ? event.detail.target : null;
-      if (!target || !target.classList || !target.classList.contains("save-status")) {
+      var target = statusContainerFor(event && event.detail ? event.detail.target : null);
+      if (!target) {
         return;
       }
 
@@ -2093,8 +2109,8 @@
     });
 
     document.body.addEventListener("htmx:afterSettle", function (event) {
-      var target = event && event.detail ? event.detail.target : null;
-      if (!target || !target.classList || !target.classList.contains("save-status")) {
+      var target = statusContainerFor(event && event.detail ? event.detail.target : null);
+      if (!target) {
         return;
       }
       scheduleClearSuccessStatus(target);
@@ -2157,7 +2173,8 @@
           return;
         }
       }
-      if (!target || !target.classList || !target.classList.contains("save-status")) {
+      target = statusContainerFor(target);
+      if (!target) {
         if (form && form.matches && form.matches("[data-dashboard-save-form]") && typeof window.__ovumcyFinalizeDashboardManualSave === "function") {
           window.__ovumcyFinalizeDashboardManualSave(form);
         }

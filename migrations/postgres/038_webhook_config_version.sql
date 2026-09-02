@@ -3,12 +3,14 @@
 -- aligned across engines.
 --
 -- webhook_config_version is the monotonic revocation epoch of an owner's
--- delivery configuration. Three writers advance it, each in the same statement
+-- delivery configuration. Four writers advance it, each in the same statement
 -- that performs its own write, and that is the COMPLETE set of DELIVERY
 -- CONFIGURATION writers rather than an illustration -- a later one owes the same
 -- advance: SaveWebhookSettings (a save, a disable, an endpoint replacement, a
--- removal), UpdateReminderLeadDays (the shared banner-and-webhook lead window,
--- which the notify pass places its reminder from), and
+-- removal), RemoveWebhookDestination (withdrawing the endpoint on its own, which
+-- the save cannot express without also writing reminder_lead_days and both
+-- per-kind opt-ins), UpdateReminderLeadDays (the shared banner-and-webhook lead
+-- window, which the notify pass places its reminder from), and
 -- ClearAllDataAndResetSettings.
 --
 -- What obliges a writer is what it CHANGES, never that it touched the users row.

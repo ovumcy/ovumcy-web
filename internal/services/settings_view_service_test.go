@@ -166,7 +166,7 @@ func TestBuildSettingsPageViewDataReadsTheOwnersEntriesOnce(t *testing.T) {
 	}}
 	exportService := NewExportService(days, &stubExportSymptomReader{})
 	settingsLoader := &stubSettingsViewLoader{user: models.User{CycleLength: 28, PeriodLength: 5}}
-	service := NewSettingsViewService(settingsLoader, exportService, nil, nil, nil)
+	service := NewSettingsViewService(settingsLoader, exportService, nil, nil)
 
 	owner := &models.User{ID: 77, Role: models.RoleOwner}
 	viewData, err := service.BuildSettingsPageViewData(
@@ -210,7 +210,7 @@ func TestBuildSettingsPageViewDataClassifiesChangePasswordError(t *testing.T) {
 			LastPeriodStart: nil,
 		},
 	}
-	service := NewSettingsViewService(settingsLoader, nil, nil, nil, nil)
+	service := NewSettingsViewService(settingsLoader, nil, nil, nil)
 
 	user := &models.User{ID: 1, Role: models.RoleOwner}
 	viewData, err := service.BuildSettingsPageViewData(context.Background(), user, "en", SettingsViewInput{
@@ -249,7 +249,7 @@ func TestBuildSettingsPageViewDataOwnerLoadsExportSummary(t *testing.T) {
 			{ID: 3, Name: "Caffeine crash", ArchivedAt: ptrSettingsViewTime(mustParseSettingsViewDay(t, "2026-02-01"))},
 		},
 	}
-	service := NewSettingsViewService(settingsLoader, exportBuilder, symptomProvider, nil, nil)
+	service := NewSettingsViewService(settingsLoader, exportBuilder, symptomProvider, nil)
 
 	user := &models.User{ID: 2, Role: models.RoleOwner}
 	viewData, err := service.BuildSettingsPageViewData(context.Background(), user, "ru", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-02-21"), time.UTC)
@@ -303,12 +303,16 @@ func TestBuildSettingsPageViewDataScopesEveryOwnerReadToTheAuthenticatedOwner(t 
 		symptoms: []models.SymptomType{{ID: 2, Name: "Joint stiffness"}},
 	}
 	webhookStatus := &stubSettingsViewWebhookStatusBuilder{
-		display: WebhookURLDisplay{Configured: true, Host: "hooks.example.test"},
+		display: WebhookURLDisplay{Readability: WebhookURLReadable, Host: "hooks.example.test"},
 	}
 	calendarFeedStatus := &stubSettingsViewCalendarFeedStatusBuilder{
-		status: CalendarFeedStatus{Configured: true},
+		status: CalendarFeedStatus{Known: true, Configured: true},
 	}
-	service := NewSettingsViewService(settingsLoader, exportBuilder, symptomProvider, webhookStatus, calendarFeedStatus)
+	// The two builders are supplied through the REAL ledger service rather than
+	// stubbed one layer higher: the seam the view now holds is the ledger, and a
+	// stub of the ledger itself would leave both owner-carrying reads below it
+	// unobserved — which is the shape of guard this test exists to refuse.
+	service := NewSettingsViewService(settingsLoader, exportBuilder, symptomProvider, NewEgressLedgerService(webhookStatus, calendarFeedStatus, true))
 
 	owner := &models.User{ID: 4242, Role: models.RoleOwner}
 	if _, err := service.BuildSettingsPageViewData(context.Background(), owner, "en", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-02-21"), time.UTC); err != nil {
@@ -353,7 +357,7 @@ func TestBuildSettingsPageViewDataOwnerClampsExportDefaultToRequestLocalToday(t 
 		},
 	}
 
-	service := NewSettingsViewService(settingsLoader, exportBuilder, nil, nil, nil)
+	service := NewSettingsViewService(settingsLoader, exportBuilder, nil, nil)
 	user := &models.User{ID: 5, Role: models.RoleOwner}
 	viewData, err := service.BuildSettingsPageViewData(context.Background(), user, "ru", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-03-12"), time.UTC)
 	if err != nil {
@@ -390,7 +394,7 @@ func TestBuildSettingsPageViewDataSanitizesFutureLastPeriodStartForForm(t *testi
 		},
 	}
 
-	service := NewSettingsViewService(settingsLoader, nil, nil, nil, nil)
+	service := NewSettingsViewService(settingsLoader, nil, nil, nil)
 	user := &models.User{ID: 6, Role: models.RoleOwner}
 	viewData, err := service.BuildSettingsPageViewData(context.Background(), user, "ru", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-03-12"), time.UTC)
 	if err != nil {
@@ -415,7 +419,7 @@ func TestBuildSettingsPageViewDataPartnerSkipsExportSummary(t *testing.T) {
 	}
 	exportBuilder := &stubSettingsViewExportBuilder{}
 	symptomProvider := &stubSettingsViewSymptomProvider{}
-	service := NewSettingsViewService(settingsLoader, exportBuilder, symptomProvider, nil, nil)
+	service := NewSettingsViewService(settingsLoader, exportBuilder, symptomProvider, nil)
 
 	user := &models.User{ID: 3, Role: "legacy_viewer"}
 	viewData, err := service.BuildSettingsPageViewData(context.Background(), user, "en", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-02-21"), time.UTC)
@@ -444,7 +448,6 @@ func TestBuildSettingsPageViewDataReturnsTypedErrors(t *testing.T) {
 		nil,
 		nil,
 		nil,
-		nil,
 	)
 	if _, err := settingsErrService.BuildSettingsPageViewData(context.Background(), user, "en", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-02-21"), time.UTC); !errors.Is(err, ErrSettingsViewLoadSettings) {
 		t.Fatalf("expected ErrSettingsViewLoadSettings, got %v", err)
@@ -453,7 +456,6 @@ func TestBuildSettingsPageViewDataReturnsTypedErrors(t *testing.T) {
 	exportErrService := NewSettingsViewService(
 		&stubSettingsViewLoader{user: models.User{CycleLength: 28, PeriodLength: 5, AutoPeriodFill: true}},
 		&stubSettingsViewExportBuilder{err: errors.New("export fail")},
-		nil,
 		nil,
 		nil,
 	)
@@ -465,7 +467,6 @@ func TestBuildSettingsPageViewDataReturnsTypedErrors(t *testing.T) {
 		&stubSettingsViewLoader{user: models.User{CycleLength: 28, PeriodLength: 5, AutoPeriodFill: true}},
 		nil,
 		&stubSettingsViewSymptomProvider{err: errors.New("symptom fail")},
-		nil,
 		nil,
 	)
 	if _, err := symptomErrService.BuildSettingsPageViewData(context.Background(), user, "en", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-02-21"), time.UTC); !errors.Is(err, ErrSettingsViewLoadSymptoms) {

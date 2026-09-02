@@ -405,6 +405,38 @@ func (repo *UserRepository) SaveWebhookSettings(ctx context.Context, userID uint
 	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(updates).Error
 }
 
+// RemoveWebhookDestination withdraws this owner's delivery endpoint and nothing
+// else, scoped strictly to userID. It exists because SaveWebhookSettings cannot
+// express "remove the destination" without also writing reminder_lead_days,
+// webhook_notify_period and webhook_notify_ovulation: a thin handler calling it
+// with a zero-valued update would silently narrow the shared lead window to
+// zero, which makes a cycle anchor due on exactly one calendar day with no later
+// pass to retry it.
+//
+// It writes webhook_url and therefore decides the fate of webhook_last_delivered_at
+// in the same statement: the mark says a delivery to THAT endpoint was accepted,
+// so it cannot outlive it by a single read. It never decrypts the ciphertext it
+// clears -- an endpoint the instance can no longer open is still an endpoint the
+// owner may withdraw, and requiring a successful decrypt here would make the
+// unreadable state unrevokable.
+//
+// It DOES advance webhook_config_version, the revocation epoch, for the reason
+// migration 038 states: this is a write to the DELIVERY CONFIGURATION -- whether
+// and where delivery happens -- so a pass already holding the previous snapshot
+// loses its claim rather than posting to an endpoint the owner just withdrew.
+// The per-kind opt-ins and the lead window are deliberately left where the owner
+// set them: withdrawing an address is not a request to forget which reminders
+// they wanted. Regression: TestRemoveWebhookDestinationLeavesTheKindsAndLeadWindowAlone,
+// TestRemoveWebhookDestinationAdvancesTheRevocationEpoch.
+func (repo *UserRepository) RemoveWebhookDestination(ctx context.Context, userID uint) error {
+	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+		"webhook_enabled":           false,
+		"webhook_url":               "",
+		"webhook_last_delivered_at": nil,
+		"webhook_config_version":    gorm.Expr("webhook_config_version + 1"),
+	}).Error
+}
+
 // MarkWebhookDelivered records that a delivery to this owner's endpoint was
 // ACCEPTED — a 2xx already returned — scoped strictly to userID. It is the only
 // writer of webhook_last_delivered_at that sets a value, and the notify pass
@@ -1181,6 +1213,13 @@ func (repo *UserRepository) LoadSettingsByID(ctx context.Context, userID uint) (
 			// columns exist to replace.
 			"webhook_last_delivered_at",
 			"calendar_feed_key_epoch",
+			// The feed columns the egress ledger reads. The selector says a
+			// token exists; calendar_feed_revealed_at marks the one-time reveal
+			// as CONSUMED and is not a record that anyone fetched the feed --
+			// polls are deliberately unaudited. No verifier lands here: the
+			// plaintext is never stored and the hash and MAC are not renderable.
+			"calendar_feed_selector",
+			"calendar_feed_revealed_at",
 		).
 		First(&user, userID).Error; err != nil {
 		return models.User{}, err
