@@ -169,8 +169,14 @@ func (handler *Handler) ShowResetPasswordPage(c fiber.Ctx) error {
 	// cookie is read only when the gate can fire, so the ordinary configuration
 	// pays nothing; an absent cookie reads as not forced and takes the same exit.
 	if !handler.localPublicAuthEnabled() {
-		if _, forced := handler.readResetPasswordCookie(c); !forced {
-			handler.clearResetPasswordCookie(c)
+		if token, forced := handler.readResetPasswordCookie(c); !forced {
+			// Only a cookie that was actually presented is retracted. An absent
+			// one has nothing to retract, and a value that would not open was
+			// already cleared by the reader — the same rule the TOTP readers
+			// follow, so no reader here answers a bare visit with a Set-Cookie.
+			if token != "" {
+				handler.clearResetPasswordCookie(c)
+			}
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 		}
 	}

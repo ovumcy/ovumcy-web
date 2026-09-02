@@ -196,8 +196,18 @@ func (handler *Handler) ShowCalendarFeedRevealPage(c fiber.Ctx) error {
 // forged request the very outcome the guard exists to deny — the owner's one
 // reveal destroyed by someone else's link — where the refusal alone leaves the
 // sealed URL and the unclaimed mark both intact for the owner's own visit.
+// The refusal is audited only when the request carried a reveal cookie at all.
+// A visit with none had nothing to take, and the guard runs BEFORE the handler
+// that would have discovered that — so auditing unconditionally would fill the
+// stream with stray links and prefetches on sessions with no armed feed, and an
+// operator could not tell those from the one line this event exists to carry.
+// Presence is read off the raw cookie, which unseals nothing and decides nothing
+// else: whether the value is any good is still the handler's question, on the
+// owner's own visit.
 func (handler *Handler) refuseCalendarFeedRevealNavigation(c fiber.Ctx) error {
-	handler.logEgressDenied(c, calendarFeedRevealEgress, "cross_origin_navigation")
+	if strings.TrimSpace(c.Cookies(calendarFeedRevealCookieName)) != "" {
+		handler.logEgressDenied(c, calendarFeedRevealEgress, "cross_origin_navigation")
+	}
 	return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
 }
 
