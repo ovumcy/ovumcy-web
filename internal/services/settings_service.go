@@ -91,6 +91,11 @@ type SettingsUserRepository interface {
 }
 
 type CycleSettingsUpdate struct {
+	// Present names the columns this update may write; anything it does not
+	// name is left as the row holds it. Build it through ValidateCycleSettings,
+	// which carries the answer over from the request — a hand-built zero value
+	// writes nothing.
+	Present            CycleSettingsMembers
 	CycleLength        int
 	PeriodLength       int
 	AutoPeriodFill     bool
@@ -220,15 +225,33 @@ func (service *SettingsService) ValidateCurrentPassword(passwordHash string, raw
 	return nil
 }
 
+// SaveCycleSettings writes the columns the update names and no others. Writing
+// the full row instead would make every save carry a snapshot of the columns it
+// was not asked about, and a save that reverts a setting it never mentioned is
+// the defect this endpoint exists not to have — inside one request or across
+// two that overlap.
 func (service *SettingsService) SaveCycleSettings(ctx context.Context, userID uint, settings CycleSettingsUpdate) error {
-	updates := map[string]any{
-		"cycle_length":        settings.CycleLength,
-		"period_length":       settings.PeriodLength,
-		"auto_period_fill":    settings.AutoPeriodFill,
-		"irregular_cycle":     settings.IrregularCycle,
-		"unpredictable_cycle": settings.UnpredictableCycle,
-		"age_group":           NormalizeAgeGroup(settings.AgeGroup),
-		"usage_goal":          NormalizeUsageGoal(settings.UsageGoal),
+	updates := map[string]any{}
+	if settings.Present.CycleLength {
+		updates["cycle_length"] = settings.CycleLength
+	}
+	if settings.Present.PeriodLength {
+		updates["period_length"] = settings.PeriodLength
+	}
+	if settings.Present.AutoPeriodFill {
+		updates["auto_period_fill"] = settings.AutoPeriodFill
+	}
+	if settings.Present.IrregularCycle {
+		updates["irregular_cycle"] = settings.IrregularCycle
+	}
+	if settings.Present.UnpredictableCycle {
+		updates["unpredictable_cycle"] = settings.UnpredictableCycle
+	}
+	if settings.Present.AgeGroup {
+		updates["age_group"] = NormalizeAgeGroup(settings.AgeGroup)
+	}
+	if settings.Present.UsageGoal {
+		updates["usage_goal"] = NormalizeUsageGoal(settings.UsageGoal)
 	}
 	if settings.LastPeriodStartSet {
 		if settings.LastPeriodStart == nil {
@@ -236,6 +259,13 @@ func (service *SettingsService) SaveCycleSettings(ctx context.Context, userID ui
 		} else {
 			updates["last_period_start"] = *settings.LastPeriodStart
 		}
+	}
+	if len(updates) == 0 {
+		// A body that named no member is a save with nothing to save. It is not
+		// an error — the request asked for no change and got none — but it must
+		// not reach the repository, where an empty update is a driver-level
+		// question rather than a domain one.
+		return nil
 	}
 	return service.users.UpdateByID(ctx, userID, updates)
 }

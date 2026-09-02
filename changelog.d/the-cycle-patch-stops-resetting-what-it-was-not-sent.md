@@ -12,6 +12,11 @@
   is left exactly as it stands. What changes for a client that was relying on the old behaviour: to
   clear a flag or a bracket, send it explicitly rather than leaving it out.
 
+  The save now writes only the columns the request named, rather than the whole row, so this holds
+  between two overlapping requests as well as inside one: a save of the cycle lengths can no longer
+  put back the tracking mode as it stood when that request began, undoing a mode switch made from
+  another tab in between.
+
   The dashboard's mode quick switch is fixed on the same edge — it used to take a one-column path
   whenever the two lengths were missing, so a flag travelling beside the mode was dropped — and its
   success body no longer echoes the stored `usage_goal`, which made it the one save whose `200`

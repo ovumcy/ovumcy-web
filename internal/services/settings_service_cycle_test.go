@@ -327,6 +327,7 @@ func TestSaveCycleSettingsPersistsNormalizedOwnerPreferences(t *testing.T) {
 	lastPeriodStart := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
 
 	err := service.SaveCycleSettings(context.Background(), 42, CycleSettingsUpdate{
+		Present:            AllCycleSettingsMembers(),
 		CycleLength:        29,
 		PeriodLength:       5,
 		AutoPeriodFill:     true,
