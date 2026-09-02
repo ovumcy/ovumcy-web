@@ -2003,6 +2003,80 @@ func TestTryRunCLICommandWithHandlersDispatchesWebhook(t *testing.T) {
 	}
 }
 
+func TestTryRunCLICommandWithHandlersDispatchesRepair(t *testing.T) {
+	// No SECRET_KEY is set, deliberately. This subcommand runs on an instance a
+	// migration has stopped, so a prerequisite beyond the database location
+	// would be one the operator meets least easily exactly when they need it.
+	t.Setenv("DB_DRIVER", "sqlite")
+	t.Setenv("SECRET_KEY", "")
+	t.Setenv("SECRET_KEY_FILE", "")
+
+	var receivedArgs []string
+	handled, err := tryRunCLICommandWithHandlers([]string{"repair", "symptom-names", "--apply"}, cliCommandHandlers{
+		runRepair: func(_ db.Config, args []string) error {
+			receivedArgs = args
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !handled {
+		t.Fatal("expected repair command to be handled")
+	}
+	if len(receivedArgs) != 2 || receivedArgs[0] != "symptom-names" || receivedArgs[1] != "--apply" {
+		t.Fatalf("expected the repair name and its flag forwarded as args, got %v", receivedArgs)
+	}
+}
+
+func TestTryRunCLICommandWithHandlersRepairWithNoArgumentsReachesItsHandler(t *testing.T) {
+	// `ovumcy repair` alone is what the migration refusal tells the operator to
+	// run, and it has to reach the handler that lists the repairs rather than be
+	// rejected here as a missing subcommand.
+	t.Setenv("DB_DRIVER", "sqlite")
+
+	called := false
+	handled, err := tryRunCLICommandWithHandlers([]string{"repair"}, cliCommandHandlers{
+		runRepair: func(_ db.Config, args []string) error {
+			called = true
+			if len(args) != 0 {
+				t.Fatalf("expected no args, got %v", args)
+			}
+			return nil
+		},
+	})
+	if err != nil || !handled || !called {
+		t.Fatalf("expected the repair handler to be reached, got handled=%t called=%t err=%v", handled, called, err)
+	}
+}
+
+func TestTryRunCLICommandWithHandlersRepairRequiresHandler(t *testing.T) {
+	handled, err := tryRunCLICommandWithHandlers([]string{"repair", "symptom-names"}, cliCommandHandlers{})
+	if !handled {
+		t.Fatal("expected repair command to be handled")
+	}
+	if err == nil || !strings.Contains(err.Error(), "repair handler is required") {
+		t.Fatalf("expected repair-handler-required error, got %v", err)
+	}
+}
+
+func TestTryRunCLICommandWithHandlersRepairReportsInvalidDatabaseConfig(t *testing.T) {
+	t.Setenv("DB_DRIVER", "mysql")
+
+	handled, err := tryRunCLICommandWithHandlers([]string{"repair", "symptom-names"}, cliCommandHandlers{
+		runRepair: func(db.Config, []string) error {
+			t.Fatal("did not expect the repair handler to be called with an invalid DB config")
+			return nil
+		},
+	})
+	if !handled {
+		t.Fatal("expected repair command to be handled")
+	}
+	if err == nil || !strings.Contains(err.Error(), "invalid database config") {
+		t.Fatalf("expected an invalid-database-config error, got %v", err)
+	}
+}
+
 func TestTryRunCLICommandWithHandlersRejectsMissingWebhookSubcommand(t *testing.T) {
 	handled, err := tryRunCLICommandWithHandlers([]string{"webhook"}, cliCommandHandlers{})
 	if !handled {

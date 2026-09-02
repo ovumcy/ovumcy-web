@@ -48,3 +48,36 @@ func DefaultBuiltinSymptoms() []BuiltinSymptom {
 func (symptom SymptomType) IsActive() bool {
 	return symptom.ArchivedAt == nil
 }
+
+// SymptomDuplicateGroup is one (owner, folded name) collision that migration
+// 037's per-owner unique index cannot cover.
+//
+// ConflictKey is the DATABASE's own lower(name), never a fold recomputed in Go.
+// SQLite folds ASCII only and Postgres folds by locale, so the two engines
+// disagree about a case-only variant of a non-ASCII name — and a report built
+// from the engine's own expression names exactly the groups that engine's index
+// would refuse, on either one, without this layer knowing which.
+type SymptomDuplicateGroup struct {
+	UserID      uint
+	ConflictKey string
+	Symptoms    []SymptomType
+}
+
+// SymptomMerge is one group's resolution: every row in Absorbed folds into
+// Survivor, and every daily log that named an absorbed symptom names Survivor
+// instead. The day-log rewrite and the row removal are one transaction, so a
+// reference can never outlive the row it pointed at.
+type SymptomMerge struct {
+	UserID   uint
+	Survivor SymptomType
+	Absorbed []SymptomType
+}
+
+// SymptomMergeOutcome is what a merge actually changed, counted rather than
+// assumed: an operator reading it can tell a run that did nothing from one that
+// moved day-log references.
+type SymptomMergeOutcome struct {
+	GroupsMerged       int
+	SymptomsRemoved    int
+	DailyLogsRewritten int
+}

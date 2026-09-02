@@ -47,8 +47,9 @@
   conflicting group — the key value and how many rows share it — instead of creating the index.
   It never deletes, merges or rewrites a row: this instance stores one person's health history,
   and a schema change is not consent to lose part of it. Nothing is executed, the migration's
-  transaction is rolled back, and the message says what to resolve through the application
-  before starting it again. The check reads the key expressions out of the `CREATE UNIQUE INDEX`
+  transaction is rolled back, and the message says how to resolve it with the instance down —
+  the refusal is also what stops the server, so there is no running application to resolve it
+  in. The check reads the key expressions out of the `CREATE UNIQUE INDEX`
   statement itself, so it covers the next unique index as well as this one, and it excludes
   `NULL` keys because both engines treat those as distinct in a unique index. A statement it
   cannot read — a partial index, or anything trailing the key list — is left to the engine,

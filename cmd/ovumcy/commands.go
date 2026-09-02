@@ -18,6 +18,7 @@ func tryRunCLICommand() (bool, error) {
 		runReadycheck:    cli.RunReadycheckCommand,
 		runNotify:        cli.RunNotifyCommand,  // codecov:ignore -- main() composition-root wiring; this os.Args dispatch wrapper runs only in the binary (the handler is unit-tested via tryRunCLICommandWithHandlers with a stub)
 		runWebhook:       cli.RunWebhookCommand, // codecov:ignore -- main() composition-root wiring; this os.Args dispatch wrapper runs only in the binary (the handler is unit-tested via tryRunCLICommandWithHandlers with a stub)
+		runRepair:        cli.RunRepairCommand,  // codecov:ignore -- main() composition-root wiring; this os.Args dispatch wrapper runs only in the binary (the handler is unit-tested via tryRunCLICommandWithHandlers with a stub)
 	})
 }
 
@@ -28,6 +29,7 @@ type cliCommandHandlers struct {
 	runReadycheck    func(port string, timeout time.Duration) error
 	runNotify        func(databaseConfig db.Config, secretKey string, defaultLanguage string, location *time.Location, blockPrivateAddresses bool, args []string) error
 	runWebhook       func(databaseConfig db.Config, secretKey string, args []string) error
+	runRepair        func(databaseConfig db.Config, args []string) error
 }
 
 func tryRunCLICommandWithHandlers(args []string, handlers cliCommandHandlers) (bool, error) {
@@ -48,6 +50,8 @@ func tryRunCLICommandWithHandlers(args []string, handlers cliCommandHandlers) (b
 		return handleNotifyCommand(args, handlers)
 	case "webhook":
 		return handleWebhookCommand(args, handlers)
+	case "repair":
+		return handleRepairCommand(args, handlers)
 	default:
 		return false, nil
 	}
@@ -132,6 +136,22 @@ func handleNotifyCommand(args []string, handlers cliCommandHandlers) (bool, erro
 		return true, err
 	}
 	return true, handlers.runNotify(databaseConfig, secretKey, defaultLanguage, location, blockPrivateAddresses, args[1:])
+}
+
+// handleRepairCommand is deliberately the only subcommand that takes no secret
+// and reaches the database with migrations left unapplied: it runs when a
+// migration has stopped every other path into this instance, so anything it
+// needed from a healthy boot would make it unreachable exactly when it is
+// wanted.
+func handleRepairCommand(args []string, handlers cliCommandHandlers) (bool, error) {
+	if handlers.runRepair == nil {
+		return true, fmt.Errorf("repair handler is required")
+	}
+	databaseConfig, err := resolveDatabaseConfig()
+	if err != nil {
+		return true, fmt.Errorf("invalid database config: %w", err)
+	}
+	return true, handlers.runRepair(databaseConfig, args[1:])
 }
 
 func handleWebhookCommand(args []string, handlers cliCommandHandlers) (bool, error) {

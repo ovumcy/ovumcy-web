@@ -450,6 +450,7 @@ go run ./cmd/ovumcy users list
 go run ./cmd/ovumcy users delete owner@example.com
 go run ./cmd/ovumcy users delete owner@example.com --yes
 go run ./cmd/ovumcy reset-password owner@example.com
+go run ./cmd/ovumcy repair symptom-names
 ```
 
 Notes:
@@ -464,6 +465,7 @@ Notes:
 - `reset-password <email>` prompts for a new password interactively, validates it against the password policy, writes its bcrypt hash to the account, and atomically bumps `auth_session_version` so every existing session is invalidated. Use this when an owner has lost both their password and their recovery code.
 - `notify` runs one webhook reminder pass — decides due period/ovulation reminders per owner and delivers them to each owner's configured webhook. It is meant to be scheduled (cron, systemd timer, a Docker one-shot, or Task Scheduler), not run continuously; an optional built-in daily scheduler (`REMINDER_SCHEDULER_ENABLED`) can run the same pass in-process instead. See [docs/notifications.md](docs/notifications.md) for all three reminder channels (in-app banner, webhook, calendar feed), scheduling recipes, and the idempotency/security contract.
 - `webhook show|set <email>` inspects or configures an owner's webhook notification settings (endpoint, enabled state, notify-period/notify-ovulation toggles) from the shell — the same settings the Settings-page form writes. See [docs/notifications.md](docs/notifications.md) for the full flag reference.
+- `repair` lists the offline data repairs the binary carries; each inspects and reports by default and changes nothing until `--apply`. Unlike every other subcommand it opens the database *without* applying migrations, because it exists for the case where a migration is refusing to run against data it cannot cover — which also stops the server, so there is no application to fix the data in. Today it carries one repair, `symptom-names`, for an account holding two symptoms under the same name. Runbook: [docs/self-hosted.md](docs/self-hosted.md#duplicate-rows-that-refuse-a-migration).
 - Treat CLI usage as operator-only access. It is intended for local shell access on the instance, not for browser or remote public administration.
 
 ## Development
