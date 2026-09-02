@@ -84,31 +84,43 @@ const (
 // which one did.
 func requireFirstPartyRequest(refuse func(fiber.Ctx, string) error) fiber.Handler {
 	return func(c fiber.Ctx) error {
-		// "none" is a load with no initiator document: a typed URL, a bookmark,
-		// a restored tab. "same-site" is refused along with "cross-site" —
-		// the CSRF middleware compares scheme+host exactly, so a sibling
-		// subdomain is another origin here too.
-		site := strings.TrimSpace(c.Get(headerSecFetchSite))
-		if site != "" && !strings.EqualFold(site, secFetchSiteSameOrigin) && !strings.EqualFold(site, secFetchSiteNone) {
-			return refuse(c, firstPartyRefusedOffOriginInitiator)
-		}
-		// A page load is `document`; a client following the published next_path is
-		// `empty`. Every other destination — image, iframe, object, script, and
-		// the rest — is an embed no flow into these routes produces, and is the
-		// shape that would spend the one-time value with nothing on screen.
-		dest := strings.TrimSpace(c.Get(headerSecFetchDest))
-		if dest != "" && !strings.EqualFold(dest, secFetchDestDocument) && !strings.EqualFold(dest, secFetchDestEmpty) {
-			return refuse(c, firstPartyRefusedUnsupportedDest)
-		}
-		// A speculative load wears the navigation's own shape — same-origin,
-		// document — and is the one request reaching here that nobody decided to
-		// make. Nothing links to either guarded route, so this costs no real flow;
-		// it is here because a browser or an extension that starts prefetching one
-		// would otherwise spend the owner's one-time value on her behalf, and the
-		// two checks above cannot tell.
-		if strings.Contains(strings.ToLower(c.Get(headerSecPurpose)), secPurposePrefetch) {
-			return refuse(c, firstPartyRefusedSpeculativeLoad)
+		if reason, firstParty := firstPartyRequestRefusal(c); !firstParty {
+			return refuse(c, reason)
 		}
 		return c.Next()
 	}
+}
+
+// firstPartyRequestRefusal is the predicate the middleware above applies, split
+// out because not every one-time claim can be guarded at the route. The
+// recovery-code reveal is claimed from ShowRegisterPage and ShowRecoveryCodePage,
+// and /register is also the anonymous signup page — a cross-site link to it is an
+// ordinary way to arrive, so the route must stay open while the CLAIM inside it
+// does not. Same rule, applied where the value is actually spent.
+func firstPartyRequestRefusal(c fiber.Ctx) (string, bool) {
+	// "none" is a load with no initiator document: a typed URL, a bookmark, a
+	// restored tab. "same-site" is refused along with "cross-site" — the CSRF
+	// middleware compares scheme+host exactly, so a sibling subdomain is another
+	// origin here too.
+	site := strings.TrimSpace(c.Get(headerSecFetchSite))
+	if site != "" && !strings.EqualFold(site, secFetchSiteSameOrigin) && !strings.EqualFold(site, secFetchSiteNone) {
+		return firstPartyRefusedOffOriginInitiator, false
+	}
+	// A page load is `document`; a client following the published next_path is
+	// `empty`. Every other destination — image, iframe, object, script, and the
+	// rest — is an embed no flow into these surfaces produces, and is the shape
+	// that would spend the one-time value with nothing on screen.
+	dest := strings.TrimSpace(c.Get(headerSecFetchDest))
+	if dest != "" && !strings.EqualFold(dest, secFetchDestDocument) && !strings.EqualFold(dest, secFetchDestEmpty) {
+		return firstPartyRefusedUnsupportedDest, false
+	}
+	// A speculative load wears the navigation's own shape — same-origin, document
+	// — and is the one request reaching here that nobody decided to make. It is
+	// refused because a browser or an extension that starts prefetching one of
+	// these surfaces would otherwise spend the owner's one-time value on her
+	// behalf, and the two checks above cannot tell.
+	if strings.Contains(strings.ToLower(c.Get(headerSecPurpose)), secPurposePrefetch) {
+		return firstPartyRefusedSpeculativeLoad, false
+	}
+	return "", true
 }

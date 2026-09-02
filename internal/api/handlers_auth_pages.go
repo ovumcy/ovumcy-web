@@ -36,6 +36,17 @@ var recoveryCodeRevealEgress = healthEgressKind{action: "auth.recovery_code_reve
 // reveal that cannot record itself is not single-use. That costs the display
 // only — the session stands, and the code is regenerated from Settings.
 func (handler *Handler) claimRecoveryCodeReveal(c fiber.Ctx, userID uint) bool {
+	// The claim below spends the owner's one reveal, so it is owed the same
+	// first-party check the two guarded routes carry — a cross-site link, an
+	// embed or a prefetch must not burn a code she has not seen. It cannot ride
+	// on the route: this helper serves the dedicated /recovery-code page AND the
+	// inline block on /register, and /register is also the anonymous signup page
+	// where a cross-site inbound link is an ordinary way to arrive. So the rule
+	// sits on the claim, which is the thing that is actually spent.
+	if reason, firstParty := firstPartyRequestRefusal(c); !firstParty {
+		handler.logEgressDenied(c, recoveryCodeRevealEgress, reason)
+		return false
+	}
 	claimed, err := handler.authService.ClaimRecoveryCodeReveal(c.Context(), userID, time.Now())
 	if err != nil || !claimed {
 		// Both recovery surfaces claim through this helper, so auditing the

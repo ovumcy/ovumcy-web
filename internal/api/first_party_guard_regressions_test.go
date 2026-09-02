@@ -217,6 +217,77 @@ func TestFirstPartyGuardAdmitsTheFetchOfThePublishedNextPath(t *testing.T) {
 	}
 }
 
+// TestRecoveryCodeRevealRefusesAForeignRequestWithoutSpendingTheMark covers the
+// third and fourth sites of the class. The recovery-code reveal is claimed from
+// GET /recovery-code and from the inline block on GET /register, and neither
+// route can carry the guard — /register is also the anonymous signup page, where
+// a cross-site inbound link is an ordinary way to arrive. The rule therefore sits
+// on the claim, and this is what proves it does.
+func TestRecoveryCodeRevealRefusesAForeignRequestWithoutSpendingTheMark(t *testing.T) {
+	for _, testCase := range []struct {
+		name    string
+		headers secFetchHeaders
+	}{
+		{name: "cross-site navigation", headers: crossSiteNavigation},
+		{name: "same-origin embed", headers: sameOriginImage},
+		{name: "same-origin prefetch", headers: sameOriginPrefetch},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			app, database := newOnboardingTestApp(t)
+			email := "recovery-reveal-guard-" + strings.ReplaceAll(testCase.name, " ", "-") + "@example.com"
+			user := createOnboardingTestUser(t, database, email, "StrongPass1", true)
+			recoveryCode := mustSetRecoveryCodeForUser(t, database, user.ID)
+			resetCookie := requestResetCookieByRecoveryCode(t, app, user.Email, recoveryCode, "StrongPass1")
+
+			redeemed := redeemResetCookieAsBrowser(t, app, resetCookie, "EvenStronger2")
+			assertStatusCode(t, redeemed, http.StatusSeeOther)
+			authCookie := responseCookie(redeemed.Cookies(), authCookieName)
+			revealCookie := responseCookie(redeemed.Cookies(), recoveryCodeCookieName)
+			if authCookie == nil || revealCookie == nil || strings.TrimSpace(revealCookie.Value) == "" {
+				t.Fatalf("expected the reset to hand back a session and a reveal cookie, got %#v / %#v", authCookie, revealCookie)
+			}
+			cookies := joinCookieHeader(authCookieName+"="+authCookie.Value, cookiePair(revealCookie))
+
+			refused := recoveryCodePageWithHeaders(t, app, cookies, testCase.headers)
+			if refused.StatusCode == http.StatusOK {
+				t.Fatal("expected a foreign request to be refused the recovery-code page")
+			}
+			if body := mustReadBodyString(t, refused.Body); strings.Contains(body, "OVUM-") {
+				t.Fatal("a refused reveal must not carry the recovery code")
+			}
+
+			accepted := recoveryCodePageWithHeaders(t, app, cookies, sameOriginNavigation)
+			assertStatusCode(t, accepted, http.StatusOK)
+			if body := mustReadBodyString(t, accepted.Body); !strings.Contains(body, "OVUM-") {
+				t.Fatal("expected the owner's own visit to still reveal the recovery code")
+			}
+		})
+	}
+}
+
+// redeemResetCookieAsBrowser is the HTML arm of the redeem: the JSON one answers
+// 200 with the code in the body, which is not the surface this reveal guard is
+// about.
+func redeemResetCookieAsBrowser(t *testing.T, app *fiber.App, resetCookieValue string, password string) *http.Response {
+	t.Helper()
+
+	form := url.Values{"password": {password}, "confirm_password": {password}}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets/redeem", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Cookie", resetPasswordCookieName+"="+resetCookieValue)
+	return mustAppResponse(t, app, request)
+}
+
+func recoveryCodePageWithHeaders(t *testing.T, app *fiber.App, cookies string, headers secFetchHeaders) *http.Response {
+	t.Helper()
+
+	request := httptest.NewRequest(http.MethodGet, "/recovery-code", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", cookies)
+	headers.applyTo(request)
+	return mustAppResponse(t, app, request)
+}
+
 // TestRefusedPickupRequestLeavesNoFlashWhenNothingWasPresented holds the other
 // half of the same rule: a refusal must not leave state behind for a request the
 // owner never made. A prefetch discards the body and keeps the Set-Cookie, so an
