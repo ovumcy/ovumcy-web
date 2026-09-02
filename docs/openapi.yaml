@@ -158,7 +158,11 @@ components:
             error: "unauthorized"
             error_detail: { key: "unauthorized", category: "unauthorized", target: "global" }
     Forbidden:
-      description: Session is valid but the caller lacks the required role (typically owner-only) or CSRF validation failed.
+      description: |
+        The request is refused on grounds other than identity: the caller lacks
+        the required role (typically owner-only), CSRF validation failed, or the
+        deployment has the local-credential surface turned off (SSO-only), which
+        refuses sign-in, registration and password recovery alike.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ApiError' }
@@ -213,6 +217,18 @@ components:
             error: "too many requests"
             error_detail: { key: "too many requests", category: "rate_limited", target: "global" }
             retry_after_seconds: 60
+    ServiceUnavailable:
+      description: |
+        A dependency the operation needs is not available. On the step-up
+        endpoints this is the identity provider: the account has no local
+        password, so the re-authentication can only be satisfied through SSO,
+        and SSO is disabled or unreachable. Retryable once the provider is back.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+          example:
+            error: "sso temporarily unavailable"
+            error_detail: { key: "sso temporarily unavailable", category: "internal", target: "auth_form" }
     InternalError:
       description: Unexpected server error.
       content:
@@ -364,6 +380,26 @@ components:
         rejected:
           type: integer
           description: Malformed or duplicate day records dropped without writing.
+      additionalProperties: false
+
+    NextStepResponse:
+      type: object
+      description: |
+        Answer of an auth step that succeeded but is not finished: the server
+        sealed a one-time cookie and names where the client must go to spend it.
+        `next_step` is the stable programmatic name of that stage; `next_path` is
+        the page serving it.
+      required: [ok, next_step, next_path]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        next_step:
+          type: string
+          enum: [register_welcome, recovery_code]
+        next_path:
+          type: string
+          example: "/recovery-code"
       additionalProperties: false
 
     OkRedirectResponse:
@@ -1327,10 +1363,30 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/RegisterRequest' }
       responses:
+        '201':
+          description: |
+            Pickup cookie issued. Sent when `Accept: application/json` is set; the
+            browser surface gets the `303` below instead. Identical for new and
+            duplicate emails.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NextStepResponse' }
+              example:
+                ok: true
+                next_step: "register_welcome"
+                next_path: "/register/welcome"
         '303':
           description: Redirect to `/register/welcome` with the sealed pickup cookie. Shape is identical for new and duplicate emails.
         '400':
           $ref: '#/components/responses/ValidationError'
+        '403':
+          description: Registration is closed on this deployment (SSO-only).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "local sign-in unavailable"
+                error_detail: { key: "local sign-in unavailable", category: "forbidden", target: "auth_form" }
         '429':
           $ref: '#/components/responses/RateLimited'
 
@@ -1376,6 +1432,16 @@ paths:
               example:
                 error: "invalid credentials"
                 error_detail: { key: "invalid credentials", category: "unauthorized", target: "auth_form" }
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          description: Local sign-in is disabled on this deployment (SSO-only).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "local sign-in unavailable"
+                error_detail: { key: "local sign-in unavailable", category: "forbidden", target: "auth_form" }
         '429':
           $ref: '#/components/responses/RateLimited'
 
@@ -1435,6 +1501,8 @@ paths:
           description: Browser redirect to `/login` or the OIDC logout bridge path.
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '429':
           $ref: '#/components/responses/RateLimited'
 
@@ -1458,6 +1526,13 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/ForgotPasswordRequest' }
       responses:
+        '200':
+          description: |
+            Reset cookie issued. Sent when `Accept: application/json` is set; the
+            browser surface gets the `303` below instead.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
         '303':
           description: Redirect to `/reset-password` with a sealed reset cookie.
         '400':
@@ -1470,6 +1545,8 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '429':
           $ref: '#/components/responses/RateLimited'
 
@@ -1488,10 +1565,24 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/ResetPasswordRequest' }
       responses:
+        '200':
+          description: |
+            Password replaced and a session issued; the freshly minted recovery
+            code waits behind `next_path`. Sent when `Accept: application/json`
+            is set; the browser surface gets the `303` below instead.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NextStepResponse' }
+              example:
+                ok: true
+                next_step: "recovery_code"
+                next_path: "/recovery-code"
         '303':
           description: Redirect to `/login` after success.
         '400':
           $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   # =========================================================================
   # onboarding
@@ -1513,6 +1604,7 @@ paths:
               schema: { $ref: '#/components/schemas/OkResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
   /api/v1/onboarding/steps/2:
     post:
@@ -1531,6 +1623,7 @@ paths:
               schema: { $ref: '#/components/schemas/OkResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
   /api/v1/onboarding/complete:
     post:
@@ -1543,6 +1636,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '400': { $ref: '#/components/responses/ValidationError' }
 
   # =========================================================================
   # days
@@ -1564,6 +1659,7 @@ paths:
                 items: { $ref: '#/components/schemas/DailyLog' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
   /api/v1/days/{date}:
     parameters:
@@ -1579,6 +1675,7 @@ paths:
               schema: { $ref: '#/components/schemas/DailyLog' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
     head:
       tags: [days]
       summary: Check whether the day has any persisted data (owner only).
@@ -1593,6 +1690,7 @@ paths:
           description: Day has no persisted data.
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '400': { $ref: '#/components/responses/ValidationError' }
     put:
       tags: [days]
       summary: Upsert a day's entry (owner only).
@@ -1637,6 +1735,7 @@ paths:
               schema: { $ref: '#/components/schemas/OkResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '400': { $ref: '#/components/responses/ValidationError' }
 
   /api/v1/days/{date}/cycle-start:
     post:
@@ -1693,6 +1792,7 @@ paths:
                 type: array
                 items: { $ref: '#/components/schemas/Symptom' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
     post:
       tags: [symptoms]
       summary: Create a custom symptom (owner only).
@@ -1785,6 +1885,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/StatsOverview' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
   # =========================================================================
   # exports
@@ -1804,6 +1905,7 @@ paths:
               schema: { $ref: '#/components/schemas/ExportSummary' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '400': { $ref: '#/components/responses/ValidationError' }
 
   /api/v1/exports/csv:
     get:
@@ -1824,6 +1926,7 @@ paths:
               schema: { type: string }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '400': { $ref: '#/components/responses/ValidationError' }
 
   /api/v1/exports/json:
     get:
@@ -1844,6 +1947,7 @@ paths:
               schema: { $ref: '#/components/schemas/ExportJSON' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '400': { $ref: '#/components/responses/ValidationError' }
 
   /api/v1/imports/json:
     post:
@@ -1909,6 +2013,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/CurrentUser' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
     delete:
       tags: [settings]
       summary: Delete the current account and all related data (owner only).
@@ -1930,6 +2035,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '400': { $ref: '#/components/responses/ValidationError' }
         '429': { $ref: '#/components/responses/RateLimited' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
   /api/v1/users/current/profile:
     patch:
@@ -1967,6 +2073,7 @@ paths:
               schema: { $ref: '#/components/schemas/OkResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '400': { $ref: '#/components/responses/ValidationError' }
 
   /api/v1/users/current/tracking:
     patch:
@@ -1985,6 +2092,7 @@ paths:
               schema: { $ref: '#/components/schemas/OkResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '400': { $ref: '#/components/responses/ValidationError' }
 
   /api/v1/users/current/timezone:
     post:
@@ -2193,6 +2301,7 @@ paths:
               schema: { $ref: '#/components/schemas/OkResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '400': { $ref: '#/components/responses/ValidationError' }
 
   /api/v1/users/current/password:
     put:
@@ -2252,6 +2361,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
   /api/v1/users/current/data-wipe/step-up:
     post:
@@ -2286,6 +2396,7 @@ paths:
               example:
                 error: "invalid settings input"
                 error_detail: { key: "invalid settings input", category: "validation", target: "settings_form" }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
   /api/v1/users/current/deletion/step-up:
     post:
@@ -2314,6 +2425,7 @@ paths:
               example:
                 error: "invalid settings input"
                 error_detail: { key: "invalid settings input", category: "validation", target: "settings_form" }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
   /api/v1/users/current/recovery-code:
     post:
@@ -2335,6 +2447,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/v1/users/current/2fa:
     put:
@@ -2355,6 +2468,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
     delete:
       tags: [settings]
       summary: Disable TOTP 2FA (owner only).
@@ -2394,6 +2508,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '400': { $ref: '#/components/responses/ValidationError' }
         '429': { $ref: '#/components/responses/RateLimited' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
   /api/v1/users/current/data-wipe:
     post:
