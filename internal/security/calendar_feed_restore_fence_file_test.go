@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -133,5 +134,40 @@ func TestCalendarFeedFenceFileTornWriteReadsAbsent(t *testing.T) {
 func TestCalendarFeedFenceFileRefusesANonRegularPath(t *testing.T) {
 	if _, _, err := NewCalendarFeedFenceFile(t.TempDir()).Read(); err == nil {
 		t.Fatal("a directory path must be an error, not an absent fence")
+	}
+}
+
+// TestCalendarFeedFenceFileWriteReportsAFailedRename covers the last step of
+// the atomic write, the one that decides whether the token is published at all.
+// A path whose final component is a directory is the reachable way to fail it —
+// the same mis-set variable the read above refuses — and the failure has to
+// surface: a Write that returned nil here would tell the fence a token was
+// recorded outside the database when none was, and the boot pass would then
+// read agreement it has no basis for.
+func TestCalendarFeedFenceFileWriteReportsAFailedRename(t *testing.T) {
+	occupied := filepath.Join(t.TempDir(), "calendar-feed.fence")
+	if err := os.Mkdir(occupied, 0o755); err != nil {
+		t.Fatalf("occupy the fence path with a directory: %v", err)
+	}
+
+	err := NewCalendarFeedFenceFile(occupied).Write("token-that-cannot-land")
+	if err == nil {
+		t.Fatal("a rename onto a directory must be reported, not swallowed")
+	}
+	if !strings.Contains(err.Error(), occupied) {
+		t.Fatalf("the error must name the path an operator has to fix, got %v", err)
+	}
+
+	// The temp file is removed on this path too: a fence directory that fills
+	// with .calendar-feed-fence-* leftovers after every failed write is a second
+	// failure an operator has to notice separately.
+	entries, err := os.ReadDir(filepath.Dir(occupied))
+	if err != nil {
+		t.Fatalf("read the fence directory: %v", err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".calendar-feed-fence-") {
+			t.Fatalf("a failed write must leave no temporary file behind, found %q", entry.Name())
+		}
 	}
 }
