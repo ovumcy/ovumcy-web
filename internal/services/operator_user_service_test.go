@@ -471,3 +471,39 @@ func TestOperatorUserServiceDeleteUserByID(t *testing.T) {
 		t.Fatalf("unexpected deleted user summary: %#v", user)
 	}
 }
+
+func TestOperatorUserServiceDeleteUserByIDErrors(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name   string
+		userID uint
+		repo   *stubOperatorUserRepo
+		want   error
+	}{
+		{name: "missing id", userID: 0, repo: &stubOperatorUserRepo{}, want: ErrOperatorUserIDRequired},
+		{name: "unknown id", userID: 9, repo: &stubOperatorUserRepo{}, want: ErrOperatorUserNotFound},
+		{
+			name: "delete failed", userID: 9,
+			repo: &stubOperatorUserRepo{user: models.User{ID: 9, Email: "owner@example.com"}, found: true, deleteErr: errors.New("db down")},
+			want: ErrOperatorUserDeleteFailed,
+		},
+	}
+
+	for _, testCase := range testCases {
+
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			service := NewOperatorUserService(testCase.repo, nil)
+			_, err := service.DeleteUserByID(context.Background(), testCase.userID)
+			if !errors.Is(err, testCase.want) {
+				t.Fatalf("expected %v, got %v", testCase.want, err)
+			}
+			// An id that never resolved must not reach the erasure.
+			if testCase.want != ErrOperatorUserDeleteFailed && testCase.repo.deleteWasCalled {
+				t.Fatal("expected no erasure on a failed lookup")
+			}
+		})
+	}
+}

@@ -96,6 +96,34 @@ func TestAuthEmailRenormalizerAgainstRealRepositories(t *testing.T) {
 	}
 }
 
+// TestFindByIDOptionalSeparatesAMissingRowFromAFailedRead pins the two
+// not-found answers apart: an id nobody carries is a legitimate "no", while a
+// storage failure must reach the caller as an error — reported as "no account
+// carries this id", it would send an operator hunting for a row that is there.
+func TestFindByIDOptionalSeparatesAMissingRowFromAFailedRead(t *testing.T) {
+	repo := openCalendarFeedRepoForTest(t)
+	ctx := context.Background()
+
+	present := createUserForTimezoneTest(t, repo, "present@example.com")
+	if user, found, err := repo.FindByIDOptional(ctx, present.ID); err != nil || !found || user.ID != present.ID {
+		t.Fatalf("expected the seeded row (found=%v, err=%v)", found, err)
+	}
+	if _, found, err := repo.FindByIDOptional(ctx, present.ID+4242); err != nil || found {
+		t.Fatalf("an absent id is a plain no (found=%v, err=%v)", found, err)
+	}
+
+	sqlDB, err := repo.database.DB()
+	if err != nil {
+		t.Fatalf("database.DB(): %v", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("close sql db: %v", err)
+	}
+	if _, found, err := repo.FindByIDOptional(ctx, present.ID); err == nil || found {
+		t.Fatalf("a failed read must surface as an error, got found=%v err=%v", found, err)
+	}
+}
+
 // TestSetUserEmailByIDAndRevokeSessionsRepairsALeftoverRow covers the operator
 // repair the pass above cannot perform: the row it left standing is re-homed by
 // id. Three properties, each on its own row state — the write bumps
