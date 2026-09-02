@@ -37,6 +37,22 @@ const symptomCatalogueTable = "symptom_types"
 // pointed at holds no symptom catalogue at all.
 var ErrSymptomCatalogueAbsent = errors.New("no symptom catalogue (table " + symptomCatalogueTable + ") in this database")
 
+// ErrSymptomCatalogueTooOld is what it answers when the table is there but the
+// schema predates a column this repair reads.
+var ErrSymptomCatalogueTooOld = errors.New("the symptom catalogue in this database predates the schema this repair reads")
+
+// symptomCatalogueColumnsAfterInit are the columns the repair reads that are NOT
+// part of symptom_types as migration 001 created it.
+//
+// The presence check has to cover them and not only the table. This repair opens
+// a database at an UNKNOWN schema version, so "the table is there" does not mean
+// "the schema this repair reads is there", and a column missing under a table
+// that is present comes back as the engine's own `no such column` — the same
+// unreadable answer the table check exists to prevent, one level down.
+// archived_at arrives in migration 004 and is what decides which row of a group
+// survives, so the repair cannot plan without it.
+var symptomCatalogueColumnsAfterInit = []string{"archived_at"}
+
 // RequireSymptomCatalogue answers whether this is an Ovumcy database before any
 // query assumes it.
 //
@@ -50,10 +66,39 @@ var ErrSymptomCatalogueAbsent = errors.New("no symptom catalogue (table " + symp
 // because opening a path that is not there creates an empty database rather than
 // refusing, so a mistyped DB_PATH reaches this point looking like a real one.
 func (repo *SymptomDuplicateRepository) RequireSymptomCatalogue(ctx context.Context) error {
-	if repo.database.WithContext(ctx).Migrator().HasTable(symptomCatalogueTable) {
-		return nil
+	database := repo.database.WithContext(ctx)
+	migrator := database.Migrator()
+
+	if !migrator.HasTable(symptomCatalogueTable) {
+		return absentUnlessTheDatabaseIsGone(database, ErrSymptomCatalogueAbsent)
 	}
-	return ErrSymptomCatalogueAbsent
+	for _, column := range symptomCatalogueColumnsAfterInit {
+		if !migrator.HasColumn(&models.SymptomType{}, column) {
+			return absentUnlessTheDatabaseIsGone(
+				database,
+				fmt.Errorf("%w: %s.%s is missing", ErrSymptomCatalogueTooOld, symptomCatalogueTable, column),
+			)
+		}
+	}
+	return nil
+}
+
+// absentUnlessTheDatabaseIsGone decides what a negative answer from the schema
+// probe actually means.
+//
+// gorm's Migrator answers HasTable and HasColumn with a bare bool and discards
+// the cause, so "the catalogue is not there" and "the database stopped
+// answering" arrive identically — and the two verdicts send the operator to
+// opposite places. Reporting the first when the truth is the second would have
+// them auditing a connection setting that was correct, on an instance that is
+// already down. One engine-neutral query settles it: if the database still
+// answers, the schema really is what the probe said.
+func absentUnlessTheDatabaseIsGone(database *gorm.DB, verdict error) error {
+	var reachable int
+	if err := database.Raw(`SELECT 1`).Scan(&reachable).Error; err != nil {
+		return fmt.Errorf("cannot read the schema of this database: %w", err)
+	}
+	return verdict
 }
 
 // duplicateSymptomNameKey is one conflicting (user_id, lower(name)) pair as the

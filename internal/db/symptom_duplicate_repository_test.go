@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -82,6 +83,44 @@ func TestMergingDuplicateSymptomsCollapsesADayThatNamedBothRows(t *testing.T) {
 	}
 	if outcome.DailyLogsRewritten != 1 {
 		t.Fatalf("only the day that named the absorbed row is a rewrite, got %d", outcome.DailyLogsRewritten)
+	}
+}
+
+// TestTheSchemaProbeTellsAnAbsentCatalogueFromAnUnreachableDatabase covers the
+// answer that decides where the operator is sent.
+//
+// gorm's Migrator reports HasTable/HasColumn as a bare bool and drops the
+// cause, so a database that stopped answering looks exactly like one with no
+// catalogue — and the two verdicts point in opposite directions: check your
+// connection setting, versus your connection setting was right and the database
+// went away.
+func TestTheSchemaProbeTellsAnAbsentCatalogueFromAnUnreachableDatabase(t *testing.T) {
+	database := openRepairFixtureDatabase(t, "unreachable.db")
+
+	// The catalogue IS there, so a verdict of "absent" here could only come from
+	// the probe failing to notice that nothing can be read at all.
+	repository := NewSymptomDuplicateRepository(database)
+	if err := repository.RequireSymptomCatalogue(context.Background()); err != nil {
+		t.Fatalf("a migrated database must satisfy the precondition, got: %v", err)
+	}
+
+	sqlDB, err := database.DB()
+	if err != nil {
+		t.Fatalf("get sql handle: %v", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("close the pool: %v", err)
+	}
+
+	err = repository.RequireSymptomCatalogue(context.Background())
+	if err == nil {
+		t.Fatal("a database that cannot be read must not pass the precondition")
+	}
+	if errors.Is(err, ErrSymptomCatalogueAbsent) || errors.Is(err, ErrSymptomCatalogueTooOld) {
+		t.Fatalf("an unreachable database must not be reported as a schema verdict, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "cannot read the schema") {
+		t.Fatalf("the refusal must say the database could not be read, got: %v", err)
 	}
 }
 

@@ -35,10 +35,16 @@
 
   Being the only entry point that opens a database of unknown schema version, it is also the only
   one that can be pointed at the wrong database and not notice — a SQLite path that does not exist
-  is created empty rather than refused. So it checks for the symptom catalogue before any query
-  assumes it, and answers a mistyped `DB_PATH` by naming the path it actually reached, instead of
-  with the engine's `no such table` about the very table the operator was told to repair. A
-  PostgreSQL target is named by `DATABASE_URL` and never by its value, which carries credentials.
+  is created empty rather than refused. So it checks the schema it needs before any query assumes
+  it, and answers a mistyped `DB_PATH` by naming the database it actually reached, instead of with
+  the engine's `no such table` about the very table the operator was told to repair. A PostgreSQL
+  target is named by `DATABASE_URL` and never by its value, which carries credentials.
+
+  The check covers the columns and not only the table, and the two failures get different answers
+  because they are different mistakes. A schema that predates the column deciding which row of a
+  group survives is not a wrong database, and is told so: start the instance to carry the schema
+  forward, and if it stops on migration 037, run the repair again — by then with the column it
+  needs.
 
   The refusal message now names this route and the runbook instead of the application.
 
