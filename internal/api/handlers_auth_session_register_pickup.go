@@ -166,11 +166,20 @@ func (handler *Handler) PickupRegister(c fiber.Ctx) error {
 }
 
 // refuseRegisterPickupNavigation is the same-origin navigation guard's exit for
-// GET /register/welcome. It reuses the endpoint's own neutral refusal, so a
-// forged cross-site navigation is answered exactly like a stale, decoy or
-// already-consumed pickup, and is audited on the same line under its own reason.
+// GET /register/welcome: the endpoint's own neutral refusal, so a forged
+// cross-site navigation is answered exactly like a stale, decoy or
+// already-consumed pickup, and is audited in the same vocabulary.
+//
+// It reproduces redirectToPostRegisterSignin rather than calling it because of
+// the one line it must NOT run: that helper clears the pickup cookie, which is
+// right for every exit it serves — each refuses a cookie that is spent or was
+// never real. This one refuses the REQUEST and leaves a good cookie standing.
+// Clearing it would hand the forged navigation the outcome the guard exists to
+// deny: the owner arriving to find her hand-off gone.
 func (handler *Handler) refuseRegisterPickupNavigation(c fiber.Ctx) error {
-	return handler.redirectToPostRegisterSignin(c, "cross_origin_navigation")
+	handler.setFlashCookie(c, FlashPayload{AuthError: "register pickup unavailable"})
+	handler.logSecurityEvent(c, "auth.register_pickup", "redirect_signin", securityEventField("reason", "cross_origin_navigation"))
+	return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 }
 
 func (handler *Handler) redirectToPostRegisterSignin(c fiber.Ctx, reason string) error {
