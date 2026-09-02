@@ -51,6 +51,7 @@ func NewUserRepository(database *gorm.DB) *UserRepository {
 //     Note what this does NOT rest on. After an advance the two halves AGREE,
 //     so no later boot disarms on its account; the safety comes from the
 //     ordering itself, never from a boot-time backstop.
+//
 //   - Everything else advances AFTER. There the feed clear is a side effect of
 //     a credential rotation, a clear-data wipe or an erasure, and advancing
 //     first would refuse the whole operation whenever the fence's own write

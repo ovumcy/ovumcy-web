@@ -6,7 +6,6 @@ import (
 	"go/token"
 	"os"
 	"sort"
-	"strings"
 	"testing"
 )
 
@@ -78,17 +77,42 @@ func TestEveryCalendarFeedWriterAdvancesTheRestoreFence(t *testing.T) {
 			continue
 		}
 		name := function.Name.Name
-		body := string(source[fileSet.Position(function.Body.Pos()).Offset:fileSet.Position(function.Body.End()).Offset])
-		advanceAt := strings.Index(body, "advanceCalendarFeedFence(ctx)")
+
+		// Positions come from the AST, never from the body text. A doc comment
+		// beside the row write that quotes the call — the natural thing to write
+		// there — would move a text offset and silently flip the ordering verdict
+		// below, which is the load-bearing half of this guard.
+		advanceAt := -1
+		columnAt := -1
+		ast.Inspect(function.Body, func(node ast.Node) bool {
+			switch typed := node.(type) {
+			case *ast.CallExpr:
+				if selector, ok := typed.Fun.(*ast.SelectorExpr); ok && selector.Sel.Name == "advanceCalendarFeedFence" {
+					if at := int(typed.Pos()); advanceAt < 0 || at < advanceAt {
+						advanceAt = at
+					}
+				}
+			case *ast.BasicLit:
+				if typed.Kind != token.STRING {
+					return true
+				}
+				for _, column := range calendarFeedAccessColumns {
+					if typed.Value != column {
+						continue
+					}
+					if at := int(typed.Pos()); columnAt < 0 || at < columnAt {
+						columnAt = at
+					}
+				}
+			}
+			return true
+		})
+
 		if advanceAt >= 0 {
 			advances[name] = true
 		}
-		columnAt := -1
-		for _, column := range calendarFeedAccessColumns {
-			if at := strings.Index(body, column); at >= 0 && (columnAt < 0 || at < columnAt) {
-				columnAt = at
-				writers[name] = true
-			}
+		if columnAt >= 0 {
+			writers[name] = true
 		}
 		if advanceAt >= 0 && columnAt >= 0 && advanceAt < columnAt {
 			advancesFirst[name] = true
