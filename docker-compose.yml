@@ -6,7 +6,7 @@ services:
     env_file:
       - ./.env
     environment:
-      - TZ=${TZ:-UTC}
+      - PORT=${PORT:-8080}
       - DEFAULT_LANGUAGE=${DEFAULT_LANGUAGE:-en}
       - REGISTRATION_MODE=${REGISTRATION_MODE:-open}
       - DB_DRIVER=${DB_DRIVER:-sqlite}
