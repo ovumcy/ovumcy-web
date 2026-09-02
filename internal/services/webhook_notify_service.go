@@ -97,6 +97,19 @@ type NotifyUserRepository interface {
 	// previous must be the same value handed to ClaimWebhookWatermark, which is
 	// what that claim replaced.
 	ReleaseWebhookWatermark(ctx context.Context, userID uint, reminderType string, cycleAnchor time.Time, previous *time.Time) error
+	// MarkWebhookDelivered records that a delivery to this owner's endpoint was
+	// ACCEPTED, at deliveredAt. It is called ONLY after Deliver returns nil, and
+	// it is the pass's only statement about delivery a later reader can trust:
+	// the claim above is taken before the request leaves and holds a cycle
+	// anchor, so it says a send was attempted under some configuration, never
+	// that one arrived.
+	//
+	// configVersion is the same revocation epoch the claim pinned, so a
+	// configuration the owner withdrew while the request was on the wire is not
+	// credited with a delivery. The write does not advance that epoch and moves
+	// no watermark. An error here is a lost ledger entry, never a lost delivery:
+	// the caller logs it and leaves the report alone.
+	MarkWebhookDelivered(ctx context.Context, userID uint, deliveredAt time.Time, configVersion int) error
 }
 
 // NotifyLogReader is the narrow read surface for an owner's day logs (the
@@ -371,8 +384,34 @@ func (service *WebhookNotifyService) processOwner(
 			continue
 		}
 
-		// Success: the claim stands as the watermark for this kind, so a re-run
-		// skips it. No second write is needed — the claim WAS the write.
+		// Success. Two different facts are now true and they need two different
+		// columns. The claim stands as the watermark for this kind, so a re-run
+		// skips the reminder — that is idempotency, and it was already written,
+		// before the request left, against a cycle anchor. It is NOT a record that
+		// anything arrived: the same value stands for a send that failed until the
+		// release above puts it back, and it holds an anchor rather than a clock
+		// reading. Reading it as a delivery time is the misreading the second
+		// write below exists to make unnecessary.
+		//
+		// So this is where — and the only place where — an accepted delivery is
+		// recorded, after a 2xx and never at the claim. It pins the SAME epoch the
+		// claim did, so a configuration the owner revoked while the request was on
+		// the wire is not credited with a delivery, and it deliberately does not
+		// advance that epoch: doing so would lose this very pass's ovulation claim
+		// a few lines from now (migration 039 corrects migration 038 on the point).
+		//
+		// now is the pass's injected clock, not a fresh reading — this service
+		// holds no clock on purpose. The mark is therefore "the pass that accepted
+		// this delivery began at", accurate to the length of a pass, and it is a
+		// record of acceptance rather than a latency measurement.
+		//
+		// A failed mark is not a failed delivery. The POST was accepted, so the
+		// reminder counts as sent and the report is left alone; the cost is one
+		// missing ledger entry. Counting it as failed would be the expensive
+		// mistake, because nothing would then stop the next pass re-sending it.
+		if err := service.users.MarkWebhookDelivered(ctx, record.ID, now, record.WebhookConfigVersion); err != nil {
+			log.Printf("webhook notify: delivery mark write failed after an accepted delivery, owner id=%d", record.ID)
+		}
 		report.Sent++
 	}
 }

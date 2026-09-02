@@ -338,15 +338,68 @@ func (repo *UserRepository) UpdateReminderLeadDays(ctx context.Context, userID u
 // retry it: a save landing inside that one pass drops that cycle's reminder.
 // Losing a reminder the owner was mid-way through reconfiguring is the
 // fail-closed direction, but it is a dropped reminder and not a delay.
+//
+// It also decides the fate of webhook_last_delivered_at, in this same statement
+// and never in a follow-up: a mark saying "a delivery to your endpoint was
+// accepted" must not survive the endpoint it was about by even one read. The
+// judgement is the caller's (settings.ClearLastDeliveredAt) because it needs the
+// plaintext — persistence sees ciphertext, and a re-encryption of the same URL
+// differs from it byte for byte. A save that leaves the destination alone leaves
+// the mark alone, which is what a toggle-only save is. Regression:
+// TestEveryWebhookURLWriterDecidesTheDeliveryMark.
 func (repo *UserRepository) SaveWebhookSettings(ctx context.Context, userID uint, settings models.WebhookSettingsColumns) error {
-	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+	updates := map[string]any{
 		"webhook_enabled":          settings.Enabled,
 		"webhook_url":              settings.EncryptedURL,
 		"webhook_notify_period":    settings.NotifyPeriod,
 		"webhook_notify_ovulation": settings.NotifyOvulation,
 		"reminder_lead_days":       settings.ReminderLeadDays,
 		"webhook_config_version":   gorm.Expr("webhook_config_version + 1"),
-	}).Error
+	}
+	if settings.ClearLastDeliveredAt {
+		updates["webhook_last_delivered_at"] = nil
+	}
+	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(updates).Error
+}
+
+// MarkWebhookDelivered records that a delivery to this owner's endpoint was
+// ACCEPTED — a 2xx already returned — scoped strictly to userID. It is the only
+// writer of webhook_last_delivered_at that sets a value, and the notify pass
+// calls it in exactly one place: after Deliver returns nil, never at the claim.
+//
+// It is a second write, and the claim is emphatically not a substitute for it.
+// The claim happens BEFORE the POST, stores a cycle anchor rather than a clock
+// reading, and stands for a send that was never accepted until the failure path
+// releases it. Reading a watermark as a delivery time is the exact misreading
+// this column was added to make impossible.
+//
+// configVersion is the revocation epoch the delivering pass's snapshot carried —
+// the same value it handed ClaimWebhookWatermark — and pinning it here means a
+// configuration revoked while the request was on the wire is not credited with a
+// delivery. The pass cannot recall that request, but it can decline to record it
+// against a configuration the owner has withdrawn.
+//
+// It does NOT advance that epoch, and that is deliberate rather than an
+// oversight of migration 038's "a later writer owes the same advance": the
+// obligation is on writers of the DELIVERY CONFIGURATION — whether, where and
+// how early delivery happens — and this write changes none of those. Advancing
+// here would also break the pass making the call, because the epoch is pinned
+// once per owner outside the reminder loop: a bump after a period delivery would
+// lose the ovulation claim of that same pass. Regression:
+// TestMarkWebhookDeliveredLeavesTheRevocationEpochAlone.
+//
+// The stamp is monotonic — the predicate refuses a value not later than the one
+// stored — so a late-returning delivery cannot walk the mark backwards over a
+// newer one. A refused write affects zero rows and is not an error: the mark is
+// already at least as current as this call would make it, or the configuration
+// moved on. It writes ONE column: not the epoch it pins, not a watermark, not
+// auth_session_version.
+func (repo *UserRepository) MarkWebhookDelivered(ctx context.Context, userID uint, deliveredAt time.Time, configVersion int) error {
+	stamp := deliveredAt.UTC()
+	return repo.database.WithContext(ctx).Model(&models.User{}).
+		Where("id = ? AND webhook_config_version = ?", userID, configVersion).
+		Where("webhook_last_delivered_at IS NULL OR webhook_last_delivered_at < ?", stamp).
+		Update("webhook_last_delivered_at", stamp).Error
 }
 
 // ListAllForNotify returns the per-owner projection a future request-free batch
@@ -519,11 +572,14 @@ func canonicalWatermarkAnchor(cycleAnchor time.Time) time.Time {
 // the statement that performs it, so a claim presenting the previous epoch
 // matches no row. That list is the complete set of writers, not an
 // illustration: SaveWebhookSettings, UpdateReminderLeadDays and
-// ClearAllDataAndResetSettings are the three, and a fourth added later owes the
-// same advance. It covers WHETHER, WHERE and HOW EARLY delivery happens and
-// deliberately not what the reminder would say — a cycle-data edit or a
-// timezone capture moves the prediction, which is the watermark
-// compare-and-set's own subject, not this column's.
+// ClearAllDataAndResetSettings are the three, and a later writer owes the same
+// advance whenever it CHANGES that configuration — never merely because it
+// touched the users row. MarkWebhookDelivered is the counter-example and must
+// stay one: it records a delivery that already happened, and advancing there
+// would lose this same pass's next claim. It covers WHETHER, WHERE and HOW
+// EARLY delivery happens and deliberately not what the reminder would say — a
+// cycle-data edit or a timezone capture moves the prediction, which is the
+// watermark compare-and-set's own subject, not this column's.
 //
 // Without the epoch the two revocation
 // shapes both survive the watermark check: a settings save deliberately leaves
@@ -651,6 +707,14 @@ func (repo *UserRepository) ReleaseWebhookWatermark(ctx context.Context, userID 
 // previous one must not outlive the token it was about. Riding the same write
 // means a mint can never leave a token armed with a stale mark that would refuse
 // its own reveal.
+//
+// calendar_feed_key_epoch (migration 039) rides it for the same reason and is
+// the only place that value is ever stamped: it names the verification regime
+// this token was minted under, so arming a token and recording what armed it are
+// one event. Revoke and both bulk disarms deliberately leave it standing — they
+// clear the token, and a stamp without a token asserts nothing. That keeps this
+// the sole writer, so the restore-fence completeness guard needs no exemption
+// for it.
 func (repo *UserRepository) SaveCalendarFeedToken(ctx context.Context, userID uint, columns models.CalendarFeedTokenColumns) error {
 	// Fence first: see advanceCalendarFeedFence. A rotation retires the previous
 	// token, so this write is a revocation as much as ClearCalendarFeedToken is.
@@ -662,6 +726,7 @@ func (repo *UserRepository) SaveCalendarFeedToken(ctx context.Context, userID ui
 		"calendar_feed_verifier_hash": columns.VerifierHash,
 		"calendar_feed_verifier_mac":  columns.VerifierMAC,
 		"calendar_feed_revealed_at":   nil,
+		"calendar_feed_key_epoch":     columns.KeyEpoch,
 	}).Error
 }
 
@@ -1063,6 +1128,13 @@ func (repo *UserRepository) LoadSettingsByID(ctx context.Context, userID uint) (
 			"webhook_url",
 			"webhook_notify_period",
 			"webhook_notify_ovulation",
+			// The two marks migration 039 added. They are here and the two
+			// *_last_sent_cycle_start watermarks are deliberately NOT: a watermark
+			// is a claim taken before a POST and would be read as a delivery time
+			// by anything that rendered it, which is the misreading these two
+			// columns exist to replace.
+			"webhook_last_delivered_at",
+			"calendar_feed_key_epoch",
 		).
 		First(&user, userID).Error; err != nil {
 		return models.User{}, err
@@ -1167,8 +1239,15 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 			"webhook_notify_ovulation":                true,
 			"webhook_period_last_sent_cycle_start":    nil,
 			"webhook_ovulation_last_sent_cycle_start": nil,
-			"reminder_lead_days":                      models.DefaultReminderLeadDays,
-			"webhook_config_version":                  gorm.Expr("webhook_config_version + 1"),
+			// The delivery mark (migration 039) goes with them, and
+			// unconditionally: this statement erases the endpoint, so a mark
+			// saying a delivery there was accepted would outlive the only thing
+			// that gave it meaning. Unlike the reveal marks below, NULL here is
+			// not an armed state — it is "no delivery recorded", which is exactly
+			// true of an account whose endpoint this write just cleared.
+			"webhook_last_delivered_at": nil,
+			"reminder_lead_days":        models.DefaultReminderLeadDays,
+			"webhook_config_version":    gorm.Expr("webhook_config_version + 1"),
 			// Calendar (.ics) feed token: a clear-data wipe revokes the feed by
 			// NULLing all three columns (selector plus both verifier columns —
 			// the MAC arrived with migration 032, after this comment was

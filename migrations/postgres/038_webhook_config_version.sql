@@ -4,11 +4,20 @@
 --
 -- webhook_config_version is the monotonic revocation epoch of an owner's
 -- delivery configuration. Three writers advance it, each in the same statement
--- that performs its own write, and that is the COMPLETE set rather than an
--- illustration -- a fourth added later owes the same advance:
--- SaveWebhookSettings (a save, a disable, an endpoint replacement, a removal),
--- UpdateReminderLeadDays (the shared banner-and-webhook lead window, which the
--- notify pass places its reminder from), and ClearAllDataAndResetSettings.
+-- that performs its own write, and that is the COMPLETE set of DELIVERY
+-- CONFIGURATION writers rather than an illustration -- a later one owes the same
+-- advance: SaveWebhookSettings (a save, a disable, an endpoint replacement, a
+-- removal), UpdateReminderLeadDays (the shared banner-and-webhook lead window,
+-- which the notify pass places its reminder from), and
+-- ClearAllDataAndResetSettings.
+--
+-- What obliges a writer is what it CHANGES, never that it touched the users row.
+-- MarkWebhookDelivered (migration 039) writes that row after a 2xx and must NOT
+-- advance this column: it records that delivery happened, changing neither
+-- WHETHER, WHERE nor HOW EARLY it happens. Advancing there would also break the
+-- pass doing the delivering -- the epoch is pinned once per owner OUTSIDE the
+-- reminder loop, so a bump after a period delivery loses the ovulation claim of
+-- that same pass.
 --
 -- The pre-delivery watermark claim pins the value the claiming pass's snapshot
 -- carried, so a pass that read the configuration before a revocation can no
