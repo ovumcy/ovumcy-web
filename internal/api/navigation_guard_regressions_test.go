@@ -18,21 +18,28 @@ import (
 // owner performed on this origin, the same navigation started from someone
 // else's page, and a subresource load that is not a navigation at all.
 type secFetchHeaders struct {
-	site string
-	mode string
-	dest string
+	site    string
+	mode    string
+	dest    string
+	purpose string
 }
 
 var (
 	sameOriginNavigation = secFetchHeaders{site: "same-origin", mode: "navigate", dest: "document"}
 	crossSiteNavigation  = secFetchHeaders{site: "cross-site", mode: "navigate", dest: "document"}
 	sameOriginFetch      = secFetchHeaders{site: "same-origin", mode: "cors", dest: "empty"}
+	// A speculative load wears the navigation's own clothes and is separated
+	// from it by Sec-Purpose alone.
+	sameOriginPrefetch = secFetchHeaders{site: "same-origin", mode: "navigate", dest: "document", purpose: "prefetch;prerender"}
 )
 
 func (headers secFetchHeaders) applyTo(request *http.Request) {
 	request.Header.Set(headerSecFetchSite, headers.site)
 	request.Header.Set(headerSecFetchMode, headers.mode)
 	request.Header.Set(headerSecFetchDest, headers.dest)
+	if headers.purpose != "" {
+		request.Header.Set(headerSecPurpose, headers.purpose)
+	}
 }
 
 // TestNavigationGuardedRoutesAreExactlyTheDeclaredSet is the class half of the
@@ -83,6 +90,7 @@ func TestRegisterPickupRefusesForeignNavigationWithoutSpendingTheNonce(t *testin
 	}{
 		{name: "cross-site navigation", headers: crossSiteNavigation},
 		{name: "same-origin fetch", headers: sameOriginFetch},
+		{name: "same-origin prefetch", headers: sameOriginPrefetch},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			app, _ := newOnboardingTestApp(t)
@@ -125,6 +133,7 @@ func TestCalendarFeedRevealRefusesForeignNavigationWithoutSpendingTheMark(t *tes
 	}{
 		{name: "cross-site navigation", headers: crossSiteNavigation},
 		{name: "same-origin fetch", headers: sameOriginFetch},
+		{name: "same-origin prefetch", headers: sameOriginPrefetch},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			ctx := newSettingsSecurityTestContextWithOptions(t, "feed-reveal-guard-"+strings.ReplaceAll(testCase.name, " ", "-")+"@example.com",
