@@ -55,16 +55,16 @@ func (headers secFetchHeaders) applyTo(request *http.Request) {
 	}
 }
 
-// TestNavigationGuardedRoutesAreExactlyTheDeclaredSet is the class half of the
+// TestFirstPartyGuardedRoutesAreExactlyTheDeclaredSet is the class half of the
 // guard. Nothing in the route table says which GET mutates state, so the set is
 // declared in routes.go and pinned here in BOTH directions: a guard dropped from
 // a route it is named for reddens, and a route that quietly acquires one without
 // being named reddens too.
-func TestNavigationGuardedRoutesAreExactlyTheDeclaredSet(t *testing.T) {
+func TestFirstPartyGuardedRoutesAreExactlyTheDeclaredSet(t *testing.T) {
 	t.Parallel()
 
 	app, _ := newOnboardingTestApp(t)
-	marker := navigationGuardClosureMarker() + ".func"
+	marker := firstPartyGuardClosureMarker() + ".func"
 
 	guarded := []string{}
 	for _, route := range app.GetRoutes() {
@@ -80,7 +80,7 @@ func TestNavigationGuardedRoutesAreExactlyTheDeclaredSet(t *testing.T) {
 		}
 	}
 
-	declared := append([]string{}, navigationGuardedRoutes...)
+	declared := append([]string{}, firstPartyGuardedRoutes...)
 	sort.Strings(guarded)
 	sort.Strings(declared)
 	if !reflect.DeepEqual(guarded, declared) {
@@ -91,12 +91,12 @@ func TestNavigationGuardedRoutesAreExactlyTheDeclaredSet(t *testing.T) {
 	}
 }
 
-// TestRegisterPickupRefusesForeignNavigationWithoutSpendingTheNonce holds the
+// TestRegisterPickupRefusesAForeignRequestWithoutSpendingTheNonce holds the
 // property that matters: a refusal must not cost the owner the thing the forged
 // request was after. The nonce is single-use, so the second half of each case —
 // the owner's own navigation still completing — is what separates a guard from a
 // denial of service.
-func TestRegisterPickupRefusesForeignNavigationWithoutSpendingTheNonce(t *testing.T) {
+func TestRegisterPickupRefusesAForeignRequestWithoutSpendingTheNonce(t *testing.T) {
 	for _, testCase := range []struct {
 		name    string
 		headers secFetchHeaders
@@ -136,22 +136,22 @@ func TestRegisterPickupRefusesForeignNavigationWithoutSpendingTheNonce(t *testin
 	}
 }
 
-// TestCalendarFeedRevealRefusesForeignNavigationWithoutSpendingTheMark is the
+// TestCalendarFeedRevealRefusesAForeignRequestWithoutSpendingTheMark is the
 // same property on the other guarded route. The reveal is claimed by a
 // compare-and-set that never resets, so a refusal that burned the mark — or
 // retracted the sealed cookie — would hand the forged request exactly the
 // outcome the guard exists to deny.
-func TestCalendarFeedRevealRefusesForeignNavigationWithoutSpendingTheMark(t *testing.T) {
+func TestCalendarFeedRevealRefusesAForeignRequestWithoutSpendingTheMark(t *testing.T) {
 	for _, testCase := range []struct {
 		name       string
 		headers    secFetchHeaders
 		wantReason string
 	}{
-		{name: "cross-site navigation", headers: crossSiteNavigation, wantReason: navigationRefusedOffOriginInitiator},
-		{name: "same-origin embed", headers: sameOriginImage, wantReason: navigationRefusedUnsupportedDest},
-		{name: "same-origin prefetch", headers: sameOriginPrefetch, wantReason: navigationRefusedSpeculativeLoad},
-		{name: "embed with the site header stripped", headers: strippedSiteEmbed, wantReason: navigationRefusedUnsupportedDest},
-		{name: "prefetch with the site header stripped", headers: strippedSitePrefetch, wantReason: navigationRefusedSpeculativeLoad},
+		{name: "cross-site navigation", headers: crossSiteNavigation, wantReason: firstPartyRefusedOffOriginInitiator},
+		{name: "same-origin embed", headers: sameOriginImage, wantReason: firstPartyRefusedUnsupportedDest},
+		{name: "same-origin prefetch", headers: sameOriginPrefetch, wantReason: firstPartyRefusedSpeculativeLoad},
+		{name: "embed with the site header stripped", headers: strippedSiteEmbed, wantReason: firstPartyRefusedUnsupportedDest},
+		{name: "prefetch with the site header stripped", headers: strippedSitePrefetch, wantReason: firstPartyRefusedSpeculativeLoad},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			ctx := newSettingsSecurityTestContextWithOptions(t, "feed-reveal-guard-"+strings.ReplaceAll(testCase.name, " ", "-")+"@example.com",
@@ -195,13 +195,13 @@ func TestCalendarFeedRevealRefusesForeignNavigationWithoutSpendingTheMark(t *tes
 	}
 }
 
-// TestNavigationGuardAdmitsTheFirstPartyFetchOfThePublishedNextPath holds the
+// TestFirstPartyGuardAdmitsTheFetchOfThePublishedNextPath holds the
 // half of the contract the refusals must not eat. Both guarded routes ARE the
 // `next_path` docs/openapi.yaml tells a JSON client to follow, and such a client
 // fetches rather than navigates — Sec-Fetch-Dest: empty. Refusing it would make
 // the guard narrow the published API, and it would buy nothing against injected
 // same-origin script, which reaches the same value through a window it opens.
-func TestNavigationGuardAdmitsTheFirstPartyFetchOfThePublishedNextPath(t *testing.T) {
+func TestFirstPartyGuardAdmitsTheFetchOfThePublishedNextPath(t *testing.T) {
 	t.Parallel()
 
 	app, _ := newOnboardingTestApp(t)
@@ -217,12 +217,35 @@ func TestNavigationGuardAdmitsTheFirstPartyFetchOfThePublishedNextPath(t *testin
 	}
 }
 
-// TestRefusedCalendarFeedNavigationIsAuditedOnlyWhenSomethingCouldBeSpent keeps
+// TestRefusedPickupRequestLeavesNoFlashWhenNothingWasPresented holds the other
+// half of the same rule: a refusal must not leave state behind for a request the
+// owner never made. A prefetch discards the body and keeps the Set-Cookie, so an
+// unconditional flash would greet her with an error about a registration she
+// never started.
+func TestRefusedPickupRequestLeavesNoFlashWhenNothingWasPresented(t *testing.T) {
+	t.Parallel()
+
+	app, _ := newOnboardingTestApp(t)
+
+	request := httptest.NewRequest(http.MethodGet, registerPickupNextPath, nil)
+	crossSiteNavigation.applyTo(request)
+	response := mustAppResponse(t, app, request)
+
+	assertStatusCode(t, response, http.StatusSeeOther)
+	if location := response.Header.Get("Location"); location != "/login" {
+		t.Fatalf("expected the refusal to land on /login, got %q", location)
+	}
+	if flash := responseCookie(response.Cookies(), flashCookieName); flash != nil && strings.TrimSpace(flash.Value) != "" {
+		t.Fatalf("a refusal with no pickup cookie must leave no flash behind, got %#v", flash)
+	}
+}
+
+// TestRefusedCalendarFeedRequestIsAuditedOnlyWhenSomethingCouldBeSpent keeps
 // the denied line meaningful. The guard runs before the handler that would have
 // discovered nothing is armed, so auditing every refusal would fill the stream
 // with stray cross-site links and prefetches on sessions with no feed — and an
 // operator could not tell those from the one case the line exists to report.
-func TestRefusedCalendarFeedNavigationIsAuditedOnlyWhenSomethingCouldBeSpent(t *testing.T) {
+func TestRefusedCalendarFeedRequestIsAuditedOnlyWhenSomethingCouldBeSpent(t *testing.T) {
 	ctx := newSettingsSecurityTestContextWithOptions(t, "feed-reveal-guard-unarmed@example.com",
 		onboardingTestAppOptions{enableCSRF: true, auditLogEnabled: true})
 
@@ -242,13 +265,13 @@ func TestRefusedCalendarFeedNavigationIsAuditedOnlyWhenSomethingCouldBeSpent(t *
 	}
 }
 
-// TestNavigationGuardAdmitsAPartiallyStrippedFetchMetadataFamily applies the
+// TestFirstPartyGuardAdmitsAPartiallyStrippedFetchMetadataFamily applies the
 // monotone rule per header rather than to the family as a whole. A proxy or
 // security appliance that forwards Sec-Fetch-Site and drops Sec-Fetch-Dest is
 // ordinary in that tier, and a guard that read the absent destination as "not
 // one I allow" would refuse every request forever — locking the owner out of her
 // recovery code, which is the failure this design explicitly rejects.
-func TestNavigationGuardAdmitsAPartiallyStrippedFetchMetadataFamily(t *testing.T) {
+func TestFirstPartyGuardAdmitsAPartiallyStrippedFetchMetadataFamily(t *testing.T) {
 	t.Parallel()
 
 	app, _ := newOnboardingTestApp(t)
@@ -264,12 +287,12 @@ func TestNavigationGuardAdmitsAPartiallyStrippedFetchMetadataFamily(t *testing.T
 	}
 }
 
-// TestNavigationGuardAdmitsAClientThatSpeaksNoFetchMetadata pins the monotone
+// TestFirstPartyGuardAdmitsAClientThatSpeaksNoFetchMetadata pins the monotone
 // half of the guard: a request carrying none of the header family lands where it
 // landed before the guard existed. It is what keeps a browser too old to send
 // Sec-Fetch — and every non-browser client — from losing a route outright, and
 // it is why the rest of the suite can go on issuing bare requests.
-func TestNavigationGuardAdmitsAClientThatSpeaksNoFetchMetadata(t *testing.T) {
+func TestFirstPartyGuardAdmitsAClientThatSpeaksNoFetchMetadata(t *testing.T) {
 	t.Parallel()
 
 	app, _ := newOnboardingTestApp(t)
@@ -285,14 +308,14 @@ func TestNavigationGuardAdmitsAClientThatSpeaksNoFetchMetadata(t *testing.T) {
 	}
 }
 
-// navigationGuardClosureMarker reads the guard factory's own name back off a
+// firstPartyGuardClosureMarker reads the guard factory's own name back off a
 // closure it produced. The factory is small enough that the compiler inlines it
 // into every call site, so each registration carries its own generated closure
 // with its own code pointer and only the factory's name survives in it —
 // comparing pointers finds nothing. Deriving the marker from the function rather
 // than spelling it out keeps a rename from turning this sweep silently empty.
-func navigationGuardClosureMarker() string {
-	name := runtime.FuncForPC(reflect.ValueOf(requireSameOriginNavigation(nil)).Pointer()).Name()
+func firstPartyGuardClosureMarker() string {
+	name := runtime.FuncForPC(reflect.ValueOf(requireFirstPartyRequest(nil)).Pointer()).Name()
 	if index := strings.LastIndex(name, ".func"); index >= 0 {
 		name = name[:index]
 	}

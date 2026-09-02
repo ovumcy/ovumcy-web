@@ -165,7 +165,7 @@ func (handler *Handler) PickupRegister(c fiber.Ctx) error {
 	return c.Redirect().Status(fiber.StatusSeeOther).To("/register")
 }
 
-// refuseRegisterPickupNavigation is the same-origin navigation guard's exit for
+// refuseRegisterPickupRequest is the first-party guard's exit for
 // GET /register/welcome: the endpoint's own neutral refusal, so a forged
 // cross-site navigation is answered exactly like a stale, decoy or
 // already-consumed pickup, and is audited in the same vocabulary.
@@ -176,8 +176,15 @@ func (handler *Handler) PickupRegister(c fiber.Ctx) error {
 // never real. This one refuses the REQUEST and leaves a good cookie standing.
 // Clearing it would hand the forged navigation the outcome the guard exists to
 // deny: the owner arriving to find her hand-off gone.
-func (handler *Handler) refuseRegisterPickupNavigation(c fiber.Ctx, reason string) error {
-	handler.setFlashCookie(c, FlashPayload{AuthError: "register pickup unavailable"})
+func (handler *Handler) refuseRegisterPickupRequest(c fiber.Ctx, reason string) error {
+	// The flash is written only when a hand-off was actually presented. A
+	// speculative load, or a stray link on a session holding no pickup, would
+	// otherwise leave the owner an error about a registration she never started —
+	// a prefetch discards the body but keeps the Set-Cookie. It is the line the
+	// calendar-feed refusal already draws for its own audit line.
+	if strings.TrimSpace(c.Cookies(registerPickupCookieName)) != "" {
+		handler.setFlashCookie(c, FlashPayload{AuthError: "register pickup unavailable"})
+	}
 	handler.logSecurityEvent(c, "auth.register_pickup", "redirect_signin", securityEventField("reason", reason))
 	return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 }

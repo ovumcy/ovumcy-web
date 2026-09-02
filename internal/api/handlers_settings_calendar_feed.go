@@ -189,7 +189,7 @@ func (handler *Handler) ShowCalendarFeedRevealPage(c fiber.Ctx) error {
 	})
 }
 
-// refuseCalendarFeedRevealNavigation is the same-origin navigation guard's exit
+// refuseCalendarFeedRevealRequest is the first-party guard's exit
 // for GET /settings/calendar-feed: the page's own lost-race exit, back to
 // /settings where the owner can rotate and try again.
 //
@@ -205,7 +205,7 @@ func (handler *Handler) ShowCalendarFeedRevealPage(c fiber.Ctx) error {
 // Presence is read off the raw cookie, which unseals nothing and decides nothing
 // else: whether the value is any good is still the handler's question, on the
 // owner's own visit.
-func (handler *Handler) refuseCalendarFeedRevealNavigation(c fiber.Ctx, reason string) error {
+func (handler *Handler) refuseCalendarFeedRevealRequest(c fiber.Ctx, reason string) error {
 	if strings.TrimSpace(c.Cookies(calendarFeedRevealCookieName)) != "" {
 		handler.logEgressDenied(c, calendarFeedRevealEgress, reason)
 	}
