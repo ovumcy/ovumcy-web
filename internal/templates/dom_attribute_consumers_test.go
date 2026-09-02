@@ -103,7 +103,6 @@ var domAttrConsumerResidual = map[string]string{
 	// These two are not decoration, and closing them is a change of its own.
 	"data-cycle-start-implantation": "the only unread field of the cycle-start confirm island: its siblings (conflict-date, short-gap, replace-message) are all read, so the implantation warning the server computes reaches no dialog",
 	"data-next-period-paused-key":   "the state key beside data-dashboard-next-period-paused, which is asserted while its key is not",
-	"data-projected":                "the only ribbon-day flag with no reader; data-today, data-fertile and the rest are all addressed",
 	"data-period":                   "the cycle-stack day flag beside data-fertile, data-fertile-peak and data-logged, which are all addressed while it is not (stats.html:352)",
 }
 
