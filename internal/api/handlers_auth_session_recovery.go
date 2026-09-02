@@ -123,7 +123,13 @@ func (handler *Handler) ResetPassword(c fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 
-	if _, err := handler.setAuthCookie(c, user, true); err != nil {
+	// A recovery reset carries no remember-me control — the flow asks for an
+	// email, a recovery code and a password, and never for a device choice — so
+	// it takes the same default an unchecked login box takes. Passing true here
+	// minted the 30-day remembered cookie on a device nobody said to remember,
+	// on the one path whose whole premise is that the owner just lost control of
+	// her password.
+	if _, err := handler.setAuthCookie(c, user, false); err != nil {
 		spec := authSessionCreateErrorSpec()
 		if errors.Is(err, services.ErrAuthUnsupportedRole) {
 			spec = authWebSignInUnavailableErrorSpec()

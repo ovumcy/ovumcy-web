@@ -135,7 +135,11 @@ func (handler *Handler) PickupRegister(c fiber.Ctx) error {
 		return handler.redirectToPostRegisterSignin(c, "decoy_or_mismatch")
 	}
 
-	if _, err := handler.setAuthCookie(c, &user, true); err != nil {
+	// The pickup form carries no remember-me control either, so it takes the same
+	// default for the same reason — the N+1 site of the recovery reset above, and
+	// the only other place that asked for a remembered device on the owner's
+	// behalf.
+	if _, err := handler.setAuthCookie(c, &user, false); err != nil {
 		spec := authSessionCreateErrorSpec()
 		handler.logSecurityError(c, "auth.register_pickup", spec)
 		return handler.redirectToPostRegisterSignin(c, "auth_cookie_failed")
