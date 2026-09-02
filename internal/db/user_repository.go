@@ -820,11 +820,14 @@ func (repo *UserRepository) ClearCalendarFeedToken(ctx context.Context, userID u
 // DisarmCalendarFeedTokensWithoutMAC clears the feed-token columns of every row
 // that is armed (non-empty selector) but carries NO verifier MAC — the rows
 // minted before migration 032, whose bcrypt hash verifies independently of
-// SECRET_KEY. The boot-time rotation sentinel calls it when the calendar-feed
-// key epoch changes: for every other armed row the rotated key already turns
-// MAC verification into a hard refusal, so this narrow predicate is exactly the
-// set that would otherwise SURVIVE the rotation — and be silently re-armed
-// under the new key by the first successful bcrypt poll's MAC backfill.
+// SECRET_KEY. The boot-time rotation sentinel calls it on two boots: one where
+// the calendar-feed key epoch changed, and one where no epoch is stored yet.
+// After a rotation the rotated key already turns MAC verification into a hard
+// refusal for every other armed row, so this narrow predicate is exactly the
+// set that would otherwise SURVIVE it — and be silently re-armed under the new
+// key by the first successful bcrypt poll's MAC backfill. On the absent-epoch
+// boot no key changed and that inference is unavailable: the same rows are
+// cleared because nothing records which key minted them.
 //
 // Rows that do carry a MAC are deliberately left in place: they fail closed on
 // their own, and the narrow predicate keeps the blast radius of a boot with a

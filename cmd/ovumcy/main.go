@@ -224,10 +224,12 @@ func mustEnforceCalendarFeedRestoreFence(fence *services.CalendarFeedRestoreFenc
 }
 
 // mustEnforceCalendarFeedKeyRotation runs the boot-time calendar-feed
-// key-rotation sentinel: when SECRET_KEY (or the feed-MAC label set) changed
-// since the previous boot, it disarms the legacy pre-032 feed rows whose
+// key-rotation sentinel. It disarms the legacy pre-032 feed rows, whose
 // key-independent bcrypt hashes would otherwise keep a leaked subscribe URL
-// alive across the rotation. The decision logic lives (tested) in
+// alive, on either of two boots: one where SECRET_KEY (or the feed-MAC label
+// set) changed since the previous boot, and one where no epoch is stored at
+// all — an upgrade past the sentinel arrives holding exactly those rows and no
+// record of the key that minted them. The decision logic lives (tested) in
 // services.CalendarFeedRotationSentinel; this wrapper only wires repositories,
 // fails the boot hard on an error, and prints the operator-facing line.
 func mustEnforceCalendarFeedKeyRotation(repositories *db.Repositories, secretKey []byte) {
