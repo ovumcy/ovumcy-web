@@ -32,6 +32,10 @@ var (
 	// A speculative load wears the navigation's own clothes and is separated
 	// from it by Sec-Purpose alone.
 	sameOriginPrefetch = secFetchHeaders{site: "same-origin", mode: "navigate", dest: "document", purpose: "prefetch;prerender"}
+	// A proxy that forwards part of the family and strips Sec-Fetch-Site. Each
+	// check reads its own header, so what survives still decides.
+	strippedSiteEmbed    = secFetchHeaders{mode: "no-cors", dest: "image"}
+	strippedSitePrefetch = secFetchHeaders{mode: "navigate", dest: "document", purpose: "prefetch;prerender"}
 )
 
 // applyTo writes only the fields the case names, so a case can model a request
@@ -100,6 +104,8 @@ func TestRegisterPickupRefusesForeignNavigationWithoutSpendingTheNonce(t *testin
 		{name: "cross-site navigation", headers: crossSiteNavigation},
 		{name: "same-origin embed", headers: sameOriginImage},
 		{name: "same-origin prefetch", headers: sameOriginPrefetch},
+		{name: "embed with the site header stripped", headers: strippedSiteEmbed},
+		{name: "prefetch with the site header stripped", headers: strippedSitePrefetch},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			app, _ := newOnboardingTestApp(t)
@@ -143,6 +149,8 @@ func TestCalendarFeedRevealRefusesForeignNavigationWithoutSpendingTheMark(t *tes
 		{name: "cross-site navigation", headers: crossSiteNavigation},
 		{name: "same-origin embed", headers: sameOriginImage},
 		{name: "same-origin prefetch", headers: sameOriginPrefetch},
+		{name: "embed with the site header stripped", headers: strippedSiteEmbed},
+		{name: "prefetch with the site header stripped", headers: strippedSitePrefetch},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			ctx := newSettingsSecurityTestContextWithOptions(t, "feed-reveal-guard-"+strings.ReplaceAll(testCase.name, " ", "-")+"@example.com",

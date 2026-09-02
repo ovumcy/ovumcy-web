@@ -50,32 +50,30 @@ const (
 // siblings — because those are the shapes that spend a one-time value with
 // nothing rendered for anybody to notice.
 //
-// The guard is deliberately MONOTONE. When the browser speaks Fetch Metadata we
-// obey it; when the header family is absent entirely — a browser older than
-// Chrome 76 / Firefox 90 / Safari 16.4, or a non-browser client, which carries
-// no ambient cookies to forge with anyway — the request lands exactly where it
-// landed before this guard existed, on Lax plus the one-time CAS and the sealed
-// owner-bound cookie. So the guard can only remove reachable forgeries, never
-// add one, and it can never lock out a client that worked yesterday. Refusing on
-// absence would trade a residual against an owner who can no longer pick up her
-// recovery code at all, which is the worse failure on a self-hosted instance.
-// The absence is also not attacker-controlled: page script cannot strip a
-// `Sec-` header from a victim's browser.
+// The guard is deliberately MONOTONE, and the rule is applied PER HEADER: each
+// check refuses only on a value the browser actually stated, and an absent header
+// decides nothing. A browser older than Chrome 76 / Firefox 90 / Safari 16.4, or
+// a non-browser client carrying no ambient cookies to forge with, sends none of
+// the family and lands exactly where it landed before this guard existed — on Lax
+// plus the one-time CAS and the sealed owner-bound cookie. A proxy that forwards
+// part of the family and strips the rest is the same case one header at a time,
+// which is why no check may read an absent header as a refusal: doing so would
+// trade a residual for an owner who can no longer pick up her recovery code at
+// all, the worse failure on a self-hosted instance. The absence is never
+// attacker-controlled either — page script cannot strip a `Sec-` header from a
+// victim's browser, so what an attacker's request states is what it is judged on.
 //
 // `refuse` is the guarded route's OWN neutral exit rather than a new error
 // surface, so a refused request is indistinguishable from the replay each route
 // already answers, and stays audited in that route's existing vocabulary.
 func requireSameOriginNavigation(refuse fiber.Handler) fiber.Handler {
 	return func(c fiber.Ctx) error {
-		site := strings.TrimSpace(c.Get(headerSecFetchSite))
-		if site == "" {
-			return c.Next()
-		}
 		// "none" is a load with no initiator document: a typed URL, a bookmark,
 		// a restored tab. "same-site" is refused along with "cross-site" —
 		// the CSRF middleware compares scheme+host exactly, so a sibling
 		// subdomain is another origin here too.
-		if !strings.EqualFold(site, secFetchSiteSameOrigin) && !strings.EqualFold(site, secFetchSiteNone) {
+		site := strings.TrimSpace(c.Get(headerSecFetchSite))
+		if site != "" && !strings.EqualFold(site, secFetchSiteSameOrigin) && !strings.EqualFold(site, secFetchSiteNone) {
 			return refuse(c)
 		}
 		// A page load is `document`; a client following the published next_path is
@@ -83,22 +81,16 @@ func requireSameOriginNavigation(refuse fiber.Handler) fiber.Handler {
 		// the rest — is an embed no flow into these routes produces, and is the
 		// shape that would spend the one-time value with nothing on screen.
 		//
-		// An ABSENT destination is admitted rather than refused, and that is the
-		// monotone rule again applied per header rather than to the family as a
-		// whole: a proxy that forwards Sec-Fetch-Site and strips Sec-Fetch-Dest
-		// would otherwise refuse every request forever, which is the lockout this
-		// design rejects. Only a destination the browser actually stated, and
-		// stated as something no client of these routes has, is a refusal.
 		dest := strings.TrimSpace(c.Get(headerSecFetchDest))
 		if dest != "" && !strings.EqualFold(dest, secFetchDestDocument) && !strings.EqualFold(dest, secFetchDestEmpty) {
 			return refuse(c)
 		}
-		// A speculative load carries the full navigation shape — same-origin,
-		// document — and is the one request that reaches here without anybody
-		// having decided to go. Nothing links to either guarded route, so this
-		// costs no real flow; it is here because a browser or an extension that
-		// starts prefetching one would otherwise spend the owner's one-time value
-		// on her behalf, and the guard would have no way to tell.
+		// A speculative load wears the navigation's own shape — same-origin,
+		// document — and is the one request reaching here that nobody decided to
+		// make. Nothing links to either guarded route, so this costs no real flow;
+		// it is here because a browser or an extension that starts prefetching one
+		// would otherwise spend the owner's one-time value on her behalf, and the
+		// two checks above cannot tell.
 		if strings.Contains(strings.ToLower(c.Get(headerSecPurpose)), secPurposePrefetch) {
 			return refuse(c)
 		}
