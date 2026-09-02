@@ -62,14 +62,13 @@ func (s *stubRotationUserStore) DisarmCalendarFeedTokensWithoutMAC(_ context.Con
 const rotationSentinelTestKeyA = "rotation-sentinel-test-key-A-0123"
 const rotationSentinelTestKeyB = "rotation-sentinel-test-key-B-0123"
 
-// TestCalendarFeedRotationSentinelFirstBootRecordsEpochWithoutDisarming pins
-// the baseline behavior: with no stored epoch the sentinel records the current
-// one and touches no feed rows — an upgrade alone must never break armed
-// subscriptions (the migration-032 "existing subscriptions keep working"
-// promise).
-func TestCalendarFeedRotationSentinelFirstBootRecordsEpochWithoutDisarming(t *testing.T) {
+// TestCalendarFeedRotationSentinelFirstBootOnANewInstallationDisarmsNothing
+// pins the quiet half of the absent-epoch case: an installation that has no
+// MAC-less feed has nothing to judge, so the disarm finds zero rows, the
+// outcome is a pure first boot, and the startup banner stays silent.
+func TestCalendarFeedRotationSentinelFirstBootOnANewInstallationDisarmsNothing(t *testing.T) {
 	appState := &stubRotationAppState{}
-	users := &stubRotationUserStore{disarmed: 7}
+	users := &stubRotationUserStore{disarmed: 0}
 	sentinel := NewCalendarFeedRotationSentinel(appState, users, []byte(rotationSentinelTestKeyA))
 
 	outcome, err := sentinel.Enforce(context.Background())
@@ -79,9 +78,6 @@ func TestCalendarFeedRotationSentinelFirstBootRecordsEpochWithoutDisarming(t *te
 	if !outcome.FirstBoot || outcome.RotationDetected || outcome.DisarmedFeeds != 0 {
 		t.Fatalf("expected pure first-boot outcome, got %+v", outcome)
 	}
-	if users.callCount != 0 {
-		t.Fatal("first boot must not disarm any feed rows")
-	}
 
 	want, err := security.CalendarFeedKeyEpoch([]byte(rotationSentinelTestKeyA))
 	if err != nil {
@@ -89,6 +85,55 @@ func TestCalendarFeedRotationSentinelFirstBootRecordsEpochWithoutDisarming(t *te
 	}
 	if got := appState.values[models.AppStateKeyCalendarFeedKeyEpoch]; got != want {
 		t.Fatalf("stored epoch %q, want the derived epoch %q", got, want)
+	}
+}
+
+// TestCalendarFeedRotationSentinelFirstBootAfterAnUpgradeDisarmsTheMACLessFeeds
+// is the other half, and the defect this arm exists for: an upgrade from a
+// release that predates the sentinel reaches the same absent-epoch branch, but
+// its pre-032 rows carry no MAC and nothing records which key minted them.
+// Adopting them as the baseline would let the first poll backfill a MAC under
+// today's key and revive a subscribe URL a rotation in that same window was
+// meant to kill, so they are disarmed — before the epoch is recorded, so a
+// failure retries the disarm instead of blessing it.
+func TestCalendarFeedRotationSentinelFirstBootAfterAnUpgradeDisarmsTheMACLessFeeds(t *testing.T) {
+	journal := make([]string, 0, 2)
+	appState := &stubRotationAppState{journal: &journal}
+	users := &stubRotationUserStore{disarmed: 7, journal: &journal}
+	sentinel := NewCalendarFeedRotationSentinel(appState, users, []byte(rotationSentinelTestKeyA))
+
+	outcome, err := sentinel.Enforce(context.Background())
+	if err != nil {
+		t.Fatalf("Enforce: %v", err)
+	}
+	if !outcome.FirstBoot || outcome.RotationDetected || outcome.DisarmedFeeds != 7 {
+		t.Fatalf("expected a first boot that disarmed the legacy rows, got %+v", outcome)
+	}
+	if users.callCount != 1 {
+		t.Fatalf("expected exactly one disarm, got %d", users.callCount)
+	}
+	if len(journal) != 2 || journal[0] != "disarm" || journal[1] != "set" {
+		t.Fatalf("expected the disarm to precede the epoch write, got %v", journal)
+	}
+}
+
+// TestCalendarFeedRotationSentinelFirstBootKeepsTheEpochUnwrittenWhenTheDisarmFails
+// pins the retry: a failed disarm on the absent-epoch path must leave no epoch
+// behind, or the next boot would read agreement and never retry.
+func TestCalendarFeedRotationSentinelFirstBootKeepsTheEpochUnwrittenWhenTheDisarmFails(t *testing.T) {
+	appState := &stubRotationAppState{}
+	users := &stubRotationUserStore{disarmErr: errors.New("storage down")}
+	sentinel := NewCalendarFeedRotationSentinel(appState, users, []byte(rotationSentinelTestKeyA))
+
+	outcome, err := sentinel.Enforce(context.Background())
+	if err == nil {
+		t.Fatal("expected the storage failure to surface")
+	}
+	if !outcome.FirstBoot || outcome.DisarmedFeeds != 0 {
+		t.Fatalf("expected a failed first-boot outcome, got %+v", outcome)
+	}
+	if _, stored := appState.values[models.AppStateKeyCalendarFeedKeyEpoch]; stored {
+		t.Fatal("a failed disarm must not record the epoch")
 	}
 }
 

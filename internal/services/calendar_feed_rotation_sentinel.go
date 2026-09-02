@@ -24,12 +24,11 @@ type calendarFeedRotationUserStore interface {
 // CalendarFeedRotationOutcome reports what one Enforce pass did, for the
 // operator-facing startup log line.
 type CalendarFeedRotationOutcome struct {
-	// FirstBoot is true when no epoch was stored yet: the current one was
-	// recorded without disarming anything, because nothing is known about the
-	// key that came before. (This is also why rotating SECRET_KEY in the same
-	// maintenance window as upgrading to the release that introduced the
-	// sentinel is not detectable — the runbook tells the operator to revoke
-	// feeds manually in that one case.)
+	// FirstBoot is true when no epoch was stored yet — a new installation, or
+	// the first start after upgrading from a release that predates the
+	// sentinel. Nothing is known about the key that came before, so any
+	// MAC-less row present is disarmed rather than adopted as the baseline and
+	// counted in DisarmedFeeds; on a new installation there are none.
 	FirstBoot bool
 	// RotationDetected is true when the stored epoch did not match the current
 	// key's — SECRET_KEY was rotated (or the feed-MAC label set was bumped)
@@ -54,6 +53,11 @@ type CalendarFeedRotationOutcome struct {
 // WITH a MAC are left alone: the rotated key already makes their verification
 // a hard refusal, and not touching them keeps a boot with a mistyped key from
 // irreversibly clearing anything beyond the legacy rows.
+//
+// A stored epoch that is ABSENT is not a third routine case: see Enforce. It
+// means a new installation or the first start after upgrading past the
+// sentinel, and only one of those can hold a MAC-less feed — so the same
+// disarm runs there, and finds nothing on a new installation.
 type CalendarFeedRotationSentinel struct {
 	appState  calendarFeedRotationAppState
 	users     calendarFeedRotationUserStore
@@ -84,10 +88,29 @@ func (sentinel *CalendarFeedRotationSentinel) Enforce(ctx context.Context) (Cale
 		return CalendarFeedRotationOutcome{}, err
 	}
 	if !found {
-		if err := sentinel.appState.Set(ctx, models.AppStateKeyCalendarFeedKeyEpoch, epoch); err != nil {
-			return CalendarFeedRotationOutcome{}, err
+		// No stored epoch has two causes and they must not be answered alike.
+		// A new installation has no feed to judge: the disarm below finds
+		// nothing and the epoch is simply recorded. An UPGRADE from a release
+		// that predates the sentinel does have feeds, and the pre-032 rows
+		// among them carry no MAC, so nothing here can tell which key minted
+		// them. Recording the current epoch beside them adopts them as the
+		// baseline, and the first poll then backfills a MAC derived from
+		// today's key — reviving a subscribe URL a rotation in that same
+		// maintenance window was meant to kill, which is the containment rule
+		// this sentinel exists for. There is no evidence to adopt, so they are
+		// disarmed and their owners generate a fresh URL from Settings.
+		//
+		// Same ordering as the rotation arm below: disarm first, record after,
+		// so a crash in between retries instead of recording an epoch whose
+		// disarm never happened.
+		disarmed, err := sentinel.users.DisarmCalendarFeedTokensWithoutMAC(ctx)
+		if err != nil {
+			return CalendarFeedRotationOutcome{FirstBoot: true}, err
 		}
-		return CalendarFeedRotationOutcome{FirstBoot: true}, nil
+		if err := sentinel.appState.Set(ctx, models.AppStateKeyCalendarFeedKeyEpoch, epoch); err != nil {
+			return CalendarFeedRotationOutcome{FirstBoot: true, DisarmedFeeds: disarmed}, err
+		}
+		return CalendarFeedRotationOutcome{FirstBoot: true, DisarmedFeeds: disarmed}, nil
 	}
 	// Constant-time by house rule for key-derived comparisons; the timing of a
 	// local boot-path compare is not attacker-observable, so this is hygiene,

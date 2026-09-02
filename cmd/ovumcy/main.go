@@ -306,9 +306,19 @@ func calendarFeedRestoreFenceStartupMessage(outcome services.CalendarFeedRestore
 }
 
 // calendarFeedRotationStartupMessage renders the operator-facing startup line
-// for a detected rotation, and stays quiet ("") for the routine cases — first
-// boot and an unchanged key — so the startup banner is stable run to run.
+// for a detected rotation, and stays quiet ("") for the routine cases — a new
+// installation's first boot and an unchanged key — so the startup banner is
+// stable run to run. The one first boot that does speak is an upgrade that
+// brought MAC-less feeds with it: those are disarmed rather than adopted as a
+// baseline, and their owners have to be told why a subscribe URL stopped
+// answering.
 func calendarFeedRotationStartupMessage(outcome services.CalendarFeedRotationOutcome) string {
+	if outcome.FirstBoot {
+		if outcome.DisarmedFeeds == 0 {
+			return ""
+		}
+		return fmt.Sprintf("calendar-feed key epoch recorded for the first time: %d legacy calendar feed(s) predating the keyed MAC disarmed, because nothing records which SECRET_KEY minted them; owners re-generate subscribe URLs from settings", outcome.DisarmedFeeds)
+	}
 	if !outcome.RotationDetected {
 		return ""
 	}

@@ -62,6 +62,10 @@ func applyEmbeddedMigrations(database *gorm.DB, driver Driver) error {
 		return err
 	}
 
+	if err := refuseASchemaWrittenByANewerBinary(migrations, appliedVersions); err != nil {
+		return err
+	}
+
 	for _, migration := range migrations {
 		if _, alreadyApplied := appliedVersions[migration.Version]; alreadyApplied {
 			continue
@@ -266,6 +270,59 @@ func refuseTableDropReplayOnANewerSchema(migration embeddedMigration, appliedVer
 		strings.Join(droppedTables, ", "),
 		laterVersion,
 		migration.Version,
+	)
+}
+
+// refuseASchemaWrittenByANewerBinary stops a start whose database records
+// migrations this binary does not carry — the downgrade case, which until now
+// was silent: an older image booted against a newer schema, applied nothing,
+// logged nothing, and served requests against columns and conventions it does
+// not know about, writing rows a re-upgrade then has to reconcile.
+//
+// The evidence is one-directional and cheap: a ledger version numbered ABOVE
+// every migration in this binary's own tree can only have been written by a
+// later release. A recorded version this binary lacks but that is numbered
+// BELOW its highest is not that: it is a migration the file set dropped, which
+// the runner already tolerates, so it is left alone here too.
+//
+// What it cannot do is protect a downgrade to a release that predates the
+// guard: the check lives in the binary being started, so an older image without
+// it still boots silently. It closes the direction it can reach — every
+// downgrade from this release onward — and the runbook keeps the caveat for the
+// other one.
+//
+// Refusing runs no statement, so the database is untouched and the operator's
+// remedy is to start the newer release again, or to restore a backup taken
+// before the upgrade (migrations are forward-only; there is no down path).
+func refuseASchemaWrittenByANewerBinary(migrations []embeddedMigration, appliedVersions map[string]struct{}) error {
+	highestEmbeddedOrder := 0
+	highestEmbeddedVersion := "none"
+	for _, migration := range migrations {
+		if migration.Order > highestEmbeddedOrder {
+			highestEmbeddedOrder = migration.Order
+			highestEmbeddedVersion = migration.Version
+		}
+	}
+
+	newerVersions := make([]string, 0)
+	for version := range appliedVersions {
+		versionOrder, err := strconv.Atoi(strings.TrimSpace(version))
+		if err != nil {
+			continue
+		}
+		if versionOrder > highestEmbeddedOrder {
+			newerVersions = append(newerVersions, version)
+		}
+	}
+	if len(newerVersions) == 0 {
+		return nil
+	}
+	sort.Strings(newerVersions)
+
+	return fmt.Errorf(
+		"refusing to start against a newer schema: the database records migration(s) %s as applied and this binary carries none of them — its own newest is %s. The schema was therefore written by a newer Ovumcy release than this one, and migrations are forward-only: there is no down path, and serving requests from an older binary against a newer schema writes rows the next upgrade has to reconcile. Nothing was executed and the database is unchanged; start the newer release again, or restore a backup taken before that upgrade. Runbook: docs/self-hosted.md, \"Downgrade Caveats\"",
+		strings.Join(newerVersions, ", "),
+		highestEmbeddedVersion,
 	)
 }
 

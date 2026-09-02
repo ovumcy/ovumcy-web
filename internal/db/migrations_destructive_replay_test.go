@@ -794,3 +794,93 @@ func closeReplayDatabase(t *testing.T, database *gorm.DB) {
 	requireNoErr(t, err, "get sql db handle")
 	requireNoErr(t, sqlDB.Close(), "close sql db handle")
 }
+
+// TestABinaryOlderThanTheLedgerRefusesToStart is the downgrade case. Before the
+// guard it was entirely silent: a ledger recording migrations this binary does
+// not carry meant the schema was written by a newer release, and the older one
+// applied nothing, said nothing, and served requests against conventions it
+// does not know — writing rows the next upgrade has to reconcile. The synthetic
+// row stands in for that newer release, since the test cannot run a future
+// binary.
+func TestABinaryOlderThanTheLedgerRefusesToStart(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "downgrade.db")
+	seedFullyMigratedDatabaseWithSentinelDay(t, databasePath)
+	insertSchemaMigrationsRow(t, databasePath, "994", "994_from_a_newer_release.sql")
+	insertSchemaMigrationsRow(t, databasePath, "995", "995_from_a_newer_release.sql")
+
+	bootErr := reopenMigratedDatabaseForReplayTest(t, databasePath)
+	if bootErr == nil {
+		t.Fatal("expected the boot to refuse a schema written by a newer binary")
+	}
+	for _, expected := range []string{"994", "995", newestEmbeddedMigrationVersion(t), "Downgrade Caveats"} {
+		if !strings.Contains(bootErr.Error(), expected) {
+			t.Errorf("the refusal must name %q so an operator knows what stopped and why; got %v", expected, bootErr)
+		}
+	}
+
+	assertSentinelDayIntact(t, databasePath)
+
+	// The anchor, and the reason this is a version comparison and not a
+	// blanket refusal of any unrecognized ledger row: with the future rows gone
+	// the same database boots. A row numbered BELOW the newest embedded one is
+	// a migration the file set dropped, which the runner has always tolerated,
+	// so it must not be read as a downgrade either.
+	deleteSchemaMigrationsRows(t, databasePath, "994", "995")
+	insertSchemaMigrationsRow(t, databasePath, "000", "000_from_a_dropped_file.sql")
+	if err := reopenMigratedDatabaseForReplayTest(t, databasePath); err != nil {
+		t.Fatalf("a ledger row below the newest embedded migration is not a downgrade and must still boot: %v", err)
+	}
+}
+
+// TestRefuseASchemaWrittenByANewerBinaryClassifiesEachLedgerShape judges the
+// guard on inputs the test owns, one per rule, so its verdict cannot ride on
+// whichever migrations happen to be in the tree today: only a version numbered
+// above every embedded one is a downgrade, an unparseable row is not orderable
+// and is ignored, and an equal or lower one is an ordinary ledger.
+func TestRefuseASchemaWrittenByANewerBinaryClassifiesEachLedgerShape(t *testing.T) {
+	migrations := []embeddedMigration{
+		{Version: "001", Order: 1, Name: "001_initial.sql"},
+		{Version: "002", Order: 2, Name: "002_second.sql"},
+	}
+
+	testCases := []struct {
+		name        string
+		applied     []string
+		wantRefusal bool
+	}{
+		{name: "current ledger", applied: []string{"001", "002"}, wantRefusal: false},
+		{name: "partially applied ledger", applied: []string{"001"}, wantRefusal: false},
+		{name: "dropped migration file", applied: []string{"001", "002", "000"}, wantRefusal: false},
+		{name: "unorderable row", applied: []string{"001", "002", "not-a-number"}, wantRefusal: false},
+		{name: "written by a newer binary", applied: []string{"001", "002", "003"}, wantRefusal: true},
+	}
+
+	for _, testCase := range testCases {
+
+		t.Run(testCase.name, func(t *testing.T) {
+			applied := make(map[string]struct{}, len(testCase.applied))
+			for _, version := range testCase.applied {
+				applied[version] = struct{}{}
+			}
+
+			err := refuseASchemaWrittenByANewerBinary(migrations, applied)
+			if testCase.wantRefusal && err == nil {
+				t.Fatal("expected a refusal")
+			}
+			if !testCase.wantRefusal && err != nil {
+				t.Fatalf("expected no refusal, got %v", err)
+			}
+		})
+	}
+}
+
+func insertSchemaMigrationsRow(t *testing.T, databasePath string, version string, name string) {
+	t.Helper()
+
+	reader := openSQLiteFileForReplayTest(t, databasePath)
+	defer closeReplayDatabase(t, reader)
+
+	requireNoErr(t, reader.Exec(
+		`INSERT INTO schema_migrations(version, name) VALUES (?, ?)`, version, name,
+	).Error, "insert schema_migrations row "+version)
+}
