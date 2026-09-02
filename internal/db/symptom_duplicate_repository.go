@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
@@ -25,6 +26,34 @@ type SymptomDuplicateRepository struct {
 
 func NewSymptomDuplicateRepository(database *gorm.DB) *SymptomDuplicateRepository {
 	return &SymptomDuplicateRepository{database: database}
+}
+
+// symptomCatalogueTable is the table every query below reads. It is named once
+// so the presence check and the queries cannot come to disagree about which
+// table decides whether this is an Ovumcy database.
+const symptomCatalogueTable = "symptom_types"
+
+// ErrSymptomCatalogueAbsent is what the repair answers when the database it was
+// pointed at holds no symptom catalogue at all.
+var ErrSymptomCatalogueAbsent = errors.New("no symptom catalogue (table " + symptomCatalogueTable + ") in this database")
+
+// RequireSymptomCatalogue answers whether this is an Ovumcy database before any
+// query assumes it.
+//
+// This repair is the one entry point that opens a database WITHOUT applying
+// migrations, which is also the one thing that stops it telling "a schema older
+// than this binary" — exactly what it exists for — from "not this application's
+// database at all". Left to the query, the second case comes back as the
+// engine's own `no such table`, printed under a dump of the SQL, naming the very
+// table the operator was told to repair: the natural reading is that the repair
+// is broken or the data is gone. On SQLite the mistake is both easy and silent,
+// because opening a path that is not there creates an empty database rather than
+// refusing, so a mistyped DB_PATH reaches this point looking like a real one.
+func (repo *SymptomDuplicateRepository) RequireSymptomCatalogue(ctx context.Context) error {
+	if repo.database.WithContext(ctx).Migrator().HasTable(symptomCatalogueTable) {
+		return nil
+	}
+	return ErrSymptomCatalogueAbsent
 }
 
 // duplicateSymptomNameKey is one conflicting (user_id, lower(name)) pair as the

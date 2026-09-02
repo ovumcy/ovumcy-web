@@ -66,11 +66,35 @@ func runRepairCommand(databaseConfig db.Config, args []string, output io.Writer)
 		_ = sqlDB.Close()
 	}()
 
-	service := services.NewSymptomDuplicateRepairService(db.NewSymptomDuplicateRepository(database))
+	repository := db.NewSymptomDuplicateRepository(database)
+	// Before anything queries the catalogue, and once for both modes: this is
+	// the only command that opens a database of unknown schema version, so "not
+	// an Ovumcy database" is a mistake only it can make and only it can name.
+	if err := repository.RequireSymptomCatalogue(context.Background()); err != nil {
+		return fmt.Errorf(
+			"%s: %w. Point DB_DRIVER and DB_PATH (or DATABASE_URL) at the instance's own database — a SQLite path that does not exist is not refused, the driver creates an empty database there",
+			describeRepairTarget(databaseConfig), err,
+		)
+	}
+
+	service := services.NewSymptomDuplicateRepairService(repository)
 	if apply {
 		return runSymptomNamesRepairApply(service, output)
 	}
 	return runSymptomNamesRepairInspect(service, output)
+}
+
+// describeRepairTarget names the database the operator actually reached, so a
+// mistyped path is visible in the refusal rather than inferred.
+//
+// A Postgres URL carries credentials, so it is named by its variable and never
+// by its value. The SQLite path is the whole point of the message and is not a
+// secret.
+func describeRepairTarget(databaseConfig db.Config) string {
+	if databaseConfig.Driver == db.DriverPostgres {
+		return "the postgres database DATABASE_URL points at"
+	}
+	return "sqlite database " + strings.TrimSpace(databaseConfig.SQLitePath)
 }
 
 func parseRepairApplyFlag(args []string) (bool, error) {

@@ -33,6 +33,13 @@
   is on. Both engines are covered by a test that takes a database holding duplicates through the
   documented steps to a completed start.
 
+  Being the only entry point that opens a database of unknown schema version, it is also the only
+  one that can be pointed at the wrong database and not notice — a SQLite path that does not exist
+  is created empty rather than refused. So it checks for the symptom catalogue before any query
+  assumes it, and answers a mistyped `DB_PATH` by naming the path it actually reached, instead of
+  with the engine's `no such table` about the very table the operator was told to repair. A
+  PostgreSQL target is named by `DATABASE_URL` and never by its value, which carries credentials.
+
   The refusal message now names this route and the runbook instead of the application.
 
 - **`docs/self-hosted.md` says what a rollback past the last six migrations costs.** Downgrade
