@@ -177,7 +177,21 @@ func (fence *CalendarFeedRestoreFence) Enforce(ctx context.Context) (CalendarFee
 //     has to fail closed rather than report success.
 //
 // Only a database failure reaches the caller, whose own write is failing for
-// the same reason.
+// the same reason. That case has a third outcome, and it is the expensive one:
+// the file half has already been written, so the halves disagree and the next
+// boot disarms EVERY armed feed on the instance — not only the one whose write
+// failed. One transient app_state error therefore costs every owner their
+// subscribe URL. It is priced in rather than avoided: the halves are written
+// one after the other with no transaction spanning both, so some order has to
+// carry the risk, and file-then-database is the order whose failure disarms
+// too much instead of too little. The reverse would leave the halves agreeing
+// on a token minted before a revocation that did happen, which is the defect
+// this whole mechanism exists to close.
+//
+// Which is also why a caller that has already COMMITTED its own write drops
+// this error instead of returning it: by then the fence has failed closed on
+// its own, and the operation being reported as failed would be a second,
+// larger lie than the missing marker.
 func (fence *CalendarFeedRestoreFence) Advance(ctx context.Context) error {
 	fence.writing.Lock()
 	defer fence.writing.Unlock()

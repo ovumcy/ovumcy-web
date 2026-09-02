@@ -84,9 +84,6 @@ func runResetPasswordCommand(databaseConfig db.Config, email string, prompt pass
 		return errors.New("password is required")
 	}
 
-	// A forced reset force-clears the owner's calendar feed, so this process has
-	// to be able to record that removal outside the database.
-	warnAboutAnUnreachableCalendarFeedFence(os.Stderr)
 	repositories := buildRepositories(database)
 	authService := services.NewAuthService(repositories.Users)
 	if err := authService.ForceResetPasswordByEmail(context.Background(), normalizedEmail, string(newPassword)); err != nil {
@@ -106,6 +103,13 @@ func runResetPasswordCommand(databaseConfig db.Config, email string, prompt pass
 			return fmt.Errorf("reset password: %w", err)
 		}
 	}
+
+	// Raised only once the reset has actually happened: a forced reset
+	// force-clears the owner's calendar feed, and until this point the command
+	// could still have exited on an unknown email or a rejected password,
+	// having changed no feed state at all. A warning printed on those runs is
+	// one an operator learns to skip past on the run that matters.
+	warnAboutAnUnreachableCalendarFeedFence(os.Stderr)
 
 	if output == nil {
 		output = os.Stdout

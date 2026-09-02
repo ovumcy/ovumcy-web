@@ -54,9 +54,6 @@ func runUsersCommand(databaseConfig db.Config, args []string, input io.Reader, o
 		_ = sqlDB.Close()
 	}()
 
-	// `users delete` takes the account row and its calendar feed with it, so
-	// this process has to be able to record that removal outside the database.
-	warnAboutAnUnreachableCalendarFeedFence(os.Stderr)
 	repositories := buildRepositories(database)
 	service := services.NewOperatorUserService(repositories.Users, services.NewAuthService(repositories.Users))
 
@@ -64,6 +61,12 @@ func runUsersCommand(databaseConfig db.Config, args []string, input io.Reader, o
 	case "list":
 		return runUsersList(service, output)
 	case "delete":
+		// `users delete` takes the account row and its calendar feed with it, so
+		// this process has to be able to record that removal outside the
+		// database. Raised in this branch only: printed beside `users list` as
+		// well, it would be a line an operator learns to skip past on the run
+		// where it matters.
+		warnAboutAnUnreachableCalendarFeedFence(os.Stderr)
 		return runUsersDelete(service, args[1:], input, output)
 	case "create":
 		return runUsersCreate(service, args[1:], input, output)
