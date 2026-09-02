@@ -129,13 +129,24 @@ func TestRevokeAndDisarmLeaveTheCalendarFeedKeyEpochAlone(t *testing.T) {
 	}
 }
 
-// TestGenerateCalendarFeedTokenRefusesToMintWithoutAKeyEpoch guards the mint's
-// fail-closed direction. An empty stamp is not a neutral value: the row reads it
+// TestEveryMintedCalendarFeedTokenCarriesAKeyEpoch guards the mint's fail-closed
+// direction as an invariant over what it RETURNS, which is the form that can
+// actually be violated. An empty stamp is not a neutral value: the row reads it
 // as "issued before this was recorded", so a token minted with one would be
 // permanently unable to say it can be retired.
-func TestGenerateCalendarFeedTokenRefusesToMintWithoutAKeyEpoch(t *testing.T) {
-	if _, columns, err := services.GenerateCalendarFeedToken(nil); err == nil {
-		t.Fatalf("expected a keyless mint to fail, got columns %+v", columns)
+//
+// The keyless case is not the test: a nil key is refused a step earlier, by the
+// verifier MAC, so a mint that dropped the epoch derivation entirely would still
+// fail it. This asserts the successful path instead.
+func TestEveryMintedCalendarFeedTokenCarriesAKeyEpoch(t *testing.T) {
+	for _, key := range []string{calendarFeedRepoTestSecretKey, "another-calendar-feed-db-test-key"} {
+		_, columns, err := services.GenerateCalendarFeedToken([]byte(key))
+		if err != nil {
+			t.Fatalf("GenerateCalendarFeedToken: %v", err)
+		}
+		if columns.KeyEpoch == "" {
+			t.Fatal("a mint returned an empty key epoch, which the row reads as \"issued before this was recorded\"")
+		}
 	}
 }
 
