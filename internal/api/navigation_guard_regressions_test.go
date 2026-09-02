@@ -171,6 +171,31 @@ func TestCalendarFeedRevealRefusesForeignNavigationWithoutSpendingTheMark(t *tes
 	}
 }
 
+// TestRefusedCalendarFeedNavigationIsAuditedOnlyWhenSomethingCouldBeSpent keeps
+// the denied line meaningful. The guard runs before the handler that would have
+// discovered nothing is armed, so auditing every refusal would fill the stream
+// with stray cross-site links and prefetches on sessions with no feed — and an
+// operator could not tell those from the one case the line exists to report.
+func TestRefusedCalendarFeedNavigationIsAuditedOnlyWhenSomethingCouldBeSpent(t *testing.T) {
+	ctx := newSettingsSecurityTestContextWithOptions(t, "feed-reveal-guard-unarmed@example.com",
+		onboardingTestAppOptions{enableCSRF: true, auditLogEnabled: true})
+
+	request := httptest.NewRequest(http.MethodGet, calendarFeedRevealPath, nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", ctx.authCookie)
+	crossSiteNavigation.applyTo(request)
+	response, logOutput := captureAuditedRequest(t, ctx.app, request)
+	defer func() { _ = response.Body.Close() }()
+
+	assertStatusCode(t, response, http.StatusSeeOther)
+	if location := response.Header.Get("Location"); location != "/settings" {
+		t.Fatalf("expected the refusal to land on /settings, got %q", location)
+	}
+	if strings.Contains(logOutput, "settings.calendar_feed_reveal") {
+		t.Fatalf("a refusal with no reveal cookie had nothing to spend and must not be audited, got %q", logOutput)
+	}
+}
+
 // TestNavigationGuardAdmitsAClientThatSpeaksNoFetchMetadata pins the monotone
 // half of the guard: a request carrying none of the header family lands where it
 // landed before the guard existed. It is what keeps a browser too old to send

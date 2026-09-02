@@ -24,4 +24,9 @@
   for 30 days only when the sign-in form's *Remember me* box is ticked, but two paths that carry no
   such box — finishing a password recovery and picking up a fresh registration — asked to be
   remembered on the owner's behalf. Both now keep their session for the browser session, the same
-  default an unticked box gets. Ticking the box on the sign-in form works exactly as before.
+  default an unticked box gets. The same choice was also being thrown away in the other direction:
+  changing the password, turning two-factor on or off, or clearing the data re-issues the session,
+  and that re-issue always came back session-scoped — so a browser the owner had asked Ovumcy to
+  remember quietly stopped being remembered, on exactly the screens where she was least likely to
+  notice. The re-issue now carries the original choice forward, and ticking the box on the sign-in
+  form works as it always did.

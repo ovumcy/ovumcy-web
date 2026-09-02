@@ -137,6 +137,25 @@ func (handler *Handler) clearSessionEndCookies(c fiber.Ctx) {
 	handler.clearTimezoneCookie(c)
 }
 
+// sessionWasRemembered reads the owner's remember-me choice back off the session
+// that is being replaced. The choice is already recorded — it IS the token's
+// lifetime — so a re-issue carries it forward without a second source of truth,
+// a new claim, or asking again on a form that has no such control. Without this
+// every posture change (password, 2FA on or off, clear-data) silently demoted a
+// remembered device to a session cookie, which is the same defect as remembering
+// one nobody chose, pointing the other way.
+//
+// A token with no dates, or none on the request, is treated as not remembered:
+// the default is the one an unticked box gets, so an unreadable answer costs a
+// re-login at worst and never extends a session past what its owner asked for.
+func sessionWasRemembered(c fiber.Ctx) bool {
+	session, ok := currentAuthSession(c)
+	if !ok || session == nil || session.IssuedAt == nil || session.ExpiresAt == nil {
+		return false
+	}
+	return session.ExpiresAt.Sub(session.IssuedAt.Time) > defaultAuthTokenTTL
+}
+
 func (handler *Handler) buildTokenWithSessionID(user *models.User, ttl time.Duration) (string, string, error) {
 	if user == nil {
 		return "", "", errors.New("user is required")
@@ -191,7 +210,7 @@ func (handler *Handler) rotateOIDCLogoutState(c fiber.Ctx, newSessionID string) 
 // device stays signed in while every other session is invalidated. The
 // `scope` argument is used for security-event logging only.
 func (handler *Handler) refreshCurrentSession(c fiber.Ctx, user *models.User, scope string) error {
-	sessionID, err := handler.setAuthCookie(c, user, false)
+	sessionID, err := handler.setAuthCookie(c, user, sessionWasRemembered(c))
 	if err != nil {
 		handler.clearAuthCookie(c)
 		spec := authSessionCreateErrorSpec()

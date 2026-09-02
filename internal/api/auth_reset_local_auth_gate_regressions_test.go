@@ -111,6 +111,14 @@ func TestResetPasswordPageFollowsTheRedeemGate(t *testing.T) {
 					t.Fatalf("expected redirect to /login, got %q", location)
 				}
 			}
+			// A cookie the request never presented is never retracted: a bare
+			// visit must not be answered with a Set-Cookie for a value nobody
+			// sent, which is the rule the TOTP readers already follow.
+			if testCase.cookie == "" {
+				if retracted := responseCookie(response.Cookies(), resetPasswordCookieName); retracted != nil {
+					t.Fatalf("expected no reset-password cookie header on a request that carried none, got %#v", retracted)
+				}
+			}
 		})
 	}
 }
