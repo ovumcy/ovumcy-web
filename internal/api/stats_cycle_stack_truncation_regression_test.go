@@ -140,9 +140,8 @@ func statsBodyForCycleGaps(t *testing.T, email string, gaps []int) string {
 // from input.css and rebuild and the two agree perfectly: the guard is green,
 // every Go test is green, the linter is green, and the mark is gone, so two
 // capped rows are once more the same width with nothing saying so.
-// `css-components.md` states that blind spot for the removal direction; this is
-// the dependency direction, where markup carries a hook whose only consumer is
-// a component rule.
+// That blind spot is the removal direction; this is the dependency direction,
+// where markup carries a hook whose only consumer is a component rule.
 //
 // That is exactly the failure this change exists to close, one layer down: #581
 // computed Truncated and AxisTruncated and shipped them with no consumer, and

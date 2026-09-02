@@ -10,9 +10,9 @@ import { registerAndOnboardWithStartDaysAgo } from './support/stats-helpers';
 // pins "today" to the browser timezone, so those day counts hold whatever zone
 // the server runs in.
 test.describe('Dashboard reminder banner', () => {
-  // testing.md keeps the backend HTML regressions on the data-reminder-banner-key
-  // hook only; the rendered visible copy — including the day count interpolated
-  // into the plural variant — is owned here, addressed via that same hook.
+  // The backend HTML regressions stay on the data-reminder-banner-key hook only;
+  // the rendered visible copy — including the day count interpolated into the
+  // plural variant — is owned here, addressed via that same hook.
   test('a next period two days out renders the plural "~N days" reminder copy', async ({
     page,
   }) => {

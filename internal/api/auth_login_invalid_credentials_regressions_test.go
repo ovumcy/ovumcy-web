@@ -30,7 +30,7 @@ func TestLoginInvalidCredentialsRedirectDoesNotPersistEmail(t *testing.T) {
 		bodyStringMatch{fragment: `id="login-email"`, message: "expected login email input in page"},
 	)
 	// Assert the error via its stable data-error-key hook, not the localized copy
-	// (testing.md: never strings.Contains on a localized phrase).
+	// — never strings.Contains on a localized phrase.
 	if htmlAuthErrorByKey(mustParseHTMLDocument(t, rendered), "auth.error.invalid_credentials") == nil {
 		t.Fatalf("expected invalid-credentials auth error surfaced via data-error-key, got %q", rendered)
 	}

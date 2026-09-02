@@ -1236,8 +1236,8 @@ jobs:
   # reports one context per cell (`e2e-shard (1)`, ...), none of which is the
   # literal name the required check is pinned to.
   #
-  # Sharding is NOT raising parallelism inside one database, which
-  # `.claude/rules/e2e.md` rules out for the SQLite-backed stateful flows.
+  # Sharding is NOT raising parallelism inside one database — that stays ruled
+  # out for the SQLite-backed stateful flows.
   # Every shard is its own runner: its own `go run` app, its own SQLite file
   # under .tmp/e2e, and still `--workers=1` from the runner (`--mode=ci`). What
   # changes is how many app instances exist, not how many tests share one.

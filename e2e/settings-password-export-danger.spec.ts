@@ -264,7 +264,7 @@ test.describe('Settings: password, export, clear data, delete account', () => {
 
     // GET-only route: CSRF gates state-changing methods, so no token is sent.
     // The explicit Origin keeps the call valid under the HTTPS posture, where
-    // the CSRF middleware rejects mutating requests without one (testing.md).
+    // the CSRF middleware rejects mutating requests without one.
     const csvResponse = await page.request.get('/api/v1/exports/csv', {
       headers: apiOriginHeader(page),
     });

@@ -497,14 +497,15 @@ func buildDashboardPredictionDisplay(user *models.User, logs []models.DailyLog, 
 	// ConfirmedCurrentCycleOvulation so they cannot disagree.
 	//
 	// This substitution deliberately sits ABOVE the suppression branches and
-	// changes only WHICH day is named, never whether a day is named at all: what
-	// may render is prediction-display.md's subject, and a confirmed observation
-	// must not become a way around a gate. dashboardOvulationInPast then reads
-	// the substituted date, so a confirmed ovulation already behind the owner is
-	// rendered as past instead of announced as upcoming — which is the whole
-	// defect: on the projected day itself the difference to today was zero, the
-	// anchor never shifted, and the line declared an ovulation the temperatures
-	// had placed several days earlier.
+	// changes only WHICH day is named, never whether a day is named at all:
+	// whether a window may render at all belongs to the suppression gates, and a
+	// confirmed observation must not become a way around one.
+	// dashboardOvulationInPast then reads the substituted date, so a confirmed
+	// ovulation already behind the owner is rendered as past instead of
+	// announced as upcoming — which is the whole defect: on the projected day
+	// itself the difference to today was zero, the anchor never shifted, and the
+	// line declared an ovulation the temperatures had placed several days
+	// earlier.
 	if confirmed, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, today, location); ok {
 		display.ovulationDate = confirmed
 		display.ovulationConfirmed = true

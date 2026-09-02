@@ -35,7 +35,7 @@ func TestRegisterPageDoesNotPersistEmailAfterPasswordValidationError(t *testing.
 		bodyStringMatch{fragment: `id="register-email"`, message: "expected register email input on validation-error page"},
 	)
 	// Assert the weak-password error via its stable data-error-key hook, not the
-	// localized copy (testing.md: never strings.Contains on a localized phrase).
+	// localized copy — never strings.Contains on a localized phrase.
 	if htmlAuthErrorByKey(mustParseHTMLDocument(t, rendered), "auth.error.weak_password") == nil {
 		t.Fatalf("expected weak-password auth error surfaced via data-error-key, got %q", rendered)
 	}

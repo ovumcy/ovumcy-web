@@ -359,8 +359,7 @@ func inspectCalendarDayFile(fileSet *token.FileSet, file *ast.File, relative str
 		// tie the anti-vacuity anchor to the very thing the sweep judges: every
 		// site fixed lowers it, so a fully converted tree would fail as "discovery
 		// is broken" — which is exactly what happened once this class was swept.
-		// A guard's floor must not depend on the data it judges
-		// (`.claude/rules/testing.md`).
+		// A guard's floor must not depend on the data it judges.
 		ast.Inspect(function.Body, func(inner ast.Node) bool {
 			call, isCall := inner.(*ast.CallExpr)
 			if !isCall || len(call.Args) != 3 {
@@ -639,7 +638,7 @@ func calendarDayIsPackageIdent(expr ast.Expr) bool {
 // Without it the shape's only live positive example is an allowlist entry, so the
 // day that site is converted the classifier stops being exercised and the barrier
 // passes while measuring nothing — the anti-vacuity anchor would depend on the
-// data it judges, which `.claude/rules/testing.md` forbids. The floors do not
+// data it judges, which a guard's floor must never do. The floors do not
 // cover this: they prove the parser SEES steps, not that the classifier still
 // tells a location anchor from a UTC one.
 const calendarDayBarrierShapeCFixture = `package sample

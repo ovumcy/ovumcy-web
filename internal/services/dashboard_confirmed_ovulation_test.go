@@ -13,7 +13,7 @@ package services
 //
 // Both surfaces now resolve the day through ConfirmedCurrentCycleOvulation. The
 // substitution changes only WHICH day is named: whether a day may be named at
-// all stays with the suppression gates (prediction-display.md).
+// all stays with the suppression gates.
 
 import (
 	"testing"

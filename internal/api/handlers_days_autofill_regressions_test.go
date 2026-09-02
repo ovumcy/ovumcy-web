@@ -504,8 +504,7 @@ func TestDayAndSymptomJSONUseSnakeCaseWireKeys(t *testing.T) {
 	// snake_case DTO contract. A no-CSRF app is appropriate here: the test
 	// isolates content negotiation, while the valid-token CSRF update path is
 	// covered by the settings symptom HTMX regressions and the missing-token 403
-	// by state_mutation_csrf_missing_token_test.go (testing.md content-negotiation
-	// rule).
+	// by state_mutation_csrf_missing_token_test.go.
 	custom := models.SymptomType{
 		UserID:    user.ID,
 		Name:      "Wire custom symptom",

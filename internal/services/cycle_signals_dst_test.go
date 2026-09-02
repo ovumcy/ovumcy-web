@@ -25,8 +25,8 @@ package services
 // start itself.
 //
 // The zone must be west of UTC: east-of-UTC zones normalize a missing midnight
-// forward and keep the date, so the same fixture there is green about nothing
-// (`.claude/rules/testing.md`). Controls: UTC over the identical fixtures.
+// forward and keep the date, so the same fixture there is green about nothing.
+// Controls: UTC over the identical fixtures.
 
 import (
 	"testing"
