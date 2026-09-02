@@ -33,7 +33,12 @@ func (handler *Handler) RegenerateRecoveryCode(c fiber.Ctx) error {
 	// Session version was bumped atomically with the hash rotation — issue a
 	// fresh auth cookie so the current request context remains valid.
 	user.AuthSessionVersion = services.NormalizeAuthSessionVersion(user.AuthSessionVersion) + 1
-	if _, err := handler.setAuthCookie(c, user, false); err != nil {
+	// The re-issue carries the owner's remember-me choice, like every other
+	// posture change. This one mints directly instead of through
+	// refreshCurrentSession — it owns its own error scope — so the choice has to
+	// be read here too, or this becomes the one screen that quietly un-remembers
+	// a device.
+	if _, err := handler.setAuthCookie(c, user, sessionWasRemembered(c)); err != nil {
 		handler.clearAuthCookie(c)
 		spec := authSessionCreateErrorSpec()
 		if errors.Is(err, services.ErrAuthUnsupportedRole) {

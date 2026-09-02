@@ -34,10 +34,18 @@ var (
 	sameOriginPrefetch = secFetchHeaders{site: "same-origin", mode: "navigate", dest: "document", purpose: "prefetch;prerender"}
 )
 
+// applyTo writes only the fields the case names, so a case can model a request
+// that reached the app with part of the family stripped on the way.
 func (headers secFetchHeaders) applyTo(request *http.Request) {
-	request.Header.Set(headerSecFetchSite, headers.site)
-	request.Header.Set("Sec-Fetch-Mode", headers.mode)
-	request.Header.Set(headerSecFetchDest, headers.dest)
+	if headers.site != "" {
+		request.Header.Set(headerSecFetchSite, headers.site)
+	}
+	if headers.mode != "" {
+		request.Header.Set("Sec-Fetch-Mode", headers.mode)
+	}
+	if headers.dest != "" {
+		request.Header.Set(headerSecFetchDest, headers.dest)
+	}
 	if headers.purpose != "" {
 		request.Header.Set(headerSecPurpose, headers.purpose)
 	}
@@ -216,6 +224,28 @@ func TestRefusedCalendarFeedNavigationIsAuditedOnlyWhenSomethingCouldBeSpent(t *
 	}
 	if strings.Contains(logOutput, "settings.calendar_feed_reveal") {
 		t.Fatalf("a refusal with no reveal cookie had nothing to spend and must not be audited, got %q", logOutput)
+	}
+}
+
+// TestNavigationGuardAdmitsAPartiallyStrippedFetchMetadataFamily applies the
+// monotone rule per header rather than to the family as a whole. A proxy or
+// security appliance that forwards Sec-Fetch-Site and drops Sec-Fetch-Dest is
+// ordinary in that tier, and a guard that read the absent destination as "not
+// one I allow" would refuse every request forever — locking the owner out of her
+// recovery code, which is the failure this design explicitly rejects.
+func TestNavigationGuardAdmitsAPartiallyStrippedFetchMetadataFamily(t *testing.T) {
+	t.Parallel()
+
+	app, _ := newOnboardingTestApp(t)
+	pickupCookie := registerAndExtractPickupCookie(t, app, "pickup-guard-partial-family@example.com")
+
+	accepted := pickupRegisterWithHeaders(t, app, pickupCookie, secFetchHeaders{site: "same-origin"})
+	assertStatusCode(t, accepted, http.StatusSeeOther)
+	if location := accepted.Header.Get("Location"); location != "/register" {
+		t.Fatalf("expected a stripped-destination request to complete the pickup, got %q", location)
+	}
+	if authCookie := responseCookie(accepted.Cookies(), authCookieName); authCookie == nil || strings.TrimSpace(authCookie.Value) == "" {
+		t.Fatalf("expected a stripped-destination request to mint a session, got %#v", authCookie)
 	}
 }
 
