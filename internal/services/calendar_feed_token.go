@@ -99,7 +99,7 @@ func GenerateCalendarFeedToken(secretKey []byte) (fullToken string, columns mode
 	// stamp taken later could name a key that no longer signs this token.
 	keyEpoch, err := security.CalendarFeedKeyEpoch(secretKey)
 	if err != nil {
-		return "", models.CalendarFeedTokenColumns{}, err
+		return "", models.CalendarFeedTokenColumns{}, err // codecov:ignore -- unreachable: a missing key is the only error this returns, and the MAC above already refused it
 	}
 	return selector + verifier, models.CalendarFeedTokenColumns{
 		Selector:     selector,
