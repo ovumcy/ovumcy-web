@@ -74,7 +74,7 @@ func handleResetPasswordCommand(args []string, handlers cliCommandHandlers) (boo
 
 func handleUsersCommand(args []string, handlers cliCommandHandlers) (bool, error) {
 	if len(args) < 2 {
-		return true, fmt.Errorf("usage: ovumcy users <list|delete|create>")
+		return true, fmt.Errorf("usage: ovumcy users <list|delete|create|set-email>")
 	}
 	if handlers.runUsers == nil {
 		return true, fmt.Errorf("users handler is required")

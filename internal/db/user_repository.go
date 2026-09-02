@@ -111,6 +111,17 @@ func (repo *UserRepository) FindByID(ctx context.Context, userID uint) (models.U
 	return user, nil
 }
 
+func (repo *UserRepository) FindByIDOptional(ctx context.Context, userID uint) (models.User, bool, error) {
+	var user models.User
+	if err := repo.database.WithContext(ctx).First(&user, userID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return models.User{}, false, nil
+		}
+		return models.User{}, false, err
+	}
+	return user, true, nil
+}
+
 func (repo *UserRepository) FindByNormalizedEmail(ctx context.Context, email string) (models.User, error) {
 	var user models.User
 	if err := repo.database.WithContext(ctx).Where("lower(trim(email)) = ?", email).First(&user).Error; err != nil {
@@ -164,6 +175,38 @@ func (repo *UserRepository) RenormalizeUserEmail(ctx context.Context, userID uin
 		Where("id = ? AND email = ?", userID, fromEmail).
 		Update("email", toEmail)
 	return result.RowsAffected == 1, result.Error
+}
+
+// SetUserEmailByIDAndRevokeSessions re-homes ONE account to a new address, and
+// unlike RenormalizeUserEmail above it DOES bump auth_session_version, in the
+// same statement: the stored email is the login identity — the value both
+// AuthenticateCredentials and the OIDC email match resolve an account by — so
+// changing it is a change to the account's security posture, and no cookie
+// issued against the old identity may keep resolving.
+//
+// The CAS on the previous value is what makes it safe to run against an
+// instance that is up: fromEmail is the exact string the operator was shown by
+// `users list`, so a row that moved between that listing and this write matches
+// zero rows and the caller reports a conflict instead of overwriting whatever
+// stands there now. Uniqueness is not decided here — the unique index on
+// lower(trim(email)) is, and its violation surfaces as the error.
+//
+// It deliberately leaves the calendar-feed columns alone. Re-homing an address
+// is a repair of a locked-out account, not a compromise event, so it follows
+// the routine-password-change arm of the force-rotate rule: the feed capability
+// belongs to the account, not to the address, and the owner keeps the manual
+// rotate control.
+func (repo *UserRepository) SetUserEmailByIDAndRevokeSessions(ctx context.Context, userID uint, fromEmail string, toEmail string) (bool, error) {
+	result := repo.database.WithContext(ctx).Model(&models.User{}).
+		Where("id = ? AND email = ?", userID, fromEmail).
+		Updates(map[string]any{
+			"email":                toEmail,
+			"auth_session_version": gorm.Expr("auth_session_version + 1"),
+		})
+	if result.Error != nil {
+		return false, classifyUniqueConstraintError(result.Error, "users.email")
+	}
+	return result.RowsAffected == 1, nil
 }
 
 // requireOwnerRole is the persistence half of the owner-role-only boundary, and
