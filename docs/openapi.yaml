@@ -449,10 +449,20 @@ components:
             The account's CURRENT password, required alongside the recovery
             code. The recovery code substitutes for the second factor (TOTP),
             never for the password, so this endpoint verifies two secrets. A
-            wrong or absent password is refused exactly as a wrong recovery
+            wrong or empty password is refused exactly as a wrong recovery
             code is — same status, same body — and consumes the same attempt
-            budget. An owner who has forgotten the password cannot recover
-            here and needs the operator CLI `ovumcy reset-password <email>`.
+            budget. A JSON body that omits the member entirely is the shape
+            this endpoint accepted before v2.0.0, so it is refused by name
+            (`recovery reset requires the account password`, 400) before any
+            account is read: it names no credential and reveals nothing.
+            Form encoding cannot express the
+            difference between an omitted and an empty field, so a form
+            submission keeps the uniform credential refusal. The route's own
+            per-IP budget applies to it as to any other request here; what it
+            skips is the per-address attempt bucket, which only a submitted
+            credential can spend. An owner who has
+            forgotten the password cannot recover here and needs the operator
+            CLI `ovumcy reset-password <email>`.
         recovery_code:
           type: string
           pattern: "^OVUM-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$"
@@ -1207,7 +1217,10 @@ components:
             Absent or unknown resolves to `health`, which is what the step's
             visible skip action submits. Onboarding does not collect the age
             bracket; `age_group` is written by
-            `PATCH /api/v1/users/current/cycle` only.
+            `PATCH /api/v1/users/current/cycle` only. A body that still names
+            `age_group` — the shape this step accepted before v2.0.0 — is
+            refused with `onboarding does not accept an age group` (400) on
+            both transports, rather than saved minus the field it submitted.
 
 paths:
   # =========================================================================
@@ -1413,8 +1426,10 @@ paths:
         Validates the `(email, recovery_code, password)` triple without leaking
         which part was wrong. The recovery code stands in for the second factor
         only — the account password is required too — and every rejection
-        (unknown address, local auth disabled, wrong code, wrong or absent
-        password) answers identically. Per-IP rate limit: default 8 / 1 hour.
+        (unknown address, local auth disabled, wrong code, wrong or empty
+        password) answers identically. A JSON body carrying no `password`
+        member is answered before that check, by name — see the field's own
+        description. Per-IP rate limit: default 8 / 1 hour.
       security:
         - csrfToken: []
       requestBody:

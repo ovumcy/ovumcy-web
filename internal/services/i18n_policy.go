@@ -54,10 +54,14 @@ var authErrorTranslationKeys = map[string]string{
 	// the settings change-password form emit the same string
 	// (SettingsPasswordChangeKeyPasswordTooLong), so the HTML render and the
 	// JSON payload cannot drift apart.
-	"password too long":          "auth.error.password_too_long",
-	"password mismatch":          "auth.error.password_mismatch",
-	"invalid recovery code":      "auth.error.invalid_recovery_code",
-	"too many recovery attempts": "auth.error.too_many_recovery_attempts",
+	"password too long":     "auth.error.password_too_long",
+	"password mismatch":     "auth.error.password_mismatch",
+	"invalid recovery code": "auth.error.invalid_recovery_code",
+	// The break v2.0.0 declares on POST /api/v1/password-resets: a JSON body
+	// carrying no password member at all is a client written against the v1
+	// contract, answered by name rather than as a bad recovery code.
+	"recovery reset requires the account password": "auth.error.recovery_reset_requires_password",
+	"too many recovery attempts":                   "auth.error.too_many_recovery_attempts",
 	// The 2FA challenge's locale entries live under the flat error.totp_* namespace
 	// (present in all six locales), unlike the auth.error.* keys around them. Kept
 	// under their own names rather than renamed: the translations are correct and
@@ -134,6 +138,7 @@ var authErrorTranslationKeys = map[string]string{
 	"complete onboarding steps first":                 "onboarding.error.incomplete",
 	"failed to save onboarding step":                  "onboarding.error.generic",
 	"failed to finish onboarding":                     "onboarding.error.generic",
+	"onboarding does not accept an age group":         "onboarding.error.age_group_removed",
 }
 
 var settingsStatusTranslationKeys = map[string]string{

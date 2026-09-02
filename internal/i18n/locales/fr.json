@@ -119,6 +119,7 @@
   "auth.error.password_too_long": "Ce mot de passe est trop long : les lettres d'autres alphabets et les emojis comptent plusieurs fois, raccourcissez-le.",
   "auth.error.password_mismatch": "Les mots de passe ne correspondent pas.",
   "auth.error.invalid_recovery_code": "Code de récupération invalide.",
+  "auth.error.recovery_reset_requires_password": "La récupération du mot de passe exige le mot de passe de votre compte en plus du code de récupération.",
   "auth.error.too_many_recovery_attempts": "Trop de tentatives de récupération. Réessayez dans 15 minutes.",
   "auth.error.too_many_login_attempts": "Trop de tentatives de connexion. Veuillez patienter 15 minutes.",
   "auth.error.too_many_sso_attempts": "Trop de tentatives de connexion SSO. Veuillez patienter 15 minutes.",
@@ -174,6 +175,7 @@
   "onboarding.error.period_length_range": "La durée des règles doit être comprise entre 1 et 14 jours.",
   "onboarding.error.incomplete": "Veuillez d'abord compléter les étapes précédentes de configuration.",
   "onboarding.error.generic": "Échec de la sauvegarde des données de configuration. Veuillez réessayer.",
+  "onboarding.error.age_group_removed": "L'intégration ne demande plus la tranche d'âge. Définissez-la dans les Paramètres.",
 
   "settings.title": "Paramètres",
   "settings.subtitle": "Gérez les paramètres du cycle, la sécurité du compte et vos données.",

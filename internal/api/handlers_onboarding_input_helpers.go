@@ -72,8 +72,32 @@ func (handler *Handler) parseOnboardingStep1Values(c fiber.Ctx, today time.Time,
 	}, ""
 }
 
+// onboardingStep2CarriesRemovedAgeGroup reports whether the step-2 body still
+// names `age_group`, which v1.9.2 collected here. Onboarding stopped asking for
+// the age bracket; the field is written by PATCH /api/v1/users/current/cycle
+// only. Without this refusal a client written against the old contract is
+// answered 200 while the value it submitted is dropped — the removal reads as a
+// successful save, which is the one answer a removed field must never give.
+// Both transports are asked, in their own spelling, so the two cannot diverge.
+func onboardingStep2CarriesRemovedAgeGroup(c fiber.Ctx) bool {
+	if hasJSONBody(c) {
+		probe := struct {
+			AgeGroup *string `json:"age_group"`
+		}{}
+		if err := c.Bind().Body(&probe); err != nil {
+			return false
+		}
+		return probe.AgeGroup != nil
+	}
+	return c.Request().PostArgs().Has("age_group")
+}
+
 func (handler *Handler) parseOnboardingStep2Input(c fiber.Ctx) (onboardingStep2Input, string) {
 	input := onboardingStep2Input{}
+
+	if onboardingStep2CarriesRemovedAgeGroup(c) {
+		return onboardingStep2Input{}, "onboarding does not accept an age group"
+	}
 
 	if hasJSONBody(c) {
 		if err := c.Bind().Body(&input); err != nil {

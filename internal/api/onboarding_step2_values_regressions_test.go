@@ -129,9 +129,14 @@ func TestOnboardingStep2DropsAgeAndKeepsASkippableModeChoice(t *testing.T) {
 }
 
 // TestOnboardingStep2SkippedModeCompletesWithTheNeutralDefault drives the skip
-// path end to end: no usage goal submitted, an age bracket submitted anyway.
-// Onboarding completes, the goal falls back to the neutral default, and the age
-// column is left exactly as it was — onboarding does not write it.
+// path end to end: no usage goal submitted. Onboarding completes, the goal falls
+// back to the neutral default, and the age column is left exactly as it was —
+// onboarding does not write it.
+//
+// A body still carrying `age_group` used to ride along here and be ignored.
+// Since v2.0.0 such a body is refused by name rather than saved minus the field
+// it submitted, so that case — and the invariant that it writes no age column —
+// lives in TestOnboardingStep2NamesTheAgeGroupItNoLongerAccepts.
 func TestOnboardingStep2SkippedModeCompletesWithTheNeutralDefault(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "onboarding-step2-skip@example.com", "StrongPass1", false)
@@ -143,8 +148,6 @@ func TestOnboardingStep2SkippedModeCompletesWithTheNeutralDefault(t *testing.T) 
 	submitOnboardingStep2(t, app, authCookie, url.Values{
 		"cycle_length":  {"29"},
 		"period_length": {"5"},
-		// A forged age bracket rides along: onboarding must ignore it entirely.
-		"age_group": {models.AgeGroup45Plus},
 	})
 
 	persisted := models.User{}
