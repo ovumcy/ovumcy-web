@@ -17,8 +17,10 @@ import (
 // database outage reads as a burst of refused replays, and an operator watching
 // outcome="failure" sees nothing.
 func TestLogEgressFailureSeparatesAFaultFromARefusal(t *testing.T) {
-	t.Parallel()
-
+	// Deliberately NOT parallel: captureAuditedRequest redirects the process-wide
+	// logger, so a concurrent neighbour's security events would land in this
+	// buffer and this one's in theirs. Every other file using that helper is
+	// serial for the same reason.
 	handler := &Handler{auditLogEnabled: true}
 	kind := healthEgressKind{action: "settings.calendar_feed_reveal", target: "calendar_feed"}
 
