@@ -79,10 +79,30 @@ func (handler *Handler) ResetPassword(c fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 
-	token, _ := handler.readResetPasswordCookie(c)
+	token, forced := handler.readResetPasswordCookie(c)
 	if token == "" {
 		handler.clearResetPasswordCookie(c)
 		spec := invalidResetTokenErrorSpec()
+		handler.logSecurityError(c, "auth.reset_password", spec)
+		return handler.respondMappedError(c, spec)
+	}
+	// The redeem half of the local recovery flow has to stop being reachable at
+	// the same moment ForgotPassword above starts refusing to start one:
+	// otherwise a token minted before local public auth was switched off still
+	// rewrites the password, still sets local_auth_enabled back to true
+	// (UpdatePasswordRecoveryCodeAndRevokeSessionsCAS), and still mints a session
+	// on an instance whose operator turned local sign-in off. The factors are all
+	// verified at issuance, so this is the account's POSTURE, not session
+	// issuance parity.
+	//
+	// A FORCED token is the opposite case and must survive the gate: the two
+	// paths that mint one — CompleteOIDCLogin and CompleteOIDCLinkConfirmation —
+	// are exactly the paths still live under oidc_only, and refusing their redeem
+	// would strand an owner whose account carries must_change_password with no
+	// way to clear it.
+	if !forced && !handler.localPublicAuthEnabled() {
+		handler.clearResetPasswordCookie(c)
+		spec := authLocalRecoveryDisabledErrorSpec()
 		handler.logSecurityError(c, "auth.reset_password", spec)
 		return handler.respondMappedError(c, spec)
 	}
