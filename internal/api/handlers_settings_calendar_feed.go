@@ -162,6 +162,16 @@ func (handler *Handler) ShowCalendarFeedRevealPage(c fiber.Ctx) error {
 	// is not single-use. The cost of refusing is one rotation from settings.
 	claimed, err := handler.calendarFeedSettings.ClaimFeedReveal(c.Context(), user.ID, time.Now())
 	if err != nil || !claimed {
+		// Audited as a DENIED egress, the way data.export audits its own refusals
+		// on the same action. An operator counting disclosures counts
+		// outcome="success"; one asking whether anybody tried to replay a spent
+		// reveal has nothing else to read, and silence here made the attempt
+		// indistinguishable from nobody visiting at all.
+		reason := "reveal_already_claimed"
+		if err != nil {
+			reason = "reveal_claim_failed"
+		}
+		handler.logEgressDenied(c, calendarFeedRevealEgress, reason)
 		handler.clearCalendarFeedRevealCookie(c)
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
 	}

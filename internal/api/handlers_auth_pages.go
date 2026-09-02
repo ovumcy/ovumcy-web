@@ -38,6 +38,15 @@ var recoveryCodeRevealEgress = healthEgressKind{action: "auth.recovery_code_reve
 func (handler *Handler) claimRecoveryCodeReveal(c fiber.Ctx, userID uint) bool {
 	claimed, err := handler.authService.ClaimRecoveryCodeReveal(c.Context(), userID, time.Now())
 	if err != nil || !claimed {
+		// Both recovery surfaces claim through this helper, so auditing the
+		// refusal here covers the dedicated page and the inline register block
+		// together — the calendar-feed reveal is the third site of the same
+		// class and audits its own refusal for the same reason.
+		reason := "reveal_already_claimed"
+		if err != nil {
+			reason = "reveal_claim_failed"
+		}
+		handler.logEgressDenied(c, recoveryCodeRevealEgress, reason)
 		handler.clearRecoveryCodePageCookie(c)
 		return false
 	}

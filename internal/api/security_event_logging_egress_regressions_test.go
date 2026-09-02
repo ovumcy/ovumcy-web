@@ -222,9 +222,11 @@ func TestCalendarFeedRevealIsAuditedAsHealthEgress(t *testing.T) {
 	// The second visit presents the ORIGINAL sealed value, not the cleared one:
 	// a client that kept the cookie is the case this negative is about, and an
 	// empty value proves only that an empty value reveals nothing. The audit
-	// stream is the sharper half of the assertion — a refused replay must leave
-	// no trace of a reveal that did not happen, so an operator counting reveals
-	// counts disclosures.
+	// stream is the sharper half of the assertion, and it is read by OUTCOME, not
+	// by action: an operator counting disclosures counts success lines, which is
+	// already what data.export forces on them. A refused replay must therefore
+	// carry no success line and must carry a denied one — silence would make the
+	// attempt indistinguishable from nobody visiting.
 	secondRequest := httptest.NewRequest(http.MethodGet, calendarFeedRevealPath, nil)
 	secondRequest.Header.Set("Accept-Language", "en")
 	secondRequest.Header.Set("Cookie", joinCookieHeader(ctx.authCookie, cookiePair(revealCookie)))
@@ -233,8 +235,12 @@ func TestCalendarFeedRevealIsAuditedAsHealthEgress(t *testing.T) {
 	if second.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected a replayed reveal cookie to redirect, got %d", second.StatusCode)
 	}
-	if strings.Contains(secondLog, "settings.calendar_feed_reveal") {
-		t.Fatalf("a visit that reveals nothing must not log a reveal, got %q", secondLog)
+	if strings.Contains(secondLog, `outcome="success"`) {
+		t.Fatalf("a visit that reveals nothing must not log a disclosure, got %q", secondLog)
+	}
+	deniedLine := assertHealthEgressAudited(t, secondLog, "settings.calendar_feed_reveal", "denied", "calendar_feed")
+	if strings.Contains(deniedLine, token) || strings.Contains(deniedLine, "/calendar/feed/") {
+		t.Fatalf("a refused reveal must record the refusal, never the subscribe URL: %q", deniedLine)
 	}
 }
 
