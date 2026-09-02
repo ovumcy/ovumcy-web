@@ -97,6 +97,10 @@ func TestRegisterPickupRefusesForeignNavigationWithoutSpendingTheNonce(t *testin
 				t.Fatalf("expected a refused pickup to mint no session, got %#v", authCookie)
 			}
 
+			if retracted := responseCookie(refused.Cookies(), registerPickupCookieName); retracted != nil && strings.TrimSpace(retracted.Value) == "" {
+				t.Fatal("a refused navigation must not retract the owner's pickup cookie")
+			}
+
 			accepted := pickupRegisterWithHeaders(t, app, pickupCookie, sameOriginNavigation)
 			assertStatusCode(t, accepted, http.StatusSeeOther)
 			if location := accepted.Header.Get("Location"); location != "/register" {
