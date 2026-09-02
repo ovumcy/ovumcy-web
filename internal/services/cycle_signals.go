@@ -112,9 +112,8 @@ func InferUserLutealPhase(logs []models.DailyLog, location *time.Location) (int,
 // save would put the future-dated value straight back, which is precisely the
 // disagreement the paragraph above promises cannot happen. `now` is a required
 // parameter for the same reason — a writer cannot omit the bound by forgetting
-// it. Same shape as the pregnancy pause: the bound belongs to the derivation
-// and never to the caller's fetch, so two callers cannot reach two answers for
-// one owner.
+// it. Same shape as the pregnancy pause: the bound belongs to the derivation,
+// never to the caller's fetch.
 func deriveUserLutealPhase(logs []models.DailyLog, now time.Time, location *time.Location) int {
 	observed := filterLogsNotAfter(logs, DateAtLocation(now, location))
 	if lutealPhase, refined := InferUserLutealPhase(observed, location); refined {
