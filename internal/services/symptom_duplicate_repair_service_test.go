@@ -165,6 +165,17 @@ func TestRepairCarriesTheStorageFailureUnderItsOwnSentinel(t *testing.T) {
 		t.Fatalf("expected the inspection sentinel, got %v", err)
 	}
 
+	// Repair inspects before it merges, so a catalogue it cannot read has to
+	// stop it there — merging against a plan built from a failed read would act
+	// on a set of groups nothing established.
+	repository := &stubSymptomDuplicateRepository{listErr: storageErr}
+	if _, _, err := NewSymptomDuplicateRepairService(repository).Repair(context.Background()); !errors.Is(err, ErrSymptomDuplicateInspectFailed) {
+		t.Fatalf("expected Repair to stop on the inspection sentinel, got %v", err)
+	}
+	if repository.mergeCalls != 0 {
+		t.Fatalf("a failed inspection must not reach the merge, got %d call(s)", repository.mergeCalls)
+	}
+
 	_, _, err := NewSymptomDuplicateRepairService(&stubSymptomDuplicateRepository{
 		groups: []models.SymptomDuplicateGroup{{
 			UserID:   3,

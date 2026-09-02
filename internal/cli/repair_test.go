@@ -2,9 +2,11 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/ovumcy/ovumcy-web/internal/db"
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/services"
 	"github.com/ovumcy/ovumcy-web/internal/testdb"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -367,6 +370,73 @@ func TestRepairNamesThePostgresTargetWithoutItsCredentials(t *testing.T) {
 	}
 	if !strings.Contains(described, "DATABASE_URL") {
 		t.Fatalf("the operator still needs to know which setting to correct, got: %s", described)
+	}
+}
+
+// failingDuplicateRepository is a catalogue that cannot be read.
+//
+// It exists because the two report paths sit BEHIND the schema precondition: a
+// database broken enough to fail the queries fails the precondition first and
+// never reaches them, so the only way to exercise what they do with a storage
+// failure is to hand them a service over this.
+type failingDuplicateRepository struct {
+	err error
+}
+
+func (repository failingDuplicateRepository) ListDuplicateSymptomNameGroups(context.Context) ([]models.SymptomDuplicateGroup, error) {
+	return nil, repository.err
+}
+
+func (repository failingDuplicateRepository) MergeDuplicateSymptoms(context.Context, []models.SymptomMerge) (models.SymptomMergeOutcome, error) {
+	return models.SymptomMergeOutcome{}, repository.err
+}
+
+// TestBothReportPathsCarryAStorageFailureOutward pins that neither mode
+// swallows a read it could not make. Reporting "no duplicates" over a failed
+// read would tell the operator the instance is ready to start when nothing was
+// checked at all.
+func TestBothReportPathsCarryAStorageFailureOutward(t *testing.T) {
+	t.Parallel()
+
+	storageErr := errors.New("disk went away")
+	service := services.NewSymptomDuplicateRepairService(failingDuplicateRepository{err: storageErr})
+
+	for _, testCase := range []struct {
+		Name string
+		Run  func(*services.SymptomDuplicateRepairService, io.Writer) error
+	}{
+		{Name: "inspect", Run: runSymptomNamesRepairInspect},
+		{Name: "apply", Run: runSymptomNamesRepairApply},
+	} {
+		t.Run(testCase.Name, func(t *testing.T) {
+			t.Parallel()
+
+			var output bytes.Buffer
+			err := testCase.Run(service, &output)
+			if err == nil {
+				t.Fatal("a failed read must not be reported as a clean database")
+			}
+			if !strings.Contains(err.Error(), storageErr.Error()) {
+				t.Fatalf("the storage failure must reach the operator, got %v", err)
+			}
+			if strings.Contains(output.String(), "No account holds") {
+				t.Fatalf("a failed read must print no verdict, got: %s", output.String())
+			}
+		})
+	}
+}
+
+// TestRunRepairCommandIsTheEntryPointTheBinaryActuallyCalls covers the exported
+// wrapper. `main` reaches only this, so a wrapper wired to the wrong writer or
+// the wrong inner function would ship untested behind a fully tested body.
+func TestRunRepairCommandIsTheEntryPointTheBinaryActuallyCalls(t *testing.T) {
+	t.Parallel()
+
+	// An empty SQLite path fails config validation before anything opens or
+	// prints, so this exercises the wiring without writing to os.Stdout.
+	err := RunRepairCommand(db.Config{Driver: db.DriverSQLite}, []string{"symptom-names"})
+	if err == nil || !strings.Contains(err.Error(), "database init failed") {
+		t.Fatalf("expected the wrapper to reach the command body, got %v", err)
 	}
 }
 

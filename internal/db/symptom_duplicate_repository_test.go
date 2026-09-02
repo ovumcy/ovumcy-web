@@ -292,6 +292,236 @@ func openRepairFixtureDatabase(t *testing.T, name string) *gorm.DB {
 	return database
 }
 
+// TestTheRepairReportsWhatItCouldNotReadInsteadOfGuessing covers the storage
+// failures on both halves of the read.
+//
+// They matter more here than in a request path: this repair runs on a stopped
+// instance, where the operator has no logs to compare against and no UI to
+// re-try in, so a failure that does not say which read failed leaves them with
+// a database they cannot judge.
+func TestTheRepairReportsWhatItCouldNotReadInsteadOfGuessing(t *testing.T) {
+	t.Run("the catalogue cannot be listed at all", func(t *testing.T) {
+		database := openRepairFixtureDatabase(t, "list-fails.db")
+		if err := database.Exec(`DROP TABLE symptom_types`).Error; err != nil {
+			t.Fatalf("drop the catalogue: %v", err)
+		}
+
+		_, err := NewSymptomDuplicateRepository(database).ListDuplicateSymptomNameGroups(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "list duplicate symptom name groups") {
+			t.Fatalf("expected the outer read to be named, got %v", err)
+		}
+	})
+
+	// The outer query groups on lower(name) and the inner one also reads
+	// archived_at, so a catalogue predating migration 004 is exactly the shape
+	// where the first read succeeds and the second cannot.
+	t.Run("a group cannot be loaded once it is known to exist", func(t *testing.T) {
+		database := openRepairFixtureDatabase(t, "group-load-fails.db")
+		owner := createDailyLogTestUser(t, database, "group-load@example.com")
+		if err := database.Exec(`DROP TABLE symptom_types`).Error; err != nil {
+			t.Fatalf("drop the catalogue: %v", err)
+		}
+		if err := database.Exec(`
+CREATE TABLE symptom_types (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  icon TEXT NOT NULL,
+  color TEXT NOT NULL,
+  is_builtin BOOLEAN NOT NULL DEFAULT 0
+)`).Error; err != nil {
+			t.Fatalf("recreate the migration 001 catalogue: %v", err)
+		}
+		insertRepairSymptom(t, database, owner, "Cramps")
+		insertRepairSymptom(t, database, owner, "cramps")
+
+		_, err := NewSymptomDuplicateRepository(database).ListDuplicateSymptomNameGroups(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "load duplicate symptom name group") {
+			t.Fatalf("expected the group read to be named, got %v", err)
+		}
+		if !strings.Contains(err.Error(), "cramps") {
+			t.Fatalf("the failure must name the group it was reading, got %v", err)
+		}
+	})
+}
+
+// TestAPlanWithNothingToAbsorbChangesNothing pins the two shapes that must cost
+// no write: an empty plan, and a plan whose entry absorbs nothing. Both arrive
+// from a repeated run, which the runbook tells the operator is safe.
+//
+// Named for what it verifies and no wider: only the EMPTY plan returns before
+// the transaction: a merge with an empty Absorbed enters it and is skipped
+// inside, so this says nothing about how many transactions were opened.
+func TestAPlanWithNothingToAbsorbChangesNothing(t *testing.T) {
+	database := openRepairFixtureDatabase(t, "merge-nothing.db")
+	owner := createDailyLogTestUser(t, database, "merge-nothing@example.com")
+	survivor := insertRepairSymptom(t, database, owner, "Cramps")
+	day := insertRepairDayLog(t, database, owner, "2026-03-08", "["+uintText(survivor)+"]")
+
+	repository := NewSymptomDuplicateRepository(database)
+
+	empty, err := repository.MergeDuplicateSymptoms(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("an empty plan must succeed, got %v", err)
+	}
+	if empty != (models.SymptomMergeOutcome{}) {
+		t.Fatalf("an empty plan must change nothing, got %+v", empty)
+	}
+
+	absorbingNothing, err := repository.MergeDuplicateSymptoms(context.Background(), []models.SymptomMerge{{
+		UserID:   owner,
+		Survivor: models.SymptomType{ID: survivor, UserID: owner},
+	}})
+	if err != nil {
+		t.Fatalf("a merge with nothing to absorb must succeed, got %v", err)
+	}
+	if absorbingNothing != (models.SymptomMergeOutcome{}) {
+		t.Fatalf("a merge with nothing to absorb must change nothing, got %+v", absorbingNothing)
+	}
+
+	if got := readRepairSymptomIDs(t, database, day); got != "["+uintText(survivor)+"]" {
+		t.Fatalf("no day may be rewritten by a plan that absorbs nothing, got %s", got)
+	}
+}
+
+// TestAMergeNamesTheWriteThatFailedAndKeepsNothing covers the failures inside
+// the transaction, which are the ones that decide whether a half-done repair
+// can exist. Each case leaves the plan rolled back whole.
+func TestAMergeNamesTheWriteThatFailedAndKeepsNothing(t *testing.T) {
+	t.Run("the day logs cannot be read", func(t *testing.T) {
+		database := openRepairFixtureDatabase(t, "daylogs-unreadable.db")
+		owner := createDailyLogTestUser(t, database, "daylogs-unreadable@example.com")
+		survivor := insertRepairSymptom(t, database, owner, "Cramps")
+		absorbed := insertRepairSymptom(t, database, owner, "cramps")
+		if err := database.Exec(`DROP TABLE daily_logs`).Error; err != nil {
+			t.Fatalf("drop the day logs: %v", err)
+		}
+
+		_, err := NewSymptomDuplicateRepository(database).MergeDuplicateSymptoms(context.Background(), []models.SymptomMerge{{
+			UserID:   owner,
+			Survivor: models.SymptomType{ID: survivor, UserID: owner},
+			Absorbed: []models.SymptomType{{ID: absorbed, UserID: owner}},
+		}})
+		if err == nil || !strings.Contains(err.Error(), "load day logs for owner") {
+			t.Fatalf("expected the day-log read to be named, got %v", err)
+		}
+
+		var remaining int64
+		if err := database.Raw(`SELECT COUNT(*) FROM symptom_types WHERE user_id = ?`, owner).Scan(&remaining).Error; err != nil {
+			t.Fatalf("count symptoms after the failure: %v", err)
+		}
+		if remaining != 2 {
+			t.Fatalf("a failed merge must remove nothing, found %d rows instead of 2", remaining)
+		}
+	})
+
+	// A view answers a SELECT and refuses an UPDATE, which is the one shape
+	// where the read this rewrite depends on succeeds and its paired write does
+	// not.
+	t.Run("a day log cannot be rewritten", func(t *testing.T) {
+		database := openRepairFixtureDatabase(t, "daylog-unwritable.db")
+		owner := createDailyLogTestUser(t, database, "daylog-unwritable@example.com")
+		survivor := insertRepairSymptom(t, database, owner, "Cramps")
+		absorbed := insertRepairSymptom(t, database, owner, "cramps")
+		day := insertRepairDayLog(t, database, owner, "2026-03-09", "["+uintText(absorbed)+"]")
+
+		if err := database.Exec(`ALTER TABLE daily_logs RENAME TO daily_logs_stored`).Error; err != nil {
+			t.Fatalf("rename the day logs: %v", err)
+		}
+		if err := database.Exec(`CREATE VIEW daily_logs AS SELECT * FROM daily_logs_stored`).Error; err != nil {
+			t.Fatalf("put a read-only view in front of the day logs: %v", err)
+		}
+
+		_, err := NewSymptomDuplicateRepository(database).MergeDuplicateSymptoms(context.Background(), []models.SymptomMerge{{
+			UserID:   owner,
+			Survivor: models.SymptomType{ID: survivor, UserID: owner},
+			Absorbed: []models.SymptomType{{ID: absorbed, UserID: owner}},
+		}})
+		if err == nil || !strings.Contains(err.Error(), "rewrite symptom references of day log") {
+			t.Fatalf("expected the day-log write to be named, got %v", err)
+		}
+
+		// Two assertions, because each catches what the other cannot. The day —
+		// read through the table the view hides — proves no partial write
+		// landed. The symptom count proves the failure STOPPED the plan: swallow
+		// the rewrite error and the merge walks on into the removal, leaving a
+		// day that names a row no longer there, which is the one outcome this
+		// merge may never produce.
+		var stored struct {
+			SymptomIDs *string `gorm:"column:symptom_ids"`
+		}
+		if err := database.Raw(`SELECT symptom_ids FROM daily_logs_stored WHERE id = ?`, day).Scan(&stored).Error; err != nil {
+			t.Fatalf("read the day back: %v", err)
+		}
+		if stored.SymptomIDs == nil || *stored.SymptomIDs != "["+uintText(absorbed)+"]" {
+			t.Fatalf("a failed write must leave the day exactly as it was, got %v", stored.SymptomIDs)
+		}
+
+		var remaining int64
+		if err := database.Raw(`SELECT COUNT(*) FROM symptom_types WHERE user_id = ?`, owner).Scan(&remaining).Error; err != nil {
+			t.Fatalf("count symptoms after the failure: %v", err)
+		}
+		if remaining != 2 {
+			t.Fatalf("a failed rewrite must stop the plan before any removal, found %d rows instead of 2", remaining)
+		}
+	})
+
+	t.Run("the duplicate row cannot be removed", func(t *testing.T) {
+		database := openRepairFixtureDatabase(t, "delete-fails.db")
+		owner := createDailyLogTestUser(t, database, "delete-fails@example.com")
+		survivor := insertRepairSymptom(t, database, owner, "Cramps")
+		absorbed := insertRepairSymptom(t, database, owner, "cramps")
+		day := insertRepairDayLog(t, database, owner, "2026-03-10", "["+uintText(absorbed)+"]")
+		if err := database.Exec(`DROP TABLE symptom_types`).Error; err != nil {
+			t.Fatalf("drop the catalogue: %v", err)
+		}
+
+		_, err := NewSymptomDuplicateRepository(database).MergeDuplicateSymptoms(context.Background(), []models.SymptomMerge{{
+			UserID:   owner,
+			Survivor: models.SymptomType{ID: survivor, UserID: owner},
+			Absorbed: []models.SymptomType{{ID: absorbed, UserID: owner}},
+		}})
+		if err == nil || !strings.Contains(err.Error(), "remove duplicate symptom") {
+			t.Fatalf("expected the removal to be named, got %v", err)
+		}
+
+		// The rewrite ran before the removal failed, and the rollback is what
+		// puts the day back on the row that still exists.
+		if got := readRepairSymptomIDs(t, database, day); got != "["+uintText(absorbed)+"]" {
+			t.Fatalf("a failed merge must leave the day exactly as it was, got %s", got)
+		}
+	})
+}
+
+// TestADayThatStoresAnEmptySymptomListIsLeftAlone covers the legacy shape the
+// column can hold beside NULL: the empty string, which is not a JSON array and
+// carries no reference to move.
+func TestADayThatStoresAnEmptySymptomListIsLeftAlone(t *testing.T) {
+	database := openRepairFixtureDatabase(t, "empty-symptom-list.db")
+	owner := createDailyLogTestUser(t, database, "empty-list@example.com")
+	survivor := insertRepairSymptom(t, database, owner, "Cramps")
+	absorbed := insertRepairSymptom(t, database, owner, "cramps")
+	empty := insertRepairDayLog(t, database, owner, "2026-03-11", "")
+	// The anchor: a day the merge MUST rewrite, so the count below can tell an
+	// empty list that was skipped from a pass that reached no day at all.
+	named := insertRepairDayLog(t, database, owner, "2026-03-12", "["+uintText(absorbed)+"]")
+
+	outcome := mergeRepairGroups(t, database, models.SymptomMerge{
+		UserID:   owner,
+		Survivor: models.SymptomType{ID: survivor, UserID: owner},
+		Absorbed: []models.SymptomType{{ID: absorbed, UserID: owner}},
+	})
+	if outcome.DailyLogsRewritten != 1 {
+		t.Fatalf("the pass must reach the named day and skip the empty one, got %d", outcome.DailyLogsRewritten)
+	}
+	if got := readRepairSymptomIDs(t, database, named); got != "["+uintText(survivor)+"]" {
+		t.Fatalf("the named day must move onto the survivor, got %s", got)
+	}
+	if got := readRepairSymptomIDs(t, database, empty); got != "" {
+		t.Fatalf("an empty list must be left exactly as it was, got %q", got)
+	}
+}
+
 func mergeRepairGroups(t *testing.T, database *gorm.DB, merges ...models.SymptomMerge) models.SymptomMergeOutcome {
 	t.Helper()
 
