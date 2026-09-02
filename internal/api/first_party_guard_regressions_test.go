@@ -249,8 +249,9 @@ func TestRecoveryCodeRevealRefusesAForeignRequestWithoutSpendingTheMark(t *testi
 			cookies := joinCookieHeader(authCookieName+"="+authCookie.Value, cookiePair(revealCookie))
 
 			refused := recoveryCodePageWithHeaders(t, app, cookies, testCase.headers)
-			if refused.StatusCode == http.StatusOK {
-				t.Fatal("expected a foreign request to be refused the recovery-code page")
+			assertStatusCode(t, refused, http.StatusSeeOther)
+			if location := refused.Header.Get("Location"); location != "/dashboard" {
+				t.Fatalf("expected the refusal to take the page's own exit, got %q", location)
 			}
 			if body := mustReadBodyString(t, refused.Body); strings.Contains(body, "OVUM-") {
 				t.Fatal("a refused reveal must not carry the recovery code")
@@ -286,6 +287,29 @@ func recoveryCodePageWithHeaders(t *testing.T, app *fiber.App, cookies string, h
 	request.Header.Set("Cookie", cookies)
 	headers.applyTo(request)
 	return mustAppResponse(t, app, request)
+}
+
+// TestRegisterPageStaysReachableFromAnotherSite is the reason the recovery-code
+// rule sits on the claim and not on the route. /register is the anonymous signup
+// page, so an inbound link from a blog, a forum or a chat is an ordinary way to
+// arrive; mounting the guard on the route would refuse every one of them. That
+// decision is stated in a comment and in the invariants — this is what enforces
+// it, because the declared-set sweep would be edited in the same change that
+// broke it.
+func TestRegisterPageStaysReachableFromAnotherSite(t *testing.T) {
+	t.Parallel()
+
+	app, _ := newOnboardingTestApp(t)
+
+	request := httptest.NewRequest(http.MethodGet, "/register", nil)
+	request.Header.Set("Accept-Language", "en")
+	crossSiteNavigation.applyTo(request)
+	response := mustAppResponse(t, app, request)
+
+	assertStatusCode(t, response, http.StatusOK)
+	if body := mustReadBodyString(t, response.Body); !strings.Contains(body, "register-form") {
+		t.Fatal("expected a cross-site visitor to still be served the signup form")
+	}
 }
 
 // TestRefusedPickupRequestLeavesNoFlashWhenNothingWasPresented holds the other
