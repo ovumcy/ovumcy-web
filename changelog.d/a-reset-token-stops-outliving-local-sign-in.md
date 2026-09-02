@@ -18,7 +18,8 @@
   owner had not seen yet: a link that quietly finished her registration, or spent her one look at
   the subscribe URL. Both pages now check who started the request and answer anything but a
   first-party navigation the way they answer a stale one, leaving the value unspent for the owner's
-  own visit. A browser too old to say who started a request is served as before.
+  own visit. A first-party app fetching those pages the documented way still gets them, and a browser
+  too old to say who started a request is served as before.
 
 - **A recovery reset no longer remembers a device nobody chose.** Signing in remembers a browser
   for 30 days only when the sign-in form's *Remember me* box is ticked, but two paths that carry no
