@@ -1201,10 +1201,15 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 	}
 	// Dropped like the purge error above, and for the same reason: the wipe has
 	// committed, and reporting it as a failure would tell an owner their data
-	// is still there. Dropping it is safe because the fence has already failed
-	// closed by the time an error can reach here — Advance writes the file half
-	// FIRST, so a database half that did not follow leaves the two disagreeing
-	// and the next boot disarms. See advanceCalendarFeedFence.
+	// is still there. Dropping it costs no containment on either route an error
+	// actually arrives on. The file half was written and the database half was
+	// not, so the halves already disagree and the next boot disarms. Or neither
+	// was written, which means the fence file is unwritable — and an unwritable
+	// fence sends every later boot down Enforce's unanchored path, which
+	// disarms every armed feed on each start. (A failed token mint also reaches
+	// here with neither half written and a writable fence, which WOULD lose the
+	// record; it takes an OS-level entropy fault, and Advance marks it
+	// unreachable for the same reason.)
 	_ = repo.advanceCalendarFeedFence(ctx)
 	return nil
 }
@@ -1255,9 +1260,12 @@ func (repo *UserRepository) DeleteAccountAndRelatedData(ctx context.Context, use
 	// back with it. The error is dropped for the same reason the purge above
 	// drops its own — the erasure has committed, and an account that no longer
 	// exists must not be reported as one that failed to be deleted, least of
-	// all to an owner who can no longer sign in to retry. Dropping it does not
-	// weaken the fence: Advance writes the file half FIRST, so a database half
-	// that did not follow leaves the two disagreeing and the next boot disarms.
+	// all to an owner who can no longer sign in to retry. It costs no
+	// containment on either route an error actually arrives on: a written file
+	// half with no database half leaves the two disagreeing, and neither half
+	// written means the fence file is unwritable, which sends every later boot
+	// down Enforce's unanchored path. Both disarm. See ClearAllDataAndResetSettings
+	// for the third, unreachable route.
 	_ = repo.advanceCalendarFeedFence(ctx)
 	return nil
 }
