@@ -175,7 +175,7 @@
   "onboarding.error.period_length_range": "La durée des règles doit être comprise entre 1 et 14 jours.",
   "onboarding.error.incomplete": "Veuillez d'abord compléter les étapes précédentes de configuration.",
   "onboarding.error.generic": "Échec de la sauvegarde des données de configuration. Veuillez réessayer.",
-  "onboarding.error.age_group_removed": "L'intégration ne demande plus la tranche d'âge. Définissez-la dans les Paramètres.",
+  "onboarding.error.age_group_removed": "La configuration initiale ne demande plus la tranche d'âge. Définissez-la dans les Paramètres.",
 
   "settings.title": "Paramètres",
   "settings.subtitle": "Gérez les paramètres du cycle, la sécurité du compte et vos données.",
