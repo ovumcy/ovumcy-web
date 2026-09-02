@@ -229,13 +229,14 @@ test.describe('Theme mode', () => {
 
     // The two phases a reader looks for — the period itself and the ovulation
     // day — carry the 3:1 non-text floor against the card in both themes. The
-    // recessive pair (follicular, luteal) deliberately does not: the band is a
-    // redundant aria-hidden graphic whose every fact is stated in the status
-    // line, and levelling all four collapses them into one luminance where
-    // neighbouring phases stop being separable at all (docs: input.css, the
-    // calendar phase/state colours comment). The exception is on the two
-    // recessive phases specifically, not on skipping their measurement — both
-    // are asserted below, just against different floors.
+    // recessive pair (follicular, luteal) deliberately does not: the phase
+    // fill is a redundant graphic — the current phase it paints is already
+    // stated as visible text in the status line beside it — and levelling all
+    // four collapses them into one luminance where neighbouring phases stop
+    // being separable at all (docs: input.css, the calendar phase/state
+    // colours comment). The exception is on the two recessive phases
+    // specifically, not on skipping their measurement — both are asserted
+    // below, just against different floors.
     const exemptFromTheFloor = new Set(['follicular', 'luteal']);
 
     for (const phase of phases) {
