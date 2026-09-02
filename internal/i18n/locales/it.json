@@ -164,7 +164,7 @@
   "onboarding.error.period_length_range": "La durata del periodo deve essere tra 1 e 14 giorni.",
   "onboarding.error.incomplete": "Completa prima i passaggi precedenti della configurazione.",
   "onboarding.error.generic": "Impossibile salvare i dati di configurazione. Riprova.",
-  "onboarding.error.age_group_removed": "L'onboarding non chiede più la fascia di età. Impostala nelle Impostazioni.",
+  "onboarding.error.age_group_removed": "La configurazione iniziale non chiede più la fascia di età. Impostala nelle Impostazioni.",
   "settings.title": "Impostazioni",
   "settings.subtitle": "Gestisci parametri del ciclo, sicurezza account e dati.",
   "settings.cycle.title": "Parametri del ciclo",

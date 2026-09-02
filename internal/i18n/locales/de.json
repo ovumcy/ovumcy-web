@@ -164,7 +164,7 @@
   "onboarding.error.period_length_range": "Die Periodendauer muss zwischen 1 und 14 Tagen liegen.",
   "onboarding.error.incomplete": "Schließen Sie zuerst die vorherigen Einrichtungsschritte ab.",
   "onboarding.error.generic": "Die Einrichtungsdaten konnten nicht gespeichert werden. Bitte versuchen Sie es erneut.",
-  "onboarding.error.age_group_removed": "Das Onboarding fragt die Altersgruppe nicht mehr ab. Legen Sie sie in den Einstellungen fest.",
+  "onboarding.error.age_group_removed": "Die Einrichtung fragt die Altersgruppe nicht mehr ab. Legen Sie sie in den Einstellungen fest.",
   "settings.title": "Einstellungen",
   "settings.subtitle": "Verwalten Sie Zyklusparameter, Kontosicherheit und Daten.",
   "settings.cycle.title": "Zyklusparameter",
