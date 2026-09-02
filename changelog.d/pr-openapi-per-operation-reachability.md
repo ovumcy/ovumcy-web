@@ -1,7 +1,7 @@
 ### Fixed
 
 - **`docs/openapi.yaml` now declares every status each operation's own handler chain can answer
-  with.** Thirty-two declarations were missing across twenty-seven operations, all pre-existing;
+  with.** Thirty-two declarations were missing across twenty-eight operations, all pre-existing;
   none is a v2.0.0 breaking change, and no server behavior moved. The gap was structural: the
   existing contract test proves `declared ⊆ emittable` over the whole server at once, so a status
   emittable *somewhere* satisfied it even on an operation that never declared it.
