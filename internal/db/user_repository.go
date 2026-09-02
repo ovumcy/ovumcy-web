@@ -52,6 +52,14 @@ func NewUserRepository(database *gorm.DB) *UserRepository {
 //     so no later boot disarms on its account; the safety comes from the
 //     ordering itself, never from a boot-time backstop.
 //
+//     What it does not close is a backup taken INSIDE the window. The advance
+//     and the row write are separate transactions, so a consistent snapshot
+//     between them holds the new token beside a row that is still armed, and
+//     restoring that snapshot compares equal and revives the feed. The window
+//     is sub-millisecond and the runbook takes backups with the app stopped,
+//     which is why it is named rather than engineered away; the reverse order
+//     trades it for the strictly worse crash window described above.
+//
 //   - Everything else advances AFTER. There the feed clear is a side effect of
 //     a credential rotation, a clear-data wipe or an erasure, and advancing
 //     first would refuse the whole operation whenever the fence's own write
@@ -1191,7 +1199,14 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 	}); err != nil {
 		return err
 	}
-	return repo.advanceCalendarFeedFence(ctx)
+	// Dropped like the purge error above, and for the same reason: the wipe has
+	// committed, and reporting it as a failure would tell an owner their data
+	// is still there. Dropping it is safe because the fence has already failed
+	// closed by the time an error can reach here — Advance writes the file half
+	// FIRST, so a database half that did not follow leaves the two disagreeing
+	// and the next boot disarms. See advanceCalendarFeedFence.
+	_ = repo.advanceCalendarFeedFence(ctx)
+	return nil
 }
 
 func (repo *UserRepository) DeleteAccountAndRelatedData(ctx context.Context, userID uint) error {
@@ -1237,8 +1252,14 @@ func (repo *UserRepository) DeleteAccountAndRelatedData(ctx context.Context, use
 	_ = repo.database.WithContext(ctx).Where("expires_at <= ?", time.Now().UTC()).Delete(&models.OIDCLogoutState{}).Error
 	// The erased account's feed left with its row, which is a removal like any
 	// other: a restore that brings the account back brings its subscribe URL
-	// back with it.
-	return repo.advanceCalendarFeedFence(ctx)
+	// back with it. The error is dropped for the same reason the purge above
+	// drops its own — the erasure has committed, and an account that no longer
+	// exists must not be reported as one that failed to be deleted, least of
+	// all to an owner who can no longer sign in to retry. Dropping it does not
+	// weaken the fence: Advance writes the file half FIRST, so a database half
+	// that did not follow leaves the two disagreeing and the next boot disarms.
+	_ = repo.advanceCalendarFeedFence(ctx)
+	return nil
 }
 
 func (repo *UserRepository) CompleteOnboarding(ctx context.Context, userID uint, startDay time.Time, periodLength int, autoPeriodFill bool) error {
