@@ -158,11 +158,7 @@ components:
             error: "unauthorized"
             error_detail: { key: "unauthorized", category: "unauthorized", target: "global" }
     Forbidden:
-      description: |
-        The request is refused on grounds other than identity: the caller lacks
-        the required role (typically owner-only), CSRF validation failed, or the
-        deployment has the local-credential surface turned off (SSO-only), which
-        refuses sign-in, registration and password recovery alike.
+      description: Session is valid but the caller lacks the required role (typically owner-only) or CSRF validation failed.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ApiError' }
@@ -1546,7 +1542,13 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
         '403':
-          $ref: '#/components/responses/Forbidden'
+          description: Local password recovery is disabled on this deployment (SSO-only).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "local recovery unavailable"
+                error_detail: { key: "local recovery unavailable", category: "forbidden", target: "auth_form" }
         '429':
           $ref: '#/components/responses/RateLimited'
 
@@ -1582,7 +1584,16 @@ paths:
         '400':
           $ref: '#/components/responses/ValidationError'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          description: |
+            Local password recovery is disabled on this deployment (SSO-only).
+            A reset token minted by the OIDC flow for an account carrying
+            `must_change_password` survives this gate and can still be redeemed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "local recovery unavailable"
+                error_detail: { key: "local recovery unavailable", category: "forbidden", target: "auth_form" }
 
   # =========================================================================
   # onboarding
