@@ -119,15 +119,23 @@ func (fence *CalendarFeedFenceFile) Write(value string) error {
 	// has moved it away.
 	defer func() { _ = os.Remove(tempName) }()
 
+	// The three failure arms below refuse a file this call created moments
+	// earlier, in a directory os.CreateTemp had just proved writable: a volume
+	// that went away mid-write, or a disk that filled between two syscalls.
+	// Nothing this package exposes reaches them, and a fake that could would be
+	// testing the fake — so each arm's BODY is marked, leaving the calls
+	// themselves measured. The step that CAN fail on an operator's own mistake
+	// is the rename below, and that one is covered by a test.
 	if _, err := temp.WriteString(value + "\n"); err != nil {
-		_ = temp.Close()
+		_ = temp.Close() // codecov:ignore -- a write refused on a file this call just created
 		return fmt.Errorf("%s could not be written: %s: %w", calendarFeedFenceLabel, fence.path, err)
 	}
 	if err := temp.Sync(); err != nil {
-		_ = temp.Close()
+		_ = temp.Close() // codecov:ignore -- a sync refused on a file this call just created
 		return fmt.Errorf("%s could not be written: %s: %w", calendarFeedFenceLabel, fence.path, err)
 	}
 	if err := temp.Close(); err != nil {
+		// codecov:ignore -- a close refused on a file this call just created
 		return fmt.Errorf("%s could not be written: %s: %w", calendarFeedFenceLabel, fence.path, err)
 	}
 	if err := os.Rename(tempName, cleanPath); err != nil {

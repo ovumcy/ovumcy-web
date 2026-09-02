@@ -602,6 +602,38 @@ func (s *countingFenceUserStore) DisarmAllCalendarFeedTokens(_ context.Context) 
 	return count, nil
 }
 
+// TestCalendarFeedRestoreFenceEnforceFailsTheBootWhenTheMarkerCannotBeStored
+// pins the boot pass's DATABASE arm, the one failure class Enforce is supposed
+// to escalate rather than absorb. The file half has already been written when
+// this happens, so the halves now disagree and the next boot would disarm
+// anyway — but the boot must still fail loudly here, because a database that
+// cannot record a marker after migrations have run is not one this instance
+// should start serving from.
+func TestCalendarFeedRestoreFenceEnforceFailsTheBootWhenTheMarkerCannotBeStored(t *testing.T) {
+	refused := errors.New("app_state is unavailable")
+	appState := &stubFenceAppState{values: map[string]string{}, setErr: refused}
+	anchor := &stubFenceAnchor{}
+	users := &stubFenceUserStore{}
+	fence := NewCalendarFeedRestoreFence(appState, users, anchor)
+
+	outcome, err := fence.Enforce(context.Background())
+	if !errors.Is(err, refused) {
+		t.Fatalf("a refused app_state write must fail the boot, got %v", err)
+	}
+	if !outcome.FirstBoot {
+		t.Fatalf("the outcome must still name the pass it was in, got %+v", outcome)
+	}
+	// The file half went out before the database half was attempted, which is
+	// what leaves the two disagreeing rather than agreeing on a marker the file
+	// never received.
+	if anchor.written == "" {
+		t.Fatal("the file half must be written before the database half is attempted")
+	}
+	if users.callCount != 0 {
+		t.Fatalf("a first boot disarms nothing: an upgrade is not a restore, got %d disarm(s)", users.callCount)
+	}
+}
+
 func equalStrings(got, want []string) bool {
 	if len(got) != len(want) {
 		return false
