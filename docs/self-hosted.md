@@ -682,10 +682,29 @@ still be refused behind it. The fix is on the cookie side, not the proxy side.
 
 Registration and sign-in used to accept a full RFC 5322 form (`jane doe <jane@example.com>`) and store it verbatim; sign-in input is now normalized to the bare address only, so such stored rows would never match again. The first boot after upgrading repairs them automatically: each is rewritten to its bare parsed address, and the startup log reports `auth email repair: N stored email(s) rewritten to their bare address`.
 
-Two cases are left untouched, counted in the same log line, and cannot sign in until resolved:
+Two cases are left untouched, counted in the same log line, and cannot sign in until you repair them:
 
-- another account already answers to the same bare address (two accounts on one mailbox — previously possible because the duplicate check compared stored forms): the oldest account keeps the address; review the leftover with `ovumcy users list` (it shows the stored legacy form) and remove or re-home it deliberately — the repair never deletes anything;
+- another account already answers to the same bare address (two accounts on one mailbox — previously possible because the duplicate check compared stored forms): the oldest account keeps the address, and the later one is the leftover;
 - the stored value cannot be reduced to a plain address at all (for example a quoted local part).
+
+**Repair by id, never by address.** `ovumcy users list` prints the id beside the stored value, and the id is the only handle that reaches such a row: the stored string is a form sign-in normalization refuses outright, so no address-taking command accepts it, and its bare address resolves the *other* account — the one that kept the address. A `users delete` typed with that address in front of you would erase the wrong account's entire health record.
+
+```bash
+docker compose exec ovumcy /app/ovumcy users list
+docker compose exec ovumcy /app/ovumcy users set-email --id 7 jane.doe@example.com
+```
+
+`set-email` moves exactly that one account, and nothing else. The new address is validated by the same rule a sign-in input is normalized under (a bare address, no display name or angle brackets), it is refused if another account already answers to it, and it is written under a compare-and-set on the value `users list` showed — so a row that changed in between is reported instead of overwritten. The account's health record is untouched. Its active sessions are all signed out, because the address *is* the login identity, and the owner signs in with the new address and their existing password. Confirm the repair the same way you found it: `ovumcy users list` shows the new address, and the owner can sign in.
+
+Delete only an account that is genuinely surplus, and delete it by id too — the confirmation then quotes the exact stored address, id and role before anything is erased:
+
+```bash
+docker compose exec ovumcy /app/ovumcy users delete --id 7
+```
+
+That erasure is permanent and takes the account's whole health record with it; there is no undo short of restoring a backup.
+
+On an OIDC instance, an account is matched to the provider by its stored address only until its first sign-in links issuer and subject; after that the link resolves it. Re-homing an account that is already linked therefore keeps its OIDC login working. The old address becomes free — and with auto-provisioning enabled, a later sign-in under it creates a **new empty account** rather than reaching the re-homed one.
 
 ### The server exits during startup instead of coming up
 

@@ -22,10 +22,10 @@ func TestRunUsersCommandUsageErrors(t *testing.T) {
 		args []string
 		want string
 	}{
-		{name: "missing subcommand", args: nil, want: "usage: ovumcy users <list|delete|create>"},
-		{name: "unknown subcommand", args: []string{"export"}, want: "usage: ovumcy users <list|delete|create>"},
+		{name: "missing subcommand", args: nil, want: "usage: ovumcy users <list|delete|create|set-email>"},
+		{name: "unknown subcommand", args: []string{"export"}, want: "usage: ovumcy users <list|delete|create|set-email>"},
 		{name: "list with extra arg", args: []string{"list", "extra"}, want: "usage: ovumcy users list"},
-		{name: "delete without email", args: []string{"delete"}, want: "usage: ovumcy users delete <email> [--yes]"},
+		{name: "delete without a handle", args: []string{"delete"}, want: usersDeleteUsage},
 		{name: "create without email", args: []string{"create"}, want: "usage: ovumcy users create <email> [--show-recovery-code] [--skip-if-exists]"},
 		{name: "create with unknown flag", args: []string{"create", "owner@example.com", "--oops"}, want: "usage: ovumcy users create <email> [--show-recovery-code] [--skip-if-exists]"},
 	}
@@ -70,14 +70,24 @@ func TestParseUsersDeleteArgs(t *testing.T) {
 		name         string
 		args         []string
 		wantEmail    string
+		wantID       uint
 		wantSkip     bool
 		wantErrorMsg string
 	}{
 		{name: "email only", args: []string{"owner@example.com"}, wantEmail: "owner@example.com"},
 		{name: "email and yes", args: []string{"owner@example.com", "--yes"}, wantEmail: "owner@example.com", wantSkip: true},
 		{name: "yes before email", args: []string{"--yes", "owner@example.com"}, wantEmail: "owner@example.com", wantSkip: true},
-		{name: "missing email", args: []string{"--yes"}, wantErrorMsg: "usage: ovumcy users delete <email> [--yes]"},
-		{name: "multiple emails", args: []string{"one@example.com", "two@example.com"}, wantErrorMsg: "usage: ovumcy users delete <email> [--yes]"},
+		{name: "id form", args: []string{"--id", "7"}, wantID: 7},
+		{name: "id form with equals and yes", args: []string{"--id=7", "--yes"}, wantID: 7, wantSkip: true},
+		{name: "missing handle", args: []string{"--yes"}, wantErrorMsg: usersDeleteUsage},
+		{name: "multiple emails", args: []string{"one@example.com", "two@example.com"}, wantErrorMsg: usersDeleteUsage},
+		{name: "email and id together", args: []string{"owner@example.com", "--id", "7"}, wantErrorMsg: usersDeleteUsage},
+		{name: "two ids", args: []string{"--id", "7", "--id", "8"}, wantErrorMsg: usersDeleteUsage},
+		{name: "id without value", args: []string{"--id"}, wantErrorMsg: usersDeleteUsage},
+		{name: "unknown flag", args: []string{"owner@example.com", "--force"}, wantErrorMsg: usersDeleteUsage},
+		{name: "id zero", args: []string{"--id", "0"}, wantErrorMsg: `invalid account id "0" (see ovumcy users list)`},
+		{name: "id not a number", args: []string{"--id", "seven"}, wantErrorMsg: `invalid account id "seven" (see ovumcy users list)`},
+		{name: "id negative", args: []string{"--id", "-1"}, wantErrorMsg: `invalid account id "-1" (see ovumcy users list)`},
 	}
 
 	for _, testCase := range tests {
@@ -85,7 +95,7 @@ func TestParseUsersDeleteArgs(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			gotEmail, gotSkip, err := parseUsersDeleteArgs(testCase.args)
+			opts, err := parseUsersDeleteArgs(testCase.args)
 			if testCase.wantErrorMsg != "" {
 				if err == nil || err.Error() != testCase.wantErrorMsg {
 					t.Fatalf("expected error %q, got %v", testCase.wantErrorMsg, err)
@@ -95,8 +105,51 @@ func TestParseUsersDeleteArgs(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parseUsersDeleteArgs returned error: %v", err)
 			}
-			if gotEmail != testCase.wantEmail || gotSkip != testCase.wantSkip {
-				t.Fatalf("unexpected parsed args: email=%q skip=%t", gotEmail, gotSkip)
+			if opts.email != testCase.wantEmail || opts.userID != testCase.wantID || opts.skipConfirm != testCase.wantSkip {
+				t.Fatalf("unexpected parsed args: email=%q id=%d skip=%t", opts.email, opts.userID, opts.skipConfirm)
+			}
+		})
+	}
+}
+
+func TestParseUsersSetEmailArgs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		args         []string
+		wantID       uint
+		wantEmail    string
+		wantErrorMsg string
+	}{
+		{name: "id then email", args: []string{"--id", "7", "owner@example.com"}, wantID: 7, wantEmail: "owner@example.com"},
+		{name: "equals form", args: []string{"--id=7", "owner@example.com"}, wantID: 7, wantEmail: "owner@example.com"},
+		{name: "email then id", args: []string{"owner@example.com", "--id", "7"}, wantID: 7, wantEmail: "owner@example.com"},
+		{name: "missing id", args: []string{"owner@example.com"}, wantErrorMsg: usersSetEmailUsage},
+		{name: "missing email", args: []string{"--id", "7"}, wantErrorMsg: usersSetEmailUsage},
+		{name: "two emails", args: []string{"--id", "7", "a@example.com", "b@example.com"}, wantErrorMsg: usersSetEmailUsage},
+		{name: "two ids", args: []string{"--id", "7", "--id=8", "a@example.com"}, wantErrorMsg: usersSetEmailUsage},
+		{name: "unknown flag", args: []string{"--id", "7", "a@example.com", "--yes"}, wantErrorMsg: usersSetEmailUsage},
+		{name: "id not a number", args: []string{"--id", "x", "a@example.com"}, wantErrorMsg: `invalid account id "x" (see ovumcy users list)`},
+	}
+
+	for _, testCase := range tests {
+
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			opts, err := parseUsersSetEmailArgs(testCase.args)
+			if testCase.wantErrorMsg != "" {
+				if err == nil || err.Error() != testCase.wantErrorMsg {
+					t.Fatalf("expected error %q, got %v", testCase.wantErrorMsg, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseUsersSetEmailArgs returned error: %v", err)
+			}
+			if opts.userID != testCase.wantID || opts.email != testCase.wantEmail {
+				t.Fatalf("unexpected parsed args: id=%d email=%q", opts.userID, opts.email)
 			}
 		})
 	}

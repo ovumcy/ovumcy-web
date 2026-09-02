@@ -449,6 +449,8 @@ printf '%s' "$OWNER_PASSWORD" | go run ./cmd/ovumcy users create owner@example.c
 go run ./cmd/ovumcy users list
 go run ./cmd/ovumcy users delete owner@example.com
 go run ./cmd/ovumcy users delete owner@example.com --yes
+go run ./cmd/ovumcy users delete --id 7
+go run ./cmd/ovumcy users set-email --id 7 owner@example.com
 go run ./cmd/ovumcy reset-password owner@example.com
 go run ./cmd/ovumcy repair symptom-names
 ```
@@ -461,7 +463,8 @@ Notes:
   - *No recovery code is printed by default*, so it cannot leak into install logs. Pass `--show-recovery-code` to print it for an interactive operator, or sign in and regenerate one from Settings.
   - *No health data passes through provisioning.* Each owner completes onboarding — last period start, cycle defaults — on first sign-in.
 - `users list` prints a minimal account audit table: `id`, `email`, `role`, `display name`, onboarding state, and creation time.
-- `users delete <email>` removes the selected account together with related health data and prompts for an explicit `DELETE` confirmation unless `--yes` is provided.
+- `users delete <email>|--id <id>` removes the selected account together with related health data and prompts for an explicit `DELETE` confirmation — quoting the stored address, id and role — unless `--yes` is provided.
+- `users set-email --id <id> <email>` re-homes one account to a new address, addressed by the id `users list` prints. It is the repair for an account whose stored email predates strict sign-in normalization and can therefore no longer be signed in to or addressed by email at all; it validates the new address under the same rule sign-in uses, refuses one another account already answers to, leaves the health record untouched, and bumps `auth_session_version` because the address is the login identity. Runbook: [docs/self-hosted.md](docs/self-hosted.md#an-account-cannot-sign-in-after-upgrading-email-stored-in-a-legacy-form).
 - `reset-password <email>` prompts for a new password interactively, validates it against the password policy, writes its bcrypt hash to the account, and atomically bumps `auth_session_version` so every existing session is invalidated. Use this when an owner has lost both their password and their recovery code.
 - `notify` runs one webhook reminder pass — decides due period/ovulation reminders per owner and delivers them to each owner's configured webhook. It is meant to be scheduled (cron, systemd timer, a Docker one-shot, or Task Scheduler), not run continuously; an optional built-in daily scheduler (`REMINDER_SCHEDULER_ENABLED`) can run the same pass in-process instead. See [docs/notifications.md](docs/notifications.md) for all three reminder channels (in-app banner, webhook, calendar feed), scheduling recipes, and the idempotency/security contract.
 - `webhook show|set <email>` inspects or configures an owner's webhook notification settings (endpoint, enabled state, notify-period/notify-ovulation toggles) from the shell — the same settings the Settings-page form writes. See [docs/notifications.md](docs/notifications.md) for the full flag reference.

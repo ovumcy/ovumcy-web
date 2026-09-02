@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
@@ -92,5 +93,83 @@ func TestAuthEmailRenormalizerAgainstRealRepositories(t *testing.T) {
 	}
 	if !second.AlreadyDone {
 		t.Fatalf("second pass must report AlreadyDone, got %+v", second)
+	}
+}
+
+// TestSetUserEmailByIDAndRevokeSessionsRepairsALeftoverRow covers the operator
+// repair the pass above cannot perform: the row it left standing is re-homed by
+// id. Three properties, each on its own row state — the write bumps
+// auth_session_version (the address IS the login identity, unlike the pure
+// renormalization above, which must not bump); a stale from-address matches
+// zero rows instead of clobbering what stands there now; and the unique index,
+// not the caller's pre-check, is what refuses an address another account
+// already answers to.
+func TestSetUserEmailByIDAndRevokeSessionsRepairsALeftoverRow(t *testing.T) {
+	repo := openCalendarFeedRepoForTest(t)
+	ctx := context.Background()
+
+	winner := createUserForTimezoneTest(t, repo, "dup@example.com")
+	leftover := createUserForTimezoneTest(t, repo, "leftover-placeholder@example.com")
+
+	const stored = "second account <dup@example.com>"
+	if err := repo.database.Model(&models.User{}).Where("id = ?", leftover.ID).
+		Update("email", stored).Error; err != nil {
+		t.Fatalf("store legacy email: %v", err)
+	}
+	if err := repo.SaveCalendarFeedToken(ctx, leftover.ID, models.CalendarFeedTokenColumns{
+		Selector:     "SELECTOR16CHARSXX",
+		VerifierHash: "verifier-hash",
+		VerifierMAC:  "verifier-mac",
+	}); err != nil {
+		t.Fatalf("arm calendar feed: %v", err)
+	}
+	before := reloadUserForCalendarFeed(t, repo, leftover.ID)
+
+	// A stale from-address: the row no longer carries it, so nothing moves.
+	changed, err := repo.SetUserEmailByIDAndRevokeSessions(ctx, leftover.ID, "leftover-placeholder@example.com", "second@example.com")
+	if err != nil {
+		t.Fatalf("stale CAS: %v", err)
+	}
+	if changed {
+		t.Fatalf("a stale from-address must match zero rows")
+	}
+	if stale := reloadUserForCalendarFeed(t, repo, leftover.ID); stale.Email != stored || stale.AuthSessionVersion != before.AuthSessionVersion {
+		t.Fatalf("a refused CAS must change nothing: email=%q version=%d", stale.Email, stale.AuthSessionVersion)
+	}
+
+	// An address another account answers to is refused by the unique index.
+	if _, err := repo.SetUserEmailByIDAndRevokeSessions(ctx, leftover.ID, stored, "dup@example.com"); err == nil {
+		t.Fatalf("expected the unique index to refuse an address already in use")
+	} else {
+		var uniqueErr *UniqueConstraintError
+		if !errors.As(err, &uniqueErr) {
+			t.Fatalf("expected a UniqueConstraintError, got %T: %v", err, err)
+		}
+	}
+
+	changed, err = repo.SetUserEmailByIDAndRevokeSessions(ctx, leftover.ID, stored, "second@example.com")
+	if err != nil {
+		t.Fatalf("repair: %v", err)
+	}
+	if !changed {
+		t.Fatalf("expected the repair to move exactly one row")
+	}
+
+	after := reloadUserForCalendarFeed(t, repo, leftover.ID)
+	if after.Email != "second@example.com" {
+		t.Fatalf("expected the repaired address, got %q", after.Email)
+	}
+	if after.AuthSessionVersion != before.AuthSessionVersion+1 {
+		t.Fatalf("re-homing must revoke sessions: before=%d after=%d", before.AuthSessionVersion, after.AuthSessionVersion)
+	}
+	// The feed is a capability of the account, not of the address: a repair is
+	// not a compromise event, so it stays armed for the owner to rotate.
+	if after.CalendarFeedSelector != before.CalendarFeedSelector || after.CalendarFeedVerifierHash != before.CalendarFeedVerifierHash {
+		t.Fatalf("re-homing must leave the feed columns alone")
+	}
+
+	winnerRow := reloadUserForCalendarFeed(t, repo, winner.ID)
+	if winnerRow.Email != "dup@example.com" || winnerRow.AuthSessionVersion != 1 {
+		t.Fatalf("the other account must be untouched: email=%q version=%d", winnerRow.Email, winnerRow.AuthSessionVersion)
 	}
 }
