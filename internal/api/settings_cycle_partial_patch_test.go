@@ -144,6 +144,10 @@ func TestCycleSettingsFormSaveRefusesNonNumericLengths(t *testing.T) {
 			_ = response.Body.Close()
 			t.Fatalf("expected status 400 for %v, got %d", form, response.StatusCode)
 		}
+		if key := errorKeyFromEnvelope(t, response.Body); key != "invalid settings input" {
+			_ = response.Body.Close()
+			t.Fatalf("expected the settings refusal for %v, got error key %q", form, key)
+		}
 		_ = response.Body.Close()
 	}
 }
@@ -287,6 +291,10 @@ func TestCycleSettingsPatchRefusesABodyThatNamesNothing(t *testing.T) {
 			_ = response.Body.Close()
 			t.Fatalf("expected status 400 for %s, got %d", body, response.StatusCode)
 		}
+		if key := errorKeyFromEnvelope(t, response.Body); key != "invalid settings input" {
+			_ = response.Body.Close()
+			t.Fatalf("expected the settings refusal for %s, got error key %q", body, key)
+		}
 		_ = response.Body.Close()
 	}
 }
@@ -304,6 +312,9 @@ func TestCycleSettingsPatchRefusesAMalformedBody(t *testing.T) {
 
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected status 400 for a malformed body, got %d", response.StatusCode)
+	}
+	if key := errorKeyFromEnvelope(t, response.Body); key != "invalid settings input" {
+		t.Fatalf("expected the settings refusal, got error key %q", key)
 	}
 
 	persisted := models.User{}
