@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +27,8 @@ func TestRunUsersCommandUsageErrors(t *testing.T) {
 		{name: "unknown subcommand", args: []string{"export"}, want: "usage: ovumcy users <list|delete|create|set-email>"},
 		{name: "list with extra arg", args: []string{"list", "extra"}, want: "usage: ovumcy users list"},
 		{name: "delete without a handle", args: []string{"delete"}, want: usersDeleteUsage},
+		{name: "set-email without arguments", args: []string{"set-email"}, want: usersSetEmailUsage},
+		{name: "set-email without an address", args: []string{"set-email", "--id", "7"}, want: usersSetEmailUsage},
 		{name: "create without email", args: []string{"create"}, want: "usage: ovumcy users create <email> [--show-recovery-code] [--skip-if-exists]"},
 		{name: "create with unknown flag", args: []string{"create", "owner@example.com", "--oops"}, want: "usage: ovumcy users create <email> [--show-recovery-code] [--skip-if-exists]"},
 	}
@@ -78,6 +81,7 @@ func TestParseUsersDeleteArgs(t *testing.T) {
 		{name: "email and yes", args: []string{"owner@example.com", "--yes"}, wantEmail: "owner@example.com", wantSkip: true},
 		{name: "yes before email", args: []string{"--yes", "owner@example.com"}, wantEmail: "owner@example.com", wantSkip: true},
 		{name: "id form", args: []string{"--id", "7"}, wantID: 7},
+		{name: "blank argument between flags", args: []string{"", "--id", "7", ""}, wantID: 7},
 		{name: "id form with equals and yes", args: []string{"--id=7", "--yes"}, wantID: 7, wantSkip: true},
 		{name: "missing handle", args: []string{"--yes"}, wantErrorMsg: usersDeleteUsage},
 		{name: "multiple emails", args: []string{"one@example.com", "two@example.com"}, wantErrorMsg: usersDeleteUsage},
@@ -123,6 +127,7 @@ func TestParseUsersSetEmailArgs(t *testing.T) {
 		wantErrorMsg string
 	}{
 		{name: "id then email", args: []string{"--id", "7", "owner@example.com"}, wantID: 7, wantEmail: "owner@example.com"},
+		{name: "blank argument between flags", args: []string{"", "--id", "7", "", "owner@example.com"}, wantID: 7, wantEmail: "owner@example.com"},
 		{name: "equals form", args: []string{"--id=7", "owner@example.com"}, wantID: 7, wantEmail: "owner@example.com"},
 		{name: "email then id", args: []string{"owner@example.com", "--id", "7"}, wantID: 7, wantEmail: "owner@example.com"},
 		{name: "missing id", args: []string{"owner@example.com"}, wantErrorMsg: usersSetEmailUsage},
@@ -153,6 +158,84 @@ func TestParseUsersSetEmailArgs(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestMapUsersSetEmailError pins the operator-facing wording of every refusal
+// the repair can produce. Two of them the CLI's own parser makes unreachable —
+// an absent id and an empty address — and they are mapped anyway: the service
+// is the authority on its own preconditions, and a mapper that answers only
+// the errors today's parser lets through turns a later parser change into an
+// unreadable "set email: operator user ..." line.
+func TestMapUsersSetEmailError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "missing id", err: services.ErrOperatorUserIDRequired, want: "an account id is required (see ovumcy users list)"},
+		{name: "unknown id", err: services.ErrOperatorUserNotFound, want: "no account carries this id (see ovumcy users list)"},
+		{name: "empty email", err: services.ErrOperatorUserEmailRequired, want: "email is required"},
+		{name: "decorated email", err: services.ErrOperatorUserEmailInvalid, want: "invalid email address: pass the bare address, with no display name or angle brackets"},
+		{name: "address taken", err: services.ErrOperatorUserEmailExists, want: "another account already answers to this email address"},
+		{name: "row moved", err: services.ErrOperatorUserChangedUnderRepair, want: "this account's email changed while the repair ran — re-read ovumcy users list and retry"},
+		{name: "storage failure", err: errors.New("db down"), want: "set email: db down"},
+	}
+
+	for _, testCase := range tests {
+
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := mapUsersSetEmailError(testCase.err); got == nil || got.Error() != testCase.want {
+				t.Fatalf("expected %q, got %v", testCase.want, got)
+			}
+		})
+	}
+}
+
+// TestRunUsersSetEmailParsesItsOwnArgumentsAndDefaultsItsWriter covers the two
+// arms runUsersCommand hides: it validates the same arguments before opening
+// the database, and it always supplies a writer.
+func TestRunUsersSetEmailParsesItsOwnArgumentsAndDefaultsItsWriter(t *testing.T) {
+	t.Parallel()
+
+	// The parse runs before the service is touched, so a nil service here is
+	// an assertion in itself: reaching past it would panic.
+	if err := runUsersSetEmail(nil, []string{"--id", "7"}, &bytes.Buffer{}); err == nil || err.Error() != usersSetEmailUsage {
+		t.Fatalf("expected the usage error, got %v", err)
+	}
+
+	databasePath := createCLIUsersDatabase(t)
+	user := createCLIUsersUser(t, databasePath, "owner@example.com", "Owner", models.RoleOwner, true, time.Now().UTC())
+	service := operatorUserServiceForCLITest(t, databasePath)
+
+	// A nil writer means "the process's stdout", which is what the exported
+	// entry point passes; the write itself is proven by the row it moved.
+	if err := runUsersSetEmail(service, []string{"--id", strconv.FormatUint(uint64(user.ID), 10), "renamed@example.com"}, nil); err != nil {
+		t.Fatalf("runUsersSetEmail with a nil writer returned error: %v", err)
+	}
+	if got := loadCLIUsersRow(t, databasePath, user.ID).Email; got != "renamed@example.com" {
+		t.Fatalf("expected the repair to land, got %q", got)
+	}
+}
+
+func operatorUserServiceForCLITest(t *testing.T, databasePath string) *services.OperatorUserService {
+	t.Helper()
+
+	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	sqlDB, err := database.DB()
+	if err != nil {
+		t.Fatalf("open sql db: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	repositories := buildRepositories(database)
+	return services.NewOperatorUserService(repositories.Users, services.NewAuthService(repositories.Users))
 }
 
 func TestReadDeleteConfirmation(t *testing.T) {
