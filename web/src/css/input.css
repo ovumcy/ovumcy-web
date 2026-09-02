@@ -4482,14 +4482,18 @@
        Measured against the white card (light) with the ribbon's own fills:
        menstrual 3.39:1, ovulation 3.61:1 — the two phases a reader actually
        looks for clear the 3:1 non-text floor — while follicular 1.71:1 and
-       luteal 2.32:1 sit under it deliberately. The band is a REDUNDANT graphic:
-       it is aria-hidden and every fact it draws is stated in the status line
-       beside it, so 1.4.11 does not bind it, and forcing all four to one
-       contrast level flattens them into a single luminance where neighbouring
-       phases stop being separable at all (measured: adjacent pairs collapse
-       from ~2:1 to ~1.05:1). What the band needs instead is a lightness ladder,
-       which is what these four are: adjacent pairs stay ≥1.46:1 in light and
-       ≥1.96:1 in dark, hue separating them further. */
+       luteal 2.32:1 sit under it deliberately. The phase fill is a REDUNDANT
+       graphic: the current phase it paints is already stated as visible text
+       in the status line beside it, so 1.4.11 does not bind it (this is
+       independent of aria-hidden — the ribbon now carries a per-day
+       aria-label of its own, for the two per-day facts that have no textual
+       equivalent elsewhere; the phase colour was never that gap). Forcing
+       all four to one contrast level flattens them into a single luminance
+       where neighbouring phases stop being separable at all (measured:
+       adjacent pairs collapse from ~2:1 to ~1.05:1). What the band needs
+       instead is a lightness ladder, which is what these four are: adjacent
+       pairs stay ≥1.46:1 in light and ≥1.96:1 in dark, hue separating them
+       further. */
     --phase-menstrual: var(--cal-period);
     --phase-follicular: 229 192 150;
     --phase-ovulation: 172 127 36;
