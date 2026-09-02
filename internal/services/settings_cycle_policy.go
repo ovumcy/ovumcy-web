@@ -27,6 +27,79 @@ type CycleSettingsValidationInput struct {
 	LastPeriodStartSet bool
 }
 
+// CycleSettingsPatch is a cycle-settings body read member by member: a nil field
+// was not in the body at all, which is a different fact from a field carrying a
+// zero value. Only a transport that can express the difference builds one — an
+// HTML form cannot, since an unchecked box is simply not submitted and would
+// read as "leave it alone", so the form surface keeps sending a full snapshot.
+type CycleSettingsPatch struct {
+	CycleLength        *int
+	PeriodLength       *int
+	AutoPeriodFill     *bool
+	IrregularCycle     *bool
+	UnpredictableCycle *bool
+	AgeGroup           *string
+	UsageGoal          *string
+	// A nil LastPeriodStart leaves the stored anchor alone; a non-nil empty
+	// string clears it. The two are distinct answers and neither is the other's
+	// default.
+	LastPeriodStart *string
+}
+
+// ResolveCycleSettingsPatch answers what a partial cycle save means: every
+// member the body omitted keeps the value the account already holds, and only
+// what was actually sent can change. Absence used to mean the field's zero
+// value, so a caller saving the cycle lengths alone silently rewrote
+// `usage_goal` to `health` — turning an owner tracking to avoid pregnancy into
+// one tracking for general health, which reframes the fertile window across
+// every surface — and wiped `age_group` back to unknown the same way.
+//
+// It lives here rather than in the transport layer because what an absent field
+// means is a question about the account, not about HTTP: the resolution reads
+// the stored record.
+func (service *SettingsService) ResolveCycleSettingsPatch(current *models.User, patch CycleSettingsPatch) CycleSettingsValidationInput {
+	stored := models.User{}
+	if current != nil {
+		stored = *current
+	}
+
+	resolved := CycleSettingsValidationInput{
+		CycleLength:        stored.CycleLength,
+		PeriodLength:       stored.PeriodLength,
+		AutoPeriodFill:     stored.AutoPeriodFill,
+		IrregularCycle:     stored.IrregularCycle,
+		UnpredictableCycle: stored.UnpredictableCycle,
+		AgeGroup:           stored.AgeGroup,
+		UsageGoal:          stored.UsageGoal,
+	}
+	if patch.CycleLength != nil {
+		resolved.CycleLength = *patch.CycleLength
+	}
+	if patch.PeriodLength != nil {
+		resolved.PeriodLength = *patch.PeriodLength
+	}
+	if patch.AutoPeriodFill != nil {
+		resolved.AutoPeriodFill = *patch.AutoPeriodFill
+	}
+	if patch.IrregularCycle != nil {
+		resolved.IrregularCycle = *patch.IrregularCycle
+	}
+	if patch.UnpredictableCycle != nil {
+		resolved.UnpredictableCycle = *patch.UnpredictableCycle
+	}
+	if patch.AgeGroup != nil {
+		resolved.AgeGroup = *patch.AgeGroup
+	}
+	if patch.UsageGoal != nil {
+		resolved.UsageGoal = *patch.UsageGoal
+	}
+	if patch.LastPeriodStart != nil {
+		resolved.LastPeriodStartRaw = *patch.LastPeriodStart
+		resolved.LastPeriodStartSet = true
+	}
+	return resolved
+}
+
 func (service *SettingsService) ValidateCycleSettings(input CycleSettingsValidationInput, now time.Time, location *time.Location) (CycleSettingsUpdate, error) {
 	if !IsValidOnboardingCycleLength(input.CycleLength) {
 		return CycleSettingsUpdate{}, ErrSettingsCycleLengthOutOfRange

@@ -20,7 +20,7 @@ func (handler *Handler) UpdateCycleSettings(c fiber.Ctx) error {
 		return handler.updateUsageGoalOnly(c, user, usageGoal)
 	}
 
-	input, parseError := handler.parseCycleSettingsInput(c)
+	input, parseError := handler.parseCycleSettingsInput(c, user)
 	if parseError != "" {
 		return handler.failMutation(c, cycleSettingsMutation, settingsValidationErrorSpec(parseError))
 	}
@@ -52,7 +52,10 @@ func (handler *Handler) updateUsageGoalOnly(c fiber.Ctx, user *models.User, rawU
 	handler.logMutationSuccess(c, cycleSettingsMutation)
 
 	if acceptsJSON(c) {
-		return c.JSON(fiber.Map{"ok": true, "usage_goal": usageGoal})
+		// The stored goal is not echoed back: OkResponse declares
+		// `additionalProperties: false`, so an extra member here is a response a
+		// client validating against the published schema rejects.
+		return c.JSON(fiber.Map{"ok": true})
 	}
 	if isHTMX(c) {
 		// The mode reframes fertile-window copy, badges and summaries across the
