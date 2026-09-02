@@ -66,6 +66,42 @@ func TestMarkWebhookDeliveredStampsUnderTheClaimedEpochOnly(t *testing.T) {
 	}
 }
 
+// TestMarkWebhookDeliveredTouchesNoOtherOwnersRow is the isolation assertion the
+// predicate's SHAPE makes necessary. The write carries a disjunction — "NULL or
+// older than this stamp" — and it is scoped to one owner only while that
+// disjunction stays parenthesised against the id and epoch conjuncts. Spelled as
+// one flat condition it would read as "(this owner, this epoch, never delivered)
+// OR (anyone whose mark is older)", and stamping one owner would walk every
+// other owner's mark forward to a delivery they never received. Nothing else in
+// the suite would notice: a single-row fixture satisfies both spellings.
+func TestMarkWebhookDeliveredTouchesNoOtherOwnersRow(t *testing.T) {
+	repo := openWebhookRepoForTest(t)
+	ctx := context.Background()
+	bystander := createUserForTimezoneTest(t, repo, "wh-mark-bystander@example.com")
+	deliveredTo := createUserForTimezoneTest(t, repo, "wh-mark-delivered-to@example.com")
+
+	earlier := time.Date(2026, 4, 1, 9, 0, 0, 0, time.UTC)
+	later := time.Date(2026, 4, 10, 9, 0, 0, 0, time.UTC)
+
+	// The bystander carries an OLDER mark, which is what the second disjunct
+	// would match, and the delivered-to owner carries none, which is what the
+	// first one matches.
+	if err := repo.MarkWebhookDelivered(ctx, bystander.ID, earlier, reloadUserForWebhook(t, repo, bystander.ID).WebhookConfigVersion); err != nil {
+		t.Fatalf("MarkWebhookDelivered (bystander): %v", err)
+	}
+	if err := repo.MarkWebhookDelivered(ctx, deliveredTo.ID, later, reloadUserForWebhook(t, repo, deliveredTo.ID).WebhookConfigVersion); err != nil {
+		t.Fatalf("MarkWebhookDelivered (delivered-to): %v", err)
+	}
+
+	untouched := markedDeliveryOf(t, repo, bystander.ID)
+	if untouched == nil || !untouched.Equal(earlier) {
+		t.Fatalf("recording a delivery for owner %d moved owner %d's mark from %s to %v", deliveredTo.ID, bystander.ID, earlier, untouched)
+	}
+	if got := markedDeliveryOf(t, repo, deliveredTo.ID); got == nil || !got.Equal(later) {
+		t.Fatalf("expected owner %d's own mark at %s, got %v", deliveredTo.ID, later, got)
+	}
+}
+
 // TestMarkWebhookDeliveredNeverMovesTheStampBackwards pins monotonicity. A
 // delivery that took longer than the next one must not walk the mark back to
 // its own start, or the ledger would report an older delivery as the latest.
@@ -201,7 +237,6 @@ func TestClearAllDataClearsTheDeliveryMarkWithBothWatermarks(t *testing.T) {
 	user := createUserForTimezoneTest(t, repo, "wh-mark-clear-data@example.com")
 	ctx := context.Background()
 
-	epoch := reloadUserForWebhook(t, repo, user.ID).WebhookConfigVersion
 	anchor := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
 	if err := repo.SaveWebhookSettings(ctx, user.ID, models.WebhookSettingsColumns{
 		Enabled:          true,
@@ -212,7 +247,8 @@ func TestClearAllDataClearsTheDeliveryMarkWithBothWatermarks(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SaveWebhookSettings: %v", err)
 	}
-	epoch = reloadUserForWebhook(t, repo, user.ID).WebhookConfigVersion
+	// The save advanced the epoch, so the claims below must present the new one.
+	epoch := reloadUserForWebhook(t, repo, user.ID).WebhookConfigVersion
 	for _, reminderType := range []string{models.WebhookReminderTypePeriod, models.WebhookReminderTypeOvulation} {
 		claimed, err := repo.ClaimWebhookWatermark(ctx, user.ID, reminderType, anchor, nil, epoch)
 		if err != nil {
