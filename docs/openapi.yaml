@@ -438,7 +438,16 @@ components:
 
     ForgotPasswordRequest:
       type: object
-      required: [email, recovery_code, password]
+      required: [email]
+      description: >-
+        Two-step body on one endpoint. Step 1 sends `email` alone; the
+        response is `{"ok": true, "next_step": "recovery_code"}` and starts
+        nothing. Step 2 repeats `email` and adds `recovery_code` and
+        `password`, which is what actually calls `StartRecovery`. Neither of
+        the step-2 fields is schema-required, because an absent one does not
+        fail validation — it is read as an empty string and refused later, by
+        name, with the same uniform credential rejection a wrong value gets;
+        see each field's own description.
       properties:
         email:
           type: string
@@ -518,9 +527,8 @@ components:
           enum: [none, protected, unprotected]
           default: none
         bbt:
-          type: number
+          type: [number, "null"]
           format: float
-          nullable: true
           description: >-
             Basal body temperature in the unit selected per account (°C or °F).
             Omitted or null means not measured. On write, a null, an omitted
@@ -576,9 +584,8 @@ components:
           type: string
           enum: [none, protected, unprotected]
         bbt:
-          type: number
+          type: [number, "null"]
           format: float
-          nullable: true
           description: >-
             Always Celsius regardless of the account's display unit
             preference (write-side unit conversion happens on input; storage
@@ -651,9 +658,8 @@ components:
         color: { type: string }
         is_builtin: { type: boolean }
         archived_at:
-          type: string
+          type: [string, "null"]
           format: date-time
-          nullable: true
 
     StatsOverview:
       type: object
@@ -740,19 +746,16 @@ components:
           type: integer
           description: Days following ovulation; per-owner when inferable, else the 14-day default.
         last_period_start:
-          type: string
+          type: [string, "null"]
           format: date
-          nullable: true
           description: Recorded anchor, not a projection. Null only when no cycle start is known.
         next_period_start:
-          type: string
+          type: [string, "null"]
           format: date
-          nullable: true
           description: Projected. Null when `suppression.predictions` is true.
         ovulation_date:
-          type: string
+          type: [string, "null"]
           format: date
-          nullable: true
           description: Projected. Null when `suppression.fertility` is true.
         ovulation_exact:
           type: boolean
@@ -763,14 +766,12 @@ components:
           type: boolean
           description: No ovulation can be placed in the running cycle at all.
         fertility_window_start:
-          type: string
+          type: [string, "null"]
           format: date
-          nullable: true
           description: Projected. Null when `suppression.fertility` is true.
         fertility_window_end:
-          type: string
+          type: [string, "null"]
           format: date
-          nullable: true
           description: Projected. Null when `suppression.fertility` is true.
         pregnancy_paused:
           type: boolean
@@ -847,9 +848,8 @@ components:
           type: string
           enum: [none, protected, unprotected]
         bbt:
-          type: number
+          type: [number, "null"]
           format: float
-          nullable: true
           description: >-
             Emitted only when measured; absent otherwise. On import, absent,
             null, or a non-positive value (legacy 0 sentinel) all mean "not
@@ -1461,9 +1461,12 @@ paths:
         '303':
           description: Redirect to `/reset-password` with a sealed reset cookie.
         '400':
-          $ref: '#/components/responses/ValidationError'
-        '401':
-          description: Recovery code does not match the supplied email.
+          description: >-
+            Every step-2 rejection lands here with the same uniform body,
+            whichever of email/recovery_code/password was wrong or missing —
+            `mapPasswordRecoveryStartError` in `internal/api/error_mapping_auth.go`
+            has no arm that answers with 401: this endpoint proves nothing to
+            an unauthenticated caller by status code.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
@@ -1926,6 +1929,7 @@ paths:
               schema: { $ref: '#/components/schemas/OkResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/v1/users/current/profile:
     patch:
@@ -2220,6 +2224,7 @@ paths:
                 error: "oidc reauth required"
                 error_detail: { key: "oidc reauth required", category: "forbidden", target: "settings_form" }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/v1/users/current/password/step-up:
     post:
@@ -2388,6 +2393,7 @@ paths:
           description: Same as 200 for non-JSON clients.
         '401': { $ref: '#/components/responses/Unauthorized' }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/v1/users/current/data-wipe:
     post:
@@ -2413,3 +2419,4 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
