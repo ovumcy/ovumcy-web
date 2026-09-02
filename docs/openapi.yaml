@@ -579,7 +579,11 @@ components:
           type: number
           format: float
           nullable: true
-          description: Present only when measured; absent when not measured.
+          description: >-
+            Always Celsius regardless of the account's display unit
+            preference (write-side unit conversion happens on input; storage
+            and this response are canonical Celsius). Present only when
+            measured; absent when not measured.
         cervical_mucus:
           type: string
           enum: [none, dry, moist, creamy, eggwhite]

@@ -163,6 +163,18 @@ func TestParseDayPayloadFromFormWithFahrenheitPreference(t *testing.T) {
 	}
 }
 
+func TestParseDayPayloadFromJSONWithFahrenheitPreference(t *testing.T) {
+	t.Parallel()
+
+	request := httptest.NewRequest(http.MethodPost, "/day", strings.NewReader(`{"bbt":98.6}`))
+	request.Header.Set("Content-Type", fiber.MIMEApplicationJSON)
+
+	payload := parseDayPayloadForUser(t, request, &models.User{TemperatureUnit: services.TemperatureUnitFahrenheit})
+	if payload.BBT == nil || *payload.BBT != 37.00 {
+		t.Fatalf("expected converted BBT 37.00, got %v", payload.BBT)
+	}
+}
+
 func parseDayPayloadForTest(t *testing.T, request *http.Request) dayPayload {
 	t.Helper()
 	return parseDayPayloadForUser(t, request, &models.User{TemperatureUnit: services.DefaultTemperatureUnit})

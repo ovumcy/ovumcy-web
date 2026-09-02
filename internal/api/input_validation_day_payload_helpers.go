@@ -19,6 +19,7 @@ func parseDayPayload(c fiber.Ctx, user *models.User) (dayPayload, error) {
 		if err := c.Bind().Body(&payload); err != nil {
 			return payload, err
 		}
+		payload.BBT = services.ConvertDayBBTToStorage(payload.BBT, temperatureUnit)
 	} else {
 		var err error
 		payload.IsPeriod = services.ParseBoolLike(c.FormValue("is_period"))
