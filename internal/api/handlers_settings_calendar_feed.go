@@ -162,16 +162,17 @@ func (handler *Handler) ShowCalendarFeedRevealPage(c fiber.Ctx) error {
 	// is not single-use. The cost of refusing is one rotation from settings.
 	claimed, err := handler.calendarFeedSettings.ClaimFeedReveal(c.Context(), user.ID, time.Now())
 	if err != nil || !claimed {
-		// Audited as a DENIED egress, the way data.export audits its own refusals
-		// on the same action. An operator counting disclosures counts
-		// outcome="success"; one asking whether anybody tried to replay a spent
-		// reveal has nothing else to read, and silence here made the attempt
-		// indistinguishable from nobody visiting at all.
-		reason := "reveal_already_claimed"
+		// Audited on the same action data.export audits its own refusals on. An
+		// operator counting disclosures counts outcome="success"; one asking
+		// whether anybody tried to replay a spent reveal has nothing else to read,
+		// and silence here made the attempt indistinguishable from nobody visiting
+		// at all. The two arms take different outcomes on purpose — a claim that
+		// ERRORED is this side failing, not somebody being refused.
 		if err != nil {
-			reason = "reveal_claim_failed"
+			handler.logEgressFailure(c, calendarFeedRevealEgress, "reveal_claim_failed") // codecov:ignore -- the claim errors only on a storage fault, which AuthRequired's own user load reaches first
+		} else {
+			handler.logEgressDenied(c, calendarFeedRevealEgress, "reveal_already_claimed")
 		}
-		handler.logEgressDenied(c, calendarFeedRevealEgress, reason)
 		handler.clearCalendarFeedRevealCookie(c)
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
 	}
@@ -204,9 +205,9 @@ func (handler *Handler) ShowCalendarFeedRevealPage(c fiber.Ctx) error {
 // Presence is read off the raw cookie, which unseals nothing and decides nothing
 // else: whether the value is any good is still the handler's question, on the
 // owner's own visit.
-func (handler *Handler) refuseCalendarFeedRevealNavigation(c fiber.Ctx) error {
+func (handler *Handler) refuseCalendarFeedRevealNavigation(c fiber.Ctx, reason string) error {
 	if strings.TrimSpace(c.Cookies(calendarFeedRevealCookieName)) != "" {
-		handler.logEgressDenied(c, calendarFeedRevealEgress, "cross_origin_navigation")
+		handler.logEgressDenied(c, calendarFeedRevealEgress, reason)
 	}
 	return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
 }
