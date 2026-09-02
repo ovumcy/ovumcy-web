@@ -15,6 +15,39 @@ var (
 	ErrSettingsCycleStartDateInvalid    = errors.New("settings cycle start date invalid")
 )
 
+// CycleSettingsMembers records which cycle columns a save may write. A save
+// writes the members it names and no others, so a request that never mentioned
+// the tracking mode cannot revert a mode another request set between this one's
+// authentication and its write — the omitted-member promise held across two
+// overlapping requests, not only inside one.
+//
+// last_period_start is absent here on purpose: it carries its own
+// LastPeriodStartSet, which already distinguishes "not sent" from "sent empty",
+// a distinction the other members do not have.
+type CycleSettingsMembers struct {
+	CycleLength        bool
+	PeriodLength       bool
+	AutoPeriodFill     bool
+	IrregularCycle     bool
+	UnpredictableCycle bool
+	AgeGroup           bool
+	UsageGoal          bool
+}
+
+// AllCycleSettingsMembers marks every member present: the answer for a full
+// snapshot, which is what the settings form submits.
+func AllCycleSettingsMembers() CycleSettingsMembers {
+	return CycleSettingsMembers{
+		CycleLength:        true,
+		PeriodLength:       true,
+		AutoPeriodFill:     true,
+		IrregularCycle:     true,
+		UnpredictableCycle: true,
+		AgeGroup:           true,
+		UsageGoal:          true,
+	}
+}
+
 type CycleSettingsValidationInput struct {
 	CycleLength        int
 	PeriodLength       int
@@ -25,6 +58,9 @@ type CycleSettingsValidationInput struct {
 	UsageGoal          string
 	LastPeriodStartRaw string
 	LastPeriodStartSet bool
+	// Present names the members this input actually carries. The zero value
+	// writes nothing, so a caller building this by hand states its answer.
+	Present CycleSettingsMembers
 }
 
 // CycleSettingsPatch is a cycle-settings body read member by member: a nil field
@@ -76,24 +112,31 @@ func (service *SettingsService) ResolveCycleSettingsPatch(current *models.User, 
 	}
 	if patch.CycleLength != nil {
 		resolved.CycleLength = *patch.CycleLength
+		resolved.Present.CycleLength = true
 	}
 	if patch.PeriodLength != nil {
 		resolved.PeriodLength = *patch.PeriodLength
+		resolved.Present.PeriodLength = true
 	}
 	if patch.AutoPeriodFill != nil {
 		resolved.AutoPeriodFill = *patch.AutoPeriodFill
+		resolved.Present.AutoPeriodFill = true
 	}
 	if patch.IrregularCycle != nil {
 		resolved.IrregularCycle = *patch.IrregularCycle
+		resolved.Present.IrregularCycle = true
 	}
 	if patch.UnpredictableCycle != nil {
 		resolved.UnpredictableCycle = *patch.UnpredictableCycle
+		resolved.Present.UnpredictableCycle = true
 	}
 	if patch.AgeGroup != nil {
 		resolved.AgeGroup = *patch.AgeGroup
+		resolved.Present.AgeGroup = true
 	}
 	if patch.UsageGoal != nil {
 		resolved.UsageGoal = *patch.UsageGoal
+		resolved.Present.UsageGoal = true
 	}
 	if patch.LastPeriodStart != nil && strings.TrimSpace(*patch.LastPeriodStart) != "" {
 		resolved.LastPeriodStartRaw = *patch.LastPeriodStart
@@ -115,6 +158,7 @@ func (service *SettingsService) ValidateCycleSettings(input CycleSettingsValidat
 	}
 
 	update := CycleSettingsUpdate{
+		Present:            input.Present,
 		CycleLength:        input.CycleLength,
 		PeriodLength:       input.PeriodLength,
 		AutoPeriodFill:     input.AutoPeriodFill,

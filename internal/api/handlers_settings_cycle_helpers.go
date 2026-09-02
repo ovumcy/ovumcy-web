@@ -155,6 +155,9 @@ func (handler *Handler) parseCycleSettingsInput(c fiber.Ctx, user *models.User) 
 		UsageGoal:          input.UsageGoal,
 		LastPeriodStartRaw: input.LastPeriodStart,
 		LastPeriodStartSet: input.LastPeriodStartSet,
+		// A form body is a full snapshot by construction, so every member is
+		// present and every column is the form's to write.
+		Present: services.AllCycleSettingsMembers(),
 	}, time.Now().In(location), location)
 	if err != nil {
 		return services.CycleSettingsUpdate{}, cycleSettingsValidationErrorKey(err)
