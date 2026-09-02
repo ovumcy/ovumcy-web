@@ -364,6 +364,28 @@ func TestOperatorUserServiceSetEmailByIDWritesTheCanonicalAddress(t *testing.T) 
 	}
 }
 
+func TestOperatorUserServiceSetEmailByIDLeavesAnUnchangedAddressAlone(t *testing.T) {
+	t.Parallel()
+
+	repo := &stubOperatorUserRepo{
+		user:            models.User{ID: 9, Email: "owner@example.com", Role: models.RoleOwner},
+		found:           true,
+		setEmailChanged: true,
+	}
+	service := NewOperatorUserService(repo, nil)
+
+	before, after, err := service.SetEmailByID(context.Background(), 9, " Owner@Example.com ")
+	if err != nil {
+		t.Fatalf("SetEmailByID() unexpected error: %v", err)
+	}
+	if repo.setEmailUserID != 0 || repo.setEmailTo != "" {
+		t.Fatalf("a no-op repair must not reach the write: id=%d to=%q", repo.setEmailUserID, repo.setEmailTo)
+	}
+	if before.Email != "owner@example.com" || after.Email != before.Email {
+		t.Fatalf("unexpected summaries: before=%#v after=%#v", before, after)
+	}
+}
+
 func TestOperatorUserServiceSetEmailByIDErrors(t *testing.T) {
 	t.Parallel()
 

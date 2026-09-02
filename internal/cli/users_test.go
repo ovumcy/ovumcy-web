@@ -480,10 +480,14 @@ func TestRunUsersCommandSetEmailRestoresTheAccountsTheBootRepairLeavesLockedOut(
 	}
 
 	// The precondition the id form exists for: the stored string cannot be
-	// handed to an email-taking command at all.
+	// handed to an email-taking command at all. Deliberately without --yes: if
+	// the strict rule were ever relaxed, this string would resolve the WINNER
+	// account, and a skipped confirmation would erase it before the assertion
+	// below could fail. Empty stdin reads as "not DELETE", so the probe stays
+	// non-destructive under every outcome.
 	if err := runUsersCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
-		[]string{"delete", collidedStored, "--yes"},
+		[]string{"delete", collidedStored},
 		strings.NewReader(""),
 		&bytes.Buffer{},
 	); err == nil || !strings.Contains(err.Error(), "invalid") {
@@ -536,6 +540,51 @@ func TestRunUsersCommandSetEmailRestoresTheAccountsTheBootRepairLeavesLockedOut(
 		t.Fatalf("expected dup@example.com to still resolve id=%d, got id=%d (err=%v)", winner.ID, winnerUser.ID, err)
 	}
 	assertCLIUsersDataCounts(t, databasePath, winner.ID, 1, 1, 1)
+}
+
+// TestRunUsersCommandSetEmailReRunWithTheSameAddressRevokesNoSession pins the
+// idempotent retry: the second run of a line the operator already ran must not
+// write, because the write bumps auth_session_version and would sign the owner
+// out of the session they just signed into.
+func TestRunUsersCommandSetEmailReRunWithTheSameAddressRevokesNoSession(t *testing.T) {
+	t.Parallel()
+
+	databasePath := createCLIUsersDatabase(t)
+	user := createCLIUsersUser(t, databasePath, "collided-placeholder@example.com", "Collided", models.RoleOwner, true, time.Now().UTC())
+	setCLIUsersStoredEmail(t, databasePath, user.ID, "second account <dup@example.com>")
+	idArgument := strconv.FormatUint(uint64(user.ID), 10)
+
+	var first bytes.Buffer
+	if err := runUsersCommand(
+		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
+		[]string{"set-email", "--id", idArgument, "second@example.com"},
+		strings.NewReader(""),
+		&first,
+	); err != nil {
+		t.Fatalf("first set-email returned error: %v", err)
+	}
+	repaired := loadCLIUsersRow(t, databasePath, user.ID)
+	// Anchor: the first run really did revoke, so the second run's stability
+	// below is the early return and not a bump that never happens at all.
+	if repaired.AuthSessionVersion <= 1 {
+		t.Fatalf("expected the repair itself to revoke sessions, version=%d", repaired.AuthSessionVersion)
+	}
+
+	var second bytes.Buffer
+	if err := runUsersCommand(
+		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
+		[]string{"set-email", "--id", idArgument, "second@example.com"},
+		strings.NewReader(""),
+		&second,
+	); err != nil {
+		t.Fatalf("re-run returned error: %v", err)
+	}
+	if !strings.Contains(second.String(), "already answers to second@example.com") {
+		t.Fatalf("expected the re-run to report a no-op, got %q", second.String())
+	}
+	if again := loadCLIUsersRow(t, databasePath, user.ID); again.AuthSessionVersion != repaired.AuthSessionVersion {
+		t.Fatalf("a re-run must revoke nothing: before=%d after=%d", repaired.AuthSessionVersion, again.AuthSessionVersion)
+	}
 }
 
 func TestRunUsersCommandSetEmailRefusesAnAddressAnotherAccountAnswersTo(t *testing.T) {
