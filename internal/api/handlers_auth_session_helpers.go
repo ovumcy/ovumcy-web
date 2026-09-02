@@ -27,6 +27,10 @@ func parseForgotPasswordInput(c fiber.Ctx) (forgotPasswordInput, string) {
 		return input, ""
 	}
 
+	if jsonBodyOmitsPassword(c) {
+		return forgotPasswordInput{}, "recovery reset requires the account password"
+	}
+
 	code, err := services.NormalizeForgotPasswordCode(rawCode)
 	if err != nil {
 		return forgotPasswordInput{}, "invalid recovery code"
@@ -37,6 +41,33 @@ func parseForgotPasswordInput(c fiber.Ctx) (forgotPasswordInput, string) {
 	// failed credential, decided in internal/services alongside the recovery
 	// code so both operands share one failure spec and one timing profile.
 	return input, ""
+}
+
+// jsonBodyOmitsPassword reports whether a step-2 JSON body carries no `password`
+// member at all: the v1.9.2 shape of this endpoint, before the account password
+// joined the recovery code as the first factor. Such a caller is a client
+// written against the removed contract, not an owner failing a credential, so it
+// is told which field the major version added instead of being told its recovery
+// code is invalid — a refusal that would send an integrator hunting a phantom
+// bad code.
+//
+// The question is answerable on the JSON transport only: in form encoding an
+// omitted field and an empty one are the same wire fact, so the form path keeps
+// the uniform credential refusal. It is decided here, before any account is
+// looked up, so it reads no state and can reveal none — the enumeration-safe
+// collapse below still covers every submitted-but-wrong credential
+// (docs/SECURITY_INVARIANTS.md → Password recovery).
+func jsonBodyOmitsPassword(c fiber.Ctx) bool {
+	if !hasJSONBody(c) {
+		return false
+	}
+	probe := struct {
+		Password *string `json:"password"`
+	}{}
+	if err := c.Bind().Body(&probe); err != nil {
+		return false
+	}
+	return probe.Password == nil
 }
 
 func parseResetPasswordInput(c fiber.Ctx) (resetPasswordInput, string) {
