@@ -933,6 +933,19 @@ components:
 
     CycleSettings:
       type: object
+      description: |
+        A partial update, as the verb says: a member this body does not carry
+        keeps the value the account already holds, and only what is actually
+        sent can change. A member carrying a zero value (`false`, `""`) is
+        present and is written — absence and a zero value are different answers.
+        Until v2.0.0 an absent member was read as its zero value, so a save of
+        the two lengths alone rewrote `usage_goal` to `health` and `age_group`
+        to unknown.
+
+        The bundled settings form is not affected and is not described by this
+        schema: it submits every control it owns on every save, and an unchecked
+        box submits nothing at all, so a form body carries no absence to honour
+        and is read as the full snapshot it is.
       properties:
         cycle_length:
           type: integer
@@ -965,13 +978,12 @@ components:
           type: string
           enum: [health, avoid_pregnancy, trying_to_conceive]
           description: >-
-            A body carrying `usage_goal` and neither `cycle_length` nor
-            `period_length` is a goal-only update: it writes that one column and
-            leaves every other cycle field untouched (this is what the dashboard
-            quick switch sends). Any other body is a full cycle save and must
-            carry both lengths. The goal is only ever changed by an explicit
-            owner action — nothing logged on a day, including a positive
-            pregnancy test, rewrites it.
+            A body carrying `usage_goal` and no other member at all is the
+            dashboard quick switch: it writes that one column directly. Any
+            other body takes the ordinary partial path above, which reaches the
+            same result for the members it carries. The goal is only ever
+            changed by an explicit owner action — nothing logged on a day,
+            including a positive pregnancy test, rewrites it.
         last_period_start:
           type: string
           format: date
@@ -2127,6 +2139,12 @@ paths:
     patch:
       tags: [settings]
       summary: Update cycle settings (owner only).
+      description: >-
+        Partial: the request body carries the members to change, and every
+        member it omits keeps its stored value. `CycleSettings` states what a
+        present member and an absent one each mean. The success body is
+        `OkResponse` and carries nothing else — including on the goal-only
+        quick switch, which echoed the stored goal back until v2.0.0.
       requestBody:
         required: true
         content:

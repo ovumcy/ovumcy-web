@@ -255,8 +255,19 @@ func TestSettingsCycleGoalOnlyPatchAnswersEveryCaller(t *testing.T) {
 	if err := json.Unmarshal([]byte(mustReadBodyString(t, jsonResponse.Body)), &payload); err != nil {
 		t.Fatalf("decode goal-only JSON response: %v", err)
 	}
-	if payload["usage_goal"] != models.UsageGoalTrying {
-		t.Fatalf("expected the stored goal echoed back, got %v", payload["usage_goal"])
+	// The stored goal is deliberately NOT echoed: `OkResponse` declares
+	// `additionalProperties: false`. That the save happened is asserted against
+	// the database below, and the response shape against the schema in
+	// TestUsageGoalOnlySaveAnswersTheDeclaredOkShape.
+	if _, echoed := payload["usage_goal"]; echoed {
+		t.Fatalf("the goal-only save echoed a member the OkResponse schema forbids: %v", payload)
+	}
+	afterJSON := models.User{}
+	if err := database.Select("usage_goal").First(&afterJSON, user.ID).Error; err != nil {
+		t.Fatalf("load persisted user: %v", err)
+	}
+	if afterJSON.UsageGoal != models.UsageGoalTrying {
+		t.Fatalf("expected the JSON caller's goal %q to be stored, got %q", models.UsageGoalTrying, afterJSON.UsageGoal)
 	}
 
 	formRequest := httptest.NewRequest(http.MethodPatch, "/api/v1/users/current/cycle", strings.NewReader(url.Values{
