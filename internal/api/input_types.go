@@ -60,18 +60,6 @@ type changePasswordInput struct {
 	ConfirmPassword string `json:"confirm_password" form:"confirm_password"`
 }
 
-type cycleSettingsInput struct {
-	CycleLength        int    `json:"cycle_length" form:"cycle_length"`
-	PeriodLength       int    `json:"period_length" form:"period_length"`
-	AutoPeriodFill     bool   `json:"auto_period_fill" form:"auto_period_fill"`
-	IrregularCycle     bool   `json:"irregular_cycle" form:"irregular_cycle"`
-	UnpredictableCycle bool   `json:"unpredictable_cycle" form:"unpredictable_cycle"`
-	AgeGroup           string `json:"age_group" form:"age_group"`
-	UsageGoal          string `json:"usage_goal" form:"usage_goal"`
-	LastPeriodStart    string `json:"last_period_start" form:"last_period_start"`
-	LastPeriodStartSet bool   `json:"-" form:"-"`
-}
-
 type profileSettingsInput struct {
 	DisplayName string `json:"display_name" form:"display_name"`
 }

@@ -106,7 +106,6 @@ func cycleSettingsPatchFromJSON(c fiber.Ctx) (services.CycleSettingsPatch, bool)
 }
 
 func (handler *Handler) parseCycleSettingsInput(c fiber.Ctx, user *models.User) (services.CycleSettingsUpdate, string) {
-	input := cycleSettingsInput{}
 	location := handler.requestLocation(c)
 
 	if hasJSONBody(c) {
@@ -141,7 +140,7 @@ func (handler *Handler) parseCycleSettingsInput(c fiber.Ctx, user *models.User) 
 	if err != nil {
 		return services.CycleSettingsUpdate{}, "invalid settings input"
 	}
-	input = cycleSettingsInput{
+	update, err := handler.settingsService.ValidateCycleSettings(services.CycleSettingsValidationInput{
 		CycleLength:        cycleLength,
 		PeriodLength:       periodLength,
 		AutoPeriodFill:     services.ParseBoolLike(c.FormValue("auto_period_fill")),
@@ -149,20 +148,8 @@ func (handler *Handler) parseCycleSettingsInput(c fiber.Ctx, user *models.User) 
 		UnpredictableCycle: services.ParseBoolLike(c.FormValue("unpredictable_cycle")),
 		AgeGroup:           strings.TrimSpace(c.FormValue("age_group")),
 		UsageGoal:          strings.TrimSpace(c.FormValue("usage_goal")),
-		LastPeriodStart:    strings.TrimSpace(c.FormValue("last_period_start")),
+		LastPeriodStartRaw: strings.TrimSpace(c.FormValue("last_period_start")),
 		LastPeriodStartSet: c.Request().PostArgs().Has("last_period_start"),
-	}
-
-	update, err := handler.settingsService.ValidateCycleSettings(services.CycleSettingsValidationInput{
-		CycleLength:        input.CycleLength,
-		PeriodLength:       input.PeriodLength,
-		AutoPeriodFill:     input.AutoPeriodFill,
-		IrregularCycle:     input.IrregularCycle,
-		UnpredictableCycle: input.UnpredictableCycle,
-		AgeGroup:           input.AgeGroup,
-		UsageGoal:          input.UsageGoal,
-		LastPeriodStartRaw: input.LastPeriodStart,
-		LastPeriodStartSet: input.LastPeriodStartSet,
 		// A form body is a full snapshot by construction, so every member is
 		// present and every column is the form's to write.
 		Present: services.AllCycleSettingsMembers(),
