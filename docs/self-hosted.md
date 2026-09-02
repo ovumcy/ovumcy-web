@@ -586,7 +586,7 @@ One caveat if you ever move a SQLite instance to Postgres. The index folds names
 
 For the Postgres stacks, run the same commands from the example stack's directory; `docker compose run` starts the database container the app depends on.
 
-If you run the binary outside compose, the command is the same with the same `DB_DRIVER`/`DB_PATH` (or `DATABASE_URL`) environment the server uses. It needs no `SECRET_KEY` and does not touch the calendar-feed fence.
+If you run the binary outside compose, the command is the same with the same `DB_DRIVER`/`DB_PATH` (or `DATABASE_URL`) environment the server uses. It needs no `SECRET_KEY` and does not touch the calendar-feed fence. Get the path wrong and it says so, naming the database it actually opened — worth knowing because SQLite does not refuse a path that is not there, it creates an empty database at it.
 
 ## Troubleshooting Baseline
 

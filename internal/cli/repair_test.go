@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -215,6 +216,60 @@ func TestRepairInspectionNamesWhatEachRowIsBeforeTheOperatorConsents(t *testing.
 		if !strings.Contains(report, fragment) {
 			t.Fatalf("the report must name %q, got:\n%s", fragment, report)
 		}
+	}
+}
+
+// TestRepairNamesAWrongDatabaseRatherThanTheMissingTable covers the mistake
+// only this command can make.
+//
+// It is the one entry point that opens a database without applying migrations,
+// so it cannot tell a schema older than the binary — what it exists for — from
+// a database that is not this application's at all. On SQLite the second is
+// silent: a path that is not there is created empty rather than refused, so a
+// mistyped DB_PATH arrives looking like a real instance and the catalogue query
+// answers with the engine's `no such table`, over a dump of the SQL, naming the
+// very table the operator was told to repair.
+func TestRepairNamesAWrongDatabaseRatherThanTheMissingTable(t *testing.T) {
+	t.Parallel()
+
+	mistyped := filepath.Join(t.TempDir(), "ovumcy-typo.db")
+	err := runRepairCommand(db.Config{Driver: db.DriverSQLite, SQLitePath: mistyped}, []string{"symptom-names"}, nil)
+	if err == nil {
+		t.Fatal("expected a database with no symptom catalogue to be refused")
+	}
+	if !errors.Is(err, db.ErrSymptomCatalogueAbsent) {
+		t.Fatalf("expected the absent-catalogue sentinel, got %v", err)
+	}
+
+	message := err.Error()
+	if !strings.Contains(message, mistyped) {
+		t.Fatalf("the refusal must name the path actually reached, got: %s", message)
+	}
+	if !strings.Contains(message, "DB_PATH") {
+		t.Fatalf("the refusal must say which setting to correct, got: %s", message)
+	}
+	for _, leak := range []string{"no such table", "SELECT", "SQL logic error"} {
+		if strings.Contains(message, leak) {
+			t.Fatalf("the refusal must not read as a schema fault, %q is in: %s", leak, message)
+		}
+	}
+}
+
+// TestRepairNamesThePostgresTargetWithoutItsCredentials is the same refusal on
+// the other engine, where naming the target verbatim would print a password.
+func TestRepairNamesThePostgresTargetWithoutItsCredentials(t *testing.T) {
+	t.Parallel()
+
+	const secret = "hunter2-do-not-print"
+	described := describeRepairTarget(db.Config{
+		Driver:      db.DriverPostgres,
+		PostgresURL: "postgres://ovumcy:" + secret + "@db.example:5432/ovumcy",
+	})
+	if strings.Contains(described, secret) || strings.Contains(described, "postgres://") {
+		t.Fatalf("a connection string must never reach the output, got: %s", described)
+	}
+	if !strings.Contains(described, "DATABASE_URL") {
+		t.Fatalf("the operator still needs to know which setting to correct, got: %s", described)
 	}
 }
 
