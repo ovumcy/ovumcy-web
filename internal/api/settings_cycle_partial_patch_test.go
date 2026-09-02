@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -93,7 +94,7 @@ func TestCycleSettingsPatchWritesEveryMemberItDoesCarry(t *testing.T) {
 	}
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
-	response := patchCycleSettingsJSON(t, app, authCookie, `{"cycle_length":28,"period_length":5,"usage_goal":"trying_to_conceive","age_group":"","irregular_cycle":false,"auto_period_fill":false}`)
+	response := patchCycleSettingsJSON(t, app, authCookie, `{"cycle_length":28,"period_length":5,"usage_goal":"trying_to_conceive","age_group":"","irregular_cycle":false,"auto_period_fill":false,"unpredictable_cycle":true}`)
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
@@ -111,6 +112,57 @@ func TestCycleSettingsPatchWritesEveryMemberItDoesCarry(t *testing.T) {
 	}
 	if persisted.IrregularCycle || persisted.AutoPeriodFill {
 		t.Fatalf("expected both flags explicitly cleared, got irregular=%v auto_fill=%v", persisted.IrregularCycle, persisted.AutoPeriodFill)
+	}
+	if !persisted.UnpredictableCycle {
+		t.Fatal("expected the submitted unpredictable-cycle flag to be written")
+	}
+}
+
+// TestCycleSettingsFormSaveRefusesNonNumericLengths covers the form transport's
+// own two refusals: it parses the lengths itself rather than binding them, so a
+// non-numeric value has to be answered there and not carried into validation as
+// a zero.
+func TestCycleSettingsFormSaveRefusesNonNumericLengths(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "cycle-form-nonnumeric@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	for _, form := range []url.Values{
+		{"cycle_length": {"twenty-eight"}, "period_length": {"5"}},
+		{"cycle_length": {"28"}, "period_length": {"five"}},
+	} {
+		request := httptest.NewRequest(http.MethodPatch, "/api/v1/users/current/cycle", strings.NewReader(form.Encode()))
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		request.Header.Set("Accept", "application/json")
+		request.Header.Set("Cookie", authCookie)
+
+		response, err := app.Test(request, testConfigNoTimeout)
+		if err != nil {
+			t.Fatalf("cycle settings request failed: %v", err)
+		}
+		if response.StatusCode != http.StatusBadRequest {
+			_ = response.Body.Close()
+			t.Fatalf("expected status 400 for %v, got %d", form, response.StatusCode)
+		}
+		_ = response.Body.Close()
+	}
+}
+
+// TestCycleSettingsValidationErrorKeyNamesEveryMappedFailure pins the mapper
+// including its default arm, which no request can reach: every sentinel the
+// policy declares gets its own key, and anything else falls back to the generic
+// refusal rather than leaking the error's own text.
+func TestCycleSettingsValidationErrorKeyNamesEveryMappedFailure(t *testing.T) {
+	for err, want := range map[error]string{
+		services.ErrSettingsCycleLengthOutOfRange:          "cycle length must be between 15 and 90",
+		services.ErrSettingsPeriodLengthOutOfRange:         "period length must be between 1 and 14",
+		services.ErrSettingsPeriodLengthIncompatible:       "period length is incompatible with cycle length",
+		services.ErrSettingsCycleStartDateInvalid:          "invalid cycle start date",
+		errors.New("an error the policy does not declare"): "invalid settings input",
+	} {
+		if got := cycleSettingsValidationErrorKey(err); got != want {
+			t.Fatalf("expected %q for %v, got %q", want, err, got)
+		}
 	}
 }
 
@@ -217,6 +269,49 @@ func TestCycleSettingsFormSaveStaysAFullSnapshot(t *testing.T) {
 	}
 	if persisted.IrregularCycle || persisted.AutoPeriodFill {
 		t.Fatalf("an unchecked box did not clear its flag: irregular=%v auto_fill=%v", persisted.IrregularCycle, persisted.AutoPeriodFill)
+	}
+}
+
+// TestCycleSettingsPatchRefusesABodyThatNamesNothing covers the empty answer.
+// Before the save became partial an empty body was refused as an out-of-range
+// cycle_length; accepting it now would answer 200 and write a mutation-log entry
+// for a cycle-settings change that did not happen.
+func TestCycleSettingsPatchRefusesABodyThatNamesNothing(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "cycle-patch-empty@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	for _, body := range []string{`{}`, `{"unrelated":1}`} {
+		response := patchCycleSettingsJSON(t, app, authCookie, body)
+		if response.StatusCode != http.StatusBadRequest {
+			_ = response.Body.Close()
+			t.Fatalf("expected status 400 for %s, got %d", body, response.StatusCode)
+		}
+		_ = response.Body.Close()
+	}
+}
+
+// TestCycleSettingsPatchRefusesAMalformedBody pins the other refusal the member
+// probe can produce: a body that does not decode at all is a request problem,
+// not a goal-only save, and must not fall through to either path.
+func TestCycleSettingsPatchRefusesAMalformedBody(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "cycle-patch-malformed@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	response := patchCycleSettingsJSON(t, app, authCookie, `{"usage_goal":`)
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected status 400 for a malformed body, got %d", response.StatusCode)
+	}
+
+	persisted := models.User{}
+	if err := database.First(&persisted, user.ID).Error; err != nil {
+		t.Fatalf("load persisted user: %v", err)
+	}
+	if persisted.UsageGoal != models.UsageGoalHealth {
+		t.Fatalf("a malformed body changed the stored goal to %q", persisted.UsageGoal)
 	}
 }
 

@@ -204,13 +204,31 @@ func (service *SettingsService) ApplyCycleSettings(user *models.User, update Cyc
 		return
 	}
 
-	user.CycleLength = update.CycleLength
-	user.PeriodLength = update.PeriodLength
-	user.AutoPeriodFill = update.AutoPeriodFill
-	user.IrregularCycle = update.IrregularCycle
-	user.UnpredictableCycle = update.UnpredictableCycle
-	user.AgeGroup = NormalizeAgeGroup(update.AgeGroup)
-	user.UsageGoal = NormalizeUsageGoal(update.UsageGoal)
+	// Applied member for member, exactly as SaveCycleSettings writes them: the
+	// in-request user has to end up carrying what the row carries. Normalizing a
+	// member this save did not write would render it as changed in the response
+	// while the stored value stayed as it was.
+	if update.Present.CycleLength {
+		user.CycleLength = update.CycleLength
+	}
+	if update.Present.PeriodLength {
+		user.PeriodLength = update.PeriodLength
+	}
+	if update.Present.AutoPeriodFill {
+		user.AutoPeriodFill = update.AutoPeriodFill
+	}
+	if update.Present.IrregularCycle {
+		user.IrregularCycle = update.IrregularCycle
+	}
+	if update.Present.UnpredictableCycle {
+		user.UnpredictableCycle = update.UnpredictableCycle
+	}
+	if update.Present.AgeGroup {
+		user.AgeGroup = NormalizeAgeGroup(update.AgeGroup)
+	}
+	if update.Present.UsageGoal {
+		user.UsageGoal = NormalizeUsageGoal(update.UsageGoal)
+	}
 
 	if !update.LastPeriodStartSet {
 		return

@@ -75,6 +75,27 @@ func TestSaveCycleSettingsNamingNothingReachesNoRepository(t *testing.T) {
 	}
 }
 
+// TestResolveCycleSettingsPatchWithoutAStoredRecordNamesOnlyWhatItCarries
+// covers the operand the handler always supplies and a future caller might not:
+// with no stored record to resolve against, the members the body carries still
+// win and the rest stay unnamed rather than being invented from a zero user.
+func TestResolveCycleSettingsPatchWithoutAStoredRecordNamesOnlyWhatItCarries(t *testing.T) {
+	service := NewSettingsService(nil)
+	goal := models.UsageGoalTrying
+
+	resolved := service.ResolveCycleSettingsPatch(nil, CycleSettingsPatch{UsageGoal: &goal})
+
+	if resolved.UsageGoal != models.UsageGoalTrying {
+		t.Fatalf("expected the carried goal, got %q", resolved.UsageGoal)
+	}
+	if resolved.Present != (CycleSettingsMembers{UsageGoal: true}) {
+		t.Fatalf("expected only the goal named, got %+v", resolved.Present)
+	}
+	if resolved.LastPeriodStartSet {
+		t.Fatal("expected the anchor to stay unnamed")
+	}
+}
+
 func assertUpdatedColumns(t *testing.T, updates map[string]any, want []string) {
 	t.Helper()
 

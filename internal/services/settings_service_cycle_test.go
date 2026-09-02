@@ -274,6 +274,7 @@ func TestApplyCycleSettings(t *testing.T) {
 	}
 
 	update := CycleSettingsUpdate{
+		Present:            AllCycleSettingsMembers(),
 		CycleLength:        28,
 		PeriodLength:       5,
 		AutoPeriodFill:     true,
@@ -295,6 +296,7 @@ func TestApplyCycleSettingsUpdatesOwnerPreferences(t *testing.T) {
 	user := &models.User{}
 
 	service.ApplyCycleSettings(user, CycleSettingsUpdate{
+		Present:            AllCycleSettingsMembers(),
 		CycleLength:        31,
 		PeriodLength:       6,
 		AutoPeriodFill:     false,
