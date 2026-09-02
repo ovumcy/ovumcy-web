@@ -1440,6 +1440,8 @@ paths:
       responses:
         '303':
           description: Redirect to `/reset-password` with a sealed reset cookie.
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
           description: Recovery code does not match the supplied email.
           content:
