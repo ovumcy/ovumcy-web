@@ -5,8 +5,10 @@
   session, and from there switch two-factor authentication off — so a single captured secret was a
   full account takeover, on every release that has ever shipped TOTP. The recovery code is now what
   it was always meant to be: a stand-in for the **second** factor, never for the password. The
-  recovery form asks for both, and a submission with a wrong or missing password is refused exactly
+  recovery form asks for both, and a submission with a wrong or empty password is refused exactly
   like a wrong recovery code — same answer, same rate-limit cost, no account existence revealed.
+  (A programmatic caller that omits the field entirely is answered differently, by name; see the
+  API entry under Changed.)
 - **The cost, stated plainly:** if you have forgotten your password and hold only a recovery code,
   you can no longer recover the account yourself. Your fallback is the operator CLI,
   `ovumcy reset-password <email>`, which needs shell or container access to the instance. The path
