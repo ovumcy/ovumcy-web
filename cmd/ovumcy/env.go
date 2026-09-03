@@ -25,7 +25,7 @@ func getEnvInt(key string, fallback int) int {
 
 	parsed, err := strconv.Atoi(value)
 	if err != nil || parsed < 1 {
-		log.Printf("invalid %s=%q, using fallback %d", key, value, fallback)
+		log.Printf("invalid %s=%q, using fallback %d", key, value, fallback) // #nosec G706 -- key is a compile-time literal and value is os.Getenv(key), read once at boot (main.go's mustLoadRuntimeConfig) from the operator's own deployment env; same operator-managed-startup-configuration boundary as the G304 exception on internal/security/local_file.go, never reachable from a request.
 		return fallback
 	}
 	return parsed
@@ -43,7 +43,7 @@ func getEnvIntInRange(key string, fallback, minValue, maxValue int) int {
 
 	parsed, err := strconv.Atoi(value)
 	if err != nil || parsed < minValue || parsed > maxValue {
-		log.Printf("invalid %s=%q, using fallback %d", key, value, fallback)
+		log.Printf("invalid %s=%q, using fallback %d", key, value, fallback) // #nosec G706 -- same operator-managed-startup-configuration boundary as getEnvInt above: value is read once at boot from the operator's own env, never from a request.
 		return fallback
 	}
 	return parsed
@@ -57,7 +57,7 @@ func getEnvDuration(key string, fallback time.Duration) time.Duration {
 
 	parsed, err := time.ParseDuration(value)
 	if err != nil || parsed < time.Second {
-		log.Printf("invalid %s=%q, using fallback %s", key, value, fallback)
+		log.Printf("invalid %s=%q, using fallback %s", key, value, fallback) // #nosec G706 -- same operator-managed-startup-configuration boundary as getEnvInt above: value is read once at boot from the operator's own env, never from a request.
 		return fallback
 	}
 	return parsed
@@ -85,7 +85,7 @@ func getEnvBool(key string, fallback bool) bool {
 
 	parsed, ok := parseBoolEnvValue(value)
 	if !ok {
-		log.Printf("invalid %s=%q, using fallback %t", key, value, fallback)
+		log.Printf("invalid %s=%q, using fallback %t", key, value, fallback) // #nosec G706 -- same operator-managed-startup-configuration boundary as getEnvInt above: value is read once at boot from the operator's own env, never from a request.
 		return fallback
 	}
 	return parsed

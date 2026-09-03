@@ -233,7 +233,7 @@ var runDockerCommandWithError = func(args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), dockerTimeoutFor(args...))
 	defer cancel()
 
-	command := exec.CommandContext(ctx, "docker", args...)
+	command := exec.CommandContext(ctx, "docker", args...) // #nosec G204 -- test-only infrastructure (this file is imported solely by _test.go callers, never by cmd/ovumcy); the binary is the fixed literal "docker" and every args element is either a compile-time literal or a containerID this same package parsed out of a prior "docker run"'s own output, never external or user-supplied input.
 	output, err := command.CombinedOutput()
 	if ctx.Err() != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		return "", fmt.Errorf("docker %s timed out", strings.Join(args, " "))

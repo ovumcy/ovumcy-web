@@ -1,6 +1,6 @@
 module github.com/ovumcy/ovumcy-web
 
-go 1.26.6
+go 1.27.0
 
 require (
 	github.com/AdamKorcz/go-118-fuzz-build v0.0.0-20250520111509-a70c2aa677fa
