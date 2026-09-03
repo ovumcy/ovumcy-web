@@ -65,7 +65,7 @@ func (handler *Handler) UpdateWebhookSettings(c fiber.Ctx) error {
 	// alone would swap the whole section -- states, controls and payload lists --
 	// out of the page. Rebuilding from a read after the write is also what stops
 	// the freshly saved endpoint being described by the state it had before.
-	return handler.respondEgressMutation(c, user, status)
+	return handler.respondEgressMutationHTML(c, user, status)
 }
 
 func parseWebhookSettingsInput(c fiber.Ctx) (webhookSettingsInput, error) {

@@ -56,6 +56,13 @@ func (handler *Handler) respondEgressMutation(c fiber.Ctx, user *models.User, st
 	if acceptsJSON(c) {
 		return c.JSON(fiber.Map{"ok": true, "status": status})
 	}
+	return handler.respondEgressMutationHTML(c, user, status)
+}
+
+// respondEgressMutationHTML is the browser half on its own, for the one caller
+// that answers JSON with more than {ok, status} and would otherwise carry a
+// second, unreachable JSON branch below its own.
+func (handler *Handler) respondEgressMutationHTML(c fiber.Ctx, user *models.User, status string) error {
 	if isHTMX(c) {
 		data, err := handler.buildSettingsEgressBlockData(c, user, status)
 		if err != nil {

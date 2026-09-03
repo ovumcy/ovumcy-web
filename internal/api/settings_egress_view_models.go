@@ -16,6 +16,12 @@ import (
 // or, once registered, put the catalogue's reachability behind a second
 // declaration that can drift from this switch. A literal per state keeps the
 // sweep able to see every key without knowing anything about this file.
+//
+// Every switch below is total over its enumeration, and
+// TestEgressLedgerViewModelNamesAKeyForEveryState walks those enumerations to
+// prove it. Each therefore ends in an unreachable empty return, kept so a state
+// added without a case renders a blank line rather than failing the request, and
+// marked once here instead of arguing the same point at three call sites.
 
 // settingsEgressPathView is one path's rendered row. The timestamp is carried as
 // two separate strings — a machine-readable attribute value and a display string
@@ -110,14 +116,15 @@ func egressTimestampStrings(language string, location *time.Location, value *tim
 	if value == nil {
 		return "", ""
 	}
-	// codecov:ignore:start -- unreachable: both call sites resolve the request
-	// location before calling. Kept because time.Time.In(nil) panics, and a
-	// rendered date one day out is a smaller failure than a 500 on the settings
-	// page. Pinned by TestEgressLedgerTimestampsFollowTheRequestLocation.
+	// Both call sites resolve the request location first, so this is a fail-safe
+	// rather than a path: time.Time.In(nil) panics, and a date one day out is a
+	// smaller failure than a 500 on the settings page. It is covered rather than
+	// exempted, because an exemption citing a test that does not exercise it is
+	// the same false claim as a Regression naming a test that does not hold the
+	// rule.
 	if location == nil {
 		location = time.UTC
 	}
-	// codecov:ignore:end
 	stamp := value.In(location)
 	return stamp.Format(time.RFC3339), services.LocalizedDateDisplay(language, stamp)
 }
@@ -141,10 +148,7 @@ func egressSectionStateMessageKey(state services.EgressSectionState) string {
 	case services.EgressSectionNoPathEnabled:
 		return "settings.egress.state.section.no_path_enabled"
 	}
-	// codecov:ignore:start -- unreachable: the switch is total over the
-	// enumeration, and TestEgressLedgerViewModelNamesAKeyForEveryState walks that
-	// enumeration to prove it. Kept so a state added without a case renders an
-	// empty line rather than failing the request.
+	// codecov:ignore:start -- unreachable, see "Every switch below is total".
 	return ""
 	// codecov:ignore:end
 }
@@ -167,10 +171,7 @@ func egressWebhookStateMessageKey(state services.EgressWebhookState) string {
 	case services.EgressWebhookArmed:
 		return "settings.egress.state.webhook.armed"
 	}
-	// codecov:ignore:start -- unreachable: the switch is total over the
-	// enumeration, and TestEgressLedgerViewModelNamesAKeyForEveryState walks that
-	// enumeration to prove it. Kept so a state added without a case renders an
-	// empty line rather than failing the request.
+	// codecov:ignore:start -- unreachable, see "Every switch below is total".
 	return ""
 	// codecov:ignore:end
 }
@@ -189,10 +190,7 @@ func egressFeedStateMessageKey(state services.EgressFeedState) string {
 	case services.EgressFeedIssuedCurrentKey:
 		return "settings.egress.state.feed.issued_current_key"
 	}
-	// codecov:ignore:start -- unreachable: the switch is total over the
-	// enumeration, and TestEgressLedgerViewModelNamesAKeyForEveryState walks that
-	// enumeration to prove it. Kept so a state added without a case renders an
-	// empty line rather than failing the request.
+	// codecov:ignore:start -- unreachable, see "Every switch below is total".
 	return ""
 	// codecov:ignore:end
 }

@@ -1668,14 +1668,24 @@
     if (target.classList.contains("save-status")) {
       return target;
     }
-    // Only an element that DECLARES itself a toast surface may have its island
-    // resolved from inside it. A bare descendant search would return whichever
-    // .save-status came first in document order, and the settings page carries
-    // several - so a webhook error could be rendered into the symptoms card.
-    if (!target.hasAttribute || !target.hasAttribute("data-success-toast")) {
+    // Otherwise the island belongs to the nearest element that DECLARES itself a
+    // toast surface — the element itself when it is one, else the closest such
+    // ancestor. Both directions are needed: a card that replaces itself is the
+    // swap target on success, while an error carries whichever element htmx
+    // resolved for the request, which can be inside the card. Walking ancestors
+    // rather than searching the document is what keeps a webhook error out of
+    // the symptoms card: the settings page carries several islands and a bare
+    // descendant search would return whichever came first.
+    var surface =
+      target.hasAttribute && target.hasAttribute("data-success-toast")
+        ? target
+        : target.closest
+          ? target.closest("[data-success-toast]")
+          : null;
+    if (!surface || !surface.querySelector) {
       return null;
     }
-    return target.querySelector ? target.querySelector(".save-status") : null;
+    return surface.querySelector(".save-status");
   }
 
   function renderErrorStatus(target, text) {
