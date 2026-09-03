@@ -95,6 +95,15 @@ type proxySettings struct {
 // maxSecretKeyFileBytes caps the SECRET_KEY_FILE read (see resolveSecretKey).
 const maxSecretKeyFileBytes int64 = 8 << 10
 
+// maxDatabaseURLFileBytes caps the DATABASE_URL_FILE read (see
+// resolveDatabaseConfig). A Postgres DSN with a long password and several
+// query parameters comfortably fits well under this.
+const maxDatabaseURLFileBytes int64 = 8 << 10
+
+// maxOIDCClientSecretFileBytes caps the OIDC_CLIENT_SECRET_FILE read (see
+// resolveOIDCConfig).
+const maxOIDCClientSecretFileBytes int64 = 8 << 10
+
 // codecov:ignore:start -- main() composition-root wiring: fatal-exits on an
 // invalid runtime config at boot. loadRuntimeConfig (the resolution logic) is
 // unit-tested directly; the log.Fatal path cannot run under `go test`.
@@ -208,11 +217,16 @@ func resolveRegistrationMode() (services.RegistrationMode, error) {
 }
 
 func resolveOIDCConfig(cookieSecure bool, registrationMode services.RegistrationMode) (security.OIDCConfig, error) {
+	clientSecret, err := resolveSecretFromEnvOrFile("OIDC_CLIENT_SECRET", "OIDC_CLIENT_SECRET_FILE", maxOIDCClientSecretFileBytes)
+	if err != nil {
+		return security.OIDCConfig{}, err
+	}
+
 	config := security.OIDCConfig{
 		Enabled:                     getEnvBool("OIDC_ENABLED", false),
 		IssuerURL:                   getEnv("OIDC_ISSUER_URL", ""),
 		ClientID:                    getEnv("OIDC_CLIENT_ID", ""),
-		ClientSecret:                getEnv("OIDC_CLIENT_SECRET", ""),
+		ClientSecret:                clientSecret,
 		RedirectURL:                 getEnv("OIDC_REDIRECT_URL", ""),
 		CAFile:                      getEnv("OIDC_CA_FILE", ""),
 		AutoProvision:               getEnvBool("OIDC_AUTO_PROVISION", false),
@@ -301,10 +315,14 @@ func validateTrustedProxies(entries []string) error {
 
 func resolveDatabaseConfig() (db.Config, error) {
 	driver := db.Driver(strings.ToLower(strings.TrimSpace(getEnv("DB_DRIVER", string(db.DriverSQLite)))))
+	databaseURL, err := resolveSecretFromEnvOrFile("DATABASE_URL", "DATABASE_URL_FILE", maxDatabaseURLFileBytes)
+	if err != nil {
+		return db.Config{}, err
+	}
 	config := db.Config{
 		Driver:      driver,
 		SQLitePath:  getEnv("DB_PATH", filepath.Join("data", "ovumcy.db")),
-		PostgresURL: strings.TrimSpace(os.Getenv("DATABASE_URL")),
+		PostgresURL: databaseURL,
 	}
 	if err := config.Validate(); err != nil {
 		return db.Config{}, err
@@ -322,16 +340,9 @@ func mustLoadLocation(name string) *time.Location {
 }
 
 func resolveSecretKey() (string, error) {
-	secret := strings.TrimSpace(os.Getenv("SECRET_KEY"))
-	if secret == "" {
-		keyFilePath := strings.TrimSpace(os.Getenv("SECRET_KEY_FILE"))
-		if keyFilePath != "" {
-			content, err := readSecretKeyFile(keyFilePath)
-			if err != nil {
-				return "", fmt.Errorf("failed to read SECRET_KEY_FILE: %w", err)
-			}
-			secret = strings.TrimSpace(content)
-		}
+	secret, err := resolveSecretFromEnvOrFile("SECRET_KEY", "SECRET_KEY_FILE", maxSecretKeyFileBytes)
+	if err != nil {
+		return "", err
 	}
 
 	if secret == "" {
@@ -349,12 +360,38 @@ func resolveSecretKey() (string, error) {
 	return secret, nil
 }
 
-func readSecretKeyFile(path string) (string, error) {
-	content, err := security.ReadBoundedRegularFile(path, "SECRET_KEY_FILE", maxSecretKeyFileBytes)
-	if err != nil {
-		return "", err
+// resolveSecretFromEnvOrFile resolves one sensitive configuration value that
+// may be supplied either directly via envVar or, for Docker Swarm/Compose
+// secrets on the shell-free runtime image (distroless: no `sh -c 'export
+// X=$(cat …)'` workaround is possible), via fileEnvVar naming a local file to
+// read it from — generalizing the SECRET_KEY/SECRET_KEY_FILE pattern so every
+// sensitive value resolves the same way instead of drifting per variable.
+//
+// envVar wins silently when both are set, matching SECRET_KEY's existing,
+// tested precedence over SECRET_KEY_FILE — one behavior, reused rather than
+// re-decided per variable. The file is read through
+// security.ReadBoundedRegularFile, which rejects directories/special files
+// and caps the read at maxBytes; its content is trimmed the same way a plain
+// env value already is, so a trailing newline from `echo secret > file` never
+// leaks into the resolved value. A file that cannot be read aborts with an
+// error naming fileEnvVar. The resolved value itself is never included in any
+// error or log line — only the variable name and whether it resolved.
+func resolveSecretFromEnvOrFile(envVar, fileEnvVar string, maxBytes int64) (string, error) {
+	value := strings.TrimSpace(os.Getenv(envVar))
+	if value != "" {
+		return value, nil
 	}
-	return string(content), nil
+
+	filePath := strings.TrimSpace(os.Getenv(fileEnvVar))
+	if filePath == "" {
+		return "", nil
+	}
+
+	content, err := security.ReadBoundedRegularFile(filePath, fileEnvVar, maxBytes)
+	if err != nil {
+		return "", fmt.Errorf("failed to read %s: %w", fileEnvVar, err)
+	}
+	return strings.TrimSpace(string(content)), nil
 }
 
 func resolvePort() (string, error) {
