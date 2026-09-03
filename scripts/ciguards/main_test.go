@@ -50,7 +50,10 @@ func repoRoot(t *testing.T) string {
 // allWorkflowFiles lists every workflow under .github/workflows, module-root
 // relative with forward slashes — the shape workflowfile.Read expects. A
 // directory listing rather than a literal list, so a workflow added later is
-// swept in without this file needing an edit.
+// swept in without this file needing an edit. GitHub Actions loads `.yml` and
+// `.yaml` identically, so both extensions are accepted — a filter on one
+// spelling alone would make a workflow written with the other invisible to
+// every guard below that relies on this list.
 func allWorkflowFiles(t *testing.T) []string {
 	t.Helper()
 
@@ -62,7 +65,10 @@ func allWorkflowFiles(t *testing.T) []string {
 
 	var files []string
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yml") {
+		if entry.IsDir() {
+			continue
+		}
+		if !strings.HasSuffix(entry.Name(), ".yml") && !strings.HasSuffix(entry.Name(), ".yaml") {
 			continue
 		}
 		files = append(files, ".github/workflows/"+entry.Name())
@@ -153,21 +159,24 @@ func NoIgnoreUnfixedAmongVulnScans(lines []string) error {
 }
 
 func TestNoIgnoreUnfixedAmongTheThreeVulnGatingTrivyScans(t *testing.T) {
+	// Every workflow is swept, not just the two REL-7 happened to touch —
+	// otherwise a vulnerability-gating scan added to a third workflow is
+	// never even opened, and neither half of this test would notice: this
+	// loop wouldn't read it, and a count fixed at 3 would still see exactly
+	// 3 among the files it DID read.
 	var lines []string
-	for _, workflow := range []string{
-		".github/workflows/security.yml",
-		".github/workflows/docker-image.yml",
-	} {
+	for _, workflow := range allWorkflowFiles(t) {
 		lines = append(lines, vulnScanLines(t, workflow)...)
 	}
 
-	// REL-7 touched exactly three vulnerability-gating Trivy invocations
-	// (trivy-fs and trivy-image in security.yml; the pre-publish re-scan in
-	// docker-image.yml). A count that has moved means a scan site was added
-	// or removed and deserves a human decision about --ignore-unfixed, not a
-	// guard that silently widens or narrows around it.
-	if len(lines) != 3 {
-		t.Fatalf("found %d vulnerability-gating Trivy scan(s), want exactly the three REL-7 covers: %v", len(lines), lines)
+	// A hardcoded expected count has the same staleness problem the REL-10
+	// guard below refuses: it goes stale the day a workflow adds another
+	// vulnerability-gating scan. The property this guards is "no such scan
+	// carries --ignore-unfixed", checked over every one this sweep finds;
+	// this assertion only guards against the sweep itself going vacuous
+	// (finding zero scans because the pattern or the directory broke).
+	if len(lines) == 0 {
+		t.Fatal("found zero vulnerability-gating Trivy scans across every workflow — the scan itself is broken, since security.yml and docker-image.yml both gate on one")
 	}
 
 	if err := NoIgnoreUnfixedAmongVulnScans(lines); err != nil {
@@ -212,18 +221,43 @@ func stepBlock(t *testing.T, jobBlock, stepName string) string {
 	return rest
 }
 
-// runBody returns a step's `run:` key onward, deliberately excluding the
-// `env:` mapping above it: `env:` is where a GitHub Actions expression is
-// SUPPOSED to land, and only a splice that reaches `run:` itself is the
-// untrusted-expression defect this guards against.
+// runBody returns a step's `run:` key and everything more indented beneath
+// it — the block-scalar body — stopping at the first line back at or above
+// `run:`'s own indentation: a sibling key (`env:`, `with:`, `if:`, …) or the
+// end of the step. YAML mapping keys are unordered, so `env:` cannot be
+// assumed to sit above `run:` in the text; cutting at the next sibling KEY,
+// wherever it falls, is what keeps a legitimate `${{ }}` in a same-step
+// `env:` block from ever entering the text this file inspects for a splice.
 func runBody(t *testing.T, block string) string {
 	t.Helper()
 
-	idx := strings.Index(block, "\n        run:")
-	if idx < 0 {
-		t.Fatalf("step has no `run:` key at the expected 8-space indentation")
+	lines := strings.Split(block, "\n")
+
+	start, indent := -1, 0
+	for i, line := range lines {
+		trimmed := strings.TrimLeft(line, " ")
+		if strings.HasPrefix(trimmed, "run:") {
+			start = i
+			indent = len(line) - len(trimmed)
+			break
+		}
 	}
-	return block[idx:]
+	if start < 0 {
+		t.Fatalf("step has no `run:` key")
+	}
+
+	end := len(lines)
+	for i := start + 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "" {
+			continue
+		}
+		lineIndent := len(lines[i]) - len(strings.TrimLeft(lines[i], " "))
+		if lineIndent <= indent {
+			end = i
+			break
+		}
+	}
+	return strings.Join(lines[start:end], "\n")
 }
 
 // NoUntrustedRefSplicedIntoRun refuses a `run:` body that reaches a GitHub
@@ -251,6 +285,32 @@ func TestChangelogFragmentDoesNotSpliceTheBaseRefIntoRun(t *testing.T) {
 
 	if err := NoUntrustedRefSplicedIntoRun(runBody(t, step)); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestRunBodyStopsAtTheNextSiblingKeyRegardlessOfOrder proves runBody does not
+// rely on `env:` sitting above `run:` in the text. YAML mapping keys are
+// unordered — a step with `run:` first and `env:` after is valid and behaves
+// identically — and a reader that assumed `env:`-then-`run:` would fold a
+// same-step `env:`'s legitimate `${{ }}` straight into the body this file
+// scans for a splice, failing a correct workflow.
+func TestRunBodyStopsAtTheNextSiblingKeyRegardlessOfOrder(t *testing.T) {
+	block := strings.Join([]string{
+		"      - name: Some step",
+		"        run: |",
+		"          echo hi",
+		"        env:",
+		"          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}",
+		"",
+	}, "\n")
+
+	body := runBody(t, block)
+
+	if strings.Contains(body, "${{") {
+		t.Fatalf("runBody with env: AFTER run: leaked the env: block's expression into the body: %q", body)
+	}
+	if body != "        run: |\n          echo hi" {
+		t.Fatalf("runBody with env: AFTER run: returned %q, want just the run: block", body)
 	}
 }
 
