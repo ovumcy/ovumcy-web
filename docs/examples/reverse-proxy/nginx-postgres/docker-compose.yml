@@ -37,6 +37,7 @@ services:
       OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-}
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      OIDC_CLIENT_SECRET_FILE: ${OIDC_CLIENT_SECRET_FILE:-}
       OIDC_REDIRECT_URL: ${OIDC_REDIRECT_URL:-}
       OIDC_CA_FILE: ${OIDC_CA_FILE:-}
       OIDC_LOGIN_MODE: ${OIDC_LOGIN_MODE:-hybrid}
@@ -77,6 +78,9 @@ services:
       # Optional: mount a file-backed app secret and set SECRET_KEY_FILE=/run/secrets/ovumcy_secret_key in .env
       # - ./secrets/ovumcy_secret_key:/run/secrets/ovumcy_secret_key:ro
       # - ./certs/oidc-provider-ca.pem:/run/certs/oidc-provider-ca.pem:ro
+      # Optional: mount a file-backed OIDC client secret and set
+      # OIDC_CLIENT_SECRET_FILE=/run/secrets/ovumcy_oidc_client_secret in .env
+      # - ./secrets/ovumcy_oidc_client_secret:/run/secrets/ovumcy_oidc_client_secret:ro
     healthcheck:
       test: ["CMD", "/app/ovumcy", "healthcheck"]
       interval: 30s

@@ -195,6 +195,100 @@ func TestResolveDatabaseConfigAcceptsPostgres(t *testing.T) {
 	}
 }
 
+// TestResolveDatabaseConfigDatabaseURLFile pins DATABASE_URL_FILE, the
+// Docker Swarm/Compose secrets route for the Postgres DSN on the shell-free
+// runtime image — the same ReadBoundedRegularFile contract and the same
+// DATABASE_URL-wins-silently precedence as SECRET_KEY/SECRET_KEY_FILE.
+func TestResolveDatabaseConfigDatabaseURLFile(t *testing.T) {
+	const dsn = "postgres://ovumcy:s3cret@127.0.0.1:5432/ovumcy?sslmode=disable"
+
+	t.Run("reads and trims DATABASE_URL_FILE", func(t *testing.T) {
+		t.Setenv("DB_DRIVER", "postgres")
+		t.Setenv("DATABASE_URL", "")
+		t.Setenv("DATABASE_URL_FILE", writeTempSecretFile(t, dsn+"\n"))
+
+		config, err := resolveDatabaseConfig()
+		if err != nil {
+			t.Fatalf("expected postgres config from file, got error: %v", err)
+		}
+		if config.PostgresURL != dsn {
+			t.Fatalf("expected %q, got %q", dsn, config.PostgresURL)
+		}
+	})
+
+	t.Run("trims leading and trailing whitespace from DATABASE_URL_FILE", func(t *testing.T) {
+		t.Setenv("DB_DRIVER", "postgres")
+		t.Setenv("DATABASE_URL", "")
+		t.Setenv("DATABASE_URL_FILE", writeTempSecretFile(t, "  "+dsn+"  \n\t"))
+
+		config, err := resolveDatabaseConfig()
+		if err != nil {
+			t.Fatalf("expected postgres config from file, got error: %v", err)
+		}
+		if config.PostgresURL != dsn {
+			t.Fatalf("expected %q, got %q", dsn, config.PostgresURL)
+		}
+	})
+
+	t.Run("DATABASE_URL takes precedence over DATABASE_URL_FILE", func(t *testing.T) {
+		t.Setenv("DB_DRIVER", "postgres")
+		t.Setenv("DATABASE_URL", dsn)
+		t.Setenv("DATABASE_URL_FILE", filepath.Join(t.TempDir(), "missing-database-url.txt"))
+
+		config, err := resolveDatabaseConfig()
+		if err != nil {
+			t.Fatalf("expected env DSN to win, got error: %v", err)
+		}
+		if config.PostgresURL != dsn {
+			t.Fatalf("expected %q from env, got %q", dsn, config.PostgresURL)
+		}
+	})
+
+	t.Run("fails when DATABASE_URL_FILE cannot be read", func(t *testing.T) {
+		t.Setenv("DB_DRIVER", "postgres")
+		t.Setenv("DATABASE_URL", "")
+		missingPath := filepath.Join(t.TempDir(), "missing-database-url.txt")
+		t.Setenv("DATABASE_URL_FILE", missingPath)
+
+		_, err := resolveDatabaseConfig()
+		if err == nil || !strings.Contains(err.Error(), "failed to read DATABASE_URL_FILE") {
+			t.Fatalf("expected error naming DATABASE_URL_FILE, got %v", err)
+		}
+	})
+
+	t.Run("rejects a directory DATABASE_URL_FILE path", func(t *testing.T) {
+		t.Setenv("DB_DRIVER", "postgres")
+		t.Setenv("DATABASE_URL", "")
+		t.Setenv("DATABASE_URL_FILE", t.TempDir())
+
+		_, err := resolveDatabaseConfig()
+		if err == nil || !strings.Contains(err.Error(), "regular file") {
+			t.Fatalf("expected a directory DATABASE_URL_FILE to be rejected, got %v", err)
+		}
+	})
+
+	t.Run("an empty DATABASE_URL_FILE still fails postgres validation", func(t *testing.T) {
+		t.Setenv("DB_DRIVER", "postgres")
+		t.Setenv("DATABASE_URL", "")
+		t.Setenv("DATABASE_URL_FILE", writeTempSecretFile(t, " \n\t "))
+
+		_, err := resolveDatabaseConfig()
+		if err == nil || !strings.Contains(err.Error(), "postgres requires DATABASE_URL") {
+			t.Fatalf("expected an empty DATABASE_URL_FILE to fail postgres validation, got %v", err)
+		}
+	})
+}
+
+func writeTempSecretFile(t *testing.T, contents string) string {
+	t.Helper()
+
+	filePath := filepath.Join(t.TempDir(), "secret.txt")
+	if err := os.WriteFile(filePath, []byte(contents), 0o600); err != nil {
+		t.Fatalf("failed to write temp secret file: %v", err)
+	}
+	return filePath
+}
+
 func TestCSRFMiddlewareConfigUsesCookieSecureFlag(t *testing.T) {
 	handler := newRateLimitTestHandler(t)
 	secureConfig := csrfMiddlewareConfig(true, handler)
@@ -550,6 +644,91 @@ func assertResolveOIDCConfigError(t *testing.T, cookieSecure bool, registrationM
 	if _, err := resolveOIDCConfig(cookieSecure, registrationMode); err == nil || !strings.Contains(err.Error(), wantContains) {
 		t.Fatalf("expected OIDC config validation error containing %q, got %v", wantContains, err)
 	}
+}
+
+// TestResolveOIDCConfigClientSecretFile pins OIDC_CLIENT_SECRET_FILE, the
+// Docker Swarm/Compose secrets route for the OIDC client secret on the
+// shell-free runtime image — the same ReadBoundedRegularFile contract and the
+// same OIDC_CLIENT_SECRET-wins-silently precedence as
+// SECRET_KEY/SECRET_KEY_FILE.
+func TestResolveOIDCConfigClientSecretFile(t *testing.T) {
+	const clientSecret = "s3cret-oidc-client-value"
+
+	t.Run("reads and trims OIDC_CLIENT_SECRET_FILE", func(t *testing.T) {
+		setValidOIDCTestEnv(t)
+		t.Setenv("OIDC_CLIENT_SECRET", "")
+		t.Setenv("OIDC_CLIENT_SECRET_FILE", writeTempSecretFile(t, clientSecret+"\n"))
+
+		config, err := resolveOIDCConfig(true, services.RegistrationModeOpen)
+		if err != nil {
+			t.Fatalf("expected valid OIDC config from file, got error: %v", err)
+		}
+		if config.ClientSecret != clientSecret {
+			t.Fatalf("expected %q, got %q", clientSecret, config.ClientSecret)
+		}
+	})
+
+	t.Run("trims leading and trailing whitespace from OIDC_CLIENT_SECRET_FILE", func(t *testing.T) {
+		setValidOIDCTestEnv(t)
+		t.Setenv("OIDC_CLIENT_SECRET", "")
+		t.Setenv("OIDC_CLIENT_SECRET_FILE", writeTempSecretFile(t, "  "+clientSecret+"  \n\t"))
+
+		config, err := resolveOIDCConfig(true, services.RegistrationModeOpen)
+		if err != nil {
+			t.Fatalf("expected valid OIDC config from file, got error: %v", err)
+		}
+		if config.ClientSecret != clientSecret {
+			t.Fatalf("expected %q, got %q", clientSecret, config.ClientSecret)
+		}
+	})
+
+	t.Run("OIDC_CLIENT_SECRET takes precedence over OIDC_CLIENT_SECRET_FILE", func(t *testing.T) {
+		setValidOIDCTestEnv(t)
+		t.Setenv("OIDC_CLIENT_SECRET", clientSecret)
+		t.Setenv("OIDC_CLIENT_SECRET_FILE", filepath.Join(t.TempDir(), "missing-client-secret.txt"))
+
+		config, err := resolveOIDCConfig(true, services.RegistrationModeOpen)
+		if err != nil {
+			t.Fatalf("expected env client secret to win, got error: %v", err)
+		}
+		if config.ClientSecret != clientSecret {
+			t.Fatalf("expected %q from env, got %q", clientSecret, config.ClientSecret)
+		}
+	})
+
+	t.Run("fails when OIDC_CLIENT_SECRET_FILE cannot be read", func(t *testing.T) {
+		setValidOIDCTestEnv(t)
+		t.Setenv("OIDC_CLIENT_SECRET", "")
+		missingPath := filepath.Join(t.TempDir(), "missing-client-secret.txt")
+		t.Setenv("OIDC_CLIENT_SECRET_FILE", missingPath)
+
+		_, err := resolveOIDCConfig(true, services.RegistrationModeOpen)
+		if err == nil || !strings.Contains(err.Error(), "failed to read OIDC_CLIENT_SECRET_FILE") {
+			t.Fatalf("expected error naming OIDC_CLIENT_SECRET_FILE, got %v", err)
+		}
+	})
+
+	t.Run("rejects a directory OIDC_CLIENT_SECRET_FILE path", func(t *testing.T) {
+		setValidOIDCTestEnv(t)
+		t.Setenv("OIDC_CLIENT_SECRET", "")
+		t.Setenv("OIDC_CLIENT_SECRET_FILE", t.TempDir())
+
+		_, err := resolveOIDCConfig(true, services.RegistrationModeOpen)
+		if err == nil || !strings.Contains(err.Error(), "regular file") {
+			t.Fatalf("expected a directory OIDC_CLIENT_SECRET_FILE to be rejected, got %v", err)
+		}
+	})
+
+	t.Run("an empty OIDC_CLIENT_SECRET_FILE still fails required-field validation", func(t *testing.T) {
+		setValidOIDCTestEnv(t)
+		t.Setenv("OIDC_CLIENT_SECRET", "")
+		t.Setenv("OIDC_CLIENT_SECRET_FILE", writeTempSecretFile(t, " \n\t "))
+
+		_, err := resolveOIDCConfig(true, services.RegistrationModeOpen)
+		if err == nil || !strings.Contains(err.Error(), "OIDC_CLIENT_SECRET is required") {
+			t.Fatalf("expected an empty OIDC_CLIENT_SECRET_FILE to fail required-field validation, got %v", err)
+		}
+	})
 }
 
 func setValidOIDCTestEnv(t *testing.T) {
