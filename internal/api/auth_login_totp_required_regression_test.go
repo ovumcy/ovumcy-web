@@ -135,3 +135,119 @@ func TestLogin_ForcedResetOutranksTOTP_RoutesToResetAndIssuesNoAuthCookie(t *tes
 		t.Fatalf("expected Set-Cookie %q with non-empty value", resetPasswordCookieName)
 	}
 }
+
+// TestForcedResetTOTPAccountRedeemsToALiveSessionWithoutASecondFactor drives
+// BOTH accepted-risk halves on one account end to end: TOTP enrolled AND
+// must_change_password set. The sibling above already pins that login never
+// reaches the 2FA challenge on such an account, and
+// TestForcedResetRedeemSurvivesLocalPublicAuthBeingOff already pins that the
+// redeem still succeeds once local public auth is off — but nothing before
+// this test drives login THEN redeem on the same TOTP-enabled account and
+// checks that what comes out the other end is a session that actually works,
+// which is the complete shape docs/security/known-disclosures.md documents
+// under "Password reset issues a session without a second-factor challenge".
+//
+// This documents the accepted risk; it does not refute it. Read a failure
+// here as "the decision was reversed", not as a stale assertion: either TOTP
+// became reachable somewhere on the path (a 2FA-pending cookie at login, a
+// totp_code requirement on redeem, a refused session afterward), or the
+// redeemed session never becomes live.
+func TestForcedResetTOTPAccountRedeemsToALiveSessionWithoutASecondFactor(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "forced-reset-totp-e2e@example.com", "StrongPass1", true)
+	setupTOTPForUser(t, database, user.ID, []byte("test-secret-key"))
+	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Update("must_change_password", true).Error; err != nil {
+		t.Fatalf("mark user must_change_password: %v", err)
+	}
+
+	// Step 1: log in with email + password only — no totp_code anywhere in the
+	// submission. The forced reset outranks TOTP at this route (pinned by the
+	// sibling test above), so this must land on /reset-password, never on the
+	// 2FA challenge.
+	loginForm := url.Values{
+		"email":    {user.Email},
+		"password": {"StrongPass1"},
+	}
+	loginReq := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(loginForm.Encode()))
+	loginReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	loginResp, err := app.Test(loginReq, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("POST /api/v1/sessions: %v", err)
+	}
+	defer func() { _ = loginResp.Body.Close() }()
+
+	if loginResp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("login status = %d, want 303", loginResp.StatusCode)
+	}
+	if loc := loginResp.Header.Get("Location"); loc != "/reset-password" {
+		t.Fatalf("login Location = %q, want /reset-password", loc)
+	}
+	if c := responseCookie(loginResp.Cookies(), authCookieName); c != nil && strings.TrimSpace(c.Value) != "" {
+		t.Fatal("login must not mint an auth session before redeem")
+	}
+	if c := responseCookie(loginResp.Cookies(), totpPendingCookieName); c != nil && strings.TrimSpace(c.Value) != "" {
+		t.Fatal("TOTP must never be demanded on the forced-reset branch: no pending-2FA cookie may be issued at login")
+	}
+	resetCookie := responseCookieValue(loginResp.Cookies(), resetPasswordCookieName)
+	if resetCookie == "" {
+		t.Fatal("expected a reset-password cookie from the forced-reset login")
+	}
+
+	// Step 2: redeem the reset token. The submission carries only a new
+	// password — the redeem form has no totp_code field, and none is sent.
+	redeemForm := url.Values{
+		"password":         {"EvenStronger2"},
+		"confirm_password": {"EvenStronger2"},
+	}
+	redeemReq := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets/redeem", strings.NewReader(redeemForm.Encode()))
+	redeemReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	redeemReq.Header.Set("Accept", "application/json")
+	redeemReq.Header.Set("Cookie", resetPasswordCookieName+"="+resetCookie)
+	redeemResp, err := app.Test(redeemReq, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("POST /api/v1/password-resets/redeem: %v", err)
+	}
+	defer func() { _ = redeemResp.Body.Close() }()
+
+	if redeemResp.StatusCode != http.StatusOK {
+		t.Fatalf("redeem status = %d, want 200", redeemResp.StatusCode)
+	}
+	authCookie := responseCookieValue(redeemResp.Cookies(), authCookieName)
+	if authCookie == "" {
+		t.Fatal("expected the redeem to mint an auth session cookie")
+	}
+	if c := responseCookie(redeemResp.Cookies(), totpPendingCookieName); c != nil && strings.TrimSpace(c.Value) != "" {
+		t.Fatal("TOTP must never be demanded on redeem either: no pending-2FA cookie may be issued")
+	}
+
+	// Step 3: the cookie the redeem just handed out must be a genuinely LIVE
+	// session, not merely a Set-Cookie header. ResolveAuthSession
+	// (internal/services/auth_service.go) refuses any token whose account
+	// still carries must_change_password, so a 200 here proves the flag was
+	// cleared by the redeem write and the second factor was never consulted
+	// anywhere on the way to a usable session.
+	currentReq := httptest.NewRequest(http.MethodGet, "/api/v1/users/current", nil)
+	currentReq.Header.Set("Cookie", authCookieName+"="+authCookie)
+	currentResp, err := app.Test(currentReq, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("GET /api/v1/users/current: %v", err)
+	}
+	defer func() { _ = currentResp.Body.Close() }()
+	if currentResp.StatusCode != http.StatusOK {
+		t.Fatalf("current-user status = %d, want 200 (the redeemed session must be live)", currentResp.StatusCode)
+	}
+
+	// The account's TOTP enrollment survives the whole path untouched: the
+	// accepted risk is that the challenge is skipped, not that enrollment is
+	// silently dropped along the way.
+	var stored models.User
+	if err := database.First(&stored, user.ID).Error; err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if !stored.TOTPEnabled {
+		t.Fatal("expected TOTP to remain enabled on the account after the forced-reset redeem")
+	}
+	if stored.MustChangePassword {
+		t.Fatal("expected must_change_password to be cleared by the redeem")
+	}
+}
