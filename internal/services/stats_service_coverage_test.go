@@ -37,7 +37,7 @@ func TestStatsServiceBuildOverviewStatsPropagatesToStorage(t *testing.T) {
 	user := &models.User{ID: 1, Role: models.RoleOwner, CycleLength: 28}
 	now := mustParseStatsServiceDay(t, "2026-05-01")
 
-	_, err := svc.BuildOverviewStats(context.Background(), user, now, time.UTC)
+	_, _, err := svc.BuildOverviewStats(context.Background(), user, now, time.UTC)
 	if err == nil {
 		t.Fatal("BuildOverviewStats() expected error, got nil")
 	}

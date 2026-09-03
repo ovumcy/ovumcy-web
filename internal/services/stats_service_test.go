@@ -197,7 +197,7 @@ func TestBuildOverviewStatsUsesOverviewRange(t *testing.T) {
 	user := &models.User{ID: 3, Role: models.RoleOwner, CycleLength: 28}
 	now := mustParseStatsServiceDay(t, "2026-03-02")
 
-	if _, err := service.BuildOverviewStats(context.Background(), user, now, time.UTC); err != nil {
+	if _, _, err := service.BuildOverviewStats(context.Background(), user, now, time.UTC); err != nil {
 		t.Fatalf("BuildOverviewStats() unexpected error: %v", err)
 	}
 
