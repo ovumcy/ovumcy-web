@@ -690,6 +690,66 @@ func TestEgressMutationAnswersAMappedErrorWhenTheRebuildCannotRead(t *testing.T)
 	}
 }
 
+// TestARefusalFallsBackToTheMappedErrorWhenTheRebuildCannotRead is the same arm
+// on the refusal path. Answering a refusal with the card means READING the row
+// to build it, and that read can fail on its own — at which point the card is
+// unavailable and the honest answer is the mapped error, not a card assembled
+// from nothing with the refusal pinned to it.
+func TestARefusalFallsBackToTheMappedErrorWhenTheRebuildCannotRead(t *testing.T) {
+	handler, database := newEgressLedgerHandler(t, true)
+	owner := createEgressLedgerUser(t, database, "egress-refusal-rebuild-fails@example.com", models.RoleOwner)
+	dependencies := newTestHandlerDependencies(database, mustEnglishManager(t), onboardingTestAppOptions{outboundDeliveryEnabled: true})
+	handler.settingsViewService = services.NewSettingsViewService(
+		failingSettingsLoader{},
+		dependencies.ExportService,
+		dependencies.SymptomService,
+		services.NewEgressLedgerService(dependencies.WebhookSettingsService, dependencies.CalendarFeedSettings, true),
+	)
+	handler.webhookSettingsSvc = dependencies.WebhookSettingsService
+
+	app := fiber.New()
+	app.Use(handler.LanguageMiddleware)
+	app.Use(func(c fiber.Ctx) error {
+		c.Locals(contextUserKey, owner)
+		return c.Next()
+	})
+	app.Post("/api/v1/users/current/webhook", handler.UpdateWebhookSettings)
+
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/users/current/webhook",
+		strings.NewReader("webhook_url=ftp%3A%2F%2Fhooks.example.test%2Fovumcy&webhook_enabled=true"),
+	)
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("HX-Request", "true")
+	request.Header.Set("Accept", "text/html")
+	response, err := app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("refusal request failed: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode < 400 {
+		t.Fatalf("expected a mapped error when the rebuild cannot read, got %d", response.StatusCode)
+	}
+	if body := mustReadBodyString(t, response.Body); strings.Contains(body, "data-egress-webhook-state") {
+		t.Fatalf("a card was rendered from a read that failed: %s", body)
+	}
+}
+
+// TestEgressErrorMessageKeyKeepsAnUnmappedKey pins the fallback. A refusal whose
+// key has no translation behind it must still reach the island as itself: an
+// empty island would render the card with no message at all, which reads as a
+// mutation that quietly did nothing.
+func TestEgressErrorMessageKeyKeepsAnUnmappedKey(t *testing.T) {
+	t.Parallel()
+
+	const unmapped = "a refusal nobody wrote copy for"
+	if got := egressErrorMessageKey(unmapped); got != unmapped {
+		t.Fatalf("expected the unmapped key to survive, got %q", got)
+	}
+}
+
 // TestEgressLedgerTimestampsFollowTheRequestLocation is the calendar-day rule for
 // the two timestamps this surface renders. Rendered in UTC they name the wrong
 // day for any owner far enough from it, and the datetime attribute agrees with
