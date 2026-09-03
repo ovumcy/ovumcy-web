@@ -326,12 +326,12 @@ jobs:
     # key hands every later run the OLD binary out of cache, silently, while the
     # workflow reads as though it had been bumped.
     env:
-      # git SHA for v0.6.1 (tag 2025.1.1): b8ec13ce4d00445d75da053c47498e6f9ec5d7d6 (verified via go list -m -json)
-      STATICCHECK_VERSION: v0.6.1
+      # git SHA for v0.8.1 (tag 2026.2.1): 1285a6a5ec1e0ebb658f49e82b6c566a878cc3cb (verified via go list -m -json)
+      STATICCHECK_VERSION: v0.8.1
       # git SHA for golang.org/x/tools v0.49.0: 18332fec72972efbb8ab9881984fec2d8cfc2b58 (verified via go list -m -json)
       DEADCODE_VERSION: v0.49.0
-      # git SHA for v2.12.2: c0d3ddc9cf3faa61a4e378e879ece580256d76e5 (verified via go list -m -json)
-      GOLANGCI_LINT_VERSION: v2.12.2
+      # git SHA for v2.13.2: 27774aaf853a4fd21f1dd5e69439459dc1b26e68 (verified via go list -m -json)
+      GOLANGCI_LINT_VERSION: v2.13.2
       # git SHA for v1.7.12: 914e7df21a07ef503a81201c76d2b11c789d3fca (verified via go list -m -json)
       ACTIONLINT_VERSION: v1.7.12
       # git SHA for v1.6.0: 5348b744d0983d85713295ea08a20cca1654a45e (verified via go list -m -json)

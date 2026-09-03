@@ -49,8 +49,8 @@ jobs:
           cache: true
 
       - name: Install gosec
-        # git SHA for v2.22.4: 6decf96c3d272d5a8bbdcf9fddb5789d0be16a8d (verified via go list -m -json)
-        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.22.4
+        # git SHA for v2.29.0: deb54465fea23d19a77f037e11e6589021f8501d (verified via go list -m -json)
+        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0
 
       - name: Prepare security artifact directory
         run: mkdir -p .tmp/security

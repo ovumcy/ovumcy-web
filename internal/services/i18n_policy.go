@@ -7,7 +7,7 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/i18n"
 )
 
-var authErrorTranslationKeys = map[string]string{
+var authErrorTranslationKeys = map[string]string{ // #nosec G101 -- false positive: the "password"/"credentials" substrings the scanner keys on ("weak password", "invalid credentials", "password mismatch", ...) are English error-spec strings mapped to i18n message keys, never a credential value.
 	"invalid input":                  "auth.error.invalid_input",
 	"consent required":               "auth.error.consent_required",
 	"registration disabled":          "auth.error.registration_disabled",
