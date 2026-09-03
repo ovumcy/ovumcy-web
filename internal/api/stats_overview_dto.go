@@ -65,6 +65,14 @@ type StatsOverviewSuppression struct {
 // domain struct's field list: a field added to CycleStats reaches no client
 // until someone names it here.
 //
+// ovulation_date carries the same additional resolution the calendar's solid
+// marker and the dashboard's ovulation line already apply, through
+// services.PublishedOverviewStats: once the owner's own BBT readings confirm
+// the current cycle's ovulation, the measured day outranks the model's
+// projection here too, and ovulation_exact reports true for it — this was the
+// one surface still naming the superseded projection after the other six
+// had moved on to the measured day.
+//
 // Every projected date is a pointer and is null when suppressed. Null rather
 // than omitted, and never a zero date: the field set stays constant across
 // states, so a client parses one shape and reads suppression from the

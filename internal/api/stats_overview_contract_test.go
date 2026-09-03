@@ -280,6 +280,65 @@ func TestStatsOverviewAgreesWithTheStatsPageOnAPublishedProjection(t *testing.T)
 	}
 }
 
+// TestStatsOverviewPublishesTheConfirmedOvulationDayNotTheModelsProjection is
+// the JSON-API half of the confirmed-ovulation substitution the calendar's
+// solid marker, the dashboard's ovulation line and four other surfaces
+// already apply (services.ConfirmedCurrentCycleOvulation,
+// dashboard_confirmed_ovulation_test.go). The model and the measured day are
+// made to differ deliberately, the way MED-2's trace does: a median-cycle
+// projection lands on cycle day 14, while a recorded BBT shift confirms cycle
+// day 17. Before this fix the endpoint answered the model's superseded day;
+// it must now answer the measured one, with ovulation_exact reporting true
+// for it — a confirmed day is a measurement, not an approximate estimate,
+// matching what the calendar's solid marker and the dashboard's line already
+// mean by never showing the "approximate" caption beside one.
+func TestStatsOverviewPublishesTheConfirmedOvulationDayNotTheModelsProjection(t *testing.T) {
+	app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
+	user := createOnboardingTestUser(t, database, "overview-confirmed-ovulation@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	today := services.DateAtLocation(time.Now().In(time.UTC), time.UTC)
+	updateStatsOverviewUser(t, database, user, map[string]any{"track_bbt": true})
+
+	// Three prior 28-day cycles fix the median at 28 and lift the
+	// zero-completed-cycle floor; the fourth start opens the CURRENT cycle at
+	// today-20 (cycle day 21 today). The median projects ovulation on cycle
+	// day 14 (cycleLen 28 - luteal 14), i.e. today-7.
+	seedStatsOverviewCycleHistory(t, database, user, today, 104, 76, 48, 20)
+
+	// Undisturbed temperatures fill the shared 3-over-6 detector's 6-day
+	// coverline window (cycle days 12-17 = today-9..today-4); three elevated
+	// days follow (cycle days 18-20 = today-3..today-1). The detector confirms
+	// ovulation the day BEFORE the shift: cycle day 17 = today-4 — three days
+	// off the model's today-7, so the two dates cannot pass by coincidence.
+	for _, offset := range []int{9, 8, 7, 6, 5, 4} {
+		seedStatsOverviewLog(t, database, models.DailyLog{UserID: user.ID, Date: today.AddDate(0, 0, -offset), BBT: new(36.20)})
+	}
+	for _, offset := range []int{3, 2, 1} {
+		seedStatsOverviewLog(t, database, models.DailyLog{UserID: user.ID, Date: today.AddDate(0, 0, -offset), BBT: new(36.50)})
+	}
+
+	_, payload := fetchStatsOverview(t, app, authCookie)
+
+	wantConfirmed := today.AddDate(0, 0, -4).Format(statsOverviewDateLayout)
+	wantModel := today.AddDate(0, 0, -7).Format(statsOverviewDateLayout)
+
+	if payload.OvulationDate == nil {
+		t.Fatal("ovulation_date is null for an owner with a published projection")
+	}
+	if *payload.OvulationDate == wantModel {
+		t.Fatalf("ovulation_date = %s — the model's projection the owner's own temperatures already superseded; want the confirmed %s", *payload.OvulationDate, wantConfirmed)
+	}
+	if *payload.OvulationDate != wantConfirmed {
+		t.Fatalf("ovulation_date = %s, want the BBT-confirmed %s", *payload.OvulationDate, wantConfirmed)
+	}
+	if !payload.OvulationExact {
+		t.Fatal("ovulation_exact = false beside a BBT-confirmed ovulation_date — a measurement is not an approximate estimate")
+	}
+	if payload.Suppression.Fertility {
+		t.Fatalf("suppression.fertility = true for an owner with observed cycles and a confirmed shift: %v", payload.Suppression.Reasons)
+	}
+}
+
 // TestStatsOverviewCarriesTheDisclaimerWithoutTheLanguageMiddleware pins the
 // framing against its own wiring.
 //

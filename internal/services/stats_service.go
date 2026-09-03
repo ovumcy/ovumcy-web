@@ -117,13 +117,17 @@ func StatsOverviewRange(now time.Time) (time.Time, time.Time) {
 	return now.AddDate(-statsOverviewWindowYears, 0, 0), now
 }
 
-func (service *StatsService) BuildOverviewStats(ctx context.Context, user *models.User, now time.Time, location *time.Location) (CycleStats, error) {
+// BuildOverviewStats also returns the logs it fetched, alongside the derived
+// stats: PublishedOverviewStats needs them to resolve a confirmed ovulation
+// day through the shared BBT detector, and a second fetch here would be a
+// second read of the same range this call already bounded.
+func (service *StatsService) BuildOverviewStats(ctx context.Context, user *models.User, now time.Time, location *time.Location) (CycleStats, []models.DailyLog, error) {
 	from, to := StatsOverviewRange(now)
-	stats, _, err := service.BuildCycleStatsForRange(ctx, user, from, to, now, location)
+	stats, logs, err := service.BuildCycleStatsForRange(ctx, user, from, to, now, location)
 	if err != nil {
-		return CycleStats{}, err
+		return CycleStats{}, nil, err
 	}
-	return stats, nil
+	return stats, logs, nil
 }
 
 func TrimTrailingCycleTrendLengths(lengths []int, maxPoints int) []int {

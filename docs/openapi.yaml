@@ -808,12 +808,18 @@ components:
         ovulation_date:
           type: [string, "null"]
           format: date
-          description: Projected. Null when `suppression.fertility` is true.
+          description: >-
+            Projected, unless the owner's own BBT readings have already
+            confirmed the current cycle's ovulation, in which case this is the
+            measured day the calendar and dashboard also show. Null when
+            `suppression.fertility` is true.
         ovulation_exact:
           type: boolean
           description: >-
-            The ovulation date is anchored on an observation rather than on the
-            cycle-length fallback. Always false when `ovulation_date` is null.
+            True when the ovulation date is anchored on an observation —
+            either a per-owner inferred luteal phase rather than the 14-day
+            fallback, or (see `ovulation_date`) a BBT-confirmed day for the
+            current cycle. Always false when `ovulation_date` is null.
         ovulation_impossible:
           type: boolean
           description: No ovulation can be placed in the running cycle at all.

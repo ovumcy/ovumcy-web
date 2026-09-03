@@ -70,3 +70,34 @@ func PublishedStats(user *models.User, stats CycleStats) (CycleStats, Prediction
 	}
 	return stats, suppression
 }
+
+// PublishedOverviewStats is PublishedStats plus the confirmed-ovulation
+// substitution the on-screen surfaces already apply: the calendar's solid
+// marker (calendar_days.go), the dashboard's ovulation line
+// (dashboard_cycle.go) and the stats chart marker all resolve the CURRENT
+// cycle's ovulation day through ConfirmedCurrentCycleOvulation, so a shift
+// the owner's own temperatures already confirm outranks the model's
+// projection everywhere an owner reads it.
+//
+// The JSON API was the one surface that skipped this: it read stats.
+// OvulationDate straight off the model and published it even after a BBT
+// shift had superseded it, while the grid, the dashboard and the chart had
+// already moved on to the measured day. The substitution runs on the RAW
+// stats, ahead of PublishedStats' own clearing, for the same reason the
+// dashboard's runs ahead of its suppression branches: ConfirmedCurrentCycleOvulation
+// already reads FertilityProjectionSuppressed itself, so a confirmed day
+// never overrides a projection the gate would have withheld anyway, and
+// running it first means PublishedStats sees the same OvulationDate every
+// other surface renders.
+//
+// A confirmed day is a MEASUREMENT, not a less-certain reading of the model:
+// OvulationExact is set true along with it, matching what the calendar's
+// solid marker and the dashboard's line already mean by never showing the
+// "approximate" caption beside a confirmed date (dashboard.html).
+func PublishedOverviewStats(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (CycleStats, PredictionSuppression) {
+	if confirmed, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, today, location); ok {
+		stats.OvulationDate = confirmed
+		stats.OvulationExact = true
+	}
+	return PublishedStats(user, stats)
+}
