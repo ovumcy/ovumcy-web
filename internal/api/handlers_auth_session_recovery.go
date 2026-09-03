@@ -95,11 +95,20 @@ func (handler *Handler) ResetPassword(c fiber.Ctx) error {
 	// verified at issuance, so this is the account's POSTURE, not session
 	// issuance parity.
 	//
-	// A FORCED token is the opposite case and must survive the gate: the two
-	// paths that mint one — CompleteOIDCLogin and CompleteOIDCLinkConfirmation —
-	// are exactly the paths still live under oidc_only, and refusing their redeem
-	// would strand an owner whose account carries must_change_password with no
-	// way to clear it.
+	// A FORCED token is the opposite case and must survive the gate.
+	// CompleteOIDCLogin mints one unconditionally under oidc_only — it never
+	// checks a local password, so there is nothing here for it to leak.
+	// CompleteOIDCLinkConfirmation also mints one, but (unlike CompleteOIDCLogin)
+	// it now refuses outright while local sign-in is off — the password it
+	// checks to authorize the identity link is exactly the credential the
+	// operator switched off, and authorizing that link is a bigger leak than
+	// the session this gate was written to stop, so gating only the session and
+	// leaving the link open is not a fix. A CompleteOIDCLinkConfirmation token
+	// can therefore only be minted while local sign-in is still on; this arm
+	// only has to cover it redeeming after the operator flips the toggle off in
+	// the few minutes between minting and redemption, and still refusing that
+	// redeem would strand an owner whose account carries must_change_password
+	// with no way to clear it.
 	if !forced && !handler.localPublicAuthEnabled() {
 		handler.clearResetPasswordCookie(c)
 		spec := authLocalRecoveryDisabledErrorSpec()

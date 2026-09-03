@@ -99,6 +99,39 @@ func (handler *Handler) ShowOIDCLinkConfirmPage(c fiber.Ctx) error {
 // account and, on success, persists the OIDC identity link and issues a fresh
 // auth session for the target user.
 func (handler *Handler) CompleteOIDCLinkConfirmation(c fiber.Ctx) error {
+	// Same instance-level gate, same point in the handler, as Login
+	// (handlers_auth_session_login.go): checked first, before anything else
+	// runs. The password verified below is exactly the factor the operator
+	// switched off, and it authorizes more than the session this handler used
+	// to mint directly — it authorizes ConfirmAndLinkIdentity, a PERMANENT
+	// binding of an attacker-supplied (issuer, subject) to the target account.
+	// Gating only the session mint and leaving the link itself unguarded does
+	// not close that: an attacker who holds the leaked password the operator
+	// disabled local sign-in over — the realistic reason to disable it — can
+	// still drive the OIDC callback with an IdP identity carrying the victim's
+	// email, hit ErrOIDCLinkRequiresConfirmation, post that password here to
+	// commit the link, and then sign in through the identity just linked on
+	// the very next OIDC round-trip — no password prompt at all the second
+	// time, because authenticateLinkedIdentity never asks. A gate placed after
+	// the link is one hop deep, not a gate.
+	//
+	// This narrows the self-service migration path: a genuine pre-existing
+	// local-password account cannot link its own OIDC identity while local
+	// sign-in is off, and there is currently no `ovumcy` CLI subcommand that
+	// links an identity on the operator's behalf (checked: cmd/ovumcy/commands.go
+	// exposes reset-password/users/notify/webhook/repair, nothing OIDC-shaped).
+	// That gap is real but is not this fix's to close — re-enabling local
+	// sign-in for the account's one linking round-trip, or an operator-run SQL
+	// insert into oidc_identities, are the only ways in today. Silently
+	// authenticating a takeover through the one arm left open is worse than
+	// that gap.
+	if !handler.localPublicAuthEnabled() {
+		spec := authLocalSignInDisabledErrorSpec()
+		handler.logSecurityError(c, "auth.oidc_link_confirm", spec)
+		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
+	}
+
 	payload, ok := handler.readOIDCLinkPendingCookie(c)
 	if !ok {
 		handler.clearOIDCLinkPendingCookie(c)

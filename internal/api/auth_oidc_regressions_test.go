@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/db"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/security"
@@ -1129,6 +1130,180 @@ func TestCompleteOIDCLinkConfirmationWithLocalAuthDisabledRefusesUnavailable(t *
 	payload := decodeFlashCookieForTest(t, flashCookie.Value)
 	if payload.AuthError != authOIDCLinkConfirmUnavailableErrorSpec().Key {
 		t.Fatalf("expected flash auth_error %q, got %q", authOIDCLinkConfirmUnavailableErrorSpec().Key, payload.AuthError)
+	}
+}
+
+// TestCompleteOIDCLinkConfirmationRefusesEntirelyWhenLocalSignInDisabled locks
+// F2: on an oidc-only instance (the operator turned the instance-level local
+// sign-in toggle off), a correct password must not be accepted at all — the
+// same refusal Login gives in that state (authLocalSignInDisabledErrorSpec,
+// /login redirect, no auth cookie), checked at the same point in the handler
+// Login checks it (first, before anything else runs).
+//
+// Critically, ConfirmAndLinkIdentity must NOT run either. Gating only the
+// session mint and leaving the identity link itself open would not close F2:
+// the link is a PERMANENT (issuer, subject) -> account binding, and the
+// password that authorizes it is exactly the credential the operator
+// disabled — the realistic reason to disable it being that it leaked. An
+// attacker holding that leaked password could drive the OIDC callback with an
+// IdP identity carrying the victim's email, hit
+// ErrOIDCLinkRequiresConfirmation, post the password here, and — if the link
+// were allowed through — sign in through the newly linked identity on the
+// very next OIDC round-trip with no password prompt at all. See
+// TestOIDCLinkConfirmRefusalWhileDisabledLeavesNoPersistentBinding for that
+// second leg pinned end-to-end.
+func TestCompleteOIDCLinkConfirmationRefusesEntirelyWhenLocalSignInDisabled(t *testing.T) {
+	t.Parallel()
+
+	stub := newStubOIDCWorkflowService(true)
+	stub.localPublicAuthEnabled = false
+	app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{
+		cookieSecure: true,
+		oidcService:  stub,
+	})
+	user := createOnboardingTestUser(t, database, "link-oidc-only@example.com", "StrongPass1", true)
+
+	pendingPayload, err := newOIDCLinkPendingPayload(time.Now().UTC(), user.ID, "https://idp.example", "subject-oidc-only", user.Email)
+	if err != nil {
+		t.Fatalf("newOIDCLinkPendingPayload: %v", err)
+	}
+	cookie := sealLinkPendingCookieForTest(t, pendingPayload)
+
+	postRequest := httptest.NewRequest(http.MethodPost, oidcLinkConfirmPath, strings.NewReader(url.Values{
+		"password": {"StrongPass1"},
+	}.Encode()))
+	postRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	postRequest.Header.Set("Cookie", oidcLinkPendingCookieName+"="+cookie)
+
+	response := mustAppResponse(t, app, postRequest)
+	assertStatusCode(t, response, http.StatusSeeOther)
+	if location := response.Header.Get("Location"); location != "/login" {
+		t.Fatalf("expected redirect to /login when local sign-in is disabled, got %q", location)
+	}
+	if authCookie := responseCookie(response.Cookies(), authCookieName); authCookie != nil && strings.TrimSpace(authCookie.Value) != "" {
+		t.Fatal("did not expect an auth cookie when local sign-in is disabled instance-wide")
+	}
+	flashCookie := responseCookie(response.Cookies(), flashCookieName)
+	if flashCookie == nil {
+		t.Fatal("expected flash cookie explaining the refusal")
+	}
+	payload := decodeFlashCookieForTest(t, flashCookie.Value)
+	// Exactly Login's refusal spec, not a bespoke one: same helper, same key.
+	wantSpec := authLocalSignInDisabledErrorSpec()
+	if wantSpec.Status != fiber.StatusForbidden {
+		t.Fatalf("test fixture assumption broken: authLocalSignInDisabledErrorSpec status changed to %d", wantSpec.Status)
+	}
+	if payload.AuthError != wantSpec.Key {
+		t.Fatalf("expected flash auth_error %q (Login's own local-sign-in-disabled key), got %q", wantSpec.Key, payload.AuthError)
+	}
+
+	// The identity link must NOT have gone through: authorizing a permanent
+	// binding with the disabled password is the actual defect, not merely
+	// issuing a session with it.
+	if stub.lastConfirmLinkUserID != 0 {
+		t.Fatalf("expected ConfirmAndLinkIdentity NOT to run while local sign-in is disabled, but it ran for user id %d", stub.lastConfirmLinkUserID)
+	}
+}
+
+// TestOIDCLinkConfirmRefusalWhileDisabledLeavesNoPersistentBinding pins the
+// two-step path the F2 review asked for end-to-end: attempt to link while
+// local sign-in is off, confirm the refusal left no standing identity link,
+// then attempt to sign in again through the same (issuer, subject) pair the
+// first attempt tried to establish. Because the refusal above never called
+// ConfirmAndLinkIdentity, the account is exactly as unlinked as before either
+// request — so the second OIDC round-trip must still land on the
+// link-confirmation challenge (ErrOIDCLinkRequiresConfirmation again), never
+// silently issue a session through a now-linked identity. This is the
+// assertion that closes the gap the review found: gating only the first
+// request's session mint would have left the attacker a session on the very
+// next attempt, with no further password prompt; gating the link itself means
+// the next attempt is challenged exactly like the first one was.
+func TestOIDCLinkConfirmRefusalWhileDisabledLeavesNoPersistentBinding(t *testing.T) {
+	t.Parallel()
+
+	stub := newStubOIDCWorkflowService(true)
+	stub.localPublicAuthEnabled = false
+	targetUser := models.User{
+		ID:                 91,
+		Role:               models.RoleOwner,
+		AuthSessionVersion: 1,
+		LocalAuthEnabled:   true,
+		Email:              "link-no-backdoor@example.com",
+	}
+	claims := &security.OIDCClaims{
+		Issuer:  "https://idp.example",
+		Subject: "subject-no-backdoor",
+		Email:   targetUser.Email,
+	}
+	stub.result = services.OIDCLoginResult{User: targetUser, PendingLinkClaims: claims}
+	stub.authErr = services.ErrOIDCLinkRequiresConfirmation
+
+	app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{
+		cookieSecure: true,
+		oidcService:  stub,
+	})
+	// The account the pending-link claims resolve to must actually exist and
+	// carry the password the attacker is assumed to hold, or FindByID inside
+	// CompleteOIDCLinkConfirmation refuses before reaching the gate under test.
+	user := createOnboardingTestUser(t, database, targetUser.Email, "StrongPass1", true)
+	stub.result.User.ID = user.ID
+
+	// Leg 1: drive a full OIDC callback into the link-confirmation hand-off,
+	// same as TestOIDCCallbackPendingLinkSealsCookieAndRedirectsToConfirmPage.
+	oidcRoundTrip := func() *http.Response {
+		startResponse := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, "/auth/oidc/start", nil))
+		stateCookie := responseCookie(startResponse.Cookies(), oidcStateCookieName)
+		if stateCookie == nil {
+			t.Fatal("expected OIDC state cookie from start flow")
+		}
+		callbackRequest := httptest.NewRequest(http.MethodPost, security.OIDCCallbackPath, strings.NewReader(url.Values{
+			"state": {stub.lastStartState},
+			"code":  {"provider-code"},
+		}.Encode()))
+		callbackRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		callbackRequest.Header.Set("Cookie", stateCookie.String())
+		return mustAppResponse(t, app, callbackRequest)
+	}
+
+	firstCallback := oidcRoundTrip()
+	assertStatusCode(t, firstCallback, http.StatusSeeOther)
+	if location := firstCallback.Header.Get("Location"); location != oidcLinkConfirmPath {
+		t.Fatalf("expected first OIDC round-trip to land on the link-confirm challenge, got %q", location)
+	}
+	linkCookie := responseCookie(firstCallback.Cookies(), oidcLinkPendingCookieName)
+	if linkCookie == nil || strings.TrimSpace(linkCookie.Value) == "" {
+		t.Fatal("expected a sealed link-pending cookie from the first OIDC round-trip")
+	}
+
+	// Attempt the link with the attacker's (correct, leaked) password while
+	// local sign-in is disabled — must be refused, and must NOT link.
+	confirmRequest := httptest.NewRequest(http.MethodPost, oidcLinkConfirmPath, strings.NewReader(url.Values{
+		"password": {"StrongPass1"},
+	}.Encode()))
+	confirmRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	confirmRequest.Header.Set("Cookie", oidcLinkPendingCookieName+"="+linkCookie.Value)
+	confirmResponse := mustAppResponse(t, app, confirmRequest)
+	assertStatusCode(t, confirmResponse, http.StatusSeeOther)
+	if location := confirmResponse.Header.Get("Location"); location != "/login" {
+		t.Fatalf("expected the link attempt to be refused to /login, got %q", location)
+	}
+	if stub.lastConfirmLinkUserID != 0 {
+		t.Fatalf("expected the refused link attempt to leave no binding, but ConfirmAndLinkIdentity ran for user id %d", stub.lastConfirmLinkUserID)
+	}
+
+	// Leg 2: a second OIDC round-trip for the identical (issuer, subject) pair
+	// — modeling the DB truth left behind by leg 1, where nothing was linked,
+	// so the service still returns ErrOIDCLinkRequiresConfirmation rather than
+	// resolving through a linked identity. If the earlier refusal had failed
+	// to stop the link, this is exactly the request that would have come back
+	// with a live session instead.
+	secondCallback := oidcRoundTrip()
+	assertStatusCode(t, secondCallback, http.StatusSeeOther)
+	if location := secondCallback.Header.Get("Location"); location != oidcLinkConfirmPath {
+		t.Fatalf("expected the second OIDC round-trip to be challenged again, got %q", location)
+	}
+	if authCookie := responseCookie(secondCallback.Cookies(), authCookieName); authCookie != nil && strings.TrimSpace(authCookie.Value) != "" {
+		t.Fatal("expected no auth cookie on the second OIDC round-trip: no identity was ever linked")
 	}
 }
 
