@@ -7,5 +7,11 @@
   OIDC client secret are the two other operator-supplied values that carry a live credential. Both
   read through the same bounded local-file helper as `SECRET_KEY_FILE` (rejects directories and
   special files, caps the read, trims a trailing newline) and the same precedence: the plain
-  variable wins silently when both are set. The bundled and example compose stacks and `.env.example`
-  now carry both variables alongside their existing `_FILE` sibling.
+  variable wins when both are set. Unlike a wrong `SECRET_KEY`, which fails loudly at first use, a
+  wrong `DATABASE_URL` just points at the wrong database with no error — so that precedence is no
+  longer silent: boot now logs one line per resolved value naming which variable supplied it, and
+  names the `_FILE` variable specifically when it was set but ignored (never the value itself). A
+  sqlite instance carrying a stale or dangling `DATABASE_URL_FILE` it never reads boots as before —
+  the file is only opened when `DB_DRIVER=postgres` actually consumes it. The bundled and example
+  compose stacks and `.env.example` now carry both variables alongside their existing `_FILE`
+  sibling.
