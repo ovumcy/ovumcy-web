@@ -102,6 +102,55 @@ func TestOpenAPIDeclaresOnlyStatusesTheServerCanEmit(t *testing.T) {
 	}
 }
 
+// apiRateLimitMountPattern locates the app-wide "/api" limiter's own
+// limiter.New(limiter.Config{...}) block in cmd/ovumcy/server.go — the exact
+// mount TestOpenAPIDeclaresRateLimitedOnEveryLimiterCoveredOperation's
+// "every registered /api/v1 route is limiter-covered" premise depends on. It
+// is anchored on the literal `app.Use("/api", limiter.New(limiter.Config{`,
+// which is unique to this mount: the per-account limiters above it in the
+// same file scope themselves with a `Next` filter instead of a path prefix,
+// and the calendar-feed limiter mounts on a different prefix entirely.
+var apiRateLimitMountPattern = regexp.MustCompile(`(?s)app\.Use\("/api", limiter\.New\(limiter\.Config\{(.*?)\n\t\}\)\)`)
+
+// requireAPIRateLimitMountHasNoNextFilter pins the premise the sweep below
+// rests on, rather than assuming it: registeredV1Routes stands in for "every
+// limiter-covered /api/v1 route" only because the app-wide limiter mount
+// carries no `Next` filter and therefore excludes nothing. The test app this
+// file assembles (newOnboardingTestApp) never mounts cmd/ovumcy's real
+// middleware chain — that wiring lives in cmd/ovumcy's newFiberApp, in
+// package main, which internal/api cannot import (cmd depends on internal/api,
+// never the reverse) — so the premise is checked by reading the mount's own
+// source text instead of executing it, the same way
+// TestOpenAPIDeclaresOnlyStatusesTheServerCanEmit reads server sources rather
+// than running the server.
+//
+// If this ever fails, the sweep below is no longer sound: a route the mount
+// newly exempts (a `Next` filter added to this exact block) can no longer
+// answer 429, docs/openapi.yaml would keep declaring it anyway, and nothing
+// else in this file would notice — the same "N of N+1" shape this whole test
+// exists to close, one level up in the guard itself.
+func requireAPIRateLimitMountHasNoNextFilter(t *testing.T) {
+	t.Helper()
+	path := filepath.Join("..", "..", "cmd", "ovumcy", "server.go")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	match := apiRateLimitMountPattern.FindSubmatch(data)
+	if match == nil {
+		t.Fatalf(`%s: no app.Use("/api", limiter.New(limiter.Config{...})) mount found — `+
+			`the app-wide API limiter moved or was rewritten; update apiRateLimitMountPattern `+
+			`before trusting registeredV1Routes as the limiter-covered set again`, path)
+	}
+	if strings.Contains(string(match[1]), "Next:") {
+		t.Fatalf(`%s: the app-wide "/api" limiter now carries a Next filter, so it no longer `+
+			`covers every /api/v1 route unconditionally — TestOpenAPIDeclaresRateLimitedOnEveryLimiterCoveredOperation's `+
+			`"every registered route is limiter-covered" premise no longer holds. Derive the covered `+
+			`set from the exemption (exclude the routes the filter skips) instead of the full route `+
+			`table before trusting this sweep again`, path)
+	}
+}
+
 // TestOpenAPIDeclaresRateLimitedOnEveryLimiterCoveredOperation pins the class
 // behind API-3: the app-wide API limiter (cmd/ovumcy/server.go's
 // `app.Use("/api", limiter.New(...))`, mounted before api.RegisterRoutes with
@@ -116,8 +165,13 @@ func TestOpenAPIDeclaresOnlyStatusesTheServerCanEmit(t *testing.T) {
 // The set to check is read from the registered routes themselves — the same
 // registeredV1Routes the route-presence contract above already trusts as the
 // ground truth for "what /api/v1 operations exist" — rather than hand-listed,
-// so a new route added later inherits the check with no edit here.
+// so a new route added later inherits the check with no edit here. That
+// stand-in is sound only while requireAPIRateLimitMountHasNoNextFilter holds;
+// it is asserted first so a mount that grows an exemption reddens this test
+// instead of leaving the spec free to over-declare 429 with nothing to catch it.
 func TestOpenAPIDeclaresRateLimitedOnEveryLimiterCoveredOperation(t *testing.T) {
+	requireAPIRateLimitMountHasNoNextFilter(t)
+
 	app, _ := newOnboardingTestApp(t)
 
 	limiterCovered := registeredV1Routes(app)
