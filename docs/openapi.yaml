@@ -530,14 +530,16 @@ components:
             CLI `ovumcy reset-password <email>`.
         recovery_code:
           type: string
-          pattern: "^OVUM-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$|^$"
+          pattern: "^OVUM-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$|^\\s*$"
           description: >-
             Single-use recovery code minted at registration or by `POST
-            /api/v1/users/current/recovery-code`. Omitted, or sent as an empty
-            string, selects step 1 (see this schema's own description) and is
-            never refused on that account — the pattern's `|^$` alternative
-            exists for that value alone, not to widen what a real code may
-            look like. Once non-blank, the pattern documents the server's
+            /api/v1/users/current/recovery-code`. Omitted, or sent blank —
+            empty or all whitespace, matching the server's own
+            `strings.TrimSpace(...) == ""` test — selects step 1 (see this
+            schema's own description) and is never refused on that account;
+            the pattern's `|^\s*$` alternative exists for that value alone,
+            not to widen what a real code may look like. Once non-blank, the
+            pattern documents the server's
             accepted request shape (`ValidateRecoveryCodeFormat` in
             `internal/services/auth_input_policy.go`), which is deliberately
             wider than the alphabet `GenerateRecoveryCode`
