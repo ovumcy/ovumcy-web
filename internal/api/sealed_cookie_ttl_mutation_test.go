@@ -187,7 +187,7 @@ func TestResetPasswordCookieExpiresHonorsThirtyMinuteTTL(t *testing.T) {
 	handler := ttlMutationTestHandler()
 	app := fiber.New()
 	app.Get("/set", func(c fiber.Ctx) error {
-		if err := handler.setResetPasswordCookie(c, "reset-token-fixture", false); err != nil {
+		if err := handler.setResetPasswordCookie(c, "reset-token-fixture"); err != nil {
 			t.Fatalf("setResetPasswordCookie: %v", err)
 		}
 		return c.SendStatus(http.StatusNoContent)

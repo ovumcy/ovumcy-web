@@ -38,11 +38,18 @@ func (service *PasswordResetService) ConfigureRecoveryAttemptLimits(attempts int
 	service.recoveryPolicy.Configure(attempts, window)
 }
 
-func (service *PasswordResetService) IssueResetTokenForUser(secretKey []byte, user *models.User, ttl time.Duration, now time.Time) (string, error) {
+// IssueResetTokenForUser mints a token with the given purpose. Every caller
+// mints one of the two FORCED purposes — the plain login route and OIDC
+// link-confirm's password challenge share this via LoginService, which always
+// passes PasswordResetTokenPurposeForcedLocal; the OIDC callback's own
+// must-change-password branch passes PasswordResetTokenPurposeForcedOIDC
+// directly. StartRecovery below is the only recovery-purpose minter and does
+// not go through this method.
+func (service *PasswordResetService) IssueResetTokenForUser(secretKey []byte, user *models.User, purpose string, ttl time.Duration, now time.Time) (string, error) {
 	if user == nil {
 		return "", ErrAuthUserRequired
 	}
-	return service.auth.BuildPasswordResetToken(secretKey, user.ID, user.PasswordHash, ttl, now)
+	return service.auth.BuildPasswordResetToken(secretKey, user.ID, user.PasswordHash, purpose, ttl, now)
 }
 
 // StartRecovery mints a password-reset token for an owner who proves TWO
@@ -88,7 +95,7 @@ func (service *PasswordResetService) StartRecovery(ctx context.Context, secretKe
 		return "", err
 	}
 
-	token, err := service.auth.BuildPasswordResetToken(secretKey, user.ID, user.PasswordHash, tokenTTL, now)
+	token, err := service.auth.BuildPasswordResetToken(secretKey, user.ID, user.PasswordHash, PasswordResetTokenPurposeRecovery, tokenTTL, now)
 	if err != nil {
 		return "", err
 	}

@@ -143,14 +143,14 @@ var sealedCookieExpiryProbes = map[string]sealedCookieExpiryProbe{
 	resetPasswordCookieName: {
 		mint: func(handler *Handler, c fiber.Ctx) error {
 			token, err := services.BuildPasswordResetToken(
-				handler.secretKey, sealedExpirySweepUserID, sealedExpirySweepStoredHash, 0, time.Now())
+				handler.secretKey, sealedExpirySweepUserID, sealedExpirySweepStoredHash, services.PasswordResetTokenPurposeRecovery, 0, time.Now())
 			if err != nil {
 				return err
 			}
-			return handler.setResetPasswordCookie(c, token, false)
+			return handler.setResetPasswordCookie(c, token)
 		},
 		honours: func(handler *Handler, c fiber.Ctx) bool {
-			token, _ := handler.readResetPasswordCookie(c)
+			token := handler.readResetPasswordCookie(c)
 			return strings.TrimSpace(token) != ""
 		},
 		verifyTokenAt: func(handler *Handler, token string, now time.Time) error {
@@ -1109,7 +1109,7 @@ func assertSealedPayloadClassifierAnswersBothWays(t *testing.T) {
 	}
 
 	signed, err := services.BuildPasswordResetToken(
-		[]byte(sealedExpirySweepKeyMaterial), sealedExpirySweepUserID, sealedExpirySweepStoredHash, time.Hour, now)
+		[]byte(sealedExpirySweepKeyMaterial), sealedExpirySweepUserID, sealedExpirySweepStoredHash, services.PasswordResetTokenPurposeRecovery, time.Hour, now)
 	if err != nil {
 		t.Fatalf("build the fixture token: %v", err)
 	}

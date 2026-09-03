@@ -128,7 +128,7 @@ func TestCompleteResetSingleUseViaCAS(t *testing.T) {
 	authSvc := NewAuthService(repo)
 	resetSvc := NewPasswordResetService(authSvc, nil)
 
-	token, err := authSvc.BuildPasswordResetToken(secret, 42, string(originalHash), 30*time.Minute, now)
+	token, err := authSvc.BuildPasswordResetToken(secret, 42, string(originalHash), PasswordResetTokenPurposeRecovery, 30*time.Minute, now)
 	if err != nil {
 		t.Fatalf("BuildPasswordResetToken: %v", err)
 	}

@@ -17,7 +17,7 @@ func TestIssueResetTokenRejectsNilUser(t *testing.T) {
 	// (here unconfigured) auth dependency is never dereferenced.
 	service := NewPasswordResetService(NewAuthService(nil), nil)
 
-	token, err := service.IssueResetTokenForUser([]byte("secret"), nil, time.Minute, time.Time{})
+	token, err := service.IssueResetTokenForUser([]byte("secret"), nil, PasswordResetTokenPurposeForcedLocal, time.Minute, time.Time{})
 	if !errors.Is(err, ErrAuthUserRequired) {
 		t.Fatalf("IssueResetTokenForUser(nil user) error = %v, want %v", err, ErrAuthUserRequired)
 	}
@@ -33,7 +33,7 @@ func TestIssueResetTokenForValidUser(t *testing.T) {
 	secret := []byte("secret")
 	user := &models.User{ID: 7, PasswordHash: "$2a$10$testhashvaluefortokenclaims"}
 
-	token, err := service.IssueResetTokenForUser(secret, user, 30*time.Minute, now)
+	token, err := service.IssueResetTokenForUser(secret, user, PasswordResetTokenPurposeForcedLocal, 30*time.Minute, now)
 	if err != nil {
 		t.Fatalf("IssueResetTokenForUser(valid user) unexpected error: %v", err)
 	}

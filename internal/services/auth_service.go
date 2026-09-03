@@ -422,8 +422,9 @@ func (service *AuthService) VerifyStoredRecoveryCode(hash string, code string) b
 // BuildPasswordResetToken forwards to the package-level builder. storedHash is
 // the account's bcrypt hash from the row — every caller passes user.PasswordHash
 // — and it is fingerprinted, not re-hashed. See PasswordStateFingerprint.
-func (service *AuthService) BuildPasswordResetToken(secretKey []byte, userID uint, storedHash string, ttl time.Duration, now time.Time) (string, error) {
-	return BuildPasswordResetToken(secretKey, userID, storedHash, ttl, now)
+// purpose must be one of the PasswordResetTokenPurpose* constants.
+func (service *AuthService) BuildPasswordResetToken(secretKey []byte, userID uint, storedHash string, purpose string, ttl time.Duration, now time.Time) (string, error) {
+	return BuildPasswordResetToken(secretKey, userID, storedHash, purpose, ttl, now)
 }
 
 func (service *AuthService) BuildAuthSessionTokenWithSessionID(secretKey []byte, userID uint, role string, sessionVersion int, ttl time.Duration, now time.Time) (string, string, error) {

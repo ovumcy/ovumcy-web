@@ -24,18 +24,20 @@ func (stub *stubLoginAuthService) AuthenticateCredentials(context.Context, strin
 }
 
 type stubLoginResetTokenIssuer struct {
-	token      string
-	err        error
-	called     bool
-	lastUserID uint
-	lastTTL    time.Duration
+	token       string
+	err         error
+	called      bool
+	lastUserID  uint
+	lastTTL     time.Duration
+	lastPurpose string
 }
 
-func (stub *stubLoginResetTokenIssuer) IssueResetTokenForUser(_ []byte, user *models.User, ttl time.Duration, _ time.Time) (string, error) {
+func (stub *stubLoginResetTokenIssuer) IssueResetTokenForUser(_ []byte, user *models.User, purpose string, ttl time.Duration, _ time.Time) (string, error) {
 	stub.called = true
 	if user != nil {
 		stub.lastUserID = user.ID
 	}
+	stub.lastPurpose = purpose
 	stub.lastTTL = ttl
 	if stub.err != nil {
 		return "", stub.err
@@ -82,6 +84,16 @@ func TestLoginServiceAuthenticateForcedResetIssuesToken(t *testing.T) {
 	}
 	if reset.lastTTL != loginServiceTestTTL {
 		t.Fatalf("expected reset ttl %s, got %s", loginServiceTestTTL, reset.lastTTL)
+	}
+	// Authenticate only reaches the mint branch after AuthenticateCredentials
+	// verifies a LOCAL password (the stub above stands in for it) — the same
+	// call OIDC link-confirm's password challenge makes (A1). It must always
+	// mint PasswordResetTokenPurposeForcedLocal, never forced-from-OIDC:
+	// mislabelling it would let the token bypass the instance-wide
+	// local-sign-in gate on exactly the path that just proved a local
+	// password (PRIV-4).
+	if reset.lastPurpose != PasswordResetTokenPurposeForcedLocal {
+		t.Fatalf("expected forced-from-local purpose, got %q", reset.lastPurpose)
 	}
 }
 

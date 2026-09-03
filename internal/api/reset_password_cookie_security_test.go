@@ -87,18 +87,15 @@ func TestResetPasswordCookieRoundTripPreservesPayload(t *testing.T) {
 
 	app := fiber.New()
 	app.Get("/seal", func(c fiber.Ctx) error {
-		if err := handler.setResetPasswordCookie(c, "reset-token-xyz", true); err != nil {
+		if err := handler.setResetPasswordCookie(c, "reset-token-xyz"); err != nil {
 			t.Fatalf("seal reset password cookie: %v", err)
 		}
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 	app.Get("/open", func(c fiber.Ctx) error {
-		token, forced := handler.readResetPasswordCookie(c)
+		token := handler.readResetPasswordCookie(c)
 		if token != "reset-token-xyz" {
 			t.Fatalf("expected reset token to round-trip, got %q", token)
-		}
-		if !forced {
-			t.Fatalf("expected forced flag to round-trip as true")
 		}
 		return c.SendStatus(fiber.StatusNoContent)
 	})
@@ -133,15 +130,15 @@ func TestResetPasswordCookieRejectsTamperedByte(t *testing.T) {
 
 	app := fiber.New()
 	app.Get("/seal", func(c fiber.Ctx) error {
-		if err := handler.setResetPasswordCookie(c, "reset-tamper", false); err != nil {
+		if err := handler.setResetPasswordCookie(c, "reset-tamper"); err != nil {
 			t.Fatalf("seal: %v", err)
 		}
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 	app.Get("/open", func(c fiber.Ctx) error {
-		token, forced := handler.readResetPasswordCookie(c)
-		if token != "" || forced {
-			t.Fatalf("expected tampered reset password cookie to yield empty token, got %q forced=%t", token, forced)
+		token := handler.readResetPasswordCookie(c)
+		if token != "" {
+			t.Fatalf("expected tampered reset password cookie to yield empty token, got %q", token)
 		}
 		return c.SendStatus(fiber.StatusNoContent)
 	})
@@ -181,16 +178,16 @@ func TestResetPasswordCookieRejectsForeignKey(t *testing.T) {
 
 	sealingApp := fiber.New()
 	sealingApp.Get("/seal", func(c fiber.Ctx) error {
-		if err := sealingHandler.setResetPasswordCookie(c, "reset-foreign", true); err != nil {
+		if err := sealingHandler.setResetPasswordCookie(c, "reset-foreign"); err != nil {
 			t.Fatalf("seal: %v", err)
 		}
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 	openingApp := fiber.New()
 	openingApp.Get("/open", func(c fiber.Ctx) error {
-		token, forced := openingHandler.readResetPasswordCookie(c)
-		if token != "" || forced {
-			t.Fatalf("expected rotated-key handler to reject sealed cookie, got %q forced=%t", token, forced)
+		token := openingHandler.readResetPasswordCookie(c)
+		if token != "" {
+			t.Fatalf("expected rotated-key handler to reject sealed cookie, got %q", token)
 		}
 		return c.SendStatus(fiber.StatusNoContent)
 	})

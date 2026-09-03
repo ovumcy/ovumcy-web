@@ -96,7 +96,11 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 	}
 
 	if result.User.MustChangePassword {
-		token, issueErr := handler.passwordResetSvc.IssueResetTokenForUser(handler.secretKey, &result.User, 30*time.Minute, time.Now())
+		// This branch is reached without ever checking a local password — the
+		// OIDC exchange above is the sole authentication factor — so the
+		// minted token must carry the forced-from-OIDC purpose, the one the
+		// redeem gate lets bypass the instance-wide local-sign-in toggle.
+		token, issueErr := handler.passwordResetSvc.IssueResetTokenForUser(handler.secretKey, &result.User, services.PasswordResetTokenPurposeForcedOIDC, 30*time.Minute, time.Now())
 		if issueErr != nil {
 			// codecov:ignore:start -- defensive: reset-token issuance fails only on an HMAC signing error
 			spec := authResetTokenCreateErrorSpec()
@@ -105,7 +109,7 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 			// codecov:ignore:end
 		}
-		if err := handler.setResetPasswordCookie(c, token, true); err != nil {
+		if err := handler.setResetPasswordCookie(c, token); err != nil {
 			// codecov:ignore:start -- defensive: the reset cookie setter fails only on an AEAD seal error
 			spec := authResetTokenCreateErrorSpec()
 			handler.logSecurityError(c, "auth.oidc_callback", spec)

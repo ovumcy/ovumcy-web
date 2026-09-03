@@ -13,13 +13,12 @@ func TestBuildResetPasswordPageDataValidTokenAndForcedFlag(t *testing.T) {
 	t.Parallel()
 
 	handler := &Handler{secretKey: []byte("test-reset-secret")}
-	token, err := services.BuildPasswordResetToken(handler.secretKey, 42, "$2a$10$testhashvaluefortokenclaims", 30*time.Minute, time.Now())
+	token, err := services.BuildPasswordResetToken(handler.secretKey, 42, "$2a$10$testhashvaluefortokenclaims", services.PasswordResetTokenPurposeForcedLocal, 30*time.Minute, time.Now())
 	if err != nil {
 		t.Fatalf("buildPasswordResetToken returned error: %v", err)
 	}
 	cookieHeader := mustBuildResetCookieHeader(t, handler.secretKey, resetPasswordCookiePayload{
-		Token:  token,
-		Forced: true,
+		Token: token,
 	})
 	flash := FlashPayload{AuthError: "invalid credentials"}
 
