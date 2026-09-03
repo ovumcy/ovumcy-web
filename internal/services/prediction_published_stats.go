@@ -61,6 +61,14 @@ func PublishedStats(user *models.User, stats CycleStats) (CycleStats, Prediction
 	if suppression.FertilitySuppressed {
 		stats.OvulationDate = time.Time{}
 		stats.OvulationExact = false
+		// OvulationImpossible is itself a claim derived from the fertility
+		// projection (clearPredictedCycleWindow in cycles.go sets it exactly
+		// where it also clears OvulationDate/OvulationExact/the window), so it
+		// travels with the rest of this tier rather than surviving it: a
+		// consumer must never read suppression.fertility=true beside an
+		// ovulation-impossibility claim computed from the data that
+		// suppression says is not to be published.
+		stats.OvulationImpossible = false
 		stats.FertilityWindowStart = time.Time{}
 		stats.FertilityWindowEnd = time.Time{}
 		stats.CurrentFertility = FertilityStatusUnknown

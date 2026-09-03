@@ -833,7 +833,12 @@ components:
             `ovulation_date` is null.
         ovulation_impossible:
           type: boolean
-          description: No ovulation can be placed in the running cycle at all.
+          description: >-
+            No ovulation can be placed in the running cycle at all. Always
+            `false` when `suppression.fertility` is true — the underlying
+            claim is itself derived from the fertility projection, so it is
+            withheld along with `ovulation_date` and the fertile window
+            rather than surviving beside a suppressed one.
         fertility_window_start:
           type: [string, "null"]
           format: date
