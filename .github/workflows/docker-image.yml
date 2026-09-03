@@ -159,11 +159,12 @@ jobs:
           # `e2e-cross-browser` runs only on push/release/workflow_dispatch —
           # the same event set as `HEAVY_CHECKS` above, never merge_group — so
           # it joins that list, not `QUEUE_CHECKS`. REL-5 (owner decision,
-          # 2026-09-03): held out until now for the reasons the prior version
-          # of this comment gave (a release tag stricter than `:latest`); the
-          # owner chose to accept that trade rather than leave the gap. This
-          # gate mirrors exactly the six checks publish-image now requires —
-          # see ci.yml's `publish-image` job `needs:`.
+          # 2026-09-03): the prior version of this comment held it out because
+          # adding it here alone would have made a release tag stricter than
+          # `:latest`; it is added to both gates in the same change instead, so
+          # the two stay level. This gate mirrors exactly the six checks
+          # publish-image now requires — see ci.yml's `publish-image` job
+          # `needs:`.
         run: |
           set -euo pipefail
 
