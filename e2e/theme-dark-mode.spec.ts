@@ -7,6 +7,7 @@ import {
   applyTheme,
   describeContrast,
   measureGraphicContrast,
+  measureOverlayContrast,
 } from './support/contrast-helpers';
 import {
   completeOnboardingIfPresent,
@@ -199,7 +200,10 @@ test.describe('Theme mode', () => {
     // past bound, so the older anchors are backfilled through it.
     await registerAndOnboardWithStartDaysAgo(page, 'theme-dark-ribbon', 60);
     const today = isoToday();
-    for (const offset of [-90, -32, -6]) {
+    // The most recent anchor is 2 days back — inside the default 5-day period —
+    // so today sits before the period's own end and the ribbon still has
+    // predicted-flow days (day > today, day <= period length) left to draw.
+    for (const offset of [-90, -32, -2]) {
       await markCycleStartViaAPI(page, shiftISODate(today, offset));
     }
 
@@ -254,6 +258,39 @@ test.describe('Theme mode', () => {
         WCAG_AA_GRAPHIC_CONTRAST
       );
     }
+
+    // The two flags excluded above are not exempt from the floor — they are the
+    // ribbon's only graphical carrier for "predicted, not recorded" and "may
+    // start here", per the template's own comment (dashboard.html: "two per-day
+    // facts ... exist only here"). Each is measured against what it is actually
+    // drawn ON: its own cell's phase fill (or the ribbon track, for a 'beyond'
+    // cell with no fill of its own), never the card two layers further down.
+    const predictedFlowCell = header
+      .locator('[data-cycle-ribbon-day][data-predicted-flow="true"]')
+      .first();
+    const startWindowCell = header
+      .locator('[data-cycle-ribbon-day][data-start-window="true"]')
+      .first();
+    await expect(predictedFlowCell).toHaveCount(1);
+    await expect(startWindowCell).toHaveCount(1);
+
+    const predictedFlowContrast = await measureOverlayContrast(
+      predictedFlowCell,
+      'cycle ribbon predicted-flow overlay (dark)'
+    );
+    expect(
+      predictedFlowContrast.worstRatio,
+      describeContrast(predictedFlowContrast)
+    ).toBeGreaterThanOrEqual(WCAG_AA_GRAPHIC_CONTRAST);
+
+    const startWindowContrast = await measureOverlayContrast(
+      startWindowCell,
+      'cycle ribbon start-window overlay (dark)'
+    );
+    expect(
+      startWindowContrast.worstRatio,
+      describeContrast(startWindowContrast)
+    ).toBeGreaterThanOrEqual(WCAG_AA_GRAPHIC_CONTRAST);
 
     // Anti-vacuity: the same reader has to resolve the light theme's cells too.
     // A reader that silently stopped resolving anything would pass the dark

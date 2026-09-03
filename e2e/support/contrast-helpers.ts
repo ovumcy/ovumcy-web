@@ -395,6 +395,61 @@ export async function measureGraphicContrast(
   };
 }
 
+/**
+ * Contrast of a `background-image` overlay against what it is drawn ON — the
+ * element's OWN `background-color` (the ribbon's phase fill), never the card
+ * two layers further down. The overlay paints over the fill, so that fill is
+ * what a reader actually sees behind the hatch or the gradient; comparing the
+ * overlay to the card instead would measure a layer the overlay never touches.
+ * A cell whose own fill is fully transparent (the 'beyond' phase, alpha 0) has
+ * no fill to sit on, so this falls back to the nearest opaque ancestor — the
+ * ribbon track itself — which is what a reader sees behind it instead.
+ */
+export async function measureOverlayContrast(
+  overlayCell: Locator,
+  label: string
+): Promise<ContrastMeasurement> {
+  const painted = await readPaintedSurface(overlayCell);
+  if (!painted.measurable) {
+    throw new Error(`${label}: the overlay cell is unmeasurable (${painted.reason})`);
+  }
+
+  const overlayMatches = painted.backgroundImage.match(/rgba?\([^)]*\)/g);
+  if (overlayMatches === null || overlayMatches.length === 0) {
+    throw new Error(
+      `${label}: paints no background-image overlay of its own ` +
+        `(background-image: ${painted.backgroundImage})`
+    );
+  }
+
+  const backdrop = opaqueBackdrop(painted.backdrop);
+  const ownFill = parseCssColor(painted.backgroundColor);
+  const surface = ownFill !== null && ownFill.a > 0 ? flattenOver(ownFill, backdrop) : backdrop;
+  const surfaceLabel = formatRgb(surface);
+
+  const stops: ContrastStop[] = overlayMatches.map((source) => {
+    const parsed = parseCssColor(source);
+    if (parsed === null) {
+      throw new Error(`${label}: unresolvable overlay stop ${source}`);
+    }
+    const flattened = flattenOver(parsed, surface);
+    return {
+      source,
+      painted: formatRgb(flattened),
+      ratio: contrastRatio(flattened, surface),
+    };
+  });
+
+  return {
+    label,
+    color: painted.backgroundImage,
+    backgroundColor: surfaceLabel,
+    backgroundImage: painted.backgroundImage,
+    stops,
+    worstRatio: Math.min(...stops.map((stop) => stop.ratio)),
+  };
+}
+
 export function describeContrast(measurement: ContrastMeasurement): string {
   const stops = measurement.stops
     .map((stop) => `${stop.painted} -> ${stop.ratio.toFixed(2)}:1`)
