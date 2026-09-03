@@ -13,26 +13,33 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
-// TestOnboardingStep2AgeGroupPresenceAcrossRequestShapes closes the remaining
-// three leaks in API-2 (handlers_onboarding_input_helpers.go): the presence
-// guard for the removed `age_group` field used to answer "absent" for any
-// shape it did not know how to probe, which meant a client using that shape
-// was told 200 while the field it sent was silently discarded — the exact
+// TestOnboardingStep2AgeGroupPresenceAcrossRequestShapes closes the leaks in
+// API-2 (handlers_onboarding_input_helpers.go): the presence guard for the
+// removed `age_group` field used to answer "absent" for any shape it did not
+// know how to probe, which meant a client using that shape was told 200
+// while the field it sent was silently discarded — the exact
 // removed-field-reads-as-success failure
 // TestOnboardingStep2NamesTheAgeGroupItNoLongerAccepts (in
 // api_v1_declared_breaks_contract_test.go) already closed for a form body and
-// a JSON body carrying a string. Three shapes still slipped past the
-// pre-fix guard:
-//   - the URL's own query string (`onboardingStep2CarriesRemovedAgeGroup`
-//     only inspected `PostArgs`, never `QueryArgs`, though the fields this
+// a JSON body carrying a string. Shapes that slipped past an earlier guard:
+//   - the URL's own query string on a non-JSON request (the guard only
+//     inspected `PostArgs`, never `QueryArgs`, though the fields this
 //     endpoint DOES accept are read via `FormValue`, which searches
 //     `QueryArgs` first);
 //   - multipart/form-data (fasthttp only populates `PostArgs` for an exact
 //     `application/x-www-form-urlencoded` Content-Type; a multipart field
 //     never reaches it);
 //   - a non-string JSON value (`3`, `null`): binding `age_group` into a
-//     `*string` probe fails with a TYPE error, which the pre-fix guard read
-//     identically to the key being absent.
+//     `*string` probe fails with a TYPE error, which an earlier guard read
+//     identically to the key being absent;
+//   - the URL's own query string on a JSON request: the query-string check
+//     lived only in the non-JSON branch, so `?age_group=x` with
+//     `Content-Type: application/json` and a body that never names the key
+//     was still answered 200;
+//   - a JSON key differing only in case (`Age_Group`, `AGE_GROUP`):
+//     `Bind().Body` matches an object key to a struct field with a
+//     case-insensitive fallback, so a body shaped like that used to bind and
+//     get refused; a bare map lookup by the exact key does not.
 //
 // Each row below submits a normal, otherwise-valid step-2 body and either
 // carries `age_group` in the row's shape or omits it entirely. A present
@@ -146,6 +153,29 @@ func TestOnboardingStep2AgeGroupPresenceAcrossRequestShapes(t *testing.T) {
 			present: true,
 			buildRequest: func(t *testing.T, path string) *http.Request {
 				return jsonRequest(t, path, fmt.Sprintf(`{"cycle_length":%d,"period_length":%d,"age_group":null}`, cycleLength, periodLength))
+			},
+		},
+		{
+			// The query string belongs to neither transport: a JSON request
+			// whose BODY never names age_group can still carry it in the URL.
+			// A guard that only checks QueryArgs on the non-JSON branch misses
+			// this entirely.
+			name:    "json-body/query-string-present",
+			present: true,
+			buildRequest: func(t *testing.T, path string) *http.Request {
+				queried := path + "?age_group=40-45"
+				return jsonRequest(t, queried, fmt.Sprintf(`{"cycle_length":%d,"period_length":%d}`, cycleLength, periodLength))
+			},
+		},
+		{
+			// A struct-tag JSON probe would have matched this via
+			// encoding/json's case-insensitive fallback; a bare map lookup by
+			// the exact key does not, unless it compares case-insensitively
+			// itself.
+			name:    "json-string/mixed-case-key-present",
+			present: true,
+			buildRequest: func(t *testing.T, path string) *http.Request {
+				return jsonRequest(t, path, fmt.Sprintf(`{"cycle_length":%d,"period_length":%d,"Age_Group":"40-45"}`, cycleLength, periodLength))
 			},
 		},
 	}
