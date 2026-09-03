@@ -370,6 +370,106 @@ func TestOIDCLoginServiceAuthenticateRejectsUnverifiedEmail(t *testing.T) {
 // that still calls linkIdentity inline — the existing-email path now requires
 // confirmation and links through ConfirmAndLinkIdentity instead, covered
 // separately).
+// TestOIDCLoginServiceAuthenticateSetsRequiresTOTPForLinkedTOTPAccount pins
+// session issuance parity (docs/security/oidc-and-sessions.md) at the service
+// layer: an OIDC callback resolving to an already-linked identity whose
+// account has TOTP enabled must come back with RequiresTOTP set, the same
+// signal LoginResult.RequiresTOTP carries for the local login path
+// (login_service.go). The handler gates on this field rather than on the raw
+// User.TOTPEnabled value; this test is what proves the service actually
+// derives it.
+func TestOIDCLoginServiceAuthenticateSetsRequiresTOTPForLinkedTOTPAccount(t *testing.T) {
+	t.Parallel()
+
+	identities := &stubOIDCIdentityStore{
+		found: true,
+		identity: models.OIDCIdentity{
+			ID:      9,
+			UserID:  7,
+			Issuer:  "https://id.example.com",
+			Subject: "owner-subject",
+		},
+	}
+	users := &stubOIDCUserStore{
+		byID: models.User{
+			ID:          7,
+			Role:        models.RoleOwner,
+			TOTPEnabled: true,
+		},
+	}
+	service := NewOIDCLoginService(&stubOIDCProviderClient{
+		enabled: true,
+		exchange: security.OIDCExchangeResult{
+			Claims: security.OIDCClaims{
+				Issuer:        "https://id.example.com",
+				Subject:       "owner-subject",
+				Email:         "owner@example.com",
+				EmailVerified: true,
+			},
+		},
+	}, identities, users, nil)
+
+	result, err := service.Authenticate(context.Background(), "code", "verifier", "nonce", time.Time{})
+	if err != nil {
+		t.Fatalf("Authenticate() unexpected error: %v", err)
+	}
+	if !result.RequiresTOTP {
+		t.Fatal("expected RequiresTOTP for a linked identity whose account has TOTP enabled")
+	}
+}
+
+// TestOIDCLoginServiceAuthenticateMustChangePasswordOutranksRequiresTOTP pins
+// the same ordering decision the local login path pins
+// (TestLoginServiceForcedResetOutranksTOTPForAnAccountWithBothFlags): an
+// account carrying BOTH MustChangePassword and TOTPEnabled must not raise
+// RequiresTOTP. The handler routes MustChangePassword to the forced-reset
+// flow first, and that flow is the sanctioned skip of the second factor
+// (docs/security/known-disclosures.md); a RequiresTOTP that won here would
+// contradict the routing the handler actually performs.
+func TestOIDCLoginServiceAuthenticateMustChangePasswordOutranksRequiresTOTP(t *testing.T) {
+	t.Parallel()
+
+	identities := &stubOIDCIdentityStore{
+		found: true,
+		identity: models.OIDCIdentity{
+			ID:      9,
+			UserID:  7,
+			Issuer:  "https://id.example.com",
+			Subject: "owner-subject",
+		},
+	}
+	users := &stubOIDCUserStore{
+		byID: models.User{
+			ID:                 7,
+			Role:               models.RoleOwner,
+			TOTPEnabled:        true,
+			MustChangePassword: true,
+		},
+	}
+	service := NewOIDCLoginService(&stubOIDCProviderClient{
+		enabled: true,
+		exchange: security.OIDCExchangeResult{
+			Claims: security.OIDCClaims{
+				Issuer:        "https://id.example.com",
+				Subject:       "owner-subject",
+				Email:         "owner@example.com",
+				EmailVerified: true,
+			},
+		},
+	}, identities, users, nil)
+
+	result, err := service.Authenticate(context.Background(), "code", "verifier", "nonce", time.Time{})
+	if err != nil {
+		t.Fatalf("Authenticate() unexpected error: %v", err)
+	}
+	if result.RequiresTOTP {
+		t.Fatal("expected MustChangePassword to outrank RequiresTOTP, mirroring the local login path's ordering")
+	}
+	if !result.User.MustChangePassword {
+		t.Fatal("expected the returned user to still carry MustChangePassword for the handler's own reset routing")
+	}
+}
+
 func TestOIDCLoginServiceAuthenticateMapsLinkPersistenceFailure(t *testing.T) {
 	t.Parallel()
 

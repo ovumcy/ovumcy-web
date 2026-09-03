@@ -451,6 +451,108 @@ func TestOIDCCallbackResetRequiredRedirectsToResetPassword(t *testing.T) {
 	}
 }
 
+// TestOIDCCallbackForLinkedTOTPAccountGatesOnTheSecondFactor pins session
+// issuance parity (docs/security/oidc-and-sessions.md) between the OIDC login
+// path and the local login path: an OIDC callback that resolves to an
+// already-linked identity whose account has TOTP enabled must NOT mint an
+// ovumcy_auth cookie directly off the exchange. It has to set the same
+// pending-TOTP cookie the local login path sets (RequiresTOTP, mirroring
+// LoginResult) and land on /auth/2fa; only completing that challenge may
+// issue the session. Before this fix CompleteOIDCLogin fell straight through
+// to setAuthCookie with no TOTP check anywhere on the path.
+func TestOIDCCallbackForLinkedTOTPAccountGatesOnTheSecondFactor(t *testing.T) {
+	t.Parallel()
+
+	stub := newStubOIDCWorkflowService(true)
+	stub.authURL = "https://id.example.com/authorize"
+
+	secretKey := []byte(testHandlerSecretKey)
+	app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{
+		cookieSecure: true,
+		oidcService:  stub,
+	})
+	user := createOnboardingTestUser(t, database, "oidc-totp@example.com", "StrongPass1", true)
+	rawSecret := setupTOTPForUser(t, database, user.ID, secretKey)
+
+	var linked models.User
+	if err := database.First(&linked, user.ID).Error; err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if !linked.TOTPEnabled {
+		t.Fatal("expected TOTP enabled on the account after setup")
+	}
+
+	// The stub bypasses OIDCLoginService.Authenticate's own computation, so the
+	// result carries RequiresTOTP exactly as the real service would derive it
+	// for this account (TOTP enabled, MustChangePassword false) — the handler
+	// gate under test is what consumes this field, not what computes it.
+	stub.result = services.OIDCLoginResult{
+		User:         linked,
+		RequiresTOTP: true,
+	}
+
+	startResponse := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, "/auth/oidc/start", nil))
+	stateCookie := responseCookie(startResponse.Cookies(), oidcStateCookieName)
+	if stateCookie == nil {
+		t.Fatal("expected OIDC state cookie from start flow")
+	}
+
+	callbackRequest := httptest.NewRequest(http.MethodPost, security.OIDCCallbackPath, strings.NewReader(url.Values{
+		"state": {stub.lastStartState},
+		"code":  {"provider-code"},
+	}.Encode()))
+	callbackRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	callbackRequest.Header.Set("Cookie", stateCookie.String())
+
+	callbackResponse := mustAppResponse(t, app, callbackRequest)
+	assertStatusCode(t, callbackResponse, http.StatusSeeOther)
+	if location := callbackResponse.Header.Get("Location"); location != "/auth/2fa" {
+		t.Fatalf("expected redirect to /auth/2fa, got %q", location)
+	}
+	if authCookie := responseCookie(callbackResponse.Cookies(), authCookieName); authCookie != nil && strings.TrimSpace(authCookie.Value) != "" {
+		t.Fatal("did not expect an auth cookie before the TOTP challenge is completed")
+	}
+	pendingCookie := responseCookie(callbackResponse.Cookies(), totpPendingCookieName)
+	if pendingCookie == nil || strings.TrimSpace(pendingCookie.Value) == "" {
+		t.Fatal("expected a TOTP pending cookie from the OIDC callback")
+	}
+
+	codec, err := newSecureCookieCodec(secretKey)
+	if err != nil {
+		t.Fatalf("newSecureCookieCodec: %v", err)
+	}
+	decoded, err := codec.open(totpPendingCookieName, pendingCookie.Value)
+	if err != nil {
+		t.Fatalf("open pending cookie: %v", err)
+	}
+	var pendingPayload totpPendingCookiePayload
+	if err := json.Unmarshal(decoded, &pendingPayload); err != nil {
+		t.Fatalf("unmarshal pending payload: %v", err)
+	}
+	if pendingPayload.UserID != linked.ID {
+		t.Fatalf("pending cookie user_id = %d, want %d", pendingPayload.UserID, linked.ID)
+	}
+
+	// Completing the challenge with a valid code is what may issue the
+	// session — never the callback itself.
+	code, err := totp.GenerateCode(rawSecret, time.Now())
+	if err != nil {
+		t.Fatalf("GenerateCode: %v", err)
+	}
+	challengeRequest := httptest.NewRequest(http.MethodPost, "/api/v1/sessions/2fa-challenge", strings.NewReader(url.Values{
+		"code": {code},
+	}.Encode()))
+	challengeRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	challengeRequest.Header.Set("Cookie", totpPendingCookieName+"="+pendingCookie.Value)
+
+	challengeResponse := mustAppResponse(t, app, challengeRequest)
+	assertStatusCode(t, challengeResponse, http.StatusSeeOther)
+	sessionCookie := responseCookie(challengeResponse.Cookies(), authCookieName)
+	if sessionCookie == nil || strings.TrimSpace(sessionCookie.Value) == "" {
+		t.Fatal("expected an auth cookie after completing the TOTP challenge")
+	}
+}
+
 func newStubOIDCWorkflowService(enabled bool) *stubOIDCWorkflowService {
 	return &stubOIDCWorkflowService{
 		enabled:                enabled,
