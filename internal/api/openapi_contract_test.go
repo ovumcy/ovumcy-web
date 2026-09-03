@@ -913,11 +913,19 @@ func openAPIProbeBound(t *testing.T, app *fiber.App, authCookie string, bound op
 	return mustAppResponse(t, app, request).StatusCode
 }
 
-// openAPIRecoveryCodePatternLine finds the `pattern: "^OVUM-..."` line
-// declared for ForgotPasswordRequest.recovery_code. It is the only `pattern:`
-// line in the spec starting with "^OVUM-", so a plain line scan identifies it
-// unambiguously without needing to track YAML nesting.
-var openAPIRecoveryCodePatternLine = regexp.MustCompile(`(?m)^\s*pattern:\s*"(\^OVUM-[^"]*)"\s*$`)
+// openAPIRecoveryCodePatternLine finds the `pattern: "^OVUM-..."` (or
+// `pattern: '^OVUM-...'`) line declared for ForgotPasswordRequest.recovery_code.
+// It is the only `pattern:` line in the spec starting with "^OVUM-", so a
+// plain line scan identifies it unambiguously without needing to track YAML
+// nesting. Both quote styles are matched deliberately, each with its own
+// capture group scoped to ITS OWN quote character: the pattern's `\s`
+// alternative (matching the handler's `strings.TrimSpace(...) == ""` blank
+// case) needs a literal backslash in the file's raw bytes, and YAML only
+// round-trips that byte-for-byte in a single-quoted scalar — double-quoted
+// would require doubling the backslash, and this extractor reads raw bytes
+// with no YAML unescaping, so a doubled backslash here would silently compile
+// into a different, wrong expression instead of failing loudly.
+var openAPIRecoveryCodePatternLine = regexp.MustCompile(`(?m)^\s*pattern:\s*(?:"(\^OVUM-[^"]*)"|'(\^OVUM-[^']*)')\s*$`)
 
 // openAPIRecoveryCodePattern extracts and compiles the `pattern` declared for
 // ForgotPasswordRequest.recovery_code in the OpenAPI spec. Like
@@ -932,12 +940,16 @@ func openAPIRecoveryCodePattern(t *testing.T, specPath string) *regexp.Regexp {
 
 	match := openAPIRecoveryCodePatternLine.FindSubmatch(data)
 	if match == nil {
-		t.Fatalf(`docs/openapi.yaml: no recovery_code pattern line found (expected pattern: "^OVUM-...")`)
+		t.Fatalf(`docs/openapi.yaml: no recovery_code pattern line found (expected pattern: "^OVUM-..." or pattern: '^OVUM-...')`)
+	}
+	raw := match[1]
+	if len(raw) == 0 {
+		raw = match[2]
 	}
 
-	compiled, err := regexp.Compile(string(match[1]))
+	compiled, err := regexp.Compile(string(raw))
 	if err != nil {
-		t.Fatalf("docs/openapi.yaml recovery_code pattern %q does not compile: %v", match[1], err)
+		t.Fatalf("docs/openapi.yaml recovery_code pattern %q does not compile: %v", raw, err)
 	}
 	return compiled
 }
@@ -992,6 +1004,35 @@ func TestOpenAPIRecoveryCodePatternAcceptsGeneratedCodes(t *testing.T) {
 		serverAccepts := services.ValidateRecoveryCodeFormat(sample) == nil
 		if specAccepts != serverAccepts {
 			t.Fatalf("docs/openapi.yaml recovery_code pattern disagrees with services.ValidateRecoveryCodeFormat for character %q: spec accepts=%v, server accepts=%v (sample %q)", r, specAccepts, serverAccepts, sample)
+		}
+	}
+}
+
+// TestOpenAPIRecoveryCodePatternAcceptsTheHandlersBlankCase ties the pattern
+// compiled FROM THE SPEC ITSELF to ForgotPassword's actual blank-selects-step-1
+// rule: parseForgotPasswordInput reads `rawCode :=
+// strings.TrimSpace(input.RecoveryCode)` and treats `rawCode == ""` — omitted,
+// empty, or all whitespace — as step 1, never a refusal
+// (internal/api/handlers_auth_session_helpers.go). A pattern requiring the
+// full OVUM-XXXX-XXXX-XXXX shape unconditionally would make a spec-validating
+// client reject its own step-1 body before ever sending it, even though the
+// server accepts it; the class this catches previously escaped detection
+// entirely because a doubled backslash in a double-quoted YAML scalar let the
+// pattern's blank alternative compile to something that matched neither " "
+// nor "\t" while still passing every existing assertion, which only fed it
+// non-blank codes. A non-blank but malformed code must still be refused.
+func TestOpenAPIRecoveryCodePatternAcceptsTheHandlersBlankCase(t *testing.T) {
+	specPattern := openAPIRecoveryCodePattern(t, filepath.Join("..", "..", "docs", "openapi.yaml"))
+
+	for _, blank := range []string{"", " ", "\t", "  \t  "} {
+		if !specPattern.MatchString(blank) {
+			t.Fatalf("docs/openapi.yaml recovery_code pattern %q rejects %q, which ForgotPassword's strings.TrimSpace(...) == \"\" check accepts as step 1", specPattern.String(), blank)
+		}
+	}
+
+	for _, malformed := range []string{"garbage", "OVUM-ABCD-2345-EFG", "ovum-abcd-2345-efgh"} {
+		if specPattern.MatchString(malformed) {
+			t.Fatalf("docs/openapi.yaml recovery_code pattern %q wrongly accepts non-blank malformed code %q", specPattern.String(), malformed)
 		}
 	}
 }

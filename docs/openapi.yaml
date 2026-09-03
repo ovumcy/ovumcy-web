@@ -530,7 +530,7 @@ components:
             CLI `ovumcy reset-password <email>`.
         recovery_code:
           type: string
-          pattern: "^OVUM-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$|^\\s*$"
+          pattern: '^OVUM-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$|^\s*$'
           description: >-
             Single-use recovery code minted at registration or by `POST
             /api/v1/users/current/recovery-code`. Omitted, or sent blank —
