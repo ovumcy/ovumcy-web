@@ -393,14 +393,20 @@ func (repo *UserRepository) UpdateReminderLeadDays(ctx context.Context, userID u
 func (repo *UserRepository) SaveWebhookSettings(ctx context.Context, userID uint, settings models.WebhookSettingsColumns) error {
 	updates := map[string]any{
 		"webhook_enabled":          settings.Enabled,
-		"webhook_url":              settings.EncryptedURL,
 		"webhook_notify_period":    settings.NotifyPeriod,
 		"webhook_notify_ovulation": settings.NotifyOvulation,
 		"reminder_lead_days":       settings.ReminderLeadDays,
 		"webhook_config_version":   gorm.Expr("webhook_config_version + 1"),
 	}
-	if settings.ClearLastDeliveredAt {
-		updates["webhook_last_delivered_at"] = nil
+	// A save that keeps the endpoint writes no endpoint. This is the one shape in
+	// which this statement is not a webhook_url writer, so it is also the one
+	// shape in which the delivery-mark judgement below has nothing to decide:
+	// the mark still describes the column the row still holds.
+	if !settings.KeepEncryptedURL {
+		updates["webhook_url"] = settings.EncryptedURL
+		if settings.ClearLastDeliveredAt {
+			updates["webhook_last_delivered_at"] = nil
+		}
 	}
 	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(updates).Error
 }

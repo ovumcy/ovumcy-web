@@ -52,7 +52,7 @@ type settingsEgressView struct {
 }
 
 // buildSettingsEgressView projects the domain ledger onto the template's view.
-func buildSettingsEgressView(c fiber.Ctx, ledger services.EgressLedger) settingsEgressView {
+func buildSettingsEgressView(c fiber.Ctx, ledger services.EgressLedger, location *time.Location) settingsEgressView {
 	language := currentLanguage(c)
 
 	webhookEvidenceKey := "settings.egress.evidence.webhook.none"
@@ -64,8 +64,8 @@ func buildSettingsEgressView(c fiber.Ctx, ledger services.EgressLedger) settings
 		feedEvidenceKey = "settings.egress.evidence.feed.recorded"
 	}
 
-	webhookISO, webhookText := egressTimestampStrings(language, ledger.Webhook.LastDeliveredAt)
-	feedISO, feedText := egressTimestampStrings(language, ledger.Feed.RevealedAt)
+	webhookISO, webhookText := egressTimestampStrings(language, location, ledger.Webhook.LastDeliveredAt)
+	feedISO, feedText := egressTimestampStrings(language, location, ledger.Feed.RevealedAt)
 
 	return settingsEgressView{
 		Section:    string(ledger.Section),
@@ -100,11 +100,25 @@ func buildSettingsEgressView(c fiber.Ctx, ledger services.EgressLedger) settings
 
 // egressTimestampStrings renders the one timestamp a path can prove, in the two
 // forms the markup needs. The value never enters a translated sentence.
-func egressTimestampStrings(language string, value *time.Time) (string, string) {
+//
+// It resolves in the REQUEST's location, like every other date this application
+// shows. Rendered in UTC it names the wrong calendar day for any owner far
+// enough east or west of it -- a delivery accepted at 23:30Z is yesterday to the
+// page and today to the owner reading it, and the datetime attribute agrees with
+// the page.
+func egressTimestampStrings(language string, location *time.Location, value *time.Time) (string, string) {
 	if value == nil {
 		return "", ""
 	}
-	stamp := value.UTC()
+	// codecov:ignore:start -- unreachable: both call sites resolve the request
+	// location before calling. Kept because time.Time.In(nil) panics, and a
+	// rendered date one day out is a smaller failure than a 500 on the settings
+	// page. Pinned by TestEgressLedgerTimestampsFollowTheRequestLocation.
+	if location == nil {
+		location = time.UTC
+	}
+	// codecov:ignore:end
+	stamp := value.In(location)
 	return stamp.Format(time.RFC3339), services.LocalizedDateDisplay(language, stamp)
 }
 
@@ -127,7 +141,12 @@ func egressSectionStateMessageKey(state services.EgressSectionState) string {
 	case services.EgressSectionNoPathEnabled:
 		return "settings.egress.state.section.no_path_enabled"
 	}
+	// codecov:ignore:start -- unreachable: the switch is total over the
+	// enumeration, and TestEgressLedgerViewModelNamesAKeyForEveryState walks that
+	// enumeration to prove it. Kept so a state added without a case renders an
+	// empty line rather than failing the request.
 	return ""
+	// codecov:ignore:end
 }
 
 // egressWebhookStateMessageKey names the sentence for each webhook state.
@@ -148,7 +167,12 @@ func egressWebhookStateMessageKey(state services.EgressWebhookState) string {
 	case services.EgressWebhookArmed:
 		return "settings.egress.state.webhook.armed"
 	}
+	// codecov:ignore:start -- unreachable: the switch is total over the
+	// enumeration, and TestEgressLedgerViewModelNamesAKeyForEveryState walks that
+	// enumeration to prove it. Kept so a state added without a case renders an
+	// empty line rather than failing the request.
 	return ""
+	// codecov:ignore:end
 }
 
 // egressFeedStateMessageKey names the sentence for each feed state.
@@ -165,7 +189,12 @@ func egressFeedStateMessageKey(state services.EgressFeedState) string {
 	case services.EgressFeedIssuedCurrentKey:
 		return "settings.egress.state.feed.issued_current_key"
 	}
+	// codecov:ignore:start -- unreachable: the switch is total over the
+	// enumeration, and TestEgressLedgerViewModelNamesAKeyForEveryState walks that
+	// enumeration to prove it. Kept so a state added without a case renders an
+	// empty line rather than failing the request.
 	return ""
+	// codecov:ignore:end
 }
 
 // egressWebhookPayloadMessageKeys names each field a reminder carries.

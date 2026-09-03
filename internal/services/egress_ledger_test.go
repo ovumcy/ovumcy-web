@@ -269,3 +269,69 @@ func TestBuildFeedStatusReportsUnknownOnALoadFailure(t *testing.T) {
 		t.Fatal("a failed read must not report a configured feed")
 	}
 }
+
+// TestBuildSettingsEgressViewDataRefusesANonOwnerAndReRreadsTheRow covers the
+// rebuild path a mutation's response is assembled from: the owner gate, the
+// fresh read, and the typed failure.
+//
+// The gate is the second half of the owner boundary on this surface. The route
+// refuses a non-owner and this refuses again, so an inverted condition here
+// would let a mutation response carry a ledger the page itself would not render.
+func TestBuildSettingsEgressViewDataRefusesANonOwnerAndReReadsTheRow(t *testing.T) {
+	t.Parallel()
+
+	webhook := &stubEgressWebhookDisplay{display: WebhookURLDisplay{Readability: WebhookURLReadable, Host: "hooks.example.test"}}
+	feed := &stubEgressFeedStatus{status: CalendarFeedStatus{Known: true, Configured: true}}
+	loader := &stubSettingsViewLoader{user: models.User{WebhookEnabled: true, WebhookNotifyPeriod: true, WebhookURL: "sealed"}}
+	service := NewSettingsViewService(loader, nil, nil, NewEgressLedgerService(webhook, feed, true))
+
+	stranger := &models.User{ID: 5, Role: "partner"}
+	ledger, err := service.BuildSettingsEgressViewData(context.Background(), stranger)
+	if err != nil {
+		t.Fatalf("unexpected error for a non-owner: %v", err)
+	}
+	if ledger.Section != "" || ledger.Webhook.State != "" || ledger.Feed.State != "" {
+		t.Fatalf("a non-owner received a ledger: %+v", ledger)
+	}
+	if loader.settingsUserID != 0 {
+		t.Fatalf("a non-owner's request read the settings row for %d", loader.settingsUserID)
+	}
+
+	owner := &models.User{ID: 6, Role: models.RoleOwner}
+	ledger, err = service.BuildSettingsEgressViewData(context.Background(), owner)
+	if err != nil {
+		t.Fatalf("unexpected error for the owner: %v", err)
+	}
+	if loader.settingsUserID != owner.ID {
+		t.Fatalf("expected the rebuild to re-read the owner's row, got %d", loader.settingsUserID)
+	}
+	if ledger.Webhook.State != EgressWebhookArmed {
+		t.Fatalf("expected the rebuild to describe the re-read row, got %q", ledger.Webhook.State)
+	}
+	if webhook.userID != owner.ID || feed.userID != owner.ID {
+		t.Fatalf("the rebuild read another owner's paths: webhook=%d feed=%d", webhook.userID, feed.userID)
+	}
+}
+
+// TestBuildSettingsEgressViewDataSurfacesALoadFailureAsATypedError proves the
+// rebuild fails loudly rather than answering with an empty ledger, which the
+// caller would render as "nothing is configured" over a row it never read.
+func TestBuildSettingsEgressViewDataSurfacesALoadFailureAsATypedError(t *testing.T) {
+	t.Parallel()
+
+	service := NewSettingsViewService(
+		&stubSettingsViewLoader{err: errors.New("load boom")},
+		nil,
+		nil,
+		NewEgressLedgerService(
+			&stubEgressWebhookDisplay{display: WebhookURLDisplay{Readability: WebhookURLAbsent}},
+			&stubEgressFeedStatus{status: CalendarFeedStatus{Known: true}},
+			true,
+		),
+	)
+
+	_, err := service.BuildSettingsEgressViewData(context.Background(), &models.User{ID: 7, Role: models.RoleOwner})
+	if !errors.Is(err, ErrSettingsViewLoadEgress) {
+		t.Fatalf("expected ErrSettingsViewLoadEgress, got %v", err)
+	}
+}

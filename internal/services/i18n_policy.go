@@ -108,6 +108,7 @@ var authErrorTranslationKeys = map[string]string{
 	"invalid password":                                "settings.error.invalid_password",
 	"local password required":                         "settings.error.local_password_required",
 	"invalid webhook url":                             "settings.error.invalid_webhook_url",
+	"webhook url unreadable":                          "settings.error.webhook_url_unreadable",
 	"failed to update webhook settings":               "settings.error.webhook_update_failed",
 	"failed to update calendar feed":                  "settings.error.calendar_feed_update_failed",
 	"invalid symptom name":                            "settings.symptoms.error.name_required",

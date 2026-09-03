@@ -2194,7 +2194,13 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
         '400':
-          description: Invalid webhook URL (empty when enabling, or non-http(s) scheme).
+          description: |
+            Invalid webhook URL (empty when enabling, or non-http(s) scheme), or
+            `webhook url unreadable` when the field was left blank - meaning "keep
+            the stored endpoint" - and the stored ciphertext no longer opens under
+            this instance's key. The second case is refused rather than resolved
+            to an empty endpoint, because that silently deleted the endpoint the
+            request asked to keep; withdraw it with `DELETE` instead.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }

@@ -329,10 +329,21 @@ func TestEveryWebhookURLWriterDecidesTheDeliveryMark(t *testing.T) {
 					decides[function.Name.Name] = true
 				}
 			case *ast.IndexExpr:
-				// A conditional clear is an index assignment onto the update map
+				// A CONDITIONAL write is an index assignment onto the update map
 				// rather than a map entry, so the column is named there instead.
+				// Both columns can arrive this way: the mark's clear has always
+				// been conditional, and the endpoint became so when a save learned
+				// to keep a ciphertext it cannot read. The read projections name
+				// webhook_url as a plain call argument, never as an index, so this
+				// still cannot mistake a reader for a writer.
 				index, ok := typed.Index.(*ast.BasicLit)
-				if ok && index.Kind == token.STRING && index.Value == markColumn {
+				if !ok || index.Kind != token.STRING {
+					return true
+				}
+				switch index.Value {
+				case urlColumn:
+					writers[function.Name.Name] = true
+				case markColumn:
 					decides[function.Name.Name] = true
 				}
 			}

@@ -67,7 +67,7 @@ func (handler *Handler) buildSettingsViewData(c fiber.Ctx, user *models.User, fl
 	// false value is still an answer to a question that session may not ask.
 	// Regression: TestSettingsViewDataNamesNoEgressKeyForANonOwner.
 	if viewData.HasOwnerEgressLedger {
-		data["Egress"] = buildSettingsEgressView(c, viewData.Egress)
+		data["Egress"] = buildSettingsEgressView(c, viewData.Egress, location)
 	}
 
 	if viewData.HasOwnerExportViewState {

@@ -177,9 +177,14 @@ func (service *CalendarFeedSettingsService) BuildFeedStatus(ctx context.Context,
 	// owner their link was issued under a superseded key because this process
 	// could not derive its own epoch would be a guess wearing a fact's clothes.
 	currentEpoch, epochErr := security.CalendarFeedKeyEpoch(service.secretKey)
+	// codecov:ignore:start -- unreachable on a wired instance: the derivation
+	// fails only for an EMPTY secret key, and every composition root supplies
+	// one. Kept because the alternative to leaving the epoch empty is reporting a
+	// mismatch this process never measured.
 	if epochErr != nil {
 		currentEpoch = ""
 	}
+	// codecov:ignore:end
 	return CalendarFeedStatus{
 		Known:           true,
 		Configured:      strings.TrimSpace(user.CalendarFeedSelector) != "",

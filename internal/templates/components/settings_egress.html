@@ -120,9 +120,9 @@
       </form>
 
       {{/* Withdrawing the endpoint is its own request, not a checkbox on the
-           save. The save writes the shared lead window and both per-kind opt-ins
-           whatever the owner touched, and it cannot act at all on a row this
-           instance can no longer decrypt — which is exactly the row an owner
+           save. The save rewrites both per-kind opt-ins from whatever the form
+           carried, and while ENABLING it cannot act at all on a row this
+           instance can no longer decrypt - which is exactly the row an owner
            most needs to withdraw. */}}
       {{if .Egress.WebhookRemovable}}
       <div class="settings-form-actions">
@@ -136,6 +136,12 @@
           data-confirm-accept="{{t .Messages "settings.egress.webhook.remove"}}"
           data-settings-webhook-remove>
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          {{/* Without JavaScript this form POSTs to its action, which is the
+               SAVE endpoint - the DELETE verb is htmx's alone. The flag makes
+               that fallback perform the removal it is labelled with, instead of
+               an empty save that would merely switch delivery off and leave the
+               endpoint stored. */}}
+          <input type="hidden" name="webhook_remove_url" value="true">
           <button type="submit" class="btn-secondary">{{t .Messages "settings.egress.webhook.remove"}}</button>
         </form>
       </div>

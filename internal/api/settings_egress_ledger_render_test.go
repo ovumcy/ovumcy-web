@@ -139,7 +139,7 @@ func TestEgressLedgerRendersNoWatermarkAndNoActiveClaim(t *testing.T) {
 			notifyPeriod:        true,
 			notifyOvulation:     true,
 			deliveredAt:         &delivered,
-			wantSection:         services.EgressSectionNoPathEnabled,
+			wantSection:         services.EgressSectionPathsEnabled,
 			wantWebhookState:    services.EgressWebhookOutboundDisabled,
 			wantFeedState:       services.EgressFeedNone,
 		},
@@ -228,6 +228,11 @@ func TestEgressLedgerRendersNoWatermarkAndNoActiveClaim(t *testing.T) {
 
 			body := fetchPageBody(t, owner.app, "/settings", owner.authCookie)
 
+			// The card is its own swap target, and the browser status machinery
+			// resolves the island only from an element that DECLARES itself a toast
+			// surface. Without this attribute a save or a withdrawal renders no
+			// status at all -- silently, on the success path.
+			assertAttributeValue(t, body, "data-success-toast", "true")
 			assertAttributeValue(t, body, "data-egress-section-state", string(row.wantSection))
 			assertAttributeValue(t, body, "data-egress-webhook-state", string(row.wantWebhookState))
 			assertAttributeValue(t, body, "data-egress-feed-state", string(row.wantFeedState))

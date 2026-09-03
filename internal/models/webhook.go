@@ -37,6 +37,20 @@ type WebhookSettingsColumns struct {
 	// pinned by enumerating the writers of webhook_url rather than by this
 	// comment: TestEveryWebhookURLWriterDecidesTheDeliveryMark.
 	ClearLastDeliveredAt bool
+	// KeepEncryptedURL asks the UPDATE to leave webhook_url alone entirely. It
+	// exists for one situation: the stored ciphertext no longer opens under this
+	// instance's key, so there is no plaintext to re-encrypt and no honest value
+	// to write. Substituting the empty string there DELETED an endpoint the
+	// request never asked to remove, and refusing the whole save instead made
+	// every unrelated toggle on the same form unusable until the endpoint was
+	// dealt with. Keeping the column is the third answer: the toggles persist,
+	// the endpoint stays for a deliberate withdrawal, and delivery cannot be
+	// armed over it because the service refuses that separately.
+	//
+	// It is mutually exclusive with EncryptedURL by construction: a save that
+	// keeps the column has nothing to put in it. Regression:
+	// TestSaveWebhookSettingsKeepsAnUnreadableEndpointAndStillSavesTheToggles.
+	KeepEncryptedURL bool
 }
 
 // WebhookNotifyRecord is the read projection returned by ListAllForNotify: the

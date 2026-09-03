@@ -77,7 +77,7 @@ func (handler *Handler) buildSettingsEgressBlockData(c fiber.Ctx, user *models.U
 		return nil, err
 	}
 	return fiber.Map{
-		"Egress":          buildSettingsEgressView(c, ledger),
+		"Egress":          buildSettingsEgressView(c, ledger, handler.requestLocation(c)),
 		"EgressStatusKey": services.SettingsStatusTranslationKey(status),
 	}, nil
 }

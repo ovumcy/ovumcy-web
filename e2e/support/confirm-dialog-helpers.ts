@@ -91,3 +91,36 @@ export async function mutatingRequestsDuring(
   }
   return seen;
 }
+
+/**
+ * Runs a destructive submit and waits for the request it releases, asserting the
+ * response was accepted.
+ *
+ * The action is a CALLBACK rather than a promise: Promise.all evaluates its
+ * elements left to right, so the request waiter is registered before the click
+ * runs. Written the other way round, an in-flight request from an earlier step
+ * can satisfy the wait under load and the assertion passes about the wrong
+ * request.
+ *
+ * It lives here rather than in one spec because both egress halves submit the
+ * same shape - an hx-delete gated by hx-confirm - and two copies of the ordering
+ * argument is one copy too many for a rule that is only correct in one order.
+ */
+export async function submitAndAwait(
+  page: Page,
+  method: 'POST' | 'DELETE',
+  pathSuffix: string,
+  action: () => Promise<void>
+): Promise<void> {
+  const [request] = await Promise.all([
+    page.waitForRequest(
+      (candidate) =>
+        candidate.method() === method && new URL(candidate.url()).pathname.endsWith(pathSuffix)
+    ),
+    action(),
+  ]);
+
+  const response = await request.response();
+  expect(response, `expected a response for ${method} ${pathSuffix}`).not.toBeNull();
+  expect(response!.ok(), `${method} ${pathSuffix} failed with ${response!.status()}`).toBeTruthy();
+}
