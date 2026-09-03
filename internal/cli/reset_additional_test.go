@@ -22,7 +22,7 @@ import (
 // parseUsersDeleteArgs treats one, so this is the same usage refusal as no
 // address at all.
 func TestRunResetPasswordCommandValidatesBeforeReadingStdin(t *testing.T) {
-	if err := RunResetPasswordCommand(db.Config{}, []string{"   "}); err == nil || err.Error() != resetPasswordUsage {
+	if err := RunResetPasswordCommand(db.Config{}, []string{"   "}); err == nil || err.Error() != resetUsage {
 		t.Fatalf("expected usage error for a blank address, got %v", err)
 	}
 }
@@ -71,7 +71,7 @@ func TestRunResetPasswordCommandRejectsBlankEmail(t *testing.T) {
 	t.Parallel()
 
 	err := runResetPasswordCommand(db.Config{}, []string{"   "}, nil, io.Discard)
-	if err == nil || err.Error() != resetPasswordUsage {
+	if err == nil || err.Error() != resetUsage {
 		t.Fatalf("expected usage error for a blank address, got %v", err)
 	}
 }
@@ -91,7 +91,7 @@ func TestRunResetPasswordCommandRejectsInvalidEmail(t *testing.T) {
 func TestParseResetPasswordArgsRejectsNeitherAddress(t *testing.T) {
 	t.Parallel()
 
-	if _, err := parseResetPasswordArgs(nil); err == nil || err.Error() != resetPasswordUsage {
+	if _, err := parseResetPasswordArgs(nil); err == nil || err.Error() != resetUsage {
 		t.Fatalf("expected usage error for no address, got %v", err)
 	}
 }
@@ -102,7 +102,7 @@ func TestParseResetPasswordArgsRejectsNeitherAddress(t *testing.T) {
 func TestParseResetPasswordArgsRejectsBothAddresses(t *testing.T) {
 	t.Parallel()
 
-	if _, err := parseResetPasswordArgs([]string{"owner@example.com", "--id", "7"}); err == nil || err.Error() != resetPasswordUsage {
+	if _, err := parseResetPasswordArgs([]string{"owner@example.com", "--id", "7"}); err == nil || err.Error() != resetUsage {
 		t.Fatalf("expected usage error for both email and --id, got %v", err)
 	}
 }
@@ -300,7 +300,7 @@ func TestRunResetPasswordCommandRejectsEmailAndIDTogether(t *testing.T) {
 	t.Parallel()
 
 	err := runResetPasswordCommand(db.Config{}, []string{"owner@example.com", "--id", "7"}, nil, io.Discard)
-	if err == nil || err.Error() != resetPasswordUsage {
+	if err == nil || err.Error() != resetUsage {
 		t.Fatalf("expected usage error, got %v", err)
 	}
 }
@@ -311,7 +311,7 @@ func TestRunResetPasswordCommandRejectsNoAddress(t *testing.T) {
 	t.Parallel()
 
 	err := runResetPasswordCommand(db.Config{}, nil, nil, io.Discard)
-	if err == nil || err.Error() != resetPasswordUsage {
+	if err == nil || err.Error() != resetUsage {
 		t.Fatalf("expected usage error, got %v", err)
 	}
 }

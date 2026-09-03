@@ -81,8 +81,7 @@ func TestNewPasswordHashesUseConfiguredCost(t *testing.T) {
 
 	t.Run("ForceResetPasswordByEmail writes hash at target cost", func(t *testing.T) {
 		repo := &stubAuthUserRepo{
-			existsByEmail:   true,
-			findByEmailUser: models.User{ID: 5, Email: "owner@example.com", Role: models.RoleOwner},
+			findAllByEmailUsers: []models.User{{ID: 5, Email: "owner@example.com", Role: models.RoleOwner}},
 		}
 		service := NewAuthService(repo)
 		if err := service.ForceResetPasswordByEmail(context.Background(), "owner@example.com", "StrongPass1"); err != nil {
