@@ -69,9 +69,15 @@ type StatsOverviewSuppression struct {
 // marker and the dashboard's ovulation line already apply, through
 // services.PublishedOverviewStats: once the owner's own BBT readings confirm
 // the current cycle's ovulation, the measured day outranks the model's
-// projection here too, and ovulation_exact reports true for it — this was the
-// one surface still naming the superseded projection after the other six
-// had moved on to the measured day.
+// projection here too — this was the one surface still naming the superseded
+// projection after the other six had moved on to the measured day.
+//
+// ovulation_confirmed names that substitution rather than folding it into
+// ovulation_exact. The two are independent on the dashboard
+// (DisplayOvulationExact vs DisplayOvulationConfirmed, dashboard_cycle.go): a
+// fallback-luteal account (ovulation_exact=false) can still have its current
+// cycle's ovulation CONFIRMED by a BBT shift, and a client that cannot see
+// both loses the "measured, not modeled" distinction the domain keeps.
 //
 // Every projected date is a pointer and is null when suppressed. Null rather
 // than omitted, and never a zero date: the field set stays constant across
@@ -98,6 +104,7 @@ type StatsOverviewResponse struct {
 	NextPeriodStart      *string                  `json:"next_period_start"`
 	OvulationDate        *string                  `json:"ovulation_date"`
 	OvulationExact       bool                     `json:"ovulation_exact"`
+	OvulationConfirmed   bool                     `json:"ovulation_confirmed"`
 	OvulationImpossible  bool                     `json:"ovulation_impossible"`
 	FertilityWindowStart *string                  `json:"fertility_window_start"`
 	FertilityWindowEnd   *string                  `json:"fertility_window_end"`
@@ -114,7 +121,7 @@ type StatsOverviewResponse struct {
 // adapter exists to prevent. Handed the raw stats it would faithfully publish
 // them, so the clearing stays the caller's obligation and the verdict travels
 // with the data.
-func newStatsOverviewResponse(stats services.CycleStats, suppression services.PredictionSuppression, disclaimer string) StatsOverviewResponse {
+func newStatsOverviewResponse(stats services.CycleStats, suppression services.PredictionSuppression, confirmed bool, disclaimer string) StatsOverviewResponse {
 	return StatsOverviewResponse{
 		CurrentCycleDay:      stats.CurrentCycleDay,
 		CurrentPhase:         stats.CurrentPhase,
@@ -133,6 +140,7 @@ func newStatsOverviewResponse(stats services.CycleStats, suppression services.Pr
 		NextPeriodStart:      statsOverviewDate(stats.NextPeriodStart),
 		OvulationDate:        statsOverviewDate(stats.OvulationDate),
 		OvulationExact:       stats.OvulationExact,
+		OvulationConfirmed:   confirmed,
 		OvulationImpossible:  stats.OvulationImpossible,
 		FertilityWindowStart: statsOverviewDate(stats.FertilityWindowStart),
 		FertilityWindowEnd:   statsOverviewDate(stats.FertilityWindowEnd),

@@ -90,14 +90,22 @@ func PublishedStats(user *models.User, stats CycleStats) (CycleStats, Prediction
 // running it first means PublishedStats sees the same OvulationDate every
 // other surface renders.
 //
-// A confirmed day is a MEASUREMENT, not a less-certain reading of the model:
-// OvulationExact is set true along with it, matching what the calendar's
-// solid marker and the dashboard's line already mean by never showing the
-// "approximate" caption beside a confirmed date (dashboard.html).
-func PublishedOverviewStats(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (CycleStats, PredictionSuppression) {
+// The returned bool is the SAME "confirmed" bit the dashboard carries beside
+// its own OvulationExact (dashboard_cycle.go's DisplayOvulationConfirmed) —
+// deliberately a second signal, not a rewrite of the first. OvulationExact
+// keeps its own meaning (an exact luteal-phase fit vs a clamped estimate,
+// CalcOvulationDay); a BBT-confirmed day on a fallback-luteal account is
+// "confirmed" and still arithmetically "not exact" until it feeds back into
+// InferUserLutealPhase on a LATER cycle, and collapsing the two into one
+// boolean would make the JSON view unable to say which is true — exactly the
+// class of divergence PublishedStats itself exists to prevent, just one field
+// over.
+func PublishedOverviewStats(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (CycleStats, PredictionSuppression, bool) {
+	confirmedOvulation := false
 	if confirmed, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, today, location); ok {
 		stats.OvulationDate = confirmed
-		stats.OvulationExact = true
+		confirmedOvulation = true
 	}
-	return PublishedStats(user, stats)
+	published, suppression := PublishedStats(user, stats)
+	return published, suppression, confirmedOvulation
 }

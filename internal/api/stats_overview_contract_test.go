@@ -160,6 +160,9 @@ func TestStatsOverviewWithholdsEveryProjectionItsGatesRefuse(t *testing.T) {
 			if payload.OvulationExact {
 				t.Fatal("ovulation_exact is true beside a null ovulation_date")
 			}
+			if payload.OvulationConfirmed {
+				t.Fatal("ovulation_confirmed is true beside a null ovulation_date")
+			}
 			if (payload.NextPeriodStart != nil) != state.wantNextPeriodSet {
 				t.Fatalf("next_period_start present = %v, want %v", payload.NextPeriodStart != nil, state.wantNextPeriodSet)
 			}
@@ -288,10 +291,12 @@ func TestStatsOverviewAgreesWithTheStatsPageOnAPublishedProjection(t *testing.T)
 // made to differ deliberately, the way MED-2's trace does: a median-cycle
 // projection lands on cycle day 14, while a recorded BBT shift confirms cycle
 // day 17. Before this fix the endpoint answered the model's superseded day;
-// it must now answer the measured one, with ovulation_exact reporting true
-// for it — a confirmed day is a measurement, not an approximate estimate,
-// matching what the calendar's solid marker and the dashboard's line already
-// mean by never showing the "approximate" caption beside one.
+// it must now answer the measured one, with ovulation_confirmed reporting
+// true for it — the same "confirmed, not modeled" bit the dashboard carries
+// as DisplayOvulationConfirmed beside its own DisplayOvulationExact
+// (dashboard_cycle.go). This fixture's luteal phase is not clamped, so
+// ovulation_exact is true here too; the case that pulls the two apart is
+// TestStatsOverviewConfirmedOvulationIsIndependentOfOvulationExact below.
 func TestStatsOverviewPublishesTheConfirmedOvulationDayNotTheModelsProjection(t *testing.T) {
 	app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
 	user := createOnboardingTestUser(t, database, "overview-confirmed-ovulation@example.com", "StrongPass1", true)
@@ -331,11 +336,66 @@ func TestStatsOverviewPublishesTheConfirmedOvulationDayNotTheModelsProjection(t 
 	if *payload.OvulationDate != wantConfirmed {
 		t.Fatalf("ovulation_date = %s, want the BBT-confirmed %s", *payload.OvulationDate, wantConfirmed)
 	}
+	if !payload.OvulationConfirmed {
+		t.Fatal("ovulation_confirmed = false beside a BBT-confirmed ovulation_date — the JSON view must name the substitution the calendar and dashboard already applied")
+	}
 	if !payload.OvulationExact {
-		t.Fatal("ovulation_exact = false beside a BBT-confirmed ovulation_date — a measurement is not an approximate estimate")
+		t.Fatal("ovulation_exact = false: this fixture's luteal phase (14, cycle length 28) is not clamped, so the model's own fit is exact independent of the confirmation")
 	}
 	if payload.Suppression.Fertility {
 		t.Fatalf("suppression.fertility = true for an owner with observed cycles and a confirmed shift: %v", payload.Suppression.Reasons)
+	}
+}
+
+// TestStatsOverviewConfirmedOvulationIsIndependentOfOvulationExact pins the
+// boundary TestStatsOverviewPublishesTheConfirmedOvulationDayNotTheModelsProjection
+// cannot: ovulation_confirmed and ovulation_exact are two different signals,
+// mirroring the dashboard's own DisplayOvulationConfirmed vs
+// DisplayOvulationExact (dashboard_cycle.go), and a single collapsed boolean
+// would hide whichever one it discarded. The fixture forces the fallback
+// 14-day luteal phase to be CLAMPED (a short 18-day median cycle: the shared
+// CalcOvulationDay caps a 14-day luteal phase at cycleLen-5=13), so
+// ovulation_exact must read false, while the current cycle's own BBT shift
+// still confirms an ovulation — a fact ovulation_confirmed must still report
+// regardless of the model's own fit.
+func TestStatsOverviewConfirmedOvulationIsIndependentOfOvulationExact(t *testing.T) {
+	app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
+	user := createOnboardingTestUser(t, database, "overview-confirmed-not-exact@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	today := services.DateAtLocation(time.Now().In(time.UTC), time.UTC)
+	updateStatsOverviewUser(t, database, user, map[string]any{"track_bbt": true})
+
+	// Three prior 18-day cycles fix the median at 18 (no BBT data recorded in
+	// them, so InferUserLutealPhase finds nothing to personalize and the
+	// 14-day fallback stays in force); the fourth start opens the CURRENT
+	// cycle at today-11 (cycle day 12 today). CalcOvulationDay(18, 14) clamps
+	// the fallback to 13 (18-5), landing the model's projection on cycle day
+	// 5 = today-7, with ovulation_exact = false.
+	seedStatsOverviewCycleHistory(t, database, user, today, 72, 54, 36, 11)
+
+	// Undisturbed temperatures fill the coverline window (cycle days 3-8 =
+	// today-9..today-4); three elevated days follow (cycle days 9-11 =
+	// today-3..today-1). The detector confirms ovulation the day BEFORE the
+	// shift: cycle day 8 = today-4.
+	for _, offset := range []int{9, 8, 7, 6, 5, 4} {
+		seedStatsOverviewLog(t, database, models.DailyLog{UserID: user.ID, Date: today.AddDate(0, 0, -offset), BBT: new(36.20)})
+	}
+	for _, offset := range []int{3, 2, 1} {
+		seedStatsOverviewLog(t, database, models.DailyLog{UserID: user.ID, Date: today.AddDate(0, 0, -offset), BBT: new(36.50)})
+	}
+
+	_, payload := fetchStatsOverview(t, app, authCookie)
+
+	wantConfirmed := today.AddDate(0, 0, -4).Format(statsOverviewDateLayout)
+
+	if payload.OvulationDate == nil || *payload.OvulationDate != wantConfirmed {
+		t.Fatalf("ovulation_date = %v, want the BBT-confirmed %s", payload.OvulationDate, wantConfirmed)
+	}
+	if !payload.OvulationConfirmed {
+		t.Fatal("ovulation_confirmed = false beside a BBT-confirmed ovulation_date")
+	}
+	if payload.OvulationExact {
+		t.Fatal("ovulation_exact = true, want false: the fixture's 18-day median clamps the 14-day fallback luteal phase, and a confirmed observation must not silently launder that into an exact model fit")
 	}
 }
 

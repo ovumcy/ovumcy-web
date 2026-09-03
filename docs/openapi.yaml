@@ -742,6 +742,7 @@ components:
         - next_period_start
         - ovulation_date
         - ovulation_exact
+        - ovulation_confirmed
         - ovulation_impossible
         - fertility_window_start
         - fertility_window_end
@@ -816,10 +817,20 @@ components:
         ovulation_exact:
           type: boolean
           description: >-
-            True when the ovulation date is anchored on an observation —
-            either a per-owner inferred luteal phase rather than the 14-day
-            fallback, or (see `ovulation_date`) a BBT-confirmed day for the
-            current cycle. Always false when `ovulation_date` is null.
+            The ovulation date is anchored on a per-owner inferred luteal
+            phase rather than on the 14-day fallback. Independent of
+            `ovulation_confirmed` — a fallback-luteal cycle (`false` here) can
+            still have its ovulation confirmed by a BBT shift. Always false
+            when `ovulation_date` is null.
+        ovulation_confirmed:
+          type: boolean
+          description: >-
+            `ovulation_date` is a MEASUREMENT: the owner's own BBT readings
+            already confirmed the current cycle's ovulation, and the date
+            reported is the detector's day rather than the model's
+            projection — the same day the calendar's solid marker and the
+            dashboard's ovulation line show. Always false when
+            `ovulation_date` is null.
         ovulation_impossible:
           type: boolean
           description: No ovulation can be placed in the running cycle at all.
