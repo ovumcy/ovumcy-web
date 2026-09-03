@@ -152,19 +152,18 @@ func (service *WebhookSettingsCLIService) ApplyWebhookSettings(ctx context.Conte
 		update.URL = patch.NewURL
 	case webhookURLClear:
 		update.URL = ""
-	case webhookURLKeep:
-		// A keep-merge is the one action that needs the plaintext. On a row this
-		// instance cannot open there is nothing to keep, and re-persisting the
-		// empty string would silently delete the endpoint the operator asked to
-		// leave alone. Set or clear it explicitly instead.
+	default:
+		// Keep — and any action added later without a case of its own, which
+		// lands here for the same reason: preserving the endpoint is the safe
+		// default. The two arms share one body deliberately. A keep-merge is the
+		// one action that needs the plaintext, and on a row this instance cannot
+		// open there is nothing to keep: re-persisting the empty string would
+		// silently delete the endpoint the operator asked to leave alone. Guarding
+		// only the named case would have left the fallback doing exactly that,
+		// while its comment claimed it failed safe.
 		if current.Readability == WebhookURLUnreadable {
 			return WebhookSettingsView{}, ErrWebhookURLUnreadable
 		}
-		update.URL = currentURL
-	default:
-		// codecov:ignore -- unreachable: URLAction is only ever one of the three
-		// named actions (set via SetURL/ClearURL or the zero-value keep). Kept so a
-		// future action added without a case fails safe by preserving the URL.
 		update.URL = currentURL
 	}
 
