@@ -93,7 +93,14 @@ func (handler *Handler) respondEgressMutationHTML(c fiber.Ctx, user *models.User
 // TestEveryEgressMutationAnswersARefusalWithTheRebuiltCard.
 func (handler *Handler) failEgressMutation(c fiber.Ctx, kind healthMutationKind, user *models.User, spec APIErrorSpec) error {
 	handler.logMutationError(c, kind, spec)
-	if !isHTMX(c) {
+	// Only an OWNER-FAULT refusal is answered with the card. A spec targeting the
+	// settings form carries a key with copy behind it and a 200-with-fragment
+	// transport that this card cannot use; an internal failure carries neither --
+	// its key is a developer-facing sentence -- and keeps its 5xx, which htmx does
+	// not swap and the client renders as the localized "request failed" line. The
+	// two must not be merged: rendering a global spec's key here would put
+	// "failed to update webhook settings" on the page as user copy, untranslated.
+	if !isHTMX(c) || spec.Target != APIErrorTargetSettingsForm {
 		return handler.respondMappedError(c, spec)
 	}
 
