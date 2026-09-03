@@ -1,4 +1,4 @@
-import { expect, test, type Frame, type Page } from './support/fixtures';
+import { expect, test, type Frame, type Locator, type Page } from './support/fixtures';
 import { expectDashboardStatusHeader } from './support/dashboard-helpers';
 import { cancelConfirmDialog } from './support/confirm-dialog-helpers';
 import { saveInterfaceSettingsForm } from './support/settings-interface-helpers';
@@ -89,6 +89,65 @@ async function awaitSystemColorSchemeFlip(page: Page, scheme: 'light' | 'dark'):
         requestAnimationFrame(() => resolve());
       })
   );
+}
+
+/**
+ * The distinct `data-phase` values among the ribbon cells `selector` matches,
+ * sorted. Used both to state exactly which phases a sweep resolved (so a
+ * fixture edit that makes one stop appearing reddens with a clear diff
+ * instead of leaving a narrowed gate silently green) and to drive a
+ * per-distinct-phase measurement without walking every one of the axis's up
+ * to 60 cells.
+ */
+async function ribbonPhasesPresent(header: Locator, selector: string): Promise<string[]> {
+  const phases = await header.locator(selector).evaluateAll((nodes) =>
+    Array.from(
+      new Set(
+        nodes
+          .map((node) => node.getAttribute('data-phase'))
+          .filter((phase): phase is string => phase !== null)
+      )
+    )
+  );
+  return phases.sort();
+}
+
+/**
+ * Asserts overlay contrast for `flagAttr` (predicted-flow or start-window)
+ * against every DISTINCT phase it is currently painted over, not just the
+ * first matching cell — the flag's own colour is fixed, but what it composites
+ * against is the phase fill beneath it, which varies by cell, and the start
+ * window in particular can straddle any phase (it follows the projected next
+ * period, not a fixed offset from today). One cell per distinct phase is
+ * enough: two cells of the same phase would only repeat the same composite.
+ * Returns the measured ratio per phase so the caller can report exactly what
+ * was covered.
+ */
+async function assertOverlayContrastAcrossPhases(
+  header: Locator,
+  flagAttr: 'data-predicted-flow' | 'data-start-window',
+  themeLabel: 'dark' | 'light'
+): Promise<Record<string, number>> {
+  const selector = `[data-cycle-ribbon-day][${flagAttr}="true"]`;
+  const phasesPresent = await ribbonPhasesPresent(header, selector);
+  expect(
+    phasesPresent.length,
+    `${flagAttr}: no cell carries this flag in the ${themeLabel} theme, so nothing was measured`
+  ).toBeGreaterThan(0);
+
+  const ratios: Record<string, number> = {};
+  for (const phase of phasesPresent) {
+    const cell = header.locator(`${selector}[data-phase="${phase}"]`).first();
+    const contrast = await measureOverlayContrast(
+      cell,
+      `cycle ribbon ${flagAttr} overlay, phase=${phase} (${themeLabel})`
+    );
+    expect(contrast.worstRatio, describeContrast(contrast)).toBeGreaterThanOrEqual(
+      WCAG_AA_GRAPHIC_CONTRAST
+    );
+    ratios[phase] = contrast.worstRatio;
+  }
+  return ratios;
 }
 
 test.describe('Theme mode', () => {
@@ -217,6 +276,23 @@ test.describe('Theme mode', () => {
       'true'
     );
 
+    // The phase axis this fixture renders, stated explicitly rather than left
+    // implicit in the four toHaveCount(1) checks below: the seeded offsets
+    // (-90, -32, -2) decide it, and moving any of them — the -2 was moved from
+    // -6 to give the overlay assertions a predicted-flow day to measure — can
+    // shrink or shift a phase card's day range. 'beyond' is here too: this
+    // account's two completed cycles (58 and 30 days) are irregular enough
+    // that the predicted start window reaches past the reference cycle length,
+    // which is what gives the start-window overlay a transparent-fill cell to
+    // paint over. A future fixture edit that makes any of these five stop
+    // appearing reddens HERE, by name, rather than only narrowing what the
+    // loops below still had left to check.
+    const phasesOnAxis = await ribbonPhasesPresent(header, '[data-cycle-ribbon-day]');
+    expect(
+      phasesOnAxis,
+      'phases the ribbon axis actually renders — this fixture must keep producing all five'
+    ).toEqual(['beyond', 'follicular', 'luteal', 'menstrual', 'ovulation']);
+
     // All four phases, measured with 'background' (not 'background-color') so
     // a cell that also carries data-predicted-flow or data-start-window — both
     // painted as background-image, layered on top of the phase's own fill —
@@ -265,32 +341,21 @@ test.describe('Theme mode', () => {
     // facts ... exist only here"). Each is measured against what it is actually
     // drawn ON: its own cell's phase fill (or the ribbon track, for a 'beyond'
     // cell with no fill of its own), never the card two layers further down.
-    const predictedFlowCell = header
-      .locator('[data-cycle-ribbon-day][data-predicted-flow="true"]')
-      .first();
-    const startWindowCell = header
-      .locator('[data-cycle-ribbon-day][data-start-window="true"]')
-      .first();
-    await expect(predictedFlowCell).toHaveCount(1);
-    await expect(startWindowCell).toHaveCount(1);
-
-    const predictedFlowContrast = await measureOverlayContrast(
-      predictedFlowCell,
-      'cycle ribbon predicted-flow overlay (dark)'
+    // Measured against every DISTINCT phase the flag currently lands on, not
+    // just the first matching cell: the flag's own colour is fixed, but the
+    // start window in particular follows the projected next period rather
+    // than a fixed day offset, so it can land on any phase, and each one is a
+    // different composite the flag has to clear the floor against.
+    const darkPredictedFlowRatios = await assertOverlayContrastAcrossPhases(
+      header,
+      'data-predicted-flow',
+      'dark'
     );
-    expect(
-      predictedFlowContrast.worstRatio,
-      describeContrast(predictedFlowContrast)
-    ).toBeGreaterThanOrEqual(WCAG_AA_GRAPHIC_CONTRAST);
-
-    const startWindowContrast = await measureOverlayContrast(
-      startWindowCell,
-      'cycle ribbon start-window overlay (dark)'
+    const darkStartWindowRatios = await assertOverlayContrastAcrossPhases(
+      header,
+      'data-start-window',
+      'dark'
     );
-    expect(
-      startWindowContrast.worstRatio,
-      describeContrast(startWindowContrast)
-    ).toBeGreaterThanOrEqual(WCAG_AA_GRAPHIC_CONTRAST);
 
     // Anti-vacuity: the same reader has to resolve the light theme's cells too.
     // A reader that silently stopped resolving anything would pass the dark
@@ -313,6 +378,29 @@ test.describe('Theme mode', () => {
         WCAG_AA_GRAPHIC_CONTRAST
       );
     }
+
+    const lightPredictedFlowRatios = await assertOverlayContrastAcrossPhases(
+      header,
+      'data-predicted-flow',
+      'light'
+    );
+    const lightStartWindowRatios = await assertOverlayContrastAcrossPhases(
+      header,
+      'data-start-window',
+      'light'
+    );
+
+    // Every phase×theme overlay combination this run actually measured, and
+    // its ratio — printed rather than discarded so a reader of the test
+    // output can see exactly what the assertions above covered, not just that
+    // "some cell" passed.
+    console.log(
+      'cycle ribbon overlay contrast coverage:',
+      JSON.stringify({
+        predictedFlow: { dark: darkPredictedFlowRatios, light: lightPredictedFlowRatios },
+        startWindow: { dark: darkStartWindowRatios, light: lightStartWindowRatios },
+      })
+    );
 
     await logoutViaAPI(page);
   });

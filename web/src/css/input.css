@@ -998,13 +998,25 @@
   /* The graded tail: the days the next period may start on. Same shape as the
      calendar's gradient (fading = uncertainty), same reasoning as the hatch
      above for why the colour is its own token rather than --cal-fill-start-window.
-     The window can reach past the projected cycle length, onto a 'beyond' cell
-     whose own fill is transparent (--ribbon-alpha: 0 above) — there the overlay
-     sits directly on the ribbon track/card instead of a phase fill, and in the
-     dark theme that backdrop is itself near-black, where a black stripe measured
-     1.20-1.22:1 (A11Y-2). Overridden below for exactly that combination; every
-     other case (any real phase, either theme; 'beyond' in the light theme, whose
-     card is near-white) keeps the black stripe, which clears 3:1 there. */
+     The window follows the projected next period, not a fixed offset from
+     today, so it can land on ANY phase card — including past the projected
+     cycle length, on a 'beyond' cell whose own fill is transparent
+     (--ribbon-alpha: 0 above), where the overlay sits directly on the ribbon
+     track/card instead of a phase fill. In the dark theme that track is
+     itself near-black, where a black stripe measured 1.20-1.22:1 (A11Y-2) —
+     overridden below for exactly that combination.
+     Every other combination keeps the black stripe. Two are measured by the
+     dark-mode e2e spec (menstrual for the hatch above, 'beyond' for this
+     gradient — the only two this fixture's variance produces); the rest
+     (follicular/ovulation/luteal, either theme) are not directly exercised by
+     that fixture, but rest on the same lightness ladder the phase family's own
+     comment documents (all four phase fills sit within a similar mid-lightness
+     band in both themes, none near-black) rather than being assumed contrast-
+     safe by inspection alone: the spec now measures every DISTINCT phase a
+     flag is actually painted over, not one fixed cell, so a future fixture
+     change that puts the start window on a different phase is measured too,
+     and reddens here if that phase's fill turns out to sit close enough to
+     black to fail. */
   --ribbon-fill-start-window: linear-gradient(180deg, rgb(0 0 0 / 0.65) 0%, rgb(0 0 0 / 0.55) 100%);
   &[data-start-window='true'] {
     background-image: var(--ribbon-fill-start-window);
