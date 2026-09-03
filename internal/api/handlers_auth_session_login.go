@@ -104,7 +104,7 @@ func (handler *Handler) Login(c fiber.Ctx) error {
 	}
 
 	if result.RequiresTOTP {
-		if err := handler.setTOTPPendingCookie(c, result.User.ID, credentials.RememberMe); err != nil {
+		if err := handler.setTOTPPendingCookie(c, result.User.ID, credentials.RememberMe, ""); err != nil {
 			spec := authSessionCreateErrorSpec()
 			handler.logSecurityError(c, "auth.login", spec)
 			return handler.respondMappedError(c, spec)

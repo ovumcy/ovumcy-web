@@ -26,13 +26,13 @@ func newTOTPCookieTestApp(t *testing.T, secretKey []byte) (*fiber.App, *Handler)
 	app.Get("/seal-pending", func(c fiber.Ctx) error {
 		userID := uint(fiber.Query(c, "user_id", 0))
 		remember := fiber.Query(c, "remember_me", false)
-		if err := handler.setTOTPPendingCookie(c, userID, remember); err != nil {
+		if err := handler.setTOTPPendingCookie(c, userID, remember, ""); err != nil {
 			return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
 		}
 		return c.SendStatus(fiber.StatusOK)
 	})
 	app.Get("/parse-pending", func(c fiber.Ctx) error {
-		uid, remember, err := handler.parseTOTPPendingCookie(c)
+		uid, remember, _, err := handler.parseTOTPPendingCookie(c)
 		if err != nil {
 			return c.Status(fiber.StatusBadRequest).SendString(err.Error())
 		}

@@ -12,7 +12,7 @@ import (
 // ShowTOTPChallengePage renders the 2FA code entry page after a successful
 // password login when the user has TOTP enabled.
 func (handler *Handler) ShowTOTPChallengePage(c fiber.Ctx) error {
-	_, _, err := handler.parseTOTPPendingCookie(c)
+	_, _, _, err := handler.parseTOTPPendingCookie(c)
 	if err != nil {
 		// No valid pending cookie — send back to login.
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
@@ -50,7 +50,7 @@ func parseTOTPChallengeCode(c fiber.Ctx) string {
 // VerifyTOTPLogin validates the 6-digit TOTP code submitted on the challenge page.
 // On success it issues the auth session cookie and redirects to the dashboard.
 func (handler *Handler) VerifyTOTPLogin(c fiber.Ctx) error {
-	userID, rememberMe, err := handler.parseTOTPPendingCookie(c)
+	userID, rememberMe, oidcLogoutStateID, err := handler.parseTOTPPendingCookie(c)
 	if err != nil {
 		spec := totpSessionExpiredErrorSpec()
 		handler.logSecurityError(c, "auth.2fa", spec)
@@ -106,11 +106,39 @@ func (handler *Handler) VerifyTOTPLogin(c fiber.Ctx) error {
 	handler.totpService.ResetAttempts(handler.secretKey, c.IP(), userID)
 	handler.clearTOTPPendingCookie(c)
 
-	if _, err := handler.setAuthCookie(c, &user, rememberMe); err != nil {
+	sessionID, err := handler.setAuthCookie(c, &user, rememberMe)
+	if err != nil {
 		spec := authSessionCreateErrorSpec()
 		handler.logSecurityError(c, "auth.2fa", spec)
 		return handler.respondMappedError(c, spec)
 	}
+
+	// A challenge raised by CompleteOIDCLogin (the account had TOTP enabled,
+	// so the OIDC callback deferred the session it would otherwise have
+	// minted) staged any provider-logout material under an opaque id carried
+	// in the pending cookie above, because no session id existed yet at that
+	// point to key it by. Relocate it onto the session id this request just
+	// minted, mirroring CompleteOIDCLogin's own Save/Delete shape so a
+	// TOTP-gated OIDC sign-in ends up with exactly the same provider-logout
+	// integration a non-gated one gets. A challenge with no such id — local
+	// login, or an OIDC login whose account carried no logout state — takes
+	// the Delete arm, which is a no-op against the session id this request
+	// just minted.
+	if oidcLogoutStateID != "" {
+		if err := handler.moveOIDCLogoutState(c.Context(), oidcLogoutStateID, sessionID, userID, time.Now()); err != nil {
+			// codecov:ignore:start -- defensive: moveOIDCLogoutState only returns a
+			// non-nil error from its own storage-error arms, which are independently
+			// marked defensive at their own site
+			spec := authSessionCreateErrorSpec()
+			handler.logSecurityError(c, "auth.2fa", spec)
+			handler.clearSessionEndCookies(c)
+			return handler.respondMappedError(c, spec)
+			// codecov:ignore:end
+		}
+	} else {
+		_ = handler.oidcLogoutStateSvc.Delete(c.Context(), sessionID, userID)
+	}
+	handler.clearOIDCLogoutBridgeCookie(c)
 
 	handler.logSecurityEvent(c, "auth.2fa", "success")
 	return redirectOrJSON(c, "/")
