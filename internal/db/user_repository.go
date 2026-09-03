@@ -141,6 +141,24 @@ func (repo *UserRepository) FindByNormalizedEmailOptional(ctx context.Context, e
 	return user, true, nil
 }
 
+// FindAllByNormalizedEmail returns every row matching the normalized address,
+// ordered by id, instead of gorm's arbitrary first match. A legacy database
+// can hold more than one: two accounts on one mailbox is exactly the case the
+// boot-time email renormalizer leaves standing (RenormalizeUserEmail) when it
+// keeps the older row's address and locks the newer one out. A caller acting
+// on a single row must use this, not FindByNormalizedEmailOptional, wherever
+// picking the wrong one silently would be a mistake worth refusing instead.
+func (repo *UserRepository) FindAllByNormalizedEmail(ctx context.Context, email string) ([]models.User, error) {
+	var users []models.User
+	if err := repo.database.WithContext(ctx).
+		Where("lower(trim(email)) = ?", email).
+		Order("id ASC").
+		Find(&users).Error; err != nil {
+		return nil, err
+	}
+	return users, nil
+}
+
 func (repo *UserRepository) ExistsByNormalizedEmail(ctx context.Context, email string) (bool, error) {
 	var matched int64
 	if err := repo.database.WithContext(ctx).Model(&models.User{}).

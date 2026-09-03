@@ -17,6 +17,10 @@ type stubWebhookReader struct {
 	found    bool
 	lookErr  error
 	gotEmail string
+	// findAllByEmailUsers overrides the single-row [s.user] shape
+	// FindAllByNormalizedEmail otherwise derives from s.found, for the one case
+	// that shape cannot express: more than one row on the same address.
+	findAllByEmailUsers []models.User
 }
 
 func (s *stubWebhookReader) FindByNormalizedEmailOptional(_ context.Context, email string) (models.User, bool, error) {
@@ -25,6 +29,20 @@ func (s *stubWebhookReader) FindByNormalizedEmailOptional(_ context.Context, ema
 		return models.User{}, false, s.lookErr
 	}
 	return s.user, s.found, nil
+}
+
+func (s *stubWebhookReader) FindAllByNormalizedEmail(_ context.Context, email string) ([]models.User, error) {
+	s.gotEmail = email
+	if s.lookErr != nil {
+		return nil, s.lookErr
+	}
+	if s.findAllByEmailUsers != nil {
+		return s.findAllByEmailUsers, nil
+	}
+	if s.found {
+		return []models.User{s.user}, nil
+	}
+	return nil, nil
 }
 
 // encryptTestWebhookURL produces a ciphertext for a plaintext endpoint bound to
@@ -278,6 +296,29 @@ func TestResolveWebhookSettingsNotFound(t *testing.T) {
 	svc, _ := newWebhookCLIServiceForTest(reader)
 	if _, err := svc.ResolveWebhookSettings(context.Background(), "ghost@example.com"); !errors.Is(err, ErrWebhookOwnerNotFound) {
 		t.Fatalf("expected ErrWebhookOwnerNotFound, got %v", err)
+	}
+}
+
+// TestResolveWebhookSettingsRefusesAnAmbiguousAddress pins the shared
+// resolveUniqueUserByEmail behaviour at this call site: two rows on one
+// mailbox must be refused, naming both ids, rather than resolved to
+// whichever the reader happens to return first.
+func TestResolveWebhookSettingsRefusesAnAmbiguousAddress(t *testing.T) {
+	reader := &stubWebhookReader{
+		findAllByEmailUsers: []models.User{
+			{ID: 5, Email: "owner@example.com"},
+			{ID: 18, Email: "owner@example.com"},
+		},
+	}
+	svc, _ := newWebhookCLIServiceForTest(reader)
+
+	_, err := svc.ResolveWebhookSettings(context.Background(), "owner@example.com")
+	var ambiguous *AmbiguousEmailError
+	if !errors.As(err, &ambiguous) {
+		t.Fatalf("expected *AmbiguousEmailError, got %v", err)
+	}
+	if got, want := ambiguous.IDs, []uint{5, 18}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("expected ambiguous ids %v, got %v", want, got)
 	}
 }
 

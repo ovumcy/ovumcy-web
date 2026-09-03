@@ -21,6 +21,10 @@ var ErrWebhookOwnerNotFound = errors.New("webhook owner not found")
 // interface stays minimal; *db.UserRepository satisfies both.
 type WebhookOwnerReader interface {
 	FindByNormalizedEmailOptional(ctx context.Context, email string) (models.User, bool, error)
+	// FindAllByNormalizedEmail is the ambiguity-aware counterpart resolveOwner
+	// resolves through instead of FindByNormalizedEmailOptional: see
+	// resolveUniqueUserByEmail.
+	FindAllByNormalizedEmail(ctx context.Context, email string) ([]models.User, error)
 }
 
 // WebhookSettingsView is the SAFE, transport-free projection of an owner's
@@ -198,8 +202,12 @@ func (service *WebhookSettingsCLIService) resolveOwner(ctx context.Context, emai
 		return models.User{}, WebhookSettingsView{}, "", err
 	}
 
-	owner, found, err := service.reader.FindByNormalizedEmailOptional(ctx, normalizedEmail)
+	owner, found, err := resolveUniqueUserByEmail(ctx, service.reader, normalizedEmail)
 	if err != nil {
+		var ambiguous *AmbiguousEmailError
+		if errors.As(err, &ambiguous) {
+			return models.User{}, WebhookSettingsView{}, "", err
+		}
 		return models.User{}, WebhookSettingsView{}, "", fmt.Errorf("%w: %v", ErrOperatorUserLookupFailed, err)
 	}
 	if !found {

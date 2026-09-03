@@ -1651,7 +1651,7 @@ func TestTryRunCLICommandWithHandlersDispatchesUsersCommand(t *testing.T) {
 
 	called := false
 	handled, err := tryRunCLICommandWithHandlers([]string{"users", "list"}, cliCommandHandlers{
-		runResetPassword: func(db.Config, string) error {
+		runResetPassword: func(db.Config, []string) error {
 			t.Fatal("did not expect reset-password handler")
 			return nil
 		},
@@ -1694,7 +1694,7 @@ func TestTryRunCLICommandWithHandlersPropagatesUsersError(t *testing.T) {
 
 	expectedErr := errors.New("delete failed")
 	handled, err := tryRunCLICommandWithHandlers([]string{"users", "delete", "owner@example.com", "--yes"}, cliCommandHandlers{
-		runResetPassword: func(db.Config, string) error {
+		runResetPassword: func(db.Config, []string) error {
 			t.Fatal("did not expect reset-password handler")
 			return nil
 		},

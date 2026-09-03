@@ -116,7 +116,7 @@ func TestTryRunCLICommandWithHandlersReturnsUnhandledForNoOrUnknownArgs(t *testi
 }
 
 func TestTryRunCLICommandWithHandlersResetPassword(t *testing.T) {
-	t.Run("rejects wrong argument count", func(t *testing.T) {
+	t.Run("requires a handler with no address", func(t *testing.T) {
 		handled, err := tryRunCLICommandWithHandlers([]string{"reset-password"}, cliCommandHandlers{})
 		if !handled || err == nil {
 			t.Fatalf("expected handled error, got (%t, %v)", handled, err)
@@ -134,7 +134,7 @@ func TestTryRunCLICommandWithHandlersResetPassword(t *testing.T) {
 		setValidBootEnv(t)
 		t.Setenv("DB_DRIVER", "bogus")
 		handled, err := tryRunCLICommandWithHandlers([]string{"reset-password", "owner@example.com"}, cliCommandHandlers{
-			runResetPassword: func(db.Config, string) error { return nil },
+			runResetPassword: func(db.Config, []string) error { return nil },
 		})
 		if !handled || err == nil {
 			t.Fatalf("expected handled db-config error, got (%t, %v)", handled, err)
@@ -145,10 +145,34 @@ func TestTryRunCLICommandWithHandlersResetPassword(t *testing.T) {
 		setValidBootEnv(t)
 		called := false
 		handled, err := tryRunCLICommandWithHandlers([]string{"reset-password", "owner@example.com"}, cliCommandHandlers{
-			runResetPassword: func(_ db.Config, email string) error {
+			runResetPassword: func(_ db.Config, args []string) error {
 				called = true
-				if email != "owner@example.com" {
-					t.Fatalf("unexpected email %q", email)
+				if len(args) != 1 || args[0] != "owner@example.com" {
+					t.Fatalf("unexpected reset-password args: %#v", args)
+				}
+				return nil
+			},
+		})
+		if !handled || err != nil {
+			t.Fatalf("expected clean dispatch, got (%t, %v)", handled, err)
+		}
+		if !called {
+			t.Fatal("expected the reset-password handler to be invoked")
+		}
+	})
+
+	// TestTryRunCLICommandWithHandlersResetPassword/dispatches_the_--id_form
+	// pins that the id-addressing affordance (finding DB-2) reaches the
+	// handler as an ordinary argument, exactly like the users subcommands'
+	// own --id flag.
+	t.Run("dispatches the --id form", func(t *testing.T) {
+		setValidBootEnv(t)
+		called := false
+		handled, err := tryRunCLICommandWithHandlers([]string{"reset-password", "--id", "7"}, cliCommandHandlers{
+			runResetPassword: func(_ db.Config, args []string) error {
+				called = true
+				if len(args) != 2 || args[0] != "--id" || args[1] != "7" {
+					t.Fatalf("unexpected reset-password args: %#v", args)
 				}
 				return nil
 			},

@@ -8,14 +8,65 @@ import (
 	"io"
 	"net/mail"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/ovumcy/ovumcy-web/internal/db"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-func RunResetPasswordCommand(databaseConfig db.Config, email string) error {
-	return runResetPasswordCommand(databaseConfig, email, resetPasswordReader(os.Stdin), os.Stdout)
+// resetPasswordUsage matches the addressing convention `users delete` already
+// established: a bare address or `--id <id>`, mutually exclusive, exactly one
+// required. reset-password gained the id form for the same reason that
+// command has it — a legacy row a strict NormalizeAuthEmail rule refuses, or
+// one sharing a mailbox with another account, cannot be reached by any
+// address-taking command at all, and its bare address can silently reach the
+// OTHER account on that mailbox.
+const resetPasswordUsage = "usage: ovumcy reset-password <email>|--id <id>"
+
+type resetPasswordOptions struct {
+	email  string
+	userID uint
+}
+
+// parseResetPasswordArgs mirrors parseUsersDeleteArgs exactly (same flag
+// spelling, same precedence, same ambiguity and error wording) rather than
+// inventing a third addressing style for this command.
+func parseResetPasswordArgs(args []string) (resetPasswordOptions, error) {
+	opts := resetPasswordOptions{}
+	for index := 0; index < len(args); index++ {
+		value := strings.TrimSpace(args[index])
+		switch {
+		case value == "":
+			continue
+		case isUsersIDFlag(value):
+			userID, consumed, err := parseUsersIDFlag(args, index, resetPasswordUsage)
+			if err != nil {
+				return resetPasswordOptions{}, err
+			}
+			if opts.userID != 0 {
+				return resetPasswordOptions{}, errors.New(resetPasswordUsage)
+			}
+			opts.userID = userID
+			index += consumed
+		case strings.HasPrefix(value, "--"):
+			return resetPasswordOptions{}, errors.New(resetPasswordUsage)
+		default:
+			if opts.email != "" {
+				return resetPasswordOptions{}, errors.New(resetPasswordUsage)
+			}
+			opts.email = value
+		}
+	}
+
+	if (opts.email == "") == (opts.userID == 0) {
+		return resetPasswordOptions{}, errors.New(resetPasswordUsage)
+	}
+	return opts, nil
+}
+
+func RunResetPasswordCommand(databaseConfig db.Config, args []string) error {
+	return runResetPasswordCommand(databaseConfig, args, resetPasswordReader(os.Stdin), os.Stdout)
 }
 
 // resetPasswordReader picks how the new password is obtained, matching what
@@ -50,13 +101,23 @@ func resetPasswordReader(input *os.File) passwordPromptFunc {
 
 type passwordPromptFunc func() ([]byte, error)
 
-func runResetPasswordCommand(databaseConfig db.Config, email string, prompt passwordPromptFunc, output io.Writer) error {
-	normalizedEmail := strings.ToLower(strings.TrimSpace(email))
-	if normalizedEmail == "" {
-		return errors.New("email is required")
+func runResetPasswordCommand(databaseConfig db.Config, args []string, prompt passwordPromptFunc, output io.Writer) error {
+	opts, err := parseResetPasswordArgs(args)
+	if err != nil {
+		return err
 	}
-	if _, err := mail.ParseAddress(normalizedEmail); err != nil {
-		return fmt.Errorf("invalid email address: %w", err)
+
+	// parseResetPasswordArgs already guarantees opts.email is non-blank
+	// whenever opts.userID is zero (a blank positional argument is skipped
+	// during parsing, same as parseUsersDeleteArgs), so there is no separate
+	// "email is required" case left to check here — only whether the
+	// non-blank value is a valid address.
+	normalizedEmail := ""
+	if opts.userID == 0 {
+		normalizedEmail = strings.ToLower(strings.TrimSpace(opts.email))
+		if _, err := mail.ParseAddress(normalizedEmail); err != nil {
+			return fmt.Errorf("invalid email address: %w", err)
+		}
 	}
 
 	database, err := db.OpenDatabase(databaseConfig)
@@ -86,22 +147,15 @@ func runResetPasswordCommand(databaseConfig db.Config, email string, prompt pass
 
 	repositories := buildRepositories(database)
 	authService := services.NewAuthService(repositories.Users)
-	if err := authService.ForceResetPasswordByEmail(context.Background(), normalizedEmail, string(newPassword)); err != nil {
-		switch {
-		case errors.Is(err, services.ErrAuthUserNotFound):
-			return fmt.Errorf("user %s not found", normalizedEmail)
-		case errors.Is(err, services.ErrAuthResetInvalid):
-			return errors.New("password is required")
-		case errors.Is(err, services.ErrAuthPasswordTooLong):
-			// Without this arm the split would surface here as the raw sentinel
-			// text under the default branch. The operator terminal counts bytes
-			// happily, so unlike the owner-facing copy this one says so.
-			return errors.New("password is longer than 72 bytes (bcrypt's input limit); note that non-ASCII characters take more than one byte each")
-		case errors.Is(err, services.ErrAuthWeakPassword):
-			return errors.New("password does not meet strength requirements")
-		default:
-			return fmt.Errorf("reset password: %w", err)
-		}
+
+	var resetErr error
+	if opts.userID != 0 {
+		resetErr = authService.ForceResetPasswordByID(context.Background(), opts.userID, string(newPassword))
+	} else {
+		resetErr = authService.ForceResetPasswordByEmail(context.Background(), normalizedEmail, string(newPassword))
+	}
+	if resetErr != nil {
+		return mapResetPasswordError(resetErr, opts, normalizedEmail)
 	}
 
 	// Raised only once the reset has actually happened: a forced reset
@@ -119,6 +173,58 @@ func runResetPasswordCommand(databaseConfig db.Config, email string, prompt pass
 	_, _ = fmt.Fprintln(output, "User must sign in again and reset the password before continuing.")
 
 	return nil
+}
+
+// mapResetPasswordError translates the service's sentinels into the
+// operator-facing wording. The id and email arms of ErrAuthUserNotFound say
+// different things because they were addressed differently: an unknown id
+// points the operator at `users list`, an unknown email might just be a typo
+// of an address that was never an account. The ambiguous-address case is
+// finding DB-2's fix: services.AmbiguousEmailError (shared with
+// OperatorUserService.GetUserByEmail — `users delete <email>` — and
+// WebhookSettingsCLIService.resolveOwner — `webhook show|set`, which has no
+// --id form at all) is never resolved silently to one match; this command's
+// own mapping adds the explicit "retry with --id" pointer the other two
+// leave to services.AmbiguousEmailError.Error()'s bare id list.
+func mapResetPasswordError(err error, opts resetPasswordOptions, normalizedEmail string) error {
+	var ambiguous *services.AmbiguousEmailError
+	if errors.As(err, &ambiguous) {
+		return fmt.Errorf(
+			"email %s matches %d accounts (ids %s); retry with --id (see ovumcy users list)",
+			ambiguous.Email, len(ambiguous.IDs), formatUserIDs(ambiguous.IDs),
+		)
+	}
+
+	switch {
+	case errors.Is(err, services.ErrAuthUserNotFound):
+		if opts.userID != 0 {
+			return fmt.Errorf("no account carries id %d (see ovumcy users list)", opts.userID)
+		}
+		return fmt.Errorf("user %s not found", normalizedEmail)
+	case errors.Is(err, services.ErrAuthUserIDRequired):
+		return errors.New("an account id is required (see ovumcy users list)")
+	case errors.Is(err, services.ErrAuthResetInvalid):
+		return errors.New("password is required")
+	case errors.Is(err, services.ErrAuthPasswordTooLong):
+		// Without this arm the split would surface here as the raw sentinel
+		// text under the default branch. The operator terminal counts bytes
+		// happily, so unlike the owner-facing copy this one says so.
+		return errors.New("password is longer than 72 bytes (bcrypt's input limit); note that non-ASCII characters take more than one byte each")
+	case errors.Is(err, services.ErrAuthWeakPassword):
+		return errors.New("password does not meet strength requirements")
+	default:
+		return fmt.Errorf("reset password: %w", err)
+	}
+}
+
+// formatUserIDs renders the ambiguous match list the same style `users list`
+// prints them in: ascending, comma-separated.
+func formatUserIDs(ids []uint) string {
+	parts := make([]string, len(ids))
+	for i, id := range ids {
+		parts[i] = strconv.FormatUint(uint64(id), 10)
+	}
+	return strings.Join(parts, ", ")
 }
 
 func promptNewPassword() ([]byte, error) {

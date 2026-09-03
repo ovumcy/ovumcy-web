@@ -695,7 +695,7 @@ Two cases are left untouched, counted in the same log line, and cannot sign in u
 - another account already answers to the same bare address (two accounts on one mailbox — previously possible because the duplicate check compared stored forms): the oldest account keeps the address, and the later one is the leftover;
 - the stored value cannot be reduced to a plain address at all (for example a quoted local part).
 
-**Repair by id, never by address.** `ovumcy users list` prints the id beside the stored value, and the id is the only handle that reaches such a row: the stored string is a form sign-in normalization refuses outright, so no address-taking command accepts it, and its bare address resolves the *other* account — the one that kept the address. A `users delete` typed with that address in front of you would erase the wrong account's entire health record.
+**Repair by id, never by address.** `ovumcy users list` prints the id beside the stored value, and the id is the only handle that reaches such a row: the stored string is a form sign-in normalization refuses outright, so no address-taking command accepts it, and its bare address resolves the *other* account — the one that kept the address. A `users delete` typed with that address in front of you would erase the wrong account's entire health record, and a `reset-password` typed with it would reset a stranger's password instead of the locked-out account's. `reset-password --id <id>` reaches the leftover row the same way `users set-email --id` and `users delete --id` do, and refuses (naming the ids) if a bare address you try instead still matches more than one row.
 
 ```bash
 docker compose exec ovumcy /app/ovumcy users list

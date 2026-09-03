@@ -862,6 +862,11 @@ func TestMapWebhookError(t *testing.T) {
 		{"email required", services.ErrOperatorUserEmailRequired, "email is required"},
 		{"email invalid", services.ErrOperatorUserEmailInvalid, "invalid email address"},
 		{"url invalid", services.ErrWebhookURLInvalid, "webhook url invalid"},
+		// webhook show|set has no --id form, so an ambiguous address (two rows
+		// on one mailbox) falls through to the default wrap rather than a
+		// dedicated case: services.AmbiguousEmailError.Error() already names
+		// every matching id, and this command has no flag to point at instead.
+		{"ambiguous address", &services.AmbiguousEmailError{Email: "owner@example.com", IDs: []uint{5, 18}}, "matches more than one account (ids 5, 18)"},
 		{"default wraps", errors.New("some other failure"), "configure webhook"},
 	}
 	for _, tc := range cases {
