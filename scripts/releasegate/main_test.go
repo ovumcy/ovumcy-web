@@ -1,5 +1,5 @@
 // Package releasegate holds the release tag gate to the one thing it exists to
-// assert: that the five checks `:latest` waits for were really run on the
+// assert: that the six checks `:latest` waits for were really run on the
 // commit being tagged.
 //
 // `verify-release-tag` in .github/workflows/docker-image.yml is the only gate
@@ -116,6 +116,7 @@ func greenQueue(suite string) []checkRun {
 		{suite, "e2e", "success"},
 		{suite, "e2e-postgres-smoke", "success"},
 		{suite, "image-smoke", "skipped"},
+		{suite, "e2e-cross-browser", "skipped"},
 	}
 }
 
@@ -126,6 +127,7 @@ func greenPush(suite string) []checkRun {
 		{suite, "e2e", "success"},
 		{suite, "e2e-postgres-smoke", "success"},
 		{suite, "image-smoke", "success"},
+		{suite, "e2e-cross-browser", "success"},
 	}
 }
 

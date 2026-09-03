@@ -2,7 +2,7 @@
 // `if` carrying no status-check function cannot have.
 //
 // `publish-image` in .github/workflows/ci.yml is the only path by which
-// `ghcr.io/<repo>:latest` follows `main`. It lists five jobs in `needs:` and
+// `ghcr.io/<repo>:latest` follows `main`. It lists six jobs in `needs:` and
 // carried an `if` naming only the event and the ref, with no status-check
 // function in it. Six consecutive runs — 33217555948, 33213567903,
 // 33188023148, 32905532451, 32882518209, 32853636750 — show it `skipped` with
@@ -56,7 +56,7 @@ import (
 	"github.com/ovumcy/ovumcy-web/scripts/workflowfile"
 )
 
-// workflowPath is the workflow that owns both the publish job and the five
+// workflowPath is the workflow that owns both the publish job and the six
 // jobs it gates on: `needs:` cannot cross a workflow boundary, which is why the
 // gate lives there rather than beside the publish itself.
 const workflowPath = ".github/workflows/ci.yml"
@@ -69,7 +69,7 @@ const publishJob = "publish-image"
 // by this one — that is what makes an added dependency fail. This list is the
 // other direction: a dependency silently dropped from `needs:` weakens the gate
 // just as much, and would leave a check that reads the actual list green.
-var wantNeeds = []string{"e2e", "e2e-postgres-smoke", "image-smoke", "race", "test"}
+var wantNeeds = []string{"e2e", "e2e-cross-browser", "e2e-postgres-smoke", "image-smoke", "race", "test"}
 
 // eventDisjunction is the ONE `||` the gate is allowed to hold: the two events
 // that may publish. Everything else has to be a conjunction, and gateProblems
@@ -160,7 +160,7 @@ func jobNeeds(t *testing.T, block string) []string {
 // parseNeeds reads a dependency list in any of the three spellings YAML allows
 // for it. All three are the same list to GitHub, so all three have to be the
 // same list here: a reader that knew only the block sequence would report "no
-// dependencies at all" over a workflow that in fact declares five, and the
+// dependencies at all" over a workflow that in fact declares six, and the
 // per-dependency checks would never run.
 func parseNeeds(lines []string) []string {
 	var needs []string
