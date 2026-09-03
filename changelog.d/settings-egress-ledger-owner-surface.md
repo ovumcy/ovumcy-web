@@ -47,6 +47,5 @@
   left exactly where it is: your reminder settings still save, delivery cannot be switched on over
   it, and removing it takes the withdraw control.
 
-  Known state for this release: the six locales carry the new copy — the egress section and the new
-  webhook error alike — and the five non-English ones are seeded with the English text pending
-  translation.
+  All six locales now carry the egress section fully translated — German, Spanish, French, Italian,
+  and Russian no longer fall back to the English placeholder copy seeded when the card shipped.
