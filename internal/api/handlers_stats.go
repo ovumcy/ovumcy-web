@@ -28,7 +28,7 @@ func (handler *Handler) GetStatsOverview(c fiber.Ctx) error {
 	// BBT shift that has superseded the model's projection is not the one thing
 	// this endpoint still names the old day for.
 	today := services.DateAtLocation(now, location)
-	published, suppression := services.PublishedOverviewStats(user, logs, stats, today, location)
+	published, suppression, confirmed := services.PublishedOverviewStats(user, logs, stats, today, location)
 
-	return c.JSON(newStatsOverviewResponse(published, suppression, handler.medicalDisclaimer(c)))
+	return c.JSON(newStatsOverviewResponse(published, suppression, confirmed, handler.medicalDisclaimer(c)))
 }
