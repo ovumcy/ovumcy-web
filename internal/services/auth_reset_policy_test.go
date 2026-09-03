@@ -80,6 +80,28 @@ func TestParsePasswordResetTokenRejectsWrongPurpose(t *testing.T) {
 	}
 }
 
+// TestBuildPasswordResetTokenRejectsUnlistedPurpose pins the MINT-side half
+// of the allow-list: BuildPasswordResetToken refuses to sign a token for any
+// purpose outside passwordResetTokenAllowedPurposes, not only the three
+// PasswordResetTokenPurpose* constants every production caller passes today.
+// A future call site passing a typo'd or unlisted purpose is exactly the
+// mistake this guards against — catching it at mint time means no token ever
+// gets signed for it, rather than relying solely on the redeem-time parse
+// (TestParsePasswordResetTokenRejectsWrongPurpose above) to refuse it later.
+func TestBuildPasswordResetTokenRejectsUnlistedPurpose(t *testing.T) {
+	secret := []byte("test-secret")
+	now := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
+	passwordHash := "$2a$10$testhashvaluefortokenclaims"
+
+	token, err := BuildPasswordResetToken(secret, 42, passwordHash, "not-a-real-purpose", 30*time.Minute, now)
+	if !errors.Is(err, ErrPasswordResetTokenInvalidPurpose) {
+		t.Fatalf("expected ErrPasswordResetTokenInvalidPurpose, got %v", err)
+	}
+	if token != "" {
+		t.Fatalf("expected no token to be minted for an unlisted purpose, got %q", token)
+	}
+}
+
 // TestParsePasswordResetTokenRejectsMissingExpiry locks the defensive
 // claims.ExpiresAt == nil branch (auth_reset_policy.go): BuildPasswordResetToken
 // always sets ExpiresAt, but the jwt/v5 parser does not require the exp claim
