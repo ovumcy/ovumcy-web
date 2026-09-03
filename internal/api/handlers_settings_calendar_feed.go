@@ -122,7 +122,7 @@ func (handler *Handler) RevokeCalendarFeed(c fiber.Ctx) error {
 	}
 
 	if err := handler.calendarFeedSettings.RevokeFeedToken(c.Context(), user.ID); err != nil {
-		return handler.failMutation(c, calendarFeedRevokeMutation, settingsCalendarFeedUpdateErrorSpec())
+		return handler.failEgressMutation(c, calendarFeedRevokeMutation, user, settingsCalendarFeedUpdateErrorSpec())
 	}
 
 	handler.logMutationSuccess(c, calendarFeedRevokeMutation)

@@ -36,7 +36,7 @@ func (handler *Handler) RemoveWebhookDestination(c fiber.Ctx) error {
 	}
 
 	if err := handler.webhookSettingsSvc.RemoveWebhookDestination(c.Context(), user.ID); err != nil {
-		return handler.failMutation(c, webhookRemoveMutation, settingsWebhookUpdateErrorSpec())
+		return handler.failEgressMutation(c, webhookRemoveMutation, user, settingsWebhookUpdateErrorSpec())
 	}
 
 	handler.logMutationSuccess(c, webhookRemoveMutation)
@@ -73,6 +73,48 @@ func (handler *Handler) respondEgressMutationHTML(c fiber.Ctx, user *models.User
 	}
 	handler.setFlashCookie(c, FlashPayload{SettingsSuccess: status})
 	return redirectOrJSON(c, "/settings")
+}
+
+// failEgressMutation is failMutation for the five mutations that answer with
+// this card, and it exists because the shared settings-error transport cannot
+// serve one.
+//
+// That transport answers an HTMX caller with 200 and a BARE status fragment,
+// which htmx then swaps into hx-target. That was right while every form targeted
+// its own status island. This card targets ITSELF with outerHTML, so the bare
+// fragment replaced the entire section: the refusal ended up standing alone in
+// the page where the card had been, and the island the refusal was written for
+// no longer existed. It is the success path's own defect wearing the other
+// outcome, and it is fixed the same way — the answer is the card, rebuilt from a
+// read, with the refusal inside its island.
+//
+// Non-HTMX callers keep the transport they had: JSON gets the typed error, a
+// plain form post gets the flash and the redirect. Regression:
+// TestEveryEgressMutationAnswersARefusalWithTheRebuiltCard.
+func (handler *Handler) failEgressMutation(c fiber.Ctx, kind healthMutationKind, user *models.User, spec APIErrorSpec) error {
+	handler.logMutationError(c, kind, spec)
+	if !isHTMX(c) {
+		return handler.respondMappedError(c, spec)
+	}
+
+	data, err := handler.buildSettingsEgressBlockData(c, user, "")
+	if err != nil {
+		return handler.respondMappedError(c, settingsLoadErrorSpec())
+	}
+	data["EgressErrorKey"] = egressErrorMessageKey(spec.Key)
+	c.Status(fiber.StatusOK)
+	return handler.renderPartial(c, "settings_egress_section", data)
+}
+
+// egressErrorMessageKey resolves the spec's raw key to the translation key the
+// island renders, by the same lookup respondSettingsError uses. An unmapped key
+// is returned unchanged rather than swallowed: a refusal with no copy is a bug
+// to see, not one to hide behind an empty island.
+func egressErrorMessageKey(specKey string) string {
+	if key := services.AuthErrorTranslationKey(specKey); key != "" {
+		return key
+	}
+	return specKey
 }
 
 // buildSettingsEgressBlockData assembles the swap payload: the rebuilt ledger

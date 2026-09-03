@@ -221,9 +221,24 @@
     {{/* ONE status island for the whole section. Two of them — one per path —
          would give the card two aria-live regions announcing over each other,
          and the toast module reads .status-ok from inside the swap target, which
-         only one of the two could be. */}}
+         only one of the two could be.
+
+         A REFUSAL lands here too, in the same island and through the same swap.
+         The settings error transport answers an HTMX caller with 200 and a bare
+         status fragment, which htmx swaps into hx-target: on a card that
+         replaces itself that fragment REPLACED THE WHOLE SECTION, leaving the
+         refusal standing alone where the card had been. That is the success
+         path's own bug wearing the other outcome, and it is fixed the same way
+         — by answering with the card. */}}
     <div id="settings-egress-status" class="save-status text-sm" aria-live="polite">
-      {{if .EgressStatusKey}}
+      {{if .EgressErrorKey}}
+      <div class="status-error" data-flash-key="{{.EgressErrorKey}}" data-flash-status="error">
+        <span class="toast-message-wrap">
+          <span class="toast-icon toast-icon-error" aria-hidden="true">⚠</span>
+          <span class="toast-message">{{t .Messages .EgressErrorKey}}</span>
+        </span>
+      </div>
+      {{else if .EgressStatusKey}}
       <div class="status-ok" data-flash-key="{{.EgressStatusKey}}" data-flash-status="success">
         <span class="toast-message-wrap">
           <span class="toast-icon" aria-hidden="true">✓</span>
