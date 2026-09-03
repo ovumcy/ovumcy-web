@@ -100,12 +100,25 @@ func PublishedStats(user *models.User, stats CycleStats) (CycleStats, Prediction
 // boolean would make the JSON view unable to say which is true — exactly the
 // class of divergence PublishedStats itself exists to prevent, just one field
 // over.
+//
+// The bool is READ BACK off `published.OvulationDate` after PublishedStats has
+// run, rather than kept from the ConfirmedCurrentCycleOvulation call above:
+// today the two calls agree by construction (both read
+// FertilityProjectionSuppressed against the same user and stats, and the only
+// field this function mutates before the second call, OvulationDate, is not an
+// input to that predicate), but a bool decided before the clearing and never
+// revisited would depend on that agreement holding forever across two files. A
+// suppressed projection reporting a measurement is exactly the medical-safety
+// floor this adapter exists to hold, so the field is derived from the
+// CLEARED stats it is published beside: it cannot outlive the date it
+// describes even if a future suppression signal reaches one predicate and not
+// the other.
 func PublishedOverviewStats(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (CycleStats, PredictionSuppression, bool) {
-	confirmedOvulation := false
-	if confirmed, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, today, location); ok {
-		stats.OvulationDate = confirmed
-		confirmedOvulation = true
+	confirmedDay, wasConfirmed := ConfirmedCurrentCycleOvulation(user, logs, stats, today, location)
+	if wasConfirmed {
+		stats.OvulationDate = confirmedDay
 	}
 	published, suppression := PublishedStats(user, stats)
+	confirmedOvulation := wasConfirmed && !published.OvulationDate.IsZero()
 	return published, suppression, confirmedOvulation
 }
