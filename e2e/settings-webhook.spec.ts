@@ -11,6 +11,7 @@ import {
   acceptConfirmDialog,
   cancelConfirmDialog,
   mutatingRequestsDuring,
+  submitAndAwait,
 } from './support/confirm-dialog-helpers';
 
 // Browser coverage for the webhook half of the egress ledger — the merged
@@ -104,24 +105,10 @@ async function removeWebhookEndpoint(page: Page): Promise<void> {
   const removeForm = webhookPath(page).locator('[data-settings-webhook-remove]');
   await expect(removeForm).toBeVisible();
 
-  const [request] = await Promise.all([
-    page.waitForRequest(
-      (candidate) =>
-        candidate.method() === 'DELETE' &&
-        new URL(candidate.url()).pathname === '/api/v1/users/current/webhook'
-    ),
-    (async () => {
-      await removeForm.locator('button[type="submit"]').click();
-      await acceptConfirmDialog(page);
-    })(),
-  ]);
-
-  const response = await request.response();
-  expect(response, 'expected a response for DELETE /api/v1/users/current/webhook').not.toBeNull();
-  expect(
-    response!.ok(),
-    `DELETE /api/v1/users/current/webhook failed with ${response!.status()}`
-  ).toBeTruthy();
+  await submitAndAwait(page, 'DELETE', '/api/v1/users/current/webhook', async () => {
+    await removeForm.locator('button[type="submit"]').click();
+    await acceptConfirmDialog(page);
+  });
 
   await expect(page.locator('#settings-egress-status .status-ok')).toBeVisible();
 }

@@ -59,6 +59,16 @@ func settingsWebhookInvalidURLErrorSpec() APIErrorSpec {
 	return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid webhook url")
 }
 
+// settingsWebhookUnreadableURLErrorSpec is the owner-fault spec for a save that
+// would have had to invent an endpoint: the stored ciphertext will not open (a
+// rotated SECRET_KEY) and the form left the field blank, which means "keep it".
+// It is separate from the invalid-URL spec because the owner's next action is
+// different -- enter a new endpoint, or withdraw the stored one -- and identical
+// copy for two different remedies is how a surface stops being actionable.
+func settingsWebhookUnreadableURLErrorSpec() APIErrorSpec {
+	return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "webhook url unreadable")
+}
+
 func settingsWebhookUpdateErrorSpec() APIErrorSpec {
 	return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update webhook settings")
 }
@@ -70,6 +80,9 @@ func settingsWebhookUpdateErrorSpec() APIErrorSpec {
 func mapSettingsWebhookSaveError(err error) APIErrorSpec {
 	if errors.Is(err, services.ErrWebhookURLInvalid) {
 		return settingsWebhookInvalidURLErrorSpec()
+	}
+	if errors.Is(err, services.ErrWebhookURLUnreadable) {
+		return settingsWebhookUnreadableURLErrorSpec()
 	}
 	return settingsWebhookUpdateErrorSpec()
 }

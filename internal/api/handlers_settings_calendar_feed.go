@@ -111,8 +111,10 @@ func (handler *Handler) issueCalendarFeedToken(c fiber.Ctx, mutation healthMutat
 }
 
 // RevokeCalendarFeed disables the owner's feed by clearing both token columns.
-// Any previously-issued subscribe URL 404s immediately. It carries no secret and
-// returns to /settings with a flash (or JSON status for API clients).
+// Any previously-issued subscribe URL 404s immediately. It carries no secret.
+// The answer is respondEgressMutation's: a JSON status, the whole egress card
+// rebuilt from a read taken after the write for an HTMX caller, or a flash and a
+// redirect to /settings.
 func (handler *Handler) RevokeCalendarFeed(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {

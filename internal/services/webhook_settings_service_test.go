@@ -615,11 +615,23 @@ func TestBuildWebhookURLDisplayUnparseableStoredURLHasNoHost(t *testing.T) {
 	}
 }
 
-// TestSaveWebhookSettingsFromFormUndecryptableStoredURLDisabledClears covers the
-// decrypt-break branch: with the URL omitted (URLProvided=false) and delivery
-// being turned OFF, a stored ciphertext that will not open is cleared to empty
-// (the empty URL is accepted while disabled) rather than erroring.
-func TestSaveWebhookSettingsFromFormUndecryptableStoredURLDisabledClears(t *testing.T) {
+// TestSaveWebhookSettingsKeepsAnUnreadableEndpointAndStillSavesTheToggles pins
+// the behaviour that replaced a silent deletion.
+//
+// A blank URL field means "keep the stored endpoint". When the stored ciphertext
+// will not open there is no plaintext to re-encrypt, and this path used to
+// substitute the empty string -- which DELETED the endpoint, but only on the
+// branch where the owner happened to be switching delivery off. So the
+// destructive outcome was reached by the least destructive-looking action
+// available: an owner reading "this instance can no longer read it" and
+// unchecking the enable toggle.
+//
+// Refusing the whole save was the first answer and it was too wide: the per-kind
+// reminder toggles share this form, and blocking them makes the card unusable
+// until the endpoint is dealt with. The column is kept instead. The toggles
+// persist, the endpoint waits for a deliberate withdrawal, and the delivery mark
+// is not touched either -- it still describes the column the row still holds.
+func TestSaveWebhookSettingsKeepsAnUnreadableEndpointAndStillSavesTheToggles(t *testing.T) {
 	const userID = 34
 	svc, repo := newWebhookServiceForTest()
 	// A ciphertext sealed under a different owner's aad will not open under userID.
@@ -628,23 +640,36 @@ func TestSaveWebhookSettingsFromFormUndecryptableStoredURLDisabledClears(t *test
 	if err := svc.SaveWebhookSettingsFromForm(context.Background(), userID, WebhookSettingsFormUpdate{
 		Enabled:         false,
 		NotifyPeriod:    true,
-		NotifyOvulation: true,
+		NotifyOvulation: false,
 		URLProvided:     false,
 	}); err != nil {
-		t.Fatalf("SaveWebhookSettingsFromForm (disabled, undecryptable stored): %v", err)
+		t.Fatalf("expected the toggle save to land over an unreadable endpoint, got %v", err)
+	}
+	if repo.saveCalls != 1 {
+		t.Fatalf("expected exactly one save, got %d", repo.saveCalls)
+	}
+	if !repo.savedColumns.KeepEncryptedURL {
+		t.Fatal("the save rewrote webhook_url for a row whose ciphertext it could not read")
+	}
+	if repo.savedColumns.EncryptedURL != "" {
+		t.Fatalf("a keeping save must carry no endpoint of its own, got %q", repo.savedColumns.EncryptedURL)
+	}
+	if repo.savedColumns.ClearLastDeliveredAt {
+		t.Fatal("the delivery mark was cleared by a save that changed no endpoint")
+	}
+	if !repo.savedColumns.NotifyPeriod || repo.savedColumns.NotifyOvulation {
+		t.Fatal("the owner's reminder-kind choices did not persist")
 	}
 	if repo.savedColumns.Enabled {
 		t.Fatal("expected delivery persisted as disabled")
 	}
-	if repo.savedColumns.EncryptedURL != "" {
-		t.Fatalf("expected the un-openable stored endpoint cleared to empty, got %q", repo.savedColumns.EncryptedURL)
-	}
 }
 
 // TestSaveWebhookSettingsFromFormUndecryptableStoredURLEnableRejected covers the
-// same decrypt-break branch when the owner is ENABLING delivery: the cleared
-// empty URL is rejected by SaveWebhookSettings, so a webhook is never armed
-// against an endpoint the server can no longer read.
+// same decrypt-break branch when the owner is ENABLING delivery. It is refused
+// for the same reason as the disabling case above, and the assertion is kept
+// separate so the two remedies stay pinned independently: a webhook is never
+// armed against an endpoint the server can no longer read.
 func TestSaveWebhookSettingsFromFormUndecryptableStoredURLEnableRejected(t *testing.T) {
 	const userID = 35
 	svc, repo := newWebhookServiceForTest()
@@ -656,8 +681,8 @@ func TestSaveWebhookSettingsFromFormUndecryptableStoredURLEnableRejected(t *test
 		NotifyOvulation: true,
 		URLProvided:     false,
 	})
-	if !errors.Is(err, ErrWebhookURLInvalid) {
-		t.Fatalf("expected ErrWebhookURLInvalid enabling over an un-openable stored URL, got %v", err)
+	if !errors.Is(err, ErrWebhookURLUnreadable) {
+		t.Fatalf("expected ErrWebhookURLUnreadable enabling over an un-openable stored URL, got %v", err)
 	}
 	if repo.saveCalls != 0 {
 		t.Fatalf("expected no persistence, got %d save calls", repo.saveCalls)

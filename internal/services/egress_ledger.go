@@ -326,7 +326,12 @@ func resolveEgressSectionState(webhook EgressWebhookState, feed EgressFeedState)
 	case EgressFeedUnknown, EgressFeedIssuedPreviousKey:
 		return EgressSectionNeedsAttention
 	}
-	if webhook == EgressWebhookArmed {
+	// outbound_disabled counts here. The webhook state says this PROCESS runs no
+	// reminder pass; it does not say nothing can reach the endpoint, because the
+	// operator CLI delivers from cron on exactly the instances that ship the
+	// scheduler off. The heading errs toward warning: a stored, readable, enabled
+	// endpoint is a route out whoever triggers it.
+	if webhook == EgressWebhookArmed || webhook == EgressWebhookOutboundDisabled {
 		return EgressSectionPathsEnabled
 	}
 	switch feed {

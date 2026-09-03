@@ -59,6 +59,13 @@ type WebhookSettingsUpdate struct {
 	NotifyPeriod     bool
 	NotifyOvulation  bool
 	ReminderLeadDays int
+	// KeepStoredURL asks the save to leave the stored endpoint column untouched
+	// instead of writing URL. It is set only where there is no honest value to
+	// write: the stored ciphertext will not open, so the plaintext this save
+	// would re-encrypt does not exist. Enabled must be false alongside it -- an
+	// endpoint the instance cannot read cannot be armed -- and the service
+	// refuses the combination rather than trusting the caller.
+	KeepStoredURL bool
 }
 
 // WebhookSettingsFormUpdate is the transport-free input to
@@ -210,6 +217,16 @@ func (service *WebhookSettingsService) SaveWebhookSettings(ctx context.Context, 
 		ReminderLeadDays: NormalizeReminderLeadDays(update.ReminderLeadDays),
 	}
 
+	if update.KeepStoredURL {
+		// Nothing to validate, nothing to encrypt, and nothing to decide about the
+		// delivery mark: the mark still describes the column the row still holds.
+		if update.Enabled {
+			return fmt.Errorf("%w: delivery cannot be enabled over an endpoint this instance cannot read", ErrWebhookURLUnreadable)
+		}
+		columns.KeepEncryptedURL = true
+		return service.users.SaveWebhookSettings(ctx, userID, columns)
+	}
+
 	trimmedURL := strings.TrimSpace(update.URL)
 	// destination is the PLAINTEXT this save will store, in the same validated
 	// form the previous save stored its own, so the two are comparable below.
@@ -328,11 +345,18 @@ func (service *WebhookSettingsService) SaveWebhookSettingsFromForm(ctx context.C
 		update.Enabled = form.Enabled
 		storedURL, decryptErr := service.DecryptWebhookURL(userID, current.WebhookURL)
 		if decryptErr != nil {
-			// The stored ciphertext will not open. If the owner is enabling
-			// delivery we must fail loudly (SaveWebhookSettings rejects an empty
-			// URL when enabled) so they re-enter it; if disabling, an empty URL
-			// is fine and clears the un-openable value.
-			update.URL = ""
+			// The stored ciphertext will not open, and a blank field means "keep
+			// the stored endpoint" -- so there is no plaintext to re-encrypt. This
+			// used to substitute the empty string, which DELETED an endpoint the
+			// request had asked to keep, and it did so on the branch that looks
+			// least destructive: an owner reading "this instance can no longer
+			// read it" and switching delivery off.
+			//
+			// Keeping the column is the answer that costs nothing else. The
+			// toggles on the same form still save, the endpoint waits for a
+			// deliberate withdrawal, and arming it is refused below because an
+			// endpoint the instance cannot read cannot deliver.
+			update.KeepStoredURL = true
 			break
 		}
 		update.URL = storedURL

@@ -215,9 +215,14 @@ func (service *WebhookSettingsCLIService) resolveOwner(ctx context.Context, emai
 		// URL-keeping merge re-persists the existing endpoint unchanged. The
 		// display above deliberately discards it.
 		plaintext, decryptErr := service.settings.DecryptWebhookURL(owner.ID, owner.WebhookURL)
+		// codecov:ignore:start -- unreachable: this arm runs only when the
+		// projection above already opened the same ciphertext under the same key
+		// and owner id. Kept because the alternative is discarding an error, and
+		// the day the two stop sharing one decrypt this fails closed.
 		if decryptErr != nil {
 			return models.User{}, WebhookSettingsView{}, "", ErrWebhookURLUnreadable
 		}
+		// codecov:ignore:end
 		plaintextURL = plaintext
 	}
 

@@ -1668,6 +1668,13 @@
     if (target.classList.contains("save-status")) {
       return target;
     }
+    // Only an element that DECLARES itself a toast surface may have its island
+    // resolved from inside it. A bare descendant search would return whichever
+    // .save-status came first in document order, and the settings page carries
+    // several - so a webhook error could be rendered into the symptoms card.
+    if (!target.hasAttribute || !target.hasAttribute("data-success-toast")) {
+      return null;
+    }
     return target.querySelector ? target.querySelector(".save-status") : null;
   }
 

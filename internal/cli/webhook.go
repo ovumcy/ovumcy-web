@@ -208,7 +208,7 @@ func webhookEndpointStatus(view services.WebhookSettingsView) string {
 	case services.WebhookURLAbsent:
 		return "not configured"
 	case services.WebhookURLUnreadable:
-		return "stored, unreadable by this instance (SECRET_KEY changed?) — set a new endpoint or clear it"
+		return "stored, unreadable by this instance (SECRET_KEY changed?): set a new endpoint or clear it"
 	}
 	host := strings.TrimSpace(view.Host)
 	// codecov:ignore:start -- not reachable from a save: ValidateWebhookURL

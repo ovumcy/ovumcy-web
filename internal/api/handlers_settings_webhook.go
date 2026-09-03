@@ -59,12 +59,13 @@ func (handler *Handler) UpdateWebhookSettings(c fiber.Ctx) error {
 			"notify_ovulation": form.NotifyOvulation,
 		})
 	}
-	if isHTMX(c) {
-		return c.SendString(htmxSettingsSuccessMarkup(c, status, "Webhook settings updated successfully."))
-	}
-
-	handler.setFlashCookie(c, FlashPayload{SettingsSuccess: status})
-	return redirectOrJSON(c, "/settings")
+	// The save is the fifth mutation on the egress card and answers like the
+	// other four. It used to return a bare status toast, which was right while
+	// the form targeted its own island; the card now replaces itself, so a toast
+	// alone would swap the whole section -- states, controls and payload lists --
+	// out of the page. Rebuilding from a read after the write is also what stops
+	// the freshly saved endpoint being described by the state it had before.
+	return handler.respondEgressMutation(c, user, status)
 }
 
 func parseWebhookSettingsInput(c fiber.Ctx) (webhookSettingsInput, error) {

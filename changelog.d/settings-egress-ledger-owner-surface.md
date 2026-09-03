@@ -39,5 +39,14 @@
 - **`/privacy` links signed-in readers to that card.** The page itself stays unauthenticated and
   says nothing about how this instance is configured.
 
-  Known state for this release: the six locales carry the new copy, and the five non-English ones
-  are seeded with the English text pending translation.
+- **A webhook endpoint this instance can no longer read is no longer deleted by accident.** Leaving
+  the URL field blank has always meant "keep the stored endpoint". When the stored value could not
+  be decrypted — after the application secret is rotated — there was nothing to keep, and the save
+  quietly stored an empty endpoint instead, but only when you were switching delivery off. So the
+  destructive outcome arrived through the least alarming action on the page. The endpoint is now
+  left exactly where it is: your reminder settings still save, delivery cannot be switched on over
+  it, and removing it takes the withdraw control.
+
+  Known state for this release: the six locales carry the new copy — the egress section and the new
+  webhook error alike — and the five non-English ones are seeded with the English text pending
+  translation.

@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/ovumcy/ovumcy-web/internal/db"
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/security"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -235,6 +237,73 @@ func TestRunWebhookCommandShowNotConfigured(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "not configured") {
 		t.Fatalf("expected 'not configured', got %q", output.String())
+	}
+}
+
+// TestRunWebhookCommandShowReportsAnUnreadableEndpoint proves the third status
+// this line can print. An endpoint sealed under key material this instance no
+// longer holds is neither "not configured" nor "configured (host …)": both of
+// those are claims about a value the process cannot read. It used to be
+// unreachable here because the resolve path aborted the whole command, which
+// hid the one row an operator has to act on and blocked the clear that would fix
+// it. Nothing about the stored value may appear in the line.
+func TestRunWebhookCommandShowReportsAnUnreadableEndpoint(t *testing.T) {
+	t.Parallel()
+
+	databasePath := createCLIWebhookDatabase(t)
+	owner := createCLIWebhookOwner(t, databasePath, "unreadable@example.com")
+	sealUnreadableWebhookEndpoint(t, databasePath, owner.ID, "https://ntfy.example.com/secret-topic?token=abc123")
+
+	var output bytes.Buffer
+	if err := runWebhookCommand(
+		sqliteConfig(databasePath),
+		testWebhookSecretKey,
+		[]string{"show", "unreadable@example.com"},
+		strings.NewReader(""),
+		&output,
+	); err != nil {
+		t.Fatalf("runWebhookCommand(show) returned error: %v", err)
+	}
+
+	rendered := output.String()
+	if !strings.Contains(rendered, "unreadable by this instance") {
+		t.Fatalf("expected the unreadable status, got %q", rendered)
+	}
+	if strings.Contains(rendered, "not configured") {
+		t.Fatal("an endpoint this instance cannot read must not be reported as absent")
+	}
+	if strings.Contains(rendered, "ntfy.example.com") {
+		t.Fatal("no host may be named for a value the instance never opened")
+	}
+	assertNoSecretLeak(t, rendered)
+}
+
+// sealUnreadableWebhookEndpoint stores a ciphertext bound to a DIFFERENT owner
+// id, which is what a rotated SECRET_KEY leaves behind from this instance's
+// point of view: a value that is present and will not open.
+func sealUnreadableWebhookEndpoint(t *testing.T, databasePath string, userID uint, plaintextURL string) {
+	t.Helper()
+
+	ciphertext, err := security.EncryptField(plaintextURL, []byte(testWebhookSecretKey), []byte(fmt.Sprintf("ovumcy.field.webhook_url:%d", userID+1)))
+	if err != nil {
+		t.Fatalf("seal the unreadable endpoint: %v", err)
+	}
+
+	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	sqlDB, err := database.DB()
+	if err != nil {
+		t.Fatalf("open sql db: %v", err)
+	}
+	defer func() { _ = sqlDB.Close() }()
+
+	if err := database.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+		"webhook_url":     ciphertext,
+		"webhook_enabled": true,
+	}).Error; err != nil {
+		t.Fatalf("store the unreadable endpoint: %v", err)
 	}
 }
 

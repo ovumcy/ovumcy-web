@@ -266,6 +266,12 @@ test.describe('Settings: calendar feed one-time reveal', () => {
     );
     await expect(page.locator('#settings-egress-status .status-ok')).toBeVisible();
 
+    // The response to the revoke IS the rebuilt card, so the new state must be
+    // readable before any reload. Asserting only after a reload would stay green
+    // if the mutation went back to answering with a bare status fragment, which
+    // is what left a stale sentence standing beside a fresh success message.
+    await expectFeedState(page, 'none');
+
     await page.reload();
     await expect(page).toHaveURL(/\/settings$/);
     await expectFeedState(page, 'none');
