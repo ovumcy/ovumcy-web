@@ -16,7 +16,7 @@ type LoginAuthService interface {
 }
 
 type LoginResetTokenIssuer interface {
-	IssueResetTokenForUser(secretKey []byte, user *models.User, ttl time.Duration, now time.Time) (string, error)
+	IssueResetTokenForUser(secretKey []byte, user *models.User, purpose string, ttl time.Duration, now time.Time) (string, error)
 }
 
 type LoginService struct {
@@ -76,7 +76,13 @@ func (service *LoginService) Authenticate(
 		return result, nil
 	}
 
-	token, err := service.reset.IssueResetTokenForUser(secretKey, &user, resetTokenTTL, now)
+	// Authenticate only reaches this branch after AuthenticateCredentials has
+	// verified a LOCAL password. Both callers that reach here through it — the
+	// plain login route and OIDC link-confirm's own password challenge — are
+	// therefore local authentications, so the token always carries the
+	// forced-from-local purpose, never forced-from-OIDC. See
+	// PasswordResetTokenPurposeForcedLocal.
+	token, err := service.reset.IssueResetTokenForUser(secretKey, &user, PasswordResetTokenPurposeForcedLocal, resetTokenTTL, now)
 	if err != nil {
 		return LoginResult{}, ErrLoginResetTokenIssue
 	}

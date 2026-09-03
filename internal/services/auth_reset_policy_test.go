@@ -18,7 +18,7 @@ func TestBuildAndParsePasswordResetToken(t *testing.T) {
 	now := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
 	passwordHash := "$2a$10$testhashvaluefortokenclaims"
 
-	token, err := BuildPasswordResetToken(secret, 42, passwordHash, 30*time.Minute, now)
+	token, err := BuildPasswordResetToken(secret, 42, passwordHash, PasswordResetTokenPurposeRecovery, 30*time.Minute, now)
 	if err != nil {
 		t.Fatalf("BuildPasswordResetToken() unexpected error: %v", err)
 	}
@@ -30,8 +30,8 @@ func TestBuildAndParsePasswordResetToken(t *testing.T) {
 	if claims.UserID != 42 {
 		t.Fatalf("expected UserID=42, got %d", claims.UserID)
 	}
-	if claims.Purpose != passwordResetTokenPurpose {
-		t.Fatalf("expected purpose %q, got %q", passwordResetTokenPurpose, claims.Purpose)
+	if claims.Purpose != PasswordResetTokenPurposeRecovery {
+		t.Fatalf("expected purpose %q, got %q", PasswordResetTokenPurposeRecovery, claims.Purpose)
 	}
 	if claims.PasswordState == "" {
 		t.Fatalf("expected non-empty password state")
@@ -43,7 +43,7 @@ func TestParsePasswordResetTokenRejectsExpired(t *testing.T) {
 	now := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
 	passwordHash := "$2a$10$testhashvaluefortokenclaims"
 
-	token, err := BuildPasswordResetToken(secret, 42, passwordHash, 1*time.Minute, now)
+	token, err := BuildPasswordResetToken(secret, 42, passwordHash, PasswordResetTokenPurposeRecovery, 1*time.Minute, now)
 	if err != nil {
 		t.Fatalf("BuildPasswordResetToken() unexpected error: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestParsePasswordResetTokenRejectsMissingExpiry(t *testing.T) {
 
 	claims := PasswordResetClaims{
 		UserID:        7,
-		Purpose:       passwordResetTokenPurpose,
+		Purpose:       PasswordResetTokenPurposeRecovery,
 		PasswordState: "state",
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:  strconv.FormatUint(7, 10),
@@ -173,7 +173,7 @@ func TestBuildPasswordResetTokenDefaultsNonPositiveTTL(t *testing.T) {
 	// boundary: the token is valid just before 30m and expired just after. The
 	// ttl=0 case also kills a `<= 0` → `< 0` boundary mutation.
 	for _, ttl := range []time.Duration{0, -time.Minute} {
-		token, err := BuildPasswordResetToken(secret, 42, passwordHash, ttl, now)
+		token, err := BuildPasswordResetToken(secret, 42, passwordHash, PasswordResetTokenPurposeRecovery, ttl, now)
 		if err != nil {
 			t.Fatalf("BuildPasswordResetToken(ttl=%v) unexpected error: %v", ttl, err)
 		}

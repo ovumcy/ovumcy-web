@@ -55,7 +55,7 @@ func (handler *Handler) ForgotPassword(c fiber.Ctx) error {
 		handler.logSecurityError(c, "auth.recovery_start", spec)
 		return handler.respondMappedError(c, spec)
 	}
-	if err := handler.setResetPasswordCookie(c, token, false); err != nil {
+	if err := handler.setResetPasswordCookie(c, token); err != nil {
 		spec := authResetTokenCreateErrorSpec()
 		handler.logSecurityError(c, "auth.recovery_start", spec)
 		return handler.respondMappedError(c, spec)
@@ -79,7 +79,7 @@ func (handler *Handler) ResetPassword(c fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 
-	token, forced := handler.readResetPasswordCookie(c)
+	token := handler.readResetPasswordCookie(c)
 	if token == "" {
 		handler.clearResetPasswordCookie(c)
 		spec := invalidResetTokenErrorSpec()
@@ -95,21 +95,32 @@ func (handler *Handler) ResetPassword(c fiber.Ctx) error {
 	// verified at issuance, so this is the account's POSTURE, not session
 	// issuance parity.
 	//
-	// A FORCED token is the opposite case and must survive the gate.
-	// CompleteOIDCLogin mints one unconditionally under oidc_only — it never
-	// checks a local password, so there is nothing here for it to leak.
-	// CompleteOIDCLinkConfirmation also mints one, but (unlike CompleteOIDCLogin)
-	// it now refuses outright while local sign-in is off — the password it
-	// checks to authorize the identity link is exactly the credential the
-	// operator switched off, and authorizing that link is a bigger leak than
-	// the session this gate was written to stop, so gating only the session and
-	// leaving the link open is not a fix. A CompleteOIDCLinkConfirmation token
-	// can therefore only be minted while local sign-in is still on; this arm
-	// only has to cover it redeeming after the operator flips the toggle off in
-	// the few minutes between minting and redemption, and still refusing that
-	// redeem would strand an owner whose account carries must_change_password
-	// with no way to clear it.
-	if !forced && !handler.localPublicAuthEnabled() {
+	// The decision reads the token's own SIGNED purpose (PRIV-4), never a
+	// cookie-carried bool: only a forced-from-OIDC token is exempt, because
+	// CompleteOIDCLogin mints one without ever checking a local password and an
+	// oidc_only instance must keep redeeming it. A forced-from-LOCAL token — the
+	// plain login route, and OIDC link-confirm's own password challenge — is
+	// gated exactly like a recovery token: the factor that produced it is
+	// exactly what the operator disabled, and refusing its redeem would not
+	// strand anyone, since the account still reaches a genuine forced-from-OIDC
+	// token through a plain OIDC sign-in. CompleteOIDCLinkConfirmation itself
+	// now refuses outright while local sign-in is off (the instance-level gate
+	// added there), so its forced-from-LOCAL token can only be minted while the
+	// toggle is still on; this arm still has to cover the narrow race where the
+	// operator flips the toggle off in the few minutes between that mint and
+	// redemption (the token's ≤30-minute TTL). Refusing it there too is the
+	// correct answer, not a gap: the token was produced by the local-password
+	// factor regardless of when the toggle later moved.
+	//
+	// A token that fails to parse (expired, malformed, unrecognised purpose)
+	// never reaches this refusal: PasswordResetTokenRefusedByLocalAuthGate
+	// answers false for it, and CompleteReset below independently re-parses
+	// and gives the accurate "invalid reset token" answer. Otherwise a
+	// forced-from-OIDC reset that simply outlives its 30-minute TTL — the
+	// ordinary case on an oidc_only instance — would be told local recovery is
+	// unavailable and would log a local-recovery-disabled event for a routine
+	// expiry.
+	if !handler.localPublicAuthEnabled() && services.PasswordResetTokenRefusedByLocalAuthGate(handler.secretKey, token, time.Now()) {
 		handler.clearResetPasswordCookie(c)
 		spec := authLocalRecoveryDisabledErrorSpec()
 		handler.logSecurityError(c, "auth.reset_password", spec)

@@ -262,7 +262,7 @@ func TestPasswordResetServiceCompleteReset(t *testing.T) {
 	authService := NewAuthService(repo)
 	service := NewPasswordResetService(authService, nil)
 
-	token, err := authService.BuildPasswordResetToken(secret, 42, repo.user.PasswordHash, 30*time.Minute, now)
+	token, err := authService.BuildPasswordResetToken(secret, 42, repo.user.PasswordHash, PasswordResetTokenPurposeRecovery, 30*time.Minute, now)
 	if err != nil {
 		t.Fatalf("BuildPasswordResetToken() unexpected error: %v", err)
 	}

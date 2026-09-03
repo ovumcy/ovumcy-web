@@ -586,7 +586,7 @@ func TestAuthServiceResolveUserByResetToken(t *testing.T) {
 	}
 	service := NewAuthService(repo)
 
-	token, err := service.BuildPasswordResetToken(secret, 42, repo.user.PasswordHash, 30*time.Minute, now)
+	token, err := service.BuildPasswordResetToken(secret, 42, repo.user.PasswordHash, PasswordResetTokenPurposeRecovery, 30*time.Minute, now)
 	if err != nil {
 		t.Fatalf("BuildPasswordResetToken() unexpected error: %v", err)
 	}
@@ -621,7 +621,7 @@ func TestAuthServiceResolveUserByResetTokenRejectsStateMismatch(t *testing.T) {
 		},
 	}
 	service := NewAuthService(repo)
-	token, err := service.BuildPasswordResetToken(secret, 42, string(originalHash), 30*time.Minute, now)
+	token, err := service.BuildPasswordResetToken(secret, 42, string(originalHash), PasswordResetTokenPurposeRecovery, 30*time.Minute, now)
 	if err != nil {
 		t.Fatalf("BuildPasswordResetToken() unexpected error: %v", err)
 	}

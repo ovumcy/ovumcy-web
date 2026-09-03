@@ -31,7 +31,7 @@ func TestResetPasswordClearsCookieOnInvalidResetToken(t *testing.T) {
 
 	validToken := mustSignResetTokenForTest(t, user.ID, user.PasswordHash, time.Now().Add(10*time.Minute), time.Now())
 	tamperedToken := mustTamperResetTokenSignatureForTest(t, validToken)
-	resetCookieValue := mustSealResetCookieValueForTest(t, []byte("test-secret-key"), tamperedToken, false)
+	resetCookieValue := mustSealResetCookieValueForTest(t, []byte("test-secret-key"), tamperedToken)
 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets/redeem", strings.NewReader(url.Values{
 		"password":         {"EvenStronger2"},

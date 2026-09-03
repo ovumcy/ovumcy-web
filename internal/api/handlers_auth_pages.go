@@ -174,12 +174,24 @@ func (handler *Handler) ShowForgotPasswordPage(c fiber.Ctx) error {
 func (handler *Handler) ShowResetPasswordPage(c fiber.Ctx) error {
 	// The N+1 site of the redeem gate in ResetPassword, and the sibling of
 	// ShowForgotPasswordPage above: with local public auth off, the only reset
-	// that still has a redeem is the forced one, so a recovery-minted form — and
-	// the cookieless page that offers to start one — must not render either. The
-	// cookie is read only when the gate can fire, so the ordinary configuration
-	// pays nothing; an absent cookie reads as not forced and takes the same exit.
+	// that still has a redeem is the forced-from-OIDC one, so a recovery-minted
+	// or forced-from-LOCAL form — and the cookieless page that offers to start
+	// one — must not render either. The decision reads the token's own SIGNED
+	// purpose, exactly like the redeem gate in ResetPassword, so the page and
+	// the submit cannot diverge (PRIV-4).
+	//
+	// A present-but-unparsable token (expired, malformed, unrecognised
+	// purpose) deliberately does NOT redirect here: PasswordResetTokenRefusedByLocalAuthGate
+	// answers false for it, so control falls through to
+	// buildResetPasswordPageData below, which independently re-parses and
+	// renders the ordinary "invalid token" page — the same answer the submit
+	// gives via CompleteReset. Only a token that is genuinely ABSENT, or one
+	// that parses and carries a recovery/forced-from-LOCAL purpose, redirects
+	// here. The cookie is read only when the gate can fire, so the ordinary
+	// configuration pays nothing.
 	if !handler.localPublicAuthEnabled() {
-		if token, forced := handler.readResetPasswordCookie(c); !forced {
+		token := handler.readResetPasswordCookie(c)
+		if token == "" || services.PasswordResetTokenRefusedByLocalAuthGate(handler.secretKey, token, time.Now()) {
 			// Only a cookie that was actually presented is retracted. An absent
 			// one has nothing to retract, and a value that would not open was
 			// already cleared by the reader — the same rule the TOTP readers

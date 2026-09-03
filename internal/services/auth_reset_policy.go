@@ -16,9 +16,37 @@ import (
 )
 
 const (
-	recoveryCodePrefix        = "OVUM"
-	passwordResetTokenPurpose = "password_reset"
+	recoveryCodePrefix = "OVUM"
+
+	// PasswordResetTokenPurposeRecovery marks a token minted by the email +
+	// recovery-code flow (ForgotPassword/StartRecovery). It is the only
+	// purpose ForgotPassword itself gates on the instance-wide local-sign-in
+	// toggle, so its redeem must be gated identically.
+	PasswordResetTokenPurposeRecovery = "password_reset_recovery"
+	// PasswordResetTokenPurposeForcedOIDC marks a token minted after an OIDC
+	// sign-in (or OIDC link-confirm's own OIDC identity attach) resolves to an
+	// account carrying MustChangePassword. An oidc_only instance legitimately
+	// mints and redeems these with local sign-in switched off.
+	PasswordResetTokenPurposeForcedOIDC = "password_reset_forced_oidc"
+	// PasswordResetTokenPurposeForcedLocal marks a token minted after a LOCAL
+	// password authenticates successfully against an account carrying
+	// MustChangePassword — the plain login route, and OIDC link-confirm's own
+	// password challenge (LoginService.Authenticate gates both). Unlike the
+	// OIDC purpose, this one must NOT survive the instance toggle being off:
+	// the factor that produced it is exactly the one the operator disabled.
+	PasswordResetTokenPurposeForcedLocal = "password_reset_forced_local"
 )
+
+// passwordResetTokenAllowedPurposes is the redeem-time allow-list: an
+// unrecognised or legacy Purpose (including the single pre-migration value
+// every reset token carried before this split) refuses here rather than
+// being reinterpreted as one of the three current values. BuildPasswordResetToken
+// mints only members of this set.
+var passwordResetTokenAllowedPurposes = map[string]bool{
+	PasswordResetTokenPurposeRecovery:    true,
+	PasswordResetTokenPurposeForcedOIDC:  true,
+	PasswordResetTokenPurposeForcedLocal: true,
+}
 
 var (
 	ErrPasswordResetTokenMissing              = errors.New("missing reset token")
@@ -38,8 +66,14 @@ type PasswordResetClaims struct {
 
 // BuildPasswordResetToken mints the reset token. storedHash is the account's
 // bcrypt hash as read from the row — never a raw password; the caller has one
-// only in the shape it already persists.
-func BuildPasswordResetToken(secretKey []byte, userID uint, storedHash string, ttl time.Duration, now time.Time) (string, error) {
+// only in the shape it already persists. purpose must be one of the three
+// PasswordResetTokenPurpose* constants — it is what ParsePasswordResetToken's
+// redeem-time allow-list decides on, not any out-of-band signal such as a
+// cookie-carried bool.
+func BuildPasswordResetToken(secretKey []byte, userID uint, storedHash string, purpose string, ttl time.Duration, now time.Time) (string, error) {
+	if !passwordResetTokenAllowedPurposes[purpose] {
+		return "", ErrPasswordResetTokenInvalidPurpose
+	}
 	if ttl <= 0 {
 		ttl = 30 * time.Minute
 	}
@@ -54,7 +88,7 @@ func BuildPasswordResetToken(secretKey []byte, userID uint, storedHash string, t
 
 	claims := PasswordResetClaims{
 		UserID:        userID,
-		Purpose:       passwordResetTokenPurpose,
+		Purpose:       purpose,
 		PasswordState: passwordState,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   strconv.FormatUint(uint64(userID), 10),
@@ -95,7 +129,7 @@ func ParsePasswordResetToken(secretKey []byte, rawToken string, now time.Time) (
 	if !token.Valid {
 		return nil, ErrPasswordResetTokenInvalid
 	}
-	if claims.Purpose != passwordResetTokenPurpose {
+	if !passwordResetTokenAllowedPurposes[claims.Purpose] {
 		return nil, ErrPasswordResetTokenInvalidPurpose
 	}
 	if claims.ExpiresAt == nil || claims.ExpiresAt.Before(now) {
@@ -108,6 +142,37 @@ func ParsePasswordResetToken(secretKey []byte, rawToken string, now time.Time) (
 		return nil, ErrPasswordResetTokenInvalidPasswordState
 	}
 	return claims, nil
+}
+
+// PasswordResetTokenRefusedByLocalAuthGate reports whether the
+// instance-wide local-sign-in toggle (localPublicAuthEnabled) is the correct
+// reason to refuse rawToken right now. It answers true only when the token
+// parses successfully — valid signature, not expired — and its SIGNED
+// purpose is recovery or forced-from-LOCAL: the two purposes produced by (or
+// gated identically to) a local password, which is exactly the factor the
+// operator disabled. A forced-from-OIDC token answers false: an oidc_only
+// instance legitimately mints and must keep redeeming those with local
+// sign-in switched off.
+//
+// A token that fails to parse for ANY reason — expired, malformed, wrong
+// signature, or an unrecognised/legacy purpose — also answers false. That is
+// deliberate: such a token is invalid on its own terms, and the caller must
+// let the ordinary invalid-token path (ResolveUserByResetToken/CompleteReset,
+// or IsResetPasswordTokenValid on the page) say so. Collapsing every parse
+// failure into "the instance toggle refused this" mislabels routine expiry —
+// the default outcome of every forced-from-OIDC reset a user takes longer
+// than the 30-minute TTL to complete — as an operator-configuration refusal,
+// and floods the security log with a local-recovery-disabled entry that
+// never happened. The actual security property does not depend on which of
+// the two refusal paths answers: a token that fails to parse here still
+// fails to parse in CompleteReset, so redemption is refused either way — only
+// the message and the logged reason change.
+func PasswordResetTokenRefusedByLocalAuthGate(secretKey []byte, rawToken string, now time.Time) bool {
+	claims, err := ParsePasswordResetToken(secretKey, rawToken, now)
+	if err != nil {
+		return false
+	}
+	return claims.Purpose != PasswordResetTokenPurposeForcedOIDC
 }
 
 // PasswordStateFingerprint reduces an account's ALREADY-HASHED credential to a

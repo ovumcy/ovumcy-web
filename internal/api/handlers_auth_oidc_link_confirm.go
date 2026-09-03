@@ -219,7 +219,18 @@ func (handler *Handler) CompleteOIDCLinkConfirmation(c fiber.Ctx) error {
 	handler.clearOIDCLinkPendingCookie(c)
 
 	if result.RequiresPasswordReset {
-		if err := handler.setResetPasswordCookie(c, result.ResetToken, true); err != nil {
+		// result comes from loginService.Authenticate above (:137-145), which
+		// verified a LOCAL password for targetUser — this handler never checks
+		// an instance-wide OIDC gate before minting. LoginService therefore
+		// always issues PasswordResetTokenPurposeForcedLocal here, never
+		// forced-from-OIDC: labelling this mint OIDC would let the redeem gate
+		// bypass the local-sign-in toggle on exactly the path that just proved
+		// a local password. ConfirmAndLinkIdentity already committed the link
+		// above (the call a few lines up in this same function), so a
+		// subsequent plain OIDC sign-in for this user still reaches
+		// CompleteOIDCLogin and mints a genuine forced-from-OIDC token if one
+		// is still needed — nothing is stranded by the local label.
+		if err := handler.setResetPasswordCookie(c, result.ResetToken); err != nil {
 			// codecov:ignore:start -- defensive: sealing the reset cookie fails only on cipher init errors, which a boot-validated SECRET_KEY cannot produce in-process.
 			spec := authResetTokenCreateErrorSpec()
 			handler.logSecurityError(c, "auth.oidc_link_confirm", spec)

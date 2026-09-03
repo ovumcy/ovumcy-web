@@ -35,12 +35,12 @@ func TestIsResetPasswordTokenValid(t *testing.T) {
 	secret := []byte("test-reset-view-secret")
 	now := time.Now().UTC()
 
-	validToken, err := BuildPasswordResetToken(secret, 7, "$2a$10$testhashvaluefortokenclaims", 30*time.Minute, now)
+	validToken, err := BuildPasswordResetToken(secret, 7, "$2a$10$testhashvaluefortokenclaims", PasswordResetTokenPurposeRecovery, 30*time.Minute, now)
 	if err != nil {
 		t.Fatalf("BuildPasswordResetToken returned error: %v", err)
 	}
 
-	expiredToken, err := BuildPasswordResetToken(secret, 7, "$2a$10$testhashvaluefortokenclaims", time.Minute, now.Add(-2*time.Minute))
+	expiredToken, err := BuildPasswordResetToken(secret, 7, "$2a$10$testhashvaluefortokenclaims", PasswordResetTokenPurposeRecovery, time.Minute, now.Add(-2*time.Minute))
 	if err != nil {
 		t.Fatalf("BuildPasswordResetToken returned error for expired token: %v", err)
 	}

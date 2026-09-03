@@ -15,7 +15,7 @@ func TestResetPasswordInvalidTokenJSONResponseDoesNotExposeSecrets(t *testing.T)
 	const plaintextToken = "plain-reset-token"
 	const plaintextPassword = "EvenStronger2"
 
-	resetCookieValue := mustSealResetCookieValueForTest(t, []byte("test-secret-key"), plaintextToken, false)
+	resetCookieValue := mustSealResetCookieValueForTest(t, []byte("test-secret-key"), plaintextToken)
 	form := url.Values{
 		"password":         {plaintextPassword},
 		"confirm_password": {plaintextPassword},
@@ -49,7 +49,7 @@ func TestResetPasswordInvalidTokenHTMLResponseDoesNotExposeSecrets(t *testing.T)
 	const plaintextToken = "plain-reset-token"
 	const plaintextPassword = "EvenStronger2"
 
-	resetCookieValue := mustSealResetCookieValueForTest(t, []byte("test-secret-key"), plaintextToken, false)
+	resetCookieValue := mustSealResetCookieValueForTest(t, []byte("test-secret-key"), plaintextToken)
 	form := url.Values{
 		"password":         {plaintextPassword},
 		"confirm_password": {plaintextPassword},

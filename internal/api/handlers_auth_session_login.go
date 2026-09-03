@@ -91,7 +91,7 @@ func (handler *Handler) Login(c fiber.Ctx) error {
 	}
 
 	if result.RequiresPasswordReset {
-		if err := handler.setResetPasswordCookie(c, result.ResetToken, true); err != nil {
+		if err := handler.setResetPasswordCookie(c, result.ResetToken); err != nil {
 			spec := authResetTokenCreateErrorSpec()
 			handler.logSecurityError(c, "auth.login", spec)
 			return handler.respondMappedError(c, spec)
