@@ -243,25 +243,58 @@ func NewEgressLedgerService(webhook EgressLedgerWebhookDisplayBuilder, feed Egre
 	return &EgressLedgerService{webhook: webhook, feed: feed, outboundDeliveryEnabled: outboundDeliveryEnabled}
 }
 
-// BuildEgressLedger derives the ledger for one owner. user carries the webhook
+// EgressLedgerInput is exactly what the ledger may see of an owner's row, and it
+// is a struct rather than models.User for the reason the whole surface exists:
+// the two claim watermarks are not delivery evidence, and the argument that they
+// never reach the view is stronger when they never reach the frame. A guard over
+// identifiers catches them being NAMED here; this makes them unavailable, so the
+// mistake is a compile error rather than a review finding.
+//
+// EncryptedWebhookURL is ciphertext and is opened only behind the readability
+// seam: the ledger holds no key and sees no decrypt error's text.
+type EgressLedgerInput struct {
+	UserID              uint
+	EncryptedWebhookURL string
+	WebhookEnabled      bool
+	NotifyPeriod        bool
+	NotifyOvulation     bool
+	LastDeliveredAt     *time.Time
+}
+
+// EgressLedgerInputFromUser narrows a loaded row to what the ledger reads. It is
+// the one place a models.User and the ledger meet, and it copies six fields by
+// name — a seventh cannot arrive by widening a struct somewhere else.
+func EgressLedgerInputFromUser(user models.User) EgressLedgerInput {
+	return EgressLedgerInput{
+		UserID:              user.ID,
+		EncryptedWebhookURL: user.WebhookURL,
+		WebhookEnabled:      user.WebhookEnabled,
+		NotifyPeriod:        user.WebhookNotifyPeriod,
+		NotifyOvulation:     user.WebhookNotifyOvulation,
+		LastDeliveredAt:     user.WebhookLastDeliveredAt,
+	}
+}
+
+// BuildEgressLedger derives the ledger for one owner. row carries the webhook
 // columns already loaded by the settings projection; the feed half is read
 // through its own seam, which is where a load failure becomes "unknown".
-func (service *EgressLedgerService) BuildEgressLedger(ctx context.Context, user models.User) EgressLedger {
-	display := service.webhook.BuildWebhookURLDisplay(user.ID, user.WebhookURL)
-	webhookState := service.resolveWebhookState(user, display)
+func (service *EgressLedgerService) BuildEgressLedger(ctx context.Context, row EgressLedgerInput) EgressLedger {
+	display := service.webhook.BuildWebhookURLDisplay(row.UserID, row.EncryptedWebhookURL)
+	intrinsicState := resolveIntrinsicWebhookState(row, display)
+	webhookState := service.applyOutboundDeliveryOverlay(intrinsicState)
 
-	feedStatus := service.feed.BuildFeedStatus(ctx, user.ID)
+	feedStatus := service.feed.BuildFeedStatus(ctx, row.UserID)
 	feedState := resolveFeedState(feedStatus)
 
 	return EgressLedger{
-		Section: resolveEgressSectionState(webhookState, feedState, wouldDeliverIfOutboundRan(user, display)),
+		Section: resolveEgressSectionState(intrinsicState, feedState),
 		Webhook: EgressWebhookLedger{
 			State:           webhookState,
-			Enabled:         user.WebhookEnabled,
-			NotifyPeriod:    user.WebhookNotifyPeriod,
-			NotifyOvulation: user.WebhookNotifyOvulation,
+			Enabled:         row.WebhookEnabled,
+			NotifyPeriod:    row.NotifyPeriod,
+			NotifyOvulation: row.NotifyOvulation,
 			Host:            webhookHostForState(webhookState, display),
-			LastDeliveredAt: deliveryEvidenceForState(webhookState, user.WebhookLastDeliveredAt),
+			LastDeliveredAt: deliveryEvidenceForState(webhookState, row.LastDeliveredAt),
 			PayloadFields:   WebhookPayloadFields(),
 		},
 		Feed: EgressFeedLedger{
@@ -272,11 +305,17 @@ func (service *EgressLedgerService) BuildEgressLedger(ctx context.Context, user 
 	}
 }
 
-// resolveWebhookState applies the one order the states may be evaluated in.
-// Readability comes before every toggle, and the instance-wide fact comes before
-// the per-owner ones: each earlier case describes a reason the later ones cannot
-// matter.
-func (service *EgressLedgerService) resolveWebhookState(user models.User, display WebhookURLDisplay) EgressWebhookState {
+// resolveIntrinsicWebhookState answers what THIS ROW is, in the one order the
+// states may be evaluated in: readability before every toggle, so a row whose
+// ciphertext no longer opens reports the key problem instead of hiding it behind
+// a flag that cannot matter.
+//
+// It deliberately knows nothing about whether this instance runs a delivery
+// pass. That is an instance-wide fact, laid over the answer below, and keeping
+// it out of here is what leaves exactly ONE place that decides whether a row is
+// armed -- the heading needs that judgement too, and a second predicate spelling
+// it out again is the same rule written twice.
+func resolveIntrinsicWebhookState(row EgressLedgerInput, display WebhookURLDisplay) EgressWebhookState {
 	switch {
 	case display.Readability == WebhookURLAbsent:
 		return EgressWebhookNotConfigured
@@ -284,15 +323,33 @@ func (service *EgressLedgerService) resolveWebhookState(user models.User, displa
 		return EgressWebhookUnreadable
 	case strings.TrimSpace(display.Host) == "":
 		return EgressWebhookUnusable
-	case !service.outboundDeliveryEnabled:
-		return EgressWebhookOutboundDisabled
-	case !user.WebhookEnabled:
+	case !row.WebhookEnabled:
 		return EgressWebhookStoredOff
-	case !user.WebhookNotifyPeriod && !user.WebhookNotifyOvulation:
+	case !row.NotifyPeriod && !row.NotifyOvulation:
 		return EgressWebhookStoredNoKinds
 	default:
 		return EgressWebhookArmed
 	}
+}
+
+// applyOutboundDeliveryOverlay lays the instance-wide fact over the row's own
+// state, which is what this path's rendered precedence means: an instance that
+// runs no delivery pass says so rather than reporting per-owner toggles that
+// cannot take effect.
+//
+// It covers exactly the three states that ARE delivery configuration.
+// not_configured, unreadable and unusable outrank it because they are facts
+// about the stored row that no instance setting explains away, and a broken key
+// reported as "delivery is switched off" is how one would stay invisible.
+func (service *EgressLedgerService) applyOutboundDeliveryOverlay(intrinsic EgressWebhookState) EgressWebhookState {
+	if service.outboundDeliveryEnabled {
+		return intrinsic
+	}
+	switch intrinsic {
+	case EgressWebhookStoredOff, EgressWebhookStoredNoKinds, EgressWebhookArmed:
+		return EgressWebhookOutboundDisabled
+	}
+	return intrinsic
 }
 
 // resolveFeedState answers only what the recorded epoch permits. An instance
@@ -315,24 +372,19 @@ func resolveFeedState(status CalendarFeedStatus) EgressFeedState {
 	}
 }
 
-// wouldDeliverIfOutboundRan answers the one question the collapsed webhook state
-// cannot: whether THIS ROW would deliver on an instance that ran a pass.
+// resolveEgressSectionState is the heading automaton, and it reads the INTRINSIC
+// webhook state on purpose. needs_attention dominates so a working path never
+// masks a broken one.
 //
-// outbound_disabled is evaluated before the toggles, so on a default instance it
-// hides stored_off and stored_no_kinds entirely -- every readable endpoint
-// reports the same state whether the owner switched delivery on or off. The
-// heading needs the difference: a row the owner turned off is not a route out,
-// however the instance is configured.
-func wouldDeliverIfOutboundRan(user models.User, display WebhookURLDisplay) bool {
-	return display.Readability == WebhookURLReadable &&
-		strings.TrimSpace(display.Host) != "" &&
-		user.WebhookEnabled &&
-		(user.WebhookNotifyPeriod || user.WebhookNotifyOvulation)
-}
-
-// resolveEgressSectionState is the heading automaton. needs_attention dominates
-// so a working path never masks a broken one.
-func resolveEgressSectionState(webhook EgressWebhookState, feed EgressFeedState, wouldDeliver bool) EgressSectionState {
+// Asking the intrinsic state whether it is armed is the whole of what the
+// heading has to know about this path. The rendered state cannot answer it on a
+// default instance: outbound_disabled collapses stored_off, stored_no_kinds and
+// armed into one word, and the heading needs them apart, because "this PROCESS
+// runs no reminder pass" is not "nothing can reach the endpoint" -- the operator
+// CLI delivers from cron on exactly the instances that ship the scheduler off.
+// So the heading errs toward warning for an armed row, and must not for a row
+// the owner switched off, which on that instance wears the same rendered state.
+func resolveEgressSectionState(webhook EgressWebhookState, feed EgressFeedState) EgressSectionState {
 	switch webhook {
 	case EgressWebhookUnreadable, EgressWebhookUnusable:
 		return EgressSectionNeedsAttention
@@ -341,13 +393,7 @@ func resolveEgressSectionState(webhook EgressWebhookState, feed EgressFeedState,
 	case EgressFeedUnknown, EgressFeedIssuedPreviousKey:
 		return EgressSectionNeedsAttention
 	}
-	// outbound_disabled counts here, but only for a row that would deliver. The
-	// webhook state says this PROCESS runs no reminder pass; it does not say
-	// nothing can reach the endpoint, because the operator CLI delivers from cron
-	// on exactly the instances that ship the scheduler off. So the heading errs
-	// toward warning for an armed row -- and must not, for a row the owner
-	// switched off, which on a default instance wears the same state.
-	if webhook == EgressWebhookArmed || (webhook == EgressWebhookOutboundDisabled && wouldDeliver) {
+	if webhook == EgressWebhookArmed {
 		return EgressSectionPathsEnabled
 	}
 	switch feed {

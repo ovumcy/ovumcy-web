@@ -10,10 +10,17 @@
        status line would leave a state sentence the write had just falsified
        standing beside a fresh success message.
 
+       Replacing itself is also why the card declares data-status-island-host:
+       the status machinery is handed the card, not the island inside it, and
+       resolves the island from the nearest ancestor declaring that it hosts one.
+       Without it a save and an error both complete and the page says nothing.
+       It is NOT data-success-toast — that one is an island's opt-in to a toast,
+       and this section answers in place rather than over the page.
+
        The medical-safety disclaimer is rendered ONCE here, for the merged
        section, and stays in the body beside the configuration it qualifies: a
        closed card hides the two together. */}}
-  <details class="card settings-section p-4 sm:p-5 space-y-4" id="settings-egress" data-settings-section data-success-toast="true" data-egress-section-state="{{.Egress.Section}}" open>
+  <details class="card settings-section p-4 sm:p-5 space-y-4" id="settings-egress" data-settings-section data-status-island-host data-egress-section-state="{{.Egress.Section}}" open>
     <summary class="settings-section-summary">
       <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "broadcast"}}</span> {{t .Messages "settings.egress.title"}}</h2>
     </summary>

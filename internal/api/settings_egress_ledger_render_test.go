@@ -250,10 +250,10 @@ func TestEgressLedgerRendersNoWatermarkAndNoActiveClaim(t *testing.T) {
 			body := fetchPageBody(t, owner.app, "/settings", owner.authCookie)
 
 			// The card is its own swap target, and the browser status machinery
-			// resolves the island only from an element that DECLARES itself a toast
-			// surface. Without this attribute a save or a withdrawal renders no
-			// status at all -- silently, on the success path.
-			assertAttributeValue(t, body, "data-success-toast", "true")
+			// resolves the island only from an element that DECLARES it hosts one.
+			// Without this attribute a save or a withdrawal renders no status at
+			// all -- silently, on the success path.
+			assertAttributePresent(t, body, "data-status-island-host")
 			assertAttributeValue(t, body, "data-egress-section-state", string(row.wantSection))
 			assertAttributeValue(t, body, "data-egress-webhook-state", string(row.wantWebhookState))
 			assertAttributeValue(t, body, "data-egress-feed-state", string(row.wantFeedState))
@@ -303,6 +303,14 @@ func TestEgressLedgerRendersNoWatermarkAndNoActiveClaim(t *testing.T) {
 // same rule. A body assertion catches a watermark VALUE reaching the page; this
 // catches the identifier reaching the transport layer at all, which is the step
 // before someone renders it.
+//
+// THE LIMIT: it reads the SHIPPING files of internal/api only. Test files name
+// the watermarks on purpose — this file seeds both columns to prove they do not
+// reach a render — so scanning them would make the guard unwritable, and the
+// price is that a helper in a _test.go file is out of its reach. It is a guard
+// over what the transport layer compiles, not over everything in the package.
+// The population is floored below, because a directory walk that matched
+// nothing would report exactly the same green.
 func TestEgressRenderPathNamesNoWatermarkIdentifier(t *testing.T) {
 	t.Parallel()
 
@@ -311,10 +319,12 @@ func TestEgressRenderPathNamesNoWatermarkIdentifier(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read internal/api: %v", err)
 	}
+	scanned := 0
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
 			continue
 		}
+		scanned++
 		contents, readErr := os.ReadFile(entry.Name())
 		if readErr != nil {
 			t.Fatalf("read %s: %v", entry.Name(), readErr)
@@ -324,6 +334,11 @@ func TestEgressRenderPathNamesNoWatermarkIdentifier(t *testing.T) {
 				t.Fatalf("%s names %q: the transport layer must not reach a claim watermark", entry.Name(), needle)
 			}
 		}
+	}
+	// internal/api is a large package; any floor above zero separates "nothing
+	// names a watermark" from "nothing was read".
+	if scanned < 20 {
+		t.Fatalf("scanned only %d shipping files in internal/api: the guard read too little to mean anything", scanned)
 	}
 }
 
@@ -656,6 +671,18 @@ func assertAttributeValue(t *testing.T, body string, attribute string, want stri
 	}
 }
 
+// assertAttributePresent fails unless the body carries the attribute as a bare
+// name. It is deliberately separate from assertAttributeValue: a valueless hook
+// asserted through a value comparison can only be asserted as ="", which the
+// renderer never writes.
+func assertAttributePresent(t *testing.T, body string, attribute string) {
+	t.Helper()
+
+	if !strings.Contains(body, attribute) {
+		t.Fatalf("expected %s in the rendered body", attribute)
+	}
+}
+
 func extractAttributeValues(t *testing.T, body string, attribute string) []string {
 	t.Helper()
 
@@ -679,16 +706,13 @@ func extractAttributeValues(t *testing.T, body string, attribute string) []strin
 
 // emailSafeRowName reduces a row name to characters an address may carry.
 func emailSafeRowName(name string) string {
-	var safe strings.Builder
-	for _, symbol := range name {
-		switch {
-		case symbol >= 'a' && symbol <= 'z', symbol >= '0' && symbol <= '9':
-			safe.WriteRune(symbol)
-		case symbol >= 'A' && symbol <= 'Z':
-			safe.WriteRune(symbol + ('a' - 'A'))
-		default:
-			safe.WriteByte('-')
+	return strings.Map(func(symbol rune) rune {
+		if (symbol >= 'a' && symbol <= 'z') || (symbol >= '0' && symbol <= '9') {
+			return symbol
 		}
-	}
-	return safe.String()
+		if symbol >= 'A' && symbol <= 'Z' {
+			return symbol + ('a' - 'A')
+		}
+		return '-'
+	}, name)
 }

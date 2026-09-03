@@ -38,7 +38,7 @@ type SettingsViewSymptomProvider interface {
 // satisfies it. Kept as an interface so the view service holds neither the secret
 // key nor the runtime configuration.
 type SettingsViewEgressLedgerBuilder interface {
-	BuildEgressLedger(ctx context.Context, user models.User) EgressLedger
+	BuildEgressLedger(ctx context.Context, row EgressLedgerInput) EgressLedger
 }
 
 type SettingsViewInput struct {
@@ -280,7 +280,7 @@ func (service *SettingsViewService) populateOwnerEgressLedger(ctx context.Contex
 	if service.egress == nil {
 		return
 	}
-	viewData.Egress = service.egress.BuildEgressLedger(ctx, viewData.CurrentUser)
+	viewData.Egress = service.egress.BuildEgressLedger(ctx, EgressLedgerInputFromUser(viewData.CurrentUser))
 	viewData.HasOwnerEgressLedger = true
 }
 
@@ -389,7 +389,7 @@ func (service *SettingsViewService) BuildSettingsEgressViewData(ctx context.Cont
 	reloaded.ID = user.ID
 	reloaded.Role = user.Role
 
-	return service.egress.BuildEgressLedger(ctx, reloaded), nil
+	return service.egress.BuildEgressLedger(ctx, EgressLedgerInputFromUser(reloaded)), nil
 }
 
 func (service *SettingsViewService) BuildSettingsSymptomsViewData(ctx context.Context, user *models.User) (SettingsSymptomsViewData, error) {
