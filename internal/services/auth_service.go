@@ -36,6 +36,11 @@ var (
 	ErrAuthResetInvalid     = errors.New("auth reset invalid input")
 	ErrAuthPasswordHash     = errors.New("auth password hash failed")
 	ErrAuthPasswordUpdate   = errors.New("auth password update failed")
+	// ErrAuthUserIDRequired mirrors ErrOperatorUserIDRequired: an id-addressed
+	// reset with no id is invalid input, the same way a blank email is, never a
+	// reason to fall through to a lookup that would compare a zero id against
+	// nothing and match nothing meaningful.
+	ErrAuthUserIDRequired = errors.New("auth user id is required")
 )
 
 // recoveryCodeTimingEqualizationHash and credentialsTimingEqualizationHash are
@@ -53,7 +58,14 @@ type AuthUserRepository interface {
 	ExistsByNormalizedEmail(ctx context.Context, email string) (bool, error)
 	FindByNormalizedEmail(ctx context.Context, email string) (models.User, error)
 	FindByNormalizedEmailOptional(ctx context.Context, email string) (models.User, bool, error)
+	// FindAllByNormalizedEmail is the ambiguity-aware counterpart to
+	// FindByNormalizedEmailOptional: every row matching, not just the driver's
+	// arbitrary first one. ForceResetPasswordByEmail is the one caller that
+	// must know when more than one row answers to an address rather than
+	// silently acting on whichever the database happened to return first.
+	FindAllByNormalizedEmail(ctx context.Context, email string) ([]models.User, error)
 	FindByID(ctx context.Context, userID uint) (models.User, error)
+	FindByIDOptional(ctx context.Context, userID uint) (models.User, bool, error)
 	Create(ctx context.Context, user *models.User) error
 	UpdateRecoveryCodeHashAndRevokeSessions(ctx context.Context, userID uint, recoveryHash string) error
 	UpdatePasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, mustChangePassword bool) error
@@ -219,29 +231,63 @@ func (service *AuthService) ForceResetPasswordByEmail(ctx context.Context, email
 		return err
 	}
 
-	exists, err := service.users.ExistsByNormalizedEmail(ctx, normalizedEmail)
+	user, found, err := resolveUniqueUserByEmail(ctx, service.users, normalizedEmail)
 	if err != nil {
+		var ambiguous *AmbiguousEmailError
+		if errors.As(err, &ambiguous) {
+			return err
+		}
 		return fmt.Errorf("%w: %v", ErrAuthUserLookupFailed, err)
 	}
-	if !exists {
+	if !found {
 		return ErrAuthUserNotFound
 	}
 
-	user, err := service.users.FindByNormalizedEmail(ctx, normalizedEmail)
+	return service.forceResetPassword(ctx, user.ID, newPassword)
+}
+
+// ForceResetPasswordByID is the id-addressed counterpart to
+// ForceResetPasswordByEmail, for the same reason `users set-email --id` exists
+// next to the email form: a legacy row the strict NormalizeAuthEmail rule
+// refuses, or one on a mailbox it shares with another account, cannot be
+// reached by any address-taking command at all, and the id `users list`
+// prints is the only handle that reaches it.
+func (service *AuthService) ForceResetPasswordByID(ctx context.Context, userID uint, newPassword string) error {
+	newPassword = strings.TrimSpace(newPassword)
+	if userID == 0 {
+		return ErrAuthUserIDRequired
+	}
+	if newPassword == "" {
+		return ErrAuthResetInvalid
+	}
+	if err := authPasswordPolicyError(ValidatePasswordStrength(newPassword)); err != nil {
+		return err
+	}
+
+	user, found, err := service.users.FindByIDOptional(ctx, userID)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrAuthUserLookupFailed, err)
 	}
+	if !found {
+		return ErrAuthUserNotFound
+	}
 
+	return service.forceResetPassword(ctx, user.ID, newPassword)
+}
+
+// forceResetPassword is the write shared by both addressing forms: hash the
+// new password and apply the operator-reset update. Operator reset
+// (compromise/lockout recovery) rewrites the password, forces
+// change-on-next-login, revokes sessions, and force-clears the calendar-feed
+// token in one atomic update. A ROUTINE authenticated change uses
+// UpdatePasswordAndRevokeSessions and keeps the feed (manual rotate only).
+func (service *AuthService) forceResetPassword(ctx context.Context, userID uint, newPassword string) error {
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), passwordHashCost)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrAuthPasswordHash, err)
 	}
 
-	// Operator reset (compromise/lockout recovery): rewrite the password, force
-	// change-on-next-login, revoke sessions, and force-clear the calendar-feed
-	// token in one atomic update. A ROUTINE authenticated change uses
-	// UpdatePasswordAndRevokeSessions and keeps the feed (manual rotate only).
-	if err := service.users.ForceResetPasswordAndRevokeSessions(ctx, user.ID, string(passwordHash)); err != nil {
+	if err := service.users.ForceResetPasswordAndRevokeSessions(ctx, userID, string(passwordHash)); err != nil {
 		return fmt.Errorf("%w: %v", ErrAuthPasswordUpdate, err)
 	}
 

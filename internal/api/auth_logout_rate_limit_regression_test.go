@@ -31,8 +31,16 @@ func (stubLogoutAuthRepo) FindByNormalizedEmailOptional(context.Context, string)
 	return models.User{}, false, nil
 }
 
+func (stubLogoutAuthRepo) FindAllByNormalizedEmail(context.Context, string) ([]models.User, error) {
+	return nil, nil
+}
+
 func (stubLogoutAuthRepo) FindByID(context.Context, uint) (models.User, error) {
 	return models.User{}, nil
+}
+
+func (stubLogoutAuthRepo) FindByIDOptional(context.Context, uint) (models.User, bool, error) {
+	return models.User{}, false, nil
 }
 
 func (stubLogoutAuthRepo) Create(context.Context, *models.User) error { return nil }

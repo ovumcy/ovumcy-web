@@ -31,6 +31,10 @@ type stubOperatorUserRepo struct {
 	setEmailUserID  uint
 	setEmailFrom    string
 	setEmailTo      string
+	// findAllByEmailUsers overrides the single-row [stub.user] shape
+	// FindAllByNormalizedEmail otherwise derives from stub.found, for the one
+	// case that shape cannot express: more than one row on the same address.
+	findAllByEmailUsers []models.User
 }
 
 func (stub *stubOperatorUserRepo) ListOperatorUserSummaries(context.Context) ([]models.OperatorUserSummary, error) {
@@ -45,6 +49,19 @@ func (stub *stubOperatorUserRepo) FindByNormalizedEmailOptional(context.Context,
 		return models.User{}, false, stub.findErr
 	}
 	return stub.user, stub.found, nil
+}
+
+func (stub *stubOperatorUserRepo) FindAllByNormalizedEmail(context.Context, string) ([]models.User, error) {
+	if stub.findErr != nil {
+		return nil, stub.findErr
+	}
+	if stub.findAllByEmailUsers != nil {
+		return stub.findAllByEmailUsers, nil
+	}
+	if stub.found {
+		return []models.User{stub.user}, nil
+	}
+	return nil, nil
 }
 
 func (stub *stubOperatorUserRepo) FindByIDOptional(context.Context, uint) (models.User, bool, error) {
@@ -144,6 +161,40 @@ func TestOperatorUserServiceGetUserByEmailNormalizesInput(t *testing.T) {
 	}
 	if user.ID != 7 || user.Email != "owner@example.com" || user.DisplayName != "Owner" {
 		t.Fatalf("unexpected user summary: %#v", user)
+	}
+}
+
+// TestOperatorUserServiceGetUserByEmailRefusesAnAmbiguousAddress pins the
+// shared resolveUniqueUserByEmail behaviour at this call site: two rows on
+// one mailbox (the shape RenormalizeUserEmail leaves standing) must be
+// refused, naming both ids, rather than resolved to whichever the repository
+// happens to return first. DeleteUserByEmail inherits this because it calls
+// GetUserByEmail.
+func TestOperatorUserServiceGetUserByEmailRefusesAnAmbiguousAddress(t *testing.T) {
+	t.Parallel()
+
+	repo := &stubOperatorUserRepo{
+		findAllByEmailUsers: []models.User{
+			{ID: 5, Email: "owner@example.com"},
+			{ID: 18, Email: "owner@example.com"},
+		},
+	}
+	service := NewOperatorUserService(repo, nil)
+
+	_, err := service.GetUserByEmail(context.Background(), "owner@example.com")
+	var ambiguous *AmbiguousEmailError
+	if !errors.As(err, &ambiguous) {
+		t.Fatalf("expected *AmbiguousEmailError, got %v", err)
+	}
+	if got, want := ambiguous.IDs, []uint{5, 18}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("expected ambiguous ids %v, got %v", want, got)
+	}
+
+	if _, err := service.DeleteUserByEmail(context.Background(), "owner@example.com"); !errors.As(err, &ambiguous) {
+		t.Fatalf("expected DeleteUserByEmail to inherit the ambiguity refusal, got %v", err)
+	}
+	if repo.deleteWasCalled {
+		t.Fatal("did not expect a delete write on an ambiguous address")
 	}
 }
 

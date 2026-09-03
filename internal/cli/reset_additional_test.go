@@ -4,21 +4,26 @@ import (
 	"errors"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/ovumcy/ovumcy-web/internal/db"
+	"github.com/ovumcy/ovumcy-web/internal/services"
 	"golang.org/x/crypto/bcrypt"
 )
 
 // TestRunResetPasswordCommandValidatesBeforeReadingStdin covers the exported
 // entry point, which is otherwise reached only from main. It also pins the
-// ordering that makes the piped form usable in a script: the email is rejected
-// before anything reads stdin, so a typo does not leave the command blocked on
-// input that will never be used.
+// ordering that makes the piped form usable in a script: a blank address is
+// rejected before anything reads stdin, so a typo does not leave the command
+// blocked on input that will never be used. A whitespace-only positional
+// argument is treated as absent by parseResetPasswordArgs, same as
+// parseUsersDeleteArgs treats one, so this is the same usage refusal as no
+// address at all.
 func TestRunResetPasswordCommandValidatesBeforeReadingStdin(t *testing.T) {
-	if err := RunResetPasswordCommand(db.Config{}, "   "); err == nil || err.Error() != "email is required" {
-		t.Fatalf("expected blank email error, got %v", err)
+	if err := RunResetPasswordCommand(db.Config{}, []string{"   "}); err == nil || err.Error() != resetPasswordUsage {
+		t.Fatalf("expected usage error for a blank address, got %v", err)
 	}
 }
 
@@ -65,18 +70,63 @@ func TestResetPasswordReaderRejectsMissingStdin(t *testing.T) {
 func TestRunResetPasswordCommandRejectsBlankEmail(t *testing.T) {
 	t.Parallel()
 
-	err := runResetPasswordCommand(db.Config{}, "   ", nil, io.Discard)
-	if err == nil || err.Error() != "email is required" {
-		t.Fatalf("expected blank email error, got %v", err)
+	err := runResetPasswordCommand(db.Config{}, []string{"   "}, nil, io.Discard)
+	if err == nil || err.Error() != resetPasswordUsage {
+		t.Fatalf("expected usage error for a blank address, got %v", err)
 	}
 }
 
 func TestRunResetPasswordCommandRejectsInvalidEmail(t *testing.T) {
 	t.Parallel()
 
-	err := runResetPasswordCommand(db.Config{}, "not-an-email", nil, io.Discard)
+	err := runResetPasswordCommand(db.Config{}, []string{"not-an-email"}, nil, io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "invalid email address") {
 		t.Fatalf("expected invalid email error, got %v", err)
+	}
+}
+
+// TestParseResetPasswordArgsRejectsNeitherAddress covers the "neither
+// supplied" case: no positional email and no --id, mirroring
+// parseUsersDeleteArgs's own refusal for the same shape of input.
+func TestParseResetPasswordArgsRejectsNeitherAddress(t *testing.T) {
+	t.Parallel()
+
+	if _, err := parseResetPasswordArgs(nil); err == nil || err.Error() != resetPasswordUsage {
+		t.Fatalf("expected usage error for no address, got %v", err)
+	}
+}
+
+// TestParseResetPasswordArgsRejectsBothAddresses covers the "both supplied"
+// case: a bare email and --id together are ambiguous about which one wins,
+// so the command refuses rather than picking one silently.
+func TestParseResetPasswordArgsRejectsBothAddresses(t *testing.T) {
+	t.Parallel()
+
+	if _, err := parseResetPasswordArgs([]string{"owner@example.com", "--id", "7"}); err == nil || err.Error() != resetPasswordUsage {
+		t.Fatalf("expected usage error for both email and --id, got %v", err)
+	}
+}
+
+// TestParseResetPasswordArgsAcceptsID mirrors parseUsersDeleteArgs's --id
+// parsing exactly: both "--id 7" and "--id=7" spellings, and the id must be a
+// positive whole number.
+func TestParseResetPasswordArgsAcceptsID(t *testing.T) {
+	t.Parallel()
+
+	opts, err := parseResetPasswordArgs([]string{"--id", "7"})
+	if err != nil {
+		t.Fatalf("parseResetPasswordArgs: %v", err)
+	}
+	if opts.userID != 7 || opts.email != "" {
+		t.Fatalf("expected userID=7 and empty email, got %+v", opts)
+	}
+
+	opts, err = parseResetPasswordArgs([]string{"--id=7"})
+	if err != nil {
+		t.Fatalf("parseResetPasswordArgs: %v", err)
+	}
+	if opts.userID != 7 {
+		t.Fatalf("expected userID=7 from --id=7, got %+v", opts)
 	}
 }
 
@@ -88,7 +138,7 @@ func TestRunResetPasswordCommandRequiresPasswordPrompt(t *testing.T) {
 
 	err := runResetPasswordCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
-		"cli-reset-nil-prompt@example.com",
+		[]string{"cli-reset-nil-prompt@example.com"},
 		nil,
 		io.Discard,
 	)
@@ -105,7 +155,7 @@ func TestRunResetPasswordCommandRejectsEmptyPromptedPassword(t *testing.T) {
 
 	err := runResetPasswordCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
-		"cli-reset-empty-password@example.com",
+		[]string{"cli-reset-empty-password@example.com"},
 		func() ([]byte, error) { return []byte{}, nil },
 		io.Discard,
 	)
@@ -122,7 +172,7 @@ func TestRunResetPasswordCommandRejectsWeakPassword(t *testing.T) {
 
 	err := runResetPasswordCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
-		"cli-reset-weak-password@example.com",
+		[]string{"cli-reset-weak-password@example.com"},
 		func() ([]byte, error) { return []byte("weakpass"), nil },
 		io.Discard,
 	)
@@ -154,7 +204,7 @@ func TestRunResetPasswordCommandRejectsPasswordOverTheByteLimit(t *testing.T) {
 
 	err := runResetPasswordCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
-		"cli-reset-long-password@example.com",
+		[]string{"cli-reset-long-password@example.com"},
 		func() ([]byte, error) { return []byte(passphrase), nil },
 		io.Discard,
 	)
@@ -182,12 +232,154 @@ func TestRunResetPasswordCommandReportsMissingUser(t *testing.T) {
 
 	err := runResetPasswordCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
-		"missing-reset-user@example.com",
+		[]string{"missing-reset-user@example.com"},
 		func() ([]byte, error) { return []byte("StrongPass2"), nil },
 		io.Discard,
 	)
 	if err == nil || !strings.Contains(err.Error(), "user missing-reset-user@example.com not found") {
 		t.Fatalf("expected missing user error, got %v", err)
+	}
+}
+
+// TestRunResetPasswordCommandAddressesAccountByID covers the id-addressing
+// affordance this command gained to close finding DB-2: `users list`'s id is
+// the only handle that reaches a legacy row an address-taking command cannot,
+// so reset-password needs the same `--id` form `users delete` and
+// `users set-email` already have.
+func TestRunResetPasswordCommandAddressesAccountByID(t *testing.T) {
+	t.Parallel()
+
+	databasePath := createCLIResetDatabase(t)
+	createCLIResetUser(t, databasePath, "cli-reset-by-id@example.com", "StrongPass1")
+	userID := loadCLIResetUser(t, databasePath, "cli-reset-by-id@example.com").ID
+
+	var output strings.Builder
+	err := runResetPasswordCommand(
+		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
+		[]string{"--id", strconv.FormatUint(uint64(userID), 10)},
+		func() ([]byte, error) { return []byte("EvenStronger2"), nil },
+		&output,
+	)
+	if err != nil {
+		t.Fatalf("runResetPasswordCommand by id: unexpected error: %v", err)
+	}
+	if !strings.Contains(output.String(), "Password reset successful") {
+		t.Fatalf("expected success output, got %q", output.String())
+	}
+
+	updated := loadCLIResetUser(t, databasePath, "cli-reset-by-id@example.com")
+	if bcrypt.CompareHashAndPassword([]byte(updated.PasswordHash), []byte("EvenStronger2")) != nil {
+		t.Fatal("expected the id-addressed reset to update the account's password")
+	}
+}
+
+// TestRunResetPasswordCommandRejectsUnknownID is the "id that does not exist"
+// case: an id with no matching row must be refused by name, not treated as a
+// no-op or matched against nothing.
+func TestRunResetPasswordCommandRejectsUnknownID(t *testing.T) {
+	t.Parallel()
+
+	databasePath := createCLIResetDatabase(t)
+
+	err := runResetPasswordCommand(
+		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
+		[]string{"--id", "999"},
+		func() ([]byte, error) { return []byte("EvenStronger2"), nil },
+		io.Discard,
+	)
+	if err == nil || err.Error() != "no account carries id 999 (see ovumcy users list)" {
+		t.Fatalf("expected unknown id error, got %v", err)
+	}
+}
+
+// TestRunResetPasswordCommandRejectsEmailAndIDTogether is the "both supplied"
+// case at the command entry point: parseResetPasswordArgs's refusal must
+// actually be reached before any database work, prompt, or password policy
+// check runs.
+func TestRunResetPasswordCommandRejectsEmailAndIDTogether(t *testing.T) {
+	t.Parallel()
+
+	err := runResetPasswordCommand(db.Config{}, []string{"owner@example.com", "--id", "7"}, nil, io.Discard)
+	if err == nil || err.Error() != resetPasswordUsage {
+		t.Fatalf("expected usage error, got %v", err)
+	}
+}
+
+// TestRunResetPasswordCommandRejectsNoAddress is the "neither supplied" case
+// at the command entry point.
+func TestRunResetPasswordCommandRejectsNoAddress(t *testing.T) {
+	t.Parallel()
+
+	err := runResetPasswordCommand(db.Config{}, nil, nil, io.Discard)
+	if err == nil || err.Error() != resetPasswordUsage {
+		t.Fatalf("expected usage error, got %v", err)
+	}
+}
+
+// TestMapResetPasswordErrorFormatsAmbiguousEmail is the CLI half of finding
+// DB-2's ambiguity refusal: services.AmbiguousEmailError (proven by
+// TestAuthServiceForceResetPasswordByEmail/ambiguous_address to be what the
+// service returns when a bare address matches more than one row) must be
+// rendered as a refusal that names every matching id and points at --id,
+// never silently resolved to one of them. Exercised as a pure function
+// because the matched-more-than-one-row shape cannot be produced through a
+// real, fully migrated database — idx_users_email_normalized forbids it — so
+// this is the layer this behaviour is actually reachable and testable at.
+func TestMapResetPasswordErrorFormatsAmbiguousEmail(t *testing.T) {
+	t.Parallel()
+
+	err := mapResetPasswordError(
+		&services.AmbiguousEmailError{Email: "owner@example.com", IDs: []uint{5, 18}},
+		resetPasswordOptions{email: "owner@example.com"},
+		"owner@example.com",
+	)
+	want := "email owner@example.com matches 2 accounts (ids 5, 18); retry with --id (see ovumcy users list)"
+	if err == nil || err.Error() != want {
+		t.Fatalf("mapResetPasswordError() = %v, want %q", err, want)
+	}
+}
+
+// TestMapResetPasswordErrorMapsRemainingSentinels covers the arms
+// mapResetPasswordError reaches only in shapes the CLI's own argument parsing
+// and pre-checks otherwise avoid producing today (ErrAuthUserIDRequired is
+// dead behind parseResetPasswordArgs's own userID != 0 guarantee, and the
+// default wrap is dead behind the switch's own exhaustive sentinels for every
+// error the service can actually return) — exercised directly, the same way
+// TestMapResetPasswordErrorFormatsAmbiguousEmail is, so the wording is pinned
+// regardless of whether today's call sites can reach it.
+func TestMapResetPasswordErrorMapsRemainingSentinels(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		err  error
+		opts resetPasswordOptions
+		want string
+	}{
+		{
+			name: "id required",
+			err:  services.ErrAuthUserIDRequired,
+			want: "an account id is required (see ovumcy users list)",
+		},
+		{
+			name: "reset invalid",
+			err:  services.ErrAuthResetInvalid,
+			want: "password is required",
+		},
+		{
+			name: "unmapped error wraps with context",
+			err:  errors.New("db exploded"),
+			want: "reset password: db exploded",
+		},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			got := mapResetPasswordError(testCase.err, testCase.opts, "owner@example.com")
+			if got == nil || got.Error() != testCase.want {
+				t.Fatalf("mapResetPasswordError() = %v, want %q", got, testCase.want)
+			}
+		})
 	}
 }
 
@@ -199,7 +391,7 @@ func TestRunResetPasswordCommandWrapsPromptReadFailure(t *testing.T) {
 
 	err := runResetPasswordCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
-		"cli-reset-read-failure@example.com",
+		[]string{"cli-reset-read-failure@example.com"},
 		func() ([]byte, error) { return nil, errors.New("terminal unavailable") },
 		io.Discard,
 	)
@@ -216,7 +408,7 @@ func TestRunResetPasswordCommandWrapsPromptReadFailure(t *testing.T) {
 func TestRunResetPasswordCommandReportsDatabaseInitFailure(t *testing.T) {
 	err := runResetPasswordCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: t.TempDir()},
-		"owner@example.com",
+		[]string{"owner@example.com"},
 		func() ([]byte, error) { return []byte("StrongPass1"), nil },
 		io.Discard,
 	)

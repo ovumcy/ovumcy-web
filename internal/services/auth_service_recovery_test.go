@@ -20,6 +20,11 @@ type stubAuthUserRepo struct {
 	findByEmailOptionalUser  models.User
 	findByEmailOptionalFound bool
 	findByEmailOptionalErr   error
+	findAllByEmailUsers      []models.User
+	findAllByEmailErr        error
+	findByIDOptionalUser     models.User
+	findByIDOptionalFound    bool
+	findByIDOptionalErr      error
 	user                     models.User
 	findByIDErr              error
 	createErr                error
@@ -76,11 +81,31 @@ func (stub *stubAuthUserRepo) FindByNormalizedEmailOptional(ctx context.Context,
 	return models.User{}, false, nil
 }
 
+func (stub *stubAuthUserRepo) FindAllByNormalizedEmail(context.Context, string) ([]models.User, error) {
+	if stub.findAllByEmailErr != nil {
+		return nil, stub.findAllByEmailErr
+	}
+	return stub.findAllByEmailUsers, nil
+}
+
 func (stub *stubAuthUserRepo) FindByID(context.Context, uint) (models.User, error) {
 	if stub.findByIDErr != nil {
 		return models.User{}, stub.findByIDErr
 	}
 	return stub.user, nil
+}
+
+func (stub *stubAuthUserRepo) FindByIDOptional(context.Context, uint) (models.User, bool, error) {
+	if stub.findByIDOptionalErr != nil {
+		return models.User{}, false, stub.findByIDOptionalErr
+	}
+	if stub.findByIDOptionalFound {
+		return stub.findByIDOptionalUser, true, nil
+	}
+	if stub.user.ID != 0 {
+		return stub.user, true, nil
+	}
+	return models.User{}, false, nil
 }
 
 func (stub *stubAuthUserRepo) Create(ctx context.Context, user *models.User) error {
@@ -305,14 +330,13 @@ func TestAuthServiceForceResetPasswordByEmail(t *testing.T) {
 		}
 
 		repo := &stubAuthUserRepo{
-			existsByEmail: true,
-			findByEmailUser: models.User{
+			findAllByEmailUsers: []models.User{{
 				ID:                 18,
 				Email:              "owner@example.com",
 				PasswordHash:       string(originalHash),
 				LocalAuthEnabled:   true,
 				MustChangePassword: false,
-			},
+			}},
 		}
 		service := NewAuthService(repo)
 
@@ -351,7 +375,7 @@ func TestAuthServiceForceResetPasswordByEmail(t *testing.T) {
 	})
 
 	t.Run("user not found", func(t *testing.T) {
-		repo := &stubAuthUserRepo{existsByEmail: false}
+		repo := &stubAuthUserRepo{}
 		service := NewAuthService(repo)
 		if err := service.ForceResetPasswordByEmail(context.Background(), "missing@example.com", "EvenStronger2"); !errors.Is(err, ErrAuthUserNotFound) {
 			t.Fatalf("expected ErrAuthUserNotFound, got %v", err)
@@ -362,7 +386,7 @@ func TestAuthServiceForceResetPasswordByEmail(t *testing.T) {
 	})
 
 	t.Run("lookup failure", func(t *testing.T) {
-		repo := &stubAuthUserRepo{existsByEmailErr: errors.New("db down")}
+		repo := &stubAuthUserRepo{findAllByEmailErr: errors.New("db down")}
 		service := NewAuthService(repo)
 		if err := service.ForceResetPasswordByEmail(context.Background(), "owner@example.com", "EvenStronger2"); !errors.Is(err, ErrAuthUserLookupFailed) {
 			t.Fatalf("expected ErrAuthUserLookupFailed, got %v", err)
@@ -376,18 +400,119 @@ func TestAuthServiceForceResetPasswordByEmail(t *testing.T) {
 		}
 
 		repo := &stubAuthUserRepo{
-			existsByEmail: true,
-			findByEmailUser: models.User{
+			findAllByEmailUsers: []models.User{{
 				ID:               18,
 				Email:            "owner@example.com",
 				PasswordHash:     string(originalHash),
 				LocalAuthEnabled: true,
-			},
+			}},
 			forceResetErr: errors.New("write failed"),
 		}
 		service := NewAuthService(repo)
 
 		if err := service.ForceResetPasswordByEmail(context.Background(), "owner@example.com", "EvenStronger2"); !errors.Is(err, ErrAuthPasswordUpdate) {
+			t.Fatalf("expected ErrAuthPasswordUpdate, got %v", err)
+		}
+	})
+
+	// TestAuthServiceForceResetPasswordByEmail/ambiguous-address is the
+	// finding-DB-2 regression: two rows sharing one normalized address (the
+	// exact shape RenormalizeUserEmail leaves standing) must be refused, not
+	// silently resolved to one of them.
+	t.Run("ambiguous address", func(t *testing.T) {
+		repo := &stubAuthUserRepo{
+			findAllByEmailUsers: []models.User{
+				{ID: 5, Email: "owner@example.com"},
+				{ID: 18, Email: "owner@example.com"},
+			},
+		}
+		service := NewAuthService(repo)
+
+		err := service.ForceResetPasswordByEmail(context.Background(), "owner@example.com", "EvenStronger2")
+		var ambiguous *AmbiguousEmailError
+		if !errors.As(err, &ambiguous) {
+			t.Fatalf("expected *AmbiguousEmailError, got %v", err)
+		}
+		if got, want := ambiguous.IDs, []uint{5, 18}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+			t.Fatalf("expected ambiguous ids %v, got %v", want, got)
+		}
+		if repo.forceResetCalled {
+			t.Fatal("did not expect password update on an ambiguous address")
+		}
+	})
+}
+
+func TestAuthServiceForceResetPasswordByID(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		originalHash, err := bcrypt.GenerateFromPassword([]byte("StrongPass1"), bcrypt.DefaultCost)
+		if err != nil {
+			t.Fatalf("hash original password: %v", err)
+		}
+
+		repo := &stubAuthUserRepo{
+			findByIDOptionalFound: true,
+			findByIDOptionalUser: models.User{
+				ID:                 18,
+				Email:              "owner@example.com",
+				PasswordHash:       string(originalHash),
+				LocalAuthEnabled:   true,
+				MustChangePassword: false,
+			},
+		}
+		service := NewAuthService(repo)
+
+		if err := service.ForceResetPasswordByID(context.Background(), 18, "EvenStronger2"); err != nil {
+			t.Fatalf("ForceResetPasswordByID() unexpected error: %v", err)
+		}
+		if !repo.forceResetCalled {
+			t.Fatal("expected ForceResetPasswordAndRevokeSessions() to be called")
+		}
+		if repo.updatedUserID != 18 {
+			t.Fatalf("expected reset to target id 18, got %d", repo.updatedUserID)
+		}
+	})
+
+	t.Run("missing id", func(t *testing.T) {
+		service := NewAuthService(&stubAuthUserRepo{})
+		if err := service.ForceResetPasswordByID(context.Background(), 0, "EvenStronger2"); !errors.Is(err, ErrAuthUserIDRequired) {
+			t.Fatalf("expected ErrAuthUserIDRequired, got %v", err)
+		}
+	})
+
+	t.Run("missing password", func(t *testing.T) {
+		service := NewAuthService(&stubAuthUserRepo{})
+		if err := service.ForceResetPasswordByID(context.Background(), 18, " "); !errors.Is(err, ErrAuthResetInvalid) {
+			t.Fatalf("expected ErrAuthResetInvalid, got %v", err)
+		}
+	})
+
+	t.Run("id not found", func(t *testing.T) {
+		repo := &stubAuthUserRepo{}
+		service := NewAuthService(repo)
+		if err := service.ForceResetPasswordByID(context.Background(), 9, "EvenStronger2"); !errors.Is(err, ErrAuthUserNotFound) {
+			t.Fatalf("expected ErrAuthUserNotFound, got %v", err)
+		}
+		if repo.forceResetCalled {
+			t.Fatal("did not expect password update when id is missing")
+		}
+	})
+
+	t.Run("lookup failure", func(t *testing.T) {
+		repo := &stubAuthUserRepo{findByIDOptionalErr: errors.New("db down")}
+		service := NewAuthService(repo)
+		if err := service.ForceResetPasswordByID(context.Background(), 18, "EvenStronger2"); !errors.Is(err, ErrAuthUserLookupFailed) {
+			t.Fatalf("expected ErrAuthUserLookupFailed, got %v", err)
+		}
+	})
+
+	t.Run("save failure", func(t *testing.T) {
+		repo := &stubAuthUserRepo{
+			findByIDOptionalFound: true,
+			findByIDOptionalUser:  models.User{ID: 18, Email: "owner@example.com"},
+			forceResetErr:         errors.New("write failed"),
+		}
+		service := NewAuthService(repo)
+		if err := service.ForceResetPasswordByID(context.Background(), 18, "EvenStronger2"); !errors.Is(err, ErrAuthPasswordUpdate) {
 			t.Fatalf("expected ErrAuthPasswordUpdate, got %v", err)
 		}
 	})

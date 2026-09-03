@@ -23,7 +23,7 @@ func tryRunCLICommand() (bool, error) {
 }
 
 type cliCommandHandlers struct {
-	runResetPassword func(databaseConfig db.Config, email string) error
+	runResetPassword func(databaseConfig db.Config, args []string) error
 	runUsers         func(databaseConfig db.Config, args []string) error
 	runHealthcheck   func(port string, timeout time.Duration) error
 	runReadycheck    func(port string, timeout time.Duration) error
@@ -58,9 +58,6 @@ func tryRunCLICommandWithHandlers(args []string, handlers cliCommandHandlers) (b
 }
 
 func handleResetPasswordCommand(args []string, handlers cliCommandHandlers) (bool, error) {
-	if len(args) != 2 {
-		return true, fmt.Errorf("usage: ovumcy reset-password <email>")
-	}
 	if handlers.runResetPassword == nil {
 		return true, fmt.Errorf("reset-password handler is required")
 	}
@@ -68,8 +65,7 @@ func handleResetPasswordCommand(args []string, handlers cliCommandHandlers) (boo
 	if err != nil {
 		return true, fmt.Errorf("invalid database config: %w", err)
 	}
-	email := strings.TrimSpace(args[1])
-	return true, handlers.runResetPassword(databaseConfig, email)
+	return true, handlers.runResetPassword(databaseConfig, args[1:])
 }
 
 func handleUsersCommand(args []string, handlers cliCommandHandlers) (bool, error) {

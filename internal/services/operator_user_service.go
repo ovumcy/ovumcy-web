@@ -31,6 +31,10 @@ var (
 type OperatorUserRepository interface {
 	ListOperatorUserSummaries(ctx context.Context) ([]models.OperatorUserSummary, error)
 	FindByNormalizedEmailOptional(ctx context.Context, email string) (models.User, bool, error)
+	// FindAllByNormalizedEmail is the ambiguity-aware counterpart
+	// GetUserByEmail resolves through instead of FindByNormalizedEmailOptional:
+	// see resolveUniqueUserByEmail.
+	FindAllByNormalizedEmail(ctx context.Context, email string) ([]models.User, error)
 	FindByIDOptional(ctx context.Context, userID uint) (models.User, bool, error)
 	ExistsByNormalizedEmailExcludingUser(ctx context.Context, email string, excludeUserID uint) (bool, error)
 	SetUserEmailByIDAndRevokeSessions(ctx context.Context, userID uint, fromEmail string, toEmail string) (bool, error)
@@ -68,8 +72,12 @@ func (service *OperatorUserService) GetUserByEmail(ctx context.Context, email st
 		return models.OperatorUserSummary{}, err
 	}
 
-	user, found, lookupErr := service.users.FindByNormalizedEmailOptional(ctx, normalizedEmail)
+	user, found, lookupErr := resolveUniqueUserByEmail(ctx, service.users, normalizedEmail)
 	if lookupErr != nil {
+		var ambiguous *AmbiguousEmailError
+		if errors.As(lookupErr, &ambiguous) {
+			return models.OperatorUserSummary{}, lookupErr
+		}
 		return models.OperatorUserSummary{}, fmt.Errorf("%w: %v", ErrOperatorUserLookupFailed, lookupErr)
 	}
 	if !found {
