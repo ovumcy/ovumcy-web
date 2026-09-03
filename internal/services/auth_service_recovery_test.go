@@ -486,6 +486,18 @@ func TestAuthServiceForceResetPasswordByID(t *testing.T) {
 		}
 	})
 
+	// TestAuthServiceForceResetPasswordByID/weak_password mirrors
+	// ForceResetPasswordByEmail's own "weak password" subtest: the id form
+	// has its own authPasswordPolicyError(ValidatePasswordStrength(...)) check
+	// (a distinct line from the email form's, even though the logic is
+	// identical), which nothing else in this file's suite reaches.
+	t.Run("weak password", func(t *testing.T) {
+		service := NewAuthService(&stubAuthUserRepo{})
+		if err := service.ForceResetPasswordByID(context.Background(), 18, "12345678"); !errors.Is(err, ErrAuthWeakPassword) {
+			t.Fatalf("expected ErrAuthWeakPassword, got %v", err)
+		}
+	})
+
 	t.Run("id not found", func(t *testing.T) {
 		repo := &stubAuthUserRepo{}
 		service := NewAuthService(repo)

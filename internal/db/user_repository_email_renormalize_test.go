@@ -124,6 +124,37 @@ func TestFindByIDOptionalSeparatesAMissingRowFromAFailedRead(t *testing.T) {
 	}
 }
 
+// TestFindAllByNormalizedEmailSurfacesAFailedRead mirrors
+// TestFindByIDOptionalSeparatesAMissingRowFromAFailedRead for
+// FindAllByNormalizedEmail: a normalized address nobody holds is a legitimate
+// empty slice, while a storage failure must reach the caller as an error —
+// ForceResetPasswordByEmail's ErrAuthUserNotFound treats a nil/empty slice as
+// "no such account", so a query failure reported the same way would send an
+// operator chasing an address that is actually just unreachable right now.
+func TestFindAllByNormalizedEmailSurfacesAFailedRead(t *testing.T) {
+	repo := openCalendarFeedRepoForTest(t)
+	ctx := context.Background()
+
+	present := createUserForTimezoneTest(t, repo, "present-all@example.com")
+	if users, err := repo.FindAllByNormalizedEmail(ctx, "present-all@example.com"); err != nil || len(users) != 1 || users[0].ID != present.ID {
+		t.Fatalf("expected the seeded row (users=%v, err=%v)", users, err)
+	}
+	if users, err := repo.FindAllByNormalizedEmail(ctx, "absent-all@example.com"); err != nil || len(users) != 0 {
+		t.Fatalf("an absent address is a plain empty slice (users=%v, err=%v)", users, err)
+	}
+
+	sqlDB, err := repo.database.DB()
+	if err != nil {
+		t.Fatalf("database.DB(): %v", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("close sql db: %v", err)
+	}
+	if users, err := repo.FindAllByNormalizedEmail(ctx, "present-all@example.com"); err == nil || users != nil {
+		t.Fatalf("a failed read must surface as an error with a nil slice, got users=%v err=%v", users, err)
+	}
+}
+
 // TestSetUserEmailByIDAndRevokeSessionsRepairsALeftoverRow covers the operator
 // repair the pass above cannot perform: the row it left standing is re-homed by
 // id. Three properties, each on its own row state — the write bumps
