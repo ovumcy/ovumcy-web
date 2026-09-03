@@ -51,9 +51,13 @@
 // this package never starts the application, it writes the volume and reads it
 // back itself — and the operator-side checklist in Post-Restore Verification,
 // which is performed against a running instance and cannot be seen from here.
-// Its ONE property that can be seen from here is checked:
-// TestPostRestoreVerificationPointsAtTheCalendarFeedNote holds the checklist to
-// the cross-reference an operator needs and nothing else enforces.
+// Two properties that CAN be seen from here are checked instead:
+// TestPostRestoreVerificationPointsAtTheCalendarFeedNote and
+// TestPostRestoreVerificationPointsAtTheErasureNote hold the checklist to the
+// two cross-references an operator needs — and, for the second, to the
+// specific claims docs/gdpr.md makes about what a restore does to data a
+// clear-data or account-deletion request already removed — since nothing else
+// enforces either.
 package backuprestoredoc
 
 import (
@@ -83,6 +87,27 @@ const (
 	postRestoreSection      = "## Post-Restore Verification"
 	calendarFeedNoteDoc     = "docs/gdpr.md"
 	calendarFeedNoteHeading = "## Backup Restore and the Calendar Feed"
+
+	// erasureNoteDoc and erasureNoteHeading are the checklist's second
+	// cross-reference, same shape as the calendar-feed one above: a restore
+	// also brings back rows a `clear-data` or account-deletion request removed
+	// after the backup was taken, and gdpr.md is where an operator is told
+	// what that means and what to do about it.
+	erasureNoteDoc     = "docs/gdpr.md"
+	erasureNoteHeading = "## Backup Restore and Erasure"
+
+	// The claims that make the erasure passages load-bearing rather than
+	// decorative, one per side of the cross-reference. Each is a short
+	// fragment distinctive enough that ordinary rewording of the sentences
+	// around it leaves the fragment standing, while deleting or hollowing out
+	// the passage removes it along with everything else — pinning the claim
+	// instead of quoting the paragraph whole.
+	runbookErasureConsequenceClaim = "erasure did not happen in the restored database"
+	runbookErasureNoTombstoneClaim = "no server-side memory of having run"
+	runbookErasureRemedyClaim      = "re-apply it manually"
+	gdprErasureConsequenceClaim    = "silently undo a data subject's erasure request"
+	gdprErasureNoTombstoneClaim    = "leaves a tombstone"
+	gdprErasureRemedyClaim         = "re-apply any request timestamped after the backup"
 
 	// composeExecPrefix is how the runbook reaches the database: the bundled
 	// compose stack's postgres service, without a TTY. It is the ONE part of a
@@ -189,17 +214,27 @@ func documentedPostgresCommands(t *testing.T) runbookCommands {
 // heading to the next one.
 func runbookSectionText(t *testing.T, heading string) string {
 	t.Helper()
+	return documentSectionText(t, runbookPath, heading)
+}
 
-	path := filepath.Join(repoRoot(t), filepath.FromSlash(runbookPath))
+// documentSectionText returns the text of one section of the named document,
+// from its heading to the next one. Reading a named section rather than the
+// whole file keeps every extraction honest: a renamed or removed heading
+// fails here instead of quietly matching some other passage further down the
+// page.
+func documentSectionText(t *testing.T, docPath, heading string) string {
+	t.Helper()
+
+	path := filepath.Join(repoRoot(t), filepath.FromSlash(docPath))
 	content, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("read %s: %v", runbookPath, err)
+		t.Fatalf("read %s: %v", docPath, err)
 	}
 
 	document := strings.ReplaceAll(string(content), "\r\n", "\n")
 	start := strings.Index(document, "\n"+heading+"\n")
 	if start < 0 {
-		t.Fatalf("%s: section %q not found — a renamed heading leaves this guard reading nothing, so it fails here instead", runbookPath, heading)
+		t.Fatalf("%s: section %q not found — a renamed heading leaves this guard reading nothing, so it fails here instead", docPath, heading)
 	}
 	rest := document[start+1:]
 	end := strings.Index(rest[len(heading):], "\n## ")
@@ -340,6 +375,61 @@ func TestPostRestoreVerificationPointsAtTheCalendarFeedNote(t *testing.T) {
 	}
 	if !strings.Contains(strings.ReplaceAll(string(content), "\r\n", "\n"), "\n"+calendarFeedNoteHeading+"\n") {
 		t.Errorf("%s: heading %q is gone, so the runbook's cross-reference resolves to nothing", calendarFeedNoteDoc, calendarFeedNoteHeading)
+	}
+}
+
+// TestPostRestoreVerificationPointsAtTheErasureNote holds the checklist's
+// second cross-reference to the same standard as the calendar-feed one above:
+// a restore also brings back rows a `clear-data` or account-deletion request
+// removed after the backup was taken, and docs/gdpr.md is where an operator
+// is told what that means and what to do about it. An operator who follows
+// this runbook alone never opens that page, which is why the checklist has
+// to carry the pointer — and, pinned here, the reasoning that makes following
+// it necessary rather than optional busywork.
+//
+// Both ends of the link are checked, as with the calendar-feed note. On top
+// of that, the specific claims each passage makes are pinned on both sides:
+// that a restore silently resurrects the erasure (the risk), that neither
+// `clear-data` nor account deletion leaves anything inside the database that
+// would flag it (why the risk is invisible from inside a restore), and that
+// the operator has to re-apply the request manually (the remedy). A passage
+// that keeps its heading and its cross-reference link but drops one of these
+// claims — hollowed out rather than deleted outright — still fails here.
+func TestPostRestoreVerificationPointsAtTheErasureNote(t *testing.T) {
+	anchor := strings.ToLower(strings.ReplaceAll(strings.TrimPrefix(erasureNoteHeading, "## "), " ", "-"))
+	link := strings.TrimPrefix(erasureNoteDoc, "docs/") + "#" + anchor
+
+	checklist := runbookSectionText(t, postRestoreSection)
+	if !strings.Contains(checklist, link) {
+		t.Errorf("%s: section %q does not link %q — an operator following only the runbook is never told that a restore also resurrects rows a clear-data or account-deletion request removed", runbookPath, postRestoreSection, link)
+	}
+	for _, required := range []struct{ substr, why string }{
+		{runbookErasureConsequenceClaim, "no longer says a restore brings back rows an erasure request removed after the backup"},
+		{runbookErasureNoTombstoneClaim, "no longer says clear-data and account deletion leave nothing that would flag the erasure to a restore"},
+		{runbookErasureRemedyClaim, "no longer tells the operator to re-apply the erasure request manually"},
+	} {
+		if !strings.Contains(checklist, required.substr) {
+			t.Errorf("%s: section %q %s — missing %q", runbookPath, postRestoreSection, required.why, required.substr)
+		}
+	}
+
+	content, err := os.ReadFile(filepath.Join(repoRoot(t), filepath.FromSlash(erasureNoteDoc)))
+	if err != nil {
+		t.Fatalf("read %s: %v", erasureNoteDoc, err)
+	}
+	if !strings.Contains(strings.ReplaceAll(string(content), "\r\n", "\n"), "\n"+erasureNoteHeading+"\n") {
+		t.Errorf("%s: heading %q is gone, so the runbook's cross-reference resolves to nothing", erasureNoteDoc, erasureNoteHeading)
+	}
+
+	section := documentSectionText(t, erasureNoteDoc, erasureNoteHeading)
+	for _, required := range []struct{ substr, why string }{
+		{gdprErasureConsequenceClaim, "no longer says a restore silently undoes an erasure request"},
+		{gdprErasureNoTombstoneClaim, "no longer says the erasure leaves nothing inside the database that a restore could detect"},
+		{gdprErasureRemedyClaim, "no longer tells the operator to re-apply a request timestamped after the backup"},
+	} {
+		if !strings.Contains(section, required.substr) {
+			t.Errorf("%s: section %q %s — missing %q", erasureNoteDoc, erasureNoteHeading, required.why, required.substr)
+		}
 	}
 }
 
