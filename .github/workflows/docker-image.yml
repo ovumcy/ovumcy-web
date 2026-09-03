@@ -119,7 +119,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          # The five ci.yml's `publish-image` requires before it lets `:latest`
+          # The six ci.yml's `publish-image` requires before it lets `:latest`
           # follow `main`, split by WHERE each one's verdict is real. The split
           # is not a preference about which run to trust; it is ci.yml's own
           # gating read back.
@@ -155,14 +155,15 @@ jobs:
           # queue's verdict as untrustworthy, and then accepted a push-run green
           # whose only justification WAS that the queue had already run.
           QUEUE_CHECKS: test race e2e
-          HEAVY_CHECKS: e2e-postgres-smoke image-smoke
-          # `e2e-cross-browser` is deliberately absent from both lists, not an
-          # omission: ci.yml:1512 marks it non-required and publish-image's own
-          # `needs:` excludes it for the same reason (deferred, slower
-          # cross-browser coverage, non-blocking by design). This gate mirrors
-          # exactly the five checks publish-image requires — see the comment
-          # above `QUEUE_CHECKS` — so a release tag is held to the same bar as
-          # `:latest`, no stricter. Re-verified against HEAD 2026-09-01.
+          HEAVY_CHECKS: e2e-postgres-smoke image-smoke e2e-cross-browser
+          # `e2e-cross-browser` runs only on push/release/workflow_dispatch —
+          # the same event set as `HEAVY_CHECKS` above, never merge_group — so
+          # it joins that list, not `QUEUE_CHECKS`. REL-5 (owner decision,
+          # 2026-09-03): held out until now for the reasons the prior version
+          # of this comment gave (a release tag stricter than `:latest`); the
+          # owner chose to accept that trade rather than leave the gap. This
+          # gate mirrors exactly the six checks publish-image now requires —
+          # see ci.yml's `publish-image` job `needs:`.
         run: |
           set -euo pipefail
 
@@ -256,7 +257,7 @@ jobs:
           # `success` and nothing else, in the run where the lane ran. `skipped`
           # is refused here even where the lane may legitimately have been
           # cleared for the diff: a release image is being signed off, the
-          # cleared lane is one of the five that hold `:latest` back, and this
+          # cleared lane is one of the six that hold `:latest` back, and this
           # gate cannot tell a lane cleared by `changes` from one skipped
           # because its run was cancelled. `pending` is not `skipped` either —
           # a queued or still-running check is no verdict at all.
