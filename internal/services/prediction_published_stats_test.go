@@ -231,6 +231,38 @@ func TestPublishedStatsClearsEveryDateItsVerdictRefuses(t *testing.T) {
 	}
 }
 
+// TestPublishedStatsClearsOvulationImpossibleUnderFertilitySuppression pins
+// MED-3: OvulationImpossible is itself a claim derived from the fertility
+// projection (clearPredictedCycleWindow in cycles.go sets it exactly where it
+// also clears OvulationDate/OvulationExact/the window), so it must not
+// outlive fertility suppression any more than those fields do. Before this
+// fix a consumer could read suppression.fertility=true beside
+// ovulation_impossible=true — a claim derived from data the suppression says
+// is not to be published.
+func TestPublishedStatsClearsOvulationImpossibleUnderFertilitySuppression(t *testing.T) {
+	stats := publishedStatsBase()
+	// Reproduce the state clearPredictedCycleWindow leaves behind (impossible
+	// paired with an already-empty date/window) and add an UNRELATED
+	// suppression signal (pregnancy pause) on top, so the case isolates
+	// whether the fertility gate clears the flag rather than whether the
+	// window computation itself does.
+	stats.OvulationDate = time.Time{}
+	stats.OvulationExact = false
+	stats.OvulationImpossible = true
+	stats.FertilityWindowStart = time.Time{}
+	stats.FertilityWindowEnd = time.Time{}
+	stats.PregnancyPaused = true
+
+	published, verdict := PublishedStats(&models.User{}, stats)
+
+	if !verdict.FertilitySuppressed {
+		t.Fatal("test setup: expected pregnancy pause to suppress fertility")
+	}
+	if published.OvulationImpossible {
+		t.Fatalf("published ovulation_impossible=true alongside suppression.fertility=true under %v", verdict.Reasons)
+	}
+}
+
 // TestPublishedStatsKeepsThePhaseTheProjectionDoesNotSpeakFor pins the
 // orthogonality rather than leaving it to a comment.
 //
