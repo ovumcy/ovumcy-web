@@ -102,11 +102,20 @@ const (
 	// around it leaves the fragment standing, while deleting or hollowing out
 	// the passage removes it along with everything else — pinning the claim
 	// instead of quoting the paragraph whole.
+	//
+	// Every fragment below carries its OWN negation where the claim it pins is
+	// a negative one, rather than stopping just short of it: a fragment that
+	// reads as a positive claim on its own, extracted from a sentence whose
+	// negation sits just outside it in the document ("Neither operation
+	// leaves a tombstone" pinned as merely "leaves a tombstone"), stays green
+	// on the exact inverse of the claim — flip the quantifier in the document
+	// ("Each operation leaves a tombstone... so a restore CAN tell") and the
+	// substring this guard looks for is still there.
 	runbookErasureConsequenceClaim = "erasure did not happen in the restored database"
 	runbookErasureNoTombstoneClaim = "no server-side memory of having run"
 	runbookErasureRemedyClaim      = "re-apply it manually"
 	gdprErasureConsequenceClaim    = "silently undo a data subject's erasure request"
-	gdprErasureNoTombstoneClaim    = "leaves a tombstone"
+	gdprErasureNoTombstoneClaim    = "no way to tell that an erasure ran"
 	gdprErasureRemedyClaim         = "re-apply any request timestamped after the backup"
 
 	// composeExecPrefix is how the runbook reaches the database: the bundled
@@ -424,7 +433,7 @@ func TestPostRestoreVerificationPointsAtTheErasureNote(t *testing.T) {
 	section := documentSectionText(t, erasureNoteDoc, erasureNoteHeading)
 	for _, required := range []struct{ substr, why string }{
 		{gdprErasureConsequenceClaim, "no longer says a restore silently undoes an erasure request"},
-		{gdprErasureNoTombstoneClaim, "no longer says the erasure leaves nothing inside the database that a restore could detect"},
+		{gdprErasureNoTombstoneClaim, "no longer says a restore has no way to tell that an erasure ran"},
 		{gdprErasureRemedyClaim, "no longer tells the operator to re-apply a request timestamped after the backup"},
 	} {
 		if !strings.Contains(section, required.substr) {
