@@ -1634,8 +1634,13 @@ paths:
         '403':
           description: |
             Local password recovery is disabled on this deployment (SSO-only).
-            A reset token minted by the OIDC flow for an account carrying
-            `must_change_password` survives this gate and can still be redeemed.
+            Only a reset token minted by the OIDC sign-in flow for an account
+            carrying `must_change_password` survives this gate and can still be
+            redeemed. A token minted by a LOCAL password — the plain sign-in
+            form, or the OIDC account-link confirmation step's own password
+            challenge — is refused here exactly like an ordinary
+            password-recovery token, since it was produced by the very factor
+            this deployment has disabled.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
