@@ -49,7 +49,7 @@ func TestEgressLedgerFeedLoadFailureRendersUnknownRatherThanNone(t *testing.T) {
 		true,
 	)
 
-	ledger := service.BuildEgressLedger(context.Background(), models.User{ID: 7})
+	ledger := service.BuildEgressLedger(context.Background(), EgressLedgerInput{UserID: 7})
 	if ledger.Feed.State != EgressFeedUnknown {
 		t.Fatalf("expected a load failure to render unknown, got %q", ledger.Feed.State)
 	}
@@ -71,7 +71,7 @@ func TestEgressLedgerFeedIsUnknownWhenTheRunningEpochCannotBeDerived(t *testing.
 		true,
 	)
 
-	ledger := service.BuildEgressLedger(context.Background(), models.User{ID: 8})
+	ledger := service.BuildEgressLedger(context.Background(), EgressLedgerInput{UserID: 8})
 	if ledger.Feed.State != EgressFeedUnknown {
 		t.Fatalf("expected unknown when the running epoch is unavailable, got %q", ledger.Feed.State)
 	}
@@ -91,11 +91,11 @@ func TestEgressLedgerEvaluatesReadabilityBeforeEveryToggle(t *testing.T) {
 		true,
 	)
 
-	ledger := service.BuildEgressLedger(context.Background(), models.User{
-		ID:                     9,
-		WebhookEnabled:         false,
-		WebhookNotifyPeriod:    false,
-		WebhookNotifyOvulation: false,
+	ledger := service.BuildEgressLedger(context.Background(), EgressLedgerInput{
+		UserID:          9,
+		WebhookEnabled:  false,
+		NotifyPeriod:    false,
+		NotifyOvulation: false,
 	})
 	if ledger.Webhook.State != EgressWebhookUnreadable {
 		t.Fatalf("expected unreadable to outrank every toggle, got %q", ledger.Webhook.State)
@@ -130,7 +130,7 @@ func TestEgressLedgerSuppressesTheDeliveryMarkWhereItCannotVouchForTheEndpoint(t
 				&stubEgressFeedStatus{status: CalendarFeedStatus{Known: true}},
 				testCase.outbound,
 			)
-			ledger := service.BuildEgressLedger(context.Background(), models.User{ID: 11, WebhookLastDeliveredAt: &delivered})
+			ledger := service.BuildEgressLedger(context.Background(), EgressLedgerInput{UserID: 11, LastDeliveredAt: &delivered})
 
 			if ledger.Webhook.State != testCase.wantState {
 				t.Fatalf("expected state %q, got %q", testCase.wantState, ledger.Webhook.State)
@@ -153,7 +153,7 @@ func TestEgressLedgerReadsBothPathsForTheAuthenticatedOwner(t *testing.T) {
 	service := NewEgressLedgerService(webhook, feed, true)
 
 	const ownerID = uint(4242)
-	service.BuildEgressLedger(context.Background(), models.User{ID: ownerID})
+	service.BuildEgressLedger(context.Background(), EgressLedgerInput{UserID: ownerID})
 
 	if webhook.userID != ownerID {
 		t.Fatalf("expected the endpoint projection scoped to owner %d, got %d", ownerID, webhook.userID)
@@ -333,5 +333,121 @@ func TestBuildSettingsEgressViewDataSurfacesALoadFailureAsATypedError(t *testing
 	_, err := service.BuildSettingsEgressViewData(context.Background(), &models.User{ID: 7, Role: models.RoleOwner})
 	if !errors.Is(err, ErrSettingsViewLoadEgress) {
 		t.Fatalf("expected ErrSettingsViewLoadEgress, got %v", err)
+	}
+}
+
+// TestEgressLedgerHeadingIsDecidedByTheRowNotByTheInstance pins the seam that
+// replaced a duplicated rule. "Is this webhook armed" used to be written twice —
+// once in the state resolver and once beside the heading — and the pair agreed
+// only for as long as nobody edited one of them.
+//
+// The property that makes the duplicate unnecessary is asserted directly: the
+// instance-wide delivery switch may change the RENDERED webhook state, and may
+// never change the heading, because the heading asks the intrinsic state. A
+// re-introduced second predicate that drifted from the first would move a
+// heading when only the instance flag moved.
+func TestEgressLedgerHeadingIsDecidedByTheRowNotByTheInstance(t *testing.T) {
+	t.Parallel()
+
+	readable := WebhookURLDisplay{Readability: WebhookURLReadable, Host: "hooks.example.test"}
+
+	rows := []struct {
+		name    string
+		display WebhookURLDisplay
+		input   EgressLedgerInput
+		// wantIntrinsic is the state an instance that DOES run a delivery pass
+		// renders; it is the row's own state, unoverlaid.
+		wantIntrinsic EgressWebhookState
+		wantSection   EgressSectionState
+	}{
+		{
+			name:          "no endpoint stored",
+			display:       WebhookURLDisplay{Readability: WebhookURLAbsent},
+			input:         EgressLedgerInput{UserID: 1},
+			wantIntrinsic: EgressWebhookNotConfigured,
+			wantSection:   EgressSectionNoPathEnabled,
+		},
+		{
+			name:          "endpoint stored and unreadable",
+			display:       WebhookURLDisplay{Readability: WebhookURLUnreadable},
+			input:         EgressLedgerInput{UserID: 2, WebhookEnabled: true, NotifyPeriod: true},
+			wantIntrinsic: EgressWebhookUnreadable,
+			wantSection:   EgressSectionNeedsAttention,
+		},
+		{
+			name:          "endpoint opens and names no host",
+			display:       WebhookURLDisplay{Readability: WebhookURLReadable},
+			input:         EgressLedgerInput{UserID: 3, WebhookEnabled: true, NotifyPeriod: true},
+			wantIntrinsic: EgressWebhookUnusable,
+			wantSection:   EgressSectionNeedsAttention,
+		},
+		{
+			name:          "owner switched delivery off",
+			display:       readable,
+			input:         EgressLedgerInput{UserID: 4, NotifyPeriod: true},
+			wantIntrinsic: EgressWebhookStoredOff,
+			wantSection:   EgressSectionNoPathEnabled,
+		},
+		{
+			name:          "delivery on and no kind opted in",
+			display:       readable,
+			input:         EgressLedgerInput{UserID: 5, WebhookEnabled: true},
+			wantIntrinsic: EgressWebhookStoredNoKinds,
+			wantSection:   EgressSectionNoPathEnabled,
+		},
+		{
+			name:          "armed",
+			display:       readable,
+			input:         EgressLedgerInput{UserID: 6, WebhookEnabled: true, NotifyOvulation: true},
+			wantIntrinsic: EgressWebhookArmed,
+			wantSection:   EgressSectionPathsEnabled,
+		},
+	}
+
+	// Whether the overlay may cover a row is decided from the FIXTURE, not from
+	// the implementation's own list of states: an instance that runs no delivery
+	// pass may speak for a row whose endpoint it can read, and never for one that
+	// is missing, unreadable or hostless, because those are facts about the
+	// stored row that no instance setting explains away. Re-listing the three
+	// covered states here would agree with the code by construction and would
+	// stay green if the overlay grew to swallow one of the other three.
+	overlaid := func(display WebhookURLDisplay) bool {
+		return display.Readability == WebhookURLReadable && strings.TrimSpace(display.Host) != ""
+	}
+
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+
+			build := func(outboundDeliveryEnabled bool) EgressLedger {
+				service := NewEgressLedgerService(
+					&stubEgressWebhookDisplay{display: row.display},
+					&stubEgressFeedStatus{status: CalendarFeedStatus{Known: true}},
+					outboundDeliveryEnabled,
+				)
+				return service.BuildEgressLedger(context.Background(), row.input)
+			}
+
+			delivering := build(true)
+			if delivering.Webhook.State != row.wantIntrinsic {
+				t.Fatalf("delivering instance: want webhook state %q, got %q", row.wantIntrinsic, delivering.Webhook.State)
+			}
+
+			quiet := build(false)
+			wantQuiet := row.wantIntrinsic
+			if overlaid(row.display) {
+				wantQuiet = EgressWebhookOutboundDisabled
+			}
+			if quiet.Webhook.State != wantQuiet {
+				t.Fatalf("instance running no delivery pass: want webhook state %q, got %q", wantQuiet, quiet.Webhook.State)
+			}
+
+			if delivering.Section != row.wantSection {
+				t.Fatalf("delivering instance: want heading %q, got %q", row.wantSection, delivering.Section)
+			}
+			if quiet.Section != row.wantSection {
+				t.Fatalf("the instance-wide delivery switch moved the heading: %q with a delivery pass, %q without", delivering.Section, quiet.Section)
+			}
+		})
 	}
 }
