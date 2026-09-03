@@ -1625,6 +1625,7 @@ paths:
               example:
                 error: "local recovery unavailable"
                 error_detail: { key: "local recovery unavailable", category: "forbidden", target: "auth_form" }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   # =========================================================================
   # onboarding
@@ -1647,6 +1648,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '400': { $ref: '#/components/responses/ValidationError' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/v1/onboarding/steps/2:
     post:
@@ -1666,6 +1668,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '400': { $ref: '#/components/responses/ValidationError' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/v1/onboarding/complete:
     post:
@@ -1680,6 +1683,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   # =========================================================================
   # days
@@ -1702,6 +1706,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '400': { $ref: '#/components/responses/ValidationError' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/v1/days/{date}:
     parameters:
@@ -1718,6 +1723,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '400': { $ref: '#/components/responses/ValidationError' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
     head:
       tags: [days]
       summary: Check whether the day has any persisted data (owner only).
@@ -1733,6 +1739,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
     put:
       tags: [days]
       summary: Upsert a day's entry (owner only).
@@ -1754,6 +1761,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
     delete:
       tags: [days]
       summary: Delete a single day's entry (owner only).
@@ -1778,6 +1786,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/v1/days/{date}/cycle-start:
     post:
@@ -1817,6 +1826,7 @@ paths:
               example:
                 error: "cycle start replace required"
                 error_detail: { key: "cycle start replace required", category: "conflict", target: "global" }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   # =========================================================================
   # symptoms
@@ -1835,6 +1845,7 @@ paths:
                 items: { $ref: '#/components/schemas/Symptom' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
     post:
       tags: [symptoms]
       summary: Create a custom symptom (owner only).
@@ -1853,6 +1864,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '400': { $ref: '#/components/responses/ValidationError' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/v1/symptoms/{id}:
     parameters:
@@ -1876,6 +1888,7 @@ paths:
         '400': { $ref: '#/components/responses/ValidationError' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
     delete:
       tags: [symptoms]
       summary: Archive (soft-delete) a symptom (owner only).
@@ -1894,6 +1907,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/v1/symptoms/{id}/restore:
     post:
@@ -1912,6 +1926,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   # =========================================================================
   # stats
@@ -1928,6 +1943,7 @@ paths:
               schema: { $ref: '#/components/schemas/StatsOverview' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   # =========================================================================
   # exports
@@ -1948,6 +1964,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/v1/exports/csv:
     get:
@@ -1969,6 +1986,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/v1/exports/json:
     get:
@@ -1990,6 +2008,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/v1/imports/json:
     post:
@@ -2034,6 +2053,7 @@ paths:
               example:
                 error: "import file too large"
                 error_detail: { key: "import file too large", category: "validation", target: "global" }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   # =========================================================================
   # users/current — whoami, settings, and account management
@@ -2056,6 +2076,7 @@ paths:
               schema: { $ref: '#/components/schemas/CurrentUser' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
     delete:
       tags: [settings]
       summary: Delete the current account and all related data (owner only).
@@ -2097,6 +2118,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/v1/users/current/interface:
     patch:
@@ -2116,6 +2138,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/v1/users/current/tracking:
     patch:
@@ -2135,6 +2158,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/v1/users/current/timezone:
     post:
@@ -2167,6 +2191,7 @@ paths:
               schema: { $ref: '#/components/schemas/ApiError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/v1/users/current/webhook:
     post:
@@ -2209,6 +2234,7 @@ paths:
                 error_detail: { key: "invalid webhook url", category: "validation", target: "settings_form" }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
     delete:
       tags: [settings]
       summary: Withdraw the stored webhook endpoint (owner only).
@@ -2242,6 +2268,7 @@ paths:
               example:
                 error: "failed to update webhook settings"
                 error_detail: { key: "failed to update webhook settings", category: "internal", target: "global" }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/v1/users/current/calendar-feed:
     post:
@@ -2279,6 +2306,7 @@ paths:
               example:
                 error: "failed to update calendar feed"
                 error_detail: { key: "failed to update calendar feed", category: "internal", target: "global" }
+        '429': { $ref: '#/components/responses/RateLimited' }
     delete:
       tags: [settings]
       summary: Revoke (disable) the calendar (.ics) feed (owner only).
@@ -2303,6 +2331,7 @@ paths:
               example:
                 error: "failed to update calendar feed"
                 error_detail: { key: "failed to update calendar feed", category: "internal", target: "global" }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/v1/users/current/calendar-feed/rotate:
     post:
@@ -2335,6 +2364,7 @@ paths:
               example:
                 error: "failed to update calendar feed"
                 error_detail: { key: "failed to update calendar feed", category: "internal", target: "global" }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/v1/users/current/cycle:
     patch:
@@ -2360,6 +2390,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/v1/users/current/reminders:
     patch:
@@ -2383,6 +2414,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/v1/users/current/password:
     put:
@@ -2442,6 +2474,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
   /api/v1/users/current/data-wipe/step-up:
@@ -2477,6 +2510,7 @@ paths:
               example:
                 error: "invalid settings input"
                 error_detail: { key: "invalid settings input", category: "validation", target: "settings_form" }
+        '429': { $ref: '#/components/responses/RateLimited' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
   /api/v1/users/current/deletion/step-up:
@@ -2506,6 +2540,7 @@ paths:
               example:
                 error: "invalid settings input"
                 error_detail: { key: "invalid settings input", category: "validation", target: "settings_form" }
+        '429': { $ref: '#/components/responses/RateLimited' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
   /api/v1/users/current/recovery-code:

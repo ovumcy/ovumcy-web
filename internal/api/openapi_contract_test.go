@@ -102,6 +102,48 @@ func TestOpenAPIDeclaresOnlyStatusesTheServerCanEmit(t *testing.T) {
 	}
 }
 
+// TestOpenAPIDeclaresRateLimitedOnEveryLimiterCoveredOperation pins the class
+// behind API-3: the app-wide API limiter (cmd/ovumcy/server.go's
+// `app.Use("/api", limiter.New(...))`, mounted before api.RegisterRoutes with
+// no `Next` filter) sits in front of every `/api/v1/*` route, not only the
+// handful that also carry a narrower per-account budget — so 429 is a real
+// answer on every operation this spec documents. The document previously
+// declared RateLimited on 12 of 47 operations, which is exactly the "N of
+// N+1" partial fix this test exists to close: a prior change added 429 to the
+// per-account-reauth-budget endpoints and stopped there, leaving every other
+// operation's 429 real but undocumented.
+//
+// The set to check is read from the registered routes themselves — the same
+// registeredV1Routes the route-presence contract above already trusts as the
+// ground truth for "what /api/v1 operations exist" — rather than hand-listed,
+// so a new route added later inherits the check with no edit here.
+func TestOpenAPIDeclaresRateLimitedOnEveryLimiterCoveredOperation(t *testing.T) {
+	app, _ := newOnboardingTestApp(t)
+
+	limiterCovered := registeredV1Routes(app)
+	if len(limiterCovered) == 0 {
+		t.Fatal("no /api/v1 routes discovered from the app; test setup is wrong")
+	}
+
+	declared := openAPIDeclaredStatuses(t, filepath.Join("..", "..", "docs", "openapi.yaml"))
+	declaresRateLimited := make(map[string]struct{}, len(declared[http.StatusTooManyRequests]))
+	for _, operation := range declared[http.StatusTooManyRequests] {
+		declaresRateLimited[operation] = struct{}{}
+	}
+
+	var missing []string
+	for operation := range limiterCovered {
+		if _, ok := declaresRateLimited[operation]; !ok {
+			missing = append(missing, operation)
+		}
+	}
+	sort.Strings(missing)
+	if len(missing) > 0 {
+		t.Errorf("the app-wide /api limiter (cmd/ovumcy/server.go, mounted with no Next filter) can answer 429 on every /api/v1 operation, but docs/openapi.yaml declares no '429': RateLimited response for:\n  %s",
+			strings.Join(missing, "\n  "))
+	}
+}
+
 // TestOpenAPIDocumentsEveryTransportStatusTheEnvelopeCovers pins the reverse
 // direction for the one part of the surface that keeps a registry of it. The
 // transport statuses are answered outside any operation — an unroutable request,
