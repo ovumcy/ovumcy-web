@@ -10,4 +10,9 @@
   removed-field-reads-as-success outcome the original refusal exists to prevent, one spelling over.
   Presence is now decided from the raw request the same way for every shape: the parsed JSON object's
   own keys for a JSON body, and the URL query string, the urlencoded body, and the multipart form in
-  that order otherwise — the same three sources `FormValue` itself reads from.
+  that order otherwise — the same three sources `FormValue` itself reads from. Two narrower routes
+  around the same guard are closed alongside it: the query-string check now runs unconditionally
+  before branching on Content-Type, so a JSON request carrying `age_group` only in its URL (not its
+  body) is caught too; and the JSON-key match is now case-insensitive, matching the fallback
+  `Bind().Body` itself uses, so a body naming `Age_Group` or `AGE_GROUP` — exactly the off-spec
+  casing a client still on the old contract might send — is refused rather than silently dropped.
