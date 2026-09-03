@@ -231,13 +231,12 @@
          path's own bug wearing the other outcome, and it is fixed the same way
          — by answering with the card. */}}
     <div id="settings-egress-status" class="save-status text-sm" aria-live="polite">
+      {{/* The same shape httpx.StatusErrorMarkup writes, so a refusal reads
+           identically wherever it is rendered from — and with no glyph of its
+           own: an interface glyph comes from the first-party icon set, never
+           from an emoji literal. */}}
       {{if .EgressErrorKey}}
-      <div class="status-error" data-flash-key="{{.EgressErrorKey}}" data-flash-status="error">
-        <span class="toast-message-wrap">
-          <span class="toast-icon toast-icon-error" aria-hidden="true">⚠</span>
-          <span class="toast-message">{{t .Messages .EgressErrorKey}}</span>
-        </span>
-      </div>
+      <div class="status-error" data-flash-key="{{.EgressErrorKey}}" data-flash-status="error">{{t .Messages .EgressErrorKey}}</div>
       {{else if .EgressStatusKey}}
       <div class="status-ok" data-flash-key="{{.EgressStatusKey}}" data-flash-status="success">
         <span class="toast-message-wrap">
