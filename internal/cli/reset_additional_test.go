@@ -107,6 +107,46 @@ func TestParseResetPasswordArgsRejectsBothAddresses(t *testing.T) {
 	}
 }
 
+// TestParseResetPasswordArgsRejectsMalformedInput covers the parser's other
+// refusals — the command's whole contract with the operator, since a wrong
+// parse here would silently reset the wrong account:
+//   - an --id value parseUsersIDFlag itself rejects (missing or non-numeric)
+//     propagates that error verbatim, not the generic usage string;
+//   - --id given twice is ambiguous about which value wins;
+//   - an unrecognized "--flag" is refused rather than silently ignored or
+//     treated as a positional;
+//   - a second positional argument (two bare addresses) is refused the same
+//     way a second --id is.
+func TestParseResetPasswordArgsRejectsMalformedInput(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name      string
+		args      []string
+		wantUsage bool // true: exact resetUsage text; false: any non-nil error (parseUsersIDFlag's own wording)
+	}{
+		{name: "missing --id value", args: []string{"--id"}, wantUsage: false},
+		{name: "non-numeric --id value", args: []string{"--id", "abc"}, wantUsage: false},
+		{name: "duplicate --id", args: []string{"--id", "3", "--id", "4"}, wantUsage: true},
+		{name: "unknown flag", args: []string{"--bogus"}, wantUsage: true},
+		{name: "duplicate positional email", args: []string{"a@example.com", "b@example.com"}, wantUsage: true},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := parseResetPasswordArgs(testCase.args)
+			if err == nil {
+				t.Fatalf("parseResetPasswordArgs(%v): expected an error, got nil", testCase.args)
+			}
+			if testCase.wantUsage && err.Error() != resetUsage {
+				t.Fatalf("parseResetPasswordArgs(%v) = %v, want the usage string %q", testCase.args, err, resetUsage)
+			}
+		})
+	}
+}
+
 // TestParseResetPasswordArgsAcceptsID mirrors parseUsersDeleteArgs's --id
 // parsing exactly: both "--id 7" and "--id=7" spellings, and the id must be a
 // positive whole number.
