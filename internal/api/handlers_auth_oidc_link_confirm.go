@@ -190,11 +190,14 @@ func (handler *Handler) CompleteOIDCLinkConfirmation(c fiber.Ctx) error {
 	// the local-password Login flow that redirects TOTP-enabled accounts to
 	// /auth/2fa before issuing a session. Without this gate, an attacker with
 	// the victim's password plus a malicious/sloppy upstream IdP (the threat
-	// link-confirm was added to mitigate) could obtain a session for a
-	// TOTP-protected account without ever holding the second factor — and the
-	// linked identity would persist for future OIDC sign-ins. Keep the link
-	// pending cookie alive on TOTP failure so the user can retry within TTL,
-	// same as wrong-password.
+	// link-confirm was added to mitigate) could obtain the session issued a
+	// few lines down for a TOTP-protected account without ever holding the
+	// second factor. A subsequent OIDC sign-in through the now-linked identity
+	// no longer compounds that: CompleteOIDCLogin gates a linked identity's
+	// re-authentication on the same second factor (OIDCLoginResult.RequiresTOTP),
+	// so this gate's job is only the session minted right here, not any future
+	// one. Keep the link pending cookie alive on TOTP failure so the user can
+	// retry within TTL, same as wrong-password.
 	if targetUser.TOTPEnabled {
 		if spec, ok := handler.verifyTOTPForLinkConfirm(c, &targetUser); !ok {
 			handler.logSecurityError(c, "auth.oidc_link_confirm", spec)

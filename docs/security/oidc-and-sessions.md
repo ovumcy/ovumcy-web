@@ -15,7 +15,9 @@ This defends against the malicious / sloppy upstream IdP scenario: a provider th
 
 The confirmation step is refused if the existing account has no local password (`local_auth_enabled=false`). Multi-provider linking onto such accounts is intentionally out of scope for the unauthenticated login path — that has to happen through a future authenticated Settings flow, which is not yet shipped.
 
-When the target account has TOTP enabled, the link-confirmation form additionally requires a valid 6-digit code submitted alongside the password. The handler invokes the same `TOTPService.ValidateCode` path as `/api/v1/sessions/2fa-challenge`, including replay rejection (`ErrTOTPReplayed`) and the per-`(client_ip, user_id)` failure counter. Without this gate, an attacker who has only the victim's password — and uses a malicious or sloppy upstream IdP to assert their email — could obtain a session for a 2FA-protected account without ever holding the second factor, and the linked identity would persist for future OIDC sign-ins.
+When the target account has TOTP enabled, the link-confirmation form additionally requires a valid 6-digit code submitted alongside the password. The handler invokes the same `TOTPService.ValidateCode` path as `/api/v1/sessions/2fa-challenge`, including replay rejection (`ErrTOTPReplayed`) and the per-`(client_ip, user_id)` failure counter. Without this gate, an attacker who has only the victim's password — and uses a malicious or sloppy upstream IdP to assert their email — could obtain a session for a 2FA-protected account without ever holding the second factor.
+
+A later sign-in through that same already-linked identity is a separate code path (`CompleteOIDCLogin` → `authenticateLinkedIdentity`, not the link-confirm flow above) and is gated the same way: `OIDCLoginService.Authenticate` sets `RequiresTOTP` whenever the resolved account has TOTP enabled and is not also routed through `MustChangePassword`, and the handler redirects to `/auth/2fa` before ever calling `setAuthCookie` — the same ordering and the same signal the local login path (`handlers_auth_session_login.go`) uses.
 
 ## Session Invalidation on Credential Rotation
 

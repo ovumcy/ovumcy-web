@@ -74,6 +74,14 @@ type OIDCLoginResult struct {
 	NewlyLinked     bool
 	AutoProvisioned bool
 	Logout          *OIDCLogoutState
+	// RequiresTOTP mirrors LoginResult.RequiresTOTP (login_service.go): set
+	// when the resolved account has TOTP enabled and is not also routed
+	// through the MustChangePassword branch — that branch outranks TOTP for
+	// the same reason it does on the local login path. The handler must gate
+	// on this exactly as it gates the local login result: set the
+	// pending-TOTP cookie and redirect to /auth/2fa before ever calling
+	// setAuthCookie.
+	RequiresTOTP bool
 	// PendingLinkClaims is non-nil only when Authenticate returned
 	// ErrOIDCLinkRequiresConfirmation. The handler stores these in a sealed
 	// short-lived cookie and dispatches to the link-confirmation step, where a
@@ -247,6 +255,11 @@ func (service *OIDCLoginService) Authenticate(ctx context.Context, code string, 
 	if err != nil {
 		return OIDCLoginResult{}, err
 	}
+	// Session issuance parity (docs/security/oidc-and-sessions.md): a linked
+	// identity re-authenticating here must clear the same second factor the
+	// local login path requires, computed the same way — MustChangePassword
+	// outranks TOTP, mirroring LoginService.Authenticate.
+	result.RequiresTOTP = !result.User.MustChangePassword && result.User.TOTPEnabled
 	result.Logout = service.buildLogoutState(exchange.Session, result.User.ID)
 	return result, nil
 }

@@ -143,6 +143,7 @@ Policy-level claims (threat model in/out-of-scope, design rationale, marketing-s
 | `MustChangePassword` targets are routed to `/reset-password` instead of receiving an auth cookie | `TestCompleteOIDCLinkConfirmationRoutesMustChangePasswordToReset` in [internal/api/auth_oidc_regressions_test.go](internal/api/auth_oidc_regressions_test.go) |
 | `ConfirmAndLinkIdentity` provider/storage failures clear the pending cookie | `TestCompleteOIDCLinkConfirmationConfirmLinkErrorMappingClearsCookie` in [internal/api/auth_oidc_regressions_test.go](internal/api/auth_oidc_regressions_test.go) |
 | Successful link emits a sanitized `auth.oidc_link_confirm linked` security event | `TestCompleteOIDCLinkConfirmationEmitsAuditLogOnSuccess` in [internal/api/auth_oidc_regressions_test.go](internal/api/auth_oidc_regressions_test.go) |
+| A later OIDC sign-in through an already-linked identity is gated on the account's second factor the same way local login is: `RequiresTOTP` routes to `/auth/2fa` before `setAuthCookie`, and `MustChangePassword` still outranks it | `TestOIDCCallbackForLinkedTOTPAccountGatesOnTheSecondFactor` in [internal/api/auth_oidc_regressions_test.go](internal/api/auth_oidc_regressions_test.go); `TestOIDCLoginServiceAuthenticateSetsRequiresTOTPForLinkedTOTPAccount`, `TestOIDCLoginServiceAuthenticateMustChangePasswordOutranksRequiresTOTP` in [internal/services/oidc_login_service_test.go](internal/services/oidc_login_service_test.go) |
 
 ### Register Enumeration Residual
 

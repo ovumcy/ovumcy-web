@@ -121,6 +121,24 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/reset-password")
 	}
 
+	// Session issuance parity with the local login path
+	// (handlers_auth_session_login.go): a linked identity re-authenticating
+	// here must clear the same second factor an ordinary sign-in would, gated
+	// on the same OIDCLoginService.Authenticate-computed signal the local
+	// path uses (RequiresTOTP, not the raw TOTPEnabled flag), and checked
+	// after MustChangePassword for the same reason the local path orders it
+	// there — a forced reset outranks TOTP.
+	if result.RequiresTOTP {
+		if err := handler.setTOTPPendingCookie(c, result.User.ID, false); err != nil {
+			spec := authSessionCreateErrorSpec()
+			handler.logSecurityError(c, "auth.oidc_callback", spec)
+			handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
+			return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
+		}
+		handler.logSecurityEvent(c, "auth.oidc_callback", "totp_required")
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/auth/2fa")
+	}
+
 	sessionID, err := handler.setAuthCookie(c, &result.User, false)
 	if err != nil {
 		spec := authSessionCreateErrorSpec()
