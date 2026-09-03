@@ -211,3 +211,106 @@ func TestResetPasswordCookieRejectsForeignKey(t *testing.T) {
 	}
 	defer func() { _ = openResponse.Body.Close() }()
 }
+
+// TestResetPasswordCookieReaderClearsWhenCodecUnavailable drives
+// readResetPasswordCookie's handler.cookieCodec() failure branch. A bare
+// Handler with no secretKey never gets past it: newSecureCookieCodec refuses
+// an empty key before any AEAD is built. NewHandler requires a non-empty
+// SECRET_KEY at boot, so a fully composed app can never reach this in
+// production — but the reader still has to fail closed rather than trust an
+// uninitialized codec's zero value if it is ever invoked before that
+// invariant holds, which is exactly what this drives directly.
+func TestResetPasswordCookieReaderClearsWhenCodecUnavailable(t *testing.T) {
+	t.Parallel()
+
+	handler := &Handler{}
+
+	app := fiber.New()
+	app.Get("/open", func(c fiber.Ctx) error {
+		token := handler.readResetPasswordCookie(c)
+		if token != "" {
+			t.Fatalf("expected no token when the cookie codec is unavailable, got %q", token)
+		}
+		return c.SendStatus(fiber.StatusNoContent)
+	})
+
+	request := httptest.NewRequest("GET", "/open", nil)
+	request.Header.Set("Cookie", resetPasswordCookieName+"=anything")
+	response, err := app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("open request: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+}
+
+// TestResetPasswordCookieReaderClearsOnNonJSONPlaintext drives
+// readResetPasswordCookie's json.Unmarshal failure branch: a value that opens
+// under the AEAD (so it was minted with the right key and not tampered) but
+// whose plaintext is not the payload JSON at all. setResetPasswordCookie
+// itself can never produce this — it always marshals resetPasswordCookiePayload
+// — so this seals the malformed plaintext directly, the same technique the
+// tamper/foreign-key tests above use to reach the reader's other failure arms.
+func TestResetPasswordCookieReaderClearsOnNonJSONPlaintext(t *testing.T) {
+	t.Parallel()
+
+	secret := []byte("0123456789abcdef0123456789abcdef")
+	handler := &Handler{secretKey: secret, cookieSecure: true}
+
+	codec, err := newSecureCookieCodec(secret)
+	if err != nil {
+		t.Fatalf("new secure cookie codec: %v", err)
+	}
+	sealed, err := codec.seal(resetPasswordCookieName, []byte("not-the-payload-json"))
+	if err != nil {
+		t.Fatalf("seal malformed plaintext: %v", err)
+	}
+
+	app := fiber.New()
+	app.Get("/open", func(c fiber.Ctx) error {
+		token := handler.readResetPasswordCookie(c)
+		if token != "" {
+			t.Fatalf("expected no token for a sealed value whose plaintext is not payload JSON, got %q", token)
+		}
+		return c.SendStatus(fiber.StatusNoContent)
+	})
+
+	request := httptest.NewRequest("GET", "/open", nil)
+	request.Header.Set("Cookie", resetPasswordCookieName+"="+sealed)
+	response, err := app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("open request: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+}
+
+// TestResetPasswordCookieReaderClearsOnBlankToken drives readResetPasswordCookie's
+// blank-token branch: the payload decodes as valid JSON but its Token field is
+// empty (or all whitespace). setResetPasswordCookie's own guard refuses to
+// seal an empty token, so this reaches the branch the same way the tests
+// above reach the reader's other arms — sealing the payload directly rather
+// than through the setter.
+func TestResetPasswordCookieReaderClearsOnBlankToken(t *testing.T) {
+	t.Parallel()
+
+	secret := []byte("0123456789abcdef0123456789abcdef")
+	handler := &Handler{secretKey: secret, cookieSecure: true}
+
+	cookieValue := mustSealResetCookieValueForTest(t, secret, "   ")
+
+	app := fiber.New()
+	app.Get("/open", func(c fiber.Ctx) error {
+		token := handler.readResetPasswordCookie(c)
+		if token != "" {
+			t.Fatalf("expected no token for a payload whose Token field is blank, got %q", token)
+		}
+		return c.SendStatus(fiber.StatusNoContent)
+	})
+
+	request := httptest.NewRequest("GET", "/open", nil)
+	request.Header.Set("Cookie", resetPasswordCookieName+"="+cookieValue)
+	response, err := app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("open request: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+}
