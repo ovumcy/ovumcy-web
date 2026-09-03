@@ -191,10 +191,10 @@ var sealedCookieExpiryProbes = map[string]sealedCookieExpiryProbe{
 	},
 	totpPendingCookieName: {
 		mint: func(handler *Handler, c fiber.Ctx) error {
-			return handler.setTOTPPendingCookie(c, sealedExpirySweepUserID, false)
+			return handler.setTOTPPendingCookie(c, sealedExpirySweepUserID, false, "")
 		},
 		honours: func(handler *Handler, c fiber.Ctx) bool {
-			userID, _, err := handler.parseTOTPPendingCookie(c)
+			userID, _, _, err := handler.parseTOTPPendingCookie(c)
 			return err == nil && userID != 0
 		},
 	},

@@ -137,7 +137,7 @@ func TestTOTPPendingCookieExpiryHonorsFiveMinuteTTL(t *testing.T) {
 	handler := ttlMutationTestHandler()
 	app := fiber.New()
 	app.Get("/set", func(c fiber.Ctx) error {
-		if err := handler.setTOTPPendingCookie(c, 42, true); err != nil {
+		if err := handler.setTOTPPendingCookie(c, 42, true, ""); err != nil {
 			t.Fatalf("setTOTPPendingCookie: %v", err)
 		}
 		return c.SendStatus(http.StatusNoContent)

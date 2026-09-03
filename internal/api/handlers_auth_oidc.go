@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"html"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -129,11 +130,42 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 	// after MustChangePassword for the same reason the local path orders it
 	// there — a forced reset outranks TOTP.
 	if result.RequiresTOTP {
-		if err := handler.setTOTPPendingCookie(c, result.User.ID, false); err != nil {
+		// No session id exists yet to key result.Logout by — setAuthCookie
+		// below is exactly what this branch is deferring — so a non-nil
+		// Logout is staged under a freshly minted opaque id instead, and only
+		// that id (never end_session_endpoint or id_token_hint) travels in
+		// the sealed pending-TOTP cookie. VerifyTOTPLogin relocates the row
+		// onto the real session id once the challenge succeeds
+		// (handlers_auth_2fa.go); an OIDC login with no logout state to carry
+		// leaves the id empty, same as a local login.
+		var oidcLogoutStateID string
+		if result.Logout != nil {
+			pendingID, genErr := services.GenerateAuthSessionID()
+			if genErr != nil {
+				// codecov:ignore:start -- defensive: crypto/rand failure
+				spec := authSessionCreateErrorSpec()
+				handler.logSecurityError(c, "auth.oidc_callback", spec)
+				handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
+				return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
+				// codecov:ignore:end
+			}
+			if err := handler.oidcLogoutStateSvc.Save(c.Context(), pendingID, *result.Logout, time.Now()); err != nil {
+				// codecov:ignore:start -- defensive: fails only on a storage error
+				spec := authSessionCreateErrorSpec()
+				handler.logSecurityError(c, "auth.oidc_callback", spec)
+				handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
+				return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
+				// codecov:ignore:end
+			}
+			oidcLogoutStateID = pendingID
+		}
+		if err := handler.setTOTPPendingCookie(c, result.User.ID, false, oidcLogoutStateID); err != nil {
+			// codecov:ignore:start -- defensive: the sealed cookie writer fails only on an AEAD seal error
 			spec := authSessionCreateErrorSpec()
 			handler.logSecurityError(c, "auth.oidc_callback", spec)
 			handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
+			// codecov:ignore:end
 		}
 		handler.logSecurityEvent(c, "auth.oidc_callback", "totp_required")
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/auth/2fa")
@@ -175,6 +207,39 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 		securityEventField("newly_linked", boolString(result.NewlyLinked)),
 	)
 	return c.Redirect().Status(fiber.StatusSeeOther).To(services.PostLoginRedirectPath(&result.User))
+}
+
+// moveOIDCLogoutState relocates one owner's provider-logout material from
+// oldSessionID (an opaque id minted only to key the row before a real session
+// existed — see the RequiresTOTP branch in CompleteOIDCLogin above) onto
+// newSessionID, the session id the TOTP challenge just minted
+// (handlers_auth_2fa.go). A row that fails validOIDCLogoutState — the same
+// check the direct, non-gated OIDC login path never has to make, because
+// buildLogoutState only ever produces a valid one — or that Load cannot find,
+// is defensive: oldSessionID is generated and Saved a few minutes earlier in
+// this same pending-TOTP window by this same code path, so in practice both
+// arms are unreachable without a storage fault between the two calls.
+func (handler *Handler) moveOIDCLogoutState(ctx context.Context, oldSessionID string, newSessionID string, userID uint, now time.Time) error {
+	if handler == nil || handler.oidcLogoutStateSvc == nil {
+		return nil
+	}
+	oldSessionID = strings.TrimSpace(oldSessionID)
+	newSessionID = strings.TrimSpace(newSessionID)
+	if oldSessionID == "" || newSessionID == "" || oldSessionID == newSessionID {
+		return nil
+	}
+
+	logoutState, found, err := handler.oidcLogoutStateSvc.Load(ctx, oldSessionID, userID, now)
+	if err != nil || !found {
+		return err // codecov:ignore -- defensive: Load fails only on a storage error, and a not-found row would mean the Save a few lines up in CompleteOIDCLogin never happened
+	}
+	if !validOIDCLogoutState(logoutState) {
+		return handler.oidcLogoutStateSvc.Delete(ctx, oldSessionID, userID) // codecov:ignore -- defensive: the state this reads was Saved by buildLogoutState a few minutes earlier in this same request chain, which never produces an invalid one
+	}
+	if err := handler.oidcLogoutStateSvc.Save(ctx, newSessionID, logoutState, now); err != nil {
+		return err // codecov:ignore -- defensive: Save fails only on a storage error
+	}
+	return handler.oidcLogoutStateSvc.Delete(ctx, oldSessionID, userID)
 }
 
 func oidcRequestContext(c fiber.Ctx) (context.Context, context.CancelFunc) {

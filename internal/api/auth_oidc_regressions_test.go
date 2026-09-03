@@ -485,10 +485,19 @@ func TestOIDCCallbackForLinkedTOTPAccountGatesOnTheSecondFactor(t *testing.T) {
 	// The stub bypasses OIDCLoginService.Authenticate's own computation, so the
 	// result carries RequiresTOTP exactly as the real service would derive it
 	// for this account (TOTP enabled, MustChangePassword false) — the handler
-	// gate under test is what consumes this field, not what computes it.
+	// gate under test is what consumes this field, not what computes it. Logout
+	// is also populated, as buildLogoutState would for a provider with
+	// end-session support, so the callback has to stage it under an opaque id
+	// rather than discard it — the parity this test exists to pin.
 	stub.result = services.OIDCLoginResult{
 		User:         linked,
 		RequiresTOTP: true,
+		Logout: &services.OIDCLogoutState{
+			UserID:                linked.ID,
+			EndSessionEndpoint:    "https://idp.example.com/logout",
+			IDTokenHint:           "eyJhbGciOiJSUzI1NiJ9.header.signature",
+			PostLogoutRedirectURL: "https://app.example.com/",
+		},
 	}
 
 	startResponse := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, "/auth/oidc/start", nil))
@@ -532,6 +541,19 @@ func TestOIDCCallbackForLinkedTOTPAccountGatesOnTheSecondFactor(t *testing.T) {
 	if pendingPayload.UserID != linked.ID {
 		t.Fatalf("pending cookie user_id = %d, want %d", pendingPayload.UserID, linked.ID)
 	}
+	pendingLogoutStateID := strings.TrimSpace(pendingPayload.OIDCLogoutStateID)
+	if pendingLogoutStateID == "" {
+		t.Fatal("expected the pending cookie to carry an opaque OIDC logout-state id, since the stubbed result carries provider-logout material")
+	}
+
+	logoutStateSvc := services.NewOIDCLogoutStateService(db.NewRepositories(database).OIDCLogout)
+	stagedState, stagedFound, err := logoutStateSvc.Load(context.Background(), pendingLogoutStateID, linked.ID, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("load staged logout state: %v", err)
+	}
+	if !stagedFound || stagedState.EndSessionEndpoint != stub.result.Logout.EndSessionEndpoint {
+		t.Fatalf("expected the callback to stage the provider-logout material under the opaque id, got found=%v state=%#v", stagedFound, stagedState)
+	}
 
 	// Completing the challenge with a valid code is what may issue the
 	// session — never the callback itself.
@@ -550,6 +572,125 @@ func TestOIDCCallbackForLinkedTOTPAccountGatesOnTheSecondFactor(t *testing.T) {
 	sessionCookie := responseCookie(challengeResponse.Cookies(), authCookieName)
 	if sessionCookie == nil || strings.TrimSpace(sessionCookie.Value) == "" {
 		t.Fatal("expected an auth cookie after completing the TOTP challenge")
+	}
+
+	// The provider-logout material must have followed the session onto its
+	// real id — the whole point of staging it under the opaque id above — and
+	// the staging row itself must be gone rather than left behind as a second,
+	// orphaned copy.
+	newSessionID := mustExtractAuthSessionIDFromCookieHeader(t, sessionCookie.Name+"="+sessionCookie.Value)
+	movedState, movedFound, err := logoutStateSvc.Load(context.Background(), newSessionID, linked.ID, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("load relocated logout state: %v", err)
+	}
+	if !movedFound || movedState.EndSessionEndpoint != stub.result.Logout.EndSessionEndpoint {
+		t.Fatalf("expected the TOTP challenge to relocate the logout state onto the new session id, got found=%v state=%#v", movedFound, movedState)
+	}
+	_, stillStaged, err := logoutStateSvc.Load(context.Background(), pendingLogoutStateID, linked.ID, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("load staging row after relocation: %v", err)
+	}
+	if stillStaged {
+		t.Fatal("expected the opaque staging row to be deleted once its state moved to the real session id")
+	}
+}
+
+// TestOIDCCallbackForLinkedTOTPAccountWithNoLogoutStateCompletesChallengeCleanly
+// covers the other half of the same parity: when the OIDC result carries no
+// provider-logout material at all (Logout == nil — no end_session_endpoint,
+// or provider logout disabled), the pending cookie carries no logout-state id,
+// completing the challenge mints the session with no OIDC logout row attached
+// to it, and the bridge cookie is cleared exactly as the direct, non-gated
+// OIDC success path clears it.
+func TestOIDCCallbackForLinkedTOTPAccountWithNoLogoutStateCompletesChallengeCleanly(t *testing.T) {
+	t.Parallel()
+
+	stub := newStubOIDCWorkflowService(true)
+	stub.authURL = "https://id.example.com/authorize"
+
+	secretKey := []byte(testHandlerSecretKey)
+	app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{
+		cookieSecure: true,
+		oidcService:  stub,
+	})
+	user := createOnboardingTestUser(t, database, "oidc-totp-no-logout@example.com", "StrongPass1", true)
+	rawSecret := setupTOTPForUser(t, database, user.ID, secretKey)
+
+	var linked models.User
+	if err := database.First(&linked, user.ID).Error; err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+
+	stub.result = services.OIDCLoginResult{
+		User:         linked,
+		RequiresTOTP: true,
+		Logout:       nil,
+	}
+
+	startResponse := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, "/auth/oidc/start", nil))
+	stateCookie := responseCookie(startResponse.Cookies(), oidcStateCookieName)
+	if stateCookie == nil {
+		t.Fatal("expected OIDC state cookie from start flow")
+	}
+	callbackRequest := httptest.NewRequest(http.MethodPost, security.OIDCCallbackPath, strings.NewReader(url.Values{
+		"state": {stub.lastStartState},
+		"code":  {"provider-code"},
+	}.Encode()))
+	callbackRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	callbackRequest.Header.Set("Cookie", stateCookie.String())
+	callbackResponse := mustAppResponse(t, app, callbackRequest)
+	assertStatusCode(t, callbackResponse, http.StatusSeeOther)
+
+	pendingCookie := responseCookie(callbackResponse.Cookies(), totpPendingCookieName)
+	if pendingCookie == nil || strings.TrimSpace(pendingCookie.Value) == "" {
+		t.Fatal("expected a TOTP pending cookie from the OIDC callback")
+	}
+	codec, err := newSecureCookieCodec(secretKey)
+	if err != nil {
+		t.Fatalf("newSecureCookieCodec: %v", err)
+	}
+	decoded, err := codec.open(totpPendingCookieName, pendingCookie.Value)
+	if err != nil {
+		t.Fatalf("open pending cookie: %v", err)
+	}
+	var pendingPayload totpPendingCookiePayload
+	if err := json.Unmarshal(decoded, &pendingPayload); err != nil {
+		t.Fatalf("unmarshal pending payload: %v", err)
+	}
+	if strings.TrimSpace(pendingPayload.OIDCLogoutStateID) != "" {
+		t.Fatalf("expected no OIDC logout-state id when the result carries no logout material, got %q", pendingPayload.OIDCLogoutStateID)
+	}
+
+	code, err := totp.GenerateCode(rawSecret, time.Now())
+	if err != nil {
+		t.Fatalf("GenerateCode: %v", err)
+	}
+	challengeRequest := httptest.NewRequest(http.MethodPost, "/api/v1/sessions/2fa-challenge", strings.NewReader(url.Values{
+		"code": {code},
+	}.Encode()))
+	challengeRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	challengeRequest.Header.Set("Cookie", totpPendingCookieName+"="+pendingCookie.Value)
+	challengeResponse := mustAppResponse(t, app, challengeRequest)
+	assertStatusCode(t, challengeResponse, http.StatusSeeOther)
+
+	sessionCookie := responseCookie(challengeResponse.Cookies(), authCookieName)
+	if sessionCookie == nil || strings.TrimSpace(sessionCookie.Value) == "" {
+		t.Fatal("expected an auth cookie after completing the TOTP challenge")
+	}
+	newSessionID := mustExtractAuthSessionIDFromCookieHeader(t, sessionCookie.Name+"="+sessionCookie.Value)
+
+	logoutStateSvc := services.NewOIDCLogoutStateService(db.NewRepositories(database).OIDCLogout)
+	_, found, err := logoutStateSvc.Load(context.Background(), newSessionID, linked.ID, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("load logout state for new session: %v", err)
+	}
+	if found {
+		t.Fatal("expected no OIDC logout state attached to a session minted with no logout material to carry")
+	}
+
+	bridgeCookie := responseCookie(challengeResponse.Cookies(), oidcLogoutBridgeCookieName)
+	if bridgeCookie == nil || strings.TrimSpace(bridgeCookie.Value) != "" {
+		t.Fatal("expected the TOTP challenge to clear the OIDC logout bridge cookie, same as every other session-mint path")
 	}
 }
 
