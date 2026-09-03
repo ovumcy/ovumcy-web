@@ -242,6 +242,69 @@ func TestEveryEgressMutationRebuildsItsBlockFromAReadAfterTheWrite(t *testing.T)
 	}
 }
 
+// TestEveryEgressMutationAnswersARefusalWithTheRebuiltCard is the other outcome
+// of the rule above, and it failed in a browser while every jsdom case was
+// green.
+//
+// The shared settings-error transport answers an HTMX caller with 200 and a BARE
+// status fragment. htmx swaps that into hx-target, and this card's hx-target is
+// ITSELF with outerHTML — so a refusal REPLACED the whole section, leaving the
+// message standing alone where the card had been, and the island it was written
+// for gone from the page. The client-side island resolution cannot help: no
+// error event fires at all, because the response is a 200.
+//
+// The assertions are therefore about the SHAPE of the answer, not about the
+// copy: the card comes back, its states come back, and the refusal is inside the
+// island rather than instead of it.
+func TestEveryEgressMutationAnswersARefusalWithTheRebuiltCard(t *testing.T) {
+	handler, database, _ := newCountingEgressHandler(t)
+	owner := createEgressLedgerUser(t, database, "egress-refusal@example.com", models.RoleOwner)
+	seedEgressRow(t, database, owner.ID, egressRenderRow{})
+
+	app := fiber.New()
+	app.Use(handler.LanguageMiddleware)
+	app.Use(func(c fiber.Ctx) error {
+		reloaded := reloadEgressUser(t, database, owner.ID)
+		c.Locals(contextUserKey, &reloaded)
+		return c.Next()
+	})
+	app.Post("/api/v1/users/current/webhook", handler.UpdateWebhookSettings)
+
+	// A URL the browser accepts as a URL and the service refuses: only http and
+	// https reach delivery. This is the refusal an owner actually meets.
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/users/current/webhook",
+		strings.NewReader("webhook_url=ftp%3A%2F%2Fhooks.example.test%2Fovumcy&webhook_enabled=true&webhook_notify_period=true"),
+	)
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("HX-Request", "true")
+	request.Header.Set("Accept", "text/html")
+	response, err := app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("mutation failed: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	responseBody := mustReadBodyString(t, response.Body)
+	if !strings.Contains(responseBody, `id="settings-egress"`) {
+		t.Fatalf("a refusal answered with something smaller than the card removes the section from the page: %s", responseBody)
+	}
+	if !strings.Contains(responseBody, "settings-egress-status") {
+		t.Fatal("the refusal carries no status island, so it lands nowhere the owner is looking")
+	}
+	if !strings.Contains(responseBody, "status-error") {
+		t.Fatalf("the rebuilt card carries no refusal: %s", responseBody)
+	}
+	if !strings.Contains(responseBody, `data-egress-webhook-state=`) {
+		t.Fatal("the rebuilt card carries no webhook state, so the refusal replaced the account rather than joining it")
+	}
+	// The write was refused, so the row must still say nothing is configured.
+	if !strings.Contains(responseBody, `data-egress-webhook-state="not_configured"`) {
+		t.Fatal("the refused endpoint is described as stored: the block was built from the request's intent, not from the row")
+	}
+}
+
 // TestEgressLedgerFieldsAreUnchangedByAnyNumberOfFeedPolls is the .ics
 // telemetry prohibition, stated as the only test that can fail.
 //

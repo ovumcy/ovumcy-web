@@ -152,6 +152,10 @@ func (service *WebhookSettingsCLIService) ApplyWebhookSettings(ctx context.Conte
 		update.URL = patch.NewURL
 	case webhookURLClear:
 		update.URL = ""
+	case webhookURLKeep:
+		// Named so the switch still reads as the three actions it has, and
+		// falling through so it cannot acquire a second body: see below.
+		fallthrough
 	default:
 		// Keep — and any action added later without a case of its own, which
 		// lands here for the same reason: preserving the endpoint is the safe

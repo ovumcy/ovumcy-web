@@ -32,7 +32,7 @@ func (handler *Handler) UpdateWebhookSettings(c fiber.Ctx) error {
 
 	input, err := parseWebhookSettingsInput(c)
 	if err != nil {
-		return handler.failMutation(c, webhookSettingsMutation, settingsInvalidInputErrorSpec())
+		return handler.failEgressMutation(c, webhookSettingsMutation, user, settingsInvalidInputErrorSpec())
 	}
 
 	form := services.WebhookSettingsFormUpdate{
@@ -44,7 +44,7 @@ func (handler *Handler) UpdateWebhookSettings(c fiber.Ctx) error {
 		RemoveURL:       input.RemoveURL,
 	}
 	if err := handler.webhookSettingsSvc.SaveWebhookSettingsFromForm(c.Context(), user.ID, form); err != nil {
-		return handler.failMutation(c, webhookSettingsMutation, mapSettingsWebhookSaveError(err))
+		return handler.failEgressMutation(c, webhookSettingsMutation, user, mapSettingsWebhookSaveError(err))
 	}
 
 	status := services.SettingsWebhookUpdatedStatus
