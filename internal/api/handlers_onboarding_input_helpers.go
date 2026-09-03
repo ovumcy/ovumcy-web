@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	"net/url"
 	"strconv"
@@ -78,18 +79,58 @@ func (handler *Handler) parseOnboardingStep1Values(c fiber.Ctx, today time.Time,
 // only. Without this refusal a client written against the old contract is
 // answered 200 while the value it submitted is dropped — the removal reads as a
 // successful save, which is the one answer a removed field must never give.
-// Both transports are asked, in their own spelling, so the two cannot diverge.
+//
+// Presence is decided from the raw request, never from whether a typed decode
+// of the value succeeded: a JSON number or `null` for `age_group` fails to
+// bind into a `*string` probe with a TYPE error, which reads identically to
+// the key being absent unless the two are told apart deliberately. Both
+// transports are asked, in their own spelling, so the two cannot diverge.
 func onboardingStep2CarriesRemovedAgeGroup(c fiber.Ctx) bool {
 	if hasJSONBody(c) {
-		probe := struct {
-			AgeGroup *string `json:"age_group"`
-		}{}
-		if err := c.Bind().Body(&probe); err != nil {
-			return false
-		}
-		return probe.AgeGroup != nil
+		return jsonBodyNamesKey(c.Body(), "age_group")
 	}
-	return c.Request().PostArgs().Has("age_group")
+	return onboardingNonJSONBodyHasField(c, "age_group")
+}
+
+// jsonBodyNamesKey reports whether the given key is present in a JSON object
+// body, independent of the value's own type — a present `null` or a present
+// number both count, since the question is "did the client name this field",
+// not "did it parse into the type we expect". A body that is not a JSON
+// object (including one too malformed to decode at all) reports the key
+// absent; the subsequent `Bind().Body` call answers the generic "invalid
+// input" for that case, so presence detection never needs to duplicate it.
+func jsonBodyNamesKey(body []byte, key string) bool {
+	fields := map[string]json.RawMessage{}
+	if err := json.Unmarshal(body, &fields); err != nil {
+		return false
+	}
+	_, present := fields[key]
+	return present
+}
+
+// onboardingNonJSONBodyHasField reports whether a non-JSON request carries the
+// given field in any of the three places fiber's own `FormValue` reads from —
+// the URL's own query string, an `application/x-www-form-urlencoded` body, and
+// a multipart form field — in that same search order. Checking `PostArgs`
+// alone (fasthttp only populates it for an exact
+// `application/x-www-form-urlencoded` Content-Type) misses a value the client
+// put in the query string, and misses every multipart submission outright, so
+// both routes around the refusal above stay silent.
+func onboardingNonJSONBodyHasField(c fiber.Ctx, key string) bool {
+	if c.Request().URI().QueryArgs().Has(key) {
+		return true
+	}
+	if c.Request().PostArgs().Has(key) {
+		return true
+	}
+	if c.IsMultipart() {
+		if form, err := c.MultipartForm(); err == nil {
+			if _, present := form.Value[key]; present {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (handler *Handler) parseOnboardingStep2Input(c fiber.Ctx) (onboardingStep2Input, string) {
