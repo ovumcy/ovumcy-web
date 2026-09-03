@@ -495,11 +495,15 @@ components:
         Two-step body on one endpoint. Step 1 sends `email` alone; the
         response is `{"ok": true, "next_step": "recovery_code"}` and starts
         nothing. Step 2 repeats `email` and adds `recovery_code` and
-        `password`, which is what actually calls `StartRecovery`. Neither of
-        the step-2 fields is schema-required, because an absent one does not
-        fail validation — it is read as an empty string and refused later, by
-        name, with the same uniform credential rejection a wrong value gets;
-        see each field's own description.
+        `password`, which is what actually calls `StartRecovery`. Neither
+        step-2 field is schema-required, because an absent one does not fail
+        validation, but the two are NOT read alike: `recovery_code` absent, or
+        present and blank once trimmed, is what SELECTS step 1 — it is
+        answered as `{"ok": true, "next_step": "recovery_code"}` like any
+        other step-1 request, never refused. `password` has no such reading;
+        once a non-blank `recovery_code` is present, an absent or blank
+        `password` is refused later, by name, with the same uniform credential
+        rejection a wrong value gets. See each field's own description.
       properties:
         email:
           type: string
@@ -526,11 +530,15 @@ components:
             CLI `ovumcy reset-password <email>`.
         recovery_code:
           type: string
-          pattern: "^OVUM-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$"
+          pattern: "^OVUM-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$|^$"
           description: >-
             Single-use recovery code minted at registration or by `POST
-            /api/v1/users/current/recovery-code`. The pattern documents the
-            server's accepted request shape (`ValidateRecoveryCodeFormat` in
+            /api/v1/users/current/recovery-code`. Omitted, or sent as an empty
+            string, selects step 1 (see this schema's own description) and is
+            never refused on that account — the pattern's `|^$` alternative
+            exists for that value alone, not to widen what a real code may
+            look like. Once non-blank, the pattern documents the server's
+            accepted request shape (`ValidateRecoveryCodeFormat` in
             `internal/services/auth_input_policy.go`), which is deliberately
             wider than the alphabet `GenerateRecoveryCode`
             (`internal/services/auth_reset_policy.go`) actually emits —
