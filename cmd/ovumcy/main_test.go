@@ -277,6 +277,55 @@ func TestResolveDatabaseConfigDatabaseURLFile(t *testing.T) {
 			t.Fatalf("expected an empty DATABASE_URL_FILE to fail postgres validation, got %v", err)
 		}
 	})
+
+	// A sqlite instance never consumes DATABASE_URL/DATABASE_URL_FILE, so a
+	// stale or dangling DATABASE_URL_FILE (an old value left in .env, or a
+	// Swarm secret mount that vanished on redeploy) must not block boot. The
+	// old plain os.Getenv read could never fail; resolving through the file
+	// helper must not turn that into a new way to fail closed on a value the
+	// driver never reads.
+	t.Run("sqlite driver boots despite an unreadable DATABASE_URL_FILE it never consumes", func(t *testing.T) {
+		t.Setenv("DB_DRIVER", "sqlite")
+		t.Setenv("DATABASE_URL", "")
+		t.Setenv("DATABASE_URL_FILE", filepath.Join(t.TempDir(), "missing-database-url.txt"))
+
+		config, err := resolveDatabaseConfig()
+		if err != nil {
+			t.Fatalf("expected sqlite driver to boot despite an unreadable DATABASE_URL_FILE it never reads, got error: %v", err)
+		}
+		if config.Driver != db.DriverSQLite {
+			t.Fatalf("expected sqlite driver, got %q", config.Driver)
+		}
+	})
+
+	// DATABASE_URL winning over DATABASE_URL_FILE is silent by design (see
+	// resolveSecretFromEnvOrFile), but silent is only safe once the operator can
+	// find out some other way. A wrong DSN does not fail at all — unlike a wrong
+	// SECRET_KEY, which fails loudly at first use — so the boot log must name
+	// which variable supplied the value and which _FILE variable it ignored,
+	// without ever printing the value itself.
+	t.Run("both-set logs which variable supplied the value and names the ignored file, without the value", func(t *testing.T) {
+		var buffer bytes.Buffer
+		originalWriter := log.Writer()
+		log.SetOutput(&buffer)
+		t.Cleanup(func() { log.SetOutput(originalWriter) })
+
+		t.Setenv("DB_DRIVER", "postgres")
+		t.Setenv("DATABASE_URL", dsn)
+		t.Setenv("DATABASE_URL_FILE", writeTempSecretFile(t, dsn))
+
+		if _, err := resolveDatabaseConfig(); err != nil {
+			t.Fatalf("expected env DSN to win, got error: %v", err)
+		}
+
+		logged := buffer.String()
+		if !strings.Contains(logged, "DATABASE_URL") || !strings.Contains(logged, "DATABASE_URL_FILE") {
+			t.Fatalf("expected the boot log to name both DATABASE_URL and the ignored DATABASE_URL_FILE, got %q", logged)
+		}
+		if strings.Contains(logged, dsn) || strings.Contains(logged, "s3cret") {
+			t.Fatalf("expected the boot log to never contain the resolved DSN or its password, got %q", logged)
+		}
+	})
 }
 
 func writeTempSecretFile(t *testing.T, contents string) string {

@@ -315,15 +315,26 @@ func validateTrustedProxies(entries []string) error {
 
 func resolveDatabaseConfig() (db.Config, error) {
 	driver := db.Driver(strings.ToLower(strings.TrimSpace(getEnv("DB_DRIVER", string(db.DriverSQLite)))))
-	databaseURL, err := resolveSecretFromEnvOrFile("DATABASE_URL", "DATABASE_URL_FILE", maxDatabaseURLFileBytes)
-	if err != nil {
-		return db.Config{}, err
-	}
 	config := db.Config{
-		Driver:      driver,
-		SQLitePath:  getEnv("DB_PATH", filepath.Join("data", "ovumcy.db")),
-		PostgresURL: databaseURL,
+		Driver:     driver,
+		SQLitePath: getEnv("DB_PATH", filepath.Join("data", "ovumcy.db")),
 	}
+
+	// Only resolve DATABASE_URL/DATABASE_URL_FILE when the driver actually
+	// consumes it. The old plain os.Getenv("DATABASE_URL") read could never
+	// fail; resolving through the bounded-file helper CAN fail (unreadable
+	// file, directory path, oversized file), and a sqlite instance carrying a
+	// stale DATABASE_URL_FILE — an old value left in .env, or a Swarm secret
+	// mount that vanished on redeploy — must not have that turn into a reason
+	// to refuse booting a database it never touches.
+	if driver == db.DriverPostgres {
+		databaseURL, err := resolveSecretFromEnvOrFile("DATABASE_URL", "DATABASE_URL_FILE", maxDatabaseURLFileBytes)
+		if err != nil {
+			return db.Config{}, err
+		}
+		config.PostgresURL = databaseURL
+	}
+
 	if err := config.Validate(); err != nil {
 		return db.Config{}, err
 	}
@@ -367,22 +378,38 @@ func resolveSecretKey() (string, error) {
 // read it from — generalizing the SECRET_KEY/SECRET_KEY_FILE pattern so every
 // sensitive value resolves the same way instead of drifting per variable.
 //
-// envVar wins silently when both are set, matching SECRET_KEY's existing,
-// tested precedence over SECRET_KEY_FILE — one behavior, reused rather than
-// re-decided per variable. The file is read through
-// security.ReadBoundedRegularFile, which rejects directories/special files
-// and caps the read at maxBytes; its content is trimmed the same way a plain
-// env value already is, so a trailing newline from `echo secret > file` never
-// leaks into the resolved value. A file that cannot be read aborts with an
-// error naming fileEnvVar. The resolved value itself is never included in any
-// error or log line — only the variable name and whether it resolved.
+// envVar wins silently over fileEnvVar when both are set, matching SECRET_KEY's
+// existing, tested precedence over SECRET_KEY_FILE — one behavior, reused
+// rather than re-decided per variable. Silent is only safe once the operator
+// can find out some other way: a wrong SECRET_KEY fails loudly at first use,
+// but a wrong DATABASE_URL or OIDC_CLIENT_SECRET does not fail at all — it
+// just points at the wrong database or provider — and there is no shell in
+// the distroless runtime image to go looking. So every resolution logs one
+// line at boot naming which variable supplied the value, and — when both were
+// set — naming the fileEnvVar that was ignored. The resolved value itself is
+// never included in any error or log line — only the variable names.
+//
+// The file is read through security.ReadBoundedRegularFile, which rejects
+// directories/special files and caps the read at maxBytes; its content is
+// trimmed the same way a plain env value already is, so a trailing newline
+// from `echo secret > file` never leaks into the resolved value. A file that
+// cannot be read aborts with an error naming fileEnvVar — callers that only
+// consume the value on some other condition (a particular DB_DRIVER, OIDC
+// enabled) must gate the call on that condition themselves, so a stale or
+// dangling fileEnvVar for a value nothing reads never blocks boot.
 func resolveSecretFromEnvOrFile(envVar, fileEnvVar string, maxBytes int64) (string, error) {
 	value := strings.TrimSpace(os.Getenv(envVar))
+	filePath := strings.TrimSpace(os.Getenv(fileEnvVar))
+
 	if value != "" {
+		if filePath != "" {
+			log.Printf("config: %s supplied via environment; %s is also set but ignored (%s takes precedence)", envVar, fileEnvVar, envVar)
+		} else {
+			log.Printf("config: %s supplied via environment", envVar)
+		}
 		return value, nil
 	}
 
-	filePath := strings.TrimSpace(os.Getenv(fileEnvVar))
 	if filePath == "" {
 		return "", nil
 	}
@@ -391,6 +418,7 @@ func resolveSecretFromEnvOrFile(envVar, fileEnvVar string, maxBytes int64) (stri
 	if err != nil {
 		return "", fmt.Errorf("failed to read %s: %w", fileEnvVar, err)
 	}
+	log.Printf("config: %s supplied via %s", envVar, fileEnvVar)
 	return strings.TrimSpace(string(content)), nil
 }
 
