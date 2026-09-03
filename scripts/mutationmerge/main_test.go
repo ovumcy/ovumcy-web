@@ -151,6 +151,25 @@ func TestMergeReportsPreservesMutationsRawJSON(t *testing.T) {
 	}
 }
 
+// REL-8: a shard whose upload never arrived used to leave the remaining
+// shards merging cleanly — the check lived inline in main() and nothing here
+// could reach it. RequireCount is that check lifted into a named function
+// (mirroring scripts/covmerge's RequireCount), so a partial shard set is
+// refused rather than silently published as a complete report.
+func TestACountOtherThanTheExpectedOneIsRefused(t *testing.T) {
+	two := []string{"a/internal_api_1.json", "b/internal_api_2.json"}
+
+	if err := RequireCount(two, 5); err == nil {
+		t.Fatal("two shard reports passed a check expecting five")
+	}
+	if err := RequireCount(two, 2); err != nil {
+		t.Fatalf("two shard reports failed a check expecting two: %v", err)
+	}
+	if err := RequireCount(two, 0); err != nil {
+		t.Fatalf("an expectation of 0 must disable the check, got %v", err)
+	}
+}
+
 func TestMergeReportsRejectsUnparseableJSON(t *testing.T) {
 	dir := t.TempDir()
 	shard := writeShardFile(t, dir, "shard.json", `not valid json`)
