@@ -235,3 +235,44 @@ func seedEveryProjectableColumn(t *testing.T, repo *UserRepository, userID uint)
 		t.Fatalf("seed every projectable column: %v", err)
 	}
 }
+
+// TestSaveWebhookSettingsKeepingTheEndpointCannotArmIt makes the exclusivity
+// structural rather than a rule a caller has to remember. An endpoint kept
+// BECAUSE this instance could not read it is one delivery must never run
+// against, and the service refuses that combination - but the service is not the
+// only thing that can reach this method.
+func TestSaveWebhookSettingsKeepingTheEndpointCannotArmIt(t *testing.T) {
+	repo := openWebhookRepoForTest(t)
+	user := createUserForTimezoneTest(t, repo, "wh-keep-cannot-arm@example.com")
+	ctx := context.Background()
+
+	if err := repo.SaveWebhookSettings(ctx, user.ID, models.WebhookSettingsColumns{
+		Enabled:          true,
+		EncryptedURL:     "sealed-endpoint",
+		NotifyPeriod:     true,
+		ReminderLeadDays: 3,
+	}); err != nil {
+		t.Fatalf("seed webhook settings: %v", err)
+	}
+
+	// A caller asking to keep the endpoint AND to arm delivery over it.
+	if err := repo.SaveWebhookSettings(ctx, user.ID, models.WebhookSettingsColumns{
+		Enabled:          true,
+		KeepEncryptedURL: true,
+		NotifyPeriod:     true,
+		ReminderLeadDays: 3,
+	}); err != nil {
+		t.Fatalf("keeping save: %v", err)
+	}
+
+	after := reloadUserForWebhook(t, repo, user.ID)
+	if after.WebhookEnabled {
+		t.Fatal("a save that kept an unreadable endpoint armed delivery over it")
+	}
+	if after.WebhookURL != "sealed-endpoint" {
+		t.Fatalf("the kept endpoint was rewritten to %q", after.WebhookURL)
+	}
+	if !after.WebhookNotifyPeriod {
+		t.Fatal("the owner's reminder-kind choice did not survive the keeping save")
+	}
+}

@@ -218,8 +218,10 @@ func (service *WebhookSettingsService) SaveWebhookSettings(ctx context.Context, 
 	}
 
 	if update.KeepStoredURL {
-		// Nothing to validate, nothing to encrypt, and nothing to decide about the
-		// delivery mark: the mark still describes the column the row still holds.
+		// Nothing to validate and nothing to encrypt. ClearLastDeliveredAt stays
+		// false deliberately rather than by omission: the mark's rule is that it
+		// may not outlive the endpoint it describes, and this save leaves that
+		// endpoint exactly where it is, so there is nothing for the rule to do.
 		if update.Enabled {
 			return fmt.Errorf("%w: delivery cannot be enabled over an endpoint this instance cannot read", ErrWebhookURLUnreadable)
 		}

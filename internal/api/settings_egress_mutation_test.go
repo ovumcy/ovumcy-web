@@ -672,6 +672,12 @@ func TestEgressLedgerTimestampsFollowTheRequestLocation(t *testing.T) {
 	if iso, display := egressTimestampStrings("en", east, nil); iso != "" || display != "" {
 		t.Fatalf("expected an absent mark to render nothing, got %q / %q", iso, display)
 	}
+
+	// The fail-safe, exercised rather than exempted: a caller that resolved no
+	// location must get a date, not a panic.
+	if iso, _ := egressTimestampStrings("en", nil, &delivered); iso != "2026-08-14T23:30:00Z" {
+		t.Fatalf("expected the fallback to render in UTC, got %q", iso)
+	}
 }
 
 // TestWebhookSaveOverAnUnreadableEndpointAnswersAnActionable400 is the HTTP half
@@ -787,5 +793,43 @@ func TestBothWithdrawalPathsClearTheEndpointAndDisableDelivery(t *testing.T) {
 				t.Fatalf("reminder kinds kept=%t, want %t", kept, testCase.wantKindsKept)
 			}
 		})
+	}
+}
+
+// TestWebhookSaveJSONAnswerKeepsItsOwnFields pins the save's JSON body through
+// the refactor that routed its browser tail through the shared egress responder.
+// That responder answers JSON with {ok, status} alone; this operation answers
+// with three more fields, and its own branch is what keeps them. Without this,
+// deleting that branch as redundant would drop documented fields with the whole
+// suite green.
+func TestWebhookSaveJSONAnswerKeepsItsOwnFields(t *testing.T) {
+	owner := newSettingsSecurityTestContext(t, "egress-save-json@example.com")
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users/current/webhook", strings.NewReader("webhook_url=https%3A%2F%2Fntfy.example.test%2Ftopic&webhook_enabled=true&webhook_notify_period=true"))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Cookie", owner.authCookie)
+	if owner.csrfCookie != nil {
+		request.AddCookie(owner.csrfCookie)
+	}
+	request.Header.Set("X-CSRF-Token", owner.csrfToken)
+
+	response, err := owner.app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("json save failed: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", response.StatusCode)
+	}
+
+	body := mustReadBodyString(t, response.Body)
+	for _, field := range []string{`"webhook_enabled":true`, `"notify_period":true`, `"notify_ovulation":false`} {
+		if !strings.Contains(body, field) {
+			t.Fatalf("the JSON answer lost %s: %s", field, body)
+		}
+	}
+	if strings.Contains(body, "ntfy.example.test") {
+		t.Fatal("the JSON answer echoed the endpoint back")
 	}
 }

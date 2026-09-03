@@ -144,6 +144,23 @@ func TestEgressLedgerRendersNoWatermarkAndNoActiveClaim(t *testing.T) {
 			wantFeedState:       services.EgressFeedNone,
 		},
 		{
+			// The heading's own case. outbound_disabled is evaluated before the
+			// toggles, so on a default instance it wears the same state whether the
+			// owner switched delivery on or off - and the heading must still tell
+			// the two apart, or a row the owner deliberately turned off reads as a
+			// route out. The row above this one is its opposite: same state, kinds
+			// chosen, heading warns.
+			name:                "endpoint stored with delivery switched off and no pass to run it",
+			webhookURLPlaintext: "https://ntfy.example.test/topic",
+			webhookEnabled:      false,
+			notifyPeriod:        false,
+			notifyOvulation:     false,
+			deliveredAt:         &delivered,
+			wantSection:         services.EgressSectionNoPathEnabled,
+			wantWebhookState:    services.EgressWebhookOutboundDisabled,
+			wantFeedState:       services.EgressFeedNone,
+		},
+		{
 			name:                    "delivery switched off",
 			outboundDeliveryEnabled: true,
 			webhookURLPlaintext:     "https://ntfy.example.test/topic",
@@ -220,7 +237,11 @@ func TestEgressLedgerRendersNoWatermarkAndNoActiveClaim(t *testing.T) {
 
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
-			owner := newSettingsSecurityTestContextWithOptions(t, "egress-"+strings.ReplaceAll(row.name, " ", "-")+"@example.com", onboardingTestAppOptions{
+			// The row name becomes the local part of an address the harness signs
+			// in with, so it is sanitized rather than merely space-stripped: a
+			// comma in a row name produced an unaddressable owner and the failure
+			// arrived as "auth cookie is missing", which names neither cause.
+			owner := newSettingsSecurityTestContextWithOptions(t, "egress-"+emailSafeRowName(row.name)+"@example.com", onboardingTestAppOptions{
 				enableCSRF:              true,
 				outboundDeliveryEnabled: row.outboundDeliveryEnabled,
 			})
@@ -654,4 +675,20 @@ func extractAttributeValues(t *testing.T, body string, attribute string) []strin
 		values = append(values, rest[:end])
 		rest = rest[end:]
 	}
+}
+
+// emailSafeRowName reduces a row name to characters an address may carry.
+func emailSafeRowName(name string) string {
+	var safe strings.Builder
+	for _, symbol := range name {
+		switch {
+		case symbol >= 'a' && symbol <= 'z', symbol >= '0' && symbol <= '9':
+			safe.WriteRune(symbol)
+		case symbol >= 'A' && symbol <= 'Z':
+			safe.WriteRune(symbol + ('a' - 'A'))
+		default:
+			safe.WriteByte('-')
+		}
+	}
+	return safe.String()
 }

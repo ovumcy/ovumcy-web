@@ -402,7 +402,18 @@ func (repo *UserRepository) SaveWebhookSettings(ctx context.Context, userID uint
 	// which this statement is not a webhook_url writer, so it is also the one
 	// shape in which the delivery-mark judgement below has nothing to decide:
 	// the mark still describes the column the row still holds.
-	if !settings.KeepEncryptedURL {
+	//
+	// It also cannot arm. An endpoint kept because this instance could not read
+	// it is one delivery must not run against, and forcing the flag here makes
+	// that structural rather than a rule some caller has to remember: the service
+	// refuses the combination too, and this is what holds if a second caller ever
+	// arrives without it. The epoch still advances either way -- the per-kind
+	// opt-ins and the enable flag ARE delivery configuration, so a pass holding
+	// the previous snapshot has to lose its claim whether or not the endpoint
+	// column moved.
+	if settings.KeepEncryptedURL {
+		updates["webhook_enabled"] = false
+	} else {
 		updates["webhook_url"] = settings.EncryptedURL
 		if settings.ClearLastDeliveredAt {
 			updates["webhook_last_delivered_at"] = nil

@@ -254,7 +254,7 @@ func (service *EgressLedgerService) BuildEgressLedger(ctx context.Context, user 
 	feedState := resolveFeedState(feedStatus)
 
 	return EgressLedger{
-		Section: resolveEgressSectionState(webhookState, feedState),
+		Section: resolveEgressSectionState(webhookState, feedState, wouldDeliverIfOutboundRan(user, display)),
 		Webhook: EgressWebhookLedger{
 			State:           webhookState,
 			Enabled:         user.WebhookEnabled,
@@ -315,9 +315,24 @@ func resolveFeedState(status CalendarFeedStatus) EgressFeedState {
 	}
 }
 
+// wouldDeliverIfOutboundRan answers the one question the collapsed webhook state
+// cannot: whether THIS ROW would deliver on an instance that ran a pass.
+//
+// outbound_disabled is evaluated before the toggles, so on a default instance it
+// hides stored_off and stored_no_kinds entirely -- every readable endpoint
+// reports the same state whether the owner switched delivery on or off. The
+// heading needs the difference: a row the owner turned off is not a route out,
+// however the instance is configured.
+func wouldDeliverIfOutboundRan(user models.User, display WebhookURLDisplay) bool {
+	return display.Readability == WebhookURLReadable &&
+		strings.TrimSpace(display.Host) != "" &&
+		user.WebhookEnabled &&
+		(user.WebhookNotifyPeriod || user.WebhookNotifyOvulation)
+}
+
 // resolveEgressSectionState is the heading automaton. needs_attention dominates
 // so a working path never masks a broken one.
-func resolveEgressSectionState(webhook EgressWebhookState, feed EgressFeedState) EgressSectionState {
+func resolveEgressSectionState(webhook EgressWebhookState, feed EgressFeedState, wouldDeliver bool) EgressSectionState {
 	switch webhook {
 	case EgressWebhookUnreadable, EgressWebhookUnusable:
 		return EgressSectionNeedsAttention
@@ -326,12 +341,13 @@ func resolveEgressSectionState(webhook EgressWebhookState, feed EgressFeedState)
 	case EgressFeedUnknown, EgressFeedIssuedPreviousKey:
 		return EgressSectionNeedsAttention
 	}
-	// outbound_disabled counts here. The webhook state says this PROCESS runs no
-	// reminder pass; it does not say nothing can reach the endpoint, because the
-	// operator CLI delivers from cron on exactly the instances that ship the
-	// scheduler off. The heading errs toward warning: a stored, readable, enabled
-	// endpoint is a route out whoever triggers it.
-	if webhook == EgressWebhookArmed || webhook == EgressWebhookOutboundDisabled {
+	// outbound_disabled counts here, but only for a row that would deliver. The
+	// webhook state says this PROCESS runs no reminder pass; it does not say
+	// nothing can reach the endpoint, because the operator CLI delivers from cron
+	// on exactly the instances that ship the scheduler off. So the heading errs
+	// toward warning for an armed row -- and must not, for a row the owner
+	// switched off, which on a default instance wears the same state.
+	if webhook == EgressWebhookArmed || (webhook == EgressWebhookOutboundDisabled && wouldDeliver) {
 		return EgressSectionPathsEnabled
 	}
 	switch feed {
