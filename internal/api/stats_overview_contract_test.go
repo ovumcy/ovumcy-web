@@ -399,6 +399,44 @@ func TestStatsOverviewConfirmedOvulationIsIndependentOfOvulationExact(t *testing
 	}
 }
 
+// TestStatsOverviewSuppressedOvulationIsNeverReportedConfirmed pins the floor
+// PublishedOverviewStats' own doc comment names: ovulation_confirmed is
+// derived off the CLEARED stats, never off the ConfirmedCurrentCycleOvulation
+// call alone, so a suppressed projection cannot assert a measurement even if a
+// real BBT shift exists in the account's history. The fixture is
+// TestStatsOverviewPublishesTheConfirmedOvulationDayNotTheModelsProjection's,
+// with unpredictable-cycle mode layered on top — the same temperatures that
+// confirm a day there must confirm nothing here, matching the suppression
+// gate ConfirmedCurrentCycleOvulation already reads for itself
+// (FertilityProjectionSuppressed, cycle_signals.go).
+func TestStatsOverviewSuppressedOvulationIsNeverReportedConfirmed(t *testing.T) {
+	app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
+	user := createOnboardingTestUser(t, database, "overview-confirmed-suppressed@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	today := services.DateAtLocation(time.Now().In(time.UTC), time.UTC)
+	updateStatsOverviewUser(t, database, user, map[string]any{"track_bbt": true, "unpredictable_cycle": true})
+
+	seedStatsOverviewCycleHistory(t, database, user, today, 104, 76, 48, 20)
+	for _, offset := range []int{9, 8, 7, 6, 5, 4} {
+		seedStatsOverviewLog(t, database, models.DailyLog{UserID: user.ID, Date: today.AddDate(0, 0, -offset), BBT: new(36.20)})
+	}
+	for _, offset := range []int{3, 2, 1} {
+		seedStatsOverviewLog(t, database, models.DailyLog{UserID: user.ID, Date: today.AddDate(0, 0, -offset), BBT: new(36.50)})
+	}
+
+	_, payload := fetchStatsOverview(t, app, authCookie)
+
+	if !payload.Suppression.Fertility {
+		t.Fatal("suppression.fertility = false for an unpredictable-cycle account — fixture did not build the state it claims")
+	}
+	if payload.OvulationDate != nil {
+		t.Fatalf("ovulation_date = %s while suppression.fertility is true", *payload.OvulationDate)
+	}
+	if payload.OvulationConfirmed {
+		t.Fatal("ovulation_confirmed = true beside a null ovulation_date — a suppressed projection must never assert a measurement, even with a real BBT shift on record")
+	}
+}
+
 // TestStatsOverviewCarriesTheDisclaimerWithoutTheLanguageMiddleware pins the
 // framing against its own wiring.
 //
