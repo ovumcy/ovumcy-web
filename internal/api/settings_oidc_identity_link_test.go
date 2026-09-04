@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -10,6 +11,41 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/security"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
+
+// TestMapOIDCIdentityLinkReauthError unit-tests every branch of the pure
+// mapper directly, the same style TestMapOIDCLinkConfirmError already uses:
+// cheaper and more precise than driving a full HTTP round-trip for each
+// outcome, especially for the cross-user-claim and generic-unavailable arms
+// that a step-up flow cannot easily provoke end-to-end.
+func TestMapOIDCIdentityLinkReauthError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  error
+		want APIErrorSpec
+	}{
+		{name: "stale reauth maps to stale", err: services.ErrOIDCReauthStale, want: settingsOIDCReauthStaleErrorSpec()},
+		{name: "cross-user claim maps to claimed", err: services.ErrOIDCLinkFailed, want: settingsOIDCIdentityLinkClaimedErrorSpec()},
+		{name: "oidc disabled maps to unavailable", err: services.ErrOIDCDisabled, want: authOIDCUnavailableErrorSpec()},
+		{name: "oidc unavailable maps to unavailable", err: services.ErrOIDCUnavailable, want: authOIDCUnavailableErrorSpec()},
+		{name: "identity resolve failed maps to unavailable", err: services.ErrOIDCIdentityResolveFailed, want: authOIDCUnavailableErrorSpec()},
+		{name: "unknown error falls back to authentication failed", err: errors.New("unmapped exchange error"), want: authOIDCAuthenticationFailedErrorSpec()},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := mapOIDCIdentityLinkReauthError(tt.err)
+			if got.Key != tt.want.Key {
+				t.Fatalf("expected error key %q, got %q", tt.want.Key, got.Key)
+			}
+			if got.Status != tt.want.Status {
+				t.Fatalf("expected status %d, got %d", tt.want.Status, got.Status)
+			}
+		})
+	}
+}
 
 // End-to-end coverage of the Settings identity-link step-up (issue #701): the
 // authenticated replacement for the public /auth/oidc/link-confirm route,
@@ -61,6 +97,122 @@ func TestOIDCIdentityLinkStepupStartRefusesWithoutALiveSession(t *testing.T) {
 	}
 	if fixture.oidcStub.lastReauthState != "" {
 		t.Fatal("expected no reauth to have been started without a session")
+	}
+}
+
+// TestOIDCIdentityLinkStepupStartRefusesWhenOIDCIsDisabled covers the branch
+// StartOIDCIdentityLinkStepup takes when the provider is not configured at
+// all — the same reason the Settings card itself is hidden in that case
+// (TestSettingsPageShowsOIDCLinkCardOnlyWhenOIDCIsEnabled), pinned here at
+// the endpoint a client could still reach directly.
+func TestOIDCIdentityLinkStepupStartRefusesWhenOIDCIsDisabled(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "settings-oidc-link-provider-disabled@example.com")
+	fixture.oidcStub.enabled = false
+
+	response := postOIDCIdentityLinkStepupStart(t, fixture)
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode == http.StatusOK {
+		t.Fatal("expected the start to refuse when the provider is disabled")
+	}
+	if fixture.oidcStub.lastReauthState != "" {
+		t.Fatal("expected no reauth to have been started when the provider is disabled")
+	}
+}
+
+// TestOIDCIdentityLinkStepupStartSurfacesAProviderFailure covers the branch
+// where StartReauth itself fails (provider unreachable): the step-up cookie
+// must not be left behind arming a flow the owner can never complete.
+func TestOIDCIdentityLinkStepupStartSurfacesAProviderFailure(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "settings-oidc-link-start-failure@example.com")
+	fixture.oidcStub.reauthStartErr = services.ErrOIDCUnavailable
+
+	response := postOIDCIdentityLinkStepupStart(t, fixture)
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode == http.StatusOK {
+		t.Fatal("expected the start to fail when the provider is unreachable")
+	}
+	for _, cookie := range response.Cookies() {
+		if cookie.Name == oidcStepupCookieName && cookie.Value != "" {
+			t.Fatal("expected no usable step-up cookie after a failed start")
+		}
+	}
+}
+
+// TestOIDCIdentityLinkStepupStartReturnsAnInterstitialForBrowsers covers the
+// non-JSON arm: a settings form submit cannot redirect straight to the
+// provider, because the page's CSP pins form-action to 'self' across the
+// redirect chain.
+func TestOIDCIdentityLinkStepupStartReturnsAnInterstitialForBrowsers(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "settings-oidc-link-start-browser@example.com")
+
+	csrfCookie, csrfToken := fixture.settingsCSRF(t)
+	form := url.Values{"csrf_token": {csrfToken}}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users/current/oidc/link/step-up", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Accept", "text/html")
+	request.Header.Set("Cookie", settingsCookieHeader(fixture.authCookie, csrfCookie))
+
+	response := mustAppResponse(t, fixture.app, request)
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 with an interstitial for a browser submit, got %d", response.StatusCode)
+	}
+	body := mustReadBodyString(t, response.Body)
+	if !strings.Contains(body, fixture.oidcStub.reauthURL) {
+		t.Fatalf("expected the interstitial to carry the provider URL, got %q", body)
+	}
+}
+
+// TestOIDCIdentityLinkStepupCallbackRefusesAMismatchedState pins the state
+// check on the callback: a step-up cookie presented with someone else's state
+// parameter must not authorize the link it names.
+func TestOIDCIdentityLinkStepupCallbackRefusesAMismatchedState(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "settings-oidc-link-state-mismatch@example.com")
+
+	startResponse := postOIDCIdentityLinkStepupStart(t, fixture)
+	defer func() { _ = startResponse.Body.Close() }()
+	stepupCookie := readStepupCookie(t, startResponse)
+
+	callbackResponse := postOIDCStepupCallback(t, fixture, stepupCookie, "not-the-state-that-was-minted", "callback-code")
+	defer func() { _ = callbackResponse.Body.Close() }()
+
+	if fixture.oidcStub.lastConfirmLinkUserID != 0 {
+		t.Fatal("a mismatched state must link nothing")
+	}
+}
+
+// TestOIDCIdentityLinkStepupCallbackRefusesAProviderError covers the arm
+// where the provider reports a failure in the callback itself.
+func TestOIDCIdentityLinkStepupCallbackRefusesAProviderError(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "settings-oidc-link-provider-error@example.com")
+
+	startResponse := postOIDCIdentityLinkStepupStart(t, fixture)
+	defer func() { _ = startResponse.Body.Close() }()
+	stepupCookie := readStepupCookie(t, startResponse)
+	state := extractStepupCallbackState(t, fixture)
+
+	form := url.Values{"state": {state}, "code": {""}, "error": {"access_denied"}}
+	request := httptest.NewRequest(http.MethodPost, "/auth/oidc/callback", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Cookie", joinCookieHeader(fixture.authCookie, stepupCookie))
+	response := mustAppResponse(t, fixture.app, request)
+	defer func() { _ = response.Body.Close() }()
+
+	if fixture.oidcStub.lastConfirmLinkUserID != 0 {
+		t.Fatal("a provider error must link nothing")
 	}
 }
 

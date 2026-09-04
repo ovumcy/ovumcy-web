@@ -222,6 +222,28 @@ func TestTryRunCLICommandWithHandlersLinkOIDCIdentity(t *testing.T) {
 		}
 	})
 
+	t.Run("reports an invalid COOKIE_SECURE value", func(t *testing.T) {
+		setValidBootEnv(t)
+		t.Setenv("COOKIE_SECURE", "not-a-bool")
+		handled, err := tryRunCLICommandWithHandlers(baseArgs, cliCommandHandlers{
+			runLinkOIDCIdentity: func(db.Config, security.OIDCConfig, []string) error { return nil },
+		})
+		if !handled || err == nil {
+			t.Fatalf("expected handled COOKIE_SECURE error, got (%t, %v)", handled, err)
+		}
+	})
+
+	t.Run("reports an invalid REGISTRATION_MODE value", func(t *testing.T) {
+		setValidBootEnv(t)
+		t.Setenv("REGISTRATION_MODE", "bogus")
+		handled, err := tryRunCLICommandWithHandlers(baseArgs, cliCommandHandlers{
+			runLinkOIDCIdentity: func(db.Config, security.OIDCConfig, []string) error { return nil },
+		})
+		if !handled || err == nil {
+			t.Fatalf("expected handled REGISTRATION_MODE error, got (%t, %v)", handled, err)
+		}
+	})
+
 	t.Run("dispatches to the handler with the resolved oidc config", func(t *testing.T) {
 		setValidBootEnv(t)
 		t.Setenv("OIDC_ENABLED", "true")

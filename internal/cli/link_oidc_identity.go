@@ -157,7 +157,11 @@ func runLinkOIDCIdentityCommand(databaseConfig db.Config, oidcConfig security.OI
 	}
 	sqlDB, err := database.DB()
 	if err != nil {
+		// codecov:ignore:start -- defensive: gorm's DB() accessor fails only if the
+		// dialector has no underlying *sql.DB, which neither the sqlite nor the
+		// postgres driver this command can be configured with ever lacks.
 		return fmt.Errorf("database init failed: %w", err)
+		// codecov:ignore:end
 	}
 	defer func() {
 		_ = sqlDB.Close()
@@ -220,15 +224,16 @@ func mapLinkOIDCIdentityLookupError(err error, opts linkOIDCIdentityOptions, nor
 }
 
 // mapLinkOIDCIdentityLinkError translates OIDCLoginService.ConfirmAndLinkIdentity's
-// sentinels into operator-facing wording.
+// sentinels into operator-facing wording. ErrOIDCIdentityResolveFailed (a
+// storage failure resolving the identity lookup) shares the default arm
+// deliberately: both wrap the same way, and giving it its own case would be
+// two branches a test has to prove behave identically rather than one.
 func mapLinkOIDCIdentityLinkError(err error) error {
 	switch {
 	case errors.Is(err, services.ErrOIDCDisabled):
 		return errors.New("OIDC is not enabled on this instance (set OIDC_ENABLED=true)")
 	case errors.Is(err, services.ErrOIDCLinkFailed):
 		return errors.New("that (issuer, subject) pair is already linked to a different account")
-	case errors.Is(err, services.ErrOIDCIdentityResolveFailed):
-		return fmt.Errorf("link oidc identity: %w", err)
 	default:
 		return fmt.Errorf("link oidc identity: %w", err)
 	}
