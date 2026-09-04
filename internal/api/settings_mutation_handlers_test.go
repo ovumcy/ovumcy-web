@@ -387,12 +387,21 @@ func TestCompleteLocalPasswordSetupReauth_SuccessIssuesRecoveryCode(t *testing.T
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	// Success path: 303 -> /recovery-code with the recovery-code issuance cookie.
-	if resp.StatusCode != http.StatusSeeOther {
-		t.Fatalf("stepup success status = %d, want 303 (body %q)", resp.StatusCode, mustReadBodyString(t, resp.Body))
+	// Success path: a same-origin handoff to /recovery-code with the
+	// recovery-code issuance cookie. It is a document and not a 303 because the
+	// reveal's first-party guard reads the whole redirect CHAIN, which this
+	// provider callback starts off-origin —
+	// TestOIDCCompleteLocalPasswordSetupHandsTheRevealOverSameOrigin is the
+	// regression for the refusal that shape avoids.
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("stepup success status = %d, want 200 (body %q)", resp.StatusCode, mustReadBodyString(t, resp.Body))
 	}
-	if loc := resp.Header.Get("Location"); loc != "/recovery-code" {
-		t.Fatalf("stepup success redirect = %q, want /recovery-code", loc)
+	body := mustReadBodyString(t, resp.Body)
+	if !strings.Contains(body, `http-equiv="refresh"`) || !strings.Contains(body, "/recovery-code") {
+		t.Fatalf("stepup success body = %q, want a meta-refresh handoff to /recovery-code", body)
+	}
+	if loc := resp.Header.Get("Location"); loc != "" {
+		t.Fatalf("stepup success must not redirect into the guarded reveal; got Location %q", loc)
 	}
 	if cookie := responseCookie(resp.Cookies(), recoveryCodeCookieName); cookie == nil || strings.TrimSpace(cookie.Value) == "" {
 		t.Fatalf("stepup success must set the %s issuance cookie", recoveryCodeCookieName)

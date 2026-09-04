@@ -111,7 +111,12 @@ func (handler *Handler) renderRecoveryCodeResponseWithContinuePath(c fiber.Ctx, 
 	return handler.renderRecoveryCodeResponseWithSurface(c, user, recoveryCode, status, continuePath, recoveryCodeSurfaceDedicated)
 }
 
-func (handler *Handler) renderRecoveryCodeResponseWithSurface(c fiber.Ctx, user *models.User, recoveryCode string, status int, continuePath string, surface string) error {
+// stageRecoveryCodeReveal seals the one-time reveal and answers the path that
+// displays it. It is split out from the redirect below because one caller — the
+// OIDC step-up that enrolls a local password — must hand the browser over a
+// same-origin document instead of a 303 (completeLocalPasswordSetupReauth says
+// why), and the sealing is identical either way.
+func (handler *Handler) stageRecoveryCodeReveal(c fiber.Ctx, user *models.User, recoveryCode string, continuePath string, surface string) (string, error) {
 	// A recovery code is only ever revealed back to the account it was minted
 	// for, so the reveal cookie must carry that account's id. A caller with no
 	// resolved user leaves the id zero, which the sealer refuses outright — such
@@ -122,10 +127,17 @@ func (handler *Handler) renderRecoveryCodeResponseWithSurface(c fiber.Ctx, user 
 		userID = user.ID
 	}
 	if err := handler.setRecoveryCodeIssuanceCookie(c, userID, recoveryCode, continuePath, surface); err != nil {
+		return "", err
+	}
+	return recoveryCodeSurfacePath(surface), nil
+}
+
+func (handler *Handler) renderRecoveryCodeResponseWithSurface(c fiber.Ctx, user *models.User, recoveryCode string, status int, continuePath string, surface string) error {
+	nextPath, err := handler.stageRecoveryCodeReveal(c, user, recoveryCode, continuePath, surface)
+	if err != nil {
 		return handler.respondMappedError(c, authRecoveryCodePersistErrorSpec())
 	}
 
-	nextPath := recoveryCodeSurfacePath(surface)
 	if acceptsJSON(c) {
 		return c.Status(status).JSON(fiber.Map{
 			"ok":        true,
