@@ -17,6 +17,7 @@
     *not* return — and each case also asserts a status the walk must still find, so a run that
     reached nothing cannot pass as a run that found nothing. The switch narrowing matches its JSON
     arm by the constant's NAME rather than one spelling of it, and walks the initializer, because
-    it is the one narrowing here whose misses hide a JSON status instead of an HTML one. The sweep itself now fails when it
-    judged fewer than 40 `/api/v1` operations, because a route table that failed to load and a
-    clean tree print the same nothing.
+    it is the one narrowing here whose misses hide a JSON status instead of an HTML one. The sweep
+    itself now fails when it judged fewer `/api/v1` operations than `docs/openapi.yaml` declares —
+    a floor read out of the spec rather than written beside it, because a route table that failed
+    to load and a clean tree print the same nothing.
