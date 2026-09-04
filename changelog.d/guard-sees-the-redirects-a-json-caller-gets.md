@@ -12,8 +12,11 @@
   its JSON arm. Dropping the exclusion without those two reddened 20 operations, 18 of them falsely.
   - Two things stop the quieter guard from being a blind one. A new test,
     `TestStatusReachTellsARedirectJSONCallersGetFromOneTheyDoNot`, runs the analyser over source
-    written for it — a bare fall-through, an `acceptsJSON` early return, the shared switch, and an
-    `acceptsJSON` arm that does *not* return — and each case also asserts a status the walk must
-    still find, so a run that reached nothing cannot pass as a run that found nothing. The sweep itself now fails when it
+    written for it — a bare fall-through, an `acceptsJSON` early return, the shared switch written
+    both qualified and not, that switch with an initializer, and an `acceptsJSON` arm that does
+    *not* return — and each case also asserts a status the walk must still find, so a run that
+    reached nothing cannot pass as a run that found nothing. The switch narrowing matches its JSON
+    arm by the constant's NAME rather than one spelling of it, and walks the initializer, because
+    it is the one narrowing here whose misses hide a JSON status instead of an HTML one. The sweep itself now fails when it
     judged fewer than 40 `/api/v1` operations, because a route table that failed to load and a
     clean tree print the same nothing.
