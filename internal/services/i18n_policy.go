@@ -160,10 +160,13 @@ var authErrorTranslationKeys = map[string]string{ // #nosec G101 -- false positi
 	// re-issuing this device's session, which describes nothing the owner can act
 	// on. The auth pages flash the same key and showed the same blank.
 	"failed to create session": "common.error.internal_error",
-	// Same reasoning, one step later in the same callback: the local password is
-	// already enrolled when the reveal cookie fails to seal, so the refusal costs
-	// the display of the fresh recovery code and names nothing the owner can act
-	// on beyond regenerating it from settings.
+	// Same reasoning, one surface over. This spec is raised when a freshly
+	// minted recovery code cannot be sealed for its one-time display, which is
+	// an AEAD failure: nothing the owner supplied and nothing she can correct.
+	// The generic copy is deliberate rather than a sentence per raiser — the
+	// four that raise it (local-password enrollment, recovery-code
+	// regeneration, the reset redeem, the register pickup) differ in what they
+	// do next, and none of that difference is hers to act on.
 	"failed to persist recovery code": "common.error.internal_error",
 	// The two internal outcomes of mapSettingsPasswordChangeError. They reach the
 	// settings page from BOTH password surfaces — the change-password form, which
