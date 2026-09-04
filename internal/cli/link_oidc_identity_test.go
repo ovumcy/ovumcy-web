@@ -391,3 +391,81 @@ func dropCLILinkOIDCTable(t *testing.T, databasePath string, table string) {
 		t.Fatalf("drop table %s: %v", table, err)
 	}
 }
+
+// TestRunLinkOIDCIdentityCommandSucceedsWithNoCapturedOutput covers the
+// output==nil branch: RunLinkOIDCIdentityCommand's real callers pass
+// os.Stdout, but runLinkOIDCIdentityCommand's own nil-safety (mirroring
+// runResetPasswordCommand's) has to hold on a genuinely successful run, not
+// only on the early-refusal paths the other tests pass nil through.
+func TestRunLinkOIDCIdentityCommandSucceedsWithNoCapturedOutput(t *testing.T) {
+	t.Parallel()
+
+	databasePath := filepath.Join(t.TempDir(), "cli-link-oidc-nil-output.db")
+	user := createCLILinkOIDCUser(t, databasePath, "cli-link-nil-output@example.com")
+
+	err := runLinkOIDCIdentityCommand(
+		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
+		validLinkOIDCIdentityConfig(),
+		[]string{"--id", strconv.FormatUint(uint64(user.ID), 10), "--issuer", "https://idp.example.com", "--subject", "cli-linked-nil-output"},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("runLinkOIDCIdentityCommand returned error: %v", err)
+	}
+	if _, found := loadCLILinkedOIDCIdentity(t, databasePath, user.ID); !found {
+		t.Fatal("expected the identity to be persisted even with no captured output")
+	}
+}
+
+// TestRunLinkOIDCIdentityCommandRefusesACrossUserClaim drives a REAL
+// ConfirmAndLinkIdentity failure: the same (issuer, subject) pair, already
+// linked to one account, cannot be linked to a second one by a later
+// invocation of this command.
+func TestRunLinkOIDCIdentityCommandRefusesACrossUserClaim(t *testing.T) {
+	t.Parallel()
+
+	databasePath := filepath.Join(t.TempDir(), "cli-link-oidc-cross-user.db")
+	firstUser := createCLILinkOIDCUser(t, databasePath, "cli-link-cross-user-first@example.com")
+	secondUser := createCLILinkOIDCUser(t, databasePath, "cli-link-cross-user-second@example.com")
+
+	if err := runLinkOIDCIdentityCommand(
+		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
+		validLinkOIDCIdentityConfig(),
+		[]string{"--id", strconv.FormatUint(uint64(firstUser.ID), 10), "--issuer", "https://idp.example.com", "--subject", "shared-subject"},
+		nil,
+	); err != nil {
+		t.Fatalf("expected the first link to succeed, got %v", err)
+	}
+
+	err := runLinkOIDCIdentityCommand(
+		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
+		validLinkOIDCIdentityConfig(),
+		[]string{"--id", strconv.FormatUint(uint64(secondUser.ID), 10), "--issuer", "https://idp.example.com", "--subject", "shared-subject"},
+		nil,
+	)
+	if err == nil || !strings.Contains(err.Error(), "already linked to a different account") {
+		t.Fatalf("expected a cross-user-claim refusal, got %v", err)
+	}
+	if identity, found := loadCLILinkedOIDCIdentity(t, databasePath, secondUser.ID); found {
+		t.Fatalf("did not expect the second account to gain a binding, got %+v", identity)
+	}
+}
+
+// TestRunLinkOIDCIdentityCommandExportedWrapperUsesStdout mirrors
+// TestRunResetPasswordCommandUpdatesPasswordFromSecurePromptWithoutLeakingPlaintext's
+// coverage of RunResetPasswordCommand: the exported entry point is a thin
+// os.Stdout wrapper that no test otherwise calls, since every other test
+// here reaches straight for the unexported function to control output
+// capture.
+func TestRunLinkOIDCIdentityCommandExportedWrapperUsesStdout(t *testing.T) {
+	t.Parallel()
+
+	err := RunLinkOIDCIdentityCommand(
+		db.Config{Driver: db.DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "unused.db")},
+		validLinkOIDCIdentityConfig(),
+		nil,
+	)
+	if err == nil {
+		t.Fatal("expected a usage error for empty args")
+	}
+}
