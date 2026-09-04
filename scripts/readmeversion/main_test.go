@@ -45,17 +45,29 @@ var ovumcyImageRef = regexp.MustCompile(`^ghcr\.io/ovumcy/ovumcy-web:v(\d+\.\d+\
 // workflow resolves through `go-version-file: go.mod`.
 var goDirective = regexp.MustCompile(`(?m)^go[ \t]+(\d+\.\d+(?:\.\d+)?)[ \t]*$`)
 
+// readmeRequirementsBlock captures the bullet list under the `Requirements:`
+// line of the manual build instructions. The Go entry is found INSIDE this
+// block rather than anywhere in the file, because "- Go " is not a
+// collision-free key the way envImageAssignment's OVUMCY_IMAGE is: a bullet
+// reading "- Go modules are vendored" is ordinary prose, and a scan over the
+// whole README would read it as a version statement and go red on it.
+var readmeRequirementsBlock = regexp.MustCompile(`(?ms)^Requirements:\n\n((?:[ \t]*-[^\n]*\n)+)`)
+
 // readmeGoVersionSites are the places README.md tells a reader which Go a
 // source build needs. Each keys on the LABEL and captures to a delimiter
 // rather than matching a version shape, for the same reason envImageAssignment
 // does: a pattern anchored to the shape it expects SKIPS a site written any
 // other way, and a skipped site is precisely the one that drifts unnoticed.
+// `within`, when set, narrows the search to submatch 1 of that pattern first —
+// the label alone is then only as specific as it needs to be inside the block
+// it belongs to.
 var readmeGoVersionSites = []struct {
-	what string
-	re   *regexp.Regexp
+	what   string
+	within *regexp.Regexp
+	re     *regexp.Regexp
 }{
-	{"the Go version badge", regexp.MustCompile(`img\.shields\.io/badge/Go-([^-]*)-`)},
-	{"the Requirements list", regexp.MustCompile(`(?m)^[ \t]*-[ \t]+Go[ \t]+(\S+)`)},
+	{"the Go version badge", nil, regexp.MustCompile(`img\.shields\.io/badge/Go-([^-]*)-`)},
+	{"the Requirements list", readmeRequirementsBlock, regexp.MustCompile(`(?m)^[ \t]*-[ \t]+Go[ \t]+(\S+)`)},
 }
 
 // TestReadmeGoVersionMatchesGoMod asserts both README.md statements of the
@@ -82,7 +94,16 @@ func TestReadmeGoVersionMatchesGoMod(t *testing.T) {
 
 	sites := 0
 	for _, site := range readmeGoVersionSites {
-		for _, m := range site.re.FindAllSubmatch(content, -1) {
+		scope := content
+		if site.within != nil {
+			block := site.within.FindSubmatch(content)
+			if block == nil {
+				t.Errorf("README.md no longer has the block %s lives in, so that site is no longer being checked at all", site.what)
+				continue
+			}
+			scope = block[1]
+		}
+		for _, m := range site.re.FindAllSubmatch(scope, -1) {
 			raw := strings.TrimSpace(string(m[1]))
 			got := strings.TrimSuffix(raw, "+")
 			if got == "" || got[0] < '0' || got[0] > '9' {
@@ -150,6 +171,29 @@ func TestReadmeGoVersionSitesKeyOnTheirLabel(t *testing.T) {
 				t.Fatalf("%q: matched %q, but this line states no Go version", tc.line, m[1])
 			}
 		})
+	}
+}
+
+// TestRequirementsSiteIgnoresProseOutsideItsBlock is the regression for the
+// label collision. "- Go " is not a collision-free key the way OVUMCY_IMAGE
+// is: a bullet reading "- Go modules are vendored" is ordinary prose, and an
+// unscoped scan reads it as a version statement and goes red on it. Confining
+// the site to the Requirements block leaves only the entry that belongs to it.
+func TestRequirementsSiteIgnoresProseOutsideItsBlock(t *testing.T) {
+	site := readmeGoVersionSites[1]
+	readme := []byte("## Notes\n\n- Go modules are vendored\n- Go generate is not used\n\n" +
+		"Requirements:\n\n- Go 1.27.1+\n- Node.js 22+\n\n```bash\nmake build\n```\n")
+
+	block := site.within.FindSubmatch(readme)
+	if block == nil {
+		t.Fatal("Requirements block not found in the fixture, so the site would go unchecked")
+	}
+	matches := site.re.FindAllSubmatch(block[1], -1)
+	if len(matches) != 1 {
+		t.Fatalf("expected exactly the Requirements entry, got %d matches", len(matches))
+	}
+	if got := string(matches[0][1]); got != "1.27.1+" {
+		t.Fatalf("captured %q, want %q", got, "1.27.1+")
 	}
 }
 
