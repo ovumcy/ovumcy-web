@@ -160,6 +160,15 @@ var authErrorTranslationKeys = map[string]string{ // #nosec G101 -- false positi
 	// re-issuing this device's session, which describes nothing the owner can act
 	// on. The auth pages flash the same key and showed the same blank.
 	"failed to create session": "common.error.internal_error",
+	// The two internal outcomes of mapSettingsPasswordChangeError. They reach the
+	// settings page from BOTH password surfaces — the change-password form, which
+	// showed the raw English key in its HTMX fragment, and the local-password
+	// enrollment step-up, whose callback flashes them across the redirect to
+	// /settings. Each says the credential was not written and nothing changed, so
+	// unlike "failed to create session" above they describe something the owner
+	// can act on: submit the pair again.
+	"failed to secure password": "settings.error.password_secure_failed",
+	"failed to update password": "settings.error.password_update_failed",
 }
 
 var settingsStatusTranslationKeys = map[string]string{
