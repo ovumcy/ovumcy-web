@@ -82,17 +82,19 @@ var readmeGoVersionSites = []struct {
 // 1.27.1 bumps unchanged. Two hand corrections of the same two lines is the
 // argument for a guard rather than a third.
 //
-// It fails closed: finding no site at all is a failure, so a rewording that
-// stops matching cannot quietly stop being checked. A captured value that does
-// not begin with a digit is reported rather than skipped — the same rule the
-// image-pin walk applies, since a value nothing can parse is a value nobody is
-// comparing.
+// It fails closed PER SITE: each one must yield at least one comparison, so a
+// rewording that stops matching is reported by name rather than absorbed by
+// the site that still matches. A single total across both sites would be the
+// trap envImageAssignment's comment describes — the remaining match keeps the
+// count non-zero and the guard reports success having checked half of what it
+// names. A captured value that does not begin with a digit is reported rather
+// than skipped, the same rule the image-pin walk applies, since a value
+// nothing can parse is a value nobody is comparing.
 func TestReadmeGoVersionMatchesGoMod(t *testing.T) {
 	root := repoRoot(t)
 	want := goModVersion(t, root)
 	content := readmeContent(t, root)
 
-	sites := 0
 	for _, site := range readmeGoVersionSites {
 		scope := content
 		if site.within != nil {
@@ -103,6 +105,12 @@ func TestReadmeGoVersionMatchesGoMod(t *testing.T) {
 			}
 			scope = block[1]
 		}
+
+		// Counted PER SITE, not across all of them. A single total is the trap
+		// envImageAssignment's comment describes: one site going dark stays
+		// invisible while the other keeps the count non-zero, and the guard
+		// reports success having checked half of what it names.
+		compared := 0
 		for _, m := range site.re.FindAllSubmatch(scope, -1) {
 			raw := strings.TrimSpace(string(m[1]))
 			got := strings.TrimSuffix(raw, "+")
@@ -110,7 +118,7 @@ func TestReadmeGoVersionMatchesGoMod(t *testing.T) {
 				t.Errorf("README.md %s reads %q, which is not a Go version, so nothing can compare it against go.mod", site.what, raw)
 				continue
 			}
-			sites++
+			compared++
 			if got != want {
 				t.Errorf(
 					"README.md %s states Go %s while go.mod requires %s; a reader building from source installs a toolchain that cannot build this module, and no workflow catches it because every one of them resolves its toolchain with go-version-file: go.mod",
@@ -118,9 +126,9 @@ func TestReadmeGoVersionMatchesGoMod(t *testing.T) {
 				)
 			}
 		}
-	}
-	if sites == 0 {
-		t.Fatal("no Go version statement found in README.md: the drift guard has nothing to check")
+		if compared == 0 {
+			t.Errorf("README.md %s matched no Go version, so that site is no longer being compared against go.mod", site.what)
+		}
 	}
 }
 
