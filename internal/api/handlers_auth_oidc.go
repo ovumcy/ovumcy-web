@@ -278,21 +278,23 @@ func boolString(value bool) string {
 // form-action does not apply — the same technique the provider-logout bridge
 // uses. target is server-built (config + random OIDC state), never user input,
 // but is HTML-escaped as defense-in-depth for the attribute context.
-// respondOIDCSameOriginHandoff answers with the interstitial below, so that the
-// navigation to target is initiated by THIS origin. Both directions of an OIDC
-// hop need that for their own reason — outbound, CSP `form-action 'self'` is
-// enforced across a form navigation's whole redirect chain; inbound, the
-// reveal's first-party guard reads Sec-Fetch-Site over that same chain — and
-// naming the answer is what lets a static guard tell it from a bare
-// c.SendString, which is not a way back to a page.
-func respondOIDCSameOriginHandoff(c fiber.Ctx, target string) error {
-	c.Type("html", "utf-8")
-	return c.SendString(oidcSameOriginRedirectInterstitial(target))
-}
-
 func oidcSameOriginRedirectInterstitial(target string) string {
 	return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=` +
 		html.EscapeString(target) + `"></head><body></body></html>`
+}
+
+// respondOIDCSameOriginHandoff answers with that interstitial, and is the only
+// way the OIDC handlers emit it. The INBOUND direction needs it for a second
+// reason the comment above does not cover: the recovery-code reveal the
+// enrollment callback ends on claims the account's one-time reveal mark, only a
+// same-origin initiator may spend it, and Sec-Fetch-Site is computed over the
+// whole redirect chain — which a provider callback starts off-origin, so a 303
+// from there is refused. Naming the answer is also what lets the step-up
+// terminal guard tell it from a bare c.SendString, which is not a way back to a
+// page (allowedStepupCompletionTerminals).
+func respondOIDCSameOriginHandoff(c fiber.Ctx, target string) error {
+	c.Type("html", "utf-8")
+	return c.SendString(oidcSameOriginRedirectInterstitial(target))
 }
 
 func (handler *Handler) ShowOIDCLogoutBridge(c fiber.Ctx) error {
