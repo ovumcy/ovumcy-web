@@ -2491,10 +2491,15 @@ paths:
       summary: Begin the OIDC step-up flow to enable a local password (owner only, OIDC-only).
       description: |
         Validates the new password pair, stashes its bcrypt hash in a sealed
-        cookie, and returns the provider's authorize URL. The browser follows
-        the redirect; the provider re-authenticates the user; the callback at
+        cookie, and returns the provider's authorize URL. The caller sends the
+        browser there; the provider re-authenticates the user; the callback at
         `/auth/oidc/callback` finalizes the local password and mints a
         recovery code. See [docs/oidc.md "How Auto-Provision Works"](oidc.md#how-auto-provision-works).
+
+        A request that does not accept JSON (an ordinary form submit) is
+        answered with a same-origin interstitial page instead of the JSON body,
+        because the settings page CSP pins `form-action` to `'self'` across the
+        whole redirect chain.
       requestBody:
         required: true
         content:
@@ -2506,8 +2511,6 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/StartLocalPasswordSetupResponse' }
-        '303':
-          description: "Browser redirect to the provider authorize URL when `Accept: application/json` is not set."
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '400': { $ref: '#/components/responses/ValidationError' }
@@ -2529,14 +2532,17 @@ paths:
 
         An account that **has** a local password is refused here: its erasure
         gate stays the password, so the SSO path can never be used to bypass it.
+
+        A request that does not accept JSON (an ordinary form submit) is
+        answered with a same-origin interstitial page instead of the JSON body,
+        because the settings page CSP pins `form-action` to `'self'` across the
+        whole redirect chain.
       responses:
         '200':
           description: OIDC redirect URL emitted.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/StartLocalPasswordSetupResponse' }
-        '303':
-          description: "Browser redirect to the provider authorize URL when `Accept: application/json` is not set."
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '400':
@@ -2559,14 +2565,17 @@ paths:
         `POST /api/v1/users/current/data-wipe/step-up`; the same rules apply,
         including the refusal for accounts that hold a local password. The
         callback deletes the account and retracts the session.
+
+        A request that does not accept JSON (an ordinary form submit) is
+        answered with a same-origin interstitial page instead of the JSON body,
+        because the settings page CSP pins `form-action` to `'self'` across the
+        whole redirect chain.
       responses:
         '200':
           description: OIDC redirect URL emitted.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/StartLocalPasswordSetupResponse' }
-        '303':
-          description: "Browser redirect to the provider authorize URL when `Accept: application/json` is not set."
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '400':
