@@ -9,7 +9,8 @@
   exclusion is gone and the surface question is answered where it is asked: the walk now reads an
   `if acceptsJSON(c) { … return … }` as ending the JSON caller's request, so later statements in
   that block are the HTML surface, and reads `switch responseFormat(c)` the same way, walking only
-  its JSON arm. Dropping the exclusion without those two reddened 20 operations, 18 of them falsely.
+  its JSON arm. Measured on `10d4b7c8`, before either fix: dropping the exclusion alone reddened 20
+  operations, of which the two 2FA ones were the only real findings; with both narrowings, none.
   - Two things stop the quieter guard from being a blind one. A new test,
     `TestStatusReachTellsARedirectJSONCallersGetFromOneTheyDoNot`, runs the analyser over source
     written for it — a bare fall-through, an `acceptsJSON` early return, the shared switch written
