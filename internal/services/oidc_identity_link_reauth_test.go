@@ -121,3 +121,46 @@ func TestOIDCLoginServiceCompleteIdentityLinkReauthRequiresTargetUserID(t *testi
 		t.Fatal("did not expect an exchange or Create() with no target user")
 	}
 }
+
+// TestOIDCLoginServiceCompleteIdentityLinkReauthRequiresNonEmptyInputs guards
+// the callback-invalid arm: an empty code, verifier, or nonce refuses before
+// ever reaching the provider.
+func TestOIDCLoginServiceCompleteIdentityLinkReauthRequiresNonEmptyInputs(t *testing.T) {
+	t.Parallel()
+
+	service := NewOIDCLoginService(&stubOIDCProviderClient{enabled: true}, &stubOIDCIdentityStore{}, &stubOIDCUserStore{}, nil)
+
+	cases := []struct {
+		name         string
+		code         string
+		codeVerifier string
+		nonce        string
+	}{
+		{name: "empty code", code: "", codeVerifier: "verifier", nonce: "nonce"},
+		{name: "empty verifier", code: "code", codeVerifier: "", nonce: "nonce"},
+		{name: "empty nonce", code: "code", codeVerifier: "verifier", nonce: ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := service.CompleteIdentityLinkReauth(context.Background(), tc.code, tc.codeVerifier, tc.nonce, 42, 5*time.Minute, time.Now())
+			if !errors.Is(err, ErrOIDCCallbackInvalid) {
+				t.Fatalf("expected ErrOIDCCallbackInvalid, got %v", err)
+			}
+		})
+	}
+}
+
+// TestOIDCLoginServiceCompleteIdentityLinkReauthMapsExchangeFailure covers the
+// arm where the provider itself refuses the code exchange.
+func TestOIDCLoginServiceCompleteIdentityLinkReauthMapsExchangeFailure(t *testing.T) {
+	t.Parallel()
+
+	client := &stubOIDCProviderClient{enabled: true, exchangeErr: ErrOIDCUnavailable}
+	service := NewOIDCLoginService(client, &stubOIDCIdentityStore{}, &stubOIDCUserStore{}, nil)
+
+	err := service.CompleteIdentityLinkReauth(context.Background(), "code", "verifier", "nonce", 42, 5*time.Minute, time.Now())
+	if !errors.Is(err, ErrOIDCAuthenticationFailed) {
+		t.Fatalf("expected ErrOIDCAuthenticationFailed, got %v", err)
+	}
+}
