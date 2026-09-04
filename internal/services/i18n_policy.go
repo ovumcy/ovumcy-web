@@ -140,6 +140,26 @@ var authErrorTranslationKeys = map[string]string{ // #nosec G101 -- false positi
 	"failed to save onboarding step":                  "onboarding.error.generic",
 	"failed to finish onboarding":                     "onboarding.error.generic",
 	"onboarding does not accept an age group":         "onboarding.error.age_group_removed",
+
+	// The settings step-ups (local-password enrollment, erasure, OIDC identity
+	// linking) finish on /auth/oidc/callback and flash their refusal across a
+	// redirect to /settings, where it is resolved through THIS map — the settings
+	// page keeps no second table of its own. The six keys below are the ones only
+	// those callbacks produce, so until they were listed here each rendered an
+	// empty banner: the owner saw an unchanged settings page and could not tell a
+	// refused step-up from a completed one. Regression:
+	// api.TestEverySettingsStepupRefusalKeyMapsToLocalizedCopy.
+	"oidc reauth identity mismatch":         "settings.error.oidc_reauth_mismatch",
+	"oidc reauth stale":                     "settings.error.oidc_reauth_stale",
+	"oidc identity already linked":          "settings.error.oidc_identity_already_linked",
+	"erasure requires the account password": "settings.error.erasure_requires_password",
+	"failed to clear data":                  "settings.error.clear_data_failed",
+	"failed to delete account":              "settings.error.delete_account_failed",
+	// Reuses the transport catalogue's generic internal-error copy rather than
+	// adding a seventh sentence: the spec is raised by an AEAD seal failure while
+	// re-issuing this device's session, which describes nothing the owner can act
+	// on. The auth pages flash the same key and showed the same blank.
+	"failed to create session": "common.error.internal_error",
 }
 
 var settingsStatusTranslationKeys = map[string]string{

@@ -142,8 +142,7 @@ func (handler *Handler) completeLocalPasswordSetupReauth(c fiber.Ctx, state oidc
 		// purpose value today, so a mismatching sealed payload cannot be minted.
 		spec := authOIDCAuthenticationFailedErrorSpec()
 		handler.logSecurityError(c, "auth.local_password_setup.callback", spec)
-		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+		return handler.redirectSettingsRefusal(c, spec)
 		// codecov:ignore:end
 	}
 
@@ -154,8 +153,7 @@ func (handler *Handler) completeLocalPasswordSetupReauth(c fiber.Ctx, state oidc
 	if err != nil || user == nil || user.ID != state.UserID {
 		spec := settingsOIDCReauthMismatchErrorSpec()
 		handler.logSecurityError(c, "auth.local_password_setup.callback", spec)
-		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+		return handler.redirectSettingsRefusal(c, spec)
 	}
 	if user.LocalAuthEnabled {
 		// Another flow finished first; nothing left to do.
@@ -167,14 +165,12 @@ func (handler *Handler) completeLocalPasswordSetupReauth(c fiber.Ctx, state oidc
 	if !state.matchesState(callbackState) {
 		spec := authOIDCAuthenticationFailedErrorSpec()
 		handler.logSecurityError(c, "auth.local_password_setup.callback", spec)
-		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+		return handler.redirectSettingsRefusal(c, spec)
 	}
 	if handler.oidcCallbackValue(c, "error") != "" {
 		spec := authOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, "auth.local_password_setup.callback", spec)
-		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+		return handler.redirectSettingsRefusal(c, spec)
 	}
 
 	ctx, cancel := oidcRequestContext(c)
@@ -182,8 +178,7 @@ func (handler *Handler) completeLocalPasswordSetupReauth(c fiber.Ctx, state oidc
 	if err := handler.validateLocalPasswordSetupReauth(ctx, code, state.CodeVerifier, state.Nonce, user.ID, time.Now()); err != nil {
 		spec := mapLocalPasswordSetupReauthError(err)
 		handler.logSecurityError(c, "auth.local_password_setup.callback", spec)
-		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+		return handler.redirectSettingsRefusal(c, spec)
 	}
 
 	recoveryCode, err := handler.settingsService.FinalizeLocalPasswordSetup(c.Context(), user, state.PasswordHash)

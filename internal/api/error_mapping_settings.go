@@ -43,6 +43,17 @@ func settingsOIDCReauthMismatchErrorSpec() APIErrorSpec {
 	return settingsFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "oidc reauth identity mismatch")
 }
 
+// settingsErasureNeedsAccountPasswordErrorSpec is the callback-side refusal of
+// an erasure step-up whose account enrolled a local password while the owner
+// was at the provider: the erasure gate moved back to that password, so the
+// step-up authorizes nothing. Distinct from the start handler's
+// settingsInvalidInputErrorSpec, which refuses the same condition observed
+// before the flow begins and answers an API caller rather than the settings
+// page.
+func settingsErasureNeedsAccountPasswordErrorSpec() APIErrorSpec {
+	return settingsFormErrorSpec(fiber.StatusForbidden, APIErrorCategoryForbidden, "erasure requires the account password")
+}
+
 // settingsOIDCIdentityLinkClaimedErrorSpec is returned when the (issuer,
 // subject) the step-up exchange resolved to is already linked to a DIFFERENT
 // account — ConfirmAndLinkIdentity's cross-user-claim guard. Distinct from the

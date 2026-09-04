@@ -275,8 +275,10 @@ func TestOIDCIdentityLinkStepupCallbackRefusesAStaleReauth(t *testing.T) {
 	if flashCookie == nil || strings.TrimSpace(flashCookie.Value) == "" {
 		t.Fatal("expected a flash cookie carrying the refusal")
 	}
-	if payload := decodeFlashCookieForTest(t, flashCookie.Value); payload.AuthError != settingsOIDCReauthStaleErrorSpec().Key {
-		t.Fatalf("expected the stale-reauth refusal %q, got %q", settingsOIDCReauthStaleErrorSpec().Key, payload.AuthError)
+	// On SettingsError, not AuthError: /settings reads only the settings channel,
+	// so the auth channel would carry this refusal to a page it never reaches.
+	if payload := decodeFlashCookieForTest(t, flashCookie.Value); payload.SettingsError != settingsOIDCReauthStaleErrorSpec().Key {
+		t.Fatalf("expected the stale-reauth refusal %q on the settings flash channel, got %q (auth channel holds %q)", settingsOIDCReauthStaleErrorSpec().Key, payload.SettingsError, payload.AuthError)
 	}
 }
 
@@ -310,8 +312,8 @@ func TestOIDCIdentityLinkStepupCallbackRefusesAForeignSession(t *testing.T) {
 	if flashCookie == nil || strings.TrimSpace(flashCookie.Value) == "" {
 		t.Fatal("expected a flash cookie carrying the refusal")
 	}
-	if payload := decodeFlashCookieForTest(t, flashCookie.Value); payload.AuthError != settingsOIDCReauthMismatchErrorSpec().Key {
-		t.Fatalf("expected the identity-mismatch refusal %q, got %q", settingsOIDCReauthMismatchErrorSpec().Key, payload.AuthError)
+	if payload := decodeFlashCookieForTest(t, flashCookie.Value); payload.SettingsError != settingsOIDCReauthMismatchErrorSpec().Key {
+		t.Fatalf("expected the identity-mismatch refusal %q on the settings flash channel, got %q (auth channel holds %q)", settingsOIDCReauthMismatchErrorSpec().Key, payload.SettingsError, payload.AuthError)
 	}
 }
 

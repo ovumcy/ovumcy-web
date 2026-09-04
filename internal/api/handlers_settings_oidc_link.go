@@ -102,8 +102,7 @@ func (handler *Handler) completeOIDCIdentityLinkStepup(c fiber.Ctx, state oidcSt
 		// payload whose purpose does not match its own shape, so a mismatching
 		// sealed payload cannot be minted and dispatched here.
 		spec := authOIDCAuthenticationFailedErrorSpec()
-		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+		return handler.redirectSettingsRefusal(c, spec)
 		// codecov:ignore:end
 	}
 
@@ -114,8 +113,7 @@ func (handler *Handler) completeOIDCIdentityLinkStepup(c fiber.Ctx, state oidcSt
 	if err != nil || user == nil || user.ID != state.UserID {
 		spec := settingsOIDCReauthMismatchErrorSpec()
 		handler.logSecurityError(c, oidcIdentityLinkStepupAction, spec)
-		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+		return handler.redirectSettingsRefusal(c, spec)
 	}
 
 	callbackState := handler.oidcCallbackValue(c, "state")
@@ -123,14 +121,12 @@ func (handler *Handler) completeOIDCIdentityLinkStepup(c fiber.Ctx, state oidcSt
 	if !state.matchesState(callbackState) {
 		spec := authOIDCAuthenticationFailedErrorSpec()
 		handler.logSecurityError(c, oidcIdentityLinkStepupAction, spec)
-		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+		return handler.redirectSettingsRefusal(c, spec)
 	}
 	if handler.oidcCallbackValue(c, "error") != "" {
 		spec := authOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, oidcIdentityLinkStepupAction, spec)
-		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+		return handler.redirectSettingsRefusal(c, spec)
 	}
 
 	ctx, cancel := oidcRequestContext(c)
@@ -138,8 +134,7 @@ func (handler *Handler) completeOIDCIdentityLinkStepup(c fiber.Ctx, state oidcSt
 	if err := handler.oidcService.CompleteIdentityLinkReauth(ctx, code, state.CodeVerifier, state.Nonce, user.ID, stepupReauthMaxAge, time.Now()); err != nil {
 		spec := mapOIDCIdentityLinkReauthError(err)
 		handler.logSecurityError(c, oidcIdentityLinkStepupAction, spec)
-		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+		return handler.redirectSettingsRefusal(c, spec)
 	}
 
 	handler.logSecurityEvent(c, oidcIdentityLinkStepupAction, "linked")

@@ -144,8 +144,7 @@ func (handler *Handler) completeErasureStepupReauth(c fiber.Ctx, state oidcStepu
 		// codecov:ignore:start -- validAt already refused a payload whose purpose
 		// and operation do not agree; this is the dispatch-side half of that check.
 		spec := authOIDCAuthenticationFailedErrorSpec()
-		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+		return handler.redirectSettingsRefusal(c, spec)
 		// codecov:ignore:end
 	}
 
@@ -156,16 +155,20 @@ func (handler *Handler) completeErasureStepupReauth(c fiber.Ctx, state oidcStepu
 	if err != nil || user == nil || user.ID != state.UserID {
 		spec := settingsOIDCReauthMismatchErrorSpec()
 		handler.logSecurityError(c, flow.stepupAction, spec)
-		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+		return handler.redirectSettingsRefusal(c, spec)
 	}
 	// A local password enrolled between start and callback moves this account
 	// back onto the password gate, so the step-up no longer authorizes anything.
+	// This refusal carries its own spec rather than the start handler's
+	// settingsInvalidInputErrorSpec: the start answers an API caller with a
+	// mapped 400, while this arm only flashes copy onto the settings page, and
+	// "invalid settings input" is the change-password form's key — its sentence
+	// asks for current/new/confirmation passwords, which describes neither what
+	// happened nor what to do next after returning from the provider.
 	if user.LocalAuthEnabled {
-		spec := settingsInvalidInputErrorSpec()
+		spec := settingsErasureNeedsAccountPasswordErrorSpec()
 		handler.logSecurityError(c, flow.stepupAction, spec)
-		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+		return handler.redirectSettingsRefusal(c, spec)
 	}
 
 	callbackState := handler.oidcCallbackValue(c, "state")
@@ -173,14 +176,12 @@ func (handler *Handler) completeErasureStepupReauth(c fiber.Ctx, state oidcStepu
 	if !state.matchesState(callbackState) {
 		spec := authOIDCAuthenticationFailedErrorSpec()
 		handler.logSecurityError(c, flow.stepupAction, spec)
-		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+		return handler.redirectSettingsRefusal(c, spec)
 	}
 	if handler.oidcCallbackValue(c, "error") != "" {
 		spec := authOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, flow.stepupAction, spec)
-		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+		return handler.redirectSettingsRefusal(c, spec)
 	}
 
 	ctx, cancel := oidcRequestContext(c)
@@ -188,23 +189,20 @@ func (handler *Handler) completeErasureStepupReauth(c fiber.Ctx, state oidcStepu
 	if err := handler.validateLocalPasswordSetupReauth(ctx, code, state.CodeVerifier, state.Nonce, user.ID, time.Now()); err != nil {
 		spec := mapLocalPasswordSetupReauthError(err)
 		handler.logSecurityError(c, flow.stepupAction, spec)
-		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+		return handler.redirectSettingsRefusal(c, spec)
 	}
 
 	handler.logSecurityEvent(c, flow.stepupAction, "success")
 	switch state.Operation {
 	case oidcStepupErasureClearData:
 		if spec, ok := handler.applyClearData(c, user); !ok {
-			handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-			return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+			return handler.redirectSettingsRefusal(c, spec)
 		}
 		handler.setFlashCookie(c, FlashPayload{SettingsSuccess: "data_cleared"})
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
 	default:
 		if spec, ok := handler.applyDeleteAccount(c, user); !ok {
-			handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-			return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+			return handler.redirectSettingsRefusal(c, spec)
 		}
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
