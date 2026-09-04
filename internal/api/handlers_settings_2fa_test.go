@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 	"github.com/pquerna/otp/totp"
@@ -461,6 +462,124 @@ func TestVerifyTOTP2FAEnrollmentClearsASetupCookieItCannotUse(t *testing.T) {
 			}
 			if body := mustReadBodyString(t, response.Body); strings.Contains(body, key.Secret()) {
 				t.Fatal("a refused setup cookie must not surface the pending secret")
+			}
+		})
+	}
+}
+
+// probeVerifyTOTPEnrollment drives VerifyTOTP2FAEnrollment on a route of its
+// own, for the same reason probeApplyClearData does: the refusal under test is
+// provoked through the ROLE gate inside setAuthCookie, and no registered route
+// can carry a non-owner session into this handler — /api/v1/users/current/2fa
+// sits behind AuthRequired and OwnerOnly, which resolve an owner first.
+func probeVerifyTOTPEnrollment(t *testing.T, handler *Handler, user *models.User, code string, setupCookie string) *http.Response {
+	t.Helper()
+
+	app := fiber.New()
+	app.Use(handler.LanguageMiddleware)
+	app.Post("/__probe/2fa/verify", func(c fiber.Ctx) error {
+		c.Locals(contextUserKey, user)
+		return handler.VerifyTOTP2FAEnrollment(c)
+	})
+
+	form := url.Values{"password": {"StrongPass1"}, "code": {code}}
+	request := httptest.NewRequest(http.MethodPost, "/__probe/2fa/verify", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", setupCookie)
+
+	return mustAppResponse(t, app, request)
+}
+
+// TestVerifyTOTP2FAEnrollmentClearsTheSetupCookieWhenTheSessionReissueIsRefused
+// pins the teardown on the handler's LAST refusal arm, the one that fires after
+// the enrollment has already been committed.
+//
+// By the time the session re-issue runs, EnableTOTP has persisted the encrypted
+// secret: the sealed setup cookie's raw seed is spent, and the enrollment page's
+// sanctioned exception for holding it — "until the first code verifies" — has
+// expired with it. The clear used to happen below, in the success arm, which a
+// refusal reached only because the guard above it could never fire; making that
+// guard real gave the arm an exit that skipped the clear, leaving the raw seed
+// on the browser for the rest of its TTL.
+//
+// The two cases are the same request with one field changed, and their auth
+// cookie is what says which arm ran: a refused re-issue clears it (setAuthCookie
+// failed, clearAuthCookie followed), a completed one seals a fresh value into
+// it. The setup cookie must be gone in both.
+func TestVerifyTOTP2FAEnrollmentClearsTheSetupCookieWhenTheSessionReissueIsRefused(t *testing.T) {
+	for _, testCase := range []struct {
+		name             string
+		slug             string
+		role             string
+		wantReissuedAuth bool
+	}{
+		{
+			name: "the session re-issue is refused",
+			slug: "refused",
+			// The one non-owner value the users table's CHECK constraint still
+			// accepts, which makes the arm reachable from a row rather than only
+			// from a fault injected into the AEAD codec.
+			role:             "partner",
+			wantReissuedAuth: false,
+		},
+		{
+			name:             "the session is re-issued",
+			slug:             "reissued",
+			role:             models.RoleOwner,
+			wantReissuedAuth: true,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			stub := newStubOIDCWorkflowService(true)
+			_, database, handler := newSettingsMutationStepupApp(t, stub)
+
+			user := createOnboardingTestUser(t, database, "totp-enroll-reissue-"+testCase.slug+"@example.com", "StrongPass1", true)
+			if testCase.role != models.RoleOwner {
+				if err := database.Model(&models.User{}).Where("id = ?", user.ID).Update("role", testCase.role).Error; err != nil {
+					t.Fatalf("set the account role under test: %v", err)
+				}
+				user.Role = testCase.role
+			}
+
+			key, err := getTOTPServiceForTest(database).GenerateSetupKey("Ovumcy", user.Email)
+			if err != nil {
+				t.Fatalf("GenerateSetupKey: %v", err)
+			}
+			code, err := totp.GenerateCode(key.Secret(), time.Now())
+			if err != nil {
+				t.Fatalf("GenerateCode: %v", err)
+			}
+			setupCookie := sealTOTPSetupCookieForTest(t, []byte("test-secret-key"), user.ID, key.Secret())
+
+			response := probeVerifyTOTPEnrollment(t, handler, &user, code, setupCookie)
+			defer func() { _ = response.Body.Close() }()
+
+			// Anti-vacuity: the enrollment must have been committed, or the
+			// request stopped at the password, the cookie or the code and never
+			// reached the arm under test.
+			var enrolled models.User
+			if err := database.First(&enrolled, user.ID).Error; err != nil {
+				t.Fatalf("reload the account under test: %v", err)
+			}
+			if !enrolled.TOTPEnabled || enrolled.TOTPSecret == "" {
+				t.Fatal("the probe never reached the session re-issue: EnableTOTP did not persist the enrollment")
+			}
+
+			authCookie := responseCookie(response.Cookies(), authCookieName)
+			if authCookie == nil {
+				t.Fatal("expected the response to write the auth cookie either way — its value is what says which arm ran")
+			}
+			if reissued := authCookie.Value != ""; reissued != testCase.wantReissuedAuth {
+				t.Fatalf("auth cookie re-issued = %t, want %t: the case did not take the arm it was built for", reissued, testCase.wantReissuedAuth)
+			}
+
+			cleared := responseCookie(response.Cookies(), totpSetupCookieName)
+			if cleared == nil || cleared.Value != "" {
+				t.Fatal("the spent setup cookie survived the response: EnableTOTP already persisted the secret, so the raw enrollment seed this cookie carries must not ride the browser for the rest of its TTL")
+			}
+			if body := mustReadBodyString(t, response.Body); strings.Contains(body, key.Secret()) {
+				t.Fatal("the response surfaced the raw enrollment seed")
 			}
 		})
 	}

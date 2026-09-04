@@ -9,3 +9,8 @@
   re-authentication: if enrolling the local password fails to be saved, or this device's session
   cannot be re-issued afterwards, the owner gets the settings page with an explanation instead of a
   raw error object.
+- **Turning on two-factor authentication no longer leaves the enrollment cookie behind when the
+  sign-in cookie cannot be refreshed.** Confirming the first code enables 2FA and re-issues this
+  device's sign-in cookie. If that last step fails, the browser kept the short-lived cookie holding
+  the authenticator seed until it expired on its own; it is now cleared along with the refusal, as
+  it already was when the enrollment succeeded.

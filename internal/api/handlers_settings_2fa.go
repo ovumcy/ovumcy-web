@@ -113,18 +113,20 @@ func (handler *Handler) VerifyTOTP2FAEnrollment(c fiber.Ctx) error {
 	user.AuthSessionVersion = services.NormalizeAuthSessionVersion(user.AuthSessionVersion) + 1
 	user.TOTPEnabled = true
 	if spec, ok := handler.refreshCurrentSession(c, user, "settings.2fa.verify"); !ok {
+		// The setup cookie is cleared HERE and not only in the success arm
+		// below. EnableTOTP has already persisted the encrypted secret, so the
+		// enrollment seed this sealed cookie carries is spent — and stopping at
+		// this refusal skips the clear that used to run when the dead guard fell
+		// through. Left in place it would ride every request for the rest of the
+		// browser session, past the moment its own scope ends: the seed is held
+		// in the setup cookie only until the first code verifies, and by this
+		// line it has verified.
+		handler.clearTOTPSetupCookie(c)
 		// This route answers on its own path, so respondMappedError is the right
 		// channel — but the answer only stands if the handler stops here. The
 		// success arm below writes an HTMX toast or a 303 over whatever was
 		// already in the response.
-		//
-		// codecov:ignore:start -- the route is owner-only behind AuthRequired, so
-		// the role check inside setAuthCookie cannot refuse here and the only
-		// remaining failure is an AEAD seal error, which no request-shaped input
-		// can provoke. The arm itself is driven at applyClearData, which reaches
-		// the same helper.
 		return handler.respondMappedError(c, spec)
-		// codecov:ignore:end
 	}
 
 	handler.clearTOTPSetupCookie(c)
