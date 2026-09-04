@@ -34,18 +34,24 @@ import (
 
 // assertFlashedSettingsSuccessRenders follows the redirect a settings mutation
 // answered with, carrying the cookies it issued, and requires the settings page
-// to render the success island for translationKey with copyText inside it. The
-// copy assertion is what separates "the flash was resolved" from "the flash was
-// dropped": an unmapped status yields no island at all, and a mapped one whose
-// catalogue entry is missing renders the key as its own text.
+// to render the success island for translationKey carrying that key's own copy.
+// The copy assertion is what separates "the flash was resolved" from "the flash
+// was dropped": an unmapped status yields no island at all, and a mapped one
+// whose catalogue entry is missing renders the key as its own text.
+//
+// The expected sentence is READ from the en catalogue (mustEnglishMessage,
+// settings_stepup_refusal_render_test.go) rather than passed in. Spelling it
+// out here would make a copy edit fail a redirect test, which names the wrong
+// cause for the next reader; and two arguments that must agree are two
+// arguments that can disagree.
 func assertFlashedSettingsSuccessRenders(
 	t *testing.T,
 	ctx settingsSecurityTestContext,
 	response *http.Response,
 	translationKey string,
-	copyText string,
 ) {
 	t.Helper()
+	copyText := mustEnglishMessage(t, translationKey)
 
 	flashValue := responseCookieValue(response.Cookies(), flashCookieName)
 	if flashValue == "" {
@@ -117,7 +123,7 @@ func TestTOTPEnrollmentConfirmationRendersOnTheRedirectTarget(t *testing.T) {
 		t.Fatalf("enrollment redirected to %q, want %q — the flash is only read there", location, "/settings")
 	}
 
-	assertFlashedSettingsSuccessRenders(t, ctx, response, "settings.2fa.enabled_status", "Two-factor authentication enabled.")
+	assertFlashedSettingsSuccessRenders(t, ctx, response, "settings.2fa.enabled_status")
 }
 
 // TestTOTPDisableConfirmationRendersOnTheRedirectTarget is the disable-side twin
@@ -143,7 +149,7 @@ func TestTOTPDisableConfirmationRendersOnTheRedirectTarget(t *testing.T) {
 		t.Fatalf("disable redirected to %q, want %q — the flash is only read there", location, "/settings")
 	}
 
-	assertFlashedSettingsSuccessRenders(t, ctx, response, "settings.2fa.disabled_status", "Two-factor authentication disabled.")
+	assertFlashedSettingsSuccessRenders(t, ctx, response, "settings.2fa.disabled_status")
 }
 
 // TestUsageGoalQuickSwitchLeavesNoFlashForTheDashboard pins the third site of
