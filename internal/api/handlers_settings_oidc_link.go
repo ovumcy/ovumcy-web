@@ -84,8 +84,7 @@ func (handler *Handler) StartOIDCIdentityLinkStepup(c fiber.Ctx) error {
 	// Same reason as the sibling step-ups: the settings page CSP pins
 	// form-action to 'self' across the whole redirect chain, so a form submit
 	// cannot 303 straight to the provider. Hand back a same-origin interstitial.
-	c.Type("html", "utf-8")
-	return c.SendString(oidcSameOriginRedirectInterstitial(authURL))
+	return respondOIDCSameOriginHandoff(c, authURL)
 }
 
 // completeOIDCIdentityLinkStepup is dispatched from CompleteOIDCLogin when the

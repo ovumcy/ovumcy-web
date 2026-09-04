@@ -278,6 +278,18 @@ func boolString(value bool) string {
 // form-action does not apply — the same technique the provider-logout bridge
 // uses. target is server-built (config + random OIDC state), never user input,
 // but is HTML-escaped as defense-in-depth for the attribute context.
+// respondOIDCSameOriginHandoff answers with the interstitial below, so that the
+// navigation to target is initiated by THIS origin. Both directions of an OIDC
+// hop need that for their own reason — outbound, CSP `form-action 'self'` is
+// enforced across a form navigation's whole redirect chain; inbound, the
+// reveal's first-party guard reads Sec-Fetch-Site over that same chain — and
+// naming the answer is what lets a static guard tell it from a bare
+// c.SendString, which is not a way back to a page.
+func respondOIDCSameOriginHandoff(c fiber.Ctx, target string) error {
+	c.Type("html", "utf-8")
+	return c.SendString(oidcSameOriginRedirectInterstitial(target))
+}
+
 func oidcSameOriginRedirectInterstitial(target string) string {
 	return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=` +
 		html.EscapeString(target) + `"></head><body></body></html>`

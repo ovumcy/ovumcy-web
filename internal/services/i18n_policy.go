@@ -160,6 +160,11 @@ var authErrorTranslationKeys = map[string]string{ // #nosec G101 -- false positi
 	// re-issuing this device's session, which describes nothing the owner can act
 	// on. The auth pages flash the same key and showed the same blank.
 	"failed to create session": "common.error.internal_error",
+	// Same reasoning, one step later in the same callback: the local password is
+	// already enrolled when the reveal cookie fails to seal, so the refusal costs
+	// the display of the fresh recovery code and names nothing the owner can act
+	// on beyond regenerating it from settings.
+	"failed to persist recovery code": "common.error.internal_error",
 	// The two internal outcomes of mapSettingsPasswordChangeError. They reach the
 	// settings page from BOTH password surfaces — the change-password form, which
 	// showed the raw English key in its HTMX fragment, and the local-password

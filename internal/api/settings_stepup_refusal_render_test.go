@@ -188,6 +188,7 @@ var stepupCompletionHandlers = map[string]string{
 var inlineStepupRefusalSpecs = map[string]func() APIErrorSpec{
 	"authOIDCAuthenticationFailedErrorSpec":        authOIDCAuthenticationFailedErrorSpec,
 	"authOIDCUnavailableErrorSpec":                 authOIDCUnavailableErrorSpec,
+	"authRecoveryCodePersistErrorSpec":             authRecoveryCodePersistErrorSpec,
 	"settingsOIDCReauthMismatchErrorSpec":          settingsOIDCReauthMismatchErrorSpec,
 	"settingsErasureNeedsAccountPasswordErrorSpec": settingsErasureNeedsAccountPasswordErrorSpec,
 }
@@ -309,10 +310,17 @@ func TestEverySettingsStepupRefusalKeyMapsToLocalizedCopy(t *testing.T) {
 //   - handler.renderRecoveryCodeResponseWithContinuePath — the one arm that
 //     renders rather than redirects, because the fresh recovery code is shown
 //     once and cannot survive a redirect.
+//   - respondOIDCSameOriginHandoff — a document whose only content is a
+//     meta-refresh to a page on this origin. It is how the enrollment callback
+//     reaches the recovery-code reveal: that surface claims the account's
+//     one-time reveal mark and only a same-origin initiator may spend it, while
+//     Sec-Fetch-Site is computed over the whole redirect chain, which a
+//     provider callback starts off-origin. A 303 from here is refused there.
 var allowedStepupCompletionTerminals = map[string]string{
 	"handler.redirectSettingsRefusal":                    "the refusal channel the settings page reads",
 	"c.Redirect.Status.To":                               "a plain redirect to a page",
 	"handler.renderRecoveryCodeResponseWithContinuePath": "renders the one-time recovery code",
+	"respondOIDCSameOriginHandoff":                       "a same-origin document that navigates to a page",
 }
 
 // stepupCompletionReturnPath renders a return expression as its dotted call
