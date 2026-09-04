@@ -26,6 +26,7 @@
     "@playwright/test": "1.62.1",
     "@tailwindcss/cli": "^4.3.3",
     "@types/node": "^26.3.0",
+    "acorn": "8.16.0",
     "eslint": "10.9.1",
     "globals": "17.11.0",
     "htmx.org": "2.0.10",
