@@ -116,12 +116,116 @@ func TestOpenAPIOperationsDeclareEveryStatusTheirOwnHandlerChainCanEmit(t *testi
 		offenders = append(offenders, operation+": emits "+strings.Join(labels, ", ")+" but docs/openapi.yaml does not declare it there")
 	}
 
+	// A guard that reached no route and a guard that found nothing print the
+	// same nothing. The floor is the population, not the verdict: the spec
+	// documents dozens of /api/v1 operations, so a run that judged a handful
+	// judged a route table that failed to load.
+	if len(seen) < 40 {
+		t.Fatalf("walked %d /api/v1 operations, want at least 40; the route table did not load", len(seen))
+	}
+
 	if len(offenders) == 0 {
 		return
 	}
 	sort.Strings(offenders)
 	t.Errorf("operations whose handler chain can emit a status docs/openapi.yaml never declares for that operation:\n  %s",
 		strings.Join(offenders, "\n  "))
+}
+
+// TestStatusReachTellsARedirectJSONCallersGetFromOneTheyDoNot exercises the
+// analyser itself, on source written for it. The sibling test above can only
+// ever report what the tree happens to contain, so once 303 stopped being
+// excluded wholesale its silence proved nothing: a narrowing that suppressed
+// every redirect and a narrowing that suppressed the right ones read the same.
+// Each case therefore carries a status the walk MUST still find, so a run that
+// reached nothing cannot pass as a run that found nothing.
+func TestStatusReachTellsARedirectJSONCallersGetFromOneTheyDoNot(t *testing.T) {
+	const source = `package api
+
+func redirectsEveryNonHTMXCaller(c fiber.Ctx) error {
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(nil)
+	}
+	if isHTMX(c) {
+		return c.SendStatus(fiber.StatusNoContent)
+	}
+	return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+}
+
+func answersJSONBeforeRedirecting(c fiber.Ctx) error {
+	if isHTMX(c) {
+		return c.SendStatus(fiber.StatusNoContent)
+	}
+	if acceptsJSON(c) {
+		return c.Status(fiber.StatusAccepted).JSON(nil)
+	}
+	return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+}
+
+func redirectsThroughTheSharedHelper(c fiber.Ctx) error {
+	switch responseFormat(c) {
+	case httpx.ResponseFormatJSON:
+		return c.Status(fiber.StatusAccepted).JSON(nil)
+	default:
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+	}
+}
+
+func redirectsWhenTheJSONArmFallsThrough(c fiber.Ctx) error {
+	if acceptsJSON(c) {
+		c.Status(fiber.StatusAccepted)
+	}
+	return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+}
+`
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "reach_fixture.go", source, 0)
+	if err != nil {
+		t.Fatalf("parse fixture: %v", err)
+	}
+	funcs := make(map[string][]*ast.FuncDecl)
+	transport := make(map[*ast.FuncDecl]bool)
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Body == nil {
+			continue
+		}
+		funcs[fn.Name.Name] = append(funcs[fn.Name.Name], fn)
+		transport[fn] = true
+	}
+
+	statusByIdentifier := knownFiberStatusIdentifiers(t)
+
+	for _, testCase := range []struct {
+		name     string
+		redirect bool
+		floor    int
+	}{
+		// The bare fall-through: nothing between the HTMX arm and the redirect,
+		// so a JSON caller lands on it. This is the shape both 2FA mutations had.
+		{name: "redirectsEveryNonHTMXCaller", redirect: true, floor: http.StatusUnauthorized},
+		// The JSON caller has already left; the redirect below is HTML-only.
+		{name: "answersJSONBeforeRedirecting", redirect: false, floor: http.StatusAccepted},
+		// Same question asked as a switch, which is how redirectOrJSON asks it.
+		{name: "redirectsThroughTheSharedHelper", redirect: false, floor: http.StatusAccepted},
+		// An acceptsJSON arm that does NOT return decides nothing: execution
+		// continues into the redirect for the JSON caller too.
+		{name: "redirectsWhenTheJSONArmFallsThrough", redirect: true, floor: http.StatusAccepted},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			reach := newStatusReach(funcs, transport, statusByIdentifier)
+			reach.walkFunc(funcs[testCase.name][0], 0, nil)
+			emittable := reach.emittable()
+
+			if !emittable[testCase.floor] {
+				t.Fatalf("walk found no %d; it reached nothing, so its verdict on the redirect means nothing",
+					testCase.floor)
+			}
+			if got := emittable[http.StatusSeeOther]; got != testCase.redirect {
+				t.Errorf("sees the 303 = %v, want %v", got, testCase.redirect)
+			}
+		})
+	}
 }
 
 // handlerFuncName extracts the bare Go function/method name a fiber.Handler
@@ -202,16 +306,22 @@ const maxReachDepth = 8
 // business logic makes: 500 is the universal default arm of every domain
 // error-mapping switch (already documented centrally, not per-operation, by
 // the ErrorHandler's total-resolution contract and
-// TestOpenAPIDocumentsEveryTransportStatusTheEnvelopeCovers); 303 is emitted
-// by the shared JSON/HTMX content-negotiation helper any handler MAY reach
-// regardless of its own logic, and the spec's own preamble scopes documented
-// responses to the JSON surface. An operation that documents 303 as an actual
-// primary outcome (the two-step password-reset flow) is unaffected — this
-// exclusion only suppresses it as a MISSING-declaration finding, it does not
-// forbid declaring it.
+// TestOpenAPIDocumentsEveryTransportStatusTheEnvelopeCovers).
+//
+// 303 was listed here too until the analyser could tell the two kinds of
+// redirect apart. The reason given was that any handler MAY reach the shared
+// content-negotiation helper regardless of its own logic — true of the helper,
+// and true of the shared error responder, but not of a handler that falls
+// through to c.Redirect() with nothing answering the JSON caller first. Both
+// 2FA mutations did exactly that and the exclusion hid it: `PUT` and
+// `DELETE /api/v1/users/current/2fa` redirected an `Accept: application/json`
+// client to a page, undeclared, on a green main. The exclusion is gone and the
+// surface question is now answered where it is asked — see statusReach's third
+// and fourth narrowings, which read an `acceptsJSON` early return and a
+// `switch responseFormat(c)` arm. Removing it wholesale, without those two,
+// reddened 20 operations of which 18 were false.
 var crossCuttingStatus = map[int]bool{
 	http.StatusInternalServerError: true,
-	http.StatusSeeOther:            true,
 }
 
 // guardSet is one case clause's sentinel errors, read as a disjunction: the arm
@@ -222,16 +332,28 @@ type guardSet []string
 // statusReach walks one route's handler chain and answers which fiber.Status*
 // values that chain can emit.
 //
-// Two narrowings keep it from claiming statuses the JSON contract can never
-// show. Both drop statuses rather than add them, so they can only make the
-// check quieter, never falsely red:
+// Four narrowings keep it from claiming statuses the JSON contract can never
+// show. All of them drop statuses rather than add them, so they can only make
+// the check quieter, never falsely red — which is also why each one is written
+// to recognise a single exact spelling and fall through on anything else:
 //
-//   - Content negotiation. A status emitted only inside an isHTMX(c) or
-//     !acceptsJSON(c) arm belongs to the HTML surface, which the spec's own
-//     preamble puts outside this contract — the same argument crossCuttingStatus
-//     makes for 303, applied where it lives instead of per status code. The
-//     shared error responder answers HTMX with 200 and error markup, and four
-//     handlers answer it with 204; neither is a JSON outcome.
+//   - Content negotiation, asked as a guard. A status emitted only inside an
+//     isHTMX(c) or !acceptsJSON(c) arm belongs to the HTML surface, which the
+//     spec's own preamble puts outside this contract. The shared error responder
+//     answers HTMX with 200 and error markup, and four handlers answer it with
+//     204; neither is a JSON outcome.
+//   - Content negotiation, asked as an early return. `if acceptsJSON(c) { …
+//     return … }` ends the JSON caller's request, so every LATER statement in
+//     that block is the HTML surface too — the redirect at the bottom of a
+//     settings mutation above all. This one needs statement ORDER, which is why
+//     walk descends into a block by its List instead of letting ast.Inspect
+//     flatten it, and it is what separates a handler that answers a JSON caller
+//     from one that redirects it. Without it, 18 operations that answer JSON
+//     perfectly well read as redirecting it.
+//   - Content negotiation, asked as a switch. `switch responseFormat(c)` is the
+//     same question again, and redirectOrJSON — reachable from most mutations —
+//     puts c.JSON on its JSON arm and the 303 on its default one. Only the JSON
+//     arm is walked.
 //   - Shared error mappers. A status inside `case errors.Is(err, ErrX):` is
 //     credited only when ErrX is producible somewhere in the same chain. Two
 //     handlers share mapDayUpsertError but only the cycle-start one can raise
@@ -285,6 +407,41 @@ func (reach *statusReach) walkFunc(decl *ast.FuncDecl, depth int, guards []guard
 func (reach *statusReach) walk(node ast.Node, emitsStatuses bool, depth int, guards []guardSet) {
 	ast.Inspect(node, func(n ast.Node) bool {
 		switch typed := n.(type) {
+		case *ast.BlockStmt:
+			// Statements are walked in order rather than as an unordered tree,
+			// because `if acceptsJSON(c) { return c.JSON(...) }` decides the
+			// surface of everything AFTER it: a JSON caller has already left the
+			// function, so the redirect at the bottom belongs to the HTML surface
+			// as surely as one written inside an isHTMX arm. Reading only the
+			// guard's own body — which is all an unordered walk can see — is what
+			// made every redirect-answering handler look alike.
+			for _, stmt := range typed.List {
+				reach.walk(stmt, emitsStatuses, depth, guards)
+				if jsonSurfaceEarlyReturn(stmt) {
+					return false
+				}
+			}
+			return false
+		case *ast.SwitchStmt:
+			// `switch responseFormat(c)` asks the same question the if-guards
+			// ask, so its non-JSON arms are the same HTML surface: the shared
+			// redirectOrJSON helper returns c.JSON on the JSON arm and the 303
+			// only on the default one, which is why every handler that merely
+			// CALLS it looked like a handler that redirects JSON callers.
+			if typed.Tag == nil || !isResponseFormatCall(typed.Tag) {
+				return true
+			}
+			reach.walk(typed.Tag, emitsStatuses, depth, guards)
+			for _, stmt := range typed.Body.List {
+				clause, ok := stmt.(*ast.CaseClause)
+				if !ok || !jsonFormatCase(clause.List) {
+					continue
+				}
+				for _, inner := range clause.Body {
+					reach.walk(inner, emitsStatuses, depth, guards)
+				}
+			}
+			return false
 		case *ast.IfStmt:
 			if !nonJSONSurfaceGuard(typed.Cond) {
 				return true
@@ -404,6 +561,54 @@ func nonJSONSurfaceGuard(cond ast.Expr) bool {
 			if call, ok := unparen(typed.X).(*ast.CallExpr); ok && calleeName(call) == "acceptsJSON" {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+// jsonSurfaceEarlyReturn reports whether a statement is `if acceptsJSON(c) {
+// … return … }` — the shape that answers the JSON caller and leaves, making
+// every later statement in the same block HTML-only.
+//
+// Three narrowings keep it from claiming an exit the JSON surface does not
+// take, since being wrong here DROPS a status rather than adding one: the
+// condition must be exactly the call (a conjunction like `acceptsJSON(c) && x`
+// still falls through whenever `x` is false), the arm must not have an else
+// (which would make the whole statement the branch, not an exit), and its body
+// must end in a return. A `panic`, a labelled break or a return buried in a
+// nested if is deliberately not read as terminal: an exit this cannot prove is
+// one it keeps walking past, which is the direction that keeps statuses.
+func jsonSurfaceEarlyReturn(stmt ast.Stmt) bool {
+	ifStmt, ok := stmt.(*ast.IfStmt)
+	if !ok || ifStmt.Else != nil || ifStmt.Init != nil || ifStmt.Body == nil {
+		return false
+	}
+	call, ok := unparen(ifStmt.Cond).(*ast.CallExpr)
+	if !ok || calleeName(call) != "acceptsJSON" {
+		return false
+	}
+	if len(ifStmt.Body.List) == 0 {
+		return false
+	}
+	_, terminal := ifStmt.Body.List[len(ifStmt.Body.List)-1].(*ast.ReturnStmt)
+	return terminal
+}
+
+// isResponseFormatCall reports whether a switch tag is the content-negotiation
+// question itself, `responseFormat(c)`. Only that spelling narrows: a switch on
+// anything else is ordinary control flow whose arms all belong to every surface.
+func isResponseFormatCall(tag ast.Expr) bool {
+	call, ok := unparen(tag).(*ast.CallExpr)
+	return ok && calleeName(call) == "responseFormat"
+}
+
+// jsonFormatCase reports whether a case clause of such a switch is its JSON
+// arm. A `default:` clause has an empty list and is therefore never one — which
+// is correct: default is where redirectOrJSON puts the browser redirect.
+func jsonFormatCase(list []ast.Expr) bool {
+	for _, expr := range list {
+		if selector, ok := unparen(expr).(*ast.SelectorExpr); ok && selector.Sel.Name == "ResponseFormatJSON" {
+			return true
 		}
 	}
 	return false
