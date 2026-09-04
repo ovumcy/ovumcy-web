@@ -117,11 +117,17 @@ func TestOpenAPIOperationsDeclareEveryStatusTheirOwnHandlerChainCanEmit(t *testi
 	}
 
 	// A guard that reached no route and a guard that found nothing print the
-	// same nothing. The floor is the population, not the verdict: the spec
-	// documents dozens of /api/v1 operations, so a run that judged a handful
-	// judged a route table that failed to load.
-	if len(seen) < 40 {
-		t.Fatalf("walked %d /api/v1 operations, want at least 40; the route table did not load", len(seen))
+	// same nothing. The floor is the population, not the verdict — and it is
+	// read out of the spec rather than written down here, so it tracks the
+	// document instead of dating from whenever someone last counted. The two
+	// sets are the same operations by TestOpenAPIContractMatchesRegisteredRoutes,
+	// which fails first and by name if they ever diverge; here their SIZE is all
+	// that is asked, as the cheapest statement that a route table failing to
+	// load cannot satisfy.
+	specOperations := openAPIV1Routes(t, filepath.Join(repoRoot, "docs", "openapi.yaml"))
+	if len(seen) < len(specOperations) {
+		t.Fatalf("walked %d /api/v1 operations against %d in the spec; the route table did not load",
+			len(seen), len(specOperations))
 	}
 
 	if len(offenders) == 0 {
