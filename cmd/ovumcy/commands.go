@@ -8,28 +8,31 @@ import (
 
 	"github.com/ovumcy/ovumcy-web/internal/cli"
 	"github.com/ovumcy/ovumcy-web/internal/db"
+	"github.com/ovumcy/ovumcy-web/internal/security"
 )
 
 func tryRunCLICommand() (bool, error) {
 	return tryRunCLICommandWithHandlers(os.Args[1:], cliCommandHandlers{
-		runResetPassword: cli.RunResetPasswordCommand,
-		runUsers:         cli.RunUsersCommand,
-		runHealthcheck:   cli.RunHealthcheckCommand,
-		runReadycheck:    cli.RunReadycheckCommand,
-		runNotify:        cli.RunNotifyCommand,  // codecov:ignore -- main() composition-root wiring; this os.Args dispatch wrapper runs only in the binary (the handler is unit-tested via tryRunCLICommandWithHandlers with a stub)
-		runWebhook:       cli.RunWebhookCommand, // codecov:ignore -- main() composition-root wiring; this os.Args dispatch wrapper runs only in the binary (the handler is unit-tested via tryRunCLICommandWithHandlers with a stub)
-		runRepair:        cli.RunRepairCommand,  // codecov:ignore -- main() composition-root wiring; this os.Args dispatch wrapper runs only in the binary (the handler is unit-tested via tryRunCLICommandWithHandlers with a stub)
+		runResetPassword:    cli.RunResetPasswordCommand,
+		runUsers:            cli.RunUsersCommand,
+		runHealthcheck:      cli.RunHealthcheckCommand,
+		runReadycheck:       cli.RunReadycheckCommand,
+		runNotify:           cli.RunNotifyCommand,           // codecov:ignore -- main() composition-root wiring; this os.Args dispatch wrapper runs only in the binary (the handler is unit-tested via tryRunCLICommandWithHandlers with a stub)
+		runWebhook:          cli.RunWebhookCommand,          // codecov:ignore -- main() composition-root wiring; this os.Args dispatch wrapper runs only in the binary (the handler is unit-tested via tryRunCLICommandWithHandlers with a stub)
+		runRepair:           cli.RunRepairCommand,           // codecov:ignore -- main() composition-root wiring; this os.Args dispatch wrapper runs only in the binary (the handler is unit-tested via tryRunCLICommandWithHandlers with a stub)
+		runLinkOIDCIdentity: cli.RunLinkOIDCIdentityCommand, // codecov:ignore -- main() composition-root wiring; this os.Args dispatch wrapper runs only in the binary (the handler is unit-tested via tryRunCLICommandWithHandlers with a stub)
 	})
 }
 
 type cliCommandHandlers struct {
-	runResetPassword func(databaseConfig db.Config, args []string) error
-	runUsers         func(databaseConfig db.Config, args []string) error
-	runHealthcheck   func(port string, timeout time.Duration) error
-	runReadycheck    func(port string, timeout time.Duration) error
-	runNotify        func(databaseConfig db.Config, secretKey string, defaultLanguage string, location *time.Location, blockPrivateAddresses bool, args []string) error
-	runWebhook       func(databaseConfig db.Config, secretKey string, args []string) error
-	runRepair        func(databaseConfig db.Config, args []string) error
+	runResetPassword    func(databaseConfig db.Config, args []string) error
+	runUsers            func(databaseConfig db.Config, args []string) error
+	runHealthcheck      func(port string, timeout time.Duration) error
+	runReadycheck       func(port string, timeout time.Duration) error
+	runNotify           func(databaseConfig db.Config, secretKey string, defaultLanguage string, location *time.Location, blockPrivateAddresses bool, args []string) error
+	runWebhook          func(databaseConfig db.Config, secretKey string, args []string) error
+	runRepair           func(databaseConfig db.Config, args []string) error
+	runLinkOIDCIdentity func(databaseConfig db.Config, oidcConfig security.OIDCConfig, args []string) error
 }
 
 func tryRunCLICommandWithHandlers(args []string, handlers cliCommandHandlers) (bool, error) {
@@ -52,6 +55,8 @@ func tryRunCLICommandWithHandlers(args []string, handlers cliCommandHandlers) (b
 		return handleWebhookCommand(args, handlers)
 	case "repair":
 		return handleRepairCommand(args, handlers)
+	case "link-oidc-identity":
+		return handleLinkOIDCIdentityCommand(args, handlers)
 	default:
 		return false, nil
 	}
@@ -148,6 +153,35 @@ func handleRepairCommand(args []string, handlers cliCommandHandlers) (bool, erro
 		return true, fmt.Errorf("invalid database config: %w", err)
 	}
 	return true, handlers.runRepair(databaseConfig, args[1:])
+}
+
+// handleLinkOIDCIdentityCommand resolves the OIDC config the same way boot
+// does (resolveOIDCConfig, defined in config.go) rather than a lighter
+// bespoke reader: `link-oidc-identity` is the operator's no-session recovery
+// path for issue #701, and a config this instance's boot would refuse (e.g.
+// COOKIE_SECURE=false with OIDC_ENABLED=true) must refuse here too, not mint a
+// binding a real sign-in could never reach.
+func handleLinkOIDCIdentityCommand(args []string, handlers cliCommandHandlers) (bool, error) {
+	if handlers.runLinkOIDCIdentity == nil {
+		return true, fmt.Errorf("link-oidc-identity handler is required")
+	}
+	databaseConfig, err := resolveDatabaseConfig()
+	if err != nil {
+		return true, fmt.Errorf("invalid database config: %w", err)
+	}
+	cookieSecure, err := getEnvBoolStrict("COOKIE_SECURE", false)
+	if err != nil {
+		return true, err
+	}
+	registrationMode, err := resolveRegistrationMode()
+	if err != nil {
+		return true, err
+	}
+	oidcConfig, err := resolveOIDCConfig(cookieSecure, registrationMode)
+	if err != nil {
+		return true, fmt.Errorf("invalid OIDC config: %w", err)
+	}
+	return true, handlers.runLinkOIDCIdentity(databaseConfig, oidcConfig, args[1:])
 }
 
 func handleWebhookCommand(args []string, handlers cliCommandHandlers) (bool, error) {

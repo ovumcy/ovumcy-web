@@ -243,6 +243,9 @@
   "settings.current_password": "Mot de passe actuel",
 
 
+  "settings.oidc_link.title": "Identité de connexion associée",
+  "settings.oidc_link.description": "Associez une identité OIDC supplémentaire à ce compte. Vous serez redirigé vers votre fournisseur d'identité pour confirmer.",
+  "settings.oidc_link.button": "Associer une identité OIDC",
   "settings.recovery_code.title": "Code de récupération",
   "settings.recovery_code.subtitle": "Générez un nouveau code de récupération. Votre code précédent ne fonctionnera plus.",
   "settings.recovery_code.submit": "Régénérer le code de récupération",
@@ -331,6 +334,7 @@
   "settings.success.profile_updated": "Profil mis à jour avec succès.",
   "settings.success.profile_name_cleared": "Nom de profil supprimé.",
   "settings.success.data_cleared": "Toutes les données de suivi ont été effacées avec succès.",
+  "settings.success.oidc_identity_linked": "Identité OIDC associée avec succès.",
   "settings.success.tracking_updated": "Paramètres de suivi mis à jour.",
 
   "settings.symptoms.success.created": "Symptôme personnalisé ajouté.",

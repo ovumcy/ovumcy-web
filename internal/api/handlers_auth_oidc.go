@@ -63,6 +63,8 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 			return handler.completeLocalPasswordSetupReauth(c, stepupState)
 		case oidcStepupPurposeErasure:
 			return handler.completeErasureStepupReauth(c, stepupState)
+		case oidcStepupPurposeIdentityLink:
+			return handler.completeOIDCIdentityLinkStepup(c, stepupState)
 		}
 	}
 

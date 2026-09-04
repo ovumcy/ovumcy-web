@@ -359,6 +359,41 @@ func (service *OIDCLoginService) ConfirmAndLinkIdentity(ctx context.Context, tar
 	return service.linkIdentity(ctx, targetUserID, claims, linkTime)
 }
 
+// CompleteIdentityLinkReauth authorises a NEW OIDC identity link from an
+// already-authenticated settings session: it runs a fresh code exchange,
+// requires the same freshness proof as ValidateReauthExchange (prompt=login +
+// max_age enforced via reauthClaimsFresh), and then persists the link via
+// ConfirmAndLinkIdentity.
+//
+// It deliberately does NOT reuse ValidateReauthExchange: that helper requires
+// the returned (issuer, subject) to already be linked to expectedUserID,
+// which is exactly backwards for linking — the whole point here is a pair
+// that has never been linked to anyone. Reusing it would make first-time
+// linking impossible; the freshness check is the part worth sharing, the
+// "already linked" check is not.
+func (service *OIDCLoginService) CompleteIdentityLinkReauth(ctx context.Context, code string, codeVerifier string, expectedNonce string, targetUserID uint, maxAuthAge time.Duration, now time.Time) error {
+	if !service.Enabled() {
+		return ErrOIDCDisabled
+	}
+	if targetUserID == 0 {
+		return ErrOIDCLinkFailed
+	}
+	if strings.TrimSpace(code) == "" || strings.TrimSpace(codeVerifier) == "" || strings.TrimSpace(expectedNonce) == "" {
+		return ErrOIDCCallbackInvalid
+	}
+
+	exchange, err := service.client.ExchangeCode(ctx, code, codeVerifier, expectedNonce)
+	if err != nil {
+		return ErrOIDCAuthenticationFailed
+	}
+
+	if !reauthClaimsFresh(exchange.Claims, maxAuthAge, now) {
+		return ErrOIDCReauthStale
+	}
+
+	return service.ConfirmAndLinkIdentity(ctx, targetUserID, exchange.Claims, now)
+}
+
 func (service *OIDCLoginService) authenticateLinkedIdentity(ctx context.Context, exchange security.OIDCExchangeResult, loginTime time.Time) (OIDCLoginResult, bool, error) {
 	identity, found, err := service.identities.FindByIssuerSubject(ctx, exchange.Claims.Issuer, exchange.Claims.Subject)
 	if err != nil {
