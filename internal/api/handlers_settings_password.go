@@ -216,7 +216,11 @@ func (handler *Handler) completeLocalPasswordSetupReauth(c fiber.Ctx, state oidc
 		// reports only that this device's cookie could not be re-issued — a
 		// settings-page banner, on the same channel the erasure step-up's
 		// session-refresh arm already flashes.
+		//
+		// codecov:ignore:start -- the seal error that raises this cannot be
+		// provoked by a request; the terminal guard asserts the route statically.
 		return handler.redirectSettingsRefusal(c, spec)
+		// codecov:ignore:end
 	}
 
 	handler.logSecurityEvent(c, "auth.local_password_setup.callback", "success")
