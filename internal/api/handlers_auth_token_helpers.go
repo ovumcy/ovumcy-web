@@ -209,32 +209,25 @@ func (handler *Handler) rotateOIDCLogoutState(c fiber.Ctx, newSessionID string) 
 // after an operation that bumped auth_session_version, so the originating
 // device stays signed in while every other session is invalidated. The
 // `scope` argument is used for security-event logging only.
-func (handler *Handler) refreshCurrentSession(c fiber.Ctx, user *models.User, scope string) error {
-	spec, ok := handler.refreshCurrentSessionSpec(c, user, scope)
-	if !ok {
-		// codecov:ignore:start -- re-issuing this device's cookie fails only on an
-		// AEAD seal error, which no request-shaped input can provoke.
-		return handler.respondMappedError(c, spec)
-		// codecov:ignore:end
-	}
-	return nil
-}
-
-// refreshCurrentSessionSpec is the same re-issue, handing the refusal back as a
-// spec instead of writing it. respondMappedError above answers on the request's
-// own path, which is right for the settings routes but wrong for a caller that
-// runs on /auth/oidc/callback: there the reply is a browser navigation coming
-// back from the identity provider, and every spec this can raise renders either
-// a JSON envelope (the global session-create spec) or a redirect to /login (the
-// unsupported-role spec) instead of the settings page the step-up promised to
-// return to. Such a caller takes the spec and flashes it through
-// redirectSettingsRefusal.
-func (handler *Handler) refreshCurrentSessionSpec(c fiber.Ctx, user *models.User, scope string) (APIErrorSpec, bool) {
+//
+// The refusal is handed BACK as a spec instead of being written here, because
+// the callers do not answer on the same channel: the settings routes reply
+// through respondMappedError, while a caller running on /auth/oidc/callback has
+// to flash it through redirectSettingsRefusal — there the reply is a browser
+// navigation coming back from the identity provider, and every spec this can
+// raise renders either a JSON envelope (the global session-create spec) or a
+// redirect to /login (the unsupported-role spec) instead of the settings page
+// the step-up promised to return to.
+//
+// That is also why the wrapper this replaced is gone rather than kept for the
+// callers whose channel it did suit. It answered through respondMappedError and
+// returned respondMappedError's nil, so it returned nil on BOTH paths: every
+// `if err := ...; err != nil` around it was dead, and each caller ran on into
+// its success arm, writing a success toast, a redirect or a `data_cleared`
+// flash over the refusal that had just been written.
+func (handler *Handler) refreshCurrentSession(c fiber.Ctx, user *models.User, scope string) (APIErrorSpec, bool) {
 	sessionID, err := handler.setAuthCookie(c, user, sessionWasRemembered(c))
 	if err != nil {
-		// codecov:ignore:start -- the same AEAD seal error as above: unreachable
-		// from a request, so which spec this hands back is asserted by the
-		// step-up refusal sweep rather than by driving the arm.
 		handler.clearAuthCookie(c)
 		spec := authSessionCreateErrorSpec()
 		if errors.Is(err, services.ErrAuthUnsupportedRole) {
@@ -242,7 +235,6 @@ func (handler *Handler) refreshCurrentSessionSpec(c fiber.Ctx, user *models.User
 		}
 		handler.logSecurityError(c, scope, spec)
 		return spec, false
-		// codecov:ignore:end
 	}
 	if err := handler.rotateOIDCLogoutState(c, sessionID); err != nil {
 		handler.logSecurityEvent(c, scope, "provider_logout_state_rotation_failed")

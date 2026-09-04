@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	"go/ast"
 	"go/parser"
@@ -10,8 +11,11 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/i18n"
+	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
@@ -204,7 +208,7 @@ var inlineStepupRefusalSpecs = map[string]func() APIErrorSpec{
 //   - The specs raised inside the HELPERS those handlers call are hand-listed
 //     below, each against the helper that raises it. Nothing derives this part: a
 //     new spec inside applyClearData, applyDeleteAccount or
-//     refreshCurrentSessionSpec has to be added here by hand.
+//     refreshCurrentSession has to be added here by hand.
 func settingsStepupRefusalSpecs() []APIErrorSpec {
 	foreign := errors.New("some provider failure the mappers do not recognize")
 
@@ -213,8 +217,11 @@ func settingsStepupRefusalSpecs() []APIErrorSpec {
 		// mutation itself failed.
 		settingsClearDataErrorSpec(),
 		settingsDeleteAccountErrorSpec(),
-		// refreshCurrentSessionSpec, re-issuing this device's cookie after the
-		// operation bumped auth_session_version.
+		// refreshCurrentSession, re-issuing this device's cookie after the
+		// operation bumped auth_session_version. Both reach the callback only
+		// because applyClearData hands its verdict back;
+		// TestApplyClearDataReportsARefusedSessionReissueToItsCaller is what
+		// keeps that true.
 		authSessionCreateErrorSpec(),
 		authWebSignInUnavailableErrorSpec(),
 	}
@@ -514,5 +521,143 @@ func TestLocalPasswordSetupCommitFailureRendersOnTheSettingsPage(t *testing.T) {
 	}
 	if message := mustEnglishMessage(t, translationKey); !strings.Contains(body, message) {
 		t.Fatalf("the refusal banner rendered without its copy: expected %q in the rendered page", message)
+	}
+}
+
+// clearDataProbeVerdict is what applyClearData hands back to its caller: the
+// spec key, and whether the operation may be reported as done.
+type clearDataProbeVerdict struct {
+	OK  bool   `json:"ok"`
+	Key string `json:"key"`
+}
+
+// probeApplyClearData calls applyClearData on a real request context and reports
+// the (spec, ok) pair, because that pair — not the response body — is what
+// completeErasureStepupReauth branches on.
+//
+// It runs on a route of its own rather than through the erasure callback: the
+// refusal below is provoked through the ROLE gate inside setAuthCookie, and no
+// registered route can carry a non-owner session into a handler (AuthRequired
+// and OwnerOnly resolve an owner first). The status is stamped explicitly so a
+// callee that already wrote a response of its own cannot make this probe fail on
+// the status instead of on the verdict under test.
+func probeApplyClearData(t *testing.T, handler *Handler, user *models.User) clearDataProbeVerdict {
+	t.Helper()
+
+	app := fiber.New()
+	app.Post("/__probe/clear-data", func(c fiber.Ctx) error {
+		spec, ok := handler.applyClearData(c, user)
+		return c.Status(fiber.StatusOK).JSON(fiber.Map{"ok": ok, "key": spec.Key})
+	})
+
+	response := mustAppResponse(t, app, httptest.NewRequest(http.MethodPost, "/__probe/clear-data", nil))
+	defer func() { _ = response.Body.Close() }()
+
+	verdict := clearDataProbeVerdict{}
+	if err := json.Unmarshal([]byte(mustReadBodyString(t, response.Body)), &verdict); err != nil {
+		t.Fatalf("decode the applyClearData verdict: %v", err)
+	}
+	return verdict
+}
+
+// TestApplyClearDataReportsARefusedSessionReissueToItsCaller pins the seam the
+// terminal guard above cannot see. That guard proves every exit of
+// completeErasureStepupReauth leads back to a page; it cannot prove the erasure
+// branch ever TAKES the refusal exit, and for the session re-issue it did not.
+//
+// The re-issue used to run through a wrapper that answered with
+// respondMappedError and returned its nil — nil on the refusal path exactly as
+// on the success path — so the `if err != nil` guard in applyClearData could
+// never fire. The wipe completed, auth_session_version was bumped, this device's
+// cookie was NOT re-issued past the bump, and applyClearData still answered
+// ok=true: the callback flashed `data_cleared` and redirected onto an
+// already-written response, telling the owner the wipe succeeded on a session
+// that dies at the next request.
+//
+// The assertion is therefore made on the pair, not on a written response: a
+// response was written in the defective version too, which is precisely why
+// nothing noticed. The refusal is provoked through the role gate
+// (services.ValidateSupportedWebUser, checked inside setAuthCookie before
+// anything is sealed) rather than by breaking the AEAD seal, so the arm is
+// reached by a row a test can create. The success case beside it is the anchor:
+// same probe, same wipe, opposite verdict.
+func TestApplyClearDataReportsARefusedSessionReissueToItsCaller(t *testing.T) {
+	t.Parallel()
+
+	for _, testCase := range []struct {
+		name    string
+		slug    string
+		role    string
+		wantOK  bool
+		wantKey string
+	}{
+		{
+			name: "the session re-issue is refused",
+			slug: "refused",
+			// The one non-owner value the users table's CHECK constraint still
+			// accepts, which is what makes this arm reachable from a row rather
+			// than only from a fault injected into the codec.
+			role:    "partner",
+			wantOK:  false,
+			wantKey: authWebSignInUnavailableErrorSpec().Key,
+		},
+		{
+			name:   "the session is re-issued",
+			slug:   "reissued",
+			role:   models.RoleOwner,
+			wantOK: true,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			stub := newStubOIDCWorkflowService(true)
+			_, database, handler := newSettingsMutationStepupApp(t, stub)
+
+			user := models.User{
+				Email:               "clear-data-reissue-" + testCase.slug + "@example.com",
+				LocalAuthEnabled:    false,
+				Role:                testCase.role,
+				OnboardingCompleted: true,
+				AuthSessionVersion:  1,
+				CycleLength:         28,
+				PeriodLength:        5,
+				AutoPeriodFill:      true,
+				CreatedAt:           time.Now().UTC(),
+			}
+			if err := database.Create(&user).Error; err != nil {
+				t.Fatalf("create the account under test: %v", err)
+			}
+			entry := models.DailyLog{UserID: user.ID, Date: time.Date(2026, 5, 13, 0, 0, 0, 0, time.UTC)}
+			if err := database.Create(&entry).Error; err != nil {
+				t.Fatalf("seed a day entry for the wipe to remove: %v", err)
+			}
+
+			verdict := probeApplyClearData(t, handler, &user)
+
+			if verdict.OK != testCase.wantOK {
+				t.Fatalf(
+					"applyClearData reported ok=%t, want %t: the caller branches on this pair, and a refused session re-issue reported as success flashes data_cleared at an owner whose cookie was never re-issued past the auth_session_version bump",
+					verdict.OK, testCase.wantOK,
+				)
+			}
+			if verdict.Key != testCase.wantKey {
+				t.Fatalf(
+					"applyClearData handed back spec key %q, want %q: the spec has to be the one the session re-issue chose, since that is the copy the settings page renders",
+					verdict.Key, testCase.wantKey,
+				)
+			}
+
+			// Anti-vacuity: the wipe itself must have happened in both cases, so
+			// a refusal above can only have come from the session re-issue and
+			// not from ClearAllData failing earlier.
+			var remaining int64
+			if err := database.Model(&models.DailyLog{}).Where("user_id = ?", user.ID).Count(&remaining).Error; err != nil {
+				t.Fatalf("count day entries after the wipe: %v", err)
+			}
+			if remaining != 0 {
+				t.Fatalf("day entries after applyClearData = %d, want 0: the probe never reached the session re-issue", remaining)
+			}
+		})
 	}
 }

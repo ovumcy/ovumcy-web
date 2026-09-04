@@ -111,9 +111,10 @@ func authCookieAuthenticates(t *testing.T, app *fiber.App, authCookieValue strin
 //     in-memory bump must match the atomically bumped DB row so the re-issued
 //     ovumcy_auth cookie authenticates. `- 1` mints a cookie with the wrong
 //     version, which the next request rejects.
-//   - handlers_settings_2fa.go:109 (`refreshCurrentSession(...); err != nil`):
-//     negating to `== nil` returns early before the HTMX success markup, so the
-//     success body disappears.
+//   - the re-issue guard in VerifyTOTP2FAEnrollment
+//     (`refreshCurrentSession(...); !ok`): negating it answers the mapped error
+//     and returns before the HTMX success markup, so the success body
+//     disappears.
 func TestVerifyTOTP2FAEnrollment_ReissuedCookieStaysValidAndReturnsSuccess(t *testing.T) {
 	ctx := newTOTPSettingsContext(t, "totp-enroll-reissue@example.com")
 
@@ -159,8 +160,8 @@ func TestVerifyTOTP2FAEnrollment_ReissuedCookieStaysValidAndReturnsSuccess(t *te
 }
 
 // TestDisableTOTP2FA_ReissuedCookieStaysValidAndReturnsSuccess pins the disable-side
-// twins of the above: handlers_settings_2fa.go:161 (`... + 1`) and :164
-// (`refreshCurrentSession(...); err != nil`).
+// twins of the above: the `... + 1` bump in DisableTOTP2FA and the re-issue
+// guard right after it (`refreshCurrentSession(...); !ok`).
 func TestDisableTOTP2FA_ReissuedCookieStaysValidAndReturnsSuccess(t *testing.T) {
 	ctx := newTOTPSettingsContext(t, "totp-disable-reissue@example.com")
 	if err := getTOTPServiceForTest(ctx.database).EnableTOTP(context.Background(), ctx.user.ID, "JBSWY3DPEHPK3PXP"); err != nil {
@@ -343,10 +344,11 @@ func TestUpdateCycleSettings_JSONBodyPersistsLastPeriodStart(t *testing.T) {
 }
 
 // TestCompleteLocalPasswordSetupReauth_SuccessIssuesRecoveryCode drives the OIDC
-// step-up password-setup callback all the way through its happy path to pin
-// handlers_settings_password.go:193 (`refreshPasswordChangeSession(...); err !=
-// nil`). On success the handler must set the recovery-code issuance cookie and
-// redirect to /recovery-code. Negating the guard to `== nil` returns early right
+// step-up password-setup callback all the way through its happy path to pin the
+// session re-issue guard in completeLocalPasswordSetupReauth
+// (`refreshCurrentSession(...); !ok`). On success the handler must set the
+// recovery-code issuance cookie and
+// redirect to /recovery-code. Negating the guard returns early right
 // after the (successful) session refresh, so neither the redirect nor the
 // recovery cookie is produced. Existing step-up coverage only exercises the error
 // arms (no session / already-local), leaving this success arm uncovered.
