@@ -226,12 +226,13 @@ func (handler *Handler) applyClearData(c fiber.Ctx, user *models.User) (APIError
 	// change, recovery-code regen, and 2FA toggle.
 	user.AuthSessionVersion = services.NormalizeAuthSessionVersion(user.AuthSessionVersion) + 1
 	// The session-refresh failures are auth-plumbing events, not the erasure
-	// itself, so they keep the plain path under the same action name.
-	if err := handler.refreshCurrentSession(c, user, clearDataMutation.action); err != nil {
-		// codecov:ignore:start -- re-issuing the cookie fails only on an AEAD
-		// seal error, which no request-shaped input can provoke.
-		return authSessionCreateErrorSpec(), false
-		// codecov:ignore:end
+	// itself, so they keep the plain path under the same action name. The spec
+	// travels back to the caller rather than being answered here: the wipe has
+	// already happened and the version bump is already in the row, so a refusal
+	// reported as ok=true would flash `data_cleared` at an owner whose cookie
+	// was never re-issued past the bump — the session dies on the next request.
+	if spec, ok := handler.refreshCurrentSession(c, user, clearDataMutation.action); !ok {
+		return spec, false
 	}
 
 	handler.logMutationSuccess(c, clearDataMutation)

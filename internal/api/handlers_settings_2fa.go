@@ -112,8 +112,19 @@ func (handler *Handler) VerifyTOTP2FAEnrollment(c fiber.Ctx) error {
 	// is invalidated on its next request.
 	user.AuthSessionVersion = services.NormalizeAuthSessionVersion(user.AuthSessionVersion) + 1
 	user.TOTPEnabled = true
-	if err := handler.refreshCurrentSession(c, user, "settings.2fa.verify"); err != nil {
-		return err
+	if spec, ok := handler.refreshCurrentSession(c, user, "settings.2fa.verify"); !ok {
+		// This route answers on its own path, so respondMappedError is the right
+		// channel — but the answer only stands if the handler stops here. The
+		// success arm below writes an HTMX toast or a 303 over whatever was
+		// already in the response.
+		//
+		// codecov:ignore:start -- the route is owner-only behind AuthRequired, so
+		// the role check inside setAuthCookie cannot refuse here and the only
+		// remaining failure is an AEAD seal error, which no request-shaped input
+		// can provoke. The arm itself is driven at applyClearData, which reaches
+		// the same helper.
+		return handler.respondMappedError(c, spec)
+		// codecov:ignore:end
 	}
 
 	handler.clearTOTPSetupCookie(c)
@@ -167,8 +178,13 @@ func (handler *Handler) DisableTOTP2FA(c fiber.Ctx) error {
 	user.AuthSessionVersion = services.NormalizeAuthSessionVersion(user.AuthSessionVersion) + 1
 	user.TOTPEnabled = false
 	user.TOTPSecret = ""
-	if err := handler.refreshCurrentSession(c, user, "settings.2fa.disable"); err != nil {
-		return err
+	if spec, ok := handler.refreshCurrentSession(c, user, "settings.2fa.disable"); !ok {
+		// Same stop-here reason as the enable arm above.
+		//
+		// codecov:ignore:start -- owner-only route: only the AEAD seal error is
+		// left, and no request-shaped input provokes it.
+		return handler.respondMappedError(c, spec)
+		// codecov:ignore:end
 	}
 
 	handler.logSecurityEvent(c, "settings.2fa.disable", "disabled")

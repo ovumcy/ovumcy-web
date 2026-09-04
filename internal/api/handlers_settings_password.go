@@ -47,8 +47,15 @@ func (handler *Handler) ChangePassword(c fiber.Ctx) error {
 		return handler.respondPasswordChangeError(c, err)
 	}
 
-	if err := handler.refreshPasswordChangeSession(c, user); err != nil {
-		return err
+	if spec, ok := handler.refreshPasswordChangeSession(c, user); !ok {
+		// respondMappedError is the right channel on this route; returning is
+		// what makes it the answer, since respondPasswordChanged below would
+		// otherwise write `{"ok":true}` over it.
+		//
+		// codecov:ignore:start -- owner-only route behind AuthRequired, so only
+		// the AEAD seal error is left and no request-shaped input provokes it.
+		return handler.respondMappedError(c, spec)
+		// codecov:ignore:end
 	}
 
 	handler.logSecurityEvent(c, "auth.password_change", "success")
@@ -209,10 +216,10 @@ func (handler *Handler) completeLocalPasswordSetupReauth(c fiber.Ctx, state oidc
 		handler.logSecurityError(c, "auth.local_password_setup.callback", spec)
 		return handler.redirectSettingsRefusal(c, spec)
 	}
-	if spec, ok := handler.refreshCurrentSessionSpec(c, user, "auth.local_password_setup.callback"); !ok {
-		// Same reason one layer down: refreshPasswordChangeSession answers
-		// through respondMappedError, whose global session-create spec is JSON
-		// on every path. The password IS enrolled by this point, so the refusal
+	if spec, ok := handler.refreshCurrentSession(c, user, "auth.local_password_setup.callback"); !ok {
+		// Same reason one layer down: the change-password route answers this
+		// same spec through respondMappedError, whose global session-create spec
+		// is JSON on every path. The password IS enrolled by this point, so the refusal
 		// reports only that this device's cookie could not be re-issued — a
 		// settings-page banner, on the same channel the erasure step-up's
 		// session-refresh arm already flashes.
@@ -239,7 +246,7 @@ func parseChangePasswordInput(c fiber.Ctx) (changePasswordInput, error) {
 	return input, nil
 }
 
-func (handler *Handler) refreshPasswordChangeSession(c fiber.Ctx, user *models.User) error {
+func (handler *Handler) refreshPasswordChangeSession(c fiber.Ctx, user *models.User) (APIErrorSpec, bool) {
 	return handler.refreshCurrentSession(c, user, "auth.password_change")
 }
 
