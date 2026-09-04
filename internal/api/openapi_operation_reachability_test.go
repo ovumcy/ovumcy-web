@@ -177,6 +177,24 @@ func redirectsThroughTheSharedHelper(c fiber.Ctx) error {
 	}
 }
 
+func redirectsThroughAnUnqualifiedHelper(c fiber.Ctx) error {
+	switch responseFormat(c) {
+	case ResponseFormatJSON:
+		return c.Status(fiber.StatusAccepted).JSON(nil)
+	default:
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+	}
+}
+
+func negotiatesAfterAnInitializer(c fiber.Ctx) error {
+	switch spec := mapSomethingError(fiber.StatusConflict); responseFormat(c) {
+	case httpx.ResponseFormatJSON:
+		return c.Status(fiber.StatusAccepted).JSON(spec)
+	default:
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+	}
+}
+
 func redirectsWhenTheJSONArmFallsThrough(c fiber.Ctx) error {
 	if acceptsJSON(c) {
 		c.Status(fiber.StatusAccepted)
@@ -214,6 +232,14 @@ func redirectsWhenTheJSONArmFallsThrough(c fiber.Ctx) error {
 		{name: "answersJSONBeforeRedirecting", redirect: false, floor: http.StatusAccepted},
 		// Same question asked as a switch, which is how redirectOrJSON asks it.
 		{name: "redirectsThroughTheSharedHelper", redirect: false, floor: http.StatusAccepted},
+		// The same switch with the constant unqualified, as httpx would write
+		// it. The floor is the JSON arm's own status: matching only the
+		// qualified spelling skips that arm, which hides a JSON status rather
+		// than an HTML one.
+		{name: "redirectsThroughAnUnqualifiedHelper", redirect: false, floor: http.StatusAccepted},
+		// The initializer runs before any arm is chosen, so its 409 is emittable
+		// to a JSON caller and must survive the narrowing.
+		{name: "negotiatesAfterAnInitializer", redirect: false, floor: http.StatusConflict},
 		// An acceptsJSON arm that does NOT return decides nothing: execution
 		// continues into the redirect for the JSON caller too.
 		{name: "redirectsWhenTheJSONArmFallsThrough", redirect: true, floor: http.StatusAccepted},
@@ -437,6 +463,12 @@ func (reach *statusReach) walk(node ast.Node, emitsStatuses bool, depth int, gua
 			if typed.Tag == nil || !isResponseFormatCall(typed.Tag) {
 				return true
 			}
+			// The initializer and the tag run before any arm is chosen, so they
+			// run for every surface — the same reason the IfStmt arm below walks
+			// its own Init and Cond rather than skipping the whole statement.
+			if typed.Init != nil {
+				reach.walk(typed.Init, emitsStatuses, depth, guards)
+			}
 			reach.walk(typed.Tag, emitsStatuses, depth, guards)
 			for _, stmt := range typed.Body.List {
 				clause, ok := stmt.(*ast.CaseClause)
@@ -611,10 +643,24 @@ func isResponseFormatCall(tag ast.Expr) bool {
 // jsonFormatCase reports whether a case clause of such a switch is its JSON
 // arm. A `default:` clause has an empty list and is therefore never one — which
 // is correct: default is where redirectOrJSON puts the browser redirect.
+//
+// The constant is matched by NAME, qualified or not. Every other narrowing here
+// errs quiet because what it drops is the HTML surface; this one is the
+// exception — dropping the JSON arm hides a status the contract does cover — so
+// it must not be keyed on one spelling. `httpx.ResponseFormatJSON` is how the
+// transport package writes it and `ResponseFormatJSON` is how httpx itself
+// would.
 func jsonFormatCase(list []ast.Expr) bool {
 	for _, expr := range list {
-		if selector, ok := unparen(expr).(*ast.SelectorExpr); ok && selector.Sel.Name == "ResponseFormatJSON" {
-			return true
+		switch typed := unparen(expr).(type) {
+		case *ast.SelectorExpr:
+			if typed.Sel.Name == "ResponseFormatJSON" {
+				return true
+			}
+		case *ast.Ident:
+			if typed.Name == "ResponseFormatJSON" {
+				return true
+			}
 		}
 	}
 	return false
