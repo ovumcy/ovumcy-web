@@ -213,12 +213,13 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 // oldSessionID (an opaque id minted only to key the row before a real session
 // existed — see the RequiresTOTP branch in CompleteOIDCLogin above) onto
 // newSessionID, the session id the TOTP challenge just minted
-// (handlers_auth_2fa.go). A row that fails validOIDCLogoutState — the same
-// check the direct, non-gated OIDC login path never has to make, because
-// buildLogoutState only ever produces a valid one — or that Load cannot find,
-// is defensive: oldSessionID is generated and Saved a few minutes earlier in
-// this same pending-TOTP window by this same code path, so in practice both
-// arms are unreachable without a storage fault between the two calls.
+// (handlers_auth_2fa.go). Its only production caller reaches this having
+// Saved oldSessionID's row itself a few minutes earlier in the same
+// pending-TOTP window, so the not-found, invalid-state and storage-error
+// arms below are not expected to fire in practice — but the function takes
+// plain arguments and a *Handler wired to a stub store drives each of them
+// directly (handlers_auth_oidc_move_logout_state_test.go), so none of it is
+// suppressed here.
 func (handler *Handler) moveOIDCLogoutState(ctx context.Context, oldSessionID string, newSessionID string, userID uint, now time.Time) error {
 	if handler == nil || handler.oidcLogoutStateSvc == nil {
 		return nil
@@ -231,13 +232,13 @@ func (handler *Handler) moveOIDCLogoutState(ctx context.Context, oldSessionID st
 
 	logoutState, found, err := handler.oidcLogoutStateSvc.Load(ctx, oldSessionID, userID, now)
 	if err != nil || !found {
-		return err // codecov:ignore -- defensive: Load fails only on a storage error, and a not-found row would mean the Save a few lines up in CompleteOIDCLogin never happened
+		return err
 	}
 	if !validOIDCLogoutState(logoutState) {
-		return handler.oidcLogoutStateSvc.Delete(ctx, oldSessionID, userID) // codecov:ignore -- defensive: the state this reads was Saved by buildLogoutState a few minutes earlier in this same request chain, which never produces an invalid one
+		return handler.oidcLogoutStateSvc.Delete(ctx, oldSessionID, userID)
 	}
 	if err := handler.oidcLogoutStateSvc.Save(ctx, newSessionID, logoutState, now); err != nil {
-		return err // codecov:ignore -- defensive: Save fails only on a storage error
+		return err
 	}
 	return handler.oidcLogoutStateSvc.Delete(ctx, oldSessionID, userID)
 }

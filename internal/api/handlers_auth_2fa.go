@@ -126,9 +126,11 @@ func (handler *Handler) VerifyTOTPLogin(c fiber.Ctx) error {
 	// just minted.
 	if oidcLogoutStateID != "" {
 		if err := handler.moveOIDCLogoutState(c.Context(), oidcLogoutStateID, sessionID, userID, time.Now()); err != nil {
-			// codecov:ignore:start -- defensive: moveOIDCLogoutState only returns a
-			// non-nil error from its own storage-error arms, which are independently
-			// marked defensive at their own site
+			// codecov:ignore:start -- defensive: this call site always passes a
+			// non-empty, freshly Saved oldSessionID against the real DB-backed
+			// service, so a non-nil error here can only come from a genuine storage
+			// fault; moveOIDCLogoutState's own arms are unit-tested directly against
+			// a stub store (handlers_auth_oidc_move_logout_state_test.go)
 			spec := authSessionCreateErrorSpec()
 			handler.logSecurityError(c, "auth.2fa", spec)
 			handler.clearSessionEndCookies(c)
