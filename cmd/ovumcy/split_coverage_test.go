@@ -10,6 +10,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/db"
+	"github.com/ovumcy/ovumcy-web/internal/security"
 )
 
 // setValidBootEnv installs a minimal, valid runtime environment so a
@@ -182,6 +183,71 @@ func TestTryRunCLICommandWithHandlersResetPassword(t *testing.T) {
 		}
 		if !called {
 			t.Fatal("expected the reset-password handler to be invoked")
+		}
+	})
+}
+
+func TestTryRunCLICommandWithHandlersLinkOIDCIdentity(t *testing.T) {
+	baseArgs := []string{"link-oidc-identity", "owner@example.com", "--issuer", "https://idp.example", "--subject", "sub-1"}
+
+	t.Run("requires a handler", func(t *testing.T) {
+		setValidBootEnv(t)
+		handled, err := tryRunCLICommandWithHandlers(baseArgs, cliCommandHandlers{})
+		if !handled || err == nil {
+			t.Fatalf("expected handled error, got (%t, %v)", handled, err)
+		}
+	})
+
+	t.Run("reports invalid database config", func(t *testing.T) {
+		setValidBootEnv(t)
+		t.Setenv("DB_DRIVER", "bogus")
+		handled, err := tryRunCLICommandWithHandlers(baseArgs, cliCommandHandlers{
+			runLinkOIDCIdentity: func(db.Config, security.OIDCConfig, []string) error { return nil },
+		})
+		if !handled || err == nil {
+			t.Fatalf("expected handled db-config error, got (%t, %v)", handled, err)
+		}
+	})
+
+	t.Run("reports invalid oidc config", func(t *testing.T) {
+		setValidBootEnv(t)
+		t.Setenv("OIDC_ENABLED", "true")
+		t.Setenv("OIDC_ISSUER_URL", "")
+		t.Setenv("OIDC_CLIENT_ID", "")
+		handled, err := tryRunCLICommandWithHandlers(baseArgs, cliCommandHandlers{
+			runLinkOIDCIdentity: func(db.Config, security.OIDCConfig, []string) error { return nil },
+		})
+		if !handled || err == nil {
+			t.Fatalf("expected handled oidc-config error, got (%t, %v)", handled, err)
+		}
+	})
+
+	t.Run("dispatches to the handler with the resolved oidc config", func(t *testing.T) {
+		setValidBootEnv(t)
+		t.Setenv("OIDC_ENABLED", "true")
+		t.Setenv("OIDC_ISSUER_URL", "https://idp.example")
+		t.Setenv("OIDC_CLIENT_ID", "client-id")
+		t.Setenv("OIDC_CLIENT_SECRET", "client-secret")
+		t.Setenv("OIDC_REDIRECT_URL", "https://app.example/auth/oidc/callback")
+		t.Setenv("COOKIE_SECURE", "true")
+		called := false
+		handled, err := tryRunCLICommandWithHandlers(baseArgs, cliCommandHandlers{
+			runLinkOIDCIdentity: func(_ db.Config, oidcConfig security.OIDCConfig, args []string) error {
+				called = true
+				if !oidcConfig.Enabled {
+					t.Fatal("expected the resolved OIDC config to be enabled")
+				}
+				if len(args) != 5 {
+					t.Fatalf("unexpected link-oidc-identity args: %#v", args)
+				}
+				return nil
+			},
+		})
+		if !handled || err != nil {
+			t.Fatalf("expected clean dispatch, got (%t, %v)", handled, err)
+		}
+		if !called {
+			t.Fatal("expected the link-oidc-identity handler to be invoked")
 		}
 	})
 }

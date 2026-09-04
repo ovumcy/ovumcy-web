@@ -43,6 +43,35 @@ func settingsOIDCReauthMismatchErrorSpec() APIErrorSpec {
 	return settingsFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "oidc reauth identity mismatch")
 }
 
+// settingsOIDCIdentityLinkClaimedErrorSpec is returned when the (issuer,
+// subject) the step-up exchange resolved to is already linked to a DIFFERENT
+// account — ConfirmAndLinkIdentity's cross-user-claim guard. Distinct from the
+// reauth-mismatch spec above: that one means "not the same session that
+// started the flow"; this one means the identity itself belongs elsewhere.
+func settingsOIDCIdentityLinkClaimedErrorSpec() APIErrorSpec {
+	return settingsFormErrorSpec(fiber.StatusConflict, APIErrorCategoryValidation, "oidc identity already linked")
+}
+
+// mapOIDCIdentityLinkReauthError maps failures of CompleteIdentityLinkReauth
+// (the Settings step-up that links a NEW OIDC identity). Stale freshness and a
+// cross-user claim keep their own specs so the owner learns what to do next;
+// everything else collapses into the generic SSO failure so provider state
+// never leaks through error granularity.
+func mapOIDCIdentityLinkReauthError(err error) APIErrorSpec {
+	switch {
+	case errors.Is(err, services.ErrOIDCReauthStale):
+		return settingsOIDCReauthStaleErrorSpec()
+	case errors.Is(err, services.ErrOIDCLinkFailed):
+		return settingsOIDCIdentityLinkClaimedErrorSpec()
+	case errors.Is(err, services.ErrOIDCDisabled),
+		errors.Is(err, services.ErrOIDCUnavailable),
+		errors.Is(err, services.ErrOIDCIdentityResolveFailed):
+		return authOIDCUnavailableErrorSpec()
+	default:
+		return authOIDCAuthenticationFailedErrorSpec()
+	}
+}
+
 func settingsCycleUpdateErrorSpec() APIErrorSpec {
 	return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update cycle settings")
 }

@@ -55,6 +55,11 @@ func registerV1APIRoutes(app *fiber.App, handler *Handler) {
 	usersCurrent.Post("/data-wipe", handler.OwnerOnly, handler.ClearAllData)
 	usersCurrent.Post("/data-wipe/step-up", handler.OwnerOnly, handler.StartClearDataStepupReauth)
 	usersCurrent.Post("/deletion/step-up", handler.OwnerOnly, handler.StartDeleteAccountStepupReauth)
+	// Authenticated settings path for linking a NEW OIDC identity (issue #701):
+	// the public /auth/oidc/link-confirm route below stays closed, and this is
+	// the replacement — a fresh provider re-authentication gates the same
+	// permanent binding ConfirmAndLinkIdentity performs.
+	usersCurrent.Post("/oidc/link/step-up", handler.OwnerOnly, handler.StartOIDCIdentityLinkStepup)
 
 	onboarding := v1.Group("/onboarding", handler.AuthRequired)
 	onboarding.Post("/steps/1", handler.OwnerOnly, handler.OnboardingStep1)

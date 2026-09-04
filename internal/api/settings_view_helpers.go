@@ -31,8 +31,13 @@ func (handler *Handler) buildSettingsViewData(c fiber.Ctx, user *models.User, fl
 	*user = viewData.CurrentUser
 
 	data := fiber.Map{
-		"Title":                  localizedPageTitle(messages, "meta.title.settings", "Ovumcy | Settings"),
-		"CurrentUser":            user,
+		"Title":       localizedPageTitle(messages, "meta.title.settings", "Ovumcy | Settings"),
+		"CurrentUser": user,
+		// OIDCEnabled gates the "link an OIDC identity" card (issue #701): the
+		// step-up it starts (StartOIDCIdentityLinkStepup) refuses immediately
+		// when the provider is disabled, so hiding the control when it can only
+		// ever fail is a display decision, not a second copy of that check.
+		"OIDCEnabled":            handler.oidcService != nil && handler.oidcService.Enabled(),
 		"ErrorKey":               viewData.ErrorKey,
 		"ChangePasswordErrorKey": viewData.ChangePasswordErrorKey,
 		"SuccessKey":             viewData.SuccessKey,

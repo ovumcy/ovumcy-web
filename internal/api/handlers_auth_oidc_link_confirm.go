@@ -15,54 +15,28 @@ import (
 // service layer returned ErrOIDCLinkRequiresConfirmation — the OIDC exchange
 // resolved to a pre-existing local user by email but the (issuer, subject)
 // pair has never been linked. Auto-linking in that situation would let a
-// malicious or sloppy upstream IdP take over the account, so we issue a sealed
-// pending-link cookie and hand the user off to the password-confirmation page.
+// malicious or sloppy upstream IdP take over the account.
+//
+// This used to seal a pending-link cookie and hand the user off to a
+// password-confirmation page reachable without a session
+// (/auth/oidc/link-confirm below). Issue #701 closes that route for good:
+// linking is a permanent, password-change-weight binding and must be
+// authorised by a factor verified NOW, which an unauthenticated page cannot
+// do. There are now exactly two ways to complete this link — sign in with the
+// existing method and use the Settings step-up
+// (StartOIDCIdentityLinkStepup/completeOIDCIdentityLinkStepup, both reusing
+// this same OIDCLoginService.ConfirmAndLinkIdentity), or have the operator run
+// `ovumcy link-oidc-identity` (internal/cli) for an account with no session at
+// all. This function therefore never mints the pending-link cookie anymore —
+// ShowOIDCLinkConfirmPage and CompleteOIDCLinkConfirmation below are
+// unreachable with a real cookie as a result, which is what keeps the public
+// route closed without requiring every caller of this handler to re-derive
+// that decision.
 func (handler *Handler) startOIDCLinkConfirmation(c fiber.Ctx, result services.OIDCLoginResult) error {
-	if result.PendingLinkClaims == nil || result.User.ID == 0 {
-		spec := authOIDCAuthenticationFailedErrorSpec()
-		handler.logSecurityError(c, "auth.oidc_callback", spec)
-		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
-	}
-
-	if !result.User.LocalAuthEnabled {
-		// The target account has no local password (OIDC-only). The
-		// password-confirmation step cannot succeed, so refuse rather than
-		// strand the user on a perpetually-failing form. Adding a second OIDC
-		// provider to such an account is a deliberate Settings action and is
-		// out of scope for the unauthenticated login path.
-		spec := authOIDCLinkConfirmUnavailableErrorSpec()
-		handler.logSecurityError(c, "auth.oidc_callback", spec)
-		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
-	}
-
-	payload, err := newOIDCLinkPendingPayload(
-		time.Now(),
-		result.User.ID,
-		result.PendingLinkClaims.Issuer,
-		result.PendingLinkClaims.Subject,
-		result.User.Email,
-	)
-	if err != nil {
-		// codecov:ignore:start -- defensive: the pending-link payload fails only on a crypto/rand error
-		spec := authOIDCAuthenticationFailedErrorSpec()
-		handler.logSecurityError(c, "auth.oidc_callback", spec)
-		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
-		// codecov:ignore:end
-	}
-	if err := handler.setOIDCLinkPendingCookie(c, payload); err != nil {
-		// codecov:ignore:start -- defensive: the pending-link cookie setter fails only on an AEAD seal error
-		spec := authOIDCUnavailableErrorSpec()
-		handler.logSecurityError(c, "auth.oidc_callback", spec)
-		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
-		// codecov:ignore:end
-	}
-
-	handler.logSecurityEvent(c, "auth.oidc_callback", "link_confirmation_required")
-	return c.Redirect().Status(fiber.StatusSeeOther).To(oidcLinkConfirmPath)
+	spec := authOIDCLinkConfirmUnavailableErrorSpec()
+	handler.logSecurityError(c, "auth.oidc_callback", spec)
+	handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
+	return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 }
 
 // ShowOIDCLinkConfirmPage renders the password challenge that gates the
@@ -103,6 +77,18 @@ func (handler *Handler) ShowOIDCLinkConfirmPage(c fiber.Ctx) error {
 // CompleteOIDCLinkConfirmation verifies the current password for the target
 // account and, on success, persists the OIDC identity link and issues a fresh
 // auth session for the target user.
+//
+// As of issue #701, startOIDCLinkConfirmation never mints the sealed
+// pending-link cookie this function reads, on any account, in any
+// configuration — see that function's comment. Nothing in the OIDC callback
+// path calls into this function anymore; it stays only because it is still
+// unit-tested directly (a hand-sealed cookie built the same way the old mint
+// used to), documenting the gate below rather than guarding a live route. The
+// two ways to actually create a link today are the Settings step-up
+// (completeOIDCIdentityLinkStepup) and the operator CLI's
+// `ovumcy link-oidc-identity`, both calling OIDCLoginService.ConfirmAndLinkIdentity
+// directly. The reasoning that follows is kept for the record and because the
+// same gate would matter again if this function were ever reconnected.
 func (handler *Handler) CompleteOIDCLinkConfirmation(c fiber.Ctx) error {
 	// Same instance-level gate, same point in the handler, as Login
 	// (handlers_auth_session_login.go): checked first, before anything else
@@ -119,17 +105,6 @@ func (handler *Handler) CompleteOIDCLinkConfirmation(c fiber.Ctx) error {
 	// the very next OIDC round-trip — no password prompt at all the second
 	// time, because authenticateLinkedIdentity never asks. A gate placed after
 	// the link is one hop deep, not a gate.
-	//
-	// This narrows the self-service migration path: a genuine pre-existing
-	// local-password account cannot link its own OIDC identity while local
-	// sign-in is off, and there is currently no `ovumcy` CLI subcommand that
-	// links an identity on the operator's behalf (checked: cmd/ovumcy/commands.go
-	// exposes reset-password/users/notify/webhook/repair, nothing OIDC-shaped).
-	// That gap is real but is not this fix's to close — re-enabling local
-	// sign-in for the account's one linking round-trip, or an operator-run SQL
-	// insert into oidc_identities, are the only ways in today. Silently
-	// authenticating a takeover through the one arm left open is worse than
-	// that gap.
 	if !handler.localPublicAuthEnabled() {
 		spec := authLocalSignInDisabledErrorSpec()
 		handler.logSecurityError(c, "auth.oidc_link_confirm", spec)

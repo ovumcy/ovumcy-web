@@ -175,6 +175,28 @@
         {{end}}
       </section>
 
+      {{/* Linking a new OIDC identity is a permanent, password-change-weight
+           binding (issue #701), so it is gated by the same fresh-provider-
+           reauth step-up the erasure and local-password cards above use —
+           never by a form on a public, unauthenticated page. The card is
+           hidden rather than disabled when OIDC is off: the step-up it starts
+           would refuse immediately, so showing a control that can only ever
+           fail is not a service to the owner. */}}
+      {{if .OIDCEnabled}}
+      <section class="card-quiet settings-account-block space-y-2">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="min-w-0">
+            <h3 class="field-label field-label-lg">{{t .Messages "settings.oidc_link.title"}}</h3>
+            <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.oidc_link.description"}}</p>
+          </div>
+          <form action="/api/v1/users/current/oidc/link/step-up" method="post">
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+            <button type="submit" class="btn-secondary">{{t .Messages "settings.oidc_link.button"}}</button>
+          </form>
+        </div>
+      </section>
+      {{end}}
+
       {{/* The advanced-security block holds exactly one control, so its own
            heading and hint were a wrapper around the recovery-code heading
            below them. The recovery code names itself. */}}

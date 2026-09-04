@@ -70,9 +70,11 @@ Notes:
 3. The identity provider authenticates the user and returns the browser to `/auth/oidc/callback` — an auto-POST of the `code` and `state` in the request body (`form_post`, the default) or a `GET` redirect carrying them in the URL query (`query`). Ovumcy reads the callback from exactly one source keyed by the mode; it never reads both.
 4. Ovumcy validates the sealed state, exchanges the authorization code for tokens, and verifies the ID token plus `nonce`.
 5. If the `(issuer, subject)` identity link already exists, the linked local account is used immediately.
-6. Otherwise, if a verified email claim matches an existing local account, Ovumcy **neither links the two nor signs the user in**. It redirects to `/auth/oidc/link-confirm` and requires that account's own password — plus a valid TOTP code when the account has 2FA enabled — before the `(issuer, subject)` link is stored. A wrong password leaves the pending claims intact so the user can retry inside the window, and the link is refused outright if another account claimed the same `(issuer, subject)` in the meantime. Without this gate, any provider able to assert an existing user's email address could take over their account. The invariant itself — why an email claim is never enough, the sealed pending cookie and its five-minute TTL, the TOTP requirement, and the refusal for an account with no local password — is owned by [docs/security/oidc-and-sessions.md](security/oidc-and-sessions.md); this page keeps the operator-facing flow.
+6. Otherwise, if a verified email claim matches an existing local account, Ovumcy **neither links the two nor signs the user in**. It redirects to `/login` with a message pointing the account holder at Settings: sign in with your existing method, then link the new identity from there.
+   There is no unauthenticated way to complete this link — the public `/auth/oidc/link-confirm` route that used to accept a password on this page stays closed. Without this gate, any provider able to assert an existing user's email address could take over their account.
+   The invariant itself — why an email claim is never enough, the two authorised linking paths (Settings step-up, operator CLI), and why the old public route can never complete a link again — is owned by [docs/security/oidc-and-sessions.md](security/oidc-and-sessions.md); this page keeps the operator-facing flow.
 7. If no account exists and auto-provisioning is enabled, Ovumcy can create a new `owner` account, subject to `REGISTRATION_MODE=open` and any configured domain allowlist. A brand-new account has nothing to take over, so no confirmation applies.
-8. Ovumcy finishes sign-in by issuing the normal local `ovumcy_auth` session cookie — after the step-6 confirmation, where that applied.
+8. Ovumcy finishes sign-in by issuing the normal local `ovumcy_auth` session cookie for a path that resolved to a session (steps 5 and 7); step 6 never mints one on its own.
 
 Provider and auth errors are intentionally kept out of query strings and fragments. Browser-facing failures return through the existing flash-based login UX instead. (In `query` response mode the provider itself puts the successful `code`/`state` in the callback URL — see [Response mode](#response-mode) — but Ovumcy still never emits its own error state into a URL.)
 
@@ -358,28 +360,34 @@ Check:
 - the provider marks the email as verified;
 - `OIDC_AUTO_PROVISION_ALLOWED_DOMAINS` is empty, or the email domain is listed there exactly.
 
-### After signing in with SSO, the user is asked for their Ovumcy password
+### SSO resolves to an existing account but does not sign the user in
 
-This is the account-link confirmation, not a failure. It appears once for each new
+This is the account-link hand-off, not a failure. It happens once for each new
 provider identity being attached to an existing account: the provider asserted an
-email that matches an existing local account, and
-Ovumcy refuses to link a fresh `(issuer, subject)` to an existing account on the
-strength of an email claim alone. The user enters that account's own password (plus
-its TOTP code when 2FA is on), the link is stored, and every later SSO sign-in goes
-straight through.
+email that matches an existing local account, and Ovumcy refuses to link a fresh
+`(issuer, subject)` to an existing account on the strength of an email claim alone.
+The user lands back on `/login` with a message pointing them at Settings.
+
+To finish the link:
+
+- **With a working sign-in already** (local password, or a different already-linked
+  OIDC identity): sign in normally, open **Settings**, and use **Link an OIDC
+  identity**. This starts a fresh interactive re-authentication at the provider
+  (`prompt=login`) — the same step-up primitive local-password enrollment and the
+  clear-data/delete-account flows already use — and links on return.
+- **With no working sign-in at all** (an OIDC-only account whose provider changed,
+  for example): the operator runs `ovumcy link-oidc-identity <email>|--id <id>
+  --issuer <issuer> --subject <subject>` from the machine `docker exec` reaches.
 
 Things worth knowing before treating it as a bug:
 
-- The pending link expires after **five minutes**. Past that the user starts the SSO
-  flow again.
-- A wrong password does **not** cancel the flow — the pending link survives for a
-  retry inside the same window, and the attempt draws on the ordinary login failure
-  budget, so repeated wrong guesses are rate-limited.
-- An OIDC-only account (`local_auth_enabled=false`) has no password to confirm with,
-  so this path refuses it rather than prompting. Such an account is linked by its
-  own `(issuer, subject)` from the start and never reaches this page.
-- There is no configuration switch that skips the confirmation. Auto-linking by
-  asserted email is the account-takeover vector the gate exists to close.
+- There is no unauthenticated page that completes this link, at any password
+  strength. That page (`/auth/oidc/link-confirm`) existed once and is now closed for
+  good — see [docs/security/oidc-and-sessions.md](security/oidc-and-sessions.md).
+- The link is refused outright if another account claimed the same
+  `(issuer, subject)` in the meantime, on both paths above.
+- There is no configuration switch that skips this. Auto-linking by asserted email
+  is the account-takeover vector the gate exists to close.
 
 ### The user can sign in but cannot regenerate a recovery code or use password-confirmed danger-zone actions
 

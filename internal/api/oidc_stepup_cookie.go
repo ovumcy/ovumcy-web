@@ -35,6 +35,12 @@ const (
 	// for the password prompt. An account that HAS a local password never
 	// reaches this purpose: its gate stays the password.
 	oidcStepupPurposeErasure oidcStepupPurpose = "erasure"
+	// oidcStepupPurposeIdentityLink gates linking a NEW OIDC identity to the
+	// currently authenticated account from Settings (issue #701). Linking is a
+	// permanent, password-change-weight binding, so it is authorised the same
+	// way as the other step-ups here: a fresh interactive provider
+	// authentication, never the public unauthenticated link-confirm route.
+	oidcStepupPurposeIdentityLink oidcStepupPurpose = "identity_link"
 )
 
 // oidcStepupErasureOperation names which erasure the step-up was started for.
@@ -82,6 +88,14 @@ func newOIDCErasureStepupState(now time.Time, userID uint, operation oidcStepupE
 		return oidcStepupState{}, errors.New("oidc stepup state requires a known erasure operation")
 	}
 	return newOIDCStepupStateForPurpose(now, oidcStepupPurposeErasure, userID, "", operation)
+}
+
+// newOIDCIdentityLinkStepupState builds the identity-link state. Like erasure
+// it carries no password hash and no operation — the callback's only job is to
+// prove a fresh interactive authentication before ConfirmAndLinkIdentity runs
+// against whatever (issuer, subject) the exchange returns.
+func newOIDCIdentityLinkStepupState(now time.Time, userID uint) (oidcStepupState, error) {
+	return newOIDCStepupStateForPurpose(now, oidcStepupPurposeIdentityLink, userID, "", "")
 }
 
 func newOIDCStepupStateForPurpose(now time.Time, purpose oidcStepupPurpose, userID uint, passwordHash string, operation oidcStepupErasureOperation) (oidcStepupState, error) {
@@ -139,6 +153,8 @@ func (state oidcStepupState) payloadCompleteForPurpose() bool {
 		return strings.TrimSpace(state.PasswordHash) != "" && state.Operation == ""
 	case oidcStepupPurposeErasure:
 		return state.Operation.valid() && strings.TrimSpace(state.PasswordHash) == ""
+	case oidcStepupPurposeIdentityLink:
+		return state.Operation == "" && strings.TrimSpace(state.PasswordHash) == ""
 	default:
 		return false
 	}

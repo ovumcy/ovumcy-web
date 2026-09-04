@@ -43,4 +43,5 @@ type OIDCWorkflowService interface {
 	Authenticate(ctx context.Context, code string, codeVerifier string, expectedNonce string, now time.Time) (services.OIDCLoginResult, error)
 	ValidateReauthExchange(ctx context.Context, code string, codeVerifier string, expectedNonce string, expectedUserID uint, maxAuthAge time.Duration, now time.Time) error
 	ConfirmAndLinkIdentity(ctx context.Context, targetUserID uint, claims security.OIDCClaims, linkTime time.Time) error
+	CompleteIdentityLinkReauth(ctx context.Context, code string, codeVerifier string, expectedNonce string, targetUserID uint, maxAuthAge time.Duration, now time.Time) error
 }
