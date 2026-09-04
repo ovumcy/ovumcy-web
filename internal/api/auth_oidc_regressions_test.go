@@ -1409,9 +1409,9 @@ func TestCompleteOIDCLinkConfirmationWithLocalAuthDisabledRefusesUnavailable(t *
 // IdP identity carrying the victim's email, hit
 // ErrOIDCLinkRequiresConfirmation, post the password here, and — if the link
 // were allowed through — sign in through the newly linked identity on the
-// very next OIDC round-trip with no password prompt at all. See
-// TestOIDCLinkConfirmRefusalWhileDisabledLeavesNoPersistentBinding for that
-// second leg pinned end-to-end.
+// very next OIDC round-trip with no password prompt at all. That second leg is
+// pinned by the last assertion in this test — ConfirmAndLinkIdentity never ran,
+// read off the stub's lastConfirmLinkUserID.
 func TestCompleteOIDCLinkConfirmationRefusesEntirelyWhenLocalSignInDisabled(t *testing.T) {
 	t.Parallel()
 
