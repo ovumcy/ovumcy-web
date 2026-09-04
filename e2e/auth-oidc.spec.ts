@@ -19,7 +19,17 @@ const autoProvisionEnabled = process.env.OIDC_AUTO_PROVISION === 'true';
 const providerEmail = process.env.OIDC_TEST_PROVIDER_EMAIL ?? 'oidc-browser@example.com';
 const providerIssuer = process.env.OIDC_ISSUER_URL ?? '';
 
-async function signInViaOIDCOnlyAndEnableLocalPassword(page: Page) {
+// `requireLocalPasswordSetup` is what separates the two callers, and it is a
+// parameter rather than a plain `if` because the difference is not incidental:
+// the first caller is the test OF the setup flow and must redden when the form
+// is missing, while the second signs in on an account the first already enrolled
+// — the form is legitimately gone by then, and its own subject is the logout
+// bridge. Left as a bare `if`, the setup test passed vacuously whenever the form
+// failed to render at all.
+async function signInViaOIDCOnlyAndEnableLocalPassword(
+  page: Page,
+  { requireLocalPasswordSetup }: { requireLocalPasswordSetup: boolean },
+) {
   await page.goto('/login');
   await expect(page).toHaveURL(/\/login(?:\?.*)?$/);
   await expect(page.locator('#login-form')).toHaveCount(0);
@@ -35,6 +45,9 @@ async function signInViaOIDCOnlyAndEnableLocalPassword(page: Page) {
   await expect(page).toHaveURL(/\/settings(?:\?.*)?$/);
 
   const localPasswordForm = page.locator('[data-settings-local-password-form]');
+  if (requireLocalPasswordSetup) {
+    await expect(localPasswordForm).toBeVisible();
+  }
   if (await localPasswordForm.isVisible().catch(() => false)) {
     // OIDC-only users must complete a step-up re-auth before a local password
     // is committed. Submitting the form posts to
@@ -237,7 +250,7 @@ test.describe('Auth: OIDC login entry', () => {
       'Requires local OIDC provider, oidc_only mode, and auto-provision',
     );
 
-    await signInViaOIDCOnlyAndEnableLocalPassword(page);
+    await signInViaOIDCOnlyAndEnableLocalPassword(page, { requireLocalPasswordSetup: true });
   });
 
   test('oidc_only provider logout bridge works when provider logout is enabled', async ({
@@ -258,7 +271,10 @@ test.describe('Auth: OIDC login entry', () => {
       }
     });
 
-    await signInViaOIDCOnlyAndEnableLocalPassword(page);
+    // The setup test above ran first and already enrolled this provider
+    // account's local password, so the setup form is gone by now — this test's
+    // own subject is the logout bridge, not the enrollment.
+    await signInViaOIDCOnlyAndEnableLocalPassword(page, { requireLocalPasswordSetup: false });
 
     await page.locator('.nav-logout-form button[type="submit"]').click();
     await expect(page.locator('#confirm-modal')).toBeVisible();

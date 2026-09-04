@@ -230,8 +230,26 @@ func (handler *Handler) completeLocalPasswordSetupReauth(c fiber.Ctx, state oidc
 		// codecov:ignore:end
 	}
 
+	// The reveal surface spends the account's one-time reveal mark, so it is
+	// guarded on Fetch Metadata: only a same-origin initiator may claim it
+	// (firstPartyRequestRefusal). Sec-Fetch-Site describes the whole redirect
+	// CHAIN, and this callback is a cross-site POST the provider makes, so a 303
+	// from here reaches /recovery-code still labelled off-origin and the owner's
+	// freshly minted code is refused on the one navigation entitled to it —
+	// silently, landing her on the dashboard with no code and no way back to it.
+	// Handing over a same-origin document instead breaks the chain: the
+	// interstitial's own navigation is initiated by this origin, so the label
+	// becomes true rather than excused, and an attacker's page still cannot
+	// produce one. Same primitive as the outbound hop in
+	// StartLocalPasswordSetupReauth above.
+	nextPath, err := handler.stageRecoveryCodeReveal(c, user, recoveryCode, "/settings", recoveryCodeSurfaceDedicated)
+	if err != nil {
+		return handler.respondMappedError(c, authRecoveryCodePersistErrorSpec())
+	}
+
 	handler.logSecurityEvent(c, "auth.local_password_setup.callback", "success")
-	return handler.renderRecoveryCodeResponseWithContinuePath(c, user, recoveryCode, fiber.StatusOK, "/settings")
+	c.Type("html", "utf-8")
+	return c.SendString(oidcSameOriginRedirectInterstitial(nextPath))
 }
 
 func (handler *Handler) validateLocalPasswordSetupReauth(ctx context.Context, code, codeVerifier, nonce string, userID uint, now time.Time) error {
