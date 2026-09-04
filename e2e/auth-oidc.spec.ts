@@ -3,6 +3,7 @@ import {
   DEFAULT_STRONG_PASSWORD,
   completeOnboardingIfPresent,
   continueFromRecoveryCode,
+  cookieByName,
   expectInlineRegisterRecoveryStep,
   expectNoSensitiveAuthParams,
   loginViaUI,
@@ -98,13 +99,13 @@ test.describe('Auth: OIDC login entry', () => {
     }
   });
 
-  test('hybrid mode links SSO to a pre-existing local account only after password confirmation', async ({
+  test('hybrid mode refuses a first-time SSO link at the callback and links only from the Settings step-up', async ({
+    context,
     page,
   }) => {
     test.skip(!localOIDCProvider || loginMode !== 'hybrid', 'Requires local OIDC provider in hybrid mode');
 
     const credentials = { email: providerEmail, password: DEFAULT_STRONG_PASSWORD };
-    const wrongPassword = 'WrongStrongPass9';
 
     await page.goto('/login');
     await expect(page).toHaveURL(/\/login(?:\?.*)?$/);
@@ -115,8 +116,8 @@ test.describe('Auth: OIDC login entry', () => {
 
     // Establish a local account whose email matches the one the provider
     // asserts. The (issuer, subject) the IdP returns has never been linked, so
-    // the first SSO sign-in must NOT auto-link — it has to fall into the
-    // password-confirmation gate (d1def85).
+    // the first SSO sign-in must NOT auto-link on the asserted email — it has
+    // to be refused (d1def85, then #701 closed the confirmation page too).
     await registerOwnerViaUI(page, credentials);
     const inlineRecovery = page.locator('[data-auth-inline-recovery]');
     const recoveryVisible = await expect(inlineRecovery)
@@ -154,37 +155,71 @@ test.describe('Auth: OIDC login entry', () => {
     expectNoSensitiveAuthParams(page.url());
 
     // First SSO sign-in: the verified email matches the existing local account
-    // but the identity is unlinked → land on the password-confirmation page,
-    // never straight on the dashboard.
+    // but the (issuer, subject) has never been linked. The callback REFUSES —
+    // linking is a permanent, password-change-weight binding and may only be
+    // authorised by a factor verified now, which an unauthenticated page
+    // cannot do (issue #701). So the browser lands back on /login carrying the
+    // refusal flash, never on a password-confirmation page and never on the
+    // dashboard.
     await page.locator('[data-auth-sso-cta]').click();
-    await expect(page).toHaveURL(/\/auth\/oidc\/link-confirm$/);
-    expectNoSensitiveAuthParams(page.url());
-    await expect(page.locator('#oidc-link-confirm-form')).toHaveAttribute(
-      'action',
-      '/auth/oidc/link-confirm',
+    await expect(
+      page.locator(
+        '[data-auth-server-error][data-error-key="auth.error.sso_link_confirmation_unavailable"]',
+      ),
+    ).toBeVisible();
+    await expect(page.locator('[data-auth-server-error]')).toContainText(
+      localeText('en', 'auth.error.sso_link_confirmation_unavailable'),
     );
-    await expect(page.locator('#oidc-link-confirm-password')).toBeVisible();
-    await expect(page.locator('[data-link-confirm-email]')).toContainText(providerEmail);
-
-    // Wrong password is rejected and keeps the user on the confirmation page
-    // (the pending-link cookie survives so a retry stays within TTL), with the
-    // error surfaced through flash state rather than a PII-bearing URL.
-    await page.locator('#oidc-link-confirm-password').fill(wrongPassword);
-    await page.locator('[data-link-confirm-submit]').click();
-    await expect(page).toHaveURL(/\/auth\/oidc\/link-confirm$/);
+    await expect(page).toHaveURL(/\/login$/);
     expectNoSensitiveAuthParams(page.url());
-    await expect(page.locator('[data-auth-server-error]')).toBeVisible();
-    await expect(page.locator('[data-link-confirm-email]')).toContainText(providerEmail);
+    await expect(page.locator('#login-form')).toBeVisible();
+    // No session was issued, and the retained-but-unreachable link-confirm
+    // route was not armed: without the pending-link cookie its page and its
+    // POST both bounce straight back to /login.
+    expect(await cookieByName(context, 'ovumcy_auth')).toBeFalsy();
+    expect(await cookieByName(context, 'ovumcy_oidc_link_pending')).toBeFalsy();
 
-    // Correct password completes the link and issues a session.
-    await page.locator('#oidc-link-confirm-password').fill(credentials.password);
-    await page.locator('[data-link-confirm-submit]').click();
+    // The link is made from an authenticated session instead, so sign in with
+    // the account's existing method first.
+    await loginViaUI(page, credentials);
     await completeOnboardingIfPresent(page);
     await expect(page).toHaveURL(/\/dashboard(?:\?.*)?$/);
-    await expect(page.locator('[data-nav-account-actions]')).toBeVisible();
+
+    await page.goto('/settings');
+    await expect(page).toHaveURL(/\/settings(?:\?.*)?$/);
+
+    const linkIdentityForm = page.locator(
+      'form[action="/api/v1/users/current/oidc/link/step-up"]',
+    );
+    await expect(linkIdentityForm).toBeVisible();
+    await expect(linkIdentityForm.locator('button[type="submit"]')).toContainText(
+      localeText('en', 'settings.oidc_link.button'),
+    );
+
+    // Submitting the card posts to the step-up, which hands back a same-origin
+    // interstitial (the settings CSP pins form-action to 'self') that bounces
+    // to the provider's authorize endpoint with prompt=login + max_age, then
+    // /auth/oidc/callback links the identity and 303s back to /settings. The
+    // terminal signal is the success flash, not the URL: the flow starts and
+    // ends on /settings, so a URL wait would be satisfied before it began.
+    // Caveat on what this proves: the local IdP keeps no login session of its
+    // own and ignores prompt=login, so the lane covers the round trip and the
+    // persisted link — the app's freshness gate itself (reauthClaimsFresh over
+    // auth_time/iat) is covered by unit tests against forged claims.
+    await linkIdentityForm.locator('button[type="submit"]').click();
+    await expect(
+      page.locator(
+        '[data-flash-key="settings.success.oidc_identity_linked"][data-flash-status="success"]',
+      ),
+    ).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator('[data-flash-status="success"]')).toContainText(
+      localeText('en', 'settings.success.oidc_identity_linked'),
+    );
+    await expect(page).toHaveURL(/\/settings(?:\?.*)?$/);
+    expectNoSensitiveAuthParams(page.url());
 
     // The identity is now linked: a second SSO sign-in authenticates straight
-    // through without a second confirmation prompt.
+    // through without any confirmation prompt.
     await page.locator('.nav-logout-form button[type="submit"]').click();
     await expect(page.locator('#confirm-modal')).toBeVisible();
     await page.locator('#confirm-modal-accept').click();
