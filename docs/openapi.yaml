@@ -2653,6 +2653,11 @@ paths:
       responses:
         '200':
           description: 2FA enabled.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+        '303':
+          description: "Browser redirect to `/settings`, which reads the success flash, when `Accept: application/json` is not set."
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '400': { $ref: '#/components/responses/ValidationError' }
@@ -2671,6 +2676,11 @@ paths:
       responses:
         '200':
           description: 2FA disabled.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+        '303':
+          description: "Browser redirect to `/settings`, which reads the success flash, when `Accept: application/json` is not set."
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '400': { $ref: '#/components/responses/ValidationError' }

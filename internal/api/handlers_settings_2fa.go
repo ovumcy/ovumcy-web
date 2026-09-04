@@ -138,6 +138,9 @@ func (handler *Handler) VerifyTOTP2FAEnrollment(c fiber.Ctx) error {
 			htmxDismissibleSuccessStatusMarkup(messages, translateMessage(messages, "settings.2fa.enabled_status")),
 		)
 	}
+	if acceptsJSON(c) {
+		return c.JSON(fiber.Map{"ok": true})
+	}
 	// The mirror image of the refusal side of this branch: a verdict has to be
 	// written to a channel its destination reads. /settings/2fa builds its
 	// template data inline and never pops the flash cookie, so a confirmation
@@ -207,6 +210,9 @@ func (handler *Handler) DisableTOTP2FA(c fiber.Ctx) error {
 		return c.Status(fiber.StatusOK).SendString(
 			htmxDismissibleSuccessStatusMarkup(messages, translateMessage(messages, "settings.2fa.disabled_status")),
 		)
+	}
+	if acceptsJSON(c) {
+		return c.JSON(fiber.Map{"ok": true})
 	}
 	// Same destination and the same slug rule as the enable arm above; fixing
 	// one of the two would leave the other rendering nothing. Landing on
