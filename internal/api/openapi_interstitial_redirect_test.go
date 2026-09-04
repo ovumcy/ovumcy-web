@@ -31,12 +31,13 @@ const interstitialHelper = "oidcSameOriginRedirectInterstitial"
 // so the cross-origin hop to the provider cannot be a 3xx at all; the operation
 // hands the browser a 200 same-origin page whose meta-refresh performs it. An
 // operation that serves it therefore has no browser redirect to declare, and
-// the 303 the three OIDC step-ups published for two releases described a hop
-// that had not existed since the CSP fix. The one status they really can
-// redirect a browser with is respondSettingsError's refusal bounce to
-// /settings, which every /api/v1/users/current mutation shares and none of the
-// ~30 others declares — a cross-cutting HTML-surface answer the spec preamble
-// puts outside this contract, not a per-operation outcome.
+// the 303 three OIDC step-ups published described a hop that had not existed
+// since the CSP fix. The one status they really can redirect a browser with is
+// respondSettingsError's refusal bounce to /settings, shared by the settings
+// mutations under /api/v1/users/current: of the operations the spec publishes
+// under that prefix, the only ones declaring a 303 are those where the
+// redirect IS the browser's primary outcome — a cross-cutting HTML-surface
+// answer the spec preamble puts outside this contract, not a per-operation one.
 //
 // Neither status guard could see this. The whole-server sweep passes because
 // 303 is emitted all over internal/; the per-operation walk passes because 303
