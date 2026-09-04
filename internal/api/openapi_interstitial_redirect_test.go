@@ -73,7 +73,7 @@ func TestOpenAPIOperationsServingAnInterstitialDeclareNoBrowserRedirect(t *testi
 		}
 		seen[operation] = true
 
-		reach := &interstitialReach{funcs: funcs, visited: make(map[*ast.FuncDecl]bool)}
+		reach := &interstitialReach{funcs: funcs, visited: make(map[*ast.FuncDecl]int)}
 		for _, h := range route.Handlers {
 			for _, decl := range funcs[handlerFuncName(h)] {
 				if transport[decl] {
@@ -110,16 +110,24 @@ func TestOpenAPIOperationsServingAnInterstitialDeclareNoBrowserRedirect(t *testi
 // narrowing: it looks for a single call by name, and a call it cannot resolve
 // makes it quieter, never falsely red.
 type interstitialReach struct {
-	funcs   map[string][]*ast.FuncDecl
-	visited map[*ast.FuncDecl]bool
+	funcs map[string][]*ast.FuncDecl
+	// visited records the SHALLOWEST depth each declaration was reached at, not
+	// merely that it was reached. A long path can arrive first and burn the
+	// descent budget below a helper that a shorter path would have walked
+	// through — marking the declaration done there would lose the shorter path
+	// and turn a real offender green.
+	visited map[*ast.FuncDecl]int
 	found   bool
 }
 
 func (reach *interstitialReach) walk(decl *ast.FuncDecl, depth int) {
-	if reach.found || decl == nil || decl.Body == nil || depth > maxReachDepth || reach.visited[decl] {
+	if reach.found || decl == nil || decl.Body == nil || depth > maxReachDepth {
 		return
 	}
-	reach.visited[decl] = true
+	if seen, ok := reach.visited[decl]; ok && seen <= depth {
+		return
+	}
+	reach.visited[decl] = depth
 	ast.Inspect(decl.Body, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {

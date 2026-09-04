@@ -2497,9 +2497,11 @@ paths:
         recovery code. See [docs/oidc.md "How Auto-Provision Works"](oidc.md#how-auto-provision-works).
 
         A request that does not accept JSON (an ordinary form submit) is
-        answered with a same-origin interstitial page instead of the JSON body,
-        because the settings page CSP pins `form-action` to `'self'` across the
-        whole redirect chain.
+        answered, on success, with a same-origin interstitial page instead of
+        the JSON body, because the settings page CSP pins `form-action` to
+        `'self'` across the whole redirect chain; the responses below describe
+        the JSON surface, and a refusal on the browser one flashes onto
+        `/settings` rather than carrying the status.
       requestBody:
         required: true
         content:
@@ -2534,9 +2536,11 @@ paths:
         gate stays the password, so the SSO path can never be used to bypass it.
 
         A request that does not accept JSON (an ordinary form submit) is
-        answered with a same-origin interstitial page instead of the JSON body,
-        because the settings page CSP pins `form-action` to `'self'` across the
-        whole redirect chain.
+        answered, on success, with a same-origin interstitial page instead of
+        the JSON body, because the settings page CSP pins `form-action` to
+        `'self'` across the whole redirect chain; the responses below describe
+        the JSON surface, and a refusal on the browser one flashes onto
+        `/settings` rather than carrying the status.
       responses:
         '200':
           description: OIDC redirect URL emitted.
@@ -2567,9 +2571,11 @@ paths:
         callback deletes the account and retracts the session.
 
         A request that does not accept JSON (an ordinary form submit) is
-        answered with a same-origin interstitial page instead of the JSON body,
-        because the settings page CSP pins `form-action` to `'self'` across the
-        whole redirect chain.
+        answered, on success, with a same-origin interstitial page instead of
+        the JSON body, because the settings page CSP pins `form-action` to
+        `'self'` across the whole redirect chain; the responses below describe
+        the JSON surface, and a refusal on the browser one flashes onto
+        `/settings` rather than carrying the status.
       responses:
         '200':
           description: OIDC redirect URL emitted.
