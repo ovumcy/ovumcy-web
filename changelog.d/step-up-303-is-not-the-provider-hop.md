@@ -11,11 +11,14 @@ meta-refresh performs the hop instead — the behaviour the fourth operation of
 the same class, `.../oidc/link/step-up`, already documented. A JSON caller was
 never affected: it receives `200 {ok, redirect_url}` and always did.
 
-The `303` these operations really can answer a browser with is the refusal
-bounce back to `/settings`, which every `/api/v1/users/current` mutation shares
-and none of the ~30 others declares; it is the cross-cutting HTML-surface
-answer the spec's own preamble puts outside this contract, not a per-operation
-outcome, so it is not declared here either.
+The `303` these operations really can answer a browser with is
+`respondSettingsError`'s refusal bounce back to `/settings`, shared by the
+settings mutations under `/api/v1/users/current`. Of the 23 operations the spec
+publishes under that prefix, four declare a `303` after this change — the two
+calendar-feed reveals and the two 2FA toggles — and there the redirect is the
+browser's primary outcome, not a refusal. The refusal bounce is the
+cross-cutting HTML-surface answer the spec's own preamble puts outside this
+contract, so it is not declared here either.
 
 A new guard keeps the class closed. Over-declaration in an OpenAPI spec is
 generally undecidable — proving no path reaches a status is proving a negative,
