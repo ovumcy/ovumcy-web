@@ -281,3 +281,27 @@ func (handler *Handler) respondSettingsError(c fiber.Ctx, spec APIErrorSpec) err
 	}
 	return apiError(c, spec)
 }
+
+// redirectSettingsRefusal flashes a refusal the SETTINGS page can render and
+// sends the browser back to it. Every OIDC step-up that authorizes a settings
+// action completes on /auth/oidc/callback and finishes by redirecting to
+// /settings, so its refusals cannot answer through respondMappedError above —
+// they have to ride a flash across the redirect.
+//
+// The channel is not interchangeable. buildSettingsViewData feeds the settings
+// view service only flash.SettingsSuccess and flash.SettingsError; flash.AuthError
+// is read exclusively by the auth pages (auth_page_view_helpers.go), which a
+// redirect to /settings never reaches. A refusal flashed as AuthError is
+// therefore consumed by nothing: the owner lands on an unchanged settings page
+// and cannot tell a refused step-up from a successful one, while the success
+// arm's SettingsSuccess renders. Regression:
+// TestSettingsStepupRefusalsRenderOnTheSettingsPage.
+//
+// The key must also be one services.AuthErrorTranslationKey maps (that is the
+// lookup resolveSettingsStatusKeys performs on the flashed error), or the banner
+// renders empty for the same reason. Regression:
+// TestEverySettingsStepupRefusalKeyMapsToLocalizedCopy.
+func (handler *Handler) redirectSettingsRefusal(c fiber.Ctx, spec APIErrorSpec) error {
+	handler.setFlashCookie(c, FlashPayload{SettingsError: spec.Key})
+	return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+}

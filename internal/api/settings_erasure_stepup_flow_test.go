@@ -334,8 +334,8 @@ func TestErasureStepupCallbackRefusesAForeignSession(t *testing.T) {
 	if flashCookie == nil || strings.TrimSpace(flashCookie.Value) == "" {
 		t.Fatal("expected a flash cookie carrying the refusal")
 	}
-	if payload := decodeFlashCookieForTest(t, flashCookie.Value); payload.AuthError != settingsOIDCReauthMismatchErrorSpec().Key {
-		t.Fatalf("expected the identity-mismatch refusal %q, got %q", settingsOIDCReauthMismatchErrorSpec().Key, payload.AuthError)
+	if payload := decodeFlashCookieForTest(t, flashCookie.Value); payload.SettingsError != settingsOIDCReauthMismatchErrorSpec().Key {
+		t.Fatalf("expected the identity-mismatch refusal %q on the settings flash channel, got %q (auth channel holds %q)", settingsOIDCReauthMismatchErrorSpec().Key, payload.SettingsError, payload.AuthError)
 	}
 }
 
