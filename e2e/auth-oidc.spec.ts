@@ -26,6 +26,15 @@ const providerIssuer = process.env.OIDC_ISSUER_URL ?? '';
 // — the form is legitimately gone by then, and its own subject is the logout
 // bridge. Left as a bare `if`, the setup test passed vacuously whenever the form
 // failed to render at all.
+//
+// What it asserts is the password SECTION, not the setup variant of it. The
+// lane resets nothing between tests and CI runs with retries, so an attempt
+// that enrols the password and then fails later leaves every retry facing an
+// account that is already enrolled: demanding the setup form there would fail
+// on state this test itself created, turning one flake into a permanent red
+// that hides the original cause. Both variants of the section carry the same
+// id, so a page that rendered neither — the vacuous pass this parameter exists
+// to close — still reddens.
 async function signInViaOIDCOnlyAndEnableLocalPassword(
   page: Page,
   { requireLocalPasswordSetup }: { requireLocalPasswordSetup: boolean },
@@ -46,7 +55,7 @@ async function signInViaOIDCOnlyAndEnableLocalPassword(
 
   const localPasswordForm = page.locator('[data-settings-local-password-form]');
   if (requireLocalPasswordSetup) {
-    await expect(localPasswordForm).toBeVisible();
+    await expect(page.locator('#settings-change-password-form')).toBeVisible();
   }
   if (await localPasswordForm.isVisible().catch(() => false)) {
     // OIDC-only users must complete a step-up re-auth before a local password
