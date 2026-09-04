@@ -40,6 +40,135 @@ var envImageAssignment = regexp.MustCompile(`(?m)^[ \t]*(?:export[ \t]+)?OVUMCY_
 // ovumcyImageRef matches the published runtime image at an exact release tag.
 var ovumcyImageRef = regexp.MustCompile(`^ghcr\.io/ovumcy/ovumcy-web:v(\d+\.\d+\.\d+)$`)
 
+// goDirective captures the version from go.mod's `go` line, which is the
+// minimum toolchain that can build this module and the same value every
+// workflow resolves through `go-version-file: go.mod`.
+var goDirective = regexp.MustCompile(`(?m)^go[ \t]+(\d+\.\d+(?:\.\d+)?)[ \t]*$`)
+
+// readmeGoVersionSites are the places README.md tells a reader which Go a
+// source build needs. Each keys on the LABEL and captures to a delimiter
+// rather than matching a version shape, for the same reason envImageAssignment
+// does: a pattern anchored to the shape it expects SKIPS a site written any
+// other way, and a skipped site is precisely the one that drifts unnoticed.
+var readmeGoVersionSites = []struct {
+	what string
+	re   *regexp.Regexp
+}{
+	{"the Go version badge", regexp.MustCompile(`img\.shields\.io/badge/Go-([^-]*)-`)},
+	{"the Requirements list", regexp.MustCompile(`(?m)^[ \t]*-[ \t]+Go[ \t]+(\S+)`)},
+}
+
+// TestReadmeGoVersionMatchesGoMod asserts both README.md statements of the
+// required Go version agree with go.mod's `go` directive.
+//
+// Nothing else catches this. Every workflow takes its toolchain from
+// `go-version-file: go.mod`, so CI stays green no matter what the README
+// claims, and the drift is only visible to someone building from source — who
+// finds out by installing the wrong toolchain. It has already happened twice:
+// the badge and the Requirements line sat at `Go 1.26+` against a stricter
+// go.mod, were corrected by hand to `1.26.6+`, and then survived the 1.27.0 and
+// 1.27.1 bumps unchanged. Two hand corrections of the same two lines is the
+// argument for a guard rather than a third.
+//
+// It fails closed: finding no site at all is a failure, so a rewording that
+// stops matching cannot quietly stop being checked. A captured value that does
+// not begin with a digit is reported rather than skipped — the same rule the
+// image-pin walk applies, since a value nothing can parse is a value nobody is
+// comparing.
+func TestReadmeGoVersionMatchesGoMod(t *testing.T) {
+	root := repoRoot(t)
+	want := goModVersion(t, root)
+	content := readmeContent(t, root)
+
+	sites := 0
+	for _, site := range readmeGoVersionSites {
+		for _, m := range site.re.FindAllSubmatch(content, -1) {
+			raw := strings.TrimSpace(string(m[1]))
+			got := strings.TrimSuffix(raw, "+")
+			if got == "" || got[0] < '0' || got[0] > '9' {
+				t.Errorf("README.md %s reads %q, which is not a Go version, so nothing can compare it against go.mod", site.what, raw)
+				continue
+			}
+			sites++
+			if got != want {
+				t.Errorf(
+					"README.md %s states Go %s while go.mod requires %s; a reader building from source installs a toolchain that cannot build this module, and no workflow catches it because every one of them resolves its toolchain with go-version-file: go.mod",
+					site.what, got, want,
+				)
+			}
+		}
+	}
+	if sites == 0 {
+		t.Fatal("no Go version statement found in README.md: the drift guard has nothing to check")
+	}
+}
+
+// TestReadmeGoVersionSitesKeyOnTheirLabel proves the patterns above find a site
+// by its label rather than by the version shape it happens to carry today, on
+// inline fixtures rather than the real README. A two-component version, a
+// four-component one and a stale value all have to be FOUND — being found is
+// what lets the comparison report them.
+func TestReadmeGoVersionSitesKeyOnTheirLabel(t *testing.T) {
+	badge := readmeGoVersionSites[0].re
+	requirements := readmeGoVersionSites[1].re
+
+	for _, tc := range []struct {
+		name string
+		re   *regexp.Regexp
+		line string
+		want string
+	}{
+		{"badge, patch version", badge, `<img src="https://img.shields.io/badge/Go-1.27.1+-00ADD8?logo=go" alt="Go Version">`, "1.27.1+"},
+		{"badge, minor version", badge, `<img src="https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go">`, "1.26+"},
+		{"badge, stale value", badge, `<img src="https://img.shields.io/badge/Go-1.20.0+-00ADD8?logo=go">`, "1.20.0+"},
+		{"badge, no plus", badge, `<img src="https://img.shields.io/badge/Go-1.27.1-00ADD8?logo=go">`, "1.27.1"},
+		{"requirements, patch version", requirements, "- Go 1.27.1+", "1.27.1+"},
+		{"requirements, indented", requirements, "  -   Go 1.27.1+", "1.27.1+"},
+		{"requirements, no plus", requirements, "- Go 1.27.1", "1.27.1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := tc.re.FindStringSubmatch(tc.line)
+			if m == nil {
+				t.Fatalf("%q: site not found, so its version would never be compared", tc.line)
+			}
+			if got := strings.TrimSpace(m[1]); got != tc.want {
+				t.Fatalf("%q: captured %q, want %q", tc.line, got, tc.want)
+			}
+		})
+	}
+
+	for _, tc := range []struct {
+		name string
+		re   *regexp.Regexp
+		line string
+	}{
+		{"a different badge", badge, `<img src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker">`},
+		{"a requirements entry for something else", requirements, "- Node.js 22+"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if m := tc.re.FindStringSubmatch(tc.line); m != nil {
+				t.Fatalf("%q: matched %q, but this line states no Go version", tc.line, m[1])
+			}
+		})
+	}
+}
+
+// goModVersion reads the `go` directive. It fails closed for its callers: a
+// go.mod the pattern cannot read aborts rather than leaving the comparison
+// running against an empty string, which every README value would fail.
+func goModVersion(t *testing.T, root string) string {
+	t.Helper()
+	content, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		t.Fatalf("read go.mod: %v", err)
+	}
+	m := goDirective.FindSubmatch(content)
+	if m == nil {
+		t.Fatal("no `go` directive found in go.mod: nothing to compare README.md against")
+	}
+	return string(m[1])
+}
+
 // TestReadmeReleaseTagsAgree asserts every occurrence of the current release
 // tag in README.md is the same version. It fails closed: finding zero
 // occurrences is itself a failure, so a rewording that stops matching the
@@ -187,10 +316,7 @@ func envImageValue(raw string) string {
 // cannot silently turn a guard built on this tag into a no-op.
 func readmeReleaseTags(t *testing.T, root string) []string {
 	t.Helper()
-	content, err := os.ReadFile(filepath.Join(root, "README.md"))
-	if err != nil {
-		t.Fatalf("read README.md: %v", err)
-	}
+	content := readmeContent(t, root)
 
 	var found []string
 	for _, re := range releaseTagPatterns {
@@ -202,6 +328,18 @@ func readmeReleaseTags(t *testing.T, root string) []string {
 		t.Fatal("no release-tag occurrences found in README.md: the drift guard has nothing to check")
 	}
 	return found
+}
+
+// readmeContent reads README.md or aborts. Both drift guards above compare
+// against it, and a read error must stop them rather than let either run over
+// empty bytes and pass by finding nothing.
+func readmeContent(t *testing.T, root string) []byte {
+	t.Helper()
+	content, err := os.ReadFile(filepath.Join(root, "README.md"))
+	if err != nil {
+		t.Fatalf("read README.md: %v", err)
+	}
+	return content
 }
 
 func repoRoot(t *testing.T) string {
