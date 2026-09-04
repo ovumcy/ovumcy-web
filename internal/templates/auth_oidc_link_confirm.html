@@ -7,7 +7,7 @@
       <h1 class="journal-title" data-title-key="auth.oidc.link_confirm.title">{{t .Messages "auth.oidc.link_confirm.title"}}</h1>
       <p class="journal-muted mt-2">{{t .Messages "auth.oidc.link_confirm.description"}}</p>
       {{if .TargetEmail}}
-      <p class="journal-muted mt-1" data-link-confirm-email>{{.TargetEmail}}</p>
+      <p class="journal-muted mt-1">{{.TargetEmail}}</p>
       {{end}}
     </div>
 
@@ -55,7 +55,7 @@
       </div>
       {{end}}
 
-      <button type="submit" class="btn-primary w-full" data-link-confirm-submit>{{t .Messages "auth.oidc.link_confirm.submit_button"}}</button>
+      <button type="submit" class="btn-primary w-full">{{t .Messages "auth.oidc.link_confirm.submit_button"}}</button>
     </form>
 
     <div class="mt-5 text-sm">
