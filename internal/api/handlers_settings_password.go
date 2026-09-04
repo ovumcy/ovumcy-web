@@ -183,10 +183,40 @@ func (handler *Handler) completeLocalPasswordSetupReauth(c fiber.Ctx, state oidc
 
 	recoveryCode, err := handler.settingsService.FinalizeLocalPasswordSetup(c.Context(), user, state.PasswordHash)
 	if err != nil {
-		return handler.respondPasswordChangeError(c, err)
+		// The commit's refusals leave the same way the re-auth refusals above
+		// do. respondPasswordChangeError is the CHANGE-PASSWORD FORM's
+		// transport: respondSettingsError only flash-redirects to /settings for
+		// paths under /api/v1/users/current, and this handler runs on
+		// /auth/oidc/callback with neither HTMX nor a JSON Accept, so it fell
+		// through to the JSON envelope — rendered as the page to a browser
+		// returning from the identity provider.
+		//
+		// Where each mapped key lands is deliberate. Finalize can raise exactly
+		// three: ErrSettingsPasswordChangeInvalidInput carries
+		// services.SettingsPasswordChangeKeyInvalidInput, which
+		// IsChangePasswordErrorMessage attaches to the enrollment form rather
+		// than to the page banner, and that is the right place here too — it
+		// means the prepared pair no longer applies (a password appeared on the
+		// account, or the sealed hash was empty) and the form is where the owner
+		// re-enters one. The other two — "failed to secure password" and
+		// "failed to update password" — are general settings errors: nothing
+		// about the submitted passwords was refused, the write was, so pinning
+		// them to the form would point the owner at fields that are not the
+		// problem. No other services.SettingsPasswordChange* key can arrive
+		// here: the rest are raised by PrepareLocalPasswordHash, which runs on
+		// the form's own route.
+		spec := mapSettingsPasswordChangeError(err)
+		handler.logSecurityError(c, "auth.local_password_setup.callback", spec)
+		return handler.redirectSettingsRefusal(c, spec)
 	}
-	if err := handler.refreshPasswordChangeSession(c, user); err != nil {
-		return err
+	if spec, ok := handler.refreshCurrentSessionSpec(c, user, "auth.local_password_setup.callback"); !ok {
+		// Same reason one layer down: refreshPasswordChangeSession answers
+		// through respondMappedError, whose global session-create spec is JSON
+		// on every path. The password IS enrolled by this point, so the refusal
+		// reports only that this device's cookie could not be re-issued — a
+		// settings-page banner, on the same channel the erasure step-up's
+		// session-refresh arm already flashes.
+		return handler.redirectSettingsRefusal(c, spec)
 	}
 
 	handler.logSecurityEvent(c, "auth.local_password_setup.callback", "success")

@@ -210,6 +210,23 @@ func (handler *Handler) rotateOIDCLogoutState(c fiber.Ctx, newSessionID string) 
 // device stays signed in while every other session is invalidated. The
 // `scope` argument is used for security-event logging only.
 func (handler *Handler) refreshCurrentSession(c fiber.Ctx, user *models.User, scope string) error {
+	spec, ok := handler.refreshCurrentSessionSpec(c, user, scope)
+	if !ok {
+		return handler.respondMappedError(c, spec)
+	}
+	return nil
+}
+
+// refreshCurrentSessionSpec is the same re-issue, handing the refusal back as a
+// spec instead of writing it. respondMappedError above answers on the request's
+// own path, which is right for the settings routes but wrong for a caller that
+// runs on /auth/oidc/callback: there the reply is a browser navigation coming
+// back from the identity provider, and every spec this can raise renders either
+// a JSON envelope (the global session-create spec) or a redirect to /login (the
+// unsupported-role spec) instead of the settings page the step-up promised to
+// return to. Such a caller takes the spec and flashes it through
+// redirectSettingsRefusal.
+func (handler *Handler) refreshCurrentSessionSpec(c fiber.Ctx, user *models.User, scope string) (APIErrorSpec, bool) {
 	sessionID, err := handler.setAuthCookie(c, user, sessionWasRemembered(c))
 	if err != nil {
 		handler.clearAuthCookie(c)
@@ -218,12 +235,12 @@ func (handler *Handler) refreshCurrentSession(c fiber.Ctx, user *models.User, sc
 			spec = authWebSignInUnavailableErrorSpec()
 		}
 		handler.logSecurityError(c, scope, spec)
-		return handler.respondMappedError(c, spec)
+		return spec, false
 	}
 	if err := handler.rotateOIDCLogoutState(c, sessionID); err != nil {
 		handler.logSecurityEvent(c, scope, "provider_logout_state_rotation_failed")
 	}
-	return nil
+	return APIErrorSpec{}, true
 }
 
 func (handler *Handler) decodeSealedAuthCookieToken(rawValue string) (string, error) {

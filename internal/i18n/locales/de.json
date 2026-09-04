@@ -326,6 +326,8 @@
   "settings.error.erasure_requires_password": "Dieses Konto hat jetzt ein lokales Passwort. Bestätigen Sie diese Aktion mit diesem Passwort.",
   "settings.error.clear_data_failed": "Ihre Daten konnten nicht gelöscht werden. Bitte versuchen Sie es erneut.",
   "settings.error.delete_account_failed": "Das Konto konnte nicht gelöscht werden. Bitte versuchen Sie es erneut.",
+  "settings.error.password_secure_failed": "Das neue Passwort konnte nicht gesichert werden. Es wurde nichts geändert. Bitte versuchen Sie es erneut.",
+  "settings.error.password_update_failed": "Das neue Passwort konnte nicht gespeichert werden. Es wurde nichts geändert. Bitte versuchen Sie es erneut.",
   "settings.symptoms.error.name_required": "Geben Sie einen Symptomnamen ein.",
   "settings.symptoms.error.name_too_long": "Verwenden Sie höchstens 40 Zeichen. Für längere Details verwenden Sie Notizen.",
   "settings.symptoms.error.invalid_characters": "Verwenden Sie nur Klartext. Tags und spitze Klammern sind nicht erlaubt.",

@@ -326,6 +326,8 @@
   "settings.error.erasure_requires_password": "Questo account ora ha una password locale. Conferma questa azione con quella password.",
   "settings.error.clear_data_failed": "Impossibile cancellare i tuoi dati. Riprova.",
   "settings.error.delete_account_failed": "Impossibile eliminare l'account. Riprova.",
+  "settings.error.password_secure_failed": "Impossibile proteggere la tua nuova password. Non è stato modificato nulla. Riprova.",
+  "settings.error.password_update_failed": "Impossibile salvare la tua nuova password. Non è stato modificato nulla. Riprova.",
   "settings.symptoms.error.name_required": "Inserisci un nome per il sintomo.",
   "settings.symptoms.error.name_too_long": "Usa al massimo 40 caratteri. Per dettagli più lunghi, usa le note.",
   "settings.symptoms.error.invalid_characters": "Usa solo testo semplice. Tag e parentesi angolari non sono consentiti.",

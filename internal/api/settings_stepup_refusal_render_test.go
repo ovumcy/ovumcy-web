@@ -2,8 +2,12 @@ package api
 
 import (
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -159,26 +163,63 @@ func TestSettingsStepupRefusalsRenderOnTheSettingsPage(t *testing.T) {
 	}
 }
 
-// settingsStepupRefusalSpecs derives every spec the three step-up completion
-// handlers can flash, by calling the same mappers they call with the same
-// sentinels, plus the specs they raise inline. It is a derivation rather than a
-// list of keys: a mapper that starts returning a different spec changes this
-// set without anything having to be re-typed here.
+// stepupCompletionHandlers are the three functions CompleteOIDCLogin dispatches
+// to when the callback carries a step-up cookie. Both source-derived guards
+// below read exactly these bodies: this is where a settings step-up decides what
+// the owner sees on the way back from the identity provider.
+var stepupCompletionHandlers = map[string]string{
+	"completeLocalPasswordSetupReauth": "handlers_settings_password.go",
+	"completeErasureStepupReauth":      "handlers_settings_danger_stepup.go",
+	"completeOIDCIdentityLinkStepup":   "handlers_settings_oidc_link.go",
+}
+
+// inlineStepupRefusalSpecs names every *ErrorSpec constructor the three handlers
+// above call inline, mapped to the constructor itself. A test cannot call a
+// function by a name it read out of a file, so this half is a lookup table — but
+// it is not a free-standing list: the names ARE read from the sources and the
+// two sets compared in both directions, so a handler that starts raising a new
+// spec fails by name until it is listed here, and an entry no handler names
+// fails as a stale one. Regression:
+// TestStepupCallbackInlineRefusalSpecsMatchTheHandlerSources.
+var inlineStepupRefusalSpecs = map[string]func() APIErrorSpec{
+	"authOIDCAuthenticationFailedErrorSpec":        authOIDCAuthenticationFailedErrorSpec,
+	"authOIDCUnavailableErrorSpec":                 authOIDCUnavailableErrorSpec,
+	"settingsOIDCReauthMismatchErrorSpec":          settingsOIDCReauthMismatchErrorSpec,
+	"settingsErasureNeedsAccountPasswordErrorSpec": settingsErasureNeedsAccountPasswordErrorSpec,
+}
+
+// settingsStepupRefusalSpecs collects every spec the three step-up completion
+// handlers can flash. Two of its three parts are derived and one is not, and
+// saying which is which is the point of this comment — the earlier wording
+// claimed the whole set was derived, and that is precisely why nobody noticed
+// that the enrollment callback's commit arm answered through
+// respondPasswordChangeError and contributed no specs here at all.
+//
+//   - The mapper arms are derived: the same mappers the handlers call, fed the
+//     same sentinels, so a mapper that starts returning a different spec changes
+//     this set with nothing re-typed. mapSettingsPasswordChangeError joined them
+//     when that commit arm was routed to /settings.
+//   - The inline specs are derived by NAME from the handler sources, through
+//     inlineStepupRefusalSpecs above.
+//   - The specs raised inside the HELPERS those handlers call are hand-listed
+//     below, each against the helper that raises it. Nothing derives this part: a
+//     new spec inside applyClearData, applyDeleteAccount or
+//     refreshCurrentSessionSpec has to be added here by hand.
 func settingsStepupRefusalSpecs() []APIErrorSpec {
 	foreign := errors.New("some provider failure the mappers do not recognize")
 
 	specs := []APIErrorSpec{
-		// Raised inline by completeOIDCIdentityLinkStepup,
-		// completeErasureStepupReauth and completeLocalPasswordSetupReauth.
-		authOIDCAuthenticationFailedErrorSpec(),
-		authOIDCUnavailableErrorSpec(),
-		settingsOIDCReauthMismatchErrorSpec(),
-		settingsErasureNeedsAccountPasswordErrorSpec(),
-		// Raised by applyClearData / applyDeleteAccount once the re-auth passed
-		// but the mutation itself failed.
+		// applyClearData / applyDeleteAccount, once the re-auth passed but the
+		// mutation itself failed.
 		settingsClearDataErrorSpec(),
 		settingsDeleteAccountErrorSpec(),
+		// refreshCurrentSessionSpec, re-issuing this device's cookie after the
+		// operation bumped auth_session_version.
 		authSessionCreateErrorSpec(),
+		authWebSignInUnavailableErrorSpec(),
+	}
+	for _, construct := range inlineStepupRefusalSpecs {
+		specs = append(specs, construct())
 	}
 	for _, err := range []error{
 		services.ErrOIDCReauthStale,
@@ -198,6 +239,19 @@ func settingsStepupRefusalSpecs() []APIErrorSpec {
 		foreign,
 	} {
 		specs = append(specs, mapLocalPasswordSetupReauthError(err))
+	}
+	// The commit arm of completeLocalPasswordSetupReauth: the three sentinels
+	// FinalizeLocalPasswordSetup can raise, plus an unrecognized error for the
+	// mapper's default. Everything else mapSettingsPasswordChangeError handles is
+	// raised by PrepareLocalPasswordHash on the form's own route, which answers
+	// as a settings form and never reaches /auth/oidc/callback.
+	for _, err := range []error{
+		services.ErrSettingsPasswordChangeInvalidInput,
+		services.ErrSettingsRecoveryCodeGenerateFailed,
+		services.ErrSettingsPasswordUpdateFailed,
+		foreign,
+	} {
+		specs = append(specs, mapSettingsPasswordChangeError(err))
 	}
 	return specs
 }
@@ -234,5 +288,231 @@ func TestEverySettingsStepupRefusalKeyMapsToLocalizedCopy(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// allowedStepupCompletionTerminals are the expressions a step-up completion
+// handler may return. Each is a way back to a PAGE the browser returning from
+// the identity provider can read; anything else answers that navigation with a
+// JSON envelope or hands it to the top-level ErrorHandler.
+//
+//   - handler.redirectSettingsRefusal — the refusal channel, flash + 303.
+//   - c.Redirect.Status.To — the plain redirects: /settings after a success or a
+//     flow that finished elsewhere, /login after the account was deleted.
+//   - handler.renderRecoveryCodeResponseWithContinuePath — the one arm that
+//     renders rather than redirects, because the fresh recovery code is shown
+//     once and cannot survive a redirect.
+var allowedStepupCompletionTerminals = map[string]string{
+	"handler.redirectSettingsRefusal":                    "the refusal channel the settings page reads",
+	"c.Redirect.Status.To":                               "a plain redirect to a page",
+	"handler.renderRecoveryCodeResponseWithContinuePath": "renders the one-time recovery code",
+}
+
+// stepupCompletionReturnPath renders a return expression as its dotted call
+// chain — handler.redirectSettingsRefusal(c, spec) becomes
+// "handler.redirectSettingsRefusal", c.Redirect().Status(x).To(y) becomes
+// "c.Redirect.Status.To", and a bare identifier (return err) becomes its own
+// name. Built from the AST rather than from the source text so a comment beside
+// the call cannot change the verdict.
+func stepupCompletionReturnPath(expression ast.Expr) string {
+	switch node := expression.(type) {
+	case *ast.CallExpr:
+		return stepupCompletionReturnPath(node.Fun)
+	case *ast.SelectorExpr:
+		receiver := stepupCompletionReturnPath(node.X)
+		if receiver == "" {
+			return node.Sel.Name
+		}
+		return receiver + "." + node.Sel.Name
+	case *ast.Ident:
+		return node.Name
+	default:
+		return ""
+	}
+}
+
+// parseStepupCompletionHandlers returns the AST body of each function named in
+// stepupCompletionHandlers, failing if one has been renamed or moved — a guard
+// that silently scans nothing is worse than no guard.
+func parseStepupCompletionHandlers(t *testing.T) map[string]*ast.FuncDecl {
+	t.Helper()
+
+	bodies := map[string]*ast.FuncDecl{}
+	for name, path := range stepupCompletionHandlers {
+		source, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		fileSet := token.NewFileSet()
+		parsed, err := parser.ParseFile(fileSet, path, source, parser.SkipObjectResolution)
+		if err != nil {
+			t.Fatalf("parse %s: %v", path, err)
+		}
+		for _, declaration := range parsed.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Body == nil || function.Name.Name != name {
+				continue
+			}
+			bodies[name] = function
+		}
+		if bodies[name] == nil {
+			t.Fatalf("%s declares no function %s: stepupCompletionHandlers is stale and this guard is scanning nothing", path, name)
+		}
+	}
+	return bodies
+}
+
+// TestEveryStepupCallbackRefusalLeavesThroughTheSettingsRedirect is the barrier
+// for the class the render test above can only sample. A step-up completion
+// handler runs on /auth/oidc/callback, where isHTMX and acceptsJSON are both
+// false and no path prefix matches /api/v1/users/current — so respondSettingsError
+// falls through to apiError and respondMappedError's global arm goes straight
+// there. Either way the reply to a browser navigation returning from the
+// provider is a JSON error object rendered as the page.
+//
+// That is not a property of one arm, so it is not asserted arm by arm: four
+// re-auth refusals in completeLocalPasswordSetupReauth went through
+// redirectSettingsRefusal while the two commit arms right after them still
+// answered through respondPasswordChangeError and a bare `return err`, and every
+// test in the file passed. The exits are read out of the sources instead, and
+// each one has to be a way back to a page.
+func TestEveryStepupCallbackRefusalLeavesThroughTheSettingsRedirect(t *testing.T) {
+	t.Parallel()
+
+	for name, function := range parseStepupCompletionHandlers(t) {
+		t.Run(name, func(t *testing.T) {
+			returns := 0
+			ast.Inspect(function.Body, func(node ast.Node) bool {
+				statement, ok := node.(*ast.ReturnStmt)
+				if !ok {
+					return true
+				}
+				returns++
+				if len(statement.Results) != 1 {
+					t.Errorf("%s returns %d values: a fiber handler returns exactly one error", name, len(statement.Results))
+					return true
+				}
+				path := stepupCompletionReturnPath(statement.Results[0])
+				if _, allowed := allowedStepupCompletionTerminals[path]; !allowed {
+					t.Errorf(
+						"%s (%s) returns %q, which is not a way back to a page. On /auth/oidc/callback that reply is a JSON envelope or fiber's ErrorHandler, shown to a browser returning from the identity provider. Map the failure to a spec and flash it with handler.redirectSettingsRefusal; add a terminal to allowedStepupCompletionTerminals only if it renders or redirects to a page itself.",
+						name, stepupCompletionHandlers[name], path,
+					)
+				}
+				return true
+			})
+			if returns == 0 {
+				t.Fatalf("%s has no return statements: the scan found nothing to check", name)
+			}
+		})
+	}
+}
+
+// TestStepupCallbackInlineRefusalSpecsMatchTheHandlerSources keeps the
+// hand-typed half of settingsStepupRefusalSpecs from falling behind the
+// handlers. The terminal guard above proves every exit goes through the flash
+// redirect; it cannot see WHICH spec rides it, so a newly raised spec would
+// reach the settings page without ever being checked for localized copy. The
+// names come from the sources, and the comparison runs both ways so the map can
+// neither miss a spec nor keep one nothing raises.
+func TestStepupCallbackInlineRefusalSpecsMatchTheHandlerSources(t *testing.T) {
+	t.Parallel()
+
+	named := map[string]bool{}
+	for name, function := range parseStepupCompletionHandlers(t) {
+		ast.Inspect(function.Body, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			identifier, ok := call.Fun.(*ast.Ident)
+			if !ok || !strings.HasSuffix(identifier.Name, "ErrorSpec") {
+				return true
+			}
+			named[identifier.Name] = true
+			if _, listed := inlineStepupRefusalSpecs[identifier.Name]; !listed {
+				t.Errorf(
+					"%s (%s) raises %s(), which inlineStepupRefusalSpecs does not list: its key is never checked for an entry in services.authErrorTranslationKeys, so it can reach /settings as an empty banner. Add it there.",
+					name, stepupCompletionHandlers[name], identifier.Name,
+				)
+			}
+			return true
+		})
+	}
+	for name := range inlineStepupRefusalSpecs {
+		if !named[name] {
+			t.Errorf("inlineStepupRefusalSpecs lists %s(), which no step-up completion handler names any more: drop it, or the list oversells what it derives", name)
+		}
+	}
+}
+
+// TestLocalPasswordSetupCommitFailureRendersOnTheSettingsPage drives the arm the
+// render test above could not reach: the step-up succeeds, the owner comes back
+// from the provider, and the WRITE that enrolls the password fails. Before this
+// PR that arm answered through respondPasswordChangeError, which on
+// /auth/oidc/callback renders the JSON error envelope as the page.
+//
+// The write is failed at the database, not by stubbing the service, so the
+// request travels the whole handler and diverges exactly where a real failure
+// would. The assertion is made on the RENDERED settings page for the same reason
+// as the sibling above: a refusal the page does not read is the defect itself.
+func TestLocalPasswordSetupCommitFailureRendersOnTheSettingsPage(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "settings-stepup-commit-failure@example.com")
+
+	startResponse := fixture.postStart(t, "EvenStronger2", "EvenStronger2")
+	defer func() { _ = startResponse.Body.Close() }()
+	stepupCookie := readStepupCookie(t, startResponse)
+	state := extractStepupCallbackState(t, fixture)
+
+	// Refuse only UPDATEs on users: the callback still authenticates through the
+	// same table and still validates the exchange, so the single thing that
+	// changes is FinalizeLocalPasswordSetup's write.
+	if err := fixture.database.Exec(
+		`CREATE TRIGGER refuse_user_updates BEFORE UPDATE ON users BEGIN SELECT RAISE(ABORT, 'forced write failure'); END;`,
+	).Error; err != nil {
+		t.Fatalf("arm the failing write: %v", err)
+	}
+
+	callbackResponse := postOIDCStepupCallback(t, fixture, stepupCookie, state, "callback-code")
+	defer func() { _ = callbackResponse.Body.Close() }()
+
+	if err := fixture.database.Exec(`DROP TRIGGER refuse_user_updates;`).Error; err != nil {
+		t.Fatalf("disarm the failing write: %v", err)
+	}
+
+	if callbackResponse.StatusCode != http.StatusSeeOther {
+		t.Fatalf("callback after a failed commit = %d, want 303 back to /settings", callbackResponse.StatusCode)
+	}
+	if location := callbackResponse.Header.Get("Location"); location != "/settings" {
+		t.Fatalf("callback after a failed commit redirected to %q, want /settings", location)
+	}
+	wantKey := mapSettingsPasswordChangeError(services.ErrSettingsPasswordUpdateFailed).Key
+	flashCookie := responseCookie(callbackResponse.Cookies(), flashCookieName)
+	if flashCookie == nil {
+		t.Fatal("expected the callback to set a flash cookie carrying the refusal")
+	}
+	if payload := decodeFlashCookieForTest(t, flashCookie.Value); payload.SettingsError != wantKey {
+		t.Fatalf("expected refusal %q on the settings flash channel, got %q (auth channel holds %q)", wantKey, payload.SettingsError, payload.AuthError)
+	}
+
+	// The account is untouched: the write that failed is the one that would have
+	// enrolled the password, so a refusal that still flipped local auth would be
+	// a worse defect than the blank page.
+	if persisted := reloadStepupUser(t, fixture); persisted.LocalAuthEnabled {
+		t.Fatal("the failed commit left local auth enabled")
+	}
+
+	body := renderSettingsAfterCallback(t, fixture, callbackResponse)
+	translationKey := services.AuthErrorTranslationKey(wantKey)
+	if translationKey == "" {
+		t.Fatalf("refusal %q has no entry in services.authErrorTranslationKeys", wantKey)
+	}
+	if !strings.Contains(body, `data-flash-key="`+translationKey+`"`) {
+		t.Fatalf("the settings page carries no error banner for the failed commit: expected the stable key %q in the rendered page", translationKey)
+	}
+	if message := mustEnglishMessage(t, translationKey); !strings.Contains(body, message) {
+		t.Fatalf("the refusal banner rendered without its copy: expected %q in the rendered page", message)
 	}
 }

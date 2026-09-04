@@ -326,6 +326,8 @@
   "settings.error.erasure_requires_password": "This account now has a local password. Confirm this action with that password.",
   "settings.error.clear_data_failed": "Could not clear your data. Please try again.",
   "settings.error.delete_account_failed": "Could not delete the account. Please try again.",
+  "settings.error.password_secure_failed": "Could not secure your new password. Nothing was changed. Please try again.",
+  "settings.error.password_update_failed": "Could not save your new password. Nothing was changed. Please try again.",
   "settings.symptoms.error.name_required": "Enter a symptom name.",
   "settings.symptoms.error.name_too_long": "Use 40 characters or fewer. For longer details, use notes.",
   "settings.symptoms.error.invalid_characters": "Use plain text only. Tags and angle brackets are not allowed.",

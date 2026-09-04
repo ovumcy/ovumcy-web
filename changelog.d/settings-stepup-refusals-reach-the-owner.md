@@ -5,4 +5,7 @@
   the owner to an unchanged settings page whenever the provider re-authentication was refused —
   stale, belonging to another session, reported as an error by the provider, or an identity already
   linked elsewhere. Nothing was shown, so a refusal looked exactly like a success. The refusal is
-  now displayed, in all six languages.
+  now displayed, in all six languages. The same return now also covers the step after the
+  re-authentication: if enrolling the local password fails to be saved, or this device's session
+  cannot be re-issued afterwards, the owner gets the settings page with an explanation instead of a
+  raw error object.
