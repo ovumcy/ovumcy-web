@@ -456,7 +456,11 @@ func forcedOIDCResetCookieFromCallback(t *testing.T, app *fiber.App, stub *stubO
 		t.Fatal("expected OIDC state cookie from start flow")
 	}
 
-	stub.result = services.OIDCLoginResult{User: user}
+	// The stub bypasses OIDCLoginService.Authenticate's own computation, so
+	// RequiresPasswordReset is set here exactly as the real service would
+	// derive it for a MustChangePassword account — the handler branch under
+	// test consumes this field, not the raw User.MustChangePassword.
+	stub.result = services.OIDCLoginResult{User: user, RequiresPasswordReset: user.MustChangePassword}
 
 	callbackRequest := httptest.NewRequest(http.MethodPost, security.OIDCCallbackPath, strings.NewReader(url.Values{
 		"state": {stub.lastStartState},

@@ -147,14 +147,22 @@ func BuildDependencies(repositories *db.Repositories, secretKey []byte, i18nMana
 	webhookSettingsService := services.NewWebhookSettingsService(repositories.Users, secretKey)
 	egressLedgerService := services.NewEgressLedgerService(webhookSettingsService, calendarFeedSettingsService, opts.OutboundDeliveryEnabled)
 	totpService := services.NewTOTPService(repositories.Users, secretKey, attemptLimiter)
+	// Every session-issuing path consults the same derived TOTP-verifiability
+	// predicate instead of the raw TOTPEnabled column (see TOTPFactorVerifier,
+	// internal/services/totp_service.go): wire it onto the local login service
+	// and onto the concrete OIDC login service below, before the latter is
+	// boxed into the apideps.OIDCWorkflowService interface.
+	loginService.SetTOTPVerifier(totpService)
 	oidcLogoutStateService := services.NewOIDCLogoutStateService(repositories.OIDCLogout)
 
-	var oidcService apideps.OIDCWorkflowService = services.NewOIDCLoginService(
+	oidcLoginService := services.NewOIDCLoginService(
 		security.NewOIDCClient(opts.OIDCConfig),
 		repositories.OIDCIdentities,
 		repositories.Users,
 		registrationService,
 	)
+	oidcLoginService.SetTOTPVerifier(totpService)
+	var oidcService apideps.OIDCWorkflowService = oidcLoginService
 	if opts.OIDCServiceOverride != nil {
 		oidcService = opts.OIDCServiceOverride
 	}

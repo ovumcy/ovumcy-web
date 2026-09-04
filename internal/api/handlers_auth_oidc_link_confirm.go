@@ -78,7 +78,12 @@ func (handler *Handler) ShowOIDCLinkConfirmPage(c fiber.Ctx) error {
 
 	totpRequired := false
 	if targetUser, err := handler.authService.FindByID(c.Context(), payload.TargetUserID); err == nil {
-		totpRequired = targetUser.TOTPEnabled
+		// Verifiable, not the raw TOTPEnabled column: an account enrolled in
+		// TOTP whose secret does not decrypt (SECRET_KEY rotation) cannot
+		// answer a code challenge at all, so the page must not ask for one —
+		// CompleteOIDCLinkConfirmation below routes that account through
+		// LoginService's forced-reset result instead.
+		totpRequired = handler.totpService.Verifiable(targetUser)
 	}
 
 	flash := handler.popFlashCookie(c)
@@ -185,20 +190,30 @@ func (handler *Handler) CompleteOIDCLinkConfirmation(c fiber.Ctx) error {
 		return c.Redirect().Status(fiber.StatusSeeOther).To(oidcLinkConfirmPath)
 	}
 
-	// Step-up 2FA gate. If the target user has TOTP enabled, the link-confirm
-	// submission must also carry a valid TOTP code in the same form — mirroring
-	// the local-password Login flow that redirects TOTP-enabled accounts to
-	// /auth/2fa before issuing a session. Without this gate, an attacker with
-	// the victim's password plus a malicious/sloppy upstream IdP (the threat
-	// link-confirm was added to mitigate) could obtain the session issued a
-	// few lines down for a TOTP-protected account without ever holding the
-	// second factor. A subsequent OIDC sign-in through the now-linked identity
-	// no longer compounds that: CompleteOIDCLogin gates a linked identity's
+	// Step-up 2FA gate. If the target user's TOTP is verifiable, the
+	// link-confirm submission must also carry a valid TOTP code in the same
+	// form — mirroring the local-password Login flow that redirects
+	// TOTP-enabled accounts to /auth/2fa before issuing a session. Without
+	// this gate, an attacker with the victim's password plus a
+	// malicious/sloppy upstream IdP (the threat link-confirm was added to
+	// mitigate) could obtain the session issued a few lines down for a
+	// TOTP-protected account without ever holding the second factor. A
+	// subsequent OIDC sign-in through the now-linked identity no longer
+	// compounds that: CompleteOIDCLogin gates a linked identity's
 	// re-authentication on the same second factor (OIDCLoginResult.RequiresTOTP),
 	// so this gate's job is only the session minted right here, not any future
 	// one. Keep the link pending cookie alive on TOTP failure so the user can
 	// retry within TTL, same as wrong-password.
-	if targetUser.TOTPEnabled {
+	//
+	// Gate on Verifiable, not the raw TOTPEnabled column: an enrolled but
+	// unverifiable secret (SECRET_KEY rotation) can never satisfy this
+	// challenge, so demanding one here would strand the user on a
+	// perpetually-failing form. `result`, computed above by
+	// loginService.Authenticate, already carries RequiresPasswordReset=true
+	// for that account (the same forced-reset reasoning LoginService applies
+	// to the local login route), so skipping the challenge here does not
+	// bypass the factor — it falls through to the reset branch below.
+	if handler.totpService.Verifiable(targetUser) {
 		if spec, ok := handler.verifyTOTPForLinkConfirm(c, &targetUser); !ok {
 			handler.logSecurityError(c, "auth.oidc_link_confirm", spec)
 			handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})

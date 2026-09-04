@@ -97,6 +97,92 @@ func TestLoginServiceAuthenticateForcedResetIssuesToken(t *testing.T) {
 	}
 }
 
+// stubTOTPFactorVerifier is a minimal, directly-controllable TOTPFactorVerifier
+// for tests that need to drive LoginService.Authenticate's routing decision
+// without a real encrypted secret. unverifiable names the user IDs Unverifiable
+// must answer true for; every other TOTPEnabled account answers Verifiable.
+type stubTOTPFactorVerifier struct {
+	unverifiable map[uint]bool
+}
+
+func (stub *stubTOTPFactorVerifier) Verifiable(user models.User) bool {
+	if !user.TOTPEnabled {
+		return false
+	}
+	return !stub.unverifiable[user.ID]
+}
+
+func (stub *stubTOTPFactorVerifier) Unverifiable(user models.User) bool {
+	return user.TOTPEnabled && stub.unverifiable[user.ID]
+}
+
+// TestLoginServiceRoutesUnverifiableTOTPToForcedResetWithoutMustChangePassword
+// pins the THIRD TOTP state this change introduces: an account enrolled in
+// TOTP (TOTPEnabled=true) whose secret cannot currently be decrypted — the
+// state a SECRET_KEY rotation leaves behind — but which an operator has NOT
+// (yet, or ever) flagged with MustChangePassword. Before this decision, such
+// an account fell into the same branch as a normal TOTP-enabled account:
+// RequiresTOTP=true, sent to a 2FA challenge no code can ever satisfy — a
+// permanent lockout with no in-product signal of why. The escape hatch must
+// now be chosen because the factor is unverifiable, not only because the
+// routing flag happens to be set: Authenticate must reach the SAME
+// forced-reset outcome (RequiresPasswordReset=true, a minted reset token,
+// RequiresTOTP left false) that an operator-flagged account gets, entirely
+// from the derived TOTPFactorVerifier signal.
+func TestLoginServiceRoutesUnverifiableTOTPToForcedResetWithoutMustChangePassword(t *testing.T) {
+	auth := &stubLoginAuthService{user: models.User{ID: 41, MustChangePassword: false, TOTPEnabled: true}}
+	reset := &stubLoginResetTokenIssuer{token: "issued-reset-token"}
+	service := NewLoginService(auth, reset, NewAttemptLimiter())
+	service.SetTOTPVerifier(&stubTOTPFactorVerifier{unverifiable: map[uint]bool{41: true}})
+
+	result, err := service.Authenticate(context.Background(), []byte("secret"), "127.0.0.1", "user@example.com", "StrongPass1", loginServiceTestTTL, loginServiceTestNow)
+	if err != nil {
+		t.Fatalf("Authenticate() unexpected error: %v", err)
+	}
+	if !result.RequiresPasswordReset {
+		t.Fatal("expected an account with an unverifiable TOTP secret to route to the forced-reset escape hatch even without MustChangePassword")
+	}
+	if result.RequiresTOTP {
+		t.Fatal("expected no TOTP challenge for an account whose secret cannot be decrypted — no code could ever satisfy it")
+	}
+	if result.ResetToken != "issued-reset-token" {
+		t.Fatalf("expected issued reset token, got %q", result.ResetToken)
+	}
+	if !reset.called || reset.lastUserID != 41 {
+		t.Fatalf("expected reset token issuance for user 41")
+	}
+	if reset.lastPurpose != PasswordResetTokenPurposeForcedLocal {
+		t.Fatalf("expected forced-from-local purpose, got %q", reset.lastPurpose)
+	}
+}
+
+// TestLoginServiceRequiresTOTPWhenVerifiableEvenWithATOTPVerifierWired is the
+// companion case: with a real TOTPFactorVerifier wired, a normal
+// enrolled-and-verifiable account must still be routed to the TOTP challenge,
+// not swept into the reset branch. Without this, a verifier wired but never
+// consulted correctly (e.g. inverted) could satisfy the unverifiable-routes-
+// to-reset test above while silently breaking every ordinary TOTP login.
+func TestLoginServiceRequiresTOTPWhenVerifiableEvenWithATOTPVerifierWired(t *testing.T) {
+	auth := &stubLoginAuthService{user: models.User{ID: 42, MustChangePassword: false, TOTPEnabled: true}}
+	reset := &stubLoginResetTokenIssuer{token: "unused"}
+	service := NewLoginService(auth, reset, NewAttemptLimiter())
+	service.SetTOTPVerifier(&stubTOTPFactorVerifier{unverifiable: map[uint]bool{}})
+
+	result, err := service.Authenticate(context.Background(), []byte("secret"), "127.0.0.1", "user@example.com", "StrongPass1", loginServiceTestTTL, loginServiceTestNow)
+	if err != nil {
+		t.Fatalf("Authenticate() unexpected error: %v", err)
+	}
+	if !result.RequiresTOTP {
+		t.Fatal("expected a verifiable TOTP account to still require the TOTP challenge")
+	}
+	if result.RequiresPasswordReset {
+		t.Fatal("did not expect the forced-reset branch for a verifiable account")
+	}
+	if reset.called {
+		t.Fatal("did not expect a reset token to be issued for a verifiable account")
+	}
+}
+
 // TestLoginServiceForcedResetOutranksTOTPForAnAccountWithBothFlags pins a
 // DECISION, not merely the behaviour that happens to exist today: for an
 // account carrying BOTH MustChangePassword and TOTPEnabled, Authenticate

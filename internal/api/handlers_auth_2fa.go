@@ -75,7 +75,15 @@ func (handler *Handler) VerifyTOTPLogin(c fiber.Ctx) error {
 	}
 
 	user, err := handler.authService.FindByID(c.Context(), userID)
-	if err != nil || !user.TOTPEnabled {
+	if err != nil || !handler.totpService.Verifiable(user) {
+		// Verifiable, not the raw TOTPEnabled column: a pending-TOTP cookie
+		// naming an account whose secret has since become unverifiable
+		// (SECRET_KEY rotation, or 2FA was disabled after the cookie was
+		// minted) can never be resolved by any code — treat it the same as
+		// an expired/invalid pending session rather than falling through to
+		// ValidateCode, which would fail every submission with an opaque
+		// internal error instead of sending the owner toward the
+		// operator-reset escape hatch the next login attempt raises.
 		spec := totpSessionExpiredErrorSpec()
 		handler.logSecurityError(c, "auth.2fa", spec)
 		return handler.respondMappedError(c, spec)

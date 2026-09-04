@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/security"
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
@@ -30,6 +31,30 @@ var (
 	ErrTOTPUpdateFailed       = errors.New("totp update failed")
 	ErrTOTPReplayed           = errors.New("totp code already used")
 )
+
+// TOTPFactorVerifier answers the question a routing flag like
+// MustChangePassword cannot: can THIS account's second factor actually be
+// checked right now. TOTP has three states — not enrolled, enrolled and
+// verifiable, enrolled but unverifiable (the stored secret does not
+// decrypt, which is what a SECRET_KEY rotation leaves behind) — and every
+// session-issuing path that used to read the raw TOTPEnabled column to
+// decide whether to raise a 2FA challenge must consult this instead: the
+// column alone cannot distinguish "checkable" from "broken," and treating
+// the two alike is either a permanent lockout (routing "broken" into a
+// challenge no code can ever satisfy) or a second-factor bypass (routing
+// "broken" straight through). Both methods derive their answer by
+// attempting the decryption on every call; neither state is stored.
+// Implemented by *TOTPService.
+type TOTPFactorVerifier interface {
+	// Verifiable reports whether user has TOTP enrolled AND the stored
+	// secret currently decrypts.
+	Verifiable(user models.User) bool
+	// Unverifiable reports whether user has TOTP enrolled but the stored
+	// secret does NOT decrypt. Callers making an authentication decision
+	// must route this case to the forced-reset escape hatch, never to a
+	// 2FA challenge, and never as a silent bypass of the factor.
+	Unverifiable(user models.User) bool
+}
 
 // TOTPUserRepository is the minimal repository interface required by TOTPService.
 type TOTPUserRepository interface {
@@ -221,4 +246,35 @@ func (service *TOTPService) DisableTOTP(ctx context.Context, userID uint) error 
 		return fmt.Errorf("%w: %v", ErrTOTPUpdateFailed, err)
 	}
 	return nil
+}
+
+// totpFactorState derives the ternary TOTP state for user by attempting the
+// same decryption ValidateCode performs, without claiming a step or
+// touching the database: enrolled reports the raw totp_enabled column, and
+// verifiable is only meaningful (and only true) when enrolled is true. An
+// empty stored secret on an enrolled account (should not happen through
+// EnableTOTP/DisableTOTP, which always write both columns together, but is
+// not assumed impossible here) is treated as unverifiable rather than
+// panicking or reporting verifiable.
+func (service *TOTPService) totpFactorState(user models.User) (enrolled bool, verifiable bool) {
+	if !user.TOTPEnabled {
+		return false, false
+	}
+	if user.TOTPSecret == "" {
+		return true, false
+	}
+	_, _, err := security.DecryptField(user.TOTPSecret, service.secretKey, aadForTOTPSecret(user.ID))
+	return true, err == nil
+}
+
+// Verifiable implements TOTPFactorVerifier.
+func (service *TOTPService) Verifiable(user models.User) bool {
+	_, verifiable := service.totpFactorState(user)
+	return verifiable
+}
+
+// Unverifiable implements TOTPFactorVerifier.
+func (service *TOTPService) Unverifiable(user models.User) bool {
+	enrolled, verifiable := service.totpFactorState(user)
+	return enrolled && !verifiable
 }

@@ -96,11 +96,19 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 
-	if result.User.MustChangePassword {
-		// This branch is reached without ever checking a local password — the
-		// OIDC exchange above is the sole authentication factor — so the
-		// minted token must carry the forced-from-OIDC purpose, the one the
-		// redeem gate lets bypass the instance-wide local-sign-in toggle.
+	if result.RequiresPasswordReset {
+		// Reached either because an operator flagged the account
+		// (MustChangePassword) or because OIDCLoginService.Authenticate
+		// derived that TOTP is enrolled but unverifiable — the state a
+		// SECRET_KEY rotation leaves behind, where no code the authenticator
+		// produces can ever satisfy a 2FA challenge. Both reasons route
+		// through the identical forced-reset escape hatch rather than either
+		// trapping the owner behind an unsatisfiable challenge or bypassing
+		// the factor. This branch is reached without ever checking a local
+		// password — the OIDC exchange above is the sole authentication
+		// factor — so the minted token must carry the forced-from-OIDC
+		// purpose, the one the redeem gate lets bypass the instance-wide
+		// local-sign-in toggle.
 		token, issueErr := handler.passwordResetSvc.IssueResetTokenForUser(handler.secretKey, &result.User, services.PasswordResetTokenPurposeForcedOIDC, 30*time.Minute, time.Now())
 		if issueErr != nil {
 			// codecov:ignore:start -- defensive: reset-token issuance fails only on an HMAC signing error
