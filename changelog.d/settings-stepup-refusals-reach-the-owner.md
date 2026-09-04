@@ -14,3 +14,14 @@
   device's sign-in cookie. If that last step fails, the browser kept the short-lived cookie holding
   the authenticator seed until it expired on its own; it is now cleared along with the refusal, as
   it already was when the enrollment succeeded.
+- **Turning two-factor authentication on or off now confirms itself where the owner can see it.**
+  The success side of the same defect the refusals had: both answers were attached to the settings
+  confirmation carrier and then sent to the two-factor page, which does not read it — and attached
+  as a raw message name, which the page that does read it resolves to nothing. So the confirmation
+  was invisible twice over, and the unread one rode along to whichever page consumed it next. Both
+  now return to the settings page, which shows the confirmation together with the account's new
+  two-factor state.
+- **Switching the tracking mode from the dashboard no longer plants a stray "saved" message on the
+  next settings page.** The quick switch returns to the dashboard, which shows the new mode itself
+  and reads no confirmation carrier; the confirmation written for it was invisible on arrival and
+  then appeared on the settings page the owner opened next, as a save they had not just made.

@@ -190,6 +190,18 @@ var settingsStatusTranslationKeys = map[string]string{
 	"symptom_updated":         "settings.symptoms.success.updated",
 	"symptom_hidden":          "settings.symptoms.success.hidden",
 	"symptom_restored":        "settings.symptoms.success.restored",
+	// The two 2FA verdicts point at copy that already existed rather than at a
+	// new pair of settings.success.* strings: settings.2fa.enabled_status and
+	// settings.2fa.disabled_status are exactly what the HTMX arms of
+	// VerifyTOTP2FAEnrollment and DisableTOTP2FA render inline, so both
+	// transports say the same sentence in all six languages. What they could
+	// NOT do is ride the flash as themselves — a page that pops the flash
+	// resolves it through SettingsStatusTranslationKey, which answers "" for
+	// anything that is not a status slug, and an empty answer renders an empty
+	// banner. Regression:
+	// api.TestTOTPEnrollmentConfirmationRendersOnTheRedirectTarget.
+	"two_factor_enabled":  "settings.2fa.enabled_status",
+	"two_factor_disabled": "settings.2fa.disabled_status",
 }
 
 func AuthErrorTranslationKey(message string) string {
