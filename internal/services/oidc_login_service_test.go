@@ -468,6 +468,108 @@ func TestOIDCLoginServiceAuthenticateMustChangePasswordOutranksRequiresTOTP(t *t
 	if !result.User.MustChangePassword {
 		t.Fatal("expected the returned user to still carry MustChangePassword for the handler's own reset routing")
 	}
+	if !result.RequiresPasswordReset {
+		t.Fatal("expected RequiresPasswordReset for a MustChangePassword account, mirroring LoginService.Authenticate")
+	}
+}
+
+// TestOIDCLoginServiceAuthenticateRoutesUnverifiableTOTPToForcedReset pins the
+// THIRD TOTP state on the OIDC login path, mirroring
+// TestLoginServiceRoutesUnverifiableTOTPToForcedResetWithoutMustChangePassword
+// at the local-login service: an account enrolled in TOTP whose secret is
+// unverifiable (SECRET_KEY rotation) but carrying NO MustChangePassword flag
+// must still come back with RequiresPasswordReset=true and RequiresTOTP=false
+// once a TOTPFactorVerifier is wired — the escape hatch chosen because the
+// factor cannot be checked, not only when the routing flag happens to be set.
+func TestOIDCLoginServiceAuthenticateRoutesUnverifiableTOTPToForcedReset(t *testing.T) {
+	t.Parallel()
+
+	identities := &stubOIDCIdentityStore{
+		found: true,
+		identity: models.OIDCIdentity{
+			ID:      9,
+			UserID:  8,
+			Issuer:  "https://id.example.com",
+			Subject: "owner-subject-unverifiable",
+		},
+	}
+	users := &stubOIDCUserStore{
+		byID: models.User{
+			ID:          8,
+			Role:        models.RoleOwner,
+			TOTPEnabled: true,
+		},
+	}
+	service := NewOIDCLoginService(&stubOIDCProviderClient{
+		enabled: true,
+		exchange: security.OIDCExchangeResult{
+			Claims: security.OIDCClaims{
+				Issuer:        "https://id.example.com",
+				Subject:       "owner-subject-unverifiable",
+				Email:         "owner-unverifiable@example.com",
+				EmailVerified: true,
+			},
+		},
+	}, identities, users, nil)
+	service.SetTOTPVerifier(&stubTOTPFactorVerifier{unverifiable: map[uint]bool{8: true}})
+
+	result, err := service.Authenticate(context.Background(), "code", "verifier", "nonce", time.Time{})
+	if err != nil {
+		t.Fatalf("Authenticate() unexpected error: %v", err)
+	}
+	if !result.RequiresPasswordReset {
+		t.Fatal("expected an account with an unverifiable TOTP secret to route to the forced-reset escape hatch even without MustChangePassword")
+	}
+	if result.RequiresTOTP {
+		t.Fatal("expected no TOTP challenge for an account whose secret cannot be decrypted — no code could ever satisfy it")
+	}
+}
+
+// TestOIDCLoginServiceAuthenticateRequiresTOTPWhenVerifiable is the companion
+// case: with a TOTPFactorVerifier wired, a normal enrolled-and-verifiable
+// account must still be routed to the TOTP challenge.
+func TestOIDCLoginServiceAuthenticateRequiresTOTPWhenVerifiable(t *testing.T) {
+	t.Parallel()
+
+	identities := &stubOIDCIdentityStore{
+		found: true,
+		identity: models.OIDCIdentity{
+			ID:      10,
+			UserID:  11,
+			Issuer:  "https://id.example.com",
+			Subject: "owner-subject-verifiable",
+		},
+	}
+	users := &stubOIDCUserStore{
+		byID: models.User{
+			ID:          11,
+			Role:        models.RoleOwner,
+			TOTPEnabled: true,
+		},
+	}
+	service := NewOIDCLoginService(&stubOIDCProviderClient{
+		enabled: true,
+		exchange: security.OIDCExchangeResult{
+			Claims: security.OIDCClaims{
+				Issuer:        "https://id.example.com",
+				Subject:       "owner-subject-verifiable",
+				Email:         "owner-verifiable@example.com",
+				EmailVerified: true,
+			},
+		},
+	}, identities, users, nil)
+	service.SetTOTPVerifier(&stubTOTPFactorVerifier{unverifiable: map[uint]bool{}})
+
+	result, err := service.Authenticate(context.Background(), "code", "verifier", "nonce", time.Time{})
+	if err != nil {
+		t.Fatalf("Authenticate() unexpected error: %v", err)
+	}
+	if !result.RequiresTOTP {
+		t.Fatal("expected a verifiable TOTP account to still require the TOTP challenge")
+	}
+	if result.RequiresPasswordReset {
+		t.Fatal("did not expect the forced-reset branch for a verifiable account")
+	}
 }
 
 func TestOIDCLoginServiceAuthenticateMapsLinkPersistenceFailure(t *testing.T) {

@@ -416,6 +416,12 @@ func TestOIDCCallbackResetRequiredRedirectsToResetPassword(t *testing.T) {
 			PasswordHash:       "$2a$10$0123456789abcdef01234uVwxyzABCD0123456789abcdef01234",
 			MustChangePassword: true,
 		},
+		// The stub bypasses OIDCLoginService.Authenticate's own computation,
+		// so RequiresPasswordReset is set here exactly as the real service
+		// would derive it for a MustChangePassword account — the handler
+		// branch under test consumes this field, not the raw
+		// User.MustChangePassword.
+		RequiresPasswordReset: true,
 	}
 	app, _ := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{
 		cookieSecure: true,

@@ -82,6 +82,12 @@ type OIDCLoginResult struct {
 	// pending-TOTP cookie and redirect to /auth/2fa before ever calling
 	// setAuthCookie.
 	RequiresTOTP bool
+	// RequiresPasswordReset mirrors LoginResult.RequiresPasswordReset
+	// (login_service.go): set when MustChangePassword is flagged on the
+	// account OR when the account is enrolled in TOTP but its secret is
+	// unverifiable (does not decrypt). Both reasons route to the same
+	// forced-reset escape hatch; RequiresTOTP is never set alongside this.
+	RequiresPasswordReset bool
 	// PendingLinkClaims is non-nil only when Authenticate returned
 	// ErrOIDCLinkRequiresConfirmation. The handler stores these in a sealed
 	// short-lived cookie and dispatches to the link-confirmation step, where a
@@ -95,6 +101,13 @@ type OIDCLoginService struct {
 	users       OIDCUserStore
 	provisioner OIDCAutoProvisioner
 	config      security.OIDCConfig
+	// totp is consulted instead of the raw TOTPEnabled column so an
+	// enrolled-but-unverifiable secret is never treated as "no second
+	// factor" or "second factor, forever." Nil unless SetTOTPVerifier is
+	// called, which is exactly today's TOTPEnabled-only behaviour for tests
+	// that never wire it. Production always wires a real *TOTPService via
+	// SetTOTPVerifier in bootstrap.
+	totp TOTPFactorVerifier
 }
 
 func NewOIDCLoginService(client OIDCProviderClient, identities OIDCIdentityStore, users OIDCUserStore, provisioner OIDCAutoProvisioner) *OIDCLoginService {
@@ -109,6 +122,14 @@ func NewOIDCLoginService(client OIDCProviderClient, identities OIDCIdentityStore
 		provisioner: provisioner,
 		config:      config,
 	}
+}
+
+// SetTOTPVerifier wires the derived TOTP-verifiability check Authenticate
+// uses to decide between raising a 2FA challenge and routing into the
+// forced-reset escape hatch. Called once from bootstrap with the same
+// *TOTPService the local login path and the 2FA handlers use.
+func (service *OIDCLoginService) SetTOTPVerifier(verifier TOTPFactorVerifier) {
+	service.totp = verifier
 }
 
 func (service *OIDCLoginService) Enabled() bool {
@@ -257,9 +278,15 @@ func (service *OIDCLoginService) Authenticate(ctx context.Context, code string, 
 	}
 	// Session issuance parity (docs/security/oidc-and-sessions.md): a linked
 	// identity re-authenticating here must clear the same second factor the
-	// local login path requires, computed the same way — MustChangePassword
-	// outranks TOTP, mirroring LoginService.Authenticate.
-	result.RequiresTOTP = !result.User.MustChangePassword && result.User.TOTPEnabled
+	// local login path requires, computed the same way as
+	// LoginService.Authenticate — MustChangePassword outranks TOTP
+	// unconditionally, and an enrolled-but-unverifiable secret (SECRET_KEY
+	// rotation) routes to the same forced-reset escape hatch because the
+	// factor cannot be checked, not only when the routing flag happens to be
+	// set. RequiresTOTP is required only where TOTP is actually verifiable.
+	result.RequiresPasswordReset = result.User.MustChangePassword ||
+		(result.User.TOTPEnabled && service.totp != nil && service.totp.Unverifiable(result.User))
+	result.RequiresTOTP = !result.RequiresPasswordReset && result.User.TOTPEnabled
 	result.Logout = service.buildLogoutState(exchange.Session, result.User.ID)
 	return result, nil
 }
