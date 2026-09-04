@@ -134,8 +134,7 @@ func (handler *Handler) StartLocalPasswordSetupReauth(c fiber.Ctx) error {
 	// Chromium enforces that across the form navigation's redirect chain, so the
 	// cross-origin hop aborts client-side (net::ERR_ABORTED). Hand back a
 	// same-origin interstitial whose meta-refresh performs the hop instead.
-	c.Type("html", "utf-8")
-	return c.SendString(oidcSameOriginRedirectInterstitial(authURL))
+	return respondOIDCSameOriginHandoff(c, authURL)
 }
 
 // completeLocalPasswordSetupReauth is dispatched from CompleteOIDCLogin when
@@ -244,12 +243,20 @@ func (handler *Handler) completeLocalPasswordSetupReauth(c fiber.Ctx, state oidc
 	// StartLocalPasswordSetupReauth above.
 	nextPath, err := handler.stageRecoveryCodeReveal(c, user, recoveryCode, "/settings", recoveryCodeSurfaceDedicated)
 	if err != nil {
-		return handler.respondMappedError(c, authRecoveryCodePersistErrorSpec())
+		// The password IS enrolled by now, so this refusal costs the display of
+		// the code and nothing else — the same shape as the session-reissue arm
+		// above, and it leaves the same way.
+		//
+		// codecov:ignore:start -- the AEAD seal error that raises this cannot be
+		// provoked by a request; the terminal guard asserts the route statically.
+		spec := authRecoveryCodePersistErrorSpec()
+		handler.logSecurityError(c, "auth.local_password_setup.callback", spec)
+		return handler.redirectSettingsRefusal(c, spec)
+		// codecov:ignore:end
 	}
 
 	handler.logSecurityEvent(c, "auth.local_password_setup.callback", "success")
-	c.Type("html", "utf-8")
-	return c.SendString(oidcSameOriginRedirectInterstitial(nextPath))
+	return respondOIDCSameOriginHandoff(c, nextPath)
 }
 
 func (handler *Handler) validateLocalPasswordSetupReauth(ctx context.Context, code, codeVerifier, nonce string, userID uint, now time.Time) error {
