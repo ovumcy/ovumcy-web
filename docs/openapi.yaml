@@ -2580,6 +2580,41 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
+  /api/v1/users/current/oidc/link/step-up:
+    post:
+      tags: [settings]
+      summary: Begin the OIDC step-up that authorizes linking a new OIDC identity to this account (owner only).
+      description: |
+        Linking an identity is a permanent `(issuer, subject)` → account
+        binding, so it is authorized the same way the other step-ups in this
+        section are: a fresh interactive re-authentication at the provider
+        (`prompt=login`, `max_age=0`). This endpoint only mints the sealed
+        step-up cookie and returns the provider's authorize URL — nothing is
+        written until the callback at `/auth/oidc/callback` proves the fresh
+        authentication, links the identity and redirects to `/settings`.
+
+        A request that does not accept JSON (an ordinary form submit) is
+        answered with a same-origin interstitial page instead of the JSON body,
+        because the settings page CSP pins `form-action` to `'self'` across the
+        whole redirect chain.
+      responses:
+        '200':
+          description: OIDC redirect URL emitted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StartLocalPasswordSetupResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503':
+          description: SSO is disabled or the provider is unreachable, so the linking re-authentication cannot be started. Retryable once the provider is back.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "sso temporarily unavailable"
+                error_detail: { key: "sso temporarily unavailable", category: "internal", target: "auth_form" }
+
   /api/v1/users/current/recovery-code:
     post:
       tags: [settings]
