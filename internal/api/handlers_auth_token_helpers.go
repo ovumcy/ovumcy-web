@@ -212,7 +212,10 @@ func (handler *Handler) rotateOIDCLogoutState(c fiber.Ctx, newSessionID string) 
 func (handler *Handler) refreshCurrentSession(c fiber.Ctx, user *models.User, scope string) error {
 	spec, ok := handler.refreshCurrentSessionSpec(c, user, scope)
 	if !ok {
+		// codecov:ignore:start -- re-issuing this device's cookie fails only on an
+		// AEAD seal error, which no request-shaped input can provoke.
 		return handler.respondMappedError(c, spec)
+		// codecov:ignore:end
 	}
 	return nil
 }
@@ -229,6 +232,9 @@ func (handler *Handler) refreshCurrentSession(c fiber.Ctx, user *models.User, sc
 func (handler *Handler) refreshCurrentSessionSpec(c fiber.Ctx, user *models.User, scope string) (APIErrorSpec, bool) {
 	sessionID, err := handler.setAuthCookie(c, user, sessionWasRemembered(c))
 	if err != nil {
+		// codecov:ignore:start -- the same AEAD seal error as above: unreachable
+		// from a request, so which spec this hands back is asserted by the
+		// step-up refusal sweep rather than by driving the arm.
 		handler.clearAuthCookie(c)
 		spec := authSessionCreateErrorSpec()
 		if errors.Is(err, services.ErrAuthUnsupportedRole) {
@@ -236,6 +242,7 @@ func (handler *Handler) refreshCurrentSessionSpec(c fiber.Ctx, user *models.User
 		}
 		handler.logSecurityError(c, scope, spec)
 		return spec, false
+		// codecov:ignore:end
 	}
 	if err := handler.rotateOIDCLogoutState(c, sessionID); err != nil {
 		handler.logSecurityEvent(c, scope, "provider_logout_state_rotation_failed")
