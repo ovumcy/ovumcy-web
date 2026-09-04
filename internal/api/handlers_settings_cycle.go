@@ -64,6 +64,13 @@ func (handler *Handler) updateUsageGoalOnly(c fiber.Ctx, user *models.User, rawU
 		return c.SendStatus(fiber.StatusNoContent)
 	}
 
-	handler.setFlashCookie(c, FlashPayload{SettingsSuccess: "cycle_updated"})
+	// No flash is written here, unlike every other settings success: the
+	// destination is the DASHBOARD, and only the settings page pops the flash
+	// cookie. A "cycle_updated" left behind was invisible on arrival and then
+	// surfaced on whatever settings page the owner opened next, within the
+	// five-minute cookie TTL, as a save they had not just made. The dashboard
+	// carries this verdict in its own state instead: the redirect re-renders it
+	// in the new mode, chip label included (`data-usage-goal-label-key`).
+	// Regression: TestUsageGoalQuickSwitchLeavesNoFlashForTheDashboard.
 	return redirectOrJSON(c, "/dashboard")
 }

@@ -138,8 +138,19 @@ func (handler *Handler) VerifyTOTP2FAEnrollment(c fiber.Ctx) error {
 			htmxDismissibleSuccessStatusMarkup(messages, translateMessage(messages, "settings.2fa.enabled_status")),
 		)
 	}
-	handler.setFlashCookie(c, FlashPayload{SettingsSuccess: "settings.2fa.enabled_status"})
-	return c.Redirect().Status(fiber.StatusSeeOther).To("/settings/2fa")
+	// The mirror image of the refusal side of this branch: a verdict has to be
+	// written to a channel its destination reads. /settings/2fa builds its
+	// template data inline and never pops the flash cookie, so a confirmation
+	// left here was invisible and rode along until some later page consumed it.
+	// The redirect goes to /settings — the one page that reads the flash and
+	// renders it through the single status island — rather than teaching a
+	// second page to read it: /settings also shows the new 2FA state in its
+	// account card, so the confirmation and the state it is about arrive
+	// together. The flashed value is a status SLUG, never a translation key:
+	// the island resolves it through services.SettingsStatusTranslationKey, and
+	// an unmapped value renders an empty banner.
+	handler.setFlashCookie(c, FlashPayload{SettingsSuccess: "two_factor_enabled"})
+	return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
 }
 
 // DisableTOTP2FA disables TOTP for the current user after verifying their password.
@@ -197,6 +208,11 @@ func (handler *Handler) DisableTOTP2FA(c fiber.Ctx) error {
 			htmxDismissibleSuccessStatusMarkup(messages, translateMessage(messages, "settings.2fa.disabled_status")),
 		)
 	}
-	handler.setFlashCookie(c, FlashPayload{SettingsSuccess: "settings.2fa.disabled_status"})
-	return c.Redirect().Status(fiber.StatusSeeOther).To("/settings/2fa")
+	// Same destination and the same slug rule as the enable arm above; fixing
+	// one of the two would leave the other rendering nothing. Landing on
+	// /settings rather than back here also stops a disable from re-entering the
+	// enrollment arm of ShowTOTPSetupPage, which would mint a fresh TOTP seed
+	// and a new setup cookie for an owner who just asked for the opposite.
+	handler.setFlashCookie(c, FlashPayload{SettingsSuccess: "two_factor_disabled"})
+	return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
 }
