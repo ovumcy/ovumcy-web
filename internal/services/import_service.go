@@ -235,7 +235,9 @@ func normalizeImportEntryInput(entry ExportJSONEntry) DayEntryInput {
 		Flow:            NormalizeDayFlow(entry.Flow),
 		Mood:            normalizeExportMood(entry.MoodRating),
 		SexActivity:     NormalizeDaySexActivity(entry.SexActivity),
-		BBT:             normalizeExportBBT(entry.BBT),
+		// Rounded onto the stored grid like a day save, so a restored file
+		// cannot put a reading off the grid the shift detector compares on.
+		BBT:             normalizeStoredDayBBT(normalizeExportBBT(entry.BBT)),
 		CervicalMucus:   NormalizeDayCervicalMucus(entry.CervicalMucus),
 		PregnancyTest:   NormalizeDayPregnancyTest(entry.PregnancyTest),
 		CycleFactorKeys: cycleFactors,
