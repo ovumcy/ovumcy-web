@@ -231,10 +231,10 @@ func (service *ImportService) planEntries(entries []ExportJSONEntry, location *t
 func normalizeImportEntryInput(entry ExportJSONEntry) DayEntryInput {
 	cycleFactors, _ := NormalizeDayCycleFactorKeys(entry.CycleFactors)
 	input := DayEntryInput{
-		IsPeriod:        entry.Period,
-		Flow:            NormalizeDayFlow(entry.Flow),
-		Mood:            normalizeExportMood(entry.MoodRating),
-		SexActivity:     NormalizeDaySexActivity(entry.SexActivity),
+		IsPeriod:    entry.Period,
+		Flow:        NormalizeDayFlow(entry.Flow),
+		Mood:        normalizeExportMood(entry.MoodRating),
+		SexActivity: NormalizeDaySexActivity(entry.SexActivity),
 		// Rounded onto the stored grid like a day save, so a restored file
 		// cannot put a reading off the grid the shift detector compares on.
 		BBT:             normalizeStoredDayBBT(normalizeExportBBT(entry.BBT)),
