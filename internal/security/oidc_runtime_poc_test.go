@@ -674,11 +674,8 @@ func TestOIDC_RuntimePoC_VerifierUsesOvumcyAllowlistOverDiscoveredAlgs(t *testin
 // TestOIDC_RuntimePoC_VerifierUsesOvumcyAllowlistOverDiscoveredAlgs is red on
 // a missing allowlist only because go-oidc, handed an oidc.Config with an
 // empty SupportedSigningAlgs, substitutes the algorithms the discovery
-// document advertised: Provider.newVerifier in oidc/verify.go copies p.algorithms
-// into an empty Config.SupportedSigningAlgs. Cited by symbol, not by version and
-// line — the previous pin named oidc.go:137-142 of a function that has lived in
-// verify.go since before 3.20.0, and a bump cannot falsify a name the way it
-// falsifies an offset.
+// document advertised (Provider.newVerifier in oidc/verify.go — named by
+// symbol, since a bump falsifies a line offset and not a name).
 // The day that fallback becomes "default to RS256" or to a fixed asymmetric
 // set, the RS256 control verifies with or without ovumcy's allowlist, and the
 // discriminator goes green in both states while proving nothing. This test
