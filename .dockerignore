@@ -2,6 +2,22 @@
 .github
 .local
 
+# The same operator-created class .gitignore covers: the secret key and CA
+# bundle docker-compose.yml has the operator place beside this file, private
+# keys and keystores, and the backup dumps and archives of the backup contract
+# in docs/self-hosted.md. The Dockerfile copies an explicit list and would not
+# reach them anyway, so this keeps them out of the context sent to the daemon
+# rather than out of a layer. `*.sql` is absent on purpose: migrations/ is
+# copied into the build.
+secrets/
+certs/
+backups/
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+
 .env
 .env.*
 !.env.example
