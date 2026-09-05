@@ -41,6 +41,22 @@ useDefault = true
 # instead of replacing its regex/keywords/entropy floor: verified by adding a
 # synthetic, unlisted fake key beside these fixtures and confirming it still
 # fires.
+#
+# WHEN THE gitleaks CHECK GOES RED ON A TEST FIXTURE YOU JUST ADDED: first
+# confirm the value really is not a credential — a real key reaching a test
+# file is the case this configuration exists to catch, and the check is doing
+# its job. Once confirmed, add the value to the list below, exactly, with a
+# comment saying what it is and why it is not a secret.
+#
+# Do NOT add a path. A path entry switches every rule off for every value in
+# the file, so it exempts the next real secret written there as well as the
+# fixture in front of you — that blindness over all `_test.go` and e2e specs
+# is what this file was changed to remove, and re-adding a path is the fastest
+# way to put it back. The two path entries above are a documentation
+# placeholder and history-only certificate fixtures; neither is a file class.
+#
+# To check an edit to this file before pushing, run the image and command
+# `.github/workflows/gitleaks.yml` pins, over the whole history.
 [[rules]]
 id = "generic-api-key"
 
