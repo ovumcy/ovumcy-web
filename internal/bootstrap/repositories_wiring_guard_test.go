@@ -91,11 +91,12 @@ func scanRepositoryWiring(root string) (wiringScanResult, error) {
 }
 
 // isOutsideTrackedTree reports whether directory path lies outside the
-// tracked tree of the module the walk started in: a dot-directory
-// (build/tooling state — .git, .tmp, an editor's or another agent's own
-// dotfile area — never part of the tracked source tree), a node_modules
-// vendor tree, or a directory that is itself the root of a *different*
-// module or repository checkout nested under this one.
+// population this guard judges — the Go source of the module the walk
+// started in: a dot-directory (build, tooling or editor state; a tracked
+// one such as .github carries no Go source, so none of them can hold a
+// call site this guard is about), a node_modules vendor tree, or a
+// directory that is itself the root of a *different* module or repository
+// checkout nested under this one.
 //
 // The last case is judged by property, not by name: a directory carrying
 // its own go.mod and/or its own git marker is a separate population — a
