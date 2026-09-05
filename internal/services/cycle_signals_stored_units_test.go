@@ -6,11 +6,12 @@ import "testing"
 // names: the third elevated day at EXACTLY coverline + 0.2 must pass, one
 // hundredth short must not.
 //
-// The three passing levels are the ones where float64(coverline + 0.2) lands
-// one ULP above the literal the third day is recorded as (36.1, 36.2, 36.7);
-// each of them is red under the plain float comparison. Levels where the sum
-// happens to round the other way (36.5) prove nothing about the fix and are
-// deliberately not listed.
+// The three passing levels are levels where float64(coverline + 0.2) lands
+// one ULP above the literal the third day is recorded as (36.1, 36.2, 36.7;
+// 36.6 is another); each of them is red under the plain float comparison.
+// Levels where the sum happens to round the other way (36.5) prove nothing
+// about the fix and are deliberately not listed. The rejecting cases are
+// controls on the rule's other edge and hold with the fix reverted too.
 func TestBBTShiftThirdDayMarginHoldsAtExactlyTwoTenths(t *testing.T) {
 	cases := []struct {
 		name          string
@@ -88,9 +89,10 @@ func TestBBTShiftFirstTwoDaysStayStrictlyAboveTheCoverline(t *testing.T) {
 // TestBBTShiftMarginHoldsForValuesEnteredInEitherUnit repeats the 36.2 boundary
 // through ConvertDayBBTToStorage, so the assertion covers the values the
 // detector actually receives (post-conversion, post-rounding). 97.16 / 97.34 /
-// 97.52 °F convert to exactly 36.2 / 36.3 / 36.4 °C, so the Fahrenheit case
-// reaches the same one-ULP boundary as the Celsius one and is red under the
-// float comparison too; 97.50 °F is 36.3889 °C, short of the margin.
+// 97.52 °F land on exactly the literals 36.2 / 36.3 / 36.4 °C once rounded
+// onto the stored grid, so the Fahrenheit case reaches the same one-ULP
+// boundary as the Celsius one and is red under the float comparison too;
+// 97.50 °F is 36.3889 °C, short of the margin.
 func TestBBTShiftMarginHoldsForValuesEnteredInEitherUnit(t *testing.T) {
 	cases := []struct {
 		name   string
