@@ -173,6 +173,15 @@ verify_one_partition() {
   local base="$1" pkg_dir="$2" total="$3"
   local total_count union_file
   echo ">> verifying $base partition ($pkg_dir, $total shards)"
+  # Checked before counting, because the count cannot tell the two apart and
+  # `|| rc=1` at the call site disables set -e for this whole function: a
+  # missing directory makes `find` fail, `wc -l` still prints 0, and the
+  # refusal below would report a registered package as EMPTY when the real
+  # fault is that its path is gone. Two outcomes, two messages.
+  if [[ ! -d "$pkg_dir" ]]; then
+    echo "::error::$base ($pkg_dir) is not a directory — the SHARDED_PKGS entry names a path that does not exist" >&2
+    return 1
+  fi
   total_count="$(shard_files "$pkg_dir" | wc -l | tr -d ' ')"
   # A registered sharded package with zero non-test .go files is a
   # misconfiguration (stale SHARDED_PKGS entry, wrong path, files moved away),
@@ -235,7 +244,16 @@ run_baseline() {
   # mutate a *subset* of a package's files rather than a distinct package path,
   # via repeated --exclude-files on the same target. The slug base selects the
   # package directory and shard count from the SHARDED_PKGS registry.
-  if [[ "$only" =~ ^(internal_api|internal_services)_([0-9]+)$ ]]; then
+  # The shard number is matched WITHOUT a leading zero on purpose, so the set
+  # this accepts is exactly the "base_1..N" the unmatched-target error below
+  # advertises. Accepting "08" was worse than cosmetic: `(( 08 > total ))`
+  # fails on the octal literal, that failure is inside an `if` condition where
+  # set -e does not apply, the test therefore reads false, and the shard is
+  # accepted — then `awk 'NR % total == shard % total'` reads "08" as 8 and
+  # runs shard 3's files under shard 8's name, reporting success. A typoed CI
+  # matrix entry passing green is the very thing this dispatch is meant to
+  # refuse.
+  if [[ "$only" =~ ^(internal_api|internal_services)_([1-9][0-9]*)$ ]]; then
     local base="${BASH_REMATCH[1]}"
     local shard_num="${BASH_REMATCH[2]}"
     local pkg_dir total
@@ -247,6 +265,19 @@ run_baseline() {
     if (( shard_num < 1 || shard_num > total )); then
       echo "error: shard '$only' out of range (1..$total)" >&2
       exit 2
+    fi
+    # The same zero-population refusal verify_one_partition applies, at the
+    # site that actually runs gremlins. shard_exclude_args names the files to
+    # EXCLUDE, so a package with no non-test .go files yields an empty array
+    # and the invocation below degrades into a full, unsharded run of the
+    # package under a shard's name — reporting success for work no shard was
+    # supposed to do. Checked here rather than trusted from verify-shards:
+    # that is a separate command nobody is required to have run.
+    local shard_population
+    shard_population="$(shard_files "$pkg_dir" | wc -l | tr -d ' ')"
+    if [[ "$shard_population" -eq 0 ]]; then
+      echo "error: $base ($pkg_dir) has zero non-test .go files, so shard $shard_num would mutate the whole package rather than its own slice" >&2
+      exit 1
     fi
     local slug="$only"
     echo ">> baseline mutation: $pkg_dir (shard $shard_num/$total)"
