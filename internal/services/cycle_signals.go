@@ -122,6 +122,12 @@ func deriveUserLutealPhase(logs []models.DailyLog, now time.Time, location *time
 	return defaultLutealPhaseDays
 }
 
+// currentCycleDetectionBound is the exclusive upper bound of the current
+// cycle's detection series: it runs through today, never the model's projected NextPeriodStart.
+func currentCycleDetectionBound(today time.Time, location *time.Location) time.Time {
+	return AddCalendarDays(today, 1, location)
+}
+
 // ConfirmedCurrentCycleOvulation reports the day the shared "3-over-6" thermal
 // detector CONFIRMS for the owner's CURRENT cycle, and whether it found one.
 //
@@ -138,14 +144,8 @@ func deriveUserLutealPhase(logs []models.DailyLog, now time.Time, location *time
 // supplies today so that a surface which has already resolved it does not
 // resolve a second, possibly different one.
 //
-// The current cycle runs to the owner's today, never to the projected next
-// start — a late shift is still this cycle's. stats.NextPeriodStart is the
-// model's own guess at when the next cycle begins, and a thermal shift that
-// lands after it is exactly the case where the guess was wrong: the detection
-// window bounded there cut the 6-day coverline short before it ever filled,
-// so the shift was visible on the stats chart (whose own window already runs
-// to today+1) and invisible on the calendar, the dashboard and the JSON API,
-// which all read this resolver.
+// The detection series runs to currentCycleDetectionBound(today), never to
+// the projected stats.NextPeriodStart — a late shift is still this cycle's.
 func ConfirmedCurrentCycleOvulation(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (time.Time, bool) {
 	if user == nil || !user.TrackBBT || stats.LastPeriodStart.IsZero() || stats.OvulationDate.IsZero() || stats.NextPeriodStart.IsZero() {
 		return time.Time{}, false
@@ -166,7 +166,7 @@ func ConfirmedCurrentCycleOvulation(user *models.User, logs []models.DailyLog, s
 		return time.Time{}, false
 	}
 
-	signal := inferBBTOvulationDate(filterLogsNotAfter(logs, today), cycleStart, AddCalendarDays(today, 1, location), location)
+	signal := inferBBTOvulationDate(filterLogsNotAfter(logs, today), cycleStart, currentCycleDetectionBound(today, location), location)
 	if signal.IsZero() {
 		return time.Time{}, false
 	}
@@ -183,12 +183,13 @@ func ConfirmedCurrentCycleOvulation(user *models.User, logs []models.DailyLog, s
 // name a different day than the dashboard and the grid for one shift, on the day
 // the difference is largest: the projected day itself.
 //
-// The bound is the confirmation's own window. ConfirmedCurrentCycleOvulation
-// reads the CURRENT cycle only, so a projection that has already rolled into the
-// next cycle is about a day this shift says nothing about, and suppressing it
-// would withhold a reminder the account is owed. Callers pass each projected day
-// they are about to announce rather than deciding per surface: a rule restated
-// twice is a rule that can disagree with itself.
+// The NextPeriodStart bound distinguishes the two projections a caller might
+// pass: the CURRENT cycle's, which always lands before NextPeriodStart, and
+// the NEXT cycle's, about which this confirmation says nothing — suppressing
+// that later projection would withhold a reminder the account is owed.
+// Callers pass each projected day they are about to announce rather than
+// deciding per surface: a rule restated twice is a rule that can disagree
+// with itself.
 func ConfirmedOvulationSupersedes(user *models.User, logs []models.DailyLog, stats CycleStats, projected time.Time, today time.Time, location *time.Location) bool {
 	if projected.IsZero() {
 		return false
