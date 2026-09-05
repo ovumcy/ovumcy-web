@@ -168,8 +168,9 @@ func (service *ImportService) ImportJSON(ctx context.Context, userID uint, raw [
 
 // planEntries validates every incoming record: it parses and canonicalizes the
 // date, rejects duplicate calendar days within the file, and normalizes every
-// field through NormalizeDayEntryInput. It also collects the first-seen spelling
-// of each custom symptom name so the reconciler can create the missing ones.
+// field through normalizeImportEntryInput, which applies the same per-field
+// rules a day save does. It also collects the first-seen spelling of each
+// custom symptom name so the reconciler can create the missing ones.
 func (service *ImportService) planEntries(entries []ExportJSONEntry, location *time.Location) ([]plannedImportDay, map[string]string, int) {
 	planned := make([]plannedImportDay, 0, len(entries))
 	otherOriginals := make(map[string]string)
