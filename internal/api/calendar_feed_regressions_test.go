@@ -71,6 +71,28 @@ func calendarFeedURL(token string) string {
 	return "/calendar/feed/" + token + ".ics"
 }
 
+// mustServeCalendarFeed GETs token's feed URL and asserts the armed-feed
+// precondition its callers below rely on: 200, no Set-Cookie, and a calendar
+// body. stage names which precondition is being proven, so a failure reads as
+// "precondition lost" against the right moment rather than as whatever
+// assertion the caller makes next. Returns the body for a caller that wants
+// to inspect it further.
+func mustServeCalendarFeed(t *testing.T, app *fiber.App, token string, stage string) string {
+	t.Helper()
+	response := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, calendarFeedURL(token), nil))
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("precondition lost: the armed feed must serve %s, got %d", stage, response.StatusCode)
+	}
+	if len(response.Cookies()) != 0 {
+		t.Fatalf("precondition lost: the armed feed must not set a cookie %s, got %#v", stage, response.Cookies())
+	}
+	body := readBodyString(t, response)
+	if !strings.Contains(body, "BEGIN:VCALENDAR") {
+		t.Fatalf("precondition lost: expected a calendar body from the armed feed %s, got:\n%s", stage, body)
+	}
+	return body
+}
+
 // TestCalendarFeedServesOwnersICSWithHardenedHeaders is the happy-path contract:
 // a valid token returns 200 with text/calendar, a private 1h cache, the
 // noindex robots tag, structural .ics markers, and the medical-safety disclaimer
@@ -166,10 +188,17 @@ const (
 
 // TestCalendarFeedReturnsBare404WithoutOracleForBadTokens proves the no-oracle
 // contract at the transport boundary: an unknown selector, a malformed token, a
-// correct-selector/wrong-verifier token and a token whose feed has since been
-// cleared all get the SAME response — same status, same headers, same body
+// correct-selector/wrong-verifier token, and a token whose feed has since been
+// revoked all get the SAME response — same status, same headers, same body
 // bytes, no Set-Cookie — so the response tells an enumerator nothing about
 // which of the four they hit.
+//
+// wrongVerifier is tried against the STILL-ARMED subscription, proven live by a
+// GET before the bad-token cases; bogus and malformed run first but mutate
+// nothing, so the row is still armed when wrongVerifier fires: the row's
+// selector must still resolve so the request actually reaches "selector found,
+// verifier mismatch" inside VerifyCalendarFeedToken, rather than the "selector
+// resolves no row" branch a since-revoked feed produces instead.
 //
 // The identity is asserted BETWEEN the cases, not case by case against a marker
 // of its own: four bodies that each merely lack "BEGIN:VCALENDAR" can still
@@ -181,48 +210,65 @@ func TestCalendarFeedReturnsBare404WithoutOracleForBadTokens(t *testing.T) {
 	user := createOnboardingTestUser(t, database, "feed-404@example.com", "StrongPass1", true)
 	validToken := armCalendarFeedForUser(t, database, user.ID)
 
+	// Positive control: the row is proven live before wrongVerifier runs.
+	mustServeCalendarFeed(t, app, validToken, "before the bad-token cases")
+
 	// A token whose selector resolves no row, a too-short malformed token, and a
-	// correct-selector/wrong-verifier token.
-	bogus := "ZZZZZZZZZZZZZZZZ" + validToken[16:]
-	malformed := "SHORT"
-	wrongVerifier := validToken[:16] + strings.Repeat("2", len(validToken)-16)
-
-	// After clearing the feed, the previously-valid token must 404 too.
-	if err := db.NewRepositories(database).Users.ClearCalendarFeedToken(t.Context(), user.ID); err != nil {
-		t.Fatalf("ClearCalendarFeedToken: %v", err)
+	// correct-selector/wrong-verifier token — built from the real selector/
+	// verifier split so the boundary is never a hand-copied magic 16. Length is
+	// the only gate before the lookup — SplitCalendarFeedToken checks only
+	// that; 'Z' and '2' are chosen for readability, not because they matter.
+	selector, verifier, ok := services.SplitCalendarFeedToken(validToken)
+	if !ok {
+		t.Fatalf("SplitCalendarFeedToken: a freshly armed token must split, got token of length %d", len(validToken))
 	}
+	bogus := strings.Repeat("Z", len(selector)) + verifier
+	malformed := "SHORT"
+	wrongVerifier := selector + strings.Repeat("2", len(verifier))
 
-	// A slice, not a map: the cases are compared against each other, so the
-	// order they are visited in has to be the same on every run for the failure
-	// message to name the same reference case.
-	badTokens := []struct {
+	// A slice, not a map: the cases are compared against each other in a fixed
+	// order, so the failure message always names the same reference case
+	// (bogus) on every run. reference is set by the very first call to compare
+	// in this function; revokedValidToken is called separately, after the loop,
+	// so it can never become the reference.
+	liveCases := []struct {
 		name  string
 		token string
 	}{
 		{name: "bogus", token: bogus},
 		{name: "malformed", token: malformed},
 		{name: "wrongVerifier", token: wrongVerifier},
-		{name: "clearedValidOnce", token: validToken},
 	}
 
 	var reference feedResponseFingerprint
 	var referenceName string
-	for index, badToken := range badTokens {
-		request := httptest.NewRequest(http.MethodGet, calendarFeedURL(badToken.token), nil)
+	var haveReference bool
+	compare := func(name, token string) {
+		request := httptest.NewRequest(http.MethodGet, calendarFeedURL(token), nil)
 		response := mustAppResponse(t, app, request)
 		if len(response.Cookies()) != 0 {
-			t.Fatalf("%s: 404 must not set a cookie, got %#v", badToken.name, response.Cookies())
+			t.Fatalf("%s: 404 must not set a cookie, got %#v", name, response.Cookies())
 		}
 		got := fingerprintFeedResponse(t, response)
-		if index == 0 {
-			reference, referenceName = got, badToken.name
-			continue
+		if !haveReference {
+			reference, referenceName, haveReference = got, name, true
+			return
 		}
 		if got != reference {
 			t.Fatalf("%s answers differently from %s, which is an enumeration oracle:\n %s: %#v\n %s: %#v",
-				badToken.name, referenceName, referenceName, reference, badToken.name, got)
+				name, referenceName, referenceName, reference, name, got)
 		}
 	}
+	for _, liveCase := range liveCases {
+		compare(liveCase.name, liveCase.token)
+	}
+
+	// revoke only now: wrongVerifier above had to hit an armed row; bogus and
+	// malformed never reach one
+	if err := db.NewRepositories(database).Users.ClearCalendarFeedToken(t.Context(), user.ID); err != nil {
+		t.Fatalf("ClearCalendarFeedToken: %v", err)
+	}
+	compare("revokedValidToken", validToken)
 
 	// The four agree with each other; now pin the shape they agree ON, so they
 	// cannot drift TOGETHER into a response that explains itself. Checked after
@@ -365,10 +411,7 @@ func TestCalendarFeedMigratesPre032RowOnFirstSuccessfulPoll(t *testing.T) {
 		t.Fatalf("test setup: expected a pre-032 row with no MAC, got %q", before.CalendarFeedVerifierMAC)
 	}
 
-	response := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, calendarFeedURL(token), nil))
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("a pre-032 feed row must keep working after the upgrade, got %d", response.StatusCode)
-	}
+	mustServeCalendarFeed(t, app, token, "on the first poll that migrates the row")
 
 	var after models.User
 	if err := database.First(&after, user.ID).Error; err != nil {
@@ -383,10 +426,7 @@ func TestCalendarFeedMigratesPre032RowOnFirstSuccessfulPoll(t *testing.T) {
 	}
 
 	// The migrated row keeps serving, now through its MAC.
-	again := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, calendarFeedURL(token), nil))
-	if again.StatusCode != http.StatusOK {
-		t.Fatalf("expected the migrated row to keep serving, got %d", again.StatusCode)
-	}
+	mustServeCalendarFeed(t, app, token, "after the migration")
 }
 
 // simulatedFeedLookupFailure is the text of the storage error injected below.
@@ -537,9 +577,7 @@ func TestCalendarFeedRestoredBackupStopsServingARevokedURL(t *testing.T) {
 	if _, err := services.NewCalendarFeedRestoreFence(repositories.AppState, repositories.Users, fence).Enforce(t.Context()); err != nil {
 		t.Fatalf("first Enforce: %v", err)
 	}
-	if response := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, calendarFeedURL(token), nil)); response.StatusCode != http.StatusOK {
-		t.Fatalf("precondition lost: the armed feed must serve before the restore, got %d", response.StatusCode)
-	}
+	mustServeCalendarFeed(t, app, token, "before the restore")
 
 	// The owner revokes, the operator restores a backup taken before that. The
 	// rows and the app_state marker come back together; the fence file does not.
@@ -561,7 +599,11 @@ func TestCalendarFeedRestoredBackupStopsServingARevokedURL(t *testing.T) {
 	}
 	// And it must 404 the same way an unrelated token does: a distinguishable
 	// refusal would tell a holder of the leaked URL that it once was real.
-	unrelated := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, calendarFeedURL("ZZZZZZZZZZZZZZZZ"+token[16:]), nil))
+	selector, verifier, ok := services.SplitCalendarFeedToken(token)
+	if !ok {
+		t.Fatalf("SplitCalendarFeedToken: a freshly armed token must split, got token of length %d", len(token))
+	}
+	unrelated := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, calendarFeedURL(strings.Repeat("Z", len(selector))+verifier), nil))
 	if fingerprintFeedResponse(t, restored) != fingerprintFeedResponse(t, unrelated) {
 		t.Fatal("a disarmed token must be indistinguishable from an unknown one")
 	}

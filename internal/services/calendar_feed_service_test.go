@@ -358,11 +358,15 @@ func TestResolveFeedIdenticalNotFoundForEveryBadToken(t *testing.T) {
 
 	// Malformed: wrong length, rejected before any lookup.
 	malformed := "TOOSHORT"
+	selector, verifier, ok := SplitCalendarFeedToken(validToken)
+	if !ok {
+		t.Fatalf("SplitCalendarFeedToken: a freshly armed token must split, got token of length %d", len(validToken))
+	}
 	// Unknown selector: right length shape, but selector not armed. Flip the
 	// selector half of the valid token so the length stays valid.
-	unknownSelector := "ZZZZZZZZZZZZZZZZ" + validToken[16:]
+	unknownSelector := strings.Repeat("Z", len(selector)) + verifier
 	// Wrong verifier: correct selector, corrupted verifier half.
-	wrongVerifier := validToken[:16] + strings.Repeat("2", len(validToken)-16)
+	wrongVerifier := selector + strings.Repeat("2", len(verifier))
 
 	for name, bad := range map[string]string{
 		"malformed":       malformed,
@@ -397,7 +401,11 @@ func TestResolveFeedEqualizesTimingOnSelectorMiss(t *testing.T) {
 	now := mustParseDashboardDay(t, "2026-03-20")
 
 	// A well-formed token whose selector resolves no row (selector-miss path).
-	unknownSelector := "ZZZZZZZZZZZZZZZZ" + validToken[16:]
+	selector, verifier, ok := SplitCalendarFeedToken(validToken)
+	if !ok {
+		t.Fatalf("SplitCalendarFeedToken: a freshly armed token must split, got token of length %d", len(validToken))
+	}
+	unknownSelector := strings.Repeat("Z", len(selector)) + verifier
 	if _, ok, _ := svc.ResolveFeed(context.Background(), unknownSelector, now, time.UTC); ok {
 		t.Fatalf("expected selector miss to be ok=false")
 	}
@@ -670,7 +678,11 @@ func TestGenerateCalendarFeedTokenVerifierIsRealBcrypt(t *testing.T) {
 	if !VerifyCalendarFeedToken([]byte(calendarFeedTestSecretKey), token, rollbackView) {
 		t.Fatalf("a freshly minted token must verify against its stored bcrypt hash alone (rollback path)")
 	}
-	tampered := token[:16] + strings.Repeat("2", len(token)-16)
+	selector, verifier, ok := SplitCalendarFeedToken(token)
+	if !ok {
+		t.Fatalf("SplitCalendarFeedToken: a freshly armed token must split, got token of length %d", len(token))
+	}
+	tampered := selector + strings.Repeat("2", len(verifier))
 	if VerifyCalendarFeedToken([]byte(calendarFeedTestSecretKey), tampered, rollbackView) {
 		t.Fatalf("a tampered verifier must not verify")
 	}
