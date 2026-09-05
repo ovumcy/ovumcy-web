@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -435,7 +436,18 @@ func TestAssembleCarriesTheRepositoryBacklogVerbatim(t *testing.T) {
 
 	dir := t.TempDir()
 	writeFile(t, dir, "CHANGELOG.md", string(original))
-	fragments, err := filepath.Glob(filepath.Join(root, "changelog.d", "*.md"))
+
+	// The fragment directory has to EXIST before its listing means anything:
+	// filepath.Glob reports no error for a directory that is not there, so a
+	// renamed, missing or unreadable changelog.d yields the same empty slice a
+	// freshly assembled repository does. Separating the two here is what lets
+	// the skip below trust assemble's verdict — a fixture that could not look
+	// must fail, never skip.
+	fragmentsDir := filepath.Join(root, "changelog.d")
+	if info, statErr := os.Stat(fragmentsDir); statErr != nil || !info.IsDir() {
+		t.Fatalf("the repository fragment directory %s is not readable as a directory (%v): an empty listing here would be a broken checkout, not an empty backlog", fragmentsDir, statErr)
+	}
+	fragments, err := filepath.Glob(filepath.Join(fragmentsDir, "*.md"))
 	if err != nil {
 		t.Fatalf("list the repository fragments: %v", err)
 	}
@@ -447,22 +459,22 @@ func TestAssembleCarriesTheRepositoryBacklogVerbatim(t *testing.T) {
 		writeFile(t, dir, "changelog.d/"+filepath.Base(fragment), string(data))
 	}
 
-	// Immediately after a real release assembly the repository legitimately
-	// carries no backlog — every fragment was just consumed and the
-	// "[Unreleased]" body reduced to the pointer line, which is exactly the
-	// state TestAssembleRefusesAnEmptyRelease asserts assemble must refuse.
-	// This test has nothing to verify verbatim survival of until the next
-	// pull request lands a fragment, so it has nothing to fail on either.
-	//
-	// The emptiness is read from the population this test itself collected,
-	// not from the text of assemble's error: an error-string skip cannot tell
-	// a legitimately empty repository from a fixture that collected nothing,
-	// and would turn a broken setup into a silent pass.
-	if len(fragments) == 0 && len(frozen) == 0 {
-		t.Skip("repository backlog is empty right after a release assembly; nothing to verify verbatim")
-	}
-
 	if _, err := assemble(dir, "99.0.0", "2026-12-31"); err != nil {
+		// Immediately after a real release assembly the repository legitimately
+		// carries no backlog — every fragment was just consumed and the
+		// "[Unreleased]" body reduced to the pointer line, which is exactly the
+		// state TestAssembleRefusesAnEmptyRelease asserts assemble must refuse.
+		// This test has nothing to verify verbatim survival of until the next
+		// pull request lands a fragment, so it has nothing to fail on either.
+		//
+		// assemble is the authority on that state, and it is asked by value:
+		// counting the files collected above would disagree with it on a
+		// backlog made only of `none` markers, which are fragments that
+		// contribute no entry. The directory check above is what separates a
+		// repository that is empty from a fixture that could not look.
+		if errors.Is(err, errNothingToRelease) {
+			t.Skip("repository backlog is empty right after a release assembly; nothing to verify verbatim")
+		}
 		t.Fatalf("assemble: %v", err)
 	}
 
