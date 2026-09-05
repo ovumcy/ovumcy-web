@@ -924,6 +924,17 @@ func requireBash(t *testing.T) string {
 		}
 	}
 	requireOrSkip(t, "bash", err)
+
+	// The registry stub answers an anonymous read by hashing the body a case
+	// stored, so `sha256sum` (and the `awk` that cuts its output) is now part
+	// of what these steps run through. Absent, the command substitution around
+	// it yields nothing, every tag resolves to a bare "sha256:", and the run
+	// reports a digest mismatch that belongs to the probe rather than to the
+	// step — a wrong diagnosis where this package's rule is that a guard which
+	// could not look must say so. The expected value is computed by the same
+	// function the fixtures use, so the two cannot drift apart.
+	requireShellTool(t, path, "sha256sum", `printf '' | sha256sum | awk '{print $1}'`, sha256Hex(""))
+
 	return path
 }
 
