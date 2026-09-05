@@ -251,6 +251,10 @@ func inferBBTOvulationDate(logs []models.DailyLog, cycleStart time.Time, nextSta
 // day to its temperature. Returns the first elevated cycle day and the
 // coverline in effect.
 func detectBBTShiftFirstHighDay(recordedDays []int, dayValues map[int]float64) (int, float64, bool) {
+	// Every comparison below runs in stored units (bbtStoredUnits): in float64
+	// a coverline of 36.2 plus the 0.2 margin is 36.400000000000006, one ULP
+	// above a third day recorded at exactly 36.4, which the rule accepts.
+	marginUnits := bbtStoredUnits(bbtThirdDayMarginCelsius)
 	for index := bbtCoverlineWindow; index+bbtElevatedStreakDays-1 < len(recordedDays); index++ {
 		dayOne := recordedDays[index]
 		dayTwo := recordedDays[index+1]
@@ -267,26 +271,15 @@ func detectBBTShiftFirstHighDay(recordedDays []int, dayValues map[int]float64) (
 		}
 		coverlineUnits := bbtStoredUnits(coverline)
 
-		// Compared in stored units, not as float64: coverline + 0.2 does not
-		// equal the stored 36.4 that a coverline of 36.2 plus an exact 0.2 shift
-		// rounds to (36.400000000000006 in float64), which rejected a shift
-		// landing exactly on the margin the rule defines as passing.
 		if bbtStoredUnits(dayValues[dayOne]) <= coverlineUnits || bbtStoredUnits(dayValues[dayTwo]) <= coverlineUnits {
 			continue
 		}
-		if bbtStoredUnits(dayValues[dayThree]) < coverlineUnits+bbtStoredUnits(bbtThirdDayMarginCelsius) {
+		if bbtStoredUnits(dayValues[dayThree]) < coverlineUnits+marginUnits {
 			continue
 		}
 		return dayOne, coverline, true
 	}
 	return 0, 0, false
-}
-
-// bbtStoredUnits converts a Celsius reading to the integer ten-thousandths
-// bbtStoredScale defines as the canonical stored precision, so the detector's
-// comparisons do not depend on float64's representation of a decimal margin.
-func bbtStoredUnits(value float64) int64 {
-	return int64(math.Round(value * bbtStoredScale))
 }
 
 // bbtSeriesFromPoints converts ordered points into the recordedDays/dayValues
