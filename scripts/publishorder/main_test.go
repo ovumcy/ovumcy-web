@@ -99,19 +99,16 @@ var (
 // asserted independently of them: a digest fixed in isolation is a value the
 // promotion and the public-check stub could each satisfy without agreeing on
 // what was actually signed, which is the failure this package exists to rule
-// out. otherManifest is a different stored object, and otherDigest is what it
-// genuinely hashes to — not a second hand-picked string, since a "wrong"
-// digest chosen by the test rather than computed proves nothing about a stub
-// that mismatches for real.
+// out. otherManifest is a different stored object; the fixtures hand the stub
+// that object rather than a "wrong" digest chosen by the test, and the stub
+// hashes it for real, because a mismatch the test wrote out itself proves
+// nothing about a registry comparison.
 const (
 	canonicalManifest = `{"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","size":1}]}`
 	otherManifest     = `{"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[]}`
 )
 
-var (
-	digest      = "sha256:" + sha256Hex(canonicalManifest)
-	otherDigest = "sha256:" + sha256Hex(otherManifest)
-)
+var digest = "sha256:" + sha256Hex(canonicalManifest)
 
 // sha256Hex is the same computation the stub performs in shell (`sha256sum`)
 // over a tag's actually-stored body, so a package-level `digest` and the
