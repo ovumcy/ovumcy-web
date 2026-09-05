@@ -20,6 +20,7 @@ import (
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
+	"gorm.io/gorm"
 )
 
 // dashboardConfirmedOvulationBBT is the 3-over-6 series the shared detector
@@ -30,6 +31,73 @@ const (
 	dashboardConfirmedOvulationLowBBT  = 36.20
 	dashboardConfirmedOvulationHighBBT = 36.50
 )
+
+// seedLateThermalShiftCycle records the late-shift cohort behind both halves of
+// its regression (the JSON overview and the rendered dashboard slot): three
+// prior 28-day cycles fix the median at 28 and the fourth start opens the
+// CURRENT cycle at today-31 — cycle day 32, not overdue (32 <= 28+7) — so the
+// model projects the next period on today-3, the very day the coverline
+// window's sixth reading falls on. A detector bounded at that projection never
+// saw the sixth reading and the shift went unseen; bounded at today+1 it does.
+// Returns the day the detector confirms.
+func seedLateThermalShiftCycle(t *testing.T, database *gorm.DB, user models.User, today time.Time) time.Time {
+	t.Helper()
+
+	seedStatsOverviewCycleHistory(t, database, user, today, 115, 87, 59, 31)
+	logs := make([]models.DailyLog, 0, 9)
+	for _, offset := range []int{8, 7, 6, 5, 4, 3} {
+		logs = append(logs, models.DailyLog{UserID: user.ID, Date: today.AddDate(0, 0, -offset), BBT: new(dashboardConfirmedOvulationLowBBT)})
+	}
+	for _, offset := range []int{2, 1, 0} {
+		logs = append(logs, models.DailyLog{UserID: user.ID, Date: today.AddDate(0, 0, -offset), BBT: new(dashboardConfirmedOvulationHighBBT)})
+	}
+	if err := database.Create(&logs).Error; err != nil {
+		t.Fatalf("seed late thermal shift: %v", err)
+	}
+	return today.AddDate(0, 0, -3)
+}
+
+// TestDashboardNamesALateShiftAfterTheProjectedNextPeriodStart is the rendered
+// half of TestStatsOverviewConfirmsALateShiftAfterTheProjectedNextPeriodStart
+// (stats_overview_contract_test.go): the same cohort read through the
+// dashboard's ovulation slot rather than the JSON payload, so the two
+// owner-facing surfaces cannot name different days for one late shift.
+func TestDashboardNamesALateShiftAfterTheProjectedNextPeriodStart(t *testing.T) {
+	app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
+	user := createOnboardingTestUser(t, database, "dashboard-late-shift@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	today := services.DateAtLocation(time.Now().In(time.UTC), time.UTC)
+	// The rendered ovulation slot exists only for an account tracking to
+	// conceive (resolveDashboardTimingFrame, dashboard_view_service.go).
+	updateStatsOverviewUser(t, database, user, map[string]any{"track_bbt": true, "usage_goal": models.UsageGoalTrying})
+	confirmedDay := seedLateThermalShiftCycle(t, database, user, today)
+
+	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", authCookie)
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusOK)
+
+	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+	header := dashboardElementByDataAttr(document, "data-dashboard-status-header")
+	if header == nil {
+		t.Fatal("fixture anchor: expected the dashboard status header")
+	}
+	ovulation := dashboardElementByDataAttr(header, "data-dashboard-ovulation")
+	if ovulation == nil {
+		t.Fatal("fixture anchor: expected the ovulation slot in the status line")
+	}
+
+	slot := normalizeHTMLText(htmlNodeText(ovulation))
+	if want := services.LocalizedDateDisplay("en", confirmedDay); !strings.Contains(slot, want) {
+		t.Fatalf("the ovulation slot = %q, want the BBT-confirmed %q — a shift recorded after the projected next period start is still this cycle's", slot, want)
+	}
+	// The model's own ovulation for this cycle is cycle day 14 (today-18, with
+	// 14 luteal days following it); it must not linger beside the confirmed day.
+	if projected := services.LocalizedDateDisplay("en", today.AddDate(0, 0, -18)); strings.Contains(slot, projected) {
+		t.Fatalf("the ovulation slot still names the projected day %q: %q", projected, slot)
+	}
+}
 
 // TestDashboardNamesTheConfirmedDayForTheThinHistoryCohort builds the cohort
 // that meets dashboardNeedsOvulationData (irregular, one completed cycle) while

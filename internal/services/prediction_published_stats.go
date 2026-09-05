@@ -127,6 +127,6 @@ func PublishedOverviewStats(user *models.User, logs []models.DailyLog, stats Cyc
 		stats.OvulationDate = confirmedDay
 	}
 	published, suppression := PublishedStats(user, stats)
-	confirmedOvulation := wasConfirmed && !published.OvulationDate.IsZero()
+	confirmedOvulation := wasConfirmed && published.OvulationDate.Equal(confirmedDay)
 	return published, suppression, confirmedOvulation
 }

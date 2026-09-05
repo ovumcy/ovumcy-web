@@ -29,17 +29,28 @@ import (
 // elevated, so the shared 3-over-6 detector names cycle day 11, 2026-03-11.
 func confirmedOvulationFixture(t *testing.T) (*models.User, []models.DailyLog, CycleStats, time.Time) {
 	t.Helper()
+	return thermalShiftFixture(t, 0)
+}
+
+// thermalShiftFixture is confirmedOvulationFixture's series slid shiftDays
+// later inside the same 28-day model cycle, so a shift can be placed anywhere
+// from the model's own ovulation to past its projected next start without a
+// second literal cycle: the coverline window opens on cycle day 6+shiftDays,
+// the elevated streak ends on cycle day 14+shiftDays, which is also today.
+func thermalShiftFixture(t *testing.T, shiftDays int) (*models.User, []models.DailyLog, CycleStats, time.Time) {
+	t.Helper()
 
 	cycleStart := cyclesignalsCovDay(t, "2026-03-01")
 	logs := []models.DailyLog{
 		{Date: cycleStart, IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
 		{Date: cyclesignalsCovDay(t, "2026-03-02"), IsPeriod: true, Flow: models.FlowMedium},
 	}
-	for _, day := range []string{"2026-03-06", "2026-03-07", "2026-03-08", "2026-03-09", "2026-03-10", "2026-03-11"} {
-		logs = append(logs, cyclesignalsCovBBTLog(t, day, 36.20))
+	firstLowDay := cycleStart.AddDate(0, 0, 5+shiftDays)
+	for offset := range 6 {
+		logs = append(logs, cyclesignalsCovBBTLog(t, CalendarDayKey(firstLowDay.AddDate(0, 0, offset)), 36.20))
 	}
-	for _, day := range []string{"2026-03-12", "2026-03-13", "2026-03-14"} {
-		logs = append(logs, cyclesignalsCovBBTLog(t, day, 36.50))
+	for offset := 6; offset < 9; offset++ {
+		logs = append(logs, cyclesignalsCovBBTLog(t, CalendarDayKey(firstLowDay.AddDate(0, 0, offset)), 36.50))
 	}
 
 	user := &models.User{ID: 1, Role: models.RoleOwner, TrackBBT: true}
@@ -49,12 +60,12 @@ func confirmedOvulationFixture(t *testing.T) (*models.User, []models.DailyLog, C
 		AverageCycleLength:  28,
 		AveragePeriodLength: 5,
 		LutealPhase:         14,
-		CurrentCycleDay:     14,
+		CurrentCycleDay:     14 + shiftDays,
 		LastPeriodStart:     cycleStart,
 		OvulationDate:       cyclesignalsCovDay(t, "2026-03-14"),
 		NextPeriodStart:     cyclesignalsCovDay(t, "2026-03-29"),
 	}
-	today := time.Date(2026, time.March, 14, 0, 0, 0, 0, time.UTC)
+	today := firstLowDay.AddDate(0, 0, 8)
 	return user, logs, stats, today
 }
 

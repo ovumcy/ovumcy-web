@@ -520,7 +520,7 @@ func TestCycleSignals_BBTChartMarkerAndInferenceAgreeOnOvulationDay(t *testing.T
 	}
 
 	// Inference side: ovulation via the shared detector.
-	ovulation := inferBBTOvulationDate(logs, cycleStart, today.AddDate(0, 0, 1), time.UTC)
+	ovulation := inferBBTOvulationDate(logs, cycleStart, currentCycleDetectionBound(today, time.UTC), time.UTC)
 	if ovulation.IsZero() {
 		t.Fatalf("expected inference to detect ovulation")
 	}

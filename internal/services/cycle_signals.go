@@ -123,7 +123,9 @@ func deriveUserLutealPhase(logs []models.DailyLog, now time.Time, location *time
 }
 
 // currentCycleDetectionBound is the exclusive upper bound of the current
-// cycle's detection series: it runs through today, never the model's projected NextPeriodStart.
+// cycle's detection series, shared by the resolver and the stats chart: the
+// series runs through the owner's today, never to the model's projected
+// NextPeriodStart, so a shift after the projection is still this cycle's.
 func currentCycleDetectionBound(today time.Time, location *time.Location) time.Time {
 	return AddCalendarDays(today, 1, location)
 }
@@ -139,13 +141,13 @@ func currentCycleDetectionBound(today time.Time, location *time.Location) time.T
 // the marker was moved onto the detector's own date, and the dashboard line was
 // left behind on the model's date by that same change.
 //
-// The logs are bounded at the owner's today first: a reading recorded against a
-// future date must not confirm an ovulation that has not happened. The caller
-// supplies today so that a surface which has already resolved it does not
-// resolve a second, possibly different one.
-//
 // The detection series runs to currentCycleDetectionBound(today), never to
-// the projected stats.NextPeriodStart — a late shift is still this cycle's.
+// the projected stats.NextPeriodStart — a late shift is still this cycle's —
+// and that one bound is also what keeps a reading recorded against a future
+// date from confirming an ovulation that has not happened. today is the
+// owner's calendar day as every caller resolves it (DateAtLocation); the
+// caller supplies it so that a surface which has already resolved it does not
+// resolve a second, possibly different one.
 func ConfirmedCurrentCycleOvulation(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (time.Time, bool) {
 	if user == nil || !user.TrackBBT || stats.LastPeriodStart.IsZero() || stats.OvulationDate.IsZero() || stats.NextPeriodStart.IsZero() {
 		return time.Time{}, false
@@ -166,7 +168,7 @@ func ConfirmedCurrentCycleOvulation(user *models.User, logs []models.DailyLog, s
 		return time.Time{}, false
 	}
 
-	signal := inferBBTOvulationDate(filterLogsNotAfter(logs, today), cycleStart, currentCycleDetectionBound(today, location), location)
+	signal := inferBBTOvulationDate(logs, cycleStart, currentCycleDetectionBound(today, location), location)
 	if signal.IsZero() {
 		return time.Time{}, false
 	}
@@ -183,22 +185,24 @@ func ConfirmedCurrentCycleOvulation(user *models.User, logs []models.DailyLog, s
 // name a different day than the dashboard and the grid for one shift, on the day
 // the difference is largest: the projected day itself.
 //
-// The NextPeriodStart bound distinguishes the two projections a caller might
-// pass: the CURRENT cycle's, which always lands before NextPeriodStart, and
-// the NEXT cycle's, about which this confirmation says nothing — suppressing
-// that later projection would withhold a reminder the account is owed.
-// Callers pass each projected day they are about to announce rather than
-// deciding per surface: a rule restated twice is a rule that can disagree
-// with itself.
+// The NextPeriodStart bound sorts the projection a caller passes by date: one
+// before it is the model's ovulation for the CURRENT cycle (luteal days ahead
+// of its own next start), one on or after it belongs to the NEXT cycle, about
+// which this confirmation says nothing — suppressing that later projection
+// would withhold a reminder the account is owed. Which of the two an egress
+// caller holds once today has passed NextPeriodStart is its anchor's doing
+// (ProjectCycleStart rolls it forward), not this predicate's. Callers pass each
+// projected day they are about to announce rather than deciding per surface: a
+// rule restated twice is a rule that can disagree with itself.
 func ConfirmedOvulationSupersedes(user *models.User, logs []models.DailyLog, stats CycleStats, projected time.Time, today time.Time, location *time.Location) bool {
 	if projected.IsZero() {
 		return false
 	}
 	// The window bound answers first because it is the cheap half. The feed asks
 	// this once per projected cycle, and only the current one can ever be the
-	// subject; running the detector first re-read the owner's whole history —
-	// filterLogsNotAfter copies the slice — for every later cycle, to reach an
-	// answer this line then discarded.
+	// subject; running the detector first re-read and re-sorted the owner's
+	// whole history for every later cycle, to reach an answer this line then
+	// discarded.
 	if CalendarDaysBetween(projected, CalendarDay(stats.NextPeriodStart, location)) <= 0 {
 		return false
 	}
