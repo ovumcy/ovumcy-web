@@ -1,11 +1,36 @@
 package testenv
 
 import (
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
 	"testing"
 )
+
+// TestTimeZoneErrorClassificationSeparatesAbsenceFromCorruption pins the
+// judgement RequireTimeZone makes on time.LoadLocation's error, which is what
+// decides skip-versus-fail for every timezone site in this tree. The malformed
+// case cannot be provoked through LoadLocation without shipping a corrupt tz
+// database, so the classifier is driven directly; an unrecognised error must
+// land on the failing side, because it is not evidence the data is absent.
+func TestTimeZoneErrorClassificationSeparatesAbsenceFromCorruption(t *testing.T) {
+	for _, testCase := range []struct {
+		what      string
+		err       error
+		isAbsence bool
+	}{
+		{"the zone is not in the database", errors.New("unknown time zone America/Toronto"), true},
+		{"the database is present and corrupt", errors.New("malformed time zone information"), false},
+		{"an error this classifier has never seen", errors.New("permission denied reading zoneinfo"), false},
+	} {
+		t.Run(testCase.what, func(t *testing.T) {
+			if got := tzErrorIsAbsence(testCase.err); got != testCase.isAbsence {
+				t.Fatalf("tzErrorIsAbsence(%q) = %v, want %v: only a zone that is missing may reach the skip path", testCase.err, got, testCase.isAbsence)
+			}
+		})
+	}
+}
 
 // recordingT records the verdict a helper reaches instead of delivering it.
 // Fatalf and Skipf never return on a real *testing.T, so a test asking "which
