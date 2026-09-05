@@ -838,6 +838,16 @@ jobs:
         # internal/services is NOT here: it is sharded in race-services above.
         # These four trees ran 100 s of the lane's 589 s together, so they stay
         # whole — splitting them would buy nothing and cost a job.
+        #
+        # No OVUMCY_REQUIRE_POSTGRES here, deliberately, and it is not an
+        # oversight to be tidied up: internal/db and internal/i18n do reach
+        # internal/testdb's gate, so a broken database would skip those cases
+        # quietly on this lane. test-go-rest OWNS that suite and declares the
+        # variable; a lane declares what it owns, and this one only brushes it.
+        # Declaring it here would instead start running container-backed tests
+        # under the race detector on a required lane — real added cost and a
+        # new failure surface, bought for a verdict test-go-rest already gives
+        # on the same commit.
         env:
           CGO_ENABLED: "1"
         # `-timeout 20m`: the declared budget from the coverage lanes above.
