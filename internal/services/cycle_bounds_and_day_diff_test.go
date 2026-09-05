@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/testenv"
 )
 
 // TestCycleLengthsCountsCalendarDaysAcrossADSTTransition pins the arithmetic at
@@ -18,22 +19,18 @@ import (
 // The same shortfall shows up with no transition involved whenever one operand
 // is a location midnight and the other a UTC one.
 //
-// A missing zone database SKIPS this test rather than failing it, which is the
-// answer the other five tz-dependent tests in this package already give
-// (cycle_baseline_coverage_test.go, cycle_projection_reference_test.go,
-// cycle_signals_mutation_round2_test.go, dashboard_cycle_test.go,
-// dashboard_reminder_banner_test.go). The module imports time/tzdata nowhere, so
-// zones come from the host: on one without zoneinfo this demonstration goes
-// quiet. What does NOT go quiet there is TestCalendarDayDiffBarrier, which reads
-// the source rather than the clock and refuses the shape with no zone database
-// at all — so the class stays barred even where this proof of it cannot run.
+// A missing zone database SKIPS this test on a developer machine — the same
+// answer the other tz-dependent tests in this package give, all routed
+// through testenv.RequireTimeZone — and FAILS it on a lane that set
+// OVUMCY_REQUIRE_TZDATA. The module imports time/tzdata nowhere, so zones come
+// from the host. What never goes quiet, on any machine, is
+// TestCalendarDayDiffBarrier, which reads the source rather than the clock
+// and refuses the shape with no zone database at all — so the class stays
+// barred even where this proof of it cannot run.
 func TestCycleLengthsCountsCalendarDaysAcrossADSTTransition(t *testing.T) {
 	t.Parallel()
 
-	berlin, err := time.LoadLocation("Europe/Berlin")
-	if err != nil {
-		t.Skipf("tz database unavailable: %v", err)
-	}
+	berlin := testenv.RequireTimeZone(t, "Europe/Berlin")
 
 	starts := []time.Time{
 		time.Date(2026, time.March, 28, 0, 0, 0, 0, berlin),

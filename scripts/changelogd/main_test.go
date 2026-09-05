@@ -3,10 +3,11 @@ package main
 import (
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ovumcy/ovumcy-web/internal/testenv"
 )
 
 const fixtureChangelog = `# Changelog
@@ -623,9 +624,7 @@ func TestValidateFragmentAcceptsTheNoneMarkerAndRejectsAnEmptyFile(t *testing.T)
 // same `git diff` invocations CI runs rather than a canned string.
 func initRepo(t *testing.T) string {
 	t.Helper()
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skipf("git is not available: %v", err)
-	}
+	testenv.RequireLookPath(t, "git", "git")
 	dir := t.TempDir()
 	run(t, dir, "init", "-q", "-b", "main")
 	run(t, dir, "config", "user.email", "changelogd@example.test")

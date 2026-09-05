@@ -3,6 +3,8 @@ package services
 import (
 	"testing"
 	"time"
+
+	"github.com/ovumcy/ovumcy-web/internal/testenv"
 )
 
 // TestDashboardReminderBannerDaysUntilDSTSpringForward guards the day count
@@ -12,10 +14,7 @@ import (
 // int(predictedDate.Sub(today).Hours()/24) truncated to 1. CalendarDaysBetween
 // re-anchors both to UTC-midnight and reports the true 2 days.
 func TestDashboardReminderBannerDaysUntilDSTSpringForward(t *testing.T) {
-	loc, err := time.LoadLocation("Europe/Berlin")
-	if err != nil {
-		t.Skipf("tz database unavailable: %v", err)
-	}
+	loc := testenv.RequireTimeZone(t, "Europe/Berlin")
 	today := time.Date(2026, time.March, 28, 0, 0, 0, 0, loc)
 	predicted := time.Date(2026, time.March, 30, 0, 0, 0, 0, loc)
 

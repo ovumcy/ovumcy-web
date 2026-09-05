@@ -11,6 +11,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/testenv"
 )
 
 // TestUpsertDayCanonicalizesStoredDateToUTCMidnightForRequestTimezone is the
@@ -34,10 +35,7 @@ func TestUpsertDayCanonicalizesStoredDateToUTCMidnightForRequestTimezone(t *test
 
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			location, err := time.LoadLocation(tt.timezoneName)
-			if err != nil {
-				t.Skipf("zoneinfo for %s unavailable: %v", tt.timezoneName, err)
-			}
+			location := testenv.RequireTimeZone(t, tt.timezoneName)
 
 			app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
 			user := createOnboardingTestUser(t, database, tt.email, "StrongPass1", true)
