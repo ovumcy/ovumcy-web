@@ -18,5 +18,13 @@
   not: no path configured, an unmounted volume, a file and marker that disagree, or a fence neither
   half has ever recorded. The refusal names `CALENDAR_FEED_FENCE_PATH`, what continuing anyway would
   have cost, and what to run instead. Run either command through `docker compose exec` on the
-  running container, or against the same fence path the server uses, to reach it. Full contract:
-  `docs/self-hosted.md → Calendar Feed Restore Fence`.
+  running container, or against the same fence path the server uses — the server's own file, never a
+  copy of it — to reach it. Full contract: `docs/self-hosted.md → Calendar Feed Restore Fence`.
+
+  The price is deliberate, and it falls on one recovery path. `reset-password` is the documented last
+  way back into an account whose second factor died with a rotated or lost `SECRET_KEY`, and on a
+  server that has never started with `CALENDAR_FEED_FENCE_PATH` configured it is now refused as well:
+  configure the fence for the server, start it once, then run the reset. The bundled compose stacks
+  mount the fence already, so `docker compose exec` there needs nothing extra. There is no flag to
+  skip the check — a reset that revokes a feed nowhere a restore could contradict is the defect, not
+  an inconvenience.

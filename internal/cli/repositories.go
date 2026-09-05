@@ -57,8 +57,11 @@ func buildRepositories(database *gorm.DB) (*db.Repositories, *services.CalendarF
 // was changed."
 func confirmOperatorFeedRevocation(ctx context.Context, fencePath string, fence *services.CalendarFeedRestoreFence, errOutput io.Writer) error {
 	fencePath = strings.TrimSpace(fencePath)
-	if fencePath == "" || !rootedPath(fencePath) {
-		return calendarFeedFenceConfirmRefusal(fencePath, calendarFeedFenceStateNotSet)
+	switch {
+	case fencePath == "":
+		return calendarFeedFenceConfirmRefusal(fencePath, calendarFeedFenceStateNotSet, nil)
+	case !rootedPath(fencePath):
+		return calendarFeedFenceConfirmRefusal(fencePath, calendarFeedFenceStateRelative, nil)
 	}
 
 	if err := fence.AdvanceConfirmed(ctx); err != nil {
@@ -69,15 +72,25 @@ func confirmOperatorFeedRevocation(ctx context.Context, fencePath string, fence 
 			if !continuity.AnchorFound && !continuity.StoredFound {
 				state = calendarFeedFenceStateNeverArmed
 			}
-			return calendarFeedFenceConfirmRefusal(fencePath, state)
+			return calendarFeedFenceConfirmRefusal(fencePath, state, nil)
 		case errors.Is(err, services.ErrCalendarFeedFenceUnreachable):
-			return calendarFeedFenceConfirmRefusal(fencePath, calendarFeedFenceStateUnreachable)
+			return calendarFeedFenceConfirmRefusal(fencePath, calendarFeedFenceStateUnreachable, nil)
+		case errors.Is(err, services.ErrCalendarFeedFenceMarkerUnavailable):
+			return calendarFeedFenceConfirmRefusal(fencePath, calendarFeedFenceStateMarkerUnavailable, err)
+		case errors.Is(err, services.ErrCalendarFeedFenceHalfAdvanced):
+			// The one refusal after which something HAS changed: the fence file
+			// moved and app_state did not, so the server's next start disarms
+			// every armed feed (fail closed). The caller's own write never
+			// ran, and the message must say both rather than the "Nothing was
+			// changed" every other refusal ends with.
+			return fmt.Errorf("%w. The fence file at %s is now ahead of the database marker, so the server's next start disarms every armed calendar feed. "+
+				"Re-run this command once the database answers. The account was not changed", err, fencePath)
 		default:
-			// A database failure: AdvanceConfirmed's own doc explains why the
-			// file may already be ahead of app_state at this point (fail
-			// closed — the next boot disarms). Nothing this function could
-			// add would be more actionable than the storage error itself.
-			return fmt.Errorf("calendar feed restore fence: %w", err)
+			// AdvanceConfirmed's contract: every error raised after the file
+			// write wraps ErrCalendarFeedFenceHalfAdvanced, so whatever reaches
+			// here — in practice only a token that could not be minted — left
+			// both halves untouched.
+			return fmt.Errorf("%w. Nothing was changed", err)
 		}
 	}
 
@@ -89,16 +102,20 @@ func confirmOperatorFeedRevocation(ctx context.Context, fencePath string, fence 
 }
 
 // calendarFeedFenceConfirmState names the shape confirmOperatorFeedRevocation
-// refused in, because the operator remedy differs by shape: a path problem is
-// fixed by running the CLI somewhere the server's fence is visible, while a
-// fence that has never recorded a token anywhere, or that records two
-// different generations, needs the SERVER to reconcile it — no CLI process
-// can safely guess which half is right.
+// refused in, because the operator remedy differs by shape: a path problem —
+// unset, relative, or nothing mounted behind it — is fixed by running the CLI
+// somewhere the server's fence is visible; a database marker that cannot be
+// read is fixed by making the database answer; while a fence that has never
+// recorded a token anywhere, or that records two different generations, needs
+// the SERVER to reconcile it — no CLI process can safely guess which half is
+// right. Every shape here is refused with nothing written in either half.
 type calendarFeedFenceConfirmState int
 
 const (
 	calendarFeedFenceStateNotSet calendarFeedFenceConfirmState = iota
+	calendarFeedFenceStateRelative
 	calendarFeedFenceStateUnreachable
+	calendarFeedFenceStateMarkerUnavailable
 	calendarFeedFenceStateDisagree
 	calendarFeedFenceStateNeverArmed
 )
@@ -108,19 +125,30 @@ const (
 // completed-but-unrecorded removal would cost, and a remedy — always ending
 // "Nothing was changed" so an operator scanning the tail of the message never
 // has to wonder whether the command it names already ran.
-func calendarFeedFenceConfirmRefusal(fencePath string, state calendarFeedFenceConfirmState) error {
+func calendarFeedFenceConfirmRefusal(fencePath string, state calendarFeedFenceConfirmState, cause error) error {
 	const consequence = "A removal recorded only inside the database is undone by restoring a backup taken before it."
 	const runElsewhere = "Run the operator CLI where the server's fence is visible " +
 		"(`docker exec ovumcy /app/ovumcy ...`; `docker compose exec ovumcy /app/ovumcy ...` if the service is already running, " +
 		"`docker compose run --rm ovumcy /app/ovumcy ...` if it is not), or set " + security.CalendarFeedFencePathEnv +
-		" to the same path the server uses."
+		" to the same path the server uses — the server's own file, never a copy of it."
 	const startTheServer = "Start the server once with this fence configured, then re-run this command."
+	const makeTheDatabaseAnswer = "Re-run this command once the database answers."
 
 	var stateSentence, remedy string
 	switch state {
+	case calendarFeedFenceStateRelative:
+		stateSentence = security.CalendarFeedFencePathEnv + " is " + fencePath + ", a relative path that resolves against this process's own working directory, not the server's."
+		remedy = runElsewhere
 	case calendarFeedFenceStateUnreachable:
 		stateSentence = security.CalendarFeedFencePathEnv + " points at " + fencePath + ", whose directory does not exist or cannot be written from this process."
 		remedy = runElsewhere
+	case calendarFeedFenceStateMarkerUnavailable:
+		stateSentence = "the database marker paired with " + security.CalendarFeedFencePathEnv + " at " + fencePath + " could not be read"
+		if cause != nil {
+			stateSentence += ": " + strings.TrimPrefix(cause.Error(), services.ErrCalendarFeedFenceMarkerUnavailable.Error()+": ")
+		}
+		stateSentence += "."
+		remedy = makeTheDatabaseAnswer
 	case calendarFeedFenceStateDisagree:
 		stateSentence = security.CalendarFeedFencePathEnv + " at " + fencePath + " and the database marker do not agree."
 		remedy = startTheServer
@@ -128,11 +156,7 @@ func calendarFeedFenceConfirmRefusal(fencePath string, state calendarFeedFenceCo
 		stateSentence = "neither " + security.CalendarFeedFencePathEnv + " at " + fencePath + " nor the database has ever recorded a marker."
 		remedy = startTheServer
 	default: // calendarFeedFenceStateNotSet
-		if fencePath == "" {
-			stateSentence = security.CalendarFeedFencePathEnv + " is not set in this shell."
-		} else {
-			stateSentence = security.CalendarFeedFencePathEnv + " is " + fencePath + ", which resolves against this process's own working directory, not the server's."
-		}
+		stateSentence = security.CalendarFeedFencePathEnv + " is not set in this shell."
 		remedy = runElsewhere
 	}
 

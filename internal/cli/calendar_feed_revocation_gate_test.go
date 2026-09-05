@@ -20,10 +20,11 @@ import (
 // TestUsersDeleteRefusesAndDeletesNothingWithoutAConfirmedFence covers the
 // realistic shapes an operator's shell can be in when a fence cannot be
 // confirmed, and pins that every one of them leaves the account exactly where
-// it was: unset, a volume that was never mounted, a file that disagrees with
-// the database marker (what a restore that has not yet been booted against
-// looks like), and a path that is set but neither half has ever recorded
-// anything (the server has not booted with this fence configured yet).
+// it was: unset, a relative path, a volume that was never mounted, a file
+// that disagrees with the database marker (what a restore that has not yet
+// been booted against looks like), and a path that is set but neither half
+// has ever recorded anything (the server has not booted with this fence
+// configured yet).
 //
 // Not run with t.Parallel(): several cases call t.Setenv (directly or through
 // armOperatorFence), which panics after t.Parallel.
@@ -36,6 +37,12 @@ func TestUsersDeleteRefusesAndDeletesNothingWithoutAConfirmedFence(t *testing.T)
 			name: "unset",
 			setUp: func(t *testing.T, _ string) {
 				t.Setenv(security.CalendarFeedFencePathEnv, "")
+			},
+		},
+		{
+			name: "a relative path, copied out of a compose file into a shell whose working directory is not the server's",
+			setUp: func(t *testing.T, _ string) {
+				t.Setenv(security.CalendarFeedFencePathEnv, filepath.Join("fence", "calendar-feed.fence"))
 			},
 		},
 		{
