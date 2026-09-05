@@ -525,19 +525,22 @@ func TestPromotionWritesOnlyTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 
 			bodies, types := 0, 0
 			for _, line := range strings.Split(output, "\n") {
-				if rest, ok := strings.CutPrefix(line, "PUT-BODY "); ok {
+				if rest, ok := strings.CutPrefix(line, "PUT-BODY-SHA "); ok {
 					bodies++
-					// Byte-exact, not `strings.Contains(rest, digest)`: a
-					// substring check is satisfied by any body that merely
-					// mentions the digest somewhere in it, including the
-					// signed manifest with one byte changed anywhere the
-					// digest string itself does not sit. The registry hashes
-					// what it stores, so a byte the promotion adds, drops, or
-					// reorders between the GET and the PUT changes the object
-					// under the tag even though the JSON is equivalent and
-					// the digest substring is still present.
-					if rest != canonicalManifest {
-						t.Fatalf("a tag was written from bytes other than the signed manifest.\ngot:  %q\nwant: %q", rest, canonicalManifest)
+					// The stub hashes the file it is about to send and logs the
+					// digest, rather than logging the body for this side to
+					// compare: `$(cat "$body")` strips every trailing newline
+					// before the text leaves the shell, so a promotion that
+					// added or dropped one would arrive here already
+					// normalised and compare equal — invisible to a check
+					// whose whole claim is that it is byte-exact. A digest is
+					// also what the registry itself compares: the substring
+					// check this replaces was satisfied by any body that
+					// merely mentioned the digest somewhere in it, including
+					// the signed manifest with a byte changed anywhere the
+					// digest string does not sit.
+					if got := strings.TrimSpace(rest); got != digest {
+						t.Fatalf("a tag was written from bytes other than the signed manifest.\ngot:  %s\nwant: %s (sha256 of the manifest the stub served)", got, digest)
 					}
 				}
 				if rest, ok := strings.CutPrefix(line, "PUT-CT "); ok {
@@ -1116,7 +1119,11 @@ func stubRegistry(dir string, reg registry) string {
 		`      tag="${url##*/manifests/}"`,
 		`      if [ "$method" = PUT ]; then`,
 		`        printf 'PUT-TAG %s\n' "$tag" >&2`,
-		`        printf 'PUT-BODY %s\n' "$(cat "$body")" >&2`,
+		// The digest of the file about to be sent, not its text: a command
+		// substitution around `cat` drops every trailing newline, so a body
+		// that differs from the signed manifest only there would reach the
+		// assertion already normalised and pass a byte-exact check.
+		`        printf 'PUT-BODY-SHA sha256:%s\n' "$(sha256sum "$body" | awk '{print $1}')" >&2`,
 		`        printf 'PUT-CT %s\n' "$content_type" >&2`,
 		`        printf '%s' ` + shellQuote(reg.putStatus) + `; return 0`,
 		`      fi`,
