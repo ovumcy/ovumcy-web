@@ -3,8 +3,12 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -327,5 +331,100 @@ func TestUpsertDayNormalizesUnknownPregnancyTest(t *testing.T) {
 	}
 	if entry.PregnancyTest != models.PregnancyTestNone {
 		t.Fatalf("expected unknown pregnancy test normalized to %q, got %q", models.PregnancyTestNone, entry.PregnancyTest)
+	}
+}
+
+// TestUpsertDayJudgesTheNotMeasuredSentinelInTheAccountsUnit walks both
+// transports of the day upsert for an account tracking in Fahrenheit. A
+// non-positive entry is the owner's "not measured" answer and saves an empty
+// temperature; a positive one is a reading, and the physiological range decides
+// it — so 20 °F and 32 °F are refused rather than filed as a day with no
+// temperature on it. The sentinel used to be read after the °F→°C conversion,
+// by which point every entry in (0, 32] °F had already turned non-positive, so
+// both refusals arrived as a 200 with a null bbt and the reading vanished
+// without the owner being told.
+//
+// Both transports are swept because they reach the conversion by different
+// routes — the JSON bind hands over a parsed float, the form its own string
+// parse — and a fix applied to one of them leaves the other saving nothing.
+func TestUpsertDayJudgesTheNotMeasuredSentinelInTheAccountsUnit(t *testing.T) {
+	t.Parallel()
+
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "upsert-day-bbt-sentinel-unit@example.com", "StrongPass1", true)
+	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
+		"temperature_unit": services.TemperatureUnitFahrenheit,
+		"track_bbt":        true,
+	}).Error; err != nil {
+		t.Fatalf("seed fahrenheit tracking preferences: %v", err)
+	}
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	const storedTolerance = 1e-9
+
+	testCases := []struct {
+		name        string
+		typed       string
+		wantStatus  int
+		wantReading bool
+		wantStored  float64
+	}{
+		{name: "impossible positive reading is refused", typed: "20", wantStatus: http.StatusBadRequest},
+		{name: "freezing point is refused", typed: "32", wantStatus: http.StatusBadRequest},
+		{name: "zero is not measured", typed: "0", wantStatus: http.StatusOK},
+		{name: "negative is not measured", typed: "-1", wantStatus: http.StatusOK},
+		{name: "ordinary reading is stored in celsius", typed: "97.7", wantStatus: http.StatusOK, wantReading: true, wantStored: 36.5},
+	}
+
+	firstDay := time.Date(2026, time.May, 1, 0, 0, 0, 0, time.UTC)
+	for transportIndex, transport := range []string{"json", "form"} {
+		for caseIndex, testCase := range testCases {
+			day := firstDay.AddDate(0, 0, transportIndex*len(testCases)+caseIndex)
+			dayRaw := day.Format("2006-01-02")
+
+			t.Run(transport+"/"+testCase.name, func(t *testing.T) {
+				var request *http.Request
+				if transport == "json" {
+					body := fmt.Sprintf(`{"is_period":false,"flow":%q,"symptom_ids":[],"notes":"","bbt":%s}`, models.FlowNone, testCase.typed)
+					request = httptest.NewRequest(http.MethodPut, "/api/v1/days/"+dayRaw, strings.NewReader(body))
+					request.Header.Set("Content-Type", fiber.MIMEApplicationJSON)
+				} else {
+					form := url.Values{"flow": {models.FlowNone}, "bbt": {testCase.typed}}
+					request = httptest.NewRequest(http.MethodPut, "/api/v1/days/"+dayRaw, strings.NewReader(form.Encode()))
+					request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+				}
+				request.Header.Set("Cookie", authCookie)
+
+				response := mustAppResponse(t, app, request)
+				assertStatusCode(t, response, testCase.wantStatus)
+
+				entry, err := fetchLogByDateForTest(database, user.ID, day, time.UTC)
+				if err != nil {
+					t.Fatalf("load stored log for %s: %v", dayRaw, err)
+				}
+
+				if testCase.wantStatus != http.StatusOK {
+					if entry.ID != 0 {
+						t.Fatalf("%s °F was refused, so %s must hold no entry at all; found one with bbt=%v", testCase.typed, dayRaw, entry.BBT)
+					}
+					return
+				}
+				if entry.ID == 0 {
+					t.Fatalf("%s °F was accepted, so %s must hold the saved day", testCase.typed, dayRaw)
+				}
+				if !testCase.wantReading {
+					if entry.BBT != nil {
+						t.Fatalf("%s °F means not measured, got %.4f °C stored", testCase.typed, *entry.BBT)
+					}
+					return
+				}
+				if entry.BBT == nil {
+					t.Fatalf("%s °F is a reading, got no stored temperature", testCase.typed)
+				}
+				if math.Abs(*entry.BBT-testCase.wantStored) > storedTolerance {
+					t.Fatalf("%s °F: expected %.4f °C stored, got %.4f", testCase.typed, testCase.wantStored, *entry.BBT)
+				}
+			})
+		}
 	}
 }

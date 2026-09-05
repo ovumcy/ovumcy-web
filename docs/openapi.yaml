@@ -595,7 +595,9 @@ components:
             Basal body temperature in the unit selected per account (°C or °F).
             Omitted or null means not measured. On write, a null, an omitted
             field, or a non-positive value (legacy 0 sentinel) is stored as
-            "not measured".
+            "not measured"; the non-positive test is applied to the value as
+            sent, in the account's unit, so a positive value outside the
+            physiological range is refused with 400 rather than emptied.
         cervical_mucus:
           type: string
           enum: [none, dry, moist, creamy, eggwhite]

@@ -159,16 +159,20 @@ func ParseDayBBTRawWithUnit(raw string, unit string) (*float64, error) {
 // unit-conversion half of ParseDayBBTRawWithUnit, factored out so the JSON
 // bind path — which parses its own float via encoding/json rather than a form
 // string — converts and rounds identically instead of writing whatever unit
-// the caller sent straight to storage.
+// the caller sent straight to storage. The "not measured" sentinel is read in
+// the unit the owner typed, before the conversion: read in Celsius afterwards
+// it also swallows every Fahrenheit entry in (0, 32], which is an impossible
+// reading the range must refuse, not an empty field.
 func ConvertDayBBTToStorage(value *float64, unit string) *float64 {
-	if value == nil {
+	if value == nil || *value <= 0 {
 		return nil
 	}
 	converted := *value
 	if NormalizeTemperatureUnit(unit) == TemperatureUnitFahrenheit {
 		converted = fahrenheitToCelsius(converted)
 	}
-	return normalizeStoredDayBBT(&converted)
+	rounded := roundStoredTemperatureValue(converted)
+	return &rounded
 }
 
 // normalizeStoredDayBBT collapses any non-measurement (nil or a non-positive
