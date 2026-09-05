@@ -27,7 +27,7 @@ file, so a row can name a subpackage (`golang.org/x/net/idna`) or appear beside 
 | `github.com/andybalholm/brotli/flate` | BSD-3-Clause | [license text](https://github.com/andybalholm/brotli/blob/v1.2.2/flate/LICENSE) |
 | `github.com/andybalholm/brotli` | MIT | [license text](https://github.com/andybalholm/brotli/blob/v1.2.2/LICENSE) |
 | `github.com/boombuler/barcode` | MIT | [license text](https://github.com/boombuler/barcode/blob/6c824513bacc/LICENSE) |
-| `github.com/coreos/go-oidc/v3/oidc` | Apache-2.0 | [license text](https://github.com/coreos/go-oidc/blob/v3.20.0/LICENSE) |
+| `github.com/coreos/go-oidc/v3/oidc` | Apache-2.0 | [license text](https://github.com/coreos/go-oidc/blob/v3.21.0/LICENSE) |
 | `github.com/dustin/go-humanize` | MIT | [license text](https://github.com/dustin/go-humanize/blob/v1.0.1/LICENSE) |
 | `github.com/glebarez/go-sqlite` | BSD-3-Clause | [license text](https://github.com/glebarez/go-sqlite/blob/v1.21.2/LICENSE) |
 | `github.com/glebarez/sqlite` | MIT | [license text](https://github.com/glebarez/sqlite/blob/v1.11.0/License) |
