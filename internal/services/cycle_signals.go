@@ -141,13 +141,12 @@ func currentCycleDetectionBound(today time.Time, location *time.Location) time.T
 // the marker was moved onto the detector's own date, and the dashboard line was
 // left behind on the model's date by that same change.
 //
-// The detection series runs to currentCycleDetectionBound(today), never to
-// the projected stats.NextPeriodStart — a late shift is still this cycle's —
-// and that one bound is also what keeps a reading recorded against a future
-// date from confirming an ovulation that has not happened. today is the
-// owner's calendar day as every caller resolves it (DateAtLocation); the
-// caller supplies it so that a surface which has already resolved it does not
-// resolve a second, possibly different one.
+// The series ends at currentCycleDetectionBound(today), and that one bound is
+// also what keeps a reading recorded against a future date from confirming an
+// ovulation that has not happened. today is the owner's calendar day as every
+// caller resolves it (DateAtLocation); the caller supplies it so that a
+// surface which has already resolved it does not resolve a second, possibly
+// different one.
 func ConfirmedCurrentCycleOvulation(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (time.Time, bool) {
 	if user == nil || !user.TrackBBT || stats.LastPeriodStart.IsZero() || stats.OvulationDate.IsZero() || stats.NextPeriodStart.IsZero() {
 		return time.Time{}, false

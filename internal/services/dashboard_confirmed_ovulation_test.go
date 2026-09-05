@@ -36,7 +36,9 @@ func confirmedOvulationFixture(t *testing.T) (*models.User, []models.DailyLog, C
 // later inside the same 28-day model cycle, so a shift can be placed anywhere
 // from the model's own ovulation to past its projected next start without a
 // second literal cycle: the coverline window opens on cycle day 6+shiftDays,
-// the elevated streak ends on cycle day 14+shiftDays, which is also today.
+// the elevated streak ends on cycle day 14+shiftDays, which is also today. The
+// model's half does not move — it still projects ovulation on 2026-03-14 and
+// the next period on 2026-03-29 — only the recorded series does.
 func thermalShiftFixture(t *testing.T, shiftDays int) (*models.User, []models.DailyLog, CycleStats, time.Time) {
 	t.Helper()
 
@@ -45,12 +47,12 @@ func thermalShiftFixture(t *testing.T, shiftDays int) (*models.User, []models.Da
 		{Date: cycleStart, IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
 		{Date: cyclesignalsCovDay(t, "2026-03-02"), IsPeriod: true, Flow: models.FlowMedium},
 	}
-	firstLowDay := cycleStart.AddDate(0, 0, 5+shiftDays)
+	firstLowDay := AddCalendarDays(cycleStart, 5+shiftDays, time.UTC)
 	for offset := range 6 {
-		logs = append(logs, cyclesignalsCovBBTLog(t, CalendarDayKey(firstLowDay.AddDate(0, 0, offset)), 36.20))
+		logs = append(logs, models.DailyLog{Date: AddCalendarDays(firstLowDay, offset, time.UTC), BBT: new(36.20)})
 	}
-	for offset := 6; offset < 9; offset++ {
-		logs = append(logs, cyclesignalsCovBBTLog(t, CalendarDayKey(firstLowDay.AddDate(0, 0, offset)), 36.50))
+	for offset := range 3 {
+		logs = append(logs, models.DailyLog{Date: AddCalendarDays(firstLowDay, 6+offset, time.UTC), BBT: new(36.50)})
 	}
 
 	user := &models.User{ID: 1, Role: models.RoleOwner, TrackBBT: true}
@@ -65,7 +67,7 @@ func thermalShiftFixture(t *testing.T, shiftDays int) (*models.User, []models.Da
 		OvulationDate:       cyclesignalsCovDay(t, "2026-03-14"),
 		NextPeriodStart:     cyclesignalsCovDay(t, "2026-03-29"),
 	}
-	today := firstLowDay.AddDate(0, 0, 8)
+	today := AddCalendarDays(firstLowDay, 8, time.UTC)
 	return user, logs, stats, today
 }
 
