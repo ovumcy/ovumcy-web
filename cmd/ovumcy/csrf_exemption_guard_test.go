@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/ovumcy/ovumcy-web/internal/api"
 	"github.com/ovumcy/ovumcy-web/internal/security"
 )
 
@@ -159,6 +160,67 @@ func TestCSRFExemptionListIsExactlyOneRoute(t *testing.T) {
 	// predicate exemption and is protected by the sealed one-time state cookie.
 	if isExempt(http.MethodGet, security.OIDCCallbackPath) {
 		t.Fatalf("CSRF exemption must be bound to POST: GET %s is unexpectedly exempt", security.OIDCCallbackPath)
+	}
+}
+
+// TestCSRFPredicateSkipsTheCookielessFeedGETWithoutWideningTheMutatingExemptions
+// covers the predicate's OTHER clause: the one that stops csrf.New from
+// minting and setting its own cookie on the cookieless calendar feed (a safe
+// GET it was never going to validate anyway — see the Next comment on
+// csrfMiddlewareConfig). That clause is not in csrfGuardExpectedExemptions
+// because it exempts no mutating route; TestCSRFExemptionListIsExactlyOneRoute
+// above proves that count stayed at exactly one by construction, since it
+// walks only state-mutating routes and the feed registers none. This test
+// pins the other half directly: the predicate DOES skip the feed's GET, and
+// does NOT skip a mutating verb under the same path prefix, so a mutating
+// route added there later would still be validated rather than silently
+// inheriting this skip.
+func TestCSRFPredicateSkipsTheCookielessFeedGETWithoutWideningTheMutatingExemptions(t *testing.T) {
+	next := csrfMiddlewareConfig(false, newRateLimitTestHandler(t)).Next
+	if next == nil {
+		t.Fatal("csrfMiddlewareConfig.Next is nil")
+	}
+
+	probe := fiber.New()
+	probe.Use(func(c fiber.Ctx) error {
+		if next(c) {
+			return c.SendStatus(fiber.StatusTeapot)
+		}
+		return c.SendStatus(fiber.StatusOK)
+	})
+	isExempt := func(method string, path string) bool {
+		t.Helper()
+		request := httptest.NewRequest(method, path, strings.NewReader(""))
+		response, err := probe.Test(request, testConfigNoTimeout)
+		if err != nil {
+			t.Fatalf("probe %s %s: %v", method, path, err)
+		}
+		defer func() { _ = response.Body.Close() }()
+		return response.StatusCode == fiber.StatusTeapot
+	}
+
+	const feedTarget = "/calendar/feed/ABCDEFGHJKLMNPQRSTUVWXYZ23456789ABCDEFGHJKLMNP12.ics"
+	if !isExempt(http.MethodGet, feedTarget) {
+		t.Fatalf("expected GET %s to skip the CSRF middleware (no token issuance on the cookieless feed)", feedTarget)
+	}
+	if !strings.HasPrefix(feedTarget, api.CalendarFeedRateLimitPrefix) {
+		t.Fatalf("probe path %q must share the feed's own rate-limit prefix %q, or the assertion above is not testing the feed clause", feedTarget, api.CalendarFeedRateLimitPrefix)
+	}
+
+	// A mutating verb under the same prefix — hypothetical today, since
+	// internal/api/routes.go registers no such route — must still be
+	// validated. Negating the predicate's method check would silently exempt
+	// one from CSRF the day it's added.
+	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
+		if isExempt(method, feedTarget) {
+			t.Fatalf("expected %s %s to stay CSRF-validated: the feed clause must be GET-only", method, feedTarget)
+		}
+	}
+
+	// A neighbouring path that merely starts with "/calendar" but not with the
+	// feed's own prefix must not be swept in by a loosened prefix check.
+	if isExempt(http.MethodGet, "/calendar/day/2026-01-15") {
+		t.Fatal("expected /calendar/day/:date to stay outside the feed's CSRF skip — the prefix must not over-match")
 	}
 }
 

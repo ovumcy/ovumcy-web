@@ -309,8 +309,31 @@ func securityHeadersMiddleware(enableStrictTransportSecurity bool) fiber.Handler
 
 func csrfMiddlewareConfig(cookieSecure bool, handler *api.Handler) csrf.Config {
 	return csrf.Config{
+		// Two unrelated skips share this predicate. The OIDC callback clause is
+		// the sole exemption from CSRF VALIDATION: a mutating POST route the
+		// middleware would otherwise reject for carrying no token, protected
+		// instead by the sealed one-time state cookie (see
+		// csrf_exemption_guard_test.go, which walks every mutating route and
+		// expects exactly this one).
+		//
+		// The calendar-feed clause validates nothing to begin with: GET is a
+		// safe method, and fiber's csrf.New only ever reaches its validation arm
+		// for the unsafe ones. What it skips is the SAFE-METHOD arm's own side
+		// effect — on every GET without a matching cookie, csrf.New mints a
+		// fresh token and unconditionally sets it, calendar clients included,
+		// which is the Set-Cookie the cookieless feed's own contract forbids on
+		// every outcome (docs/SECURITY_INVARIANTS.md → Calendar feed
+		// subscription). So this is not a second validation exemption, and
+		// csrfGuardExpectedExemptions in csrf_exemption_guard_test.go stays a
+		// single mutating route. Scoped to GET so a mutating verb ever added
+		// under this prefix would still be validated; scoped to the same prefix
+		// the feed's own rate limiter mounts on below, which
+		// internal/api/routes.go confirms is the only route under it.
 		Next: func(c fiber.Ctx) bool {
-			return c.Method() == fiber.MethodPost && c.Path() == security.OIDCCallbackPath
+			if c.Method() == fiber.MethodPost && c.Path() == security.OIDCCallbackPath {
+				return true
+			}
+			return c.Method() == fiber.MethodGet && strings.HasPrefix(c.Path(), api.CalendarFeedRateLimitPrefix)
 		},
 		// Fiber v3 removed KeyLookup and ContextKey: the token source is now a
 		// typed extractors.Extractor (see api.CSRFTokenExtractor, form-then-

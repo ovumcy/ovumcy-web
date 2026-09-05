@@ -163,10 +163,16 @@ Load-bearing invariants (see [`docs/SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS
   before any session exists have no role to enforce, and that exclusion set —
   which applies to `OwnerOnly` alone, never to CSRF — is named in full in
   [`docs/SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md) rather than restated
-  here. The single CSRF exemption is the OIDC callback — `POST
+  here. The single CSRF **validation** exemption is the OIDC callback — `POST
   /auth/oidc/callback`, plus `GET` on the same path under
   `OIDC_RESPONSE_MODE=query`, a safe method the middleware never validates —
-  protected by the sealed one-time state cookie.
+  protected by the sealed one-time state cookie. The calendar client's own
+  path in the diagram above bypasses the CSRF box entirely rather than passing
+  through it unvalidated: its GET is excluded, by path prefix, from the same
+  middleware's safe-method side effect (minting and setting its own cookie),
+  which is not a validation exemption and does not widen the one named here —
+  detail in [`docs/SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md)'s
+  *Calendar feed subscription* and *CSRF and CORS* sections.
 - **No usable secret in transport.** Passwords, auth/recovery/reset tokens and
   stored secrets never appear in URLs, JSON, HTML or logs. The exception ledger is
   [`docs/SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md)'s, not this file's:
