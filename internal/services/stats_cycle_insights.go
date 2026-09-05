@@ -204,7 +204,7 @@ func buildCurrentCycleBBTChart(language string, stats CycleStats, logs []models.
 		return StatsBBTChartViewData{}
 	}
 
-	detectionDays, detectionValues := bbtSeriesFromPoints(collectCycleBBTPoints(logs, cycleStart, AddCalendarDays(today, 1, location), location))
+	detectionDays, detectionValues := bbtSeriesFromPoints(collectCycleBBTPoints(logs, cycleStart, currentCycleDetectionBound(today, location), location))
 	firstHighDay, coverline, hasShift := detectBBTShiftFirstHighDay(detectionDays, detectionValues)
 	markerIndex, hasMarker := probableOvulationMarkerIndex(firstHighDay, hasShift, len(labels))
 	points := buildCurrentCycleBBTChartPoints(language, cycleStart, labels, values)

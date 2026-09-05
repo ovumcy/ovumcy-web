@@ -739,3 +739,27 @@ func assertExportEntryHasBBT(t *testing.T, entry ExportJSONEntry, want string) {
 		t.Fatalf("expected %s export entry to include bbt:%s, got %s", entry.Date, want, marshaled)
 	}
 }
+
+// TestImportServiceRoundsAnImportedBBTOntoTheStoredGrid pins the second writer
+// of a stored reading to the same precision as a day save: a restored file may
+// carry any decimal expansion, and the shift detector compares readings on the
+// ten-thousandths grid every other writer rounds to.
+func TestImportServiceRoundsAnImportedBBTOntoTheStoredGrid(t *testing.T) {
+	dayService, database := newDayServiceIntegration(t)
+	symptomService := NewSymptomService(db.NewRepositories(database).Symptoms)
+	user := createDayServiceTestUser(t, database, "import-bbt-grid@example.com")
+
+	raw := []byte(`{"entries":[{"date":"2026-07-05","period":false,"bbt":36.123456,"cycle_factors":[]}]}`)
+	importService := newImportServiceIntegration(t, database, symptomService)
+	if _, err := importService.ImportJSON(context.Background(), user.ID, raw, time.UTC); err != nil {
+		t.Fatalf("import: %v", err)
+	}
+
+	stored, err := dayService.FetchLogByDate(context.Background(), user.ID, mustParseExportDay(t, "2026-07-05"), time.UTC)
+	if err != nil {
+		t.Fatalf("reload imported day: %v", err)
+	}
+	if stored.BBT == nil || *stored.BBT != 36.1235 {
+		t.Fatalf("expected the imported reading rounded to 36.1235, got %v", stored.BBT)
+	}
+}

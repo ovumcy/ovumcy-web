@@ -485,6 +485,8 @@ func normalizeExportMood(value int) int {
 // unmeasured (nil) or out-of-range value becomes nil so it is emitted as
 // absent, and a valid reading is passed through. Combined with the
 // `omitempty` tag on the export entry, an unmeasured day carries no `bbt` key.
+// Export emits the stored value as it is; the import side rounds what it
+// accepts (normalizeImportEntryInput).
 func normalizeExportBBT(value *float64) *float64 {
 	if value == nil || !IsValidDayBBT(value) {
 		return nil

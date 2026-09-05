@@ -122,6 +122,12 @@ func deriveUserLutealPhase(logs []models.DailyLog, now time.Time, location *time
 	return defaultLutealPhaseDays
 }
 
+// currentCycleDetectionBound is the exclusive upper bound of the current
+// cycle's detection series: it runs through today, never the model's projected NextPeriodStart.
+func currentCycleDetectionBound(today time.Time, location *time.Location) time.Time {
+	return AddCalendarDays(today, 1, location)
+}
+
 // ConfirmedCurrentCycleOvulation reports the day the shared "3-over-6" thermal
 // detector CONFIRMS for the owner's CURRENT cycle, and whether it found one.
 //
@@ -137,6 +143,9 @@ func deriveUserLutealPhase(logs []models.DailyLog, now time.Time, location *time
 // future date must not confirm an ovulation that has not happened. The caller
 // supplies today so that a surface which has already resolved it does not
 // resolve a second, possibly different one.
+//
+// The detection series runs to currentCycleDetectionBound(today), never to
+// the projected stats.NextPeriodStart — a late shift is still this cycle's.
 func ConfirmedCurrentCycleOvulation(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (time.Time, bool) {
 	if user == nil || !user.TrackBBT || stats.LastPeriodStart.IsZero() || stats.OvulationDate.IsZero() || stats.NextPeriodStart.IsZero() {
 		return time.Time{}, false
@@ -157,7 +166,7 @@ func ConfirmedCurrentCycleOvulation(user *models.User, logs []models.DailyLog, s
 		return time.Time{}, false
 	}
 
-	signal := inferBBTOvulationDate(filterLogsNotAfter(logs, today), cycleStart, CalendarDay(stats.NextPeriodStart, location), location)
+	signal := inferBBTOvulationDate(filterLogsNotAfter(logs, today), cycleStart, currentCycleDetectionBound(today, location), location)
 	if signal.IsZero() {
 		return time.Time{}, false
 	}
@@ -174,12 +183,13 @@ func ConfirmedCurrentCycleOvulation(user *models.User, logs []models.DailyLog, s
 // name a different day than the dashboard and the grid for one shift, on the day
 // the difference is largest: the projected day itself.
 //
-// The bound is the confirmation's own window. ConfirmedCurrentCycleOvulation
-// reads the CURRENT cycle only, so a projection that has already rolled into the
-// next cycle is about a day this shift says nothing about, and suppressing it
-// would withhold a reminder the account is owed. Callers pass each projected day
-// they are about to announce rather than deciding per surface: a rule restated
-// twice is a rule that can disagree with itself.
+// The NextPeriodStart bound distinguishes the two projections a caller might
+// pass: the CURRENT cycle's, which always lands before NextPeriodStart, and
+// the NEXT cycle's, about which this confirmation says nothing — suppressing
+// that later projection would withhold a reminder the account is owed.
+// Callers pass each projected day they are about to announce rather than
+// deciding per surface: a rule restated twice is a rule that can disagree
+// with itself.
 func ConfirmedOvulationSupersedes(user *models.User, logs []models.DailyLog, stats CycleStats, projected time.Time, today time.Time, location *time.Location) bool {
 	if projected.IsZero() {
 		return false
@@ -248,9 +258,13 @@ func inferBBTOvulationDate(logs []models.DailyLog, cycleStart time.Time, nextSta
 // days (cycle days n, n+1, n+2), all recorded, the first two strictly above
 // the coverline and the third at least bbtThirdDayMarginCelsius above it.
 // recordedDays must be sorted ascending; dayValues maps each recorded cycle
-// day to its temperature. Returns the first elevated cycle day and the
-// coverline in effect.
+// day to its temperature, and every value must have passed IsValidDayBBT
+// (bbtStoredUnits converts to int64 without a range check of its own).
+// Returns the first elevated cycle day and the coverline in effect.
 func detectBBTShiftFirstHighDay(recordedDays []int, dayValues map[int]float64) (int, float64, bool) {
+	// The threshold checks run in stored units (bbtStoredUnits), where adding
+	// the margin is exact.
+	marginUnits := bbtStoredUnits(bbtThirdDayMarginCelsius)
 	for index := bbtCoverlineWindow; index+bbtElevatedStreakDays-1 < len(recordedDays); index++ {
 		dayOne := recordedDays[index]
 		dayTwo := recordedDays[index+1]
@@ -265,11 +279,12 @@ func detectBBTShiftFirstHighDay(recordedDays []int, dayValues map[int]float64) (
 				coverline = value
 			}
 		}
+		coverlineUnits := bbtStoredUnits(coverline)
 
-		if dayValues[dayOne] <= coverline || dayValues[dayTwo] <= coverline {
+		if bbtStoredUnits(dayValues[dayOne]) <= coverlineUnits || bbtStoredUnits(dayValues[dayTwo]) <= coverlineUnits {
 			continue
 		}
-		if dayValues[dayThree] < coverline+bbtThirdDayMarginCelsius {
+		if bbtStoredUnits(dayValues[dayThree]) < coverlineUnits+marginUnits {
 			continue
 		}
 		return dayOne, coverline, true
