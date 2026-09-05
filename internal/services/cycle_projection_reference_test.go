@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/ovumcy/ovumcy-web/internal/testenv"
 )
 
 // This file consumes the ADDITIVE "projection" section of the shared
@@ -91,11 +93,7 @@ func projectionLocation(t *testing.T, name string) *time.Location {
 	if name == "" || name == "UTC" {
 		return time.UTC
 	}
-	loc, err := time.LoadLocation(name)
-	if err != nil {
-		t.Skipf("tz database unavailable for %q: %v", name, err)
-	}
-	return loc
+	return testenv.RequireTimeZone(t, name)
 }
 
 // projectionDate parses a fixture "YYYY-MM-DD" as midnight in loc, matching how

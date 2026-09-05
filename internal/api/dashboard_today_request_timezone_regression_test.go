@@ -13,6 +13,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
+	"github.com/ovumcy/ovumcy-web/internal/testenv"
 )
 
 func TestBuildDashboardViewDataKeepsMarchThreeAtUTCBoundary(t *testing.T) {
@@ -164,6 +165,6 @@ func timezoneWithDifferentCalendarDay(t *testing.T, nowUTC time.Time) (string, *
 		}
 	}
 
-	t.Skip("timezone data unavailable for different-calendar-day regression")
+	testenv.SkipUnlessRequired(t, "tzdata", "timezone data unavailable for different-calendar-day regression: none of %v resolved a day different from UTC", candidates)
 	return "", nil
 }

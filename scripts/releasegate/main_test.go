@@ -47,6 +47,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ovumcy/ovumcy-web/internal/testenv"
 	"github.com/ovumcy/ovumcy-web/scripts/workflowfile"
 )
 
@@ -538,7 +539,10 @@ func runGate(t *testing.T, script string, env map[string]string, state scenario)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	command := exec.CommandContext(ctx, bashPath(t), "-c", preamble+script)
+	bash := bashPath(t)
+	requireWorkingBash(t, bash)
+
+	command := exec.CommandContext(ctx, bash, "-c", preamble+script)
 	command.Env = append(os.Environ(),
 		"GITHUB_SHA=5049126faa3152cced900c304c3640e4ec724ba5",
 		"GITHUB_REPOSITORY=ovumcy/ovumcy-web",
@@ -555,15 +559,29 @@ func runGate(t *testing.T, script string, env map[string]string, state scenario)
 
 // bashPath locates the shell the workflow's `shell: bash` steps are written
 // for. Absent it, there is nothing to run the gate's own script under, and a
-// skip is honest where a Go reimplementation would not be.
+// skip is honest where a Go reimplementation would not be — unless the lane
+// running this package declared bash mandatory (OVUMCY_REQUIRE_BASH), in
+// which case the same absence is a failure: this suite is the only thing that
+// exercises the gate's real script, and a lane that promised to run it cannot
+// report green having found no shell to run it under. A bash that resolves
+// but does not behave like one is a separate, always-fatal case — see
+// requireWorkingBash below.
 func bashPath(t *testing.T) string {
 	t.Helper()
+	return testenv.RequireLookPath(t, "bash", "bash")
+}
 
-	path, err := exec.LookPath("bash")
-	if err != nil {
-		t.Skipf("bash is required to run the gate's own script as the workflow runs it: %v", err)
-	}
-	return path
+// requireWorkingBash is the operational half bashPath does not cover: a
+// binary named bash that resolves on PATH but does not run scripts the way
+// this suite's fixtures assume — a WSL launcher stub with no distro
+// installed answers a lookup exactly as a real bash does — fails the suite
+// outright, on every machine, whatever the owning lane declared. The probe
+// script matches the preamble every fixture already runs under: a shell
+// unable to report its own exit code correctly would corrupt every case in
+// this file identically.
+func requireWorkingBash(t *testing.T, path string) {
+	t.Helper()
+	testenv.ProbeShell(t, path, "printf ok", "ok")
 }
 
 // shellQuote makes a path safe to paste into the stub preamble. A temporary
