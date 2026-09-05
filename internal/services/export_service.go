@@ -483,13 +483,15 @@ func normalizeExportMood(value int) int {
 
 // normalizeExportBBT canonicalizes a stored BBT for export/import: an
 // unmeasured (nil) or out-of-range value becomes nil so it is emitted as
-// absent, and a valid reading is passed through. Combined with the
-// `omitempty` tag on the export entry, an unmeasured day carries no `bbt` key.
+// absent, and a valid reading is rounded onto the stored grid — the same
+// normalization a day save applies, so a restored file cannot put a reading
+// off the grid the shift detector compares on. Combined with the `omitempty`
+// tag on the export entry, an unmeasured day carries no `bbt` key.
 func normalizeExportBBT(value *float64) *float64 {
 	if value == nil || !IsValidDayBBT(value) {
 		return nil
 	}
-	return value
+	return normalizeStoredDayBBT(value)
 }
 
 func csvMoodRating(value int) string {
