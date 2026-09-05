@@ -104,11 +104,15 @@ func (f *fakeConfirmFenceAnchor) Write(value string) error {
 
 type fakeConfirmFenceAppState struct {
 	values  map[string]string
+	getErr  error
 	setErr  error
 	journal *[]string
 }
 
 func (f *fakeConfirmFenceAppState) Get(_ context.Context, key string) (string, bool, error) {
+	if f.getErr != nil {
+		return "", false, f.getErr
+	}
 	value, ok := f.values[key]
 	return value, ok, nil
 }
@@ -193,8 +197,19 @@ func TestConfirmOperatorFeedRevocationRefusesAndWritesNothing(t *testing.T) {
 			fencePath:  filepath.Join("state", "calendar-feed.fence"),
 			appState:   &fakeConfirmFenceAppState{values: map[string]string{}},
 			anchor:     &fakeConfirmFenceAnchor{},
-			wantExtra:  []string{"working directory"},
+			wantExtra:  []string{filepath.Join("state", "calendar-feed.fence"), "a relative path", "working directory"},
 			wantRemedy: "docker exec",
+		},
+		{
+			name:      "the database marker cannot be read",
+			fencePath: "/app/fence/calendar-feed.fence",
+			appState:  &fakeConfirmFenceAppState{values: map[string]string{}, getErr: errors.New("database is locked")},
+			anchor:    &fakeConfirmFenceAnchor{value: confirmFenceTestToken, found: true},
+			wantExtra: []string{
+				"could not be read",
+				"database is locked",
+			},
+			wantRemedy: "once the database answers",
 		},
 		{
 			name:      "the anchor is unreachable",
@@ -258,6 +273,45 @@ func TestConfirmOperatorFeedRevocationRefusesAndWritesNothing(t *testing.T) {
 				t.Fatalf("a refusal must write no file, got %q", testCase.anchor.written)
 			}
 		})
+	}
+}
+
+// TestConfirmOperatorFeedRevocationNamesTheHalfAdvancedFenceInsteadOfClaimingNothingChanged
+// pins the one refusal after which something did change: the file half moved
+// and the database write then failed. Every other refusal ends "Nothing was
+// changed"; this one must not, must name what the next server start will do,
+// and must still say the account itself was left alone.
+func TestConfirmOperatorFeedRevocationNamesTheHalfAdvancedFenceInsteadOfClaimingNothingChanged(t *testing.T) {
+	appState := &fakeConfirmFenceAppState{
+		values: map[string]string{models.AppStateKeyCalendarFeedRestoreFence: confirmFenceTestToken},
+		setErr: errors.New("database is locked"),
+	}
+	anchor := &fakeConfirmFenceAnchor{value: confirmFenceTestToken, found: true}
+	fence := services.NewCalendarFeedRestoreFence(appState, fakeConfirmFenceUsers{}, anchor)
+
+	err := confirmOperatorFeedRevocation(context.Background(), "/app/fence/calendar-feed.fence", fence, &bytes.Buffer{})
+	if err == nil {
+		t.Fatal("expected a refusal")
+	}
+	message := err.Error()
+	if strings.Contains(message, "Nothing was changed") {
+		t.Fatalf("the fence file moved, so the refusal must not claim nothing changed: %q", message)
+	}
+	for _, want := range []string{
+		"/app/fence/calendar-feed.fence",
+		"database is locked",
+		"next start disarms every armed calendar feed",
+		"The account was not changed",
+	} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("refusal must contain %q, got %q", want, message)
+		}
+	}
+	if anchor.written == "" || anchor.written == confirmFenceTestToken {
+		t.Fatalf("the file half must have moved, got %q", anchor.written)
+	}
+	if got := appState.values[models.AppStateKeyCalendarFeedRestoreFence]; got != confirmFenceTestToken {
+		t.Fatalf("the database half must be left at its old value, got %q", got)
 	}
 }
 

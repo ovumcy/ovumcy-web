@@ -801,14 +801,43 @@ func TestCalendarFeedRestoreFenceAdvanceConfirmedPropagatesADatabaseFailureAfter
 	if !errors.Is(err, refused) {
 		t.Fatalf("expected the raw app_state failure, got %v", err)
 	}
-	if errors.Is(err, ErrCalendarFeedFenceUnreachable) {
-		t.Fatal("a database failure must not be reported as an anchor failure")
+	if !errors.Is(err, ErrCalendarFeedFenceHalfAdvanced) {
+		t.Fatalf("a database write failure after the file moved must say so, got %v", err)
+	}
+	if errors.Is(err, ErrCalendarFeedFenceUnreachable) || errors.Is(err, ErrCalendarFeedFenceMarkerUnavailable) {
+		t.Fatal("a database write failure must not be reported as an anchor failure or an unreadable marker")
 	}
 	if anchor.written == "" || anchor.written == fenceTestToken {
 		t.Fatalf("the file half must already have moved to a fresh token, got %q", anchor.written)
 	}
 	if got := appState.values[models.AppStateKeyCalendarFeedRestoreFence]; got != fenceTestToken {
 		t.Fatalf("the database half must be left at its old value, got %q", got)
+	}
+}
+
+// TestCalendarFeedRestoreFenceAdvanceConfirmedRefusesWhenTheMarkerCannotBeReadAndWritesNothing
+// is the read-side counterpart: the anchor is fine, the database cannot
+// answer, and the refusal must be typed as exactly that — not as an anchor
+// failure, whose remedy (run the CLI elsewhere) would send the operator the
+// wrong way — with neither half written.
+func TestCalendarFeedRestoreFenceAdvanceConfirmedRefusesWhenTheMarkerCannotBeReadAndWritesNothing(t *testing.T) {
+	unreadable := errors.New("app_state read failed")
+	appState := &stubFenceAppState{getErr: unreadable}
+	anchor := &stubFenceAnchor{value: fenceTestToken, found: true}
+	fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor)
+
+	err := fence.AdvanceConfirmed(context.Background())
+	if !errors.Is(err, ErrCalendarFeedFenceMarkerUnavailable) || !errors.Is(err, unreadable) {
+		t.Fatalf("expected ErrCalendarFeedFenceMarkerUnavailable wrapping the read failure, got %v", err)
+	}
+	if errors.Is(err, ErrCalendarFeedFenceUnreachable) || errors.Is(err, ErrCalendarFeedFenceHalfAdvanced) {
+		t.Fatal("an unreadable marker must not be reported as an anchor failure or a half-advanced fence")
+	}
+	if anchor.written != "" {
+		t.Fatalf("an unreadable marker must write no file, got %q", anchor.written)
+	}
+	if len(appState.values) != 0 {
+		t.Fatalf("an unreadable marker must record nothing, got %v", appState.values)
 	}
 }
 

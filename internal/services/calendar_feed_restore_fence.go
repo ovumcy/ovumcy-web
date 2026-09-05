@@ -233,6 +233,24 @@ func (fence *CalendarFeedRestoreFence) Advance(ctx context.Context) error {
 // entirely instead.
 var ErrCalendarFeedFenceUnreachable = errors.New("calendar feed restore fence: could not confirm continuity")
 
+// ErrCalendarFeedFenceMarkerUnavailable is returned by AdvanceConfirmed when
+// the DATABASE half could not be read. It is kept apart from
+// ErrCalendarFeedFenceUnreachable because the operator remedy differs — this
+// is the database not answering, not a path that is unset or unmounted — and
+// because, like that error, it guarantees nothing was written in either half.
+// It always wraps the storage error.
+var ErrCalendarFeedFenceMarkerUnavailable = errors.New("calendar feed restore fence: could not read the database marker")
+
+// ErrCalendarFeedFenceHalfAdvanced is returned by AdvanceConfirmed when the
+// file half was written and the database half then could not be. It is the
+// one error out of that method after which something HAS changed: the file is
+// ahead of app_state, so the server's next boot reads that as a restore and
+// disarms every armed feed — fail closed, the same answer Advance's own
+// unreachable-anchor path gives, reached through a different door. A caller
+// must not tell the operator that nothing changed on this error. It always
+// wraps the storage error.
+var ErrCalendarFeedFenceHalfAdvanced = errors.New("calendar feed restore fence: the file advanced but the database marker did not")
+
 // CalendarFeedFenceContinuityError is returned by AdvanceConfirmed when the
 // anchor was reachable but the two halves are not the one pair AdvanceConfirmed
 // is willing to move forward from: both already holding the SAME token.
@@ -267,10 +285,16 @@ func (err *CalendarFeedFenceContinuityError) Error() string {
 // mints, writes the file, then the database marker, in that order, same as
 // Advance. A failure writing the database half after the file has already
 // moved is still returned here (unlike Advance, which has nothing left to
-// protect by dropping it): the file is now ahead of app_state, so the very
-// next boot reads that as a restore and disarms every armed feed — fail
-// closed, the same answer Advance's own unreachable-anchor path gives,
-// reached through a different door.
+// protect by dropping it), wrapped in ErrCalendarFeedFenceHalfAdvanced: the
+// file is now ahead of app_state, so the very next boot reads that as a
+// restore and disarms every armed feed.
+//
+// The errors are typed by what they leave behind, and a caller may rely on
+// it: every error returned after anchor.Write wraps
+// ErrCalendarFeedFenceHalfAdvanced, so an error that does not — an anchor
+// failure, an unreadable marker, a pair that does not agree, or the bare
+// error of a token that could not be minted — means nothing was written in
+// either half.
 func (fence *CalendarFeedRestoreFence) AdvanceConfirmed(ctx context.Context) error {
 	fence.writing.Lock()
 	defer fence.writing.Unlock()
@@ -282,7 +306,7 @@ func (fence *CalendarFeedRestoreFence) AdvanceConfirmed(ctx context.Context) err
 
 	stored, storedFound, err := fence.appState.Get(ctx, models.AppStateKeyCalendarFeedRestoreFence)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", ErrCalendarFeedFenceMarkerUnavailable, err)
 	}
 
 	if !anchorFound || !storedFound || anchored != stored {
@@ -296,7 +320,10 @@ func (fence *CalendarFeedRestoreFence) AdvanceConfirmed(ctx context.Context) err
 	if err := fence.anchor.Write(token); err != nil {
 		return fmt.Errorf("%w: %w", ErrCalendarFeedFenceUnreachable, err)
 	}
-	return fence.appState.Set(ctx, models.AppStateKeyCalendarFeedRestoreFence, token)
+	if err := fence.appState.Set(ctx, models.AppStateKeyCalendarFeedRestoreFence, token); err != nil {
+		return fmt.Errorf("%w: %w", ErrCalendarFeedFenceHalfAdvanced, err)
+	}
+	return nil
 }
 
 // record mints the next token and stores it in both halves. A write failure on
