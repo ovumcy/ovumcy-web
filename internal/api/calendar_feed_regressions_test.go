@@ -166,10 +166,19 @@ const (
 
 // TestCalendarFeedReturnsBare404WithoutOracleForBadTokens proves the no-oracle
 // contract at the transport boundary: an unknown selector, a malformed token, a
-// correct-selector/wrong-verifier token and a token whose feed has since been
-// cleared all get the SAME response — same status, same headers, same body
+// correct-selector/wrong-verifier token, and a token whose feed has since been
+// revoked all get the SAME response — same status, same headers, same body
 // bytes, no Set-Cookie — so the response tells an enumerator nothing about
 // which of the four they hit.
+//
+// wrongVerifier is tried against the STILL-ARMED subscription, proven live by a
+// GET immediately before it: the row's selector must still resolve so the
+// request actually reaches "selector found, verifier mismatch" inside
+// VerifyCalendarFeedToken, rather than the "selector resolves no row" branch a
+// since-revoked feed produces instead — the same branch bogus and
+// revokedValidToken exercise. Revocation happens only after wrongVerifier has
+// been tried, and revokedValidToken is a separate case tried only once the feed
+// is actually gone, so the two can never borrow each other's coverage.
 //
 // The identity is asserted BETWEEN the cases, not case by case against a marker
 // of its own: four bodies that each merely lack "BEGIN:VCALENDAR" can still
@@ -181,33 +190,50 @@ func TestCalendarFeedReturnsBare404WithoutOracleForBadTokens(t *testing.T) {
 	user := createOnboardingTestUser(t, database, "feed-404@example.com", "StrongPass1", true)
 	validToken := armCalendarFeedForUser(t, database, user.ID)
 
+	// Positive control: the subscription genuinely works before any bad token is
+	// tried against it, so wrongVerifier below is proven against a live row, not
+	// one that never served anything.
+	live := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, calendarFeedURL(validToken), nil))
+	if live.StatusCode != http.StatusOK {
+		t.Fatalf("precondition lost: the armed feed must serve before the bad-token cases, got %d", live.StatusCode)
+	}
+	if liveBody := readBodyString(t, live); !strings.Contains(liveBody, "BEGIN:VCALENDAR") {
+		t.Fatalf("precondition lost: expected a calendar body from the armed feed, got:\n%s", liveBody)
+	}
+
 	// A token whose selector resolves no row, a too-short malformed token, and a
 	// correct-selector/wrong-verifier token.
 	bogus := "ZZZZZZZZZZZZZZZZ" + validToken[16:]
 	malformed := "SHORT"
 	wrongVerifier := validToken[:16] + strings.Repeat("2", len(validToken)-16)
 
-	// After clearing the feed, the previously-valid token must 404 too.
-	if err := db.NewRepositories(database).Users.ClearCalendarFeedToken(t.Context(), user.ID); err != nil {
-		t.Fatalf("ClearCalendarFeedToken: %v", err)
-	}
-
 	// A slice, not a map: the cases are compared against each other, so the
 	// order they are visited in has to be the same on every run for the failure
-	// message to name the same reference case.
+	// message to name the same reference case. revokedValidToken's before hook
+	// revokes the feed immediately before its own request — after bogus,
+	// malformed and wrongVerifier have already run against the still-armed
+	// subscription — so it is the only case that ever sees a cleared row.
 	badTokens := []struct {
-		name  string
-		token string
+		name   string
+		token  string
+		before func()
 	}{
 		{name: "bogus", token: bogus},
 		{name: "malformed", token: malformed},
 		{name: "wrongVerifier", token: wrongVerifier},
-		{name: "clearedValidOnce", token: validToken},
+		{name: "revokedValidToken", token: validToken, before: func() {
+			if err := db.NewRepositories(database).Users.ClearCalendarFeedToken(t.Context(), user.ID); err != nil {
+				t.Fatalf("ClearCalendarFeedToken: %v", err)
+			}
+		}},
 	}
 
 	var reference feedResponseFingerprint
 	var referenceName string
 	for index, badToken := range badTokens {
+		if badToken.before != nil {
+			badToken.before()
+		}
 		request := httptest.NewRequest(http.MethodGet, calendarFeedURL(badToken.token), nil)
 		response := mustAppResponse(t, app, request)
 		if len(response.Cookies()) != 0 {
