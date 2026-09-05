@@ -1,6 +1,7 @@
 package api
 
 import (
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -49,16 +50,34 @@ const (
 	CalendarFeedRateLimitPrefix = "/calendar/feed"
 )
 
+// IsCalendarFeedRequestPath reports whether path is a request for the
+// cookieless feed itself — a concrete URL below CalendarFeedRateLimitPrefix —
+// as opposed to a neighbour that merely shares its leading characters. The
+// separator is part of the test on purpose: the two app-wide middlewares that
+// skip this route key on it (csrfMiddlewareConfig.Next in cmd/ovumcy/server.go,
+// the early return in LanguageMiddleware), and a bare-prefix match would hand
+// a future /calendar/feedback both skips, leaving it with no language and no
+// request timezone resolved.
+func IsCalendarFeedRequestPath(path string) bool {
+	return strings.HasPrefix(path, CalendarFeedRateLimitPrefix+"/")
+}
+
 // ServeCalendarFeed serves an owner's read-only .ics feed, authenticated by the
 // path token alone. It never sets a cookie and never renders an HTML error: the
 // only outcomes are 200 + calendar body, a bare 404 (every not-found/invalid
 // case, answered with the same status text, so no oracle), or a generic 500 on
 // an infrastructure failure. That promise also holds one layer up: the two
 // app-wide middlewares mounted ahead of this handler (CSRF, LanguageMiddleware)
-// are excluded, by this route's own path prefix, from the safe-method side
+// are excluded, through IsCalendarFeedRequestPath, from the safe-method side
 // effect that would otherwise mint and set one of their own cookies on any GET
 // lacking a matching cookie — see csrfMiddlewareConfig.Next in
-// cmd/ovumcy/server.go and the early return in LanguageMiddleware.
+// cmd/ovumcy/server.go and the early return in LanguageMiddleware. One
+// consequence is deliberate: with LanguageMiddleware skipped, requestLocation
+// below is the instance zone, never a zone the polling request named. The
+// owner's stored users.timezone decides the calendar day regardless
+// (CalendarFeedService.ResolveFeed); only an owner who never had one captured
+// is affected, and for them the capability URL now renders the same day
+// whoever polls it instead of following the poller's cookie.
 func (handler *Handler) ServeCalendarFeed(c fiber.Ctx) error {
 	token := c.Params("token")
 	location := handler.requestLocation(c)

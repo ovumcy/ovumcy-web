@@ -37,6 +37,10 @@ func newLanguageMiddlewareTestApp(t *testing.T) *fiber.App {
 	app.Use(handler.LanguageMiddleware)
 	app.Get("/tzprobe", func(c fiber.Ctx) error { return c.SendStatus(fiber.StatusOK) })
 	app.Get(CalendarFeedRateLimitPrefix+"/:token.ics", func(c fiber.Ctx) error { return c.SendStatus(fiber.StatusOK) })
+	// A neighbour that shares the feed prefix's characters but not its
+	// separator: hypothetical today; the control below keeps the early return
+	// from ever claiming it.
+	app.Get(CalendarFeedRateLimitPrefix+"back", func(c fiber.Ctx) error { return c.SendStatus(fiber.StatusOK) })
 	return app
 }
 
@@ -106,5 +110,39 @@ func TestLanguageMiddlewareSkipsTheCookielessCalendarFeedEntirely(t *testing.T) 
 
 	if cookie := responseCookie(resp.Cookies(), timezoneCookieName); cookie != nil {
 		t.Fatalf("expected the calendar feed route to never receive a timezone cookie, got %q", cookie.Value)
+	}
+
+	// Control for the prefix boundary: a path that begins with the same
+	// characters but is not under the feed's own subtree must still be served
+	// by the middleware, or the early return has widened from the feed route
+	// to everything that happens to start with its prefix.
+	neighbour := httptest.NewRequest(http.MethodGet, CalendarFeedRateLimitPrefix+"back", nil)
+	neighbour.Header.Set(timezoneHeaderName, "UTC")
+	neighbourResp, err := app.Test(neighbour, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("neighbour tz probe failed: %v", err)
+	}
+	defer func() { _ = neighbourResp.Body.Close() }()
+	if cookie := responseCookie(neighbourResp.Cookies(), timezoneCookieName); cookie == nil || cookie.Value != "UTC" {
+		t.Fatalf("expected %sback to keep receiving the timezone cookie — the feed skip must not over-match its prefix, got %#v", CalendarFeedRateLimitPrefix, cookie)
+	}
+}
+
+// TestIsCalendarFeedRequestPathRequiresTheSeparator pins the boundary the two
+// middleware skips share: a concrete feed URL is in, the bare prefix and a
+// neighbour that merely continues its characters are out.
+func TestIsCalendarFeedRequestPathRequiresTheSeparator(t *testing.T) {
+	cases := map[string]bool{
+		CalendarFeedRateLimitPrefix + "/" + strings.Repeat("A", 48) + ".ics": true,
+		CalendarFeedRateLimitPrefix + "/":                                    true,
+		CalendarFeedRateLimitPrefix:                                          false,
+		CalendarFeedRateLimitPrefix + "back":                                 false,
+		"/calendar/day/2026-01-15":                                           false,
+		"/":                                                                  false,
+	}
+	for path, want := range cases {
+		if got := IsCalendarFeedRequestPath(path); got != want {
+			t.Errorf("IsCalendarFeedRequestPath(%q) = %t, want %t", path, got, want)
+		}
 	}
 }

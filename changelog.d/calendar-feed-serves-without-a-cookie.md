@@ -9,3 +9,8 @@
   either had any reason to run for this route at all. Neither ever validated anything here — a GET
   is a safe method the CSRF middleware was never going to check — so nothing about who may poll the
   feed changes; it now polls exactly as before, with one cookie fewer riding along for no reason.
+
+  One consequence is deliberate: the feed no longer reads a timezone from the polling request at all.
+  The calendar day it renders comes from the owner's saved timezone, as before; an owner whose timezone
+  the app never captured now gets the server's zone instead of whatever zone the request happened to
+  name, so the same subscribe URL renders the same day in every client.

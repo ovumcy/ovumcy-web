@@ -217,10 +217,18 @@ func TestCSRFPredicateSkipsTheCookielessFeedGETWithoutWideningTheMutatingExempti
 		}
 	}
 
-	// A neighbouring path that merely starts with "/calendar" but not with the
-	// feed's own prefix must not be swept in by a loosened prefix check.
-	if isExempt(http.MethodGet, "/calendar/day/2026-01-15") {
-		t.Fatal("expected /calendar/day/:date to stay outside the feed's CSRF skip — the prefix must not over-match")
+	// Neighbouring paths must not be swept in by a loosened prefix check: one
+	// that merely starts with "/calendar", one that continues every character
+	// of the feed prefix without its separator, and the bare prefix itself,
+	// which names no feed URL.
+	for _, neighbour := range []string{
+		"/calendar/day/2026-01-15",
+		api.CalendarFeedRateLimitPrefix + "back",
+		api.CalendarFeedRateLimitPrefix,
+	} {
+		if isExempt(http.MethodGet, neighbour) {
+			t.Fatalf("expected GET %s to stay outside the feed's CSRF skip — the prefix must not over-match", neighbour)
+		}
 	}
 }
 

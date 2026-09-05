@@ -150,15 +150,16 @@ func (service *CalendarFeedService) ResolveFeed(ctx context.Context, token strin
 	// exactly the row the token resolved to.
 	//
 	// "Today" resolves in the OWNER's persisted timezone, not the transport's.
-	// The location the api layer passes in is the ordinary request chain
-	// (X-Ovumcy-Timezone header -> ovumcy_tz cookie -> server zone), and a
-	// calendar client sends neither the header nor the cookie — so that chain
-	// always collapses to the server zone and would render an owner in a distant
-	// timezone a day off. users.timezone exists for exactly these request-free
-	// passes, and the sibling egress subsystem (the webhook notify pass) already
-	// resolves the owner's day through the same helper; sharing it keeps the two
-	// from disagreeing about which calendar day the owner is on. The passed-in
-	// location stays the fallback for an owner whose timezone was never captured.
+	// The location the api layer passes in for this route is the server zone:
+	// the feed is excluded from LanguageMiddleware (api.IsCalendarFeedRequestPath),
+	// so no header or cookie the poller presents ever reaches it — a calendar
+	// client sends neither anyway — and the server zone alone would render an
+	// owner in a distant timezone a day off. users.timezone exists for exactly
+	// these request-free passes, and the sibling egress subsystem (the webhook
+	// notify pass) already resolves the owner's day through the same helper;
+	// sharing it keeps the two from disagreeing about which calendar day the
+	// owner is on. The passed-in location stays the fallback for an owner whose
+	// timezone was never captured.
 	requestLocation := location
 	if requestLocation == nil {
 		requestLocation = time.UTC
