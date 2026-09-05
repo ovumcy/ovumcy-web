@@ -187,18 +187,22 @@ const (
 )
 
 // TestCalendarFeedReturnsBare404WithoutOracleForBadTokens proves the no-oracle
-// contract at the transport boundary: an unknown selector, a malformed token, a
+// contract at the transport boundary. An unknown selector, a malformed token, a
 // correct-selector/wrong-verifier token, and a token whose feed has since been
 // revoked all get the SAME response — same status, same headers, same body
-// bytes, no Set-Cookie — so the response tells an enumerator nothing about
-// which of the four they hit.
+// bytes — so the response tells an enumerator nothing about which of the four
+// they hit. None of the four sets a cookie either, and that is asserted per
+// case rather than left to the header fingerprint: four 404s carrying the same
+// Set-Cookie would still be identical to one another, while the route's
+// contract is to set none at all.
 //
-// wrongVerifier is tried against the STILL-ARMED subscription, proven live by a
-// GET before the bad-token cases; bogus and malformed run first but mutate
-// nothing, so the row is still armed when wrongVerifier fires: the row's
-// selector must still resolve so the request actually reaches "selector found,
-// verifier mismatch" inside VerifyCalendarFeedToken, rather than the "selector
-// resolves no row" branch a since-revoked feed produces instead.
+// wrongVerifier is tried against the STILL-ARMED subscription, proven live by
+// the positive control that runs before any bad-token case. bogus and
+// malformed run first but mutate nothing, so the row is still armed when
+// wrongVerifier fires: its selector must still resolve so the request actually
+// reaches "selector found, verifier mismatch" inside VerifyCalendarFeedToken,
+// rather than the "selector resolves no row" branch a since-revoked feed
+// produces instead.
 //
 // The identity is asserted BETWEEN the cases, not case by case against a marker
 // of its own: four bodies that each merely lack "BEGIN:VCALENDAR" can still
