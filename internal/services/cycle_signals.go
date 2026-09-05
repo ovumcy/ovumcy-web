@@ -265,16 +265,28 @@ func detectBBTShiftFirstHighDay(recordedDays []int, dayValues map[int]float64) (
 				coverline = value
 			}
 		}
+		coverlineUnits := bbtStoredUnits(coverline)
 
-		if dayValues[dayOne] <= coverline || dayValues[dayTwo] <= coverline {
+		// Compared in stored units, not as float64: coverline + 0.2 does not
+		// equal the stored 36.4 that a coverline of 36.2 plus an exact 0.2 shift
+		// rounds to (36.400000000000006 in float64), which rejected a shift
+		// landing exactly on the margin the rule defines as passing.
+		if bbtStoredUnits(dayValues[dayOne]) <= coverlineUnits || bbtStoredUnits(dayValues[dayTwo]) <= coverlineUnits {
 			continue
 		}
-		if dayValues[dayThree] < coverline+bbtThirdDayMarginCelsius {
+		if bbtStoredUnits(dayValues[dayThree]) < coverlineUnits+bbtStoredUnits(bbtThirdDayMarginCelsius) {
 			continue
 		}
 		return dayOne, coverline, true
 	}
 	return 0, 0, false
+}
+
+// bbtStoredUnits converts a Celsius reading to the integer ten-thousandths
+// bbtStoredScale defines as the canonical stored precision, so the detector's
+// comparisons do not depend on float64's representation of a decimal margin.
+func bbtStoredUnits(value float64) int64 {
+	return int64(math.Round(value * bbtStoredScale))
 }
 
 // bbtSeriesFromPoints converts ordered points into the recordedDays/dayValues

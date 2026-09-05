@@ -16,6 +16,13 @@ const (
 
 	MinDayBBTCelsius = 34.0
 	MaxDayBBTCelsius = 43.0
+
+	// bbtStoredScale is the canonical stored precision for a BBT reading —
+	// ten-thousandths of a degree Celsius, matching roundStoredTemperatureValue
+	// below. detectBBTShiftFirstHighDay (cycle_signals.go) compares readings in
+	// these integer units rather than as float64 so the two constants cannot
+	// drift apart.
+	bbtStoredScale = 10000
 )
 
 func NormalizeDaySexActivity(value string) string {
@@ -188,7 +195,7 @@ func normalizeStoredDayBBT(value *float64) *float64 {
 // decimals keep every 0.01 °F step distinct and exactly recoverable, while
 // still collapsing the float noise the conversion produces.
 func roundStoredTemperatureValue(value float64) float64 {
-	return math.Round(value*10000) / 10000
+	return math.Round(value*bbtStoredScale) / bbtStoredScale
 }
 
 // roundTemperatureValue rounds to the two decimals a temperature is DISPLAYED
