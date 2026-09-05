@@ -25,6 +25,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -304,6 +305,15 @@ func assembleCommand(root string, args []string) (string, error) {
 	return assemble(root, *version, *date)
 }
 
+// errNothingToRelease is what assemble returns when neither the frozen
+// "[Unreleased]" body nor any fragment contributes an entry — the state the
+// repository is legitimately in for as long as it takes the next pull request
+// to land a fragment. It is a value rather than a message so a caller can
+// recognise that state without matching prose: a fragment carrying only the
+// `none` marker counts as a fragment and contributes nothing, so counting
+// files is not the same question and does not answer it.
+var errNothingToRelease = errors.New("nothing to release")
+
 func assemble(root, version, date string) (string, error) {
 	if !versionPattern.MatchString(version) {
 		return "", fmt.Errorf("invalid -version %q (expected X.Y.Z)", version)
@@ -366,7 +376,7 @@ func assemble(root, version, date string) (string, error) {
 	}
 
 	if len(merged) == 0 {
-		return "", fmt.Errorf("nothing to release: no fragments in %s/ and no entries frozen under \"## [Unreleased]\" in %s", fragmentDir, changelogFile)
+		return "", fmt.Errorf("%w: no fragments in %s/ and no entries frozen under \"## [Unreleased]\" in %s", errNothingToRelease, fragmentDir, changelogFile)
 	}
 
 	out := renderChangelog(head, tail, merged, version, date)
