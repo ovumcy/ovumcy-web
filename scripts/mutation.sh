@@ -273,6 +273,15 @@ run_baseline() {
     # package under a shard's name — reporting success for work no shard was
     # supposed to do. Checked here rather than trusted from verify-shards:
     # that is a separate command nobody is required to have run.
+    # Same two outcomes verify_one_partition separates, and separated here for
+    # the same reason: without this, a registry entry whose directory has moved
+    # kills the run with a bare `find: ... No such file or directory` (pipefail
+    # carries it out of the assignment below), leaving the operator to work out
+    # that the fault is a stale registry rather than a broken package.
+    if [[ ! -d "$pkg_dir" ]]; then
+      echo "error: $base ($pkg_dir) is not a directory — the SHARDED_PKGS entry names a path that does not exist" >&2
+      exit 1
+    fi
     local shard_population
     shard_population="$(shard_files "$pkg_dir" | wc -l | tr -d ' ')"
     if [[ "$shard_population" -eq 0 ]]; then
