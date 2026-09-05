@@ -1,14 +1,11 @@
 package services
 
-// late_thermal_shift_test.go — a thermal shift that lands AFTER the model's
-// projected next-period start is still an event of the CURRENT cycle, and the
-// shared resolver must confirm it on every surface that reads it: the stats
-// chart already did (its own detection window runs to today+1), but the
-// calendar, the dashboard and the JSON API all read ConfirmedCurrentCycleOvulation,
-// which bounded its detection series at the PROJECTED stats.NextPeriodStart
-// instead — so a late shift was visible on the chart and invisible everywhere
-// else, one cycle for the length of an owner's whole thermal record past the
-// projection.
+// late_thermal_shift_test.go — a thermal shift that lands after the model's
+// projected next-period start is still an event of the CURRENT cycle, and every
+// surface reading the shared resolver must confirm it. The two surfaces that
+// leave the instance (the .ics feed and the webhook reminder) are not among
+// them: they announce projections, and which projection they hold once today
+// has passed the projected start is their anchor's business.
 
 import (
 	"testing"
@@ -17,49 +14,18 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
-// lateThermalShiftFixture builds a cycle that runs past its own projection: a
-// 28-day model (median/average 28, luteal 14) projects the next period on
-// 2026-03-29, but the owner's temperatures do not rise until cycle day 30 —
-// two days into what the model already calls the next cycle. The 3-over-6
-// detector's 6-day coverline window sits on cycle days 24-29 (36.20) and the
-// elevated streak on cycle days 30-32 (36.50), so the shared detector confirms
-// ovulation on cycle day 29, 2026-03-29 — the day before the first elevated
-// reading, which is itself after the projected start.
+// lateThermalShiftFixture slides confirmedOvulationFixture's series 18 days
+// later: the model still projects the next period on 2026-03-29, but the
+// coverline window now sits on cycle days 24-29 and the elevated streak on days
+// 30-32, so the detector confirms 2026-03-29 — the projected start itself — on
+// 2026-04-01, cycle day 32.
 func lateThermalShiftFixture(t *testing.T) (*models.User, []models.DailyLog, CycleStats, time.Time) {
 	t.Helper()
-
-	cycleStart := cyclesignalsCovDay(t, "2026-03-01")
-	logs := []models.DailyLog{
-		{Date: cycleStart, IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
-		{Date: cyclesignalsCovDay(t, "2026-03-02"), IsPeriod: true, Flow: models.FlowMedium},
-	}
-	for _, day := range []string{"2026-03-24", "2026-03-25", "2026-03-26", "2026-03-27", "2026-03-28", "2026-03-29"} {
-		logs = append(logs, cyclesignalsCovBBTLog(t, day, 36.20))
-	}
-	for _, day := range []string{"2026-03-30", "2026-03-31", "2026-04-01"} {
-		logs = append(logs, cyclesignalsCovBBTLog(t, day, 36.50))
-	}
-
-	user := &models.User{ID: 1, Role: models.RoleOwner, TrackBBT: true}
-	stats := CycleStats{
-		CompletedCycleCount: 3,
-		MedianCycleLength:   28,
-		AverageCycleLength:  28,
-		AveragePeriodLength: 5,
-		LutealPhase:         14,
-		CurrentCycleDay:     32,
-		LastPeriodStart:     cycleStart,
-		OvulationDate:       cyclesignalsCovDay(t, "2026-03-14"),
-		NextPeriodStart:     cyclesignalsCovDay(t, "2026-03-29"),
-	}
-	today := time.Date(2026, time.April, 1, 0, 0, 0, 0, time.UTC)
-	return user, logs, stats, today
+	return thermalShiftFixture(t, 18)
 }
 
 // TestConfirmedOvulationSurvivesTheProjectedNextPeriodStart pins the resolver
-// before any surface is asked about it: a shift confirmed after
-// stats.NextPeriodStart must still be returned, not cut off at the model's own
-// prediction.
+// before any surface is asked about it.
 func TestConfirmedOvulationSurvivesTheProjectedNextPeriodStart(t *testing.T) {
 	user, logs, stats, today := lateThermalShiftFixture(t)
 
@@ -72,45 +38,36 @@ func TestConfirmedOvulationSurvivesTheProjectedNextPeriodStart(t *testing.T) {
 	}
 }
 
-// TestLateShiftNamesOneDayOnEverySurface checks the four surfaces an owner can
-// read this shift from against the ONE fixture above. The stats chart already
-// names 2026-03-29 before the fix (its own detection window is not bounded by
-// stats.NextPeriodStart); the other three read the shared resolver and must
-// name the same day once it is fixed to agree with the chart.
-func TestLateShiftNamesOneDayOnEverySurface(t *testing.T) {
+// TestLateShiftNamesOneDayOnEverySurfaceInsideTheInstance compares the four
+// surfaces an owner reads this shift from — the stats chart, the calendar grid,
+// the dashboard line and the JSON overview — against the one day the resolver
+// names, so a surface that drifts fails on its own comparison rather than on
+// two literals happening to agree. The chart already named the day before the
+// fix (its window was never bounded by the projection); the other three read
+// the resolver.
+func TestLateShiftNamesOneDayOnEverySurfaceInsideTheInstance(t *testing.T) {
 	user, logs, stats, today := lateThermalShiftFixture(t)
 
 	confirmed, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, today, time.UTC)
 	if !ok {
-		t.Fatal("resolver: expected the late shift to confirm an ovulation")
+		t.Fatal("fixture: the late shift must confirm before the surfaces are compared")
 	}
 	confirmedKey := CalendarDayKey(confirmed)
-	if confirmedKey != "2026-03-29" {
-		t.Fatalf("resolver: confirmed ovulation = %s, want 2026-03-29", confirmedKey)
-	}
-	if confirmed.Equal(stats.OvulationDate) {
-		t.Fatalf("resolver: confirmed ovulation must not equal the model's projection %s", CalendarDayKey(stats.OvulationDate))
-	}
+	cycleStart := CalendarDay(stats.LastPeriodStart, time.UTC)
 
-	// Every surface below is compared against confirmedKey, the one day the
-	// resolver named above — not against a literal repeated on each surface —
-	// so a surface that drifts from the resolver fails on its own comparison
-	// rather than on a coincidence of two hardcoded dates agreeing.
-
-	// (i) The stats chart marker.
+	// (i) The stats chart marker, read back as the day its index names.
 	chart := buildCurrentCycleBBTChart("en", stats, logs, today, time.UTC)
 	if !chart.HasMarker {
 		t.Error("chart: expected a probable-ovulation marker for the late shift")
-	} else if chart.MarkerIndex != 28 {
-		t.Errorf("chart: marker index = %d, want 28 (0-based %s)", chart.MarkerIndex, confirmedKey)
+	} else if got := CalendarDayKey(AddCalendarDays(cycleStart, chart.MarkerIndex, time.UTC)); got != confirmedKey {
+		t.Errorf("chart: marker on %s, want %s", got, confirmedKey)
 	}
 
 	// (ii) The calendar grid's solid marker.
 	monthStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
-	days := BuildCalendarDayStates(user, monthStart, logs, stats, today, time.UTC)
 	solid := make([]string, 0, 1)
 	tentative := make([]string, 0, 1)
-	for _, day := range days {
+	for _, day := range BuildCalendarDayStates(user, monthStart, logs, stats, today, time.UTC) {
 		if day.IsOvulation {
 			solid = append(solid, day.DateString)
 		}
@@ -122,7 +79,7 @@ func TestLateShiftNamesOneDayOnEverySurface(t *testing.T) {
 		t.Errorf("calendar: solid ovulation marker(s) = %v, want exactly [%s]", solid, confirmedKey)
 	}
 	if len(tentative) != 0 {
-		t.Errorf("calendar: tentative ovulation marker(s) = %v, want none — the projection on 2026-03-14 must not linger beside the confirmed day", tentative)
+		t.Errorf("calendar: tentative ovulation marker(s) = %v, want none — the projection on %s must not linger beside the confirmed day", tentative, CalendarDayKey(stats.OvulationDate))
 	}
 
 	// (iii) The dashboard's ovulation line.
@@ -145,11 +102,11 @@ func TestLateShiftNamesOneDayOnEverySurface(t *testing.T) {
 }
 
 // TestLateShiftStaysWithheldWhenTheCycleIsOverdue is the suppression control:
-// once the cycle is overdue (DashboardCycleOverdue, > reference + 7), the
-// resolver and the surfaces reading it must withhold the confirmed day like
-// any other projection-adjacent signal. The chart is not one of those
-// surfaces — its marker reads recorded temperatures, never a projection — so
-// it keeps showing the same shift.
+// once the cycle is overdue (DashboardCycleOverdue, > reference + 7) the
+// resolver and every surface reading it withhold the confirmed day like any
+// other projection-adjacent signal. The chart is not one of those surfaces —
+// its marker reads recorded temperatures, never a projection — so it keeps
+// naming the same shift; that is the one place the four may differ.
 func TestLateShiftStaysWithheldWhenTheCycleIsOverdue(t *testing.T) {
 	user, logs, stats, _ := lateThermalShiftFixture(t)
 	today := time.Date(2026, time.April, 6, 0, 0, 0, 0, time.UTC)
@@ -175,54 +132,42 @@ func TestLateShiftStaysWithheldWhenTheCycleIsOverdue(t *testing.T) {
 		t.Errorf("dashboard: ovulation line = %s, want none while the cycle is overdue", CalendarDayKey(context.DisplayOvulationDate))
 	}
 
-	// The calendar grid must withhold the marker on the same day too, not just
-	// on the resolver's own return value.
 	monthStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
-	for _, day := range BuildCalendarDayStates(user, monthStart, logs, stats, today, time.UTC) {
-		if day.DateString != "2026-03-29" {
-			continue
-		}
-		if day.IsOvulation {
-			t.Error("calendar: IsOvulation = true for 2026-03-29 while the cycle is overdue, want false")
-		}
-		if day.IsTentativeOvulation {
-			t.Error("calendar: IsTentativeOvulation = true for 2026-03-29 while the cycle is overdue, want false")
-		}
+	day := findCalendarDayStateByDateString(t, BuildCalendarDayStates(user, monthStart, logs, stats, today, time.UTC), "2026-03-29")
+	if day.IsOvulation || day.IsTentativeOvulation {
+		t.Errorf("calendar: 2026-03-29 IsOvulation=%t IsTentativeOvulation=%t, want both false while the cycle is overdue", day.IsOvulation, day.IsTentativeOvulation)
 	}
 
-	// The chart is unaffected: it names a RECORDED shift, not a projection, so
-	// overdue suppression — which exists to stop announcing dates the model can
-	// no longer support — has nothing to withhold here.
 	chart := buildCurrentCycleBBTChart("en", stats, logs, today, time.UTC)
 	if !chart.HasMarker {
 		t.Error("chart: expected the marker to remain while overdue — it names a recorded shift, not a projection")
 	}
 }
 
-// TestLateShiftSupersedesTheCurrentCyclesProjectionOnly pins
-// ConfirmedOvulationSupersedes against the same late-shift fixture: the
-// NextPeriodStart bound must let through a projection of the CURRENT cycle —
-// which the shift has already answered — while still refusing a projection of
-// the cycle AFTER it, which this shift says nothing about.
+// TestLateShiftSupersedesTheCurrentCyclesProjectionOnly pins the predicate's
+// contract on the same fixture: a projection dated before NextPeriodStart is
+// the current cycle's and is superseded by the shift; one on or after it is the
+// next cycle's, which the shift says nothing about. Whether an egress caller
+// still holds the former once today has passed the projected start is its
+// anchor's business (ProjectCycleStart), not this test's.
 func TestLateShiftSupersedesTheCurrentCyclesProjectionOnly(t *testing.T) {
 	user, logs, stats, today := lateThermalShiftFixture(t)
 
-	currentCycleProjection := cyclesignalsCovDay(t, "2026-03-14")
-	if !ConfirmedOvulationSupersedes(user, logs, stats, currentCycleProjection, today, time.UTC) {
-		t.Error("supersedes: a CURRENT-cycle projection the shift already answered must be superseded")
+	if !ConfirmedOvulationSupersedes(user, logs, stats, stats.OvulationDate, today, time.UTC) {
+		t.Error("supersedes: the CURRENT cycle's projection, which the shift answered, must be superseded")
 	}
 
-	nextCycleProjection := cyclesignalsCovDay(t, "2026-04-12")
+	nextCycleProjection := AddCalendarDays(stats.NextPeriodStart, 14, time.UTC)
 	if ConfirmedOvulationSupersedes(user, logs, stats, nextCycleProjection, today, time.UTC) {
 		t.Error("supersedes: a NEXT-cycle projection — which this shift says nothing about — must not be superseded")
 	}
 }
 
-// TestLateShiftDoesNotCountAReadingLoggedAfterToday pins the other bound: the
-// resolver reads logs up to the owner's today, never beyond it. At cycle day
-// 31 only two of the three elevated readings have been recorded as of today —
-// the third is dated tomorrow — so the streak is not yet three days long and
-// nothing may be confirmed.
+// TestLateShiftDoesNotCountAReadingLoggedAfterToday pins the detection bound's
+// other edge: the series runs through today and no further. At cycle day 31
+// only two of the three elevated readings exist as of today — the third is
+// dated tomorrow — so the streak is not yet three days long and nothing may be
+// confirmed.
 func TestLateShiftDoesNotCountAReadingLoggedAfterToday(t *testing.T) {
 	user, logs, stats, _ := lateThermalShiftFixture(t)
 	today := time.Date(2026, time.March, 31, 0, 0, 0, 0, time.UTC)
