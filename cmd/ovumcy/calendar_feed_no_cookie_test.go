@@ -139,4 +139,30 @@ func TestCalendarFeedRouteSetsNoCookieOnTheProductionStack(t *testing.T) {
 			t.Fatal("expected /privacy to persist the timezone cookie — if it doesn't, the feed's cookieless cases above prove nothing")
 		}
 	})
+
+	// Boundary of the exclusion, on the same production stack: a path that
+	// continues every character of the feed prefix without its separator is
+	// not the feed. No route answers it, so the NotFound catch-all does — and
+	// that 404 must still carry both cookies, or the exclusion has widened
+	// from the feed route to whatever happens to start with its prefix.
+	t.Run("control: a neighbour continuing the prefix's characters still gets both cookies", func(t *testing.T) {
+		request := httptest.NewRequest(http.MethodGet, "/calendar/feedback", nil)
+		request.Header.Set("X-Ovumcy-Timezone", "Europe/Berlin")
+
+		response, err := app.Test(request, testConfigNoTimeout)
+		if err != nil {
+			t.Fatalf("neighbour request failed: %v", err)
+		}
+		defer func() { _ = response.Body.Close() }()
+
+		if response.StatusCode != http.StatusNotFound {
+			t.Fatalf("expected the catch-all 404 for a path no route registers, got %d — fix the probe before trusting the cookie assertions below", response.StatusCode)
+		}
+		if testResponseCookie(response.Cookies(), "ovumcy_csrf") == nil {
+			t.Fatal("expected /calendar/feedback to mint a CSRF cookie — the feed's CSRF skip must not over-match its prefix")
+		}
+		if cookie := testResponseCookie(response.Cookies(), "ovumcy_tz"); cookie == nil || cookie.Value != "Europe/Berlin" {
+			t.Fatal("expected /calendar/feedback to persist the timezone cookie — LanguageMiddleware's feed skip must not over-match its prefix")
+		}
+	})
 }

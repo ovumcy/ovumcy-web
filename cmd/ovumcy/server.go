@@ -326,14 +326,16 @@ func csrfMiddlewareConfig(cookieSecure bool, handler *api.Handler) csrf.Config {
 		// subscription). So this is not a second validation exemption, and
 		// csrfGuardExpectedExemptions in csrf_exemption_guard_test.go stays a
 		// single mutating route. Scoped to GET so a mutating verb ever added
-		// under this prefix would still be validated; scoped to the same prefix
-		// the feed's own rate limiter mounts on below, which
-		// internal/api/routes.go confirms is the only route under it.
+		// under this prefix would still be validated; scoped by
+		// api.IsCalendarFeedRequestPath to a concrete feed URL — separator
+		// included, so a neighbour that merely shares the prefix's characters
+		// keeps its CSRF cookie — which internal/api/routes.go confirms is the
+		// only route under that prefix.
 		Next: func(c fiber.Ctx) bool {
 			if c.Method() == fiber.MethodPost && c.Path() == security.OIDCCallbackPath {
 				return true
 			}
-			return c.Method() == fiber.MethodGet && strings.HasPrefix(c.Path(), api.CalendarFeedRateLimitPrefix)
+			return c.Method() == fiber.MethodGet && api.IsCalendarFeedRequestPath(c.Path())
 		},
 		// Fiber v3 removed KeyLookup and ContextKey: the token source is now a
 		// typed extractors.Extractor (see api.CSRFTokenExtractor, form-then-
