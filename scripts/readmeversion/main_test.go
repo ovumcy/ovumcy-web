@@ -10,6 +10,11 @@
 // default, and the runbook tells an operator to copy that template verbatim.
 // So the release tag README.md asserts is also the tag every example env
 // template must pin.
+//
+// It also reaches every compose file's own `${OVUMCY_IMAGE:-...}` fallback:
+// an operator who never sets OVUMCY_IMAGE gets whatever tag is baked into
+// that default, starting with the root docker-compose.yml the quick start
+// tells a reader to run first.
 package readmeversion
 
 import (
@@ -24,6 +29,13 @@ var releaseTagPatterns = []*regexp.Regexp{
 	regexp.MustCompile("latest tagged release is `v(\\d+\\.\\d+\\.\\d+)`"),
 	regexp.MustCompile(`ghcr\.io/ovumcy/ovumcy-web:v(\d+\.\d+\.\d+)`),
 	regexp.MustCompile("Latest tagged release: `v(\\d+\\.\\d+\\.\\d+)`"),
+	// Keys on the sentence the mutable-tag caveat opens with, not on the tag's
+	// digit shape: the digit shape is already covered by the ghcr.io pattern
+	// above everywhere the tag appears next to an image reference, but this
+	// sentence states the tag bare, in backticks, with no image reference
+	// beside it, so that pattern never reaches it. Without this entry the tag
+	// here can drift from the other eight occurrences and nothing notices.
+	regexp.MustCompile("The `v(\\d+\\.\\d+\\.\\d+)` tag is mutable"),
 }
 
 // envImageAssignment matches any uncommented line in an example env template
@@ -39,6 +51,28 @@ var envImageAssignment = regexp.MustCompile(`(?m)^[ \t]*(?:export[ \t]+)?OVUMCY_
 
 // ovumcyImageRef matches the published runtime image at an exact release tag.
 var ovumcyImageRef = regexp.MustCompile(`^ghcr\.io/ovumcy/ovumcy-web:v(\d+\.\d+\.\d+)$`)
+
+// composeFallbackImage matches the default inside a compose file's
+// `${OVUMCY_IMAGE:-...}` interpolation. It keys on the variable name for the
+// same reason envImageAssignment does: anchoring to the default's shape would
+// skip a fallback written any other way, and the skipped file is precisely
+// the one that drifts unnoticed — which is how the root docker-compose.yml
+// went unchecked before this test existed.
+var composeFallbackImage = regexp.MustCompile(`\$\{OVUMCY_IMAGE:-([^}]*)\}`)
+
+// isComposeFile reports whether name has the docker-compose*.y*ml shape this
+// repository's compose stacks use. The population TestComposeFallbackImagesMatchReleaseTag
+// checks is DISCOVERED by walking the tree with this predicate rather than
+// declared as a path list: a hardcoded list of the six compose files known
+// today drifts from the tree the moment a new example stack is added, the
+// same way the inventory this test package was missing had already drifted.
+func isComposeFile(name string) bool {
+	const prefix, suffix = "docker-compose", "ml"
+	if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, suffix) {
+		return false
+	}
+	return strings.Contains(name[len(prefix):], ".y")
+}
 
 // goDirective captures the version from go.mod's `go` line, which is the
 // minimum toolchain that can build this module and the same value every
@@ -291,6 +325,88 @@ func TestExampleEnvImagePinsMatchReleaseTag(t *testing.T) {
 	}
 	if pins == 0 {
 		t.Fatalf("no OVUMCY_IMAGE assignment found in any .env.example under %s: the drift guard has nothing to check", examplesDir)
+	}
+}
+
+// TestComposeFallbackImagesMatchReleaseTag asserts that every compose file's
+// `${OVUMCY_IMAGE:-...}` fallback names the same release tag README.md
+// asserts. That fallback is what an operator gets when OVUMCY_IMAGE is unset
+// — which is the default path through every quick start in this repository,
+// starting with the root docker-compose.yml.
+//
+// The population is discovered by walking the repository root for
+// docker-compose*.y*ml files (isComposeFile), not by a list of paths: a list
+// is exactly how the root docker-compose.yml went unchecked while five
+// example-stack copies were. It fails closed twice over, per the same rule
+// TestExampleEnvImagePinsMatchReleaseTag applies: zero compose files found at
+// all is a failure, and a compose file that IS found but yields no
+// `${OVUMCY_IMAGE:-...}` fallback is reported by name rather than silently
+// skipped — a single total across all files would let the remaining files
+// keep the count non-zero while this one drifts unseen, the trap
+// envImageAssignment's comment describes. A fallback value that is not the
+// published image at an exact release tag is reported too.
+func TestComposeFallbackImagesMatchReleaseTag(t *testing.T) {
+	root := repoRoot(t)
+	composeFallbacksMatchReleaseTag(t, root, readmeReleaseTags(t, root)[0])
+}
+
+// composeFallbacksMatchReleaseTag walks root for docker-compose*.y*ml files
+// (isComposeFile) and asserts every `${OVUMCY_IMAGE:-...}` fallback names
+// want. It is a helper, not inlined into the test above, so a fixture built
+// on a synthetic root can drive the exact same check the real repository
+// gets — the same reason readmeReleaseTags takes root as a parameter.
+func composeFallbacksMatchReleaseTag(t *testing.T, root, want string) {
+	t.Helper()
+	var files, fallbacks int
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if d.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !isComposeFile(d.Name()) {
+			return nil
+		}
+		files++
+
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(root, path)
+		rel = filepath.ToSlash(rel)
+
+		matches := composeFallbackImage.FindAllSubmatch(content, -1)
+		if len(matches) == 0 {
+			t.Errorf("%s: no ${OVUMCY_IMAGE:-...} fallback found, so this compose file's default image is no longer being checked", rel)
+			return nil
+		}
+		for _, m := range matches {
+			fallbacks++
+			value := string(m[1])
+			ref := ovumcyImageRef.FindStringSubmatch(value)
+			if ref == nil {
+				t.Errorf("%s: OVUMCY_IMAGE fallback %q is not ghcr.io/ovumcy/ovumcy-web at an exact release tag, so nothing can tell which image an operator who never sets OVUMCY_IMAGE would run", rel, value)
+				continue
+			}
+			if ref[1] != want {
+				t.Errorf("%s: OVUMCY_IMAGE fallback pins v%s while the release tag asserted in README.md is v%s; an operator who never sets OVUMCY_IMAGE runs the older image", rel, ref[1], want)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", root, err)
+	}
+	if files == 0 {
+		t.Fatalf("no docker-compose*.y*ml files found under %s: the drift guard has nothing to check", root)
+	}
+	if fallbacks == 0 {
+		t.Fatalf("no OVUMCY_IMAGE fallback found in any compose file under %s: the drift guard has nothing to check", root)
 	}
 }
 
