@@ -146,11 +146,35 @@ const tzdataResource = "tzdata"
 // internal/reminders calls this instead of handling time.LoadLocation's own
 // error, which is what lets one env var arm all of them together rather than
 // however many call sites happened to write their own t.Skipf.
+// tzErrorIsAbsence reports whether a time.LoadLocation error means the zone
+// was not found, as opposed to found and unusable. It is a named function
+// rather than an inline condition so the classification itself can be tested:
+// the malformed case cannot be provoked through LoadLocation without shipping
+// a corrupt tz database, and an untested classifier deciding skip-versus-fail
+// is the same unexamined judgement this package was written to replace.
+func tzErrorIsAbsence(err error) bool {
+	return strings.HasPrefix(err.Error(), "unknown time zone")
+}
+
 func RequireTimeZone(t TestingT, name string) *time.Location {
 	t.Helper()
 
 	location, err := time.LoadLocation(name)
 	if err != nil {
+		// time.LoadLocation reports an absent zone and a corrupt tz database
+		// through the same error type, and only the wording separates them:
+		// "unknown time zone <name>" is the absence a developer machine may
+		// legitimately skip on, while "malformed time zone information" means
+		// the database is present and broken — an operational error, and those
+		// fail everywhere. Anything not recognised as the absence is treated as
+		// operational too: an unrecognised error is not evidence that the data
+		// is missing, and defaulting the other way would leave every timezone
+		// call site in this tree — the large majority of the sites this package
+		// serves — behind exactly the silence it exists to remove.
+		if !tzErrorIsAbsence(err) {
+			Fail(t, "loading zoneinfo for %s did not fail as a plain absence, so the tz database is present and broken rather than missing: %v", name, err)
+			return nil
+		}
 		SkipUnlessRequired(t, tzdataResource, "zoneinfo for %s unavailable: %v", name, err)
 		return nil
 	}
