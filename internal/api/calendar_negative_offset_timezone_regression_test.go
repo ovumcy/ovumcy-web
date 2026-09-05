@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/services"
+	"github.com/ovumcy/ovumcy-web/internal/testenv"
 )
 
 // TestCycleStartSavedWithoutTimezoneRendersOnLocalDayInNegativeOffset
@@ -29,10 +30,7 @@ import (
 // day that was originally posted to the server, regardless of the viewer's
 // locale.
 func TestCycleStartSavedWithoutTimezoneRendersOnLocalDayInNegativeOffset(t *testing.T) {
-	location, err := time.LoadLocation("America/Toronto")
-	if err != nil {
-		t.Skipf("zoneinfo for America/Toronto unavailable: %v", err)
-	}
+	location := testenv.RequireTimeZone(t, "America/Toronto")
 
 	app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
 	user := createOnboardingTestUser(t, database, "tz-negative-offset@example.com", "StrongPass1", true)

@@ -78,6 +78,18 @@ jobs:
     if: ${{ !cancelled() && needs.changes.outputs.run_unit != 'false' }}
     permissions:
       contents: read
+
+    # internal/api carries the timezone/zoneinfo regressions (calendar,
+    # export, day-upsert canonicalization); scripts/racepartition splits this
+    # package's tests by NAME across the three shards below, so any shard may
+    # draw one. Without this variable a runner whose tzdata is missing or
+    # broken SKIPS them instead of failing, and no job here asserted they ran
+    # — see internal/testenv's OVUMCY_REQUIRE_TZDATA gate. The ubuntu runner
+    # always ships tzdata, so an absence here is a broken runner, never a
+    # legitimate developer-host allowance.
+    env:
+      OVUMCY_REQUIRE_TZDATA: "1"
+
     outputs:
       # coverage-merge has to know how many profiles it is owed, and the shard
       # count lives in exactly ONE place: the matrix below. Every shard writes
@@ -168,8 +180,24 @@ jobs:
     # test-go-shard — a lane with no Postgres test would only be asserting
     # something about a suite it does not run — and it is absent from a
     # developer machine, where no docker still means "not my test to run".
+    #
+    # This is also the only lane that runs scripts/releasegate,
+    # scripts/backuprestoredoc and scripts/changelogd (via `go list
+    # ./scripts/...` below) and the whole of internal/services — the bash the
+    # release gate's and the runbook's own scripts run under, the docker the
+    # runbook's named-volume commands and the docker-image build both compose
+    # a step so the postgres/docker overlap; the git changelogd's fixture repo
+    # builds; and the tzdata every cycle/day timezone regression in
+    # internal/services loads. The ubuntu runner ships all four; an absence
+    # here means the runner is broken, not that a developer skipped a tool
+    # they were never going to install. See internal/testenv for the shared
+    # gate these variables arm (OVUMCY_REQUIRE_<RESOURCE>, one switch each).
     env:
       OVUMCY_REQUIRE_POSTGRES: "1"
+      OVUMCY_REQUIRE_BASH: "1"
+      OVUMCY_REQUIRE_DOCKER: "1"
+      OVUMCY_REQUIRE_GIT: "1"
+      OVUMCY_REQUIRE_TZDATA: "1"
 
     steps:
       - name: Checkout
@@ -721,6 +749,15 @@ jobs:
     if: ${{ !cancelled() && needs.changes.outputs.run_race != 'false' }}
     permissions:
       contents: read
+
+    # internal/services carries the tz/zoneinfo cycle regressions, split by
+    # name across the shards below exactly as test-go-shard splits
+    # internal/api — any shard may draw one. Same reasoning as test-go-shard's
+    # OVUMCY_REQUIRE_TZDATA: the ubuntu runner always has tzdata, so its
+    # absence here is a broken runner.
+    env:
+      OVUMCY_REQUIRE_TZDATA: "1"
+
     strategy:
       fail-fast: false
       matrix:

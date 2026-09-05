@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/testenv"
 )
 
 // cyclebaselineCovOwner builds a minimal RoleOwner user with the supplied
@@ -317,10 +318,7 @@ func TestCycleBaseline_ProjectCycleStartRollsToNewCycleAcrossDST(t *testing.T) {
 	// 28*24-1h span to 27 elapsed days, so it reported cycleDay 28 of the SAME
 	// cycle instead of rolling over. CalendarDaysBetween yields the true 28
 	// elapsed days, so the projection advances to the new cycle at day 1.
-	loc, err := time.LoadLocation("Europe/Berlin")
-	if err != nil {
-		t.Skipf("tz database unavailable: %v", err)
-	}
+	loc := testenv.RequireTimeZone(t, "Europe/Berlin")
 	lp := time.Date(2026, time.March, 15, 0, 0, 0, 0, loc)
 	today := time.Date(2026, time.April, 12, 0, 0, 0, 0, loc)
 

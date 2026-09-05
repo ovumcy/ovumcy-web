@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/testenv"
 	"gorm.io/gorm"
 )
 
@@ -33,14 +34,8 @@ func TestDayServiceUpsertCanonicalizesDateToUTCMidnightPostgres(t *testing.T) {
 func runDayServiceUpsertCanonicalizesDateToUTCMidnight(t *testing.T, setup func(*testing.T) (*DayService, *gorm.DB), emailPrefix string) {
 	t.Helper()
 
-	toronto, err := time.LoadLocation("America/Toronto")
-	if err != nil {
-		t.Skipf("zoneinfo for America/Toronto unavailable: %v", err)
-	}
-	tokyo, err := time.LoadLocation("Asia/Tokyo")
-	if err != nil {
-		t.Skipf("zoneinfo for Asia/Tokyo unavailable: %v", err)
-	}
+	toronto := testenv.RequireTimeZone(t, "America/Toronto")
+	tokyo := testenv.RequireTimeZone(t, "Asia/Tokyo")
 
 	tests := []struct {
 		name     string
@@ -119,14 +114,8 @@ func TestDayServiceConsecutiveUpsertsUpdateSameRowAcrossTimezonesPostgres(t *tes
 func runDayServiceConsecutiveUpsertsUpdateSameRowAcrossTimezones(t *testing.T, setup func(*testing.T) (*DayService, *gorm.DB), emailPrefix string) {
 	t.Helper()
 
-	toronto, err := time.LoadLocation("America/Toronto")
-	if err != nil {
-		t.Skipf("zoneinfo for America/Toronto unavailable: %v", err)
-	}
-	tokyo, err := time.LoadLocation("Asia/Tokyo")
-	if err != nil {
-		t.Skipf("zoneinfo for Asia/Tokyo unavailable: %v", err)
-	}
+	toronto := testenv.RequireTimeZone(t, "America/Toronto")
+	tokyo := testenv.RequireTimeZone(t, "Asia/Tokyo")
 
 	tests := []struct {
 		name     string

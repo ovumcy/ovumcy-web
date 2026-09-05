@@ -3,18 +3,17 @@ package reminders
 import (
 	"testing"
 	"time"
+
+	"github.com/ovumcy/ovumcy-web/internal/testenv"
 )
 
-// mustLoadLocation loads an IANA zone or skips the test when the platform lacks
-// the tz database (some minimal Windows dev boxes). The Linux runtime that ships
-// always has it, and CI validates there.
+// mustLoadLocation loads an IANA zone, skipping only on a genuine absence of
+// the tz database (some minimal Windows dev boxes) — and failing instead on a
+// lane that set OVUMCY_REQUIRE_TZDATA, since the Linux runtime that ships
+// always has it and CI is meant to validate there.
 func mustLoadLocation(t *testing.T, name string) *time.Location {
 	t.Helper()
-	loc, err := time.LoadLocation(name)
-	if err != nil {
-		t.Skipf("timezone %q unavailable on this platform: %v", name, err)
-	}
-	return loc
+	return testenv.RequireTimeZone(t, name)
 }
 
 // TestNextRunBasicSameDayAndRollover covers the non-DST core: when the target

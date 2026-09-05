@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/testenv"
 )
 
 func TestCycleSignals_InferUserLutealPhase_UnchangedByDSTTransitionInCycle(t *testing.T) {
@@ -18,10 +19,7 @@ func TestCycleSignals_InferUserLutealPhase_UnchangedByDSTTransitionInCycle(t *te
 	// 19*24-1h cycle span down to 18 in Toronto and drag the inferred phase to
 	// 12 there while UTC saw 13 — a location-dependent skew this test guards
 	// against.
-	loc, err := time.LoadLocation("America/Toronto")
-	if err != nil {
-		t.Skipf("tz database unavailable: %v", err)
-	}
+	loc := testenv.RequireTimeZone(t, "America/Toronto")
 	day := func(s string) time.Time { return cyclesignalsCovDay(t, s) }
 
 	logs := []models.DailyLog{
