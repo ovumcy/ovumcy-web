@@ -159,7 +159,19 @@ func tzErrorIsAbsence(err error) bool {
 func RequireTimeZone(t TestingT, name string) *time.Location {
 	t.Helper()
 
-	location, err := time.LoadLocation(name)
+	return requireTimeZone(t, name, time.LoadLocation)
+}
+
+// requireTimeZone takes the loader as an argument for the same reason
+// tzErrorIsAbsence is a named function: the corrupt-database branch below
+// cannot be provoked through time.LoadLocation without shipping a broken tz
+// database, and a dispatch on that classification that no test ever executes
+// is the unexamined judgement this package exists to replace. Only the tests
+// pass anything but time.LoadLocation.
+func requireTimeZone(t TestingT, name string, load func(string) (*time.Location, error)) *time.Location {
+	t.Helper()
+
+	location, err := load(name)
 	if err != nil {
 		// time.LoadLocation reports an absent zone and a corrupt tz database
 		// through the same error type, and only the wording separates them:

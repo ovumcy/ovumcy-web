@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestTimeZoneErrorClassificationSeparatesAbsenceFromCorruption pins the
@@ -239,6 +240,31 @@ func TestRequireTimeZoneLoadsARealZone(t *testing.T) {
 	}
 	if location == nil {
 		t.Fatal("a real zone must return a non-nil location")
+	}
+}
+
+// TestRequireTimeZoneFailsOnACorruptDatabaseWhateverTheGateSays drives the
+// branch time.LoadLocation cannot produce on a sound host: an error that is not
+// a plain absence. It is asserted with the gate unset as well as set, because a
+// present-and-broken database is an operational error and those fail on every
+// machine — a case that only ran with the gate set would leave the dispatch
+// indistinguishable from SkipUnlessRequired's.
+func TestRequireTimeZoneFailsOnACorruptDatabaseWhateverTheGateSays(t *testing.T) {
+	corrupt := func(string) (*time.Location, error) {
+		return nil, errors.New("malformed time zone information")
+	}
+
+	for name, gate := range map[string]string{"gate unset": "", "gate set": "1"} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(RequireEnv("tzdata"), gate)
+			recorder := &recordingT{}
+			if got := requireTimeZone(recorder, "Europe/Berlin", corrupt); got != nil {
+				t.Fatalf("a corrupt database must not report a location; got %v", got)
+			}
+			if recorder.skipped != "" || recorder.fatal == "" {
+				t.Fatalf("a present-and-broken database must fail, never skip; got %s", recorder.verdict())
+			}
+		})
 	}
 }
 
