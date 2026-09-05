@@ -50,11 +50,6 @@ func TestBBTShiftThirdDayMarginHoldsAtExactlyTwoTenths(t *testing.T) {
 			values: []float64{36.2, 36.2, 36.2, 36.2, 36.2, 36.2, 36.3, 36.3, 36.3},
 			wantOK: false,
 		},
-		{
-			name:   "a second day equal to the coverline is not elevated",
-			values: []float64{36.2, 36.2, 36.2, 36.2, 36.2, 36.2, 36.3, 36.2, 36.4},
-			wantOK: false,
-		},
 	}
 
 	for _, tc := range cases {
@@ -75,6 +70,18 @@ func TestBBTShiftThirdDayMarginHoldsAtExactlyTwoTenths(t *testing.T) {
 				t.Errorf("coverline = %v, want %v", coverline, tc.wantCoverline)
 			}
 		})
+	}
+}
+
+// TestBBTShiftFirstTwoDaysStayStrictlyAboveTheCoverline pins the other half of
+// the stored-units comparison: the first two elevated days must exceed the
+// coverline, so a second day equal to it confirms nothing. It holds with the
+// margin fix reverted too; it is a control on the rewrite, not on the margin.
+func TestBBTShiftFirstTwoDaysStayStrictlyAboveTheCoverline(t *testing.T) {
+	recordedDays, dayValues := bbtSeriesFromDailyValues([]float64{36.2, 36.2, 36.2, 36.2, 36.2, 36.2, 36.3, 36.2, 36.4})
+
+	if _, _, ok := detectBBTShiftFirstHighDay(recordedDays, dayValues); ok {
+		t.Fatal("a second day equal to the coverline must not confirm a shift")
 	}
 }
 

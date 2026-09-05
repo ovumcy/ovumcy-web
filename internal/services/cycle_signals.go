@@ -251,9 +251,8 @@ func inferBBTOvulationDate(logs []models.DailyLog, cycleStart time.Time, nextSta
 // day to its temperature. Returns the first elevated cycle day and the
 // coverline in effect.
 func detectBBTShiftFirstHighDay(recordedDays []int, dayValues map[int]float64) (int, float64, bool) {
-	// Every comparison below runs in stored units (bbtStoredUnits): in float64
-	// a coverline of 36.2 plus the 0.2 margin is 36.400000000000006, one ULP
-	// above a third day recorded at exactly 36.4, which the rule accepts.
+	// The threshold checks run in stored units (bbtStoredUnits), where adding
+	// the margin is exact.
 	marginUnits := bbtStoredUnits(bbtThirdDayMarginCelsius)
 	for index := bbtCoverlineWindow; index+bbtElevatedStreakDays-1 < len(recordedDays); index++ {
 		dayOne := recordedDays[index]
