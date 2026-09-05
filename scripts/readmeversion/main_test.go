@@ -77,14 +77,10 @@ var composeFallbackImage = regexp.MustCompile(`\$\{OVUMCY_IMAGE:-([^}]*)\}`)
 // name rather than as a prefix, so a `composer.yml` belonging to something
 // else is not dragged in and then reported for having no fallback.
 func isComposeFile(name string) bool {
-	if name == "compose.yml" || name == "compose.yaml" {
-		return true
-	}
-	const prefix, suffix = "docker-compose", "ml"
-	if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, suffix) {
+	if !strings.HasSuffix(name, ".yml") && !strings.HasSuffix(name, ".yaml") {
 		return false
 	}
-	return strings.Contains(name[len(prefix):], ".y")
+	return name == "compose.yml" || name == "compose.yaml" || strings.HasPrefix(name, "docker-compose")
 }
 
 // isOutsideTrackedTree reports whether directory path belongs to a population
@@ -187,6 +183,23 @@ func TestComposeFallbackCheckRefusesAStaleFallback(t *testing.T) {
 	}
 }
 
+// TestEveryReleaseTagPatternMatchesTheRealReadme fails closed PER PATTERN, the
+// rule readmeGoVersionSites already applies to its two sites and the one
+// readmeReleaseTags cannot apply on its own: it pools every pattern's matches
+// into a single slice and aborts only when ALL of them come back empty, so a
+// reworded sentence silences its pattern while the remaining ones keep the
+// total non-zero and the site it named drifts unchecked. That is the defect
+// this package exists to catch, one level up from the sites it checks.
+func TestEveryReleaseTagPatternMatchesTheRealReadme(t *testing.T) {
+	content := readmeContent(t, repoRoot(t))
+
+	for _, re := range releaseTagPatterns {
+		if len(re.FindAllSubmatch(content, -1)) == 0 {
+			t.Errorf("no README.md occurrence matches %s: the site this pattern names is no longer being compared, and the other patterns keep the pooled count non-zero, so nothing else reports it", re)
+		}
+	}
+}
+
 // TestComposeFileNamesCoverBothSpellings pins which filenames enter the
 // population. A name this predicate declines is a release site nothing reads,
 // and no other test in the package can tell: the walk keeps finding the files
@@ -204,6 +217,10 @@ func TestComposeFileNamesCoverBothSpellings(t *testing.T) {
 		{"compose.yaml", true},
 		{"composer.yml", false},
 		{"docker-compose.txt", false},
+		// A template is not a compose file: it renders into one, and the
+		// value it carries is whatever the renderer substitutes. It ends in
+		// "ml", which a suffix check looser than a full extension accepts.
+		{"docker-compose.yaml.tmpl", false},
 		{"README.md", false},
 	} {
 		if got := isComposeFile(testCase.name); got != testCase.want {
@@ -221,10 +238,17 @@ func TestComposeFileNamesCoverBothSpellings(t *testing.T) {
 func TestComposeFallbackCheckIgnoresANestedCheckout(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "docker-compose.yml", composeFixture("2.0.0"))
-	writeFixtureFile(t, root, "nested-checkout/go.mod", "module nested\n\ngo 1.23\n")
-	writeFixtureFile(t, root, "nested-checkout/docker-compose.yml", composeFixture("1.9.2"))
-	writeFixtureFile(t, root, ".worktrees/copy/.git", "gitdir: ../../.git/worktrees/copy\n")
-	writeFixtureFile(t, root, ".worktrees/copy/docker-compose.yml", composeFixture("0.8.4"))
+	// One case per clause, and each case triggers ONLY its own: a fixture
+	// whose directory is both a dot-directory and a checkout proves whichever
+	// clause runs first and leaves the other free to be deleted with the
+	// tests still green. So the checkout marker cases live at names that do
+	// not start with a dot.
+	writeFixtureFile(t, root, "nested-module/go.mod", "module nested\n\ngo 1.23\n")
+	writeFixtureFile(t, root, "nested-module/docker-compose.yml", composeFixture("1.9.2"))
+	writeFixtureFile(t, root, "vendor-checkout/.git", "gitdir: ../.git/worktrees/vendor-checkout\n")
+	writeFixtureFile(t, root, "vendor-checkout/docker-compose.yml", composeFixture("0.8.4"))
+	writeFixtureFile(t, root, "node_modules/pkg/docker-compose.yml", composeFixture("0.1.0"))
+	writeFixtureFile(t, root, ".tooling/docker-compose.yml", composeFixture("0.2.0"))
 
 	var report recordedReport
 	composeFallbacksMatchReleaseTag(&report, root, "2.0.0")
