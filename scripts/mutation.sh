@@ -174,6 +174,17 @@ verify_one_partition() {
   local total_count union_file
   echo ">> verifying $base partition ($pkg_dir, $total shards)"
   total_count="$(shard_files "$pkg_dir" | wc -l | tr -d ' ')"
+  # A registered sharded package with zero non-test .go files is a
+  # misconfiguration (stale SHARDED_PKGS entry, wrong path, files moved away),
+  # not a legitimate empty partition: the union-vs-total comparison below would
+  # accept 0 == 0 as "no gaps, no overlaps" and print OK having verified
+  # nothing. A single shard within a non-empty package coming up empty (more
+  # shards than files) stays legitimate and is not rejected here — only the
+  # whole-population case is.
+  if [[ "$total_count" -eq 0 ]]; then
+    echo "::error::$base ($pkg_dir) has zero non-test .go files — a registered sharded package must not be empty" >&2
+    return 1
+  fi
   union_file="$(mktemp)"
 
   local shard_num
@@ -250,17 +261,37 @@ run_baseline() {
     return
   fi
 
+  local matched=0
   for pkg in "${TARGETS[@]}"; do
     local slug
     slug="$(echo "$pkg" | sed 's#^\./##; s#/#_#g')"
     if [[ -n "$only" && "$slug" != "$only" ]]; then
       continue
     fi
+    matched=1
     echo ">> baseline mutation: $pkg"
     "$GREMLINS" unleash "$pkg" \
       --workers "$WORKERS" \
       --output "$TMP_DIR/${slug}.json"
   done
+  # A pkg-slug argument that matches neither a plain TARGETS slug nor a
+  # registered shard form (handled in the branch above) must not report
+  # success: silently running zero mutation targets and still printing
+  # "baseline JSON written" would let a typoed CI matrix entry pass green
+  # having tested nothing.
+  if [[ "$matched" -eq 0 ]]; then
+    echo "error: '$only' does not match any baseline target" >&2
+    echo "valid targets:" >&2
+    for pkg in "${TARGETS[@]}"; do
+      echo "  $(echo "$pkg" | sed 's#^\./##; s#/#_#g')" >&2
+    done
+    for entry in "${SHARDED_PKGS[@]}"; do
+      local base dir count
+      IFS=: read -r base dir count <<<"$entry"
+      echo "  ${base}_1..${count}" >&2
+    done
+    exit 2
+  fi
   echo ">> baseline JSON written to $TMP_DIR/ (commit a summary into $BASELINE_DIR/ once reviewed)"
 }
 
