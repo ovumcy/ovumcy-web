@@ -447,16 +447,22 @@ func TestAssembleCarriesTheRepositoryBacklogVerbatim(t *testing.T) {
 		writeFile(t, dir, "changelog.d/"+filepath.Base(fragment), string(data))
 	}
 
+	// Immediately after a real release assembly the repository legitimately
+	// carries no backlog — every fragment was just consumed and the
+	// "[Unreleased]" body reduced to the pointer line, which is exactly the
+	// state TestAssembleRefusesAnEmptyRelease asserts assemble must refuse.
+	// This test has nothing to verify verbatim survival of until the next
+	// pull request lands a fragment, so it has nothing to fail on either.
+	//
+	// The emptiness is read from the population this test itself collected,
+	// not from the text of assemble's error: an error-string skip cannot tell
+	// a legitimately empty repository from a fixture that collected nothing,
+	// and would turn a broken setup into a silent pass.
+	if len(fragments) == 0 && len(frozen) == 0 {
+		t.Skip("repository backlog is empty right after a release assembly; nothing to verify verbatim")
+	}
+
 	if _, err := assemble(dir, "99.0.0", "2026-12-31"); err != nil {
-		// Immediately after a real release assembly the repository legitimately
-		// carries no backlog — every fragment was just consumed and the
-		// "[Unreleased]" body reduced to the pointer line, which is exactly the
-		// state TestAssembleRefusesAnEmptyRelease asserts assemble must refuse.
-		// This test has nothing to verify verbatim survival of until the next
-		// pull request lands a fragment, so it has nothing to fail on either.
-		if strings.Contains(err.Error(), "nothing to release") {
-			t.Skip("repository backlog is empty right after a release assembly; nothing to verify verbatim")
-		}
 		t.Fatalf("assemble: %v", err)
 	}
 
