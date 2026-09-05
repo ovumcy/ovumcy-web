@@ -183,15 +183,24 @@ jobs:
     #
     # This is also the only lane that runs scripts/releasegate,
     # scripts/backuprestoredoc and scripts/changelogd (via `go list
-    # ./scripts/...` below) and the whole of internal/services — the bash the
-    # release gate's and the runbook's own scripts run under, the docker the
-    # runbook's named-volume commands and the docker-image build both compose
-    # a step so the postgres/docker overlap; the git changelogd's fixture repo
-    # builds; and the tzdata every cycle/day timezone regression in
-    # internal/services loads. The ubuntu runner ships all four; an absence
-    # here means the runner is broken, not that a developer skipped a tool
-    # they were never going to install. See internal/testenv for the shared
-    # gate these variables arm (OVUMCY_REQUIRE_<RESOURCE>, one switch each).
+    # ./scripts/...` below) and the whole of internal/services, and each of the
+    # four resources below is owed by one of them:
+    #
+    #   bash    — the release gate's own script and the runbook's documented
+    #             commands are run through a shell, not reassembled as argv.
+    #   docker  — the runbook's named-volume backup and restore commands are
+    #             executed for real, against real volumes. This lane is where
+    #             they belong because it is the one already provisioned for
+    #             containers (OVUMCY_REQUIRE_POSTGRES above); declaring docker
+    #             on a lane that has none would assert a check nothing runs.
+    #   git     — changelogd builds a fixture repository to probe against.
+    #   tzdata  — every cycle/day timezone regression in internal/services
+    #             loads an IANA zone.
+    #
+    # The ubuntu runner ships all four, so an absence here means the runner is
+    # broken, not that a developer skipped a tool they were never going to
+    # install. See internal/testenv for the shared gate these variables arm
+    # (OVUMCY_REQUIRE_<RESOURCE>, one switch each).
     env:
       OVUMCY_REQUIRE_POSTGRES: "1"
       OVUMCY_REQUIRE_BASH: "1"
