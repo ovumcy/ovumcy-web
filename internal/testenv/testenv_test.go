@@ -243,28 +243,26 @@ func TestRequireTimeZoneLoadsARealZone(t *testing.T) {
 	}
 }
 
-// TestRequireTimeZoneFailsOnACorruptDatabaseWhateverTheGateSays drives the
-// branch time.LoadLocation cannot produce on a sound host: an error that is not
-// a plain absence. It is asserted with the gate unset as well as set, because a
-// present-and-broken database is an operational error and those fail on every
-// machine — a case that only ran with the gate set would leave the dispatch
-// indistinguishable from SkipUnlessRequired's.
-func TestRequireTimeZoneFailsOnACorruptDatabaseWhateverTheGateSays(t *testing.T) {
+// TestRequireTimeZoneFailsOnACorruptDatabase drives the branch
+// time.LoadLocation cannot produce on a sound host: an error that is not a
+// plain absence. The gate is deliberately left UNSET, and that is the whole
+// discriminator — with it set, SkipUnlessRequired turns a misclassification
+// into a failure of its own, so a gate-set case passes against a dispatch that
+// has been deleted and pins nothing. That Fail ignores the gate is
+// TestFailNeverSkipsRegardlessOfTheGate's subject, not this one's.
+func TestRequireTimeZoneFailsOnACorruptDatabase(t *testing.T) {
+	t.Setenv(RequireEnv("tzdata"), "")
+
 	corrupt := func(string) (*time.Location, error) {
 		return nil, errors.New("malformed time zone information")
 	}
 
-	for name, gate := range map[string]string{"gate unset": "", "gate set": "1"} {
-		t.Run(name, func(t *testing.T) {
-			t.Setenv(RequireEnv("tzdata"), gate)
-			recorder := &recordingT{}
-			if got := requireTimeZone(recorder, "Europe/Berlin", corrupt); got != nil {
-				t.Fatalf("a corrupt database must not report a location; got %v", got)
-			}
-			if recorder.skipped != "" || recorder.fatal == "" {
-				t.Fatalf("a present-and-broken database must fail, never skip; got %s", recorder.verdict())
-			}
-		})
+	recorder := &recordingT{}
+	if got := requireTimeZone(recorder, "Europe/Berlin", corrupt); got != nil {
+		t.Fatalf("a corrupt database must not report a location; got %v", got)
+	}
+	if recorder.skipped != "" || recorder.fatal == "" {
+		t.Fatalf("a present-and-broken database must fail, never skip; got %s", recorder.verdict())
 	}
 }
 
