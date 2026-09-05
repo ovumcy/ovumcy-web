@@ -8,4 +8,4 @@
   short of the margin. Readings entered in Fahrenheit hit the same boundary after conversion. The
   comparison now runs in the same fixed-precision units a saved reading is rounded to, so an
   exact 0.2 °C shift is confirmed whichever unit it was entered in. A restored backup now rounds
-  its temperature readings onto that same precision, as a day saved by hand always has.
+  its temperature readings onto that same precision, as a day saved through the app is.
