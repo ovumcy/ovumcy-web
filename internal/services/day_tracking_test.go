@@ -1,9 +1,12 @@
 package services
 
 import (
+	"errors"
 	"math"
 	"strconv"
 	"testing"
+
+	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
 // bbtPtr builds a *float64 for BBT test inputs (nil means "not measured").
@@ -118,5 +121,81 @@ func TestNormalizeTemperatureUnitDefaultsToCelsius(t *testing.T) {
 
 	if got := NormalizeTemperatureUnit("invalid"); got != TemperatureUnitCelsius {
 		t.Fatalf("expected default %q, got %q", TemperatureUnitCelsius, got)
+	}
+}
+
+// TestConvertDayBBTToStorageJudgesTheSentinelInTheInputUnit pins WHERE the
+// "not measured" sentinel is read: in the unit the owner typed, before the
+// Fahrenheit conversion rather than in stored Celsius after it. The two
+// disagree across a whole band of the Fahrenheit scale — everything from just
+// above 0 °F up to 32 °F converts to a non-positive Celsius value — so reading
+// the sentinel afterwards turned an impossible entry into an empty field and
+// saved the day with no temperature and no refusal. Below 0 °F the two answers
+// agree, which is why a negative-only table stays green over the defect; the
+// Fahrenheit rows between 0 and 32 are the ones that separate them.
+func TestConvertDayBBTToStorageJudgesTheSentinelInTheInputUnit(t *testing.T) {
+	t.Parallel()
+
+	const tolerance = 1e-9
+
+	testCases := []struct {
+		name       string
+		unit       string
+		value      float64
+		wantStored bool
+		want       float64
+	}{
+		{name: "fahrenheit zero is not measured", unit: TemperatureUnitFahrenheit, value: 0},
+		{name: "fahrenheit negative is not measured", unit: TemperatureUnitFahrenheit, value: -1},
+		{name: "fahrenheit impossible positive stays a reading", unit: TemperatureUnitFahrenheit, value: 20, wantStored: true, want: -6.6667},
+		{name: "fahrenheit freezing point stays a reading", unit: TemperatureUnitFahrenheit, value: 32, wantStored: true, want: 0},
+		{name: "fahrenheit ordinary reading", unit: TemperatureUnitFahrenheit, value: 97.7, wantStored: true, want: 36.5},
+		{name: "celsius zero is not measured", unit: TemperatureUnitCelsius, value: 0},
+		{name: "celsius negative is not measured", unit: TemperatureUnitCelsius, value: -1},
+		{name: "celsius impossible positive stays a reading", unit: TemperatureUnitCelsius, value: 0.5, wantStored: true, want: 0.5},
+		{name: "celsius ordinary reading", unit: TemperatureUnitCelsius, value: 36.5, wantStored: true, want: 36.5},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			typed := testCase.value
+			symbol := TemperatureUnitSymbol(testCase.unit)
+			got := ConvertDayBBTToStorage(&typed, testCase.unit)
+
+			if !testCase.wantStored {
+				if got != nil {
+					t.Fatalf("%.2f %s: expected nil (not measured), got %.4f °C stored", testCase.value, symbol, *got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatalf("%.2f %s: a positive entry is a reading for the range to judge, got nil (not measured)", testCase.value, symbol)
+			}
+			if math.Abs(*got-testCase.want) > tolerance {
+				t.Fatalf("%.2f %s: expected %.4f °C stored, got %.4f", testCase.value, symbol, testCase.want, *got)
+			}
+		})
+	}
+}
+
+// TestNormalizeDayEntryInputRefusesAnImpossibleFahrenheitReading is the other
+// half of that placement: once 20 °F survives the conversion as a reading, the
+// physiological range is what refuses it. While the sentinel was read after the
+// conversion this entry was accepted, silently emptied, and stored
+// indistinguishably from a day the owner never took a temperature on.
+func TestNormalizeDayEntryInputRefusesAnImpossibleFahrenheitReading(t *testing.T) {
+	t.Parallel()
+
+	typed := 20.0
+	input := DayEntryInput{
+		Flow: models.FlowNone,
+		BBT:  ConvertDayBBTToStorage(&typed, TemperatureUnitFahrenheit),
+	}
+
+	normalized, err := NormalizeDayEntryInput(input)
+	if !errors.Is(err, ErrInvalidDayBBT) {
+		t.Fatalf("expected ErrInvalidDayBBT for 20 °F, got err=%v stored=%v", err, normalized.BBT)
 	}
 }
