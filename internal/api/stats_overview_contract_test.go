@@ -316,10 +316,10 @@ func TestStatsOverviewPublishesTheConfirmedOvulationDayNotTheModelsProjection(t 
 	// ovulation the day BEFORE the shift: cycle day 17 = today-4 — three days
 	// off the model's today-7, so the two dates cannot pass by coincidence.
 	for _, offset := range []int{9, 8, 7, 6, 5, 4} {
-		seedStatsOverviewLog(t, database, models.DailyLog{UserID: user.ID, Date: today.AddDate(0, 0, -offset), BBT: new(36.20)})
+		seedStatsOverviewLog(t, database, models.DailyLog{UserID: user.ID, Date: today.AddDate(0, 0, -offset), BBT: new(dashboardConfirmedOvulationLowBBT)})
 	}
 	for _, offset := range []int{3, 2, 1} {
-		seedStatsOverviewLog(t, database, models.DailyLog{UserID: user.ID, Date: today.AddDate(0, 0, -offset), BBT: new(36.50)})
+		seedStatsOverviewLog(t, database, models.DailyLog{UserID: user.ID, Date: today.AddDate(0, 0, -offset), BBT: new(dashboardConfirmedOvulationHighBBT)})
 	}
 
 	_, payload := fetchStatsOverview(t, app, authCookie)
@@ -378,10 +378,10 @@ func TestStatsOverviewConfirmedOvulationIsIndependentOfOvulationExact(t *testing
 	// today-3..today-1). The detector confirms ovulation the day BEFORE the
 	// shift: cycle day 8 = today-4.
 	for _, offset := range []int{9, 8, 7, 6, 5, 4} {
-		seedStatsOverviewLog(t, database, models.DailyLog{UserID: user.ID, Date: today.AddDate(0, 0, -offset), BBT: new(36.20)})
+		seedStatsOverviewLog(t, database, models.DailyLog{UserID: user.ID, Date: today.AddDate(0, 0, -offset), BBT: new(dashboardConfirmedOvulationLowBBT)})
 	}
 	for _, offset := range []int{3, 2, 1} {
-		seedStatsOverviewLog(t, database, models.DailyLog{UserID: user.ID, Date: today.AddDate(0, 0, -offset), BBT: new(36.50)})
+		seedStatsOverviewLog(t, database, models.DailyLog{UserID: user.ID, Date: today.AddDate(0, 0, -offset), BBT: new(dashboardConfirmedOvulationHighBBT)})
 	}
 
 	_, payload := fetchStatsOverview(t, app, authCookie)
@@ -444,10 +444,10 @@ func TestStatsOverviewSuppressedOvulationIsNeverReportedConfirmed(t *testing.T) 
 
 	seedStatsOverviewCycleHistory(t, database, user, today, 104, 76, 48, 20)
 	for _, offset := range []int{9, 8, 7, 6, 5, 4} {
-		seedStatsOverviewLog(t, database, models.DailyLog{UserID: user.ID, Date: today.AddDate(0, 0, -offset), BBT: new(36.20)})
+		seedStatsOverviewLog(t, database, models.DailyLog{UserID: user.ID, Date: today.AddDate(0, 0, -offset), BBT: new(dashboardConfirmedOvulationLowBBT)})
 	}
 	for _, offset := range []int{3, 2, 1} {
-		seedStatsOverviewLog(t, database, models.DailyLog{UserID: user.ID, Date: today.AddDate(0, 0, -offset), BBT: new(36.50)})
+		seedStatsOverviewLog(t, database, models.DailyLog{UserID: user.ID, Date: today.AddDate(0, 0, -offset), BBT: new(dashboardConfirmedOvulationHighBBT)})
 	}
 
 	_, payload := fetchStatsOverview(t, app, authCookie)

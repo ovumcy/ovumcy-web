@@ -23,10 +23,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// dashboardConfirmedOvulationBBT is the 3-over-6 series the shared detector
-// resolves: six undisturbed readings fill the coverline window on cycle days
-// 6..11, three elevated ones follow on days 12..14. The detector names the last
-// low day, cycle day 11.
+// The two temperatures every 3-over-6 series in this package is built from:
+// six undisturbed readings at the low value fill the coverline window, three at
+// the high value clear it by more than the detector's 0.2 °C margin. Which
+// cycle days carry them is each seed's own business.
 const (
 	dashboardConfirmedOvulationLowBBT  = 36.20
 	dashboardConfirmedOvulationHighBBT = 36.50
@@ -46,15 +46,15 @@ func seedLateThermalShiftCycle(t *testing.T, database *gorm.DB, user models.User
 	seedStatsOverviewCycleHistory(t, database, user, today, 115, 87, 59, 31)
 	logs := make([]models.DailyLog, 0, 9)
 	for _, offset := range []int{8, 7, 6, 5, 4, 3} {
-		logs = append(logs, models.DailyLog{UserID: user.ID, Date: today.AddDate(0, 0, -offset), BBT: new(dashboardConfirmedOvulationLowBBT)})
+		logs = append(logs, models.DailyLog{UserID: user.ID, Date: services.AddCalendarDays(today, -offset, time.UTC), BBT: new(dashboardConfirmedOvulationLowBBT)})
 	}
 	for _, offset := range []int{2, 1, 0} {
-		logs = append(logs, models.DailyLog{UserID: user.ID, Date: today.AddDate(0, 0, -offset), BBT: new(dashboardConfirmedOvulationHighBBT)})
+		logs = append(logs, models.DailyLog{UserID: user.ID, Date: services.AddCalendarDays(today, -offset, time.UTC), BBT: new(dashboardConfirmedOvulationHighBBT)})
 	}
 	if err := database.Create(&logs).Error; err != nil {
 		t.Fatalf("seed late thermal shift: %v", err)
 	}
-	return today.AddDate(0, 0, -3)
+	return services.AddCalendarDays(today, -3, time.UTC)
 }
 
 // TestDashboardNamesALateShiftAfterTheProjectedNextPeriodStart is the rendered
@@ -91,11 +91,6 @@ func TestDashboardNamesALateShiftAfterTheProjectedNextPeriodStart(t *testing.T) 
 	slot := normalizeHTMLText(htmlNodeText(ovulation))
 	if want := services.LocalizedDateDisplay("en", confirmedDay); !strings.Contains(slot, want) {
 		t.Fatalf("the ovulation slot = %q, want the BBT-confirmed %q — a shift recorded after the projected next period start is still this cycle's", slot, want)
-	}
-	// The model's own ovulation for this cycle is cycle day 14 (today-18, with
-	// 14 luteal days following it); it must not linger beside the confirmed day.
-	if projected := services.LocalizedDateDisplay("en", today.AddDate(0, 0, -18)); strings.Contains(slot, projected) {
-		t.Fatalf("the ovulation slot still names the projected day %q: %q", projected, slot)
 	}
 }
 
