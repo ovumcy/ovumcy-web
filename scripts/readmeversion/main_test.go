@@ -67,7 +67,19 @@ var composeFallbackImage = regexp.MustCompile(`\$\{OVUMCY_IMAGE:-([^}]*)\}`)
 // declared as a path list: a hardcoded list of the six compose files known
 // today drifts from the tree the moment a new example stack is added, the
 // same way the inventory this test package was missing had already drifted.
+// Both spellings count. Compose v2 looks for `compose.yaml` by default and
+// treats `docker-compose.yml` as the legacy name, so a stack added tomorrow is
+// as likely to use the short one as this repository's six use the long one —
+// and a file outside the population is exactly the site that drifts unseen at
+// a release. The fail-closed checks would not catch it either: `files == 0`
+// fires only if the walk finds NOTHING, and six matching files keep the count
+// non-zero while the seventh goes unread. The short form is matched by exact
+// name rather than as a prefix, so a `composer.yml` belonging to something
+// else is not dragged in and then reported for having no fallback.
 func isComposeFile(name string) bool {
+	if name == "compose.yml" || name == "compose.yaml" {
+		return true
+	}
 	const prefix, suffix = "docker-compose", "ml"
 	if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, suffix) {
 		return false
@@ -172,6 +184,31 @@ func TestComposeFallbackCheckRefusesAStaleFallback(t *testing.T) {
 	}
 	if !strings.Contains(report.problems[0], "1.9.2") {
 		t.Errorf("the refusal does not name the tag it found: %s", report.problems[0])
+	}
+}
+
+// TestComposeFileNamesCoverBothSpellings pins which filenames enter the
+// population. A name this predicate declines is a release site nothing reads,
+// and no other test in the package can tell: the walk keeps finding the files
+// it does recognise, so the count stays non-zero and every assertion stays
+// green while the unmatched file drifts.
+func TestComposeFileNamesCoverBothSpellings(t *testing.T) {
+	for _, testCase := range []struct {
+		name string
+		want bool
+	}{
+		{"docker-compose.yml", true},
+		{"docker-compose.yaml", true},
+		{"docker-compose.override.yml", true},
+		{"compose.yml", true},
+		{"compose.yaml", true},
+		{"composer.yml", false},
+		{"docker-compose.txt", false},
+		{"README.md", false},
+	} {
+		if got := isComposeFile(testCase.name); got != testCase.want {
+			t.Errorf("isComposeFile(%q) = %v, want %v", testCase.name, got, testCase.want)
+		}
 	}
 }
 
