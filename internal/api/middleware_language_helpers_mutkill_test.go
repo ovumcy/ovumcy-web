@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -35,6 +36,7 @@ func newLanguageMiddlewareTestApp(t *testing.T) *fiber.App {
 	app := fiber.New()
 	app.Use(handler.LanguageMiddleware)
 	app.Get("/tzprobe", func(c fiber.Ctx) error { return c.SendStatus(fiber.StatusOK) })
+	app.Get(CalendarFeedRateLimitPrefix+"/:token.ics", func(c fiber.Ctx) error { return c.SendStatus(fiber.StatusOK) })
 	return app
 }
 
@@ -79,5 +81,30 @@ func TestLanguageMiddlewareSkipsRewriteWhenCookieAlreadyCanonical(t *testing.T) 
 
 	if cookie := responseCookie(resp.Cookies(), timezoneCookieName); cookie != nil {
 		t.Fatalf("expected no ovumcy_tz re-write when cookie already canonical, got %q", cookie.Value)
+	}
+}
+
+// TestLanguageMiddlewareSkipsTheCookielessCalendarFeedEntirely pins the early
+// return the calendar-feed prefix takes at the top of LanguageMiddleware.
+// Without it, the exact header that proves the "set" arm above (a valid tz
+// header with no matching cookie) would just as reliably persist ovumcy_tz on
+// the feed route — a Set-Cookie the cookieless feed's own contract forbids on
+// every outcome (docs/SECURITY_INVARIANTS.md → Calendar feed subscription). This is
+// a mutation-kill for the early-return guard itself: deleting it, or scoping
+// it to the wrong path, leaves this red while the two tests above stay green,
+// since neither of them drives a request against the feed prefix.
+func TestLanguageMiddlewareSkipsTheCookielessCalendarFeedEntirely(t *testing.T) {
+	app := newLanguageMiddlewareTestApp(t)
+
+	req := httptest.NewRequest(http.MethodGet, CalendarFeedRateLimitPrefix+"/"+strings.Repeat("A", 48)+".ics", nil)
+	req.Header.Set(timezoneHeaderName, "UTC")
+	resp, err := app.Test(req, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("feed tz probe failed: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if cookie := responseCookie(resp.Cookies(), timezoneCookieName); cookie != nil {
+		t.Fatalf("expected the calendar feed route to never receive a timezone cookie, got %q", cookie.Value)
 	}
 }

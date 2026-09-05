@@ -53,7 +53,12 @@ const (
 // path token alone. It never sets a cookie and never renders an HTML error: the
 // only outcomes are 200 + calendar body, a bare 404 (every not-found/invalid
 // case, answered with the same status text, so no oracle), or a generic 500 on
-// an infrastructure failure.
+// an infrastructure failure. That promise also holds one layer up: the two
+// app-wide middlewares mounted ahead of this handler (CSRF, LanguageMiddleware)
+// are excluded, by this route's own path prefix, from the safe-method side
+// effect that would otherwise mint and set one of their own cookies on any GET
+// lacking a matching cookie — see csrfMiddlewareConfig.Next in
+// cmd/ovumcy/server.go and the early return in LanguageMiddleware.
 func (handler *Handler) ServeCalendarFeed(c fiber.Ctx) error {
 	token := c.Params("token")
 	location := handler.requestLocation(c)
