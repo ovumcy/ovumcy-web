@@ -16,10 +16,9 @@ import (
 )
 
 func TestRunResetPasswordCommandUpdatesPasswordFromSecurePromptWithoutLeakingPlaintext(t *testing.T) {
-	t.Parallel()
-
 	databasePath := createCLIResetDatabase(t)
 	createCLIResetUser(t, databasePath, "cli-reset@example.com", "StrongPass1")
+	armOperatorFence(t, databasePath)
 	plaintextPassword := "EvenStronger2"
 	var output bytes.Buffer
 

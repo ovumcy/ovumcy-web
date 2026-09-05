@@ -61,14 +61,14 @@ func runUsersCommand(databaseConfig db.Config, args []string, input io.Reader, o
 		_ = sqlDB.Close()
 	}()
 
-	repositories := buildRepositories(database)
+	repositories, fence := buildRepositories(database)
 	service := services.NewOperatorUserService(repositories.Users, services.NewAuthService(repositories.Users))
 
 	switch subcommand {
 	case "list":
 		return runUsersList(service, output)
 	case "delete":
-		return runUsersDelete(service, args[1:], input, output)
+		return runUsersDelete(service, calendarFeedFencePath(), fence, args[1:], input, output)
 	case "create":
 		return runUsersCreate(service, args[1:], input, output)
 	case "set-email":
@@ -117,7 +117,7 @@ func runUsersList(service *services.OperatorUserService, output io.Writer) error
 	return writer.Flush()
 }
 
-func runUsersDelete(service *services.OperatorUserService, args []string, input io.Reader, output io.Writer) error {
+func runUsersDelete(service *services.OperatorUserService, fencePath string, fence *services.CalendarFeedRestoreFence, args []string, input io.Reader, output io.Writer) error {
 	opts, err := parseUsersDeleteArgs(args)
 	if err != nil {
 		return err
@@ -147,11 +147,13 @@ func runUsersDelete(service *services.OperatorUserService, args []string, input 
 	}
 
 	// The erasure takes the account row and its calendar feed with it, so this
-	// process has to be able to record that removal outside the database. It is
-	// raised here, past the confirmation and immediately before the write, so
-	// that a cancelled deletion does not print it and a deletion that fails
-	// halfway still does.
-	warnAboutAnUnreachableCalendarFeedFence(os.Stderr)
+	// process must confirm and advance the SAME fence the server does before
+	// that happens — never merely warn about it. Raised here, past the
+	// confirmation and immediately before the write, so a cancelled deletion
+	// never reaches it and a refusal here means the row is never touched.
+	if err := confirmOperatorFeedRevocation(context.Background(), fencePath, fence, os.Stderr); err != nil {
+		return err
+	}
 
 	deletedUser, err := opts.delete(service)
 	if err != nil {

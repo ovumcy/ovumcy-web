@@ -94,7 +94,7 @@ func RunNotifyCommand(
 		return fmt.Errorf("i18n init failed: %w", err)
 	}
 
-	repositories := buildRepositories(database)
+	repositories, _ := buildRepositories(database)
 	service := bootstrap.BuildNotifyService(repositories, []byte(secretKey), i18nManager, blockPrivateAddresses)
 
 	return runNotifyCommand(service, opts, time.Now(), location, os.Stdout)

@@ -634,6 +634,231 @@ func TestCalendarFeedRestoreFenceEnforceFailsTheBootWhenTheMarkerCannotBeStored(
 	}
 }
 
+// TestCalendarFeedRestoreFenceAdvanceConfirmedAdvancesBothHalvesWhenTheyAgree
+// is the one case AdvanceConfirmed is willing to move forward from: the two
+// halves already hold the SAME token, so nothing stands between this call and
+// the server's own boot-time no-op (TestCalendarFeedRestoreFenceAgreementIsANoOp).
+func TestCalendarFeedRestoreFenceAdvanceConfirmedAdvancesBothHalvesWhenTheyAgree(t *testing.T) {
+	appState := &stubFenceAppState{values: map[string]string{
+		models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken,
+	}}
+	anchor := &stubFenceAnchor{value: fenceTestToken, found: true}
+	fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor)
+
+	if err := fence.AdvanceConfirmed(context.Background()); err != nil {
+		t.Fatalf("AdvanceConfirmed: %v", err)
+	}
+
+	advanced := appState.values[models.AppStateKeyCalendarFeedRestoreFence]
+	if advanced == fenceTestToken || advanced == "" {
+		t.Fatalf("the database half must move to a fresh token, got %q", advanced)
+	}
+	if anchor.written != advanced {
+		t.Fatalf("both halves must hold the same token; file %q, app_state %q", anchor.written, advanced)
+	}
+}
+
+// TestCalendarFeedRestoreFenceAdvanceConfirmedRefusesWithoutAnAnchorAndWritesNothing
+// pins the state buildRepositories handed every subcommand before this fix: an
+// operator's shell with CALENDAR_FEED_FENCE_PATH unset. Unlike Advance, this
+// must be a hard refusal — a caller acting on someone else's behalf must never
+// let the database half move on alone.
+func TestCalendarFeedRestoreFenceAdvanceConfirmedRefusesWithoutAnAnchorAndWritesNothing(t *testing.T) {
+	appState := &stubFenceAppState{values: map[string]string{}}
+	anchor := &stubFenceAnchor{readErr: security.ErrCalendarFeedFenceNotConfigured}
+	fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor)
+
+	err := fence.AdvanceConfirmed(context.Background())
+	if !errors.Is(err, ErrCalendarFeedFenceUnreachable) || !errors.Is(err, security.ErrCalendarFeedFenceNotConfigured) {
+		t.Fatalf("expected ErrCalendarFeedFenceUnreachable wrapping the not-configured cause, got %v", err)
+	}
+	if len(appState.values) != 0 {
+		t.Fatalf("an unreachable anchor must record no marker, got %v", appState.values)
+	}
+	if anchor.written != "" {
+		t.Fatalf("an unreachable anchor must write no file, got %q", anchor.written)
+	}
+}
+
+// TestCalendarFeedRestoreFenceAdvanceConfirmedRefusesWhenTheAnchorWriteFailsAndLeavesTheDatabaseHalfAlone
+// is the one behaviour that must NOT match Advance: TestCalendarFeedRestoreFenceAdvanceBreaksTheFenceWhenTheFileRefuses
+// lets the database half move on alone on the same fake shape, and that is
+// exactly the defect AdvanceConfirmed exists to close for an operator-driven
+// caller — a removal recorded only inside the database, with the file left
+// unable to contradict it.
+func TestCalendarFeedRestoreFenceAdvanceConfirmedRefusesWhenTheAnchorWriteFailsAndLeavesTheDatabaseHalfAlone(t *testing.T) {
+	appState := &stubFenceAppState{values: map[string]string{
+		models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken,
+	}}
+	anchor := &stubFenceAnchor{value: fenceTestToken, found: true, writeErr: errors.New("read-only file system")}
+	fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor)
+
+	err := fence.AdvanceConfirmed(context.Background())
+	if !errors.Is(err, ErrCalendarFeedFenceUnreachable) {
+		t.Fatalf("expected ErrCalendarFeedFenceUnreachable, got %v", err)
+	}
+	if got := appState.values[models.AppStateKeyCalendarFeedRestoreFence]; got != fenceTestToken {
+		t.Fatalf("the database half must NOT move on alone, got %q", got)
+	}
+	if anchor.value != fenceTestToken {
+		t.Fatalf("the file half must be left where it was, got %q", anchor.value)
+	}
+}
+
+// TestCalendarFeedRestoreFenceAdvanceConfirmedRefusesWhenTheHalvesAreNotAKnownAgreeingPairAndWritesNothing
+// covers every shape that is not "both halves already hold the same token":
+// a real disagreement, either asymmetric shape, and both halves empty — which
+// means the server has never booted with this fence configured, and arming it
+// is Enforce's job on a first boot, never an operator command's.
+func TestCalendarFeedRestoreFenceAdvanceConfirmedRefusesWhenTheHalvesAreNotAKnownAgreeingPairAndWritesNothing(t *testing.T) {
+	cases := []struct {
+		name            string
+		stored          map[string]string
+		anchor          *stubFenceAnchor
+		wantAnchorFound bool
+		wantStoredFound bool
+	}{
+		{
+			name:            "the halves disagree",
+			stored:          map[string]string{models.AppStateKeyCalendarFeedRestoreFence: "an-older-generation"},
+			anchor:          &stubFenceAnchor{value: fenceTestToken, found: true},
+			wantAnchorFound: true,
+			wantStoredFound: true,
+		},
+		{
+			name:            "only the database half has a token",
+			stored:          map[string]string{models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken},
+			anchor:          &stubFenceAnchor{},
+			wantAnchorFound: false,
+			wantStoredFound: true,
+		},
+		{
+			name:            "only the file half has a token",
+			stored:          map[string]string{},
+			anchor:          &stubFenceAnchor{value: fenceTestToken, found: true},
+			wantAnchorFound: true,
+			wantStoredFound: false,
+		},
+		{
+			name:            "both halves are empty",
+			stored:          map[string]string{},
+			anchor:          &stubFenceAnchor{},
+			wantAnchorFound: false,
+			wantStoredFound: false,
+		},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			appState := &stubFenceAppState{values: testCase.stored}
+			fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, testCase.anchor)
+
+			before := map[string]string{}
+			for key, value := range testCase.stored {
+				before[key] = value
+			}
+
+			err := fence.AdvanceConfirmed(context.Background())
+			var continuity *CalendarFeedFenceContinuityError
+			if !errors.As(err, &continuity) {
+				t.Fatalf("expected *CalendarFeedFenceContinuityError, got %v", err)
+			}
+			if continuity.AnchorFound != testCase.wantAnchorFound || continuity.StoredFound != testCase.wantStoredFound {
+				t.Fatalf("expected AnchorFound=%t StoredFound=%t, got %+v", testCase.wantAnchorFound, testCase.wantStoredFound, continuity)
+			}
+			if got := appState.values; len(got) != len(before) {
+				t.Fatalf("a refused advance must write nothing to app_state, before=%v after=%v", before, got)
+			}
+			for key, value := range before {
+				if appState.values[key] != value {
+					t.Fatalf("a refused advance must write nothing to app_state, before=%v after=%v", before, appState.values)
+				}
+			}
+			if testCase.anchor.written != "" {
+				t.Fatalf("a refused advance must write no file, got %q", testCase.anchor.written)
+			}
+		})
+	}
+}
+
+// TestCalendarFeedRestoreFenceAdvanceConfirmedPropagatesADatabaseFailureAfterTheFileHasAlreadyMoved
+// pins the one failure this method cannot avoid recording partially: unlike
+// the unreachable-anchor path, a database failure here happens AFTER the file
+// half has already moved, so the two now disagree — and AdvanceConfirmed
+// returns the raw error (never wrapped in ErrCalendarFeedFenceUnreachable,
+// which names an ANCHOR failure) because the caller's operation must be
+// reported as failed, and the next boot's Enforce is what actually answers
+// the disagreement by disarming.
+func TestCalendarFeedRestoreFenceAdvanceConfirmedPropagatesADatabaseFailureAfterTheFileHasAlreadyMoved(t *testing.T) {
+	refused := errors.New("app_state is unavailable")
+	appState := &stubFenceAppState{values: map[string]string{
+		models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken,
+	}, setErr: refused}
+	anchor := &stubFenceAnchor{value: fenceTestToken, found: true}
+	fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor)
+
+	err := fence.AdvanceConfirmed(context.Background())
+	if !errors.Is(err, refused) {
+		t.Fatalf("expected the raw app_state failure, got %v", err)
+	}
+	if errors.Is(err, ErrCalendarFeedFenceUnreachable) {
+		t.Fatal("a database failure must not be reported as an anchor failure")
+	}
+	if anchor.written == "" || anchor.written == fenceTestToken {
+		t.Fatalf("the file half must already have moved to a fresh token, got %q", anchor.written)
+	}
+	if got := appState.values[models.AppStateKeyCalendarFeedRestoreFence]; got != fenceTestToken {
+		t.Fatalf("the database half must be left at its old value, got %q", got)
+	}
+}
+
+// TestCalendarFeedRestoreFenceAdvanceConfirmedSharesTheMutexWithAdvance proves
+// the CLI-facing method and the server-facing one serialize against the SAME
+// lock. Mixing 8 Advance calls with 8 AdvanceConfirmed calls, unsynchronized,
+// could pair a mint from one call with a write from the other and leave the
+// halves disagreeing with nothing restored — the same two-writer race
+// TestCalendarFeedRestoreFenceConcurrentAdvancesLeaveTheHalvesAgreeing already
+// covers for two Advance calls alone. The pair is seeded to already agree,
+// because AdvanceConfirmed correctly refusing a never-armed fence is not the
+// property under test here and would be indistinguishable from a real bug in
+// the loop below.
+func TestCalendarFeedRestoreFenceAdvanceConfirmedSharesTheMutexWithAdvance(t *testing.T) {
+	appState := &serializedFenceAppState{}
+	anchor := &serializedFenceAnchor{}
+	fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor)
+
+	if err := fence.Advance(context.Background()); err != nil {
+		t.Fatalf("seed Advance: %v", err)
+	}
+
+	var waiting sync.WaitGroup
+	errs := make(chan error, 16)
+	for i := range 16 {
+		waiting.Add(1)
+		go func(i int) {
+			defer waiting.Done()
+			var err error
+			if i%2 == 0 {
+				err = fence.Advance(context.Background())
+			} else {
+				err = fence.AdvanceConfirmed(context.Background())
+			}
+			if err != nil {
+				errs <- err
+			}
+		}(i)
+	}
+	waiting.Wait()
+	close(errs)
+	for err := range errs {
+		t.Errorf("concurrent advance: %v", err)
+	}
+
+	if appState.last() == "" || anchor.last() != appState.last() {
+		t.Fatalf("the halves must end agreeing; file %q, app_state %q", anchor.last(), appState.last())
+	}
+}
+
 func equalStrings(got, want []string) bool {
 	if len(got) != len(want) {
 		return false
