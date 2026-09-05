@@ -1,35 +1,21 @@
 # Gitleaks configuration for ovumcy-web.
 #
-# Extends gitleaks' built-in default rule set (do not replace it) and adds
-# only allowlist entries for already-triaged, non-secret fixture/placeholder
-# values. A full-history scan (--log-opts=--all) found zero real secrets;
-# every entry below is a known test fixture or documentation placeholder,
-# never production or non-test source.
+# Extends gitleaks' built-in default rule set (do not replace it). Every
+# exclusion below is scoped to the SPECIFIC rule and exact VALUE it exempts —
+# never to a class of file — so a real secret pasted into a test file or an
+# e2e spec is still caught. A path-based blanket over `_test\.go$` and
+# `e2e/.*\.spec\.ts$` used to sit here and silence every rule on those files;
+# it was removed (SEC-M6) because the exact-value list below already covers
+# every fixture it existed for. A full-history scan (--log-opts=--all) found
+# zero real secrets; every entry below is a known test fixture or
+# documentation placeholder, never production or non-test source.
 [extend]
 useDefault = true
 
 [allowlist]
-  # Broad, path-based allowlisting is intentional and scoped to file classes
-  # that are legitimately allowed to carry fixture/placeholder secrets:
-  # Go test files, Playwright e2e specs, and .env.example documentation. None
-  # of these paths are production source, and none are reachable at runtime.
+  # These two are NOT test/e2e file-class exemptions and stay path-scoped;
+  # SEC-M6 is only about the two blanket-by-file-class paths removed above.
   paths = [
-    # All Go test files repo-wide: unit/integration/mutation tests use
-    # syntactically-valid-but-fake keys, tokens, and cookie values (e.g.
-    # testNotifySecretKey in internal/cli/notify_test.go,
-    # mut2totpserviceCollidingSecret in
-    # internal/services/totp_service_mutation_round2_test.go, and
-    # legacyV1AuthCookieValueForTest in
-    # internal/api/secure_cookie_codec_rotation_test.go) to exercise
-    # validation, rotation, and collision-guard logic without touching real
-    # secrets.
-    '''_test\.go$''',
-
-    # Playwright e2e specs: fixture passwords used only against ephemeral,
-    # locally-booted test instances (e.g. the newPassword literal in
-    # e2e/settings-password-export-danger.spec.ts's password-rotation test).
-    '''e2e/.*\.spec\.ts$''',
-
     # .env.example documentation: SECRET_KEY=/OIDC_CLIENT_SECRET=-style lines
     # ship empty or as an explicit "replace_with_a_..." placeholder, never a
     # real value — covers the root .env.example and every
@@ -45,24 +31,82 @@ useDefault = true
     '''^scripts/fixtures/e2e-localhost-(key|cert)\.pem$''',
   ]
 
-  # Belt-and-suspenders exact-value allowlisting for the specific fixture
-  # constants named above, in case a future refactor moves them out of an
-  # allowlisted path (e.g. extracted into a shared non-test helper). If that
-  # happens, prefer re-scoping the path allowlist over relying on this list.
-  regexes = [
-    '''0123456789abcdef0123456789abcdef''', # testNotifySecretKey (internal/cli/notify_test.go)
-    '''53QMWFBK3KWC4KFNCMZSP37SHKGEJNEG''', # mut2totpserviceCollidingSecret (internal/services/totp_service_mutation_round2_test.go)
-    '''v1\.AQIDBAUGBwgJCgsMgMCNVdfeoxzg5RdfW2gB0u8QSayB''', # legacyV1AuthCookieValueForTest (internal/api/secure_cookie_codec_rotation_test.go)
-    '''NewStrongPass2''', # e2e fixture password (e2e/settings-password-export-danger.spec.ts)
-    # NOT a secret: the fixed, ambiguity-stripped 32-char CHARACTER ALPHABET that
-    # security.RandomString draws from to GENERATE tokens (identical to the
-    # recovery-code alphabet in internal/services/auth_reset_policy.go). generic-api-key
-    # flagged it in the calendar-feed token generator only because the identifier
-    # there embedded the keyword "Token"; HEAD renames it to calendarFeedAlphabet
-    # (keyword-free) so no non-test source matches going forward. This exact-value
-    # entry covers the historical commit that still carries the old name (force-push
-    # is disabled, so that commit cannot be rewritten) and guards the identical
-    # recovery-code alphabet against a future keyword-adjacent rename. No real key
-    # equals this sorted, de-duplicated alphabet.
-    '''ABCDEFGHJKLMNPQRSTUVWXYZ23456789''',
-  ]
+# Every Go test / Playwright e2e fixture that the default rule set flags is
+# allowlisted here, against the one rule that flags all of them
+# (`generic-api-key`, confirmed by scanning the repository with the default
+# rules and no allowlist at all) and by its exact value — never by file path
+# — so an unrelated secret dropped into the same file, or even the same test
+# function, is still caught. Extending a default rule's id under
+# `[extend] useDefault = true` merges this allowlist into the built-in rule
+# instead of replacing its regex/keywords/entropy floor: verified by adding a
+# synthetic, unlisted fake key beside these fixtures and confirming it still
+# fires.
+[[rules]]
+id = "generic-api-key"
+
+  [rules.allowlist]
+    regexes = [
+      '''0123456789abcdef0123456789abcdef''', # testNotifySecretKey (internal/cli/notify_test.go)
+      '''53QMWFBK3KWC4KFNCMZSP37SHKGEJNEG''', # mut2totpserviceCollidingSecret (internal/services/totp_service_mutation_round2_test.go)
+      '''v1\.AQIDBAUGBwgJCgsMgMCNVdfeoxzg5RdfW2gB0u8QSayB''', # legacyV1AuthCookieValueForTest (internal/api/secure_cookie_codec_rotation_test.go)
+      '''NewStrongPass2''', # e2e fixture password (e2e/settings-password-export-danger.spec.ts)
+      # NOT a secret: the fixed, ambiguity-stripped 32-char CHARACTER ALPHABET
+      # that security.RandomString draws from to GENERATE tokens (identical to
+      # the recovery-code alphabet in internal/services/auth_reset_policy.go).
+      # generic-api-key flagged it in the calendar-feed token generator only
+      # because the identifier there embedded the keyword "Token"; HEAD
+      # renames it to calendarFeedAlphabet (keyword-free) so no non-test
+      # source matches going forward. This exact-value entry covers the
+      # historical commit that still carries the old name (force-push is
+      # disabled, so that commit cannot be rewritten) and guards the identical
+      # recovery-code alphabet against a future keyword-adjacent rename. No
+      # real key equals this sorted, de-duplicated alphabet.
+      '''ABCDEFGHJKLMNPQRSTUVWXYZ23456789''',
+
+      # Shape-accurate synthetic calendar-feed token
+      # (internal/api/request_logging_test.go's feedToken): built from the
+      # same selector+verifier alphabet the real generator uses, purely to
+      # prove SafeLogError redacts a token-shaped value. Authenticates
+      # nothing.
+      '''ABCDEFGHJKLMNPQR234567892345678923456789ABCDEFGH''',
+
+      # Synthetic recovery-code shapes (internal/api/request_logging_test.go)
+      # exercised only to prove SafeLogError masks a recovery code in every
+      # cased/separator variant a user might paste. Never issued to an
+      # account.
+      '''OVUM-A1B2-C3D4-E5F6''',
+      '''OVUMA1B2C3D4E5F6''',
+      '''ovum-a1b2-c3d4-e5f6''',
+
+      # Synthetic "opaque token" shape (internal/api/request_logging_test.go)
+      # used by both SafeLogError's masking test and
+      # TestIsOpaqueRequestLogSegment's classifier test. Not derived from any
+      # real secret.
+      '''AbCdEf0123456789AbCdEf012345''',
+
+      # Pre-consolidation golden sealed-cookie values
+      # (internal/api/secure_cookie_codec_golden_test.go): pin the v2 envelope
+      # format end to end, sealed under the fixture key
+      # goldenSealedCookieSecretKey — never a value any live deployment holds.
+      '''v2\.VIBSLKuwjVMy4xTlTt9kjHR4AuJew-9dygidI1ryVZlKS8MHbyPjBLvj9sWKJ6vDs__CnA''', # authCookieName golden
+      '''v2\.golsLgDUmURHcZboCdvAvoiwynu8VBuWV1CEG92EvKJ-h8KUqTNB2dRk_vJCXaXSUXsLMGLQgrhonp6XFgg''', # resetPasswordCookieName golden
+
+      # rotationSentinelTestKeyA/B
+      # (internal/services/calendar_feed_rotation_sentinel_test.go): plain
+      # app_state map values used to assert the disarm-before-new-epoch
+      # ordering, not cryptographic key material.
+      '''rotation-sentinel-test-key-A-0123''',
+      '''rotation-sentinel-test-key-B-0123''',
+
+      # OVUM-ABCD-2345-EFGH: the shared "wrong recovery code" test fixture
+      # used across the auth/recovery/reset suites (e.g.
+      # internal/services/password_reset_service_test.go,
+      # internal/services/auth_input_policy_test.go,
+      # internal/services/auth_reset_policy_test.go,
+      # internal/api/auth_recovery_reset_requires_password_regressions_test.go).
+      # generic-api-key only flags it in one now-refactored historical shape
+      # of password_reset_service_test.go where a literal "test-secret" sat
+      # next to it; a full-history scan needs the value covered regardless.
+      # Never issued to an account.
+      '''OVUM-ABCD-2345-EFGH''',
+    ]
