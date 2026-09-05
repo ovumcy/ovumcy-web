@@ -18,6 +18,7 @@
 package readmeversion
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -72,6 +73,143 @@ func isComposeFile(name string) bool {
 		return false
 	}
 	return strings.Contains(name[len(prefix):], ".y")
+}
+
+// isOutsideTrackedTree reports whether directory path belongs to a population
+// this guard must not judge: a dot-directory (build, tooling or editor state),
+// a node_modules vendor tree, or a directory that is itself the root of a
+// different module or repository checkout nested under this one.
+//
+// Discovering the compose files by walking is what keeps the population from
+// drifting, but a walk answers with everything on disk, and a developer
+// machine carries whole extra checkouts of THIS repository underneath the
+// root — each with its own docker-compose.yml pinned to whatever release it
+// was cut at. Measured before this filter existed: the walk matched 67
+// compose files where the repository has 6. They agree only while the tree
+// has not been bumped, so the guard would go red on the developer's machine
+// at the exact moment of a release bump, naming files from another checkout —
+// a false refusal blocking the release, which is the failure this guard is
+// meant to prevent rather than cause.
+//
+// The last case is judged by property, not by name: a directory carrying its
+// own go.mod and/or its own git marker is a separate population, and a
+// worktree's ".git" is a regular file (a "gitdir:" pointer), so what is
+// checked is presence, not directory-ness.
+func isOutsideTrackedTree(path string, entry os.DirEntry) bool {
+	if strings.HasPrefix(entry.Name(), ".") || entry.Name() == "node_modules" {
+		return true
+	}
+	if _, err := os.Stat(filepath.Join(path, "go.mod")); err == nil {
+		return true
+	}
+	_, err := os.Stat(filepath.Join(path, ".git"))
+	return err == nil
+}
+
+// composeReporter is the slice of *testing.T composeFallbacksMatchReleaseTag
+// needs. A real *testing.T satisfies it unchanged; the fixtures below pass a
+// recorder instead, so they can drive the REAL check over a deliberately
+// inconsistent tree and read the verdict rather than be failed by it. Without
+// that seam every test in this package only ever asserts that a consistent
+// tree agrees with itself, and a checker narrowed until it reads nothing
+// still passes them all.
+type composeReporter interface {
+	Helper()
+	Errorf(format string, args ...any)
+	Fatalf(format string, args ...any)
+}
+
+// recordedReport collects what a check reported instead of failing the test.
+// Fatalf records like Errorf and returns: on a real *testing.T it would not,
+// but a fixture wants the whole verdict, and every Fatalf in the checker is
+// its last act on that population anyway.
+type recordedReport struct{ problems []string }
+
+func (r *recordedReport) Helper() {}
+
+func (r *recordedReport) Errorf(format string, args ...any) {
+	r.problems = append(r.problems, fmt.Sprintf(format, args...))
+}
+
+func (r *recordedReport) Fatalf(format string, args ...any) { r.Errorf(format, args...) }
+
+// writeFixtureFile creates relative (and any missing parents) under root.
+func writeFixtureFile(t *testing.T, root, relative, content string) {
+	t.Helper()
+	full := filepath.Join(root, relative)
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(full), err)
+	}
+	if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s: %v", full, err)
+	}
+}
+
+func composeFixture(tag string) string {
+	return "services:\n  app:\n    image: ${OVUMCY_IMAGE:-ghcr.io/ovumcy/ovumcy-web:v" + tag + "}\n"
+}
+
+// TestComposeFallbackCheckRefusesAStaleFallback is this guard's negative
+// fixture: the release bump the guard exists to police is exactly the moment
+// one compose file gets left behind, and nothing else in this package ever
+// shows the checker able to REFUSE. It drives the real
+// composeFallbacksMatchReleaseTag over a synthetic tree, so narrowing the
+// walk or inverting the comparison turns this test red instead of leaving
+// every other test green about a consistent tree.
+func TestComposeFallbackCheckRefusesAStaleFallback(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureFile(t, root, "docker-compose.yml", composeFixture("2.0.0"))
+	writeFixtureFile(t, root, "docs/examples/postgres/docker-compose.yml", composeFixture("1.9.2"))
+
+	var report recordedReport
+	composeFallbacksMatchReleaseTag(&report, root, "2.0.0")
+
+	if len(report.problems) != 1 {
+		t.Fatalf("reported %d problems, want exactly 1 (the stale fallback):\n%s", len(report.problems), strings.Join(report.problems, "\n"))
+	}
+	if !strings.Contains(report.problems[0], "docs/examples/postgres/docker-compose.yml") {
+		t.Errorf("the refusal does not name the stale file: %s", report.problems[0])
+	}
+	if !strings.Contains(report.problems[0], "1.9.2") {
+		t.Errorf("the refusal does not name the tag it found: %s", report.problems[0])
+	}
+}
+
+// TestComposeFallbackCheckIgnoresANestedCheckout pins the population rule: a
+// developer machine carries whole extra checkouts of this repository under
+// the root, each with its own compose files pinned to the release they were
+// cut at. Judging those turns the guard red at the moment of a bump, naming
+// files from another checkout — a false refusal that blocks the release this
+// guard exists to protect.
+func TestComposeFallbackCheckIgnoresANestedCheckout(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureFile(t, root, "docker-compose.yml", composeFixture("2.0.0"))
+	writeFixtureFile(t, root, "nested-checkout/go.mod", "module nested\n\ngo 1.23\n")
+	writeFixtureFile(t, root, "nested-checkout/docker-compose.yml", composeFixture("1.9.2"))
+	writeFixtureFile(t, root, ".worktrees/copy/.git", "gitdir: ../../.git/worktrees/copy\n")
+	writeFixtureFile(t, root, ".worktrees/copy/docker-compose.yml", composeFixture("0.8.4"))
+
+	var report recordedReport
+	composeFallbacksMatchReleaseTag(&report, root, "2.0.0")
+
+	if len(report.problems) != 0 {
+		t.Fatalf("judged compose files belonging to a nested checkout:\n%s", strings.Join(report.problems, "\n"))
+	}
+}
+
+// TestReadmeReleaseTagPatternsCoverTheMutableTagSentence pins the site that
+// was outside every pattern until this change: README's paragraph explaining
+// that the release tag is mutable names the tag in prose, so a bump that
+// missed it left the file disagreeing with itself unnoticed.
+func TestReadmeReleaseTagPatternsCoverTheMutableTagSentence(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureFile(t, root, "README.md",
+		"The `v7.7.7` tag is mutable and `pull_policy: always` re-pulls it on every restart.\n")
+
+	got := readmeReleaseTags(t, root)
+	if len(got) != 1 || got[0] != "7.7.7" {
+		t.Fatalf("readmeReleaseTags = %v, want [7.7.7]: the mutable-tag sentence is a release site and must be in the population", got)
+	}
 }
 
 // goDirective captures the version from go.mod's `go` line, which is the
@@ -355,7 +493,7 @@ func TestComposeFallbackImagesMatchReleaseTag(t *testing.T) {
 // want. It is a helper, not inlined into the test above, so a fixture built
 // on a synthetic root can drive the exact same check the real repository
 // gets — the same reason readmeReleaseTags takes root as a parameter.
-func composeFallbacksMatchReleaseTag(t *testing.T, root, want string) {
+func composeFallbacksMatchReleaseTag(t composeReporter, root, want string) {
 	t.Helper()
 	var files, fallbacks int
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
@@ -363,7 +501,7 @@ func composeFallbacksMatchReleaseTag(t *testing.T, root, want string) {
 			return err
 		}
 		if d.IsDir() {
-			if d.Name() == ".git" {
+			if path != root && isOutsideTrackedTree(path, d) {
 				return filepath.SkipDir
 			}
 			return nil
