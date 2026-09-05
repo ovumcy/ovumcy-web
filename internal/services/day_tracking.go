@@ -17,11 +17,10 @@ const (
 	MinDayBBTCelsius = 34.0
 	MaxDayBBTCelsius = 43.0
 
-	// bbtStoredScale is the canonical stored precision for a BBT reading —
-	// ten-thousandths of a degree Celsius, matching roundStoredTemperatureValue
-	// below. detectBBTShiftFirstHighDay (cycle_signals.go) compares readings in
-	// these integer units rather than as float64 so the two constants cannot
-	// drift apart.
+	// bbtStoredScale is the canonical stored precision for a BBT reading:
+	// ten-thousandths of a degree Celsius. bbtStoredUnits is the one conversion
+	// onto that grid; roundStoredTemperatureValue and the shift detector's
+	// comparisons (cycle_signals.go) both go through it.
 	bbtStoredScale = 10000
 )
 
@@ -195,7 +194,14 @@ func normalizeStoredDayBBT(value *float64) *float64 {
 // decimals keep every 0.01 °F step distinct and exactly recoverable, while
 // still collapsing the float noise the conversion produces.
 func roundStoredTemperatureValue(value float64) float64 {
-	return math.Round(value*bbtStoredScale) / bbtStoredScale
+	return float64(bbtStoredUnits(value)) / bbtStoredScale
+}
+
+// bbtStoredUnits places a Celsius reading on the stored grid as an integer
+// count of bbtStoredScale-ths. Comparisons made in these units are exact, where
+// adding a decimal margin to a float64 reading is not.
+func bbtStoredUnits(value float64) int64 {
+	return int64(math.Round(value * bbtStoredScale))
 }
 
 // roundTemperatureValue rounds to the two decimals a temperature is DISPLAYED

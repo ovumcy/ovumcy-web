@@ -6,5 +6,5 @@
   reject a reading sitting exactly on it — a coverline of 36.2 °C plus 0.2 rounds to a value a
   hair above 36.4 in float64, so a third day recorded at precisely 36.4 read as short of the
   margin. Readings entered in Fahrenheit hit the same boundary after conversion. The comparison
-  now runs in the same integer stored units the database keeps a reading in, so an exact 0.2 °C
-  shift is confirmed regardless of unit or magnitude.
+  now runs in the same integer units a saved reading is rounded to, so an exact 0.2 °C shift is
+  confirmed regardless of unit or magnitude.
