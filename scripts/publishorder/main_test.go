@@ -61,6 +61,8 @@
 package publishorder
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -92,14 +94,33 @@ var (
 	envEntry = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*): (.*)$`)
 )
 
-// digest is what the fixtures sign and promote; otherDigest is what a public
-// alias must never be allowed to resolve to instead. The stubbed manifest body
-// carries `digest`, so a tag written from anything but the bytes read back by
-// digest shows up in the stub's own log.
+// canonicalManifest is the exact bytes the stub answers when the signed
+// digest is read back, and digest is computed from THOSE bytes rather than
+// asserted independently of them: a digest fixed in isolation is a value the
+// promotion and the public-check stub could each satisfy without agreeing on
+// what was actually signed, which is the failure this package exists to rule
+// out. otherManifest is a different stored object, and otherDigest is what it
+// genuinely hashes to — not a second hand-picked string, since a "wrong"
+// digest chosen by the test rather than computed proves nothing about a stub
+// that mismatches for real.
 const (
-	digest      = "sha256:1f0c1cb3f0e0c9c2a8d2e0a1b3c4d5e6f70819202a2b3c4d5e6f708192a2b3c4d"
-	otherDigest = "sha256:99999999999999999999999999999999999999999999999999999999deadbeef"
+	canonicalManifest = `{"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","size":1}]}`
+	otherManifest     = `{"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[]}`
 )
+
+var (
+	digest      = "sha256:" + sha256Hex(canonicalManifest)
+	otherDigest = "sha256:" + sha256Hex(otherManifest)
+)
+
+// sha256Hex is the same computation the stub performs in shell (`sha256sum`)
+// over a tag's actually-stored body, so a package-level `digest` and the
+// stub's own runtime answer are the same function applied to the same bytes,
+// not two independently maintained values that happen to agree today.
+func sha256Hex(body string) string {
+	sum := sha256.Sum256([]byte(body))
+	return hex.EncodeToString(sum[:])
+}
 
 // The image the fixtures run against. The workflow derives both from
 // `github.repository`, lowercased; the two spellings are what the steps
@@ -296,8 +317,13 @@ type registry struct {
 	contentType    string
 	// putStatus is what a tag write returns; 201 is the registry's success.
 	putStatus string
-	// resolves is what each tag resolves to when read back anonymously, and
-	// headStatus what that read returns.
+	// resolves is the body each tag is stored under, as if an earlier PUT had
+	// written it. The stub hashes that body for real (`sha256sum`, the same
+	// function `sha256Hex` runs in Go) to answer an anonymous read, so a case
+	// controls what got STORED, not the digest the check is told to see —
+	// a stub that returned a digest a test merely asserted would confirm
+	// itself rather than the registry's own comparison. headStatus is what
+	// that read returns.
 	resolves   map[string]string
 	headStatus string
 	// terseHeaders drops the space after a header name. A server may write one
@@ -501,8 +527,17 @@ func TestPromotionWritesOnlyTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 			for _, line := range strings.Split(output, "\n") {
 				if rest, ok := strings.CutPrefix(line, "PUT-BODY "); ok {
 					bodies++
-					if !strings.Contains(rest, digest) {
-						t.Fatalf("a tag was written from bytes other than the signed manifest: %q", line)
+					// Byte-exact, not `strings.Contains(rest, digest)`: a
+					// substring check is satisfied by any body that merely
+					// mentions the digest somewhere in it, including the
+					// signed manifest with one byte changed anywhere the
+					// digest string itself does not sit. The registry hashes
+					// what it stores, so a byte the promotion adds, drops, or
+					// reorders between the GET and the PUT changes the object
+					// under the tag even though the JSON is equivalent and
+					// the digest substring is still present.
+					if rest != canonicalManifest {
+						t.Fatalf("a tag was written from bytes other than the signed manifest.\ngot:  %q\nwant: %q", rest, canonicalManifest)
 					}
 				}
 				if rest, ok := strings.CutPrefix(line, "PUT-CT "); ok {
@@ -543,7 +578,7 @@ func TestThePublicCheckRefusesAnAliasThatIsNotTheSignedDigest(t *testing.T) {
 			name: "both aliases resolve to the signed digest",
 			registry: func() registry {
 				r := defaultRegistry()
-				r.resolves = map[string]string{"v2.0.0": digest, "latest": digest}
+				r.resolves = map[string]string{"v2.0.0": canonicalManifest, "latest": canonicalManifest}
 				return r
 			}(),
 		},
@@ -551,7 +586,7 @@ func TestThePublicCheckRefusesAnAliasThatIsNotTheSignedDigest(t *testing.T) {
 			name: "one alias resolves to something else",
 			registry: func() registry {
 				r := defaultRegistry()
-				r.resolves = map[string]string{"v2.0.0": digest, "latest": otherDigest}
+				r.resolves = map[string]string{"v2.0.0": canonicalManifest, "latest": otherManifest}
 				return r
 			}(),
 			wantRefusal: true,
@@ -561,7 +596,7 @@ func TestThePublicCheckRefusesAnAliasThatIsNotTheSignedDigest(t *testing.T) {
 			name: "an alias is not anonymously readable",
 			registry: func() registry {
 				r := defaultRegistry()
-				r.resolves = map[string]string{"v2.0.0": digest, "latest": digest}
+				r.resolves = map[string]string{"v2.0.0": canonicalManifest, "latest": canonicalManifest}
 				r.headStatus = "404"
 				return r
 			}(),
@@ -572,7 +607,7 @@ func TestThePublicCheckRefusesAnAliasThatIsNotTheSignedDigest(t *testing.T) {
 			name: "the anonymous token request is refused",
 			registry: func() registry {
 				r := defaultRegistry()
-				r.resolves = map[string]string{"v2.0.0": digest, "latest": digest}
+				r.resolves = map[string]string{"v2.0.0": canonicalManifest, "latest": canonicalManifest}
 				r.tokenStatus = "403"
 				return r
 			}(),
@@ -585,7 +620,7 @@ func TestThePublicCheckRefusesAnAliasThatIsNotTheSignedDigest(t *testing.T) {
 			name: "the anonymous token response carries no token",
 			registry: func() registry {
 				r := defaultRegistry()
-				r.resolves = map[string]string{"v2.0.0": digest, "latest": digest}
+				r.resolves = map[string]string{"v2.0.0": canonicalManifest, "latest": canonicalManifest}
 				r.emptyToken = true
 				return r
 			}(),
@@ -599,7 +634,7 @@ func TestThePublicCheckRefusesAnAliasThatIsNotTheSignedDigest(t *testing.T) {
 			name: "the registry writes the digest header with no space",
 			registry: func() registry {
 				r := defaultRegistry()
-				r.resolves = map[string]string{"v2.0.0": digest, "latest": digest}
+				r.resolves = map[string]string{"v2.0.0": canonicalManifest, "latest": canonicalManifest}
 				r.terseHeaders = true
 				return r
 			}(),
@@ -611,7 +646,7 @@ func TestThePublicCheckRefusesAnAliasThatIsNotTheSignedDigest(t *testing.T) {
 			name: "no public tag to verify",
 			registry: func() registry {
 				r := defaultRegistry()
-				r.resolves = map[string]string{"v2.0.0": digest, "latest": digest}
+				r.resolves = map[string]string{"v2.0.0": canonicalManifest, "latest": canonicalManifest}
 				return r
 			}(),
 			tags:        "\n",
@@ -625,7 +660,7 @@ func TestThePublicCheckRefusesAnAliasThatIsNotTheSignedDigest(t *testing.T) {
 			name: "a reference outside the image this run signed",
 			registry: func() registry {
 				r := defaultRegistry()
-				r.resolves = map[string]string{"v2.0.0": digest, "latest": digest}
+				r.resolves = map[string]string{"v2.0.0": canonicalManifest, "latest": canonicalManifest}
 				return r
 			}(),
 			tags:        "ghcr.io/ovumcy/ovumcy-web:v2.0.0\ndocker.io/someone/else:latest",
@@ -964,11 +999,18 @@ func runStep(t *testing.T, bash, job, step string, env map[string]string, reg re
 	script := stepScript(t, job, step)
 
 	dir := filepath.ToSlash(t.TempDir())
-	resolves := ""
-	for tag, resolved := range reg.resolves {
-		resolves += tag + " " + resolved + "\n"
+	// Each tag's fixture body is written to its own file rather than into one
+	// shared index: the body is a JSON manifest, not a bare digest, so a
+	// whitespace-delimited lookup (as the digest version of this fixture used)
+	// would read only the first field of it. The stub hashes the file's bytes
+	// for real, so what a case controls is what got stored, not the digest a
+	// check is told to see.
+	for tag, body := range reg.resolves {
+		if err := os.WriteFile(filepath.Join(dir, "resolve-"+tag+".body"), []byte(body), 0o600); err != nil {
+			t.Fatalf("write the resolve fixture for tag %q: %v", tag, err)
+		}
 	}
-	preamble := stubRegistry(dir, reg, resolves)
+	preamble := stubRegistry(dir, reg)
 
 	command := exec.Command(bash, "-c", preamble+"\n"+script)
 	command.Env = append(os.Environ(),
@@ -1007,7 +1049,7 @@ func runStep(t *testing.T, bash, job, step string, env map[string]string, reg re
 // answers the ENDPOINT rather than parsing HTTP, so what these fixtures prove is
 // which requests each step makes and how it judges the answers — not that curl
 // is invoked with the right flags.
-func stubRegistry(dir string, reg registry, resolves string) string {
+func stubRegistry(dir string, reg registry) string {
 	// The stub stands in for the token extraction as well as for the endpoint:
 	// both steps pipe the registry's JSON through `python3` to pull `.token`
 	// out of it, and what matters to them is the value that comes back, not how
@@ -1028,9 +1070,8 @@ func stubRegistry(dir string, reg registry, resolves string) string {
 
 	return strings.Join([]string{
 		`STUB_MANIFEST=` + shellQuote(dir+"/manifest.json"),
-		`printf '{"signed":"` + digest + `"}' > "$STUB_MANIFEST"`,
+		`printf '%s' ` + shellQuote(canonicalManifest) + ` > "$STUB_MANIFEST"`,
 		`printf '%s' ` + shellQuote(token) + ` > ` + shellQuote(dir+"/token.json"),
-		`printf '%s' ` + shellQuote(resolves) + ` > ` + shellQuote(dir+"/resolves.txt"),
 		`printf '%s' ` + shellQuote(tokenValue) + ` > ` + shellQuote(dir+"/token_value.txt"),
 		`python3() { cat > /dev/null 2>&1 || true; cat "$STUB_DIR/token_value.txt"; printf '\n'; }`,
 		`curl() {`,
@@ -1068,7 +1109,17 @@ func stubRegistry(dir string, reg registry, resolves string) string {
 		`        printf 'PUT-CT %s\n' "$content_type" >&2`,
 		`        printf '%s' ` + shellQuote(reg.putStatus) + `; return 0`,
 		`      fi`,
-		`      resolved="$(awk -v t="$tag" '$1 == t { print $2 }' "$STUB_DIR/resolves.txt")"`,
+		// The digest is computed here, over the tag's fixture body, rather
+		// than read back from a value the fixture handed the stub directly —
+		// a case controls what got STORED under the tag, and this line is
+		// what turns that into the digest the check reads, exactly as GHCR's
+		// own content-addressing would. A stub that instead returned a
+		// digest string a test merely asserted would confirm itself, not the
+		// step's own comparison.
+		`      resolved=""`,
+		`      if [ -f "$STUB_DIR/resolve-$tag.body" ]; then`,
+		`        resolved="sha256:$(sha256sum "$STUB_DIR/resolve-$tag.body" | awk '{print $1}')"`,
+		`      fi`,
 		`      [ -n "$dump" ] && printf 'HTTP/2 %s\r\nDocker-Content-Digest:` + space + `%s\r\n' ` + shellQuote(reg.headStatus) + ` "$resolved" > "$dump"`,
 		`      printf '%s' ` + shellQuote(reg.headStatus) + `; return 0 ;;`,
 		`  esac`,
