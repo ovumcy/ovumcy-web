@@ -181,10 +181,16 @@ These are the exact cases asserted by the reference tests.
 
 Basal body temperature rises ~0.2–0.5 °C after ovulation (progesterone from the
 corpus luteum is thermogenic), so a sustained rise *confirms ovulation
-retrospectively*. One shared detector drives the luteal-phase inference, the
-calendar's tentative-ovulation signal, and the coverline + probable-ovulation
-marker on the stats BBT chart, so those surfaces can never disagree. It applies
-the classical symptothermal ("3-over-6") rule:
+retrospectively*. One shared detector drives every surface that names an
+ovulation day: the luteal-phase inference, the calendar's ovulation markers
+(tentative on the projection, solid on the confirmed day), the dashboard's
+ovulation line, the JSON overview's `ovulation_date` / `ovulation_confirmed`,
+and the coverline + probable-ovulation marker on the stats BBT chart. For the
+current cycle they all read one resolver, so they can never disagree, and that
+cycle's detection series runs through the owner's today rather than to the
+projected next-period start — a shift that arrives after the projected date has
+passed is still this cycle's. The rule applied is the classical symptothermal
+("3-over-6") one:
 
 - **Coverline** — the maximum of the **6 immediately preceding** recorded,
   undisturbed temperatures. The maximum (not the mean) is used so ordinary
@@ -204,10 +210,46 @@ the classical symptothermal ("3-over-6") rule:
   no marker, and the luteal inference falls back to the cervical-mucus signal
   or the 14-day default.
 
-The stats chart draws the coverline only once a shift is confirmed — until
-then there is nothing physiologically meaningful to draw. Even a confirmed
-shift remains an estimate (±1–2 days), never a fact: prospective studies find
-BBT alone identifies the ovulation day imperfectly, so treat the marker as
+**What this detector is not.** The rule above is the *temperature* half of a
+symptothermal method, applied to recorded, undisturbed readings. It is not the
+full fertility-awareness protocol those methods define, and the differences are
+deliberate rather than gaps:
+
+- **No double-check against a second indicator.** Symptothermal protocols
+  confirm a thermal shift against cervical mucus or the cervix before treating
+  it as a change of phase. Here the temperature rule stands alone; the
+  cervical-mucus signal is a separate fallback estimate used when no shift is
+  found, never a cross-check on one that was.
+- **No slow-rise exceptions — the detector is stricter.** Reference methods
+  carry exception rules that rescue a rise whose third day misses the 0.2 °C
+  margin, by waiting for a fourth day that only has to stay above the coverline.
+  This detector has none: a rise that climbs in steps smaller than the margin is
+  never confirmed at all, because the coverline slides with each candidate day,
+  so the first elevated readings enter the window that the days after them are
+  measured against and lift the bar to their own level.
+- **A disturbed day is dropped whole.** An `illness` or `sleep_disruption` tag
+  removes the reading from the detection series without asking whether its value
+  actually stands out from its neighbours — broader than the reference method's
+  bracketing of a single outlying value, and the reason a tagged day does not
+  occupy a slot in the six either.
+- **The six are recordings, not calendar days.** A morning left unrecorded
+  lengthens the window backwards instead of shrinking it, and any number of gaps
+  is tolerated; implementations that score the window over calendar days
+  typically stop at one missing day of six.
+
+The date it produces is an inference from a signal, not an observation of
+ovulation: the day before the first elevated reading. Prospective work comparing
+home temperature records against an LH-anchored reference finds that first
+elevated reading follows the anchor by days on average (Zhu et al., *JMIR
+mHealth and uHealth*, 2021: 2.7 ± 1.9 days after LH+1 in that cohort). A
+confirmed shift therefore says an ovulation has already happened — it is not a
+forecast, and not a method of contraception.
+
+The stats chart draws the coverline only once a shift is confirmed — until then
+there is nothing physiologically meaningful to draw. Even a confirmed shift
+remains an estimate, never a fact, and no individual accuracy interval is
+promised: the day is inferred from the signal, and, as above, the first elevated
+reading lags the LH-anchored day by days on average. Treat the marker as
 indicative, not diagnostic.
 
 ## First cycle — what is computed but not shown
