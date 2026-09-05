@@ -18,9 +18,9 @@ const (
 	MaxDayBBTCelsius = 43.0
 
 	// bbtStoredScale is the canonical stored precision for a BBT reading:
-	// ten-thousandths of a degree Celsius. bbtStoredUnits is the one conversion
-	// onto that grid; roundStoredTemperatureValue and the shift detector's
-	// comparisons (cycle_signals.go) both go through it.
+	// ten-thousandths of a degree Celsius. bbtStoredGridValue is the one
+	// rounding onto that grid; roundStoredTemperatureValue and the shift
+	// detector's comparisons (cycle_signals.go) both go through it.
 	bbtStoredScale = 10000
 )
 
@@ -194,14 +194,23 @@ func normalizeStoredDayBBT(value *float64) *float64 {
 // decimals keep every 0.01 °F step distinct and exactly recoverable, while
 // still collapsing the float noise the conversion produces.
 func roundStoredTemperatureValue(value float64) float64 {
-	return float64(bbtStoredUnits(value)) / bbtStoredScale
+	return bbtStoredGridValue(value) / bbtStoredScale
 }
 
-// bbtStoredUnits places a Celsius reading on the stored grid as an integer
-// count of bbtStoredScale-ths. Comparisons made in these units are exact, where
-// adding a decimal margin to a float64 reading is not.
+// bbtStoredGridValue is the one rounding onto the stored grid: the reading as
+// a whole number of bbtStoredScale-ths, kept as float64 so whatever the form
+// parser lets through (NaN, 1e300) stays a defined value for IsValidDayBBT to
+// refuse rather than an out-of-range int64 conversion.
+func bbtStoredGridValue(value float64) float64 {
+	return math.Round(value * bbtStoredScale)
+}
+
+// bbtStoredUnits is bbtStoredGridValue as an integer, for readings that have
+// already passed IsValidDayBBT. Comparisons in these units are exact where a
+// float64 addition is not: 36.2 + 0.2 is 36.400000000000006, one ULP above a
+// third day recorded as 36.4.
 func bbtStoredUnits(value float64) int64 {
-	return int64(math.Round(value * bbtStoredScale))
+	return int64(bbtStoredGridValue(value))
 }
 
 // roundTemperatureValue rounds to the two decimals a temperature is DISPLAYED
