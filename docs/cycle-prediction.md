@@ -186,11 +186,14 @@ ovulation day: the luteal-phase inference, the calendar's ovulation markers
 (tentative on the projection, solid on the confirmed day), the dashboard's
 ovulation line, the JSON overview's `ovulation_date` / `ovulation_confirmed`,
 and the coverline + probable-ovulation marker on the stats BBT chart. For the
-current cycle they all read one resolver, so they can never disagree, and that
-cycle's detection series runs through the owner's today rather than to the
-projected next-period start — a shift that arrives after the projected date has
-passed is still this cycle's. The rule applied is the classical symptothermal
-("3-over-6") one:
+current cycle the calendar, the dashboard and the JSON overview read one
+resolver and the chart shares its detection window, so a shift names one day
+wherever it is shown; the chart is the one surface that keeps its marker while
+the others withhold every date (an overdue cycle, unpredictable mode, a
+pregnancy pause, the first cycle). That window runs through the owner's today
+rather than to the projected next-period start — a shift that arrives after the
+projected date has passed is still this cycle's. The rule applied is the
+classical symptothermal ("3-over-6") one:
 
 - **Coverline** — the maximum of the **6 immediately preceding** recorded,
   undisturbed temperatures. The maximum (not the mean) is used so ordinary
@@ -234,8 +237,8 @@ deliberate rather than gaps:
   occupy a slot in the six either.
 - **The six are recordings, not calendar days.** A morning left unrecorded
   lengthens the window backwards instead of shrinking it, and any number of gaps
-  is tolerated; implementations that score the window over calendar days
-  typically stop at one missing day of six.
+  is tolerated; a published implementation that scores the window over calendar
+  days (Zhu et al., 2021) allows one missing day of six and no more.
 
 The date it produces is an inference from a signal, not an observation of
 ovulation: the day before the first elevated reading. Prospective work comparing
