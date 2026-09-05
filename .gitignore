@@ -62,3 +62,15 @@ docs/screenshots/ovumcy-social-preview.png
 scripts/take-screenshots.mjs
 scripts/record-demo.mjs
 docs/demo.mp4
+
+# Deployment secrets: docker-compose.yml documents mounting these paths as
+# operator-created, file-backed secrets (app secret key, OIDC CA bundle).
+# Ignore the whole class so a locally created secret can't be committed by
+# accident.
+secrets/
+certs/
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
