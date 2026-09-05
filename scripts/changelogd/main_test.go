@@ -443,9 +443,15 @@ func TestAssembleCarriesTheRepositoryBacklogVerbatim(t *testing.T) {
 	// freshly assembled repository does. Separating the two here is what lets
 	// the skip below trust assemble's verdict — a fixture that could not look
 	// must fail, never skip.
+	// Two outcomes, and the message says which: a path that cannot be looked at
+	// is not a path that was looked at and turned out to be a file, and one
+	// report carrying both appends a `<nil>` error to the second.
 	fragmentsDir := filepath.Join(root, "changelog.d")
-	if info, statErr := os.Stat(fragmentsDir); statErr != nil || !info.IsDir() {
-		t.Fatalf("the repository fragment directory %s is not readable as a directory (%v): an empty listing here would be a broken checkout, not an empty backlog", fragmentsDir, statErr)
+	switch info, statErr := os.Stat(fragmentsDir); {
+	case statErr != nil:
+		t.Fatalf("cannot stat the repository fragment directory %s: %v — an empty listing here would be a broken checkout, not an empty backlog", fragmentsDir, statErr)
+	case !info.IsDir():
+		t.Fatalf("the repository fragment path %s exists but is not a directory — an empty listing here would be a broken checkout, not an empty backlog", fragmentsDir)
 	}
 	fragments, err := filepath.Glob(filepath.Join(fragmentsDir, "*.md"))
 	if err != nil {
