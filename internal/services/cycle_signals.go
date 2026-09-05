@@ -137,6 +137,15 @@ func deriveUserLutealPhase(logs []models.DailyLog, now time.Time, location *time
 // future date must not confirm an ovulation that has not happened. The caller
 // supplies today so that a surface which has already resolved it does not
 // resolve a second, possibly different one.
+//
+// The current cycle runs to the owner's today, never to the projected next
+// start — a late shift is still this cycle's. stats.NextPeriodStart is the
+// model's own guess at when the next cycle begins, and a thermal shift that
+// lands after it is exactly the case where the guess was wrong: the detection
+// window bounded there cut the 6-day coverline short before it ever filled,
+// so the shift was visible on the stats chart (whose own window already runs
+// to today+1) and invisible on the calendar, the dashboard and the JSON API,
+// which all read this resolver.
 func ConfirmedCurrentCycleOvulation(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (time.Time, bool) {
 	if user == nil || !user.TrackBBT || stats.LastPeriodStart.IsZero() || stats.OvulationDate.IsZero() || stats.NextPeriodStart.IsZero() {
 		return time.Time{}, false
@@ -157,7 +166,7 @@ func ConfirmedCurrentCycleOvulation(user *models.User, logs []models.DailyLog, s
 		return time.Time{}, false
 	}
 
-	signal := inferBBTOvulationDate(filterLogsNotAfter(logs, today), cycleStart, CalendarDay(stats.NextPeriodStart, location), location)
+	signal := inferBBTOvulationDate(filterLogsNotAfter(logs, today), cycleStart, AddCalendarDays(today, 1, location), location)
 	if signal.IsZero() {
 		return time.Time{}, false
 	}
