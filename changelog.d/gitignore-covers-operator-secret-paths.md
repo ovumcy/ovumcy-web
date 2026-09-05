@@ -4,5 +4,7 @@
   `docker-compose.yml` documents mounting a file-backed app secret key from `./secrets/` and a
   private OIDC CA bundle from `./certs/`, but neither directory nor the common private-key/keystore
   extensions (`*.pem`, `*.key`, `*.p12`, `*.pfx`, `*.jks`) were ignored — a secret created by
-  following the compose instructions could be committed by an inattentive `git add`. No such file
-  was ever tracked; this closes the gap before one is.
+  following the compose instructions could be committed by an inattentive `git add`. No file of
+  that class is tracked today, and no tracked file became ignored by the change; whether one was
+  ever added and later removed is a question only a full-history scan answers, and that scan is a
+  release step of its own.
