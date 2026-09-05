@@ -146,8 +146,8 @@ func TestWiringScanCatchesAnUnwiredCallOutsideBootstrap(t *testing.T) {
 
 // TestWiringScanIgnoresANestedRepositoryCheckout reproduces TS-M19: a
 // checkout of another repository (or another worktree of this one) sitting
-// physically under the module root — complete with its own go.mod, its own
-// git marker, and a stale file that happens to contain the exact
+// physically under the module root — carrying its own module or repository
+// marker and a stale file that happens to contain the exact
 // db.NewRepositories( text the guard looks for — must not make the guard
 // fail on an otherwise-unchanged product tree. The nested checkout is a
 // different population; the guard's job is this module's tracked tree only.
@@ -155,11 +155,24 @@ func TestWiringScanIgnoresANestedRepositoryCheckout(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "go.mod", "module fixture\n\ngo 1.23\n")
 
-	const nested = "nested-checkout"
-	writeFixtureFile(t, root, filepath.Join(nested, "go.mod"), "module nestedfixture\n\ngo 1.23\n")
-	writeFixtureFile(t, root, filepath.Join(nested, ".git"), "gitdir: ../../.git/worktrees/nested-checkout\n")
-	writeFixtureFile(t, root, filepath.Join(nested, "internal", "old", "stale.go"),
-		"package old\n\nfunc build() {\n\tdb.NewRepositories(nil)\n}\n")
+	// Two markers, and each fixture carries only ONE of them, because either
+	// alone makes a directory a separate population and a fixture carrying
+	// both proves neither check on its own: a worktree of this repository has
+	// a go.mod and a .git pointer file, while a checkout of a project that is
+	// not written in Go has a .git and no go.mod at all.
+	for _, nested := range []struct {
+		what   string
+		dir    string
+		marker string
+		body   string
+	}{
+		{"a nested Go module", "nested-module", "go.mod", "module nestedfixture\n\ngo 1.23\n"},
+		{"a nested checkout that is not a Go module", "nested-checkout", ".git", "gitdir: ../../.git/worktrees/nested-checkout\n"},
+	} {
+		writeFixtureFile(t, root, filepath.Join(nested.dir, nested.marker), nested.body)
+		writeFixtureFile(t, root, filepath.Join(nested.dir, "internal", "old", "stale.go"),
+			"package old\n\nfunc build() {\n\tdb.NewRepositories(nil)\n}\n")
+	}
 
 	result, err := scanRepositoryWiring(root)
 	if err != nil {
