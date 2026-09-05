@@ -248,9 +248,13 @@ func inferBBTOvulationDate(logs []models.DailyLog, cycleStart time.Time, nextSta
 // days (cycle days n, n+1, n+2), all recorded, the first two strictly above
 // the coverline and the third at least bbtThirdDayMarginCelsius above it.
 // recordedDays must be sorted ascending; dayValues maps each recorded cycle
-// day to its temperature. Returns the first elevated cycle day and the
-// coverline in effect.
+// day to its temperature, and every value must have passed IsValidDayBBT
+// (bbtStoredUnits converts to int64 without a range check of its own).
+// Returns the first elevated cycle day and the coverline in effect.
 func detectBBTShiftFirstHighDay(recordedDays []int, dayValues map[int]float64) (int, float64, bool) {
+	// The threshold checks run in stored units (bbtStoredUnits), where adding
+	// the margin is exact.
+	marginUnits := bbtStoredUnits(bbtThirdDayMarginCelsius)
 	for index := bbtCoverlineWindow; index+bbtElevatedStreakDays-1 < len(recordedDays); index++ {
 		dayOne := recordedDays[index]
 		dayTwo := recordedDays[index+1]
@@ -265,11 +269,12 @@ func detectBBTShiftFirstHighDay(recordedDays []int, dayValues map[int]float64) (
 				coverline = value
 			}
 		}
+		coverlineUnits := bbtStoredUnits(coverline)
 
-		if dayValues[dayOne] <= coverline || dayValues[dayTwo] <= coverline {
+		if bbtStoredUnits(dayValues[dayOne]) <= coverlineUnits || bbtStoredUnits(dayValues[dayTwo]) <= coverlineUnits {
 			continue
 		}
-		if dayValues[dayThree] < coverline+bbtThirdDayMarginCelsius {
+		if bbtStoredUnits(dayValues[dayThree]) < coverlineUnits+marginUnits {
 			continue
 		}
 		return dayOne, coverline, true
