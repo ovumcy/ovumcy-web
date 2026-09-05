@@ -205,10 +205,11 @@ func bbtStoredGridValue(value float64) float64 {
 	return math.Round(value * bbtStoredScale)
 }
 
-// bbtStoredUnits is bbtStoredGridValue as an integer, for readings that have
-// already passed IsValidDayBBT. Comparisons in these units are exact where a
-// float64 addition is not: 36.2 + 0.2 is 36.400000000000006, one ULP above a
-// third day recorded as 36.4.
+// bbtStoredUnits is bbtStoredGridValue as an integer, for values already known
+// to be finite and small: readings that passed IsValidDayBBT, and the margin
+// constant. Comparisons in these units are exact where a float64 addition is
+// not: 36.2 + 0.2 is 36.400000000000006, one ULP above a third day recorded
+// as 36.4.
 func bbtStoredUnits(value float64) int64 {
 	return int64(bbtStoredGridValue(value))
 }
