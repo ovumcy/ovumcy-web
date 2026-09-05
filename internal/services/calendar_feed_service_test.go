@@ -358,7 +358,10 @@ func TestResolveFeedIdenticalNotFoundForEveryBadToken(t *testing.T) {
 
 	// Malformed: wrong length, rejected before any lookup.
 	malformed := "TOOSHORT"
-	selector, verifier, _ := SplitCalendarFeedToken(validToken)
+	selector, verifier, ok := SplitCalendarFeedToken(validToken)
+	if !ok {
+		t.Fatalf("SplitCalendarFeedToken: a freshly armed token must split, got token of length %d", len(validToken))
+	}
 	// Unknown selector: right length shape, but selector not armed. Flip the
 	// selector half of the valid token so the length stays valid.
 	unknownSelector := strings.Repeat("Z", len(selector)) + verifier
@@ -398,7 +401,10 @@ func TestResolveFeedEqualizesTimingOnSelectorMiss(t *testing.T) {
 	now := mustParseDashboardDay(t, "2026-03-20")
 
 	// A well-formed token whose selector resolves no row (selector-miss path).
-	selector, verifier, _ := SplitCalendarFeedToken(validToken)
+	selector, verifier, ok := SplitCalendarFeedToken(validToken)
+	if !ok {
+		t.Fatalf("SplitCalendarFeedToken: a freshly armed token must split, got token of length %d", len(validToken))
+	}
 	unknownSelector := strings.Repeat("Z", len(selector)) + verifier
 	if _, ok, _ := svc.ResolveFeed(context.Background(), unknownSelector, now, time.UTC); ok {
 		t.Fatalf("expected selector miss to be ok=false")
@@ -672,7 +678,10 @@ func TestGenerateCalendarFeedTokenVerifierIsRealBcrypt(t *testing.T) {
 	if !VerifyCalendarFeedToken([]byte(calendarFeedTestSecretKey), token, rollbackView) {
 		t.Fatalf("a freshly minted token must verify against its stored bcrypt hash alone (rollback path)")
 	}
-	selector, verifier, _ := SplitCalendarFeedToken(token)
+	selector, verifier, ok := SplitCalendarFeedToken(token)
+	if !ok {
+		t.Fatalf("SplitCalendarFeedToken: a freshly armed token must split, got token of length %d", len(token))
+	}
 	tampered := selector + strings.Repeat("2", len(verifier))
 	if VerifyCalendarFeedToken([]byte(calendarFeedTestSecretKey), tampered, rollbackView) {
 		t.Fatalf("a tampered verifier must not verify")
