@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/testenv"
 )
 
 // The round-trip invariant pinned here: an ovulation OBSERVED on cycle day N
@@ -236,10 +237,7 @@ func TestInferredLutealPhaseRoundTripsAcrossDSTAndTimezones(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			location, err := time.LoadLocation(testCase.zone)
-			if err != nil {
-				t.Skipf("tz database unavailable for %q: %v", testCase.zone, err)
-			}
+			location := testenv.RequireTimeZone(t, testCase.zone)
 
 			logs := lutealRoundTripLogs(t, testCase.origin, cycleLength, []int{testCase.observed, testCase.observed}, testCase.kind)
 			nextCycleStart := CalendarDay(testCase.origin.AddDate(0, 0, 2*cycleLength), location)

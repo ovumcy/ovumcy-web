@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/db"
+	"github.com/ovumcy/ovumcy-web/internal/testenv"
 	"gorm.io/gorm"
 )
 
@@ -521,15 +522,19 @@ func readVolume(t *testing.T, volume string, image string, dir string) {
 }
 
 // requireDocker skips when there is no docker to talk to, the same idiom the
-// repository's other container-backed tests use. CI has docker, so this is a
-// developer-host allowance and not a way for the guard to go quiet in the lane
-// that matters.
+// repository's other container-backed tests use — but only on a machine where
+// the owning lane has not declared docker mandatory. CI sets
+// OVUMCY_REQUIRE_DOCKER on the lane that runs this package, which turns that
+// same absence into a failure: the ubuntu runner always has docker, so
+// finding none there is a broken runner, not a developer-host allowance, and
+// this is the one guard that would otherwise go quiet about it. Every docker
+// command after this point (runDocker below) already fails rather than skips
+// on any error, so this preflight is the only place absence is even a
+// candidate for a skip.
 func requireDocker(t *testing.T) {
 	t.Helper()
 
-	if _, err := exec.LookPath("docker"); err != nil {
-		t.Skipf("docker is required to run the documented named-volume commands: %v", err)
-	}
+	testenv.RequireLookPath(t, "docker", "docker")
 }
 
 // runDocker runs one docker command with stdin, returning its stdout.

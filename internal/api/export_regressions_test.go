@@ -12,6 +12,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
+	"github.com/ovumcy/ovumcy-web/internal/testenv"
 )
 
 func TestExportCSVRespectsRequestedDateRange(t *testing.T) {
@@ -428,10 +429,7 @@ func TestExportSummaryUsesRequestTimezoneForRangeParsing(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "export-summary-timezone@example.com", "StrongPass1", true)
 
-	location, err := time.LoadLocation("Pacific/Kiritimati")
-	if err != nil {
-		t.Skipf("load Pacific/Kiritimati timezone: %v", err)
-	}
+	location := testenv.RequireTimeZone(t, "Pacific/Kiritimati")
 
 	localDay := time.Date(2026, time.March, 13, 0, 0, 0, 0, location)
 	if err := database.Create(&models.DailyLog{

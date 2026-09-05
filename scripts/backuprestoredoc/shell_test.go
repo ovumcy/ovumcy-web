@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ovumcy/ovumcy-web/internal/testenv"
 )
 
 // runbookCommandTimeout bounds one documented command. Every step here is a
@@ -80,13 +82,16 @@ func runScript(t *testing.T, dir string, script string) (string, error) {
 // redirections, the pipe and the line continuations are load-bearing parts of
 // the documented procedure — the `-T` of `docker compose exec` exists so the
 // dump can arrive on stdin — so the commands are run by a shell rather than
-// reassembled as argv.
+// reassembled as argv. Absence is a skip unless OVUMCY_REQUIRE_BASH declares
+// this lane owns the runbook check, in which case it is a failure — this
+// package is the only thing that runs the self-hosting runbook's commands at
+// all, so a lane that promised the check ran cannot report green having found
+// no shell. A bash that resolves but does not behave like one is a separate,
+// always-fatal case, checked once it is found rather than assumed.
 func bashPath(t *testing.T) string {
 	t.Helper()
 
-	path, err := exec.LookPath("bash")
-	if err != nil {
-		t.Skipf("bash is required to run the runbook's commands as written: %v", err)
-	}
+	path := testenv.RequireLookPath(t, "bash", "bash")
+	testenv.ProbeShell(t, path, "printf ok", "ok")
 	return path
 }

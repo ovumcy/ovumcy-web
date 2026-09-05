@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/testenv"
 )
 
 func TestDashboardCycleReferenceLengthPrefersObservedAverage(t *testing.T) {
@@ -49,10 +50,7 @@ func TestCompletedCycleTrendLengths(t *testing.T) {
 // to UTC-midnight and yields the true 28, agreeing with CycleLengths (which
 // operates on UTC-midnight starts and is immune to the location skew).
 func TestCompletedCycleTrendLengthsDSTSpringForward(t *testing.T) {
-	loc, err := time.LoadLocation("Europe/Berlin")
-	if err != nil {
-		t.Skipf("tz database unavailable: %v", err)
-	}
+	loc := testenv.RequireTimeZone(t, "Europe/Berlin")
 
 	logs := []models.DailyLog{
 		{Date: mustParseDashboardDay(t, "2026-03-15"), IsPeriod: true},
