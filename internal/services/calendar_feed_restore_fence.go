@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
@@ -192,6 +193,16 @@ func (fence *CalendarFeedRestoreFence) Enforce(ctx context.Context) (CalendarFee
 // this error instead of returning it: by then the fence has failed closed on
 // its own, and the operation being reported as failed would be a second,
 // larger lie than the missing marker.
+//
+// This method is the SERVER's own: it is called on behalf of the request that
+// is itself arming, rotating or removing the caller's OWN feed, where refusing
+// for want of a mounted volume would be the wrong trade. It is never the right
+// call for a process acting on someone ELSE's behalf — an operator revoking
+// another account's feed (`users delete`, a forced password reset) — because
+// there "the database half moves on alone" stops being a safe degradation and
+// becomes the defect this mechanism exists to close: a removal recorded
+// nowhere a restore of an older backup could contradict. AdvanceConfirmed
+// below exists for exactly that caller, and refuses instead.
 func (fence *CalendarFeedRestoreFence) Advance(ctx context.Context) error {
 	fence.writing.Lock()
 	defer fence.writing.Unlock()
@@ -202,6 +213,88 @@ func (fence *CalendarFeedRestoreFence) Advance(ctx context.Context) error {
 	}
 	if err := fence.anchor.Write(token); errors.Is(err, security.ErrCalendarFeedFenceNotConfigured) {
 		return nil
+	}
+	return fence.appState.Set(ctx, models.AppStateKeyCalendarFeedRestoreFence, token)
+}
+
+// ErrCalendarFeedFenceUnreachable is returned by AdvanceConfirmed when this
+// process cannot prove it is reading and writing the SAME anchor the server
+// does: CALENDAR_FEED_FENCE_PATH unset, no mount behind it, or any other
+// anchor failure, including one surfaced by the read half. It always wraps
+// the underlying cause.
+//
+// Advance answers the identical failure by letting the database half move on
+// alone (see its own doc comment) because an owner's request to change their
+// OWN feed must not be refused for want of a mounted volume. AdvanceConfirmed
+// exists for the opposite caller — an operator-driven revocation that is not
+// itself the fence's owner — where that same degradation would BE the defect
+// this whole mechanism exists to close. So on this path AdvanceConfirmed
+// writes NOTHING, in either half, and the caller refuses the operation
+// entirely instead.
+var ErrCalendarFeedFenceUnreachable = errors.New("calendar feed restore fence: could not confirm continuity")
+
+// CalendarFeedFenceContinuityError is returned by AdvanceConfirmed when the
+// anchor was reachable but the two halves are not the one pair AdvanceConfirmed
+// is willing to move forward from: both already holding the SAME token.
+// AnchorFound and StoredFound report which half(s) held one, because the
+// operator remedy differs by shape: both false means the server has never
+// booted with this fence configured at all — arming it is Enforce's job on a
+// first boot, never this method's — while any other combination is the same
+// disagreement a restored backup produces. Either way AdvanceConfirmed writes
+// nothing: a caller that cannot prove continuity must refuse, not guess which
+// half is right.
+type CalendarFeedFenceContinuityError struct {
+	AnchorFound, StoredFound bool
+}
+
+func (err *CalendarFeedFenceContinuityError) Error() string {
+	return fmt.Sprintf(
+		"calendar feed restore fence: the file and the database marker are not a known-agreeing pair (file present=%t, database present=%t)",
+		err.AnchorFound, err.StoredFound,
+	)
+}
+
+// AdvanceConfirmed is Advance's fail-closed sibling for a caller that is not
+// the fence's own owner-facing server process — today, the operator CLI
+// revoking a feed on someone else's behalf (`users delete`, a forced password
+// reset). Both methods answer the same question — "record that the set of
+// armed feeds just changed" — but must answer an unreachable or disagreeing
+// fence oppositely, for the reason ErrCalendarFeedFenceUnreachable's doc
+// comment gives.
+//
+// It refuses unless the anchor can be read AND the two halves already hold
+// the SAME token — the one condition Enforce calls a no-op — and only then
+// mints, writes the file, then the database marker, in that order, same as
+// Advance. A failure writing the database half after the file has already
+// moved is still returned here (unlike Advance, which has nothing left to
+// protect by dropping it): the file is now ahead of app_state, so the very
+// next boot reads that as a restore and disarms every armed feed — fail
+// closed, the same answer Advance's own unreachable-anchor path gives,
+// reached through a different door.
+func (fence *CalendarFeedRestoreFence) AdvanceConfirmed(ctx context.Context) error {
+	fence.writing.Lock()
+	defer fence.writing.Unlock()
+
+	anchored, anchorFound, err := fence.anchor.Read()
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrCalendarFeedFenceUnreachable, err)
+	}
+
+	stored, storedFound, err := fence.appState.Get(ctx, models.AppStateKeyCalendarFeedRestoreFence)
+	if err != nil {
+		return err
+	}
+
+	if !anchorFound || !storedFound || anchored != stored {
+		return &CalendarFeedFenceContinuityError{AnchorFound: anchorFound, StoredFound: storedFound}
+	}
+
+	token, err := security.NewCalendarFeedFenceToken()
+	if err != nil {
+		return err // codecov:ignore -- crypto/rand failure; unreachable without an OS-level entropy fault
+	}
+	if err := fence.anchor.Write(token); err != nil {
+		return fmt.Errorf("%w: %w", ErrCalendarFeedFenceUnreachable, err)
 	}
 	return fence.appState.Set(ctx, models.AppStateKeyCalendarFeedRestoreFence, token)
 }

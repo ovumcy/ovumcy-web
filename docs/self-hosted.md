@@ -469,7 +469,7 @@ The whole mechanism rests on where that file lives:
 - **It must be outside whatever your database backups capture.** The bundled compose stacks mount a separate `ovumcy_fence` volume for it, which the documented backup and restore commands never touch. A fence kept inside the data volume comes back with the database, agrees with it, and detects nothing.
 - **Never back it up, and never restore it.** It carries no health data and no secrets — it is an opaque marker — and losing it costs one round of re-generated subscribe URLs. Restoring it beside the database is the one action that defeats the fence.
 - **Nothing else depends on it.** Feeds are all it protects, so losing the fence volume disarms feeds on the next start and touches nothing else.
-- **Run the operator CLI where the fence is visible.** `ovumcy reset` and `ovumcy users delete` remove feed access, and reach the fence only if `CALENDAR_FEED_FENCE_PATH` is set in their shell — through [`docker compose exec`](#running-the-operator-cli-against-the-container) it is. Elsewhere they still run, but warn, and the next start disarms.
+- **Run the operator CLI where the fence is visible.** `ovumcy reset-password` and `ovumcy users delete` confirm and advance the same fence the server does, never merely warn. Through [`docker compose exec`](#running-the-operator-cli-against-the-container) they reach it; anywhere else they refuse, naming the variable, and change nothing.
 
 What happens when:
 

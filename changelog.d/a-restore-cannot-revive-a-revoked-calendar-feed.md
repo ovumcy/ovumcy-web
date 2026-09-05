@@ -27,11 +27,12 @@
   database agrees with it and detects nothing. Losing it is cheap by design: it holds no health data
   and no secrets, and the cost is one round of re-generated subscribe URLs.
 
-  **Run the operator CLI where the server's fence is visible.** `ovumcy reset` and
-  `ovumcy users delete` both remove calendar-feed access, and record that through the same
-  fence. Through `docker compose exec` on the running container they already see it; from a
-  host shell that does not, they still complete — an erasure never depends on a mount — but
-  warn, and the server disarms every armed calendar feed on its next start.
+  **Run the operator CLI where the server's fence is visible.** `ovumcy reset-password` and
+  `ovumcy users delete` both remove calendar-feed access, and now confirm and advance the same
+  fence before that removal is allowed to happen — never merely warn about it. Through
+  `docker compose exec` on the running container they already see it; from a host shell that
+  does not, they refuse instead of completing, naming the variable and what to run instead, and
+  change nothing.
 
   An instance with nowhere to keep the fence — the image pulled without the new volume, or the
   binary run outside compose with the variable unset — starts normally and keeps working, but

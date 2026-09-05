@@ -204,11 +204,14 @@ func TestRunResetPasswordCommandRejectsEmptyPromptedPassword(t *testing.T) {
 	}
 }
 
+// TestRunResetPasswordCommandRejectsWeakPassword needs the fence armed even
+// though the assertion is about password strength: the fence check now runs
+// ahead of ForceResetPassword*, so any prompted password that clears the
+// empty-string guard reaches it first, weak or not.
 func TestRunResetPasswordCommandRejectsWeakPassword(t *testing.T) {
-	t.Parallel()
-
 	databasePath := createCLIResetDatabase(t)
 	createCLIResetUser(t, databasePath, "cli-reset-weak-password@example.com", "StrongPass1")
+	armOperatorFence(t, databasePath)
 
 	err := runResetPasswordCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
@@ -232,10 +235,9 @@ func TestRunResetPasswordCommandRejectsWeakPassword(t *testing.T) {
 // message names bytes on purpose — unlike the owner-facing copy, an operator
 // terminal is a place where a reader can count them.
 func TestRunResetPasswordCommandRejectsPasswordOverTheByteLimit(t *testing.T) {
-	t.Parallel()
-
 	databasePath := createCLIResetDatabase(t)
 	createCLIResetUser(t, databasePath, "cli-reset-long-password@example.com", "StrongPass1")
+	armOperatorFence(t, databasePath)
 
 	passphrase := "Пароль1" + strings.Repeat("ы", 30)
 	if runes, bytes := len([]rune(passphrase)), len(passphrase); runes > 72 || bytes <= 72 {
@@ -265,10 +267,15 @@ func TestRunResetPasswordCommandRejectsPasswordOverTheByteLimit(t *testing.T) {
 	}
 }
 
+// TestRunResetPasswordCommandReportsMissingUser needs the fence armed for the
+// same reason as the weak/over-limit cases above: the fence check runs before
+// the target is resolved, so an unknown address still has to clear it first.
+// AdvanceConfirmed only ever moves both halves together, so advancing it on a
+// lookup that is about to fail costs nothing — the halves stay equal either
+// way, and the very next call sees them agreeing again.
 func TestRunResetPasswordCommandReportsMissingUser(t *testing.T) {
-	t.Parallel()
-
 	databasePath := createCLIResetDatabase(t)
+	armOperatorFence(t, databasePath)
 
 	err := runResetPasswordCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
@@ -287,11 +294,10 @@ func TestRunResetPasswordCommandReportsMissingUser(t *testing.T) {
 // so reset-password needs the same `--id` form `users delete` and
 // `users set-email` already have.
 func TestRunResetPasswordCommandAddressesAccountByID(t *testing.T) {
-	t.Parallel()
-
 	databasePath := createCLIResetDatabase(t)
 	createCLIResetUser(t, databasePath, "cli-reset-by-id@example.com", "StrongPass1")
 	userID := loadCLIResetUser(t, databasePath, "cli-reset-by-id@example.com").ID
+	armOperatorFence(t, databasePath)
 
 	var output strings.Builder
 	err := runResetPasswordCommand(
@@ -315,11 +321,11 @@ func TestRunResetPasswordCommandAddressesAccountByID(t *testing.T) {
 
 // TestRunResetPasswordCommandRejectsUnknownID is the "id that does not exist"
 // case: an id with no matching row must be refused by name, not treated as a
-// no-op or matched against nothing.
+// no-op or matched against nothing. Needs the fence armed for the same reason
+// TestRunResetPasswordCommandReportsMissingUser does.
 func TestRunResetPasswordCommandRejectsUnknownID(t *testing.T) {
-	t.Parallel()
-
 	databasePath := createCLIResetDatabase(t)
+	armOperatorFence(t, databasePath)
 
 	err := runResetPasswordCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},

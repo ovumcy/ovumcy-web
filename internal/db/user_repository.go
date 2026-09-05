@@ -1409,6 +1409,13 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 	// here with neither half written and a writable fence, which WOULD lose the
 	// record; it takes an OS-level entropy fault, and Advance marks it
 	// unreachable for the same reason.)
+	//
+	// That reasoning holds for THIS caller — the server process, whose anchor is
+	// the fence file it was booted with, acting on the owner's own request. It
+	// does not extend to the operator CLI wiping someone else's data: that path
+	// confirms and advances the same fence through AdvanceConfirmed before its
+	// own write, and refuses rather than reaching this method at all when it
+	// cannot (internal/cli).
 	_ = repo.advanceCalendarFeedFence(ctx)
 	return nil
 }
@@ -1465,6 +1472,13 @@ func (repo *UserRepository) DeleteAccountAndRelatedData(ctx context.Context, use
 	// written means the fence file is unwritable, which sends every later boot
 	// down Enforce's unanchored path. Both disarm. See ClearAllDataAndResetSettings
 	// for the third, unreachable route.
+	//
+	// That reasoning holds for THIS caller — the server process, whose anchor is
+	// the fence file it was booted with, acting on the owner's own request. The
+	// operator CLI's `users delete` does not reach this best-effort call as its
+	// only protection: it confirms and advances the same fence through
+	// AdvanceConfirmed before it ever calls this method, and refuses the whole
+	// deletion when it cannot (internal/cli).
 	_ = repo.advanceCalendarFeedFence(ctx)
 	return nil
 }

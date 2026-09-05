@@ -234,7 +234,7 @@ func operatorUserServiceForCLITest(t *testing.T, databasePath string) *services.
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
-	repositories := buildRepositories(database)
+	repositories, _ := buildRepositories(database)
 	return services.NewOperatorUserService(repositories.Users, services.NewAuthService(repositories.Users))
 }
 
@@ -283,8 +283,12 @@ func TestRunUsersDeleteRequiresConfirmationInputWhenYesFlagIsAbsent(t *testing.T
 	user := createCLIUsersUser(t, databasePath, "needs-confirmation@example.com", "Owner", models.RoleOwner, true, nowUTC())
 	seedCLIUsersHealthData(t, databasePath, user.ID)
 
+	// The fence is never reached: readDeleteConfirmation fails first, so a
+	// blank path and a nil fence are safe here.
 	err := runUsersDelete(
 		mustCLIUsersService(t, databasePath),
+		"",
+		nil,
 		[]string{"needs-confirmation@example.com"},
 		nil,
 		&bytes.Buffer{},

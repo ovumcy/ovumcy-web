@@ -75,11 +75,10 @@ func TestRunUsersCommandDeleteRequiresExplicitConfirmation(t *testing.T) {
 }
 
 func TestRunUsersCommandDeleteRemovesAccountAndRelatedDataAfterExplicitConfirmation(t *testing.T) {
-	t.Parallel()
-
 	databasePath := createCLIUsersDatabase(t)
 	user := createCLIUsersUser(t, databasePath, "owner@example.com", "Owner", models.RoleOwner, true, time.Now().UTC())
 	seedCLIUsersHealthData(t, databasePath, user.ID)
+	armOperatorFence(t, databasePath)
 
 	var output bytes.Buffer
 	err := runUsersCommand(
@@ -99,10 +98,9 @@ func TestRunUsersCommandDeleteRemovesAccountAndRelatedDataAfterExplicitConfirmat
 }
 
 func TestRunUsersCommandDeleteRemovesAccountWithYesFlag(t *testing.T) {
-	t.Parallel()
-
 	databasePath := createCLIUsersDatabase(t)
 	createCLIUsersUser(t, databasePath, "owner@example.com", "Owner", models.RoleOwner, true, time.Now().UTC())
+	armOperatorFence(t, databasePath)
 
 	var output bytes.Buffer
 	err := runUsersCommand(
@@ -646,14 +644,13 @@ func TestRunUsersCommandSetEmailRejectsADecoratedAddressAndAnUnknownID(t *testin
 }
 
 func TestRunUsersCommandDeleteByIDConfirmsAgainstTheStoredIdentity(t *testing.T) {
-	t.Parallel()
-
 	databasePath := createCLIUsersDatabase(t)
 	winner := createCLIUsersUser(t, databasePath, "dup@example.com", "Winner", models.RoleOwner, true, time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC))
 	collided := createCLIUsersUser(t, databasePath, "collided-placeholder@example.com", "Collided", models.RoleOwner, true, time.Date(2026, time.March, 2, 10, 0, 0, 0, time.UTC))
 	seedCLIUsersHealthData(t, databasePath, winner.ID)
 	seedCLIUsersHealthData(t, databasePath, collided.ID)
 	setCLIUsersStoredEmail(t, databasePath, collided.ID, "second account <dup@example.com>")
+	armOperatorFence(t, databasePath)
 
 	var output bytes.Buffer
 	if err := runUsersCommand(
@@ -730,5 +727,6 @@ func authenticateCLIUser(t *testing.T, databasePath string, email string, passwo
 	if normalized == "" {
 		t.Fatalf("test fixture email %q is not a valid sign-in input", email)
 	}
-	return services.NewAuthService(buildRepositories(database).Users).AuthenticateCredentials(context.Background(), normalized, password)
+	repositories, _ := buildRepositories(database)
+	return services.NewAuthService(repositories.Users).AuthenticateCredentials(context.Background(), normalized, password)
 }

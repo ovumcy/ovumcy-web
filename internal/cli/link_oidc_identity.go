@@ -167,7 +167,7 @@ func runLinkOIDCIdentityCommand(databaseConfig db.Config, oidcConfig security.OI
 		_ = sqlDB.Close()
 	}()
 
-	repositories := buildRepositories(database)
+	repositories, _ := buildRepositories(database)
 	userService := services.NewOperatorUserService(repositories.Users, services.NewAuthService(repositories.Users))
 
 	target, err := resolveLinkOIDCIdentityTarget(userService, opts)

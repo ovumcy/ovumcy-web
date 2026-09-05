@@ -152,8 +152,22 @@ func runResetPasswordCommand(databaseConfig db.Config, args []string, prompt pas
 		return errors.New("password is required")
 	}
 
-	repositories := buildRepositories(database)
+	repositories, fence := buildRepositories(database)
 	authService := services.NewAuthService(repositories.Users)
+
+	// A forced reset force-clears the owner's calendar feed, so this process
+	// must confirm and advance the SAME fence the server does before the reset
+	// is even attempted — never merely warn about it. This runs ahead of
+	// resolving the target account: services.AuthService is what resolves an
+	// address (including the ambiguous-match refusal --id exists to route
+	// around), and duplicating that resolution here just to order the fence
+	// check after it would duplicate that refusal too. The cost is that an
+	// unknown email or id advances the fence before the "not found" error
+	// surfaces — harmless, since AdvanceConfirmed only ever moves both halves
+	// together, so they stay equal either way.
+	if err := confirmOperatorFeedRevocation(context.Background(), calendarFeedFencePath(), fence, os.Stderr); err != nil {
+		return err
+	}
 
 	var resetErr error
 	if opts.userID != 0 {
@@ -164,13 +178,6 @@ func runResetPasswordCommand(databaseConfig db.Config, args []string, prompt pas
 	if resetErr != nil {
 		return mapResetPasswordError(resetErr, opts, normalizedEmail)
 	}
-
-	// Raised only once the reset has actually happened: a forced reset
-	// force-clears the owner's calendar feed, and until this point the command
-	// could still have exited on an unknown email or a rejected password,
-	// having changed no feed state at all. A warning printed on those runs is
-	// one an operator learns to skip past on the run that matters.
-	warnAboutAnUnreachableCalendarFeedFence(os.Stderr)
 
 	if output == nil {
 		output = os.Stdout
