@@ -157,6 +157,33 @@ func TestOIDCCallbackQueryModeIgnoresBody(t *testing.T) {
 	}
 }
 
+// TestHeadQueryModeCallbackDoesNotConsumeTheStateCookie is the behavioral half
+// of query-mode GET /auth/oidc/callback carrying refuseHEADOnShownOnceSurface:
+// CompleteOIDCLogin would otherwise run on HEAD and consume the sealed
+// one-time state cookie together with the provider's single-use code for a
+// response whose body the wire always drops.
+func TestHeadQueryModeCallbackDoesNotConsumeTheStateCookie(t *testing.T) {
+	t.Parallel()
+
+	app, stub, stateCookie, state := startQueryModeOIDC(t)
+
+	target := security.OIDCCallbackPath + "?" + url.Values{
+		"state": {state},
+		"code":  {"provider-code"},
+	}.Encode()
+	headRequest := httptest.NewRequest(http.MethodHead, target, nil)
+	headRequest.Header.Set("Cookie", stateCookie)
+
+	headResponse := mustAppResponse(t, app, headRequest)
+	assertStatusCode(t, headResponse, http.StatusNotFound)
+	if stub.lastAuthCode != "" {
+		t.Fatalf("HEAD on the query-mode callback must not reach the provider exchange, got code %q", stub.lastAuthCode)
+	}
+	if retracted := responseCookie(headResponse.Cookies(), oidcStateCookieName); retracted != nil {
+		t.Fatalf("expected HEAD on the query-mode callback to leave the sealed state cookie untouched, got Set-Cookie %#v", retracted)
+	}
+}
+
 // TestOIDCCallbackFormPostModeRejectsGET pins that the default form_post mode
 // never registers the GET callback route: a GET falls through to NotFound.
 func TestOIDCCallbackFormPostModeRejectsGET(t *testing.T) {

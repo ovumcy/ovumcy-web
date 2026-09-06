@@ -79,6 +79,41 @@ func TestFlashCookieUsesSealedTransport(t *testing.T) {
 	assertSealedCookieEnvelope(t, flashCookie.Value, &FlashPayload{})
 }
 
+// TestHeadDoesNotPopTheFlashCookie pins the property popFlashCookie's HEAD
+// guard exists for: registerHEADTwins runs ShowLoginPage's full chain on HEAD
+// before any owner GET arrives, and the flash cookie is single-use, so an
+// uptime monitor's or a link preview's HEAD must not be the request that
+// spends it — the HEAD response discards its body on the wire regardless, so
+// nothing would ever have been shown for that read.
+func TestHeadDoesNotPopTheFlashCookie(t *testing.T) {
+	app, _ := newOnboardingTestApp(t)
+
+	serialized, err := json.Marshal(FlashPayload{AuthError: "invalid credentials"})
+	if err != nil {
+		t.Fatalf("marshal flash payload: %v", err)
+	}
+	sealed := sealCookieForTestApp(t, flashCookieName, serialized)
+
+	headRequest := httptest.NewRequest(http.MethodHead, "/login", nil)
+	headRequest.Header.Set("Accept-Language", "en")
+	headRequest.Header.Set("Cookie", flashCookieName+"="+sealed)
+	headResponse := mustAppResponse(t, app, headRequest)
+	if headResponse.StatusCode != http.StatusOK {
+		t.Fatalf("expected HEAD /login to answer like its GET, got %d", headResponse.StatusCode)
+	}
+	if retracted := responseCookie(headResponse.Cookies(), flashCookieName); retracted != nil {
+		t.Fatalf("expected a HEAD request to leave the flash cookie untouched, got Set-Cookie %#v", retracted)
+	}
+
+	// The anchor: the owner's own GET, presented with the very same sealed
+	// value the HEAD above left alone, still renders the flash it carries.
+	getResponse := loginPageWithFlashCookie(t, app, sealed)
+	body := mustReadBodyString(t, getResponse.Body)
+	if htmlAuthErrorByKey(mustParseHTMLDocument(t, body), "auth.error.invalid_credentials") == nil {
+		t.Fatal("expected the owner's own GET, after a HEAD on the same cookie, to still render the flash")
+	}
+}
+
 // TestSealedEnvelopeAroundPlaintextFlashPayloadIsRefused pins the half of the
 // "sealed cookies" invariant that a shape check on the response cannot reach: a
 // value wearing the v2 envelope over base64url(plaintext JSON) is not a sealed
