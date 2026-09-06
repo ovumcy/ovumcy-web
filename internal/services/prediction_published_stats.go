@@ -96,7 +96,7 @@ func PublishedStats(user *models.User, stats CycleStats) (CycleStats, Prediction
 // The JSON API was the one surface that skipped this: it read stats.
 // OvulationDate straight off the model and published it even after a BBT
 // shift had superseded it, while the grid, the dashboard and the chart had
-// already moved on to the measured day. The substitution runs on the RAW
+// already moved on to the confirmed day. The substitution runs on the RAW
 // stats, ahead of PublishedStats' own clearing, for the same reason the
 // dashboard's runs ahead of its suppression branches: ConfirmedCurrentCycleOvulation
 // already reads FertilityProjectionSuppressed itself, so a confirmed day
