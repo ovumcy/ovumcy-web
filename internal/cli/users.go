@@ -19,10 +19,10 @@ import (
 )
 
 func RunUsersCommand(databaseConfig db.Config, args []string) error {
-	return runUsersCommand(databaseConfig, args, os.Stdin, os.Stdout)
+	return runUsersCommand(databaseConfig, args, calendarFeedFencePath(), os.Stdin, os.Stdout)
 }
 
-func runUsersCommand(databaseConfig db.Config, args []string, input io.Reader, output io.Writer) error {
+func runUsersCommand(databaseConfig db.Config, args []string, fencePath string, input io.Reader, output io.Writer) error {
 	if len(args) == 0 {
 		return errors.New("usage: ovumcy users <list|delete|create|set-email>")
 	}
@@ -61,7 +61,7 @@ func runUsersCommand(databaseConfig db.Config, args []string, input io.Reader, o
 		_ = sqlDB.Close()
 	}()
 
-	repositories, fence, fencePath := buildRepositories(database)
+	repositories, fence := buildRepositories(database, fencePath)
 	service := services.NewOperatorUserService(repositories.Users, services.NewAuthService(repositories.Users))
 
 	switch subcommand {
@@ -123,9 +123,17 @@ func runUsersDelete(service *services.OperatorUserService, fencePath string, fen
 		return err
 	}
 
-	user, err := opts.resolve(service)
+	normalizedEmail := ""
+	if opts.userID == 0 {
+		normalizedEmail, err = normalizeOperatorEmailArgument(opts.email)
+		if err != nil {
+			return err
+		}
+	}
+
+	user, err := resolveOperatorUser(service, opts.userID, normalizedEmail)
 	if err != nil {
-		return err
+		return mapUsersDeleteError(err, opts.userID, normalizedEmail)
 	}
 
 	if output == nil {
@@ -157,32 +165,33 @@ func runUsersDelete(service *services.OperatorUserService, fencePath string, fen
 
 	deletedUser, err := opts.delete(service)
 	if err != nil {
-		return err
+		return operatorFeedRevocationCommitted(mapUsersDeleteError(err, opts.userID, normalizedEmail))
 	}
 	_, _ = fmt.Fprintf(output, "Deleted account %q (id=%d).\n", deletedUser.Email, deletedUser.ID)
 	return nil
 }
 
+// mapUsersDeleteError adds the one refusal the shared lookup mapper cannot
+// name — the erasure itself failing — and leaves every other shape to it. The
+// delete re-resolves the row internally, so a row removed in the window
+// between this command's own resolve and its write arrives here as the same
+// not-found the resolve would have reported.
+func mapUsersDeleteError(err error, userID uint, normalizedEmail string) error {
+	if errors.Is(err, services.ErrOperatorUserDeleteFailed) {
+		return fmt.Errorf("delete account: %w", err)
+	}
+	return mapOperatorUserLookupError(err, userID, normalizedEmail)
+}
+
 const usersDeleteUsage = "usage: ovumcy users delete <email>|--id <id> [--yes]"
 
-// usersDeleteOptions carries exactly one handle. The id form exists because the
-// address form cannot reach every row: a legacy stored value the strict
-// NormalizeAuthEmail rule refuses is rejected before any lookup runs, and its
-// bare address resolves the OTHER account on that mailbox — the one the boot
-// repair let keep the address — so an operator following the leftover runbook
-// with the address in front of them would erase the wrong account's health
-// history.
+// usersDeleteOptions carries exactly one handle, resolved by
+// resolveOperatorUser, whose doc comment carries why the id form has to exist
+// beside the address one.
 type usersDeleteOptions struct {
 	email       string
 	userID      uint
 	skipConfirm bool
-}
-
-func (opts usersDeleteOptions) resolve(service *services.OperatorUserService) (models.OperatorUserSummary, error) {
-	if opts.userID != 0 {
-		return service.GetUserByID(context.Background(), opts.userID)
-	}
-	return service.GetUserByEmail(context.Background(), opts.email)
 }
 
 func (opts usersDeleteOptions) delete(service *services.OperatorUserService) (models.OperatorUserSummary, error) {
@@ -399,7 +408,7 @@ func runUsersSetEmail(service *services.OperatorUserService, args []string, outp
 
 	before, after, err := service.SetEmailByID(context.Background(), opts.userID, opts.email)
 	if err != nil {
-		return mapUsersSetEmailError(err)
+		return mapUsersSetEmailError(err, opts.userID)
 	}
 
 	if output == nil {
@@ -454,12 +463,15 @@ func parseUsersSetEmailArgs(args []string) (usersSetEmailOptions, error) {
 	return opts, nil
 }
 
-func mapUsersSetEmailError(err error) error {
+// mapUsersSetEmailError takes the id it was addressed by so the two refusals
+// it shares with every other account subcommand — an absent id, an id that
+// names no row — can be answered by mapOperatorUserLookupError in the one
+// wording all of them use. The rest are this command's own: here the address
+// is the NEW value being written, not a handle a lookup failed on.
+func mapUsersSetEmailError(err error, userID uint) error {
 	switch {
-	case errors.Is(err, services.ErrOperatorUserIDRequired):
-		return errors.New("an account id is required (see ovumcy users list)")
-	case errors.Is(err, services.ErrOperatorUserNotFound):
-		return errors.New("no account carries this id (see ovumcy users list)")
+	case errors.Is(err, services.ErrOperatorUserIDRequired), errors.Is(err, services.ErrOperatorUserNotFound):
+		return mapOperatorUserLookupError(err, userID, "")
 	case errors.Is(err, services.ErrOperatorUserEmailRequired):
 		return errors.New("email is required")
 	case errors.Is(err, services.ErrOperatorUserEmailInvalid):

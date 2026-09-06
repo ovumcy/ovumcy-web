@@ -38,7 +38,7 @@ func TestRunUsersCommandUsageErrors(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			err := runUsersCommand(db.Config{}, testCase.args, strings.NewReader(""), &bytes.Buffer{})
+			err := runUsersCommand(db.Config{}, testCase.args, "", strings.NewReader(""), &bytes.Buffer{})
 			if err == nil || err.Error() != testCase.want {
 				t.Fatalf("expected error %q, got %v", testCase.want, err)
 			}
@@ -55,6 +55,7 @@ func TestRunUsersCommandListShowsEmptyState(t *testing.T) {
 	err := runUsersCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"list"},
+		"",
 		strings.NewReader(""),
 		&output,
 	)
@@ -166,6 +167,11 @@ func TestParseUsersSetEmailArgs(t *testing.T) {
 // is the authority on its own preconditions, and a mapper that answers only
 // the errors today's parser lets through turns a later parser change into an
 // unreadable "set email: operator user ..." line.
+//
+// The two account-lookup refusals are asserted in the SHARED wording, not this
+// command's own: `set-email` used to answer an unknown id with "no account
+// carries this id", a third phrasing beside the two the other subcommands
+// already had, for the same failure the operator meets under three commands.
 func TestMapUsersSetEmailError(t *testing.T) {
 	t.Parallel()
 
@@ -175,7 +181,7 @@ func TestMapUsersSetEmailError(t *testing.T) {
 		want string
 	}{
 		{name: "missing id", err: services.ErrOperatorUserIDRequired, want: "an account id is required (see ovumcy users list)"},
-		{name: "unknown id", err: services.ErrOperatorUserNotFound, want: "no account carries this id (see ovumcy users list)"},
+		{name: "unknown id", err: services.ErrOperatorUserNotFound, want: "no account carries id 7 (see ovumcy users list)"},
 		{name: "empty email", err: services.ErrOperatorUserEmailRequired, want: "email is required"},
 		{name: "decorated email", err: services.ErrOperatorUserEmailInvalid, want: "invalid email address: pass the bare address, with no display name or angle brackets"},
 		{name: "address taken", err: services.ErrOperatorUserEmailExists, want: "another account already answers to this email address"},
@@ -188,7 +194,7 @@ func TestMapUsersSetEmailError(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			if got := mapUsersSetEmailError(testCase.err); got == nil || got.Error() != testCase.want {
+			if got := mapUsersSetEmailError(testCase.err, 7); got == nil || got.Error() != testCase.want {
 				t.Fatalf("expected %q, got %v", testCase.want, got)
 			}
 		})
@@ -234,7 +240,7 @@ func operatorUserServiceForCLITest(t *testing.T, databasePath string) *services.
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
-	repositories, _, _ := buildRepositories(database)
+	repositories, _ := buildRepositories(database, "")
 	return services.NewOperatorUserService(repositories.Users, services.NewAuthService(repositories.Users))
 }
 
@@ -486,6 +492,7 @@ func TestRunUsersCommandReportsDatabaseInitFailure(t *testing.T) {
 	err := runUsersCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: t.TempDir()},
 		[]string{"list"},
+		"",
 		bytes.NewReader(nil),
 		io.Discard,
 	)

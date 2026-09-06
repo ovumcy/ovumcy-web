@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"errors"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -253,33 +252,6 @@ func TestParseLinkOIDCIdentityStringFlagBranches(t *testing.T) {
 	}
 }
 
-// TestMapLinkOIDCIdentityLookupErrorBranches unit-tests the pure mapper
-// directly with constructed sentinels, the same style
-// TestMapResetPasswordErrorFormatsAmbiguousEmail already uses for the sibling
-// command — cheaper and more precise than engineering a live DB fixture for
-// each outcome.
-func TestMapLinkOIDCIdentityLookupErrorBranches(t *testing.T) {
-	t.Parallel()
-
-	ambiguous := &services.AmbiguousEmailError{Email: "owner@example.com", IDs: []uint{5, 18}}
-	if err := mapLinkOIDCIdentityLookupError(ambiguous, linkOIDCIdentityOptions{}, "owner@example.com"); err == nil || !strings.Contains(err.Error(), "retry with --id") {
-		t.Fatalf("expected an ambiguous-email refusal, got %v", err)
-	}
-
-	if err := mapLinkOIDCIdentityLookupError(services.ErrOperatorUserNotFound, linkOIDCIdentityOptions{userID: 42}, ""); err == nil || !strings.Contains(err.Error(), "id 42") {
-		t.Fatalf("expected an id-not-found refusal naming the id, got %v", err)
-	}
-	if err := mapLinkOIDCIdentityLookupError(services.ErrOperatorUserNotFound, linkOIDCIdentityOptions{}, "owner@example.com"); err == nil || !strings.Contains(err.Error(), "owner@example.com") {
-		t.Fatalf("expected an email-not-found refusal naming the email, got %v", err)
-	}
-	if err := mapLinkOIDCIdentityLookupError(services.ErrOperatorUserIDRequired, linkOIDCIdentityOptions{}, ""); err == nil || !strings.Contains(err.Error(), "an account id is required") {
-		t.Fatalf("expected the id-required refusal, got %v", err)
-	}
-	if err := mapLinkOIDCIdentityLookupError(errors.New("boom"), linkOIDCIdentityOptions{}, ""); err == nil || !strings.Contains(err.Error(), "look up account") {
-		t.Fatalf("expected the generic lookup-failure fallback, got %v", err)
-	}
-}
-
 // TestMapLinkOIDCIdentityLinkErrorBranches is the ConfirmAndLinkIdentity-side
 // counterpart of the lookup-error test above.
 func TestMapLinkOIDCIdentityLinkErrorBranches(t *testing.T) {
@@ -298,7 +270,7 @@ func TestMapLinkOIDCIdentityLinkErrorBranches(t *testing.T) {
 
 // TestRunLinkOIDCIdentityCommandLinksByEmail is the email-addressed sibling of
 // TestRunLinkOIDCIdentityCommandLinksByID: both addressing forms reach
-// ConfirmAndLinkIdentity through resolveLinkOIDCIdentityTarget.
+// ConfirmAndLinkIdentity through resolveOperatorUser.
 func TestRunLinkOIDCIdentityCommandLinksByEmail(t *testing.T) {
 	t.Parallel()
 
@@ -355,7 +327,7 @@ func TestRunLinkOIDCIdentityCommandRefusesInvalidDatabaseConfig(t *testing.T) {
 
 // TestRunLinkOIDCIdentityCommandReportsAGenericLookupFailure drives a REAL
 // storage error (rather than a constructed sentinel) through
-// resolveLinkOIDCIdentityTarget's default arm: with the users table gone, the
+// mapOperatorUserLookupError's default arm: with the users table gone, the
 // id lookup fails for reasons that are not "not found", and the command must
 // say so rather than misreport it as an unknown id.
 func TestRunLinkOIDCIdentityCommandReportsAGenericLookupFailure(t *testing.T) {

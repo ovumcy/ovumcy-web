@@ -4,89 +4,129 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/db"
 	"github.com/ovumcy/ovumcy-web/internal/models"
-	"github.com/ovumcy/ovumcy-web/internal/security"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 	"golang.org/x/crypto/bcrypt"
 )
 
 // TestUsersDeleteRefusesAndDeletesNothingWithoutAConfirmedFence covers the
 // realistic shapes an operator's shell can be in when a fence cannot be
-// confirmed, and pins that every one of them leaves the account exactly where
-// it was: unset, a relative path, a volume that was never mounted, a file
-// that disagrees with the database marker (what a restore that has not yet
-// been booted against looks like), and a path that is set but neither half
-// has ever recorded anything (the server has not booted with this fence
-// configured yet).
+// confirmed, and pins for each one BOTH halves of the refusal: that the
+// account is exactly where it was, and that the message names this state
+// rather than a neighbouring one. Asserting only "Nothing was changed" would
+// pass with every case rendering the same sentence, which is the failure mode
+// the per-state texts exist to prevent — two of these shapes previously shared
+// a state, and the suite was green.
 //
-// Not run with t.Parallel(): several cases call t.Setenv (directly or through
-// armOperatorFence), which panics after t.Parallel.
+// Each case supplies its own fence path rather than an environment variable,
+// so all of them run in parallel.
 func TestUsersDeleteRefusesAndDeletesNothingWithoutAConfirmedFence(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
-		name  string
-		setUp func(t *testing.T, databasePath string)
+		name string
+		// fencePath returns the path the command is given. It runs after the
+		// account exists, so a case can arm the fence against that database
+		// first and then disturb one half of it.
+		fencePath  func(t *testing.T, databasePath string) string
+		wantState  string
+		wantRemedy string
 	}{
 		{
-			name: "unset",
-			setUp: func(t *testing.T, _ string) {
-				t.Setenv(security.CalendarFeedFencePathEnv, "")
-			},
+			name:       "unset",
+			fencePath:  func(*testing.T, string) string { return "" },
+			wantState:  "is not set in this shell",
+			wantRemedy: "docker exec",
 		},
 		{
 			name: "a relative path, copied out of a compose file into a shell whose working directory is not the server's",
-			setUp: func(t *testing.T, _ string) {
-				t.Setenv(security.CalendarFeedFencePathEnv, filepath.Join("fence", "calendar-feed.fence"))
+			fencePath: func(*testing.T, string) string {
+				return filepath.Join("fence", "calendar-feed.fence")
 			},
+			wantState:  "a relative path that resolves against this process's own working directory",
+			wantRemedy: "Reconfigure the SERVER",
 		},
 		{
-			name: "a fence volume that was never mounted",
-			setUp: func(t *testing.T, _ string) {
-				t.Setenv(security.CalendarFeedFencePathEnv, filepath.Join(t.TempDir(), "never-mounted", "calendar-feed.fence"))
+			// The database is armed FIRST: an unmounted volume with nothing
+			// recorded anywhere is the never-armed shape below, not this one.
+			// Without the arming, this case and that one produced the same
+			// refusal and the difference between them went untested.
+			name: "the database is armed but the fence volume was never mounted",
+			fencePath: func(t *testing.T, databasePath string) string {
+				armOperatorFence(t, databasePath)
+				return filepath.Join(t.TempDir(), "never-mounted", "calendar-feed.fence")
 			},
+			wantState:  "no fence value is visible from this process",
+			wantRemedy: "starting it once rewrites both halves",
+		},
+		{
+			// A directory, not a file: the one Read failure an operator can
+			// actually produce on a path that exists. A missing directory is
+			// reported as absent, never as a read failure, so it cannot reach
+			// this state — which is why the old text's "whose directory does
+			// not exist" described something unreachable.
+			name: "the path names a directory rather than a fence file",
+			fencePath: func(t *testing.T, _ string) string {
+				return t.TempDir()
+			},
+			wantState:  "cannot read or write",
+			wantRemedy: "docker exec",
 		},
 		{
 			name: "the file and the database marker disagree",
-			setUp: func(t *testing.T, databasePath string) {
+			fencePath: func(t *testing.T, databasePath string) string {
 				fencePath := armOperatorFence(t, databasePath)
 				if err := os.WriteFile(fencePath, []byte("a-different-generation\n"), 0o600); err != nil {
 					t.Fatalf("rewrite fence file: %v", err)
 				}
+				return fencePath
 			},
+			wantState:  "hold different tokens",
+			wantRemedy: "Start the server once",
 		},
 		{
 			name: "neither half has ever recorded a token",
-			setUp: func(t *testing.T, _ string) {
-				t.Setenv(security.CalendarFeedFencePathEnv, filepath.Join(t.TempDir(), "calendar-feed.fence"))
+			fencePath: func(t *testing.T, _ string) string {
+				return filepath.Join(t.TempDir(), "calendar-feed.fence")
 			},
+			wantState:  "has ever recorded a marker",
+			wantRemedy: "writable fence",
 		},
 	}
 
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
 			databasePath := createCLIUsersDatabase(t)
 			createCLIUsersUser(t, databasePath, "owner@example.com", "Owner", models.RoleOwner, true, time.Now().UTC())
-			testCase.setUp(t, databasePath)
+			fencePath := testCase.fencePath(t, databasePath)
 
 			var output bytes.Buffer
 			err := runUsersCommand(
 				db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 				[]string{"delete", "owner@example.com", "--yes"},
+				fencePath,
 				strings.NewReader(""),
 				&output,
 			)
 			if err == nil {
 				t.Fatal("expected the deletion to be refused")
 			}
-			if !strings.Contains(err.Error(), "Nothing was changed") {
-				t.Fatalf("expected the refusal to say nothing was changed, got %v", err)
+			for _, want := range []string{testCase.wantState, testCase.wantRemedy, "Nothing was changed"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("expected the refusal to contain %q, got %v", want, err)
+				}
 			}
 			if remaining := listCLIUserEmails(t, databasePath); len(remaining) != 1 || remaining[0] != "owner@example.com" {
 				t.Fatalf("expected the account to survive a refused revocation, got %#v", remaining)
@@ -176,13 +216,15 @@ func TestUsersDeleteAdvancesTheFenceBeforeTheRow(t *testing.T) {
 // one — that the stored password hash and must_change_password are both
 // exactly where the account left them.
 func TestResetPasswordRefusesWithoutAConfirmedFenceAndLeavesTheHashAlone(t *testing.T) {
+	t.Parallel()
+
 	databasePath := createCLIResetDatabase(t)
 	createCLIResetUser(t, databasePath, "cli-reset-unfenced@example.com", "StrongPass1")
-	t.Setenv(security.CalendarFeedFencePathEnv, "")
 
 	err := runResetPasswordCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"cli-reset-unfenced@example.com"},
+		"",
 		func() ([]byte, error) { return []byte("EvenStronger2"), nil },
 		io.Discard,
 	)
@@ -208,8 +250,12 @@ func TestResetPasswordRefusesWithoutAConfirmedFenceAndLeavesTheHashAlone(t *test
 // is asserted here rather than left implied — a run whose stderr is silent
 // and whose password is unchanged is indistinguishable from a refusal.
 //
-// Not run with t.Parallel(): it swaps os.Stderr, and armOperatorFence calls
-// t.Setenv.
+// The error the operator gets must say the same thing the stderr line does:
+// a bare "reset password: ..." after a gate that already spent its one-shot
+// advance reads as "the command did nothing", and the operator's next move —
+// whether to re-run at all — depends on knowing otherwise.
+//
+// Not run with t.Parallel(): it swaps os.Stderr.
 func TestResetPasswordReportsAWriteFailureAfterTheFenceHasAlreadyAdvanced(t *testing.T) {
 	databasePath := createCLIResetDatabase(t)
 	createCLIResetUser(t, databasePath, "cli-reset-write-refused@example.com", "StrongPass1")
@@ -220,6 +266,7 @@ func TestResetPasswordReportsAWriteFailureAfterTheFenceHasAlreadyAdvanced(t *tes
 	err := runResetPasswordCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"cli-reset-write-refused@example.com"},
+		fencePath,
 		func() ([]byte, error) { return []byte("EvenStronger2"), nil },
 		io.Discard,
 	)
@@ -230,6 +277,18 @@ func TestResetPasswordReportsAWriteFailureAfterTheFenceHasAlreadyAdvanced(t *tes
 	}
 	if !strings.HasPrefix(err.Error(), "reset password: ") {
 		t.Fatalf("expected mapResetPasswordError's wording around the write failure, got %v", err)
+	}
+	for _, want := range []string{
+		"restore fence was already advanced",
+		"the account itself was not changed",
+		"Re-run the command",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("a write that failed past the gate must say %q, got %v", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "Nothing was changed") {
+		t.Fatalf("the fence advance already happened, so this is not a refusal: %v", err)
 	}
 
 	unchanged := loadCLIResetUser(t, databasePath, "cli-reset-write-refused@example.com")
@@ -298,5 +357,163 @@ func captureStandardError(t *testing.T) func() string {
 			t.Fatalf("captureStandardError: read: %v", readErr)
 		}
 		return string(captured)
+	}
+}
+
+// TestUsersDeleteReportsAWriteFailureAfterTheFenceHasAlreadyAdvanced is the
+// `users delete` half of the post-gate outcome the reset path already pins.
+// The row vanishes at the one seam where a real operator's can: while the
+// command is blocked reading the typed DELETE confirmation, which sits between
+// the resolve and the fence gate. The gate then spends its one-shot advance,
+// and the delete finds nothing.
+//
+// The operator must be told both facts. The account is untouched — there is
+// nothing left to touch — but the fence DID move, so a bare "no account
+// carries id N" would read as a command that changed nothing at all.
+func TestUsersDeleteReportsAWriteFailureAfterTheFenceHasAlreadyAdvanced(t *testing.T) {
+	t.Parallel()
+
+	databasePath := createCLIUsersDatabase(t)
+	user := createCLIUsersUser(t, databasePath, "vanishes@example.com", "Owner", models.RoleOwner, true, time.Now().UTC())
+	fencePath := armOperatorFence(t, databasePath)
+
+	var output bytes.Buffer
+	err := runUsersCommand(
+		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
+		[]string{"delete", "--id", strconv.FormatUint(uint64(user.ID), 10)},
+		fencePath,
+		&deleteRowWhileConfirming{t: t, databasePath: databasePath, userID: user.ID},
+		&output,
+	)
+	if err == nil {
+		t.Fatal("expected the delete to fail: the row is gone by the time it runs")
+	}
+	for _, want := range []string{
+		fmt.Sprintf("no account carries id %d", user.ID),
+		"restore fence was already advanced",
+		"the account itself was not changed",
+		"Re-run the command",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("a delete that failed past the gate must say %q, got %v", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "Nothing was changed") {
+		t.Fatalf("the fence advance already happened, so this is not a refusal: %v", err)
+	}
+}
+
+// deleteRowWhileConfirming removes the account the moment the command asks for
+// its typed confirmation, then answers DELETE. Reading the confirmation is a
+// real blocking step between the resolve and the write, so this reproduces the
+// window without reaching inside runUsersDelete.
+type deleteRowWhileConfirming struct {
+	t            *testing.T
+	databasePath string
+	userID       uint
+	answer       *strings.Reader
+}
+
+func (reader *deleteRowWhileConfirming) Read(buffer []byte) (int, error) {
+	if reader.answer == nil {
+		reader.t.Helper()
+		database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: reader.databasePath})
+		if err != nil {
+			reader.t.Fatalf("deleteRowWhileConfirming: open sqlite: %v", err)
+		}
+		sqlDB, err := database.DB()
+		if err != nil {
+			reader.t.Fatalf("deleteRowWhileConfirming: open sql db: %v", err)
+		}
+		defer func() { _ = sqlDB.Close() }()
+		if err := database.Exec("DELETE FROM users WHERE id = ?", reader.userID).Error; err != nil {
+			reader.t.Fatalf("deleteRowWhileConfirming: delete row: %v", err)
+		}
+		reader.answer = strings.NewReader("DELETE\n")
+	}
+	return reader.answer.Read(buffer)
+}
+
+// TestUsersDeleteRefusesAHalfAdvancedFenceOnARealAppState drives the
+// half-advanced refusal through a REAL SQLite app_state rather than a double:
+// the fence file is written, the marker upsert is refused by a trigger, and
+// the command must report the file half as already moved and leave the account
+// standing.
+//
+// It is the shape a full disk or a locked database produces on a live
+// instance, and it is the one refusal whose message must NOT end "Nothing was
+// changed" — so it is worth proving against the real repository rather than
+// only against a fake whose Set returns an error on request.
+func TestUsersDeleteRefusesAHalfAdvancedFenceOnARealAppState(t *testing.T) {
+	t.Parallel()
+
+	databasePath := createCLIUsersDatabase(t)
+	createCLIUsersUser(t, databasePath, "half-advanced@example.com", "Owner", models.RoleOwner, true, time.Now().UTC())
+	fencePath := armOperatorFence(t, databasePath)
+
+	armed, err := os.ReadFile(fencePath)
+	if err != nil {
+		t.Fatalf("read the armed fence file: %v", err)
+	}
+	refuseCLIAppStateWrites(t, databasePath)
+
+	var output bytes.Buffer
+	err = runUsersCommand(
+		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
+		[]string{"delete", "half-advanced@example.com", "--yes"},
+		fencePath,
+		strings.NewReader(""),
+		&output,
+	)
+	if err == nil {
+		t.Fatal("expected the deletion to be refused")
+	}
+	if !errors.Is(err, services.ErrCalendarFeedFenceHalfAdvanced) {
+		t.Fatalf("expected the half-advanced sentinel, got %v", err)
+	}
+	if strings.Contains(err.Error(), "Nothing was changed") {
+		t.Fatalf("the fence file moved, so the refusal must not claim nothing changed: %v", err)
+	}
+	for _, want := range []string{fencePath, "next start disarms every armed calendar feed", "The account was not changed"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the half-advanced refusal must contain %q, got %v", want, err)
+		}
+	}
+
+	after, err := os.ReadFile(fencePath)
+	if err != nil {
+		t.Fatalf("read the fence file after the refusal: %v", err)
+	}
+	if string(after) == string(armed) {
+		t.Fatal("the file half must have moved: without that this is an ordinary refusal, not the half-advanced one")
+	}
+	if remaining := listCLIUserEmails(t, databasePath); len(remaining) != 1 {
+		t.Fatalf("expected the account to survive a refused revocation, got %#v", remaining)
+	}
+}
+
+// refuseCLIAppStateWrites makes the database half of the fence unwritable
+// while leaving it readable, which is what a full disk or a refused write
+// looks like from AdvanceConfirmed. AppStateRepository.Set upserts, so both
+// verbs have to be refused.
+func refuseCLIAppStateWrites(t *testing.T, databasePath string) {
+	t.Helper()
+
+	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath})
+	if err != nil {
+		t.Fatalf("refuseCLIAppStateWrites: open sqlite: %v", err)
+	}
+	sqlDB, err := database.DB()
+	if err != nil {
+		t.Fatalf("refuseCLIAppStateWrites: open sql db: %v", err)
+	}
+	defer func() { _ = sqlDB.Close() }()
+
+	for _, verb := range []string{"INSERT", "UPDATE"} {
+		statement := "CREATE TRIGGER refuse_app_state_" + strings.ToLower(verb) + " BEFORE " + verb + " ON app_state " +
+			"BEGIN SELECT RAISE(ABORT, 'app_state writes are refused by this test'); END"
+		if err := database.Exec(statement).Error; err != nil {
+			t.Fatalf("refuseCLIAppStateWrites: create %s trigger: %v", verb, err)
+		}
 	}
 }

@@ -13,6 +13,113 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// TestRunResetPasswordCommandJudgesThePasswordItWillSubmit pins the property
+// the pre-gate check exists for, in the one shape that tells the two apart: a
+// password whose RAW form passes the policy and whose TRIMMED form does not.
+//
+// ForceResetPasswordByID trims before it validates, so "Passwd1 " is submitted
+// as a 7-character value the policy refuses. When the CLI checked the raw
+// bytes it saw eight characters with an upper, a lower and a digit, let the
+// value through, spent the fence gate's one-shot advance — burning a
+// generation for every armed feed on the instance — and only then heard the
+// service refuse. The refusal message is identical either way, so the fence
+// file is what this test has to look at.
+func TestRunResetPasswordCommandJudgesThePasswordItWillSubmit(t *testing.T) {
+	t.Parallel()
+
+	databasePath := createCLIResetDatabase(t)
+	createCLIResetUser(t, databasePath, "cli-reset-trailing-space@example.com", "StrongPass1")
+	fencePath := armOperatorFence(t, databasePath)
+
+	armed, err := os.ReadFile(fencePath)
+	if err != nil {
+		t.Fatalf("read the armed fence file: %v", err)
+	}
+
+	err = runResetPasswordCommand(
+		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
+		[]string{"cli-reset-trailing-space@example.com"},
+		fencePath,
+		func() ([]byte, error) { return []byte("Passwd1 "), nil },
+		io.Discard,
+	)
+	if err == nil || err.Error() != "password does not meet strength requirements" {
+		t.Fatalf("expected the trimmed value to be judged weak, got %v", err)
+	}
+
+	after, err := os.ReadFile(fencePath)
+	if err != nil {
+		t.Fatalf("read the fence file after the refusal: %v", err)
+	}
+	if string(after) != string(armed) {
+		t.Fatal("a password the service would refuse must not spend the fence's one-shot advance first: the gate ran before the policy did")
+	}
+}
+
+// TestRunResetPasswordCommandAcceptsAPasswordThatFitsOnceTrimmed is the same
+// disagreement seen from the other side, and the one that refused work the
+// service would have done: 71 characters followed by two spaces is 73 raw
+// bytes, so a check on the raw value reported "longer than 72 bytes (bcrypt's
+// input limit)" for a password bcrypt never sees at that length — the value
+// submitted is the trimmed one, and it fits.
+func TestRunResetPasswordCommandAcceptsAPasswordThatFitsOnceTrimmed(t *testing.T) {
+	t.Parallel()
+
+	databasePath := createCLIResetDatabase(t)
+	createCLIResetUser(t, databasePath, "cli-reset-trimmed-length@example.com", "StrongPass1")
+	fencePath := armOperatorFence(t, databasePath)
+
+	trimmed := "A1" + strings.Repeat("b", 69)
+	if len(trimmed) != 71 {
+		t.Fatalf("the fixture must sit one byte under bcrypt's limit, got %d", len(trimmed))
+	}
+
+	if err := runResetPasswordCommand(
+		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
+		[]string{"cli-reset-trimmed-length@example.com"},
+		fencePath,
+		func() ([]byte, error) { return []byte(trimmed + "  "), nil },
+		io.Discard,
+	); err != nil {
+		t.Fatalf("expected the trimmed 71-byte password to be accepted, got %v", err)
+	}
+
+	updated := loadCLIResetUser(t, databasePath, "cli-reset-trimmed-length@example.com")
+	if bcrypt.CompareHashAndPassword([]byte(updated.PasswordHash), []byte(trimmed)) != nil {
+		t.Fatal("the stored hash must verify against the value the service actually submitted, which is the trimmed one")
+	}
+}
+
+// TestRunResetPasswordCommandRefusesADecoratedAddress pins that the command's
+// own address check is the SAME rule the lookup resolves by. net/mail's
+// ParseAddress — the check this replaced — accepts a display name, so
+// `reset-password "Owner <owner@example.com>"` passed the CLI's own check,
+// prompted for a password, and was then refused by an unmapped service
+// sentinel that reached the operator as raw text.
+func TestRunResetPasswordCommandRefusesADecoratedAddress(t *testing.T) {
+	t.Parallel()
+
+	databasePath := createCLIResetDatabase(t)
+	createCLIResetUser(t, databasePath, "cli-reset-decorated@example.com", "StrongPass1")
+
+	err := runResetPasswordCommand(
+		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
+		[]string{"Owner <cli-reset-decorated@example.com>"},
+		"",
+		func() ([]byte, error) {
+			t.Fatal("the address must be refused before anything asks for a password")
+			return nil, nil
+		},
+		io.Discard,
+	)
+	if err == nil || err.Error() != "invalid email address: pass the bare address, with no display name or angle brackets" {
+		t.Fatalf("expected the shared address refusal, got %v", err)
+	}
+	if strings.Contains(err.Error(), "operator user email is invalid") {
+		t.Fatalf("the raw service sentinel must not reach the operator, got %v", err)
+	}
+}
+
 // TestRunResetPasswordCommandValidatesBeforeReadingStdin covers the exported
 // entry point, which is otherwise reached only from main. It also pins the
 // ordering that makes the piped form usable in a script: a blank address is
@@ -70,7 +177,7 @@ func TestResetPasswordReaderRejectsMissingStdin(t *testing.T) {
 func TestRunResetPasswordCommandRejectsBlankEmail(t *testing.T) {
 	t.Parallel()
 
-	err := runResetPasswordCommand(db.Config{}, []string{"   "}, nil, io.Discard)
+	err := runResetPasswordCommand(db.Config{}, []string{"   "}, "", nil, io.Discard)
 	if err == nil || err.Error() != resetUsage {
 		t.Fatalf("expected usage error for a blank address, got %v", err)
 	}
@@ -79,7 +186,7 @@ func TestRunResetPasswordCommandRejectsBlankEmail(t *testing.T) {
 func TestRunResetPasswordCommandRejectsInvalidEmail(t *testing.T) {
 	t.Parallel()
 
-	err := runResetPasswordCommand(db.Config{}, []string{"not-an-email"}, nil, io.Discard)
+	err := runResetPasswordCommand(db.Config{}, []string{"not-an-email"}, "", nil, io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "invalid email address") {
 		t.Fatalf("expected invalid email error, got %v", err)
 	}
@@ -179,6 +286,7 @@ func TestRunResetPasswordCommandRequiresPasswordPrompt(t *testing.T) {
 	err := runResetPasswordCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"cli-reset-nil-prompt@example.com"},
+		"",
 		nil,
 		io.Discard,
 	)
@@ -196,6 +304,7 @@ func TestRunResetPasswordCommandRejectsEmptyPromptedPassword(t *testing.T) {
 	err := runResetPasswordCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"cli-reset-empty-password@example.com"},
+		"",
 		func() ([]byte, error) { return []byte{}, nil },
 		io.Discard,
 	)
@@ -216,6 +325,7 @@ func TestRunResetPasswordCommandRejectsWeakPassword(t *testing.T) {
 	err := runResetPasswordCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"cli-reset-weak-password@example.com"},
+		"",
 		func() ([]byte, error) { return []byte("weakpass"), nil },
 		io.Discard,
 	)
@@ -248,6 +358,7 @@ func TestRunResetPasswordCommandRejectsPasswordOverTheByteLimit(t *testing.T) {
 	err := runResetPasswordCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"cli-reset-long-password@example.com"},
+		"",
 		func() ([]byte, error) { return []byte(passphrase), nil },
 		io.Discard,
 	)
@@ -279,6 +390,7 @@ func TestRunResetPasswordCommandReportsMissingUser(t *testing.T) {
 	err := runResetPasswordCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"missing-reset-user@example.com"},
+		"",
 		func() ([]byte, error) { return []byte("StrongPass2"), nil },
 		io.Discard,
 	)
@@ -296,12 +408,13 @@ func TestRunResetPasswordCommandAddressesAccountByID(t *testing.T) {
 	databasePath := createCLIResetDatabase(t)
 	createCLIResetUser(t, databasePath, "cli-reset-by-id@example.com", "StrongPass1")
 	userID := loadCLIResetUser(t, databasePath, "cli-reset-by-id@example.com").ID
-	armOperatorFence(t, databasePath)
+	fencePath := armOperatorFence(t, databasePath)
 
 	var output strings.Builder
 	err := runResetPasswordCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"--id", strconv.FormatUint(uint64(userID), 10)},
+		fencePath,
 		func() ([]byte, error) { return []byte("EvenStronger2"), nil },
 		&output,
 	)
@@ -330,6 +443,7 @@ func TestRunResetPasswordCommandRejectsUnknownID(t *testing.T) {
 	err := runResetPasswordCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"--id", "999"},
+		"",
 		func() ([]byte, error) { return []byte("EvenStronger2"), nil },
 		io.Discard,
 	)
@@ -345,7 +459,7 @@ func TestRunResetPasswordCommandRejectsUnknownID(t *testing.T) {
 func TestRunResetPasswordCommandRejectsEmailAndIDTogether(t *testing.T) {
 	t.Parallel()
 
-	err := runResetPasswordCommand(db.Config{}, []string{"owner@example.com", "--id", "7"}, nil, io.Discard)
+	err := runResetPasswordCommand(db.Config{}, []string{"owner@example.com", "--id", "7"}, "", nil, io.Discard)
 	if err == nil || err.Error() != resetUsage {
 		t.Fatalf("expected usage error, got %v", err)
 	}
@@ -356,44 +470,26 @@ func TestRunResetPasswordCommandRejectsEmailAndIDTogether(t *testing.T) {
 func TestRunResetPasswordCommandRejectsNoAddress(t *testing.T) {
 	t.Parallel()
 
-	err := runResetPasswordCommand(db.Config{}, nil, nil, io.Discard)
+	err := runResetPasswordCommand(db.Config{}, nil, "", nil, io.Discard)
 	if err == nil || err.Error() != resetUsage {
 		t.Fatalf("expected usage error, got %v", err)
 	}
 }
 
-// TestMapResetPasswordErrorFormatsAmbiguousEmail is the CLI half of finding
-// DB-2's ambiguity refusal: services.AmbiguousEmailError (proven by
-// TestOperatorUserServiceGetUserByEmailRefusesAnAmbiguousAddress to be what
-// the target resolve returns when a bare address matches more than one row)
-// must be
-// rendered as a refusal that names every matching id and points at --id,
-// never silently resolved to one of them. Exercised as a pure function
-// because the matched-more-than-one-row shape cannot be produced through a
-// real, fully migrated database — idx_users_email_normalized forbids it — so
-// this is the layer this behaviour is actually reachable and testable at.
-func TestMapResetPasswordErrorFormatsAmbiguousEmail(t *testing.T) {
-	t.Parallel()
-
-	err := mapResetPasswordError(
-		&services.AmbiguousEmailError{Email: "owner@example.com", IDs: []uint{5, 18}},
-		resetPasswordOptions{email: "owner@example.com"},
-		"owner@example.com",
-	)
-	want := "email owner@example.com matches 2 accounts (ids 5, 18); retry with --id (see ovumcy users list)"
-	if err == nil || err.Error() != want {
-		t.Fatalf("mapResetPasswordError() = %v, want %q", err, want)
-	}
-}
-
 // TestMapResetPasswordErrorMapsRemainingSentinels covers the arms
 // mapResetPasswordError reaches only in shapes the CLI's own argument parsing
-// and pre-checks otherwise avoid producing today (ErrAuthUserIDRequired is
-// dead behind parseResetPasswordArgs's own userID != 0 guarantee, and the
-// default wrap is dead behind the switch's own exhaustive sentinels for every
-// error the service can actually return) — exercised directly, the same way
-// TestMapResetPasswordErrorFormatsAmbiguousEmail is, so the wording is pinned
-// regardless of whether today's call sites can reach it.
+// and pre-checks otherwise avoid producing today (the default wrap is dead
+// behind the switch's own exhaustive sentinels for every error the service can
+// actually return) — exercised directly, so the wording is pinned regardless
+// of whether today's call sites can reach it.
+//
+// The account-lookup arms are NOT here: they belong to
+// mapOperatorUserLookupError, shared with the other account subcommands and
+// covered by TestMapOperatorUserLookupErrorBranches. The one that stays is
+// ErrAuthUserNotFound, which this command can produce only through
+// ForceResetPasswordByID's own re-resolution of an id it already resolved —
+// and it must read exactly like the resolve's own refusal, since the operator
+// cannot tell which of the two fired.
 func TestMapResetPasswordErrorMapsRemainingSentinels(t *testing.T) {
 	t.Parallel()
 
@@ -404,9 +500,10 @@ func TestMapResetPasswordErrorMapsRemainingSentinels(t *testing.T) {
 		want string
 	}{
 		{
-			name: "id required",
-			err:  services.ErrAuthUserIDRequired,
-			want: "an account id is required (see ovumcy users list)",
+			name: "a row deleted between the resolve and the write",
+			err:  services.ErrAuthUserNotFound,
+			opts: resetPasswordOptions{userID: 42},
+			want: "no account carries id 42 (see ovumcy users list)",
 		},
 		{
 			name: "reset invalid",
@@ -439,6 +536,7 @@ func TestRunResetPasswordCommandWrapsPromptReadFailure(t *testing.T) {
 	err := runResetPasswordCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"cli-reset-read-failure@example.com"},
+		"",
 		func() ([]byte, error) { return nil, errors.New("terminal unavailable") },
 		io.Discard,
 	)
@@ -456,6 +554,7 @@ func TestRunResetPasswordCommandReportsDatabaseInitFailure(t *testing.T) {
 	err := runResetPasswordCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: t.TempDir()},
 		[]string{"owner@example.com"},
+		"",
 		func() ([]byte, error) { return []byte("StrongPass1"), nil },
 		io.Discard,
 	)

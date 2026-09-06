@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,19 +16,19 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-// armOperatorFence points CALENDAR_FEED_FENCE_PATH at a file this test owns
-// and runs the one Enforce pass a first boot performs against databasePath,
-// so both fence halves already agree by the time a subcommand under test
-// calls confirmOperatorFeedRevocation. It returns the fence file's path, for
-// a test that needs to disturb it afterward (simulating a restore).
+// armOperatorFence creates a fence file this test owns and runs the one
+// Enforce pass a first boot performs against databasePath, so both fence
+// halves already agree by the time a subcommand under test calls
+// confirmOperatorFeedRevocation. It returns the fence file's path, which the
+// caller passes to the command under test — and which a caller simulating a
+// restore can disturb first.
 //
-// t.Setenv panics after t.Parallel: every caller of this helper runs without
-// t.Parallel for that reason.
+// Nothing here touches the environment: the fence path is a parameter all the
+// way down, so a caller of this helper is free to run with t.Parallel.
 func armOperatorFence(t *testing.T, databasePath string) string {
 	t.Helper()
 
 	fencePath := filepath.Join(t.TempDir(), "calendar-feed.fence")
-	t.Setenv(security.CalendarFeedFencePathEnv, fencePath)
 
 	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath})
 	if err != nil {
@@ -39,7 +40,7 @@ func armOperatorFence(t *testing.T, databasePath string) string {
 	}
 	defer func() { _ = sqlDB.Close() }()
 
-	_, fence, _ := buildRepositories(database)
+	_, fence := buildRepositories(database, fencePath)
 	if _, err := fence.Enforce(context.Background()); err != nil {
 		t.Fatalf("armOperatorFence: Enforce: %v", err)
 	}
@@ -225,7 +226,8 @@ func TestConfirmOperatorFeedRevocationRefusesAndWritesNothing(t *testing.T) {
 			anchor:    &fakeConfirmFenceAnchor{readErr: errFencePermissionDenied},
 			wantExtra: []string{
 				"points at /app/fence/calendar-feed.fence",
-				"does not exist or cannot be written",
+				"cannot read or write",
+				"must name a small regular file",
 				"permission denied",
 			},
 			wantRemedy: "docker exec",
@@ -237,7 +239,20 @@ func TestConfirmOperatorFeedRevocationRefusesAndWritesNothing(t *testing.T) {
 				models.AppStateKeyCalendarFeedRestoreFence: "an-older-generation",
 			}},
 			anchor:     &fakeConfirmFenceAnchor{value: confirmFenceTestToken, found: true},
-			wantExtra:  []string{"do not agree"},
+			wantExtra:  []string{"hold different tokens"},
+			wantRemedy: "Start the server once",
+		},
+		{
+			// The mirror of the anchor-missing shape below: here the file IS
+			// visible and holds a token, and it is the database that has never
+			// recorded one. A restart reconciles it, so the remedy matches the
+			// disagreement's — but the sentence must not, or it sends the
+			// operator comparing two values one of which does not exist.
+			name:       "the file holds a token and the database has no marker",
+			fencePath:  "/app/fence/calendar-feed.fence",
+			appState:   &fakeConfirmFenceAppState{values: map[string]string{}},
+			anchor:     &fakeConfirmFenceAnchor{value: confirmFenceTestToken, found: true},
+			wantExtra:  []string{"carries a token but the database has no marker"},
 			wantRemedy: "Start the server once",
 		},
 		{
@@ -260,8 +275,8 @@ func TestConfirmOperatorFeedRevocationRefusesAndWritesNothing(t *testing.T) {
 				models.AppStateKeyCalendarFeedRestoreFence: confirmFenceTestToken,
 			}},
 			anchor:     &fakeConfirmFenceAnchor{},
-			wantExtra:  []string{"is not visible from this process"},
-			wantRemedy: "genuinely been lost",
+			wantExtra:  []string{"no fence value is visible from this process", "missing, or present and empty"},
+			wantRemedy: "starting it once rewrites both halves",
 		},
 	}
 
@@ -373,45 +388,79 @@ func TestConfirmOperatorFeedRevocationHalfAdvancedRemedyIsAServerBootNotABareRer
 	if err == nil {
 		t.Fatal("expected the second call to still refuse: a bare re-run is not the remedy")
 	}
-	if !strings.Contains(err.Error(), "do not agree") {
+	if !strings.Contains(err.Error(), "hold different tokens") {
 		t.Fatalf("expected the disagreement refusal on a bare re-run, got %v", err)
 	}
 }
 
 // TestConfirmOperatorFeedRevocationNamesTheAnchorMissingWhenTheDatabaseIsArmedButNoFileIsVisible
-// drives the REAL security.CalendarFeedFenceFile.Read against a directory
-// that does not exist, paired with a database that already carries a marker
-// — the shape an operator's shell is in when it cannot see the mount the
-// server itself uses, or when that mount has genuinely gone missing. Before
-// calendarFeedFenceStateAnchorMissing existed, this fell through to the
-// "halves disagree" state, whose "Start the server once" remedy would not
-// have helped: restarting reconciles two VISIBLE, differing values, not a
-// file this process cannot see at all.
+// drives the REAL security.CalendarFeedFenceFile.Read, paired with a database
+// that already carries a marker, through BOTH routes into that state — and
+// the second one is why the sentence cannot say "the file is not visible".
+//
+// A directory that does not exist is the shape an operator's shell is in when
+// it cannot see the mount the server uses. A file that exists and is EMPTY is
+// a torn write, and Read reports it as absent on purpose (it must never
+// compare against nothing), so it arrives here as the same state — with the
+// file plainly visible. One sentence has to be true of both.
+//
+// Before calendarFeedFenceStateAnchorMissing existed, both fell through to
+// the "halves disagree" state, whose "Start the server once" remedy would not
+// have helped the first: restarting reconciles two VISIBLE, differing values,
+// not a file this process cannot see at all.
 func TestConfirmOperatorFeedRevocationNamesTheAnchorMissingWhenTheDatabaseIsArmedButNoFileIsVisible(t *testing.T) {
 	t.Parallel()
 
-	appState := &fakeConfirmFenceAppState{values: map[string]string{
-		models.AppStateKeyCalendarFeedRestoreFence: confirmFenceTestToken,
-	}}
-	fencePath := filepath.Join(t.TempDir(), "never-mounted", "calendar-feed.fence")
-	anchor := security.NewCalendarFeedFenceFile(fencePath)
-	fence := services.NewCalendarFeedRestoreFence(appState, fakeConfirmFenceUsers{}, anchor)
+	cases := []struct {
+		name      string
+		fencePath func(t *testing.T) string
+	}{
+		{
+			name: "no directory behind the path",
+			fencePath: func(t *testing.T) string {
+				return filepath.Join(t.TempDir(), "never-mounted", "calendar-feed.fence")
+			},
+		},
+		{
+			name: "a torn write left the file empty",
+			fencePath: func(t *testing.T) string {
+				path := filepath.Join(t.TempDir(), "calendar-feed.fence")
+				if err := os.WriteFile(path, nil, 0o600); err != nil {
+					t.Fatalf("write empty fence file: %v", err)
+				}
+				return path
+			},
+		},
+	}
 
-	err := confirmOperatorFeedRevocation(context.Background(), fencePath, fence, &bytes.Buffer{})
-	if err == nil {
-		t.Fatal("expected a refusal")
-	}
-	message := err.Error()
-	for _, want := range []string{fencePath, "is not visible from this process", "Nothing was changed"} {
-		if !strings.Contains(message, want) {
-			t.Fatalf("refusal must contain %q, got %q", want, message)
-		}
-	}
-	if strings.Contains(message, "do not agree") {
-		t.Fatal("a database-only marker with no visible file is not the same shape as two visible, differing values")
-	}
-	if strings.Contains(message, "Start the server once with this fence configured") {
-		t.Fatal("must not tell the operator to just restart: the database already carries a marker, and restarting will not make an invisible file visible")
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			appState := &fakeConfirmFenceAppState{values: map[string]string{
+				models.AppStateKeyCalendarFeedRestoreFence: confirmFenceTestToken,
+			}}
+			fencePath := testCase.fencePath(t)
+			anchor := security.NewCalendarFeedFenceFile(fencePath)
+			fence := services.NewCalendarFeedRestoreFence(appState, fakeConfirmFenceUsers{}, anchor)
+
+			err := confirmOperatorFeedRevocation(context.Background(), fencePath, fence, &bytes.Buffer{})
+			if err == nil {
+				t.Fatal("expected a refusal")
+			}
+			message := err.Error()
+			for _, want := range []string{fencePath, "no fence value is visible from this process", "Nothing was changed"} {
+				if !strings.Contains(message, want) {
+					t.Fatalf("refusal must contain %q, got %q", want, message)
+				}
+			}
+			if strings.Contains(message, "hold different tokens") {
+				t.Fatal("a database-only marker with no visible fence value is not the same shape as two visible, differing values")
+			}
+			if strings.Contains(message, "Start the server once with this fence configured") {
+				t.Fatal("must not tell the operator to just restart: the database already carries a marker, and restarting alone answers only one of the two routes here")
+			}
+		})
 	}
 }
 
@@ -431,34 +480,34 @@ func TestConfirmOperatorFeedRevocationRejectsANilFenceInsteadOfPanicking(t *test
 	}
 }
 
-// calendarFeedFenceConfirmStatesInDeclaredOrder lists every state
-// calendarFeedFenceConfirmRefusal's switch must carry its own case for. Kept
-// as a literal slice (not a loop over an int range) so adding a state here is
-// a deliberate, reviewable act, matching how the switch itself is written.
-var calendarFeedFenceConfirmStatesInDeclaredOrder = []calendarFeedFenceConfirmState{
-	calendarFeedFenceStateNotSet,
-	calendarFeedFenceStateRelative,
-	calendarFeedFenceStateUnreachable,
-	calendarFeedFenceStateMarkerUnavailable,
-	calendarFeedFenceStateAnchorMissing,
-	calendarFeedFenceStateDisagree,
-	calendarFeedFenceStateNeverArmed,
-}
-
-// TestCalendarFeedFenceConfirmRefusalHasACaseForEveryDefinedState guards
-// against exactly the failure mode calendarFeedFenceConfirmRefusal's own doc
-// comment names: a state added without its own case would otherwise silently
-// borrow whichever state the switch happens to fall through to, rather than
-// failing loudly. Requiring every state's message to be DISTINCT is what
-// would have caught calendarFeedFenceStateAnchorMissing silently reusing
-// calendarFeedFenceStateNeverArmed's or calendarFeedFenceStateDisagree's text
-// if its own case had been left out.
-func TestCalendarFeedFenceConfirmRefusalHasACaseForEveryDefinedState(t *testing.T) {
+// TestCalendarFeedFenceConfirmRefusalHasATextForEveryDeclaredState walks the
+// enum itself — every value between the invalid zero and
+// calendarFeedFenceStateCount — against calendarFeedFenceConfirmRefusals. A
+// hand-written list of the states beside the table would agree with the table
+// by construction and never notice a state declared without an entry; the
+// declaration is the only source that cannot.
+//
+// Requiring every state's message to be DISTINCT is what would have caught
+// calendarFeedFenceStateAnchorMissing silently reusing
+// calendarFeedFenceStateNeverArmed's or calendarFeedFenceStateDisagree's text.
+func TestCalendarFeedFenceConfirmRefusalHasATextForEveryDeclaredState(t *testing.T) {
 	t.Parallel()
 
+	if calendarFeedFenceStateCount <= calendarFeedFenceStateInvalid+1 {
+		t.Fatal("the enum declares no states between the invalid zero and the count: this guard would report success over an empty set")
+	}
+
 	seen := map[string]calendarFeedFenceConfirmState{}
-	for _, state := range calendarFeedFenceConfirmStatesInDeclaredOrder {
-		message := calendarFeedFenceConfirmRefusal("/app/fence/calendar-feed.fence", state, nil).Error()
+	for state := calendarFeedFenceStateInvalid + 1; state < calendarFeedFenceStateCount; state++ {
+		refusal, ok := calendarFeedFenceConfirmRefusals[state]
+		if !ok {
+			t.Fatalf("state %d is declared but has no refusal text: an operator reaching it would get a panic, not a remedy", state)
+		}
+		if strings.TrimSpace(refusal.remedy) == "" {
+			t.Fatalf("state %d has no remedy: a refusal that does not say what to do next is half a message", state)
+		}
+
+		message := calendarFeedFenceConfirmRefusal("/app/fence/calendar-feed.fence", state, errFencePermissionDenied).Error()
 		if !strings.Contains(message, "Nothing was changed") {
 			t.Fatalf("state %d: expected every refusal text to end \"Nothing was changed\", got %q", state, message)
 		}
@@ -469,77 +518,28 @@ func TestCalendarFeedFenceConfirmRefusalHasACaseForEveryDefinedState(t *testing.
 	}
 }
 
-// TestCalendarFeedFenceConfirmRefusalPanicsOnAnUnhandledState is the
-// red-on-defect half of the guard above: before the switch carried an
-// explicit case per state and a default that panics instead of quietly
-// reusing calendarFeedFenceStateNotSet's own sentence, a state with no case
-// rendered NotSet's text instead of failing loudly — the exact shape a state
-// added later without updating the switch would take.
-func TestCalendarFeedFenceConfirmRefusalPanicsOnAnUnhandledState(t *testing.T) {
+// TestCalendarFeedFenceConfirmRefusalPanicsOnAStateWithNoText is the
+// red-on-defect half of the guard above, and it covers the zero value on
+// purpose: calendarFeedFenceStateInvalid is what an unassigned state variable
+// holds, and before the enum reserved it the zero value WAS
+// calendarFeedFenceStateNotSet — so a state that was never assigned rendered
+// "CALENDAR_FEED_FENCE_PATH is not set in this shell" and sent the operator
+// after a variable that may well have been set.
+func TestCalendarFeedFenceConfirmRefusalPanicsOnAStateWithNoText(t *testing.T) {
 	t.Parallel()
 
-	defer func() {
-		if recover() == nil {
-			t.Fatal("expected a panic for a state with no case in the switch")
-		}
-	}()
-	_ = calendarFeedFenceConfirmRefusal("/app/fence/calendar-feed.fence", calendarFeedFenceConfirmState(999), nil)
-}
-
-var errFencePermissionDenied = errors.New("permission denied")
-
-// TestWrappedCauseAnswersOnlyTheTwoErrorSentinelWrap pins each shape
-// wrappedCause has to tell apart, because every shape but the last one is
-// reported to the operator as "no extra detail" while the last one is printed
-// as the fence's cause: answering the sentinel instead of the cause, or a
-// joined error's first member instead of nothing, would put an unrelated
-// failure into a refusal message.
-//
-// errors.Join builds the one- and three-element Unwrap() []error shapes:
-// fmt.Errorf produces only the single-error Unwrap() error form and the
-// two-error form this function exists for.
-func TestWrappedCauseAnswersOnlyTheTwoErrorSentinelWrap(t *testing.T) {
-	t.Parallel()
-
-	sentinel := errors.New("calendar feed fence is unreachable")
-	cause := errors.New("permission denied")
-	third := errors.New("no space left on device")
-
-	cases := []struct {
-		name string
-		err  error
-		want error
-	}{
-		{
-			name: "a bare error carries no Unwrap at all",
-			err:  cause,
-		},
-		{
-			name: "a single-verb wrap implements Unwrap() error, which is not the multi form",
-			err:  fmt.Errorf("%w: %v", sentinel, cause),
-		},
-		{
-			name: "one wrapped error is not a sentinel beside a cause",
-			err:  errors.Join(cause),
-		},
-		{
-			name: "three wrapped errors are not a sentinel beside a cause",
-			err:  errors.Join(sentinel, cause, third),
-		},
-		{
-			name: "a sentinel beside a cause answers the cause",
-			err:  fmt.Errorf("%w: %w", sentinel, cause),
-			want: cause,
-		},
-	}
-
-	for _, testCase := range cases {
-		t.Run(testCase.name, func(t *testing.T) {
+	for _, state := range []calendarFeedFenceConfirmState{calendarFeedFenceStateInvalid, calendarFeedFenceStateCount, 999} {
+		t.Run(fmt.Sprintf("state %d", state), func(t *testing.T) {
 			t.Parallel()
 
-			if got := wrappedCause(testCase.err); got != testCase.want {
-				t.Fatalf("wrappedCause(%v) = %v, want %v", testCase.err, got, testCase.want)
-			}
+			defer func() {
+				if recover() == nil {
+					t.Fatalf("expected a panic for state %d, which has no refusal text", state)
+				}
+			}()
+			_ = calendarFeedFenceConfirmRefusal("/app/fence/calendar-feed.fence", state, nil)
 		})
 	}
 }
+
+var errFencePermissionDenied = errors.New("permission denied")
