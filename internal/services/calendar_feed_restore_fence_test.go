@@ -1101,6 +1101,35 @@ func TestCalendarFeedRestoreFenceUnanchoredStampFailureFailsTheBoot(t *testing.T
 	}
 }
 
+// TestCalendarFeedRestoreFenceUnanchoredDisarmFailurePropagates pins the
+// disarm-error branch inside disarmUnanchored itself, reached when the ANCHOR
+// cannot be read rather than when the halves disagree or a stamped history is
+// found (those are TestCalendarFeedRestoreFencePropagatesDatabaseFailures and
+// TestCalendarFeedRestoreFenceUnanchoredHistoryDisarmFailurePropagates below).
+// The stamp is written only after a disarm that succeeded, so a failed disarm
+// leaves no evidence that could be mistaken for a completed unanchored pass.
+func TestCalendarFeedRestoreFenceUnanchoredDisarmFailurePropagates(t *testing.T) {
+	journal := []string{}
+	disarmFailure := errors.New("disarm failed")
+	appState := &stubFenceAppState{values: map[string]string{}, journal: &journal}
+	users := &stubFenceUserStore{disarmErr: disarmFailure, journal: &journal}
+	anchor := &stubFenceAnchor{readErr: security.ErrCalendarFeedFenceNotConfigured}
+
+	outcome, err := NewCalendarFeedRestoreFence(appState, users, anchor).Enforce(context.Background())
+	if !errors.Is(err, disarmFailure) {
+		t.Fatalf("expected the disarm failure, got %v", err)
+	}
+	if !outcome.Unanchored {
+		t.Fatalf("expected Unanchored, got %+v", outcome)
+	}
+	if appState.has(models.AppStateKeyCalendarFeedFenceUnanchored) {
+		t.Fatal("a failed disarm must leave no stamp: the database would otherwise say this boot completed an unanchored pass it never finished")
+	}
+	if want := []string{"disarm"}; !equalStrings(journal, want) {
+		t.Fatalf("a failed disarm must record nothing else, got %v", journal)
+	}
+}
+
 // TestCalendarFeedRestoreFenceEmptyHalvesOverAStampedDatabaseDisarm is the
 // finding itself, at the unit layer: both halves empty is the signature of a
 // first boot AND of a restore of a backup taken while the instance had no
