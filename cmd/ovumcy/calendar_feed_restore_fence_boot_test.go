@@ -100,6 +100,25 @@ func TestCalendarFeedRestoreFenceStartupMessage(t *testing.T) {
 		t.Fatalf("a broken fence must name the count and the cause, got %q", broken)
 	}
 
+	// UnanchoredHistory qualifies ContinuityBroken rather than replacing it, so
+	// both flags are set together on this outcome. The switch must still read
+	// it as the unanchored-history case, not the plain backup-restore one: the
+	// two share a cause (ContinuityBroken) but need different operator text,
+	// and a case-order slip would silently produce the wrong line.
+	unanchoredHistory := calendarFeedRestoreFenceStartupMessage(services.CalendarFeedRestoreFenceOutcome{
+		ContinuityBroken:  true,
+		UnanchoredHistory: true,
+		DisarmedFeeds:     5,
+	})
+	if strings.Contains(unanchoredHistory, "backup restore") {
+		t.Fatalf("an unanchored-history fence must not read as a backup restore, got %q", unanchoredHistory)
+	}
+	for _, want := range []string{"armed for the first time on a database that had already run without one", "5 armed calendar feed(s) disarmed", "not a restore", "Later starts disarm nothing"} {
+		if !strings.Contains(unanchoredHistory, want) {
+			t.Fatalf("the unanchored-history line must contain %q, got %q", want, unanchoredHistory)
+		}
+	}
+
 	unanchored := calendarFeedRestoreFenceStartupMessage(services.CalendarFeedRestoreFenceOutcome{
 		Unanchored:      true,
 		UnanchoredCause: errors.New("read-only file system"),

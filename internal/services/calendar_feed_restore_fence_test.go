@@ -1133,7 +1133,7 @@ func TestCalendarFeedRestoreFenceEmptyHalvesOverAStampedDatabaseDisarm(t *testin
 		t.Fatalf("the pass must arm the fence it just answered for: file=%q database=%q", anchor.written, appState.values[models.AppStateKeyCalendarFeedRestoreFence])
 	}
 	if appState.has(models.AppStateKeyCalendarFeedFenceUnanchored) {
-		t.Fatal("the stamp must be gone once it has been answered for, or every later start disarms every feed again")
+		t.Fatal(`the stamp must be gone once it has been answered for: a stamp left behind is inert while the halves agree (read only where both are empty), so erasure is hygiene that keeps the stamp meaning "the last boot ran unanchored," not a guard against a disarm loop`)
 	}
 	if want := []string{"disarm", "anchor", "set", "delete"}; !equalStrings(journal, want) {
 		t.Fatalf("the disarm has to precede the token, and the token the erasure:\n got %v\nwant %v", journal, want)
