@@ -593,52 +593,83 @@ func TestResolveFeedBackfillsMACForPre032RowAndLeavesBcryptBehind(t *testing.T) 
 	}
 }
 
-// TestResolveFeedRefusesAWrongVerifierOnAPre032RowAndWritesNoMAC pins the
-// transitional bcrypt path from the layer that serves requests: a row minted
-// before migration 032 (hash, no MAC), presented with the correct selector and a
-// wrong verifier, is refused exactly like any other bad token — and that refusal
-// leaves the row unmigrated.
+// TestResolveFeedRefusesAWrongVerifierOnAPre032RowAndWritesNoMAC drives the
+// transitional bcrypt path through the layer that serves requests: a row minted
+// before migration 032 (hash, no MAC), resolved by its real selector and
+// presented with a wrong verifier, is refused like any other bad token, reads no
+// owner-scoped logs, and is left exactly as it was stored.
 //
-// The second half is the one no other case reaches. The backfill derives its
-// input from the PRESENTED verifier, because a successful poll is the only moment
-// that plaintext exists; a backfill reached without a passing verification would
-// therefore install a wrong verifier as the row's authoritative authenticator,
-// locking the owner out of their own feed and handing the caller a working one.
-// Every other backfill case here presents the correct token, and the bad-token
-// sweep (TestResolveFeedIdenticalNotFoundForEveryBadToken) runs against an armed
-// post-032 row whose non-empty MAC skips this branch entirely.
+// The backfill derives its input from the PRESENTED verifier, because a
+// successful poll is the only moment that plaintext exists — so a write reached
+// without a passing verification installs a wrong verifier as the row's
+// authenticator, locking the owner out of their own feed and handing the caller a
+// working one.
 func TestResolveFeedRefusesAWrongVerifierOnAPre032RowAndWritesNoMAC(t *testing.T) {
-	legacy, token := legacyArmedFeedUser(t, 16, "2026-03-02")
-	svc, users, _ := newFeedServiceForTest(legacy, predictableFeedLogs(t))
+	armed, token := armedFeedUser(t, 16, "2026-03-02")
+	expectedMAC := armed.CalendarFeedVerifierMAC
+	// The same row as it was stored before migration 032: hash present, MAC absent.
+	legacy := armed
+	legacy.CalendarFeedVerifierMAC = ""
+
+	svc, users, days := newFeedServiceForTest(legacy, predictableFeedLogs(t))
 	now := mustParseDashboardDay(t, "2026-03-20")
 
-	// The real selector with a wrong verifier of the correct width: the token is
-	// well-formed and resolves the row, so only the bcrypt compare can refuse it.
-	tampered := token[:calendarFeedSelectorLength] + strings.Repeat("2", calendarFeedVerifierLength)
-	if tampered == token {
-		t.Fatal("test setup: the tampered verifier must differ from the minted one")
+	// The row's real selector with a wrong verifier of the correct width, drawn
+	// from the token alphabet: the token is well-formed and resolves the row, so
+	// only the bcrypt compare can refuse it.
+	selector, verifier, split := SplitCalendarFeedToken(token)
+	if !split {
+		t.Fatal("test setup: a minted token must split into selector and verifier")
+	}
+	wrongVerifier := strings.Repeat("2", calendarFeedVerifierLength)
+	if wrongVerifier == verifier {
+		t.Fatal("test setup: the wrong verifier must differ from the minted one")
 	}
 
-	body, ok, err := svc.ResolveFeed(context.Background(), tampered, now, time.UTC)
+	body, ok, err := svc.ResolveFeed(context.Background(), selector+wrongVerifier, now, time.UTC)
 	if err != nil {
 		t.Fatalf("a wrong verifier must return the no-oracle nil error, got %v", err)
 	}
 	if ok || body != nil {
 		t.Fatalf("a wrong verifier must be refused on the pre-032 bcrypt path: ok=%v, %d bytes of body", ok, len(body))
 	}
+	if days.requestedCount != 0 {
+		t.Fatalf("a refused token must not trigger an owner-scoped log read, got %d", days.requestedCount)
+	}
+	if users.user.CalendarFeedVerifierMAC != "" || users.user.CalendarFeedVerifierHash != legacy.CalendarFeedVerifierHash {
+		t.Fatalf("a refused token must leave the row as stored, got MAC %q and hash %q",
+			users.user.CalendarFeedVerifierMAC, users.user.CalendarFeedVerifierHash)
+	}
 	if users.backfillCalls != 0 {
-		t.Fatalf("a refused token must never migrate the row: got %d MAC writes", users.backfillCalls)
+		t.Fatalf("a refused token must never reach the MAC write: got %d writes", users.backfillCalls)
 	}
 
-	// Positive anchor for both negatives: the same row and the same service serve
-	// the correct token and do write the MAC, so the assertions above measure the
-	// verifier compare rather than a fixture that never resolves or a counter that
-	// never moves.
-	if _, ok, err := svc.ResolveFeed(context.Background(), token, now, time.UTC); err != nil || !ok {
+	// Positive anchor for the negatives above: the same row and the same service
+	// serve the correct token, read the owner's logs once, and store the MAC
+	// generation derives for this token — so a fixture that never resolves, a
+	// counter that never moves, and a write carrying a MAC derived from anything
+	// but the verified verifier all fail here.
+	body, ok, err = svc.ResolveFeed(context.Background(), token, now, time.UTC)
+	if err != nil || !ok {
 		t.Fatalf("the same pre-032 row must still serve its own token: ok=%v err=%v", ok, err)
+	}
+	if !strings.Contains(string(body), "BEGIN:VCALENDAR") {
+		t.Fatalf("expected the anchor poll to render a feed, got:\n%s", string(body))
+	}
+	if days.requestedCount != 1 {
+		t.Fatalf("the served poll must read the owner's logs exactly once, got %d", days.requestedCount)
 	}
 	if users.backfillCalls != 1 {
 		t.Fatalf("the correct token must migrate the row exactly once, got %d MAC writes", users.backfillCalls)
+	}
+	if users.backfilledUserID != 16 {
+		t.Fatalf("backfill must be scoped to the resolved owner 16, got %d", users.backfilledUserID)
+	}
+	if users.backfilledSel != legacy.CalendarFeedSelector {
+		t.Fatalf("backfill must be scoped to the verified selector %q, got %q", legacy.CalendarFeedSelector, users.backfilledSel)
+	}
+	if users.backfilledMAC != expectedMAC {
+		t.Fatalf("backfilled MAC %q does not match the MAC generation derives for the same token (%q)", users.backfilledMAC, expectedMAC)
 	}
 }
 
