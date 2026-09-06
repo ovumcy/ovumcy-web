@@ -33,9 +33,9 @@ func TestMR3Dash_CycleHeroCurrentPhaseDayBoundaries(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := dashboardCycleHeroCurrentPhase("", tc.day, periodLength, ovulationDay, cycleLength)
+			got := dashboardCycleHeroCurrentPhase("", tc.day, periodLength, ovulationDay, cycleLength, false)
 			if got != tc.want {
-				t.Fatalf("dashboardCycleHeroCurrentPhase(\"\", %d, %d, %d, %d) = %q, want %q",
+				t.Fatalf("dashboardCycleHeroCurrentPhase(\"\", %d, %d, %d, %d, false) = %q, want %q",
 					tc.day, periodLength, ovulationDay, cycleLength, got, tc.want)
 			}
 		})

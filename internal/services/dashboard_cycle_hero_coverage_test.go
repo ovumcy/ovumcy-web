@@ -367,6 +367,10 @@ func TestDashboardCycleHeroFertileWindowRidesTheFirstCycleGate(t *testing.T) {
 
 	awaiting := dashboardcycleheroCovExactContext()
 	awaiting.AwaitingFirstCycle = true
+	// The span now gates on the resolved FertilitySuppressed field, not on
+	// AwaitingFirstCycle alone — production always sets the two together
+	// (BuildDashboardCycleContext), so the fixture must too.
+	awaiting.FertilitySuppressed = true
 	withheld := BuildDashboardCycleHero(dashboardcycleheroCovUser28(), stats, awaiting, input)
 	for _, day := range withheld.Days {
 		if day.IsFertile || day.IsFertilePeak {
@@ -480,7 +484,7 @@ func TestDashboardCycleHeroMarksOnlyRecordedDaysAsLogged(t *testing.T) {
 func TestDashboardCycleHeroCurrentPhaseUnknownFallsBackToNumericMenstrual(t *testing.T) {
 	// Pass an unrecognised currentPhase ("") so the first switch falls through.
 	// currentDay=3 is within periodLength=5 → should return "menstrual".
-	got := dashboardCycleHeroCurrentPhase("", 3, 5, 14, 28)
+	got := dashboardCycleHeroCurrentPhase("", 3, 5, 14, 28, false)
 	if got != "menstrual" {
 		t.Fatalf("expected menstrual fallback for day 3 in period 1-5, got %q", got)
 	}
@@ -489,7 +493,7 @@ func TestDashboardCycleHeroCurrentPhaseUnknownFallsBackToNumericMenstrual(t *tes
 // TestDashboardCycleHeroCurrentPhaseUnknownFallsBackToNumericOvulation covers
 // line 156: currentDay == ovulationDay → "ovulation".
 func TestDashboardCycleHeroCurrentPhaseUnknownFallsBackToNumericOvulation(t *testing.T) {
-	got := dashboardCycleHeroCurrentPhase("", 14, 5, 14, 28)
+	got := dashboardCycleHeroCurrentPhase("", 14, 5, 14, 28, false)
 	if got != "ovulation" {
 		t.Fatalf("expected ovulation fallback for day == ovulationDay, got %q", got)
 	}
@@ -498,7 +502,7 @@ func TestDashboardCycleHeroCurrentPhaseUnknownFallsBackToNumericOvulation(t *tes
 // TestDashboardCycleHeroCurrentPhaseUnknownFallsBackToNumericLuteal covers
 // line 158: currentDay > ovulationDay && currentDay <= cycleLength → "luteal".
 func TestDashboardCycleHeroCurrentPhaseUnknownFallsBackToNumericLuteal(t *testing.T) {
-	got := dashboardCycleHeroCurrentPhase("", 20, 5, 14, 28)
+	got := dashboardCycleHeroCurrentPhase("", 20, 5, 14, 28, false)
 	if got != "luteal" {
 		t.Fatalf("expected luteal fallback for day 20 (past ovulation), got %q", got)
 	}
@@ -508,7 +512,7 @@ func TestDashboardCycleHeroCurrentPhaseUnknownFallsBackToNumericLuteal(t *testin
 // default branch: a day between period and ovulation (exclusive) → "follicular".
 func TestDashboardCycleHeroCurrentPhaseUnknownFallsBackToFollicular(t *testing.T) {
 	// day=10 is after period (5) and before ovulation (14) → follicular
-	got := dashboardCycleHeroCurrentPhase("", 10, 5, 14, 28)
+	got := dashboardCycleHeroCurrentPhase("", 10, 5, 14, 28, false)
 	if got != "follicular" {
 		t.Fatalf("expected follicular fallback for day 10 (between period and ovulation), got %q", got)
 	}
@@ -527,7 +531,7 @@ func TestDashboardCycleHeroCurrentPhaseKnownValuesPassThrough(t *testing.T) {
 		{"follicular", "follicular"},
 	}
 	for _, tc := range cases {
-		got := dashboardCycleHeroCurrentPhase(tc.input, 20, 5, 14, 28)
+		got := dashboardCycleHeroCurrentPhase(tc.input, 20, 5, 14, 28, false)
 		if got != tc.want {
 			t.Fatalf("input %q: expected %q, got %q", tc.input, tc.want, got)
 		}
