@@ -98,12 +98,15 @@ func isCalendarFeedRequestPath(path string) bool {
 
 	// Cheap, allocation-free rejection first: this predicate runs in two
 	// app-wide middlewares, so it sees every request the instance serves, and
-	// most of them share no prefix with the feed at all. EqualFold against
-	// this ASCII-only literal prefix agrees with the full normalization below
-	// on every byte it looks at (both only ever fold 'A'-'Z'), so a path that
-	// fails it would fail the prefix check after normalizing too — without
-	// paying for httpx.RoutingNormalizedPath's []byte allocation to find out.
-	if len(path) < len(prefixWithSeparator) || !strings.EqualFold(path[:len(prefixWithSeparator)], prefixWithSeparator) {
+	// most of them share no prefix with the feed at all. httpx.HasRoutingPrefix
+	// folds only 'A'-'Z', the same range the full normalization below folds,
+	// so a path that fails it would fail the prefix check after normalizing
+	// too — without paying for httpx.RoutingNormalizedPath's []byte allocation
+	// to find out. strings.EqualFold is the wrong primitive here: it performs
+	// Unicode simple case folding, which equates code points such as U+212A
+	// KELVIN SIGN with 'k' and U+017F LATIN SMALL LETTER LONG S with 's' — a
+	// fold fiber's router never performs.
+	if !httpx.HasRoutingPrefix(path, prefixWithSeparator) {
 		return false
 	}
 

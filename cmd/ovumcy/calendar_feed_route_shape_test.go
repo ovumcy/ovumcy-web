@@ -94,6 +94,14 @@ func TestIsCalendarFeedRequestMatchesWhatFiberActuallyDispatches(t *testing.T) {
 		"/calendar/feed/",
 		"/calendar/feed",
 		"/calendar/feedback",
+		// An empty token immediately followed by a literal "/" (rest starts
+		// with "/" itself), distinct from the mid-token "/" in
+		// "/calendar/feed/a/b.ics" below — and a neighbour that continues the
+		// prefix's characters past a full extra path segment rather than a
+		// bare "back" suffix. Neither is the feed: the predicate must refuse
+		// both, and no route answers either.
+		"/calendar/feed//x.ics",
+		"/calendar/feedback/x.ics",
 		// fiber's router finds the token/suffix boundary at the FIRST ".ics" in
 		// the remainder (path.go's findParamLen), not the last: these four all
 		// carry a second ".ics" (or start with one) further right, which the

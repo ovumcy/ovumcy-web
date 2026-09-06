@@ -42,6 +42,7 @@ func TestIsCalendarFeedRequestMatchesTheRouteFormAndMethod(t *testing.T) {
 		{"GET", CalendarFeedRateLimitPrefix + "back", false},
 		{"GET", CalendarFeedRateLimitPrefix + "/a/b.ics", false}, // token would contain "/"
 		{"GET", CalendarFeedRateLimitPrefix + "/.ics", false},    // empty token
+		{"GET", CalendarFeedRateLimitPrefix + "//x.ics", false},  // empty token immediately followed by a literal "/" — rest starts with "/", distinct from the mid-token "/" in "/a/b.ics" above
 		{"GET", "/calendar/day/2026-01-15", false},
 		{"GET", "/", false},
 		// fiber's router finds the token/suffix boundary at the FIRST ".ics" in
