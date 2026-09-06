@@ -662,14 +662,20 @@ func assertRunbookBootIsANoOp(t *testing.T, repos *db.Repositories, fencePath st
 
 // assertRunbookBootDisarmed is the restart after a restore: the file outlived
 // the database generation it was written against, so every armed feed goes.
+// The outcome must be a plain restore, not the UnanchoredHistory qualifier a
+// database that once ran without a fence reports on its first fenced boot —
+// both set ContinuityBroken and disarm at least one row, and a scenario that
+// substituted the wrong one here would still read as a passing restore.
 func assertRunbookBootDisarmed(t *testing.T, repos *db.Repositories, fencePath string) {
 	t.Helper()
 
 	outcome := bootCalendarFeedPasses(t, repos, fencePath)
-	if !outcome.ContinuityBroken {
+	switch {
+	case !outcome.ContinuityBroken:
 		t.Fatalf("the boot after the documented restore must report it: the fence file outlived the database generation it was written against, got %+v", outcome)
-	}
-	if outcome.DisarmedFeeds < 1 {
+	case outcome.UnanchoredHistory:
+		t.Fatalf("this restore must be reported as a plain restore, not as the first fenced boot over a database that ran unanchored, got %+v", outcome)
+	case outcome.DisarmedFeeds < 1:
 		t.Fatalf("the restored feed must be disarmed by that boot, got %d rows", outcome.DisarmedFeeds)
 	}
 }

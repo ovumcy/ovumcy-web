@@ -197,9 +197,11 @@ func runUnanchoredHistoryScenario(t *testing.T, instance runbookInstance) {
 
 	instance.documentedBackup(t)
 
-	// The owner revokes afterwards, through the same web path the guards above
-	// use — and still with no fence, so the revocation exists in exactly one
-	// place: the database the restore below is about to replace.
+	// The owner revokes afterwards — the same repository write the web
+	// revocation performs (ClearCalendarFeedToken), called directly: the HTTP
+	// layer adds nothing the fence can see. Still with no fence, so the
+	// revocation exists in exactly one place: the database the restore below
+	// is about to replace.
 	instance.withUnfencedDatabase(t, func(repos *db.Repositories) {
 		if err := repos.Users.ClearCalendarFeedToken(context.Background(), armed.ownerID); err != nil {
 			t.Fatalf("revoke the calendar feed: %v", err)
