@@ -7,6 +7,9 @@
   unknown addresses. Uptime checks, link checkers, reverse-proxy probes and calendar clients that
   ask for headers before downloading all saw a dead site. They now get the same status and headers
   the matching `GET` returns, with no body, and an address that really does not exist still answers
-  404 on either method. Pages that show a secret once — the recovery code, the freshly minted
-  subscribe URL, the registration hand-off — deliberately keep answering `HEAD` with 404: a headers-
-  only request there would spend the single viewing with nobody having seen it.
+  404 on either method. Pages that show a secret once, or mint one-time auth material a redirect
+  would carry — the recovery code, the freshly minted subscribe URL, the registration hand-off,
+  starting sign-in with a provider — deliberately keep answering `HEAD` with 404: a headers-only
+  request there would spend the single use with nobody able to see or follow it. The one-time
+  notice a page shows after a redirect (a sign-in error, a forgotten-password prefill) is left
+  untouched by `HEAD` too, so the browser's own next visit is still the first to read it.

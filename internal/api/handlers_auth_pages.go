@@ -53,9 +53,11 @@ func (handler *Handler) claimRecoveryCodeReveal(c fiber.Ctx, userID uint) bool {
 	// it. The single-purpose reveal routes refuse HEAD on the route itself
 	// (shownOnceGETRoutes); /register cannot, because the same GET is the
 	// anonymous signup page, where HEAD is an ordinary probe that reveals and
-	// spends nothing. Refusing here costs the display only — the same exit an
-	// already-claimed reveal takes — and an absent Sec-Fetch family cannot be
-	// read as a refusal above, so nothing else would have stopped it.
+	// spends nothing. Unlike an already-claimed reveal, this refusal returns
+	// before the claim and before clearRecoveryCodePageCookie: the cookie
+	// stays sealed on the response, so the owner's own GET right after this
+	// HEAD still reveals it. An absent Sec-Fetch family cannot be read as a
+	// refusal above, so nothing else would have stopped this one.
 	if c.Method() == fiber.MethodHead {
 		handler.logEgressDenied(c, recoveryCodeRevealEgress, "head_request")
 		return false

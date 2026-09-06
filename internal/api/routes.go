@@ -159,7 +159,7 @@ func registerPageRoutes(app *fiber.App, handler *Handler) {
 	app.Post(LanguageSwitchPath, handler.SetLanguage)
 
 	app.Get("/login", handler.ShowLoginPage)
-	app.Get("/auth/oidc/start", handler.StartOIDCLogin)
+	app.Get("/auth/oidc/start", handler.refuseHEADOnShownOnceSurface, handler.StartOIDCLogin)
 	app.Get(oidcLogoutBridgePath, handler.ShowOIDCLogoutBridge)
 	app.Get(oidcLogoutBridgeRedirectPath, handler.refuseHEADOnShownOnceSurface, handler.RedirectOIDCLogout)
 	app.Get("/register", handler.ShowRegisterPage)
@@ -201,40 +201,45 @@ func registerPageRoutes(app *fiber.App, handler *Handler) {
 }
 
 // shownOnceGETRoutes names every GET route whose chain starts with
-// refuseHEADOnShownOnceSurface: the routes whose GET spends a one-time
-// consumption mark or a one-time sealed cookie, and which therefore refuse the
-// HEAD twin registerHEADTwins would otherwise let run that chain for a body the
-// protocol discards.
+// refuseHEADOnShownOnceSurface: the routes whose GET spends or mints one-time
+// auth material, and which therefore refuse the HEAD twin registerHEADTwins
+// would otherwise let run that chain for a body the protocol discards.
 //
 // The set is declared rather than derived for the same reason
 // firstPartyGuardedRoutes is: nothing in the route table says which GET spends
 // something. Membership is decided by reading the handler — /register/welcome
 // consumes the pickup token, /recovery-code and /settings/calendar-feed claim
 // their reveal marks, /auth/oidc/logout/redirect consumes the end-session
-// state, and the query-mode OIDC callback consumes the one-time state cookie
-// together with the provider's authorization code — and
-// TestShownOnceGETRoutesAreExactlyTheDeclaredSet refuses both drifts: a refusal
-// dropped from a route named here, and a route that acquires one without being
-// named.
+// state, the query-mode OIDC callback consumes the one-time state cookie
+// together with the provider's authorization code, and /auth/oidc/start mints
+// that state cookie and starts the provider handshake before it redirects —
+// a HEAD can neither follow that redirect nor use the cookie, and would only
+// overwrite whatever state a concurrent GET login already staged in the same
+// cookie jar. TestShownOnceGETRoutesAreExactlyTheDeclaredSet refuses both
+// drifts: a refusal dropped from a route named here, and a route that
+// acquires one without being named.
 //
 // The OIDC callback is registered only under OIDC_RESPONSE_MODE=query, which is
 // why that test builds a query-mode app as well as the default one.
 //
-// What counts as spending is one-time SECRET or AUTH material — a consumption
-// mark, a pickup nonce, a sealed one-time state cookie. The flash cookie every
-// page pops is not: it carries a notice, not a secret, and treating it as one
-// would refuse HEAD on nearly every page in the app, which is the answer this
-// change exists to remove. A HEAD that swallows a flash message costs the same
-// as the GET prefetch that already could.
+// What counts as spending or minting is one-time SECRET or AUTH material — a
+// consumption mark, a pickup nonce, a sealed one-time state cookie. The flash
+// cookie every page pops is not: it carries a notice, not a secret, and
+// treating it as one would refuse HEAD on nearly every page in the app, which
+// is the answer this change exists to remove. popFlashCookie itself leaves the
+// cookie alone on HEAD — it returns an empty payload without reading or
+// clearing it — so no route here needs to guard the flash on the route's
+// account.
 //
 // This is not the whole set of surfaces that spend something on a GET: the
 // inline recovery-code reveal shares GET /register with the anonymous signup
 // page, so a route-wide refusal there would answer 404 to an ordinary probe of
 // a page that exists. That one is refused inside claimRecoveryCodeReveal, where
 // the first-party rule sits and for the same reason — see its comment. A route
-// belongs HERE when its GET spends something on every visit; a route whose
-// spend depends on the request's own state refuses at the spend.
+// belongs HERE when its GET spends or mints something on every visit; a route
+// whose spend depends on the request's own state refuses at the spend.
 var shownOnceGETRoutes = []string{
+	fiber.MethodGet + " /auth/oidc/start",
 	fiber.MethodGet + " /auth/oidc/callback",
 	fiber.MethodGet + " " + oidcLogoutBridgeRedirectPath,
 	fiber.MethodGet + " " + registerPickupNextPath,
