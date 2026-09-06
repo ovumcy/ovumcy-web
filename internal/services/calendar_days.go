@@ -158,11 +158,21 @@ func buildCalendarPredictionMaps(user *models.User, logs []models.DailyLog, stat
 	// days keep their anchor in a recorded cycle start and stay.
 	fertilitySuppressed := FertilityProjectionSuppressed(user, stats)
 
+	// The CURRENT cycle's window follows a thermal shift the owner's own
+	// temperatures confirm — the same triple (day, window, status) the dashboard
+	// and the JSON API publish, resolved once so the grid cannot shade the
+	// projected window under a solid marker the BBT pass below has already moved
+	// onto the confirmed day. The projected cycles chained after it (line
+	// 379/404) keep the model's arithmetic: a confirmation is about this cycle
+	// only. The resolver reads the same gate as the branch it sits in, so it
+	// changes which days are shaded and never whether any are.
+	currentStats, _ := ResolveConfirmedCycleStats(user, logs, stats, DateAtLocation(now, location), location)
+
 	appendCurrentBaselinePeriod(predictedPeriodMap, stats, location)
 	if !fertilitySuppressed {
-		appendCurrentBaselinePreFertile(preFertileMap, stats, location)
-		appendFertilityWindow(fertilityEdgeMap, fertilityPeakMap, stats.FertilityWindowStart, stats.FertilityWindowEnd, stats.OvulationDate)
-		appendCalendarSingleDate(ovulationMap, stats.OvulationDate)
+		appendCurrentBaselinePreFertile(preFertileMap, currentStats, location)
+		appendFertilityWindow(fertilityEdgeMap, fertilityPeakMap, currentStats.FertilityWindowStart, currentStats.FertilityWindowEnd, currentStats.OvulationDate)
+		appendCalendarSingleDate(ovulationMap, currentStats.OvulationDate)
 	}
 	appendPredictedCycles(predictedPeriodMap, preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, stats, gridEnd, location, !fertilitySuppressed)
 	appendPredictedStartRange(maps.predictedStartRange, user, stats, location)
@@ -405,7 +415,14 @@ func appendPredictedWindow(preFertileMap map[string]bool, fertilityEdgeMap map[s
 }
 
 func appendCurrentCycleBBTSignal(user *models.User, logs []models.DailyLog, stats CycleStats, now time.Time, ovulationMap map[string]bool, tentativeOvulationMap map[string]bool, location *time.Location) {
-	if user == nil || !user.TrackBBT || stats.LastPeriodStart.IsZero() || stats.OvulationDate.IsZero() || stats.NextPeriodStart.IsZero() {
+	// The PROJECTED ovulation date is no longer a precondition, only the subject
+	// of the downgrade below: a projection the model withheld (a median cycle too
+	// short to place an ovulation, so no ovulation date and no next period start)
+	// used to silence the grid about a shift the owner's own temperatures had
+	// already confirmed. The window derived from a confirmed day needs no
+	// projection, so the pass now runs on the recorded anchor alone and simply
+	// has nothing to downgrade when there is no projected day.
+	if user == nil || !user.TrackBBT || stats.LastPeriodStart.IsZero() {
 		return
 	}
 
@@ -416,10 +433,14 @@ func appendCurrentCycleBBTSignal(user *models.User, logs []models.DailyLog, stat
 	}
 
 	ovulationSignal, confirmed := ConfirmedCurrentCycleOvulation(user, logs, stats, today, location)
-	projectedKey := CalendarDayKey(stats.OvulationDate)
-	delete(ovulationMap, projectedKey)
+	if !stats.OvulationDate.IsZero() {
+		projectedKey := CalendarDayKey(stats.OvulationDate)
+		delete(ovulationMap, projectedKey)
+		if !confirmed {
+			tentativeOvulationMap[projectedKey] = true
+		}
+	}
 	if !confirmed {
-		tentativeOvulationMap[projectedKey] = true
 		return
 	}
 

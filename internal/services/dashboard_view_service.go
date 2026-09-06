@@ -180,15 +180,23 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 		reminderBanner = BuildDashboardReminderBanner(cycleContext, today, user.ReminderLeadDays)
 	}
 
+	// A confirmed thermal shift outranks the projection on the whole triple —
+	// day, window, status — before either the published copy or the hero ribbon
+	// reads it, so the header, the ring and the JSON API cannot name one day and
+	// shade another. The resolver carries the same medical gate the ovulation
+	// line above already resolves through, so this changes WHICH window is shown
+	// and never whether one is shown at all.
+	confirmedStats, _ := ResolveConfirmedCycleStats(user, logs, stats, today, location)
+
 	// The same helper the stats page and the JSON API publish through, so the
 	// surfaces cannot drift apart on what a suppressed tier is allowed to carry.
 	// Every builder above still reads the uncleared stats.
-	publishedStats, _ := PublishedStats(user, stats)
+	publishedStats, _ := PublishedStats(user, confirmedStats)
 
 	return DashboardViewData{
 		Stats:                             publishedStats,
 		CycleContext:                      cycleContext,
-		CycleHero:                         BuildDashboardCycleHero(user, stats, cycleContext, dashboardCycleHeroInput{Logs: logs, Today: today, Location: location}),
+		CycleHero:                         BuildDashboardCycleHero(user, confirmedStats, cycleContext, dashboardCycleHeroInput{Logs: logs, Today: today, Location: location}),
 		ReminderBanner:                    reminderBanner,
 		Today:                             today,
 		Yesterday:                         yesterday,

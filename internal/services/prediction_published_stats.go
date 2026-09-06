@@ -87,6 +87,12 @@ func PublishedStats(user *models.User, stats CycleStats) (CycleStats, Prediction
 // the owner's own temperatures already confirm outranks the model's
 // projection everywhere an owner reads it.
 //
+// The substitution is ResolveConfirmedCycleStats and covers the whole triple —
+// day, window, fertility status — rather than the date alone: this function
+// used to move the date and leave the window and CurrentFertility on the
+// projection, which published a confirmed day beside a window that disagreed
+// with it.
+//
 // The JSON API was the one surface that skipped this: it read stats.
 // OvulationDate straight off the model and published it even after a BBT
 // shift had superseded it, while the grid, the dashboard and the chart had
@@ -126,11 +132,9 @@ func PublishedStats(user *models.User, stats CycleStats) (CycleStats, Prediction
 // PublishedStats only zeroes OvulationDate, so day equality and a presence check
 // coincide by construction — which is why the stricter one is written here.
 func PublishedOverviewStats(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (CycleStats, PredictionSuppression, bool) {
-	confirmedDay, wasConfirmed := ConfirmedCurrentCycleOvulation(user, logs, stats, today, location)
-	if wasConfirmed {
-		stats.OvulationDate = confirmedDay
-	}
-	published, suppression := PublishedStats(user, stats)
+	resolved, wasConfirmed := ResolveConfirmedCycleStats(user, logs, stats, today, location)
+	confirmedDay := resolved.OvulationDate
+	published, suppression := PublishedStats(user, resolved)
 	confirmedOvulation := wasConfirmed && sameDay(published.OvulationDate, confirmedDay)
 	return published, suppression, confirmedOvulation
 }

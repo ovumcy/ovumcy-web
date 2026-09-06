@@ -150,11 +150,18 @@ func currentCycleDetectionBound(today time.Time, location *time.Location) time.T
 // that a surface which has already resolved it does not resolve a second,
 // possibly different one.
 func ConfirmedCurrentCycleOvulation(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (time.Time, bool) {
-	// NextPeriodStart no longer bounds the series below, but it stays in the
-	// gate with the other two model dates: a projection the model withheld
-	// (no next period start) withholds the confirmation too, until the window
-	// itself follows the confirmed day rather than the projection.
-	if user == nil || !user.TrackBBT || stats.LastPeriodStart.IsZero() || stats.OvulationDate.IsZero() || stats.NextPeriodStart.IsZero() {
+	// The two PROJECTED dates used to stand in this gate beside the recorded
+	// anchor: a projection the model withheld (no ovulation date, no next period
+	// start) withheld the confirmation too — "until the window itself follows
+	// the confirmed day rather than the projection". It does now
+	// (ResolveConfirmedCycleStats), and a window derived from a recorded shift
+	// needs no projection to exist, so an account whose median cycle leaves the
+	// model no room to place an ovulation still gets the day its own
+	// temperatures name instead of a silence its data does not support.
+	//
+	// LastPeriodStart stays: it is a RECORDED cycle start and the detection
+	// series' own lower bound below, not a projection.
+	if user == nil || !user.TrackBBT || stats.LastPeriodStart.IsZero() {
 		return time.Time{}, false
 	}
 

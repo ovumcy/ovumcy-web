@@ -149,8 +149,13 @@ func (service *StatsService) BuildStatsPageViewData(ctx context.Context, user *m
 	cycleFactorExplanation, hasCycleFactorExplanation := buildStatsCycleFactorExplanation(user, baseData.logs, baseData.stats, now, location)
 	predictionExplanation := BuildOwnerPredictionExplanation(user, cycleContext, hasCycleFactorExplanation && len(cycleFactorExplanation.HintFactorKeys) > 0)
 	// The one adapter every projection surface publishes through, so /stats and
-	// the JSON API cannot drift apart on what a suppressed tier may carry.
-	publishedStats, _ := PublishedStats(user, baseData.stats)
+	// the JSON API cannot drift apart on what a suppressed tier may carry — and,
+	// ahead of it, the one resolver that moves the ovulation day, the fertile
+	// window and the fertility status onto a shift the owner's temperatures
+	// confirm, so this page's fertile-window card cannot name the projection
+	// while the grid and the chart name the measured day.
+	confirmedStats, _ := ResolveConfirmedCycleStats(user, baseData.logs, baseData.stats, DateAtLocation(now, location), location)
+	publishedStats, _ := PublishedStats(user, confirmedStats)
 
 	return StatsPageViewData{
 		Stats:                               publishedStats,
