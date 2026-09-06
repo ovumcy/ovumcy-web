@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -195,5 +196,107 @@ func TestResetPasswordRefusesWithoutAConfirmedFenceAndLeavesTheHashAlone(t *test
 	}
 	if unchanged.MustChangePassword {
 		t.Fatal("expected must_change_password to be untouched by a refused reset")
+	}
+}
+
+// TestResetPasswordReportsAWriteFailureAfterTheFenceHasAlreadyAdvanced is the
+// outcome that follows from confirming the fence BEFORE the credential write
+// rather than after it: the fence advance is one-shot, so a write that fails
+// once the gate has passed leaves the account's password where it was while
+// every armed calendar feed on the instance is already revoked. The success
+// line on stderr is the operator's only record of that half-done state, so it
+// is asserted here rather than left implied — a run whose stderr is silent
+// and whose password is unchanged is indistinguishable from a refusal.
+//
+// Not run with t.Parallel(): it swaps os.Stderr, and armOperatorFence calls
+// t.Setenv.
+func TestResetPasswordReportsAWriteFailureAfterTheFenceHasAlreadyAdvanced(t *testing.T) {
+	databasePath := createCLIResetDatabase(t)
+	createCLIResetUser(t, databasePath, "cli-reset-write-refused@example.com", "StrongPass1")
+	fencePath := armOperatorFence(t, databasePath)
+	refuseCLIPasswordHashWrites(t, databasePath)
+	readStandardError := captureStandardError(t)
+
+	err := runResetPasswordCommand(
+		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
+		[]string{"cli-reset-write-refused@example.com"},
+		func() ([]byte, error) { return []byte("EvenStronger2"), nil },
+		io.Discard,
+	)
+	captured := readStandardError()
+
+	if !errors.Is(err, services.ErrAuthPasswordUpdate) {
+		t.Fatalf("expected the refused write to reach the operator as ErrAuthPasswordUpdate, got %v", err)
+	}
+	if !strings.HasPrefix(err.Error(), "reset password: ") {
+		t.Fatalf("expected mapResetPasswordError's wording around the write failure, got %v", err)
+	}
+
+	unchanged := loadCLIResetUser(t, databasePath, "cli-reset-write-refused@example.com")
+	if bcrypt.CompareHashAndPassword([]byte(unchanged.PasswordHash), []byte("StrongPass1")) != nil {
+		t.Fatal("expected the stored password hash to survive a refused write")
+	}
+	if unchanged.MustChangePassword {
+		t.Fatal("expected must_change_password to survive a refused write")
+	}
+
+	if !strings.Contains(captured, "fence advanced at "+fencePath) {
+		t.Fatalf("the burned fence generation must still be reported, got %q", captured)
+	}
+}
+
+// refuseCLIPasswordHashWrites installs a SQLite trigger that aborts any UPDATE
+// carrying password_hash — the single statement
+// ForceResetPasswordAndRevokeSessions issues — so the credential write fails
+// while the target resolve and the fence advance ahead of it still succeed.
+// A trigger rather than a repository double because runResetPasswordCommand
+// builds its own repositories from the db.Config it is handed, and no other
+// write in the command names that column.
+func refuseCLIPasswordHashWrites(t *testing.T, databasePath string) {
+	t.Helper()
+
+	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath})
+	if err != nil {
+		t.Fatalf("refuseCLIPasswordHashWrites: open sqlite: %v", err)
+	}
+	sqlDB, err := database.DB()
+	if err != nil {
+		t.Fatalf("refuseCLIPasswordHashWrites: open sql db: %v", err)
+	}
+	defer func() { _ = sqlDB.Close() }()
+
+	if err := database.Exec(
+		"CREATE TRIGGER refuse_password_hash_writes BEFORE UPDATE OF password_hash ON users " +
+			"BEGIN SELECT RAISE(ABORT, 'password_hash writes are refused by this test'); END",
+	).Error; err != nil {
+		t.Fatalf("refuseCLIPasswordHashWrites: create trigger: %v", err)
+	}
+}
+
+// captureStandardError swaps os.Stderr for a pipe and returns the reader half
+// as a function that restores the original and yields everything written
+// meanwhile. runResetPasswordCommand hands confirmOperatorFeedRevocation
+// os.Stderr itself, so from the command's own entry point the fence line
+// cannot be observed any other way.
+func captureStandardError(t *testing.T) func() string {
+	t.Helper()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("captureStandardError: pipe: %v", err)
+	}
+	original := os.Stderr
+	os.Stderr = writer
+	t.Cleanup(func() { os.Stderr = original })
+
+	return func() string {
+		os.Stderr = original
+		_ = writer.Close()
+		captured, readErr := io.ReadAll(reader)
+		_ = reader.Close()
+		if readErr != nil {
+			t.Fatalf("captureStandardError: read: %v", readErr)
+		}
+		return string(captured)
 	}
 }
