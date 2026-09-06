@@ -484,9 +484,9 @@ func TestCalendarFeedReturns500OnInfrastructureError(t *testing.T) {
 	// Minted by the production generator, because only a token of the CURRENT
 	// selector+verifier width reaches the stubbed lookup at all: any other
 	// length is refused by SplitCalendarFeedToken and 404s before it. A
-	// hand-sized literal would go on 404ing — green, and proving nothing about
-	// the error branch — the day either width changes. Nothing stores it; this
-	// store fails on every selector.
+	// hand-sized literal would start 404ing the day either width changes, and
+	// this test would then fail for the wrong reason instead of exercising the
+	// error branch. Nothing stores it; this store fails on every selector.
 	token, _, err := services.GenerateCalendarFeedToken([]byte(testAppSecretKey))
 	if err != nil {
 		t.Fatalf("GenerateCalendarFeedToken: %v", err)
