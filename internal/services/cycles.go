@@ -485,6 +485,19 @@ func resolveCyclePhase(stats CycleStats, logs []models.DailyLog, today time.Time
 			periodLength = models.DefaultPeriodLength
 		}
 		periodEnd := AddCalendarDays(stats.LastPeriodStart, periodLength-1, opts.location)
+		// The band above is a PROJECTION of the average period length, and the
+		// lines below read stats.OvulationDate to call that same day
+		// "ovulation" — so a band long enough to swallow the published
+		// ovulation day makes this function contradict itself, and does it
+		// silently, since the earlier return wins. It is reachable both ways:
+		// a confirmed shift can land on cycle day 6 while the average period
+		// projects seven days, and a short projected cycle can place its own
+		// ovulation day inside its own projected period. The published day
+		// wins, whichever produced it; a day the owner actually LOGGED as
+		// bleeding already returned above and is untouched.
+		if !stats.OvulationDate.IsZero() && CalendarDaysBetween(stats.OvulationDate, periodEnd) >= 0 {
+			periodEnd = AddCalendarDays(stats.OvulationDate, -1, opts.location)
+		}
 		if betweenInclusive(today, stats.LastPeriodStart, periodEnd) {
 			return "menstrual"
 		}
