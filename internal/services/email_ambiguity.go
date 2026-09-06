@@ -53,8 +53,9 @@ type normalizedEmailFinder interface {
 
 // resolveUniqueUserByEmail is the ambiguity-aware counterpart to a bare
 // FindByNormalizedEmailOptional call, shared by every service that resolves
-// an account by email on behalf of an operator: AuthService.ForceResetPasswordByEmail,
-// OperatorUserService.GetUserByEmail, and WebhookSettingsCLIService.resolveOwner.
+// an account by email on behalf of an operator: OperatorUserService.GetUserByEmail
+// (which `users delete` and `reset-password` both resolve their target through)
+// and WebhookSettingsCLIService.resolveOwner.
 // It returns (user, false, nil) when nothing matches — the caller decides how
 // to report "not found" in its own vocabulary — and *AmbiguousEmailError when
 // more than one row matches, rather than silently returning whichever row the

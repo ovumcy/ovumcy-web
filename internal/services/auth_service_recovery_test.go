@@ -20,8 +20,6 @@ type stubAuthUserRepo struct {
 	findByEmailOptionalUser  models.User
 	findByEmailOptionalFound bool
 	findByEmailOptionalErr   error
-	findAllByEmailUsers      []models.User
-	findAllByEmailErr        error
 	findByIDOptionalUser     models.User
 	findByIDOptionalFound    bool
 	findByIDOptionalErr      error
@@ -79,13 +77,6 @@ func (stub *stubAuthUserRepo) FindByNormalizedEmailOptional(ctx context.Context,
 		return stub.user, true, nil
 	}
 	return models.User{}, false, nil
-}
-
-func (stub *stubAuthUserRepo) FindAllByNormalizedEmail(context.Context, string) ([]models.User, error) {
-	if stub.findAllByEmailErr != nil {
-		return nil, stub.findAllByEmailErr
-	}
-	return stub.findAllByEmailUsers, nil
 }
 
 func (stub *stubAuthUserRepo) FindByID(context.Context, uint) (models.User, error) {
@@ -322,127 +313,11 @@ func TestAuthServiceValidateResetPasswordInput(t *testing.T) {
 	}
 }
 
-func TestAuthServiceForceResetPasswordByEmail(t *testing.T) {
-	t.Run("success", func(t *testing.T) {
-		originalHash, err := bcrypt.GenerateFromPassword([]byte("StrongPass1"), bcrypt.DefaultCost)
-		if err != nil {
-			t.Fatalf("hash original password: %v", err)
-		}
-
-		repo := &stubAuthUserRepo{
-			findAllByEmailUsers: []models.User{{
-				ID:                 18,
-				Email:              "owner@example.com",
-				PasswordHash:       string(originalHash),
-				LocalAuthEnabled:   true,
-				MustChangePassword: false,
-			}},
-		}
-		service := NewAuthService(repo)
-
-		if err := service.ForceResetPasswordByEmail(context.Background(), " Owner@Example.com ", "EvenStronger2"); err != nil {
-			t.Fatalf("ForceResetPasswordByEmail() unexpected error: %v", err)
-		}
-		if !repo.forceResetCalled {
-			t.Fatal("expected ForceResetPasswordAndRevokeSessions() to be called")
-		}
-		if repo.updatePasswordCalled {
-			t.Fatal("operator reset must NOT use the routine UpdatePasswordAndRevokeSessions path")
-		}
-		if !repo.user.MustChangePassword {
-			t.Fatal("expected MustChangePassword=true after forced reset")
-		}
-		if bcrypt.CompareHashAndPassword([]byte(repo.user.PasswordHash), []byte("EvenStronger2")) != nil {
-			t.Fatal("expected saved password hash to match new password")
-		}
-		if repo.user.AuthSessionVersion != 2 {
-			t.Fatalf("expected auth session version to increment to 2, got %d", repo.user.AuthSessionVersion)
-		}
-	})
-
-	t.Run("missing password", func(t *testing.T) {
-		service := NewAuthService(&stubAuthUserRepo{})
-		if err := service.ForceResetPasswordByEmail(context.Background(), "owner@example.com", " "); !errors.Is(err, ErrAuthResetInvalid) {
-			t.Fatalf("expected ErrAuthResetInvalid, got %v", err)
-		}
-	})
-
-	t.Run("weak password", func(t *testing.T) {
-		service := NewAuthService(&stubAuthUserRepo{})
-		if err := service.ForceResetPasswordByEmail(context.Background(), "owner@example.com", "12345678"); !errors.Is(err, ErrAuthWeakPassword) {
-			t.Fatalf("expected ErrAuthWeakPassword, got %v", err)
-		}
-	})
-
-	t.Run("user not found", func(t *testing.T) {
-		repo := &stubAuthUserRepo{}
-		service := NewAuthService(repo)
-		if err := service.ForceResetPasswordByEmail(context.Background(), "missing@example.com", "EvenStronger2"); !errors.Is(err, ErrAuthUserNotFound) {
-			t.Fatalf("expected ErrAuthUserNotFound, got %v", err)
-		}
-		if repo.forceResetCalled {
-			t.Fatal("did not expect password update when user is missing")
-		}
-	})
-
-	t.Run("lookup failure", func(t *testing.T) {
-		repo := &stubAuthUserRepo{findAllByEmailErr: errors.New("db down")}
-		service := NewAuthService(repo)
-		if err := service.ForceResetPasswordByEmail(context.Background(), "owner@example.com", "EvenStronger2"); !errors.Is(err, ErrAuthUserLookupFailed) {
-			t.Fatalf("expected ErrAuthUserLookupFailed, got %v", err)
-		}
-	})
-
-	t.Run("save failure", func(t *testing.T) {
-		originalHash, err := bcrypt.GenerateFromPassword([]byte("StrongPass1"), bcrypt.DefaultCost)
-		if err != nil {
-			t.Fatalf("hash original password: %v", err)
-		}
-
-		repo := &stubAuthUserRepo{
-			findAllByEmailUsers: []models.User{{
-				ID:               18,
-				Email:            "owner@example.com",
-				PasswordHash:     string(originalHash),
-				LocalAuthEnabled: true,
-			}},
-			forceResetErr: errors.New("write failed"),
-		}
-		service := NewAuthService(repo)
-
-		if err := service.ForceResetPasswordByEmail(context.Background(), "owner@example.com", "EvenStronger2"); !errors.Is(err, ErrAuthPasswordUpdate) {
-			t.Fatalf("expected ErrAuthPasswordUpdate, got %v", err)
-		}
-	})
-
-	// TestAuthServiceForceResetPasswordByEmail/ambiguous-address is the
-	// finding-DB-2 regression: two rows sharing one normalized address (the
-	// exact shape RenormalizeUserEmail leaves standing) must be refused, not
-	// silently resolved to one of them.
-	t.Run("ambiguous address", func(t *testing.T) {
-		repo := &stubAuthUserRepo{
-			findAllByEmailUsers: []models.User{
-				{ID: 5, Email: "owner@example.com"},
-				{ID: 18, Email: "owner@example.com"},
-			},
-		}
-		service := NewAuthService(repo)
-
-		err := service.ForceResetPasswordByEmail(context.Background(), "owner@example.com", "EvenStronger2")
-		var ambiguous *AmbiguousEmailError
-		if !errors.As(err, &ambiguous) {
-			t.Fatalf("expected *AmbiguousEmailError, got %v", err)
-		}
-		if got, want := ambiguous.IDs, []uint{5, 18}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
-			t.Fatalf("expected ambiguous ids %v, got %v", want, got)
-		}
-		if repo.forceResetCalled {
-			t.Fatal("did not expect password update on an ambiguous address")
-		}
-	})
-}
-
 func TestAuthServiceForceResetPasswordByID(t *testing.T) {
+	// TestAuthServiceForceResetPasswordByID/success is the session-invalidation
+	// row for the operator-forced reset in SECURITY.md: the new hash is stored,
+	// must_change_password is set, the routine authenticated writer is NOT the
+	// one used, and auth_session_version goes up in the same update.
 	t.Run("success", func(t *testing.T) {
 		originalHash, err := bcrypt.GenerateFromPassword([]byte("StrongPass1"), bcrypt.DefaultCost)
 		if err != nil {
@@ -467,8 +342,20 @@ func TestAuthServiceForceResetPasswordByID(t *testing.T) {
 		if !repo.forceResetCalled {
 			t.Fatal("expected ForceResetPasswordAndRevokeSessions() to be called")
 		}
+		if repo.updatePasswordCalled {
+			t.Fatal("operator reset must NOT use the routine UpdatePasswordAndRevokeSessions path")
+		}
 		if repo.updatedUserID != 18 {
 			t.Fatalf("expected reset to target id 18, got %d", repo.updatedUserID)
+		}
+		if !repo.user.MustChangePassword {
+			t.Fatal("expected MustChangePassword=true after forced reset")
+		}
+		if bcrypt.CompareHashAndPassword([]byte(repo.user.PasswordHash), []byte("EvenStronger2")) != nil {
+			t.Fatal("expected saved password hash to match new password")
+		}
+		if repo.user.AuthSessionVersion != 2 {
+			t.Fatalf("expected auth session version to increment to 2, got %d", repo.user.AuthSessionVersion)
 		}
 	})
 
@@ -486,11 +373,11 @@ func TestAuthServiceForceResetPasswordByID(t *testing.T) {
 		}
 	})
 
-	// TestAuthServiceForceResetPasswordByID/weak_password mirrors
-	// ForceResetPasswordByEmail's own "weak password" subtest: the id form
-	// has its own authPasswordPolicyError(ValidatePasswordStrength(...)) check
-	// (a distinct line from the email form's, even though the logic is
-	// identical), which nothing else in this file's suite reaches.
+	// TestAuthServiceForceResetPasswordByID/weak_password covers the forced
+	// reset's own authPasswordPolicyError(ValidatePasswordStrength(...)) call,
+	// which nothing else in this file's suite reaches. The CLI runs the same
+	// policy once more ahead of the fence gate (resetPasswordPolicyError), so
+	// a weak password never spends the gate's one-shot confirmation.
 	t.Run("weak password", func(t *testing.T) {
 		service := NewAuthService(&stubAuthUserRepo{})
 		if err := service.ForceResetPasswordByID(context.Background(), 18, "12345678"); !errors.Is(err, ErrAuthWeakPassword) {
