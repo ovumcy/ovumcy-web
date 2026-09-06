@@ -83,8 +83,21 @@ func BuildDashboardCycleHero(user *models.User, stats CycleStats, cycleContext D
 	}
 	cycleStart := CalendarDay(stats.LastPeriodStart, location)
 
-	ovulationDay := dashboardCycleHeroOvulationDay(stats, cycleContext, cycleLength, cycleStart, location)
-	if ovulationDay <= periodLength+1 || ovulationDay > cycleLength {
+	ovulationDay, confirmedAnchor := dashboardCycleHeroOvulationDay(stats, cycleContext, cycleLength, cycleStart, location)
+	if confirmedAnchor {
+		// A confirmed day is an OBSERVATION; the projected periodLength above it
+		// is a projection of the average. When they disagree the observation
+		// narrows the menstrual/follicular split (and every card and cell that
+		// reads periodLength below), rather than the projection hiding the whole
+		// ribbon out from under the cohort that tracks its temperatures most
+		// closely. The only refusal left here is geometric impossibility —
+		// see the comment on dashboardCycleHeroOvulationDay for why the confirmed
+		// branch drops the periodLength+1 floor the projected branch still needs.
+		if ovulationDay < 2 || ovulationDay > cycleLength {
+			return DashboardCycleHero{}
+		}
+		periodLength = min(periodLength, ovulationDay-1)
+	} else if ovulationDay <= periodLength+1 || ovulationDay > cycleLength {
 		return DashboardCycleHero{}
 	}
 
@@ -129,16 +142,28 @@ func BuildDashboardCycleHero(user *models.User, stats CycleStats, cycleContext D
 // confirmed date is only trusted when cycleContext.DisplayOvulationConfirmed
 // says a resolver actually substituted it; otherwise this falls back to the
 // same CalcOvulationDay(cycleLength, LutealPhase) projection used before
-// confirmed-shift anchoring existed. The bounds check the caller applies
-// afterward is unchanged: it is the ribbon's own phase geometry, keyed to
-// DashboardCycleReferenceLength (the average), and a confirmed day landing
-// outside it is a legitimate refusal to render, not a defect.
-func dashboardCycleHeroOvulationDay(stats CycleStats, cycleContext DashboardCycleContext, cycleLength int, cycleStart time.Time, location *time.Location) int {
+// confirmed-shift anchoring existed.
+//
+// The two callers apply two DIFFERENT bounds, because the two returned days
+// carry different guarantees. The projected branch's caller still requires
+// ovulationDay > periodLength+1: CalcOvulationDay is itself a projection
+// built from the SAME AveragePeriodLength periodLength projects, so a day it
+// places inside or one after the projected period is that projection
+// disagreeing with itself, not a real cycle — a legitimate refusal to render.
+// The confirmed branch's caller drops that floor to the geometric minimum
+// (ovulationDay >= 2): the day is an OBSERVATION the detector read off
+// recorded temperatures, periodLength is still a projection of the average,
+// and when an observation lands inside or before the projected period the
+// observation narrows periodLength instead — the projection has no standing
+// to hide a ribbon an observation can place. Only ovulationDay > cycleLength
+// stays a refusal on both branches: that is a day past the ribbon's own axis,
+// which no clamp on periodLength can fix.
+func dashboardCycleHeroOvulationDay(stats CycleStats, cycleContext DashboardCycleContext, cycleLength int, cycleStart time.Time, location *time.Location) (int, bool) {
 	if cycleContext.DisplayOvulationConfirmed && !stats.OvulationDate.IsZero() && !cycleStart.IsZero() {
-		return CalendarDaysBetween(cycleStart, CalendarDay(stats.OvulationDate, location)) + 1
+		return CalendarDaysBetween(cycleStart, CalendarDay(stats.OvulationDate, location)) + 1, true
 	}
 	projected, _ := CalcOvulationDay(cycleLength, stats.LutealPhase)
-	return projected
+	return projected, false
 }
 
 func canRenderDashboardCycleHero(cycleLength int, stats CycleStats, cycleContext DashboardCycleContext) bool {
