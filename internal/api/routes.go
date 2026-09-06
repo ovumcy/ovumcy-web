@@ -193,7 +193,7 @@ func registerPageRoutes(app *fiber.App, handler *Handler) {
 	app.Get(calendarFeedRoutePath, handler.ServeCalendarFeed)
 	app.Get("/stats", handler.AuthRequired, handler.ShowStats)
 	app.Get("/settings", handler.AuthRequired, handler.ShowSettings)
-	app.Get("/settings/2fa", handler.AuthRequired, handler.ShowTOTPSetupPage)
+	app.Get("/settings/2fa", handler.refuseHEADOnShownOnceSurface, handler.AuthRequired, handler.ShowTOTPSetupPage)
 	// One-time reveal of the freshly generated/rotated .ics subscribe URL. The
 	// URL (a secret) is read from the sealed one-time cookie, shown once, then
 	// the cookie is cleared; a refresh redirects back to /settings.
@@ -211,13 +211,16 @@ func registerPageRoutes(app *fiber.App, handler *Handler) {
 // consumes the pickup token, /recovery-code and /settings/calendar-feed claim
 // their reveal marks, /auth/oidc/logout/redirect consumes the end-session
 // state, the query-mode OIDC callback consumes the one-time state cookie
-// together with the provider's authorization code, and /auth/oidc/start mints
+// together with the provider's authorization code, /auth/oidc/start mints
 // that state cookie and starts the provider handshake before it redirects —
 // a HEAD can neither follow that redirect nor use the cookie, and would only
 // overwrite whatever state a concurrent GET login already staged in the same
-// cookie jar. TestShownOnceGETRoutesAreExactlyTheDeclaredSet refuses both
-// drifts: a refusal dropped from a route named here, and a route that
-// acquires one without being named.
+// cookie jar — and /settings/2fa mints the TOTP enrolment secret and seals it
+// into a cookie the owner's own PUT verifies against: a HEAD would overwrite
+// the secret behind a QR code she is already scanning in another tab, and her
+// enrolment PUT would refuse. TestShownOnceGETRoutesAreExactlyTheDeclaredSet
+// refuses both drifts: a refusal dropped from a route named here, and a route
+// that acquires one without being named.
 //
 // The OIDC callback is registered only under OIDC_RESPONSE_MODE=query, which is
 // why that test builds a query-mode app as well as the default one.
@@ -245,6 +248,7 @@ var shownOnceGETRoutes = []string{
 	fiber.MethodGet + " " + registerPickupNextPath,
 	fiber.MethodGet + " /recovery-code",
 	fiber.MethodGet + " " + calendarFeedRevealPath,
+	fiber.MethodGet + " /settings/2fa",
 }
 
 // firstPartyGuardedRoutes names every route that carries

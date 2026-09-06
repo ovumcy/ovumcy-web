@@ -135,6 +135,34 @@ func TestShowTOTPSetupPage_TOTPEnabled_ShowsManagementView(t *testing.T) {
 	}
 }
 
+// TestShowTOTPSetupPage_HEAD_RefusesAndMintsNoSetupCookie pins GET /settings/2fa
+// joining shownOnceGETRoutes: while TOTP is not yet enabled, ShowTOTPSetupPage
+// mints a fresh secret and seals it into the setup cookie on every visit, and a
+// HEAD can neither show the QR code nor let the owner scan it — it would only
+// overwrite whatever secret a concurrent GET enrollment already staged in the
+// same cookie jar, so the owner's own PUT against the code she already scanned
+// would refuse. Mirrors
+// TestHeadOnOIDCStartDoesNotMintStateCookieOrStartTheHandshake.
+func TestShowTOTPSetupPage_HEAD_RefusesAndMintsNoSetupCookie(t *testing.T) {
+	ctx := newTOTPSettingsContext(t, "totp-setup-head@example.com")
+
+	req := httptest.NewRequest(http.MethodHead, "/settings/2fa", nil)
+	req.Header.Set("Accept-Language", "en")
+	req.Header.Set("Cookie", ctx.authCookie)
+	resp, err := ctx.app.Test(req, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("HEAD /settings/2fa: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", resp.StatusCode)
+	}
+	if cookie := responseCookie(resp.Cookies(), totpSetupCookieName); cookie != nil {
+		t.Fatalf("expected HEAD /settings/2fa to mint no setup cookie, got Set-Cookie %#v", cookie)
+	}
+}
+
 // --- VerifyTOTP2FAEnrollment ---
 
 func TestVerifyTOTP2FAEnrollment_ValidCode_EnablesTOTP(t *testing.T) {
