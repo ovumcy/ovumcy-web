@@ -44,6 +44,26 @@ func projectedWindowFixture(t *testing.T) (*models.User, []models.DailyLog, Cycl
 	return user, logs, stats, today
 }
 
+// impossibleProjectionShiftFixture is confirmedOvulationFixture's cycle with
+// its median shortened to 14 — one below minLutealPhaseDays+minOvulationCycleDay
+// (15), so CalcOvulationDay refuses it and DashboardProjectionCycleLength (which
+// prefers the median) makes the dashboard's own projection report
+// OvulationImpossible. AverageCycleLength is raised to 25 so
+// DashboardCycleReferenceLength — which prefers the average — still hands the
+// hero's OWN, independent ovulation-day placement a cycle long enough to seat
+// one: the fixture isolates the impossibility claim the projection makes from
+// the unrelated placement guard the hero computes for itself, so a hero that
+// stays hidden points at the flag this change fixes, not at that guard.
+func impossibleProjectionShiftFixture(t *testing.T) (*models.User, []models.DailyLog, CycleStats, time.Time) {
+	t.Helper()
+
+	user, logs, stats, today := confirmedOvulationFixture(t)
+	stats.MedianCycleLength = 14
+	stats.AverageCycleLength = 25
+	stats.OvulationImpossible = true
+	return user, logs, stats, today
+}
+
 // calendarFertileDays reports the window the grid shades for the fixture's
 // month, as "2026-03-06"-style keys, so a window assertion reads the RENDERED
 // days rather than the struct the builder was handed.
@@ -333,6 +353,34 @@ func TestDashboardPublishesAndShadesTheConfirmedWindow(t *testing.T) {
 	}
 	if !peakDays[11] || peakDays[14] {
 		t.Fatalf("the hero peak must sit on the confirmed cycle day 11, got %v", peakDays)
+	}
+}
+
+// TestDashboardShowsTheHeroWhenAConfirmedShiftAnswersTheImpossibilityClaim
+// reproduces the dashboard's own N-of-N+1: ResolveConfirmedCycleStats already
+// clears OvulationImpossible once a shift is confirmed, but the dashboard's
+// display builder derives its own copy of the flag from the raw projection and
+// never reads the substitution, so a median cycle too short to place an
+// ovulation kept the hero hidden and the reminder banner silent even though a
+// confirmed shift had just named the day and the window.
+func TestDashboardShowsTheHeroWhenAConfirmedShiftAnswersTheImpossibilityClaim(t *testing.T) {
+	user, logs, stats, today := impossibleProjectionShiftFixture(t)
+
+	service := NewDashboardViewService(
+		&stubDashboardStatsProvider{stats: stats},
+		&stubDashboardViewerProvider{logEntry: models.DailyLog{Date: today}},
+		&stubDashboardDayStateProvider{logs: logs},
+	)
+	viewData, err := service.BuildDashboardViewData(context.Background(), user, "en", today, time.UTC)
+	if err != nil {
+		t.Fatalf("BuildDashboardViewData() unexpected error: %v", err)
+	}
+
+	if viewData.CycleContext.DisplayOvulationImpossible {
+		t.Fatal("a confirmed shift answers the projection's impossibility claim; the display must not keep it")
+	}
+	if !viewData.CycleHero.Visible {
+		t.Fatal("the hero must render once the confirmed shift answers the impossibility claim")
 	}
 }
 
