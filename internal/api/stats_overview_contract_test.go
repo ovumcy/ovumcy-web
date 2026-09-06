@@ -288,11 +288,11 @@ func TestStatsOverviewAgreesWithTheStatsPageOnAPublishedProjection(t *testing.T)
 // the JSON-API half of the confirmed-ovulation substitution the calendar's
 // solid marker, the dashboard's ovulation line and four other surfaces
 // already apply (services.ConfirmedCurrentCycleOvulation,
-// dashboard_confirmed_ovulation_test.go). The model and the measured day are
+// dashboard_confirmed_ovulation_test.go). The model and the confirmed day are
 // made to differ deliberately, the way MED-2's trace does: a median-cycle
 // projection lands on cycle day 14, while a recorded BBT shift confirms cycle
 // day 17. Before this fix the endpoint answered the model's superseded day;
-// it must now answer the measured one, with ovulation_confirmed reporting
+// it must now answer the confirmed one, with ovulation_confirmed reporting
 // true for it — the same "confirmed, not modeled" bit the dashboard carries
 // as DisplayOvulationConfirmed beside its own DisplayOvulationExact
 // (dashboard_cycle.go). This fixture's luteal phase is not clamped, so
@@ -461,7 +461,7 @@ func TestStatsOverviewConfirmsALateShiftOnOrAfterTheProjectedNextPeriodStart(t *
 // TestStatsOverviewSuppressedOvulationIsNeverReportedConfirmed pins the floor
 // PublishedOverviewStats' own doc comment names: ovulation_confirmed is
 // derived off the CLEARED stats, never off the ConfirmedCurrentCycleOvulation
-// call alone, so a suppressed projection cannot assert a measurement even if a
+// call alone, so a suppressed projection cannot assert a confirmed day even if a
 // real BBT shift exists in the account's history. The fixture is
 // TestStatsOverviewPublishesTheConfirmedOvulationDayNotTheModelsProjection's,
 // with unpredictable-cycle mode layered on top — the same temperatures that
@@ -492,7 +492,7 @@ func TestStatsOverviewSuppressedOvulationIsNeverReportedConfirmed(t *testing.T) 
 		t.Fatalf("ovulation_date = %s while suppression.fertility is true", *payload.OvulationDate)
 	}
 	if payload.OvulationConfirmed {
-		t.Fatal("ovulation_confirmed = true beside a null ovulation_date — a suppressed projection must never assert a measurement, even with a real BBT shift on record")
+		t.Fatal("ovulation_confirmed = true beside a null ovulation_date — a suppressed projection must never assert a confirmed day, even with a real BBT shift on record")
 	}
 }
 

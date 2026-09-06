@@ -583,7 +583,7 @@ func applyDashboardPredictionRanges(display dashboardPredictionDisplay, user *mo
 	// A confirmed ovulation outranks the range. The range expresses the SPREAD
 	// of a projection, and there is no projection left to express once the
 	// temperatures have named the day — it is built from cycle-length spread and
-	// need not even contain that day. Discarding a measurement for it would
+	// need not even contain that day. Discarding a confirmed shift for it would
 	// leave the dashboard and the calendar naming different things again, for
 	// the cohort whose model is weakest. The next-period range above is
 	// untouched: that projection is still a projection.

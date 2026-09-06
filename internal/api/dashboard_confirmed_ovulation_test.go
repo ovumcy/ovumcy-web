@@ -208,7 +208,7 @@ func TestDashboardNamesTheConfirmedDayForTheThinHistoryCohort(t *testing.T) {
 	const cycleLength = 28
 	const periodLength = 5
 	// Cycle day 14 today, so the model projects ovulation on today itself: the
-	// day the projection and the measurement disagree by three days.
+	// day the projection and the confirmed shift disagree by three days.
 	cycleStart := services.AddCalendarDays(today, -13, time.UTC)
 	previousStart := services.AddCalendarDays(cycleStart, -cycleLength, time.UTC)
 	confirmedDay := services.AddCalendarDays(cycleStart, 10, time.UTC)
@@ -256,7 +256,7 @@ func TestDashboardNamesTheConfirmedDayForTheThinHistoryCohort(t *testing.T) {
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 	slot, document := dashboardOvulationSlotText(t, app, authCookie)
 	if strings.Contains(slot, "completed cycles are needed") {
-		t.Fatalf("the ovulation slot withheld a measured day behind the thin-history caption: %q", slot)
+		t.Fatalf("the ovulation slot withheld a confirmed day behind the thin-history caption: %q", slot)
 	}
 	if want := services.LocalizedDateDisplay("en", confirmedDay); !strings.Contains(slot, want) {
 		t.Fatalf("the ovulation slot = %q, want the detector's day %q", slot, want)
@@ -266,7 +266,7 @@ func TestDashboardNamesTheConfirmedDayForTheThinHistoryCohort(t *testing.T) {
 	}
 
 	// The amber notice is about a projection the model still points at after the
-	// day has gone by. A measured ovulation is behind the owner for the whole
+	// day has gone by. A confirmed ovulation is behind the owner for the whole
 	// luteal phase by design, so reading it as that notice would leave the
 	// warning standing for a fortnight of every cycle. The next period is
 	// fifteen days out in this fixture, so its own in-past branch cannot be what
