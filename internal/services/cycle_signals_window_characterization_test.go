@@ -48,8 +48,10 @@ func cyclesignalsWindowLogs(t *testing.T, readings []cyclesignalsWindowReading) 
 
 	logs := make([]models.DailyLog, 0, len(readings))
 	for _, reading := range readings {
-		day := cycleStart.AddDate(0, 0, reading.cycleDay-1)
-		entry := cyclesignalsCovBBTLog(t, day.Format("2006-01-02"), reading.value)
+		entry := models.DailyLog{
+			Date: AddCalendarDays(cycleStart, reading.cycleDay-1, time.UTC),
+			BBT:  &reading.value,
+		}
 		if reading.disturbed {
 			entry.CycleFactorKeys = []string{models.CycleFactorIllness}
 		}
