@@ -256,3 +256,78 @@ func expectCardRange(t *testing.T, card DashboardCycleHeroPhaseCard, phase strin
 		t.Fatalf("expected current=%v for %s, got %v", isCurrent, phase, card.IsCurrent)
 	}
 }
+
+// TestDashboardCycleHeroWithheldStatusIsSuppressionOnly is the negative control
+// for the withheld status: an unsuppressed account must reach neither the card
+// nor the label, or the status would be reporting something other than the
+// fertility gate. Both halves are asserted because they are two functions: a
+// mutant that drops the fertilitySuppressed guard in either one alone is red
+// here and green in the other's test.
+func TestDashboardCycleHeroWithheldStatusIsSuppressionOnly(t *testing.T) {
+	cards := dashboardCycleHeroPhaseCards("follicular", 5, 14, 28, false)
+	if len(cards) != 4 {
+		t.Fatalf("expected the four named phase cards without suppression, got %#v", cards)
+	}
+	for _, card := range cards {
+		if card.Phase == "withheld" {
+			t.Errorf("unsuppressed breakdown carries a withheld card (days %d-%d)", card.StartDay, card.EndDay)
+		}
+	}
+
+	if got := dashboardCycleHeroCurrentPhase("", 9, 5, 14, 28, false); got != "follicular" {
+		t.Errorf("unsuppressed current phase is %q, want the resolved phase itself", got)
+	}
+	if got := dashboardCycleHeroCurrentPhase("", 9, 5, 14, 28, true); got != "withheld" {
+		t.Errorf("suppressed current phase is %q, want withheld", got)
+	}
+
+	// The menstrual block is read off recorded bleeding, so suppression must not
+	// swallow it into the withheld run.
+	if got := dashboardCycleHeroCurrentPhase("", 3, 5, 14, 28, true); got != "menstrual" {
+		t.Errorf("suppressed current phase on a period day is %q, want menstrual", got)
+	}
+}
+
+// TestDashboardCycleHeroSuppressedAxisStillEndsAtBeyond keeps the two statuses
+// apart at the boundary that separates them. The withheld run stops at the
+// projected cycle length; the days after it exist only because the predicted
+// start window reaches them, and there the projection really has ended. A
+// mutant extending the withheld card to the axis instead of the cycle length
+// paints those days as a running cycle.
+func TestDashboardCycleHeroSuppressedAxisStillEndsAtBeyond(t *testing.T) {
+	const cycleLength, axisDays = 28, 32
+
+	cards := dashboardCycleHeroPhaseCards("withheld", 5, 14, cycleLength, true)
+	days := dashboardCycleHeroDays(
+		axisDays,
+		14,
+		cards,
+		dashboardCycleHeroDaySpan{StartDay: 29, EndDay: axisDays, Present: true},
+		dashboardCycleHeroDaySpan{},
+		nil,
+		5,
+	)
+
+	for _, day := range days {
+		want := "withheld"
+		switch {
+		case day.Day <= 5:
+			want = "menstrual"
+		case day.Day > cycleLength:
+			want = phaseBeyondProjectedCycle
+		}
+		if day.Phase != want {
+			t.Errorf("ribbon day %d carries phase %q, want %q", day.Day, day.Phase, want)
+		}
+	}
+}
+
+// TestDashboardCycleHeroWithheldCardNeedsRoomToExist pins the empty case: when
+// the projected period already fills the cycle there is no day left to withhold,
+// and a card spanning days 6-5 would be a range covering nothing.
+func TestDashboardCycleHeroWithheldCardNeedsRoomToExist(t *testing.T) {
+	cards := dashboardCycleHeroPhaseCards("menstrual", 28, 14, 28, true)
+	if len(cards) != 1 {
+		t.Fatalf("expected the menstrual card alone when the period fills the cycle, got %#v", cards)
+	}
+}

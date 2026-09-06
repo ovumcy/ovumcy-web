@@ -762,3 +762,90 @@ func mustParseDashboardServiceDay(t *testing.T, raw string) time.Time {
 	}
 	return parsed
 }
+
+// TestBuildDashboardViewDataSuppressedRibbonKeepsAStatusPastTheMenstrualBlock
+// pins what round 5 left open. Withholding the follicular/ovulation/luteal
+// cards stopped the ribbon naming the suppressed day, and left the days those
+// cards used to cover with no card at all — so dashboardCycleHeroPhaseForDay
+// fell through to "beyond", whose CSS paints nothing because it means the
+// projection ENDED. A mid-cycle owner read a flat colourless tail as tracking
+// having stopped.
+//
+// The fixture is the one the round-4/5 guard above already establishes as the
+// first-cycle floor alone. The assertions walk every cell of the axis and give
+// each day exactly one expected status, so a mutant that drops the withheld
+// card (days go "beyond"), widens it past the cycle length (the start-window
+// tail stops being "beyond") or lets it start on the menstrual block is red.
+func TestBuildDashboardViewDataSuppressedRibbonKeepsAStatusPastTheMenstrualBlock(t *testing.T) {
+	today := mustParseDashboardServiceDay(t, "2026-02-21")
+	user := &models.User{ID: 13, Role: models.RoleOwner, CycleLength: 28, PeriodLength: 5, LutealPhase: 14, UsageGoal: models.UsageGoalHealth}
+	stats := CycleStats{
+		CompletedCycleCount: 0,
+		CurrentCycleDay:     14,
+		MedianCycleLength:   28,
+		AveragePeriodLength: 5,
+		LutealPhase:         14,
+		LastPeriodStart:     mustParseDashboardServiceDay(t, "2026-02-08"),
+		NextPeriodStart:     mustParseDashboardServiceDay(t, "2026-03-08"),
+	}
+
+	if !FertilityProjectionSuppressed(user, stats) {
+		t.Fatal("fixture: expected the shared predicate to suppress this cohort")
+	}
+
+	service := NewDashboardViewService(
+		&stubDashboardStatsProvider{stats: stats},
+		&stubDashboardViewerProvider{logEntry: models.DailyLog{Date: today}},
+		&stubDashboardDayStateProvider{},
+	)
+	viewData, err := service.BuildDashboardViewData(context.Background(), user, "en", today, time.UTC)
+	if err != nil {
+		t.Fatalf("BuildDashboardViewData() unexpected error: %v", err)
+	}
+
+	hero := viewData.CycleHero
+	if !hero.Visible {
+		t.Fatal("fixture: expected the cycle hero to stay visible under suppression")
+	}
+	if len(hero.PhaseCards) != 2 {
+		t.Fatalf("expected the suppressed breakdown to be the menstrual card and one withheld card, got %#v", hero.PhaseCards)
+	}
+	menstrual, withheld := hero.PhaseCards[0], hero.PhaseCards[1]
+	if menstrual.Phase != "menstrual" {
+		t.Fatalf("expected the first card to stay menstrual, got %q", menstrual.Phase)
+	}
+	if withheld.Phase != "withheld" {
+		t.Fatalf("expected the second card to carry the withheld status, got %q", withheld.Phase)
+	}
+	if withheld.StartDay != menstrual.EndDay+1 {
+		t.Errorf("withheld card starts on day %d, expected the day after the menstrual block ends (%d)", withheld.StartDay, menstrual.EndDay+1)
+	}
+	if withheld.EndDay != hero.CycleLength {
+		t.Errorf("withheld card ends on day %d, expected the projected cycle length %d", withheld.EndDay, hero.CycleLength)
+	}
+
+	// A regular account's axis stops at the cycle length, so every cell of THIS
+	// fixture is inside the cycle and none of them may read "beyond". That the
+	// days past the cycle length still do is pinned where the axis can be made
+	// to run past it directly — TestDashboardCycleHeroSuppressedAxisStillEndsAtBeyond.
+	if hero.AxisDays != hero.CycleLength {
+		t.Fatalf("fixture: expected the axis to stop at the cycle length %d, got %d", hero.CycleLength, hero.AxisDays)
+	}
+
+	for _, day := range hero.Days {
+		want := "withheld"
+		if day.Day <= menstrual.EndDay {
+			want = "menstrual"
+		}
+		if day.Phase != want {
+			t.Errorf("ribbon day %d carries phase %q, want %q", day.Day, day.Phase, want)
+		}
+	}
+
+	if hero.CurrentPhase != "withheld" {
+		t.Errorf("CycleHero.CurrentPhase is %q on a suppressed mid-cycle day, want the same status the ribbon cells carry", hero.CurrentPhase)
+	}
+	if viewData.PredictionExplanationPrimaryKey != "prediction.explainer.awaiting_first_cycle" {
+		t.Errorf("prediction explainer is %q, want the first-cycle floor named on the page that goes quiet because of it", viewData.PredictionExplanationPrimaryKey)
+	}
+}

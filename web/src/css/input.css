@@ -970,6 +970,18 @@
     --ribbon-phase: var(--phase-luteal);
   }
 
+  /* The cycle is still running here; what is withheld is the phase, because
+     every boundary past the menstrual card is defined in terms of the
+     suppressed ovulation day. A neutral fill at full alpha says "no phase to
+     show"; the transparent 'beyond' below says "the projection ended". Painting
+     them alike read as tracking having stopped mid-cycle. The token sits inside
+     the same mid-lightness band as the four phase fills, so the flags layered
+     over it (the start-window gradient reaches these days) keep the contrast
+     the phase family's own comment documents. */
+  &[data-phase='withheld'] {
+    --ribbon-phase: var(--phase-withheld);
+  }
+
   /* Past the projected cycle length there is no phase left to claim; the cell
      exists only because the start window reaches it, and it shows the track. */
   &[data-phase='beyond'] {
@@ -4535,6 +4547,7 @@
     --phase-follicular: 229 192 150;
     --phase-ovulation: 172 127 36;
     --phase-luteal: 183 161 212;
+    --phase-withheld: 179 174 168;
     /* ---- end calendar phase/state colours ------------------------------ */
     --ovulation-color: rgb(var(--cal-ovulation));
     --fertile-warning-edge: #f4d8ac;
@@ -4800,6 +4813,7 @@
     --phase-follicular: 143 105 68;
     --phase-ovulation: 236 196 110;
     --phase-luteal: 121 96 160;
+    --phase-withheld: 148 142 154;
     /* ---- end calendar phase/state colours — dark ------------------------ */
     --ovulation-color: rgb(var(--cal-ovulation));
     --fertile-warning-edge: #8d7047;

@@ -86,3 +86,15 @@ func domainLabelTranslationKeys(t *testing.T) map[string]string {
 func TestDomainLabelTranslationKeysResolveInEveryLocale(t *testing.T) {
 	assertMappedTranslationKeysResolveInEveryLocale(t, "domain label switch functions", domainLabelTranslationKeys(t))
 }
+
+// TestPhaseTranslationKeyNamesTheWithheldStatus keeps the ribbon's suppressed
+// status out of the "unknown" bucket: unknown reads as a phase the app failed
+// to work out, and this one is a phase the app is deliberately not naming.
+func TestPhaseTranslationKeyNamesTheWithheldStatus(t *testing.T) {
+	if got := PhaseTranslationKey("withheld"); got != "phases.withheld" {
+		t.Errorf("PhaseTranslationKey(\"withheld\") = %q, want phases.withheld", got)
+	}
+	if got := PhaseTranslationKey("beyond"); got != "phases.unknown" {
+		t.Errorf("PhaseTranslationKey(\"beyond\") = %q, want phases.unknown", got)
+	}
+}

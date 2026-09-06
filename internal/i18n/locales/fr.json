@@ -607,6 +607,7 @@
   "dashboard.pregnancy_test.absent": "Aucun résultat enregistré pour ce jour.",
   "dashboard.pregnancy_test.remove": "Supprimer le résultat",
   "prediction.explainer.pregnancy_paused": "Les prédictions de cycle sont en pause après un test de grossesse positif. Enregistrez de nouvelles règles pour les reprendre.",
+  "prediction.explainer.awaiting_first_cycle": "Les détails de fertilité attendent votre premier cycle terminé. D'ici là, ils ne reposent que sur la durée de cycle définie à la configuration.",
   "dashboard.median_cycle": "Cycle médian",
   "dashboard.fertile_window": "Fenêtre fertile",
   "dashboard.flow.none": "Aucun",
@@ -826,6 +827,7 @@
   "common.not_available": "-",
 
   "phases.unknown": "Inconnue",
+  "phases.withheld": "Détails de fertilité non affichés",
   "phases.menstrual": "Menstruelle",
   "phases.follicular": "Folliculaire",
   "phases.ovulation": "Ovulation",  "phases.luteal": "Lutéale",

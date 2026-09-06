@@ -25,6 +25,12 @@ func predictionExplanationPrimaryKey(user *models.User, cycleContext DashboardCy
 		return "prediction.explainer.pregnancy_paused"
 	case cycleContext.PredictionDisabled:
 		return "prediction.explainer.unpredictable"
+	// The first-cycle floor is what makes the cycle ribbon go quiet past the
+	// menstrual block, and nothing else on the page said so. It outranks the
+	// irregular-cycle branches below because those describe how a projection is
+	// PRESENTED, while this one is why the fertility half is absent entirely.
+	case cycleContext.AwaitingFirstCycle:
+		return "prediction.explainer.awaiting_first_cycle"
 	case user != nil && user.IrregularCycle && (cycleContext.DisplayNextPeriodNeedsData || cycleContext.DisplayOvulationNeedsData):
 		return "prediction.explainer.irregular_sparse"
 	case user != nil && user.IrregularCycle && (cycleContext.DisplayNextPeriodUseRange || cycleContext.DisplayOvulationUseRange):
