@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -316,10 +317,10 @@ func TestStatsOverviewPublishesTheConfirmedOvulationDayNotTheModelsProjection(t 
 	// ovulation the day BEFORE the shift: cycle day 17 = today-4 — three days
 	// off the model's today-7, so the two dates cannot pass by coincidence.
 	for _, offset := range []int{9, 8, 7, 6, 5, 4} {
-		seedStatsOverviewLog(t, database, models.DailyLog{UserID: user.ID, Date: today.AddDate(0, 0, -offset), BBT: new(dashboardConfirmedOvulationLowBBT)})
+		seedStatsOverviewLog(t, database, models.DailyLog{UserID: user.ID, Date: services.AddCalendarDays(today, -offset, time.UTC), BBT: new(dashboardConfirmedOvulationLowBBT)})
 	}
 	for _, offset := range []int{3, 2, 1} {
-		seedStatsOverviewLog(t, database, models.DailyLog{UserID: user.ID, Date: today.AddDate(0, 0, -offset), BBT: new(dashboardConfirmedOvulationHighBBT)})
+		seedStatsOverviewLog(t, database, models.DailyLog{UserID: user.ID, Date: services.AddCalendarDays(today, -offset, time.UTC), BBT: new(dashboardConfirmedOvulationHighBBT)})
 	}
 
 	_, payload := fetchStatsOverview(t, app, authCookie)
@@ -378,10 +379,10 @@ func TestStatsOverviewConfirmedOvulationIsIndependentOfOvulationExact(t *testing
 	// today-3..today-1). The detector confirms ovulation the day BEFORE the
 	// shift: cycle day 8 = today-4.
 	for _, offset := range []int{9, 8, 7, 6, 5, 4} {
-		seedStatsOverviewLog(t, database, models.DailyLog{UserID: user.ID, Date: today.AddDate(0, 0, -offset), BBT: new(dashboardConfirmedOvulationLowBBT)})
+		seedStatsOverviewLog(t, database, models.DailyLog{UserID: user.ID, Date: services.AddCalendarDays(today, -offset, time.UTC), BBT: new(dashboardConfirmedOvulationLowBBT)})
 	}
 	for _, offset := range []int{3, 2, 1} {
-		seedStatsOverviewLog(t, database, models.DailyLog{UserID: user.ID, Date: today.AddDate(0, 0, -offset), BBT: new(dashboardConfirmedOvulationHighBBT)})
+		seedStatsOverviewLog(t, database, models.DailyLog{UserID: user.ID, Date: services.AddCalendarDays(today, -offset, time.UTC), BBT: new(dashboardConfirmedOvulationHighBBT)})
 	}
 
 	_, payload := fetchStatsOverview(t, app, authCookie)
@@ -405,23 +406,45 @@ func TestStatsOverviewConfirmedOvulationIsIndependentOfOvulationExact(t *testing
 // window straddles the model's own projected next period start is still an
 // event of the CURRENT cycle, and GET /api/v1/stats/overview must confirm it
 // like the calendar and the dashboard do. The cohort is seedLateThermalShiftCycle
-// (dashboard_confirmed_ovulation_test.go), shared with the rendered half.
+// (dashboard_confirmed_ovulation_test.go), shared with the rendered half, and it
+// is read on both sides of the projected start: a shift confirmed ON it and one
+// confirmed a day AFTER it, which is the case a bound stopping at the projection
+// cannot reach at all.
 func TestStatsOverviewConfirmsALateShiftAfterTheProjectedNextPeriodStart(t *testing.T) {
-	app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
-	user := createOnboardingTestUser(t, database, "overview-late-shift@example.com", "StrongPass1", true)
-	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
-	today := services.DateAtLocation(time.Now().In(time.UTC), time.UTC)
-	updateStatsOverviewUser(t, database, user, map[string]any{"track_bbt": true})
-	confirmedDay := seedLateThermalShiftCycle(t, database, user, today)
+	for _, testCase := range []struct {
+		name               string
+		daysPastProjection int
+	}{
+		{name: "on the projected start", daysPastProjection: 0},
+		{name: "after the projected start", daysPastProjection: 1},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
+			email := fmt.Sprintf("overview-late-shift-%d@example.com", testCase.daysPastProjection)
+			user := createOnboardingTestUser(t, database, email, "StrongPass1", true)
+			authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+			today := services.DateAtLocation(time.Now().In(time.UTC), time.UTC)
+			updateStatsOverviewUser(t, database, user, map[string]any{"track_bbt": true})
+			confirmedDay, projectedStart := seedLateThermalShiftCycle(t, database, user, today, testCase.daysPastProjection)
 
-	_, payload := fetchStatsOverview(t, app, authCookie)
+			_, payload := fetchStatsOverview(t, app, authCookie)
 
-	wantConfirmed := confirmedDay.Format(statsOverviewDateLayout)
-	if payload.OvulationDate == nil || *payload.OvulationDate != wantConfirmed {
-		t.Fatalf("ovulation_date = %v, want the BBT-confirmed %s (a shift recorded after the projected next period start is still this cycle's)", payload.OvulationDate, wantConfirmed)
-	}
-	if !payload.OvulationConfirmed {
-		t.Fatal("ovulation_confirmed = false beside a BBT-confirmed ovulation_date recorded after the projected next period start")
+			wantConfirmed := confirmedDay.Format(statsOverviewDateLayout)
+			if payload.OvulationDate == nil || *payload.OvulationDate != wantConfirmed {
+				t.Fatalf("ovulation_date = %v, want the BBT-confirmed %s (a shift recorded on or after the projected next period start is still this cycle's)", payload.OvulationDate, wantConfirmed)
+			}
+			if !payload.OvulationConfirmed {
+				t.Fatal("ovulation_confirmed = false beside a BBT-confirmed ovulation_date recorded on or after the projected next period start")
+			}
+			if testCase.daysPastProjection == 0 {
+				// On this side the confirmed day and the projected start ARE the
+				// same date, so there is no second date to be absent.
+				return
+			}
+			if projected := projectedStart.Format(statsOverviewDateLayout); *payload.OvulationDate == projected {
+				t.Fatalf("ovulation_date = %s, the projected next period start rather than the measured day %s", projected, wantConfirmed)
+			}
+		})
 	}
 }
 
@@ -444,10 +467,10 @@ func TestStatsOverviewSuppressedOvulationIsNeverReportedConfirmed(t *testing.T) 
 
 	seedStatsOverviewCycleHistory(t, database, user, today, 104, 76, 48, 20)
 	for _, offset := range []int{9, 8, 7, 6, 5, 4} {
-		seedStatsOverviewLog(t, database, models.DailyLog{UserID: user.ID, Date: today.AddDate(0, 0, -offset), BBT: new(dashboardConfirmedOvulationLowBBT)})
+		seedStatsOverviewLog(t, database, models.DailyLog{UserID: user.ID, Date: services.AddCalendarDays(today, -offset, time.UTC), BBT: new(dashboardConfirmedOvulationLowBBT)})
 	}
 	for _, offset := range []int{3, 2, 1} {
-		seedStatsOverviewLog(t, database, models.DailyLog{UserID: user.ID, Date: today.AddDate(0, 0, -offset), BBT: new(dashboardConfirmedOvulationHighBBT)})
+		seedStatsOverviewLog(t, database, models.DailyLog{UserID: user.ID, Date: services.AddCalendarDays(today, -offset, time.UTC), BBT: new(dashboardConfirmedOvulationHighBBT)})
 	}
 
 	_, payload := fetchStatsOverview(t, app, authCookie)

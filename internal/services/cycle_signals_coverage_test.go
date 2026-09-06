@@ -519,8 +519,12 @@ func TestCycleSignals_BBTChartMarkerAndInferenceAgreeOnOvulationDay(t *testing.T
 		cyclesignalsCovBBTLog(t, "2025-01-12", 36.65),
 	}
 
-	// Inference side: ovulation via the shared detector.
-	ovulation := inferBBTOvulationDate(logs, cycleStart, currentCycleDetectionBound(today, time.UTC), time.UTC)
+	// Inference side: ovulation via the shared detector. The series bound is
+	// written out here rather than read from currentCycleDetectionBound: the
+	// chart under test reads that helper, and an oracle sharing it with its
+	// subject would move with it (testing.md — an anti-vacuity anchor must not
+	// depend on the data it judges).
+	ovulation := inferBBTOvulationDate(logs, cycleStart, AddCalendarDays(today, 1, time.UTC), time.UTC)
 	if ovulation.IsZero() {
 		t.Fatalf("expected inference to detect ovulation")
 	}

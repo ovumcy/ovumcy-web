@@ -120,13 +120,17 @@ func PublishedStats(user *models.User, stats CycleStats) (CycleStats, Prediction
 // floor this adapter exists to hold, so the field is derived from the
 // CLEARED stats it is published beside: it cannot outlive the date it
 // describes even if a future suppression signal reaches one predicate and not
-// the other.
+// the other. The read-back compares the DAY, not the presence of a date: a tier
+// that one day SUBSTITUTES another date instead of clearing the field must not
+// be able to report "confirmed" about a day nobody measured. Today
+// PublishedStats only zeroes OvulationDate, so day equality and a presence check
+// coincide by construction — which is why the stricter one is written here.
 func PublishedOverviewStats(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (CycleStats, PredictionSuppression, bool) {
 	confirmedDay, wasConfirmed := ConfirmedCurrentCycleOvulation(user, logs, stats, today, location)
 	if wasConfirmed {
 		stats.OvulationDate = confirmedDay
 	}
 	published, suppression := PublishedStats(user, stats)
-	confirmedOvulation := wasConfirmed && CalendarDaysBetween(published.OvulationDate, confirmedDay) == 0
+	confirmedOvulation := wasConfirmed && sameDay(published.OvulationDate, confirmedDay)
 	return published, suppression, confirmedOvulation
 }
