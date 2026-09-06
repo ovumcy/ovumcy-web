@@ -94,6 +94,23 @@ func TestIsCalendarFeedRequestMatchesWhatFiberActuallyDispatches(t *testing.T) {
 		"/calendar/feed/",
 		"/calendar/feed",
 		"/calendar/feedback",
+		// fiber's router finds the token/suffix boundary at the FIRST ".ics" in
+		// the remainder (path.go's findParamLen), not the last: these four all
+		// carry a second ".ics" (or start with one) further right, which the
+		// router treats as trailing garbage after a shorter token and refuses —
+		// a HasSuffix-and-slice reading of the same string would find only the
+		// LAST ".ics" and wrongly call every one of them a match.
+		"/calendar/feed/a.ics.ics",
+		"/calendar/feed/.ics.ics",
+		"/calendar/feed/a.icsb.ics",
+		"/calendar/feed/a.ICS.ics",
+		// fiberConfig leaves UnescapePath at its default (false): the router
+		// matches these RAW, undecoded bytes, never the decoded form, and the
+		// predicate has to agree on the same raw bytes rather than silently
+		// decoding first.
+		"/calendar/feed/%2E%2E.ics",
+		"/calendar/feed/a%2Fb.ics",
+		"/calendar/feed/x.ics%2F",
 	)
 
 	for _, path := range spellings {
