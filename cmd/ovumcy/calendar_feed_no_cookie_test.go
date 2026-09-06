@@ -63,6 +63,18 @@ func armCalendarFeedToken(t *testing.T, database *gorm.DB, userID uint) string {
 	return token
 }
 
+// assertNoSetCookie fails the test if response carries a Set-Cookie header.
+// outcome names the case under test ("any outcome", "its 200", "its 429",
+// "the plain request") so every call site in this file keeps its own
+// diagnostic without repeating the header lookup and format string.
+func assertNoSetCookie(t *testing.T, response *http.Response, outcome string) {
+	t.Helper()
+
+	if cookies := response.Header.Values("Set-Cookie"); len(cookies) != 0 {
+		t.Fatalf("calendar feed route must never set a cookie on %s, got Set-Cookie: %v", outcome, cookies)
+	}
+}
+
 // calendarFeedNoCookieCase is one probe TestCalendarFeedRouteSetsNoCookieOnTheProductionStack
 // drives against the production stack.
 type calendarFeedNoCookieCase struct {
@@ -178,9 +190,7 @@ func TestCalendarFeedRouteSetsNoCookieOnTheProductionStack(t *testing.T) {
 			if response.StatusCode != http.StatusNotFound {
 				t.Fatalf("expected the feed's bare 404 for an unresolvable token, got %d — fix the probe before trusting the cookie assertion below", response.StatusCode)
 			}
-			if cookies := response.Header.Values("Set-Cookie"); len(cookies) != 0 {
-				t.Fatalf("calendar feed route must never set a cookie on any outcome, got Set-Cookie: %v", cookies)
-			}
+			assertNoSetCookie(t, response, "any outcome")
 		})
 	}
 
@@ -262,9 +272,7 @@ func TestCalendarFeedRouteSetsNoCookieForAnArmedFeed(t *testing.T) {
 	if contentType := response.Header.Get("Content-Type"); !strings.HasPrefix(contentType, "text/calendar") {
 		t.Fatalf("expected a text/calendar body from ServeCalendarFeed, got Content-Type %q — fix the probe before trusting the cookie assertion below", contentType)
 	}
-	if cookies := response.Header.Values("Set-Cookie"); len(cookies) != 0 {
-		t.Fatalf("an armed calendar feed must never set a cookie on its 200, got Set-Cookie: %v", cookies)
-	}
+	assertNoSetCookie(t, response, "its 200")
 }
 
 // TestCalendarFeedRouteSetsNoCookieOn429 is the 429 leg — see
@@ -273,6 +281,13 @@ func TestCalendarFeedRouteSetsNoCookieForAnArmedFeed(t *testing.T) {
 // limiter is mounted ahead of both cookie-minting middlewares in
 // configureFiberMiddleware and answers the 429 without ever calling c.Next(),
 // so neither one runs once the budget is spent.
+//
+// This drives two explicit requests rather than the shared spendBudgetAndProbe
+// helper: that helper is indifferent to the first request's outcome — it
+// closes the body and returns only the second response — which would hide
+// exactly what this test has to prove, that the limiter's budget of 1 is
+// spent by a REAL, successful hit on the armed feed and not by a request
+// something ahead of the limiter had already refused for an unrelated reason.
 func TestCalendarFeedRouteSetsNoCookieOn429(t *testing.T) {
 	handler, database := newRateLimitTestHandlerAndDB(t)
 	user := seedOwner(t, db.NewRepositories(database), "calendar-feed-limited@example.com", 14)
@@ -280,15 +295,27 @@ func TestCalendarFeedRouteSetsNoCookieOn429(t *testing.T) {
 	app := newCalendarFeedTestApp(t, handler, 1)
 	feedTarget := api.CalendarFeedRateLimitPrefix + "/" + token + ".ics"
 
-	response := spendBudgetAndProbe(t, app, rateLimitSurface{method: http.MethodGet, path: feedTarget}, nil)
-	defer func() { _ = response.Body.Close() }()
+	first := httptest.NewRequest(http.MethodGet, feedTarget, nil)
+	firstResponse, err := app.Test(first, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("first feed request failed: %v", err)
+	}
+	defer func() { _ = firstResponse.Body.Close() }()
+	if firstResponse.StatusCode != http.StatusOK {
+		t.Fatalf("expected the first request inside the budget of 1 to succeed, got %d — fix the probe before trusting the cookie assertion below", firstResponse.StatusCode)
+	}
+	assertNoSetCookie(t, firstResponse, "its 200")
 
-	if response.StatusCode != http.StatusTooManyRequests {
-		t.Fatalf("expected 429 once the per-IP budget (1) is spent, got %d — fix the probe before trusting the cookie assertion below", response.StatusCode)
+	second := httptest.NewRequest(http.MethodGet, feedTarget, nil)
+	secondResponse, err := app.Test(second, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("second feed request failed: %v", err)
 	}
-	if cookies := response.Header.Values("Set-Cookie"); len(cookies) != 0 {
-		t.Fatalf("the calendar feed's rate limiter must never set a cookie on its 429, got Set-Cookie: %v", cookies)
+	defer func() { _ = secondResponse.Body.Close() }()
+	if secondResponse.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("expected 429 once the per-IP budget (1) is spent, got %d — fix the probe before trusting the cookie assertion below", secondResponse.StatusCode)
 	}
+	assertNoSetCookie(t, secondResponse, "its 429")
 }
 
 // TestCalendarFeedRateLimiterScopedToTheRouteShapeNotTheBarePrefix covers the
@@ -469,9 +496,7 @@ func TestCalendarFeedBodyIgnoresRequestTimezoneSignals(t *testing.T) {
 		if response.StatusCode != http.StatusOK {
 			t.Fatalf("%s request: expected 200 for the armed feed, got %d", name, response.StatusCode)
 		}
-		if cookies := response.Header.Values("Set-Cookie"); len(cookies) != 0 {
-			t.Fatalf("%s request: calendar feed route must never set a cookie, got Set-Cookie: %v", name, cookies)
-		}
+		assertNoSetCookie(t, response, "the "+name+" request")
 	}
 	if !bytes.Equal(plainBody, claimedBody) {
 		t.Fatalf("a poller-claimed timezone changed the feed body for an owner with no stored timezone:\nplain:         %q\nzone-claiming: %q", plainBody, claimedBody)
