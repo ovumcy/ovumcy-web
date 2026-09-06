@@ -33,6 +33,12 @@ func newLanguageMiddlewareTestApp(t *testing.T) *fiber.App {
 	}
 	handler := &Handler{i18n: i18nManager, location: time.UTC}
 
+	// A bare fiber.New() is deliberate here, where a wiring test would need the
+	// shipped config: every path below is already spelled canonically, so the
+	// router's CaseSensitive/StrictRouting flags cannot change which of them
+	// reaches a route, and the assertions are about the cookie the middleware
+	// writes before routing runs at all. The spellings the flags DO decide are
+	// driven against the real chain in cmd/ovumcy.
 	app := fiber.New()
 	app.Use(handler.LanguageMiddleware)
 	app.Get("/tzprobe", func(c fiber.Ctx) error { return c.SendStatus(fiber.StatusOK) })

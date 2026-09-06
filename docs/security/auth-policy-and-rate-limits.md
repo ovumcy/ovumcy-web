@@ -41,7 +41,7 @@ Per-IP HTTP rate limits enforced by Fiber's limiter middleware. Defaults are tun
 | `DELETE /api/v1/sessions/current` | 60 requests / 15 minutes | `RATE_LIMIT_LOGOUT_MAX`, `RATE_LIMIT_LOGOUT_WINDOW` |
 | `POST /lang` (language switch) | 300 requests / 1 minute | shares `RATE_LIMIT_API_MAX`, `RATE_LIMIT_API_WINDOW` |
 | `/api/*` (catch-all) | 300 requests / 1 minute | `RATE_LIMIT_API_MAX`, `RATE_LIMIT_API_WINDOW` |
-| `GET /calendar/feed/:token.ics` | 20 requests / 1 minute | `RATE_LIMIT_CALENDAR_FEED_MAX`, `RATE_LIMIT_CALENDAR_FEED_WINDOW` |
+| `GET/HEAD /calendar/feed/:token.ics` | 20 requests / 1 minute | `RATE_LIMIT_CALENDAR_FEED_MAX`, `RATE_LIMIT_CALENDAR_FEED_WINDOW` |
 
 A single-endpoint row above is matched the way the router matches, not by raw path bytes: routing is case-insensitive and ignores trailing slashes, so `POST /LANG` and `POST /lang/` reach the same handler as `POST /lang` and draw on the same budget. The match stays exact rather than prefix-wide — `POST /api/v1/sessions/2fa-challenge` does not spend the sign-in row's budget; it draws on the `/api` catch-all and on its own per-account TOTP budget below.
 
