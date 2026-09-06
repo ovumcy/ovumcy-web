@@ -191,12 +191,18 @@ func FertilityProjectionSuppressed(user *models.User, stats CycleStats) bool {
 // Until that first cycle closes, every fertility surface on the dashboard is
 // derived from the onboarding cycle-length slider rather than from anything the
 // account recorded: the fertile window and the ovulation date are the settings
-// default projected forward. Showing them at the same confidence as a measured
+// default projected forward. Showing them at the same confidence as an observed
 // window is the estimate-presented-as-fact the medical-safety invariant forbids,
-// so the header withholds them until one cycle has been observed. The phase and
-// the next-period estimate stay: the phase is the axis orthogonal to fertility
-// (#416) rather than a claim this tier withholds, and the next-period item
-// already carries its own estimate qualifier.
+// so the header withholds them until one cycle has been observed. The
+// next-period estimate stays: it carries its own estimate qualifier.
+//
+// The PHASE used to stay too, on the reasoning that phase is the axis orthogonal
+// to fertility (#416). That reasoning was about the taxonomy, not about where the
+// label comes from: resolveCyclePhase decides between follicular, ovulation and
+// luteal by comparing today against OvulationDate, so every phase but "menstrual"
+// spells out the very day this tier withholds. Published stats and the cycle
+// ribbon both answer "unknown" past the menstrual card for a suppressed tier;
+// "menstrual" survives because it is read off recorded bleeding.
 func DashboardAwaitingFirstCycle(stats CycleStats) bool {
 	return stats.CompletedCycleCount < 1
 }
