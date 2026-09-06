@@ -17,16 +17,26 @@ import (
 // ordering the fence promises — disarm, then the file, then the row — is
 // asserted rather than assumed.
 type stubFenceAppState struct {
-	values    map[string]string
-	getErr    error
-	setErr    error
-	deleteErr error
-	journal   *[]string
+	values map[string]string
+	getErr error
+	// getErrByKey fails one specific key's Get without touching the others, so
+	// a test can make the anchor's own key read as "not found" while a
+	// DIFFERENT key on the same double fails — the shape Enforce's both-empty
+	// branch needs to prove unanchoredHistory's own read failure propagates.
+	// Checked only after the keyless getErr above, which every existing test
+	// that fails every Get regardless of key already relies on.
+	getErrByKey map[string]error
+	setErr      error
+	deleteErr   error
+	journal     *[]string
 }
 
 func (s *stubFenceAppState) Get(_ context.Context, key string) (string, bool, error) {
 	if s.getErr != nil {
 		return "", false, s.getErr
+	}
+	if err, keyed := s.getErrByKey[key]; keyed {
+		return "", false, err
 	}
 	value, ok := s.values[key]
 	return value, ok, nil
@@ -267,11 +277,11 @@ func TestCalendarFeedRestoreFenceWithoutAnAnchorDisarmsAndRecordsNoToken(t *test
 	if !errors.Is(outcome.UnanchoredCause, notConfigured) {
 		t.Fatalf("the outcome must carry the cause for the startup line, got %v", outcome.UnanchoredCause)
 	}
-	if appState.has(models.AppStateKeyCalendarFeedRestoreFence) {
-		t.Fatalf("an unanchored pass must record no fence token, got %v", appState.values)
-	}
-	if !appState.has(models.AppStateKeyCalendarFeedFenceUnanchored) {
-		t.Fatal("an unanchored pass must stamp the database, or a backup taken from it reads as a first boot later")
+	// The exact key SET, not two point checks: a Set of any other key on this
+	// path would pass "no token, has stamp" while still writing something this
+	// pass has no business recording.
+	if len(appState.values) != 1 || !appState.has(models.AppStateKeyCalendarFeedFenceUnanchored) {
+		t.Fatalf("an unanchored pass must record exactly the unanchored stamp and nothing else, got %v", appState.values)
 	}
 }
 
@@ -292,11 +302,10 @@ func TestCalendarFeedRestoreFenceUnwritableAnchorDisarmsOnAFirstBoot(t *testing.
 	if !outcome.Unanchored || outcome.DisarmedFeeds != 5 {
 		t.Fatalf("expected an unanchored disarm of 5, got %+v", outcome)
 	}
-	if appState.has(models.AppStateKeyCalendarFeedRestoreFence) {
-		t.Fatalf("a fence that was never written must record no token, got %v", appState.values)
-	}
-	if !appState.has(models.AppStateKeyCalendarFeedFenceUnanchored) {
-		t.Fatal("this boot served without a usable fence and must leave the database saying so")
+	// The exact key SET, not two point checks: see the sibling anchor-missing
+	// test above for why a point check on each key alone is not enough.
+	if len(appState.values) != 1 || !appState.has(models.AppStateKeyCalendarFeedFenceUnanchored) {
+		t.Fatalf("a fence that was never written must record exactly the unanchored stamp and nothing else, got %v", appState.values)
 	}
 }
 
@@ -348,6 +357,41 @@ func TestCalendarFeedRestoreFencePropagatesDatabaseFailures(t *testing.T) {
 	}
 	if anchor.written != "" {
 		t.Fatalf("a failed disarm must not write the fence file, got %q", anchor.written)
+	}
+}
+
+// TestCalendarFeedRestoreFencePropagatesTheUnanchoredStampReadFailure closes
+// the gap the plain database-failure test above leaves: that one sets a
+// KEYLESS getErr, which fails the token read at the top of Enforce before the
+// both-empty branch is ever reached, so it can never exercise
+// unanchoredHistory's own error return. Here the anchor and the token are both
+// a genuine "not found", so Enforce reaches the both-empty branch, and only
+// the STAMP read fails. A database that cannot answer this one Get must fail
+// the boot exactly like any other storage error — never be misread as "no
+// stamp, first boot" — and must disarm and record nothing.
+func TestCalendarFeedRestoreFencePropagatesTheUnanchoredStampReadFailure(t *testing.T) {
+	stampReadFailure := errors.New("app_state read failed for the unanchored stamp")
+	appState := &stubFenceAppState{
+		values: map[string]string{},
+		getErrByKey: map[string]error{
+			models.AppStateKeyCalendarFeedFenceUnanchored: stampReadFailure,
+		},
+	}
+	users := &stubFenceUserStore{disarmed: 9}
+	anchor := &stubFenceAnchor{}
+
+	outcome, err := NewCalendarFeedRestoreFence(appState, users, anchor).Enforce(context.Background())
+	if !errors.Is(err, stampReadFailure) {
+		t.Fatalf("expected the unanchored-stamp read failure, got %v", err)
+	}
+	if outcome != (CalendarFeedRestoreFenceOutcome{}) {
+		t.Fatalf("a database failure must not report a decided outcome, got %+v", outcome)
+	}
+	if users.callCount != 0 {
+		t.Fatalf("a read failure must disarm nothing, got %d disarm(s)", users.callCount)
+	}
+	if len(appState.values) != 0 || anchor.written != "" {
+		t.Fatalf("a read failure must record nothing, appState=%v anchor=%q", appState.values, anchor.written)
 	}
 }
 
@@ -591,17 +635,20 @@ func (s *serializedFenceAppState) Set(_ context.Context, _ string, value string)
 	return nil
 }
 
-// Delete completes the interface. This double holds ONE slot, the fence token
-// the two concurrency guards drive through Advance and AdvanceConfirmed, so it
-// clears only for that key and answers every other one as already absent —
-// which is what the unanchored stamp is on those paths, neither written nor
-// read by either method.
+// Delete completes the interface. This double holds ONE slot — the fence
+// token the two concurrency guards drive through Advance and AdvanceConfirmed
+// — and neither method ever touches the unanchored stamp, so there is no
+// second slot to model. Rather than answer an unmodeled key with a silent
+// no-op (a double that "deletes" without deleting anything is vacuous), it
+// panics: the day either method starts deleting a key this double does not
+// carry, the test doubling for it has to be extended, not stay quietly wrong.
 func (s *serializedFenceAppState) Delete(_ context.Context, key string) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	if key == models.AppStateKeyCalendarFeedRestoreFence {
-		s.value = ""
+	if key != models.AppStateKeyCalendarFeedRestoreFence {
+		panic("serializedFenceAppState: Delete called for an unmodeled key " + key)
 	}
+	s.value = ""
 	return nil
 }
 
@@ -1110,6 +1157,37 @@ func TestCalendarFeedRestoreFenceStampErasureFailureFailsTheBoot(t *testing.T) {
 		appState, &stubFenceUserStore{disarmed: 1}, &stubFenceAnchor{},
 	).Enforce(context.Background()); !errors.Is(err, erasureFailure) {
 		t.Fatalf("expected the erasure failure to reach the caller, got %v", err)
+	}
+}
+
+// TestCalendarFeedRestoreFenceUnanchoredHistoryDisarmFailurePropagates covers
+// the disarm-error branch INSIDE the both-halves-empty-with-a-stamp path,
+// which TestCalendarFeedRestoreFencePropagatesDatabaseFailures's disarm case
+// cannot reach: that one runs with a disagreeing pair, not two empty halves
+// over a stamp. A failed disarm here must fail the boot like every other
+// disarm failure, keep BOTH outcome flags for a caller that only checks the
+// error, and record nothing else — the crash-safety this pass relies on
+// assumes the disarm ran to completion before either half of a new token is
+// written.
+func TestCalendarFeedRestoreFenceUnanchoredHistoryDisarmFailurePropagates(t *testing.T) {
+	journal := []string{}
+	disarmFailure := errors.New("disarm failed")
+	appState := &stubFenceAppState{
+		values:  map[string]string{models.AppStateKeyCalendarFeedFenceUnanchored: "booted without a usable fence"},
+		journal: &journal,
+	}
+	users := &stubFenceUserStore{disarmErr: disarmFailure, journal: &journal}
+	anchor := &stubFenceAnchor{journal: &journal}
+
+	outcome, err := NewCalendarFeedRestoreFence(appState, users, anchor).Enforce(context.Background())
+	if !errors.Is(err, disarmFailure) {
+		t.Fatalf("expected the disarm failure, got %v", err)
+	}
+	if !outcome.ContinuityBroken || !outcome.UnanchoredHistory {
+		t.Fatalf("expected ContinuityBroken and UnanchoredHistory both set, got %+v", outcome)
+	}
+	if want := []string{"disarm"}; !equalStrings(journal, want) {
+		t.Fatalf("a failed disarm must record nothing else, got %v", journal)
 	}
 }
 

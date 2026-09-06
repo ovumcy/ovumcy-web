@@ -113,6 +113,37 @@ func TestAppStateRepositoryDeleteRemovesTheKeyAndToleratesAMissingOne(t *testing
 	}
 }
 
+// TestAppStateRepositoryDeleteIsIdempotentOnPostgres repeats the missing-key,
+// repeat-delete, and blank-key shapes above against the Postgres tree: the
+// fence's Delete call is engine-independent, so the guarantee it relies on has
+// to hold on both. Skips without Docker unless OVUMCY_REQUIRE_POSTGRES=1 (see
+// startPostgresTestConfig).
+func TestAppStateRepositoryDeleteIsIdempotentOnPostgres(t *testing.T) {
+	database := openPostgresForMigrationBootstrapTest(t, startPostgresTestConfig(t))
+	repo := NewAppStateRepository(database)
+	ctx := context.Background()
+	key := models.AppStateKeyCalendarFeedFenceUnanchored
+
+	if err := repo.Delete(ctx, key); err != nil {
+		t.Fatalf("Delete() of a key that was never written must be a no-op, got %v", err)
+	}
+	if err := repo.Set(ctx, key, "booted without a usable fence"); err != nil {
+		t.Fatalf("Set() unexpected error: %v", err)
+	}
+	if err := repo.Delete(ctx, key); err != nil {
+		t.Fatalf("Delete() unexpected error: %v", err)
+	}
+	if _, ok, err := repo.Get(ctx, key); err != nil || ok {
+		t.Fatalf("expected the marker to be gone, ok=%v err=%v", ok, err)
+	}
+	if err := repo.Delete(ctx, key); err != nil {
+		t.Fatalf("Delete() must stay idempotent, got %v", err)
+	}
+	if err := repo.Delete(ctx, "   "); err != nil {
+		t.Fatalf("Delete() with a blank key must be a no-op, got %v", err)
+	}
+}
+
 // TestAppStateRepositoryRejectsBlankKey covers the guard: an empty/whitespace key
 // is not a valid marker. Get treats it as missing; Set refuses it.
 func TestAppStateRepositoryRejectsBlankKey(t *testing.T) {
