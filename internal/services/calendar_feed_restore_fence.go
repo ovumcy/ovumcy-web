@@ -144,7 +144,7 @@ func (fence *CalendarFeedRestoreFence) Enforce(ctx context.Context) (CalendarFee
 	// Equality is the only proof of continuity, and it needs both halves: a
 	// database carrying no token at all is a database this fence never wrote,
 	// which is what restoring a pre-fence backup looks like.
-	if anchorFound && storedFound && anchored == stored {
+	if continuityHolds(anchorFound, storedFound, anchored, stored) {
 		return CalendarFeedRestoreFenceOutcome{}, nil
 	}
 
@@ -309,7 +309,7 @@ func (fence *CalendarFeedRestoreFence) AdvanceConfirmed(ctx context.Context) err
 		return fmt.Errorf("%w: %w", ErrCalendarFeedFenceMarkerUnavailable, err)
 	}
 
-	if !anchorFound || !storedFound || anchored != stored {
+	if !continuityHolds(anchorFound, storedFound, anchored, stored) {
 		return &CalendarFeedFenceContinuityError{AnchorFound: anchorFound, StoredFound: storedFound}
 	}
 
@@ -324,6 +324,16 @@ func (fence *CalendarFeedRestoreFence) AdvanceConfirmed(ctx context.Context) err
 		return fmt.Errorf("%w: %w", ErrCalendarFeedFenceHalfAdvanced, err)
 	}
 	return nil
+}
+
+// continuityHolds reports whether the two fence halves already prove
+// continuity: both hold a token, and it is the SAME one. Enforce treats this
+// as its no-op case; AdvanceConfirmed treats anything else — either half
+// missing, or both present but different — as a refusal. The two calls are a
+// De Morgan pair over the same three facts, spelled out here once so they
+// cannot drift apart.
+func continuityHolds(anchorFound, storedFound bool, anchored, stored string) bool {
+	return anchorFound && storedFound && anchored == stored
 }
 
 // record mints the next token and stores it in both halves. A write failure on
