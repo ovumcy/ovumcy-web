@@ -104,9 +104,17 @@ func TestCalendarFeedGenerateRevealsURLOnceAndNeverAgain(t *testing.T) {
 		t.Fatalf("expected a /calendar/feed/<token>.ics URL revealed, got %q", revealedURL)
 	}
 	// Extract the token path and prove it actually serves the feed.
+	//
+	// This does NOT go through mustServeCalendarFeed: ctx.app is built with
+	// enableCSRF: true (newSettingsSecurityTestContext), matching production's
+	// unconditional CSRF mount (cmd/ovumcy/server.go), and that middleware sets
+	// its own ovumcy_csrf cookie on every response with no incoming one —
+	// including this GET. mustServeCalendarFeed's no-Set-Cookie assertion is
+	// about the FEED's own behavior and only holds on newOnboardingTestApp's
+	// CSRF-disabled default; asserting it here would fail on a cookie the feed
+	// handler itself never sets.
 	token := extractFeedTokenFromURL(t, revealedURL)
 	feedResp := mustAppResponse(t, ctx.app, httptest.NewRequest(http.MethodGet, calendarFeedURL(token), nil))
-	defer func() { _ = feedResp.Body.Close() }()
 	if feedResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected the revealed URL to serve the feed (200), got %d", feedResp.StatusCode)
 	}
@@ -293,8 +301,10 @@ func TestCalendarFeedRotateInvalidatesOldToken(t *testing.T) {
 	// Arm a feed directly and capture the OLD token, then confirm it serves.
 	oldToken := armCalendarFeedForUser(t, ctx.database, ctx.user.ID)
 	oldSelector := reloadUserForCalendarFeedAPI(t, ctx, ctx.user.ID).CalendarFeedSelector
+	// Not mustServeCalendarFeed: ctx.app mounts CSRF (see the comment on the
+	// same pattern in TestCalendarFeedGenerateRevealsURLOnceAndNeverAgain
+	// above), which sets its own cookie on this GET — unrelated to the feed.
 	pre := mustAppResponse(t, ctx.app, httptest.NewRequest(http.MethodGet, calendarFeedURL(oldToken), nil))
-	_ = pre.Body.Close()
 	if pre.StatusCode != http.StatusOK {
 		t.Fatalf("precondition: old token should serve the feed, got %d", pre.StatusCode)
 	}
@@ -533,8 +543,10 @@ func TestCalendarFeedGenerateScopedToOwner(t *testing.T) {
 	if ownerAAfter.CalendarFeedSelector != ownerABefore.CalendarFeedSelector {
 		t.Fatal("owner A's feed selector must not change when owner B generates")
 	}
+	// Not mustServeCalendarFeed: ctx.app mounts CSRF, which sets its own
+	// cookie on this GET (see the comment in
+	// TestCalendarFeedGenerateRevealsURLOnceAndNeverAgain above).
 	feedA := mustAppResponse(t, ctx.app, httptest.NewRequest(http.MethodGet, calendarFeedURL(tokenA), nil))
-	defer func() { _ = feedA.Body.Close() }()
 	if feedA.StatusCode != http.StatusOK {
 		t.Fatalf("expected owner A's feed to keep serving after owner B generate, got %d", feedA.StatusCode)
 	}
@@ -570,13 +582,14 @@ func TestCalendarFeedRevokeScopedToOwner(t *testing.T) {
 	tokenB := armCalendarFeedForUser(t, ctx.database, ownerB.ID)
 
 	// Both feeds serve before the revoke, so neither verdict below can be
-	// satisfied by a URL that never worked.
+	// satisfied by a URL that never worked. Not mustServeCalendarFeed: ctx.app
+	// mounts CSRF, which sets its own cookie on this GET (see the comment in
+	// TestCalendarFeedGenerateRevealsURLOnceAndNeverAgain above).
 	for label, token := range map[string]string{"A": tokenA, "B": tokenB} {
 		before := mustAppResponse(t, ctx.app, httptest.NewRequest(http.MethodGet, calendarFeedURL(token), nil))
 		if before.StatusCode != http.StatusOK {
 			t.Fatalf("expected owner %s's feed to serve before the revoke, got %d", label, before.StatusCode)
 		}
-		_ = before.Body.Close()
 	}
 
 	// Owner B revokes, on owner B's own session.
@@ -614,8 +627,10 @@ func TestCalendarFeedRevokeScopedToOwner(t *testing.T) {
 		ownerAAfter.CalendarFeedVerifierMAC != ownerABefore.CalendarFeedVerifierMAC {
 		t.Fatal("owner A's feed columns must not change when owner B revokes")
 	}
+	// Not mustServeCalendarFeed: ctx.app mounts CSRF, which sets its own
+	// cookie on this GET (see the comment in
+	// TestCalendarFeedGenerateRevealsURLOnceAndNeverAgain above).
 	feedA := mustAppResponse(t, ctx.app, httptest.NewRequest(http.MethodGet, calendarFeedURL(tokenA), nil))
-	defer func() { _ = feedA.Body.Close() }()
 	if feedA.StatusCode != http.StatusOK {
 		t.Fatalf("expected owner A's feed to keep serving after owner B's revoke, got %d", feedA.StatusCode)
 	}

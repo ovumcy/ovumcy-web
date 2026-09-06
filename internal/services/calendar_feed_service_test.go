@@ -127,6 +127,19 @@ func legacyArmedFeedUser(t *testing.T, id uint, lastPeriodStart string) (models.
 	return user, token
 }
 
+// mustSplitFeedToken splits a token that was just minted for this test,
+// failing the test (not the assertion actually under test) if it doesn't
+// split at the expected width — that would be a test-setup bug, not the
+// no-oracle behavior these regressions exist to prove.
+func mustSplitFeedToken(t *testing.T, token string) (selector string, verifier string) {
+	t.Helper()
+	selector, verifier, ok := SplitCalendarFeedToken(token)
+	if !ok {
+		t.Fatalf("SplitCalendarFeedToken: a freshly armed token must split, got token of length %d", len(token))
+	}
+	return selector, verifier
+}
+
 func newFeedServiceForTest(user models.User, logs []models.DailyLog) (*CalendarFeedService, *stubFeedUserStore, *stubFeedDayReader) {
 	users := &stubFeedUserStore{selector: user.CalendarFeedSelector, user: user}
 	days := &stubFeedDayReader{logs: logs}
@@ -351,29 +364,48 @@ func TestResolveFeedCrossUserIsolation(t *testing.T) {
 // TestResolveFeedIdenticalNotFoundForEveryBadToken proves the no-oracle
 // contract: malformed token, unknown selector, and wrong verifier all yield the
 // identical (nil, false, nil) result — no body, no distinguishing error.
+//
+// That external identity alone would also hold if wrongVerifier's selector
+// never resolved — the same "selector not found" branch unknownSelector takes
+// — so each case also asserts the internal signal that tells the branches
+// apart: the selector-lookup call count (malformed never reaches it) and
+// whether the miss-path timing equalization ran (only a selector MISS pays it;
+// VerifyCalendarFeedToken decides directly once a row resolves — see
+// ResolveFeed). wrongVerifier hits the lookup and skips equalization, proving
+// it actually reached the verifier compare rather than a second
+// unknown-selector miss.
 func TestResolveFeedIdenticalNotFoundForEveryBadToken(t *testing.T) {
+	original := equalizeCalendarFeedTiming
+	var equalizeCalls int
+	equalizeCalendarFeedTiming = func([]byte, string, string) { equalizeCalls++ }
+	t.Cleanup(func() { equalizeCalendarFeedTiming = original })
+
 	user, validToken := armedFeedUser(t, 7, "2026-03-02")
-	svc, _, _ := newFeedServiceForTest(user, predictableFeedLogs(t))
+	svc, users, _ := newFeedServiceForTest(user, predictableFeedLogs(t))
 	now := mustParseDashboardDay(t, "2026-03-20")
 
 	// Malformed: wrong length, rejected before any lookup.
 	malformed := "TOOSHORT"
-	selector, verifier, ok := SplitCalendarFeedToken(validToken)
-	if !ok {
-		t.Fatalf("SplitCalendarFeedToken: a freshly armed token must split, got token of length %d", len(validToken))
-	}
+	selector, verifier := mustSplitFeedToken(t, validToken)
 	// Unknown selector: right length shape, but selector not armed. Flip the
 	// selector half of the valid token so the length stays valid.
 	unknownSelector := strings.Repeat("Z", len(selector)) + verifier
 	// Wrong verifier: correct selector, corrupted verifier half.
 	wrongVerifier := selector + strings.Repeat("2", len(verifier))
 
-	for name, bad := range map[string]string{
-		"malformed":       malformed,
-		"unknownSelector": unknownSelector,
-		"wrongVerifier":   wrongVerifier,
+	for name, tc := range map[string]struct {
+		token        string
+		wantLookups  int
+		wantEqualize int
+	}{
+		"malformed":       {token: malformed, wantLookups: 0, wantEqualize: 0},
+		"unknownSelector": {token: unknownSelector, wantLookups: 1, wantEqualize: 1},
+		"wrongVerifier":   {token: wrongVerifier, wantLookups: 1, wantEqualize: 0},
 	} {
-		body, ok, err := svc.ResolveFeed(context.Background(), bad, now, time.UTC)
+		lookupsBefore := users.calls
+		equalizeCalls = 0
+
+		body, ok, err := svc.ResolveFeed(context.Background(), tc.token, now, time.UTC)
 		if err != nil {
 			t.Fatalf("%s: expected nil error (no oracle), got %v", name, err)
 		}
@@ -382,6 +414,13 @@ func TestResolveFeedIdenticalNotFoundForEveryBadToken(t *testing.T) {
 		}
 		if body != nil {
 			t.Fatalf("%s: expected no body, got %d bytes", name, len(body))
+		}
+		if got := users.calls - lookupsBefore; got != tc.wantLookups {
+			t.Fatalf("%s: expected %d selector lookup(s), got %d", name, tc.wantLookups, got)
+		}
+		if equalizeCalls != tc.wantEqualize {
+			t.Fatalf("%s: expected %d timing-equalization call(s) (1 = selector miss, 0 = row found and refused by the real verifier compare), got %d",
+				name, tc.wantEqualize, equalizeCalls)
 		}
 	}
 }
@@ -401,10 +440,7 @@ func TestResolveFeedEqualizesTimingOnSelectorMiss(t *testing.T) {
 	now := mustParseDashboardDay(t, "2026-03-20")
 
 	// A well-formed token whose selector resolves no row (selector-miss path).
-	selector, verifier, ok := SplitCalendarFeedToken(validToken)
-	if !ok {
-		t.Fatalf("SplitCalendarFeedToken: a freshly armed token must split, got token of length %d", len(validToken))
-	}
+	selector, verifier := mustSplitFeedToken(t, validToken)
 	unknownSelector := strings.Repeat("Z", len(selector)) + verifier
 	if _, ok, _ := svc.ResolveFeed(context.Background(), unknownSelector, now, time.UTC); ok {
 		t.Fatalf("expected selector miss to be ok=false")
@@ -489,7 +525,7 @@ func TestResolveFeedVerifiesThroughMACNotBcrypt(t *testing.T) {
 // armed feeds and the owner re-generates the subscribe URL from settings.
 func TestResolveFeedRefusesStaleMACWithoutBcryptFallback(t *testing.T) {
 	user, token := armedFeedUser(t, 12, "2026-03-02")
-	selector, verifier, _ := SplitCalendarFeedToken(token)
+	selector, verifier := mustSplitFeedToken(t, token)
 	staleMAC, err := security.CalendarFeedVerifierMAC([]byte(calendarFeedRotatedTestKey), selector, verifier)
 	if err != nil {
 		t.Fatalf("CalendarFeedVerifierMAC: %v", err)
@@ -678,10 +714,7 @@ func TestGenerateCalendarFeedTokenVerifierIsRealBcrypt(t *testing.T) {
 	if !VerifyCalendarFeedToken([]byte(calendarFeedTestSecretKey), token, rollbackView) {
 		t.Fatalf("a freshly minted token must verify against its stored bcrypt hash alone (rollback path)")
 	}
-	selector, verifier, ok := SplitCalendarFeedToken(token)
-	if !ok {
-		t.Fatalf("SplitCalendarFeedToken: a freshly armed token must split, got token of length %d", len(token))
-	}
+	selector, verifier := mustSplitFeedToken(t, token)
 	tampered := selector + strings.Repeat("2", len(verifier))
 	if VerifyCalendarFeedToken([]byte(calendarFeedTestSecretKey), tampered, rollbackView) {
 		t.Fatalf("a tampered verifier must not verify")
