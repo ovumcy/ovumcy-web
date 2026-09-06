@@ -32,16 +32,24 @@ import (
 // asks the predicates a second time can be holding cleared stats by then, and
 // FertilityProjectionSuppressed reads fields this function empties.
 //
-// CurrentPhase is NOT cleared, and that is a decision rather than an omission.
-// Phase and fertility are orthogonal axes here (#416): the
-// taxonomy is menstrual/follicular/ovulation/luteal/unknown and "fertile" is a
-// status, never a phase — so a phase label is not the window-or-fertility claim
-// the medical-safety invariant withholds. It also cannot be cleared HERE alone:
-// the dashboard hero rebuilds its own phase from the cycle geometry
-// (dashboardCycleHeroCurrentPhase) and the header prefers the hero's, so
-// emptying the published copy splits one page across two answers. A client
-// reading a phase beside a null ovulation date has the suppression object to
-// tell it why the date is absent.
+// CurrentPhase is RECOMPUTED from the cleared fields below, not left standing
+// on the pre-clearing geometry it was originally derived from. Phase and
+// fertility are orthogonal axes here (#416): the taxonomy is
+// menstrual/follicular/ovulation/luteal/unknown and "fertile" is a status,
+// never a phase — but resolveCyclePhase itself reads OvulationDate to decide
+// between them, so a phase computed before this function clears that date
+// names the day suppression withholds ("ovulation" today, "follicular" or
+// "luteal" any other day of the cycle). Leaving it standing let a suppressed
+// account read the ovulation day straight off the phase label on the
+// dashboard, /stats and the JSON API, even with OvulationDate itself blank.
+// The fix is not to empty the copy either — the dashboard hero rebuilds its
+// own phase from the cycle geometry (dashboardCycleHeroCurrentPhase) and the
+// header prefers the hero's, so emptying the published copy would split one
+// page across two answers — but to recompute it from the SAME fields this
+// function just cleared: both sides then read the same geometry, and a
+// suppressed account's phase can still say "menstrual" during a logged or
+// projected period, or "unknown" the rest of the cycle, without ever pointing
+// at the withheld day.
 //
 // RECORDED history — observed cycle lengths, the last period start, the current
 // cycle day — is never touched: it is fact, not projection, and the "facts only"
@@ -49,7 +57,7 @@ import (
 // every builder behind a page reads the full stats, because the ribbon, the
 // factor context and the cycle context each apply their own suppression rule to
 // it.
-func PublishedStats(user *models.User, stats CycleStats) (CycleStats, PredictionSuppression) {
+func PublishedStats(user *models.User, stats CycleStats, logs []models.DailyLog, today time.Time, location *time.Location) (CycleStats, PredictionSuppression) {
 	// The verdict is read off the UNCLEARED stats, so the fertility gate cannot
 	// be answered from fields the clearing below has already emptied.
 	suppression := ResolvePredictionSuppression(user, stats)
@@ -76,6 +84,14 @@ func PublishedStats(user *models.User, stats CycleStats) (CycleStats, Prediction
 	if suppression.PredictionsSuppressed {
 		stats.NextPeriodStart = time.Time{}
 	}
+	// Recomputed against the fields this function just cleared (or left alone),
+	// never against the pre-clearing geometry CurrentPhase carried in: the
+	// phase is derived FROM OvulationDate (resolveCyclePhase), so a phase
+	// computed before the clearing above stays "ovulation"/"follicular"/
+	// "luteal" on a day the rest of this response no longer names. A suppressed
+	// account only sees "menstrual" (during a logged or projected period) or
+	// "unknown" — never the day the fertility clearing above just withheld.
+	stats.CurrentPhase = DetectCurrentPhase(stats, logs, today, location)
 	return stats, suppression
 }
 
@@ -122,19 +138,19 @@ func PublishedStats(user *models.User, stats CycleStats) (CycleStats, Prediction
 // field this function mutates before the second call, OvulationDate, is not an
 // input to that predicate), but a bool decided before the clearing and never
 // revisited would depend on that agreement holding forever across two files. A
-// suppressed projection reporting a measurement is exactly the medical-safety
+// suppressed projection reporting a confirmed day is exactly the medical-safety
 // floor this adapter exists to hold, so the field is derived from the
 // CLEARED stats it is published beside: it cannot outlive the date it
 // describes even if a future suppression signal reaches one predicate and not
 // the other. The read-back compares the DAY, not the presence of a date: a tier
 // that one day SUBSTITUTES another date instead of clearing the field must not
-// be able to report "confirmed" about a day nobody measured. Today
+// be able to report "confirmed" about a day the shift never named. Today
 // PublishedStats only zeroes OvulationDate, so day equality and a presence check
 // coincide by construction — which is why the stricter one is written here.
 func PublishedOverviewStats(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (CycleStats, PredictionSuppression, bool) {
 	resolved, wasConfirmed := ResolveConfirmedCycleStats(user, logs, stats, today, location)
 	confirmedDay := resolved.OvulationDate
-	published, suppression := PublishedStats(user, resolved)
+	published, suppression := PublishedStats(user, resolved, logs, today, location)
 	confirmedOvulation := wasConfirmed && sameDay(published.OvulationDate, confirmedDay)
 	return published, suppression, confirmedOvulation
 }

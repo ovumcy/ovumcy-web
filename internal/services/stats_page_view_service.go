@@ -154,8 +154,9 @@ func (service *StatsService) BuildStatsPageViewData(ctx context.Context, user *m
 	// window and the fertility status onto a shift the owner's temperatures
 	// confirm, so this page's fertile-window card cannot name the projection
 	// while the grid and the chart name the confirmed day.
-	confirmedStats, _ := ResolveConfirmedCycleStats(user, baseData.logs, baseData.stats, DateAtLocation(now, location), location)
-	publishedStats, _ := PublishedStats(user, confirmedStats)
+	today := DateAtLocation(now, location)
+	confirmedStats, _ := ResolveConfirmedCycleStats(user, baseData.logs, baseData.stats, today, location)
+	publishedStats, _ := PublishedStats(user, confirmedStats, baseData.logs, today, location)
 
 	return StatsPageViewData{
 		Stats:                               publishedStats,
