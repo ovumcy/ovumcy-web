@@ -79,7 +79,7 @@ func ResolveConfirmedCycleStats(user *models.User, logs []models.DailyLog, stats
 	// betweenInclusive and ResolveFertilityStatus below compare instants —
 	// so a UTC-midnight window compared against a location-midnight today
 	// disagrees by the zone's own offset (day one of the window read as
-	// not_fertile in UTC+3, the ovulation day itself read as fertile in
+	// not_fertile in UTC+3, the ovulation day itself read as not_fertile in
 	// UTC-5). CalendarDay keeps the calendar date exactly as computed above
 	// and only moves it onto the axis `today` is already on.
 	stats.OvulationDate = CalendarDay(ovulationDayUTC, location)
