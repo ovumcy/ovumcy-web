@@ -334,14 +334,14 @@ func TestNormalizeDayEntryInputNormalizesPregnancyTest(t *testing.T) {
 //
 // Each row asserts the whole entry rather than its own field: the value under
 // test neutralised, the four preservable neighbours the caller did send
-// returned unchanged, and the five fields no flag can preserve — the period
-// day, its flow, the mood, the pregnancy test, the symptoms — returned
-// unchanged too, so a drop reaching past its own flag cannot pass. Five
-// rows carry a value that IS refused on its own and re-submit it without the
-// flag to require that refusal; the sixth, a note, has no invalid spelling, so
-// its control requires the opposite — that without the flag the note survives
-// — which is what makes the drop attributable to the flag rather than to an
-// unconditional reset.
+// returned unchanged, and the six fields no flag can preserve — the period
+// day, its flow, the mood, the pregnancy test, the symptoms, the cycle-start
+// answer — returned unchanged too, so a drop reaching past its own flag cannot
+// pass. Five rows carry a value that IS refused on its own and re-submit it
+// without the flag to require that refusal; the sixth, a note, has no invalid
+// spelling, so its control requires the opposite — that without the flag the
+// note survives — which is what makes the drop attributable to the flag rather
+// than to an unconditional reset.
 func TestNormalizeDayEntryInputDropsAPreservedFieldsIncomingValue(t *testing.T) {
 	t.Parallel()
 
@@ -440,28 +440,37 @@ func TestNormalizeDayEntryInputDropsAPreservedFieldsIncomingValue(t *testing.T) 
 // from one that neutralised the lot.
 //
 // The fields no flag can preserve carry values too — the period day and its
-// flow, the mood, the pregnancy test, the symptoms — because the drop runs over
-// a whole DayEntryInput and nothing in its signature confines it to the five. A
-// reset reaching past them would unset the day the owner did send, which is the
-// same defect one field further out.
+// flow, the mood, the pregnancy test, the symptoms, the cycle-start answer —
+// because the drop runs over a whole DayEntryInput and nothing in its signature
+// confines it to the five. A reset reaching past them would unset the day the
+// owner did send, which is the same defect one field further out. The
+// cycle-start answer survives the pass only on a period day, which is why the
+// fixture is one: NormalizeDayEntryInput clears it on any other.
+//
+// The cycle factors carry TWO keys, in the order normalization returns them
+// (supportedDayCycleFactorKeys), because a single key is a set every rewrite
+// agrees with: joined on a comma it answers back as itself, so the
+// element-by-element comparison below would be describing a property the
+// fixture cannot exercise.
 func dayEntryInputWithEveryDayFieldSet() DayEntryInput {
 	return DayEntryInput{
-		IsPeriod:        true,
-		Flow:            models.FlowMedium,
-		Mood:            4,
-		PregnancyTest:   models.PregnancyTestNegative,
-		SymptomIDs:      []uint{7},
-		SexActivity:     models.SexActivityProtected,
-		BBT:             bbtPtr(36.5),
-		CervicalMucus:   models.CervicalMucusCreamy,
-		CycleFactorKeys: []string{models.CycleFactorStress},
-		Notes:           "a neighbour this write does carry",
+		IsPeriod:          true,
+		Flow:              models.FlowMedium,
+		Mood:              4,
+		PregnancyTest:     models.PregnancyTestNegative,
+		SymptomIDs:        []uint{7},
+		ConfirmCycleStart: true,
+		SexActivity:       models.SexActivityProtected,
+		BBT:               bbtPtr(36.5),
+		CervicalMucus:     models.CervicalMucusCreamy,
+		CycleFactorKeys:   []string{models.CycleFactorStress, models.CycleFactorTravel},
+		Notes:             "a neighbour this write does carry",
 	}
 }
 
 // assertDayEntryFields compares a normalized entry against the whole input the
 // caller sent: first the five preservable fields, which are each row's subject,
-// then the five no flag can preserve, which are the cross-check.
+// then the six no flag can preserve, which are the cross-check.
 //
 // The slices are compared element by element. Joined into one string on a
 // comma, ["a,b"] and ["a", "b"] are the same text and two different sets, so a
@@ -501,5 +510,8 @@ func assertDayEntryFields(t *testing.T, got DayEntryInput, want DayEntryInput) {
 	}
 	if !slices.Equal(got.SymptomIDs, want.SymptomIDs) {
 		t.Fatalf("symptom ids: expected %#v, got %#v", want.SymptomIDs, got.SymptomIDs)
+	}
+	if got.ConfirmCycleStart != want.ConfirmCycleStart {
+		t.Fatalf("confirm cycle start: expected %t, got %t", want.ConfirmCycleStart, got.ConfirmCycleStart)
 	}
 }
