@@ -8,7 +8,7 @@ import (
 )
 
 func (handler *Handler) LanguageMiddleware(c fiber.Ctx) error {
-	if IsCalendarFeedRequestPath(c.Path()) {
+	if IsCalendarFeedRequest(c.Method(), c.Path()) {
 		// The cookieless calendar feed is authenticated by its path token alone
 		// and reads no request language: ServeCalendarFeed resolves "today"
 		// from the owner's stored users.timezone
@@ -29,6 +29,11 @@ func (handler *Handler) LanguageMiddleware(c fiber.Ctx) error {
 		// route's output dependent on the poller's cookies — the same
 		// capability URL rendering a different day in the owner's browser than
 		// in the calendar client — on a route whose contract is to read none.
+		//
+		// IsCalendarFeedRequest is method-gated to GET/HEAD (the only verbs
+		// app.Get's route ever dispatches): a mutating verb aimed at this same
+		// path shape falls through to the ordinary branch below instead of
+		// silently inheriting a skip meant for a read-only capability URL.
 		return c.Next()
 	}
 	requestLocation, timezoneCookieValue := resolveRequestLocation(

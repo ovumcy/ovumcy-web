@@ -258,7 +258,16 @@ func configureFiberMiddleware(app *fiber.App, config runtimeConfig, handler *api
 	// budget: every well-formed token costs one bcrypt compare, so the budget
 	// bounds CPU, not just request count. Keep it small — a calendar client
 	// polls once per refresh interval, not hundreds of times a minute.
+	//
+	// app.Use is prefix-matched and method-agnostic, so mounting it on the bare
+	// prefix alone would also spend this small budget on a bare "/calendar/feed",
+	// a trailing slash, a nested path segment, or a POST — none of which reach
+	// ServeCalendarFeed's bcrypt-costing compare, so none of them are what this
+	// budget exists to bound. Next scopes it to api.IsCalendarFeedRequest, the
+	// same predicate the CSRF and language skips below key on, so the three can
+	// never disagree about which requests are "the feed".
 	app.Use(api.CalendarFeedRateLimitPrefix, limiter.New(limiter.Config{
+		Next:         func(c fiber.Ctx) bool { return !api.IsCalendarFeedRequest(c.Method(), c.Path()) },
 		Max:          config.RateLimits.CalendarFeedMax,
 		Expiration:   config.RateLimits.CalendarFeedWindow,
 		KeyGenerator: keyGen,
@@ -316,26 +325,26 @@ func csrfMiddlewareConfig(cookieSecure bool, handler *api.Handler) csrf.Config {
 		// csrf_exemption_guard_test.go, which walks every mutating route and
 		// expects exactly this one).
 		//
-		// The calendar-feed clause validates nothing to begin with: GET is a
-		// safe method, and fiber's csrf.New only ever reaches its validation arm
-		// for the unsafe ones. What it skips is the SAFE-METHOD arm's own side
-		// effect — on every GET without a matching cookie, csrf.New mints a
-		// fresh token and unconditionally sets it, calendar clients included,
-		// which is the Set-Cookie the cookieless feed's own contract forbids on
-		// every outcome (docs/SECURITY_INVARIANTS.md → Calendar feed
-		// subscription). So this is not a second validation exemption, and
-		// csrfGuardExpectedExemptions in csrf_exemption_guard_test.go stays a
-		// single mutating route. Scoped to GET so a mutating verb ever added
-		// under this prefix would still be validated; scoped by
-		// api.IsCalendarFeedRequestPath to a concrete feed URL — separator
-		// included, so a neighbour that merely shares the prefix's characters
-		// keeps its CSRF cookie — which internal/api/routes.go confirms is the
-		// only route under that prefix.
+		// The calendar-feed clause validates nothing to begin with: GET and HEAD
+		// are safe methods, and fiber's csrf.New only ever reaches its
+		// validation arm for the unsafe ones. What it skips is the SAFE-METHOD
+		// arm's own side effect — on every GET or HEAD without a matching
+		// cookie, csrf.New mints a fresh token and unconditionally sets it,
+		// calendar clients included, which is the Set-Cookie the cookieless
+		// feed's own contract forbids on every outcome
+		// (docs/SECURITY_INVARIANTS.md → Calendar feed subscription). So this
+		// is not a second validation exemption, and csrfGuardExpectedExemptions
+		// in csrf_exemption_guard_test.go stays a single mutating route.
+		// api.IsCalendarFeedRequest is itself method-gated to GET/HEAD, so a
+		// mutating verb ever added under this prefix would still be validated;
+		// it also requires the route's own shape (prefix + non-empty token +
+		// ".ics"), so a neighbour that merely shares the prefix's characters, or
+		// a nested/empty-token path under it, keeps its CSRF cookie.
 		Next: func(c fiber.Ctx) bool {
 			if c.Method() == fiber.MethodPost && c.Path() == security.OIDCCallbackPath {
 				return true
 			}
-			return c.Method() == fiber.MethodGet && api.IsCalendarFeedRequestPath(c.Path())
+			return api.IsCalendarFeedRequest(c.Method(), c.Path())
 		},
 		// Fiber v3 removed KeyLookup and ContextKey: the token source is now a
 		// typed extractors.Extractor (see api.CSRFTokenExtractor, form-then-

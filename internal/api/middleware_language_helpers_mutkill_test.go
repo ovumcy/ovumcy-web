@@ -127,22 +127,3 @@ func TestLanguageMiddlewareSkipsTheCookielessCalendarFeedEntirely(t *testing.T) 
 		t.Fatalf("expected %sback to keep receiving the timezone cookie — the feed skip must not over-match its prefix, got %#v", CalendarFeedRateLimitPrefix, cookie)
 	}
 }
-
-// TestIsCalendarFeedRequestPathRequiresTheSeparator pins the boundary the two
-// middleware skips share: a concrete feed URL is in, the bare prefix and a
-// neighbour that merely continues its characters are out.
-func TestIsCalendarFeedRequestPathRequiresTheSeparator(t *testing.T) {
-	cases := map[string]bool{
-		CalendarFeedRateLimitPrefix + "/" + strings.Repeat("A", 48) + ".ics": true,
-		CalendarFeedRateLimitPrefix + "/":                                    true,
-		CalendarFeedRateLimitPrefix:                                          false,
-		CalendarFeedRateLimitPrefix + "back":                                 false,
-		"/calendar/day/2026-01-15":                                           false,
-		"/":                                                                  false,
-	}
-	for path, want := range cases {
-		if got := IsCalendarFeedRequestPath(path); got != want {
-			t.Errorf("IsCalendarFeedRequestPath(%q) = %t, want %t", path, got, want)
-		}
-	}
-}

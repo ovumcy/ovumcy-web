@@ -1,0 +1,108 @@
+package main
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/gofiber/fiber/v3"
+	"github.com/ovumcy/ovumcy-web/internal/api"
+)
+
+// calendarFeedRouteShapeMarker is the body a probe app answers with when the
+// request actually reached the registered ":token.ics" route, as opposed to
+// falling through to the probe's own 404.
+const calendarFeedRouteShapeMarker = "MARKER"
+
+// calendarFeedDispatchProbeApp registers ONLY the feed's own route pattern
+// (with a marker handler) over the shipped fiberConfig — no catch-all, no
+// sibling route competing for the same prefix — so a spelling's outcome
+// reflects fiber's router alone. fiberConfig, not a bare fiber.New(): the
+// shipped config leaves CaseSensitive and StrictRouting both off, and that is
+// exactly the normalization api.IsCalendarFeedRequest has to agree with
+// (security-testing.md's wiring-tests-use-fiberConfig rule).
+func calendarFeedDispatchProbeApp(t *testing.T) *fiber.App {
+	t.Helper()
+
+	app := fiber.New(fiberConfig(proxySettings{}))
+	app.Get("/calendar/feed/:token.ics", func(c fiber.Ctx) error {
+		return c.SendString(calendarFeedRouteShapeMarker)
+	})
+	return app
+}
+
+// calendarFeedDispatchReached reports whether method+path actually reached
+// the probe app's marker handler. HEAD carries no body on the wire, so a
+// reached HEAD is read off the status (200 from the marker handler's
+// SendString) rather than the (always empty) body fasthttp strips for it.
+func calendarFeedDispatchReached(t *testing.T, app *fiber.App, method, path string) bool {
+	t.Helper()
+
+	request := httptest.NewRequest(method, path, nil)
+	response, err := app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, path, err)
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	if method == http.MethodHead {
+		return response.StatusCode == http.StatusOK
+	}
+	return string(mustReadAll(t, response)) == calendarFeedRouteShapeMarker
+}
+
+// TestIsCalendarFeedRequestMatchesWhatFiberActuallyDispatches is
+// api.IsCalendarFeedRequest's definition test: for every (method, path) pair
+// below, the predicate must agree with whether fiber's OWN router — driven
+// directly, not modeled — actually reaches ServeCalendarFeed's route pattern.
+// This is the experimental ground truth cmd/ovumcy/CLAUDE.md-adjacent review
+// asked for rather than assumed from fiber's docs; the spellings include
+// every one from rate_limit_scope_guard_test.go's routableSpellings plus the
+// edge cases a route-parameter pattern raises on its own (a dot inside the
+// token, an empty token, a nested path segment, a case-folded prefix).
+//
+// GET/HEAD reaching this bare probe app (no catch-all ahead of the route)
+// does NOT mean HEAD reaches ServeCalendarFeed on the REAL production route
+// table: cmd/ovumcy/server.go's newFiberApp mounts the terminal
+// app.Use(handler.NotFound) AFTER api.RegisterRoutes, and fiber only appends
+// a GET route's auto-generated HEAD copy (router.go's
+// ensureAutoHeadRoutesLocked) at serve time — after every directly-registered
+// Use middleware, NotFound included, already occupies the HEAD stack. A HEAD
+// request to ANY page route in the deployed app therefore hits NotFound
+// before its own handler; this predates this change, is not calendar-feed
+// specific, and is out of scope here. What stays true regardless: CSRF and
+// LanguageMiddleware are mounted as Use before api.RegisterRoutes even runs,
+// so they act on a HEAD request to this path whether or not it goes on to
+// reach ServeCalendarFeed — which is why the predicate still has to say yes
+// to HEAD.
+func TestIsCalendarFeedRequestMatchesWhatFiberActuallyDispatches(t *testing.T) {
+	app := calendarFeedDispatchProbeApp(t)
+	canonical := "/calendar/feed/" + strings.Repeat("A", 48) + ".ics"
+
+	spellings := append([]string{canonical}, routableSpellings(canonical)...)
+	spellings = append(spellings,
+		"/calendar/feed/a.b.ics",
+		"/calendar/feed/.ics",
+		"/calendar/feed/x.ICS",
+		"/calendar/feed/x.ics/",
+		"/calendar/feed/x.ics//",
+		"/Calendar/Feed/x.ics",
+		"/calendar/feed/a/b.ics",
+		"/calendar/feed/",
+		"/calendar/feed",
+		"/calendar/feedback",
+	)
+
+	for _, path := range spellings {
+		for _, method := range []string{fiber.MethodGet, fiber.MethodHead, fiber.MethodPost} {
+			t.Run(method+" "+path, func(t *testing.T) {
+				reached := calendarFeedDispatchReached(t, app, method, path)
+				predicted := api.IsCalendarFeedRequest(method, path)
+				if predicted != reached {
+					t.Fatalf("IsCalendarFeedRequest(%q, %q) = %t, but fiber's own router reached the route = %t", method, path, predicted, reached)
+				}
+			})
+		}
+	}
+}

@@ -21,7 +21,14 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/i18n"
 	"github.com/ovumcy/ovumcy-web/internal/security"
 	"github.com/ovumcy/ovumcy-web/internal/services"
+	"gorm.io/gorm"
 )
+
+// rateLimitTestSecretKey is the app-level secret the test handler is built
+// with (bootstrap.BuildDependencies): callers that need to mint a real
+// calendar-feed token against this same handler's database (services.GenerateCalendarFeedToken)
+// reuse this constant rather than a second hardcoded copy that could drift.
+const rateLimitTestSecretKey = "test-secret-key"
 
 func newRateLimitTestI18nManager(t *testing.T) *i18n.Manager {
 	t.Helper()
@@ -34,6 +41,17 @@ func newRateLimitTestI18nManager(t *testing.T) *i18n.Manager {
 }
 
 func newRateLimitTestHandler(t *testing.T) *api.Handler {
+	t.Helper()
+
+	handler, _ := newRateLimitTestHandlerAndDB(t)
+	return handler
+}
+
+// newRateLimitTestHandlerAndDB is newRateLimitTestHandler plus the backing
+// database, for callers that need to seed a row (e.g. arm a real calendar-feed
+// token with services.GenerateCalendarFeedToken([]byte(rateLimitTestSecretKey)))
+// against the exact handler under test rather than a disconnected database.
+func newRateLimitTestHandlerAndDB(t *testing.T) (*api.Handler, *gorm.DB) {
 	t.Helper()
 
 	tempDB, err := os.CreateTemp("", "ovumcy-rate-limit-*.db")
@@ -62,7 +80,7 @@ func newRateLimitTestHandler(t *testing.T) *api.Handler {
 		time.UTC,
 		i18nManager,
 		false,
-		bootstrap.BuildDependencies(db.NewRepositories(database), []byte("test-secret-key"), i18nManager, bootstrap.Options{
+		bootstrap.BuildDependencies(db.NewRepositories(database), []byte(rateLimitTestSecretKey), i18nManager, bootstrap.Options{
 			RegistrationMode: services.RegistrationModeOpen,
 			OIDCConfig:       security.OIDCConfig{},
 			LoginAttempts:    bootstrap.AttemptLimit{Max: 8, Window: 15 * time.Minute},
@@ -74,7 +92,7 @@ func newRateLimitTestHandler(t *testing.T) *api.Handler {
 	if err != nil {
 		t.Fatalf("init rate-limit test handler: %v", err)
 	}
-	return handler
+	return handler, database
 }
 
 func TestAuthRateLimitHandlerTreatsJSONContentTypeAsJSONRequest(t *testing.T) {
