@@ -32,12 +32,13 @@ func confirmedOvulationFixture(t *testing.T) (*models.User, []models.DailyLog, C
 	return thermalShiftFixture(t, 0)
 }
 
-// The two temperatures the package's 3-over-6 fixtures are built from —
-// thermalShiftFixture here and bbtCycleAroundASkippedMidnight in
-// cycle_signals_dst_test.go: six undisturbed readings at the low value fill the
-// coverline window, three at the high value clear it. Which days carry them is
-// each fixture's own business. The 0.30 gap is what clears
-// bbtThirdDayMarginCelsius — narrowing it silently kills every one of them.
+// The two temperatures thermalShiftFixture (here) and
+// bbtCycleAroundASkippedMidnight (cycle_signals_dst_test.go) build their series
+// from: six undisturbed readings at the low value fill the coverline window,
+// three at the high value clear it. Which days carry them is each fixture's own
+// business. The 0.30 gap is what clears bbtThirdDayMarginCelsius (0.2) —
+// narrowing it silently kills both. Other 3-over-6 fixtures in the package
+// spell their own temperatures out and do not read these.
 const (
 	thermalShiftLowBBT  = 36.20
 	thermalShiftHighBBT = 36.50
@@ -117,10 +118,14 @@ func TestConfirmedCurrentCycleOvulationReadsTheDetectorsDay(t *testing.T) {
 // falls before it, so the detection series is empty and nothing confirms with or
 // without the guard — this assertion cannot tell the two apart. It is pinned so
 // the early exit cannot start answering differently from the empty series it
-// stands in for.
+// stands in for. The cycle day follows the moved start through atToday, which
+// cycleDayAt clamps to 0 for a today before it, so the input is a cohort an
+// owner can be in rather than the fixture's cycle day left behind on a start
+// that has moved.
 func TestConfirmedOvulationIgnoresACycleStartRecordedAhead(t *testing.T) {
 	user, logs, stats, today := confirmedOvulationFixture(t)
 	stats.LastPeriodStart = AddCalendarDays(today, 2, time.UTC)
+	stats = atToday(stats, today)
 
 	if _, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, today, time.UTC); ok {
 		t.Fatal("a cycle start recorded ahead of today must confirm nothing")
@@ -319,5 +324,48 @@ func TestConfirmedOvulationStopsAtTheFirstCycleFloor(t *testing.T) {
 	context := BuildDashboardCycleContext(user, logs, stats, today, time.UTC)
 	if got := CalendarDayKey(context.DisplayOvulationDate); got == "2026-03-11" {
 		t.Fatal("the dashboard must not name the detector's day while the calendar withholds it under the first-cycle floor")
+	}
+}
+
+// TestFirstCycleGridWithholdsTheTentativeMarkerWithTheFertilityMaps is the grid
+// half of the floor above, on the ONE cohort where the calendar's
+// `if !fertilitySuppressed` wrapper around the BBT pass decides anything. The
+// wrapper sits several statements below the PredictionsSuppressed early return
+// that opens buildCalendarPredictionMaps, so an unpredictable, pregnancy-paused
+// or overdue account never reaches it — those grids are already empty. Here
+// PredictionsSuppressed is false and only DashboardAwaitingFirstCycle holds, so
+// the wrapper is what stands between the owner and a marker.
+//
+// What it withholds is the TENTATIVE shade: with the fertility maps empty, an
+// unguarded appendCurrentCycleBBTSignal marks the projected 2026-03-14 tentative
+// (the resolver confirms nothing under the floor), reintroducing one shade
+// lighter the very day the floor had just removed. The floor's own sweep across
+// the four consumers (TestFirstCycleFloorSuppressesFertilityOnEverySurface,
+// prediction_first_cycle_floor_test.go) does not reach that: its owner neither
+// tracks BBT nor records a temperature, so the pass returns at its first guard
+// whether the wrapper is there or not.
+func TestFirstCycleGridWithholdsTheTentativeMarkerWithTheFertilityMaps(t *testing.T) {
+	user, logs, stats, today := thermalShiftFixture(t, 0)
+	// The model's projections stay: an account awaiting its first cycle still
+	// has an ovulation date and a next-period start, both projected from the
+	// onboarding cycle length, which is exactly why the fertility half is
+	// withheld rather than absent.
+	stats.CompletedCycleCount = 0
+
+	if _, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, today, time.UTC); ok {
+		t.Fatal("fixture anchor: with no completed cycle FertilityProjectionSuppressed must hold, so the resolver confirms nothing")
+	}
+
+	monthStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
+	days := BuildCalendarDayStates(user, monthStart, logs, stats, today, time.UTC)
+	if solid, tentative := ovulationMarkerKeys(days); len(solid) != 0 || len(tentative) != 0 {
+		t.Errorf("calendar: solid ovulation marker(s) = %v, tentative = %v, want none of either — the first-cycle floor withholds the ovulation day in both shades", solid, tentative)
+	}
+	// The other half of the floor's definition, and this grid's anti-vacuity
+	// control: the PREDICTED PERIOD keeps its anchor in a recorded cycle start
+	// and is still painted, so a builder that had stopped painting anything at
+	// all cannot satisfy the assertion above.
+	if projected := findCalendarDayStateByDateString(t, days, "2026-03-29"); !projected.IsPredicted {
+		t.Errorf("calendar: 2026-03-29 IsPredicted = false, want true — only the fertility half is withheld here, and PredictionsSuppressed is what would take the period with it")
 	}
 }
