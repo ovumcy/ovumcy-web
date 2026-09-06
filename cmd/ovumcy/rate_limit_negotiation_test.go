@@ -54,6 +54,22 @@ func newRateLimitTestHandler(t *testing.T) *api.Handler {
 func newRateLimitTestHandlerAndDB(t *testing.T) (*api.Handler, *gorm.DB) {
 	t.Helper()
 
+	return newRateLimitTestHandlerAndDBAtLocation(t, time.UTC)
+}
+
+// newRateLimitTestHandlerAndDBAtLocation is newRateLimitTestHandlerAndDB with
+// the handler's own instance zone parameterized instead of hardcoded to
+// time.UTC — for a caller whose fixture depends on the instance zone being
+// something OTHER than UTC (a request-timezone-signal probe needs a poller-
+// claimed zone with a real offset gap from its baseline; UTC would need one
+// exceeding fiber's own +14 ceiling, which no real zone reaches).
+// runtimeConfig.Location — the argument newFiberApp otherwise takes — is
+// composition-root config for session cookies and has no effect here:
+// handler.location is fixed at construction, by api.NewHandler's own second
+// argument, the moment this builds it.
+func newRateLimitTestHandlerAndDBAtLocation(t *testing.T, location *time.Location) (*api.Handler, *gorm.DB) {
+	t.Helper()
+
 	tempDB, err := os.CreateTemp("", "ovumcy-rate-limit-*.db")
 	if err != nil {
 		t.Fatalf("create rate-limit test database path: %v", err)
@@ -77,7 +93,7 @@ func newRateLimitTestHandlerAndDB(t *testing.T) (*api.Handler, *gorm.DB) {
 
 	handler, err := api.NewHandler(
 		"0123456789abcdef0123456789abcdef",
-		time.UTC,
+		location,
 		i18nManager,
 		false,
 		bootstrap.BuildDependencies(db.NewRepositories(database), []byte(rateLimitTestSecretKey), i18nManager, bootstrap.Options{
@@ -266,7 +282,7 @@ func TestCalendarFeedLimiterUsesItsOwnBudgetNotTheAPIBudget(t *testing.T) {
 			CalendarFeedWindow: time.Minute,
 		},
 	}, handler)
-	app.Get("/calendar/feed/:token.ics", func(c fiber.Ctx) error {
+	app.Get(api.CalendarFeedRateLimitPrefix+"/:token.ics", func(c fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 	app.Get("/api/v1/ping", func(c fiber.Ctx) error {
@@ -283,7 +299,7 @@ func TestCalendarFeedLimiterUsesItsOwnBudgetNotTheAPIBudget(t *testing.T) {
 		return response.StatusCode
 	}
 
-	const feedTarget = "/calendar/feed/ABCDEFGHJKLMNPQRSTUVWXYZ23456789ABCDEFGHJKLMNP12.ics"
+	const feedTarget = api.CalendarFeedRateLimitPrefix + "/ABCDEFGHJKLMNPQRSTUVWXYZ23456789ABCDEFGHJKLMNP12.ics"
 	for i := 1; i <= 2; i++ {
 		if status := get(t, feedTarget); status != http.StatusNoContent {
 			t.Fatalf("feed request %d within budget: got %d, want 204", i, status)
@@ -485,7 +501,7 @@ func TestCalendarFeedRateLimitHandlerAnswers429AndRedactsToken(t *testing.T) {
 	app.Get(api.CalendarFeedRateLimitPrefix+"/:token.ics", newCalendarFeedRateLimitHandler(handler))
 
 	const feedToken = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789ABCDEFGHJKLMNP"
-	request := httptest.NewRequest(http.MethodGet, "/calendar/feed/"+feedToken+".ics", nil)
+	request := httptest.NewRequest(http.MethodGet, api.CalendarFeedRateLimitPrefix+"/"+feedToken+".ics", nil)
 	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("calendar-feed rate-limit request failed: %v", err)

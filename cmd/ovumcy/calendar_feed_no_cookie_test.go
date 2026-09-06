@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/api"
 	"github.com/ovumcy/ovumcy-web/internal/db"
+	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 	"gorm.io/gorm"
 )
@@ -24,24 +26,13 @@ import (
 func newCalendarFeedTestApp(t *testing.T, handler *api.Handler, feedMax int) *fiber.App {
 	t.Helper()
 
+	settings := uniformRateLimits(t, 100000, time.Hour)
+	settings.CalendarFeedMax = feedMax
 	config := runtimeConfig{
 		Location:        time.UTC,
 		DefaultLanguage: "en",
 		CookieSecure:    false,
-		RateLimits: rateLimitSettings{
-			LoginMax:             100000,
-			LoginWindow:          time.Hour,
-			ForgotPasswordMax:    100000,
-			ForgotPasswordWindow: time.Hour,
-			RegisterMax:          100000,
-			RegisterWindow:       time.Hour,
-			LogoutMax:            100000,
-			LogoutWindow:         time.Hour,
-			APIMax:               100000,
-			APIWindow:            time.Hour,
-			CalendarFeedMax:      feedMax,
-			CalendarFeedWindow:   time.Hour,
-		},
+		RateLimits:      settings,
 	}
 	return newFiberApp(config, handler)
 }
@@ -72,6 +63,15 @@ func armCalendarFeedToken(t *testing.T, database *gorm.DB, userID uint) string {
 	return token
 }
 
+// calendarFeedNoCookieCase is one probe TestCalendarFeedRouteSetsNoCookieOnTheProductionStack
+// drives against the production stack.
+type calendarFeedNoCookieCase struct {
+	name      string
+	method    string // empty = GET
+	path      string // empty = feedTarget
+	configure func(*http.Request)
+}
+
 // TestCalendarFeedRouteSetsNoCookieOnTheProductionStack pins
 // docs/SECURITY_INVARIANTS.md's "Calendar feed subscription" claim that the
 // feed carries no `Set-Cookie` on any outcome: internal/api/handlers_calendar_feed.go
@@ -92,14 +92,9 @@ func armCalendarFeedToken(t *testing.T, database *gorm.DB, userID uint) string {
 // exercises the exact same middleware pass a 200 would.
 func TestCalendarFeedRouteSetsNoCookieOnTheProductionStack(t *testing.T) {
 	app := newCalendarFeedNoCookieTestApp(t)
-	feedTarget := "/calendar/feed/" + strings.Repeat("A", 48) + ".ics"
+	feedTarget := api.CalendarFeedRateLimitPrefix + "/" + strings.Repeat("A", 48) + ".ics"
 
-	cases := []struct {
-		name      string
-		method    string // empty = GET
-		path      string // empty = feedTarget
-		configure func(*http.Request)
-	}{
+	cases := []calendarFeedNoCookieCase{
 		{
 			name:      "no headers",
 			configure: func(*http.Request) {},
@@ -128,31 +123,6 @@ func TestCalendarFeedRouteSetsNoCookieOnTheProductionStack(t *testing.T) {
 				r.AddCookie(&http.Cookie{Name: "ovumcy_tz", Value: "Europe/Berlin"})
 			},
 		},
-		// The four spellings below are exactly routableSpellings(feedTarget)
-		// (rate_limit_scope_guard_test.go): fiberConfig ships with CaseSensitive
-		// and StrictRouting both off, so the router folds case and trailing
-		// slashes away before matching, and a predicate comparing c.Path() raw
-		// claims fewer spellings than the router actually dispatches here.
-		{
-			name:      "uppercase spelling",
-			path:      strings.ToUpper(feedTarget),
-			configure: func(*http.Request) {},
-		},
-		{
-			name:      "trailing slash",
-			path:      feedTarget + "/",
-			configure: func(*http.Request) {},
-		},
-		{
-			name:      "uppercase spelling with trailing slash",
-			path:      strings.ToUpper(feedTarget) + "/",
-			configure: func(*http.Request) {},
-		},
-		{
-			name:      "double trailing slash",
-			path:      feedTarget + "//",
-			configure: func(*http.Request) {},
-		},
 		{
 			name:      "uppercase route prefix, lowercase token",
 			path:      "/CALENDAR/FEED/" + strings.Repeat("A", 48) + ".ics",
@@ -161,11 +131,29 @@ func TestCalendarFeedRouteSetsNoCookieOnTheProductionStack(t *testing.T) {
 		{
 			// app.Get also registers HEAD; the CSRF Next clause historically
 			// checked only GET, so a HEAD request minted a CSRF cookie the GET
-			// cases above never revealed.
+			// cases above never revealed. This case proves no Set-Cookie on
+			// HEAD — independently of which handler answers it: on the real
+			// route table a HEAD to this (or any) page route actually reaches
+			// the terminal NotFound catch-all rather than ServeCalendarFeed
+			// (fiber only appends a GET route's auto-generated HEAD copy at
+			// serve time, after NotFound already occupies the stack), a
+			// pre-existing gap this change does not touch either way.
 			name:      "HEAD instead of GET",
 			method:    http.MethodHead,
 			configure: func(*http.Request) {},
 		},
+	}
+	// fiberConfig ships with CaseSensitive and StrictRouting both off, so the
+	// router folds case and trailing slashes away before matching a route, and
+	// a predicate comparing c.Path() raw claims fewer spellings than the
+	// router actually dispatches here — the exact set routableSpellings
+	// (rate_limit_scope_guard_test.go) returns.
+	for _, spelling := range routableSpellings(feedTarget) {
+		cases = append(cases, calendarFeedNoCookieCase{
+			name:      "routable spelling " + spelling,
+			path:      spelling,
+			configure: func(*http.Request) {},
+		})
 	}
 
 	for _, testCase := range cases {
@@ -225,7 +213,8 @@ func TestCalendarFeedRouteSetsNoCookieOnTheProductionStack(t *testing.T) {
 	// that 404 must still carry both cookies, or the exclusion has widened
 	// from the feed route to whatever happens to start with its prefix.
 	t.Run("control: a neighbour continuing the prefix's characters still gets both cookies", func(t *testing.T) {
-		request := httptest.NewRequest(http.MethodGet, "/calendar/feedback", nil)
+		neighbour := api.CalendarFeedRateLimitPrefix + "back"
+		request := httptest.NewRequest(http.MethodGet, neighbour, nil)
 		request.Header.Set("X-Ovumcy-Timezone", "Europe/Berlin")
 
 		response, err := app.Test(request, testConfigNoTimeout)
@@ -238,10 +227,10 @@ func TestCalendarFeedRouteSetsNoCookieOnTheProductionStack(t *testing.T) {
 			t.Fatalf("expected the catch-all 404 for a path no route registers, got %d — fix the probe before trusting the cookie assertions below", response.StatusCode)
 		}
 		if testResponseCookie(response.Cookies(), "ovumcy_csrf") == nil {
-			t.Fatal("expected /calendar/feedback to mint a CSRF cookie — the feed's CSRF skip must not over-match its prefix")
+			t.Fatalf("expected %s to mint a CSRF cookie — the feed's CSRF skip must not over-match its prefix", neighbour)
 		}
 		if cookie := testResponseCookie(response.Cookies(), "ovumcy_tz"); cookie == nil || cookie.Value != "Europe/Berlin" {
-			t.Fatal("expected /calendar/feedback to persist the timezone cookie — LanguageMiddleware's feed skip must not over-match its prefix")
+			t.Fatalf("expected %s to persist the timezone cookie — LanguageMiddleware's feed skip must not over-match its prefix", neighbour)
 		}
 	})
 }
@@ -259,7 +248,7 @@ func TestCalendarFeedRouteSetsNoCookieForAnArmedFeed(t *testing.T) {
 	token := armCalendarFeedToken(t, database, user.ID)
 	app := newCalendarFeedTestApp(t, handler, 100000)
 
-	request := httptest.NewRequest(http.MethodGet, "/calendar/feed/"+token+".ics", nil)
+	request := httptest.NewRequest(http.MethodGet, api.CalendarFeedRateLimitPrefix+"/"+token+".ics", nil)
 	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("armed feed request failed: %v", err)
@@ -289,29 +278,15 @@ func TestCalendarFeedRouteSetsNoCookieOn429(t *testing.T) {
 	user := seedOwner(t, db.NewRepositories(database), "calendar-feed-limited@example.com", 14)
 	token := armCalendarFeedToken(t, database, user.ID)
 	app := newCalendarFeedTestApp(t, handler, 1)
-	feedTarget := "/calendar/feed/" + token + ".ics"
+	feedTarget := api.CalendarFeedRateLimitPrefix + "/" + token + ".ics"
 
-	first := httptest.NewRequest(http.MethodGet, feedTarget, nil)
-	firstResponse, err := app.Test(first, testConfigNoTimeout)
-	if err != nil {
-		t.Fatalf("first feed request failed: %v", err)
-	}
-	_ = firstResponse.Body.Close()
-	if firstResponse.StatusCode != http.StatusOK {
-		t.Fatalf("expected the first request inside the budget of 1 to succeed, got %d", firstResponse.StatusCode)
-	}
+	response := spendBudgetAndProbe(t, app, rateLimitSurface{method: http.MethodGet, path: feedTarget}, nil)
+	defer func() { _ = response.Body.Close() }()
 
-	second := httptest.NewRequest(http.MethodGet, feedTarget, nil)
-	secondResponse, err := app.Test(second, testConfigNoTimeout)
-	if err != nil {
-		t.Fatalf("second feed request failed: %v", err)
+	if response.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("expected 429 once the per-IP budget (1) is spent, got %d — fix the probe before trusting the cookie assertion below", response.StatusCode)
 	}
-	defer func() { _ = secondResponse.Body.Close() }()
-
-	if secondResponse.StatusCode != http.StatusTooManyRequests {
-		t.Fatalf("expected 429 once the per-IP budget (1) is spent, got %d — fix the probe before trusting the cookie assertion below", secondResponse.StatusCode)
-	}
-	if cookies := secondResponse.Header.Values("Set-Cookie"); len(cookies) != 0 {
+	if cookies := response.Header.Values("Set-Cookie"); len(cookies) != 0 {
 		t.Fatalf("the calendar feed's rate limiter must never set a cookie on its 429, got Set-Cookie: %v", cookies)
 	}
 }
@@ -327,7 +302,7 @@ func TestCalendarFeedRateLimiterScopedToTheRouteShapeNotTheBarePrefix(t *testing
 	token := armCalendarFeedToken(t, database, user.ID)
 	app := newCalendarFeedTestApp(t, handler, 1)
 
-	const overMatchPath = "/calendar/feed/"
+	const overMatchPath = api.CalendarFeedRateLimitPrefix + "/"
 	for i := range 3 {
 		request := httptest.NewRequest(http.MethodGet, overMatchPath, nil)
 		response, err := app.Test(request, testConfigNoTimeout)
@@ -343,7 +318,7 @@ func TestCalendarFeedRateLimiterScopedToTheRouteShapeNotTheBarePrefix(t *testing
 	// Positive anchor, same app, same tiny budget: a REAL feed URL must still
 	// be capped, or the assertion above would pass just as well with the
 	// limiter dead rather than correctly scoped.
-	feedTarget := "/calendar/feed/" + token + ".ics"
+	feedTarget := api.CalendarFeedRateLimitPrefix + "/" + token + ".ics"
 	first := httptest.NewRequest(http.MethodGet, feedTarget, nil)
 	firstResponse, err := app.Test(first, testConfigNoTimeout)
 	if err != nil {
@@ -383,15 +358,15 @@ func TestCalendarFeedOverMatchPathsKeepLanguageCatalogueAndCSRFSupport(t *testin
 	const rawTitleAsText = ">not_found.title<"
 
 	cases := []string{
-		"/calendar/feed/",
-		"/calendar/feed",
-		"/calendar/feed/a/b.ics",
-		"/calendar/feed/.ics",
+		api.CalendarFeedRateLimitPrefix + "/",
+		api.CalendarFeedRateLimitPrefix,
+		api.CalendarFeedRateLimitPrefix + "/a/b.ics",
+		api.CalendarFeedRateLimitPrefix + "/.ics",
 		// Control: a genuine neighbour that shares no route with the feed. If
 		// THIS case also failed, the assertions below would be worthless — it
 		// would mean the not_found page never carries a catalogue or a CSRF
 		// token on this app, feed-adjacent or not.
-		"/calendar/feedback",
+		api.CalendarFeedRateLimitPrefix + "back",
 	}
 
 	for _, path := range cases {
@@ -415,5 +390,90 @@ func TestCalendarFeedOverMatchPathsKeepLanguageCatalogueAndCSRFSupport(t *testin
 				t.Errorf("%s rendered no non-empty csrf-token meta tag — the CSRF middleware's calendar-feed skip over-matched this path", path)
 			}
 		})
+	}
+}
+
+// TestCalendarFeedBodyIgnoresRequestTimezoneSignals is the body-content half
+// of TestCalendarFeedRouteSetsNoCookieOnTheProductionStack's "with
+// X-Ovumcy-Timezone header" case: that test proves the header mints no cookie
+// on the feed; this proves it changes nothing about what is served, for the
+// one owner it could affect (see the early-return comment on
+// LanguageMiddleware) — one whose users.timezone was never captured, where
+// ResolveFeed's fallback location is whatever the transport layer would have
+// resolved had it run for this route.
+//
+// The instance zone (Pacific/Pago_Pago, UTC-11) and the poller-claimed zone
+// (Pacific/Kiritimati, UTC+14) are picked 25 hours apart on purpose: any two
+// zones with an offset gap over 24h disagree about the calendar date on EVERY
+// possible instant, so the mutation-kill below (temporarily letting
+// LanguageMiddleware run for this route) does not depend on catching the real
+// clock in the ~14-of-24-hours window a same-day pair such as UTC/Kiritimati
+// would need. The seeded ~28-day period cadence anchors the current cycle so
+// its next projected period lands exactly one day past the instance zone's
+// "today" — the earliest date ProjectCycleStart can ever place a projection
+// relative to whichever "today" resolved it — so a poller-claimed zone that
+// actually reached the projector would move that date a further 28 days out,
+// a difference no rendered .ics body could hide.
+func TestCalendarFeedBodyIgnoresRequestTimezoneSignals(t *testing.T) {
+	instanceZone, err := time.LoadLocation("Pacific/Pago_Pago")
+	if err != nil {
+		t.Fatalf("load Pacific/Pago_Pago: %v", err)
+	}
+
+	handler, database := newRateLimitTestHandlerAndDBAtLocation(t, instanceZone)
+	user := seedOwner(t, db.NewRepositories(database), "calendar-feed-tz-signal@example.com", 14)
+	// users.timezone stays "" (seedOwner never sets it) — the one condition
+	// under which ResolveFeed's preference for the owner's own stored zone
+	// falls through to whatever the transport layer hands it.
+
+	today := services.DateAtLocation(time.Now(), instanceZone)
+	starts := []time.Time{today.AddDate(0, 0, -83), today.AddDate(0, 0, -55), today.AddDate(0, 0, -27)}
+	for _, start := range starts {
+		if err := database.Create(&models.DailyLog{UserID: user.ID, Date: start, IsPeriod: true}).Error; err != nil {
+			t.Fatalf("seed period log %s: %v", start.Format("2006-01-02"), err)
+		}
+	}
+	if err := database.Model(&models.User{}).Where("id = ?", user.ID).
+		Update("last_period_start", starts[len(starts)-1]).Error; err != nil {
+		t.Fatalf("set last_period_start: %v", err)
+	}
+
+	token := armCalendarFeedToken(t, database, user.ID)
+	config := runtimeConfig{
+		Location:        instanceZone,
+		DefaultLanguage: "en",
+		RateLimits:      uniformRateLimits(t, 100000, time.Hour),
+	}
+	app := newFiberApp(config, handler)
+	feedTarget := api.CalendarFeedRateLimitPrefix + "/" + token + ".ics"
+
+	plain := httptest.NewRequest(http.MethodGet, feedTarget, nil)
+	plainResponse, err := app.Test(plain, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("plain feed request failed: %v", err)
+	}
+	defer func() { _ = plainResponse.Body.Close() }()
+	plainBody := mustReadAll(t, plainResponse)
+
+	claimed := httptest.NewRequest(http.MethodGet, feedTarget, nil)
+	claimed.Header.Set("X-Ovumcy-Timezone", "Pacific/Kiritimati")
+	claimed.AddCookie(&http.Cookie{Name: "ovumcy_tz", Value: "Pacific/Kiritimati"})
+	claimedResponse, err := app.Test(claimed, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("zone-claiming feed request failed: %v", err)
+	}
+	defer func() { _ = claimedResponse.Body.Close() }()
+	claimedBody := mustReadAll(t, claimedResponse)
+
+	for name, response := range map[string]*http.Response{"plain": plainResponse, "zone-claiming": claimedResponse} {
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("%s request: expected 200 for the armed feed, got %d", name, response.StatusCode)
+		}
+		if cookies := response.Header.Values("Set-Cookie"); len(cookies) != 0 {
+			t.Fatalf("%s request: calendar feed route must never set a cookie, got Set-Cookie: %v", name, cookies)
+		}
+	}
+	if !bytes.Equal(plainBody, claimedBody) {
+		t.Fatalf("a poller-claimed timezone changed the feed body for an owner with no stored timezone:\nplain:         %q\nzone-claiming: %q", plainBody, claimedBody)
 	}
 }

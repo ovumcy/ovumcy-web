@@ -203,10 +203,7 @@ func TestCSRFPredicateSkipsTheCookielessFeedGETAndHEADWithoutWideningTheMutating
 		return response.StatusCode == fiber.StatusTeapot
 	}
 
-	const feedTarget = "/calendar/feed/ABCDEFGHJKLMNPQRSTUVWXYZ23456789ABCDEFGHJKLMNP12.ics"
-	if !strings.HasPrefix(feedTarget, api.CalendarFeedRateLimitPrefix) {
-		t.Fatalf("probe path %q must share the feed's own rate-limit prefix %q, or the assertions below are not testing the feed clause", feedTarget, api.CalendarFeedRateLimitPrefix)
-	}
+	const feedTarget = api.CalendarFeedRateLimitPrefix + "/ABCDEFGHJKLMNPQRSTUVWXYZ23456789ABCDEFGHJKLMNP12.ics"
 	for _, method := range []string{http.MethodGet, http.MethodHead} {
 		if !isExempt(method, feedTarget) {
 			t.Errorf("expected %s %s to skip the CSRF middleware (no token issuance on the cookieless feed)", method, feedTarget)
