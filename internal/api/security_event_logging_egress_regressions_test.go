@@ -370,3 +370,26 @@ func TestHealthAuditDomainsSeparateEgressFromMutation(t *testing.T) {
 		}
 	}
 }
+
+// TestHeadExportCarriesTheHEADMethodOnTheAuditLine pins the audit half of the
+// export HEAD twin: registerHEADTwins lets HEAD /api/v1/exports/summary run
+// the same chain GET does, and emitSecurityEvent reads the field straight off
+// c.Method() rather than assuming GET — an operator reading the egress stream
+// must be able to tell a headers-only probe from a download that actually
+// carried data out.
+func TestHeadExportCarriesTheHEADMethodOnTheAuditLine(t *testing.T) {
+	app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{auditLogEnabled: true})
+	user := createOnboardingTestUser(t, database, "export-head-audit@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	request := httptest.NewRequest(http.MethodHead, "/api/v1/exports/summary", nil)
+	request.Header.Set("Cookie", authCookie)
+	response, logOutput := captureAuditedRequest(t, app, request)
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200 for a HEAD export summary, got %d", response.StatusCode)
+	}
+
+	assertHealthEgressAudited(t, logOutput, dataExportAction, "success", exportEgressTarget,
+		securityEventField("export_format", "summary"), securityEventField("method", "HEAD"))
+}

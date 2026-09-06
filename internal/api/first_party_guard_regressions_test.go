@@ -572,3 +572,27 @@ func TestShownOnceGETRoutesAreExactlyTheDeclaredSet(t *testing.T) {
 		t.Fatal("expected at least one declared shown-once route; recheck route discovery")
 	}
 }
+
+// TestHeadOnOIDCStartDoesNotMintStateCookieOrStartTheHandshake is the
+// behavioral half of GET /auth/oidc/start joining shownOnceGETRoutes:
+// StartOIDCLogin mints a fresh one-time state cookie and starts the provider
+// handshake before its 307 redirect, and a HEAD can neither follow that
+// redirect nor use the cookie — it would only overwrite whatever state a
+// concurrent GET login already staged in the same cookie jar. Both must never
+// happen on HEAD, not merely fail to reach the caller.
+func TestHeadOnOIDCStartDoesNotMintStateCookieOrStartTheHandshake(t *testing.T) {
+	t.Parallel()
+
+	stub := newStubOIDCWorkflowService(true)
+	stub.authURL = "https://id.example.com/authorize"
+	app, _ := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{oidcService: stub})
+
+	response := mustAppResponse(t, app, httptest.NewRequest(http.MethodHead, "/auth/oidc/start", nil))
+	assertStatusCode(t, response, http.StatusNotFound)
+	if stub.lastStartState != "" {
+		t.Fatalf("expected HEAD /auth/oidc/start to never reach the provider handshake, got state %q", stub.lastStartState)
+	}
+	if cookie := responseCookie(response.Cookies(), oidcStateCookieName); cookie != nil {
+		t.Fatalf("expected HEAD /auth/oidc/start to mint no state cookie, got Set-Cookie %#v", cookie)
+	}
+}
