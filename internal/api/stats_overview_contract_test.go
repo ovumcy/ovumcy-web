@@ -389,8 +389,11 @@ func TestStatsOverviewConfirmedOvulationIsIndependentOfOvulationExact(t *testing
 
 	wantConfirmed := services.AddCalendarDays(today, -4, time.UTC).Format(statsOverviewDateLayout)
 
-	if payload.OvulationDate == nil || *payload.OvulationDate != wantConfirmed {
-		t.Fatalf("ovulation_date = %v, want the BBT-confirmed %s", payload.OvulationDate, wantConfirmed)
+	if payload.OvulationDate == nil {
+		t.Fatalf("ovulation_date is absent, want the BBT-confirmed %s", wantConfirmed)
+	}
+	if *payload.OvulationDate != wantConfirmed {
+		t.Fatalf("ovulation_date = %s, want the BBT-confirmed %s", *payload.OvulationDate, wantConfirmed)
 	}
 	if !payload.OvulationConfirmed {
 		t.Fatal("ovulation_confirmed = false beside a BBT-confirmed ovulation_date")
@@ -442,8 +445,11 @@ func TestStatsOverviewConfirmsALateShiftOnOrAfterTheProjectedNextPeriodStart(t *
 			}
 
 			wantConfirmed := confirmedDay.Format(statsOverviewDateLayout)
-			if payload.OvulationDate == nil || *payload.OvulationDate != wantConfirmed {
-				t.Fatalf("ovulation_date = %v, want the BBT-confirmed %s (a shift recorded on or after the projected next period start is still this cycle's)", payload.OvulationDate, wantConfirmed)
+			if payload.OvulationDate == nil {
+				t.Fatalf("ovulation_date is absent, want the BBT-confirmed %s (a shift recorded on or after the projected next period start is still this cycle's)", wantConfirmed)
+			}
+			if *payload.OvulationDate != wantConfirmed {
+				t.Fatalf("ovulation_date = %s, want the BBT-confirmed %s (a shift recorded on or after the projected next period start is still this cycle's)", *payload.OvulationDate, wantConfirmed)
 			}
 			if !payload.OvulationConfirmed {
 				t.Fatal("ovulation_confirmed = false beside a BBT-confirmed ovulation_date recorded on or after the projected next period start")
