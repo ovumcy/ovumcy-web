@@ -15,7 +15,6 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
-	"gorm.io/gorm"
 )
 
 func TestUpsertDayNormalizesFlowWhenNotPeriod(t *testing.T) {
@@ -356,7 +355,7 @@ func TestUpsertDayJudgesTheNotMeasuredSentinelInTheAccountsUnit(t *testing.T) {
 
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "upsert-day-bbt-sentinel-unit@example.com", "StrongPass1", true)
-	seedFahrenheitBBTTracking(t, database, user.ID, true)
+	updateStatsOverviewUser(t, database, user, fahrenheitBBTTrackingPreferences(true))
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
 	const storedTolerance = 1e-9
@@ -441,7 +440,7 @@ func TestUpsertDayRefusesAnImpossibleFahrenheitReadingOverHTMX(t *testing.T) {
 
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "upsert-day-bbt-sentinel-htmx@example.com", "StrongPass1", true)
-	seedFahrenheitBBTTracking(t, database, user.ID, true)
+	updateStatsOverviewUser(t, database, user, fahrenheitBBTTrackingPreferences(true))
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
 	day := time.Date(2026, time.June, 1, 0, 0, 0, 0, time.UTC)
@@ -455,9 +454,9 @@ func TestUpsertDayRefusesAnImpossibleFahrenheitReadingOverHTMX(t *testing.T) {
 	response := mustAppResponse(t, app, request)
 	assertStatusCode(t, response, http.StatusBadRequest)
 
-	body := mustReadBodyString(t, response.Body)
-	if !strings.Contains(body, `data-flash-key="dashboard.error.invalid_bbt"`) {
-		t.Fatalf("expected the HTMX refusal to carry the bbt flash key, got %q", body)
+	root := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+	if htmlFlashByKey(root, "dashboard.error.invalid_bbt") == nil {
+		t.Fatalf("expected the HTMX refusal to carry the bbt flash key")
 	}
 
 	entry, err := fetchLogByDateForTest(database, user.ID, day, time.UTC)
@@ -469,63 +468,128 @@ func TestUpsertDayRefusesAnImpossibleFahrenheitReadingOverHTMX(t *testing.T) {
 	}
 }
 
-// TestUpsertDayKeepsTheDayWhenAHiddenTemperatureIsImpossible sends that same
-// impossible reading to an account that does not track BBT. Transport marks a
-// hidden field Preserve* (buildUpsertDayEntryInput) and the save replaces it
-// with the value already stored, so the incoming one is not this write's
-// subject and may not refuse the day: the mood the owner did send has to land
-// and the stored temperature has to survive untouched.
-//
-// The form transport carries the case because Preserve* is set only for a form
-// body — a JSON caller states every field explicitly and is granted no
-// preservation, so for it 20 °F stays the refusal the test above pins.
-func TestUpsertDayKeepsTheDayWhenAHiddenTemperatureIsImpossible(t *testing.T) {
+// TestUpsertDayRefusesAnImpossibleTemperatureSentAsJSON pins the transport
+// condition the hidden-field handling below rests on: hiddenDayFields grants it
+// to a FORM body only. A form is the browser day editor, which posts the fields
+// the account shows and nothing else, so a value arriving in a hidden one is
+// not this write's subject; a JSON body is a client replacing the record with
+// exactly what it states, so every field it sends is its subject and is judged.
+// The same account, the same 20 °F and the same day therefore answer 400 here
+// and 200 in the table below, and the entry must not be created either way
+// round. Widening the condition (`!hasJSONBody(c)` → true) reddens this test.
+func TestUpsertDayRefusesAnImpossibleTemperatureSentAsJSON(t *testing.T) {
 	t.Parallel()
 
 	app, database := newOnboardingTestApp(t)
-	user := createOnboardingTestUser(t, database, "upsert-day-bbt-hidden-impossible@example.com", "StrongPass1", true)
-	seedFahrenheitBBTTracking(t, database, user.ID, false)
+	user := createOnboardingTestUser(t, database, "upsert-day-bbt-hidden-json@example.com", "StrongPass1", true)
+	updateStatsOverviewUser(t, database, user, fahrenheitBBTTrackingPreferences(false))
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
-	day := time.Date(2026, time.June, 2, 0, 0, 0, 0, time.UTC)
-	seeded := models.DailyLog{UserID: user.ID, Date: day, Mood: 2, BBT: new(36.65)}
-	if err := database.Create(&seeded).Error; err != nil {
-		t.Fatalf("seed the stored day: %v", err)
-	}
-
-	form := url.Values{"flow": {models.FlowNone}, "mood": {"4"}, "bbt": {"20"}}
-	request := httptest.NewRequest(http.MethodPut, "/api/v1/days/"+day.Format("2006-01-02"), strings.NewReader(form.Encode()))
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	day := time.Date(2026, time.June, 10, 0, 0, 0, 0, time.UTC)
+	body := fmt.Sprintf(`{"is_period":false,"flow":%q,"symptom_ids":[],"notes":"","bbt":20}`, models.FlowNone)
+	request := httptest.NewRequest(http.MethodPut, "/api/v1/days/"+day.Format("2006-01-02"), strings.NewReader(body))
+	request.Header.Set("Content-Type", fiber.MIMEApplicationJSON)
 	request.Header.Set("Cookie", authCookie)
 
 	response := mustAppResponse(t, app, request)
-	assertStatusCode(t, response, http.StatusOK)
+	assertStatusCode(t, response, http.StatusBadRequest)
+	if got := readAPIError(t, response.Body); got != invalidDayBBTErrorKey {
+		t.Fatalf("a JSON body is granted no preservation, so 20 °F must be refused under %q, got %q", invalidDayBBTErrorKey, got)
+	}
 
 	entry, err := fetchLogByDateForTest(database, user.ID, day, time.UTC)
 	if err != nil {
 		t.Fatalf("load stored log: %v", err)
 	}
-	if entry.ID == 0 {
-		t.Fatalf("the day must still be saved, found no entry")
-	}
-	if entry.Mood != 4 {
-		t.Fatalf("expected the sent mood 4 to land, got %d", entry.Mood)
-	}
-	if entry.BBT == nil || *entry.BBT != 36.65 {
-		t.Fatalf("expected the stored temperature preserved as 36.65 °C, got %v", entry.BBT)
+	if entry.ID != 0 {
+		t.Fatalf("a refused day must not be stored, found an entry with bbt=%v", entry.BBT)
 	}
 }
 
-// seedFahrenheitBBTTracking puts the account on the Fahrenheit scale and sets
-// whether it tracks BBT at all — the two preferences every case in this file
-// reads the day form through.
-func seedFahrenheitBBTTracking(t *testing.T, database *gorm.DB, userID uint, trackBBT bool) {
-	t.Helper()
+// TestUpsertDayDoesNotReadAHiddenTemperatureField drives an account that hides
+// temperature — and tracks in Fahrenheit, where everything in (0, 32] °F is an
+// impossible reading — through the form the browser posts. A field the account
+// hides is not read at all (parseDayPayload consults hiddenDayFields), so
+// nothing that can arrive in it reaches a parser or a validator: not a value
+// the range refuses, not one strconv refuses, not one no float64 can hold. The
+// day the owner did save has to land, and the temperature already stored has to
+// come back untouched (mergePreservedDayEntryInput).
+//
+// The last row is the other half of the same rule: on a day that does not exist
+// yet there is nothing to merge, so the hidden field starts empty rather than
+// storing a reading the account cannot see or correct.
+func TestUpsertDayDoesNotReadAHiddenTemperatureField(t *testing.T) {
+	t.Parallel()
 
-	if err := database.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "upsert-day-bbt-hidden-impossible@example.com", "StrongPass1", true)
+	updateStatsOverviewUser(t, database, user, fahrenheitBBTTrackingPreferences(false))
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	const storedCelsius = 36.65
+
+	testCases := []struct {
+		name       string
+		typed      string
+		seedStored bool
+	}{
+		{name: "an impossible reading leaves the stored one alone", typed: "20", seedStored: true},
+		{name: "an unparseable value cannot refuse the day", typed: "abc", seedStored: true},
+		{name: "a magnitude no float64 holds cannot refuse the day", typed: "1e400", seedStored: true},
+		{name: "a hidden field starts empty on a day that does not exist yet", typed: "20"},
+	}
+
+	firstDay := time.Date(2026, time.June, 2, 0, 0, 0, 0, time.UTC)
+	for caseIndex, testCase := range testCases {
+		day := firstDay.AddDate(0, 0, caseIndex)
+		dayRaw := day.Format("2006-01-02")
+
+		t.Run(testCase.name, func(t *testing.T) {
+			if testCase.seedStored {
+				stored := storedCelsius
+				seeded := models.DailyLog{UserID: user.ID, Date: day, Mood: 2, BBT: &stored}
+				if err := database.Create(&seeded).Error; err != nil {
+					t.Fatalf("seed the stored day: %v", err)
+				}
+			}
+
+			form := url.Values{"flow": {models.FlowNone}, "mood": {"4"}, "bbt": {testCase.typed}}
+			request := httptest.NewRequest(http.MethodPut, "/api/v1/days/"+dayRaw, strings.NewReader(form.Encode()))
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			request.Header.Set("Cookie", authCookie)
+
+			response := mustAppResponse(t, app, request)
+			assertStatusCode(t, response, http.StatusOK)
+
+			entry, err := fetchLogByDateForTest(database, user.ID, day, time.UTC)
+			if err != nil {
+				t.Fatalf("load stored log for %s: %v", dayRaw, err)
+			}
+			if entry.ID == 0 {
+				t.Fatalf("bbt=%q is not this write's subject, so %s must hold the saved day", testCase.typed, dayRaw)
+			}
+			if entry.Mood != 4 {
+				t.Fatalf("bbt=%q: expected the sent mood 4 to land, got %d", testCase.typed, entry.Mood)
+			}
+			if !testCase.seedStored {
+				if entry.BBT != nil {
+					t.Fatalf("bbt=%q: a hidden field must start empty on a new day, got %.4f °C stored", testCase.typed, *entry.BBT)
+				}
+				return
+			}
+			if entry.BBT == nil || *entry.BBT != storedCelsius {
+				t.Fatalf("bbt=%q: expected the stored temperature preserved as %.2f °C, got %v", testCase.typed, storedCelsius, entry.BBT)
+			}
+		})
+	}
+}
+
+// fahrenheitBBTTrackingPreferences is the pair of preferences the temperature
+// cases in this file drive the day form through: the account reads and writes
+// in Fahrenheit, and either tracks BBT or hides it.
+func fahrenheitBBTTrackingPreferences(trackBBT bool) map[string]any {
+	return map[string]any{
 		"temperature_unit": services.TemperatureUnitFahrenheit,
 		"track_bbt":        trackBBT,
-	}).Error; err != nil {
-		t.Fatalf("seed fahrenheit tracking preferences: %v", err)
 	}
 }

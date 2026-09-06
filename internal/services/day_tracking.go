@@ -155,12 +155,17 @@ func ParseDayBBTRawWithUnit(raw string, unit string) (*float64, error) {
 }
 
 // ConvertDayBBTToStorage is the INPUT gate for a temperature: it takes what the
-// owner typed, in the account's own unit, and answers the canonical stored
-// Celsius form — or nil for "not measured". Both transports go through it
-// before NormalizeDayEntryInput judges the result, the form via
-// ParseDayBBTRawWithUnit's string parse and the JSON bind with the float
-// encoding/json gave it, so neither writes whatever unit the caller sent
-// straight to storage and both round identically.
+// owner typed, in the account's own unit, and answers that value converted to
+// Celsius and rounded onto the stored grid — or nil for "not measured". It
+// judges nothing beyond the sentinel: 32 °F comes back as a pointer to 0.0 and
+// 20 °F as one to -6.6667, both of them readings left for IsValidDayBBT to
+// refuse. So the order is fixed, convert HERE and validate after, and a caller
+// that validates first is judging a number in the wrong unit.
+//
+// Both transports go through it before NormalizeDayEntryInput judges the
+// result, the form via ParseDayBBTRawWithUnit's string parse and the JSON bind
+// with the float encoding/json gave it, so neither writes whatever unit the
+// caller sent straight to storage and both round identically.
 //
 // The "not measured" sentinel is read HERE, in the unit that was typed, and
 // this is the only place entitled to read it. A non-positive entry is the owner
@@ -171,8 +176,21 @@ func ParseDayBBTRawWithUnit(raw string, unit string) (*float64, error) {
 // reading — and the day was saved with a null temperature and no word to the
 // owner. This is the one full statement of that placement; the tests, the
 // changelog and the spec point back here.
+//
+// A non-finite entry is neither answer and is handed on as it stands, so the
+// range refuses it. Without that, -Inf would BE the sentinel — it is
+// non-positive — and a value no thermometer can produce would be filed as the
+// owner's "nothing measured", while NaN, non-positive under no comparison, was
+// already refused. Same input, opposite outcomes, on the sign of an infinity.
 func ConvertDayBBTToStorage(value *float64, unit string) *float64 {
-	if value == nil || *value <= 0 {
+	if value == nil {
+		return nil
+	}
+	if math.IsNaN(*value) || math.IsInf(*value, 0) {
+		nonFinite := *value
+		return &nonFinite
+	}
+	if *value <= 0 {
 		return nil
 	}
 	converted := *value
@@ -183,13 +201,15 @@ func ConvertDayBBTToStorage(value *float64, unit string) *float64 {
 	return &rounded
 }
 
-// normalizeStoredDayBBT is the STORED-side counterpart, and runs only on values
-// that are already Celsius and never passed the input gate above: a legacy 0
-// read back out of a row written before BBT became nullable
-// (FormatDayBBTForInput), a restored file's reading (import_service.go), and
-// NormalizeDayEntryInput's closing pass over whatever a service caller handed
-// it. It collapses a non-measurement (nil, or the old non-positive sentinel
-// range) to nil and rounds a genuine reading onto the stored grid.
+// normalizeStoredDayBBT rounds an already-Celsius value onto the stored grid.
+// Its non-measurement branch (nil, or the old non-positive sentinel range) is
+// live for one caller: FormatDayBBTForInput, rendering a legacy 0 out of a row
+// written before BBT became nullable, which the day form has to show as an
+// empty field. At the other two sites the value has already been validated or
+// nil-ed and only the rounding applies — NormalizeDayEntryInput's closing pass
+// (day_input.go), where IsValidDayBBT refused anything non-positive one step
+// earlier, and the import (import_service.go), where normalizeExportBBT emptied
+// it.
 //
 // Because it runs after any conversion and never learns the owner's unit, it
 // cannot be the place the sentinel is judged — ConvertDayBBTToStorage says why.

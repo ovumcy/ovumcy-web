@@ -64,37 +64,27 @@ func NormalizeDayEntryInput(input DayEntryInput) (DayEntryInput, error) {
 	return input, nil
 }
 
-// dropPreservedDayEntryFields empties every field this write marked Preserve*,
-// before the validation above ever reads it. A preserved field's incoming value
-// is not this write's subject — the save replaces it with the stored one
-// (mergePreservedDayEntryInput) — so it is dropped rather than allowed to
-// reject the day: transport sets the flags for the fields the account keeps
-// hidden (buildUpsertDayEntryInput), the form therefore posts them empty, and a
-// value that arrives there anyway used to cost the owner the whole save under a
-// sentinel naming a field the answer then ignored. A Fahrenheit account that
-// hides BBT is the reachable case, since everything in (0, 32] °F converts to a
-// reading below the physiological range.
+// dropPreservedDayEntryFields neutralises every field this write marked
+// Preserve*, before the validation above ever reads one. A preserved field's
+// incoming value is not this write's subject — the save replaces it with the
+// value already stored — so it may not reject the day, and merging against an
+// EMPTY stored row is exactly that neutralisation: the same path an update
+// takes with the real row, run against no row at all, so the drop and the merge
+// cannot come to list different fields.
 //
-// On a day that does not exist yet there is nothing to merge, and dropping is
-// then the whole answer: a hidden field starts neutral instead of storing a
-// value the account cannot see.
+// Transport declines to read a hidden field at all (parseDayPayload), so no
+// HTTP request delivers a value here any more; keeping the rule in the service
+// is what makes it the service's own rather than a property of one transport.
+// Even before that, only bbt and cycle factors could refuse a day this way —
+// transport normalizes sex activity and cervical mucus to a valid spelling on
+// the way in and merely trims notes — and all five are dropped so the rule does
+// not have to be re-derived from what each transport happens to sanitize.
+//
+// On a day that does not exist yet there is nothing to merge, and this is then
+// the whole answer: a hidden field starts neutral instead of storing a value
+// the account can neither see nor correct.
 func dropPreservedDayEntryFields(input DayEntryInput) DayEntryInput {
-	if input.PreserveSexActivity {
-		input.SexActivity = models.SexActivityNone
-	}
-	if input.PreserveBBT {
-		input.BBT = nil
-	}
-	if input.PreserveCervicalMucus {
-		input.CervicalMucus = models.CervicalMucusNone
-	}
-	if input.PreserveCycleFactors {
-		input.CycleFactorKeys = nil
-	}
-	if input.PreserveNotes {
-		input.Notes = ""
-	}
-	return input
+	return mergePreservedDayEntryInput(models.DailyLog{}, input)
 }
 
 func NormalizeDayFlow(flow string) string {
