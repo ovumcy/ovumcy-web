@@ -571,6 +571,25 @@ func TestShownOnceGETRoutesAreExactlyTheDeclaredSet(t *testing.T) {
 	if len(declared) == 0 {
 		t.Fatal("expected at least one declared shown-once route; recheck route discovery")
 	}
+
+	// The position-0 check above reads only route.Handlers, and in fiber v3 a
+	// group's own middleware (e.g. AuthRequired mounted on a v1 sub-group) is
+	// registered as a separate "USE" route matched by path prefix — app.Group
+	// calls app.register([]string{methodUse}, ...), so that middleware never
+	// joins the group's own routes' Handlers slice. A refusal sitting at
+	// position 0 of route.Handlers would still run AFTER such a group's
+	// middleware at request-dispatch time, so a shown-once route declared
+	// inside a guarded /api/ group could pass the check above while a HEAD
+	// still ran the group's middleware first. Every route named in
+	// shownOnceGETRoutes today is a page route registered directly with
+	// app.Get, outside any group, so the check holds — this anchor pins that
+	// precondition so a route added under /api/ fails loudly here instead of
+	// silently invalidating the position-0 check.
+	for _, route := range declared {
+		if strings.Contains(route, " /api/") {
+			t.Fatalf("%q is declared in shownOnceGETRoutes but sits under a /api/ group prefix: group middleware in fiber v3 is a separate USE route invisible to route.Handlers, so the position-0 check above cannot see it run first for this route", route)
+		}
+	}
 }
 
 // TestHeadOnOIDCStartDoesNotMintStateCookieOrStartTheHandshake is the
