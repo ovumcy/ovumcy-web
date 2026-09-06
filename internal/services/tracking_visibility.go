@@ -17,10 +17,20 @@ import "github.com/ovumcy/ovumcy-web/internal/models"
 //
 // Renaming the columns themselves is deliberately out of scope here — the
 // adapter is what makes the rename a separate, mechanical change later.
+//
+// ShowBBTField and ShowCervicalMucus join them because the QUESTION is the same
+// one — is this field on the owner's day form — even though their columns
+// (track_bbt, track_cervical_mucus) are stored the positive way round and need
+// no inversion. Only TrackingVisibilityForUser can answer them: they are not
+// derivable from TrackingHiddenColumns, so a value built by
+// TrackingVisibilityFromHiddenColumns speaks for the three inverted sections
+// alone and says nothing about these two.
 type TrackingVisibility struct {
-	ShowSexChip      bool
-	ShowCycleFactors bool
-	ShowNotesField   bool
+	ShowSexChip       bool
+	ShowCycleFactors  bool
+	ShowNotesField    bool
+	ShowBBTField      bool
+	ShowCervicalMucus bool
 }
 
 // TrackingHiddenColumns is the stored, inverted spelling of the same three
@@ -33,7 +43,9 @@ type TrackingHiddenColumns struct {
 }
 
 // TrackingVisibilityFromHiddenColumns undoes the stored inversion. It is the
-// only place in the codebase that does so.
+// only place in the codebase that does so, and it answers for the three
+// inverted sections only — the two positive columns stay at their zero value,
+// so BBTFieldHidden and CervicalMucusHidden are meaningless on its result.
 func TrackingVisibilityFromHiddenColumns(columns TrackingHiddenColumns) TrackingVisibility {
 	return TrackingVisibility{
 		ShowSexChip:      !columns.HideSexChip,
@@ -43,18 +55,25 @@ func TrackingVisibilityFromHiddenColumns(columns TrackingHiddenColumns) Tracking
 }
 
 // TrackingVisibilityForUser reads one owner's stored columns through the
-// conversion above. A nil user yields the stored defaults (all three columns
-// false), i.e. every section visible — the same answer the zero-valued user
-// row gives, so a missing user never reads as "the owner hid this".
+// conversion above and adds the two positive ones, so it is the only complete
+// answer to "which day-form fields does this account show". A nil user yields
+// the stored defaults (all three inverted columns false), i.e. every section
+// visible — the same answer the zero-valued user row gives, so a missing user
+// never reads as "the owner hid this". The two positive columns follow that
+// same row, where they are false: an account that has not opted into
+// temperature or cervical mucus does not show those fields.
 func TrackingVisibilityForUser(user *models.User) TrackingVisibility {
 	if user == nil {
 		return TrackingVisibilityFromHiddenColumns(TrackingHiddenColumns{})
 	}
-	return TrackingVisibilityFromHiddenColumns(TrackingHiddenColumns{
+	visibility := TrackingVisibilityFromHiddenColumns(TrackingHiddenColumns{
 		HideSexChip:      user.HideSexChip,
 		HideCycleFactors: user.HideCycleFactors,
 		HideNotesField:   user.HideNotesField,
 	})
+	visibility.ShowBBTField = user.TrackBBT
+	visibility.ShowCervicalMucus = user.TrackCervicalMucus
+	return visibility
 }
 
 // HiddenColumns folds a positive view model back into the stored spelling, for
@@ -80,10 +99,13 @@ func (visibility TrackingVisibility) ApplyToUser(user *models.User) {
 	user.HideNotesField = columns.HideNotesField
 }
 
-// SexChipHidden, CycleFactorsHidden and NotesFieldHidden answer the one
-// question that is genuinely negative: the day-write path preserves a stored
-// value precisely when its section is not rendered, so the owner cannot erase
-// data through a form that never showed it.
+// SexChipHidden, CycleFactorsHidden, NotesFieldHidden, BBTFieldHidden and
+// CervicalMucusHidden answer the one question that is genuinely negative: the
+// day-write path does not read a field its form never showed, and preserves the
+// stored value instead, so the owner cannot erase data through a form that
+// never showed it. All five live here so that the day-write path asks one type
+// for the whole set (hiddenDayFields) rather than negating two of the columns
+// itself.
 func (visibility TrackingVisibility) SexChipHidden() bool {
 	return !visibility.ShowSexChip
 }
@@ -94,4 +116,12 @@ func (visibility TrackingVisibility) CycleFactorsHidden() bool {
 
 func (visibility TrackingVisibility) NotesFieldHidden() bool {
 	return !visibility.ShowNotesField
+}
+
+func (visibility TrackingVisibility) BBTFieldHidden() bool {
+	return !visibility.ShowBBTField
+}
+
+func (visibility TrackingVisibility) CervicalMucusHidden() bool {
+	return !visibility.ShowCervicalMucus
 }

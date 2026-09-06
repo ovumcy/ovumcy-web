@@ -29,9 +29,10 @@ async function csrfToken(page: Page): Promise<string> {
 }
 
 async function saveDayBBT(page: Page, isoDate: string, bbt: number): Promise<void> {
-  // Send JSON so buildUpsertDayEntryInput skips the "preserve hidden fields"
-  // shortcut that drops BBT when the user has TrackBBT=false. JSON callers
-  // are treated as programmatic clients and the payload is taken as-is.
+  // Send JSON because a form body from an account that hides temperature does
+  // not read the bbt field at all (hiddenDayFields): the day would save with no
+  // reading on it. A JSON body is a programmatic client replacing the record
+  // with exactly what it states, so every field it sends is read.
   const response = await page.request.put(`/api/v1/days/${isoDate}`, {
     headers: {
       ...apiOriginHeader(page),

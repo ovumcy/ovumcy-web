@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -175,15 +176,163 @@ func TestParseDayPayloadFromJSONWithFahrenheitPreference(t *testing.T) {
 	}
 }
 
+// TestParseDayPayloadSkipsEveryFieldTheAccountHides drives one form body —
+// carrying a value in every one of the five preservable fields — through an
+// account that hides each of them in turn, and then through one that hides all
+// five. A hidden field must come back at its zero value, never having been
+// read, and every field the account does show must come back exactly as sent,
+// so a skip that reaches past its own flag fails here too.
+//
+// The first row hides nothing and is the anchor: it is what makes the zero
+// values in the rows below evidence of the skip rather than of a parser that
+// reads no form at all. Dropping any single `if !hidden.X` in parseDayPayload
+// reddens the row that hides X and the all-five row.
+//
+// The temperature in the body is a well-formed reading on purpose: nothing
+// refuses 36.50 °C, so a hidden bbt coming back nil can only mean the field was
+// never read, where an unparseable value would leave the same nil consistent
+// with a refusal swallowed elsewhere. That the skip also comes BEFORE the parse
+// — where "abc" would cost the whole day — is pinned end to end by
+// TestUpsertDayDoesNotReadAHiddenTemperatureField.
+func TestParseDayPayloadSkipsEveryFieldTheAccountHides(t *testing.T) {
+	t.Parallel()
+
+	type parsedDayFields struct {
+		sexActivity   string
+		cervicalMucus string
+		notes         string
+		bbt           *float64
+		cycleFactors  []string
+	}
+
+	sentBBT := 36.50
+	sentCycleFactors := []string{models.CycleFactorStress, models.CycleFactorTravel}
+	everythingRead := parsedDayFields{
+		sexActivity:   models.SexActivityProtected,
+		cervicalMucus: models.CervicalMucusEggWhite,
+		notes:         "hello",
+		bbt:           &sentBBT,
+		cycleFactors:  sentCycleFactors,
+	}
+
+	testCases := []struct {
+		name    string
+		hide    func(user *models.User)
+		neutral func(want *parsedDayFields)
+	}{
+		{
+			name:    "an account that hides nothing reads every field",
+			hide:    func(*models.User) {},
+			neutral: func(*parsedDayFields) {},
+		},
+		{
+			name:    "a hidden sex chip",
+			hide:    func(user *models.User) { user.HideSexChip = true },
+			neutral: func(want *parsedDayFields) { want.sexActivity = models.SexActivityNone },
+		},
+		{
+			name:    "a hidden temperature",
+			hide:    func(user *models.User) { user.TrackBBT = false },
+			neutral: func(want *parsedDayFields) { want.bbt = nil },
+		},
+		{
+			name:    "a hidden cervical mucus",
+			hide:    func(user *models.User) { user.TrackCervicalMucus = false },
+			neutral: func(want *parsedDayFields) { want.cervicalMucus = models.CervicalMucusNone },
+		},
+		{
+			name:    "hidden cycle factors",
+			hide:    func(user *models.User) { user.HideCycleFactors = true },
+			neutral: func(want *parsedDayFields) { want.cycleFactors = nil },
+		},
+		{
+			name:    "a hidden notes field",
+			hide:    func(user *models.User) { user.HideNotesField = true },
+			neutral: func(want *parsedDayFields) { want.notes = "" },
+		},
+		{
+			name: "an account that hides all five",
+			hide: func(user *models.User) {
+				user.HideSexChip = true
+				user.TrackBBT = false
+				user.TrackCervicalMucus = false
+				user.HideCycleFactors = true
+				user.HideNotesField = true
+			},
+			neutral: func(want *parsedDayFields) {
+				want.sexActivity = models.SexActivityNone
+				want.bbt = nil
+				want.cervicalMucus = models.CervicalMucusNone
+				want.cycleFactors = nil
+				want.notes = ""
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			user := &models.User{
+				TemperatureUnit:    services.DefaultTemperatureUnit,
+				TrackBBT:           true,
+				TrackCervicalMucus: true,
+			}
+			testCase.hide(user)
+
+			want := everythingRead
+			testCase.neutral(&want)
+
+			form := url.Values{}
+			form.Set("sex_activity", everythingRead.sexActivity)
+			form.Set("cervical_mucus", everythingRead.cervicalMucus)
+			form.Set("notes", everythingRead.notes)
+			form.Set("bbt", strconv.FormatFloat(sentBBT, 'f', 2, 64))
+			for _, key := range sentCycleFactors {
+				form.Add("cycle_factor_keys", key)
+			}
+
+			request := httptest.NewRequest(http.MethodPost, "/day", strings.NewReader(form.Encode()))
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+			payload := parseDayPayloadForUser(t, request, user)
+
+			if payload.SexActivity != want.sexActivity {
+				t.Fatalf("sex activity: expected %q, got %q", want.sexActivity, payload.SexActivity)
+			}
+			if payload.CervicalMucus != want.cervicalMucus {
+				t.Fatalf("cervical mucus: expected %q, got %q", want.cervicalMucus, payload.CervicalMucus)
+			}
+			if payload.Notes != want.notes {
+				t.Fatalf("notes: expected %q, got %q", want.notes, payload.Notes)
+			}
+			switch {
+			case want.bbt == nil && payload.BBT != nil:
+				t.Fatalf("bbt: a hidden temperature must not be read, got %v °C stored", *payload.BBT)
+			case want.bbt != nil && (payload.BBT == nil || *payload.BBT != *want.bbt):
+				t.Fatalf("bbt: expected %v °C, got %v", *want.bbt, payload.BBT)
+			}
+			if !slices.Equal(payload.CycleFactorKeys, want.cycleFactors) {
+				t.Fatalf("cycle factors: expected %#v, got %#v", want.cycleFactors, payload.CycleFactorKeys)
+			}
+		})
+	}
+}
+
 // Every helper below hands parseDayPayload the hidden-field set the production
 // route would resolve for the same account (hiddenDayFields), rather than a
 // hand-written one: a field the account hides is not read at all, so a test
 // user that did not track it would be asserting about a field the parser is
-// entitled to skip. Hence TrackBBT on the accounts whose subject is the
-// temperature.
+// entitled to skip. Hence TrackBBT and TrackCervicalMucus on the shared
+// accounts — those two columns are stored the positive way round and default to
+// false, i.e. hidden — while the three inverted ones already default to shown.
 func parseDayPayloadForTest(t *testing.T, request *http.Request) dayPayload {
 	t.Helper()
-	return parseDayPayloadForUser(t, request, &models.User{TemperatureUnit: services.DefaultTemperatureUnit, TrackBBT: true})
+	return parseDayPayloadForUser(t, request, &models.User{
+		TemperatureUnit:    services.DefaultTemperatureUnit,
+		TrackBBT:           true,
+		TrackCervicalMucus: true,
+	})
 }
 
 func parseDayPayloadForUser(t *testing.T, request *http.Request, user *models.User) dayPayload {
@@ -191,7 +340,8 @@ func parseDayPayloadForUser(t *testing.T, request *http.Request, user *models.Us
 
 	app := fiber.New()
 	app.Post("/day", func(c fiber.Ctx) error {
-		payload, err := parseDayPayload(c, user, hiddenDayFields(user, !hasJSONBody(c)))
+		formBody := !hasJSONBody(c)
+		payload, err := parseDayPayload(c, user, formBody, hiddenDayFields(user, formBody))
 		if err != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -231,10 +381,15 @@ func parseDayPayloadStatusForForm(t *testing.T, form url.Values) int {
 func parseDayPayloadStatus(t *testing.T, request *http.Request) int {
 	t.Helper()
 
-	user := &models.User{TemperatureUnit: services.DefaultTemperatureUnit, TrackBBT: true}
+	user := &models.User{
+		TemperatureUnit:    services.DefaultTemperatureUnit,
+		TrackBBT:           true,
+		TrackCervicalMucus: true,
+	}
 	app := fiber.New()
 	app.Post("/day", func(c fiber.Ctx) error {
-		if _, err := parseDayPayload(c, user, hiddenDayFields(user, !hasJSONBody(c))); err != nil {
+		formBody := !hasJSONBody(c)
+		if _, err := parseDayPayload(c, user, formBody, hiddenDayFields(user, formBody)); err != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 		}
 		return c.JSON(fiber.Map{"ok": true})

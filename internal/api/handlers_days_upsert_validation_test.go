@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -350,6 +349,18 @@ const invalidDayBBTErrorKey = "invalid bbt value"
 // Both transports are swept because they reach that conversion by different
 // routes — the JSON bind hands over a parsed float, the form its own string
 // parse — and a fix applied to one of them leaves the other saving nothing.
+//
+// The three non-finite rows are form-only, and that is a property of JSON
+// rather than of this endpoint: NaN and the infinities have no spelling as a
+// JSON number, so such a body is refused while binding, under the payload
+// sentinel and not the temperature's. strconv.ParseFloat does accept all three,
+// so the form is the transport that can deliver one, and -Inf is the row that
+// matters — it is non-positive, so it reaches the "not measured" sentinel and
+// would be filed as an empty temperature with a 200.
+//
+// The stored reading is compared exactly: 97.7 °F is 36.5 °C on the stored
+// grid, so there is nothing for a tolerance to absorb except a change to that
+// grid, which is what the comparison is here to notice.
 func TestUpsertDayJudgesTheNotMeasuredSentinelInTheAccountsUnit(t *testing.T) {
 	t.Parallel()
 
@@ -358,17 +369,18 @@ func TestUpsertDayJudgesTheNotMeasuredSentinelInTheAccountsUnit(t *testing.T) {
 	updateStatsOverviewUser(t, database, user, fahrenheitBBTTrackingPreferences(true))
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
-	const storedTolerance = 1e-9
-
 	testCases := []struct {
 		name        string
 		typed       string
+		formOnly    bool
 		wantStatus  int
 		wantReading bool
 		wantStored  float64
 	}{
 		{name: "impossible positive reading is refused", typed: "20", wantStatus: http.StatusBadRequest},
 		{name: "freezing point is refused", typed: "32", wantStatus: http.StatusBadRequest},
+		{name: "not a number is refused", typed: "NaN", formOnly: true, wantStatus: http.StatusBadRequest},
+		{name: "negative infinity is refused", typed: "-Inf", formOnly: true, wantStatus: http.StatusBadRequest},
 		{name: "zero is not measured", typed: "0", wantStatus: http.StatusOK},
 		{name: "negative is not measured", typed: "-1", wantStatus: http.StatusOK},
 		{name: "ordinary reading is stored in celsius", typed: "97.7", wantStatus: http.StatusOK, wantReading: true, wantStored: 36.5},
@@ -379,6 +391,10 @@ func TestUpsertDayJudgesTheNotMeasuredSentinelInTheAccountsUnit(t *testing.T) {
 		for caseIndex, testCase := range testCases {
 			day := firstDay.AddDate(0, 0, transportIndex*len(testCases)+caseIndex)
 			dayRaw := day.Format("2006-01-02")
+
+			if testCase.formOnly && transport == "json" {
+				continue
+			}
 
 			t.Run(transport+"/"+testCase.name, func(t *testing.T) {
 				var request *http.Request
@@ -422,7 +438,7 @@ func TestUpsertDayJudgesTheNotMeasuredSentinelInTheAccountsUnit(t *testing.T) {
 				if entry.BBT == nil {
 					t.Fatalf("%s °F is a reading, got no stored temperature", testCase.typed)
 				}
-				if math.Abs(*entry.BBT-testCase.wantStored) > storedTolerance {
+				if *entry.BBT != testCase.wantStored {
 					t.Fatalf("%s °F: expected %.4f °C stored, got %.4f", testCase.typed, testCase.wantStored, *entry.BBT)
 				}
 			})
@@ -474,9 +490,14 @@ func TestUpsertDayRefusesAnImpossibleFahrenheitReadingOverHTMX(t *testing.T) {
 // the account shows and nothing else, so a value arriving in a hidden one is
 // not this write's subject; a JSON body is a client replacing the record with
 // exactly what it states, so every field it sends is its subject and is judged.
-// The same account, the same 20 °F and the same day therefore answer 400 here
-// and 200 in the table below, and the entry must not be created either way
-// round. Widening the condition (`!hasJSONBody(c)` → true) reddens this test.
+// This test and the table below differ in the transport and in nothing that
+// matters otherwise: the same two preferences (Fahrenheit, temperature hidden)
+// and the same 20 °F. Sent as JSON it is refused with 400 and no entry is
+// written at all; sent as a form it is not read, the day is saved with 200 and
+// the stored temperature survives. Each drives its own account and its own
+// dates because the two run in parallel against one database. Widening the
+// condition (resolveUpsertDayRequest's formBody → always true) reddens this
+// test.
 func TestUpsertDayRefusesAnImpossibleTemperatureSentAsJSON(t *testing.T) {
 	t.Parallel()
 

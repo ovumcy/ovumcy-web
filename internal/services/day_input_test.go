@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io/fs"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -331,9 +332,11 @@ func TestNormalizeDayEntryInputNormalizesPregnancyTest(t *testing.T) {
 // table is therefore the service's own contract — held for any caller, not
 // inherited from what one transport happens to filter.
 //
-// Each row asserts the whole preserved class rather than its own field: the
-// value under test neutralised AND the four neighbours the caller did send
-// returned unchanged, so a drop reaching past its own flag cannot pass. Five
+// Each row asserts the whole entry rather than its own field: the value under
+// test neutralised, the four preservable neighbours the caller did send
+// returned unchanged, and the five fields no flag can preserve — the period
+// day, its flow, the mood, the pregnancy test, the symptoms — returned
+// unchanged too, so a drop reaching past its own flag cannot pass. Five
 // rows carry a value that IS refused on its own and re-submit it without the
 // flag to require that refusal; the sixth, a note, has no invalid spelling, so
 // its control requires the opposite — that without the flag the note survives
@@ -402,7 +405,7 @@ func TestNormalizeDayEntryInputDropsAPreservedFieldsIncomingValue(t *testing.T) 
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			incoming := dayEntryInputWithEveryPreservableFieldSet()
+			incoming := dayEntryInputWithEveryDayFieldSet()
 			testCase.send(&incoming)
 			wantDropped := incoming
 			testCase.neutral(&wantDropped)
@@ -413,7 +416,7 @@ func TestNormalizeDayEntryInputDropsAPreservedFieldsIncomingValue(t *testing.T) 
 			if err != nil {
 				t.Fatalf("a preserved field must not refuse the day, got %v", err)
 			}
-			assertDayEntryPreservableFields(t, normalized, wantDropped)
+			assertDayEntryFields(t, normalized, wantDropped)
 
 			control, err := NormalizeDayEntryInput(incoming)
 			if testCase.wantErrWithoutPreserve != nil {
@@ -425,19 +428,29 @@ func TestNormalizeDayEntryInputDropsAPreservedFieldsIncomingValue(t *testing.T) 
 			if err != nil {
 				t.Fatalf("without the preserve flag this value is a valid entry, got %v", err)
 			}
-			assertDayEntryPreservableFields(t, control, incoming)
+			assertDayEntryFields(t, control, incoming)
 		})
 	}
 }
 
-// dayEntryInputWithEveryPreservableFieldSet is the input every row above starts
-// from: all five preservable fields carry a valid, non-neutral value, so the
-// four a row is not testing can be required to come back exactly as sent. A row
+// dayEntryInputWithEveryDayFieldSet is the input every row above starts from.
+// All five preservable fields carry a valid, non-neutral value, so the four a
+// row is not testing can be required to come back exactly as sent: a row
 // starting from the zero value could not tell a drop confined to its own flag
 // from one that neutralised the lot.
-func dayEntryInputWithEveryPreservableFieldSet() DayEntryInput {
+//
+// The fields no flag can preserve carry values too — the period day and its
+// flow, the mood, the pregnancy test, the symptoms — because the drop runs over
+// a whole DayEntryInput and nothing in its signature confines it to the five. A
+// reset reaching past them would unset the day the owner did send, which is the
+// same defect one field further out.
+func dayEntryInputWithEveryDayFieldSet() DayEntryInput {
 	return DayEntryInput{
-		Flow:            models.FlowNone,
+		IsPeriod:        true,
+		Flow:            models.FlowMedium,
+		Mood:            4,
+		PregnancyTest:   models.PregnancyTestNegative,
+		SymptomIDs:      []uint{7},
 		SexActivity:     models.SexActivityProtected,
 		BBT:             bbtPtr(36.5),
 		CervicalMucus:   models.CervicalMucusCreamy,
@@ -446,7 +459,16 @@ func dayEntryInputWithEveryPreservableFieldSet() DayEntryInput {
 	}
 }
 
-func assertDayEntryPreservableFields(t *testing.T, got DayEntryInput, want DayEntryInput) {
+// assertDayEntryFields compares a normalized entry against the whole input the
+// caller sent: first the five preservable fields, which are each row's subject,
+// then the five no flag can preserve, which are the cross-check.
+//
+// The slices are compared element by element. Joined into one string on a
+// comma, ["a,b"] and ["a", "b"] are the same text and two different sets, so a
+// comparison that reads as "the same keys" would also pass a set some
+// normalization had rewritten. A nil slice and an empty one stay equal — "no
+// cycle factors" is one answer with two spellings.
+func assertDayEntryFields(t *testing.T, got DayEntryInput, want DayEntryInput) {
 	t.Helper()
 
 	if got.SexActivity != want.SexActivity {
@@ -458,10 +480,26 @@ func assertDayEntryPreservableFields(t *testing.T, got DayEntryInput, want DayEn
 	if got.CervicalMucus != want.CervicalMucus {
 		t.Fatalf("cervical mucus: expected %q, got %q", want.CervicalMucus, got.CervicalMucus)
 	}
-	if strings.Join(got.CycleFactorKeys, ",") != strings.Join(want.CycleFactorKeys, ",") {
+	if !slices.Equal(got.CycleFactorKeys, want.CycleFactorKeys) {
 		t.Fatalf("cycle factors: expected %#v, got %#v", want.CycleFactorKeys, got.CycleFactorKeys)
 	}
 	if got.Notes != want.Notes {
 		t.Fatalf("notes: expected %q, got %q", want.Notes, got.Notes)
+	}
+
+	if got.IsPeriod != want.IsPeriod {
+		t.Fatalf("is period: expected %t, got %t", want.IsPeriod, got.IsPeriod)
+	}
+	if got.Flow != want.Flow {
+		t.Fatalf("flow: expected %q, got %q", want.Flow, got.Flow)
+	}
+	if got.Mood != want.Mood {
+		t.Fatalf("mood: expected %d, got %d", want.Mood, got.Mood)
+	}
+	if got.PregnancyTest != want.PregnancyTest {
+		t.Fatalf("pregnancy test: expected %q, got %q", want.PregnancyTest, got.PregnancyTest)
+	}
+	if !slices.Equal(got.SymptomIDs, want.SymptomIDs) {
+		t.Fatalf("symptom ids: expected %#v, got %#v", want.SymptomIDs, got.SymptomIDs)
 	}
 }

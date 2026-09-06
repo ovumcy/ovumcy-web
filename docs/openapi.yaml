@@ -570,13 +570,18 @@ components:
       type: object
       description: |
         Day entry payload. A JSON body replaces the whole record with exactly
-        what it states: every field it sends is validated, and an omitted field
-        is written as its default. Hidden-field preservation belongs to the form
-        body the browser day editor posts, not here — for a field the account
-        hides in its tracking preferences (BBT, cervical mucus, sex activity,
-        cycle factors, notes) that form carries no input, the request is not
-        read for one, and an update keeps the stored value while a new day
-        starts the field empty.
+        what it states: every field it sends is read, and an omitted field is
+        written as its default. Read is not the same as validated — a
+        temperature outside the accepted range is refused with 400, an unknown
+        spelling of sex_activity, cervical_mucus or pregnancy_test collapses to
+        "none", and notes are trimmed. Hidden-field preservation belongs to the
+        form body the browser day editor posts, not here — for a field the
+        account hides in its tracking preferences (BBT, cervical mucus, sex
+        activity, cycle factors, notes) that form carries no input, the request
+        is not read for one, and an update keeps what is already stored under
+        the same rules a sent value gets: a stored temperature outside the
+        accepted range is no reading and comes back empty. A new day starts the
+        field empty.
       properties:
         is_period:
           type: boolean

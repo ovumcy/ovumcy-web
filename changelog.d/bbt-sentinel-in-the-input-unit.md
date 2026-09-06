@@ -9,5 +9,5 @@
   was reachable through the JSON API, or from the form with scripts off.
 - **A hidden field can no longer refuse the day it is not part of.** A form save from an account
   that hides temperature or cycle factors no longer loses the whole entry to a value in the hidden
-  field: the form's hidden fields are not read at all — on an existing day the stored value is
+  field: the form's hidden fields are not read at all — on an existing day the stored reading is
   kept, on a new day the field starts empty. JSON bodies carry every field they send.
