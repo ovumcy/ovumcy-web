@@ -937,9 +937,13 @@ components:
           type: [number, "null"]
           format: float
           description: >-
-            Emitted only when measured; absent otherwise. On import, absent,
-            null, or a non-positive value (legacy 0 sentinel) all mean "not
-            measured".
+            Emitted only when measured; absent otherwise. Always Celsius,
+            whatever unit the account displays. On import, absent, null, or a
+            non-positive value (legacy 0 sentinel) all mean "not measured". A
+            value outside the accepted range is read as "not measured" like any
+            other malformed field, not rejected — an import restores the file
+            around it instead of refusing the day, which is the opposite of what
+            a day write does with the same value.
         cervical_mucus:
           type: string
           enum: [none, dry, moist, creamy, eggwhite]

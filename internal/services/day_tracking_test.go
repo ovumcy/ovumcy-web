@@ -125,14 +125,10 @@ func TestNormalizeTemperatureUnitDefaultsToCelsius(t *testing.T) {
 }
 
 // TestConvertDayBBTToStorageJudgesTheSentinelInTheInputUnit pins WHERE the
-// "not measured" sentinel is read: in the unit the owner typed, before the
-// Fahrenheit conversion rather than in stored Celsius after it. The two
-// disagree across a whole band of the Fahrenheit scale — everything from just
-// above 0 °F up to 32 °F converts to a non-positive Celsius value — so reading
-// the sentinel afterwards turned an impossible entry into an empty field and
-// saved the day with no temperature and no refusal. Below 0 °F the two answers
-// agree, which is why a negative-only table stays green over the defect; the
-// Fahrenheit rows between 0 and 32 are the ones that separate them.
+// "not measured" sentinel is read; ConvertDayBBTToStorage's own doc says why it
+// is read there. Below 0 °F both placements agree, so a negative-only table
+// stays green over the defect — the Fahrenheit rows between 0 and 32, which
+// convert to a non-positive Celsius value, are the ones that separate them.
 func TestConvertDayBBTToStorageJudgesTheSentinelInTheInputUnit(t *testing.T) {
 	t.Parallel()
 
@@ -160,9 +156,8 @@ func TestConvertDayBBTToStorageJudgesTheSentinelInTheInputUnit(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			typed := testCase.value
 			symbol := TemperatureUnitSymbol(testCase.unit)
-			got := ConvertDayBBTToStorage(&typed, testCase.unit)
+			got := ConvertDayBBTToStorage(bbtPtr(testCase.value), testCase.unit)
 
 			if !testCase.wantStored {
 				if got != nil {
@@ -182,16 +177,13 @@ func TestConvertDayBBTToStorageJudgesTheSentinelInTheInputUnit(t *testing.T) {
 
 // TestNormalizeDayEntryInputRefusesAnImpossibleFahrenheitReading is the other
 // half of that placement: once 20 °F survives the conversion as a reading, the
-// physiological range is what refuses it. While the sentinel was read after the
-// conversion this entry was accepted, silently emptied, and stored
-// indistinguishably from a day the owner never took a temperature on.
+// physiological range is what refuses it (ConvertDayBBTToStorage).
 func TestNormalizeDayEntryInputRefusesAnImpossibleFahrenheitReading(t *testing.T) {
 	t.Parallel()
 
-	typed := 20.0
 	input := DayEntryInput{
 		Flow: models.FlowNone,
-		BBT:  ConvertDayBBTToStorage(&typed, TemperatureUnitFahrenheit),
+		BBT:  ConvertDayBBTToStorage(bbtPtr(20), TemperatureUnitFahrenheit),
 	}
 
 	normalized, err := NormalizeDayEntryInput(input)
