@@ -716,7 +716,7 @@ Delete only an account that is genuinely surplus, and delete it by id too — th
 docker compose exec ovumcy /app/ovumcy users delete --id 7
 ```
 
-That erasure is permanent and takes the account's whole health record with it; there is no undo short of restoring a backup.
+That erasure is permanent and takes the account's whole health record with it; there is no undo short of restoring a backup. The command also revokes the account's calendar feed, so it confirms the server's own restore fence before it deletes anything — the [`docker compose exec`](#running-the-operator-cli-against-the-container) form above already reaches it; a server that has never started with `CALENDAR_FEED_FENCE_PATH` configured refuses this command too, until it has been started once with a writable fence.
 
 On an OIDC instance, an account is matched to the provider by its stored address only until its first sign-in links issuer and subject; after that the link resolves it. Re-homing an account that is already linked therefore keeps its OIDC login working. The old address becomes free — and with auto-provisioning enabled, a later sign-in under it creates a **new empty account** rather than reaching the re-homed one.
 
