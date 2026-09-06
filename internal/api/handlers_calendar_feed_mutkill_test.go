@@ -3,6 +3,8 @@ package api
 import (
 	"strings"
 	"testing"
+
+	"github.com/gofiber/fiber/v3"
 )
 
 // TestIsCalendarFeedRequestMatchesTheRouteFormAndMethod pins the boundary
@@ -66,7 +68,13 @@ func TestIsCalendarFeedRequestMatchesTheRouteFormAndMethod(t *testing.T) {
 	// The mutating-verb refusal is a property of the method alone (see
 	// IsCalendarFeedRequest), so one representative path stands in for every
 	// non-GET/HEAD verb rather than repeating the same feed URL under each.
-	for _, method := range []string{"POST", "PUT", "PATCH", "DELETE"} {
+	// fiber.DefaultMethods — not a hand-picked subset — so a predicate mutated
+	// to also accept, say, OPTIONS (which a POST/PUT/PATCH/DELETE-only list
+	// would never exercise) still turns this loop red.
+	for _, method := range fiber.DefaultMethods {
+		if method == fiber.MethodGet || method == fiber.MethodHead {
+			continue
+		}
 		if got := IsCalendarFeedRequest(method, feedURL); got {
 			t.Errorf("IsCalendarFeedRequest(%q, %q) = %t, want false — the route dispatches GET/HEAD only", method, feedURL, got)
 		}
