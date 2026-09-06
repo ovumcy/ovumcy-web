@@ -191,7 +191,7 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 	// The same helper the stats page and the JSON API publish through, so the
 	// surfaces cannot drift apart on what a suppressed tier is allowed to carry.
 	// Every builder above still reads the uncleared stats.
-	publishedStats, _ := PublishedStats(user, confirmedStats)
+	publishedStats, _ := PublishedStats(user, confirmedStats, logs, today, location)
 
 	return DashboardViewData{
 		Stats:                             publishedStats,

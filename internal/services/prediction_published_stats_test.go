@@ -16,6 +16,14 @@ import (
 // on a leap day.
 var publishedStatsAnchor = time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC)
 
+// publishedStatsToday sits after the projected period band (LastPeriodStart +
+// AveragePeriodLength, days 0-4 off the anchor) and before OvulationDate
+// (day 14), so PublishedStats' now-mandatory phase recompute reproduces the
+// "follicular" the fixture already carries — the cases in this file that do
+// not care about the phase axis pass this rather than pick a day that would
+// silently change it out from under them.
+var publishedStatsToday = publishedStatsAnchor.AddDate(0, 0, 10)
+
 // publishedStatsBase is an owner whose projection is fully calculable and
 // unsuppressed: three completed cycles, a recorded anchor, every forward-looking
 // field filled. Each case below turns on exactly ONE signal against it, so a
@@ -200,7 +208,7 @@ func TestResolvePredictionSuppressionNamesTheSignalThatHeld(t *testing.T) {
 func TestPublishedStatsClearsEveryDateItsVerdictRefuses(t *testing.T) {
 	for _, testCase := range publishedStatsCases() {
 		t.Run(testCase.name, func(t *testing.T) {
-			published, verdict := PublishedStats(testCase.user, testCase.stats)
+			published, verdict := PublishedStats(testCase.user, testCase.stats, nil, publishedStatsToday, time.UTC)
 
 			if !published.OvulationDate.IsZero() {
 				t.Fatalf("published an ovulation date under %s", verdict.Reasons)
@@ -253,7 +261,7 @@ func TestPublishedStatsClearsOvulationImpossibleUnderFertilitySuppression(t *tes
 	stats.FertilityWindowEnd = time.Time{}
 	stats.PregnancyPaused = true
 
-	published, verdict := PublishedStats(&models.User{}, stats)
+	published, verdict := PublishedStats(&models.User{}, stats, nil, publishedStatsToday, time.UTC)
 
 	if !verdict.FertilitySuppressed {
 		t.Fatal("test setup: expected pregnancy pause to suppress fertility")
@@ -263,36 +271,84 @@ func TestPublishedStatsClearsOvulationImpossibleUnderFertilitySuppression(t *tes
 	}
 }
 
-// TestPublishedStatsKeepsThePhaseTheProjectionDoesNotSpeakFor pins the
-// orthogonality rather than leaving it to a comment.
-//
-// The phase axis is menstrual/follicular/ovulation/luteal/unknown and "fertile"
-// is a status, never a phase (#416), so a phase label is not the
-// window-or-fertility claim the medical-safety invariant withholds. Clearing it
-// here would also split one dashboard across two answers: the hero rebuilds its
-// own phase from the cycle geometry and the header prefers the hero's, so the
-// published copy would read "unknown" beside a header naming a phase. Whoever
-// reaches for that clearing next meets this test first.
-func TestPublishedStatsKeepsThePhaseTheProjectionDoesNotSpeakFor(t *testing.T) {
-	for _, testCase := range publishedStatsCases() {
-		t.Run(testCase.name, func(t *testing.T) {
-			published, _ := PublishedStats(testCase.user, testCase.stats)
+// TestPublishedStatsPhaseNeverNamesTheOvulationDaySuppressionWithheld pins the
+// R12 round-4 fix (#744): CurrentPhase used to survive the clearing above
+// untouched, so a suppressed account whose pre-clearing phase landed on
+// "ovulation" kept reading that label — and, either side of it,
+// "follicular"/"luteal" — straight off the day OvulationDate no longer names.
+// CurrentPhase is now recomputed from the fields this function just cleared,
+// so none of the three can appear once OvulationDate is empty.
+func TestPublishedStatsPhaseNeverNamesTheOvulationDaySuppressionWithheld(t *testing.T) {
+	stats := publishedStatsBase()
+	stats.PregnancyPaused = true
+	// Stand in for the pre-fix derivation that already ran and landed on
+	// "ovulation" for today — the value this function used to leave standing.
+	stats.CurrentPhase = "ovulation"
+	today := stats.OvulationDate
 
-			if published.CurrentPhase != testCase.stats.CurrentPhase {
-				t.Fatalf("current phase = %q, want the derivation's own %q", published.CurrentPhase, testCase.stats.CurrentPhase)
-			}
-		})
+	published, verdict := PublishedStats(&models.User{}, stats, nil, today, time.UTC)
+
+	if !verdict.FertilitySuppressed {
+		t.Fatal("test setup: expected pregnancy pause to suppress fertility")
+	}
+	if !published.OvulationDate.IsZero() {
+		t.Fatalf("published an ovulation date under %v", verdict.Reasons)
+	}
+	if published.CurrentPhase == "ovulation" || published.CurrentPhase == "follicular" || published.CurrentPhase == "luteal" {
+		t.Fatalf("current phase = %q, still names a side of the ovulation day suppression withheld", published.CurrentPhase)
+	}
+}
+
+// TestPublishedStatsPhaseStaysMenstrualInsideThePeriodBandWhenSuppressed pins
+// the other half of the same fix: the recompute must not make the phase
+// disappear for a suppressed account inside its own projected period band —
+// only the ovulation-day leak is the target, not the phase axis itself.
+func TestPublishedStatsPhaseStaysMenstrualInsideThePeriodBandWhenSuppressed(t *testing.T) {
+	stats := publishedStatsBase()
+	stats.PregnancyPaused = true
+	today := stats.LastPeriodStart // day one of the projected period band
+
+	published, verdict := PublishedStats(&models.User{}, stats, nil, today, time.UTC)
+
+	if !verdict.FertilitySuppressed {
+		t.Fatal("test setup: expected pregnancy pause to suppress fertility")
+	}
+	if published.CurrentPhase != "menstrual" {
+		t.Fatalf("current phase = %q, want menstrual — the recompute must not erase the phase inside the period band", published.CurrentPhase)
+	}
+}
+
+// TestPublishedStatsPhaseStaysMenstrualForRecordedBleedingWhenSuppressed pins
+// that an owner's own logged bleeding always wins, even on a day that would
+// otherwise have been the (now-withheld) ovulation day for a suppressed
+// account.
+func TestPublishedStatsPhaseStaysMenstrualForRecordedBleedingWhenSuppressed(t *testing.T) {
+	stats := publishedStatsBase()
+	stats.PregnancyPaused = true
+	today := stats.OvulationDate // outside the projected period band
+	logs := []models.DailyLog{{Date: today, IsPeriod: true}}
+
+	published, verdict := PublishedStats(&models.User{}, stats, logs, today, time.UTC)
+
+	if !verdict.FertilitySuppressed {
+		t.Fatal("test setup: expected pregnancy pause to suppress fertility")
+	}
+	if published.CurrentPhase != "menstrual" {
+		t.Fatalf("current phase = %q, want menstrual — recorded bleeding wins over every projection", published.CurrentPhase)
 	}
 }
 
 // TestPublishedStatsLeavesAnUnsuppressedProjectionWhole pins the other end: with
 // no signal holding, the adapter is the identity and the verdict names nothing.
 // Without it, a clearing rule that fired unconditionally would pass every
-// assertion above.
+// assertion above. publishedStatsToday sits strictly between the projected
+// period band and OvulationDate, so the mandatory phase recompute reproduces
+// the fixture's own "follicular" rather than silently changing it — this is
+// the control against the phase fix touching an unsuppressed account.
 func TestPublishedStatsLeavesAnUnsuppressedProjectionWhole(t *testing.T) {
 	stats := publishedStatsBase()
 
-	published, verdict := PublishedStats(&models.User{}, stats)
+	published, verdict := PublishedStats(&models.User{}, stats, nil, publishedStatsToday, time.UTC)
 
 	if verdict.PredictionsSuppressed || verdict.FertilitySuppressed {
 		t.Fatalf("an unsuppressed owner got verdict %+v", verdict)
