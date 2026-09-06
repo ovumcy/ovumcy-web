@@ -32,17 +32,22 @@ func confirmedOvulationFixture(t *testing.T) (*models.User, []models.DailyLog, C
 	return thermalShiftFixture(t, 0)
 }
 
-// The two temperatures thermalShiftFixture's 3-over-6 series is built from: six
-// undisturbed readings at the low value fill the coverline window, three at the
-// high value clear it by more than bbtThirdDayMarginCelsius. Which cycle days
-// carry them is the shiftDays argument's business.
+// The two temperatures the package's 3-over-6 fixtures are built from —
+// thermalShiftFixture here and bbtCycleAroundASkippedMidnight in
+// cycle_signals_dst_test.go: six undisturbed readings at the low value fill the
+// coverline window, three at the high value clear it. Which days carry them is
+// each fixture's own business. The 0.30 gap is what clears
+// bbtThirdDayMarginCelsius — narrowing it silently kills every one of them.
 const (
 	thermalShiftLowBBT  = 36.20
 	thermalShiftHighBBT = 36.50
 )
 
 // atToday derives CurrentCycleDay from today through cycleDayAt, the production
-// helper, so no fixture that slides its series has to restate the cycle day.
+// helper — CalendarDaysBetween + 1, clamped to 0 for a today before the start —
+// so no fixture that slides its series has to restate the cycle day. A cycle day
+// disagreeing with today is a cohort no owner can be in: the shape that lets an
+// overdue or a bound assertion pass for a reason its name does not name.
 func atToday(stats CycleStats, today time.Time) CycleStats {
 	stats.CurrentCycleDay = cycleDayAt(stats.LastPeriodStart, today)
 	return stats
@@ -105,16 +110,17 @@ func TestConfirmedCurrentCycleOvulationReadsTheDetectorsDay(t *testing.T) {
 	}
 }
 
-// TestConfirmedOvulationIgnoresACycleStartRecordedAhead pins the last guard in
-// the resolver. manualCycleStartFutureDays lets an owner record a cycle start up
-// to two days ahead, and a cycle that has not begun cannot have ovulated: the
-// window handed to the detector would run backwards from a start later than the
-// readings. The calendar reaches the resolver behind its own copy of this test,
-// so without this the guard is only exercised through a surface that can no
-// longer fail it.
+// TestConfirmedOvulationIgnoresACycleStartRecordedAhead pins the resolver's
+// early exit on a cycle start recorded ahead of today (manualCycleStartFutureDays
+// lets an owner record one up to two days out). The exit is a cheap one, not a
+// load-bearing refusal: with the start ahead of today every recorded reading
+// falls before it, so the detection series is empty and nothing confirms with or
+// without the guard — this assertion cannot tell the two apart. It is pinned so
+// the early exit cannot start answering differently from the empty series it
+// stands in for.
 func TestConfirmedOvulationIgnoresACycleStartRecordedAhead(t *testing.T) {
 	user, logs, stats, today := confirmedOvulationFixture(t)
-	stats.LastPeriodStart = today.AddDate(0, 0, 2)
+	stats.LastPeriodStart = AddCalendarDays(today, 2, time.UTC)
 
 	if _, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, today, time.UTC); ok {
 		t.Fatal("a cycle start recorded ahead of today must confirm nothing")

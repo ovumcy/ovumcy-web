@@ -249,10 +249,12 @@ func TestInferEggWhiteOvulationDateStillClampsAPeakOnTheLastCycleDay(t *testing.
 // begins at the transition, which is where the correct bound already sits.
 //
 // So there are three legs and only the second can observe a wrong OUTCOME:
-// (i) pins the bound as an instant on both sides of the transition, against
-// literals written in UTC so that neither operand comes from the helper under
-// test; (ii) is the harm — on the skipped-midnight day the third elevated
-// reading is dated tomorrow and nothing may confirm; (iii) is the positive
+// (i) pins the bound as an instant on both sides of the transition: the
+// EXPECTED instants are UTC literals, while the input day is built the way
+// production builds today (CalendarDay), so a regression inside
+// StartOfCalendarDay still moves only one side of the equality; (ii) is the
+// harm — on the skipped-midnight day the third elevated reading is dated
+// tomorrow and nothing may confirm; (iii) is the positive
 // control one day on, where that reading is inside the series and the detector
 // names cycle day 6, so (ii) reads as the bound's doing rather than as a
 // resolver that had stopped confirming anything at all.
