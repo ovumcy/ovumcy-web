@@ -681,6 +681,79 @@ func TestBuildDashboardViewDataHoldsFertilityBackUntilTheFirstCompletedCycle(t *
 	}
 }
 
+// TestBuildDashboardViewDataHeroWithholdsTheOvulationDayForTheFirstCycleCohort
+// pins the second path a suppressed ovulation day can leak through. Round 4
+// closed the leak in the published copy (PublishedStats recomputes
+// CurrentPhase from cleared fields), but the dashboard hero is built from
+// confirmedStats — the pre-publication copy — in
+// DashboardViewService.BuildDashboardViewData, so a cohort the shared
+// suppression predicate withholds the fertile window from can still read the
+// day off the hero's phase label and its "ovulation" phase card.
+//
+// The fixture is the earliest tier: no completed cycle yet
+// (DashboardAwaitingFirstCycle), a regular (non-irregular) account, a cycle
+// that is neither paused nor overdue — so FertilityProjectionSuppressed is
+// true for exactly one reason, and every OTHER gate the hero checks
+// (canRenderDashboardCycleHero) is satisfied. currentDay is placed exactly on
+// the projected ovulation day so the leak is unambiguous: CurrentPhase names
+// "ovulation" and the phase-card list carries an "ovulation" entry pinned to
+// that same day.
+func TestBuildDashboardViewDataHeroWithholdsTheOvulationDayForTheFirstCycleCohort(t *testing.T) {
+	today := mustParseDashboardServiceDay(t, "2026-02-21")
+	user := &models.User{ID: 13, Role: models.RoleOwner, CycleLength: 28, PeriodLength: 5, LutealPhase: 14, UsageGoal: models.UsageGoalHealth}
+	stats := CycleStats{
+		CompletedCycleCount: 0,
+		CurrentCycleDay:     14,
+		MedianCycleLength:   28,
+		AveragePeriodLength: 5,
+		LutealPhase:         14,
+		LastPeriodStart:     mustParseDashboardServiceDay(t, "2026-02-08"),
+		NextPeriodStart:     mustParseDashboardServiceDay(t, "2026-03-08"),
+	}
+
+	// Fixture invariant: the cohort this test is about is the first-cycle
+	// floor alone, not a second suppression signal riding along with it.
+	if !FertilityProjectionSuppressed(user, stats) {
+		t.Fatal("fixture: expected the shared predicate to suppress this cohort")
+	}
+	if user.IrregularCycle || stats.PregnancyPaused || DashboardCycleOverdue(user, stats) {
+		t.Fatal("fixture: expected the first-cycle floor to be the only suppression signal armed")
+	}
+
+	service := NewDashboardViewService(
+		&stubDashboardStatsProvider{stats: stats},
+		&stubDashboardViewerProvider{logEntry: models.DailyLog{Date: today}},
+		&stubDashboardDayStateProvider{},
+	)
+	viewData, err := service.BuildDashboardViewData(context.Background(), user, "en", today, time.UTC)
+	if err != nil {
+		t.Fatalf("BuildDashboardViewData() unexpected error: %v", err)
+	}
+
+	if !viewData.CycleContext.FertilitySuppressed {
+		t.Fatal("fixture: expected the resolved context to carry the suppression")
+	}
+
+	// The published copy already withholds the day — this is the guard from
+	// round 4, restated here as the fixture's other half: if this ever went
+	// red, the assertions on CycleHero below would be proving nothing new.
+	if !viewData.Stats.OvulationDate.IsZero() {
+		t.Fatal("fixture: expected the published copy to already withhold the ovulation date")
+	}
+
+	if !viewData.CycleHero.Visible {
+		t.Fatal("expected the cycle hero (axis, days, today marker) to stay visible under suppression")
+	}
+	if viewData.CycleHero.CurrentPhase == "ovulation" {
+		t.Error("CycleHero.CurrentPhase names \"ovulation\" for a cohort the shared predicate suppresses the ovulation day for")
+	}
+	for _, card := range viewData.CycleHero.PhaseCards {
+		if card.Phase == "ovulation" {
+			t.Errorf("CycleHero.PhaseCards names an \"ovulation\" card (day %d) for a cohort the shared predicate suppresses the ovulation day for", card.StartDay)
+		}
+	}
+}
+
 func mustParseDashboardServiceDay(t *testing.T, raw string) time.Time {
 	t.Helper()
 	parsed, err := time.ParseInLocation("2006-01-02", raw, time.UTC)
