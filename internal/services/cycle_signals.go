@@ -25,16 +25,18 @@ const (
 	bbtThirdDayMarginCelsius = 0.2
 )
 
-// maxPlausibleLutealPhaseDays is the ceiling of the plausibility window the
-// observed-luteal inference filters its per-cycle samples through; the floor is
-// minLutealPhaseDays. It belongs to this file rather than to the luteal-phase
-// const family in cycles.go because it is an outlier-rejection threshold owned
-// by the inference, not a property of the cycle model: a length past it means
-// the ovulation signal was misread (a stray egg-white day early in the cycle, a
-// thermal shift picked up from a disturbed reading), so the cycle is dropped
-// from the sample rather than clamped into it. The prediction-time bound is a
-// different quantity — maxSupportedLutealPhase (cycles.go), computed from the
-// cycle length.
+// maxPlausibleLutealPhaseDays is the ceiling of the window the observed-luteal
+// inference filters its per-cycle samples through; the floor is
+// minLutealPhaseDays. Both ends are an engineering outlier filter, not a
+// clinical boundary: a sample outside them is one this inference declines to
+// average, which is not evidence that the reading was wrong. Lengths at or
+// below the floor occur in ordinary cycles, so dropping a short sample says
+// nothing about the owner. The window belongs to this file rather than to the
+// luteal-phase const family in cycles.go because it is owned by the inference,
+// not by the cycle model; the prediction-time bound is a different quantity —
+// maxSupportedLutealPhase (cycles.go), computed from the cycle length. Moving
+// either end is a medical-wording change as much as a numeric one: see
+// docs/cycle-prediction.md, "How cycle length and luteal phase are chosen".
 //
 // Both ends bound the parameter in CalcOvulationDay's reading of it: the count
 // of days that FOLLOW ovulation. They are NOT bounds on the calendar span from

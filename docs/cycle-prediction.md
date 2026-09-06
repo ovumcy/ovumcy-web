@@ -161,16 +161,24 @@ These are the exact cases asserted by the reference tests.
   cervical-mucus entries place the ovulation inside past cycles, each of those
   observations becomes a luteal length by Step 2a and the average of them
   replaces the default. A cycle whose inferred luteal length falls outside a
-  physiological 10–20 day window is **discarded**, not pulled to the nearest
-  edge of it — an implausible inference is treated as a bad reading rather than
-  as a 10 or a 20 — and the refinement needs at least two surviving cycles, so
-  a single odd reading cannot move the estimate on its own. The cervical-mucus
-  signal estimates ovulation as the day after the last egg-white (peak-quality)
-  mucus day of the cycle; self-observed peak days can differ from reference
-  ovulation by a day or more, which is another reason the inferred luteal
-  length stays an estimate. With little or no such data the fixed 14-day
-  default stands. Individual luteal phases vary (commonly 11–17 days), which is
-  one reason predictions remain estimates.
+  10–20 day window is **discarded** from that average rather than pulled to the
+  nearest edge of it, and the refinement needs at least two surviving cycles, so
+  a single odd reading cannot move the estimate on its own. That window is an
+  engineering outlier filter over *inferred* lengths, not a clinical boundary:
+  luteal phases at or below its floor occur and are ordinary — a TTC cohort
+  anchored on ovulation tests put 18 % of cycles at 11 days or fewer counting
+  the ovulation day itself, which is 10 or fewer on the count this document
+  uses, which excludes it — so a discarded sample is one this inference declines
+  to average, never a measurement shown to be wrong and never a statement about
+  the owner's body. The cervical-mucus signal estimates ovulation as the day
+  after the last egg-white (peak-quality) mucus day of the cycle; self-observed
+  peak days can differ from reference ovulation by a day or more, which is
+  another reason the inferred luteal length stays an estimate. With little or no
+  such data, or with fewer than two surviving samples, the fixed 14-day default
+  stands — it is the model's constant, not a value observed from this owner, and
+  no surface may present it as evidence of a personalised luteal phase.
+  Individual luteal phases vary (commonly 11–17 days), which is one reason
+  predictions remain estimates.
 - For irregular cycles the app widens the prediction into a range rather than a
   single date. The range and variability statistics (shortest/longest cycle and
   the sample standard deviation) are computed over the same recent-cycle window
