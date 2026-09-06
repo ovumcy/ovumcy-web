@@ -16,6 +16,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/api"
+	"github.com/ovumcy/ovumcy-web/internal/db"
 )
 
 // The limiters wired through rateLimitOnlyFor cap a single (method, path) each,
@@ -377,5 +378,194 @@ func TestFiberRoutesEveryScopedLimiterPathSpellingToItsOwnRoute(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// The calendar feed's limiter is the one scoped limiter discoverScopedLimiterSpecs
+// cannot read: its path carries a per-owner token, so there is no exact
+// (method, path) pair for rateLimitOnlyFor to compare. It carries its own Next
+// instead — api.IsCalendarFeedRequest, the route-SHAPE predicate the CSRF skip and
+// the language skip key on as well — and the three tests below are that mount's
+// half of the sweep above: the spellings it must count, the neighbours under its
+// prefix it must not, and a static check that no limiter here grows a third kind
+// of scope predicate with nothing sweeping it.
+
+// calendarFeedLimiterBudget is the feed budget the two behavioural tests below
+// run at: one request inside it, the next one over it.
+const calendarFeedLimiterBudget = 1
+
+// calendarFeedSpellingPlaceholder is the feed URL with its token masked. The
+// spellings below are derived from it by the same routableSpellings
+// transformation that derives the real targets, so a subtest name or a failure
+// message can name a spelling without printing a live subscribe token.
+const calendarFeedSpellingPlaceholder = api.CalendarFeedRateLimitPrefix + "/<token>.ics"
+
+// calendarFeedSend drives one request through app and returns its status.
+// spelling is the masked form of target, used for diagnostics only.
+func calendarFeedSend(t *testing.T, app *fiber.App, method, spelling, target string) int {
+	t.Helper()
+
+	response, err := app.Test(httptest.NewRequest(method, target, nil), testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, spelling, err)
+	}
+	_ = response.Body.Close()
+	return response.StatusCode
+}
+
+// TestCalendarFeedLimiterCountsEveryRoutableSpellingAndVerbOfTheFeedURL is the
+// feed limiter's leg of TestScopedRateLimitersCoverEveryRoutableSpellingOfTheirPath:
+// every spelling of the feed URL api.IsCalendarFeedRequest claims — case-folded,
+// trailing slash alike — must spend this budget, on both verbs the predicate
+// claims, because the limiter keys on that same predicate. A Next comparing the
+// raw c.Path() against one canonical string would leave /CALENDAR/FEED/<token>.ICS
+// and /calendar/feed/<token>.ics/ polling an unauthenticated surface uncapped
+// while the sweep above stayed green, having never seen this mount at all.
+//
+// HEAD is counted because the predicate claims it, not because the deployed route
+// table answers it from ServeCalendarFeed: fiber appends a GET route's
+// auto-generated HEAD copy at serve time, after the terminal
+// app.Use(handler.NotFound), so a HEAD to any page route in the shipped app lands
+// in NotFound. That predates this change, is not feed-specific, and is pinned by
+// TestIsCalendarFeedRequestMatchesWhatFiberActuallyDispatches — what matters here
+// is that the two cookie skips act on a HEAD to this path, so the limiter reading
+// the same predicate has to charge it.
+func TestCalendarFeedLimiterCountsEveryRoutableSpellingAndVerbOfTheFeedURL(t *testing.T) {
+	handler, database := newRateLimitTestHandlerAndDB(t)
+	user := seedOwner(t, db.NewRepositories(database), "calendar-feed-spelling@example.com", 14)
+	feedTarget := api.CalendarFeedRateLimitPrefix + "/" + armCalendarFeedToken(t, database, user.ID) + ".ics"
+
+	targets := append([]string{feedTarget}, routableSpellings(feedTarget)...)
+	spellings := append([]string{calendarFeedSpellingPlaceholder}, routableSpellings(calendarFeedSpellingPlaceholder)...)
+
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		for i, target := range targets {
+			t.Run(method+" "+spellings[i], func(t *testing.T) {
+				// A fresh app per case: under app.Test every request reports the
+				// same peer address, so one app would share one bucket across the
+				// spellings and hide which of them was counted.
+				app := newCalendarFeedTestApp(t, handler, calendarFeedLimiterBudget)
+				if status := calendarFeedSend(t, app, method, spellings[i], target); status == http.StatusTooManyRequests {
+					t.Fatalf("%s %s was refused on the first request; this sweep needs one request inside the budget of %d", method, spellings[i], calendarFeedLimiterBudget)
+				}
+				if status := calendarFeedSend(t, app, method, spellings[i], target); status != http.StatusTooManyRequests {
+					t.Fatalf("%s %s answered %d once the feed budget of %d was spent: api.IsCalendarFeedRequest claims this spelling for the feed, and the CSRF and language skips act on it, so the limiter reading that same predicate has to count it", method, spellings[i], status, calendarFeedLimiterBudget)
+				}
+			})
+		}
+	}
+}
+
+// TestCalendarFeedLimiterSpendsNoBudgetOnPathsThatReachNoFeed is the other half.
+// The budget is small because a well-formed token costs a keyed-MAC compare — or,
+// on a not-yet-migrated row, a bcrypt — and a request that reaches no feed pays
+// neither, which is why SECURITY.md's calendar-feed row says a bare prefix, a
+// nested path segment and a non-GET/HEAD verb spend no part of it. app.Use is
+// prefix-matched and method-agnostic, so those three are exactly what an unscoped
+// mount would charge. Each runs on its own app, so a scope that widened onto one
+// of them alone reddens that case alone; the two real polls closing each case are
+// its positive anchor, the first proving the budget was still whole and the
+// second that there was a budget at all.
+func TestCalendarFeedLimiterSpendsNoBudgetOnPathsThatReachNoFeed(t *testing.T) {
+	handler, database := newRateLimitTestHandlerAndDB(t)
+	user := seedOwner(t, db.NewRepositories(database), "calendar-feed-uncounted@example.com", 14)
+	feedTarget := api.CalendarFeedRateLimitPrefix + "/" + armCalendarFeedToken(t, database, user.ID) + ".ics"
+
+	uncounted := []struct {
+		name   string
+		method string
+		target string
+	}{
+		{"the bare prefix", http.MethodGet, api.CalendarFeedRateLimitPrefix + "/"},
+		{"a nested path segment", http.MethodGet, api.CalendarFeedRateLimitPrefix + "/a/b.ics"},
+		{"a non-GET or HEAD verb on the feed's own URL", http.MethodPost, feedTarget},
+	}
+	for _, probe := range uncounted {
+		t.Run(probe.name, func(t *testing.T) {
+			app := newCalendarFeedTestApp(t, handler, calendarFeedLimiterBudget)
+			for attempt := range 2 {
+				if status := calendarFeedSend(t, app, probe.method, probe.name, probe.target); status == http.StatusTooManyRequests {
+					t.Fatalf("request %d to %s was refused by the feed's limiter — its scope has widened past the route this budget exists to bound", attempt+1, probe.name)
+				}
+			}
+
+			if status := calendarFeedSend(t, app, http.MethodGet, calendarFeedSpellingPlaceholder, feedTarget); status != http.StatusOK {
+				t.Fatalf("the first real poll answered %d after two requests to %s: they spent part of a budget of %d that only a request reaching the feed may spend", status, probe.name, calendarFeedLimiterBudget)
+			}
+			if status := calendarFeedSend(t, app, http.MethodGet, calendarFeedSpellingPlaceholder, feedTarget); status != http.StatusTooManyRequests {
+				t.Fatalf("the second real poll answered %d: the feed budget of %d is not enforced on this app at all, so the two requests to %s prove nothing", status, calendarFeedLimiterBudget, probe.name)
+			}
+		})
+	}
+}
+
+// limiterScopePredicateForms are the only Next predicates a limiter in
+// configureFiberMiddleware may carry, each covered by a sweep in this file:
+// rateLimitOnlyFor by TestScopedRateLimitersCoverEveryRoutableSpellingOfTheirPath,
+// which reads its arguments out of the source, and the feed's route-shape
+// predicate by the two tests above, which drive it. A limiter with no Next at all
+// is outside this guard's subject — it is mounted prefix-wide on purpose (the
+// /api and /auth/oidc catch-alls), and fiber normalizes a prefix mount itself.
+var limiterScopePredicateForms = []string{
+	"rateLimitOnlyFor(",
+	"func(c fiber.Ctx) bool { return !api.IsCalendarFeedRequest(c.Method(), c.Path()) },",
+}
+
+// configureFiberMiddlewareBody returns the source text of
+// configureFiberMiddleware. The slice stops at that function's end on purpose:
+// csrfMiddlewareConfig further down server.go carries a Next of its own, which is
+// a CSRF skip and not a limiter's scope.
+func configureFiberMiddlewareBody(t *testing.T) string {
+	t.Helper()
+
+	source, err := os.ReadFile("server.go")
+	if err != nil {
+		t.Fatalf("read server.go: %v", err)
+	}
+	body := string(source)
+	start := strings.Index(body, "func configureFiberMiddleware(")
+	if start < 0 {
+		t.Fatal("configureFiberMiddleware not found in server.go — teach this guard the new name rather than letting it sweep nothing")
+	}
+	end := strings.Index(body[start:], "\n}\n")
+	if end < 0 {
+		t.Fatal("could not find the end of configureFiberMiddleware")
+	}
+	return body[start : start+end]
+}
+
+// TestEveryLimiterScopePredicateIsOneTheSweepsCover closes the gap the feed's
+// mount opened above: discovery there reads rateLimitOnlyFor call sites, so a
+// limiter scoped by any other predicate is not swept — it is invisible, and
+// rewriting the feed's Next to compare the raw c.Path() would leave every AST
+// guard in this file green. Each Next wired in configureFiberMiddleware must
+// therefore be one of the forms a sweep here actually drives, and each of those
+// forms must still be wired.
+func TestEveryLimiterScopePredicateIsOneTheSweepsCover(t *testing.T) {
+	wired := make(map[string]int, len(limiterScopePredicateForms))
+	for _, line := range strings.Split(configureFiberMiddlewareBody(t), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "Next:") {
+			continue
+		}
+		predicate := strings.TrimSpace(strings.TrimPrefix(trimmed, "Next:"))
+		matched := ""
+		for _, form := range limiterScopePredicateForms {
+			if strings.HasPrefix(predicate, form) {
+				matched = form
+				break
+			}
+		}
+		if matched == "" {
+			t.Errorf("a limiter is scoped by %q, which nothing here sweeps: express the scope as rateLimitOnlyFor(method, path) so the sweep above reads it, or — for a scope no exact (method, path) pair can express — write the sweep that drives every routable spelling of it first and then list its predicate in limiterScopePredicateForms. The predicate is read off the Next: line, so keep it on one line", predicate)
+			continue
+		}
+		wired[matched]++
+	}
+
+	for _, form := range limiterScopePredicateForms {
+		if wired[form] == 0 {
+			t.Errorf("no limiter in configureFiberMiddleware is scoped by %q any more; the sweep written for it now measures a wiring that is gone", form)
+		}
 	}
 }
