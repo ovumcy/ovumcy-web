@@ -122,7 +122,7 @@ func TestIsCalendarFeedRequestMatchesWhatFiberActuallyDispatches(t *testing.T) {
 	)
 
 	for _, path := range spellings {
-		for _, method := range []string{fiber.MethodGet, fiber.MethodHead, fiber.MethodPost} {
+		for _, method := range fiber.DefaultMethods {
 			t.Run(method+" "+path, func(t *testing.T) {
 				reached := calendarFeedDispatchReached(t, app, method, path)
 				predicted := api.IsCalendarFeedRequest(method, path)

@@ -399,6 +399,17 @@ func TestCalendarFeedOverMatchPathsKeepLanguageCatalogueAndCSRFSupport(t *testin
 // relative to whichever "today" resolved it — so a poller-claimed zone that
 // actually reached the projector would move that date a further 28 days out,
 // a difference no rendered .ics body could hide.
+//
+// Positive anchor: the plain/claimed equality above is worthless if the
+// render can never depend on a timezone at all — it would pass just as well
+// if ResolveFeed ignored location outright. So after that comparison, this
+// test persists the SAME Kiritimati zone onto the owner's own users.timezone
+// column (a signal ResolveFeed DOES honor — see resolveOwnerLocation) and
+// re-issues a plain, header-free request: that is exactly the "poller-claimed
+// zone actually reached the projector" case the paragraph above describes,
+// so it must reproduce the same kind of shift and change the body. If it did
+// not, the render would never depend on any zone, and the equality check
+// above would be proving nothing.
 func TestCalendarFeedBodyIgnoresRequestTimezoneSignals(t *testing.T) {
 	instanceZone, err := time.LoadLocation("Pacific/Pago_Pago")
 	if err != nil {
@@ -458,5 +469,32 @@ func TestCalendarFeedBodyIgnoresRequestTimezoneSignals(t *testing.T) {
 	}
 	if !bytes.Equal(plainBody, claimedBody) {
 		t.Fatalf("a poller-claimed timezone changed the feed body for an owner with no stored timezone:\nplain:         %q\nzone-claiming: %q", plainBody, claimedBody)
+	}
+
+	// Positive anchor (see doc comment): give this owner the persisted zone
+	// ResolveFeed is actually documented to honor, then repeat the plain,
+	// header-free request. A body that still matched plainBody would mean
+	// the render never depended on any zone, and the equality assertion
+	// above would not have proven that request signals specifically — as
+	// opposed to every signal — are what gets ignored.
+	if err := database.Model(&models.User{}).Where("id = ?", user.ID).
+		Update("timezone", "Pacific/Kiritimati").Error; err != nil {
+		t.Fatalf("set owner timezone: %v", err)
+	}
+
+	ownerZoned := httptest.NewRequest(http.MethodGet, feedTarget, nil)
+	ownerZonedResponse, err := app.Test(ownerZoned, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("owner-timezone feed request failed: %v", err)
+	}
+	defer func() { _ = ownerZonedResponse.Body.Close() }()
+	if ownerZonedResponse.StatusCode != http.StatusOK {
+		t.Fatalf("owner-timezone request: expected 200 for the armed feed, got %d", ownerZonedResponse.StatusCode)
+	}
+	assertNoSetCookie(t, ownerZonedResponse, "the owner-timezone request")
+	ownerZonedBody := mustReadAll(t, ownerZonedResponse)
+
+	if bytes.Equal(plainBody, ownerZonedBody) {
+		t.Fatalf("test setup: the owner's own stored timezone must move the projected period date, otherwise this test cannot prove the body is zone-sensitive:\nplain:       %q\nowner-zoned: %q", plainBody, ownerZonedBody)
 	}
 }
