@@ -178,7 +178,9 @@ func ParseDayBBTRawWithUnit(raw string, unit string) (*float64, error) {
 // changelog and the spec point back here.
 //
 // A non-finite entry is neither answer and is handed on as it stands, so the
-// range refuses it. Without that, -Inf would BE the sentinel — it is
+// range refuses it — which makes validation a PRECONDITION of every caller:
+// what comes back is a value in stored units, not a value fit to store, and the
+// two callers here both reach NormalizeDayEntryInput before anything is written. Without that, -Inf would BE the sentinel — it is
 // non-positive — and a value no thermometer can produce would be filed as the
 // owner's "nothing measured", while NaN, non-positive under no comparison, was
 // already refused. Same input, opposite outcomes, on the sign of an infinity.

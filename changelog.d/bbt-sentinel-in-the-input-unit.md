@@ -6,7 +6,8 @@
   converted Celsius value instead of on what was typed. It now runs in the account's own unit: 0
   or less still means "not measured", and anything above it is judged against the physiological
   range and refused if it falls outside. The day form rejects such a value in the browser, so it
-  was reachable through the JSON API, or from the form with scripts off.
+  was reachable through the JSON API, or from the form with scripts off. An infinity typed into
+  the form is refused the same way, where a negative one used to be filed as "not measured" too.
 - **A hidden field can no longer refuse the day it is not part of.** A form save from an account
   that hides temperature or cycle factors no longer loses the whole entry to a value in the hidden
   field: the form's hidden fields are not read at all — on an existing day the stored reading is
