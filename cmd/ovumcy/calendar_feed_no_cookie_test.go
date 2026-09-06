@@ -141,15 +141,15 @@ func TestCalendarFeedRouteSetsNoCookieOnTheProductionStack(t *testing.T) {
 			configure: func(*http.Request) {},
 		},
 		{
-			// app.Get also registers HEAD; the CSRF Next clause historically
-			// checked only GET, so a HEAD request minted a CSRF cookie the GET
-			// cases above never revealed. This case proves no Set-Cookie on
-			// HEAD — independently of which handler answers it: on the real
-			// route table a HEAD to this (or any) page route actually reaches
-			// the terminal NotFound catch-all rather than ServeCalendarFeed
-			// (fiber only appends a GET route's auto-generated HEAD copy at
-			// serve time, after NotFound already occupies the stack), a
-			// pre-existing gap this change does not touch either way.
+			// Every GET route is served on HEAD too; the CSRF Next clause
+			// historically checked only GET, so a HEAD request minted a CSRF
+			// cookie the GET cases above never revealed. This case proves no
+			// Set-Cookie on HEAD, and it now measures the same handler the GET
+			// cases measure: api.RegisterRoutes registers the HEAD twin of
+			// every GET route ahead of the terminal NotFound catch-all, so a
+			// HEAD to this path reaches ServeCalendarFeed and answers this
+			// unresolvable token with the feed's own 404 — the same status the
+			// catch-all used to give it, for a different reason.
 			name:      "HEAD instead of GET",
 			method:    http.MethodHead,
 			configure: func(*http.Request) {},

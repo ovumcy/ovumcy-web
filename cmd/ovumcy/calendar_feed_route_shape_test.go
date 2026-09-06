@@ -64,20 +64,20 @@ func calendarFeedDispatchReached(t *testing.T, app *fiber.App, method, path stri
 // its own (a dot inside the token, an empty token, a nested path segment, a
 // case-folded prefix).
 //
-// GET/HEAD reaching this bare probe app (no catch-all ahead of the route)
-// does NOT mean HEAD reaches ServeCalendarFeed on the REAL production route
-// table: cmd/ovumcy/server.go's newFiberApp mounts the terminal
-// app.Use(handler.NotFound) AFTER api.RegisterRoutes, and fiber only appends
-// a GET route's auto-generated HEAD copy (router.go's
-// ensureAutoHeadRoutesLocked) at serve time — after every directly-registered
-// Use middleware, NotFound included, already occupies the HEAD stack. A HEAD
-// request to ANY page route in the deployed app therefore hits NotFound
-// before its own handler; this predates this change, is not calendar-feed
-// specific, and is out of scope here. What stays true regardless: CSRF and
-// LanguageMiddleware are mounted as Use before api.RegisterRoutes even runs,
-// so they act on a HEAD request to this path whether or not it goes on to
-// reach ServeCalendarFeed — which is why the predicate still has to say yes
-// to HEAD.
+// GET/HEAD reaching this bare probe app (no catch-all ahead of the route) is
+// not by itself an account of what the REAL production route table dispatches:
+// fiber appends a GET route's auto-generated HEAD copy (router.go's
+// ensureAutoHeadRoutesLocked) only at serve time, behind every
+// directly-registered Use middleware — including the terminal
+// app.Use(handler.NotFound) that cmd/ovumcy/server.go's newFiberApp mounts
+// after api.RegisterRoutes — so a HEAD request to any page route used to reach
+// that catch-all instead of its own handler. api.RegisterRoutes now registers
+// the HEAD twins itself, ahead of anything mounted afterwards, and
+// head_route_dispatch_test.go pins that on the production stack. What was true
+// throughout, and is what this test needs: CSRF and LanguageMiddleware are
+// mounted as Use before api.RegisterRoutes even runs, so they act on a HEAD
+// request to this path however it is dispatched — which is why the predicate
+// has to say yes to HEAD.
 func TestIsCalendarFeedRequestMatchesWhatFiberActuallyDispatches(t *testing.T) {
 	app := calendarFeedDispatchProbeApp(t)
 	canonical := "/calendar/feed/" + strings.Repeat("A", 48) + ".ics"

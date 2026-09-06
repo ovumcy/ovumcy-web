@@ -220,6 +220,13 @@ func registerPageRoutes(app *fiber.App, handler *Handler) {
 // The OIDC callback is registered only under OIDC_RESPONSE_MODE=query, which is
 // why that test builds a query-mode app as well as the default one.
 //
+// What counts as spending is one-time SECRET or AUTH material — a consumption
+// mark, a pickup nonce, a sealed one-time state cookie. The flash cookie every
+// page pops is not: it carries a notice, not a secret, and treating it as one
+// would refuse HEAD on nearly every page in the app, which is the answer this
+// change exists to remove. A HEAD that swallows a flash message costs the same
+// as the GET prefetch that already could.
+//
 // This is not the whole set of surfaces that spend something on a GET: the
 // inline recovery-code reveal shares GET /register with the anonymous signup
 // page, so a route-wide refusal there would answer 404 to an ordinary probe of
