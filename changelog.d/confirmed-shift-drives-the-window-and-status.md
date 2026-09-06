@@ -36,5 +36,10 @@
   it only ever announces a day still ahead, and a confirmed day is by construction several days
   behind today, so it was never the day this fix addresses. Where predictions are withheld
   altogether — unpredictable-cycle mode, a pregnancy pause, an overdue cycle, or before the first
-  completed cycle — every surface stays as silent as before: a recorded observation never becomes a
-  way around that.
+  completed cycle — the silence is now more complete than before, not merely unchanged: the cycle
+  phase label used to keep naming the withheld ovulation day even after every other field went
+  quiet, so a suppressed account could still read "ovulation" today, or "follicular"/"luteal" on
+  either side of it, off the phase alone. The phase is now recomputed from the same fields the rest
+  of the response withholds, so it can say "menstrual" during a logged or projected period, or
+  "unknown" otherwise, but never point at the day suppression exists to hide. A recorded observation
+  still never becomes a way around any of this.
