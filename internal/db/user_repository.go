@@ -69,6 +69,20 @@ func NewUserRepository(database *gorm.DB) *UserRepository {
 //     auth_session_version). The window is named as a residual risk rather
 //     than engineered away.
 //
+//     Every "advances AFTER" caller drops this call's error (`_ =`) rather
+//     than returning it, because by the time it runs their own write has
+//     already committed: reporting a completed password reset, recovery-code
+//     rotation or clear-data as failed would be a bigger lie than the missing
+//     fence record. The cost is bounded either way the fence can actually
+//     fail — a write that moved the file but not app_state leaves the halves
+//     disagreeing, and a write that moved neither leaves the fence unanchored
+//     — and Enforce answers both by disarming every armed feed on the next
+//     boot, never by losing a revocation silently. This reasoning is the
+//     server's own; it holds only for a write acting on the account's OWN
+//     feed, never for the operator CLI acting on someone else's, which is why
+//     AdvanceConfirmed (internal/services) exists and refuses instead of
+//     degrading.
+//
 // Deliberately NOT called by the two boot-time bulk disarms: the restore fence
 // records its own token immediately after its disarm, and the key-rotation
 // sentinel's disarm is answered by the key epoch, which a restore brings back
@@ -1044,7 +1058,10 @@ func (repo *UserRepository) UpdateRecoveryCodeHashAndRevokeSessions(ctx context.
 	}).Error; err != nil {
 		return err
 	}
-	return repo.advanceCalendarFeedFence(ctx)
+	// Best-effort: see advanceCalendarFeedFence's doc comment for why a
+	// caller past this point drops the error instead of returning it.
+	_ = repo.advanceCalendarFeedFence(ctx)
+	return nil
 }
 
 func (repo *UserRepository) UpdatePasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, mustChangePassword bool) error {
@@ -1057,7 +1074,7 @@ func (repo *UserRepository) UpdatePasswordAndRevokeSessions(ctx context.Context,
 }
 
 // ForceResetPasswordAndRevokeSessions is the operator-driven variant of
-// UpdatePasswordAndRevokeSessions (the CLI `ovumcy reset` path). It rewrites the
+// UpdatePasswordAndRevokeSessions (the CLI `ovumcy reset-password` path). It rewrites the
 // password hash, forces a change-on-next-login, bumps auth_session_version, AND
 // force-clears the calendar-feed token — all in one atomic Updates().
 //
@@ -1081,7 +1098,10 @@ func (repo *UserRepository) ForceResetPasswordAndRevokeSessions(ctx context.Cont
 	}).Error; err != nil {
 		return err
 	}
-	return repo.advanceCalendarFeedFence(ctx)
+	// Best-effort: see advanceCalendarFeedFence's doc comment for why a
+	// caller past this point drops the error instead of returning it.
+	_ = repo.advanceCalendarFeedFence(ctx)
+	return nil
 }
 
 // UpdatePasswordHashOnly rewrites only the password_hash column without bumping
@@ -1158,7 +1178,10 @@ func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx c
 	if result.RowsAffected == 0 {
 		return ErrResetTokenAlreadyConsumed
 	}
-	return repo.advanceCalendarFeedFence(ctx)
+	// Best-effort: see advanceCalendarFeedFence's doc comment for why a
+	// caller past this point drops the error instead of returning it.
+	_ = repo.advanceCalendarFeedFence(ctx)
+	return nil
 }
 
 func (repo *UserRepository) BumpAuthSessionVersion(ctx context.Context, userID uint) error {
@@ -1411,11 +1434,10 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 	// unreachable for the same reason.)
 	//
 	// That reasoning holds for THIS caller — the server process, whose anchor is
-	// the fence file it was booted with, acting on the owner's own request. It
-	// does not extend to the operator CLI wiping someone else's data: that path
-	// confirms and advances the same fence through AdvanceConfirmed before its
-	// own write, and refuses rather than reaching this method at all when it
-	// cannot (internal/cli).
+	// the fence file it was booted with, acting on the owner's own request.
+	// There is no operator-CLI counterpart to wiping data this way: clear-data
+	// is reached only from SettingsService, itself reached only from the
+	// owner-authenticated, step-up-gated danger-zone endpoint.
 	_ = repo.advanceCalendarFeedFence(ctx)
 	return nil
 }

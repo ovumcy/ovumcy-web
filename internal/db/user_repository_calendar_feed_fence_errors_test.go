@@ -97,3 +97,66 @@ func TestACredentialRotationSurfacesItsOwnWriteFailure(t *testing.T) {
 		t.Fatal("ForceResetPasswordAndRevokeSessions must report a failed write rather than fall through to the fence")
 	}
 }
+
+// TestPostOperationFenceFailureNeverFailsAnAlreadyCommittedWrite covers the
+// three callers that advance the fence AFTER their own Updates() has already
+// committed: UpdateRecoveryCodeHashAndRevokeSessions,
+// ForceResetPasswordAndRevokeSessions, and
+// UpdatePasswordRecoveryCodeAndRevokeSessionsCAS. Unlike
+// TestARevocationIsRefusedWhenTheFenceCannotRecordIt above — whose two
+// methods advance BEFORE their write and must refuse when the fence cannot
+// keep up — these three must report SUCCESS once their own write has landed,
+// because undoing the report at that point would not undo the write: a
+// caller told "reset password: app_state is unavailable" after the new hash
+// is already stored would retry a reset that had already happened, or an
+// operator would tell an owner their forced reset failed when the account
+// already answers to the new password. The fence's own failure is bounded
+// elsewhere — Enforce disarms every armed feed on the next boot — never by
+// silently pretending the credential write did not happen.
+func TestPostOperationFenceFailureNeverFailsAnAlreadyCommittedWrite(t *testing.T) {
+	repo := openCalendarFeedRepoForTest(t)
+	ctx := context.Background()
+	refused := errors.New("app_state is unavailable")
+	fence := &refusingCalendarFeedFence{err: refused}
+
+	cases := []struct {
+		name string
+		run  func(userID uint) error
+	}{
+		{
+			name: "UpdateRecoveryCodeHashAndRevokeSessions",
+			run: func(userID uint) error {
+				return repo.UpdateRecoveryCodeHashAndRevokeSessions(ctx, userID, "recovery-hash")
+			},
+		},
+		{
+			name: "ForceResetPasswordAndRevokeSessions",
+			run: func(userID uint) error {
+				return repo.ForceResetPasswordAndRevokeSessions(ctx, userID, "password-hash")
+			},
+		},
+		{
+			name: "UpdatePasswordRecoveryCodeAndRevokeSessionsCAS",
+			run: func(userID uint) error {
+				// createUserForTimezoneTest below always seeds PasswordHash
+				// "hash", so the CAS predicate is known without a reload.
+				return repo.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx, userID, "hash", "new-password-hash", "new-recovery-hash")
+			},
+		},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			user := createUserForTimezoneTest(t, repo, "post-op-fence-"+testCase.name+"@example.com")
+			repo.calendarFeedFence = fence
+			before := fence.calls
+
+			if err := testCase.run(user.ID); err != nil {
+				t.Fatalf("%s must report success once its own write has committed, got %v", testCase.name, err)
+			}
+			if fence.calls != before+1 {
+				t.Fatalf("expected the fence to be consulted exactly once, got %d call(s)", fence.calls-before)
+			}
+		})
+	}
+}
