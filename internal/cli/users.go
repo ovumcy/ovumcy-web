@@ -159,7 +159,7 @@ func runUsersDelete(service *services.OperatorUserService, fencePath string, fen
 	// that happens — never merely warn about it. Raised here, past the
 	// confirmation and immediately before the write, so a cancelled deletion
 	// never reaches it and a refusal here means the row is never touched.
-	if err := confirmOperatorFeedRevocation(context.Background(), fencePath, fence, os.Stderr); err != nil {
+	if err := confirmOperatorFeedRevocation(context.Background(), fencePath, fence, output); err != nil {
 		return err
 	}
 
