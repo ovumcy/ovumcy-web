@@ -73,7 +73,7 @@ Field semantics:
 | `flow` | string | One of `none`, `spotting`, `light`, `medium`, `heavy`. |
 | `mood_rating` | integer | User-selected mood scale. Zero means unset. |
 | `sex_activity` | string | One of `none`, `protected`, `unprotected`. |
-| `bbt` | float | Basal body temperature in Celsius, always — storage is canonical Celsius regardless of the account's display unit, and export emits the stored value unconverted. Emitted only when measured; the key is absent on unmeasured days. On import, an absent key, an explicit `null`, or a legacy `0` are all read as "not measured". |
+| `bbt` | float | Basal body temperature in Celsius, always — storage is canonical Celsius regardless of the account's display unit, and export emits the stored value unconverted. Emitted only when measured; the key is absent on unmeasured days. On import, an absent key, an explicit `null`, or a legacy `0` are all read as "not measured"; a value outside the accepted range is read as "not measured" too, like any other malformed field, rather than rejecting the day. |
 | `cervical_mucus` | string | One of `none`, `dry`, `moist`, `creamy`, `eggwhite`. |
 | `pregnancy_test` | string | One of `none`, `negative`, `positive`. |
 | `cycle_factors` | array of strings | Factor keys recorded that day, from the closed catalog `stress`, `illness`, `travel`, `sleep_disruption`, `medication_change`. Any other key is dropped on import. |

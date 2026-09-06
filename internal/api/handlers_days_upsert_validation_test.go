@@ -15,6 +15,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
+	"gorm.io/gorm"
 )
 
 func TestUpsertDayNormalizesFlowWhenNotPeriod(t *testing.T) {
@@ -334,17 +335,20 @@ func TestUpsertDayNormalizesUnknownPregnancyTest(t *testing.T) {
 	}
 }
 
+// invalidDayBBTErrorKey is the key mapDayUpsertError publishes for
+// services.ErrInvalidDayBBT; the refusals below assert the owner is told which
+// field lost the save, not merely that one was lost.
+const invalidDayBBTErrorKey = "invalid bbt value"
+
 // TestUpsertDayJudgesTheNotMeasuredSentinelInTheAccountsUnit walks both
-// transports of the day upsert for an account tracking in Fahrenheit. A
+// transports of the day upsert for an account tracking in Fahrenheit: a
 // non-positive entry is the owner's "not measured" answer and saves an empty
-// temperature; a positive one is a reading, and the physiological range decides
-// it — so 20 °F and 32 °F are refused rather than filed as a day with no
-// temperature on it. The sentinel used to be read after the °F→°C conversion,
-// by which point every entry in (0, 32] °F had already turned non-positive, so
-// both refusals arrived as a 200 with a null bbt and the reading vanished
-// without the owner being told.
+// temperature, a positive one is a reading the physiological range judges, so
+// 20 °F and 32 °F are refused rather than filed as a day with no temperature on
+// it. Why the sentinel is read before the conversion rather than after:
+// services.ConvertDayBBTToStorage.
 //
-// Both transports are swept because they reach the conversion by different
+// Both transports are swept because they reach that conversion by different
 // routes — the JSON bind hands over a parsed float, the form its own string
 // parse — and a fix applied to one of them leaves the other saving nothing.
 func TestUpsertDayJudgesTheNotMeasuredSentinelInTheAccountsUnit(t *testing.T) {
@@ -352,12 +356,7 @@ func TestUpsertDayJudgesTheNotMeasuredSentinelInTheAccountsUnit(t *testing.T) {
 
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "upsert-day-bbt-sentinel-unit@example.com", "StrongPass1", true)
-	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
-		"temperature_unit": services.TemperatureUnitFahrenheit,
-		"track_bbt":        true,
-	}).Error; err != nil {
-		t.Fatalf("seed fahrenheit tracking preferences: %v", err)
-	}
+	seedFahrenheitBBTTracking(t, database, user.ID, true)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
 	const storedTolerance = 1e-9
@@ -404,6 +403,9 @@ func TestUpsertDayJudgesTheNotMeasuredSentinelInTheAccountsUnit(t *testing.T) {
 				}
 
 				if testCase.wantStatus != http.StatusOK {
+					if got := readAPIError(t, response.Body); got != invalidDayBBTErrorKey {
+						t.Fatalf("%s °F must be refused under %q, got %q", testCase.typed, invalidDayBBTErrorKey, got)
+					}
 					if entry.ID != 0 {
 						t.Fatalf("%s °F was refused, so %s must hold no entry at all; found one with bbt=%v", testCase.typed, dayRaw, entry.BBT)
 					}
@@ -426,5 +428,104 @@ func TestUpsertDayJudgesTheNotMeasuredSentinelInTheAccountsUnit(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestUpsertDayRefusesAnImpossibleFahrenheitReadingOverHTMX runs one of those
+// refusals through the arm the day form itself uses. apiError answers an HTMX
+// request with the shared status fragment rather than the JSON envelope, so the
+// key travels as data-flash-key — a 400 that reached the panel without it would
+// trade a named refusal for a silent one.
+func TestUpsertDayRefusesAnImpossibleFahrenheitReadingOverHTMX(t *testing.T) {
+	t.Parallel()
+
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "upsert-day-bbt-sentinel-htmx@example.com", "StrongPass1", true)
+	seedFahrenheitBBTTracking(t, database, user.ID, true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	day := time.Date(2026, time.June, 1, 0, 0, 0, 0, time.UTC)
+	form := url.Values{"flow": {models.FlowNone}, "bbt": {"20"}}
+	request := httptest.NewRequest(http.MethodPut, "/api/v1/days/"+day.Format("2006-01-02"), strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("HX-Request", "true")
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", authCookie)
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusBadRequest)
+
+	body := mustReadBodyString(t, response.Body)
+	if !strings.Contains(body, `data-flash-key="dashboard.error.invalid_bbt"`) {
+		t.Fatalf("expected the HTMX refusal to carry the bbt flash key, got %q", body)
+	}
+
+	entry, err := fetchLogByDateForTest(database, user.ID, day, time.UTC)
+	if err != nil {
+		t.Fatalf("load stored log: %v", err)
+	}
+	if entry.ID != 0 {
+		t.Fatalf("a refused day must not be stored, found an entry with bbt=%v", entry.BBT)
+	}
+}
+
+// TestUpsertDayKeepsTheDayWhenAHiddenTemperatureIsImpossible sends that same
+// impossible reading to an account that does not track BBT. Transport marks a
+// hidden field Preserve* (buildUpsertDayEntryInput) and the save replaces it
+// with the value already stored, so the incoming one is not this write's
+// subject and may not refuse the day: the mood the owner did send has to land
+// and the stored temperature has to survive untouched.
+//
+// The form transport carries the case because Preserve* is set only for a form
+// body — a JSON caller states every field explicitly and is granted no
+// preservation, so for it 20 °F stays the refusal the test above pins.
+func TestUpsertDayKeepsTheDayWhenAHiddenTemperatureIsImpossible(t *testing.T) {
+	t.Parallel()
+
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "upsert-day-bbt-hidden-impossible@example.com", "StrongPass1", true)
+	seedFahrenheitBBTTracking(t, database, user.ID, false)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	day := time.Date(2026, time.June, 2, 0, 0, 0, 0, time.UTC)
+	seeded := models.DailyLog{UserID: user.ID, Date: day, Mood: 2, BBT: new(36.65)}
+	if err := database.Create(&seeded).Error; err != nil {
+		t.Fatalf("seed the stored day: %v", err)
+	}
+
+	form := url.Values{"flow": {models.FlowNone}, "mood": {"4"}, "bbt": {"20"}}
+	request := httptest.NewRequest(http.MethodPut, "/api/v1/days/"+day.Format("2006-01-02"), strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Cookie", authCookie)
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusOK)
+
+	entry, err := fetchLogByDateForTest(database, user.ID, day, time.UTC)
+	if err != nil {
+		t.Fatalf("load stored log: %v", err)
+	}
+	if entry.ID == 0 {
+		t.Fatalf("the day must still be saved, found no entry")
+	}
+	if entry.Mood != 4 {
+		t.Fatalf("expected the sent mood 4 to land, got %d", entry.Mood)
+	}
+	if entry.BBT == nil || *entry.BBT != 36.65 {
+		t.Fatalf("expected the stored temperature preserved as 36.65 °C, got %v", entry.BBT)
+	}
+}
+
+// seedFahrenheitBBTTracking puts the account on the Fahrenheit scale and sets
+// whether it tracks BBT at all — the two preferences every case in this file
+// reads the day form through.
+func seedFahrenheitBBTTracking(t *testing.T, database *gorm.DB, userID uint, trackBBT bool) {
+	t.Helper()
+
+	if err := database.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+		"temperature_unit": services.TemperatureUnitFahrenheit,
+		"track_bbt":        trackBBT,
+	}).Error; err != nil {
+		t.Fatalf("seed fahrenheit tracking preferences: %v", err)
 	}
 }

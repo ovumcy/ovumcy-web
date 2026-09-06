@@ -25,6 +25,7 @@ var (
 )
 
 func NormalizeDayEntryInput(input DayEntryInput) (DayEntryInput, error) {
+	input = dropPreservedDayEntryFields(input)
 	if !IsValidDayFlow(input.Flow) {
 		return input, ErrInvalidDayFlow
 	}
@@ -61,6 +62,39 @@ func NormalizeDayEntryInput(input DayEntryInput) (DayEntryInput, error) {
 	input.BBT = normalizeStoredDayBBT(input.BBT)
 	input.Notes = TrimDayNotes(input.Notes)
 	return input, nil
+}
+
+// dropPreservedDayEntryFields empties every field this write marked Preserve*,
+// before the validation above ever reads it. A preserved field's incoming value
+// is not this write's subject — the save replaces it with the stored one
+// (mergePreservedDayEntryInput) — so it is dropped rather than allowed to
+// reject the day: transport sets the flags for the fields the account keeps
+// hidden (buildUpsertDayEntryInput), the form therefore posts them empty, and a
+// value that arrives there anyway used to cost the owner the whole save under a
+// sentinel naming a field the answer then ignored. A Fahrenheit account that
+// hides BBT is the reachable case, since everything in (0, 32] °F converts to a
+// reading below the physiological range.
+//
+// On a day that does not exist yet there is nothing to merge, and dropping is
+// then the whole answer: a hidden field starts neutral instead of storing a
+// value the account cannot see.
+func dropPreservedDayEntryFields(input DayEntryInput) DayEntryInput {
+	if input.PreserveSexActivity {
+		input.SexActivity = models.SexActivityNone
+	}
+	if input.PreserveBBT {
+		input.BBT = nil
+	}
+	if input.PreserveCervicalMucus {
+		input.CervicalMucus = models.CervicalMucusNone
+	}
+	if input.PreserveCycleFactors {
+		input.CycleFactorKeys = nil
+	}
+	if input.PreserveNotes {
+		input.Notes = ""
+	}
+	return input
 }
 
 func NormalizeDayFlow(flow string) string {
