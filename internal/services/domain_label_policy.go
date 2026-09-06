@@ -16,6 +16,8 @@ func PhaseTranslationKey(phase string) string {
 		return "phases.ovulation"
 	case "luteal":
 		return "phases.luteal"
+	case "withheld":
+		return "phases.withheld"
 	default:
 		return "phases.unknown"
 	}

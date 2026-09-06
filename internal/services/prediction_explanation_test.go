@@ -99,3 +99,39 @@ func TestBuildOwnerPredictionExplanation(t *testing.T) {
 		}
 	})
 }
+
+// TestBuildOwnerPredictionExplanationNamesTheFirstCycleFloor pins the line the
+// cohort with no completed cycle had none of. It also pins the ORDER: an
+// irregular account in this tier gets the first-cycle sentence rather than the
+// irregular one, because the missing first cycle is why the fertility half is
+// absent entirely, while the irregular branches only describe how a projection
+// that does exist is presented.
+func TestBuildOwnerPredictionExplanationNamesTheFirstCycleFloor(t *testing.T) {
+	owner := &models.User{Role: models.RoleOwner}
+
+	explanation := BuildOwnerPredictionExplanation(owner, DashboardCycleContext{AwaitingFirstCycle: true}, false)
+	if explanation.PrimaryKey != "prediction.explainer.awaiting_first_cycle" {
+		t.Fatalf("expected the first-cycle explainer, got %#v", explanation)
+	}
+
+	irregular := &models.User{Role: models.RoleOwner, IrregularCycle: true}
+	withRanges := BuildOwnerPredictionExplanation(
+		irregular,
+		DashboardCycleContext{AwaitingFirstCycle: true, DisplayNextPeriodUseRange: true},
+		false,
+	)
+	if withRanges.PrimaryKey != "prediction.explainer.awaiting_first_cycle" {
+		t.Fatalf("expected the first-cycle floor to outrank the irregular-range branch, got %#v", withRanges)
+	}
+
+	// Negative control: without the floor the same account keeps the branch it
+	// had before, so the new case is not swallowing the ones under it.
+	paused := BuildOwnerPredictionExplanation(owner, DashboardCycleContext{PregnancyPaused: true, AwaitingFirstCycle: true}, false)
+	if paused.PrimaryKey != "prediction.explainer.pregnancy_paused" {
+		t.Fatalf("expected the pregnancy pause to still outrank the first-cycle floor, got %#v", paused)
+	}
+	settled := BuildOwnerPredictionExplanation(irregular, DashboardCycleContext{DisplayNextPeriodUseRange: true}, false)
+	if settled.PrimaryKey != "prediction.explainer.irregular_ranges" {
+		t.Fatalf("expected the irregular-range branch once the first cycle is behind, got %#v", settled)
+	}
+}

@@ -19,6 +19,15 @@ const dashboardCycleHeroMaxAxisDays = 60
 // predicted start window reaches them.
 const phaseBeyondProjectedCycle = "beyond"
 
+// phaseFertilityWithheld labels the axis days a suppressed tier still HAS —
+// the cycle is running — but whose phase is defined in terms of the ovulation
+// day the shared fertility gate withholds. It is deliberately not
+// phaseBeyondProjectedCycle: "beyond" means the projection ENDED and the
+// ribbon paints nothing there, so letting these days fall through to it told a
+// mid-cycle owner that tracking had stopped rather than that the fertile
+// details were held back.
+const phaseFertilityWithheld = "withheld"
+
 type DashboardCycleHero struct {
 	Visible      bool
 	Approximate  bool
@@ -207,13 +216,15 @@ func dashboardCycleHeroApproximate(cycleContext DashboardCycleContext) bool {
 }
 
 // dashboardCycleHeroPhaseCards splits the cycle into cards for the ribbon's
-// phase breakdown. The menstrual card alone survives suppression: it is read
-// off recorded bleeding (periodLength), never off the ovulation day, so it
-// carries nothing the shared fertility gate withholds. The follicular,
-// ovulation and luteal cards all have a boundary defined IN TERMS OF
-// ovulationDay — cutting any one of them in would still spell the day out
-// through its StartDay/EndDay, so all three drop together rather than only
-// the "ovulation" card whose name is the obvious tell.
+// phase breakdown. The menstrual card is the only NAMED phase that survives
+// suppression: it is read off recorded bleeding (periodLength), never off the
+// ovulation day, so it carries nothing the shared fertility gate withholds.
+// The follicular, ovulation and luteal cards all have a boundary defined IN
+// TERMS OF ovulationDay — cutting any one of them in would still spell the day
+// out through its StartDay/EndDay, so all three drop together rather than only
+// the "ovulation" card whose name is the obvious tell. What replaces them is
+// one card carrying no boundary of its own, so that the days keep a status
+// instead of falling through to "beyond".
 func dashboardCycleHeroPhaseCards(currentPhase string, periodLength int, ovulationDay int, cycleLength int, fertilitySuppressed bool) []DashboardCycleHeroPhaseCard {
 	cards := []DashboardCycleHeroPhaseCard{
 		{
@@ -224,6 +235,14 @@ func dashboardCycleHeroPhaseCards(currentPhase string, periodLength int, ovulati
 		},
 	}
 	if fertilitySuppressed {
+		if periodLength < cycleLength {
+			cards = append(cards, DashboardCycleHeroPhaseCard{
+				Phase:     phaseFertilityWithheld,
+				StartDay:  periodLength + 1,
+				EndDay:    cycleLength,
+				IsCurrent: currentPhase == phaseFertilityWithheld,
+			})
+		}
 		return cards
 	}
 	return append(cards,
@@ -400,8 +419,11 @@ func dashboardCycleHeroPhaseForDay(day int, phaseCards []DashboardCycleHeroPhase
 // filters the RESULT, because "menstrual" is read off recorded bleeding
 // (periodLength) while every other branch is defined in terms of
 // ovulationDay — the follicular/ovulation/luteal split the fertility gate
-// withholds. A suppressed tier keeps "menstrual" and answers "unknown" for
+// withholds. A suppressed tier keeps "menstrual" and answers "withheld" for
 // anything else, rather than resolving a phase whose boundary names the day.
+// The status line and the ribbon cells below it are one widget answering about
+// one cycle, so the header says the same word the cells do; a second spelling
+// for the same suppression is a second answer.
 func dashboardCycleHeroCurrentPhase(currentPhase string, currentDay int, periodLength int, ovulationDay int, cycleLength int, fertilitySuppressed bool) string {
 	resolved := currentPhase
 	switch currentPhase {
@@ -421,7 +443,7 @@ func dashboardCycleHeroCurrentPhase(currentPhase string, currentDay int, periodL
 	}
 
 	if fertilitySuppressed && resolved != "menstrual" {
-		return "unknown"
+		return phaseFertilityWithheld
 	}
 	return resolved
 }

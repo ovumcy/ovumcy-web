@@ -47,3 +47,13 @@
   response had already gone quiet on. The ribbon itself — the axis, the day cells, the "today"
   marker — still draws; only the parts that named the day now don't. A recorded observation still
   never becomes a way around any of this.
+
+  Going quiet is not the same as going blank, and the ribbon now says which one it is. The days
+  whose phase depends on the withheld ovulation day carry a status of their own — "fertile details
+  held back" — in their own colour, instead of the empty track that means the projection has run
+  out. Mid-cycle, the difference is the difference between "there is more to show later" and
+  "tracking has stopped". The dashboard's phase line says the same words as the cells beneath it
+  rather than a second phrase for the same silence. And an account still waiting for its first
+  completed cycle — the tier with nothing behind the fertile half but the cycle length from setup —
+  is now told so in a sentence under the ribbon, which is where every other reason for a quiet
+  prediction already says its name.
