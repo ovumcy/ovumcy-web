@@ -153,7 +153,7 @@ func (service *StatsService) BuildStatsPageViewData(ctx context.Context, user *m
 	// ahead of it, the one resolver that moves the ovulation day, the fertile
 	// window and the fertility status onto a shift the owner's temperatures
 	// confirm, so this page's fertile-window card cannot name the projection
-	// while the grid and the chart name the measured day.
+	// while the grid and the chart name the confirmed day.
 	confirmedStats, _ := ResolveConfirmedCycleStats(user, baseData.logs, baseData.stats, DateAtLocation(now, location), location)
 	publishedStats, _ := PublishedStats(user, confirmedStats)
 

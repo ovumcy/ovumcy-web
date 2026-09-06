@@ -68,9 +68,11 @@ type StatsOverviewSuppression struct {
 // ovulation_date carries the same additional resolution the calendar's solid
 // marker and the dashboard's ovulation line already apply, through
 // services.PublishedOverviewStats: once the owner's own BBT readings confirm
-// the current cycle's ovulation, the measured day outranks the model's
+// the current cycle's ovulation, the confirmed day outranks the model's
 // projection here too — this was the one surface still naming the superseded
-// projection after the other six had moved on to the measured day.
+// projection after the other six had moved on to the confirmed day. That day
+// is inferred from the owner's own temperature shift, never a measurement of
+// the ovulation itself.
 //
 // ovulation_confirmed names that substitution rather than folding it into
 // ovulation_exact. The two are independent on the dashboard
