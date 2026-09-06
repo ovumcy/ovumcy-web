@@ -27,16 +27,20 @@ import (
 // disagree in the first place.
 //
 // The window keeps the projection's own arithmetic (PredictCycleWindow): six
-// days, [day-5, day], stepped from a dateOnly anchor rather than from the
-// caller's request zone — a step taken from a request-zone midnight resolves
-// a skipped local midnight backward into the previous day.
+// days, [day-5, day], clamped to the recorded cycle start, and stepped from a
+// dateOnly anchor rather than from the caller's request zone — a step taken
+// from a request-zone midnight resolves a skipped local midnight backward into
+// the previous day.
 //
-// It is never clamped to the recorded cycle start: the shared "3-over-6"
-// detector (cycle_signals.go) only ever reads recorded days on or after that
-// start, so its earliest possible confirmed day is cycle day 6 (a full
-// 6-value coverline window plus the first elevated day) — and day-5 of cycle
-// day 6 lands exactly ON the cycle start, never before it. A clamp for an
-// earlier day would be dead code for a day the detector cannot produce.
+// The clamp cannot fire today, and is kept as the projection's invariant rather
+// than deleted as dead code: the shared "3-over-6" detector (cycle_signals.go)
+// reads only recorded days on or after the cycle start, so its earliest
+// possible confirmed day is cycle day 6 — a full six-value coverline window
+// plus the first elevated day — and day-5 of cycle day 6 lands exactly ON the
+// start. Deleting it would move the guarantee that a published window never
+// precedes the recorded start into another file's series bound, where a later
+// change to that bound removes it silently. TestConfirmedShiftAtTheEarliest
+// CycleDayNeverCrossesThePeriodStart pins the boundary the argument rests on.
 //
 // The medical gate is NOT re-stated here: ConfirmedCurrentCycleOvulation reads
 // FertilityProjectionSuppressed for every surface, so a cycle whose window is
@@ -58,6 +62,12 @@ func ResolveConfirmedCycleStats(user *models.User, logs []models.DailyLog, stats
 
 	ovulationDay := dateOnly(confirmedDay)
 	fertilityStart := ovulationDay.AddDate(0, 0, -5)
+	if periodStart := dateOnly(stats.LastPeriodStart); !stats.LastPeriodStart.IsZero() && fertilityStart.Before(periodStart) {
+		// codecov:ignore -- defensive invariant: the detector's series starts at
+		// LastPeriodStart, so its earliest confirmed day is cycle day 6 and day-5
+		// lands ON the start, never before it (see the comment above).
+		fertilityStart = periodStart
+	}
 
 	stats.OvulationDate = ovulationDay
 	stats.OvulationImpossible = false
