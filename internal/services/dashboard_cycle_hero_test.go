@@ -98,6 +98,52 @@ func TestBuildDashboardCycleHeroSkipsSparseOrDisabledPredictionStates(t *testing
 	}
 }
 
+// TestDashboardCycleHeroIgnoresUnconfirmedOvulationDateOutsideTheAverageWindow
+// is the unconfirmed counterpart of TestDashboardHeroOvulationCardSitsOnTheConfirmedPeak:
+// stats.OvulationDate is a MEDIAN-driven projection (here cycle day 32, from a
+// 45-day median), while the ribbon's own geometry is keyed to
+// DashboardCycleReferenceLength — the AVERAGE (28 here). Without a confirmed
+// shift, dashboardCycleHeroOvulationDay must not anchor on that median-driven
+// date: doing so pushes the "ovulation" card past the average cycle length and
+// the whole hero disappears for an account that never recorded a thermal
+// shift. The card must instead sit where CalcOvulationDay(cycleLength,
+// LutealPhase) always put it before the confirmed-shift anchoring existed.
+func TestDashboardCycleHeroIgnoresUnconfirmedOvulationDateOutsideTheAverageWindow(t *testing.T) {
+	user := &models.User{Role: models.RoleOwner, CycleLength: 28}
+	lastPeriodStart := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	stats := CycleStats{
+		CurrentCycleDay:     20,
+		CurrentPhase:        "luteal",
+		AveragePeriodLength: 5,
+		LutealPhase:         14,
+		AverageCycleLength:  28,
+		MedianCycleLength:   45,
+		LastPeriodStart:     lastPeriodStart,
+		// A median-first projection for a 45-day cycle: cycle day 32, well past
+		// the 28-day average the ribbon renders against.
+		OvulationDate: AddCalendarDays(lastPeriodStart, 31, time.UTC),
+	}
+
+	hero := BuildDashboardCycleHero(user, stats, DashboardCycleContext{}, dashboardCycleHeroInput{})
+	if !hero.Visible {
+		t.Fatal("the hero must render for an unconfirmed account even when stats.OvulationDate falls outside the average cycle length")
+	}
+
+	var ovulationCard DashboardCycleHeroPhaseCard
+	for _, card := range hero.PhaseCards {
+		if card.Phase == "ovulation" {
+			ovulationCard = card
+		}
+	}
+	wantDay, ok := CalcOvulationDay(28, stats.LutealPhase)
+	if !ok {
+		t.Fatal("fixture: CalcOvulationDay must succeed for a 28-day cycle")
+	}
+	if ovulationCard.StartDay != wantDay || ovulationCard.EndDay != wantDay {
+		t.Fatalf(`the "ovulation" card must sit on CalcOvulationDay's day %d, got %d-%d`, wantDay, ovulationCard.StartDay, ovulationCard.EndDay)
+	}
+}
+
 func expectCardRange(t *testing.T, card DashboardCycleHeroPhaseCard, phase string, startDay int, endDay int, isCurrent bool) {
 	t.Helper()
 	if card.Phase != phase {

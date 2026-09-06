@@ -422,7 +422,7 @@ func TestDashboardHeroOvulationCardSitsOnTheConfirmedPeak(t *testing.T) {
 		t.Fatal("fixture: the shift must confirm")
 	}
 
-	hero := BuildDashboardCycleHero(user, confirmed, DashboardCycleContext{}, dashboardCycleHeroInput{Logs: logs, Today: today, Location: time.UTC})
+	hero := BuildDashboardCycleHero(user, confirmed, DashboardCycleContext{DisplayOvulationConfirmed: true}, dashboardCycleHeroInput{Logs: logs, Today: today, Location: time.UTC})
 	if !hero.Visible {
 		t.Fatal("fixture: the hero must render")
 	}
