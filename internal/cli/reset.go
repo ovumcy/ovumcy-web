@@ -6,13 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/mail"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/ovumcy/ovumcy-web/internal/db"
-	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
@@ -73,18 +70,8 @@ func parseResetPasswordArgs(args []string) (resetPasswordOptions, error) {
 	return opts, nil
 }
 
-// resolve mirrors usersDeleteOptions.resolve exactly: the same two-address
-// handles, resolved through the same OperatorUserService methods, so an
-// ambiguous or unknown address is refused the same way for both commands.
-func (opts resetPasswordOptions) resolve(service *services.OperatorUserService) (models.OperatorUserSummary, error) {
-	if opts.userID != 0 {
-		return service.GetUserByID(context.Background(), opts.userID)
-	}
-	return service.GetUserByEmail(context.Background(), opts.email)
-}
-
 func RunResetPasswordCommand(databaseConfig db.Config, args []string) error {
-	return runResetPasswordCommand(databaseConfig, args, resetPasswordReader(os.Stdin), os.Stdout)
+	return runResetPasswordCommand(databaseConfig, args, calendarFeedFencePath(), resetPasswordReader(os.Stdin), os.Stdout)
 }
 
 // resetPasswordReader picks how the new password is obtained, matching what
@@ -119,7 +106,7 @@ func resetPasswordReader(input *os.File) passwordPromptFunc {
 
 type passwordPromptFunc func() ([]byte, error)
 
-func runResetPasswordCommand(databaseConfig db.Config, args []string, prompt passwordPromptFunc, output io.Writer) error {
+func runResetPasswordCommand(databaseConfig db.Config, args []string, fencePath string, prompt passwordPromptFunc, output io.Writer) error {
 	opts, err := parseResetPasswordArgs(args)
 	if err != nil {
 		return err
@@ -129,12 +116,12 @@ func runResetPasswordCommand(databaseConfig db.Config, args []string, prompt pas
 	// whenever opts.userID is zero (a blank positional argument is skipped
 	// during parsing, same as parseUsersDeleteArgs), so there is no separate
 	// "email is required" case left to check here — only whether the
-	// non-blank value is a valid address.
+	// non-blank value is an address this command can resolve.
 	normalizedEmail := ""
 	if opts.userID == 0 {
-		normalizedEmail = strings.ToLower(strings.TrimSpace(opts.email))
-		if _, err := mail.ParseAddress(normalizedEmail); err != nil {
-			return fmt.Errorf("invalid email address: %w", err)
+		normalizedEmail, err = normalizeOperatorEmailArgument(opts.email)
+		if err != nil {
+			return err
 		}
 	}
 
@@ -154,31 +141,33 @@ func runResetPasswordCommand(databaseConfig db.Config, args []string, prompt pas
 		return errors.New("password prompt is required")
 	}
 
-	newPassword, err := prompt()
+	rawPassword, err := prompt()
 	if err != nil {
 		return fmt.Errorf("read new password: %w", err)
 	}
-	defer clear(newPassword)
-	if len(newPassword) == 0 {
+	defer clear(rawPassword)
+	if len(rawPassword) == 0 {
 		return errors.New("password is required")
 	}
-	// Checked here, ahead of the fence gate below, for the same reason the
+	// Applied here, ahead of the fence gate below, for the same reason the
 	// target is resolved ahead of it: a password ForceResetPasswordByID would
 	// refuse anyway must not spend the gate's one-shot confirmation first.
-	// ValidatePasswordStrength has no side effects, so running it twice — once
-	// here and once more inside ForceResetPasswordByID a moment later — costs
-	// nothing beyond the CPU of checking a string twice.
-	if err := resetPasswordPolicyError(string(newPassword)); err != nil {
+	// This is the service's own rule rather than a local copy of it, and what
+	// it returns is what gets submitted a few lines down — a value checked in
+	// one shape and submitted in another would put the refusal back after the
+	// gate, which is the whole thing this ordering exists to prevent.
+	newPassword, err := services.NormalizeForcedResetPassword(string(rawPassword))
+	if err != nil {
 		return mapResetPasswordError(err, opts, normalizedEmail)
 	}
 
-	repositories, fence, fencePath := buildRepositories(database)
+	repositories, fence := buildRepositories(database, fencePath)
 	authService := services.NewAuthService(repositories.Users)
 	operatorUsers := services.NewOperatorUserService(repositories.Users, authService)
 
-	target, err := opts.resolve(operatorUsers)
+	target, err := resolveOperatorUser(operatorUsers, opts.userID, normalizedEmail)
 	if err != nil {
-		return mapResetPasswordError(err, opts, normalizedEmail)
+		return mapOperatorUserLookupError(err, opts.userID, normalizedEmail)
 	}
 
 	// A forced reset force-clears the owner's calendar feed, so this process
@@ -188,8 +177,8 @@ func runResetPasswordCommand(databaseConfig db.Config, args []string, prompt pas
 		return err
 	}
 
-	if resetErr := authService.ForceResetPasswordByID(context.Background(), target.ID, string(newPassword)); resetErr != nil {
-		return mapResetPasswordError(resetErr, opts, normalizedEmail)
+	if resetErr := authService.ForceResetPasswordByID(context.Background(), target.ID, newPassword); resetErr != nil {
+		return operatorFeedRevocationCommitted(mapResetPasswordError(resetErr, opts, normalizedEmail))
 	}
 
 	if output == nil {
@@ -202,42 +191,22 @@ func runResetPasswordCommand(databaseConfig db.Config, args []string, prompt pas
 	return nil
 }
 
-// mapResetPasswordError translates the service's sentinels into the
-// operator-facing wording. The id and email arms of the not-found case say
-// different things because they were addressed differently: an unknown id
-// points the operator at `users list`, an unknown email might just be a typo
-// of an address that was never an account. The ambiguous-address case is
-// finding DB-2's fix: services.AmbiguousEmailError (shared with
-// OperatorUserService.GetUserByEmail — `users delete <email>` — and
-// WebhookSettingsCLIService.resolveOwner — `webhook show|set`, which has no
-// --id form at all) is never resolved silently to one match; this command's
-// own mapping adds the explicit "retry with --id" pointer the other two
-// leave to services.AmbiguousEmailError.Error()'s bare id list.
+// mapResetPasswordError translates AuthService's own sentinels — the password
+// policy this command applies ahead of the fence gate, and the id
+// re-resolution ForceResetPasswordByID performs internally — into the
+// operator-facing wording.
 //
-// Every case below is duplicated across two sentinel families on purpose:
-// opts.resolve (services.ErrOperatorUser*, from OperatorUserService) runs
-// ahead of the fence gate and normally reaches this function first, while
-// ForceResetPasswordByID's own internal re-resolution (services.ErrAuth*) is
-// what a row deleted in the narrow window between that resolve and this
-// command's own write would surface instead — both must report identically,
-// since the operator cannot tell which one fired.
+// Account-lookup refusals do not reach it: the address is resolved through
+// mapOperatorUserLookupError, shared with `users delete` and
+// `link-oidc-identity` so all three name an unknown account identically. The
+// one lookup sentinel left here is ErrAuthUserNotFound, which only a row
+// deleted in the narrow window between that resolve and this command's own
+// write can produce — the operator cannot tell which of the two fired, so it
+// is answered by that same shared helper.
 func mapResetPasswordError(err error, opts resetPasswordOptions, normalizedEmail string) error {
-	var ambiguous *services.AmbiguousEmailError
-	if errors.As(err, &ambiguous) {
-		return fmt.Errorf(
-			"email %s matches %d accounts (ids %s); retry with --id (see ovumcy users list)",
-			ambiguous.Email, len(ambiguous.IDs), formatUserIDs(ambiguous.IDs),
-		)
-	}
-
 	switch {
-	case errors.Is(err, services.ErrAuthUserNotFound), errors.Is(err, services.ErrOperatorUserNotFound):
-		if opts.userID != 0 {
-			return fmt.Errorf("no account carries id %d (see ovumcy users list)", opts.userID)
-		}
-		return fmt.Errorf("user %s not found", normalizedEmail)
-	case errors.Is(err, services.ErrAuthUserIDRequired), errors.Is(err, services.ErrOperatorUserIDRequired):
-		return errors.New("an account id is required (see ovumcy users list)")
+	case errors.Is(err, services.ErrAuthUserNotFound):
+		return operatorUserNotFoundError(opts.userID, normalizedEmail)
 	case errors.Is(err, services.ErrAuthResetInvalid):
 		return errors.New("password is required")
 	case errors.Is(err, services.ErrAuthPasswordTooLong):
@@ -250,35 +219,6 @@ func mapResetPasswordError(err error, opts resetPasswordOptions, normalizedEmail
 	default:
 		return fmt.Errorf("reset password: %w", err)
 	}
-}
-
-// resetPasswordPolicyError runs the SAME password-length/composition check
-// AuthService.ForceResetPasswordByID performs internally — it calls its own
-// unexported authPasswordPolicyError(ValidatePasswordStrength(...)) — and
-// translates the result into the same services.ErrAuth* sentinels
-// mapResetPasswordError already knows how to report. Duplicated here rather
-// than exported from services because it is four lines with no state:
-// ValidatePasswordStrength is the actual policy, and this is only the
-// too-long/weak split AuthService already applies to its own result.
-func resetPasswordPolicyError(newPassword string) error {
-	switch err := services.ValidatePasswordStrength(newPassword); {
-	case err == nil:
-		return nil
-	case errors.Is(err, services.ErrPasswordTooLong):
-		return services.ErrAuthPasswordTooLong
-	default:
-		return services.ErrAuthWeakPassword
-	}
-}
-
-// formatUserIDs renders the ambiguous match list the same style `users list`
-// prints them in: ascending, comma-separated.
-func formatUserIDs(ids []uint) string {
-	parts := make([]string, len(ids))
-	for i, id := range ids {
-		parts[i] = strconv.FormatUint(uint64(id), 10)
-	}
-	return strings.Join(parts, ", ")
 }
 
 func promptNewPassword() ([]byte, error) {

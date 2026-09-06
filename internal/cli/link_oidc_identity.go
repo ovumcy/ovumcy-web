@@ -5,13 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/mail"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/db"
-	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/security"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
@@ -131,9 +129,9 @@ func runLinkOIDCIdentityCommand(databaseConfig db.Config, oidcConfig security.OI
 
 	normalizedEmail := ""
 	if opts.userID == 0 {
-		normalizedEmail = strings.ToLower(strings.TrimSpace(opts.email))
-		if _, err := mail.ParseAddress(normalizedEmail); err != nil {
-			return fmt.Errorf("invalid email address: %w", err)
+		normalizedEmail, err = normalizeOperatorEmailArgument(opts.email)
+		if err != nil {
+			return err
 		}
 	}
 
@@ -167,12 +165,12 @@ func runLinkOIDCIdentityCommand(databaseConfig db.Config, oidcConfig security.OI
 		_ = sqlDB.Close()
 	}()
 
-	repositories, _, _ := buildRepositories(database)
+	repositories, _ := buildRepositories(database, calendarFeedFencePath())
 	userService := services.NewOperatorUserService(repositories.Users, services.NewAuthService(repositories.Users))
 
-	target, err := resolveLinkOIDCIdentityTarget(userService, opts)
+	target, err := resolveOperatorUser(userService, opts.userID, normalizedEmail)
 	if err != nil {
-		return mapLinkOIDCIdentityLookupError(err, opts, normalizedEmail)
+		return mapOperatorUserLookupError(err, opts.userID, normalizedEmail)
 	}
 
 	oidcLoginService := services.NewOIDCLoginService(oidcClient, repositories.OIDCIdentities, repositories.Users, nil)
@@ -189,38 +187,6 @@ func runLinkOIDCIdentityCommand(databaseConfig db.Config, oidcConfig security.OI
 	}
 	_, _ = fmt.Fprintf(output, "✅ Linked OIDC identity (issuer=%s, subject=%s) to account %q (id=%d)\n", claims.Issuer, claims.Subject, target.Email, target.ID)
 	return nil
-}
-
-func resolveLinkOIDCIdentityTarget(userService *services.OperatorUserService, opts linkOIDCIdentityOptions) (models.OperatorUserSummary, error) {
-	if opts.userID != 0 {
-		return userService.GetUserByID(context.Background(), opts.userID)
-	}
-	return userService.GetUserByEmail(context.Background(), opts.email)
-}
-
-// mapLinkOIDCIdentityLookupError mirrors mapResetPasswordError's account-
-// lookup arms: the id and email cases point the operator at different next
-// steps because they were addressed differently.
-func mapLinkOIDCIdentityLookupError(err error, opts linkOIDCIdentityOptions, normalizedEmail string) error {
-	var ambiguous *services.AmbiguousEmailError
-	if errors.As(err, &ambiguous) {
-		return fmt.Errorf(
-			"email %s matches %d accounts (ids %s); retry with --id (see ovumcy users list)",
-			ambiguous.Email, len(ambiguous.IDs), formatUserIDs(ambiguous.IDs),
-		)
-	}
-
-	switch {
-	case errors.Is(err, services.ErrOperatorUserNotFound):
-		if opts.userID != 0 {
-			return fmt.Errorf("no account carries id %d (see ovumcy users list)", opts.userID)
-		}
-		return fmt.Errorf("user %s not found", normalizedEmail)
-	case errors.Is(err, services.ErrOperatorUserIDRequired):
-		return errors.New("an account id is required (see ovumcy users list)")
-	default:
-		return fmt.Errorf("look up account: %w", err)
-	}
 }
 
 // mapLinkOIDCIdentityLinkError translates OIDCLoginService.ConfirmAndLinkIdentity's

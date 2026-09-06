@@ -24,7 +24,7 @@ func TestRunUsersCommandListPrintsMinimalUserAuditTable(t *testing.T) {
 	createCLIUsersUser(t, databasePath, "second-owner@example.com", "", models.RoleOwner, false, time.Date(2026, time.March, 2, 11, 0, 0, 0, time.UTC))
 
 	var output bytes.Buffer
-	err := runUsersCommand(db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath}, []string{"list"}, strings.NewReader(""), &output)
+	err := runUsersCommand(db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath}, []string{"list"}, "", strings.NewReader(""), &output)
 	if err != nil {
 		t.Fatalf("runUsersCommand(list) returned error: %v", err)
 	}
@@ -60,6 +60,7 @@ func TestRunUsersCommandDeleteRequiresExplicitConfirmation(t *testing.T) {
 	err := runUsersCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"delete", "owner@example.com"},
+		"",
 		strings.NewReader("no\n"),
 		&output,
 	)
@@ -78,12 +79,13 @@ func TestRunUsersCommandDeleteRemovesAccountAndRelatedDataAfterExplicitConfirmat
 	databasePath := createCLIUsersDatabase(t)
 	user := createCLIUsersUser(t, databasePath, "owner@example.com", "Owner", models.RoleOwner, true, time.Now().UTC())
 	seedCLIUsersHealthData(t, databasePath, user.ID)
-	armOperatorFence(t, databasePath)
+	fencePath := armOperatorFence(t, databasePath)
 
 	var output bytes.Buffer
 	err := runUsersCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"delete", "owner@example.com"},
+		fencePath,
 		strings.NewReader("DELETE\n"),
 		&output,
 	)
@@ -100,12 +102,13 @@ func TestRunUsersCommandDeleteRemovesAccountAndRelatedDataAfterExplicitConfirmat
 func TestRunUsersCommandDeleteRemovesAccountWithYesFlag(t *testing.T) {
 	databasePath := createCLIUsersDatabase(t)
 	createCLIUsersUser(t, databasePath, "owner@example.com", "Owner", models.RoleOwner, true, time.Now().UTC())
-	armOperatorFence(t, databasePath)
+	fencePath := armOperatorFence(t, databasePath)
 
 	var output bytes.Buffer
 	err := runUsersCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"delete", "owner@example.com", "--yes"},
+		fencePath,
 		strings.NewReader(""),
 		&output,
 	)
@@ -277,6 +280,7 @@ func TestRunUsersCommandCreateProvisionsOwnerFromStdin(t *testing.T) {
 	err := runUsersCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"create", "Owner@Example.com"},
+		"",
 		strings.NewReader("StrongPass1\n"),
 		&output,
 	)
@@ -316,6 +320,7 @@ func TestRunUsersCommandCreatePrintsRecoveryCodeOnOptIn(t *testing.T) {
 	err := runUsersCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"create", "owner@example.com", "--show-recovery-code"},
+		"",
 		strings.NewReader("StrongPass1\n"),
 		&output,
 	)
@@ -339,6 +344,7 @@ func TestRunUsersCommandCreateAddsSecondHouseholdOwner(t *testing.T) {
 	err := runUsersCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"create", "daughter@example.com"},
+		"",
 		strings.NewReader("StrongPass1\n"),
 		&output,
 	)
@@ -365,6 +371,7 @@ func TestRunUsersCommandCreateRejectsDuplicateEmail(t *testing.T) {
 	err := runUsersCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"create", "owner@example.com"},
+		"",
 		strings.NewReader("StrongPass1\n"),
 		&output,
 	)
@@ -388,6 +395,7 @@ func TestRunUsersCommandCreateSkipIfExistsIsIdempotent(t *testing.T) {
 	err := runUsersCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"create", "mom@example.com", "--skip-if-exists"},
+		"",
 		strings.NewReader("StrongPass1\n"),
 		&output,
 	)
@@ -413,6 +421,7 @@ func TestRunUsersCommandCreateRejectsWeakPassword(t *testing.T) {
 	err := runUsersCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"create", "owner@example.com"},
+		"",
 		strings.NewReader("weak\n"),
 		&output,
 	)
@@ -486,6 +495,7 @@ func TestRunUsersCommandSetEmailRestoresTheAccountsTheBootRepairLeavesLockedOut(
 	if err := runUsersCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"delete", collidedStored},
+		"",
 		strings.NewReader(""),
 		&bytes.Buffer{},
 	); err == nil || !strings.Contains(err.Error(), "invalid") {
@@ -505,6 +515,7 @@ func TestRunUsersCommandSetEmailRestoresTheAccountsTheBootRepairLeavesLockedOut(
 		if err := runUsersCommand(
 			db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 			[]string{"set-email", "--id", strconv.FormatUint(uint64(repair.userID), 10), repair.newEmail},
+			"",
 			strings.NewReader(""),
 			&output,
 		); err != nil {
@@ -556,6 +567,7 @@ func TestRunUsersCommandSetEmailReRunWithTheSameAddressRevokesNoSession(t *testi
 	if err := runUsersCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"set-email", "--id", idArgument, "second@example.com"},
+		"",
 		strings.NewReader(""),
 		&first,
 	); err != nil {
@@ -572,6 +584,7 @@ func TestRunUsersCommandSetEmailReRunWithTheSameAddressRevokesNoSession(t *testi
 	if err := runUsersCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"set-email", "--id", idArgument, "second@example.com"},
+		"",
 		strings.NewReader(""),
 		&second,
 	); err != nil {
@@ -596,6 +609,7 @@ func TestRunUsersCommandSetEmailRefusesAnAddressAnotherAccountAnswersTo(t *testi
 	err := runUsersCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"set-email", "--id", strconv.FormatUint(uint64(collided.ID), 10), "dup@example.com"},
+		"",
 		strings.NewReader(""),
 		&bytes.Buffer{},
 	)
@@ -622,6 +636,7 @@ func TestRunUsersCommandSetEmailRejectsADecoratedAddressAndAnUnknownID(t *testin
 	err := runUsersCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"set-email", "--id", strconv.FormatUint(uint64(user.ID), 10), "jane doe <jane@example.com>"},
+		"",
 		strings.NewReader(""),
 		&bytes.Buffer{},
 	)
@@ -635,10 +650,13 @@ func TestRunUsersCommandSetEmailRejectsADecoratedAddressAndAnUnknownID(t *testin
 	err = runUsersCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"set-email", "--id", "4242", "someone@example.com"},
+		"",
 		strings.NewReader(""),
 		&bytes.Buffer{},
 	)
-	if err == nil || !strings.Contains(err.Error(), "no account carries this id") {
+	// The shared wording, naming the id the operator typed: `set-email` used
+	// to answer with a third phrasing of its own for the same failure.
+	if err == nil || !strings.Contains(err.Error(), "no account carries id 4242") {
 		t.Fatalf("expected an unknown id to be refused, got %v", err)
 	}
 }
@@ -650,12 +668,13 @@ func TestRunUsersCommandDeleteByIDConfirmsAgainstTheStoredIdentity(t *testing.T)
 	seedCLIUsersHealthData(t, databasePath, winner.ID)
 	seedCLIUsersHealthData(t, databasePath, collided.ID)
 	setCLIUsersStoredEmail(t, databasePath, collided.ID, "second account <dup@example.com>")
-	armOperatorFence(t, databasePath)
+	fencePath := armOperatorFence(t, databasePath)
 
 	var output bytes.Buffer
 	if err := runUsersCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"delete", "--id", strconv.FormatUint(uint64(collided.ID), 10)},
+		fencePath,
 		strings.NewReader("DELETE\n"),
 		&output,
 	); err != nil {
@@ -727,6 +746,6 @@ func authenticateCLIUser(t *testing.T, databasePath string, email string, passwo
 	if normalized == "" {
 		t.Fatalf("test fixture email %q is not a valid sign-in input", email)
 	}
-	repositories, _, _ := buildRepositories(database)
+	repositories, _ := buildRepositories(database, "")
 	return services.NewAuthService(repositories.Users).AuthenticateCredentials(context.Background(), normalized, password)
 }
