@@ -57,7 +57,6 @@ func TestCalendarFeedGenerateRevealsURLOnceAndNeverAgain(t *testing.T) {
 	ctx := newSettingsSecurityTestContext(t, "feed-generate-once@example.com")
 
 	gen := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/calendar-feed", url.Values{}, nil)
-	defer func() { _ = gen.Body.Close() }()
 	if gen.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected 303 redirect on feed generate, got %d", gen.StatusCode)
 	}
@@ -105,14 +104,10 @@ func TestCalendarFeedGenerateRevealsURLOnceAndNeverAgain(t *testing.T) {
 	}
 	// Extract the token path and prove it actually serves the feed.
 	//
-	// This does NOT go through mustServeCalendarFeed: ctx.app is built with
-	// enableCSRF: true (newSettingsSecurityTestContext), matching production's
-	// unconditional CSRF mount (cmd/ovumcy/server.go), and that middleware sets
-	// its own ovumcy_csrf cookie on every response with no incoming one —
-	// including this GET. mustServeCalendarFeed's no-Set-Cookie assertion is
-	// about the FEED's own behavior and only holds on newOnboardingTestApp's
-	// CSRF-disabled default; asserting it here would fail on a cookie the feed
-	// handler itself never sets.
+	// This does NOT go through mustServeCalendarFeed: this package's test app
+	// mounts csrf.New through its own testCSRFMiddlewareConfig, which carries
+	// no calendar-feed exemption, so it sets ovumcy_csrf on this GET; whether
+	// the route itself sets a cookie is not this test's subject.
 	token := extractFeedTokenFromURL(t, revealedURL)
 	feedResp := mustAppResponse(t, ctx.app, httptest.NewRequest(http.MethodGet, calendarFeedURL(token), nil))
 	if feedResp.StatusCode != http.StatusOK {
@@ -186,7 +181,6 @@ func TestCalendarFeedRevealRefusesAReplayedCookieAndRearmsOnRotate(t *testing.T)
 	ctx := newSettingsSecurityTestContext(t, "feed-reveal-replay@example.com")
 
 	generated := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/calendar-feed", url.Values{}, nil)
-	defer func() { _ = generated.Body.Close() }()
 	assertStatusCode(t, generated, http.StatusSeeOther)
 	sealedReveal := responseCookie(generated.Cookies(), calendarFeedRevealCookieName)
 
@@ -194,7 +188,6 @@ func TestCalendarFeedRevealRefusesAReplayedCookieAndRearmsOnRotate(t *testing.T)
 	assertCalendarFeedRevealRefused(t, ctx, sealedReveal, firstToken)
 
 	rotated := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/calendar-feed/rotate", url.Values{}, nil)
-	defer func() { _ = rotated.Body.Close() }()
 	assertStatusCode(t, rotated, http.StatusSeeOther)
 	rotatedReveal := responseCookie(rotated.Cookies(), calendarFeedRevealCookieName)
 
@@ -266,7 +259,6 @@ func TestCalendarFeedGenerateJSONReturnsRevealPathNotURL(t *testing.T) {
 			resp := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, tc.path, url.Values{}, map[string]string{
 				"Accept": "application/json",
 			})
-			defer func() { _ = resp.Body.Close() }()
 			assertStatusCode(t, resp, http.StatusOK)
 
 			body := mustReadBodyString(t, resp.Body)
@@ -310,7 +302,6 @@ func TestCalendarFeedRotateInvalidatesOldToken(t *testing.T) {
 	}
 
 	rot := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/calendar-feed/rotate", url.Values{}, nil)
-	defer func() { _ = rot.Body.Close() }()
 	if rot.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected 303 on rotate, got %d", rot.StatusCode)
 	}
@@ -322,7 +313,6 @@ func TestCalendarFeedRotateInvalidatesOldToken(t *testing.T) {
 	}
 	// ...and the OLD token now 404s (its selector no longer resolves).
 	post := mustAppResponse(t, ctx.app, httptest.NewRequest(http.MethodGet, calendarFeedURL(oldToken), nil))
-	defer func() { _ = post.Body.Close() }()
 	if post.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected the old token to 404 after rotate, got %d", post.StatusCode)
 	}
@@ -342,7 +332,6 @@ func TestCalendarFeedRevokeClearsColumns(t *testing.T) {
 	revoke := settingsFormRequestWithCSRF(t, ctx, http.MethodDelete, "/api/v1/users/current/calendar-feed", url.Values{}, map[string]string{
 		"Accept": "application/json",
 	})
-	defer func() { _ = revoke.Body.Close() }()
 	assertStatusCode(t, revoke, http.StatusOK)
 
 	got := reloadUserForCalendarFeedAPI(t, ctx, ctx.user.ID)
@@ -351,7 +340,6 @@ func TestCalendarFeedRevokeClearsColumns(t *testing.T) {
 			got.CalendarFeedSelector, got.CalendarFeedVerifierHash, got.CalendarFeedVerifierMAC)
 	}
 	feedResp := mustAppResponse(t, ctx.app, httptest.NewRequest(http.MethodGet, calendarFeedURL(token), nil))
-	defer func() { _ = feedResp.Body.Close() }()
 	if feedResp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected the revoked feed URL to 404, got %d", feedResp.StatusCode)
 	}
@@ -365,7 +353,6 @@ func TestCalendarFeedRevokeBrowserRedirectsWithFlash(t *testing.T) {
 	armCalendarFeedForUser(t, ctx.database, ctx.user.ID)
 
 	resp := settingsFormRequestWithCSRF(t, ctx, http.MethodDelete, "/api/v1/users/current/calendar-feed", url.Values{}, nil)
-	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected 303 on browser revoke, got %d", resp.StatusCode)
 	}
@@ -390,7 +377,6 @@ func TestCalendarFeedRevokeHTMXReturnsSuccessMarkup(t *testing.T) {
 	resp := settingsFormRequestWithCSRF(t, ctx, http.MethodDelete, "/api/v1/users/current/calendar-feed", url.Values{}, map[string]string{
 		"HX-Request": "true",
 	})
-	defer func() { _ = resp.Body.Close() }()
 	assertStatusCode(t, resp, http.StatusOK)
 	body := mustReadBodyString(t, resp.Body)
 	if strings.TrimSpace(body) == "" {
@@ -407,7 +393,6 @@ func TestCalendarFeedRevealCrossOwnerCookieIgnored(t *testing.T) {
 
 	// Owner A generates and captures A's sealed reveal cookie.
 	gen := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/calendar-feed", url.Values{}, nil)
-	_ = gen.Body.Close()
 	revealCookieA := responseCookie(gen.Cookies(), calendarFeedRevealCookieName)
 	if revealCookieA == nil {
 		t.Fatal("expected owner A reveal cookie")
@@ -450,7 +435,6 @@ func TestCalendarFeedRevealRefusesUnattributedCookie(t *testing.T) {
 
 	// Positive anchor: owner A generates and sees the URL on the reveal page.
 	gen := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/calendar-feed", url.Values{}, nil)
-	_ = gen.Body.Close()
 	revealResponse, revealBody := followCalendarFeedReveal(t, ctx, responseCookie(gen.Cookies(), calendarFeedRevealCookieName))
 	defer func() { _ = revealResponse.Body.Close() }()
 	if !strings.Contains(revealBody, "/calendar/feed/") {
@@ -586,10 +570,10 @@ func TestCalendarFeedRevokeScopedToOwner(t *testing.T) {
 	// mounts CSRF, which sets its own cookie on this GET (see the comment in
 	// TestCalendarFeedGenerateRevealsURLOnceAndNeverAgain above).
 	for label, token := range map[string]string{"A": tokenA, "B": tokenB} {
-		before := mustAppResponse(t, ctx.app, httptest.NewRequest(http.MethodGet, calendarFeedURL(token), nil))
-		if before.StatusCode != http.StatusOK {
-			t.Fatalf("expected owner %s's feed to serve before the revoke, got %d", label, before.StatusCode)
-		}
+		t.Run("owner "+label, func(t *testing.T) {
+			before := mustAppResponse(t, ctx.app, httptest.NewRequest(http.MethodGet, calendarFeedURL(token), nil))
+			assertStatusCode(t, before, http.StatusOK)
+		})
 	}
 
 	// Owner B revokes, on owner B's own session.
@@ -615,7 +599,6 @@ func TestCalendarFeedRevokeScopedToOwner(t *testing.T) {
 			ownerBAfter.CalendarFeedSelector, ownerBAfter.CalendarFeedVerifierHash, ownerBAfter.CalendarFeedVerifierMAC)
 	}
 	feedB := mustAppResponse(t, ctx.app, httptest.NewRequest(http.MethodGet, calendarFeedURL(tokenB), nil))
-	defer func() { _ = feedB.Body.Close() }()
 	if feedB.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected owner B's revoked feed URL to 404, got %d", feedB.StatusCode)
 	}

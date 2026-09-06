@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -76,24 +75,22 @@ func calendarFeedURL(token string) string {
 // precondition its callers below rely on: 200, no Set-Cookie, and a calendar
 // body. stage names which precondition is being proven, so a failure reads as
 // "precondition lost" against the right moment rather than as whatever
-// assertion the caller makes next. The body is read to check the precondition
-// and then restored onto the response, so a caller that wants to inspect it
-// further (its own headers or its own body markers) still can.
-func mustServeCalendarFeed(t *testing.T, app *fiber.App, token string, stage string) *http.Response {
+// assertion the caller makes next. It returns the response UNTOUCHED (so
+// mustAppResponse's own t.Cleanup still closes the real body it read) plus the
+// body already drained to check the precondition, for a caller that wants to
+// inspect it further (its own headers or its own body markers).
+func mustServeCalendarFeed(t *testing.T, app *fiber.App, token string, stage string) (*http.Response, string) {
 	t.Helper()
 	response := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, calendarFeedURL(token), nil))
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("precondition lost: the armed feed must serve %s, got %d", stage, response.StatusCode)
 	}
-	if len(response.Cookies()) != 0 {
-		t.Fatalf("precondition lost: the armed feed must not set a cookie %s, got %q", stage, response.Header.Values("Set-Cookie"))
-	}
+	assertNoSetCookie(t, response, "precondition lost: the armed feed must not set a cookie "+stage)
 	body := mustReadBodyString(t, response.Body)
 	if !strings.Contains(body, "BEGIN:VCALENDAR") {
 		t.Fatalf("precondition lost: expected a calendar body from the armed feed %s, got:\n%s", stage, body)
 	}
-	response.Body = io.NopCloser(strings.NewReader(body))
-	return response
+	return response, body
 }
 
 // mustSplitFeedToken splits a token that was just minted for this test,
@@ -118,7 +115,7 @@ func TestCalendarFeedServesOwnersICSWithHardenedHeaders(t *testing.T) {
 	user := createOnboardingTestUser(t, database, "feed-ok@example.com", "StrongPass1", true)
 	token := armCalendarFeedForUser(t, database, user.ID)
 
-	response := mustServeCalendarFeed(t, app, token, "for the happy-path contract")
+	response, body := mustServeCalendarFeed(t, app, token, "for the happy-path contract")
 
 	if ct := response.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/calendar") {
 		t.Fatalf("expected text/calendar content type, got %q", ct)
@@ -130,7 +127,6 @@ func TestCalendarFeedServesOwnersICSWithHardenedHeaders(t *testing.T) {
 		t.Fatalf("expected X-Robots-Tag noindex, got %q", robots)
 	}
 
-	body := mustReadBodyString(t, response.Body)
 	for _, marker := range []string{"BEGIN:VCALENDAR", "BEGIN:VEVENT", "SUMMARY:", "DESCRIPTION:"} {
 		if !strings.Contains(body, marker) {
 			t.Fatalf("expected .ics marker %q, got:\n%s", marker, body)
@@ -217,13 +213,10 @@ const (
 // (calendar_feed_service_test.go) proves instead, from inside the service, via
 // the selector-lookup and timing-equalization call counts.
 //
-// The identity is asserted BETWEEN the cases, not case by case against a marker
-// of its own: four bodies that each merely lack "BEGIN:VCALENDAR" can still
-// differ from one another in every remaining byte, which is exactly the oracle
-// this route must not be. bogus, the case that sets the reference, is also
-// pinned against the known bare-404 shape at that same moment — otherwise a
-// bogus that is itself wrong could become the reference silently, and a later,
-// CORRECT case would be reported as the one that "diverges".
+// Each case is compared directly against want, the one fixed bare-404 model
+// built from the constants above: all four responses equal that same model,
+// which is exactly what it means for the response to tell an enumerator
+// nothing about which case produced it.
 func TestCalendarFeedReturnsBare404WithoutOracleForBadTokens(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "feed-404@example.com", "StrongPass1", true)
@@ -243,50 +236,29 @@ func TestCalendarFeedReturnsBare404WithoutOracleForBadTokens(t *testing.T) {
 	malformed := "SHORT"
 	wrongVerifier := selector + strings.Repeat("2", len(verifier))
 
-	// want is the fixed no-oracle shape every case below must answer. Defined
-	// before compare so the very first case can be checked against it
-	// directly, not just against later cases.
+	// want is the fixed no-oracle shape every case below must answer.
 	want := feedResponseFingerprint{
 		status:  http.StatusNotFound,
 		headers: calendarFeedBare404Headers,
 		body:    calendarFeedBare404Body,
 	}
 
-	// reference is set by the very first call to compare in this function
-	// (bogus, below); revokedValidToken is called separately, after
-	// wrongVerifier, so it can never become the reference.
-	var reference feedResponseFingerprint
-	var referenceName string
-	var haveReference bool
 	compare := func(name, token string) {
 		t.Helper()
-		request := httptest.NewRequest(http.MethodGet, calendarFeedURL(token), nil)
-		response := mustAppResponse(t, app, request)
-		if len(response.Cookies()) != 0 {
-			t.Fatalf("%s: 404 must not set a cookie, got %q", name, response.Header.Values("Set-Cookie"))
-		}
-		got := fingerprintFeedResponse(t, response)
-		if !haveReference {
-			// Pin the reference against the known shape the moment it is set:
-			// otherwise a broken bogus could become the reference silently,
-			// and a later, correct case would be blamed for "diverging".
+		t.Run(name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, calendarFeedURL(token), nil)
+			response := mustAppResponse(t, app, request)
+			assertNoSetCookie(t, response, name+": 404 must not set a cookie")
+			got := fingerprintFeedResponse(t, response)
 			if got != want {
 				t.Fatalf("%s answered %#v; expected the bare no-oracle 404 %#v", name, got, want)
 			}
-			reference, referenceName, haveReference = got, name, true
-			return
-		}
-		if got != reference {
-			t.Fatalf("%s answers differently from %s, which is an enumeration oracle:\n %s: %#v\n %s: %#v",
-				name, referenceName, referenceName, reference, name, got)
-		}
+		})
 	}
 	compare("bogus", bogus)
 	compare("malformed", malformed)
-	// bogus and malformed mutate nothing, but that is an argument, not a
-	// check: re-prove the row is armed right before the request that actually
-	// depends on it, instead of resting on the positive control two requests
-	// back.
+	// Re-prove liveness right before wrongVerifier, per the docstring above —
+	// bogus/malformed alone do not cover it.
 	mustServeCalendarFeed(t, app, validToken, "immediately before wrongVerifier")
 	compare("wrongVerifier", wrongVerifier)
 
@@ -508,13 +480,8 @@ func TestCalendarFeedReturns500OnInfrastructureError(t *testing.T) {
 	}})
 	app.Get(calendarFeedRoutePath, handler.ServeCalendarFeed)
 
-	// The length must be exactly 48 — calendarFeedSelectorLength (16) +
-	// calendarFeedVerifierLength (32) in internal/services, the only width
-	// SplitCalendarFeedToken accepts. Anything else is rejected before any
-	// lookup, so the stubbed failing store below would never be reached and
-	// this would 404 instead of exercising the 500 path. The actual
-	// characters ('A' repeated) are what's irrelevant — the lookup is stubbed
-	// to fail regardless of what it is asked to resolve.
+	// 48 = calendarFeedSelectorLength (16) + calendarFeedVerifierLength (32) in
+	// internal/services; any other length 404s before the stubbed lookup runs.
 	token := strings.Repeat("A", 48)
 	response := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, calendarFeedURL(token), nil))
 	if response.StatusCode != http.StatusInternalServerError {
@@ -564,9 +531,9 @@ func unfoldICS(body string) string {
 }
 
 // TestCalendarFeedRestoredBackupStopsServingARevokedURL is the HTTP tail of the
-// restore fence: the finding said a restored backup makes a revoked subscribe
-// URL serve the calendar again, and this is that URL, at the real route, after
-// the boot pass a restore now runs through.
+// restore fence: a restored backup makes a revoked subscribe URL serve the
+// calendar again, and this is that URL, at the real route, after the boot
+// pass a restore now runs through.
 //
 // The restore is staged from the fence's own side, which is the honest side to
 // stage it from: the fence file is the half a restore does NOT roll back, so

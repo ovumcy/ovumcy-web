@@ -402,26 +402,28 @@ func TestResolveFeedIdenticalNotFoundForEveryBadToken(t *testing.T) {
 		"unknownSelector": {token: unknownSelector, wantLookups: 1, wantEqualize: 1},
 		"wrongVerifier":   {token: wrongVerifier, wantLookups: 1, wantEqualize: 0},
 	} {
-		lookupsBefore := users.calls
-		equalizeCalls = 0
+		t.Run(name, func(t *testing.T) {
+			lookupsBefore := users.calls
+			equalizeCalls = 0
 
-		body, ok, err := svc.ResolveFeed(context.Background(), tc.token, now, time.UTC)
-		if err != nil {
-			t.Fatalf("%s: expected nil error (no oracle), got %v", name, err)
-		}
-		if ok {
-			t.Fatalf("%s: expected ok=false", name)
-		}
-		if body != nil {
-			t.Fatalf("%s: expected no body, got %d bytes", name, len(body))
-		}
-		if got := users.calls - lookupsBefore; got != tc.wantLookups {
-			t.Fatalf("%s: expected %d selector lookup(s), got %d", name, tc.wantLookups, got)
-		}
-		if equalizeCalls != tc.wantEqualize {
-			t.Fatalf("%s: expected %d timing-equalization call(s) (1 = selector miss, 0 = row found and refused by the real verifier compare), got %d",
-				name, tc.wantEqualize, equalizeCalls)
-		}
+			body, ok, err := svc.ResolveFeed(context.Background(), tc.token, now, time.UTC)
+			if err != nil {
+				t.Fatalf("expected nil error (no oracle), got %v", err)
+			}
+			if ok {
+				t.Fatalf("expected ok=false")
+			}
+			if body != nil {
+				t.Fatalf("expected no body, got %d bytes", len(body))
+			}
+			if got := users.calls - lookupsBefore; got != tc.wantLookups {
+				t.Fatalf("expected %d selector lookup(s), got %d", tc.wantLookups, got)
+			}
+			if equalizeCalls != tc.wantEqualize {
+				t.Fatalf("expected %d timing-equalization call(s) (1 = selector miss, 0 = row found and refused by the real verifier compare), got %d",
+					tc.wantEqualize, equalizeCalls)
+			}
+		})
 	}
 }
 
