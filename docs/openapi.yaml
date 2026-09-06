@@ -25,6 +25,13 @@ info:
     header the server returns HTML or `303` redirects suitable for browser
     navigation, and the corresponding response is not part of this contract.
 
+    Methods — every operation served on `GET` is also served on `HEAD` by the
+    same handler chain: same status, same headers, no body. Those mirrors are
+    not published as separate operations; read the `GET` operation for what a
+    `HEAD` request answers. `HEAD /api/v1/days/{date}` is the one `HEAD` with
+    semantics of its own — it reports whether the day holds any data — and is
+    documented per path below.
+
     Authentication & authorization — most endpoints require the sealed
     `ovumcy_auth` session cookie issued by `POST /api/v1/sessions`. Endpoints
     marked **owner only** additionally require the caller's `role` to be
