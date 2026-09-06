@@ -90,13 +90,10 @@ func confirmOperatorFeedRevocation(ctx context.Context, fencePath string, fence 
 			// write wraps ErrCalendarFeedFenceHalfAdvanced, so whatever reaches
 			// here — in practice only a token that could not be minted — left
 			// both halves untouched.
-			return fmt.Errorf("%w. Nothing was changed", err)
+			return fmt.Errorf("%w. Nothing was changed", err) // codecov:ignore -- reached only through the token-mint failure AdvanceConfirmed itself marks unreachable
 		}
 	}
 
-	if errOutput == nil {
-		errOutput = os.Stderr
-	}
 	_, _ = fmt.Fprintf(errOutput, "calendar-feed restore fence: continuity confirmed at %s; this removal is recorded outside the database\n", fencePath)
 	return nil
 }

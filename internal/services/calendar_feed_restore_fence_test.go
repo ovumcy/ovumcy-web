@@ -899,3 +899,15 @@ func equalStrings(got, want []string) bool {
 	}
 	return true
 }
+
+// TestCalendarFeedFenceContinuityErrorNamesWhichHalfHeldAMarker pins the text
+// the operator CLI falls back to when it cannot classify the shape itself:
+// which half held a marker is what tells a never-booted fence from a restored
+// one, so the message must carry both flags.
+func TestCalendarFeedFenceContinuityErrorNamesWhichHalfHeldAMarker(t *testing.T) {
+	got := (&CalendarFeedFenceContinuityError{AnchorFound: true, StoredFound: false}).Error()
+	want := "calendar feed restore fence: the file and the database marker are not a known-agreeing pair (file present=true, database present=false)"
+	if got != want {
+		t.Fatalf("continuity error text:\n got %q\nwant %q", got, want)
+	}
+}
