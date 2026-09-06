@@ -1083,9 +1083,7 @@ func TestLoadRuntimeConfigResolvesHSTSSwitch(t *testing.T) {
 	for _, tt := range tests {
 
 		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("SECRET_KEY", "0123456789abcdef0123456789abcdef")
-			t.Setenv("DB_DRIVER", "sqlite")
-			t.Setenv("DB_PATH", "data/ovumcy.db")
+			minimalRuntimeEnv(t)
 			t.Setenv("COOKIE_SECURE", tt.cookieSecure)
 			t.Setenv("HSTS_ENABLED", tt.hstsEnabled)
 
@@ -1110,9 +1108,7 @@ func TestLoadRuntimeConfigResolvesHSTSSwitch(t *testing.T) {
 // stays free while a silent revert to the shared budget fails.
 func TestLoadRuntimeConfigGivesCalendarFeedItsOwnBudget(t *testing.T) {
 	t.Run("defaults are independent and the feed is the tighter one", func(t *testing.T) {
-		t.Setenv("SECRET_KEY", "0123456789abcdef0123456789abcdef")
-		t.Setenv("DB_DRIVER", "sqlite")
-		t.Setenv("DB_PATH", "data/ovumcy.db")
+		minimalRuntimeEnv(t)
 
 		config, err := loadRuntimeConfig(time.UTC)
 		if err != nil {
