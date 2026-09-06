@@ -251,6 +251,28 @@ var ErrCalendarFeedFenceMarkerUnavailable = errors.New("calendar feed restore fe
 // wraps the storage error.
 var ErrCalendarFeedFenceHalfAdvanced = errors.New("calendar feed restore fence: the file advanced but the database marker did not")
 
+// CalendarFeedFenceStepError is every AdvanceConfirmed failure that has an
+// underlying cause: the Sentinel names WHICH step refused and what it left
+// behind, the Cause is the failure that step hit. Both are reachable through
+// errors.Is/errors.As, so a caller switching on the sentinels above keeps
+// working unchanged while one that wants to SHOW the cause — the operator CLI,
+// whose refusal quotes it — asks for this type by name instead of picking a
+// member out of an Unwrap() []error slice by position.
+type CalendarFeedFenceStepError struct {
+	Sentinel error
+	Cause    error
+}
+
+func (err *CalendarFeedFenceStepError) Error() string {
+	return err.Sentinel.Error() + ": " + err.Cause.Error()
+}
+
+// Unwrap returns both members, which is what makes errors.Is match the
+// sentinel and errors.As reach anything typed inside the cause.
+func (err *CalendarFeedFenceStepError) Unwrap() []error {
+	return []error{err.Sentinel, err.Cause}
+}
+
 // CalendarFeedFenceContinuityError is returned by AdvanceConfirmed when the
 // anchor was reachable but the two halves are not the one pair AdvanceConfirmed
 // is willing to move forward from: both already holding the SAME token.
@@ -301,12 +323,12 @@ func (fence *CalendarFeedRestoreFence) AdvanceConfirmed(ctx context.Context) err
 
 	anchored, anchorFound, err := fence.anchor.Read()
 	if err != nil {
-		return fmt.Errorf("%w: %w", ErrCalendarFeedFenceUnreachable, err)
+		return &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceUnreachable, Cause: err}
 	}
 
 	stored, storedFound, err := fence.appState.Get(ctx, models.AppStateKeyCalendarFeedRestoreFence)
 	if err != nil {
-		return fmt.Errorf("%w: %w", ErrCalendarFeedFenceMarkerUnavailable, err)
+		return &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceMarkerUnavailable, Cause: err}
 	}
 
 	if !continuityHolds(anchorFound, storedFound, anchored, stored) {
@@ -318,10 +340,10 @@ func (fence *CalendarFeedRestoreFence) AdvanceConfirmed(ctx context.Context) err
 		return err // codecov:ignore -- crypto/rand failure; unreachable without an OS-level entropy fault
 	}
 	if err := fence.anchor.Write(token); err != nil {
-		return fmt.Errorf("%w: %w", ErrCalendarFeedFenceUnreachable, err)
+		return &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceUnreachable, Cause: err}
 	}
 	if err := fence.appState.Set(ctx, models.AppStateKeyCalendarFeedRestoreFence, token); err != nil {
-		return fmt.Errorf("%w: %w", ErrCalendarFeedFenceHalfAdvanced, err)
+		return &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceHalfAdvanced, Cause: err}
 	}
 	return nil
 }
