@@ -78,7 +78,7 @@ func statsOverviewStates() []statsOverviewState {
 			seed: func(t *testing.T, database *gorm.DB, user models.User, today time.Time) {
 				seedStatsOverviewLog(t, database, models.DailyLog{
 					UserID:        user.ID,
-					Date:          today.AddDate(0, 0, -2),
+					Date:          services.AddCalendarDays(today, -2, time.UTC),
 					PregnancyTest: models.PregnancyTestPositive,
 				})
 			},
@@ -109,7 +109,7 @@ func statsOverviewStates() []statsOverviewState {
 			history: []int{90, 62, 45},
 			seed: func(t *testing.T, database *gorm.DB, user models.User, today time.Time) {
 				updateStatsOverviewUser(t, database, user, map[string]any{
-					"last_period_start": today.AddDate(0, 0, -45),
+					"last_period_start": services.AddCalendarDays(today, -45, time.UTC),
 				})
 			},
 			wantReasons:     []string{"cycle_overdue"},
@@ -325,8 +325,8 @@ func TestStatsOverviewPublishesTheConfirmedOvulationDayNotTheModelsProjection(t 
 
 	_, payload := fetchStatsOverview(t, app, authCookie)
 
-	wantConfirmed := today.AddDate(0, 0, -4).Format(statsOverviewDateLayout)
-	wantModel := today.AddDate(0, 0, -7).Format(statsOverviewDateLayout)
+	wantConfirmed := services.AddCalendarDays(today, -4, time.UTC).Format(statsOverviewDateLayout)
+	wantModel := services.AddCalendarDays(today, -7, time.UTC).Format(statsOverviewDateLayout)
 
 	if payload.OvulationDate == nil {
 		t.Fatal("ovulation_date is null for an owner with a published projection")
@@ -387,7 +387,7 @@ func TestStatsOverviewConfirmedOvulationIsIndependentOfOvulationExact(t *testing
 
 	_, payload := fetchStatsOverview(t, app, authCookie)
 
-	wantConfirmed := today.AddDate(0, 0, -4).Format(statsOverviewDateLayout)
+	wantConfirmed := services.AddCalendarDays(today, -4, time.UTC).Format(statsOverviewDateLayout)
 
 	if payload.OvulationDate == nil || *payload.OvulationDate != wantConfirmed {
 		t.Fatalf("ovulation_date = %v, want the BBT-confirmed %s", payload.OvulationDate, wantConfirmed)
@@ -547,7 +547,7 @@ func newStatsOverviewOwner(t *testing.T, app *fiber.App, database *gorm.DB, emai
 	updateStatsOverviewUser(t, database, user, map[string]any{
 		"cycle_length":      28,
 		"period_length":     5,
-		"last_period_start": today.AddDate(0, 0, -6),
+		"last_period_start": services.AddCalendarDays(today, -6, time.UTC),
 	})
 	return user, authCookie, today
 }

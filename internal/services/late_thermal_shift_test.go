@@ -29,15 +29,19 @@ func lateThermalShiftFixture(t *testing.T) (*models.User, []models.DailyLog, Cyc
 // a shift confirmed on the projected day itself and one confirmed after it.
 func TestConfirmedOvulationSurvivesTheProjectedNextPeriodStart(t *testing.T) {
 	for _, testCase := range []struct {
-		name      string
-		shiftDays int
-		want      string
+		name         string
+		shiftDays    int
+		wantCycleDay int
+		want         string
 	}{
-		{name: "confirmed on the projected start itself", shiftDays: 18, want: "2026-03-29"},
-		{name: "confirmed after the projected start", shiftDays: 19, want: "2026-03-30"},
+		{name: "confirmed on the projected start itself", shiftDays: 18, wantCycleDay: 32, want: "2026-03-29"},
+		{name: "confirmed after the projected start", shiftDays: 19, wantCycleDay: 33, want: "2026-03-30"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			user, logs, stats, today := thermalShiftFixture(t, testCase.shiftDays)
+			if stats.CurrentCycleDay != testCase.wantCycleDay {
+				t.Fatalf("fixture anchor: cycle day = %d, want %d — a cycle running late and still short of DashboardCycleOverdue's reference 28 + 7", stats.CurrentCycleDay, testCase.wantCycleDay)
+			}
 
 			confirmed, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, today, time.UTC)
 			if !ok {
@@ -138,7 +142,7 @@ func TestLateShiftStaysWithheldWhenTheCycleIsOverdue(t *testing.T) {
 	today := AddCalendarDays(fixtureToday, 5, time.UTC)
 	stats = atToday(stats, today)
 	if stats.CurrentCycleDay != 37 {
-		t.Fatalf("fixture anchor: cycle day = %d, want 37 — past the 28 + 7 the reference allows", stats.CurrentCycleDay)
+		t.Fatalf("fixture anchor: cycle day = %d, want 37 — past DashboardCycleOverdue's reference 28 + 7", stats.CurrentCycleDay)
 	}
 
 	if _, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, today, time.UTC); ok {
@@ -166,6 +170,25 @@ func TestLateShiftStaysWithheldWhenTheCycleIsOverdue(t *testing.T) {
 	day := findCalendarDayStateByDateString(t, days, confirmedKey)
 	if day.IsOvulation || day.IsTentativeOvulation {
 		t.Errorf("calendar: %s IsOvulation=%t IsTentativeOvulation=%t, want both false while the cycle is overdue", confirmedKey, day.IsOvulation, day.IsTentativeOvulation)
+	}
+	// The whole grid, not only the confirmed day: the check above reads ONE
+	// date, and the day an overdue grid could republish is the model's
+	// projection 2026-03-14, not the confirmed 2026-03-29. Same instrument that
+	// reports [2026-03-29] on this very grid in
+	// TestLateShiftNamesOneDayOnEverySurfaceInsideTheInstance, so a silent
+	// answer here is the gate's doing rather than a reader that finds nothing.
+	//
+	// What holds it is the PredictionsSuppressed early return that opens
+	// buildCalendarPredictionMaps (calendar_days.go) — not the
+	// `if !fertilitySuppressed` wrapper further down, which covers the
+	// first-cycle floor: dropping that wrapper leaves this test green, because
+	// under overdue the early return has already returned (measured). So no
+	// defect inside the BBT pass can redden this line; it pins the ORDER — every
+	// path to an ovulation marker stays below the overdue gate, and a pass
+	// hoisted above it or re-gated on something narrower than
+	// PredictionsSuppressed is what this catches.
+	if solid, tentative := ovulationMarkerKeys(days); len(solid) != 0 || len(tentative) != 0 {
+		t.Errorf("calendar: solid ovulation marker(s) = %v, tentative = %v, want none of either — an overdue cycle publishes no ovulation day, measured or projected", solid, tentative)
 	}
 
 	chart := buildCurrentCycleBBTChart("en", stats, logs, today, time.UTC)
@@ -213,6 +236,9 @@ func TestLateShiftDoesNotCountAReadingLoggedAfterToday(t *testing.T) {
 
 	today := AddCalendarDays(fixtureToday, -1, time.UTC)
 	stats = atToday(stats, today)
+	if stats.CurrentCycleDay != 31 {
+		t.Fatalf("fixture anchor: cycle day = %d, want 31 — the day before the fixture's own, where the third elevated reading is still dated tomorrow", stats.CurrentCycleDay)
+	}
 
 	if _, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, today, time.UTC); ok {
 		t.Fatal("resolver: a reading dated after today must not help confirm a shift")

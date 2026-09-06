@@ -45,23 +45,25 @@ const (
 // back by daysPastProjection:
 //
 //	0 — the cycle opens at today-31 (cycle day 32), the next period is projected
-//	    on today-3, and the confirmed day falls ON that projected start. This is
-//	    the row that was red before the fix: the coverline window's sixth
-//	    reading falls exactly on the projection, so a detector bounded there
-//	    never saw it and found no shift at all.
+//	    on today-3, and the confirmed day falls ON that projected start;
 //	1 — the cycle opens at today-32 (cycle day 33, still <= 28+7 and so not
 //	    overdue), the next period is projected on today-4, and the confirmed day
-//	    falls a day AFTER it. Bounded at the projection this row dies exactly as
-//	    the first one does — four of the six coverline readings in range instead
-//	    of five, and six are needed either way. What it adds is a confirmed day
-//	    LATER than NextPeriodStart, the only shape that can catch a layer above
-//	    the resolver clamping the named day to the projected start.
+//	    falls a day AFTER it.
 //
-// That the seed's own projection is the one the MODEL arrives at is anchored
-// once, on next_period_start in the JSON half
-// (TestStatsOverviewConfirmsALateShiftOnOrAfterTheProjectedNextPeriodStart):
-// every date here is derived from the same today, so nothing else in this file
-// could catch the cohort drifting.
+// BOTH rows were red before the fix, and for one reason: a detector bounded at
+// the projection sees five of the six coverline readings on row 0 and four on
+// row 1, and six are needed either way, so it found no shift at all. Row 1 is
+// kept for what it adds beyond that — a confirmed day LATER than
+// NextPeriodStart, the only shape that can catch a layer above the resolver
+// clamping the named day back to the projected start.
+//
+// That the seed's own projection is the one the MODEL arrives at is anchored on
+// next_period_start, once per half: the JSON half reads it out of the payload it
+// already fetches
+// (TestStatsOverviewConfirmsALateShiftOnOrAfterTheProjectedNextPeriodStart), the
+// rendered half takes the same reading on its own request before it looks at the
+// slot. Every other date on either side is derived from the same today, so an
+// anchor held by one half only would leave the other blind to a drifting cohort.
 //
 // Returns the day the detector confirms and the projected next-period start it
 // is measured against.
@@ -144,6 +146,19 @@ func TestDashboardNamesALateShiftOnOrAfterTheProjectedNextPeriodStart(t *testing
 			// conceive (resolveDashboardTimingFrame, dashboard_view_service.go).
 			updateStatsOverviewUser(t, database, user, map[string]any{"track_bbt": true, "usage_goal": models.UsageGoalTrying})
 			confirmedDay, projectedStart := seedLateThermalShiftCycle(t, database, user, today, testCase.daysPastProjection)
+
+			// This half's own anchor on the cohort: the projection the seed
+			// computed is the one the model arrives at. Taken before the slot is
+			// read, so a seed that drifted out of the cohort fails as arithmetic
+			// rather than as a slot naming the wrong day.
+			_, payload := fetchStatsOverview(t, app, authCookie)
+			wantProjected := projectedStart.Format(statsOverviewDateLayout)
+			if payload.NextPeriodStart == nil {
+				t.Fatalf("fixture anchor: next_period_start is absent, want the projected %s", wantProjected)
+			}
+			if *payload.NextPeriodStart != wantProjected {
+				t.Fatalf("fixture anchor: next_period_start = %s, want %s — the seed's projection and the model's must be one date before the slot is read against it", *payload.NextPeriodStart, wantProjected)
+			}
 
 			slot, _ := dashboardOvulationSlotText(t, app, authCookie)
 			if want := services.LocalizedDateDisplay("en", confirmedDay); !strings.Contains(slot, want) {
