@@ -350,13 +350,21 @@ const invalidDayBBTErrorKey = "invalid bbt value"
 // routes — the JSON bind hands over a parsed float, the form its own string
 // parse — and a fix applied to one of them leaves the other saving nothing.
 //
-// The three non-finite rows are form-only, and that is a property of JSON
-// rather than of this endpoint: NaN and the infinities have no spelling as a
-// JSON number, so such a body is refused while binding, under the payload
-// sentinel and not the temperature's. strconv.ParseFloat does accept all three,
-// so the form is the transport that can deliver one, and -Inf is the row that
-// matters — it is non-positive, so it reaches the "not measured" sentinel and
-// would be filed as an empty temperature with a 200.
+// Two rows are non-finite and form-only, and that is a property of JSON rather
+// than of this endpoint: NaN and the infinities have no spelling as a JSON
+// number, so such a body is refused while binding, under the payload sentinel
+// and not the temperature's. strconv.ParseFloat does accept them, so the form
+// is the transport that can deliver one.
+//
+// Those two rows carry different weight, and only one of them is about the
+// sentinel. -Inf is non-positive, so without the non-finite branch in
+// ConvertDayBBTToStorage it would BE the "not measured" answer and the day
+// would be filed with an empty temperature and a 200; that row is what pins the
+// branch. NaN is non-positive under no comparison, so it passes the sentinel
+// either way and reaches this 400 through IsValidDayBBT one step later — the
+// range refusing a value no comparison accepts. Its row states the class, that
+// no non-finite entry is saved as a measurement, and it is not a witness for
+// where the sentinel is read.
 //
 // The stored reading is compared exactly: 97.7 °F is 36.5 °C on the stored
 // grid, so there is nothing for a tolerance to absorb except a change to that
