@@ -22,10 +22,11 @@
   right beside it fell on the same day or earlier — one screen answering two ways about one date.
   That estimate is now cut short at the published ovulation day, so a day past a confirmed shift
   reads as luteal rather than as an estimated period still running. A day you logged bleeding on is
-  untouched: what you recorded outranks every estimate, and always did. The dashboard ring follows
-  the same rule — it shortens its period band instead of disappearing, which is what a shift
-  confirmed early in a cycle used to make it do, to the owners tracking their temperatures most
-  closely.
+  untouched: what you recorded outranks every estimate, and always did. The month grid follows the
+  same rule — the expected-period shading now stops before the ovulation day rather than sitting on
+  the same cell as the ovulation marker and the fertile shading. So does the dashboard ring, which
+  shortens its period band instead of disappearing, which is what a shift confirmed early in a cycle
+  used to make it do, to the owners tracking their temperatures most closely.
 
   A confirmed shift also no longer needs the model to agree that a cycle can ovulate at all: an
   account whose recorded history is too short for the model to place an ovulation used to see its

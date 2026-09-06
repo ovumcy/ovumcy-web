@@ -168,7 +168,11 @@ func buildCalendarPredictionMaps(user *models.User, logs []models.DailyLog, stat
 	// changes which days are shaded and never whether any are.
 	currentStats, _ := ResolveConfirmedCycleStats(user, logs, stats, DateAtLocation(now, location), location)
 
-	appendCurrentBaselinePeriod(predictedPeriodMap, stats, location)
+	currentOvulationDay := time.Time{}
+	if !fertilitySuppressed {
+		currentOvulationDay = currentStats.OvulationDate
+	}
+	appendCurrentBaselinePeriod(predictedPeriodMap, stats, currentOvulationDay, location)
 	if !fertilitySuppressed {
 		appendCurrentBaselinePreFertile(preFertileMap, currentStats, location)
 		appendFertilityWindow(fertilityEdgeMap, fertilityPeakMap, currentStats.FertilityWindowStart, currentStats.FertilityWindowEnd, currentStats.OvulationDate)
@@ -207,13 +211,31 @@ func appendPredictedStartRange(startRangeMap map[string]bool, user *models.User,
 	appendCalendarDateRange(startRangeMap, rangeStart, rangeEnd)
 }
 
-func appendCurrentBaselinePeriod(predictedPeriodMap map[string]bool, stats CycleStats, location *time.Location) {
+// appendCurrentBaselinePeriod shades the CURRENT cycle's projected period band.
+// ovulationDay is the day the grid is about to mark as the ovulation, or the
+// zero time when the grid marks none (fertility withheld): the band is a
+// projection of the average period length, and shading it over a day the same
+// grid marks as the ovulation — and shades as fertile — puts two answers on one
+// cell. The published day wins, exactly as it does in resolveCyclePhase; a day
+// the owner LOGGED as bleeding is drawn from the log, not from this map, and is
+// untouched. Only this cycle is clamped: appendPredictedCycles keeps the model's
+// own arithmetic for the cycles chained after it.
+func appendCurrentBaselinePeriod(predictedPeriodMap map[string]bool, stats CycleStats, ovulationDay time.Time, location *time.Location) {
 	if stats.LastPeriodStart.IsZero() {
 		return
 	}
 
+	cycleStart := CalendarDay(stats.LastPeriodStart, location)
 	periodLength := predictedPeriodLength(stats.AveragePeriodLength)
-	appendPredictedPeriod(predictedPeriodMap, CalendarDay(stats.LastPeriodStart, location), periodLength)
+	if !ovulationDay.IsZero() {
+		if daysToOvulation := CalendarDaysBetween(cycleStart, CalendarDay(ovulationDay, location)); daysToOvulation < periodLength {
+			periodLength = daysToOvulation
+		}
+	}
+	if periodLength <= 0 {
+		return
+	}
+	appendPredictedPeriod(predictedPeriodMap, cycleStart, periodLength)
 }
 
 func appendCurrentBaselinePreFertile(preFertileMap map[string]bool, stats CycleStats, location *time.Location) {
