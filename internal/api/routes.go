@@ -217,8 +217,8 @@ func registerPageRoutes(app *fiber.App, handler *Handler) {
 // overwrite whatever state a concurrent GET login already staged in the same
 // cookie jar — and /settings/2fa mints the TOTP enrolment secret and seals it
 // into a cookie the owner's own PUT verifies against: a HEAD would overwrite
-// the secret behind a QR code she is already scanning in another tab, and her
-// enrolment PUT would refuse. TestShownOnceGETRoutesAreExactlyTheDeclaredSet
+// the secret behind a QR code they are already scanning in another tab, and
+// their enrolment PUT would refuse. TestShownOnceGETRoutesAreExactlyTheDeclaredSet
 // refuses both drifts: a refusal dropped from a route named here, and a route
 // that acquires one without being named.
 //
