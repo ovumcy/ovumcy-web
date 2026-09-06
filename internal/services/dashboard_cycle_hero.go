@@ -83,7 +83,7 @@ func BuildDashboardCycleHero(user *models.User, stats CycleStats, cycleContext D
 	}
 	cycleStart := CalendarDay(stats.LastPeriodStart, location)
 
-	ovulationDay := dashboardCycleHeroOvulationDay(stats, cycleLength, cycleStart, location)
+	ovulationDay := dashboardCycleHeroOvulationDay(stats, cycleContext, cycleLength, cycleStart, location)
 	if ovulationDay <= periodLength+1 || ovulationDay > cycleLength {
 		return DashboardCycleHero{}
 	}
@@ -117,16 +117,24 @@ func BuildDashboardCycleHero(user *models.User, stats CycleStats, cycleContext D
 
 // dashboardCycleHeroOvulationDay anchors the phase-card geometry — and so the
 // "ovulation" card and dashboardCycleHeroCurrentPhase's own fallback — on the
-// same day dashboardCycleHeroFertileSpan already peaks on: the confirmed or
-// published OvulationDate, read as a cycle day off the same cycleStart, rather
-// than a second, independent CalcOvulationDay projection. Left on the
-// projection, a confirmed shift moved the ribbon's fertile peak without moving
-// the card labeled "ovulation" to sit on it. The bounds check the caller
-// applies afterward is unchanged: it is the ribbon's own phase geometry, keyed
-// to DashboardCycleReferenceLength (the average), and a confirmed day landing
+// same day dashboardCycleHeroFertileSpan already peaks on: the confirmed
+// OvulationDate, read as a cycle day off the same cycleStart, rather than a
+// second, independent CalcOvulationDay projection. Left unconditional, this
+// anchor also fires for an account with no confirmed shift, whose
+// stats.OvulationDate is a MEDIAN-driven projection (DashboardProjectionCycleLength)
+// while the ribbon's own geometry — cycleLength here — is the AVERAGE
+// (DashboardCycleReferenceLength); a median well above the average lands that
+// date's cycle day outside the ribbon and the bounds check below silently
+// hides the hero for an owner who never recorded a thermal shift. So the
+// confirmed date is only trusted when cycleContext.DisplayOvulationConfirmed
+// says a resolver actually substituted it; otherwise this falls back to the
+// same CalcOvulationDay(cycleLength, LutealPhase) projection used before
+// confirmed-shift anchoring existed. The bounds check the caller applies
+// afterward is unchanged: it is the ribbon's own phase geometry, keyed to
+// DashboardCycleReferenceLength (the average), and a confirmed day landing
 // outside it is a legitimate refusal to render, not a defect.
-func dashboardCycleHeroOvulationDay(stats CycleStats, cycleLength int, cycleStart time.Time, location *time.Location) int {
-	if !stats.OvulationDate.IsZero() && !cycleStart.IsZero() {
+func dashboardCycleHeroOvulationDay(stats CycleStats, cycleContext DashboardCycleContext, cycleLength int, cycleStart time.Time, location *time.Location) int {
+	if cycleContext.DisplayOvulationConfirmed && !stats.OvulationDate.IsZero() && !cycleStart.IsZero() {
 		return CalendarDaysBetween(cycleStart, CalendarDay(stats.OvulationDate, location)) + 1
 	}
 	projected, _ := CalcOvulationDay(cycleLength, stats.LutealPhase)
