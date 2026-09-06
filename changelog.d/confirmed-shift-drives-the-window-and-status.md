@@ -41,5 +41,9 @@
   quiet, so a suppressed account could still read "ovulation" today, or "follicular"/"luteal" on
   either side of it, off the phase alone. The phase is now recomputed from the same fields the rest
   of the response withholds, so it can say "menstrual" during a logged or projected period, or
-  "unknown" otherwise, but never point at the day suppression exists to hide. A recorded observation
-  still never becomes a way around any of this.
+  "unknown" otherwise, but never point at the day suppression exists to hide. The dashboard's cycle
+  ribbon widget read the day through a second, separate path and stayed just as loud: its phase
+  label and its phase-card breakdown followed the same suppressed ovulation day the rest of the
+  response had already gone quiet on. The ribbon itself — the axis, the day cells, the "today"
+  marker — still draws; only the parts that named the day now don't. A recorded observation still
+  never becomes a way around any of this.
