@@ -7,6 +7,6 @@
   instance, on a database later restored from a backup taken before that revocation, got the old
   subscribe URL back and nothing recorded it.
 - **Operators:** the first start after you mount the fence on an instance that had been running without
-  one disarms every armed calendar feed once, and the startup line says that is what happened. It is
-  expected; owners re-generate their subscribe URLs from `Settings → Calendar feed`, and later starts
-  disarm nothing.
+  one — over a database that holds no fence token — disarms every armed calendar feed once, and the
+  startup line says that is what happened. It is expected; owners re-generate their subscribe URLs from
+  `Settings → Calendar feed`, and later starts disarm nothing.
