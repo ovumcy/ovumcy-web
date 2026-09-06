@@ -214,6 +214,30 @@ func (service *AuthService) ValidateResetPasswordInput(password string, confirmP
 	return nil
 }
 
+// NormalizeForcedResetPassword is the operator-forced reset's whole password
+// rule — the trim AND the policy — in one exported call that returns the exact
+// string ForceResetPasswordByID will hash.
+//
+// It is exported because the `ovumcy reset-password` CLI has to apply the rule
+// BEFORE it spends the calendar-feed fence's one-shot confirmation, and a
+// second, hand-written copy of the rule there does not stay equal to this one:
+// a value the CLI trimmed differently is a value it checked and did not submit.
+// A trailing space is enough — " Passwd1 " passes a check on the raw bytes and
+// is refused by the policy once trimmed, and 71 characters plus two spaces are
+// refused as over the byte limit while the trimmed value is inside it. Callers
+// pass the returned string on to ForceResetPasswordByID, which applies this
+// same function again; it is idempotent, so the second pass changes nothing.
+func NormalizeForcedResetPassword(raw string) (string, error) {
+	newPassword := strings.TrimSpace(raw)
+	if newPassword == "" {
+		return "", ErrAuthResetInvalid
+	}
+	if err := authPasswordPolicyError(ValidatePasswordStrength(newPassword)); err != nil {
+		return "", err
+	}
+	return newPassword, nil
+}
+
 // ForceResetPasswordByID is the operator-forced reset: it applies the same
 // password policy the owner-facing paths do, then rewrites the hash, sets
 // must_change_password, re-enables local auth, clears the calendar-feed token
@@ -226,14 +250,11 @@ func (service *AuthService) ValidateResetPasswordInput(password string, confirmP
 // address to that id through OperatorUserService first, so an ambiguous
 // address is refused there rather than acted on here.
 func (service *AuthService) ForceResetPasswordByID(ctx context.Context, userID uint, newPassword string) error {
-	newPassword = strings.TrimSpace(newPassword)
 	if userID == 0 {
 		return ErrAuthUserIDRequired
 	}
-	if newPassword == "" {
-		return ErrAuthResetInvalid
-	}
-	if err := authPasswordPolicyError(ValidatePasswordStrength(newPassword)); err != nil {
+	newPassword, err := NormalizeForcedResetPassword(newPassword)
+	if err != nil {
 		return err
 	}
 

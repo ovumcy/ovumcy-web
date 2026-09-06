@@ -658,6 +658,46 @@ func TestCalendarFeedRestoreFenceAdvanceConfirmedAdvancesBothHalvesWhenTheyAgree
 	}
 }
 
+// TestCalendarFeedFenceStepErrorCarriesBothTheSentinelAndTheCause pins the
+// contract every AdvanceConfirmed refusal with an underlying failure rests on:
+// errors.Is finds the sentinel that says WHICH step refused and what it left
+// behind, and errors.As reaches anything typed inside the cause.
+//
+// The operator CLI quotes that cause in its refusal, and it used to reach it by
+// pulling member [1] out of a two-verb fmt.Errorf's Unwrap() []error — a
+// position, not a name, which any later "%w: %w: %w" would have silently
+// re-pointed at an unrelated error.
+func TestCalendarFeedFenceStepErrorCarriesBothTheSentinelAndTheCause(t *testing.T) {
+	cause := &stubFenceTypedCause{detail: "permission denied"}
+	err := error(&CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceUnreachable, Cause: cause})
+
+	if !errors.Is(err, ErrCalendarFeedFenceUnreachable) {
+		t.Fatalf("the sentinel must stay reachable through errors.Is, got %v", err)
+	}
+	if errors.Is(err, ErrCalendarFeedFenceHalfAdvanced) {
+		t.Fatalf("only the step's OWN sentinel may match, got %v", err)
+	}
+	var typed *stubFenceTypedCause
+	if !errors.As(err, &typed) || typed.detail != "permission denied" {
+		t.Fatalf("the cause must stay reachable through errors.As, got %v", err)
+	}
+	want := ErrCalendarFeedFenceUnreachable.Error() + ": permission denied"
+	if err.Error() != want {
+		t.Fatalf("step error text:\n got %q\nwant %q", err.Error(), want)
+	}
+}
+
+// stubFenceTypedCause is a cause with a type of its own, so the test above can
+// prove errors.As reaches INTO the cause rather than merely that something is
+// wrapped.
+type stubFenceTypedCause struct {
+	detail string
+}
+
+func (err *stubFenceTypedCause) Error() string {
+	return err.detail
+}
+
 // TestCalendarFeedRestoreFenceAdvanceConfirmedRefusesWithoutAnAnchorAndWritesNothing
 // pins the state buildRepositories handed every subcommand before this fix: an
 // operator's shell with CALENDAR_FEED_FENCE_PATH unset. Unlike Advance, this
