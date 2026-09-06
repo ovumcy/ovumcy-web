@@ -102,20 +102,12 @@ func TestCalendarFeedGenerateRevealsURLOnceAndNeverAgain(t *testing.T) {
 	if !strings.Contains(revealedURL, "/calendar/feed/") || !strings.HasSuffix(revealedURL, ".ics") {
 		t.Fatalf("expected a /calendar/feed/<token>.ics URL revealed, got %q", revealedURL)
 	}
-	// Extract the token path and prove it actually serves the feed.
-	//
-	// This does NOT go through mustServeCalendarFeed: the test app mounts
-	// csrf.New only when it is built with enableCSRF, which is exactly what
-	// newSettingsSecurityTestContext asks for, and that middleware's
-	// testCSRFMiddlewareConfig carries no calendar-feed exemption, so it sets
-	// ovumcy_csrf on this GET. mustServeCalendarFeed's callers build the app
-	// without that option and so may demand no cookie at all; whether the feed
-	// route itself sets one is not this test's subject.
+	// Extract the token path and prove it actually serves the feed. ctx.app
+	// mounts testCSRFMiddlewareConfig, which carries the same calendar-feed
+	// exemption production does, so this GET is held to the full armed-feed
+	// contract like every other mustServeCalendarFeed caller.
 	token := extractFeedTokenFromURL(t, revealedURL)
-	feedResp := mustAppResponse(t, ctx.app, httptest.NewRequest(http.MethodGet, calendarFeedURL(token), nil))
-	if feedResp.StatusCode != http.StatusOK {
-		t.Fatalf("expected the revealed URL to serve the feed (200), got %d", feedResp.StatusCode)
-	}
+	mustServeCalendarFeed(t, ctx.app, token, "for the just-revealed URL")
 
 	// The reveal page retracts the cookie...
 	clearedCookie := responseCookie(revealResp.Cookies(), calendarFeedRevealCookieName)
@@ -296,13 +288,7 @@ func TestCalendarFeedRotateInvalidatesOldToken(t *testing.T) {
 	// Arm a feed directly and capture the OLD token, then confirm it serves.
 	oldToken := armCalendarFeedForUser(t, ctx.database, ctx.user.ID)
 	oldSelector := reloadUserForCalendarFeedAPI(t, ctx, ctx.user.ID).CalendarFeedSelector
-	// Not mustServeCalendarFeed: ctx.app mounts CSRF (see the comment on the
-	// same pattern in TestCalendarFeedGenerateRevealsURLOnceAndNeverAgain
-	// above), which sets its own cookie on this GET — unrelated to the feed.
-	pre := mustAppResponse(t, ctx.app, httptest.NewRequest(http.MethodGet, calendarFeedURL(oldToken), nil))
-	if pre.StatusCode != http.StatusOK {
-		t.Fatalf("precondition: old token should serve the feed, got %d", pre.StatusCode)
-	}
+	mustServeCalendarFeed(t, ctx.app, oldToken, "before the rotate")
 
 	rot := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/calendar-feed/rotate", url.Values{}, nil)
 	if rot.StatusCode != http.StatusSeeOther {
@@ -319,6 +305,7 @@ func TestCalendarFeedRotateInvalidatesOldToken(t *testing.T) {
 	if post.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected the old token to 404 after rotate, got %d", post.StatusCode)
 	}
+	assertNoSetCookie(t, post, "the rotated-out token's 404 must not set a cookie")
 	// The old selector must not resolve any owner anymore.
 	if _, ok, err := db.NewRepositories(ctx.database).Users.FindByCalendarFeedSelector(t.Context(), oldSelector); err != nil || ok {
 		t.Fatalf("expected old selector to be unresolvable after rotate (ok=%v err=%v)", ok, err)
@@ -346,6 +333,7 @@ func TestCalendarFeedRevokeClearsColumns(t *testing.T) {
 	if feedResp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected the revoked feed URL to 404, got %d", feedResp.StatusCode)
 	}
+	assertNoSetCookie(t, feedResp, "the revoked feed's 404 must not set a cookie")
 }
 
 // TestCalendarFeedRevokeBrowserRedirectsWithFlash covers the non-JSON revoke
@@ -530,13 +518,7 @@ func TestCalendarFeedGenerateScopedToOwner(t *testing.T) {
 	if ownerAAfter.CalendarFeedSelector != ownerABefore.CalendarFeedSelector {
 		t.Fatal("owner A's feed selector must not change when owner B generates")
 	}
-	// Not mustServeCalendarFeed: ctx.app mounts CSRF, which sets its own
-	// cookie on this GET (see the comment in
-	// TestCalendarFeedGenerateRevealsURLOnceAndNeverAgain above).
-	feedA := mustAppResponse(t, ctx.app, httptest.NewRequest(http.MethodGet, calendarFeedURL(tokenA), nil))
-	if feedA.StatusCode != http.StatusOK {
-		t.Fatalf("expected owner A's feed to keep serving after owner B generate, got %d", feedA.StatusCode)
-	}
+	mustServeCalendarFeed(t, ctx.app, tokenA, "after owner B generate")
 	// Owner B got its own (distinct) selector.
 	ownerBRow := reloadUserForCalendarFeedAPI(t, ctx, ownerB.ID)
 	if ownerBRow.CalendarFeedSelector == "" || ownerBRow.CalendarFeedSelector == ownerABefore.CalendarFeedSelector {
@@ -572,17 +554,12 @@ func TestCalendarFeedRevokeScopedToOwner(t *testing.T) {
 	// satisfied by a URL that never worked. Asserted here and not in a subtest:
 	// t.Fatalf inside t.Run ends only the subtest, so a lost precondition would
 	// leave the verdicts below to run anyway and report a second, misleading
-	// failure beside it. Not mustServeCalendarFeed: ctx.app mounts CSRF, which
-	// sets its own cookie on this GET (see the comment in
-	// TestCalendarFeedGenerateRevealsURLOnceAndNeverAgain above).
+	// failure beside it.
 	for _, owner := range []struct {
 		label string
 		token string
 	}{{label: "A", token: tokenA}, {label: "B", token: tokenB}} {
-		before := mustAppResponse(t, ctx.app, httptest.NewRequest(http.MethodGet, calendarFeedURL(owner.token), nil))
-		if before.StatusCode != http.StatusOK {
-			t.Fatalf("precondition: owner %s's feed must serve before the revoke, got %d", owner.label, before.StatusCode)
-		}
+		mustServeCalendarFeed(t, ctx.app, owner.token, "for owner "+owner.label+" before the revoke")
 	}
 
 	// Owner B revokes, on owner B's own session.
@@ -611,6 +588,7 @@ func TestCalendarFeedRevokeScopedToOwner(t *testing.T) {
 	if feedB.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected owner B's revoked feed URL to 404, got %d", feedB.StatusCode)
 	}
+	assertNoSetCookie(t, feedB, "owner B's revoked feed 404 must not set a cookie")
 
 	// Owner A's row is untouched and A's URL still serves.
 	ownerAAfter := reloadUserForCalendarFeedAPI(t, ctx, ctx.user.ID)
@@ -619,13 +597,7 @@ func TestCalendarFeedRevokeScopedToOwner(t *testing.T) {
 		ownerAAfter.CalendarFeedVerifierMAC != ownerABefore.CalendarFeedVerifierMAC {
 		t.Fatal("owner A's feed columns must not change when owner B revokes")
 	}
-	// Not mustServeCalendarFeed: ctx.app mounts CSRF, which sets its own
-	// cookie on this GET (see the comment in
-	// TestCalendarFeedGenerateRevealsURLOnceAndNeverAgain above).
-	feedA := mustAppResponse(t, ctx.app, httptest.NewRequest(http.MethodGet, calendarFeedURL(tokenA), nil))
-	if feedA.StatusCode != http.StatusOK {
-		t.Fatalf("expected owner A's feed to keep serving after owner B's revoke, got %d", feedA.StatusCode)
-	}
+	mustServeCalendarFeed(t, ctx.app, tokenA, "after owner B's revoke")
 }
 
 // failingCalendarFeedRepo forces the feed settings repository to error on every

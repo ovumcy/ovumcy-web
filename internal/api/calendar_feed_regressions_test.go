@@ -336,6 +336,11 @@ func TestCalendarFeedIsRateLimitedPerIP(t *testing.T) {
 	const maxRequests = 3
 	rlApp := fiber.New()
 	rlApp.Use(CalendarFeedRateLimitPrefix, limiter.New(limiter.Config{
+		// Mirrors the production mount (cmd/ovumcy/server.go): Next scopes the
+		// limiter to IsCalendarFeedRequest, the same route-shape predicate the
+		// CSRF and language skips key on, rather than the bare prefix app.Use
+		// matches on its own (method-agnostic, no trailing-slash/case folding).
+		Next:       func(c fiber.Ctx) bool { return !IsCalendarFeedRequest(c.Method(), c.Path()) },
 		Max:        maxRequests,
 		Expiration: time.Minute,
 		LimitReached: func(c fiber.Ctx) error {

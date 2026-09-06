@@ -153,10 +153,21 @@ func newTestHandlerDependencies(database *gorm.DB, i18nManager *i18n.Manager, op
 	return dependencies
 }
 
+// testCSRFMiddlewareConfig mirrors csrfMiddlewareConfig (cmd/ovumcy/server.go)
+// exactly: the same two Next clauses, the OIDC callback exemption scoped to
+// POST and the calendar-feed skip keyed on IsCalendarFeedRequest. A narrower
+// mirror here would leave the feed's "no Set-Cookie" contract untested by
+// every regression that arms a feed through this shared test app; a wider one
+// would let a CSRF-exemption regression in this app pass while production's
+// own predicate — pinned separately by csrf_exemption_guard_test.go — stayed
+// broken, or vice versa.
 func testCSRFMiddlewareConfig(cookieSecure bool, handler *Handler) csrf.Config {
 	return csrf.Config{
 		Next: func(c fiber.Ctx) bool {
-			return c.Path() == security.OIDCCallbackPath
+			if c.Method() == fiber.MethodPost && c.Path() == security.OIDCCallbackPath {
+				return true
+			}
+			return IsCalendarFeedRequest(c.Method(), c.Path())
 		},
 		CookieName:     "ovumcy_csrf",
 		CookieSameSite: "Lax",
