@@ -17,10 +17,11 @@ import (
 // ordering the fence promises — disarm, then the file, then the row — is
 // asserted rather than assumed.
 type stubFenceAppState struct {
-	values  map[string]string
-	getErr  error
-	setErr  error
-	journal *[]string
+	values    map[string]string
+	getErr    error
+	setErr    error
+	deleteErr error
+	journal   *[]string
 }
 
 func (s *stubFenceAppState) Get(_ context.Context, key string) (string, bool, error) {
@@ -43,6 +44,27 @@ func (s *stubFenceAppState) Set(_ context.Context, key string, value string) err
 	}
 	s.values[key] = value
 	return nil
+}
+
+// Delete mirrors the repository's own idempotence: a key that is not there is
+// removed without complaint, so a test cannot pass by relying on the fence
+// reading before it deletes.
+func (s *stubFenceAppState) Delete(_ context.Context, key string) error {
+	if s.deleteErr != nil {
+		return s.deleteErr
+	}
+	if s.journal != nil {
+		*s.journal = append(*s.journal, "delete")
+	}
+	delete(s.values, key)
+	return nil
+}
+
+// has reports whether a marker is present, which is all the fence ever asks of
+// the unanchored stamp.
+func (s *stubFenceAppState) has(key string) bool {
+	_, found := s.values[key]
+	return found
 }
 
 type stubFenceUserStore struct {
@@ -171,7 +193,11 @@ func TestCalendarFeedRestoreFenceDisarmsWhenTheHalvesDisagree(t *testing.T) {
 	if got := appState.values[models.AppStateKeyCalendarFeedRestoreFence]; got == "an-older-generation" || got != anchor.written {
 		t.Fatalf("both halves must be re-minted together; file %q, app_state %q", anchor.written, got)
 	}
-	if want := []string{"disarm", "anchor", "set"}; !equalStrings(journal, want) {
+	// The erasure of the unanchored stamp closes the sequence, after both halves
+	// already hold the new token: a crash before it leaves a stamp the next boot
+	// ignores, while erasing first would clear the evidence ahead of the write
+	// that replaces it.
+	if want := []string{"disarm", "anchor", "set", "delete"}; !equalStrings(journal, want) {
 		t.Fatalf("ordering must be %v, got %v", want, journal)
 	}
 }
@@ -218,12 +244,15 @@ func TestCalendarFeedRestoreFenceDisarmsWhenOnlyOneHalfHasAToken(t *testing.T) {
 	}
 }
 
-// TestCalendarFeedRestoreFenceWithoutAnAnchorDisarmsAndRecordsNothing pins the
+// TestCalendarFeedRestoreFenceWithoutAnAnchorDisarmsAndRecordsNoToken pins the
 // fail-closed default. An unreadable fence — no CALENDAR_FEED_FENCE_PATH, no
 // mount behind it — cannot prove this database still holds the revocations this
-// instance performed, so every armed feed goes and NO marker is written: writing
-// one would make the next boot, still unanchored, look like agreement.
-func TestCalendarFeedRestoreFenceWithoutAnAnchorDisarmsAndRecordsNothing(t *testing.T) {
+// instance performed, so every armed feed goes and no TOKEN is written: writing
+// one would make the next boot, still unanchored, look like agreement. What IS
+// written is the unanchored stamp, which no boot ever mistakes for a token —
+// it is read only where both halves are empty, and it is what tells the first
+// boot with a working fence that this database has already served without one.
+func TestCalendarFeedRestoreFenceWithoutAnAnchorDisarmsAndRecordsNoToken(t *testing.T) {
 	notConfigured := errors.New("CALENDAR_FEED_FENCE_PATH is not set")
 	appState := &stubFenceAppState{values: map[string]string{}}
 	users := &stubFenceUserStore{disarmed: 4}
@@ -238,8 +267,11 @@ func TestCalendarFeedRestoreFenceWithoutAnAnchorDisarmsAndRecordsNothing(t *test
 	if !errors.Is(outcome.UnanchoredCause, notConfigured) {
 		t.Fatalf("the outcome must carry the cause for the startup line, got %v", outcome.UnanchoredCause)
 	}
-	if len(appState.values) != 0 {
-		t.Fatalf("an unanchored pass must record no marker, got %v", appState.values)
+	if appState.has(models.AppStateKeyCalendarFeedRestoreFence) {
+		t.Fatalf("an unanchored pass must record no fence token, got %v", appState.values)
+	}
+	if !appState.has(models.AppStateKeyCalendarFeedFenceUnanchored) {
+		t.Fatal("an unanchored pass must stamp the database, or a backup taken from it reads as a first boot later")
 	}
 }
 
@@ -260,8 +292,11 @@ func TestCalendarFeedRestoreFenceUnwritableAnchorDisarmsOnAFirstBoot(t *testing.
 	if !outcome.Unanchored || outcome.DisarmedFeeds != 5 {
 		t.Fatalf("expected an unanchored disarm of 5, got %+v", outcome)
 	}
-	if len(appState.values) != 0 {
-		t.Fatalf("a fence that was never written must record no marker, got %v", appState.values)
+	if appState.has(models.AppStateKeyCalendarFeedRestoreFence) {
+		t.Fatalf("a fence that was never written must record no token, got %v", appState.values)
+	}
+	if !appState.has(models.AppStateKeyCalendarFeedFenceUnanchored) {
+		t.Fatal("this boot served without a usable fence and must leave the database saying so")
 	}
 }
 
@@ -553,6 +588,20 @@ func (s *serializedFenceAppState) Set(_ context.Context, _ string, value string)
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	s.value = value
+	return nil
+}
+
+// Delete completes the interface. This double holds ONE slot, the fence token
+// the two concurrency guards drive through Advance and AdvanceConfirmed, so it
+// clears only for that key and answers every other one as already absent —
+// which is what the unanchored stamp is on those paths, neither written nor
+// read by either method.
+func (s *serializedFenceAppState) Delete(_ context.Context, key string) error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	if key == models.AppStateKeyCalendarFeedRestoreFence {
+		s.value = ""
+	}
 	return nil
 }
 
@@ -949,5 +998,145 @@ func TestCalendarFeedFenceContinuityErrorNamesWhichHalfHeldAMarker(t *testing.T)
 	want := "calendar feed restore fence: the file and the database marker are not a known-agreeing pair (file present=true, database present=false)"
 	if got != want {
 		t.Fatalf("continuity error text:\n got %q\nwant %q", got, want)
+	}
+}
+
+// TestCalendarFeedRestoreFenceUnanchoredBootStampsTheDatabase pins the write
+// half of the unanchored stamp. A boot with no usable fence has nowhere outside
+// the database to leave a token, so the database itself has to carry the fact
+// that this happened: without it, a backup taken from an unfenced instance is
+// indistinguishable from one taken by an instance that never served, and the
+// first boot that finally has a fence adopts its armed rows.
+func TestCalendarFeedRestoreFenceUnanchoredBootStampsTheDatabase(t *testing.T) {
+	appState := &stubFenceAppState{}
+	users := &stubFenceUserStore{disarmed: 2}
+
+	outcome, err := NewCalendarFeedRestoreFence(appState, users, &stubFenceAnchor{
+		readErr: security.ErrCalendarFeedFenceNotConfigured,
+	}).Enforce(context.Background())
+	if err != nil {
+		t.Fatalf("an unconfigured fence is an operator state, not a boot failure: %v", err)
+	}
+	if !outcome.Unanchored || outcome.DisarmedFeeds != 2 {
+		t.Fatalf("expected the unanchored disarm of both rows, got %+v", outcome)
+	}
+	if !appState.has(models.AppStateKeyCalendarFeedFenceUnanchored) {
+		t.Fatal("the boot ran without a fence and left nothing in the database saying so: a later restore of a backup taken now cannot be told from a first boot")
+	}
+	if appState.has(models.AppStateKeyCalendarFeedRestoreFence) {
+		t.Fatal("no fence token may be recorded on this path: half a fence is worse than none, because the next boot would read it as a disagreement")
+	}
+}
+
+// TestCalendarFeedRestoreFenceUnanchoredStampFailureFailsTheBoot pins the
+// choice made where the two failure classes meet. The anchor being unusable is
+// deliberately NOT a boot failure — an unmounted volume is an ordinary operator
+// state. The database refusing to record that fact is: an instance that serves
+// unanchored and leaves no evidence is exactly the state the stamp exists to
+// prevent, so it is returned rather than logged and stepped over.
+func TestCalendarFeedRestoreFenceUnanchoredStampFailureFailsTheBoot(t *testing.T) {
+	stampFailure := errors.New("app_state write refused")
+	users := &stubFenceUserStore{disarmed: 1}
+
+	outcome, err := NewCalendarFeedRestoreFence(
+		&stubFenceAppState{setErr: stampFailure},
+		users,
+		&stubFenceAnchor{readErr: security.ErrCalendarFeedFenceNotConfigured},
+	).Enforce(context.Background())
+	if !errors.Is(err, stampFailure) {
+		t.Fatalf("expected the stamp failure to reach the caller, got %v", err)
+	}
+	if !outcome.Unanchored {
+		t.Fatalf("the outcome must still say what this boot was, got %+v", outcome)
+	}
+	if users.callCount != 1 {
+		t.Fatalf("the disarm runs before the stamp, so a failed stamp still leaves the feeds down, got %d disarm calls", users.callCount)
+	}
+}
+
+// TestCalendarFeedRestoreFenceEmptyHalvesOverAStampedDatabaseDisarm is the
+// finding itself, at the unit layer: both halves empty is the signature of a
+// first boot AND of a restore of a backup taken while the instance had no
+// fence. The stamp is what separates them, and the stamped case has to be
+// answered the same way any other unprovable continuity is.
+//
+// Its opposite — both halves empty, no stamp, nothing disarmed — is pinned by
+// TestCalendarFeedRestoreFenceFirstBootArmsWithoutDisarming above; the two are
+// the pair, and losing either would let this branch collapse into one answer.
+func TestCalendarFeedRestoreFenceEmptyHalvesOverAStampedDatabaseDisarm(t *testing.T) {
+	journal := []string{}
+	appState := &stubFenceAppState{
+		values:  map[string]string{models.AppStateKeyCalendarFeedFenceUnanchored: "booted without a usable fence"},
+		journal: &journal,
+	}
+	users := &stubFenceUserStore{disarmed: 3, journal: &journal}
+	anchor := &stubFenceAnchor{journal: &journal}
+
+	outcome, err := NewCalendarFeedRestoreFence(appState, users, anchor).Enforce(context.Background())
+	if err != nil {
+		t.Fatalf("Enforce: %v", err)
+	}
+	if !outcome.ContinuityBroken || !outcome.UnanchoredHistory || outcome.FirstBoot {
+		t.Fatalf("a stamped database with two empty halves is not a first boot, got %+v", outcome)
+	}
+	if outcome.DisarmedFeeds != 3 {
+		t.Fatalf("every armed row must go, got %d", outcome.DisarmedFeeds)
+	}
+	if anchor.written == "" || appState.values[models.AppStateKeyCalendarFeedRestoreFence] != anchor.written {
+		t.Fatalf("the pass must arm the fence it just answered for: file=%q database=%q", anchor.written, appState.values[models.AppStateKeyCalendarFeedRestoreFence])
+	}
+	if appState.has(models.AppStateKeyCalendarFeedFenceUnanchored) {
+		t.Fatal("the stamp must be gone once it has been answered for, or every later start disarms every feed again")
+	}
+	if want := []string{"disarm", "anchor", "set", "delete"}; !equalStrings(journal, want) {
+		t.Fatalf("the disarm has to precede the token, and the token the erasure:\n got %v\nwant %v", journal, want)
+	}
+}
+
+// TestCalendarFeedRestoreFenceStampErasureFailureFailsTheBoot keeps the last
+// write of that sequence honest. There is no end-to-end effect to observe when
+// the erasure is skipped — a stamp left beside two agreeing halves is never
+// read again, because the stamp is consulted only where both halves are empty
+// — so this is the only place the step is measured, and it is stated here
+// rather than dressed up as a scenario that does not exist.
+func TestCalendarFeedRestoreFenceStampErasureFailureFailsTheBoot(t *testing.T) {
+	erasureFailure := errors.New("app_state delete refused")
+	appState := &stubFenceAppState{
+		values:    map[string]string{models.AppStateKeyCalendarFeedFenceUnanchored: "booted without a usable fence"},
+		deleteErr: erasureFailure,
+	}
+
+	if _, err := NewCalendarFeedRestoreFence(
+		appState, &stubFenceUserStore{disarmed: 1}, &stubFenceAnchor{},
+	).Enforce(context.Background()); !errors.Is(err, erasureFailure) {
+		t.Fatalf("expected the erasure failure to reach the caller, got %v", err)
+	}
+}
+
+// TestCalendarFeedRestoreFenceIgnoresAStaleStampWhenTheHalvesAgree is the pin
+// against the obvious over-correction: reading the stamp everywhere instead of
+// only where both halves are empty. A stamp can outlive the pass that should
+// have erased it — a crash between the token write and the erasure leaves
+// exactly that — and a fence that consulted it on every start would answer a
+// routine restart by disarming every armed feed, forever. Agreement between the
+// two halves is proof of continuity on its own; nothing overrides it.
+func TestCalendarFeedRestoreFenceIgnoresAStaleStampWhenTheHalvesAgree(t *testing.T) {
+	appState := &stubFenceAppState{values: map[string]string{
+		models.AppStateKeyCalendarFeedRestoreFence:    fenceTestToken,
+		models.AppStateKeyCalendarFeedFenceUnanchored: "left behind by an older run",
+	}}
+	users := &stubFenceUserStore{disarmed: 4}
+
+	outcome, err := NewCalendarFeedRestoreFence(
+		appState, users, &stubFenceAnchor{value: fenceTestToken, found: true},
+	).Enforce(context.Background())
+	if err != nil {
+		t.Fatalf("Enforce: %v", err)
+	}
+	if outcome != (CalendarFeedRestoreFenceOutcome{}) {
+		t.Fatalf("two halves holding the same token is a routine restart, got %+v", outcome)
+	}
+	if users.callCount != 0 {
+		t.Fatalf("a stale stamp must not turn every start into a disarm-all, got %d disarm calls", users.callCount)
 	}
 }

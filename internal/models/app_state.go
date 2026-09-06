@@ -30,6 +30,24 @@ const AppStateKeyCalendarFeedKeyEpoch = "calendar_feed_key_epoch"
 // because SECRET_KEY did not change and each of them would still verify.
 const AppStateKeyCalendarFeedRestoreFence = "calendar_feed_restore_fence"
 
+// AppStateKeyCalendarFeedFenceUnanchored records that this database was booted
+// at least once by a server that had NO usable fence above — path unset, no
+// mount behind it, unreadable or unwritable. Only the PRESENCE of the key is
+// read; the value is a human-readable note for an operator who finds the row.
+//
+// It exists because the two halves above cannot tell an installation that has
+// never had a fence from one whose backup was taken while it had none: both
+// halves are empty in either case, and calling that a first boot lets a feed
+// the owner revoked on an unfenced instance come back through a restore, once
+// the fence is finally mounted. A database carrying this key has run without
+// the one marker a restore cannot roll back, so continuity across that gap is
+// unprovable by construction and the first fenced boot disarms instead of
+// adopting the rows in front of it.
+//
+// Written on every unanchored boot, erased by the boot that records a fresh
+// token in both halves — the same pass that answers for it.
+const AppStateKeyCalendarFeedFenceUnanchored = "calendar_feed_fence_unanchored"
+
 // AppStateKeyAuthEmailRenormalizeV1 marks the one-shot boot pass that rewrote
 // auth emails stored by the pre-strict normalizer (which kept a whole
 // display-name-decorated input verbatim) down to the bare parsed address, so
@@ -58,6 +76,9 @@ const AppStateKeyLutealPhaseRecomputeV1 = "luteal_phase_recompute.v1"
 // WHILE SERVING — every write that arms, rotates or removes a calendar feed
 // advances it, which is what lets a restore be seen at all — so it is a single
 // writer but not a boot marker, and the fence serializes its own writes.
+// calendar_feed_fence_unanchored is that same fence's boot-time marker, and the
+// one key any writer DELETES: the boot pass writes it whenever it ran without a
+// usable fence and erases it on the boot that records a fresh token instead.
 type AppState struct {
 	Key       string    `gorm:"column:key;primaryKey"`
 	Value     string    `gorm:"column:value;not null"`
