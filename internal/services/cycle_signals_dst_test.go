@@ -230,3 +230,88 @@ func TestInferEggWhiteOvulationDateStillClampsAPeakOnTheLastCycleDay(t *testing.
 		})
 	}
 }
+
+// TestCurrentCycleDetectionBoundEndsOnTheSkippedMidnightDay pins the CURRENT
+// cycle's series bound on the one date where "today plus one day" has no local
+// midnight to land on. currentCycleDetectionBound steps from a UTC anchor and
+// re-anchors through StartOfCalendarDay, so the bound is the DST transition that
+// opens the skipped-midnight day — not the 23:00 instant of the day before,
+// which is what a bare AddDate in the request zone returns. Stepped that way the
+// bound would fall a whole day short, and a reading recorded on the skipped
+// midnight's own day would be dropped from the detection series: the owner's
+// third elevated temperature would go uncounted for exactly one day a year, per
+// zone. The assertions are the bound, then the resolver on both sides of it.
+func TestCurrentCycleDetectionBoundEndsOnTheSkippedMidnightDay(t *testing.T) {
+	testCases := []struct {
+		name     string
+		location *time.Location
+		days     [9]string
+		want     string
+	}{
+		{
+			name:     "santiago: the third elevated reading falls on 2026-09-06",
+			location: santiagoTestLocation(t),
+			days: [9]string{
+				"2026-08-29", "2026-08-30", "2026-08-31", "2026-09-01", "2026-09-02",
+				"2026-09-03", "2026-09-04", "2026-09-05", "2026-09-06",
+			},
+			want: "2026-09-03",
+		},
+		{
+			name:     "havana: the third elevated reading falls on 2026-03-08",
+			location: havanaTestLocation(t),
+			days: [9]string{
+				"2026-02-28", "2026-03-01", "2026-03-02", "2026-03-03", "2026-03-04",
+				"2026-03-05", "2026-03-06", "2026-03-07", "2026-03-08",
+			},
+			want: "2026-03-05",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			location := testCase.location
+			logs := bbtCycleAroundASkippedMidnight(t, testCase.days)
+			cycleStart := CalendarDay(cyclesignalsCovDay(t, testCase.days[0]), location)
+			dayEight := CalendarDay(cyclesignalsCovDay(t, testCase.days[7]), location)
+			dayNine := CalendarDay(cyclesignalsCovDay(t, testCase.days[8]), location)
+
+			// (i) The bound as an INSTANT: the day after the eighth reading begins
+			// at the transition, so comparing calendar keys alone would pass for a
+			// bound sitting at 23:00 on the previous day.
+			if bound := currentCycleDetectionBound(dayEight, location); !bound.Equal(dayNine) {
+				t.Fatalf("detection bound = %s, want %s: the day after the eighth reading opens at the zone transition, there being no local midnight on it", bound.Format(time.RFC3339), dayNine.Format(time.RFC3339))
+			}
+
+			user := &models.User{ID: 1, Role: models.RoleOwner, TrackBBT: true}
+			statsAt := func(today time.Time) CycleStats {
+				return atToday(CycleStats{
+					CompletedCycleCount: 3,
+					MedianCycleLength:   28,
+					AverageCycleLength:  28,
+					AveragePeriodLength: 5,
+					LutealPhase:         14,
+					LastPeriodStart:     cycleStart,
+					OvulationDate:       AddCalendarDays(cycleStart, 13, location),
+					NextPeriodStart:     AddCalendarDays(cycleStart, 28, location),
+				}, today)
+			}
+
+			// (ii) A day earlier the third elevated reading is dated tomorrow, so
+			// the streak is two days long and nothing may be confirmed.
+			if _, ok := ConfirmedCurrentCycleOvulation(user, logs, statsAt(dayEight), dayEight, location); ok {
+				t.Fatal("resolver: a reading dated on the day after today must not complete the elevated streak")
+			}
+
+			// (iii) On the skipped-midnight day itself the reading is inside the
+			// series and the detector names the day before the first elevated one.
+			confirmed, ok := ConfirmedCurrentCycleOvulation(user, logs, statsAt(dayNine), dayNine, location)
+			if !ok {
+				t.Fatal("resolver: on the skipped-midnight day the third elevated reading is on or before today and the shift must confirm")
+			}
+			if got := CalendarDayKey(confirmed); got != testCase.want {
+				t.Fatalf("confirmed ovulation = %s, want %s", got, testCase.want)
+			}
+		})
+	}
+}

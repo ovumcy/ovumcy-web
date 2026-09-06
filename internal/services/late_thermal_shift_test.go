@@ -80,21 +80,21 @@ func TestLateShiftNamesOneDayOnEverySurfaceInsideTheInstance(t *testing.T) {
 
 	// (ii) The calendar grid's solid marker.
 	monthStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
-	solid := make([]string, 0, 1)
-	tentative := make([]string, 0, 1)
-	for _, day := range BuildCalendarDayStates(user, monthStart, logs, stats, today, time.UTC) {
-		if day.IsOvulation {
-			solid = append(solid, day.DateString)
-		}
-		if day.IsTentativeOvulation {
-			tentative = append(tentative, day.DateString)
-		}
-	}
+	days := BuildCalendarDayStates(user, monthStart, logs, stats, today, time.UTC)
+	solid, tentative := ovulationMarkerKeys(days)
 	if len(solid) != 1 || solid[0] != confirmedKey {
 		t.Errorf("calendar: solid ovulation marker(s) = %v, want exactly [%s]", solid, confirmedKey)
 	}
 	if len(tentative) != 0 {
 		t.Errorf("calendar: tentative ovulation marker(s) = %v, want none — the projection on %s must not linger beside the confirmed day", tentative, CalendarDayKey(stats.OvulationDate))
+	}
+	// The projected next period is NOT recomputed from the confirmed shift (a
+	// separate decision, not taken), so on this cohort the confirmed day and the
+	// first projected bleeding day are the same date and that one cell carries
+	// both flags. Pinned so the overlap is a named state rather than a
+	// coincidence a later reader has to rediscover.
+	if confirmedDay := findCalendarDayStateByDateString(t, days, confirmedKey); !confirmedDay.IsPredicted {
+		t.Errorf("calendar: %s IsPredicted = false, want true — the projected next period still starts on the day the shift confirms", confirmedKey)
 	}
 
 	// (iii) The dashboard's ovulation line.
@@ -133,7 +133,7 @@ func TestLateShiftStaysWithheldWhenTheCycleIsOverdue(t *testing.T) {
 	// Five days on: 28 + 7 = 35 is the last day the reference allows, so cycle
 	// day 37 is overdue.
 	today := AddCalendarDays(fixtureToday, 5, time.UTC)
-	stats.CurrentCycleDay += 5
+	stats = atToday(stats, today)
 
 	if _, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, today, time.UTC); ok {
 		t.Fatal("resolver: an overdue cycle must withhold the confirmed day like any other projection")
@@ -156,9 +156,16 @@ func TestLateShiftStaysWithheldWhenTheCycleIsOverdue(t *testing.T) {
 	}
 
 	monthStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
-	day := findCalendarDayStateByDateString(t, BuildCalendarDayStates(user, monthStart, logs, stats, today, time.UTC), confirmedKey)
+	days := BuildCalendarDayStates(user, monthStart, logs, stats, today, time.UTC)
+	day := findCalendarDayStateByDateString(t, days, confirmedKey)
 	if day.IsOvulation || day.IsTentativeOvulation {
 		t.Errorf("calendar: %s IsOvulation=%t IsTentativeOvulation=%t, want both false while the cycle is overdue", confirmedKey, day.IsOvulation, day.IsTentativeOvulation)
+	}
+	// Overdue withholds the PROJECTION too, not only the confirmed day: a grid
+	// that answered by moving the tentative marker back onto 2026-03-14 would
+	// pass the check above and still publish an estimate the gate refuses.
+	if _, tentative := ovulationMarkerKeys(days); len(tentative) != 0 {
+		t.Errorf("calendar: tentative ovulation marker(s) = %v, want none while the cycle is overdue", tentative)
 	}
 
 	chart := buildCurrentCycleBBTChart("en", stats, logs, today, time.UTC)
@@ -190,11 +197,22 @@ func TestLateShiftSupersedesTheCurrentCyclesProjectionOnly(t *testing.T) {
 // other edge: the series runs through today and no further. At cycle day 31
 // only two of the three elevated readings exist as of today — the third is
 // dated tomorrow — so the streak is not yet three days long and nothing may be
-// confirmed.
+// confirmed. This case catches only a bound that is too WIDE; a bound too
+// narrow is TestConfirmedOvulationSurvivesTheProjectedNextPeriodStart's
+// subject, where the third elevated day IS today.
 func TestLateShiftDoesNotCountAReadingLoggedAfterToday(t *testing.T) {
 	user, logs, stats, fixtureToday := lateThermalShiftFixture(t)
+
+	// The positive control runs first: on the fixture's own today the third
+	// elevated reading is recorded and the shift confirms, so the refusal below
+	// is the bound's doing rather than a resolver that had stopped confirming
+	// anything at all.
+	if _, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, fixtureToday, time.UTC); !ok {
+		t.Fatal("control: on the day the third elevated reading is recorded the shift must confirm")
+	}
+
 	today := AddCalendarDays(fixtureToday, -1, time.UTC)
-	stats.CurrentCycleDay--
+	stats = atToday(stats, today)
 
 	if _, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, today, time.UTC); ok {
 		t.Fatal("resolver: a reading dated after today must not help confirm a shift")

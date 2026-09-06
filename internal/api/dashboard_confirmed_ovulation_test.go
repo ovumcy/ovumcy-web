@@ -12,14 +12,17 @@ package api
 // read the context alone was green through all of it.
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
+	"golang.org/x/net/html"
 	"gorm.io/gorm"
 )
 
@@ -35,42 +38,53 @@ const (
 // seedLateThermalShiftCycle records the late-shift cohort behind both halves of
 // its regression (the JSON overview and the rendered dashboard slot): three
 // prior 28-day cycles fix the median at 28 and the fourth start opens the
-// CURRENT cycle at today-31 — cycle day 32, not overdue (32 <= 28+7) — so the
-// model projects the next period on today-3, the very day the coverline
-// window's sixth reading falls on. A detector bounded at that projection never
-// saw the sixth reading and the shift went unseen; bounded at today+1 it does.
-// Returns the day the detector confirms.
-func seedLateThermalShiftCycle(t *testing.T, database *gorm.DB, user models.User, today time.Time) time.Time {
+// CURRENT cycle, so the model projects a next period the recorded shift then
+// straddles. The recorded series never moves — the coverline window is
+// today-8..today-3 and the elevated streak today-2..today — so the detector
+// names today-3 in both cases; what moves is the model's own projection, slid
+// back by daysPastProjection:
+//
+//	0 — the cycle opens at today-31 (cycle day 32), the next period is projected
+//	    on today-3, and the confirmed day falls ON that projected start;
+//	1 — the cycle opens at today-32 (cycle day 33, still <= 28+7 and so not
+//	    overdue), the next period is projected on today-4, and the confirmed day
+//	    falls a day AFTER it — the side a detector bounded at the projection
+//	    cannot reach at all rather than merely truncating.
+//
+// Returns the day the detector confirms and the projected next-period start it
+// is measured against.
+func seedLateThermalShiftCycle(t *testing.T, database *gorm.DB, user models.User, today time.Time, daysPastProjection int) (time.Time, time.Time) {
 	t.Helper()
 
-	seedStatsOverviewCycleHistory(t, database, user, today, 115, 87, 59, 31)
-	logs := make([]models.DailyLog, 0, 9)
-	for _, offset := range []int{8, 7, 6, 5, 4, 3} {
-		logs = append(logs, models.DailyLog{UserID: user.ID, Date: services.AddCalendarDays(today, -offset, time.UTC), BBT: new(dashboardConfirmedOvulationLowBBT)})
+	seedStatsOverviewCycleHistory(t, database, user, today,
+		115+daysPastProjection, 87+daysPastProjection, 59+daysPastProjection, 31+daysPastProjection)
+	firstLowDay := services.AddCalendarDays(today, -8, time.UTC)
+	for offset := range 6 {
+		seedStatsOverviewLog(t, database, models.DailyLog{
+			UserID: user.ID,
+			Date:   services.AddCalendarDays(firstLowDay, offset, time.UTC),
+			BBT:    new(dashboardConfirmedOvulationLowBBT),
+		})
 	}
-	for _, offset := range []int{2, 1, 0} {
-		logs = append(logs, models.DailyLog{UserID: user.ID, Date: services.AddCalendarDays(today, -offset, time.UTC), BBT: new(dashboardConfirmedOvulationHighBBT)})
+	for offset := range 3 {
+		seedStatsOverviewLog(t, database, models.DailyLog{
+			UserID: user.ID,
+			Date:   services.AddCalendarDays(firstLowDay, 6+offset, time.UTC),
+			BBT:    new(dashboardConfirmedOvulationHighBBT),
+		})
 	}
-	if err := database.Create(&logs).Error; err != nil {
-		t.Fatalf("seed late thermal shift: %v", err)
-	}
-	return services.AddCalendarDays(today, -3, time.UTC)
+	confirmed := services.AddCalendarDays(today, -3, time.UTC)
+	projected := services.AddCalendarDays(today, -3-daysPastProjection, time.UTC)
+	return confirmed, projected
 }
 
-// TestDashboardNamesALateShiftAfterTheProjectedNextPeriodStart is the rendered
-// half of TestStatsOverviewConfirmsALateShiftAfterTheProjectedNextPeriodStart
-// (stats_overview_contract_test.go): the same cohort read through the
-// dashboard's ovulation slot rather than the JSON payload, so the two
-// owner-facing surfaces cannot name different days for one late shift.
-func TestDashboardNamesALateShiftAfterTheProjectedNextPeriodStart(t *testing.T) {
-	app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
-	user := createOnboardingTestUser(t, database, "dashboard-late-shift@example.com", "StrongPass1", true)
-	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
-	today := services.DateAtLocation(time.Now().In(time.UTC), time.UTC)
-	// The rendered ovulation slot exists only for an account tracking to
-	// conceive (resolveDashboardTimingFrame, dashboard_view_service.go).
-	updateStatsOverviewUser(t, database, user, map[string]any{"track_bbt": true, "usage_goal": models.UsageGoalTrying})
-	confirmedDay := seedLateThermalShiftCycle(t, database, user, today)
+// dashboardOvulationSlotText reads the ovulation slot out of the dashboard's
+// status header, failing on either anchor on the way: an absent slot must read
+// as a fixture that drifted out of its cohort, never as a slot naming nothing.
+// The parsed document comes back with the text so a caller can assert on a
+// sibling hook without a second request.
+func dashboardOvulationSlotText(t *testing.T, app *fiber.App, authCookie string) (string, *html.Node) {
+	t.Helper()
 
 	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
 	request.Header.Set("Accept-Language", "en")
@@ -87,10 +101,52 @@ func TestDashboardNamesALateShiftAfterTheProjectedNextPeriodStart(t *testing.T) 
 	if ovulation == nil {
 		t.Fatal("fixture anchor: expected the ovulation slot in the status line")
 	}
+	return normalizeHTMLText(htmlNodeText(ovulation)), document
+}
 
-	slot := normalizeHTMLText(htmlNodeText(ovulation))
-	if want := services.LocalizedDateDisplay("en", confirmedDay); !strings.Contains(slot, want) {
-		t.Fatalf("the ovulation slot = %q, want the BBT-confirmed %q — a shift recorded after the projected next period start is still this cycle's", slot, want)
+// TestDashboardNamesALateShiftAfterTheProjectedNextPeriodStart is the rendered
+// half of TestStatsOverviewConfirmsALateShiftAfterTheProjectedNextPeriodStart
+// (stats_overview_contract_test.go): the same cohort read through the
+// dashboard's ovulation slot rather than the JSON payload, so the two
+// owner-facing surfaces cannot name different days for one late shift. Both
+// sides of the projected start are exercised — a shift confirmed ON it and one
+// confirmed a day AFTER it — because a bound that stops AT the projection and
+// one that merely truncates the series behave alike on the first.
+func TestDashboardNamesALateShiftAfterTheProjectedNextPeriodStart(t *testing.T) {
+	for _, testCase := range []struct {
+		name               string
+		daysPastProjection int
+	}{
+		{name: "on the projected start", daysPastProjection: 0},
+		{name: "after the projected start", daysPastProjection: 1},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
+			email := fmt.Sprintf("dashboard-late-shift-%d@example.com", testCase.daysPastProjection)
+			user := createOnboardingTestUser(t, database, email, "StrongPass1", true)
+			authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+			today := services.DateAtLocation(time.Now().In(time.UTC), time.UTC)
+			// The rendered ovulation slot exists only for an account tracking to
+			// conceive (resolveDashboardTimingFrame, dashboard_view_service.go).
+			updateStatsOverviewUser(t, database, user, map[string]any{"track_bbt": true, "usage_goal": models.UsageGoalTrying})
+			confirmedDay, projectedStart := seedLateThermalShiftCycle(t, database, user, today, testCase.daysPastProjection)
+
+			slot, _ := dashboardOvulationSlotText(t, app, authCookie)
+			if want := services.LocalizedDateDisplay("en", confirmedDay); !strings.Contains(slot, want) {
+				t.Fatalf("the ovulation slot = %q, want the BBT-confirmed %q — a shift recorded after the projected next period start is still this cycle's", slot, want)
+			}
+			if testCase.daysPastProjection == 0 {
+				// On this side the two days ARE the same date, so there is no
+				// second date to be absent.
+				return
+			}
+			if services.CalendarDaysBetween(projectedStart, confirmedDay) != testCase.daysPastProjection {
+				t.Fatalf("fixture anchor: confirmed day %s is not %d day(s) past the projected start %s", confirmedDay.Format("2006-01-02"), testCase.daysPastProjection, projectedStart.Format("2006-01-02"))
+			}
+			if projected := services.LocalizedDateDisplay("en", projectedStart); strings.Contains(slot, projected) {
+				t.Fatalf("the ovulation slot names the projected next period start %q beside the confirmed day: %q", projected, slot)
+			}
+		})
 	}
 }
 
@@ -115,16 +171,14 @@ func TestDashboardNamesTheConfirmedDayForTheThinHistoryCohort(t *testing.T) {
 	previousStart := cycleStart.AddDate(0, 0, -cycleLength)
 	confirmedDay := cycleStart.AddDate(0, 0, 10)
 
-	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
+	updateStatsOverviewUser(t, database, user, map[string]any{
 		"cycle_length":      cycleLength,
 		"period_length":     periodLength,
 		"last_period_start": cycleStart,
 		"usage_goal":        models.UsageGoalTrying,
 		"irregular_cycle":   true,
 		"track_bbt":         true,
-	}).Error; err != nil {
-		t.Fatalf("update confirmed-ovulation cycle context: %v", err)
-	}
+	})
 
 	// Two starts, so exactly one completed cycle: under three (the withholding
 	// this test is about) and at least one (the floor that would withhold the
@@ -158,23 +212,7 @@ func TestDashboardNamesTheConfirmedDayForTheThinHistoryCohort(t *testing.T) {
 	}
 
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
-	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
-	request.Header.Set("Accept-Language", "en")
-	request.Header.Set("Cookie", authCookie)
-	response := mustAppResponse(t, app, request)
-	assertStatusCode(t, response, http.StatusOK)
-
-	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
-	header := dashboardElementByDataAttr(document, "data-dashboard-status-header")
-	if header == nil {
-		t.Fatal("fixture anchor: expected the dashboard status header")
-	}
-	ovulation := dashboardElementByDataAttr(header, "data-dashboard-ovulation")
-	if ovulation == nil {
-		t.Fatal("fixture anchor: expected the ovulation slot in the status line")
-	}
-
-	slot := normalizeHTMLText(htmlNodeText(ovulation))
+	slot, document := dashboardOvulationSlotText(t, app, authCookie)
 	if strings.Contains(slot, "completed cycles are needed") {
 		t.Fatalf("the ovulation slot withheld a measured day behind the thin-history caption: %q", slot)
 	}

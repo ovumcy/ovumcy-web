@@ -32,13 +32,34 @@ func confirmedOvulationFixture(t *testing.T) (*models.User, []models.DailyLog, C
 	return thermalShiftFixture(t, 0)
 }
 
+// The two temperatures thermalShiftFixture's 3-over-6 series is built from: six
+// undisturbed readings at the low value fill the coverline window, three at the
+// high value clear it by more than bbtThirdDayMarginCelsius. Which cycle days
+// carry them is the shiftDays argument's business.
+const (
+	thermalShiftLowBBT  = 36.20
+	thermalShiftHighBBT = 36.50
+)
+
+// atToday returns stats whose CurrentCycleDay is DERIVED from today rather than
+// restated beside it. A fixture that slides its series, or a test that moves
+// today by a few days, would otherwise have to remember to move the cycle day
+// too — and a cycle day disagreeing with today is a cohort no owner can be in,
+// which is the shape that lets an overdue or a bound assertion pass for a
+// reason its name does not name.
+func atToday(stats CycleStats, today time.Time) CycleStats {
+	stats.CurrentCycleDay = CalendarDaysBetween(stats.LastPeriodStart, today) + 1
+	return stats
+}
+
 // thermalShiftFixture is confirmedOvulationFixture's series slid shiftDays
 // later inside the same 28-day model cycle, so a shift can be placed anywhere
 // from the model's own ovulation to past its projected next start without a
 // second literal cycle: the coverline window opens on cycle day 6+shiftDays,
-// the elevated streak ends on cycle day 14+shiftDays, which is also today. The
-// model's half does not move — it still projects ovulation on 2026-03-14 and
-// the next period on 2026-03-29 — only the recorded series does.
+// the elevated streak ends on cycle day 14+shiftDays, which is also today. What
+// does not move is the model's PROJECTIONS — ovulation stays 2026-03-14, the
+// next period 2026-03-29. The recorded series moves, today moves with it, and
+// so does the cycle day, which is derived from today rather than restated.
 func thermalShiftFixture(t *testing.T, shiftDays int) (*models.User, []models.DailyLog, CycleStats, time.Time) {
 	t.Helper()
 
@@ -49,25 +70,24 @@ func thermalShiftFixture(t *testing.T, shiftDays int) (*models.User, []models.Da
 	}
 	firstLowDay := AddCalendarDays(cycleStart, 5+shiftDays, time.UTC)
 	for offset := range 6 {
-		logs = append(logs, models.DailyLog{Date: AddCalendarDays(firstLowDay, offset, time.UTC), BBT: new(36.20)})
+		logs = append(logs, models.DailyLog{Date: AddCalendarDays(firstLowDay, offset, time.UTC), BBT: new(thermalShiftLowBBT)})
 	}
 	for offset := range 3 {
-		logs = append(logs, models.DailyLog{Date: AddCalendarDays(firstLowDay, 6+offset, time.UTC), BBT: new(36.50)})
+		logs = append(logs, models.DailyLog{Date: AddCalendarDays(firstLowDay, 6+offset, time.UTC), BBT: new(thermalShiftHighBBT)})
 	}
 
 	user := &models.User{ID: 1, Role: models.RoleOwner, TrackBBT: true}
-	stats := CycleStats{
+	today := AddCalendarDays(firstLowDay, 8, time.UTC)
+	stats := atToday(CycleStats{
 		CompletedCycleCount: 3,
 		MedianCycleLength:   28,
 		AverageCycleLength:  28,
 		AveragePeriodLength: 5,
 		LutealPhase:         14,
-		CurrentCycleDay:     14 + shiftDays,
 		LastPeriodStart:     cycleStart,
 		OvulationDate:       cyclesignalsCovDay(t, "2026-03-14"),
 		NextPeriodStart:     cyclesignalsCovDay(t, "2026-03-29"),
-	}
-	today := AddCalendarDays(firstLowDay, 8, time.UTC)
+	}, today)
 	return user, logs, stats, today
 }
 
@@ -180,6 +200,22 @@ func TestDashboardOvulationLineKeepsTheProjectionWithoutAShift(t *testing.T) {
 	}
 }
 
+// ovulationMarkerKeys splits a built month into the days carrying the SOLID
+// ovulation marker and the days carrying the tentative one. Every test comparing
+// the grid against another surface reads it through here, so none of them can
+// answer the question with its own loop over a different field.
+func ovulationMarkerKeys(days []CalendarDayState) (solid []string, tentative []string) {
+	for _, day := range days {
+		if day.IsOvulation {
+			solid = append(solid, day.DateString)
+		}
+		if day.IsTentativeOvulation {
+			tentative = append(tentative, day.DateString)
+		}
+	}
+	return solid, tentative
+}
+
 // TestDashboardAndCalendarNameOneDayForOneShift is the point of the shared
 // resolver: the two surfaces an owner reads side by side must not disagree.
 func TestDashboardAndCalendarNameOneDayForOneShift(t *testing.T) {
@@ -190,13 +226,7 @@ func TestDashboardAndCalendarNameOneDayForOneShift(t *testing.T) {
 	monthStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
 	days := BuildCalendarDayStates(user, monthStart, logs, stats, today, time.UTC)
 
-	solid := make([]string, 0, 1)
-	for _, day := range days {
-		if day.IsOvulation {
-			solid = append(solid, day.DateString)
-		}
-	}
-
+	solid, _ := ovulationMarkerKeys(days)
 	if len(solid) != 1 {
 		t.Fatalf("expected exactly one solid ovulation marker in the current cycle's month, got %v", solid)
 	}

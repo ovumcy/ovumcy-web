@@ -64,9 +64,9 @@ func TestDashboardDropsTheProjectionQualifierFromAConfirmedDay(t *testing.T) {
 		}
 	}
 	for offset := 5; offset <= 13; offset++ {
-		temperature := 36.20
+		temperature := dashboardConfirmedOvulationLowBBT
 		if offset > 10 {
-			temperature = 36.50
+			temperature = dashboardConfirmedOvulationHighBBT
 		}
 		value := temperature
 		if err := database.Create(&models.DailyLog{
