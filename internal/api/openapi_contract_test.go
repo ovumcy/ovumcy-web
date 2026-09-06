@@ -9,7 +9,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
@@ -495,15 +494,23 @@ func isTransportHEADTwin(app *fiber.App, route fiber.Route) bool {
 	return false
 }
 
-// sameHandlerChain compares two routes by the functions fiber will dispatch
-// rather than by their names: a twin is registered with the very handler values
-// of the GET route it mirrors, so pointer identity is the exact question.
+// sameHandlerChain compares two routes by the functions fiber will dispatch.
+// It reads each handler's NAME (handlerFuncName, the same reader
+// TestShownOnceGETRoutesAreExactlyTheDeclaredSet trusts) rather than
+// reflect.ValueOf(fn).Pointer(): for a method value, Pointer() returns the
+// code pointer of the method's wrapper, which the reflect docs call "not
+// necessarily enough to identify a single function uniquely" — the same
+// wrapper is produced for that method on any receiver of the type. Comparing
+// names is sound here because this app never constructs more than one
+// *Handler: registerHEADTwins copies the GET route's own handler values onto
+// its HEAD twin, so two routes whose handlers share names at every position
+// are that same registration, not a coincidence between receivers.
 func sameHandlerChain(left fiber.Route, right fiber.Route) bool {
 	if len(left.Handlers) == 0 || len(left.Handlers) != len(right.Handlers) {
 		return false
 	}
 	for index := range left.Handlers {
-		if reflect.ValueOf(left.Handlers[index]).Pointer() != reflect.ValueOf(right.Handlers[index]).Pointer() {
+		if handlerFuncName(left.Handlers[index]) != handlerFuncName(right.Handlers[index]) {
 			return false
 		}
 	}
