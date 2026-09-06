@@ -68,6 +68,21 @@ func TestRootedPathAcceptsTheRootsFilepathIsAbsMisses(t *testing.T) {
 	}
 }
 
+// TestCalendarFeedFencePathTrimsTheEnvironmentValue pins calendarFeedFencePath
+// as the ONE place that trims CALENDAR_FEED_FENCE_PATH: confirmOperatorFeedRevocation
+// no longer trims its own copy, so an operator's shell exporting the variable
+// with stray whitespace (a trailing newline from a sourced file is the
+// realistic shape) has to be cleaned up here or not at all. Without this test,
+// removing the TrimSpace below stays green: nothing else in this package sets
+// the environment variable itself.
+func TestCalendarFeedFencePathTrimsTheEnvironmentValue(t *testing.T) {
+	t.Setenv(security.CalendarFeedFencePathEnv, " /app/fence/f ")
+
+	if got := calendarFeedFencePath(); got != "/app/fence/f" {
+		t.Fatalf("calendarFeedFencePath: expected surrounding whitespace trimmed, got %q", got)
+	}
+}
+
 // fakeConfirmFenceAnchor and fakeConfirmFenceAppState let this package build a
 // real *services.CalendarFeedRestoreFence over doubles it controls, without
 // touching a filesystem or a database: Go interface satisfaction is
@@ -276,7 +291,7 @@ func TestConfirmOperatorFeedRevocationRefusesAndWritesNothing(t *testing.T) {
 			}},
 			anchor:     &fakeConfirmFenceAnchor{},
 			wantExtra:  []string{"no fence value is visible from this process", "missing, or present and empty"},
-			wantRemedy: "starting it once rewrites both halves",
+			wantRemedy: "disarms every armed calendar feed on the instance and rewrites both halves",
 		},
 	}
 

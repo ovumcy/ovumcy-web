@@ -65,8 +65,13 @@ func buildRepositories(database *gorm.DB, fencePath string) (*db.Repositories, *
 // caller must not proceed to its own write — and every refusal but one ends
 // "Nothing was changed": the exception is the half-advanced fence, whose own
 // message says plainly that the file side already moved.
+//
+// fencePath is used exactly as received, with no trim of its own: trimming
+// happens once, in calendarFeedFencePath, so the value this switch judges and
+// the value buildRepositories already built the fence's anchor from are
+// provably the same string, not two copies a future third read could let
+// drift apart.
 func confirmOperatorFeedRevocation(ctx context.Context, fencePath string, fence *services.CalendarFeedRestoreFence, errOutput io.Writer) error {
-	fencePath = strings.TrimSpace(fencePath)
 	switch {
 	case fencePath == "":
 		return calendarFeedFenceConfirmRefusal(fencePath, calendarFeedFenceStateNotSet, nil)
@@ -230,7 +235,8 @@ const (
 	reconfigureTheServer = "A relative path cannot safely name the server's fence from any shell, including one already set to the exact string the " +
 		"server was given — it resolves against a working directory, and this process's is not the server's. Reconfigure the SERVER's own " +
 		security.CalendarFeedFencePathEnv + " to an absolute path, restart it once, then point this command at that same absolute path and re-run."
-	startTheServer = "Start the server once with this fence configured, then re-run this command."
+	startTheServer = "Start the server once with this fence configured — its boot pass disarms every armed calendar feed on the " +
+		"instance before it reconciles both halves — then re-run this command."
 	// Distinct from startTheServer: a fence that has NEVER recorded a marker
 	// anywhere may mean the server has never had a writable fence at all —
 	// the compose image sets CALENDAR_FEED_FENCE_PATH unconditionally, so an
@@ -248,8 +254,8 @@ const (
 	// Every route into this state gets its own clause.
 	anchorMissingRemedy = "Either this process cannot see the server's own fence file — run the operator CLI where that file is visible " +
 		dockerCLIForms + ", or set " + security.CalendarFeedFencePathEnv + " to the same path the server uses — or the server sees the same missing " +
-		"or empty file, in which case starting it once rewrites both halves and this command can then be re-run. If the server has never been able " +
-		"to write a fence at all (no volume mounted), give it a writable one first."
+		"or empty file, in which case starting it once disarms every armed calendar feed on the instance and rewrites both halves, and this " +
+		"command can then be re-run. If the server has never been able to write a fence at all (no volume mounted), give it a writable one first."
 )
 
 // calendarFeedFenceConfirmRefusals is the whole refusal vocabulary, one entry

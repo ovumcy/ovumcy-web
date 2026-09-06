@@ -165,15 +165,28 @@ func runResetPasswordCommand(databaseConfig db.Config, args []string, fencePath 
 	authService := services.NewAuthService(repositories.Users)
 	operatorUsers := services.NewOperatorUserService(repositories.Users, authService)
 
+	return runResetPassword(operatorUsers, authService, fencePath, fence, opts, normalizedEmail, newPassword, output)
+}
+
+// runResetPassword is runResetPasswordCommand's own tail — resolve, confirm
+// the fence, then write — split out so a test can drive that exact sequence
+// over a fence and a user repository it controls, the same seam runUsersDelete
+// already gives `users delete`. It is what lets a test journal WHEN each fence
+// half advances relative to the credential write, not only that it does.
+func runResetPassword(operatorUsers *services.OperatorUserService, authService *services.AuthService, fencePath string, fence *services.CalendarFeedRestoreFence, opts resetPasswordOptions, normalizedEmail string, newPassword string, output io.Writer) error {
 	target, err := resolveOperatorUser(operatorUsers, opts.userID, normalizedEmail)
 	if err != nil {
 		return mapOperatorUserLookupError(err, opts.userID, normalizedEmail)
 	}
 
+	if output == nil {
+		output = os.Stdout
+	}
+
 	// A forced reset force-clears the owner's calendar feed, so this process
 	// must confirm and advance the SAME fence the server does before the reset
 	// is even attempted — never merely warn about it.
-	if err := confirmOperatorFeedRevocation(context.Background(), fencePath, fence, os.Stderr); err != nil {
+	if err := confirmOperatorFeedRevocation(context.Background(), fencePath, fence, output); err != nil {
 		return err
 	}
 
@@ -181,9 +194,6 @@ func runResetPasswordCommand(databaseConfig db.Config, args []string, fencePath 
 		return operatorFeedRevocationCommitted(mapResetPasswordError(resetErr, opts, normalizedEmail))
 	}
 
-	if output == nil {
-		output = os.Stdout
-	}
 	_, _ = fmt.Fprintln(output, "✅ Password reset successful")
 	_, _ = fmt.Fprintln(output, "Existing auth sessions were invalidated.")
 	_, _ = fmt.Fprintln(output, "User must sign in again and reset the password before continuing.")

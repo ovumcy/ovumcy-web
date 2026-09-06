@@ -67,7 +67,7 @@ func TestUsersDeleteRefusesAndDeletesNothingWithoutAConfirmedFence(t *testing.T)
 				return filepath.Join(t.TempDir(), "never-mounted", "calendar-feed.fence")
 			},
 			wantState:  "no fence value is visible from this process",
-			wantRemedy: "starting it once rewrites both halves",
+			wantRemedy: "disarms every armed calendar feed on the instance and rewrites both halves",
 		},
 		{
 			// A directory, not a file: the one Read failure an operator can
@@ -210,6 +210,91 @@ func TestUsersDeleteAdvancesTheFenceBeforeTheRow(t *testing.T) {
 	}
 }
 
+// journalingPasswordResetRepository is journalingUserRepository's counterpart
+// for the reset-password path: it journals exactly the instant
+// ForceResetPasswordAndRevokeSessions is invoked, which is the credential
+// write runResetPassword performs, and promotes every other method from the
+// real *db.UserRepository it wraps unchanged.
+type journalingPasswordResetRepository struct {
+	*db.UserRepository
+	journal *[]string
+}
+
+func (repo *journalingPasswordResetRepository) ForceResetPasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string) error {
+	*repo.journal = append(*repo.journal, "row-write")
+	return repo.UserRepository.ForceResetPasswordAndRevokeSessions(ctx, userID, passwordHash)
+}
+
+// TestResetPasswordAdvancesTheFenceBeforeTheRow is
+// TestUsersDeleteAdvancesTheFenceBeforeTheRow's reset-password counterpart,
+// driving the REAL runResetPassword — the seam runResetPasswordCommand splits
+// out for exactly this reason — against a real SQLite row, through a fence
+// whose halves are fakes only so the test can journal WHEN each write
+// happened.
+//
+// ForceResetPasswordAndRevokeSessions carries the same best-effort
+// post-op advance DeleteAccountAndRelatedData does (both call
+// advanceCalendarFeedFenceBestEffort), so the expected journal has the same
+// shape: the gate's own advance, the credential write, then that write's own
+// advance.
+func TestResetPasswordAdvancesTheFenceBeforeTheRow(t *testing.T) {
+	journal := []string{}
+	appState := &fakeConfirmFenceAppState{
+		values:  map[string]string{models.AppStateKeyCalendarFeedRestoreFence: confirmFenceTestToken},
+		journal: &journal,
+	}
+	anchor := &fakeConfirmFenceAnchor{value: confirmFenceTestToken, found: true, journal: &journal}
+	fence := services.NewCalendarFeedRestoreFence(appState, fakeConfirmFenceUsers{}, anchor)
+
+	databasePath := createCLIResetDatabase(t)
+	createCLIResetUser(t, databasePath, "reset-fence-order@example.com", "StrongPass1")
+
+	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	sqlDB, err := database.DB()
+	if err != nil {
+		t.Fatalf("open sql db: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	repositories := db.NewRepositories(database).WithCalendarFeedFence(fence)
+	users := &journalingPasswordResetRepository{UserRepository: repositories.Users, journal: &journal}
+	authService := services.NewAuthService(users)
+	operatorUsers := services.NewOperatorUserService(users, authService)
+
+	opts := resetPasswordOptions{email: "reset-fence-order@example.com"}
+	if err := runResetPassword(operatorUsers, authService, "/app/fence/calendar-feed.fence", fence, opts, "reset-fence-order@example.com", "EvenStronger2", &bytes.Buffer{}); err != nil {
+		t.Fatalf("runResetPassword: %v", err)
+	}
+
+	want := []string{"anchor", "app_state", "row-write", "anchor", "app_state"}
+	if len(journal) != len(want) {
+		t.Fatalf("expected the fence to advance before the row write, got %v, want %v", journal, want)
+	}
+	for i := range want {
+		if journal[i] != want[i] {
+			t.Fatalf("expected the fence to advance before the row write, got %v, want %v", journal, want)
+		}
+	}
+
+	if anchor.written == "" || anchor.written == confirmFenceTestToken {
+		t.Fatalf("expected a fresh token to have been minted, got %q", anchor.written)
+	}
+	if got := appState.values[models.AppStateKeyCalendarFeedRestoreFence]; got != anchor.written {
+		t.Fatalf("expected both halves to hold the same fresh token, file %q app_state %q", anchor.written, got)
+	}
+
+	updated := loadCLIResetUser(t, databasePath, "reset-fence-order@example.com")
+	if bcrypt.CompareHashAndPassword([]byte(updated.PasswordHash), []byte("EvenStronger2")) != nil {
+		t.Fatal("expected the stored hash to reflect the reset")
+	}
+	if !updated.MustChangePassword {
+		t.Fatal("expected must_change_password to be set by a forced reset")
+	}
+}
+
 // TestResetPasswordRefusesWithoutAConfirmedFenceAndLeavesTheHashAlone pins the
 // same refusal for the forced reset path, and — because the fence check now
 // runs before ForceResetPassword* rather than only warning after a successful
@@ -246,31 +331,31 @@ func TestResetPasswordRefusesWithoutAConfirmedFenceAndLeavesTheHashAlone(t *test
 // rather than after it: the fence advance is one-shot, so a write that fails
 // once the gate has passed leaves the account's password where it was while
 // every armed calendar feed on the instance is already revoked. The success
-// line on stderr is the operator's only record of that half-done state, so it
-// is asserted here rather than left implied — a run whose stderr is silent
-// and whose password is unchanged is indistinguishable from a refusal.
+// line on the command's own output is the operator's only record of that
+// half-done state, so it is asserted here rather than left implied — a run
+// whose output is silent and whose password is unchanged is indistinguishable
+// from a refusal.
 //
-// The error the operator gets must say the same thing the stderr line does:
+// The error the operator gets must say the same thing the output line does:
 // a bare "reset password: ..." after a gate that already spent its one-shot
 // advance reads as "the command did nothing", and the operator's next move —
 // whether to re-run at all — depends on knowing otherwise.
-//
-// Not run with t.Parallel(): it swaps os.Stderr.
 func TestResetPasswordReportsAWriteFailureAfterTheFenceHasAlreadyAdvanced(t *testing.T) {
+	t.Parallel()
+
 	databasePath := createCLIResetDatabase(t)
 	createCLIResetUser(t, databasePath, "cli-reset-write-refused@example.com", "StrongPass1")
 	fencePath := armOperatorFence(t, databasePath)
 	refuseCLIPasswordHashWrites(t, databasePath)
-	readStandardError := captureStandardError(t)
 
+	var output bytes.Buffer
 	err := runResetPasswordCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"cli-reset-write-refused@example.com"},
 		fencePath,
 		func() ([]byte, error) { return []byte("EvenStronger2"), nil },
-		io.Discard,
+		&output,
 	)
-	captured := readStandardError()
 
 	if !errors.Is(err, services.ErrAuthPasswordUpdate) {
 		t.Fatalf("expected the refused write to reach the operator as ErrAuthPasswordUpdate, got %v", err)
@@ -299,8 +384,8 @@ func TestResetPasswordReportsAWriteFailureAfterTheFenceHasAlreadyAdvanced(t *tes
 		t.Fatal("expected must_change_password to survive a refused write")
 	}
 
-	if !strings.Contains(captured, "fence advanced at "+fencePath) {
-		t.Fatalf("the burned fence generation must still be reported, got %q", captured)
+	if !strings.Contains(output.String(), "fence advanced at "+fencePath) {
+		t.Fatalf("the burned fence generation must still be reported, got %q", output.String())
 	}
 }
 
@@ -329,34 +414,6 @@ func refuseCLIPasswordHashWrites(t *testing.T, databasePath string) {
 			"BEGIN SELECT RAISE(ABORT, 'password_hash writes are refused by this test'); END",
 	).Error; err != nil {
 		t.Fatalf("refuseCLIPasswordHashWrites: create trigger: %v", err)
-	}
-}
-
-// captureStandardError swaps os.Stderr for a pipe and returns the reader half
-// as a function that restores the original and yields everything written
-// meanwhile. runResetPasswordCommand hands confirmOperatorFeedRevocation
-// os.Stderr itself, so from the command's own entry point the fence line
-// cannot be observed any other way.
-func captureStandardError(t *testing.T) func() string {
-	t.Helper()
-
-	reader, writer, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("captureStandardError: pipe: %v", err)
-	}
-	original := os.Stderr
-	os.Stderr = writer
-	t.Cleanup(func() { os.Stderr = original })
-
-	return func() string {
-		os.Stderr = original
-		_ = writer.Close()
-		captured, readErr := io.ReadAll(reader)
-		_ = reader.Close()
-		if readErr != nil {
-			t.Fatalf("captureStandardError: read: %v", readErr)
-		}
-		return string(captured)
 	}
 }
 
