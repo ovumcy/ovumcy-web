@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/ovumcy/ovumcy-web/internal/bootstrap"
@@ -75,7 +74,7 @@ func confirmOperatorFeedRevocation(ctx context.Context, fencePath string, fence 
 	switch {
 	case fencePath == "":
 		return calendarFeedFenceConfirmRefusal(fencePath, calendarFeedFenceStateNotSet, nil)
-	case !rootedPath(fencePath):
+	case !security.CalendarFeedFencePathRooted(fencePath):
 		return calendarFeedFenceConfirmRefusal(fencePath, calendarFeedFenceStateRelative, nil)
 	case fence == nil:
 		// Every production caller gets its fence from buildRepositories, which
@@ -355,14 +354,4 @@ func calendarFeedFenceConfirmRefusal(fencePath string, state calendarFeedFenceCo
 	// No trailing period (staticcheck ST1005): Go error strings end without
 	// punctuation, even a deliberately long, multi-sentence operator one.
 	return fmt.Errorf("calendar-feed restore fence: %s %s %s Nothing was changed", refusal.sentence(fencePath, cause), consequence, refusal.remedy)
-}
-
-// rootedPath reports whether the path names a location independent of the
-// working directory. filepath.IsAbs is not enough on its own: this CLI is
-// developed on Windows, where it demands a drive letter and therefore calls
-// `/app/fence/calendar-feed.fence` relative — which is precisely the value an
-// operator copies out of a compose file, and precisely the case the check
-// exists to catch. A leading separator settles it on either platform.
-func rootedPath(path string) bool {
-	return filepath.IsAbs(path) || strings.HasPrefix(path, "/") || strings.HasPrefix(path, `\`)
 }

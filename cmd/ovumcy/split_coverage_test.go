@@ -27,6 +27,11 @@ func setValidBootEnv(t *testing.T) {
 	t.Setenv("TRUST_PROXY_ENABLED", "false")
 	t.Setenv("REGISTRATION_MODE", "closed")
 	t.Setenv("OIDC_ENABLED", "false")
+	// Cleared like SECRET_KEY_FILE and DATABASE_URL above: a relative
+	// CALENDAR_FEED_FENCE_PATH now refuses the boot, so one left in the shell
+	// running the suite would fail every caller of this helper on a value none
+	// of them set.
+	t.Setenv("CALENDAR_FEED_FENCE_PATH", "")
 }
 
 func TestGetEnvFallbacksOnInvalidValue(t *testing.T) {
