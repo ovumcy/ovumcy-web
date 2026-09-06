@@ -47,6 +47,20 @@ func assertStatusCode(t *testing.T, response *http.Response, expected int) {
 	}
 }
 
+// assertNoSetCookie fails if response carries any Set-Cookie header. It gates
+// on the RAW header values, never the parsed Cookies(): a malformed Set-Cookie
+// value is dropped silently by Go's cookie parser, so a check gated on the
+// parsed slice would miss the exact case this diagnostic exists to catch.
+// label is the full description of what must not have set a cookie; the raw
+// values are appended for diagnosis.
+func assertNoSetCookie(t *testing.T, response *http.Response, label string) {
+	t.Helper()
+
+	if values := response.Header.Values("Set-Cookie"); len(values) != 0 {
+		t.Fatalf("%s, got %q", label, values)
+	}
+}
+
 func mustParseLocationHeader(t *testing.T, response *http.Response) *url.URL {
 	t.Helper()
 

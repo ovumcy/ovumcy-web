@@ -73,10 +73,7 @@ func TestGenerateCalendarFeedTokenMintsBothVerifierColumns(t *testing.T) {
 
 	// The stored MAC is exactly the MAC the verify path recomputes from the
 	// presented halves — the two derivations must not drift.
-	selector, verifier, ok := SplitCalendarFeedToken(fullToken)
-	if !ok {
-		t.Fatal("expected the generated token to split")
-	}
+	selector, verifier := mustSplitFeedToken(t, fullToken)
 	recomputed, err := security.CalendarFeedVerifierMAC([]byte(calendarFeedTestSecretKey), selector, verifier)
 	if err != nil {
 		t.Fatalf("CalendarFeedVerifierMAC: %v", err)
@@ -130,10 +127,7 @@ func TestVerifyCalendarFeedTokenRejectsWrongVerifier(t *testing.T) {
 func TestVerifyCalendarFeedTokenRejectsWrongSelector(t *testing.T) {
 	fullToken, columns := mustGenerateFeedToken(t)
 
-	_, presentedVerifier, ok := SplitCalendarFeedToken(fullToken)
-	if !ok {
-		t.Fatal("expected the generated token to split")
-	}
+	_, presentedVerifier := mustSplitFeedToken(t, fullToken)
 	// A different selector than the one whose columns we stored, same real verifier.
 	otherSelector := strings.Repeat("B", calendarFeedSelectorLength)
 	if otherSelector == columns.Selector {
@@ -203,10 +197,7 @@ func TestVerifyCalendarFeedTokenRejectsEmptyStoredColumns(t *testing.T) {
 // the ~265 ms path.
 func TestVerifyCalendarFeedTokenPrefersMACOverBcrypt(t *testing.T) {
 	fullToken, columns := mustGenerateFeedToken(t)
-	selector, verifier, ok := SplitCalendarFeedToken(fullToken)
-	if !ok {
-		t.Fatal("expected the generated token to split")
-	}
+	selector, verifier := mustSplitFeedToken(t, fullToken)
 
 	// Valid bcrypt hash, MAC minted under a different (rotated) key.
 	staleMAC, err := security.CalendarFeedVerifierMAC([]byte(calendarFeedRotatedTestKey), selector, verifier)
@@ -254,10 +245,7 @@ func TestVerifyCalendarFeedTokenFallsBackToBcryptOnlyForPre032Rows(t *testing.T)
 func TestGenerateCalendarFeedTokenHashAtRest(t *testing.T) {
 	fullToken, columns := mustGenerateFeedToken(t)
 
-	selector, verifier, ok := SplitCalendarFeedToken(fullToken)
-	if !ok {
-		t.Fatal("expected the generated token to split")
-	}
+	selector, verifier := mustSplitFeedToken(t, fullToken)
 
 	for name, stored := range map[string]string{"hash": columns.VerifierHash, "mac": columns.VerifierMAC} {
 		if stored == verifier {
