@@ -5,13 +5,12 @@
   — a calendar client presents no session and no CSRF token, and `docs/SECURITY_INVARIANTS.md`
   already required the identical `404` it answers an unknown token with to carry no `Set-Cookie`;
   that requirement now reads on every outcome of the route, which is what this fix makes true.
-  Every GET or HEAD to the feed's own URL — whatever its case or trailing slash — used to get one
-  anyway: an `ovumcy_csrf` cookie
-  handing out a fresh CSRF token, and, whenever the request named a timezone, an `ovumcy_tz`
-  cookie recording it, both set before the request had any reason to carry either. Nothing about
-  who may poll the feed changes — a calendar client was never going to present a CSRF token or
-  read a cookie back — so it now polls exactly as before, with two cookies fewer riding along for
-  no reason.
+  Every GET or HEAD to the feed's own URL — whatever its case or trailing slash — used to be handed
+  cookies anyway: an `ovumcy_csrf` cookie carrying a fresh CSRF token, and, whenever the request
+  named a timezone, an `ovumcy_tz` cookie recording it, both set before the request had any reason
+  to carry either. Nothing about who may poll the feed changes — a calendar client was never going
+  to present a CSRF token or read a cookie back — so it now polls exactly as before, with two
+  cookies fewer riding along for no reason.
 
   The exclusion is scoped precisely to the feed's own concrete URL: a path that merely starts with
   its prefix but names no real token — a bare `/calendar/feed/`, or a nested path segment — keeps

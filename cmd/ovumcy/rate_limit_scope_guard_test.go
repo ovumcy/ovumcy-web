@@ -93,9 +93,11 @@ func limiterPathConstants() map[string]string {
 	}
 }
 
-// discoverScopedLimiterSpecs parses every non-test file in the package and
-// returns one spec per rateLimitOnlyFor call site.
-func discoverScopedLimiterSpecs(t *testing.T) []scopedLimiterSpec {
+// parsePackageFiles parses every non-test file in the package. Both guards that
+// read the wiring statically walk what it returns, so a limiter mounted from any
+// function in any file of package main is swept on the same footing as the ones
+// configureFiberMiddleware mounts.
+func parsePackageFiles(t *testing.T) (*token.FileSet, []*ast.File) {
 	t.Helper()
 
 	entries, err := os.ReadDir(".")
@@ -104,7 +106,7 @@ func discoverScopedLimiterSpecs(t *testing.T) []scopedLimiterSpec {
 	}
 
 	fileSet := token.NewFileSet()
-	var specs []scopedLimiterSpec
+	var files []*ast.File
 	for _, entry := range entries {
 		name := entry.Name()
 		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -114,6 +116,22 @@ func discoverScopedLimiterSpecs(t *testing.T) []scopedLimiterSpec {
 		if parseErr != nil {
 			t.Fatalf("parse %s: %v", name, parseErr)
 		}
+		files = append(files, parsed)
+	}
+	if len(files) == 0 {
+		t.Fatal("no non-test file parsed in the package directory — discovery broke, and every guard reading the wiring would sweep nothing")
+	}
+	return fileSet, files
+}
+
+// discoverScopedLimiterSpecs returns one spec per rateLimitOnlyFor call site in
+// the package.
+func discoverScopedLimiterSpecs(t *testing.T) []scopedLimiterSpec {
+	t.Helper()
+
+	fileSet, files := parsePackageFiles(t)
+	var specs []scopedLimiterSpec
+	for _, parsed := range files {
 		ast.Inspect(parsed, func(node ast.Node) bool {
 			call, ok := node.(*ast.CallExpr)
 			if !ok {
@@ -456,7 +474,9 @@ func TestCalendarFeedLimiterCountsEveryRoutableSpellingAndVerbOfTheFeedURL(t *te
 	}
 }
 
-// TestCalendarFeedLimiterSpendsNoBudgetOnPathsThatReachNoFeed is the other half.
+// TestCalendarFeedLimiterSpendsNoBudgetOnPathsThatReachNoFeed is the other half,
+// and covers what TestCalendarFeedRateLimiterScopedToTheRouteShapeNotTheBarePrefix
+// covered before it, one bare-prefix case of the three below.
 // The budget is small because a well-formed token costs a keyed-MAC compare — or,
 // on a not-yet-migrated row, a bcrypt — and a request that reaches no feed pays
 // neither, which is why SECURITY.md's calendar-feed row says a bare prefix, a
@@ -499,73 +519,278 @@ func TestCalendarFeedLimiterSpendsNoBudgetOnPathsThatReachNoFeed(t *testing.T) {
 	}
 }
 
-// limiterScopePredicateForms are the only Next predicates a limiter in
-// configureFiberMiddleware may carry, each covered by a sweep in this file:
-// rateLimitOnlyFor by TestScopedRateLimitersCoverEveryRoutableSpellingOfTheirPath,
+// The two Next predicates a limiter may carry, each covered by a sweep in this
+// file: rateLimitOnlyFor by TestScopedRateLimitersCoverEveryRoutableSpellingOfTheirPath,
 // which reads its arguments out of the source, and the feed's route-shape
 // predicate by the two tests above, which drive it. A limiter with no Next at all
-// is outside this guard's subject — it is mounted prefix-wide on purpose (the
-// /api and /auth/oidc catch-alls), and fiber normalizes a prefix mount itself.
-var limiterScopePredicateForms = []string{
-	"rateLimitOnlyFor(",
-	"func(c fiber.Ctx) bool { return !api.IsCalendarFeedRequest(c.Method(), c.Path()) },",
+// is outside that half of the guard's subject — it is mounted prefix-wide on
+// purpose (the /api and /auth/oidc catch-alls), and fiber normalizes a prefix
+// mount itself. Its key generator is not: every limiter, scoped or prefix-wide,
+// has to key per client.
+const (
+	scopedPathPredicateForm = "rateLimitOnlyFor(method, path)"
+	routeShapePredicateForm = "api.IsCalendarFeedRequest(c.Method(), c.Path())"
+)
+
+// limiterConfigFloor guards against a vacuous pass, the way scopedLimiterFloor
+// does for the call sites: the sweep below walks the package for limiter.Config
+// literals, so a walk that silently matched none would report success over an
+// empty set. Eight limiters are wired today — logout, login, register,
+// forgot-password, the /auth/oidc catch-all, the language switch, the /api
+// catch-all and the calendar feed.
+const limiterConfigFloor = 8
+
+// isQualified reports whether expr is the qualified name pkg.name.
+func isQualified(expr ast.Expr, pkg, name string) bool {
+	selector, ok := expr.(*ast.SelectorExpr)
+	if !ok || selector.Sel.Name != name {
+		return false
+	}
+	ident, isIdent := selector.X.(*ast.Ident)
+	return isIdent && ident.Name == pkg
 }
 
-// configureFiberMiddlewareBody returns the source text of
-// configureFiberMiddleware. The slice stops at that function's end on purpose:
-// csrfMiddlewareConfig further down server.go carries a Next of its own, which is
-// a CSRF skip and not a limiter's scope.
-func configureFiberMiddlewareBody(t *testing.T) string {
-	t.Helper()
+// constructsLimiterConfig reports whether expr builds a limiter.Config, with or
+// without the address-of a mount could be written with.
+func constructsLimiterConfig(expr ast.Expr) bool {
+	if unary, ok := expr.(*ast.UnaryExpr); ok && unary.Op == token.AND {
+		expr = unary.X
+	}
+	literal, ok := expr.(*ast.CompositeLit)
+	return ok && isQualified(literal.Type, "limiter", "Config")
+}
 
-	source, err := os.ReadFile("server.go")
-	if err != nil {
-		t.Fatalf("read server.go: %v", err)
+// limiterConfigVariables returns the names bound to a limiter.Config in file, so
+// the sweep can refuse a config assembled field by field after the literal it
+// reads has been closed.
+func limiterConfigVariables(file *ast.File) map[string]bool {
+	names := make(map[string]bool)
+	ast.Inspect(file, func(node ast.Node) bool {
+		switch typed := node.(type) {
+		case *ast.ValueSpec:
+			if isQualified(typed.Type, "limiter", "Config") {
+				for _, name := range typed.Names {
+					names[name.Name] = true
+				}
+			}
+			for i, value := range typed.Values {
+				if i < len(typed.Names) && constructsLimiterConfig(value) {
+					names[typed.Names[i].Name] = true
+				}
+			}
+		case *ast.AssignStmt:
+			for i, value := range typed.Rhs {
+				if i >= len(typed.Lhs) || !constructsLimiterConfig(value) {
+					continue
+				}
+				if ident, ok := typed.Lhs[i].(*ast.Ident); ok {
+					names[ident.Name] = true
+				}
+			}
+		}
+		return true
+	})
+	return names
+}
+
+// keyGeneratorBindings returns the names bound to a rateLimitKeyGenerator(...)
+// call in file. configureFiberMiddleware builds the generator once and hands the
+// same value to every limiter, so the sweep has to follow that name to see what
+// a limiter keys on.
+func keyGeneratorBindings(file *ast.File) map[string]bool {
+	names := make(map[string]bool)
+	record := func(target ast.Expr, value ast.Expr) {
+		call, ok := value.(*ast.CallExpr)
+		if !ok {
+			return
+		}
+		callee, isIdent := call.Fun.(*ast.Ident)
+		if !isIdent || callee.Name != "rateLimitKeyGenerator" {
+			return
+		}
+		if ident, isTarget := target.(*ast.Ident); isTarget {
+			names[ident.Name] = true
+		}
 	}
-	body := string(source)
-	start := strings.Index(body, "func configureFiberMiddleware(")
-	if start < 0 {
-		t.Fatal("configureFiberMiddleware not found in server.go — teach this guard the new name rather than letting it sweep nothing")
+	ast.Inspect(file, func(node ast.Node) bool {
+		switch typed := node.(type) {
+		case *ast.ValueSpec:
+			for i, value := range typed.Values {
+				if i < len(typed.Names) {
+					record(typed.Names[i], value)
+				}
+			}
+		case *ast.AssignStmt:
+			for i, value := range typed.Rhs {
+				if i < len(typed.Lhs) {
+					record(typed.Lhs[i], value)
+				}
+			}
+		}
+		return true
+	})
+	return names
+}
+
+// limiterConfigField returns the value a limiter.Config literal gives field, and
+// whether the literal sets it at all.
+func limiterConfigField(literal *ast.CompositeLit, field string) (ast.Expr, bool) {
+	for _, element := range literal.Elts {
+		pair, ok := element.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		if key, isIdent := pair.Key.(*ast.Ident); isIdent && key.Name == field {
+			return pair.Value, true
+		}
 	}
-	end := strings.Index(body[start:], "\n}\n")
-	if end < 0 {
-		t.Fatal("could not find the end of configureFiberMiddleware")
+	return nil, false
+}
+
+// callsOn reports whether expr is the no-argument call receiver.method().
+func callsOn(expr ast.Expr, receiver, method string) bool {
+	call, ok := expr.(*ast.CallExpr)
+	if !ok || len(call.Args) != 0 {
+		return false
 	}
-	return body[start : start+end]
+	selector, isSelector := call.Fun.(*ast.SelectorExpr)
+	if !isSelector || selector.Sel.Name != method {
+		return false
+	}
+	ident, isIdent := selector.X.(*ast.Ident)
+	return isIdent && ident.Name == receiver
+}
+
+// asksTheFeedPredicateAboutItsOwnRequest reports whether the func literal puts
+// api.IsCalendarFeedRequest the question the two behavioural sweeps answer: the
+// method and path of the request being scoped, taken off its own context, rather
+// than a captured or constant pair. The shape is read from the syntax tree, so
+// the same predicate laid out across several lines still matches.
+func asksTheFeedPredicateAboutItsOwnRequest(literal *ast.FuncLit) bool {
+	params := literal.Type.Params
+	if params == nil || len(params.List) != 1 || len(params.List[0].Names) != 1 {
+		return false
+	}
+	if !isQualified(params.List[0].Type, "fiber", "Ctx") {
+		return false
+	}
+	context := params.List[0].Names[0].Name
+
+	asked := false
+	ast.Inspect(literal.Body, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok || !isQualified(call.Fun, "api", "IsCalendarFeedRequest") || len(call.Args) != 2 {
+			return true
+		}
+		if callsOn(call.Args[0], context, "Method") && callsOn(call.Args[1], context, "Path") {
+			asked = true
+		}
+		return !asked
+	})
+	return asked
+}
+
+// limiterScopePredicateForm names which of the two swept forms expr is, or ""
+// for a third kind no sweep here drives.
+func limiterScopePredicateForm(expr ast.Expr) string {
+	if call, ok := expr.(*ast.CallExpr); ok {
+		if callee, isIdent := call.Fun.(*ast.Ident); isIdent && callee.Name == "rateLimitOnlyFor" {
+			return scopedPathPredicateForm
+		}
+		return ""
+	}
+	if literal, ok := expr.(*ast.FuncLit); ok && asksTheFeedPredicateAboutItsOwnRequest(literal) {
+		return routeShapePredicateForm
+	}
+	return ""
+}
+
+// keysPerClient reports whether expr is the production key generator, either
+// called inline or through a name bound to that call in the same file.
+func keysPerClient(expr ast.Expr, bindings map[string]bool) bool {
+	switch typed := expr.(type) {
+	case *ast.CallExpr:
+		callee, ok := typed.Fun.(*ast.Ident)
+		return ok && callee.Name == "rateLimitKeyGenerator"
+	case *ast.Ident:
+		return bindings[typed.Name]
+	}
+	return false
 }
 
 // TestEveryLimiterScopePredicateIsOneTheSweepsCover closes the gap the feed's
 // mount opened above: discovery there reads rateLimitOnlyFor call sites, so a
 // limiter scoped by any other predicate is not swept — it is invisible, and
-// rewriting the feed's Next to compare the raw c.Path() would leave every AST
-// guard in this file green. Each Next wired in configureFiberMiddleware must
-// therefore be one of the forms a sweep here actually drives, and each of those
-// forms must still be wired.
+// rewriting the feed's Next to compare the raw c.Path() would leave every other
+// guard in this file green.
+//
+// It reads the syntax tree of the whole package rather than the text of
+// configureFiberMiddleware: a limiter mounted from newFiberApp — or from any
+// function added later, in any file — ships in the same chain, and a text scan
+// anchored on one function's name would not see it. Each limiter.Config must
+// therefore carry a Next that is one of the forms a sweep here drives (or none
+// at all, the deliberate prefix-wide mounts), a KeyGenerator that is the
+// production per-client one, and both spelled inside the literal, where this
+// sweep can read them. Each swept form must still be wired, or the sweep written
+// for it is measuring a wiring that is gone.
+//
+// KeyGenerator is here because the two claims are one wiring: a limiter that
+// pools every client into a single bucket caps the endpoint's total traffic, not
+// each caller's, so the per-IP row in SECURITY.md would be describing something
+// the chain no longer does. TestRateLimitKeyGeneratorBucketing proves that
+// generator separates clients; this pins that every limiter uses it.
 func TestEveryLimiterScopePredicateIsOneTheSweepsCover(t *testing.T) {
-	wired := make(map[string]int, len(limiterScopePredicateForms))
-	for _, line := range strings.Split(configureFiberMiddlewareBody(t), "\n") {
-		trimmed := strings.TrimSpace(line)
-		if !strings.HasPrefix(trimmed, "Next:") {
-			continue
-		}
-		predicate := strings.TrimSpace(strings.TrimPrefix(trimmed, "Next:"))
-		matched := ""
-		for _, form := range limiterScopePredicateForms {
-			if strings.HasPrefix(predicate, form) {
-				matched = form
-				break
+	fileSet, files := parsePackageFiles(t)
+
+	wired := make(map[string]int, 2)
+	limiters := 0
+	for _, file := range files {
+		configVariables := limiterConfigVariables(file)
+		keyGenerators := keyGeneratorBindings(file)
+		ast.Inspect(file, func(node ast.Node) bool {
+			if assignment, ok := node.(*ast.AssignStmt); ok {
+				for _, target := range assignment.Lhs {
+					selector, isSelector := target.(*ast.SelectorExpr)
+					if !isSelector || (selector.Sel.Name != "Next" && selector.Sel.Name != "KeyGenerator") {
+						continue
+					}
+					if ident, isIdent := selector.X.(*ast.Ident); isIdent && configVariables[ident.Name] {
+						t.Errorf("%s: %s.%s is set after the limiter.Config literal is closed; this sweep reads the literal, so a limiter configured this way is scoped and keyed by nothing it can see — keep Next and KeyGenerator inside the literal", fileSet.Position(target.Pos()), ident.Name, selector.Sel.Name)
+					}
+				}
+				return true
 			}
-		}
-		if matched == "" {
-			t.Errorf("a limiter is scoped by %q, which nothing here sweeps: express the scope as rateLimitOnlyFor(method, path) so the sweep above reads it, or — for a scope no exact (method, path) pair can express — write the sweep that drives every routable spelling of it first and then list its predicate in limiterScopePredicateForms. The predicate is read off the Next: line, so keep it on one line", predicate)
-			continue
-		}
-		wired[matched]++
+
+			literal, ok := node.(*ast.CompositeLit)
+			if !ok || !isQualified(literal.Type, "limiter", "Config") {
+				return true
+			}
+			limiters++
+			position := fileSet.Position(literal.Pos()).String()
+
+			if next, scoped := limiterConfigField(literal, "Next"); scoped {
+				form := limiterScopePredicateForm(next)
+				if form == "" {
+					t.Errorf("%s: this limiter is scoped by a predicate nothing here sweeps: express the scope as rateLimitOnlyFor(method, path) so TestScopedRateLimitersCoverEveryRoutableSpellingOfTheirPath reads it, or — for a scope no exact (method, path) pair can express — write the sweep that drives every routable spelling of it first, then teach limiterScopePredicateForm the shape it took", position)
+				} else {
+					wired[form]++
+				}
+			}
+
+			keyGenerator, keyed := limiterConfigField(literal, "KeyGenerator")
+			if !keyed || !keysPerClient(keyGenerator, keyGenerators) {
+				t.Errorf("%s: this limiter does not key on rateLimitKeyGenerator, so its budget is not per client: one bucket for every caller turns the cap into a total-traffic limit any single IP can spend on everyone else's behalf. Key it on rateLimitKeyGenerator(config.Proxy), which resolves the real client IP across a trusted proxy", position)
+			}
+			return true
+		})
 	}
 
-	for _, form := range limiterScopePredicateForms {
+	if limiters < limiterConfigFloor {
+		t.Fatalf("found %d limiter(s), expected at least %d — either the walk broke or a limiter was removed; both need a conscious review, not a green run", limiters, limiterConfigFloor)
+	}
+	for _, form := range []string{scopedPathPredicateForm, routeShapePredicateForm} {
 		if wired[form] == 0 {
-			t.Errorf("no limiter in configureFiberMiddleware is scoped by %q any more; the sweep written for it now measures a wiring that is gone", form)
+			t.Errorf("no limiter is scoped by %s any more; the sweep written for it now measures a wiring that is gone", form)
 		}
 	}
 }
