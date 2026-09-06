@@ -13,10 +13,10 @@
   middleware was never going to check — so nothing about who may poll the feed changes; it now polls
   exactly as before, with one cookie fewer riding along for no reason.
 
-  The same fix also stops a path that merely starts with the feed's prefix but names no real token —
-  a bare `/calendar/feed/`, or a nested path segment — from being swept into the feed's own exclusion:
-  such a path already answered the ordinary "page not found" screen, but was silently missing its
-  language and its CSRF token. It now gets both, like any other page.
+  The exclusion is scoped precisely to the feed's own concrete URL: a path that merely starts with
+  its prefix but names no real token — a bare `/calendar/feed/`, or a nested path segment — keeps
+  answering the ordinary "page not found" screen with its language and CSRF token exactly as before,
+  whatever its own case or trailing slash.
 
   One consequence is deliberate: the feed no longer reads a timezone from the polling request at all.
   The calendar day it renders comes from the owner's saved timezone, as before; an owner whose timezone

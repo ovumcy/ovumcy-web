@@ -279,11 +279,12 @@ components:
         message a failing request produced internally is never echoed into the
         body.
 
-        Three routes answer with a **fixed body** instead, and are named here so
-        the rule above reads as exact rather than approximate — the same way the
-        single CSRF exemption is named rather than left implied. `GET /healthz`
-        and `GET /readyz` answer a fixed one-word JSON body in both outcomes,
-        and the read-only calendar feed `GET /calendar/feed/{token}.ics` answers
+        Three routes answer with a **fixed body** instead, and are named here
+        so the rule above reads as exact rather than approximate — the same
+        way the single CSRF validation exemption is named rather than left
+        implied. `GET /healthz` and `GET /readyz` answer a fixed one-word JSON
+        body in both outcomes, and the read-only calendar feed
+        `GET /calendar/feed/{token}.ics` answers
         its not-found path with the fixed status-text body `Not Found`: one
         identical, cause-free `404` for a malformed token, an unknown selector,
         a wrong verifier and a disabled feed alike (see

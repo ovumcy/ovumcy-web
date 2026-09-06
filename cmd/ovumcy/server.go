@@ -334,12 +334,10 @@ func csrfMiddlewareConfig(cookieSecure bool, handler *api.Handler) csrf.Config {
 		// feed's own contract forbids on every outcome
 		// (docs/SECURITY_INVARIANTS.md → Calendar feed subscription). So this
 		// is not a second validation exemption, and csrfGuardExpectedExemptions
-		// in csrf_exemption_guard_test.go stays a single mutating route.
-		// api.IsCalendarFeedRequest is itself method-gated to GET/HEAD, so a
-		// mutating verb ever added under this prefix would still be validated;
-		// it also requires the route's own shape (prefix + non-empty token +
-		// ".ics"), so a neighbour that merely shares the prefix's characters, or
-		// a nested/empty-token path under it, keeps its CSRF cookie.
+		// in csrf_exemption_guard_test.go stays a single mutating route. See
+		// api.IsCalendarFeedRequest's own godoc for why a mutating verb, or a
+		// neighbour that merely shares the prefix's characters, never reaches
+		// this skip.
 		Next: func(c fiber.Ctx) bool {
 			if c.Method() == fiber.MethodPost && c.Path() == security.OIDCCallbackPath {
 				return true
