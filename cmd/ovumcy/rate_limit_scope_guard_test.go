@@ -340,7 +340,7 @@ func TestScopedRateLimitersCoverEveryRoutableSpellingOfTheirPath(t *testing.T) {
 // Backward: c.Path() still hands back the untouched path off the wire while the
 // router matches its own normalized copy. That gap is the whole defect; should a
 // fiber upgrade close it by normalizing c.Path() too, this pin fails and says so
-// rather than leaving routingNormalizedPath as dead weight nobody revisits.
+// rather than leaving httpx.RoutingNormalizedPath as dead weight nobody revisits.
 func TestFiberRoutesEveryScopedLimiterPathSpellingToItsOwnRoute(t *testing.T) {
 	specs := discoverScopedLimiterSpecs(t)
 
@@ -373,7 +373,7 @@ func TestFiberRoutesEveryScopedLimiterPathSpellingToItsOwnRoute(t *testing.T) {
 					t.Fatalf("%s %s answered %d %q; it was expected to route to %s, which is why the limiter scoped to that path has to count it", spec.method, variant, response.StatusCode, body, spec.path)
 				}
 				if observedPath != variant {
-					t.Fatalf("c.Path() returned %q for %s %s: fiber now hands the handler a normalized path, so routingNormalizedPath is no longer mirroring an unexported detail — revisit it", observedPath, spec.method, variant)
+					t.Fatalf("c.Path() returned %q for %s %s: fiber now hands the handler a normalized path, so httpx.RoutingNormalizedPath is no longer mirroring an unexported detail — revisit it", observedPath, spec.method, variant)
 				}
 			}
 		})
