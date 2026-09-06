@@ -131,11 +131,150 @@ func TestDocumentedPostgresRestoreLeavesARevokedCalendarFeedRevoked(t *testing.T
 	})
 }
 
+// TestVolumeRestoreOfAnUnanchoredBackupDisarmsOnTheFirstFencedBoot is the
+// SQLite half of the second finding, one step earlier in an instance's life
+// than the two guards above: the backup was taken while the server had NO
+// usable fence at all, and the fence arrives only afterwards.
+//
+// Nothing in that backup can disagree with a fence file, because the unfenced
+// server never wrote one — so the boot that finally has a fence sees both
+// halves empty, which used to be the signature of a brand-new installation and
+// was answered by adopting the rows in front of it. The revocation the owner
+// made after the backup was therefore undone by the restore and nothing was
+// left to notice.
+func TestVolumeRestoreOfAnUnanchoredBackupDisarmsOnTheFirstFencedBoot(t *testing.T) {
+	commands := documentedVolumeCommands(t)
+	requireDocker(t)
+
+	// binary is deliberately left empty: this scenario never runs the operator
+	// CLI. Its subject is a server that had no fence, not a shell that cannot
+	// see one, and building the binary for it would cost minutes per run.
+	runUnanchoredHistoryScenario(t, &volumeRunbookInstance{
+		commands: commands,
+		volume:   ephemeralVolume(t),
+		workdir:  t.TempDir(),
+		fence:    filepath.Join(t.TempDir(), "calendar-feed.fence"),
+	})
+}
+
+// TestPostgresRestoreOfAnUnanchoredBackupDisarmsOnTheFirstFencedBoot is the
+// same claim over the runbook's dump and replay. The engine is the only thing
+// that differs: an unfenced server records nothing outside either database.
+func TestPostgresRestoreOfAnUnanchoredBackupDisarmsOnTheFirstFencedBoot(t *testing.T) {
+	commands := documentedPostgresCommands(t)
+	dsn, container := testdb.StartPostgres(t, "ovumcy_runbook_unanchored_feed")
+
+	runUnanchoredHistoryScenario(t, &postgresRunbookInstance{
+		commands:  commands,
+		container: container,
+		config:    db.Config{Driver: db.DriverPostgres, PostgresURL: dsn},
+		dsn:       dsn,
+		backupDir: t.TempDir(),
+		fence:     filepath.Join(t.TempDir(), "calendar-feed.fence"),
+	})
+}
+
+// runUnanchoredHistoryScenario is the whole claim, written once and run against
+// each engine. It is the operator sequence the fence's own documentation asks
+// for — "mount a directory and set CALENDAR_FEED_FENCE_PATH" — arriving late,
+// after the instance has already served and been backed up without one.
+//
+// The verdict is taken over HTTP, through the shipped route table and the real
+// handler, because that is the surface a calendar client polls: every layer
+// under it can agree that a feed is revoked while the URL still answers 200.
+func runUnanchoredHistoryScenario(t *testing.T, instance runbookInstance) {
+	t.Helper()
+
+	var armed armedRunbookFeed
+
+	// Boot 1, with no CALENDAR_FEED_FENCE_PATH: an owner arms a feed on an
+	// instance that cannot record anything outside its own database.
+	instance.withUnfencedDatabase(t, func(repos *db.Repositories) {
+		assertUnanchoredBoot(t, repos)
+		armed = armRunbookCalendarFeed(t, repos)
+		assertRunbookFeedServesOverHTTP(t, repos, armed)
+	})
+
+	instance.documentedBackup(t)
+
+	// The owner revokes afterwards, through the same web path the guards above
+	// use — and still with no fence, so the revocation exists in exactly one
+	// place: the database the restore below is about to replace.
+	instance.withUnfencedDatabase(t, func(repos *db.Repositories) {
+		if err := repos.Users.ClearCalendarFeedToken(context.Background(), armed.ownerID); err != nil {
+			t.Fatalf("revoke the calendar feed: %v", err)
+		}
+		assertRunbookFeedIsGoneOverHTTP(t, repos, armed)
+	})
+
+	instance.documentedRestore(t)
+
+	// Only now does the operator mount a fence volume and set the variable —
+	// the remedy every unanchored start has been logging. The first boot with
+	// it is where the revocation is either honoured or lost for good.
+	instance.withDatabase(t, func(repos *db.Repositories) {
+		// The finding first, at the layer the owner sees: the restore put the
+		// revoked feed back and the old subscribe URL answers again. Without
+		// this the 404 below could come from a feed that was never resurrected.
+		assertRunbookFeedServesOverHTTP(t, repos, armed)
+
+		// The verdict is the poll, taken immediately after the boot and before
+		// anything is said about WHICH branch produced it: a pass that reported
+		// the right outcome and left the URL serving would still be the defect.
+		// The outcome is then checked for shape, so a run that disarmed by
+		// disarming on every start cannot pass for this one.
+		outcome := bootCalendarFeedPasses(t, repos, instance.serverFencePath())
+		assertRunbookFeedIsGoneOverHTTP(t, repos, armed)
+		if !outcome.ContinuityBroken || !outcome.UnanchoredHistory {
+			t.Errorf("the first fenced boot over a database that ran unanchored must report exactly that, got %+v", outcome)
+		}
+		if outcome.DisarmedFeeds != 1 {
+			t.Errorf("the resurrected feed must be the one row that boot disarmed, got %d", outcome.DisarmedFeeds)
+		}
+
+		// And the start after it is an ordinary restart. This is the other half
+		// of the claim: the evidence the unfenced runs left behind is consumed
+		// by the boot that answers for it, so an operator who mounted a fence
+		// does not lose every subscribe URL on every start from now on.
+		assertRunbookBootIsANoOp(t, repos, instance.serverFencePath())
+	})
+}
+
+// assertUnanchoredBoot is a start with no fence configured at all. It runs the
+// same two passes main runs, in main's order, and asserts the fence reports
+// itself unavailable rather than quietly arming: a run in which this boot found
+// a usable fence would be measuring the wrong instance entirely.
+func assertUnanchoredBoot(t *testing.T, repos *db.Repositories) {
+	t.Helper()
+
+	fence := services.NewCalendarFeedRestoreFence(repos.AppState, repos.Users, security.NewCalendarFeedFenceFile(""))
+	outcome, err := fence.Enforce(context.Background())
+	if err != nil {
+		t.Fatalf("a server without a fence must still boot: %v", err)
+	}
+	if !outcome.Unanchored {
+		t.Fatalf("this boot has no CALENDAR_FEED_FENCE_PATH and must report itself unanchored, got %+v", outcome)
+	}
+
+	sentinel := services.NewCalendarFeedRotationSentinel(repos.AppState, repos.Users, []byte(runbookFeedSecretKey))
+	rotation, err := sentinel.Enforce(context.Background())
+	if err != nil {
+		t.Fatalf("the key-rotation sentinel failed: %v", err)
+	}
+	if rotation.RotationDetected {
+		t.Fatal("SECRET_KEY never changes in this guard; a detected rotation means the wrong mechanism is being measured")
+	}
+}
+
 // fencedRepositories attaches the restore fence, which is what production
 // wiring does through bootstrap.BuildRepositories. Without it the revoke below
 // would change the rows and record nothing outside the database, which is
 // exactly the state before this fix — so a guard that forgot this line would go
 // green by measuring the defect instead of the repair.
+//
+// An EMPTY fencePath is a deliberate configuration, not a missing one: it is
+// the instance whose operator never set CALENDAR_FEED_FENCE_PATH, wired through
+// the same object production wires so its writes take the same code path.
 func fencedRepositories(repos *db.Repositories, fencePath string) *db.Repositories {
 	return repos.WithCalendarFeedFence(services.NewCalendarFeedRestoreFence(
 		repos.AppState, repos.Users, security.NewCalendarFeedFenceFile(fencePath),

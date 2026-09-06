@@ -296,6 +296,12 @@ type runbookInstance interface {
 	// production wires — the restore fence attached — and persists whatever
 	// the callback changed.
 	withDatabase(t *testing.T, fn func(repos *db.Repositories))
+	// withUnfencedDatabase is the same, for the period BEFORE the operator
+	// mounted a fence: the fence object is attached exactly as production
+	// attaches it, over an anchor with no path, so every write goes through the
+	// code an unfenced server really runs rather than through a shortcut that
+	// skips it. Its user is the guard for a backup taken during that period.
+	withUnfencedDatabase(t *testing.T, fn func(repos *db.Repositories))
 	// operatorCLI runs the real binary against this instance's database, with
 	// the fence the scenario chose and nothing else of this machine's
 	// environment that the application reads.
@@ -368,8 +374,20 @@ func (instance *volumeRunbookInstance) documentedRestore(t *testing.T) {
 func (instance *volumeRunbookInstance) withDatabase(t *testing.T, fn func(repos *db.Repositories)) {
 	t.Helper()
 
+	instance.withDatabaseFencedAt(t, instance.fence, fn)
+}
+
+func (instance *volumeRunbookInstance) withUnfencedDatabase(t *testing.T, fn func(repos *db.Repositories)) {
+	t.Helper()
+
+	instance.withDatabaseFencedAt(t, "", fn)
+}
+
+func (instance *volumeRunbookInstance) withDatabaseFencedAt(t *testing.T, fencePath string, fn func(repos *db.Repositories)) {
+	t.Helper()
+
 	withVolumeCopy(t, instance.volume, instance.commands, func(dir string, repos *db.Repositories) {
-		fn(fencedRepositories(repos, instance.fence))
+		fn(fencedRepositories(repos, fencePath))
 		writeVolume(t, instance.volume, instance.commands.image, dir)
 	})
 }
@@ -421,8 +439,20 @@ func (instance *postgresRunbookInstance) documentedRestore(t *testing.T) {
 func (instance *postgresRunbookInstance) withDatabase(t *testing.T, fn func(repos *db.Repositories)) {
 	t.Helper()
 
+	instance.withDatabaseFencedAt(t, instance.fence, fn)
+}
+
+func (instance *postgresRunbookInstance) withUnfencedDatabase(t *testing.T, fn func(repos *db.Repositories)) {
+	t.Helper()
+
+	instance.withDatabaseFencedAt(t, "", fn)
+}
+
+func (instance *postgresRunbookInstance) withDatabaseFencedAt(t *testing.T, fencePath string, fn func(repos *db.Repositories)) {
+	t.Helper()
+
 	withRepositories(t, instance.config, func(repos *db.Repositories) {
-		fn(fencedRepositories(repos, instance.fence))
+		fn(fencedRepositories(repos, fencePath))
 	})
 }
 
