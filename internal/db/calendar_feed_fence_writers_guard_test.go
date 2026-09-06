@@ -36,6 +36,16 @@ var alwaysAdvancingWriters = map[string]string{
 	"DeleteAccountAndRelatedData": "the erased account's feed leaves with its row, and a restore brings both back together",
 }
 
+// calendarFeedFenceAdvanceCalls are the two spellings of the advance. They are
+// one call in two forms — the error-returning one, which the writers that must
+// advance BEFORE their row write use, and the best-effort wrapper that drops it,
+// which every writer that advances after uses — so the scan has to count both or
+// it would report five writers as never advancing at all.
+var calendarFeedFenceAdvanceCalls = map[string]bool{
+	"advanceCalendarFeedFence":           true,
+	"advanceCalendarFeedFenceBestEffort": true,
+}
+
 // advanceBeforeTheWrite are the writers whose advance must precede their row
 // write, because there the write IS the revocation and a fence left behind it
 // is the window a restore reopens. Every other writer advances after, so that a
@@ -100,7 +110,7 @@ func TestEveryCalendarFeedWriterAdvancesTheRestoreFence(t *testing.T) {
 		ast.Inspect(function.Body, func(node ast.Node) bool {
 			switch typed := node.(type) {
 			case *ast.CallExpr:
-				if selector, ok := typed.Fun.(*ast.SelectorExpr); ok && selector.Sel.Name == "advanceCalendarFeedFence" {
+				if selector, ok := typed.Fun.(*ast.SelectorExpr); ok && calendarFeedFenceAdvanceCalls[selector.Sel.Name] {
 					if at := int(typed.Pos()); advanceAt < 0 || at < advanceAt {
 						advanceAt = at
 					}

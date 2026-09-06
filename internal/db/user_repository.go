@@ -96,6 +96,26 @@ func (repo *UserRepository) advanceCalendarFeedFence(ctx context.Context) error 
 	return repo.calendarFeedFence.Advance(ctx)
 }
 
+// advanceCalendarFeedFenceBestEffort is the "advances AFTER" form, and the only
+// place the dropped error is explained: every caller of it has already
+// committed its own write, so reporting a completed password reset,
+// recovery-code rotation, reset-token consumption, clear-data wipe or account
+// erasure as failed would be a bigger lie than the missing fence record — and
+// the last of those would be told to an owner who can no longer sign in to
+// retry.
+//
+// The cost is bounded on either route the fence can actually fail. A write that
+// moved the file but not app_state leaves the two halves disagreeing; one that
+// moved neither means the fence file is unwritable, which sends every later
+// boot down Enforce's unanchored path. Both disarm every armed feed on the next
+// start, so no revocation is lost silently. The third route — a failed token
+// mint, neither half written over a writable fence — WOULD lose the record, and
+// takes an OS-level entropy fault; Advance marks it unreachable for the same
+// reason.
+func (repo *UserRepository) advanceCalendarFeedFenceBestEffort(ctx context.Context) {
+	_ = repo.advanceCalendarFeedFence(ctx)
+}
+
 func (repo *UserRepository) CountUsers(ctx context.Context) (int64, error) {
 	var count int64
 	if err := repo.database.WithContext(ctx).Model(&models.User{}).Count(&count).Error; err != nil {
@@ -1058,9 +1078,7 @@ func (repo *UserRepository) UpdateRecoveryCodeHashAndRevokeSessions(ctx context.
 	}).Error; err != nil {
 		return err
 	}
-	// Best-effort: see advanceCalendarFeedFence's doc comment for why a
-	// caller past this point drops the error instead of returning it.
-	_ = repo.advanceCalendarFeedFence(ctx)
+	repo.advanceCalendarFeedFenceBestEffort(ctx)
 	return nil
 }
 
@@ -1098,9 +1116,7 @@ func (repo *UserRepository) ForceResetPasswordAndRevokeSessions(ctx context.Cont
 	}).Error; err != nil {
 		return err
 	}
-	// Best-effort: see advanceCalendarFeedFence's doc comment for why a
-	// caller past this point drops the error instead of returning it.
-	_ = repo.advanceCalendarFeedFence(ctx)
+	repo.advanceCalendarFeedFenceBestEffort(ctx)
 	return nil
 }
 
@@ -1178,9 +1194,7 @@ func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx c
 	if result.RowsAffected == 0 {
 		return ErrResetTokenAlreadyConsumed
 	}
-	// Best-effort: see advanceCalendarFeedFence's doc comment for why a
-	// caller past this point drops the error instead of returning it.
-	_ = repo.advanceCalendarFeedFence(ctx)
+	repo.advanceCalendarFeedFenceBestEffort(ctx)
 	return nil
 }
 
@@ -1421,24 +1435,9 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 	}); err != nil {
 		return err
 	}
-	// Dropped like the purge error above, and for the same reason: the wipe has
-	// committed, and reporting it as a failure would tell an owner their data
-	// is still there. Dropping it costs no containment on either route an error
-	// actually arrives on. The file half was written and the database half was
-	// not, so the halves already disagree and the next boot disarms. Or neither
-	// was written, which means the fence file is unwritable — and an unwritable
-	// fence sends every later boot down Enforce's unanchored path, which
-	// disarms every armed feed on each start. (A failed token mint also reaches
-	// here with neither half written and a writable fence, which WOULD lose the
-	// record; it takes an OS-level entropy fault, and Advance marks it
-	// unreachable for the same reason.)
-	//
-	// That reasoning holds for THIS caller — the server process, whose anchor is
-	// the fence file it was booted with, acting on the owner's own request.
-	// There is no operator-CLI counterpart to wiping data this way: clear-data
-	// is reached only from SettingsService, itself reached only from the
-	// owner-authenticated, step-up-gated danger-zone endpoint.
-	_ = repo.advanceCalendarFeedFence(ctx)
+	// The wipe committed above, and it took the owner's feed with it: recording
+	// that outside the database is best-effort for the reason the helper gives.
+	repo.advanceCalendarFeedFenceBestEffort(ctx)
 	return nil
 }
 
@@ -1485,23 +1484,8 @@ func (repo *UserRepository) DeleteAccountAndRelatedData(ctx context.Context, use
 	_ = repo.database.WithContext(ctx).Where("expires_at <= ?", time.Now().UTC()).Delete(&models.OIDCLogoutState{}).Error
 	// The erased account's feed left with its row, which is a removal like any
 	// other: a restore that brings the account back brings its subscribe URL
-	// back with it. The error is dropped for the same reason the purge above
-	// drops its own — the erasure has committed, and an account that no longer
-	// exists must not be reported as one that failed to be deleted, least of
-	// all to an owner who can no longer sign in to retry. It costs no
-	// containment on either route an error actually arrives on: a written file
-	// half with no database half leaves the two disagreeing, and neither half
-	// written means the fence file is unwritable, which sends every later boot
-	// down Enforce's unanchored path. Both disarm. See ClearAllDataAndResetSettings
-	// for the third, unreachable route.
-	//
-	// That reasoning holds for THIS caller — the server process, whose anchor is
-	// the fence file it was booted with, acting on the owner's own request. The
-	// operator CLI's `users delete` does not reach this best-effort call as its
-	// only protection: it confirms and advances the same fence through
-	// AdvanceConfirmed before it ever calls this method, and refuses the whole
-	// deletion when it cannot (internal/cli).
-	_ = repo.advanceCalendarFeedFence(ctx)
+	// back with it.
+	repo.advanceCalendarFeedFenceBestEffort(ctx)
 	return nil
 }
 
