@@ -1,17 +1,15 @@
 ### Security
 
-- **The calendar feed no longer receives a cookie it was never supposed to carry, on any spelling of
-  its URL.** `GET /calendar/feed/:token.ics` is a cookieless, capability-token route by design — a
-  calendar client presents no session and no CSRF token, and `docs/SECURITY_INVARIANTS.md` already
-  documented that it sets no `Set-Cookie` on any outcome. Two app-wide middlewares mounted ahead of
-  the route did not honor that, and did not honor it identically to how fiber itself routes: on a
-  GET or HEAD lacking a matching cookie, the CSRF middleware minted and set its own token cookie, and
-  the timezone middleware did the same whenever a caller named a zone, before either had any reason
-  to run for this route at all — reachable through a case-folded or trailing-slash spelling of the
-  URL (the app does not require an exact case or a bare path), not only the canonical one, and on
-  HEAD as well as GET. Neither ever validated anything here — GET and HEAD are safe methods the CSRF
-  middleware was never going to check — so nothing about who may poll the feed changes; it now polls
-  exactly as before, with one cookie fewer riding along for no reason.
+- **The calendar feed no longer receives a cookie it was never supposed to carry, on any spelling
+  of its URL.** `GET /calendar/feed/:token.ics` is a cookieless, capability-token route by design
+  — a calendar client presents no session and no CSRF token, and `docs/SECURITY_INVARIANTS.md`
+  already documented that it sets no `Set-Cookie` on any outcome. Every GET or HEAD to the feed's
+  own URL — whatever its case or trailing slash — used to get one anyway: an `ovumcy_csrf` cookie
+  handing out a fresh CSRF token, and, whenever the request named a timezone, an `ovumcy_tz`
+  cookie recording it, both set before the request had any reason to carry either. Nothing about
+  who may poll the feed changes — a calendar client was never going to present a CSRF token or
+  read a cookie back — so it now polls exactly as before, with two cookies fewer riding along for
+  no reason.
 
   The exclusion is scoped precisely to the feed's own concrete URL: a path that merely starts with
   its prefix but names no real token — a bare `/calendar/feed/`, or a nested path segment — keeps
