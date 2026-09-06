@@ -223,13 +223,17 @@ deliberate rather than gaps:
   it as a change of phase. Here the temperature rule stands alone; the
   cervical-mucus signal is a separate fallback estimate used when no shift is
   found, never a cross-check on one that was.
-- **No slow-rise exceptions — the detector is stricter.** Reference methods
+- **No slow-rise exception — the detector is stricter.** Reference methods
   carry exception rules that rescue a rise whose third day misses the 0.2 °C
   margin, by waiting for a fourth day that only has to stay above the coverline.
-  This detector has none: a rise that climbs in steps smaller than the margin is
-  never confirmed at all, because the coverline slides with each candidate day,
-  so the first elevated readings enter the window that the days after them are
-  measured against and lift the bar to their own level.
+  This detector has none. What decides a candidate is how far its third day
+  stands above the coverline, not how large a single step was: three days
+  climbing 0.1 °C each do confirm over a flat window, because the third of them
+  is 0.3 °C above it. What is never rescued is a rise that falls short on its
+  third day and keeps climbing afterwards — the coverline is recomputed for each
+  candidate from the six recordings before it, so those first elevated readings
+  join the window the later days are measured against and lift the bar to their
+  own level.
 - **A disturbed day is dropped whole.** An `illness` or `sleep_disruption` tag
   removes the reading from the detection series without asking whether its value
   actually stands out from its neighbours — broader than the reference method's
