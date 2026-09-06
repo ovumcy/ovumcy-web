@@ -14,15 +14,15 @@
 
   The line now names the confirmed day, which is usually already behind you, instead of announcing
   one as upcoming. It does not raise the "date is already in the past" notice while doing so: that
-  notice is about an estimate the app is still pointing at after its day has gone by, and a measured
-  ovulation being behind you is simply what the rest of a cycle looks like. Both surfaces resolve the
-  day through one shared reader, so a single shift can no longer produce two dates.
+  notice is about an estimate the app is still pointing at after its day has gone by, and a confirmed
+  thermal shift being behind you is simply what the rest of a cycle looks like. Both surfaces resolve
+  the day through one shared reader, so a single shift can no longer produce two dates.
 
-  A measurement also outranks the two ways the dashboard expresses how uncertain a *projection* is: a
-  confirmed day is named as a day rather than widened into the range shown for irregular cycles, and
-  it is not withheld under "needs more cycles". Neither of those is about a day the temperatures have
-  already named, and both used to hide it while the calendar went on marking it — for irregular
-  cycles, the very accounts the model serves worst.
+  A confirmed day also outranks the two ways the dashboard expresses how uncertain a *projection* is:
+  it is named as a day rather than widened into the range shown for irregular cycles, and it is not
+  withheld under "needs more cycles". Neither of those is about a day the temperatures have already
+  pointed at, and both used to hide it while the calendar went on marking it — for irregular cycles,
+  the very accounts the model serves worst.
 
   One thing does stop appearing, and that is the point of the change: the dashboard's "ovulation is
   coming" reminder no longer counts down to a day the temperatures have already placed behind you.
