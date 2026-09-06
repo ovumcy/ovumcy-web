@@ -217,5 +217,5 @@ func (handler *Handler) refuseCalendarFeedRevealRequest(c fiber.Ctx, reason stri
 // here it comes straight from GenerateCalendarFeedToken, so it is URL-path-safe.
 func calendarFeedSubscribeURL(c fiber.Ctx, token string) string {
 	base := strings.TrimRight(c.BaseURL(), "/")
-	return base + "/calendar/feed/" + token + ".ics"
+	return base + CalendarFeedRateLimitPrefix + "/" + token + calendarFeedRouteSuffix
 }

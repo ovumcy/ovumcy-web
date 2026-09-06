@@ -163,25 +163,29 @@ func TestCSRFExemptionListIsExactlyOneRoute(t *testing.T) {
 	}
 }
 
-// TestCSRFPredicateSkipsTheCookielessFeedGETWithoutWideningTheMutatingExemptions
+// TestCSRFPredicateSkipsTheCookielessFeedGETAndHEADWithoutWideningTheMutatingExemptions
 // covers the predicate's OTHER clause: the one that stops csrf.New from
 // minting and setting its own cookie on the cookieless calendar feed (a safe
-// GET it was never going to validate anyway — see the Next comment on
+// method it was never going to validate anyway — see the Next comment on
 // csrfMiddlewareConfig). That clause is not in csrfGuardExpectedExemptions
 // because it exempts no mutating route; TestCSRFExemptionListIsExactlyOneRoute
 // above proves that count stayed at exactly one by construction, since it
 // walks only state-mutating routes and the feed registers none. This test
-// pins the other half directly: the predicate DOES skip the feed's GET, and
-// does NOT skip a mutating verb under the same path prefix, so a mutating
-// route added there later would still be validated rather than silently
-// inheriting this skip.
-func TestCSRFPredicateSkipsTheCookielessFeedGETWithoutWideningTheMutatingExemptions(t *testing.T) {
+// pins the other half directly: the predicate skips the feed's GET and HEAD
+// (app.Get registers both — fiber's csrf.New mints its safe-method cookie for
+// either), does NOT skip a mutating verb under the same path prefix, and does
+// not widen past the route's own shape to a path merely sharing its prefix.
+func TestCSRFPredicateSkipsTheCookielessFeedGETAndHEADWithoutWideningTheMutatingExemptions(t *testing.T) {
 	next := csrfMiddlewareConfig(false, newRateLimitTestHandler(t)).Next
 	if next == nil {
 		t.Fatal("csrfMiddlewareConfig.Next is nil")
 	}
 
-	probe := fiber.New()
+	// The shipped fiberConfig, not a bare fiber.New(): CaseSensitive and
+	// StrictRouting are both off there, and this predicate has to agree with
+	// the router's own normalization of the probed spellings, not a
+	// coincidentally-matching default (security-testing.md).
+	probe := fiber.New(fiberConfig(proxySettings{}))
 	probe.Use(func(c fiber.Ctx) error {
 		if next(c) {
 			return c.SendStatus(fiber.StatusTeapot)
@@ -200,34 +204,39 @@ func TestCSRFPredicateSkipsTheCookielessFeedGETWithoutWideningTheMutatingExempti
 	}
 
 	const feedTarget = "/calendar/feed/ABCDEFGHJKLMNPQRSTUVWXYZ23456789ABCDEFGHJKLMNP12.ics"
-	if !isExempt(http.MethodGet, feedTarget) {
-		t.Fatalf("expected GET %s to skip the CSRF middleware (no token issuance on the cookieless feed)", feedTarget)
-	}
 	if !strings.HasPrefix(feedTarget, api.CalendarFeedRateLimitPrefix) {
-		t.Fatalf("probe path %q must share the feed's own rate-limit prefix %q, or the assertion above is not testing the feed clause", feedTarget, api.CalendarFeedRateLimitPrefix)
+		t.Fatalf("probe path %q must share the feed's own rate-limit prefix %q, or the assertions below are not testing the feed clause", feedTarget, api.CalendarFeedRateLimitPrefix)
+	}
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		if !isExempt(method, feedTarget) {
+			t.Errorf("expected %s %s to skip the CSRF middleware (no token issuance on the cookieless feed)", method, feedTarget)
+		}
 	}
 
 	// A mutating verb under the same prefix — hypothetical today, since
 	// internal/api/routes.go registers no such route — must still be
-	// validated. Negating the predicate's method check would silently exempt
+	// validated. Widening the predicate's method check would silently exempt
 	// one from CSRF the day it's added.
 	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
 		if isExempt(method, feedTarget) {
-			t.Fatalf("expected %s %s to stay CSRF-validated: the feed clause must be GET-only", method, feedTarget)
+			t.Errorf("expected %s %s to stay CSRF-validated: the feed clause must be GET/HEAD-only", method, feedTarget)
 		}
 	}
 
 	// Neighbouring paths must not be swept in by a loosened prefix check: one
 	// that merely starts with "/calendar", one that continues every character
-	// of the feed prefix without its separator, and the bare prefix itself,
-	// which names no feed URL.
+	// of the feed prefix without its separator, the bare prefix itself (with
+	// and without a trailing slash) and a nested segment beneath it — none of
+	// these name the feed's own route shape.
 	for _, neighbour := range []string{
 		"/calendar/day/2026-01-15",
 		api.CalendarFeedRateLimitPrefix + "back",
 		api.CalendarFeedRateLimitPrefix,
+		api.CalendarFeedRateLimitPrefix + "/",
+		api.CalendarFeedRateLimitPrefix + "/a/b.ics",
 	} {
 		if isExempt(http.MethodGet, neighbour) {
-			t.Fatalf("expected GET %s to stay outside the feed's CSRF skip — the prefix must not over-match", neighbour)
+			t.Errorf("expected GET %s to stay outside the feed's CSRF skip — the prefix must not over-match", neighbour)
 		}
 	}
 }

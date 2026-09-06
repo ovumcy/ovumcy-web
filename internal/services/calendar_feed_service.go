@@ -150,8 +150,8 @@ func (service *CalendarFeedService) ResolveFeed(ctx context.Context, token strin
 	// exactly the row the token resolved to.
 	//
 	// "Today" resolves in the OWNER's persisted timezone, not the transport's.
-	// The location the api layer passes in for this route is the server zone:
-	// the feed is excluded from LanguageMiddleware (api.IsCalendarFeedRequestPath),
+	// The location the caller passes in for this route is the server zone: the
+	// transport layer resolves no request language or timezone for this route,
 	// so no header or cookie the poller presents ever reaches it — a calendar
 	// client sends neither anyway — and the server zone alone would render an
 	// owner in a distant timezone a day off. users.timezone exists for exactly

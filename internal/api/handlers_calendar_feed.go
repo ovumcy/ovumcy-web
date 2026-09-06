@@ -38,28 +38,88 @@ import (
 //     X-Robots-Tag: noindex.
 
 const (
-	// calendarFeedRoutePath is the registered page route. Fiber treats '.' as a
-	// parameter delimiter, so ":token.ics" binds param "token" (without ".ics")
-	// and ".ics" is a literal constant suffix.
-	calendarFeedRoutePath = "/calendar/feed/:token.ics"
-
 	// CalendarFeedRateLimitPrefix is the path prefix the composition root
 	// (cmd/ovumcy/main.go) mounts the per-IP feed rate limiter on. It is
 	// exported so the limiter wiring and the route share one source of truth;
 	// every concrete feed URL (…/calendar/feed/<token>.ics) sits under it.
 	CalendarFeedRateLimitPrefix = "/calendar/feed"
+
+	// calendarFeedRouteSuffix is the literal fiber binds after the ":token"
+	// parameter. Shared by the route pattern below, the predicate's route-form
+	// check, and the settings page's subscribe-URL builder
+	// (calendarFeedSubscribeURL) so the three can never drift apart.
+	calendarFeedRouteSuffix = ".ics"
+
+	// calendarFeedRoutePath is the registered page route. Fiber treats '.' as a
+	// parameter delimiter, so ":token.ics" binds param "token" (without ".ics")
+	// and ".ics" is a literal constant suffix.
+	calendarFeedRoutePath = CalendarFeedRateLimitPrefix + "/:token" + calendarFeedRouteSuffix
 )
 
-// IsCalendarFeedRequestPath reports whether path is a request for the
-// cookieless feed itself — a concrete URL below CalendarFeedRateLimitPrefix —
-// as opposed to a neighbour that merely shares its leading characters. The
-// separator is part of the test on purpose: the two app-wide middlewares that
-// skip this route key on it (csrfMiddlewareConfig.Next in cmd/ovumcy/server.go,
-// the early return in LanguageMiddleware), and a bare-prefix match would hand
-// a future /calendar/feedback both skips, leaving it with no language and no
-// request timezone resolved.
-func IsCalendarFeedRequestPath(path string) bool {
-	return strings.HasPrefix(path, CalendarFeedRateLimitPrefix+"/")
+// IsCalendarFeedRequest reports whether method and path together select
+// fiber's dispatch of the cookieless feed's own route — GET or HEAD (app.Get
+// registers both) at a concrete feed URL — as opposed to a neighbour that
+// merely shares its leading characters, a nested or empty-token path under the
+// same prefix, or a mutating verb. The two app-wide middlewares that skip this
+// route (csrfMiddlewareConfig.Next in cmd/ovumcy/server.go, the early return
+// in LanguageMiddleware) and the feed's own rate limiter (server.go) all key on
+// this one predicate, so the three can never disagree about which requests are
+// "the feed".
+//
+// path is compared against fiber's OWN routing normalization, not the raw
+// wire path c.Path() returns: the shipped fiberConfig (cmd/ovumcy/server.go)
+// leaves CaseSensitive and StrictRouting both off, so the router folds ASCII
+// case and trailing slashes away before matching a route, and a predicate
+// comparing the untouched path claims fewer spellings than the router actually
+// dispatches here. Verified experimentally against a probe registering this
+// exact route pattern under the shipped fiberConfig, not assumed from fiber's
+// docs (see cmd/ovumcy's route-shape definition test for calendarFeedRoutePath):
+// the token may contain any character but "/" (fiber treats only the FINAL
+// ".ics" as the literal delimiter, so "a.b.ics" binds token "a.b"), must be
+// non-empty, and the prefix/suffix match case-insensitively.
+func IsCalendarFeedRequest(method, path string) bool {
+	return (method == fiber.MethodGet || method == fiber.MethodHead) && isCalendarFeedRequestPath(path)
+}
+
+// isCalendarFeedRequestPath is IsCalendarFeedRequest's route-form half, kept
+// separate (and unexported) because the mutating-verb refusal above is a
+// property of the METHOD, not the path.
+func isCalendarFeedRequestPath(path string) bool {
+	normalized := normalizeCalendarFeedRequestPath(path)
+	prefixWithSeparator := CalendarFeedRateLimitPrefix + "/"
+	if !strings.HasPrefix(normalized, prefixWithSeparator) || !strings.HasSuffix(normalized, calendarFeedRouteSuffix) {
+		return false
+	}
+	token := normalized[len(prefixWithSeparator) : len(normalized)-len(calendarFeedRouteSuffix)]
+	return token != "" && !strings.Contains(token, "/")
+}
+
+// normalizeCalendarFeedRequestPath mirrors fiber's own routing normalization
+// under the shipped fiberConfig (cmd/ovumcy/server.go leaves CaseSensitive and
+// StrictRouting both off): ASCII letters lowercased, then trailing slashes
+// trimmed. strings.ToLower is the wrong primitive here — it is Unicode-aware
+// and folds code points (e.g. U+212A KELVIN SIGN) that fiber's byte-only table
+// leaves alone — so this is a byte-for-byte copy of the same two operations
+// cmd/ovumcy/ratelimit.go's asciiLowerPath/routingNormalizedPath apply for
+// its own edge limiters; api cannot import cmd/ovumcy to share the code
+// (transport boundary, api.md), so it keeps this second copy instead.
+func normalizeCalendarFeedRequestPath(path string) string {
+	lowered := []byte(path)
+	changed := false
+	for i := range lowered {
+		if lowered[i] >= 'A' && lowered[i] <= 'Z' {
+			lowered[i] += 'a' - 'A'
+			changed = true
+		}
+	}
+	normalized := path
+	if changed {
+		normalized = string(lowered)
+	}
+	if len(normalized) > 1 {
+		normalized = strings.TrimRight(normalized, "/")
+	}
+	return normalized
 }
 
 // ServeCalendarFeed serves an owner's read-only .ics feed, authenticated by the
@@ -68,9 +128,9 @@ func IsCalendarFeedRequestPath(path string) bool {
 // case, answered with the same status text, so no oracle), or a generic 500 on
 // an infrastructure failure. That promise also holds one layer up: the two
 // app-wide middlewares mounted ahead of this handler (CSRF, LanguageMiddleware)
-// are excluded, through IsCalendarFeedRequestPath, from the safe-method side
+// are excluded, through IsCalendarFeedRequest, from the safe-method side
 // effect that would otherwise mint and set one of their own cookies on any GET
-// lacking a matching cookie — see csrfMiddlewareConfig.Next in
+// or HEAD lacking a matching cookie — see csrfMiddlewareConfig.Next in
 // cmd/ovumcy/server.go and the early return in LanguageMiddleware. One
 // consequence is deliberate: with LanguageMiddleware skipped, requestLocation
 // below is the instance zone, never a zone the polling request named. The
