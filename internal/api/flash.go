@@ -42,8 +42,8 @@ func (handler *Handler) setFlashCookie(c fiber.Ctx, payload FlashPayload) {
 func (handler *Handler) popFlashCookie(c fiber.Ctx) FlashPayload {
 	if c.Method() == fiber.MethodHead {
 		// The cookie is single-use and a HEAD response always drops the body
-		// that would carry it (registerHEADTwins runs this same chain before
-		// any GET arrives) — so popping it here would spend the one flash
+		// that would carry it (the HEAD twin registerHEADTwins registers runs
+		// this same chain) — so popping it here would spend the one flash
 		// write, ForgotEmail prefill included, on a visit that could never
 		// display it. Leave it sealed for the GET that can.
 		return FlashPayload{}
