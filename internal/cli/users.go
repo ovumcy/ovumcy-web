@@ -61,14 +61,14 @@ func runUsersCommand(databaseConfig db.Config, args []string, input io.Reader, o
 		_ = sqlDB.Close()
 	}()
 
-	repositories, fence := buildRepositories(database)
+	repositories, fence, fencePath := buildRepositories(database)
 	service := services.NewOperatorUserService(repositories.Users, services.NewAuthService(repositories.Users))
 
 	switch subcommand {
 	case "list":
 		return runUsersList(service, output)
 	case "delete":
-		return runUsersDelete(service, calendarFeedFencePath(), fence, args[1:], input, output)
+		return runUsersDelete(service, fencePath, fence, args[1:], input, output)
 	case "create":
 		return runUsersCreate(service, args[1:], input, output)
 	case "set-email":

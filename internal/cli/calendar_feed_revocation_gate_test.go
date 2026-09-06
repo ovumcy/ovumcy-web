@@ -94,21 +94,36 @@ func TestUsersDeleteRefusesAndDeletesNothingWithoutAConfirmedFence(t *testing.T)
 	}
 }
 
-// TestUsersDeleteAdvancesTheFenceBeforeTheRow proves the ordering the task
-// names, with a journal rather than a real database: a real end-to-end run
-// cannot isolate it cleanly, because DeleteAccountAndRelatedData's own
-// best-effort advance (internal/db/user_repository.go's
-// advanceCalendarFeedFence, called again right after the row is gone) writes
-// the SAME fence a second time — so a single before/after read of the fence
-// file sees a fresh token whether or not confirmOperatorFeedRevocation ran at
-// all, and cannot be the proof. A journaled fake fence has no such confound:
-// it records WHEN each write happened, not only that one did.
+// journalingUserRepository wraps a real *db.UserRepository and journals
+// exactly one moment: the instant DeleteAccountAndRelatedData is invoked. It
+// promotes every other OperatorUserRepository method unchanged, so
+// runUsersDelete's own resolve/confirm/delete sequence runs against a real
+// SQLite-backed row throughout — only the row write itself is instrumented.
+type journalingUserRepository struct {
+	*db.UserRepository
+	journal *[]string
+}
+
+func (repo *journalingUserRepository) DeleteAccountAndRelatedData(ctx context.Context, userID uint) error {
+	*repo.journal = append(*repo.journal, "row-deleted")
+	return repo.UserRepository.DeleteAccountAndRelatedData(ctx, userID)
+}
+
+// TestUsersDeleteAdvancesTheFenceBeforeTheRow drives the REAL runUsersDelete
+// end to end against a real SQLite row, through a fence whose halves are
+// fakes only so the test can journal WHEN each write happened, not only that
+// it did. The row write itself is journaled by journalingUserRepository
+// above rather than by a hand-inserted marker between two direct calls,
+// because a hand-inserted marker cannot go red when runUsersDelete's own
+// internal ordering changes — only a wrapper actually sitting on the call
+// runUsersDelete makes can.
 //
-// "row-deleted" stands for opts.delete(service) — the account row itself,
-// plus that same best-effort repository-level advance, simulated here as a
-// second fence.Advance on the identical fence object, exactly as
-// DeleteAccountAndRelatedData performs it on the one bootstrap.BuildRepositories
-// attaches.
+// DeleteAccountAndRelatedData's own best-effort post-op advance
+// (internal/db/user_repository.go's advanceCalendarFeedFence, called again
+// right after the row is gone) writes the SAME fence a second time, through
+// the calendarFeedFence the journalingUserRepository's embedded
+// *db.UserRepository was built with — so the expected journal captures BOTH
+// advances, one on each side of the row write.
 func TestUsersDeleteAdvancesTheFenceBeforeTheRow(t *testing.T) {
 	journal := []string{}
 	appState := &fakeConfirmFenceAppState{
@@ -118,12 +133,25 @@ func TestUsersDeleteAdvancesTheFenceBeforeTheRow(t *testing.T) {
 	anchor := &fakeConfirmFenceAnchor{value: confirmFenceTestToken, found: true, journal: &journal}
 	fence := services.NewCalendarFeedRestoreFence(appState, fakeConfirmFenceUsers{}, anchor)
 
-	if err := confirmOperatorFeedRevocation(context.Background(), "/app/fence/calendar-feed.fence", fence, &bytes.Buffer{}); err != nil {
-		t.Fatalf("confirmOperatorFeedRevocation: %v", err)
+	databasePath := createCLIUsersDatabase(t)
+	created := createCLIUsersUser(t, databasePath, "fence-order@example.com", "Owner", models.RoleOwner, true, time.Now().UTC())
+
+	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
 	}
-	journal = append(journal, "row-deleted")
-	if err := fence.Advance(context.Background()); err != nil {
-		t.Fatalf("simulated post-delete Advance: %v", err)
+	sqlDB, err := database.DB()
+	if err != nil {
+		t.Fatalf("open sql db: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	repositories := db.NewRepositories(database).WithCalendarFeedFence(fence)
+	users := &journalingUserRepository{UserRepository: repositories.Users, journal: &journal}
+	service := services.NewOperatorUserService(users, services.NewAuthService(users.UserRepository))
+
+	if err := runUsersDelete(service, "/app/fence/calendar-feed.fence", fence, []string{"fence-order@example.com", "--yes"}, strings.NewReader(""), &bytes.Buffer{}); err != nil {
+		t.Fatalf("runUsersDelete: %v", err)
 	}
 
 	want := []string{"anchor", "app_state", "row-deleted", "anchor", "app_state"}
@@ -134,6 +162,10 @@ func TestUsersDeleteAdvancesTheFenceBeforeTheRow(t *testing.T) {
 		if journal[i] != want[i] {
 			t.Fatalf("expected the fence to advance before the row write, got %v, want %v", journal, want)
 		}
+	}
+
+	if remaining := listCLIUserEmails(t, databasePath); len(remaining) != 0 {
+		t.Fatalf("expected the account to be gone after a confirmed revocation, got %#v (id=%d)", remaining, created.ID)
 	}
 }
 

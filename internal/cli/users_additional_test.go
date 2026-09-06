@@ -234,7 +234,7 @@ func operatorUserServiceForCLITest(t *testing.T, databasePath string) *services.
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
-	repositories, _ := buildRepositories(database)
+	repositories, _, _ := buildRepositories(database)
 	return services.NewOperatorUserService(repositories.Users, services.NewAuthService(repositories.Users))
 }
 

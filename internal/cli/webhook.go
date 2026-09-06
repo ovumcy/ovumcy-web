@@ -140,7 +140,7 @@ func openWebhookCLIService(databaseConfig db.Config, secretKey string) (*service
 		return nil, nil, fmt.Errorf("database init failed: %w", err)
 	}
 
-	repositories, _ := buildRepositories(database)
+	repositories, _, _ := buildRepositories(database)
 	settingsService := services.NewWebhookSettingsService(repositories.Users, []byte(secretKey))
 	cliService := services.NewWebhookSettingsCLIService(repositories.Users, settingsService)
 	cleanup := func() { _ = sqlDB.Close() }

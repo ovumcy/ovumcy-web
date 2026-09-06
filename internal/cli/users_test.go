@@ -727,6 +727,6 @@ func authenticateCLIUser(t *testing.T, databasePath string, email string, passwo
 	if normalized == "" {
 		t.Fatalf("test fixture email %q is not a valid sign-in input", email)
 	}
-	repositories, _ := buildRepositories(database)
+	repositories, _, _ := buildRepositories(database)
 	return services.NewAuthService(repositories.Users).AuthenticateCredentials(context.Background(), normalized, password)
 }
