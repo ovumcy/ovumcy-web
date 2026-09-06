@@ -7,11 +7,11 @@
   like "outline" or "sticky" anywhere in the tree can mint an unused
   utility into the shipped bundle and make builds machine-dependent.
   Class names legitimately live only in the server templates, the shared
-  Go markup helpers (internal/httpx), and the client JS; scan exactly
+  Go markup helpers (internal/httpx/markup.go), and the client JS; scan exactly
   those. The CI stale-bundle guard relies on this build being reproducible.
 */
 @source "../../../internal/templates";
-@source "../../../internal/httpx";
+@source "../../../internal/httpx/markup.go";
 /* Calendar day-cell classes are composed in Go view helpers, not in the
    templates (the template renders {{.CellClass}}). Scan exactly that file
    rather than all of internal/api, so Go prose/comments elsewhere cannot
