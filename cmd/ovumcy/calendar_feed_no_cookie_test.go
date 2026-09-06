@@ -196,11 +196,11 @@ func TestCalendarFeedRouteSetsNoCookieOnTheProductionStack(t *testing.T) {
 		})
 	}
 
-	// Positive anchor (security-testing.md): every case above is a negative
-	// assertion, which would pass just as well if the CSRF/timezone-cookie
-	// machinery were dead app-wide rather than specifically excluded for the
-	// feed. Prove it is alive, on the SAME app instance, against an ordinary
-	// unauthenticated page that carries no such exclusion.
+	// Positive anchor: every case above is a negative assertion, which would
+	// pass just as well if the CSRF/timezone-cookie machinery were dead
+	// app-wide rather than specifically excluded for the feed. Prove it is
+	// alive, on the SAME app instance, against an ordinary unauthenticated
+	// page that carries no such exclusion.
 	t.Run("control: an ordinary page still gets both cookies", func(t *testing.T) {
 		request := httptest.NewRequest(http.MethodGet, "/privacy", nil)
 		request.Header.Set("X-Ovumcy-Timezone", "Europe/Berlin")

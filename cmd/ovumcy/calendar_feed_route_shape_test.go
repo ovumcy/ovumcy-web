@@ -20,8 +20,9 @@ const calendarFeedRouteShapeMarker = "MARKER"
 // sibling route competing for the same prefix — so a spelling's outcome
 // reflects fiber's router alone. fiberConfig, not a bare fiber.New(): the
 // shipped config leaves CaseSensitive and StrictRouting both off, and that is
-// exactly the normalization api.IsCalendarFeedRequest has to agree with
-// (security-testing.md's wiring-tests-use-fiberConfig rule).
+// exactly the normalization api.IsCalendarFeedRequest has to agree with — a
+// wiring test has to build on what the shipped app actually routes, not on a
+// bare default that happens to share today's flags.
 func calendarFeedDispatchProbeApp(t *testing.T) *fiber.App {
 	t.Helper()
 
@@ -56,11 +57,12 @@ func calendarFeedDispatchReached(t *testing.T, app *fiber.App, method, path stri
 // api.IsCalendarFeedRequest's definition test: for every (method, path) pair
 // below, the predicate must agree with whether fiber's OWN router — driven
 // directly, not modeled — actually reaches ServeCalendarFeed's route pattern.
-// This is the experimental ground truth cmd/ovumcy/CLAUDE.md-adjacent review
-// asked for rather than assumed from fiber's docs; the spellings include
-// every one from rate_limit_scope_guard_test.go's routableSpellings plus the
-// edge cases a route-parameter pattern raises on its own (a dot inside the
-// token, an empty token, a nested path segment, a case-folded prefix).
+// This is the experimental ground truth for how fiber binds ":token.ics",
+// established by running the real router rather than assumed from fiber's
+// docs; the spellings include every one from rate_limit_scope_guard_test.go's
+// routableSpellings plus the edge cases a route-parameter pattern raises on
+// its own (a dot inside the token, an empty token, a nested path segment, a
+// case-folded prefix).
 //
 // GET/HEAD reaching this bare probe app (no catch-all ahead of the route)
 // does NOT mean HEAD reaches ServeCalendarFeed on the REAL production route
