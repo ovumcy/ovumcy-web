@@ -46,6 +46,58 @@ func TestRunUsersCommandUsageErrors(t *testing.T) {
 	}
 }
 
+// TestRunUsersCommandRejectsUsageBeforeReadingAnything covers the exported
+// entry point, which is otherwise reached only from main: it resolves the
+// fence path once, from the environment, and hands everything else to the
+// unexported runner — so a usage error must still come back unchanged, with
+// nothing read and no database opened.
+func TestRunUsersCommandRejectsUsageBeforeReadingAnything(t *testing.T) {
+	t.Parallel()
+
+	if err := RunUsersCommand(db.Config{}, nil); err == nil || !strings.Contains(err.Error(), "usage: ovumcy users") {
+		t.Fatalf("expected the usage error, got %v", err)
+	}
+}
+
+// TestRunUsersDeleteReportsAnUnresolvableTargetInTheSharedWording pins that
+// `users delete` answers an unknown handle the way its siblings do. It used to
+// return the service's own sentinel unmapped, so the operator read "operator
+// user not found" from one subcommand and a sentence from the next.
+func TestRunUsersDeleteReportsAnUnresolvableTargetInTheSharedWording(t *testing.T) {
+	t.Parallel()
+
+	databasePath := createCLIUsersDatabase(t)
+
+	err := runUsersCommand(
+		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
+		[]string{"delete", "--id", "999", "--yes"},
+		"",
+		strings.NewReader(""),
+		&bytes.Buffer{},
+	)
+	if err == nil || err.Error() != "no account carries id 999 (see ovumcy users list)" {
+		t.Fatalf("expected the shared unknown-id wording, got %v", err)
+	}
+}
+
+// TestMapUsersDeleteErrorSeparatesTheErasureFromTheLookup pins the one arm
+// this command adds to the shared mapper. Routing a failed erasure through the
+// lookup wording would report a storage failure as "look up account", which
+// points the operator at the handle they typed rather than at the write.
+func TestMapUsersDeleteErrorSeparatesTheErasureFromTheLookup(t *testing.T) {
+	t.Parallel()
+
+	erasure := mapUsersDeleteError(services.ErrOperatorUserDeleteFailed, 7, "")
+	if erasure == nil || !strings.HasPrefix(erasure.Error(), "delete account: ") {
+		t.Fatalf("expected the erasure failure to be named as one, got %v", erasure)
+	}
+
+	lookup := mapUsersDeleteError(services.ErrOperatorUserNotFound, 7, "")
+	if lookup == nil || lookup.Error() != "no account carries id 7 (see ovumcy users list)" {
+		t.Fatalf("expected the shared lookup wording, got %v", lookup)
+	}
+}
+
 func TestRunUsersCommandListShowsEmptyState(t *testing.T) {
 	t.Parallel()
 
