@@ -494,6 +494,100 @@ func TestConfirmedShiftAtTheEarliestCycleDayNeverCrossesThePeriodStart(t *testin
 	}
 }
 
+// TestConfirmedShiftWindowPublishesOnTheLocationAxis is F1: the resolver's
+// arithmetic (PredictCycleWindow's own [day-5, day]) is correctly stepped from
+// a dateOnly (UTC-midnight) anchor, but every caller hands `today` as a
+// location midnight (DateAtLocation), and ResolveFertilityStatus compares the
+// two as instants. A UTC-midnight window published beside a location-midnight
+// today disagrees by the zone's own offset: a positive offset (Europe/Moscow,
+// UTC+3) reads the window's first day as not_fertile, a negative one
+// (America/New_York, UTC-5) reads the confirmed ovulation day itself the same
+// way. Every existing control in this file runs in time.UTC, where the two
+// midnights coincide and the bug is invisible — that vacuousness is itself
+// part of the finding.
+func TestConfirmedShiftWindowPublishesOnTheLocationAxis(t *testing.T) {
+	moscow, err := time.LoadLocation("Europe/Moscow")
+	if err != nil {
+		t.Fatalf("LoadLocation(Europe/Moscow): %v", err)
+	}
+	newYork, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatalf("LoadLocation(America/New_York): %v", err)
+	}
+
+	for _, location := range []*time.Location{moscow, newYork} {
+		t.Run(location.String(), func(t *testing.T) {
+			user, logs, stats, confirmingToday := confirmedOvulationFixture(t)
+
+			resolved, ok := ResolveConfirmedCycleStats(user, logs, stats, confirmingToday, location)
+			if !ok {
+				t.Fatal("fixture: the shift must confirm")
+			}
+			if got := CalendarDayKey(resolved.FertilityWindowStart); got != "2026-03-06" {
+				t.Fatalf("fixture: window start = %s, want 2026-03-06", got)
+			}
+			if got := CalendarDayKey(resolved.OvulationDate); got != "2026-03-11" {
+				t.Fatalf("fixture: confirmed day = %s, want 2026-03-11", got)
+			}
+
+			windowStartToday := CalendarDay(mustParseStatsServiceDay(t, "2026-03-06"), location)
+			if got := ResolveFertilityStatus(resolved, windowStartToday); got != FertilityStatusFertile {
+				t.Fatalf("current fertility on the window's first day = %q, want %q", got, FertilityStatusFertile)
+			}
+
+			ovulationDayToday := CalendarDay(mustParseStatsServiceDay(t, "2026-03-11"), location)
+			if got := ResolveFertilityStatus(resolved, ovulationDayToday); got != FertilityStatusFertile {
+				t.Fatalf("current fertility on the confirmed ovulation day = %q, want %q", got, FertilityStatusFertile)
+			}
+		})
+	}
+}
+
+// TestResolveConfirmedCycleStatsUsesTheProjectedPeriodPhaseRule is F4: the
+// resolver recomputes CurrentPhase with its own detectCyclePhase
+// (cycles.go:474 — location: time.UTC, includeProjectedPeriod: false), a
+// second, narrower phase rule than the one every owner-facing surface actually
+// reads (DetectCurrentPhase, includeProjectedPeriod: true), so the resolver's
+// own substitution overwrites a correct "menstrual" verdict with an incorrect
+// one. With AveragePeriodLength 10 and a confirmed ovulation on cycle day 6
+// (the detector's own earliest possible day), day 9 has no explicit period log
+// but still falls inside the projected 10-day period band — a day the
+// production rule calls "menstrual" and the resolver's own rule calls "luteal"
+// because it never looks at the projected band at all.
+func TestResolveConfirmedCycleStatsUsesTheProjectedPeriodPhaseRule(t *testing.T) {
+	cycleStart := cyclesignalsCovDay(t, "2026-03-01")
+	var logs []models.DailyLog
+	for offset := range 6 {
+		logs = append(logs, models.DailyLog{Date: AddCalendarDays(cycleStart, offset, time.UTC), BBT: new(thermalShiftLowBBT)})
+	}
+	for offset := range 3 {
+		logs = append(logs, models.DailyLog{Date: AddCalendarDays(cycleStart, 6+offset, time.UTC), BBT: new(thermalShiftHighBBT)})
+	}
+
+	today := AddCalendarDays(cycleStart, 8, time.UTC) // cycle day 9
+	stats := atToday(CycleStats{
+		CompletedCycleCount: 3,
+		MedianCycleLength:   28,
+		AverageCycleLength:  28,
+		AveragePeriodLength: 10,
+		LastPeriodStart:     cycleStart,
+	}, today)
+	user := &models.User{ID: 42, Role: models.RoleOwner, TrackBBT: true}
+
+	confirmedDay, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, today, time.UTC)
+	if !ok || CalendarDayKey(confirmedDay) != "2026-03-06" {
+		t.Fatalf("fixture: the detector must confirm cycle day 6 (2026-03-06), got %s (ok=%v)", CalendarDayKey(confirmedDay), ok)
+	}
+
+	resolved, confirmed := ResolveConfirmedCycleStats(user, logs, stats, today, time.UTC)
+	if !confirmed {
+		t.Fatal("the resolver must report the shift as confirmed")
+	}
+	if resolved.CurrentPhase != "menstrual" {
+		t.Fatalf("current phase = %q, want %q: cycle day 9 sits inside the projected 10-day period band", resolved.CurrentPhase, "menstrual")
+	}
+}
+
 // TestResolveConfirmedCycleStatsRecomputesCurrentPhase is the phase-axis half of
 // F2: CurrentPhase was computed against the PROJECTED ovulation date before the
 // resolver ran and never recomputed afterward, so a published response could
@@ -505,8 +599,15 @@ func TestConfirmedShiftAtTheEarliestCycleDayNeverCrossesThePeriodStart(t *testin
 func TestResolveConfirmedCycleStatsRecomputesCurrentPhase(t *testing.T) {
 	user, logs, stats, today := projectedWindowFixture(t)
 	// Simulate the pre-resolver pipeline: CurrentPhase computed from the
-	// still-projected OvulationDate (2026-03-14), which today sits exactly on.
-	stats.CurrentPhase = detectCyclePhase(stats, logs, today)
+	// still-projected OvulationDate (2026-03-14), which today sits exactly on,
+	// through the PRODUCTION path (DetectCurrentPhase, ApplyUserCycleBaseline's
+	// own call) rather than the resolver's own detectCyclePhase — building the
+	// "before" value from the resolver's own function under test made this
+	// fixture blind to the two ever disagreeing (F4): detectCyclePhase always
+	// runs at time.UTC with includeProjectedPeriod: false, so a fixture built
+	// from it never exercises the location or the projected-period branch the
+	// production caller (DetectCurrentPhase) actually reads.
+	stats.CurrentPhase = DetectCurrentPhase(stats, logs, today, time.UTC)
 	if stats.CurrentPhase != "ovulation" {
 		t.Fatalf("fixture: the projection must classify today as %q, got %q", "ovulation", stats.CurrentPhase)
 	}

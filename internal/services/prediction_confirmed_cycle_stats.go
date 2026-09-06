@@ -60,24 +60,37 @@ func ResolveConfirmedCycleStats(user *models.User, logs []models.DailyLog, stats
 		return stats, false
 	}
 
-	ovulationDay := dateOnly(confirmedDay)
-	fertilityStart := ovulationDay.AddDate(0, 0, -5)
-	if periodStart := dateOnly(stats.LastPeriodStart); !stats.LastPeriodStart.IsZero() && fertilityStart.Before(periodStart) {
+	if location == nil {
+		location = time.UTC
+	}
+	ovulationDayUTC := dateOnly(confirmedDay)
+	fertilityStartUTC := ovulationDayUTC.AddDate(0, 0, -5)
+	if periodStart := dateOnly(stats.LastPeriodStart); !stats.LastPeriodStart.IsZero() && fertilityStartUTC.Before(periodStart) {
 		// codecov:ignore -- defensive invariant: the detector's series starts at
 		// LastPeriodStart, so its earliest confirmed day is cycle day 6 and day-5
 		// lands ON the start, never before it (see the comment above).
-		fertilityStart = periodStart
+		fertilityStartUTC = periodStart
 	}
 
-	stats.OvulationDate = ovulationDay
+	// The arithmetic above stays on dateOnly (UTC midnight) — see the comment
+	// on the window's arithmetic above. The PUBLISHED fields are rebuilt at
+	// location midnight before leaving this function: every caller computes
+	// `today` via DateAtLocation, which is a location midnight, while
+	// betweenInclusive and ResolveFertilityStatus below compare instants —
+	// so a UTC-midnight window compared against a location-midnight today
+	// disagrees by the zone's own offset (day one of the window read as
+	// not_fertile in UTC+3, the ovulation day itself read as fertile in
+	// UTC-5). CalendarDay keeps the calendar date exactly as computed above
+	// and only moves it onto the axis `today` is already on.
+	stats.OvulationDate = CalendarDay(ovulationDayUTC, location)
 	stats.OvulationImpossible = false
-	stats.FertilityWindowStart = fertilityStart
-	stats.FertilityWindowEnd = ovulationDay
+	stats.FertilityWindowStart = CalendarDay(fertilityStartUTC, location)
+	stats.FertilityWindowEnd = CalendarDay(ovulationDayUTC, location)
 	// Phase and fertility are two orthogonal axes (#416), but both are
 	// geometric and both are obliged to describe the date just published beside
 	// them — read off the ALREADY updated fields, so neither disagrees with the
 	// day a confirmed shift just named.
-	stats.CurrentPhase = detectCyclePhase(stats, logs, today)
+	stats.CurrentPhase = DetectCurrentPhase(stats, logs, today, location)
 	stats.CurrentFertility = ResolveFertilityStatus(stats, today)
 	return stats, true
 }
