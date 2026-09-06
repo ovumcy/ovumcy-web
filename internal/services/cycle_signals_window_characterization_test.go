@@ -194,8 +194,11 @@ func TestBBTShiftWindowTakesSixRecordedValuesWhateverTheGapCount(t *testing.T) {
 // the day is gone from the series entirely: the sixth value back moves one
 // recorded day further, exactly as an unrecorded day makes it move. A tagged day
 // is dropped whole, without asking whether its value stands out from the
-// window — Sensiplan's Ausklammern removes at most an outlying value and keeps
-// the day's place in the count.
+// window. The reference rule this departs from — bracketing at most a single
+// outlying value while keeping the day's place in the count — is taken from a
+// secondary account of Sensiplan; the primary text was not obtained, so the
+// comparison is stated as the source of the product's rule, not as a quotation
+// of it.
 func TestBBTShiftDisturbedDayDoesNotConsumeAWindowSlot(t *testing.T) {
 	cases := []struct {
 		name          string
@@ -244,11 +247,16 @@ func TestBBTShiftDisturbedDayDoesNotConsumeAWindowSlot(t *testing.T) {
 // the source protocol: Sensiplan's first exception rule accepts a rise whose
 // third day misses the 0.2 °C margin by waiting for a fourth day, which only has
 // to stay above the coverline — it would confirm this cycle on the evening of
-// cycle day 15. The product never does, and the reason is not the margin alone:
-// the coverline SLIDES with the candidate, so the first elevated days of a slow
-// rise enter the window of every later candidate and lift the line to their own
-// level. A rise that climbs in steps smaller than the margin therefore raises
-// the bar it is being measured against, and no candidate in it can qualify.
+// cycle day 15. The product never does.
+//
+// The reason is not that the steps are small. A candidate is judged on how far
+// its THIRD day stands above the coverline, so a run climbing 0.1 °C a day over
+// a flat window does confirm — that third day is 0.3 °C above it. This fixture
+// fails because its three elevated days are all 36.30 against a 36.20 window:
+// 0.1 °C short on the third. What then stops every later candidate is the
+// coverline being recomputed from the six recordings before it — from cycle day
+// 13 on, the window already contains a 36.30, and no day of this rise is
+// strictly above it. The 36.50 on day 15 arrives with only itself left.
 func TestBBTShiftSlowRiseIsNotConfirmed(t *testing.T) {
 	readings := []cyclesignalsWindowReading{
 		{cycleDay: 6, value: 36.20},
