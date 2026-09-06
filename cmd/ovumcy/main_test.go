@@ -843,6 +843,7 @@ func TestLoadRuntimeConfigBuildsExpectedSettings(t *testing.T) {
 	t.Setenv("TRUST_PROXY_ENABLED", "true")
 	t.Setenv("PROXY_HEADER", "X-Forwarded-For")
 	t.Setenv("TRUSTED_PROXIES", "127.0.0.1, ::1")
+	t.Setenv(security.CalendarFeedFencePathEnv, "")
 
 	location := time.FixedZone("UTC+3", 3*60*60)
 	config, err := loadRuntimeConfig(location)
@@ -924,9 +925,7 @@ func assertProxyRuntimeConfig(t *testing.T, config runtimeConfig) {
 // state audit logging is off by default. (The api-package audit-flag test
 // covers the request path; this one exercises the startup default.)
 func TestLoadRuntimeConfigDefaultsAuditLogOff(t *testing.T) {
-	t.Setenv("SECRET_KEY", "0123456789abcdef0123456789abcdef")
-	t.Setenv("DB_DRIVER", "sqlite")
-	t.Setenv("DB_PATH", "data/ovumcy.db")
+	minimalRuntimeEnv(t)
 	t.Setenv("AUDIT_LOG_ENABLED", "")
 
 	config, err := loadRuntimeConfig(time.UTC)
@@ -939,9 +938,7 @@ func TestLoadRuntimeConfigDefaultsAuditLogOff(t *testing.T) {
 }
 
 func TestLoadRuntimeConfigHonorsAuditLogEnabled(t *testing.T) {
-	t.Setenv("SECRET_KEY", "0123456789abcdef0123456789abcdef")
-	t.Setenv("DB_DRIVER", "sqlite")
-	t.Setenv("DB_PATH", "data/ovumcy.db")
+	minimalRuntimeEnv(t)
 	t.Setenv("AUDIT_LOG_ENABLED", "true")
 
 	config, err := loadRuntimeConfig(time.UTC)
@@ -958,9 +955,7 @@ func TestLoadRuntimeConfigHonorsAuditLogEnabled(t *testing.T) {
 // and runs at local hour 9 when its env is unset. This is the instant-rollback
 // contract (REMINDER_SCHEDULER_ENABLED=false).
 func TestLoadRuntimeConfigDefaultsReminderSchedulerOff(t *testing.T) {
-	t.Setenv("SECRET_KEY", "0123456789abcdef0123456789abcdef")
-	t.Setenv("DB_DRIVER", "sqlite")
-	t.Setenv("DB_PATH", "data/ovumcy.db")
+	minimalRuntimeEnv(t)
 	t.Setenv("REMINDER_SCHEDULER_ENABLED", "")
 	t.Setenv("REMINDER_SCHEDULER_HOUR", "")
 
@@ -980,9 +975,7 @@ func TestLoadRuntimeConfigDefaultsReminderSchedulerOff(t *testing.T) {
 // and hour override, including hour 0 (midnight) which getEnvInt would have
 // rejected — the dedicated range helper must accept it.
 func TestLoadRuntimeConfigHonorsReminderSchedulerSettings(t *testing.T) {
-	t.Setenv("SECRET_KEY", "0123456789abcdef0123456789abcdef")
-	t.Setenv("DB_DRIVER", "sqlite")
-	t.Setenv("DB_PATH", "data/ovumcy.db")
+	minimalRuntimeEnv(t)
 	t.Setenv("REMINDER_SCHEDULER_ENABLED", "true")
 	t.Setenv("REMINDER_SCHEDULER_HOUR", "0")
 
