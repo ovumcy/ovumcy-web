@@ -593,6 +593,55 @@ func TestResolveFeedBackfillsMACForPre032RowAndLeavesBcryptBehind(t *testing.T) 
 	}
 }
 
+// TestResolveFeedRefusesAWrongVerifierOnAPre032RowAndWritesNoMAC pins the
+// transitional bcrypt path from the layer that serves requests: a row minted
+// before migration 032 (hash, no MAC), presented with the correct selector and a
+// wrong verifier, is refused exactly like any other bad token — and that refusal
+// leaves the row unmigrated.
+//
+// The second half is the one no other case reaches. The backfill derives its
+// input from the PRESENTED verifier, because a successful poll is the only moment
+// that plaintext exists; a backfill reached without a passing verification would
+// therefore install a wrong verifier as the row's authoritative authenticator,
+// locking the owner out of their own feed and handing the caller a working one.
+// Every other backfill case here presents the correct token, and the bad-token
+// sweep (TestResolveFeedIdenticalNotFoundForEveryBadToken) runs against an armed
+// post-032 row whose non-empty MAC skips this branch entirely.
+func TestResolveFeedRefusesAWrongVerifierOnAPre032RowAndWritesNoMAC(t *testing.T) {
+	legacy, token := legacyArmedFeedUser(t, 16, "2026-03-02")
+	svc, users, _ := newFeedServiceForTest(legacy, predictableFeedLogs(t))
+	now := mustParseDashboardDay(t, "2026-03-20")
+
+	// The real selector with a wrong verifier of the correct width: the token is
+	// well-formed and resolves the row, so only the bcrypt compare can refuse it.
+	tampered := token[:calendarFeedSelectorLength] + strings.Repeat("2", calendarFeedVerifierLength)
+	if tampered == token {
+		t.Fatal("test setup: the tampered verifier must differ from the minted one")
+	}
+
+	body, ok, err := svc.ResolveFeed(context.Background(), tampered, now, time.UTC)
+	if err != nil {
+		t.Fatalf("a wrong verifier must return the no-oracle nil error, got %v", err)
+	}
+	if ok || body != nil {
+		t.Fatalf("a wrong verifier must be refused on the pre-032 bcrypt path: ok=%v, %d bytes of body", ok, len(body))
+	}
+	if users.backfillCalls != 0 {
+		t.Fatalf("a refused token must never migrate the row: got %d MAC writes", users.backfillCalls)
+	}
+
+	// Positive anchor for both negatives: the same row and the same service serve
+	// the correct token and do write the MAC, so the assertions above measure the
+	// verifier compare rather than a fixture that never resolves or a counter that
+	// never moves.
+	if _, ok, err := svc.ResolveFeed(context.Background(), token, now, time.UTC); err != nil || !ok {
+		t.Fatalf("the same pre-032 row must still serve its own token: ok=%v err=%v", ok, err)
+	}
+	if users.backfillCalls != 1 {
+		t.Fatalf("the correct token must migrate the row exactly once, got %d MAC writes", users.backfillCalls)
+	}
+}
+
 // TestResolveFeedSkipsMACBackfillWithoutSecretKey covers the other way the
 // backfill can decline: with no secret key there is no MAC to derive. The pre-032
 // bcrypt path needs no key, so the feed must still serve — it simply stays on the
