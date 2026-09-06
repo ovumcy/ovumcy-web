@@ -121,6 +121,15 @@ func TestTrackingVisibilityKeepsASingleConversionPoint(t *testing.T) {
 // The price is that a legitimate reader must be entered in
 // positiveTrackingColumnAllowedFiles with the question it asks, which is where
 // the two questions are kept apart rather than blurred.
+//
+// What it does NOT see, said out loud because the sibling sweep does see it: an
+// entry here exempts the whole FILE, so a day-form read added to a file already
+// listed passes unremarked. The inverted columns can be checked line by line
+// because the defect has a spelling there — a negation outside the conversion
+// point — while a positive column reads the same whichever question it is
+// asked, so nothing in the line separates the two. An allowlist entry is
+// therefore a claim about a file's whole subject, and a file that grows a day
+// form is a reason to re-read its entry rather than to widen it.
 func TestTrackingVisibilityIsTheOnlyDayFormReaderOfTheTrackedColumns(t *testing.T) {
 	walkTrackingColumnSources(t, func(relative string, data []byte) {
 		if _, allowed := positiveTrackingColumnAllowedFiles[relative]; allowed {
