@@ -40,15 +40,26 @@ const CalendarFeedFencePathEnv = "CALENDAR_FEED_FENCE_PATH"
 //
 // filepath.IsAbs is not enough on its own: this is developed on Windows, where
 // it demands a drive letter and therefore calls `/app/fence/calendar-feed.fence`
-// relative — which is precisely the value an operator copies out of a compose
-// file, and precisely the case the check exists to accept. A leading separator
-// settles it on either platform.
+// relative — which is precisely the value an operator copies out of every
+// shipped compose file (all of them use forward slashes), and precisely the
+// case the check exists to accept. A leading forward slash settles it on
+// either platform.
+//
+// A leading BACKslash is deliberately not treated the same way, even though it
+// looks like the same shape with the other separator: on Linux a backslash is
+// an ordinary filename character, so `\app\fence\x.fence` is one relative
+// component that resolves against whatever directory started the process —
+// exactly the server-vs-CLI divergence this predicate exists to close, not a
+// case it should accept. On Windows it is drive-relative — rooted to the
+// CURRENT drive, not to a fixed location — for the same reason a bare
+// `C:state\...` below is refused rather than accepted. No shipped compose file
+// ever produces this shape, so there is no real value that needs it.
 //
 // The empty path is not this predicate's subject: "not configured" is a normal
 // operator state both sides answer on their own (the server fails closed, the
 // CLI refuses with its own message), so callers judge emptiness first.
 func CalendarFeedFencePathRooted(path string) bool {
-	return filepath.IsAbs(path) || strings.HasPrefix(path, "/") || strings.HasPrefix(path, `\`)
+	return filepath.IsAbs(path) || strings.HasPrefix(path, "/")
 }
 
 // ErrCalendarFeedFenceNotConfigured is returned by both halves of the anchor

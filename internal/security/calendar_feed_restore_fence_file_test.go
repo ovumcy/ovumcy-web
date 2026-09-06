@@ -4,29 +4,48 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
 
 // TestCalendarFeedFencePathRootedAcceptsTheRootsFilepathIsAbsMisses runs on the
-// classifier directly, touching no filesystem. The two rooted shapes are
-// deliberate, because one of them alone would guard only the platform it was
-// written on. A leading slash is IsAbs on Linux, so putting filepath.IsAbs back
-// would still pass there — on a Linux CI the regression would go through green.
-// A leading backslash is IsAbs on NEITHER platform, so it is the case that
-// fails everywhere the suite runs.
+// classifier directly, touching no filesystem.
+//
+// Most cases below hold on every GOOS the suite runs on, and are asserted
+// unconditionally so a regression on either platform fails here rather than
+// only in a CI job that happens to run on the other one:
+//
+//   - "/app/fence/..." must be accepted everywhere: it is precisely the value
+//     an operator copies out of any shipped compose file, and precisely the
+//     case filepath.IsAbs alone misses on Windows (it demands a drive letter).
+//   - A leading BACKslash must be refused everywhere: on Linux it is one
+//     ordinary relative filename (backslash is not a separator there), and on
+//     Windows it is drive-relative, not rooted to a fixed location — the same
+//     reason the bare drive-relative case just below is refused. Accepting it
+//     on Linux is exactly the server-vs-CLI divergence this predicate exists
+//     to close, so putting the old unconditional branch back must fail here.
+//   - A path with no root at all, and a drive-relative one (a volume name with
+//     no separator after it), must stay unjudged on every platform: both
+//     resolve against a working directory that is not provably the server's.
+//
+// The drive-ABSOLUTE case is the one place GOOS changes the answer, because
+// Go's own filepath.IsAbs does: on Windows a drive letter followed by a
+// separator is what IsAbs considers absolute, so this is the positive case a
+// mutant that dropped filepath.IsAbs from the predicate — keeping only the
+// forward-slash branch — would still pass without. On every other platform
+// the same string has no leading "/" and no meaning as a drive letter, so it
+// is judged exactly like any other relative-looking string and refused.
 //
 // Both callers of this predicate — the server's boot-time config load and the
 // operator CLI's revocation gate — depend on it answering the same way, which is
 // why it is tested once, here, rather than per caller.
 func TestCalendarFeedFencePathRootedAcceptsTheRootsFilepathIsAbsMisses(t *testing.T) {
-	for _, fencePath := range []string{
-		"/app/fence/calendar-feed.fence",
-		`\app\fence\calendar-feed.fence`,
-	} {
-		if !CalendarFeedFencePathRooted(fencePath) {
-			t.Fatalf("%q names a location no working directory changes: judging it by filepath.IsAbs alone silences the check on the value an operator copies out of the compose file", fencePath)
-		}
+	if !CalendarFeedFencePathRooted("/app/fence/calendar-feed.fence") {
+		t.Fatal(`"/app/fence/calendar-feed.fence" names a location no working directory changes: judging it by filepath.IsAbs alone silences the check on the value an operator copies out of the compose file`)
+	}
+	if CalendarFeedFencePathRooted(`\app\fence\calendar-feed.fence`) {
+		t.Fatal(`a leading backslash must stay unjudged: on Linux it is one relative filename, and on Windows it resolves against the current drive's own working directory, not a fixed location`)
 	}
 	if CalendarFeedFencePathRooted(filepath.Join("state", "calendar-feed.fence")) {
 		t.Fatal("a path with no root must stay unjudged: it resolves against a working directory that is not the server's")
@@ -36,6 +55,15 @@ func TestCalendarFeedFencePathRootedAcceptsTheRootsFilepathIsAbsMisses(t *testin
 	// to "has a volume name" would accept it on every platform.
 	if CalendarFeedFencePathRooted(`C:state\calendar-feed.fence`) {
 		t.Fatal("a drive-relative path must stay unjudged: it resolves against that drive's working directory, which is not the server's")
+	}
+
+	const driveAbsolute = `C:\app\fence\calendar-feed.fence`
+	if runtime.GOOS == "windows" {
+		if !CalendarFeedFencePathRooted(driveAbsolute) {
+			t.Fatalf("%q must be accepted on Windows: a drive letter followed by a separator is what filepath.IsAbs treats as absolute there, and a host configured this way must be able to boot", driveAbsolute)
+		}
+	} else if CalendarFeedFencePathRooted(driveAbsolute) {
+		t.Fatalf("%q must stay unjudged on %s: a Windows drive letter is not a root here, so this reads as an ordinary relative-looking string", driveAbsolute, runtime.GOOS)
 	}
 }
 
