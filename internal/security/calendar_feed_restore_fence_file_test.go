@@ -31,6 +31,12 @@ func TestCalendarFeedFencePathRootedAcceptsTheRootsFilepathIsAbsMisses(t *testin
 	if CalendarFeedFencePathRooted(filepath.Join("state", "calendar-feed.fence")) {
 		t.Fatal("a path with no root must stay unjudged: it resolves against a working directory that is not the server's")
 	}
+	// Drive-relative on Windows: a volume name is not a root, the path still
+	// resolves against that drive's working directory. Widening the predicate
+	// to "has a volume name" would accept it on every platform.
+	if CalendarFeedFencePathRooted(`C:state\calendar-feed.fence`) {
+		t.Fatal("a drive-relative path must stay unjudged: it resolves against that drive's working directory, which is not the server's")
+	}
 }
 
 // TestCalendarFeedFenceFileRoundTripsAToken pins the ordinary lifecycle: an

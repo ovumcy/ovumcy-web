@@ -26,6 +26,9 @@ func minimalRuntimeEnv(t *testing.T) {
 	t.Setenv("SECRET_KEY", "0123456789abcdef0123456789abcdef")
 	t.Setenv("DB_DRIVER", "sqlite")
 	t.Setenv("DB_PATH", "data/ovumcy.db")
+	// A relative CALENDAR_FEED_FENCE_PATH refuses the boot, so one exported by
+	// the shell running the tests must not reach loadRuntimeConfig.
+	t.Setenv("CALENDAR_FEED_FENCE_PATH", "")
 }
 
 // TestLogoutBudgetDefaultsAreTheDocumentedPair asserts the shipped defaults:
