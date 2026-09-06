@@ -153,14 +153,19 @@ func newTestHandlerDependencies(database *gorm.DB, i18nManager *i18n.Manager, op
 	return dependencies
 }
 
-// testCSRFMiddlewareConfig mirrors csrfMiddlewareConfig (cmd/ovumcy/server.go)
-// exactly: the same two Next clauses, the OIDC callback exemption scoped to
-// POST and the calendar-feed skip keyed on IsCalendarFeedRequest. A narrower
-// mirror here would leave the feed's "no Set-Cookie" contract untested by
-// every regression that arms a feed through this shared test app; a wider one
-// would let a CSRF-exemption regression in this app pass while production's
-// own predicate — pinned separately by csrf_exemption_guard_test.go — stayed
-// broken, or vice versa.
+// testCSRFMiddlewareConfig mirrors csrfMiddlewareConfig (cmd/ovumcy/server.go):
+// the same two Next clauses, the OIDC callback exemption scoped to POST and
+// the calendar-feed skip keyed on IsCalendarFeedRequest. Nothing type-checks
+// that this copy stays in sync with its source, so each clause is pinned
+// separately, on THIS copy, by TestTestAppCSRFExemptionIsExactlyProductionsShape
+// (calendar_feed_regressions_test.go): a mutating method at the feed route
+// still 403s (kills `Next: return true` and a feed clause widened past
+// GET/HEAD), and a GET at the OIDC callback still mints ovumcy_csrf (kills the
+// OIDC clause losing its POST-method guard). The PRODUCTION copy's own shape —
+// the exemption list, and the feed's no-cookie contract across every outcome —
+// is guarded independently, on the real app, by
+// cmd/ovumcy/csrf_exemption_guard_test.go and
+// cmd/ovumcy/calendar_feed_no_cookie_test.go.
 func testCSRFMiddlewareConfig(cookieSecure bool, handler *Handler) csrf.Config {
 	return csrf.Config{
 		Next: func(c fiber.Ctx) bool {

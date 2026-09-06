@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -336,10 +337,16 @@ func TestCalendarFeedIsRateLimitedPerIP(t *testing.T) {
 	const maxRequests = 3
 	rlApp := fiber.New()
 	rlApp.Use(CalendarFeedRateLimitPrefix, limiter.New(limiter.Config{
-		// Mirrors the production mount (cmd/ovumcy/server.go): Next scopes the
-		// limiter to IsCalendarFeedRequest, the same route-shape predicate the
-		// CSRF and language skips key on, rather than the bare prefix app.Use
-		// matches on its own (method-agnostic, no trailing-slash/case folding).
+		// Next repeats the FORM of the production mount (cmd/ovumcy/server.go)
+		// so this test measures the same middleware stack production runs — not
+		// because this test proves the scope Next narrows to: every request
+		// below is a canonical feed GET, which Next admits unconditionally
+		// whether it is this narrow or as wide as the bare prefix. The scope
+		// claim — that a path under the prefix but outside the feed's route
+		// shape spends no budget — is proven on the production stack by
+		// TestCalendarFeedLimiterSpendsNoBudgetOnPathsThatReachNoFeed
+		// (cmd/ovumcy/rate_limit_scope_guard_test.go). This test asserts only
+		// the per-IP budget and the 429's Retry-After shape.
 		Next:       func(c fiber.Ctx) bool { return !IsCalendarFeedRequest(c.Method(), c.Path()) },
 		Max:        maxRequests,
 		Expiration: time.Minute,
@@ -361,8 +368,12 @@ func TestCalendarFeedIsRateLimitedPerIP(t *testing.T) {
 	if lastStatus != http.StatusTooManyRequests {
 		t.Fatalf("expected 429 after exceeding the per-IP budget, got %d", lastStatus)
 	}
-	if retryAfter == "" {
-		t.Fatalf("expected a Retry-After header on the 429")
+	seconds, err := strconv.Atoi(retryAfter)
+	if err != nil {
+		t.Fatalf("expected an integer Retry-After on the 429, got %q: %v", retryAfter, err)
+	}
+	if seconds < 1 || seconds > int(time.Minute/time.Second) {
+		t.Fatalf("expected Retry-After in [1, %d] (the window), got %d", int(time.Minute/time.Second), seconds)
 	}
 }
 
@@ -606,4 +617,55 @@ func TestCalendarFeedRestoredBackupStopsServingARevokedURL(t *testing.T) {
 		t.Fatalf("a disarmed token and an unknown one must both answer the bare no-oracle 404 %#v:\n restored: %#v\n unrelated: %#v",
 			want, restoredFingerprint, unrelatedFingerprint)
 	}
+}
+
+// TestTestAppCSRFExemptionIsExactlyProductionsShape pins
+// testCSRFMiddlewareConfig's two Next clauses
+// (test_onboarding_app_setup_helpers_test.go) on the ONE app every other
+// CSRF-enabled regression in this package shares. Until this test, nothing
+// exercised the copy that way: the only existing GET to
+// security.OIDCCallbackPath (TestOIDCCallbackFormPostModeRejectsGET) builds
+// its app without enableCSRF, and no test sends a mutating method at the feed
+// route through a CSRF-enabled app — so `Next: return true` (exempting
+// everything) or the OIDC clause losing its POST guard (exempting the
+// callback on every method) left the whole package green. The two mutation
+// subtests are negative (403, no cookie change); the third is the positive
+// anchor in the same test proving this app's CSRF machinery is not simply
+// dead — the same token still serves 200 with no Set-Cookie through it.
+func TestTestAppCSRFExemptionIsExactlyProductionsShape(t *testing.T) {
+	app, database := newOnboardingTestAppWithCSRF(t)
+	user := createOnboardingTestUser(t, database, "csrf-exemption-shape@example.com", "StrongPass1", true)
+	token := armCalendarFeedForUser(t, database, user.ID)
+
+	// Kills `Next: return true` and any widening of the feed clause past
+	// GET/HEAD: IsCalendarFeedRequest admits only those two methods, so a POST
+	// at an armed feed URL must still fail CSRF validation for want of a
+	// token — the route table has no POST handler for this path either, so a
+	// wrongly-exempted request would fall through to the 404 catch-all rather
+	// than 403, not silently succeed.
+	t.Run("a mutating method at the feed route is not exempt", func(t *testing.T) {
+		response := mustAppResponse(t, app, httptest.NewRequest(http.MethodPost, calendarFeedURL(token), nil))
+		assertStatusCode(t, response, http.StatusForbidden)
+	})
+
+	// Kills the OIDC clause losing its `c.Method() == fiber.MethodPost` guard:
+	// with the guard intact, a GET is not exempt, so the CSRF middleware's
+	// safe-method arm runs like it would for any other page and mints+sets
+	// ovumcy_csrf. Status is deliberately not asserted — form_post mode (the
+	// default this app builds under) registers no GET route at this path, and
+	// the cookie decision is made by CSRF middleware mounted ahead of routing
+	// either way.
+	t.Run("a GET at the OIDC callback is not exempt from cookie minting", func(t *testing.T) {
+		response := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, security.OIDCCallbackPath, nil))
+		if responseCookie(response.Cookies(), "ovumcy_csrf") == nil {
+			t.Fatalf("expected a GET to the OIDC callback to mint ovumcy_csrf like any other safe request, got Set-Cookie: %q", response.Header.Values("Set-Cookie"))
+		}
+	})
+
+	// Positive anchor: the feed's own GET stays exempt on this same app and
+	// token, so the two refusals above are the exemption's boundary, not a
+	// CSRF-enabled app that refuses everything.
+	t.Run("the feed's own GET stays exempt", func(t *testing.T) {
+		mustServeCalendarFeed(t, app, token, "through the CSRF-enabled test app")
+	})
 }
