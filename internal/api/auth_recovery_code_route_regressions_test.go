@@ -318,6 +318,42 @@ func registerPageWithRecoveryCookie(t *testing.T, app *fiber.App, authCookie str
 	return mustAppResponse(t, app, request)
 }
 
+// TestHeadOnTheInlineRegisterRevealDoesNotSpendTheRecoveryCode covers the reveal
+// surface no route can refuse HEAD for: the inline block lives on GET /register,
+// which is also the anonymous signup page, so the refusal sits on
+// claimRecoveryCodeReveal — the thing that is actually spent — exactly where the
+// first-party rule sits, for the same reason.
+//
+// Without it the HEAD twin of /register would claim the mark for a signed-in
+// owner holding the issuance cookie and answer with a body the protocol strips:
+// the code burned, never displayed, and reachable again only by regenerating it.
+func TestHeadOnTheInlineRegisterRevealDoesNotSpendTheRecoveryCode(t *testing.T) {
+	app, _ := newOnboardingTestApp(t)
+	authCookie, sealed := registerAndExtractRecoveryCookies(t, app, "recovery-inline-head@example.com", "StrongPass1")
+	if authCookie == "" || sealed == "" {
+		t.Fatal("expected auth and recovery cookies from the register pickup")
+	}
+	session := authCookieName + "=" + authCookie
+
+	headRequest := httptest.NewRequest(http.MethodHead, "/register", nil)
+	headRequest.Header.Set("Accept-Language", "en")
+	headRequest.Header.Set("Cookie", session+"; "+recoveryCodeCookieName+"="+sealed)
+	headResponse := mustAppResponse(t, app, headRequest)
+	if headResponse.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected HEAD on the inline reveal to take the refused-claim exit, got %d", headResponse.StatusCode)
+	}
+
+	// The anchor is the owner's own GET, on the same app and the same cookie:
+	// the reveal the HEAD must not have spent is still hers to spend.
+	revealed := registerPageWithRecoveryCookie(t, app, session, sealed)
+	if revealed.StatusCode != http.StatusOK {
+		t.Fatalf("expected the owner's own visit to render the inline reveal after the refused HEAD, got %d", revealed.StatusCode)
+	}
+	if code := recoveryCodeFromRevealPage(t, mustReadBodyString(t, revealed.Body)); strings.TrimSpace(code) == "" {
+		t.Fatal("expected the inline reveal to carry the recovery code after the refused HEAD")
+	}
+}
+
 // recoveryCodePageCookieForTest seals a recovery-code page payload written as
 // raw JSON, so a test can present a shape the production writer will not mint:
 // an expiry already in the past, or — for the zero time — a payload from before

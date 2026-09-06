@@ -77,6 +77,12 @@ func TestOpenAPIOperationsDeclareEveryStatusTheirOwnHandlerChainCanEmit(t *testi
 		if !valid[route.Method] || !strings.HasPrefix(route.Path, "/api/v1") {
 			continue
 		}
+		if isTransportHEADTwin(app, route) {
+			// The twin dispatches the GET operation's own chain, so it emits
+			// exactly what that operation emits and the spec declares those
+			// statuses once, there. See isTransportHEADTwin.
+			continue
+		}
 		operation := route.Method + " " + fiberPathToOpenAPI(route.Path)
 		if seen[operation] {
 			continue // duplicate registration (e.g. HEAD mirroring GET); one check is enough

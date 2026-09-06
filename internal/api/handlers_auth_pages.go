@@ -47,6 +47,19 @@ func (handler *Handler) claimRecoveryCodeReveal(c fiber.Ctx, userID uint) bool {
 		handler.logEgressDenied(c, recoveryCodeRevealEgress, reason)
 		return false
 	}
+	// A HEAD request is refused here for the same reason and at the same site.
+	// Every GET route is served on HEAD too (registerHEADTwins), and a body
+	// stripped on the wire would leave the code spent with nobody having seen
+	// it. The single-purpose reveal routes refuse HEAD on the route itself
+	// (shownOnceGETRoutes); /register cannot, because the same GET is the
+	// anonymous signup page, where HEAD is an ordinary probe that reveals and
+	// spends nothing. Refusing here costs the display only — the same exit an
+	// already-claimed reveal takes — and an absent Sec-Fetch family cannot be
+	// read as a refusal above, so nothing else would have stopped it.
+	if c.Method() == fiber.MethodHead {
+		handler.logEgressDenied(c, recoveryCodeRevealEgress, "head_request")
+		return false
+	}
 	claimed, err := handler.authService.ClaimRecoveryCodeReveal(c.Context(), userID, time.Now())
 	if err != nil || !claimed {
 		// Both recovery surfaces claim through this helper, so auditing the

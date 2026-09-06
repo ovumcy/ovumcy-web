@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
@@ -38,6 +39,13 @@ func TestOpenAPIContractMatchesRegisteredRoutes(t *testing.T) {
 
 	if len(codeRoutes) == 0 {
 		t.Fatal("no /api/v1 routes discovered from the app; test setup is wrong")
+	}
+	// Positive anchor for the transport-twin filter registeredV1Routes applies:
+	// a HEAD route with a chain of its own is an operation and must survive it.
+	// Were the filter to start swallowing every HEAD route, both comparisons
+	// below would pass while the spec's own HEAD entry went unchecked.
+	if _, ok := codeRoutes[fiber.MethodHead+" /api/v1/days/{date}"]; !ok {
+		t.Fatal("HEAD /api/v1/days/{date} is missing from the discovered routes: the transport-twin filter is dropping HEAD routes that carry their own handler chain")
 	}
 	if len(specRoutes) == 0 {
 		t.Fatal("no /api/v1 paths parsed from openapi.yaml; parser or spec is wrong")
@@ -455,9 +463,51 @@ func registeredV1Routes(app *fiber.App) map[string]struct{} {
 		if !strings.HasPrefix(route.Path, "/api/v1") {
 			continue
 		}
+		if isTransportHEADTwin(app, route) {
+			continue
+		}
 		routes[route.Method+" "+fiberPathToOpenAPI(route.Path)] = struct{}{}
 	}
 	return routes
+}
+
+// isTransportHEADTwin reports whether route is the HEAD counterpart
+// registerHEADTwins gives a GET route: the same handler chain, function for
+// function. Such a route is not an operation of its own — it answers exactly
+// what the GET operation answers, minus the body the protocol strips — so the
+// spec states the rule once in its preamble instead of publishing a second copy
+// of every GET operation, the same "one canonical route per operation" posture
+// that kept the query-string day twin out.
+//
+// A HEAD route carrying a chain of its own is a real operation and stays in
+// scope: HEAD /api/v1/days/{date} asks whether the day holds any data, which is
+// not what GET on that path answers, and it is documented per path.
+func isTransportHEADTwin(app *fiber.App, route fiber.Route) bool {
+	if route.Method != fiber.MethodHead {
+		return false
+	}
+	for _, candidate := range app.GetRoutes(true) {
+		if candidate.Method != fiber.MethodGet || candidate.Path != route.Path {
+			continue
+		}
+		return sameHandlerChain(candidate, route)
+	}
+	return false
+}
+
+// sameHandlerChain compares two routes by the functions fiber will dispatch
+// rather than by their names: a twin is registered with the very handler values
+// of the GET route it mirrors, so pointer identity is the exact question.
+func sameHandlerChain(left fiber.Route, right fiber.Route) bool {
+	if len(left.Handlers) == 0 || len(left.Handlers) != len(right.Handlers) {
+		return false
+	}
+	for index := range left.Handlers {
+		if reflect.ValueOf(left.Handlers[index]).Pointer() != reflect.ValueOf(right.Handlers[index]).Pointer() {
+			return false
+		}
+	}
+	return true
 }
 
 // fiberPathToOpenAPI rewrites Fiber ":param" segments to OpenAPI "{param}".

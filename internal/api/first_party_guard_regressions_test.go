@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/ovumcy/ovumcy-web/internal/security"
 )
 
 // secFetchHeaders is one browser's account of who started a request. The shapes
@@ -459,4 +460,115 @@ func revealCalendarFeedWithHeaders(t *testing.T, app *fiber.App, authCookie stri
 	headers.applyTo(request)
 	response, logOutput := captureAuditedRequest(t, app, request)
 	return response, mustReadBodyString(t, response.Body), logOutput
+}
+
+// TestEveryGETRouteIsAlsoServedOnHEAD is the route-table half of HEAD parity:
+// registerHEADTwins must leave no GET route without a HEAD route of its own, or
+// a HEAD request to it falls through to whatever the composition root mounts
+// after the routes — in the deployed app, the terminal NotFound catch-all.
+//
+// The chain comparison is what makes the count meaningful: a HEAD route
+// answering something OTHER than its GET route would satisfy a presence check
+// and still break parity. The one route that legitimately does is HEAD
+// /api/v1/days/{date}, whose own question (does the day hold any data) is not
+// what GET on that path answers — it is asserted here as the negative anchor,
+// so a twin that started overwriting hand-written HEAD routes reddens.
+func TestEveryGETRouteIsAlsoServedOnHEAD(t *testing.T) {
+	t.Parallel()
+
+	app, _ := newOnboardingTestApp(t)
+
+	headRoutesByPath := map[string][]fiber.Route{}
+	for _, route := range app.GetRoutes(true) {
+		if route.Method == fiber.MethodHead {
+			headRoutesByPath[route.Path] = append(headRoutesByPath[route.Path], route)
+		}
+	}
+
+	twins := 0
+	ownChain := []string{}
+	for _, route := range app.GetRoutes(true) {
+		if route.Method != fiber.MethodGet {
+			continue
+		}
+		heads := headRoutesByPath[route.Path]
+		if len(heads) == 0 {
+			t.Errorf("GET %s has no HEAD route: a HEAD request to it reaches whatever is mounted after the route table instead of its own handlers", route.Path)
+			continue
+		}
+		if len(heads) > 1 {
+			t.Errorf("GET %s has %d HEAD routes: the first one wins and the others are unreachable clutter", route.Path, len(heads))
+			continue
+		}
+		if sameHandlerChain(route, heads[0]) {
+			twins++
+			continue
+		}
+		ownChain = append(ownChain, fiber.MethodHead+" "+route.Path)
+	}
+
+	if twins == 0 {
+		t.Fatal("no GET route was mirrored by a HEAD route with the same chain; recheck route discovery before reading the comparison above")
+	}
+	want := []string{fiber.MethodHead + " /api/v1/days/:date"}
+	sort.Strings(ownChain)
+	if !reflect.DeepEqual(ownChain, want) {
+		t.Fatalf("HEAD routes carrying a chain of their own drifted:\n  routed:   %v\n  expected: %v", ownChain, want)
+	}
+}
+
+// TestShownOnceGETRoutesAreExactlyTheDeclaredSet is the class half of the HEAD
+// refusal, the same shape TestFirstPartyGuardedRoutesAreExactlyTheDeclaredSet
+// has: nothing in the route table says which GET spends a one-time mark, so the
+// set is declared in routes.go and pinned here in BOTH directions — a refusal
+// dropped from a route named there reddens, and a route that acquires one
+// without being named reddens too.
+//
+// It builds a query-mode app because GET /auth/oidc/callback is registered only
+// under OIDC_RESPONSE_MODE=query, and that callback consumes the one-time state
+// cookie together with the provider's single-use authorization code.
+func TestShownOnceGETRoutesAreExactlyTheDeclaredSet(t *testing.T) {
+	t.Parallel()
+
+	// The name is read from the production method value rather than typed as a
+	// string: a rename moves the expectation with it. The nil receiver is never
+	// dereferenced — a method value only captures it.
+	marker := handlerFuncName((*Handler)(nil).refuseHEADOnShownOnceSurface)
+	if !strings.Contains(marker, "refuseHEAD") {
+		t.Fatalf("resolved middleware name %q does not name the HEAD refusal; the chain comparison below would be meaningless", marker)
+	}
+
+	stub := newStubOIDCWorkflowService(true)
+	stub.responseMode = security.OIDCResponseModeQuery
+	app, _ := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{oidcService: stub})
+
+	refusing := []string{}
+	for _, route := range app.GetRoutes(true) {
+		if route.Method != fiber.MethodGet {
+			continue
+		}
+		for position, routeHandler := range route.Handlers {
+			if handlerFuncName(routeHandler) != marker {
+				continue
+			}
+			if position != 0 {
+				// A refusal behind AuthRequired or the first-party guard answers
+				// a HEAD with their redirect instead of the 404 an unknown path
+				// gets, and runs whatever they do on the way.
+				t.Errorf("GET %s carries %s at position %d: the refusal has to be the first link in the chain", route.Path, marker, position)
+			}
+			refusing = append(refusing, route.Method+" "+route.Path)
+			break
+		}
+	}
+
+	declared := append([]string{}, shownOnceGETRoutes...)
+	sort.Strings(refusing)
+	sort.Strings(declared)
+	if !reflect.DeepEqual(refusing, declared) {
+		t.Fatalf("routes refusing HEAD drifted from the declared set:\n  routed:   %v\n  declared: %v", refusing, declared)
+	}
+	if len(declared) == 0 {
+		t.Fatal("expected at least one declared shown-once route; recheck route discovery")
+	}
 }
