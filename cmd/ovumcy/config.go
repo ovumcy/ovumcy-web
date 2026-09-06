@@ -76,12 +76,13 @@ type rateLimitSettings struct {
 	LogoutAccountWindow time.Duration
 	APIMax              int
 	APIWindow           time.Duration
-	// CalendarFeed is deliberately NOT the API budget. The feed is the only
-	// unauthenticated endpoint that pays a bcrypt compare per request (the
-	// selector-miss equalization in ResolveFeed), so the API budget — sized for
-	// cheap JSON reads — would let one IP burn ~79 CPU-seconds per minute. A
-	// calendar client polls once per refresh interval, so a small budget is
-	// generous. See docs/security/auth-policy-and-rate-limits.md.
+	// CalendarFeed is deliberately NOT the API budget. The feed is a cookieless
+	// unauthenticated endpoint and this is the only cap on it; it was sized when
+	// every well-formed request cost a bcrypt compare, and since migration 032
+	// moved verification (and its timing equalization) to a keyed MAC it bounds
+	// only the residual bcrypt of a row minted before that. A calendar client
+	// polls once per refresh interval, so a small budget is generous. See
+	// docs/security/auth-policy-and-rate-limits.md.
 	CalendarFeedMax    int
 	CalendarFeedWindow time.Duration
 }

@@ -1108,11 +1108,11 @@ func TestLoadRuntimeConfigResolvesHSTSSwitch(t *testing.T) {
 }
 
 // TestLoadRuntimeConfigGivesCalendarFeedItsOwnBudget pins the split between the
-// calendar-feed budget and the /api catch-all. The feed is the one
-// unauthenticated endpoint that pays a bcrypt compare per well-formed request
-// (the selector-miss equalization in ResolveFeed), so reusing the API budget —
-// sized for cheap JSON reads — turns it into a CPU-amplification primitive: one
-// IP could spend APIMax bcrypts per window. The assertion is deliberately
+// calendar-feed budget and the /api catch-all. The feed is a cookieless
+// unauthenticated polling surface this budget is the only cap on, and reusing
+// the API budget — sized for cheap authorized reads — would hand one IP APIMax
+// unauthenticated polls per window (plus, on a row minted before migration 032,
+// that many residual bcrypts). The assertion is deliberately
 // "strictly below APIMax" rather than an exact number, so retuning either budget
 // stays free while a silent revert to the shared budget fails.
 func TestLoadRuntimeConfigGivesCalendarFeedItsOwnBudget(t *testing.T) {
@@ -1126,7 +1126,7 @@ func TestLoadRuntimeConfigGivesCalendarFeedItsOwnBudget(t *testing.T) {
 			t.Fatalf("load runtime config: %v", err)
 		}
 		if config.RateLimits.CalendarFeedMax >= config.RateLimits.APIMax {
-			t.Fatalf("calendar feed budget (%d) must stay strictly below the API budget (%d); a bcrypt-per-request endpoint cannot inherit the cheap-read budget",
+			t.Fatalf("calendar feed budget (%d) must stay strictly below the API budget (%d); a cookieless unauthenticated endpoint cannot inherit the cheap-read budget",
 				config.RateLimits.CalendarFeedMax, config.RateLimits.APIMax)
 		}
 		if config.RateLimits.CalendarFeedMax <= 0 || config.RateLimits.CalendarFeedWindow <= 0 {

@@ -318,53 +318,11 @@ func TestCalendarFeedRouteSetsNoCookieOn429(t *testing.T) {
 	assertNoSetCookie(t, secondResponse, "its 429")
 }
 
-// TestCalendarFeedRateLimiterScopedToTheRouteShapeNotTheBarePrefix covers the
-// limiter half of the same predicate class: app.Use(api.CalendarFeedRateLimitPrefix, ...)
-// is prefix-matched and method-agnostic, so without a Next scoped to
-// api.IsCalendarFeedRequest it would also spend this small, bcrypt-sized
-// budget on a bare "/calendar/feed/" that reaches no bcrypt compare at all.
-func TestCalendarFeedRateLimiterScopedToTheRouteShapeNotTheBarePrefix(t *testing.T) {
-	handler, database := newRateLimitTestHandlerAndDB(t)
-	user := seedOwner(t, db.NewRepositories(database), "calendar-feed-rl-scope@example.com", 14)
-	token := armCalendarFeedToken(t, database, user.ID)
-	app := newCalendarFeedTestApp(t, handler, 1)
-
-	const overMatchPath = api.CalendarFeedRateLimitPrefix + "/"
-	for i := range 3 {
-		request := httptest.NewRequest(http.MethodGet, overMatchPath, nil)
-		response, err := app.Test(request, testConfigNoTimeout)
-		if err != nil {
-			t.Fatalf("over-match request %d failed: %v", i, err)
-		}
-		_ = response.Body.Close()
-		if response.StatusCode == http.StatusTooManyRequests {
-			t.Fatalf("over-match request %d to %s was rate-limited by the feed's own limiter — its scope predicate has widened to the bare prefix", i, overMatchPath)
-		}
-	}
-
-	// Positive anchor, same app, same tiny budget: a REAL feed URL must still
-	// be capped, or the assertion above would pass just as well with the
-	// limiter dead rather than correctly scoped.
-	feedTarget := api.CalendarFeedRateLimitPrefix + "/" + token + ".ics"
-	first := httptest.NewRequest(http.MethodGet, feedTarget, nil)
-	firstResponse, err := app.Test(first, testConfigNoTimeout)
-	if err != nil {
-		t.Fatalf("first canonical request failed: %v", err)
-	}
-	_ = firstResponse.Body.Close()
-	if firstResponse.StatusCode != http.StatusOK {
-		t.Fatalf("expected the first canonical request inside the budget of 1 to succeed, got %d", firstResponse.StatusCode)
-	}
-	second := httptest.NewRequest(http.MethodGet, feedTarget, nil)
-	secondResponse, err := app.Test(second, testConfigNoTimeout)
-	if err != nil {
-		t.Fatalf("second canonical request failed: %v", err)
-	}
-	defer func() { _ = secondResponse.Body.Close() }()
-	if secondResponse.StatusCode != http.StatusTooManyRequests {
-		t.Fatalf("expected the canonical feed URL to still be capped at 429 once its own budget (1) is spent, got %d — if it doesn't, the over-match case above proves nothing", secondResponse.StatusCode)
-	}
-}
+// The limiter half of the same predicate class — a scope widened onto the bare
+// prefix, a nested path segment or a non-GET/HEAD verb — is
+// TestCalendarFeedLimiterSpendsNoBudgetOnPathsThatReachNoFeed in
+// rate_limit_scope_guard_test.go, beside the spelling sweep it shares this
+// file's app builder with.
 
 // TestCalendarFeedOverMatchPathsKeepLanguageCatalogueAndCSRFSupport covers the
 // OTHER half of the same predicate defect: a path that shares the feed's

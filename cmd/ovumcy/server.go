@@ -255,14 +255,15 @@ func configureFiberMiddleware(app *fiber.App, config runtimeConfig, handler *api
 	// /api, so the /api limiter does not cover it; a public, tokened polling
 	// surface must be independently capped so a leaked/guessed URL cannot be
 	// hammered. Reuses the same spoof-proof key generator, but NOT the API
-	// budget: every well-formed token costs one bcrypt compare, so the budget
-	// bounds CPU, not just request count. Keep it small — a calendar client
-	// polls once per refresh interval, not hundreds of times a minute.
+	// budget: this is the only cap on the surface, and since migration 032 moved
+	// verification to a keyed MAC it bounds request count plus the residual
+	// bcrypt of a pre-032 row. Keep it small — a calendar client polls once per
+	// refresh interval, not hundreds of times a minute.
 	//
 	// app.Use is prefix-matched and method-agnostic, so mounting it on the bare
 	// prefix alone would also spend this small budget on a bare "/calendar/feed",
 	// a trailing slash, a nested path segment, or a POST — none of which reach
-	// ServeCalendarFeed's bcrypt-costing compare, so none of them are what this
+	// ServeCalendarFeed's verification at all, so none of them are what this
 	// budget exists to bound. Next scopes it to api.IsCalendarFeedRequest, the
 	// same predicate the CSRF and language skips below key on, so the three can
 	// never disagree about which requests are "the feed".

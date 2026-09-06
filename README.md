@@ -395,8 +395,8 @@ AUDIT_LOG_ENABLED=false
 # RATE_LIMIT_LOGOUT_ACCOUNT_WINDOW=15m
 # RATE_LIMIT_API_MAX=300
 # RATE_LIMIT_API_WINDOW=1m
-# Calendar feed: kept well below the API budget on purpose — every request costs
-# a bcrypt compare, so this bounds CPU rather than request count.
+# Calendar feed: kept well below the API budget on purpose — it is the only cap on
+# a cookieless, unauthenticated polling surface, not on cheap authorized reads.
 # RATE_LIMIT_CALENDAR_FEED_MAX=20
 # RATE_LIMIT_CALENDAR_FEED_WINDOW=1m
 
