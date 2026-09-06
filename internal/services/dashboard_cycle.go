@@ -512,6 +512,10 @@ func buildDashboardPredictionDisplay(user *models.User, logs []models.DailyLog, 
 	if confirmed, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, today, location); ok {
 		display.ovulationDate = confirmed
 		display.ovulationConfirmed = true
+		// ovulationImpossible is the projection's claim that the account's
+		// median cycle leaves no room for an ovulation, and the shift the owner
+		// recorded is the observation that answers it (ResolveConfirmedCycleStats).
+		display.ovulationImpossible = false
 	}
 	// The prompt is not a projection: with no recorded start there is no date
 	// to withhold and nothing for the overdue signal to be about, so it answers
