@@ -58,12 +58,6 @@ type AuthUserRepository interface {
 	ExistsByNormalizedEmail(ctx context.Context, email string) (bool, error)
 	FindByNormalizedEmail(ctx context.Context, email string) (models.User, error)
 	FindByNormalizedEmailOptional(ctx context.Context, email string) (models.User, bool, error)
-	// FindAllByNormalizedEmail is the ambiguity-aware counterpart to
-	// FindByNormalizedEmailOptional: every row matching, not just the driver's
-	// arbitrary first one. ForceResetPasswordByEmail is the one caller that
-	// must know when more than one row answers to an address rather than
-	// silently acting on whichever the database happened to return first.
-	FindAllByNormalizedEmail(ctx context.Context, email string) ([]models.User, error)
 	FindByID(ctx context.Context, userID uint) (models.User, error)
 	FindByIDOptional(ctx context.Context, userID uint) (models.User, bool, error)
 	Create(ctx context.Context, user *models.User) error
@@ -220,38 +214,17 @@ func (service *AuthService) ValidateResetPasswordInput(password string, confirmP
 	return nil
 }
 
-func (service *AuthService) ForceResetPasswordByEmail(ctx context.Context, email string, newPassword string) error {
-	normalizedEmail := NormalizeAuthEmail(email)
-	newPassword = strings.TrimSpace(newPassword)
-
-	if normalizedEmail == "" || newPassword == "" {
-		return ErrAuthResetInvalid
-	}
-	if err := authPasswordPolicyError(ValidatePasswordStrength(newPassword)); err != nil {
-		return err
-	}
-
-	user, found, err := resolveUniqueUserByEmail(ctx, service.users, normalizedEmail)
-	if err != nil {
-		var ambiguous *AmbiguousEmailError
-		if errors.As(err, &ambiguous) {
-			return err
-		}
-		return fmt.Errorf("%w: %v", ErrAuthUserLookupFailed, err)
-	}
-	if !found {
-		return ErrAuthUserNotFound
-	}
-
-	return service.forceResetPassword(ctx, user.ID, newPassword)
-}
-
-// ForceResetPasswordByID is the id-addressed counterpart to
-// ForceResetPasswordByEmail, for the same reason `users set-email --id` exists
-// next to the email form: a legacy row the strict NormalizeAuthEmail rule
-// refuses, or one on a mailbox it shares with another account, cannot be
-// reached by any address-taking command at all, and the id `users list`
-// prints is the only handle that reaches it.
+// ForceResetPasswordByID is the operator-forced reset: it applies the same
+// password policy the owner-facing paths do, then rewrites the hash, sets
+// must_change_password, re-enables local auth, clears the calendar-feed token
+// and bumps auth_session_version in one atomic update (forceResetPassword
+// below). It is addressed by id alone, because the id `users list` prints is
+// the only handle that reaches EVERY row: a legacy row the strict
+// NormalizeAuthEmail rule refuses, or one on a mailbox it shares with another
+// account, cannot be reached by any address-taking form at all. Its one
+// caller, the `ovumcy reset-password` CLI command, resolves the operator's
+// address to that id through OperatorUserService first, so an ambiguous
+// address is refused there rather than acted on here.
 func (service *AuthService) ForceResetPasswordByID(ctx context.Context, userID uint, newPassword string) error {
 	newPassword = strings.TrimSpace(newPassword)
 	if userID == 0 {

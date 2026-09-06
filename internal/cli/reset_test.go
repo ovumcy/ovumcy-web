@@ -19,6 +19,7 @@ func TestRunResetPasswordCommandUpdatesPasswordFromSecurePromptWithoutLeakingPla
 	databasePath := createCLIResetDatabase(t)
 	createCLIResetUser(t, databasePath, "cli-reset@example.com", "StrongPass1")
 	armOperatorFence(t, databasePath)
+	beforeReset := loadCLIResetUser(t, databasePath, "cli-reset@example.com")
 	plaintextPassword := "EvenStronger2"
 	var output bytes.Buffer
 
@@ -54,6 +55,12 @@ func TestRunResetPasswordCommandUpdatesPasswordFromSecurePromptWithoutLeakingPla
 	}
 	if bcrypt.CompareHashAndPassword([]byte(updatedUser.PasswordHash), []byte(plaintextPassword)) != nil {
 		t.Fatalf("expected cli reset to store hash for prompted password")
+	}
+	// The session-invalidation half of the same claim: the operator-forced
+	// reset must revoke every issued auth cookie, which the middleware reads
+	// as a higher auth_session_version than the one a cookie was minted with.
+	if updatedUser.AuthSessionVersion <= beforeReset.AuthSessionVersion {
+		t.Fatalf("expected the forced reset to bump auth_session_version past %d, got %d", beforeReset.AuthSessionVersion, updatedUser.AuthSessionVersion)
 	}
 }
 

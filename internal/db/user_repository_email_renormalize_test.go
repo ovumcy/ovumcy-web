@@ -128,9 +128,10 @@ func TestFindByIDOptionalSeparatesAMissingRowFromAFailedRead(t *testing.T) {
 // TestFindByIDOptionalSeparatesAMissingRowFromAFailedRead for
 // FindAllByNormalizedEmail: a normalized address nobody holds is a legitimate
 // empty slice, while a storage failure must reach the caller as an error —
-// ForceResetPasswordByEmail's ErrAuthUserNotFound treats a nil/empty slice as
-// "no such account", so a query failure reported the same way would send an
-// operator chasing an address that is actually just unreachable right now.
+// OperatorUserService.GetUserByEmail's ErrOperatorUserNotFound treats a
+// nil/empty slice as "no such account", so a query failure reported the same
+// way would send an operator chasing an address that is actually just
+// unreachable right now.
 func TestFindAllByNormalizedEmailSurfacesAFailedRead(t *testing.T) {
 	repo := openCalendarFeedRepoForTest(t)
 	ctx := context.Background()

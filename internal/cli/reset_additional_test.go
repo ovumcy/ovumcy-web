@@ -364,8 +364,9 @@ func TestRunResetPasswordCommandRejectsNoAddress(t *testing.T) {
 
 // TestMapResetPasswordErrorFormatsAmbiguousEmail is the CLI half of finding
 // DB-2's ambiguity refusal: services.AmbiguousEmailError (proven by
-// TestAuthServiceForceResetPasswordByEmail/ambiguous_address to be what the
-// service returns when a bare address matches more than one row) must be
+// TestOperatorUserServiceGetUserByEmailRefusesAnAmbiguousAddress to be what
+// the target resolve returns when a bare address matches more than one row)
+// must be
 // rendered as a refusal that names every matching id and points at --id,
 // never silently resolved to one of them. Exercised as a pure function
 // because the matched-more-than-one-row shape cannot be produced through a
