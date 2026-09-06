@@ -798,7 +798,9 @@ components:
           type: string
           enum: [fertile, not_fertile, unknown]
           description: >-
-            Whether today falls inside the predicted fertile window — the axis
+            Whether today falls inside the fertile window this response
+            reports — the projected one, or the one derived from the confirmed
+            shift when `ovulation_confirmed`, never a mix of the two. The axis
             orthogonal to `current_phase`. `unknown` whenever
             `suppression.fertility` is true.
         average_cycle_length:
@@ -843,8 +845,13 @@ components:
           description: >-
             Projected, unless the owner's own BBT readings have already
             confirmed the current cycle's ovulation, in which case this is the
-            measured day the calendar and dashboard also show. Null when
-            `suppression.fertility` is true.
+            day inferred from the owner's own temperature shift — an inference
+            from a recorded signal, never a measurement of the ovulation itself
+            — and the same day the calendar and dashboard show. A confirmed
+            date may fall on or after `next_period_start`: a late shift outlives
+            the projected next start, which stays a projection and is not
+            recomputed from the confirmed day. Null when `suppression.fertility`
+            is true.
         ovulation_exact:
           type: boolean
           description: >-
@@ -856,12 +863,15 @@ components:
         ovulation_confirmed:
           type: boolean
           description: >-
-            `ovulation_date` is a MEASUREMENT: the owner's own BBT readings
-            already confirmed the current cycle's ovulation, and the date
-            reported is the detector's day rather than the model's
-            projection — the same day the calendar's solid marker and the
-            dashboard's ovulation line show. Always false when
-            `ovulation_date` is null.
+            `ovulation_date` is inferred from the owner's own temperature
+            shift: the recorded BBT readings confirm that the current cycle's
+            ovulation has already happened, and the date reported is the
+            detector's day rather than the model's projection — the same day
+            the calendar's solid marker and the dashboard's ovulation line
+            show. The claim is that the ovulation is behind the owner and
+            nothing more. `fertility_window_start`/`fertility_window_end` and
+            the fertility status are derived from that same day. Always false
+            when `ovulation_date` is null.
         ovulation_impossible:
           type: boolean
           description: >-
@@ -873,11 +883,18 @@ components:
         fertility_window_start:
           type: [string, "null"]
           format: date
-          description: Projected. Null when `suppression.fertility` is true.
+          description: >-
+            Projected, or derived from the confirmed shift when
+            `ovulation_confirmed` — then `ovulation_date` minus five days,
+            clamped to `last_period_start`. Null when `suppression.fertility`
+            is true.
         fertility_window_end:
           type: [string, "null"]
           format: date
-          description: Projected. Null when `suppression.fertility` is true.
+          description: >-
+            Projected, or derived from the confirmed shift when
+            `ovulation_confirmed` — then `ovulation_date` itself. Null when
+            `suppression.fertility` is true.
         pregnancy_paused:
           type: boolean
           description: >-
