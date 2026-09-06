@@ -3,10 +3,10 @@ package services
 // outbound_confirmed_ovulation_test.go — the two surfaces that leave the
 // instance stop announcing an ovulation the temperatures have already answered.
 //
-// The on-screen surfaces replace the projected day with the measured one. The
+// The on-screen surfaces replace the projected day with the confirmed one. The
 // .ics feed and the webhook reminder cannot: both exist to announce a day still
 // ahead. Left alone they kept publishing the projection, so on the projected day
-// itself the owner read the measured day on the dashboard and the grid and the
+// itself the owner read the confirmed day on the dashboard and the grid and the
 // projected day in a subscribed calendar and in a payload leaving the instance —
 // two dates for one shift, at the moment the gap between them is largest.
 

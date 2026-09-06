@@ -1,13 +1,13 @@
 package api
 
 // dashboard_confirmed_ovulation_qualifier_test.go — the projection's own
-// qualifier does not follow a measured day onto the status line.
+// qualifier does not follow a confirmed shift onto the status line.
 //
 // The "approximately" marker rides DisplayOvulationExact, which reports whether
 // CalcOvulationDay had to CLAMP the luteal phase into a short cycle. That is a
 // property of the projection's arithmetic; a day the temperatures named did not
 // come out of it. Carrying the marker across the substitution captioned a
-// recorded reading as an approximation of itself.
+// confirmed shift as an approximation of itself.
 
 import (
 	"net/http"
@@ -103,6 +103,6 @@ func TestDashboardDropsTheProjectionQualifierFromAConfirmedDay(t *testing.T) {
 		t.Fatalf("fixture anchor: the slot must name the detector's day %q, got %q", want, slot)
 	}
 	if dashboardElementByDataAttr(ovulation, "data-dashboard-ovulation-approximate") != nil {
-		t.Fatalf("a measured day carried the projection's approximate marker: %q", slot)
+		t.Fatalf("a confirmed shift carried the projection's approximate marker: %q", slot)
 	}
 }

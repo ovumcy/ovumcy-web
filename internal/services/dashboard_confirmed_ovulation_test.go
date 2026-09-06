@@ -142,7 +142,7 @@ func TestDashboardOvulationLineNamesTheConfirmedDay(t *testing.T) {
 	}
 	// OvulationInPast drives the amber "date is already in the past" notice,
 	// which is about a PROJECTION the model still points at after its day has
-	// gone by. A measured ovulation is behind the owner for the whole luteal
+	// gone by. A confirmed ovulation is behind the owner for the whole luteal
 	// phase by design, so reporting it here would leave that warning standing
 	// for a fortnight of every cycle — and DashboardUpcomingPredictions rolls a
 	// projected ovulation forward the moment it is past, which is why this flag
