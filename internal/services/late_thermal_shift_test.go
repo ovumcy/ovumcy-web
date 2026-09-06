@@ -270,7 +270,7 @@ func TestLateShiftDoesNotCountAReadingLoggedAfterToday(t *testing.T) {
 			lastBBTDay = entry.Date
 		}
 	}
-	if want := AddCalendarDays(today, 1, time.UTC); !lastBBTDay.Equal(want) {
+	if want := AddCalendarDays(today, 1, time.UTC); CalendarDaysBetween(lastBBTDay, want) != 0 {
 		t.Fatalf("fixture anchor: last recorded BBT = %s, want %s — the reading this test refuses must be dated after today", CalendarDayKey(lastBBTDay), CalendarDayKey(want))
 	}
 

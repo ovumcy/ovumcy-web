@@ -346,6 +346,7 @@ func TestConfirmedOvulationStopsAtTheFirstCycleFloor(t *testing.T) {
 // whether the wrapper is there or not.
 func TestFirstCycleGridWithholdsTheTentativeMarkerWithTheFertilityMaps(t *testing.T) {
 	user, logs, stats, today := thermalShiftFixture(t, 0)
+	floorLifted := stats
 	// The model's projections stay: an account awaiting its first cycle still
 	// has an ovulation date and a next-period start, both projected from the
 	// onboarding cycle length, which is exactly why the fertility half is
@@ -354,6 +355,13 @@ func TestFirstCycleGridWithholdsTheTentativeMarkerWithTheFertilityMaps(t *testin
 
 	if _, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, today, time.UTC); ok {
 		t.Fatal("fixture anchor: with no completed cycle FertilityProjectionSuppressed must hold, so the resolver confirms nothing")
+	}
+	// That silence is the floor's and not an empty pass: the BBT pass opens on
+	// the same fields the resolver does — TrackBBT and the model's three dates
+	// — so a fixture that had lost one of them would keep this grid empty with
+	// the wrapper gone. Pinned here, and proven on the grid itself at the end.
+	if !user.TrackBBT || stats.LastPeriodStart.IsZero() || stats.OvulationDate.IsZero() || stats.NextPeriodStart.IsZero() {
+		t.Fatal("fixture anchor: the BBT pass must be reachable — TrackBBT and the model's three dates are what its first guard reads")
 	}
 
 	monthStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
@@ -367,5 +375,15 @@ func TestFirstCycleGridWithholdsTheTentativeMarkerWithTheFertilityMaps(t *testin
 	// all cannot satisfy the assertion above.
 	if projected := findCalendarDayStateByDateString(t, days, "2026-03-29"); !projected.IsPredicted {
 		t.Errorf("calendar: 2026-03-29 IsPredicted = false, want true — only the fertility half is withheld here, and PredictionsSuppressed is what would take the period with it")
+	}
+	// The reachability control: the same series with the floor lifted paints
+	// the detector's day, so the empty grid above is the floor's doing and not
+	// a pass that had nothing to draw.
+	confirmed, ok := ConfirmedCurrentCycleOvulation(user, logs, floorLifted, today, time.UTC)
+	if !ok {
+		t.Fatal("control: with the floor lifted the resolver must confirm the detector's day")
+	}
+	if solid, _ := ovulationMarkerKeys(BuildCalendarDayStates(user, monthStart, logs, floorLifted, today, time.UTC)); len(solid) != 1 || solid[0] != CalendarDayKey(confirmed) {
+		t.Fatalf("control: with the floor lifted solid ovulation marker(s) = %v, want [%s] — the BBT pass paints this series once the floor is gone", solid, CalendarDayKey(confirmed))
 	}
 }
