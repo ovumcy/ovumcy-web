@@ -132,6 +132,19 @@ func (f *fakeConfirmFenceAppState) Set(_ context.Context, key string, value stri
 	return nil
 }
 
+// Delete completes the app_state surface the fence needs. No operator path
+// deletes anything — only the server's boot pass erases the unanchored stamp —
+// so this exists to satisfy the interface and is deliberately journalled, which
+// would make an operator command that started deleting markers visible in the
+// ordering assertions rather than silent.
+func (f *fakeConfirmFenceAppState) Delete(_ context.Context, key string) error {
+	if f.journal != nil {
+		*f.journal = append(*f.journal, "app_state_delete")
+	}
+	delete(f.values, key)
+	return nil
+}
+
 type fakeConfirmFenceUsers struct{}
 
 func (fakeConfirmFenceUsers) DisarmAllCalendarFeedTokens(_ context.Context) (int64, error) {

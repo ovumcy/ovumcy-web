@@ -299,6 +299,11 @@ func calendarFeedRestoreFenceStartupMessage(outcome services.CalendarFeedRestore
 		// concatenated pieces is invisible to go vet's printf checker, and the
 		// locale-format guard refuses one for that reason.
 		return fmt.Sprintf("calendar-feed restore fence unavailable (%v): %d armed calendar feed(s) disarmed, and every start will disarm again. Mount a persistent directory that is NOT part of any database backup and point CALENDAR_FEED_FENCE_PATH at a file inside it, using an absolute path — a relative one is refused at startup, by this server and by the operator CLI alike (see docs/self-hosted.md → Calendar Feed Restore Fence); without it a restored backup cannot be told from the database it replaced", outcome.UnanchoredCause, outcome.DisarmedFeeds)
+	case outcome.UnanchoredHistory:
+		// Ahead of the plain ContinuityBroken line below, because this outcome
+		// sets both flags and only this text explains a disarm on a start where
+		// nothing was restored and no two markers disagreed.
+		return fmt.Sprintf("calendar-feed restore fence armed for the first time on a database that had already run without one: %d armed calendar feed(s) disarmed; owners re-generate subscribe URLs from settings. This is expected on the first start after you mounted the fence, and it is not a restore — while the fence was unavailable, nothing outside the database recorded a revocation, so a backup taken then cannot be told from the database it would replace. Later starts disarm nothing", outcome.DisarmedFeeds)
 	case outcome.ContinuityBroken:
 		return fmt.Sprintf("calendar-feed restore fence: this database is not the one this instance last wrote (backup restore, or a recreated fence): %d armed calendar feed(s) disarmed; owners re-generate subscribe URLs from settings", outcome.DisarmedFeeds)
 	case outcome.FirstBoot:

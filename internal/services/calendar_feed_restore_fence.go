@@ -11,10 +11,13 @@ import (
 )
 
 // calendarFeedRestoreFenceAppState is the narrow app_state surface the fence
-// needs: read one marker, upsert one marker.
+// needs: read a marker, upsert a marker, drop a marker. Delete is idempotent —
+// a key that is not there is not an error — because the fence erases its
+// unanchored marker on every boot that records a token, without reading first.
 type calendarFeedRestoreFenceAppState interface {
 	Get(ctx context.Context, key string) (string, bool, error)
 	Set(ctx context.Context, key string, value string) error
+	Delete(ctx context.Context, key string) error
 }
 
 // calendarFeedRestoreFenceUserStore is the single bulk write the fence performs
@@ -33,27 +36,45 @@ type calendarFeedRestoreFenceAnchor interface {
 }
 
 // CalendarFeedRestoreFenceOutcome reports what one Enforce pass did, for the
-// operator-facing startup log line. At most one of the three flags is set.
+// operator-facing startup log line. At most one of the three outcome flags —
+// Unanchored, FirstBoot, ContinuityBroken — is set. UnanchoredHistory is not a
+// fourth outcome but a qualifier on ContinuityBroken: it says WHICH shape of
+// broken continuity this was, because the operator remedy and the surprise
+// differ (nothing was restored; a fence was finally mounted).
 type CalendarFeedRestoreFenceOutcome struct {
 	// Unanchored is true when the fence could not be read or written: no
 	// CALENDAR_FEED_FENCE_PATH, no mount behind it, a read-only or broken path.
 	// Continuity is then unprovable on every boot, so every armed feed is
-	// disarmed on every boot and no marker is recorded.
+	// disarmed on every boot. No fence TOKEN is recorded — there is nowhere
+	// outside the database to put its other half — but the database is stamped
+	// as having booted this way, which is what lets the first boot that finally
+	// has a fence tell this history from a fresh installation.
 	Unanchored bool
 	// UnanchoredCause carries why, for the startup line only. Never nil when
 	// Unanchored is true.
 	UnanchoredCause error
-	// FirstBoot is true when neither half held a token: a new installation, or
-	// the first boot of an existing one after the fence was introduced. Nothing
-	// is disarmed — an upgrade is not a restore, and the feeds an instance is
-	// already serving were never revoked.
+	// FirstBoot is true when neither half held a token AND the database carries
+	// no unanchored stamp: a new installation, or the first boot of an existing
+	// one after the fence was introduced. Nothing is disarmed — an upgrade is
+	// not a restore, and the feeds an instance is already serving were never
+	// revoked.
 	FirstBoot bool
-	// ContinuityBroken is true when the two halves disagreed: the database was
-	// replaced by an older generation of itself (a backup restore), replaced by
-	// another database, or the fence directory was recreated. All three mean the
-	// revocations this instance performed may be missing from the rows in front
-	// of it.
+	// ContinuityBroken is true when continuity could not be proved with a fence
+	// that itself worked: the two halves disagreed — the database was replaced
+	// by an older generation of itself (a backup restore), replaced by another
+	// database, or the fence directory was recreated — or both halves were empty
+	// over a database stamped as having run unanchored (UnanchoredHistory). All
+	// of them mean the revocations this instance performed may be missing from
+	// the rows in front of it.
 	ContinuityBroken bool
+	// UnanchoredHistory qualifies ContinuityBroken: this is the FIRST boot with
+	// a working fence over a database that ran without one. Neither half held a
+	// token, so nothing disagreed and nothing was necessarily restored; what
+	// broke continuity is the gap itself, during which a revocation could have
+	// been made and then rolled back by a restore no marker could contradict.
+	// The operator sees a disarm on a start where nothing appears to have
+	// happened, so the startup line has to say which of the two this was.
+	UnanchoredHistory bool
 	// DisarmedFeeds counts the armed rows this pass cleared.
 	DisarmedFeeds int64
 }
@@ -111,8 +132,12 @@ func NewCalendarFeedRestoreFence(appState calendarFeedRestoreFenceAppState, user
 // cannot answer will not serve either. An ANCHOR error is not — an unmounted
 // fence volume is an ordinary operator state, and refusing to start over it
 // would take an instance down for a feature most instances do not use. It fails
-// closed instead: disarm everything, record nothing, and say so on every start
-// until the mount is there.
+// closed instead: disarm everything, record no token — there is nowhere outside
+// the database to keep its other half — and say so on every start until the
+// mount is there. It does stamp the database as having booted that way, because
+// that stamp is what the first boot WITH a fence needs in order to tell this
+// history from a brand-new installation; a stamped database whose two halves
+// are both empty is a restore that cannot be ruled out, not a first boot.
 //
 // Ordering matches the sibling: the disarm runs BEFORE either half of the new
 // token is recorded, so a crash in between re-runs the disarm on the next boot
@@ -139,7 +164,33 @@ func (fence *CalendarFeedRestoreFence) Enforce(ctx context.Context) (CalendarFee
 	}
 
 	if !anchorFound && !storedFound {
-		return fence.record(ctx, CalendarFeedRestoreFenceOutcome{FirstBoot: true}, 0)
+		// Two very different histories look identical here, and only the stamp
+		// tells them apart: an instance that never had a fence at all, and one
+		// that SERVED without a usable fence and is now being booted with one.
+		// In the second, the gap is the hole: an owner could have revoked a feed
+		// while nothing outside the database recorded it, a backup taken before
+		// that revocation carries the armed row and no fence token, and restoring
+		// it lands exactly here — both halves empty — where calling it a first
+		// boot would hand the old subscribe URL back. So the stamp is read ONLY
+		// in this branch. Reading it anywhere else would turn a stamp left behind
+		// by an older unanchored run into a disarm-all on every start, which is
+		// the one thing this pass must never become.
+		unanchoredHistory, err := fence.unanchoredHistory(ctx)
+		if err != nil {
+			return CalendarFeedRestoreFenceOutcome{}, err
+		}
+		if !unanchoredHistory {
+			return fence.record(ctx, CalendarFeedRestoreFenceOutcome{FirstBoot: true}, 0)
+		}
+		disarmed, err := fence.users.DisarmAllCalendarFeedTokens(ctx)
+		if err != nil {
+			return CalendarFeedRestoreFenceOutcome{ContinuityBroken: true, UnanchoredHistory: true}, err
+		}
+		return fence.record(ctx, CalendarFeedRestoreFenceOutcome{
+			ContinuityBroken:  true,
+			UnanchoredHistory: true,
+			DisarmedFeeds:     disarmed,
+		}, disarmed)
 	}
 	// Equality is the only proof of continuity, and it needs both halves: a
 	// database carrying no token at all is a database this fence never wrote,
@@ -358,10 +409,28 @@ func continuityHolds(anchorFound, storedFound bool, anchored, stored string) boo
 	return anchorFound && storedFound && anchored == stored
 }
 
-// record mints the next token and stores it in both halves. A write failure on
-// the file half is an anchor failure, not a boot failure, so it degrades into
-// the unanchored outcome — which is also the path a first boot with no mount
-// takes, since a missing directory reads as "no token" and only fails on write.
+// unanchoredHistory reports whether this database was booted at least once
+// without a usable fence. It is only ever asked in the one branch where both
+// halves are empty, and only its presence matters — the value is a note for an
+// operator reading the row, never an input to this decision.
+func (fence *CalendarFeedRestoreFence) unanchoredHistory(ctx context.Context) (bool, error) {
+	_, found, err := fence.appState.Get(ctx, models.AppStateKeyCalendarFeedFenceUnanchored)
+	return found, err
+}
+
+// record mints the next token and stores it in both halves, then clears the
+// unanchored stamp. A write failure on the file half is an anchor failure, not
+// a boot failure, so it degrades into the unanchored outcome — which is also
+// the path a first boot with no mount takes, since a missing directory reads as
+// "no token" and only fails on write.
+//
+// The stamp is erased LAST, after both halves already hold the new token, and
+// unconditionally rather than only when one was found: a crash between the two
+// leaves a stamp beside halves that agree, which the next boot ignores (the
+// stamp is read only where both halves are empty) and the next pass that
+// records erases — while the reverse order would clear the evidence first and
+// let a crash before the token write leave a database that ran unanchored with
+// nothing left saying so. Fail closed on the way in, tidy up on the way out.
 func (fence *CalendarFeedRestoreFence) record(ctx context.Context, outcome CalendarFeedRestoreFenceOutcome, disarmed int64) (CalendarFeedRestoreFenceOutcome, error) {
 	token, err := security.NewCalendarFeedFenceToken()
 	if err != nil {
@@ -373,6 +442,9 @@ func (fence *CalendarFeedRestoreFence) record(ctx context.Context, outcome Calen
 	if err := fence.appState.Set(ctx, models.AppStateKeyCalendarFeedRestoreFence, token); err != nil {
 		return outcome, err
 	}
+	if err := fence.appState.Delete(ctx, models.AppStateKeyCalendarFeedFenceUnanchored); err != nil {
+		return outcome, err
+	}
 	return outcome, nil
 }
 
@@ -380,11 +452,38 @@ func (fence *CalendarFeedRestoreFence) record(ctx context.Context, outcome Calen
 // prove this database still holds the revocations this instance performed, so
 // every armed feed goes. alreadyDisarmed carries the count from a disarm that
 // ran earlier in the same pass, so the reported total counts each row once.
+//
+// It also stamps the database, which is the only durable trace this boot can
+// leave: the fence's own token needs a half outside the database and there is
+// none here, so without the stamp a backup taken now is indistinguishable from
+// one taken by an instance that never served at all, and the first boot after
+// a fence is finally mounted would adopt its armed rows instead of disarming.
+//
+// A failure to write the stamp is RETURNED, not swallowed, which fails the
+// boot. That is the same answer the pass already gives every other app_state
+// failure, and the right one here: the anchor error this path exists for is an
+// ordinary operator state the instance boots through, but a database that
+// cannot record what just happened is not — an instance that served unanchored
+// and left no evidence is precisely the state this stamp exists to prevent, and
+// starting anyway would produce it silently. The disarm runs first, so the
+// feeds are down either way and a failed boot never leaves them served.
 func (fence *CalendarFeedRestoreFence) disarmUnanchored(ctx context.Context, cause error, alreadyDisarmed int64) (CalendarFeedRestoreFenceOutcome, error) {
 	disarmed, err := fence.users.DisarmAllCalendarFeedTokens(ctx)
-	return CalendarFeedRestoreFenceOutcome{
+	outcome := CalendarFeedRestoreFenceOutcome{
 		Unanchored:      true,
 		UnanchoredCause: cause,
 		DisarmedFeeds:   alreadyDisarmed + disarmed,
-	}, err
+	}
+	if err != nil {
+		return outcome, err
+	}
+	return outcome, fence.appState.Set(ctx, models.AppStateKeyCalendarFeedFenceUnanchored, unanchoredStampValue(cause))
+}
+
+// unanchoredStampValue is what an operator finds in the row. Only the key's
+// presence is ever read, so this text is free to be for a human: the cause is
+// the fence failure itself (an unset variable, a missing mount), never a
+// selector, a token or anything about an owner.
+func unanchoredStampValue(cause error) string {
+	return fmt.Sprintf("booted without a usable calendar-feed restore fence: %v", cause)
 }
