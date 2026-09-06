@@ -160,9 +160,11 @@ func TestDashboardNamesALateShiftOnOrAfterTheProjectedNextPeriodStart(t *testing
 
 			// This half's own anchor on the cohort, read from the very document
 			// the slot comes from: the projection the seed computed is the one the
-			// model arrives at. Judged before the slot is, so a seed that drifted
-			// out of the cohort fails as arithmetic rather than as a slot naming
-			// the wrong day.
+			// model arrives at. Judged before the slot is compared, so a seed
+			// that drifted inside the cohort fails as arithmetic rather than as a
+			// slot naming the wrong day; one that drifted past the overdue gate
+			// fails earlier still, in the helper, as a slot the paused dashboard
+			// never rendered.
 			//
 			// The date this surface names is the projected start rolled one whole
 			// cycle on — 28 days, the spacing of the four starts the seed records
