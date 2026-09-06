@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -486,3 +487,59 @@ func TestCalendarFeedFenceConfirmRefusalPanicsOnAnUnhandledState(t *testing.T) {
 }
 
 var errFencePermissionDenied = errors.New("permission denied")
+
+// TestWrappedCauseAnswersOnlyTheTwoErrorSentinelWrap pins each shape
+// wrappedCause has to tell apart, because every shape but the last one is
+// reported to the operator as "no extra detail" while the last one is printed
+// as the fence's cause: answering the sentinel instead of the cause, or a
+// joined error's first member instead of nothing, would put an unrelated
+// failure into a refusal message.
+//
+// errors.Join builds the one- and three-element Unwrap() []error shapes:
+// fmt.Errorf produces only the single-error Unwrap() error form and the
+// two-error form this function exists for.
+func TestWrappedCauseAnswersOnlyTheTwoErrorSentinelWrap(t *testing.T) {
+	t.Parallel()
+
+	sentinel := errors.New("calendar feed fence is unreachable")
+	cause := errors.New("permission denied")
+	third := errors.New("no space left on device")
+
+	cases := []struct {
+		name string
+		err  error
+		want error
+	}{
+		{
+			name: "a bare error carries no Unwrap at all",
+			err:  cause,
+		},
+		{
+			name: "a single-verb wrap implements Unwrap() error, which is not the multi form",
+			err:  fmt.Errorf("%w: %v", sentinel, cause),
+		},
+		{
+			name: "one wrapped error is not a sentinel beside a cause",
+			err:  errors.Join(cause),
+		},
+		{
+			name: "three wrapped errors are not a sentinel beside a cause",
+			err:  errors.Join(sentinel, cause, third),
+		},
+		{
+			name: "a sentinel beside a cause answers the cause",
+			err:  fmt.Errorf("%w: %w", sentinel, cause),
+			want: cause,
+		},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := wrappedCause(testCase.err); got != testCase.want {
+				t.Fatalf("wrappedCause(%v) = %v, want %v", testCase.err, got, testCase.want)
+			}
+		})
+	}
+}
