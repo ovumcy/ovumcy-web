@@ -6,16 +6,83 @@ import (
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/db"
+	"github.com/ovumcy/ovumcy-web/internal/security"
 )
 
-// Boot-time refusal guards for the two runtime-config values an operator can
+// Boot-time refusal guards for the runtime-config values an operator can
 // mistype into a silently degraded security posture.
 //
-// Deliberately narrow: only TRUSTED_PROXIES and the four security-relevant
-// booleans (COOKIE_SECURE, HSTS_ENABLED, TRUST_PROXY_ENABLED,
-// WEBHOOK_BLOCK_PRIVATE_ADDRESSES) refuse the boot. The lenient getEnvBool /
-// getEnvInt / getEnvDuration fallback still governs every other key, so nothing
-// here may be read as "every invalid env value stops the process".
+// Deliberately narrow: only TRUSTED_PROXIES, CALENDAR_FEED_FENCE_PATH and the
+// four security-relevant booleans (COOKIE_SECURE, HSTS_ENABLED,
+// TRUST_PROXY_ENABLED, WEBHOOK_BLOCK_PRIVATE_ADDRESSES) refuse the boot. The
+// lenient getEnvBool / getEnvInt / getEnvDuration fallback still governs every
+// other key, so nothing here may be read as "every invalid env value stops the
+// process".
+
+// TestBootRefusesARelativeCalendarFeedFencePath pins that the server accepts
+// exactly the set of CALENDAR_FEED_FENCE_PATH values the operator CLI accepts.
+//
+// The CLI has always refused a relative one, because it resolves against
+// whichever working directory the command happens to run in rather than the
+// server's; the server took the value verbatim. A bare-binary deployment with
+// a relative path therefore ran with a fence that worked — against the server's
+// own cwd — while `ovumcy users delete` and a forced `ovumcy reset-password`
+// could never confirm that same fence, and refused every removal, with the one
+// documented remedy ("give the server this path") already satisfied.
+func TestBootRefusesARelativeCalendarFeedFencePath(t *testing.T) {
+	t.Run("a relative path refuses the boot", func(t *testing.T) {
+		setValidBootEnv(t)
+		const relative = "state/calendar-feed.fence"
+		t.Setenv(security.CalendarFeedFencePathEnv, relative)
+
+		_, err := loadRuntimeConfig(time.UTC)
+		if err == nil {
+			t.Fatalf("expected boot to refuse %s=%q", security.CalendarFeedFencePathEnv, relative)
+		}
+		for _, want := range []string{security.CalendarFeedFencePathEnv, relative, "absolute path"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("expected the refusal to name %q, got: %v", want, err)
+			}
+		}
+	})
+
+	// A POSIX absolute path is the value an operator copies out of a compose
+	// file, and this suite also runs on Windows, where filepath.IsAbs demands a
+	// drive letter and calls it relative. Judging the value by IsAbs alone would
+	// refuse the boot of the very deployment the fence is documented for, so
+	// this case is the reason the predicate is not filepath.IsAbs.
+	t.Run("a POSIX absolute path boots on every host", func(t *testing.T) {
+		setValidBootEnv(t)
+		const absolute = "/app/fence/calendar-feed.fence"
+		t.Setenv(security.CalendarFeedFencePathEnv, absolute)
+
+		config, err := loadRuntimeConfig(time.UTC)
+		if err != nil {
+			t.Fatalf("expected %s=%q to be accepted, got: %v", security.CalendarFeedFencePathEnv, absolute, err)
+		}
+		if config.CalendarFeedFencePath != absolute {
+			t.Fatalf("expected the fence path to reach the config verbatim, got %q", config.CalendarFeedFencePath)
+		}
+	})
+
+	// An unset path stays a normal operator state, never a boot failure: the
+	// fence then fails closed on each start (every armed feed disarmed, and the
+	// startup line says so), which is the documented default for a bare binary.
+	// The value is judged after trimming, so a blank one is unset and not a
+	// relative path.
+	t.Run("an unset path still boots and stays not configured", func(t *testing.T) {
+		setValidBootEnv(t)
+		t.Setenv(security.CalendarFeedFencePathEnv, "   ")
+
+		config, err := loadRuntimeConfig(time.UTC)
+		if err != nil {
+			t.Fatalf("expected an unset %s to be accepted, got: %v", security.CalendarFeedFencePathEnv, err)
+		}
+		if config.CalendarFeedFencePath != "" {
+			t.Fatalf("expected an unset fence path to reach the config as empty, got %q", config.CalendarFeedFencePath)
+		}
+	})
+}
 
 // TestResolveProxySettingsRejectsAMalformedTrustedProxyEntry pins that a
 // TRUSTED_PROXIES entry the trusted-proxy matcher could never use refuses the

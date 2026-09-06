@@ -47,26 +47,10 @@ func armOperatorFence(t *testing.T, databasePath string) string {
 	return fencePath
 }
 
-// TestRootedPathAcceptsTheRootsFilepathIsAbsMisses runs on the classifier
-// directly, touching no filesystem. The two rooted shapes are deliberate,
-// because one of them alone would guard only the platform it was written on.
-// A leading slash is IsAbs on Linux, so putting filepath.IsAbs back would
-// still pass there — on a Linux CI the regression would go through green. A
-// leading backslash is IsAbs on NEITHER platform, so it is the case that
-// fails everywhere the suite runs.
-func TestRootedPathAcceptsTheRootsFilepathIsAbsMisses(t *testing.T) {
-	for _, fencePath := range []string{
-		"/app/fence/calendar-feed.fence",
-		`\app\fence\calendar-feed.fence`,
-	} {
-		if !rootedPath(fencePath) {
-			t.Fatalf("%q names a location no working directory changes: judging it by filepath.IsAbs alone silences the check on the value an operator copies out of the compose file", fencePath)
-		}
-	}
-	if rootedPath(filepath.Join("state", "calendar-feed.fence")) {
-		t.Fatal("a path with no root must stay unjudged: it resolves against a working directory that is not the server's")
-	}
-}
+// The classifier itself is tested where it lives, beside the variable it
+// judges: security.TestCalendarFeedFencePathRootedAcceptsTheRootsFilepathIsAbsMisses.
+// What stays here is CLI conduct — which refusal confirmOperatorFeedRevocation
+// produces for a path the classifier rejects, and that it writes nothing.
 
 // TestCalendarFeedFencePathTrimsTheEnvironmentValue pins calendarFeedFencePath
 // as the ONE place that trims CALENDAR_FEED_FENCE_PATH: confirmOperatorFeedRevocation

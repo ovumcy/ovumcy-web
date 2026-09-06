@@ -165,16 +165,18 @@ func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 		return runtimeConfig{}, err
 	}
 
+	calendarFeedFencePath, err := resolveCalendarFeedFencePath()
+	if err != nil {
+		return runtimeConfig{}, err
+	}
+
 	return runtimeConfig{
-		Location:        location,
-		SecretKey:       secretKey,
-		DatabaseConfig:  databaseConfig,
-		Port:            port,
-		DefaultLanguage: getEnv("DEFAULT_LANGUAGE", "en"),
-		// No default: an unset value must reach the fence as "not configured" so
-		// it fails closed. A default path would guess at a mount the operator
-		// never made and turn a loud refusal into a fence that silently vanishes.
-		CalendarFeedFencePath: strings.TrimSpace(os.Getenv(security.CalendarFeedFencePathEnv)),
+		Location:              location,
+		SecretKey:             secretKey,
+		DatabaseConfig:        databaseConfig,
+		Port:                  port,
+		DefaultLanguage:       getEnv("DEFAULT_LANGUAGE", "en"),
+		CalendarFeedFencePath: calendarFeedFencePath,
 		RegistrationMode:      registrationMode,
 		CookieSecure:          cookieSecure,
 		HSTSEnabled:           hstsEnabled,
@@ -215,6 +217,31 @@ func resolveRegistrationMode() (services.RegistrationMode, error) {
 		return "", err
 	}
 	return mode, nil
+}
+
+// resolveCalendarFeedFencePath reads CALENDAR_FEED_FENCE_PATH for the boot-time
+// restore fence.
+//
+// No default: an unset value must reach the fence as "not configured" so it
+// fails closed. A default path would guess at a mount the operator never made
+// and turn a loud refusal into a fence that silently vanishes.
+//
+// A relative path refuses the boot instead, because this server is not the only
+// process that opens that file: `ovumcy users delete` and a forced `ovumcy
+// reset-password` confirm and advance the SAME fence before removing an owner's
+// calendar feed, and each resolves a relative path against its own working
+// directory rather than this one's. Taken verbatim it would give the server a
+// fence that works and every operator removal a refusal whose documented remedy
+// — point the server at this path — is already satisfied. Refusing is deliberately
+// not "treat it as unconfigured": that would disarm every armed feed on each
+// start, which is worse than what a relative path does today.
+func resolveCalendarFeedFencePath() (string, error) {
+	fencePath := strings.TrimSpace(os.Getenv(security.CalendarFeedFencePathEnv))
+	if fencePath != "" && !security.CalendarFeedFencePathRooted(fencePath) {
+		return "", fmt.Errorf("invalid %s=%q: the operator CLI resolves a relative fence path against its own working directory, not the server's, and refuses it, so give an absolute path (for example /app/fence/calendar-feed.fence)",
+			security.CalendarFeedFencePathEnv, fencePath)
+	}
+	return fencePath, nil
 }
 
 func resolveOIDCConfig(cookieSecure bool, registrationMode services.RegistrationMode) (security.OIDCConfig, error) {

@@ -8,6 +8,31 @@ import (
 	"testing"
 )
 
+// TestCalendarFeedFencePathRootedAcceptsTheRootsFilepathIsAbsMisses runs on the
+// classifier directly, touching no filesystem. The two rooted shapes are
+// deliberate, because one of them alone would guard only the platform it was
+// written on. A leading slash is IsAbs on Linux, so putting filepath.IsAbs back
+// would still pass there — on a Linux CI the regression would go through green.
+// A leading backslash is IsAbs on NEITHER platform, so it is the case that
+// fails everywhere the suite runs.
+//
+// Both callers of this predicate — the server's boot-time config load and the
+// operator CLI's revocation gate — depend on it answering the same way, which is
+// why it is tested once, here, rather than per caller.
+func TestCalendarFeedFencePathRootedAcceptsTheRootsFilepathIsAbsMisses(t *testing.T) {
+	for _, fencePath := range []string{
+		"/app/fence/calendar-feed.fence",
+		`\app\fence\calendar-feed.fence`,
+	} {
+		if !CalendarFeedFencePathRooted(fencePath) {
+			t.Fatalf("%q names a location no working directory changes: judging it by filepath.IsAbs alone silences the check on the value an operator copies out of the compose file", fencePath)
+		}
+	}
+	if CalendarFeedFencePathRooted(filepath.Join("state", "calendar-feed.fence")) {
+		t.Fatal("a path with no root must stay unjudged: it resolves against a working directory that is not the server's")
+	}
+}
+
 // TestCalendarFeedFenceFileRoundTripsAToken pins the ordinary lifecycle: an
 // absent file is "no token yet" rather than an error, and what Write stored is
 // what Read returns.

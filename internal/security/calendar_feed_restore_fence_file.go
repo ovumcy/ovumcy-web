@@ -31,6 +31,26 @@ const (
 // as a restore and disarms every armed feed.
 const CalendarFeedFencePathEnv = "CALENDAR_FEED_FENCE_PATH"
 
+// CalendarFeedFencePathRooted reports whether a configured fence path names a
+// location no working directory changes. It lives here, beside the variable's
+// name, for the same reason that name does: the server and the operator CLI
+// must accept the SAME set of values. A path one side takes and the other
+// refuses gives the server a fence no operator command can ever confirm, and a
+// removal the CLI then refuses to perform.
+//
+// filepath.IsAbs is not enough on its own: this is developed on Windows, where
+// it demands a drive letter and therefore calls `/app/fence/calendar-feed.fence`
+// relative — which is precisely the value an operator copies out of a compose
+// file, and precisely the case the check exists to accept. A leading separator
+// settles it on either platform.
+//
+// The empty path is not this predicate's subject: "not configured" is a normal
+// operator state both sides answer on their own (the server fails closed, the
+// CLI refuses with its own message), so callers judge emptiness first.
+func CalendarFeedFencePathRooted(path string) bool {
+	return filepath.IsAbs(path) || strings.HasPrefix(path, "/") || strings.HasPrefix(path, `\`)
+}
+
 // ErrCalendarFeedFenceNotConfigured is returned by both halves of the anchor
 // when no path was supplied. It is a normal operator state, never a boot
 // failure: the caller answers it by disarming feeds, not by exiting.
