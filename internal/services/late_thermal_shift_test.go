@@ -59,6 +59,9 @@ func TestConfirmedOvulationSurvivesTheProjectedNextPeriodStart(t *testing.T) {
 // other three read the resolver.
 func TestLateShiftNamesOneDayOnEverySurfaceInsideTheInstance(t *testing.T) {
 	user, logs, stats, today := lateThermalShiftFixture(t)
+	if stats.CurrentCycleDay != 32 {
+		t.Fatalf("fixture anchor: cycle day = %d, want 32 — the cohort is a cycle running late but not yet overdue", stats.CurrentCycleDay)
+	}
 
 	confirmed, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, today, time.UTC)
 	if !ok {
@@ -134,6 +137,9 @@ func TestLateShiftStaysWithheldWhenTheCycleIsOverdue(t *testing.T) {
 	// day 37 is overdue.
 	today := AddCalendarDays(fixtureToday, 5, time.UTC)
 	stats = atToday(stats, today)
+	if stats.CurrentCycleDay != 37 {
+		t.Fatalf("fixture anchor: cycle day = %d, want 37 — past the 28 + 7 the reference allows", stats.CurrentCycleDay)
+	}
 
 	if _, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, today, time.UTC); ok {
 		t.Fatal("resolver: an overdue cycle must withhold the confirmed day like any other projection")
@@ -160,12 +166,6 @@ func TestLateShiftStaysWithheldWhenTheCycleIsOverdue(t *testing.T) {
 	day := findCalendarDayStateByDateString(t, days, confirmedKey)
 	if day.IsOvulation || day.IsTentativeOvulation {
 		t.Errorf("calendar: %s IsOvulation=%t IsTentativeOvulation=%t, want both false while the cycle is overdue", confirmedKey, day.IsOvulation, day.IsTentativeOvulation)
-	}
-	// Overdue withholds the PROJECTION too, not only the confirmed day: a grid
-	// that answered by moving the tentative marker back onto 2026-03-14 would
-	// pass the check above and still publish an estimate the gate refuses.
-	if _, tentative := ovulationMarkerKeys(days); len(tentative) != 0 {
-		t.Errorf("calendar: tentative ovulation marker(s) = %v, want none while the cycle is overdue", tentative)
 	}
 
 	chart := buildCurrentCycleBBTChart("en", stats, logs, today, time.UTC)

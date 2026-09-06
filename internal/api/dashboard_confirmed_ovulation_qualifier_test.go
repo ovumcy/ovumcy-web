@@ -38,8 +38,8 @@ func TestDashboardDropsTheProjectionQualifierFromAConfirmedDay(t *testing.T) {
 	today := services.DateAtLocation(time.Now().UTC(), time.UTC)
 	const cycleLength = 16
 	const periodLength = 3
-	cycleStart := today.AddDate(0, 0, -13)
-	confirmedDay := cycleStart.AddDate(0, 0, 10)
+	cycleStart := services.AddCalendarDays(today, -13, time.UTC)
+	confirmedDay := services.AddCalendarDays(cycleStart, 10, time.UTC)
 
 	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
 		"cycle_length":      cycleLength,
@@ -50,11 +50,11 @@ func TestDashboardDropsTheProjectionQualifierFromAConfirmedDay(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("update confirmed-qualifier cycle context: %v", err)
 	}
-	for _, start := range []time.Time{cycleStart.AddDate(0, 0, -cycleLength), cycleStart} {
+	for _, start := range []time.Time{services.AddCalendarDays(cycleStart, -cycleLength, time.UTC), cycleStart} {
 		for offset := range periodLength {
 			if err := database.Create(&models.DailyLog{
 				UserID:     user.ID,
-				Date:       start.AddDate(0, 0, offset),
+				Date:       services.AddCalendarDays(start, offset, time.UTC),
 				IsPeriod:   true,
 				CycleStart: offset == 0,
 				Flow:       models.FlowMedium,
@@ -71,7 +71,7 @@ func TestDashboardDropsTheProjectionQualifierFromAConfirmedDay(t *testing.T) {
 		value := temperature
 		if err := database.Create(&models.DailyLog{
 			UserID: user.ID,
-			Date:   cycleStart.AddDate(0, 0, offset),
+			Date:   services.AddCalendarDays(cycleStart, offset, time.UTC),
 			BBT:    &value,
 		}).Error; err != nil {
 			t.Fatalf("create bbt log at cycle day %d: %v", offset+1, err)

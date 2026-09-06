@@ -41,14 +41,10 @@ const (
 	thermalShiftHighBBT = 36.50
 )
 
-// atToday returns stats whose CurrentCycleDay is DERIVED from today rather than
-// restated beside it. A fixture that slides its series, or a test that moves
-// today by a few days, would otherwise have to remember to move the cycle day
-// too — and a cycle day disagreeing with today is a cohort no owner can be in,
-// which is the shape that lets an overdue or a bound assertion pass for a
-// reason its name does not name.
+// atToday derives CurrentCycleDay from today through cycleDayAt, the production
+// helper, so no fixture that slides its series has to restate the cycle day.
 func atToday(stats CycleStats, today time.Time) CycleStats {
-	stats.CurrentCycleDay = CalendarDaysBetween(stats.LastPeriodStart, today) + 1
+	stats.CurrentCycleDay = cycleDayAt(stats.LastPeriodStart, today)
 	return stats
 }
 
@@ -226,12 +222,18 @@ func TestDashboardAndCalendarNameOneDayForOneShift(t *testing.T) {
 	monthStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
 	days := BuildCalendarDayStates(user, monthStart, logs, stats, today, time.UTC)
 
-	solid, _ := ovulationMarkerKeys(days)
+	solid, tentative := ovulationMarkerKeys(days)
 	if len(solid) != 1 {
 		t.Fatalf("expected exactly one solid ovulation marker in the current cycle's month, got %v", solid)
 	}
 	if solid[0] != CalendarDayKey(context.DisplayOvulationDate) {
 		t.Fatalf("calendar marks %s while the dashboard line says %s — one shift must produce one day", solid[0], CalendarDayKey(context.DisplayOvulationDate))
+	}
+	// The confirmed day EXTINGUISHES the projection's tentative marker rather
+	// than sitting beside it: a grid keeping both marks two days for one shift,
+	// and the solid check above cannot see the second one.
+	if len(tentative) != 0 {
+		t.Fatalf("calendar: tentative ovulation marker(s) = %v, want none — a confirmed day leaves no projection to mark", tentative)
 	}
 }
 

@@ -47,18 +47,19 @@ func havanaTestLocation(t *testing.T) *time.Location {
 	return location
 }
 
-// bbtCycleAroundASkippedMidnight builds a cycle whose confirmed ovulation is
-// the sixth cycle day: six undisturbed low readings fill the coverline window
-// (cycle days 1-6), then three consecutive elevated days (7, 8, 9) trip the
-// shared 3-over-6 detector. firstHighDay is day 7, so the detector names day 6
-// — the day whose local midnight the zone skips.
+// bbtCycleAroundASkippedMidnight builds a nine-day 3-over-6 series: six
+// undisturbed low readings fill the coverline window (cycle days 1-6) and three
+// consecutive elevated days (7, 8, 9) trip the shared detector, so firstHighDay
+// is day 7 and the detector names day 6. WHICH of the nine days carries the
+// midnight the zone skips is the caller's array's business — the callers below
+// place it differently on purpose.
 func bbtCycleAroundASkippedMidnight(t *testing.T, days [9]string) []models.DailyLog {
 	t.Helper()
 	logs := make([]models.DailyLog, 0, len(days))
 	for index, day := range days {
-		value := 36.20
+		value := thermalShiftLowBBT
 		if index >= 6 {
-			value = 36.50
+			value = thermalShiftHighBBT
 		}
 		logs = append(logs, cyclesignalsCovBBTLog(t, day, value))
 	}
@@ -231,40 +232,65 @@ func TestInferEggWhiteOvulationDateStillClampsAPeakOnTheLastCycleDay(t *testing.
 	}
 }
 
-// TestCurrentCycleDetectionBoundEndsOnTheSkippedMidnightDay pins the CURRENT
-// cycle's series bound on the one date where "today plus one day" has no local
+// TestCurrentCycleDetectionBoundDoesNotAdmitTomorrowAcrossASkippedMidnight
+// covers the one date in the year where "today plus one day" has no local
 // midnight to land on. currentCycleDetectionBound steps from a UTC anchor and
-// re-anchors through StartOfCalendarDay, so the bound is the DST transition that
-// opens the skipped-midnight day — not the 23:00 instant of the day before,
-// which is what a bare AddDate in the request zone returns. Stepped that way the
-// bound would fall a whole day short, and a reading recorded on the skipped
-// midnight's own day would be dropped from the detection series: the owner's
-// third elevated temperature would go uncounted for exactly one day a year, per
-// zone. The assertions are the bound, then the resolver on both sides of it.
-func TestCurrentCycleDetectionBoundEndsOnTheSkippedMidnightDay(t *testing.T) {
+// re-anchors through StartOfCalendarDay; a bare today.AddDate(0, 0, 1) would
+// re-enter time.Date in the request zone instead.
+//
+// The single day on which that substitution does behavioural HARM is today
+// being the skipped-midnight day itself. Such a day begins at the transition
+// — 01:00 local, there being no 00:00 — so AddDate returns tomorrow at 01:00,
+// an instant LATER than tomorrow's own midnight, and the exclusive bound then
+// admits a reading dated tomorrow into today's series: the owner's third
+// elevated temperature counted a day before it was recorded. A day earlier the
+// substitution returns an instant an hour short of the correct bound, which is
+// a wrong bound that still admits exactly the same set of days — tomorrow
+// begins at the transition, which is where the correct bound already sits.
+//
+// So there are three legs and only the second can observe a wrong OUTCOME:
+// (i) pins the bound as an instant on both sides of the transition, against
+// literals written in UTC so that neither operand comes from the helper under
+// test; (ii) is the harm — on the skipped-midnight day the third elevated
+// reading is dated tomorrow and nothing may confirm; (iii) is the positive
+// control one day on, where that reading is inside the series and the detector
+// names cycle day 6, so (ii) reads as the bound's doing rather than as a
+// resolver that had stopped confirming anything at all.
+func TestCurrentCycleDetectionBoundDoesNotAdmitTomorrowAcrossASkippedMidnight(t *testing.T) {
 	testCases := []struct {
-		name     string
-		location *time.Location
-		days     [9]string
-		want     string
+		name          string
+		location      *time.Location
+		days          [9]string
+		boundFromDay7 time.Time
+		boundFromDay8 time.Time
+		want          string
 	}{
 		{
-			name:     "santiago: the third elevated reading falls on 2026-09-06",
+			name:     "santiago: the zone skips the midnight opening 2026-09-06",
 			location: santiagoTestLocation(t),
 			days: [9]string{
-				"2026-08-29", "2026-08-30", "2026-08-31", "2026-09-01", "2026-09-02",
-				"2026-09-03", "2026-09-04", "2026-09-05", "2026-09-06",
+				"2026-08-30", "2026-08-31", "2026-09-01", "2026-09-02", "2026-09-03",
+				"2026-09-04", "2026-09-05", "2026-09-06", "2026-09-07",
 			},
-			want: "2026-09-03",
+			// 2026-09-06 opens at the transition: 00:00 -04 and 01:00 -03 are one
+			// instant, 04:00 UTC. The day after it opens at an ordinary -03
+			// midnight, 03:00 UTC.
+			boundFromDay7: time.Date(2026, time.September, 6, 4, 0, 0, 0, time.UTC),
+			boundFromDay8: time.Date(2026, time.September, 7, 3, 0, 0, 0, time.UTC),
+			want:          "2026-09-04",
 		},
 		{
-			name:     "havana: the third elevated reading falls on 2026-03-08",
+			name:     "havana: the zone skips the midnight opening 2026-03-08",
 			location: havanaTestLocation(t),
 			days: [9]string{
-				"2026-02-28", "2026-03-01", "2026-03-02", "2026-03-03", "2026-03-04",
-				"2026-03-05", "2026-03-06", "2026-03-07", "2026-03-08",
+				"2026-03-01", "2026-03-02", "2026-03-03", "2026-03-04", "2026-03-05",
+				"2026-03-06", "2026-03-07", "2026-03-08", "2026-03-09",
 			},
-			want: "2026-03-05",
+			// The same shape one zone over: 00:00 -05 and 01:00 -04 are 05:00 UTC,
+			// and the following midnight is 04:00 UTC.
+			boundFromDay7: time.Date(2026, time.March, 8, 5, 0, 0, 0, time.UTC),
+			boundFromDay8: time.Date(2026, time.March, 9, 4, 0, 0, 0, time.UTC),
+			want:          "2026-03-06",
 		},
 	}
 
@@ -273,14 +299,17 @@ func TestCurrentCycleDetectionBoundEndsOnTheSkippedMidnightDay(t *testing.T) {
 			location := testCase.location
 			logs := bbtCycleAroundASkippedMidnight(t, testCase.days)
 			cycleStart := CalendarDay(cyclesignalsCovDay(t, testCase.days[0]), location)
+			daySeven := CalendarDay(cyclesignalsCovDay(t, testCase.days[6]), location)
 			dayEight := CalendarDay(cyclesignalsCovDay(t, testCase.days[7]), location)
 			dayNine := CalendarDay(cyclesignalsCovDay(t, testCase.days[8]), location)
 
-			// (i) The bound as an INSTANT: the day after the eighth reading begins
-			// at the transition, so comparing calendar keys alone would pass for a
-			// bound sitting at 23:00 on the previous day.
-			if bound := currentCycleDetectionBound(dayEight, location); !bound.Equal(dayNine) {
-				t.Fatalf("detection bound = %s, want %s: the day after the eighth reading opens at the zone transition, there being no local midnight on it", bound.Format(time.RFC3339), dayNine.Format(time.RFC3339))
+			// (i) Both sides of the transition, reported rather than fatal so the
+			// legs below still run and each failure is read on its own.
+			if bound := currentCycleDetectionBound(daySeven, location); !bound.Equal(testCase.boundFromDay7) {
+				t.Errorf("bound from the day before the skipped midnight = %s, want %s", bound.UTC().Format(time.RFC3339), testCase.boundFromDay7.Format(time.RFC3339))
+			}
+			if bound := currentCycleDetectionBound(dayEight, location); !bound.Equal(testCase.boundFromDay8) {
+				t.Errorf("bound from the skipped-midnight day = %s, want %s", bound.UTC().Format(time.RFC3339), testCase.boundFromDay8.Format(time.RFC3339))
 			}
 
 			user := &models.User{ID: 1, Role: models.RoleOwner, TrackBBT: true}
@@ -297,17 +326,16 @@ func TestCurrentCycleDetectionBoundEndsOnTheSkippedMidnightDay(t *testing.T) {
 				}, today)
 			}
 
-			// (ii) A day earlier the third elevated reading is dated tomorrow, so
-			// the streak is two days long and nothing may be confirmed.
+			// (ii) On the skipped-midnight day the third elevated reading is dated
+			// tomorrow, so the streak is two days long and nothing may confirm.
 			if _, ok := ConfirmedCurrentCycleOvulation(user, logs, statsAt(dayEight), dayEight, location); ok {
-				t.Fatal("resolver: a reading dated on the day after today must not complete the elevated streak")
+				t.Error("resolver: a reading dated on the day after today must not complete the elevated streak")
 			}
 
-			// (iii) On the skipped-midnight day itself the reading is inside the
-			// series and the detector names the day before the first elevated one.
+			// (iii) A day on, that same reading is inside the series.
 			confirmed, ok := ConfirmedCurrentCycleOvulation(user, logs, statsAt(dayNine), dayNine, location)
 			if !ok {
-				t.Fatal("resolver: on the skipped-midnight day the third elevated reading is on or before today and the shift must confirm")
+				t.Fatal("control: with all three elevated readings on or before today the shift must confirm")
 			}
 			if got := CalendarDayKey(confirmed); got != testCase.want {
 				t.Fatalf("confirmed ovulation = %s, want %s", got, testCase.want)

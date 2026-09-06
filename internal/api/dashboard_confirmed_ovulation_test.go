@@ -45,11 +45,23 @@ const (
 // back by daysPastProjection:
 //
 //	0 — the cycle opens at today-31 (cycle day 32), the next period is projected
-//	    on today-3, and the confirmed day falls ON that projected start;
+//	    on today-3, and the confirmed day falls ON that projected start. This is
+//	    the row that was red before the fix: the coverline window's sixth
+//	    reading falls exactly on the projection, so a detector bounded there
+//	    never saw it and found no shift at all.
 //	1 — the cycle opens at today-32 (cycle day 33, still <= 28+7 and so not
 //	    overdue), the next period is projected on today-4, and the confirmed day
-//	    falls a day AFTER it — the side a detector bounded at the projection
-//	    cannot reach at all rather than merely truncating.
+//	    falls a day AFTER it. Bounded at the projection this row dies exactly as
+//	    the first one does — four of the six coverline readings in range instead
+//	    of five, and six are needed either way. What it adds is a confirmed day
+//	    LATER than NextPeriodStart, the only shape that can catch a layer above
+//	    the resolver clamping the named day to the projected start.
+//
+// That the seed's own projection is the one the MODEL arrives at is anchored
+// once, on next_period_start in the JSON half
+// (TestStatsOverviewConfirmsALateShiftOnOrAfterTheProjectedNextPeriodStart):
+// every date here is derived from the same today, so nothing else in this file
+// could catch the cohort drifting.
 //
 // Returns the day the detector confirms and the projected next-period start it
 // is measured against.
@@ -104,15 +116,17 @@ func dashboardOvulationSlotText(t *testing.T, app *fiber.App, authCookie string)
 	return normalizeHTMLText(htmlNodeText(ovulation)), document
 }
 
-// TestDashboardNamesALateShiftAfterTheProjectedNextPeriodStart is the rendered
-// half of TestStatsOverviewConfirmsALateShiftAfterTheProjectedNextPeriodStart
+// TestDashboardNamesALateShiftOnOrAfterTheProjectedNextPeriodStart is the
+// rendered half of
+// TestStatsOverviewConfirmsALateShiftOnOrAfterTheProjectedNextPeriodStart
 // (stats_overview_contract_test.go): the same cohort read through the
 // dashboard's ovulation slot rather than the JSON payload, so the two
 // owner-facing surfaces cannot name different days for one late shift. Both
 // sides of the projected start are exercised — a shift confirmed ON it and one
-// confirmed a day AFTER it — because a bound that stops AT the projection and
-// one that merely truncates the series behave alike on the first.
-func TestDashboardNamesALateShiftAfterTheProjectedNextPeriodStart(t *testing.T) {
+// confirmed a day AFTER it — because only the second can catch a surface that
+// clamps the named day back to the projected start, the first having both on
+// one date.
+func TestDashboardNamesALateShiftOnOrAfterTheProjectedNextPeriodStart(t *testing.T) {
 	for _, testCase := range []struct {
 		name               string
 		daysPastProjection int
@@ -133,15 +147,12 @@ func TestDashboardNamesALateShiftAfterTheProjectedNextPeriodStart(t *testing.T) 
 
 			slot, _ := dashboardOvulationSlotText(t, app, authCookie)
 			if want := services.LocalizedDateDisplay("en", confirmedDay); !strings.Contains(slot, want) {
-				t.Fatalf("the ovulation slot = %q, want the BBT-confirmed %q — a shift recorded after the projected next period start is still this cycle's", slot, want)
+				t.Fatalf("the ovulation slot = %q, want the BBT-confirmed %q — a shift recorded on or after the projected next period start is still this cycle's", slot, want)
 			}
 			if testCase.daysPastProjection == 0 {
 				// On this side the two days ARE the same date, so there is no
 				// second date to be absent.
 				return
-			}
-			if services.CalendarDaysBetween(projectedStart, confirmedDay) != testCase.daysPastProjection {
-				t.Fatalf("fixture anchor: confirmed day %s is not %d day(s) past the projected start %s", confirmedDay.Format("2006-01-02"), testCase.daysPastProjection, projectedStart.Format("2006-01-02"))
 			}
 			if projected := services.LocalizedDateDisplay("en", projectedStart); strings.Contains(slot, projected) {
 				t.Fatalf("the ovulation slot names the projected next period start %q beside the confirmed day: %q", projected, slot)
@@ -167,9 +178,9 @@ func TestDashboardNamesTheConfirmedDayForTheThinHistoryCohort(t *testing.T) {
 	const periodLength = 5
 	// Cycle day 14 today, so the model projects ovulation on today itself: the
 	// day the projection and the measurement disagree by three days.
-	cycleStart := today.AddDate(0, 0, -13)
-	previousStart := cycleStart.AddDate(0, 0, -cycleLength)
-	confirmedDay := cycleStart.AddDate(0, 0, 10)
+	cycleStart := services.AddCalendarDays(today, -13, time.UTC)
+	previousStart := services.AddCalendarDays(cycleStart, -cycleLength, time.UTC)
+	confirmedDay := services.AddCalendarDays(cycleStart, 10, time.UTC)
 
 	updateStatsOverviewUser(t, database, user, map[string]any{
 		"cycle_length":      cycleLength,
@@ -187,7 +198,7 @@ func TestDashboardNamesTheConfirmedDayForTheThinHistoryCohort(t *testing.T) {
 		for offset := range periodLength {
 			if err := database.Create(&models.DailyLog{
 				UserID:     user.ID,
-				Date:       start.AddDate(0, 0, offset),
+				Date:       services.AddCalendarDays(start, offset, time.UTC),
 				IsPeriod:   true,
 				CycleStart: offset == 0,
 				Flow:       models.FlowMedium,
@@ -204,7 +215,7 @@ func TestDashboardNamesTheConfirmedDayForTheThinHistoryCohort(t *testing.T) {
 		value := temperature
 		if err := database.Create(&models.DailyLog{
 			UserID: user.ID,
-			Date:   cycleStart.AddDate(0, 0, offset),
+			Date:   services.AddCalendarDays(cycleStart, offset, time.UTC),
 			BBT:    &value,
 		}).Error; err != nil {
 			t.Fatalf("create bbt log at cycle day %d: %v", offset+1, err)
