@@ -10,21 +10,29 @@ import (
 
 // parseDayPayload reads one day write off the wire. A field named in hidden is
 // not read at all in the form branch: the account keeps it out of the day form,
-// so whatever arrives under that name is not this write's subject, and reading
-// it would let it refuse the whole day right here — before the save could
-// replace it with the value already stored (mergePreservedDayEntryInput). That
-// refusal is the parser's to make, not the validator's: "abc" or 1e400 in a
-// hidden temperature never reaches a range check to be dropped by. Which fields
-// are hidden, and why a JSON body has none: hiddenDayFields. Regression:
+// so whatever arrives under that name is not this write's subject.
+//
+// Only for the temperature does the skip decide the day. Reading that field IS
+// a parse, and a parse can refuse: "abc" or 1e400 answers an error right here,
+// before the save could replace the field with the value already stored
+// (mergePreservedDayEntryInput), and no range check downstream ever sees it.
+// For the other four a read could at worst be neutralised one layer later
+// (services.dropPreservedDayEntryFields), and they are skipped anyway so that
+// "a hidden field is not read" stays one rule instead of a temperature
+// exception every reader has to rediscover.
+//
+// formBody is the transport condition, resolved once by the caller; which
+// fields are hidden, and why a JSON body has none: hiddenDayFields. Regression:
+// TestParseDayPayloadSkipsEveryFieldTheAccountHides,
 // TestUpsertDayDoesNotReadAHiddenTemperatureField.
-func parseDayPayload(c fiber.Ctx, user *models.User, hidden preservedDayFields) (dayPayload, error) {
+func parseDayPayload(c fiber.Ctx, user *models.User, formBody bool, hidden preservedDayFields) (dayPayload, error) {
 	payload := dayPayload{Flow: models.FlowNone, SymptomIDs: []uint{}}
 	temperatureUnit := services.DefaultTemperatureUnit
 	if user != nil {
 		temperatureUnit = user.TemperatureUnit
 	}
 
-	if hasJSONBody(c) {
+	if !formBody {
 		if err := c.Bind().Body(&payload); err != nil {
 			return payload, err
 		}

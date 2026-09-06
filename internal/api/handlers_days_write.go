@@ -22,7 +22,10 @@ type upsertDayRequest struct {
 // not show and therefore does not speak for. It is resolved once per request
 // (hiddenDayFields) and read twice — parseDayPayload skips reading each hidden
 // field off the wire, buildUpsertDayEntryInput marks it Preserve* for the save
-// — so the two halves cannot disagree about which fields those are.
+// — so the two halves cannot disagree about which fields those are. That holds
+// by construction rather than by care: resolveUpsertDayRequest reads the
+// transport once and hands the same formBody, and the same resolved set, to
+// both.
 type preservedDayFields struct {
 	SexActivity   bool
 	BBT           bool
@@ -36,9 +39,16 @@ type preservedDayFields struct {
 // the account shows and nothing else, so a value arriving in a hidden one is
 // not this write's subject; a JSON body replaces the record with exactly what
 // the client states, so it is granted no preservation and every field it sends
-// is read and judged. Which fields an account hides is the services layer's
-// answer (TrackingVisibilityForUser), not this one's. Regression:
-// TestUpsertDayRefusesAnImpossibleTemperatureSentAsJSON.
+// is read. Read is not the same as validated: a temperature outside the
+// accepted range is refused with 400, an unknown spelling of sex_activity,
+// cervical_mucus or pregnancy_test collapses to "none", and notes are trimmed.
+//
+// Which fields an account hides is the services layer's answer, and all five
+// come from one TrackingVisibility so that no tracking column is negated in
+// transport. Whether the caller may write this owner's day at all is the
+// route's question — days.Put declares OwnerOnly (routes.go) — and not this
+// set's. Regression: TestUpsertDayRefusesAnImpossibleTemperatureSentAsJSON,
+// TestParseDayPayloadSkipsEveryFieldTheAccountHides.
 func hiddenDayFields(user *models.User, formBody bool) preservedDayFields {
 	if !formBody || user == nil {
 		return preservedDayFields{}
@@ -46,8 +56,8 @@ func hiddenDayFields(user *models.User, formBody bool) preservedDayFields {
 	visibility := services.TrackingVisibilityForUser(user)
 	return preservedDayFields{
 		SexActivity:   visibility.SexChipHidden(),
-		BBT:           !user.TrackBBT,
-		CervicalMucus: !user.TrackCervicalMucus,
+		BBT:           visibility.BBTFieldHidden(),
+		CervicalMucus: visibility.CervicalMucusHidden(),
 		CycleFactors:  visibility.CycleFactorsHidden(),
 		Notes:         visibility.NotesFieldHidden(),
 	}
@@ -101,8 +111,9 @@ func (handler *Handler) resolveUpsertDayRequest(c fiber.Ctx) (upsertDayRequest, 
 		return upsertDayRequest{}, invalidDateErrorSpec(), false
 	}
 
-	hidden := hiddenDayFields(user, !hasJSONBody(c))
-	payload, err := parseDayPayload(c, user, hidden)
+	formBody := !hasJSONBody(c)
+	hidden := hiddenDayFields(user, formBody)
+	payload, err := parseDayPayload(c, user, formBody, hidden)
 	if err != nil {
 		return upsertDayRequest{}, invalidPayloadErrorSpec(), false
 	}

@@ -338,8 +338,8 @@ func dashboardOwnerVisibilityState(user *models.User, today time.Time, now time.
 	visibility := TrackingVisibilityForUser(user)
 	return dashboardOwnerVisibility{
 		ShowSexChip:           isOwner && visibility.ShowSexChip,
-		ShowBBTField:          isOwner && user.TrackBBT,
-		ShowCervicalMucus:     isOwner && user.TrackCervicalMucus,
+		ShowBBTField:          isOwner && visibility.ShowBBTField,
+		ShowCervicalMucus:     isOwner && visibility.ShowCervicalMucus,
 		ShowCycleFactors:      isOwner && visibility.ShowCycleFactors,
 		ShowNotesField:        isOwner && visibility.ShowNotesField,
 		AllowManualCycleStart: isOwner && IsAllowedManualCycleStartDate(today, now, location),

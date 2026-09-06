@@ -586,11 +586,14 @@ func seedStatsOverviewLog(t *testing.T, database *gorm.DB, log models.DailyLog) 
 	}
 }
 
+// updateStatsOverviewUser writes stored preferences onto a test account. It is
+// named after the file it started in but is shared across the package, so its
+// failure message names the account rather than any one surface.
 func updateStatsOverviewUser(t *testing.T, database *gorm.DB, user models.User, updates map[string]any) {
 	t.Helper()
 
 	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(updates).Error; err != nil {
-		t.Fatalf("update stats overview owner: %v", err)
+		t.Fatalf("update test owner: %v", err)
 	}
 }
 

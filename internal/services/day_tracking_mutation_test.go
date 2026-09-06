@@ -54,10 +54,12 @@ func TestFormatDayBBTForInputReturnsEmptyForUnsetValue(t *testing.T) {
 	}
 }
 
-// TestFormatDayBBTForInputRendersALegacyZeroAsNotMeasured pins
-// normalizeStoredDayBBT's `*value <= 0` guard where that function is still
-// reached: a row written before BBT became nullable holds 0, and the day form
-// has to render it as an empty field rather than as a measurement of zero. The
+// TestFormatDayBBTForInputRendersALegacyZeroAsNotMeasured pins the floor that
+// normalizeStoredDayBBT's `*value <= 0` guard is: migration 024 rewrote every
+// stored 0 to NULL and no writer can produce another one, so nothing in a
+// current database reaches it — and a row that arrives from outside those
+// writers, out of a backup taken before 024 or a database edited by hand, still
+// has to render as an empty field rather than as a measurement of zero. The
 // CONDITIONALS_BOUNDARY mutant (`*value < 0`) lets the 0 through and prints
 // "0.00" °C — or "32.00" °F — into the input the owner is about to save back.
 //

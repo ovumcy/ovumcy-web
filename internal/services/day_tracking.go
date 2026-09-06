@@ -201,15 +201,25 @@ func ConvertDayBBTToStorage(value *float64, unit string) *float64 {
 	return &rounded
 }
 
-// normalizeStoredDayBBT rounds an already-Celsius value onto the stored grid.
-// Its non-measurement branch (nil, or the old non-positive sentinel range) is
-// live for one caller: FormatDayBBTForInput, rendering a legacy 0 out of a row
-// written before BBT became nullable, which the day form has to show as an
-// empty field. At the other two sites the value has already been validated or
-// nil-ed and only the rounding applies — NormalizeDayEntryInput's closing pass
-// (day_input.go), where IsValidDayBBT refused anything non-positive one step
-// earlier, and the import (import_service.go), where normalizeExportBBT emptied
-// it.
+// normalizeStoredDayBBT rounds an already-Celsius value onto the stored grid
+// and answers nil for a non-measurement. Its two halves are reached very
+// differently.
+//
+// The nil half runs on every ordinary path: a day saved without a temperature
+// (NormalizeDayEntryInput's closing pass, day_input.go), a restored file whose
+// reading the import already emptied (normalizeExportBBT, import_service.go),
+// and a row the day form renders as an empty field (FormatDayBBTForInput).
+//
+// The non-positive half is a floor rather than a live path. Migration 024
+// rewrote the legacy 0 sentinel to NULL on both engines
+// (migrations/024_daily_logs_bbt_nullable.sql and its postgres twin), and since
+// the "not measured" answer moved into the owner's own unit no writer can store
+// a non-positive value at all — a save is refused by IsValidDayBBT one step
+// earlier, an import emptied by normalizeExportBBT. It stays for the row that
+// arrives from outside those writers: a backup taken before 024, a database
+// edited by hand. Such a row has to render as an empty field, not as a
+// measurement of zero. Regression:
+// TestFormatDayBBTForInputRendersALegacyZeroAsNotMeasured.
 //
 // Because it runs after any conversion and never learns the owner's unit, it
 // cannot be the place the sentinel is judged — ConvertDayBBTToStorage says why.

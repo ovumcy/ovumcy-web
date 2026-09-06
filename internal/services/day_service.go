@@ -166,6 +166,10 @@ func (service *DayService) DayHasDataForDate(ctx context.Context, userID uint, d
 	return false, nil
 }
 
+// UpsertDayEntry writes one owner's day. Its precondition is that callers
+// normalise the payload through NormalizeDayEntryInput first: only the update
+// branch merges anything (mergePreservedDayEntryInput), while the create branch
+// writes the fields exactly as given and applies no preservation of its own.
 func (service *DayService) UpsertDayEntry(ctx context.Context, userID uint, dayStart time.Time, payload DayEntryInput, location *time.Location) (models.DailyLog, bool, error) {
 	// Defensive normalization: collapse any time-of-day or non-UTC offset on
 	// the incoming dayStart back to canonical UTC-midnight. The intended
