@@ -224,7 +224,7 @@ func decideDueReminders(user *models.User, settings WebhookReminderSettings, log
 	// reminder says an ovulation is COMING; once the temperatures have named the
 	// day it happened on, sending the projected day puts a second date for one
 	// shift outside the instance, where the dashboard and the grid have already
-	// moved onto the measured one. ConfirmedOvulationSupersedes bounds that to
+	// moved onto the day inferred from the temperature shift. ConfirmedOvulationSupersedes bounds that to
 	// the confirmation's own cycle, so a projection that has rolled into the next
 	// one still sends.
 	if !suppression.FertilitySuppressed &&

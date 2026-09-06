@@ -19,9 +19,11 @@
 
   A confirmed shift also no longer needs the model to agree that a cycle can ovulate at all: an
   account whose recorded history is too short for the model to place an ovulation used to see its
-  own temperature signal silently dropped from the calendar, the overview and the dashboard —
-  whose hero ring and reminder banner read the same withheld claim independently of the calendar's
-  fix and stayed hidden — and now sees the day its readings name everywhere alike. Where
-  predictions are withheld altogether — unpredictable-cycle mode, a pregnancy pause, an overdue
-  cycle, or before the first completed cycle — every surface stays as silent as before: a recorded
-  observation never becomes a way around that.
+  own temperature signal silently dropped from the calendar, the overview and the dashboard — whose
+  hero ring read the same withheld claim independently of the calendar's fix and stayed hidden — and
+  the hero ring is visible again. The reminder banner reads a different gate and stays as it was:
+  it only ever announces a day still ahead, and a confirmed day is by construction several days
+  behind today, so it was never the day this fix addresses. Where predictions are withheld
+  altogether — unpredictable-cycle mode, a pregnancy pause, an overdue cycle, or before the first
+  completed cycle — every surface stays as silent as before: a recorded observation never becomes a
+  way around that.

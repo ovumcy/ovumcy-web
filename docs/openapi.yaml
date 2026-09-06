@@ -879,7 +879,9 @@ components:
             `false` when `suppression.fertility` is true — the underlying
             claim is itself derived from the fertility projection, so it is
             withheld along with `ovulation_date` and the fertile window
-            rather than surviving beside a suppressed one.
+            rather than surviving beside a suppressed one. Also `false`
+            whenever `ovulation_confirmed` is true — a recorded shift is the
+            observation that answers the projection's impossibility claim.
         fertility_window_start:
           type: [string, "null"]
           format: date

@@ -77,7 +77,13 @@ func BuildDashboardCycleHero(user *models.User, stats CycleStats, cycleContext D
 		return DashboardCycleHero{}
 	}
 
-	ovulationDay, _ := CalcOvulationDay(cycleLength, stats.LutealPhase)
+	location := input.Location
+	if location == nil {
+		location = time.UTC
+	}
+	cycleStart := CalendarDay(stats.LastPeriodStart, location)
+
+	ovulationDay := dashboardCycleHeroOvulationDay(stats, cycleLength, cycleStart, location)
 	if ovulationDay <= periodLength+1 || ovulationDay > cycleLength {
 		return DashboardCycleHero{}
 	}
@@ -86,11 +92,6 @@ func BuildDashboardCycleHero(user *models.User, stats CycleStats, cycleContext D
 	currentPhase := dashboardCycleHeroCurrentPhase(stats.CurrentPhase, currentDay, periodLength, ovulationDay, cycleLength)
 	phaseCards := dashboardCycleHeroPhaseCards(currentPhase, periodLength, ovulationDay, cycleLength)
 
-	location := input.Location
-	if location == nil {
-		location = time.UTC
-	}
-	cycleStart := CalendarDay(stats.LastPeriodStart, location)
 	startWindow := dashboardCycleHeroStartWindow(user, stats, cycleStart, location)
 	axisDays := dashboardCycleHeroAxisDays(cycleLength, startWindow)
 
@@ -112,6 +113,24 @@ func BuildDashboardCycleHero(user *models.User, stats CycleStats, cycleContext D
 			periodLength,
 		),
 	}
+}
+
+// dashboardCycleHeroOvulationDay anchors the phase-card geometry — and so the
+// "ovulation" card and dashboardCycleHeroCurrentPhase's own fallback — on the
+// same day dashboardCycleHeroFertileSpan already peaks on: the confirmed or
+// published OvulationDate, read as a cycle day off the same cycleStart, rather
+// than a second, independent CalcOvulationDay projection. Left on the
+// projection, a confirmed shift moved the ribbon's fertile peak without moving
+// the card labeled "ovulation" to sit on it. The bounds check the caller
+// applies afterward is unchanged: it is the ribbon's own phase geometry, keyed
+// to DashboardCycleReferenceLength (the average), and a confirmed day landing
+// outside it is a legitimate refusal to render, not a defect.
+func dashboardCycleHeroOvulationDay(stats CycleStats, cycleLength int, cycleStart time.Time, location *time.Location) int {
+	if !stats.OvulationDate.IsZero() && !cycleStart.IsZero() {
+		return CalendarDaysBetween(cycleStart, CalendarDay(stats.OvulationDate, location)) + 1
+	}
+	projected, _ := CalcOvulationDay(cycleLength, stats.LutealPhase)
+	return projected
 }
 
 func canRenderDashboardCycleHero(cycleLength int, stats CycleStats, cycleContext DashboardCycleContext) bool {

@@ -407,3 +407,69 @@ func TestCalendarShadesTheConfirmedWindowForTheCurrentCycle(t *testing.T) {
 		}
 	}
 }
+
+// TestDashboardHeroOvulationCardSitsOnTheConfirmedPeak is the hero's own N-of-N+1:
+// dashboardCycleHeroFertileSpan already rides the confirmed peak (cycle day 11),
+// but ovulationDay — the phase-card geometry the "ovulation" card and
+// dashboardCycleHeroCurrentPhase's fallback both use — was still
+// CalcOvulationDay's PROJECTED cycle day (14, from a 28/14 cycle), so the
+// ribbon's peak cell and the card labeled "ovulation" named two different days.
+func TestDashboardHeroOvulationCardSitsOnTheConfirmedPeak(t *testing.T) {
+	user, logs, stats, today := projectedWindowFixture(t)
+
+	confirmed, ok := ResolveConfirmedCycleStats(user, logs, stats, today, time.UTC)
+	if !ok {
+		t.Fatal("fixture: the shift must confirm")
+	}
+
+	hero := BuildDashboardCycleHero(user, confirmed, DashboardCycleContext{}, dashboardCycleHeroInput{Logs: logs, Today: today, Location: time.UTC})
+	if !hero.Visible {
+		t.Fatal("fixture: the hero must render")
+	}
+
+	var peakDay int
+	for _, day := range hero.Days {
+		if day.IsFertilePeak {
+			peakDay = day.Day
+		}
+	}
+	if peakDay != 11 {
+		t.Fatalf("fixture: the ribbon peak must sit on the confirmed cycle day 11, got %d", peakDay)
+	}
+
+	var ovulationCard DashboardCycleHeroPhaseCard
+	for _, card := range hero.PhaseCards {
+		if card.Phase == "ovulation" {
+			ovulationCard = card
+		}
+	}
+	if ovulationCard.StartDay != peakDay || ovulationCard.EndDay != peakDay {
+		t.Fatalf(`the "ovulation" card must sit on the ribbon peak (cycle day %d), got %d-%d`, peakDay, ovulationCard.StartDay, ovulationCard.EndDay)
+	}
+}
+
+// TestResolveConfirmedCycleStatsRecomputesCurrentPhase is the phase-axis half of
+// F2: CurrentPhase was computed against the PROJECTED ovulation date before the
+// resolver ran and never recomputed afterward, so a published response could
+// name "ovulation" as the current phase beside a confirmed ovulation_date and a
+// current_fertility of "not_fertile" for the very same day — three claims about
+// one day that contradicted each other. Phase and fertility are two orthogonal
+// axes (#416), but both are geometric and both must describe the date actually
+// published beside them.
+func TestResolveConfirmedCycleStatsRecomputesCurrentPhase(t *testing.T) {
+	user, logs, stats, today := projectedWindowFixture(t)
+	// Simulate the pre-resolver pipeline: CurrentPhase computed from the
+	// still-projected OvulationDate (2026-03-14), which today sits exactly on.
+	stats.CurrentPhase = detectCyclePhase(stats, logs, today)
+	if stats.CurrentPhase != "ovulation" {
+		t.Fatalf("fixture: the projection must classify today as %q, got %q", "ovulation", stats.CurrentPhase)
+	}
+
+	resolved, ok := ResolveConfirmedCycleStats(user, logs, stats, today, time.UTC)
+	if !ok {
+		t.Fatal("fixture: the shift must confirm")
+	}
+	if resolved.CurrentPhase != "luteal" {
+		t.Fatalf("current phase = %q, want %q: the confirmed ovulation (2026-03-11) is 3 days behind today", resolved.CurrentPhase, "luteal")
+	}
+}

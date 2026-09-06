@@ -190,7 +190,8 @@ func ConfirmedCurrentCycleOvulation(user *models.User, logs []models.DailyLog, s
 // ConfirmedOvulationSupersedes reports whether a PROJECTED ovulation day is one
 // the owner's temperatures have already answered.
 //
-// The on-screen surfaces replace such a day with the measured one. The two
+// The on-screen surfaces replace such a day with the one inferred from the
+// temperature shift. The two
 // surfaces that leave the instance — the .ics feed and the webhook reminder —
 // cannot: both exist to announce a day that is still ahead, and a shift confirms
 // a day that is behind. Announcing the projection anyway is how they came to

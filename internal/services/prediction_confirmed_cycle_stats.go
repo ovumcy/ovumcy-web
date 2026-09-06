@@ -60,8 +60,11 @@ func ResolveConfirmedCycleStats(user *models.User, logs []models.DailyLog, stats
 	stats.OvulationImpossible = false
 	stats.FertilityWindowStart = fertilityStart
 	stats.FertilityWindowEnd = ovulationDay
-	// Read off the ALREADY updated window, so the status describes the window
-	// published beside it rather than the projection it replaced.
+	// Phase and fertility are two orthogonal axes (#416), but both are
+	// geometric and both are obliged to describe the date just published beside
+	// them — read off the ALREADY updated fields, so neither disagrees with the
+	// day a confirmed shift just named.
+	stats.CurrentPhase = detectCyclePhase(stats, logs, today)
 	stats.CurrentFertility = ResolveFertilityStatus(stats, today)
 	return stats, true
 }

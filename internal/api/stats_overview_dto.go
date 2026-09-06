@@ -79,7 +79,7 @@ type StatsOverviewSuppression struct {
 // (DisplayOvulationExact vs DisplayOvulationConfirmed, dashboard_cycle.go): a
 // fallback-luteal account (ovulation_exact=false) can still have its current
 // cycle's ovulation CONFIRMED by a BBT shift, and a client that cannot see
-// both loses the "measured, not modeled" distinction the domain keeps.
+// both loses the "confirmed, not modeled" distinction the domain keeps.
 //
 // Every projected date is a pointer and is null when suppressed. Null rather
 // than omitted, and never a zero date: the field set stays constant across
