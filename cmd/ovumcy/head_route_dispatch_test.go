@@ -142,6 +142,23 @@ func TestHeadIsAnsweredByTheRouteHandlerNotTheCatchAll(t *testing.T) {
 func TestEveryParameterlessGETRouteAnswersHEADLikeGET(t *testing.T) {
 	app, _ := newHeadDispatchTestApp(t)
 
+	// Snapshot which paths already carry a HEAD route BEFORE any request is
+	// dispatched. The first app.Test call below triggers fiber's own
+	// startupProcess, which lazily backfills a HEAD route for every GET path
+	// still missing one (ensureAutoHeadRoutesLocked) — appended behind the
+	// terminal catch-all, exactly like the defect this whole file exists to
+	// catch, so it exists in app.GetRoutes(true) without ever being
+	// reachable. Read after that point, the route table cannot tell that
+	// dead-on-arrival entry from registerHEADTwins' own reachable one; read
+	// here, first, it can only hold what registerHEADTwins actually
+	// registered.
+	preDispatchHEADRoutes := map[string]bool{}
+	for _, route := range app.GetRoutes(true) {
+		if route.Method == fiber.MethodHead {
+			preDispatchHEADRoutes[route.Path] = true
+		}
+	}
+
 	mirrored := 0
 	answered := 0
 	refused := []string{}
@@ -166,6 +183,15 @@ func TestEveryParameterlessGETRouteAnswersHEADLikeGET(t *testing.T) {
 
 			if headResponse.StatusCode != getResponse.StatusCode {
 				t.Fatalf("HEAD %s answered %d while GET answered %d: a HEAD request must reach the same handler chain as GET", route.Path, headResponse.StatusCode, getResponse.StatusCode)
+			}
+			// A GET that legitimately answers 404 from its own state (OIDC
+			// disabled, no session to bridge) makes the comparison above pass
+			// whether or not a HEAD twin was ever registered: an unregistered
+			// twin falls through to the catch-all, which answers the identical
+			// 404, and the two look the same. Ask the pre-dispatch snapshot
+			// instead of trusting the status.
+			if getResponse.StatusCode == http.StatusNotFound && !preDispatchHEADRoutes[route.Path] {
+				t.Fatalf("GET %s and HEAD %s both answered 404, but registerHEADTwins never registered a HEAD route for %s: this pair cannot tell a route that legitimately 404s from one whose HEAD twin was never registered", route.Path, route.Path, route.Path)
 			}
 		})
 
