@@ -127,7 +127,7 @@ flowchart LR
     end
 
     subgraph authz["Authorization boundary — internal/api"]
-        csrf["CSRF (Origin-checked)<br/>sole exemption: OIDC callback"]
+        csrf["CSRF (Origin-checked)<br/>sole validation exemption: OIDC callback"]
         auth["AuthRequired<br/>sealed session cookie + AuthSessionVersion"]
         owner["OwnerOnly<br/>explicit, defense-in-depth"]
     end
