@@ -141,12 +141,12 @@ func currentCycleDetectionBound(today time.Time, location *time.Location) time.T
 // the marker was moved onto the detector's own date, and the dashboard line was
 // left behind on the model's date by that same change.
 //
-// The series ends at currentCycleDetectionBound(today), and that one bound is
-// also what keeps a reading recorded against a future date from confirming an
-// ovulation that has not happened. today is the owner's calendar day as every
-// caller resolves it (DateAtLocation); the caller supplies it so that a
-// surface which has already resolved it does not resolve a second, possibly
-// different one.
+// The series ends at currentCycleDetectionBound(today, location), and that one
+// bound is also what keeps a reading recorded against a future date from
+// confirming an ovulation that has not happened. today is the owner's calendar
+// day as every caller resolves it (DateAtLocation); the caller supplies it so
+// that a surface which has already resolved it does not resolve a second,
+// possibly different one.
 func ConfirmedCurrentCycleOvulation(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (time.Time, bool) {
 	if user == nil || !user.TrackBBT || stats.LastPeriodStart.IsZero() || stats.OvulationDate.IsZero() || stats.NextPeriodStart.IsZero() {
 		return time.Time{}, false
@@ -219,7 +219,7 @@ func inferObservedOvulationDate(logs []models.DailyLog, cycleStart time.Time, ne
 
 // inferBBTOvulationDate reads the detection series over [cycleStart, seriesEnd)
 // — seriesEnd exclusive, and the caller's to choose: the next observed start for
-// a completed cycle, currentCycleDetectionBound(today) for the current one.
+// a completed cycle, currentCycleDetectionBound for the current one.
 func inferBBTOvulationDate(logs []models.DailyLog, cycleStart time.Time, seriesEnd time.Time, location *time.Location) time.Time {
 	recordedDays, dayValues := bbtSeriesFromPoints(collectCycleBBTPoints(logs, cycleStart, seriesEnd, location))
 	firstHighDay, _, ok := detectBBTShiftFirstHighDay(recordedDays, dayValues)
@@ -317,7 +317,7 @@ func bbtSeriesFromPoints(points []cycleBBTPoint) ([]int, map[int]float64) {
 // series). Days tagged illness or sleep_disruption are excluded entirely — a
 // fever must neither inflate the coverline nor confirm an elevated streak.
 // seriesEnd is exclusive and belongs to the caller: the next observed start for
-// a completed cycle, currentCycleDetectionBound(today) for the current one.
+// a completed cycle, currentCycleDetectionBound for the current one.
 func collectCycleBBTPoints(logs []models.DailyLog, cycleStart time.Time, seriesEnd time.Time, location *time.Location) []cycleBBTPoint {
 	pointByDay := make(map[int]cycleBBTPoint)
 	for _, logEntry := range sortDailyLogs(logs) {

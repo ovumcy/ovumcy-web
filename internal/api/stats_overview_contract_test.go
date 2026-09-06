@@ -400,17 +400,21 @@ func TestStatsOverviewConfirmedOvulationIsIndependentOfOvulationExact(t *testing
 	}
 }
 
-// TestStatsOverviewConfirmsALateShiftAfterTheProjectedNextPeriodStart is the
-// JSON-API half of the current-cycle detection window fix
+// TestStatsOverviewConfirmsALateShiftOnOrAfterTheProjectedNextPeriodStart is
+// the JSON-API half of the current-cycle detection window fix
 // (services.ConfirmedCurrentCycleOvulation): a thermal shift whose coverline
 // window straddles the model's own projected next period start is still an
 // event of the CURRENT cycle, and GET /api/v1/stats/overview must confirm it
 // like the calendar and the dashboard do. The cohort is seedLateThermalShiftCycle
 // (dashboard_confirmed_ovulation_test.go), shared with the rendered half, and it
 // is read on both sides of the projected start: a shift confirmed ON it and one
-// confirmed a day AFTER it, which is the case a bound stopping at the projection
-// cannot reach at all.
-func TestStatsOverviewConfirmsALateShiftAfterTheProjectedNextPeriodStart(t *testing.T) {
+// confirmed a day AFTER it, the latter being the case where the confirmed day
+// outruns NextPeriodStart rather than landing on it.
+//
+// next_period_start carries the cohort's one real anchor. Every other date in
+// either half is derived from the same today the seed used, so this is the
+// single point where the seed's arithmetic is checked against the model's.
+func TestStatsOverviewConfirmsALateShiftOnOrAfterTheProjectedNextPeriodStart(t *testing.T) {
 	for _, testCase := range []struct {
 		name               string
 		daysPastProjection int
@@ -429,20 +433,20 @@ func TestStatsOverviewConfirmsALateShiftAfterTheProjectedNextPeriodStart(t *test
 
 			_, payload := fetchStatsOverview(t, app, authCookie)
 
+			wantProjected := projectedStart.Format(statsOverviewDateLayout)
+			if payload.NextPeriodStart == nil {
+				t.Fatalf("fixture anchor: next_period_start is absent, want the projected %s", wantProjected)
+			}
+			if *payload.NextPeriodStart != wantProjected {
+				t.Fatalf("fixture anchor: next_period_start = %s, want %s — the seed's projection and the model's must be one date before the confirmed day is read against it", *payload.NextPeriodStart, wantProjected)
+			}
+
 			wantConfirmed := confirmedDay.Format(statsOverviewDateLayout)
 			if payload.OvulationDate == nil || *payload.OvulationDate != wantConfirmed {
 				t.Fatalf("ovulation_date = %v, want the BBT-confirmed %s (a shift recorded on or after the projected next period start is still this cycle's)", payload.OvulationDate, wantConfirmed)
 			}
 			if !payload.OvulationConfirmed {
 				t.Fatal("ovulation_confirmed = false beside a BBT-confirmed ovulation_date recorded on or after the projected next period start")
-			}
-			if testCase.daysPastProjection == 0 {
-				// On this side the confirmed day and the projected start ARE the
-				// same date, so there is no second date to be absent.
-				return
-			}
-			if projected := projectedStart.Format(statsOverviewDateLayout); *payload.OvulationDate == projected {
-				t.Fatalf("ovulation_date = %s, the projected next period start rather than the measured day %s", projected, wantConfirmed)
 			}
 		})
 	}
@@ -560,7 +564,7 @@ func seedStatsOverviewCycleHistory(t *testing.T, database *gorm.DB, user models.
 	for _, daysBack := range daysBackList {
 		seedStatsOverviewLog(t, database, models.DailyLog{
 			UserID:     user.ID,
-			Date:       today.AddDate(0, 0, -daysBack),
+			Date:       services.AddCalendarDays(today, -daysBack, time.UTC),
 			IsPeriod:   true,
 			Flow:       models.FlowMedium,
 			CycleStart: true,
