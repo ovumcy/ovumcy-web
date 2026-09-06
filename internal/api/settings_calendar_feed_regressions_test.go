@@ -744,3 +744,47 @@ func extractFeedTokenFromURL(t *testing.T, feedURL string) string {
 	}
 	return token
 }
+
+// TestHeadToAShownOnceSurfaceDoesNotSpendTheReveal is the behavioural half of
+// the shown-once exception to HEAD parity (routes.go, shownOnceGETRoutes). The
+// reveal page is served on HEAD like every other GET route, and its chain
+// claims the owner's one-time mark BEFORE it renders — so a twin left to run
+// that chain would record the disclosure and hand back a response the protocol
+// strips the body from: the single display of a bearer secret spent on a
+// request that could not carry it.
+//
+// The probe sends exactly what the owner's own visit sends — the session and
+// the sealed reveal cookie the generate minted — and asserts the three halves
+// of "nothing was spent": the refusal, the untouched server-side mark, and the
+// owner's later GET still showing the URL.
+func TestHeadToAShownOnceSurfaceDoesNotSpendTheReveal(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "feed-head-does-not-spend@example.com")
+
+	generated := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/calendar-feed", url.Values{}, nil)
+	assertStatusCode(t, generated, http.StatusSeeOther)
+	sealedReveal := responseCookie(generated.Cookies(), calendarFeedRevealCookieName)
+	if sealedReveal == nil {
+		t.Fatal("expected a sealed reveal cookie on the generate response")
+	}
+	if armed := reloadUserForCalendarFeedAPI(t, ctx, ctx.user.ID); armed.CalendarFeedRevealedAt != nil {
+		t.Fatal("expected the generate to arm an unclaimed reveal mark; the assertion below could not tell a spent mark from one that was never armed")
+	}
+
+	headRequest := httptest.NewRequest(http.MethodHead, calendarFeedRevealPath, nil)
+	headRequest.Header.Set("Accept-Language", "en")
+	headRequest.Header.Set("Cookie", joinCookieHeader(ctx.authCookie, cookiePair(sealedReveal)))
+	headResponse := mustAppResponse(t, ctx.app, headRequest)
+	if headResponse.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected HEAD on the reveal page to be refused with the unknown-path 404, got %d", headResponse.StatusCode)
+	}
+
+	if spent := reloadUserForCalendarFeedAPI(t, ctx, ctx.user.ID); spent.CalendarFeedRevealedAt != nil {
+		t.Fatalf("HEAD claimed the owner's one-time reveal (calendar_feed_revealed_at = %v), so her own visit can never show the subscribe URL again", spent.CalendarFeedRevealedAt)
+	}
+
+	// Positive anchor, on the same app and the same cookie: the reveal the HEAD
+	// did not spend is still there for the owner to spend.
+	if revealed := assertCalendarFeedRevealShowsURL(t, ctx, sealedReveal); strings.TrimSpace(revealed) == "" {
+		t.Fatal("expected the owner's own visit to reveal a subscribe token after the refused HEAD")
+	}
+}

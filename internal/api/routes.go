@@ -24,6 +24,51 @@ func RegisterRoutes(app *fiber.App, handler *Handler) {
 	app.Use(requestBodyLimitGuard)
 	registerPageRoutes(app, handler)
 	registerV1APIRoutes(app, handler)
+	registerHEADTwins(app)
+}
+
+// registerHEADTwins gives every GET route registered above a HEAD route with
+// the same handler chain, so a HEAD request is answered by the route's own
+// handlers — same status, same headers, no body, since fasthttp drops the body
+// of a HEAD response on the wire.
+//
+// Fiber makes these copies on its own, but only at startup (App.startupProcess
+// → ensureAutoHeadRoutes), and it appends them to the END of the HEAD stack.
+// The deployed app registers its terminal catch-all with app.Use AFTER this
+// function runs, and a Use route joins EVERY method stack at the moment it is
+// registered — so a copy appended later sits behind the catch-all and is never
+// reached: HEAD to any page or /api/v1 route answered 404 while GET answered
+// the route. Registering the twins here, while route registration is still
+// running, puts them ahead of whatever the composition root mounts afterwards,
+// and leaves fiber's own pass with nothing to add (it skips a GET path that
+// already carries a HEAD route).
+//
+// A GET path that already carries its own HEAD route keeps it: HEAD
+// /api/v1/days/:date answers a different question from GET — whether the day
+// holds any data at all — and must not be replaced by a copy of the reader.
+func registerHEADTwins(app *fiber.App) {
+	covered := make(map[string]struct{})
+	for _, route := range app.GetRoutes(true) {
+		if route.Method == fiber.MethodHead {
+			covered[route.Path] = struct{}{}
+		}
+	}
+
+	for _, route := range app.GetRoutes(true) {
+		if route.Method != fiber.MethodGet || len(route.Handlers) == 0 {
+			continue // codecov:ignore -- a route with no handler cannot exist here: fiber panics on one
+		}
+		if _, done := covered[route.Path]; done {
+			continue
+		}
+		covered[route.Path] = struct{}{}
+
+		chain := make([]any, 0, len(route.Handlers))
+		for _, routeHandler := range route.Handlers {
+			chain = append(chain, routeHandler)
+		}
+		app.Add([]string{fiber.MethodHead}, route.Path, chain[0], chain[1:]...)
+	}
 }
 
 func registerV1APIRoutes(app *fiber.App, handler *Handler) {
@@ -116,10 +161,10 @@ func registerPageRoutes(app *fiber.App, handler *Handler) {
 	app.Get("/login", handler.ShowLoginPage)
 	app.Get("/auth/oidc/start", handler.StartOIDCLogin)
 	app.Get(oidcLogoutBridgePath, handler.ShowOIDCLogoutBridge)
-	app.Get(oidcLogoutBridgeRedirectPath, handler.RedirectOIDCLogout)
+	app.Get(oidcLogoutBridgeRedirectPath, handler.refuseHEADOnShownOnceSurface, handler.RedirectOIDCLogout)
 	app.Get("/register", handler.ShowRegisterPage)
-	app.Get(registerPickupNextPath, requireFirstPartyRequest(handler.refuseRegisterPickupRequest), handler.PickupRegister)
-	app.Get("/recovery-code", handler.ShowRecoveryCodePage)
+	app.Get(registerPickupNextPath, handler.refuseHEADOnShownOnceSurface, requireFirstPartyRequest(handler.refuseRegisterPickupRequest), handler.PickupRegister)
+	app.Get("/recovery-code", handler.refuseHEADOnShownOnceSurface, handler.ShowRecoveryCodePage)
 	app.Get("/forgot-password", handler.ShowForgotPasswordPage)
 	app.Get("/reset-password", handler.ShowResetPasswordPage)
 	app.Get("/auth/2fa", handler.ShowTOTPChallengePage)
@@ -130,7 +175,7 @@ func registerPageRoutes(app *fiber.App, handler *Handler) {
 	// the sealed one-time state cookie (matchesState + validAt), which reads the
 	// state from the query in this mode. form_post deployments keep POST-only.
 	if handler.oidcResponseModeQuery() {
-		app.Get("/auth/oidc/callback", handler.CompleteOIDCLogin)
+		app.Get("/auth/oidc/callback", handler.refuseHEADOnShownOnceSurface, handler.CompleteOIDCLogin)
 	}
 	app.Get(oidcLinkConfirmPath, handler.ShowOIDCLinkConfirmPage)
 	app.Post(oidcLinkConfirmPath, handler.CompleteOIDCLinkConfirmation)
@@ -152,7 +197,42 @@ func registerPageRoutes(app *fiber.App, handler *Handler) {
 	// One-time reveal of the freshly generated/rotated .ics subscribe URL. The
 	// URL (a secret) is read from the sealed one-time cookie, shown once, then
 	// the cookie is cleared; a refresh redirects back to /settings.
-	app.Get(calendarFeedRevealPath, handler.AuthRequired, requireFirstPartyRequest(handler.refuseCalendarFeedRevealRequest), handler.ShowCalendarFeedRevealPage)
+	app.Get(calendarFeedRevealPath, handler.refuseHEADOnShownOnceSurface, handler.AuthRequired, requireFirstPartyRequest(handler.refuseCalendarFeedRevealRequest), handler.ShowCalendarFeedRevealPage)
+}
+
+// shownOnceGETRoutes names every GET route whose chain starts with
+// refuseHEADOnShownOnceSurface: the routes whose GET spends a one-time
+// consumption mark or a one-time sealed cookie, and which therefore refuse the
+// HEAD twin registerHEADTwins would otherwise let run that chain for a body the
+// protocol discards.
+//
+// The set is declared rather than derived for the same reason
+// firstPartyGuardedRoutes is: nothing in the route table says which GET spends
+// something. Membership is decided by reading the handler — /register/welcome
+// consumes the pickup token, /recovery-code and /settings/calendar-feed claim
+// their reveal marks, /auth/oidc/logout/redirect consumes the end-session
+// state, and the query-mode OIDC callback consumes the one-time state cookie
+// together with the provider's authorization code — and
+// TestShownOnceGETRoutesAreExactlyTheDeclaredSet refuses both drifts: a refusal
+// dropped from a route named here, and a route that acquires one without being
+// named.
+//
+// The OIDC callback is registered only under OIDC_RESPONSE_MODE=query, which is
+// why that test builds a query-mode app as well as the default one.
+//
+// This is not the whole set of surfaces that spend something on a GET: the
+// inline recovery-code reveal shares GET /register with the anonymous signup
+// page, so a route-wide refusal there would answer 404 to an ordinary probe of
+// a page that exists. That one is refused inside claimRecoveryCodeReveal, where
+// the first-party rule sits and for the same reason — see its comment. A route
+// belongs HERE when its GET spends something on every visit; a route whose
+// spend depends on the request's own state refuses at the spend.
+var shownOnceGETRoutes = []string{
+	fiber.MethodGet + " /auth/oidc/callback",
+	fiber.MethodGet + " " + oidcLogoutBridgeRedirectPath,
+	fiber.MethodGet + " " + registerPickupNextPath,
+	fiber.MethodGet + " /recovery-code",
+	fiber.MethodGet + " " + calendarFeedRevealPath,
 }
 
 // firstPartyGuardedRoutes names every route that carries

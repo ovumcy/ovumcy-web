@@ -50,3 +50,27 @@ func (handler *Handler) NotFound(c fiber.Ctx) error {
 		"PrimaryLabelKey": primaryLabelKey,
 	})
 }
+
+// refuseHEADOnShownOnceSurface answers HEAD with the same 404 an unknown path
+// receives and lets every other method through. It is the first link in the
+// chain of every route named in shownOnceGETRoutes.
+//
+// Every GET route is served on HEAD too (registerHEADTwins), and a twin runs
+// the GET route's own chain. On a shown-once surface that chain performs the
+// compare-and-set that makes the reveal single use BEFORE it renders, so a twin
+// would spend the owner's one display of a secret to build a response the
+// protocol then strips the body from — the mark consumed by a request that
+// could not carry what it unlocked. Refusing is also the answer these routes
+// already gave for as long as HEAD reached nothing but the catch-all, so no
+// client loses a response it used to get.
+//
+// The refusal rides on the chain rather than on a list held by the composition
+// root: the twin copies whatever the GET route carries, so the route table
+// states the exception once and an app assembled anywhere — the deployed one,
+// this package's test helper — behaves the same way.
+func (handler *Handler) refuseHEADOnShownOnceSurface(c fiber.Ctx) error {
+	if c.Method() == fiber.MethodHead {
+		return handler.NotFound(c)
+	}
+	return c.Next()
+}
