@@ -244,7 +244,6 @@ func TestCalendarFeedReturnsBare404WithoutOracleForBadTokens(t *testing.T) {
 	}
 
 	compare := func(name, token string) {
-		t.Helper()
 		t.Run(name, func(t *testing.T) {
 			request := httptest.NewRequest(http.MethodGet, calendarFeedURL(token), nil)
 			response := mustAppResponse(t, app, request)
