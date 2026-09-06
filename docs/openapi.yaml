@@ -1798,9 +1798,11 @@ paths:
       tags: [days]
       summary: Upsert a day's entry (owner only).
       description: |
-        Creates a new row when missing or updates the existing row. Hidden-field
-        preservation rules apply for tracking preferences (BBT, mucus, sex
-        activity, cycle factors, notes).
+        Creates a new row when missing or updates the existing row. The JSON body
+        below carries every field it sends: an omitted field is cleared, and an
+        impossible value is refused rather than stored as "not measured".
+        Hidden-field preservation is a property of the form body the browser day
+        editor posts, which this operation does not describe.
       requestBody:
         required: true
         content:
