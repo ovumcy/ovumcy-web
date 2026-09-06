@@ -35,8 +35,11 @@
   change nothing.
 
   An instance with nowhere to keep the fence — the image pulled without the new volume, or the
-  binary run outside compose with the variable unset — starts normally and keeps working, but
+  binary run outside compose with the variable unset — starts normally and keeps serving, but
   disarms every armed calendar feed on each start and says so in its startup log, naming the
   variable to set. Without a fence a restored backup cannot be told apart from the database it
-  replaced, so the feed fails closed rather than quietly returning to the old behaviour. Full
-  contract: `docs/self-hosted.md → Calendar Feed Restore Fence`.
+  replaced, so the feed fails closed rather than quietly returning to the old behaviour. The two
+  operator subcommands above are the exception to "keeps working": with no fence to advance,
+  `reset-password` and `users delete` refuse rather than erase without a record, so an instance
+  that has never started with `CALENDAR_FEED_FENCE_PATH` configured has to be started once with
+  it before either can run. Full contract: `docs/self-hosted.md → Calendar Feed Restore Fence`.
