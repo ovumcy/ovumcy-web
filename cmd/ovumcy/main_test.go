@@ -1125,9 +1125,7 @@ func TestLoadRuntimeConfigGivesCalendarFeedItsOwnBudget(t *testing.T) {
 	})
 
 	t.Run("operator overrides are honored independently of the API budget", func(t *testing.T) {
-		t.Setenv("SECRET_KEY", "0123456789abcdef0123456789abcdef")
-		t.Setenv("DB_DRIVER", "sqlite")
-		t.Setenv("DB_PATH", "data/ovumcy.db")
+		minimalRuntimeEnv(t)
 		t.Setenv("RATE_LIMIT_API_MAX", "250")
 		t.Setenv("RATE_LIMIT_CALENDAR_FEED_MAX", "7")
 		t.Setenv("RATE_LIMIT_CALENDAR_FEED_WINDOW", "30s")
