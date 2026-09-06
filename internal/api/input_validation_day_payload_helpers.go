@@ -8,7 +8,16 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-func parseDayPayload(c fiber.Ctx, user *models.User) (dayPayload, error) {
+// parseDayPayload reads one day write off the wire. A field named in hidden is
+// not read at all in the form branch: the account keeps it out of the day form,
+// so whatever arrives under that name is not this write's subject, and reading
+// it would let it refuse the whole day right here — before the save could
+// replace it with the value already stored (mergePreservedDayEntryInput). That
+// refusal is the parser's to make, not the validator's: "abc" or 1e400 in a
+// hidden temperature never reaches a range check to be dropped by. Which fields
+// are hidden, and why a JSON body has none: hiddenDayFields. Regression:
+// TestUpsertDayDoesNotReadAHiddenTemperatureField.
+func parseDayPayload(c fiber.Ctx, user *models.User, hidden preservedDayFields) (dayPayload, error) {
 	payload := dayPayload{Flow: models.FlowNone, SymptomIDs: []uint{}}
 	temperatureUnit := services.DefaultTemperatureUnit
 	if user != nil {
@@ -29,13 +38,21 @@ func parseDayPayload(c fiber.Ctx, user *models.User) (dayPayload, error) {
 		if err != nil {
 			return payload, err
 		}
-		payload.SexActivity = strings.ToLower(strings.TrimSpace(c.FormValue("sex_activity")))
-		payload.CervicalMucus = strings.ToLower(strings.TrimSpace(c.FormValue("cervical_mucus")))
+		if !hidden.SexActivity {
+			payload.SexActivity = strings.ToLower(strings.TrimSpace(c.FormValue("sex_activity")))
+		}
+		if !hidden.CervicalMucus {
+			payload.CervicalMucus = strings.ToLower(strings.TrimSpace(c.FormValue("cervical_mucus")))
+		}
 		payload.PregnancyTest = strings.ToLower(strings.TrimSpace(c.FormValue("pregnancy_test")))
-		payload.Notes = strings.TrimSpace(c.FormValue("notes"))
-		payload.BBT, err = services.ParseDayBBTRawWithUnit(c.FormValue("bbt"), temperatureUnit)
-		if err != nil {
-			return payload, err
+		if !hidden.Notes {
+			payload.Notes = strings.TrimSpace(c.FormValue("notes"))
+		}
+		if !hidden.BBT {
+			payload.BBT, err = services.ParseDayBBTRawWithUnit(c.FormValue("bbt"), temperatureUnit)
+			if err != nil {
+				return payload, err
+			}
 		}
 
 		// symptom_ids stays deliberately lenient: an unparseable member of a
@@ -51,9 +68,11 @@ func parseDayPayload(c fiber.Ctx, user *models.User) (dayPayload, error) {
 			}
 		}
 
-		cycleFactorRaw := c.RequestCtx().PostArgs().PeekMulti("cycle_factor_keys")
-		for _, value := range cycleFactorRaw {
-			payload.CycleFactorKeys = append(payload.CycleFactorKeys, string(value))
+		if !hidden.CycleFactors {
+			cycleFactorRaw := c.RequestCtx().PostArgs().PeekMulti("cycle_factor_keys")
+			for _, value := range cycleFactorRaw {
+				payload.CycleFactorKeys = append(payload.CycleFactorKeys, string(value))
+			}
 		}
 	}
 

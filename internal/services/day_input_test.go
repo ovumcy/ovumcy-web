@@ -317,38 +317,43 @@ func TestNormalizeDayEntryInputNormalizesPregnancyTest(t *testing.T) {
 }
 
 // TestNormalizeDayEntryInputDropsAPreservedFieldsIncomingValue pins the order
-// the two halves of a hidden-field save run in. Transport sets Preserve* for
-// every field the account keeps hidden (buildUpsertDayEntryInput), and
-// mergePreservedDayEntryInput then replaces each of them with the value already
-// stored — but validation runs first, so an incoming value this write had
-// already promised to ignore could refuse the whole day, under a sentinel
-// naming a field the answer never looks at. The reachable case is an account
-// that hides BBT and tracks in Fahrenheit: everything in (0, 32] °F leaves
-// ConvertDayBBTToStorage as a reading below the physiological range, and the
-// day went unsaved over a temperature nobody asked for.
+// the two halves of a hidden-field save run in. A write marks Preserve* for
+// every field the account keeps hidden, and mergePreservedDayEntryInput
+// replaces each of them with the value already stored — but validation runs
+// first, so an incoming value this write had already promised to ignore could
+// refuse the whole day, under a sentinel naming a field the answer never looks
+// at.
 //
-// Five of the six rows carry a value that IS refused on its own — the second
-// half of each subtest re-submits it without the flag and requires that
-// refusal — so the table cannot go green by dropping validation altogether.
+// No HTTP request delivers such a value any more: transport does not read a
+// hidden field at all (parseDayPayload), and even before that only bbt and
+// cycle factors could arrive here unsanitized, since transport normalizes sex
+// activity and cervical mucus to a valid spelling and merely trims notes. This
+// table is therefore the service's own contract — held for any caller, not
+// inherited from what one transport happens to filter.
+//
+// Each row asserts the whole preserved class rather than its own field: the
+// value under test neutralised AND the four neighbours the caller did send
+// returned unchanged, so a drop reaching past its own flag cannot pass. Five
+// rows carry a value that IS refused on its own and re-submit it without the
+// flag to require that refusal; the sixth, a note, has no invalid spelling, so
+// its control requires the opposite — that without the flag the note survives
+// — which is what makes the drop attributable to the flag rather than to an
+// unconditional reset.
 func TestNormalizeDayEntryInputDropsAPreservedFieldsIncomingValue(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
 		name                   string
-		incoming               DayEntryInput
+		send                   func(input *DayEntryInput)
+		neutral                func(input *DayEntryInput)
 		preserve               func(input *DayEntryInput)
-		wantDropped            func(t *testing.T, normalized DayEntryInput)
 		wantErrWithoutPreserve error
 	}{
 		{
-			name:     "a bbt outside the physiological range",
-			incoming: DayEntryInput{Flow: models.FlowNone, BBT: bbtPtr(20)},
-			preserve: func(input *DayEntryInput) { input.PreserveBBT = true },
-			wantDropped: func(t *testing.T, normalized DayEntryInput) {
-				if normalized.BBT != nil {
-					t.Fatalf("expected a preserved bbt dropped to nil, got %.4f", *normalized.BBT)
-				}
-			},
+			name:                   "a bbt outside the physiological range",
+			send:                   func(input *DayEntryInput) { input.BBT = bbtPtr(20) },
+			neutral:                func(input *DayEntryInput) { input.BBT = nil },
+			preserve:               func(input *DayEntryInput) { input.PreserveBBT = true },
 			wantErrWithoutPreserve: ErrInvalidDayBBT,
 		},
 		{
@@ -358,62 +363,38 @@ func TestNormalizeDayEntryInputDropsAPreservedFieldsIncomingValue(t *testing.T) 
 			// sentinel — and its control expects the same refusal as the row
 			// above. It is listed because a preserved bbt is dropped whatever
 			// its sign, not only when the range would have caught it.
-			name:     "a non-positive bbt",
-			incoming: DayEntryInput{Flow: models.FlowNone, BBT: bbtPtr(-1)},
-			preserve: func(input *DayEntryInput) { input.PreserveBBT = true },
-			wantDropped: func(t *testing.T, normalized DayEntryInput) {
-				if normalized.BBT != nil {
-					t.Fatalf("expected a preserved bbt dropped to nil, got %.4f", *normalized.BBT)
-				}
-			},
+			name:                   "a non-positive bbt",
+			send:                   func(input *DayEntryInput) { input.BBT = bbtPtr(-1) },
+			neutral:                func(input *DayEntryInput) { input.BBT = nil },
+			preserve:               func(input *DayEntryInput) { input.PreserveBBT = true },
 			wantErrWithoutPreserve: ErrInvalidDayBBT,
 		},
 		{
-			name:     "an unknown sex activity",
-			incoming: DayEntryInput{Flow: models.FlowNone, SexActivity: "not-an-activity"},
-			preserve: func(input *DayEntryInput) { input.PreserveSexActivity = true },
-			wantDropped: func(t *testing.T, normalized DayEntryInput) {
-				if normalized.SexActivity != models.SexActivityNone {
-					t.Fatalf("expected a preserved sex activity dropped to %q, got %q", models.SexActivityNone, normalized.SexActivity)
-				}
-			},
+			name:                   "an unknown sex activity",
+			send:                   func(input *DayEntryInput) { input.SexActivity = "not-an-activity" },
+			neutral:                func(input *DayEntryInput) { input.SexActivity = models.SexActivityNone },
+			preserve:               func(input *DayEntryInput) { input.PreserveSexActivity = true },
 			wantErrWithoutPreserve: ErrInvalidDaySexActivity,
 		},
 		{
-			name:     "an unknown cervical mucus",
-			incoming: DayEntryInput{Flow: models.FlowNone, CervicalMucus: "not-a-mucus"},
-			preserve: func(input *DayEntryInput) { input.PreserveCervicalMucus = true },
-			wantDropped: func(t *testing.T, normalized DayEntryInput) {
-				if normalized.CervicalMucus != models.CervicalMucusNone {
-					t.Fatalf("expected a preserved cervical mucus dropped to %q, got %q", models.CervicalMucusNone, normalized.CervicalMucus)
-				}
-			},
+			name:                   "an unknown cervical mucus",
+			send:                   func(input *DayEntryInput) { input.CervicalMucus = "not-a-mucus" },
+			neutral:                func(input *DayEntryInput) { input.CervicalMucus = models.CervicalMucusNone },
+			preserve:               func(input *DayEntryInput) { input.PreserveCervicalMucus = true },
 			wantErrWithoutPreserve: ErrInvalidDayCervicalMucus,
 		},
 		{
-			name:     "an unknown cycle factor",
-			incoming: DayEntryInput{Flow: models.FlowNone, CycleFactorKeys: []string{"not_a_factor"}},
-			preserve: func(input *DayEntryInput) { input.PreserveCycleFactors = true },
-			wantDropped: func(t *testing.T, normalized DayEntryInput) {
-				if len(normalized.CycleFactorKeys) != 0 {
-					t.Fatalf("expected preserved cycle factors dropped to none, got %#v", normalized.CycleFactorKeys)
-				}
-			},
+			name:                   "an unknown cycle factor",
+			send:                   func(input *DayEntryInput) { input.CycleFactorKeys = []string{"not_a_factor"} },
+			neutral:                func(input *DayEntryInput) { input.CycleFactorKeys = nil },
+			preserve:               func(input *DayEntryInput) { input.PreserveCycleFactors = true },
 			wantErrWithoutPreserve: ErrInvalidDayCycleFactors,
 		},
 		{
-			// A note has no invalid spelling, so this row cannot produce a
-			// refusal; it is here because the fifth preserved field must behave
-			// like the other four rather than be the one that still carries an
-			// ignored value into a freshly created day.
 			name:     "a note",
-			incoming: DayEntryInput{Flow: models.FlowNone, Notes: "not this write's subject"},
+			send:     func(input *DayEntryInput) { input.Notes = "not this write's subject" },
+			neutral:  func(input *DayEntryInput) { input.Notes = "" },
 			preserve: func(input *DayEntryInput) { input.PreserveNotes = true },
-			wantDropped: func(t *testing.T, normalized DayEntryInput) {
-				if normalized.Notes != "" {
-					t.Fatalf("expected a preserved note dropped to empty, got %q", normalized.Notes)
-				}
-			},
 		},
 	}
 
@@ -421,18 +402,66 @@ func TestNormalizeDayEntryInputDropsAPreservedFieldsIncomingValue(t *testing.T) 
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			preserved := testCase.incoming
+			incoming := dayEntryInputWithEveryPreservableFieldSet()
+			testCase.send(&incoming)
+			wantDropped := incoming
+			testCase.neutral(&wantDropped)
+
+			preserved := incoming
 			testCase.preserve(&preserved)
 			normalized, err := NormalizeDayEntryInput(preserved)
 			if err != nil {
 				t.Fatalf("a preserved field must not refuse the day, got %v", err)
 			}
-			testCase.wantDropped(t, normalized)
+			assertDayEntryPreservableFields(t, normalized, wantDropped)
 
-			_, err = NormalizeDayEntryInput(testCase.incoming)
-			if !errors.Is(err, testCase.wantErrWithoutPreserve) {
-				t.Fatalf("without the preserve flag the same value must answer %v, got %v", testCase.wantErrWithoutPreserve, err)
+			control, err := NormalizeDayEntryInput(incoming)
+			if testCase.wantErrWithoutPreserve != nil {
+				if !errors.Is(err, testCase.wantErrWithoutPreserve) {
+					t.Fatalf("without the preserve flag the same value must answer %v, got %v", testCase.wantErrWithoutPreserve, err)
+				}
+				return
 			}
+			if err != nil {
+				t.Fatalf("without the preserve flag this value is a valid entry, got %v", err)
+			}
+			assertDayEntryPreservableFields(t, control, incoming)
 		})
+	}
+}
+
+// dayEntryInputWithEveryPreservableFieldSet is the input every row above starts
+// from: all five preservable fields carry a valid, non-neutral value, so the
+// four a row is not testing can be required to come back exactly as sent. A row
+// starting from the zero value could not tell a drop confined to its own flag
+// from one that neutralised the lot.
+func dayEntryInputWithEveryPreservableFieldSet() DayEntryInput {
+	return DayEntryInput{
+		Flow:            models.FlowNone,
+		SexActivity:     models.SexActivityProtected,
+		BBT:             bbtPtr(36.5),
+		CervicalMucus:   models.CervicalMucusCreamy,
+		CycleFactorKeys: []string{models.CycleFactorStress},
+		Notes:           "a neighbour this write does carry",
+	}
+}
+
+func assertDayEntryPreservableFields(t *testing.T, got DayEntryInput, want DayEntryInput) {
+	t.Helper()
+
+	if got.SexActivity != want.SexActivity {
+		t.Fatalf("sex activity: expected %q, got %q", want.SexActivity, got.SexActivity)
+	}
+	if !sameDayBBT(got.BBT, want.BBT) {
+		t.Fatalf("bbt: expected %s, got %s", describeDayBBT(want.BBT), describeDayBBT(got.BBT))
+	}
+	if got.CervicalMucus != want.CervicalMucus {
+		t.Fatalf("cervical mucus: expected %q, got %q", want.CervicalMucus, got.CervicalMucus)
+	}
+	if strings.Join(got.CycleFactorKeys, ",") != strings.Join(want.CycleFactorKeys, ",") {
+		t.Fatalf("cycle factors: expected %#v, got %#v", want.CycleFactorKeys, got.CycleFactorKeys)
+	}
+	if got.Notes != want.Notes {
+		t.Fatalf("notes: expected %q, got %q", want.Notes, got.Notes)
 	}
 }

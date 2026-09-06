@@ -129,65 +129,143 @@ func TestNormalizeTemperatureUnitDefaultsToCelsius(t *testing.T) {
 // is read there. Below 0 °F both placements agree, so a negative-only table
 // stays green over the defect — the Fahrenheit rows between 0 and 32, which
 // convert to a non-positive Celsius value, are the ones that separate them.
+//
+// The stored value is compared EXACTLY, against expectations written as the
+// grid values storage keeps, so the table states that grid rather than a
+// neighbourhood around it. The row that carries the rounding is 20 °F: without
+// roundStoredTemperatureValue it converts to -6.666666666666667 instead of
+// -6.6667. 97.7 °F is no witness for it — measured, it converts to exactly
+// 36.5 either way.
 func TestConvertDayBBTToStorageJudgesTheSentinelInTheInputUnit(t *testing.T) {
 	t.Parallel()
 
-	const tolerance = 1e-9
-
 	testCases := []struct {
-		name       string
-		unit       string
-		value      float64
-		wantStored bool
-		want       float64
+		name  string
+		unit  string
+		input *float64
+		want  *float64
 	}{
-		{name: "fahrenheit zero is not measured", unit: TemperatureUnitFahrenheit, value: 0},
-		{name: "fahrenheit negative is not measured", unit: TemperatureUnitFahrenheit, value: -1},
-		{name: "fahrenheit impossible positive stays a reading", unit: TemperatureUnitFahrenheit, value: 20, wantStored: true, want: -6.6667},
-		{name: "fahrenheit freezing point stays a reading", unit: TemperatureUnitFahrenheit, value: 32, wantStored: true, want: 0},
-		{name: "fahrenheit ordinary reading", unit: TemperatureUnitFahrenheit, value: 97.7, wantStored: true, want: 36.5},
-		{name: "celsius zero is not measured", unit: TemperatureUnitCelsius, value: 0},
-		{name: "celsius negative is not measured", unit: TemperatureUnitCelsius, value: -1},
-		{name: "celsius impossible positive stays a reading", unit: TemperatureUnitCelsius, value: 0.5, wantStored: true, want: 0.5},
-		{name: "celsius ordinary reading", unit: TemperatureUnitCelsius, value: 36.5, wantStored: true, want: 36.5},
+		{name: "no value at all is not measured", unit: TemperatureUnitFahrenheit},
+		{name: "fahrenheit zero is not measured", unit: TemperatureUnitFahrenheit, input: bbtPtr(0)},
+		{name: "fahrenheit negative is not measured", unit: TemperatureUnitFahrenheit, input: bbtPtr(-1)},
+		{name: "fahrenheit impossible positive stays a reading", unit: TemperatureUnitFahrenheit, input: bbtPtr(20), want: bbtPtr(-6.6667)},
+		{name: "fahrenheit freezing point stays a reading", unit: TemperatureUnitFahrenheit, input: bbtPtr(32), want: bbtPtr(0)},
+		{name: "fahrenheit ordinary reading", unit: TemperatureUnitFahrenheit, input: bbtPtr(97.7), want: bbtPtr(36.5)},
+		{name: "celsius zero is not measured", unit: TemperatureUnitCelsius, input: bbtPtr(0)},
+		{name: "celsius negative is not measured", unit: TemperatureUnitCelsius, input: bbtPtr(-1)},
+		{name: "celsius impossible positive stays a reading", unit: TemperatureUnitCelsius, input: bbtPtr(0.5), want: bbtPtr(0.5)},
+		{name: "celsius ordinary reading", unit: TemperatureUnitCelsius, input: bbtPtr(36.5), want: bbtPtr(36.5)},
 	}
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			symbol := TemperatureUnitSymbol(testCase.unit)
-			got := ConvertDayBBTToStorage(bbtPtr(testCase.value), testCase.unit)
-
-			if !testCase.wantStored {
-				if got != nil {
-					t.Fatalf("%.2f %s: expected nil (not measured), got %.4f °C stored", testCase.value, symbol, *got)
-				}
-				return
-			}
-			if got == nil {
-				t.Fatalf("%.2f %s: a positive entry is a reading for the range to judge, got nil (not measured)", testCase.value, symbol)
-			}
-			if math.Abs(*got-testCase.want) > tolerance {
-				t.Fatalf("%.2f %s: expected %.4f °C stored, got %.4f", testCase.value, symbol, testCase.want, *got)
+			got := ConvertDayBBTToStorage(testCase.input, testCase.unit)
+			if !sameDayBBT(got, testCase.want) {
+				t.Fatalf("%s %s: expected %s stored, got %s",
+					describeDayBBT(testCase.input), TemperatureUnitSymbol(testCase.unit), describeDayBBT(testCase.want), describeDayBBT(got))
 			}
 		})
 	}
 }
 
-// TestNormalizeDayEntryInputRefusesAnImpossibleFahrenheitReading is the other
-// half of that placement: once 20 °F survives the conversion as a reading, the
-// physiological range is what refuses it (ConvertDayBBTToStorage).
-func TestNormalizeDayEntryInputRefusesAnImpossibleFahrenheitReading(t *testing.T) {
+// TestNormalizeDayEntryInputRefusesAReadingTheRangeCannotAccept is the other
+// half of that placement: once a value survives the conversion as a reading,
+// IsValidDayBBT is what refuses it, so the owner is told which field lost the
+// save instead of receiving a day filed with an empty temperature.
+//
+// 20 in either unit is the ordinary case. The three non-finite spellings are
+// there because strconv.ParseFloat accepts all of them, so the form can deliver
+// one, and because only -Inf separates the two placements: it is non-positive,
+// so without the non-finite branch in ConvertDayBBTToStorage it would BE the
+// "not measured" sentinel and answer 200 with an empty field. NaN and +Inf
+// reach the same refusal by the longer road; they are listed so the rule holds
+// over the class, not over the one member that discriminates today.
+func TestNormalizeDayEntryInputRefusesAReadingTheRangeCannotAccept(t *testing.T) {
 	t.Parallel()
 
-	input := DayEntryInput{
-		Flow: models.FlowNone,
-		BBT:  ConvertDayBBTToStorage(bbtPtr(20), TemperatureUnitFahrenheit),
+	for _, unit := range []string{TemperatureUnitCelsius, TemperatureUnitFahrenheit} {
+		for _, raw := range []string{"20", "NaN", "+Inf", "-Inf"} {
+			t.Run(raw+"/"+unit, func(t *testing.T) {
+				t.Parallel()
+
+				symbol := TemperatureUnitSymbol(unit)
+				parsed, err := ParseDayBBTRawWithUnit(raw, unit)
+				if err != nil {
+					t.Fatalf("%q is a number the form parser accepts, so the range is what must judge it; got a parse error %v", raw, err)
+				}
+				if parsed == nil {
+					t.Fatalf("%q in %s is not the owner's not-measured answer; it must reach the range as a reading", raw, symbol)
+				}
+				if _, err := NormalizeDayEntryInput(DayEntryInput{Flow: models.FlowNone, BBT: parsed}); !errors.Is(err, ErrInvalidDayBBT) {
+					t.Fatalf("%q in %s must answer %v, got %v", raw, symbol, ErrInvalidDayBBT, err)
+				}
+			})
+		}
+	}
+}
+
+// TestIsValidDayBBTRefusesNaN pins the SHAPE of the range comparison rather
+// than its bounds. `*value >= Min && *value <= Max` and the De Morgan rewrite
+// that looks equivalent to it, `!(*value < Min || *value > Max)`, agree on
+// every ordinary reading and differ on exactly one input: NaN compares false to
+// both bounds, so the rewrite calls it valid and a NaN reaches storage, where
+// it poisons every average and shift comparison the day takes part in.
+func TestIsValidDayBBTRefusesNaN(t *testing.T) {
+	t.Parallel()
+
+	notANumber := math.NaN()
+	if IsValidDayBBT(&notANumber) {
+		t.Fatalf("NaN is no reading inside the physiological range; the comparison must refuse it")
 	}
 
-	normalized, err := NormalizeDayEntryInput(input)
-	if !errors.Is(err, ErrInvalidDayBBT) {
-		t.Fatalf("expected ErrInvalidDayBBT for 20 °F, got err=%v stored=%v", err, normalized.BBT)
+	// The anchor: the same call still accepts an ordinary reading, so the
+	// refusal above is about NaN and not about a range that refuses everything.
+	inRange := 36.5
+	if !IsValidDayBBT(&inRange) {
+		t.Fatalf("%.2f °C is inside the range and must be accepted", inRange)
 	}
+}
+
+// TestParseDayBBTRawWithUnitReadsTheNotMeasuredAnswers covers the spellings the
+// day form actually posts for "I did not measure today": the field left empty,
+// and the non-positive values the sentinel accepts, in both units. Text that is
+// not a number at all stays an error — read as "not measured" instead, a typo
+// would erase a reading without a word.
+func TestParseDayBBTRawWithUnitReadsTheNotMeasuredAnswers(t *testing.T) {
+	t.Parallel()
+
+	for _, unit := range []string{TemperatureUnitCelsius, TemperatureUnitFahrenheit} {
+		symbol := TemperatureUnitSymbol(unit)
+		for _, raw := range []string{"", "0", "-0", "-1"} {
+			got, err := ParseDayBBTRawWithUnit(raw, unit)
+			if err != nil {
+				t.Fatalf("ParseDayBBTRawWithUnit(%q, %s): unexpected error %v", raw, symbol, err)
+			}
+			if got != nil {
+				t.Fatalf("%q in %s means not measured, got %s stored", raw, symbol, describeDayBBT(got))
+			}
+		}
+		if _, err := ParseDayBBTRawWithUnit("abc", unit); err == nil {
+			t.Fatalf(`ParseDayBBTRawWithUnit("abc", %s): text that is not a number must be an error, got none`, symbol)
+		}
+	}
+}
+
+// sameDayBBT compares two stored temperatures exactly: either both are "not
+// measured", or both are the same value on the stored grid. Exactness is the
+// point — see the table above on what a tolerance hides.
+func sameDayBBT(got *float64, want *float64) bool {
+	if got == nil || want == nil {
+		return got == nil && want == nil
+	}
+	return *got == *want
+}
+
+func describeDayBBT(value *float64) string {
+	if value == nil {
+		return "nil (not measured)"
+	}
+	return strconv.FormatFloat(*value, 'f', -1, 64)
 }

@@ -157,7 +157,7 @@ func TestParseDayPayloadFromFormWithFahrenheitPreference(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/day", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	payload := parseDayPayloadForUser(t, request, &models.User{TemperatureUnit: services.TemperatureUnitFahrenheit})
+	payload := parseDayPayloadForUser(t, request, &models.User{TemperatureUnit: services.TemperatureUnitFahrenheit, TrackBBT: true})
 	if payload.BBT == nil || *payload.BBT != 37.00 {
 		t.Fatalf("expected converted BBT 37.00, got %v", payload.BBT)
 	}
@@ -169,15 +169,21 @@ func TestParseDayPayloadFromJSONWithFahrenheitPreference(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/day", strings.NewReader(`{"bbt":98.6}`))
 	request.Header.Set("Content-Type", fiber.MIMEApplicationJSON)
 
-	payload := parseDayPayloadForUser(t, request, &models.User{TemperatureUnit: services.TemperatureUnitFahrenheit})
+	payload := parseDayPayloadForUser(t, request, &models.User{TemperatureUnit: services.TemperatureUnitFahrenheit, TrackBBT: true})
 	if payload.BBT == nil || *payload.BBT != 37.00 {
 		t.Fatalf("expected converted BBT 37.00, got %v", payload.BBT)
 	}
 }
 
+// Every helper below hands parseDayPayload the hidden-field set the production
+// route would resolve for the same account (hiddenDayFields), rather than a
+// hand-written one: a field the account hides is not read at all, so a test
+// user that did not track it would be asserting about a field the parser is
+// entitled to skip. Hence TrackBBT on the accounts whose subject is the
+// temperature.
 func parseDayPayloadForTest(t *testing.T, request *http.Request) dayPayload {
 	t.Helper()
-	return parseDayPayloadForUser(t, request, &models.User{TemperatureUnit: services.DefaultTemperatureUnit})
+	return parseDayPayloadForUser(t, request, &models.User{TemperatureUnit: services.DefaultTemperatureUnit, TrackBBT: true})
 }
 
 func parseDayPayloadForUser(t *testing.T, request *http.Request, user *models.User) dayPayload {
@@ -185,7 +191,7 @@ func parseDayPayloadForUser(t *testing.T, request *http.Request, user *models.Us
 
 	app := fiber.New()
 	app.Post("/day", func(c fiber.Ctx) error {
-		payload, err := parseDayPayload(c, user)
+		payload, err := parseDayPayload(c, user, hiddenDayFields(user, !hasJSONBody(c)))
 		if err != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -225,10 +231,10 @@ func parseDayPayloadStatusForForm(t *testing.T, form url.Values) int {
 func parseDayPayloadStatus(t *testing.T, request *http.Request) int {
 	t.Helper()
 
-	user := &models.User{TemperatureUnit: services.DefaultTemperatureUnit}
+	user := &models.User{TemperatureUnit: services.DefaultTemperatureUnit, TrackBBT: true}
 	app := fiber.New()
 	app.Post("/day", func(c fiber.Ctx) error {
-		if _, err := parseDayPayload(c, user); err != nil {
+		if _, err := parseDayPayload(c, user, hiddenDayFields(user, !hasJSONBody(c))); err != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 		}
 		return c.JSON(fiber.Map{"ok": true})

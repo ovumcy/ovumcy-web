@@ -14,6 +14,43 @@ type upsertDayRequest struct {
 	day             time.Time
 	payload         dayPayload
 	cleanSymptomIDs []uint
+	hidden          preservedDayFields
+}
+
+// preservedDayFields names the day fields a request must leave to the value
+// already stored: the ones the account keeps hidden, which the day form does
+// not show and therefore does not speak for. It is resolved once per request
+// (hiddenDayFields) and read twice — parseDayPayload skips reading each hidden
+// field off the wire, buildUpsertDayEntryInput marks it Preserve* for the save
+// — so the two halves cannot disagree about which fields those are.
+type preservedDayFields struct {
+	SexActivity   bool
+	BBT           bool
+	CervicalMucus bool
+	CycleFactors  bool
+	Notes         bool
+}
+
+// hiddenDayFields resolves that set for one request. formBody carries the
+// transport condition: a form body is the day editor, which posts the fields
+// the account shows and nothing else, so a value arriving in a hidden one is
+// not this write's subject; a JSON body replaces the record with exactly what
+// the client states, so it is granted no preservation and every field it sends
+// is read and judged. Which fields an account hides is the services layer's
+// answer (TrackingVisibilityForUser), not this one's. Regression:
+// TestUpsertDayRefusesAnImpossibleTemperatureSentAsJSON.
+func hiddenDayFields(user *models.User, formBody bool) preservedDayFields {
+	if !formBody || user == nil {
+		return preservedDayFields{}
+	}
+	visibility := services.TrackingVisibilityForUser(user)
+	return preservedDayFields{
+		SexActivity:   visibility.SexChipHidden(),
+		BBT:           !user.TrackBBT,
+		CervicalMucus: !user.TrackCervicalMucus,
+		CycleFactors:  visibility.CycleFactorsHidden(),
+		Notes:         visibility.NotesFieldHidden(),
+	}
 }
 
 var (
@@ -32,7 +69,7 @@ func (handler *Handler) UpsertDay(c fiber.Ctx) error {
 		c.Context(),
 		request.user.ID,
 		request.day,
-		buildUpsertDayEntryInput(request.payload, request.cleanSymptomIDs, request.user, !hasJSONBody(c)),
+		buildUpsertDayEntryInput(request.payload, request.cleanSymptomIDs, request.hidden),
 		request.location,
 	)
 	if err != nil {
@@ -64,7 +101,8 @@ func (handler *Handler) resolveUpsertDayRequest(c fiber.Ctx) (upsertDayRequest, 
 		return upsertDayRequest{}, invalidDateErrorSpec(), false
 	}
 
-	payload, err := parseDayPayload(c, user)
+	hidden := hiddenDayFields(user, !hasJSONBody(c))
+	payload, err := parseDayPayload(c, user, hidden)
 	if err != nil {
 		return upsertDayRequest{}, invalidPayloadErrorSpec(), false
 	}
@@ -80,17 +118,11 @@ func (handler *Handler) resolveUpsertDayRequest(c fiber.Ctx) (upsertDayRequest, 
 		day:             day,
 		payload:         payload,
 		cleanSymptomIDs: cleanIDs,
+		hidden:          hidden,
 	}, APIErrorSpec{}, true
 }
 
-func buildUpsertDayEntryInput(payload dayPayload, cleanSymptomIDs []uint, user *models.User, preserveHiddenFields bool) services.DayEntryInput {
-	visibility := services.TrackingVisibilityForUser(user)
-	preserveSexActivity := preserveHiddenFields && user != nil && visibility.SexChipHidden()
-	preserveBBT := preserveHiddenFields && user != nil && !user.TrackBBT
-	preserveCervicalMucus := preserveHiddenFields && user != nil && !user.TrackCervicalMucus
-	preserveCycleFactors := preserveHiddenFields && user != nil && visibility.CycleFactorsHidden()
-	preserveNotes := preserveHiddenFields && user != nil && visibility.NotesFieldHidden()
-
+func buildUpsertDayEntryInput(payload dayPayload, cleanSymptomIDs []uint, hidden preservedDayFields) services.DayEntryInput {
 	return services.DayEntryInput{
 		IsPeriod:              payload.IsPeriod,
 		ConfirmCycleStart:     payload.ConfirmCycleStart,
@@ -103,11 +135,11 @@ func buildUpsertDayEntryInput(payload dayPayload, cleanSymptomIDs []uint, user *
 		CycleFactorKeys:       payload.CycleFactorKeys,
 		Notes:                 payload.Notes,
 		SymptomIDs:            cleanSymptomIDs,
-		PreserveSexActivity:   preserveSexActivity,
-		PreserveBBT:           preserveBBT,
-		PreserveCervicalMucus: preserveCervicalMucus,
-		PreserveCycleFactors:  preserveCycleFactors,
-		PreserveNotes:         preserveNotes,
+		PreserveSexActivity:   hidden.SexActivity,
+		PreserveBBT:           hidden.BBT,
+		PreserveCervicalMucus: hidden.CervicalMucus,
+		PreserveCycleFactors:  hidden.CycleFactors,
+		PreserveNotes:         hidden.Notes,
 	}
 }
 

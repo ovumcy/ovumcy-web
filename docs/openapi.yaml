@@ -569,10 +569,14 @@ components:
     DayPayload:
       type: object
       description: |
-        Day entry payload. Hidden-field preservation: when the caller omits a
-        field that the user has chosen to hide in their tracking preferences
-        (BBT, cervical mucus, sex activity, cycle factors, notes), the previous
-        value is preserved on update rather than overwritten with the default.
+        Day entry payload. A JSON body replaces the whole record with exactly
+        what it states: every field it sends is validated, and an omitted field
+        is written as its default. Hidden-field preservation belongs to the form
+        body the browser day editor posts, not here — for a field the account
+        hides in its tracking preferences (BBT, cervical mucus, sex activity,
+        cycle factors, notes) that form carries no input, the request is not
+        read for one, and an update keeps the stored value while a new day
+        starts the field empty.
       properties:
         is_period:
           type: boolean
@@ -597,7 +601,9 @@ components:
             field, or a non-positive value (legacy 0 sentinel) is stored as
             "not measured"; the non-positive test is applied to the value as
             sent, in the account's unit, so a positive value outside the
-            physiological range is refused with 400 rather than emptied.
+            physiological range is refused with 400 rather than emptied (a form
+            save from an account that hides temperature does not read the field
+            at all).
         cervical_mucus:
           type: string
           enum: [none, dry, moist, creamy, eggwhite]
