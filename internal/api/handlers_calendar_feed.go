@@ -101,8 +101,9 @@ func isCalendarFeedRequestPath(path string) bool {
 // and folds code points (e.g. U+212A KELVIN SIGN) that fiber's byte-only table
 // leaves alone — so this is a byte-for-byte copy of the same two operations
 // cmd/ovumcy/ratelimit.go's asciiLowerPath/routingNormalizedPath apply for
-// its own edge limiters; api cannot import cmd/ovumcy to share the code
-// (transport boundary, api.md), so it keeps this second copy instead.
+// its own edge limiters; cmd/ovumcy is the composition root that imports this
+// package, so importing back from here would cycle, and this package keeps a
+// second copy of the same two operations instead.
 func normalizeCalendarFeedRequestPath(path string) string {
 	lowered := []byte(path)
 	changed := false

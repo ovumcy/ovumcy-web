@@ -184,7 +184,7 @@ func TestCSRFPredicateSkipsTheCookielessFeedGETAndHEADWithoutWideningTheMutating
 	// The shipped fiberConfig, not a bare fiber.New(): CaseSensitive and
 	// StrictRouting are both off there, and this predicate has to agree with
 	// the router's own normalization of the probed spellings, not a
-	// coincidentally-matching default (security-testing.md).
+	// coincidentally-matching default.
 	probe := fiber.New(fiberConfig(proxySettings{}))
 	probe.Use(func(c fiber.Ctx) error {
 		if next(c) {
