@@ -30,10 +30,9 @@ func (handler *Handler) LanguageMiddleware(c fiber.Ctx) error {
 		// capability URL rendering a different day in the owner's browser than
 		// in the calendar client — on a route whose contract is to read none.
 		//
-		// IsCalendarFeedRequest is method-gated to GET/HEAD (the only verbs
-		// app.Get's route ever dispatches): a mutating verb aimed at this same
-		// path shape falls through to the ordinary branch below instead of
-		// silently inheriting a skip meant for a read-only capability URL.
+		// See IsCalendarFeedRequest for why a mutating verb at this same path
+		// shape still falls through to the ordinary branch below instead of
+		// inheriting this skip.
 		return c.Next()
 	}
 	requestLocation, timezoneCookieValue := resolveRequestLocation(

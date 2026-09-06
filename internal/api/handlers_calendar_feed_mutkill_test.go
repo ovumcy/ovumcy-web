@@ -33,14 +33,10 @@ func TestIsCalendarFeedRequestMatchesTheRouteFormAndMethod(t *testing.T) {
 	}{
 		{"GET", feedURL, true},
 		{"HEAD", feedURL, true},
-		{"POST", feedURL, false},
-		{"PUT", feedURL, false},
-		{"PATCH", feedURL, false},
-		{"DELETE", feedURL, false},
 		{"GET", strings.ToUpper(feedURL), true},
 		{"GET", feedURL + "/", true},
 		{"GET", feedURL + "//", true},
-		{"GET", CalendarFeedRateLimitPrefix + "/a.b.ics", true}, // token "a.b": only the FINAL ".ics" is the literal suffix
+		{"GET", CalendarFeedRateLimitPrefix + "/a.b.ics", true}, // token "a.b": the remainder holds exactly one ".ics", so it is both the first and only occurrence
 		{"GET", CalendarFeedRateLimitPrefix + "/", false},
 		{"GET", CalendarFeedRateLimitPrefix, false},
 		{"GET", CalendarFeedRateLimitPrefix + "back", false},
@@ -48,10 +44,30 @@ func TestIsCalendarFeedRequestMatchesTheRouteFormAndMethod(t *testing.T) {
 		{"GET", CalendarFeedRateLimitPrefix + "/.ics", false},    // empty token
 		{"GET", "/calendar/day/2026-01-15", false},
 		{"GET", "/", false},
+		// fiber's router finds the token/suffix boundary at the FIRST ".ics" in
+		// the remainder, not the last (path.go's findParamLen uses
+		// strings.Index, never strings.LastIndex): each of these carries a
+		// second ".ics" further right that the router never reaches, so it
+		// refuses the whole path rather than matching a shorter token plus
+		// trailing garbage. See cmd/ovumcy's route-shape definition test, which
+		// confirms this against fiber's own router rather than this table alone.
+		{"GET", CalendarFeedRateLimitPrefix + "/a.ics.ics", false},
+		{"GET", CalendarFeedRateLimitPrefix + "/.ics.ics", false},
+		{"GET", CalendarFeedRateLimitPrefix + "/a.icsb.ics", false},
+		{"GET", CalendarFeedRateLimitPrefix + "/a.ICS.ics", false},
 	}
 	for _, testCase := range cases {
 		if got := IsCalendarFeedRequest(testCase.method, testCase.path); got != testCase.want {
 			t.Errorf("IsCalendarFeedRequest(%q, %q) = %t, want %t", testCase.method, testCase.path, got, testCase.want)
+		}
+	}
+
+	// The mutating-verb refusal is a property of the method alone (see
+	// IsCalendarFeedRequest), so one representative path stands in for every
+	// non-GET/HEAD verb rather than repeating the same feed URL under each.
+	for _, method := range []string{"POST", "PUT", "PATCH", "DELETE"} {
+		if got := IsCalendarFeedRequest(method, feedURL); got {
+			t.Errorf("IsCalendarFeedRequest(%q, %q) = %t, want false — the route dispatches GET/HEAD only", method, feedURL, got)
 		}
 	}
 }
