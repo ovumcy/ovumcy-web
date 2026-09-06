@@ -448,6 +448,52 @@ func TestDashboardHeroOvulationCardSitsOnTheConfirmedPeak(t *testing.T) {
 	}
 }
 
+// TestConfirmedShiftAtTheEarliestCycleDayNeverCrossesThePeriodStart is the
+// lower-bound case for the window arithmetic in ResolveConfirmedCycleStats: the
+// shared "3-over-6" detector (cycle_signals.go) never reads a recorded day
+// before the cycle start, so it needs a full 6-value coverline window plus one
+// elevated day before it can confirm anything — cycle day 6 at the very
+// earliest (coverline on days 1..6, the elevated streak starting day 7). This
+// fixture builds exactly that boundary case: the confirmed day's window,
+// [day-5, day], then lands exactly ON LastPeriodStart, never before it. There
+// is no lower cycle day to construct: the detector's own arithmetic rules it
+// out, so an explicit clamp to LastPeriodStart would be unreachable dead code.
+func TestConfirmedShiftAtTheEarliestCycleDayNeverCrossesThePeriodStart(t *testing.T) {
+	cycleStart := cyclesignalsCovDay(t, "2026-03-01")
+	var logs []models.DailyLog
+	for offset := range 6 {
+		logs = append(logs, models.DailyLog{Date: AddCalendarDays(cycleStart, offset, time.UTC), BBT: new(thermalShiftLowBBT)})
+	}
+	for offset := range 3 {
+		logs = append(logs, models.DailyLog{Date: AddCalendarDays(cycleStart, 6+offset, time.UTC), BBT: new(thermalShiftHighBBT)})
+	}
+
+	today := AddCalendarDays(cycleStart, 8, time.UTC)
+	stats := atToday(CycleStats{
+		CompletedCycleCount: 3,
+		MedianCycleLength:   28,
+		AverageCycleLength:  28,
+		LastPeriodStart:     cycleStart,
+	}, today)
+	user := &models.User{ID: 42, Role: models.RoleOwner, TrackBBT: true}
+
+	confirmedDay, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, today, time.UTC)
+	if !ok || CalendarDayKey(confirmedDay) != "2026-03-06" {
+		t.Fatalf("fixture: the detector must confirm the earliest possible day 2026-03-06, got %s (ok=%v)", CalendarDayKey(confirmedDay), ok)
+	}
+
+	resolved, confirmed := ResolveConfirmedCycleStats(user, logs, stats, today, time.UTC)
+	if !confirmed {
+		t.Fatal("the resolver must report the shift as confirmed")
+	}
+	if got := CalendarDayKey(resolved.FertilityWindowStart); got != "2026-03-01" {
+		t.Fatalf("fertility window start = %s, want 2026-03-01 (the confirmed day - 5, which equals LastPeriodStart at this boundary)", got)
+	}
+	if resolved.FertilityWindowStart != resolved.OvulationDate.AddDate(0, 0, -5) {
+		t.Fatalf("window start must be exactly confirmed day - 5 with no clamp applied, got %v want %v", resolved.FertilityWindowStart, resolved.OvulationDate.AddDate(0, 0, -5))
+	}
+}
+
 // TestResolveConfirmedCycleStatsRecomputesCurrentPhase is the phase-axis half of
 // F2: CurrentPhase was computed against the PROJECTED ovulation date before the
 // resolver ran and never recomputed afterward, so a published response could
