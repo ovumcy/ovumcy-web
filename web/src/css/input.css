@@ -4542,7 +4542,16 @@
        adjacent pairs collapse from ~2:1 to ~1.05:1). What the band needs
        instead is a lightness ladder, which is what these four are: adjacent
        pairs stay ≥1.46:1 in light and ≥1.96:1 in dark, hue separating them
-       further. */
+       further.
+
+       --phase-withheld is the fifth fill and the one phase colour that is not a
+       phase: it paints the days a suppressed tier keeps but may not name. It
+       never shares a ribbon with follicular, ovulation or luteal — suppression
+       removes all three — so the only adjacency it has to survive is the
+       menstrual block ending into it, and hue cannot help, because a neutral is
+       exactly what "no phase" has to look like. Measured against the white
+       card: 2.20:1, the same deliberately recessive band as follicular and
+       luteal, and 1.54:1 against menstrual beside it. */
     --phase-menstrual: var(--cal-period);
     --phase-follicular: 229 192 150;
     --phase-ovulation: 172 127 36;
@@ -4809,11 +4818,17 @@
        the ground: follicular and luteal are the recessive pair here as there,
        but on a dark card recessive means darker. Measured against the card:
        menstrual 6.39:1, ovulation 9.67:1, follicular 3.26:1, luteal 3.04:1;
-       adjacent pairs ≥1.96:1. */
+       adjacent pairs ≥1.96:1.
+
+       --phase-withheld (see the light block for what it is) is 3.14:1 against
+       the card and 2.04:1 against the menstrual block it always follows. It is
+       darker than the light theme's neutral rather than a flip of it, for the
+       ladder reason above: a mid-grey selected for the light card lands at
+       1.27:1 from menstrual here, which is the one pair that has to separate. */
     --phase-follicular: 143 105 68;
     --phase-ovulation: 236 196 110;
     --phase-luteal: 121 96 160;
-    --phase-withheld: 148 142 154;
+    --phase-withheld: 112 108 118;
     /* ---- end calendar phase/state colours — dark ------------------------ */
     --ovulation-color: rgb(var(--cal-ovulation));
     --fertile-warning-edge: #8d7047;

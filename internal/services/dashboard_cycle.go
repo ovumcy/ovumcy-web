@@ -200,9 +200,12 @@ func FertilityProjectionSuppressed(user *models.User, stats CycleStats) bool {
 // to fertility (#416). That reasoning was about the taxonomy, not about where the
 // label comes from: resolveCyclePhase decides between follicular, ovulation and
 // luteal by comparing today against OvulationDate, so every phase but "menstrual"
-// spells out the very day this tier withholds. Published stats and the cycle
-// ribbon both answer "unknown" past the menstrual card for a suppressed tier;
-// "menstrual" survives because it is read off recorded bleeding.
+// spells out the very day this tier withholds. Past the menstrual card a
+// suppressed tier gets no phase from either surface: published stats answer
+// "unknown", and the dashboard ribbon — which is drawn, not just read — answers
+// "withheld", the status that says the days are still there and their phase is
+// not being named. "menstrual" survives on both because it is read off recorded
+// bleeding.
 func DashboardAwaitingFirstCycle(stats CycleStats) bool {
 	return stats.CompletedCycleCount < 1
 }
