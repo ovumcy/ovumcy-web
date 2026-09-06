@@ -1089,3 +1089,46 @@ func assertCalendarGridCoversEachDayOnce(t *testing.T, days []CalendarDayState, 
 		t.Fatalf("last grid day: want %s, got %s", lastDay, days[len(days)-1].DateString)
 	}
 }
+
+// TestBuildCalendarDayStatesStopsThePeriodBandAtTheOvulationDay pins the grid's
+// half of "the published day wins": the projected period band is drawn from the
+// owner's AVERAGE period length, and an owner with a long average period and a
+// short cycle has that band reach over the very day the same grid marks as the
+// ovulation and shades as fertile. One cell then carried the expected-bleeding
+// shading, the fertile shading and the ovulation marker at once. The band now
+// ends the day before the published ovulation day; the days before it are
+// unaffected, and a day the owner logged bleeding on is drawn from the log.
+func TestBuildCalendarDayStatesStopsThePeriodBandAtTheOvulationDay(t *testing.T) {
+	monthStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2026, time.March, 6, 0, 0, 0, 0, time.UTC)
+
+	stats := CycleStats{
+		CompletedCycleCount:  3,
+		MedianCycleLength:    21,
+		AverageCycleLength:   21,
+		AveragePeriodLength:  10,
+		LastPeriodStart:      time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC),
+		NextPeriodStart:      time.Date(2026, time.March, 22, 0, 0, 0, 0, time.UTC),
+		OvulationDate:        time.Date(2026, time.March, 6, 0, 0, 0, 0, time.UTC),
+		FertilityWindowStart: time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC),
+		FertilityWindowEnd:   time.Date(2026, time.March, 6, 0, 0, 0, 0, time.UTC),
+	}
+
+	days := BuildCalendarDayStates(nil, monthStart, nil, stats, now, time.UTC)
+
+	ovulationDay := findCalendarDayStateByDateString(t, days, "2026-03-06")
+	if !ovulationDay.IsOvulation {
+		t.Fatalf("fixture: the grid must mark 2026-03-06 as the ovulation day")
+	}
+	if ovulationDay.IsPredicted {
+		t.Fatalf("the ovulation day must not also be shaded as an expected period day")
+	}
+	for _, dateString := range []string{"2026-03-07", "2026-03-08", "2026-03-09", "2026-03-10"} {
+		if day := findCalendarDayStateByDateString(t, days, dateString); day.IsPredicted {
+			t.Fatalf("%s: the projected period band must end before the published ovulation day, not run past it", dateString)
+		}
+	}
+	if day := findCalendarDayStateByDateString(t, days, "2026-03-03"); !day.IsPredicted {
+		t.Fatalf("2026-03-03: the clamp shortens the projected period band, it does not remove it")
+	}
+}
