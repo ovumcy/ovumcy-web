@@ -40,7 +40,15 @@ func TestConfirmedOvulationSurvivesTheProjectedNextPeriodStart(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			user, logs, stats, today := thermalShiftFixture(t, testCase.shiftDays)
 			if stats.CurrentCycleDay != testCase.wantCycleDay {
-				t.Fatalf("fixture anchor: cycle day = %d, want %d — a cycle running late and still short of DashboardCycleOverdue's reference 28 + 7", stats.CurrentCycleDay, testCase.wantCycleDay)
+				t.Fatalf("fixture anchor: cycle day = %d, want %d", stats.CurrentCycleDay, testCase.wantCycleDay)
+			}
+			// Which side of the gate that cycle day falls on is read off the
+			// predicate rather than off the literal above: the reference + 7
+			// threshold lives in DashboardCycleOverdue, and a row that drifted
+			// past it would otherwise keep passing for the suppression's reason
+			// instead of the resolver's.
+			if DashboardCycleOverdue(user, stats) {
+				t.Fatalf("fixture anchor: DashboardCycleOverdue = true at cycle day %d, want false — this row is a cycle running late, still inside the reference the predicate reads", stats.CurrentCycleDay)
 			}
 
 			confirmed, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, today, time.UTC)
@@ -64,7 +72,10 @@ func TestConfirmedOvulationSurvivesTheProjectedNextPeriodStart(t *testing.T) {
 func TestLateShiftNamesOneDayOnEverySurfaceInsideTheInstance(t *testing.T) {
 	user, logs, stats, today := lateThermalShiftFixture(t)
 	if stats.CurrentCycleDay != 32 {
-		t.Fatalf("fixture anchor: cycle day = %d, want 32 — the cohort is a cycle running late but not yet overdue", stats.CurrentCycleDay)
+		t.Fatalf("fixture anchor: cycle day = %d, want 32", stats.CurrentCycleDay)
+	}
+	if DashboardCycleOverdue(user, stats) {
+		t.Fatalf("fixture anchor: DashboardCycleOverdue = true at cycle day %d, want false — every surface below is compared on a cycle running late but not yet suppressed", stats.CurrentCycleDay)
 	}
 
 	confirmed, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, today, time.UTC)
@@ -142,7 +153,14 @@ func TestLateShiftStaysWithheldWhenTheCycleIsOverdue(t *testing.T) {
 	today := AddCalendarDays(fixtureToday, 5, time.UTC)
 	stats = atToday(stats, today)
 	if stats.CurrentCycleDay != 37 {
-		t.Fatalf("fixture anchor: cycle day = %d, want 37 — past DashboardCycleOverdue's reference 28 + 7", stats.CurrentCycleDay)
+		t.Fatalf("fixture anchor: cycle day = %d, want 37", stats.CurrentCycleDay)
+	}
+	// The gate itself, not the literal: this test's whole subject is what the
+	// surfaces do once DashboardCycleOverdue holds, so it is asserted here
+	// rather than inferred from 37 being greater than a threshold spelled out
+	// in a comment.
+	if !DashboardCycleOverdue(user, stats) {
+		t.Fatalf("fixture anchor: DashboardCycleOverdue = false at cycle day %d, want true — the suppression every assertion below reads must actually be on", stats.CurrentCycleDay)
 	}
 
 	if _, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, today, time.UTC); ok {
@@ -173,9 +191,10 @@ func TestLateShiftStaysWithheldWhenTheCycleIsOverdue(t *testing.T) {
 	}
 	// The whole grid, not only the confirmed day: the check above reads ONE
 	// date, and the day an overdue grid could republish is the model's
-	// projection 2026-03-14, not the confirmed 2026-03-29. Same instrument that
-	// reports [2026-03-29] on this very grid in
-	// TestLateShiftNamesOneDayOnEverySurfaceInsideTheInstance, so a silent
+	// projection 2026-03-14, not the confirmed 2026-03-29. The same instrument
+	// reports [2026-03-29] on the sibling test's grid — same logs, same month,
+	// a different today and the stats that follow it
+	// (TestLateShiftNamesOneDayOnEverySurfaceInsideTheInstance) — so a silent
 	// answer here is the gate's doing rather than a reader that finds nothing.
 	//
 	// What holds it is the PredictionsSuppressed early return that opens
@@ -237,7 +256,22 @@ func TestLateShiftDoesNotCountAReadingLoggedAfterToday(t *testing.T) {
 	today := AddCalendarDays(fixtureToday, -1, time.UTC)
 	stats = atToday(stats, today)
 	if stats.CurrentCycleDay != 31 {
-		t.Fatalf("fixture anchor: cycle day = %d, want 31 — the day before the fixture's own, where the third elevated reading is still dated tomorrow", stats.CurrentCycleDay)
+		t.Fatalf("fixture anchor: cycle day = %d, want 31 — the day before the fixture's own", stats.CurrentCycleDay)
+	}
+	if DashboardCycleOverdue(user, stats) {
+		t.Fatalf("fixture anchor: DashboardCycleOverdue = true at cycle day %d, want false — the refusal below has to be the bound's doing, not the suppression gate's", stats.CurrentCycleDay)
+	}
+	// The property the paragraph above claims, read off the fixture instead of
+	// trusted: the last temperature it records is dated tomorrow, so today's
+	// series can hold only two of the three elevated readings.
+	lastBBTDay := time.Time{}
+	for _, entry := range logs {
+		if entry.BBT != nil && entry.Date.After(lastBBTDay) {
+			lastBBTDay = entry.Date
+		}
+	}
+	if want := AddCalendarDays(today, 1, time.UTC); !lastBBTDay.Equal(want) {
+		t.Fatalf("fixture anchor: last recorded BBT = %s, want %s — the reading this test refuses must be dated after today", CalendarDayKey(lastBBTDay), CalendarDayKey(want))
 	}
 
 	if _, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, today, time.UTC); ok {

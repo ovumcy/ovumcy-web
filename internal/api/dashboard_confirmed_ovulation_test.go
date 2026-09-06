@@ -50,20 +50,25 @@ const (
 //	    overdue), the next period is projected on today-4, and the confirmed day
 //	    falls a day AFTER it.
 //
-// BOTH rows were red before the fix, and for one reason: a detector bounded at
-// the projection sees five of the six coverline readings on row 0 and four on
-// row 1, and six are needed either way, so it found no shift at all. Row 1 is
-// kept for what it adds beyond that — a confirmed day LATER than
+// BOTH rows were red before the fix, and for two reasons at once. A detector
+// bounded at the projection sees a coverline window one reading short — five of
+// the six on row 0, four on row 1, where six are needed either way — AND the
+// elevated triple today-2..today falls outside that bound entirely, so there was
+// no streak inside the series to measure against a window in the first place.
+// Row 1 is kept for what it adds beyond that — a confirmed day LATER than
 // NextPeriodStart, the only shape that can catch a layer above the resolver
 // clamping the named day back to the projected start.
 //
-// That the seed's own projection is the one the MODEL arrives at is anchored on
-// next_period_start, once per half: the JSON half reads it out of the payload it
-// already fetches
+// That the seed's own projection is the one the MODEL arrives at is anchored
+// once per half, each half on the surface it reads: the JSON half compares
+// next_period_start in the payload it already fetches
 // (TestStatsOverviewConfirmsALateShiftOnOrAfterTheProjectedNextPeriodStart), the
-// rendered half takes the same reading on its own request before it looks at the
-// slot. Every other date on either side is derived from the same today, so an
-// anchor held by one half only would leave the other blind to a drifting cohort.
+// rendered half compares the dashboard's next-period slot in the very document
+// it takes the ovulation slot from — where the model's start appears rolled one
+// whole cycle past the projected one today has already gone by, which is what
+// this cohort's lateness looks like on that surface. Every other date on either
+// side is derived from the same today, so an anchor held by one half only would
+// leave the other blind to a drifting cohort.
 //
 // Returns the day the detector confirms and the projected next-period start it
 // is measured against.
@@ -102,7 +107,11 @@ func dashboardOvulationSlotText(t *testing.T, app *fiber.App, authCookie string)
 
 	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
 	request.Header.Set("Accept-Language", "en")
-	request.Header.Set("Cookie", authCookie)
+	// The same zone the JSON half sends (fetchStatsOverview): both halves resolve
+	// "today" from the request, so a dashboard left on the app's default while
+	// the payload is read in UTC compares two cohorts a day apart.
+	request.Header.Set("Cookie", joinCookieHeader(authCookie, timezoneCookieName+"=UTC"))
+	request.Header.Set(timezoneHeaderName, "UTC")
 	response := mustAppResponse(t, app, request)
 	assertStatusCode(t, response, http.StatusOK)
 
@@ -147,20 +156,25 @@ func TestDashboardNamesALateShiftOnOrAfterTheProjectedNextPeriodStart(t *testing
 			updateStatsOverviewUser(t, database, user, map[string]any{"track_bbt": true, "usage_goal": models.UsageGoalTrying})
 			confirmedDay, projectedStart := seedLateThermalShiftCycle(t, database, user, today, testCase.daysPastProjection)
 
-			// This half's own anchor on the cohort: the projection the seed
-			// computed is the one the model arrives at. Taken before the slot is
-			// read, so a seed that drifted out of the cohort fails as arithmetic
-			// rather than as a slot naming the wrong day.
-			_, payload := fetchStatsOverview(t, app, authCookie)
-			wantProjected := projectedStart.Format(statsOverviewDateLayout)
-			if payload.NextPeriodStart == nil {
-				t.Fatalf("fixture anchor: next_period_start is absent, want the projected %s", wantProjected)
-			}
-			if *payload.NextPeriodStart != wantProjected {
-				t.Fatalf("fixture anchor: next_period_start = %s, want %s — the seed's projection and the model's must be one date before the slot is read against it", *payload.NextPeriodStart, wantProjected)
+			slot, document := dashboardOvulationSlotText(t, app, authCookie)
+
+			// This half's own anchor on the cohort, read from the very document
+			// the slot comes from: the projection the seed computed is the one the
+			// model arrives at. Judged before the slot is, so a seed that drifted
+			// out of the cohort fails as arithmetic rather than as a slot naming
+			// the wrong day.
+			//
+			// The date this surface names is the projected start rolled one whole
+			// cycle on — 28 days, the spacing of the four starts the seed records
+			// — because today has already passed the projected one, which is this
+			// cohort's whole point (DashboardUpcomingPredictions, ProjectCycleStart).
+			// A seed that drifted by a day moves it just the same.
+			nextPeriod := dashboardElementTextByDataAttr(t, document, "data-dashboard-next-period")
+			wantNextPeriod := services.LocalizedDateDisplay("en", services.AddCalendarDays(projectedStart, 28, time.UTC))
+			if !strings.Contains(nextPeriod, wantNextPeriod) {
+				t.Fatalf("fixture anchor: the next-period slot = %q, want %q — one cycle past the seed's projected %s, so the seed's projection and the model's are one date before the ovulation slot is read against it", nextPeriod, wantNextPeriod, services.LocalizedDateDisplay("en", projectedStart))
 			}
 
-			slot, _ := dashboardOvulationSlotText(t, app, authCookie)
 			if want := services.LocalizedDateDisplay("en", confirmedDay); !strings.Contains(slot, want) {
 				t.Fatalf("the ovulation slot = %q, want the BBT-confirmed %q — a shift recorded on or after the projected next period start is still this cycle's", slot, want)
 			}
