@@ -104,10 +104,13 @@ func TestCalendarFeedGenerateRevealsURLOnceAndNeverAgain(t *testing.T) {
 	}
 	// Extract the token path and prove it actually serves the feed.
 	//
-	// This does NOT go through mustServeCalendarFeed: this package's test app
-	// mounts csrf.New through its own testCSRFMiddlewareConfig, which carries
-	// no calendar-feed exemption, so it sets ovumcy_csrf on this GET; whether
-	// the route itself sets a cookie is not this test's subject.
+	// This does NOT go through mustServeCalendarFeed: the test app mounts
+	// csrf.New only when it is built with enableCSRF, which is exactly what
+	// newSettingsSecurityTestContext asks for, and that middleware's
+	// testCSRFMiddlewareConfig carries no calendar-feed exemption, so it sets
+	// ovumcy_csrf on this GET. mustServeCalendarFeed's callers build the app
+	// without that option and so may demand no cookie at all; whether the feed
+	// route itself sets one is not this test's subject.
 	token := extractFeedTokenFromURL(t, revealedURL)
 	feedResp := mustAppResponse(t, ctx.app, httptest.NewRequest(http.MethodGet, calendarFeedURL(token), nil))
 	if feedResp.StatusCode != http.StatusOK {
@@ -566,14 +569,20 @@ func TestCalendarFeedRevokeScopedToOwner(t *testing.T) {
 	tokenB := armCalendarFeedForUser(t, ctx.database, ownerB.ID)
 
 	// Both feeds serve before the revoke, so neither verdict below can be
-	// satisfied by a URL that never worked. Not mustServeCalendarFeed: ctx.app
-	// mounts CSRF, which sets its own cookie on this GET (see the comment in
+	// satisfied by a URL that never worked. Asserted here and not in a subtest:
+	// t.Fatalf inside t.Run ends only the subtest, so a lost precondition would
+	// leave the verdicts below to run anyway and report a second, misleading
+	// failure beside it. Not mustServeCalendarFeed: ctx.app mounts CSRF, which
+	// sets its own cookie on this GET (see the comment in
 	// TestCalendarFeedGenerateRevealsURLOnceAndNeverAgain above).
-	for label, token := range map[string]string{"A": tokenA, "B": tokenB} {
-		t.Run("owner "+label, func(t *testing.T) {
-			before := mustAppResponse(t, ctx.app, httptest.NewRequest(http.MethodGet, calendarFeedURL(token), nil))
-			assertStatusCode(t, before, http.StatusOK)
-		})
+	for _, owner := range []struct {
+		label string
+		token string
+	}{{label: "A", token: tokenA}, {label: "B", token: tokenB}} {
+		before := mustAppResponse(t, ctx.app, httptest.NewRequest(http.MethodGet, calendarFeedURL(owner.token), nil))
+		if before.StatusCode != http.StatusOK {
+			t.Fatalf("precondition: owner %s's feed must serve before the revoke, got %d", owner.label, before.StatusCode)
+		}
 	}
 
 	// Owner B revokes, on owner B's own session.

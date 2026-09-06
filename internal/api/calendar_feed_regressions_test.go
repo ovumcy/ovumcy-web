@@ -75,10 +75,11 @@ func calendarFeedURL(token string) string {
 // precondition its callers below rely on: 200, no Set-Cookie, and a calendar
 // body. stage names which precondition is being proven, so a failure reads as
 // "precondition lost" against the right moment rather than as whatever
-// assertion the caller makes next. It returns the response UNTOUCHED (so
-// mustAppResponse's own t.Cleanup still closes the real body it read) plus the
-// body already drained to check the precondition, for a caller that wants to
-// inspect it further (its own headers or its own body markers).
+// assertion the caller makes next. It returns the response for its status and
+// headers, and the body as a string: checking the precondition READ the body,
+// so response.Body is drained by the time a caller sees it and the returned
+// string is the only copy of it. Closing stays mustAppResponse's t.Cleanup's
+// job.
 func mustServeCalendarFeed(t *testing.T, app *fiber.App, token string, stage string) (*http.Response, string) {
 	t.Helper()
 	response := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, calendarFeedURL(token), nil))
@@ -196,10 +197,11 @@ const (
 // correct-selector/wrong-verifier token, and a token whose feed has since been
 // revoked all get the SAME response — same status, same headers, same body
 // bytes — so the response tells an enumerator nothing about which of the four
-// they hit. None of the four sets a cookie either, and that is asserted per
-// case rather than left to the header fingerprint: four 404s carrying the same
-// Set-Cookie would still be identical to one another, while the route's
-// contract is to set none at all.
+// they hit. None of the four sets a cookie either. The fingerprint already
+// decides that — it keeps every header but Date, so a Set-Cookie breaks the
+// comparison against want — and the per-case assertNoSetCookie is kept for the
+// message it produces: it names the violated contract, instead of leaving a
+// reader to find the extra header inside two printed fingerprints.
 //
 // wrongVerifier needs a selector that still resolves, or it falls into the
 // same "selector not found" branch as bogus and never reaches
@@ -479,9 +481,16 @@ func TestCalendarFeedReturns500OnInfrastructureError(t *testing.T) {
 	}})
 	app.Get(calendarFeedRoutePath, handler.ServeCalendarFeed)
 
-	// 48 = calendarFeedSelectorLength (16) + calendarFeedVerifierLength (32) in
-	// internal/services; any other length 404s before the stubbed lookup runs.
-	token := strings.Repeat("A", 48)
+	// Minted by the production generator, because only a token of the CURRENT
+	// selector+verifier width reaches the stubbed lookup at all: any other
+	// length is refused by SplitCalendarFeedToken and 404s before it. A
+	// hand-sized literal would go on 404ing — green, and proving nothing about
+	// the error branch — the day either width changes. Nothing stores it; this
+	// store fails on every selector.
+	token, _, err := services.GenerateCalendarFeedToken([]byte(testAppSecretKey))
+	if err != nil {
+		t.Fatalf("GenerateCalendarFeedToken: %v", err)
+	}
 	response := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, calendarFeedURL(token), nil))
 	if response.StatusCode != http.StatusInternalServerError {
 		t.Fatalf("expected 500 on an infrastructure error, got %d", response.StatusCode)
@@ -573,12 +582,23 @@ func TestCalendarFeedRestoredBackupStopsServingARevokedURL(t *testing.T) {
 	}
 	// And it must 404 the same way an unrelated token does: a distinguishable
 	// refusal would tell a holder of the leaked URL that it once was real.
+	// Each is compared against want — the same pinned bare-404 model the
+	// no-oracle test uses — and not merely against the other: a handler that
+	// began naming its cause ("no such feed: <selector>") would move BOTH
+	// fingerprints the same way and leave a mutual comparison green.
 	selector, verifier := mustSplitFeedToken(t, token)
 	unrelated := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, calendarFeedURL(strings.Repeat("Z", len(selector))+verifier), nil))
+	assertNoSetCookie(t, restored, "the disarmed token's 404 must not set a cookie")
+	assertNoSetCookie(t, unrelated, "the unknown token's 404 must not set a cookie")
+	want := feedResponseFingerprint{
+		status:  http.StatusNotFound,
+		headers: calendarFeedBare404Headers,
+		body:    calendarFeedBare404Body,
+	}
 	restoredFingerprint := fingerprintFeedResponse(t, restored)
 	unrelatedFingerprint := fingerprintFeedResponse(t, unrelated)
-	if restoredFingerprint != unrelatedFingerprint {
-		t.Fatalf("a disarmed token must be indistinguishable from an unknown one:\n restored: %#v\n unrelated: %#v",
-			restoredFingerprint, unrelatedFingerprint)
+	if restoredFingerprint != want || unrelatedFingerprint != want {
+		t.Fatalf("a disarmed token and an unknown one must both answer the bare no-oracle 404 %#v:\n restored: %#v\n unrelated: %#v",
+			want, restoredFingerprint, unrelatedFingerprint)
 	}
 }
