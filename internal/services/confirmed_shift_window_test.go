@@ -543,18 +543,21 @@ func TestConfirmedShiftWindowPublishesOnTheLocationAxis(t *testing.T) {
 	}
 }
 
-// TestResolveConfirmedCycleStatsUsesTheProjectedPeriodPhaseRule is F4: the
-// resolver recomputes CurrentPhase with its own detectCyclePhase
-// (cycles.go:474 — location: time.UTC, includeProjectedPeriod: false), a
-// second, narrower phase rule than the one every owner-facing surface actually
-// reads (DetectCurrentPhase, includeProjectedPeriod: true), so the resolver's
-// own substitution overwrites a correct "menstrual" verdict with an incorrect
-// one. With AveragePeriodLength 10 and a confirmed ovulation on cycle day 6
-// (the detector's own earliest possible day), day 9 has no explicit period log
-// but still falls inside the projected 10-day period band — a day the
-// production rule calls "menstrual" and the resolver's own rule calls "luteal"
-// because it never looks at the projected band at all.
-func TestResolveConfirmedCycleStatsUsesTheProjectedPeriodPhaseRule(t *testing.T) {
+// TestConfirmedDayNarrowsTheProjectedPeriodBandInThePhaseRule pins the phase
+// half of "the observation narrows the projection". The projected period band
+// ([LastPeriodStart, +AveragePeriodLength)) is a projection of the AVERAGE
+// period length, and resolveCyclePhase reads stats.OvulationDate three lines
+// below it to call that same day "ovulation" — so a band long enough to swallow
+// the published ovulation day makes one function answer two ways about one day,
+// silently, because the band's return wins first. With AveragePeriodLength 10
+// and a confirmed shift on cycle day 6 (the detector's earliest possible day),
+// cycle day 9 falls inside the raw band while sitting three days PAST an
+// ovulation the owner's own temperatures placed. The band is clamped to end
+// before the published day, so day 9 reads "luteal".
+//
+// A day the owner LOGGED as bleeding is untouched: periodLoggedOnDay returns
+// before the band is ever consulted, and the second half of this test pins it.
+func TestConfirmedDayNarrowsTheProjectedPeriodBandInThePhaseRule(t *testing.T) {
 	cycleStart := cyclesignalsCovDay(t, "2026-03-01")
 	var logs []models.DailyLog
 	for offset := range 6 {
@@ -583,8 +586,46 @@ func TestResolveConfirmedCycleStatsUsesTheProjectedPeriodPhaseRule(t *testing.T)
 	if !confirmed {
 		t.Fatal("the resolver must report the shift as confirmed")
 	}
-	if resolved.CurrentPhase != "menstrual" {
-		t.Fatalf("current phase = %q, want %q: cycle day 9 sits inside the projected 10-day period band", resolved.CurrentPhase, "menstrual")
+	if resolved.CurrentPhase != "luteal" {
+		t.Fatalf("current phase = %q, want %q: cycle day 9 sits three days past the confirmed ovulation, and the projected 10-day band must not swallow it", resolved.CurrentPhase, "luteal")
+	}
+
+	loggedPeriod := append(append([]models.DailyLog(nil), logs...), models.DailyLog{
+		Date:     today,
+		IsPeriod: true,
+	})
+	resolvedLogged, _ := ResolveConfirmedCycleStats(user, loggedPeriod, stats, today, time.UTC)
+	if resolvedLogged.CurrentPhase != "menstrual" {
+		t.Fatalf("current phase = %q, want %q: bleeding the owner logged on the day outranks every projection and every inference", resolvedLogged.CurrentPhase, "menstrual")
+	}
+}
+
+// TestProjectedPeriodBandNeverSwallowsTheProjectedOvulationDay is the other half
+// of the same class, and the reason the clamp lives in resolveCyclePhase rather
+// than in the confirmed resolver: a confirmed day is not required to produce the
+// contradiction. An account with a long average period and a short projected
+// cycle has its own projected ovulation day land inside its own projected period
+// band, and the band's earlier return then calls "menstrual" the very day the
+// lines below it call "ovulation". Fixing this only on the confirmed path would
+// leave the class closed at N of N+1.
+func TestProjectedPeriodBandNeverSwallowsTheProjectedOvulationDay(t *testing.T) {
+	cycleStart := cyclesignalsCovDay(t, "2026-03-01")
+	ovulation := AddCalendarDays(cycleStart, 5, time.UTC) // cycle day 6
+	stats := CycleStats{
+		CompletedCycleCount: 3,
+		MedianCycleLength:   21,
+		AverageCycleLength:  21,
+		AveragePeriodLength: 10,
+		LastPeriodStart:     cycleStart,
+		OvulationDate:       ovulation,
+	}
+
+	if phase := DetectCurrentPhase(stats, nil, ovulation, time.UTC); phase != "ovulation" {
+		t.Fatalf("phase on the projected ovulation day = %q, want %q: the projected period band must not swallow the day published beside it", phase, "ovulation")
+	}
+	inBand := AddCalendarDays(cycleStart, 2, time.UTC) // cycle day 3, before the ovulation day
+	if phase := DetectCurrentPhase(stats, nil, inBand, time.UTC); phase != "menstrual" {
+		t.Fatalf("phase on cycle day 3 = %q, want %q: the clamp shortens the band, it does not remove it", phase, "menstrual")
 	}
 }
 

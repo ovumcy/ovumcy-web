@@ -17,6 +17,16 @@
   method asserts. The projected next period is deliberately left alone — it stays a projection and
   is not recomputed from a confirmed ovulation.
 
+  The cycle phase moved with them. Ovumcy estimates how long a period lasts from your own average,
+  and used to call every day inside that estimate "menstrual" even when the ovulation day published
+  right beside it fell on the same day or earlier — one screen answering two ways about one date.
+  That estimate is now cut short at the published ovulation day, so a day past a confirmed shift
+  reads as luteal rather than as an estimated period still running. A day you logged bleeding on is
+  untouched: what you recorded outranks every estimate, and always did. The dashboard ring follows
+  the same rule — it shortens its period band instead of disappearing, which is what a shift
+  confirmed early in a cycle used to make it do, to the owners tracking their temperatures most
+  closely.
+
   A confirmed shift also no longer needs the model to agree that a cycle can ovulate at all: an
   account whose recorded history is too short for the model to place an ovulation used to see its
   own temperature signal silently dropped from the calendar, the overview and the dashboard — whose
