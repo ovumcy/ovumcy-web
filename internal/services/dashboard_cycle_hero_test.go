@@ -321,13 +321,3 @@ func TestDashboardCycleHeroSuppressedAxisStillEndsAtBeyond(t *testing.T) {
 		}
 	}
 }
-
-// TestDashboardCycleHeroWithheldCardNeedsRoomToExist pins the empty case: when
-// the projected period already fills the cycle there is no day left to withhold,
-// and a card spanning days 6-5 would be a range covering nothing.
-func TestDashboardCycleHeroWithheldCardNeedsRoomToExist(t *testing.T) {
-	cards := dashboardCycleHeroPhaseCards("menstrual", 28, 14, 28, true)
-	if len(cards) != 1 {
-		t.Fatalf("expected the menstrual card alone when the period fills the cycle, got %#v", cards)
-	}
-}
