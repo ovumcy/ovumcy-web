@@ -101,11 +101,12 @@ func TestBuildOwnerPredictionExplanation(t *testing.T) {
 }
 
 // TestBuildOwnerPredictionExplanationNamesTheFirstCycleFloor pins the line the
-// cohort with no completed cycle had none of. It also pins the ORDER: an
-// irregular account in this tier gets the first-cycle sentence rather than the
-// irregular one, because the missing first cycle is why the fertility half is
-// absent entirely, while the irregular branches only describe how a projection
-// that does exist is presented.
+// cohort with no completed cycle had none of. It also pins the ORDER, and the
+// order is that the new sentence YIELDS: an irregular account in the sparse
+// tier has no completed cycle either, and its own sentence names the number of
+// cycles the rest of that screen counts to, so the general answer must not
+// displace the specific one. What the floor claims is the owner the switch used
+// to fall through to the empty default for.
 func TestBuildOwnerPredictionExplanationNamesTheFirstCycleFloor(t *testing.T) {
 	owner := &models.User{Role: models.RoleOwner}
 
@@ -114,14 +115,26 @@ func TestBuildOwnerPredictionExplanationNamesTheFirstCycleFloor(t *testing.T) {
 		t.Fatalf("expected the first-cycle explainer, got %#v", explanation)
 	}
 
+	// An irregular owner in the sparse tier is in the first-cycle floor too, and
+	// keeps the sentence that names the cycle count. A mutant moving the floor
+	// above these branches takes that sentence away from every freshly onboarded
+	// irregular account — which is what it did before this order was fixed.
 	irregular := &models.User{Role: models.RoleOwner, IrregularCycle: true}
+	sparse := BuildOwnerPredictionExplanation(
+		irregular,
+		DashboardCycleContext{AwaitingFirstCycle: true, DisplayNextPeriodNeedsData: true},
+		false,
+	)
+	if sparse.PrimaryKey != "prediction.explainer.irregular_sparse" {
+		t.Fatalf("expected the sparse irregular sentence to survive the first-cycle floor, got %#v", sparse)
+	}
 	withRanges := BuildOwnerPredictionExplanation(
 		irregular,
 		DashboardCycleContext{AwaitingFirstCycle: true, DisplayNextPeriodUseRange: true},
 		false,
 	)
-	if withRanges.PrimaryKey != "prediction.explainer.awaiting_first_cycle" {
-		t.Fatalf("expected the first-cycle floor to outrank the irregular-range branch, got %#v", withRanges)
+	if withRanges.PrimaryKey != "prediction.explainer.irregular_ranges" {
+		t.Fatalf("expected the irregular-range branch to survive the first-cycle floor, got %#v", withRanges)
 	}
 
 	// Negative control: without the floor the same account keeps the branch it
