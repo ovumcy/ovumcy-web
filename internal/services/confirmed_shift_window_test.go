@@ -665,3 +665,32 @@ func TestResolveConfirmedCycleStatsRecomputesCurrentPhase(t *testing.T) {
 		t.Fatalf("current phase = %q, want %q: the confirmed ovulation (2026-03-11) is 3 days behind today", resolved.CurrentPhase, "luteal")
 	}
 }
+
+// TestResolveConfirmedCycleStatsWithoutALocationReadsUTC covers the resolver's
+// nil-location normalisation. Every caller in the tree hands a real location, so
+// the branch is defensive — but it is defensive about the AXIS the published
+// fields are built on, and a nil slipping through would panic inside
+// CalendarDay rather than fall back, so it is covered rather than annotated.
+func TestResolveConfirmedCycleStatsWithoutALocationReadsUTC(t *testing.T) {
+	user, logs, stats, today := projectedWindowFixture(t)
+
+	withUTC, okUTC := ResolveConfirmedCycleStats(user, logs, stats, today, time.UTC)
+	if !okUTC {
+		t.Fatal("fixture: the resolver must confirm the shift with an explicit location")
+	}
+
+	withNil, okNil := ResolveConfirmedCycleStats(user, logs, stats, today, nil)
+	if !okNil {
+		t.Fatal("a nil location must fall back to UTC, not refuse the confirmation")
+	}
+	if !withNil.OvulationDate.Equal(withUTC.OvulationDate) ||
+		!withNil.FertilityWindowStart.Equal(withUTC.FertilityWindowStart) ||
+		!withNil.FertilityWindowEnd.Equal(withUTC.FertilityWindowEnd) {
+		t.Errorf("nil location published %v/%v-%v, want the UTC answer %v/%v-%v",
+			withNil.OvulationDate, withNil.FertilityWindowStart, withNil.FertilityWindowEnd,
+			withUTC.OvulationDate, withUTC.FertilityWindowStart, withUTC.FertilityWindowEnd)
+	}
+	if withNil.CurrentFertility != withUTC.CurrentFertility {
+		t.Errorf("nil location published fertility %q, want %q", withNil.CurrentFertility, withUTC.CurrentFertility)
+	}
+}

@@ -321,3 +321,43 @@ func TestDashboardCycleHeroSuppressedAxisStillEndsAtBeyond(t *testing.T) {
 		}
 	}
 }
+
+// TestBuildDashboardCycleHeroRefusesAConfirmedDayPastTheAxis covers the
+// confirmed branch's only remaining refusal. The branch drops the projected
+// branch's periodLength+1 floor because an observation outranks a projection,
+// but a day past the ribbon's own axis is not something a clamp on periodLength
+// can fix: there is no cell to draw it in. The control below is the same
+// fixture with the day inside the axis, so a mutant that always refuses — or
+// one that widens the bound to >= cycleLength — is red on one half or the other.
+func TestBuildDashboardCycleHeroRefusesAConfirmedDayPastTheAxis(t *testing.T) {
+	cycleStart := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	today := cycleStart.AddDate(0, 0, 19)
+	user := &models.User{Role: models.RoleOwner, CycleLength: 28}
+	cycleContext := DashboardCycleContext{DisplayOvulationConfirmed: true, DisplayOvulationExact: true}
+
+	build := func(ovulation time.Time) DashboardCycleHero {
+		stats := CycleStats{
+			CurrentCycleDay:     20,
+			AveragePeriodLength: 5,
+			LutealPhase:         14,
+			LastPeriodStart:     cycleStart,
+			OvulationDate:       ovulation,
+		}
+		return BuildDashboardCycleHero(user, stats, cycleContext, dashboardCycleHeroInput{Today: today, Location: time.UTC})
+	}
+
+	// Cycle day 31 on a 28-day axis: past the last cell the ribbon has.
+	if hero := build(cycleStart.AddDate(0, 0, 30)); hero.Visible {
+		t.Errorf("hero rendered with a confirmed day past the axis: cycle length %d, cards %#v", hero.CycleLength, hero.PhaseCards)
+	}
+
+	// Control: the same fixture with the day on the axis renders, and renders
+	// the confirmed day as its ovulation card rather than a projection.
+	hero := build(cycleStart.AddDate(0, 0, 15))
+	if !hero.Visible {
+		t.Fatal("control: the hero must render when the confirmed day is inside the axis")
+	}
+	if len(hero.PhaseCards) != 4 || hero.PhaseCards[2].StartDay != 16 {
+		t.Errorf("control: expected the ovulation card on cycle day 16, got %#v", hero.PhaseCards)
+	}
+}
