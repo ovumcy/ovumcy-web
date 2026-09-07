@@ -374,8 +374,12 @@ func TestInterfaceGlyphsComeFromTheFirstPartyIconSet(t *testing.T) {
 	}
 
 	// The phase chip picks its icon in the services layer, so a rename there
-	// would ship a blank chip that no template-only scan can see.
-	for _, phase := range []string{"menstrual", "follicular", "ovulation", "luteal", "unknown"} {
+	// would ship a blank chip that no template-only scan can see. This list is a
+	// SECOND enumeration of what PhaseIcon answers to, so it goes stale the
+	// moment a value is added there and not here: "withheld", the status a
+	// suppressed ribbon carries, arrived exactly that way and was unguarded
+	// until it was added below.
+	for _, phase := range []string{"menstrual", "follicular", "ovulation", "luteal", "withheld", "unknown"} {
 		if name := services.PhaseIcon(phase); !symbols[name] {
 			t.Errorf("PhaseIcon(%q) names the icon %q, which the sprite does not define", phase, name)
 		}
