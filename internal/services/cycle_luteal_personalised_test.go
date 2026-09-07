@@ -26,6 +26,23 @@ import (
 // on CycleStats at that SHA (compile failure: undefined field
 // LutealPhasePersonalised) — the same absence the fix closes.
 
+// personalisedBaselineFixture is the shared fixture of this file: an owner with
+// the 14-day setting, and logs whose ovulation signals are placed cycleLength
+// days apart from origin so InferUserLutealPhase refines a value the setting
+// does not hold. now sits five days into the logs' last (in-progress) cycle.
+func personalisedBaselineFixture(t *testing.T, cycleLength int, ovulationCycleDays []int, kind lutealSignalKind) (*models.User, []models.DailyLog, time.Time) {
+	t.Helper()
+	origin := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	logs := lutealRoundTripLogs(t, origin, cycleLength, ovulationCycleDays, kind)
+	now := origin.AddDate(0, 0, len(ovulationCycleDays)*cycleLength+5).Add(9 * time.Hour)
+	user := &models.User{
+		Role:        models.RoleOwner,
+		CycleLength: cycleLength,
+		LutealPhase: 14,
+	}
+	return user, logs, now
+}
+
 // TestOvulationExactAloneCannotTellDefaultFromPersonalisedLutealPhase pins the
 // invariant this task's fix depends on staying true: OvulationExact by itself
 // must never be read as a personalisation signal, because a default-14 cycle
@@ -60,14 +77,7 @@ func TestOvulationExactAloneCannotTellDefaultFromPersonalisedLutealPhase(t *test
 
 	// Personalised: the round-trip fixture from cycle_luteal_round_trip_test.go,
 	// which infers 13 from two observed cycles and also fits without a clamp.
-	origin := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
-	personalisedLogs := lutealRoundTripLogs(t, origin, 28, []int{15, 15}, lutealSignalBBT)
-	personalisedNow := time.Date(2026, time.March, 3, 9, 0, 0, 0, time.UTC)
-	personalisedUser := &models.User{
-		Role:        models.RoleOwner,
-		CycleLength: 28,
-		LutealPhase: 14,
-	}
+	personalisedUser, personalisedLogs, personalisedNow := personalisedBaselineFixture(t, 28, []int{15, 15}, lutealSignalBBT)
 	personalisedStats := ApplyUserCycleBaseline(personalisedUser, personalisedLogs, BuildCycleStats(personalisedLogs, personalisedNow), personalisedNow, time.UTC)
 
 	if personalisedStats.LutealPhase != 13 {
@@ -105,9 +115,7 @@ func TestLutealPhasePersonalisedTrueButClamped(t *testing.T) {
 	// own plausible window (10-20) and therefore accepted. Predicting the next
 	// 22-day cycle needs maxSupportedLutealPhase = 22-5 = 17, so CalcOvulationDay
 	// clamps 20 down to 17 and reports ovulationExact=false.
-	const cycleLength = 22
-	origin := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
-	logs := lutealRoundTripLogs(t, origin, cycleLength, []int{2, 2}, lutealSignalEggWhite)
+	user, logs, now := personalisedBaselineFixture(t, 22, []int{2, 2}, lutealSignalEggWhite)
 
 	luteal, refined := InferUserLutealPhase(logs, time.UTC)
 	if !refined {
@@ -117,12 +125,6 @@ func TestLutealPhasePersonalisedTrueButClamped(t *testing.T) {
 		t.Fatalf("fixture: inferred luteal phase = %d, want 20", luteal)
 	}
 
-	now := origin.AddDate(0, 0, 3*cycleLength).Add(9 * time.Hour)
-	user := &models.User{
-		Role:        models.RoleOwner,
-		CycleLength: cycleLength,
-		LutealPhase: 14,
-	}
 	stats := ApplyUserCycleBaseline(user, logs, BuildCycleStats(logs, now), now, time.UTC)
 
 	if !stats.LutealPhasePersonalised {
@@ -141,18 +143,11 @@ func TestLutealPhasePersonalisedTrueButClamped(t *testing.T) {
 func TestPublishedStatsClearsLutealPhasePersonalisedUnderFertilitySuppression(t *testing.T) {
 	t.Parallel()
 
-	origin := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
-	logs := lutealRoundTripLogs(t, origin, 28, []int{15, 15}, lutealSignalBBT)
-	now := time.Date(2026, time.March, 3, 9, 0, 0, 0, time.UTC)
-	user := &models.User{
-		Role:        models.RoleOwner,
-		CycleLength: 28,
-		LutealPhase: 14,
-		// Unpredictable-cycle mode is one of the PredictionsSuppressed disjuncts
-		// that FertilityProjectionSuppressed folds in; any gate that reaches
-		// suppression.FertilitySuppressed exercises the same clearing branch.
-		UnpredictableCycle: true,
-	}
+	user, logs, now := personalisedBaselineFixture(t, 28, []int{15, 15}, lutealSignalBBT)
+	// Unpredictable-cycle mode is one of the PredictionsSuppressed disjuncts
+	// that FertilityProjectionSuppressed folds in; any gate that reaches
+	// suppression.FertilitySuppressed exercises the same clearing branch.
+	user.UnpredictableCycle = true
 	stats := ApplyUserCycleBaseline(user, logs, BuildCycleStats(logs, now), now, time.UTC)
 	if !stats.LutealPhasePersonalised {
 		t.Fatal("fixture: stats.LutealPhasePersonalised = false before publishing, want true (the inference must have refined)")
@@ -164,5 +159,44 @@ func TestPublishedStatsClearsLutealPhasePersonalisedUnderFertilitySuppression(t 
 	}
 	if published.LutealPhasePersonalised {
 		t.Error("published.LutealPhasePersonalised = true under fertility suppression: it must not assert personalisation about an ovulation date this tier just withheld")
+	}
+}
+
+// TestLutealPhasePersonalisedStaysFalseWhenTheInferredValueNeverLandsOnLastPeriodStart
+// pins the gap between the two conditions the flag used to conflate.
+// InferUserLutealPhase needs only ObservedCycleStarts, which accepts a period
+// cluster with no CycleStart flag; ApplyUserCycleBaseline's projection needs an
+// anchor — a flagged start or user.LastPeriodStart — and writes the inferred
+// value into stats.LutealPhase only past that anchor. An owner who logs periods
+// without ever flagging a start therefore gets a successful inference and no
+// projection, and the flag must follow the projection, not the inference.
+//
+// Repro (6fb73c13, the PR's first commit): this test failed with
+// `stats.LutealPhasePersonalised = true` beside `stats.LutealPhase = 14`.
+func TestLutealPhasePersonalisedStaysFalseWhenTheInferredValueNeverLandsOnLastPeriodStart(t *testing.T) {
+	t.Parallel()
+
+	user, logs, now := personalisedBaselineFixture(t, 28, []int{15, 15}, lutealSignalBBT)
+	for index := range logs {
+		logs[index].CycleStart = false
+	}
+
+	luteal, refined := InferUserLutealPhase(logs, time.UTC)
+	if !refined {
+		t.Fatal("fixture: InferUserLutealPhase declined to refine from unflagged period clusters")
+	}
+	if luteal != 13 {
+		t.Fatalf("fixture: inferred luteal phase = %d, want 13", luteal)
+	}
+
+	stats := ApplyUserCycleBaseline(user, logs, BuildCycleStats(logs, now), now, time.UTC)
+	if !stats.LastPeriodStart.IsZero() {
+		t.Fatalf("fixture: stats.LastPeriodStart = %s, want zero (no flagged start and no user.LastPeriodStart to anchor on)", stats.LastPeriodStart.Format("2006-01-02"))
+	}
+	if stats.LutealPhase == luteal {
+		t.Fatalf("fixture: stats.LutealPhase = %d equals the inferred value; the test needs the projection to have been skipped", stats.LutealPhase)
+	}
+	if stats.LutealPhasePersonalised {
+		t.Errorf("stats.LutealPhasePersonalised = true while stats.LutealPhase = %d, not the inferred %d: the flag claims a value that never landed", stats.LutealPhase, luteal)
 	}
 }
