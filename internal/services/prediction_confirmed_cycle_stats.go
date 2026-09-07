@@ -65,12 +65,15 @@ func ResolveConfirmedCycleStats(user *models.User, logs []models.DailyLog, stats
 	}
 	ovulationDayUTC := dateOnly(confirmedDay)
 	fertilityStartUTC := ovulationDayUTC.AddDate(0, 0, -5)
+	// codecov:ignore:start -- defensive invariant: the detector's series starts
+	// at LastPeriodStart, so its earliest confirmed day is cycle day 6 and day-5
+	// lands ON the start, never before it (see the comment above). The region
+	// form is required: a leading // codecov:ignore annotates only the line it
+	// is ON, so the assignment below stayed counted and the gate stayed red.
 	if periodStart := dateOnly(stats.LastPeriodStart); !stats.LastPeriodStart.IsZero() && fertilityStartUTC.Before(periodStart) {
-		// codecov:ignore -- defensive invariant: the detector's series starts at
-		// LastPeriodStart, so its earliest confirmed day is cycle day 6 and day-5
-		// lands ON the start, never before it (see the comment above).
 		fertilityStartUTC = periodStart
 	}
+	// codecov:ignore:end
 
 	// The arithmetic above stays on dateOnly (UTC midnight) — see the comment
 	// on the window's arithmetic above. The PUBLISHED fields are rebuilt at

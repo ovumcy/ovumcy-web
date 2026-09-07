@@ -1132,3 +1132,28 @@ func TestBuildCalendarDayStatesStopsThePeriodBandAtTheOvulationDay(t *testing.T)
 		t.Fatalf("2026-03-03: the clamp shortens the projected period band, it does not remove it")
 	}
 }
+
+// TestAppendCurrentBaselinePeriodDrawsNothingWhenTheOvulationIsTheCycleStart
+// covers the band's own floor. The clamp shortens the projected period so it
+// stops before the published ovulation day; when that day IS the cycle start
+// there is no period left to shade, and a zero-length band must be no band
+// rather than a call into appendPredictedPeriod with a length of zero.
+func TestAppendCurrentBaselinePeriodDrawsNothingWhenTheOvulationIsTheCycleStart(t *testing.T) {
+	cycleStart := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	stats := CycleStats{LastPeriodStart: cycleStart, AveragePeriodLength: 5}
+
+	empty := map[string]bool{}
+	appendCurrentBaselinePeriod(empty, stats, cycleStart, time.UTC)
+	if len(empty) != 0 {
+		t.Errorf("expected no period band when the ovulation lands on the cycle start, got %v", empty)
+	}
+
+	// Control: a day inside the projected period shortens the band instead of
+	// removing it, so the emptiness above is the floor and not the clamp
+	// swallowing every case.
+	shortened := map[string]bool{}
+	appendCurrentBaselinePeriod(shortened, stats, cycleStart.AddDate(0, 0, 3), time.UTC)
+	if len(shortened) != 3 {
+		t.Errorf("expected a three-day band up to the ovulation day, got %v", shortened)
+	}
+}
