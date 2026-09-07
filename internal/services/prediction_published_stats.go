@@ -69,6 +69,13 @@ func PublishedStats(user *models.User, stats CycleStats, logs []models.DailyLog,
 	if suppression.FertilitySuppressed {
 		stats.OvulationDate = time.Time{}
 		stats.OvulationExact = false
+		// LutealPhasePersonalised describes the luteal phase this same clearing
+		// just withheld the ovulation date and window for; it must not keep
+		// asserting personalisation about a projection this tier has decided not
+		// to publish. LutealPhase itself (the RECORDED derived value, not a
+		// projection) is left standing along with the rest of the facts-only
+		// tier — only the personalisation CLAIM about it is cleared here.
+		stats.LutealPhasePersonalised = false
 		// OvulationImpossible is itself a claim derived from the fertility
 		// projection (clearPredictedCycleWindow in cycles.go sets it exactly
 		// where it also clears OvulationDate/OvulationExact/the window), so it

@@ -17,12 +17,15 @@ func ApplyUserCycleBaseline(user *models.User, logs []models.DailyLog, stats Cyc
 	today := DateAtLocation(now.In(location), location)
 	latestExplicitCycleStart := latestExplicitCycleStartBeforeOrOn(logs, today, location)
 	cycleLength, periodLength, lutealPhase := resolveUserCycleLengths(user)
+	personalisedLutealPhase := false
 	if inferredLutealPhase, ok := InferUserLutealPhase(logs, location); ok {
 		lutealPhase = inferredLutealPhase
+		personalisedLutealPhase = true
 	}
 	hasObservedCycleLengths := len(CycleLengths(logs)) >= 1
 	applyObservedBaseline(&stats, user, latestExplicitCycleStart, cycleLength, periodLength, hasObservedCycleLengths, today, location)
 	applyProjectedBaseline(&stats, cycleLength, lutealPhase, location)
+	stats.LutealPhasePersonalised = personalisedLutealPhase
 
 	stats.CurrentCycleDay = baselineCurrentCycleDay(stats.LastPeriodStart, today)
 	stats.CurrentPhase = DetectCurrentPhase(stats, logs, today, location)

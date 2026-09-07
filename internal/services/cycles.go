@@ -9,27 +9,37 @@ import (
 )
 
 type CycleStats struct {
-	CurrentCycleDay      int       `json:"current_cycle_day"`
-	CurrentPhase         string    `json:"current_phase"`
-	CurrentFertility     string    `json:"current_fertility"`
-	AverageCycleLength   float64   `json:"average_cycle_length"`
-	MedianCycleLength    int       `json:"median_cycle_length"`
-	MinCycleLength       int       `json:"min_cycle_length"`
-	MaxCycleLength       int       `json:"max_cycle_length"`
-	CycleLengthStdDev    float64   `json:"cycle_length_std_dev"`
-	CompletedCycleCount  int       `json:"completed_cycle_count"`
-	AveragePeriodLength  float64   `json:"average_period_length"`
-	LastCycleLength      int       `json:"last_cycle_length"`
-	LastPeriodLength     int       `json:"last_period_length"`
-	LutealPhase          int       `json:"luteal_phase"`
-	LastPeriodStart      time.Time `json:"last_period_start"`
-	NextPeriodStart      time.Time `json:"next_period_start"`
-	OvulationDate        time.Time `json:"ovulation_date"`
-	OvulationExact       bool      `json:"ovulation_exact"`
-	OvulationImpossible  bool      `json:"ovulation_impossible"`
-	FertilityWindowStart time.Time `json:"fertility_window_start"`
-	FertilityWindowEnd   time.Time `json:"fertility_window_end"`
-	PregnancyPaused      bool      `json:"pregnancy_paused"`
+	CurrentCycleDay     int     `json:"current_cycle_day"`
+	CurrentPhase        string  `json:"current_phase"`
+	CurrentFertility    string  `json:"current_fertility"`
+	AverageCycleLength  float64 `json:"average_cycle_length"`
+	MedianCycleLength   int     `json:"median_cycle_length"`
+	MinCycleLength      int     `json:"min_cycle_length"`
+	MaxCycleLength      int     `json:"max_cycle_length"`
+	CycleLengthStdDev   float64 `json:"cycle_length_std_dev"`
+	CompletedCycleCount int     `json:"completed_cycle_count"`
+	AveragePeriodLength float64 `json:"average_period_length"`
+	LastCycleLength     int     `json:"last_cycle_length"`
+	LastPeriodLength    int     `json:"last_period_length"`
+	LutealPhase         int     `json:"luteal_phase"`
+	// LutealPhasePersonalised reports whether LutealPhase was inferred from the
+	// owner's own logs (InferUserLutealPhase's refined return), rather than the
+	// defaultLutealPhaseDays model constant. It says nothing about OvulationExact
+	// (a personalised value can still get clamped, and the 14-day default can
+	// still fit a cycle without a clamp) and nothing about ovulation_confirmed
+	// (a BBT shift confirms a day independently of where the luteal phase came
+	// from). ApplyUserCycleBaseline is the only writer; BuildCycleStats leaves it
+	// at its zero value (false) because it always seeds LutealPhase with the
+	// default.
+	LutealPhasePersonalised bool      `json:"luteal_phase_personalised"`
+	LastPeriodStart         time.Time `json:"last_period_start"`
+	NextPeriodStart         time.Time `json:"next_period_start"`
+	OvulationDate           time.Time `json:"ovulation_date"`
+	OvulationExact          bool      `json:"ovulation_exact"`
+	OvulationImpossible     bool      `json:"ovulation_impossible"`
+	FertilityWindowStart    time.Time `json:"fertility_window_start"`
+	FertilityWindowEnd      time.Time `json:"fertility_window_end"`
+	PregnancyPaused         bool      `json:"pregnancy_paused"`
 }
 
 type detectedCycle struct {
