@@ -38,10 +38,13 @@ func predictionExplanationPrimaryKey(user *models.User, cycleContext DashboardCy
 	// the owner who had no explanation at all.
 	case cycleContext.AwaitingFirstCycle:
 		return "prediction.explainer.awaiting_first_cycle"
-	// A regular owner whose prediction renders as a range gets no explainer:
-	// the range is the affordance, and since wave 2 the next-period line names
-	// the quantity it shows ("start window"). A sentence saying the range is a
-	// range restated the surface instead of adding to it.
+	// A regular owner with at least one completed cycle behind them gets no
+	// explainer even when the prediction renders as a range: the range is the
+	// affordance, and since wave 2 the next-period line names the quantity it
+	// shows ("start window"). A sentence saying the range is a range restated
+	// the surface instead of adding to it. The first cycle is the exception the
+	// branch above now takes, and it is not about how the range is drawn — it is
+	// that the fertility half behind it is withheld entirely.
 	default:
 		return ""
 	}
