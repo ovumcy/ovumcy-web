@@ -17,15 +17,17 @@ func ApplyUserCycleBaseline(user *models.User, logs []models.DailyLog, stats Cyc
 	today := DateAtLocation(now.In(location), location)
 	latestExplicitCycleStart := latestExplicitCycleStartBeforeOrOn(logs, today, location)
 	cycleLength, periodLength, lutealPhase := resolveUserCycleLengths(user)
-	personalisedLutealPhase := false
-	if inferredLutealPhase, ok := InferUserLutealPhase(logs, location); ok {
+	inferredLutealPhase, inferred := InferUserLutealPhase(logs, location)
+	if inferred {
 		lutealPhase = inferredLutealPhase
-		personalisedLutealPhase = true
 	}
 	hasObservedCycleLengths := len(CycleLengths(logs)) >= 1
 	applyObservedBaseline(&stats, user, latestExplicitCycleStart, cycleLength, periodLength, hasObservedCycleLengths, today, location)
-	applyProjectedBaseline(&stats, cycleLength, lutealPhase, location)
-	stats.LutealPhasePersonalised = personalisedLutealPhase
+	projected := applyProjectedBaseline(&stats, cycleLength, lutealPhase, location)
+	// The inference can succeed (ObservedCycleStarts accepts unflagged period
+	// clusters) while the baseline finds no anchor to project from; then
+	// stats.LutealPhase still holds BuildCycleStats's value, not the inferred one.
+	stats.LutealPhasePersonalised = inferred && projected
 
 	stats.CurrentCycleDay = baselineCurrentCycleDay(stats.LastPeriodStart, today)
 	stats.CurrentPhase = DetectCurrentPhase(stats, logs, today, location)
@@ -70,9 +72,11 @@ func baselineLastPeriodStart(user *models.User, latestExplicitCycleStart time.Ti
 	return latestCycleStartAnchorBeforeOrOn(user, latestExplicitCycleStart, today, location)
 }
 
-func applyProjectedBaseline(stats *CycleStats, cycleLength int, lutealPhase int, location *time.Location) {
+// applyProjectedBaseline reports whether it wrote lutealPhase into stats: false
+// on the two early returns, where stats.LutealPhase is left untouched.
+func applyProjectedBaseline(stats *CycleStats, cycleLength int, lutealPhase int, location *time.Location) bool {
 	if stats.LastPeriodStart.IsZero() {
-		return
+		return false
 	}
 
 	predictionCycleLength := predictedCycleLength(stats.MedianCycleLength, stats.AverageCycleLength)
@@ -80,7 +84,7 @@ func applyProjectedBaseline(stats *CycleStats, cycleLength int, lutealPhase int,
 		predictionCycleLength = cycleLength
 	}
 	if predictionCycleLength <= 0 {
-		return
+		return false
 	}
 
 	stats.NextPeriodStart = AddCalendarDays(stats.LastPeriodStart, predictionCycleLength, location)
@@ -93,7 +97,7 @@ func applyProjectedBaseline(stats *CycleStats, cycleLength int, lutealPhase int,
 	)
 	if !window.Calculable {
 		clearPredictedCycleWindow(stats)
-		return
+		return true
 	}
 
 	stats.OvulationDate = CalendarDay(window.OvulationDate, location)
@@ -101,6 +105,7 @@ func applyProjectedBaseline(stats *CycleStats, cycleLength int, lutealPhase int,
 	stats.OvulationImpossible = false
 	stats.FertilityWindowStart = locationDateOrZero(window.FertilityWindowStart, location)
 	stats.FertilityWindowEnd = locationDateOrZero(window.FertilityWindowEnd, location)
+	return true
 }
 
 func locationDateOrZero(day time.Time, location *time.Location) time.Time {

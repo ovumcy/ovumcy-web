@@ -89,32 +89,33 @@ type StatsOverviewSuppression struct {
 // Recorded history — the observed lengths, the last period start, the current
 // cycle day — is fact rather than projection and is published in every tier.
 type StatsOverviewResponse struct {
-	CurrentCycleDay         int                      `json:"current_cycle_day"`
-	CurrentPhase            string                   `json:"current_phase"`
-	CurrentFertility        string                   `json:"current_fertility"`
-	AverageCycleLength      float64                  `json:"average_cycle_length"`
-	MedianCycleLength       int                      `json:"median_cycle_length"`
-	MinCycleLength          int                      `json:"min_cycle_length"`
-	MaxCycleLength          int                      `json:"max_cycle_length"`
-	CycleLengthStdDev       float64                  `json:"cycle_length_std_dev"`
-	CompletedCycleCount     int                      `json:"completed_cycle_count"`
-	AveragePeriodLength     float64                  `json:"average_period_length"`
-	LastCycleLength         int                      `json:"last_cycle_length"`
-	LastPeriodLength        int                      `json:"last_period_length"`
-	LutealPhase             int                      `json:"luteal_phase"`
-	LutealPhasePersonalised bool                     `json:"luteal_phase_personalised"`
-	LastPeriodStart         *string                  `json:"last_period_start"`
-	NextPeriodStart         *string                  `json:"next_period_start"`
-	OvulationDate           *string                  `json:"ovulation_date"`
-	OvulationExact          bool                     `json:"ovulation_exact"`
-	OvulationConfirmed      bool                     `json:"ovulation_confirmed"`
-	OvulationImpossible     bool                     `json:"ovulation_impossible"`
-	FertilityWindowStart    *string                  `json:"fertility_window_start"`
-	FertilityWindowEnd      *string                  `json:"fertility_window_end"`
-	PregnancyPaused         bool                     `json:"pregnancy_paused"`
-	Suppression             StatsOverviewSuppression `json:"suppression"`
-	Disclaimer              string                   `json:"disclaimer"`
-	DisclaimerKey           string                   `json:"disclaimer_key"`
+	CurrentCycleDay      int                      `json:"current_cycle_day"`
+	CurrentPhase         string                   `json:"current_phase"`
+	CurrentFertility     string                   `json:"current_fertility"`
+	AverageCycleLength   float64                  `json:"average_cycle_length"`
+	MedianCycleLength    int                      `json:"median_cycle_length"`
+	MinCycleLength       int                      `json:"min_cycle_length"`
+	MaxCycleLength       int                      `json:"max_cycle_length"`
+	CycleLengthStdDev    float64                  `json:"cycle_length_std_dev"`
+	CompletedCycleCount  int                      `json:"completed_cycle_count"`
+	AveragePeriodLength  float64                  `json:"average_period_length"`
+	LastCycleLength      int                      `json:"last_cycle_length"`
+	LastPeriodLength     int                      `json:"last_period_length"`
+	LutealPhase          int                      `json:"luteal_phase"`
+	LastPeriodStart      *string                  `json:"last_period_start"`
+	NextPeriodStart      *string                  `json:"next_period_start"`
+	OvulationDate        *string                  `json:"ovulation_date"`
+	OvulationExact       bool                     `json:"ovulation_exact"`
+	OvulationConfirmed   bool                     `json:"ovulation_confirmed"`
+	OvulationImpossible  bool                     `json:"ovulation_impossible"`
+	FertilityWindowStart *string                  `json:"fertility_window_start"`
+	FertilityWindowEnd   *string                  `json:"fertility_window_end"`
+	PregnancyPaused      bool                     `json:"pregnancy_paused"`
+	Suppression          StatsOverviewSuppression `json:"suppression"`
+	Disclaimer           string                   `json:"disclaimer"`
+	DisclaimerKey        string                   `json:"disclaimer_key"`
+
+	LutealPhasePersonalised bool `json:"luteal_phase_personalised"`
 }
 
 // newStatsOverviewResponse maps the PUBLISHED stats — the copy
@@ -126,32 +127,33 @@ type StatsOverviewResponse struct {
 // with the data.
 func newStatsOverviewResponse(stats services.CycleStats, suppression services.PredictionSuppression, confirmed bool, disclaimer string) StatsOverviewResponse {
 	return StatsOverviewResponse{
-		CurrentCycleDay:         stats.CurrentCycleDay,
-		CurrentPhase:            stats.CurrentPhase,
-		CurrentFertility:        stats.CurrentFertility,
-		AverageCycleLength:      stats.AverageCycleLength,
-		MedianCycleLength:       stats.MedianCycleLength,
-		MinCycleLength:          stats.MinCycleLength,
-		MaxCycleLength:          stats.MaxCycleLength,
-		CycleLengthStdDev:       stats.CycleLengthStdDev,
-		CompletedCycleCount:     stats.CompletedCycleCount,
-		AveragePeriodLength:     stats.AveragePeriodLength,
-		LastCycleLength:         stats.LastCycleLength,
-		LastPeriodLength:        stats.LastPeriodLength,
-		LutealPhase:             stats.LutealPhase,
+		CurrentCycleDay:      stats.CurrentCycleDay,
+		CurrentPhase:         stats.CurrentPhase,
+		CurrentFertility:     stats.CurrentFertility,
+		AverageCycleLength:   stats.AverageCycleLength,
+		MedianCycleLength:    stats.MedianCycleLength,
+		MinCycleLength:       stats.MinCycleLength,
+		MaxCycleLength:       stats.MaxCycleLength,
+		CycleLengthStdDev:    stats.CycleLengthStdDev,
+		CompletedCycleCount:  stats.CompletedCycleCount,
+		AveragePeriodLength:  stats.AveragePeriodLength,
+		LastCycleLength:      stats.LastCycleLength,
+		LastPeriodLength:     stats.LastPeriodLength,
+		LutealPhase:          stats.LutealPhase,
+		LastPeriodStart:      statsOverviewDate(stats.LastPeriodStart),
+		NextPeriodStart:      statsOverviewDate(stats.NextPeriodStart),
+		OvulationDate:        statsOverviewDate(stats.OvulationDate),
+		OvulationExact:       stats.OvulationExact,
+		OvulationConfirmed:   confirmed,
+		OvulationImpossible:  stats.OvulationImpossible,
+		FertilityWindowStart: statsOverviewDate(stats.FertilityWindowStart),
+		FertilityWindowEnd:   statsOverviewDate(stats.FertilityWindowEnd),
+		PregnancyPaused:      stats.PregnancyPaused,
+		Suppression:          newStatsOverviewSuppression(suppression),
+		Disclaimer:           disclaimer,
+		DisclaimerKey:        medicalDisclaimerMessageKey,
+
 		LutealPhasePersonalised: stats.LutealPhasePersonalised,
-		LastPeriodStart:         statsOverviewDate(stats.LastPeriodStart),
-		NextPeriodStart:         statsOverviewDate(stats.NextPeriodStart),
-		OvulationDate:           statsOverviewDate(stats.OvulationDate),
-		OvulationExact:          stats.OvulationExact,
-		OvulationConfirmed:      confirmed,
-		OvulationImpossible:     stats.OvulationImpossible,
-		FertilityWindowStart:    statsOverviewDate(stats.FertilityWindowStart),
-		FertilityWindowEnd:      statsOverviewDate(stats.FertilityWindowEnd),
-		PregnancyPaused:         stats.PregnancyPaused,
-		Suppression:             newStatsOverviewSuppression(suppression),
-		Disclaimer:              disclaimer,
-		DisclaimerKey:           medicalDisclaimerMessageKey,
 	}
 }
 
