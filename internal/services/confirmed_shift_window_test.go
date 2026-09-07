@@ -489,9 +489,13 @@ func TestConfirmedShiftAtTheEarliestCycleDayNeverCrossesThePeriodStart(t *testin
 	if got := CalendarDayKey(resolved.FertilityWindowStart); got != "2026-03-01" {
 		t.Fatalf("fertility window start = %s, want 2026-03-01 (the confirmed day - 5, which equals LastPeriodStart at this boundary)", got)
 	}
-	if resolved.FertilityWindowStart != resolved.OvulationDate.AddDate(0, 0, -5) {
-		t.Fatalf("window start must be exactly confirmed day - 5 with no clamp applied, got %v want %v", resolved.FertilityWindowStart, resolved.OvulationDate.AddDate(0, 0, -5))
-	}
+	// Deliberately NOT asserted here: that the clamp to LastPeriodStart did not
+	// fire. At this boundary both branches produce 2026-03-01, so the comparison
+	// cannot tell them apart and would read as a pin on a behaviour it never
+	// observes. The clamp guards a day the detector cannot confirm at all —
+	// collectCycleBBTPoints needs six days of cycle before a shift is callable —
+	// so it is a declared invariant with no reachable fixture, not a branch this
+	// suite is failing to cover.
 }
 
 // TestConfirmedShiftWindowPublishesOnTheLocationAxis is F1: the resolver's

@@ -111,6 +111,12 @@ func PhaseIcon(phase string) string {
 		return "sun"
 	case "luteal":
 		return "leaf"
+	// "withheld" is not a phase the app failed to work out, so it must not wear
+	// the icon that says so. Falling through to the default put the label
+	// "fertile details held back" beside the unknown glyph, which is the same
+	// collapse of held-back into unknown the ribbon's own colours refuse.
+	case "withheld":
+		return "eye-off"
 	default:
 		return "sparkle"
 	}

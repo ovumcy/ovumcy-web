@@ -97,4 +97,15 @@ func TestPhaseTranslationKeyNamesTheWithheldStatus(t *testing.T) {
 	if got := PhaseTranslationKey("beyond"); got != "phases.unknown" {
 		t.Errorf("PhaseTranslationKey(\"beyond\") = %q, want phases.unknown", got)
 	}
+
+	// The label and the icon are two functions in this file and the status line
+	// renders both side by side, so the pair has to be pinned together: a
+	// withheld phase wearing the unknown glyph says in pictures what the words
+	// beside it deny.
+	if got := PhaseIcon("withheld"); got != "eye-off" {
+		t.Errorf("PhaseIcon(\"withheld\") = %q, want eye-off", got)
+	}
+	if got := PhaseIcon("beyond"); got != "sparkle" {
+		t.Errorf("PhaseIcon(\"beyond\") = %q, want the unknown glyph", got)
+	}
 }

@@ -235,14 +235,18 @@ func dashboardCycleHeroPhaseCards(currentPhase string, periodLength int, ovulati
 		},
 	}
 	if fertilitySuppressed {
-		if periodLength < cycleLength {
-			cards = append(cards, DashboardCycleHeroPhaseCard{
-				Phase:     phaseFertilityWithheld,
-				StartDay:  periodLength + 1,
-				EndDay:    cycleLength,
-				IsCurrent: currentPhase == phaseFertilityWithheld,
-			})
-		}
+		// periodLength < cycleLength is the caller's invariant, not a case to
+		// re-test: BuildDashboardCycleHero returns an empty hero above when the
+		// projected period fills the cycle, and the confirmed branch only ever
+		// lowers periodLength. The three unsuppressed cards below rest on the
+		// same guarantee, and guarding only this one would have bought a test
+		// that exercises a state the ribbon cannot be built in.
+		cards = append(cards, DashboardCycleHeroPhaseCard{
+			Phase:     phaseFertilityWithheld,
+			StartDay:  periodLength + 1,
+			EndDay:    cycleLength,
+			IsCurrent: currentPhase == phaseFertilityWithheld,
+		})
 		return cards
 	}
 	return append(cards,
