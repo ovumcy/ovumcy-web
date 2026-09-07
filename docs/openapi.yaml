@@ -769,6 +769,7 @@ components:
         - last_cycle_length
         - last_period_length
         - luteal_phase
+        - luteal_phase_personalised
         - last_period_start
         - next_period_start
         - ovulation_date
@@ -835,6 +836,19 @@ components:
         luteal_phase:
           type: integer
           description: Days following ovulation; per-owner when inferable, else the 14-day default.
+        luteal_phase_personalised:
+          type: boolean
+          description: >-
+            `luteal_phase` was inferred from the owner's own logs, rather than
+            the 14-day model default. This says nothing about whether the
+            resulting ovulation date avoided the arithmetic clamp (see
+            `ovulation_exact`) and nothing about whether the current cycle's
+            ovulation was confirmed by a BBT shift (see `ovulation_confirmed`)
+            — a personalised luteal phase can still be clamped, and a default
+            one can still fit exactly. `false` means the owner's logs did not
+            yet support an inference, not that a personalised value was tried
+            and found wrong. Always false when `suppression.fertility` is
+            true.
         last_period_start:
           type: [string, "null"]
           format: date
@@ -859,11 +873,15 @@ components:
         ovulation_exact:
           type: boolean
           description: >-
-            The ovulation date is anchored on a per-owner inferred luteal
-            phase rather than on the 14-day fallback. Independent of
-            `ovulation_confirmed` — a fallback-luteal cycle (`false` here) can
-            still have its ovulation confirmed by a BBT shift. Always false
-            when `ovulation_date` is null.
+            The luteal phase fit within the cycle without the arithmetic
+            clamp. This is NOT a personalisation signal and NOT an accuracy
+            claim: it is `true` on the 14-day model default whenever that
+            default fits the cycle, and `false` on a per-owner inferred value
+            the cycle was too short to hold. See `luteal_phase_personalised`
+            for whether the luteal phase came from the owner's own logs.
+            Independent of `ovulation_confirmed` — an unclamped cycle (`true`
+            here) can still have its ovulation confirmed by a BBT shift, and a
+            clamped one can too. Always false when `ovulation_date` is null.
         ovulation_confirmed:
           type: boolean
           description: >-
