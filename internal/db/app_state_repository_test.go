@@ -60,9 +60,10 @@ func TestAppStateRepositoryRoundTripAndUpsert(t *testing.T) {
 // TestAppStateRepositoryDeleteRemovesTheKeyAndToleratesAMissingOne covers the
 // contract the calendar-feed restore fence relies on: a marker that is there is
 // gone afterwards, and deleting one that was never written is not an error. The
-// fence erases its unanchored stamp on every boot that records a token, without
-// reading first, so an absent key raising an error would turn every ordinary
-// first boot into a failed start.
+// fence erases its unanchored stamp on every boot that records a token and its
+// token half on every boot without a usable fence, without reading first, so an
+// absent key raising an error would turn every ordinary first boot — and every
+// unfenced start after the first — into a failed start.
 func TestAppStateRepositoryDeleteRemovesTheKeyAndToleratesAMissingOne(t *testing.T) {
 	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "app-state-delete.db")})
 	if err != nil {

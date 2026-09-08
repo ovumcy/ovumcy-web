@@ -95,11 +95,11 @@ func TestUsersDeleteRefusesAndDeletesNothingWithoutAConfirmedFence(t *testing.T)
 			wantRemedy: "Start the server once",
 		},
 		{
-			name: "neither half has ever recorded a token",
+			name: "neither half holds a token",
 			fencePath: func(t *testing.T, _ string) string {
 				return filepath.Join(t.TempDir(), "calendar-feed.fence")
 			},
-			wantState:  "has ever recorded a marker",
+			wantState:  "nor the database holds a marker",
 			wantRemedy: "writable fence",
 		},
 	}

@@ -69,9 +69,10 @@ func (repo *AppStateRepository) Set(ctx context.Context, key string, value strin
 
 // Delete removes the row for key, if there is one. A key that was never written
 // is not an error: the only caller that deletes — the calendar-feed restore
-// fence, erasing its unanchored marker on the boot that answers for it — runs
-// the same statement whether or not the marker is there, so it never has to
-// read before writing and cannot turn an absent marker into a failed boot.
+// fence, erasing its unanchored marker on the boot that answers for it and its
+// own token half on a boot that runs without a usable fence — runs the same
+// statement whether or not the row is there, so it never has to read before
+// writing and cannot turn an absent row into a failed boot.
 // A blank key deletes nothing rather than matching every row, the same
 // defensive shape Get gives it; Set is the one operation that refuses a blank
 // key outright, because there it would create a row nothing can address.

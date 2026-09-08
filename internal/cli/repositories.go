@@ -188,7 +188,8 @@ const (
 
 // calendarFeedFenceStateForContinuity classifies a
 // *services.CalendarFeedFenceContinuityError by which half(s) it found,
-// mirroring the doc comment on that type: both absent is "never armed", each
+// mirroring the doc comment on that type: both absent is "not armed" (never, or
+// not since an unfenced start dropped the database half), each
 // half missing on its own gets its own state — the sentence an operator acts
 // on has to name which half is empty — and both present but different is the
 // disagreement a restored backup produces.
@@ -327,7 +328,7 @@ var calendarFeedFenceConfirmRefusals = map[calendarFeedFenceConfirmState]calenda
 	},
 	calendarFeedFenceStateNeverArmed: {
 		sentence: func(fencePath string, _ error) string {
-			return "neither " + security.CalendarFeedFencePathEnv + " at " + fencePath + " nor the database has ever recorded a marker."
+			return "neither " + security.CalendarFeedFencePathEnv + " at " + fencePath + " nor the database holds a marker."
 		},
 		remedy: giveTheServerAWritableFence,
 	},
