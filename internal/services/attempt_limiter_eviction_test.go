@@ -323,3 +323,41 @@ func TestAttemptLimiterPinnedEntriesMayExceedTheCap(t *testing.T) {
 		t.Fatalf("tracked keys after the windows lapsed = %d, want 1", size)
 	}
 }
+
+// TestAttemptLimiterSweepPacingRisesWithPinnedEntries prices the pin. A live
+// lockout is pinned for its whole window, so a map carrying more than
+// evictAboveSize of them stays over that size however often it is swept. Were
+// the sweep trigger fixed at the absolute cap it would then be true forever,
+// and every later AddFailureAll — every failed login of every other account —
+// would pay a full stale sweep plus a full blocked() pass under the one mutex.
+// The trigger therefore allows one cap's worth of headroom above the entries the
+// last sweep had to pin. TestAttemptLimiterCapIsPerScope holds the other side:
+// unpinned keys get no headroom, so their cap is unaffected.
+func TestAttemptLimiterSweepPacingRisesWithPinnedEntries(t *testing.T) {
+	t.Parallel()
+
+	limiter := NewAttemptLimiter()
+	now := time.Now().UTC()
+	budget := AttemptBudget{Scope: "login", Limit: 2, Window: 15 * time.Minute}
+
+	for index := range evictAboveSize + 10 {
+		key := []string{fmt.Sprintf("locked:%05d", index)}
+		for range budget.Limit {
+			limiter.AddFailureAll(key, now, budget)
+		}
+	}
+
+	limiter.mu.Lock()
+	size, trigger, calls := len(limiter.attempts), limiter.sweepAbove, limiter.addCallsN
+	limiter.mu.Unlock()
+
+	if size <= evictAboveSize {
+		t.Fatalf("tracked keys = %d, want the pinned population to exceed the cap of %d", size, evictAboveSize)
+	}
+	if trigger <= size {
+		t.Fatalf("sweep trigger = %d at %d tracked keys: every add would sweep the whole map", trigger, size)
+	}
+	if calls >= evictEveryN {
+		t.Fatalf("call counter = %d, want the last sweep to have reset it below %d", calls, evictEveryN)
+	}
+}

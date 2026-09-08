@@ -50,7 +50,20 @@ Every test-enforceable entry has a corresponding test or set of tests in `SECURI
   window has lapsed (a login-window sweep does not erase a recovery entry), the size cap is enforced
   **per scope** (a flood of login identities cannot evict a TOTP or recovery entry), and an entry at
   its limit — an active lockout — is pinned until it expires. Flooding fresh keys therefore evicts
-  only the flood's own scope, coldest first, and never a lockout.
+  only the flood's own scope, coldest first, and never a lockout. The bound is conditional on that
+  pin: the 1024-per-scope cap counts only entries that are **not** enforcing a lockout, so the map
+  may exceed it by the number of live lockouts, each of which cost the attacker `limit` refused
+  requests inside one window. A pinned population never on its own makes the sweep fire on every add:
+  its size trigger allows one cap's worth of headroom above the pinned entries the previous sweep
+  could not remove, rather than sitting at the absolute cap — otherwise a bought-and-paid-for pinned
+  population would make every later failed login of every other account pay a full-map sweep under
+  the limiter's single mutex. Unpinned keys get no such headroom, so their cap holds throughout.
+- The **logout budget is keyed on the account, never on the session.** Revoking bumps the account's
+  session version, so the token that reached the sign-out route is refused on the next request and no
+  session arrives twice: a session-keyed budget records one attempt per key, can never trip, and
+  leaves the browser sign-out route — which the per-IP row does not cover — with no account-side cap.
+  What the session may qualify is only the client bucket, which is `(address, account)` so that a
+  household behind one address does not spend one shared per-address budget.
 
 ## Privacy and PII
 

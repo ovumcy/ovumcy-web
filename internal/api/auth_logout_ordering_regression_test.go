@@ -125,23 +125,21 @@ func TestLogoutRefusalSendsABrowserToLogin(t *testing.T) {
 	}
 }
 
-// TestLogoutBudgetIsKeyedByTheSession: two sessions of one owner each get the
-// budget; a budget keyed on the owner alone refused the second device's
-// sign-out after the first had spent it.
-func TestLogoutBudgetIsKeyedByTheSession(t *testing.T) {
+// TestLogoutBudgetIsKeyedByTheOwnerNotTheSession: the revoke ends every session
+// of the owner, so an owner who reaches this route again always carries a fresh
+// session id. A budget keyed on the session would hand each arrival an untouched
+// budget and could never refuse anything; the owner key counts the succession.
+func TestLogoutBudgetIsKeyedByTheOwnerNotTheSession(t *testing.T) {
 	repo := &countingLogoutAuthRepo{}
-	app := newLogoutTestApp(t, repo, 1, []string{"session-a", "session-b", "session-a"})
+	app := newLogoutTestApp(t, repo, 1, []string{"session-a", "session-b"})
 
 	if response := doLogout(t, app); response.StatusCode != http.StatusOK {
 		t.Fatalf("session-a logout: status %d, want 200", response.StatusCode)
 	}
-	if response := doLogout(t, app); response.StatusCode != http.StatusOK {
-		t.Fatalf("session-b logout: status %d, want 200 — the budget is per session, not per owner", response.StatusCode)
-	}
 	if response := doLogout(t, app); response.StatusCode != http.StatusTooManyRequests {
-		t.Fatalf("session-a again: status %d, want 429 — the same session's budget is spent", response.StatusCode)
+		t.Fatalf("session-b logout: status %d, want 429 — the owner's budget is spent", response.StatusCode)
 	}
-	if repo.revokes != 3 {
-		t.Fatalf("revokes = %d, want 3", repo.revokes)
+	if repo.revokes != 2 {
+		t.Fatalf("revokes = %d, want 2", repo.revokes)
 	}
 }

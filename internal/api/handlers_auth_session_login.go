@@ -144,10 +144,6 @@ func (handler *Handler) Logout(c fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 	sessionClaims, hasSession := currentAuthSession(c)
-	sessionID := ""
-	if hasSession && sessionClaims != nil {
-		sessionID = sessionClaims.SessionID
-	}
 	// The revoke comes first and the budget check second: a sign-out the owner
 	// asked for must end the session even when the budget is spent, or an
 	// exhausted budget would keep a session alive on a device the owner is
@@ -165,10 +161,14 @@ func (handler *Handler) Logout(c fiber.Ctx) error {
 		// codecov:ignore:end
 	}
 	handler.clearSessionEndCookies(c)
+	// The session has ended by this line on every branch below, so the audit
+	// record of it is written here rather than on the success answer alone: a
+	// refused sign-out still terminated a session and must not read as a bare 429.
+	handler.logSecurityEvent(c, "auth.logout", "success")
 	if handler.authService.CheckAndRecordLogoutAttempt(
 		handler.secretKey,
 		c.IP(),
-		services.LogoutAttemptIdentity(user.ID, sessionID),
+		services.LogoutAttemptIdentity(user.ID),
 		time.Now(),
 	) {
 		spec := tooManyLogoutAttemptsErrorSpec()
@@ -193,7 +193,6 @@ func (handler *Handler) Logout(c fiber.Ctx) error {
 			}
 		}
 	}
-	handler.logSecurityEvent(c, "auth.logout", "success")
 	if logoutTransportPath != "" {
 		if isHTMX(c) {
 			c.Set("HX-Redirect", logoutTransportPath)
