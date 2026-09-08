@@ -287,7 +287,25 @@ its anchor is a date the owner actually recorded.
 Three further signals withhold **every** projected date, the next period included,
 on every one of those surfaces: unpredictable-cycle mode (the settings toggle
 "My cycle is unpredictable"), a pregnancy pause, and a cycle overdue past its own
-reference length. The floor is
+reference length — more than a week past it, a margin that is an explicitly named
+engineering safety rule rather than a clinical cutoff: no guideline says a
+prediction becomes invalid on a particular cycle day, and past that point the
+model can only roll a whole cycle forward at a time, so what it yields is
+manufactured rather than estimated.
+
+That comparison uses the **smaller** of the two cycle lengths this document
+describes — the average-first reference length and the median-first projection
+length — and the same conservative length decides the late-cycle notice, the
+out-of-date-data notice and whether the dashboard's cycle ribbon is drawn at all.
+Either statistic alone can be raised by one outlying span: a period that was never
+logged merges two cycles into one 300-day gap, which leaves the median at 28 and
+pulls the average of three ordinary cycles to 96, and a rule measured against 96
+withheld nothing on cycle day 61 while every date it published came from the 28.
+Taking the smaller of the two settles that without ruling on which spans count as
+a cycle — a genuinely long but regular history, where the two statistics agree, is
+compared against its own length exactly as before. Nothing recorded is discarded:
+the merged span stays in the history, and logging the missing period corrects it.
+The floor is
 the fourth signal and the only partial one. Predicates:
 `FertilityProjectionSuppressed` over `PredictionsSuppressed`
 (`internal/services/dashboard_cycle.go`) — one predicate rather than a copy per

@@ -197,6 +197,19 @@ func dashboardCycleHeroOvulationDay(stats CycleStats, cycleContext DashboardCycl
 	return projected, false
 }
 
+// canRenderDashboardCycleHero decides whether the ribbon may be drawn at all.
+//
+// It reads no suppression predicate, and an overdue cycle is nonetheless refused
+// here — through CycleDataStale, not through the day-inside-the-length test above
+// it, whose cycleLength is the average-first reference and passed cycle day 61
+// inside a 96-day reference. Both the stale flag and the overdue gate resolve
+// against DashboardCycleGateLength, and the stale rule carries no +7 grace, so
+// overdue (day > gate+7) implies stale (day > gate) and the ribbon cannot draw a
+// projected cycle map beside a header saying the estimate is paused. That
+// implication is the whole protection: give the stale check a length or a grace
+// period of its own and this function starts rendering a projection every other
+// surface withholds. Pinned from the outside by
+// TestLongCycleGateSuppressesEverySurfaceWhenAMergedCycleInflatesTheAverage.
 func canRenderDashboardCycleHero(cycleLength int, stats CycleStats, cycleContext DashboardCycleContext) bool {
 	return cycleLength > 0 &&
 		stats.CurrentCycleDay > 0 &&
