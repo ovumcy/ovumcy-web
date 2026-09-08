@@ -30,6 +30,20 @@ func (handler *Handler) buildCalendarDays(states []services.CalendarDayState) []
 			// never tie with the hatched one on the same cell.
 			cellClass += " calendar-cell-start-window"
 			stateKey = "predicted-start-window"
+		} else if state.IsPredictedFertileOverlap {
+			// A projected bleeding day that is also inside the fertile window.
+			// One class per cell means the predicted-period rung below simply
+			// won these days and the window vanished from them, so the reader
+			// saw a shorter fertile window than the account has. Both facts
+			// hold, so the day gets a fill of its own rather than either half.
+			// This rung sits exactly where that one does, so it can only
+			// re-paint a cell that already painted as predicted-period.
+			//
+			// The class stem extends neither "…-predicted" nor "…-fertile":
+			// both are asserted elsewhere by substring and by regex, which a
+			// longer name built on either would satisfy silently.
+			cellClass += " calendar-cell-overlap-period-fertile"
+			stateKey = "predicted-period-in-fertile-window"
 		} else if state.IsPredicted {
 			cellClass += " calendar-cell-predicted"
 			stateKey = "predicted-period"

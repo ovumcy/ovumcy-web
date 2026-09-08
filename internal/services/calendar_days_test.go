@@ -1133,6 +1133,79 @@ func TestBuildCalendarDayStatesStopsThePeriodBandAtTheOvulationDay(t *testing.T)
 	}
 }
 
+// TestBuildCalendarDayStatesMarksTheOverlapOfTheBandAndTheWindow is the other
+// half of the case the clamp above only narrowed. Clamping the band at the
+// ovulation day leaves the days BEFORE it carrying both statements at once: the
+// projected period band and the fertile window are true on the same cell, which
+// is what a short cycle with a long average period produces and what a
+// bleeding-inside-the-fertile-window cycle really looks like. The grid paints
+// one fill per cell, so before the overlap state existed the band's fill simply
+// outranked the window's and the window lost days it actually has.
+//
+// The fixture is the reported one: a 10-day average period against a 21-day
+// cycle whose ovulation falls on cycle day 6, so the band runs 03-01..03-05 and
+// the window 03-01..03-06. Every overlap day is asserted to keep BOTH source
+// flags — the derived reading must not be a way of clearing one of them, which
+// is exactly the alternative this fix rejected.
+func TestBuildCalendarDayStatesMarksTheOverlapOfTheBandAndTheWindow(t *testing.T) {
+	monthStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2026, time.March, 6, 0, 0, 0, 0, time.UTC)
+
+	stats := CycleStats{
+		CompletedCycleCount:  3,
+		MedianCycleLength:    21,
+		AverageCycleLength:   21,
+		AveragePeriodLength:  10,
+		LastPeriodStart:      time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC),
+		NextPeriodStart:      time.Date(2026, time.March, 22, 0, 0, 0, 0, time.UTC),
+		OvulationDate:        time.Date(2026, time.March, 6, 0, 0, 0, 0, time.UTC),
+		FertilityWindowStart: time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC),
+		FertilityWindowEnd:   time.Date(2026, time.March, 6, 0, 0, 0, 0, time.UTC),
+	}
+
+	days := BuildCalendarDayStates(nil, monthStart, nil, stats, now, time.UTC)
+
+	for _, dateString := range []string{"2026-03-01", "2026-03-02", "2026-03-03", "2026-03-04", "2026-03-05"} {
+		day := findCalendarDayStateByDateString(t, days, dateString)
+		if !day.IsPredictedFertileOverlap {
+			t.Errorf("%s: the band and the window are both true here, expected the overlap state", dateString)
+		}
+		if !day.IsPredicted {
+			t.Errorf("%s: the overlap must not clear the projected period band", dateString)
+		}
+		if !day.IsFertilityEdge && !day.IsFertilityPeak {
+			t.Errorf("%s: the overlap must not clear the fertile window", dateString)
+		}
+		if !day.IsFertility {
+			t.Errorf("%s: the overlap must not clear the narrowed fertile reading either", dateString)
+		}
+	}
+
+	// The ovulation day itself: the band already stops before it, so it is a
+	// window day and nothing else. It must not be swept into the overlap by a
+	// predicate that reads the window alone.
+	ovulationDay := findCalendarDayStateByDateString(t, days, "2026-03-06")
+	if !ovulationDay.IsFertilityPeak || !ovulationDay.IsOvulation {
+		t.Fatalf("fixture: 2026-03-06 must be the ovulation day inside the window")
+	}
+	if ovulationDay.IsPredicted || ovulationDay.IsPredictedFertileOverlap {
+		t.Errorf("2026-03-06: the clamped band ends before the ovulation day, so there is no overlap on it")
+	}
+
+	// The band-only control, from the chained cycle: its band runs 03-22..03-31
+	// while its window is 03-23..03-28, so 03-30 is a projected period day with
+	// no window over it. A predicate that read the band alone would paint the
+	// new fill here. (03-06 above is the window-only control — a window day the
+	// clamp left outside the band.)
+	bandOnly := findCalendarDayStateByDateString(t, days, "2026-03-30")
+	if !bandOnly.IsPredicted {
+		t.Fatalf("fixture: 2026-03-30 must be a projected period day of the chained cycle")
+	}
+	if bandOnly.IsFertilityEdge || bandOnly.IsFertilityPeak || bandOnly.IsPredictedFertileOverlap {
+		t.Errorf("2026-03-30: a band day outside every window must keep the plain projected-period state")
+	}
+}
+
 // TestAppendCurrentBaselinePeriodDrawsNothingWhenTheOvulationIsTheCycleStart
 // covers the band's own floor. The clamp shortens the projected period so it
 // stops before the published ovulation day; when that day IS the cycle start

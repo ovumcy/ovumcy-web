@@ -1,6 +1,7 @@
 package api
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -129,6 +130,74 @@ func TestBuildCalendarDaysSeparatesTheStartWindowFromProjectedPeriodDays(t *test
 	}
 	if days[3].StateKey != "period" {
 		t.Fatalf("stateKey = %q, want period", days[3].StateKey)
+	}
+}
+
+// The overlap rung. A day that is both a projected bleeding day and a fertile
+// window day used to fall through to the predicted-period rung, so the window
+// was invisible on it. It now paints a fill of its own — and, just as
+// importantly, the cells on either side of the overlap keep the exact class
+// they had, which is the regression this rung could most easily cause.
+//
+// The class assertions compare whitespace-delimited TOKENS rather than
+// substrings: "calendar-cell-overlap-period-fertile" was named so that neither
+// "calendar-cell-predicted" nor "calendar-cell-fertile" is a substring of it,
+// and a substring check here would not prove that.
+func TestBuildCalendarDaysGivesTheBandAndWindowOverlapItsOwnFill(t *testing.T) {
+	handler := &Handler{}
+	days := handler.buildCalendarDays([]services.CalendarDayState{
+		{
+			DateString:                "2026-03-03",
+			Day:                       3,
+			InMonth:                   true,
+			IsPredicted:               true,
+			IsFertility:               true,
+			IsFertilityEdge:           true,
+			IsPredictedFertileOverlap: true,
+		},
+		{
+			DateString:  "2026-03-30",
+			Day:         30,
+			InMonth:     true,
+			IsPredicted: true,
+		},
+		{
+			DateString:      "2026-03-06",
+			Day:             6,
+			InMonth:         true,
+			IsFertility:     true,
+			IsFertilityPeak: true,
+		},
+		{
+			// A recorded bleeding day still outranks every projection, overlap
+			// included: the ladder's top rung is a fact, not an estimate.
+			DateString:                "2026-03-04",
+			Day:                       4,
+			InMonth:                   true,
+			IsPeriod:                  true,
+			IsPredicted:               true,
+			IsFertilityEdge:           true,
+			IsPredictedFertileOverlap: true,
+		},
+	})
+
+	cases := []struct {
+		class    string
+		stateKey string
+	}{
+		{"calendar-cell-overlap-period-fertile", "predicted-period-in-fertile-window"},
+		{"calendar-cell-predicted", "predicted-period"},
+		{"calendar-cell-fertile calendar-cell-fertile-peak", "fertile-peak"},
+		{"calendar-cell-period", "period"},
+	}
+	for index, want := range cases {
+		got := days[index]
+		if classes := strings.Fields(got.CellClass); !slices.Equal(classes, append([]string{"calendar-cell"}, strings.Fields(want.class)...)) {
+			t.Errorf("day %s: cellClass = %q, want the %q state", got.DateString, got.CellClass, want.stateKey)
+		}
+		if got.StateKey != want.stateKey {
+			t.Errorf("day %s: stateKey = %q, want %q", got.DateString, got.StateKey, want.stateKey)
+		}
 	}
 }
 

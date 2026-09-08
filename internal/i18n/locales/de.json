@@ -523,6 +523,7 @@
   "calendar.legend.predicted_period": "Vorhergesagte Periodentage",
   "calendar.legend.start_window": "Vorhergesagtes Startfenster",
   "calendar.legend.fertility": "Fruchtbares Fenster",
+  "calendar.legend.predicted_period_in_fertility": "Vorhergesagte Periode im fruchtbaren Fenster",
   "calendar.legend.ovulation_group": "Eisprung (Strich: geschätzt)",
   "calendar.legend.logged_entry": "Erfasster Eintrag (Herz: Sex)",
   "calendar.ovulation_icon": "Eisprung",

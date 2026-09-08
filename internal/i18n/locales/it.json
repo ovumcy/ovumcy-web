@@ -523,6 +523,7 @@
   "calendar.legend.predicted_period": "Giorni di periodo previsti",
   "calendar.legend.start_window": "Finestra di inizio prevista",
   "calendar.legend.fertility": "Finestra fertile",
+  "calendar.legend.predicted_period_in_fertility": "Periodo previsto nella finestra fertile",
   "calendar.legend.ovulation_group": "Ovulazione (trattino: stimata)",
   "calendar.legend.logged_entry": "Voce registrata (cuore: sesso)",
   "calendar.ovulation_icon": "Ovulazione",
