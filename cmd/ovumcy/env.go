@@ -49,14 +49,18 @@ func getEnvIntInRange(key string, fallback, minValue, maxValue int) int {
 	return parsed
 }
 
-func getEnvDuration(key string, fallback time.Duration) time.Duration {
+// getEnvDurationInRange parses a duration env var and accepts it only within the
+// inclusive [min, max] range, falling back otherwise — the duration twin of
+// getEnvIntInRange. Every duration setting has an upper bound that is part of
+// its contract, so there is no unbounded variant.
+func getEnvDurationInRange(key string, fallback, minValue, maxValue time.Duration) time.Duration {
 	value := strings.TrimSpace(os.Getenv(key))
 	if value == "" {
 		return fallback
 	}
 
 	parsed, err := time.ParseDuration(value)
-	if err != nil || parsed < time.Second {
+	if err != nil || parsed < minValue || parsed > maxValue {
 		log.Printf("invalid %s=%q, using fallback %s", key, value, fallback) // #nosec G706 -- same operator-managed-startup-configuration boundary as getEnvInt above: value is read once at boot from the operator's own env, never from a request.
 		return fallback
 	}

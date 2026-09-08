@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -114,15 +115,48 @@ func (service *AuthService) ConfigureLogoutAttemptLimits(attempts int, window ti
 	service.logoutAttemptPolicy.Configure(attempts, window)
 }
 
+// LogoutAttemptIdentity is the identity the logout budget is keyed by: the
+// owner of the session being ended. It deliberately does NOT name the session.
+// RevokeAuthSessions bumps AuthSessionVersion, so ResolveAuthSession refuses
+// that token on the very next request and no session can reach the logout
+// handler twice: a session-keyed budget would top out at one recorded attempt
+// against a limit of twenty and could never be spent, leaving the browser
+// logout route with no account-side cap at all. The session-independent harm a
+// per-owner key used to cause — one owner's sign-outs refusing another's —
+// belongs to the client bucket, and is fixed there (logoutClientBucket).
+func LogoutAttemptIdentity(userID uint) string {
+	return strconv.FormatUint(uint64(userID), 10)
+}
+
 // CheckAndRecordLogoutAttempt returns true if the per-account logout rate limit is
 // exceeded for this (clientKey, identity) pair. If not exceeded, it also records
-// the attempt so subsequent calls count it toward the window.
+// the attempt so subsequent calls count it toward the window. The budget lives
+// in its own limiter under its own scope: a logout is an attempt against this
+// budget only, never a failure against — and never a reset of — the login,
+// recovery or TOTP budgets.
 func (service *AuthService) CheckAndRecordLogoutAttempt(secretKey []byte, clientKey string, identity string, now time.Time) bool {
-	if service.logoutAttemptPolicy.TooManyRecent(secretKey, clientKey, identity, now) {
+	clientBucket := logoutClientBucket(clientKey, identity)
+	if service.logoutAttemptPolicy.TooManyRecent(secretKey, clientBucket, identity, now) {
 		return true
 	}
-	service.logoutAttemptPolicy.AddFailure(secretKey, clientKey, identity, now)
+	service.logoutAttemptPolicy.AddFailure(secretKey, clientBucket, identity, now)
 	return false
+}
+
+// logoutClientBucket scopes the client-keyed bucket to the account as well, the
+// way ReauthAttempt.clientBucket does for re-authentication. Logout is reachable
+// only with a session in hand, so an address-wide bucket buys no protection an
+// attacker could not get around by signing in; it did cause harm: at the
+// account budget's size it ran a second, three-times-tighter per-address cap
+// under the documented per-IP row, and a household behind one address — or a
+// test run from one — was refused its twenty-first sign-out even though each
+// owner still had its own budget.
+func logoutClientBucket(clientKey string, identity string) string {
+	identity = strings.TrimSpace(identity)
+	if identity == "" {
+		return clientKey
+	}
+	return clientKey + "|" + identity
 }
 
 func (service *AuthService) RegistrationEmailExists(ctx context.Context, email string) (bool, error) {

@@ -14,25 +14,89 @@ const (
 	// sweep rare enough to be O(1) amortised while bounding residual memory.
 	evictEveryN = 128
 
-	// evictAboveSize is the hard cap on tracked keys. Exceeding it triggers a
-	// sweep on every add, and after the stale sweep the map is trimmed back to
-	// this size by evicting the keys with the oldest most-recent failure — a
-	// stale sweep alone cannot shrink the map when an attacker keeps minting
-	// fresh keys inside the window. Evicting the coldest keys loses the least:
-	// they are the closest to ageing out naturally, while an actively
-	// brute-forced key is among the freshest and is evicted last.
+	// evictAboveSize caps the tracked keys PER SCOPE that are not enforcing a
+	// lockout. It is also the headroom the sweep trigger allows above the pinned
+	// population the previous sweep could not remove (AttemptLimiter.sweepAbove),
+	// and after the stale sweep each scope is trimmed back to this many unpinned entries —
+	// a stale sweep alone cannot shrink the map when an attacker keeps minting
+	// fresh keys inside the window. Two things the cap deliberately does not
+	// count: a lockout (see attemptEntry.blocked), because evicting one lifts
+	// it, and another scope's entries, because the cheapest flood — the login
+	// form accepts any email — must not be able to erase a TOTP or recovery
+	// budget. What bounds the rest is the attacker's own spend: a lockout costs
+	// `limit` refused requests inside one window, and the scopes are the fixed
+	// handful bootstrap wires.
 	evictAboveSize = 1024
 )
 
+// AttemptBudget is what a policy judges its keys by. The limiter stores it on
+// every entry recorded under that policy, because it is shared by policies with
+// different budgets (login 8/15m, recovery 8/1h, totp 5/15m): a sweep or a
+// trim that judged every entry by the calling policy's window would erase a
+// budget that was still live under its own.
+type AttemptBudget struct {
+	Scope  string
+	Limit  int
+	Window time.Duration
+}
+
+type attemptEntry struct {
+	// times is ordered oldest-first; pruneLocked keeps only the failures inside
+	// the caller's window, so the newest is always last.
+	times  []time.Time
+	budget AttemptBudget
+}
+
+func (entry attemptEntry) newest() time.Time {
+	return entry.times[len(entry.times)-1]
+}
+
+// expired reports whether the entry's own window has lapsed since its newest
+// failure, so nothing in it can still count toward a lockout.
+func (entry attemptEntry) expired(now time.Time) bool {
+	return !entry.newest().Add(entry.budget.Window).After(now)
+}
+
+// blocked reports whether the entry currently enforces a lockout: at least
+// `Limit` failures inside its own window. A blocked entry is pinned — neither
+// the stale sweep nor the size-cap trim removes it — because evicting it would
+// let the next attempt through, and minting fresh keys is the cheapest thing an
+// attacker can do to this map.
+func (entry attemptEntry) blocked(now time.Time) bool {
+	if entry.budget.Limit < 1 {
+		return false
+	}
+	threshold := now.Add(-entry.budget.Window)
+	live := 0
+	for _, value := range entry.times {
+		if value.After(threshold) {
+			live++
+		}
+	}
+	return live >= entry.budget.Limit
+}
+
 type AttemptLimiter struct {
 	mu        sync.Mutex
-	attempts  map[string][]time.Time
+	attempts  map[string]attemptEntry
 	addCallsN int // counts AddFailureAll invocations for eviction pacing
+	// sweepAbove is the map size that re-triggers a sweep ahead of the call
+	// counter. It is recomputed after every sweep as "the entries the sweep could
+	// not remove, plus one cap's worth of headroom": what it cannot remove is a
+	// live lockout, pinned for its whole window. Fixed at the absolute
+	// evictAboveSize instead, the trigger would stay true from the first lockout
+	// past the cap onward and every later add would pay a full O(n) sweep and an
+	// O(n) blocked() pass under the single mutex — an attacker who bought n
+	// lockouts would tax every other account's login by n. The headroom counts
+	// only pinned entries, never the unpinned ones a sweep is free to drop, so
+	// the cap on those still holds at every observable moment.
+	sweepAbove int
 }
 
 func NewAttemptLimiter() *AttemptLimiter {
 	return &AttemptLimiter{
-		attempts: make(map[string][]time.Time),
+		attempts:   make(map[string]attemptEntry),
+		sweepAbove: evictAboveSize,
 	}
 }
 
@@ -56,73 +120,88 @@ func (limiter *AttemptLimiter) TooManyRecentAny(keys []string, now time.Time, li
 	return false
 }
 
-func (limiter *AttemptLimiter) AddFailureAll(keys []string, now time.Time, window time.Duration) {
+// AddFailureAll records one failure at `now` under every key, judged by budget.
+func (limiter *AttemptLimiter) AddFailureAll(keys []string, now time.Time, budget AttemptBudget) {
 	limiter.mu.Lock()
 	defer limiter.mu.Unlock()
 
 	for _, key := range normalizeLimiterKeys(keys) {
-		pruned := limiter.pruneLocked(key, now, window)
-		pruned = append(pruned, now)
-		limiter.attempts[key] = pruned
+		pruned := limiter.pruneLocked(key, now, budget.Window)
+		limiter.attempts[key] = attemptEntry{
+			times:  append(pruned, now),
+			budget: budget,
+		}
 	}
 
 	limiter.addCallsN++
-	limiter.maybeEvictStaleLocked(now, window)
+	limiter.maybeEvictStaleLocked(now)
 }
 
-// maybeEvictStaleLocked performs an opportunistic full-map sweep to remove keys
-// whose most-recent attempt is older than window, then trims the map back to
-// the evictAboveSize hard cap. It fires when either the call counter reaches
-// evictEveryN or the map exceeds evictAboveSize entries. The sweep is O(n) in
-// map size but runs rarely below the cap, keeping amortised cost negligible.
-// Must be called with limiter.mu held.
-func (limiter *AttemptLimiter) maybeEvictStaleLocked(now time.Time, window time.Duration) {
-	if limiter.addCallsN < evictEveryN && len(limiter.attempts) < evictAboveSize {
+// maybeEvictStaleLocked performs an opportunistic full-map sweep to remove
+// entries whose own window has lapsed, then trims every scope back to the
+// evictAboveSize cap. It fires when either the call counter reaches evictEveryN
+// or the map grows past sweepAbove. Both triggers are reset by the sweep, so a
+// pinned population however large never on its own makes the size trigger true:
+// what still does is unpinned keys at the cap, which is the flood the trim
+// answers. Must be called with limiter.mu held.
+func (limiter *AttemptLimiter) maybeEvictStaleLocked(now time.Time) {
+	if limiter.addCallsN < evictEveryN && len(limiter.attempts) < limiter.sweepAbove {
 		return
 	}
 	limiter.addCallsN = 0
 
-	threshold := now.Add(-window)
-	for key, times := range limiter.attempts {
-		if len(times) == 0 {
+	for key, entry := range limiter.attempts {
+		if len(entry.times) == 0 {
 			delete(limiter.attempts, key) // codecov:ignore -- defensive; pruneLocked never stores an empty slice in the map
 			continue
 		}
-		// times is ordered oldest-first after pruneLocked; newest is last.
-		if times[len(times)-1].Before(threshold) || times[len(times)-1].Equal(threshold) {
+		if entry.expired(now) {
 			delete(limiter.attempts, key)
 		}
 	}
 
-	limiter.enforceSizeCapLocked()
+	limiter.sweepAbove = limiter.enforceSizeCapLocked(now) + evictAboveSize
 }
 
-// enforceSizeCapLocked bounds the map at evictAboveSize keys by evicting the
-// keys with the oldest most-recent failure first. The stale sweep alone only
-// removes keys whose window has lapsed, so under a sustained attack that
-// keeps minting fresh keys (identity:<hmac> material is attacker-influenced)
-// the map would otherwise grow without bound for the full window length.
+// enforceSizeCapLocked bounds every scope at evictAboveSize entries that are
+// not enforcing a lockout, evicting the ones with the oldest most-recent
+// failure first. Evicting the coldest loses the least: they are the closest to
+// ageing out naturally, while the key an attacker is working on is among the
+// freshest and is evicted last — so lifting one partial budget costs a full
+// scope's worth of fresher keys, again for every guess. It returns how many
+// entries it had to pin, which is what the next sweep trigger gets as headroom.
 // Must be called with limiter.mu held.
-func (limiter *AttemptLimiter) enforceSizeCapLocked() {
-	excess := len(limiter.attempts) - evictAboveSize
-	if excess <= 0 {
-		return
+func (limiter *AttemptLimiter) enforceSizeCapLocked(now time.Time) int {
+	if len(limiter.attempts) <= evictAboveSize {
+		return 0
 	}
 
-	type keyAge struct {
+	type candidate struct {
 		key    string
 		newest time.Time
 	}
-	ages := make([]keyAge, 0, len(limiter.attempts))
-	for key, times := range limiter.attempts {
-		ages = append(ages, keyAge{key: key, newest: times[len(times)-1]})
+	pinned := 0
+	perScope := make(map[string][]candidate)
+	for key, entry := range limiter.attempts {
+		if entry.blocked(now) {
+			pinned++
+			continue
+		}
+		perScope[entry.budget.Scope] = append(perScope[entry.budget.Scope], candidate{key: key, newest: entry.newest()})
 	}
-	sort.Slice(ages, func(i, j int) bool {
-		return ages[i].newest.Before(ages[j].newest)
-	})
-	for _, entry := range ages[:excess] {
-		delete(limiter.attempts, entry.key)
+	for _, candidates := range perScope {
+		excess := len(candidates) - evictAboveSize
+		if excess <= 0 {
+			continue
+		}
+		sort.Slice(candidates, func(i, j int) bool {
+			return candidates[i].newest.Before(candidates[j].newest)
+		})
+		for _, entry := range candidates[:excess] {
+			delete(limiter.attempts, entry.key)
+		}
 	}
+	return pinned
 }
 
 func (limiter *AttemptLimiter) ResetAll(keys []string) {
@@ -155,15 +234,18 @@ func normalizeLimiterKeys(keys []string) []string {
 	return normalized
 }
 
+// pruneLocked drops the failures outside the caller's window and returns what
+// is left, keeping the entry's recorded budget. Keys are scope-prefixed by the
+// policy that owns them, so the caller's window is the entry's own.
 func (limiter *AttemptLimiter) pruneLocked(key string, now time.Time, window time.Duration) []time.Time {
-	values := limiter.attempts[key]
-	if len(values) == 0 {
+	entry, ok := limiter.attempts[key]
+	if !ok || len(entry.times) == 0 {
 		return []time.Time{}
 	}
 
 	threshold := now.Add(-window)
-	pruned := make([]time.Time, 0, len(values))
-	for _, value := range values {
+	pruned := make([]time.Time, 0, len(entry.times))
+	for _, value := range entry.times {
 		if value.After(threshold) {
 			pruned = append(pruned, value)
 		}
@@ -174,6 +256,7 @@ func (limiter *AttemptLimiter) pruneLocked(key string, now time.Time, window tim
 		return []time.Time{}
 	}
 
-	limiter.attempts[key] = pruned
+	entry.times = pruned
+	limiter.attempts[key] = entry
 	return pruned
 }

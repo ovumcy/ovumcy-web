@@ -43,6 +43,15 @@ Per-IP HTTP rate limits enforced by Fiber's limiter middleware. Defaults are tun
 | `/api/*` (catch-all) | 300 requests / 1 minute | `RATE_LIMIT_API_MAX`, `RATE_LIMIT_API_WINDOW` |
 | `GET/HEAD /calendar/feed/:token.ics` | 20 requests / 1 minute | `RATE_LIMIT_CALENDAR_FEED_MAX`, `RATE_LIMIT_CALENDAR_FEED_WINDOW` |
 
+Every setting above has a ceiling as well as a floor (`cmd/ovumcy/config.go`): a `*_MAX` may not
+exceed 100 on the three credential endpoints (each request costs a bcrypt compare or hash), 600
+on the per-IP logout row, 200 on the per-session logout budget, 3000 on the API catch-all and
+120 on the calendar feed, and a `*_WINDOW` must lie between one second and one day. A value
+outside its range is logged at boot and replaced by the default, so a misread unit or a stray
+zero cannot widen a budget past its ceiling, let alone switch a limiter off; an operator who needs
+a wider budget shortens the window. The ceilings bound the *rate* of bcrypt work an address can
+demand; the bcrypt cost itself (12) is the load-bearing limit and is not lowered to compensate.
+
 A single-endpoint row above is matched the way the router matches, not by raw path bytes: routing is case-insensitive and ignores trailing slashes, so `POST /LANG` and `POST /lang/` reach the same handler as `POST /lang` and draw on the same budget. The match stays exact rather than prefix-wide — `POST /api/v1/sessions/2fa-challenge` does not spend the sign-in row's budget; it draws on the `/api` catch-all and on its own per-account TOTP budget below.
 
 A HEAD request to the feed both counts against this budget and is answered by the feed: `RegisterRoutes` gives every GET route a HEAD route with the same handler chain, registered ahead of the terminal `NotFound` catch-all, so HEAD reaches `ServeCalendarFeed` and returns its status and headers with the body dropped on the wire. It used to reach the catch-all's 404 instead — fiber appends a GET route's auto-generated HEAD copy only at startup, behind every directly-registered `Use` middleware — which is why the row above once distinguished "rate-limited" from "answers the feed". A calendar client that probes with HEAD before fetching therefore spends two of the twenty, one per request.
@@ -59,9 +68,39 @@ Plus per-account, identity-keyed budgets enforced by `AuthAttemptPolicy` (`inter
 
 - Recovery-code redemption (`POST /api/v1/password-resets`): 8 failures / 1 hour, tuned by the same `RATE_LIMIT_FORGOT_PASSWORD_MAX` / `RATE_LIMIT_FORGOT_PASSWORD_WINDOW` pair as that endpoint's per-IP row above, so the two budgets never drift apart. Wired as the `recovery` scope in `internal/services/password_reset_service.go`. A code that is merely malformed spends the budget exactly as a wrong-but-well-formed one does, so failing the format check early is not a free retry; only a submission with no email at all falls back to the client-keyed bucket alone, there being no identity to key on.
 - Login attempts: 8 failures / 15 minutes. The OIDC link-confirmation password challenge (`POST /auth/oidc/link-confirm`) draws from this same budget, so link-confirm cannot be used as a faster password oracle than the login form.
-- Logout attempts: 20 per 15 minutes (account-scoped). Unlike the rows around it this one counts **every** logout, not only failures — `CheckAndRecordLogoutAttempt` records the attempt as soon as the session resolves (`internal/api/handlers_auth_session_login.go`), so a 21st legitimate logout inside the window is refused too. Tuned by `RATE_LIMIT_LOGOUT_ACCOUNT_MAX` / `RATE_LIMIT_LOGOUT_ACCOUNT_WINDOW` — deliberately its own pair, not the `RATE_LIMIT_LOGOUT_*` per-IP row above: the per-IP budget must stay wide enough for several owners behind one address, which is exactly why it cannot double as the account budget.
+- Logout attempts: 20 per 15 minutes, keyed on the **owner** of the session being ended
+  (`LogoutAttemptIdentity`). It deliberately does not name the session: `RevokeAuthSessions` bumps
+  `AuthSessionVersion`, so the token is refused on the next request and no session reaches this
+  route twice — a session-keyed budget would record one attempt per key, never trip, and leave the
+  browser sign-out route (`POST /logout`, which the per-IP row above does not cover) with no
+  account-side cap at all. Its client bucket is `(address, account)` like the re-authentication
+  budget's, never the address by itself: that is the per-IP row's job, and a plain address bucket
+  at this size ran a second, tighter per-address cap under it (a household behind one address, or a
+  test run from one, was refused its 21st sign-out while each owner still had budget). Unlike the
+  rows around it this one counts **every** logout,
+  not only failures, so an owner's 21st sign-out inside the window is refused too. The
+  check runs **after** `RevokeAuthSessions` and after the session cookies are cleared
+  (`internal/api/handlers_auth_session_login.go`): a spent budget never keeps a session alive on a
+  device the owner is leaving; what the `429` withholds is the provider sign-out bridge and the
+  success answer. A logout is an attempt against this budget only — it lives in its own limiter
+  under its own scope and never adds a failure to, or resets, the login, recovery or TOTP budgets.
+  Tuned by `RATE_LIMIT_LOGOUT_ACCOUNT_MAX` / `RATE_LIMIT_LOGOUT_ACCOUNT_WINDOW` — deliberately its
+  own pair, not the `RATE_LIMIT_LOGOUT_*` per-IP row above: the per-IP budget must stay wide enough
+  for several owners behind one address, which is exactly why it cannot double as the account budget.
 - TOTP login challenge: 5 failures / 15 minutes.
 - TOTP disable: 5 failures / 15 minutes.
 - Settings re-authentication: 5 failures / 15 minutes, covering every password-gated settings action except the TOTP disable, whose password check draws its own budget above — `POST /api/v1/users/current/data-wipe/validate`, `POST …/data-wipe`, `DELETE /api/v1/users/current`, `PUT …/password`, `PUT …/2fa` (the TOTP-enrollment confirmation), and `POST …/recovery-code` (recovery-code regeneration). Without it these would be faster password oracles than the login form (the `/api` catch-all allows 300 requests per minute against login's 8 per 15 minutes), and `/data-wipe/validate` changes no state, which makes it a pure oracle. Once the budget is spent the endpoints answer `429` even for the correct password. The budget is keyed on `(client, account)` and on the account alone, deliberately **not** on the client address by itself: several independent owners share one address on a household instance, and one owner mistyping must not lock out the others, while the account-wide bucket still caps an attacker rotating addresses.
 
 Per-account budgets are keyed by `HMAC-SHA256(SECRET_KEY, "ovumcy.auth-attempt.identity.v1:" || identity)`, so the limiter never persists the raw identifier.
+
+The login, recovery, TOTP and re-authentication budgets share one in-memory `AttemptLimiter`
+(`internal/services/attempt_limiter.go`; the logout budget runs on a limiter of its own), whose
+keys are partly attacker-chosen — the login form accepts any email — so it bounds its own memory:
+a periodic sweep drops entries whose window has lapsed, and above 1024 live entries a scope is
+trimmed back to that many, coldest first. Neither bound can lift a budget that is still live.
+Every entry carries the scope, limit and window it was recorded under, so the sweep judges each
+entry by its own window (a login failure's sweep does not erase a recovery entry forty minutes
+early), the cap counts one scope at a time (a flood of login identities never reaches a TOTP or
+recovery entry), and an entry at its limit — an active lockout — is pinned until it expires. What
+bounds the pinned population is the attacker's own spend: each lockout costs `limit` refused
+requests inside one window, which the per-IP rows above already meter.
