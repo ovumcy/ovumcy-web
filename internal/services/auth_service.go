@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -114,15 +115,49 @@ func (service *AuthService) ConfigureLogoutAttemptLimits(attempts int, window ti
 	service.logoutAttemptPolicy.Configure(attempts, window)
 }
 
+// LogoutAttemptIdentity is the identity the logout budget is keyed by: the
+// session being ended, qualified by its owner, not the owner alone. One owner's
+// devices sign out independently and a session can be signed out once, so a
+// budget keyed on the account alone was spent by the owner's own sign-outs and
+// then refused the next one. A session-less caller (an API token, or a test
+// that set no claims) falls back to the owner id, the only identity it has.
+func LogoutAttemptIdentity(userID uint, sessionID string) string {
+	owner := strconv.FormatUint(uint64(userID), 10)
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return owner
+	}
+	return owner + ":" + sessionID
+}
+
 // CheckAndRecordLogoutAttempt returns true if the per-account logout rate limit is
 // exceeded for this (clientKey, identity) pair. If not exceeded, it also records
-// the attempt so subsequent calls count it toward the window.
+// the attempt so subsequent calls count it toward the window. The budget lives
+// in its own limiter under its own scope: a logout is an attempt against this
+// budget only, never a failure against — and never a reset of — the login,
+// recovery or TOTP budgets.
 func (service *AuthService) CheckAndRecordLogoutAttempt(secretKey []byte, clientKey string, identity string, now time.Time) bool {
-	if service.logoutAttemptPolicy.TooManyRecent(secretKey, clientKey, identity, now) {
+	clientBucket := logoutClientBucket(clientKey, identity)
+	if service.logoutAttemptPolicy.TooManyRecent(secretKey, clientBucket, identity, now) {
 		return true
 	}
-	service.logoutAttemptPolicy.AddFailure(secretKey, clientKey, identity, now)
+	service.logoutAttemptPolicy.AddFailure(secretKey, clientBucket, identity, now)
 	return false
+}
+
+// logoutClientBucket scopes the client-keyed bucket to the session as well, the
+// way ReauthAttempt.clientBucket does for re-authentication. Logout is reachable
+// only with a session in hand, so an address-wide bucket buys no protection an
+// attacker could not get around by signing in; it did cause harm: at the
+// account budget's size it ran a second, three-times-tighter per-address cap
+// under the documented per-IP row, and a household behind one address — or a
+// test run from one — was refused its twenty-first sign-out.
+func logoutClientBucket(clientKey string, identity string) string {
+	identity = strings.TrimSpace(identity)
+	if identity == "" {
+		return clientKey
+	}
+	return clientKey + "|" + identity
 }
 
 func (service *AuthService) RegistrationEmailExists(ctx context.Context, email string) (bool, error) {
