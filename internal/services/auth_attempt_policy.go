@@ -50,11 +50,15 @@ func (policy *AuthAttemptPolicy) TooManyRecent(secretKey []byte, clientKey strin
 }
 
 func (policy *AuthAttemptPolicy) AddFailure(secretKey []byte, clientKey string, identity string, now time.Time) {
-	policy.limiter.AddFailureAll(policy.keys(secretKey, clientKey, identity), now, policy.window)
+	policy.limiter.AddFailureAll(policy.keys(secretKey, clientKey, identity), now, policy.budget())
 }
 
 func (policy *AuthAttemptPolicy) Reset(secretKey []byte, clientKey string, identity string) {
 	policy.limiter.ResetAll(policy.keys(secretKey, clientKey, identity))
+}
+
+func (policy *AuthAttemptPolicy) budget() AttemptBudget {
+	return AttemptBudget{Scope: policy.scope, Limit: policy.attempts, Window: policy.window}
 }
 
 func (policy *AuthAttemptPolicy) keys(secretKey []byte, clientKey string, identity string) []string {
