@@ -150,6 +150,11 @@ type mockOIDCProvider struct {
 	// verifier follows ovumcy's own allowlist and not the discovery document.
 	signingAlgsSupported []string
 
+	// discoveryOverrides is merged into the discovery document LAST, so a test
+	// can advertise a field of the wrong JSON type (or any extra field) that the
+	// typed overrides above cannot express.
+	discoveryOverrides map[string]any
+
 	// idToken, when set, makes the /token endpoint answer a successful OAuth2
 	// token response carrying this signed id_token so the real ExchangeCode
 	// path can be driven end-to-end. Left empty it keeps the historical 501
@@ -222,6 +227,9 @@ func (m *mockOIDCProvider) serveDiscoveryDocument(w http.ResponseWriter, r *http
 	}
 	if m.endSessionEndpoint != "" {
 		payload["end_session_endpoint"] = m.endSessionEndpoint
+	}
+	for key, value := range m.discoveryOverrides {
+		payload[key] = value
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(payload)
