@@ -229,6 +229,12 @@ func validateOIDCHTTPSURL(rawURL string, envName string) (*url.URL, error) {
 	if parsedURL.RawQuery != "" || parsedURL.Fragment != "" {
 		return nil, fmt.Errorf("%s must not include query or fragment", envName)
 	}
+	// `https://:8443` parses as absolute with an empty host, and Go's dialer
+	// resolves an empty host to loopback — so the client secret and code would
+	// be posted to whatever listens locally on that port.
+	if parsedURL.Hostname() == "" {
+		return nil, fmt.Errorf("%s must name a host", envName)
+	}
 	return parsedURL, nil
 }
 
@@ -422,10 +428,21 @@ func (client *OIDCClient) loadProvider(ctx context.Context) (*oauth2.Config, *oi
 		return nil, nil, fmt.Errorf("discover oidc provider: %w", err)
 	}
 
+	// A discovery document whose metadata does not decode is refused outright
+	// rather than pinned on whatever encoding/json filled in before it stopped:
+	// json.Unmarshal completes the remaining fields on a type error, so a
+	// partially decoded struct would carry an unsanitized endpoint past the
+	// pins below.
+	// A discovery document whose metadata does not decode is refused outright
+	// rather than pinned on whatever encoding/json filled in before it stopped:
+	// json.Unmarshal completes the remaining fields on a type error, so a
+	// partially decoded struct would carry an unsanitized endpoint past the
+	// pins below.
 	metadata := oidcProviderMetadata{}
-	if claimsErr := provider.Claims(&metadata); claimsErr == nil {
-		metadata.EndSessionEndpoint = sanitizeOIDCEndSessionEndpoint(metadata.EndSessionEndpoint, client.config.IssuerURL)
+	if err := provider.Claims(&metadata); err != nil {
+		return nil, nil, fmt.Errorf("decode oidc discovery metadata: %w", err)
 	}
+	metadata.EndSessionEndpoint = sanitizeOIDCEndSessionEndpoint(metadata.EndSessionEndpoint, client.config.IssuerURL)
 
 	// Pin the discovery-supplied jwks_uri to the issuer origin, mirroring the
 	// end_session_endpoint host-pin above. go-oidc fetches the verification keys
@@ -710,6 +727,11 @@ func oidcRedirectPolicy(issuerURL string) func(req *http.Request, via []*http.Re
 
 func sameOriginURL(left *url.URL, right *url.URL) bool {
 	if left == nil || right == nil {
+		return false
+	}
+	// Two empty hosts are not the same origin: an issuer and an endpoint that
+	// both name no host would otherwise pin to each other — and to loopback.
+	if left.Hostname() == "" || right.Hostname() == "" {
 		return false
 	}
 	return strings.EqualFold(left.Scheme, right.Scheme) &&
