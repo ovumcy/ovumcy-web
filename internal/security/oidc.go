@@ -428,20 +428,12 @@ func (client *OIDCClient) loadProvider(ctx context.Context) (*oauth2.Config, *oi
 		return nil, nil, fmt.Errorf("discover oidc provider: %w", err)
 	}
 
-	// A discovery document whose metadata does not decode is refused outright
-	// rather than pinned on whatever encoding/json filled in before it stopped:
-	// json.Unmarshal completes the remaining fields on a type error, so a
-	// partially decoded struct would carry an unsanitized endpoint past the
-	// pins below.
-	// A discovery document whose metadata does not decode is refused outright
-	// rather than pinned on whatever encoding/json filled in before it stopped:
-	// json.Unmarshal completes the remaining fields on a type error, so a
-	// partially decoded struct would carry an unsanitized endpoint past the
-	// pins below.
+	// The sanitizer runs whether or not Claims reports a decode error:
+	// encoding/json keeps filling the other fields after a type error, so an
+	// error is not a reason to leave whatever did decode unpinned. A field that
+	// failed to decode stays zero, which the pins below treat as "absent".
 	metadata := oidcProviderMetadata{}
-	if err := provider.Claims(&metadata); err != nil {
-		return nil, nil, fmt.Errorf("decode oidc discovery metadata: %w", err)
-	}
+	_ = provider.Claims(&metadata)
 	metadata.EndSessionEndpoint = sanitizeOIDCEndSessionEndpoint(metadata.EndSessionEndpoint, client.config.IssuerURL)
 
 	// Pin the discovery-supplied jwks_uri to the issuer origin, mirroring the
@@ -587,7 +579,7 @@ func sanitizeOIDCEndSessionEndpoint(rawEndpoint string, issuerURL string) string
 	if err != nil || !parsed.IsAbs() {
 		return ""
 	}
-	if !strings.EqualFold(parsed.Scheme, "https") || parsed.Fragment != "" {
+	if !strings.EqualFold(parsed.Scheme, "https") || parsed.Fragment != "" || parsed.Hostname() == "" {
 		return ""
 	}
 
