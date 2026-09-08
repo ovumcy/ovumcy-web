@@ -3499,33 +3499,24 @@
      not, because the band is not the axis the goal inverts. The edge values
      are used for the whole state: the overlap fill already collapses the edge
      and peak tiers, and inventing a second grade here would say more than the
-     fill can carry.
+     fill can carry. Each goal names a COMPLETE fill token rather than swapping
+     a stroke colour under the shared one — see the token block for why the
+     shorter form silently paints the neutral hatch.
 
      The two rules sit ABOVE the dark rule on purpose, exactly as the tier
      rules below do: at equal specificity the later rule wins, and on a dark
      card the neutral fill is the readable one. */
   [data-calendar-view][data-usage-goal='avoid_pregnancy'] & {
-    --cal-overlap-fertile-ink: rgba(196, 116, 33, 0.42);
     border-color: rgba(203, 139, 54, 0.78);
-    background-color: color-mix(
-      in srgb,
-      var(--fertile-warning-edge) 78%,
-      white 22%
-    );
+    background: var(--cal-fill-overlap-period-fertile-warning);
   }
 
   [data-calendar-view][data-usage-goal='trying_to_conceive'] & {
-    --cal-overlap-fertile-ink: rgba(63, 133, 71, 0.42);
     border-color: rgba(103, 154, 101, 0.78);
-    background-color: color-mix(
-      in srgb,
-      var(--fertile-positive-edge) 78%,
-      white 22%
-    );
+    background: var(--cal-fill-overlap-period-fertile-positive);
   }
 
   :root[data-theme='dark'] & {
-    --cal-overlap-fertile-ink: rgb(var(--cal-fertile-ink) / 0.22);
     border-color: var(--cal-line-overlap-period-fertile);
     background: var(--cal-fill-overlap-period-fertile);
   }
@@ -4589,10 +4580,14 @@
        green is a new colour, which reads as a third unrelated concept, while
        one hatch crossing the other reads as the two states it is made of. The
        wash under them is thinner than the fertile one so both directions stay
-       visible over it. The fertile hatch reads its colour from a token of its
-       own so the goal palette can swap that one stroke on the cell without
-       restating the whole weave. */
-    --cal-overlap-fertile-ink: rgb(var(--cal-fertile-ink) / 0.3);
+       visible over it.
+
+       The goal palette gets a whole fill of its own per goal rather than a
+       token for the fertile stroke alone. A var() inside a custom property is
+       substituted where that property is DECLARED, so a stroke token declared
+       here and overridden on the cell would never reach this value — what
+       inherits down is the already-resolved fill. Three complete fills is the
+       only form in which the swap actually happens. */
     --cal-fill-overlap-period-fertile: repeating-linear-gradient(
         45deg,
         rgb(var(--cal-predicted) / 0.36) 0,
@@ -4602,12 +4597,42 @@
       ),
       repeating-linear-gradient(
         -45deg,
-        var(--cal-overlap-fertile-ink) 0,
-        var(--cal-overlap-fertile-ink) 3px,
+        rgb(var(--cal-fertile-ink) / 0.3) 0,
+        rgb(var(--cal-fertile-ink) / 0.3) 3px,
         rgb(255 255 255 / 0) 3px,
         rgb(255 255 255 / 0) 10px
       ),
       rgb(var(--cal-fertile) / 0.26);
+    --cal-fill-overlap-period-fertile-warning: repeating-linear-gradient(
+        45deg,
+        rgb(var(--cal-predicted) / 0.36) 0,
+        rgb(var(--cal-predicted) / 0.36) 3px,
+        rgb(255 255 255 / 0) 3px,
+        rgb(255 255 255 / 0) 10px
+      ),
+      repeating-linear-gradient(
+        -45deg,
+        rgba(196, 116, 33, 0.42) 0,
+        rgba(196, 116, 33, 0.42) 3px,
+        rgb(255 255 255 / 0) 3px,
+        rgb(255 255 255 / 0) 10px
+      ),
+      color-mix(in srgb, var(--fertile-warning-edge) 78%, white 22%);
+    --cal-fill-overlap-period-fertile-positive: repeating-linear-gradient(
+        45deg,
+        rgb(var(--cal-predicted) / 0.36) 0,
+        rgb(var(--cal-predicted) / 0.36) 3px,
+        rgb(255 255 255 / 0) 3px,
+        rgb(255 255 255 / 0) 10px
+      ),
+      repeating-linear-gradient(
+        -45deg,
+        rgba(63, 133, 71, 0.42) 0,
+        rgba(63, 133, 71, 0.42) 3px,
+        rgb(255 255 255 / 0) 3px,
+        rgb(255 255 255 / 0) 10px
+      ),
+      color-mix(in srgb, var(--fertile-positive-edge) 78%, white 22%);
     --cal-line-period: rgb(var(--cal-period) / 0.7);
     --cal-line-predicted: rgb(var(--cal-predicted) / 0.85);
     --cal-line-fertile: rgb(var(--cal-fertile-ink) / 0.7);
@@ -4908,7 +4933,6 @@
     /* The weave keeps both hatch expressions and restates only the wash under
        them, for the reason the fertile fill above restates its own: mixed
        toward the light-theme green it lifts the cell under light day numbers. */
-    --cal-overlap-fertile-ink: rgb(var(--cal-fertile-ink) / 0.22);
     --cal-fill-overlap-period-fertile: repeating-linear-gradient(
         45deg,
         rgb(var(--cal-predicted) / 0.3) 0,
@@ -4918,8 +4942,8 @@
       ),
       repeating-linear-gradient(
         -45deg,
-        var(--cal-overlap-fertile-ink) 0,
-        var(--cal-overlap-fertile-ink) 3px,
+        rgb(var(--cal-fertile-ink) / 0.22) 0,
+        rgb(var(--cal-fertile-ink) / 0.22) 3px,
         rgb(255 255 255 / 0) 3px,
         rgb(255 255 255 / 0) 10px
       ),
