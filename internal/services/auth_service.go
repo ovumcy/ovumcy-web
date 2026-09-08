@@ -116,18 +116,16 @@ func (service *AuthService) ConfigureLogoutAttemptLimits(attempts int, window ti
 }
 
 // LogoutAttemptIdentity is the identity the logout budget is keyed by: the
-// session being ended, qualified by its owner, not the owner alone. One owner's
-// devices sign out independently and a session can be signed out once, so a
-// budget keyed on the account alone was spent by the owner's own sign-outs and
-// then refused the next one. A session-less caller (an API token, or a test
-// that set no claims) falls back to the owner id, the only identity it has.
-func LogoutAttemptIdentity(userID uint, sessionID string) string {
-	owner := strconv.FormatUint(uint64(userID), 10)
-	sessionID = strings.TrimSpace(sessionID)
-	if sessionID == "" {
-		return owner
-	}
-	return owner + ":" + sessionID
+// owner of the session being ended. It deliberately does NOT name the session.
+// RevokeAuthSessions bumps AuthSessionVersion, so ResolveAuthSession refuses
+// that token on the very next request and no session can reach the logout
+// handler twice: a session-keyed budget would top out at one recorded attempt
+// against a limit of twenty and could never be spent, leaving the browser
+// logout route with no account-side cap at all. The session-independent harm a
+// per-owner key used to cause — one owner's sign-outs refusing another's —
+// belongs to the client bucket, and is fixed there (logoutClientBucket).
+func LogoutAttemptIdentity(userID uint) string {
+	return strconv.FormatUint(uint64(userID), 10)
 }
 
 // CheckAndRecordLogoutAttempt returns true if the per-account logout rate limit is
@@ -145,13 +143,14 @@ func (service *AuthService) CheckAndRecordLogoutAttempt(secretKey []byte, client
 	return false
 }
 
-// logoutClientBucket scopes the client-keyed bucket to the session as well, the
+// logoutClientBucket scopes the client-keyed bucket to the account as well, the
 // way ReauthAttempt.clientBucket does for re-authentication. Logout is reachable
 // only with a session in hand, so an address-wide bucket buys no protection an
 // attacker could not get around by signing in; it did cause harm: at the
 // account budget's size it ran a second, three-times-tighter per-address cap
 // under the documented per-IP row, and a household behind one address — or a
-// test run from one — was refused its twenty-first sign-out.
+// test run from one — was refused its twenty-first sign-out even though each
+// owner still had its own budget.
 func logoutClientBucket(clientKey string, identity string) string {
 	identity = strings.TrimSpace(identity)
 	if identity == "" {

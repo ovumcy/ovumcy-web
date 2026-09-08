@@ -68,14 +68,17 @@ Plus per-account, identity-keyed budgets enforced by `AuthAttemptPolicy` (`inter
 
 - Recovery-code redemption (`POST /api/v1/password-resets`): 8 failures / 1 hour, tuned by the same `RATE_LIMIT_FORGOT_PASSWORD_MAX` / `RATE_LIMIT_FORGOT_PASSWORD_WINDOW` pair as that endpoint's per-IP row above, so the two budgets never drift apart. Wired as the `recovery` scope in `internal/services/password_reset_service.go`. A code that is merely malformed spends the budget exactly as a wrong-but-well-formed one does, so failing the format check early is not a free retry; only a submission with no email at all falls back to the client-keyed bucket alone, there being no identity to key on.
 - Login attempts: 8 failures / 15 minutes. The OIDC link-confirmation password challenge (`POST /auth/oidc/link-confirm`) draws from this same budget, so link-confirm cannot be used as a faster password oracle than the login form.
-- Logout attempts: 20 per 15 minutes, keyed on the session being ended qualified by its owner
-  (`LogoutAttemptIdentity`), not on the owner alone — one owner's devices sign out independently,
-  and a session can be signed out once. Its client bucket is `(address, session)` like the
-  re-authentication budget's, never the address by itself: that is the per-IP row's job, and a
-  plain address bucket at this size ran a second, tighter per-address cap under it (a household
-  behind one address, or a test run from one, was refused its 21st sign-out). Unlike the rows
-  around it this one counts **every** logout,
-  not only failures, so a 21st logout of the same session inside the window is refused too. The
+- Logout attempts: 20 per 15 minutes, keyed on the **owner** of the session being ended
+  (`LogoutAttemptIdentity`). It deliberately does not name the session: `RevokeAuthSessions` bumps
+  `AuthSessionVersion`, so the token is refused on the next request and no session reaches this
+  route twice — a session-keyed budget would record one attempt per key, never trip, and leave the
+  browser sign-out route (`POST /logout`, which the per-IP row above does not cover) with no
+  account-side cap at all. Its client bucket is `(address, account)` like the re-authentication
+  budget's, never the address by itself: that is the per-IP row's job, and a plain address bucket
+  at this size ran a second, tighter per-address cap under it (a household behind one address, or a
+  test run from one, was refused its 21st sign-out while each owner still had budget). Unlike the
+  rows around it this one counts **every** logout,
+  not only failures, so an owner's 21st sign-out inside the window is refused too. The
   check runs **after** `RevokeAuthSessions` and after the session cookies are cleared
   (`internal/api/handlers_auth_session_login.go`): a spent budget never keeps a session alive on a
   device the owner is leaving; what the `429` withholds is the provider sign-out bridge and the
