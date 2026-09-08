@@ -200,6 +200,21 @@ func TestBuildCalendarDaysGivesTheBandAndWindowOverlapItsOwnFill(t *testing.T) {
 			InMonth:                true,
 			IsPredictedStartWindow: true,
 		},
+		{
+			// The other control, and the one that matters medically: a fertile
+			// start-window day the projected BAND does not cover. On an
+			// irregular cycle the start window runs for weeks and reaches
+			// fertile days no bleeding is projected on. It keeps the plain
+			// start-window class — painting the overlap here would print the
+			// band's own hatch, and the words "predicted period", over a day
+			// the model makes no such claim about.
+			DateString:             "2026-04-14",
+			Day:                    14,
+			InMonth:                true,
+			IsPredictedStartWindow: true,
+			IsFertility:            true,
+			IsFertilityEdge:        true,
+		},
 	})
 
 	cases := []struct {
@@ -214,6 +229,7 @@ func TestBuildCalendarDaysGivesTheBandAndWindowOverlapItsOwnFill(t *testing.T) {
 			"calendar-cell-overlap-period-fertile calendar-cell-overlap-start-window",
 			"predicted-start-window-in-fertile-window",
 		},
+		{"calendar-cell-start-window", "predicted-start-window"},
 		{"calendar-cell-start-window", "predicted-start-window"},
 	}
 	for index, want := range cases {

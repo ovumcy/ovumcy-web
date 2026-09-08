@@ -1206,16 +1206,17 @@ func TestBuildCalendarDayStatesMarksTheOverlapOfTheBandAndTheWindow(t *testing.T
 	}
 }
 
-// The same overlap one rung higher. The grid ranks the predicted START window
-// above the projected band, so a predicate that named the band alone would leave
-// the window unpainted on exactly the days the start window covers — and, worse
-// than before the overlap state existed, it would cut a hole through the middle
-// of a window whose remaining days now carry the new fill.
+// The same overlap where the predicted START window also covers it. The grid
+// ranks the start window above the projected band, so without a rung of its own
+// those days paint as start-window only and cut a hole through the middle of a
+// window whose remaining days now carry the overlap fill. The flag itself stays
+// anchored to the band — a start-window day the band does not cover is not an
+// overlap, because the start window projects no bleeding on the day.
 //
 // The fixture is the one above plus a cycle-length spread, which is what turns
 // the start window on: three completed cycles and StdDev 2.4 give a span of two
 // days either side of the projected start, so the window is 03-20..03-24 while
-// the chained cycle's fertile window opens on 03-23.
+// the chained cycle's band and fertile window both reach 03-23.
 func TestBuildCalendarDayStatesMarksTheStartWindowInsideTheFertileWindow(t *testing.T) {
 	monthStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
 	now := time.Date(2026, time.March, 6, 0, 0, 0, 0, time.UTC)
@@ -1240,11 +1241,11 @@ func TestBuildCalendarDayStatesMarksTheStartWindowInsideTheFertileWindow(t *test
 		if !day.IsPredictedStartWindow {
 			t.Fatalf("fixture: %s must be a predicted start-window day", dateString)
 		}
-		if !day.IsFertilityEdge && !day.IsFertilityPeak {
-			t.Fatalf("fixture: %s must also be a fertile day", dateString)
+		if !day.IsPredicted || (!day.IsFertilityEdge && !day.IsFertilityPeak) {
+			t.Fatalf("fixture: %s must be a projected bleeding day inside the fertile window", dateString)
 		}
 		if !day.IsPredictedFertileOverlap {
-			t.Errorf("%s: a start-window day inside the fertile window is an overlap too", dateString)
+			t.Errorf("%s: the start window ranking above the band does not stop the day being an overlap", dateString)
 		}
 	}
 

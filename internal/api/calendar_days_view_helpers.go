@@ -23,12 +23,13 @@ func (handler *Handler) buildCalendarDays(states []services.CalendarDayState) []
 			cellClass += " calendar-cell-period"
 			stateKey = "period"
 		} else if state.IsPredictedStartWindow && state.IsPredictedFertileOverlap {
-			// The start window inside the fertile window. It needs its own rung
-			// for the same reason the pair below does, one step higher: the
-			// start window outranks the projected band, so a fix that stopped
-			// at the band would leave these days painting as start-window only
-			// and cut a hole through the middle of a window whose other days
-			// now show the overlap.
+			// A start-window day that is ALSO an overlap — band and fertile
+			// window both over it. The rung is needed because the start window
+			// outranks the band: without it these days paint as start-window
+			// only and cut a hole through the middle of a window whose other
+			// days now show the overlap. It reads both flags rather than the
+			// start window alone, because a start-window day the band does not
+			// cover is no bleeding projection and must not be painted as one.
 			cellClass += " calendar-cell-overlap-period-fertile calendar-cell-overlap-start-window"
 			stateKey = "predicted-start-window-in-fertile-window"
 		} else if state.IsPredictedStartWindow {
