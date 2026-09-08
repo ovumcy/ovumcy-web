@@ -602,10 +602,18 @@ async function main() {
     // (TRUST_PROXY_ENABLED=true in docs/examples/reverse-proxy/*).
     TRUST_PROXY_ENABLED: process.env.TRUST_PROXY_ENABLED ?? (useHTTPSProxy ? "true" : "false"),
     TRUSTED_PROXIES: process.env.TRUSTED_PROXIES ?? (useHTTPSProxy ? "127.0.0.1,::1" : ""),
-    RATE_LIMIT_LOGIN_MAX: process.env.RATE_LIMIT_LOGIN_MAX ?? "500",
-    RATE_LIMIT_FORGOT_PASSWORD_MAX: process.env.RATE_LIMIT_FORGOT_PASSWORD_MAX ?? "500",
-    RATE_LIMIT_REGISTER_MAX: process.env.RATE_LIMIT_REGISTER_MAX ?? "500",
-    RATE_LIMIT_API_MAX: process.env.RATE_LIMIT_API_MAX ?? "5000",
+    // Every RATE_LIMIT_*_MAX has a ceiling (cmd/ovumcy/config.go) above which
+    // the app falls back to its tight default, so the harness widens a budget
+    // by shortening the window, not by asking for more than the ceiling: 100
+    // per 10 s is ten sign-ins a second from one address, far above what a
+    // serial browser run produces, and the same number a real operator may set.
+    RATE_LIMIT_LOGIN_MAX: process.env.RATE_LIMIT_LOGIN_MAX ?? "100",
+    RATE_LIMIT_LOGIN_WINDOW: process.env.RATE_LIMIT_LOGIN_WINDOW ?? "10s",
+    RATE_LIMIT_FORGOT_PASSWORD_MAX: process.env.RATE_LIMIT_FORGOT_PASSWORD_MAX ?? "100",
+    RATE_LIMIT_FORGOT_PASSWORD_WINDOW: process.env.RATE_LIMIT_FORGOT_PASSWORD_WINDOW ?? "10s",
+    RATE_LIMIT_REGISTER_MAX: process.env.RATE_LIMIT_REGISTER_MAX ?? "100",
+    RATE_LIMIT_REGISTER_WINDOW: process.env.RATE_LIMIT_REGISTER_WINDOW ?? "10s",
+    RATE_LIMIT_API_MAX: process.env.RATE_LIMIT_API_MAX ?? "3000",
     OIDC_ENABLED: process.env.OIDC_ENABLED ?? (localOIDCProviderEnabled ? "true" : "false"),
     OIDC_ISSUER_URL: process.env.OIDC_ISSUER_URL ?? localOIDCIssuer,
     OIDC_CLIENT_ID: process.env.OIDC_CLIENT_ID ?? (localOIDCProviderEnabled ? "ovumcy-e2e" : ""),
