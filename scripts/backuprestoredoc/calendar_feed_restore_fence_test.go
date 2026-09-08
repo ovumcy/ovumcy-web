@@ -242,6 +242,112 @@ func runUnanchoredHistoryScenario(t *testing.T, instance runbookInstance) {
 	})
 }
 
+// TestVolumeRestoreOfAGapBackupDisarmsWhenTheFenceReturns is the SQLite half of
+// the third finding: the instance was FENCED, and lost only the variable.
+func TestVolumeRestoreOfAGapBackupDisarmsWhenTheFenceReturns(t *testing.T) {
+	commands := documentedVolumeCommands(t)
+	requireDocker(t)
+
+	// binary is deliberately left empty: this scenario never runs the operator
+	// CLI. Its subject is a server that lost its fence path, not a shell that
+	// cannot see one, and building the binary for it would cost minutes per run.
+	runFenceGapScenario(t, &volumeRunbookInstance{
+		commands: commands,
+		volume:   ephemeralVolume(t),
+		workdir:  t.TempDir(),
+		fence:    filepath.Join(t.TempDir(), "calendar-feed.fence"),
+	})
+}
+
+// TestPostgresRestoreOfAGapBackupDisarmsWhenTheFenceReturns is the same claim
+// over the runbook's dump and replay. The engine is the only thing that
+// differs: neither database carries the fence file the gap leaves untouched.
+func TestPostgresRestoreOfAGapBackupDisarmsWhenTheFenceReturns(t *testing.T) {
+	commands := documentedPostgresCommands(t)
+	dsn, container := testdb.StartPostgres(t, "ovumcy_runbook_gap_feed")
+
+	runFenceGapScenario(t, &postgresRunbookInstance{
+		commands:  commands,
+		container: container,
+		config:    db.Config{Driver: db.DriverPostgres, PostgresURL: dsn},
+		dsn:       dsn,
+		backupDir: t.TempDir(),
+		fence:     filepath.Join(t.TempDir(), "calendar-feed.fence"),
+	})
+}
+
+// runFenceGapScenario is the whole claim, written once and run against each
+// engine. Its instance is already FENCED — both halves hold one token — and
+// then starts without CALENDAR_FEED_FENCE_PATH while the data volume, and the
+// fence file beside it, are kept. Nothing during that gap advances either half,
+// so the two stayed equal across it: a backup taken in the gap, restored beside
+// the untouched file, compared equal, the boot read continuity, and the stamp —
+// consulted only where both halves are empty — was never reached. The feed the
+// owner revoked in the gap served again.
+//
+// The verdict is taken over HTTP, through the shipped route table and the real
+// handler, because that is the surface a calendar client polls: every layer
+// under it can agree that a feed is revoked while the URL still answers 200.
+func runFenceGapScenario(t *testing.T, instance runbookInstance) {
+	t.Helper()
+
+	var armed armedRunbookFeed
+
+	// Boot 1, fenced: the instance arms the fence itself, so both halves hold
+	// one token before anything else happens.
+	instance.withDatabase(t, func(repos *db.Repositories) {
+		outcome := bootCalendarFeedPasses(t, repos, instance.serverFencePath())
+		if !outcome.FirstBoot {
+			t.Fatalf("this scenario starts from a fenced instance whose two halves hold one token, got %+v", outcome)
+		}
+	})
+
+	// The gap: the variable is gone, the volume — and the fence file on it —
+	// are kept. An owner arms a feed here.
+	instance.withUnfencedDatabase(t, func(repos *db.Repositories) {
+		assertUnanchoredBoot(t, repos)
+		armed = armRunbookCalendarFeed(t, repos)
+		assertRunbookFeedServesOverHTTP(t, repos, armed)
+	})
+
+	instance.documentedBackup(t)
+
+	// The owner revokes, still in the gap — the same repository write the web
+	// revocation performs.
+	instance.withUnfencedDatabase(t, func(repos *db.Repositories) {
+		if err := repos.Users.ClearCalendarFeedToken(context.Background(), armed.ownerID); err != nil {
+			t.Fatalf("revoke the calendar feed: %v", err)
+		}
+		assertRunbookFeedIsGoneOverHTTP(t, repos, armed)
+	})
+
+	instance.documentedRestore(t)
+
+	// The variable is back and the file was never touched, which is the state
+	// that used to compare equal.
+	instance.withDatabase(t, func(repos *db.Repositories) {
+		// The finding first, at the layer the owner sees: the restore put the
+		// revoked feed back and the old subscribe URL answers again. Without
+		// this the 404 below could come from a feed that was never resurrected.
+		assertRunbookFeedServesOverHTTP(t, repos, armed)
+
+		// The verdict is the poll, taken immediately after the boot and before
+		// anything is said about WHICH branch produced it.
+		outcome := bootCalendarFeedPasses(t, repos, instance.serverFencePath())
+		assertRunbookFeedIsGoneOverHTTP(t, repos, armed)
+		if !outcome.ContinuityBroken || outcome.UnanchoredHistory {
+			t.Errorf("the file kept its token, so this is a plain disagreement rather than the both-empty history case, got %+v", outcome)
+		}
+		if outcome.DisarmedFeeds != 1 {
+			t.Errorf("the resurrected feed must be the one row that boot disarmed, got %d", outcome.DisarmedFeeds)
+		}
+
+		// And the start after it is an ordinary restart: the gap is paid for
+		// once, not on every start from now on.
+		assertRunbookBootIsANoOp(t, repos, instance.serverFencePath())
+	})
+}
+
 // assertUnanchoredBoot is a start with no fence configured at all. It runs the
 // same two passes main runs, in main's order, and asserts the fence reports
 // itself unavailable rather than quietly arming: a run in which this boot found
