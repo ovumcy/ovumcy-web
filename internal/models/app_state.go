@@ -76,9 +76,11 @@ const AppStateKeyLutealPhaseRecomputeV1 = "luteal_phase_recompute.v1"
 // WHILE SERVING — every write that arms, rotates or removes a calendar feed
 // advances it, which is what lets a restore be seen at all — so it is a single
 // writer but not a boot marker, and the fence serializes its own writes.
-// calendar_feed_fence_unanchored is that same fence's boot-time marker, and the
-// one key any writer DELETES: the boot pass writes it whenever it ran without a
-// usable fence and erases it on the boot that records a fresh token instead.
+// calendar_feed_fence_unanchored is that same fence's boot-time marker, and one
+// of the two keys any writer DELETES: the boot pass writes it whenever it ran
+// without a usable fence — dropping calendar_feed_restore_fence in the same
+// pass, so a fence file kept across the gap disagrees on its return — and
+// erases it on the boot that records a fresh token instead.
 type AppState struct {
 	Key       string    `gorm:"column:key;primaryKey"`
 	Value     string    `gorm:"column:value;not null"`
