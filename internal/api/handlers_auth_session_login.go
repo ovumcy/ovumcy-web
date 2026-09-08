@@ -143,16 +143,16 @@ func (handler *Handler) Logout(c fiber.Ctx) error {
 		handler.logSecurityError(c, "auth.logout", spec)
 		return handler.respondMappedError(c, spec)
 	}
-	if handler.authService.CheckAndRecordLogoutAttempt(
-		handler.secretKey,
-		c.IP(),
-		strconv.FormatUint(uint64(user.ID), 10),
-		time.Now(),
-	) {
-		spec := tooManyLogoutAttemptsErrorSpec()
-		handler.logSecurityError(c, "auth.logout", spec)
-		return handler.respondMappedError(c, spec)
+	sessionClaims, hasSession := currentAuthSession(c)
+	sessionID := ""
+	if hasSession && sessionClaims != nil {
+		sessionID = sessionClaims.SessionID
 	}
+	// The revoke comes first and the budget check second: a sign-out the owner
+	// asked for must end the session even when the budget is spent, or an
+	// exhausted budget would keep a session alive on a device the owner is
+	// leaving. What the refusal below still withholds is the provider sign-out
+	// bridge and the success answer — the cookies are already gone.
 	if err := handler.authService.RevokeAuthSessions(c.Context(), user.ID); err != nil {
 		// codecov:ignore:start -- the revoke fails only on a storage error, which no
 		// request-shaped input can provoke. The branch stays in step with the
@@ -164,11 +164,26 @@ func (handler *Handler) Logout(c fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 		// codecov:ignore:end
 	}
+	handler.clearSessionEndCookies(c)
+	if handler.authService.CheckAndRecordLogoutAttempt(
+		handler.secretKey,
+		c.IP(),
+		services.LogoutAttemptIdentity(user.ID, sessionID),
+		time.Now(),
+	) {
+		spec := tooManyLogoutAttemptsErrorSpec()
+		handler.logSecurityError(c, "auth.logout", spec)
+		if acceptsJSON(c) || isHTMX(c) {
+			return handler.respondMappedError(c, spec)
+		}
+		// The session is already gone, so a browser lands where a signed-out
+		// browser belongs, with the refusal as a flash, not on a JSON body.
+		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
+	}
 
 	logoutTransportPath := ""
-	sessionClaims, hasSession := currentAuthSession(c)
-	handler.clearSessionEndCookies(c)
-	if hasSession && sessionClaims != nil {
+	if hasSession && sessionClaims != nil && handler.oidcLogoutStateSvc != nil {
 		logoutState, found, err := handler.oidcLogoutStateSvc.Load(c.Context(), sessionClaims.SessionID, sessionClaims.UserID, time.Now())
 		if err != nil {
 			handler.logSecurityEvent(c, "auth.logout", "provider_logout_state_unavailable")
