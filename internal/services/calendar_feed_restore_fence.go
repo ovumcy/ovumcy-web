@@ -46,9 +46,12 @@ type CalendarFeedRestoreFenceOutcome struct {
 	// CALENDAR_FEED_FENCE_PATH, no mount behind it, a read-only or broken path.
 	// Continuity is then unprovable on every boot, so every armed feed is
 	// disarmed on every boot. No fence TOKEN is recorded — there is nowhere
-	// outside the database to put its other half — but the database is stamped
-	// as having booted this way, which is what lets the first boot that finally
-	// has a fence tell this history from a fresh installation.
+	// outside the database to put its other half — and the database half of any
+	// token still there is DROPPED, so a fence file that outlives this start
+	// cannot compare equal on its return. The database is stamped as having
+	// booted this way, which is what lets the first boot that finally has a
+	// fence — with both halves empty — tell this history from a fresh
+	// installation.
 	Unanchored bool
 	// UnanchoredCause carries why, for the startup line only. Never nil when
 	// Unanchored is true.
@@ -132,9 +135,9 @@ func NewCalendarFeedRestoreFence(appState calendarFeedRestoreFenceAppState, user
 // cannot answer will not serve either. An ANCHOR error is not — an unmounted
 // fence volume is an ordinary operator state, and refusing to start over it
 // would take an instance down for a feature most instances do not use. It fails
-// closed instead: disarm everything, record no token — there is nowhere outside
-// the database to keep its other half — and say so on every start until the
-// mount is there. It does stamp the database as having booted that way, because
+// closed instead: disarm everything, record no token and drop the database half
+// of any token still there — there is nowhere outside the database to keep its
+// other half — and say so on every start until the mount is there. It does stamp the database as having booted that way, because
 // that stamp is what the first boot WITH a fence needs in order to tell this
 // history from a brand-new installation; a stamped database whose two halves
 // are both empty is a restore that cannot be ruled out, not a first boot.
@@ -459,6 +462,29 @@ func (fence *CalendarFeedRestoreFence) record(ctx context.Context, outcome Calen
 // one taken by an instance that never served at all, and the first boot after
 // a fence is finally mounted would adopt its armed rows instead of disarming.
 //
+// The database half of the token is dropped as well. A fence file that outlives
+// this start — the variable dropped and later restored over the same volume —
+// would otherwise still agree with the database: nothing during an unfenced
+// period can advance either half (Advance records nothing when not configured),
+// so a backup taken then, restored beside the untouched file, compares equal and
+// the stamp is never consulted. With the database half gone, the file's return
+// reads as a disagreement (anchor found, database empty → ContinuityBroken) and
+// the feeds are disarmed once more before re-arming; with the file gone too,
+// both halves are empty and the stamp answers. Delete is idempotent — a missing
+// key is not an error — so every unanchored start after the first pays one
+// no-op.
+//
+// The order is disarm → drop the token → stamp, and each reversal is worse.
+// Token before stamp: a crash between the two leaves the database with no token
+// and no stamp, which the next fenced boot reads as a disagreement (fail
+// closed), while the reverse leaves a stamp beside a token that still matches
+// the file — exactly the state this drop exists to prevent, and the stamp is not
+// read there. Disarm before either write: a boot that fails at the disarm leaves
+// the database exactly as it found it, so the fence's next start with the file
+// back reads continuity — a failed boot served nothing and lost nothing —
+// instead of a disagreement that would cost every owner a subscribe URL for a
+// restore that never happened.
+//
 // A failure to write the stamp is RETURNED, not swallowed, which fails the
 // boot. That is the same answer the pass already gives every other app_state
 // failure, and the right one here: the anchor error this path exists for is an
@@ -475,6 +501,9 @@ func (fence *CalendarFeedRestoreFence) disarmUnanchored(ctx context.Context, cau
 		DisarmedFeeds:   alreadyDisarmed + disarmed,
 	}
 	if err != nil {
+		return outcome, err
+	}
+	if err := fence.appState.Delete(ctx, models.AppStateKeyCalendarFeedRestoreFence); err != nil {
 		return outcome, err
 	}
 	return outcome, fence.appState.Set(ctx, models.AppStateKeyCalendarFeedFenceUnanchored, unanchoredStampValue(cause))

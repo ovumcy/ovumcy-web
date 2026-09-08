@@ -328,6 +328,9 @@ func TestCalendarFeedRestoreFenceUnwritableAnchorCountsEachRowOnce(t *testing.T)
 	if !outcome.Unanchored || outcome.DisarmedFeeds != 6 {
 		t.Fatalf("expected 6 rows counted once, got %+v", outcome)
 	}
+	if appState.has(models.AppStateKeyCalendarFeedRestoreFence) {
+		t.Fatalf("the degraded pass ends unanchored, so the database half of the old token must be gone too, got %v", appState.values)
+	}
 }
 
 // TestCalendarFeedRestoreFencePropagatesDatabaseFailures separates the two
@@ -1071,7 +1074,79 @@ func TestCalendarFeedRestoreFenceUnanchoredBootStampsTheDatabase(t *testing.T) {
 		t.Fatal("the boot ran without a fence and left nothing in the database saying so: a later restore of a backup taken now cannot be told from a first boot")
 	}
 	if appState.has(models.AppStateKeyCalendarFeedRestoreFence) {
-		t.Fatal("no fence token may be recorded on this path: half a fence is worse than none, because the next boot would read it as a disagreement")
+		t.Fatal("no fence token may remain on this path: nothing outside the database holds its other half, so anything left here is a token the next boot could read as agreement")
+	}
+}
+
+// TestCalendarFeedRestoreFenceUnanchoredBootDropsTheDatabaseHalf is the finding.
+// A FENCED instance that loses CALENDAR_FEED_FENCE_PATH for a start while its
+// data volume — and the fence file on it — is kept would leave both halves
+// holding the same token: nothing during an unfenced period advances either
+// half, so a backup taken then and restored beside the untouched file compares
+// equal, continuity holds, and the stamp is never consulted because it is read
+// only where both halves are empty. Dropping the database half is what turns the
+// file's return into a disagreement.
+func TestCalendarFeedRestoreFenceUnanchoredBootDropsTheDatabaseHalf(t *testing.T) {
+	journal := []string{}
+	appState := &stubFenceAppState{
+		values:  map[string]string{models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken},
+		journal: &journal,
+	}
+	users := &stubFenceUserStore{disarmed: 2, journal: &journal}
+	// A CONFIGURED fence that cannot be read — the shape of a lost mount. Not
+	// ErrCalendarFeedFenceNotConfigured, so the drop is pinned for every
+	// unanchored cause rather than only for the unset variable.
+	anchor := &stubFenceAnchor{readErr: errors.New("permission denied"), journal: &journal}
+
+	outcome, err := NewCalendarFeedRestoreFence(appState, users, anchor).Enforce(context.Background())
+	if err != nil {
+		t.Fatalf("an unreadable fence is an operator state, not a boot failure: %v", err)
+	}
+	if !outcome.Unanchored || outcome.DisarmedFeeds != 2 {
+		t.Fatalf("expected the unanchored disarm of both rows, got %+v", outcome)
+	}
+	if appState.has(models.AppStateKeyCalendarFeedRestoreFence) {
+		t.Fatal("the database half of the token survived an unanchored start: a fence file kept across this gap would still compare equal on its return, and the stamp is never read there")
+	}
+	if !appState.has(models.AppStateKeyCalendarFeedFenceUnanchored) {
+		t.Fatal("the boot ran without a fence and left nothing in the database saying so")
+	}
+	if want := []string{"disarm", "delete", "set"}; !equalStrings(journal, want) {
+		t.Fatalf("order is disarm → drop the token → stamp: the disarm first so a boot that fails there changes nothing, the token before the stamp so a crash between them leaves a database the next fenced boot reads as a disagreement; got %v, want %v", journal, want)
+	}
+}
+
+// TestCalendarFeedRestoreFenceUnanchoredTokenDropFailureFailsTheBoot pins the
+// drop as a database write like the stamp beside it: a database that cannot
+// erase the half whose partner this start could not read is not an operator
+// state to boot through, and starting anyway would leave exactly the agreeing
+// pair the drop exists to break. Nothing after it runs.
+func TestCalendarFeedRestoreFenceUnanchoredTokenDropFailureFailsTheBoot(t *testing.T) {
+	journal := []string{}
+	dropFailure := errors.New("app_state delete refused")
+	appState := &stubFenceAppState{
+		values:    map[string]string{models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken},
+		deleteErr: dropFailure,
+		journal:   &journal,
+	}
+	users := &stubFenceUserStore{disarmed: 2, journal: &journal}
+	anchor := &stubFenceAnchor{readErr: errors.New("permission denied"), journal: &journal}
+
+	outcome, err := NewCalendarFeedRestoreFence(appState, users, anchor).Enforce(context.Background())
+	if !errors.Is(err, dropFailure) {
+		t.Fatalf("expected the drop failure to reach the caller, got %v", err)
+	}
+	if !outcome.Unanchored {
+		t.Fatalf("the outcome must still say what this boot was, got %+v", outcome)
+	}
+	if appState.has(models.AppStateKeyCalendarFeedFenceUnanchored) {
+		t.Fatal("a stamp beside a token that still matches the file is the state the drop exists to prevent, and the stamp is not read there")
+	}
+	if !appState.has(models.AppStateKeyCalendarFeedRestoreFence) {
+		t.Fatal("the drop failed, so the token must still be there: a test that passes over a token the stub removed anyway proves nothing")
+	}
+	if want := []string{"disarm"}; !equalStrings(journal, want) {
+		t.Fatalf("a failed drop must record nothing else, got %v", journal)
 	}
 }
 
@@ -1106,12 +1181,17 @@ func TestCalendarFeedRestoreFenceUnanchoredStampFailureFailsTheBoot(t *testing.T
 // cannot be read rather than when the halves disagree or a stamped history is
 // found (those are TestCalendarFeedRestoreFencePropagatesDatabaseFailures and
 // TestCalendarFeedRestoreFenceUnanchoredHistoryDisarmFailurePropagates below).
-// The stamp is written only after a disarm that succeeded, so a failed disarm
-// leaves no evidence that could be mistaken for a completed unanchored pass.
+// Neither write runs before a disarm that succeeded: a boot that fails at the
+// disarm leaves the database exactly as it found it — no stamp, and the token
+// untouched — so the next start with the fence back reads continuity, because a
+// failed boot served nothing and lost nothing.
 func TestCalendarFeedRestoreFenceUnanchoredDisarmFailurePropagates(t *testing.T) {
 	journal := []string{}
 	disarmFailure := errors.New("disarm failed")
-	appState := &stubFenceAppState{values: map[string]string{}, journal: &journal}
+	appState := &stubFenceAppState{
+		values:  map[string]string{models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken},
+		journal: &journal,
+	}
 	users := &stubFenceUserStore{disarmErr: disarmFailure, journal: &journal}
 	anchor := &stubFenceAnchor{readErr: security.ErrCalendarFeedFenceNotConfigured}
 
@@ -1124,6 +1204,9 @@ func TestCalendarFeedRestoreFenceUnanchoredDisarmFailurePropagates(t *testing.T)
 	}
 	if appState.has(models.AppStateKeyCalendarFeedFenceUnanchored) {
 		t.Fatal("a failed disarm must leave no stamp: the database would otherwise say this boot completed an unanchored pass it never finished")
+	}
+	if !appState.has(models.AppStateKeyCalendarFeedRestoreFence) {
+		t.Fatal("a failed disarm must leave the token too: dropping it first would cost every owner a subscribe URL on the next start with the fence back, for a boot that served nothing")
 	}
 	if want := []string{"disarm"}; !equalStrings(journal, want) {
 		t.Fatalf("a failed disarm must record nothing else, got %v", journal)
