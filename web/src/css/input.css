@@ -4589,7 +4589,15 @@
        substituted where that property is DECLARED, so a stroke token declared
        here and overridden on the cell would never reach this value — what
        inherits down is the already-resolved fill. Three complete fills is the
-       only form in which the swap actually happens. */
+       only form in which the swap actually happens.
+
+       Contrast: the WCAG gate measures a cell's flattened background-COLOUR,
+       never its hatches, and each wash below is a colour the gate already
+       clears on another cell — the two goal washes are the same color-mix()
+       the goal fertile-edge fill uses, and the neutral one is thinner than
+       --cal-fill-fertile in the light theme and the same value in the dark.
+       The hatches are the part no cell's gate covers; a check that measured
+       them would be new coverage for the whole family, not for this fill. */
     --cal-fill-overlap-period-fertile: repeating-linear-gradient(
         45deg,
         rgb(var(--cal-predicted) / 0.36) 0,
