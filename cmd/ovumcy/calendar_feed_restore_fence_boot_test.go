@@ -124,7 +124,7 @@ func TestCalendarFeedRestoreFenceStartupMessage(t *testing.T) {
 		UnanchoredCause: errors.New("read-only file system"),
 		DisarmedFeeds:   3,
 	})
-	for _, want := range []string{"CALENDAR_FEED_FENCE_PATH", "NOT part of any database backup", "every start will disarm again", "3 armed calendar feed(s) disarmed"} {
+	for _, want := range []string{"CALENDAR_FEED_FENCE_PATH", "NOT part of any database backup", "every start will disarm again", "3 armed calendar feed(s) disarmed", "database half of the fence marker dropped"} {
 		if !strings.Contains(unanchored, want) {
 			t.Fatalf("the unanchored line must contain %q, got %q", want, unanchored)
 		}
