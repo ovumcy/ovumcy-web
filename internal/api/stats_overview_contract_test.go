@@ -120,6 +120,35 @@ func statsOverviewStates() []statsOverviewState {
 			// value rather than both on silence.
 			wantsFertilityHook: true,
 		},
+		{
+			// The same overdue tier reached through the history that used to walk
+			// past it: three 28-day cycles, then one 300-day gap where a period
+			// log is missing. The mean of the recent window is 96 and the median
+			// is 28, so a gate resolved against the mean asked whether cycle day
+			// 61 was past 103 — and this endpoint published dates rolled forward
+			// from the 28 the projection actually uses. The service-level guard is
+			// TestLongCycleGateSuppressesEverySurfaceWhenAMergedCycleInflatesTheAverage;
+			// this case is here because the endpoint is a separate consumer, and a
+			// helper's verdict is not a payload.
+			name:    "cycle overdue behind a mean inflated by a merged cycle",
+			history: []int{444, 416, 388, 360, 60},
+			seed: func(t *testing.T, database *gorm.DB, user models.User, today time.Time) {
+				// The onboarding anchor the fixture account carries is newer than
+				// the logged starts and would stay active (services-cycle.md), so
+				// the running cycle has to be anchored on the start this history
+				// is about — otherwise the case is about cycle day 6.
+				updateStatsOverviewUser(t, database, user, map[string]any{
+					"last_period_start": services.AddCalendarDays(today, -60, time.UTC),
+				})
+			},
+			// cycle_overdue, not a new reason: the gate is the same one, resolved
+			// against a length an outlier cannot lift.
+			wantReasons:        []string{"cycle_overdue"},
+			wantPredictions:    true,
+			wantFertility:      true,
+			wantNextPeriodSet:  false,
+			wantsFertilityHook: true,
+		},
 	}
 }
 

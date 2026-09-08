@@ -136,11 +136,43 @@ func DashboardProjectionCycleLength(user *models.User, stats CycleStats) int {
 	return models.DefaultCycleLength
 }
 
+// DashboardCycleGateLength is the length every "this running cycle has passed
+// what the account's own history can predict" decision resolves against: the
+// SMALLER of the average-first reference and the median-first projection length.
+//
+// Neither statistic alone can carry that decision. A single missed period log
+// merges two real cycles into one enormous span, and that span lands in the same
+// recent-cycle window both statistics are computed over: three 28-day cycles
+// beside one 300-day gap average 96, four of them average 82, while the median
+// stays 28. Resolved against the average, the overdue gate asked whether cycle
+// day 61 was past 103, answered no, and every surface kept publishing dates
+// produced by rolling the 28-day median forward — a projection 33 days past the
+// length that produced it, presented as an estimate.
+//
+// Taking the smaller of the two is the conservative reading in both directions:
+// it cannot be lifted by an outlier in either statistic, and it changes nothing
+// where the two agree — an ordinary history and a genuinely long-but-regular one
+// (three real 50-day cycles) keep the exact threshold they have today.
+//
+// It deliberately introduces no cutoff of its own. WHICH spans stop counting as
+// a cycle, and what a long history should do to the reference set, is a clinical
+// question this function does not answer and must not silently decide; the
+// robust statistic sidesteps it by giving the outlier no vote instead of ruling
+// on it. DashboardCycleReferenceLength stays average-first and stays the
+// DISPLAYED reference and the hero's axis, unchanged.
+func DashboardCycleGateLength(user *models.User, stats CycleStats) int {
+	reference := DashboardCycleReferenceLength(user, stats)
+	if projection := DashboardProjectionCycleLength(user, stats); projection > 0 && projection < reference {
+		return projection
+	}
+	return reference
+}
+
 // DashboardCycleOverdue reports that the running cycle has passed the account's
 // own reference length by more than a week. It is the reference+7 rule of
 // DashboardCycleDayLooksLong — the one the late-cycle notice already states —
-// resolved against DashboardCycleReferenceLength, so the threshold keeps living
-// in exactly one place and no surface may re-derive it.
+// resolved against DashboardCycleGateLength, so the threshold keeps living in
+// exactly one place and no surface may re-derive it.
 //
 // This is the third medical-safety suppression signal, beside
 // DashboardPredictionDisabled(user) and stats.PregnancyPaused: past this point a
@@ -150,7 +182,7 @@ func DashboardProjectionCycleLength(user *models.User, stats CycleStats) int {
 // forbids. Every surface that shows a projected window gates on all three —
 // through PredictionsSuppressed, which is where the three now live together.
 func DashboardCycleOverdue(user *models.User, stats CycleStats) bool {
-	return DashboardCycleDayLooksLong(stats.CurrentCycleDay, DashboardCycleReferenceLength(user, stats))
+	return DashboardCycleDayLooksLong(stats.CurrentCycleDay, DashboardCycleGateLength(user, stats))
 }
 
 // PredictionsSuppressed is the whole-projection suppression gate: unpredictable-
@@ -445,9 +477,15 @@ func BuildDashboardCycleContext(user *models.User, logs []models.DailyLog, stats
 	}
 
 	cycleDayReference := DashboardCycleReferenceLength(user, stats)
-	cycleDayWarning := DashboardCycleDayLooksLong(stats.CurrentCycleDay, cycleDayReference)
+	// Both decisions below resolve against the conservative gate length, never
+	// against the displayed reference alone: they ask the same question
+	// DashboardCycleOverdue asks, and an answer that differed from the gate's
+	// would withhold the window while the late-cycle notice stayed invisible —
+	// a blank slot with nothing standing where the date was.
+	cycleDayGateLength := DashboardCycleGateLength(user, stats)
+	cycleDayWarning := DashboardCycleDayLooksLong(stats.CurrentCycleDay, cycleDayGateLength)
 	cycleStaleAnchor := DashboardCycleStaleAnchor(user, stats, location)
-	cycleDataStale := DashboardCycleDataLooksStale(cycleStaleAnchor, today, cycleDayReference)
+	cycleDataStale := DashboardCycleDataLooksStale(cycleStaleAnchor, today, cycleDayGateLength)
 	display := buildDashboardPredictionDisplay(user, logs, stats, today, location)
 
 	return DashboardCycleContext{

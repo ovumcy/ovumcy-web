@@ -150,7 +150,11 @@ func (service *StatsService) BuildFlags(user *models.User, logs []models.DailyLo
 	observedCycleCount := len(CycleLengths(logs))
 	completedCycleCount := len(CompletedCycleTrendLengths(logs, now, location))
 	today := DateAtLocation(now, location)
-	cycleDayReference := DashboardCycleReferenceLength(user, stats)
+	// The same conservative length the dashboard's stale check resolves against
+	// (DashboardCycleGateLength): the two flags are one question asked on two
+	// pages, and an inflated mean silencing it here alone would leave /stats
+	// reassuring an account the dashboard is already warning.
+	cycleDayReference := DashboardCycleGateLength(user, stats)
 	cycleStaleAnchor := DashboardCycleStaleAnchor(user, stats, location)
 
 	return StatsFlags{
