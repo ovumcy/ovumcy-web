@@ -466,10 +466,17 @@ func (fence *CalendarFeedRestoreFence) record(ctx context.Context, outcome Calen
 //
 // The database half of the token is dropped as well. A fence file that outlives
 // this start — the variable dropped and later restored over the same volume —
-// would otherwise still agree with the database: nothing during an unfenced
-// period can advance either half (Advance records nothing when not configured),
-// so a backup taken then, restored beside the untouched file, compares equal and
-// the stamp is never consulted. With the database half gone, the file's return
+// would otherwise still agree with the database: nothing during a period with
+// no fence configured can advance either half (Advance records nothing when not
+// configured), so a backup taken then, restored beside the untouched file,
+// compares equal and the stamp is never consulted. A fence that is configured
+// but unusable is the other flavour of unanchored: there Advance moves the
+// database half alone, so every feed change made in the gap is already a
+// disagreement the next fenced boot reads, and a gap with no change has nothing
+// to contain. The drop still runs for that flavour, on purpose — the two are
+// told apart only by the error, and a drop keyed on it would leave the file
+// agreeing with a database half nothing wrote across a gap the pass just
+// declared it could not vouch for. With the database half gone, the file's return
 // reads as a disagreement (anchor found, database empty → ContinuityBroken) and
 // the feeds are disarmed once more before re-arming; with the file gone too,
 // both halves are empty and the stamp answers. Delete is idempotent — a missing

@@ -237,8 +237,9 @@ const (
 		security.CalendarFeedFencePathEnv + " to an absolute path, restart it once, then point this command at that same absolute path and re-run."
 	startTheServer = "Start the server once with this fence configured — its boot pass disarms every armed calendar feed on the " +
 		"instance before it reconciles both halves — then re-run this command."
-	// Distinct from startTheServer: a fence that has NEVER recorded a marker
-	// anywhere may mean the server has never had a writable fence at all —
+	// Distinct from startTheServer: a fence that holds no marker anywhere —
+	// never recorded one, or not since an unfenced start dropped the database
+	// half — may mean the server has never had a writable fence at all —
 	// the compose image sets CALENDAR_FEED_FENCE_PATH unconditionally, so an
 	// operator who skipped mounting the volume sees exactly this shape rather
 	// than an obvious "no variable set" refusal — and "start the server" on
