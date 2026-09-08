@@ -28,20 +28,21 @@ type CalendarDayState struct {
 	IsFertilityEdge        bool
 	IsOvulation            bool
 	IsTentativeOvulation   bool
-	// IsPredictedFertileOverlap marks a day on which the fertile window and a
-	// projected-period statement — the band, the start window, or both — are
-	// true at once. Both facts are real together: a short cycle with a long
-	// average period puts expected bleeding inside the six days before
-	// ovulation. Neither flag above is cleared for it; this is a derived
-	// reading of them, and the only thing it decides is which single fill the
-	// cell paints, which is otherwise a precedence ladder that would drop the
-	// fertile half silently.
+	// IsPredictedFertileOverlap marks a day on which the projected period band
+	// and the fertile window are BOTH true. Both facts are real at once — a
+	// short cycle with a long average period puts expected bleeding inside the
+	// six days before ovulation — so neither flag above is cleared for it: this
+	// is a derived reading of the two, and the only thing it decides is which
+	// single fill the cell paints, which is otherwise a precedence ladder that
+	// would drop the fertile half silently.
 	//
-	// The start window counts because the ladder ranks it ABOVE the band: a
-	// predicate that named the band alone would leave the window's fill missing
-	// on exactly the days the start window covers, which is the same defect one
-	// rung higher — and it draws a hole through the middle of a window whose
-	// remaining days now paint the overlap.
+	// The BAND, not the start window: the start window says the next period may
+	// begin on the day, which is not a projection of bleeding on it, and on an
+	// irregular cycle the window can be weeks long and reach fertile days the
+	// band never covers. Folding it in here would paint the band's own hatch —
+	// and print "predicted period" — over days the model projects no bleeding
+	// on. A start-window day the band also covers is still an overlap, and the
+	// ladder in internal/api reads both flags to keep its dotted stroke.
 	IsPredictedFertileOverlap bool
 	HasData                   bool
 	HasSex                    bool
@@ -522,7 +523,7 @@ func buildCalendarDayState(day time.Time, monthStart time.Time, todayKey string,
 		// The window's own membership, edge or peak, is what makes the day
 		// fertile — not IsFertility, which is already the narrowed reading that
 		// stands down on the ovulation day and on its tentative form.
-		IsPredictedFertileOverlap: (isPredictedPeriod || isPredictedStartWindow) && (isFertilityEdge || isFertilityPeak),
+		IsPredictedFertileOverlap: isPredictedPeriod && (isFertilityEdge || isFertilityPeak),
 		HasData:                   hasDataMap[key],
 		HasSex:                    hasEntry && NormalizeDaySexActivity(entry.SexActivity) != models.SexActivityNone,
 	}
