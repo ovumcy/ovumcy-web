@@ -136,43 +136,38 @@ func DashboardProjectionCycleLength(user *models.User, stats CycleStats) int {
 	return models.DefaultCycleLength
 }
 
-// DashboardCycleGateLength is the length every "this running cycle has passed
-// what the account's own history can predict" decision resolves against: the
-// SMALLER of the average-first reference and the median-first projection length.
-//
-// Neither statistic alone can carry that decision. A single missed period log
-// merges two real cycles into one enormous span, and that span lands in the same
-// recent-cycle window both statistics are computed over: three 28-day cycles
-// beside one 300-day gap average 96, four of them average 82, while the median
-// stays 28. Resolved against the average, the overdue gate asked whether cycle
-// day 61 was past 103, answered no, and every surface kept publishing dates
-// produced by rolling the 28-day median forward — a projection 33 days past the
-// length that produced it, presented as an estimate.
-//
-// Taking the smaller of the two is the conservative reading in both directions:
-// it cannot be lifted by an outlier in either statistic, and it changes nothing
-// where the two agree — an ordinary history and a genuinely long-but-regular one
-// (three real 50-day cycles) keep the exact threshold they have today.
-//
-// It deliberately introduces no cutoff of its own. WHICH spans stop counting as
-// a cycle, and what a long history should do to the reference set, is a clinical
-// question this function does not answer and must not silently decide; the
-// robust statistic sidesteps it by giving the outlier no vote instead of ruling
-// on it. DashboardCycleReferenceLength stays average-first and stays the
-// DISPLAYED reference and the hero's axis, unchanged.
-func DashboardCycleGateLength(user *models.User, stats CycleStats) int {
-	reference := DashboardCycleReferenceLength(user, stats)
-	if projection := DashboardProjectionCycleLength(user, stats); projection > 0 && projection < reference {
-		return projection
-	}
-	return reference
-}
-
-// DashboardCycleOverdue reports that the running cycle has passed the account's
-// own reference length by more than a week. It is the reference+7 rule of
+// DashboardCycleOverdue reports that the running cycle has passed the length its
+// own projection was computed from by more than a week. It is the +7 rule of
 // DashboardCycleDayLooksLong — the one the late-cycle notice already states —
-// resolved against DashboardCycleGateLength, so the threshold keeps living in
-// exactly one place and no surface may re-derive it.
+// resolved against DashboardProjectionCycleLength, so the threshold keeps living
+// in exactly one place and no surface may re-derive it.
+//
+// It is measured against the PROJECTION length, not against the average-first
+// DashboardCycleReferenceLength, because the claim being withheld is the
+// projection: every published date is the median rolled forward from the
+// anchor, so the median is the length that can be shown to have run out. The
+// average cannot carry the decision. A single missed period log merges two real
+// cycles into one enormous span, and that span lands in the same recent-cycle
+// window both statistics are computed over: three 28-day cycles beside one
+// 300-day gap average 96, four of them average 82, while the median stays 28.
+// Resolved against the average, this gate asked whether cycle day 61 was past
+// 103, answered no, and every surface kept publishing dates rolled forward from
+// the 28 — a projection 33 days past the length that produced it, presented as
+// an estimate.
+//
+// The median also cannot fire BEFORE the date it published: a 28/60/60 history
+// projects day 61 and is measured against 60, where the smaller of the two
+// statistics (mean 49) would have suppressed on day 57 a date not yet due.
+//
+// It introduces no cutoff of its own. WHICH spans stop counting as a cycle, and
+// what a long history should do to the reference set, is a clinical question this
+// gate does not answer and must not silently decide; reading the projection's own
+// length gives the outlier no vote instead of ruling on it — at the cost of
+// suppressing (mean − median) days earlier than before for a right-skewed
+// history, which is the safe direction and is pinned as such in
+// long_cycle_gate_test.go. DashboardCycleReferenceLength stays average-first and
+// stays the displayed reference, the hero's axis and the stale check's length,
+// unchanged.
 //
 // This is the third medical-safety suppression signal, beside
 // DashboardPredictionDisabled(user) and stats.PregnancyPaused: past this point a
@@ -182,12 +177,13 @@ func DashboardCycleGateLength(user *models.User, stats CycleStats) int {
 // forbids. Every surface that shows a projected window gates on all three —
 // through PredictionsSuppressed, which is where the three now live together.
 func DashboardCycleOverdue(user *models.User, stats CycleStats) bool {
-	return DashboardCycleDayLooksLong(stats.CurrentCycleDay, DashboardCycleGateLength(user, stats))
+	return DashboardCycleDayLooksLong(stats.CurrentCycleDay, DashboardProjectionCycleLength(user, stats))
 }
 
 // PredictionsSuppressed is the whole-projection suppression gate: unpredictable-
-// cycle mode, a pregnancy pause, or a cycle overdue past its own reference
-// length. Any one of them withholds every projected date, on every surface.
+// cycle mode, a pregnancy pause, or a cycle overdue past the length its own
+// projection was computed from. Any one of them withholds every projected date,
+// on every surface.
 //
 // It exists as one predicate because the three disjuncts had been written out
 // once per surface — the calendar grid, the .ics feed and the webhook pass each
@@ -477,15 +473,21 @@ func BuildDashboardCycleContext(user *models.User, logs []models.DailyLog, stats
 	}
 
 	cycleDayReference := DashboardCycleReferenceLength(user, stats)
-	// Both decisions below resolve against the conservative gate length, never
-	// against the displayed reference alone: they ask the same question
-	// DashboardCycleOverdue asks, and an answer that differed from the gate's
-	// would withhold the window while the late-cycle notice stayed invisible —
-	// a blank slot with nothing standing where the date was.
-	cycleDayGateLength := DashboardCycleGateLength(user, stats)
-	cycleDayWarning := DashboardCycleDayLooksLong(stats.CurrentCycleDay, cycleDayGateLength)
+	// The late-cycle notice is what stands where the withheld date was, so its
+	// trigger is the GATE's question, asked against the gate's length — the same
+	// DashboardCycleOverdue reads. Answered against the displayed reference
+	// instead, an inflated mean withheld the window and left the notice invisible:
+	// a blank slot with nothing explaining it.
+	//
+	// The stale check keeps the displayed reference on purpose. It is a different
+	// question — "is this account's data out of date" — and it carries no +7
+	// grace, so moving it onto the shorter projection length flipped ordinary
+	// right-skewed histories: 27/28/28/36 (mean 30, median 28) turned stale on
+	// cycle day 29, forcing phase and fertility to unknown and raising the amber
+	// out-of-date banner while the next-period date was still published.
+	cycleDayWarning := DashboardCycleDayLooksLong(stats.CurrentCycleDay, DashboardProjectionCycleLength(user, stats))
 	cycleStaleAnchor := DashboardCycleStaleAnchor(user, stats, location)
-	cycleDataStale := DashboardCycleDataLooksStale(cycleStaleAnchor, today, cycleDayGateLength)
+	cycleDataStale := DashboardCycleDataLooksStale(cycleStaleAnchor, today, cycleDayReference)
 	display := buildDashboardPredictionDisplay(user, logs, stats, today, location)
 
 	return DashboardCycleContext{

@@ -199,21 +199,20 @@ func dashboardCycleHeroOvulationDay(stats CycleStats, cycleContext DashboardCycl
 
 // canRenderDashboardCycleHero decides whether the ribbon may be drawn at all.
 //
-// It reads no suppression predicate, and an overdue cycle is nonetheless refused
-// here — through CycleDataStale, not through the day-inside-the-length test above
-// it, whose cycleLength is the average-first reference and passed cycle day 61
-// inside a 96-day reference. Both the stale flag and the overdue gate resolve
-// against DashboardCycleGateLength, and the stale rule carries no +7 grace, so
-// overdue (day > gate+7) implies stale (day > gate) and the ribbon cannot draw a
-// projected cycle map beside a header saying the estimate is paused. That
-// implication is the whole protection: give the stale check a length or a grace
-// period of its own and this function starts rendering a projection every other
-// surface withholds. Pinned from the outside by
+// NextPeriodEstimatePaused is the decision the cycle context already resolved,
+// read rather than re-derived, and it is not the day-inside-the-length test above
+// it: cycleLength here is the average-first reference, which a merged cycle
+// inflates, while the gate is measured against the projection length. Cycle day
+// 61 sat inside a 96-day reference, so the ribbon drew a 96-day projected cycle
+// map — projected days and a projected ovulation day among them — beside a header
+// saying the estimate is paused. A suppressed cycle map is not a cycle map that
+// stays honest (.claude/rules/prediction-display.md). Pinned from the outside by
 // TestLongCycleGateSuppressesEverySurfaceWhenAMergedCycleInflatesTheAverage.
 func canRenderDashboardCycleHero(cycleLength int, stats CycleStats, cycleContext DashboardCycleContext) bool {
 	return cycleLength > 0 &&
 		stats.CurrentCycleDay > 0 &&
 		stats.CurrentCycleDay <= cycleLength &&
+		!cycleContext.NextPeriodEstimatePaused &&
 		!cycleContext.PredictionDisabled &&
 		!cycleContext.CycleDataStale &&
 		!cycleContext.DisplayNextPeriodPrompt &&
