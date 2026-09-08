@@ -137,10 +137,11 @@ func NewCalendarFeedRestoreFence(appState calendarFeedRestoreFenceAppState, user
 // would take an instance down for a feature most instances do not use. It fails
 // closed instead: disarm everything, record no token and drop the database half
 // of any token still there — there is nowhere outside the database to keep its
-// other half — and say so on every start until the mount is there. It does stamp the database as having booted that way, because
-// that stamp is what the first boot WITH a fence needs in order to tell this
-// history from a brand-new installation; a stamped database whose two halves
-// are both empty is a restore that cannot be ruled out, not a first boot.
+// other half — and say so on every start until the mount is there. It does
+// stamp the database as having booted that way, because that stamp is what the
+// first boot WITH a fence needs in order to tell this history from a brand-new
+// installation; a stamped database whose two halves are both empty is a restore
+// that cannot be ruled out, not a first boot.
 //
 // Ordering matches the sibling: the disarm runs BEFORE either half of the new
 // token is recorded, so a crash in between re-runs the disarm on the next boot
@@ -331,10 +332,11 @@ func (err *CalendarFeedFenceStepError) Unwrap() []error {
 // anchor was reachable but the two halves are not the one pair AdvanceConfirmed
 // is willing to move forward from: both already holding the SAME token.
 // AnchorFound and StoredFound report which half(s) held one, because the
-// operator remedy differs by shape: both false means the server has never
-// booted with this fence configured at all — arming it is Enforce's job on a
-// first boot, never this method's — while any other combination is the same
-// disagreement a restored backup produces. Either way AdvanceConfirmed writes
+// operator remedy differs by shape: both false means the server has not booted
+// with this fence since it last held a token — never at all, or an unfenced
+// start dropped the database half and the file went with the volume — and
+// arming it is Enforce's job on that next boot, never this method's — while any
+// other combination is the same disagreement a restored backup produces. Either way AdvanceConfirmed writes
 // nothing: a caller that cannot prove continuity must refuse, not guess which
 // half is right.
 type CalendarFeedFenceContinuityError struct {
@@ -479,11 +481,14 @@ func (fence *CalendarFeedRestoreFence) record(ctx context.Context, outcome Calen
 // and no stamp, which the next fenced boot reads as a disagreement (fail
 // closed), while the reverse leaves a stamp beside a token that still matches
 // the file — exactly the state this drop exists to prevent, and the stamp is not
-// read there. Disarm before either write: a boot that fails at the disarm leaves
-// the database exactly as it found it, so the fence's next start with the file
-// back reads continuity — a failed boot served nothing and lost nothing —
-// instead of a disagreement that would cost every owner a subscribe URL for a
-// restore that never happened.
+// read there. Disarm before either write: a boot that fails at the disarm writes
+// neither, so where nothing had been disarmed yet (the anchor-read failure, a
+// first boot whose file write failed) the database is exactly as the boot found
+// it and the fence's next start with the file back reads continuity — a failed
+// boot served nothing and lost nothing — instead of a disagreement that would
+// cost every owner a subscribe URL for a restore that never happened. Reached
+// from record after a disarm that already ran, a second failed disarm leaves the
+// halves as they were too — disagreeing — and the next boot disarms again.
 //
 // A failure to write the stamp is RETURNED, not swallowed, which fails the
 // boot. That is the same answer the pass already gives every other app_state

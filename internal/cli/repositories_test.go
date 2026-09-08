@@ -268,11 +268,11 @@ func TestConfirmOperatorFeedRevocationRefusesAndWritesNothing(t *testing.T) {
 			wantRemedy: "Start the server once",
 		},
 		{
-			name:       "neither half has ever recorded a marker",
+			name:       "neither half holds a marker",
 			fencePath:  "/app/fence/calendar-feed.fence",
 			appState:   &fakeConfirmFenceAppState{values: map[string]string{}},
 			anchor:     &fakeConfirmFenceAnchor{},
-			wantExtra:  []string{"has ever recorded a marker"},
+			wantExtra:  []string{"nor the database holds a marker"},
 			wantRemedy: "writable fence",
 		},
 		{
