@@ -3490,9 +3490,56 @@
   border-style: dashed;
   background: var(--cal-fill-overlap-period-fertile);
 
+  /* The goal palette has to reach this fill too. It repaints the fertile
+     window amber for avoid_pregnancy and green for trying_to_conceive — the
+     whole point of the family being that the same biology carries opposite
+     advice — so an overlap cell left in the neutral green would tell an
+     avoid_pregnancy owner "go ahead" on days the cells beside it warn about.
+     Both the wash and the fertile hatch move; the projected-period hatch does
+     not, because the band is not the axis the goal inverts. The edge values
+     are used for the whole state: the overlap fill already collapses the edge
+     and peak tiers, and inventing a second grade here would say more than the
+     fill can carry.
+
+     The two rules sit ABOVE the dark rule on purpose, exactly as the tier
+     rules below do: at equal specificity the later rule wins, and on a dark
+     card the neutral fill is the readable one. */
+  [data-calendar-view][data-usage-goal='avoid_pregnancy'] & {
+    --cal-overlap-fertile-ink: rgba(196, 116, 33, 0.42);
+    border-color: rgba(203, 139, 54, 0.78);
+    background-color: color-mix(
+      in srgb,
+      var(--fertile-warning-edge) 78%,
+      white 22%
+    );
+  }
+
+  [data-calendar-view][data-usage-goal='trying_to_conceive'] & {
+    --cal-overlap-fertile-ink: rgba(63, 133, 71, 0.42);
+    border-color: rgba(103, 154, 101, 0.78);
+    background-color: color-mix(
+      in srgb,
+      var(--fertile-positive-edge) 78%,
+      white 22%
+    );
+  }
+
   :root[data-theme='dark'] & {
+    --cal-overlap-fertile-ink: rgb(var(--cal-fertile-ink) / 0.22);
     border-color: var(--cal-line-overlap-period-fertile);
     background: var(--cal-fill-overlap-period-fertile);
+  }
+}
+
+/* The same overlap one rung higher: the days the next period may START on,
+   inside the fertile window. It carries the overlap fill together with this
+   class — the pairing the fertile tiers already use — so the weave, the goal
+   palette and the dark-theme rules are stated once. Only the border changes,
+   to the dotted stroke that means "start window" everywhere else on the grid;
+   written against the base class so it cannot lose to it on source order. */
+@utility calendar-cell-overlap-start-window {
+  &.calendar-cell-overlap-period-fertile {
+    border-style: dotted;
   }
 }
 
@@ -4542,7 +4589,10 @@
        green is a new colour, which reads as a third unrelated concept, while
        one hatch crossing the other reads as the two states it is made of. The
        wash under them is thinner than the fertile one so both directions stay
-       visible over it. */
+       visible over it. The fertile hatch reads its colour from a token of its
+       own so the goal palette can swap that one stroke on the cell without
+       restating the whole weave. */
+    --cal-overlap-fertile-ink: rgb(var(--cal-fertile-ink) / 0.3);
     --cal-fill-overlap-period-fertile: repeating-linear-gradient(
         45deg,
         rgb(var(--cal-predicted) / 0.36) 0,
@@ -4552,8 +4602,8 @@
       ),
       repeating-linear-gradient(
         -45deg,
-        rgb(var(--cal-fertile-ink) / 0.3) 0,
-        rgb(var(--cal-fertile-ink) / 0.3) 3px,
+        var(--cal-overlap-fertile-ink) 0,
+        var(--cal-overlap-fertile-ink) 3px,
         rgb(255 255 255 / 0) 3px,
         rgb(255 255 255 / 0) 10px
       ),
@@ -4858,6 +4908,7 @@
     /* The weave keeps both hatch expressions and restates only the wash under
        them, for the reason the fertile fill above restates its own: mixed
        toward the light-theme green it lifts the cell under light day numbers. */
+    --cal-overlap-fertile-ink: rgb(var(--cal-fertile-ink) / 0.22);
     --cal-fill-overlap-period-fertile: repeating-linear-gradient(
         45deg,
         rgb(var(--cal-predicted) / 0.3) 0,
@@ -4867,8 +4918,8 @@
       ),
       repeating-linear-gradient(
         -45deg,
-        rgb(var(--cal-fertile-ink) / 0.22) 0,
-        rgb(var(--cal-fertile-ink) / 0.22) 3px,
+        var(--cal-overlap-fertile-ink) 0,
+        var(--cal-overlap-fertile-ink) 3px,
         rgb(255 255 255 / 0) 3px,
         rgb(255 255 255 / 0) 10px
       ),

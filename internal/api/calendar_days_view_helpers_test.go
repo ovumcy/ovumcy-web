@@ -179,6 +179,27 @@ func TestBuildCalendarDaysGivesTheBandAndWindowOverlapItsOwnFill(t *testing.T) {
 			IsFertilityEdge:           true,
 			IsPredictedFertileOverlap: true,
 		},
+		{
+			// The start window inside the fertile window: the overlap fill,
+			// plus the modifier that restores the dotted start-window stroke.
+			DateString:                "2026-03-23",
+			Day:                       23,
+			InMonth:                   true,
+			IsPredicted:               true,
+			IsPredictedStartWindow:    true,
+			IsFertility:               true,
+			IsFertilityEdge:           true,
+			IsPredictedFertileOverlap: true,
+		},
+		{
+			// The control beside it: a start-window day no window covers keeps
+			// the plain start-window class, so the new rung cannot swallow the
+			// whole range.
+			DateString:             "2026-03-21",
+			Day:                    21,
+			InMonth:                true,
+			IsPredictedStartWindow: true,
+		},
 	})
 
 	cases := []struct {
@@ -189,6 +210,11 @@ func TestBuildCalendarDaysGivesTheBandAndWindowOverlapItsOwnFill(t *testing.T) {
 		{"calendar-cell-predicted", "predicted-period"},
 		{"calendar-cell-fertile calendar-cell-fertile-peak", "fertile-peak"},
 		{"calendar-cell-period", "period"},
+		{
+			"calendar-cell-overlap-period-fertile calendar-cell-overlap-start-window",
+			"predicted-start-window-in-fertile-window",
+		},
+		{"calendar-cell-start-window", "predicted-start-window"},
 	}
 	for index, want := range cases {
 		got := days[index]

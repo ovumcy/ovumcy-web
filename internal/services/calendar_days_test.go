@@ -1206,6 +1206,60 @@ func TestBuildCalendarDayStatesMarksTheOverlapOfTheBandAndTheWindow(t *testing.T
 	}
 }
 
+// The same overlap one rung higher. The grid ranks the predicted START window
+// above the projected band, so a predicate that named the band alone would leave
+// the window unpainted on exactly the days the start window covers — and, worse
+// than before the overlap state existed, it would cut a hole through the middle
+// of a window whose remaining days now carry the new fill.
+//
+// The fixture is the one above plus a cycle-length spread, which is what turns
+// the start window on: three completed cycles and StdDev 2.4 give a span of two
+// days either side of the projected start, so the window is 03-20..03-24 while
+// the chained cycle's fertile window opens on 03-23.
+func TestBuildCalendarDayStatesMarksTheStartWindowInsideTheFertileWindow(t *testing.T) {
+	monthStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2026, time.March, 6, 0, 0, 0, 0, time.UTC)
+
+	stats := CycleStats{
+		CompletedCycleCount:  3,
+		MedianCycleLength:    21,
+		AverageCycleLength:   21,
+		AveragePeriodLength:  10,
+		CycleLengthStdDev:    2.4,
+		LastPeriodStart:      time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC),
+		NextPeriodStart:      time.Date(2026, time.March, 22, 0, 0, 0, 0, time.UTC),
+		OvulationDate:        time.Date(2026, time.March, 6, 0, 0, 0, 0, time.UTC),
+		FertilityWindowStart: time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC),
+		FertilityWindowEnd:   time.Date(2026, time.March, 6, 0, 0, 0, 0, time.UTC),
+	}
+
+	days := BuildCalendarDayStates(nil, monthStart, nil, stats, now, time.UTC)
+
+	for _, dateString := range []string{"2026-03-23", "2026-03-24"} {
+		day := findCalendarDayStateByDateString(t, days, dateString)
+		if !day.IsPredictedStartWindow {
+			t.Fatalf("fixture: %s must be a predicted start-window day", dateString)
+		}
+		if !day.IsFertilityEdge && !day.IsFertilityPeak {
+			t.Fatalf("fixture: %s must also be a fertile day", dateString)
+		}
+		if !day.IsPredictedFertileOverlap {
+			t.Errorf("%s: a start-window day inside the fertile window is an overlap too", dateString)
+		}
+	}
+
+	// The control on the same rung: a start-window day with no window over it
+	// keeps the plain start-window state, so the new rung cannot swallow the
+	// range whole.
+	startWindowOnly := findCalendarDayStateByDateString(t, days, "2026-03-21")
+	if !startWindowOnly.IsPredictedStartWindow {
+		t.Fatalf("fixture: 2026-03-21 must be a predicted start-window day")
+	}
+	if startWindowOnly.IsFertilityEdge || startWindowOnly.IsFertilityPeak || startWindowOnly.IsPredictedFertileOverlap {
+		t.Errorf("2026-03-21: a start-window day outside every fertile window is not an overlap")
+	}
+}
+
 // TestAppendCurrentBaselinePeriodDrawsNothingWhenTheOvulationIsTheCycleStart
 // covers the band's own floor. The clamp shortens the projected period so it
 // stops before the published ovulation day; when that day IS the cycle start
