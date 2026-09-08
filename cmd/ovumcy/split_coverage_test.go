@@ -41,8 +41,8 @@ func TestGetEnvFallbacksOnInvalidValue(t *testing.T) {
 	}
 
 	t.Setenv("OVUMCY_TEST_DURATION", "not-a-duration")
-	if got := getEnvDuration("OVUMCY_TEST_DURATION", 30*time.Second); got != 30*time.Second {
-		t.Fatalf("getEnvDuration: expected fallback 30s, got %s", got)
+	if got := getEnvDurationInRange("OVUMCY_TEST_DURATION", 30*time.Second, time.Second, time.Hour); got != 30*time.Second {
+		t.Fatalf("getEnvDurationInRange: expected fallback 30s, got %s", got)
 	}
 
 	t.Setenv("OVUMCY_TEST_BOOL", "maybe")

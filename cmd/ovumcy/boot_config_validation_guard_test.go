@@ -15,7 +15,7 @@ import (
 // Deliberately narrow: only TRUSTED_PROXIES, CALENDAR_FEED_FENCE_PATH and the
 // four security-relevant booleans (COOKIE_SECURE, HSTS_ENABLED,
 // TRUST_PROXY_ENABLED, WEBHOOK_BLOCK_PRIVATE_ADDRESSES) refuse the boot. The
-// lenient getEnvBool / getEnvInt / getEnvDuration fallback still governs every
+// lenient getEnvBool / getEnvInt / getEnvDurationInRange fallback still governs every
 // other key, so nothing here may be read as "every invalid env value stops the
 // process".
 

@@ -381,7 +381,11 @@ TRUSTED_PROXIES=127.0.0.1,::1
 # Per-action audit logs to stderr. Default off. Enable only when investigating an incident.
 AUDIT_LOG_ENABLED=false
 
-# Rate limits (defaults shown); see SECURITY.md's Rate Limits section for the full policy
+# Rate limits (defaults shown); see SECURITY.md's Rate Limits section for the full policy.
+# Each *_MAX has a ceiling (100 for login/register/forgot-password, 600 logout, 200 logout
+# account, 3000 api, 120 calendar feed) and each *_WINDOW must be between 1s and 24h; a value
+# outside its range is logged at boot and the default is used instead — a limiter cannot be
+# widened past its ceiling, let alone switched off. To widen a budget, shorten its window.
 # RATE_LIMIT_LOGIN_MAX=8
 # RATE_LIMIT_LOGIN_WINDOW=15m
 # RATE_LIMIT_REGISTER_MAX=8

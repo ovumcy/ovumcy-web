@@ -55,6 +55,42 @@ type reminderSchedulerSettings struct {
 	Hour    int
 }
 
+// Every RATE_LIMIT_* setting has a ceiling as well as a floor: a value above it
+// falls back to the default (logged at boot) instead of widening the budget,
+// so a misread unit or a stray zero cannot switch a limiter off. The ceilings
+// are sized to what a self-hosted instance behind one address can need, not to
+// what the process could survive; the load-bearing cost on the credential
+// endpoints stays the bcrypt compare each request pays (cost 12, ~250 ms of
+// CPU), which these caps bound the rate of rather than replace.
+const (
+	rateLimitWindowFloor   = time.Second
+	rateLimitWindowCeiling = 24 * time.Hour
+	// Login, registration and password-reset requests each cost a bcrypt
+	// compare or hash; the per-account login and recovery budgets read the
+	// same numbers. 100 in a window is already a dozen times the default.
+	rateLimitCredentialMaxCeiling = 100
+	// Logout is one storage write per request; the per-IP row stays wide
+	// enough for a household behind one address, the per-session budget
+	// never needs more than a handful.
+	rateLimitLogoutMaxCeiling        = 600
+	rateLimitLogoutAccountMaxCeiling = 200
+	// Authenticated API reads are cheap; ten times the default covers an
+	// HTMX-heavy session without becoming no limit at all.
+	rateLimitAPIMaxCeiling = 3000
+	// The feed is the cookieless surface with no other cap; a calendar client
+	// polls every 15-60 minutes, so two requests a second is far beyond any
+	// fleet of devices behind one address.
+	rateLimitCalendarFeedMaxCeiling = 120
+)
+
+func getRateLimitMax(key string, fallback int, ceiling int) int {
+	return getEnvIntInRange(key, fallback, 1, ceiling)
+}
+
+func getRateLimitWindow(key string, fallback time.Duration) time.Duration {
+	return getEnvDurationInRange(key, fallback, rateLimitWindowFloor, rateLimitWindowCeiling)
+}
+
 type rateLimitSettings struct {
 	LoginMax             int
 	LoginWindow          time.Duration
@@ -182,22 +218,22 @@ func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 		HSTSEnabled:           hstsEnabled,
 		OIDC:                  oidcConfig,
 		RateLimits: rateLimitSettings{
-			LoginMax:             getEnvInt("RATE_LIMIT_LOGIN_MAX", 8),
-			LoginWindow:          getEnvDuration("RATE_LIMIT_LOGIN_WINDOW", 15*time.Minute),
-			RegisterMax:          getEnvInt("RATE_LIMIT_REGISTER_MAX", 8),
-			RegisterWindow:       getEnvDuration("RATE_LIMIT_REGISTER_WINDOW", 15*time.Minute),
-			ForgotPasswordMax:    getEnvInt("RATE_LIMIT_FORGOT_PASSWORD_MAX", 8),
-			ForgotPasswordWindow: getEnvDuration("RATE_LIMIT_FORGOT_PASSWORD_WINDOW", time.Hour),
-			LogoutMax:            getEnvInt("RATE_LIMIT_LOGOUT_MAX", 60),
-			LogoutWindow:         getEnvDuration("RATE_LIMIT_LOGOUT_WINDOW", 15*time.Minute),
+			LoginMax:             getRateLimitMax("RATE_LIMIT_LOGIN_MAX", 8, rateLimitCredentialMaxCeiling),
+			LoginWindow:          getRateLimitWindow("RATE_LIMIT_LOGIN_WINDOW", 15*time.Minute),
+			RegisterMax:          getRateLimitMax("RATE_LIMIT_REGISTER_MAX", 8, rateLimitCredentialMaxCeiling),
+			RegisterWindow:       getRateLimitWindow("RATE_LIMIT_REGISTER_WINDOW", 15*time.Minute),
+			ForgotPasswordMax:    getRateLimitMax("RATE_LIMIT_FORGOT_PASSWORD_MAX", 8, rateLimitCredentialMaxCeiling),
+			ForgotPasswordWindow: getRateLimitWindow("RATE_LIMIT_FORGOT_PASSWORD_WINDOW", time.Hour),
+			LogoutMax:            getRateLimitMax("RATE_LIMIT_LOGOUT_MAX", 60, rateLimitLogoutMaxCeiling),
+			LogoutWindow:         getRateLimitWindow("RATE_LIMIT_LOGOUT_WINDOW", 15*time.Minute),
 			// Defaulted from the service constants so the documented account
 			// budget and the code cannot drift apart.
-			LogoutAccountMax:    getEnvInt("RATE_LIMIT_LOGOUT_ACCOUNT_MAX", services.DefaultLogoutAttemptsLimit),
-			LogoutAccountWindow: getEnvDuration("RATE_LIMIT_LOGOUT_ACCOUNT_WINDOW", services.DefaultLogoutAttemptsWindow),
-			APIMax:              getEnvInt("RATE_LIMIT_API_MAX", 300),
-			APIWindow:           getEnvDuration("RATE_LIMIT_API_WINDOW", time.Minute),
-			CalendarFeedMax:     getEnvInt("RATE_LIMIT_CALENDAR_FEED_MAX", 20),
-			CalendarFeedWindow:  getEnvDuration("RATE_LIMIT_CALENDAR_FEED_WINDOW", time.Minute),
+			LogoutAccountMax:    getRateLimitMax("RATE_LIMIT_LOGOUT_ACCOUNT_MAX", services.DefaultLogoutAttemptsLimit, rateLimitLogoutAccountMaxCeiling),
+			LogoutAccountWindow: getRateLimitWindow("RATE_LIMIT_LOGOUT_ACCOUNT_WINDOW", services.DefaultLogoutAttemptsWindow),
+			APIMax:              getRateLimitMax("RATE_LIMIT_API_MAX", 300, rateLimitAPIMaxCeiling),
+			APIWindow:           getRateLimitWindow("RATE_LIMIT_API_WINDOW", time.Minute),
+			CalendarFeedMax:     getRateLimitMax("RATE_LIMIT_CALENDAR_FEED_MAX", 20, rateLimitCalendarFeedMaxCeiling),
+			CalendarFeedWindow:  getRateLimitWindow("RATE_LIMIT_CALENDAR_FEED_WINDOW", time.Minute),
 		},
 		Proxy:               proxy,
 		AuditLogEnabled:     getEnvBool("AUDIT_LOG_ENABLED", false),
