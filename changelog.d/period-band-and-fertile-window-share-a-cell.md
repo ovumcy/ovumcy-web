@@ -8,7 +8,9 @@
   appeared shorter on the calendar than it actually was.
 
   Those cells now carry a fill of their own — the two hatches woven together, dashed like the
-  projected band and drawn in the fertile ink — with its own entry in the calendar legend. Nothing is
-  hidden to make room for it: the day remains both an expected period day and a fertile day
-  everywhere else it is read, and every cell that carries only one of the two keeps exactly the fill
-  it had.
+  projected band and drawn in the fertile ink — with its own entry in the calendar legend. The days
+  the next period may start on get the same fill with their usual dotted stroke, so the window is
+  drawn without a gap where the start window crosses it. The fill follows the calendar's goal
+  colours, so it warns or encourages exactly as the rest of the window does. Nothing is hidden to
+  make room for it: the day remains both an expected period day and a fertile day everywhere else it
+  is read, and every cell that carries only one of the two keeps exactly the fill it had.
