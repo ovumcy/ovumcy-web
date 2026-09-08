@@ -13,13 +13,14 @@ func TestAttemptLimiterWindowAndReset(t *testing.T) {
 	key := "127.0.0.1"
 	window := time.Hour
 	now := time.Now().UTC()
+	budget := AttemptBudget{Limit: 1, Window: window}
 
-	limiter.AddFailureAll([]string{key}, now.Add(-2*time.Hour), window)
+	limiter.AddFailureAll([]string{key}, now.Add(-2*time.Hour), budget)
 	if limiter.TooManyRecentAny([]string{key}, now, 1, window) {
 		t.Fatal("expected old attempt to be pruned from active window")
 	}
 
-	limiter.AddFailureAll([]string{key}, now.Add(-30*time.Minute), window)
+	limiter.AddFailureAll([]string{key}, now.Add(-30*time.Minute), budget)
 	if !limiter.TooManyRecentAny([]string{key}, now, 1, window) {
 		t.Fatal("expected one recent attempt to hit limit 1")
 	}
@@ -38,7 +39,7 @@ func TestAttemptLimiterMultiKeyOperations(t *testing.T) {
 	window := time.Hour
 	keys := []string{"127.0.0.1", " owner@example.com ", "127.0.0.1"}
 
-	limiter.AddFailureAll(keys, now, window)
+	limiter.AddFailureAll(keys, now, AttemptBudget{Limit: 1, Window: window})
 	if !limiter.TooManyRecentAny([]string{"127.0.0.1"}, now, 1, window) {
 		t.Fatal("expected client limiter entry to be recorded")
 	}
@@ -61,6 +62,7 @@ func TestAttemptLimiterStaleKeyEviction(t *testing.T) {
 	window := time.Hour
 	past := time.Now().UTC().Add(-2 * window) // well outside the window
 	live := time.Now().UTC()
+	budget := AttemptBudget{Limit: 1, Window: window}
 
 	limiter := NewAttemptLimiter()
 
@@ -68,21 +70,18 @@ func TestAttemptLimiterStaleKeyEviction(t *testing.T) {
 	// AddFailureAll call crosses it and triggers the sweep.
 	limiter.addCallsN = evictEveryN - 1
 
-	// Populate evictEveryN-1 stale keys (failures recorded at 'past').
-	// Use a sub-window so pruneLocked doesn't evict them on touch here
-	// (they were added with window=time.Hour at time 'past', which is
-	// before the threshold relative to 'live'; however we add them directly
-	// to the map to avoid triggering the sweep counter prematurely).
+	// Populate evictEveryN-1 stale keys (failures recorded at 'past'), added
+	// directly to the map so the sweep counter is not perturbed.
 	staleCount := evictEveryN - 1
 	for i := range staleCount {
 		key := fmt.Sprintf("stale-key-%d", i)
-		limiter.attempts[key] = []time.Time{past}
+		limiter.attempts[key] = attemptEntry{times: []time.Time{past}, budget: budget}
 	}
 
 	// Add a live key via the normal path — this increments addCallsN to
 	// evictEveryN and triggers the sweep.
 	liveKey := "live-key"
-	limiter.AddFailureAll([]string{liveKey}, live, window)
+	limiter.AddFailureAll([]string{liveKey}, live, budget)
 
 	// All stale keys should be gone.
 	limiter.mu.Lock()
@@ -128,20 +127,20 @@ func TestNormalizeLimiterKey(t *testing.T) {
 	}
 }
 
-// TestAttemptLimiterSizeCapUnderFreshKeyFlood pins the hard memory bound: a
-// stale sweep cannot shrink the map while an attacker keeps minting fresh
-// keys inside the window, so after every sweep the map is trimmed back to
-// evictAboveSize by evicting the keys with the oldest most-recent failure.
+// TestAttemptLimiterSizeCapUnderFreshKeyFlood pins the memory bound: a stale
+// sweep cannot shrink the map while an attacker keeps minting fresh keys inside
+// the window, so after every sweep the scope is trimmed back to evictAboveSize
+// by evicting the keys with the oldest most-recent failure.
 func TestAttemptLimiterSizeCapUnderFreshKeyFlood(t *testing.T) {
 	limiter := NewAttemptLimiter()
 	now := time.Now()
-	window := 15 * time.Minute
+	budget := AttemptBudget{Scope: "login", Limit: DefaultLoginAttemptsLimit, Window: 15 * time.Minute}
 
 	// Flood with fresh, distinct keys — far more than the cap, all inside
 	// the window so the stale sweep removes none of them.
 	total := evictAboveSize * 2
 	for index := range total {
-		limiter.AddFailureAll([]string{fmt.Sprintf("identity:flood-%05d", index)}, now.Add(time.Duration(index)*time.Millisecond), window)
+		limiter.AddFailureAll([]string{fmt.Sprintf("identity:flood-%05d", index)}, now.Add(time.Duration(index)*time.Millisecond), budget)
 	}
 
 	limiter.mu.Lock()
@@ -154,20 +153,21 @@ func TestAttemptLimiterSizeCapUnderFreshKeyFlood(t *testing.T) {
 
 // TestAttemptLimiterSizeCapEvictsColdestKeysFirst proves the trim removes
 // the keys with the oldest most-recent failure, so an actively brute-forced
-// key (the freshest) survives the eviction pass.
+// key (the freshest) survives the eviction pass. The limit sits above every
+// count reached here so no entry is pinned and the ordering alone decides.
 func TestAttemptLimiterSizeCapEvictsColdestKeysFirst(t *testing.T) {
 	limiter := NewAttemptLimiter()
 	base := time.Now()
-	window := time.Hour
+	budget := AttemptBudget{Scope: "login", Limit: 1000, Window: time.Hour}
 
 	// The victim key is the oldest entry but stays inside the window…
-	limiter.AddFailureAll([]string{"identity:victim-hot"}, base, window)
+	limiter.AddFailureAll([]string{"identity:victim-hot"}, base, budget)
 	// …and is refreshed continuously while the flood runs, making it one of
 	// the newest entries by last-failure time.
 	for index := range evictAboveSize + 200 {
-		limiter.AddFailureAll([]string{fmt.Sprintf("identity:cold-%05d", index)}, base.Add(time.Duration(index)*time.Millisecond), window)
+		limiter.AddFailureAll([]string{fmt.Sprintf("identity:cold-%05d", index)}, base.Add(time.Duration(index)*time.Millisecond), budget)
 		if index%100 == 0 {
-			limiter.AddFailureAll([]string{"identity:victim-hot"}, base.Add(time.Duration(index)*time.Millisecond+time.Second), window)
+			limiter.AddFailureAll([]string{"identity:victim-hot"}, base.Add(time.Duration(index)*time.Millisecond+time.Second), budget)
 		}
 	}
 
