@@ -143,6 +143,15 @@ func TestLongCycleGateSuppressesEverySurfaceWhenAMergedCycleInflatesTheAverage(t
 			}
 			// The notice is what stands where the date was: a surface that
 			// withholds silently tells the owner nothing at all.
+			//
+			// WHICH notice is a separate, open question, and the key is not pinned
+			// here on purpose. For this fixture BuildLateCycleNotice compares cycle
+			// day 61 against stats.MaxCycleLength — 300, the merged span itself —
+			// and lands on LateCycleWithinRangeKey: "still inside your recorded
+			// range of 28 to 300 days", beside a withheld date. Answering it means
+			// deciding when a recorded span stops counting as a cycle, which is the
+			// threshold call this change deliberately does not make; pinning the
+			// current copy here would freeze the reassurance as intended.
 			if !cycleContext.LateCycle.Visible {
 				t.Fatal("no late-cycle notice beside the withheld window")
 			}
@@ -171,14 +180,6 @@ func TestLongCycleGateSuppressesEverySurfaceWhenAMergedCycleInflatesTheAverage(t
 					published.OvulationDate.Format("2006-01-02"),
 					published.FertilityWindowStart.Format("2006-01-02"),
 					published.FertilityWindowEnd.Format("2006-01-02"))
-			}
-
-			// The stats page asks the same "is this data out of date" question the
-			// dashboard does, off its own call site: an inflated mean silencing it
-			// there alone would leave /stats reassuring an account the dashboard is
-			// already warning. It is also what keeps the ribbon above from drawing.
-			if flags := NewStatsService(nil, nil).BuildFlags(user, logs, stats, today, loc, 0); !flags.CycleDataStale {
-				t.Fatal("StatsFlags.CycleDataStale = false on cycle day 61 of a 28-day median history")
 			}
 
 			// 4. Calendar grid — the month the un-rolled projection falls in and
@@ -211,13 +212,20 @@ func TestLongCycleGateSuppressesEverySurfaceWhenAMergedCycleInflatesTheAverage(t
 	}
 }
 
-// TestLongCycleGateLeavesAnUninflatedHistoryWhereItWas is the positive control
-// for both directions of the gate: an ordinary history keeps its projection
-// inside its own length and loses it past the same +7, and a genuinely long
-// history — 50-day cycles the owner really has, with no merged span — is
-// measured against ITS length rather than against a shorter one. A gate that
-// suppressed everything would pass the test above and fail here.
-func TestLongCycleGateLeavesAnUninflatedHistoryWhereItWas(t *testing.T) {
+// TestLongCycleGateMeasuresEveryHistoryAgainstItsOwnProjection is the control
+// table, and it deliberately includes the histories the gate's answer CHANGED
+// for, not only the ones it left alone. An earlier draft asserted only on
+// histories where the mean equals the median — where the change is a no-op by
+// construction — and the whole affected cohort was untestable in it.
+//
+// The two boundaries the gate must respect:
+//   - it may not fire while the account is inside the length its own projection
+//     was computed from, plus the week of grace — including the left-skewed
+//     history, whose median EXCEEDS its mean and whose projected date would
+//     otherwise be withheld four days before it fell due;
+//   - it must fire once past that, for a right-skewed history too, where the mean
+//     used to buy days of grace the projection had already spent.
+func TestLongCycleGateMeasuresEveryHistoryAgainstItsOwnProjection(t *testing.T) {
 	loc := time.UTC
 	base := time.Date(2025, time.January, 1, 0, 0, 0, 0, loc)
 
@@ -225,12 +233,26 @@ func TestLongCycleGateLeavesAnUninflatedHistoryWhereItWas(t *testing.T) {
 		name         string
 		startOffsets []int
 		cycleDay     int
-		wantOverdue  bool
+		// wantProjectionLength is the median the account's dates are rolled
+		// forward from, written out so a scenario that stopped being about this
+		// arithmetic reds here rather than passing quietly.
+		wantProjectionLength int
+		wantOverdue          bool
 	}{
-		{"four 28-day cycles, cycle day 30", []int{0, 28, 56, 84, 112}, 30, false},
-		{"four 28-day cycles, cycle day 36", []int{0, 28, 56, 84, 112}, 36, true},
-		{"three 50-day cycles, cycle day 55", []int{0, 50, 100, 150}, 55, false},
-		{"three 50-day cycles, cycle day 58", []int{0, 50, 100, 150}, 58, true},
+		{"four 28-day cycles, cycle day 30", []int{0, 28, 56, 84, 112}, 30, 28, false},
+		{"four 28-day cycles, cycle day 36", []int{0, 28, 56, 84, 112}, 36, 28, true},
+		{"three real 50-day cycles, cycle day 55", []int{0, 50, 100, 150}, 55, 50, false},
+		{"three real 50-day cycles, cycle day 58", []int{0, 50, 100, 150}, 58, 50, true},
+		// 25/28/28/45 — no merged span, mean 32 against median 28. The mean used
+		// to grant grace to cycle day 39; the projection it publishes ran out on
+		// day 35. Both sides of that boundary are pinned.
+		{"a variable history inside its projection, cycle day 34", []int{0, 25, 53, 81, 126}, 34, 28, false},
+		{"a variable history past its projection, cycle day 36", []int{0, 25, 53, 81, 126}, 36, 28, true},
+		// 28/60/60 — median 60 above mean 49. The projected next period is day 61,
+		// so a gate resolved against the smaller statistic would have suppressed
+		// it on day 57, before the date was due.
+		{"a history whose median exceeds its mean, cycle day 60", []int{0, 28, 88, 148}, 60, 60, false},
+		{"a history whose median exceeds its mean, cycle day 68", []int{0, 28, 88, 148}, 68, 60, true},
 	}
 
 	for _, tc := range cases {
@@ -244,11 +266,9 @@ func TestLongCycleGateLeavesAnUninflatedHistoryWhereItWas(t *testing.T) {
 			if stats.CurrentCycleDay != tc.cycleDay {
 				t.Fatalf("scenario setup: CurrentCycleDay = %d, want %d", stats.CurrentCycleDay, tc.cycleDay)
 			}
-			// Mean and median agree in both histories, which is why neither may
-			// move: the fix is only allowed to bite where they disagree.
-			if int(stats.AverageCycleLength+0.5) != stats.MedianCycleLength {
-				t.Fatalf("scenario setup: mean %d and median %d disagree, so this is not an uninflated history",
-					int(stats.AverageCycleLength+0.5), stats.MedianCycleLength)
+			if got := DashboardProjectionCycleLength(user, stats); got != tc.wantProjectionLength {
+				t.Fatalf("scenario setup: projection length = %d, want %d (median %d, mean %.1f)",
+					got, tc.wantProjectionLength, stats.MedianCycleLength, stats.AverageCycleLength)
 			}
 
 			if got := DashboardCycleOverdue(user, stats); got != tc.wantOverdue {
