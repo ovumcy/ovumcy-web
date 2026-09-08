@@ -39,10 +39,12 @@ func TestValidateOIDCHTTPSURLRejectsUnsafeInputs(t *testing.T) {
 		{name: "http", rawURL: "http://id.example.com"},
 		{name: "query", rawURL: "https://id.example.com/callback?foo=bar"},
 		{name: "fragment", rawURL: "https://id.example.com/callback#frag"},
-		// An empty host parses as absolute and dials loopback.
+		// A host that names no peer parses as absolute and dials this machine.
 		{name: "empty host with port", rawURL: "https://:8443"},
 		{name: "empty host with path", rawURL: "https:///.well-known"},
 		{name: "empty host callback", rawURL: "https://:8443/auth/oidc/callback"},
+		{name: "unspecified ipv4", rawURL: "https://0.0.0.0:8443"},
+		{name: "unspecified ipv6", rawURL: "https://[::]:8443/auth/oidc/callback"},
 	}
 
 	for _, testCase := range tests {

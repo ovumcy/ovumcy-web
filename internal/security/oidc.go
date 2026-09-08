@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"path"
@@ -229,11 +230,8 @@ func validateOIDCHTTPSURL(rawURL string, envName string) (*url.URL, error) {
 	if parsedURL.RawQuery != "" || parsedURL.Fragment != "" {
 		return nil, fmt.Errorf("%s must not include query or fragment", envName)
 	}
-	// `https://:8443` parses as absolute with an empty host, and Go's dialer
-	// resolves an empty host to loopback — so the client secret and code would
-	// be posted to whatever listens locally on that port.
-	if parsedURL.Hostname() == "" {
-		return nil, fmt.Errorf("%s must name a host", envName)
+	if HostDialsThisMachine(parsedURL.Hostname()) {
+		return nil, fmt.Errorf("%s must name a remote host", envName)
 	}
 	return parsedURL, nil
 }
@@ -429,9 +427,11 @@ func (client *OIDCClient) loadProvider(ctx context.Context) (*oauth2.Config, *oi
 	}
 
 	// The sanitizer runs whether or not Claims reports a decode error:
-	// encoding/json keeps filling the other fields after a type error, so an
-	// error is not a reason to leave whatever did decode unpinned. A field that
-	// failed to decode stays zero, which the pins below treat as "absent".
+	// encoding/json keeps filling the remaining fields after a type error, and a
+	// field that already decoded keeps the value it decoded — a document
+	// repeating end_session_endpoint as a cross-origin string and then as a
+	// number errors while leaving that string in place. So a decode error is not
+	// a reason to skip the pins; it is the case that most needs them.
 	metadata := oidcProviderMetadata{}
 	_ = provider.Claims(&metadata)
 	metadata.EndSessionEndpoint = sanitizeOIDCEndSessionEndpoint(metadata.EndSessionEndpoint, client.config.IssuerURL)
@@ -579,7 +579,7 @@ func sanitizeOIDCEndSessionEndpoint(rawEndpoint string, issuerURL string) string
 	if err != nil || !parsed.IsAbs() {
 		return ""
 	}
-	if !strings.EqualFold(parsed.Scheme, "https") || parsed.Fragment != "" || parsed.Hostname() == "" {
+	if !strings.EqualFold(parsed.Scheme, "https") || parsed.Fragment != "" || HostDialsThisMachine(parsed.Hostname()) {
 		return ""
 	}
 
@@ -717,13 +717,28 @@ func oidcRedirectPolicy(issuerURL string) func(req *http.Request, via []*http.Re
 	}
 }
 
+// HostDialsThisMachine reports whether a URL host resolves to the machine doing
+// the dialing rather than to a named peer: an empty host (`https://:8443`) and
+// the unspecified addresses `0.0.0.0` / `[::]` all do. An OIDC endpoint of that
+// shape parses as a valid absolute https URL, so nothing but this check stops
+// the client secret and authorization code from being posted to whatever
+// listens locally on that port. Loopback literals are deliberately not included:
+// a self-hosted issuer on 127.0.0.1 is a supported deployment.
+func HostDialsThisMachine(host string) bool {
+	if host == "" {
+		return true
+	}
+	parsed := net.ParseIP(host)
+	return parsed != nil && parsed.IsUnspecified()
+}
+
 func sameOriginURL(left *url.URL, right *url.URL) bool {
 	if left == nil || right == nil {
 		return false
 	}
-	// Two empty hosts are not the same origin: an issuer and an endpoint that
-	// both name no host would otherwise pin to each other — and to loopback.
-	if left.Hostname() == "" || right.Hostname() == "" {
+	// Two hosts that both dial this machine are not the same origin: an issuer
+	// and an endpoint that both name no host would otherwise pin to each other.
+	if HostDialsThisMachine(left.Hostname()) || HostDialsThisMachine(right.Hostname()) {
 		return false
 	}
 	return strings.EqualFold(left.Scheme, right.Scheme) &&
