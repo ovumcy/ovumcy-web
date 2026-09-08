@@ -36,13 +36,14 @@ type CalendarDayState struct {
 	// single fill the cell paints, which is otherwise a precedence ladder that
 	// would drop the fertile half silently.
 	//
-	// The BAND, not the start window: the start window says the next period may
-	// begin on the day, which is not a projection of bleeding on it, and on an
-	// irregular cycle the window can be weeks long and reach fertile days the
-	// band never covers. Folding it in here would paint the band's own hatch —
-	// and print "predicted period" — over days the model projects no bleeding
-	// on. A start-window day the band also covers is still an overlap, and the
-	// ladder in internal/api reads both flags to keep its dotted stroke.
+	// The BAND, not the start window: the two are different quantities, so this
+	// stays the band's own conjunction and every consumer can tell which one it
+	// has. The start window has fertile days of its own — on an irregular cycle
+	// it runs from the shortest observed cycle to the longest and reaches days
+	// the band never covers — and the ladder in internal/api resolves those from
+	// IsPredictedStartWindow and the edge-or-peak pair below, the same
+	// membership this flag is built from. Folding the window in here would hand
+	// every consumer one flag for two facts instead.
 	IsPredictedFertileOverlap bool
 	HasData                   bool
 	HasSex                    bool

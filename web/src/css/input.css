@@ -3527,9 +3527,12 @@
    already use — so the weave, the goal palette and the dark-theme rules are
    stated once. Only the border changes, to the dotted stroke that means "start
    window" everywhere else on the grid; written against the base class so it
-   cannot lose to it on source order. A start-window day the projected band does
-   not cover never reaches here: it is no bleeding projection, so it keeps the
-   plain start-window fill rather than borrowing the band's hatch. */
+   cannot lose to it on source order. A start-window day inside the fertile
+   window reaches here whether or not the projected band also covers it: the
+   fill stands for a fertile day under a period projection, and on an irregular
+   cycle the window outruns the band by weeks, so anchoring it to the band left
+   exactly those days painted as start-window only — the fertile window missing
+   from the cells this fill exists for. */
 @utility calendar-cell-overlap-start-window {
   &.calendar-cell-overlap-period-fertile {
     border-style: dotted;

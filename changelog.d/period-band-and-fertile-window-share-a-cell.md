@@ -9,8 +9,10 @@
 
   Those cells now carry a fill of their own — the two hatches woven together, dashed like the
   projected band and drawn in the fertile ink — with its own entry in the calendar legend. The days
-  the next period may start on get the same fill with their usual dotted stroke where the projected
-  band covers them too, so the window is drawn without a gap. The fill follows the calendar's goal
+  the next period may start on get the same fill with their usual dotted stroke wherever the fertile
+  window reaches them, whether or not bleeding is projected on them as well — on an irregular cycle
+  that window of possible start days runs for weeks and covers fertile days the projected bleeding
+  never touches — so the fertile window is drawn without a gap. The fill follows the calendar's goal
   colours, so it warns or encourages exactly as the rest of the window does. Nothing is hidden to
   make room for it: the day remains both an expected period day and a fertile day everywhere else it
   is read, and every cell that carries only one of the two keeps exactly the fill it had.

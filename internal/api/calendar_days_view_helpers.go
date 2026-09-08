@@ -22,14 +22,21 @@ func (handler *Handler) buildCalendarDays(states []services.CalendarDayState) []
 			// Rendering it as a projection would misstate the record.
 			cellClass += " calendar-cell-period"
 			stateKey = "period"
-		} else if state.IsPredictedStartWindow && state.IsPredictedFertileOverlap {
-			// A start-window day that is ALSO an overlap — band and fertile
-			// window both over it. The rung is needed because the start window
-			// outranks the band: without it these days paint as start-window
-			// only and cut a hole through the middle of a window whose other
-			// days now show the overlap. It reads both flags rather than the
-			// start window alone, because a start-window day the band does not
-			// cover is no bleeding projection and must not be painted as one.
+		} else if state.IsPredictedStartWindow && (state.IsFertilityEdge || state.IsFertilityPeak) {
+			// A start-window day the fertile window also covers. The rung is
+			// needed because the start window outranks both the band and the
+			// window: without it these days paint as start-window only and cut
+			// a hole through the middle of a fertile window whose other days
+			// show it.
+			//
+			// Fertility is read as window MEMBERSHIP — the same edge-or-peak
+			// pair services.IsPredictedFertileOverlap is built from, so the two
+			// rungs cover one class between them and pre-fertile days, a tier
+			// of their own, stay out. Reading the band-anchored flag alone left
+			// the hole open on exactly the accounts where it is widest: on an
+			// irregular cycle the start window runs from the shortest observed
+			// cycle to the longest and reaches fertile days weeks past the five
+			// projected bleeding days inside it.
 			cellClass += " calendar-cell-overlap-period-fertile calendar-cell-overlap-start-window"
 			stateKey = "predicted-start-window-in-fertile-window"
 		} else if state.IsPredictedStartWindow {
