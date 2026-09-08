@@ -614,6 +614,11 @@ async function main() {
     RATE_LIMIT_REGISTER_MAX: process.env.RATE_LIMIT_REGISTER_MAX ?? "100",
     RATE_LIMIT_REGISTER_WINDOW: process.env.RATE_LIMIT_REGISTER_WINDOW ?? "10s",
     RATE_LIMIT_API_MAX: process.env.RATE_LIMIT_API_MAX ?? "3000",
+    // The per-account logout budget is keyed on the owner, and a serial suite
+    // signs the same owner in and out far more than twenty times: widen it the
+    // same way, by the window rather than past the ceiling.
+    RATE_LIMIT_LOGOUT_ACCOUNT_MAX: process.env.RATE_LIMIT_LOGOUT_ACCOUNT_MAX ?? "200",
+    RATE_LIMIT_LOGOUT_ACCOUNT_WINDOW: process.env.RATE_LIMIT_LOGOUT_ACCOUNT_WINDOW ?? "10s",
     OIDC_ENABLED: process.env.OIDC_ENABLED ?? (localOIDCProviderEnabled ? "true" : "false"),
     OIDC_ISSUER_URL: process.env.OIDC_ISSUER_URL ?? localOIDCIssuer,
     OIDC_CLIENT_ID: process.env.OIDC_CLIENT_ID ?? (localOIDCProviderEnabled ? "ovumcy-e2e" : ""),
