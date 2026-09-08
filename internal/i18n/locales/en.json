@@ -523,6 +523,7 @@
   "calendar.legend.predicted_period": "Predicted period days",
   "calendar.legend.start_window": "Predicted start window",
   "calendar.legend.fertility": "Fertility window",
+  "calendar.legend.predicted_period_in_fertility": "Predicted period inside the fertile window",
   "calendar.legend.ovulation_group": "Ovulation (dash: estimated)",
   "calendar.legend.logged_entry": "Logged entry (heart: sex)",
   "calendar.ovulation_icon": "Ovulation",

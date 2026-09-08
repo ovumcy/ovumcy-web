@@ -527,6 +527,7 @@
   "calendar.legend.predicted_period": "Прогноз: дни месячных",
   "calendar.legend.start_window": "Прогноз: окно начала",
   "calendar.legend.fertility": "Фертильное окно",
+  "calendar.legend.predicted_period_in_fertility": "Прогноз месячных внутри фертильного окна",
   "calendar.legend.ovulation_group": "Овуляция (штрих — предполагаемая)",
   "calendar.legend.logged_entry": "Есть запись (сердце — секс)",
   "calendar.ovulation_icon": "Овуляция",

@@ -659,6 +659,7 @@
   "calendar.legend.predicted_period": "Jours de règles prédits",
   "calendar.legend.start_window": "Fenêtre de début prédite",
   "calendar.legend.fertility": "Fenêtre fertile",
+  "calendar.legend.predicted_period_in_fertility": "Règles prédites dans la fenêtre fertile",
   "calendar.legend.ovulation_group": "Ovulation (tiret : estimée)",
   "calendar.legend.logged_entry": "Entrée enregistrée (cœur : rapports sexuels)",
   "calendar.ovulation_icon": "Ovulation",

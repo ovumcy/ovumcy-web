@@ -523,6 +523,7 @@
   "calendar.legend.predicted_period": "Días de periodo previstos",
   "calendar.legend.start_window": "Ventana de inicio prevista",
   "calendar.legend.fertility": "Ventana fértil",
+  "calendar.legend.predicted_period_in_fertility": "Periodo previsto dentro de la ventana fértil",
   "calendar.legend.ovulation_group": "Ovulación (guion: estimada)",
   "calendar.legend.logged_entry": "Registro guardado (corazón: sexo)",
   "calendar.ovulation_icon": "Ovulación",

@@ -137,9 +137,12 @@ test.describe('Calendar page', () => {
     await expect(legend.locator('.legend-swatch-predicted')).toHaveCount(1);
     await expect(legend.locator('.legend-swatch-start-window')).toHaveCount(1);
     await expect(legend.locator('.legend-swatch-fertile')).toHaveCount(1);
+    await expect(legend.locator('.legend-swatch-overlap-period-fertile')).toHaveCount(1);
     await expect(legend.locator('.legend-swatch-today')).toHaveCount(1);
-    // Seven concepts, not the nine CSS states the grid happens to have.
-    await expect(legend.locator('.legend-item')).toHaveCount(7);
+    // Eight concepts, not the ten CSS states the grid happens to have. The
+    // overlap earns an entry of its own because it is a fill the reader cannot
+    // decode from the two it is made of.
+    await expect(legend.locator('.legend-item')).toHaveCount(8);
 
     // The legend is above the first day cell, so it is on screen while the
     // month is being read.
@@ -163,6 +166,58 @@ test.describe('Calendar page', () => {
     });
     expect(styles.width).toBeGreaterThanOrEqual(12);
     expect(styles.boxShadow).not.toBe('none');
+  });
+
+  test('the band/window overlap paints a fill neither of its two parents paints', async ({
+    page,
+  }) => {
+    // A projected bleeding day that also falls inside the fertile window is a
+    // state of its own, and the grid resolves one fill per cell — so if the
+    // overlap fill ever collapses onto the predicted-period fill or the fertile
+    // fill, one of the two facts silently disappears from the month, which is
+    // the defect this state exists to close. The legend swatches are the
+    // measurable form of that: each paints exactly the fill its cell paints,
+    // from the same token, and all three are on screen on every calendar render
+    // without any cycle data having to line up.
+    //
+    // Both layers are read, not just background-color: the projected fill is a
+    // gradient over no colour at all, so on background-color alone two states
+    // that share nothing would compare equal.
+    await registerOwnerOnCalendar(page, 'calendar-overlap-fill');
+
+    const legend = page.locator('[data-calendar-legend]');
+    const swatches = {
+      predicted: legend.locator('.legend-swatch-predicted'),
+      fertile: legend.locator('.legend-swatch-fertile'),
+      overlap: legend.locator('.legend-swatch-overlap-period-fertile'),
+    } as const;
+    for (const [name, swatch] of Object.entries(swatches)) {
+      await expect(swatch, `${name} swatch`).toHaveCount(1);
+    }
+
+    for (const theme of ['light', 'dark'] as const) {
+      await applyTheme(page, theme);
+
+      const painted = async (swatch: Locator): Promise<string> =>
+        swatch.evaluate((node: Element) => {
+          const computed = window.getComputedStyle(node);
+          return `${computed.backgroundColor} | ${computed.backgroundImage}`;
+        });
+
+      const predicted = await painted(swatches.predicted);
+      const fertile = await painted(swatches.fertile);
+      const overlap = await painted(swatches.overlap);
+
+      expect(overlap, `${theme}: the overlap paints the projected-period fill`).not.toBe(predicted);
+      expect(overlap, `${theme}: the overlap paints the fertile fill`).not.toBe(fertile);
+      // The control: the two parents were already distinct, so a reading in
+      // which everything differs from everything proves nothing.
+      expect(predicted, `${theme}: projected-period and fertile fills collapsed`).not.toBe(fertile);
+      // A fill that resolves to nothing would satisfy every inequality above.
+      expect(overlap, `${theme}: the overlap cell has no fill at all`).toContain(
+        'repeating-linear-gradient'
+      );
+    }
   });
 
   test('mobile calendar keeps the legend scrollable above the bottom tabbar', async ({ page }) => {

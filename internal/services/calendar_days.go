@@ -28,8 +28,16 @@ type CalendarDayState struct {
 	IsFertilityEdge        bool
 	IsOvulation            bool
 	IsTentativeOvulation   bool
-	HasData                bool
-	HasSex                 bool
+	// IsPredictedFertileOverlap marks a day on which the projected period band
+	// and the fertile window are BOTH true. Both facts are real at once — a
+	// short cycle with a long average period puts expected bleeding inside the
+	// six days before ovulation — so neither flag above is cleared for it: this
+	// is a derived reading of the two, and the only thing it decides is which
+	// single fill the cell paints, which is otherwise a precedence ladder that
+	// would drop the fertile half silently.
+	IsPredictedFertileOverlap bool
+	HasData                   bool
+	HasSex                    bool
 }
 
 func CalendarLogRange(monthStart time.Time) (time.Time, time.Time) {
@@ -483,6 +491,7 @@ func buildCalendarDayState(day time.Time, monthStart time.Time, todayKey string,
 	isTentativeOvulation := predictions.tentativeOvulation[key]
 	isFertilityPeak := predictions.fertilityPeak[key]
 	isFertilityEdge := predictions.fertilityEdge[key]
+	isPredictedPeriod := predictions.predictedPeriod[key]
 	openEditDirectly := !hasDataMap[key]
 
 	return CalendarDayState{
@@ -494,7 +503,7 @@ func buildCalendarDayState(day time.Time, monthStart time.Time, todayKey string,
 		IsFuture:               key > todayKey,
 		OpenEditDirectly:       openEditDirectly,
 		IsPeriod:               hasEntry && entry.IsPeriod,
-		IsPredicted:            predictions.predictedPeriod[key],
+		IsPredicted:            isPredictedPeriod,
 		IsPredictedStartWindow: predictions.predictedStartRange[key],
 		IsPreFertile:           predictions.preFertile[key],
 		IsFertility:            (isFertilityEdge || isFertilityPeak) && !isOvulation && !isTentativeOvulation,
@@ -502,7 +511,11 @@ func buildCalendarDayState(day time.Time, monthStart time.Time, todayKey string,
 		IsFertilityEdge:        isFertilityEdge,
 		IsOvulation:            isOvulation,
 		IsTentativeOvulation:   isTentativeOvulation,
-		HasData:                hasDataMap[key],
-		HasSex:                 hasEntry && NormalizeDaySexActivity(entry.SexActivity) != models.SexActivityNone,
+		// The window's own membership, edge or peak, is what makes the day
+		// fertile — not IsFertility, which is already the narrowed reading that
+		// stands down on the ovulation day and on its tentative form.
+		IsPredictedFertileOverlap: isPredictedPeriod && (isFertilityEdge || isFertilityPeak),
+		HasData:                   hasDataMap[key],
+		HasSex:                    hasEntry && NormalizeDaySexActivity(entry.SexActivity) != models.SexActivityNone,
 	}
 }

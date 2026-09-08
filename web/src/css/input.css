@@ -3478,6 +3478,24 @@
   }
 }
 
+/* Both at once: a projected bleeding day that also falls inside the fertile
+   window. The grid resolves one fill per cell, so before this state existed the
+   period band simply outranked the window and the window's own days went
+   missing from the month — a real signal hidden to keep the cell readable. The
+   two facts are independent and both hold, so this is a state of its own rather
+   than either fill winning. It replaces the predicted-period fill on exactly
+   the cells where the window overlaps it and changes no other cell. */
+@utility calendar-cell-overlap-period-fertile {
+  border-color: var(--cal-line-overlap-period-fertile);
+  border-style: dashed;
+  background: var(--cal-fill-overlap-period-fertile);
+
+  :root[data-theme='dark'] & {
+    border-color: var(--cal-line-overlap-period-fertile);
+    background: var(--cal-fill-overlap-period-fertile);
+  }
+}
+
 /* The days the next period may START on — the range the dashboard prints as
    "Next period: X — Y". Before wave 3 they carried the same shading as the
    projected bleeding days, so one visual language stood for two different
@@ -3744,6 +3762,12 @@
   border-style: dashed;
   border-color: var(--cal-line-predicted);
   background: var(--cal-fill-predicted);
+}
+
+@utility legend-swatch-overlap-period-fertile {
+  border-style: dashed;
+  border-color: var(--cal-line-overlap-period-fertile);
+  background: var(--cal-fill-overlap-period-fertile);
 }
 
 @utility legend-swatch-start-window {
@@ -4511,6 +4535,29 @@
        fills reach it now that the tiers render for every usage goal. */
     --cal-fill-fertile-edge: rgb(var(--cal-fertile-edge) / 0.76);
     --cal-fill-fertile-peak: rgb(var(--cal-fertile-peak) / 0.82);
+    /* The third fill: a day that is BOTH a projected bleeding day and inside
+       the fertile window — what a short cycle with a long average period
+       produces, and what the grid used to answer with the period band alone.
+       The two hatches are woven rather than blended: a blend of amber and
+       green is a new colour, which reads as a third unrelated concept, while
+       one hatch crossing the other reads as the two states it is made of. The
+       wash under them is thinner than the fertile one so both directions stay
+       visible over it. */
+    --cal-fill-overlap-period-fertile: repeating-linear-gradient(
+        45deg,
+        rgb(var(--cal-predicted) / 0.36) 0,
+        rgb(var(--cal-predicted) / 0.36) 3px,
+        rgb(255 255 255 / 0) 3px,
+        rgb(255 255 255 / 0) 10px
+      ),
+      repeating-linear-gradient(
+        -45deg,
+        rgb(var(--cal-fertile-ink) / 0.3) 0,
+        rgb(var(--cal-fertile-ink) / 0.3) 3px,
+        rgb(255 255 255 / 0) 3px,
+        rgb(255 255 255 / 0) 10px
+      ),
+      rgb(var(--cal-fertile) / 0.26);
     --cal-line-period: rgb(var(--cal-period) / 0.7);
     --cal-line-predicted: rgb(var(--cal-predicted) / 0.85);
     --cal-line-fertile: rgb(var(--cal-fertile-ink) / 0.7);
@@ -4519,6 +4566,10 @@
        paint a light-theme border in the dark theme. */
     --cal-line-fertile-edge: rgb(154 184 132 / 0.78);
     --cal-line-fertile-peak: rgb(93 147 95 / 0.82);
+    /* Dashed like the projected band it is half of, but drawn in the fertile
+       ink: no other state on the grid carries that pair, so the border alone
+       already separates the overlap cell from both of its parents. */
+    --cal-line-overlap-period-fertile: rgb(var(--cal-fertile-ink) / 0.85);
     /* ---- cycle-phase colours — one source for every phase surface ------ */
     /* Phase and fertility are two orthogonal axes (#416), and this family is
        the phase one: menstrual / follicular / ovulation / luteal, never
@@ -4804,8 +4855,29 @@
       rgb(69 109 88 / 0.34);
     --cal-fill-fertile-edge: rgb(92 125 86 / 0.5);
     --cal-fill-fertile-peak: rgb(78 136 79 / 0.58);
+    /* The weave keeps both hatch expressions and restates only the wash under
+       them, for the reason the fertile fill above restates its own: mixed
+       toward the light-theme green it lifts the cell under light day numbers. */
+    --cal-fill-overlap-period-fertile: repeating-linear-gradient(
+        45deg,
+        rgb(var(--cal-predicted) / 0.3) 0,
+        rgb(var(--cal-predicted) / 0.3) 3px,
+        rgb(255 255 255 / 0) 3px,
+        rgb(255 255 255 / 0) 10px
+      ),
+      repeating-linear-gradient(
+        -45deg,
+        rgb(var(--cal-fertile-ink) / 0.22) 0,
+        rgb(var(--cal-fertile-ink) / 0.22) 3px,
+        rgb(255 255 255 / 0) 3px,
+        rgb(255 255 255 / 0) 10px
+      ),
+      rgb(69 109 88 / 0.34);
     --cal-line-predicted: rgb(var(--cal-predicted) / 0.82);
     --cal-line-fertile: rgb(var(--cal-fertile) / 0.8);
+    /* Lighter than the fill it outlines, the way every dark-theme calendar
+       border is; the light-theme ink triplet is too dark against this card. */
+    --cal-line-overlap-period-fertile: rgb(var(--cal-fertile) / 0.85);
     /* The tier borders derive from the tier identity colours here: on a dark
        card the border has to be lighter than the fill it outlines, which is the
        opposite of what the light theme needs. */
