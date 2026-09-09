@@ -123,8 +123,10 @@ func BuildDashboardCycleHero(user *models.User, stats CycleStats, cycleContext D
 
 	currentDay := stats.CurrentCycleDay
 	// The ribbon geometry (axis, day cells, the "today" marker) stays visible
-	// under suppression — the owner rejected hiding the whole hero for this —
-	// but the parts that NAME the ovulation day go quiet: the current-phase
+	// under FERTILITY suppression — the owner rejected hiding the whole hero for
+	// that tier; the overdue gate is refused earlier, in
+	// canRenderDashboardCycleHero, for the reason stated there — but the parts
+	// that NAME the ovulation day go quiet: the current-phase
 	// label and the phase-card breakdown both stop revealing anything past the
 	// menstrual card, which is read off recorded bleeding rather than the
 	// suppressed ovulation projection.
@@ -205,8 +207,17 @@ func dashboardCycleHeroOvulationDay(stats CycleStats, cycleContext DashboardCycl
 // inflates, while the gate is measured against the projection length. Cycle day
 // 61 sat inside a 96-day reference, so the ribbon drew a 96-day projected cycle
 // map — projected days and a projected ovulation day among them — beside a header
-// saying the estimate is paused. A suppressed cycle map is not a cycle map that
-// stays honest (.claude/rules/prediction-display.md). Pinned from the outside by
+// saying the estimate is paused. A projected window the gate withheld may not be
+// drawn by any surface, this one included: a suppressed cycle map is not a cycle
+// map that stays honest.
+//
+// This is a stricter refusal than the fertility tier's, and deliberately so. That
+// tier keeps the ribbon and quiets only the parts that NAME the ovulation day
+// (see the comment on currentPhase in BuildDashboardCycleHero), because the axis
+// itself is still a length the account can be shown to be inside. Past the
+// overdue gate nothing on the ribbon survives that test: the axis length is the
+// inflated reference, the start window is a withheld date, and the "today" marker
+// sits outside the projection that produced them. Pinned from the outside by
 // TestLongCycleGateSuppressesEverySurfaceWhenAMergedCycleInflatesTheAverage.
 func canRenderDashboardCycleHero(cycleLength int, stats CycleStats, cycleContext DashboardCycleContext) bool {
 	return cycleLength > 0 &&

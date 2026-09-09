@@ -122,7 +122,7 @@ func WebhookReminderSettingsFromNotifyRecord(record models.WebhookNotifyRecord) 
 //
 //   - In-app predictions suppressed (DashboardPredictionDisabled — the owner's
 //     unpredictable-cycle mode — stats.PregnancyPaused, or DashboardCycleOverdue
-//     — the running cycle is past the account's reference length by more than a
+//     — the running cycle is past the account's projection length by more than a
 //     week) ⇒ nothing. This is the medical-safety gate: never emit a date the app
 //     itself refuses to show.
 //

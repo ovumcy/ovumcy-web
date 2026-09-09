@@ -47,7 +47,7 @@ var predictionSuppressionSignals = map[string]string{
 	"PredictionDisabled":            "unpredictable-cycle mode",
 	"DashboardPredictionDisabled":   "unpredictable-cycle mode",
 	"PregnancyPaused":               "pregnancy pause",
-	"DashboardCycleOverdue":         "cycle overdue past its own reference length",
+	"DashboardCycleOverdue":         "cycle overdue past its own projection length",
 	"AwaitingFirstCycle":            "the zero-completed-cycle floor",
 	"DashboardAwaitingFirstCycle":   "the zero-completed-cycle floor",
 	"PredictionsSuppressed":         "the whole-projection gate",
