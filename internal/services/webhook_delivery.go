@@ -63,6 +63,22 @@ const (
 	webhookPhaseTimeout = 5 * time.Second
 	// webhookUserAgent identifies our POSTs without revealing anything sensitive.
 	webhookUserAgent = "ovumcy-webhook/1"
+	// webhookFormatQueryParam is the URL query key that selects a delivery
+	// format for one stored webhook URL. The opt-in lives in the URL itself —
+	// already owner-controlled and encrypted at rest — so no settings column
+	// or schema change is involved in choosing a format.
+	webhookFormatQueryParam = "format"
+	// webhookFormatNtfy is the value of the format query param that selects
+	// ntfy-native plain-text delivery. ntfy renders a plain-body topic POST
+	// verbatim as the notification, so the default JSON envelope otherwise
+	// reaches the phone as a raw JSON blob.
+	webhookFormatNtfy = "ntfy"
+	// webhookNtfyTagsPeriod and webhookNtfyTagsOvulation are ntfy emoji
+	// shortcodes used as the notification tag/icon per reminder kind. They are
+	// cosmetic only: an unknown shortcode degrades to plain tag text in the
+	// ntfy client, never to a failed delivery.
+	webhookNtfyTagsPeriod    = "mens"
+	webhookNtfyTagsOvulation = "sparkles"
 )
 
 // ErrWebhookDeliveryURLScheme is returned when a decrypted URL does not use
@@ -251,7 +267,10 @@ func guardedDialContext(dial dialFunc, resolver ipResolver) dialFunc {
 	}
 }
 
-// Deliver POSTs the payload as JSON to decryptedURL under the hardened envelope.
+// Deliver POSTs the payload to decryptedURL under the hardened envelope, in
+// one of two body formats chosen by the URL itself: the default generic JSON
+// envelope, or — when the URL carries ?format=ntfy — an ntfy-native plain-text
+// body with title and tag in X-Title/X-Tags headers (see webhookFormatNtfy).
 // It returns nil only on a 2xx response. On any failure it logs a stable reason
 // key plus the destination HOST and (when available) the status code — never the
 // URL, query, userinfo, or response body — and returns an error that likewise
@@ -285,13 +304,37 @@ func (client *webhookDeliveryClient) Deliver(ctx context.Context, decryptedURL s
 		return fmt.Errorf("webhook delivery to private address refused")
 	}
 
-	body, err := json.Marshal(payload)
-	if err != nil {
-		// codecov:ignore -- unreachable: WebhookPayload is all JSON-safe scalar
-		// fields, so json.Marshal cannot fail here. Kept as a fail-safe so a future
-		// unmarshalable field never delivers a malformed body.
-		log.Printf("webhook delivery skipped: reason=payload_marshal_failed host=%s", parsed.Hostname())
-		return fmt.Errorf("marshal webhook payload: %w", err)
+	// Delivery format is selected by the URL itself. The default is the generic
+	// JSON envelope any webhook consumer can parse. Appending ?format=ntfy to
+	// a stored ntfy topic URL opts that one URL into ntfy's native plain-text
+	// publish — title/tag headers plus a body ntfy renders as the notification
+	// text — because ntfy shows a plain-body topic POST verbatim, so the JSON
+	// envelope would reach the phone as a raw blob. The opt-in travels in the
+	// already-encrypted URL, and every other query parameter (e.g. an ntfy
+	// ?auth= token) passes through untouched: ntfy ignores the unknown
+	// `format` key, and no other consumer is affected.
+	ntfyFormat := strings.EqualFold(parsed.Query().Get(webhookFormatQueryParam), webhookFormatNtfy)
+
+	var body []byte
+	var contentType string
+	if ntfyFormat {
+		// Plain-text body: the human message, then the MANDATORY medical-safety
+		// disclaimer. The disclaimer invariant is about delivery, not JSON
+		// shape, so it rides in the body here exactly as it rides in a field
+		// of the JSON envelope.
+		body = []byte(payload.Message + "\n\n" + payload.Disclaimer)
+		contentType = "text/plain"
+	} else {
+		var marshalErr error
+		body, marshalErr = json.Marshal(payload)
+		if marshalErr != nil {
+			// codecov:ignore -- unreachable: WebhookPayload is all JSON-safe scalar
+			// fields, so json.Marshal cannot fail here. Kept as a fail-safe so a
+			// future unmarshalable field never delivers a malformed body.
+			log.Printf("webhook delivery skipped: reason=payload_marshal_failed host=%s", parsed.Hostname())
+			return fmt.Errorf("marshal webhook payload: %w", marshalErr)
+		}
+		contentType = "application/json"
 	}
 
 	requestCtx, cancel := context.WithTimeout(ctx, webhookDeliveryTimeout)
@@ -304,8 +347,23 @@ func (client *webhookDeliveryClient) Deliver(ctx context.Context, decryptedURL s
 		log.Printf("webhook delivery skipped: reason=build_request_failed host=%s", parsed.Hostname())
 		return fmt.Errorf("build webhook request: %w", err)
 	}
-	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Content-Type", contentType)
 	request.Header.Set("User-Agent", webhookUserAgent)
+	if ntfyFormat {
+		// ntfy reads the notification title and tag list from these headers.
+		// Both values come from the reminder copy/i18n catalogue or our own
+		// tag constants; headerSafeValue skips a pair only if the value ever
+		// carried control characters (which would fail the request write at
+		// the transport layer), degrading to ntfy's topic-name title rather
+		// than failing the delivery.
+		if headerSafeValue(payload.Title) {
+			request.Header.Set("X-Title", payload.Title)
+		}
+		tags := ntfyTagsForReminderType(payload.Type)
+		if headerSafeValue(tags) {
+			request.Header.Set("X-Tags", tags)
+		}
+	}
 
 	response, err := client.httpClient.Do(request)
 	if err != nil {
@@ -338,6 +396,32 @@ func (client *webhookDeliveryClient) Deliver(ctx context.Context, decryptedURL s
 		return fmt.Errorf("webhook delivery to host %q returned status %d", parsed.Hostname(), response.StatusCode)
 	}
 	return nil
+}
+
+// ntfyTagsForReminderType maps a reminder kind to an ntfy tag list. The tags
+// are ntfy emoji shortcodes rendered as the notification icon — mens (🩸) for
+// a period reminder, sparkles (✨) for ovulation — and are cosmetic only: an
+// unknown kind, or a client without the shortcode, degrades to plain tag text
+// in the notification, never a failed delivery.
+func ntfyTagsForReminderType(reminderType string) string {
+	if reminderType == DueReminderTypeOvulation {
+		return webhookNtfyTagsOvulation
+	}
+	return webhookNtfyTagsPeriod
+}
+
+// headerSafeValue reports whether value can travel in an HTTP header as-is:
+// no C0 controls and no DEL. UTF-8 text is allowed — it passes through as
+// obs-text and ntfy decodes headers as UTF-8 — so localized titles ride
+// along; only control characters (which would make the request write fail at
+// the transport layer) disqualify a value.
+func headerSafeValue(value string) bool {
+	for _, r := range value {
+		if r < 0x20 || r == 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 // isRedirectRefusal reports whether err is our zero-redirect refusal, which the

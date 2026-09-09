@@ -436,6 +436,35 @@ consumer (an ntfy topic rule, a Gotify filter, a home-automation flow) can
 route on it without parsing `message`. `disclaimer` is present on every
 payload, unconditionally.
 
+#### ntfy-native delivery (`?format=ntfy`)
+
+ntfy renders a plain-body `POST` to a topic URL **verbatim as the
+notification text**, so the JSON envelope above arrives on an ntfy topic as a
+raw JSON blob. If your webhook URL is an ntfy topic, opt that one URL into
+ntfy-native formatting by appending `format=ntfy` to it:
+
+```
+https://ntfy.example.com/my-topic?format=ntfy
+```
+
+Delivery then sends what ntfy expects natively:
+
+- `X-Title` — the reminder title (the same localized `title` as the JSON field),
+- `X-Tags` — an emoji tag per kind (`mens` 🩸 for a period reminder,
+  `sparkles` ✨ for ovulation),
+- a `text/plain` body of the localized `message`, a blank line, then the
+  `disclaimer` — the disclaimer is delivered on every notification in this
+  format too, unconditionally.
+
+Everything else about the URL passes through untouched: an access token in
+the query (`?auth=...`) or userinfo still applies (ntfy ignores the unknown
+`format` parameter), and all delivery hardening (timeouts, no redirects,
+host-only logging) is identical in both formats. URLs without `format=ntfy`
+keep the generic JSON envelope byte-for-byte, so Gotify, Apprise, and
+home-automation consumers are unaffected. Re-saving the URL in Settings (or
+`ovumcy webhook set`) is all it takes to switch a given endpoint between the
+two formats.
+
 The three text fields — `title`, `message` and `disclaimer` — are written in the
 **interface language the owner chose in settings**, all three in the same one
 (the example above is an owner on English). A pass runs without a browser, so
