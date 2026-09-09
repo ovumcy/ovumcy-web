@@ -6,8 +6,8 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"path"
 	"strings"
@@ -456,6 +456,14 @@ func (client *OIDCClient) loadProvider(ctx context.Context) (*oauth2.Config, *oi
 		return nil, nil, err
 	}
 
+	// The authorize URL is the browser hop, so it is not covered by the
+	// server-side pins above — but it is the same discovery document, and a host
+	// that dials this machine there would send the owner's browser (carrying
+	// state, nonce and redirect_uri) to whatever listens on that port.
+	if err := validateDiscoveredAuthorizationEndpoint(provider.Endpoint().AuthURL); err != nil {
+		return nil, nil, err
+	}
+
 	client.provider = provider
 	client.metadata = metadata
 	client.oauthConfig = &oauth2.Config{
@@ -567,8 +575,9 @@ func isValidProvisioningDomain(rawDomain string) bool {
 // from the same authority that issued the ID token.
 //
 // When issuerURL is empty (constant-time discovery / tests / legacy callers
-// that have no issuer to pin against), the function only enforces the
-// HTTPS-and-no-fragment shape and returns the endpoint unchanged.
+// that have no issuer to pin against), the function enforces the shape alone —
+// HTTPS, no fragment, and a host that does not dial this machine — and returns
+// the endpoint unchanged.
 func sanitizeOIDCEndSessionEndpoint(rawEndpoint string, issuerURL string) string {
 	endpoint := strings.TrimSpace(rawEndpoint)
 	if endpoint == "" {
@@ -643,6 +652,28 @@ func validateDiscoveredTokenEndpoint(tokenEndpoint string, issuerURL string) err
 	}
 	if !sameOriginURL(parsed, parsedIssuer) {
 		return errors.New("oidc token_endpoint origin must match the issuer origin")
+	}
+	return nil
+}
+
+// validateDiscoveredAuthorizationEndpoint refuses a discovery-supplied
+// authorization_endpoint that is not an absolute https URL, or whose host dials
+// this machine. Unlike jwks_uri and token_endpoint this URL is not pinned to the
+// issuer origin: it is the only discovery endpoint the browser navigates to
+// rather than the server fetching, and pinning it would change the
+// three-endpoint pin contract this change does not own. An empty endpoint is
+// left for the oauth2 flow to reject (there is nowhere to send the owner).
+func validateDiscoveredAuthorizationEndpoint(authorizationEndpoint string) error {
+	endpoint := strings.TrimSpace(authorizationEndpoint)
+	if endpoint == "" {
+		return nil
+	}
+	parsed, err := url.Parse(endpoint)
+	if err != nil || !parsed.IsAbs() || !strings.EqualFold(parsed.Scheme, "https") {
+		return errors.New("oidc authorization_endpoint must be an absolute https URL")
+	}
+	if HostDialsThisMachine(parsed.Hostname()) {
+		return errors.New("oidc authorization_endpoint must name a remote host")
 	}
 	return nil
 }
@@ -723,13 +754,30 @@ func oidcRedirectPolicy(issuerURL string) func(req *http.Request, via []*http.Re
 // shape parses as a valid absolute https URL, so nothing but this check stops
 // the client secret and authorization code from being posted to whatever
 // listens locally on that port. Loopback literals are deliberately not included:
-// a self-hosted issuer on 127.0.0.1 is a supported deployment.
+// a self-hosted issuer on 127.0.0.1 is a supported deployment, as is one on a
+// LAN address — so this is NOT an SSRF egress gate and must not be reused as
+// one. The gate that refuses private and link-local destinations outright is
+// `internal/services/webhook_delivery.go`.
 func HostDialsThisMachine(host string) bool {
 	if host == "" {
 		return true
 	}
-	parsed := net.ParseIP(host)
-	return parsed != nil && parsed.IsUnspecified()
+	address, err := netip.ParseAddr(host)
+	if err != nil {
+		return false
+	}
+	// A zone identifier (`https://[::%25eth0]`) is not part of the address the
+	// dialer resolves, and an IPv4-mapped form is the same address wearing a v6
+	// shape: strip both before classifying, or either spelling walks past this.
+	address = address.WithZone("").Unmap()
+	if address.IsUnspecified() {
+		return true
+	}
+	// RFC 1122 "this network" (0.0.0.0/8). IsUnspecified matches only the first
+	// address of the block, yet a connect() to any of it lands on the local host
+	// on common stacks — the same reason the webhook egress gate refuses the
+	// whole prefix (`internal/services/webhook_delivery.go`).
+	return address.Is4() && address.As4()[0] == 0
 }
 
 func sameOriginURL(left *url.URL, right *url.URL) bool {
