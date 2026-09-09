@@ -276,8 +276,10 @@ func boolString(value bool) string {
 // net::ERR_ABORTED. Returning a same-origin 200 whose meta-refresh performs the
 // hop keeps the cross-origin navigation out of the form submission — where
 // form-action does not apply — the same technique the provider-logout bridge
-// uses. target is server-built (config + random OIDC state), never user input,
-// but is HTML-escaped as defense-in-depth for the attribute context.
+// uses. target is server-built and never user input, but its origin is not all
+// local configuration: the authorize URL comes from the provider's discovery
+// document and the end-session URL from the stored logout state, so it is
+// HTML-escaped for the attribute context rather than trusted.
 func oidcSameOriginRedirectInterstitial(target string) string {
 	return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=` +
 		html.EscapeString(target) + `"></head><body></body></html>`

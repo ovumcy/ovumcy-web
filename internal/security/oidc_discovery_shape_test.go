@@ -15,14 +15,19 @@ import (
 func TestSameOriginURLRefusesHostsThatDialThisMachine(t *testing.T) {
 	t.Parallel()
 
-	for _, host := range []string{"", "0.0.0.0", "::"} {
+	// The spellings past the first three are the ones a check written as
+	// `net.ParseIP(host).IsUnspecified()` would wave through: the rest of
+	// 0.0.0.0/8, a zone identifier, and the IPv4-mapped form.
+	for _, host := range []string{"", "0.0.0.0", "::", "0.0.0.1", "0.1.2.3", "::%eth0", "::ffff:0.0.0.1"} {
 		if !HostDialsThisMachine(host) {
 			t.Fatalf("HostDialsThisMachine(%q) = false", host)
 		}
 	}
-	// A self-hosted issuer on loopback is a supported deployment, so loopback
-	// stays distinguishable from an unspecified address.
-	for _, host := range []string{"127.0.0.1", "::1", "id.example.com"} {
+	// A self-hosted issuer on loopback or a LAN address is a supported
+	// deployment, so neither may be confused with an address that names no peer:
+	// this check bounds a misconfigured or hostile OIDC URL, it is not an SSRF
+	// egress gate.
+	for _, host := range []string{"127.0.0.1", "::1", "10.0.0.1", "192.168.1.10", "id.example.com"} {
 		if HostDialsThisMachine(host) {
 			t.Fatalf("HostDialsThisMachine(%q) = true", host)
 		}
@@ -51,6 +56,36 @@ func TestSameOriginURLRefusesHostsThatDialThisMachine(t *testing.T) {
 		}
 		if err := validateDiscoveredJWKSURI(issuer+"/jwks", issuer); err == nil {
 			t.Fatalf("jwks_uri on issuer %s passed the pin", issuer)
+		}
+		if err := validateDiscoveredAuthorizationEndpoint(issuer + "/authorize"); err == nil {
+			t.Fatalf("authorization_endpoint on issuer %s passed the host check", issuer)
+		}
+	}
+}
+
+// The authorize URL is the one discovery endpoint the browser navigates to, and
+// the only one this change checks without pinning it to the issuer origin. Both
+// halves are deliberate and both are pinned here: an off-origin https authorize
+// URL is accepted (so nobody reads its acceptance as an oversight of the loop
+// above), a plaintext or machine-dialing one is not.
+func TestValidateDiscoveredAuthorizationEndpoint(t *testing.T) {
+	t.Parallel()
+
+	for _, endpoint := range []string{"", "https://id.example.com/authorize", "https://sso.example.net/authorize"} {
+		if err := validateDiscoveredAuthorizationEndpoint(endpoint); err != nil {
+			t.Fatalf("authorization_endpoint %q was refused: %v", endpoint, err)
+		}
+	}
+	for _, endpoint := range []string{
+		"http://id.example.com/authorize",
+		"/authorize",
+		"https://0.0.0.0:8443/authorize",
+		"https://[::]:8443/authorize",
+		"https://:8443/authorize",
+		"https://0.0.0.1/authorize",
+	} {
+		if err := validateDiscoveredAuthorizationEndpoint(endpoint); err == nil {
+			t.Fatalf("authorization_endpoint %q was accepted", endpoint)
 		}
 	}
 }
