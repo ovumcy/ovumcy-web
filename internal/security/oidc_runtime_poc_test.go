@@ -150,6 +150,11 @@ type mockOIDCProvider struct {
 	// verifier follows ovumcy's own allowlist and not the discovery document.
 	signingAlgsSupported []string
 
+	// discoveryRawBody, when set, is served verbatim in place of the composed
+	// document, so a test can express JSON the map below cannot — a field of the
+	// wrong type, or the same key twice.
+	discoveryRawBody string
+
 	// idToken, when set, makes the /token endpoint answer a successful OAuth2
 	// token response carrying this signed id_token so the real ExchangeCode
 	// path can be driven end-to-end. Left empty it keeps the historical 501
@@ -199,6 +204,12 @@ func (m *mockOIDCProvider) serveDiscovery(w http.ResponseWriter, r *http.Request
 }
 
 func (m *mockOIDCProvider) serveDiscoveryDocument(w http.ResponseWriter, r *http.Request) {
+	if m.discoveryRawBody != "" {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(m.discoveryRawBody))
+		return
+	}
+
 	jwksURI := m.issuer + "/jwks"
 	if m.jwksURI != "" {
 		jwksURI = m.jwksURI

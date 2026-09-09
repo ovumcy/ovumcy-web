@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/ovumcy/ovumcy-web/internal/security"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
@@ -99,13 +100,23 @@ func validOIDCLogoutState(payload services.OIDCLogoutState) bool {
 		return false
 	}
 
+	// The host check is the same one the discovery sanitizer applies, repeated
+	// here because this state is read back from a row that may predate it: a
+	// stored `https://:8443/logout` would otherwise be composed into a Location
+	// carrying the id_token_hint to whatever listens locally on that port.
 	endpointURL, err := url.Parse(endSessionEndpoint)
 	if err != nil || !endpointURL.IsAbs() || !strings.EqualFold(endpointURL.Scheme, "https") || endpointURL.Fragment != "" {
+		return false
+	}
+	if security.HostDialsThisMachine(endpointURL.Hostname()) {
 		return false
 	}
 
 	redirectURL, err := url.Parse(postLogoutRedirectURL)
 	if err != nil || !redirectURL.IsAbs() || !strings.EqualFold(redirectURL.Scheme, "https") {
+		return false
+	}
+	if security.HostDialsThisMachine(redirectURL.Hostname()) {
 		return false
 	}
 	if redirectURL.RawQuery != "" || redirectURL.Fragment != "" {

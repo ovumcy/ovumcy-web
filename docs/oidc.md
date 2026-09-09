@@ -55,6 +55,11 @@ Notes:
 - `COOKIE_SECURE=true` is mandatory when `OIDC_ENABLED=true`.
 - `OIDC_REDIRECT_URL` must be an absolute `https://` URL and its path must be exactly `/auth/oidc/callback`.
 - `OIDC_ISSUER_URL` must be the issuer URL itself, not a browser login page URL and not a URL with query parameters or fragments.
+- Every configured OIDC URL must name a host. `https://:8443`, `https://0.0.0.0:8443` and `https://[::]:8443` are rejected at startup: they parse as valid
+  URLs but resolve to the machine Ovumcy runs on, which would send the client secret and the authorization code to whatever listens on that port. A real
+  hostname or a concrete address — `127.0.0.1` included — is required. The same requirement applies to the `authorization_endpoint` your provider advertises
+  in its discovery document, which must additionally be an absolute `https://` URL; a document that fails it leaves SSO unavailable rather than sending the
+  browser to that URL.
 - `OIDC_CA_FILE` is optional. Use it only when the provider certificate chain is signed by a private or internal CA that the Ovumcy runtime does not already trust.
 - `OIDC_LOGIN_MODE` must be `hybrid` or `oidc_only`.
 - `OIDC_RESPONSE_MODE` must be `form_post` (default) or `query`. Leave it at `form_post` unless your provider cannot form-post the callback (see [Response mode](#response-mode)).
@@ -137,7 +142,7 @@ An account that **has** a local password is refused both endpoints with `400 inv
 
 If you want provider logout, keep `OIDC_POST_LOGOUT_REDIRECT_URL` on the same public origin as the callback URL. If you leave it empty, Ovumcy defaults to your public `/login` URL.
 
-Ovumcy host-pins the discovery-supplied `end_session_endpoint` to the configured `OIDC_ISSUER_URL` (same scheme, host, and effective port). If a provider advertises an end-session endpoint on a different origin — for example a compromised or look-alike discovery document — Ovumcy rejects it at provider load and silently falls back to local logout, regardless of `OIDC_LOGOUT_MODE`. This prevents a malicious metadata response from redirecting the logout flow (including any `id_token_hint` carried in the URL) to an attacker-controlled host.
+Ovumcy host-pins the discovery-supplied `end_session_endpoint` to the configured `OIDC_ISSUER_URL` (same scheme, host, and effective port). If a provider advertises an end-session endpoint on a different origin — for example a compromised or look-alike discovery document — Ovumcy rejects it at provider load and silently falls back to local logout, regardless of `OIDC_LOGOUT_MODE`. This prevents a malicious metadata response from redirecting the logout flow (including any `id_token_hint` carried in the URL) to an attacker-controlled host. The pin also applies to a discovery document that Ovumcy can only decode in part: sign-in still works, and an end-session endpoint that fails the pin degrades to local logout exactly as a missing one does.
 
 ## Accepted Signing Algorithms
 
