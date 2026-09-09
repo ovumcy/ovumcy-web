@@ -827,3 +827,145 @@ func TestWebhookDeliveryURLParseFailure(t *testing.T) {
 		t.Fatalf("parse-failure log leaked URL content: %q", output)
 	}
 }
+
+// captureDelivery is the shared recorder for the ntfy-format tests: one
+// request's method, path, headers, and body, snapshotted under the handler.
+type captureDelivery struct {
+	method string
+	path   string
+	title  string
+	tags   string
+	ctype  string
+	body   string
+}
+
+// TestWebhookDeliveryNtfyFormatSendsNativeEnvelope pins the ?format=ntfy
+// opt-in: the request must carry the title and tag as ntfy headers, a
+// text/plain body of message + blank line + disclaimer, and still POST to the
+// exact URL the owner configured (query param riding along untouched).
+func TestWebhookDeliveryNtfyFormatSendsNativeEnvelope(t *testing.T) {
+	payload := samplePayload()
+	var captured captureDelivery
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		bodyBytes, _ := io.ReadAll(request.Body)
+		captured = captureDelivery{
+			method: request.Method,
+			path:   request.URL.RequestURI(),
+			title:  request.Header.Get("X-Title"),
+			tags:   request.Header.Get("X-Tags"),
+			ctype:  request.Header.Get("Content-Type"),
+			body:   string(bodyBytes),
+		}
+		writer.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	deliverer := NewWebhookDeliverer(false)
+	if err := deliverer.Deliver(context.Background(), server.URL+"/ovumcy?auth=tok&format=ntfy", payload); err != nil {
+		t.Fatalf("ntfy-format delivery must succeed on 2xx, got %v", err)
+	}
+	if captured.method != http.MethodPost {
+		t.Fatalf("expected POST, got %s", captured.method)
+	}
+	if captured.path != "/ovumcy?auth=tok&format=ntfy" {
+		t.Fatalf("ntfy-format must keep the owner URL (params and order) untouched, got %q", captured.path)
+	}
+	if captured.title != payload.Title {
+		t.Fatalf("X-Title must carry the payload title %q, got %q", payload.Title, captured.title)
+	}
+	if captured.tags != "mens" {
+		t.Fatalf("period reminder must tag mens, got %q", captured.tags)
+	}
+	if captured.ctype != "text/plain" {
+		t.Fatalf("ntfy-format body must be text/plain, got %q", captured.ctype)
+	}
+	expectedBody := payload.Message + "\n\n" + payload.Disclaimer
+	if captured.body != expectedBody {
+		t.Fatalf("ntfy-format body must be message + blank line + disclaimer:\n want %q\n got  %q", expectedBody, captured.body)
+	}
+}
+
+// TestWebhookDeliveryNtfyFormatOvulationTag pins the ovulation-kind tag branch
+// of ntfyTagsForReminderType (and, through the table's default row, that an
+// unknown kind falls back to the period tag rather than an empty header).
+func TestWebhookDeliveryNtfyFormatOvulationTag(t *testing.T) {
+	cases := []struct {
+		name         string
+		reminderType string
+		expectedTag  string
+	}{
+		{"ovulation maps to sparkles", DueReminderTypeOvulation, "sparkles"},
+		{"period maps to mens", DueReminderTypePeriod, "mens"},
+		{"unknown kind falls back to mens", "fertility-window", "mens"},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			if got := ntfyTagsForReminderType(testCase.reminderType); got != testCase.expectedTag {
+				t.Fatalf("ntfyTagsForReminderType(%q) = %q, want %q", testCase.reminderType, got, testCase.expectedTag)
+			}
+		})
+	}
+}
+
+// TestWebhookDeliveryUnrelatedQueryParamsKeepJSONEnvelope pins the default:
+// query parameters that are NOT format=ntfy (a token param, or an explicit
+// format=json) must leave the generic JSON envelope — and its Content-Type —
+// byte-for-byte in place, so no existing consumer changes behavior.
+func TestWebhookDeliveryUnrelatedQueryParamsKeepJSONEnvelope(t *testing.T) {
+	for _, target := range []string{
+		"/hook?auth=tok",
+		"/hook?format=json",
+		"/hook?format=ntfyish",
+	} {
+		var gotTitle, gotTags, gotCtype string
+		var gotBody []byte
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			gotTitle = request.Header.Get("X-Title")
+			gotTags = request.Header.Get("X-Tags")
+			gotCtype = request.Header.Get("Content-Type")
+			gotBody, _ = io.ReadAll(request.Body)
+			writer.WriteHeader(http.StatusOK)
+		}))
+		deliverer := NewWebhookDeliverer(false)
+		if err := deliverer.Deliver(context.Background(), server.URL+target, samplePayload()); err != nil {
+			t.Fatalf("default-format delivery to %q must succeed, got %v", target, err)
+		}
+		server.Close()
+		if gotTitle != "" || gotTags != "" {
+			t.Fatalf("%q must not set ntfy headers, got title=%q tags=%q", target, gotTitle, gotTags)
+		}
+		if gotCtype != "application/json" {
+			t.Fatalf("%q must stay application/json, got %q", target, gotCtype)
+		}
+		var decoded WebhookPayload
+		if err := json.Unmarshal(gotBody, &decoded); err != nil {
+			t.Fatalf("%q body must remain the JSON envelope: %v", target, err)
+		}
+		if decoded.Disclaimer == "" {
+			t.Fatalf("%q JSON envelope lost the mandatory disclaimer", target)
+		}
+	}
+}
+
+// TestWebhookDeliveryNtfyFormatSkipsUnsafeTitleHeader pins headerSafeValue's
+// degradation: a title carrying a control character must be dropped from
+// X-Title (the request would otherwise fail to write at the transport layer)
+// while the delivery itself still succeeds with the plain-text body.
+func TestWebhookDeliveryNtfyFormatSkipsUnsafeTitleHeader(t *testing.T) {
+	payload := samplePayload()
+	payload.Title = "Broken\n title"
+	var gotTitle string
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		gotTitle = request.Header.Get("X-Title")
+		writer.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	deliverer := NewWebhookDeliverer(false)
+	if err := deliverer.Deliver(context.Background(), server.URL+"/t?format=ntfy", payload); err != nil {
+		t.Fatalf("delivery must succeed without the unsafe title header, got %v", err)
+	}
+	if gotTitle != "" {
+		t.Fatalf("unsafe title must be dropped from X-Title, got %q", gotTitle)
+	}
+}
