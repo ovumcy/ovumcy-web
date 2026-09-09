@@ -288,8 +288,8 @@ Three further signals withhold **every** projected date, the next period include
 on every one of those surfaces: unpredictable-cycle mode (the settings toggle
 "My cycle is unpredictable"), a pregnancy pause, and a cycle overdue past the
 length its own projection was computed from — more than a week past it, a margin
-that is an explicitly named
-engineering safety rule rather than a clinical cutoff: no guideline says a
+that is an explicitly named engineering safety rule rather than a clinical
+cutoff: no guideline says a
 prediction becomes invalid on a particular cycle day, and past that point the
 model can only roll a whole cycle forward at a time, so what it yields is
 manufactured rather than estimated.
@@ -302,14 +302,15 @@ period that was never logged merges two cycles into one 300-day gap, which leave
 the median at 28 and pulls the average of three ordinary cycles to 96, and a rule
 measured against 96 withheld nothing on cycle day 61 while every date it published
 came from the 28. Reading the projection's own length settles that without ruling
-on which spans still count as a cycle. The late-cycle notice and the dashboard's
-cycle ribbon follow the same length; the out-of-date-data notice keeps the
-displayed reference length, because it asks a different question — is this
-account's data stale — and carries no week of grace. Nothing recorded is
-discarded: the merged span stays in the history, and logging the missing period
-corrects it.
-The floor is
-the fourth signal and the only partial one. Predicates:
+on which spans still count as a cycle. The late-cycle notice follows the same
+length; the dashboard's cycle ribbon is not drawn at all past the gate, because
+its axis length, its start window and its "today" marker are all projection
+output. The out-of-date-data notice keeps the displayed reference length: it asks
+a different question — is this account's data stale — and carries no week of
+grace. Nothing recorded is discarded: the merged span stays in the history, and
+logging the missing period corrects it.
+
+The floor is the fourth signal and the only partial one. Predicates:
 `FertilityProjectionSuppressed` over `PredictionsSuppressed`
 (`internal/services/dashboard_cycle.go`) — one predicate rather than a copy per
 surface, precisely because the floor had once been missed at one of four sites.

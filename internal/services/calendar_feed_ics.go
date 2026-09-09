@@ -128,7 +128,7 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 
 	// Medical-safety suppression gate: if the app suppresses predictions, emit
 	// nothing. Unpredictable-cycle mode, a pregnancy pause, OR an overdue cycle
-	// (DashboardCycleOverdue — past the account's reference length by more than a
+	// (DashboardCycleOverdue — past the account's projection length by more than a
 	// week, where the projection can only roll a whole cycle forward) each
 	// suppress on their own, and they are read here through the one predicate
 	// every surface shares. The feed carries prediction events only, so this is

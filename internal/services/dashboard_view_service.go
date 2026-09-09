@@ -273,7 +273,7 @@ type dashboardTimingFrame struct {
 // resolveDashboardTimingFrame decides that frame from the resolved usage goal.
 // The ovulation estimate is withheld wherever the next-period window is: an
 // unpredictable cycle, a pregnancy pause, and a cycle overdue past its own
-// reference length — it is derived from the same projection, so an account
+// projection length — it is derived from the same projection, so an account
 // trying to conceive would otherwise be the one cohort still reading a
 // placeholder where the window used to be. Before the first completed cycle
 // (AwaitingFirstCycle) the projection has nothing but the onboarding slider to
@@ -298,7 +298,7 @@ type dashboardTimingFrame struct {
 // deliberately does NOT read NextPeriodEstimatePaused. That flag means "this
 // projection is paused", which is a fact about a date the bridge does not name;
 // reading it withdrew the line for an account whose FIRST cycle had run past the
-// reference length — the moment the owner most needs to be told when the window
+// projection length — the moment the owner most needs to be told when the window
 // arrives — and left the status slot empty instead. Nor does it read
 // FertilitySuppressed: the bridge is the line shown IN the first-cycle floor, so
 // a gate carrying that floor would gate the bridge on its own state.
