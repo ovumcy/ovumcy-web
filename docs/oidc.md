@@ -57,7 +57,9 @@ Notes:
 - `OIDC_ISSUER_URL` must be the issuer URL itself, not a browser login page URL and not a URL with query parameters or fragments.
 - Every configured OIDC URL must name a host. `https://:8443`, `https://0.0.0.0:8443` and `https://[::]:8443` are rejected at startup: they parse as valid
   URLs but resolve to the machine Ovumcy runs on, which would send the client secret and the authorization code to whatever listens on that port. A real
-  hostname or a concrete address — `127.0.0.1` included — is required.
+  hostname or a concrete address — `127.0.0.1` included — is required. The same requirement applies to the `authorization_endpoint` your provider advertises
+  in its discovery document, which must additionally be an absolute `https://` URL; a document that fails it leaves SSO unavailable rather than sending the
+  browser to that URL.
 - `OIDC_CA_FILE` is optional. Use it only when the provider certificate chain is signed by a private or internal CA that the Ovumcy runtime does not already trust.
 - `OIDC_LOGIN_MODE` must be `hybrid` or `oidc_only`.
 - `OIDC_RESPONSE_MODE` must be `form_post` (default) or `query`. Leave it at `form_post` unless your provider cannot form-post the callback (see [Response mode](#response-mode)).
