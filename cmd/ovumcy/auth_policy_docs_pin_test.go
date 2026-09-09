@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -85,6 +86,9 @@ func parseDocDuration(t *testing.T, text string) time.Duration {
 var (
 	rateLimitEnvPattern = regexp.MustCompile(`RATE_LIMIT_[A-Z0-9_]+\*?`)
 	docTableRowPattern  = regexp.MustCompile(`(?m)^\|\s*` + "`" + `[^|]+\|\s*(\d+) requests / ([^|]+?)\s*\|([^|]*)\|`)
+	// Every endpoint row opens with a code-formatted cell; the header and the
+	// separator do not, so this counts rows without reading their budgets.
+	docTableRowCount = regexp.MustCompile(`(?m)^\|\s*` + "`")
 	// A bullet's budget can be followed by a comma, a full stop, or a
 	// parenthetical aside ("20 per 15 minutes (account-scoped)").
 	docBulletPattern = regexp.MustCompile(`(?m)^- (.+?)(?: \([^)]*\))?: (\d+) (?:failures /|per) ([a-z0-9 ]+?)(?:[,.]|\s+\()`)
@@ -130,18 +134,22 @@ func TestAuthPolicyDocPinsTheRateLimitEnvVariables(t *testing.T) {
 		known[name] = true
 	}
 
-	source, err := os.ReadFile("config.go")
-	if err != nil {
-		t.Fatalf("read config.go: %v", err)
-	}
-	inCode := rateLimitEnvNames(string(source))
+	inCode := rateLimitEnvNames(serverSourceText(t))
 	doc := authPolicyDocText(t)
 	inDoc := rateLimitEnvNames(doc)
 
-	assertSameNames(t, "config.go", inCode, "the doc", inDoc)
-	assertSameNames(t, "config.go", inCode, "this test's expectations", known)
+	assertSameNames(t, "the server sources", inCode, "the doc", inDoc)
+	assertSameNames(t, "the server sources", inCode, "this test's expectations", known)
 
 	rows := docTableRowPattern.FindAllStringSubmatch(doc, -1)
+	// A row this pattern cannot read would be dropped in SILENCE, and its budget
+	// is checked by nothing else — the name comparison above passes on a row that
+	// reuses an already-documented variable. Count the rows the table has and
+	// insist every one of them parsed.
+	if written := docTableRowCount.FindAllString(doc, -1); len(rows) != len(written) {
+		t.Fatalf("%s: %d table row(s) written, %d parsed — a row's budget wording changed and its numbers are now read by nothing",
+			authPolicyDoc, len(written), len(rows))
+	}
 	if len(rows) == 0 {
 		t.Fatal("no rate-limit rows parsed from the doc table; the table's shape changed and this test reads nothing")
 	}
@@ -221,6 +229,38 @@ func TestAuthPolicyDocPinsThePerAccountLockoutThresholds(t *testing.T) {
 				authPolicyDoc, name, got.max, got.window, want.max, want.window)
 		}
 	}
+}
+
+// serverSourceText reads every non-test server source, not just config.go: a
+// RATE_LIMIT_* variable read from anywhere else would otherwise be invisible to
+// both directions of this check, which is the N-of-N+1 shape the repo's
+// measurement rules call a new defect rather than a partial fix.
+func serverSourceText(t *testing.T) string {
+	t.Helper()
+	var builder strings.Builder
+	for _, tree := range []string{".", filepath.Join("..", "..", "internal")} {
+		err := filepath.WalkDir(tree, func(path string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			builder.Write(data)
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("walk %s: %v", tree, err)
+		}
+	}
+	if builder.Len() == 0 {
+		t.Fatal("no server sources read; this test's setup is wrong and it would pass on an empty corpus")
+	}
+	return builder.String()
 }
 
 // rateLimitEnvNames drops the glob forms the prose uses — "the
