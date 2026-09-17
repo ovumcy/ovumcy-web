@@ -8,9 +8,11 @@
   utility into the shipped bundle and make builds machine-dependent.
   Class names legitimately live only in the server templates, the shared
   Go markup helpers (internal/httpx/markup.go), and the client JS; scan exactly
-  those. The CI stale-bundle guard relies on this build being reproducible.
+  those FILES, never the package directory around them — internal/templates
+  also holds embed.go and *_test.go, and every word of their prose would be a
+  CSS input. The CI stale-bundle guard relies on this build being reproducible.
 */
-@source "../../../internal/templates";
+@source "../../../internal/templates/**/*.html";
 @source "../../../internal/httpx/markup.go";
 /* Calendar day-cell classes are composed in Go view helpers, not in the
    templates (the template renders {{.CellClass}}). Scan exactly that file
