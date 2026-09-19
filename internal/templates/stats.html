@@ -284,6 +284,7 @@
           data-chart='{{toJSON .BBTChartData}}'
           data-empty-text='{{t .Messages "stats.no_cycle_data"}}'
           data-value-suffix='{{.BBTUnitLabel}}'
+          data-value-unit='{{if eq .BBTUnitLabel (t .Messages "stats.bbt_unit_fahrenheit")}}fahrenheit{{else}}celsius{{end}}'
           data-value-decimals="1"
           data-baseline-label='{{t .Messages "stats.bbt_baseline"}}'
           data-chart-hover

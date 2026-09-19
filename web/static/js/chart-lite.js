@@ -14,6 +14,15 @@
   var BBT_DOMAIN_MIN_SPAN = 0.8;
   var BBT_TICK_STEP = 0.2;
 
+  // A °F reading is its °C counterpart times 1.8, so a °F axis needs the same
+  // multiple to keep the same physical density: the floor window scales
+  // exactly (0.8 * 1.8 = 1.44), but the tick step does not carry over —
+  // 0.2 * 1.8 = 0.36 is not a step an owner would read a thermometer in. 0.4
+  // is the nearest step that stays legible while keeping the tick count in
+  // the same range as the °C axis produces.
+  var BBT_DOMAIN_MIN_SPAN_FAHRENHEIT = 1.44;
+  var BBT_TICK_STEP_FAHRENHEIT = 0.4;
+
   // The "bar" series is one cycle length in whole days per completed cycle.
   var CYCLE_DOMAIN_PADDING = 1;
   var CYCLE_DOMAIN_MIN_SPAN = 4;
@@ -217,7 +226,7 @@
     return fitted;
   }
 
-  function createDomain(values, baseline, kind) {
+  function createDomain(values, baseline, kind, isFahrenheitUnit) {
     var rangeValues = numericValues(values);
     if (isFiniteNumber(baseline)) {
       rangeValues.push(baseline);
@@ -245,15 +254,17 @@
       };
     }
 
+    var domainMinSpan = isFahrenheitUnit ? BBT_DOMAIN_MIN_SPAN_FAHRENHEIT : BBT_DOMAIN_MIN_SPAN;
+    var tickStep = isFahrenheitUnit ? BBT_TICK_STEP_FAHRENHEIT : BBT_TICK_STEP;
     var reading = widenToSpan(
       minValue - BBT_DOMAIN_PADDING,
       maxValue + BBT_DOMAIN_PADDING,
-      BBT_DOMAIN_MIN_SPAN
+      domainMinSpan
     );
     return {
       min: roundValue(reading.min),
       max: roundValue(reading.max),
-      step: fitTickStep(reading.max - reading.min, BBT_TICK_STEP)
+      step: fitTickStep(reading.max - reading.min, tickStep)
     };
   }
 
@@ -693,7 +704,8 @@
     var padding = { top: 26, right: 22, bottom: 40, left: 46 };
     var innerWidth = size.width - padding.left - padding.right;
     var innerHeight = size.height - padding.top - padding.bottom;
-    var domain = createDomain(chartData.values, chartData.baseline, chartData.kind);
+    var isFahrenheitUnit = container.getAttribute("data-value-unit") === "fahrenheit";
+    var domain = createDomain(chartData.values, chartData.baseline, chartData.kind, isFahrenheitUnit);
 
     if (!domain) {
       renderMessage(container, emptyText);

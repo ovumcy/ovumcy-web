@@ -305,6 +305,39 @@ test("the BBT axis scales to the readings, with a tick every 0.2 °C", async () 
   assert.ok(marker364, "the 36.4 °C reading is drawn at the 36.4 °C tick");
 });
 
+test("a Fahrenheit BBT dataset scales the axis floor and tick step, a Celsius one keeps 0.8/0.2", async () => {
+  // Same shape of readings as the 0.2 °C tick test above, converted to °F
+  // (×1.8 + 32): 97.5..98.4 -> domain padded by 0.15*1.8=0.27, already wider
+  // than the 1.44 °F floor window (0.8 °C * 1.8) -> ticks every 0.4 °F, the
+  // readable step this order picks in place of the unreadable 0.2 * 1.8 = 0.36.
+  const celsiusValues = [36.4, 36.5, 36.45, 36.7, 36.9];
+  const fahrenheitValues = celsiusValues.map((value) => Math.round((value * 1.8 + 32) * 100) / 100);
+
+  const fahrenheitCalls = await drawChart(
+    { kind: "line", labels: fahrenheitValues.map((_, index) => String(index + 1)), values: fahrenheitValues },
+    { "data-value-suffix": "°F", "data-value-decimals": "1", "data-baseline-label": "Coverline", "data-value-unit": "fahrenheit" },
+  );
+  const fahrenheitBox = gridBox(fahrenheitCalls);
+  const fahrenheitTicks = axisTicks(fahrenheitCalls, fahrenheitBox);
+  assert.deepEqual(
+    fahrenheitTicks.map((tick) => tick.text),
+    ["98.4°F", "98.0°F", "97.6°F"],
+    "a °F dataset gets a °F-scaled floor span and a readable 0.4 °F tick step",
+  );
+
+  const celsiusCalls = await drawChart(
+    { kind: "line", labels: celsiusValues.map((_, index) => String(index + 1)), values: celsiusValues },
+    BBT_ATTRIBUTES,
+  );
+  const celsiusBox = gridBox(celsiusCalls);
+  const celsiusTicks = axisTicks(celsiusCalls, celsiusBox);
+  assert.deepEqual(
+    celsiusTicks.map((tick) => tick.text),
+    ["37.0°C", "36.8°C", "36.6°C", "36.4°C"],
+    "a °C dataset (no data-value-unit='fahrenheit') keeps the 0.8/0.2 °C constants",
+  );
+});
+
 test("a flat BBT cycle keeps the 0.8 °C floor window instead of magnifying noise", async () => {
   // A 0.05 °C spread would pad to a 0.35 °C domain; the floor window widens
   // it around its centre (36.525) to [36.125, 36.925].
