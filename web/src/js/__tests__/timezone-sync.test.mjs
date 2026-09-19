@@ -53,6 +53,24 @@ function flushMicrotasks() {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+// captureSequencedFetch installs a fake window.fetch that resolves/rejects
+// with the queued outcomes in call order (an HTTP error response, a network
+// rejection, ...), then keeps resolving `{ ok: true }` once the queue is
+// exhausted — modelling a page load that finally succeeds after a prior
+// load's sync attempt failed.
+function captureSequencedFetch(window, outcomes) {
+  const calls = [];
+  window.fetch = function (url, options) {
+    calls.push({ url, options });
+    const outcome = outcomes[Math.min(calls.length - 1, outcomes.length - 1)];
+    if (outcome.reject) {
+      return Promise.reject(outcome.reject);
+    }
+    return Promise.resolve({ ok: outcome.ok });
+  };
+  return calls;
+}
+
 test("posts the detected timezone with the CSRF header when it differs from the persisted value", async () => {
   const dom = await loadDOMWithScript(APP_BUNDLE, {
     html: pageWithPersistedTz("America/Toronto"),
@@ -156,6 +174,85 @@ test("does not re-post the same detected timezone twice in one session", async (
     dom.window.document.dispatchEvent(new dom.window.Event("DOMContentLoaded", { bubbles: true }));
     await flushMicrotasks();
     assert.equal(calls.length, 1, "a successful sync must not repeat for the same value this session");
+  } finally {
+    dom.window.close();
+  }
+});
+
+// Regression: a failed sync (HTTP error response) must roll its optimistic
+// session mark back so the very next load in the same session — the same
+// sessionStorage, modelled here as a second DOMContentLoaded on the same
+// window — retries instead of giving up for the rest of the session.
+test("retries after an HTTP error response and marks the session done only once the retry succeeds", async () => {
+  const dom = await loadDOMWithScript(APP_BUNDLE, {
+    html: pageWithPersistedTz("America/Toronto"),
+    beforeRun: stubTimezone("Europe/Belgrade"),
+  });
+  const calls = captureSequencedFetch(dom.window, [{ ok: false }, { ok: true }]);
+  try {
+    // First load: the sync POST comes back non-2xx.
+    dom.window.document.dispatchEvent(new dom.window.Event("DOMContentLoaded", { bubbles: true }));
+    await flushMicrotasks();
+    assert.equal(calls.length, 1, "the first load must attempt the sync");
+    assert.equal(
+      dom.window.sessionStorage.getItem("ovumcy_tz_synced"),
+      null,
+      "an HTTP error must not leave the session marked done"
+    );
+
+    // Next load, same session: the mark was rolled back, so it retries.
+    dom.window.document.dispatchEvent(new dom.window.Event("DOMContentLoaded", { bubbles: true }));
+    await flushMicrotasks();
+    assert.equal(calls.length, 2, "the next load must retry the sync after an HTTP error");
+    assert.equal(
+      dom.window.sessionStorage.getItem("ovumcy_tz_synced"),
+      "Europe/Belgrade",
+      "the retry succeeded, so the session must now be marked done"
+    );
+
+    // A further load in the same session must not re-post.
+    dom.window.document.dispatchEvent(new dom.window.Event("DOMContentLoaded", { bubbles: true }));
+    await flushMicrotasks();
+    assert.equal(calls.length, 2, "once marked done, a later load must not sync again");
+  } finally {
+    dom.window.close();
+  }
+});
+
+// Same contract, but the failure is a fetch network rejection rather than an
+// HTTP error response — the two failure paths are separate branches in the
+// production code and each must roll the mark back on its own.
+test("retries after a fetch network rejection and marks the session done only once the retry succeeds", async () => {
+  const dom = await loadDOMWithScript(APP_BUNDLE, {
+    html: pageWithPersistedTz("America/Toronto"),
+    beforeRun: stubTimezone("Europe/Belgrade"),
+  });
+  const calls = captureSequencedFetch(dom.window, [{ reject: new Error("network down") }, { ok: true }]);
+  try {
+    // First load: the sync POST rejects outright (offline/DNS/etc).
+    dom.window.document.dispatchEvent(new dom.window.Event("DOMContentLoaded", { bubbles: true }));
+    await flushMicrotasks();
+    assert.equal(calls.length, 1, "the first load must attempt the sync");
+    assert.equal(
+      dom.window.sessionStorage.getItem("ovumcy_tz_synced"),
+      null,
+      "a network failure must not leave the session marked done"
+    );
+
+    // Next load, same session: the mark was rolled back, so it retries.
+    dom.window.document.dispatchEvent(new dom.window.Event("DOMContentLoaded", { bubbles: true }));
+    await flushMicrotasks();
+    assert.equal(calls.length, 2, "the next load must retry the sync after a network failure");
+    assert.equal(
+      dom.window.sessionStorage.getItem("ovumcy_tz_synced"),
+      "Europe/Belgrade",
+      "the retry succeeded, so the session must now be marked done"
+    );
+
+    // A further load in the same session must not re-post.
+    dom.window.document.dispatchEvent(new dom.window.Event("DOMContentLoaded", { bubbles: true }));
+    await flushMicrotasks();
+    assert.equal(calls.length, 2, "once marked done, a later load must not sync again");
   } finally {
     dom.window.close();
   }
