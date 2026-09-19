@@ -14,7 +14,9 @@
   dashboard, which is drawn entirely from the projection, is hidden while the estimate is paused
   rather than drawn around a date that is being withheld. The same rule now also covers the
   message shown after saving a day, which could still call a day fertile from a withheld window,
-  and the implantation-bleeding hint offered when a new cycle start is logged. An ordinary 28-day
+  and the implantation-bleeding hint offered when a new cycle start is logged — which is now also
+  withheld in unpredictable-cycle mode and during a pregnancy pause, as every other projection
+  already was. An ordinary 28-day
   pattern and a genuinely long-but-regular one (three real 50-day cycles) keep the exact threshold
   they had; a history whose average sits above its median now stops publishing dates on the day
   its own estimate has run out rather than a few days later. No recorded day is changed or

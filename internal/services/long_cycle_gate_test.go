@@ -458,6 +458,35 @@ func TestLongCycleGateWithholdsTheImplantationHint(t *testing.T) {
 	}
 }
 
+// TestImplantationHintFollowsEverySuppressionSignal: the hint counts from a
+// projected ovulation, so the two signals that withhold that ovulation on every
+// other surface without any overdue verdict — unpredictable-cycle mode and a
+// pregnancy pause — withhold the hint too. A 28/28/28 history on cycle day 22
+// is well inside the gate and eight days past the projected ovulation.
+func TestImplantationHintFollowsEverySuppressionSignal(t *testing.T) {
+	base := time.Date(2025, time.January, 1, 0, 0, 0, 0, time.UTC)
+	logs := longCycleGateLogs(base, []int{0, 28, 56, 84})
+	day := base.AddDate(0, 0, 84+21)
+
+	if policy := ResolveManualCycleStartPolicy(longCycleGateUser(), logs, day, day, time.UTC); !policy.PotentialImplantation {
+		t.Fatal("scenario setup: an ordinary history on cycle day 22 offers no implantation hint, so this test proves nothing")
+	}
+
+	unpredictable := longCycleGateUser()
+	unpredictable.UnpredictableCycle = true
+	if policy := ResolveManualCycleStartPolicy(unpredictable, logs, day, day, time.UTC); policy.PotentialImplantation {
+		t.Fatalf("unpredictable-cycle mode withholds every projection, yet the hint counts %d days from a projected ovulation", policy.ImplantationGapDays)
+	}
+
+	paused := append(append([]models.DailyLog(nil), logs...), models.DailyLog{
+		Date:          base.AddDate(0, 0, 84+17),
+		PregnancyTest: models.PregnancyTestPositive,
+	})
+	if policy := ResolveManualCycleStartPolicy(longCycleGateUser(), paused, day, day, time.UTC); policy.PotentialImplantation {
+		t.Fatalf("a pregnancy pause withholds every projection, yet the hint counts %d days from a projected ovulation", policy.ImplantationGapDays)
+	}
+}
+
 // TestLongCycleGateKeepsAConfirmedOvulationOnEverySurface is the 25/28/28/45
 // history (mean 32, median 28) on cycle day 36: the gate now fires there, three
 // days before the average used to let it, and a thermal shift the owner
