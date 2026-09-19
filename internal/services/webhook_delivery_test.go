@@ -902,7 +902,7 @@ func TestWebhookDeliveryNtfyFormatEncodesNonASCIITitle(t *testing.T) {
 	if err := NewWebhookDeliverer(false).Deliver(context.Background(), server.URL+"/t?format=ntfy", payload); err != nil {
 		t.Fatalf("ntfy-format delivery must succeed on 2xx, got %v", err)
 	}
-	for index := 0; index < len(rawTitle); index++ {
+	for index := range len(rawTitle) {
 		if rawTitle[index] >= 0x80 {
 			t.Fatalf("X-Title must be ASCII on the wire, got %q", rawTitle)
 		}
