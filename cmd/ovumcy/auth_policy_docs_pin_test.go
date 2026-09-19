@@ -35,11 +35,10 @@ import (
 // default of one hour. Asserting against the constant would pin a value no
 // request ever meets.
 //
-// CEILINGS ARE NOT PINNED BECAUSE THERE ARE NONE. getEnvInt bounds nothing above
-// (only getEnvIntInRange does, and no RATE_LIMIT_* variable uses it), and the doc
-// claims no upper bound. If a ceiling is ever added it belongs in the doc and in
-// docRateLimitEnvNames' expectations here — the absence is a fact about today,
-// not a gap in this test.
+// THE CEILINGS ARE PINNED AS NUMBERS, NOT AS BEHAVIOUR. rate_limit_ceilings_test.go
+// already proves each setting accepts its ceiling and refuses one past it; what
+// nothing read until here is the doc's sentence stating those ceilings, so a
+// ceiling retuned in config.go left the doc promising the old bound.
 
 const authPolicyDoc = "auth-policy-and-rate-limits.md"
 
@@ -228,6 +227,82 @@ func TestAuthPolicyDocPinsThePerAccountLockoutThresholds(t *testing.T) {
 			t.Errorf("%s: %q documented as %d / %s, the boot wires %d / %s",
 				authPolicyDoc, name, got.max, got.window, want.max, want.window)
 		}
+	}
+}
+
+var (
+	docCeilingPattern      = regexp.MustCompile(`(\d+) on the ([A-Za-z -]+?)(?: \(|,| and )`)
+	docWindowBoundsPattern = regexp.MustCompile("`\\*_WINDOW` must lie between (one [a-z]+) and (one [a-z]+)")
+	docCeilingPhraseToEnvs = map[string][]string{
+		"three credential endpoints": {"RATE_LIMIT_LOGIN_MAX", "RATE_LIMIT_REGISTER_MAX", "RATE_LIMIT_FORGOT_PASSWORD_MAX"},
+		"per-IP logout row":          {"RATE_LIMIT_LOGOUT_MAX"},
+		"per-account logout budget":  {"RATE_LIMIT_LOGOUT_ACCOUNT_MAX"},
+		"API catch-all":              {"RATE_LIMIT_API_MAX"},
+		"calendar feed":              {"RATE_LIMIT_CALENDAR_FEED_MAX"},
+	}
+	docWindowWords = map[string]time.Duration{"one second": time.Second, "one minute": time.Minute, "one hour": time.Hour, "one day": 24 * time.Hour}
+)
+
+// TestAuthPolicyDocPinsTheRateLimitCeilings reads the ceilings sentence against
+// rateLimitCeilingCases in both directions: a ceiling the doc states for a
+// setting must be the one config.go enforces, and every setting with a ceiling
+// must be named in the sentence.
+func TestAuthPolicyDocPinsTheRateLimitCeilings(t *testing.T) {
+	doc := authPolicyDocText(t)
+	start := strings.Index(doc, "Every setting above has a ceiling as well as a floor")
+	if start < 0 {
+		t.Fatal("the ceilings paragraph is gone from the doc; this test reads nothing")
+	}
+	paragraph := doc[start:]
+	if end := strings.Index(paragraph, "\n\n"); end >= 0 {
+		paragraph = paragraph[:end]
+	}
+	paragraph = strings.Join(strings.Fields(paragraph), " ")
+
+	ceilingByEnv := map[string]int{}
+	for _, tc := range rateLimitCeilingCases {
+		ceilingByEnv[tc.key] = tc.ceiling
+	}
+
+	documented := map[string]bool{}
+	matches := docCeilingPattern.FindAllStringSubmatch(paragraph, -1)
+	if len(matches) == 0 {
+		t.Fatal("no ceiling parsed from the doc's ceilings paragraph; its wording changed and this test reads nothing")
+	}
+	for _, match := range matches {
+		envs, ok := docCeilingPhraseToEnvs[match[2]]
+		if !ok {
+			t.Errorf("%s states a ceiling for %q, which this test maps to no setting", authPolicyDoc, match[2])
+			continue
+		}
+		stated := mustAtoi(t, match[1])
+		for _, env := range envs {
+			documented[env] = true
+			if enforced, ok := ceilingByEnv[env]; !ok {
+				t.Errorf("%s states a ceiling of %d for %s, which has no ceiling in config.go", authPolicyDoc, stated, env)
+			} else if enforced != stated {
+				t.Errorf("%s states a ceiling of %d for %s, config.go enforces %d", authPolicyDoc, stated, env, enforced)
+			}
+		}
+	}
+	for env := range ceilingByEnv {
+		if !documented[env] {
+			t.Errorf("%s has a ceiling in config.go that %s does not state", env, authPolicyDoc)
+		}
+	}
+
+	bounds := docWindowBoundsPattern.FindStringSubmatch(paragraph)
+	if bounds == nil {
+		t.Fatal("the doc's window bounds sentence is gone; the [floor, ceiling] of every *_WINDOW is read by nothing")
+	}
+	floor, floorOK := docWindowWords[bounds[1]]
+	ceiling, ceilingOK := docWindowWords[bounds[2]]
+	if !floorOK || !ceilingOK {
+		t.Fatalf("cannot read the window bounds from %q", bounds[0])
+	}
+	if floor != rateLimitWindowFloor || ceiling != rateLimitWindowCeiling {
+		t.Errorf("%s bounds every window to [%s, %s], config.go enforces [%s, %s]",
+			authPolicyDoc, floor, ceiling, rateLimitWindowFloor, rateLimitWindowCeiling)
 	}
 }
 
