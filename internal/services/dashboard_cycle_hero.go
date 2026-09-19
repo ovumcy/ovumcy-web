@@ -204,7 +204,7 @@ func dashboardCycleHeroOvulationDay(stats CycleStats, cycleContext DashboardCycl
 // NextPeriodEstimatePaused is the decision the cycle context already resolved,
 // read rather than re-derived, and it is not the day-inside-the-length test above
 // it: cycleLength here is the average-first reference, which a merged cycle
-// inflates, while the gate is measured against the projection length. Cycle day
+// inflates, while the gate is measured against the shorter length. Cycle day
 // 61 sat inside a 96-day reference, so the ribbon drew a 96-day projected cycle
 // map — projected days and a projected ovulation day among them — beside a header
 // saying the estimate is paused. A projected window the gate withheld may not be

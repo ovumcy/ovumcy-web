@@ -122,9 +122,8 @@ func PublishedStats(user *models.User, stats CycleStats, logs []models.DailyLog,
 // already moved on to the confirmed day. The substitution runs on the RAW
 // stats, ahead of PublishedStats' own clearing, for the same reason the
 // dashboard's runs ahead of its suppression branches: ConfirmedCurrentCycleOvulation
-// already reads FertilityProjectionSuppressed itself, so a confirmed day
-// never overrides a projection the gate would have withheld anyway, and
-// running it first means PublishedStats sees the same OvulationDate every
+// already reads its own gate (ConfirmedOvulationWithheld), so a confirmed day
+// never outlives a tier that withholds it, and running it first means PublishedStats sees the same OvulationDate every
 // other surface renders.
 //
 // The returned bool is the SAME "confirmed" bit the dashboard carries beside
@@ -140,10 +139,8 @@ func PublishedStats(user *models.User, stats CycleStats, logs []models.DailyLog,
 //
 // The bool is READ BACK off `published.OvulationDate` after PublishedStats has
 // run, rather than kept from the ConfirmedCurrentCycleOvulation call above:
-// today the two calls agree by construction (both read
-// FertilityProjectionSuppressed against the same user and stats, and the only
-// field this function mutates before the second call, OvulationDate, is not an
-// input to that predicate), but a bool decided before the clearing and never
+// today the two agree by construction (the day is put back below exactly when
+// the confirmation passed its own gate, ConfirmedOvulationWithheld), but a bool decided before the clearing and never
 // revisited would depend on that agreement holding forever across two files. A
 // suppressed projection reporting a confirmed day is exactly the medical-safety
 // floor this adapter exists to hold, so the field is derived from the
@@ -158,6 +155,16 @@ func PublishedOverviewStats(user *models.User, logs []models.DailyLog, stats Cyc
 	resolved, wasConfirmed := ResolveConfirmedCycleStats(user, logs, stats, today, location)
 	confirmedDay := resolved.OvulationDate
 	published, suppression := PublishedStats(user, resolved, logs, today, location)
+	// A confirmed day reaches here under the fertility gate only when the
+	// overdue signal is the whole of it (ConfirmedOvulationWithheld answered
+	// no): the cycle has outrun the length its projection was rolled from, and
+	// the day the owner's temperatures named is not such a projection. The
+	// clearing above keeps the window, the fertility status and the phase it
+	// withheld; only the day comes back, so the JSON API names what the
+	// dashboard and the calendar name.
+	if wasConfirmed && suppression.FertilitySuppressed {
+		published.OvulationDate = confirmedDay
+	}
 	confirmedOvulation := wasConfirmed && sameDay(published.OvulationDate, confirmedDay)
 	return published, suppression, confirmedOvulation
 }

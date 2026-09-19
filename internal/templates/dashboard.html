@@ -83,7 +83,10 @@
                  also names the ovulation estimate. It rides the next-period
                  item's gating — a suppressed prediction, and a cycle overdue
                  enough that the window above is withheld, never reach this
-                 branch — and stays an estimate in its own wording. */}}
+                 branch with a projected day. The one day that does reach it
+                 past the overdue gate is a BBT-confirmed ovulation, which is an
+                 observation rather than the projection that was paused; it
+                 stays an estimate in its own wording, like every day here. */}}
             {{if .ShowOvulationEstimate}}
             <span class="dashboard-status-separator" aria-hidden="true">·</span>
             <span class="dashboard-status-item">{{t .Messages "dashboard.ovulation"}}:

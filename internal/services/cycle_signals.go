@@ -165,13 +165,15 @@ func ConfirmedCurrentCycleOvulation(user *models.User, logs []models.DailyLog, s
 		return time.Time{}, false
 	}
 
-	// The gate lives HERE rather than at each surface, so the calendar and the
-	// dashboard cannot gate the same signal differently. It is the same
-	// predicate the calendar already wrapped this pass in
-	// (FertilityProjectionSuppressed = unpredictable · pregnancy-paused ·
-	// overdue, plus the first-cycle floor), read once instead of restated: a
-	// surface may not recombine the suppression signals itself.
-	if FertilityProjectionSuppressed(user, stats) {
+	// The gate lives HERE rather than at each surface, so the calendar, the
+	// dashboard and the JSON API cannot gate the same signal differently. It is
+	// ConfirmedOvulationWithheld — unpredictable · pregnancy-paused · the
+	// first-cycle floor — read once instead of restated: a surface may not
+	// recombine the suppression signals itself. The overdue signal is NOT part
+	// of it: that gate withholds what was rolled forward from a cycle length,
+	// and this day was read off recorded temperatures instead. Every surface
+	// still withholds the window and the fertility status derived from it.
+	if ConfirmedOvulationWithheld(user, stats) {
 		return time.Time{}, false
 	}
 

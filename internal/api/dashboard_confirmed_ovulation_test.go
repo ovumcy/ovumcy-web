@@ -163,8 +163,8 @@ func TestDashboardNamesALateShiftOnOrAfterTheProjectedNextPeriodStart(t *testing
 			// model arrives at. Judged before the slot is compared, so a seed
 			// that drifted inside the cohort fails as arithmetic rather than as a
 			// slot naming the wrong day; one that drifted past the overdue gate
-			// fails earlier still, in the helper, as a slot the paused dashboard
-			// never rendered.
+			// fails on this very anchor, the paused dashboard rendering no
+			// next-period date (the confirmed day's slot itself outlives the gate).
 			//
 			// The date this surface names is the projected start rolled one whole
 			// cycle on — 28 days, the spacing of the four starts the seed records
@@ -273,5 +273,71 @@ func TestDashboardNamesTheConfirmedDayForTheThinHistoryCohort(t *testing.T) {
 	// keeps this quiet.
 	if dashboardElementByDataAttr(document, "data-dashboard-prediction-past") != nil {
 		t.Fatal("a confirmed ovulation must not raise the stale-projection notice")
+	}
+}
+
+// overdueConfirmedShiftDaysPastProjection slides seedLateThermalShiftCycle's
+// cycle open to cycle day 36: one day past 28 + 7, so the overdue gate is on,
+// while the recorded shift still names today-3.
+const overdueConfirmedShiftDaysPastProjection = 4
+
+// TestDashboardNamesAConfirmedOvulationBesideAPausedEstimate reads the rendered
+// status line of an overdue account whose temperatures confirmed this cycle's
+// ovulation. The next-period estimate is paused; the ovulation slot still names
+// the day the temperatures named, in its estimate wording, with the page's
+// disclaimer beside it. It used to render no slot at all, the observation
+// withheld along with the projection.
+func TestDashboardNamesAConfirmedOvulationBesideAPausedEstimate(t *testing.T) {
+	app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
+	user := createOnboardingTestUser(t, database, "dashboard-overdue-shift@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	today := services.DateAtLocation(time.Now().In(time.UTC), time.UTC)
+	updateStatsOverviewUser(t, database, user, map[string]any{"track_bbt": true, "usage_goal": models.UsageGoalTrying})
+	confirmedDay, _ := seedLateThermalShiftCycle(t, database, user, today, overdueConfirmedShiftDaysPastProjection)
+
+	slot, document := dashboardOvulationSlotText(t, app, authCookie)
+
+	if dashboardElementByDataAttr(document, "data-dashboard-next-period-paused") == nil {
+		t.Fatal("fixture anchor: expected the paused next-period estimate — the cycle must be past the overdue gate")
+	}
+	if dashboardElementByDataAttr(document, "data-dashboard-next-period") != nil {
+		t.Fatal("a next-period date rendered for an overdue cycle")
+	}
+	if want := services.LocalizedDateDisplay("en", confirmedDay); !strings.Contains(slot, want) {
+		t.Fatalf("the ovulation slot = %q, want the BBT-confirmed %q beside the paused estimate", slot, want)
+	}
+	if dashboardElementByDataAttr(document, "data-dashboard-prediction-disclaimer") == nil {
+		t.Fatal("the confirmed day rendered without the medical disclaimer")
+	}
+}
+
+// TestStatsOverviewKeepsAConfirmedOvulationUnderTheOverdueGate is the JSON half
+// of the same account: every projection is null and the fertility status
+// unknown, while ovulation_date still carries the confirmed day and says so.
+func TestStatsOverviewKeepsAConfirmedOvulationUnderTheOverdueGate(t *testing.T) {
+	app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
+	user := createOnboardingTestUser(t, database, "overview-overdue-shift@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	today := services.DateAtLocation(time.Now().In(time.UTC), time.UTC)
+	updateStatsOverviewUser(t, database, user, map[string]any{"track_bbt": true})
+	confirmedDay, _ := seedLateThermalShiftCycle(t, database, user, today, overdueConfirmedShiftDaysPastProjection)
+
+	_, payload := fetchStatsOverview(t, app, authCookie)
+
+	if !payload.Suppression.Predictions || !payload.Suppression.Fertility {
+		t.Fatalf("fixture anchor: suppression = %+v, want both on for an overdue cycle", payload.Suppression)
+	}
+	want := confirmedDay.Format(statsOverviewDateLayout)
+	if payload.OvulationDate == nil || *payload.OvulationDate != want || !payload.OvulationConfirmed {
+		t.Fatalf("ovulation_date = %v (confirmed=%t), want the BBT-confirmed %s under the overdue gate", payload.OvulationDate, payload.OvulationConfirmed, want)
+	}
+	if payload.NextPeriodStart != nil || payload.FertilityWindowStart != nil || payload.FertilityWindowEnd != nil {
+		t.Fatalf("a projection survived the overdue gate: next %v, window %v..%v", payload.NextPeriodStart, payload.FertilityWindowStart, payload.FertilityWindowEnd)
+	}
+	if payload.CurrentFertility != services.FertilityStatusUnknown {
+		t.Fatalf("current_fertility = %q, want %q", payload.CurrentFertility, services.FertilityStatusUnknown)
+	}
+	if strings.TrimSpace(payload.Disclaimer) == "" {
+		t.Fatal("the confirmed day was published without the disclaimer")
 	}
 }

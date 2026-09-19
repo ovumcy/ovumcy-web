@@ -43,10 +43,14 @@ import (
 // CycleDayNeverCrossesThePeriodStart pins the boundary the argument rests on.
 //
 // The medical gate is NOT re-stated here: ConfirmedCurrentCycleOvulation reads
-// FertilityProjectionSuppressed for every surface, so a cycle whose window is
-// withheld today confirms nothing here either and keeps its silence. Suppression
-// is the floor, and a confirmed observation must never become a route around
-// one.
+// ConfirmedOvulationWithheld for every surface, so an unpredictable, paused or
+// first-cycle account confirms nothing here either and keeps its silence. An
+// OVERDUE cycle does confirm — the day was read off recorded temperatures, not
+// rolled forward from the length that ran out — and the window and status set
+// below are then withheld by PublishedStats' fertility clearing on every
+// surface that publishes them. Suppression is the floor, and a confirmed
+// observation must never become a route around it: only the day itself
+// survives the overdue gate.
 //
 // OvulationImpossible is cleared with the substitution rather than left behind:
 // it is the projection's claim that the account's median cycle leaves no room
