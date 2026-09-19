@@ -24,8 +24,9 @@ var requestTimezoneLocations = newRequestTimezoneCache(time.LoadLocation)
 
 // requestTimezoneCache remembers loaded zones and names the tz database does
 // not know, each in its own bounded map, so a flood of refused names can only
-// evict other refused names and never the zones owners actually send. At the bound an arbitrary
-// entry is evicted (map iteration order is randomized). A name the cache has
+// evict other refused names and never the zones owners actually send. At the
+// bound an arbitrary entry is evicted (map iteration order is randomized). A
+// name the cache has
 // not seen still costs one lookup: the header admits any short identifier, so
 // no bounded cache can absorb distinct names — it removes the repeats.
 type requestTimezoneCache struct {
