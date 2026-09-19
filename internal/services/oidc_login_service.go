@@ -20,9 +20,9 @@ var (
 	ErrOIDCLinkFailed            = errors.New("oidc identity link failed")
 	ErrOIDCProvisionFailed       = errors.New("oidc account provision failed")
 	// ErrOIDCReauthStale indicates the provider returned a successful exchange
-	// but auth_time / iat are older than the requested max age — the user did
-	// not actually re-authenticate, the provider answered from a cached SSO
-	// session despite prompt=login + max_age=0.
+	// whose auth_time is absent or older than the requested max age — the
+	// user did not provably re-authenticate; the provider may have answered
+	// from a cached SSO session despite prompt=login + max_age=0.
 	ErrOIDCReauthStale = errors.New("oidc reauth stale")
 	// ErrOIDCReauthIdentityMismatch indicates the (issuer, subject) returned by
 	// the reauth callback is not linked to the user that started the step-up
@@ -217,10 +217,10 @@ func (service *OIDCLoginService) startAuthWithExtra(ctx context.Context, state s
 //     expectedUserID. This stops an attacker who hijacked an OIDC-only session
 //     from completing the step-up by signing in with their OWN provider account.
 //   - the provider must actually have performed a fresh interactive
-//     authentication. We trust auth_time when present (REQUIRED by the spec
-//     whenever max_age was sent); otherwise we fall back to iat, which is
-//     bounded by token lifetime but still useful when auth_time is omitted.
-//   - the freshness signal must lie within maxAuthAge of now. A small
+//     authentication, proven by auth_time alone (REQUIRED by the spec
+//     whenever max_age was sent). A token without auth_time is refused; iat
+//     is never accepted in its place.
+//   - auth_time must lie within maxAuthAge of now. A small
 //     forward-tolerance handles modest clock skew.
 //
 // All deviations collapse into ErrOIDCReauthStale or
@@ -262,10 +262,10 @@ func reauthClaimsFresh(claims security.OIDCClaims, maxAuthAge time.Duration, now
 	if maxAuthAge <= 0 {
 		return false
 	}
+	// iat is never a fallback: it dates the token, not the authentication, so a
+	// provider answering prompt=login from a cached SSO session mints a fresh iat
+	// over a stale sign-in. A token without auth_time proves nothing here.
 	reference := claims.AuthTime
-	if reference.IsZero() {
-		reference = claims.IssuedAt
-	}
 	if reference.IsZero() {
 		return false
 	}

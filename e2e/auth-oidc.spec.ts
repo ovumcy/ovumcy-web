@@ -227,7 +227,7 @@ test.describe('Auth: OIDC login entry', () => {
     // Caveat on what this proves: the local IdP keeps no login session of its
     // own and ignores prompt=login, so the lane covers the round trip and the
     // persisted link — the app's freshness gate itself (reauthClaimsFresh over
-    // auth_time/iat) is covered by unit tests against forged claims.
+    // auth_time, never iat) is covered by unit tests against forged claims.
     await linkIdentityForm.locator('button[type="submit"]').click();
     await expect(
       page.locator(

@@ -129,7 +129,7 @@ That last point is important. An auto-provisioned OIDC-only account can use the 
 To enable a local password, OIDC-only users go through a **step-up re-authentication flow**:
 
 1. The user fills the "set local password" form in `Settings`. The browser submits to `POST /api/v1/users/current/password/step-up`, which validates the password, prepares its bcrypt hash without touching the database, and redirects the browser to the provider's authorize endpoint with `prompt=login` and `max_age=0` so the provider is forced to re-authenticate the user interactively.
-2. The provider posts the result back to the existing `/auth/oidc/callback` endpoint. Ovumcy detects the step-up flow (via a sealed cookie issued in step 1), runs the OIDC code exchange, and requires the resulting ID token's `auth_time` claim (or, if the provider omits it, `iat`) to lie within the last five minutes and the returned `(issuer, subject)` pair to already be linked to the current session's user.
+2. The provider posts the result back to the existing `/auth/oidc/callback` endpoint. Ovumcy detects the step-up flow (via a sealed cookie issued in step 1), runs the OIDC code exchange, and requires the resulting ID token's `auth_time` claim to lie within the last five minutes (see [Provider requirement for step-up](#provider-requirement-for-step-up-auth_time)) and the returned `(issuer, subject)` pair to already be linked to the current session's user.
 3. Only after both checks succeed does Ovumcy persist the prepared password hash, mint a fresh recovery code, and present it on the dedicated `/recovery-code` page. A stale or mismatched re-auth leaves the account untouched.
 
 The `PUT /api/v1/users/current/password` endpoint still works for accounts that already have local auth enabled (ordinary password rotation). For accounts with `LocalAuthEnabled=false` it returns `403 oidc reauth required` so the step-up flow above is the only path to enrol a local password.
@@ -143,6 +143,12 @@ Erasing health data always costs a fresh re-authentication. An account provision
 3. Only then does the erasure run — the operation taken from the sealed state, never from the callback request, which arrives from the provider carrying no body of its own.
 
 An account that **has** a local password is refused both endpoints with `400 invalid settings input`: its erasure gate is the password, and the SSO route must never become a way around it.
+
+### Provider requirement for step-up: `auth_time`
+
+All three step-ups — erasure, enrolling a local password, and linking an identity from `Settings` — accept the provider's answer only if its ID token carries an `auth_time` claim from the last five minutes. `iat` is never used in its place: it dates the token, not the sign-in, so a provider that answers `prompt=login` from a cached session would mint a fresh `iat` over a stale authentication. OpenID Connect Core makes `auth_time` required whenever `max_age` is requested, and Ovumcy always sends `max_age=0` on a step-up, so a conformant provider is unaffected. There is no setting to relax this.
+
+Consequence: **a provider that omits `auth_time` under `max_age=0` cannot complete any of the three step-ups.** On such a provider an OIDC-only account cannot clear its data, delete itself or enrol a local password, and no account — with a local password or without — can link another identity from `Settings`; every attempt returns to `Settings` with the stale re-authentication refusal and changes nothing. Ordinary SSO sign-in is unaffected — it never checks `auth_time`. None of the rows in the [compatibility matrix](#provider-compatibility-matrix) has been verified against this requirement; check your provider by decoding an ID token it issues for a `max_age=0` request. The operator commands need no step-up: `ovumcy link-oidc-identity` links an identity, and `ovumcy users delete` erases an account on its owner's behalf (see [GDPR](gdpr.md)).
 
 ## How Logout Works
 

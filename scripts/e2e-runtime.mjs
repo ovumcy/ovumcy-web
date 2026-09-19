@@ -242,6 +242,9 @@ export async function startLocalOIDCProvider({
           sub: testSubject,
           name: testName,
           emailVerified,
+          // The mock keeps no login session, so every authorize request is an
+          // authentication. Step-up freshness is proven by auth_time alone.
+          authTime: Math.floor(Date.now() / 1000),
         });
 
         if (responseMode === "query") {
@@ -351,6 +354,7 @@ export async function startLocalOIDCProvider({
             aud: clientID,
             exp: issuedAt + 300,
             iat: issuedAt,
+            auth_time: record.authTime,
             nonce: record.nonce,
             email: record.email,
             email_verified: record.emailVerified,
