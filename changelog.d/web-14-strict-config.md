@@ -1,10 +1,16 @@
 ### Changed
 
-- **An unparseable `AUDIT_LOG_ENABLED` now refuses the boot.** It joins `COOKIE_SECURE`,
-  `HSTS_ENABLED`, `TRUST_PROXY_ENABLED` and `WEBHOOK_BLOCK_PRIVATE_ADDRESSES`: a typo such as
-  `AUDIT_LOG_ENABLED=ture` used to start the instance with the audit stream off and one warning in
-  the boot log; it now exits with an error naming the key and the value. The accepted spellings are
-  unchanged (`1`/`true`/`yes`/`on`, `0`/`false`/`no`/`off`), and an unset key still means off.
+- **An unparseable `AUDIT_LOG_ENABLED` or `OIDC_ENABLED` now refuses the boot.** Both join
+  `COOKIE_SECURE`, `HSTS_ENABLED`, `TRUST_PROXY_ENABLED` and `WEBHOOK_BLOCK_PRIVATE_ADDRESSES`: a
+  typo such as `AUDIT_LOG_ENABLED=ture` used to start the instance with the audit stream off, and
+  `OIDC_ENABLED=ture` with OIDC off — which also skipped every OIDC check and, under
+  `OIDC_LOGIN_MODE=oidc_only`, quietly brought password sign-in back — each with only one warning
+  in the boot log. Both now exit with an error naming the key and the value. The accepted spellings
+  are unchanged (`1`/`true`/`yes`/`on`, `0`/`false`/`no`/`off`), and an unset key still means off.
+  **Upgrade note:** a value that only produced that warning before now stops the start — check the
+  boot log of the running version for `invalid AUDIT_LOG_ENABLED` or `invalid OIDC_ENABLED` before
+  upgrading. A common source is a quoted value passed through `docker run --env-file`, which keeps
+  the quotes (`"false"`).
 
 ### Fixed
 

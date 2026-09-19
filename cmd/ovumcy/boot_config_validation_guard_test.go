@@ -14,9 +14,9 @@ import (
 // mistype into a silently degraded security posture.
 //
 // Deliberately narrow: only TRUSTED_PROXIES, CALENDAR_FEED_FENCE_PATH and the
-// five security-relevant booleans (COOKIE_SECURE, HSTS_ENABLED,
-// TRUST_PROXY_ENABLED, WEBHOOK_BLOCK_PRIVATE_ADDRESSES, AUDIT_LOG_ENABLED)
-// refuse the boot. The
+// six security-relevant booleans (COOKIE_SECURE, HSTS_ENABLED,
+// TRUST_PROXY_ENABLED, WEBHOOK_BLOCK_PRIVATE_ADDRESSES, AUDIT_LOG_ENABLED,
+// OIDC_ENABLED) refuse the boot. The
 // lenient getEnvBool / getEnvInt / getEnvDurationInRange fallback still governs every
 // other key, so nothing here may be read as "every invalid env value stops the
 // process".
@@ -198,7 +198,7 @@ func TestTrustedProxyCountTheBannerPrintsMatchesTheMatcher(t *testing.T) {
 }
 
 // TestBootRefusesAnUnparseableSecurityBoolean pins that a typo in one of the
-// four security-relevant booleans stops the process with an error naming the
+// six security-relevant booleans stops the process with an error naming the
 // key and the rejected value, instead of silently running on the fallback:
 // COOKIE_SECURE=ture used to yield cookies without the Secure flag and a boot
 // that looked normal.
@@ -212,6 +212,9 @@ func TestBootRefusesAnUnparseableSecurityBoolean(t *testing.T) {
 		{"TRUST_PROXY_ENABLED", "tru"},
 		{"WEBHOOK_BLOCK_PRIVATE_ADDRESSES", "onn"},
 		{"AUDIT_LOG_ENABLED", "enabled"},
+		// A lenient read here fell back to off, which skips OIDC Validate and
+		// turns OIDC_LOGIN_MODE=oidc_only back into password sign-in.
+		{"OIDC_ENABLED", "ture"},
 	}
 
 	for _, tc := range cases {
