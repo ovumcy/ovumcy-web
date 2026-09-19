@@ -258,7 +258,7 @@ func (service *StatsService) buildOwnerStatsInsights(ctx context.Context, user *
 		return insights, nil
 	}
 
-	insights.currentCycleBBTChart = buildCurrentCycleBBTChart(language, stats, logs, now, location)
+	insights.currentCycleBBTChart = buildCurrentCycleBBTChart(language, stats, logs, now, location).inTemperatureUnit(user.TemperatureUnit)
 	// The cycle-length trend needs no symptom catalogue, so it is built before
 	// the reader check below: an owner with no symptom repository still gets
 	// the statement about their own cycle lengths.

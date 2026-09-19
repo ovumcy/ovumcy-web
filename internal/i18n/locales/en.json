@@ -598,6 +598,7 @@
   "stats.no_cycle_symptom_data": "No symptoms were logged in your last completed cycle.",
   "stats.bbt_title": "BBT this cycle",
   "stats.bbt_unit": "°C",
+  "stats.bbt_unit_fahrenheit": "°F",
   "stats.bbt_baseline": "Coverline",
   "stats.bbt_probable_ovulation": "Probable ovulation",
   "stats.bbt_chart_summary": "%d readings this cycle. Coverline %.2f %s.",

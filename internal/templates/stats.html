@@ -272,7 +272,7 @@
       <section class="card p-4 sm:p-5 stats-trend-panel" data-stats-bbt-panel>
         <div class="mb-4 flex items-center justify-between gap-3">
           <h2 id="stats-bbt-title" class="journal-subtitle">{{t .Messages "stats.bbt_title"}}</h2>
-          <span class="journal-muted text-xs">{{t .Messages "stats.bbt_unit"}}</span>
+          <span class="journal-muted text-xs" data-bbt-unit>{{.BBTUnitLabel}}</span>
         </div>
         {{/* data-chart-hover opts this chart into the crosshair: the pointer
              reads back the day, the date and the reading it is over. The
@@ -283,7 +283,7 @@
           id="bbt-chart"
           data-chart='{{toJSON .BBTChartData}}'
           data-empty-text='{{t .Messages "stats.no_cycle_data"}}'
-          data-value-suffix='{{t .Messages "stats.bbt_unit"}}'
+          data-value-suffix='{{.BBTUnitLabel}}'
           data-value-decimals="1"
           data-baseline-label='{{t .Messages "stats.bbt_baseline"}}'
           data-chart-hover
@@ -296,7 +296,7 @@
         </div>
         <p id="stats-bbt-summary" class="journal-muted mt-3 text-xs">{{.BBTChartSummary}}</p>
         <p id="stats-bbt-caption" class="journal-muted mt-2 text-sm">{{t .Messages "stats.bbt_caption"}}</p>
-        {{$bbtUnit := t .Messages "stats.bbt_unit"}}
+        {{$bbtUnit := .BBTUnitLabel}}
         {{$bbtNoReading := t .Messages "stats.bbt_table_no_reading"}}
         <details class="chart-table-disclosure mt-3" data-bbt-table-disclosure>
           <summary class="chart-table-summary">{{t .Messages "stats.bbt_table_toggle"}}</summary>
