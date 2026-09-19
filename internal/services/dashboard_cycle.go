@@ -319,32 +319,7 @@ const (
 type PredictionSuppression struct {
 	PredictionsSuppressed bool
 	FertilitySuppressed   bool
-	// ConfirmedOvulationWithheld is the third decision: whether the one
-	// fertility value that is not a projection — the day the owner's own
-	// temperatures confirmed — is withheld too. It is read off its own
-	// predicate, never inferred from FertilitySuppressed: the two sets differ
-	// (the overdue signal withholds the projection and keeps the day), and a
-	// surface that read "fertility suppressed" as "keep the confirmed day" was
-	// right only while every fertility-only signal also withheld the day.
-	// Surfaces ask KeepConfirmedOvulation rather than this field.
-	ConfirmedOvulationWithheld bool
-	Reasons                    []SuppressionReason
-}
-
-// KeepConfirmedOvulation is the one answer to "may this surface name the day
-// the owner's temperatures confirmed", taking ConfirmedCurrentCycleOvulation's
-// result as it comes. The JSON overview's put-back, the calendar's solid marker
-// under a suppressed tier and the dashboard's ovulation line all read it, so the
-// three cannot disagree about a tier: whatever a new signal does to the
-// fertility gate, the day survives exactly where ConfirmedOvulationWithheld
-// lets it. ConfirmedCurrentCycleOvulation carries the same gate, so today this
-// narrows nothing it already answered; the decision is written here so that no
-// surface decides it from FertilitySuppressed instead.
-func (s PredictionSuppression) KeepConfirmedOvulation(confirmed time.Time, ok bool) (time.Time, bool) {
-	if !ok || s.ConfirmedOvulationWithheld {
-		return time.Time{}, false
-	}
-	return confirmed, true
+	Reasons               []SuppressionReason
 }
 
 // ResolvePredictionSuppression answers what a surface may publish and why. It
@@ -362,9 +337,8 @@ func (s PredictionSuppression) KeepConfirmedOvulation(confirmed time.Time, ok bo
 // TestEverySuppressionSignalHasAPublishedReason fails until it does.
 func ResolvePredictionSuppression(user *models.User, stats CycleStats) PredictionSuppression {
 	verdict := PredictionSuppression{
-		PredictionsSuppressed:      PredictionsSuppressed(user, stats),
-		FertilitySuppressed:        FertilityProjectionSuppressed(user, stats),
-		ConfirmedOvulationWithheld: ConfirmedOvulationWithheld(user, stats),
+		PredictionsSuppressed: PredictionsSuppressed(user, stats),
+		FertilitySuppressed:   FertilityProjectionSuppressed(user, stats),
 	}
 
 	if DashboardPredictionDisabled(user) {
@@ -531,8 +505,7 @@ func BuildDashboardCycleContext(user *models.User, logs []models.DailyLog, stats
 	// Resolved beside the tier and carried by every branch below, for the same
 	// reason: a context that answered "not suppressed" on a suppression branch
 	// would hand the banner the very rule it is meant to be gated by.
-	suppression := ResolvePredictionSuppression(user, stats)
-	fertilitySuppressed := suppression.FertilitySuppressed
+	fertilitySuppressed := FertilityProjectionSuppressed(user, stats)
 	if stats.PregnancyPaused {
 		return DashboardCycleContext{
 			CycleDayReference:   DashboardCycleReferenceLength(user, stats),
@@ -576,7 +549,7 @@ func BuildDashboardCycleContext(user *models.User, logs []models.DailyLog, stats
 	cycleDayWarning := DashboardCycleOverdue(user, stats)
 	cycleStaleAnchor := DashboardCycleStaleAnchor(user, stats, location)
 	cycleDataStale := DashboardCycleDataLooksStale(cycleStaleAnchor, today, cycleDayReference)
-	display := buildDashboardPredictionDisplay(user, logs, stats, suppression, today, location)
+	display := buildDashboardPredictionDisplay(user, logs, stats, today, location)
 
 	return DashboardCycleContext{
 		CycleDayReference:           cycleDayReference,
@@ -611,7 +584,7 @@ func BuildDashboardCycleContext(user *models.User, logs []models.DailyLog, stats
 // dashboard renders, withholding the whole projected window once
 // DashboardCycleOverdue reports the cycle is past its own cycle length by more
 // than a week.
-func buildDashboardPredictionDisplay(user *models.User, logs []models.DailyLog, stats CycleStats, suppression PredictionSuppression, today time.Time, location *time.Location) dashboardPredictionDisplay {
+func buildDashboardPredictionDisplay(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) dashboardPredictionDisplay {
 	prediction := DashboardUpcomingPredictions(
 		stats,
 		user,
@@ -647,10 +620,8 @@ func buildDashboardPredictionDisplay(user *models.User, logs []models.DailyLog, 
 	// announced as upcoming — which is the whole defect: on the projected day
 	// itself the difference to today was zero, the anchor never shifted, and the
 	// line declared an ovulation the temperatures had placed several days
-	// earlier. Whether the day may be named at all is the verdict's
-	// (KeepConfirmedOvulation), the same answer the calendar and the JSON
-	// overview read.
-	if confirmed, ok := suppression.KeepConfirmedOvulation(ConfirmedCurrentCycleOvulation(user, logs, stats, today, location)); ok {
+	// earlier.
+	if confirmed, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, today, location); ok {
 		display.ovulationDate = confirmed
 		display.ovulationConfirmed = true
 		// ovulationImpossible is the projection's claim that the account's

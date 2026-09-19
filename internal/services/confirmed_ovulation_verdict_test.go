@@ -3,11 +3,12 @@ package services
 // confirmed_ovulation_verdict_test.go — the day the owner's temperatures
 // confirmed is named by three surfaces inside the instance: the JSON overview
 // (PublishedOverviewStats), the dashboard's ovulation line
-// (BuildDashboardCycleContext) and the calendar's solid marker. All three read
-// ONE decision, PredictionSuppression.KeepConfirmedOvulation. The overview used
-// to put the day back under ANY fertility gate, which matched the other two only
-// because ConfirmedOvulationWithheld happened to be a subset of
-// FertilityProjectionSuppressed.
+// (BuildDashboardCycleContext) and the calendar's solid marker. Whether it may
+// be named is decided in ONE place, the gate inside
+// ConfirmedCurrentCycleOvulation (ConfirmedOvulationWithheld). The overview used
+// to add a second condition — put the day back only under the fertility gate —
+// which agreed with that owner only because ConfirmedOvulationWithheld happened
+// to be a subset of FertilityProjectionSuppressed.
 
 import (
 	"go/parser"
@@ -20,19 +21,18 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
-// TestEverySuppressionSignalAgreesOnTheConfirmedDay walks every signal either
-// predicate disjoins, plus the unsuppressed control, and asks each surface
-// whether it names the confirmed 2026-03-11. The rows are checked against the
-// predicates' own disjuncts, so a signal added to either one without a row here
-// fails instead of passing unexamined.
-func TestEverySuppressionSignalAgreesOnTheConfirmedDay(t *testing.T) {
-	const confirmedKey = "2026-03-11"
-	type row struct {
-		signal   string
-		suppress func(user *models.User, stats *CycleStats, today *time.Time)
-		wantKept bool
-	}
-	rows := []row{
+const confirmedVerdictDayKey = "2026-03-11"
+
+type confirmedVerdictRow struct {
+	signal   string
+	suppress func(user *models.User, stats *CycleStats, today *time.Time)
+	wantKept bool
+}
+
+// confirmedVerdictRows is one row per suppression signal plus the unsuppressed
+// control, each applied to projectedWindowFixture (confirmed 2026-03-11).
+func confirmedVerdictRows() []confirmedVerdictRow {
+	return []confirmedVerdictRow{
 		{signal: "", suppress: func(*models.User, *CycleStats, *time.Time) {}, wantKept: true},
 		{signal: "DashboardPredictionDisabled", suppress: func(user *models.User, _ *CycleStats, _ *time.Time) { user.UnpredictableCycle = true }},
 		{signal: "PregnancyPaused", suppress: func(_ *models.User, stats *CycleStats, _ *time.Time) { stats.PregnancyPaused = true }},
@@ -43,38 +43,34 @@ func TestEverySuppressionSignalAgreesOnTheConfirmedDay(t *testing.T) {
 			*stats = atToday(*stats, *today)
 		}},
 	}
+}
 
+func confirmedVerdictRowName(signal string) string {
+	if signal == "" {
+		return "no suppression"
+	}
+	return signal
+}
+
+// TestConfirmedCurrentCycleOvulationOwnsTheConfirmedDayVerdict pins the owner
+// itself: for every signal the detector's answer is its gate's, and the rows
+// cover every signal any of the three predicates disjoins — a signal added to
+// ConfirmedOvulationWithheld alone demands a row as much as one added to either
+// suppression predicate.
+func TestConfirmedCurrentCycleOvulationOwnsTheConfirmedDayVerdict(t *testing.T) {
 	covered := map[string]bool{}
-	for _, testCase := range rows {
+	for _, testCase := range confirmedVerdictRows() {
 		covered[testCase.signal] = true
-		name := testCase.signal
-		if name == "" {
-			name = "no suppression"
-		}
-		t.Run(name, func(t *testing.T) {
+		t.Run(confirmedVerdictRowName(testCase.signal), func(t *testing.T) {
 			user, logs, stats, today := projectedWindowFixture(t)
 			testCase.suppress(user, &stats, &today)
 
-			verdict := ResolvePredictionSuppression(user, stats)
-			if (testCase.signal != "") != verdict.FertilitySuppressed {
-				t.Fatalf("fixture: fertility gate = %t for signal %q", verdict.FertilitySuppressed, testCase.signal)
+			if (testCase.signal != "") != FertilityProjectionSuppressed(user, stats) {
+				t.Fatalf("fixture: fertility gate = %t for signal %q", FertilityProjectionSuppressed(user, stats), testCase.signal)
 			}
-			if verdict.ConfirmedOvulationWithheld == testCase.wantKept {
-				t.Fatalf("verdict: ConfirmedOvulationWithheld = %t, want %t", verdict.ConfirmedOvulationWithheld, !testCase.wantKept)
-			}
-
-			published, _, apiConfirmed := PublishedOverviewStats(user, logs, stats, today, time.UTC)
-			apiKept := apiConfirmed && CalendarDayKey(published.OvulationDate) == confirmedKey
-
-			cycleContext := BuildDashboardCycleContext(user, logs, stats, today, time.UTC)
-			dashboardKept := cycleContext.DisplayOvulationConfirmed && CalendarDayKey(cycleContext.DisplayOvulationDate) == confirmedKey
-
-			_, ovulation := calendarFertileDays(t, user, logs, stats, today)
-			calendarKept := ovulation[confirmedKey]
-
-			if apiKept != testCase.wantKept || dashboardKept != testCase.wantKept || calendarKept != testCase.wantKept {
-				t.Fatalf("confirmed %s named: API=%t dashboard=%t calendar=%t, want %t on all three",
-					confirmedKey, apiKept, dashboardKept, calendarKept, testCase.wantKept)
+			day, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, today, time.UTC)
+			if ok != testCase.wantKept || (ok && CalendarDayKey(day) != confirmedVerdictDayKey) {
+				t.Fatalf("detector: confirmed %s (ok=%t), want ok=%t on %s", CalendarDayKey(day), ok, testCase.wantKept, confirmedVerdictDayKey)
 			}
 		})
 	}
@@ -88,7 +84,7 @@ func TestEverySuppressionSignalAgreesOnTheConfirmedDay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse %s: %v", predictionSuppressionPredicateFile, err)
 	}
-	predicates := map[string]bool{"PredictionsSuppressed": true, "FertilityProjectionSuppressed": true}
+	predicates := map[string]bool{"PredictionsSuppressed": true, "FertilityProjectionSuppressed": true, "ConfirmedOvulationWithheld": true}
 	signals := 0
 	for predicate := range predicates {
 		for _, signal := range predictionSuppressionDisjunctsOf(t, file, predicate) {
@@ -106,34 +102,27 @@ func TestEverySuppressionSignalAgreesOnTheConfirmedDay(t *testing.T) {
 	}
 }
 
-// TestKeepConfirmedOvulationFollowsTheWithheldVerdictNotTheFertilityGate
-// covers the verdicts the tree cannot produce today: a fertility-only signal
-// that withholds the confirmed day and one that keeps it. All three surfaces
-// read the day through this method, so its answer is theirs.
-func TestKeepConfirmedOvulationFollowsTheWithheldVerdictNotTheFertilityGate(t *testing.T) {
-	day := time.Date(2026, time.March, 11, 0, 0, 0, 0, time.UTC)
-	for _, testCase := range []struct {
-		name     string
-		verdict  PredictionSuppression
-		ok       bool
-		wantKept bool
-	}{
-		{name: "no suppression", verdict: PredictionSuppression{}, ok: true, wantKept: true},
-		{name: "overdue shape: both gates, day kept", verdict: PredictionSuppression{PredictionsSuppressed: true, FertilitySuppressed: true}, ok: true, wantKept: true},
-		{name: "hypothetical fertility-only signal that withholds the day", verdict: PredictionSuppression{FertilitySuppressed: true, ConfirmedOvulationWithheld: true}, ok: true, wantKept: false},
-		{name: "hypothetical fertility-only signal that keeps the day", verdict: PredictionSuppression{FertilitySuppressed: true}, ok: true, wantKept: true},
-		{name: "nothing confirmed", verdict: PredictionSuppression{}, ok: false, wantKept: false},
-	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			got, kept := testCase.verdict.KeepConfirmedOvulation(day, testCase.ok)
-			if kept != testCase.wantKept {
-				t.Fatalf("kept = %t, want %t for %+v", kept, testCase.wantKept, testCase.verdict)
-			}
-			if kept && !got.Equal(day) {
-				t.Fatalf("kept day = %s, want %s", CalendarDayKey(got), CalendarDayKey(day))
-			}
-			if !kept && !got.IsZero() {
-				t.Fatalf("a withheld verdict returned a day: %s", CalendarDayKey(got))
+// TestEverySuppressionSignalAgreesOnTheConfirmedDay asks each surface, for
+// every row above, whether it names the confirmed day: all three read the one
+// owner, so none may answer differently from the row.
+func TestEverySuppressionSignalAgreesOnTheConfirmedDay(t *testing.T) {
+	for _, testCase := range confirmedVerdictRows() {
+		t.Run(confirmedVerdictRowName(testCase.signal), func(t *testing.T) {
+			user, logs, stats, today := projectedWindowFixture(t)
+			testCase.suppress(user, &stats, &today)
+
+			published, _, apiConfirmed := PublishedOverviewStats(user, logs, stats, today, time.UTC)
+			apiKept := apiConfirmed && CalendarDayKey(published.OvulationDate) == confirmedVerdictDayKey
+
+			cycleContext := BuildDashboardCycleContext(user, logs, stats, today, time.UTC)
+			dashboardKept := cycleContext.DisplayOvulationConfirmed && CalendarDayKey(cycleContext.DisplayOvulationDate) == confirmedVerdictDayKey
+
+			_, ovulation := calendarFertileDays(t, user, logs, stats, today)
+			calendarKept := ovulation[confirmedVerdictDayKey]
+
+			if apiKept != testCase.wantKept || dashboardKept != testCase.wantKept || calendarKept != testCase.wantKept {
+				t.Fatalf("confirmed %s named: API=%t dashboard=%t calendar=%t, want %t on all three",
+					confirmedVerdictDayKey, apiKept, dashboardKept, calendarKept, testCase.wantKept)
 			}
 		})
 	}
