@@ -328,11 +328,12 @@ func (client *webhookDeliveryClient) Deliver(ctx context.Context, decryptedURL s
 		var marshalErr error
 		body, marshalErr = json.Marshal(payload)
 		if marshalErr != nil {
-			// codecov:ignore -- unreachable: WebhookPayload is all JSON-safe scalar
+			// codecov:ignore:start -- unreachable: WebhookPayload is all JSON-safe scalar
 			// fields, so json.Marshal cannot fail here. Kept as a fail-safe so a
 			// future unmarshalable field never delivers a malformed body.
 			log.Printf("webhook delivery skipped: reason=payload_marshal_failed host=%s", parsed.Hostname())
 			return fmt.Errorf("marshal webhook payload: %w", marshalErr)
+			// codecov:ignore:end
 		}
 		contentType = "application/json"
 	}
