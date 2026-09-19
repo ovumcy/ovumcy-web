@@ -138,12 +138,17 @@ func newTestHandlerDependencies(database *gorm.DB, i18nManager *i18n.Manager, op
 	// same recipe the production binary uses, so the two cannot drift. Tests pass
 	// the default attempt limits, a disabled OIDC config, and—unlike
 	// production—leave LogoutAttempts unset to keep the auth-service default.
-	// The disabled config still names testOIDCIssuerURL: stored provider-logout
-	// state is pinned to the configured issuer origin, and the logout tests
-	// drive that state through this default wiring.
+	// The disabled config still names testOIDCIssuerURL and
+	// testOIDCPostLogoutRedirectURL: stored provider-logout state is pinned to
+	// the configured issuer origin, the provider redirect takes its return
+	// address from the configuration, and the logout tests drive that state
+	// through this default wiring.
 	dependencies := bootstrap.BuildDependencies(db.NewRepositories(database), []byte(testAppSecretKey), i18nManager, bootstrap.Options{
-		RegistrationMode:        registrationMode,
-		OIDCConfig:              security.OIDCConfig{IssuerURL: testOIDCIssuerURL},
+		RegistrationMode: registrationMode,
+		OIDCConfig: security.OIDCConfig{
+			IssuerURL:             testOIDCIssuerURL,
+			PostLogoutRedirectURL: testOIDCPostLogoutRedirectURL,
+		},
 		OIDCServiceOverride:     appOptions.oidcService,
 		LoginAttempts:           bootstrap.AttemptLimit{Max: services.DefaultLoginAttemptsLimit, Window: services.DefaultLoginAttemptsWindow},
 		RecoveryAttempts:        bootstrap.AttemptLimit{Max: services.DefaultRecoveryAttemptsLimit, Window: time.Hour},

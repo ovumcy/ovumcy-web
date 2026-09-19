@@ -68,8 +68,10 @@ Notes:
   `end_session_endpoint` — must be on the issuer's origin: the same scheme, host and port as `OIDC_ISSUER_URL`. A provider whose sign-in page
   lives on another host (for example a separate `login.` subdomain) is refused when Ovumcy loads its discovery document, and SSO stays
   unavailable until `OIDC_ISSUER_URL` names an issuer whose endpoints share its origin. An `end_session_endpoint` on another origin is dropped, so
-  sign-out stays local. A stored provider-logout target is checked against the issuer configured now, so after `OIDC_ISSUER_URL` changes, a
-  sign-out from a session started before the change is local only.
+  sign-out stays local. A stored provider-logout target is checked against the issuer configured now, so after the issuer's origin (scheme, host or port)
+  changes, a sign-out from a session started before the change is local only; a change that keeps the origin (for example another
+  realm on the same host) does not affect it. The address the provider returns the browser to after sign-out is always the one
+  configured now (`OIDC_POST_LOGOUT_REDIRECT_URL`, or `/login` on the `OIDC_REDIRECT_URL` origin), never one saved with the session.
 - `OIDC_CA_FILE` is optional. Use it only when the provider certificate chain is signed by a private or internal CA that the Ovumcy runtime does not already trust.
 - `OIDC_LOGIN_MODE` must be `hybrid` or `oidc_only`.
 - `OIDC_RESPONSE_MODE` must be `form_post` (default) or `query`. Leave it at `form_post` unless your provider cannot form-post the callback (see [Response mode](#response-mode)).

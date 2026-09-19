@@ -26,6 +26,7 @@ type stubOIDCWorkflowService struct {
 	localPublicAuthEnabled bool
 	responseMode           security.OIDCResponseMode
 	issuerURL              string
+	postLogoutRedirectURL  string
 	authURL                string
 	startErr               error
 	result                 services.OIDCLoginResult
@@ -92,6 +93,12 @@ func (stub *stubOIDCWorkflowService) ResponseMode() security.OIDCResponseMode {
 // that drives a valid logout state names the issuer its endpoint sits on.
 func (stub *stubOIDCWorkflowService) IssuerURL() string {
 	return stub.issuerURL
+}
+
+// PostLogoutRedirectURL is the configured post-logout return address the
+// provider redirect is composed from.
+func (stub *stubOIDCWorkflowService) PostLogoutRedirectURL() string {
+	return stub.postLogoutRedirectURL
 }
 
 func (stub *stubOIDCWorkflowService) StartAuth(ctx context.Context, state string, nonce string, codeVerifier string) (string, error) {
@@ -739,11 +746,17 @@ func TestOIDCCallbackForLinkedTOTPAccountWithNoLogoutStateCompletesChallengeClea
 // whose end-session endpoint must survive that pin sits on this origin.
 const testOIDCIssuerURL = "https://id.example.com"
 
+// testOIDCPostLogoutRedirectURL is the post-logout return address the stub and
+// the default test wiring resolve. The provider redirect is composed from it,
+// never from the address stored with the logout state.
+const testOIDCPostLogoutRedirectURL = "https://ovumcy.example.com/login"
+
 func newStubOIDCWorkflowService(enabled bool) *stubOIDCWorkflowService {
 	return &stubOIDCWorkflowService{
 		enabled:                enabled,
 		localPublicAuthEnabled: true,
 		issuerURL:              testOIDCIssuerURL,
+		postLogoutRedirectURL:  testOIDCPostLogoutRedirectURL,
 	}
 }
 
