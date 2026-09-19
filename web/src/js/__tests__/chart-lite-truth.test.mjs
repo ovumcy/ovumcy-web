@@ -307,9 +307,13 @@ test("the BBT axis scales to the readings, with a tick every 0.2 °C", async () 
 
 test("a Fahrenheit BBT dataset scales the axis floor and tick step, a Celsius one keeps 0.8/0.2", async () => {
   // Same shape of readings as the 0.2 °C tick test above, converted to °F
-  // (×1.8 + 32): 97.5..98.4 -> domain padded by 0.15*1.8=0.27, already wider
-  // than the 1.44 °F floor window (0.8 °C * 1.8) -> ticks every 0.4 °F, the
-  // readable step this order picks in place of the unreadable 0.2 * 1.8 = 0.36.
+  // (×1.8 + 32): 97.52..98.42 (span 0.9), padded by 0.27 °F (0.15 * 1.8) on
+  // each side lands exactly on the 1.44 °F floor window (0.8 °C * 1.8) ->
+  // ticks every 0.4 °F, the readable step this order picks in place of the
+  // unreadable 0.2 * 1.8 = 0.36. This dataset's padded span lands on the
+  // floor whether the padding is scaled to 0.27 °F or left at an unscaled
+  // 0.15 °F, so it does not by itself distinguish the two — see the
+  // dedicated padding test below for that.
   const celsiusValues = [36.4, 36.5, 36.45, 36.7, 36.9];
   const fahrenheitValues = celsiusValues.map((value) => Math.round((value * 1.8 + 32) * 100) / 100);
 
@@ -335,6 +339,28 @@ test("a Fahrenheit BBT dataset scales the axis floor and tick step, a Celsius on
     celsiusTicks.map((tick) => tick.text),
     ["37.0°C", "36.8°C", "36.6°C", "36.4°C"],
     "a °C dataset (no data-value-unit='fahrenheit') keeps the 0.8/0.2 °C constants",
+  );
+});
+
+test("a Fahrenheit BBT dataset with a spread past the floor gets 0.27 °F of padding, not 0.15 °F", async () => {
+  // A 1.5 °F spread (97.0..98.5) pads, at the scaled 0.27 °F (0.15 * 1.8), to
+  // a 2.04 °F domain -- clear of the 1.44 °F floor -- so the padding
+  // constant itself sets the domain instead of being absorbed into the floor
+  // widening the way the test above is. An unscaled 0.15 °F padding would
+  // only reach 1.8 °F, also clear of the floor but landing on a different
+  // domain and dropping the 96.8 °F tick.
+  const values = [97.0, 97.3, 97.8, 98.5, 98.2];
+  const calls = await drawChart(
+    { kind: "line", labels: values.map((_, index) => String(index + 1)), values },
+    { "data-value-suffix": "°F", "data-value-decimals": "1", "data-baseline-label": "Coverline", "data-value-unit": "fahrenheit" },
+  );
+
+  const box = gridBox(calls);
+  const ticks = axisTicks(calls, box);
+  assert.deepEqual(
+    ticks.map((tick) => tick.text),
+    ["98.4°F", "98.0°F", "97.6°F", "97.2°F", "96.8°F"],
+    "the domain is padded by 0.27 °F (0.15 * 1.8), not the unscaled 0.15 °F that would drop the 96.8 °F tick",
   );
 });
 

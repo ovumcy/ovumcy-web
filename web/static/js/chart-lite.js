@@ -22,6 +22,9 @@
   // the same range as the °C axis produces.
   var BBT_DOMAIN_MIN_SPAN_FAHRENHEIT = 1.44;
   var BBT_TICK_STEP_FAHRENHEIT = 0.4;
+  // The padding around the reading range scales exactly like the floor
+  // window: 0.15 * 1.8 = 0.27.
+  var BBT_DOMAIN_PADDING_FAHRENHEIT = 0.27;
 
   // The "bar" series is one cycle length in whole days per completed cycle.
   var CYCLE_DOMAIN_PADDING = 1;
@@ -256,9 +259,10 @@
 
     var domainMinSpan = isFahrenheitUnit ? BBT_DOMAIN_MIN_SPAN_FAHRENHEIT : BBT_DOMAIN_MIN_SPAN;
     var tickStep = isFahrenheitUnit ? BBT_TICK_STEP_FAHRENHEIT : BBT_TICK_STEP;
+    var domainPadding = isFahrenheitUnit ? BBT_DOMAIN_PADDING_FAHRENHEIT : BBT_DOMAIN_PADDING;
     var reading = widenToSpan(
-      minValue - BBT_DOMAIN_PADDING,
-      maxValue + BBT_DOMAIN_PADDING,
+      minValue - domainPadding,
+      maxValue + domainPadding,
       domainMinSpan
     );
     return {
