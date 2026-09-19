@@ -18,6 +18,55 @@ type StatsBBTChartViewData struct {
 	MarkerLabelKey string
 	HasMarker      bool
 	Points         []StatsBBTChartPointViewData
+	// TemperatureUnit is the unit every number above is expressed in. The zero
+	// value is storage's Celsius; inTemperatureUnit is the only way to another.
+	TemperatureUnit string
+}
+
+// UnitLabelKey names the catalogue entry for the unit the chart's numbers are
+// in, so the axis suffix, the table and the text summary print the unit the
+// values were converted to rather than a fixed one.
+func (chart StatsBBTChartViewData) UnitLabelKey() string {
+	if NormalizeTemperatureUnit(chart.TemperatureUnit) == TemperatureUnitFahrenheit {
+		return "stats.bbt_unit_fahrenheit"
+	}
+	return "stats.bbt_unit"
+}
+
+// inTemperatureUnit re-expresses a chart built from stored Celsius readings in
+// the owner's display unit. It runs after detection, which compares stored
+// units, so the shift, the coverline day and the marker cannot move with the
+// unit; only the numbers shown change. A reading converts exactly as the day
+// editor shows it (FormatDayBBTForInput) and its text is re-derived from the
+// converted value, so value, text, coverline and unit label stay one unit.
+// Stored data is never touched.
+func (chart StatsBBTChartViewData) inTemperatureUnit(unit string) StatsBBTChartViewData {
+	if NormalizeTemperatureUnit(unit) != TemperatureUnitFahrenheit {
+		return chart
+	}
+
+	values := make([]*float64, len(chart.Values))
+	for index, value := range chart.Values {
+		if value != nil {
+			converted := roundTemperatureValue(celsiusToFahrenheit(*value))
+			values[index] = &converted
+		}
+	}
+	points := make([]StatsBBTChartPointViewData, len(chart.Points))
+	copy(points, chart.Points)
+	for index := range points {
+		if points[index].HasValue && index < len(values) && values[index] != nil {
+			points[index].ValueText = formatBBTChartPointValue(*values[index])
+		}
+	}
+
+	chart.Values = values
+	chart.Points = points
+	if chart.HasBaseline {
+		chart.Baseline = roundTemperatureValue(celsiusToFahrenheit(chart.Baseline))
+	}
+	chart.TemperatureUnit = TemperatureUnitFahrenheit
+	return chart
 }
 
 // StatsBBTChartPointViewData is one plotted day, spelled out for the surfaces

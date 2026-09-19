@@ -606,6 +606,7 @@
   "stats.no_cycle_symptom_data": "В последнем завершённом цикле ещё нет данных по симптомам.",
   "stats.bbt_title": "БТТ в текущем цикле",
   "stats.bbt_unit": "°C",
+  "stats.bbt_unit_fahrenheit": "°F",
   "stats.bbt_baseline": "Покровная линия",
   "stats.bbt_probable_ovulation": "Вероятная овуляция",
   "stats.bbt_chart_summary": "Измерений в этом цикле: %d. Покровная линия: %.2f %s.",

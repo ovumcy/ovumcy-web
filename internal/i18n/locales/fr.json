@@ -735,6 +735,7 @@
   "stats.no_cycle_symptom_data": "Aucun symptôme n'a été enregistré dans votre dernier cycle terminé.",
   "stats.bbt_title": "TB ce cycle",
   "stats.bbt_unit": "°C",
+  "stats.bbt_unit_fahrenheit": "°F",
   "stats.bbt_baseline": "Ligne de couverture",
   "stats.bbt_probable_ovulation": "Ovulation probable",
   "stats.bbt_chart_summary": "%d mesures sur ce cycle. Ligne de couverture : %.2f %s.",

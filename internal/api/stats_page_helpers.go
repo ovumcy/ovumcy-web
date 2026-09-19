@@ -145,7 +145,7 @@ func buildStatsBBTChartSummary(messages map[string]string, chart services.StatsB
 		return fmt.Sprintf(pattern, readingsCount)
 	}
 
-	unit := translateMessage(messages, "stats.bbt_unit")
+	unit := translateMessage(messages, chart.UnitLabelKey())
 	if chart.HasMarker && chart.MarkerLabelKey != "" {
 		pattern, translated := lookupMessage(messages, "stats.bbt_chart_summary_with_marker")
 		if !translated {
@@ -220,6 +220,7 @@ func (handler *Handler) buildStatsPageData(ctx context.Context, user *models.Use
 		"SymptomCounts":                       viewData.SymptomCounts,
 		"BBTChartData":                        mapStatsBBTChartData(viewData.CurrentCycleBBTChart, messages),
 		"BBTChartPoints":                      viewData.CurrentCycleBBTChart.Points,
+		"BBTUnitLabel":                        translateMessage(messages, viewData.CurrentCycleBBTChart.UnitLabelKey()),
 		"CycleRibbon":                         viewData.CycleRibbon,
 		"PhaseMoodInsights":                   viewData.PhaseMoodInsights,
 		"PhaseSymptomInsights":                viewData.PhaseSymptomInsights,

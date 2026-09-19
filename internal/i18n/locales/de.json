@@ -598,6 +598,7 @@
   "stats.no_cycle_symptom_data": "Im letzten abgeschlossenen Zyklus wurden keine Symptome erfasst.",
   "stats.bbt_title": "Basaltemperatur in diesem Zyklus",
   "stats.bbt_unit": "°C",
+  "stats.bbt_unit_fahrenheit": "°F",
   "stats.bbt_baseline": "Coverline",
   "stats.bbt_probable_ovulation": "Wahrscheinlicher Eisprung",
   "stats.bbt_chart_summary": "%d Messungen in diesem Zyklus. Coverline: %.2f %s.",
