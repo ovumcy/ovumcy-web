@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"log"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -50,6 +53,27 @@ func loadRateLimits(t *testing.T) rateLimitSettings {
 	return config.RateLimits
 }
 
+// loadRateLimitsRefusing loads the settings with key set to an out-of-range
+// value and fails unless the refusal reached the boot log: a value replaced in
+// silence leaves the operator believing the limiter runs at what they set.
+func loadRateLimitsRefusing(t *testing.T, key string, value string) rateLimitSettings {
+	t.Helper()
+	t.Setenv(key, value)
+
+	var captured bytes.Buffer
+	settings := func() rateLimitSettings {
+		previous := log.Writer()
+		log.SetOutput(&captured)
+		defer log.SetOutput(previous)
+		return loadRateLimits(t)
+	}()
+
+	if want := "invalid " + key + "=" + strconv.Quote(value); !strings.Contains(captured.String(), want) {
+		t.Fatalf("%s=%s was replaced without being logged; want %q in %q", key, value, want, captured.String())
+	}
+	return settings
+}
+
 // TestRateLimitMaxSettingsHaveCeilings: the ceiling itself is accepted, one
 // above it is refused in favour of the default, and the calendar feed — the
 // only cap on a cookieless surface — is bounded like every other row.
@@ -63,18 +87,15 @@ func TestRateLimitMaxSettingsHaveCeilings(t *testing.T) {
 				t.Fatalf("%s at its ceiling %d read back as %d", tc.key, tc.ceiling, got)
 			}
 
-			t.Setenv(tc.key, itoa(tc.ceiling+1))
-			if got := tc.read(loadRateLimits(t)); got != tc.fallback {
+			if got := tc.read(loadRateLimitsRefusing(t, tc.key, itoa(tc.ceiling+1))); got != tc.fallback {
 				t.Fatalf("%s=%d (above the ceiling %d) read back as %d, want the default %d", tc.key, tc.ceiling+1, tc.ceiling, got, tc.fallback)
 			}
 
-			t.Setenv(tc.key, "1000000")
-			if got := tc.read(loadRateLimits(t)); got != tc.fallback {
+			if got := tc.read(loadRateLimitsRefusing(t, tc.key, "1000000")); got != tc.fallback {
 				t.Fatalf("%s=1000000 read back as %d, want the default %d: a huge value must not switch the limiter off", tc.key, got, tc.fallback)
 			}
 
-			t.Setenv(tc.key, "0")
-			if got := tc.read(loadRateLimits(t)); got != tc.fallback {
+			if got := tc.read(loadRateLimitsRefusing(t, tc.key, "0")); got != tc.fallback {
 				t.Fatalf("%s=0 read back as %d, want the default %d", tc.key, got, tc.fallback)
 			}
 		})
@@ -94,13 +115,11 @@ func TestRateLimitWindowSettingsHaveCeilings(t *testing.T) {
 				t.Fatalf("%s=24h read back as %s", tc.key, got)
 			}
 
-			t.Setenv(tc.key, "24h1s")
-			if got := tc.read(loadRateLimits(t)); got != tc.fallback {
+			if got := tc.read(loadRateLimitsRefusing(t, tc.key, "24h1s")); got != tc.fallback {
 				t.Fatalf("%s=24h1s read back as %s, want the default %s", tc.key, got, tc.fallback)
 			}
 
-			t.Setenv(tc.key, "500ms")
-			if got := tc.read(loadRateLimits(t)); got != tc.fallback {
+			if got := tc.read(loadRateLimitsRefusing(t, tc.key, "500ms")); got != tc.fallback {
 				t.Fatalf("%s=500ms read back as %s, want the default %s", tc.key, got, tc.fallback)
 			}
 
