@@ -765,12 +765,13 @@ func HostDialsThisMachine(host string) bool {
 	address, err := netip.ParseAddr(host)
 	if err != nil {
 		// Go parses only canonical dotted-quad literals, but a resolver with
-		// inet_aton semantics reads `0`, `0.1` and `00.0.0.0` as addresses in
-		// 0.0.0.0/8 — the very block below. Nothing of that shape is a hostname
-		// (a DNS label may not be all-numeric), so refusing every digits-and-dots
-		// host Go cannot parse costs no deployment and leaves no spelling of this
-		// block for a platform resolver to accept behind the check.
-		return isDottedNumericHost(host)
+		// inet_aton semantics reads `0`, `0.1`, `00.0.0.0` and `0x0` as addresses
+		// in 0.0.0.0/8 — the very block below. No registered hostname is written
+		// that way (a top-level label is never a number), so refusing every
+		// numeric spelling Go cannot parse costs no deployment and leaves no
+		// spelling of this block for a platform resolver to accept behind the
+		// check.
+		return isNumericAddressSpelling(host)
 	}
 	// A zone identifier (`https://[::%25eth0]`) is not part of the address the
 	// dialer resolves, and an IPv4-mapped form is the same address wearing a v6
@@ -786,18 +787,23 @@ func HostDialsThisMachine(host string) bool {
 	return address.Is4() && address.As4()[0] == 0
 }
 
-// isDottedNumericHost reports whether a host is written entirely in digits and
-// dots — a numeric address in some spelling, canonical or not, and never a
-// hostname. `192.168.001.010` lands here too: its octal-looking labels name a
-// different address under inet_aton than they appear to, and an ambiguous
-// numeric spelling is refused rather than guessed.
-func isDottedNumericHost(host string) bool {
-	if host == "" {
-		return false
-	}
-	for _, char := range host {
-		if (char < '0' || char > '9') && char != '.' {
-			return false
+// isNumericAddressSpelling reports whether every dot-separated label of a host
+// is a number in one of the bases inet_aton accepts — decimal, octal (a leading
+// zero) or hex (`0x`) — so the host is an address in some spelling, canonical
+// or not, and never a hostname. `192.168.001.010` lands here too: its
+// octal-looking labels name a different address under inet_aton than they
+// appear to, and an ambiguous numeric spelling is refused rather than guessed.
+// The caller has already classified the empty host.
+func isNumericAddressSpelling(host string) bool {
+	for _, label := range strings.Split(host, ".") {
+		digits, base := label, "0123456789"
+		if len(label) >= 2 && label[0] == '0' && (label[1] == 'x' || label[1] == 'X') {
+			digits, base = label[2:], "0123456789abcdefABCDEF"
+		}
+		for _, char := range digits {
+			if !strings.ContainsRune(base, char) {
+				return false
+			}
 		}
 	}
 	return true

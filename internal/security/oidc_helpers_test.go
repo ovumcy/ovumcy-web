@@ -45,6 +45,9 @@ func TestValidateOIDCHTTPSURLRejectsUnsafeInputs(t *testing.T) {
 		{name: "empty host callback", rawURL: "https://:8443/auth/oidc/callback"},
 		{name: "unspecified ipv4", rawURL: "https://0.0.0.0:8443"},
 		{name: "unspecified ipv6", rawURL: "https://[::]:8443/auth/oidc/callback"},
+		{name: "this network ipv4", rawURL: "https://0.1.2.3:8443"},
+		{name: "short numeric spelling", rawURL: "https://0:8443"},
+		{name: "hex numeric spelling", rawURL: "https://0x0:8443"},
 	}
 
 	for _, testCase := range tests {
