@@ -100,7 +100,7 @@ func getEnvBool(key string, fallback bool) bool {
 //
 // It is used for the toggles whose fallback IS the insecure posture —
 // COOKIE_SECURE, HSTS_ENABLED, TRUST_PROXY_ENABLED,
-// WEBHOOK_BLOCK_PRIVATE_ADDRESSES. There a typo (COOKIE_SECURE=ture) used to
+// WEBHOOK_BLOCK_PRIVATE_ADDRESSES, AUDIT_LOG_ENABLED. There a typo (COOKIE_SECURE=ture) used to
 // start the process on the default, so what the instance ran with could not be
 // answered from the operator's env file, only from the boot log. An unset
 // value is still the documented default; only a value the operator wrote and

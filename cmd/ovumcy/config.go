@@ -198,6 +198,14 @@ func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 	if err != nil {
 		return runtimeConfig{}, err
 	}
+	// Strict for the same reason as the toggles above: the fallback is the
+	// posture the operator was trying to leave. AUDIT_LOG_ENABLED=ture used to
+	// start without the audit stream an incident investigation had switched on,
+	// and the only trace of it was one line in the boot log.
+	auditLogEnabled, err := getEnvBoolStrict("AUDIT_LOG_ENABLED", false)
+	if err != nil {
+		return runtimeConfig{}, err
+	}
 	oidcConfig, err := resolveOIDCConfig(cookieSecure, registrationMode)
 	if err != nil {
 		return runtimeConfig{}, err
@@ -238,7 +246,7 @@ func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 			CalendarFeedWindow:  getRateLimitWindow("RATE_LIMIT_CALENDAR_FEED_WINDOW", time.Minute),
 		},
 		Proxy:               proxy,
-		AuditLogEnabled:     getEnvBool("AUDIT_LOG_ENABLED", false),
+		AuditLogEnabled:     auditLogEnabled,
 		WebhookBlockPrivate: webhookBlockPrivate,
 		ReminderScheduler: reminderSchedulerSettings{
 			Enabled: getEnvBool("REMINDER_SCHEDULER_ENABLED", false),
@@ -282,14 +290,26 @@ func resolveCalendarFeedFencePath() (string, error) {
 	return fencePath, nil
 }
 
+// resolveOIDCConfig resolves the client secret only when OIDC is enabled. A
+// disabled instance never consumes it, so a stale or unreadable
+// OIDC_CLIENT_SECRET_FILE left in its env is not read and does not block the
+// boot — the same rule DATABASE_URL_FILE follows on a sqlite instance. Once
+// enabled, today's rule stands unchanged: OIDC_CLIENT_SECRET wins when both are
+// set, and a file that is the only source and cannot be read refuses the boot.
 func resolveOIDCConfig(cookieSecure bool, registrationMode services.RegistrationMode) (security.OIDCConfig, error) {
-	clientSecret, err := resolveSecretFromEnvOrFile("OIDC_CLIENT_SECRET", "OIDC_CLIENT_SECRET_FILE", maxOIDCClientSecretFileBytes)
-	if err != nil {
-		return security.OIDCConfig{}, err
+	enabled := getEnvBool("OIDC_ENABLED", false)
+
+	clientSecret := ""
+	if enabled {
+		var err error
+		clientSecret, err = resolveSecretFromEnvOrFile("OIDC_CLIENT_SECRET", "OIDC_CLIENT_SECRET_FILE", maxOIDCClientSecretFileBytes)
+		if err != nil {
+			return security.OIDCConfig{}, err
+		}
 	}
 
 	config := security.OIDCConfig{
-		Enabled:                     getEnvBool("OIDC_ENABLED", false),
+		Enabled:                     enabled,
 		IssuerURL:                   getEnv("OIDC_ISSUER_URL", ""),
 		ClientID:                    getEnv("OIDC_CLIENT_ID", ""),
 		ClientSecret:                clientSecret,

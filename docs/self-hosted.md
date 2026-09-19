@@ -123,7 +123,8 @@ Operator checklist for OIDC:
 - serve Ovumcy through HTTPS and set `COOKIE_SECURE=true`;
 - set `OIDC_REDIRECT_URL` to the public HTTPS URL ending in `/auth/oidc/callback`;
 - if the provider uses a private or internal CA, mount a readable PEM bundle into the container and point `OIDC_CA_FILE` at that in-container path;
-- keep `OIDC_CLIENT_SECRET` private just like `SECRET_KEY` and `.env`; `OIDC_CLIENT_SECRET_FILE` takes a secret file path instead, the same pattern as `SECRET_KEY_FILE` below (`OIDC_CLIENT_SECRET` wins if both are set);
+- keep `OIDC_CLIENT_SECRET` private just like `SECRET_KEY` and `.env`; `OIDC_CLIENT_SECRET_FILE` takes a secret file path instead, the same pattern as `SECRET_KEY_FILE` below (`OIDC_CLIENT_SECRET` wins if both are set).
+  Neither is read while `OIDC_ENABLED` is off, so a stale secret file path does not block the boot of an instance that has OIDC disabled;
 - prefer the dedicated reverse-proxy stacks for public deployments so the callback URL and cookie policy stay aligned;
 - use `OIDC_LOGOUT_MODE=auto` when you want provider logout when available but do not want logout to break on providers that do not expose an end-session endpoint;
 - use [docs/oidc.md](oidc.md) for provider-specific recipes, rollout guidance, flow details, and troubleshooting.
@@ -160,8 +161,9 @@ The supported reverse proxy path is intentionally narrow:
 - `TRUST_PROXY_ENABLED=true` is valid only when every trusted proxy IP or internal proxy subnet is explicitly listed in `TRUSTED_PROXIES`.
   Each entry must be a literal IP in canonical form (`10.0.0.1`, `2001:db8::1`) or a CIDR range (`10.0.0.0/8`); with trust-proxy enabled,
   an entry the app cannot use refuses the boot, naming the rejected entry, rather than being dropped from the trusted set.
-- A value this app cannot parse for `COOKIE_SECURE`, `HSTS_ENABLED`, `TRUST_PROXY_ENABLED` or `WEBHOOK_BLOCK_PRIVATE_ADDRESSES` also
-  refuses the boot, naming the key and the value — a typo in one of these no longer starts the instance on the insecure default.
+- A value this app cannot parse for `COOKIE_SECURE`, `HSTS_ENABLED`, `TRUST_PROXY_ENABLED`, `WEBHOOK_BLOCK_PRIVATE_ADDRESSES` or
+  `AUDIT_LOG_ENABLED` also refuses the boot, naming the key and the value — a typo in one of these no longer starts the instance on
+  the insecure default.
   Accepted spellings are `1`/`true`/`yes`/`on` and `0`/`false`/`no`/`off`; leaving a key unset still means its documented default.
 - Keep `PROXY_HEADER=X-Real-IP`; the example proxies set it to the real client IP. The app's own default is `X-Forwarded-For`, which the edge rate limiters handle safely — they key on the **rightmost untrusted** hop, so a spoofed prefix cannot defeat them, and the app prints an operator note at boot when trust-proxy is on with that header. What stays client-controlled under `X-Forwarded-For` is the leftmost entry that fiber's `c.IP()` returns, which feeds the secondary per-client auth-attempt buckets; the per-identity buckets that actually cap brute force are unaffected. A header your proxy overwrites gives you spoof-proof values everywhere.
 
@@ -315,7 +317,7 @@ Treat the application secret as part of the deployment identity, whether you pas
 
 - `SECRET_KEY_FILE` should point to a readable path inside the running process or container. Trailing newlines are trimmed, but the secret still needs 32+ non-placeholder characters.
 - `SECRET_KEY` takes precedence if both secret sources are configured.
-- `DATABASE_URL_FILE` and `OIDC_CLIENT_SECRET_FILE` follow the identical pattern — a readable in-container path, trailing whitespace trimmed, the plain variable winning silently if both are set — for the Postgres DSN and the OIDC client secret respectively. This is the Docker Swarm/Compose secrets route for a runtime image that ships without a shell, so there is no `sh -c 'export X=$(cat …)'` workaround available.
+- `DATABASE_URL_FILE` and `OIDC_CLIENT_SECRET_FILE` follow the identical pattern — a readable in-container path, trailing whitespace trimmed, the plain variable winning silently if both are set — for the Postgres DSN and the OIDC client secret respectively. Each file is opened only when it is consumed — `DATABASE_URL_FILE` under `DB_DRIVER=postgres`, `OIDC_CLIENT_SECRET_FILE` under `OIDC_ENABLED=true` — so a dangling path on an instance that does not use it is ignored rather than refused. This is the Docker Swarm/Compose secrets route for a runtime image that ships without a shell, so there is no `sh -c 'export X=$(cat …)'` workaround available.
 - Store the underlying secret privately and back it up separately from the SQLite archive.
 - Rotating the application secret invalidates existing sealed cookies and active sign-ins.
 - Restoring SQLite data with a different application secret is valid, but users should expect a fresh sign-in and new sealed-cookie state.
