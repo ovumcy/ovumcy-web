@@ -5,15 +5,17 @@ import "github.com/ovumcy/ovumcy-web/internal/models"
 // Late-cycle message keys. A cycle running past its expected end is a FACT
 // about the account's own history, never a diagnosis, so no key here names a
 // condition: the copy either states the measured excess over the owner's own
-// observed range, states that the running cycle is still inside that range, or
-// — when no personal range exists yet — states that only the cycle day is being
-// shown. The last case is the important one: an account with no completed
-// cycles has no "usual range" to be compared against, and inventing one at the
-// most anxious moment in the product is worse than saying nothing.
+// observed range, states — once the overdue gate has fired but the account's
+// own recorded range has not itself been exceeded — that predictions are
+// paused until a new period is logged, or — when no personal range exists yet
+// — states that only the cycle day is being shown. The last case is the
+// important one: an account with no completed cycles has no "usual range" to
+// be compared against, and inventing one at the most anxious moment in the
+// product is worse than saying nothing.
 const (
-	LateCycleBeyondRangeKey     = "dashboard.late_cycle.beyond_range"
-	LateCycleWithinRangeKey     = "dashboard.late_cycle.within_range"
-	LateCycleNoPersonalRangeKey = "dashboard.late_cycle.no_personal_range"
+	LateCycleBeyondRangeKey       = "dashboard.late_cycle.beyond_range"
+	LateCyclePredictionsPausedKey = "dashboard.late_cycle.predictions_paused"
+	LateCycleNoPersonalRangeKey   = "dashboard.late_cycle.no_personal_range"
 )
 
 // Late-cycle tones. Only a cycle measurably past the owner's own range earns
@@ -26,12 +28,10 @@ const (
 
 // Late-cycle message forms, telling the template how to translate MessageKey.
 // LateCycleFormCount selects the CLDR plural category from the day COUNT;
-// LateCycleFormRange selects it from the range's UPPER bound (the «до N дней»
-// rule) and substitutes both bounds; LateCycleFormPlain takes no parameter.
+// LateCycleFormPlain takes no parameter.
 const (
 	LateCycleFormPlain = "plain"
 	LateCycleFormCount = "count"
-	LateCycleFormRange = "range"
 )
 
 // LateCycleNotice is the single late-cycle message the dashboard renders, chosen
@@ -42,8 +42,6 @@ type LateCycleNotice struct {
 	Tone       string
 	Form       string
 	Days       int
-	RangeLow   int
-	RangeHigh  int
 }
 
 // HasPersonalCycleRange reports whether the account has enough completed cycles
@@ -59,11 +57,26 @@ func HasPersonalCycleRange(user *models.User, completedCycleCount int) bool {
 }
 
 // BuildLateCycleNotice selects the late-cycle message for a cycle the dashboard
-// already considers long (cycleDayLooksLong comes from
-// DashboardCycleDayLooksLong, whose threshold this function deliberately does
-// not widen). Unpredictable mode and a paused pregnancy never reach here: both
-// return early from BuildDashboardCycleContext with the zero notice, so the
-// recorded-facts-only surfaces stay silent.
+// already considers long. cycleDayLooksLong is not a generic "looks long"
+// check widened here: the one production caller (BuildDashboardCycleContext)
+// passes it DashboardCycleOverdue's own verdict, so every branch below this
+// function's first return already knows the overdue gate has fired and every
+// projected date on the page is withheld.
+//
+// That is why the excess-days branch below no longer compares against
+// stats.MaxCycleLength to decide between a reassurance and a warning: the
+// account's recorded maximum can itself BE the merged span an unlogged period
+// produced (three 28-day cycles beside one 300-day gap: the gate fires at day
+// 36 off the outlier-resistant median, but the recorded range still runs to
+// 300), so "still inside your recorded range" would contradict the
+// suppression banner already on the same screen. Once the gate has fired,
+// the notice states the fact the gate is already acting on — the running
+// cycle is past the length predictions are built from, and predictions wait
+// for a new logged period — never a comparison to a range that may be the
+// same outlier the gate was built to see past. Unpredictable mode and a
+// paused pregnancy never reach here: both return early from
+// BuildDashboardCycleContext with the zero notice, so the recorded-facts-only
+// surfaces stay silent.
 func BuildLateCycleNotice(user *models.User, stats CycleStats, cycleDayLooksLong bool) LateCycleNotice {
 	if !cycleDayLooksLong || stats.CurrentCycleDay <= 0 {
 		return LateCycleNotice{}
@@ -82,11 +95,9 @@ func BuildLateCycleNotice(user *models.User, stats CycleStats, cycleDayLooksLong
 	if excessDays <= 0 {
 		return LateCycleNotice{
 			Visible:    true,
-			MessageKey: LateCycleWithinRangeKey,
+			MessageKey: LateCyclePredictionsPausedKey,
 			Tone:       LateCycleToneNeutral,
-			Form:       LateCycleFormRange,
-			RangeLow:   stats.MinCycleLength,
-			RangeHigh:  stats.MaxCycleLength,
+			Form:       LateCycleFormPlain,
 		}
 	}
 

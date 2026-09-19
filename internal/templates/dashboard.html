@@ -214,9 +214,7 @@
           data-dashboard-cycle-day-warning
           data-late-cycle-key="{{.LateCycle.MessageKey}}"
           data-late-cycle-tone="{{.LateCycle.Tone}}">
-          {{- if eq .LateCycle.Form "range" -}}
-          {{printf (tn .Messages .Lang .LateCycle.MessageKey .LateCycle.RangeHigh) .LateCycle.RangeLow .LateCycle.RangeHigh}}
-          {{- else if eq .LateCycle.Form "count" -}}
+          {{- if eq .LateCycle.Form "count" -}}
           {{printf (tn .Messages .Lang .LateCycle.MessageKey .LateCycle.Days) .LateCycle.Days}}
           {{- else -}}
           {{t .Messages .LateCycle.MessageKey}}

@@ -35,16 +35,14 @@ func TestLateCycleNoticeStateMatrix(t *testing.T) {
 	today := time.Date(2026, 3, 20, 0, 0, 0, 0, time.UTC)
 
 	testCases := []struct {
-		name            string
-		user            *models.User
-		stats           CycleStats
-		expectVisible   bool
-		expectKey       string
-		expectTone      string
-		expectForm      string
-		expectDays      int
-		expectRangeLow  int
-		expectRangeHigh int
+		name          string
+		user          *models.User
+		stats         CycleStats
+		expectVisible bool
+		expectKey     string
+		expectTone    string
+		expectForm    string
+		expectDays    int
 	}{
 		{
 			name:          "last day of the expected range stays silent",
@@ -108,14 +106,34 @@ func TestLateCycleNoticeStateMatrix(t *testing.T) {
 			expectDays: 6,
 		},
 		{
-			name:            "irregular mode still inside the observed range says so instead of inventing a delay",
-			user:            &models.User{Role: models.RoleOwner, CycleLength: 30, IrregularCycle: true},
-			stats:           lateCycleStats(today, 42, 3, 32, 24, 45),
-			expectKey:       LateCycleWithinRangeKey,
-			expectTone:      LateCycleToneNeutral,
-			expectForm:      LateCycleFormRange,
-			expectRangeLow:  24,
-			expectRangeHigh: 45,
+			name:       "irregular mode still inside the recorded maximum states the paused fact, not a comparison",
+			user:       &models.User{Role: models.RoleOwner, CycleLength: 30, IrregularCycle: true},
+			stats:      lateCycleStats(today, 42, 3, 32, 24, 45),
+			expectKey:  LateCyclePredictionsPausedKey,
+			expectTone: LateCycleToneNeutral,
+			expectForm: LateCycleFormPlain,
+		},
+		{
+			// WEB-3 finding 5's repro: three 28-day cycles beside one 300-day gap
+			// an unlogged period produced (median 28, mean 96 — the same
+			// arithmetic long_cycle_gate_test.go pins from real logs). The
+			// overdue gate reads the SHORTER of the two (DashboardCycleOverdue),
+			// so it fires off the outlier-resistant median (28+7=35) long before
+			// cycle day 61, and by the time this notice is visible the dashboard
+			// has already withheld every projected date — "still inside your
+			// recorded range of 28 to 300 days" would contradict that
+			// withholding on the same screen, because the 300-day figure IS the
+			// outlier the gate was built to see past.
+			name: "a cycle day inside the merged-span maximum states the paused fact, not the contradicting range",
+			user: &models.User{Role: models.RoleOwner, CycleLength: 28},
+			stats: func() CycleStats {
+				stats := lateCycleStats(today, 61, 4, 96, 28, 300)
+				stats.MedianCycleLength = 28
+				return stats
+			}(),
+			expectKey:  LateCyclePredictionsPausedKey,
+			expectTone: LateCycleToneNeutral,
+			expectForm: LateCycleFormPlain,
 		},
 		{
 			name:          "unpredictable mode renders recorded facts only",
@@ -163,9 +181,6 @@ func TestLateCycleNoticeStateMatrix(t *testing.T) {
 			}
 			if notice.Days != testCase.expectDays {
 				t.Errorf("expected %d day(s) of excess, got %d", testCase.expectDays, notice.Days)
-			}
-			if notice.RangeLow != testCase.expectRangeLow || notice.RangeHigh != testCase.expectRangeHigh {
-				t.Errorf("expected range %d-%d, got %d-%d", testCase.expectRangeLow, testCase.expectRangeHigh, notice.RangeLow, notice.RangeHigh)
 			}
 		})
 	}
@@ -220,13 +235,14 @@ func TestLateCycleNoticeCopyExistsInEveryLocale(t *testing.T) {
 		messages := manager.Messages(language)
 		for _, key := range []string{
 			LateCycleNoPersonalRangeKey,
+			LateCyclePredictionsPausedKey,
 			"dashboard.late_cycle.actions",
 		} {
 			if messages[key] == "" {
 				t.Errorf("locale %q has no entry for %q: the message would render as the raw key", language, key)
 			}
 		}
-		for _, base := range []string{LateCycleBeyondRangeKey, LateCycleWithinRangeKey} {
+		for _, base := range []string{LateCycleBeyondRangeKey} {
 			for _, category := range i18n.PluralCategories(language) {
 				key := base + "." + category
 				if messages[key] == "" {
@@ -234,5 +250,38 @@ func TestLateCycleNoticeCopyExistsInEveryLocale(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// TestWEB3Finding5LateCycleNoticeDoesNotReassureAfterTheGateFires is the
+// proof-on-defect repro for WEB-3 finding 5: three 28-day cycles beside one
+// 300-day gap an unlogged period produced (median 28, mean 96). The overdue
+// gate reads the shorter of the two, so it has already suppressed every
+// projected date on the dashboard since cycle day 36 — yet the late-cycle
+// notice used to compare the running day against the account's recorded
+// MAXIMUM (300, the merged span itself) instead of asking the same gate, and
+// told the owner the cycle is "still inside your recorded range of 28 to 300
+// days" beside the withheld window. The message key literal is asserted
+// directly (not via the retired Go constant) on purpose: this exact
+// assertion is what proved the defect red on the pre-fix tree and red again
+// when the fix's own body was gutted back to it (see the mutant SHAs in the
+// PR description).
+func TestWEB3Finding5LateCycleNoticeDoesNotReassureAfterTheGateFires(t *testing.T) {
+	today := time.Date(2026, 3, 20, 0, 0, 0, 0, time.UTC)
+	user := &models.User{Role: models.RoleOwner, CycleLength: 28}
+	stats := lateCycleStats(today, 61, 4, 96, 28, 300)
+	stats.MedianCycleLength = 28
+
+	if !DashboardCycleOverdue(user, stats) {
+		t.Fatalf("scenario setup: expected the overdue gate to have fired at cycle day %d", stats.CurrentCycleDay)
+	}
+
+	notice := BuildDashboardCycleContext(user, nil, stats, today, time.UTC).LateCycle
+
+	if !notice.Visible {
+		t.Fatal("expected a visible late-cycle notice beside the withheld window")
+	}
+	if notice.MessageKey == "dashboard.late_cycle.within_range" {
+		t.Fatalf("late-cycle notice key = %q: it told the owner the cycle is still inside its recorded range while the overdue gate has already suppressed every projected date on the same screen", notice.MessageKey)
 	}
 }
