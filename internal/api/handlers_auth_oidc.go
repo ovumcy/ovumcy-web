@@ -244,7 +244,7 @@ func (handler *Handler) moveOIDCLogoutState(ctx context.Context, oldSessionID st
 	if err != nil || !found {
 		return err
 	}
-	if !validOIDCLogoutState(logoutState) {
+	if !validOIDCLogoutState(logoutState, handler.oidcIssuerURL()) {
 		return handler.oidcLogoutStateSvc.Delete(ctx, oldSessionID, userID)
 	}
 	if err := handler.oidcLogoutStateSvc.Save(ctx, newSessionID, logoutState, now); err != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -67,23 +68,48 @@ func TestSameOriginURLRefusesHostsThatDialThisMachine(t *testing.T) {
 		if err := validateDiscoveredJWKSURI(issuer+"/jwks", issuer); err == nil {
 			t.Fatalf("jwks_uri on issuer %s passed the pin", issuer)
 		}
-		if err := validateDiscoveredAuthorizationEndpoint(issuer + "/authorize"); err == nil {
-			t.Fatalf("authorization_endpoint on issuer %s passed the host check", issuer)
+		if err := validateDiscoveredAuthorizationEndpoint(issuer+"/authorize", issuer); err == nil {
+			t.Fatalf("authorization_endpoint on issuer %s passed the pin", issuer)
 		}
 	}
 }
 
-// The authorize URL is the one discovery endpoint the browser navigates to, and
-// the only one this change checks without pinning it to the issuer origin. Both
-// halves are deliberate and both are pinned here: an off-origin https authorize
-// URL is accepted (so nobody reads its acceptance as an oversight of the loop
-// above), a plaintext or machine-dialing one is not.
+// The authorize URL is the discovery endpoint the browser navigates to, and it
+// is pinned to the issuer origin exactly as jwks_uri and token_endpoint are: a
+// discovery document naming a foreign origin there would send the owner, with
+// state, nonce and redirect_uri, to a sign-in page the issuer never served.
 func TestValidateDiscoveredAuthorizationEndpoint(t *testing.T) {
 	t.Parallel()
 
-	for _, endpoint := range []string{"https://id.example.com/authorize", "https://sso.example.net/authorize"} {
-		if err := validateDiscoveredAuthorizationEndpoint(endpoint); err != nil {
-			t.Fatalf("authorization_endpoint %q was refused: %v", endpoint, err)
+	const issuer = "https://id.example.com"
+	// Positive control: the same origin, spelled with or without the default
+	// port and with another path or letter case, is the issuer's own page.
+	for _, endpoint := range []string{
+		"https://id.example.com/authorize",
+		"https://id.example.com:443/protocol/openid-connect/auth",
+		"https://ID.example.com/authorize",
+	} {
+		if err := validateDiscoveredAuthorizationEndpoint(endpoint, issuer); err != nil {
+			t.Fatalf("same-origin authorization_endpoint %q was refused: %v", endpoint, err)
+		}
+	}
+	// A foreign origin — another host, a subdomain of the issuer, another port —
+	// is refused by the origin pin, not by some earlier shape check.
+	for _, endpoint := range []string{
+		"https://sso.example.net/authorize",
+		"https://login.id.example.com/authorize",
+		"https://id.example.com:8443/authorize",
+	} {
+		err := validateDiscoveredAuthorizationEndpoint(endpoint, issuer)
+		if err == nil || !strings.Contains(err.Error(), "origin must match the issuer origin") {
+			t.Fatalf("off-origin authorization_endpoint %q: err = %v, want the origin refusal", endpoint, err)
+		}
+	}
+	// An issuer that does not parse as an absolute URL pins nothing, so no
+	// endpoint passes against it.
+	for _, badIssuer := range []string{"", "id.example.com", "://"} {
+		if err := validateDiscoveredAuthorizationEndpoint("https://id.example.com/authorize", badIssuer); err == nil {
+			t.Fatalf("authorization_endpoint passed against the unpinnable issuer %q", badIssuer)
 		}
 	}
 	// An absent endpoint is refused, not deferred: oauth2.AuthCodeURL does not
@@ -101,7 +127,7 @@ func TestValidateDiscoveredAuthorizationEndpoint(t *testing.T) {
 		"https://:8443/authorize",
 		"https://0.0.0.1/authorize",
 	} {
-		if err := validateDiscoveredAuthorizationEndpoint(endpoint); err == nil {
+		if err := validateDiscoveredAuthorizationEndpoint(endpoint, issuer); err == nil {
 			t.Fatalf("authorization_endpoint %q was accepted", endpoint)
 		}
 	}
