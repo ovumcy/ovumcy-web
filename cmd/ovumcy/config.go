@@ -70,7 +70,7 @@ const (
 	// same numbers. 100 in a window is already a dozen times the default.
 	rateLimitCredentialMaxCeiling = 100
 	// Logout is one storage write per request; the per-IP row stays wide
-	// enough for a household behind one address, the per-session budget
+	// enough for a household behind one address, the per-account budget
 	// never needs more than a handful.
 	rateLimitLogoutMaxCeiling        = 600
 	rateLimitLogoutAccountMaxCeiling = 200
