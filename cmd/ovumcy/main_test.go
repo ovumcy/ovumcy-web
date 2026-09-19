@@ -2443,15 +2443,28 @@ func TestDefaultRequestLoggerDoesNotLogFormSecrets(t *testing.T) {
 }
 
 func TestRequestLoggerUsesSafeRouteTemplateWithoutIP(t *testing.T) {
+	// app.Test dumps the request over the wire (httputil.DumpRequest) and
+	// serves it on a fake conn whose RemoteAddr is always 0.0.0.0 — setting
+	// http.Request.RemoteAddr directly never reaches the handler, so the only
+	// way to deliver a real client IP here is the trusted-proxy header path
+	// the app itself honours (fiberConfig + c.IP()). Trusting the fixed
+	// 0.0.0.0 test-conn peer lets X-Real-IP flow through exactly as it would
+	// behind a configured reverse proxy.
 	var output bytes.Buffer
-	app := fiber.New()
+	app := fiber.New(fiberConfig(proxySettings{
+		Enabled:        true,
+		Header:         "X-Real-IP",
+		TrustedProxies: []string{"0.0.0.0"},
+	}))
 	app.Use(newRequestLogger(&output))
+	var observedIP string
 	app.Put("/api/v1/days/:date", func(c fiber.Ctx) error {
+		observedIP = c.IP()
 		return c.SendStatus(http.StatusNoContent)
 	})
 
 	request := httptest.NewRequest(http.MethodPut, "/api/v1/days/2026-02-17", nil)
-	request.RemoteAddr = "203.0.113.9:43123"
+	request.Header.Set("X-Real-IP", "203.0.113.9")
 
 	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
@@ -2461,6 +2474,13 @@ func TestRequestLoggerUsesSafeRouteTemplateWithoutIP(t *testing.T) {
 
 	if response.StatusCode != http.StatusNoContent {
 		t.Fatalf("expected status 204, got %d", response.StatusCode)
+	}
+
+	// Positive control: prove the request path actually observed the client
+	// IP before asserting it stays out of the log — otherwise the log
+	// assertion below would hold vacuously for an IP the handler never saw.
+	if observedIP != "203.0.113.9" {
+		t.Fatalf("expected the handler to observe the client ip via X-Real-IP, got %q", observedIP)
 	}
 
 	logLine := output.String()
@@ -2484,8 +2504,18 @@ func TestRateLimitLogDoesNotLogQueryPII(t *testing.T) {
 
 	const plaintextPassword = "PlaintextPassword123!"
 
-	app := fiber.New()
+	// See TestRequestLoggerUsesSafeRouteTemplateWithoutIP: app.Test never
+	// delivers http.Request.RemoteAddr to the handler, so the client IP here
+	// is driven through the trusted-proxy header path (fiberConfig + c.IP())
+	// the app actually honours, trusting the fixed 0.0.0.0 test-conn peer.
+	app := fiber.New(fiberConfig(proxySettings{
+		Enabled:        true,
+		Header:         "X-Real-IP",
+		TrustedProxies: []string{"0.0.0.0"},
+	}))
+	var observedIP string
 	app.Put("/api/v1/days/:date", func(c fiber.Ctx) error {
+		observedIP = c.IP()
 		c.Response().Header.Set(fiber.HeaderRetryAfter, "60")
 		logRateLimitHit(c)
 		return c.SendStatus(http.StatusTooManyRequests)
@@ -2497,7 +2527,7 @@ func TestRateLimitLogDoesNotLogQueryPII(t *testing.T) {
 		strings.NewReader("email=user@example.com&password=PlaintextPassword123%21&token=plain-reset-token"),
 	)
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	request.RemoteAddr = "203.0.113.9:43123"
+	request.Header.Set("X-Real-IP", "203.0.113.9")
 
 	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
@@ -2507,6 +2537,13 @@ func TestRateLimitLogDoesNotLogQueryPII(t *testing.T) {
 
 	if response.StatusCode != http.StatusTooManyRequests {
 		t.Fatalf("expected status 429, got %d", response.StatusCode)
+	}
+
+	// Positive control: prove logRateLimitHit ran against a request the
+	// handler actually observed the client IP for, before asserting that IP
+	// stays out of the log.
+	if observedIP != "203.0.113.9" {
+		t.Fatalf("expected the handler to observe the client ip via X-Real-IP, got %q", observedIP)
 	}
 
 	logLine := output.String()
