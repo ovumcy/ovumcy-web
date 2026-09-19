@@ -103,6 +103,13 @@ func TestGenerateCalendarFeedTokenFailsWithoutSecretKey(t *testing.T) {
 // TestVerifyCalendarFeedTokenRejectsWrongVerifier proves that a token carrying
 // the correct selector but the wrong verifier half fails verification: the
 // verifier is the secret, so a valid selector alone must not authenticate.
+//
+// TS-M21 induced-red: the mutant this kills is verifierMatch hardcoded to 1 (or
+// the VerifyCalendarFeedVerifierMAC call dropped) in VerifyCalendarFeedToken's
+// MAC branch — with either mutant this test flips from FAIL to PASS on a
+// verifier that was never generated for this selector, and at the transport
+// boundary the same mutant turns TestCalendarFeedReturnsBare404WithoutOracleForBadTokens's
+// "wrongVerifier" case from 404 into 200.
 func TestVerifyCalendarFeedTokenRejectsWrongVerifier(t *testing.T) {
 	_, columns := mustGenerateFeedToken(t)
 
