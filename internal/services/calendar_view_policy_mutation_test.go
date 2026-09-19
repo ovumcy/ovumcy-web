@@ -14,7 +14,7 @@ func TestCalendarMonthBefore_SelectedDayInExactMinimumMonthKept(t *testing.T) {
 	// at line 115, but true under the `<=` mutation, which would clear the
 	// selected date. Explicit month query keeps activeMonth at 2023-03 so the
 	// selected-day month override does not interfere.
-	month, selectedDate, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2023-03", "2023-03-15", now, time.UTC, minMonth)
+	month, selectedDate, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2023-03", "2023-03-15", now, time.UTC, minMonth, time.Time{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

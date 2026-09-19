@@ -42,11 +42,13 @@ Per-IP HTTP rate limits enforced by Fiber's limiter middleware. Defaults are tun
 | `POST /lang` (language switch) | 300 requests / 1 minute | shares `RATE_LIMIT_API_MAX`, `RATE_LIMIT_API_WINDOW` |
 | `/api/*` (catch-all) | 300 requests / 1 minute | `RATE_LIMIT_API_MAX`, `RATE_LIMIT_API_WINDOW` |
 | `GET/HEAD /calendar/feed/:token.ics` | 20 requests / 1 minute | `RATE_LIMIT_CALENDAR_FEED_MAX`, `RATE_LIMIT_CALENDAR_FEED_WINDOW` |
+| `GET /calendar` | 300 requests / 1 minute | `RATE_LIMIT_CALENDAR_MAX`, `RATE_LIMIT_CALENDAR_WINDOW` |
 
 Every setting above has a ceiling as well as a floor (`cmd/ovumcy/config.go`): a `*_MAX` may not
 exceed 100 on the three credential endpoints (each request costs a bcrypt compare or hash), 600
-on the per-IP logout row, 200 on the per-account logout budget, 3000 on the API catch-all and
-120 on the calendar feed, and a `*_WINDOW` must lie between one second and one day. A value
+on the per-IP logout row, 200 on the per-account logout budget, 3000 on the API catch-all, 3000
+on the calendar page and 120 on the calendar feed, and a `*_WINDOW` must lie between one second
+and one day. A value
 outside its range is logged at boot and replaced by the default, so a misread unit or a stray
 zero cannot widen a budget past its ceiling, let alone switch a limiter off; an operator who needs
 a wider budget shortens the window. The ceilings bound the *rate* of bcrypt work an address can

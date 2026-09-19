@@ -83,6 +83,14 @@ const (
 	// polls every 15-60 minutes, so two requests a second is far beyond any
 	// fleet of devices behind one address.
 	rateLimitCalendarFeedMaxCeiling = 120
+	// GET /calendar builds the month grid plus its projected cycles
+	// (BuildCalendarDayStates / appendPredictedCycles); its own upper-bound
+	// clamp and iteration cap (services.CalendarMaximumNavigableMonth,
+	// maxProjectedCyclesInGrid — WEB-14 SEC-H5) already hold that cost to a
+	// small, request-size-independent constant, so this budget sits with the
+	// other authenticated reads rather than the cheap-request /api default: ten
+	// times the default covers an HTMX-heavy session without being no limit.
+	rateLimitCalendarMaxCeiling = 3000
 )
 
 func getRateLimitMax(key string, fallback int, ceiling int) int {
@@ -123,6 +131,12 @@ type rateLimitSettings struct {
 	// docs/security/auth-policy-and-rate-limits.md.
 	CalendarFeedMax    int
 	CalendarFeedWindow time.Duration
+	// Calendar is the authenticated GET /calendar page's own budget — outside
+	// /api, so the APIMax limiter above never reaches it. Keyed the same way as
+	// the sibling authenticated routes (see the keyGen call at this limiter's
+	// mount point in server.go). See docs/security/auth-policy-and-rate-limits.md.
+	CalendarMax    int
+	CalendarWindow time.Duration
 }
 
 type proxySettings struct {
@@ -244,6 +258,8 @@ func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 			APIWindow:           getRateLimitWindow("RATE_LIMIT_API_WINDOW", time.Minute),
 			CalendarFeedMax:     getRateLimitMax("RATE_LIMIT_CALENDAR_FEED_MAX", 20, rateLimitCalendarFeedMaxCeiling),
 			CalendarFeedWindow:  getRateLimitWindow("RATE_LIMIT_CALENDAR_FEED_WINDOW", time.Minute),
+			CalendarMax:         getRateLimitMax("RATE_LIMIT_CALENDAR_MAX", 300, rateLimitCalendarMaxCeiling),
+			CalendarWindow:      getRateLimitWindow("RATE_LIMIT_CALENDAR_WINDOW", time.Minute),
 		},
 		Proxy:               proxy,
 		AuditLogEnabled:     auditLogEnabled,

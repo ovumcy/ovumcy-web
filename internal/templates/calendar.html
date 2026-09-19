@@ -12,7 +12,11 @@
       {{else}}
       <span class="btn-secondary btn-disabled" aria-disabled="true">{{t .Messages "calendar.prev"}}</span>
       {{end}}
+      {{if .NextMonth}}
       <a href="/calendar?month={{.NextMonth}}" class="btn-secondary">{{t .Messages "calendar.next"}}</a>
+      {{else}}
+      <span class="btn-secondary btn-disabled" aria-disabled="true">{{t .Messages "calendar.next"}}</span>
+      {{end}}
       <a href="/calendar" class="btn-secondary btn-compact" data-calendar-today data-action-weight="secondary">{{t .Messages "calendar.today"}}</a>
     </div>
   </div>

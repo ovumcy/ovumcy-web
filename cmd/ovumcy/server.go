@@ -274,6 +274,22 @@ func configureFiberMiddleware(app *fiber.App, config runtimeConfig, handler *api
 		KeyGenerator: keyGen,
 		LimitReached: newCalendarFeedRateLimitHandler(handler),
 	}))
+	// WEB-14 SEC-H5: GET /calendar builds the month grid, sized independently of
+	// the request by the clamp and iteration cap in internal/services
+	// (CalendarMaximumNavigableMonth, maxProjectedCyclesInGrid) — but it is an
+	// authenticated page outside /api, so the APIMax limiter above never
+	// reaches it, and it had no cap of its own at all. Keyed the same as every
+	// other authenticated-session limiter (keyGen). rateLimitOnlyFor keeps this
+	// scoped to exactly GET /calendar, the same reasoning POST /lang's mount
+	// above documents — /calendar/day/:date shares the prefix but not the
+	// grid-building cost this budget exists to bound, and must not spend it.
+	app.Use(limiter.New(limiter.Config{
+		Next:         rateLimitOnlyFor(fiber.MethodGet, "/calendar"),
+		Max:          config.RateLimits.CalendarMax,
+		Expiration:   config.RateLimits.CalendarWindow,
+		KeyGenerator: keyGen,
+		LimitReached: newCalendarPageRateLimitHandler(handler),
+	}))
 	app.Use(handler.LanguageMiddleware)
 	app.Use(csrf.New(csrfMiddlewareConfig(config.CookieSecure, handler)))
 }

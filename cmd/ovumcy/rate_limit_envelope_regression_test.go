@@ -132,6 +132,18 @@ var rateLimitSurfaces = []rateLimitSurface{
 		detailTarget: "global",
 		html:         htmlArmEnvelope,
 	},
+	{
+		// WEB-14 SEC-H5: GET /calendar’s own budget, outside every named
+		// prefix RespondAPIRateLimited checks — no auth form, no settings
+		// path, not /lang — so it falls to the same global spec the API
+		// catch-all uses, envelope and all.
+		name:         "calendar",
+		method:       http.MethodGet,
+		path:         "/calendar",
+		key:          "too many requests",
+		detailTarget: "global",
+		html:         htmlArmEnvelope,
+	},
 }
 
 // newRateLimitEnvelopeTestApp builds the REAL app — fiberConfig plus
@@ -159,6 +171,8 @@ func newRateLimitEnvelopeTestApp(t *testing.T, handler *api.Handler) *fiber.App 
 			APIWindow:            time.Minute,
 			CalendarFeedMax:      1,
 			CalendarFeedWindow:   time.Minute,
+			CalendarMax:          1,
+			CalendarWindow:       time.Minute,
 		},
 	}, handler)
 }

@@ -19,11 +19,12 @@ func (handler *Handler) ShowCalendar(c fiber.Ctx) error {
 	language, messages, now := handler.currentPageViewContext(c)
 	location := handler.requestLocation(c)
 	minMonth := services.CalendarMinimumNavigableMonth(user, location)
+	maxMonth := services.CalendarMaximumNavigableMonth(now, location)
 	selectedDateQuery := strings.TrimSpace(c.Query("day"))
 	if selectedDateQuery == "" {
 		selectedDateQuery = strings.TrimSpace(c.Query("selected"))
 	}
-	activeMonth, selectedDate, err := services.ResolveCalendarMonthAndSelectedDateWithinBounds(c.Query("month"), selectedDateQuery, now, location, minMonth)
+	activeMonth, selectedDate, err := services.ResolveCalendarMonthAndSelectedDateWithinBounds(c.Query("month"), selectedDateQuery, now, location, minMonth, maxMonth)
 	if err != nil {
 		if acceptsJSON(c) {
 			return handler.respondMappedError(c, invalidMonthErrorSpec())

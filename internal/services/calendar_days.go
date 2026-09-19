@@ -363,6 +363,17 @@ func appendFertilityWindow(fertilityEdgeMap map[string]bool, fertilityPeakMap ma
 	})
 }
 
+// maxProjectedCyclesInGrid hard-caps how many cycles appendPredictedCycles will
+// chain, independent of gridEnd. gridEnd descends from the requested calendar
+// month, which callers are expected to clamp to CalendarMaximumNavigableMonth
+// (three years out) before reaching here — at the shortest cycle length the
+// loop steps by (one day), that clamp alone bounds the loop to ~1096
+// iterations. This cap is defense-in-depth for WEB-14 SEC-H5, not the primary
+// bound: it protects the loop's own cost regardless of whether a caller
+// upstream clamped gridEnd, so a bound on the request can never again be the
+// only thing standing between a month value and an unbounded chain.
+const maxProjectedCyclesInGrid = 4000
+
 // appendPredictedCycles chains the projected cycles across the visible grid.
 // includeFertility is false in the first-cycle tier: the chained period days
 // still descend from a recorded anchor, while the window inside each of them
@@ -396,11 +407,16 @@ func appendPredictedCycles(predictedPeriodMap map[string]bool, preFertileMap map
 	// shapes (01:00 local against 00:00). Compared as instants, a projected
 	// cycle falling exactly on the last grid day reads as past the grid and its
 	// markers are never painted.
-	for cycleStart := CalendarDay(stats.NextPeriodStart, location); CalendarDaysBetween(cycleStart, gridEnd) >= 0; cycleStart = AddCalendarDays(cycleStart, predictedCycleLength, location) {
+	cycleStart := CalendarDay(stats.NextPeriodStart, location)
+	for cycles := 0; CalendarDaysBetween(cycleStart, gridEnd) >= 0; cycles++ {
+		if cycles >= maxProjectedCyclesInGrid {
+			break
+		}
 		appendPredictedPeriod(predictedPeriodMap, cycleStart, predictedPeriodLength)
 		if includeFertility {
 			appendPredictedWindow(preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, cycleStart, predictedCycleLength, predictedPeriodLength, stats.LutealPhase, location)
 		}
+		cycleStart = AddCalendarDays(cycleStart, predictedCycleLength, location)
 	}
 }
 
