@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
@@ -30,7 +31,7 @@ import (
 //   - DisableKeepAlives: each delivery is a one-shot connection; we never pool to
 //     an owner-controlled host.
 //   - ZERO redirects: CheckRedirect always returns an error, so a 3xx response
-//     cannot steer the request (or the JSON body) to a second, unvalidated origin
+//     cannot steer the request (or its body) to a second, unvalidated origin
 //     after the scheme/host check passed (SSRF-via-redirect).
 //   - Response body capped by io.LimitReader: we only need the status code, so we
 //     read at most a few KB and discard the rest — a hostile endpoint cannot make
@@ -77,7 +78,7 @@ const (
 	// shortcodes used as the notification tag/icon per reminder kind. They are
 	// cosmetic only: an unknown shortcode degrades to plain tag text in the
 	// ntfy client, never to a failed delivery.
-	webhookNtfyTagsPeriod    = "mens"
+	webhookNtfyTagsPeriod    = "drop_of_blood"
 	webhookNtfyTagsOvulation = "sparkles"
 )
 
@@ -136,7 +137,8 @@ type WebhookPayload struct {
 // is an interface so tests can substitute a capturing/failing stub and the
 // notify service never reaches for a real socket.
 type WebhookDeliverer interface {
-	// Deliver POSTs payload as JSON to decryptedURL and reports success. Success
+	// Deliver POSTs payload to decryptedURL — as the JSON envelope, or as ntfy's
+	// plain-text form when the URL carries format=ntfy — and reports success. Success
 	// is a 2xx response; every other outcome (non-2xx, timeout, refused redirect,
 	// bad scheme, transport error) is a failure. It must never log the URL beyond
 	// its hostname, and never the body.
@@ -358,7 +360,10 @@ func (client *webhookDeliveryClient) Deliver(ctx context.Context, decryptedURL s
 		// the transport layer), degrading to ntfy's topic-name title rather
 		// than failing the delivery.
 		if headerSafeValue(payload.Title) {
-			request.Header.Set("X-Title", payload.Title)
+			// A localized title is often non-ASCII; header bytes past ASCII are
+			// not portable across proxies, so they travel as an RFC 2047 encoded
+			// word, which ntfy decodes. ASCII titles pass through unchanged.
+			request.Header.Set("X-Title", mime.BEncoding.Encode("UTF-8", payload.Title))
 		}
 		tags := ntfyTagsForReminderType(payload.Type)
 		if headerSafeValue(tags) {
@@ -400,7 +405,7 @@ func (client *webhookDeliveryClient) Deliver(ctx context.Context, decryptedURL s
 }
 
 // ntfyTagsForReminderType maps a reminder kind to an ntfy tag list. The tags
-// are ntfy emoji shortcodes rendered as the notification icon — mens (🩸) for
+// are ntfy emoji shortcodes rendered as the notification icon — drop_of_blood (🩸) for
 // a period reminder, sparkles (✨) for ovulation — and are cosmetic only: an
 // unknown kind, or a client without the shortcode, degrades to plain tag text
 // in the notification, never a failed delivery.

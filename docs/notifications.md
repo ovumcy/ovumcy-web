@@ -389,7 +389,8 @@ Operator-relevant summary (the full, test-backed claim list lives in
   (AWS/GCP/Azure/etc.) the link-local range also reaches the instance **metadata
   service** (`169.254.169.254`), which — like any other private target — an
   owner-controlled webhook URL would let the notify pass POST to. Delivery only
-  sends a fixed JSON body and discards the (size-capped) response, so there is no
+  sends a fixed body (JSON, or ntfy plain text) and discards the (size-capped)
+  response, so there is no
   response-body exfiltration path; the residual risk is a semi-trusted owner using
   status/timing differences to probe the instance's own internal network (a
   *blind* SSRF). If you deploy Ovumcy to any cloud or otherwise non-LAN host, set
@@ -403,7 +404,8 @@ Operator-relevant summary (the full, test-backed claim list lives in
   `disclaimer` field carrying the exact medical-safety string shown elsewhere
   in the app: *"Predictions are estimates, not medical advice or a method of
   contraception."* — in the owner's own interface language, the same one the
-  title and message are written in.
+  title and message are written in. An ntfy-format body (`?format=ntfy`, below)
+  ends with the same string, after the message and a blank line.
 - **URL encrypted at rest.** The stored webhook URL is AES-256-GCM ciphertext,
   bound to the owning user's id, exactly like a TOTP secret. If `SECRET_KEY`
   is rotated, existing stored URLs can no longer be decrypted; delivery fails
@@ -412,8 +414,10 @@ Operator-relevant summary (the full, test-backed claim list lives in
   [`SECURITY.md`](../SECURITY.md) for the full rotation impact table.
 - **No secrets in the payload or CLI output.** The JSON payload carries only a
   title, message, the disclaimer, the reminder type, the estimated event date,
-  and the lead-day count — never the webhook URL, never `SECRET_KEY`, never a
-  health specific beyond the single estimated date. The CLI never prints the URL
+  and the lead-day count (the ntfy format sends a subset: title, message,
+  disclaimer and a tag for the type) — never the webhook URL, never
+  `SECRET_KEY`, never a health specific beyond the single estimated date. The
+  CLI never prints the URL
   or the token at all, and by default prints no reminder type or estimated date
   either; `ovumcy notify --dry-run --show-health-details` is the one way to ask
   for those, and it is opt-in precisely because the answer is health data.
@@ -449,8 +453,9 @@ https://ntfy.example.com/my-topic?format=ntfy
 
 Delivery then sends what ntfy expects natively:
 
-- `X-Title` — the reminder title (the same localized `title` as the JSON field),
-- `X-Tags` — an emoji tag per kind (`mens` 🩸 for a period reminder,
+- `X-Title` — the reminder title (the same localized `title` as the JSON field;
+  a non-ASCII title travels as an RFC 2047 encoded word, which ntfy decodes),
+- `X-Tags` — an emoji tag per kind (`drop_of_blood` 🩸 for a period reminder,
   `sparkles` ✨ for ovulation),
 - a `text/plain` body of the localized `message`, a blank line, then the
   `disclaimer` — the disclaimer is delivered on every notification in this
@@ -463,7 +468,9 @@ host-only logging) is identical in both formats. URLs without `format=ntfy`
 keep the generic JSON envelope byte-for-byte, so Gotify, Apprise, and
 home-automation consumers are unaffected. Re-saving the URL in Settings (or
 `ovumcy webhook set`) is all it takes to switch a given endpoint between the
-two formats.
+two formats. ntfy parameters you add to the URL yourself are yours to answer
+for: `filename=`, `attach=` or `template=` can make ntfy render the body as an
+attachment or through a template, where the disclaimer line may not be shown.
 
 The three text fields — `title`, `message` and `disclaimer` — are written in the
 **interface language the owner chose in settings**, all three in the same one
