@@ -869,7 +869,12 @@ components:
             date may fall on or after `next_period_start`: a late shift outlives
             the projected next start, which stays a projection and is not
             recomputed from the confirmed day. Null when `suppression.fertility`
-            is true.
+            is true, with one exception: when `cycle_overdue` is the only entry
+            in `suppression.reasons`, a confirmed day (`ovulation_confirmed`) is
+            still reported — the cycle has outrun the length its projection was
+            rolled from, and the confirmed day is not such a projection. Every
+            projected field stays null then, and the fertile window and
+            `current_fertility` stay withheld.
         ovulation_exact:
           type: boolean
           description: >-
@@ -892,8 +897,10 @@ components:
             the calendar's solid marker and the dashboard's ovulation line
             show. The claim is that the ovulation is behind the owner and
             nothing more. `fertility_window_start`/`fertility_window_end` and
-            the fertility status are derived from that same day. Always false
-            when `ovulation_date` is null.
+            the fertility status are derived from that same day, and withheld
+            with the rest of the fertility projection while
+            `suppression.fertility` is true. Always false when
+            `ovulation_date` is null.
         ovulation_impossible:
           type: boolean
           description: >-
