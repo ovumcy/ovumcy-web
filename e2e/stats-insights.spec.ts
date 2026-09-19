@@ -348,10 +348,14 @@ test.describe('Stats: symptom patterns', () => {
     const dayEnd = Number(await patternCard.getAttribute('data-symptom-pattern-day-end'));
     expect(dayStart).toBeGreaterThan(0);
     expect(dayEnd).toBeGreaterThanOrEqual(dayStart);
-    // The symptom was logged on cycle day 10 of each completed cycle; a TZ
-    // boundary can shift the derived day by one either way.
-    expect(dayStart).toBeGreaterThanOrEqual(9);
-    expect(dayEnd).toBeLessThanOrEqual(11);
+    // The symptom was logged on cycle day 10 of each completed cycle. Every
+    // cycle start and every symptom day above is an ISO date offset from the
+    // same `today` string, so the cycle day is pure calendar arithmetic
+    // (today-51 - (today-60) + 1 = 10, and likewise for the other two) with
+    // no instant or zone in between: a window of exactly day 10 is the only
+    // correct answer, and a derived day 9 or 11 is an off-by-one defect.
+    expect(dayStart).toBe(10);
+    expect(dayEnd).toBe(10);
     // One rendered-copy assertion for this surface: the card really does print
     // the day window, not just carry it in an attribute.
     await expect(patternCard).toContainText(String(dayStart));

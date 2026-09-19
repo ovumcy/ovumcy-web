@@ -61,6 +61,32 @@
         "isExact": false,
         "nextPeriodStart": "2026-02-15"
       }
+    },
+    {
+      "name": "25-day cycle, personalised luteal 11 across the end of February (exact)",
+      "$comment": "Hand-derived by calendar arithmetic, not by running the code. Step 1: 11 >= 10, kept as 11. Step 2: 25 >= 15; reserve 25-5 = 20 >= 11, no clamp, so exact; ovulation day = 25-11 = 14 (>= 5). Ovulation date = 2026-02-20 + 13 days: February 2026 has 28 days, so Feb 20 + 8 = Feb 28, + 5 = 2026-03-05. Step 3: window start = Mar 5 - 5 days = 2026-02-28 (after the period start, no clamp); window end = 2026-03-05. Step 4: next period = 2026-02-20 + 25 days = Feb 28 + 17 = 2026-03-17. Check: Mar 5 -> Mar 17 is 12 calendar days, i.e. the ovulation day plus 11 following luteal days.",
+      "input": { "cycleStartDate": "2026-02-20", "cycleLength": 25, "lutealPhase": 11 },
+      "expected": {
+        "calculable": true,
+        "fertilityStart": "2026-02-28",
+        "fertilityEnd": "2026-03-05",
+        "ovulationDate": "2026-03-05",
+        "isExact": true,
+        "nextPeriodStart": "2026-03-17"
+      }
+    },
+    {
+      "name": "32-day cycle, personalised luteal 16 (exact)",
+      "$comment": "Hand-derived by calendar arithmetic, not by running the code. Step 1: 16 >= 10, kept as 16. Step 2: 32 >= 15; reserve 32-5 = 27 >= 16, no clamp, so exact; ovulation day = 32-16 = 16. Ovulation date = 2026-07-15 + 15 days = 2026-07-30. Step 3: window start = Jul 30 - 5 days = 2026-07-25; window end = 2026-07-30. Step 4: next period = 2026-07-15 + 32 days: July has 31 days, so Jul 15 + 16 = Jul 31, + 16 = 2026-08-16. Check: Jul 30 -> Aug 16 is 17 calendar days, i.e. the ovulation day plus 16 following luteal days.",
+      "input": { "cycleStartDate": "2026-07-15", "cycleLength": 32, "lutealPhase": 16 },
+      "expected": {
+        "calculable": true,
+        "fertilityStart": "2026-07-25",
+        "fertilityEnd": "2026-07-30",
+        "ovulationDate": "2026-07-30",
+        "isExact": true,
+        "nextPeriodStart": "2026-08-16"
+      }
     }
   ],
   "projection": {

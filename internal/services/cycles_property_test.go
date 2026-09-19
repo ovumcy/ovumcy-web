@@ -25,28 +25,44 @@ func drawCycleStartDate(t *rapid.T) time.Time {
 }
 
 // TestResolveLutealPhaseProperty pins the clamping contract band-by-band and
-// guarantees the result never drops below the supported minimum.
+// guarantees the result never drops below the supported minimum. The oracle
+// states the documented numbers (default 14, floor 10) as literals rather than
+// reading defaultLutealPhaseDays / minLutealPhaseDays: an oracle built from
+// the constants under test agrees with any value they are changed to. The
+// band edges are checked by hand first, since a random draw may miss them.
 func TestResolveLutealPhaseProperty(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) {
-		value := rapid.IntRange(-500, 500).Draw(t, "luteal")
-		got := ResolveLutealPhase(value)
+	const documentedDefault, documentedFloor = 14, 10
+	t.Run("band edges", func(t *testing.T) {
+		for _, ref := range []struct{ in, want int }{
+			{-1, 14}, {0, 14}, {1, 10}, {9, 10}, {10, 10}, {11, 11}, {13, 13}, {14, 14}, {16, 16},
+		} {
+			if got := ResolveLutealPhase(ref.in); got != ref.want {
+				t.Errorf("ResolveLutealPhase(%d)=%d, want %d", ref.in, got, ref.want)
+			}
+		}
+	})
+	t.Run("drawn", func(t *testing.T) {
+		rapid.Check(t, func(t *rapid.T) {
+			value := rapid.IntRange(-500, 500).Draw(t, "luteal")
+			got := ResolveLutealPhase(value)
 
-		if got < minLutealPhaseDays {
-			t.Fatalf("ResolveLutealPhase(%d)=%d below minimum %d", value, got, minLutealPhaseDays)
-		}
+			if got < documentedFloor {
+				t.Fatalf("ResolveLutealPhase(%d)=%d below minimum %d", value, got, documentedFloor)
+			}
 
-		var want int
-		switch {
-		case value <= 0:
-			want = defaultLutealPhaseDays
-		case value < minLutealPhaseDays:
-			want = minLutealPhaseDays
-		default:
-			want = value
-		}
-		if got != want {
-			t.Fatalf("ResolveLutealPhase(%d)=%d, want %d", value, got, want)
-		}
+			var want int
+			switch {
+			case value <= 0:
+				want = documentedDefault
+			case value < documentedFloor:
+				want = documentedFloor
+			default:
+				want = value
+			}
+			if got != want {
+				t.Fatalf("ResolveLutealPhase(%d)=%d, want %d", value, got, want)
+			}
+		})
 	})
 }
 
