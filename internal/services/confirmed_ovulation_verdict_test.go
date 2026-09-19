@@ -1,9 +1,10 @@
 package services
 
 // confirmed_ovulation_verdict_test.go — the day the owner's temperatures
-// confirmed is named by three surfaces inside the instance: the JSON overview
+// confirmed is named by four surfaces inside the instance: the JSON overview
 // (PublishedOverviewStats), the dashboard's ovulation line
-// (BuildDashboardCycleContext) and the calendar's solid marker. Whether it may
+// (BuildDashboardCycleContext), the calendar's solid marker and the stats BBT
+// chart's marker (buildOwnerCurrentCycleBBTChart). Whether it may
 // be named is decided in ONE place, the gate inside
 // ConfirmedCurrentCycleOvulation (ConfirmedOvulationWithheld). The overview used
 // to add a second condition — put the day back only under the fertility gate —
@@ -103,7 +104,7 @@ func TestConfirmedCurrentCycleOvulationOwnsTheConfirmedDayVerdict(t *testing.T) 
 }
 
 // TestEverySuppressionSignalAgreesOnTheConfirmedDay asks each surface, for
-// every row above, whether it names the confirmed day: all three read the one
+// every row above, whether it names the confirmed day: all four read the one
 // owner, so none may answer differently from the row.
 func TestEverySuppressionSignalAgreesOnTheConfirmedDay(t *testing.T) {
 	for _, testCase := range confirmedVerdictRows() {
@@ -120,9 +121,11 @@ func TestEverySuppressionSignalAgreesOnTheConfirmedDay(t *testing.T) {
 			_, ovulation := calendarFertileDays(t, user, logs, stats, today)
 			calendarKept := ovulation[confirmedVerdictDayKey]
 
-			if apiKept != testCase.wantKept || dashboardKept != testCase.wantKept || calendarKept != testCase.wantKept {
-				t.Fatalf("confirmed %s named: API=%t dashboard=%t calendar=%t, want %t on all three",
-					confirmedVerdictDayKey, apiKept, dashboardKept, calendarKept, testCase.wantKept)
+			statsKept := statsBBTChartMarkerDayKey(stats, statsPageBBTChart(t, user, logs, stats, today)) == confirmedVerdictDayKey
+
+			if apiKept != testCase.wantKept || dashboardKept != testCase.wantKept || calendarKept != testCase.wantKept || statsKept != testCase.wantKept {
+				t.Fatalf("confirmed %s named: API=%t dashboard=%t calendar=%t stats chart=%t, want %t on all four",
+					confirmedVerdictDayKey, apiKept, dashboardKept, calendarKept, statsKept, testCase.wantKept)
 			}
 		})
 	}
