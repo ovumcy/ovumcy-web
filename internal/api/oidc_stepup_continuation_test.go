@@ -6,6 +6,9 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/gofiber/fiber/v3"
 )
 
 // The cross-site bounce exists because a provider on another site posts the
@@ -119,6 +122,134 @@ func TestStepupContinuationRefusesASessionThatDidNotStartIt(t *testing.T) {
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode == http.StatusOK {
 		t.Fatal("the continue leg must not complete a step-up for an unidentified session")
+	}
+}
+
+func TestOIDCStepupContinuationRefusesAPayloadItCannotComplete(t *testing.T) {
+	t.Parallel()
+
+	valid, err := newOIDCStepupState(time.Now(), oidcStepupPurposeLocalPasswordSetup, 7, "argon2id$hash")
+	if err != nil {
+		t.Fatalf("build step-up state: %v", err)
+	}
+
+	for name, testCase := range map[string]struct {
+		stepup oidcStepupState
+		code   string
+	}{
+		// No code means nothing to redeem at the token endpoint: parking it
+		// would hand the continue leg a hand-off that can only fail there,
+		// after the step-up cookie has already been spent.
+		"empty code":         {stepup: valid, code: "   "},
+		"incomplete step-up": {stepup: oidcStepupState{}, code: "authorization-code"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := newOIDCStepupContinuation(time.Now(), testCase.stepup, testCase.code); err == nil {
+				t.Fatal("expected the continuation constructor to refuse this payload")
+			}
+		})
+	}
+
+	// A zero clock means "now", not the zero instant — otherwise every
+	// continuation would be minted already expired.
+	continuation, err := newOIDCStepupContinuation(time.Time{}, valid, "authorization-code")
+	if err != nil {
+		t.Fatalf("expected a zero clock to default to now, got %v", err)
+	}
+	if !continuation.validAt(time.Time{}) {
+		t.Fatal("a continuation minted on the default clock must be valid on the default clock")
+	}
+	if continuation.validAt(time.Now().Add(2 * oidcStepupContinuationTTL)) {
+		t.Fatal("a continuation must not outlive its TTL")
+	}
+}
+
+func TestOIDCStepupContinuationCookieRefusesInsecureTransport(t *testing.T) {
+	t.Parallel()
+
+	stepup, err := newOIDCIdentityLinkStepupState(time.Now(), 9)
+	if err != nil {
+		t.Fatalf("build step-up state: %v", err)
+	}
+	continuation, err := newOIDCStepupContinuation(time.Now(), stepup, "authorization-code")
+	if err != nil {
+		t.Fatalf("build continuation: %v", err)
+	}
+
+	handler := newSealedExpirySweepHandler()
+	handler.cookieSecure = false
+
+	// The cookie is Secure by construction, so a deployment that is not on
+	// secure transport must refuse to mint it rather than write one the
+	// browser drops — the same rule its two sibling OIDC cookies follow.
+	app := fiber.New()
+	app.Get("/mint", func(c fiber.Ctx) error {
+		if err := handler.setOIDCStepupContinuationCookie(c, continuation); err == nil {
+			t.Error("expected an insecure deployment to refuse the continuation cookie")
+		}
+		if err := handler.setOIDCStepupContinuationCookie(c, oidcStepupContinuation{}); err == nil {
+			t.Error("expected an empty payload to be refused")
+		}
+		return c.SendStatus(fiber.StatusNoContent)
+	})
+	response, err := app.Test(httptest.NewRequest(http.MethodGet, "/mint", nil), testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("mint request: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	if cookie := responseCookie(response.Cookies(), oidcStepupContinuationCookieName); cookie != nil {
+		t.Fatal("a refused mint must write no cookie at all")
+	}
+}
+
+func TestCrossSiteStepupCallbackWithoutACodeParksNothing(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "crosssite-no-code@example.com")
+	fixture.oidcStub.reauthErr = nil
+
+	startResponse := fixture.postStart(t, "EvenStronger2", "EvenStronger2")
+	defer func() { _ = startResponse.Body.Close() }()
+	stepupCookie := readStepupCookie(t, startResponse)
+	state := extractStepupCallbackState(t, fixture)
+
+	// A provider that posts a matching state with neither a code nor an error
+	// leaves nothing to redeem; the bounce must refuse rather than park a
+	// hand-off whose only possible outcome is a failure one leg later.
+	response := crossSiteStepupCallback(t, fixture, stepupCookie, state, "")
+	defer func() { _ = response.Body.Close() }()
+
+	assertStatusCode(t, response, http.StatusSeeOther)
+	if continuation := responseCookie(response.Cookies(), oidcStepupContinuationCookieName); continuation != nil && strings.TrimSpace(continuation.Value) != "" {
+		t.Fatal("a callback carrying no authorization code must not seal a continuation")
+	}
+}
+
+func TestCrossSiteStepupCallbackRefusesAProviderError(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "crosssite-provider-error@example.com")
+	fixture.oidcStub.reauthErr = nil
+
+	startResponse := fixture.postStart(t, "EvenStronger2", "EvenStronger2")
+	defer func() { _ = startResponse.Body.Close() }()
+	stepupCookie := readStepupCookie(t, startResponse)
+	state := extractStepupCallbackState(t, fixture)
+
+	form := url.Values{"state": {state}, "error": {"access_denied"}}
+	request := httptest.NewRequest(http.MethodPost, "/auth/oidc/callback", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Accept", "text/html,application/xhtml+xml")
+	request.Header.Set("Cookie", joinCookieHeader(fixture.authCookie, stepupCookie))
+	crossSiteNavigation.applyTo(request)
+
+	response := mustAppResponse(t, fixture.app, request)
+	defer func() { _ = response.Body.Close() }()
+
+	assertStatusCode(t, response, http.StatusSeeOther)
+	if continuation := responseCookie(response.Cookies(), oidcStepupContinuationCookieName); continuation != nil && strings.TrimSpace(continuation.Value) != "" {
+		t.Fatal("a provider error must not be parked for completion")
 	}
 }
 
