@@ -177,13 +177,17 @@ func DashboardProjectionCycleLength(user *models.User, stats CycleStats) int {
 // forbids. Every surface that shows a projected window gates on all three —
 // through PredictionsSuppressed, which is where the three now live together.
 func DashboardCycleOverdue(user *models.User, stats CycleStats) bool {
+	// Both length functions can return 0, and on the SAME input: an average in
+	// (0, 0.5) with no median rounds to zero in each of them. A gate handed zero
+	// answers false and switches itself off silently, which is the one failure
+	// mode a suppression signal may not have, so the fallback ends at a length
+	// that always exists.
 	length := DashboardProjectionCycleLength(user, stats)
 	if length <= 0 {
-		// That function documents a zero return; the average-first reference
-		// never has one, always falling back to models.DefaultCycleLength. A
-		// gate handed zero silently answers false and switches itself off, so
-		// the degenerate case keeps the length this gate used to read.
 		length = DashboardCycleReferenceLength(user, stats)
+	}
+	if length <= 0 {
+		length = models.DefaultCycleLength
 	}
 	return DashboardCycleDayLooksLong(stats.CurrentCycleDay, length)
 }
@@ -493,6 +497,18 @@ func BuildDashboardCycleContext(user *models.User, logs []models.DailyLog, stats
 	// right-skewed histories: 27/28/28/36 (mean 30, median 28) turned stale on
 	// cycle day 29, forcing phase and fertility to unknown and raising the amber
 	// out-of-date banner while the next-period date was still published.
+	//
+	// Two consequences of the earlier firing are named here because nothing else
+	// in the change states them, and both are open questions rather than settled
+	// trade-offs:
+	//   - suppression withholds an OBSERVATION, not only a projection.
+	//     ConfirmedCurrentCycleOvulation gates on FertilityProjectionSuppressed,
+	//     so a BBT-confirmed ovulation day — recorded, not predicted — also leaves
+	//     the dashboard, the calendar and the JSON API once the gate fires
+	//     (25/28/28/45 at cycle day 36).
+	//   - the stale check and the gate disagree over a WIDER band than before.
+	//     For 28/60/60 the account reads amber out-of-date from cycle day 50
+	//     while its dates stay published to day 68: 18 days, against 7 before.
 	cycleDayWarning := DashboardCycleOverdue(user, stats)
 	cycleStaleAnchor := DashboardCycleStaleAnchor(user, stats, location)
 	cycleDataStale := DashboardCycleDataLooksStale(cycleStaleAnchor, today, cycleDayReference)
