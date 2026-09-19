@@ -954,9 +954,10 @@ func TestWebhookDeliveryUnrelatedQueryParamsKeepJSONEnvelope(t *testing.T) {
 func TestWebhookDeliveryNtfyFormatSkipsUnsafeTitleHeader(t *testing.T) {
 	payload := samplePayload()
 	payload.Title = "Broken\n title"
-	var gotTitle string
+	var gotTitle, gotContentType string
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		gotTitle = request.Header.Get("X-Title")
+		gotContentType = request.Header.Get("Content-Type")
 		writer.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -964,6 +965,9 @@ func TestWebhookDeliveryNtfyFormatSkipsUnsafeTitleHeader(t *testing.T) {
 	deliverer := NewWebhookDeliverer(false)
 	if err := deliverer.Deliver(context.Background(), server.URL+"/t?format=ntfy", payload); err != nil {
 		t.Fatalf("delivery must succeed without the unsafe title header, got %v", err)
+	}
+	if gotContentType != "text/plain" {
+		t.Fatalf("expected the ntfy plain-text delivery, got Content-Type %q", gotContentType)
 	}
 	if gotTitle != "" {
 		t.Fatalf("unsafe title must be dropped from X-Title, got %q", gotTitle)
