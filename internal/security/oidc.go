@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
@@ -230,10 +231,28 @@ func validateOIDCHTTPSURL(rawURL string, envName string) (*url.URL, error) {
 	if parsedURL.RawQuery != "" || parsedURL.Fragment != "" {
 		return nil, fmt.Errorf("%s must not include query or fragment", envName)
 	}
+	// A non-ASCII host is one HostDialsThisMachine refuses too, but naming it
+	// separately tells the operator the actual fix: spell the host in its ASCII
+	// `xn--` form.
+	if hostHasNonASCII(parsedURL.Hostname()) {
+		return nil, fmt.Errorf("%s host must be ASCII: write an internationalized domain in its xn-- (punycode) form", envName)
+	}
 	if HostDialsThisMachine(parsedURL.Hostname()) {
 		return nil, fmt.Errorf("%s must name a remote host", envName)
 	}
 	return parsedURL, nil
+}
+
+// hostHasNonASCII reports whether host holds any byte outside ASCII — the
+// spelling HostDialsThisMachine refuses because IDNA mapping decides what it
+// dials.
+func hostHasNonASCII(host string) bool {
+	for index := range len(host) {
+		if host[index] >= utf8.RuneSelf {
+			return true
+		}
+	}
+	return false
 }
 
 func (client *OIDCClient) Enabled() bool {
@@ -456,11 +475,13 @@ func (client *OIDCClient) loadProvider(ctx context.Context) (*oauth2.Config, *oi
 		return nil, nil, err
 	}
 
-	// The authorize URL is the browser hop, so it is not covered by the
-	// server-side pins above — but it is the same discovery document, and a host
-	// that dials this machine there would send the owner's browser (carrying
-	// state, nonce and redirect_uri) to whatever listens on that port.
-	if err := validateDiscoveredAuthorizationEndpoint(provider.Endpoint().AuthURL); err != nil {
+	// Pin the discovery-supplied authorization_endpoint the same way. It is the
+	// browser hop rather than a server-side fetch, and it carries state, nonce,
+	// client_id and redirect_uri: a discovery document naming a foreign origin
+	// here would send the owner to a look-alike sign-in page the issuer never
+	// served, and one naming a host that dials this machine would send the
+	// owner's browser to whatever listens locally on that port.
+	if err := validateDiscoveredAuthorizationEndpoint(provider.Endpoint().AuthURL, client.config.IssuerURL); err != nil {
 		return nil, nil, err
 	}
 
@@ -656,17 +677,16 @@ func validateDiscoveredTokenEndpoint(tokenEndpoint string, issuerURL string) err
 	return nil
 }
 
-// validateDiscoveredAuthorizationEndpoint refuses a discovery-supplied
-// authorization_endpoint that is not an absolute https URL, or whose host dials
-// this machine. Unlike jwks_uri and token_endpoint this URL is not pinned to the
-// issuer origin: it is the only discovery endpoint the browser navigates to
-// rather than the server fetching, and pinning it would change the
-// three-endpoint pin contract this change does not own. An empty endpoint is
-// refused here rather than deferred to the flow, unlike the siblings above:
-// oauth2.Config.AuthCodeURL never validates Endpoint.AuthURL, so an empty one
-// composes the relative "?client_id=…&state=…" and sends the owner back into
-// ovumcy carrying state and nonce instead of failing the sign-in.
-func validateDiscoveredAuthorizationEndpoint(authorizationEndpoint string) error {
+// validateDiscoveredAuthorizationEndpoint pins the discovery-supplied
+// authorization_endpoint to the issuer origin, exactly as jwks_uri and
+// token_endpoint are pinned: an absolute https URL on the same origin (scheme +
+// host + effective port) as the configured issuer, whose host does not dial
+// this machine. An empty endpoint is refused here rather than deferred to the
+// flow, unlike the siblings above: oauth2.Config.AuthCodeURL never validates
+// Endpoint.AuthURL, so an empty one composes the relative
+// "?client_id=…&state=…" and sends the owner back into ovumcy carrying state
+// and nonce instead of failing the sign-in.
+func validateDiscoveredAuthorizationEndpoint(authorizationEndpoint string, issuerURL string) error {
 	endpoint := strings.TrimSpace(authorizationEndpoint)
 	parsed, err := url.Parse(endpoint)
 	if err != nil || !parsed.IsAbs() || !strings.EqualFold(parsed.Scheme, "https") {
@@ -675,7 +695,28 @@ func validateDiscoveredAuthorizationEndpoint(authorizationEndpoint string) error
 	if HostDialsThisMachine(parsed.Hostname()) {
 		return errors.New("oidc authorization_endpoint must name a remote host")
 	}
+	parsedIssuer, err := url.Parse(strings.TrimSpace(issuerURL))
+	if err != nil || !parsedIssuer.IsAbs() {
+		return errors.New("oidc issuer URL is invalid")
+	}
+	if !sameOriginURL(parsed, parsedIssuer) {
+		return errors.New("oidc authorization_endpoint origin must match the issuer origin")
+	}
 	return nil
+}
+
+// OnIssuerOrigin reports whether endpoint sits on the configured issuer's
+// origin (scheme + host + effective port) — the same comparison every
+// discovered endpoint is pinned with. It exists for state read back from
+// storage after discovery has already run, such as the provider-logout
+// end-session URL. An issuer that does not parse as an absolute URL pins
+// nothing, so no endpoint is on its origin.
+func OnIssuerOrigin(endpoint *url.URL, issuerURL string) bool {
+	parsedIssuer, err := url.Parse(strings.TrimSpace(issuerURL))
+	if err != nil || !parsedIssuer.IsAbs() {
+		return false
+	}
+	return sameOriginURL(endpoint, parsedIssuer)
 }
 
 func validateOIDCCABundle(path string) error {
@@ -758,8 +799,18 @@ func oidcRedirectPolicy(issuerURL string) func(req *http.Request, via []*http.Re
 // LAN address — so this is NOT an SSRF egress gate and must not be reused as
 // one. The gate that refuses private and link-local destinations outright is
 // `internal/services/webhook_delivery.go`.
+//
+// A host holding any non-ASCII byte is refused as well, because what it dials
+// is decided by a mapping this check does not run: Go's HTTP transport passes
+// the host through IDNA lookup mapping before dialing, and so does a browser, so
+// the full-width `０.０.０.０` is dialed as `0.0.0.0`. An internationalized
+// deployment spells its host in the ASCII (`xn--`) form, which is what those
+// mappings produce anyway.
 func HostDialsThisMachine(host string) bool {
 	if host == "" {
+		return true
+	}
+	if hostHasNonASCII(host) {
 		return true
 	}
 	address, err := netip.ParseAddr(host)
@@ -780,10 +831,13 @@ func HostDialsThisMachine(host string) bool {
 	if address.IsUnspecified() {
 		return true
 	}
-	// RFC 1122 "this network" (0.0.0.0/8). IsUnspecified matches only the first
-	// address of the block, yet a connect() to any of it lands on the local host
-	// on common stacks — the same reason the webhook egress gate refuses the
-	// whole prefix (`internal/services/webhook_delivery.go`).
+	// Every IPv4 address whose first octet is zero — RFC 1122 "this network",
+	// 0.0.0.0/8 — is refused, not only the 0.0.0.0 that IsUnspecified matches.
+	// Only 0.0.0.0 itself is the address a connect() is known to map to the
+	// local host; the rest of the block is refused because it is not a valid
+	// destination for any peer, so no working issuer names one and no spelling
+	// of the block is left to a platform stack's handling of it. The webhook
+	// egress gate refuses the same prefix (`internal/services/webhook_delivery.go`).
 	return address.Is4() && address.As4()[0] == 0
 }
 

@@ -77,7 +77,15 @@ func (handler *Handler) clearOIDCLogoutBridgeCookie(c fiber.Ctx) {
 }
 
 func (handler *Handler) providerLogoutRedirectURLFromState(state services.OIDCLogoutState) string {
-	if !validOIDCLogoutState(state) {
+	if !validOIDCLogoutState(state, handler.oidcIssuerURL()) {
+		return ""
+	}
+	// The return address comes from the current configuration, not from the
+	// stored row: a row written under an earlier configuration would otherwise
+	// tell the provider to send the browser somewhere this instance no longer
+	// names. No configured address composes no provider redirect.
+	postLogoutRedirectURL := handler.oidcPostLogoutRedirectURL()
+	if postLogoutRedirectURL == "" {
 		return ""
 	}
 	logoutURL, err := url.Parse(strings.TrimSpace(state.EndSessionEndpoint))
@@ -87,12 +95,31 @@ func (handler *Handler) providerLogoutRedirectURLFromState(state services.OIDCLo
 
 	query := logoutURL.Query()
 	query.Set("id_token_hint", strings.TrimSpace(state.IDTokenHint))
-	query.Set("post_logout_redirect_uri", strings.TrimSpace(state.PostLogoutRedirectURL))
+	query.Set("post_logout_redirect_uri", postLogoutRedirectURL)
 	logoutURL.RawQuery = query.Encode()
 	return logoutURL.String()
 }
 
-func validOIDCLogoutState(payload services.OIDCLogoutState) bool {
+// oidcPostLogoutRedirectURL is the post-logout return address the current
+// configuration resolves to. A handler with no OIDC service reports none.
+func (handler *Handler) oidcPostLogoutRedirectURL() string {
+	if handler == nil || handler.oidcService == nil {
+		return ""
+	}
+	return strings.TrimSpace(handler.oidcService.PostLogoutRedirectURL())
+}
+
+// oidcIssuerURL is the configured issuer stored logout state is pinned to. A
+// handler with no OIDC service reports none, and an absent issuer admits no
+// stored end-session endpoint rather than skipping the pin.
+func (handler *Handler) oidcIssuerURL() string {
+	if handler == nil || handler.oidcService == nil {
+		return ""
+	}
+	return handler.oidcService.IssuerURL()
+}
+
+func validOIDCLogoutState(payload services.OIDCLogoutState, issuerURL string) bool {
 	endSessionEndpoint := strings.TrimSpace(payload.EndSessionEndpoint)
 	idTokenHint := strings.TrimSpace(payload.IDTokenHint)
 	postLogoutRedirectURL := strings.TrimSpace(payload.PostLogoutRedirectURL)
@@ -100,15 +127,20 @@ func validOIDCLogoutState(payload services.OIDCLogoutState) bool {
 		return false
 	}
 
-	// The host check is the same one the discovery sanitizer applies, repeated
-	// here because this state is read back from a row that may predate it: a
-	// stored `https://:8443/logout` would otherwise be composed into a Location
-	// carrying the id_token_hint to whatever listens locally on that port.
+	// The host check and the issuer-origin pin are the ones the discovery
+	// sanitizer applies, repeated here because this state is read back from a
+	// row that may predate them or the issuer now configured: a stored
+	// `https://:8443/logout` would otherwise be composed into a Location carrying
+	// the id_token_hint to whatever listens locally on that port, and a stored
+	// foreign origin would hand that hint to a host the issuer does not own.
 	endpointURL, err := url.Parse(endSessionEndpoint)
 	if err != nil || !endpointURL.IsAbs() || !strings.EqualFold(endpointURL.Scheme, "https") || endpointURL.Fragment != "" {
 		return false
 	}
 	if security.HostDialsThisMachine(endpointURL.Hostname()) {
+		return false
+	}
+	if !security.OnIssuerOrigin(endpointURL, issuerURL) {
 		return false
 	}
 

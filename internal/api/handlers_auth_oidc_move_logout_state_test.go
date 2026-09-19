@@ -63,7 +63,7 @@ func (s *moveLogoutStateStub) DeleteExpired(ctx context.Context, cutoff time.Tim
 func validMoveLogoutStateRecord(ownerID uint) models.OIDCLogoutState {
 	return models.OIDCLogoutState{
 		UserID:                ownerID,
-		EndSessionEndpoint:    "https://idp.example.com/logout",
+		EndSessionEndpoint:    testOIDCIssuerURL + "/logout",
 		IDTokenHint:           "eyJhbGciOiJSUzI1NiJ9.header.signature",
 		PostLogoutRedirectURL: "https://app.example.com/",
 	}
@@ -178,7 +178,7 @@ func TestMoveOIDCLogoutStateSaveErrorPropagates(t *testing.T) {
 		findRecord: validMoveLogoutStateRecord(7),
 		saveErr:    errors.New("storage unavailable"),
 	}
-	handler := &Handler{oidcLogoutStateSvc: services.NewOIDCLogoutStateService(store)}
+	handler := &Handler{oidcLogoutStateSvc: services.NewOIDCLogoutStateService(store), oidcService: newStubOIDCWorkflowService(true)}
 	if err := handler.moveOIDCLogoutState(context.Background(), "old-session", "new-session", 7, time.Now()); err == nil {
 		t.Fatal("expected the Save error to propagate")
 	}
@@ -193,7 +193,7 @@ func TestMoveOIDCLogoutStateSaveErrorPropagates(t *testing.T) {
 // is saved under the new one, then deleted from the old one.
 func TestMoveOIDCLogoutStateValidRecordMovesAndDeletesOld(t *testing.T) {
 	store := &moveLogoutStateStub{findFound: true, findRecord: validMoveLogoutStateRecord(7)}
-	handler := &Handler{oidcLogoutStateSvc: services.NewOIDCLogoutStateService(store)}
+	handler := &Handler{oidcLogoutStateSvc: services.NewOIDCLogoutStateService(store), oidcService: newStubOIDCWorkflowService(true)}
 	if err := handler.moveOIDCLogoutState(context.Background(), "old-session", "new-session", 7, time.Now()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -33,7 +33,7 @@ import (
 func validRotationLogoutState(ownerID uint) services.OIDCLogoutState {
 	return services.OIDCLogoutState{
 		UserID:                ownerID,
-		EndSessionEndpoint:    "https://idp.example.com/logout",
+		EndSessionEndpoint:    testOIDCIssuerURL + "/logout",
 		IDTokenHint:           "eyJhbGciOiJSUzI1NiJ9.header.signature",
 		PostLogoutRedirectURL: "https://app.example.com/",
 	}
