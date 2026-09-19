@@ -260,6 +260,24 @@ func buildCurrentCycleBBTChart(language string, stats CycleStats, logs []models.
 	return newCurrentCycleBBTChartViewData(labels, values, coverline, hasShift, markerIndex, hasMarker, points)
 }
 
+// buildOwnerCurrentCycleBBTChart is the chart the stats page draws. The
+// probable-ovulation marker and the coverline are an interpretation of the
+// readings — the day the temperatures confirmed and the threshold that
+// confirmed it — so they appear only where the dashboard, the calendar and the
+// JSON API would name that day, and the verdict is read from the one owner of
+// it, ConfirmedCurrentCycleOvulation, rather than restated here: unpredictable
+// mode, a pregnancy pause and the first-cycle floor withhold it, an overdue
+// cycle does not. The readings themselves are recorded facts and stay on the
+// chart under every one of them.
+func buildOwnerCurrentCycleBBTChart(user *models.User, language string, stats CycleStats, logs []models.DailyLog, now time.Time, location *time.Location) StatsBBTChartViewData {
+	chart := buildCurrentCycleBBTChart(language, stats, logs, now, location)
+	if _, confirmed := ConfirmedCurrentCycleOvulation(user, logs, stats, DateAtLocation(now, location), location); !confirmed {
+		chart.Baseline, chart.HasBaseline = 0, false
+		chart.MarkerIndex, chart.HasMarker = 0, false
+	}
+	return chart
+}
+
 // buildCurrentCycleBBTChartPoints restates the drawn series as text. Cycle day
 // n is the nth day from the cycle start, which is how the labels were numbered
 // in the first place, so the date is a walk along the same axis rather than a
