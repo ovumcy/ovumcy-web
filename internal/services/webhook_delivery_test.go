@@ -261,6 +261,164 @@ func TestWebhookDeliveryHandlesOversizedBody(t *testing.T) {
 	}
 }
 
+// countingReadCloser counts every byte a Read call returns, so a test can
+// observe exactly how many bytes the deliverer pulled from a body — not how
+// many bytes the source had available, and not how the transport or the OS
+// buffered the rest.
+type countingReadCloser struct {
+	source io.ReadCloser
+	read   *int64
+}
+
+func (c *countingReadCloser) Read(p []byte) (int, error) {
+	n, err := c.source.Read(p)
+	atomic.AddInt64(c.read, int64(n))
+	return n, err
+}
+
+func (c *countingReadCloser) Close() error {
+	return c.source.Close()
+}
+
+// bodyCountingTransport wraps a real http.RoundTripper and substitutes the
+// response body with a countingReadCloser, so a test can see exactly how many
+// bytes the deliverer's own `io.Copy(io.Discard, io.LimitReader(response.Body,
+// webhookResponseReadLimit))` reads. io.LimitReader bounds the TOTAL read
+// across every call to exactly its limit as long as the underlying source
+// never runs dry before that limit, so this assertion is exact and does not
+// depend on how much the network or the OS actually buffered.
+type bodyCountingTransport struct {
+	base http.RoundTripper
+	read *int64
+}
+
+func (t *bodyCountingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.base.RoundTrip(req)
+	if err != nil || resp == nil {
+		return resp, err
+	}
+	resp.Body = &countingReadCloser{source: resp.Body, read: t.read}
+	return resp, nil
+}
+
+// TestWebhookDeliveryResponseBodyReadIsCappedAtTheConstant proves the
+// response-body cap by COUNTING bytes actually consumed, not merely by
+// asserting success on an oversized body (that is
+// TestWebhookDeliveryHandlesOversizedBody, above). A server that serves far
+// more than webhookResponseReadLimit still results in the deliverer reading
+// EXACTLY webhookResponseReadLimit bytes from the response body: io.LimitReader
+// bounds the total across every Read call, so the count is exact regardless of
+// how much extra data the OS or the transport buffered underneath it.
+//
+// This path is identical for both delivery formats — it runs after
+// client.httpClient.Do returns and depends only on the response, never on
+// whether the outbound body was the JSON envelope or ntfy's plain text — so
+// one test covers both.
+func TestWebhookDeliveryResponseBodyReadIsCappedAtTheConstant(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.WriteHeader(http.StatusOK)
+		blob := bytes.Repeat([]byte("x"), 1<<20) // 1 MiB, far beyond the read cap
+		_, _ = writer.Write(blob)
+	}))
+	defer server.Close()
+
+	var bytesRead int64
+	client := &webhookDeliveryClient{
+		httpClient: &http.Client{
+			Timeout:       webhookDeliveryTimeout,
+			Transport:     &bodyCountingTransport{base: http.DefaultTransport, read: &bytesRead},
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return errWebhookRedirect },
+		},
+	}
+
+	if err := client.Deliver(context.Background(), server.URL, samplePayload()); err != nil {
+		t.Fatalf("expected success on 2xx with oversized body, got %v", err)
+	}
+
+	if got := atomic.LoadInt64(&bytesRead); got != webhookResponseReadLimit {
+		t.Fatalf("expected the deliverer to read exactly the capped %d bytes, read %d", webhookResponseReadLimit, got)
+	}
+}
+
+// blockingTransport is a RoundTripper double that never completes on its own:
+// it blocks until the REQUEST's own context is done, so a test can prove
+// delivery is released by context cancellation alone. started signals once
+// RoundTrip is actually in flight and blocked, so a test cancelling
+// afterwards knows it interrupted a blocked call rather than racing a call
+// that had not begun yet. observedCtxErr carries the context error
+// blockingTransport itself saw on the request context, proving the transport
+// — not just the caller — observed the cancellation.
+type blockingTransport struct {
+	started        chan struct{}
+	observedCtxErr chan error
+}
+
+func (bt *blockingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	close(bt.started)
+	<-req.Context().Done()
+	err := req.Context().Err()
+	bt.observedCtxErr <- err
+	return nil, err
+}
+
+// TestWebhookDeliveryReleasedByCallerContextCancellationNotClientTimeout
+// proves delivery is unblocked by the CALLER's context being cancelled, not by
+// any client-side timeout. The transport double blocks forever except on its
+// request context being done, and the client's own http.Client.Timeout is set
+// far larger than this test's own deadline, so a pass here cannot be
+// explained by that timeout firing instead — only cancelling ctx can release
+// it. This path is identical for both delivery formats: the request is built
+// from the same context.WithTimeout(ctx, ...) derivation and goes through the
+// same client.httpClient.Do call regardless of ?format=ntfy, so one test
+// covers both.
+func TestWebhookDeliveryReleasedByCallerContextCancellationNotClientTimeout(t *testing.T) {
+	transport := &blockingTransport{
+		started:        make(chan struct{}),
+		observedCtxErr: make(chan error, 1),
+	}
+	client := &webhookDeliveryClient{
+		httpClient: &http.Client{
+			Timeout:       time.Hour, // far larger than this test's own deadline: irrelevant to the result
+			Transport:     transport,
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return errWebhookRedirect },
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	result := make(chan error, 1)
+	go func() {
+		result <- client.Deliver(ctx, "http://example.test/hook", samplePayload())
+	}()
+
+	select {
+	case <-transport.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("transport never entered RoundTrip")
+	}
+
+	cancel() // the only signal this test relies on: the CALLER's own context
+
+	select {
+	case err := <-result:
+		if err == nil {
+			t.Fatal("expected an error after the caller context was cancelled, got nil")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("delivery did not return promptly after the caller context was cancelled")
+	}
+
+	select {
+	case observed := <-transport.observedCtxErr:
+		if !errors.Is(observed, context.Canceled) {
+			t.Fatalf("expected the blocking transport to observe context.Canceled, got %v", observed)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("blocking transport never reported its observed context error")
+	}
+}
+
 // TestWebhookDeliveryHonorsContextTimeout proves a slow endpoint is cut off:
 // delivery aborts when the caller's context deadline passes.
 func TestWebhookDeliveryHonorsContextTimeout(t *testing.T) {
