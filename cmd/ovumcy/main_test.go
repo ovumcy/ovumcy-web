@@ -802,6 +802,11 @@ func TestResolveOIDCConfigClientSecretFile(t *testing.T) {
 		{"disabled with both sources set and the file missing boots", "false", clientSecret, func(t *testing.T) string {
 			return filepath.Join(t.TempDir(), "missing-client-secret.txt")
 		}},
+		// A readable file is the case that tells "never read" from "read, then
+		// discarded": only a real read logs which source supplied the secret.
+		{"disabled with a readable OIDC_CLIENT_SECRET_FILE does not read it", "false", "", func(t *testing.T) string {
+			return writeTempSecretFile(t, clientSecret+"\n")
+		}},
 	}
 	for _, tc := range disabledCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -809,6 +814,11 @@ func TestResolveOIDCConfigClientSecretFile(t *testing.T) {
 			t.Setenv("OIDC_ENABLED", tc.enabled)
 			t.Setenv("OIDC_CLIENT_SECRET", tc.secret)
 			t.Setenv("OIDC_CLIENT_SECRET_FILE", tc.file(t))
+
+			var logged bytes.Buffer
+			originalWriter := log.Writer()
+			log.SetOutput(&logged)
+			t.Cleanup(func() { log.SetOutput(originalWriter) })
 
 			config, err := loadRuntimeConfig(time.UTC)
 			if err != nil {
@@ -819,6 +829,9 @@ func TestResolveOIDCConfigClientSecretFile(t *testing.T) {
 			}
 			if config.OIDC.ClientSecret != "" {
 				t.Fatal("expected a disabled OIDC config to carry no client secret")
+			}
+			if strings.Contains(logged.String(), "OIDC_CLIENT_SECRET") {
+				t.Fatalf("expected a disabled OIDC config to consult neither secret source, but boot logged: %q", logged.String())
 			}
 		})
 	}

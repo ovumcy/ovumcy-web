@@ -296,12 +296,18 @@ func resolveCalendarFeedFencePath() (string, error) {
 // boot — the same rule DATABASE_URL_FILE follows on a sqlite instance. Once
 // enabled, today's rule stands unchanged: OIDC_CLIENT_SECRET wins when both are
 // set, and a file that is the only source and cannot be read refuses the boot.
+//
+// OIDC_ENABLED is strict: it gates Validate, so a typo that fell back to off
+// would skip every OIDC check while OIDC_LOGIN_MODE=oidc_only stopped applying
+// — password sign-in and open registration would come back on, silently.
 func resolveOIDCConfig(cookieSecure bool, registrationMode services.RegistrationMode) (security.OIDCConfig, error) {
-	enabled := getEnvBool("OIDC_ENABLED", false)
+	enabled, err := getEnvBoolStrict("OIDC_ENABLED", false)
+	if err != nil {
+		return security.OIDCConfig{}, err
+	}
 
 	clientSecret := ""
 	if enabled {
-		var err error
 		clientSecret, err = resolveSecretFromEnvOrFile("OIDC_CLIENT_SECRET", "OIDC_CLIENT_SECRET_FILE", maxOIDCClientSecretFileBytes)
 		if err != nil {
 			return security.OIDCConfig{}, err
