@@ -754,10 +754,11 @@ func newOIDCHTTPClient(config OIDCConfig) *http.Client {
 			}
 		}
 	}
+	transport.MaxResponseHeaderBytes = oidcResponseHeaderLimit
 
 	return &http.Client{
 		Timeout:       defaultOIDCHTTPTimeout,
-		Transport:     transport,
+		Transport:     &oidcBoundedBodyTransport{base: transport, limit: oidcResponseBodyLimit},
 		CheckRedirect: oidcRedirectPolicy(config.IssuerURL),
 	}
 }

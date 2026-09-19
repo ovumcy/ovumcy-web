@@ -161,6 +161,17 @@ type mockOIDCProvider struct {
 	// stub, so pre-existing tests that never exchange a code are unaffected.
 	idToken string
 
+	// discoveryPadding, jwksPadding and tokenPadding add a filler member of
+	// that many bytes to the respective response while keeping it a valid
+	// document, and discoveryHeaderPadding adds a response header of that many
+	// bytes to discovery: the response-size caps on the OIDC HTTP client are
+	// driven through them. A padded token response is form-encoded, the one
+	// shape oauth2's own 1 MiB truncation still parses.
+	discoveryPadding       int
+	discoveryHeaderPadding int
+	jwksPadding            int
+	tokenPadding           int
+
 	// issuer is the URL returned in discovery and in JWT iss claims.
 	// httptest.NewTLSServer assigns it at startup.
 	issuer string
@@ -234,6 +245,12 @@ func (m *mockOIDCProvider) serveDiscoveryDocument(w http.ResponseWriter, r *http
 	if m.endSessionEndpoint != "" {
 		payload["end_session_endpoint"] = m.endSessionEndpoint
 	}
+	if m.discoveryPadding > 0 {
+		payload["x_padding"] = strings.Repeat("a", m.discoveryPadding)
+	}
+	if m.discoveryHeaderPadding > 0 {
+		w.Header().Set("X-Padding", strings.Repeat("a", m.discoveryHeaderPadding))
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(payload)
 }
@@ -245,6 +262,16 @@ func (m *mockOIDCProvider) serveDiscoveryDocument(w http.ResponseWriter, r *http
 func (m *mockOIDCProvider) serveToken(w http.ResponseWriter, r *http.Request) {
 	if m.idToken == "" {
 		http.Error(w, "token stub: PoC tests do not exchange the code", http.StatusNotImplemented)
+		return
+	}
+	if m.tokenPadding > 0 {
+		w.Header().Set("Content-Type", "application/x-www-form-urlencoded")
+		_, _ = w.Write([]byte(url.Values{
+			"access_token": {"test-access-token"},
+			"token_type":   {"Bearer"},
+			"expires_in":   {"3600"},
+			"id_token":     {m.idToken},
+		}.Encode() + "&x_padding=" + strings.Repeat("a", m.tokenPadding)))
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -271,6 +298,9 @@ func (m *mockOIDCProvider) serveJWKS(w http.ResponseWriter, r *http.Request) {
 				"e":   base64.RawURLEncoding.EncodeToString(eBytes),
 			},
 		},
+	}
+	if m.jwksPadding > 0 {
+		payload["x_padding"] = strings.Repeat("a", m.jwksPadding)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(payload)
