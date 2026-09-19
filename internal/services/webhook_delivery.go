@@ -417,10 +417,8 @@ func ntfyTagsForReminderType(reminderType string) string {
 }
 
 // headerSafeValue reports whether value can travel in an HTTP header as-is:
-// no C0 controls and no DEL. UTF-8 text is allowed — it passes through as
-// obs-text and ntfy decodes headers as UTF-8 — so localized titles ride
-// along; only control characters (which would make the request write fail at
-// the transport layer) disqualify a value.
+// no C0 controls and no DEL, which would make the request write fail at the
+// transport layer. Non-ASCII text is allowed here; the caller encodes it.
 func headerSafeValue(value string) bool {
 	for _, r := range value {
 		if r < 0x20 || r == 0x7f {
