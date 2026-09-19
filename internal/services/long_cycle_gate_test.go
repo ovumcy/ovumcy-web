@@ -144,16 +144,20 @@ func TestLongCycleGateSuppressesEverySurfaceWhenAMergedCycleInflatesTheAverage(t
 			// The notice is what stands where the date was: a surface that
 			// withholds silently tells the owner nothing at all.
 			//
-			// WHICH notice is a separate, open question, and the key is not pinned
-			// here on purpose. For this fixture BuildLateCycleNotice compares cycle
-			// day 61 against stats.MaxCycleLength — 300, the merged span itself —
-			// and lands on LateCycleWithinRangeKey: "still inside your recorded
-			// range of 28 to 300 days", beside a withheld date. Answering it means
-			// deciding when a recorded span stops counting as a cycle, which is the
-			// threshold call this change deliberately does not make; pinning the
-			// current copy here would freeze the reassurance as intended.
+			// WHICH notice was an open question (WEB-3 finding 5): for this
+			// fixture BuildLateCycleNotice used to compare cycle day 61 against
+			// stats.MaxCycleLength — 300, the merged span itself — and land on
+			// "still inside your recorded range of 28 to 300 days", beside a
+			// withheld date. Deciding when a recorded span stops counting as a
+			// cycle is still not this gate's call to make, so the fix does not
+			// answer that; it stops comparing to a range that can itself be the
+			// outlier, and states the fact the gate already acted on instead.
 			if !cycleContext.LateCycle.Visible {
 				t.Fatal("no late-cycle notice beside the withheld window")
+			}
+			if cycleContext.LateCycle.MessageKey != LateCyclePredictionsPausedKey {
+				t.Fatalf("late-cycle notice key = %q, want %q: the recorded maximum is the merged span itself, so it must not be read back as a reassuring range",
+					cycleContext.LateCycle.MessageKey, LateCyclePredictionsPausedKey)
 			}
 
 			// 2. The hero ribbon, which asks its own question rather than reading

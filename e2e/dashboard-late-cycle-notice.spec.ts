@@ -33,7 +33,7 @@ import {
  * date is still sitting one line above it.
  */
 const BEYOND_RANGE_KEY = 'dashboard.late_cycle.beyond_range';
-const WITHIN_RANGE_KEY = 'dashboard.late_cycle.within_range';
+const PREDICTIONS_PAUSED_KEY = 'dashboard.late_cycle.predictions_paused';
 const NO_PERSONAL_RANGE_KEY = 'dashboard.late_cycle.no_personal_range';
 const ESTIMATE_PAUSED_KEY = 'dashboard.next_period_estimate_paused';
 
@@ -120,12 +120,13 @@ test.describe('Dashboard late-cycle notice', () => {
     await expect(pausedEstimate).toHaveText(localeText('en', ESTIMATE_PAUSED_KEY));
   });
 
-  test('a long cycle still inside the recorded range names both bounds', async ({ page }) => {
+  test('a long cycle still inside the recorded range says predictions are paused, not that it is in range', async ({ page }) => {
     // Cycle starts today-113, today-88, today-43 (the onboarding anchor):
     // completed cycles of 25 and 45 days, so the average reference is 35 and the
     // recorded range is 25..45. The running cycle is on day 44 — past 35 + 7, so
-    // the notice fires, but not past the 45-day maximum, so it reassures rather
-    // than warns. The rendered bounds are seeded facts, independent of the clock.
+    // the overdue gate fires and withholds the projection. The notice states that
+    // fact rather than comparing against a recorded maximum, which an unlogged
+    // period can inflate (3×28 + 300 would otherwise read "inside 28 to 300").
     const anchorISO = await registerAndOnboardWithStartDaysAgo(page, 'late-cycle-within', 43);
     for (const offset of [-70, -45]) {
       await markCycleStartViaAPI(page, shiftISODate(anchorISO, offset));
@@ -136,14 +137,9 @@ test.describe('Dashboard late-cycle notice', () => {
 
     const notice = lateCycleNotice(page);
     await expect(notice).toBeVisible();
-    await expect(notice).toHaveAttribute('data-late-cycle-key', WITHIN_RANGE_KEY);
+    await expect(notice).toHaveAttribute('data-late-cycle-key', PREDICTIONS_PAUSED_KEY);
     await expect(notice).toHaveAttribute('data-late-cycle-tone', 'neutral');
-
-    // The plural variant of this key is selected by the range's UPPER bound (the
-    // «до 45 дней» rule), not by the cycle day.
-    await expect(notice).toHaveText(
-      formatCounts(localeText('en', pluralVariantKey('en', WITHIN_RANGE_KEY, 45)), [25, 45])
-    );
+    await expect(notice).toHaveText(localeText('en', PREDICTIONS_PAUSED_KEY));
   });
 
   test('an account with no completed cycles is told only the cycle day, in its own language', async ({
