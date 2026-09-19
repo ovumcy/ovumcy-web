@@ -315,8 +315,10 @@ corrects it.
 The same gate covers the two places a projected window is read outside those
 surfaces: the day-save message no longer calls a day fertile from a withheld window,
 and logging a new cycle start no longer offers the implantation-bleeding hint counted
-from a withheld ovulation. One value outlives it: an ovulation day the owner's own
-temperatures confirmed. It was never rolled forward from the length that ran out,
+from a withheld ovulation. The hint reads the whole suppression gate, so
+unpredictable-cycle mode and a pregnancy pause withhold it too. One value outlives
+it: an ovulation day the owner's own temperatures confirmed. It was never rolled
+forward from the length that ran out,
 so the dashboard line, the calendar's solid marker and the JSON overview keep
 naming it — still worded as an estimate, beside the disclaimer — while the fertile
 window and fertility status derived from it stay withheld. Unpredictable-cycle mode,
