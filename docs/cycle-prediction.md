@@ -286,29 +286,41 @@ its anchor is a date the owner actually recorded.
 
 Three further signals withhold **every** projected date, the next period included,
 on every one of those surfaces: unpredictable-cycle mode (the settings toggle
-"My cycle is unpredictable"), a pregnancy pause, and a cycle overdue past the
-length its own projection was computed from — more than a week past it, a margin
-that is an explicitly named engineering safety rule rather than a clinical
-cutoff: no guideline says a
+"My cycle is unpredictable"), a pregnancy pause, and a cycle overdue past its own
+cycle length — more than a week past it, a margin that is an explicitly named
+engineering safety rule rather than a clinical cutoff: no guideline says a
 prediction becomes invalid on a particular cycle day, and past that point the
 model can only roll a whole cycle forward at a time, so what it yields is
 manufactured rather than estimated.
 
-That comparison uses the **median-first projection length**, not the average-first
-reference length, because the claim being withheld is the projection itself: every
-published date is the median rolled forward from the anchor, so the median is the
-length that can be shown to have run out. The average cannot carry the decision. A
+That comparison uses the **shorter** of the two cycle lengths: the median-first
+projection length every published date is rolled forward from, and the
+average-first reference length. The average alone cannot carry the decision. A
 period that was never logged merges two cycles into one 300-day gap, which leaves
 the median at 28 and pulls the average of three ordinary cycles to 96, and a rule
 measured against 96 withheld nothing on cycle day 61 while every date it published
-came from the 28. Reading the projection's own length settles that without ruling
-on which spans still count as a cycle. The late-cycle notice follows the same
-length; the dashboard's cycle ribbon is not drawn at all past the gate, because
-its axis length, its start window and its "today" marker are all projection
-output. The out-of-date-data notice keeps the displayed reference length: it asks
-a different question — is this account's data stale — and carries no week of
-grace. Nothing recorded is discarded: the merged span stays in the history, and
-logging the missing period corrects it.
+came from the 28. The median alone cannot carry it either: where the median sits
+above the average (28/60/60 — median 60, average 49) it would keep dates published
+to cycle day 67 while the out-of-date-data notice, which reads the average with no
+week of grace, has stood since day 50. Taking the shorter length withholds no later
+than either statistic would, keeps the days on which that notice stands beside a
+published date to seven at most, and settles the merged span without ruling on
+which spans still count as a cycle. The late-cycle notice follows the same length;
+the dashboard's cycle ribbon is not drawn at all past the gate, because its axis
+length, its start window and its "today" marker are all projection output. The
+out-of-date-data notice keeps the displayed reference length. Nothing recorded is
+discarded: the merged span stays in the history, and logging the missing period
+corrects it.
+
+The same gate covers the two places a projected window is read outside those
+surfaces: the day-save message no longer calls a day fertile from a withheld window,
+and logging a new cycle start no longer offers the implantation-bleeding hint counted
+from a withheld ovulation. One value outlives it: an ovulation day the owner's own
+temperatures confirmed. It was never rolled forward from the length that ran out,
+so the dashboard line, the calendar's solid marker and the JSON overview keep
+naming it — still worded as an estimate, beside the disclaimer — while the fertile
+window and fertility status derived from it stay withheld. Unpredictable-cycle mode,
+a pregnancy pause and the first-cycle floor still withhold that day too.
 
 The floor is the fourth signal and the only partial one. Predicates:
 `FertilityProjectionSuppressed` over `PredictionsSuppressed`
