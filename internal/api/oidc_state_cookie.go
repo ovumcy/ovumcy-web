@@ -82,7 +82,7 @@ func (handler *Handler) setOIDCStateCookie(c fiber.Ctx, state oidcAuthState) err
 
 // popOIDCStateCookie decodes the login state and consumes the cookie ONLY
 // once that payload has proved valid — the same ordering popOIDCStepupCookie
-// documents (SEC-M10): a stray hit on the callback path must not destroy a
+// documents: a stray hit on the callback path must not destroy a
 // sign-in the owner is in the middle of.
 func (handler *Handler) popOIDCStateCookie(c fiber.Ctx) oidcAuthState {
 	raw := strings.TrimSpace(c.Cookies(oidcStateCookieName))

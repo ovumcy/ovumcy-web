@@ -88,6 +88,8 @@ func (handler *Handler) setOIDCStepupContinuationCookie(c fiber.Ctx, continuatio
 
 	payload, err := json.Marshal(continuation)
 	if err != nil {
+		// codecov:ignore -- defensive: the payload is strings and a struct of
+		// strings, which encoding/json cannot fail on.
 		return err
 	}
 	return handler.writeSealedCookie(c, oidcStepupContinuationCookieSpec, payload, time.Now().Add(oidcStepupContinuationTTL))
@@ -96,7 +98,8 @@ func (handler *Handler) setOIDCStepupContinuationCookie(c fiber.Ctx, continuatio
 // peekOIDCStepupContinuationCookie decodes the continuation WITHOUT clearing
 // it. Clearing is the caller's own step once the payload has been validated,
 // so a stray request to the continue route cannot destroy an in-flight
-// completion (SEC-M10).
+// completion: the same consume-after-validate ordering the transit cookies
+// follow.
 func (handler *Handler) peekOIDCStepupContinuationCookie(c fiber.Ctx) oidcStepupContinuation {
 	raw := strings.TrimSpace(c.Cookies(oidcStepupContinuationCookieName))
 	if raw == "" {
@@ -180,9 +183,14 @@ func (handler *Handler) bounceStepupToSameSiteContinue(c fiber.Ctx, state oidcSt
 		return handler.redirectSettingsRefusal(c, spec)
 	}
 	if err := handler.setOIDCStepupContinuationCookie(c, continuation); err != nil {
+		// codecov:ignore:start -- defensive: the payload validated one line above
+		// and the route only runs on a secure deployment, so the two refusals
+		// inside the setter are unreachable from here; what is left is an AEAD
+		// seal error.
 		spec := authOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, "auth.oidc_callback", spec)
 		return handler.redirectSettingsRefusal(c, spec)
+		// codecov:ignore:end
 	}
 
 	return c.Redirect().Status(fiber.StatusSeeOther).To(oidcCallbackContinuePath)

@@ -201,7 +201,7 @@ func (handler *Handler) setOIDCStepupCookie(c fiber.Ctx, state oidcStepupState) 
 // once that payload has proved valid. Clearing first made any stray hit on the
 // callback path — a prefetch, a stale tab, a cross-site navigation an attacker
 // can trigger — destroy an in-flight step-up the owner would then have to
-// restart (SEC-M10). An invalid or absent payload now leaves the cookie for
+// restart. An invalid or absent payload now leaves the cookie for
 // the request that can actually use it; its own TTL still bounds the lifetime.
 func (handler *Handler) popOIDCStepupCookie(c fiber.Ctx) oidcStepupState {
 	raw := strings.TrimSpace(c.Cookies(oidcStepupCookieName))

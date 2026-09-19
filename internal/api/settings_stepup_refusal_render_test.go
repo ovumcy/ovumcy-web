@@ -167,14 +167,23 @@ func TestSettingsStepupRefusalsRenderOnTheSettingsPage(t *testing.T) {
 	}
 }
 
-// stepupCompletionHandlers are the three functions CompleteOIDCLogin dispatches
-// to when the callback carries a step-up cookie. Both source-derived guards
-// below read exactly these bodies: this is where a settings step-up decides what
-// the owner sees on the way back from the identity provider.
+// stepupCompletionHandlers are the functions a step-up callback can leave
+// through on the way back from the identity provider. Both source-derived
+// guards below read exactly these bodies: this is where a settings step-up
+// decides what the owner sees.
+//
+// The last three are the cross-site bounce, and they belong here for the same
+// reason the per-purpose handlers do: they run on a provider-return
+// navigation, so a `return err` in any of them reaches a browser as raw JSON —
+// the regression this guard exists for. Listing only the per-purpose three
+// would fix the class at three sites out of six.
 var stepupCompletionHandlers = map[string]string{
 	"completeLocalPasswordSetupReauth": "handlers_settings_password.go",
 	"completeErasureStepupReauth":      "handlers_settings_danger_stepup.go",
 	"completeOIDCIdentityLinkStepup":   "handlers_settings_oidc_link.go",
+	"bounceStepupToSameSiteContinue":   "oidc_stepup_continuation.go",
+	"dispatchStepupCompletion":         "oidc_stepup_continuation.go",
+	"ContinueOIDCStepup":               "oidc_stepup_continuation.go",
 }
 
 // inlineStepupRefusalSpecs names every *ErrorSpec constructor the three handlers
@@ -316,11 +325,49 @@ func TestEverySettingsStepupRefusalKeyMapsToLocalizedCopy(t *testing.T) {
 //     one-time reveal mark and only a same-origin initiator may spend it, while
 //     Sec-Fetch-Site is computed over the whole redirect chain, which a
 //     provider callback starts off-origin. A 303 from here is refused there.
+//   - handler.dispatchStepupCompletion and handler.bounceStepupToSameSiteContinue
+//     — the two arms of the cross-site bounce. They are terminals only because
+//     they are themselves on stepupCompletionHandlers above: whatever they
+//     return is scanned by this same guard, so admitting them delegates the
+//     check rather than skipping it.
 var allowedStepupCompletionTerminals = map[string]string{
 	"handler.redirectSettingsRefusal":                    "the refusal channel the settings page reads",
 	"c.Redirect.Status.To":                               "a plain redirect to a page",
 	"handler.renderRecoveryCodeResponseWithContinuePath": "renders the one-time recovery code",
 	"respondOIDCSameOriginHandoff":                       "a same-origin document that navigates to a page",
+	"handler.dispatchStepupCompletion":                   "dispatches to a handler this guard also scans",
+	"handler.bounceStepupToSameSiteContinue":             "bounces to the same-site leg this guard also scans",
+	"handler.completeLocalPasswordSetupReauth":           "a per-purpose completion this guard also scans",
+	"handler.completeErasureStepupReauth":                "a per-purpose completion this guard also scans",
+	"handler.completeOIDCIdentityLinkStepup":             "a per-purpose completion this guard also scans",
+}
+
+// stepupCompletionDelegates are the terminals above that are admitted ONLY
+// because they are themselves scanned. Pinned here so the delegation cannot
+// rot into an exemption: dropping a name from stepupCompletionHandlers while
+// leaving it in the terminal list would silently stop checking it.
+var stepupCompletionDelegates = []string{
+	"handler.dispatchStepupCompletion",
+	"handler.bounceStepupToSameSiteContinue",
+	"handler.completeLocalPasswordSetupReauth",
+	"handler.completeErasureStepupReauth",
+	"handler.completeOIDCIdentityLinkStepup",
+}
+
+func TestEveryDelegatingStepupTerminalIsItselfScanned(t *testing.T) {
+	t.Parallel()
+
+	for _, terminal := range stepupCompletionDelegates {
+		if _, allowed := allowedStepupCompletionTerminals[terminal]; !allowed {
+			t.Errorf("%s is listed as a delegate but is not an allowed terminal", terminal)
+		}
+		name := terminal[strings.LastIndex(terminal, ".")+1:]
+		if _, scanned := stepupCompletionHandlers[name]; !scanned {
+			t.Errorf(
+				"%s is admitted as a terminal only because this guard scans it, but %s is not in stepupCompletionHandlers — the delegation is now an exemption",
+				terminal, name)
+		}
+	}
 }
 
 // stepupCompletionReturnPath renders a return expression as its dotted call
