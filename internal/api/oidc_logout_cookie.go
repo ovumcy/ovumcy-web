@@ -80,6 +80,14 @@ func (handler *Handler) providerLogoutRedirectURLFromState(state services.OIDCLo
 	if !validOIDCLogoutState(state, handler.oidcIssuerURL()) {
 		return ""
 	}
+	// The return address comes from the current configuration, not from the
+	// stored row: a row written under an earlier configuration would otherwise
+	// tell the provider to send the browser somewhere this instance no longer
+	// names. No configured address composes no provider redirect.
+	postLogoutRedirectURL := handler.oidcPostLogoutRedirectURL()
+	if postLogoutRedirectURL == "" {
+		return ""
+	}
 	logoutURL, err := url.Parse(strings.TrimSpace(state.EndSessionEndpoint))
 	if err != nil || !logoutURL.IsAbs() {
 		return ""
@@ -87,9 +95,18 @@ func (handler *Handler) providerLogoutRedirectURLFromState(state services.OIDCLo
 
 	query := logoutURL.Query()
 	query.Set("id_token_hint", strings.TrimSpace(state.IDTokenHint))
-	query.Set("post_logout_redirect_uri", strings.TrimSpace(state.PostLogoutRedirectURL))
+	query.Set("post_logout_redirect_uri", postLogoutRedirectURL)
 	logoutURL.RawQuery = query.Encode()
 	return logoutURL.String()
+}
+
+// oidcPostLogoutRedirectURL is the post-logout return address the current
+// configuration resolves to. A handler with no OIDC service reports none.
+func (handler *Handler) oidcPostLogoutRedirectURL() string {
+	if handler == nil || handler.oidcService == nil {
+		return ""
+	}
+	return strings.TrimSpace(handler.oidcService.PostLogoutRedirectURL())
 }
 
 // oidcIssuerURL is the configured issuer stored logout state is pinned to. A

@@ -39,6 +39,7 @@ type OIDCWorkflowService interface {
 	LocalPublicAuthEnabled() bool
 	ResponseMode() security.OIDCResponseMode
 	IssuerURL() string
+	PostLogoutRedirectURL() string
 	StartAuth(ctx context.Context, state string, nonce string, codeVerifier string) (string, error)
 	StartReauth(ctx context.Context, state string, nonce string, codeVerifier string) (string, error)
 	Authenticate(ctx context.Context, code string, codeVerifier string, expectedNonce string, now time.Time) (services.OIDCLoginResult, error)

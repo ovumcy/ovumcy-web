@@ -166,6 +166,19 @@ func (service *OIDCLoginService) IssuerURL() string {
 	return service.config.IssuerURL
 }
 
+// PostLogoutRedirectURL reports the post-logout return address the current
+// configuration resolves to. The transport layer composes the provider
+// end-session redirect from this value, never from the copy stored with the
+// logout state, so a row written under an earlier configuration cannot name
+// where the provider sends the browser afterwards. A nil service (OIDC
+// disabled) reports none, which composes no provider redirect.
+func (service *OIDCLoginService) PostLogoutRedirectURL() string {
+	if service == nil {
+		return ""
+	}
+	return strings.TrimSpace(service.config.ResolvedPostLogoutRedirectURL())
+}
+
 func (service *OIDCLoginService) StartAuth(ctx context.Context, state string, nonce string, codeVerifier string) (string, error) {
 	return service.startAuthWithExtra(ctx, state, nonce, codeVerifier, nil)
 }

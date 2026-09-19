@@ -231,10 +231,28 @@ func validateOIDCHTTPSURL(rawURL string, envName string) (*url.URL, error) {
 	if parsedURL.RawQuery != "" || parsedURL.Fragment != "" {
 		return nil, fmt.Errorf("%s must not include query or fragment", envName)
 	}
+	// A non-ASCII host is one HostDialsThisMachine refuses too, but naming it
+	// separately tells the operator the actual fix: spell the host in its ASCII
+	// `xn--` form.
+	if hostHasNonASCII(parsedURL.Hostname()) {
+		return nil, fmt.Errorf("%s host must be ASCII: write an internationalized domain in its xn-- (punycode) form", envName)
+	}
 	if HostDialsThisMachine(parsedURL.Hostname()) {
 		return nil, fmt.Errorf("%s must name a remote host", envName)
 	}
 	return parsedURL, nil
+}
+
+// hostHasNonASCII reports whether host holds any byte outside ASCII — the
+// spelling HostDialsThisMachine refuses because IDNA mapping decides what it
+// dials.
+func hostHasNonASCII(host string) bool {
+	for index := range len(host) {
+		if host[index] >= utf8.RuneSelf {
+			return true
+		}
+	}
+	return false
 }
 
 func (client *OIDCClient) Enabled() bool {
@@ -792,10 +810,8 @@ func HostDialsThisMachine(host string) bool {
 	if host == "" {
 		return true
 	}
-	for index := range len(host) {
-		if host[index] >= utf8.RuneSelf {
-			return true
-		}
+	if hostHasNonASCII(host) {
+		return true
 	}
 	address, err := netip.ParseAddr(host)
 	if err != nil {

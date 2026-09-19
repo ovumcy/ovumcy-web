@@ -3,6 +3,7 @@ package security
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"golang.org/x/net/idna"
@@ -114,8 +115,14 @@ func TestHostDialsThisMachineRefusesNonASCIIHostSpellings(t *testing.T) {
 		if !HostDialsThisMachine(host) {
 			t.Fatalf("HostDialsThisMachine(%q) = false for %s", host, tc.rawURL)
 		}
-		if _, err := validateOIDCHTTPSURL(tc.rawURL, "OIDC_ISSUER_URL"); err == nil {
+		// The refusal names its real cause and the fix — the ASCII form — rather
+		// than calling an ordinary internationalized domain a local host.
+		_, err := validateOIDCHTTPSURL(tc.rawURL, "OIDC_ISSUER_URL")
+		if err == nil {
 			t.Fatalf("OIDC_ISSUER_URL %s was accepted", tc.rawURL)
+		}
+		if !strings.Contains(err.Error(), "must be ASCII") || !strings.Contains(err.Error(), "xn--") {
+			t.Fatalf("OIDC_ISSUER_URL %s: refusal %q does not name the non-ASCII host and its xn-- form", tc.rawURL, err)
 		}
 		if sameOriginURL(mustParseTestURL(t, tc.rawURL+"/authorize"), issuer) {
 			t.Fatalf("an endpoint on issuer %s passed the origin pin", tc.rawURL)
@@ -146,8 +153,12 @@ func TestHostDialsThisMachineRefusesUnspecifiedSpellingsThroughAFullURL(t *testi
 		if !HostDialsThisMachine(host) {
 			t.Fatalf("HostDialsThisMachine(%q) = false for %s", host, rawURL)
 		}
-		if _, err := validateOIDCHTTPSURL(rawURL, "OIDC_ISSUER_URL"); err == nil {
+		_, err := validateOIDCHTTPSURL(rawURL, "OIDC_ISSUER_URL")
+		if err == nil {
 			t.Fatalf("OIDC_ISSUER_URL %s was accepted", rawURL)
+		}
+		if !strings.Contains(err.Error(), "must name a remote host") {
+			t.Fatalf("OIDC_ISSUER_URL %s: refusal %q does not name the local host", rawURL, err)
 		}
 	}
 }
