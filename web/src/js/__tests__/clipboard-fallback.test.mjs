@@ -30,6 +30,28 @@ function findTempClipboardTextarea(window) {
   return window.document.querySelector("textarea.clipboard-helper");
 }
 
+// The copy helper wraps execCommand in try/catch and turns any throw into
+// copy_failed, so an assertion inside the stub would lose its message. The
+// stub records what it saw; the test asserts on it afterwards.
+function snapshotTempClipboardTextarea(window) {
+  const textarea = findTempClipboardTextarea(window);
+  if (!textarea) {
+    return null;
+  }
+  return {
+    value: textarea.value,
+    selectionStart: textarea.selectionStart,
+    selectionEnd: textarea.selectionEnd,
+  };
+}
+
+function assertCopiedExactly(snapshot, code) {
+  assert.ok(snapshot, "the temporary textarea must be in the DOM when execCommand runs");
+  assert.equal(snapshot.value, code, "the temporary textarea must hold the exact code");
+  assert.equal(snapshot.selectionStart, 0, "the selection must start at the beginning of the code");
+  assert.equal(snapshot.selectionEnd, code.length, "the selection must cover exactly the code, not more or less");
+}
+
 async function clickCopyButton(dom) {
   const button = dom.window.document.querySelector('[data-recovery-action="copy"]');
   assert.ok(button, "fixture must include a copy button");
@@ -78,19 +100,7 @@ test("falls back to document.execCommand when navigator.clipboard rejects", asyn
         },
       };
       window.document.execCommand = function (command) {
-        // Assert at copy time: the temporary textarea must already hold
-        // the exact code, selected end-to-end, before the browser is
-        // asked to copy it.
-        const textarea = findTempClipboardTextarea(window);
-        assert.ok(textarea, "the temporary textarea must be in the DOM when execCommand runs");
-        assert.equal(textarea.value, "OVUM-1111-2222-3333", "the temporary textarea must hold the exact code");
-        assert.equal(textarea.selectionStart, 0, "the selection must start at the beginning of the code");
-        assert.equal(
-          textarea.selectionEnd,
-          "OVUM-1111-2222-3333".length,
-          "the selection must cover exactly the code, not more or less"
-        );
-        calls.push({ api: "execCommand", command });
+        calls.push({ api: "execCommand", command, textarea: snapshotTempClipboardTextarea(window) });
         return true;
       };
     },
@@ -104,6 +114,7 @@ test("falls back to document.execCommand when navigator.clipboard rejects", asyn
       `expected fallback chain navigator.clipboard → execCommand, got ${JSON.stringify(calls)}`
     );
     assert.equal(calls[1].command, "copy");
+    assertCopiedExactly(calls[1].textarea, "OVUM-1111-2222-3333");
     assert.equal(
       findTempClipboardTextarea(dom.window),
       null,
@@ -123,18 +134,7 @@ test("falls back to document.execCommand when navigator.clipboard is undefined",
       // a non-secure context where navigator.clipboard is suppressed).
       Object.defineProperty(window.navigator, "clipboard", { value: undefined, configurable: true });
       window.document.execCommand = function (command) {
-        // Same copy-time contract as the reject path above: the code must
-        // be exactly present and exactly selected before the copy runs.
-        const textarea = findTempClipboardTextarea(window);
-        assert.ok(textarea, "the temporary textarea must be in the DOM when execCommand runs");
-        assert.equal(textarea.value, "OVUM-9999-8888-7777", "the temporary textarea must hold the exact code");
-        assert.equal(textarea.selectionStart, 0, "the selection must start at the beginning of the code");
-        assert.equal(
-          textarea.selectionEnd,
-          "OVUM-9999-8888-7777".length,
-          "the selection must cover exactly the code, not more or less"
-        );
-        calls.push({ api: "execCommand", command });
+        calls.push({ api: "execCommand", command, textarea: snapshotTempClipboardTextarea(window) });
         return true;
       };
     },
@@ -143,6 +143,7 @@ test("falls back to document.execCommand when navigator.clipboard is undefined",
     await clickCopyButton(dom);
     assert.equal(calls.length, 1, `expected one execCommand call, got ${JSON.stringify(calls)}`);
     assert.equal(calls[0].command, "copy");
+    assertCopiedExactly(calls[0].textarea, "OVUM-9999-8888-7777");
     assert.equal(
       findTempClipboardTextarea(dom.window),
       null,
