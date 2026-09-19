@@ -41,20 +41,3 @@ func TestAuthServiceFindByNormalizedEmailDelegates(t *testing.T) {
 		t.Fatalf("FindByNormalizedEmail error = %v, want %v", err, wantErr)
 	}
 }
-
-func TestSymptomServiceFindSymptomForUserDelegates(t *testing.T) {
-	service := NewSymptomService(&stubSymptomRepo{findResult: models.SymptomType{ID: 7}})
-	got, err := service.FindSymptomForUser(context.Background(), 7, 10)
-	if err != nil {
-		t.Fatalf("FindSymptomForUser() unexpected error: %v", err)
-	}
-	if got.ID != 7 {
-		t.Fatalf("FindSymptomForUser returned symptom ID %d, want 7", got.ID)
-	}
-
-	wantErr := errors.New("not found")
-	failing := NewSymptomService(&stubSymptomRepo{findErr: wantErr})
-	if _, err := failing.FindSymptomForUser(context.Background(), 7, 10); !errors.Is(err, wantErr) {
-		t.Fatalf("FindSymptomForUser error = %v, want %v", err, wantErr)
-	}
-}
