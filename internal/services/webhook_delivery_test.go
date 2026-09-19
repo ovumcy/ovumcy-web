@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -873,8 +874,8 @@ func TestWebhookDeliveryNtfyFormatSendsNativeEnvelope(t *testing.T) {
 	if captured.title != payload.Title {
 		t.Fatalf("X-Title must carry the payload title %q, got %q", payload.Title, captured.title)
 	}
-	if captured.tags != "mens" {
-		t.Fatalf("period reminder must tag mens, got %q", captured.tags)
+	if captured.tags != "drop_of_blood" {
+		t.Fatalf("period reminder must tag drop_of_blood, got %q", captured.tags)
 	}
 	if captured.ctype != "text/plain" {
 		t.Fatalf("ntfy-format body must be text/plain, got %q", captured.ctype)
@@ -882,6 +883,36 @@ func TestWebhookDeliveryNtfyFormatSendsNativeEnvelope(t *testing.T) {
 	expectedBody := payload.Message + "\n\n" + payload.Disclaimer
 	if captured.body != expectedBody {
 		t.Fatalf("ntfy-format body must be message + blank line + disclaimer:\n want %q\n got  %q", expectedBody, captured.body)
+	}
+}
+
+// TestWebhookDeliveryNtfyFormatEncodesNonASCIITitle pins that a localized
+// title leaves as an RFC 2047 encoded word rather than raw UTF-8 header bytes,
+// and that it decodes back to the exact title ntfy should display.
+func TestWebhookDeliveryNtfyFormatEncodesNonASCIITitle(t *testing.T) {
+	payload := samplePayload()
+	payload.Title = "Напоминание о менструации"
+	var rawTitle string
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		rawTitle = request.Header.Get("X-Title")
+		writer.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	if err := NewWebhookDeliverer(false).Deliver(context.Background(), server.URL+"/t?format=ntfy", payload); err != nil {
+		t.Fatalf("ntfy-format delivery must succeed on 2xx, got %v", err)
+	}
+	for index := 0; index < len(rawTitle); index++ {
+		if rawTitle[index] >= 0x80 {
+			t.Fatalf("X-Title must be ASCII on the wire, got %q", rawTitle)
+		}
+	}
+	decoded, err := new(mime.WordDecoder).DecodeHeader(rawTitle)
+	if err != nil {
+		t.Fatalf("X-Title %q is not a decodable RFC 2047 header: %v", rawTitle, err)
+	}
+	if decoded != payload.Title {
+		t.Fatalf("X-Title must decode to %q, got %q", payload.Title, decoded)
 	}
 }
 
@@ -895,8 +926,8 @@ func TestWebhookDeliveryNtfyFormatOvulationTag(t *testing.T) {
 		expectedTag  string
 	}{
 		{"ovulation maps to sparkles", DueReminderTypeOvulation, "sparkles"},
-		{"period maps to mens", DueReminderTypePeriod, "mens"},
-		{"unknown kind falls back to mens", "fertility-window", "mens"},
+		{"period maps to drop_of_blood", DueReminderTypePeriod, "drop_of_blood"},
+		{"unknown kind falls back to drop_of_blood", "fertility-window", "drop_of_blood"},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
