@@ -19,14 +19,14 @@ func TestValidOIDCLogoutStateRefusesHostsThatDialThisMachine(t *testing.T) {
 		IDTokenHint:           "id-token",
 		PostLogoutRedirectURL: "https://ovumcy.example/",
 	}
-	if !validOIDCLogoutState(valid) {
+	if !validOIDCLogoutState(valid, testOIDCIssuerURL) {
 		t.Fatal("positive control: a well-formed logout state was refused")
 	}
 
 	for _, hostile := range []string{"https://:8443/logout", "https://0.0.0.0:8443/logout", "https://[::]:8443/logout"} {
 		state := valid
 		state.EndSessionEndpoint = hostile
-		if validOIDCLogoutState(state) {
+		if validOIDCLogoutState(state, testOIDCIssuerURL) {
 			t.Fatalf("end_session_endpoint %q passed the state validator", hostile)
 		}
 		if got := (&Handler{}).providerLogoutRedirectURLFromState(state); got != "" {
@@ -35,7 +35,7 @@ func TestValidOIDCLogoutStateRefusesHostsThatDialThisMachine(t *testing.T) {
 
 		state = valid
 		state.PostLogoutRedirectURL = hostile
-		if validOIDCLogoutState(state) {
+		if validOIDCLogoutState(state, testOIDCIssuerURL) {
 			t.Fatalf("post_logout_redirect_uri %q passed the state validator", hostile)
 		}
 	}

@@ -25,6 +25,7 @@ type stubOIDCWorkflowService struct {
 	enabled                bool
 	localPublicAuthEnabled bool
 	responseMode           security.OIDCResponseMode
+	issuerURL              string
 	authURL                string
 	startErr               error
 	result                 services.OIDCLoginResult
@@ -85,6 +86,12 @@ func (stub *stubOIDCWorkflowService) ResponseMode() security.OIDCResponseMode {
 		return security.OIDCResponseModeFormPost
 	}
 	return stub.responseMode
+}
+
+// IssuerURL is the origin stored provider-logout state is pinned to; a test
+// that drives a valid logout state names the issuer its endpoint sits on.
+func (stub *stubOIDCWorkflowService) IssuerURL() string {
+	return stub.issuerURL
 }
 
 func (stub *stubOIDCWorkflowService) StartAuth(ctx context.Context, state string, nonce string, codeVerifier string) (string, error) {
@@ -527,7 +534,7 @@ func TestOIDCCallbackForLinkedTOTPAccountGatesOnTheSecondFactor(t *testing.T) {
 		RequiresTOTP: true,
 		Logout: &services.OIDCLogoutState{
 			UserID:                linked.ID,
-			EndSessionEndpoint:    "https://idp.example.com/logout",
+			EndSessionEndpoint:    testOIDCIssuerURL + "/logout",
 			IDTokenHint:           "eyJhbGciOiJSUzI1NiJ9.header.signature",
 			PostLogoutRedirectURL: "https://app.example.com/",
 		},
@@ -727,10 +734,16 @@ func TestOIDCCallbackForLinkedTOTPAccountWithNoLogoutStateCompletesChallengeClea
 	}
 }
 
+// testOIDCIssuerURL is the issuer the stub and the default test wiring report.
+// Stored provider-logout state is pinned to the issuer origin, so a fixture
+// whose end-session endpoint must survive that pin sits on this origin.
+const testOIDCIssuerURL = "https://id.example.com"
+
 func newStubOIDCWorkflowService(enabled bool) *stubOIDCWorkflowService {
 	return &stubOIDCWorkflowService{
 		enabled:                enabled,
 		localPublicAuthEnabled: true,
+		issuerURL:              testOIDCIssuerURL,
 	}
 }
 
