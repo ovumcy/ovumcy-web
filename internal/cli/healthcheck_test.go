@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -154,6 +155,37 @@ func TestRunReadycheckCommandFailsOnAnUnreadyResponse(t *testing.T) {
 	// it probed — otherwise a readiness failure reads as a liveness failure.
 	if !strings.Contains(err.Error(), readycheckPath) {
 		t.Fatalf("expected the probed path in the error, got %v", err)
+	}
+}
+
+// TestProbeHealthEndpointRefusesOversizedResponseHeaders proves the probe bounds
+// the response HEADER block, which defaults to Go's unbounded 10 MiB, so
+// anything answering the checked port could otherwise make the probe buffer
+// far more than a healthcheck needs. The positive anchor is the second half:
+// an ordinary small header set on the same server still succeeds, so the test
+// cannot pass by refusing everything.
+func TestProbeHealthEndpointRefusesOversizedResponseHeaders(t *testing.T) {
+	oversized := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		padding := strings.Repeat("x", 4096)
+		for index := range 16 { // 64 KiB of headers, past the 16 KiB cap
+			writer.Header().Set(fmt.Sprintf("X-Pad-%d", index), padding)
+		}
+		writer.WriteHeader(http.StatusOK)
+	}))
+	defer oversized.Close()
+
+	if err := probeHealthEndpoint(oversized.URL+healthcheckPath, time.Second); err == nil {
+		t.Fatal("expected an oversized response header block to fail the probe")
+	}
+
+	modest := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("X-Small", "ok")
+		writer.WriteHeader(http.StatusOK)
+	}))
+	defer modest.Close()
+
+	if err := probeHealthEndpoint(modest.URL+healthcheckPath, time.Second); err != nil {
+		t.Fatalf("an ordinary header set must still succeed, got %v", err)
 	}
 }
 

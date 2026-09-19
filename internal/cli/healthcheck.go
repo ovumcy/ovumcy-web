@@ -14,6 +14,10 @@ const (
 	defaultHealthcheckTimeout = 5 * time.Second
 	healthcheckPath           = "/healthz"
 	readycheckPath            = "/readyz"
+	// healthcheckResponseHeaderLimit caps the response HEADER block, which Go
+	// otherwise lets grow to 10 MiB. Sized like
+	// webhookResponseHeaderLimit (internal/services/webhook_delivery.go).
+	healthcheckResponseHeaderLimit = 16 * 1024
 )
 
 // RunHealthcheckCommand probes the local server's /healthz endpoint and returns
@@ -66,6 +70,7 @@ func probeHealthEndpoint(url string, timeout time.Duration) error {
 			DialContext: (&net.Dialer{
 				Timeout: timeout,
 			}).DialContext,
+			MaxResponseHeaderBytes: healthcheckResponseHeaderLimit,
 		},
 	}
 	response, err := client.Do(request)
