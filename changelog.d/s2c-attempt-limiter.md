@@ -19,20 +19,24 @@
   window lapsed. The revoke and the cookie retraction now come first and the budget check second:
   a refused sign-out still ends the session and answers `429` (a browser form is sent to the
   sign-in page with the refusal as a flash) with the cookies already gone; what it withholds is
-  the provider sign-out bridge. The budget is also keyed on the session being
-  ended, qualified by its owner, instead of on the owner alone, so one owner's devices no longer
-  spend each other's budget; its client bucket is `(address, session)` rather than the address by
-  itself, which had run a second per-address cap of 20 under the documented per-IP row of 60 and
-  refused a household's — or a test run's — 21st sign-out from one address. A logout is recorded
+  the provider sign-out bridge. The budget stays keyed on the **owner** and deliberately does not
+  name the session: revoking bumps the account's session version, so no session reaches the route
+  twice and a session-keyed budget would record one attempt per key and never trip, leaving the
+  browser sign-out route with no account-side cap. What the session used to carry is instead fixed
+  in the client bucket, now `(address, account)` rather than the address by itself, which had run a
+  second per-address cap of 20 under the documented per-IP row of 60 and refused a household's — or
+  a test run's — 21st sign-out from one address. A logout is recorded
   against this budget only — never as a failure against, nor a reset of, the login, recovery or
   TOTP budgets. Regressions:
-  `TestLogoutRevokesTheSessionBeforeTheBudgetIsChecked`, `TestLogoutBudgetIsKeyedByTheSession`,
+  `TestLogoutRevokesTheSessionBeforeTheBudgetIsChecked`,
+  `TestLogoutBudgetIsKeyedByTheOwnerNotTheSession`,
+  `TestLogoutBudgetIsSpendableAcrossSuccessiveSessions`,
   `TestLogoutAccountingNeverTouchesAnotherBudget`.
 - **Every `RATE_LIMIT_*` setting has a ceiling.** A `*_MAX` accepted any positive integer and a
   `*_WINDOW` any duration of a second or more, so `RATE_LIMIT_LOGIN_MAX=100000000` switched the
   sign-in limiter off and a window of a year kept a refused address refused until restart. Each
   `*_MAX` now has a ceiling — 100 for login, registration and password reset (each request costs
-  a bcrypt compare), 600 for the per-IP logout row, 200 for the per-session logout budget, 3000
+  a bcrypt compare), 600 for the per-IP logout row, 200 for the per-account logout budget, 3000
   for the API catch-all and 120 for the calendar feed — and each `*_WINDOW` must lie between one
   second and one day. A value outside its range is logged at boot and the default is used, as an
   unparseable value already was. Operators who had set a `*_MAX` above its ceiling get the default
