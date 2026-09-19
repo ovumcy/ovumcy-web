@@ -36,6 +36,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 )
@@ -79,18 +80,21 @@ func runOIDCSignInWithFetchOn(t *testing.T, mock *mockOIDCProvider, issuerCA []b
 	return client, err
 }
 
-func requireOIDCFetchNeverLeavesTheIssuerOrigin(t *testing.T, fetch string, point func(mock *mockOIDCProvider, origin string)) {
+func requireOIDCFetchNeverLeavesTheIssuerOrigin(t *testing.T, fetch string, refusal string, point func(mock *mockOIDCProvider, origin string)) {
 	t.Helper()
 
 	t.Run("a foreign origin receives no request", func(t *testing.T) {
 		mock, issuerCA := newMockOIDCProvider(t)
 		foreign, foreignCounter, foreignCA := newForeignOriginServer(t)
 
-		// The refusal itself is pinned by the *OriginPinRejectsCrossOrigin and
-		// DiscoveryRedirectCrossOriginRefused tests; this one counts requests.
-		client, _ := runOIDCSignInWithFetchOn(t, mock, issuerCA, foreignCA, foreign.URL, point)
+		client, err := runOIDCSignInWithFetchOn(t, mock, issuerCA, foreignCA, foreign.URL, point)
 		if got := foreignCounter.requests.Load(); got != 0 {
 			t.Fatalf("%s on a foreign origin: the sign-in sent %d request(s) to %s; the origin pin must refuse before any request leaves the issuer origin", fetch, got, foreign.URL)
+		}
+		// The sign-in must end at the pin itself: any earlier failure would
+		// leave the fetch unattempted and the zero above vacuous.
+		if err == nil || !strings.Contains(err.Error(), refusal) {
+			t.Fatalf("%s on a foreign origin: sign-in error = %v, want the origin-pin refusal %q", fetch, err, refusal)
 		}
 
 		// Reachability control: the very client that sent nothing can reach and
@@ -129,7 +133,7 @@ func requireOIDCFetchNeverLeavesTheIssuerOrigin(t *testing.T, fetch string, poin
 // response redirecting to another origin is refused by the client's
 // CheckRedirect before the redirected request is sent.
 func TestOIDC_RuntimePoC_CrossOriginDiscoveryRedirectSendsNoRequest(t *testing.T) {
-	requireOIDCFetchNeverLeavesTheIssuerOrigin(t, "discovery redirect", func(mock *mockOIDCProvider, origin string) {
+	requireOIDCFetchNeverLeavesTheIssuerOrigin(t, "discovery redirect", "oidc http redirect left the issuer origin", func(mock *mockOIDCProvider, origin string) {
 		mock.discoveryRedirectTo = origin + "/.well-known/openid-configuration"
 	})
 }
@@ -138,7 +142,7 @@ func TestOIDC_RuntimePoC_CrossOriginDiscoveryRedirectSendsNoRequest(t *testing.T
 // refused at provider load, so id_token verification never fetches keys from
 // it.
 func TestOIDC_RuntimePoC_ForeignJWKSURIGetsNoRequest(t *testing.T) {
-	requireOIDCFetchNeverLeavesTheIssuerOrigin(t, "jwks_uri", func(mock *mockOIDCProvider, origin string) {
+	requireOIDCFetchNeverLeavesTheIssuerOrigin(t, "jwks_uri", "oidc jwks_uri origin must match the issuer origin", func(mock *mockOIDCProvider, origin string) {
 		mock.jwksURI = origin + "/jwks"
 	})
 }
@@ -147,7 +151,7 @@ func TestOIDC_RuntimePoC_ForeignJWKSURIGetsNoRequest(t *testing.T) {
 // token_endpoint is refused at provider load, so the code exchange never POSTs
 // the client secret and authorization code to it.
 func TestOIDC_RuntimePoC_ForeignTokenEndpointGetsNoRequest(t *testing.T) {
-	requireOIDCFetchNeverLeavesTheIssuerOrigin(t, "token_endpoint", func(mock *mockOIDCProvider, origin string) {
+	requireOIDCFetchNeverLeavesTheIssuerOrigin(t, "token_endpoint", "oidc token_endpoint origin must match the issuer origin", func(mock *mockOIDCProvider, origin string) {
 		mock.tokenEndpoint = origin + "/token"
 	})
 }
