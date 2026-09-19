@@ -156,7 +156,7 @@ func buildCalendarPredictionMaps(user *models.User, logs []models.DailyLog, stat
 
 	// Medical-safety suppression gate, the shared predicate every projected
 	// surface gates on (PredictionsSuppressed): unpredictable-cycle mode, a
-	// pregnancy pause, or a cycle running past the account's projection length by
+	// pregnancy pause, or a cycle running past the account's own cycle length by
 	// more than a week (DashboardCycleOverdue). Past that point
 	// stats.NextPeriodStart is a date the account's own data no longer supports:
 	// appendPredictedCycles chains from it, so the grid painted a predicted period
@@ -164,7 +164,16 @@ func buildCalendarPredictionMaps(user *models.User, logs []models.DailyLog, stat
 	// cycle length after it. Every prediction map stays empty here; the recorded
 	// facts (logged period days, has-data, sex activity) are read elsewhere and
 	// are untouched.
+	//
+	// One marker survives, and only past the overdue gate: the solid ovulation
+	// marker on a day the owner's own temperatures confirmed. That day was never
+	// chained from NextPeriodStart; ConfirmedCurrentCycleOvulation carries its own
+	// gate (ConfirmedOvulationWithheld), which still answers no for the other two
+	// signals here. No window, peak band or pre-fertile shading comes with it.
 	if PredictionsSuppressed(user, stats) {
+		if confirmed, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, DateAtLocation(now, location), location); ok {
+			ovulationMap[CalendarDayKey(confirmed)] = true
+		}
 		return maps
 	}
 

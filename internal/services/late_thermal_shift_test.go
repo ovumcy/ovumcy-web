@@ -134,13 +134,15 @@ func TestLateShiftNamesOneDayOnEverySurfaceInsideTheInstance(t *testing.T) {
 	}
 }
 
-// TestLateShiftStaysWithheldWhenTheCycleIsOverdue is the suppression control:
-// once the cycle is overdue (DashboardCycleOverdue, > reference + 7) the
-// resolver and every surface reading it withhold the confirmed day like any
-// other projection-adjacent signal. The chart is not one of those surfaces —
-// its marker reads recorded temperatures, never a projection — so it keeps
-// naming the same shift; that is the one place the four may differ.
-func TestLateShiftStaysWithheldWhenTheCycleIsOverdue(t *testing.T) {
+// TestLateShiftOutlivesTheOverdueGateAsTheDayAlone is the suppression control:
+// once the cycle is overdue (DashboardCycleOverdue) every PROJECTED value is
+// withheld — the next period, the window, the fertility status — while the day
+// the owner's own temperatures confirmed stays named on the three surfaces that
+// name it inside the instance: the JSON overview, the dashboard line and the
+// calendar's solid marker. It used to vanish with the projection, which hid a
+// recorded signal to make the page agree with a verdict about another claim.
+// The chart names the same shift, as it always did.
+func TestLateShiftOutlivesTheOverdueGateAsTheDayAlone(t *testing.T) {
 	user, logs, stats, fixtureToday := lateThermalShiftFixture(t)
 	confirmed, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, fixtureToday, time.UTC)
 	if !ok {
@@ -163,51 +165,52 @@ func TestLateShiftStaysWithheldWhenTheCycleIsOverdue(t *testing.T) {
 		t.Fatalf("fixture anchor: DashboardCycleOverdue = false at cycle day %d, want true — the suppression every assertion below reads must actually be on", stats.CurrentCycleDay)
 	}
 
-	if _, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, today, time.UTC); ok {
-		t.Fatal("resolver: an overdue cycle must withhold the confirmed day like any other projection")
+	if got, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, today, time.UTC); !ok || CalendarDayKey(got) != confirmedKey {
+		t.Fatalf("resolver: confirmed = %s (ok=%t), want %s — the overdue gate withholds projections, not the day the temperatures named", CalendarDayKey(got), ok, confirmedKey)
 	}
 
 	published, suppression, confirmedOvulation := PublishedOverviewStats(user, logs, stats, today, time.UTC)
-	if !published.OvulationDate.IsZero() {
-		t.Errorf("API: published OvulationDate = %s, want zero while the cycle is overdue", CalendarDayKey(published.OvulationDate))
+	if !suppression.FertilitySuppressed || !suppression.PredictionsSuppressed {
+		t.Fatalf("API: suppression = %+v, want both predicates on for an overdue cycle", suppression)
 	}
-	if !suppression.FertilitySuppressed {
-		t.Error("API: suppression.FertilitySuppressed = false, want true for an overdue cycle")
+	if got := CalendarDayKey(published.OvulationDate); got != confirmedKey {
+		t.Errorf("API: published OvulationDate = %q, want the confirmed %s", got, confirmedKey)
 	}
-	if confirmedOvulation {
-		t.Error("API: confirmedOvulation = true, want false while the cycle is overdue")
+	if !confirmedOvulation {
+		t.Error("API: confirmedOvulation = false beside the confirmed day")
+	}
+	if !published.NextPeriodStart.IsZero() || !published.FertilityWindowStart.IsZero() || !published.FertilityWindowEnd.IsZero() {
+		t.Errorf("API: a projection survived the overdue gate: next %s, window %s..%s",
+			CalendarDayKey(published.NextPeriodStart), CalendarDayKey(published.FertilityWindowStart), CalendarDayKey(published.FertilityWindowEnd))
+	}
+	if published.CurrentFertility != FertilityStatusUnknown {
+		t.Errorf("API: CurrentFertility = %q, want %q — a status derived from the confirmed day is a fertility claim the gate still withholds", published.CurrentFertility, FertilityStatusUnknown)
 	}
 
 	context := BuildDashboardCycleContext(user, logs, stats, today, time.UTC)
-	if !context.DisplayOvulationDate.IsZero() {
-		t.Errorf("dashboard: ovulation line = %s, want none while the cycle is overdue", CalendarDayKey(context.DisplayOvulationDate))
+	if !context.NextPeriodEstimatePaused || !context.DisplayNextPeriodStart.IsZero() {
+		t.Fatalf("dashboard: paused=%t next=%s, want the projection paused", context.NextPeriodEstimatePaused, CalendarDayKey(context.DisplayNextPeriodStart))
+	}
+	if got := CalendarDayKey(context.DisplayOvulationDate); got != confirmedKey || !context.DisplayOvulationConfirmed {
+		t.Errorf("dashboard: ovulation line = %q (confirmed=%t), want the confirmed %s", got, context.DisplayOvulationConfirmed, confirmedKey)
+	}
+	if context.DisplayOvulationUseRange || context.DisplayOvulationExact {
+		t.Errorf("dashboard: range=%t exact=%t, want neither beside a confirmed day under the pause", context.DisplayOvulationUseRange, context.DisplayOvulationExact)
 	}
 
 	monthStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
 	days := BuildCalendarDayStates(user, monthStart, logs, stats, today, time.UTC)
-	day := findCalendarDayStateByDateString(t, days, confirmedKey)
-	if day.IsOvulation || day.IsTentativeOvulation {
-		t.Errorf("calendar: %s IsOvulation=%t IsTentativeOvulation=%t, want both false while the cycle is overdue", confirmedKey, day.IsOvulation, day.IsTentativeOvulation)
+	// The whole grid, not only the confirmed day: the day an overdue grid could
+	// republish is the model's projection 2026-03-14, not the confirmed
+	// 2026-03-29, so exactly one solid marker and no tentative one is the answer
+	// — the projection gone, the observation kept.
+	if solid, tentative := ovulationMarkerKeys(days); len(solid) != 1 || solid[0] != confirmedKey || len(tentative) != 0 {
+		t.Errorf("calendar: solid ovulation marker(s) = %v, tentative = %v, want exactly [%s] and none tentative", solid, tentative, confirmedKey)
 	}
-	// The whole grid, not only the confirmed day: the check above reads ONE
-	// date, and the day an overdue grid could republish is the model's
-	// projection 2026-03-14, not the confirmed 2026-03-29. The same instrument
-	// reports [2026-03-29] on the sibling test's grid — same logs, same month,
-	// a different today and the stats that follow it
-	// (TestLateShiftNamesOneDayOnEverySurfaceInsideTheInstance) — so a silent
-	// answer here is the gate's doing rather than a reader that finds nothing.
-	//
-	// What holds it is the PredictionsSuppressed early return that opens
-	// buildCalendarPredictionMaps (calendar_days.go) — not the
-	// `if !fertilitySuppressed` wrapper further down, which covers the
-	// first-cycle floor: dropping that wrapper leaves this test green, because
-	// under overdue the early return has already returned (measured). So no
-	// defect inside the BBT pass can redden this line; it pins the ORDER — every
-	// path to an ovulation marker stays below the overdue gate, and a pass
-	// hoisted above it or re-gated on something narrower than
-	// PredictionsSuppressed is what this catches.
-	if solid, tentative := ovulationMarkerKeys(days); len(solid) != 0 || len(tentative) != 0 {
-		t.Errorf("calendar: solid ovulation marker(s) = %v, tentative = %v, want none of either — an overdue cycle publishes no ovulation day, measured or projected", solid, tentative)
+	for _, day := range days {
+		if day.IsPredicted || day.IsPredictedStartWindow || day.IsPreFertile || day.IsFertility || day.IsFertilityPeak {
+			t.Errorf("calendar: %s carries a projection under the overdue gate: %+v", day.DateString, day)
+		}
 	}
 
 	chart := buildCurrentCycleBBTChart("en", stats, logs, today, time.UTC)

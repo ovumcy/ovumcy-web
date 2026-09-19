@@ -101,6 +101,21 @@ func potentialImplantationGapDays(user *models.User, logs []models.DailyLog, tar
 	}
 	// codecov:ignore:end
 
+	// The hint is read off the closing cycle's PROJECTED ovulation, so it may
+	// only be offered while that projection is one the account's own lengths
+	// still support: asked on the day being logged, the same overdue verdict the
+	// dashboard gives on that day (DashboardCycleOverdue). Past it the ovulation
+	// this hint counts from is withheld on every surface, and a bleed logged
+	// then is a late period, not a bleed a week after a known ovulation. Where
+	// the median sits above the mean (28/60/60) the gate answers on day 57 while
+	// the projected ovulation, placed from the median, still leaves days 57-58
+	// inside the implantation gap.
+	gateStats := stats
+	gateStats.CurrentCycleDay = CalendarDaysBetween(previousStart, targetDay) + 1
+	if DashboardCycleOverdue(user, gateStats) {
+		return 0, false
+	}
+
 	window := PredictCycleWindow(previousStart, cycleLength, stats.LutealPhase)
 	if !window.Calculable || window.OvulationDate.IsZero() {
 		return 0, false

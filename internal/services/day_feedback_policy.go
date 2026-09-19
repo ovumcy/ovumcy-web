@@ -113,25 +113,21 @@ func resolveDaySaveMessageKey(user *models.User, day time.Time, stats CycleStats
 		}
 	}
 	// The fertile line is a claim about right now, so it may only be made from
-	// something the account recorded. Until the first cycle closes
-	// (DashboardAwaitingFirstCycle, the same tier the dashboard withholds its
-	// fertility surfaces at) there are no observed cycle lengths, so
-	// predictedCycleLength falls through to models.DefaultCycleLength and the
-	// window is that default projected forward with the default luteal phase.
-	// Display confidence follows data confidence: where the only source is
+	// a window the other fertility surfaces would still publish — the gate is
+	// FertilityProjectionSuppressed, the one the calendar grid, the .ics feed,
+	// the webhook reminder and the dashboard read. Two of its tiers matter here
+	// beyond the early returns above. Until the first cycle closes there are no
+	// observed cycle lengths, so the window is the default length projected
+	// forward with the default luteal phase: where the only source is
 	// configuration defaults, suppression is the floor and a qualifier is not
-	// enough (docs/SECURITY_INVARIANTS.md -> medical safety), so the save falls
-	// back to the neutral message rather than softening the fertile one.
-	//
-	// FOLLOW-UP: this is the fifth surface carrying that same zero-completed-cycle
-	// floor, and the only one still spelling it out for itself — the calendar day
-	// states, the .ics feed, the webhook reminder and the dashboard reminder
-	// banner are being collapsed behind one shared suppression predicate in this
-	// package. Fold this call into that predicate once it exists: a floor stated
-	// at N of N+1 sites diverges the moment the shared one gains a disjunct or is
-	// narrowed to let a recorded observation through, and this site would keep the
-	// old rule silently.
-	if !DashboardAwaitingFirstCycle(stats) &&
+	// enough (docs/SECURITY_INVARIANTS.md -> medical safety). And once the cycle
+	// has run more than a week past its own length (DashboardCycleOverdue), the
+	// window is a projection the account's data no longer supports: three 28-day
+	// cycles beside one 300-day gap still placed it on days 9-14 of a cycle on
+	// day 61, and saving one of those days called it fertile while every other
+	// surface withheld the window. The save falls back to the neutral message
+	// rather than softening the fertile one.
+	if !FertilityProjectionSuppressed(user, stats) &&
 		!stats.FertilityWindowStart.IsZero() &&
 		!day.Before(stats.FertilityWindowStart) &&
 		!day.After(stats.FertilityWindowEnd) {

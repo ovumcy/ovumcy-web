@@ -204,11 +204,14 @@ func TestConfirmedShiftDrivesTheWindowWithoutAProjection(t *testing.T) {
 // ConfirmedCurrentCycleOvulation already reads — and this pins that a suppressed
 // tier publishes no window, no date and no fertility status even though the
 // temperatures would have confirmed one.
+//
+// The overdue tier is not in this table: it withholds the window and the status
+// and keeps the confirmed DAY (ConfirmedOvulationWithheld), which
+// TestLateShiftOutlivesTheOverdueGateAsTheDayAlone pins on every surface.
 func TestSuppressedFertilityProjectionStillWithholdsTheConfirmedWindow(t *testing.T) {
 	for name, suppress := range map[string]func(*models.User, *CycleStats){
 		"unpredictable-cycle mode":      func(user *models.User, _ *CycleStats) { user.UnpredictableCycle = true },
 		"pregnancy pause":               func(_ *models.User, stats *CycleStats) { stats.PregnancyPaused = true },
-		"cycle overdue":                 func(_ *models.User, stats *CycleStats) { stats.CurrentCycleDay = 54 },
 		"awaiting the first full cycle": func(_ *models.User, stats *CycleStats) { stats.CompletedCycleCount = 0 },
 	} {
 		t.Run(name, func(t *testing.T) {

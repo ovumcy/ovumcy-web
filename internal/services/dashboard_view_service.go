@@ -273,7 +273,7 @@ type dashboardTimingFrame struct {
 // resolveDashboardTimingFrame decides that frame from the resolved usage goal.
 // The ovulation estimate is withheld wherever the next-period window is: an
 // unpredictable cycle, a pregnancy pause, and a cycle overdue past its own
-// projection length — it is derived from the same projection, so an account
+// cycle length — it is derived from the same projection, so an account
 // trying to conceive would otherwise be the one cohort still reading a
 // placeholder where the window used to be. Before the first completed cycle
 // (AwaitingFirstCycle) the projection has nothing but the onboarding slider to
@@ -289,6 +289,11 @@ type dashboardTimingFrame struct {
 // The ovulation estimate names a date, so it is a fertility claim and reads the
 // decision the context already resolved (FertilitySuppressed =
 // FertilityProjectionSuppressed) rather than rebuilding it from the disjuncts.
+// A day the owner's temperatures CONFIRMED is the one date that outlives it,
+// and the context says so too: DisplayOvulationConfirmed is set only where
+// ConfirmedOvulationWithheld let the day through, which past the fertility gate
+// means the overdue signal alone — the projection is paused, the observation
+// is not.
 //
 // The bridge line names NO date — it says the fertile window arrives once the
 // first cycle closes. Suppression exists to withhold a claim, and there is no
@@ -297,8 +302,8 @@ type dashboardTimingFrame struct {
 // pause), where a line promising a future window would contradict the page. It
 // deliberately does NOT read NextPeriodEstimatePaused. That flag means "this
 // projection is paused", which is a fact about a date the bridge does not name;
-// reading it withdrew the line for an account whose FIRST cycle had run past the
-// projection length — the moment the owner most needs to be told when the window
+// reading it withdrew the line for an account whose FIRST cycle had run past its
+// own cycle length — the moment the owner most needs to be told when the window
 // arrives — and left the status slot empty instead. Nor does it read
 // FertilitySuppressed: the bridge is the line shown IN the first-cycle floor, so
 // a gate carrying that floor would gate the bridge on its own state.
@@ -307,7 +312,7 @@ func resolveDashboardTimingFrame(user *models.User, cycleContext DashboardCycleC
 		return dashboardTimingFrame{}
 	}
 	return dashboardTimingFrame{
-		ShowOvulationEstimate: !cycleContext.FertilitySuppressed,
+		ShowOvulationEstimate: !cycleContext.FertilitySuppressed || cycleContext.DisplayOvulationConfirmed,
 		ShowFirstCycleBridge:  !cycleContext.PredictionDisabled && cycleContext.AwaitingFirstCycle,
 		BBTInVisibleTier:      visibility.ShowBBTField,
 	}
