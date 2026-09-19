@@ -130,6 +130,17 @@ func TestOIDCBoundedBodyBoundary(t *testing.T) {
 	if len(got) > limit {
 		t.Fatalf("the bounded body handed out %d bytes past a %d-byte limit", len(got), limit)
 	}
+
+	// A caller that reads again after the refusal must not see a clean EOF:
+	// with a body of exactly limit+1 bytes the underlying reader is drained,
+	// and only the sticky error keeps the truncated prefix from ending well.
+	body := &oidcBoundedBody{body: io.NopCloser(bytes.NewReader(bytes.Repeat([]byte("a"), limit+1))), remaining: limit}
+	if _, err := io.ReadAll(body); !errors.Is(err, errOIDCResponseTooLarge) {
+		t.Fatalf("first read past the limit must fail with errOIDCResponseTooLarge, got %v", err)
+	}
+	if n, err := body.Read(make([]byte, 8)); n != 0 || !errors.Is(err, errOIDCResponseTooLarge) {
+		t.Fatalf("a read after the refusal returned %d bytes, err %v; it must keep failing with errOIDCResponseTooLarge", n, err)
+	}
 }
 
 // The refusal tests pad relative to the constants, so they move with them;
