@@ -81,15 +81,16 @@ type AttemptLimiter struct {
 	attempts  map[string]attemptEntry
 	addCallsN int // counts AddFailureAll invocations for eviction pacing
 	// sweepAbove is the map size that re-triggers a sweep ahead of the call
-	// counter. It is recomputed after every sweep as "the entries the sweep could
-	// not remove, plus one cap's worth of headroom": what it cannot remove is a
-	// live lockout, pinned for its whole window. Fixed at the absolute
-	// evictAboveSize instead, the trigger would stay true from the first lockout
-	// past the cap onward and every later add would pay a full O(n) sweep and an
-	// O(n) blocked() pass under the single mutex — an attacker who bought n
-	// lockouts would tax every other account's login by n. The headroom counts
-	// only pinned entries, never the unpinned ones a sweep is free to drop, so
-	// the cap on those still holds at every observable moment.
+	// counter. It is recomputed after every sweep as "the entries the sweep kept,
+	// plus the room left under the cap in the fullest scope". What a sweep keeps
+	// includes every live lockout, pinned for its whole window, and up to a cap's
+	// worth of unpinned entries in EACH scope. Fixed at the absolute
+	// evictAboveSize, or at the pinned count plus one cap, the trigger would stay
+	// true while nothing is over its cap — past the first lockout beyond the cap,
+	// or with two scopes partly full — and every later add would pay a full O(n)
+	// sweep and an O(n) blocked() pass under the single mutex. The headroom is
+	// the fullest scope's remaining room, so no scope can pass its cap before the
+	// trigger fires: the cap on unpinned entries holds at every observable moment.
 	sweepAbove int
 }
 
@@ -140,10 +141,10 @@ func (limiter *AttemptLimiter) AddFailureAll(keys []string, now time.Time, budge
 // maybeEvictStaleLocked performs an opportunistic full-map sweep to remove
 // entries whose own window has lapsed, then trims every scope back to the
 // evictAboveSize cap. It fires when either the call counter reaches evictEveryN
-// or the map grows past sweepAbove. Both triggers are reset by the sweep, so a
-// pinned population however large never on its own makes the size trigger true:
-// what still does is unpinned keys at the cap, which is the flood the trim
-// answers. Must be called with limiter.mu held.
+// or the map grows past sweepAbove. Both triggers are reset by the sweep, so
+// neither a pinned population however large nor several scopes each under their
+// cap makes the size trigger true on its own: what still does is a scope at its
+// cap, which is the flood the trim answers. Must be called with limiter.mu held.
 func (limiter *AttemptLimiter) maybeEvictStaleLocked(now time.Time) {
 	if limiter.addCallsN < evictEveryN && len(limiter.attempts) < limiter.sweepAbove {
 		return
@@ -160,7 +161,8 @@ func (limiter *AttemptLimiter) maybeEvictStaleLocked(now time.Time) {
 		}
 	}
 
-	limiter.sweepAbove = limiter.enforceSizeCapLocked(now) + evictAboveSize
+	headroom := limiter.enforceSizeCapLocked(now)
+	limiter.sweepAbove = len(limiter.attempts) + headroom
 }
 
 // enforceSizeCapLocked bounds every scope at evictAboveSize entries that are
@@ -168,29 +170,30 @@ func (limiter *AttemptLimiter) maybeEvictStaleLocked(now time.Time) {
 // failure first. Evicting the coldest loses the least: they are the closest to
 // ageing out naturally, while the key an attacker is working on is among the
 // freshest and is evicted last — so lifting one partial budget costs a full
-// scope's worth of fresher keys, again for every guess. It returns how many
-// entries it had to pin, which is what the next sweep trigger gets as headroom.
-// Must be called with limiter.mu held.
+// scope's worth of fresher keys, again for every guess. It returns the room
+// left under the cap in the fullest scope, which is what the next sweep trigger
+// gets as headroom. Must be called with limiter.mu held.
 func (limiter *AttemptLimiter) enforceSizeCapLocked(now time.Time) int {
 	if len(limiter.attempts) <= evictAboveSize {
-		return 0
+		// No scope can hold more entries than the whole map.
+		return evictAboveSize - len(limiter.attempts)
 	}
 
 	type candidate struct {
 		key    string
 		newest time.Time
 	}
-	pinned := 0
 	perScope := make(map[string][]candidate)
 	for key, entry := range limiter.attempts {
 		if entry.blocked(now) {
-			pinned++
 			continue
 		}
 		perScope[entry.budget.Scope] = append(perScope[entry.budget.Scope], candidate{key: key, newest: entry.newest()})
 	}
+	fullest := 0
 	for _, candidates := range perScope {
 		excess := len(candidates) - evictAboveSize
+		fullest = max(fullest, min(len(candidates), evictAboveSize))
 		if excess <= 0 {
 			continue
 		}
@@ -201,7 +204,7 @@ func (limiter *AttemptLimiter) enforceSizeCapLocked(now time.Time) int {
 			delete(limiter.attempts, entry.key)
 		}
 	}
-	return pinned
+	return evictAboveSize - fullest
 }
 
 func (limiter *AttemptLimiter) ResetAll(keys []string) {

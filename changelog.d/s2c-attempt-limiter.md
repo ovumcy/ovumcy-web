@@ -13,13 +13,16 @@
   entry at its limit — an active lockout — is pinned until it expires. Regressions:
   `TestAttemptLimiterChurnDoesNotLiftActiveLockout`, `TestAttemptLimiterChurnDoesNotEraseTOTPBudget`,
   `TestAttemptLimiterSweepRespectsEachEntryWindow`.
-- **A spent logout budget no longer keeps a session alive.** `DELETE /api/v1/sessions/current`
+- **A spent per-account logout budget no longer keeps a session alive.** `DELETE /api/v1/sessions/current`
   checked the per-account logout budget before revoking the session, so once the budget was spent
   the owner could not sign out at all — on a shared device the session stayed usable until the
   window lapsed. The revoke and the cookie retraction now come first and the budget check second:
   a refused sign-out still ends the session and answers `429` (a browser form is sent to the
   sign-in page with the refusal as a flash) with the cookies already gone; what it withholds is
-  the provider sign-out bridge. The budget stays keyed on the **owner** and deliberately does not
+  the provider sign-out bridge. The per-IP `RATE_LIMIT_LOGOUT_*` row on `DELETE /api/v1/sessions/current` is
+  edge middleware and still refuses before the handler runs, so whoever shares the address and
+  spends that row holds an API client's sign-out until its window lapses; the browser form
+  (`POST /logout`) is not behind that row. The budget stays keyed on the **owner** and deliberately does not
   name the session: revoking bumps the account's session version, so no session reaches the route
   twice and a session-keyed budget would record one attempt per key and never trip, leaving the
   browser sign-out route with no account-side cap. What the session used to carry is instead fixed

@@ -391,3 +391,43 @@ func TestAttemptLimiterSweepPacingRisesWithPinnedEntries(t *testing.T) {
 		t.Fatalf("call counter = %d, want the last sweep to have reset it below %d", calls, evictEveryN)
 	}
 }
+
+// TestAttemptLimiterSweepPacingIgnoresScopesUnderTheirCap is the unpinned
+// twin: two scopes each under the per-scope cap, together over the absolute
+// one. Nothing is over its cap, so nothing may make every add sweep — the
+// trigger has to sit above the map, not at the pinned count plus one cap.
+func TestAttemptLimiterSweepPacingIgnoresScopesUnderTheirCap(t *testing.T) {
+	t.Parallel()
+
+	limiter := NewAttemptLimiter()
+	now := time.Now().UTC()
+	login := AttemptBudget{Scope: "login", Limit: 8, Window: 15 * time.Minute}
+	totp := AttemptBudget{Scope: "totp", Limit: 5, Window: 15 * time.Minute}
+
+	for index := range 600 {
+		limiter.AddFailureAll([]string{fmt.Sprintf("login:%05d", index)}, now, login)
+	}
+	for index := range 499 {
+		limiter.AddFailureAll([]string{fmt.Sprintf("totp:%05d", index)}, now, totp)
+	}
+	// The last add lands on the call counter, so the trigger read below is the
+	// one this exact map produced.
+	limiter.addCallsN = evictEveryN - 1
+	limiter.AddFailureAll([]string{"totp:last"}, now, totp)
+
+	limiter.mu.Lock()
+	size, trigger := len(limiter.attempts), limiter.sweepAbove
+	limiter.mu.Unlock()
+
+	if size != 1100 {
+		t.Fatalf("tracked keys = %d, want all 1100 kept: neither scope is over its cap", size)
+	}
+	if trigger <= size {
+		t.Fatalf("sweep trigger = %d at %d tracked keys: every add would sweep the whole map", trigger, size)
+	}
+	// The headroom is the fullest scope's remaining room, so the next sweep
+	// still fires before that scope can pass its cap.
+	if want := size + evictAboveSize - 600; trigger != want {
+		t.Fatalf("sweep trigger = %d, want %d (the login scope's remaining room above the map)", trigger, want)
+	}
+}

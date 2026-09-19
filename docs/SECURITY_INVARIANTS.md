@@ -53,11 +53,12 @@ Every test-enforceable entry has a corresponding test or set of tests in `SECURI
   only the flood's own scope, coldest first, and never a lockout. The bound is conditional on that
   pin: the 1024-per-scope cap counts only entries that are **not** enforcing a lockout, so the map
   may exceed it by the number of live lockouts, each of which cost the attacker `limit` refused
-  requests inside one window. A pinned population never on its own makes the sweep fire on every add:
-  its size trigger allows one cap's worth of headroom above the pinned entries the previous sweep
-  could not remove, rather than sitting at the absolute cap — otherwise a bought-and-paid-for pinned
-  population would make every later failed login of every other account pay a full-map sweep under
-  the limiter's single mutex. Unpinned keys get no such headroom, so their cap holds throughout.
+  requests inside one window. Neither a pinned population nor several scopes each under their cap
+  makes the sweep fire on every add: its size trigger sits above everything the previous sweep kept,
+  by the room left under the cap in the fullest scope, rather than at the absolute cap — otherwise a
+  bought-and-paid-for pinned population would make every later failed login of every other account
+  pay a full-map sweep under the limiter's single mutex. No scope can pass its cap before the trigger
+  fires, so the cap on unpinned keys holds throughout.
 - The **logout budget is keyed on the account, never on the session.** Revoking bumps the account's
   session version, so the token that reached the sign-out route is refused on the next request and no
   session arrives twice: a session-keyed budget records one attempt per key, can never trip, and
