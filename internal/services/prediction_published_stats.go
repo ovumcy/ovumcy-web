@@ -155,15 +155,18 @@ func PublishedOverviewStats(user *models.User, logs []models.DailyLog, stats Cyc
 	resolved, wasConfirmed := ResolveConfirmedCycleStats(user, logs, stats, today, location)
 	confirmedDay := resolved.OvulationDate
 	published, suppression := PublishedStats(user, resolved, logs, today, location)
-	// A confirmed day reaches here under the fertility gate only when the
-	// overdue signal is the whole of it (ConfirmedOvulationWithheld answered
-	// no): the cycle has outrun the length its projection was rolled from, and
-	// the day the owner's temperatures named is not such a projection. The
+	// The day comes back exactly where the verdict keeps it
+	// (KeepConfirmedOvulation — today the overdue signal alone: the cycle has
+	// outrun the length its projection was rolled from, and the day the owner's
+	// temperatures named is not such a projection). It used to come back under
+	// ANY fertility gate, which agreed with the dashboard and the calendar only
+	// while every fertility-only signal also withheld the confirmed day. The
 	// clearing above keeps the window, the fertility status and the phase it
 	// withheld; only the day comes back, so the JSON API names what the
-	// dashboard and the calendar name.
-	if wasConfirmed && suppression.FertilitySuppressed {
-		published.OvulationDate = confirmedDay
+	// dashboard and the calendar name. Outside every gate the assignment is a
+	// no-op: PublishedStats left the resolved day standing.
+	if day, kept := suppression.KeepConfirmedOvulation(confirmedDay, wasConfirmed); kept {
+		published.OvulationDate = day
 	}
 	confirmedOvulation := wasConfirmed && sameDay(published.OvulationDate, confirmedDay)
 	return published, suppression, confirmedOvulation

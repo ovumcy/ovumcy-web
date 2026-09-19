@@ -165,15 +165,21 @@ func buildCalendarPredictionMaps(user *models.User, logs []models.DailyLog, stat
 	// facts (logged period days, has-data, sex activity) are read elsewhere and
 	// are untouched.
 	//
-	// One marker survives, and only past the overdue gate: the solid ovulation
-	// marker on a day the owner's own temperatures confirmed. That day was never
-	// chained from NextPeriodStart; ConfirmedCurrentCycleOvulation carries its own
-	// gate (ConfirmedOvulationWithheld), which still answers no for the other two
-	// signals here. No window, peak band or pre-fertile shading comes with it.
-	if PredictionsSuppressed(user, stats) {
-		if confirmed, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, DateAtLocation(now, location), location); ok {
+	// One marker survives a suppressed tier: the solid ovulation marker on a day
+	// the owner's own temperatures confirmed, exactly where the verdict keeps it
+	// (KeepConfirmedOvulation — today the overdue signal alone). That day was
+	// never chained from NextPeriodStart. It is asked under EITHER gate, not
+	// only the whole-projection one: the dashboard and the JSON overview read the
+	// same verdict under the fertility gate, and a grid that asked it only here
+	// would hide a day they name the moment a fertility-only signal stopped
+	// withholding it. No window, peak band or pre-fertile shading comes with it.
+	suppression := ResolvePredictionSuppression(user, stats)
+	if suppression.FertilitySuppressed {
+		if confirmed, ok := suppression.KeepConfirmedOvulation(ConfirmedCurrentCycleOvulation(user, logs, stats, DateAtLocation(now, location), location)); ok {
 			ovulationMap[CalendarDayKey(confirmed)] = true
 		}
+	}
+	if suppression.PredictionsSuppressed {
 		return maps
 	}
 
@@ -182,7 +188,7 @@ func buildCalendarPredictionMaps(user *models.User, logs []models.DailyLog, stat
 	// ovulation day are the onboarding slider projected forward, so the grid
 	// paints none of them (FertilityProjectionSuppressed). The predicted period
 	// days keep their anchor in a recorded cycle start and stay.
-	fertilitySuppressed := FertilityProjectionSuppressed(user, stats)
+	fertilitySuppressed := suppression.FertilitySuppressed
 
 	// The CURRENT cycle's window follows a thermal shift the owner's own
 	// temperatures confirm — the same triple (day, window, status) the dashboard
