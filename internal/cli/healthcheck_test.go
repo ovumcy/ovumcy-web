@@ -159,7 +159,7 @@ func TestRunReadycheckCommandFailsOnAnUnreadyResponse(t *testing.T) {
 }
 
 // TestProbeHealthEndpointRefusesOversizedResponseHeaders proves the probe bounds
-// the response HEADER block, which defaults to Go's unbounded 10 MiB, so
+// the response HEADER block, which Go otherwise lets grow to 10 MiB, so
 // anything answering the checked port could otherwise make the probe buffer
 // far more than a healthcheck needs. The positive anchor is the second half:
 // an ordinary small header set on the same server still succeeds, so the test
