@@ -62,7 +62,7 @@ file, so a row can name a subpackage (`golang.org/x/net/idna`) or appear beside 
 | `golang.org/x/sync/semaphore` | BSD-3-Clause | [license text](https://cs.opensource.google/go/x/sync/+/v0.23.0:LICENSE) |
 | `golang.org/x/sys` | BSD-3-Clause | [license text](https://cs.opensource.google/go/x/sys/+/v0.48.0:LICENSE) |
 | `golang.org/x/text` | BSD-3-Clause | [license text](https://cs.opensource.google/go/x/text/+/v0.42.0:LICENSE) |
-| `gorm.io/driver/postgres` | MIT | [license text](https://github.com/go-gorm/postgres/blob/v1.6.2/License) |
+| `gorm.io/driver/postgres` | MIT | [license text](https://github.com/go-gorm/postgres/blob/v1.6.3/License) |
 | `gorm.io/gorm` | MIT | [license text](https://github.com/go-gorm/gorm/blob/v1.31.2/LICENSE) |
 | `modernc.org/libc` | BSD-3-Clause | [license text](https://gitlab.com/cznic/libc/-/blob/v1.73.4/LICENSE) |
 | `modernc.org/mathutil` | BSD-3-Clause | [license text](https://gitlab.com/cznic/mathutil/-/blob/v1.7.1/LICENSE) |
