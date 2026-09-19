@@ -80,7 +80,7 @@ Plus per-account, identity-keyed budgets enforced by `AuthAttemptPolicy` (`inter
   rows around it this one counts **every** logout,
   not only failures, so an owner's 21st sign-out inside the window is refused too. The
   check runs **after** `RevokeAuthSessions` and after the session cookies are cleared
-  (`internal/api/handlers_auth_session_login.go`): a spent budget never keeps a session alive on a
+  (`internal/api/handlers_auth_session_login.go`): a spent per-account budget never keeps a session alive on a
   device the owner is leaving; what the `429` withholds is the provider sign-out bridge and the
   success answer. A logout is an attempt against this budget only — it lives in its own limiter
   under its own scope and never adds a failure to, or resets, the login, recovery or TOTP budgets.
