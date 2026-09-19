@@ -285,6 +285,36 @@ func TestAttemptLimiterCapIsPerScope(t *testing.T) {
 	}
 }
 
+// TestAttemptLimiterBudgetWithoutALimitPinsNothing: an entry recorded under a
+// budget that names no limit (a zero-value AttemptBudget, or a policy built
+// with attempts < 1) is never a lockout, so the trim may still evict it. Read
+// as "at least zero failures", every such entry would count as blocked and be
+// pinned for its whole window, and a flood of them would outgrow the cap
+// without bound.
+func TestAttemptLimiterBudgetWithoutALimitPinsNothing(t *testing.T) {
+	t.Parallel()
+
+	limiter := NewAttemptLimiter()
+	base := time.Now().UTC()
+	budget := AttemptBudget{Scope: "login", Window: DefaultLoginAttemptsWindow}
+
+	for index := range evictAboveSize + 100 {
+		limiter.AddFailureAll([]string{fmt.Sprintf("login:identity:%05d", index)}, base.Add(time.Duration(index+1)*time.Millisecond), budget)
+	}
+
+	limiter.mu.Lock()
+	size := len(limiter.attempts)
+	_, coldestKept := limiter.attempts["login:identity:00000"]
+	limiter.mu.Unlock()
+
+	if size > evictAboveSize {
+		t.Fatalf("tracked keys = %d, want <= %d: entries without a limit were pinned", size, evictAboveSize)
+	}
+	if coldestKept {
+		t.Fatal("the coldest entry survived the trim; entries without a limit must stay evictable")
+	}
+}
+
 // TestAttemptLimiterPinnedEntriesMayExceedTheCap documents the trade-off the
 // pin makes: when every entry is a lockout there is nothing the trim may
 // evict, so the map holds all of them until their own windows lapse. Each such
