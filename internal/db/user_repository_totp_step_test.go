@@ -2,43 +2,15 @@ package db
 
 import (
 	"context"
-	"path/filepath"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
-func openTOTPStepRepoForTest(t *testing.T) *UserRepository {
-	t.Helper()
-	database := openSQLiteForMigrationBootstrapTest(t, filepath.Join(t.TempDir(), "totp-step.db"))
-	return NewUserRepository(database)
-}
-
-func createUserForTOTPTest(t *testing.T, repo *UserRepository, email string) models.User {
-	t.Helper()
-	user := models.User{
-		Email:               email,
-		PasswordHash:        "hash",
-		RecoveryCodeHash:    "recovery",
-		Role:                models.RoleOwner,
-		LocalAuthEnabled:    true,
-		OnboardingCompleted: true,
-		CycleLength:         28,
-		PeriodLength:        5,
-		AutoPeriodFill:      true,
-		CreatedAt:           time.Now().UTC(),
-	}
-	if err := repo.Create(context.Background(), &user); err != nil {
-		t.Fatalf("create user: %v", err)
-	}
-	return user
-}
-
 func TestClaimTOTPStepFirstClaim(t *testing.T) {
-	repo := openTOTPStepRepoForTest(t)
-	user := createUserForTOTPTest(t, repo, "totp-first@example.com")
+	repo := openTimezoneRepoForTest(t)
+	user := createUserForTimezoneTest(t, repo, "totp-first@example.com")
 
 	ok, err := repo.ClaimTOTPStep(context.Background(), user.ID, 1000)
 	if err != nil {
@@ -58,8 +30,8 @@ func TestClaimTOTPStepFirstClaim(t *testing.T) {
 }
 
 func TestClaimTOTPStepReplay(t *testing.T) {
-	repo := openTOTPStepRepoForTest(t)
-	user := createUserForTOTPTest(t, repo, "totp-replay@example.com")
+	repo := openTimezoneRepoForTest(t)
+	user := createUserForTimezoneTest(t, repo, "totp-replay@example.com")
 
 	if ok, err := repo.ClaimTOTPStep(context.Background(), user.ID, 1000); err != nil || !ok {
 		t.Fatalf("first claim: ok=%v err=%v", ok, err)
@@ -83,8 +55,8 @@ func TestClaimTOTPStepReplay(t *testing.T) {
 }
 
 func TestClaimTOTPStepOlderStep(t *testing.T) {
-	repo := openTOTPStepRepoForTest(t)
-	user := createUserForTOTPTest(t, repo, "totp-older@example.com")
+	repo := openTimezoneRepoForTest(t)
+	user := createUserForTimezoneTest(t, repo, "totp-older@example.com")
 
 	if ok, err := repo.ClaimTOTPStep(context.Background(), user.ID, 2000); err != nil || !ok {
 		t.Fatalf("first claim: ok=%v err=%v", ok, err)
@@ -100,8 +72,8 @@ func TestClaimTOTPStepOlderStep(t *testing.T) {
 }
 
 func TestClaimTOTPStepNewerStep(t *testing.T) {
-	repo := openTOTPStepRepoForTest(t)
-	user := createUserForTOTPTest(t, repo, "totp-newer@example.com")
+	repo := openTimezoneRepoForTest(t)
+	user := createUserForTimezoneTest(t, repo, "totp-newer@example.com")
 
 	if ok, err := repo.ClaimTOTPStep(context.Background(), user.ID, 1000); err != nil || !ok {
 		t.Fatalf("first claim: ok=%v err=%v", ok, err)
@@ -125,7 +97,7 @@ func TestClaimTOTPStepNewerStep(t *testing.T) {
 }
 
 func TestClaimTOTPStepUnknownUser(t *testing.T) {
-	repo := openTOTPStepRepoForTest(t)
+	repo := openTimezoneRepoForTest(t)
 
 	ok, err := repo.ClaimTOTPStep(context.Background(), 99999, 1000)
 	if err != nil {
@@ -137,8 +109,8 @@ func TestClaimTOTPStepUnknownUser(t *testing.T) {
 }
 
 func TestClaimTOTPStepConcurrentOneWinner(t *testing.T) {
-	repo := openTOTPStepRepoForTest(t)
-	user := createUserForTOTPTest(t, repo, "totp-concurrent@example.com")
+	repo := openTimezoneRepoForTest(t)
+	user := createUserForTimezoneTest(t, repo, "totp-concurrent@example.com")
 
 	const goroutines = 5
 	results := make([]bool, goroutines)
