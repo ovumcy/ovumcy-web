@@ -662,12 +662,12 @@ func validateDiscoveredTokenEndpoint(tokenEndpoint string, issuerURL string) err
 // issuer origin: it is the only discovery endpoint the browser navigates to
 // rather than the server fetching, and pinning it would change the
 // three-endpoint pin contract this change does not own. An empty endpoint is
-// left for the oauth2 flow to reject (there is nowhere to send the owner).
+// refused here rather than deferred to the flow, unlike the siblings above:
+// oauth2.Config.AuthCodeURL never validates Endpoint.AuthURL, so an empty one
+// composes the relative "?client_id=…&state=…" and sends the owner back into
+// ovumcy carrying state and nonce instead of failing the sign-in.
 func validateDiscoveredAuthorizationEndpoint(authorizationEndpoint string) error {
 	endpoint := strings.TrimSpace(authorizationEndpoint)
-	if endpoint == "" {
-		return nil
-	}
 	parsed, err := url.Parse(endpoint)
 	if err != nil || !parsed.IsAbs() || !strings.EqualFold(parsed.Scheme, "https") {
 		return errors.New("oidc authorization_endpoint must be an absolute https URL")
@@ -764,7 +764,13 @@ func HostDialsThisMachine(host string) bool {
 	}
 	address, err := netip.ParseAddr(host)
 	if err != nil {
-		return false
+		// Go parses only canonical dotted-quad literals, but a resolver with
+		// inet_aton semantics reads `0`, `0.1` and `00.0.0.0` as addresses in
+		// 0.0.0.0/8 — the very block below. Nothing of that shape is a hostname
+		// (a DNS label may not be all-numeric), so refusing every digits-and-dots
+		// host Go cannot parse costs no deployment and leaves no spelling of this
+		// block for a platform resolver to accept behind the check.
+		return isDottedNumericHost(host)
 	}
 	// A zone identifier (`https://[::%25eth0]`) is not part of the address the
 	// dialer resolves, and an IPv4-mapped form is the same address wearing a v6
@@ -778,6 +784,23 @@ func HostDialsThisMachine(host string) bool {
 	// on common stacks — the same reason the webhook egress gate refuses the
 	// whole prefix (`internal/services/webhook_delivery.go`).
 	return address.Is4() && address.As4()[0] == 0
+}
+
+// isDottedNumericHost reports whether a host is written entirely in digits and
+// dots — a numeric address in some spelling, canonical or not, and never a
+// hostname. `192.168.001.010` lands here too: its octal-looking labels name a
+// different address under inet_aton than they appear to, and an ambiguous
+// numeric spelling is refused rather than guessed.
+func isDottedNumericHost(host string) bool {
+	if host == "" {
+		return false
+	}
+	for _, char := range host {
+		if (char < '0' || char > '9') && char != '.' {
+			return false
+		}
+	}
+	return true
 }
 
 func sameOriginURL(left *url.URL, right *url.URL) bool {

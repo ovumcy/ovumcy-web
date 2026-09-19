@@ -17,8 +17,13 @@ func TestSameOriginURLRefusesHostsThatDialThisMachine(t *testing.T) {
 
 	// The spellings past the first three are the ones a check written as
 	// `net.ParseIP(host).IsUnspecified()` would wave through: the rest of
-	// 0.0.0.0/8, a zone identifier, and the IPv4-mapped form.
-	for _, host := range []string{"", "0.0.0.0", "::", "0.0.0.1", "0.1.2.3", "::%eth0", "::ffff:0.0.0.1"} {
+	// 0.0.0.0/8, a zone identifier, and the IPv4-mapped form. The last four are
+	// what Go declines to parse as an address at all and a platform resolver
+	// with inet_aton semantics still reads as 0.0.0.0/8.
+	for _, host := range []string{
+		"", "0.0.0.0", "::", "0.0.0.1", "0.1.2.3", "::%eth0", "::ffff:0.0.0.1",
+		"0", "0.1", "00.0.0.0", "0.0.0.00",
+	} {
 		if !HostDialsThisMachine(host) {
 			t.Fatalf("HostDialsThisMachine(%q) = false", host)
 		}
@@ -71,14 +76,21 @@ func TestSameOriginURLRefusesHostsThatDialThisMachine(t *testing.T) {
 func TestValidateDiscoveredAuthorizationEndpoint(t *testing.T) {
 	t.Parallel()
 
-	for _, endpoint := range []string{"", "https://id.example.com/authorize", "https://sso.example.net/authorize"} {
+	for _, endpoint := range []string{"https://id.example.com/authorize", "https://sso.example.net/authorize"} {
 		if err := validateDiscoveredAuthorizationEndpoint(endpoint); err != nil {
 			t.Fatalf("authorization_endpoint %q was refused: %v", endpoint, err)
 		}
 	}
+	// An absent endpoint is refused, not deferred: oauth2.AuthCodeURL does not
+	// validate its AuthURL, so an empty one composes a relative
+	// "?client_id=…&state=…" that walks the owner back into ovumcy with state
+	// and nonce in the query instead of failing sign-in.
 	for _, endpoint := range []string{
+		"",
+		"   ",
 		"http://id.example.com/authorize",
 		"/authorize",
+		"https://0:8443/authorize",
 		"https://0.0.0.0:8443/authorize",
 		"https://[::]:8443/authorize",
 		"https://:8443/authorize",
