@@ -177,6 +177,10 @@ func registerPageRoutes(app *fiber.App, handler *Handler) {
 	if handler.oidcResponseModeQuery() {
 		app.Get("/auth/oidc/callback", handler.refuseHEADOnShownOnceSurface, handler.CompleteOIDCLogin)
 	}
+	// Same-site half of the cross-site step-up bounce: a top-level GET the
+	// session cookie (SameSite=Lax) is delivered to, guarded by the sealed
+	// single-use continuation the callback minted.
+	app.Get(oidcCallbackContinuePath, handler.refuseHEADOnShownOnceSurface, handler.ContinueOIDCStepup)
 	app.Get(oidcLinkConfirmPath, handler.ShowOIDCLinkConfirmPage)
 	app.Post(oidcLinkConfirmPath, handler.CompleteOIDCLinkConfirmation)
 	app.Post("/logout", handler.AuthRequired, handler.OwnerOnly, handler.Logout)
@@ -244,6 +248,7 @@ func registerPageRoutes(app *fiber.App, handler *Handler) {
 var shownOnceGETRoutes = []string{
 	fiber.MethodGet + " /auth/oidc/start",
 	fiber.MethodGet + " /auth/oidc/callback",
+	fiber.MethodGet + " " + oidcCallbackContinuePath,
 	fiber.MethodGet + " " + oidcLogoutBridgeRedirectPath,
 	fiber.MethodGet + " " + registerPickupNextPath,
 	fiber.MethodGet + " /recovery-code",

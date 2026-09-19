@@ -140,7 +140,7 @@ function parsePortValue(value, label) {
   return port;
 }
 
-function reservePort(port = 0) {
+function reservePort(port = 0, host = "127.0.0.1") {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
 
@@ -163,7 +163,7 @@ function reservePort(port = 0) {
       });
     });
 
-    server.listen(port, "127.0.0.1");
+    server.listen(port, host);
   });
 }
 
@@ -356,13 +356,25 @@ async function runDockerCapture(args) {
   });
 }
 
-async function generateLocalTLSFixture(tmpDir, runID) {
+async function generateLocalTLSFixture(tmpDir, runID, extraHosts = []) {
   const certPath = path.join(tmpDir, `localhost-${runID}.cert.pem`);
   const keyPath = path.join(tmpDir, `localhost-${runID}.key.pem`);
+  // One fixture serves both the app-facing proxy and the mock IdP, so the
+  // cross-site lane's IdP host has to be a SAN of the same certificate.
+  const hosts = ["127.0.0.1", "localhost", ...extraHosts.filter(Boolean)];
 
   await spawnAndCapture(
     goBinary(),
-    ["run", "./scripts/e2e-tls-cert", "--cert", certPath, "--key", keyPath],
+    [
+      "run",
+      "./scripts/e2e-tls-cert",
+      "--cert",
+      certPath,
+      "--key",
+      keyPath,
+      "--hosts",
+      [...new Set(hosts)].join(","),
+    ],
     {
       cwd: repoRoot,
       stdio: ["ignore", "pipe", "pipe"],
@@ -505,14 +517,24 @@ async function main() {
     String(process.env.E2E_USE_HTTPS_PROXY ?? "").trim().toLowerCase() === "true" ||
     cookieSecureEnabled ||
     localOIDCProviderEnabled;
-  const tlsFixture = useHTTPSProxy || localOIDCProviderEnabled ? await generateLocalTLSFixture(tmpDir, runID) : null;
+  // The app always answers on 127.0.0.1. E2E_OIDC_HOST moves ONLY the mock
+  // IdP: any other loopback host (127.0.0.2 by default in the cross-site lane)
+  // is a different site to the browser, so the form_post callback POST arrives
+  // cross-site and the SameSite attributes of the OIDC transit cookies are
+  // actually exercised. Same host = the old same-site lane, unchanged.
+  const localOIDCHost = (process.env.E2E_OIDC_HOST ?? "").trim() || "127.0.0.1";
+  const oidcIsCrossSite = localOIDCProviderEnabled && localOIDCHost !== "127.0.0.1";
+  const tlsFixture =
+    useHTTPSProxy || localOIDCProviderEnabled
+      ? await generateLocalTLSFixture(tmpDir, runID, [localOIDCHost])
+      : null;
   const publicPort = useHTTPSProxy ? await reservePort(0) : appPort;
   const appURL = `http://127.0.0.1:${appPort}`;
   const baseURL =
     process.env.PLAYWRIGHT_BASE_URL ??
     (useHTTPSProxy ? `https://127.0.0.1:${publicPort}` : appURL);
-  const localOIDCPort = localOIDCProviderEnabled ? await reservePort(0) : null;
-  const localOIDCIssuer = localOIDCPort ? `https://127.0.0.1:${localOIDCPort}` : "";
+  const localOIDCPort = localOIDCProviderEnabled ? await reservePort(0, localOIDCHost) : null;
+  const localOIDCIssuer = localOIDCPort ? `https://${localOIDCHost}:${localOIDCPort}` : "";
 
   const dbPath = path.join(tmpDir, `run-${runID}.db`);
   const appLogPath = path.join(tmpDir, `app-${runID}.log`);
@@ -570,6 +592,7 @@ async function main() {
           certPath: tlsFixture.certPath,
           keyPath: tlsFixture.keyPath,
           listenPort: localOIDCPort,
+          listenHost: localOIDCHost,
           clientID: process.env.OIDC_CLIENT_ID ?? "ovumcy-e2e",
           clientSecret: process.env.OIDC_CLIENT_SECRET ?? "ovumcy-e2e-secret",
           redirectURL: process.env.OIDC_REDIRECT_URL ?? `${baseURL}/auth/oidc/callback`,
@@ -646,6 +669,7 @@ async function main() {
     OIDC_CA_FILE: appEnv.OIDC_CA_FILE,
     OIDC_LOGIN_MODE: process.env.OIDC_LOGIN_MODE ?? "hybrid",
     OIDC_RESPONSE_MODE: oidcResponseMode,
+    E2E_OIDC_CROSS_SITE: oidcIsCrossSite ? "true" : "false",
     OIDC_AUTO_PROVISION: process.env.OIDC_AUTO_PROVISION ?? "false",
     OIDC_POST_LOGOUT_REDIRECT_URL: appEnv.OIDC_POST_LOGOUT_REDIRECT_URL,
   };

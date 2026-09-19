@@ -53,19 +53,15 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 	// user. Dispatching off cookie presence avoids registering a second
 	// redirect URI at every provider operators have to manage.
 	if stepupState := handler.popOIDCStepupCookie(c); stepupState.validAt(time.Now()) {
-		// The purpose is dispatched on, never inferred: validAt has already
-		// refused any payload whose purpose is unknown or whose fields do not
-		// match the purpose it names, and each completion handler re-checks the
-		// purpose it is written for. An unhandled purpose falls through to the
-		// ordinary login path below, which finds no state cookie and refuses.
-		switch stepupState.Purpose {
-		case oidcStepupPurposeLocalPasswordSetup:
-			return handler.completeLocalPasswordSetupReauth(c, stepupState)
-		case oidcStepupPurposeErasure:
-			return handler.completeErasureStepupReauth(c, stepupState)
-		case oidcStepupPurposeIdentityLink:
-			return handler.completeOIDCIdentityLinkStepup(c, stepupState)
+		exchange := handler.oidcCallbackExchangeFromRequest(c)
+		// A provider on another site posts the callback cross-site, where
+		// SameSite=Lax withholds the session cookie — and every completion
+		// below resolves the owner from that session. Hand the validated
+		// exchange to a same-origin GET, which Lax does deliver to.
+		if callbackArrivedCrossSite(c) {
+			return handler.bounceStepupToSameSiteContinue(c, stepupState, exchange)
 		}
+		return handler.dispatchStepupCompletion(c, stepupState, exchange)
 	}
 
 	oidcState := handler.popOIDCStateCookie(c)

@@ -232,6 +232,23 @@ var sealedCookieExpiryProbes = map[string]sealedCookieExpiryProbe{
 			return strings.TrimSpace(handler.popOIDCStepupCookie(c).State) != ""
 		},
 	},
+	oidcStepupContinuationCookieName: {
+		mint: func(handler *Handler, c fiber.Ctx) error {
+			state, err := newOIDCStepupState(
+				time.Now(), oidcStepupPurposeLocalPasswordSetup, sealedExpirySweepUserID, sealedExpirySweepStoredHash)
+			if err != nil {
+				return err
+			}
+			continuation, err := newOIDCStepupContinuation(time.Now(), state, "authorization-code")
+			if err != nil {
+				return err
+			}
+			return handler.setOIDCStepupContinuationCookie(c, continuation)
+		},
+		honours: func(handler *Handler, c fiber.Ctx) bool {
+			return strings.TrimSpace(handler.peekOIDCStepupContinuationCookie(c).Code) != ""
+		},
+	},
 	oidcLinkPendingCookieName: {
 		mint: func(handler *Handler, c fiber.Ctx) error {
 			payload, err := newOIDCLinkPendingPayload(

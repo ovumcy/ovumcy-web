@@ -95,7 +95,7 @@ func (handler *Handler) StartOIDCIdentityLinkStepup(c fiber.Ctx) error {
 // same service method the (now closed) public link-confirm route used to
 // call, and the same one the operator CLI command calls for the no-session
 // recovery case.
-func (handler *Handler) completeOIDCIdentityLinkStepup(c fiber.Ctx, state oidcStepupState) error {
+func (handler *Handler) completeOIDCIdentityLinkStepup(c fiber.Ctx, state oidcStepupState, exchange oidcCallbackExchange) error {
 	if state.Purpose != oidcStepupPurposeIdentityLink {
 		// codecov:ignore:start -- forward-compat guard: validAt already refused a
 		// payload whose purpose does not match its own shape, so a mismatching
@@ -115,14 +115,14 @@ func (handler *Handler) completeOIDCIdentityLinkStepup(c fiber.Ctx, state oidcSt
 		return handler.redirectSettingsRefusal(c, spec)
 	}
 
-	callbackState := handler.oidcCallbackValue(c, "state")
-	code := handler.oidcCallbackValue(c, "code")
+	callbackState := exchange.State
+	code := exchange.Code
 	if !state.matchesState(callbackState) {
 		spec := authOIDCAuthenticationFailedErrorSpec()
 		handler.logSecurityError(c, oidcIdentityLinkStepupAction, spec)
 		return handler.redirectSettingsRefusal(c, spec)
 	}
-	if handler.oidcCallbackValue(c, "error") != "" {
+	if exchange.Error != "" {
 		spec := authOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, oidcIdentityLinkStepupAction, spec)
 		return handler.redirectSettingsRefusal(c, spec)

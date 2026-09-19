@@ -3,10 +3,13 @@ import { readFile } from "node:fs/promises";
 import http from "node:http";
 import https from "node:https";
 
-function listen(server, port) {
+// host defaults to the app's own loopback address. The mock IdP binds a
+// DIFFERENT loopback host in the cross-site lane, so that a form_post callback
+// is a genuine cross-site POST rather than a same-host, different-port one.
+function listen(server, port, host = "127.0.0.1") {
   return new Promise((resolve, reject) => {
     server.once("error", reject);
-    server.listen(port, "127.0.0.1", () => {
+    server.listen(port, host, () => {
       server.off("error", reject);
       resolve();
     });
@@ -146,6 +149,7 @@ export async function startLocalOIDCProvider({
   certPath,
   keyPath,
   listenPort,
+  listenHost = "127.0.0.1",
   clientID,
   clientSecret,
   redirectURL,
@@ -400,7 +404,7 @@ export async function startLocalOIDCProvider({
     }
   });
 
-  await listen(server, listenPort);
+  await listen(server, listenPort, listenHost);
   return {
     issuerURL,
     close: async () => close(server),
