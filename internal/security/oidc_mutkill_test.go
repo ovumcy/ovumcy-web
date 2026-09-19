@@ -56,6 +56,17 @@ func mustSignMockIDToken(t *testing.T, mock *mockOIDCProvider, claims jwt.MapCla
 	return raw
 }
 
+// oidcClientBaseTransport returns the cloned *http.Transport underneath the
+// response-body cap newOIDCHTTPClient installs over it.
+func oidcClientBaseTransport(client *http.Client) (*http.Transport, bool) {
+	bounded, ok := client.Transport.(*oidcBoundedBodyTransport)
+	if !ok {
+		return nil, false
+	}
+	transport, ok := bounded.base.(*http.Transport)
+	return transport, ok
+}
+
 // TestLoadProviderMemoizesProvider kills the two CONDITIONALS_NEGATION mutants
 // on the memoization guard `client.oauthConfig != nil && client.verifier != nil`
 // (oidc.go:416). Negating either half forces a rebuild on every call, so the
@@ -97,9 +108,9 @@ func TestNewOIDCHTTPClientClonesDefaultTransport(t *testing.T) {
 	}
 
 	client := newOIDCHTTPClient(OIDCConfig{}) // no CAFile -> plain clone path
-	got, ok := client.Transport.(*http.Transport)
+	got, ok := oidcClientBaseTransport(client)
 	if !ok {
-		t.Fatalf("expected the OIDC client transport to be a *http.Transport, got %T", client.Transport)
+		t.Fatalf("expected the OIDC client transport to wrap a *http.Transport, got %T", client.Transport)
 	}
 	if got.IdleConnTimeout != def.IdleConnTimeout {
 		t.Fatalf("OIDC transport must be cloned from DefaultTransport (IdleConnTimeout %s), got %s (a bare transport?)", def.IdleConnTimeout, got.IdleConnTimeout)
@@ -133,7 +144,7 @@ func TestNewOIDCHTTPClientAddsCustomCAToSystemRoots(t *testing.T) {
 	}
 
 	client := newOIDCHTTPClient(OIDCConfig{CAFile: caFile})
-	transport, ok := client.Transport.(*http.Transport)
+	transport, ok := oidcClientBaseTransport(client)
 	if !ok || transport.TLSClientConfig == nil || transport.TLSClientConfig.RootCAs == nil {
 		t.Fatalf("expected TLSClientConfig.RootCAs to be set when CAFile is provided")
 	}

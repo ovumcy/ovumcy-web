@@ -366,7 +366,8 @@ Check:
 - `OIDC_ISSUER_URL` points to the real issuer, not to a login form URL;
 - the provider is reachable from the Ovumcy host or container;
 - the provider certificate chain is trusted by the Ovumcy runtime, or `OIDC_CA_FILE` points to a readable PEM bundle for your private CA;
-- reverse-proxy DNS and firewall rules allow Ovumcy to reach the provider.
+- reverse-proxy DNS and firewall rules allow Ovumcy to reach the provider;
+- the provider's discovery document, key set (JWKS) and token response each stay under 512 KiB, with under 64 KiB of response headers. Ovumcy refuses a larger response outright rather than truncating it. Real providers answer in a few KiB, so hitting either limit points at a proxy or captive portal answering in the provider's place, or at a misbehaving provider.
 
 ### Auto-provision does not happen
 
