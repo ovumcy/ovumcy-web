@@ -194,10 +194,6 @@ func isSymptomValidationError(err error) bool {
 		errors.Is(err, ErrBuiltinSymptomEditForbidden)
 }
 
-func (service *SymptomService) FindSymptomForUser(ctx context.Context, symptomID uint, userID uint) (models.SymptomType, error) {
-	return service.symptoms.FindByIDForUser(ctx, symptomID, userID)
-}
-
 func (service *SymptomService) CalculateFrequencies(ctx context.Context, userID uint, logs []models.DailyLog) ([]SymptomFrequency, error) {
 	if len(logs) == 0 {
 		return []SymptomFrequency{}, nil
