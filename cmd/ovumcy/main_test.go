@@ -778,6 +778,66 @@ func TestResolveOIDCConfigClientSecretFile(t *testing.T) {
 			t.Fatalf("expected an empty OIDC_CLIENT_SECRET_FILE to fail required-field validation, got %v", err)
 		}
 	})
+
+	// A disabled instance never consumes the client secret, so neither source is
+	// read: a stale or unreadable OIDC_CLIENT_SECRET_FILE — alone or beside an
+	// OIDC_CLIENT_SECRET — must not stop the boot. Driven through
+	// loadRuntimeConfig because the contract is "the instance starts", not only
+	// "the resolver returns".
+	disabledCases := []struct {
+		name    string
+		enabled string
+		secret  string
+		file    func(t *testing.T) string
+	}{
+		{"disabled with a missing OIDC_CLIENT_SECRET_FILE boots", "false", "", func(t *testing.T) string {
+			return filepath.Join(t.TempDir(), "missing-client-secret.txt")
+		}},
+		{"unset OIDC_ENABLED with a missing OIDC_CLIENT_SECRET_FILE boots", "", "", func(t *testing.T) string {
+			return filepath.Join(t.TempDir(), "missing-client-secret.txt")
+		}},
+		{"disabled with a directory OIDC_CLIENT_SECRET_FILE boots", "false", "", func(t *testing.T) string {
+			return t.TempDir()
+		}},
+		{"disabled with both sources set and the file missing boots", "false", clientSecret, func(t *testing.T) string {
+			return filepath.Join(t.TempDir(), "missing-client-secret.txt")
+		}},
+	}
+	for _, tc := range disabledCases {
+		t.Run(tc.name, func(t *testing.T) {
+			setValidBootEnv(t)
+			t.Setenv("OIDC_ENABLED", tc.enabled)
+			t.Setenv("OIDC_CLIENT_SECRET", tc.secret)
+			t.Setenv("OIDC_CLIENT_SECRET_FILE", tc.file(t))
+
+			config, err := loadRuntimeConfig(time.UTC)
+			if err != nil {
+				t.Fatalf("expected a disabled OIDC config to boot without reading the secret, got: %v", err)
+			}
+			if config.OIDC.Enabled {
+				t.Fatal("expected OIDC to stay disabled")
+			}
+			if config.OIDC.ClientSecret != "" {
+				t.Fatal("expected a disabled OIDC config to carry no client secret")
+			}
+		})
+	}
+
+	// The same unreadable file stays a refusal the moment OIDC is enabled and
+	// the file is the only source: the disabled carve-out above must not loosen
+	// the enabled case.
+	t.Run("enabled with a missing OIDC_CLIENT_SECRET_FILE still refuses the boot", func(t *testing.T) {
+		setValidBootEnv(t)
+		setValidOIDCTestEnv(t)
+		t.Setenv("COOKIE_SECURE", "true")
+		t.Setenv("OIDC_CLIENT_SECRET", "")
+		t.Setenv("OIDC_CLIENT_SECRET_FILE", filepath.Join(t.TempDir(), "missing-client-secret.txt"))
+
+		_, err := loadRuntimeConfig(time.UTC)
+		if err == nil || !strings.Contains(err.Error(), "failed to read OIDC_CLIENT_SECRET_FILE") {
+			t.Fatalf("expected an enabled OIDC config to refuse an unreadable secret file, got %v", err)
+		}
+	})
 }
 
 func setValidOIDCTestEnv(t *testing.T) {

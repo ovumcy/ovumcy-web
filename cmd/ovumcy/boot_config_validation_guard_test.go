@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -13,8 +14,9 @@ import (
 // mistype into a silently degraded security posture.
 //
 // Deliberately narrow: only TRUSTED_PROXIES, CALENDAR_FEED_FENCE_PATH and the
-// four security-relevant booleans (COOKIE_SECURE, HSTS_ENABLED,
-// TRUST_PROXY_ENABLED, WEBHOOK_BLOCK_PRIVATE_ADDRESSES) refuse the boot. The
+// five security-relevant booleans (COOKIE_SECURE, HSTS_ENABLED,
+// TRUST_PROXY_ENABLED, WEBHOOK_BLOCK_PRIVATE_ADDRESSES, AUDIT_LOG_ENABLED)
+// refuse the boot. The
 // lenient getEnvBool / getEnvInt / getEnvDurationInRange fallback still governs every
 // other key, so nothing here may be read as "every invalid env value stops the
 // process".
@@ -209,6 +211,7 @@ func TestBootRefusesAnUnparseableSecurityBoolean(t *testing.T) {
 		{"HSTS_ENABLED", "yess"},
 		{"TRUST_PROXY_ENABLED", "tru"},
 		{"WEBHOOK_BLOCK_PRIVATE_ADDRESSES", "onn"},
+		{"AUDIT_LOG_ENABLED", "enabled"},
 	}
 
 	for _, tc := range cases {
@@ -290,4 +293,52 @@ func TestBootRefusesAnUnparseableSecurityBoolean(t *testing.T) {
 				config.CookieSecure, config.HSTSEnabled, config.Proxy.Enabled, config.WebhookBlockPrivate)
 		}
 	})
+}
+
+// TestBootAuditLogEnabledIsStrict pins AUDIT_LOG_ENABLED to the refusing
+// getter. It was the one security-relevant boolean still read leniently: a typo
+// started the instance without the audit stream an incident investigation had
+// switched on, and only the boot log said so. Every documented spelling must
+// still boot and land on the value it names; an unset key is still the
+// documented default (off).
+func TestBootAuditLogEnabledIsStrict(t *testing.T) {
+	for _, value := range []string{"ture", "enabled", "2", "y", "yess"} {
+		t.Run("refuses "+value, func(t *testing.T) {
+			setValidBootEnv(t)
+			t.Setenv("AUDIT_LOG_ENABLED", value)
+
+			_, err := loadRuntimeConfig(time.UTC)
+			if err == nil {
+				t.Fatalf("expected boot to refuse AUDIT_LOG_ENABLED=%q", value)
+			}
+			for _, want := range []string{"AUDIT_LOG_ENABLED", value, "expected one of"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("expected the refusal to name %q, got: %v", want, err)
+				}
+			}
+		})
+	}
+
+	accepted := []struct {
+		value string
+		want  bool
+	}{
+		{"", false},
+		{"1", true}, {"true", true}, {"TRUE", true}, {"yes", true}, {"on", true}, {" on ", true},
+		{"0", false}, {"false", false}, {"no", false}, {"off", false},
+	}
+	for _, tc := range accepted {
+		t.Run("accepts "+strconv.Quote(tc.value), func(t *testing.T) {
+			setValidBootEnv(t)
+			t.Setenv("AUDIT_LOG_ENABLED", tc.value)
+
+			config, err := loadRuntimeConfig(time.UTC)
+			if err != nil {
+				t.Fatalf("expected AUDIT_LOG_ENABLED=%q to boot, got: %v", tc.value, err)
+			}
+			if config.AuditLogEnabled != tc.want {
+				t.Fatalf("AUDIT_LOG_ENABLED=%q: expected %t, got %t", tc.value, tc.want, config.AuditLogEnabled)
+			}
+		})
+	}
 }
