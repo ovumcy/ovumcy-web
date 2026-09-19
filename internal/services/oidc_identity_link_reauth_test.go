@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/security"
 )
 
 // TestOIDCLoginServiceCompleteIdentityLinkReauthLinksOnFreshExchange is the
@@ -58,6 +59,35 @@ func TestOIDCLoginServiceCompleteIdentityLinkReauthRefusesStaleExchange(t *testi
 	}
 	if identities.createCallSeen {
 		t.Fatal("a stale exchange must never persist a link")
+	}
+}
+
+// TestOIDCLoginServiceCompleteIdentityLinkReauthRefusesIATOnlyExchange: a
+// permanent binding is authorised only by auth_time; a fresh iat on a token
+// that omits auth_time links nothing.
+func TestOIDCLoginServiceCompleteIdentityLinkReauthRefusesIATOnlyExchange(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 5, 13, 10, 0, 0, 0, time.UTC)
+	identities := &stubOIDCIdentityStore{}
+	client := &stubOIDCProviderClient{
+		enabled: true,
+		exchange: security.OIDCExchangeResult{
+			Claims: security.OIDCClaims{
+				Issuer:   "https://id.example.com",
+				Subject:  "settings-link-iat-only",
+				IssuedAt: now,
+			},
+		},
+	}
+	service := NewOIDCLoginService(client, identities, &stubOIDCUserStore{}, nil)
+
+	err := service.CompleteIdentityLinkReauth(context.Background(), "code", "verifier", "nonce", 42, 5*time.Minute, now)
+	if !errors.Is(err, ErrOIDCReauthStale) {
+		t.Fatalf("expected ErrOIDCReauthStale for an iat-only token, got %v", err)
+	}
+	if identities.createCallSeen {
+		t.Fatal("an iat-only exchange must never persist a link")
 	}
 }
 

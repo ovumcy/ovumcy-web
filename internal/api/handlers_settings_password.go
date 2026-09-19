@@ -10,7 +10,7 @@ import (
 )
 
 // stepupReauthMaxAge is the maximum acceptable age of an OIDC ID token's
-// auth_time / iat claim relative to the moment we finish the step-up callback.
+// auth_time claim relative to the moment we finish the step-up callback.
 // 5 minutes is long enough for an interactive sign-in (typically 30-60 seconds)
 // but short enough that a captured ID token from an earlier session cannot be
 // replayed to bypass the re-auth requirement.

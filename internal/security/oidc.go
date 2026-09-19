@@ -72,7 +72,8 @@ type OIDCClaims struct {
 	Subject       string
 	Email         string
 	EmailVerified bool
-	// IssuedAt is the ID token "iat" claim (always present per RFC).
+	// IssuedAt is the ID token "iat" claim (always present per RFC). It dates
+	// the token, not the sign-in: never use it as step-up freshness proof.
 	IssuedAt time.Time
 	// AuthTime is the ID token "auth_time" claim. Zero when the provider did
 	// not include the claim (it is REQUIRED only when max_age was requested).

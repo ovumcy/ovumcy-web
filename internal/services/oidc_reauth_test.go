@@ -117,7 +117,11 @@ func TestOIDCLoginServiceValidateReauthExchangeHappyFreshAuthTime(t *testing.T) 
 	}
 }
 
-func TestOIDCLoginServiceValidateReauthExchangeHappyIATFallback(t *testing.T) {
+// TestOIDCLoginServiceValidateReauthExchangeRefusesFreshIATWithoutAuthTime
+// pins the strict freshness policy: iat dates the token, not the sign-in, so a
+// provider that answers prompt=login from a cached SSO session and omits
+// auth_time must not pass the step-up however fresh its iat is.
+func TestOIDCLoginServiceValidateReauthExchangeRefusesFreshIATWithoutAuthTime(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 5, 13, 10, 0, 0, 0, time.UTC)
@@ -131,14 +135,17 @@ func TestOIDCLoginServiceValidateReauthExchangeHappyIATFallback(t *testing.T) {
 			Claims: security.OIDCClaims{
 				Issuer:   "https://id.example.com",
 				Subject:  "sub-2",
-				IssuedAt: now.Add(-1 * time.Minute),
+				IssuedAt: now,
 			},
 		},
 	}
 	service := NewOIDCLoginService(client, identities, &stubOIDCUserStore{}, nil)
 
-	if err := service.ValidateReauthExchange(context.Background(), "code", "verifier", "nonce", 6, 5*time.Minute, now); err != nil {
-		t.Fatalf("expected nil error with iat fallback, got %v", err)
+	if err := service.ValidateReauthExchange(context.Background(), "code", "verifier", "nonce", 6, 5*time.Minute, now); !errors.Is(err, ErrOIDCReauthStale) {
+		t.Fatalf("expected ErrOIDCReauthStale for an iat-only token, got %v", err)
+	}
+	if identities.touchedID != 0 {
+		t.Fatalf("a refused step-up must not touch last-used, touched identity %d", identities.touchedID)
 	}
 }
 
@@ -161,7 +168,9 @@ func TestOIDCLoginServiceValidateReauthExchangeStaleAuthTime(t *testing.T) {
 	}
 }
 
-func TestOIDCLoginServiceValidateReauthExchangeStaleIATFallback(t *testing.T) {
+// A fresh iat must not rescue a stale auth_time either: the token is new, the
+// sign-in behind it is not.
+func TestOIDCLoginServiceValidateReauthExchangeFreshIATDoesNotRescueStaleAuthTime(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 5, 13, 10, 0, 0, 0, time.UTC)
@@ -175,14 +184,15 @@ func TestOIDCLoginServiceValidateReauthExchangeStaleIATFallback(t *testing.T) {
 			Claims: security.OIDCClaims{
 				Issuer:   "https://id.example.com",
 				Subject:  "sub-4",
-				IssuedAt: now.Add(-10 * time.Minute),
+				IssuedAt: now,
+				AuthTime: now.Add(-10 * time.Minute),
 			},
 		},
 	}
 	service := NewOIDCLoginService(client, identities, &stubOIDCUserStore{}, nil)
 
 	if err := service.ValidateReauthExchange(context.Background(), "code", "verifier", "nonce", 8, 5*time.Minute, now); !errors.Is(err, ErrOIDCReauthStale) {
-		t.Fatalf("expected ErrOIDCReauthStale on stale iat fallback, got %v", err)
+		t.Fatalf("expected ErrOIDCReauthStale when auth_time is stale behind a fresh iat, got %v", err)
 	}
 }
 
