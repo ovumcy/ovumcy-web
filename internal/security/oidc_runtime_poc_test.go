@@ -172,6 +172,12 @@ type mockOIDCProvider struct {
 	jwksPadding            int
 	tokenPadding           int
 
+	// countedOnIssuer answers and counts every request under /counted/ on the
+	// issuer origin. It is the same counter a foreign origin runs in
+	// oidc_foreign_origin_no_request_test.go, mounted here so a test can show
+	// that a fetch pointed at the issuer origin does arrive.
+	countedOnIssuer *originRequestCounter
+
 	// issuer is the URL returned in discovery and in JWT iss claims.
 	// httptest.NewTLSServer assigns it at startup.
 	issuer string
@@ -184,9 +190,10 @@ func newMockOIDCProvider(t *testing.T) (*mockOIDCProvider, []byte) {
 	if err != nil {
 		t.Fatalf("rsa.GenerateKey: %v", err)
 	}
-	mock := &mockOIDCProvider{privateKey: priv, keyID: "test-key-1"}
+	mock := &mockOIDCProvider{privateKey: priv, keyID: "test-key-1", countedOnIssuer: &originRequestCounter{}}
 
 	mux := http.NewServeMux()
+	mux.Handle("/counted/", mock.countedOnIssuer)
 	mux.HandleFunc("/.well-known/openid-configuration", mock.serveDiscovery)
 	mux.HandleFunc("/alt-discovery", mock.serveDiscoveryDocument)
 	mux.HandleFunc("/jwks", mock.serveJWKS)
