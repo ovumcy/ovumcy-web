@@ -38,30 +38,54 @@ func TestMR3Cycles_DetectCurrentPhaseNilLocation(t *testing.T) {
 	}
 }
 
-// TestMR3Cycles_DetectCurrentPhaseHonorsLocation also targets
-// cycle_baseline.go:121. The NEGATION mutation (`location != nil`) clobbers a
-// non-nil location to UTC, which shifts the location-rebuilt period-end and
-// fertility-window dates relative to the UTC-midnight `today`. At the
-// period-end boundary (LastPeriodStart Mar 1 + 5-day period = Mar 5) under a
-// far-east UTC+14 location, Mar 5 (UTC midnight) falls just AFTER the
-// location-midnight period end, so the phase is follicular. Clobbering the
-// location to UTC pulls the period end back to UTC midnight, making Mar 5 land
-// inside the menstrual window — a wrong "menstrual" classification.
+// TestMR3Cycles_DetectCurrentPhaseHonorsLocation targets the location handling
+// in DetectCurrentPhase (cycle_baseline.go). Every value is built the way
+// ApplyUserCycleBaseline hands it over — stats dates and `today` all at
+// midnight of their calendar day in the owner's zone — and every expected
+// phase comes from calendar arithmetic written out below, never from a
+// production helper, so the table is the same in every zone:
+//
+//	period starts 2026-03-01, average period 5 days -> Mar 1..Mar 5 menstrual
+//	28-day cycle, luteal 14 -> ovulation on cycle day 28-14 = 14 -> Mar 1 + 13 = Mar 14
+//	Mar 6..Mar 13 follicular, Mar 14 ovulation, Mar 15 onward luteal
+//
+// UTC is the control. UTC+14 is where reading today's calendar date off its
+// UTC wall clock loses a whole day (Mar 14 00:00 +14 is Mar 13 10:00 UTC), so
+// the ovulation row reddens there. UTC-10 is where clobbering the location to
+// UTC (the NEGATION `location != nil` mutant) pulls the period end back to
+// Mar 4 14:00 local, so the last menstrual day reads follicular; east of UTC
+// that clobber moves the bound later and stays invisible.
 func TestMR3Cycles_DetectCurrentPhaseHonorsLocation(t *testing.T) {
-	loc := time.FixedZone("UTCplus14", 14*60*60)
-	stats := CycleStats{
-		LastPeriodStart:      mr3cycDay(2026, time.March, 1),
-		AveragePeriodLength:  5,
-		OvulationDate:        mr3cycDay(2026, time.March, 14),
-		FertilityWindowStart: mr3cycDay(2026, time.March, 9),
-		FertilityWindowEnd:   mr3cycDay(2026, time.March, 14),
+	zones := []*time.Location{
+		time.UTC,
+		time.FixedZone("UTC+14", 14*60*60),
+		time.FixedZone("UTC-10", -10*60*60),
 	}
-	// today = Mar 5 (UTC midnight), the day after the 5-day menstrual window
-	// ends in a far-east locale; no period is logged on this day.
-	today := mr3cycDay(2026, time.March, 5)
-
-	phase := DetectCurrentPhase(stats, nil, today, loc)
-	if phase != "follicular" {
-		t.Fatalf("expected follicular phase honoring UTC+14, got %q", phase)
+	probes := []struct {
+		day  int // day of March 2026
+		want string
+	}{
+		{1, "menstrual"},
+		{5, "menstrual"},
+		{6, "follicular"},
+		{13, "follicular"},
+		{14, "ovulation"},
+		{15, "luteal"},
+		{28, "luteal"},
+	}
+	for _, loc := range zones {
+		march := func(day int) time.Time { return time.Date(2026, time.March, day, 0, 0, 0, 0, loc) }
+		stats := CycleStats{
+			LastPeriodStart:      march(1),
+			AveragePeriodLength:  5,
+			OvulationDate:        march(14),
+			FertilityWindowStart: march(9),
+			FertilityWindowEnd:   march(14),
+		}
+		for _, probe := range probes {
+			if got := DetectCurrentPhase(stats, nil, march(probe.day), loc); got != probe.want {
+				t.Errorf("%s: 2026-03-%02d phase = %q, want %q", loc, probe.day, got, probe.want)
+			}
+		}
 	}
 }

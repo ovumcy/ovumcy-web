@@ -147,6 +147,8 @@ These are the exact cases asserted by the reference tests.
 | 2026-06-01 | 30 | 0 (→14) | 2026-06-16 | 2026-06-11 … 2026-06-16 | 2026-07-01 | yes |
 | 2026-01-01 | 21 | 14 | 2026-01-07 | 2026-01-02 … 2026-01-07 | 2026-01-22 | yes |
 | 2026-02-01 | 15 | 14 (→10) | 2026-02-05 | 2026-02-01 … 2026-02-05 | 2026-02-16 | no (luteal clamped, window clamped to period start) |
+| 2026-02-20 | 25 | 11 (personalised) | 2026-03-05 | 2026-02-28 … 2026-03-05 | 2026-03-17 | yes |
+| 2026-07-15 | 32 | 16 (personalised) | 2026-07-30 | 2026-07-25 … 2026-07-30 | 2026-08-16 | yes |
 | any | 14 | any | — | — | — | no prediction (cycle too short) |
 
 ## How cycle length and luteal phase are chosen
