@@ -1,7 +1,11 @@
 package api
 
 import (
+	"errors"
+	"fmt"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -128,5 +132,186 @@ func TestParseRequestTimezoneRejectsUnsafeInputs(t *testing.T) {
 	tooLong := strings.Repeat("A", maxRequestTimezoneLength+1)
 	if _, _, ok := parseRequestTimezone(tooLong); ok {
 		t.Fatal("expected oversized timezone to be rejected")
+	}
+}
+
+// countingTimezoneLoader stands in for time.LoadLocation: it answers from a
+// fixed set of known names, refuses the rest the way the stdlib does, and
+// counts every call so a test can tell a cache hit from a fresh load.
+type countingTimezoneLoader struct {
+	mu    sync.Mutex
+	calls map[string]int
+	known map[string]bool
+	err   error
+}
+
+func (loader *countingTimezoneLoader) load(name string) (*time.Location, error) {
+	loader.mu.Lock()
+	defer loader.mu.Unlock()
+	if loader.calls == nil {
+		loader.calls = make(map[string]int)
+	}
+	loader.calls[name]++
+	if loader.err != nil {
+		return nil, loader.err
+	}
+	if loader.known[name] {
+		return time.FixedZone(name, 3*60*60), nil
+	}
+	return nil, fmt.Errorf("unknown time zone %s", name)
+}
+
+func (loader *countingTimezoneLoader) callsFor(name string) int {
+	loader.mu.Lock()
+	defer loader.mu.Unlock()
+	return loader.calls[name]
+}
+
+func (cache *requestTimezoneCache) sizes() (int, int) {
+	cache.mu.RLock()
+	defer cache.mu.RUnlock()
+	return len(cache.loaded), len(cache.refused)
+}
+
+func TestRequestTimezoneCacheLoadsARepeatedZoneOnce(t *testing.T) {
+	t.Parallel()
+
+	loader := &countingTimezoneLoader{known: map[string]bool{"Europe/Moscow": true}}
+	cache := newRequestTimezoneCache(loader.load)
+
+	first, ok := cache.lookup("Europe/Moscow")
+	if !ok || first == nil {
+		t.Fatal("expected Europe/Moscow to load")
+	}
+	second, ok := cache.lookup("Europe/Moscow")
+	if !ok || second != first {
+		t.Fatalf("expected the repeated lookup to return the cached location %p, got %p (ok=%v)", first, second, ok)
+	}
+	if calls := loader.callsFor("Europe/Moscow"); calls != 1 {
+		t.Fatalf("expected one load for a repeated zone name, got %d", calls)
+	}
+}
+
+func TestRequestTimezoneCacheRemembersAnUnknownZoneOnce(t *testing.T) {
+	t.Parallel()
+
+	loader := &countingTimezoneLoader{}
+	cache := newRequestTimezoneCache(loader.load)
+
+	for range 3 {
+		if location, ok := cache.lookup("Nowhere/Unknown"); ok || location != nil {
+			t.Fatalf("expected an unknown zone to be refused, got %v (ok=%v)", location, ok)
+		}
+	}
+	if calls := loader.callsFor("Nowhere/Unknown"); calls != 1 {
+		t.Fatalf("expected one load for a repeated unknown zone name, got %d", calls)
+	}
+}
+
+// A load that fails for any reason other than "no such zone" — a read error,
+// a descriptor limit under load — must not be remembered, or one transient
+// fault would pin every later request naming that zone to the fallback.
+func TestRequestTimezoneCacheRetriesATransientLoadError(t *testing.T) {
+	t.Parallel()
+
+	loader := &countingTimezoneLoader{err: errors.New("open /usr/share/zoneinfo/Europe/Moscow: too many open files")}
+	cache := newRequestTimezoneCache(loader.load)
+
+	for range 2 {
+		if _, ok := cache.lookup("Europe/Moscow"); ok {
+			t.Fatal("expected the failing load to be refused")
+		}
+	}
+	if calls := loader.callsFor("Europe/Moscow"); calls != 2 {
+		t.Fatalf("expected a transient load error to be retried on the next lookup, got %d loads", calls)
+	}
+	if loaded, refused := cache.sizes(); loaded != 0 || refused != 0 {
+		t.Fatalf("expected nothing cached after a transient error, got loaded=%d refused=%d", loaded, refused)
+	}
+}
+
+func TestRequestTimezoneCacheStaysBoundedUnderDistinctNames(t *testing.T) {
+	t.Parallel()
+
+	const flood = 3 * maxCachedRequestTimezones
+
+	known := make(map[string]bool, flood)
+	for index := range flood {
+		known["Europe/Moscow/"+strconv.Itoa(index)] = true
+	}
+	loader := &countingTimezoneLoader{known: known}
+	cache := newRequestTimezoneCache(loader.load)
+
+	for index := range flood {
+		cache.lookup("Nowhere/Invalid" + strconv.Itoa(index))
+	}
+	loaded, refused := cache.sizes()
+	if refused == 0 || refused > maxCachedRequestTimezones {
+		t.Fatalf("expected %d distinct unknown names to leave 1..%d refusals cached, got %d",
+			flood, maxCachedRequestTimezones, refused)
+	}
+	if loaded != 0 {
+		t.Fatalf("expected no loaded zones from unknown names, got %d", loaded)
+	}
+
+	for name := range known {
+		cache.lookup(name)
+	}
+	if loaded, _ := cache.sizes(); loaded == 0 || loaded > maxCachedRequestTimezones {
+		t.Fatalf("expected %d distinct loadable names to leave 1..%d zones cached, got %d",
+			flood, maxCachedRequestTimezones, loaded)
+	}
+}
+
+func TestRequestTimezoneCacheIsSafeForConcurrentLookups(t *testing.T) {
+	t.Parallel()
+
+	loader := &countingTimezoneLoader{known: map[string]bool{"Europe/Moscow": true}}
+	cache := newRequestTimezoneCache(loader.load)
+
+	var wg sync.WaitGroup
+	for worker := range 16 {
+		wg.Go(func() {
+			for index := range 2 * maxCachedRequestTimezones {
+				cache.lookup("Europe/Moscow")
+				cache.lookup(fmt.Sprintf("Nowhere/W%dN%d", worker, index))
+			}
+		})
+	}
+	wg.Wait()
+
+	if location, ok := cache.lookup("Europe/Moscow"); !ok || location == nil {
+		t.Fatal("expected Europe/Moscow to resolve after concurrent lookups")
+	}
+	if _, refused := cache.sizes(); refused > maxCachedRequestTimezones {
+		t.Fatalf("expected concurrent refusals to stay within %d, got %d", maxCachedRequestTimezones, refused)
+	}
+}
+
+func TestUnknownTimezoneRecognizesTheStdlibRefusal(t *testing.T) {
+	t.Parallel()
+
+	_, err := time.LoadLocation("Nowhere/Ovumcy_Nonexistent_Zone")
+	if err == nil {
+		t.Fatal("expected the stdlib to refuse a nonexistent zone")
+	}
+	if !isUnknownTimezone(err) {
+		t.Fatalf("expected the stdlib refusal %q to be recognized as an unknown zone", err)
+	}
+}
+
+// The request path, not only the cache type, has to go through the cache:
+// parseRequestTimezone is what LanguageMiddleware calls on every request.
+func TestParseRequestTimezoneResolvesThroughTheSharedCache(t *testing.T) {
+	t.Parallel()
+
+	if _, canonical, ok := parseRequestTimezone("Asia/Tbilisi"); !ok || canonical != "Asia/Tbilisi" {
+		t.Fatalf("expected Asia/Tbilisi to resolve, got %q (ok=%v)", canonical, ok)
+	}
+	requestTimezoneLocations.mu.RLock()
+	_, cached := requestTimezoneLocations.loaded["Asia/Tbilisi"]
+	requestTimezoneLocations.mu.RUnlock()
+	if !cached {
+		t.Fatal("expected parseRequestTimezone to leave Asia/Tbilisi in the shared request-timezone cache")
 	}
 }
