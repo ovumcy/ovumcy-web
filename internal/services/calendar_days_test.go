@@ -1285,3 +1285,50 @@ func TestAppendCurrentBaselinePeriodDrawsNothingWhenTheOvulationIsTheCycleStart(
 		t.Errorf("expected a three-day band up to the ovulation day, got %v", shortened)
 	}
 }
+
+// TestAppendPredictedCyclesCapsIterationCountRegardlessOfGridEnd is the WEB-14
+// SEC-H5 iteration-cap regression. appendPredictedCycles chains forward from
+// stats.NextPeriodStart to gridEnd one cycle at a time; before the fix, gridEnd
+// descended straight from an unclamped ?month= (the audit's "9999-12"), so this
+// loop's cost was proportional to the distance between "now" and whatever
+// month the request named. maxProjectedCyclesInGrid is the loop's OWN cap,
+// independent of any clamp a caller applies upstream — this test drives the
+// function directly with a gridEnd 500 years out and a 1-day cycle length (the
+// shortest step the loop ever takes), the worst case regardless of the
+// month-level clamp tested in calendar_view_policy_test.go.
+func TestAppendPredictedCyclesCapsIterationCountRegardlessOfGridEnd(t *testing.T) {
+	predictedPeriodMap := map[string]bool{}
+	preFertileMap := map[string]bool{}
+	fertilityEdgeMap := map[string]bool{}
+	fertilityPeakMap := map[string]bool{}
+	ovulationMap := map[string]bool{}
+
+	nextPeriodStart := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	stats := CycleStats{
+		MedianCycleLength:   1,
+		NextPeriodStart:     nextPeriodStart,
+		AveragePeriodLength: 1,
+	}
+	gridEnd := nextPeriodStart.AddDate(500, 0, 0)
+
+	appendPredictedCycles(predictedPeriodMap, preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, stats, gridEnd, time.UTC, false)
+
+	if got := len(predictedPeriodMap); got > maxProjectedCyclesInGrid {
+		t.Fatalf("predicted period map holds %d days, want at most the %d-cycle cap", got, maxProjectedCyclesInGrid)
+	}
+
+	// Positive anchor: the first cycle, comfortably inside the cap, must still
+	// be painted — otherwise the assertion above would pass just as well with
+	// the whole map builder disabled.
+	firstDay := CalendarDayKey(nextPeriodStart)
+	if !predictedPeriodMap[firstDay] {
+		t.Fatalf("expected the first predicted cycle day %s to be marked", firstDay)
+	}
+
+	// A day only reachable by chaining past the cap must be absent — proves the
+	// loop stopped at the cap rather than merely finishing before gridEnd.
+	farBeyondCap := CalendarDayKey(AddCalendarDays(nextPeriodStart, maxProjectedCyclesInGrid+10, time.UTC))
+	if predictedPeriodMap[farBeyondCap] {
+		t.Fatalf("expected day %s (past the %d-cycle cap) to be unmarked; the cap did not fire", farBeyondCap, maxProjectedCyclesInGrid)
+	}
+}

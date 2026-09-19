@@ -14,14 +14,14 @@ func TestResolveCalendarMonthAndSelectedDateWithoutMinimumMonth(t *testing.T) {
 	now := time.Date(2026, time.February, 21, 10, 30, 0, 0, time.UTC)
 
 	t.Run("invalid month", func(t *testing.T) {
-		_, _, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2026-99", "", now, time.UTC, time.Time{})
+		_, _, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2026-99", "", now, time.UTC, time.Time{}, time.Time{})
 		if !errors.Is(err, ErrCalendarMonthInvalid) {
 			t.Fatalf("expected ErrCalendarMonthInvalid, got %v", err)
 		}
 	})
 
 	t.Run("uses selected day month when month missing", func(t *testing.T) {
-		month, selectedDate, err := ResolveCalendarMonthAndSelectedDateWithinBounds("", "2026-02-17", now, time.UTC, time.Time{})
+		month, selectedDate, err := ResolveCalendarMonthAndSelectedDateWithinBounds("", "2026-02-17", now, time.UTC, time.Time{}, time.Time{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -34,7 +34,7 @@ func TestResolveCalendarMonthAndSelectedDateWithoutMinimumMonth(t *testing.T) {
 	})
 
 	t.Run("keeps explicit month query", func(t *testing.T) {
-		month, selectedDate, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2026-03", "2026-02-17", now, time.UTC, time.Time{})
+		month, selectedDate, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2026-03", "2026-02-17", now, time.UTC, time.Time{}, time.Time{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -47,7 +47,7 @@ func TestResolveCalendarMonthAndSelectedDateWithoutMinimumMonth(t *testing.T) {
 	})
 
 	t.Run("ignores invalid selected day", func(t *testing.T) {
-		month, selectedDate, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2026-03", "invalid-day", now, time.UTC, time.Time{})
+		month, selectedDate, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2026-03", "invalid-day", now, time.UTC, time.Time{}, time.Time{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -60,7 +60,7 @@ func TestResolveCalendarMonthAndSelectedDateWithoutMinimumMonth(t *testing.T) {
 	})
 
 	t.Run("defaults selected day to today when both params missing", func(t *testing.T) {
-		month, selectedDate, err := ResolveCalendarMonthAndSelectedDateWithinBounds("", "", now, time.UTC, time.Time{})
+		month, selectedDate, err := ResolveCalendarMonthAndSelectedDateWithinBounds("", "", now, time.UTC, time.Time{}, time.Time{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -78,7 +78,7 @@ func TestResolveCalendarMonthAndSelectedDateWithinBounds(t *testing.T) {
 	minMonth := time.Date(2023, time.February, 1, 0, 0, 0, 0, time.UTC)
 
 	t.Run("clamps explicit month before minimum", func(t *testing.T) {
-		month, selectedDate, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2020-01", "", now, time.UTC, minMonth)
+		month, selectedDate, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2020-01", "", now, time.UTC, minMonth, time.Time{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -91,7 +91,7 @@ func TestResolveCalendarMonthAndSelectedDateWithinBounds(t *testing.T) {
 	})
 
 	t.Run("drops selected date before minimum month", func(t *testing.T) {
-		month, selectedDate, err := ResolveCalendarMonthAndSelectedDateWithinBounds("", "2022-12-17", now, time.UTC, minMonth)
+		month, selectedDate, err := ResolveCalendarMonthAndSelectedDateWithinBounds("", "2022-12-17", now, time.UTC, minMonth, time.Time{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -104,11 +104,80 @@ func TestResolveCalendarMonthAndSelectedDateWithinBounds(t *testing.T) {
 	})
 }
 
+// TestResolveCalendarMonthAndSelectedDateWithinMaximumBound is the WEB-14
+// SEC-H5 regression: an unbounded ?month= (the audit's "9999-12") used to
+// reach appendPredictedCycles' catch-up loop unclamped, with cost proportional
+// to the distance between "now" and the requested month. The upper clamp
+// bounds that distance to CalendarMaximumNavigableMonth regardless of what the
+// request names, symmetrically with the lower-bound cases above.
+func TestResolveCalendarMonthAndSelectedDateWithinMaximumBound(t *testing.T) {
+	now := time.Date(2026, time.February, 21, 10, 30, 0, 0, time.UTC)
+	maxMonth := time.Date(2026, time.May, 1, 0, 0, 0, 0, time.UTC)
+
+	t.Run("clamps a far-future explicit month to the maximum", func(t *testing.T) {
+		month, selectedDate, err := ResolveCalendarMonthAndSelectedDateWithinBounds("9999-12", "", now, time.UTC, time.Time{}, maxMonth)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if month.Format("2006-01") != "2026-05" {
+			t.Fatalf("expected clamped month 2026-05, got %s", month.Format("2006-01"))
+		}
+		if selectedDate != "" {
+			t.Fatalf("expected empty selected date, got %q", selectedDate)
+		}
+	})
+
+	t.Run("drops selected date after maximum month", func(t *testing.T) {
+		// The selected day (June) first sets the active month, since no explicit
+		// ?month= was given; the maximum clamp then pulls that month back to May,
+		// same as the minimum-bound case above pulls a too-early month forward.
+		month, selectedDate, err := ResolveCalendarMonthAndSelectedDateWithinBounds("", "2026-06-17", now, time.UTC, time.Time{}, maxMonth)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if month.Format("2006-01") != "2026-05" {
+			t.Fatalf("expected clamped month 2026-05, got %s", month.Format("2006-01"))
+		}
+		if selectedDate != "" {
+			t.Fatalf("expected selected date to be cleared, got %q", selectedDate)
+		}
+	})
+}
+
+// TestCalendarAdjacentMonthValuesWithinMaximumBound is the "next" mirror of
+// TestCalendarAdjacentMonthValuesWithinBounds: the next-month link is hidden
+// exactly at the upper bound, exactly as the previous-month link already is at
+// the lower one.
+func TestCalendarAdjacentMonthValuesWithinMaximumBound(t *testing.T) {
+	monthStart := time.Date(2026, time.May, 1, 0, 0, 0, 0, time.UTC)
+	maxMonth := time.Date(2026, time.May, 1, 0, 0, 0, 0, time.UTC)
+
+	prev, next := CalendarAdjacentMonthValuesWithinBounds(monthStart, time.Time{}, maxMonth)
+	if prev != "2026-04" {
+		t.Fatalf("expected prev month 2026-04, got %q", prev)
+	}
+	if next != "" {
+		t.Fatalf("expected empty next month at the upper bound, got %q", next)
+	}
+}
+
+// TestCalendarMaximumNavigableMonth pins the three-year forward horizon: the
+// same magnitude CalendarMinimumNavigableMonth looks back from account
+// creation, mirrored forward from "now" instead.
+func TestCalendarMaximumNavigableMonth(t *testing.T) {
+	now := time.Date(2026, time.March, 13, 14, 30, 0, 0, time.UTC)
+
+	maxMonth := CalendarMaximumNavigableMonth(now, time.UTC)
+	if maxMonth.Format("2006-01-02") != "2029-03-01" {
+		t.Fatalf("expected maximum month 2029-03-01, got %s", maxMonth.Format("2006-01-02"))
+	}
+}
+
 // With a zero minMonth there is no lower bound, so the previous month is always
 // offered — the complement of the bounded case below.
 func TestCalendarAdjacentMonthValuesWithoutMinimumMonth(t *testing.T) {
 	monthStart := time.Date(2026, time.February, 1, 0, 0, 0, 0, time.UTC)
-	prev, next := CalendarAdjacentMonthValuesWithinBounds(monthStart, time.Time{})
+	prev, next := CalendarAdjacentMonthValuesWithinBounds(monthStart, time.Time{}, time.Time{})
 	if prev != "2026-01" {
 		t.Fatalf("expected prev month 2026-01, got %q", prev)
 	}
@@ -121,7 +190,7 @@ func TestCalendarAdjacentMonthValuesWithinBounds(t *testing.T) {
 	monthStart := time.Date(2023, time.February, 1, 0, 0, 0, 0, time.UTC)
 	minMonth := time.Date(2023, time.February, 1, 0, 0, 0, 0, time.UTC)
 
-	prev, next := CalendarAdjacentMonthValuesWithinBounds(monthStart, minMonth)
+	prev, next := CalendarAdjacentMonthValuesWithinBounds(monthStart, minMonth, time.Time{})
 	if prev != "" {
 		t.Fatalf("expected empty prev month at lower bound, got %q", prev)
 	}
@@ -245,7 +314,7 @@ func TestCalendarMonthAnchorsSurviveASkippedFirstOfMonthMidnight(t *testing.T) {
 			now := time.Date(2026, time.August, 17, 12, 0, 0, 0, time.UTC)
 
 			t.Run("month query", func(t *testing.T) {
-				month, _, err := ResolveCalendarMonthAndSelectedDateWithinBounds(testCase.month, "", now, testCase.location, time.Time{})
+				month, _, err := ResolveCalendarMonthAndSelectedDateWithinBounds(testCase.month, "", now, testCase.location, time.Time{}, time.Time{})
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}
@@ -253,7 +322,7 @@ func TestCalendarMonthAnchorsSurviveASkippedFirstOfMonthMidnight(t *testing.T) {
 					t.Fatalf("?month=%s rendered %s", testCase.month, got)
 				}
 
-				prev, next := CalendarAdjacentMonthValuesWithinBounds(month, time.Time{})
+				prev, next := CalendarAdjacentMonthValuesWithinBounds(month, time.Time{}, time.Time{})
 				if prev != testCase.prevMonth {
 					t.Fatalf("previous month link for %s = %q, want %q", testCase.month, prev, testCase.prevMonth)
 				}
@@ -263,7 +332,7 @@ func TestCalendarMonthAnchorsSurviveASkippedFirstOfMonthMidnight(t *testing.T) {
 			})
 
 			t.Run("month derived from the selected day", func(t *testing.T) {
-				month, selectedDate, err := ResolveCalendarMonthAndSelectedDateWithinBounds("", testCase.selectedDay, now, testCase.location, time.Time{})
+				month, selectedDate, err := ResolveCalendarMonthAndSelectedDateWithinBounds("", testCase.selectedDay, now, testCase.location, time.Time{}, time.Time{})
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}
@@ -290,7 +359,7 @@ func TestCalendarMonthAnchorsSurviveASkippedFirstOfMonthMidnight(t *testing.T) {
 
 			t.Run("clamp to the minimum month", func(t *testing.T) {
 				minMonth := time.Date(requested.Year(), requested.Month(), 1, 0, 0, 0, 0, time.UTC)
-				month, _, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2001-01", "", now, testCase.location, minMonth)
+				month, _, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2001-01", "", now, testCase.location, minMonth, time.Time{})
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}

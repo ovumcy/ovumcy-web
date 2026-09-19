@@ -64,7 +64,8 @@ func (service *CalendarViewService) BuildCalendarPageViewData(ctx context.Contex
 	}
 
 	minMonth := CalendarMinimumNavigableMonth(user, location)
-	prevMonth, nextMonth := CalendarAdjacentMonthValuesWithinBounds(monthStart, minMonth)
+	maxMonth := CalendarMaximumNavigableMonth(now, location)
+	prevMonth, nextMonth := CalendarAdjacentMonthValuesWithinBounds(monthStart, minMonth, maxMonth)
 	dayStates := BuildCalendarDayStates(user, monthStart, logs, stats, now, location)
 	// statsLogs, not the grid's set: `logs` is the window around the MONTH being
 	// viewed (CalendarLogRange), so a past month excludes the current cycle

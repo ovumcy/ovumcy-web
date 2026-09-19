@@ -28,6 +28,7 @@ var rateLimitCeilingCases = []struct {
 	{key: "RATE_LIMIT_LOGOUT_ACCOUNT_MAX", read: func(s rateLimitSettings) int { return s.LogoutAccountMax }, ceiling: rateLimitLogoutAccountMaxCeiling, fallback: 20},
 	{key: "RATE_LIMIT_API_MAX", read: func(s rateLimitSettings) int { return s.APIMax }, ceiling: rateLimitAPIMaxCeiling, fallback: 300},
 	{key: "RATE_LIMIT_CALENDAR_FEED_MAX", read: func(s rateLimitSettings) int { return s.CalendarFeedMax }, ceiling: rateLimitCalendarFeedMaxCeiling, fallback: 20},
+	{key: "RATE_LIMIT_CALENDAR_MAX", read: func(s rateLimitSettings) int { return s.CalendarMax }, ceiling: rateLimitCalendarMaxCeiling, fallback: 300},
 }
 
 var rateLimitWindowCases = []struct {
@@ -42,6 +43,7 @@ var rateLimitWindowCases = []struct {
 	{key: "RATE_LIMIT_LOGOUT_ACCOUNT_WINDOW", read: func(s rateLimitSettings) time.Duration { return s.LogoutAccountWindow }, fallback: 15 * time.Minute},
 	{key: "RATE_LIMIT_API_WINDOW", read: func(s rateLimitSettings) time.Duration { return s.APIWindow }, fallback: time.Minute},
 	{key: "RATE_LIMIT_CALENDAR_FEED_WINDOW", read: func(s rateLimitSettings) time.Duration { return s.CalendarFeedWindow }, fallback: time.Minute},
+	{key: "RATE_LIMIT_CALENDAR_WINDOW", read: func(s rateLimitSettings) time.Duration { return s.CalendarWindow }, fallback: time.Minute},
 }
 
 func loadRateLimits(t *testing.T) rateLimitSettings {

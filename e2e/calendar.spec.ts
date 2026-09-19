@@ -128,6 +128,39 @@ test.describe('Calendar page', () => {
     await expect(title).toHaveText(localeText('en', 'calendar.title'));
   });
 
+  test('far-future month query renders the clamped month with the next link disabled', async ({ page }) => {
+    // WEB-14 SEC-H5 sibling of the invalid-month case above: "9999-12" is a
+    // syntactically valid month (unlike "9999-99"), so the page renders 200
+    // at the requested URL instead of redirecting — but the rendered month
+    // is clamped to services.CalendarMaximumNavigableMonth (three years
+    // out), never the requested far-future value, and the "next" link is
+    // disabled there exactly as "prev" is at the lower bound.
+    await registerOwnerOnCalendar(page, 'calendar-far-future-month');
+
+    const navigationCard = page.locator('div.card').filter({
+      has: page.locator('[data-calendar-month-nav]'),
+    }).first();
+    const monthLabel = navigationCard.locator('p.journal-muted').first();
+    const initialLabel = ((await monthLabel.textContent()) ?? '').trim();
+
+    await page.goto('/calendar?month=9999-12');
+    await expect(page).toHaveURL(/\/calendar\?month=9999-12$/);
+
+    const title = page.locator('h1[data-title-key="calendar.title"]');
+    await expect(title).toBeVisible();
+
+    const clampedLabel = ((await monthLabel.textContent()) ?? '').trim();
+    expect(clampedLabel.length).toBeGreaterThan(0);
+    expect(clampedLabel).not.toBe(initialLabel);
+
+    const nextDisabled = navigationCard.locator('span.btn-disabled[aria-disabled="true"]');
+    await expect(nextDisabled).toHaveCount(1);
+    await expect(nextDisabled).toHaveText(localeText('en', 'calendar.next'));
+
+    const prevLink = navigationCard.locator('a.btn-secondary[href^="/calendar?month="]');
+    await expect(prevLink).toHaveCount(1);
+  });
+
   test('legend groups the grid encoding by concept and leads the grid', async ({ page }) => {
     await registerOwnerOnCalendar(page, 'calendar-legend');
 

@@ -17,12 +17,12 @@ import (
 func TestCalendarViewPolicyNilLocationUsesUTC(t *testing.T) {
 	now := time.Date(2026, time.March, 15, 9, 0, 0, 0, time.UTC)
 
-	withNil, selNil, errNil := ResolveCalendarMonthAndSelectedDateWithinBounds("", "", now, nil, time.Time{})
+	withNil, selNil, errNil := ResolveCalendarMonthAndSelectedDateWithinBounds("", "", now, nil, time.Time{}, time.Time{})
 	if errNil != nil {
 		t.Fatalf("unexpected error with nil location: %v", errNil)
 	}
 
-	withUTC, selUTC, errUTC := ResolveCalendarMonthAndSelectedDateWithinBounds("", "", now, time.UTC, time.Time{})
+	withUTC, selUTC, errUTC := ResolveCalendarMonthAndSelectedDateWithinBounds("", "", now, time.UTC, time.Time{}, time.Time{})
 	if errUTC != nil {
 		t.Fatalf("unexpected error with UTC location: %v", errUTC)
 	}
@@ -40,7 +40,7 @@ func TestCalendarViewPolicyNilLocationUsesUTC(t *testing.T) {
 func TestCalendarViewPolicyNilLocationWithSelectedDay(t *testing.T) {
 	now := time.Date(2026, time.April, 5, 12, 0, 0, 0, time.UTC)
 
-	withNil, selNil, err := ResolveCalendarMonthAndSelectedDateWithinBounds("", "2026-04-05", now, nil, time.Time{})
+	withNil, selNil, err := ResolveCalendarMonthAndSelectedDateWithinBounds("", "2026-04-05", now, nil, time.Time{}, time.Time{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestCalendarViewPolicyMonthBeforeExactMinimum(t *testing.T) {
 	// monthStart == minMonth, prevMonth (Feb 2023) is before the minimum,
 	// so prevValue must be "".  But monthStart itself (March 2023) is exactly
 	// the minimum, confirming the equality edge.
-	prev, _ := CalendarAdjacentMonthValuesWithinBounds(minMonth, minMonth)
+	prev, _ := CalendarAdjacentMonthValuesWithinBounds(minMonth, minMonth, time.Time{})
 	if prev != "" {
 		t.Errorf("prevValue for month == minMonth should be empty, got %q", prev)
 	}
@@ -121,7 +121,7 @@ func TestCalendarViewPolicyMonthBeforeExactMinimum(t *testing.T) {
 	// Also drive calendarMonthBefore directly via ResolveCalendarMonthAndSelectedDateWithinBounds:
 	// request March 2023 explicitly — it should NOT be clamped (it equals minMonth).
 	now := time.Date(2026, time.February, 21, 0, 0, 0, 0, time.UTC)
-	gotMonth, _, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2023-03", "", now, time.UTC, minMonth)
+	gotMonth, _, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2023-03", "", now, time.UTC, minMonth, time.Time{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -141,7 +141,7 @@ func TestCalendarViewPolicyMonthBeforeEarlierYear(t *testing.T) {
 	now := time.Date(2026, time.February, 21, 0, 0, 0, 0, time.UTC)
 
 	// Request 2021-06 — an earlier year — it must be clamped to 2023-03.
-	gotMonth, _, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2021-06", "", now, time.UTC, minMonth)
+	gotMonth, _, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2021-06", "", now, time.UTC, minMonth, time.Time{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestCalendarViewPolicyMonthBeforeLaterYear(t *testing.T) {
 	minMonth := time.Date(2023, time.March, 1, 0, 0, 0, 0, time.UTC)
 	now := time.Date(2026, time.February, 21, 0, 0, 0, 0, time.UTC)
 
-	gotMonth, _, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2025-06", "", now, time.UTC, minMonth)
+	gotMonth, _, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2025-06", "", now, time.UTC, minMonth, time.Time{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestCalendarViewPolicyMonthBeforeSameYearEarlierMonth(t *testing.T) {
 	now := time.Date(2026, time.February, 21, 0, 0, 0, 0, time.UTC)
 
 	// 2023-03 is in the same year but earlier month — must be clamped to 2023-06.
-	gotMonth, _, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2023-03", "", now, time.UTC, minMonth)
+	gotMonth, _, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2023-03", "", now, time.UTC, minMonth, time.Time{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestCalendarViewPolicyMonthBeforeSameYearLaterMonth(t *testing.T) {
 	minMonth := time.Date(2023, time.June, 1, 0, 0, 0, 0, time.UTC)
 	now := time.Date(2026, time.February, 21, 0, 0, 0, 0, time.UTC)
 
-	gotMonth, _, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2023-09", "", now, time.UTC, minMonth)
+	gotMonth, _, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2023-09", "", now, time.UTC, minMonth, time.Time{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -221,7 +221,7 @@ func TestCalendarViewPolicyResolveLocationNonNilReturnsIt(t *testing.T) {
 	now := time.Date(2026, time.February, 21, 0, 0, 0, 0, berlinLoc)
 
 	// Request a month that is before minMonth so clampCalendarMonthToMinimum fires.
-	gotMonth, _, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2022-01", "", now, berlinLoc, minMonth)
+	gotMonth, _, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2022-01", "", now, berlinLoc, minMonth, time.Time{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -247,7 +247,7 @@ func TestCalendarViewPolicyResolveLocationNilUseFallback(t *testing.T) {
 	// Pass nil location — the entry point's guard replaces it with UTC.
 	// Month 2022-01 is before minMonth, so clamping fires and the returned
 	// month must carry UTC, not minMonth's Tokyo zone.
-	gotMonth, _, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2022-01", "", now, nil, minMonth)
+	gotMonth, _, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2022-01", "", now, nil, minMonth, time.Time{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -271,7 +271,7 @@ func TestCalendarViewPolicyResolveLocationNonNilPreferred(t *testing.T) {
 	now := time.Date(2026, time.February, 21, 0, 0, 0, 0, pacificLoc)
 
 	// Month 2022-03 is before minMonth; explicit location is Pacific.
-	gotMonth, _, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2022-03", "", now, pacificLoc, minMonth)
+	gotMonth, _, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2022-03", "", now, pacificLoc, minMonth, time.Time{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

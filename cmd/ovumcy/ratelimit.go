@@ -178,8 +178,26 @@ func rateLimitScope(c fiber.Ctx) string {
 		return "settings"
 	case isV1AuthPath(path), strings.HasPrefix(path, "/auth/oidc"):
 		return "auth"
+	case path == "/calendar":
+		return "calendar"
 	default:
 		return "api"
+	}
+}
+
+// newCalendarPageRateLimitHandler is the LimitReached handler for GET
+// /calendar's own budget (WEB-14 SEC-H5). It answers through the same
+// negotiated envelope as the general API limiter (JSON when asked, the mapped
+// HTML/flash form otherwise) — RespondAPIRateLimited's default case already
+// covers a page outside every named prefix, so no new response arm is needed.
+func newCalendarPageRateLimitHandler(handler *api.Handler) fiber.Handler {
+	return func(c fiber.Ctx) error {
+		logRateLimitHit(c)
+		handler.LogSecurityEvent(c, "rate_limit", "blocked",
+			api.SecurityEventField{Key: "scope", Value: "calendar"},
+			api.SecurityEventField{Key: "reason", Value: "too many requests"},
+		)
+		return handler.RespondAPIRateLimited(c)
 	}
 }
 
