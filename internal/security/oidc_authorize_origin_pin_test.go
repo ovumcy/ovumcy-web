@@ -62,6 +62,29 @@ func TestOIDC_RuntimePoC_ForeignAuthorizationEndpointIsRefusedAtProviderLoad(t *
 	}
 }
 
+// OnIssuerOrigin is the pin the transport layer re-applies to provider-logout
+// state read back from storage. It must agree with the discovery pins: the
+// issuer's own origin passes, any other origin does not, and an issuer that
+// does not parse as an absolute URL admits nothing.
+func TestOnIssuerOriginAgreesWithTheDiscoveryPins(t *testing.T) {
+	t.Parallel()
+
+	const issuer = "https://id.example.com"
+	if !OnIssuerOrigin(mustParseTestURL(t, "https://id.example.com:443/logout"), issuer) {
+		t.Fatal("positive control: an endpoint on the issuer origin was refused")
+	}
+	for _, foreign := range []string{"https://evil.example/logout", "https://id.example.com:8443/logout", "https://login.id.example.com/logout"} {
+		if OnIssuerOrigin(mustParseTestURL(t, foreign), issuer) {
+			t.Fatalf("%s was treated as on the issuer origin", foreign)
+		}
+	}
+	for _, badIssuer := range []string{"", "id.example.com", "://"} {
+		if OnIssuerOrigin(mustParseTestURL(t, "https://id.example.com/logout"), badIssuer) {
+			t.Fatalf("an endpoint passed against the unpinnable issuer %q", badIssuer)
+		}
+	}
+}
+
 // Full-width and other non-ASCII host spellings. Go's HTTP transport, like a
 // browser, maps a host through IDNA before dialing it, so a spelling the check
 // would read as an ordinary name can dial this machine. The premise is asserted
