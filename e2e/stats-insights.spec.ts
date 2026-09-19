@@ -210,6 +210,34 @@ test.describe('Stats: BBT chart', () => {
     await registerAndOnboardWithStartDaysAgo(page, 'stats-bbt-marker', 60);
     const today = isoToday();
 
+    // The marker is an interpretation of the BBT series, gated on the same
+    // ConfirmedCurrentCycleOvulation predicate (user.TrackBBT) as the
+    // dashboard, the calendar's confirmed-vs-tentative ovulation dot, and the
+    // API: an account that never turned tracking on gets no temperature-
+    // derived marker anywhere, so it must be enabled before the rows below are
+    // written. Send the full default snapshot through the tracking endpoint —
+    // the JSON body parser does not treat missing fields as no-op, so a
+    // single-field patch would wipe the other tracking flags (see
+    // calendar.spec.ts's TrackBBT block for the same spelling).
+    const csrf = await csrfToken(page);
+    const trackingResponse = await page.request.patch('/api/v1/users/current/tracking', {
+      headers: {
+        ...apiOriginHeader(page),
+        'X-CSRF-Token': csrf,
+        'Content-Type': 'application/json',
+      },
+      data: {
+        track_bbt: true,
+        temperature_unit: 'celsius',
+        track_cervical_mucus: false,
+        hide_sex_chip: false,
+        hide_cycle_factors: false,
+        hide_notes_field: false,
+        show_historical_phases: false,
+      },
+    });
+    expect(trackingResponse.status()).toBeLessThan(400);
+
     await markCycleStartViaAPI(page, shiftISODate(today, -30));
     await markCycleStartViaAPI(page, shiftISODate(today, -14));
 
