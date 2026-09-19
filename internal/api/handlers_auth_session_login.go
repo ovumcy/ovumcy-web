@@ -183,7 +183,7 @@ func (handler *Handler) Logout(c fiber.Ctx) error {
 	}
 
 	logoutTransportPath := ""
-	if hasSession && sessionClaims != nil && handler.oidcLogoutStateSvc != nil {
+	if hasSession && sessionClaims != nil {
 		logoutState, found, err := handler.oidcLogoutStateSvc.Load(c.Context(), sessionClaims.SessionID, sessionClaims.UserID, time.Now())
 		if err != nil {
 			handler.logSecurityEvent(c, "auth.logout", "provider_logout_state_unavailable")

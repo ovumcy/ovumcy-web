@@ -34,6 +34,9 @@ func newLogoutTestApp(t *testing.T, repo *countingLogoutAuthRepo, limit int, ses
 		location:    time.UTC,
 		secretKey:   []byte("test-secret-key"),
 		authService: authSvc,
+		// Wired as in production; no provider-logout state is stored, so the
+		// sign-out stays local.
+		oidcLogoutStateSvc: services.NewOIDCLogoutStateService(&moveLogoutStateStub{findFound: false}),
 	}
 
 	app := fiber.New()
