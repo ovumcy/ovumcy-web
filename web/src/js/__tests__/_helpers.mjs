@@ -11,6 +11,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { afterEach } from "node:test";
 import { JSDOM, VirtualConsole } from "jsdom";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -47,6 +48,55 @@ export function isAllowedJsdomErrorMessage(message) {
   return ALLOWED_JSDOM_ERROR_MESSAGES.has(message);
 }
 
+// Every dom created by loadDOMWithScript is tracked here until it is
+// finalized — either by an explicit dom.window.close() call, or by the
+// afterEach hook below when the test that created it ends without ever
+// calling close(). `finalizeDomEntry` is the single path both routes use, so
+// an explicit close() followed by the automatic afterEach sweep checks and
+// reports exactly once, never twice.
+let pendingDomEntries = [];
+
+function finalizeDomEntry(entry) {
+  if (entry.finalized) {
+    return;
+  }
+  entry.finalized = true;
+  entry.originalClose();
+  if (entry.unhandled.length === 0) {
+    return;
+  }
+  const summary = entry.unhandled
+    .map((item, index) => `  ${index + 1}. [${item.source}] ${item.message}`)
+    .join("\n");
+  throw new Error(
+    `loadDOMWithScript: ${entry.unhandled.length} unhandled jsdom/window error(s) surfaced during this test:\n${summary}`
+  );
+}
+
+// Registered once per test file (module-scope, run at import time), this
+// applies to every top-level test in the file: node:test attributes a
+// failure thrown here to the test that just finished, exactly like an
+// explicit assertion inside it would. A test that forgets dom.window.close()
+// — or creates several doms and closes only some — still gets checked.
+afterEach(() => {
+  const entries = pendingDomEntries;
+  pendingDomEntries = [];
+  const errors = [];
+  for (const entry of entries) {
+    try {
+      finalizeDomEntry(entry);
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (errors.length === 1) {
+    throw errors[0];
+  }
+  if (errors.length > 1) {
+    throw new Error(errors.map((error) => error.message).join("\n\n"));
+  }
+});
+
 export function readAppBundle() {
   return readFileSync(path.join(repoRoot, "web", "static", "js", "app.js"), "utf8");
 }
@@ -67,9 +117,12 @@ export function readTimezoneBootstrap() {
 // Any error jsdom surfaces from inside the window — an exception thrown by
 // an event handler or a timer callback, reported through the window "error"
 // event and/or jsdom's virtual console — is recorded and, unless its exact
-// message is allow-listed above, makes `dom.window.close()` throw and name
-// it. Every existing test already calls `dom.window.close()` in a `finally`
-// block, so this applies harness-wide with no per-test opt-in.
+// message is allow-listed above, fails the test that created this dom and
+// names it. This is checked automatically at test end via the afterEach
+// hook above, so it applies with no per-test opt-in — a test that forgets to
+// call dom.window.close() (or closes only some of several doms it created)
+// is still checked. An explicit dom.window.close() call still works and
+// still runs the check immediately, without waiting for the test to end.
 //
 // An unhandled promise REJECTION inside jsdom-evaluated script is not routed
 // through this mechanism: jsdom does not implement window "unhandledrejection"
@@ -130,18 +183,11 @@ export async function loadDOMWithScript(scriptSource, { html, url, beforeRun } =
   const event = new dom.window.Event("DOMContentLoaded", { bubbles: true, cancelable: true });
   dom.window.document.dispatchEvent(event);
 
-  const originalClose = dom.window.close.bind(dom.window);
+  const entry = { unhandled, finalized: false, originalClose: dom.window.close.bind(dom.window) };
+  pendingDomEntries.push(entry);
+
   dom.window.close = function assertNoUnhandledErrorsThenClose() {
-    originalClose();
-    if (unhandled.length === 0) {
-      return;
-    }
-    const summary = unhandled
-      .map((entry, index) => `  ${index + 1}. [${entry.source}] ${entry.message}`)
-      .join("\n");
-    throw new Error(
-      `loadDOMWithScript: ${unhandled.length} unhandled jsdom/window error(s) surfaced during this test:\n${summary}`
-    );
+    finalizeDomEntry(entry);
   };
 
   return dom;

@@ -91,3 +91,31 @@ test("an unhandled promise rejection already fails the process (Node's own detec
   assert.notEqual(result.status, 0, "an unhandled rejection inside jsdom-evaluated script must crash the process");
   assert.match(result.stderr, /fixture: rejection boom/, "the crash must name the rejection's error message");
 });
+
+test("a handler exception fails the test even when it never calls dom.window.close()", () => {
+  // Run as a child `node --test` process: the fixture test must itself go
+  // red, so it cannot live inline here without permanently failing this
+  // file. The afterEach hook in _helpers.mjs — not an explicit close() call
+  // — is what must catch it.
+  const fixture = fileURLToPath(
+    new URL("./_fixtures/never-closed-handler-throw-repro.mjs", import.meta.url)
+  );
+  // Strip NODE_TEST_CONTEXT/NODE_TEST_WORKER_ID: when this file itself runs
+  // under `node --test`, Node sets them so a nested `node --test` child
+  // reports through the parent's IPC channel instead of its own exit code,
+  // which would make this assertion pass regardless of the fixture's result.
+  const childEnv = { ...process.env };
+  delete childEnv.NODE_TEST_CONTEXT;
+  delete childEnv.NODE_TEST_WORKER_ID;
+  const result = spawnSync(process.execPath, ["--test", fixture], { encoding: "utf8", env: childEnv });
+  assert.notEqual(
+    result.status,
+    0,
+    "a handler exception must fail the fixture's test even though it never calls dom.window.close()"
+  );
+  assert.match(
+    result.stdout + result.stderr,
+    /never-closed handler boom/,
+    "the automatic afterEach check must name the error"
+  );
+});
