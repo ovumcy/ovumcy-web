@@ -14,16 +14,17 @@ import (
 )
 
 // This file is WEB-16 TS-M04 + TS-M10: it pins the exact owner → URL →
-// payload wiring the notify pass promises (notifications-egress.md) and the
-// reminder-timing due/not-due/watermark contract (webhook_reminder.go), at a
+// payload wiring the notify pass promises (each owner's reminder goes to that
+// owner's own endpoint and nowhere else) and the reminder-timing
+// due/not-due/watermark contract (webhook_reminder.go), at a
 // level of exactness the existing suite left implicit. Every expected date
 // below is HAND-COMPUTED from the fixture's own LastPeriodStart/CycleLength —
 // never derived by calling CalendarDay/AddCalendarDays/CalendarDaysBetween
 // (the production helpers under test) — so a test can never agree with a
 // mutated production computation by construction.
 
-// TestNotifyOwnerZoneProducesADifferentPayloadDateThanTheFallbackZone pins
-// resolveOwnerLocation's promise (timezone-calendar.md: "the single
+// TestWebhookNotifyOwnerZoneProducesADifferentPayloadDateThanTheFallbackZone pins
+// resolveOwnerLocation's promise (its doc comment: "the single
 // owner-timezone resolver for every request-free pass") at the one point
 // where getting it wrong is invisible without an exact-date assertion: a
 // moment picked so the owner's persisted zone and the injected fallback zone
@@ -48,7 +49,7 @@ import (
 // one doesn't merely date the reminder wrong — it fails to send one at all,
 // which is what makes this assertion self-checking: a correct pass reports
 // exactly one delivery, dated 2026-03-12.
-func TestNotifyOwnerZoneProducesADifferentPayloadDateThanTheFallbackZone(t *testing.T) {
+func TestWebhookNotifyOwnerZoneProducesADifferentPayloadDateThanTheFallbackZone(t *testing.T) {
 	now := time.Date(2026, 3, 12, 5, 0, 0, 0, time.UTC)
 	lastPeriodStart := time.Date(2026, 2, 12, 0, 0, 0, 0, time.UTC)
 
@@ -89,7 +90,7 @@ func TestNotifyOwnerZoneProducesADifferentPayloadDateThanTheFallbackZone(t *test
 	}
 }
 
-// TestNotifySameOwnerDueAtOneMomentAndNotDueAtAnother pins the timing
+// TestWebhookNotifySameOwnerDueAtOneMomentAndNotDueAtAnother pins the timing
 // contract with one owner across two independent passes: at a moment outside
 // the lead window nothing fires, and at a moment inside it the SAME owner's
 // SAME reminder fires — proving "due" is a property of the moment, not a
@@ -103,7 +104,7 @@ func TestNotifyOwnerZoneProducesADifferentPayloadDateThanTheFallbackZone(t *test
 //     before the projected 2026-03-12 ⇒ outside [0,3] ⇒ not due.
 //   - moment2 = 2026-03-10: today is 2 days before 2026-03-12 ⇒ inside
 //     [0,3] ⇒ due, dated 2026-03-12.
-func TestNotifySameOwnerDueAtOneMomentAndNotDueAtAnother(t *testing.T) {
+func TestWebhookNotifySameOwnerDueAtOneMomentAndNotDueAtAnother(t *testing.T) {
 	lastPeriodStart := time.Date(2026, 2, 12, 0, 0, 0, 0, time.UTC)
 	baseRecord := models.WebhookNotifyRecord{
 		ID:                  1,
@@ -125,6 +126,12 @@ func TestNotifySameOwnerDueAtOneMomentAndNotDueAtAnother(t *testing.T) {
 	reportNotDue, err := serviceNotDue.RunOnce(context.Background(), notDueMoment, time.UTC, false)
 	if err != nil {
 		t.Fatalf("RunOnce at the not-due moment: %v", err)
+	}
+	// Checked FIRST: a watermark written for a reminder that was not due would
+	// suppress the real reminder when its window opens, with no send to show for
+	// it — the one failure of this pair nothing downstream would ever surface.
+	if writes := repoNotDue.writes(); len(writes) != 0 {
+		t.Fatalf("a not-due moment must not advance any watermark, got %#v", writes)
 	}
 	if reportNotDue.Due != 0 || reportNotDue.Sent != 0 {
 		t.Fatalf("expected nothing due 20 days ahead of the window, got due=%d sent=%d", reportNotDue.Due, reportNotDue.Sent)
@@ -154,7 +161,7 @@ func TestNotifySameOwnerDueAtOneMomentAndNotDueAtAnother(t *testing.T) {
 	}
 }
 
-// TestNotifyWatermarkAdvancesToTheExactExpectedAnchorThenSuppresses pins the
+// TestWebhookNotifyWatermarkAdvancesToTheExactExpectedAnchorThenSuppresses pins the
 // watermark's VALUE, not just its presence: after a successful send it must
 // advance to the exact hand-computed cycle anchor, and a second pass inside
 // the same window — fed that exact stored watermark, precisely as the real
@@ -164,7 +171,7 @@ func TestNotifySameOwnerDueAtOneMomentAndNotDueAtAnother(t *testing.T) {
 // 2026-02-12, CycleLength = 28 ⇒ the watermark a successful send at
 // 2026-03-10 must write is 2026-03-12 (the projected next period, which is
 // definitionally the cycle anchor for a period reminder).
-func TestNotifyWatermarkAdvancesToTheExactExpectedAnchorThenSuppresses(t *testing.T) {
+func TestWebhookNotifyWatermarkAdvancesToTheExactExpectedAnchorThenSuppresses(t *testing.T) {
 	lastPeriodStart := time.Date(2026, 2, 12, 0, 0, 0, 0, time.UTC)
 	now := time.Date(2026, 3, 10, 9, 0, 0, 0, time.UTC)
 	record := models.WebhookNotifyRecord{
@@ -223,7 +230,7 @@ func TestNotifyWatermarkAdvancesToTheExactExpectedAnchorThenSuppresses(t *testin
 	}
 }
 
-// TestNotifyCrossOwnerWiringHoldsAcrossBothDeliveryFormats drives the notify
+// TestWebhookNotifyCrossOwnerWiringHoldsAcrossBothDeliveryFormats drives the notify
 // pass with the REAL hardened deliverer (not the in-process stub every other
 // test in this package uses) against two httptest servers, so it exercises
 // the actual wire format alongside owner scoping. The repo carries two
@@ -246,7 +253,7 @@ func TestNotifyWatermarkAdvancesToTheExactExpectedAnchorThenSuppresses(t *testin
 // 27 days ago (2026-02-13) ⇒ next period 2026-02-13+28 = 2026-03-13. Both
 // fall inside the 3-day lead window (2 and 1 days out) and are distinct
 // dates, so a cross-owner leak is observable either direction.
-func TestNotifyCrossOwnerWiringHoldsAcrossBothDeliveryFormats(t *testing.T) {
+func TestWebhookNotifyCrossOwnerWiringHoldsAcrossBothDeliveryFormats(t *testing.T) {
 	now := time.Date(2026, 3, 12, 9, 0, 0, 0, time.UTC)
 
 	var gotA struct {
@@ -321,5 +328,100 @@ func TestNotifyCrossOwnerWiringHoldsAcrossBothDeliveryFormats(t *testing.T) {
 	}
 	if gotB.title == "" {
 		t.Fatal("owner B's ntfy request must carry the X-Title header")
+	}
+
+	// The watermark is owner-scoped wiring too: each owner's send advances THAT
+	// owner's watermark to THAT owner's own anchor (the projected next period,
+	// hand-computed above). A claim keyed on the wrong owner would mark A's
+	// reminder sent for B and withhold B's next one.
+	expectedAnchors := map[uint]time.Time{
+		1: time.Date(2026, 3, 14, 0, 0, 0, 0, time.UTC),
+		2: time.Date(2026, 3, 13, 0, 0, 0, 0, time.UTC),
+	}
+	writes := repo.writes()
+	if len(writes) != len(expectedAnchors) {
+		t.Fatalf("expected one watermark write per owner, got %#v", writes)
+	}
+	seen := map[uint]bool{}
+	for _, write := range writes {
+		expected, known := expectedAnchors[write.userID]
+		if !known || seen[write.userID] {
+			t.Fatalf("watermark writes must be exactly one per delivered owner, got %#v", writes)
+		}
+		seen[write.userID] = true
+		if write.reminderType != DueReminderTypePeriod {
+			t.Fatalf("owner %d: expected a period watermark, got %q", write.userID, write.reminderType)
+		}
+		if !write.anchor.Equal(expected) {
+			t.Fatalf("owner %d: watermark must advance to the owner's own anchor %s, got %s", write.userID, expected.Format("2006-01-02"), write.anchor.Format("2006-01-02"))
+		}
+	}
+}
+
+// TestWebhookNotifyOwnerZoneWithholdsAReminderTheFallbackZoneWouldSend is the
+// reverse direction of the owner-zone case above: at this instant the fallback
+// zone says "due" and the owner's zone says "not yet", so a pass that read the
+// fallback would SEND, and a correct one sends nothing to that owner.
+//
+// Fixture (hand-computed): LastPeriodStart = 2026-02-12, CycleLength = 28,
+// lead 3. Instant now = 2026-03-11T12:00:00Z.
+//   - fallback UTC: today = 2026-03-11, 27 days elapsed ⇒ next period
+//     2026-02-12 + 28 = 2026-03-12, one day out ⇒ due.
+//   - owner Pacific/Kiritimati (UTC+14): local wall clock 2026-03-12T02:00,
+//     today = 2026-03-12, 28 days elapsed = one full cycle ⇒ the projection
+//     rolls, the next period moves to 2026-04-09, 28 days out ⇒ not due.
+//
+// The control owner has no persisted zone, so the pass resolves it through the
+// same fallback: it must send, dated 2026-03-12. That proves the fixture sits
+// inside the window on the fallback's day — without it, the refusal above
+// would also pass on a fixture that is simply never due.
+func TestWebhookNotifyOwnerZoneWithholdsAReminderTheFallbackZoneWouldSend(t *testing.T) {
+	now := time.Date(2026, 3, 11, 12, 0, 0, 0, time.UTC)
+	lastPeriodStart := time.Date(2026, 2, 12, 0, 0, 0, 0, time.UTC)
+	newRecord := func(id uint, timezone string, url string) models.WebhookNotifyRecord {
+		return models.WebhookNotifyRecord{
+			ID:                  id,
+			CycleLength:         28,
+			PeriodLength:        5,
+			LutealPhase:         14,
+			LastPeriodStart:     &lastPeriodStart,
+			Timezone:            timezone,
+			WebhookEnabled:      true,
+			WebhookURL:          url,
+			WebhookNotifyPeriod: true,
+			ReminderLeadDays:    3,
+		}
+	}
+	const ownerURL = "https://kiritimati.example/hook"
+	const controlURL = "https://fallback.example/hook"
+	repo := &stubNotifyRepo{records: []models.WebhookNotifyRecord{
+		newRecord(1, "Pacific/Kiritimati", ownerURL),
+		newRecord(2, "", controlURL),
+	}}
+	logs := stubLogReader{byUser: map[uint][]models.DailyLog{
+		1: {periodStartLog(1, lastPeriodStart)},
+		2: {periodStartLog(2, lastPeriodStart)},
+	}}
+	deliverer := &stubDeliverer{}
+	service := newTestNotifyService(repo, logs, stubDecryptor{}, deliverer)
+
+	if _, err := service.RunOnce(context.Background(), now, time.UTC, false); err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+
+	var controlDeliveries int
+	for _, delivery := range deliverer.deliveries() {
+		switch delivery.url {
+		case ownerURL:
+			t.Fatalf("the owner's zone puts the period 28 days out; the pass sent it on the fallback zone's day: %#v", delivery.payload)
+		case controlURL:
+			controlDeliveries++
+			if got := delivery.payload.EventDate; got != "2026-03-12" {
+				t.Fatalf("control owner (fallback zone): expected the reminder dated 2026-03-12, got %q", got)
+			}
+		}
+	}
+	if controlDeliveries != 1 {
+		t.Fatalf("control owner (no persisted zone) must be due on the fallback's day and receive exactly one reminder, got %d", controlDeliveries)
 	}
 }
