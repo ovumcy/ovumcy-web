@@ -166,20 +166,24 @@ func buildCalendarPredictionMaps(user *models.User, logs []models.DailyLog, stat
 	// are untouched.
 	//
 	// One marker survives a suppressed tier: the solid ovulation marker on a day
-	// the owner's own temperatures confirmed, exactly where the verdict keeps it
-	// (KeepConfirmedOvulation — today the overdue signal alone). That day was
-	// never chained from NextPeriodStart. It is asked under EITHER gate, not
-	// only the whole-projection one: the dashboard and the JSON overview read the
-	// same verdict under the fertility gate, and a grid that asked it only here
-	// would hide a day they name the moment a fertility-only signal stopped
-	// withholding it. No window, peak band or pre-fertile shading comes with it.
-	suppression := ResolvePredictionSuppression(user, stats)
-	if suppression.FertilitySuppressed {
-		if confirmed, ok := suppression.KeepConfirmedOvulation(ConfirmedCurrentCycleOvulation(user, logs, stats, DateAtLocation(now, location), location)); ok {
+	// the owner's own temperatures confirmed. That day was never chained from
+	// NextPeriodStart, and whether it may be named is decided in ONE place, the
+	// gate inside ConfirmedCurrentCycleOvulation (ConfirmedOvulationWithheld) —
+	// today it lets the day through under the overdue signal alone. The grid
+	// asks that owner under EITHER gate, not only the whole-projection one: the
+	// dashboard and the JSON overview ask it under the fertility gate too, and a
+	// grid that asked only here would hide a day they name the moment a
+	// fertility-only signal stopped withholding it. No window, peak band or
+	// pre-fertile shading comes with it.
+	fertilitySuppressed := FertilityProjectionSuppressed(user, stats)
+	confirmedUnderSuppression := time.Time{}
+	if fertilitySuppressed {
+		if confirmed, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, DateAtLocation(now, location), location); ok {
 			ovulationMap[CalendarDayKey(confirmed)] = true
+			confirmedUnderSuppression = confirmed
 		}
 	}
-	if suppression.PredictionsSuppressed {
+	if PredictionsSuppressed(user, stats) {
 		return maps
 	}
 
@@ -187,8 +191,8 @@ func buildCalendarPredictionMaps(user *models.User, logs []models.DailyLog, stat
 	// until one cycle has been observed, the fertile window, the peak band and the
 	// ovulation day are the onboarding slider projected forward, so the grid
 	// paints none of them (FertilityProjectionSuppressed). The predicted period
-	// days keep their anchor in a recorded cycle start and stay.
-	fertilitySuppressed := suppression.FertilitySuppressed
+	// days keep their anchor in a recorded cycle start and stay — narrowed off a
+	// confirmed day the marker above names, so a band never shades that cell.
 
 	// The CURRENT cycle's window follows a thermal shift the owner's own
 	// temperatures confirm — the same triple (day, window, status) the dashboard
@@ -200,7 +204,7 @@ func buildCalendarPredictionMaps(user *models.User, logs []models.DailyLog, stat
 	// changes which days are shaded and never whether any are.
 	currentStats, _ := ResolveConfirmedCycleStats(user, logs, stats, DateAtLocation(now, location), location)
 
-	currentOvulationDay := time.Time{}
+	currentOvulationDay := confirmedUnderSuppression
 	if !fertilitySuppressed {
 		currentOvulationDay = currentStats.OvulationDate
 	}

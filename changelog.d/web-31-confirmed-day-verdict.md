@@ -1,5 +1,6 @@
 none
 
-Structural: the JSON overview, the dashboard and the calendar now read one verdict on the
-BBT-confirmed ovulation day instead of the overview inferring it from the fertility gate. No
-surface publishes anything different for any existing suppression signal.
+Structural: whether the BBT-confirmed ovulation day may be named is decided once, by the gate
+inside the confirmed-day detector; the JSON overview no longer adds a fertility-gate condition of
+its own, and the calendar asks the detector under either suppression gate. No surface publishes
+anything different for any existing suppression signal.
