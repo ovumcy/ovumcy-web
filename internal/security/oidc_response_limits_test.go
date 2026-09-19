@@ -131,3 +131,21 @@ func TestOIDCBoundedBodyBoundary(t *testing.T) {
 		t.Fatalf("the bounded body handed out %d bytes past a %d-byte limit", len(got), limit)
 	}
 }
+
+// The refusal tests pad relative to the constants, so they move with them;
+// this pins the values SECURITY.md, docs/oidc.md and the changelog promise,
+// on the client newOIDCHTTPClient actually builds.
+func TestOIDCResponseLimitsAreTheDocumentedValues(t *testing.T) {
+	client := newOIDCHTTPClient(OIDCConfig{})
+	bounded, ok := client.Transport.(*oidcBoundedBodyTransport)
+	if !ok {
+		t.Fatalf("OIDC client transport is %T, want *oidcBoundedBodyTransport", client.Transport)
+	}
+	if bounded.limit != 512<<10 {
+		t.Fatalf("OIDC response body cap is %d bytes; the documented value is 512 KiB", bounded.limit)
+	}
+	base, ok := oidcClientBaseTransport(client)
+	if !ok || base.MaxResponseHeaderBytes != 64<<10 {
+		t.Fatalf("OIDC response header cap must be the documented 64 KiB, got transport %T", bounded.base)
+	}
+}
