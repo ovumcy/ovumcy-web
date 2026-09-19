@@ -57,7 +57,9 @@ type reminderSchedulerSettings struct {
 
 // Every RATE_LIMIT_* setting has a ceiling as well as a floor: a value above it
 // falls back to the default (logged at boot) instead of widening the budget,
-// so a misread unit or a stray zero cannot switch a limiter off. The ceilings
+// so an oversized max or a stray zero cannot switch a limiter off. A window is
+// only held to [1s, 24h]: a unit slip there (15s for 15m) still widens the
+// budget, and the per-account login budget with it. The ceilings
 // are sized to what a self-hosted instance behind one address can need, not to
 // what the process could survive; the load-bearing cost on the credential
 // endpoints stays the bcrypt compare each request pays (cost 12, ~250 ms of
