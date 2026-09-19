@@ -142,7 +142,7 @@ func (handler *Handler) StartLocalPasswordSetupReauth(c fiber.Ctx) error {
 // the ordinary login state cookie. It must verify the OIDC exchange against
 // the same user that initiated the flow before committing the prepared
 // password.
-func (handler *Handler) completeLocalPasswordSetupReauth(c fiber.Ctx, state oidcStepupState) error {
+func (handler *Handler) completeLocalPasswordSetupReauth(c fiber.Ctx, state oidcStepupState, exchange oidcCallbackExchange) error {
 	if state.Purpose != oidcStepupPurposeLocalPasswordSetup {
 		// codecov:ignore:start -- forward-compat guard: local_password_setup is the only stepup
 		// purpose value today, so a mismatching sealed payload cannot be minted.
@@ -166,14 +166,14 @@ func (handler *Handler) completeLocalPasswordSetupReauth(c fiber.Ctx, state oidc
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
 	}
 
-	callbackState := handler.oidcCallbackValue(c, "state")
-	code := handler.oidcCallbackValue(c, "code")
+	callbackState := exchange.State
+	code := exchange.Code
 	if !state.matchesState(callbackState) {
 		spec := authOIDCAuthenticationFailedErrorSpec()
 		handler.logSecurityError(c, "auth.local_password_setup.callback", spec)
 		return handler.redirectSettingsRefusal(c, spec)
 	}
-	if handler.oidcCallbackValue(c, "error") != "" {
+	if exchange.Error != "" {
 		spec := authOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, "auth.local_password_setup.callback", spec)
 		return handler.redirectSettingsRefusal(c, spec)

@@ -18,7 +18,12 @@ const (
 	resetPasswordCookieName      = "ovumcy_reset_password" // #nosec G101 -- cookie name contains "password" but is not a secret or credential.
 	oidcStateCookieName          = "ovumcy_oidc_auth"
 	oidcStepupCookieName         = "ovumcy_oidc_stepup"
-	oidcLinkPendingCookieName    = "ovumcy_oidc_link_pending"
+	// Carries an already-validated cross-site step-up across the same-site
+	// bounce (oidc_stepup_continuation.go); the continue route below is the
+	// only reader.
+	oidcStepupContinuationCookieName = "ovumcy_oidc_stepup_continue"
+	oidcCallbackContinuePath         = "/auth/oidc/callback/continue"
+	oidcLinkPendingCookieName        = "ovumcy_oidc_link_pending"
 	oidcLogoutBridgeCookieName   = "ovumcy_oidc_logout_bridge"
 	totpPendingCookieName        = "ovumcy_totp_pending"
 	totpSetupCookieName          = "ovumcy_totp_setup"

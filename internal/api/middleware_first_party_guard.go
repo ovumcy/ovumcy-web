@@ -16,6 +16,7 @@ const (
 	headerSecPurpose   = "Sec-Purpose"
 
 	secFetchSiteSameOrigin = "same-origin"
+	secFetchSiteCrossSite  = "cross-site"
 	secFetchSiteNone       = "none"
 	secFetchDestDocument   = "document"
 	secFetchDestEmpty      = "empty"

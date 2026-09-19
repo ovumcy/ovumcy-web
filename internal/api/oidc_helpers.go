@@ -41,3 +41,22 @@ func (handler *Handler) oidcCallbackValue(c fiber.Ctx, name string) string {
 	}
 	return string(c.Request().PostArgs().Peek(name))
 }
+
+// oidcCallbackExchange is what the provider returned, decoupled from WHERE it
+// was read. On the direct callback it comes from the request; on the
+// cross-site bounce's continue leg the provider posted it to a request that is
+// already over, so it comes from the sealed continuation instead. Completion
+// handlers take it as an argument so both legs run the identical code.
+type oidcCallbackExchange struct {
+	Code  string
+	State string
+	Error string
+}
+
+func (handler *Handler) oidcCallbackExchangeFromRequest(c fiber.Ctx) oidcCallbackExchange {
+	return oidcCallbackExchange{
+		Code:  handler.oidcCallbackValue(c, "code"),
+		State: handler.oidcCallbackValue(c, "state"),
+		Error: handler.oidcCallbackValue(c, "error"),
+	}
+}

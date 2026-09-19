@@ -137,7 +137,7 @@ func (handler *Handler) startErasureStepupReauth(c fiber.Ctx, operation oidcStep
 // operation the owner confirmed BEFORE leaving for the provider: the operation
 // rides in the sealed payload, never in the callback request, which arrives
 // from the provider carrying no body of its own.
-func (handler *Handler) completeErasureStepupReauth(c fiber.Ctx, state oidcStepupState) error {
+func (handler *Handler) completeErasureStepupReauth(c fiber.Ctx, state oidcStepupState, exchange oidcCallbackExchange) error {
 	flow, known := erasureStepupFlowFor(state.Operation)
 	if state.Purpose != oidcStepupPurposeErasure || !known {
 		// codecov:ignore:start -- validAt already refused a payload whose purpose
@@ -170,14 +170,14 @@ func (handler *Handler) completeErasureStepupReauth(c fiber.Ctx, state oidcStepu
 		return handler.redirectSettingsRefusal(c, spec)
 	}
 
-	callbackState := handler.oidcCallbackValue(c, "state")
-	code := handler.oidcCallbackValue(c, "code")
+	callbackState := exchange.State
+	code := exchange.Code
 	if !state.matchesState(callbackState) {
 		spec := authOIDCAuthenticationFailedErrorSpec()
 		handler.logSecurityError(c, flow.stepupAction, spec)
 		return handler.redirectSettingsRefusal(c, spec)
 	}
-	if handler.oidcCallbackValue(c, "error") != "" {
+	if exchange.Error != "" {
 		spec := authOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, flow.stepupAction, spec)
 		return handler.redirectSettingsRefusal(c, spec)

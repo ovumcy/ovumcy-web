@@ -411,12 +411,39 @@ func TestOIDCCompleteLocalPasswordSetupHandsTheRevealOverSameOrigin(t *testing.T
 	request.Header.Set("Cookie", joinCookieHeader(fixture.authCookie, stepupCookie))
 	crossSiteNavigation.applyTo(request)
 
-	callbackResponse := mustAppResponse(t, fixture.app, request)
+	bounceResponse := mustAppResponse(t, fixture.app, request)
+	defer func() { _ = bounceResponse.Body.Close() }()
+
+	// A cross-site callback completes nothing: SameSite=Lax withholds the
+	// session cookie from it, so the step-up bounces to a same-origin GET
+	// first. All it may hand over here is the sealed continuation — no reveal,
+	// no re-minted session, and no guarded destination.
+	assertStatusCode(t, bounceResponse, http.StatusSeeOther)
+	if location := bounceResponse.Header.Get("Location"); location != oidcCallbackContinuePath {
+		t.Fatalf("expected the cross-site callback to bounce to %q, got %q", oidcCallbackContinuePath, location)
+	}
+	if reveal := responseCookie(bounceResponse.Cookies(), recoveryCodeCookieName); reveal != nil && strings.TrimSpace(reveal.Value) != "" {
+		t.Fatal("the bounce must not mint the reveal before the owner's session has been identified")
+	}
+	continuationCookie := responseCookie(bounceResponse.Cookies(), oidcStepupContinuationCookieName)
+	if continuationCookie == nil || strings.TrimSpace(continuationCookie.Value) == "" {
+		t.Fatal("expected the cross-site callback to seal a step-up continuation")
+	}
+
+	// The continue leg is a top-level GET navigation, which SameSite=Lax does
+	// deliver the session cookie to even when the chain that produced it began
+	// off-origin — which is why the headers below still say cross-site.
+	continueRequest := httptest.NewRequest(http.MethodGet, oidcCallbackContinuePath, nil)
+	continueRequest.Header.Set("Accept", "text/html,application/xhtml+xml")
+	continueRequest.Header.Set("Cookie", joinCookieHeader(fixture.authCookie, cookiePair(continuationCookie)))
+	crossSiteNavigation.applyTo(continueRequest)
+
+	callbackResponse := mustAppResponse(t, fixture.app, continueRequest)
 	defer func() { _ = callbackResponse.Body.Close() }()
 
 	assertStatusCode(t, callbackResponse, http.StatusOK)
 	if location := callbackResponse.Header.Get("Location"); location != "" {
-		t.Fatalf("the callback must not redirect into the guarded reveal from an off-origin chain; got Location %q", location)
+		t.Fatalf("the completion must not redirect into the guarded reveal from an off-origin chain; got Location %q", location)
 	}
 	if contentType := callbackResponse.Header.Get("Content-Type"); !strings.HasPrefix(contentType, "text/html") {
 		t.Fatalf("expected a same-origin html handoff, got content-type %q", contentType)
