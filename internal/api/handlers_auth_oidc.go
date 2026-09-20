@@ -30,6 +30,14 @@ func (handler *Handler) StartOIDCLogin(c fiber.Ctx) error {
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 
+	// Drop any in-flight step-up, the mirror of what the three step-up starts
+	// already do to this flow's own state cookie. The callback dispatches on
+	// the step-up cookie's PRESENCE and spends it only for a callback whose
+	// state matches, so a step-up the owner abandoned at the provider takes
+	// every sign-in return for its own and refuses it — for the cookie's whole
+	// ten minutes, on a flash channel /login does not render.
+	handler.clearOIDCStepupCookie(c)
+
 	ctx, cancel := oidcRequestContext(c)
 	defer cancel()
 

@@ -89,9 +89,13 @@ func (handler *Handler) clearAuthCookie(c fiber.Ctx) {
 // later request to happen to read and refuse the value.
 //
 // Cookies whose flow completes outside a session are deliberately absent: the
-// OIDC one-time state and step-up cookies and the register-pickup handle are
-// consumed by their own flow, and `ovumcy_flash` carries no secret. `ovumcy_lang`
-// and `ovumcy_tz` are absent for a different reason, and it is not an oversight:
+// OIDC one-time state cookie and the register-pickup handle are consumed by
+// their own flow, and `ovumcy_flash` carries no secret. The OIDC STEP-UP cookie
+// is absent for a second reason on top of that one — this helper also runs on a
+// session REJECTION, and one of those can arrive on the callback itself, the
+// single request that still needs the cookie — so only a deliberate end
+// retracts it, through clearSessionEndCookies below. `ovumcy_lang`
+// and `ovumcy_tz` are absent for a different reason again, and it is not an oversight:
 // neither is sealed or session-scoped, and this helper also runs where a session
 // is REJECTED rather than ended — an expired cookie on an ordinary request, or an
 // unauthenticated probe. Retracting the language there would take the login
@@ -131,8 +135,15 @@ func (handler *Handler) clearAuthRelatedCookies(c fiber.Ctx) {
 // signedInPage in web/src/js/app/00-core.js). Without that half the next page
 // load — the login page this very sign-out redirects to — would put the cookie
 // straight back, and this retraction would be theatre.
+//
+// The OIDC step-up cookie is here rather than in clearAuthRelatedCookies for
+// the same reason: it names the owner a settings step-up would act for, and a
+// session that has deliberately ended cannot complete one — while a session
+// REJECTION may well arrive on the callback itself, which is the one request
+// that still needs the cookie.
 func (handler *Handler) clearSessionEndCookies(c fiber.Ctx) {
 	handler.clearAuthRelatedCookies(c)
+	handler.clearOIDCStepupCookie(c)
 	handler.clearLanguageCookie(c)
 	handler.clearTimezoneCookie(c)
 }

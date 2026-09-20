@@ -31,6 +31,7 @@ func TestAuthLogoutPostWithCSRFRedirectsAndClearsCookies(t *testing.T) {
 			totpPendingCookieName+"=temporary-totp-pending",
 			totpSetupCookieName+"=temporary-totp-setup",
 			calendarFeedRevealCookieName+"=temporary-feed-reveal",
+			oidcStepupCookieName+"=temporary-oidc-stepup",
 			languageCookieName+"=ru",
 		),
 	)
@@ -56,6 +57,12 @@ func TestAuthLogoutPostWithCSRFRedirectsAndClearsCookies(t *testing.T) {
 	// a logout that stopped emitting Set-Cookie at all fails here rather than
 	// passing for want of anything left to check.
 	//
+	// `ovumcy_oidc_stepup` joins them because it names the owner a settings
+	// step-up would act for. It is spent only for a callback whose state
+	// matches, so one the owner abandoned at the provider survives a sign-out
+	// and then takes the NEXT sign-in's callback for its own — the callback
+	// dispatches on its presence — refusing every attempt until it expires.
+	//
 	// `ovumcy_lang` is the one member that is neither sealed nor session-scoped:
 	// a year-long plaintext cache of the account's stored language. Surviving a
 	// sign-out it tells whoever opens the browser next that this app is used here
@@ -69,6 +76,7 @@ func TestAuthLogoutPostWithCSRFRedirectsAndClearsCookies(t *testing.T) {
 		totpPendingCookieName,
 		totpSetupCookieName,
 		calendarFeedRevealCookieName,
+		oidcStepupCookieName,
 		languageCookieName,
 	} {
 		cleared := responseCookie(response.Cookies(), cookieName)
