@@ -16,6 +16,14 @@ import { localeText } from './support/locale-helpers';
 // (ovumcy_oidc_auth, ovumcy_oidc_stepup) are exercised against their real
 // SameSite constraint instead of a same-host, different-port one. A step-up
 // that silently depends on same-site cookie delivery can only redden here.
+//
+// Like every lane that needs the mock IdP, this one is OPT-IN and no CI job
+// runs it — CI starts no provider at all. It is run by hand, with
+// E2E_OIDC_PROVIDER=local and E2E_OIDC_HOST set to a second loopback host
+// (127.0.0.2), against `npm run e2e` scoped to this file; the harness supplies
+// the HTTPS proxy and the TLS fixture covering both hosts. Run it for any
+// change to the OIDC callback: the Go suite can model what the browser would
+// send, but only this lane observes what it actually sends.
 const oidcEnabled = process.env.OIDC_ENABLED === 'true';
 const localOIDCProvider = process.env.E2E_OIDC_PROVIDER === 'local';
 const crossSiteLane = process.env.E2E_OIDC_CROSS_SITE === 'true';
