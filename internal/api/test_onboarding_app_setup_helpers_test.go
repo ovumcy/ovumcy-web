@@ -42,6 +42,15 @@ type onboardingTestAppOptions struct {
 	oidcService      OIDCWorkflowService
 	auditLogEnabled  bool
 	assetVersion     string
+	// oidcEnabled and oidcLogoutMode are the two halves of the configuration
+	// the provider-logout gate reads at sign-out time. The package default
+	// leaves OIDC off and the mode at its `local` default, under which a
+	// stored provider-logout row composes no end-session redirect at all — so
+	// a test that expects the provider hop has to name the configuration that
+	// allows it (providerLogoutTestAppOptions), and a test of the switched-off
+	// instance names the other one.
+	oidcEnabled    bool
+	oidcLogoutMode security.OIDCLogoutMode
 	// bodyLimit overrides fiber's DefaultBodyLimit for this app. Zero keeps the
 	// default. Body-cap regressions set a small value so the compressed payload
 	// under test stays a few hundred bytes on the wire while its decoded size
@@ -136,16 +145,19 @@ func newTestHandlerDependencies(database *gorm.DB, i18nManager *i18n.Manager, op
 
 	// Delegate to the shared composition-root wiring (internal/bootstrap), the
 	// same recipe the production binary uses, so the two cannot drift. Tests pass
-	// the default attempt limits, a disabled OIDC config, and—unlike
-	// production—leave LogoutAttempts unset to keep the auth-service default.
-	// The disabled config still names testOIDCIssuerURL and
-	// testOIDCPostLogoutRedirectURL: stored provider-logout state is pinned to
-	// the configured issuer origin, the provider redirect takes its return
-	// address from the configuration, and the logout tests drive that state
-	// through this default wiring.
+	// the default attempt limits, an OIDC config that is disabled unless the
+	// options ask otherwise, and—unlike production—leave LogoutAttempts unset
+	// to keep the auth-service default. The config always names
+	// testOIDCIssuerURL and testOIDCPostLogoutRedirectURL, whatever the switch
+	// says: stored provider-logout state is pinned to the configured issuer
+	// origin and the provider redirect takes its return address from the
+	// configuration, so both stay observable on a switched-off instance —
+	// which is the state in which a stored row must NOT produce a hop.
 	dependencies := bootstrap.BuildDependencies(db.NewRepositories(database), []byte(testAppSecretKey), i18nManager, bootstrap.Options{
 		RegistrationMode: registrationMode,
 		OIDCConfig: security.OIDCConfig{
+			Enabled:               appOptions.oidcEnabled,
+			LogoutMode:            appOptions.oidcLogoutMode,
 			IssuerURL:             testOIDCIssuerURL,
 			PostLogoutRedirectURL: testOIDCPostLogoutRedirectURL,
 		},

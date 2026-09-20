@@ -12,6 +12,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/db"
+	"github.com/ovumcy/ovumcy-web/internal/security"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 	"gorm.io/gorm"
 )
@@ -342,7 +343,7 @@ func TestAuthLogoutJSONWithOIDCProviderReturnsBridgePathWithoutTokenLeak(t *test
 func TestOIDCLogoutBridgeRedirectRefusesAnotherOwnersSessionID(t *testing.T) {
 	t.Parallel()
 
-	app, database := newOnboardingTestAppWithCSRF(t)
+	app, database := newOnboardingTestAppWithOptions(t, providerLogoutTestAppOptions())
 	ownerA := createOnboardingTestUser(t, database, "bridge-owner-a@example.com", "StrongPass1", true)
 	ownerB := createOnboardingTestUser(t, database, "bridge-owner-b@example.com", "StrongPass1", true)
 
@@ -479,10 +480,24 @@ func TestOIDCLogoutBridgeRedirectDegradesALegacyBridgeCookieToLocalSignOut(t *te
 	}
 }
 
+// providerLogoutTestAppOptions is the configuration under which a stored
+// provider-logout row may still produce a hop to the IdP: OIDC on, logout mode
+// `provider`. The sign-out path re-reads both at logout time, so a test that
+// expects the bridge has to run on an app that names them — the package
+// default leaves OIDC off and the mode at `local`, where every stored row is
+// carrier data for a hop this instance no longer makes.
+func providerLogoutTestAppOptions() onboardingTestAppOptions {
+	return onboardingTestAppOptions{
+		enableCSRF:     true,
+		oidcEnabled:    true,
+		oidcLogoutMode: security.OIDCLogoutModeProvider,
+	}
+}
+
 func prepareAuthenticatedOIDCLogoutContext(t *testing.T, logoutState services.OIDCLogoutState) (*fiber.App, string, *http.Cookie, string) {
 	t.Helper()
 
-	app, database := newOnboardingTestAppWithCSRF(t)
+	app, database := newOnboardingTestAppWithOptions(t, providerLogoutTestAppOptions())
 	user := createOnboardingTestUser(t, database, "oidc-logout@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookieWithCSRF(t, app, user.Email, "StrongPass1")
 	// The state belongs to the account whose session it is keyed on — the

@@ -187,6 +187,14 @@ func (handler *Handler) Logout(c fiber.Ctx) error {
 		logoutState, found, err := handler.oidcLogoutStateSvc.Load(c.Context(), sessionClaims.SessionID, sessionClaims.UserID, time.Now())
 		if err != nil {
 			handler.logSecurityEvent(c, "auth.logout", "provider_logout_state_unavailable")
+		} else if found && !handler.providerLogoutConfigured() {
+			// The row was written under a configuration that asked for a
+			// provider sign-out; the one in force now does not. It carries the
+			// per-session material for a hop this instance no longer makes, so
+			// the sign-out completes locally and the row goes with the session
+			// rather than waiting out its days-long TTL.
+			_ = handler.oidcLogoutStateSvc.Delete(c.Context(), sessionClaims.SessionID, sessionClaims.UserID)
+			handler.logSecurityEvent(c, "auth.logout", "provider_logout_state_discarded")
 		} else if found && validOIDCLogoutState(logoutState, handler.oidcIssuerURL()) {
 			if err := handler.setOIDCLogoutBridgeCookie(c, sessionClaims.SessionID, sessionClaims.UserID, time.Now()); err == nil {
 				logoutTransportPath = oidcLogoutBridgePath

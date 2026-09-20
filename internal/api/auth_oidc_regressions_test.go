@@ -22,7 +22,12 @@ import (
 )
 
 type stubOIDCWorkflowService struct {
-	enabled                bool
+	enabled bool
+	// providerLogoutDisabled stands for OIDC_LOGOUT_MODE=local on an instance
+	// whose OIDC is otherwise on: the write-time mode and the read-time mode
+	// are the same predicate, so a test that switches it observes what a
+	// stored row is worth after the switch.
+	providerLogoutDisabled bool
 	localPublicAuthEnabled bool
 	responseMode           security.OIDCResponseMode
 	issuerURL              string
@@ -99,6 +104,14 @@ func (stub *stubOIDCWorkflowService) IssuerURL() string {
 // provider redirect is composed from.
 func (stub *stubOIDCWorkflowService) PostLogoutRedirectURL() string {
 	return stub.postLogoutRedirectURL
+}
+
+// ProviderLogoutEnabled is the mode in force at sign-out time. An enabled stub
+// reports provider logout on unless a test turns it off, which is what the
+// tests around the bridge assume; a disabled stub reports it off, exactly as
+// the real service does when OIDC is off.
+func (stub *stubOIDCWorkflowService) ProviderLogoutEnabled() bool {
+	return stub.enabled && !stub.providerLogoutDisabled
 }
 
 func (stub *stubOIDCWorkflowService) StartAuth(ctx context.Context, state string, nonce string, codeVerifier string) (string, error) {
