@@ -26,6 +26,9 @@ func TestMapOIDCIdentityLinkReauthError(t *testing.T) {
 		want APIErrorSpec
 	}{
 		{name: "stale reauth maps to stale", err: services.ErrOIDCReauthStale, want: settingsOIDCReauthStaleErrorSpec()},
+		// Its own key, although it wraps the stale sentinel: on a provider that
+		// omits auth_time the stale copy's "try again" is a loop with no exit.
+		{name: "missing auth_time maps to its own refusal", err: services.ErrOIDCReauthAuthTimeMissing, want: settingsOIDCReauthAuthTimeMissingErrorSpec()},
 		{name: "cross-user claim maps to claimed", err: services.ErrOIDCLinkFailed, want: settingsOIDCIdentityLinkClaimedErrorSpec()},
 		{name: "oidc disabled maps to unavailable", err: services.ErrOIDCDisabled, want: authOIDCUnavailableErrorSpec()},
 		{name: "oidc unavailable maps to unavailable", err: services.ErrOIDCUnavailable, want: authOIDCUnavailableErrorSpec()},

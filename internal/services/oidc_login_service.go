@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -20,10 +21,26 @@ var (
 	ErrOIDCLinkFailed            = errors.New("oidc identity link failed")
 	ErrOIDCProvisionFailed       = errors.New("oidc account provision failed")
 	// ErrOIDCReauthStale indicates the provider returned a successful exchange
-	// whose auth_time is absent or older than the requested max age — the
-	// user did not provably re-authenticate; the provider may have answered
-	// from a cached SSO session despite prompt=login + max_age=0.
+	// whose auth_time is older than the requested max age — the user did not
+	// provably re-authenticate; the provider may have answered from a cached
+	// SSO session despite prompt=login + max_age=0. Signing in again can clear
+	// it, so the owner-facing copy asks for exactly that.
 	ErrOIDCReauthStale = errors.New("oidc reauth stale")
+	// ErrOIDCReauthAuthTimeMissing indicates the exchange carried NO auth_time
+	// at all: the provider never said when the sign-in happened. OpenID
+	// Connect Core requires the claim whenever max_age is sent, and every
+	// step-up sends max_age=0, so this is a non-conforming provider rather
+	// than a slow owner — no retry can succeed until the provider is fixed,
+	// and an operator reading the audit stream must be able to tell the two
+	// apart.
+	//
+	// It WRAPS ErrOIDCReauthStale on purpose. The two verdicts are distinct,
+	// but "the freshness proof did not hold" is true of both, so a consumer
+	// that knows only the coarse sentinel keeps refusing instead of falling
+	// through to its default arm. A consumer that must distinguish them
+	// matches this one FIRST; the switch order is not a convention here but a
+	// pinned invariant — api.TestEveryReauthStaleMatchIsPrecededByTheMissingAuthTimeMatch.
+	ErrOIDCReauthAuthTimeMissing = fmt.Errorf("oidc reauth auth_time missing: %w", ErrOIDCReauthStale)
 	// ErrOIDCReauthIdentityMismatch indicates the (issuer, subject) returned by
 	// the reauth callback is not linked to the user that started the step-up
 	// flow. Treated as a hard failure to prevent cross-account substitution.
@@ -237,9 +254,12 @@ func (service *OIDCLoginService) startAuthWithExtra(ctx context.Context, state s
 //   - auth_time must lie within maxAuthAge of now. A small
 //     forward-tolerance handles modest clock skew.
 //
-// All deviations collapse into ErrOIDCReauthStale or
-// ErrOIDCReauthIdentityMismatch so the handler can log them with distinct
-// security events while returning a uniform user-facing error.
+// Deviations are reported as ErrOIDCReauthIdentityMismatch, or as one of the
+// two freshness verdicts reauthFreshnessVerdict draws: ErrOIDCReauthStale for a
+// sign-in that is too old, ErrOIDCReauthAuthTimeMissing for a provider that
+// never dated it at all. The handler keeps them apart in the audit stream and
+// in the owner-facing copy, because only one of the two can be cleared by
+// trying again.
 func (service *OIDCLoginService) ValidateReauthExchange(ctx context.Context, code string, codeVerifier string, expectedNonce string, expectedUserID uint, maxAuthAge time.Duration, now time.Time) error {
 	if !service.Enabled() {
 		return ErrOIDCDisabled
@@ -264,31 +284,47 @@ func (service *OIDCLoginService) ValidateReauthExchange(ctx context.Context, cod
 		return ErrOIDCReauthIdentityMismatch
 	}
 
-	if !reauthClaimsFresh(exchange.Claims, maxAuthAge, now) {
-		return ErrOIDCReauthStale
+	if err := reauthFreshnessVerdict(exchange.Claims, maxAuthAge, now); err != nil {
+		return err
 	}
 
 	_ = service.identities.TouchLastUsed(ctx, identity.ID, effectiveOIDCLoginTime(now))
 	return nil
 }
 
-func reauthClaimsFresh(claims security.OIDCClaims, maxAuthAge time.Duration, now time.Time) bool {
+// reauthFreshnessVerdict returns nil when the exchange proves a sign-in inside
+// the window, and otherwise the sentinel that says WHY. The two refusals are
+// separated here, at the single place that reads the claim, rather than at each
+// caller: a copy per step-up is how the class would end up fixed at N of N+1
+// sites, one of them still telling the owner to try again on a provider where
+// no retry can work.
+func reauthFreshnessVerdict(claims security.OIDCClaims, maxAuthAge time.Duration, now time.Time) error {
 	if maxAuthAge <= 0 {
-		return false
+		// Not a provider fault: the caller asked for a window nothing can sit
+		// inside. "Too old" is the honest verdict and it stays this side of the
+		// missing-claim check, so a zero window cannot be reported as a
+		// non-conforming provider.
+		return ErrOIDCReauthStale
 	}
 	// iat is never a fallback: it dates the token, not the authentication, so a
 	// provider answering prompt=login from a cached SSO session mints a fresh iat
-	// over a stale sign-in. A token without auth_time proves nothing here.
+	// over a stale sign-in. A token without auth_time proves nothing here — and
+	// it is a different failure from a sign-in that is merely too old, because
+	// the owner cannot resolve it by signing in again.
 	reference := claims.AuthTime
 	if reference.IsZero() {
-		return false
+		return ErrOIDCReauthAuthTimeMissing
 	}
 	if reference.After(now.Add(1 * time.Minute)) {
 		// Clock skew tolerance in one direction only — clearly future-dated
-		// timestamps look forged or like provider misconfiguration.
-		return false
+		// timestamps look forged or like provider misconfiguration. The claim
+		// IS present, so this is the stale verdict, not the missing one.
+		return ErrOIDCReauthStale
 	}
-	return now.Sub(reference) <= maxAuthAge
+	if now.Sub(reference) > maxAuthAge {
+		return ErrOIDCReauthStale
+	}
+	return nil
 }
 
 func (service *OIDCLoginService) Authenticate(ctx context.Context, code string, codeVerifier string, expectedNonce string, now time.Time) (OIDCLoginResult, error) {
@@ -400,7 +436,7 @@ func (service *OIDCLoginService) ConfirmAndLinkIdentity(ctx context.Context, tar
 // CompleteIdentityLinkReauth authorises a NEW OIDC identity link from an
 // already-authenticated settings session: it runs a fresh code exchange,
 // requires the same freshness proof as ValidateReauthExchange (prompt=login +
-// max_age enforced via reauthClaimsFresh), and then persists the link via
+// max_age enforced via reauthFreshnessVerdict), and then persists the link via
 // ConfirmAndLinkIdentity.
 //
 // It deliberately does NOT reuse ValidateReauthExchange: that helper requires
@@ -425,8 +461,8 @@ func (service *OIDCLoginService) CompleteIdentityLinkReauth(ctx context.Context,
 		return ErrOIDCAuthenticationFailed
 	}
 
-	if !reauthClaimsFresh(exchange.Claims, maxAuthAge, now) {
-		return ErrOIDCReauthStale
+	if err := reauthFreshnessVerdict(exchange.Claims, maxAuthAge, now); err != nil {
+		return err
 	}
 
 	return service.ConfirmAndLinkIdentity(ctx, targetUserID, exchange.Claims, now)

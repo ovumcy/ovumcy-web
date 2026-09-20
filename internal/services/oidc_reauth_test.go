@@ -121,6 +121,14 @@ func TestOIDCLoginServiceValidateReauthExchangeHappyFreshAuthTime(t *testing.T) 
 // pins the strict freshness policy: iat dates the token, not the sign-in, so a
 // provider that answers prompt=login from a cached SSO session and omits
 // auth_time must not pass the step-up however fresh its iat is.
+//
+// The refusal is ErrOIDCReauthAuthTimeMissing, not ErrOIDCReauthStale: the
+// provider never told us when the sign-in happened, which no amount of signing
+// in again will change. The two verdicts are separate all the way to the owner's
+// banner and the audit line's reason — see
+// TestOIDCLoginServiceReauthFreshnessSeparatesAMissingAuthTimeFromAnOldOne
+// below for the pair, and api.TestStepupCallbackAuditsAMissingAuthTimeApartFromAStaleOne
+// for the operator's half.
 func TestOIDCLoginServiceValidateReauthExchangeRefusesFreshIATWithoutAuthTime(t *testing.T) {
 	t.Parallel()
 
@@ -141,8 +149,8 @@ func TestOIDCLoginServiceValidateReauthExchangeRefusesFreshIATWithoutAuthTime(t 
 	}
 	service := NewOIDCLoginService(client, identities, &stubOIDCUserStore{}, nil)
 
-	if err := service.ValidateReauthExchange(context.Background(), "code", "verifier", "nonce", 6, 5*time.Minute, now); !errors.Is(err, ErrOIDCReauthStale) {
-		t.Fatalf("expected ErrOIDCReauthStale for an iat-only token, got %v", err)
+	if err := service.ValidateReauthExchange(context.Background(), "code", "verifier", "nonce", 6, 5*time.Minute, now); !errors.Is(err, ErrOIDCReauthAuthTimeMissing) {
+		t.Fatalf("expected ErrOIDCReauthAuthTimeMissing for an iat-only token, got %v", err)
 	}
 	if identities.touchedID != 0 {
 		t.Fatalf("a refused step-up must not touch last-used, touched identity %d", identities.touchedID)
@@ -212,8 +220,48 @@ func TestOIDCLoginServiceValidateReauthExchangeNoClaims(t *testing.T) {
 	}
 	service := NewOIDCLoginService(client, identities, &stubOIDCUserStore{}, nil)
 
-	if err := service.ValidateReauthExchange(context.Background(), "code", "verifier", "nonce", 9, 5*time.Minute, now); !errors.Is(err, ErrOIDCReauthStale) {
-		t.Fatalf("expected ErrOIDCReauthStale when both auth_time and iat are zero, got %v", err)
+	if err := service.ValidateReauthExchange(context.Background(), "code", "verifier", "nonce", 9, 5*time.Minute, now); !errors.Is(err, ErrOIDCReauthAuthTimeMissing) {
+		t.Fatalf("expected ErrOIDCReauthAuthTimeMissing when both auth_time and iat are zero, got %v", err)
+	}
+}
+
+// TestOIDCLoginServiceReauthFreshnessSeparatesAMissingAuthTimeFromAnOldOne is
+// the invariant this pair of sentinels exists for, asserted at the one place
+// that draws the line. Both halves are needed: a fix that reported everything
+// as missing would satisfy the first check alone, and the earlier behaviour —
+// everything reported as stale — satisfies neither.
+//
+// The wrap is asserted too, because it is load-bearing rather than incidental:
+// a consumer that only knows the coarse sentinel must keep refusing, and the
+// mapper ordering that keeps the fine one from being swallowed is pinned by
+// api.TestEveryReauthStaleMatchIsPrecededByTheMissingAuthTimeMatch.
+func TestOIDCLoginServiceReauthFreshnessSeparatesAMissingAuthTimeFromAnOldOne(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 5, 13, 10, 0, 0, 0, time.UTC)
+
+	missing := reauthFreshnessVerdict(security.OIDCClaims{IssuedAt: now}, 5*time.Minute, now)
+	if !errors.Is(missing, ErrOIDCReauthAuthTimeMissing) {
+		t.Fatalf("a token carrying no auth_time must report the missing-claim verdict, got %v", missing)
+	}
+
+	old := reauthFreshnessVerdict(security.OIDCClaims{AuthTime: now.Add(-10 * time.Minute)}, 5*time.Minute, now)
+	if errors.Is(old, ErrOIDCReauthAuthTimeMissing) {
+		t.Fatalf("a sign-in the provider DID date must not report the missing-claim verdict, got %v", old)
+	}
+	if !errors.Is(old, ErrOIDCReauthStale) {
+		t.Fatalf("a sign-in older than the window must report the stale verdict, got %v", old)
+	}
+
+	if !errors.Is(missing, ErrOIDCReauthStale) {
+		t.Fatalf("the missing-claim verdict must still satisfy the coarse freshness sentinel so a consumer that knows only ErrOIDCReauthStale keeps refusing, got %v", missing)
+	}
+
+	// The anchor: the same helper still says yes to a sign-in inside the
+	// window, so the two refusals above are verdicts and not a helper that
+	// refuses everything.
+	if fresh := reauthFreshnessVerdict(security.OIDCClaims{AuthTime: now.Add(-1 * time.Minute)}, 5*time.Minute, now); fresh != nil {
+		t.Fatalf("a sign-in inside the window must pass, got %v", fresh)
 	}
 }
 

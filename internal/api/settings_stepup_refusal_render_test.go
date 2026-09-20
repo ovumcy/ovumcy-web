@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -115,6 +116,23 @@ func TestSettingsStepupRefusalsRenderOnTheSettingsPage(t *testing.T) {
 			},
 			flashKey:       settingsOIDCReauthStaleErrorSpec().Key,
 			translationKey: "settings.error.oidc_reauth_stale",
+		},
+		{
+			// The other freshness verdict, driven end to end because its whole
+			// point is that the owner reads something different: the stale
+			// sentence asks for a retry, and on a provider that never sends
+			// auth_time the retry lands here again.
+			name: "erasure, provider never dated the sign-in",
+			slug: "erasure-auth-time-missing",
+			start: func(t *testing.T, fixture *oidcStepupFixture) *http.Response {
+				t.Helper()
+				return postErasureStepupStart(t, fixture, "/api/v1/users/current/data-wipe/step-up")
+			},
+			refuse: func(fixture *oidcStepupFixture) {
+				fixture.oidcStub.reauthErr = services.ErrOIDCReauthAuthTimeMissing
+			},
+			flashKey:       settingsOIDCReauthAuthTimeMissingErrorSpec().Key,
+			translationKey: "settings.error.oidc_reauth_auth_time_missing",
 		},
 		{
 			name: "local password enrollment, identity mismatch",
@@ -240,6 +258,7 @@ func settingsStepupRefusalSpecs() []APIErrorSpec {
 	}
 	for _, err := range []error{
 		services.ErrOIDCReauthStale,
+		services.ErrOIDCReauthAuthTimeMissing,
 		services.ErrOIDCLinkFailed,
 		services.ErrOIDCDisabled,
 		services.ErrOIDCUnavailable,
@@ -250,6 +269,7 @@ func settingsStepupRefusalSpecs() []APIErrorSpec {
 	}
 	for _, err := range []error{
 		services.ErrOIDCReauthStale,
+		services.ErrOIDCReauthAuthTimeMissing,
 		services.ErrOIDCReauthIdentityMismatch,
 		services.ErrOIDCDisabled,
 		services.ErrOIDCUnavailable,
@@ -271,6 +291,147 @@ func settingsStepupRefusalSpecs() []APIErrorSpec {
 		specs = append(specs, mapSettingsPasswordChangeError(err))
 	}
 	return specs
+}
+
+// services.ErrOIDCReauthAuthTimeMissing wraps services.ErrOIDCReauthStale, so
+// errors.Is answers true for the coarse sentinel on both verdicts. That is
+// deliberate — a consumer knowing only the coarse one keeps refusing instead of
+// dropping into a default arm — but it puts the whole distinction in the ORDER
+// of the case clauses: a switch whose stale arm runs first tells an owner whose
+// provider never sends auth_time to try again, which is the defect the split
+// exists to remove. Today exactly two mappers match the coarse sentinel; the
+// sweep below reads the shipped sources rather than naming them, so a third
+// added later is covered the day it is written, with no allowlist to forget.
+const (
+	reauthStaleSentinelName       = "ErrOIDCReauthStale"
+	reauthAuthTimeMissingSentinel = "ErrOIDCReauthAuthTimeMissing"
+)
+
+// TestEveryReauthStaleMatchIsPrecededByTheMissingAuthTimeMatch fails when any
+// switch in the transport layer matches the coarse freshness sentinel without
+// having matched the precise one first.
+func TestEveryReauthStaleMatchIsPrecededByTheMissingAuthTimeMatch(t *testing.T) {
+	t.Parallel()
+
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read internal/api: %v", err)
+	}
+
+	var violations []string
+	parsed := 0
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		source, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		parsed++
+		violations = append(violations, unorderedReauthFreshnessClauses(t, name, string(source))...)
+	}
+	// Anchored on the count of FILES, not of matches: a tree where no switch
+	// mentions the sentinel at all is reachable, while a sweep that read no
+	// source is a vacuous verdict about a package nobody looked at.
+	if parsed == 0 {
+		t.Fatal("the sweep read no non-test Go file in internal/api — its verdict is vacuous")
+	}
+	if len(violations) > 0 {
+		t.Fatalf("a switch matches %s before %s, so the wrapped verdict is swallowed and the owner is told to retry something that cannot succeed — put the precise case first:\n%s", reauthStaleSentinelName, reauthAuthTimeMissingSentinel, strings.Join(violations, "\n"))
+	}
+}
+
+// TestReauthFreshnessClauseOrderSweepClassifiesItsOwnFixtures proves the sweep
+// reports both verdicts, on sources the test owns rather than on the tree it
+// judges.
+func TestReauthFreshnessClauseOrderSweepClassifiesItsOwnFixtures(t *testing.T) {
+	t.Parallel()
+
+	const ordered = `package fixture
+
+func mapIt(err error) int {
+	switch {
+	case errors.Is(err, services.ErrOIDCReauthAuthTimeMissing):
+		return 1
+	case errors.Is(err, services.ErrOIDCReauthStale):
+		return 2
+	}
+	return 0
+}
+`
+	const swapped = `package fixture
+
+func mapIt(err error) int {
+	switch {
+	case errors.Is(err, services.ErrOIDCReauthStale):
+		return 2
+	case errors.Is(err, services.ErrOIDCReauthAuthTimeMissing):
+		return 1
+	}
+	return 0
+}
+`
+	if hits := unorderedReauthFreshnessClauses(t, "ordered.go", ordered); len(hits) != 0 {
+		t.Fatalf("a switch matching the precise sentinel first must pass, got %v", hits)
+	}
+	if hits := unorderedReauthFreshnessClauses(t, "swapped.go", swapped); len(hits) != 1 {
+		t.Fatalf("a switch matching the coarse sentinel first must report exactly one violation, got %d: %v", len(hits), hits)
+	}
+}
+
+// unorderedReauthFreshnessClauses returns one entry per case clause that
+// matches the coarse freshness sentinel with no earlier clause in the SAME
+// switch matching the precise one.
+func unorderedReauthFreshnessClauses(t *testing.T, display string, source string) []string {
+	t.Helper()
+
+	fileSet := token.NewFileSet()
+	file, err := parser.ParseFile(fileSet, display, source, 0)
+	if err != nil {
+		t.Fatalf("parse %s: %v", display, err)
+	}
+
+	var violations []string
+	ast.Inspect(file, func(node ast.Node) bool {
+		switchStmt, isSwitch := node.(*ast.SwitchStmt)
+		if !isSwitch || switchStmt.Body == nil {
+			return true
+		}
+		preciseSeen := false
+		for _, statement := range switchStmt.Body.List {
+			clause, isClause := statement.(*ast.CaseClause)
+			if !isClause {
+				continue
+			}
+			if clauseNamesIdentifier(clause, reauthAuthTimeMissingSentinel) {
+				preciseSeen = true
+				continue
+			}
+			if clauseNamesIdentifier(clause, reauthStaleSentinelName) && !preciseSeen {
+				violations = append(violations, fmt.Sprintf("  %s:%d", display, fileSet.Position(clause.Pos()).Line))
+			}
+		}
+		return true
+	})
+	return violations
+}
+
+// clauseNamesIdentifier reports whether a case clause's expressions mention the
+// given identifier, qualified (services.Err…) or bare.
+func clauseNamesIdentifier(clause *ast.CaseClause, name string) bool {
+	found := false
+	for _, expr := range clause.List {
+		ast.Inspect(expr, func(node ast.Node) bool {
+			identifier, isIdentifier := node.(*ast.Ident)
+			if isIdentifier && identifier.Name == name {
+				found = true
+			}
+			return !found
+		})
+	}
+	return found
 }
 
 // TestEverySettingsStepupRefusalKeyMapsToLocalizedCopy is the other half of the

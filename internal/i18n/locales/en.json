@@ -322,6 +322,7 @@
   "settings.error.local_password_required": "Set a local password first to use this action.",
   "settings.error.oidc_reauth_mismatch": "That re-authentication does not match the account signed in here. Try the action again.",
   "settings.error.oidc_reauth_stale": "The confirmation at your identity provider was too old to authorize this action. Try again.",
+  "settings.error.oidc_reauth_auth_time_missing": "Your identity provider did not report when this sign-in happened, so it cannot authorize this action. Trying again will not help: the provider must be configured to send auth_time.",
   "settings.error.oidc_identity_already_linked": "That identity is already linked to another account.",
   "settings.error.erasure_requires_password": "This account now has a local password. Confirm this action with that password.",
   "settings.error.clear_data_failed": "Could not clear your data. Please try again.",

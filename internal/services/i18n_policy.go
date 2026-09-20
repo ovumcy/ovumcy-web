@@ -151,6 +151,11 @@ var authErrorTranslationKeys = map[string]string{ // #nosec G101 -- false positi
 	// api.TestEverySettingsStepupRefusalKeyMapsToLocalizedCopy.
 	"oidc reauth identity mismatch":         "settings.error.oidc_reauth_mismatch",
 	"oidc reauth stale":                     "settings.error.oidc_reauth_stale",
+	// Separate from the stale sentence above, and not a wording preference: on
+	// a provider that never sends auth_time the stale copy's "try again" is a
+	// loop with no exit, so this one says the retry cannot help and names what
+	// has to change instead.
+	"oidc reauth auth_time missing":         "settings.error.oidc_reauth_auth_time_missing",
 	"oidc identity already linked":          "settings.error.oidc_identity_already_linked",
 	"erasure requires the account password": "settings.error.erasure_requires_password",
 	"failed to clear data":                  "settings.error.clear_data_failed",

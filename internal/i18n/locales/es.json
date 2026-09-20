@@ -322,6 +322,7 @@
   "settings.error.local_password_required": "Primero define una contraseña local para usar esta acción.",
   "settings.error.oidc_reauth_mismatch": "Esa reautenticación no corresponde a la cuenta con la que has iniciado sesión aquí. Vuelve a intentar la acción.",
   "settings.error.oidc_reauth_stale": "La confirmación en tu proveedor de identidad caducó y no autoriza esta acción. Inténtalo de nuevo.",
+  "settings.error.oidc_reauth_auth_time_missing": "Tu proveedor de identidad no indicó cuándo se produjo este inicio de sesión, así que no puede autorizar esta acción. Volver a intentarlo no ayudará: el proveedor debe enviar auth_time.",
   "settings.error.oidc_identity_already_linked": "Esa identidad ya está vinculada a otra cuenta.",
   "settings.error.erasure_requires_password": "Esta cuenta ahora tiene una contraseña local. Confirma esta acción con esa contraseña.",
   "settings.error.clear_data_failed": "No se pudieron borrar tus datos. Inténtalo de nuevo.",
