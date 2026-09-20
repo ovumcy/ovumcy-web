@@ -93,11 +93,30 @@ func (handler *Handler) setOIDCStepupContinuationCookie(c fiber.Ctx, continuatio
 	return handler.writeSealedCookie(c, oidcStepupContinuationCookieSpec, payload, time.Now().Add(oidcStepupContinuationTTL))
 }
 
-// peekOIDCStepupContinuationCookie decodes the continuation WITHOUT clearing
-// it. Clearing is the caller's own step once the payload has been validated,
-// so a stray request to the continue route cannot destroy an in-flight
-// completion: the same consume-after-validate ordering the transit cookies
-// follow.
+// peekOIDCStepupContinuationCookie decodes the continuation and returns a
+// payload it HONOURS without clearing it. Spending it is the caller's own step
+// once the payload has been validated, so a stray request to the continue
+// route cannot destroy an in-flight completion: the same consume-after-validate
+// ordering the transit cookies follow.
+//
+// A value it REFUSES is retracted here instead, in the response that refused
+// it — the convention parseTOTPPendingCookie follows. No live completion can
+// reach one of those arms: setOIDCStepupContinuationCookie refuses to park a
+// payload that is empty or already expired, and an expired one is past the
+// bound this reader itself enforces. Left riding, it is re-sent to the continue
+// route on every later navigation there, carrying a sealed step-up payload the
+// server has already said it will not act on. The clear sits in the reader
+// because the reader is the only place that knows a value was presented and
+// found unusable; ContinueOIDCStepup sees an empty continuation and would have
+// to repeat the clear, and the next caller added without it reintroduces the
+// leak. A missing cookie retracts nothing: there is no value to retract, and an
+// empty value is already the cleared state.
+//
+// openCookieValue folds two arms into one — the codec that will not build and
+// the envelope that will not open — and both retract. The codec one is not a
+// transient failure to be forgiven: cookieCodec() builds under sync.Once and
+// caches its error for the life of the process, so a codec that failed once
+// fails for every later request and no flow it refuses can ever complete.
 func (handler *Handler) peekOIDCStepupContinuationCookie(c fiber.Ctx) oidcStepupContinuation {
 	raw := strings.TrimSpace(c.Cookies(oidcStepupContinuationCookieName))
 	if raw == "" {
@@ -106,14 +125,17 @@ func (handler *Handler) peekOIDCStepupContinuationCookie(c fiber.Ctx) oidcStepup
 
 	decoded, err := handler.openCookieValue(oidcStepupContinuationCookieName, raw)
 	if err != nil {
+		handler.clearOIDCStepupContinuationCookie(c)
 		return oidcStepupContinuation{}
 	}
 
 	continuation := oidcStepupContinuation{}
 	if err := json.Unmarshal(decoded, &continuation); err != nil {
+		handler.clearOIDCStepupContinuationCookie(c)
 		return oidcStepupContinuation{}
 	}
 	if !continuation.validAt(time.Now()) {
+		handler.clearOIDCStepupContinuationCookie(c)
 		return oidcStepupContinuation{}
 	}
 	return continuation
