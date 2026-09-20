@@ -10,6 +10,8 @@ bounce — so they could be wrong while the suite stayed green, and the same
 miscount stood in the invariant, in the security matrix, in that entry, and in
 the guard's own header.
 
+The replacement says which of the three can still refuse anything reachable — one — rather than implying all of them can, which is the same defect one abstraction up.
+
 Two comments are corrected with them: the continue route still claimed the
 completion handler re-checks the state, which that entry is precisely what
 removed, and the seam claimed to give a state check to "every other leg" when
