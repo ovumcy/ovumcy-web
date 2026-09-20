@@ -114,9 +114,11 @@ func (handler *Handler) setOIDCStepupContinuationCookie(c fiber.Ctx, continuatio
 //
 // openCookieValue folds two arms into one — the codec that will not build and
 // the envelope that will not open — and both retract. The codec one is not a
-// transient failure to be forgiven: cookieCodec() builds under sync.Once and
-// caches its error for the life of the process, so a codec that failed once
-// fails for every later request and no flow it refuses can ever complete.
+// transient failure to be forgiven: cookieCodec() builds under a sync.Once
+// held on the Handler and caches the error on that Handler, so the cache is
+// per instance rather than per process; the server composes one Handler
+// (cmd/ovumcy), so within a running instance a codec that failed once fails
+// for every later request and no flow it refuses can complete.
 func (handler *Handler) peekOIDCStepupContinuationCookie(c fiber.Ctx) oidcStepupContinuation {
 	raw := strings.TrimSpace(c.Cookies(oidcStepupContinuationCookieName))
 	if raw == "" {
@@ -331,7 +333,10 @@ func (handler *Handler) bounceStepupToSameSiteContinue(c fiber.Ctx, state oidcSt
 // match the cross-site callback made before parking anything.
 func (handler *Handler) ContinueOIDCStepup(c fiber.Ctx) error {
 	continuation := handler.peekOIDCStepupContinuationCookie(c)
-	if !continuation.validAt(time.Now()) {
+	// One evaluation, the reader's: a refused value comes back as the zero
+	// continuation and is already retracted by the response this handler is
+	// writing into. No payload the reader honours carries an empty Code.
+	if continuation.Code == "" {
 		spec := authOIDCAuthenticationFailedErrorSpec()
 		handler.logSecurityError(c, "auth.oidc_callback", spec)
 		return handler.redirectSettingsRefusal(c, spec)

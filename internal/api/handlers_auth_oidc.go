@@ -68,7 +68,14 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 	// a distinct sealed cookie identifying the purpose and the originating
 	// user. Dispatching off cookie presence avoids registering a second
 	// redirect URI at every provider operators have to manage.
-	if stepupState := handler.peekOIDCStepupCookie(c); stepupState.validAt(time.Now()) {
+	//
+	// The bound is evaluated once, by the reader. peekOIDCStepupCookie answers
+	// with the zero state for every value it refuses — and retracts that value
+	// in this response — so asking validAt again here would be a second
+	// refusal site in a handler that cannot know whether anything was
+	// presented, and so cannot retract what it turned down. The zero state is
+	// self-identifying: no payload the reader honours has an empty State.
+	if stepupState := handler.peekOIDCStepupCookie(c); stepupState.State != "" {
 		exchange := handler.oidcCallbackExchangeFromRequest(c)
 		// The cookie is spent only for a callback that answers THIS flow. A
 		// request whose state does not match is not the owner's return trip —
@@ -93,7 +100,12 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 	oidcState := handler.peekOIDCStateCookie(c)
 	callbackState := handler.oidcCallbackValue(c, "state")
 	code := handler.oidcCallbackValue(c, "code")
-	if !oidcState.validAt(time.Now()) || !oidcState.matchesState(callbackState) {
+	// The same single evaluation as the step-up above: peekOIDCStateCookie has
+	// applied the bound and retracted what it refused, so this handler asks
+	// only whether a payload came back. The emptiness check stays ahead of the
+	// match — a zero state would otherwise compare equal to a callback that
+	// carries no state at all.
+	if oidcState.State == "" || !oidcState.matchesState(callbackState) {
 		// Same rule as the step-up above: a sign-in the owner is in the middle
 		// of is not cancelled by someone else's request to this path.
 		spec := authOIDCAuthenticationFailedErrorSpec()

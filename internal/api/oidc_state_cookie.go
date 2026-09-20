@@ -100,9 +100,12 @@ func (handler *Handler) setOIDCStateCookie(c fiber.Ctx, state oidcAuthState) err
 // value is already the cleared state.
 //
 // The codec arm retracts for the same reason as the rest, not as a special
-// case: cookieCodec() builds under sync.Once and caches its error for the life
-// of the process, so a codec that failed once fails for every later request —
-// no flow this arm refuses can ever complete.
+// case: cookieCodec() builds its codec under a sync.Once held on the Handler
+// and caches the error there, so the scope of that cache is the Handler, not
+// the process. The server composes one Handler (cmd/ovumcy), so within a
+// running instance a codec that failed once fails for every later request and
+// no flow this arm refuses can complete. A second Handler — which only tests
+// build — would get its own attempt.
 func (handler *Handler) peekOIDCStateCookie(c fiber.Ctx) oidcAuthState {
 	raw := strings.TrimSpace(c.Cookies(oidcStateCookieName))
 	if raw == "" {

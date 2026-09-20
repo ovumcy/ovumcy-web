@@ -44,9 +44,10 @@ func (handler *Handler) startOIDCLinkConfirmation(c fiber.Ctx, result services.O
 // page also surfaces the 2FA code field so the link cannot be completed
 // without the second factor.
 func (handler *Handler) ShowOIDCLinkConfirmPage(c fiber.Ctx) error {
+	// No clear here: readOIDCLinkPendingCookie has already retracted whatever
+	// it refused, in this same response.
 	payload, ok := handler.readOIDCLinkPendingCookie(c)
 	if !ok {
-		handler.clearOIDCLinkPendingCookie(c)
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 
@@ -112,9 +113,9 @@ func (handler *Handler) CompleteOIDCLinkConfirmation(c fiber.Ctx) error {
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 
+	// Same as ShowOIDCLinkConfirmPage: the reader owns the retraction.
 	payload, ok := handler.readOIDCLinkPendingCookie(c)
 	if !ok {
-		handler.clearOIDCLinkPendingCookie(c)
 		spec := authOIDCLinkConfirmExpiredErrorSpec()
 		handler.logSecurityError(c, "auth.oidc_link_confirm", spec)
 		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})

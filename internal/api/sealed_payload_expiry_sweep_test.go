@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -120,6 +121,13 @@ type sealedCookieExpiryProbe struct {
 	// given clock. Required for the opaque-token category, which is exempt from
 	// carrying a payload bound only because this refuses once past it.
 	verifyTokenAt func(handler *Handler, token string, now time.Time) error
+	// spentOnRead declares what the reader does with a value it HONOURS: a
+	// pop spends it as it reads, a peek leaves it for the request that
+	// completes the flow. Read by
+	// TestEverySealedCookieReaderRetractsTheValueItRefuses, which asserts both
+	// directions — it is an expectation about the reader, not an exemption
+	// from anything.
+	spentOnRead bool
 }
 
 // sealedCookieExpiryProbes is keyed by cookie name. It is NOT an allowlist: a
@@ -134,6 +142,10 @@ var sealedCookieExpiryProbes = map[string]sealedCookieExpiryProbe{
 				AuthSessionVersion: 1,
 			}, false)
 			return err
+		},
+		honours: func(handler *Handler, c fiber.Ctx) bool {
+			user, err := handler.authenticateRequest(c)
+			return err == nil && user != nil
 		},
 		verifyTokenAt: func(handler *Handler, token string, now time.Time) error {
 			_, err := services.ParseAuthSessionToken(handler.secretKey, token, now)
@@ -169,6 +181,7 @@ var sealedCookieExpiryProbes = map[string]sealedCookieExpiryProbe{
 		honours: func(handler *Handler, c fiber.Ctx) bool {
 			return strings.TrimSpace(handler.popFlashCookie(c).SettingsError) != ""
 		},
+		spentOnRead: true,
 	},
 	calendarFeedRevealCookieName: {
 		mint: func(handler *Handler, c fiber.Ctx) error {
@@ -283,6 +296,7 @@ var sealedCookieExpiryProbes = map[string]sealedCookieExpiryProbe{
 			_, ok := handler.popRegisterPickupCookie(c)
 			return ok
 		},
+		spentOnRead: true,
 	},
 }
 
@@ -443,10 +457,27 @@ func newSealedExpirySweepHandler() *Handler {
 		// The two cross-site OIDC cookies refuse to mint on a deployment that
 		// is not on secure transport.
 		cookieSecure: true,
-		// BuildAuthSessionTokenWithSessionID needs no repository, and nothing
-		// in this sweep resolves a user.
-		authService: services.NewAuthService(nil),
+		// BuildAuthSessionTokenWithSessionID needs no repository; the
+		// repository below exists for the one reader that resolves a user —
+		// authenticateRequest, the auth cookie's production read path, which
+		// the retraction guard drives. It answers with the owner the sweep
+		// mints for, so a freshly minted session cookie is honoured and the
+		// refusal cases mean something.
+		authService: services.NewAuthService(sealedSweepAuthRepo{}),
 	}
+}
+
+// sealedSweepAuthRepo resolves the one account this file mints for. Everything
+// else comes from stubLogoutAuthRepo, which already carries the rest of the
+// AuthUserRepository surface.
+type sealedSweepAuthRepo struct{ stubLogoutAuthRepo }
+
+func (sealedSweepAuthRepo) FindByID(context.Context, uint) (models.User, error) {
+	return models.User{
+		ID:                 sealedExpirySweepUserID,
+		Role:               models.RoleOwner,
+		AuthSessionVersion: 1,
+	}, nil
 }
 
 // mintSealedCookieForSweep runs the probe's production mint on a real request
