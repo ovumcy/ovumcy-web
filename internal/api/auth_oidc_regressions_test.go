@@ -359,6 +359,73 @@ func TestOIDCCallbackSuccessIssuesLocalAuthCookie(t *testing.T) {
 	}
 }
 
+// The sign-in half of "a transit cookie is spent only for a callback that
+// answers its own flow". The callback path is reachable by any site that can
+// cause a navigation to it, so a request whose state does not match must leave
+// the one-time cookie where it is — otherwise a stranger cancels a sign-in the
+// owner is in the middle of, and the step-up half of the same rule
+// (TestCrossSiteStepupCallbackRefusesAStateThatDoesNotMatchWithoutSpendingTheCookie)
+// would be the only half anything holds to.
+func TestOIDCCallbackMismatchingStateLeavesTheStateCookieForTheRealReturn(t *testing.T) {
+	t.Parallel()
+
+	stub := newStubOIDCWorkflowService(true)
+	stub.authURL = "https://id.example.com/authorize"
+	stub.result = services.OIDCLoginResult{
+		User: models.User{
+			ID:                  12,
+			Role:                models.RoleOwner,
+			AuthSessionVersion:  1,
+			OnboardingCompleted: true,
+		},
+	}
+	app, _ := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{
+		cookieSecure: true,
+		oidcService:  stub,
+	})
+
+	startResponse := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, "/auth/oidc/start", nil))
+	assertStatusCode(t, startResponse, http.StatusTemporaryRedirect)
+	stateCookie := responseCookie(startResponse.Cookies(), oidcStateCookieName)
+	if stateCookie == nil {
+		t.Fatal("expected OIDC state cookie from start flow")
+	}
+
+	postCallback := func(state string, code string) *http.Response {
+		t.Helper()
+		request := httptest.NewRequest(http.MethodPost, security.OIDCCallbackPath, strings.NewReader(url.Values{
+			"state": {state},
+			"code":  {code},
+		}.Encode()))
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		request.Header.Set("Cookie", stateCookie.String())
+		return mustAppResponse(t, app, request)
+	}
+
+	stray := postCallback("not-the-sealed-state", "stranger-code")
+	assertStatusCode(t, stray, http.StatusSeeOther)
+	if location := stray.Header.Get("Location"); location != "/login" {
+		t.Fatalf("expected the refusal to land on /login, got %q", location)
+	}
+	if retracted := responseCookie(stray.Cookies(), oidcStateCookieName); retracted != nil && strings.TrimSpace(retracted.Value) == "" {
+		t.Fatal("a mismatching callback must not expire the sign-in state cookie")
+	}
+	if stub.lastAuthCode != "" {
+		t.Fatalf("a mismatching callback must not reach the token exchange, got code %q", stub.lastAuthCode)
+	}
+
+	// And the owner's real return trip still completes, which is what proves
+	// the cookie above survived rather than merely not being re-sent.
+	real := postCallback(stub.lastStartState, "provider-code")
+	assertStatusCode(t, real, http.StatusSeeOther)
+	if location := real.Header.Get("Location"); location != "/dashboard" {
+		t.Fatalf("expected the real callback to sign in, got %q", location)
+	}
+	if authCookie := responseCookie(real.Cookies(), authCookieName); authCookie == nil || strings.TrimSpace(authCookie.Value) == "" {
+		t.Fatal("expected the real callback to issue the session cookie")
+	}
+}
+
 func TestOIDCCallbackProviderErrorRedirectsToLoginWithoutLeakingProviderError(t *testing.T) {
 	t.Parallel()
 
