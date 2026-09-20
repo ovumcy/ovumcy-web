@@ -426,6 +426,59 @@ func TestOIDCCallbackMismatchingStateLeavesTheStateCookieForTheRealReturn(t *tes
 	}
 }
 
+// TestSSOSignInStartDropsAnAbandonedStepup is the other half of "spend the
+// step-up cookie only on a state match". Not spending it is what keeps a
+// stranger from cancelling a step-up in progress — but the callback also
+// DISPATCHES on that cookie's presence, so one the owner abandoned at the
+// provider outranks the sign-in that comes next: the login state never
+// matches it, the refusal returns before the sign-in branch is reached, and
+// it flashes on the settings channel, which /login does not render. Every
+// attempt fails silently for the cookie's whole ten minutes. Starting a
+// sign-in therefore drops it, the mirror of what the three step-up starts
+// already do to the login state cookie.
+func TestSSOSignInStartDropsAnAbandonedStepup(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "abandoned-stepup-blocks-signin@example.com")
+	fixture.oidcStub.authURL = "https://id.example.com/authorize"
+
+	startResponse := fixture.postStart(t, "EvenStronger2", "EvenStronger2")
+	defer func() { _ = startResponse.Body.Close() }()
+	stepupCookie := readStepupCookie(t, startResponse)
+
+	// The owner leaves the provider without finishing, and later starts an
+	// ordinary sign-in with that cookie still riding.
+	request := httptest.NewRequest(http.MethodGet, "/auth/oidc/start", nil)
+	request.Header.Set("Cookie", stepupCookie)
+	signInStart := mustAppResponse(t, fixture.app, request)
+	defer func() { _ = signInStart.Body.Close() }()
+	assertStatusCode(t, signInStart, http.StatusTemporaryRedirect)
+
+	retracted := responseCookie(signInStart.Cookies(), oidcStepupCookieName)
+	if retracted == nil || strings.TrimSpace(retracted.Value) != "" {
+		t.Fatal("expected the sign-in start to retract the abandoned step-up cookie")
+	}
+	stateCookie := responseCookie(signInStart.Cookies(), oidcStateCookieName)
+	if stateCookie == nil || strings.TrimSpace(stateCookie.Value) == "" {
+		t.Fatal("expected the sign-in start to mint a state cookie")
+	}
+
+	// What the browser has left is the state cookie alone, so the provider's
+	// return reaches the sign-in branch instead of being answered by a
+	// step-up that is no longer in flight.
+	callback := httptest.NewRequest(http.MethodPost, security.OIDCCallbackPath, strings.NewReader(url.Values{
+		"state": {fixture.oidcStub.lastStartState},
+		"code":  {"provider-code"},
+	}.Encode()))
+	callback.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	callback.Header.Set("Cookie", cookiePair(stateCookie))
+	completed := mustAppResponse(t, fixture.app, callback)
+	defer func() { _ = completed.Body.Close() }()
+	if location := completed.Header.Get("Location"); location == "/settings" {
+		t.Fatal("the sign-in return was answered by the step-up branch: the abandoned cookie still decides")
+	}
+}
+
 func TestOIDCCallbackProviderErrorRedirectsToLoginWithoutLeakingProviderError(t *testing.T) {
 	t.Parallel()
 

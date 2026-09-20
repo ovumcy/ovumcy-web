@@ -11,9 +11,16 @@
   reachable from another site to achieve it. That page's own hand-off is single-use, expires in a
   minute, is scoped to one address, and that address turns away any request another site starts. A
   refusal comes back the same way: when the provider declines, or sends back something that does not
-  answer the request that was made, the owner arrives on the settings page and is told why, instead
-  of being dropped on the sign-in page with nothing said and the explanation surfacing later
-  somewhere else. A provider on the same site is unaffected.
+  answer the request that was made, the owner arrives on the settings page and is told why — on every
+  browser, rather than only on those that treat a redirect begun elsewhere as still being her own
+  visit. A provider on the same site is unaffected.
+
+- **An abandoned re-authentication no longer blocks the next sign-in.** Starting one of those
+  settings actions and then leaving the provider without finishing left a note in the browser that
+  said "a re-authentication is in progress". For the next ten minutes that note answered every
+  attempt to sign in with SSO — the sign-in came back from the provider, was mistaken for the
+  abandoned action, and was turned away with nothing shown on the page. Starting a sign-in now
+  discards the abandoned action, and so does signing out.
 
 ### Security
 
