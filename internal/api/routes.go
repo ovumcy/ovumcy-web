@@ -180,7 +180,7 @@ func registerPageRoutes(app *fiber.App, handler *Handler) {
 	// Same-site half of the cross-site step-up bounce: a top-level GET the
 	// session cookie (SameSite=Lax) is delivered to, guarded by the sealed
 	// single-use continuation the callback minted.
-	app.Get(oidcCallbackContinuePath, handler.refuseHEADOnShownOnceSurface, handler.ContinueOIDCStepup)
+	app.Get(oidcCallbackContinuePath, handler.refuseHEADOnShownOnceSurface, requireFirstPartyRequest(handler.refuseOIDCStepupContinueRequest), handler.ContinueOIDCStepup)
 	app.Get(oidcLinkConfirmPath, handler.ShowOIDCLinkConfirmPage)
 	app.Post(oidcLinkConfirmPath, handler.CompleteOIDCLinkConfirmation)
 	app.Post("/logout", handler.AuthRequired, handler.OwnerOnly, handler.Logout)
@@ -266,6 +266,7 @@ var shownOnceGETRoutes = []string{
 var firstPartyGuardedRoutes = []string{
 	fiber.MethodGet + " " + registerPickupNextPath,
 	fiber.MethodGet + " " + calendarFeedRevealPath,
+	fiber.MethodGet + " " + oidcCallbackContinuePath,
 }
 
 func sendNoContent(c fiber.Ctx) error {

@@ -38,7 +38,7 @@ func TestPopOIDCStateCookieRejectsExpiredPayload(t *testing.T) {
 
 	app := fiber.New()
 	app.Get(security.OIDCCallbackPath, func(c fiber.Ctx) error {
-		state := handler.popOIDCStateCookie(c)
+		state := handler.peekOIDCStateCookie(c)
 		if state.State != "" || state.Nonce != "" || state.CodeVerifier != "" {
 			t.Fatalf("expected expired OIDC state cookie to be rejected, got %+v", state)
 		}
@@ -78,7 +78,7 @@ func TestOIDCStateCookieRoundTripPreservesPayload(t *testing.T) {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 	app.Get(security.OIDCCallbackPath, func(c fiber.Ctx) error {
-		recovered := handler.popOIDCStateCookie(c)
+		recovered := handler.peekOIDCStateCookie(c)
 		if recovered.State != state.State || recovered.Nonce != state.Nonce || recovered.CodeVerifier != state.CodeVerifier {
 			t.Fatalf("expected oidc state to round-trip, got %+v", recovered)
 		}
@@ -130,7 +130,7 @@ func TestOIDCStateCookieRejectsForeignKey(t *testing.T) {
 	})
 	openingApp := fiber.New()
 	openingApp.Get(security.OIDCCallbackPath, func(c fiber.Ctx) error {
-		recovered := openingHandler.popOIDCStateCookie(c)
+		recovered := openingHandler.peekOIDCStateCookie(c)
 		if recovered.State != "" || recovered.Nonce != "" || recovered.CodeVerifier != "" {
 			t.Fatalf("expected rotated-key handler to reject sealed state cookie, got %+v", recovered)
 		}
@@ -177,7 +177,7 @@ func TestOIDCStateCookieRejectsTamperedByte(t *testing.T) {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 	app.Get(security.OIDCCallbackPath, func(c fiber.Ctx) error {
-		recovered := handler.popOIDCStateCookie(c)
+		recovered := handler.peekOIDCStateCookie(c)
 		if recovered.State != "" || recovered.Nonce != "" || recovered.CodeVerifier != "" {
 			t.Fatalf("expected tampered oidc state cookie to be rejected, got %+v", recovered)
 		}

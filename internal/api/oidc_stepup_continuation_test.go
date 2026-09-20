@@ -14,11 +14,13 @@ import (
 // The cross-site bounce exists because a provider on another site posts the
 // callback cross-site, where SameSite=Lax withholds the session cookie. What
 // follows pins the properties that make the bounce safe rather than merely
-// working: it refuses a state that does not match before parking anything, it
-// commits nothing on the cross-site leg, its hand-off is single-use, and the
-// same-site leg still refuses a session that is not the one that started the
-// step-up. The end-to-end round trip itself is covered by the opt-in
-// cross-site e2e lane (e2e/auth-oidc-cross-site.spec.ts).
+// working: it refuses a state that does not match before parking anything and
+// without spending the step-up cookie, it commits nothing on the cross-site
+// leg, it hands over through a same-origin document so the continue route can
+// carry the first-party guard, its hand-off is single-use, and that leg still
+// refuses a session that is not the one that started the step-up. The
+// end-to-end round trip is covered by the opt-in cross-site e2e lane
+// (e2e/auth-oidc-cross-site.spec.ts).
 
 func crossSiteStepupCallback(t *testing.T, fixture *oidcStepupFixture, stepupCookieHeader, state, code string) *http.Response {
 	t.Helper()
@@ -31,16 +33,27 @@ func crossSiteStepupCallback(t *testing.T, fixture *oidcStepupFixture, stepupCoo
 	return mustAppResponse(t, fixture.app, request)
 }
 
-func continueRequestWithCookies(t *testing.T, fixture *oidcStepupFixture, cookieHeader string) *http.Response {
+// continueLeg replays what the interstitial's own navigation looks like:
+// same-origin, because the document that started it is served by this app.
+func continueLeg(t *testing.T, fixture *oidcStepupFixture, cookieHeader string) *http.Response {
 	t.Helper()
 	request := httptest.NewRequest(http.MethodGet, oidcCallbackContinuePath, nil)
 	request.Header.Set("Accept", "text/html,application/xhtml+xml")
 	request.Header.Set("Cookie", cookieHeader)
-	crossSiteNavigation.applyTo(request)
+	sameOriginNavigation.applyTo(request)
 	return mustAppResponse(t, fixture.app, request)
 }
 
-func TestCrossSiteStepupCallbackRefusesAStateThatDoesNotMatchBeforeParkingAnything(t *testing.T) {
+func continuationFromBounce(t *testing.T, response *http.Response) *http.Cookie {
+	t.Helper()
+	continuation := responseCookie(response.Cookies(), oidcStepupContinuationCookieName)
+	if continuation == nil || strings.TrimSpace(continuation.Value) == "" {
+		t.Fatal("expected the cross-site callback to seal a step-up continuation")
+	}
+	return continuation
+}
+
+func TestCrossSiteStepupCallbackRefusesAStateThatDoesNotMatchWithoutSpendingTheCookie(t *testing.T) {
 	t.Parallel()
 
 	fixture := newOIDCStepupFixture(t, "crosssite-state-mismatch@example.com")
@@ -53,18 +66,30 @@ func TestCrossSiteStepupCallbackRefusesAStateThatDoesNotMatchBeforeParkingAnythi
 	response := crossSiteStepupCallback(t, fixture, stepupCookie, "not-the-sealed-state", "callback-code")
 	defer func() { _ = response.Body.Close() }()
 
-	// The refusal is the ordinary settings redirect, and — the point of the
-	// test — nothing was parked for a later leg to spend.
 	assertStatusCode(t, response, http.StatusSeeOther)
 	if continuation := responseCookie(response.Cookies(), oidcStepupContinuationCookieName); continuation != nil && strings.TrimSpace(continuation.Value) != "" {
 		t.Fatal("a callback whose state does not match must not seal a continuation")
 	}
+	// The step-up cookie is SameSite=None, so any site can cause a request
+	// carrying it. Spending it on a state that does not match would let a
+	// stranger cancel a step-up the owner is in the middle of.
+	if spent := responseCookie(response.Cookies(), oidcStepupCookieName); spent != nil && strings.TrimSpace(spent.Value) == "" {
+		t.Fatal("a mismatching callback must not expire the owner's step-up cookie")
+	}
+
+	// And the flow still completes afterwards with the real state, proving the
+	// cookie above survived rather than merely not being re-sent.
+	state := extractStepupCallbackState(t, fixture)
+	bounce := crossSiteStepupCallback(t, fixture, stepupCookie, state, "callback-code")
+	defer func() { _ = bounce.Body.Close() }()
+	assertStatusCode(t, bounce, http.StatusOK)
+	_ = continuationFromBounce(t, bounce)
 }
 
-func TestCrossSiteStepupContinuationIsSingleUse(t *testing.T) {
+func TestCrossSiteStepupCallbackHandsOverThroughASameOriginDocument(t *testing.T) {
 	t.Parallel()
 
-	fixture := newOIDCStepupFixture(t, "crosssite-continuation-replay@example.com")
+	fixture := newOIDCStepupFixture(t, "crosssite-handoff-shape@example.com")
 	fixture.oidcStub.reauthErr = nil
 
 	startResponse := fixture.postStart(t, "EvenStronger2", "EvenStronger2")
@@ -74,27 +99,90 @@ func TestCrossSiteStepupContinuationIsSingleUse(t *testing.T) {
 
 	bounce := crossSiteStepupCallback(t, fixture, stepupCookie, state, "callback-code")
 	defer func() { _ = bounce.Body.Close() }()
-	assertStatusCode(t, bounce, http.StatusSeeOther)
-	continuation := responseCookie(bounce.Cookies(), oidcStepupContinuationCookieName)
-	if continuation == nil || strings.TrimSpace(continuation.Value) == "" {
-		t.Fatal("expected the cross-site callback to seal a continuation")
+
+	// Not a 303: Sec-Fetch-Site describes the whole redirect chain, so a
+	// redirect from here would reach the continue route still labelled
+	// cross-site and its first-party guard would refuse the owner's own
+	// return. A document served by this origin makes that navigation
+	// same-origin in fact.
+	assertStatusCode(t, bounce, http.StatusOK)
+	if location := bounce.Header.Get("Location"); location != "" {
+		t.Fatalf("the bounce must not redirect into the guarded continue route; got Location %q", location)
+	}
+	body := mustReadBodyString(t, bounce.Body)
+	if !strings.Contains(body, `http-equiv="refresh"`) || !strings.Contains(body, oidcCallbackContinuePath) {
+		t.Fatalf("expected a meta-refresh hand-off to %s, got %q", oidcCallbackContinuePath, body)
+	}
+	_ = continuationFromBounce(t, bounce)
+}
+
+func TestStepupContinueRouteRefusesAnOffOriginNavigation(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "crosssite-continue-offorigin@example.com")
+	fixture.oidcStub.reauthErr = nil
+
+	startResponse := fixture.postStart(t, "EvenStronger2", "EvenStronger2")
+	defer func() { _ = startResponse.Body.Close() }()
+	stepupCookie := readStepupCookie(t, startResponse)
+	state := extractStepupCallbackState(t, fixture)
+
+	bounce := crossSiteStepupCallback(t, fixture, stepupCookie, state, "callback-code")
+	defer func() { _ = bounce.Body.Close() }()
+	continuation := continuationFromBounce(t, bounce)
+
+	// Lax sends both the session and the continuation on a top-level
+	// navigation another site starts, so without the guard a page on that site
+	// could complete an erasure or a link at a moment of its choosing.
+	request := httptest.NewRequest(http.MethodGet, oidcCallbackContinuePath, nil)
+	request.Header.Set("Accept", "text/html,application/xhtml+xml")
+	request.Header.Set("Cookie", joinCookieHeader(fixture.authCookie, cookiePair(continuation)))
+	crossSiteNavigation.applyTo(request)
+
+	refused := mustAppResponse(t, fixture.app, request)
+	defer func() { _ = refused.Body.Close() }()
+	assertStatusCode(t, refused, http.StatusSeeOther)
+	if reveal := responseCookie(refused.Cookies(), recoveryCodeCookieName); reveal != nil && strings.TrimSpace(reveal.Value) != "" {
+		t.Fatal("an off-origin navigation must not complete the step-up")
 	}
 
-	first := continueRequestWithCookies(t, fixture, joinCookieHeader(fixture.authCookie, cookiePair(continuation)))
+	// The owner's own return still works: the refusal spent nothing.
+	completed := continueLeg(t, fixture, joinCookieHeader(fixture.authCookie, cookiePair(continuation)))
+	defer func() { _ = completed.Body.Close() }()
+	assertStatusCode(t, completed, http.StatusOK)
+}
+
+func TestCrossSiteStepupContinuationIsSingleUse(t *testing.T) {
+	t.Parallel()
+
+	// identity_link rather than local-password setup: the password purpose
+	// short-circuits on its second run because the account now HAS a local
+	// password, which would let a replay look refused for the wrong reason.
+	fixture := newOIDCStepupFixture(t, "crosssite-continuation-replay@example.com")
+	fixture.oidcStub.reauthErr = nil
+
+	startResponse := postOIDCIdentityLinkStepupStart(t, fixture)
+	defer func() { _ = startResponse.Body.Close() }()
+	stepupCookie := readStepupCookie(t, startResponse)
+	state := extractStepupCallbackState(t, fixture)
+
+	bounce := crossSiteStepupCallback(t, fixture, stepupCookie, state, "callback-code")
+	defer func() { _ = bounce.Body.Close() }()
+	continuation := continuationFromBounce(t, bounce)
+
+	first := continueLeg(t, fixture, joinCookieHeader(fixture.authCookie, cookiePair(continuation)))
 	defer func() { _ = first.Body.Close() }()
-	assertStatusCode(t, first, http.StatusOK)
+	assertStatusCode(t, first, http.StatusSeeOther)
 	if cleared := responseCookie(first.Cookies(), oidcStepupContinuationCookieName); cleared == nil || strings.TrimSpace(cleared.Value) != "" {
 		t.Fatal("expected the continue leg to expire the continuation it spent")
 	}
 
-	// Replaying the same sealed value — a browser that kept it, a log that
-	// captured it — must not complete the action a second time. The step-up
-	// cookie is gone by now, so there is nothing left to re-mint it from.
-	replay := continueRequestWithCookies(t, fixture, joinCookieHeader(fixture.authCookie, cookiePair(continuation)))
+	// Replaying the sealed value — a browser that kept it, a log that captured
+	// it — must not run the link a second time. The step-up cookie is gone by
+	// now, so nothing can re-mint it either.
+	replay := continueLeg(t, fixture, joinCookieHeader(fixture.authCookie, cookiePair(continuation)))
 	defer func() { _ = replay.Body.Close() }()
-	if replay.StatusCode == http.StatusOK {
-		t.Fatal("a replayed continuation must not complete the step-up again")
-	}
+	assertFlashRefusal(t, replay)
 }
 
 func TestStepupContinuationRefusesASessionThatDidNotStartIt(t *testing.T) {
@@ -110,15 +198,12 @@ func TestStepupContinuationRefusesASessionThatDidNotStartIt(t *testing.T) {
 
 	bounce := crossSiteStepupCallback(t, fixture, stepupCookie, state, "callback-code")
 	defer func() { _ = bounce.Body.Close() }()
-	continuation := responseCookie(bounce.Cookies(), oidcStepupContinuationCookieName)
-	if continuation == nil {
-		t.Fatal("expected the cross-site callback to seal a continuation")
-	}
+	continuation := continuationFromBounce(t, bounce)
 
 	// The whole point of the bounce is that the session is read on THIS leg.
 	// Presenting the continuation without one must refuse: a sealed payload
 	// naming an owner is never authority on its own.
-	response := continueRequestWithCookies(t, fixture, cookiePair(continuation))
+	response := continueLeg(t, fixture, cookiePair(continuation))
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode == http.StatusOK {
 		t.Fatal("the continue leg must not complete a step-up for an unidentified session")
@@ -138,7 +223,7 @@ func TestOIDCStepupContinuationRefusesAPayloadItCannotComplete(t *testing.T) {
 		code   string
 	}{
 		// No code means nothing to redeem at the token endpoint: parking it
-		// would hand the continue leg a hand-off that can only fail there,
+		// would hand the continue leg a payload that can only fail there,
 		// after the step-up cookie has already been spent.
 		"empty code":         {stepup: valid, code: "   "},
 		"incomplete step-up": {stepup: oidcStepupState{}, code: "authorization-code"},
@@ -180,9 +265,9 @@ func TestOIDCStepupContinuationCookieRefusesInsecureTransport(t *testing.T) {
 	handler := newSealedExpirySweepHandler()
 	handler.cookieSecure = false
 
-	// The cookie is Secure by construction, so a deployment that is not on
-	// secure transport must refuse to mint it rather than write one the
-	// browser drops — the same rule its two sibling OIDC cookies follow.
+	// The cookie is Secure by construction, so a deployment not on secure
+	// transport must refuse to mint it rather than write one the browser
+	// drops — the rule its two sibling OIDC cookies already follow.
 	app := fiber.New()
 	app.Get("/mint", func(c fiber.Ctx) error {
 		if err := handler.setOIDCStepupContinuationCookie(c, continuation); err == nil {
@@ -274,5 +359,18 @@ func TestSameSiteStepupCallbackStillCompletesDirectly(t *testing.T) {
 	}
 	if reveal := responseCookie(response.Cookies(), recoveryCodeCookieName); reveal == nil || strings.TrimSpace(reveal.Value) == "" {
 		t.Fatal("expected the same-site callback to complete the local-password setup and mint the reveal")
+	}
+}
+
+// assertFlashRefusal pins that a response is the settings refusal channel: a
+// 303 back to /settings carrying an error flash, never a completion.
+func assertFlashRefusal(t *testing.T, response *http.Response) {
+	t.Helper()
+	assertStatusCode(t, response, http.StatusSeeOther)
+	if location := response.Header.Get("Location"); location != "/settings" {
+		t.Fatalf("expected the refusal to land on /settings, got %q", location)
+	}
+	if flash := responseCookie(response.Cookies(), flashCookieName); flash == nil || strings.TrimSpace(flash.Value) == "" {
+		t.Fatal("expected the refusal to carry a flash the settings page renders")
 	}
 }

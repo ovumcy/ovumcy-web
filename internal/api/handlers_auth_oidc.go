@@ -52,8 +52,20 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 	// a distinct sealed cookie identifying the purpose and the originating
 	// user. Dispatching off cookie presence avoids registering a second
 	// redirect URI at every provider operators have to manage.
-	if stepupState := handler.popOIDCStepupCookie(c); stepupState.validAt(time.Now()) {
+	if stepupState := handler.peekOIDCStepupCookie(c); stepupState.validAt(time.Now()) {
 		exchange := handler.oidcCallbackExchangeFromRequest(c)
+		// The cookie is spent only for a callback that answers THIS flow. A
+		// request whose state does not match is not the owner's return trip —
+		// and since the cookie is SameSite=None, any site can cause one — so
+		// consuming it there would let a stranger cancel a step-up in
+		// progress. It stays put, bounded by its own ten-minute expiry.
+		if !stepupState.matchesState(exchange.State) {
+			spec := authOIDCAuthenticationFailedErrorSpec()
+			handler.logSecurityError(c, stepupActionForPurpose(stepupState), spec)
+			return handler.redirectSettingsRefusal(c, spec)
+		}
+		handler.clearOIDCStepupCookie(c)
+
 		// A provider on another site posts the callback cross-site, where
 		// SameSite=Lax withholds the session cookie — and every completion
 		// below resolves the owner from that session. Hand the validated
@@ -64,15 +76,18 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 		return handler.dispatchStepupCompletion(c, stepupState, exchange)
 	}
 
-	oidcState := handler.popOIDCStateCookie(c)
+	oidcState := handler.peekOIDCStateCookie(c)
 	callbackState := handler.oidcCallbackValue(c, "state")
 	code := handler.oidcCallbackValue(c, "code")
 	if !oidcState.validAt(time.Now()) || !oidcState.matchesState(callbackState) {
+		// Same rule as the step-up above: a sign-in the owner is in the middle
+		// of is not cancelled by someone else's request to this path.
 		spec := authOIDCAuthenticationFailedErrorSpec()
 		handler.logSecurityError(c, "auth.oidc_callback", spec)
 		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
+	handler.clearOIDCStateCookie(c)
 	if handler.oidcCallbackValue(c, "error") != "" {
 		spec := authOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, "auth.oidc_callback", spec)
