@@ -5,10 +5,10 @@
   the same tags, so an operator whose environment pulls from Docker Hub can run the same release
   without a registry mirror of their own. The copy is content-addressed: it moves the manifest
   bytes and the Cosign signature that already covers them, never a second build, so both registries
-  answer with the one digest this project signed, and the verification commands in the README and
-  the security policy check the same artifact whichever registry it was pulled from. The build
-  provenance is served by GitHub against that digest rather than by a registry, so it too covers
-  both.
+  answer with the one digest this project signed. The README and the security policy now name the
+  Docker Hub reference beside the GHCR one and say that every verification command takes either,
+  because the build provenance is issued against the digest rather than against a registry and the
+  signature is copied along with the manifest it covers.
 
   Nothing reaches Docker Hub until the GHCR release is finished — signed, attested, read back, and
   every public GHCR tag resolved anonymously to the signed digest — and the mirror is not reported

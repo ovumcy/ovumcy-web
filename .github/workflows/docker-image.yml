@@ -497,7 +497,18 @@ jobs:
           outputs: type=image,name=${{ steps.image.outputs.name }},push-by-digest=true,name-canonical=true,push=true
 
       - name: Install Cosign
+        # The cosign version is pinned here rather than left to the action's
+        # own default, because the mirror at the end of this job runs `cosign
+        # copy`, and that command carries a deprecation marker as of v3.0.6,
+        # naming `oras copy -r` and `cosign save`/`cosign load` as what
+        # replaces it. Left to the default, a bump of the action's SHA would
+        # change the cosign version as a side effect, and a release where
+        # `copy` has been removed fails AFTER the GHCR release is public, on a
+        # job no required check covers. Bumping this line is where that
+        # question gets asked.
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
 
       - name: Sign the pushed digest
         env:
@@ -859,14 +870,25 @@ jobs:
             esac
           done <<< "${TAG_REFS}"
 
-          # The SOURCE is the digest, never a GHCR tag. A tag is a mutable
-          # pointer: resolving one here would mirror whatever it names by the
-          # time this step runs, which is not necessarily what was signed.
-          # `--force` is what lets a moving alias — `latest`, `main` — be
-          # rewritten on a later release rather than failing the run.
+          # The SOURCE is a digest throughout, never a tag. A tag is a
+          # mutable pointer: resolving one here would mirror whatever it names
+          # by the time this step runs, which is not necessarily what was
+          # signed. `--force` is what lets a moving alias — `latest`, `main` —
+          # be rewritten on a later release rather than failing the run.
+          #
+          # Only the FIRST tag is copied across registries. `cosign copy` walks
+          # the whole signed entity — the index, the signature, the attestation
+          # and the SBOM — on every invocation, and `--force` skips the
+          # read-back that would otherwise let an identical destination
+          # short-circuit, so four tags would mean four transfers of the same
+          # bytes. Every later tag is copied from the MIRROR's own digest,
+          # which is that same manifest by definition and lets the registry
+          # answer each blob as already present.
+          source="${IMAGE_NAME}@${DIGEST}"
           for tag in "${tags[@]}"; do
-            cosign copy --force "${IMAGE_NAME}@${DIGEST}" "${MIRROR_NAME}:${tag}"
-            echo "${MIRROR_NAME}:${tag} <- ${DIGEST}"
+            cosign copy --force "${source}" "${MIRROR_NAME}:${tag}"
+            echo "${MIRROR_NAME}:${tag} <- ${source}"
+            source="${MIRROR_NAME}@${DIGEST}"
           done
 
       - name: Verify every mirrored tag anonymously and against the signed digest
