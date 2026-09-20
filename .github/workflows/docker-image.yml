@@ -862,12 +862,23 @@ jobs:
             [ -n "$ref" ] || continue
 
             case "$ref" in
-              "${IMAGE_NAME}:"*) tags+=("${ref##*:}") ;;
+              "${IMAGE_NAME}:"*) ;;
               *)
                 echo "::error::the metadata step produced ${ref}, which is not a tag of ${IMAGE_NAME}. Nothing outside the repository this run signed is mirrored, and nothing at all is mirrored from a list carrying one."
                 exit 1
                 ;;
             esac
+
+            # Same empty-tag case the promotion step guards against: a
+            # reference with nothing after the colon matches the prefix above
+            # and would otherwise queue a blank tag, landing a dangling
+            # `${MIRROR_NAME}:` copy destination below.
+            tag="${ref##*:}"
+            if [ -z "$tag" ]; then
+              echo "::error::the metadata step produced ${ref}, which names this image and no tag."
+              exit 1
+            fi
+            tags+=("$tag")
           done <<< "${TAG_REFS}"
 
           # The SOURCE is a digest throughout, never a tag. A tag is a
