@@ -179,6 +179,20 @@ func (service *OIDCLoginService) PostLogoutRedirectURL() string {
 	return strings.TrimSpace(service.config.ResolvedPostLogoutRedirectURL())
 }
 
+// ProviderLogoutEnabled reports whether the configuration in force NOW routes
+// a sign-out through the provider's end-session endpoint. It is the single
+// predicate both sides of the provider-logout bridge ask: buildLogoutState
+// consults it before writing a row, and the transport layer consults it again
+// at logout time before composing any end-session redirect from one. A stored
+// row lives for days and is only a carrier of the per-session material the
+// provider needs — never evidence of the mode that produced it — so an
+// instance switched to OIDC_LOGOUT_MODE=local, or with OIDC turned off
+// entirely, signs out locally from the first request after the switch. A nil
+// or disabled service reports false, which composes no provider redirect.
+func (service *OIDCLoginService) ProviderLogoutEnabled() bool {
+	return service.Enabled() && service.config.ProviderLogoutEnabled()
+}
+
 func (service *OIDCLoginService) StartAuth(ctx context.Context, state string, nonce string, codeVerifier string) (string, error) {
 	return service.startAuthWithExtra(ctx, state, nonce, codeVerifier, nil)
 }
@@ -514,7 +528,7 @@ func effectiveOIDCLoginTime(now time.Time) time.Time {
 // outcome as a provider that offers no end-session endpoint — the caller
 // simply issues no logout state.
 func (service *OIDCLoginService) buildLogoutState(session security.OIDCSession, userID uint) *OIDCLogoutState {
-	if !service.config.ProviderLogoutEnabled() || userID == 0 {
+	if !service.ProviderLogoutEnabled() || userID == 0 {
 		return nil
 	}
 

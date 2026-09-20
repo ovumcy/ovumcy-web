@@ -40,6 +40,11 @@ type OIDCWorkflowService interface {
 	ResponseMode() security.OIDCResponseMode
 	IssuerURL() string
 	PostLogoutRedirectURL() string
+	// ProviderLogoutEnabled is asked at LOGOUT time, not only when the
+	// end-session material is stored: the transport layer composes a provider
+	// redirect from a stored row only while the configuration in force still
+	// asks for one.
+	ProviderLogoutEnabled() bool
 	StartAuth(ctx context.Context, state string, nonce string, codeVerifier string) (string, error)
 	StartReauth(ctx context.Context, state string, nonce string, codeVerifier string) (string, error)
 	Authenticate(ctx context.Context, code string, codeVerifier string, expectedNonce string, now time.Time) (services.OIDCLoginResult, error)

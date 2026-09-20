@@ -177,6 +177,8 @@ Consequence: **a provider that omits `auth_time` under `max_age=0` cannot comple
 
 If you want provider logout, keep `OIDC_POST_LOGOUT_REDIRECT_URL` on the same public origin as the callback URL. If you leave it empty, Ovumcy defaults to your public `/login` URL.
 
+A change to `OIDC_LOGOUT_MODE` takes effect on the next sign-out, including for sessions that began before the change. Ovumcy stores the provider material a sign-out would need (the `end_session_endpoint` and the `id_token_hint`) with the session, and that record can outlive the setting by up to seven days — but it is only the data for the hop, never the decision to make it. After you switch to `local`, or turn OIDC off, every sign-out is local and the stored record is discarded as the session ends.
+
 Ovumcy host-pins the discovery-supplied `end_session_endpoint` to the configured `OIDC_ISSUER_URL` (same scheme, host, and effective port). If a provider advertises an end-session endpoint on a different origin — for example a compromised or look-alike discovery document — Ovumcy rejects it at provider load and silently falls back to local logout, regardless of `OIDC_LOGOUT_MODE`. This prevents a malicious metadata response from redirecting the logout flow (including any `id_token_hint` carried in the URL) to an attacker-controlled host. The pin also applies to a discovery document that Ovumcy can only decode in part: sign-in still works, and an end-session endpoint that fails the pin degrades to local logout exactly as a missing one does.
 
 ## Accepted Signing Algorithms

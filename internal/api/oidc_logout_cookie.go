@@ -77,6 +77,11 @@ func (handler *Handler) clearOIDCLogoutBridgeCookie(c fiber.Ctx) {
 }
 
 func (handler *Handler) providerLogoutRedirectURLFromState(state services.OIDCLogoutState) string {
+	// The mode in force now decides, never the row: see
+	// providerLogoutConfigured below.
+	if !handler.providerLogoutConfigured() {
+		return ""
+	}
 	if !validOIDCLogoutState(state, handler.oidcIssuerURL()) {
 		return ""
 	}
@@ -98,6 +103,26 @@ func (handler *Handler) providerLogoutRedirectURLFromState(state services.OIDCLo
 	query.Set("post_logout_redirect_uri", postLogoutRedirectURL)
 	logoutURL.RawQuery = query.Encode()
 	return logoutURL.String()
+}
+
+// providerLogoutConfigured reports whether the configuration in force at this
+// request asks a sign-out to travel through the provider's end-session
+// endpoint — OIDC on, and a logout mode that wants the hop. It is the single
+// read-time gate: the sign-out handler asks it before minting the bridge
+// cookie, and providerLogoutRedirectURLFromState asks it before composing a
+// Location, so the two cannot drift.
+//
+// A stored row is never the source of truth about the mode. Rows live for
+// days (defaultOIDCLogoutStateTTL), so without this an owner who signed in
+// before the operator switched OIDC_LOGOUT_MODE to local — or turned OIDC off
+// — would keep being sent to the provider's end-session endpoint for the rest
+// of the row's life, exercising a mode the operator had turned off. A handler
+// with no OIDC service configures no provider logout.
+func (handler *Handler) providerLogoutConfigured() bool {
+	if handler == nil || handler.oidcService == nil {
+		return false
+	}
+	return handler.oidcService.ProviderLogoutEnabled()
 }
 
 // oidcPostLogoutRedirectURL is the post-logout return address the current
