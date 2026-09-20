@@ -201,8 +201,26 @@ func (handler *Handler) setOIDCStepupCookie(c fiber.Ctx, state oidcStepupState) 
 // once that payload has proved valid. Clearing first made any stray hit on the
 // callback path — a prefetch, a stale tab, a cross-site navigation an attacker
 // can trigger — destroy an in-flight step-up the owner would then have to
-// restart. An invalid or absent payload now leaves the cookie for
-// the request that can actually use it; its own TTL still bounds the lifetime.
+// restart. A payload this reader HONOURS therefore stays put, for the request
+// whose state matches it to spend; its own TTL still bounds the lifetime.
+//
+// A value this reader REFUSES is the other case, and it is retracted here, in
+// the response that refused it — the convention parseTOTPPendingCookie
+// follows. Nothing that reaches one of those arms can be a live step-up:
+// setOIDCStepupCookie mints no payload that is incomplete for its purpose, and
+// an expired one is past the bound this reader itself enforces. Left riding, it
+// is re-sent to the callback path by every later request, and this cookie is
+// SameSite=None, so any site can cause one. The clear sits in the reader
+// because the reader is the only place that knows a value was presented and
+// found unusable; a caller sees an empty state and would have to repeat the
+// clear, and the next caller added without it reintroduces the leak. A missing
+// cookie retracts nothing: there is no value to retract, and an empty value is
+// already the cleared state.
+//
+// The codec arm is not a transient failure to be forgiven: cookieCodec() builds
+// under sync.Once and caches its error for the life of the process, so a codec
+// that failed once fails for every later request and no flow it refuses can
+// ever complete.
 func (handler *Handler) peekOIDCStepupCookie(c fiber.Ctx) oidcStepupState {
 	raw := strings.TrimSpace(c.Cookies(oidcStepupCookieName))
 	if raw == "" {
@@ -211,18 +229,22 @@ func (handler *Handler) peekOIDCStepupCookie(c fiber.Ctx) oidcStepupState {
 
 	codec, err := handler.cookieCodec()
 	if err != nil {
+		handler.clearOIDCStepupCookie(c)
 		return oidcStepupState{}
 	}
 	decoded, err := codec.open(oidcStepupCookieName, raw)
 	if err != nil {
+		handler.clearOIDCStepupCookie(c)
 		return oidcStepupState{}
 	}
 
 	state := oidcStepupState{}
 	if err := json.Unmarshal(decoded, &state); err != nil {
+		handler.clearOIDCStepupCookie(c)
 		return oidcStepupState{}
 	}
 	if !state.validAt(time.Now()) {
+		handler.clearOIDCStepupCookie(c)
 		return oidcStepupState{}
 	}
 	return state
