@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 // The cross-site bounce exists because a provider on another site posts the
@@ -49,6 +50,19 @@ func continuationFromBounce(t *testing.T, response *http.Response) *http.Cookie 
 	continuation := responseCookie(response.Cookies(), oidcStepupContinuationCookieName)
 	if continuation == nil || strings.TrimSpace(continuation.Value) == "" {
 		t.Fatal("expected the cross-site callback to seal a step-up continuation")
+	}
+	// The attributes ARE the containment, and only the emitted header shows
+	// them: SameSite=None would hand the completion leg to any site that can
+	// reach the route, and a wider path would send the hand-off along with
+	// every other request until it is spent.
+	if continuation.SameSite != http.SameSiteLaxMode {
+		t.Fatalf("continuation SameSite=%v, want Lax", continuation.SameSite)
+	}
+	if continuation.Path != oidcCallbackContinuePath {
+		t.Fatalf("continuation Path=%q, want %q", continuation.Path, oidcCallbackContinuePath)
+	}
+	if !continuation.HttpOnly || !continuation.Secure {
+		t.Fatalf("continuation HttpOnly=%v Secure=%v, want both", continuation.HttpOnly, continuation.Secure)
 	}
 	return continuation
 }
@@ -178,8 +192,13 @@ func TestCrossSiteStepupContinuationIsSingleUse(t *testing.T) {
 	}
 
 	// Replaying the sealed value — a browser that kept it, a log that captured
-	// it — must not run the link a second time. The step-up cookie is gone by
-	// now, so nothing can re-mint it either.
+	// it — must not run the link a second time. Clearing the cookie above is
+	// only an instruction to the client, so what actually stops the replay is
+	// the authorization code the continuation carries: the provider redeemed
+	// it on the leg that just ran and refuses it now. Model exactly that, or
+	// the assertion below would be measuring a stub that never burns a code.
+	fixture.oidcStub.identityLinkReauthErr = services.ErrOIDCLinkFailed
+
 	replay := continueLeg(t, fixture, joinCookieHeader(fixture.authCookie, cookiePair(continuation)))
 	defer func() { _ = replay.Body.Close() }()
 	assertFlashRefusal(t, replay)
@@ -407,14 +426,23 @@ func TestSameSiteStepupCallbackStillCompletesDirectly(t *testing.T) {
 }
 
 // assertFlashRefusal pins that a response is the settings refusal channel: a
-// 303 back to /settings carrying an error flash, never a completion.
+// 303 back to /settings carrying an error flash, never a completion. The flash
+// has to be OPENED, not merely counted: a completed step-up answers with the
+// same 303 to the same path carrying a sealed success flash, so a refusal
+// asserted by status and cookie presence alone is satisfied by the completion
+// it means to rule out.
 func assertFlashRefusal(t *testing.T, response *http.Response) {
 	t.Helper()
 	assertStatusCode(t, response, http.StatusSeeOther)
 	if location := response.Header.Get("Location"); location != "/settings" {
 		t.Fatalf("expected the refusal to land on /settings, got %q", location)
 	}
-	if flash := responseCookie(response.Cookies(), flashCookieName); flash == nil || strings.TrimSpace(flash.Value) == "" {
+	flash := responseCookie(response.Cookies(), flashCookieName)
+	if flash == nil || strings.TrimSpace(flash.Value) == "" {
 		t.Fatal("expected the refusal to carry a flash the settings page renders")
+	}
+	payload := decodeFlashCookieForTest(t, flash.Value)
+	if payload.SettingsError == "" && payload.AuthError == "" {
+		t.Fatalf("expected an error flash, got %+v", payload)
 	}
 }
