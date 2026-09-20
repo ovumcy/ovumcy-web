@@ -31,6 +31,14 @@ on:
         required: false
       DOCKERHUB_TOKEN:
         required: false
+      # A second, publish-only credential rather than write access added to the
+      # pull-auth pair above: that one is handed to security.yml, which runs on
+      # every pull request, while this one reaches a single step that runs only
+      # on a release tag or on main.
+      DOCKERHUB_PUBLISH_USERNAME:
+        required: false
+      DOCKERHUB_PUBLISH_TOKEN:
+        required: false
 
 permissions:
   contents: read
@@ -335,10 +343,11 @@ jobs:
       packages: write
     env:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      # Both registry steps below have to ask for, and declare, the same
+      DOCKERHUB_PUBLISH_USERNAME: ${{ secrets.DOCKERHUB_PUBLISH_USERNAME }}
+      # Every registry step below has to ask for, and declare, the same
       # manifest media types: the promotion writes the tag under the type its
-      # read-back returned, and the public check resolves that tag under the
-      # same set. A type in one list and not the other splits the two steps'
+      # read-back returned, and both public checks resolve that tag under the
+      # same set. A type in one list and not the others splits those steps'
       # view of one manifest, so the list is declared once, for the job.
       MANIFEST_ACCEPT: application/vnd.oci.image.index.v1+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.docker.distribution.manifest.v2+json
 
@@ -789,4 +798,188 @@ jobs:
             fi
 
             echo "${ref} is anonymously pullable and resolves to ${DIGEST}."
+          done <<< "${TAG_REFS}"
+
+      # THE MIRROR BEGINS WHERE THE GHCR RELEASE ENDS. Everything above has
+      # already settled the digest: it is signed, attested, both were read back
+      # from the registry, and every public GHCR tag was resolved anonymously
+      # and found to be that digest. Only then does a second registry receive
+      # anything, so Docker Hub cannot come to hold a release that this job's
+      # own checks would have refused.
+      #
+      # The mirror is a `cosign copy` of content-addressed bytes, never a
+      # second build and never a `docker push` of a re-assembled index: either
+      # would produce a different digest and leave the Docker Hub copy outside
+      # the signature this run issued, while looking identical in a tag list.
+      # Copying cannot, and the check below is what says so rather than
+      # assuming it.
+      #
+      # Absent the publishing credential all three steps skip and GHCR
+      # publishes exactly as before. The credential is deliberately NOT the
+      # `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` pair above: that one exists for
+      # authenticated base-image pulls and security.yml hands it to jobs that
+      # run on every pull request, so write access to a public registry must
+      # not be inside it.
+      - name: Log in to Docker Hub for the mirror
+        if: ${{ env.DOCKERHUB_PUBLISH_USERNAME != '' }}
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_PUBLISH_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PUBLISH_TOKEN }}
+
+      - name: Mirror the signed digest to Docker Hub
+        if: ${{ env.DOCKERHUB_PUBLISH_USERNAME != '' }}
+        shell: bash
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAG_REFS: ${{ steps.meta.outputs.tags }}
+          IMAGE_NAME: ${{ steps.image.outputs.name }}
+          MIRROR_NAME: docker.io/${{ steps.image.outputs.path }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$(printf '%s' "${TAG_REFS}" | tr -d '[:space:]')" ]; then
+            echo "::error::the metadata step produced no tag to mirror, so this run would copy a digest nothing points at."
+            exit 1
+          fi
+
+          # The WHOLE list is judged before the first copy, for the reason the
+          # promotion judges its own: a foreign reference found halfway leaves
+          # the registry holding the tags written before it.
+          tags=()
+          while IFS= read -r ref; do
+            [ -n "$ref" ] || continue
+
+            case "$ref" in
+              "${IMAGE_NAME}:"*) tags+=("${ref##*:}") ;;
+              *)
+                echo "::error::the metadata step produced ${ref}, which is not a tag of ${IMAGE_NAME}. Nothing outside the repository this run signed is mirrored, and nothing at all is mirrored from a list carrying one."
+                exit 1
+                ;;
+            esac
+          done <<< "${TAG_REFS}"
+
+          # The SOURCE is the digest, never a GHCR tag. A tag is a mutable
+          # pointer: resolving one here would mirror whatever it names by the
+          # time this step runs, which is not necessarily what was signed.
+          # `--force` is what lets a moving alias — `latest`, `main` — be
+          # rewritten on a later release rather than failing the run.
+          for tag in "${tags[@]}"; do
+            cosign copy --force "${IMAGE_NAME}@${DIGEST}" "${MIRROR_NAME}:${tag}"
+            echo "${MIRROR_NAME}:${tag} <- ${DIGEST}"
+          done
+
+      - name: Verify every mirrored tag anonymously and against the signed digest
+        # The same two questions the GHCR check asks, asked of the other
+        # registry, because an answer from GHCR is not an answer about Docker
+        # Hub. The signature object is checked for by name as well: it is what
+        # `cosign copy` carries beyond the manifest, and its absence would
+        # leave `cosign verify docker.io/...` failing for every operator who
+        # follows SECURITY.md while this run reported a mirror published.
+        #
+        # The provenance attestation is not re-verified here. It is served by
+        # GitHub against the DIGEST and the repository, not by the registry the
+        # image is read from, and the digest is the one this step proves
+        # identical — so `gh attestation verify` on the mirror would
+        # interrogate the record `Verify the signature and provenance before
+        # promoting` has already read back.
+        if: ${{ env.DOCKERHUB_PUBLISH_USERNAME != '' }}
+        shell: bash
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAG_REFS: ${{ steps.meta.outputs.tags }}
+          IMAGE_NAME: ${{ steps.image.outputs.name }}
+          IMAGE_PATH: ${{ steps.image.outputs.path }}
+          MIRROR_NAME: docker.io/${{ steps.image.outputs.path }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$(printf '%s' "${TAG_REFS}" | tr -d '[:space:]')" ]; then
+            echo "::error::there is no mirrored tag to verify, so nothing here would be checked and the mirror would be reported published regardless."
+            exit 1
+          fi
+
+          token_body="$(mktemp)"
+          manifest_headers="$(mktemp)"
+          trap 'rm -f "$token_body" "$manifest_headers"' EXIT
+
+          token_status="$(
+            curl -sSL --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors \
+              -o "$token_body" -w '%{http_code}' \
+              "https://auth.docker.io/token?service=registry.docker.io&scope=repository:${IMAGE_PATH}:pull"
+          )"
+
+          if [ "$token_status" != "200" ]; then
+            echo "::error::Anonymous Docker Hub token request for ${MIRROR_NAME} returned HTTP ${token_status}. Ensure the repository exists and is public."
+            cat "$token_body"
+            exit 1
+          fi
+
+          # Parsed the way the GHCR steps parse theirs, and held to that one
+          # spelling on purpose: three registry steps reading a bearer token
+          # out of a JSON body three ways is three chances for one of them to
+          # read an empty string as success.
+          token="$(
+            python3 -c 'import json, pathlib, sys; body = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")); print(body.get("token", ""))' "$token_body"
+          )"
+
+          if [ -z "$token" ]; then
+            echo "::error::Anonymous Docker Hub token response for ${MIRROR_NAME} did not include a bearer token."
+            cat "$token_body"
+            exit 1
+          fi
+
+          # Cosign stores a digest's signature under a tag derived from that
+          # digest, so this asks for the one object `cosign copy` adds beyond
+          # the manifest itself. Checked once rather than per tag: every tag
+          # below is about to be proved to be this digest.
+          signature_status="$(
+            curl -sS --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors \
+              -o /dev/null -w '%{http_code}' -I \
+              -H "Authorization: Bearer ${token}" \
+              -H "Accept: ${MANIFEST_ACCEPT}" \
+              "https://registry-1.docker.io/v2/${IMAGE_PATH}/manifests/${DIGEST/:/-}.sig"
+          )"
+
+          if [ "$signature_status" != "200" ]; then
+            echo "::error::the signature for ${DIGEST} is not on Docker Hub (HTTP ${signature_status}); the mirrored image cannot be verified there however green this run is."
+            exit 1
+          fi
+
+          while IFS= read -r ref; do
+            [ -n "$ref" ] || continue
+
+            case "$ref" in
+              "${IMAGE_NAME}:"*) tag="${ref##*:}" ;;
+              *)
+                echo "::error::the metadata step produced ${ref}, which is not a tag of ${IMAGE_NAME}. This check reports on tags of the image this run signed and on nothing else."
+                exit 1
+                ;;
+            esac
+
+            head_status="$(
+              curl -sS --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors \
+                -o /dev/null -D "$manifest_headers" -w '%{http_code}' -I \
+                -H "Authorization: Bearer ${token}" \
+                -H "Accept: ${MANIFEST_ACCEPT}" \
+                "https://registry-1.docker.io/v2/${IMAGE_PATH}/manifests/${tag}"
+            )"
+
+            if [ "$head_status" != "200" ]; then
+              echo "::error::Anonymous Docker Hub manifest request for ${MIRROR_NAME}:${tag} returned HTTP ${head_status}. Ensure the repository is publicly pullable before considering this mirror published."
+              exit 1
+            fi
+
+            published="$(
+              tr -d '\r' < "$manifest_headers" \
+                | awk 'tolower($0) ~ /^docker-content-digest:/ { sub(/^[^:]*:[ \t]*/, ""); sub(/[ \t]+$/, ""); print }' \
+                | tail -1
+            )"
+
+            if [ "$published" != "$DIGEST" ]; then
+              echo "::error::${MIRROR_NAME}:${tag} resolves to ${published:-nothing}, not to the signed digest ${DIGEST}. A mirrored alias pointing anywhere else is an unsigned release however green this run is."
+              exit 1
+            fi
+
+            echo "${MIRROR_NAME}:${tag} is anonymously pullable and resolves to ${DIGEST}."
           done <<< "${TAG_REFS}"
