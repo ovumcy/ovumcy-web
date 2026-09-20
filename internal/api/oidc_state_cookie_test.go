@@ -10,7 +10,7 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/security"
 )
 
-func TestPopOIDCStateCookieRejectsExpiredPayload(t *testing.T) {
+func TestPeekOIDCStateCookieRejectsExpiredPayload(t *testing.T) {
 	t.Parallel()
 
 	handler := &Handler{
