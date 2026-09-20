@@ -37,6 +37,12 @@
 //     stubbed registry. A guard that only read the order would pass over a
 //     promotion that writes a tag it never checked, or a verification that
 //     accepts an alias resolving to a digest nobody signed;
+//   - the DOCKER HUB MIRROR, at both ends. The tail of the job is pinned the
+//     way the window before the promotion is, so nothing reaches a second
+//     registry until the first one's release is complete; and the copy and
+//     its check run over that same stub, because a mirror that resolved a tag
+//     rather than the signed digest, or one whose signature never travelled
+//     with it, is a tag on a public registry that no operator can verify;
 //   - the TOKEN PARSE, against a real interpreter rather than that stub, which
 //     shadows it everywhere else. It is the only place the line both registry
 //     steps pull the bearer token out of the registry's answer with is
@@ -87,6 +93,10 @@ const (
 	verifyStep  = "Verify the signature and provenance before promoting"
 	promoteStep = "Promote the signed digest to its public tags"
 	publicStep  = "Verify every public tag anonymously and against the signed digest"
+
+	mirrorLoginStep  = "Log in to Docker Hub for the mirror"
+	mirrorStep       = "Mirror the signed digest to Docker Hub"
+	mirrorVerifyStep = "Verify every mirrored tag anonymously and against the signed digest"
 )
 
 var (
@@ -126,6 +136,11 @@ func sha256Hex(body string) string {
 const (
 	imageName = "ghcr.io/ovumcy/ovumcy-web"
 	imagePath = "ovumcy/ovumcy-web"
+
+	// The Docker Hub mirror is the same path under the other registry, which
+	// is what lets the pull-count badge in README.md name it, and what makes
+	// `docker.io/<path>` derivable rather than a second spelling to maintain.
+	mirrorName = "docker.io/" + imagePath
 )
 
 // TestNoPublicTagIsCreatedBeforeTheSignature is the order rule. It is written
@@ -248,6 +263,249 @@ func TestOnlyReviewedStepsRunBeforeThePromotion(t *testing.T) {
 	}
 }
 
+// TestTheDockerHubMirrorRunsAfterTheWholeGhcrReleaseIsVerified holds the
+// second registry to the far side of every check the first one gets. The
+// window guarded above is the one before the promotion; this is its mirror
+// image at the other end of the job, and it exists because a mirror is the
+// cheapest way to reintroduce the defect this package was written for — an
+// alias on a registry nothing in this run has read back, carrying whatever
+// bytes a second build produced.
+//
+// The tail is pinned whole rather than by a pairwise order, for the reason the
+// pre-promotion window is: a step appended after the public check runs with
+// this job's registry credentials in the environment and can write a tag
+// anywhere, so a new one there has to be read for that and then added here.
+func TestTheDockerHubMirrorRunsAfterTheWholeGhcrReleaseIsVerified(t *testing.T) {
+	job := workflowfile.Job(t, publishWorkflow, publishJob)
+	steps := stepNames(t, job)
+
+	public := slices.Index(steps, publicStep)
+	if public < 0 {
+		t.Fatalf("%s, job %q: no step named %q, so this guard cannot find the window it is meant to hold", publishWorkflow, publishJob, publicStep)
+	}
+
+	want := []string{publicStep, mirrorLoginStep, mirrorStep, mirrorVerifyStep}
+	if got := steps[public:]; !slices.Equal(got, want) {
+		t.Errorf("%s, job %q ends on these steps:\n  %v\nand this guard has reviewed:\n  %v\nNothing may reach Docker Hub before %q has resolved every GHCR alias to the signed digest, and the mirror is not published until %q has resolved every Docker Hub alias to the same one",
+			publishWorkflow, publishJob, got, want, publicStep, mirrorVerifyStep)
+	}
+}
+
+// TestTheMirrorCopiesTheSignedDigestUnderOnlyItsOwnTags runs the copy step
+// with `cosign` shadowed. The order rule above reads step names, and a name is
+// all it reads: a mirror step that resolved `<image>:latest` and pushed
+// whatever came back would keep its place in the sequence and put unsigned
+// bytes under a public tag on the other registry.
+func TestTheMirrorCopiesTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
+	job := workflowfile.Job(t, publishWorkflow, publishJob)
+	bash := requireBash(t)
+	script := stepScript(t, job, mirrorStep)
+
+	preamble := `cosign() { printf 'COSIGN %s\n' "$*" >&2; }`
+
+	for _, testCase := range []struct {
+		name        string
+		tagRefs     string
+		wantCopies  []string
+		wantRefusal string
+	}{
+		{
+			name:    "the tags this run derived",
+			tagRefs: imageName + ":v2.0.0\n" + imageName + ":latest",
+			wantCopies: []string{
+				"COSIGN copy --force " + imageName + "@" + digest + " " + mirrorName + ":v2.0.0",
+				"COSIGN copy --force " + imageName + "@" + digest + " " + mirrorName + ":latest",
+			},
+		},
+		{
+			// The same list the promotion and the public check refuse, refused
+			// here for the same reason and before the first copy: a foreign
+			// reference found halfway would leave the mirror holding the tags
+			// written ahead of it.
+			name:        "a reference from another repository",
+			tagRefs:     imageName + ":v2.0.0\ndocker.io/someone/else:latest",
+			wantRefusal: "not a tag of",
+		},
+		{
+			// An empty list is not a mirror of nothing, it is a run that would
+			// report a mirror published having copied nothing at all.
+			name:        "no tag at all",
+			tagRefs:     "\n   \n",
+			wantRefusal: "no tag to mirror",
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			command := exec.Command(bash, "-c", preamble+"\n"+script)
+			command.Env = append(os.Environ(),
+				"DIGEST="+digest,
+				"TAG_REFS="+testCase.tagRefs,
+				"IMAGE_NAME="+imageName,
+				"MIRROR_NAME="+mirrorName,
+			)
+			output, err := command.CombinedOutput()
+
+			if testCase.wantRefusal != "" {
+				if err == nil {
+					t.Fatalf("the step mirrored a tag list it should have refused.\n%s", output)
+				}
+				requireRefusalReason(t, string(output), testCase.wantRefusal)
+				if strings.Contains(string(output), "COSIGN") {
+					t.Errorf("the step copied before it had judged the whole list, so a refusal leaves tags on the mirror:\n%s", output)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("the step failed on %q: %v\n%s", testCase.tagRefs, err, output)
+			}
+			for _, want := range testCase.wantCopies {
+				if !strings.Contains(string(output), want) {
+					t.Errorf("the mirror did not run %q:\n%s", want, output)
+				}
+			}
+		})
+	}
+}
+
+// TestTheMirrorCheckRefusesAMirrorThatIsNotTheSignedDigest runs the mirror's
+// public check against the stub, as the GHCR one is run against it. An answer
+// from GHCR is not an answer about Docker Hub: the copy is a second registry's
+// account of the same bytes, and this is the step that says the account agrees
+// — every mirrored alias resolving to the digest this run signed, with the
+// signature beside it, or no mirror reported published at all.
+func TestTheMirrorCheckRefusesAMirrorThatIsNotTheSignedDigest(t *testing.T) {
+	job := workflowfile.Job(t, publishWorkflow, publishJob)
+	bash := requireBash(t)
+	tags := imageName + ":v2.0.0\n" + imageName + ":latest"
+
+	bothResolve := func(mutate func(*registry)) registry {
+		r := defaultRegistry()
+		r.resolves = map[string]string{"v2.0.0": canonicalManifest, "latest": canonicalManifest}
+		if mutate != nil {
+			mutate(&r)
+		}
+		return r
+	}
+
+	for _, testCase := range []struct {
+		name     string
+		registry registry
+		// tags overrides the pair above when a case is about the references
+		// themselves rather than about what they resolve to.
+		tags        string
+		wantRefusal bool
+		// wantError names the branch, so a refusal for another reason is not
+		// mistaken for this one.
+		wantError string
+	}{
+		{
+			name:     "both mirrored aliases resolve to the signed digest",
+			registry: bothResolve(nil),
+		},
+		{
+			// The copy landed, and landed different. Whatever produced those
+			// bytes, the signature this run issued does not cover them.
+			name: "one mirrored alias resolves to something else",
+			registry: bothResolve(func(r *registry) {
+				r.resolves["latest"] = otherManifest
+			}),
+			wantRefusal: true,
+			wantError:   "not to the signed digest",
+		},
+		{
+			// The tags are there and correct; the signature is not. Every
+			// verification command the README and the security policy give an
+			// operator fails on this mirror, and nothing else in this job
+			// would notice.
+			name: "the signature did not travel with the copy",
+			registry: bothResolve(func(r *registry) {
+				r.missingSignature = true
+			}),
+			wantRefusal: true,
+			wantError:   "is not on Docker Hub",
+		},
+		{
+			name: "a mirrored alias is not anonymously readable",
+			registry: bothResolve(func(r *registry) {
+				r.headStatus = "404"
+			}),
+			wantRefusal: true,
+			wantError:   "Anonymous Docker Hub manifest request",
+		},
+		{
+			name: "the anonymous token request is refused",
+			registry: bothResolve(func(r *registry) {
+				r.tokenStatus = "403"
+			}),
+			wantRefusal: true,
+			wantError:   "Anonymous Docker Hub token request",
+		},
+		{
+			name: "the anonymous token response carries no token",
+			registry: bothResolve(func(r *registry) {
+				r.emptyToken = true
+			}),
+			wantRefusal: true,
+			wantError:   "did not include a bearer token",
+		},
+		{
+			// The same header-shape case the GHCR check carries. Both read a
+			// digest header, and a reader that stops finding one calls a
+			// correct mirror unsigned.
+			name: "the registry writes the digest header with no space",
+			registry: bothResolve(func(r *registry) {
+				r.terseHeaders = true
+			}),
+		},
+		{
+			// The copy step refuses an empty list before it copies anything,
+			// and this step does not rely on that having happened: handed one,
+			// it would loop zero times and report a mirror published having
+			// resolved nothing.
+			name:        "no mirrored tag to verify",
+			registry:    bothResolve(nil),
+			tags:        "\n   \n",
+			wantRefusal: true,
+			wantError:   "no mirrored tag to verify",
+		},
+		{
+			// The same prefix rule the copy and the promotion apply. Asked on
+			// its own, this step would otherwise report on a tag of the signed
+			// image while the metadata step had named someone else's registry.
+			name:        "a reference from another repository",
+			registry:    bothResolve(nil),
+			tags:        imageName + ":v2.0.0\ndocker.io/someone/else:latest",
+			wantRefusal: true,
+			wantError:   "not a tag of",
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			tagRefs := tags
+			if testCase.tags != "" {
+				tagRefs = testCase.tags
+			}
+
+			output, _, err := runStep(t, bash, job, mirrorVerifyStep, map[string]string{
+				"DIGEST":      digest,
+				"TAG_REFS":    tagRefs,
+				"IMAGE_NAME":  imageName,
+				"IMAGE_PATH":  imagePath,
+				"MIRROR_NAME": mirrorName,
+			}, testCase.registry)
+
+			if testCase.wantRefusal {
+				if err == nil {
+					t.Fatalf("the check reported a mirror published that it should have refused.\n%s", output)
+				}
+				requireRefusalReason(t, output, testCase.wantError)
+				return
+			}
+			if err != nil {
+				t.Fatalf("the check refused a mirror that is the signed digest: %v\n%s", err, output)
+			}
+		})
+	}
+}
+
 // TestTheSigningStepsActOnThePushedDigest reads what the three steps between
 // the push and the promotion actually do. Their ORDER is held above, and order
 // is all it holds: `Verify the signature and provenance before promoting`
@@ -323,6 +581,12 @@ type registry struct {
 	// that read returns.
 	resolves   map[string]string
 	headStatus string
+	// missingSignature answers the mirrored signature object with a 404 while
+	// leaving every tag readable. `cosign copy` carries the signature beside
+	// the manifest, and a copy that moved only the manifest leaves the tags
+	// resolving perfectly to an image nobody can verify on that registry —
+	// a state a knob tied to headStatus could not produce.
+	missingSignature bool
 	// terseHeaders drops the space after a header name. A server may write one
 	// that way, and a reader matching the name as a whitespace-delimited field
 	// silently stops finding the header at all — which reads as the header
@@ -1079,6 +1343,11 @@ func stubRegistry(dir string, reg registry) string {
 		space = ""
 	}
 
+	signatureStatus := "200"
+	if reg.missingSignature {
+		signatureStatus = "404"
+	}
+
 	return strings.Join([]string{
 		`STUB_MANIFEST=` + shellQuote(dir+"/manifest.json"),
 		`printf '%s' ` + shellQuote(canonicalManifest) + ` > "$STUB_MANIFEST"`,
@@ -1112,6 +1381,12 @@ func stubRegistry(dir string, reg registry) string {
 		`      [ -n "$out" ] && cp "$STUB_MANIFEST" "$out"`,
 		`      [ -n "$dump" ] && printf 'HTTP/2 %s\r\nContent-Type:` + space + `%s\r\n' ` + shellQuote(reg.manifestStatus) + ` ` + shellQuote(reg.contentType) + ` > "$dump"`,
 		`      printf '%s' ` + shellQuote(reg.manifestStatus) + `; return 0 ;;`,
+		// Cosign stores a digest's signature under a tag derived from that
+		// digest, so the request for it arrives here rather than at the
+		// digest branch above, and it is answered before the generic tag
+		// branch that would otherwise swallow it.
+		`    *"/manifests/sha256-"*".sig")`,
+		`      printf '%s' ` + shellQuote(signatureStatus) + `; return 0 ;;`,
 		`    *"/manifests/"*)`,
 		`      tag="${url##*/manifests/}"`,
 		`      if [ "$method" = PUT ]; then`,

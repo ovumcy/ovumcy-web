@@ -1908,7 +1908,12 @@ jobs:
       packages: write
     uses: ./.github/workflows/docker-image.yml
     # Passed explicitly rather than with `secrets: inherit`: the publish job
-    # needs exactly these two, for authenticated base-image pulls.
+    # needs exactly these four — the first pair for authenticated base-image
+    # pulls, the second to mirror the signed digest to Docker Hub. All four are
+    # declared `required: false` over there, so `:latest` keeps following `main`
+    # in a fork or a clone where none of them is set.
     secrets:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      DOCKERHUB_PUBLISH_USERNAME: ${{ secrets.DOCKERHUB_PUBLISH_USERNAME }}
+      DOCKERHUB_PUBLISH_TOKEN: ${{ secrets.DOCKERHUB_PUBLISH_TOKEN }}
