@@ -339,6 +339,16 @@ func TestTheMirrorCopiesTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 			tagRefs:     "\n   \n",
 			wantRefusal: "no tag to mirror",
 		},
+		{
+			// Same fixture the promotion step guards against: a reference
+			// with nothing after the colon matches the "is this image"
+			// prefix check above and, absent this guard, would queue a
+			// blank tag — landing a dangling `${MIRROR_NAME}:` copy
+			// destination instead of failing loud.
+			name:        "the metadata step derived no tag at all",
+			tagRefs:     imageName + ":",
+			wantRefusal: "names this image and no tag",
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			command := exec.Command(bash, "-c", preamble+"\n"+script)
@@ -561,7 +571,8 @@ func TestTheMirrorNameIsSpelledOnceAcrossTheRepository(t *testing.T) {
 // workflow depends on and does not otherwise state. Left to the action's
 // default, the version moves whenever the action's SHA is bumped, and the
 // release that discovers `copy` is gone fails after the GHCR release is
-// already public, on a job ci.md records no required check covers.
+// already public, on a job none of the branch protection's required checks
+// cover.
 func TestTheMirrorsToolIsPinnedRatherThanInherited(t *testing.T) {
 	job := workflowfile.Job(t, publishWorkflow, publishJob)
 
