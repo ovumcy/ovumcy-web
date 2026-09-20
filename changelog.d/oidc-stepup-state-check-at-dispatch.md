@@ -1,9 +1,10 @@
 none
 
 Internal hardening with no behaviour change. The OIDC step-up callback state
-was matched in four places: once at the callback, before the one-time step-up
-cookie is spent, and once again inside each of the three per-purpose
-completions. The three copies are removed and one check now stands at the
+was matched in five places: once at the callback, before the one-time step-up
+cookie is spent, once in the cross-site bounce before it parks anything for the
+continue leg, and once again inside each of the three per-purpose completions.
+The three per-purpose copies are removed and one check now stands at the
 dispatch seam every completion passes through, so a purpose added later
 inherits it rather than having to remember it.
 
