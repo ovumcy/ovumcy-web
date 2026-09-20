@@ -31,6 +31,8 @@ jobs:
       # document to BADGE_BRANCH through the contents API. No checkout runs
       # here, so no git credential is persisted into a working tree.
       contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Read the GHCR download counter
@@ -41,20 +43,51 @@ jobs:
           # an early-exiting reader sends its writer may reach a pipeline here:
           # either would fail the step before the annotation below explains why.
           # Hence awk over a here-string, whose no-match exit status is 0.
-          count="$(awk '/Total downloads/, 0 { if (match($0, /title="[0-9]+"/)) { print substr($0, RSTART + 7, RLENGTH - 8); exit } }' <<< "$page")"
+          #
+          # The heading taken must be the marker's OWN one: the page carries a
+          # second counter for the last 30 days, and a bare "first number after
+          # the marker" would publish that one silently if the blocks reorder.
+          count="$(awk '
+            /Total downloads/ { limit = NR + 6 }
+            limit && NR <= limit && /<h3[^>]*title="[0-9]+"/ {
+              match($0, /title="[0-9]+"/)
+              print substr($0, RSTART + 7, RLENGTH - 8)
+              exit
+            }' <<< "$page")"
           if [ -z "$count" ]; then
             echo "::error::the package page carried no download counter; the badge keeps its previous value"
             exit 1
           fi
-          message="$(awk -v n="$count" 'BEGIN { if (n >= 1000) printf "%.1fk", n / 1000; else printf "%d", n }')"
-          printf '{"schemaVersion":1,"label":"docker pulls","message":"%s","color":"2496ED"}\n' "$message" > "${BADGE_PATH}"
-          cat "${BADGE_PATH}"
+          echo "COUNT=${count}" >> "$GITHUB_ENV"
+
+      - name: Refuse a counter that moved backwards
+        shell: bash
+        run: |
+          # A pull count only grows, so a drop means the number was read from
+          # elsewhere on the page rather than that anyone left. The slack
+          # absorbs the rounding the published value carries.
+          published="$(gh api -H "Accept: application/vnd.github.raw" \
+            "repos/${GITHUB_REPOSITORY}/contents/${BADGE_PATH}?ref=${BADGE_BRANCH}" --jq .message || true)"
+          floor="$(awk -v m="$published" 'BEGIN {
+            if (m ~ /M$/) { sub(/M$/, "", m); m = m * 1000000 }
+            else if (m ~ /k$/) { sub(/k$/, "", m); m = m * 1000 }
+            printf "%d", m * 0.95
+          }')"
+          if [ "$COUNT" -lt "$floor" ]; then
+            echo "::error::the page reports ${COUNT} pulls, under the published ${published}; the counter's markup has moved"
+            exit 1
+          fi
 
       - name: Publish the badge document
         shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          message="$(awk -v n="$COUNT" 'BEGIN {
+            if (n >= 1000000) printf "%.1fM", n / 1000000
+            else if (n >= 1000) printf "%.1fk", n / 1000
+            else printf "%d", n
+          }')"
+          printf '{"schemaVersion":1,"label":"docker pulls","message":"%s","color":"2496ED"}\n' "$message" > "${BADGE_PATH}"
+          cat "${BADGE_PATH}"
           args=(--method PUT "repos/${GITHUB_REPOSITORY}/contents/${BADGE_PATH}"
             -f "message=chore(badges): refresh the GHCR pull count"
             -f "branch=${BADGE_BRANCH}"
