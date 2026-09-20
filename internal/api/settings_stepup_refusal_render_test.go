@@ -326,10 +326,10 @@ func TestEverySettingsStepupRefusalKeyMapsToLocalizedCopy(t *testing.T) {
 //     Sec-Fetch-Site is computed over the whole redirect chain, which a
 //     provider callback starts off-origin. A 303 from here is refused there.
 //   - handler.refuseOIDCStepupCallback — the same refusal channel, picking the
-//     303 or that same-origin document by how the callback ARRIVED. A refusal
-//     answering the cross-site POST with a 303 keeps the chain cross-site, so
-//     Lax withholds the session and the flash from /settings and the owner is
-//     told nothing.
+//     303 or that same-origin document by how the callback ARRIVED. Whether a
+//     303 out of the cross-site POST still carries Lax cookies depends on
+//     whether the browser judges the redirect chain or only its ends; the
+//     document does not depend on the answer.
 //   - handler.dispatchStepupCompletion and handler.bounceStepupToSameSiteContinue
 //     — the two arms of the cross-site bounce. They are terminals only because
 //     they are themselves on stepupCompletionHandlers above: whatever they
