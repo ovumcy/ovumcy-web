@@ -216,7 +216,7 @@ var sealedCookieExpiryProbes = map[string]sealedCookieExpiryProbe{
 			return handler.setOIDCStateCookie(c, state)
 		},
 		honours: func(handler *Handler, c fiber.Ctx) bool {
-			return strings.TrimSpace(handler.popOIDCStateCookie(c).State) != ""
+			return strings.TrimSpace(handler.peekOIDCStateCookie(c).State) != ""
 		},
 	},
 	oidcStepupCookieName: {
@@ -229,7 +229,7 @@ var sealedCookieExpiryProbes = map[string]sealedCookieExpiryProbe{
 			return handler.setOIDCStepupCookie(c, state)
 		},
 		honours: func(handler *Handler, c fiber.Ctx) bool {
-			return strings.TrimSpace(handler.popOIDCStepupCookie(c).State) != ""
+			return strings.TrimSpace(handler.peekOIDCStepupCookie(c).State) != ""
 		},
 	},
 	oidcStepupContinuationCookieName: {

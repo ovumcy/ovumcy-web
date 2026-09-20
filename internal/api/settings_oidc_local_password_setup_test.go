@@ -415,12 +415,16 @@ func TestOIDCCompleteLocalPasswordSetupHandsTheRevealOverSameOrigin(t *testing.T
 	defer func() { _ = bounceResponse.Body.Close() }()
 
 	// A cross-site callback completes nothing: SameSite=Lax withholds the
-	// session cookie from it, so the step-up bounces to a same-origin GET
-	// first. All it may hand over here is the sealed continuation — no reveal,
-	// no re-minted session, and no guarded destination.
-	assertStatusCode(t, bounceResponse, http.StatusSeeOther)
-	if location := bounceResponse.Header.Get("Location"); location != oidcCallbackContinuePath {
-		t.Fatalf("expected the cross-site callback to bounce to %q, got %q", oidcCallbackContinuePath, location)
+	// session cookie from it, so the step-up hands over to a same-origin
+	// document first. All it may carry here is the sealed continuation — no
+	// reveal, no re-minted session, and no redirect into a guarded route
+	// (which would still be labelled cross-site when it arrived).
+	assertStatusCode(t, bounceResponse, http.StatusOK)
+	if location := bounceResponse.Header.Get("Location"); location != "" {
+		t.Fatalf("the bounce must hand over through a document, not a redirect; got Location %q", location)
+	}
+	if handoff := mustReadBodyString(t, bounceResponse.Body); !strings.Contains(handoff, oidcCallbackContinuePath) {
+		t.Fatalf("expected the hand-off document to navigate to %s, got %q", oidcCallbackContinuePath, handoff)
 	}
 	if reveal := responseCookie(bounceResponse.Cookies(), recoveryCodeCookieName); reveal != nil && strings.TrimSpace(reveal.Value) != "" {
 		t.Fatal("the bounce must not mint the reveal before the owner's session has been identified")
@@ -430,13 +434,13 @@ func TestOIDCCompleteLocalPasswordSetupHandsTheRevealOverSameOrigin(t *testing.T
 		t.Fatal("expected the cross-site callback to seal a step-up continuation")
 	}
 
-	// The continue leg is a top-level GET navigation, which SameSite=Lax does
-	// deliver the session cookie to even when the chain that produced it began
-	// off-origin — which is why the headers below still say cross-site.
+	// The continue leg is the navigation that hand-off document starts, so it
+	// is same-origin — which is what lets the route carry the first-party
+	// guard and still admit the owner's own return.
 	continueRequest := httptest.NewRequest(http.MethodGet, oidcCallbackContinuePath, nil)
 	continueRequest.Header.Set("Accept", "text/html,application/xhtml+xml")
 	continueRequest.Header.Set("Cookie", joinCookieHeader(fixture.authCookie, cookiePair(continuationCookie)))
-	crossSiteNavigation.applyTo(continueRequest)
+	sameOriginNavigation.applyTo(continueRequest)
 
 	callbackResponse := mustAppResponse(t, fixture.app, continueRequest)
 	defer func() { _ = callbackResponse.Body.Close() }()

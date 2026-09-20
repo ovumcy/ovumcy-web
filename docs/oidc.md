@@ -112,11 +112,11 @@ Prefer `form_post`; reach for `query` only when the provider gives you no choice
 
 ### A provider on another site
 
-Nothing has to be configured for this, but it is worth knowing what happens. When the provider is served from a different registrable site than Ovumcy — the usual case for a hosted IdP — the browser treats the `form_post` callback as a cross-site `POST` and withholds the session cookie from it, which is exactly what `SameSite=Lax` is for. A step-up (linking an identity, setting a first local password, clearing data, deleting the account) has to know *whose* re-authentication just came back, so the callback redirects once to `/auth/oidc/callback/continue`, a same-origin `GET` navigation the session cookie is delivered to, and finishes there.
+Nothing has to be configured for this, but it is worth knowing what happens. When the provider is served from a different registrable site than Ovumcy — the usual case for a hosted IdP — the browser treats the `form_post` callback as a cross-site `POST` and withholds the session cookie from it, which is exactly what `SameSite=Lax` is for. A step-up (linking an identity, setting a first local password, clearing data, deleting the account) has to know *whose* re-authentication just came back, so the callback answers with a small same-origin page that immediately navigates to `/auth/oidc/callback/continue`, where the session cookie is delivered and the action finishes.
 
 What this means in practice:
 
-- the redirect is internal — there is no extra redirect URI to register with the provider, and `OIDC_REDIRECT_URL` is unchanged;
+- the hop is internal — there is no extra redirect URI to register with the provider, and `OIDC_REDIRECT_URL` is unchanged;
 - the hand-off between the two legs is a sealed, `HttpOnly`, `Secure` cookie scoped to that one path, usable once, and expiring after a minute;
 - if a reverse proxy in front of Ovumcy filters paths, `/auth/oidc/callback/continue` has to reach the app like the rest of `/auth/oidc/`;
 - an ordinary sign-in is unaffected, and so is any callback from a provider on the same site as Ovumcy: both complete on the callback itself;

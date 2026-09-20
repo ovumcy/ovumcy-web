@@ -125,6 +125,17 @@ func (handler *Handler) clearOIDCStepupContinuationCookie(c fiber.Ctx) {
 	handler.clearSealedCookie(c, oidcStepupContinuationCookieSpec)
 }
 
+// refuseOIDCStepupContinueRequest is the first-party guard's exit for the
+// continue route. It spends nothing and says nothing about whether a
+// continuation was waiting: an off-origin initiator, an embed, or a
+// speculative load all leave through the same settings refusal, so a page on
+// another site learns neither that a step-up is in flight nor what it was for.
+func (handler *Handler) refuseOIDCStepupContinueRequest(c fiber.Ctx, reason string) error {
+	spec := authOIDCAuthenticationFailedErrorSpec()
+	handler.logSecurityError(c, "auth.oidc_callback", spec, SecurityEventField{Key: "refused", Value: reason})
+	return handler.redirectSettingsRefusal(c, spec)
+}
+
 // callbackArrivedCrossSite reports whether the browser says this request came
 // from another site. Sec-Fetch-Site is set by the browser and page script
 // cannot forge it (the Sec- prefix is a forbidden header name), so a request
@@ -158,28 +169,57 @@ func (handler *Handler) dispatchStepupCompletion(c fiber.Ctx, state oidcStepupSt
 	// codecov:ignore:end
 }
 
+// stepupActionForPurpose names the audit action a bounce refusal belongs to.
+// The per-purpose completion handlers each log their own; the bounce runs
+// before dispatch, so it has to derive the same name or the cross-site leg
+// would report every refusal as a generic callback failure.
+func stepupActionForPurpose(state oidcStepupState) string {
+	switch state.Purpose {
+	case oidcStepupPurposeLocalPasswordSetup:
+		return "auth.local_password_setup.callback"
+	case oidcStepupPurposeErasure:
+		if flow, known := erasureStepupFlowFor(state.Operation); known {
+			return flow.stepupAction
+		}
+		// codecov:ignore -- validAt refuses an erasure payload whose operation
+		// is not one of the two known ones.
+		return "auth.oidc_callback"
+	case oidcStepupPurposeIdentityLink:
+		return oidcIdentityLinkStepupAction
+	default:
+		// codecov:ignore -- validAt refuses an unknown purpose before any
+		// caller here can reach it.
+		return "auth.oidc_callback"
+	}
+}
+
 // bounceStepupToSameSiteContinue validates what the cross-site POST carried
 // and parks it for the same-origin GET that follows. Nothing is exchanged with
 // the provider here and no action is committed: the code is still unspent when
 // the continue leg resolves the session and completes the step-up.
 func (handler *Handler) bounceStepupToSameSiteContinue(c fiber.Ctx, state oidcStepupState, exchange oidcCallbackExchange) error {
+	// The refusals below name the purpose the owner actually started, not a
+	// generic callback action: an operator reading the audit trail after a
+	// failed erasure must not have to guess which step-up it was.
+	action := stepupActionForPurpose(state)
+
 	// State first: a callback that does not match the sealed state is not this
 	// owner's flow and must not be parked for completion.
 	if !state.matchesState(exchange.State) {
 		spec := authOIDCAuthenticationFailedErrorSpec()
-		handler.logSecurityError(c, "auth.oidc_callback", spec)
+		handler.logSecurityError(c, action, spec)
 		return handler.redirectSettingsRefusal(c, spec)
 	}
 	if exchange.Error != "" {
 		spec := authOIDCUnavailableErrorSpec()
-		handler.logSecurityError(c, "auth.oidc_callback", spec)
+		handler.logSecurityError(c, action, spec)
 		return handler.redirectSettingsRefusal(c, spec)
 	}
 
 	continuation, err := newOIDCStepupContinuation(time.Now(), state, exchange.Code)
 	if err != nil {
 		spec := authOIDCAuthenticationFailedErrorSpec()
-		handler.logSecurityError(c, "auth.oidc_callback", spec)
+		handler.logSecurityError(c, action, spec)
 		return handler.redirectSettingsRefusal(c, spec)
 	}
 	if err := handler.setOIDCStepupContinuationCookie(c, continuation); err != nil {
@@ -188,12 +228,19 @@ func (handler *Handler) bounceStepupToSameSiteContinue(c fiber.Ctx, state oidcSt
 		// inside the setter are unreachable from here; what is left is an AEAD
 		// seal error.
 		spec := authOIDCUnavailableErrorSpec()
-		handler.logSecurityError(c, "auth.oidc_callback", spec)
+		handler.logSecurityError(c, action, spec)
 		return handler.redirectSettingsRefusal(c, spec)
 		// codecov:ignore:end
 	}
 
-	return c.Redirect().Status(fiber.StatusSeeOther).To(oidcCallbackContinuePath)
+	// A same-origin document, not a 303. Sec-Fetch-Site describes the whole
+	// redirect CHAIN, so a redirect issued from this cross-site POST would
+	// still arrive at the continue route labelled cross-site — and that route
+	// spends a one-time hand-off, the very class requireFirstPartyRequest
+	// guards. An interstitial served from this origin makes the next
+	// navigation same-origin in fact, so the guard can stand there and a page
+	// on another site cannot produce a request that satisfies it.
+	return respondOIDCSameOriginHandoff(c, oidcCallbackContinuePath)
 }
 
 // ContinueOIDCStepup is the same-site half of the cross-site bounce: a

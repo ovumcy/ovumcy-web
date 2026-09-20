@@ -263,7 +263,7 @@ func TestSetAndPopOIDCStepupCookieRoundTrip(t *testing.T) {
 	popApp := fiber.New()
 	var popped oidcStepupState
 	popApp.Get(security.OIDCCallbackPath, func(c fiber.Ctx) error {
-		popped = handler.popOIDCStepupCookie(c)
+		popped = handler.peekOIDCStepupCookie(c)
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 	popReq := httptest.NewRequest("GET", security.OIDCCallbackPath, nil)
@@ -328,7 +328,7 @@ func TestPopOIDCStepupCookieWrongKey(t *testing.T) {
 	popApp := fiber.New()
 	var popped oidcStepupState
 	popApp.Get(security.OIDCCallbackPath, func(c fiber.Ctx) error {
-		popped = verifier.popOIDCStepupCookie(c)
+		popped = verifier.peekOIDCStepupCookie(c)
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 	popReq := httptest.NewRequest("GET", security.OIDCCallbackPath, nil)
@@ -374,7 +374,7 @@ func TestPopOIDCStepupCookieExpiredPayload(t *testing.T) {
 	app := fiber.New()
 	var popped oidcStepupState
 	app.Get(security.OIDCCallbackPath, func(c fiber.Ctx) error {
-		popped = handler.popOIDCStepupCookie(c)
+		popped = handler.peekOIDCStepupCookie(c)
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 	req := httptest.NewRequest("GET", security.OIDCCallbackPath, nil)
