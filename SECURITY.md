@@ -47,6 +47,11 @@ Verify the build provenance with the GitHub CLI:
 gh attestation verify oci://ghcr.io/ovumcy/ovumcy-web:vX.Y.Z --repo ovumcy/ovumcy-web
 ```
 
+Both commands take `docker.io/ovumcy/ovumcy-web:vX.Y.Z` in place of the GHCR name. The release is
+mirrored to Docker Hub at the same digest, and no tag is written there until every GHCR tag has been
+resolved back to that digest first, so a mirrored tag that resolves at all resolves to the digest
+this repository signed.
+
 A failed check means the image was not produced by this repository's release workflow. Do not run it.
 
 ## Reporting a Vulnerability

@@ -94,6 +94,8 @@ const (
 	promoteStep = "Promote the signed digest to its public tags"
 	publicStep  = "Verify every public tag anonymously and against the signed digest"
 
+	installCosignStep = "Install Cosign"
+
 	mirrorLoginStep  = "Log in to Docker Hub for the mirror"
 	mirrorStep       = "Mirror the signed digest to Docker Hub"
 	mirrorVerifyStep = "Verify every mirrored tag anonymously and against the signed digest"
@@ -251,7 +253,7 @@ func TestOnlyReviewedStepsRunBeforeThePromotion(t *testing.T) {
 		"Pull Trivy image",
 		"Scan the image before publishing it",
 		pushStep,
-		"Install Cosign",
+		installCosignStep,
 		signStep,
 		attestStep,
 		verifyStep,
@@ -312,9 +314,13 @@ func TestTheMirrorCopiesTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 		{
 			name:    "the tags this run derived",
 			tagRefs: imageName + ":v2.0.0\n" + imageName + ":latest",
+			// The first tag crosses registries; every later one is copied
+			// from the mirror's own digest, which is the same manifest and
+			// costs a manifest write rather than a second transfer. Both
+			// sources are digests, which is the part that matters.
 			wantCopies: []string{
 				"COSIGN copy --force " + imageName + "@" + digest + " " + mirrorName + ":v2.0.0",
-				"COSIGN copy --force " + imageName + "@" + digest + " " + mirrorName + ":latest",
+				"COSIGN copy --force " + mirrorName + "@" + digest + " " + mirrorName + ":latest",
 			},
 		},
 		{
@@ -503,6 +509,65 @@ func TestTheMirrorCheckRefusesAMirrorThatIsNotTheSignedDigest(t *testing.T) {
 				t.Fatalf("the check refused a mirror that is the signed digest: %v\n%s", err, output)
 			}
 		})
+	}
+}
+
+// TestTheMirrorNameIsSpelledOnceAcrossTheRepository compares the name the
+// workflow DERIVES the mirror from against every place the documentation
+// SPELLS it out. The two are independent by construction: the workflow builds
+// `docker.io/<path>` out of `github.repository`, while a badge URL and a
+// verification command are literal text, and nothing else in this repository
+// puts the two side by side.
+//
+// The failure that needs is quiet and total. Registered under a namespace that
+// is not the GitHub owner — the obvious reason being that the owner's name was
+// taken on Docker Hub — the mirror pushes to one repository while the badge
+// counts another and the documented command verifies a third, with every step
+// in the publish job and every other test in this package green.
+func TestTheMirrorNameIsSpelledOnceAcrossTheRepository(t *testing.T) {
+	// Each site keys on its own surroundings rather than on the name's shape,
+	// for readmeversion's reason: a pattern anchored to what it expects to
+	// find skips a site written any other way, and a skipped site is the one
+	// that drifts. Each is required to match, so a reworded sentence is a
+	// failure here rather than a site silently leaving the comparison.
+	for _, site := range []struct {
+		file string
+		what string
+		re   *regexp.Regexp
+	}{
+		{"README.md", "the pull-count badge", regexp.MustCompile(`img\.shields\.io/docker/pulls/(\S+?)"`)},
+		{"README.md", "the badge's link", regexp.MustCompile(`hub\.docker\.com/r/(\S+?)"`)},
+		{"README.md", "the Quick Start reference", regexp.MustCompile("docker\\.io/(\\S+?)`")},
+		{"SECURITY.md", "the verification note", regexp.MustCompile("docker\\.io/([^:`\\s]+)")},
+	} {
+		t.Run(site.file+", "+site.what, func(t *testing.T) {
+			matches := site.re.FindAllStringSubmatch(workflowfile.Read(t, site.file), -1)
+			if len(matches) == 0 {
+				t.Fatalf("%s no longer carries %s, so the name the mirror writes to is stated there and compared against nothing", site.file, site.what)
+			}
+			for _, match := range matches {
+				if match[1] != imagePath {
+					t.Errorf("%s %s names %q while the publish job mirrors to %q. A reader following the documentation reaches a repository this workflow never writes to",
+						site.file, site.what, match[1], mirrorName)
+				}
+			}
+		})
+	}
+}
+
+// TestTheMirrorsToolIsPinnedRatherThanInherited holds the cosign version to
+// this file. `cosign copy` is deprecated as of v3.0.6 — the command names its
+// own replacements — so the version that still carries it is a fact this
+// workflow depends on and does not otherwise state. Left to the action's
+// default, the version moves whenever the action's SHA is bumped, and the
+// release that discovers `copy` is gone fails after the GHCR release is
+// already public, on a job ci.md records no required check covers.
+func TestTheMirrorsToolIsPinnedRatherThanInherited(t *testing.T) {
+	job := workflowfile.Job(t, publishWorkflow, publishJob)
+
+	if block := withoutComments(stepBlock(t, job, installCosignStep)); !strings.Contains(block, "cosign-release:") {
+		t.Errorf("%s, step %q takes its cosign version from the action's default, so a bump of the action's SHA changes the tool the mirror runs. `cosign copy` is deprecated; pin the version that still has it",
+			publishWorkflow, installCosignStep)
 	}
 }
 
