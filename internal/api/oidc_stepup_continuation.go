@@ -186,11 +186,32 @@ func callbackArrivedCrossSite(c fiber.Ctx) bool {
 }
 
 // dispatchStepupCompletion routes a validated step-up to the handler written
-// for its purpose. The purpose is dispatched on, never inferred: validAt has
-// already refused a payload whose purpose is unknown or whose fields do not
-// match the purpose it names, and each completion handler re-checks its own.
-// An unhandled purpose falls through to the ordinary refusal.
+// for its purpose, and is the one place the callback state is matched against
+// the sealed step-up before any completion runs.
+//
+// The check sits at this seam rather than inside each completion because a
+// per-purpose copy fixes the class at N of N+1: a fourth purpose taught to the
+// switch below would inherit nothing. The direct callback's own match cannot
+// take that duty — it runs before the step-up cookie is spent, which is the
+// reason it exists, and it says nothing about a leg that reaches dispatch by
+// another route.
+//
+// On the continue leg the comparison is degenerate by construction: the
+// continuation carries the state it is checked against, so it can only agree.
+// What makes that leg safe is the match the cross-site callback performed
+// before parking anything. The check here is what every OTHER leg gives a
+// completion that never looks at state itself.
+//
+// The purpose is dispatched on, never inferred: validAt has already refused a
+// payload whose purpose is unknown or whose fields do not match the purpose it
+// names. An unhandled purpose falls through to the ordinary refusal.
 func (handler *Handler) dispatchStepupCompletion(c fiber.Ctx, state oidcStepupState, exchange oidcCallbackExchange) error {
+	if !state.matchesState(exchange.State) {
+		spec := authOIDCAuthenticationFailedErrorSpec()
+		handler.logSecurityError(c, stepupActionForPurpose(state), spec)
+		return handler.redirectSettingsRefusal(c, spec)
+	}
+
 	switch state.Purpose {
 	case oidcStepupPurposeLocalPasswordSetup:
 		return handler.completeLocalPasswordSetupReauth(c, state, exchange)

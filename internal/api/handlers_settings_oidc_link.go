@@ -115,13 +115,10 @@ func (handler *Handler) completeOIDCIdentityLinkStepup(c fiber.Ctx, state oidcSt
 		return handler.redirectSettingsRefusal(c, spec)
 	}
 
-	callbackState := exchange.State
+	// The callback state is matched at the dispatch seam every completion
+	// passes through (dispatchStepupCompletion), not here: a copy per purpose
+	// fixed the class at N of N+1, because the next purpose inherits nothing.
 	code := exchange.Code
-	if !state.matchesState(callbackState) {
-		spec := authOIDCAuthenticationFailedErrorSpec()
-		handler.logSecurityError(c, oidcIdentityLinkStepupAction, spec)
-		return handler.redirectSettingsRefusal(c, spec)
-	}
 	if exchange.Error != "" {
 		spec := authOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, oidcIdentityLinkStepupAction, spec)
