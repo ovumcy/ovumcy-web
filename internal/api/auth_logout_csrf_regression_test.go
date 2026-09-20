@@ -63,7 +63,7 @@ func TestAuthLogoutPostWithCSRFRedirectsAndClearsCookies(t *testing.T) {
 	// matches, so one the owner abandoned at the provider survives a sign-out
 	// and then takes the NEXT sign-in's callback for its own — the callback
 	// dispatches on its presence — refusing every attempt until it expires.
-	// `ovumcy_oidc_stepup_continuation` joins it as the second carrier of that
+	// `ovumcy_oidc_stepup_continue` joins it as the second carrier of that
 	// authority: it seals the same step-up plus a code the provider has not
 	// redeemed, so one left by a cross-site return finishes an erasure for an
 	// owner who signed out a moment earlier.
