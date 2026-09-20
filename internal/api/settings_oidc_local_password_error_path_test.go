@@ -222,6 +222,11 @@ func TestMapLocalPasswordSetupReauthError(t *testing.T) {
 		{"disabled", services.ErrOIDCDisabled, "sso temporarily unavailable"},
 		{"unavailable", services.ErrOIDCUnavailable, "sso temporarily unavailable"},
 		{"reauth stale", services.ErrOIDCReauthStale, "oidc reauth stale"},
+		// The wrapped sentinel must reach its own key: ErrOIDCReauthAuthTimeMissing
+		// satisfies errors.Is for ErrOIDCReauthStale too, so a switch whose stale
+		// arm came first would answer "too old, try again" on a provider where no
+		// retry can succeed.
+		{"auth_time missing", services.ErrOIDCReauthAuthTimeMissing, "oidc reauth auth_time missing"},
 		{"identity mismatch", services.ErrOIDCReauthIdentityMismatch, "oidc reauth identity mismatch"},
 		{"authentication failed", services.ErrOIDCAuthenticationFailed, "sso authentication failed"},
 		{"unknown error", errors.New("some other error"), "sso authentication failed"},

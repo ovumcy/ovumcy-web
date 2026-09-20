@@ -353,6 +353,7 @@
   "settings.error.local_password_required": "Définissez d'abord un mot de passe local pour utiliser cette action.",
   "settings.error.oidc_reauth_mismatch": "Cette réauthentification ne correspond pas au compte connecté ici. Recommencez l'action.",
   "settings.error.oidc_reauth_stale": "La confirmation auprès de votre fournisseur d'identité est trop ancienne pour autoriser cette action. Réessayez.",
+  "settings.error.oidc_reauth_auth_time_missing": "Votre fournisseur d'identité n'a pas indiqué quand cette connexion a eu lieu, il ne peut donc pas autoriser cette action. Réessayer n'y changera rien : le fournisseur doit envoyer auth_time.",
   "settings.error.oidc_identity_already_linked": "Cette identité est déjà associée à un autre compte.",
   "settings.error.erasure_requires_password": "Ce compte possède désormais un mot de passe local. Confirmez cette action avec ce mot de passe.",
   "settings.error.clear_data_failed": "Impossible d'effacer vos données. Veuillez réessayer.",

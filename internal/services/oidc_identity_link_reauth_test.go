@@ -57,6 +57,12 @@ func TestOIDCLoginServiceCompleteIdentityLinkReauthRefusesStaleExchange(t *testi
 	if !errors.Is(err, ErrOIDCReauthStale) {
 		t.Fatalf("expected ErrOIDCReauthStale, got %v", err)
 	}
+	// The provider DID date this sign-in, so the verdict must not be the
+	// missing-claim one: that copy tells the owner a retry cannot work, which
+	// is false here — the sign-in was merely old.
+	if errors.Is(err, ErrOIDCReauthAuthTimeMissing) {
+		t.Fatalf("a dated but old sign-in must not be reported as a provider that omits auth_time, got %v", err)
+	}
 	if identities.createCallSeen {
 		t.Fatal("a stale exchange must never persist a link")
 	}
@@ -64,7 +70,10 @@ func TestOIDCLoginServiceCompleteIdentityLinkReauthRefusesStaleExchange(t *testi
 
 // TestOIDCLoginServiceCompleteIdentityLinkReauthRefusesIATOnlyExchange: a
 // permanent binding is authorised only by auth_time; a fresh iat on a token
-// that omits auth_time links nothing.
+// that omits auth_time links nothing — and it is refused as the provider
+// omission it is, not as a sign-in that got old, because the identity-link
+// step-up is reachable on any provider and its owner needs to know that
+// repeating the flow cannot help.
 func TestOIDCLoginServiceCompleteIdentityLinkReauthRefusesIATOnlyExchange(t *testing.T) {
 	t.Parallel()
 
@@ -83,8 +92,8 @@ func TestOIDCLoginServiceCompleteIdentityLinkReauthRefusesIATOnlyExchange(t *tes
 	service := NewOIDCLoginService(client, identities, &stubOIDCUserStore{}, nil)
 
 	err := service.CompleteIdentityLinkReauth(context.Background(), "code", "verifier", "nonce", 42, 5*time.Minute, now)
-	if !errors.Is(err, ErrOIDCReauthStale) {
-		t.Fatalf("expected ErrOIDCReauthStale for an iat-only token, got %v", err)
+	if !errors.Is(err, ErrOIDCReauthAuthTimeMissing) {
+		t.Fatalf("expected ErrOIDCReauthAuthTimeMissing for an iat-only token, got %v", err)
 	}
 	if identities.createCallSeen {
 		t.Fatal("an iat-only exchange must never persist a link")

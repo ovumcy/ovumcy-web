@@ -8,12 +8,20 @@ import (
 )
 
 // mapLocalPasswordSetupReauthError maps failures of the OIDC step-up exchange
-// that gates local-password enrollment. Stale and identity-mismatch outcomes
-// keep their own specs so the owner learns to redo the step-up; everything
-// else collapses into the generic SSO failure so provider state never leaks
-// through error granularity.
+// that gates local-password enrollment and, through the same helper, the two
+// erasure step-ups. The freshness verdicts and the identity mismatch keep their
+// own specs so the owner learns what to do next — and the two freshness
+// verdicts are separate specs because their "next" differs: sign in again, or
+// stop and fix the provider. Everything else collapses into the generic SSO
+// failure so provider state never leaks through error granularity.
 func mapLocalPasswordSetupReauthError(err error) APIErrorSpec {
 	switch {
+	// Before the stale arm, always: ErrOIDCReauthAuthTimeMissing wraps
+	// ErrOIDCReauthStale, so the coarse match below would swallow it and tell
+	// the owner to retry something that cannot succeed. Pinned by
+	// TestEveryReauthStaleMatchIsPrecededByTheMissingAuthTimeMatch.
+	case errors.Is(err, services.ErrOIDCReauthAuthTimeMissing):
+		return settingsOIDCReauthAuthTimeMissingErrorSpec()
 	case errors.Is(err, services.ErrOIDCReauthStale):
 		return settingsOIDCReauthStaleErrorSpec()
 	case errors.Is(err, services.ErrOIDCReauthIdentityMismatch):

@@ -39,6 +39,21 @@ func settingsOIDCReauthStaleErrorSpec() APIErrorSpec {
 	return settingsFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "oidc reauth stale")
 }
 
+// settingsOIDCReauthAuthTimeMissingErrorSpec is the refusal of a step-up whose
+// provider returned no auth_time at all, as distinct from one whose sign-in was
+// merely too old. Its own key is what makes the two tellable apart downstream:
+// the owner is told that trying again cannot help (the stale sentence asks for
+// exactly that, and on such a provider it is a loop with no exit), and the
+// audit line carries reason="oidc reauth auth_time missing", so an operator can
+// separate a non-conforming provider from a genuinely slow sign-in without
+// reading the owner's copy. The status stays 401 alongside the stale spec: both
+// are refusals of the caller's proof, which is the side of
+// securityEventOutcomeForSpec's split ("denied", never "failure") that they
+// share — nothing on this instance failed.
+func settingsOIDCReauthAuthTimeMissingErrorSpec() APIErrorSpec {
+	return settingsFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "oidc reauth auth_time missing")
+}
+
 func settingsOIDCReauthMismatchErrorSpec() APIErrorSpec {
 	return settingsFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "oidc reauth identity mismatch")
 }
@@ -70,6 +85,12 @@ func settingsOIDCIdentityLinkClaimedErrorSpec() APIErrorSpec {
 // never leaks through error granularity.
 func mapOIDCIdentityLinkReauthError(err error) APIErrorSpec {
 	switch {
+	// Before the stale arm, always: ErrOIDCReauthAuthTimeMissing wraps
+	// ErrOIDCReauthStale, so the coarse match below would swallow it and tell
+	// the owner to retry something that cannot succeed. Pinned by
+	// TestEveryReauthStaleMatchIsPrecededByTheMissingAuthTimeMatch.
+	case errors.Is(err, services.ErrOIDCReauthAuthTimeMissing):
+		return settingsOIDCReauthAuthTimeMissingErrorSpec()
 	case errors.Is(err, services.ErrOIDCReauthStale):
 		return settingsOIDCReauthStaleErrorSpec()
 	case errors.Is(err, services.ErrOIDCLinkFailed):

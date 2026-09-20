@@ -371,6 +371,70 @@ func TestStepupCallbacksAuditTheOwnerTheyActFor(t *testing.T) {
 	})
 }
 
+// TestStepupCallbackAuditsAMissingAuthTimeApartFromAStaleOne is the operator's
+// half of the freshness split. Both refusals are the caller's, so both keep
+// outcome="denied" — the who-failed line securityEventOutcomeForSpec draws by
+// status does not move, and inventing a third outcome value would re-scope a
+// field operators filter on. What separates them is the reason, and it has to:
+// "the provider never dated this sign-in" is a non-conforming IdP that will
+// refuse every future step-up on this instance, while "the sign-in was too old"
+// is one owner who took too long. Read off one audit line at a time, because a
+// buffer-wide search is satisfied by whichever other line of the same request
+// happens to carry the string.
+func TestStepupCallbackAuditsAMissingAuthTimeApartFromAStaleOne(t *testing.T) {
+	t.Parallel()
+
+	for _, testCase := range []struct {
+		name       string
+		reauthErr  error
+		wantReason string
+	}{
+		{
+			name:       "provider never dated the sign-in",
+			reauthErr:  services.ErrOIDCReauthAuthTimeMissing,
+			wantReason: settingsOIDCReauthAuthTimeMissingErrorSpec().Key,
+		},
+		{
+			// The control: unchanged behaviour, and it is what makes the case
+			// above evidence of a split rather than of a renamed reason.
+			name:       "the sign-in was too old",
+			reauthErr:  services.ErrOIDCReauthStale,
+			wantReason: settingsOIDCReauthStaleErrorSpec().Key,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := newOIDCStepupFixtureWithAudit(t, "stepup-audit-freshness-"+strings.ReplaceAll(testCase.name, " ", "-")+"@example.com", true)
+			fixture.oidcStub.reauthErr = nil
+
+			startResponse := postErasureStepupStart(t, fixture, "/api/v1/users/current/data-wipe/step-up")
+			defer func() { _ = startResponse.Body.Close() }()
+			stepupCookie := readStepupCookie(t, startResponse)
+			state := extractStepupCallbackState(t, fixture)
+
+			fixture.oidcStub.reauthErr = testCase.reauthErr
+
+			callbackResponse, auditLog := captureStepupCallbackAudit(t, fixture, stepupCookie, state)
+			defer func() { _ = callbackResponse.Body.Close() }()
+
+			line := securityEventLine(t, auditLog, clearDataStepupAction, "denied")
+			if !strings.Contains(line, fmt.Sprintf("reason=%q", testCase.wantReason)) {
+				t.Fatalf("the refused step-up must be audited as %q, got %q", testCase.wantReason, line)
+			}
+			for _, otherReason := range []string{
+				settingsOIDCReauthAuthTimeMissingErrorSpec().Key,
+				settingsOIDCReauthStaleErrorSpec().Key,
+			} {
+				if otherReason == testCase.wantReason {
+					continue
+				}
+				if strings.Contains(line, fmt.Sprintf("reason=%q", otherReason)) {
+					t.Fatalf("the two freshness refusals must not share an audit reason: %q also carried %q", line, otherReason)
+				}
+			}
+		})
+	}
+}
+
 // securityEventLine resolves the ONE audit line an action/outcome pair produced
 // and returns it, so every field assertion below is made against that line
 // rather than against the whole capture buffer. Asserting on the buffer lets a

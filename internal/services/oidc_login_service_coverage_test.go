@@ -19,11 +19,15 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Line 200 — reauthClaimsFresh: maxAuthAge == 0 must return false (disabled)
+// reauthFreshnessVerdict: maxAuthAge == 0 must refuse (feature disabled)
 //
 // Surviving mutant: change `<= 0` → `< 0`.  Under that mutation maxAuthAge==0
 // would fall through to the freshness check, and a reference exactly equal to
 // now would pass (now.Sub(now) == 0 <= 0).  This test detects that mutation.
+//
+// The verdict is the STALE sentinel, not the missing-auth_time one: a window
+// nothing can sit inside is this instance's own configuration, and reporting it
+// as a non-conforming provider would point the operator at the wrong system.
 // ---------------------------------------------------------------------------
 
 func TestOIDCLoginServiceReauthClaimsFreshZeroMaxAuthAgeReturnsFalse(t *testing.T) {
@@ -34,8 +38,12 @@ func TestOIDCLoginServiceReauthClaimsFreshZeroMaxAuthAgeReturnsFalse(t *testing.
 	claims := security.OIDCClaims{AuthTime: now}
 
 	// maxAuthAge == 0 must unconditionally disable freshness.
-	if reauthClaimsFresh(claims, 0, now) {
-		t.Fatal("reauthClaimsFresh must return false when maxAuthAge == 0 (feature disabled)")
+	verdict := reauthFreshnessVerdict(claims, 0, now)
+	if verdict == nil {
+		t.Fatal("reauthFreshnessVerdict must refuse when maxAuthAge == 0 (feature disabled)")
+	}
+	if errors.Is(verdict, ErrOIDCReauthAuthTimeMissing) {
+		t.Fatalf("a zero window is not a provider omission — auth_time was present — got %v", verdict)
 	}
 }
 
@@ -45,26 +53,26 @@ func TestOIDCLoginServiceReauthClaimsFreshNegativeMaxAuthAgeReturnsFalse(t *test
 	now := time.Date(2026, 5, 13, 10, 0, 0, 0, time.UTC)
 	claims := security.OIDCClaims{AuthTime: now}
 
-	if reauthClaimsFresh(claims, -1*time.Second, now) {
-		t.Fatal("reauthClaimsFresh must return false when maxAuthAge < 0")
+	if reauthFreshnessVerdict(claims, -1*time.Second, now) == nil {
+		t.Fatal("reauthFreshnessVerdict must refuse when maxAuthAge < 0")
 	}
 }
 
-// Positive companion: maxAuthAge > 0 with a fresh reference must return true,
-// so we know the zero test is not just "always false".
+// Positive companion: maxAuthAge > 0 with a fresh reference must pass,
+// so we know the zero test is not just "always refuses".
 func TestOIDCLoginServiceReauthClaimsFreshPositiveMaxAuthAgeReturnsTrue(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 5, 13, 10, 0, 0, 0, time.UTC)
 	claims := security.OIDCClaims{AuthTime: now.Add(-30 * time.Second)}
 
-	if !reauthClaimsFresh(claims, 5*time.Minute, now) {
-		t.Fatal("reauthClaimsFresh must return true when maxAuthAge > 0 and reference is fresh")
+	if err := reauthFreshnessVerdict(claims, 5*time.Minute, now); err != nil {
+		t.Fatalf("reauthFreshnessVerdict must accept when maxAuthAge > 0 and reference is fresh, got %v", err)
 	}
 }
 
 // ---------------------------------------------------------------------------
-// Line 210 — reauthClaimsFresh: 1-minute clock-skew tolerance boundary
+// reauthFreshnessVerdict: 1-minute clock-skew tolerance boundary
 //
 // Surviving mutant: change the tolerance constant (e.g. 1m → 0 or 2m).
 // Tests pin the exact boundary: reference exactly 1 minute into the future
@@ -87,8 +95,8 @@ func TestOIDCLoginServiceReauthClaimsFreshExactlyOneMinuteInFutureIsRejected(t *
 	reference := now.Add(61 * time.Second)
 	claims := security.OIDCClaims{AuthTime: reference}
 
-	if reauthClaimsFresh(claims, 5*time.Minute, now) {
-		t.Fatal("reauthClaimsFresh must reject a reference more than 1 minute in the future (possible forgery)")
+	if reauthFreshnessVerdict(claims, 5*time.Minute, now) == nil {
+		t.Fatal("reauthFreshnessVerdict must reject a reference more than 1 minute in the future (possible forgery)")
 	}
 }
 
@@ -102,13 +110,13 @@ func TestOIDCLoginServiceReauthClaimsFreshWithinSkewToleranceIsAccepted(t *testi
 	claims := security.OIDCClaims{AuthTime: reference}
 
 	// elapsed = now - (now+59s) = -59s, which is <= maxAuthAge=5m, so fresh.
-	if !reauthClaimsFresh(claims, 5*time.Minute, now) {
-		t.Fatal("reauthClaimsFresh must accept a reference within the 1-minute clock-skew tolerance")
+	if err := reauthFreshnessVerdict(claims, 5*time.Minute, now); err != nil {
+		t.Fatalf("reauthFreshnessVerdict must accept a reference within the 1-minute clock-skew tolerance, got %v", err)
 	}
 }
 
 // ---------------------------------------------------------------------------
-// Line 215 — reauthClaimsFresh: elapsed == maxAuthAge boundary (<=  vs <)
+// reauthFreshnessVerdict: elapsed == maxAuthAge boundary (<=  vs <)
 //
 // Surviving mutant: change `<= maxAuthAge` → `< maxAuthAge`.
 // A reference exactly maxAuthAge seconds in the past must be ACCEPTED.
@@ -123,8 +131,8 @@ func TestOIDCLoginServiceReauthClaimsFreshExactlyAtMaxAuthAgeIsAccepted(t *testi
 	reference := now.Add(-maxAge)
 	claims := security.OIDCClaims{AuthTime: reference}
 
-	if !reauthClaimsFresh(claims, maxAge, now) {
-		t.Fatal("reauthClaimsFresh must accept a reference exactly at the maxAuthAge boundary (inclusive)")
+	if err := reauthFreshnessVerdict(claims, maxAge, now); err != nil {
+		t.Fatalf("reauthFreshnessVerdict must accept a reference exactly at the maxAuthAge boundary (inclusive), got %v", err)
 	}
 }
 
@@ -137,8 +145,8 @@ func TestOIDCLoginServiceReauthClaimsFreshOneNanosecondBeyondMaxAuthAgeIsRejecte
 	reference := now.Add(-maxAge - time.Nanosecond)
 	claims := security.OIDCClaims{AuthTime: reference}
 
-	if reauthClaimsFresh(claims, maxAge, now) {
-		t.Fatal("reauthClaimsFresh must reject a reference one nanosecond beyond maxAuthAge")
+	if reauthFreshnessVerdict(claims, maxAge, now) == nil {
+		t.Fatal("reauthFreshnessVerdict must reject a reference one nanosecond beyond maxAuthAge")
 	}
 }
 

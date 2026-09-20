@@ -322,6 +322,7 @@
   "settings.error.local_password_required": "Legen Sie zuerst ein lokales Passwort fest, um diese Aktion zu verwenden.",
   "settings.error.oidc_reauth_mismatch": "Diese erneute Anmeldung gehört nicht zu dem hier angemeldeten Konto. Starten Sie die Aktion erneut.",
   "settings.error.oidc_reauth_stale": "Die Bestätigung bei Ihrem Identitätsanbieter ist zu alt, um diese Aktion zu autorisieren. Bitte versuchen Sie es erneut.",
+  "settings.error.oidc_reauth_auth_time_missing": "Ihr Identitätsanbieter hat nicht mitgeteilt, wann diese Anmeldung stattgefunden hat, daher kann diese Aktion nicht autorisiert werden. Ein neuer Versuch hilft nicht: Der Anbieter muss auth_time senden.",
   "settings.error.oidc_identity_already_linked": "Diese Identität ist bereits mit einem anderen Konto verknüpft.",
   "settings.error.erasure_requires_password": "Dieses Konto hat jetzt ein lokales Passwort. Bestätigen Sie diese Aktion mit diesem Passwort.",
   "settings.error.clear_data_failed": "Ihre Daten konnten nicht gelöscht werden. Bitte versuchen Sie es erneut.",
