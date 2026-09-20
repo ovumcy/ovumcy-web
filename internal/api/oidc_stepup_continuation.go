@@ -88,9 +88,7 @@ func (handler *Handler) setOIDCStepupContinuationCookie(c fiber.Ctx, continuatio
 
 	payload, err := json.Marshal(continuation)
 	if err != nil {
-		// codecov:ignore -- defensive: the payload is strings and a struct of
-		// strings, which encoding/json cannot fail on.
-		return err
+		return err // codecov:ignore -- defensive: a struct of strings cannot fail encoding/json
 	}
 	return handler.writeSealedCookie(c, oidcStepupContinuationCookieSpec, payload, time.Now().Add(oidcStepupContinuationTTL))
 }
@@ -181,15 +179,11 @@ func stepupActionForPurpose(state oidcStepupState) string {
 		if flow, known := erasureStepupFlowFor(state.Operation); known {
 			return flow.stepupAction
 		}
-		// codecov:ignore -- validAt refuses an erasure payload whose operation
-		// is not one of the two known ones.
-		return "auth.oidc_callback"
+		return "auth.oidc_callback" // codecov:ignore -- validAt refuses an erasure payload whose operation is not one of the two known ones
 	case oidcStepupPurposeIdentityLink:
 		return oidcIdentityLinkStepupAction
 	default:
-		// codecov:ignore -- validAt refuses an unknown purpose before any
-		// caller here can reach it.
-		return "auth.oidc_callback"
+		return "auth.oidc_callback" // codecov:ignore -- validAt refuses an unknown purpose before any caller here can reach it
 	}
 }
 
@@ -206,9 +200,13 @@ func (handler *Handler) bounceStepupToSameSiteContinue(c fiber.Ctx, state oidcSt
 	// State first: a callback that does not match the sealed state is not this
 	// owner's flow and must not be parked for completion.
 	if !state.matchesState(exchange.State) {
+		// codecov:ignore:start -- unreachable from the only caller: the callback
+		// refuses a mismatching state before it spends the step-up cookie, so
+		// this arm guards a second caller rather than that one.
 		spec := authOIDCAuthenticationFailedErrorSpec()
 		handler.logSecurityError(c, action, spec)
 		return handler.redirectSettingsRefusal(c, spec)
+		// codecov:ignore:end
 	}
 	if exchange.Error != "" {
 		spec := authOIDCUnavailableErrorSpec()
