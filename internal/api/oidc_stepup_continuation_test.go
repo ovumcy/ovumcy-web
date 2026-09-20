@@ -314,7 +314,7 @@ func TestOIDCStepupContinuationCookieRefusesWhatItCannotMint(t *testing.T) {
 // RETURNS for a value it cannot read: nothing at all, never a partially filled
 // payload. What the response does with that value — retract it, so it stops
 // being sent to the continue route — is the subject of
-// TestOIDCTransitCookieReaderRetractsTheValueItRefuses; "ignores" here is about
+// TestEverySealedCookieReaderRetractsTheValueItRefuses; "ignores" here is about
 // the return value, not about leaving the cookie alone.
 func TestOIDCStepupContinuationCookieIgnoresAValueItCannotRead(t *testing.T) {
 	t.Parallel()

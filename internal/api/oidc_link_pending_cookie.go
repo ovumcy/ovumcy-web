@@ -81,6 +81,31 @@ func (handler *Handler) setOIDCLinkPendingCookie(c fiber.Ctx, payload oidcLinkPe
 	return handler.writeSealedCookie(c, oidcLinkPendingCookieSpec, serialized, time.Now().Add(oidcLinkPendingCookieTTL))
 }
 
+// readOIDCLinkPendingCookie returns the pending link the confirmation page
+// acts on, and retracts any value it refuses in the response that refused it —
+// the convention every sealed reader in this package follows, pinned by
+// TestEverySealedCookieReaderRetractsTheValueItRefuses.
+//
+// Nothing that reaches a refusal arm can be a live hand-off:
+// setOIDCLinkPendingCookie mints no payload without a target user, an issuer
+// and a subject, and an expired one is past the five-minute bound this reader
+// itself enforces. Left riding, it is re-sent to the confirmation path on every
+// later request there, carrying the target user id, the issuer, the subject and
+// the asserted email of an account the server has already said it will not
+// link. The clear belongs here because the reader is the only place that knows
+// a value was presented and found unusable; both handlers see an empty payload
+// and would have to repeat the clear, and the next caller added without it
+// reintroduces the leak. A missing cookie retracts nothing: there is no value
+// to retract, and an empty value is already the cleared state.
+//
+// A payload this reader HONOURS is left in place, for the handler that
+// completes the confirmation to spend.
+//
+// The codec arm retracts for the same reason as the rest: cookieCodec() builds
+// its codec under a sync.Once held on the Handler and caches the error there,
+// and the server composes one Handler for the process (cmd/ovumcy), so within
+// a running instance a codec that failed once fails for every later request
+// and no flow this arm refuses can complete.
 func (handler *Handler) readOIDCLinkPendingCookie(c fiber.Ctx) (oidcLinkPendingPayload, bool) {
 	raw := strings.TrimSpace(c.Cookies(oidcLinkPendingCookieName))
 	if raw == "" {
@@ -88,17 +113,21 @@ func (handler *Handler) readOIDCLinkPendingCookie(c fiber.Ctx) (oidcLinkPendingP
 	}
 	codec, err := handler.cookieCodec()
 	if err != nil {
+		handler.clearOIDCLinkPendingCookie(c)
 		return oidcLinkPendingPayload{}, false
 	}
 	decoded, err := codec.open(oidcLinkPendingCookieName, raw)
 	if err != nil {
+		handler.clearOIDCLinkPendingCookie(c)
 		return oidcLinkPendingPayload{}, false
 	}
 	payload := oidcLinkPendingPayload{}
 	if err := json.Unmarshal(decoded, &payload); err != nil {
+		handler.clearOIDCLinkPendingCookie(c)
 		return oidcLinkPendingPayload{}, false
 	}
 	if !payload.validAt(time.Now()) {
+		handler.clearOIDCLinkPendingCookie(c)
 		return oidcLinkPendingPayload{}, false
 	}
 	return payload, true

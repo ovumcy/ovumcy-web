@@ -217,10 +217,11 @@ func (handler *Handler) setOIDCStepupCookie(c fiber.Ctx, state oidcStepupState) 
 // cookie retracts nothing: there is no value to retract, and an empty value is
 // already the cleared state.
 //
-// The codec arm is not a transient failure to be forgiven: cookieCodec() builds
-// under sync.Once and caches its error for the life of the process, so a codec
-// that failed once fails for every later request and no flow it refuses can
-// ever complete.
+// The codec arm is not a transient failure to be forgiven: cookieCodec()
+// builds under a sync.Once held on the Handler and caches the error on the
+// Handler — per instance, not per process — and the server composes one
+// Handler (cmd/ovumcy), so within a running instance a codec that failed once
+// fails for every later request and no flow it refuses can complete.
 func (handler *Handler) peekOIDCStepupCookie(c fiber.Ctx) oidcStepupState {
 	raw := strings.TrimSpace(c.Cookies(oidcStepupCookieName))
 	if raw == "" {
