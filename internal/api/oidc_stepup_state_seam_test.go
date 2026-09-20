@@ -14,12 +14,12 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/i18n"
 )
 
-// The callback state is matched at ONE seam — dispatchStepupCompletion — and
-// the per-purpose completions carry no copy of that check. What follows pins
-// both halves of that arrangement, because only together are they the
-// property: the seam refusing is worth nothing if a completion can be reached
-// around it, and a completion without its own check is safe only while the
-// seam has one.
+// On the completion path the callback state is matched at ONE seam —
+// dispatchStepupCompletion — and the per-purpose completions carry no copy of
+// that check. What follows pins both halves of that arrangement, because only
+// together are they the property: the seam refusing is worth nothing if a
+// completion can be reached around it, and a completion without its own check
+// is safe only while the seam has one.
 //
 // The check moved here because a per-purpose copy fixes the class at N of N+1:
 // a fourth purpose added to the switch would inherit nothing. The AST guard

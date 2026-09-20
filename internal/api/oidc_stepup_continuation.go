@@ -186,8 +186,10 @@ func callbackArrivedCrossSite(c fiber.Ctx) bool {
 }
 
 // dispatchStepupCompletion routes a validated step-up to the handler written
-// for its purpose, and is the one place the callback state is matched against
-// the sealed step-up before any completion runs.
+// for its purpose, and is the one place on the completion path where the
+// callback state is matched against the sealed step-up. The cross-site bounce
+// below matches it too, earlier and for its own duty: it refuses before it
+// parks anything for the continue leg.
 //
 // The check sits at this seam rather than inside each completion because a
 // per-purpose copy fixes the class at N of N+1: a fourth purpose taught to the
@@ -199,8 +201,9 @@ func callbackArrivedCrossSite(c fiber.Ctx) bool {
 // On the continue leg the comparison is degenerate by construction: the
 // continuation carries the state it is checked against, so it can only agree.
 // What makes that leg safe is the match the cross-site callback performed
-// before parking anything. The check here is what every OTHER leg gives a
-// completion that never looks at state itself.
+// before parking anything. So the seam refuses nothing today that the callback
+// did not already refuse; what it buys is the leg or the purpose added next,
+// which inherits the check instead of having to remember it.
 //
 // The purpose is dispatched on, never inferred: validAt has already refused a
 // payload whose purpose is unknown or whose fields do not match the purpose it
