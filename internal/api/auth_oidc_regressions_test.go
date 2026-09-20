@@ -479,6 +479,45 @@ func TestSSOSignInStartDropsAnAbandonedStepup(t *testing.T) {
 	}
 }
 
+// TestSSOSignInStartDropsAnAbandonedStepupContinuation is the same rule for the
+// step-up's other carrier. The hand-off a cross-site return parks seals the
+// whole step-up plus an authorization code nobody has spent. Unlike the step-up
+// cookie it cannot capture this callback — it is scoped to the continue route —
+// but it can outlive the session that started it: a session that lapsed rather
+// than being signed out never passed through clearSessionEndCookies, so without
+// this the next sign-in leaves a restored tab everything it needs to finish the
+// erasure the previous session abandoned.
+func TestSSOSignInStartDropsAnAbandonedStepupContinuation(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "abandoned-continuation-outlives-session@example.com")
+	fixture.oidcStub.reauthErr = nil
+	fixture.oidcStub.authURL = "https://id.example.com/authorize"
+
+	startResponse := postOIDCIdentityLinkStepupStart(t, fixture)
+	defer func() { _ = startResponse.Body.Close() }()
+	stepupCookie := readStepupCookie(t, startResponse)
+	state := extractStepupCallbackState(t, fixture)
+
+	bounce := crossSiteStepupCallback(t, fixture, stepupCookie, state, "callback-code")
+	defer func() { _ = bounce.Body.Close() }()
+	continuation := continuationFromBounce(t, bounce)
+
+	// The owner never follows the hand-off document. The tab sits there, the
+	// session lapses, and the next thing the browser does is start a sign-in
+	// with the continuation still riding.
+	request := httptest.NewRequest(http.MethodGet, "/auth/oidc/start", nil)
+	request.Header.Set("Cookie", cookiePair(continuation))
+	signInStart := mustAppResponse(t, fixture.app, request)
+	defer func() { _ = signInStart.Body.Close() }()
+	assertStatusCode(t, signInStart, http.StatusTemporaryRedirect)
+
+	retracted := responseCookie(signInStart.Cookies(), oidcStepupContinuationCookieName)
+	if retracted == nil || strings.TrimSpace(retracted.Value) != "" {
+		t.Fatal("expected the sign-in start to retract the abandoned step-up continuation")
+	}
+}
+
 func TestOIDCCallbackProviderErrorRedirectsToLoginWithoutLeakingProviderError(t *testing.T) {
 	t.Parallel()
 

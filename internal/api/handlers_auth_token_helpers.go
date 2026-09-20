@@ -141,9 +141,17 @@ func (handler *Handler) clearAuthRelatedCookies(c fiber.Ctx) {
 // session that has deliberately ended cannot complete one — while a session
 // REJECTION may well arrive on the callback itself, which is the one request
 // that still needs the cookie.
+//
+// The continuation cookie is the second carrier of that same authority, not a
+// detail of the first: it seals the whole step-up state plus an authorization
+// code nobody has spent yet, so a minute-old hand-off left by a cross-site
+// return completes an erasure or a link for an owner who has since signed out.
+// Retracting one carrier and not the other states the rule above at one of two
+// places, which is not the rule.
 func (handler *Handler) clearSessionEndCookies(c fiber.Ctx) {
 	handler.clearAuthRelatedCookies(c)
 	handler.clearOIDCStepupCookie(c)
+	handler.clearOIDCStepupContinuationCookie(c)
 	handler.clearLanguageCookie(c)
 	handler.clearTimezoneCookie(c)
 }
