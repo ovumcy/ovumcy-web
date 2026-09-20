@@ -192,22 +192,24 @@ func TestCycleStartPolicy_ResolveManualCycleStartPolicy_AnchorDayBeforeTargetInc
 // stats that feed potentialImplantationGapDays. The mutation would change the
 // cutoff to targetDay (inclusive), potentially skewing the cycle-length stats.
 //
-// Setup: previousStart 2026-02-26, user CycleLength=28 (no prior logs).
+// Setup: previousStart 2026-02-26, user CycleLength=28, two recorded 28-day
+// cycles behind it (observedCyclesBefore — without them the first-cycle floor
+// withholds the hint and this test would never reach the cutoff it is about).
 // Ovulation predicted on 2026-03-11 (cycle day 14 of a 28-day cycle).
 // targetDay = 2026-03-17 → gap = 6 → implantation window (lower edge).
 //
 // We add a synthetic "future" CycleStart on targetDay itself. If that log
-// leaks into stats it would shorten the computed cycle length and shift the
-// ovulation date, potentially making the result (6,true) differ.
+// leaks into stats it closes a third, 19-day cycle, which pulls the median
+// down and moves the ovulation date, so the result stops being (6,true).
 func TestCycleStartPolicy_PotentialImplantationGapDays_TargetDayLogExcluded(t *testing.T) {
 	user := &models.User{CycleLength: 28}
 	previousStart := cyclestartpolicyCovDay(t, "2026-02-26")
 	targetDay := cyclestartpolicyCovDay(t, "2026-03-17") // 6 days after ovulation
+	recorded := observedCyclesBefore(previousStart)
 
 	// A log dated ON targetDay — must not leak into stats.
-	logsWithTargetDayEntry := []models.DailyLog{
-		{Date: targetDay, IsPeriod: true, CycleStart: true},
-	}
+	logsWithTargetDayEntry := append(append([]models.DailyLog(nil), recorded...),
+		models.DailyLog{Date: targetDay, IsPeriod: true, CycleStart: true})
 
 	gap, ok := potentialImplantationGapDays(user, logsWithTargetDayEntry, targetDay, previousStart)
 	if !ok {
@@ -217,8 +219,8 @@ func TestCycleStartPolicy_PotentialImplantationGapDays_TargetDayLogExcluded(t *t
 		t.Fatalf("expected gap=6, got %d (targetDay log may have leaked into stats)", gap)
 	}
 
-	// Confirm with no extra logs: result should be identical.
-	gapClean, okClean := potentialImplantationGapDays(user, nil, targetDay, previousStart)
+	// Confirm without the targetDay entry: result should be identical.
+	gapClean, okClean := potentialImplantationGapDays(user, recorded, targetDay, previousStart)
 	if gap != gapClean || ok != okClean {
 		t.Fatalf("result changed when targetDay log added: got (%d,%t) vs (%d,%t)", gap, ok, gapClean, okClean)
 	}

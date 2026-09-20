@@ -7,14 +7,20 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
-// The zero-completed-cycle floor is one policy with four consumers: the
-// calendar grid, the .ics feed, the webhook reminder pass and the dashboard
-// reminder banner. Until the first cycle closes, the fertile window and the
+// The zero-completed-cycle floor is one policy with five consumers: the
+// calendar grid, the .ics feed, the webhook reminder pass, the dashboard
+// reminder banner and the implantation-bleeding hint offered when a new cycle
+// start is logged. Until the first cycle closes, the fertile window and the
 // ovulation date are the onboarding cycle-length slider projected forward, so
 // every one of them must withhold the fertility half of the projection — two of
-// the four carry it off the instance. The same table drives a one-completed-
+// the five carry it off the instance. The same table drives a one-completed-
 // cycle history as the positive anchor: the surfaces must resume there, or a
 // guard that simply emptied every projection would read as green.
+
+// implantationHintAgeDays ages the shared history so that the day being logged
+// sits inside the closing cycle's implantation window. See
+// assertImplantationHint.
+const implantationHintAgeDays = 10
 
 // firstCycleFloorLogs seeds a five-day period per start, the first day of each
 // flagged as an explicit cycle start.
@@ -48,11 +54,12 @@ func firstCycleFloorUser() *models.User {
 // asserted to produce, so a fixture that stopped meaning what its name says
 // fails on the count rather than silently changing what the surfaces are asked.
 type firstCycleFloorCase struct {
-	name            string
-	startsDaysAgo   []int
-	wantCompleted   int
-	wantOvulation   bool
-	wantFertileDays bool
+	name                 string
+	startsDaysAgo        []int
+	wantCompleted        int
+	wantOvulation        bool
+	wantFertileDays      bool
+	wantImplantationHint bool
 }
 
 func firstCycleFloorCases() []firstCycleFloorCase {
@@ -63,11 +70,12 @@ func firstCycleFloorCases() []firstCycleFloorCase {
 			wantCompleted: 0,
 		},
 		{
-			name:            "one completed cycle: the window has an observed length behind it",
-			startsDaysAgo:   []int{40, 12},
-			wantCompleted:   1,
-			wantOvulation:   true,
-			wantFertileDays: true,
+			name:                 "one completed cycle: the window has an observed length behind it",
+			startsDaysAgo:        []int{40, 12},
+			wantCompleted:        1,
+			wantOvulation:        true,
+			wantFertileDays:      true,
+			wantImplantationHint: true,
 		},
 	}
 }
@@ -98,6 +106,7 @@ func TestFirstCycleFloorSuppressesFertilityOnEverySurface(t *testing.T) {
 			assertFeedOvulationEvents(t, user, logs, now, location, testCase)
 			assertWebhookOvulationReminder(t, user, logs, now, location, testCase)
 			assertDashboardOvulationBanner(t, user, stats, today, location, testCase)
+			assertImplantationHint(t, user, today, location, testCase)
 		})
 	}
 }
@@ -184,5 +193,38 @@ func assertDashboardOvulationBanner(t *testing.T, user *models.User, stats Cycle
 	isOvulationBanner := banner.Show && banner.Kind == DashboardReminderBannerKindOvulation
 	if isOvulationBanner != testCase.wantOvulation {
 		t.Errorf("banner: ovulation banner shown = %v, want %v (kind %q, show %v)", isOvulationBanner, testCase.wantOvulation, banner.Kind, banner.Show)
+	}
+}
+
+// assertImplantationHint is the fifth consumer. Logging a cycle start a week or
+// so after the closing cycle's PROJECTED ovulation offers the
+// implantation-bleeding caution, and the caution names the gap counted from
+// that projection. With no completed cycle behind it the projection is the
+// onboarding cycle-length slider rolled forward, so the caution presents an
+// inferred number as a grounded one and the floor withholds it.
+//
+// The hint is read on the day the bleed is logged rather than on today's
+// dashboard, so this row ages the case's history by implantationHintAgeDays.
+// The gaps BETWEEN the starts are untouched, so the completed-cycle count and
+// the observed median are the ones the case names; what moves is where today
+// falls, and after the shift it is cycle day 23 — nine days past the projected
+// ovulation of a 28-day cycle, inside the 6..12-day window the policy looks
+// for. Both rows project the same ovulation date (the default length and the
+// observed median are both 28 here), so the only thing that differs between
+// them is the completed-cycle count, and the positive row shows the window is
+// reachable at all.
+func assertImplantationHint(t *testing.T, user *models.User, today time.Time, location *time.Location, testCase firstCycleFloorCase) {
+	t.Helper()
+
+	starts := make([]time.Time, 0, len(testCase.startsDaysAgo))
+	for _, daysAgo := range testCase.startsDaysAgo {
+		starts = append(starts, today.AddDate(0, 0, -(daysAgo + implantationHintAgeDays)))
+	}
+	logs := firstCycleFloorLogs(starts)
+
+	policy := ResolveManualCycleStartPolicy(user, logs, today, today, location)
+	if got := policy.PotentialImplantation; got != testCase.wantImplantationHint {
+		t.Errorf("cycle start: implantation hint offered = %v, want %v (gap %d days past the projected ovulation)",
+			got, testCase.wantImplantationHint, policy.ImplantationGapDays)
 	}
 }
