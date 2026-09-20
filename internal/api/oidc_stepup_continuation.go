@@ -137,14 +137,26 @@ func (handler *Handler) refuseOIDCStepupContinueRequest(c fiber.Ctx, reason stri
 // refuseOIDCStepupCallback flashes spec against action and returns the owner to
 // /settings by the route the ARRIVING request can actually carry. On a
 // same-site callback that is the ordinary 303. On the cross-site one it is the
-// same same-origin document the success path hands over with, and for the same
-// reason: Sec-Fetch-Site describes the whole redirect chain, so a 303 issued
-// here reaches /settings still labelled cross-site, where SameSite=Lax
-// withholds ovumcy_auth — the owner lands on /login — and withholds
-// ovumcy_flash too, so the refusal she was owed sits in the jar and surfaces on
-// some later navigation, attached to a page it says nothing about. A document
-// served from this origin makes the next navigation same-origin in fact, and
-// both cookies ride it.
+// same same-origin document the success path hands over with — though NOT for
+// the same reason, and the difference is worth stating because it is easy to
+// carry the success leg's argument over and be wrong.
+//
+// The success leg has to have the document: Sec-Fetch-Site is computed over the
+// whole redirect chain, so a 303 would reach the continue route still labelled
+// cross-site and requireFirstPartyRequest would refuse the owner's own return.
+// Nothing guards /settings, so that argument does not transfer here.
+//
+// What is left is cookie delivery, and there the answer is browser-dependent
+// rather than settled. SameSite=Lax by definition DOES send on a cross-site
+// top-level GET navigation, which is what a 303 out of the form POST produces —
+// so on a browser that judges only the initiator and the target, ovumcy_auth
+// and ovumcy_flash both arrive and the 303 is fine. A browser that instead
+// judges the whole redirect chain, the way Fetch Metadata does, sees a chain
+// begun by a cross-site POST and withholds both: the owner lands on /login with
+// nothing said, and the flash she was owed surfaces on some later navigation,
+// attached to a page it says nothing about. The document removes the dependency
+// — the navigation it starts is same-origin in fact, under either rule — rather
+// than betting the refusal channel on which rule the browser implements.
 func (handler *Handler) refuseOIDCStepupCallback(c fiber.Ctx, action string, spec APIErrorSpec) error {
 	handler.logSecurityError(c, action, spec)
 	if callbackArrivedCrossSite(c) {

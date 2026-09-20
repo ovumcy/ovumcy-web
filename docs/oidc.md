@@ -121,7 +121,7 @@ What this means in practice:
 - if a reverse proxy in front of Ovumcy filters paths, `/auth/oidc/callback/continue` has to reach the app like the rest of `/auth/oidc/`;
 - an ordinary sign-in is unaffected, and so is any callback from a provider on the same site as Ovumcy: both complete on the callback itself;
 - a cross-site step-up takes the hop in `query` mode too: the return is classified by where it came from, not by response mode;
-- a refusal takes the same hop: when the provider declines, the owner lands back on the settings page with the reason, not on the sign-in page.
+- a refusal takes the same hop, so where the owner lands does not depend on how her browser treats a redirect begun on another site.
 
 The hop is chosen from the `Sec-Fetch-Site` request header, which the browser sets and page script cannot forge. A proxy in front of Ovumcy that strips `Sec-` headers therefore hides a cross-site return: the step-up then refuses with "that re-authentication does not match the account signed in here". If step-ups fail that way against a cross-site provider, check that the proxy passes `Sec-Fetch-Site` through.
 
