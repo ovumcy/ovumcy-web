@@ -250,7 +250,7 @@ func TestOIDCStepupContinuationRefusesAPayloadItCannotComplete(t *testing.T) {
 	}
 }
 
-func TestOIDCStepupContinuationCookieRefusesInsecureTransport(t *testing.T) {
+func TestOIDCStepupContinuationCookieRefusesWhatItCannotMint(t *testing.T) {
 	t.Parallel()
 
 	stepup, err := newOIDCIdentityLinkStepupState(time.Now(), 9)
@@ -262,19 +262,31 @@ func TestOIDCStepupContinuationCookieRefusesInsecureTransport(t *testing.T) {
 		t.Fatalf("build continuation: %v", err)
 	}
 
-	handler := newSealedExpirySweepHandler()
-	handler.cookieSecure = false
+	insecure := newSealedExpirySweepHandler()
+	insecure.cookieSecure = false
+	secure := newSealedExpirySweepHandler()
 
-	// The cookie is Secure by construction, so a deployment not on secure
-	// transport must refuse to mint it rather than write one the browser
-	// drops — the rule its two sibling OIDC cookies already follow.
+	expired := continuation
+	expired.ExpiresAt = time.Now().Add(-time.Minute).UTC().Format(time.RFC3339Nano)
+
 	app := fiber.New()
 	app.Get("/mint", func(c fiber.Ctx) error {
-		if err := handler.setOIDCStepupContinuationCookie(c, continuation); err == nil {
+		// The cookie is Secure by construction, so a deployment not on secure
+		// transport must refuse to mint it rather than write one the browser
+		// drops — the rule its two sibling OIDC cookies already follow.
+		if err := insecure.setOIDCStepupContinuationCookie(c, continuation); err == nil {
 			t.Error("expected an insecure deployment to refuse the continuation cookie")
 		}
-		if err := handler.setOIDCStepupContinuationCookie(c, oidcStepupContinuation{}); err == nil {
+		// Secure transport is not enough on its own: the payload also has to
+		// be one the continue leg could still complete. Sealing an empty or
+		// already-expired hand-off would answer the cross-site POST as if it
+		// had worked, having spent the step-up cookie for a navigation that
+		// can only refuse.
+		if err := secure.setOIDCStepupContinuationCookie(c, oidcStepupContinuation{}); err == nil {
 			t.Error("expected an empty payload to be refused")
+		}
+		if err := secure.setOIDCStepupContinuationCookie(c, expired); err == nil {
+			t.Error("expected an expired payload to be refused")
 		}
 		return c.SendStatus(fiber.StatusNoContent)
 	})
@@ -285,6 +297,38 @@ func TestOIDCStepupContinuationCookieRefusesInsecureTransport(t *testing.T) {
 	defer func() { _ = response.Body.Close() }()
 	if cookie := responseCookie(response.Cookies(), oidcStepupContinuationCookieName); cookie != nil {
 		t.Fatal("a refused mint must write no cookie at all")
+	}
+}
+
+func TestOIDCStepupContinuationCookieIgnoresAValueItCannotRead(t *testing.T) {
+	t.Parallel()
+
+	handler := newSealedExpirySweepHandler()
+	// Sealed by this deployment's own key, so it opens — but the seal
+	// authenticates bytes, it does not vouch for their shape.
+	sealedNonJSON, err := handler.sealCookieValue(oidcStepupContinuationCookieName, []byte("not a continuation"))
+	if err != nil {
+		t.Fatalf("seal the probe value: %v", err)
+	}
+
+	for name, raw := range map[string]string{
+		"value the seal refuses":        "tampered-value",
+		"sealed but not a continuation": sealedNonJSON,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			cookies := map[string]string{oidcStepupContinuationCookieName: raw}
+			response := runSealedCookieProbeRequest(t, cookies, func(c fiber.Ctx) error {
+				// Nothing at all, not a partially-filled payload: a
+				// continuation the peek cannot read must not reach the
+				// dispatcher carrying a purpose or an owner id.
+				if continuation := handler.peekOIDCStepupContinuationCookie(c); continuation != (oidcStepupContinuation{}) {
+					t.Errorf("expected an unreadable continuation to peek as nothing, got %+v", continuation)
+				}
+				return nil
+			})
+			defer func() { _ = response.Body.Close() }()
+		})
 	}
 }
 
