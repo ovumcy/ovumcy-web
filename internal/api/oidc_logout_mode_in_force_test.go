@@ -65,6 +65,22 @@ func TestProviderLogoutFollowsTheConfigurationInForceNotTheStoredRow(t *testing.
 			}
 			assertNoStoredIDTokenHintInResponse(t, bridgeResponse, "stale-id-token")
 
+			// The bridge route Consumes the row it reads, so put it back: the
+			// sign-out below has to meet a stored row, since "a row is present
+			// and the mode no longer wants it" is the whole state under test.
+			// Without this the sign-out would find nothing, never enter the
+			// discard arm, and the "row is gone" assertion at the end would
+			// hold for a reason that has nothing to do with the handler.
+			persistOIDCLogoutStateForAuthCookie(t, database, authCookie, services.OIDCLogoutState{
+				UserID:                user.ID,
+				EndSessionEndpoint:    testOIDCIssuerURL + "/oidc/logout",
+				IDTokenHint:           "stale-id-token",
+				PostLogoutRedirectURL: testOIDCPostLogoutRedirectURL,
+			})
+			if _, found, err := db.NewRepositories(database).OIDCLogout.FindBySessionID(context.Background(), claims.SessionID, user.ID); err != nil || !found {
+				t.Fatalf("%s: the row under test was not in place before the sign-out (found=%t, err=%v)", name, found, err)
+			}
+
 			// Sign out: no bridge cookie, a local /login answer, and the row
 			// the instance will not use is gone rather than left for its TTL.
 			csrfCookie, csrfToken := mustCSRFPairForAuthCookie(t, app, authCookie)
