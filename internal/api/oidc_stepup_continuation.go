@@ -298,8 +298,12 @@ func (handler *Handler) bounceStepupToSameSiteContinue(c fiber.Ctx, state oidcSt
 // ContinueOIDCStepup is the same-site half of the cross-site bounce: a
 // top-level GET navigation, which SameSite=Lax delivers the session cookie to,
 // so the completion below identifies the owner exactly as the direct callback
-// does. It consumes the continuation only once the payload has validated, and
-// the state carried inside it is re-checked by the completion handler.
+// does. It consumes the continuation only once the payload has validated.
+//
+// The dispatch seam below matches the state again, but on this leg that
+// comparison is degenerate: the exchange is built from the continuation, so it
+// can only agree with itself. What stands behind the state on this leg is the
+// match the cross-site callback made before parking anything.
 func (handler *Handler) ContinueOIDCStepup(c fiber.Ctx) error {
 	continuation := handler.peekOIDCStepupContinuationCookie(c)
 	if !continuation.validAt(time.Now()) {
