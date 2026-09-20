@@ -1,0 +1,56 @@
+name: Badges
+
+env:
+  # The badge counts pulls of the published runtime image. GitHub exposes the
+  # counter only on the package page's HTML, never through the REST API, so it
+  # is read from there and republished as a shields.io endpoint document.
+  PACKAGE: ovumcy-web
+  BADGE_BRANCH: badges
+  BADGE_PATH: pulls.json
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ghcr-pulls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      # The only job in this repository that writes: it commits the badge
+      # document to BADGE_BRANCH through the contents API. No checkout runs
+      # here, so no git credential is persisted into a working tree.
+      contents: write
+
+    steps:
+      - name: Read the GHCR download counter
+        shell: bash
+        run: |
+          page="$(curl -sSfL --max-time 30 "https://github.com/${GITHUB_REPOSITORY}/pkgs/container/${PACKAGE}")"
+          count="$(printf '%s' "$page" | grep -A4 'Total downloads' | grep -oE 'title="[0-9]+"' | head -1 | tr -dc '0-9')"
+          if [ -z "$count" ]; then
+            echo "::error::the package page carried no download counter; the badge keeps its previous value"
+            exit 1
+          fi
+          message="$(awk -v n="$count" 'BEGIN { if (n >= 1000) printf "%.1fk", n / 1000; else printf "%d", n }')"
+          printf '{"schemaVersion":1,"label":"docker pulls","message":"%s","color":"2496ED"}\n' "$message" > "${BADGE_PATH}"
+          cat "${BADGE_PATH}"
+
+      - name: Publish the badge document
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          args=(--method PUT "repos/${GITHUB_REPOSITORY}/contents/${BADGE_PATH}"
+            -f "message=chore(badges): refresh the GHCR pull count"
+            -f "branch=${BADGE_BRANCH}"
+            -f "content=$(base64 -w0 "${BADGE_PATH}")")
+          sha="$(gh api "repos/${GITHUB_REPOSITORY}/contents/${BADGE_PATH}?ref=${BADGE_BRANCH}" --jq .sha || true)"
+          if [ -n "$sha" ]; then
+            args+=(-f "sha=${sha}")
+          fi
+          gh api "${args[@]}" --jq .commit.sha
