@@ -38,6 +38,14 @@ func (handler *Handler) StartOIDCLogin(c fiber.Ctx) error {
 	// ten minutes, on a flash channel /login does not render.
 	handler.clearOIDCStepupCookie(c)
 
+	// The hand-off parked by a cross-site return goes with it. It cannot take
+	// this callback — it is scoped to the continue route — but it carries the
+	// same owner and an unspent code, and a session that lapsed rather than
+	// being signed out never passed through clearSessionEndCookies. Without
+	// this, signing in again is enough to finish a step-up the previous session
+	// abandoned.
+	handler.clearOIDCStepupContinuationCookie(c)
+
 	ctx, cancel := oidcRequestContext(c)
 	defer cancel()
 

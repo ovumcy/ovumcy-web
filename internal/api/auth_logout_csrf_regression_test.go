@@ -32,6 +32,7 @@ func TestAuthLogoutPostWithCSRFRedirectsAndClearsCookies(t *testing.T) {
 			totpSetupCookieName+"=temporary-totp-setup",
 			calendarFeedRevealCookieName+"=temporary-feed-reveal",
 			oidcStepupCookieName+"=temporary-oidc-stepup",
+			oidcStepupContinuationCookieName+"=temporary-oidc-continuation",
 			languageCookieName+"=ru",
 		),
 	)
@@ -62,6 +63,10 @@ func TestAuthLogoutPostWithCSRFRedirectsAndClearsCookies(t *testing.T) {
 	// matches, so one the owner abandoned at the provider survives a sign-out
 	// and then takes the NEXT sign-in's callback for its own — the callback
 	// dispatches on its presence — refusing every attempt until it expires.
+	// `ovumcy_oidc_stepup_continuation` joins it as the second carrier of that
+	// authority: it seals the same step-up plus a code the provider has not
+	// redeemed, so one left by a cross-site return finishes an erasure for an
+	// owner who signed out a moment earlier.
 	//
 	// `ovumcy_lang` is the one member that is neither sealed nor session-scoped:
 	// a year-long plaintext cache of the account's stored language. Surviving a
@@ -77,6 +82,7 @@ func TestAuthLogoutPostWithCSRFRedirectsAndClearsCookies(t *testing.T) {
 		totpSetupCookieName,
 		calendarFeedRevealCookieName,
 		oidcStepupCookieName,
+		oidcStepupContinuationCookieName,
 		languageCookieName,
 	} {
 		cleared := responseCookie(response.Cookies(), cookieName)
