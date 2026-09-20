@@ -16,6 +16,12 @@ on:
 permissions:
   contents: read
 
+# The scheduled run and a manual one write the same file on the same branch;
+# serialised, the second reads the first's blob sha instead of losing to a 409.
+concurrency:
+  group: badges
+  cancel-in-progress: false
+
 jobs:
   ghcr-pulls:
     runs-on: ubuntu-latest
@@ -31,7 +37,11 @@ jobs:
         shell: bash
         run: |
           page="$(curl -sSfL --max-time 30 "https://github.com/${GITHUB_REPOSITORY}/pkgs/container/${PACKAGE}")"
-          count="$(printf '%s' "$page" | grep -A4 'Total downloads' | grep -oE 'title="[0-9]+"' | head -1 | tr -dc '0-9')"
+          # A run: block is -e -o pipefail, so neither a no-match nor the SIGPIPE
+          # an early-exiting reader sends its writer may reach a pipeline here:
+          # either would fail the step before the annotation below explains why.
+          # Hence awk over a here-string, whose no-match exit status is 0.
+          count="$(awk '/Total downloads/, 0 { if (match($0, /title="[0-9]+"/)) { print substr($0, RSTART + 7, RLENGTH - 8); exit } }' <<< "$page")"
           if [ -z "$count" ]; then
             echo "::error::the package page carried no download counter; the badge keeps its previous value"
             exit 1
