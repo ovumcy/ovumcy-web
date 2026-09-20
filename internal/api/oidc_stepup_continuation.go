@@ -134,12 +134,41 @@ func (handler *Handler) refuseOIDCStepupContinueRequest(c fiber.Ctx, reason stri
 	return handler.redirectSettingsRefusal(c, spec)
 }
 
+// refuseOIDCStepupCallback flashes spec against action and returns the owner to
+// /settings by the route the ARRIVING request can actually carry. On a
+// same-site callback that is the ordinary 303. On the cross-site one it is the
+// same same-origin document the success path hands over with, and for the same
+// reason: Sec-Fetch-Site describes the whole redirect chain, so a 303 issued
+// here reaches /settings still labelled cross-site, where SameSite=Lax
+// withholds ovumcy_auth — the owner lands on /login — and withholds
+// ovumcy_flash too, so the refusal she was owed sits in the jar and surfaces on
+// some later navigation, attached to a page it says nothing about. A document
+// served from this origin makes the next navigation same-origin in fact, and
+// both cookies ride it.
+func (handler *Handler) refuseOIDCStepupCallback(c fiber.Ctx, action string, spec APIErrorSpec) error {
+	handler.logSecurityError(c, action, spec)
+	if callbackArrivedCrossSite(c) {
+		handler.setFlashCookie(c, FlashPayload{SettingsError: spec.Key})
+		return respondOIDCSameOriginHandoff(c, "/settings")
+	}
+	return handler.redirectSettingsRefusal(c, spec)
+}
+
 // callbackArrivedCrossSite reports whether the browser says this request came
 // from another site. Sec-Fetch-Site is set by the browser and page script
 // cannot forge it (the Sec- prefix is a forbidden header name), so a request
 // claiming same-origin cannot talk its way into the bounce. A request with no
-// Fetch Metadata at all is treated as same-site: that is the pre-existing
-// direct path, whose own refusal still applies if no session is present.
+// Fetch Metadata at all is treated as same-site: only a STATED cross-site
+// decides, the same monotone rule firstPartyRequestRefusal applies, because a
+// proxy that forwards part of the family and drops the rest must not change
+// how a request is handled. The cost is named in docs/oidc.md — on a browser
+// that sends no Fetch Metadata (older than Chrome 76 / Firefox 90 / Safari
+// 16.4) a cross-site step-up reaches the same dead end as behind a stripping
+// proxy: the direct path, refusing because no session came with the POST. The
+// alternative is worse than the cost. Reading silence as cross-site would
+// route those browsers through a hand-off whose continue route is guarded by
+// that same absent header, so the one-time leg would become reachable exactly
+// where nothing can tell the owner's navigation from another site's.
 func callbackArrivedCrossSite(c fiber.Ctx) bool {
 	return strings.TrimSpace(c.Get(headerSecFetchSite)) == secFetchSiteCrossSite
 }
@@ -203,31 +232,23 @@ func (handler *Handler) bounceStepupToSameSiteContinue(c fiber.Ctx, state oidcSt
 		// codecov:ignore:start -- unreachable from the only caller: the callback
 		// refuses a mismatching state before it spends the step-up cookie, so
 		// this arm guards a second caller rather than that one.
-		spec := authOIDCAuthenticationFailedErrorSpec()
-		handler.logSecurityError(c, action, spec)
-		return handler.redirectSettingsRefusal(c, spec)
+		return handler.refuseOIDCStepupCallback(c, action, authOIDCAuthenticationFailedErrorSpec())
 		// codecov:ignore:end
 	}
 	if exchange.Error != "" {
-		spec := authOIDCUnavailableErrorSpec()
-		handler.logSecurityError(c, action, spec)
-		return handler.redirectSettingsRefusal(c, spec)
+		return handler.refuseOIDCStepupCallback(c, action, authOIDCUnavailableErrorSpec())
 	}
 
 	continuation, err := newOIDCStepupContinuation(time.Now(), state, exchange.Code)
 	if err != nil {
-		spec := authOIDCAuthenticationFailedErrorSpec()
-		handler.logSecurityError(c, action, spec)
-		return handler.redirectSettingsRefusal(c, spec)
+		return handler.refuseOIDCStepupCallback(c, action, authOIDCAuthenticationFailedErrorSpec())
 	}
 	if err := handler.setOIDCStepupContinuationCookie(c, continuation); err != nil {
 		// codecov:ignore:start -- defensive: the payload validated one line above
 		// and the route only runs on a secure deployment, so the two refusals
 		// inside the setter are unreachable from here; what is left is an AEAD
 		// seal error.
-		spec := authOIDCUnavailableErrorSpec()
-		handler.logSecurityError(c, action, spec)
-		return handler.redirectSettingsRefusal(c, spec)
+		return handler.refuseOIDCStepupCallback(c, action, authOIDCUnavailableErrorSpec())
 		// codecov:ignore:end
 	}
 

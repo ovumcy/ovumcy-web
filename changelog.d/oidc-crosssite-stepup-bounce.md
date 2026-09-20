@@ -10,7 +10,10 @@
   answer forward: the app reads the session there exactly as it always did, and no cookie was made
   reachable from another site to achieve it. That page's own hand-off is single-use, expires in a
   minute, is scoped to one address, and that address turns away any request another site starts. A
-  provider on the same site is unaffected.
+  refusal comes back the same way: when the provider declines, or sends back something that does not
+  answer the request that was made, the owner arrives on the settings page and is told why, instead
+  of being dropped on the sign-in page with nothing said and the explanation surfacing later
+  somewhere else. A provider on the same site is unaffected.
 
 ### Security
 

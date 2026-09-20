@@ -120,9 +120,12 @@ What this means in practice:
 - the hand-off between the two legs is a sealed, `HttpOnly`, `Secure` cookie scoped to that one path, usable once, and expiring after a minute;
 - if a reverse proxy in front of Ovumcy filters paths, `/auth/oidc/callback/continue` has to reach the app like the rest of `/auth/oidc/`;
 - an ordinary sign-in is unaffected, and so is any callback from a provider on the same site as Ovumcy: both complete on the callback itself;
-- a cross-site step-up takes the hop in `query` mode too: the return is classified by where it came from, not by response mode.
+- a cross-site step-up takes the hop in `query` mode too: the return is classified by where it came from, not by response mode;
+- a refusal takes the same hop: when the provider declines, the owner lands back on the settings page with the reason, not on the sign-in page.
 
 The hop is chosen from the `Sec-Fetch-Site` request header, which the browser sets and page script cannot forge. A proxy in front of Ovumcy that strips `Sec-` headers therefore hides a cross-site return: the step-up then refuses with "that re-authentication does not match the account signed in here". If step-ups fail that way against a cross-site provider, check that the proxy passes `Sec-Fetch-Site` through.
+
+A browser that never sends the header reaches the same dead end for the same reason — anything older than Chrome 76, Firefox 90 or Safari 16.4. An absent header is read as *nothing stated*, never as *cross-site*, which is the rule Ovumcy applies to Fetch Metadata everywhere: a missing header may not be the thing that decides, because a proxy forwarding part of the family and dropping the rest would otherwise change how requests are handled rather than merely how they are labelled. The consequence is worth stating plainly: on such a browser, a step-up against a provider on another site cannot complete. Signing in is unaffected, and so is every step-up against a provider on Ovumcy's own site.
 
 ## How Auto-Provision Works
 

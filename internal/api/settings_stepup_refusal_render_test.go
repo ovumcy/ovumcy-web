@@ -325,6 +325,11 @@ func TestEverySettingsStepupRefusalKeyMapsToLocalizedCopy(t *testing.T) {
 //     one-time reveal mark and only a same-origin initiator may spend it, while
 //     Sec-Fetch-Site is computed over the whole redirect chain, which a
 //     provider callback starts off-origin. A 303 from here is refused there.
+//   - handler.refuseOIDCStepupCallback — the same refusal channel, picking the
+//     303 or that same-origin document by how the callback ARRIVED. A refusal
+//     answering the cross-site POST with a 303 keeps the chain cross-site, so
+//     Lax withholds the session and the flash from /settings and the owner is
+//     told nothing.
 //   - handler.dispatchStepupCompletion and handler.bounceStepupToSameSiteContinue
 //     — the two arms of the cross-site bounce. They are terminals only because
 //     they are themselves on stepupCompletionHandlers above: whatever they
@@ -332,6 +337,7 @@ func TestEverySettingsStepupRefusalKeyMapsToLocalizedCopy(t *testing.T) {
 //     check rather than skipping it.
 var allowedStepupCompletionTerminals = map[string]string{
 	"handler.redirectSettingsRefusal":                    "the refusal channel the settings page reads",
+	"handler.refuseOIDCStepupCallback":                   "the refusal channel, by the route the arrival can carry",
 	"c.Redirect.Status.To":                               "a plain redirect to a page",
 	"handler.renderRecoveryCodeResponseWithContinuePath": "renders the one-time recovery code",
 	"respondOIDCSameOriginHandoff":                       "a same-origin document that navigates to a page",

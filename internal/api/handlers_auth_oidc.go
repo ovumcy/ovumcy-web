@@ -60,9 +60,7 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 		// consuming it there would let a stranger cancel a step-up in
 		// progress. It stays put, bounded by its own ten-minute expiry.
 		if !stepupState.matchesState(exchange.State) {
-			spec := authOIDCAuthenticationFailedErrorSpec()
-			handler.logSecurityError(c, stepupActionForPurpose(stepupState), spec)
-			return handler.redirectSettingsRefusal(c, spec)
+			return handler.refuseOIDCStepupCallback(c, stepupActionForPurpose(stepupState), authOIDCAuthenticationFailedErrorSpec())
 		}
 		handler.clearOIDCStepupCookie(c)
 
