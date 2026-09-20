@@ -317,8 +317,11 @@ corrects it.
 The same gate covers the two places a projected window is read outside those
 surfaces: the day-save message no longer calls a day fertile from a withheld window,
 and logging a new cycle start no longer offers the implantation-bleeding hint counted
-from a withheld ovulation. The hint reads the whole suppression gate, so
-unpredictable-cycle mode and a pregnancy pause withhold it too. One value outlives
+from a withheld ovulation. Both read the fertility gate, so unpredictable-cycle mode,
+a pregnancy pause and the first-cycle floor withhold them too — the hint states a
+number of days since ovulation, and with no completed cycle that ovulation is the
+configured cycle length rolled forward, which is an inference no reader could tell
+from a measurement. One value outlives
 it: an ovulation day the owner's own temperatures confirmed. It was never rolled
 forward from the length that ran out,
 so the dashboard line, the calendar's solid marker and the JSON overview keep
@@ -330,7 +333,8 @@ The floor is the fourth signal and the only partial one. Predicates:
 `FertilityProjectionSuppressed` over `PredictionsSuppressed`
 (`internal/services/dashboard_cycle.go`) — one predicate rather than a copy per
 surface, precisely because the floor had once been missed at one of four sites.
-All four surfaces are pinned by
+All five surfaces — the calendar grid, the `.ics` feed, the webhook reminder, the
+dashboard reminder banner and the implantation hint — are pinned by
 `TestFirstCycleFloorSuppressesFertilityOnEverySurface`.
 
 Everything below and above describes the numbers themselves — the floor decides

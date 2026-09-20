@@ -82,13 +82,35 @@ func TestShouldSuggestManualCycleStart_RequiresPeriodNonStart(t *testing.T) {
 	}
 }
 
+// observedCyclesBefore seeds the recorded history the implantation hint
+// requires: with fewer than two recorded cycle starts there is no measured
+// cycle length, the first-cycle floor inside FertilityProjectionSuppressed
+// withholds the hint, and a fixture probing the window arithmetic would never
+// reach that arithmetic. The two starts are 28 days apart — the length these
+// tests were already written against — so every ovulation date below is
+// unchanged from when the fixture carried no logs at all.
+func observedCyclesBefore(start time.Time) []models.DailyLog {
+	logs := make([]models.DailyLog, 0, 10)
+	for _, cycleStart := range []time.Time{start.AddDate(0, 0, -28), start} {
+		for offset := range 5 {
+			logs = append(logs, models.DailyLog{
+				Date:       cycleStart.AddDate(0, 0, offset),
+				IsPeriod:   true,
+				CycleStart: offset == 0,
+			})
+		}
+	}
+	return logs
+}
+
 func TestPotentialImplantationGapDays_WindowBoundary(t *testing.T) {
-	// With no prior logs the cycle length resolves to the user's configured 28
-	// days and the luteal phase to the 14-day default, so ovulation for a cycle
-	// starting 2026-02-26 lands on 2026-03-11. The implantation warning fires
-	// only for a gap of 6..12 days after that ovulation date.
+	// Two recorded 28-day cycles put an observed length behind the projection
+	// and the luteal phase resolves to the 14-day default, so ovulation for the
+	// cycle starting 2026-02-26 lands on 2026-03-11. The implantation warning
+	// fires only for a gap of 6..12 days after that ovulation date.
 	user := &models.User{CycleLength: 28}
 	previousStart := mustParseCycleStartPolicyDay(t, "2026-02-26")
+	logs := observedCyclesBefore(previousStart)
 	cases := []struct {
 		name      string
 		targetDay string
@@ -103,7 +125,7 @@ func TestPotentialImplantationGapDays_WindowBoundary(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			targetDay := mustParseCycleStartPolicyDay(t, tc.targetDay)
-			gap, ok := potentialImplantationGapDays(user, nil, targetDay, previousStart)
+			gap, ok := potentialImplantationGapDays(user, logs, targetDay, previousStart)
 			if gap != tc.wantGap || ok != tc.wantOK {
 				t.Fatalf("potentialImplantationGapDays(target %s) = (%d,%t), want (%d,%t)",
 					tc.targetDay, gap, ok, tc.wantGap, tc.wantOK)
@@ -198,6 +220,7 @@ func TestPotentialImplantationGapDays_CrossTimezone(t *testing.T) {
 	// starting 2026-02-26 lands on 2026-03-11.
 	user := &models.User{CycleLength: 28}
 	previousStart := mustParseCycleStartPolicyDay(t, "2026-02-26")
+	logs := observedCyclesBefore(previousStart)
 	tokyo := time.FixedZone("UTC+9", 9*60*60)
 	lima := time.FixedZone("UTC-5", -5*60*60)
 
@@ -215,7 +238,7 @@ func TestPotentialImplantationGapDays_CrossTimezone(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			gap, ok := potentialImplantationGapDays(user, nil, tc.targetDay, previousStart)
+			gap, ok := potentialImplantationGapDays(user, logs, tc.targetDay, previousStart)
 			if gap != tc.wantGap || ok != tc.wantOK {
 				t.Fatalf("potentialImplantationGapDays(target %s) = (%d,%t), want (%d,%t)",
 					tc.targetDay.Format(time.RFC3339), gap, ok, tc.wantGap, tc.wantOK)

@@ -44,23 +44,23 @@ func TestIsAllowedManualCycleStartDate_NonUTCLocationNotForcedToUTC(t *testing.T
 	}
 }
 
-// TestPotentialImplantationGapDays_NoStatsUsesPredictedDefaultNotUserLength
-// kills the line-83 CONDITIONALS_NEGATION mutant (`cycleLength <= 0` ->
-// `cycleLength > 0`) by pinning the predicted-default fallback path.
-func TestPotentialImplantationGapDays_NoStatsUsesPredictedDefaultNotUserLength(t *testing.T) {
-	// With no logs, BuildCycleStats yields empty stats, so cycleLength must come
-	// from predictedCycleLength's default of 28 (not from the user's configured
-	// 35). For previousStart 2026-02-26 that puts ovulation on 2026-03-11, and a
+// TestPotentialImplantationGapDays_UsesTheObservedMedianNotTheUserLength pins
+// which length the hint is counted from: the account's own observed median,
+// never the configured cycle length on the settings page.
+func TestPotentialImplantationGapDays_UsesTheObservedMedianNotTheUserLength(t *testing.T) {
+	// Two recorded 28-day cycles, and a user configured to 35. cycleLength must
+	// come from predictedCycleLength over the observed median (28). For
+	// previousStart 2026-02-26 that puts ovulation on 2026-03-11, and a
 	// targetDay of 2026-03-17 is a 6-day gap -> inside the implantation window.
-	// If the code instead fell back to the user's 35-day length, ovulation would
-	// move to 2026-03-18 and the gap would be negative, returning (0,false).
+	// If the code instead read the user's 35-day length, ovulation would move to
+	// 2026-03-18 and the gap would be negative, returning (0,false).
 	user := &models.User{CycleLength: 35}
 	previousStart := mustParseCycleStartPolicyDay(t, "2026-02-26")
 	targetDay := mustParseCycleStartPolicyDay(t, "2026-03-17")
 
-	gap, ok := potentialImplantationGapDays(user, nil, targetDay, previousStart)
+	gap, ok := potentialImplantationGapDays(user, observedCyclesBefore(previousStart), targetDay, previousStart)
 	if !ok || gap != 6 {
-		t.Fatalf("expected (6,true) using the predicted 28-day default, got (%d,%t)", gap, ok)
+		t.Fatalf("expected (6,true) counted from the observed 28-day median, got (%d,%t)", gap, ok)
 	}
 }
 

@@ -7,19 +7,23 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
-// TestMR3Cycles_PotentialImplantationUsesTheDefaultCycleLengthWithoutLogs pins
-// implantation detection for the no-observed-data path: with no daily logs
-// predictedCycleLength falls through to models.DefaultCycleLength (28) and the
-// detection runs on that default. It does NOT cover the
-// cycleLength <= 0 fallback at cycle_start_policy.go:83-88 — nothing this
+// TestMR3Cycles_PotentialImplantationRefusesTheDefaultCycleLength pins the
+// first-cycle floor at the end of the policy, on the one history that reaches
+// the hint with nothing recorded behind it: the anchor comes from the settings
+// LastPeriodStart, not from a log, so there are no observed cycle lengths and
+// predictedCycleLength would answer with models.DefaultCycleLength. The hint
+// counted from that default is an inference presented as a measurement, so it
+// is withheld — the FertilityProjectionSuppressed -> PredictionsSuppressed
+// mutant reddens here.
+//
+// It does NOT cover the cycleLength <= 0 fallback further down — nothing this
 // caller can build reaches it (the reason is recorded there), which is why the
-// `<= 0` -> `< 0` mutant on those two lines is equivalent and why the name no
-// longer advertises a zero-cycle-length fallback.
-func TestMR3Cycles_PotentialImplantationUsesTheDefaultCycleLengthWithoutLogs(t *testing.T) {
+// `<= 0` -> `< 0` mutant on those two lines is equivalent and why the name
+// never advertised a zero-cycle-length fallback.
+func TestMR3Cycles_PotentialImplantationRefusesTheDefaultCycleLength(t *testing.T) {
 	location := time.UTC
 	// Owner with a configured 28-day cycle and an explicit last period start,
-	// but NO daily logs -> no observed cycle lengths -> predictedCycleLength
-	// returns its models.DefaultCycleLength (28) fallback.
+	// but NO daily logs -> no recorded cycle starts, no observed cycle lengths.
 	lastPeriod := mr3cycDay(2026, time.March, 1)
 	user := &models.User{
 		Role:            models.RoleOwner,
@@ -36,8 +40,16 @@ func TestMR3Cycles_PotentialImplantationUsesTheDefaultCycleLengthWithoutLogs(t *
 	now := mr3cycDay(2026, time.March, 22)
 
 	policy := ResolveManualCycleStartPolicy(user, nil, target, now, location)
-	if !policy.PotentialImplantation {
-		t.Fatalf("expected implantation detection on the default 28-day cycle, got none (gap=%d)",
+	if policy.PotentialImplantation {
+		t.Fatalf("the configuration default is the only source of this ovulation, yet the hint counts %d days from it",
 			policy.ImplantationGapDays)
+	}
+
+	// Positive anchor: the same day, the same geometry, two recorded 28-day
+	// cycles behind it. Without this the assertion above would pass on a hint
+	// that had simply stopped working.
+	recorded := observedCyclesBefore(lastPeriod)
+	if policy := ResolveManualCycleStartPolicy(user, recorded, target, now, location); !policy.PotentialImplantation {
+		t.Fatal("scenario setup: an observed 28-day history offers no hint on cycle day 22, so the refusal above proves nothing")
 	}
 }

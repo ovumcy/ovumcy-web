@@ -83,16 +83,46 @@ func ResolveManualCycleStartPolicy(user *models.User, logs []models.DailyLog, da
 func potentialImplantationGapDays(user *models.User, logs []models.DailyLog, targetDay time.Time, previousStart time.Time) (int, bool) {
 	filtered := filterLogsNotAfter(logs, AddCalendarDays(targetDay, -1, targetDay.Location()))
 	stats := BuildCycleStats(filtered, targetDay.Add(-time.Second))
+
+	// The hint is read off the closing cycle's PROJECTED ovulation, so it may
+	// only be offered where every other surface would still publish that
+	// projection on the day being logged: the whole fertility gate, not one of
+	// its signals. Unpredictable-cycle mode and a pregnancy pause withhold the
+	// ovulation this hint counts from everywhere else; the pause is resolved
+	// here because BuildCycleStats alone never sets it. Past the overdue
+	// verdict a bleed logged is a late period, not a bleed a week after a known
+	// ovulation. Where the median sits above the mean (28/60/60) the gate
+	// answers on day 57 while the projected ovulation, placed from the median,
+	// still leaves days 57-58 inside the implantation gap.
+	//
+	// The fourth signal is the first-cycle floor, and it is the reason the gate
+	// runs BEFORE any length is resolved: with fewer than two recorded cycle
+	// starts there is no observed length at all, and predictedCycleLength would
+	// answer with models.DefaultCycleLength — an ovulation date, and then a
+	// "six to twelve days after it" caution, whose only source is the
+	// onboarding slider. Where configuration defaults are the only source,
+	// suppression is the floor and a qualifier is not enough
+	// (docs/SECURITY_INVARIANTS.md -> medical safety). Past this return the
+	// length is always the account's own median.
+	gateStats := stats
+	gateStats.CurrentCycleDay = CalendarDaysBetween(previousStart, targetDay) + 1
+	if _, paused := ResolvePregnancyPause(filtered); paused {
+		gateStats.PregnancyPaused = true
+	}
+	if FertilityProjectionSuppressed(user, gateStats) {
+		return 0, false
+	}
+
 	cycleLength := predictedCycleLength(stats.MedianCycleLength, stats.AverageCycleLength)
 	// codecov:ignore:start -- unreachable from this caller, kept as a floor for
 	// a future statistic that can report "unknown". stats are computed HERE by
-	// BuildCycleStats, so either there are fewer than two detected cycle starts
-	// (median and average both 0 -> predictedCycleLength returns
-	// models.DefaultCycleLength) or the starts are distinct sorted calendar days
-	// (every observed length >= 1 -> median > 0). Callers that pass CALLER-BUILT
-	// CycleStats can still drive predictedCycleLength to 0 with a fractional
-	// average in (0, 0.5) — applyProjectedBaseline is that shape and its guards
-	// are live — which is why these two are left in place rather than removed.
+	// BuildCycleStats, and the first-cycle floor above has already returned for
+	// every history with fewer than two detected cycle starts, so the starts
+	// left here are distinct sorted calendar days (every observed length >= 1 ->
+	// median > 0). Callers that pass CALLER-BUILT CycleStats can still drive
+	// predictedCycleLength to 0 with a fractional average in (0, 0.5) —
+	// applyProjectedBaseline is that shape and its guards are live — which is
+	// why these two are left in place rather than removed.
 	if cycleLength <= 0 {
 		cycleLength = DashboardCycleReferenceLength(user, stats)
 	}
@@ -100,25 +130,6 @@ func potentialImplantationGapDays(user *models.User, logs []models.DailyLog, tar
 		return 0, false
 	}
 	// codecov:ignore:end
-
-	// The hint is read off the closing cycle's PROJECTED ovulation, so it may
-	// only be offered where every other surface would still publish that
-	// projection on the day being logged: the whole PredictionsSuppressed gate,
-	// not one of its signals. Unpredictable-cycle mode and a pregnancy pause
-	// withhold the ovulation this hint counts from everywhere else; the pause is
-	// resolved here because BuildCycleStats alone never sets it. Past the overdue
-	// verdict a bleed logged is a late period, not a bleed a week after a known
-	// ovulation. Where the median sits above the mean (28/60/60) the gate answers
-	// on day 57 while the projected ovulation, placed from the median, still
-	// leaves days 57-58 inside the implantation gap.
-	gateStats := stats
-	gateStats.CurrentCycleDay = CalendarDaysBetween(previousStart, targetDay) + 1
-	if _, paused := ResolvePregnancyPause(filtered); paused {
-		gateStats.PregnancyPaused = true
-	}
-	if PredictionsSuppressed(user, gateStats) {
-		return 0, false
-	}
 
 	window := PredictCycleWindow(previousStart, cycleLength, stats.LutealPhase)
 	if !window.Calculable || window.OvulationDate.IsZero() {
