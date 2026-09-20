@@ -195,7 +195,7 @@ func TestStepupDispatchRefusesACallbackStateThatDoesNotMatch(t *testing.T) {
 				assertFlashRefusal(t, response)
 				flash := decodeFlashCookieForTest(t, responseCookie(response.Cookies(), flashCookieName).Value)
 				if flash.SettingsError != mismatchKey {
-					t.Fatalf("expected the state-mismatch refusal %q for a %s callback state, got %q", mismatchKey, shape, flash.SettingsError)
+					t.Fatalf("expected the state-mismatch refusal %q for the %s callback state, got %q", mismatchKey, shape, flash.SettingsError)
 				}
 			})
 		}
@@ -228,7 +228,6 @@ func TestStepupDispatchLetsAMatchingStateReachItsCompletion(t *testing.T) {
 			purpose: "local password setup",
 			email:   "stepup-seam-password@example.com",
 			reached: func(t *testing.T, _ *stepupSeamHarness, _ models.User, response *http.Response) {
-				t.Helper()
 				assertStatusCode(t, response, http.StatusSeeOther)
 				if location := response.Header.Get("Location"); location != "/settings" {
 					t.Fatalf("expected the completion to send the owner to /settings, got %q", location)
@@ -245,7 +244,6 @@ func TestStepupDispatchLetsAMatchingStateReachItsCompletion(t *testing.T) {
 			purpose: "erasure",
 			email:   "stepup-seam-erasure@example.com",
 			reached: func(t *testing.T, _ *stepupSeamHarness, _ models.User, response *http.Response) {
-				t.Helper()
 				assertFlashRefusal(t, response)
 				wanted := settingsErasureNeedsAccountPasswordErrorSpec().Key
 				flash := decodeFlashCookieForTest(t, responseCookie(response.Cookies(), flashCookieName).Value)
@@ -258,7 +256,6 @@ func TestStepupDispatchLetsAMatchingStateReachItsCompletion(t *testing.T) {
 			purpose: "identity link",
 			email:   "stepup-seam-link@example.com",
 			reached: func(t *testing.T, harness *stepupSeamHarness, user models.User, response *http.Response) {
-				t.Helper()
 				assertStatusCode(t, response, http.StatusSeeOther)
 				flash := responseCookie(response.Cookies(), flashCookieName)
 				if flash == nil || strings.TrimSpace(flash.Value) == "" {
