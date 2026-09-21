@@ -50,7 +50,9 @@ gh attestation verify oci://ghcr.io/ovumcy/ovumcy-web:vX.Y.Z --repo ovumcy/ovumc
 Both commands take `docker.io/ovumcy/ovumcy-web:vX.Y.Z` in place of the GHCR name. The release is
 mirrored to Docker Hub at the same digest, and no tag is written there until every GHCR tag has been
 resolved back to that digest first, so a mirrored tag that resolves at all resolves to the digest
-this repository signed.
+this repository signed. The signature is issued on Docker Hub as well, over that digest and under
+the same workflow identity, and the workflow runs the `cosign verify` command above against the
+mirror before it reports one published.
 
 A failed check means the image was not produced by this repository's release workflow. Do not run it.
 
