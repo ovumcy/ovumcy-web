@@ -294,11 +294,16 @@ func shouldShowStatsIrregularInsufficientDataNotice(user *models.User, flags Sta
 // boundary (the settings/onboarding info_cycle_short advisory fires below
 // the same value), so the logged-cycle note and the cycle-length setting
 // stay consistent.
+//
+// The 24-day value is clinical, not an engineering choice: FIGO AUB System 1
+// classifies a cycle shorter than 24 days as frequent and one longer than 38
+// days as infrequent (Munro MG et al., Int J Gynecol Obstet 2018;143:393–408).
 const shortCycleNoticeThresholdDays = 24
 
 // shortCycleNoticeMinimumOccurrences requires a repeated pattern before the
 // note shows, so a one-off short cycle (or a missed-log artifact) never
-// surfaces medical wording.
+// surfaces medical wording. The count of three is an engineering heuristic,
+// not a clinical threshold.
 const shortCycleNoticeMinimumOccurrences = 3
 
 // shouldShowStatsShortCycleNotice surfaces a soft "several recent cycles are

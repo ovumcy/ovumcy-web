@@ -242,7 +242,12 @@ func TestLongCycleGateMeasuresEveryHistoryAgainstItsOwnProjection(t *testing.T) 
 		wantProjectionLength int
 		wantOverdue          bool
 	}{
+		// The window between the projected next period (cycle day 29 of a
+		// 28-day median) and the overdue threshold (28 + 7 = 35): the gate stays
+		// open on its first and last day, so the estimate is still shown there.
+		{"four 28-day cycles, cycle day 29 (projected start passed)", []int{0, 28, 56, 84, 112}, 29, 28, false},
 		{"four 28-day cycles, cycle day 30", []int{0, 28, 56, 84, 112}, 30, 28, false},
+		{"four 28-day cycles, cycle day 35 (last day of grace)", []int{0, 28, 56, 84, 112}, 35, 28, false},
 		{"four 28-day cycles, cycle day 36", []int{0, 28, 56, 84, 112}, 36, 28, true},
 		{"three real 50-day cycles, cycle day 55", []int{0, 50, 100, 150}, 55, 50, false},
 		{"three real 50-day cycles, cycle day 58", []int{0, 50, 100, 150}, 58, 50, true},

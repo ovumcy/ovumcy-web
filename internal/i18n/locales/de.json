@@ -141,7 +141,7 @@
   "onboarding.step1.field": "Startdatum der letzten Periode",
   "onboarding.step2.title": "Zyklusparameter einrichten",
   "onboarding.step2.cycle_length": "Typische Zykluslänge",
-  "onboarding.step2.cycle_length_hint": "Bewegen Sie den Regler auf die Zykluslänge, die Sie normalerweise von einem Periodenbeginn bis zum nächsten sehen. Ein üblicher Ausgangswert liegt bei etwa 21-35 Tagen.",
+  "onboarding.step2.cycle_length_hint": "Bewegen Sie den Regler auf die Zykluslänge, die Sie normalerweise von einem Periodenbeginn bis zum nächsten sehen. Ein üblicher Bereich liegt bei etwa 24-38 Tagen.",
   "onboarding.step2.period_length": "Periodendauer",
   "onboarding.step2.period_length_hint": "Das ist die Anzahl der Tage mit tatsächlicher Blutung, nicht mit Schmierblutung davor.",
   "onboarding.step2.error_incompatible": "Die Periodendauer ist mit der Zykluslänge nicht vereinbar. Die Menstruation kann nicht fast den gesamten Zyklus einnehmen.",

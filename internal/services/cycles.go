@@ -52,7 +52,10 @@ type detectedCycle struct {
 }
 
 const (
-	cyclePredictionWindow    = 6
+	cyclePredictionWindow = 6
+	// irregularCycleSpreadDays is an engineering heuristic, not a clinical
+	// threshold: the spread between observed cycle lengths past which the
+	// prediction is treated as irregular.
 	irregularCycleSpreadDays = 7
 	defaultLutealPhaseDays   = 14
 	minLutealPhaseDays       = 10

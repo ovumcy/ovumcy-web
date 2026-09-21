@@ -27,7 +27,7 @@ const (
 
 // maxPlausibleLutealPhaseDays is the ceiling of the window the observed-luteal
 // inference filters its per-cycle samples through; the floor is
-// minLutealPhaseDays. Both ends are an engineering outlier filter, not a
+// minLutealPhaseDays. Both ends are an engineering heuristic (an outlier filter), not a
 // clinical boundary: a sample outside them is one this inference declines to
 // average, which is not evidence that the reading was wrong. Lengths at or
 // below the floor occur in ordinary cycles, so dropping a short sample says
