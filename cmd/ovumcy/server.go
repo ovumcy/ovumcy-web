@@ -280,7 +280,7 @@ func configureFiberMiddleware(app *fiber.App, config runtimeConfig, handler *api
 	// authenticated page outside /api, so the APIMax limiter above never
 	// reaches it, and it had no cap of its own at all. Keyed the same as every
 	// other authenticated-session limiter (keyGen). rateLimitOnlyFor keeps this
-	// scoped to exactly GET /calendar, the same reasoning POST /lang's mount
+	// scoped to exactly GET (and its HEAD twin) /calendar, the same reasoning POST /lang's mount
 	// above documents — /calendar/day/:date shares the prefix but not the
 	// grid-building cost this budget exists to bound, and must not spend it.
 	app.Use(limiter.New(limiter.Config{

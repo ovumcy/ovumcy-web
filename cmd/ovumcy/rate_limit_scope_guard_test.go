@@ -440,14 +440,9 @@ func calendarFeedSend(t *testing.T, app *fiber.App, method, spelling, target str
 // and /calendar/feed/<token>.ics/ polling an unauthenticated surface uncapped
 // while the sweep above stayed green, having never seen this mount at all.
 //
-// HEAD is counted because the predicate claims it, not because the deployed route
-// table answers it from ServeCalendarFeed: fiber appends a GET route's
-// auto-generated HEAD copy at serve time, after the terminal
-// app.Use(handler.NotFound), so a HEAD to any page route in the shipped app lands
-// in NotFound. That predates this change, is not feed-specific, and is pinned by
-// TestIsCalendarFeedRequestMatchesWhatFiberActuallyDispatches — what matters here
-// is that the two cookie skips act on a HEAD to this path, so the limiter reading
-// the same predicate has to charge it.
+// HEAD is counted because the predicate claims it and because the deployed route
+// table answers it: api.RegisterRoutes gives every GET route a HEAD twin running
+// the same chain, ahead of the terminal app.Use(handler.NotFound).
 func TestCalendarFeedLimiterCountsEveryRoutableSpellingAndVerbOfTheFeedURL(t *testing.T) {
 	handler, database := newRateLimitTestHandlerAndDB(t)
 	user := seedOwner(t, db.NewRepositories(database), "calendar-feed-spelling@example.com", 14)
