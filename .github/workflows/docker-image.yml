@@ -505,7 +505,10 @@ jobs:
         # change the cosign version as a side effect, and a release where
         # `copy` has been removed fails AFTER the GHCR release is public, on a
         # job no required check covers. Bumping this line is where that
-        # question gets asked.
+        # question gets asked — and where the second question is asked with
+        # it: WHERE this version attaches a signature. v3 moved that to a
+        # Sigstore bundle under the referrers API, which is why the mirror
+        # signs in place instead of expecting `copy` to carry one across.
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
           cosign-release: v3.0.6
@@ -523,6 +526,7 @@ jobs:
           push-to-registry: true
 
       - name: Verify the signature and provenance before promoting
+        id: verify
         # Signing and attesting are two API calls that reported success; this is
         # the first step that reads back what an operator would read. It runs
         # BEFORE the tags exist, so a signature that does not verify costs a red
@@ -554,8 +558,16 @@ jobs:
           esac
           repository_pattern="${GITHUB_REPOSITORY//./[.]}"
 
+          # Built once and handed on as a step output rather than spelled a
+          # second time at the mirror. The escaping above is the whole subject
+          # of this block, and a pattern rebuilt elsewhere is a second place
+          # for a dot to stay unescaped — in the one field these checks exist
+          # to pin. The mirror's check reads `steps.verify.outputs`.
+          identity_regexp="^https://github\.com/${repository_pattern}/\.github/workflows/docker-image\.yml@"
+          printf 'identity_regexp=%s\n' "$identity_regexp" >> "$GITHUB_OUTPUT"
+
           cosign verify \
-            --certificate-identity-regexp "^https://github\.com/${repository_pattern}/\.github/workflows/docker-image\.yml@" \
+            --certificate-identity-regexp "$identity_regexp" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "$IMAGE_DIGEST"
 
@@ -825,6 +837,17 @@ jobs:
       # Copying cannot, and the check below is what says so rather than
       # assuming it.
       #
+      # The copy moves the manifest and nothing else. A cosign v3 signature is
+      # a Sigstore bundle attached through the OCI 1.1 referrers API — on a
+      # registry without that API, GHCR among them, under the fallback tag
+      # `sha256-<hex>` — and `cosign copy` walks the pre-v3 `sha256-<hex>.sig`
+      # layout that this version no longer writes. So the mirror is SIGNED
+      # where it lands, over the digest GHCR already signed and under the same
+      # keyless identity, rather than expected to carry a signature across.
+      # Two Rekor entries for one digest is the cost, and it is what makes the
+      # `cosign verify docker.io/…` command SECURITY.md gives an operator
+      # answer at all.
+      #
       # Absent the publishing credential all three steps skip and GHCR
       # publishes exactly as before. The credential is deliberately NOT the
       # `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` pair above: that one exists for
@@ -846,6 +869,7 @@ jobs:
           TAG_REFS: ${{ steps.meta.outputs.tags }}
           IMAGE_NAME: ${{ steps.image.outputs.name }}
           MIRROR_NAME: docker.io/${{ steps.image.outputs.path }}
+          IDENTITY_REGEXP: ${{ steps.verify.outputs.identity_regexp }}
         run: |
           set -euo pipefail
 
@@ -881,36 +905,82 @@ jobs:
             tags+=("$tag")
           done <<< "${TAG_REFS}"
 
+          # THE MIRROR REPEATS THE ORDER THE GHCR RELEASE ABOVE FOLLOWS, and
+          # for the same reason: a red run retracts no tag. The bytes cross
+          # first UNDER NO TAG AT ALL — the destination is a digest, so Docker
+          # Hub holds the manifest with nothing pointing at it — then the
+          # mirror is signed and that signature is read back, and only then is
+          # a public alias written. Signing after the aliases would leave
+          # `latest` on a public registry that no operator can verify whenever
+          # the signing call failed, which is the defect `scripts/publishorder`
+          # exists to refuse; that it would be the mirror rather than GHCR
+          # does not make it a different defect.
+          cosign copy --force "${IMAGE_NAME}@${DIGEST}" "${MIRROR_NAME}@${DIGEST}"
+
+          # The signature does not travel with those bytes — the section
+          # comment above says why — so it is issued here, against the mirror's
+          # own name and the digest just copied. Nothing about the image is
+          # re-derived: the same content, the same digest, the same OIDC
+          # identity that signed it on GHCR.
+          cosign sign --yes "${MIRROR_NAME}@${DIGEST}"
+
+          # Read back before any alias exists, exactly as `Verify the signature
+          # and provenance before promoting` reads GHCR's back: signing is an
+          # API call that reported success, and this is what an operator
+          # following SECURITY.md actually runs. The pattern is built once, by
+          # that step, and handed here — rebuilding it would be a second place
+          # for a dot to go unescaped in the field it exists to pin.
+          if [ -z "${IDENTITY_REGEXP}" ]; then
+            echo "::error::the signer identity pattern reached this step empty, and an empty --certificate-identity-regexp accepts any signer. It comes from the \`Verify the signature and provenance before promoting\` step's outputs."
+            exit 1
+          fi
+
+          if ! cosign verify \
+            --certificate-identity-regexp "${IDENTITY_REGEXP}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "${MIRROR_NAME}@${DIGEST}"; then
+            echo "::error::${MIRROR_NAME}@${DIGEST} carries no signature this repository issued. No Docker Hub alias is written, so nothing is published there this run."
+            exit 1
+          fi
+
           # The SOURCE is a digest throughout, never a tag. A tag is a
           # mutable pointer: resolving one here would mirror whatever it names
           # by the time this step runs, which is not necessarily what was
           # signed. `--force` is what lets a moving alias — `latest`, `main` —
           # be rewritten on a later release rather than failing the run.
           #
-          # Only the FIRST tag is copied across registries. `cosign copy` walks
-          # the whole signed entity — the index, the signature, the attestation
-          # and the SBOM — on every invocation, and `--force` skips the
-          # read-back that would otherwise let an identical destination
-          # short-circuit, so four tags would mean four transfers of the same
-          # bytes. Every later tag is copied from the MIRROR's own digest,
-          # which is that same manifest by definition and lets the registry
-          # answer each blob as already present.
-          source="${IMAGE_NAME}@${DIGEST}"
+          # Every alias is copied from the MIRROR's own digest, the manifest
+          # the line above proved signed, which lets the registry answer each
+          # blob as already present rather than transferring the same bytes
+          # once per tag.
+          #
+          # These copies run AFTER the signature and do not disturb it, but
+          # only because Docker Hub serves the referrers API: `cosign copy`
+          # writes the copied manifest under `sha256-<hex>` as well as under
+          # the destination, and that is the tag a registry WITHOUT that API
+          # keeps its referrers index at — the copy would overwrite the
+          # signature's index with the image's own manifest. Moving this
+          # mirror to a registry that answers `/v2/<path>/referrers/<digest>`
+          # with a 404 means the aliases can no longer be written by `cosign
+          # copy` after the signature.
           for tag in "${tags[@]}"; do
-            cosign copy --force "${source}" "${MIRROR_NAME}:${tag}"
-            echo "${MIRROR_NAME}:${tag} <- ${source}"
-            source="${MIRROR_NAME}@${DIGEST}"
+            cosign copy --force "${MIRROR_NAME}@${DIGEST}" "${MIRROR_NAME}:${tag}"
+            echo "${MIRROR_NAME}:${tag} <- ${MIRROR_NAME}@${DIGEST}"
           done
 
       - name: Verify every mirrored tag anonymously and against the signed digest
-        # The same two questions the GHCR check asks, asked of the other
+        # The same question the GHCR alias check asks, asked of the other
         # registry, because an answer from GHCR is not an answer about Docker
-        # Hub. The signature object is checked for by name as well: it is what
-        # `cosign copy` carries beyond the manifest, and its absence would
-        # leave `cosign verify docker.io/...` failing for every operator who
-        # follows SECURITY.md while this run reported a mirror published.
+        # Hub: every alias resolving anonymously, and resolving to the digest
+        # this run signed.
         #
-        # The provenance attestation is not re-verified here. It is served by
+        # The signature is NOT asked for here. The mirror step signs the
+        # digest and reads that signature back before it writes the first
+        # alias, which is the order GHCR's own release follows — a check
+        # placed after the aliases exist could only report on a mirror already
+        # public.
+        #
+        # The provenance attestation is not re-verified here either. It is served by
         # GitHub against the DIGEST and the repository, not by the registry the
         # image is read from, and the digest is the one this step proves
         # identical — so `gh attestation verify` on the mirror would
@@ -959,23 +1029,6 @@ jobs:
           if [ -z "$token" ]; then
             echo "::error::Anonymous Docker Hub token response for ${MIRROR_NAME} did not include a bearer token."
             cat "$token_body"
-            exit 1
-          fi
-
-          # Cosign stores a digest's signature under a tag derived from that
-          # digest, so this asks for the one object `cosign copy` adds beyond
-          # the manifest itself. Checked once rather than per tag: every tag
-          # below is about to be proved to be this digest.
-          signature_status="$(
-            curl -sS --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors \
-              -o /dev/null -w '%{http_code}' -I \
-              -H "Authorization: Bearer ${token}" \
-              -H "Accept: ${MANIFEST_ACCEPT}" \
-              "https://registry-1.docker.io/v2/${IMAGE_PATH}/manifests/${DIGEST/:/-}.sig"
-          )"
-
-          if [ "$signature_status" != "200" ]; then
-            echo "::error::the signature for ${DIGEST} is not on Docker Hub (HTTP ${signature_status}); the mirrored image cannot be verified there however green this run is."
             exit 1
           fi
 

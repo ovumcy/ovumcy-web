@@ -274,9 +274,11 @@ Tagged releases from `v0.7.1` onward publish under the GHCR namespace `ghcr.io/o
 
 The same image is mirrored to Docker Hub as `docker.io/ovumcy/ovumcy-web`, under the same tags and
 at the same digest: the mirror is a copy of the signed manifest, not a second build. Substitute that
-name into any command below to pull or verify what Docker Hub serves — the signature travels with
-the copy, and the build provenance is issued against the digest rather than against a registry, so
-both answer to the same checks.
+name into any command below to pull or verify what Docker Hub serves. The mirror is signed on Docker
+Hub itself, by the same workflow identity and over that same digest, and the build provenance is
+issued against the digest rather than against a registry — so both registries answer to the same
+checks, and the release workflow refuses to report a mirror published until it has run the signature
+check below against Docker Hub.
 
 **Verify the image before running (recommended).** Every published image is Cosign-signed (keyless, via GitHub Actions OIDC — no long-lived signing key), carries a SLSA build-provenance attestation, and ships an SBOM attached at build time. To verify a tagged release (needs [`cosign`](https://docs.sigstore.dev/cosign/installation/) and the [`gh`](https://cli.github.com/) CLI):
 
