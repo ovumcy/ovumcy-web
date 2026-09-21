@@ -11,6 +11,7 @@ package services
 // than two surfaces.
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -251,6 +252,69 @@ func impossibleOvulationFeedFixture(t *testing.T) (*models.User, []models.DailyL
 		logs = append(logs, outboundBBTLog(t, user.ID, day, 36.50))
 	}
 	return user, logs, mustParseDashboardDay(t, "2026-03-16")
+}
+
+// TestResolveFeedPublishesTheConfirmedDayOnTheOwnersCalendarDay drives the
+// confirmed day through the request-free path a calendar client takes, where
+// "today" comes from users.timezone rather than from any request. The owner is
+// in Pacific/Kiritimati (UTC+14) and polls at 2026-03-13 12:00 UTC, which is
+// already 02:00 on 2026-03-14 for her — the day the third elevated reading is
+// dated. On her calendar the shift is confirmed; on the server's it is not yet,
+// so the day appears only when the whole decision runs on her calendar day.
+func TestResolveFeedPublishesTheConfirmedDayOnTheOwnersCalendarDay(t *testing.T) {
+	kiritimati, err := time.LoadLocation("Pacific/Kiritimati")
+	if err != nil {
+		t.Fatalf("load Pacific/Kiritimati: %v", err)
+	}
+	now := time.Date(2026, time.March, 13, 12, 0, 0, 0, time.UTC)
+	const confirmedEvent = "DTSTART;VALUE=DATE:20260311"
+
+	fixtureUser, fixtureLogs, _ := outboundConfirmedFixture(t, true)
+	// The day repository hands back each log dated at local midnight in the
+	// zone it was asked for, so the fixture's days are re-homed into the
+	// owner's zone rather than left at UTC midnight.
+	ownerLogs := make([]models.DailyLog, 0, len(fixtureLogs))
+	for _, log := range fixtureLogs {
+		year, month, day := log.Date.Date()
+		log.Date = time.Date(year, month, day, 0, 0, 0, 0, kiritimati)
+		ownerLogs = append(ownerLogs, log)
+	}
+
+	owner, token := armedFeedUser(t, 71, "2026-03-01")
+	owner.TrackBBT = fixtureUser.TrackBBT
+	owner.Timezone = "Pacific/Kiritimati"
+	svc, _, days := newFeedServiceForTest(owner, ownerLogs)
+
+	body, ok, err := svc.ResolveFeed(context.Background(), token, now, time.UTC)
+	if err != nil || !ok {
+		t.Fatalf("expected the feed to resolve: ok=%v err=%v", ok, err)
+	}
+	if y, m, d := days.requestedTo.Date(); y != 2026 || m != time.March || d != 14 {
+		t.Fatalf("test setup: the owner's today must be 2026-03-14, got %04d-%02d-%02d", y, m, d)
+	}
+	if !strings.Contains(string(body), confirmedEvent) || countUID(feedEventUIDs(string(body)), "ovulation-20260311@ovumcy") != 1 {
+		t.Fatalf("the owner-zone feed must carry the confirmed day once (%s), got:\n%s", confirmedEvent, body)
+	}
+
+	// Control: the same instant on the server's calendar, where 2026-03-14 has
+	// not begun. The log read stops at that day, so the third elevated reading
+	// is not there yet and nothing is confirmed.
+	fallbackOwner := owner
+	fallbackOwner.Timezone = ""
+	serverLogs := make([]models.DailyLog, 0, len(fixtureLogs))
+	for _, log := range fixtureLogs {
+		if !log.Date.After(mustParseDashboardDay(t, "2026-03-13")) {
+			serverLogs = append(serverLogs, log)
+		}
+	}
+	fallbackSvc, _, _ := newFeedServiceForTest(fallbackOwner, serverLogs)
+	serverBody, ok, err := fallbackSvc.ResolveFeed(context.Background(), token, now, time.UTC)
+	if err != nil || !ok {
+		t.Fatalf("expected the server-zone feed to resolve: ok=%v err=%v", ok, err)
+	}
+	if strings.Contains(string(serverBody), confirmedEvent) {
+		t.Fatalf("control: on the server's 2026-03-13 the shift is not confirmed yet, got:\n%s", serverBody)
+	}
 }
 
 // TestEverySurfaceAgreesOnTheConfirmedDayIncludingTheFeed asks the JSON API,

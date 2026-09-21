@@ -12,8 +12,9 @@ import (
 // Calendar (.ics) feed builder (issue #126-replacement / .ics, slice 3). This
 // file is the PURE, transport-free RFC 5545 builder: given an owner, their day
 // logs, an injected now/location, and the localized medical-safety disclaimer,
-// it renders a read-only text/calendar body of the owner's upcoming cycle
-// events. It performs NO transport, NO auth, and NO persistence — the api layer
+// it renders a read-only text/calendar body of the owner's estimated period and
+// ovulation days: the projections plus the current cycle's temperature-confirmed
+// ovulation day. It performs NO transport, NO auth, and NO persistence — the api layer
 // owns token resolution, headers, and rate-limiting.
 //
 // Medical-safety invariant (same as the webhook reminder decision): it reuses

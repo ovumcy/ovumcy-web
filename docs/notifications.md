@@ -520,6 +520,11 @@ The feed is **read-only**: nothing a calendar app does can write back into
 Ovumcy through it. It is scoped to the single owner who generated it, exactly
 like every other per-day and per-account resource in Ovumcy.
 
+Turning the feed off, rotating the link or clearing your data stops the
+calendar app from fetching anything new, but the app keeps the last copy it
+fetched. That copy can include a past, temperature-confirmed ovulation day. To
+remove those events, also delete the subscription in the calendar app itself.
+
 ### Security rationale (brief)
 
 The subscribe URL itself is the credential — a calendar client sends no
