@@ -64,6 +64,9 @@ pushing (a stale `coverage.out` gives a false pass, so don't run
 go run ./cmd/ovumcy
 ```
 
+It listens on `PORT` (default `8080`) on every interface; `HOST_BIND_ADDRESS`
+applies to compose only. On a machine others can reach, firewall the port.
+
 ## Reporting Bugs
 
 Before opening a bug, check existing issues:

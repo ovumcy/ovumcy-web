@@ -74,7 +74,7 @@ Use the repository root `docker-compose.yml` for localhost, LAN, or other privat
 
 - `HOST_BIND_ADDRESS=127.0.0.1` is the safe default: compose publishes the app's port on host loopback only.
 - If you intentionally want base-compose access from a private LAN, set `HOST_BIND_ADDRESS` to the specific private host IP you control before starting the stack.
-- `HOST_BIND_ADDRESS` is read by `docker-compose.yml` alone, as the host side of the port publish; the app never reads it. Inside the container, and whenever you run the binary or `go run ./cmd/ovumcy` directly, the server listens on `PORT` on **every interface**, and no variable narrows that. On a direct run, keep the port off the network with a host firewall; with a plain `docker run`, publish it as `-p 127.0.0.1:8080:8080`, not `-p 8080:8080`.
+- `HOST_BIND_ADDRESS` is read by `docker-compose.yml` alone, as the host side of the port publish; the app never reads it. Inside the container, and whenever you run the binary or `go run ./cmd/ovumcy` directly, the server listens on `PORT` on **every interface**, and no variable narrows that. On a direct run, keep the port off the network with a host firewall; with a plain `docker run`, publish it as `-p 127.0.0.1:8080:8080`, not `-p 8080:8080` (both `8080`s follow `PORT`).
 - `COOKIE_SECURE=false` unless you terminate HTTPS before the app.
 - `TRUST_PROXY_ENABLED=false` unless you have explicitly placed Ovumcy behind your own trusted proxy.
 - `PORT=8080` is the internal app port and is also used for the host publish target in the base compose path.
