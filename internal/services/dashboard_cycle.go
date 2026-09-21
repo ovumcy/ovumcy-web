@@ -356,6 +356,10 @@ func ResolvePredictionSuppression(user *models.User, stats CycleStats) Predictio
 	return verdict
 }
 
+// DashboardCycleDayLooksLong reports a cycle day more than seven days past the
+// reference length. The seven-day grace is an engineering heuristic, not a
+// clinical threshold: it is the point past which a projection stops being
+// shown, never a statement about the owner's body.
 func DashboardCycleDayLooksLong(currentDay int, referenceLength int) bool {
 	if currentDay <= 0 || referenceLength <= 0 {
 		return false

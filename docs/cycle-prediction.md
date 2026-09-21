@@ -40,7 +40,7 @@ expected period.
 | Constant | Value | Role |
 |----------|-------|------|
 | `defaultLutealPhaseDays` | 14 | Default luteal phase, used when it is not refined from logged signals |
-| `minLutealPhaseDays` | 10 | Lower clamp for the luteal phase |
+| `minLutealPhaseDays` | 10 | Lower clamp for the luteal phase (engineering heuristic, not a clinical boundary) |
 | `minOvulationCycleDay` | 5 | Ovulation may not fall before cycle day 5 |
 | (min cycle for a prediction) | 15 | `minLutealPhaseDays + minOvulationCycleDay` |
 
@@ -373,12 +373,29 @@ whether they reach a surface, never what they are.
   intended behaviour of an estimator revising on new evidence, not a regression:
   the model deliberately re-estimates cycle length instead of holding it fixed.
 
+- **Which thresholds are clinical and which are engineering heuristics.** Only
+  one threshold is taken from a clinical classification: the 24-day boundary
+  behind the short-cycle note on the stats page (FIGO AUB System 1: a cycle
+  shorter than 24 days is *frequent*, one longer than 38 days *infrequent*; see
+  below). The onboarding hint's "about 24-38 days" quotes the same range. The
+  following are engineering heuristics, chosen for display safety and not
+  clinical boundaries: the 10–20 day window the luteal inference filters its
+  samples through, the seven days past the reference length after which a
+  cycle counts as overdue and projections pause, the seven-day spread between
+  cycle lengths past which predictions are treated as irregular, and the
+  minimum of three cycles before a pattern note (short, long or irregular)
+  appears.
+
 ## Physiological basis
 
 The ~14-day luteal phase and the "6-day fertile window ending at ovulation" are
 standard reproductive-physiology concepts (e.g. the fertile-window work of
 Wilcox et al., *NEJM* 1995). ovumcy applies them as a transparent calendar
 estimate, nothing more.
+
+The 24-day short-cycle boundary follows the FIGO AUB System 1 normal range for
+cycle frequency, 24–38 days (Munro MG et al., *Int J Gynecol Obstet*
+2018;143:393–408).
 
 ## Verifying this document
 

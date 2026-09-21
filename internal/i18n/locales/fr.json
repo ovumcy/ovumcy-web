@@ -152,7 +152,7 @@
   "onboarding.step1.field": "Date de début des dernières règles",
   "onboarding.step2.title": "Configurer les paramètres du cycle",
   "onboarding.step2.cycle_length": "Durée habituelle du cycle",
-  "onboarding.step2.cycle_length_hint": "Déplacez le curseur jusqu'à la durée de cycle que vous observez habituellement d'un début de règles au suivant. Une base courante est d'environ 21 à 35 jours.",
+  "onboarding.step2.cycle_length_hint": "Déplacez le curseur jusqu'à la durée de cycle que vous observez habituellement d'un début de règles au suivant. Une plage courante est d'environ 24 à 38 jours.",
   "onboarding.step2.period_length": "Durée des règles",
   "onboarding.step2.period_length_hint": "C'est le nombre de jours avec un flux réel, sans compter les légères pertes avant le début.",
   "onboarding.step2.error_incompatible": "La durée des règles est incompatible avec la durée du cycle. Les menstruations ne peuvent pas occuper presque tout le cycle.",

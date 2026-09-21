@@ -141,7 +141,7 @@
   "onboarding.step1.field": "Data di inizio dell'ultimo ciclo",
   "onboarding.step2.title": "Imposta i parametri del ciclo",
   "onboarding.step2.cycle_length": "Lunghezza tipica del ciclo",
-  "onboarding.step2.cycle_length_hint": "Sposta il cursore sulla lunghezza del ciclo che vedi di solito da un inizio del periodo al successivo. Una base comune è circa 21-35 giorni.",
+  "onboarding.step2.cycle_length_hint": "Sposta il cursore sulla lunghezza del ciclo che vedi di solito da un inizio del periodo al successivo. Un intervallo comune è di circa 24-38 giorni.",
   "onboarding.step2.period_length": "Durata del periodo",
   "onboarding.step2.period_length_hint": "Questo è il numero di giorni con flusso effettivo, non le perdite prima dell'inizio.",
   "onboarding.step2.error_incompatible": "La durata del periodo è incompatibile con la lunghezza del ciclo. La mestruazione non può occupare quasi tutto il ciclo.",

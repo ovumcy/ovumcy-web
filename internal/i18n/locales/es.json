@@ -141,7 +141,7 @@
   "onboarding.step1.field": "Fecha de inicio del último periodo",
   "onboarding.step2.title": "Configura los parámetros del ciclo",
   "onboarding.step2.cycle_length": "Duración habitual del ciclo",
-  "onboarding.step2.cycle_length_hint": "Mueve el control hasta la duración que sueles ver entre el inicio de un periodo y el siguiente. Un rango de referencia habitual es de unos 21-35 días.",
+  "onboarding.step2.cycle_length_hint": "Mueve el control hasta la duración que sueles ver entre el inicio de un periodo y el siguiente. Un rango habitual es de unos 24-38 días.",
   "onboarding.step2.period_length": "Duración del periodo",
   "onboarding.step2.period_length_hint": "Indica los días con flujo menstrual real, no el manchado previo.",
   "onboarding.step2.error_incompatible": "La duración del periodo es incompatible con la duración del ciclo. La menstruación no puede ocupar casi todo el ciclo.",

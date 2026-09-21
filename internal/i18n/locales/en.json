@@ -141,7 +141,7 @@
   "onboarding.step1.field": "Last period start date",
   "onboarding.step2.title": "Set up cycle parameters",
   "onboarding.step2.cycle_length": "Typical cycle length",
-  "onboarding.step2.cycle_length_hint": "Move the slider to the cycle length you usually see from one period start to the next. A common baseline is about 21-35 days.",
+  "onboarding.step2.cycle_length_hint": "Move the slider to the cycle length you usually see from one period start to the next. A common range is about 24-38 days.",
   "onboarding.step2.period_length": "Period duration",
   "onboarding.step2.period_length_hint": "This is the number of days with actual period flow, not spotting before it starts.",
   "onboarding.step2.error_incompatible": "Period duration is incompatible with cycle length. Menstruation cannot take up almost the whole cycle.",
