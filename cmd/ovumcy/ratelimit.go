@@ -178,8 +178,6 @@ func rateLimitScope(c fiber.Ctx) string {
 		return "settings"
 	case isV1AuthPath(path), strings.HasPrefix(path, "/auth/oidc"):
 		return "auth"
-	case path == "/calendar":
-		return "calendar"
 	default:
 		return "api"
 	}
