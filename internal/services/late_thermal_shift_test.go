@@ -2,10 +2,11 @@ package services
 
 // late_thermal_shift_test.go — a thermal shift that lands after the model's
 // projected next-period start is still an event of the CURRENT cycle, and every
-// surface reading the shared resolver must confirm it. The two surfaces that
-// leave the instance (the .ics feed and the webhook reminder) are not among
-// them: they announce projections, and which projection they hold once today
-// has passed the projected start is their anchor's business.
+// surface reading the shared resolver must confirm it. The webhook reminder is
+// not among them: it announces projections, and which projection it holds once
+// today has passed the projected start is its anchor's business. The .ics feed
+// publishes the confirmed day beside its projections; its cohort comparison is
+// in calendar_feed_confirmed_ovulation_test.go.
 
 import (
 	"testing"

@@ -3,9 +3,10 @@ package services
 // outbound_confirmed_ovulation_test.go — the two surfaces that leave the
 // instance stop announcing an ovulation the temperatures have already answered.
 //
-// The on-screen surfaces replace the projected day with the confirmed one. The
-// .ics feed and the webhook reminder cannot: both exist to announce a day still
-// ahead. Left alone they kept publishing the projection, so on the projected day
+// The on-screen surfaces replace the projected day with the confirmed one, and
+// the .ics feed now does too, as an event of its own. The webhook reminder
+// cannot: it exists to announce a day still ahead. Left alone both egress
+// surfaces kept publishing the projection, so on the projected day
 // itself the owner read the confirmed day on the dashboard and the grid and the
 // projected day in a subscribed calendar and in a payload leaving the instance —
 // two dates for one shift, at the moment the gap between them is largest.
@@ -143,6 +144,10 @@ func TestCalendarFeedWithholdsAnOvulationTheTemperaturesHaveAnswered(t *testing.
 	}))
 	if strings.Contains(body, "DTSTART;VALUE=DATE:20260314") {
 		t.Fatalf("the feed published the projected ovulation the shift superseded:\n%s", body)
+	}
+	// The measured day takes the projection's place, under the same UID kind.
+	if !strings.Contains(body, "UID:ovulation-20260311@ovumcy") {
+		t.Fatalf("the feed must publish the confirmed ovulation 2026-03-11:\n%s", body)
 	}
 	// The bound, on the surface rather than on the helper: the next projected
 	// cycle's ovulation still ships, so this is a superseded day dropped and not

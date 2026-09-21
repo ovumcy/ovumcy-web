@@ -8,7 +8,9 @@
   once per cycle for as long as the cycle stayed open. The `.ics` feed pushed up to three cycles of
   invented period and ovulation events into subscribed calendar clients, where they outlive any
   correction made in the app. The calendar grid shaded a predicted period in the past — on days that
-  came and went with no period logged — and phantom fertile windows ahead of it. All three now stay
-  quiet for an overdue cycle, exactly as the dashboard already does; logged days, their markers and
+  came and went with no period logged — and phantom fertile windows ahead of it. All three now stop
+  projecting for an overdue cycle, exactly as the dashboard already does; a temperature-confirmed
+  ovulation day is recorded rather than projected, and the grid and the feed keep showing it as the
+  dashboard does. Logged days, their markers and
   the calendar subscription itself are untouched. When the new cycle start is finally logged, the
   next reminder fires once, on time.
