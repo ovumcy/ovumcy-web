@@ -134,7 +134,7 @@ func statsOverviewStates() []statsOverviewState {
 			history: []int{444, 416, 388, 360, 60},
 			seed: func(t *testing.T, database *gorm.DB, user models.User, today time.Time) {
 				// The onboarding anchor the fixture account carries is newer than
-				// the logged starts and would stay active (services-cycle.md), so
+				// the logged starts and would stay active, so
 				// the running cycle has to be anchored on the start this history
 				// is about — otherwise the case is about cycle day 6.
 				updateStatsOverviewUser(t, database, user, map[string]any{
