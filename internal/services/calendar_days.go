@@ -408,10 +408,7 @@ func appendPredictedCycles(predictedPeriodMap map[string]bool, preFertileMap map
 	// cycle falling exactly on the last grid day reads as past the grid and its
 	// markers are never painted.
 	cycleStart := CalendarDay(stats.NextPeriodStart, location)
-	for cycles := 0; CalendarDaysBetween(cycleStart, gridEnd) >= 0; cycles++ {
-		if cycles >= maxProjectedCyclesInGrid {
-			break
-		}
+	for cycles := 0; cycles < maxProjectedCyclesInGrid && CalendarDaysBetween(cycleStart, gridEnd) >= 0; cycles++ {
 		appendPredictedPeriod(predictedPeriodMap, cycleStart, predictedPeriodLength)
 		if includeFertility {
 			appendPredictedWindow(preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, cycleStart, predictedCycleLength, predictedPeriodLength, stats.LutealPhase, location)

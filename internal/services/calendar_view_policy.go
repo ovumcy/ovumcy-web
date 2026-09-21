@@ -19,8 +19,8 @@ var ErrCalendarMonthInvalid = errors.New("calendar invalid month")
 // appendPredictedCycles, whose loop chains forward from "now" to the requested
 // grid one cycle at a time — cost proportional to the distance between the two,
 // unbounded by request size. Clamping the month here keeps that distance
-// bounded for every caller of this function; forEachCalendarDay also gained its
-// own hard cap as defense-in-depth (calendar_days.go).
+// bounded for every caller of this function; appendPredictedCycles also gained
+// its own hard cap as defense-in-depth (calendar_days.go).
 func ResolveCalendarMonthAndSelectedDateWithinBounds(monthQueryRaw string, selectedDayRaw string, now time.Time, location *time.Location, minMonth time.Time, maxMonth time.Time) (time.Time, string, error) {
 	if location == nil {
 		location = time.UTC
