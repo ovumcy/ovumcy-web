@@ -865,10 +865,11 @@ jobs:
         # `VERIFY_ATTEMPTS`/`VERIFY_DELAY_SECONDS` bound how long the read-back
         # waits for Docker Hub's referrers listing to catch up with the
         # signature just pushed to it; the comment at that line carries the
-        # measurement. They are constants rather than expressions because
-        # `scripts/publishorder` runs this script for real and drives the delay
-        # to zero — and they sit outside the `env:` block below because the
-        # reader that hands the fixture those constants stops at a comment.
+        # measurement. They are literal constants rather than expressions for
+        # two reasons: `scripts/publishorder` runs this script for real and has
+        # to drive the delay to zero, and it reads these two off the block
+        # below to hold the SHIPPED budget to more than one attempt — which a
+        # fixture supplying its own number cannot do.
         if: ${{ env.DOCKERHUB_PUBLISH_USERNAME != '' }}
         shell: bash
         env:
@@ -966,16 +967,38 @@ jobs:
           #
           # Waiting is the whole of the change: a signature that never appears
           # still fails this step, and no alias is written when it does.
+          verify_log="$(mktemp)"
+          trap 'rm -f "$verify_log"' EXIT
+
           attempt=1
-          until cosign verify \
-            --certificate-identity-regexp "${IDENTITY_REGEXP}" \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            "${MIRROR_NAME}@${DIGEST}"; do
+          while true; do
+            if cosign verify \
+              --certificate-identity-regexp "${IDENTITY_REGEXP}" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              "${MIRROR_NAME}@${DIGEST}" > "$verify_log" 2>&1; then
+              cat "$verify_log"
+              break
+            fi
+            cat "$verify_log"
+
+            # ONE verdict is worth asking again about. `no signatures found`
+            # is cosign saying the referrers listing holds nothing for this
+            # digest YET. Every other refusal is an answer — an identity that
+            # does not match, a certificate issued to someone else, a
+            # transport error — and retrying it would spend the whole budget
+            # and then report an absence, which is not what was found. A
+            # mirror signed by a stranger must not read like a slow registry.
+            if ! grep -q 'no signatures found' "$verify_log"; then
+              echo "::error::${MIRROR_NAME}@${DIGEST} did not verify against this repository's signer identity, and the refusal is not a missing signature — the cosign output above says what it is. No Docker Hub alias is written, so nothing is published there this run."
+              exit 1
+            fi
+
             if [ "${attempt}" -ge "${VERIFY_ATTEMPTS}" ]; then
               echo "::error::${MIRROR_NAME}@${DIGEST} carries no signature this repository issued, over ${VERIFY_ATTEMPTS} attempts spanning $(( (VERIFY_ATTEMPTS - 1) * VERIFY_DELAY_SECONDS ))s. No Docker Hub alias is written, so nothing is published there this run."
               exit 1
             fi
-            echo "attempt ${attempt} of ${VERIFY_ATTEMPTS} found no signature on ${MIRROR_NAME}@${DIGEST}; waiting ${VERIFY_DELAY_SECONDS}s for the referrers listing."
+
+            echo "attempt ${attempt} of ${VERIFY_ATTEMPTS} found no signature listed for ${MIRROR_NAME}@${DIGEST}; waiting ${VERIFY_DELAY_SECONDS}s."
             attempt=$(( attempt + 1 ))
             sleep "${VERIFY_DELAY_SECONDS}"
           done

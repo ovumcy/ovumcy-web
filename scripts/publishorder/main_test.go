@@ -164,6 +164,13 @@ const (
 	// and a fixture that took the number off the workflow would agree with
 	// whatever that number became — including zero, which is no waiting at all.
 	verifyAttempts = 3
+
+	// What cosign prints when the registry holds no signature for the digest
+	// YET — the one refusal the step may ask about again. Spelled here as
+	// cosign spells it (`ErrNoSignaturesFound`, `pkg/cosign/verify.go`),
+	// because the step greps for it and a fixture inventing its own wording
+	// would prove the retry works on a string nothing ever emits.
+	listingNotReady = "no signatures found"
 )
 
 // TestNoPublicTagIsCreatedBeforeTheSignature is the order rule. It is written
@@ -334,10 +341,16 @@ func TestTheMirrorCopiesTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 	// there at all" reach this step as the same verdict and are told apart
 	// only by asking again; a fixture that could not distinguish them would
 	// pass a step that waits forever and a step that does not wait at all.
-	preamble := func(verifyFailures int) string {
+	//
+	// `failureMessage` is what cosign PRINTS when it refuses, and it decides
+	// whether the step may ask again at all: only a missing listing earns a
+	// retry. A shim that refused silently would let a step retry every
+	// refusal and still read green here.
+	preamble := func(verifyFailures int, failureMessage string) string {
 		return `n=0` + "\n" +
-			`cosign() { printf 'COSIGN %s\n' "$*" >&2; if [ "$1" = verify ]; then n=$(( n + 1 )); [ "$n" -gt ` +
-			strconv.Itoa(verifyFailures) + ` ]; fi; }`
+			`cosign() { printf 'COSIGN %s\n' "$*" >&2; if [ "$1" = verify ]; then n=$(( n + 1 )); ` +
+			`if [ "$n" -gt ` + strconv.Itoa(verifyFailures) + ` ]; then return 0; fi; ` +
+			`printf '%s\n' ` + shellQuote(failureMessage) + ` >&2; return 1; fi; }`
 	}
 
 	for _, testCase := range []struct {
@@ -352,6 +365,13 @@ func TestTheMirrorCopiesTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 		// refuses before it answers. Below `verifyAttempts` the step must
 		// wait it out and publish; at or above it the step must refuse.
 		verifyFailures int
+		// failureMessage is what those refusals print. The zero value is the
+		// listing-not-ready verdict, the only one a retry is for.
+		failureMessage string
+		// wantVerifyCalls, when set, is exactly how many times `cosign verify`
+		// may run. It is what separates waiting from retrying blindly: a
+		// refusal that is an ANSWER must be asked once and no more.
+		wantVerifyCalls int
 		// wantCosign is the ORDERED sequence of invocations. Order is the
 		// property, not a detail of it: an alias written before the signature
 		// is read back is a public tag on a registry nobody can verify for as
@@ -414,6 +434,19 @@ func TestTheMirrorCopiesTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 			wantRefusal:    "carries no signature this repository issued",
 		},
 		{
+			// A refusal that is an ANSWER. cosign found something and would
+			// not accept it, which the budget cannot change: asking again
+			// spends the whole wait and then reports an absence, so a mirror
+			// signed by a stranger would reach the log wearing the wording a
+			// slow registry produces. Asked once, refused on its own terms.
+			name:            "the mirror is signed by an identity this repository did not issue",
+			tagRefs:         imageName + ":v2.0.0",
+			verifyFailures:  verifyAttempts * 10,
+			failureMessage:  "none of the signatures were verified against the certificate identity",
+			wantVerifyCalls: 1,
+			wantRefusal:     "did not verify against this repository's signer identity",
+		},
+		{
 			// The same list the promotion and the public check refuse, refused
 			// here for the same reason and before the first copy: a foreign
 			// reference found halfway would leave the mirror holding the tags
@@ -446,7 +479,12 @@ func TestTheMirrorCopiesTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 				identity = ""
 			}
 
-			command := exec.Command(bash, "-c", preamble(testCase.verifyFailures)+"\n"+script)
+			failureMessage := testCase.failureMessage
+			if failureMessage == "" {
+				failureMessage = listingNotReady
+			}
+
+			command := exec.Command(bash, "-c", preamble(testCase.verifyFailures, failureMessage)+"\n"+script)
 			command.Env = append(os.Environ(),
 				"DIGEST="+digest,
 				"TAG_REFS="+testCase.tagRefs,
@@ -457,11 +495,20 @@ func TestTheMirrorCopiesTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 				// the real one waits minutes on purpose. The DELAY is what a
 				// test cannot afford, and driving it to zero is why these are
 				// plain constants in the step's `env:` rather than an
-				// expression nothing local can override.
+				// expression nothing local can override. What the SHIPPED
+				// numbers must be is
+				// `TestTheShippedReadBackBudgetActuallyWaits`'s subject.
 				"VERIFY_ATTEMPTS="+strconv.Itoa(verifyAttempts),
 				"VERIFY_DELAY_SECONDS=0",
 			)
 			output, err := command.CombinedOutput()
+
+			if testCase.wantVerifyCalls > 0 {
+				if got := strings.Count(string(output), "COSIGN verify "); got != testCase.wantVerifyCalls {
+					t.Errorf("the step ran `cosign verify` %d time(s), want %d — a refusal that is an answer must not be asked again:\n%s",
+						got, testCase.wantVerifyCalls, output)
+				}
+			}
 
 			if testCase.wantRefusal != "" {
 				if err == nil {
@@ -493,6 +540,52 @@ func TestTheMirrorCopiesTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 				t.Fatalf("the step failed on %q: %v\n%s", testCase.tagRefs, err, output)
 			}
 			requireOrderedLines(t, string(output), testCase.wantCosign)
+		})
+	}
+}
+
+// TestTheShippedReadBackBudgetActuallyWaits judges the numbers the workflow
+// ITSELF carries, which every fixture above overrides and therefore none of
+// them can speak for. The defect it refuses is a quiet one: `VERIFY_ATTEMPTS`
+// trimmed to 1 restores the one-shot read-back that lost the race against
+// Docker Hub's referrers listing on run 35606394489, and the whole package
+// stays green, because each case hands the step a budget of its own.
+//
+// The floor is "more than once, and with a pause worth having" rather than a
+// figure copied off the workflow — a bound restating the value it guards
+// agrees with whatever that value becomes.
+func TestTheShippedReadBackBudgetActuallyWaits(t *testing.T) {
+	job := workflowfile.Job(t, publishWorkflow, publishJob)
+	env := declaredEnv(t, job, mirrorStep)
+
+	for _, knob := range []struct {
+		name    string
+		atLeast int
+		why     string
+	}{
+		{
+			name:    "VERIFY_ATTEMPTS",
+			atLeast: 2,
+			why:     "one attempt is the one-shot check that asked before the listing existed",
+		},
+		{
+			name:    "VERIFY_DELAY_SECONDS",
+			atLeast: 1,
+			why:     "a zero pause spends the attempts inside the same second and waits for nothing",
+		},
+	} {
+		t.Run(knob.name, func(t *testing.T) {
+			raw, ok := env[knob.name]
+			if !ok {
+				t.Fatalf("the mirror step declares no %s, so the read-back's budget is whatever `set -u` refuses. Declared: %v", knob.name, env)
+			}
+			value, err := strconv.Atoi(strings.TrimSpace(raw))
+			if err != nil {
+				t.Fatalf("%s is %q, which the step compares numerically: %v", knob.name, raw, err)
+			}
+			if value < knob.atLeast {
+				t.Errorf("the mirror step ships %s=%d, want at least %d — %s", knob.name, value, knob.atLeast, knob.why)
+			}
 		})
 	}
 }
