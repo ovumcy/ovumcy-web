@@ -171,6 +171,10 @@ func TestCalendarMaximumNavigableMonth(t *testing.T) {
 	if maxMonth.Format("2006-01-02") != "2029-03-01" {
 		t.Fatalf("expected maximum month 2029-03-01, got %s", maxMonth.Format("2006-01-02"))
 	}
+
+	if nilLocation := CalendarMaximumNavigableMonth(now, nil); !nilLocation.Equal(maxMonth) {
+		t.Fatalf("expected a nil location to resolve as UTC (%s), got %s", maxMonth, nilLocation)
+	}
 }
 
 // With a zero minMonth there is no lower bound, so the previous month is always
