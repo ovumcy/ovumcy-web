@@ -134,7 +134,7 @@ func (handler *Handler) VerifyTOTP2FAEnrollment(c fiber.Ctx) error {
 
 	if isHTMX(c) {
 		messages := currentMessages(c)
-		return c.Status(fiber.StatusOK).SendString(
+		return sendHTMLFragment(c.Status(fiber.StatusOK),
 			htmxDismissibleSuccessStatusMarkup(messages, translateMessage(messages, "settings.2fa.enabled_status")),
 		)
 	}
@@ -207,7 +207,7 @@ func (handler *Handler) DisableTOTP2FA(c fiber.Ctx) error {
 
 	if isHTMX(c) {
 		messages := currentMessages(c)
-		return c.Status(fiber.StatusOK).SendString(
+		return sendHTMLFragment(c.Status(fiber.StatusOK),
 			htmxDismissibleSuccessStatusMarkup(messages, translateMessage(messages, "settings.2fa.disabled_status")),
 		)
 	}

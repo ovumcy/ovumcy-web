@@ -722,3 +722,108 @@ func TestRespondAuthRateLimitedFallsBackThroughAuthFlash(t *testing.T) {
 		t.Fatalf("expected flash auth_error %q, got %q", "too many login attempts", payload.AuthError)
 	}
 }
+
+// sendStringCallsOutsideHTMLFragmentHelper reports every SendString call in
+// the parsed file that is not inside sendHTMLFragment, as file:line.
+func sendStringCallsOutsideHTMLFragmentHelper(fileSet *token.FileSet, parsed *ast.File) []string {
+	var offenders []string
+	for _, decl := range parsed.Decls {
+		funcDecl, isFunc := decl.(*ast.FuncDecl)
+		if isFunc && funcDecl.Recv == nil && funcDecl.Name.Name == "sendHTMLFragment" {
+			continue
+		}
+		ast.Inspect(decl, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			if selector, ok := call.Fun.(*ast.SelectorExpr); ok && selector.Sel.Name == "SendString" {
+				offenders = append(offenders, fileSet.Position(call.Pos()).String())
+			}
+			return true
+		})
+	}
+	return offenders
+}
+
+// TestSendStringIsCalledOnlyByTheHTMLFragmentHelper sweeps every non-test file
+// in the package for a SendString call outside sendHTMLFragment. fiber's
+// SendString sets no Content-Type, so a status fragment sent through it goes
+// out as fasthttp's default text/plain; HTMX error and success fragments did
+// exactly that while sibling sites set text/html by hand. No
+// allowlist: a future offender fails here by file and line. The anchors are
+// fixtures the test owns, not the package it judges.
+func TestSendStringIsCalledOnlyByTheHTMLFragmentHelper(t *testing.T) {
+	anchorSet := token.NewFileSet()
+	anchor, err := parser.ParseFile(anchorSet, "anchor.go", `package api
+func sendHTMLFragment(c fiber.Ctx, markup string) error { return c.SendString(markup) }
+func offender(c fiber.Ctx) error { return c.Status(400).SendString("x") }
+`, 0)
+	if err != nil {
+		t.Fatalf("parse anchor fixture: %v", err)
+	}
+	if got := sendStringCallsOutsideHTMLFragmentHelper(anchorSet, anchor); len(got) != 1 || !strings.HasPrefix(got[0], "anchor.go:3:") {
+		t.Fatalf("anchor fixture: expected exactly the offender on line 3, got %v", got)
+	}
+
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read package dir: %v", err)
+	}
+	fileSet := token.NewFileSet()
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		parsed, err := parser.ParseFile(fileSet, name, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		for _, offender := range sendStringCallsOutsideHTMLFragmentHelper(fileSet, parsed) {
+			t.Errorf("%s calls SendString directly: answer through sendHTMLFragment so the body is labelled text/html", offender)
+		}
+	}
+}
+
+// TestHTMXFragmentsAreServedAsHTML pins the Content-Type on real routes whose
+// HTMX answer is a hand-built fragment: a mapped error, a settings success
+// toast and the not-found fragment. Each went out as text/plain before the
+// fragments were routed through sendHTMLFragment.
+func TestHTMXFragmentsAreServedAsHTML(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "fragment-content-type@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	cases := []struct {
+		name       string
+		method     string
+		path       string
+		form       string
+		wantMarker string
+	}{
+		{name: "settings validation error", method: http.MethodPatch, path: "/api/v1/users/current/cycle", form: "cycle_length=5&period_length=5", wantMarker: "status-error"},
+		{name: "settings success toast", method: http.MethodPatch, path: "/api/v1/users/current/cycle", form: "cycle_length=28&period_length=5", wantMarker: "status-ok"},
+		{name: "not found fragment", method: http.MethodGet, path: "/no-such-page-for-fragment-test", wantMarker: "status-error"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			request := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.form))
+			if tc.form != "" {
+				request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			}
+			request.Header.Set("HX-Request", "true")
+			request.Header.Set("Accept-Language", "en")
+			request.Header.Set("Cookie", authCookie)
+
+			response := mustAppResponse(t, app, request)
+			body := mustReadBodyString(t, response.Body)
+			if !strings.Contains(body, tc.wantMarker) {
+				t.Fatalf("expected a %s fragment, got status %d body %q", tc.wantMarker, response.StatusCode, body)
+			}
+			if got := response.Header.Get("Content-Type"); got != "text/html; charset=utf-8" {
+				t.Fatalf("expected Content-Type text/html; charset=utf-8, got %q", got)
+			}
+		})
+	}
+}

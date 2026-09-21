@@ -15,7 +15,7 @@ import (
 // key stays for backward compatibility with clients that already parse it.
 func apiError(c fiber.Ctx, spec APIErrorSpec) error {
 	if responseFormat(c) == httpx.ResponseFormatHTMX {
-		return c.Status(spec.Status).SendString(localizedStatusErrorMarkup(c, spec))
+		return sendHTMLFragment(c.Status(spec.Status), localizedStatusErrorMarkup(c, spec))
 	}
 	return c.Status(spec.Status).JSON(apiErrorEnvelope(spec))
 }
@@ -55,9 +55,9 @@ func localizedStatusErrorMarkup(c fiber.Ctx, spec APIErrorSpec) string {
 // respondPageFormStatusFragment answers one mapped spec as the shared localized
 // status fragment, `text/html`. It is the arm for a client that is a browser
 // performing a full-page form navigation rather than an API caller: the JSON
-// envelope would be painted into the browser window as text. The content type is
-// set explicitly because SendString would otherwise label the markup
-// `text/plain` and the browser would show the tags. The catalogue is resolved
+// envelope would be painted into the browser window as text. It answers through
+// sendHTMLFragment, which labels the markup `text/html`; a bare SendString would
+// leave it `text/plain` and the browser would show the tags. The catalogue is resolved
 // here because a refusal can be produced before LanguageMiddleware has run (the
 // edge limiters sit ahead of it), and without it the fragment renders its own
 // machine key as the visible message.
@@ -66,8 +66,7 @@ func localizedStatusErrorMarkup(c fiber.Ctx, spec APIErrorSpec) string {
 // and nothing about the contract.
 func (handler *Handler) respondPageFormStatusFragment(c fiber.Ctx, spec APIErrorSpec) error {
 	handler.ensureRequestMessages(c)
-	c.Type("html", "utf-8")
-	return c.Status(spec.Status).SendString(localizedStatusErrorMarkup(c, spec))
+	return sendHTMLFragment(c.Status(spec.Status), localizedStatusErrorMarkup(c, spec))
 }
 
 // respondPageFormMappedError is the page-form counterpart of respondMappedError:
@@ -273,7 +272,7 @@ func (handler *Handler) respondSettingsError(c fiber.Ctx, spec APIErrorSpec) err
 				rendered = localized
 			}
 		}
-		return c.Status(fiber.StatusOK).SendString(httpx.StatusErrorMarkup(rendered, flashKey))
+		return sendHTMLFragment(c.Status(fiber.StatusOK), httpx.StatusErrorMarkup(rendered, flashKey))
 	}
 	if strings.HasPrefix(c.Path(), "/api/v1/users/current") && !acceptsJSON(c) {
 		handler.setFlashCookie(c, FlashPayload{SettingsError: spec.Key})

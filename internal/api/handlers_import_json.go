@@ -49,7 +49,7 @@ func (handler *Handler) ImportJSON(c fiber.Ctx) error {
 
 func (handler *Handler) respondImportSuccess(c fiber.Ctx, result services.ImportResult) error {
 	if isHTMX(c) {
-		return c.SendString(htmxSettingsSuccessMarkup(c, "data_imported", "Restored your data."))
+		return sendHTMLFragment(c, htmxSettingsSuccessMarkup(c, "data_imported", "Restored your data."))
 	}
 	if acceptsJSON(c) {
 		return c.JSON(fiber.Map{
