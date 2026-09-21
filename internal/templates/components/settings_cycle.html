@@ -142,7 +142,7 @@
             <span class="chip chip-stack"><span>{{t .Messages "settings.goal.health"}}</span></span>
           </label>
           <label class="choice-option">
-            <input type="radio" name="usage_goal" value="avoid_pregnancy" class="choice-input" {{if eq .UsageGoal "avoid_pregnancy"}}checked{{end}}>
+            <input type="radio" name="usage_goal" value="avoid_pregnancy" class="choice-input" aria-describedby="settings-usage-goal-avoid-warning" {{if eq .UsageGoal "avoid_pregnancy"}}checked{{end}}>
             <span class="chip chip-stack"><span>{{t .Messages "settings.goal.avoid"}}</span></span>
           </label>
           <label class="choice-option">
@@ -150,7 +150,7 @@
             <span class="chip chip-stack"><span>{{t .Messages "settings.goal.trying"}}</span></span>
           </label>
         </div>
-        <p class="warning-amber text-sm" role="note" data-usage-goal-avoid-warning{{if ne .UsageGoal "avoid_pregnancy"}} hidden{{end}}>{{t .Messages "usage_goal.avoid_warning"}}</p>
+        <p id="settings-usage-goal-avoid-warning" class="warning-amber text-sm" role="note" data-usage-goal-avoid-warning{{if ne .UsageGoal "avoid_pregnancy"}} hidden{{end}}>{{t .Messages "usage_goal.avoid_warning"}}</p>
         {{/* The mode summary sits inside the group it belongs to. Its
              third line said what settings.goal.hint above already says —
              that the choice reframes the interface and not the maths — so
