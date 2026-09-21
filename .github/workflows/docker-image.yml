@@ -862,6 +862,13 @@ jobs:
           password: ${{ secrets.DOCKERHUB_PUBLISH_TOKEN }}
 
       - name: Mirror the signed digest to Docker Hub
+        # `VERIFY_ATTEMPTS`/`VERIFY_DELAY_SECONDS` bound how long the read-back
+        # waits for Docker Hub's referrers listing to catch up with the
+        # signature just pushed to it; the comment at that line carries the
+        # measurement. They are constants rather than expressions because
+        # `scripts/publishorder` runs this script for real and drives the delay
+        # to zero — and they sit outside the `env:` block below because the
+        # reader that hands the fixture those constants stops at a comment.
         if: ${{ env.DOCKERHUB_PUBLISH_USERNAME != '' }}
         shell: bash
         env:
@@ -870,6 +877,8 @@ jobs:
           IMAGE_NAME: ${{ steps.image.outputs.name }}
           MIRROR_NAME: docker.io/${{ steps.image.outputs.path }}
           IDENTITY_REGEXP: ${{ steps.verify.outputs.identity_regexp }}
+          VERIFY_ATTEMPTS: 6
+          VERIFY_DELAY_SECONDS: 10
         run: |
           set -euo pipefail
 
@@ -942,13 +951,34 @@ jobs:
           # following SECURITY.md actually runs. The pattern is built once, by
           # that step, and handed here — rebuilding it would be a second place
           # for a dot to go unescaped in the field it exists to pin.
-          if ! cosign verify \
+          #
+          # ASKED REPEATEDLY, because the registry answers this question later
+          # than it accepts the signature. Run 35606394489 signed the mirror at
+          # 13:53:05Z and failed `no signatures found` at 13:53:06Z; the same
+          # digest's `/v2/<path>/referrers/<digest>` served the bundle, with
+          # `artifactType: application/vnd.dev.sigstore.bundle.v0.3+json`,
+          # when queried afterwards. cosign reads that endpoint (`GetBundles`
+          # → `remote.Referrers`) and consults the `sha256-<hex>` fallback tag
+          # ONLY when it does not answer 200 with an index content type, which
+          # Docker Hub does — so the tag `cosign copy` overwrites below is not
+          # what is being waited for here, and a one-shot check was simply
+          # asking before the listing existed.
+          #
+          # Waiting is the whole of the change: a signature that never appears
+          # still fails this step, and no alias is written when it does.
+          attempt=1
+          until cosign verify \
             --certificate-identity-regexp "${IDENTITY_REGEXP}" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            "${MIRROR_NAME}@${DIGEST}"; then
-            echo "::error::${MIRROR_NAME}@${DIGEST} carries no signature this repository issued. No Docker Hub alias is written, so nothing is published there this run."
-            exit 1
-          fi
+            "${MIRROR_NAME}@${DIGEST}"; do
+            if [ "${attempt}" -ge "${VERIFY_ATTEMPTS}" ]; then
+              echo "::error::${MIRROR_NAME}@${DIGEST} carries no signature this repository issued, over ${VERIFY_ATTEMPTS} attempts spanning $(( (VERIFY_ATTEMPTS - 1) * VERIFY_DELAY_SECONDS ))s. No Docker Hub alias is written, so nothing is published there this run."
+              exit 1
+            fi
+            echo "attempt ${attempt} of ${VERIFY_ATTEMPTS} found no signature on ${MIRROR_NAME}@${DIGEST}; waiting ${VERIFY_DELAY_SECONDS}s for the referrers listing."
+            attempt=$(( attempt + 1 ))
+            sleep "${VERIFY_DELAY_SECONDS}"
+          done
 
           # The SOURCE is a digest throughout, never a tag. A tag is a
           # mutable pointer: resolving one here would mirror whatever it names
