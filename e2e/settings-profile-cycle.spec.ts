@@ -618,6 +618,48 @@ test.describe('Settings: profile and cycle', () => {
     await expect(page.locator('[data-settings-tracking-discard]')).toBeDisabled();
   });
 
+  test('the avoid-pregnancy warning follows the goal choice, a discard, and the saved goal', async ({
+    page,
+  }) => {
+    await registerOwnerAndOpenSettings(page, 'settings-avoid-warning');
+
+    const cycleForm = page.locator('#settings-cycle form[data-settings-draft-form="cycle"]');
+    const warning = cycleForm.locator('[data-usage-goal-avoid-warning]');
+    const goalChoice = (value: string) =>
+      cycleForm.locator(`label.choice-option:has(input[name="usage_goal"][value="${value}"])`);
+
+    // A new owner starts on the neutral goal: nothing to warn about.
+    await expect(cycleForm.locator('input[name="usage_goal"][value="health"]')).toBeChecked();
+    await expect(warning).toBeHidden();
+
+    await goalChoice('avoid_pregnancy').click();
+    await expect(warning).toBeVisible();
+    await expect(warning).toHaveText(localeText('en', 'usage_goal.avoid_warning'));
+
+    await goalChoice('trying_to_conceive').click();
+    await expect(warning).toBeHidden();
+
+    // A discard puts the saved goal back, and the warning with it.
+    await goalChoice('avoid_pregnancy').click();
+    await expect(warning).toBeVisible();
+    await cycleForm.locator('[data-settings-cycle-discard]').click();
+    await expect(cycleForm.locator('input[name="usage_goal"][value="health"]')).toBeChecked();
+    await expect(warning).toBeHidden();
+
+    // Saved, it is server-rendered visible on the next load, before any change.
+    await goalChoice('avoid_pregnancy').click();
+    await cycleForm.locator('button[data-save-button]').click();
+    await expect(page.locator('#settings-cycle-status .status-ok')).toBeVisible();
+    await page.waitForLoadState('networkidle');
+
+    await page.reload();
+    await expect(page).toHaveURL(/\/settings$/);
+    await expect(
+      page.locator('#settings-cycle input[name="usage_goal"][value="avoid_pregnancy"]')
+    ).toBeChecked();
+    await expect(page.locator('#settings-cycle [data-usage-goal-avoid-warning]')).toBeVisible();
+  });
+
   test('onboarding selected start date persists into settings cycle field', async ({ page }) => {
     const creds = createCredentials('settings-onboarding-date');
 

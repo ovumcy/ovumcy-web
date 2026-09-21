@@ -24,12 +24,16 @@ const (
 	// clear-data reset can reference it without importing services (layering).
 	DefaultReminderLeadDays = 3
 	// Age brackets are calibrated to the medical literature: 35–39 is the
-	// lowest-variability cohort in Gibson et al., npj Digital Medicine 2023
-	// (Apple Women's Health Study, n=12,608), with within-individual cycle SD
-	// rising only modestly through 40–44 and sharply at 45+. Persistent ≥7-day
-	// differences between consecutive cycles after 40 are the STRAW+10 marker
-	// for the menopausal transition (median entry age 45.5 years), so the
-	// three brackets isolate the clinically meaningful threshold at 45.
+	// lowest-variability cohort in Li H. et al. (senior author Gibson EA), npj
+	// Digital Medicine 2023, PMID 37248288 (Apple Women's Health Study,
+	// n=12,608), where cycle variability rises modestly through 40–44 and is
+	// ~45% higher at 45–49 and ~200% higher at 50+ than at 35–39. A persistent
+	// difference of ≥7 days in consecutive cycle length, recurring within 10
+	// cycles, is the STRAW+10 marker for the early menopausal transition
+	// (Harlow SD et al., Menopause 2012;19:387–395, PMID 22343510); the
+	// ReSTAGE cohorts put its median onset between 41.0 (TREMIN) and 49.5
+	// (MWMHP) years (Fertil Steril 2008), so the three brackets isolate the
+	// clinically meaningful threshold at 45.
 	AgeGroupUnknown = ""
 	AgeGroupUnder40 = "under_40"
 	AgeGroup40To45  = "age_40_45"

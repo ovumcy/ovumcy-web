@@ -457,6 +457,7 @@
     form.reset();
     syncSettingsDraftDateFields(form);
     bindBinaryToggles(root);
+    bindUsageGoalWarnings(root);
     syncSettingsCycleForm(root);
     syncSettingsCycleDraftState(root);
   }

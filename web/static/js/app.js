@@ -2908,6 +2908,46 @@
     }
   }
 
+  // The avoid-pregnancy warning follows the checked usage_goal radio of its
+  // scope. The server already renders it shown or hidden for the saved goal, so
+  // the page is right without this script; this keeps it in step while the
+  // choice changes before a save, after a draft reset, and when a skip clears it.
+  function syncUsageGoalWarning(scope) {
+    if (!scope || !scope.querySelector) {
+      return;
+    }
+
+    var warning = scope.querySelector("[data-usage-goal-avoid-warning]");
+    var checked = scope.querySelector("input[name='usage_goal']:checked");
+    setNodeHidden(warning, !checked || checked.value !== "avoid_pregnancy");
+  }
+
+  function bindUsageGoalWarnings(root) {
+    var scope = root && root.querySelectorAll ? root : document;
+    var scopes = [];
+    if (scope.matches && scope.matches("[data-usage-goal-warning-scope]")) {
+      scopes.push(scope);
+    }
+    var nested = scope.querySelectorAll("[data-usage-goal-warning-scope]");
+    for (var nestedIndex = 0; nestedIndex < nested.length; nestedIndex++) {
+      scopes.push(nested[nestedIndex]);
+    }
+
+    for (var index = 0; index < scopes.length; index++) {
+      var current = scopes[index];
+      if (current.dataset.usageGoalWarningBound !== "1") {
+        current.dataset.usageGoalWarningBound = "1";
+        current.addEventListener("change", function (event) {
+          if (event.target && event.target.matches && event.target.matches("input[name='usage_goal']")) {
+            syncUsageGoalWarning(this);
+          }
+        });
+      }
+
+      syncUsageGoalWarning(current);
+    }
+  }
+
   function syncSymptomNameCounter(field) {
     if (!field || !field.querySelector) {
       return;
@@ -4673,6 +4713,7 @@
     form.reset();
     syncSettingsDraftDateFields(form);
     bindBinaryToggles(root);
+    bindUsageGoalWarnings(root);
     syncSettingsCycleForm(root);
     syncSettingsCycleDraftState(root);
   }
@@ -5514,6 +5555,7 @@
     for (var index = 0; index < choices.length; index++) {
       choices[index].checked = false;
     }
+    bindUsageGoalWarnings(root);
   }
 
   function goToOnboardingStep(state, nextStep) {
@@ -5927,6 +5969,7 @@
       window.__ovumcyBindLocalizedDateFields(document);
     }
     bindBinaryToggles(document);
+    bindUsageGoalWarnings(document);
     bindSymptomNameCounters(document);
     bindTemperatureInputs(document);
     bindPregnancyTestFields(document);

@@ -156,7 +156,7 @@
           <p class="journal-muted text-sm">{{t .Messages "onboarding.step2.irregular_cycle_hint"}}</p>
         </div>
 
-        <div class="space-y-3" data-onboarding-usage-goal>
+        <div class="space-y-3" data-onboarding-usage-goal data-usage-goal-warning-scope>
           <p class="field-label">{{t .Messages "onboarding.step2.usage_goal"}}</p>
           <div class="grid gap-2">
             <label class="choice-option">
@@ -172,6 +172,7 @@
               <span class="chip chip-stack"><span>{{t .Messages "settings.goal.trying"}}</span></span>
             </label>
           </div>
+          <p class="warning-amber text-sm" role="note" data-usage-goal-avoid-warning{{if ne .UsageGoal "avoid_pregnancy"}} hidden{{end}}>{{t .Messages "usage_goal.avoid_warning"}}</p>
           <button type="submit" class="btn-secondary" data-onboarding-usage-goal-skip>{{t .Messages "onboarding.step2.usage_goal_skip"}}</button>
         </div>
 
