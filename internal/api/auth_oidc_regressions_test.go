@@ -56,6 +56,12 @@ type stubOIDCWorkflowService struct {
 	lastReauthUserID       uint
 	lastReauthMaxAge       time.Duration
 	confirmLinkErr         error
+	unlinkErr              error
+	unlinkCalls            int
+	lastUnlinkUserID       uint
+	lastUnlinkIdentityID   uint
+	linkedIdentities       []services.LinkedOIDCIdentity
+	listLinkedErr          error
 	lastConfirmLinkUserID  uint
 	lastConfirmLinkClaims  security.OIDCClaims
 
@@ -174,6 +180,60 @@ func (stub *stubOIDCWorkflowService) ConfirmAndLinkIdentity(ctx context.Context,
 	stub.lastConfirmLinkUserID = targetUserID
 	stub.lastConfirmLinkClaims = claims
 	return stub.confirmLinkErr
+}
+
+// UnlinkIdentity records what the handler asked for and answers unlinkErr.
+// The handler's own gates (password, id parse) are what the api tests pin;
+// the service rules live in internal/services.
+func (stub *stubOIDCWorkflowService) UnlinkIdentity(_ context.Context, user models.User, identityID uint) error {
+	stub.unlinkCalls++
+	stub.lastUnlinkUserID = user.ID
+	stub.lastUnlinkIdentityID = identityID
+	return stub.unlinkErr
+}
+
+// assertStepupExchangeMatchesStart pins that a step-up completion validated
+// the provider answer against the values ITS OWN start minted: the code the
+// callback carried, the PKCE verifier and nonce the start handed to StartReauth
+// (read back from the sealed state cookie), and a non-zero max-age. A handler
+// that validated with a blank or a different verifier/nonce — or dropped the
+// max-age — would still reach its success path against the stub, so the
+// comparison has to be made here, on every step-up purpose.
+func assertStepupExchangeMatchesStart(t *testing.T, stub *stubOIDCWorkflowService, wantCode string, gotCode string, gotVerifier string, gotNonce string, gotMaxAge time.Duration) {
+	t.Helper()
+	if strings.TrimSpace(stub.lastReauthVerifier) == "" || strings.TrimSpace(stub.lastReauthNonce) == "" {
+		t.Fatalf("expected the step-up start to mint a verifier and a nonce, got verifier=%q nonce=%q", stub.lastReauthVerifier, stub.lastReauthNonce)
+	}
+	if gotCode != wantCode {
+		t.Fatalf("expected the exchange to use the callback code %q, got %q", wantCode, gotCode)
+	}
+	if gotVerifier != stub.lastReauthVerifier {
+		t.Fatalf("expected the exchange to use the start's PKCE verifier %q, got %q", stub.lastReauthVerifier, gotVerifier)
+	}
+	if gotNonce != stub.lastReauthNonce {
+		t.Fatalf("expected the exchange to check the start's nonce %q, got %q", stub.lastReauthNonce, gotNonce)
+	}
+	if gotMaxAge <= 0 {
+		t.Fatalf("expected a positive max-age to bound the provider re-authentication, got %s", gotMaxAge)
+	}
+}
+
+// assertReauthExchangeMatchesStart is the ValidateReauthExchange half
+// (local-password setup, clear-data, account deletion).
+func (stub *stubOIDCWorkflowService) assertReauthExchangeMatchesStart(t *testing.T, wantCode string) {
+	t.Helper()
+	assertStepupExchangeMatchesStart(t, stub, wantCode, stub.lastReauthCode, stub.lastReauthCodeVerifier, stub.lastReauthNonceCheck, stub.lastReauthMaxAge)
+}
+
+// assertIdentityLinkExchangeMatchesStart is the CompleteIdentityLinkReauth half.
+func (stub *stubOIDCWorkflowService) assertIdentityLinkExchangeMatchesStart(t *testing.T, wantCode string) {
+	t.Helper()
+	assertStepupExchangeMatchesStart(t, stub, wantCode, stub.lastIdentityLinkCode, stub.lastIdentityLinkCodeVerifier, stub.lastIdentityLinkNonce, stub.lastIdentityLinkMaxAge)
+}
+
+// ListLinkedIdentities answers the stub's configured rows unchanged.
+func (stub *stubOIDCWorkflowService) ListLinkedIdentities(_ context.Context, _ uint) ([]services.LinkedOIDCIdentity, error) {
+	return stub.linkedIdentities, stub.listLinkedErr
 }
 
 func (stub *stubOIDCWorkflowService) CompleteIdentityLinkReauth(_ context.Context, code string, codeVerifier string, expectedNonce string, targetUserID uint, maxAuthAge time.Duration, _ time.Time) error {

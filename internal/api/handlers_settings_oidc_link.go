@@ -1,6 +1,7 @@
 package api
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -40,6 +41,17 @@ func (handler *Handler) StartOIDCIdentityLinkStepup(c fiber.Ctx) error {
 	}
 	if handler.oidcService == nil || !handler.oidcService.Enabled() {
 		spec := authOIDCUnavailableErrorSpec()
+		handler.logSecurityError(c, oidcIdentityLinkStepupAction, spec)
+		return handler.respondMappedError(c, spec)
+	}
+	// Fresh proof of the ACCOUNT, not only of the provider account being
+	// linked: the provider re-authentication below proves whoever holds this
+	// session controls the identity they are about to bind — which an attacker
+	// with a hijacked session does, for their own provider account. The
+	// current local password (budgeted, like every re-auth) is what proves the
+	// account holder is present. An account without one is refused here and
+	// sets a local password first.
+	if _, spec, valid := handler.validateSettingsActionPassword(c); !valid {
 		handler.logSecurityError(c, oidcIdentityLinkStepupAction, spec)
 		return handler.respondMappedError(c, spec)
 	}
@@ -134,6 +146,76 @@ func (handler *Handler) completeOIDCIdentityLinkStepup(c fiber.Ctx, state oidcSt
 	}
 
 	handler.logSecurityEvent(c, oidcIdentityLinkStepupAction, "linked")
+	// The link bumped AuthSessionVersion in the same write, revoking every
+	// earlier session; this device keeps signing in on a re-issued one.
+	if spec, ok := handler.reissueSessionAfterIdentityChange(c, user.ID, oidcIdentityLinkStepupAction); !ok {
+		return handler.redirectSettingsRefusal(c, spec)
+	}
 	handler.setFlashCookie(c, FlashPayload{SettingsSuccess: "oidc_identity_linked"})
 	return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+}
+
+const oidcIdentityUnlinkAction = "settings.oidc_identity_unlink"
+
+// UnlinkOIDCIdentity removes one OIDC identity from the current account
+// (DELETE /api/v1/users/current/oidc/identities/:id). It requires the current
+// local password — the same budgeted re-auth every password-gated settings
+// action uses — and the service refuses to remove the account's last way in.
+// The delete bumps AuthSessionVersion in the same write, so every earlier
+// session (including one the removed identity minted) is revoked; this device
+// is re-issued a session.
+func (handler *Handler) UnlinkOIDCIdentity(c fiber.Ctx) error {
+	if handler.oidcService == nil || !handler.oidcService.Enabled() {
+		spec := authOIDCUnavailableErrorSpec()
+		handler.logSecurityError(c, oidcIdentityUnlinkAction, spec)
+		return handler.respondMappedError(c, spec)
+	}
+	identityID, err := strconv.ParseUint(c.Params("id"), 10, 64)
+	if err != nil || identityID == 0 {
+		spec := notFoundErrorSpec()
+		handler.logSecurityError(c, oidcIdentityUnlinkAction, spec)
+		return handler.respondMappedError(c, spec)
+	}
+	user, spec, valid := handler.validateSettingsActionPassword(c)
+	if !valid {
+		handler.logSecurityError(c, oidcIdentityUnlinkAction, spec)
+		return handler.respondMappedError(c, spec)
+	}
+	if err := handler.oidcService.UnlinkIdentity(c.Context(), *user, uint(identityID)); err != nil {
+		spec := mapOIDCIdentityUnlinkError(err)
+		handler.logSecurityError(c, oidcIdentityUnlinkAction, spec)
+		return handler.respondMappedError(c, spec)
+	}
+	handler.logSecurityEvent(c, oidcIdentityUnlinkAction, "unlinked")
+	if spec, ok := handler.reissueSessionAfterIdentityChange(c, user.ID, oidcIdentityUnlinkAction); !ok {
+		return handler.respondMappedError(c, spec)
+	}
+	if acceptsJSON(c) {
+		return c.JSON(fiber.Map{"ok": true})
+	}
+	handler.setFlashCookie(c, FlashPayload{SettingsSuccess: "oidc_identity_unlinked"})
+	if isHTMX(c) {
+		c.Set("HX-Redirect", "/settings")
+		return c.SendStatus(fiber.StatusOK)
+	}
+	return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+}
+
+// reissueSessionAfterIdentityChange reloads the account after a link or unlink
+// bumped its AuthSessionVersion and re-issues this device's session at the new
+// version. It reloads rather than incrementing in memory: an already-linked
+// pair is a no-op that bumps nothing, and the stored version is the only one a
+// session can be checked against.
+func (handler *Handler) reissueSessionAfterIdentityChange(c fiber.Ctx, userID uint, scope string) (APIErrorSpec, bool) {
+	fresh, err := handler.authService.FindByID(c.Context(), userID)
+	if err != nil {
+		// codecov:ignore:start -- the account was resolved by this same request;
+		// only a storage fault between the two reads reaches this line.
+		handler.clearAuthCookie(c)
+		spec := authSessionCreateErrorSpec()
+		handler.logSecurityError(c, scope, spec)
+		return spec, false
+		// codecov:ignore:end
+	}
+	return handler.refreshCurrentSession(c, &fresh, scope)
 }

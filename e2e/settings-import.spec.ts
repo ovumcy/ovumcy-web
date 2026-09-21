@@ -11,7 +11,7 @@ import {
 
 const IMPORT_SECTION = '[data-import-section]';
 
-type ExportEntry = { date?: string };
+type ExportEntry = { date?: string; flow?: string };
 type ExportPayload = { entries?: ExportEntry[] };
 
 async function registerOwnerAndOpenSettings(page: Page, prefix: string) {
@@ -51,13 +51,17 @@ function lastToast(page: Page) {
   return page.locator('.toast-stack .toast-message').last();
 }
 
-async function exportedDates(page: Page): Promise<string[]> {
+async function exportedEntries(page: Page): Promise<ExportEntry[]> {
   const response = await page.request.get('/api/v1/exports/json', {
     headers: apiOriginHeader(page),
   });
   expect(response.ok()).toBeTruthy();
   const payload = (await response.json()) as ExportPayload;
-  return (payload.entries ?? []).map((entry) => String(entry.date ?? ''));
+  return payload.entries ?? [];
+}
+
+async function exportedDates(page: Page): Promise<string[]> {
+  return (await exportedEntries(page)).map((entry) => String(entry.date ?? ''));
 }
 
 test.describe('Settings: restore from JSON backup', () => {
@@ -132,12 +136,27 @@ test.describe('Settings: restore from JSON backup', () => {
     await expect(lastToast(page)).toBeVisible();
     expect(await exportedDates(page)).toContain('2026-09-01');
 
-    await chooseImportFile(page, 'export.json', file);
-    await submitImport(page);
-    await expect(lastToast(page)).toBeVisible();
+    // The repeat carries a DIFFERENT value for the same day, so "no overwrite"
+    // is observable, and the test waits for the repeat's own import response:
+    // the toast from the first import is still on screen, so a toast wait would
+    // be satisfied before the second submit had even been sent.
+    const repeatFile = exportFileBuffer([
+      { date: '2026-09-01', period: true, flow: 'heavy', cycle_factors: [] },
+    ]);
+    await chooseImportFile(page, 'export.json', repeatFile);
+    const [repeatResponse] = await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' && /\/import(?:[/?]|$)/.test(response.url()),
+      ),
+      submitImport(page),
+    ]);
+    expect(repeatResponse.status()).toBeLessThan(500);
 
-    // Skip-existing: the day is present exactly once, never duplicated.
-    const occurrences = (await exportedDates(page)).filter((date) => date === '2026-09-01').length;
-    expect(occurrences).toBe(1);
+    // Skip-existing: the day is present exactly once, never duplicated, and it
+    // still holds the value the first import wrote.
+    const entries = (await exportedEntries(page)).filter((entry) => entry.date === '2026-09-01');
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.flow).toBe('light');
   });
 });

@@ -387,6 +387,13 @@ func (client *OIDCClient) ExchangeCode(ctx context.Context, code string, codeVer
 	if strings.TrimSpace(idToken.Nonce) != strings.TrimSpace(expectedNonce) {
 		return OIDCExchangeResult{}, errors.New("oidc nonce mismatch")
 	}
+	// The (issuer, subject) pair is the whole identity: every lookup and every
+	// link keys on it. A blank subject is not "some user" — it is no user, and a
+	// token carrying one is refused here, before any caller can resolve or bind
+	// an identity by it.
+	if strings.TrimSpace(idToken.Subject) == "" || strings.TrimSpace(idToken.Issuer) == "" {
+		return OIDCExchangeResult{}, errors.New("oidc id_token is missing sub or iss")
+	}
 
 	var claims struct {
 		Email         string `json:"email"`
@@ -877,6 +884,25 @@ func sameOriginURL(left *url.URL, right *url.URL) bool {
 	return strings.EqualFold(left.Scheme, right.Scheme) &&
 		strings.EqualFold(left.Hostname(), right.Hostname()) &&
 		effectivePort(left) == effectivePort(right)
+}
+
+// SameOriginURLString reports whether two absolute URLs share scheme, host and
+// effective port. Unlike sameOriginURL it does not refuse loopback hosts: it
+// answers "is this address first-party to that one", which holds for an
+// instance served on localhost exactly as for one on a public name. A blank or
+// relative operand is never the same origin as anything.
+func SameOriginURLString(left string, right string) bool {
+	leftURL, err := url.Parse(strings.TrimSpace(left))
+	if err != nil || !leftURL.IsAbs() || leftURL.Hostname() == "" {
+		return false
+	}
+	rightURL, err := url.Parse(strings.TrimSpace(right))
+	if err != nil || !rightURL.IsAbs() || rightURL.Hostname() == "" {
+		return false
+	}
+	return strings.EqualFold(leftURL.Scheme, rightURL.Scheme) &&
+		strings.EqualFold(leftURL.Hostname(), rightURL.Hostname()) &&
+		effectivePort(leftURL) == effectivePort(rightURL)
 }
 
 func effectivePort(value *url.URL) string {

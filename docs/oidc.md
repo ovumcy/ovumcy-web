@@ -95,6 +95,15 @@ Notes:
 
 Provider and auth errors are intentionally kept out of query strings and fragments. Browser-facing failures return through the existing flash-based login UX instead. (In `query` response mode the provider itself puts the successful `code`/`state` in the callback URL — see [Response mode](#response-mode) — but Ovumcy still never emits its own error state into a URL.)
 
+### Linking and unlinking from Settings
+
+- **Link:** `Settings` → the connected sign-in identity card. Enter the account's current password, then confirm at the provider. An account without a local password cannot link another identity until it sets one.
+- **Unlink:** the same card lists every linked identity by issuer and link date; each row has an **Unlink** button that asks for the current password and a confirmation. The last way into an account cannot be removed: an account's only identity stays linked unless local password sign-in is set up and allowed (`OIDC_LOGIN_MODE=hybrid`).
+- Linking and unlinking both sign out every other session of the account.
+- `email_verified` plays no part in linking: the identity is the `(issuer, subject)` pair, bound from a password-confirmed session.
+- A password change or reset does not remove linked identities; unlink one explicitly.
+- A provider whose ID tokens lack `sub` or `iss` cannot sign anyone in.
+
 ## Response mode
 
 `OIDC_RESPONSE_MODE` selects how the provider returns the authorization code on the callback:
@@ -172,7 +181,7 @@ Consequence: **a provider that omits `auth_time` under `max_age=0` cannot comple
 `OIDC_LOGOUT_MODE` controls what happens after Ovumcy clears its own auth cookies:
 
 - `local`: clear Ovumcy cookies only, then return to `/login`;
-- `provider`: if the provider session metadata includes `end_session_endpoint`, redirect there with `id_token_hint` and `post_logout_redirect_uri`; otherwise Ovumcy falls back to local logout;
+- `provider`: if the provider session metadata includes `end_session_endpoint`, redirect there with `id_token_hint` and `post_logout_redirect_uri`; otherwise Ovumcy falls back to local logout. The post-logout address must be on the same origin (scheme, host, port) as `OIDC_REDIRECT_URL`; one that is not is never sent to the provider, and sign-out completes locally;
 - `auto`: same behavior as `provider`, but intended as the default "best effort" setting for operators who want provider logout when available without breaking logout on providers that do not publish an end-session endpoint.
 
 If you want provider logout, keep `OIDC_POST_LOGOUT_REDIRECT_URL` on the same public origin as the callback URL. If you leave it empty, Ovumcy defaults to your public `/login` URL.
@@ -421,6 +430,8 @@ To finish the link:
 - **With no working sign-in at all** (an OIDC-only account whose provider changed,
   for example): the operator runs `ovumcy link-oidc-identity <email>|--id <id>
   --issuer <issuer> --subject <subject>` from the machine `docker exec` reaches.
+  A new link signs out every session the account had open, on this path as on
+  the Settings one.
 
 Things worth knowing before treating it as a bug:
 

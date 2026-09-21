@@ -18,7 +18,7 @@ This defends against the malicious / sloppy upstream IdP scenario: a provider th
 There are exactly two paths, and no third:
 
 1. **Authenticated Settings step-up.** `POST /api/v1/users/current/oidc/link/step-up` (any signed-in owner, gated by `AuthRequired` + `OwnerOnly` + CSRF) mints a sealed step-up cookie and sends the browser to the provider with `prompt=login&max_age=0`, forcing a fresh interactive authentication — the same primitive `StartLocalPasswordSetupReauth` and the erasure step-ups already use. The callback (`completeOIDCIdentityLinkStepup`, dispatched from `CompleteOIDCLogin` by the step-up cookie's purpose, before the `RequiresTOTP`/`RequiresPasswordReset` gates described below ever run — a step-up cookie is checked first and dispatches on its own purpose) verifies the session that started the flow is still the one presenting the callback, checks the exchange's `auth_time` against the same freshness window — a token without `auth_time` is refused, and `iat` is never accepted in its place — (`OIDCLoginService.CompleteIdentityLinkReauth`), and only then calls `ConfirmAndLinkIdentity`. TOTP does not gate this step separately: the fresh interactive provider authentication **is** the step-up factor, exactly as it is for the sibling flows.
-2. **Operator CLI, no session.** `ovumcy link-oidc-identity <email>|--id <id> --issuer <issuer> --subject <subject>` addresses the account the same way `reset-password` does (bare email or `--id`, mutually exclusive) and calls the identical `ConfirmAndLinkIdentity` service method directly. This is the recovery path for an account that cannot reach a live session at all — the same shape as `reset-password` for a lost credential.
+2. **Operator CLI, no session.** `ovumcy link-oidc-identity <email>|--id <id> --issuer <issuer> --subject <subject>` addresses the account the same way `reset-password` does (bare email or `--id`, mutually exclusive) and calls the identical `ConfirmAndLinkIdentity` service method directly. This is the recovery path for an account that cannot reach a live session at all — the same shape as `reset-password` for a lost credential. Like the Settings link, a new link bumps the account's session version in the same write, so every session the account had open is signed out; re-running the command for a pair already linked to that account changes nothing.
 
 **There is no unauthenticated path.** `GET`/`POST /auth/oidc/link-confirm` stay registered but the callback never mints the sealed pending-link cookie either handler reads, so neither can ever complete a link from the public internet; this is intentional, not an oversight — see `internal/api/handlers_auth_oidc_link_confirm.go`'s `startOIDCLinkConfirmation` comment for the reasoning and the earlier iteration (password-only, on a page reachable without a session) that this replaced.
 
@@ -26,10 +26,25 @@ When the target account has TOTP enabled, neither of the two paths above asks fo
 
 A later **sign-in** through that same already-linked identity is a separate code path (`CompleteOIDCLogin` → `authenticateLinkedIdentity`, not either linking path above) and is gated the ordinary way: `OIDCLoginService.Authenticate` derives `RequiresPasswordReset` (true when `MustChangePassword` is set OR the account's TOTP is enrolled but unverifiable — its stored secret no longer decrypts, the state a `SECRET_KEY` rotation leaves behind) and sets `RequiresTOTP` only when `RequiresPasswordReset` is false and TOTP is enabled, i.e. only where the factor is actually verifiable (`TOTPService.Verifiable`). The handler redirects to `/reset-password` or `/auth/2fa` before ever calling `setAuthCookie`, mirroring the same predicate, the same ordering, and the same signal the local login path (`handlers_auth_session_login.go` via `LoginService.Authenticate`) uses.
 
+### Linking needs the account password; unlinking exists
+
+The provider re-authentication in the Settings step-up proves that whoever holds the session controls the identity being bound — which an attacker holding a hijacked session does, for their own provider account. So the step-up start (`POST /api/v1/users/current/oidc/link/step-up`) additionally requires the account's **current local password** in the `password` form field, checked with the same attempt budget as every other password-gated Settings action. An account with no local password is refused and has to set one first (Settings offers no link form to it). The provider-side re-authentication is still required after that.
+
+`DELETE /api/v1/users/current/oidc/identities/{id}` removes one linked identity. It is `OwnerOnly`, CSRF-protected, requires the current local password, and deletes only a row that belongs to the session's own account — another owner's id, a missing id and `0` all answer the same `404`. It refuses, with the same "set a local password first" answer the local-password setup uses, to remove the account's **last way in**: the only linked identity of an account that has no usable local password sign-in (none set, or `OIDC_LOGIN_MODE=oidc_only`).
+
+Both the link and the unlink bump `users.auth_session_version` in the same transaction as the identity write, so every session issued before the change — including one a removed identity minted — is revoked; the device that made the change is re-issued a session at the new version.
+
+Policy decisions that follow from the identity being the `(issuer, subject)` pair:
+
+- **`email_verified` is not consulted when linking.** The pair is bound from a session whose owner has just confirmed the account password and freshly re-authenticated at the provider; the email claim plays no part in which account the identity is bound to, so its verification status cannot change the outcome. (Email still never *creates* a link on its own — see above.)
+- **Linked identities survive a password change or reset.** A password change or reset bumps `auth_session_version` and so revokes every session, but it does not remove identities; an owner who no longer trusts a linked provider account unlinks it explicitly.
+- **A blank `sub` or `iss` identifies nobody.** An ID token without either is refused at the code exchange, and the service and repository refuse to look up or bind a blank key.
+
 ## Session Invalidation on Credential Rotation
 
 Operations that rotate a long-lived credential bump `users.auth_session_version` in the same database update, immediately invalidating every active `ovumcy_auth` cookie for that account. This applies to:
 
+- Linking an OIDC identity from Settings, or unlinking one (`DELETE /api/v1/users/current/oidc/identities/{id}`).
 - Password change (`PUT /api/v1/users/current/password`).
 - Password reset via recovery code (`POST /api/v1/password-resets/redeem`).
 - Recovery-code regeneration (`POST /api/v1/users/current/recovery-code`) — the current request receives a freshly issued cookie so the originating session stays alive, but every other device is signed out.

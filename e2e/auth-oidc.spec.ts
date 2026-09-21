@@ -81,6 +81,14 @@ async function signInViaOIDCOnlyAndEnableLocalPassword(
       page.locator('[data-settings-local-password-form] button[type="submit"]').click(),
     ]);
     expect(page.url()).not.toMatch(/\/settings(?:\?.*)?$/);
+  } else {
+    // "Already set" is confirmed positively, not inferred from the setup form's
+    // absence: an enrolled account renders the change-password variant, which
+    // posts to the password route and asks for the CURRENT password.
+    const changePasswordForm = page.locator('#settings-change-password-form');
+    await expect(changePasswordForm).toBeVisible();
+    await expect(changePasswordForm).toHaveAttribute('action', '/api/v1/users/current/password');
+    await expect(changePasswordForm.locator('#settings-current-password')).toBeVisible();
   }
 }
 
@@ -228,6 +236,10 @@ test.describe('Auth: OIDC login entry', () => {
     // own and ignores prompt=login, so the lane covers the round trip and the
     // persisted link — the app's freshness gate itself (reauthClaimsFresh over
     // auth_time, never iat) is covered by unit tests against forged claims.
+    // The provider re-authentication proves control of the identity being
+    // bound, not of this account, so the start also asks for the account's
+    // current password.
+    await linkIdentityForm.locator('#settings-oidc-link-password').fill(credentials.password);
     await linkIdentityForm.locator('button[type="submit"]').click();
     await expect(
       page.locator(
@@ -251,6 +263,37 @@ test.describe('Auth: OIDC login entry', () => {
     await completeOnboardingIfPresent(page);
     await expect(page).toHaveURL(/\/dashboard(?:\?.*)?$/);
     await expect(page.locator('[data-nav-account-actions]')).toBeVisible();
+
+    // Unlink it again from Settings: the current password plus a confirmation,
+    // and the account keeps its password as a way in. The removal revokes every
+    // earlier session and re-issues this one, so the browser stays signed in.
+    await page.goto('/settings');
+    const unlinkForm = page.locator('form[data-oidc-unlink-form]').first();
+    await expect(unlinkForm).toBeVisible();
+    await unlinkForm.locator('input[name="password"][type="password"]').fill(credentials.password);
+    await unlinkForm.locator('button[type="submit"]').click();
+    await expect(page.locator('#confirm-modal')).toBeVisible();
+    await page.locator('#confirm-modal-accept').click();
+    await expect(
+      page.locator(
+        '[data-flash-key="settings.success.oidc_identity_unlinked"][data-flash-status="success"]',
+      ),
+    ).toBeVisible({ timeout: 20_000 });
+    expectNoSensitiveAuthParams(page.url());
+
+    // With the link gone, SSO for that provider account is refused again
+    // rather than signing in.
+    await page.locator('.nav-logout-form button[type="submit"]').click();
+    await expect(page.locator('#confirm-modal')).toBeVisible();
+    await page.locator('#confirm-modal-accept').click();
+    await expect(page).toHaveURL(/\/login(?:\?.*)?$/);
+    await page.locator('[data-auth-sso-cta]').click();
+    await expect(
+      page.locator(
+        '[data-auth-server-error][data-error-key="auth.error.sso_link_confirmation_unavailable"]',
+      ),
+    ).toBeVisible();
+    expect(await cookieByName(context, 'ovumcy_auth')).toBeFalsy();
   });
 
   test('oidc_only auto-provision enables a local password', async ({ page }) => {

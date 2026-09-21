@@ -295,9 +295,7 @@ func TestOIDCCompleteLocalPasswordSetupFinalizesOnFreshReauth(t *testing.T) {
 	if fixture.oidcStub.lastReauthUserID != fixture.user.ID {
 		t.Fatalf("expected ValidateReauthExchange to be called with user %d, got %d", fixture.user.ID, fixture.oidcStub.lastReauthUserID)
 	}
-	if fixture.oidcStub.lastReauthMaxAge == 0 {
-		t.Fatal("expected max-age to be passed into ValidateReauthExchange")
-	}
+	fixture.oidcStub.assertReauthExchangeMatchesStart(t, "callback-code")
 
 	var persisted models.User
 	if err := fixture.database.First(&persisted, fixture.user.ID).Error; err != nil {

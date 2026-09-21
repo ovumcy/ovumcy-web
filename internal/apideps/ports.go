@@ -51,4 +51,11 @@ type OIDCWorkflowService interface {
 	ValidateReauthExchange(ctx context.Context, code string, codeVerifier string, expectedNonce string, expectedUserID uint, maxAuthAge time.Duration, now time.Time) error
 	ConfirmAndLinkIdentity(ctx context.Context, targetUserID uint, claims security.OIDCClaims, linkTime time.Time) error
 	CompleteIdentityLinkReauth(ctx context.Context, code string, codeVerifier string, expectedNonce string, targetUserID uint, maxAuthAge time.Duration, now time.Time) error
+	// UnlinkIdentity removes one identity from the account and bumps its
+	// AuthSessionVersion in the same write; the caller has already verified
+	// the current local password.
+	UnlinkIdentity(ctx context.Context, user models.User, identityID uint) error
+	// ListLinkedIdentities returns the identities bound to userID, for the
+	// owner's own settings page.
+	ListLinkedIdentities(ctx context.Context, userID uint) ([]services.LinkedOIDCIdentity, error)
 }

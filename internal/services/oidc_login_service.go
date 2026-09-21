@@ -54,6 +54,16 @@ var (
 	// linkIdentity is called. OIDCLoginResult.PendingLinkClaims carries the
 	// claims to persist; OIDCLoginResult.User carries the target user.
 	ErrOIDCLinkRequiresConfirmation = errors.New("oidc identity link requires confirmation")
+	// ErrOIDCIdentityNotFound indicates an unlink named no identity bound to the
+	// requesting account — missing, zero, or another owner's id alike.
+	ErrOIDCIdentityNotFound = errors.New("oidc identity not found")
+	// ErrOIDCUnlinkLastSignIn indicates removing the identity would leave the
+	// account with no way to sign in: no other linked identity, and no local
+	// password sign-in available (none set, or OIDC_LOGIN_MODE=oidc_only). It is
+	// the shared value from internal/models: the identity repository raises the
+	// same error from inside the delete transaction, where the check that holds
+	// under concurrency runs.
+	ErrOIDCUnlinkLastSignIn = models.ErrOIDCUnlinkLastSignIn
 )
 
 type OIDCProviderClient interface {
@@ -67,7 +77,26 @@ type OIDCProviderClient interface {
 type OIDCIdentityStore interface {
 	FindByIssuerSubject(ctx context.Context, issuer string, subject string) (models.OIDCIdentity, bool, error)
 	Create(ctx context.Context, identity *models.OIDCIdentity) error
+	// CreateAndRevokeSessions binds an identity to an EXISTING account and
+	// bumps its AuthSessionVersion in the same atomic write.
+	CreateAndRevokeSessions(ctx context.Context, identity *models.OIDCIdentity) error
+	ListByUser(ctx context.Context, userID uint) ([]models.OIDCIdentity, error)
+	// DeleteForUserAndRevokeSessions removes one owner-scoped identity and bumps
+	// the owner's AuthSessionVersion in the same atomic write; false means no
+	// row with that id belongs to userID. Inside that write it refuses, with
+	// ErrOIDCUnlinkLastSignIn, a delete that leaves no identity and no usable
+	// local password (localSignInOpen: the instance accepts password sign-in).
+	DeleteForUserAndRevokeSessions(ctx context.Context, userID uint, identityID uint, localSignInOpen bool) (bool, error)
 	TouchLastUsed(ctx context.Context, identityID uint, usedAt time.Time) error
+}
+
+// LinkedOIDCIdentity is the owner-facing view of one bound identity: enough to
+// tell two links apart and pick one to remove, nothing the provider did not
+// already show the owner.
+type LinkedOIDCIdentity struct {
+	ID       uint
+	Issuer   string
+	LinkedAt time.Time
 }
 
 type OIDCUserStore interface {
@@ -193,7 +222,16 @@ func (service *OIDCLoginService) PostLogoutRedirectURL() string {
 	if service == nil {
 		return ""
 	}
-	return strings.TrimSpace(service.config.ResolvedPostLogoutRedirectURL())
+	postLogoutRedirectURL := strings.TrimSpace(service.config.ResolvedPostLogoutRedirectURL())
+	// First-party only, re-checked where the value is handed out rather than
+	// trusted from boot validation alone: the provider sends the browser to
+	// this address after sign-out, so it must be on this instance's own origin —
+	// the origin of the configured OIDC callback. Anything else composes no
+	// provider redirect and the sign-out completes locally.
+	if !security.SameOriginURLString(service.config.RedirectURL, postLogoutRedirectURL) {
+		return ""
+	}
+	return postLogoutRedirectURL
 }
 
 // ProviderLogoutEnabled reports whether the configuration in force NOW routes
@@ -336,7 +374,7 @@ func (service *OIDCLoginService) Authenticate(ctx context.Context, code string, 
 	}
 
 	exchange, err := service.client.ExchangeCode(ctx, code, codeVerifier, expectedNonce)
-	if err != nil {
+	if err != nil || !hasIdentityKey(exchange.Claims) {
 		return OIDCLoginResult{}, ErrOIDCAuthenticationFailed
 	}
 
@@ -411,7 +449,7 @@ func (service *OIDCLoginService) ConfirmAndLinkIdentity(ctx context.Context, tar
 	if !service.Enabled() {
 		return ErrOIDCDisabled
 	}
-	if targetUserID == 0 {
+	if targetUserID == 0 || !hasIdentityKey(claims) {
 		return ErrOIDCLinkFailed
 	}
 
@@ -430,7 +468,95 @@ func (service *OIDCLoginService) ConfirmAndLinkIdentity(ctx context.Context, tar
 		return nil
 	}
 
-	return service.linkIdentity(ctx, targetUserID, claims, linkTime)
+	// An explicit link changes how an existing account can be entered, so it
+	// bumps AuthSessionVersion in the same write (session invalidation
+	// invariant); the caller re-issues its own session afterwards. The
+	// auto-provision path keeps linkIdentity: that account was created by this
+	// very sign-in and has no earlier session to revoke.
+	identity := newOIDCIdentityRecord(targetUserID, claims, linkTime)
+	if err := service.identities.CreateAndRevokeSessions(ctx, &identity); err != nil {
+		return ErrOIDCLinkFailed
+	}
+	return nil
+}
+
+// ListLinkedIdentities returns the identities bound to userID for the owner's
+// own settings page. A zero userID lists nothing.
+func (service *OIDCLoginService) ListLinkedIdentities(ctx context.Context, userID uint) ([]LinkedOIDCIdentity, error) {
+	if service == nil || service.identities == nil || userID == 0 {
+		return nil, nil
+	}
+	identities, err := service.identities.ListByUser(ctx, userID)
+	if err != nil {
+		return nil, ErrOIDCIdentityResolveFailed
+	}
+	linked := make([]LinkedOIDCIdentity, 0, len(identities))
+	for _, identity := range identities {
+		if identity.UserID != userID {
+			// codecov:ignore:start -- the store scopes by user_id in the query;
+			// this is the second half of the privacy boundary, not a live branch.
+			continue
+			// codecov:ignore:end
+		}
+		linked = append(linked, LinkedOIDCIdentity{ID: identity.ID, Issuer: identity.Issuer, LinkedAt: identity.CreatedAt})
+	}
+	return linked, nil
+}
+
+// UnlinkIdentity removes one identity from the requesting account. The caller
+// has already verified a fresh factor (the current local password); this
+// method owns the rules that do not depend on the transport:
+//
+//   - the identity id is combined with the session's user id in the delete
+//     itself, so another owner's id reads as not-found;
+//   - the account must keep a way in: removing its only identity is refused
+//     unless local password sign-in is both set up and allowed on this
+//     instance (OIDC_LOGIN_MODE=hybrid);
+//   - the delete bumps AuthSessionVersion in the same write, so every session
+//     issued before the unlink — including one a removed identity minted —
+//     is revoked.
+func (service *OIDCLoginService) UnlinkIdentity(ctx context.Context, user models.User, identityID uint) error {
+	if !service.Enabled() {
+		return ErrOIDCDisabled
+	}
+	if user.ID == 0 || identityID == 0 {
+		return ErrOIDCIdentityNotFound
+	}
+	identities, err := service.identities.ListByUser(ctx, user.ID)
+	if err != nil {
+		return ErrOIDCIdentityResolveFailed
+	}
+	owned := false
+	for _, identity := range identities {
+		if identity.ID == identityID && identity.UserID == user.ID {
+			owned = true
+			break
+		}
+	}
+	if !owned {
+		return ErrOIDCIdentityNotFound
+	}
+	localSignInOpen := service.LocalPublicAuthEnabled()
+	localSignInAvailable := user.LocalAuthEnabled &&
+		strings.TrimSpace(user.PasswordHash) != "" &&
+		localSignInOpen
+	if len(identities) <= 1 && !localSignInAvailable {
+		return ErrOIDCUnlinkLastSignIn
+	}
+	// The read above answers the common case; the store re-checks the same rule
+	// inside the delete transaction, which is what holds against a concurrent
+	// unlink of the account's other identity.
+	deleted, err := service.identities.DeleteForUserAndRevokeSessions(ctx, user.ID, identityID, localSignInOpen)
+	if errors.Is(err, ErrOIDCUnlinkLastSignIn) {
+		return ErrOIDCUnlinkLastSignIn
+	}
+	if err != nil {
+		return ErrOIDCIdentityResolveFailed
+	}
+	if !deleted {
+		return ErrOIDCIdentityNotFound
+	}
+	return nil
 }
 
 // CompleteIdentityLinkReauth authorises a NEW OIDC identity link from an
@@ -536,17 +662,33 @@ func (service *OIDCLoginService) autoProvisionOrLookupUser(ctx context.Context, 
 }
 
 func (service *OIDCLoginService) linkIdentity(ctx context.Context, userID uint, claims security.OIDCClaims, linkTime time.Time) error {
-	identity := models.OIDCIdentity{
+	if userID == 0 || !hasIdentityKey(claims) {
+		return ErrOIDCLinkFailed
+	}
+	identity := newOIDCIdentityRecord(userID, claims, linkTime)
+	if err := service.identities.Create(ctx, &identity); err != nil {
+		return ErrOIDCLinkFailed
+	}
+	return nil
+}
+
+func newOIDCIdentityRecord(userID uint, claims security.OIDCClaims, linkTime time.Time) models.OIDCIdentity {
+	linkTime = effectiveOIDCLoginTime(linkTime)
+	return models.OIDCIdentity{
 		UserID:     userID,
 		Issuer:     strings.TrimSpace(claims.Issuer),
 		Subject:    strings.TrimSpace(claims.Subject),
 		CreatedAt:  linkTime,
 		LastUsedAt: &linkTime,
 	}
-	if err := service.identities.Create(ctx, &identity); err != nil {
-		return ErrOIDCLinkFailed
-	}
-	return nil
+}
+
+// hasIdentityKey reports whether the claims carry the (issuer, subject) pair
+// every identity is keyed on. A blank either half identifies nobody, so it is
+// refused rather than looked up or bound (the claims parser refuses it first;
+// this is the service's own half of that rule, for any other claims source).
+func hasIdentityKey(claims security.OIDCClaims) bool {
+	return strings.TrimSpace(claims.Issuer) != "" && strings.TrimSpace(claims.Subject) != ""
 }
 
 func effectiveOIDCLoginTime(now time.Time) time.Time {
