@@ -225,7 +225,7 @@ func TestBuildCalendarFeedICSSuppressesForOverdueCycle(t *testing.T) {
 		}
 	})
 
-	t.Run("an overdue cycle emits no prediction events", func(t *testing.T) {
+	t.Run("an overdue cycle without a thermal shift emits no event", func(t *testing.T) {
 		now := mustParseDashboardDay(t, "2026-04-25")
 
 		stats := NewStatsService(nil, nil).BuildCycleStatsFromLogs(user, logs, now, time.UTC)
@@ -238,12 +238,28 @@ func TestBuildCalendarFeedICSSuppressesForOverdueCycle(t *testing.T) {
 		if strings.Contains(body, "BEGIN:VEVENT") {
 			t.Fatalf("an overdue cycle must suppress ALL prediction events, got:\n%s", body)
 		}
-		// The subscription must not break: the feed is prediction-only, so
-		// suppression is the well-formed empty VCALENDAR a client keeps polling.
+		// The subscription must not break: with no prediction and no confirmed
+		// day to publish, suppression is the well-formed empty VCALENDAR a client
+		// keeps polling.
 		for _, marker := range []string{"BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:" + calendarFeedProductID, "END:VCALENDAR"} {
 			if !strings.Contains(body, marker) {
 				t.Fatalf("expected a well-formed empty VCALENDAR carrying %q, got:\n%s", marker, body)
 			}
+		}
+	})
+
+	// The overdue gate withholds projections, not the day the owner's own
+	// temperatures confirmed: that one event survives it, and nothing else does.
+	t.Run("an overdue cycle with a thermal shift emits only the confirmed day", func(t *testing.T) {
+		shiftUser, shiftLogs, _ := outboundConfirmedFixture(t, true)
+		now := mustParseDashboardDay(t, "2026-04-10")
+		if stats := BuildCycleStatsFromLogs(shiftUser, shiftLogs, now, time.UTC); !DashboardCycleOverdue(shiftUser, stats) {
+			t.Fatalf("test setup expects an overdue cycle: cycle day %d", stats.CurrentCycleDay)
+		}
+
+		events := calendarFeedEvents(CalendarFeedICSInput{User: shiftUser, Logs: shiftLogs, Now: now, Location: time.UTC})
+		if len(events) != 1 || events[0].kind != calendarFeedKindOvulation || CalendarDayKey(events[0].date) != "2026-03-11" {
+			t.Fatalf("overdue feed events = %#v, want exactly the confirmed ovulation on 2026-03-11", events)
 		}
 	})
 }

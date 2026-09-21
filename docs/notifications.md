@@ -5,7 +5,8 @@ independent, self-hosted channels: an in-app dashboard banner, an outbound
 webhook (for example a self-hosted [ntfy](https://ntfy.sh/) or
 [Gotify](https://gotify.net/) instance), and a private, read-only calendar
 (`.ics`) subscription. All three read the same underlying prediction and the
-same per-owner lead-time setting. No third-party notification service is
+same per-owner lead-time setting; the calendar feed also carries the current
+cycle's ovulation day once the owner's temperature readings confirm it. No third-party notification service is
 required or built in: this is a zero-cost, self-hosted notification model,
 consistent with Ovumcy's single-tenant, operator-controlled design. The endpoints and calendar clients an
 owner chooses may themselves be third-party services — a hosted webhook target,
@@ -18,6 +19,7 @@ choice, not something Ovumcy arranges.
 > webhook payload, and the calendar feed all carry the same medical-safety
 > framing shown elsewhere in the app:
 > **"Predictions are estimates, not medical advice or a method of contraception."**
+> Webhook reminders only ever announce a day that is still ahead.
 
 This document covers all three channels: what each one is, how an owner
 enables it, and — for the webhook channel, which needs a scheduled delivery
@@ -486,8 +488,20 @@ language — route on those, not on the prose.
 An owner can generate a private, read-only calendar feed URL and subscribe to
 it from any standard calendar app (Google Calendar, Apple Calendar,
 Thunderbird, or any client that supports "subscribe by URL"). The feed shows
-predicted period and ovulation days and updates automatically each time the
+estimated period and ovulation days and updates automatically each time the
 calendar app refreshes it — there is nothing to schedule or run.
+
+Besides the projected days, the feed carries the current cycle's
+temperature-confirmed ovulation day: once a basal body temperature shift
+confirms ovulation, that day appears in the feed exactly when the dashboard and
+the calendar show it, including after a cycle has run so long that projected
+dates are paused. It is still an estimate and carries the same disclaimer. If
+the feed had already projected ovulation for that same day, the calendar app
+updates that event rather than adding a second one; a projected day the
+confirmation replaces is dropped. The confirmed day is withheld in irregular
+(unpredictable) cycle mode, during a pregnancy pause and before the first
+completed cycle, as it is in the app, and earlier cycles are never included.
+Webhook reminders stay future-only and never send a confirmed day.
 
 ### How to enable it
 

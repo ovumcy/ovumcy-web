@@ -27,6 +27,16 @@ import (
 // of invented period dates into a calendar client the app itself would not name
 // a single date to.
 //
+// The feed carries estimated dates, and one of them is not a projection: the
+// current cycle's ovulation day as the owner's own temperatures confirm it
+// (ConfirmedCurrentCycleOvulation). It is published exactly when the dashboard,
+// the calendar grid and the JSON API name it — that resolver's gate
+// (ConfirmedOvulationWithheld) is the only one it passes, so it outlives the
+// overdue signal and stays withheld in unpredictable-cycle mode, during a
+// pregnancy pause and before the first completed cycle. It is the one event the
+// feed publishes for a day already behind the owner; past cycles are never
+// carried.
+//
 // Data-minimization invariant: every VEVENT SUMMARY is the SAME neutral,
 // contentless title (calendarFeedNeutralSummary) — no cycle phase, no date, no
 // symptom appears in the SUMMARY, so a lock-screen preview or a shared calendar
@@ -77,7 +87,17 @@ type CalendarFeedICSInput struct {
 	Disclaimer string
 }
 
-// calendarFeedEvent is one resolved all-day prediction event before rendering.
+const (
+	// calendarFeedKindPeriod and calendarFeedKindOvulation are the two UID
+	// discriminators. The confirmed ovulation day shares the projected one's
+	// kind on purpose: a client that already holds the projection for that date
+	// sees the same UID and updates the event in place instead of adding a
+	// second one.
+	calendarFeedKindPeriod    = "period"
+	calendarFeedKindOvulation = "ovulation"
+)
+
+// calendarFeedEvent is one resolved all-day event before rendering.
 // kind is a stable, non-secret discriminator used only to build a deterministic
 // UID; it is NEVER placed in the SUMMARY (that stays neutral).
 type calendarFeedEvent struct {
@@ -93,10 +113,13 @@ type calendarFeedEvent struct {
 // The decision, in order (mirrors DecideDueReminders' medical-safety gate):
 //   - Build cycle stats from the owner's logs via the SAME path the dashboard
 //     uses (BuildCycleStatsFromLogs, which needs no repositories).
+//   - Emit the current cycle's temperature-confirmed ovulation day when
+//     ConfirmedCurrentCycleOvulation names one — its own gate, the same answer
+//     the dashboard, the calendar grid and the JSON API read.
 //   - If in-app predictions are suppressed (DashboardPredictionDisabled — the
 //     owner's unpredictable-cycle mode — stats.PregnancyPaused, or
-//     DashboardCycleOverdue), emit ZERO events. This is the hard medical-safety
-//     suppression gate.
+//     DashboardCycleOverdue), emit ZERO prediction events. This is the hard
+//     medical-safety suppression gate.
 //   - Otherwise project the next calendarFeedProjectionCycles cycles forward from
 //     the owner's last period start, reusing the dashboard's own cycle-start
 //     projection + window helpers, and emit a predicted-next-period event and an
@@ -107,9 +130,10 @@ func BuildCalendarFeedICS(input CalendarFeedICSInput) []byte {
 	return renderCalendarFeedICS(events, input.Disclaimer, input.Now)
 }
 
-// calendarFeedEvents resolves the neutral, all-day prediction events for the
-// feed. Returns nil when predictions are suppressed or no cycle can be
-// projected.
+// calendarFeedEvents resolves the neutral, all-day events for the feed: the
+// current cycle's confirmed ovulation day when its gate lets it through, then
+// the projected events. Returns no prediction event when predictions are
+// suppressed or no cycle can be projected.
 func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 	user := input.User
 	if user == nil {
@@ -126,15 +150,47 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 	// reads the verdict it returns rather than asking the predicates again.
 	stats, suppression := PublishedStats(user, BuildCycleStatsFromLogs(user, input.Logs, input.Now, input.Location), input.Logs, today, input.Location)
 
+	events := make([]calendarFeedEvent, 0, calendarFeedProjectionCycles*2+1)
+	seen := make(map[string]struct{}, calendarFeedProjectionCycles*2+1)
+	appendEvent := func(kind string, date time.Time) {
+		key := kind + "-" + date.Format(calendarFeedDateLayout)
+		if _, dup := seen[key]; dup {
+			// codecov:ignore -- defensive: a confirmed day is behind today and every
+			// projected ovulation is on or after it, and projected cycles step
+			// strictly forward, so (kind, date) is unique in practice; dedupe guards
+			// the UID invariant if that ever stops holding rather than falling back
+			// to a disambiguating suffix that would break UID stability across
+			// renders.
+			return
+		}
+		seen[key] = struct{}{}
+		events = append(events, calendarFeedEvent{kind: kind, date: date})
+	}
+
+	// The confirmed ovulation day comes first and ahead of the suppression gate
+	// below. Whether it may be named is decided once, inside
+	// ConfirmedCurrentCycleOvulation (ConfirmedOvulationWithheld), which the
+	// dashboard, the calendar grid and the JSON API read too — so the feed shows
+	// the day exactly when they do, never under a gate of its own. That gate
+	// leaves out the overdue signal (the day was read off recorded temperatures,
+	// not rolled forward from a cycle length) and keeps unpredictable-cycle mode,
+	// the pregnancy pause and the first-cycle floor. No "not in the past" filter
+	// applies: a confirmed day is always behind the owner, and it stays in the
+	// feed only while its cycle is the current one. It takes the ovulation kind,
+	// so a projection a client already holds for the same date keeps its UID.
+	if confirmed, ok := ConfirmedCurrentCycleOvulation(user, input.Logs, stats, today, input.Location); ok {
+		appendEvent(calendarFeedKindOvulation, CalendarDay(confirmed, input.Location))
+	}
+
 	// Medical-safety suppression gate: if the app suppresses predictions, emit
-	// nothing. Unpredictable-cycle mode, a pregnancy pause, OR an overdue cycle
-	// (DashboardCycleOverdue — past the account's own cycle length by more than a
-	// week, where the projection can only roll a whole cycle forward) each
-	// suppress on their own, and they are read here through the one predicate
-	// every surface shares. The feed carries prediction events only, so this is
-	// the empty-but-well-formed VCALENDAR path.
+	// no projected event. Unpredictable-cycle mode, a pregnancy pause, OR an
+	// overdue cycle (DashboardCycleOverdue — past the account's own cycle length
+	// by more than a week, where the projection can only roll a whole cycle
+	// forward) each suppress on their own, and they are read here through the one
+	// predicate every surface shares. Without a confirmed day above, this is the
+	// empty-but-well-formed VCALENDAR path.
 	if suppression.PredictionsSuppressed {
-		return nil
+		return events
 	}
 
 	// The ovulation events carry the extra first-cycle floor: with no completed
@@ -144,7 +200,7 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 	includeOvulation := !suppression.FertilitySuppressed
 	cycleLength := DashboardProjectionCycleLength(user, stats)
 	if stats.LastPeriodStart.IsZero() || cycleLength <= 0 {
-		return nil
+		return events
 	}
 
 	// Anchor the first projected cycle to the current/next cycle start exactly as
@@ -153,29 +209,15 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 	if !ok {
 		// codecov:ignore -- defensive: ProjectCycleStart only reports !ok for a zero
 		// LastPeriodStart or non-positive cycleLength, both already returned above.
-		return nil
+		return events
 	}
 
-	events := make([]calendarFeedEvent, 0, calendarFeedProjectionCycles*2)
-	seen := make(map[string]struct{}, calendarFeedProjectionCycles*2)
-	appendEvent := func(kind string, date time.Time) {
-		key := kind + "-" + date.Format(calendarFeedDateLayout)
-		if _, dup := seen[key]; dup {
-			// codecov:ignore -- defensive: projected cycles step strictly forward, so
-			// (kind, date) is unique in practice; dedupe guards the UID invariant if
-			// that ever stops holding rather than falling back to a disambiguating
-			// suffix that would break UID stability across renders.
-			return
-		}
-		seen[key] = struct{}{}
-		events = append(events, calendarFeedEvent{kind: kind, date: date})
-	}
 	for cycle := range calendarFeedProjectionCycles {
 		anchor := AddCalendarDays(cycleStart, cycle*cycleLength, input.Location)
 
 		nextPeriodStart := AddCalendarDays(anchor, cycleLength, input.Location)
 		if !nextPeriodStart.Before(today) {
-			appendEvent("period", nextPeriodStart)
+			appendEvent(calendarFeedKindPeriod, nextPeriodStart)
 		}
 
 		window := PredictCycleWindow(anchor, cycleLength, stats.LutealPhase)
@@ -184,15 +226,15 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 		// needs a calendar-day comparison, or the ovulation event disappears from
 		// the feed on the ovulation day itself in every UTC-minus zone (issue #48
 		// class).
-		// A confirmed thermal shift outranks the projection it supersedes. The feed
-		// publishes an ovulation only while it is still ahead, so once the current
-		// cycle's shift has named the day, this cycle's projected event is a second
-		// date for one shift going out to a calendar client that keeps it —
+		// A confirmed thermal shift outranks the projection it supersedes. Once the
+		// current cycle's shift has named the day, the confirmed event above
+		// carries it, and this cycle's projected event would be a second date for
+		// one shift going out to a calendar client that keeps it —
 		// ConfirmedOvulationSupersedes bounds that to the confirmation's own cycle,
 		// so the later projected cycles here are untouched.
 		if includeOvulation && window.Calculable && CalendarDaysBetween(window.OvulationDate, today) <= 0 &&
 			!ConfirmedOvulationSupersedes(user, input.Logs, stats, window.OvulationDate, today, input.Location) {
-			appendEvent("ovulation", CalendarDay(window.OvulationDate, input.Location))
+			appendEvent(calendarFeedKindOvulation, CalendarDay(window.OvulationDate, input.Location))
 		}
 	}
 	return events

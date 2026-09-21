@@ -193,12 +193,12 @@ func ConfirmedCurrentCycleOvulation(user *models.User, logs []models.DailyLog, s
 // the owner's temperatures have already answered.
 //
 // The on-screen surfaces replace such a day with the one inferred from the
-// temperature shift. The two
-// surfaces that leave the instance — the .ics feed and the webhook reminder —
-// cannot: both exist to announce a day that is still ahead, and a shift confirms
-// a day that is behind. Announcing the projection anyway is how they came to
-// name a different day than the dashboard and the grid for one shift, on the day
-// the difference is largest: the projected day itself.
+// temperature shift, and so does the .ics feed, which publishes the confirmed
+// day as an event of its own. The webhook reminder cannot: it exists to
+// announce a day that is still ahead, and a shift confirms a day that is
+// behind. Announcing the projection anyway is how both egress surfaces came to
+// name a different day than the dashboard and the grid for one shift, on the
+// day the difference is largest: the projected day itself.
 //
 // The NextPeriodStart bound sorts the projection a caller passes by date: one
 // before it is the model's ovulation for the CURRENT cycle (luteal days ahead
