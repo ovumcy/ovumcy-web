@@ -28,6 +28,12 @@ import (
 // legacy row the strict NormalizeAuthEmail rule refuses, or one sharing a
 // mailbox with another account, neither of which any email-taking command can
 // address at all.
+//
+// A new link changes how the account can be entered, so ConfirmAndLinkIdentity
+// bumps its AuthSessionVersion in the same write: every session the account
+// had open is signed out, exactly as a link from Settings does. Re-running the
+// command for a pair already linked to that account changes nothing and signs
+// nobody out.
 const linkOIDCIdentityUsage = "usage: ovumcy link-oidc-identity <email>|--id <id> --issuer <issuer> --subject <subject>"
 
 type linkOIDCIdentityOptions struct {
@@ -186,6 +192,7 @@ func runLinkOIDCIdentityCommand(databaseConfig db.Config, oidcConfig security.OI
 		output = os.Stdout
 	}
 	_, _ = fmt.Fprintf(output, "✅ Linked OIDC identity (issuer=%s, subject=%s) to account %q (id=%d)\n", claims.Issuer, claims.Subject, target.Email, target.ID)
+	_, _ = fmt.Fprintln(output, "   A new link signs out every session the account had open; its owner signs in again.")
 	return nil
 }
 

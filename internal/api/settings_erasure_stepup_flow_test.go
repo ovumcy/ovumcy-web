@@ -119,6 +119,7 @@ func TestErasureStepupClearsDataOnlyAfterAFreshReauth(t *testing.T) {
 	if fixture.oidcStub.lastReauthUserID != fixture.user.ID {
 		t.Fatalf("expected the reauth to be validated for user %d, got %d", fixture.user.ID, fixture.oidcStub.lastReauthUserID)
 	}
+	fixture.oidcStub.assertReauthExchangeMatchesStart(t, "callback-code")
 }
 
 // TestErasureStepupDeletesAccountOnlyAfterAFreshReauth is the delete-account
@@ -151,6 +152,7 @@ func TestErasureStepupDeletesAccountOnlyAfterAFreshReauth(t *testing.T) {
 	if got := countStepupAccounts(t, fixture); got != 0 {
 		t.Fatalf("expected the account to be deleted after the callback, accounts = %d", got)
 	}
+	fixture.oidcStub.assertReauthExchangeMatchesStart(t, "callback-code")
 
 	// The erasure completes through the same applyDeleteAccount as the
 	// password-gated route, so this arm must retract the session's cookies too —

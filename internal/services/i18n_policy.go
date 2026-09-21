@@ -149,8 +149,8 @@ var authErrorTranslationKeys = map[string]string{ // #nosec G101 -- false positi
 	// empty banner: the owner saw an unchanged settings page and could not tell a
 	// refused step-up from a completed one. Regression:
 	// api.TestEverySettingsStepupRefusalKeyMapsToLocalizedCopy.
-	"oidc reauth identity mismatch":         "settings.error.oidc_reauth_mismatch",
-	"oidc reauth stale":                     "settings.error.oidc_reauth_stale",
+	"oidc reauth identity mismatch": "settings.error.oidc_reauth_mismatch",
+	"oidc reauth stale":             "settings.error.oidc_reauth_stale",
 	// Separate from the stale sentence above, and not a wording preference: on
 	// a provider that never sends auth_time the stale copy's "try again" is a
 	// loop with no exit, so this one says the retry cannot help and names what
@@ -199,6 +199,7 @@ var settingsStatusTranslationKeys = map[string]string{
 	"profile_name_cleared":    "settings.success.profile_name_cleared",
 	"data_cleared":            "settings.success.data_cleared",
 	"oidc_identity_linked":    "settings.success.oidc_identity_linked",
+	"oidc_identity_unlinked":  "settings.success.oidc_identity_unlinked",
 	"symptom_created":         "settings.symptoms.success.created",
 	"symptom_updated":         "settings.symptoms.success.updated",
 	"symptom_hidden":          "settings.symptoms.success.hidden",

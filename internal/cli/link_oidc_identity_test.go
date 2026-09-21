@@ -105,6 +105,35 @@ func TestRunLinkOIDCIdentityCommandLinksByID(t *testing.T) {
 	if identity.Issuer != "https://idp.example.com" || identity.Subject != "cli-linked-subject" {
 		t.Fatalf("unexpected persisted identity: %+v", identity)
 	}
+
+	// A link is an identity change: the command revokes every session the
+	// account had open, and says so.
+	if got := loadCLIAuthSessionVersion(t, databasePath, user.ID); got != user.AuthSessionVersion+1 {
+		t.Fatalf("expected the link to bump the session version from %d to %d, got %d", user.AuthSessionVersion, user.AuthSessionVersion+1, got)
+	}
+	if !strings.Contains(output.String(), "signs out every session") {
+		t.Fatalf("expected the output to say existing sessions were signed out, got %q", output.String())
+	}
+}
+
+func loadCLIAuthSessionVersion(t *testing.T, databasePath string, userID uint) int {
+	t.Helper()
+
+	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	sqlDB, err := database.DB()
+	if err != nil {
+		t.Fatalf("open sql db: %v", err)
+	}
+	defer func() { _ = sqlDB.Close() }()
+
+	var user models.User
+	if err := database.First(&user, userID).Error; err != nil {
+		t.Fatalf("load user %d: %v", userID, err)
+	}
+	return user.AuthSessionVersion
 }
 
 // TestRunLinkOIDCIdentityCommandRefusesUnknownID pins (d)'s negative half: an

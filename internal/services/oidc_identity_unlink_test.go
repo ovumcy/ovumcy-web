@@ -1,0 +1,215 @@
+package services
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/security"
+)
+
+func newUnlinkTestService(loginMode security.OIDCLoginMode, identities *stubOIDCIdentityStore) *OIDCLoginService {
+	return NewOIDCLoginService(&stubOIDCProviderClient{
+		enabled: true,
+		config:  security.OIDCConfig{Enabled: true, LoginMode: loginMode},
+	}, identities, &stubOIDCUserStore{}, nil)
+}
+
+func unlinkTestOwner(withPassword bool) models.User {
+	user := models.User{ID: 7, Role: models.RoleOwner}
+	if withPassword {
+		user.LocalAuthEnabled = true
+		user.PasswordHash = "$2a$10$placeholderplaceholderplaceholderplaceholderplaceholde"
+	}
+	return user
+}
+
+func TestOIDCUnlinkIdentityRemovesTheOwnersIdentityAndRevokesSessions(t *testing.T) {
+	t.Parallel()
+
+	identities := &stubOIDCIdentityStore{listed: []models.OIDCIdentity{
+		{ID: 1, UserID: 7, Issuer: "https://id.example.com", Subject: "a"},
+	}}
+	service := newUnlinkTestService(security.OIDCLoginModeHybrid, identities)
+
+	if err := service.UnlinkIdentity(context.Background(), unlinkTestOwner(true), 1); err != nil {
+		t.Fatalf("UnlinkIdentity() unexpected error: %v", err)
+	}
+	if identities.deletedID != 1 || identities.deleteCalls != 1 {
+		t.Fatalf("expected exactly one revoking delete of identity 1, got calls=%d id=%d", identities.deleteCalls, identities.deletedID)
+	}
+}
+
+// An identity id belonging to another owner reads exactly like a missing one,
+// and nothing is deleted: the id from the request is always combined with the
+// session's user id.
+func TestOIDCUnlinkIdentityRefusesAnotherOwnersIdentity(t *testing.T) {
+	t.Parallel()
+
+	identities := &stubOIDCIdentityStore{listed: []models.OIDCIdentity{
+		{ID: 1, UserID: 7, Issuer: "https://id.example.com", Subject: "mine"},
+		{ID: 2, UserID: 8, Issuer: "https://id.example.com", Subject: "theirs"},
+	}}
+	service := newUnlinkTestService(security.OIDCLoginModeHybrid, identities)
+
+	for _, identityID := range []uint{2, 0, 99} {
+		err := service.UnlinkIdentity(context.Background(), unlinkTestOwner(true), identityID)
+		if !errors.Is(err, ErrOIDCIdentityNotFound) {
+			t.Fatalf("identity %d: expected ErrOIDCIdentityNotFound, got %v", identityID, err)
+		}
+	}
+	if identities.deleteCalls != 0 {
+		t.Fatalf("expected no delete for a foreign, zero or missing id, got %d", identities.deleteCalls)
+	}
+}
+
+// The account must keep a way in. The last identity goes only when local
+// password sign-in is both set up and allowed on this instance.
+func TestOIDCUnlinkIdentityRefusesToRemoveTheLastSignInMethod(t *testing.T) {
+	t.Parallel()
+
+	for name, tc := range map[string]struct {
+		mode         security.OIDCLoginMode
+		withPassword bool
+		want         error
+	}{
+		"no local password":                 {mode: security.OIDCLoginModeHybrid, withPassword: false, want: ErrOIDCUnlinkLastSignIn},
+		"password but local sign-in closed": {mode: security.OIDCLoginModeOIDCOnly, withPassword: true, want: ErrOIDCUnlinkLastSignIn},
+		"password and local sign-in open":   {mode: security.OIDCLoginModeHybrid, withPassword: true, want: nil},
+	} {
+		identities := &stubOIDCIdentityStore{listed: []models.OIDCIdentity{
+			{ID: 1, UserID: 7, Issuer: "https://id.example.com", Subject: "only"},
+		}}
+		service := newUnlinkTestService(tc.mode, identities)
+		err := service.UnlinkIdentity(context.Background(), unlinkTestOwner(tc.withPassword), 1)
+		if !errors.Is(err, tc.want) || (tc.want == nil && err != nil) {
+			t.Fatalf("%s: expected %v, got %v", name, tc.want, err)
+		}
+		wantDeletes := 0
+		if tc.want == nil {
+			wantDeletes = 1
+		}
+		if identities.deleteCalls != wantDeletes {
+			t.Fatalf("%s: expected %d deletes, got %d", name, wantDeletes, identities.deleteCalls)
+		}
+	}
+}
+
+// With a second identity left, an OIDC-only account may drop one of them.
+func TestOIDCUnlinkIdentityAllowsRemovingOneOfTwoWithoutAPassword(t *testing.T) {
+	t.Parallel()
+
+	identities := &stubOIDCIdentityStore{listed: []models.OIDCIdentity{
+		{ID: 1, UserID: 7, Issuer: "https://id.example.com", Subject: "a"},
+		{ID: 2, UserID: 7, Issuer: "https://id.example.com", Subject: "b"},
+	}}
+	service := newUnlinkTestService(security.OIDCLoginModeOIDCOnly, identities)
+	if err := service.UnlinkIdentity(context.Background(), unlinkTestOwner(false), 2); err != nil {
+		t.Fatalf("UnlinkIdentity() unexpected error: %v", err)
+	}
+	if identities.deletedID != 2 {
+		t.Fatalf("expected identity 2 deleted, got %d", identities.deletedID)
+	}
+}
+
+// The service's own read can be stale: a concurrent unlink of the other
+// identity commits between it and the delete. The store's in-transaction
+// refusal must surface as the same last-sign-in error, not as a storage fault,
+// and the store must be told whether this instance accepts password sign-in.
+func TestOIDCUnlinkIdentitySurfacesTheStoresLastSignInRefusal(t *testing.T) {
+	t.Parallel()
+
+	for name, tc := range map[string]struct {
+		mode     security.OIDCLoginMode
+		wantOpen bool
+	}{
+		"oidc_only": {mode: security.OIDCLoginModeOIDCOnly, wantOpen: false},
+		"hybrid":    {mode: security.OIDCLoginModeHybrid, wantOpen: true},
+	} {
+		identities := &stubOIDCIdentityStore{
+			listed: []models.OIDCIdentity{
+				{ID: 1, UserID: 7, Issuer: "https://id.example.com", Subject: "a"},
+				{ID: 2, UserID: 7, Issuer: "https://id.example.com", Subject: "b"},
+			},
+			deleteErr: models.ErrOIDCUnlinkLastSignIn,
+		}
+		service := newUnlinkTestService(tc.mode, identities)
+		if err := service.UnlinkIdentity(context.Background(), unlinkTestOwner(false), 2); !errors.Is(err, ErrOIDCUnlinkLastSignIn) {
+			t.Fatalf("%s: expected ErrOIDCUnlinkLastSignIn from the store's refusal, got %v", name, err)
+		}
+		if identities.deleteLocalSignInOpen != tc.wantOpen {
+			t.Fatalf("%s: expected localSignInOpen=%v passed to the store, got %v", name, tc.wantOpen, identities.deleteLocalSignInOpen)
+		}
+	}
+}
+
+func TestOIDCListLinkedIdentitiesIsOwnerScoped(t *testing.T) {
+	t.Parallel()
+
+	linkedAt := time.Date(2026, time.September, 1, 8, 0, 0, 0, time.UTC)
+	identities := &stubOIDCIdentityStore{listed: []models.OIDCIdentity{
+		{ID: 1, UserID: 7, Issuer: "https://id.example.com", Subject: "a", CreatedAt: linkedAt},
+		{ID: 2, UserID: 8, Issuer: "https://id.example.com", Subject: "b", CreatedAt: linkedAt},
+	}}
+	service := newUnlinkTestService(security.OIDCLoginModeHybrid, identities)
+
+	linked, err := service.ListLinkedIdentities(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("ListLinkedIdentities() unexpected error: %v", err)
+	}
+	if len(linked) != 1 || linked[0].ID != 1 || !linked[0].LinkedAt.Equal(linkedAt) {
+		t.Fatalf("expected only the owner's identity, got %+v", linked)
+	}
+	if none, _ := service.ListLinkedIdentities(context.Background(), 0); len(none) != 0 {
+		t.Fatalf("a zero user id must list nothing, got %+v", none)
+	}
+}
+
+// An explicit link to an existing account bumps AuthSessionVersion in the
+// same write: the store call that persists it must be the revoking one.
+func TestOIDCConfirmAndLinkIdentityRevokesSessionsInTheSameWrite(t *testing.T) {
+	t.Parallel()
+
+	identities := &stubOIDCIdentityStore{}
+	service := newUnlinkTestService(security.OIDCLoginModeHybrid, identities)
+	claims := security.OIDCClaims{Issuer: "https://id.example.com", Subject: "fresh-sub"}
+	if err := service.ConfirmAndLinkIdentity(context.Background(), 7, claims, time.Now()); err != nil {
+		t.Fatalf("ConfirmAndLinkIdentity() unexpected error: %v", err)
+	}
+	if !identities.revokedOnCreate {
+		t.Fatal("expected the link to be written through CreateAndRevokeSessions")
+	}
+}
+
+// A blank subject or issuer identifies nobody: it is refused before any lookup
+// or write, on the link path and on sign-in.
+func TestOIDCBlankSubjectIsRefusedAtLinkAndSignIn(t *testing.T) {
+	t.Parallel()
+
+	for name, claims := range map[string]security.OIDCClaims{
+		"empty subject": {Issuer: "https://id.example.com", Subject: "", Email: "owner@example.com", EmailVerified: true},
+		"blank subject": {Issuer: "https://id.example.com", Subject: "  ", Email: "owner@example.com", EmailVerified: true},
+		"empty issuer":  {Issuer: "", Subject: "sub", Email: "owner@example.com", EmailVerified: true},
+	} {
+		identities := &stubOIDCIdentityStore{}
+		service := newUnlinkTestService(security.OIDCLoginModeHybrid, identities)
+		if err := service.ConfirmAndLinkIdentity(context.Background(), 7, claims, time.Now()); !errors.Is(err, ErrOIDCLinkFailed) {
+			t.Fatalf("%s: link expected ErrOIDCLinkFailed, got %v", name, err)
+		}
+
+		client := &stubOIDCProviderClient{
+			enabled:  true,
+			config:   security.OIDCConfig{Enabled: true, LoginMode: security.OIDCLoginModeHybrid, AutoProvision: true},
+			exchange: security.OIDCExchangeResult{Claims: claims},
+		}
+		signIn := NewOIDCLoginService(client, identities, &stubOIDCUserStore{}, nil)
+		if _, err := signIn.Authenticate(context.Background(), "code", "verifier", "nonce", time.Now()); !errors.Is(err, ErrOIDCAuthenticationFailed) {
+			t.Fatalf("%s: sign-in expected ErrOIDCAuthenticationFailed, got %v", name, err)
+		}
+		if identities.createCallSeen || identities.lastSubject != "" || identities.lastIssuer != "" {
+			t.Fatalf("%s: expected no lookup or write, got create=%v lookup=(%q,%q)", name, identities.createCallSeen, identities.lastIssuer, identities.lastSubject)
+		}
+	}
+}

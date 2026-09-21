@@ -41,6 +41,33 @@ func TestOIDCLoginServiceReportsTheConfiguredLogoutInputs(t *testing.T) {
 			},
 			want: "https://ovumcy.example.com/login",
 		},
+		// First-party only: an address off this instance's origin — which boot
+		// validation refuses, and which this accessor refuses again at the point
+		// it hands the value out — composes no provider redirect at all.
+		"third-party post-logout address": {
+			config: security.OIDCConfig{
+				IssuerURL:             "https://id.example.com",
+				RedirectURL:           "https://ovumcy.example.com/auth/oidc/callback",
+				PostLogoutRedirectURL: "https://evil.example.net/landing",
+			},
+			want: "",
+		},
+		"post-logout address on another port": {
+			config: security.OIDCConfig{
+				IssuerURL:             "https://id.example.com",
+				RedirectURL:           "https://ovumcy.example.com/auth/oidc/callback",
+				PostLogoutRedirectURL: "https://ovumcy.example.com:8443/signed-out",
+			},
+			want: "",
+		},
+		"first-party on a loopback instance": {
+			config: security.OIDCConfig{
+				IssuerURL:             "https://id.example.com",
+				RedirectURL:           "https://localhost:8080/auth/oidc/callback",
+				PostLogoutRedirectURL: "https://localhost:8080/signed-out",
+			},
+			want: "https://localhost:8080/signed-out",
+		},
 	} {
 		service := NewOIDCLoginService(&stubOIDCProviderClient{config: tc.config}, &stubOIDCIdentityStore{}, &stubOIDCUserStore{}, nil)
 		if got := service.IssuerURL(); got != "https://id.example.com" {

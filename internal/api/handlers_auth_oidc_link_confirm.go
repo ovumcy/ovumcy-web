@@ -236,6 +236,23 @@ func (handler *Handler) CompleteOIDCLinkConfirmation(c fiber.Ctx) error {
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/reset-password")
 	}
 
+	// ConfirmAndLinkIdentity bumped AuthSessionVersion in the same write as the
+	// link, so the targetUser read above now carries a revoked version: a
+	// session minted from it is refused on the very next request. Reload the
+	// account and mint at the stored version, as the Settings link does
+	// (reissueSessionAfterIdentityChange).
+	linkedUser, err := handler.authService.FindByID(c.Context(), payload.TargetUserID)
+	if err != nil {
+		// codecov:ignore:start -- the account was resolved by this same request;
+		// only a storage fault between the two reads reaches this line.
+		spec := authSessionCreateErrorSpec()
+		handler.logSecurityError(c, "auth.oidc_link_confirm", spec)
+		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
+		// codecov:ignore:end
+	}
+	targetUser = linkedUser
+
 	if _, err := handler.setAuthCookie(c, &targetUser, false); err != nil {
 		// codecov:ignore:start -- defensive: the LoginService password gate above already refuses
 		// unsupported roles (TestFullPageFallbackLinkConfirmRejectsUnsupportedRoleTarget), so this

@@ -160,6 +160,9 @@ func newTestHandlerDependencies(database *gorm.DB, i18nManager *i18n.Manager, op
 			LogoutMode:            appOptions.oidcLogoutMode,
 			IssuerURL:             testOIDCIssuerURL,
 			PostLogoutRedirectURL: testOIDCPostLogoutRedirectURL,
+			// The callback origin is what makes the post-logout address
+			// first-party; boot requires it whenever OIDC is on.
+			RedirectURL: testOIDCPostLogoutRedirectURL,
 		},
 		OIDCServiceOverride:     appOptions.oidcService,
 		LoginAttempts:           bootstrap.AttemptLimit{Max: services.DefaultLoginAttemptsLimit, Window: services.DefaultLoginAttemptsWindow},

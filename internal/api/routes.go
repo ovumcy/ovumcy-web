@@ -105,6 +105,7 @@ func registerV1APIRoutes(app *fiber.App, handler *Handler) {
 	// the replacement — a fresh provider re-authentication gates the same
 	// permanent binding ConfirmAndLinkIdentity performs.
 	usersCurrent.Post("/oidc/link/step-up", handler.OwnerOnly, handler.StartOIDCIdentityLinkStepup)
+	usersCurrent.Delete("/oidc/identities/:id", handler.OwnerOnly, handler.UnlinkOIDCIdentity)
 
 	onboarding := v1.Group("/onboarding", handler.AuthRequired)
 	onboarding.Post("/steps/1", handler.OwnerOnly, handler.OnboardingStep1)

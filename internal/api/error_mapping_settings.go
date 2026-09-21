@@ -104,6 +104,21 @@ func mapOIDCIdentityLinkReauthError(err error) APIErrorSpec {
 	}
 }
 
+// mapOIDCIdentityUnlinkError maps failures of UnlinkIdentity. A foreign,
+// zero or missing id share one 404 so the answer is no oracle for other
+// owners' identity ids; refusing to remove the last way in reuses the
+// "local password required" key, which is what the owner has to set up first.
+func mapOIDCIdentityUnlinkError(err error) APIErrorSpec {
+	switch {
+	case errors.Is(err, services.ErrOIDCIdentityNotFound):
+		return notFoundErrorSpec()
+	case errors.Is(err, services.ErrOIDCUnlinkLastSignIn):
+		return settingsLocalPasswordRequiredErrorSpec()
+	default:
+		return authOIDCUnavailableErrorSpec()
+	}
+}
+
 func settingsCycleUpdateErrorSpec() APIErrorSpec {
 	return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update cycle settings")
 }

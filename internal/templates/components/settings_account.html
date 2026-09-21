@@ -189,10 +189,74 @@
             <h3 class="field-label field-label-lg">{{t .Messages "settings.oidc_link.title"}}</h3>
             <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.oidc_link.description"}}</p>
           </div>
-          <form action="/api/v1/users/current/oidc/link/step-up" method="post">
+          {{/* Linking needs the account's current password as fresh proof of
+               the account holder; an account without one sets it first. */}}
+          {{if .CurrentUser.LocalAuthEnabled}}
+          <form action="/api/v1/users/current/oidc/link/step-up" method="post" class="space-y-2" data-oidc-link-form>
             <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+            {{template "password_username_context_field" (dict "Value" .CurrentUser.Email)}}
+            {{template "password_toggle_field" (dict
+              "Messages" .Messages
+              "LabelKey" "settings.oidc_link.password"
+              "FieldID" "settings-oidc-link-password"
+              "FieldName" "password"
+              "Autocomplete" "current-password"
+              "Required" true)}}
             <button type="submit" class="btn-secondary">{{t .Messages "settings.oidc_link.button"}}</button>
           </form>
+          {{else}}
+          <p class="journal-muted text-sm" data-oidc-link-needs-password>{{t .Messages "settings.oidc_link.needs_password"}}</p>
+          {{end}}
+        </div>
+
+        {{/* Every identity bound to this account, each with its own unlink
+             form. Unlinking is gated like deleting the account: the current
+             password plus a confirmation. The server refuses to remove the
+             account's last way in, and the removal signs out every other
+             device. */}}
+        <div class="space-y-2" data-oidc-linked-identities>
+          <h4 class="field-label">{{t .Messages "settings.oidc_link.linked_title"}}</h4>
+          {{if .LinkedOIDCIdentities}}
+          <ul class="space-y-3">
+            {{range .LinkedOIDCIdentities}}
+            <li class="space-y-2" data-oidc-linked-identity>
+              <p class="text-sm break-all">
+                <span data-oidc-linked-identity-issuer>{{.Issuer}}</span>
+                <span class="journal-muted">· {{t $.Messages "settings.oidc_link.linked_at"}} <time datetime="{{.LinkedAtISO}}">{{.LinkedAtText}}</time></span>
+              </p>
+              {{if $.CurrentUser.LocalAuthEnabled}}
+              <form
+                method="post"
+                hx-delete="/api/v1/users/current/oidc/identities/{{.ID}}"
+                hx-target="#oidc-unlink-feedback-{{.ID}}"
+                hx-swap="innerHTML"
+                hx-confirm="{{t $.Messages "settings.oidc_link.confirm_unlink"}}"
+                data-confirm-accept="{{t $.Messages "settings.oidc_link.unlink"}}"
+                class="space-y-2"
+                data-oidc-unlink-form>
+                <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+                {{template "password_username_context_field" (dict "Value" $.CurrentUser.Email)}}
+                <div class="settings-form-actions">
+                  <div class="min-w-0 flex-1 space-y-1 sm:max-w-xs">
+                    {{template "password_toggle_field" (dict
+                      "Messages" $.Messages
+                      "LabelKey" "settings.oidc_link.unlink_password"
+                      "FieldID" (printf "settings-oidc-unlink-password-%d" .ID)
+                      "FieldName" "password"
+                      "Autocomplete" "current-password"
+                      "Required" true)}}
+                  </div>
+                  <button type="submit" class="btn-secondary">{{t $.Messages "settings.oidc_link.unlink"}}</button>
+                </div>
+                <div id="oidc-unlink-feedback-{{.ID}}" class="save-status text-sm" aria-live="polite"></div>
+              </form>
+              {{end}}
+            </li>
+            {{end}}
+          </ul>
+          {{else}}
+          <p class="journal-muted text-sm">{{t .Messages "settings.oidc_link.linked_empty"}}</p>
+          {{end}}
         </div>
       </section>
       {{end}}

@@ -62,6 +62,16 @@ type stubOIDCIdentityStore struct {
 	// nothing observable and a mis-scoped link would go unnoticed.
 	lastIssuer  string
 	lastSubject string
+
+	revokedOnCreate bool
+	listed          []models.OIDCIdentity
+	listErr         error
+	lastListUserID  uint
+	deleteErr       error
+	deleteCalls     int
+	deletedID       uint
+
+	deleteLocalSignInOpen bool
 }
 
 func (stub *stubOIDCIdentityStore) FindByIssuerSubject(_ context.Context, issuer string, subject string) (models.OIDCIdentity, bool, error) {
@@ -82,6 +92,44 @@ func (stub *stubOIDCIdentityStore) Create(ctx context.Context, identity *models.
 		stub.created = *identity
 	}
 	return stub.createErr
+}
+
+// CreateAndRevokeSessions records into the same fields as Create — a link is a
+// link to the assertions that read them — and additionally marks that the
+// write carried the session-version bump.
+func (stub *stubOIDCIdentityStore) CreateAndRevokeSessions(ctx context.Context, identity *models.OIDCIdentity) error {
+	stub.revokedOnCreate = true
+	return stub.Create(ctx, identity)
+}
+
+func (stub *stubOIDCIdentityStore) ListByUser(_ context.Context, userID uint) ([]models.OIDCIdentity, error) {
+	stub.lastListUserID = userID
+	if stub.listErr != nil {
+		return nil, stub.listErr
+	}
+	owned := make([]models.OIDCIdentity, 0, len(stub.listed))
+	for _, identity := range stub.listed {
+		if identity.UserID == userID {
+			owned = append(owned, identity)
+		}
+	}
+	return owned, nil
+}
+
+func (stub *stubOIDCIdentityStore) DeleteForUserAndRevokeSessions(_ context.Context, userID uint, identityID uint, localSignInOpen bool) (bool, error) {
+	stub.deleteCalls++
+	stub.deleteLocalSignInOpen = localSignInOpen
+	if stub.deleteErr != nil {
+		return false, stub.deleteErr
+	}
+	for index, identity := range stub.listed {
+		if identity.ID == identityID && identity.UserID == userID {
+			stub.listed = append(stub.listed[:index], stub.listed[index+1:]...)
+			stub.deletedID = identityID
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (stub *stubOIDCIdentityStore) TouchLastUsed(ctx context.Context, identityID uint, usedAt time.Time) error {

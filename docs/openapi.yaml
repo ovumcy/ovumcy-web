@@ -2687,12 +2687,29 @@ paths:
         answered with a same-origin interstitial page instead of the JSON body,
         because the settings page CSP pins `form-action` to `'self'` across the
         whole redirect chain.
+
+        The provider re-authentication proves control of the identity being
+        linked, not of this account, so the request must also carry the
+        account's current local password (budgeted like every settings
+        re-auth). An account without a local password is refused with
+        `403 local password required` and sets one first. On success the link
+        bumps `auth_session_version`: every other session is signed out and
+        the originating device is re-issued a session. The identity's `email`
+        and `email_verified` claims are not consulted — the binding is keyed on
+        `(issuer, subject)` alone and authorized by the password plus the fresh
+        provider sign-in.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PasswordOnlyRequest' }
       responses:
         '200':
           description: OIDC redirect URL emitted.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/StartLocalPasswordSetupResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '429': { $ref: '#/components/responses/RateLimited' }
@@ -2704,6 +2721,48 @@ paths:
               example:
                 error: "sso temporarily unavailable"
                 error_detail: { key: "sso temporarily unavailable", category: "internal", target: "auth_form" }
+
+  /api/v1/users/current/oidc/identities/{id}:
+    delete:
+      tags: [settings]
+      summary: Unlink one OIDC identity from this account (owner only).
+      description: |
+        Requires the account's current local password (budgeted like every
+        settings re-auth). The id is always combined with the session's
+        account: another owner's id, a missing id and a malformed one all
+        answer `404`. Removing the account's last way in is refused with
+        `403 local password required` — the only identity goes only while
+        local password sign-in is set up and allowed on this instance
+        (`OIDC_LOGIN_MODE=hybrid`). The delete bumps `auth_session_version` in
+        the same write, so every other session — including one the removed
+        identity minted — is signed out; the originating device is re-issued a
+        session. An htmx request is answered with `HX-Redirect: /settings`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, minimum: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PasswordOnlyRequest' }
+      responses:
+        '200':
+          description: Identity unlinked.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503':
+          description: SSO is disabled or the identity store is unavailable.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
 
   /api/v1/users/current/recovery-code:
     post:

@@ -98,6 +98,8 @@ test.describe('Auth: OIDC cross-site callback', () => {
     // returns as a POST from that other site. The sealed step-up cookie has to
     // survive that round trip for the callback to find a purpose at all; a
     // cookie the browser withholds lands on the generic refusal instead.
+    // Starting the step-up asks for the account's current password first.
+    await linkIdentityForm.locator('#settings-oidc-link-password').fill(credentials.password);
     await linkIdentityForm.locator('button[type="submit"]').click();
     await expect(
       page.locator(

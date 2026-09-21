@@ -75,6 +75,14 @@ func (handler *Handler) buildSettingsViewData(c fiber.Ctx, user *models.User, fl
 		data["Egress"] = buildSettingsEgressView(c, viewData.Egress, location)
 	}
 
+	if oidcEnabled, _ := data["OIDCEnabled"].(bool); oidcEnabled {
+		linked, err := handler.oidcService.ListLinkedIdentities(c.Context(), user.ID)
+		if err != nil {
+			return nil, err
+		}
+		data["LinkedOIDCIdentities"] = buildSettingsLinkedIdentityRows(language, location, linked)
+	}
+
 	if viewData.HasOwnerExportViewState {
 		data["ExportTotalEntries"] = viewData.Export.SummaryTotalEntries
 		data["HasExportData"] = viewData.Export.HasData
@@ -110,4 +118,30 @@ func (handler *Handler) buildSettingsViewData(c fiber.Ctx, user *models.User, fl
 	}
 
 	return data, nil
+}
+
+// settingsLinkedIdentityRow is one row of the "linked sign-in identities"
+// list: the id the unlink form addresses, the issuer the owner signed in at,
+// and when the link was made. The provider subject is deliberately absent — it
+// is an opaque key, not something the owner recognises.
+type settingsLinkedIdentityRow struct {
+	ID           uint
+	Issuer       string
+	LinkedAtISO  string
+	LinkedAtText string
+}
+
+func buildSettingsLinkedIdentityRows(language string, location *time.Location, linked []services.LinkedOIDCIdentity) []settingsLinkedIdentityRow {
+	rows := make([]settingsLinkedIdentityRow, 0, len(linked))
+	for _, identity := range linked {
+		linkedAt := identity.LinkedAt
+		iso, text := egressTimestampStrings(language, location, &linkedAt)
+		rows = append(rows, settingsLinkedIdentityRow{
+			ID:           identity.ID,
+			Issuer:       identity.Issuer,
+			LinkedAtISO:  iso,
+			LinkedAtText: text,
+		})
+	}
+	return rows
 }

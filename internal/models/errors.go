@@ -35,4 +35,12 @@ var (
 	// it by the service that fronts it: both layers refuse a zero owner on
 	// their own, and this is the one value both refusals carry.
 	ErrOIDCLogoutStateUnattributed = errors.New("oidc logout state requires an owner id")
+
+	// ErrOIDCUnlinkLastSignIn reports that removing an identity would leave the
+	// account with no way to sign in: no other linked identity, and no local
+	// password sign-in available. The service answers it from its own read for
+	// the common case; the identity repository raises it again from inside the
+	// delete transaction, after locking the account row, so two concurrent
+	// unlinks cannot each count the other's identity and remove both.
+	ErrOIDCUnlinkLastSignIn = errors.New("oidc unlink would remove the last sign-in method")
 )

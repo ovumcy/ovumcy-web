@@ -180,6 +180,7 @@ func TestProviderLogoutConfiguredReadsTheModeInForce(t *testing.T) {
 				LogoutMode:            tc.mode,
 				IssuerURL:             testOIDCIssuerURL,
 				PostLogoutRedirectURL: testOIDCPostLogoutRedirectURL,
+				RedirectURL:           testOIDCPostLogoutRedirectURL,
 			}),
 			nil, nil, nil,
 		)}

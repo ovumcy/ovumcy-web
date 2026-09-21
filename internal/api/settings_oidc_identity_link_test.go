@@ -5,11 +5,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/security"
 	"github.com/ovumcy/ovumcy-web/internal/services"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // TestMapOIDCIdentityLinkReauthError unit-tests every branch of the pure
@@ -58,10 +61,35 @@ func TestMapOIDCIdentityLinkReauthError(t *testing.T) {
 // a stubbed provider whose reauth verdict the test controls and an
 // authenticated owner session, both of which this flow also needs.
 
+const linkFixturePassword = "StrongPass1"
+
+// giveLinkFixtureAPassword turns the fixture's OIDC-only owner into one with a
+// local password: linking a new identity requires the current local password
+// as fresh proof of the account holder, on top of the provider re-auth.
+func giveLinkFixtureAPassword(t *testing.T, fixture *oidcStepupFixture) {
+	t.Helper()
+	hash, err := bcrypt.GenerateFromPassword([]byte(linkFixturePassword), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("hash fixture password: %v", err)
+	}
+	if err := fixture.database.Model(&models.User{}).Where("id = ?", fixture.user.ID).Updates(map[string]any{
+		"password_hash":      string(hash),
+		"local_auth_enabled": true,
+	}).Error; err != nil {
+		t.Fatalf("set fixture password: %v", err)
+	}
+}
+
 func postOIDCIdentityLinkStepupStart(t *testing.T, fixture *oidcStepupFixture) *http.Response {
 	t.Helper()
+	giveLinkFixtureAPassword(t, fixture)
+	return postOIDCIdentityLinkStepupStartWithPassword(t, fixture, linkFixturePassword)
+}
+
+func postOIDCIdentityLinkStepupStartWithPassword(t *testing.T, fixture *oidcStepupFixture, password string) *http.Response {
+	t.Helper()
 	csrfCookie, csrfToken := fixture.settingsCSRF(t)
-	form := url.Values{"csrf_token": {csrfToken}}
+	form := url.Values{"csrf_token": {csrfToken}, "password": {password}}
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/users/current/oidc/link/step-up", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept", "application/json")
@@ -155,9 +183,10 @@ func TestOIDCIdentityLinkStepupStartReturnsAnInterstitialForBrowsers(t *testing.
 	t.Parallel()
 
 	fixture := newOIDCStepupFixture(t, "settings-oidc-link-start-browser@example.com")
+	giveLinkFixtureAPassword(t, fixture)
 
 	csrfCookie, csrfToken := fixture.settingsCSRF(t)
-	form := url.Values{"csrf_token": {csrfToken}}
+	form := url.Values{"csrf_token": {csrfToken}, "password": {linkFixturePassword}}
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/users/current/oidc/link/step-up", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept", "text/html")
@@ -348,6 +377,7 @@ func TestOIDCIdentityLinkStepupCompletesAndCreatesTheBinding(t *testing.T) {
 	if fixture.oidcStub.lastIdentityLinkUserID != fixture.user.ID {
 		t.Fatalf("expected CompleteIdentityLinkReauth to run for user %d, got %d", fixture.user.ID, fixture.oidcStub.lastIdentityLinkUserID)
 	}
+	fixture.oidcStub.assertIdentityLinkExchangeMatchesStart(t, "callback-code")
 	if fixture.oidcStub.lastConfirmLinkUserID != fixture.user.ID {
 		t.Fatalf("expected ConfirmAndLinkIdentity to run for user %d, got %d", fixture.user.ID, fixture.oidcStub.lastConfirmLinkUserID)
 	}
@@ -361,5 +391,154 @@ func TestOIDCIdentityLinkStepupCompletesAndCreatesTheBinding(t *testing.T) {
 	}
 	if payload := decodeFlashCookieForTest(t, flashCookie.Value); payload.SettingsSuccess != "oidc_identity_linked" {
 		t.Fatalf("expected settings_success=oidc_identity_linked, got %q", payload.SettingsSuccess)
+	}
+	// The link revoked every earlier session in the same write; this device is
+	// re-issued one rather than signed out.
+	if reissued := responseCookie(callbackResponse.Cookies(), authCookieName); reissued == nil || strings.TrimSpace(reissued.Value) == "" {
+		t.Fatal("expected the link to re-issue this device's auth cookie")
+	}
+}
+
+// TestOIDCIdentityLinkStepupStartRequiresTheAccountPassword is R3's repro: a
+// live session alone — what a hijacker holds — must not be able to start the
+// flow that binds THEIR provider subject to the account. Without the current
+// local password nothing is minted and no provider re-auth begins; the
+// positive anchor is TestOIDCIdentityLinkStepupCompletesAndCreatesTheBinding,
+// which sends the right password through the same helper.
+func TestOIDCIdentityLinkStepupStartRequiresTheAccountPassword(t *testing.T) {
+	t.Parallel()
+
+	for name, tc := range map[string]struct {
+		withPassword bool
+		submitted    string
+		wantKey      string
+	}{
+		"session only, no password":     {withPassword: true, submitted: "", wantKey: settingsMissingPasswordErrorSpec().Key},
+		"wrong password":                {withPassword: true, submitted: "WrongPass1", wantKey: settingsInvalidPasswordErrorSpec().Key},
+		"account has no local password": {withPassword: false, submitted: "StrongPass1", wantKey: settingsLocalPasswordRequiredErrorSpec().Key},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			fixture := newOIDCStepupFixture(t, "settings-oidc-link-pw-"+strings.ReplaceAll(name, " ", "-")+"@example.com")
+			if tc.withPassword {
+				giveLinkFixtureAPassword(t, fixture)
+			}
+			response := postOIDCIdentityLinkStepupStartWithPassword(t, fixture, tc.submitted)
+			defer func() { _ = response.Body.Close() }()
+
+			if response.StatusCode == http.StatusOK {
+				t.Fatal("expected the link start to refuse without the account password")
+			}
+			if body := mustReadBodyString(t, response.Body); !strings.Contains(body, tc.wantKey) {
+				t.Fatalf("expected error key %q, got %q", tc.wantKey, body)
+			}
+			for _, cookie := range response.Cookies() {
+				if cookie.Name == oidcStepupCookieName && cookie.Value != "" {
+					t.Fatal("expected no step-up cookie without the account password")
+				}
+			}
+			if fixture.oidcStub.lastReauthState != "" {
+				t.Fatal("expected no provider re-auth to start without the account password")
+			}
+		})
+	}
+}
+
+func deleteOIDCIdentity(t *testing.T, fixture *oidcStepupFixture, identityID string, password string, withCSRF bool) *http.Response {
+	t.Helper()
+	csrfCookie, csrfToken := fixture.settingsCSRF(t)
+	form := url.Values{"password": {password}}
+	if withCSRF {
+		form.Set("csrf_token", csrfToken)
+	}
+	request := httptest.NewRequest(http.MethodDelete, "/api/v1/users/current/oidc/identities/"+identityID, strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Cookie", settingsCookieHeader(fixture.authCookie, csrfCookie))
+	return mustAppResponse(t, fixture.app, request)
+}
+
+// TestOIDCIdentityUnlinkRequiresCSRFAndThePassword pins the route's gates:
+// CSRF at the middleware, then the budgeted password re-auth, before the
+// service is ever asked.
+func TestOIDCIdentityUnlinkRequiresCSRFAndThePassword(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "settings-oidc-unlink-gates@example.com")
+	giveLinkFixtureAPassword(t, fixture)
+	identityID := strconv.FormatUint(uint64(fixture.identity.ID), 10)
+
+	noCSRF := deleteOIDCIdentity(t, fixture, identityID, linkFixturePassword, false)
+	defer func() { _ = noCSRF.Body.Close() }()
+	if noCSRF.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403 without a CSRF token, got %d", noCSRF.StatusCode)
+	}
+
+	wrong := deleteOIDCIdentity(t, fixture, identityID, "WrongPass1", true)
+	defer func() { _ = wrong.Body.Close() }()
+	if wrong.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for a wrong password, got %d", wrong.StatusCode)
+	}
+
+	badID := deleteOIDCIdentity(t, fixture, "not-a-number", linkFixturePassword, true)
+	defer func() { _ = badID.Body.Close() }()
+	if badID.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404 for a malformed id, got %d", badID.StatusCode)
+	}
+
+	if fixture.oidcStub.unlinkCalls != 0 {
+		t.Fatalf("expected the service never to be asked past a refused gate, got %d calls", fixture.oidcStub.unlinkCalls)
+	}
+}
+
+// TestOIDCIdentityUnlinkActsForTheSessionOwnerAndReissuesTheSession is the
+// positive anchor: the service is asked for the SESSION's account with the
+// path's id, and this device is re-issued a session at the bumped version.
+func TestOIDCIdentityUnlinkActsForTheSessionOwnerAndReissuesTheSession(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "settings-oidc-unlink-success@example.com")
+	giveLinkFixtureAPassword(t, fixture)
+	identityID := strconv.FormatUint(uint64(fixture.identity.ID), 10)
+
+	response := deleteOIDCIdentity(t, fixture, identityID, linkFixturePassword, true)
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.StatusCode, mustReadBodyString(t, response.Body))
+	}
+	if fixture.oidcStub.lastUnlinkUserID != fixture.user.ID || fixture.oidcStub.lastUnlinkIdentityID != fixture.identity.ID {
+		t.Fatalf("expected unlink of identity %d for user %d, got identity %d for user %d",
+			fixture.identity.ID, fixture.user.ID, fixture.oidcStub.lastUnlinkIdentityID, fixture.oidcStub.lastUnlinkUserID)
+	}
+	if reissued := responseCookie(response.Cookies(), authCookieName); reissued == nil || strings.TrimSpace(reissued.Value) == "" {
+		t.Fatal("expected the unlink to re-issue this device's auth cookie")
+	}
+}
+
+// TestOIDCIdentityUnlinkMapsServiceRefusals pins the two owner-facing
+// refusals: another owner's (or a missing) id is a 404 with no oracle, and
+// removing the last way in is refused with the local-password key.
+func TestOIDCIdentityUnlinkMapsServiceRefusals(t *testing.T) {
+	t.Parallel()
+
+	for name, tc := range map[string]struct {
+		err        error
+		wantStatus int
+	}{
+		"not the owner's identity": {err: services.ErrOIDCIdentityNotFound, wantStatus: http.StatusNotFound},
+		"last sign-in method":      {err: services.ErrOIDCUnlinkLastSignIn, wantStatus: http.StatusForbidden},
+	} {
+		fixture := newOIDCStepupFixture(t, "settings-oidc-unlink-"+strings.ReplaceAll(name, " ", "-")+"@example.com")
+		giveLinkFixtureAPassword(t, fixture)
+		fixture.oidcStub.unlinkErr = tc.err
+
+		response := deleteOIDCIdentity(t, fixture, "4242", linkFixturePassword, true)
+		_ = response.Body.Close()
+		if response.StatusCode != tc.wantStatus {
+			t.Fatalf("%s: expected %d, got %d", name, tc.wantStatus, response.StatusCode)
+		}
+		if cookie := responseCookie(response.Cookies(), authCookieName); cookie != nil && cookie.Value != "" {
+			t.Fatalf("%s: a refused unlink must not re-issue a session", name)
+		}
 	}
 }
