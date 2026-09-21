@@ -44,7 +44,7 @@ func (handler *Handler) UpdateTrackingSettings(c fiber.Ctx) error {
 		})
 	}
 	if isHTMX(c) {
-		return c.SendString(htmxSettingsSuccessMarkup(c, status, "Tracking settings updated successfully."))
+		return sendHTMLFragment(c, htmxSettingsSuccessMarkup(c, status, "Tracking settings updated successfully."))
 	}
 
 	handler.setFlashCookie(c, FlashPayload{SettingsSuccess: status})

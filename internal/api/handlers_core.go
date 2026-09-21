@@ -57,8 +57,21 @@ func (handler *Handler) renderPartial(c fiber.Ctx, name string, data fiber.Map) 
 	if err != nil {
 		return respondGlobalMappedError(c, partialRenderErrorSpec())
 	}
+	return sendHTMLFragment(c, output)
+}
+
+// sendHTMLFragment is the only place in the package that answers with a
+// hand-built string body. fiber's SendString sets the body and nothing else, so
+// the response would go out under fasthttp's default `text/plain` — or under
+// whatever type an earlier step left on it — and a browser that reaches the
+// fragment directly renders the tags as text. Every HTMX status fragment, OOB
+// swap and interstitial carries `text/html; charset=utf-8` through here, and
+// TestSendStringIsCalledOnlyByTheHTMLFragmentHelper keeps it the only caller.
+// The status is the caller's: pass c.Status(code) when the answer is not the
+// status already set.
+func sendHTMLFragment(c fiber.Ctx, markup string) error {
 	c.Type("html", "utf-8")
-	return c.SendString(output)
+	return c.SendString(markup)
 }
 
 func (handler *Handler) renderPartialString(c fiber.Ctx, name string, data fiber.Map) (string, error) {

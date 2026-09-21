@@ -56,8 +56,7 @@ func (handler *Handler) UpdateProfile(c fiber.Ctx) error {
 		if err == nil {
 			responseBody += oobMarkup
 		}
-		c.Type("html", "utf-8")
-		return c.SendString(responseBody)
+		return sendHTMLFragment(c, responseBody)
 	}
 	handler.setFlashCookie(c, FlashPayload{SettingsSuccess: status})
 	return redirectOrJSON(c, "/settings")

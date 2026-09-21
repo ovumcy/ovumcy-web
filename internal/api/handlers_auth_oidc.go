@@ -332,8 +332,7 @@ func oidcSameOriginRedirectInterstitial(target string) string {
 // terminal guard tell it from a bare c.SendString, which is not a way back to a
 // page (allowedStepupCompletionTerminals).
 func respondOIDCSameOriginHandoff(c fiber.Ctx, target string) error {
-	c.Type("html", "utf-8")
-	return c.SendString(oidcSameOriginRedirectInterstitial(target))
+	return sendHTMLFragment(c, oidcSameOriginRedirectInterstitial(target))
 }
 
 func (handler *Handler) ShowOIDCLogoutBridge(c fiber.Ctx) error {
@@ -342,8 +341,7 @@ func (handler *Handler) ShowOIDCLogoutBridge(c fiber.Ctx) error {
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 
-	c.Type("html", "utf-8")
-	return c.SendString(`<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=` + oidcLogoutBridgeRedirectPath + `"></head><body></body></html>`)
+	return sendHTMLFragment(c, `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=`+oidcLogoutBridgeRedirectPath+`"></head><body></body></html>`)
 }
 
 func (handler *Handler) RedirectOIDCLogout(c fiber.Ctx) error {

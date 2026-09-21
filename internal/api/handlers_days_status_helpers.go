@@ -76,5 +76,5 @@ func (handler *Handler) sendDaySaveStatus(c fiber.Ctx, messageKey string) error 
 	if patternKey == "common.saved_at" {
 		message = fmt.Sprintf(pattern, timestamp)
 	}
-	return c.SendString(htmxDismissibleSuccessStatusMarkup(currentMessages(c), message))
+	return sendHTMLFragment(c, htmxDismissibleSuccessStatusMarkup(currentMessages(c), message))
 }

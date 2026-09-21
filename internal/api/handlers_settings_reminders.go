@@ -62,7 +62,7 @@ func (handler *Handler) UpdateReminderSettings(c fiber.Ctx) error {
 		})
 	}
 	if isHTMX(c) {
-		return c.SendString(htmxSettingsSuccessMarkup(c, status, "Reminder settings updated."))
+		return sendHTMLFragment(c, htmxSettingsSuccessMarkup(c, status, "Reminder settings updated."))
 	}
 
 	handler.setFlashCookie(c, FlashPayload{SettingsSuccess: status})

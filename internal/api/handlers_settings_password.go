@@ -283,7 +283,7 @@ func (handler *Handler) respondPasswordChanged(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ok": true})
 	}
 	if isHTMX(c) {
-		return c.SendString(htmxSettingsSuccessMarkup(c, "password_changed", "Password changed successfully."))
+		return sendHTMLFragment(c, htmxSettingsSuccessMarkup(c, "password_changed", "Password changed successfully."))
 	}
 	handler.setFlashCookie(c, FlashPayload{SettingsSuccess: "password_changed"})
 	return redirectOrJSON(c, "/settings")
