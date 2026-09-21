@@ -254,6 +254,12 @@ deliberate rather than gaps:
   is tolerated; a published implementation that scores the window over calendar
   days (Zhu et al., 2021) allows one missing day of six and no more.
 
+Sensiplan's rules (Arbeitsgruppe NFP) are taken from secondary accounts; the
+handbook *Natürlich und sicher* was not consulted, so the differences listed are
+stated against those accounts, not quoted from the method's text. The method's
+effectiveness study is Frank-Herrmann et al., *Hum Reprod* 2007;22(5):1310–1319,
+doi:10.1093/humrep/dem003.
+
 The date it produces is an inference from a signal, not an observation of
 ovulation: the day before the first elevated reading. Prospective work comparing
 home temperature records against an LH-anchored reference finds that first
