@@ -131,7 +131,7 @@
         </div>
       </div>
 
-      <div class="card-quiet card-fit space-y-2">
+      <div class="card-quiet card-fit space-y-2" data-usage-goal-warning-scope>
         <div>
           <p class="field-label field-label-lg">{{t .Messages "settings.goal.title"}}</p>
           <p class="journal-muted text-sm">{{t .Messages "settings.goal.hint"}}</p>
@@ -150,6 +150,7 @@
             <span class="chip chip-stack"><span>{{t .Messages "settings.goal.trying"}}</span></span>
           </label>
         </div>
+        <p class="warning-amber text-sm" role="note" data-usage-goal-avoid-warning{{if ne .UsageGoal "avoid_pregnancy"}} hidden{{end}}>{{t .Messages "usage_goal.avoid_warning"}}</p>
         {{/* The mode summary sits inside the group it belongs to. Its
              third line said what settings.goal.hint above already says —
              that the choice reframes the interface and not the maths — so

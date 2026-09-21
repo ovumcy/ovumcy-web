@@ -344,15 +344,17 @@ func shouldShowStatsLongCycleNotice(user *models.User, completedCycleLengths []i
 }
 
 // shouldShowStatsPerimenopauseHint surfaces a STRAW+10-aligned educational note
-// for users aged 45+, where within-individual cycle variability rises sharply
-// (Gibson et al., npj Digital Medicine 2023, Apple Women's Health Study,
-// n=12,608).
+// for users aged 45+, where cycle variability is ~45% higher at 45–49 and ~200%
+// higher at 50+ than at 35–39 (Li H. et al., senior author Gibson EA, npj
+// Digital Medicine 2023, PMID 37248288, Apple Women's Health Study, n=12,608).
 //
 // THE AGE BRACKET IS THE WHOLE RULE — no cycle data is consulted, and that is
 // deliberate, not an omission. The copy is an invitation to look, not a verdict:
-// it tells the owner that persistent ≥7-day differences between consecutive
-// cycles are what marks entry into the menopausal transition (Harlow et al., the
-// ReSTAGE collaboration, median entry age 45.5 years) and asks them to notice
+// it tells the owner that a persistent difference of ≥7 days in consecutive
+// cycle length, recurring within 10 cycles, is what marks entry into the early
+// menopausal transition (STRAW+10: Harlow SD et al., Menopause 2012;19:387–395,
+// PMID 22343510; the ReSTAGE cohorts put its median onset between 41.0
+// (TREMIN) and 49.5 (MWMHP) years, Fertil Steril 2008) and asks them to notice
 // it. Gating the hint on that criterion would turn the invitation into a claim
 // the app makes about the account, and would withhold it from exactly the owners
 // with too little history to measure variability at all. It is why this function

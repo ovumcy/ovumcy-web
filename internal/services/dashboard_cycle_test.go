@@ -335,8 +335,8 @@ func TestDashboardPredictionRangeUsesObservedStdDevForRegularCycles(t *testing.T
 // TestDashboardPredictionRangeIgnoresAgeGroup locks in that age, on its
 // own, no longer widens the prediction. The previous age_35_plus add-on
 // was applied to the cohort with the lowest within-individual variability
-// per Gibson et al., npj Digital Medicine 2023 (Apple Women's Health
-// Study), so it has been removed in favour of the data-driven span above.
+// per Li H. et al. (senior author Gibson EA), npj Digital Medicine 2023
+// (Apple Women's Health Study), so it has been removed in favour of the data-driven span above.
 func TestDashboardPredictionRangeIgnoresAgeGroup(t *testing.T) {
 	stats := CycleStats{CompletedCycleCount: 5, CycleLengthStdDev: 2.0}
 	predictedStart := mustParseDashboardDay(t, "2026-04-07")

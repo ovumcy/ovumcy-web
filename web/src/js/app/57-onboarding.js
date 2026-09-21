@@ -338,6 +338,7 @@
     for (var index = 0; index < choices.length; index++) {
       choices[index].checked = false;
     }
+    bindUsageGoalWarnings(root);
   }
 
   function goToOnboardingStep(state, nextStep) {

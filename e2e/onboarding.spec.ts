@@ -559,6 +559,33 @@ test.describe('Onboarding flow', () => {
     );
   });
 
+  test('step 2 shows the avoid-pregnancy warning only while that goal is chosen', async ({ page }) => {
+    await registerAndOpenOnboarding(page, 'onboarding-step2-avoid-warning');
+
+    const selectedDate = toISODate(new Date(Date.now() - 4 * 24 * 60 * 60 * 1000));
+    await submitStepOne(page, selectedDate);
+
+    const stepTwo = onboardingStepTwoForm(page);
+    const warning = stepTwo.locator('[data-usage-goal-avoid-warning]');
+    const goalChoice = (value: string) =>
+      stepTwo.locator(`label.choice-option:has(input[name="usage_goal"][value="${value}"])`);
+
+    await expect(warning).toBeHidden();
+
+    await goalChoice('avoid_pregnancy').click();
+    await expect(warning).toBeVisible();
+    await expect(warning).toHaveText(localeText('en', 'usage_goal.avoid_warning'));
+
+    await goalChoice('trying_to_conceive').click();
+    await expect(warning).toBeHidden();
+
+    await goalChoice('health').click();
+    await expect(warning).toBeHidden();
+
+    await goalChoice('avoid_pregnancy').click();
+    await expect(warning).toBeVisible();
+  });
+
   test('step 1 surfaces the day-1 spotting clarification tip above the date field', async ({
     page,
   }) => {

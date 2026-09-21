@@ -6,6 +6,7 @@
       window.__ovumcyBindLocalizedDateFields(document);
     }
     bindBinaryToggles(document);
+    bindUsageGoalWarnings(document);
     bindSymptomNameCounters(document);
     bindTemperatureInputs(document);
     bindPregnancyTestFields(document);

@@ -13,8 +13,9 @@ test.describe('Dashboard prediction range', () => {
   // Regular (non-irregular) users with at least three completed cycles and
   // measurable variability now see a data-driven uncertainty range on the
   // dashboard, replacing the previous age-35+ widening that applied to the
-  // cohort with the lowest within-individual variability per Gibson et al.,
-  // npj Digital Medicine 2023 (Apple Women's Health Study).
+  // cohort with the lowest within-individual variability per Li H. et al.
+  // (senior author Gibson EA), npj Digital Medicine 2023 (Apple Women's Health
+  // Study).
   test('regular user with variable cycles sees a confidence range and no explainer', async ({
     page,
   }) => {

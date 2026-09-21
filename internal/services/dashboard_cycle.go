@@ -387,9 +387,10 @@ func DashboardCycleStaleAnchor(user *models.User, stats CycleStats, location *ti
 // deviation to be meaningful, signalling the caller to show a single date.
 //
 // The span is round(StdDev) clamped to [1, 5]. The upper bound keeps the
-// UI readable for high-variability cohorts (per-user SD ≈ 5–11 days in
-// participants aged 45+ in Gibson et al., npj Digital Medicine 2023,
-// Apple Women's Health Study, n=12,608).
+// UI readable for high-variability cohorts: cycle variability is ~45% higher
+// at 45–49 and ~200% higher at 50+ than at 35–39 (Li H. et al., senior author
+// Gibson EA, npj Digital Medicine 2023, PMID 37248288, Apple Women's Health
+// Study, n=12,608).
 func dashboardPredictionRegularSpan(stats CycleStats) int {
 	if stats.CompletedCycleCount < 3 || stats.CycleLengthStdDev <= 0 {
 		return 0
