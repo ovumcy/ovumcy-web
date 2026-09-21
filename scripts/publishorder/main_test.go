@@ -147,11 +147,15 @@ const (
 	// The signer identity the mirror's check is handed. The workflow builds it
 	// once, in the step that verifies GHCR, and passes it on as an output —
 	// `TestTheIdentityPatternPinsEveryCharacterOfTheRepository` is what holds
-	// that construction honest, and this is only a stand-in for its value, so
-	// a fixture spelling it differently would prove nothing about the pattern.
-	// What the mirror's check owes is that it passes ON what it was given, and
-	// refuses rather than accepting any signer when it was given nothing.
-	identityRegexp = `^https://github\.com/ovumcy/ovumcy-web/\.github/workflows/docker-image\.yml@`
+	// that construction honest, and all the mirror owes is that it passes ON
+	// what it was given rather than deciding for itself.
+	//
+	// Which is why this is deliberately NOT the pattern that step produces for
+	// this repository. Handed the real one, a mirror step that ignored its
+	// input and spelled the identity out as a literal would satisfy every
+	// assertion here — and would then pin a hard-coded owner in any fork.
+	// A value no correct step could have invented cannot be satisfied that way.
+	identityRegexp = `^stub-identity-the-mirror-must-pass-through@`
 )
 
 // TestNoPublicTagIsCreatedBeforeTheSignature is the order rule. It is written
@@ -426,10 +430,22 @@ func TestTheMirrorCopiesTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 					t.Fatalf("the step mirrored a tag list it should have refused.\n%s", output)
 				}
 				requireRefusalReason(t, string(output), testCase.wantRefusal)
-				// No ALIAS may exist after a refusal. The cross-registry copy
-				// and the signing call write nothing an operator can name, so
-				// they are allowed here; a `:tag` destination is the thing a
-				// red run cannot retract.
+
+				// Every refusal but one is over an INPUT — the tag list, the
+				// identity pattern — and the step judges all of them before it
+				// reaches a registry, so nothing at all may have been run. The
+				// weaker "no alias was written" would pass a step that moved
+				// the cross-registry copy above the list it has not judged yet.
+				if !testCase.verifyFails {
+					if strings.Contains(string(output), "COSIGN") {
+						t.Errorf("the step reached a registry before it had judged its own inputs:\n%s", output)
+					}
+					return
+				}
+
+				// The one refusal that happens after the copy and the signing
+				// call: those write nothing an operator can name, and a `:tag`
+				// destination is the thing a red run cannot retract.
 				if strings.Contains(string(output), "COSIGN copy --force "+mirrorName+"@"+digest+" "+mirrorName+":") {
 					t.Errorf("the step wrote a mirrored alias on a run it refused, and a red run retracts no tag:\n%s", output)
 				}

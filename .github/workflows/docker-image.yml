@@ -878,6 +878,18 @@ jobs:
             exit 1
           fi
 
+          # Judged here with the tag list rather than beside the `cosign
+          # verify` that consumes it: it is an INPUT to this step, knowable
+          # before a byte moves, and an input checked after the copy and the
+          # signing call has already cost a full cross-registry transfer and a
+          # public transparency-log entry by the time it refuses. An empty
+          # pattern is not a loose check but no check — cosign matches every
+          # certificate identity against it.
+          if [ -z "${IDENTITY_REGEXP}" ]; then
+            echo "::error::the signer identity pattern reached this step empty, and an empty --certificate-identity-regexp accepts any signer. It comes from the \`Verify the signature and provenance before promoting\` step's outputs."
+            exit 1
+          fi
+
           # The WHOLE list is judged before the first copy, for the reason the
           # promotion judges its own: a foreign reference found halfway leaves
           # the registry holding the tags written before it.
@@ -930,11 +942,6 @@ jobs:
           # following SECURITY.md actually runs. The pattern is built once, by
           # that step, and handed here — rebuilding it would be a second place
           # for a dot to go unescaped in the field it exists to pin.
-          if [ -z "${IDENTITY_REGEXP}" ]; then
-            echo "::error::the signer identity pattern reached this step empty, and an empty --certificate-identity-regexp accepts any signer. It comes from the \`Verify the signature and provenance before promoting\` step's outputs."
-            exit 1
-          fi
-
           if ! cosign verify \
             --certificate-identity-regexp "${IDENTITY_REGEXP}" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
