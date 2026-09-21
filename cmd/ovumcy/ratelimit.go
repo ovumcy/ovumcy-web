@@ -233,10 +233,15 @@ func isV1AuthPath(path string) bool {
 // The method needs no such treatment: fiber resolves the verb to an int against
 // its canonical constants and answers 501 before any middleware runs when the
 // lookup fails, so c.Method() inside a limiter is always one of those constants.
+// A GET scope also charges HEAD: api.RegisterRoutes gives every GET route a HEAD
+// twin running the same handler chain, so HEAD reaches the guarded handler and
+// would otherwise spend nothing.
 func rateLimitOnlyFor(method, path string) func(fiber.Ctx) bool {
 	scopedPath := httpx.RoutingNormalizedPath(path)
 	return func(c fiber.Ctx) bool {
-		return c.Method() != method || httpx.RoutingNormalizedPath(c.Path()) != scopedPath
+		requestMethod := c.Method()
+		methodMatches := requestMethod == method || (method == fiber.MethodGet && requestMethod == fiber.MethodHead)
+		return !methodMatches || httpx.RoutingNormalizedPath(c.Path()) != scopedPath
 	}
 }
 

@@ -42,7 +42,7 @@ Per-IP HTTP rate limits enforced by Fiber's limiter middleware. Defaults are tun
 | `POST /lang` (language switch) | 300 requests / 1 minute | shares `RATE_LIMIT_API_MAX`, `RATE_LIMIT_API_WINDOW` |
 | `/api/*` (catch-all) | 300 requests / 1 minute | `RATE_LIMIT_API_MAX`, `RATE_LIMIT_API_WINDOW` |
 | `GET/HEAD /calendar/feed/:token.ics` | 20 requests / 1 minute | `RATE_LIMIT_CALENDAR_FEED_MAX`, `RATE_LIMIT_CALENDAR_FEED_WINDOW` |
-| `GET /calendar` | 300 requests / 1 minute | `RATE_LIMIT_CALENDAR_MAX`, `RATE_LIMIT_CALENDAR_WINDOW` |
+| `GET/HEAD /calendar` | 300 requests / 1 minute | `RATE_LIMIT_CALENDAR_MAX`, `RATE_LIMIT_CALENDAR_WINDOW` |
 
 Every setting above has a ceiling as well as a floor (`cmd/ovumcy/config.go`): a `*_MAX` may not
 exceed 100 on the three credential endpoints (each request costs a bcrypt compare or hash), 600
