@@ -147,7 +147,8 @@ test.describe('Settings: restore from JSON backup', () => {
     const [repeatResponse] = await Promise.all([
       page.waitForResponse(
         (response) =>
-          response.request().method() === 'POST' && /\/import(?:[/?]|$)/.test(response.url()),
+          response.request().method() === 'POST' &&
+          new URL(response.url()).pathname === '/api/v1/imports/json',
       ),
       submitImport(page),
     ]);

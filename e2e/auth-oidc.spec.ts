@@ -218,10 +218,12 @@ test.describe('Auth: OIDC login entry', () => {
     await page.goto('/settings');
     await expect(page).toHaveURL(/\/settings(?:\?.*)?$/);
 
-    const linkIdentityForm = page.locator(
-      'form[action="/api/v1/users/current/oidc/link/step-up"]',
-    );
+    const linkIdentityForm = page.locator('form[data-oidc-link-form]');
     await expect(linkIdentityForm).toBeVisible();
+    await expect(linkIdentityForm).toHaveAttribute(
+      'action',
+      '/api/v1/users/current/oidc/link/step-up',
+    );
     await expect(linkIdentityForm.locator('button[type="submit"]')).toContainText(
       localeText('en', 'settings.oidc_link.button'),
     );
