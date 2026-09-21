@@ -76,6 +76,7 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -156,6 +157,13 @@ const (
 	// assertion here — and would then pin a hard-coded owner in any fork.
 	// A value no correct step could have invented cannot be satisfied that way.
 	identityRegexp = `^stub-identity-the-mirror-must-pass-through@`
+
+	// The attempt budget the mirror fixtures run under. Deliberately smaller
+	// than the workflow's, and not read from it: what the step owes is to wait
+	// out a registry that answers late and to refuse one that never answers,
+	// and a fixture that took the number off the workflow would agree with
+	// whatever that number became — including zero, which is no waiting at all.
+	verifyAttempts = 3
 )
 
 // TestNoPublicTagIsCreatedBeforeTheSignature is the order rule. It is written
@@ -318,14 +326,18 @@ func TestTheMirrorCopiesTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 
 	// `cosign` is shadowed rather than stubbed per endpoint: what this step
 	// owes is WHICH invocations it makes and IN WHICH ORDER, and the arguments
-	// are the whole of that. `verifyFails` is the one case where the verdict
-	// matters, so the shim fails only that call.
-	preamble := func(verifyFails bool) string {
-		body := `printf 'COSIGN %s\n' "$*" >&2`
-		if verifyFails {
-			body += `; [ "$1" != verify ]`
-		}
-		return `cosign() { ` + body + `; }`
+	// are the whole of that.
+	//
+	// `verifyFailures` is the count of `verify` calls the shim refuses before
+	// answering — the registry's own behaviour, not the step's. Docker Hub
+	// accepts a signature before it lists it, so "not there yet" and "not
+	// there at all" reach this step as the same verdict and are told apart
+	// only by asking again; a fixture that could not distinguish them would
+	// pass a step that waits forever and a step that does not wait at all.
+	preamble := func(verifyFailures int) string {
+		return `n=0` + "\n" +
+			`cosign() { printf 'COSIGN %s\n' "$*" >&2; if [ "$1" = verify ]; then n=$(( n + 1 )); [ "$n" -gt ` +
+			strconv.Itoa(verifyFailures) + ` ]; fi; }`
 	}
 
 	for _, testCase := range []struct {
@@ -336,7 +348,10 @@ func TestTheMirrorCopiesTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 		// value a workflow expression resolves to when the step that builds
 		// it did not run.
 		emptyIdentity bool
-		verifyFails   bool
+		// verifyFailures is how many `cosign verify` calls the registry
+		// refuses before it answers. Below `verifyAttempts` the step must
+		// wait it out and publish; at or above it the step must refuse.
+		verifyFailures int
 		// wantCosign is the ORDERED sequence of invocations. Order is the
 		// property, not a detail of it: an alias written before the signature
 		// is read back is a public tag on a registry nobody can verify for as
@@ -373,14 +388,30 @@ func TestTheMirrorCopiesTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 			wantRefusal:   "identity pattern reached this step empty",
 		},
 		{
+			// The registry answers late, which is the ordinary case and not a
+			// failure: Docker Hub accepted the signature and had not listed it
+			// yet. The step waits and publishes — and the aliases appearing
+			// after the LAST verify is what says it waited rather than
+			// publishing on a verdict it never got.
+			name:           "the referrers listing catches up before the attempts run out",
+			tagRefs:        imageName + ":v2.0.0",
+			verifyFailures: verifyAttempts - 1,
+			wantCosign: []string{
+				"COSIGN sign --yes " + mirrorName + "@" + digest,
+				"COSIGN verify --certificate-identity-regexp " + identityRegexp + " --certificate-oidc-issuer https://token.actions.githubusercontent.com " + mirrorName + "@" + digest,
+				"COSIGN verify --certificate-identity-regexp " + identityRegexp + " --certificate-oidc-issuer https://token.actions.githubusercontent.com " + mirrorName + "@" + digest,
+				"COSIGN copy --force " + mirrorName + "@" + digest + " " + mirrorName + ":v2.0.0",
+			},
+		},
+		{
 			// The signing call reported success and left nothing verifiable
-			// behind it. The manifest is on Docker Hub by then — under no
-			// alias, which is what makes this a red run rather than a
-			// published mirror nobody can verify.
-			name:        "the mirrored signature does not verify",
-			tagRefs:     imageName + ":v2.0.0\n" + imageName + ":latest",
-			verifyFails: true,
-			wantRefusal: "carries no signature this repository issued",
+			// behind it, and waiting did not change that. The manifest is on
+			// Docker Hub by then — under no alias, which is what makes this a
+			// red run rather than a published mirror nobody can verify.
+			name:           "the mirrored signature never appears",
+			tagRefs:        imageName + ":v2.0.0\n" + imageName + ":latest",
+			verifyFailures: verifyAttempts,
+			wantRefusal:    "carries no signature this repository issued",
 		},
 		{
 			// The same list the promotion and the public check refuse, refused
@@ -415,13 +446,20 @@ func TestTheMirrorCopiesTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 				identity = ""
 			}
 
-			command := exec.Command(bash, "-c", preamble(testCase.verifyFails)+"\n"+script)
+			command := exec.Command(bash, "-c", preamble(testCase.verifyFailures)+"\n"+script)
 			command.Env = append(os.Environ(),
 				"DIGEST="+digest,
 				"TAG_REFS="+testCase.tagRefs,
 				"IMAGE_NAME="+imageName,
 				"MIRROR_NAME="+mirrorName,
 				"IDENTITY_REGEXP="+identity,
+				// The attempt budget is the fixture's, not the workflow's:
+				// the real one waits minutes on purpose. The DELAY is what a
+				// test cannot afford, and driving it to zero is why these are
+				// plain constants in the step's `env:` rather than an
+				// expression nothing local can override.
+				"VERIFY_ATTEMPTS="+strconv.Itoa(verifyAttempts),
+				"VERIFY_DELAY_SECONDS=0",
 			)
 			output, err := command.CombinedOutput()
 
@@ -436,7 +474,7 @@ func TestTheMirrorCopiesTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 				// reaches a registry, so nothing at all may have been run. The
 				// weaker "no alias was written" would pass a step that moved
 				// the cross-registry copy above the list it has not judged yet.
-				if !testCase.verifyFails {
+				if testCase.verifyFailures == 0 {
 					if strings.Contains(string(output), "COSIGN") {
 						t.Errorf("the step reached a registry before it had judged its own inputs:\n%s", output)
 					}
