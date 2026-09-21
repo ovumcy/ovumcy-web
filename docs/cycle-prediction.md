@@ -193,7 +193,7 @@ Basal body temperature rises ~0.2–0.5 °C after ovulation (progesterone from t
 corpus luteum is thermogenic), so a sustained rise *confirms ovulation
 retrospectively*. One shared detector drives every surface that names an
 ovulation day: the luteal-phase inference, the calendar's ovulation markers
-(dashed only while BBT tracking is on and no shift has been detected yet; the
+(dashed only while BBT tracking is on and no confirmed shift is shown yet; the
 solid dot marks a confirmed day, but is also drawn for projected future cycles,
 for phases derived from logged period starts, and for the whole current cycle
 when temperature tracking is off — so a solid dot alone is not a confirmation),
