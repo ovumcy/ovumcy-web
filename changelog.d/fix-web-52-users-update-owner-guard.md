@@ -12,3 +12,6 @@
   compare-and-set clause (webhook delivery mark, webhook watermark release, calendar-feed
   verifier-MAC backfill) shared the same hole — a zero id was indistinguishable from a normal
   zero-row CAS miss — and now call the same refusal directly before building their query.
+  Calendar-feed token issue and clear now refuse a zero id before advancing the restore fence,
+  not after: a fence advanced for a revocation that never happened made a restore from any
+  earlier backup disarm every armed feed.

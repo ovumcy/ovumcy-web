@@ -959,13 +959,18 @@ func (repo *UserRepository) ReleaseWebhookWatermark(ctx context.Context, userID 
 // the sole writer, so the restore-fence completeness guard needs no exemption
 // for it.
 func (repo *UserRepository) SaveCalendarFeedToken(ctx context.Context, userID uint, columns models.CalendarFeedTokenColumns) error {
-	// Fence first: see advanceCalendarFeedFence. A rotation retires the previous
-	// token, so this write is a revocation as much as ClearCalendarFeedToken is.
-	if err := repo.advanceCalendarFeedFence(ctx); err != nil {
-		return err
-	}
+	// The zero-id refusal comes before the fence, not after it: an id that names
+	// no owner retires no token, and a fence advanced for it records a
+	// revocation that never happened — a restore from any backup taken before it
+	// then disarms every armed feed.
 	query, err := repo.scopedUserUpdate(ctx, userID)
 	if err != nil {
+		return err
+	}
+	// Fence ahead of the row write: see advanceCalendarFeedFence. A rotation
+	// retires the previous token, so this write is a revocation as much as
+	// ClearCalendarFeedToken is.
+	if err := repo.advanceCalendarFeedFence(ctx); err != nil {
 		return err
 	}
 	return query.Updates(map[string]any{
@@ -1054,14 +1059,18 @@ func (repo *UserRepository) BackfillCalendarFeedVerifierMAC(ctx context.Context,
 // account's login security posture. Uses a typed nil so the columns become SQL
 // NULL (feed off), matching the "both NULL = off" default.
 func (repo *UserRepository) ClearCalendarFeedToken(ctx context.Context, userID uint) error {
-	// Fence first: see advanceCalendarFeedFence. This write IS the revocation,
-	// so the fence has to be ahead of it — a crash in between then leaves the
-	// owner's intent enforced at the next boot instead of lost.
-	if err := repo.advanceCalendarFeedFence(ctx); err != nil {
-		return err
-	}
+	// The zero-id refusal comes before the fence, not after it: an id that names
+	// no owner revokes nothing, and a fence advanced for it records a revocation
+	// that never happened — a restore from any backup taken before it then
+	// disarms every armed feed.
 	query, err := repo.scopedUserUpdate(ctx, userID)
 	if err != nil {
+		return err
+	}
+	// Fence ahead of the row write: see advanceCalendarFeedFence. This write IS
+	// the revocation, so the fence has to be ahead of it — a crash in between
+	// then leaves the owner's intent enforced at the next boot instead of lost.
+	if err := repo.advanceCalendarFeedFence(ctx); err != nil {
 		return err
 	}
 	return query.Updates(map[string]any{
