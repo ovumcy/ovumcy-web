@@ -392,12 +392,15 @@ components:
         Answer of an auth step that succeeded but is not finished: the server
         sealed a one-time cookie and names where the client must go to spend it.
         `next_step` is the stable programmatic name of that stage; `next_path` is
-        the page serving it. The enum is exactly the two stages reached this way
-        (`register_welcome` from `POST /api/v1/users`; `recovery_code` from
+        the page serving it. Two stages answer with THIS shape:
+        `register_welcome` from `POST /api/v1/users`, and `recovery_code` from
         `POST /api/v1/password-resets/redeem` and
-        `POST /api/v1/users/current/recovery-code`) — the calendar-feed reveal
-        names a stage too and has its own schema, so a new stage extends the
-        enum only if it also answers with this shape.
+        `POST /api/v1/users/current/recovery-code`. A stage name is not unique
+        to this schema, so do not read the enum as a list of producers:
+        `POST /api/v1/password-resets` also answers `recovery_code`, through
+        `RecoveryCodeRequiredResponse` and with no `next_path`, and the
+        calendar-feed reveal names its own stage through its own schema. A new
+        stage extends this enum only if it also answers with this shape.
       required: [ok, next_step, next_path]
       properties:
         ok:
@@ -1708,8 +1711,11 @@ paths:
         '200':
           description: |
             Password replaced and a session issued; the freshly minted recovery
-            code waits behind `next_path`. Sent when `Accept: application/json`
-            is set; the browser surface gets the `303` below instead.
+            code waits behind `next_path`. The body above is sent when
+            `Accept: application/json` is set. An htmx request lands on this
+            status too, but answers `HX-Redirect: /recovery-code` with a
+            plain-text `OK` body — NOT the JSON above. A plain browser request
+            gets the `303` below.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/NextStepResponse' }
@@ -1718,7 +1724,7 @@ paths:
                 next_step: "recovery_code"
                 next_path: "/recovery-code"
         '303':
-          description: "Redirect to `/recovery-code` after success, when `Accept: application/json` is not set (an htmx request gets `HX-Redirect: /recovery-code` instead)."
+          description: "Redirect to `/recovery-code` after success, for a plain browser request — neither `Accept: application/json` nor htmx."
         '400':
           $ref: '#/components/responses/ValidationError'
         '403':
@@ -2803,10 +2809,12 @@ paths:
       responses:
         '200':
           description: |
-            Sent when `Accept: application/json` is set. The plaintext code is
-            never in this body — it waits behind `next_path`, sealed in a
-            one-time reveal cookie, exactly like the redeem step of password
-            reset.
+            The body above is sent when `Accept: application/json` is set. The
+            plaintext code is never in it — the code waits behind `next_path`,
+            sealed in a one-time reveal cookie, exactly like the redeem step of
+            password reset. An htmx request lands on this status too, but
+            answers `HX-Redirect: /recovery-code` with a plain-text `OK` body
+            — NOT the JSON above.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/NextStepResponse' }
@@ -2815,7 +2823,7 @@ paths:
                 next_step: "recovery_code"
                 next_path: "/recovery-code"
         '303':
-          description: "Redirect to `/recovery-code` when `Accept: application/json` is not set."
+          description: "Redirect to `/recovery-code` for a plain browser request — neither `Accept: application/json` nor htmx."
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '400': { $ref: '#/components/responses/ValidationError' }

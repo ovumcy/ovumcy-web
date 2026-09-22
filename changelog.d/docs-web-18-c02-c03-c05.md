@@ -16,4 +16,8 @@
   step then refuses the account's role (`web sign-in unavailable`) — since that was already
   reachable and undocumented, and now states what it leaves behind: password and recovery code
   both already replaced, the rotated code never shown on this path, and no separate sign-in to
-  fall back on, because the same role check gates every web session.
+  fall back on, because the same role check gates every web session. Two smaller trues alongside:
+  `NextStepResponse`'s note no longer reads as a list of producers — `POST /api/v1/password-resets`
+  answers `recovery_code` too, through its own schema and without a `next_path` — and both
+  recovery-code operations now name the third success shape, the htmx one, which lands on `200`
+  with `HX-Redirect` and a plain-text body instead of the declared JSON, under a guard test.
