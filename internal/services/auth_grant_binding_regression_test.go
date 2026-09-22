@@ -161,7 +161,7 @@ func TestAuthAttemptResetClientForgivesOnlyTheSucceedingClient(t *testing.T) {
 	now := time.Now()
 	policy := NewAuthAttemptPolicy("login", nil, 3, time.Minute)
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		policy.AddFailure(secret, "attacker-ip", "owner@example.test", now)
 	}
 	policy.AddFailure(secret, "owner-ip", "", now)
