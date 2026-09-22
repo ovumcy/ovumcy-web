@@ -130,6 +130,38 @@ func TestParsePasswordResetTokenRejectsMissingExpiry(t *testing.T) {
 	}
 }
 
+// TestParsePasswordResetTokenRejectsMissingSessionEpoch pins the SessionVersion
+// < 1 refusal (auth_reset_policy.go): BuildPasswordResetToken always normalizes
+// the epoch to at least 1 (NormalizeAuthSessionVersion), so this branch only
+// guards a hand-crafted or legacy token that never carried an `sv` claim. Such
+// a token must be refused, never treated as version 1 — that would bind it to
+// every account still at its first version.
+func TestParsePasswordResetTokenRejectsMissingSessionEpoch(t *testing.T) {
+	secret := []byte("test-secret")
+	now := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
+
+	claims := PasswordResetClaims{
+		UserID:        7,
+		Purpose:       PasswordResetTokenPurposeRecovery,
+		PasswordState: PasswordStateFingerprint("$2a$10$testhashvaluefortokenclaims"),
+		// SessionVersion left at its zero value on purpose.
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   strconv.FormatUint(7, 10),
+			ExpiresAt: jwt.NewNumericDate(now.Add(10 * time.Minute)),
+			IssuedAt:  jwt.NewNumericDate(now),
+		},
+	}
+	signed, err := signPasswordResetClaims(secret, &claims)
+	if err != nil {
+		t.Fatalf("sign token: %v", err)
+	}
+
+	_, err = ParsePasswordResetToken(secret, signed, now.Add(1*time.Minute))
+	if !errors.Is(err, ErrPasswordResetTokenInvalidSessionEpoch) {
+		t.Fatalf("expected ErrPasswordResetTokenInvalidSessionEpoch, got %v", err)
+	}
+}
+
 func TestPasswordStateFingerprintMatch(t *testing.T) {
 	hash := "$2a$10$testhashvaluefortokenclaims"
 	fingerprint := PasswordStateFingerprint(hash)

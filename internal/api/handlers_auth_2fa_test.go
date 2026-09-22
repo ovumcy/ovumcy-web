@@ -285,6 +285,39 @@ func TestTOTPChallengeClearsAPendingCookieItCannotUse(t *testing.T) {
 	})
 }
 
+// TestVerifyTOTPLogin_StaleSessionVersion_RefusesAndClearsCookie pins the
+// grant's binding to auth_session_version (handlers_auth_2fa.go,
+// services.SecondFactorGrantCurrent): a pending cookie minted before a
+// posture change bumped the row — here, TOTP enrollment itself, which bumps
+// the version from 1 to 2 — must be refused even though the cookie is
+// well-formed, unexpired, and names a user whose secret decrypts (Verifiable
+// is true), so this exercises the version check specifically and not the
+// earlier Verifiable/FindByID branch.
+func TestVerifyTOTPLogin_StaleSessionVersion_RefusesAndClearsCookie(t *testing.T) {
+	app, database := newOnboardingTestAppWithCSRF(t)
+	user := createOnboardingTestUser(t, database, "totp-stale-version@example.com", "StrongPass1", true)
+	secretKey := []byte("test-secret-key")
+	setupTOTPForUser(t, database, user.ID, secretKey) // bumps auth_session_version from 1 to 2
+	csrfToken, csrfCookieHeader := extractCSRFCookieAndToken(t, app)
+
+	stalePending := totpPendingCookieName + "=" + sealTOTPCookiePayloadForTest(t, secretKey, totpPendingCookieName, totpPendingCookiePayload{
+		UserID:         user.ID,
+		ExpiresAt:      time.Now().Add(5 * time.Minute),
+		SessionVersion: 1,
+	})
+
+	response := doTOTPChallengeRequest(t, app, joinCookieHeader(stalePending, csrfCookieHeader), "123456", csrfToken)
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected a stale-version pending grant to redirect back to the challenge, got %d", response.StatusCode)
+	}
+	if issued := responseCookie(response.Cookies(), authCookieName); issued != nil && issued.Value != "" {
+		t.Fatal("a stale-version pending grant must not issue an auth session")
+	}
+	assertTOTPCookieCleared(t, response, totpPendingCookieName)
+}
+
 func TestVerifyTOTPLogin_ValidCode_IssuesSessionAndRedirects(t *testing.T) {
 	app, database := newOnboardingTestAppWithCSRF(t)
 	user := createOnboardingTestUser(t, database, "totp-valid@example.com", "StrongPass1", true)

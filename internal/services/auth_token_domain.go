@@ -66,7 +66,7 @@ func (domain authTokenDomain) parse(secretKey []byte, rawToken string, claims jw
 	)
 	return parser.ParseWithClaims(rawToken, claims, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method")
+			return nil, fmt.Errorf("unexpected signing method") // codecov:ignore -- unreachable, jwt.WithValidMethods rejects non-HS256 before this keyfunc runs
 		}
 		if typ, _ := token.Header["typ"].(string); typ != domain.typ {
 			return nil, errAuthTokenWrongType
