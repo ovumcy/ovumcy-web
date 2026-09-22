@@ -8,4 +8,7 @@
   and webhook settings, calendar-feed token issue/clear, password/recovery/TOTP rotation and
   revocation, onboarding, clear-data, and the generic settings updater — now build their query
   through one helper that refuses a zero id up front, so the refusal cannot be dropped by a future
-  call site without a test noticing.
+  call site without a test noticing. Three more writers that build a compound `id = ? AND ...`
+  compare-and-set clause (webhook delivery mark, webhook watermark release, calendar-feed
+  verifier-MAC backfill) shared the same hole — a zero id was indistinguishable from a normal
+  zero-row CAS miss — and now call the same refusal directly before building their query.
