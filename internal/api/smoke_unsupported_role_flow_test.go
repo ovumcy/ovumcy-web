@@ -1,6 +1,8 @@
 package api
 
 import (
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -47,8 +49,7 @@ func TestUnsupportedLegacyRoleResetRedeemWritesNothing(t *testing.T) {
 }
 
 func assertRoleRefusedResetRedeemWritesNothing(t *testing.T, purpose string) {
-	t.Helper()
-	// Every purpose fails from the same call site, so each message names its purpose.
+	// The three purposes run the same assertions, so each message names its purpose.
 	fail := func(format string, args ...any) {
 		t.Helper()
 		t.Fatalf("[%s] "+format, append([]any{purpose}, args...)...)
@@ -65,8 +66,14 @@ func assertRoleRefusedResetRedeemWritesNothing(t *testing.T, purpose string) {
 	} else {
 		// The forced purposes are built directly, not through the login and OIDC
 		// routes that mint them in production: this pins the redeem-side resolver
-		// for each purpose, not the minting routes.
-		token, err := services.BuildPasswordResetToken([]byte(testHandlerSecretKey), user.ID, user.PasswordHash, user.AuthSessionVersion, purpose, 30*time.Minute, time.Now())
+		// for each purpose, not the minting routes. The token binds the stored
+		// row, re-read here so a setup step that touched it cannot leave the
+		// token stale and the refusal owed to that instead of to the role.
+		var current models.User
+		if err := database.First(&current, user.ID).Error; err != nil {
+			fail("load user before minting: %v", err)
+		}
+		token, err := services.BuildPasswordResetToken([]byte(testHandlerSecretKey), current.ID, current.PasswordHash, current.AuthSessionVersion, purpose, 30*time.Minute, time.Now())
 		if err != nil {
 			fail("BuildPasswordResetToken: %v", err)
 		}
@@ -108,8 +115,18 @@ func assertRoleRefusedResetRedeemWritesNothing(t *testing.T, purpose string) {
 	if refused.StatusCode != http.StatusBadRequest {
 		fail("expected the role-refused redeem to answer %d, got %d", http.StatusBadRequest, refused.StatusCode)
 	}
-	if got := readAPIError(t, refused.Body); got != "invalid reset token" {
-		fail("expected the role-refused redeem to answer as an invalid reset token before any write, got %q", got)
+	refusedBody, err := io.ReadAll(refused.Body)
+	if err != nil {
+		fail("read refused redeem body: %v", err)
+	}
+	var refusal struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(refusedBody, &refusal); err != nil {
+		fail("decode refused redeem body %q: %v", refusedBody, err)
+	}
+	if refusal.Error != "invalid reset token" {
+		fail("expected the role-refused redeem to answer as an invalid reset token before any write, got %q", refusal.Error)
 	}
 	for _, name := range []string{authCookieName, recoveryCodeCookieName} {
 		if cookie := responseCookie(refused.Cookies(), name); cookie != nil && strings.TrimSpace(cookie.Value) != "" {
