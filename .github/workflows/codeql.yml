@@ -27,8 +27,118 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Mirrors ci.yml's own `changes` job and security.yml's copy of it: same
+  # base resolution, same fail-safe (unknown event, missing base, failed or
+  # empty diff all leave every language running), and only
+  # pull_request/merge_group ever narrow anything.
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      run_go: ${{ steps.detect.outputs.run_go }}
+      run_js: ${{ steps.detect.outputs.run_js }}
+      run_actions: ${{ steps.detect.outputs.run_actions }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Detect which CodeQL languages this diff can affect
+        id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          QUEUE_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: |
+          # No `set -e`: see security.yml's copy of this job for why it must
+          # never fail. Every output starts at true.
+          run_go=true
+          run_js=true
+          run_actions=true
+          verdict=""
+
+          if [ "$EVENT_NAME" = "pull_request" ] || [ "$EVENT_NAME" = "merge_group" ]; then
+            base=""
+            if [ "$EVENT_NAME" = "pull_request" ]; then
+              if git fetch --no-tags origin "$BASE_REF"; then
+                base="origin/$BASE_REF"
+              else
+                verdict="base ref fetch failed: running every language."
+              fi
+            else
+              base="$QUEUE_BASE_SHA"
+              if [ -z "$base" ]; then
+                verdict="no base commit in the merge_group payload: running every language."
+              elif ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+                git fetch --no-tags origin "$base" || true
+                if ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+                  base=""
+                  verdict="merge_group base commit unreachable: running every language."
+                fi
+              fi
+            fi
+
+            if [ -n "$base" ]; then
+              # core.quotePath=false + --no-renames: see security.yml's copy
+              # of this job for why (PR #839's ci.yml fix, same shape).
+              if ! files="$(git -c core.quotePath=false diff --no-renames --name-only "${base}...HEAD")"; then
+                verdict="git diff ${base}...HEAD failed: running every language."
+              elif [ -z "$files" ]; then
+                verdict="empty file list from ${base}...HEAD: running every language."
+              else
+                echo "Changed files against ${base}:"
+                printf '%s\n' "$files"
+
+                # This workflow file carries the paths-ignore config inline,
+                # so an edit to it forces every language rather than being
+                # judged by the rules below.
+                workflow_changed="$(printf '%s\n' "$files" | grep -E '^\.github/workflows/codeql\.yml$' || true)"
+
+                go_changes="$(printf '%s\n' "$files" | grep -E '(\.go$|^go\.mod$|^go\.sum$)' || true)"
+                # javascript-typescript has no `paths:` restriction above
+                # (only the two paths-ignore entries), so CodeQL extracts
+                # every JS/TS/HTML/Vue source in the tree: web/src/js, the
+                # go:embed'ed templates (inline <script> and on* handlers —
+                # internal/templates/*.html), the e2e specs, scripts/, the
+                # root tooling configs, and the npm manifests plus
+                # tsconfig*.json that shape what gets extracted.
+                js_changes="$(printf '%s\n' "$files" | grep -E '(\.(ts|tsx|mts|cts|js|jsx|mjs|cjs|html|htm|vue)$|^package(-lock)?\.json$|(^|/)tsconfig[^/]*\.json$)' || true)"
+                actions_changes="$(printf '%s\n' "$files" | grep -E '^\.github/' || true)"
+
+                if [ -n "$workflow_changed" ]; then
+                  verdict="codeql.yml itself changed: running every language."
+                else
+                  run_go=false
+                  run_js=false
+                  run_actions=false
+                  [ -n "$go_changes" ] && run_go=true
+                  [ -n "$js_changes" ] && run_js=true
+                  [ -n "$actions_changes" ] && run_actions=true
+                  verdict="scoped to what changed: go=$run_go javascript-typescript=$run_js actions=$run_actions."
+                fi
+              fi
+            fi
+          else
+            verdict="$EVENT_NAME always runs every language in full."
+          fi
+
+          echo "$verdict"
+          echo "run_go=$run_go" >> "$GITHUB_OUTPUT"
+          echo "run_js=$run_js" >> "$GITHUB_OUTPUT"
+          echo "run_actions=$run_actions" >> "$GITHUB_OUTPUT"
+
   analyze:
     name: Analyze (${{ matrix.language }})
+    needs: changes
+    # `!cancelled()` overrides the implicit success()-of-needs predicate: a
+    # FAILED or cancelled `changes` job would otherwise skip every leg into a
+    # satisfied `Analyze (*)` required check instead of running it. Mirrors
+    # ci.yml's gated jobs and security.yml's `changes`-gated jobs above.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -44,21 +154,50 @@ jobs:
             build-mode: none
           - language: go
             build-mode: manual
+    # Deliberately step-gated, not job-gated: this job is a required check
+    # named per matrix leg (`Analyze (go)`, `Analyze (javascript-typescript)`,
+    # `Analyze (actions)`), and every step below is skipped instead of the
+    # whole job so each leg keeps reporting under its own name and conclusion
+    # exactly as it does today — mirrors ci.yml's e2e-shard job, which chose
+    # the same shape for the same reason (a required check must not move to a
+    # name GitHub renders differently on skip). A job-level `if` referencing
+    # `matrix.language` is a documented pattern and would likely resolve to
+    # the identical name too, but that composition has not been exercised
+    # live against this required-check set, and the cost of being wrong is a
+    # stuck merge queue — so the proven shape wins here.
+    # RUN_THIS_LANGUAGE is an AND of per-language NEGATIONS, not an OR of
+    # per-language positives: with an OR, a matrix leg added later (a
+    # fourth language) would match none of the three named terms and never
+    # run at all, even on push/schedule — fail-CLOSED for anything this
+    # expression doesn't already know by name. Framed as "run unless THIS
+    # leg's own output is exactly 'false'", a leg outside {go,
+    # javascript-typescript, actions} is true by construction: none of the
+    # three `matrix.language == '<x>' && ...` guards match it, so every
+    # `!(false && …)` term is `!false` and the whole AND is true.
+    env:
+      RUN_THIS_LANGUAGE: >-
+        ${{
+          !(matrix.language == 'go' && needs.changes.outputs.run_go == 'false') &&
+          !(matrix.language == 'javascript-typescript' && needs.changes.outputs.run_js == 'false') &&
+          !(matrix.language == 'actions' && needs.changes.outputs.run_actions == 'false')
+        }}
 
     steps:
       - name: Checkout
+        if: env.RUN_THIS_LANGUAGE == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Setup Go
-        if: matrix.language == 'go'
+        if: matrix.language == 'go' && env.RUN_THIS_LANGUAGE == 'true'
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Initialize CodeQL
+        if: env.RUN_THIS_LANGUAGE == 'true'
         uses: github/codeql-action/init@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         with:
           languages: ${{ matrix.language }}
@@ -75,10 +214,11 @@ jobs:
               - web/src/js/settings-export
 
       - name: Build Go packages
-        if: matrix.language == 'go'
+        if: matrix.language == 'go' && env.RUN_THIS_LANGUAGE == 'true'
         run: go build ./...
 
       - name: Analyze
+        if: env.RUN_THIS_LANGUAGE == 'true'
         uses: github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         with:
           category: "/language:${{ matrix.language }}"
