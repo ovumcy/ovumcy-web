@@ -1729,8 +1729,7 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '403':
           description: |
-            Two distinct refusals share this status. The first is local
-            password recovery being disabled on this deployment (SSO-only).
+            Local password recovery is disabled on this deployment (SSO-only).
             Only a reset token minted by the OIDC sign-in flow survives this
             gate and can still be redeemed — for an account carrying
             `must_change_password`, or one whose enrolled TOTP secret has gone
@@ -1742,27 +1741,13 @@ paths:
             account-link confirmation step's own password challenge — is
             refused here exactly like an ordinary password-recovery token,
             since it was produced by the very factor this deployment has
-            disabled. The second is unrelated to that gate: the redeem itself
-            already committed — the password was replaced and the recovery
-            code rotated — and only the session issuance that follows refused
-            the account's role (`ErrAuthUnsupportedRole`). Signing in
-            separately does not help: the same role check gates every web
-            session. The token is spent, so the redeem cannot be retried, and
-            the rotated recovery code is never shown on this path.
+            disabled.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
-              examples:
-                localRecoveryDisabled:
-                  summary: Local recovery unavailable (SSO-only deployment)
-                  value:
-                    error: "local recovery unavailable"
-                    error_detail: { key: "local recovery unavailable", category: "forbidden", target: "auth_form" }
-                webSignInUnavailable:
-                  summary: Password replaced, but the account's role cannot sign in over the web
-                  value:
-                    error: "web sign-in unavailable"
-                    error_detail: { key: "web sign-in unavailable", category: "forbidden", target: "auth_form" }
+              example:
+                error: "local recovery unavailable"
+                error_detail: { key: "local recovery unavailable", category: "forbidden", target: "auth_form" }
         '429': { $ref: '#/components/responses/RateLimited' }
 
   # =========================================================================

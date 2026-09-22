@@ -11,12 +11,7 @@
   token survives the local-auth-disabled gate; an enrolled-but-unverifiable TOTP secret (a
   `SECRET_KEY` rotation) reaches the identical escape hatch and is now named too, with a guard test
   (local public auth switched off before redeem, against a fixture account that is genuinely
-  TOTP-enabled) proving that account's recovery path completes end to end. The `403` also gained
-  the reason it was missing outright — a successful password replacement whose session-issuance
-  step then refuses the account's role (`web sign-in unavailable`) — since that was already
-  reachable and undocumented, and now states what it leaves behind: password and recovery code
-  both already replaced, the rotated code never shown on this path, and no separate sign-in to
-  fall back on, because the same role check gates every web session. Two smaller trues alongside:
+  TOTP-enabled) proving that account's recovery path completes end to end. Two smaller trues alongside:
   `NextStepResponse`'s note no longer reads as a list of producers — `POST /api/v1/password-resets`
   answers `recovery_code` too, through its own schema and without a `next_path` — and both
   recovery-code operations now name the third success shape, the htmx one, which lands on `200`
