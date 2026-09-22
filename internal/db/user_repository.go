@@ -335,9 +335,17 @@ func (repo *UserRepository) CreateUserWithSymptoms(ctx context.Context, user *mo
 		// one statement earlier, and a row that ended up with a zero owner
 		// would be unreachable by every owner-scoped read and by account
 		// erasure.
+		// codecov:ignore:start -- no test can drive this arm: user.ID is
+		// assigned by the insert one statement earlier in this same
+		// transaction, so prepared never carries a zero owner while that
+		// insert succeeds, and the function returns before here when it does
+		// not. The check is written for the refactor that moves, reorders or
+		// re-sources that insert, and the ordering is pinned by
+		// TestUserRepositoryCreateUserWithSymptomsChecksSeedOwnersInSource.
 		if err := requireSymptomOwners(prepared); err != nil {
 			return &SymptomSeedError{Err: err}
 		}
+		// codecov:ignore:end
 
 		if err := tx.Create(&prepared).Error; err != nil {
 			return &SymptomSeedError{Err: err}
