@@ -28,12 +28,15 @@ func (service *SettingsService) ValidatePasswordChange(passwordHash string, curr
 	confirmPassword = strings.TrimSpace(confirmPassword)
 
 	if currentPassword == "" || newPassword == "" || confirmPassword == "" {
+		equalizeSettingsReauthTiming(currentPassword)
 		return ErrSettingsPasswordChangeInvalidInput
 	}
 	if newPassword != confirmPassword {
+		equalizeSettingsReauthTiming(currentPassword)
 		return ErrSettingsPasswordMismatch
 	}
 	if strings.TrimSpace(passwordHash) == "" {
+		equalizeSettingsReauthTiming(currentPassword)
 		return ErrSettingsLocalPasswordNotSet
 	}
 	if bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(currentPassword)) != nil {
