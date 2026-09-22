@@ -130,7 +130,14 @@ func (repo *DailyLogRepository) FindByUserAndDayRange(ctx context.Context, userI
 	return entry, true, nil
 }
 
+// Create inserts a new day row. A zero entry.UserID is refused rather than
+// written: an owner-scoped read or the account-erasure sweep can never
+// address a row with no owner, so it would sit unreachable forever instead of
+// failing loudly at write time.
 func (repo *DailyLogRepository) Create(ctx context.Context, entry *models.DailyLog) error {
+	if entry.UserID == 0 {
+		return ErrDailyLogOwnerRequired
+	}
 	return repo.database.WithContext(ctx).Create(entry).Error
 }
 
@@ -145,9 +152,17 @@ const importDayInsertBatchSize = 500
 // importDayInsertBatchSize. The JSON import path uses it to write all new days
 // at once instead of one INSERT per day. Per-row hooks (BeforeSave) still run,
 // so stored dates are normalized to UTC-midnight exactly as with single Create.
+// CreateBatch refuses the whole batch when any entry carries a zero UserID,
+// for the same reason as Create: a zero-owner row would be unreachable by
+// every owner-scoped read and by account erasure.
 func (repo *DailyLogRepository) CreateBatch(ctx context.Context, entries []models.DailyLog) error {
 	if len(entries) == 0 {
 		return nil
+	}
+	for _, entry := range entries {
+		if entry.UserID == 0 {
+			return ErrDailyLogOwnerRequired
+		}
 	}
 	return repo.database.WithContext(ctx).CreateInBatches(&entries, importDayInsertBatchSize).Error
 }

@@ -261,6 +261,25 @@ func TestOIDCIdentityRepositoryCreateAndRevokeSessionsRequiresAnOwner(t *testing
 	}
 }
 
+// A nil identity or a zero UserID names no owner: Create refuses it rather
+// than writing a row that no owner-scoped read and no account erasure can
+// ever reach.
+func TestOIDCIdentityRepositoryCreateRefusesZeroOwner(t *testing.T) {
+	repository, _ := seedOIDCRepositoryOwners(t)
+	ctx := context.Background()
+
+	if err := repository.Create(ctx, nil); !errors.Is(err, errOIDCIdentityOwnerRequired) {
+		t.Fatalf("expected errOIDCIdentityOwnerRequired for a nil identity, got %v", err)
+	}
+	identity := models.OIDCIdentity{Issuer: "https://id.example.com", Subject: "no-owner-create"}
+	if err := repository.Create(ctx, &identity); !errors.Is(err, errOIDCIdentityOwnerRequired) {
+		t.Fatalf("expected errOIDCIdentityOwnerRequired for a zero UserID, got %v", err)
+	}
+	if _, found, _ := repository.FindByIssuerSubject(ctx, identity.Issuer, identity.Subject); found {
+		t.Fatal("expected no identity row after the refused create")
+	}
+}
+
 // A zero userID lists nothing rather than running the query.
 func TestOIDCIdentityRepositoryListByUserWithZeroIDListsNothing(t *testing.T) {
 	repository, _ := seedOIDCRepositoryOwners(t)

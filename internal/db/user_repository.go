@@ -1510,6 +1510,9 @@ func (repo *UserRepository) DeleteAccountAndRelatedData(ctx context.Context, use
 }
 
 func (repo *UserRepository) CompleteOnboarding(ctx context.Context, userID uint, startDay time.Time, periodLength int, autoPeriodFill bool) error {
+	if userID == 0 {
+		return errors.New("onboarding owner is required")
+	}
 	if periodLength <= 0 {
 		return errors.New("invalid period length")
 	}
@@ -1549,7 +1552,7 @@ func (repo *UserRepository) CompleteOnboarding(ctx context.Context, userID uint,
 					return result.Error
 				}
 
-				if err := tx.Model(&entry).Updates(map[string]any{
+				if err := tx.Model(&entry).Where("user_id = ?", userID).Updates(map[string]any{
 					"is_period": true,
 					"flow":      models.FlowNone,
 				}).Error; err != nil {
