@@ -119,6 +119,7 @@ func TestSQLiteConcurrentDayWritesNoBusyError(t *testing.T) {
 	baseDay := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
 
 	var busyCount int64
+	var successCount int64
 	var otherErr atomic.Value // error
 	var wg sync.WaitGroup
 	start := make(chan struct{})
@@ -153,7 +154,9 @@ func TestSQLiteConcurrentDayWritesNoBusyError(t *testing.T) {
 				})
 				if err != nil {
 					record(&busyCount, &otherErr, err)
+					continue
 				}
+				atomic.AddInt64(&successCount, 1)
 			}
 		}(w)
 	}
@@ -161,14 +164,31 @@ func TestSQLiteConcurrentDayWritesNoBusyError(t *testing.T) {
 	close(start)
 	wg.Wait()
 
+	// A run where every write errors leaves busyCount at 0 too, so "zero BUSY"
+	// alone proves nothing about contention that was never exercised — pin
+	// that the disjoint day slots actually landed a successful write each.
+	wantWrites := int64(workers * daysPerBlock)
+	if n := atomic.LoadInt64(&successCount); n < wantWrites {
+		t.Fatalf("only %d of the %d disjoint day slots recorded a successful write; zero SQLITE_BUSY with few or no writes proves nothing about contention", n, wantWrites)
+	}
 	if n := atomic.LoadInt64(&busyCount); n > 0 {
 		t.Fatalf("got %d SQLITE_BUSY errors under concurrent day writes; busy_timeout/BEGIN IMMEDIATE not engaging", n)
 	}
+	// Any non-BUSY error is unexpected here: the day blocks are disjoint per
+	// worker, so nothing legitimately collides. Logging it used to let this
+	// class of failure pass silently as long as no BUSY was also observed.
 	if v := otherErr.Load(); v != nil {
-		// Non-BUSY errors (e.g. UNIQUE races on the overlapping day set) are not
-		// what this regression guards; surface them so the test is not silently
-		// masking a real failure, but do not conflate them with the BUSY defect.
-		t.Logf("non-BUSY error observed during concurrent writes: %v", v.(error))
+		t.Fatalf("unexpected non-BUSY error observed during concurrent writes: %v", v.(error))
+	}
+
+	// The final rows are the other half of the proof: a contention-free
+	// success count does not by itself show the data actually landed.
+	finalLogs, err := repos.DailyLogs.ListByUser(context.Background(), user.ID)
+	if err != nil {
+		t.Fatalf("list final day rows: %v", err)
+	}
+	if got := int64(len(finalLogs)); got != wantWrites {
+		t.Fatalf("expected %d day rows after the concurrent run (one per disjoint day slot), got %d", wantWrites, got)
 	}
 }
 

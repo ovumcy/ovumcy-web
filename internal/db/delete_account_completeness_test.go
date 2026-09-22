@@ -217,6 +217,16 @@ func assertAccountErasureLeavesNoUserScopedRows(t *testing.T, database *gorm.DB)
 // error-return branches for the explicit oidc_identities, register_pickup_tokens,
 // and oidc_logout_states deletes: when one child delete fails mid-transaction,
 // the whole erasure must roll back so the account is not left half-deleted.
+//
+// The rollback claim used to be checked against `users` alone: the fixture
+// created only the account row, so a transaction that erased every OTHER
+// child table before hitting the dropped one and then failed to roll back
+// those deletes would still have passed. Seed the same schema-derived
+// children TestDeleteAccountAndRelatedDataRemovesAllUserRows seeds, and after
+// the refused delete assert every surviving table (the dropped one is gone
+// and cannot be queried) still holds its row — "child delete errors, rollback
+// restores every other child row" is the actual atomicity guarantee, not
+// just "the user row survives".
 func TestDeleteAccountAndRelatedDataRollsBackOnChildDeleteError(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
@@ -239,7 +249,7 @@ func TestDeleteAccountAndRelatedDataRollsBackOnChildDeleteError(t *testing.T) {
 			})
 			repos := NewRepositories(database)
 			user := &models.User{
-				Email:            "delerr@example.com",
+				Email:            "delerr-" + tc.dropTable + "@example.com",
 				PasswordHash:     "hash",
 				RecoveryCodeHash: "recovery",
 				Role:             models.RoleOwner,
@@ -252,12 +262,47 @@ func TestDeleteAccountAndRelatedDataRollsBackOnChildDeleteError(t *testing.T) {
 				t.Fatalf("create user: %v", err)
 			}
 
+			// Children created: the same schema-derived, exemption-minus set the
+			// happy-path erasure test seeds, so the rollback proof covers every
+			// user-scoped table the schema carries today, not a hand-picked few.
+			scopedTables := userScopedTablesFromSchema(t, database)
+			if len(scopedTables) == 0 {
+				t.Fatal("derived no user-scoped tables from the live schema — the derivation is broken, not the schema")
+			}
+			for _, row := range []any{
+				&models.DailyLog{UserID: user.ID, Date: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC), IsPeriod: true},
+				&models.SymptomType{UserID: user.ID, Name: "custom", Color: "#AABBCC"},
+				&models.RegisterPickupToken{Nonce: "nonce-" + tc.dropTable, UserID: user.ID, ExpiresAt: time.Now().Add(time.Hour).UTC(), CreatedAt: time.Now().UTC()},
+				&models.OIDCIdentity{UserID: user.ID, Issuer: "https://idp.example.com", Subject: "subject-" + tc.dropTable, CreatedAt: time.Now().UTC()},
+				&models.OIDCLogoutState{SessionID: "sess-" + tc.dropTable, UserID: user.ID, EndSessionEndpoint: "https://idp.example.com/logout", IDTokenHint: "hint", ExpiresAt: time.Now().Add(time.Hour).UTC()},
+			} {
+				if err := database.Create(row).Error; err != nil {
+					t.Fatalf("seed row %T: %v", row, err)
+				}
+			}
+			for _, table := range scopedTables {
+				if seeded := countUserRowsInTable(t, database, table, user.ID); seeded == 0 {
+					t.Fatalf("%s carries a %s column but this test seeds no row for the account under erasure — add a seed row above", table, userScopeColumn)
+				}
+			}
+			// Snapshot pre-delete counts for every table that will still exist
+			// after the drop below (the dropped one cannot be queried anymore).
+			preCounts := make(map[string]int64, len(scopedTables))
+			for _, table := range scopedTables {
+				if table == tc.dropTable {
+					continue
+				}
+				preCounts[table] = countUserRowsInTable(t, database, table, user.ID)
+			}
+
 			// Drop a child table so its delete inside the transaction errors,
 			// hitting the error-return branch and forcing a rollback.
 			if err := database.Exec("DROP TABLE " + tc.dropTable).Error; err != nil {
 				t.Fatalf("drop %s: %v", tc.dropTable, err)
 			}
 
+			// First delete succeeds (TestDeleteAccountAndRelatedDataRemovesAllUserRows,
+			// same package); this is the next one, and it must refuse.
 			if err := repos.Users.DeleteAccountAndRelatedData(context.Background(), user.ID); err == nil {
 				t.Fatal("expected an error when a child-table delete fails, got nil")
 			}
@@ -268,6 +313,15 @@ func TestDeleteAccountAndRelatedDataRollsBackOnChildDeleteError(t *testing.T) {
 			}
 			if usersLeft != 1 {
 				t.Fatalf("transaction must roll back on delete error; user rows = %d, want 1", usersLeft)
+			}
+
+			// All rows restored: every other child table's row for this account
+			// must still be there, unchanged by the deletes that ran before the
+			// transaction hit the dropped table and aborted.
+			for table, want := range preCounts {
+				if got := countUserRowsInTable(t, database, table, user.ID); got != want {
+					t.Fatalf("%s: expected the rollback to restore %d row(s) for the account, found %d — a child delete that ran before the failure was not rolled back", table, want, got)
+				}
 			}
 		})
 	}
