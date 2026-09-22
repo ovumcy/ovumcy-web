@@ -120,18 +120,22 @@ func TestUserRepositoryCompleteOnboardingRefusesZeroOwner(t *testing.T) {
 	repo := openRegistrationRepositoryForTest(t)
 
 	err := repo.CompleteOnboarding(context.Background(), 0, time.Now().UTC(), 5, false)
-	if err == nil || err.Error() != "onboarding owner is required" {
-		t.Fatalf("expected the owner-required refusal, got %v", err)
+	if !errors.Is(err, ErrUserOwnerRequired) {
+		t.Fatalf("expected ErrUserOwnerRequired, got %v", err)
 	}
 }
 
-// TestUserRepositoryCompleteOnboardingScopesDailyLogUpdateToOwner proves the
-// per-day update inside CompleteOnboarding's auto-fill loop is scoped by
-// user_id in the query itself, mirroring DailyLogRepository.Save. The entry is
-// read scoped by userID in the same transaction, so today the update only
-// ever reaches the owner's own row (defense-in-depth) — this pins the guard
-// rather than a currently-reachable cross-owner write.
-func TestUserRepositoryCompleteOnboardingScopesDailyLogUpdateToOwner(t *testing.T) {
+// TestUserRepositoryCompleteOnboardingMarksAnExistingDayAsPeriod covers the
+// auto-fill loop's update arm: a day row that already exists on an onboarding
+// date is updated rather than inserted a second time.
+//
+// It deliberately does NOT cover the user_id predicate on that update. The
+// entry is read scoped by userID in the same transaction, so removing the
+// predicate changes nothing this test can observe and it stays green either
+// way — the predicate is pinned by
+// TestUserRepositoryCompleteOnboardingUpdateIsScopedByOwnerInSource below, and
+// that test is not redundant with this one.
+func TestUserRepositoryCompleteOnboardingMarksAnExistingDayAsPeriod(t *testing.T) {
 	repo := openRegistrationRepositoryForTest(t)
 	ctx := context.Background()
 
@@ -186,15 +190,61 @@ func TestUserRepositoryCompleteOnboardingScopesDailyLogUpdateToOwner(t *testing.
 // regression back to the primary-key-only Updates that DailyLogRepository.Save
 // documents the same risk for.
 func TestUserRepositoryCompleteOnboardingUpdateIsScopedByOwnerInSource(t *testing.T) {
+	body := userRepositoryFunctionBody(t, "func (repo *UserRepository) CompleteOnboarding(")
+
+	if !strings.Contains(body, `tx.Model(&entry).Where("user_id=?",userID).Updates(`) {
+		t.Fatal("expected CompleteOnboarding's per-day Updates call to be scoped by " +
+			`Where("user_id = ?", userID), mirroring DailyLogRepository.Save`)
+	}
+}
+
+// TestUserRepositoryCreateUserWithSymptomsChecksSeedOwnersInSource pins the
+// owner check on the one symptom insert in this package that does not go
+// through SymptomRepository. CreateUserWithSymptoms stamps user.ID onto the
+// seed rows and writes them with its own transaction handle, so the guard on
+// SymptomRepository.Create/CreateBatch does not cover it; leaving it uncovered
+// would fix the class at every site but this one, which is how the two halves
+// drift apart. The id is assigned by the insert one statement earlier, so no
+// behavioral test can drive this path to a zero owner — the check is pinned
+// where it is written.
+func TestUserRepositoryCreateUserWithSymptomsChecksSeedOwnersInSource(t *testing.T) {
+	body := userRepositoryFunctionBody(t, "func (repo *UserRepository) CreateUserWithSymptoms(")
+
+	check := strings.Index(body, "requireSymptomOwners(prepared)")
+	insert := strings.Index(body, "tx.Create(&prepared)")
+	if check < 0 {
+		t.Fatal("expected CreateUserWithSymptoms to run requireSymptomOwners over the seed rows, " +
+			"the same owner check SymptomRepository's own inserts run")
+	}
+	if insert < 0 {
+		t.Fatal("seed insert not found in CreateUserWithSymptoms; update this guard")
+	}
+	if check > insert {
+		t.Fatal("expected the owner check to run before the seed insert, not after it")
+	}
+}
+
+// userRepositoryFunctionBody returns the source of one function in
+// user_repository.go, with every run of whitespace collapsed away.
+//
+// The whitespace is dropped so a gofmt-legal reflow of a call chain — the
+// kind a later edit to a neighbouring line can force — cannot fail a caller
+// with a message claiming a security-shaped predicate was dropped while it is
+// still there. Every whitespace run goes, string literals included, so a
+// needle must be written with none at all: `Where("user_id=?",userID)`, not
+// the spelling that appears in the source.
+func userRepositoryFunctionBody(t *testing.T, signature string) string {
+	t.Helper()
+
 	source, err := os.ReadFile("user_repository.go")
 	if err != nil {
-		t.Fatalf("read user_repository.go: %v", err)
+		t.Fatalf("read the user repository source: %v", err)
 	}
 	body := string(source)
 
-	start := strings.Index(body, "func (repo *UserRepository) CompleteOnboarding(")
+	start := strings.Index(body, signature)
 	if start < 0 {
-		t.Fatal("CompleteOnboarding not found in user_repository.go")
+		t.Fatalf("function not found in the user repository source: %s", signature)
 	}
 	rest := body[start:]
 	end := strings.Index(rest[1:], "\nfunc ")
@@ -203,10 +253,6 @@ func TestUserRepositoryCompleteOnboardingUpdateIsScopedByOwnerInSource(t *testin
 	} else {
 		end++
 	}
-	functionBody := rest[:end]
 
-	if !strings.Contains(functionBody, `tx.Model(&entry).Where("user_id = ?", userID).Updates(`) {
-		t.Fatal("expected CompleteOnboarding's per-day Updates call to be scoped by " +
-			`Where("user_id = ?", userID), mirroring DailyLogRepository.Save`)
-	}
+	return strings.Join(strings.Fields(rest[:end]), "")
 }

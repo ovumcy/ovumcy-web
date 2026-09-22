@@ -10,6 +10,14 @@ import (
 	"gorm.io/gorm"
 )
 
+// ErrUserOwnerRequired is returned when a write that acts on exactly one
+// account arrives with no account to act on. A zero id is invalid input, not a
+// wildcard and not a no-op: Where("id = ?", 0) matches zero rows and reports
+// nil, so the caller is told its write succeeded while nothing was written.
+// Today only CompleteOnboarding raises it; the rest of this file's
+// single-account writes are the subject of a separate change.
+var ErrUserOwnerRequired = errors.New("user owner is required")
+
 // CalendarFeedFence records, OUTSIDE the database, that the set of armed
 // calendar feeds just changed. Every write below that arms, rotates or removes
 // a feed calls it, in the same shape and for the same reason the webhook
@@ -319,6 +327,16 @@ func (repo *UserRepository) CreateUserWithSymptoms(ctx context.Context, user *mo
 		copy(prepared, symptoms)
 		for index := range prepared {
 			prepared[index].UserID = user.ID
+		}
+
+		// The seed rows go in through this transaction's own handle rather
+		// than through SymptomRepository, so they are held to the same owner
+		// check its inserts are: the id stamped above comes from the insert
+		// one statement earlier, and a row that ended up with a zero owner
+		// would be unreachable by every owner-scoped read and by account
+		// erasure.
+		if err := requireSymptomOwners(prepared); err != nil {
+			return &SymptomSeedError{Err: err}
 		}
 
 		if err := tx.Create(&prepared).Error; err != nil {
@@ -1511,7 +1529,7 @@ func (repo *UserRepository) DeleteAccountAndRelatedData(ctx context.Context, use
 
 func (repo *UserRepository) CompleteOnboarding(ctx context.Context, userID uint, startDay time.Time, periodLength int, autoPeriodFill bool) error {
 	if userID == 0 {
-		return errors.New("onboarding owner is required")
+		return ErrUserOwnerRequired
 	}
 	if periodLength <= 0 {
 		return errors.New("invalid period length")
