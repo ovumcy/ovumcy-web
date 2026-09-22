@@ -511,8 +511,14 @@ func TestCalendarFeedTimingEqualizationPlaceholderReachesTheVerifierCompare(t *t
 // resolved row's own columns, or against an empty MAC, would spend a different
 // amount of work than the verify path it stands in for.
 func TestCalendarFeedEqualizerBodyReExecutesTheVerifyPath(t *testing.T) {
+	// A well-formed pair, as ResolveFeed hands the equalizer after a split: a
+	// shorter verifier would make the pass-through refuse on length and never
+	// reach the MAC compare this test claims to exercise.
 	const selector = "SELECTOR16CHARSX"
-	const verifier = "VERIFIER"
+	const verifier = "VERIFIER32CHARSXVERIFIER32CHARSX"
+	if _, _, ok := SplitCalendarFeedToken(selector + verifier); !ok {
+		t.Fatalf("fixture pair %q+%q is not a well-formed feed token — the verify pass-through would do no MAC work", selector, verifier)
+	}
 
 	type verifyCall struct {
 		token  string

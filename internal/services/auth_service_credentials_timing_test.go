@@ -97,8 +97,10 @@ type equalizerCompare struct {
 }
 
 // withEqualizerCompareRecorder records every comparison an equalizer body
-// spends and still calls the production compare, so the body under test runs
-// exactly as it ships and only the accounting is added.
+// spends. It does not call through: these tests ask WHICH comparisons the body
+// makes, and what each one costs is pinned elsewhere — the placeholder costs by
+// TestTimingEqualizationHashesMatchTargetCost, the spent work by the ledger in
+// auth_service_timing_cost_topup_test.go, which does call through.
 func withEqualizerCompareRecorder(t *testing.T) *[]equalizerCompare {
 	t.Helper()
 
@@ -106,7 +108,7 @@ func withEqualizerCompareRecorder(t *testing.T) *[]equalizerCompare {
 	recorded := []equalizerCompare{}
 	authTimingEqualizerCompare = func(hash []byte, operand []byte) error {
 		recorded = append(recorded, equalizerCompare{hash: string(hash), operand: string(operand)})
-		return original(hash, operand)
+		return bcrypt.ErrMismatchedHashAndPassword
 	}
 	t.Cleanup(func() { authTimingEqualizerCompare = original })
 	return &recorded
@@ -126,12 +128,22 @@ func assertEqualizerSpent(t *testing.T, recorded []equalizerCompare, wantHashes 
 	}
 	for index, want := range wantHashes {
 		if recorded[index].hash != want {
-			t.Fatalf("comparison %d ran against a hash other than the placeholder it must name — the work it buys is then whatever that hash costs", index)
+			t.Fatalf("comparison %d ran against hash %q, want placeholder %q — the work it buys is then whatever that hash costs",
+				index, hashPrefix(recorded[index].hash), hashPrefix(want))
 		}
 		if recorded[index].operand != wantOperand {
 			t.Fatalf("comparison %d ran against operand %q, want the submitted secret %q", index, recorded[index].operand, wantOperand)
 		}
 	}
+}
+
+// hashPrefix shortens a bcrypt hash for a failure message: the cost and the
+// first salt characters are enough to tell two placeholders apart.
+func hashPrefix(hash string) string {
+	if len(hash) > 16 {
+		return hash[:16] + "…"
+	}
+	return hash
 }
 
 // TestAuthCredentialsEqualizerBodyComparesThePlaceholder drives the SHIPPED
