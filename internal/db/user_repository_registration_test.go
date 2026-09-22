@@ -3,7 +3,9 @@ package db
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -172,5 +174,39 @@ func TestUserRepositoryCompleteOnboardingScopesDailyLogUpdateToOwner(t *testing.
 	}
 	if !reloaded.IsPeriod {
 		t.Fatal("expected the onboarding auto-fill to mark the existing day as period")
+	}
+}
+
+// TestUserRepositoryCompleteOnboardingUpdateIsScopedByOwnerInSource pins the
+// user_id predicate on CompleteOnboarding's per-day Updates call. The entry
+// is read scoped by userID earlier in the same transaction, so today this
+// predicate never changes which row is touched — it is defense-in-depth, not
+// a currently-reachable cross-owner write, and no behavioral test can force a
+// different outcome by removing it. This structural check is what catches a
+// regression back to the primary-key-only Updates that DailyLogRepository.Save
+// documents the same risk for.
+func TestUserRepositoryCompleteOnboardingUpdateIsScopedByOwnerInSource(t *testing.T) {
+	source, err := os.ReadFile("user_repository.go")
+	if err != nil {
+		t.Fatalf("read user_repository.go: %v", err)
+	}
+	body := string(source)
+
+	start := strings.Index(body, "func (repo *UserRepository) CompleteOnboarding(")
+	if start < 0 {
+		t.Fatal("CompleteOnboarding not found in user_repository.go")
+	}
+	rest := body[start:]
+	end := strings.Index(rest[1:], "\nfunc ")
+	if end < 0 {
+		end = len(rest)
+	} else {
+		end++
+	}
+	functionBody := rest[:end]
+
+	if !strings.Contains(functionBody, `tx.Model(&entry).Where("user_id = ?", userID).Updates(`) {
+		t.Fatal("expected CompleteOnboarding's per-day Updates call to be scoped by " +
+			`Where("user_id = ?", userID), mirroring DailyLogRepository.Save`)
 	}
 }
