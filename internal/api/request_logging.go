@@ -2,7 +2,6 @@ package api
 
 import (
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
@@ -105,7 +104,7 @@ func isNumericRequestLogSegment(segment string) bool {
 	if segment == "" {
 		return false
 	}
-	_, err := strconv.ParseUint(segment, 10, 64)
+	_, err := parseRequestUint(segment)
 	return err == nil
 }
 
