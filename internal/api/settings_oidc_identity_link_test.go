@@ -8,7 +8,9 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/security"
 	"github.com/ovumcy/ovumcy-web/internal/services"
@@ -486,6 +488,18 @@ func TestOIDCIdentityUnlinkRequiresCSRFAndThePassword(t *testing.T) {
 		t.Fatalf("expected 404 for a malformed id, got %d", badID.StatusCode)
 	}
 
+	// CodeQL flagged the id parse as an unbounded uint64->uint truncation
+	// (converted to `uint` without an upper bound); it now goes through
+	// parseRequestUint, which parses at the platform's own uint width. An id
+	// past even uint64's range still fails to parse, so it takes the same
+	// not-found path a malformed id does rather than truncating into some
+	// other owner's identity id.
+	overflowID := deleteOIDCIdentity(t, fixture, "99999999999999999999999", linkFixturePassword, true)
+	defer func() { _ = overflowID.Body.Close() }()
+	if overflowID.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404 for an id beyond the uint range, got %d", overflowID.StatusCode)
+	}
+
 	if fixture.oidcStub.unlinkCalls != 0 {
 		t.Fatalf("expected the service never to be asked past a refused gate, got %d calls", fixture.oidcStub.unlinkCalls)
 	}
@@ -527,6 +541,10 @@ func TestOIDCIdentityUnlinkMapsServiceRefusals(t *testing.T) {
 	}{
 		"not the owner's identity": {err: services.ErrOIDCIdentityNotFound, wantStatus: http.StatusNotFound},
 		"last sign-in method":      {err: services.ErrOIDCUnlinkLastSignIn, wantStatus: http.StatusForbidden},
+		// mapOIDCIdentityUnlinkError's default arm: an error UnlinkIdentity
+		// never documents (a storage fault, say) collapses into the generic
+		// SSO-unavailable spec rather than leaking service internals.
+		"unmapped service failure": {err: errors.New("oidc store unavailable"), wantStatus: http.StatusServiceUnavailable},
 	} {
 		fixture := newOIDCStepupFixture(t, "settings-oidc-unlink-"+strings.ReplaceAll(name, " ", "-")+"@example.com")
 		giveLinkFixtureAPassword(t, fixture)
@@ -540,5 +558,248 @@ func TestOIDCIdentityUnlinkMapsServiceRefusals(t *testing.T) {
 		if cookie := responseCookie(response.Cookies(), authCookieName); cookie != nil && cookie.Value != "" {
 			t.Fatalf("%s: a refused unlink must not re-issue a session", name)
 		}
+	}
+}
+
+// TestOIDCIdentityUnlinkRefusesWhenOIDCIsDisabled covers the branch
+// UnlinkOIDCIdentity takes before it ever parses the id or asks for the
+// account password: a provider that is not configured refuses immediately,
+// the same posture StartOIDCIdentityLinkStepup takes
+// (TestOIDCIdentityLinkStepupStartRefusesWhenOIDCIsDisabled).
+func TestOIDCIdentityUnlinkRefusesWhenOIDCIsDisabled(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "settings-oidc-unlink-disabled@example.com")
+	fixture.oidcStub.enabled = false
+
+	response := deleteOIDCIdentity(t, fixture, "1", linkFixturePassword, true)
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("expected %d when the provider is disabled, got %d", http.StatusServiceUnavailable, response.StatusCode)
+	}
+	if fixture.oidcStub.unlinkCalls != 0 {
+		t.Fatal("expected the service never to be asked when OIDC is disabled")
+	}
+}
+
+// deleteOIDCIdentityWithFormat is deleteOIDCIdentity with the response format
+// under the caller's control, for the two success arms a JSON caller never
+// exercises: the HTMX redirect and the plain browser redirect.
+func deleteOIDCIdentityWithFormat(t *testing.T, fixture *oidcStepupFixture, identityID, password, accept string, htmx bool) *http.Response {
+	t.Helper()
+	csrfCookie, csrfToken := fixture.settingsCSRF(t)
+	form := url.Values{"csrf_token": {csrfToken}, "password": {password}}
+	request := httptest.NewRequest(http.MethodDelete, "/api/v1/users/current/oidc/identities/"+identityID, strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Accept", accept)
+	if htmx {
+		request.Header.Set("HX-Request", "true")
+	}
+	request.Header.Set("Cookie", settingsCookieHeader(fixture.authCookie, csrfCookie))
+	return mustAppResponse(t, fixture.app, request)
+}
+
+// TestOIDCIdentityUnlinkHTMXSuccessRedirectsViaHXRedirect and
+// TestOIDCIdentityUnlinkBrowserSuccessRedirectsToSettings are the two success
+// arms TestOIDCIdentityUnlinkActsForTheSessionOwnerAndReissuesTheSession never
+// reaches: that anchor always asks for JSON, so acceptsJSON(c) answers first
+// and short-circuits both.
+func TestOIDCIdentityUnlinkHTMXSuccessRedirectsViaHXRedirect(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "settings-oidc-unlink-htmx@example.com")
+	giveLinkFixtureAPassword(t, fixture)
+	identityID := strconv.FormatUint(uint64(fixture.identity.ID), 10)
+
+	response := deleteOIDCIdentityWithFormat(t, fixture, identityID, linkFixturePassword, "text/html", true)
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 with HX-Redirect on an HTMX unlink, got %d", response.StatusCode)
+	}
+	if redirect := response.Header.Get("HX-Redirect"); redirect != "/settings" {
+		t.Fatalf("expected HX-Redirect /settings, got %q", redirect)
+	}
+	flashCookie := responseCookie(response.Cookies(), flashCookieName)
+	if flashCookie == nil || strings.TrimSpace(flashCookie.Value) == "" {
+		t.Fatal("expected a success flash cookie on the HTMX unlink")
+	}
+}
+
+func TestOIDCIdentityUnlinkBrowserSuccessRedirectsToSettings(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "settings-oidc-unlink-browser@example.com")
+	giveLinkFixtureAPassword(t, fixture)
+	identityID := strconv.FormatUint(uint64(fixture.identity.ID), 10)
+
+	response := deleteOIDCIdentityWithFormat(t, fixture, identityID, linkFixturePassword, "text/html", false)
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected 303 redirect for a plain browser unlink, got %d", response.StatusCode)
+	}
+	if location := response.Header.Get("Location"); location != "/settings" {
+		t.Fatalf("expected redirect to /settings, got %q", location)
+	}
+	flashCookie := responseCookie(response.Cookies(), flashCookieName)
+	if flashCookie == nil || strings.TrimSpace(flashCookie.Value) == "" {
+		t.Fatal("expected a success flash cookie on the plain unlink")
+	}
+}
+
+// TestOIDCIdentityUnlinkReissueFailureIsReportedAsARefusal pins the same seam
+// TestApplyClearDataReportsARefusedSessionReissueToItsCaller pins for
+// clear-data: reissueSessionAfterIdentityChange's !ok branch has to reach the
+// caller as a refusal, not be swallowed into the success response the unlink
+// already wrote up to that point.
+//
+// The refusal is provoked the same way, with a role
+// reissueSessionAfterIdentityChange's own fresh FindByID will refuse but that
+// no registered route can carry into the handler in the first place
+// (AuthRequired resolves the same role first and would refuse the request
+// before UnlinkOIDCIdentity ever runs). The probe therefore injects the
+// session user directly via Locals — the same seam UnlinkOIDCIdentity reads
+// through currentUser — instead of going through AuthRequired.
+func TestOIDCIdentityUnlinkReissueFailureIsReportedAsARefusal(t *testing.T) {
+	t.Parallel()
+
+	stub := newStubOIDCWorkflowService(true)
+	// newSettingsMutationStepupApp's own app ends in a catch-all
+	// app.Use(handler.NotFound) registered after every production route, so a
+	// route added to it here — after the helper returns — would never be
+	// reached; the catch-all answers first. The probe therefore takes only the
+	// handler and database from the fixture and mounts its single route on a
+	// bare app of its own, the same split probeApplyClearData uses.
+	_, database, handler := newSettingsMutationStepupApp(t, stub)
+	app := fiber.New()
+
+	password := "StrongPass1"
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("hash probe password: %v", err)
+	}
+	user := models.User{
+		Email:            "oidc-unlink-reissue-refused@example.com",
+		LocalAuthEnabled: true,
+		PasswordHash:     string(hash),
+		// The one non-owner value the users table's CHECK constraint still
+		// accepts, which is what makes reissueSessionAfterIdentityChange's
+		// role gate reachable from a row a test can create, the same
+		// technique TestApplyClearDataReportsARefusedSessionReissueToItsCaller
+		// uses.
+		Role:                "partner",
+		OnboardingCompleted: true,
+		AuthSessionVersion:  1,
+		CycleLength:         28,
+		PeriodLength:        5,
+		AutoPeriodFill:      true,
+		CreatedAt:           time.Now().UTC(),
+	}
+	if err := database.Create(&user).Error; err != nil {
+		t.Fatalf("create the probe account: %v", err)
+	}
+
+	app.Delete("/__probe/oidc-unlink/:id", func(c fiber.Ctx) error {
+		c.Locals(contextUserKey, &user)
+		return handler.UnlinkOIDCIdentity(c)
+	})
+
+	form := url.Values{"password": {password}}
+	request := httptest.NewRequest(http.MethodDelete, "/__probe/oidc-unlink/1", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Accept", "application/json")
+	response := mustAppResponse(t, app, request)
+	defer func() { _ = response.Body.Close() }()
+
+	wantSpec := authWebSignInUnavailableErrorSpec()
+	if response.StatusCode != wantSpec.Status {
+		t.Fatalf("expected the refused reissue's status %d, got %d: %s", wantSpec.Status, response.StatusCode, mustReadBodyString(t, response.Body))
+	}
+	if body := mustReadBodyString(t, response.Body); !strings.Contains(body, wantSpec.Key) {
+		t.Fatalf("expected the refused-reissue key %q in the body, got %q", wantSpec.Key, body)
+	}
+	// Anti-vacuity: the unlink itself ran before the reissue was asked, so a
+	// refusal above can only have come from the reissue and not from the
+	// service call being skipped.
+	if stub.unlinkCalls != 1 || stub.lastUnlinkUserID != user.ID {
+		t.Fatalf("expected UnlinkIdentity to have run for user %d before the reissue, got %d calls for user %d", user.ID, stub.unlinkCalls, stub.lastUnlinkUserID)
+	}
+}
+
+// TestOIDCIdentityLinkStepupReissueFailureIsReportedAsARefusal is the
+// identity-link counterpart above: reissueSessionAfterIdentityChange's !ok
+// branch inside completeOIDCIdentityLinkStepup must redirect the refusal, not
+// the success the flash cookie would otherwise carry.
+//
+// completeOIDCIdentityLinkStepup re-resolves the session from the real auth
+// cookie (authenticateRequest) before it ever asks the service to confirm the
+// link, and the reissue's own FindByID re-resolves the same row again
+// afterward. A role flip made before the call would already fail that FIRST
+// read, so the Locals-injection probe the unlink test above uses cannot reach
+// this arm. Instead the stub's afterIdentityLinkConfirm hook flips the row's
+// role in the gap between the two reads: the account passes the first read as
+// an owner and only becomes unsupported for the second one, which is exactly
+// the reissue failure this test exists to pin.
+func TestOIDCIdentityLinkStepupReissueFailureIsReportedAsARefusal(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "settings-oidc-link-reissue-failure@example.com")
+	fixture.oidcStub.identityLinkClaims = security.OIDCClaims{
+		Issuer:  "https://id.example.com",
+		Subject: "reissue-failure-subject",
+	}
+	fixture.oidcStub.afterIdentityLinkConfirm = func() {
+		if err := fixture.database.Model(&models.User{}).Where("id = ?", fixture.user.ID).Update("role", "partner").Error; err != nil {
+			t.Fatalf("flip the fixture role to provoke a refused reissue: %v", err)
+		}
+	}
+
+	startResponse := postOIDCIdentityLinkStepupStart(t, fixture)
+	defer func() { _ = startResponse.Body.Close() }()
+	stepupCookie := readStepupCookie(t, startResponse)
+	state := extractStepupCallbackState(t, fixture)
+
+	callbackResponse := postOIDCStepupCallback(t, fixture, stepupCookie, state, "callback-code")
+	defer func() { _ = callbackResponse.Body.Close() }()
+
+	// Anti-vacuity: the link itself completed before the reissue ran, so a
+	// refusal below can only have come from the reissue and not from
+	// ConfirmAndLinkIdentity never being asked.
+	if fixture.oidcStub.lastConfirmLinkUserID != fixture.user.ID {
+		t.Fatalf("expected the link to have been confirmed before the reissue ran, got user id %d", fixture.oidcStub.lastConfirmLinkUserID)
+	}
+	flashCookie := responseCookie(callbackResponse.Cookies(), flashCookieName)
+	if flashCookie == nil || strings.TrimSpace(flashCookie.Value) == "" {
+		t.Fatal("expected a flash cookie carrying the refused reissue")
+	}
+	wantKey := authWebSignInUnavailableErrorSpec().Key
+	if payload := decodeFlashCookieForTest(t, flashCookie.Value); payload.SettingsError != wantKey {
+		t.Fatalf("expected the refused-reissue key %q on the settings flash channel, got %q", wantKey, payload.SettingsError)
+	}
+}
+
+// TestSettingsPageRefusesWhenListingLinkedIdentitiesFails pins
+// buildSettingsViewData's OIDC branch: a ListLinkedIdentities failure (a
+// storage fault, unlike every other arm in this file which refuses a
+// request rather than a page load) must surface as the page's own load
+// failure rather than a half-built page that silently drops the
+// linked-identities list.
+func TestSettingsPageRefusesWhenListingLinkedIdentitiesFails(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "settings-oidc-link-list-failure@example.com")
+	fixture.oidcStub.enabled = true
+	fixture.oidcStub.listLinkedErr = errors.New("oidc identity store unavailable")
+
+	request := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", fixture.authCookie)
+	response := mustAppResponse(t, fixture.app, request)
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("expected the settings page to refuse when listing linked identities fails, got %d", response.StatusCode)
 	}
 }
