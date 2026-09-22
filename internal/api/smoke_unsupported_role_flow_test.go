@@ -6,7 +6,83 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/ovumcy/ovumcy-web/internal/models"
 )
+
+// TestUnsupportedLegacyRoleResetRedeemWritesNothing pins the guard that keeps a
+// role-refused reset from costing the account its recovery code.
+// CompleteReset rotates the password AND the recovery code in one write, and
+// the reveal of the new code is staged only after a session is issued — so a
+// redeem that reached the write and was refused a session afterwards would
+// leave the account with a recovery code nobody saw and the previous one
+// destroyed. What stops that is the role check inside the reset-token
+// resolution, which answers "invalid reset token" before any write; the
+// handler's own unsupported-role arm after the write is never reached on this
+// route. The claim is proven on the row, not on the status.
+//
+// The positive anchor is the same cookie redeemed once the role is back to
+// owner: it succeeds, so the refusal above is the role's doing and not a stale
+// or malformed token.
+func TestUnsupportedLegacyRoleResetRedeemWritesNothing(t *testing.T) {
+	t.Parallel()
+
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "smoke-legacy-reset@example.com", "StrongPass1", true)
+	recoveryCode := mustSetRecoveryCodeForUser(t, database, user.ID)
+	resetCookieValue := requestResetCookieByRecoveryCode(t, app, user.Email, recoveryCode, "StrongPass1")
+
+	var before models.User
+	if err := database.First(&before, user.ID).Error; err != nil {
+		t.Fatalf("load user before redeem: %v", err)
+	}
+	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Update("role", "partner").Error; err != nil {
+		t.Fatalf("set unsupported legacy role: %v", err)
+	}
+
+	redeem := func() *http.Response {
+		form := url.Values{"password": {"EvenStronger2"}, "confirm_password": {"EvenStronger2"}}
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets/redeem", strings.NewReader(form.Encode()))
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		request.Header.Set("Accept", "application/json")
+		request.Header.Set("Cookie", resetPasswordCookieName+"="+resetCookieValue)
+		return mustAppResponse(t, app, request)
+	}
+
+	refused := redeem()
+
+	var after models.User
+	if err := database.First(&after, user.ID).Error; err != nil {
+		t.Fatalf("load user after refused redeem: %v", err)
+	}
+	if after.PasswordHash != before.PasswordHash {
+		t.Fatal("the role-refused redeem rewrote the password")
+	}
+	if after.RecoveryCodeHash != before.RecoveryCodeHash {
+		t.Fatal("the role-refused redeem rotated the recovery code: the new one was never revealed and the old one is gone")
+	}
+	if after.AuthSessionVersion != before.AuthSessionVersion {
+		t.Fatalf("the role-refused redeem bumped auth_session_version from %d to %d", before.AuthSessionVersion, after.AuthSessionVersion)
+	}
+	assertStatusCode(t, refused, http.StatusBadRequest)
+	if got := readAPIError(t, refused.Body); got != "invalid reset token" {
+		t.Fatalf("expected the role-refused redeem to answer as an invalid reset token before any write, got %q", got)
+	}
+	for _, name := range []string{authCookieName, recoveryCodeCookieName} {
+		if cookie := responseCookie(refused.Cookies(), name); cookie != nil && strings.TrimSpace(cookie.Value) != "" {
+			t.Fatalf("a role-refused redeem must not set %s", name)
+		}
+	}
+
+	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Update("role", models.RoleOwner).Error; err != nil {
+		t.Fatalf("restore owner role: %v", err)
+	}
+	accepted := redeem()
+	assertStatusCode(t, accepted, http.StatusOK)
+	if cookie := responseCookie(accepted.Cookies(), recoveryCodeCookieName); cookie == nil || strings.TrimSpace(cookie.Value) == "" {
+		t.Fatal("anchor: the same cookie redeemed by an owner must stage the recovery-code reveal — without it the refusal above proves nothing about the role")
+	}
+}
 
 func TestUnsupportedLegacyRoleLoginIsRejected(t *testing.T) {
 	t.Parallel()
