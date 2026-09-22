@@ -723,6 +723,19 @@ func (service *DayService) clearCompetingCycleStarts(ctx context.Context, userID
 	return nil
 }
 
+// refreshDerivedCycleSettings is the single place the "day save" writer
+// family (upsert, delete, manual cycle-start mark — every caller below)
+// recomputes the persisted users.luteal_phase cache. The bound is the
+// OWNER's today, never the request's: this column is also read by the
+// request-free boot recompute (LutealPhaseRecomputer), which has no request
+// zone to agree with and resolves purely through resolveOwnerLocation, so a
+// write here bounded at the request's zone would silently disagree with the
+// boot pass on any day the two zones name a different date — the disagreement
+// self-heals only on the NEXT write, not before. `location` (the caller's
+// request-resolved zone) stays the fallback for an owner with no captured
+// timezone yet, exactly as calendar_feed_service.go's feedLocation already
+// does. This calls resolveOwnerLocation, the one owner-timezone resolver
+// (webhook_notify_service.go) — it does not add a second one.
 func (service *DayService) refreshDerivedCycleSettings(ctx context.Context, userID uint, now time.Time, location *time.Location) {
 	if service == nil || service.users == nil || service.logs == nil {
 		return
@@ -734,8 +747,15 @@ func (service *DayService) refreshDerivedCycleSettings(ctx context.Context, user
 		return
 	}
 
+	ownerLocation := location
+	if userSettings, err := service.users.LoadSettingsByID(ctx, userID); err != nil {
+		log.Printf("refreshDerivedCycleSettings: load timezone for user %d failed: %v", userID, err)
+	} else {
+		ownerLocation = resolveOwnerLocation(userSettings.Timezone, location)
+	}
+
 	if err := service.users.UpdateByID(ctx, userID, map[string]any{
-		"luteal_phase": deriveUserLutealPhase(logs, now, location),
+		"luteal_phase": deriveUserLutealPhase(logs, now, ownerLocation),
 	}); err != nil {
 		log.Printf("refreshDerivedCycleSettings: update luteal_phase for user %d failed: %v", userID, err)
 	}

@@ -138,6 +138,118 @@ func (importmutDataLogs) DeleteByUserAndDayRange(context.Context, uint, time.Tim
 	return nil
 }
 
+// ---------------------------------------------------------------------------
+// SEC-M14 (WEB-15) — refreshDerivedCycleSettings must bound the persisted
+// users.luteal_phase cache at the OWNER's stored timezone, never the
+// request's (header/cookie) zone threaded in as `location`. Mirrors
+// TestDayService_RefreshDerivedCycleSettings_BoundsAtOwnerZoneNotRequestZone
+// (day_service_mutation_test.go) with the same fixture and boundary instant:
+// a "bulk restore" is the import writer's own slot in the derivation's three
+// writers (services-cycle.md), so it needs its own induced-red proof.
+// ---------------------------------------------------------------------------
+
+// importmutTZLogs serves a fixed, pre-seeded log set regardless of the
+// import payload's own writes, so the historical fixture below is what
+// refreshDerivedCycleSettings's ListByUser call observes.
+type importmutTZLogs struct {
+	entries []models.DailyLog
+}
+
+func (s importmutTZLogs) FindByUserAndDayRange(context.Context, uint, time.Time, time.Time) (models.DailyLog, bool, error) {
+	return models.DailyLog{}, false, nil
+}
+func (s importmutTZLogs) Create(context.Context, *models.DailyLog) error { return nil }
+func (s importmutTZLogs) CreateBatch(context.Context, []models.DailyLog) error {
+	return nil
+}
+func (s importmutTZLogs) ListByUser(context.Context, uint) ([]models.DailyLog, error) {
+	return s.entries, nil
+}
+func (s importmutTZLogs) ListByUserRange(context.Context, uint, *time.Time, *time.Time) ([]models.DailyLog, error) {
+	return nil, nil
+}
+func (s importmutTZLogs) ListByUserDayRange(context.Context, uint, time.Time, time.Time) ([]models.DailyLog, error) {
+	return nil, nil
+}
+func (s importmutTZLogs) Save(context.Context, *models.DailyLog) error { return nil }
+func (s importmutTZLogs) DeleteByUserAndDayRange(context.Context, uint, time.Time, time.Time) error {
+	return nil
+}
+
+// importmutTZUsers records the persisted luteal_phase and serves a fixed
+// owner timezone from LoadSettingsByID.
+type importmutTZUsers struct {
+	timezone string
+	luteal   int
+}
+
+func (u *importmutTZUsers) LoadSettingsByID(context.Context, uint) (models.User, error) {
+	return models.User{Timezone: u.timezone}, nil
+}
+func (u *importmutTZUsers) UpdateByID(_ context.Context, _ uint, updates map[string]any) error {
+	if v, ok := updates["luteal_phase"]; ok {
+		if lp, ok := v.(int); ok {
+			u.luteal = lp
+		}
+	}
+	return nil
+}
+
+func TestImportMut_RefreshDerivedCycleSettings_BoundsAtOwnerZoneNotRequestZone(t *testing.T) {
+	day := func(s string) time.Time {
+		parsed, err := time.Parse("2006-01-02", s)
+		if err != nil {
+			t.Fatalf("parse %q: %v", s, err)
+		}
+		return parsed
+	}
+	bbt := func(v float64) *float64 { return &v }
+
+	// Two BBT-confirmed cycles (Jan1->Jan20, luteal 13; Jan20->Feb8, luteal
+	// 12 — same coverline/rise shape as the day-service sibling test) plus a
+	// THIRD observed cycle start on Feb 8, the boundary log.
+	// InferUserLutealPhase needs 3 starts to refine at all, so whether Feb 8
+	// counts as "observed yet" decides refined (13, true) vs the unrefined
+	// default (14, false).
+	logs := importmutTZLogs{entries: []models.DailyLog{
+		{UserID: 42, Date: day("2026-01-01"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium, BBT: bbt(36.20)},
+		{UserID: 42, Date: day("2026-01-02"), BBT: bbt(36.20)},
+		{UserID: 42, Date: day("2026-01-03"), BBT: bbt(36.20)},
+		{UserID: 42, Date: day("2026-01-04"), BBT: bbt(36.20)},
+		{UserID: 42, Date: day("2026-01-05"), BBT: bbt(36.20)},
+		{UserID: 42, Date: day("2026-01-06"), BBT: bbt(36.20)},
+		{UserID: 42, Date: day("2026-01-07"), BBT: bbt(36.50)},
+		{UserID: 42, Date: day("2026-01-08"), BBT: bbt(36.50)},
+		{UserID: 42, Date: day("2026-01-09"), BBT: bbt(36.50)},
+		{UserID: 42, Date: day("2026-01-20"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium, BBT: bbt(36.20)},
+		{UserID: 42, Date: day("2026-01-21"), BBT: bbt(36.20)},
+		{UserID: 42, Date: day("2026-01-22"), BBT: bbt(36.20)},
+		{UserID: 42, Date: day("2026-01-23"), BBT: bbt(36.20)},
+		{UserID: 42, Date: day("2026-01-24"), BBT: bbt(36.20)},
+		{UserID: 42, Date: day("2026-01-25"), BBT: bbt(36.20)},
+		{UserID: 42, Date: day("2026-01-27"), BBT: bbt(36.50)},
+		{UserID: 42, Date: day("2026-01-28"), BBT: bbt(36.50)},
+		{UserID: 42, Date: day("2026-01-29"), BBT: bbt(36.50)},
+		{UserID: 42, Date: day("2026-02-08"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+	}}
+	users := &importmutTZUsers{timezone: "Pacific/Midway"}
+	svc := &ImportService{logs: logs, users: users}
+
+	// now = 2026-02-08T00:30 UTC: the request's zone (UTC, `requestLocation`
+	// below) already reads today as Feb 8, the boundary log's own date. The
+	// owner's stored zone, Pacific/Midway (UTC-11), reads local time as
+	// 2026-02-07T13:30 — today is still Feb 7, one calendar day before the
+	// boundary log.
+	now := time.Date(2026, time.February, 8, 0, 30, 0, 0, time.UTC)
+	requestLocation := time.UTC
+
+	svc.refreshDerivedCycleSettings(context.Background(), 42, now, requestLocation)
+
+	if users.luteal != defaultLutealPhaseDays {
+		t.Fatalf("expected luteal_phase bounded at the OWNER's zone (Pacific/Midway, today=Feb 7) to stay the unrefined default %d; got %d — a request-zone bound (UTC, today=Feb 8) would count the not-yet-owner-observed Feb 8 cycle start and refine it to 13", defaultLutealPhaseDays, users.luteal)
+	}
+}
+
 func TestImportMut_RefreshNilGuardsShortCircuitPerClause(t *testing.T) {
 	ctx := context.Background()
 

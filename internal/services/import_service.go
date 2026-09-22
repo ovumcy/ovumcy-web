@@ -443,8 +443,12 @@ func resolveImportSymptomIDs(flags ExportSymptomFlags, otherNames []string, buil
 }
 
 // refreshDerivedCycleSettings recomputes the owner's luteal-phase estimate once
-// after a bulk restore. Mirrors DayService.refreshDerivedCycleSettings; kept as
-// a best-effort side effect (a failure here never fails the import).
+// after a bulk restore ("bulk restore", the second of the derivation's three
+// writers — services-cycle.md). Mirrors DayService.refreshDerivedCycleSettings,
+// including the owner-zone bound: `location` is only the fallback for an
+// owner with no captured timezone, resolveOwnerLocation prefers the persisted
+// one, same reasoning as the day-save family (day_service.go). Kept as a
+// best-effort side effect (a failure here never fails the import).
 func (service *ImportService) refreshDerivedCycleSettings(ctx context.Context, userID uint, now time.Time, location *time.Location) {
 	if service == nil || service.users == nil || service.logs == nil {
 		return
@@ -453,5 +457,9 @@ func (service *ImportService) refreshDerivedCycleSettings(ctx context.Context, u
 	if err != nil {
 		return
 	}
-	_ = service.users.UpdateByID(ctx, userID, map[string]any{"luteal_phase": deriveUserLutealPhase(logs, now, location)})
+	ownerLocation := location
+	if userSettings, err := service.users.LoadSettingsByID(ctx, userID); err == nil {
+		ownerLocation = resolveOwnerLocation(userSettings.Timezone, location)
+	}
+	_ = service.users.UpdateByID(ctx, userID, map[string]any{"luteal_phase": deriveUserLutealPhase(logs, now, ownerLocation)})
 }
