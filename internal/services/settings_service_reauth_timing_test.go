@@ -1,8 +1,12 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"testing"
+	"time"
+
+	"github.com/ovumcy/ovumcy-web/internal/models"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -260,5 +264,44 @@ func TestSettingsReauthRefusalsSpendEqualWorkAcrossStoredCosts(t *testing.T) {
 		if spent != noLocalPassword {
 			t.Fatalf("stored cost %d: wrong-password refusal spends %d work units, the no-local-password refusal spends %d", storedCost, spent, noLocalPassword)
 		}
+	}
+}
+
+// The equalized no-local-password refusal spends a full bcrypt, so it must draw
+// the re-auth budget like a wrong password does; otherwise an OIDC-only session
+// buys that compare on every request with nothing capping it. Both budgeted
+// callers are covered — the erasure gate and the password-change gate.
+func TestSettingsReauthNoLocalPasswordRefusalDrawsTheBudget(t *testing.T) {
+	cases := []struct {
+		name   string
+		refuse func(service *SettingsService, attempt ReauthAttempt) error
+	}{
+		{"erasure", func(service *SettingsService, attempt ReauthAttempt) error {
+			return service.VerifyReauthPassword(attempt, "", "AnyPass1")
+		}},
+		{"password change", func(service *SettingsService, attempt ReauthAttempt) error {
+			user := &models.User{ID: 42, LocalAuthEnabled: true}
+			return service.ChangePassword(context.Background(), attempt, user, "AnyPass1", "NewStrongPass2", "NewStrongPass2")
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := withCountingSettingsReauthEqualizer(t)
+			service := NewSettingsService(nil)
+			service.ConfigureReauthAttempts([]byte("test-secret"), NewAttemptLimiter(), 2, time.Minute)
+			attempt := ReauthAttempt{ClientKey: "203.0.113.10", UserID: 42, Now: time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)}
+
+			for i := 1; i <= 2; i++ {
+				if err := tc.refuse(service, attempt); !errors.Is(err, ErrSettingsLocalPasswordNotSet) {
+					t.Fatalf("refusal %d: got %v, want ErrSettingsLocalPasswordNotSet", i, err)
+				}
+			}
+			if err := tc.refuse(service, attempt); !errors.Is(err, ErrSettingsReauthRateLimited) {
+				t.Fatalf("after the budget: got %v, want ErrSettingsReauthRateLimited", err)
+			}
+			if *calls != 2 {
+				t.Fatalf("equalizer ran %d times, want 2 — the rate-limited call must spend nothing", *calls)
+			}
+		})
 	}
 }
