@@ -769,7 +769,7 @@ func runDetectQueue(t *testing.T, script, event string, files []string, queueBas
 	git("commit", "-q", "-m", "change")
 	var apiEnv []string
 	if api != nil {
-		apiEnv = api.install(t, bash, git("rev-parse", "HEAD~1"), git("rev-parse", "HEAD"))
+		apiEnv = api.install(t, bash, git)
 	}
 
 	output := filepath.ToSlash(filepath.Join(t.TempDir(), "output"))
@@ -816,13 +816,22 @@ func requireBash(t *testing.T, dir string) string {
 			err = fmt.Errorf("%s answered %q, not \"ok\": %v", path, got, probeErr)
 		}
 	}
-	if err != nil {
-		if runtime.GOOS != "windows" || os.Getenv("CI") != "" {
-			t.Fatalf("bash with git is required to execute the detect step, and this guard proves nothing without it: %v", err)
-		}
-		t.Skipf("bash with git is required to execute the detect step: %v", err)
-	}
+	requireOrSkip(t, "bash with git", err)
 	return path
+}
+
+// requireOrSkip is the rule for a tool the detect step runs through: only a
+// Windows developer machine outside CI may skip.
+func requireOrSkip(t *testing.T, name string, err error) {
+	t.Helper()
+
+	if err == nil {
+		return
+	}
+	if runtime.GOOS != "windows" || os.Getenv("CI") != "" {
+		t.Fatalf("%s is required to execute the detect step, and this guard proves nothing without it: %v", name, err)
+	}
+	t.Skipf("%s is required to execute the detect step: %v", name, err)
 }
 
 type detectCase struct {
@@ -919,25 +928,23 @@ func TestDetectStepHarnessRefusesTheUnfixedShapes(t *testing.T) {
 // merge_group's proven-tree skip, executed against recorded API answers.
 // ---------------------------------------------------------------------------
 
-// The four `gh api` answers the skip reads were recorded off the real API for
+// The three `gh api` answers the skip reads were recorded off the real API for
 // PR #839 at 515ea3f4 (testdata/ghapi, trimmed around the fields read). A case
-// is served them with the recorded head and parent swapped for the fixture's
-// own commits, through a real jq running the step's own program as `gh --jq`
-// does — so a wrong path or program in the step fails the proven case instead
-// of reading, silently, as "not proven" forever.
+// is served them with the recorded head swapped for the fixture's own, through
+// a real jq running the step's own program as `gh --jq` does — so a wrong path
+// or program in the step fails the proven case instead of reading, silently,
+// as "not proven" forever.
 const (
-	stubRepository    = "ovumcy/ovumcy-web"
-	recordedPRNumber  = "839"
-	recordedHeadSHA   = "515ea3f42b78418f8e0ac9ca3a6b3b4514f84158"
-	recordedParentSHA = "a445e3cea5dd4ad5e1a72a34d4f72dedd2034bda"
-	provenHeadRef     = "refs/heads/gh-readonly-queue/main/pr-" + recordedPRNumber + "-0123abcd"
+	stubRepository   = "ovumcy/ovumcy-web"
+	recordedPRNumber = "839"
+	recordedHeadSHA  = "515ea3f42b78418f8e0ac9ca3a6b3b4514f84158"
+	provenHeadRef    = "refs/heads/gh-readonly-queue/main/pr-" + recordedPRNumber + "-0123abcd"
 )
 
 // ghRoutes is every path the step asks for; {head} is the PR head it read.
 var ghRoutes = []struct{ name, path string }{
 	{"pulls", "repos/" + stubRepository + "/pulls/" + recordedPRNumber},
 	{"commit_pulls", "repos/" + stubRepository + "/commits/{head}/pulls"},
-	{"commit", "repos/" + stubRepository + "/commits/{head}"},
 	{"runs", "repos/" + stubRepository + "/actions/runs?head_sha={head}&event=pull_request&per_page=50"},
 }
 
@@ -960,22 +967,39 @@ exec jq -r "$4" "$GH_STUB_DIR/$file"
 // ghAPI is one case's answers: the recorded ones, bent by the fields set.
 type ghAPI struct {
 	headRef string
-	// headIsBase serves the fixture's base commit as the PR head, its parent
-	// answer still the base: every answer checks out except the tree.
+	// headIsBase serves the fixture's base commit as the PR head: every
+	// answer checks out except the tree.
 	headIsBase bool
-	fail       string                          // this route exits 1
-	edit       func(route string, doc any) any // rewrites one decoded answer
+	// secondCommit puts one more commit on the head, so its parent is not
+	// the queue base — the shape of every multi-commit PR.
+	secondCommit bool
+	// baseOffHistory hands the step a queue base that is not an ancestor of
+	// the head: a root commit carrying the base's tree.
+	baseOffHistory bool
+	fail           string                          // this route exits 1
+	edit           func(route string, doc any) any // rewrites one decoded answer
 }
 
-func (api *ghAPI) install(t *testing.T, bash, baseSHA, headSHA string) []string {
+func (api *ghAPI) install(t *testing.T, bash string, git func(...string) string) []string {
 	t.Helper()
 	requireJq(t, bash)
 
-	prHead := headSHA
+	if api.secondCommit {
+		git("commit", "-q", "--allow-empty", "-m", "second")
+	}
+	baseSHA, prHead := git("rev-parse", "HEAD~1"), git("rev-parse", "HEAD")
+	if api.secondCommit {
+		baseSHA = git("rev-parse", "HEAD~2")
+	}
 	if api.headIsBase {
 		prHead = baseSHA
 	}
-	swap := strings.NewReplacer(recordedHeadSHA, prHead, recordedParentSHA, baseSHA)
+	var env []string
+	if api.baseOffHistory {
+		// Appended after runDetectQueue's own QUEUE_BASE_SHA, so it wins.
+		env = append(env, "QUEUE_BASE_SHA="+git("commit-tree", "-m", "off history", baseSHA+"^{tree}"))
+	}
+	swap := strings.NewReplacer(recordedHeadSHA, prHead)
 	dir := t.TempDir()
 	var routes strings.Builder
 	for _, r := range ghRoutes {
@@ -1009,17 +1033,16 @@ func (api *ghAPI) install(t *testing.T, bash, baseSHA, headSHA string) []string 
 	if err := os.WriteFile(filepath.Join(dir, "gh"), []byte(ghStubScript), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	return []string{
-		"MERGE_GROUP_HEAD_REF=" + api.headRef,
-		"GITHUB_REPOSITORY=" + stubRepository,
+	return append(env,
+		"MERGE_GROUP_HEAD_REF="+api.headRef,
+		"GITHUB_REPOSITORY="+stubRepository,
 		"GH_TOKEN=stub",
-		"GH_STUB_DIR=" + filepath.ToSlash(dir),
-		"PATH=" + dir + string(os.PathListSeparator) + os.Getenv("PATH"),
-	}
+		"GH_STUB_DIR="+filepath.ToSlash(dir),
+		"PATH="+dir+string(os.PathListSeparator)+os.Getenv("PATH"),
+	)
 }
 
-// requireJq holds jq to requireBash's rule: only a Windows machine outside CI
-// may skip.
+// requireJq returns once jq answers from inside bash.
 func requireJq(t *testing.T, bash string) {
 	t.Helper()
 
@@ -1027,12 +1050,7 @@ func requireJq(t *testing.T, bash string) {
 	if got := strings.TrimSpace(string(out)); err == nil && got != "ok" {
 		err = fmt.Errorf("jq answered %q, not \"ok\"", got)
 	}
-	if err != nil {
-		if runtime.GOOS != "windows" || os.Getenv("CI") != "" {
-			t.Fatalf("jq is required to serve the recorded API answers, and this guard proves nothing without it: %v", err)
-		}
-		t.Skipf("jq is required to serve the recorded API answers: %v", err)
-	}
+	requireOrSkip(t, "jq", err)
 }
 
 // on applies f to one route's answer and leaves the others as recorded.
@@ -1060,11 +1078,7 @@ var (
 	apiSecondPR = ghAPI{headRef: provenHeadRef, edit: on("commit_pulls", func(doc any) any {
 		return append(doc.([]any), map[string]any{"number": 840, "state": "open", "base": map[string]any{"ref": "main"}})
 	})}
-	apiMergeCommit = ghAPI{headRef: provenHeadRef, edit: on("commit", func(doc any) any {
-		c := doc.(map[string]any)
-		c["parents"] = append(c["parents"].([]any), map[string]any{"sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"})
-		return c
-	})}
+	apiOffHistory = ghAPI{headRef: provenHeadRef, baseOffHistory: true}
 	apiOtherTree  = ghAPI{headRef: provenHeadRef, headIsBase: true}
 	apiRunFailed  = ghAPI{headRef: provenHeadRef, edit: on("runs", func(doc any) any { ciRun(doc)["conclusion"] = "failure"; return doc })}
 	apiRunOtherPR = ghAPI{headRef: provenHeadRef, edit: on("runs", func(doc any) any {
@@ -1085,20 +1099,18 @@ func TestMergeGroupProvenTreeSkip(t *testing.T) {
 		proven bool
 	}{
 		{"one PR rebased onto the queue base, green on this tree", apiProven, true},
+		{"a PR of two commits on the queue base", ghAPI{headRef: provenHeadRef, secondCommit: true}, true},
 		{"a head_ref of another shape", ghAPI{headRef: "refs/heads/some-other-branch"}, false},
 		{"a base outside the plain branch charset", ghAPI{headRef: "refs/heads/gh-readonly-queue/release/1.x/pr-839-0123abcd"}, false},
 		{"the PR lookup errors", ghAPI{headRef: provenHeadRef, fail: "pulls"}, false},
+		{"the head-to-PR lookup errors", ghAPI{headRef: provenHeadRef, fail: "commit_pulls"}, false},
 		{"the head is in a second open PR", apiSecondPR, false},
 		{"the PR targets another base", ghAPI{headRef: provenHeadRef, edit: on("commit_pulls", func(doc any) any {
 			doc.([]any)[0].(map[string]any)["base"] = map[string]any{"ref": "release"}
 			return doc
 		})}, false},
-		{"the head's parent is not the queue base", ghAPI{headRef: provenHeadRef, edit: on("commit", func(doc any) any {
-			doc.(map[string]any)["parents"].([]any)[0] = map[string]any{"sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"}
-			return doc
-		})}, false},
-		{"the head is a merge commit", apiMergeCommit, false},
-		{"the parent matches, the tree does not", apiOtherTree, false},
+		{"the queue base is not an ancestor of the head", apiOffHistory, false},
+		{"the base is an ancestor, the tree differs", apiOtherTree, false},
 		{"the runs lookup errors", ghAPI{headRef: provenHeadRef, fail: "runs"}, false},
 		{"the ci.yml run failed", apiRunFailed, false},
 		{"the ci.yml run belongs to another PR", apiRunOtherPR, false},
@@ -1133,7 +1145,7 @@ func TestMergeGroupProvenTreeSkipRefusesEachDroppedCheck(t *testing.T) {
 		api            ghAPI
 	}{
 		{"PR binding", `if [ "$pr_binding" != "$(printf '%s\t%s' "$pr_number" "$queue_base_ref")" ]; then`, "if false; then", apiSecondPR},
-		{"single parent", `[ "$parent_count" != "1" ] || `, "", apiMergeCommit},
+		{"base is an ancestor", `! git merge-base --is-ancestor "$QUEUE_BASE_SHA" "$pr_head_sha" 2>/dev/null`, "false", apiOffHistory},
 		{"tree equality", ` || [ "$queue_tree" != "$pr_tree" ]`, "", apiOtherTree},
 		{"run bound to the PR", ` | select(any(.pull_requests[]?; .number == '"$pr_number"' and .base.ref == "'"$queue_base_ref"'"))`, "", apiRunOtherPR},
 		{"run success", `if [ "$run_conclusion" != "success" ]; then`, "if false; then", apiRunFailed},
