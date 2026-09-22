@@ -2,12 +2,21 @@ package db
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"gorm.io/gorm"
 )
+
+// ErrDailyLogOwnerRequired is returned by DailyLogRepository.Save and
+// UpdateSymptomIDs when the entry carries no owner. Both scope their write by
+// entry.UserID in the query itself (see Save's doc comment); a zero UserID is
+// invalid input, not a wildcard — matching Where("user_id = ?", 0) would
+// ordinarily just match zero rows and return nil, a silent no-op that looks
+// exactly like a successful write of an entry nobody asked to persist.
+var ErrDailyLogOwnerRequired = errors.New("daily log entry owner is required")
 
 // busyRetryAttempts / busyRetryBackoff bound the application-level retry on
 // SQLITE_BUSY. `_txlock=immediate` (see sqlite.go) removes the
@@ -156,6 +165,9 @@ func (repo *DailyLogRepository) CreateBatch(ctx context.Context, entries []model
 // matches zero rows, and that fallback would otherwise re-create/overwrite the
 // row by primary key and defeat the scope.
 func (repo *DailyLogRepository) Save(ctx context.Context, entry *models.DailyLog) error {
+	if entry.UserID == 0 {
+		return ErrDailyLogOwnerRequired
+	}
 	return repo.database.WithContext(ctx).
 		Model(entry).
 		Where("user_id = ?", entry.UserID).
@@ -171,6 +183,9 @@ func (repo *DailyLogRepository) DeleteByUserAndDayRange(ctx context.Context, use
 // write can only touch a row whose user_id matches the entry's own UserID
 // (defense-in-depth, mirroring Save and the read/delete methods).
 func (repo *DailyLogRepository) UpdateSymptomIDs(ctx context.Context, entry *models.DailyLog) error {
+	if entry.UserID == 0 {
+		return ErrDailyLogOwnerRequired
+	}
 	return repo.database.WithContext(ctx).Model(entry).Where("user_id = ?", entry.UserID).Select("symptom_ids").Updates(entry).Error
 }
 

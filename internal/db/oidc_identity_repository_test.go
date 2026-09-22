@@ -306,3 +306,44 @@ func TestOIDCIdentityRepositoryBlankKeyFindsNothing(t *testing.T) {
 		}
 	}
 }
+
+// TestOIDCIdentityRepositoryTouchLastUsedScopedToOwner proves TouchLastUsed
+// combines identityID with the caller's own userID in the query, rather than
+// trusting identityID alone: owner two presenting owner one's identity id
+// must be a clean no-op, never a touch of the other owner's row. Without the
+// user_id term in the WHERE clause, a stale or foreign identityID — read once
+// and reused after the identity moved, or handed to the wrong owner's call —
+// would update a row that id belongs to, regardless of who is asking.
+func TestOIDCIdentityRepositoryTouchLastUsedScopedToOwner(t *testing.T) {
+	repository, _ := seedOIDCRepositoryOwners(t)
+	ctx := context.Background()
+
+	ownerOneIdentity := models.OIDCIdentity{UserID: 1, Issuer: "https://id.example.com", Subject: "owner-one", CreatedAt: time.Now().UTC()}
+	if err := repository.Create(ctx, &ownerOneIdentity); err != nil {
+		t.Fatalf("create owner one's identity: %v", err)
+	}
+
+	// Owner two (userID 2) presents owner one's identity id. The combined
+	// (id, user_id) predicate matches zero rows, so this must be a no-op: no
+	// error, and owner one's last_used_at stays untouched.
+	if err := repository.TouchLastUsed(ctx, ownerOneIdentity.ID, 2, time.Now().UTC()); err != nil {
+		t.Fatalf("cross-owner TouchLastUsed should be a no-op, got %v", err)
+	}
+	reloaded, found, err := repository.FindByIssuerSubject(ctx, ownerOneIdentity.Issuer, ownerOneIdentity.Subject)
+	if err != nil || !found {
+		t.Fatalf("reload owner one's identity: found=%v err=%v", found, err)
+	}
+	if reloaded.LastUsedAt != nil {
+		t.Fatalf("cross-owner TouchLastUsed touched owner one's row: last_used_at=%v, want nil", reloaded.LastUsedAt)
+	}
+
+	// The legitimate owner touching their own identity still works.
+	touchedAt := time.Now().UTC()
+	if err := repository.TouchLastUsed(ctx, ownerOneIdentity.ID, 1, touchedAt); err != nil {
+		t.Fatalf("owner-scoped TouchLastUsed: %v", err)
+	}
+	reloaded, found, err = repository.FindByIssuerSubject(ctx, ownerOneIdentity.Issuer, ownerOneIdentity.Subject)
+	if err != nil || !found || reloaded.LastUsedAt == nil {
+		t.Fatalf("expected owner-scoped touch to persist, found=%v err=%v last_used_at=%v", found, err, reloaded.LastUsedAt)
+	}
+}

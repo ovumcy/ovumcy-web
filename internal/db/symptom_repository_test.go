@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -97,5 +98,14 @@ func TestSymptomRepositoryOwnerScoping(t *testing.T) {
 	}
 	if rawR.Name != "Renamed" {
 		t.Fatalf("cross-owner Update mutated the row: name=%q, want %q", rawR.Name, "Renamed")
+	}
+
+	// UserID==0 is invalid input, not a wildcard: without the guard,
+	// Where("user_id = ?", 0) matches zero rows and Update returns nil, a
+	// silent no-op indistinguishable from a successful write. Mirrors
+	// TestDailyLogWriteRefusesZeroOwner.
+	zero := models.SymptomType{ID: aBuiltinID, UserID: 0, Name: "Zero Owner", Icon: "z", Color: "#000000"}
+	if err := repo.Update(context.Background(), &zero); !errors.Is(err, ErrSymptomOwnerRequired) {
+		t.Fatalf("Update with UserID==0: got %v, want ErrSymptomOwnerRequired", err)
 	}
 }

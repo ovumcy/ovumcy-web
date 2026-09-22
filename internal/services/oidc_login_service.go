@@ -87,7 +87,7 @@ type OIDCIdentityStore interface {
 	// ErrOIDCUnlinkLastSignIn, a delete that leaves no identity and no usable
 	// local password (localSignInOpen: the instance accepts password sign-in).
 	DeleteForUserAndRevokeSessions(ctx context.Context, userID uint, identityID uint, localSignInOpen bool) (bool, error)
-	TouchLastUsed(ctx context.Context, identityID uint, usedAt time.Time) error
+	TouchLastUsed(ctx context.Context, identityID uint, userID uint, usedAt time.Time) error
 }
 
 // LinkedOIDCIdentity is the owner-facing view of one bound identity: enough to
@@ -326,7 +326,7 @@ func (service *OIDCLoginService) ValidateReauthExchange(ctx context.Context, cod
 		return err
 	}
 
-	_ = service.identities.TouchLastUsed(ctx, identity.ID, effectiveOIDCLoginTime(now))
+	_ = service.identities.TouchLastUsed(ctx, identity.ID, identity.UserID, effectiveOIDCLoginTime(now))
 	return nil
 }
 
@@ -464,7 +464,7 @@ func (service *OIDCLoginService) ConfirmAndLinkIdentity(ctx context.Context, tar
 			// confirmation. Fail closed.
 			return ErrOIDCLinkFailed
 		}
-		_ = service.identities.TouchLastUsed(ctx, existing.ID, effectiveOIDCLoginTime(linkTime)) // codecov:ignore -- best-effort last-used touch; error intentionally ignored
+		_ = service.identities.TouchLastUsed(ctx, existing.ID, existing.UserID, effectiveOIDCLoginTime(linkTime)) // codecov:ignore -- best-effort last-used touch; error intentionally ignored
 		return nil
 	}
 
@@ -610,7 +610,7 @@ func (service *OIDCLoginService) authenticateLinkedIdentity(ctx context.Context,
 	if err := ValidateSupportedWebUser(&user); err != nil {
 		return OIDCLoginResult{}, true, ErrOIDCAccountUnavailable
 	}
-	_ = service.identities.TouchLastUsed(ctx, identity.ID, loginTime)
+	_ = service.identities.TouchLastUsed(ctx, identity.ID, identity.UserID, loginTime)
 	return OIDCLoginResult{User: user}, true, nil
 }
 
