@@ -258,9 +258,10 @@ func impossibleOvulationFeedFixture(t *testing.T) (*models.User, []models.DailyL
 // confirmed day through the request-free path a calendar client takes, where
 // "today" comes from users.timezone rather than from any request. The owner is
 // in Pacific/Kiritimati (UTC+14) and polls at 2026-03-13 12:00 UTC, which is
-// already 02:00 on 2026-03-14 for her — the day the third elevated reading is
-// dated. On her calendar the shift is confirmed; on the server's it is not yet,
-// so the day appears only when the whole decision runs on her calendar day.
+// already 02:00 on 2026-03-14 in that zone — the day the third elevated
+// reading is dated. On the owner's calendar the shift is confirmed; on the
+// server's it is not yet, so the day appears only when the whole decision
+// runs on the owner's calendar day.
 func TestResolveFeedPublishesTheConfirmedDayOnTheOwnersCalendarDay(t *testing.T) {
 	kiritimati, err := time.LoadLocation("Pacific/Kiritimati")
 	if err != nil {
@@ -297,13 +298,16 @@ func TestResolveFeedPublishesTheConfirmedDayOnTheOwnersCalendarDay(t *testing.T)
 	}
 
 	// Control: the same instant on the server's calendar, where 2026-03-14 has
-	// not begun. The log read stops at that day, so the third elevated reading
-	// is not there yet and nothing is confirmed.
+	// not begun. FetchLogsForUser bounds its read to "today", so this stands in
+	// for that bound with the same CalendarDay the production code computes it
+	// with — the third elevated reading is not there yet and nothing is
+	// confirmed.
 	fallbackOwner := owner
 	fallbackOwner.Timezone = ""
+	serverToday := CalendarDay(now, time.UTC)
 	serverLogs := make([]models.DailyLog, 0, len(fixtureLogs))
 	for _, log := range fixtureLogs {
-		if !log.Date.After(mustParseDashboardDay(t, "2026-03-13")) {
+		if !log.Date.After(serverToday) {
 			serverLogs = append(serverLogs, log)
 		}
 	}
