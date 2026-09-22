@@ -270,8 +270,9 @@ func TestIsUUIDRequestLogSegment(t *testing.T) {
 }
 
 // TestIsNumericRequestLogSegment pins the numeric-id detector: the empty guard
-// and the ParseUint result path (a leading sign or letter is not a bare
-// unsigned id), so a negated empty check is caught.
+// and the digit scan (a leading sign or letter is not a bare unsigned id), so a
+// negated empty check is caught. The verdict must not depend on the platform's
+// int size, or a 32-bit build logs a large id verbatim.
 func TestIsNumericRequestLogSegment(t *testing.T) {
 	t.Parallel()
 
@@ -281,6 +282,7 @@ func TestIsNumericRequestLogSegment(t *testing.T) {
 	}{
 		{"0", true},
 		{"42", true},
+		{"12345678901", true},
 		{"", false},
 		{"-1", false},
 		{"1a", false},

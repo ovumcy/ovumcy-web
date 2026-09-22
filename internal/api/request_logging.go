@@ -104,8 +104,12 @@ func isNumericRequestLogSegment(segment string) bool {
 	if segment == "" {
 		return false
 	}
-	_, err := parseRequestUint(segment)
-	return err == nil
+	for _, char := range segment {
+		if char < '0' || char > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func isUUIDRequestLogSegment(segment string) bool {
