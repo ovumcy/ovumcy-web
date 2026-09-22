@@ -484,7 +484,7 @@ func TestTheMirrorCopiesTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 				failureMessage = listingNotReady
 			}
 
-			command := exec.Command(bash, "-c", preamble(testCase.verifyFailures, failureMessage)+"\n"+script)
+			command := runBashScript(t, bash, preamble(testCase.verifyFailures, failureMessage)+"\n"+script)
 			command.Env = append(os.Environ(),
 				"DIGEST="+digest,
 				"TAG_REFS="+testCase.tagRefs,
@@ -1296,7 +1296,7 @@ func TestTheIdentityPatternPinsEveryCharacterOfTheRepository(t *testing.T) {
 			// an empty identity, which is no identity.
 			outputFile := filepath.Join(t.TempDir(), "github_output")
 
-			command := exec.Command(bash, "-c", preamble+"\n"+script)
+			command := runBashScript(t, bash, preamble+"\n"+script)
 			command.Env = append(os.Environ(),
 				"GITHUB_REPOSITORY="+testCase.repository,
 				"IMAGE_DIGEST="+imageName+"@"+digest,
@@ -1378,7 +1378,7 @@ func TestTheImageNameIsDerivedOnceAndLowercased(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			outputs := filepath.ToSlash(filepath.Join(t.TempDir(), "outputs"))
 
-			command := exec.Command(bash, "-c", script)
+			command := runBashScript(t, bash, script)
 			command.Env = append(os.Environ(),
 				"GITHUB_REPOSITORY="+testCase.repository,
 				"GITHUB_OUTPUT="+outputs,
@@ -1435,7 +1435,7 @@ func TestTheTokenParseReadsWhatTheRegistryReturned(t *testing.T) {
 				t.Fatalf("write the fixture answer: %v", err)
 			}
 
-			output, err := exec.Command(bash, "-c", "set -euo pipefail\ntoken_body="+shellQuote(path)+"\n"+parse).Output()
+			output, err := runBashScript(t, bash, "set -euo pipefail\ntoken_body="+shellQuote(path)+"\n"+parse).Output()
 			if err != nil {
 				t.Fatalf("the token parse failed on %s: %v", testCase.body, err)
 			}
@@ -1486,6 +1486,24 @@ func requireBash(t *testing.T) string {
 	requireShellTool(t, path, "sha256sum", `printf '' | sha256sum | awk '{print $1}'`, sha256Hex(""))
 
 	return path
+}
+
+// runBashScript writes script to a file under t.TempDir() and returns a Cmd
+// that runs it the way every step read out of the workflow in this package
+// does: every step under `publish` in docker-image.yml declares `shell: bash`
+// explicitly, which GitHub Actions compiles to
+// `bash --noprofile --norc -eo pipefail {0}` — a FILE, never `-c`. A script
+// long enough to hold one of these steps truncates silently on Windows when
+// handed to `-c` as a command-line argument, and `-c` runs without the
+// errexit the workflow applies to every one of them.
+func runBashScript(t *testing.T, bash, script string) *exec.Cmd {
+	t.Helper()
+
+	scriptFile := filepath.Join(t.TempDir(), "step.sh")
+	if err := os.WriteFile(scriptFile, []byte(script), 0o644); err != nil {
+		t.Fatalf("write the step script: %v", err)
+	}
+	return exec.Command(bash, "--noprofile", "--norc", "-eo", "pipefail", filepath.ToSlash(scriptFile))
 }
 
 // requireShellTool checks a tool THROUGH the shell that will reach it, which is
@@ -1599,7 +1617,7 @@ func runStep(t *testing.T, bash, job, step string, env map[string]string, reg re
 	}
 	preamble := stubRegistry(dir, reg)
 
-	command := exec.Command(bash, "-c", preamble+"\n"+script)
+	command := runBashScript(t, bash, preamble+"\n"+script)
 	command.Env = append(os.Environ(),
 		"GITHUB_REPOSITORY=ovumcy/ovumcy-web",
 		"GITHUB_SERVER_URL=https://github.com",

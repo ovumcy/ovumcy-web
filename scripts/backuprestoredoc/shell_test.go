@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -60,7 +61,17 @@ func runScript(t *testing.T, dir string, script string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), runbookCommandTimeout)
 	defer cancel()
 
-	command := exec.CommandContext(ctx, bashPath(t), "-c", "set -euo pipefail\n"+script)
+	// The runbook itself is a sequence of commands an operator pastes and
+	// reads one at a time — it is `set -euo pipefail` above that turns this
+	// harness's run into a single script with the same fail-fast behaviour,
+	// not `-c` restating a shell the runbook was written for. Handed to `-c`
+	// as a command-line argument, a long documented procedure truncates
+	// silently on Windows, which this file writes out and runs instead.
+	scriptFile := filepath.Join(t.TempDir(), "runbook-step.sh")
+	if err := os.WriteFile(scriptFile, []byte("set -euo pipefail\n"+script), 0o644); err != nil {
+		t.Fatalf("write the runbook script: %v", err)
+	}
+	command := exec.CommandContext(ctx, bashPath(t), filepath.ToSlash(scriptFile))
 	command.Dir = dir
 	// MSYS_NO_PATHCONV/MSYS2_ARG_CONV_EXCL are a Windows-dev-host shim and
 	// nothing else: Git Bash rewrites arguments that look like POSIX paths
