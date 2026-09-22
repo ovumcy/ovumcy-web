@@ -11,8 +11,9 @@ suite green while the enumeration oracle each exists to close was fully
 restored. Each body now spends through a named compare seam, the ledger accounts
 at that seam, and three new tests drive the shipped bodies and assert the
 comparisons they actually make. A source sweep over the services package
-refuses any later `equalize…Timing` var whose body calls
-`bcrypt.CompareHashAndPassword` or `VerifyCalendarFeedToken` directly, calls no
-package-level seam var, or spends through a seam no test reassigns; a body that
-also calls some other primitive directly alongside a seam passes it. No product
+refuses any later `equalize…Timing` var whose body references
+`bcrypt.CompareHashAndPassword` (under any import name) or
+`VerifyCalendarFeedToken` directly, calls no seam var bound to one of them, or
+spends through a seam no test reassigns; a body that also calls some other
+primitive directly alongside a seam passes it. No product
 behaviour changes: the same comparisons run against the same placeholders.
