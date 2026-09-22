@@ -375,8 +375,13 @@ func TestTOTPService_ResetAttempts_ClearsLimit(t *testing.T) {
 
 	svc.ResetAttempts(secretKey, "1.2.3.4", 1)
 
-	if err := svc.CheckRateLimit(secretKey, "1.2.3.4", 1, now); err != nil {
-		t.Errorf("CheckRateLimit() after ResetAttempts = %v, want nil", err)
+	// The client bucket is forgiven: the same client is open for another account.
+	if err := svc.CheckRateLimit(secretKey, "1.2.3.4", 2, now); err != nil {
+		t.Errorf("CheckRateLimit() for another account after ResetAttempts = %v, want nil", err)
+	}
+	// The identity bucket pools every client's failures and is not reset.
+	if err := svc.CheckRateLimit(secretKey, "5.6.7.8", 1, now); !errors.Is(err, ErrTOTPRateLimited) {
+		t.Errorf("CheckRateLimit() for the same account from another client = %v, want ErrTOTPRateLimited", err)
 	}
 }
 
@@ -473,6 +478,11 @@ func TestTOTPService_ResetDisableAttempts_ClearsLimit(t *testing.T) {
 
 	if err := svc.CheckDisableRateLimit(secretKey, "1.2.3.4", 1, now); err != nil {
 		t.Errorf("CheckDisableRateLimit() after ResetDisableAttempts = %v, want nil", err)
+	}
+	// Disabling TOTP is session-bound: the account's counter is cleared too,
+	// so the same account is open from any client.
+	if err := svc.CheckDisableRateLimit(secretKey, "5.6.7.8", 1, now); err != nil {
+		t.Errorf("CheckDisableRateLimit() for the same account from another client = %v, want nil", err)
 	}
 }
 

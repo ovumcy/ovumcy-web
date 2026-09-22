@@ -182,6 +182,11 @@ func TestMapPasswordResetCompleteError(t *testing.T) {
 			want: authFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid reset token"),
 		},
 		{
+			name: "lost concurrent redeem",
+			err:  services.ErrResetTokenAlreadyConsumed,
+			want: authFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid reset token"),
+		},
+		{
 			name: "unknown",
 			err:  errors.New("unknown"),
 			want: globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to reset password"),

@@ -39,7 +39,7 @@ func TestMR3Auth_ConfigureWindowBoundary(t *testing.T) {
 	// A sub-second window must be ignored, leaving the accepted 1s window in
 	// place. Under the negation/`<=` family the 500ms window would install and
 	// the failure would wrongly age out before 750ms.
-	policy.Reset(secretKey, clientKey, identity)
+	policy.ResetAll(secretKey, clientKey, identity)
 	policy.Configure(1, 500*time.Millisecond)
 	policy.AddFailure(secretKey, clientKey, identity, now)
 	if !policy.TooManyRecent(secretKey, clientKey, identity, now.Add(750*time.Millisecond)) {

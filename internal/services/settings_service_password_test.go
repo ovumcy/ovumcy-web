@@ -235,6 +235,41 @@ func TestChangePasswordRefusesOnceReauthBudgetSpent(t *testing.T) {
 	}
 }
 
+// TestChangePasswordSuccessClearsTheAccountCounterAcrossClients pins the
+// session-bound reset at the change-password site, which reaches the budget
+// through its own call rather than through VerifyReauthPassword: a correct
+// current password clears the account counter, not only the succeeding
+// client's, so typos from one device never carry over to lock another.
+func TestChangePasswordSuccessClearsTheAccountCounterAcrossClients(t *testing.T) {
+	repo := &stubSettingsUserRepo{}
+	service := NewSettingsService(repo)
+	service.ConfigureReauthAttempts([]byte("test-secret"), NewAttemptLimiter(), 3, time.Minute)
+
+	currentHash, err := bcrypt.GenerateFromPassword([]byte("StrongPass1"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	user := &models.User{ID: 42, PasswordHash: string(currentHash), AuthSessionVersion: 1}
+	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	laptop := ReauthAttempt{ClientKey: "203.0.113.10", UserID: user.ID, Now: now}
+	phone := ReauthAttempt{ClientKey: "198.51.100.7", UserID: user.ID, Now: now}
+	tablet := ReauthAttempt{ClientKey: "192.0.2.44", UserID: user.ID, Now: now}
+
+	for i := 1; i <= 2; i++ {
+		if err := service.ChangePassword(context.Background(), laptop, user, "WrongPass1", "EvenStronger2", "EvenStronger2"); !errors.Is(err, ErrSettingsInvalidCurrentPassword) {
+			t.Fatalf("laptop wrong current password attempt %d: got %v", i, err)
+		}
+	}
+	if err := service.ChangePassword(context.Background(), phone, user, "StrongPass1", "EvenStronger2", "EvenStronger2"); err != nil {
+		t.Fatalf("phone correct current password within budget: got %v, want success", err)
+	}
+	for i := 1; i <= 3; i++ {
+		if err := service.ChangePassword(context.Background(), tablet, user, "WrongPass1", "EvenStronger3", "EvenStronger3"); !errors.Is(err, ErrSettingsInvalidCurrentPassword) {
+			t.Fatalf("tablet attempt %d: got %v, want ErrSettingsInvalidCurrentPassword (account counter survived the session-bound success)", i, err)
+		}
+	}
+}
+
 func TestChangePasswordWrapsUpdateError(t *testing.T) {
 	repo := &stubSettingsUserRepo{
 		updatePasswordErr: errors.New("write failure"),

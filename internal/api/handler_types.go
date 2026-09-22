@@ -90,6 +90,12 @@ type FlashPayload struct {
 	// Login/register error prefill deliberately does NOT round-trip the email
 	// to keep PII out of the cookie on the common failure paths.
 	ForgotEmail string `json:"forgot_password_email,omitempty"`
+	// ExpiresAt is the server-side bound on the flash: setFlashCookie stamps
+	// it, popFlashCookie refuses a payload with none or one in the past. The
+	// cookie's own Expires is a browser hint; a client that kept the sealed
+	// value would otherwise replay the message (and a ForgotEmail prefill)
+	// until the key rotates.
+	ExpiresAt time.Time `json:"expires_at"`
 }
 
 const (

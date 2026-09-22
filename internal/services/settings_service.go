@@ -160,7 +160,8 @@ func (service *SettingsService) VerifyReauthPassword(attempt ReauthAttempt, pass
 		}
 		return err
 	}
-	service.reauthPolicy.Reset(service.reauthSecretKey, attempt.clientBucket(), identity)
+	// Session-bound flow: clear the client and the account counters (see ResetAll).
+	service.reauthPolicy.ResetAll(service.reauthSecretKey, attempt.clientBucket(), identity)
 	return nil
 }
 

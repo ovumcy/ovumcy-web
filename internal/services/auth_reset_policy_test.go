@@ -18,7 +18,7 @@ func TestBuildAndParsePasswordResetToken(t *testing.T) {
 	now := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
 	passwordHash := "$2a$10$testhashvaluefortokenclaims"
 
-	token, err := BuildPasswordResetToken(secret, 42, passwordHash, PasswordResetTokenPurposeRecovery, 30*time.Minute, now)
+	token, err := BuildPasswordResetToken(secret, 42, passwordHash, 1, PasswordResetTokenPurposeRecovery, 30*time.Minute, now)
 	if err != nil {
 		t.Fatalf("BuildPasswordResetToken() unexpected error: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestParsePasswordResetTokenRejectsExpired(t *testing.T) {
 	now := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
 	passwordHash := "$2a$10$testhashvaluefortokenclaims"
 
-	token, err := BuildPasswordResetToken(secret, 42, passwordHash, PasswordResetTokenPurposeRecovery, 1*time.Minute, now)
+	token, err := BuildPasswordResetToken(secret, 42, passwordHash, 1, PasswordResetTokenPurposeRecovery, 1*time.Minute, now)
 	if err != nil {
 		t.Fatalf("BuildPasswordResetToken() unexpected error: %v", err)
 	}
@@ -68,8 +68,7 @@ func TestParsePasswordResetTokenRejectsWrongPurpose(t *testing.T) {
 			IssuedAt:  jwt.NewNumericDate(now),
 		},
 	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	signed, err := token.SignedString(secret)
+	signed, err := signPasswordResetClaims(secret, &claims)
 	if err != nil {
 		t.Fatalf("sign token: %v", err)
 	}
@@ -93,7 +92,7 @@ func TestBuildPasswordResetTokenRejectsUnlistedPurpose(t *testing.T) {
 	now := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
 	passwordHash := "$2a$10$testhashvaluefortokenclaims"
 
-	token, err := BuildPasswordResetToken(secret, 42, passwordHash, "not-a-real-purpose", 30*time.Minute, now)
+	token, err := BuildPasswordResetToken(secret, 42, passwordHash, 1, "not-a-real-purpose", 30*time.Minute, now)
 	if !errors.Is(err, ErrPasswordResetTokenInvalidPurpose) {
 		t.Fatalf("expected ErrPasswordResetTokenInvalidPurpose, got %v", err)
 	}
@@ -120,8 +119,7 @@ func TestParsePasswordResetTokenRejectsMissingExpiry(t *testing.T) {
 			IssuedAt: jwt.NewNumericDate(now),
 		},
 	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	signed, err := token.SignedString(secret)
+	signed, err := signPasswordResetClaims(secret, &claims)
 	if err != nil {
 		t.Fatalf("sign token: %v", err)
 	}
@@ -195,7 +193,7 @@ func TestBuildPasswordResetTokenDefaultsNonPositiveTTL(t *testing.T) {
 	// boundary: the token is valid just before 30m and expired just after. The
 	// ttl=0 case also kills a `<= 0` → `< 0` boundary mutation.
 	for _, ttl := range []time.Duration{0, -time.Minute} {
-		token, err := BuildPasswordResetToken(secret, 42, passwordHash, PasswordResetTokenPurposeRecovery, ttl, now)
+		token, err := BuildPasswordResetToken(secret, 42, passwordHash, 1, PasswordResetTokenPurposeRecovery, ttl, now)
 		if err != nil {
 			t.Fatalf("BuildPasswordResetToken(ttl=%v) unexpected error: %v", ttl, err)
 		}

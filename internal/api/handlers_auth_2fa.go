@@ -12,7 +12,7 @@ import (
 // ShowTOTPChallengePage renders the 2FA code entry page after a successful
 // password login when the user has TOTP enabled.
 func (handler *Handler) ShowTOTPChallengePage(c fiber.Ctx) error {
-	_, _, _, err := handler.parseTOTPPendingCookie(c)
+	_, err := handler.parseTOTPPendingCookie(c)
 	if err != nil {
 		// No valid pending cookie — send back to login.
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
@@ -50,7 +50,8 @@ func parseTOTPChallengeCode(c fiber.Ctx) string {
 // VerifyTOTPLogin validates the 6-digit TOTP code submitted on the challenge page.
 // On success it issues the auth session cookie and redirects to the dashboard.
 func (handler *Handler) VerifyTOTPLogin(c fiber.Ctx) error {
-	userID, rememberMe, oidcLogoutStateID, err := handler.parseTOTPPendingCookie(c)
+	grant, err := handler.parseTOTPPendingCookie(c)
+	userID, rememberMe, oidcLogoutStateID := grant.UserID, grant.RememberMe, grant.OIDCLogoutStateID
 	if err != nil {
 		spec := totpSessionExpiredErrorSpec()
 		handler.logSecurityError(c, "auth.2fa", spec)
@@ -84,6 +85,16 @@ func (handler *Handler) VerifyTOTPLogin(c fiber.Ctx) error {
 		// ValidateCode, which would fail every submission with an opaque
 		// internal error instead of sending the owner toward the
 		// operator-reset escape hatch the next login attempt raises.
+		spec := totpSessionExpiredErrorSpec()
+		handler.logSecurityError(c, "auth.2fa", spec)
+		return handler.respondMappedError(c, spec)
+	}
+	// The grant dies with the credential that earned it: a password change, a
+	// session revocation or an operator's forced reset since the first factor
+	// passed refuses it here — before ValidateCode, so a stale grant cannot
+	// even spend the owner's current TOTP step. The owner signs in again.
+	if !services.SecondFactorGrantCurrent(grant.SessionVersion, &user) {
+		handler.clearTOTPPendingCookie(c)
 		spec := totpSessionExpiredErrorSpec()
 		handler.logSecurityError(c, "auth.2fa", spec)
 		return handler.respondMappedError(c, spec)

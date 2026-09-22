@@ -102,7 +102,7 @@ func TestRecoveryCodeRegenForceClearsFeedAtomically(t *testing.T) {
 func TestPasswordResetCASForceClearsFeedAtomically(t *testing.T) {
 	repo, userID := createArmedFeedUserForForceClear(t, "reset-feed-clear@example.com")
 
-	if err := repo.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(context.Background(), userID, "old-hash", "new-hash", "new-recovery"); err != nil {
+	if err := repo.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(context.Background(), userID, "old-hash", 1, "new-hash", "new-recovery"); err != nil {
 		t.Fatalf("CAS reset: %v", err)
 	}
 
@@ -122,7 +122,7 @@ func TestPasswordResetCASRollbackLeavesFeedArmedAndVersionUnchanged(t *testing.T
 	repo, userID := createArmedFeedUserForForceClear(t, "reset-feed-rollback@example.com")
 
 	// Wrong oldPasswordHash → CAS matches 0 rows → ErrResetTokenAlreadyConsumed.
-	err := repo.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(context.Background(), userID, "WRONG-OLD-HASH", "new-hash", "new-recovery")
+	err := repo.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(context.Background(), userID, "WRONG-OLD-HASH", 1, "new-hash", "new-recovery")
 	if !errors.Is(err, ErrResetTokenAlreadyConsumed) {
 		t.Fatalf("expected ErrResetTokenAlreadyConsumed on CAS miss, got %v", err)
 	}

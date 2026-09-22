@@ -26,17 +26,17 @@ func newTOTPCookieTestApp(t *testing.T, secretKey []byte) (*fiber.App, *Handler)
 	app.Get("/seal-pending", func(c fiber.Ctx) error {
 		userID := uint(fiber.Query(c, "user_id", 0))
 		remember := fiber.Query(c, "remember_me", false)
-		if err := handler.setTOTPPendingCookie(c, userID, remember, ""); err != nil {
+		if err := handler.setTOTPPendingCookie(c, userID, 1, remember, ""); err != nil {
 			return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
 		}
 		return c.SendStatus(fiber.StatusOK)
 	})
 	app.Get("/parse-pending", func(c fiber.Ctx) error {
-		uid, remember, _, err := handler.parseTOTPPendingCookie(c)
+		grant, err := handler.parseTOTPPendingCookie(c)
 		if err != nil {
 			return c.Status(fiber.StatusBadRequest).SendString(err.Error())
 		}
-		return c.JSON(fiber.Map{"user_id": uid, "remember_me": remember})
+		return c.JSON(fiber.Map{"user_id": grant.UserID, "remember_me": grant.RememberMe})
 	})
 	// The setup routes take the acting account as a query parameter so a test
 	// can seal for one owner and parse as another, the way two independent
@@ -180,8 +180,9 @@ func TestTOTPPendingCookie_ExpiredPayload_ParseError(t *testing.T) {
 	app, _ := newTOTPCookieTestApp(t, secretKey)
 
 	sealed := sealTOTPCookiePayloadForTest(t, secretKey, totpPendingCookieName, totpPendingCookiePayload{
-		UserID:    1,
-		ExpiresAt: time.Now().Add(-1 * time.Minute),
+		UserID:         1,
+		ExpiresAt:      time.Now().Add(-1 * time.Minute),
+		SessionVersion: 1,
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/parse-pending", nil)
@@ -239,15 +240,27 @@ func TestTOTPPendingCookieUnusableValueIsClearedNotLeftRiding(t *testing.T) {
 		{
 			name: "payload_naming_no_account",
 			value: sealTOTPCookiePayloadForTest(t, secretKey, totpPendingCookieName, totpPendingCookiePayload{
-				UserID:    0,
-				ExpiresAt: time.Now().Add(5 * time.Minute),
+				UserID:         0,
+				ExpiresAt:      time.Now().Add(5 * time.Minute),
+				SessionVersion: 1,
 			}),
 		},
 		{
 			name: "expired_payload",
 			value: sealTOTPCookiePayloadForTest(t, secretKey, totpPendingCookieName, totpPendingCookiePayload{
+				UserID:         42,
+				ExpiresAt:      time.Now().Add(-1 * time.Minute),
+				SessionVersion: 1,
+			}),
+		},
+		{
+			// A grant that carries no auth_session_version cannot be checked
+			// against the account row, so it is refused rather than read as
+			// version 1.
+			name: "payload_without_session_version",
+			value: sealTOTPCookiePayloadForTest(t, secretKey, totpPendingCookieName, totpPendingCookiePayload{
 				UserID:    42,
-				ExpiresAt: time.Now().Add(-1 * time.Minute),
+				ExpiresAt: time.Now().Add(5 * time.Minute),
 			}),
 		},
 	}

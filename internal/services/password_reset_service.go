@@ -49,7 +49,7 @@ func (service *PasswordResetService) IssueResetTokenForUser(secretKey []byte, us
 	if user == nil {
 		return "", ErrAuthUserRequired
 	}
-	return service.auth.BuildPasswordResetToken(secretKey, user.ID, user.PasswordHash, purpose, ttl, now)
+	return service.auth.BuildPasswordResetToken(secretKey, user.ID, user.PasswordHash, user.AuthSessionVersion, purpose, ttl, now)
 }
 
 // StartRecovery mints a password-reset token for an owner who proves TWO
@@ -59,10 +59,14 @@ func (service *PasswordResetService) IssueResetTokenForUser(secretKey []byte, us
 // knows the password, while an attacker who photographed the recovery code once
 // no longer holds a standing takeover credential.
 //
-// Every failure below — unknown address, local auth disabled, wrong recovery
-// code, wrong or absent password, unsupported role — returns the SAME
-// ErrPasswordRecoveryCodeInvalid and books the SAME attempt failure, so the
-// route reveals neither account existence nor which operand was wrong.
+// An address that does not normalize to a usable email is malformed input,
+// visible to the caller without any lookup, and answers
+// ErrPasswordRecoveryInputInvalid. Every failure past that point — unknown
+// address, local auth disabled, wrong recovery code, wrong or absent password,
+// unsupported role — returns the SAME ErrPasswordRecoveryCodeInvalid, so the
+// route reveals neither account existence nor which operand was wrong. Every
+// failure, the malformed one included, books its attempt under the same keys
+// the budget check above it reads.
 func (service *PasswordResetService) StartRecovery(ctx context.Context, secretKey []byte, limiterKey string, email string, rawRecoveryCode string, password string, now time.Time, tokenTTL time.Duration) (string, error) {
 	if service.auth == nil {
 		return "", errors.New("auth service is required")
@@ -76,7 +80,7 @@ func (service *PasswordResetService) StartRecovery(ctx context.Context, secretKe
 		return "", ErrPasswordRecoveryRateLimited
 	}
 	if normalizedEmail == "" {
-		service.recoveryPolicy.AddFailure(secretKey, limiterKey, "", now)
+		service.recoveryPolicy.AddFailure(secretKey, limiterKey, normalizedEmail, now)
 		return "", ErrPasswordRecoveryInputInvalid
 	}
 
@@ -95,12 +99,13 @@ func (service *PasswordResetService) StartRecovery(ctx context.Context, secretKe
 		return "", err
 	}
 
-	token, err := service.auth.BuildPasswordResetToken(secretKey, user.ID, user.PasswordHash, PasswordResetTokenPurposeRecovery, tokenTTL, now)
+	token, err := service.auth.BuildPasswordResetToken(secretKey, user.ID, user.PasswordHash, user.AuthSessionVersion, PasswordResetTokenPurposeRecovery, tokenTTL, now)
 	if err != nil {
 		return "", err
 	}
 
-	service.recoveryPolicy.Reset(secretKey, limiterKey, normalizedEmail)
+	// Unauthenticated flow: forgive this client only (see ResetClient).
+	service.recoveryPolicy.ResetClient(limiterKey)
 	return token, nil
 }
 

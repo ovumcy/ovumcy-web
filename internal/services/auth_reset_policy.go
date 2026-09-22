@@ -55,22 +55,33 @@ var (
 	ErrPasswordResetTokenExpired              = errors.New("expired reset token")
 	ErrPasswordResetTokenInvalidUserID        = errors.New("invalid reset token user id")
 	ErrPasswordResetTokenInvalidPasswordState = errors.New("invalid reset token password state")
+	ErrPasswordResetTokenInvalidSessionEpoch  = errors.New("invalid reset token session epoch")
 )
 
 type PasswordResetClaims struct {
 	UserID        uint   `json:"uid"`
 	Purpose       string `json:"purpose"`
 	PasswordState string `json:"password_state"`
+	// SessionVersion is the account's auth_session_version when the grant was
+	// minted. Every credential or posture change — password change or reset,
+	// recovery-code regeneration, forced operator reset, TOTP enable/disable,
+	// session revocation — bumps that column in the same write, so a grant
+	// minted before any of them is refused at redeem
+	// (ResolveUserByResetToken). The password fingerprint alone does not see a
+	// recovery-code rotation: a grant proven with the old code would otherwise
+	// still rewrite the password after the owner had rotated it away.
+	SessionVersion int `json:"sv"`
 	jwt.RegisteredClaims
 }
 
 // BuildPasswordResetToken mints the reset token. storedHash is the account's
 // bcrypt hash as read from the row — never a raw password; the caller has one
-// only in the shape it already persists. purpose must be one of the three
-// PasswordResetTokenPurpose* constants — it is what ParsePasswordResetToken's
-// redeem-time allow-list decides on, not any out-of-band signal such as a
-// cookie-carried bool.
-func BuildPasswordResetToken(secretKey []byte, userID uint, storedHash string, purpose string, ttl time.Duration, now time.Time) (string, error) {
+// only in the shape it already persists. sessionVersion is the same row's
+// auth_session_version (see PasswordResetClaims.SessionVersion). purpose must
+// be one of the three PasswordResetTokenPurpose* constants — it is what
+// ParsePasswordResetToken's redeem-time allow-list decides on, not any
+// out-of-band signal such as a cookie-carried bool.
+func BuildPasswordResetToken(secretKey []byte, userID uint, storedHash string, sessionVersion int, purpose string, ttl time.Duration, now time.Time) (string, error) {
 	if !passwordResetTokenAllowedPurposes[purpose] {
 		return "", ErrPasswordResetTokenInvalidPurpose
 	}
@@ -87,9 +98,10 @@ func BuildPasswordResetToken(secretKey []byte, userID uint, storedHash string, p
 	}
 
 	claims := PasswordResetClaims{
-		UserID:        userID,
-		Purpose:       purpose,
-		PasswordState: passwordState,
+		UserID:         userID,
+		Purpose:        purpose,
+		PasswordState:  passwordState,
+		SessionVersion: NormalizeAuthSessionVersion(sessionVersion),
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   strconv.FormatUint(uint64(userID), 10),
 			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
@@ -97,8 +109,9 @@ func BuildPasswordResetToken(secretKey []byte, userID uint, storedHash string, p
 		},
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(secretKey)
+	// Signed under the password-reset key domain (its own HKDF-derived key,
+	// `aud` and `typ`), never under SECRET_KEY itself: see authTokenDomain.
+	return signPasswordResetClaims(secretKey, &claims)
 }
 
 func ParsePasswordResetToken(secretKey []byte, rawToken string, now time.Time) (*PasswordResetClaims, error) {
@@ -110,16 +123,7 @@ func ParsePasswordResetToken(secretKey []byte, rawToken string, now time.Time) (
 	}
 
 	claims := &PasswordResetClaims{}
-	parser := jwt.NewParser(
-		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
-		jwt.WithTimeFunc(func() time.Time { return now }),
-	)
-	token, err := parser.ParseWithClaims(rawToken, claims, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method")
-		}
-		return secretKey, nil
-	})
+	token, err := passwordResetTokenDomain.parse(secretKey, rawToken, claims, now)
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {
 			return nil, ErrPasswordResetTokenExpired
@@ -140,6 +144,11 @@ func ParsePasswordResetToken(secretKey []byte, rawToken string, now time.Time) (
 	}
 	if strings.TrimSpace(claims.PasswordState) == "" {
 		return nil, ErrPasswordResetTokenInvalidPasswordState
+	}
+	// A grant with no epoch is refused, never normalized to 1: that would bind
+	// it to every account still at version 1.
+	if claims.SessionVersion < 1 {
+		return nil, ErrPasswordResetTokenInvalidSessionEpoch
 	}
 	return claims, nil
 }

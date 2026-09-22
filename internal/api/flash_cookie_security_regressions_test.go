@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -88,7 +89,7 @@ func TestFlashCookieUsesSealedTransport(t *testing.T) {
 func TestHeadDoesNotPopTheFlashCookie(t *testing.T) {
 	app, _ := newOnboardingTestApp(t)
 
-	serialized, err := json.Marshal(FlashPayload{AuthError: "invalid credentials"})
+	serialized, err := json.Marshal(FlashPayload{AuthError: "invalid credentials", ExpiresAt: time.Now().Add(flashCookieTTL)})
 	if err != nil {
 		t.Fatalf("marshal flash payload: %v", err)
 	}
@@ -114,6 +115,78 @@ func TestHeadDoesNotPopTheFlashCookie(t *testing.T) {
 	}
 }
 
+// TestFlashPayloadWithoutALiveBoundIsIgnored pins the flash's server-side
+// bound: a sealed value under the app's own key still renders nothing once its
+// ExpiresAt has passed, or when it carries none (a value minted before the
+// bound existed). The live payload is the positive anchor proving the page has
+// a rendering path to lose; each refused value is also retracted.
+func TestFlashPayloadWithoutALiveBoundIsIgnored(t *testing.T) {
+	app, _ := newOnboardingTestApp(t)
+
+	cases := []struct {
+		name      string
+		expiresAt time.Time
+		honoured  bool
+	}{
+		{name: "live_bound", expiresAt: time.Now().Add(flashCookieTTL), honoured: true},
+		{name: "past_bound", expiresAt: time.Now().Add(-time.Minute)},
+		{name: "no_bound"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			serialized, err := json.Marshal(FlashPayload{
+				AuthError:   "invalid credentials",
+				ForgotEmail: "kept-flash@example.com",
+				ExpiresAt:   tc.expiresAt,
+			})
+			if err != nil {
+				t.Fatalf("marshal flash payload: %v", err)
+			}
+			response := loginPageWithFlashCookie(t, app, sealCookieForTestApp(t, flashCookieName, serialized))
+			body := mustReadBodyString(t, response.Body)
+			rendered := htmlAuthErrorByKey(mustParseHTMLDocument(t, body), "auth.error.invalid_credentials") != nil
+			if rendered != tc.honoured {
+				t.Fatalf("expected flash honoured=%v, got rendered=%v", tc.honoured, rendered)
+			}
+			cleared := responseCookie(response.Cookies(), flashCookieName)
+			if cleared == nil || cleared.Value != "" {
+				t.Fatalf("expected the read flash cookie to be retracted, got %#v", cleared)
+			}
+		})
+	}
+}
+
+// TestLogoutRetractsThePendingFlash pins that a flash still riding when the
+// owner signs out (a settings message, a ForgotEmail prefill) ends with the
+// session instead of surfacing on the next visitor's login page.
+func TestLogoutRetractsThePendingFlash(t *testing.T) {
+	app, authCookie, csrfCookie, csrfToken := prepareAuthenticatedLogoutCSRFContext(t)
+
+	serialized, err := json.Marshal(FlashPayload{SettingsSuccess: "settings.success.saved", ExpiresAt: time.Now().Add(flashCookieTTL)})
+	if err != nil {
+		t.Fatalf("marshal flash payload: %v", err)
+	}
+	form := url.Values{"csrf_token": {csrfToken}}
+	request := httptest.NewRequest(http.MethodDelete, "/api/v1/sessions/current", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Cookie", joinCookieHeader(
+		authCookie,
+		cookiePair(csrfCookie),
+		flashCookieName+"="+sealCookieForTestApp(t, flashCookieName, serialized),
+	))
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusSeeOther)
+
+	cleared := responseCookie(response.Cookies(), flashCookieName)
+	if cleared == nil {
+		t.Fatalf("expected logout to retract %s", flashCookieName)
+	}
+	if strings.TrimSpace(cleared.Value) != "" || !cleared.Expires.Before(time.Now()) {
+		t.Fatalf("expected %s retracted with an empty value and a past expiry, got %#v", flashCookieName, cleared)
+	}
+}
+
 // TestSealedEnvelopeAroundPlaintextFlashPayloadIsRefused pins the half of the
 // "sealed cookies" invariant that a shape check on the response cannot reach: a
 // value wearing the v2 envelope over base64url(plaintext JSON) is not a sealed
@@ -127,6 +200,7 @@ func TestSealedEnvelopeAroundPlaintextFlashPayloadIsRefused(t *testing.T) {
 	serialized, err := json.Marshal(FlashPayload{
 		AuthError:   "invalid credentials",
 		ForgotEmail: "forged-flash@example.com",
+		ExpiresAt:   time.Now().Add(flashCookieTTL),
 	})
 	if err != nil {
 		t.Fatalf("marshal flash payload: %v", err)

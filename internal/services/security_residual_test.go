@@ -64,7 +64,7 @@ func TestAuthAttemptPolicyConfigure_AttemptsLowerBound(t *testing.T) {
 	// Zero attempts are rejected; the previous floor of 1 is kept. Were 0 wrongly
 	// applied, TooManyRecent would report throttled with zero failures (limit 0 is
 	// always exceeded), so a clean state must still read as OPEN after Configure(0).
-	policy.Reset(secretKey, clientKey, identity)
+	policy.ResetAll(secretKey, clientKey, identity)
 	policy.Configure(0, time.Minute)
 	if policy.TooManyRecent(secretKey, clientKey, identity, now) {
 		t.Fatal("Configure(0) must be ignored: a clean state must stay open, not throttle at limit 0")

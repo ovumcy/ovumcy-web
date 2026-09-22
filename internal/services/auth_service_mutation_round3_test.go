@@ -18,7 +18,7 @@ type mr3authCASRepo struct {
 }
 
 func (r *mr3authCASRepo) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(
-	_ context.Context, _ uint, _, _, _ string,
+	_ context.Context, _ uint, _ string, _ int, _, _ string,
 ) error {
 	// Succeed; deliberately do NOT mutate any user state here so the
 	// assertion below pins the service's own mutation of userSnap.

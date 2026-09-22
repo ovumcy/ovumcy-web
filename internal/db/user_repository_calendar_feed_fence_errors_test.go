@@ -140,7 +140,7 @@ func TestPostOperationFenceFailureNeverFailsAnAlreadyCommittedWrite(t *testing.T
 			run: func(userID uint) error {
 				// createUserForTimezoneTest below always seeds PasswordHash
 				// "hash", so the CAS predicate is known without a reload.
-				return repo.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx, userID, "hash", "new-password-hash", "new-recovery-hash")
+				return repo.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx, userID, "hash", 1, "new-password-hash", "new-recovery-hash")
 			},
 		},
 	}

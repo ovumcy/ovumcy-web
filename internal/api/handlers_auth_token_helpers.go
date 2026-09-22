@@ -113,7 +113,8 @@ func (handler *Handler) clearAuthRelatedCookies(c fiber.Ctx) {
 }
 
 // clearSessionEndCookies retracts everything clearAuthRelatedCookies does, plus
-// the two plaintext preference caches `ovumcy_lang` and `ovumcy_tz`. It is the
+// the two plaintext preference caches `ovumcy_lang` and `ovumcy_tz` and any
+// pending flash. It is the
 // helper for the paths where the owner ends the session ON PURPOSE — logout and
 // account deletion — as opposed to the paths where the server refuses one it was
 // handed.
@@ -154,6 +155,11 @@ func (handler *Handler) clearSessionEndCookies(c fiber.Ctx) {
 	handler.clearOIDCStepupContinuationCookie(c)
 	handler.clearLanguageCookie(c)
 	handler.clearTimezoneCookie(c)
+	// A flash still riding from before the session ended (a settings message,
+	// a ForgotEmail prefill) belongs to the session that ended. A path that
+	// wants to show a message after ending the session sets its flash after
+	// this call, and the later Set-Cookie for the same name wins.
+	handler.clearFlashCookie(c)
 }
 
 // sessionWasRemembered reads the owner's remember-me choice back off the session

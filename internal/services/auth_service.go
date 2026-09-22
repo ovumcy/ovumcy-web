@@ -71,7 +71,7 @@ type AuthUserRepository interface {
 	// routine UpdatePasswordAndRevokeSessions, which must NOT touch the feed.
 	ForceResetPasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string) error
 	UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, recoveryHash string, mustChangePassword bool) error
-	UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx context.Context, userID uint, oldPasswordHash string, newPasswordHash string, recoveryHash string) error
+	UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx context.Context, userID uint, oldPasswordHash string, oldSessionVersion int, newPasswordHash string, recoveryHash string) error
 	// UpdatePasswordHashOnly rewrites password_hash WITHOUT bumping
 	// auth_session_version — a transparent storage-format upgrade (bcrypt cost
 	// rise), not a credential change. Used only by the opportunistic rehash on
@@ -496,9 +496,10 @@ func (service *AuthService) VerifyStoredRecoveryCode(hash string, code string) b
 // BuildPasswordResetToken forwards to the package-level builder. storedHash is
 // the account's bcrypt hash from the row — every caller passes user.PasswordHash
 // — and it is fingerprinted, not re-hashed. See PasswordStateFingerprint.
-// purpose must be one of the PasswordResetTokenPurpose* constants.
-func (service *AuthService) BuildPasswordResetToken(secretKey []byte, userID uint, storedHash string, purpose string, ttl time.Duration, now time.Time) (string, error) {
-	return BuildPasswordResetToken(secretKey, userID, storedHash, purpose, ttl, now)
+// sessionVersion is the same row's auth_session_version, the epoch the grant
+// is bound to. purpose must be one of the PasswordResetTokenPurpose* constants.
+func (service *AuthService) BuildPasswordResetToken(secretKey []byte, userID uint, storedHash string, sessionVersion int, purpose string, ttl time.Duration, now time.Time) (string, error) {
+	return BuildPasswordResetToken(secretKey, userID, storedHash, sessionVersion, purpose, ttl, now)
 }
 
 func (service *AuthService) BuildAuthSessionTokenWithSessionID(secretKey []byte, userID uint, role string, sessionVersion int, ttl time.Duration, now time.Time) (string, string, error) {
@@ -523,7 +524,7 @@ func (service *AuthService) ResolveAuthSession(ctx context.Context, secretKey []
 	if user.MustChangePassword {
 		return nil, nil, ErrAuthSessionTokenRevoked
 	}
-	if NormalizeAuthSessionVersion(claims.SessionVersion) != NormalizeAuthSessionVersion(user.AuthSessionVersion) {
+	if !AuthSessionVersionsMatch(claims.SessionVersion, user.AuthSessionVersion) {
 		return nil, nil, ErrAuthSessionTokenRevoked
 	}
 	if err := ValidateSupportedWebUser(&user); err != nil {
@@ -546,6 +547,16 @@ func (service *AuthService) ResolveUserByResetToken(ctx context.Context, secretK
 		return nil, ErrInvalidResetToken
 	}
 	if !IsPasswordStateFingerprintMatch(claims.PasswordState, user.PasswordHash) {
+		return nil, ErrInvalidResetToken
+	}
+	// The grant dies with the epoch it was minted in: a recovery-code rotation,
+	// a session revocation or any other posture change bumps
+	// auth_session_version, and none of them touches the password hash the
+	// fingerprint above sees. A posture change landing between this read and
+	// the write is caught by the compare-and-swap in
+	// ResetPasswordAndRotateRecoveryCodeCAS, which keys on this row's version
+	// as well as its password hash.
+	if !AuthSessionVersionsMatch(claims.SessionVersion, user.AuthSessionVersion) {
 		return nil, ErrInvalidResetToken
 	}
 	if err := ValidateSupportedWebUser(&user); err != nil {
@@ -754,9 +765,12 @@ var topUpRecoveryLookupTiming = func(recoveryHash string, code string, passwordH
 // issued (sourced from the resolved user before any write).
 //
 // The UPDATE carries the predicate
-// `WHERE id = ? AND password_hash = oldPasswordHash`. Concurrent or replayed
-// redeems both reach the UPDATE, but only one sees RowsAffected == 1; the
-// loser receives ErrResetTokenAlreadyConsumed.
+// `WHERE id = ? AND password_hash = oldPasswordHash AND auth_session_version =
+// <the version on user>`. Concurrent or replayed redeems both reach the
+// UPDATE, but only one sees RowsAffected == 1; the loser receives
+// ErrResetTokenAlreadyConsumed. The version term closes the window between
+// resolving the token (which checks the version) and this write: a revocation
+// or posture change landing in between makes the reset lose too.
 func (service *AuthService) ResetPasswordAndRotateRecoveryCodeCAS(ctx context.Context, user *models.User, oldPasswordHash string, newPassword string) (string, error) {
 	if user == nil {
 		return "", ErrAuthUserRequired // codecov:ignore -- defensive; callers always pass a resolved user
@@ -772,7 +786,7 @@ func (service *AuthService) ResetPasswordAndRotateRecoveryCodeCAS(ctx context.Co
 	}
 
 	// CAS predicate prevents concurrent / replayed redeems.
-	if err := service.users.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx, user.ID, oldPasswordHash, string(passwordHash), recoveryHash); err != nil {
+	if err := service.users.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx, user.ID, oldPasswordHash, NormalizeAuthSessionVersion(user.AuthSessionVersion), string(passwordHash), recoveryHash); err != nil {
 		return "", err
 	}
 	user.PasswordHash = string(passwordHash)

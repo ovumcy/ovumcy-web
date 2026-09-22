@@ -238,8 +238,13 @@ func TestPasswordResetServiceStartRecoverySuccessResetsLimiter(t *testing.T) {
 	if token == "" {
 		t.Fatalf("expected non-empty reset token")
 	}
-	if service.recoveryPolicy.limiter.TooManyRecentAny(service.recoveryPolicy.keys(secretKey, key, "owner@example.com"), now, 1, DefaultRecoveryAttemptsWindow) {
-		t.Fatalf("expected limiter reset after successful recovery flow")
+	// A success forgives the succeeding client's bucket only; the identity
+	// bucket pools every client's failures and ages out on its own.
+	if service.recoveryPolicy.limiter.TooManyRecentAny(service.recoveryPolicy.keys(nil, key, ""), now, 1, DefaultRecoveryAttemptsWindow) {
+		t.Fatalf("expected the client bucket reset after successful recovery flow")
+	}
+	if !service.recoveryPolicy.limiter.TooManyRecentAny(service.recoveryPolicy.keys(secretKey, "", "owner@example.com")[1:], now, 1, DefaultRecoveryAttemptsWindow) {
+		t.Fatalf("expected the identity bucket to keep the failure other clients may have pooled")
 	}
 }
 
@@ -262,7 +267,7 @@ func TestPasswordResetServiceCompleteReset(t *testing.T) {
 	authService := NewAuthService(repo)
 	service := NewPasswordResetService(authService, nil)
 
-	token, err := authService.BuildPasswordResetToken(secret, 42, repo.user.PasswordHash, PasswordResetTokenPurposeRecovery, 30*time.Minute, now)
+	token, err := authService.BuildPasswordResetToken(secret, 42, repo.user.PasswordHash, 1, PasswordResetTokenPurposeRecovery, 30*time.Minute, now)
 	if err != nil {
 		t.Fatalf("BuildPasswordResetToken() unexpected error: %v", err)
 	}
