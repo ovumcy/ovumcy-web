@@ -82,7 +82,8 @@ func (service *SettingsService) ChangePassword(ctx context.Context, attempt Reau
 		}
 		return err
 	}
-	service.reauthPolicy.Reset(service.reauthSecretKey, attempt.clientBucket(), identity)
+	// Session-bound flow: clear the client and the account counters (see ResetAll).
+	service.reauthPolicy.ResetAll(service.reauthSecretKey, attempt.clientBucket(), identity)
 
 	newPassword = strings.TrimSpace(newPassword)
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), passwordHashCost)

@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -64,8 +63,9 @@ func BuildAuthSessionTokenWithVersionAndSessionID(secretKey []byte, userID uint,
 		},
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	rawToken, signErr := token.SignedString(secretKey)
+	// Signed under the auth-session key domain (its own HKDF-derived key, `aud`
+	// and `typ`), never under SECRET_KEY itself: see authTokenDomain.
+	rawToken, signErr := signAuthSessionClaims(secretKey, &claims)
 	if signErr != nil {
 		return "", "", signErr
 	}
@@ -81,16 +81,7 @@ func ParseAuthSessionToken(secretKey []byte, rawToken string, now time.Time) (*A
 	}
 
 	claims := &AuthSessionClaims{}
-	parser := jwt.NewParser(
-		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
-		jwt.WithTimeFunc(func() time.Time { return now }),
-	)
-	token, err := parser.ParseWithClaims(rawToken, claims, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method")
-		}
-		return secretKey, nil
-	})
+	token, err := authSessionTokenDomain.parse(secretKey, rawToken, claims, now)
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {
 			return nil, ErrAuthSessionTokenExpired
@@ -117,6 +108,13 @@ func GenerateAuthSessionID() (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(buffer), nil
+}
+
+// AuthSessionVersionsMatch reports whether a version a grant was minted at is
+// still the account's current one. Both sides are normalized, so a legacy zero
+// on the row compares as 1 — the same reading ResolveAuthSession applies.
+func AuthSessionVersionsMatch(granted int, current int) bool {
+	return NormalizeAuthSessionVersion(granted) == NormalizeAuthSessionVersion(current)
 }
 
 func NormalizeAuthSessionVersion(version int) int {

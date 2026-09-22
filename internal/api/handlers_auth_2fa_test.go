@@ -65,6 +65,10 @@ func sealTOTPPendingCookieForTest(t *testing.T, secretKey []byte, userID uint, r
 		UserID:     userID,
 		RememberMe: rememberMe,
 		ExpiresAt:  time.Now().Add(5 * time.Minute),
+		// setupTOTPForUser enables TOTP through the same write production uses,
+		// which bumps auth_session_version from 1 to 2; the first factor of a
+		// sign-in that follows passes at that version.
+		SessionVersion: 2,
 	}
 	serialized, err := json.Marshal(payload)
 	if err != nil {
@@ -84,8 +88,9 @@ func sealTOTPPendingCookieForTest(t *testing.T, secretKey []byte, userID uint, r
 func sealExpiredTOTPPendingCookieForTest(t *testing.T, secretKey []byte, userID uint) string {
 	t.Helper()
 	payload := totpPendingCookiePayload{
-		UserID:    userID,
-		ExpiresAt: time.Now().Add(-1 * time.Minute), // already expired
+		UserID:         userID,
+		ExpiresAt:      time.Now().Add(-1 * time.Minute), // already expired
+		SessionVersion: 1,
 	}
 	serialized, err := json.Marshal(payload)
 	if err != nil {

@@ -142,6 +142,11 @@ func mapPasswordResetCompleteError(err error) APIErrorSpec {
 		return authInvalidInputErrorSpec()
 	case errors.Is(err, services.ErrInvalidResetToken):
 		return invalidResetTokenErrorSpec()
+	case errors.Is(err, services.ErrResetTokenAlreadyConsumed):
+		// A concurrent redeem of the same token won the compare-and-swap, so the
+		// token is spent: the loser gets the answer a replay after the win gets,
+		// and the caller clears the sealed reset cookie on this key.
+		return invalidResetTokenErrorSpec()
 	default:
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to reset password")
 	}

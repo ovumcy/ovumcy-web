@@ -29,12 +29,14 @@ func (handler *Handler) setFlashCookie(c fiber.Ctx, payload FlashPayload) {
 	// the reason and never the payload (a flash may carry the submitted email),
 	// is the difference between "no flash was warranted" and "the error carrier
 	// is broken". Regression: TestFlashCookieWriteFailureIsReported.
+	expiresAt := time.Now().Add(flashCookieTTL)
+	payload.ExpiresAt = expiresAt
 	serialized, err := json.Marshal(payload)
 	if err != nil {
 		log.Printf("flash cookie: encode failed: %s", SafeLogError(err)) // codecov:ignore -- defensive: a struct of strings has no failing marshal
 		return
 	}
-	if err := handler.writeSealedCookie(c, flashCookieSpec, serialized, time.Now().Add(flashCookieTTL)); err != nil {
+	if err := handler.writeSealedCookie(c, flashCookieSpec, serialized, expiresAt); err != nil {
 		log.Printf("flash cookie: sealed write failed: %s", SafeLogError(err))
 	}
 }
@@ -66,6 +68,12 @@ func (handler *Handler) popFlashCookie(c fiber.Ctx) FlashPayload {
 
 	payload := FlashPayload{}
 	if err := json.Unmarshal(decoded, &payload); err != nil {
+		return FlashPayload{}
+	}
+	// The bound is the server's, not the browser's: a payload minted without
+	// one (a pre-upgrade value) or past it is refused, so a kept sealed value
+	// cannot replay its message or its ForgotEmail prefill.
+	if payload.ExpiresAt.IsZero() || time.Now().After(payload.ExpiresAt) {
 		return FlashPayload{}
 	}
 	return normalizeFlashPayload(payload)

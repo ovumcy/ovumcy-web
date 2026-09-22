@@ -202,7 +202,7 @@ func TestForcedResetFromOIDCExpiredTokenGetsInvalidTokenNotLocalAuthDisabled(t *
 	user := createOnboardingTestUser(t, database, "reset-gate-forced-oidc-expired@example.com", "StrongPass1", true)
 
 	expiredToken, err := services.BuildPasswordResetToken(
-		[]byte(testAppSecretKey), user.ID, user.PasswordHash,
+		[]byte(testAppSecretKey), user.ID, user.PasswordHash, user.AuthSessionVersion,
 		services.PasswordResetTokenPurposeForcedOIDC, time.Minute, time.Now().Add(-time.Hour))
 	if err != nil {
 		t.Fatalf("BuildPasswordResetToken: %v", err)
@@ -305,7 +305,7 @@ func TestResetPasswordPageFollowsTheRedeemGate(t *testing.T) {
 	forcedOIDCCookie := forcedOIDCResetCookieFromCallback(t, app, stub, forcedOIDCUser)
 
 	expiredForcedOIDCToken, err := services.BuildPasswordResetToken(
-		[]byte(testAppSecretKey), forcedOIDCUser.ID, forcedOIDCUser.PasswordHash,
+		[]byte(testAppSecretKey), forcedOIDCUser.ID, forcedOIDCUser.PasswordHash, forcedOIDCUser.AuthSessionVersion,
 		services.PasswordResetTokenPurposeForcedOIDC, time.Minute, time.Now().Add(-time.Hour))
 	if err != nil {
 		t.Fatalf("BuildPasswordResetToken: %v", err)

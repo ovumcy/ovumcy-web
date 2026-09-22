@@ -103,8 +103,7 @@ func TestParseAuthSessionTokenNormalizesLegacyMissingVersion(t *testing.T) {
 			IssuedAt:  jwt.NewNumericDate(now),
 		},
 	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	rawToken, err := token.SignedString(secret)
+	rawToken, err := signAuthSessionClaims(secret, &claims)
 	if err != nil {
 		t.Fatalf("sign legacy token: %v", err)
 	}
@@ -131,8 +130,7 @@ func TestParseAuthSessionTokenRejectsMissingSessionID(t *testing.T) {
 			IssuedAt:  jwt.NewNumericDate(now),
 		},
 	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	rawToken, err := token.SignedString(secret)
+	rawToken, err := signAuthSessionClaims(secret, &claims)
 	if err != nil {
 		t.Fatalf("sign missing-session-id token: %v", err)
 	}

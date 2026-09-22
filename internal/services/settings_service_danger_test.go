@@ -73,6 +73,40 @@ func TestVerifyReauthPasswordSuccessResetsBudget(t *testing.T) {
 	}
 }
 
+// TestVerifyReauthPasswordSuccessClearsTheAccountCounterAcrossClients pins the
+// session-bound side of the reset split: re-auth runs only inside the owner's
+// own session, so a correct password clears the ACCOUNT counter as well, not
+// just the succeeding client's. Failures typed from one device and a success
+// from another must leave a third device the full budget; a client-only reset
+// would leave the account counter at two and refuse the second attempt.
+func TestVerifyReauthPasswordSuccessClearsTheAccountCounterAcrossClients(t *testing.T) {
+	service := NewSettingsService(nil)
+	service.ConfigureReauthAttempts([]byte("test-secret"), NewAttemptLimiter(), 3, time.Minute)
+
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte("StrongPass1"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	laptop := ReauthAttempt{ClientKey: "203.0.113.10", UserID: 42, Now: now}
+	phone := ReauthAttempt{ClientKey: "198.51.100.7", UserID: 42, Now: now}
+	tablet := ReauthAttempt{ClientKey: "192.0.2.44", UserID: 42, Now: now}
+
+	for i := 1; i <= 2; i++ {
+		if err := service.VerifyReauthPassword(laptop, string(passwordHash), "WrongPass1"); !errors.Is(err, ErrSettingsPasswordInvalid) {
+			t.Fatalf("laptop wrong-password attempt %d: got %v", i, err)
+		}
+	}
+	if err := service.VerifyReauthPassword(phone, string(passwordHash), "StrongPass1"); err != nil {
+		t.Fatalf("phone correct password within budget: got %v, want success", err)
+	}
+	for i := 1; i <= 3; i++ {
+		if err := service.VerifyReauthPassword(tablet, string(passwordHash), "WrongPass1"); !errors.Is(err, ErrSettingsPasswordInvalid) {
+			t.Fatalf("tablet attempt %d: got %v, want ErrSettingsPasswordInvalid (account counter survived the session-bound success)", i, err)
+		}
+	}
+}
+
 // TestVerifyReauthPasswordDoesNotSpendBudgetOnBlankSubmission keeps the budget
 // aimed at guesses. A blank field is a client mistake, and counting it would let
 // a stray double-submit walk an owner toward a lockout.

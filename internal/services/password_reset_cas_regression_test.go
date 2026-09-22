@@ -27,19 +27,30 @@ type casStubAuthUserRepo struct {
 	casUserIDSeen uint
 	// casErr, if set, is returned on the next CAS call.
 	casErr error
+	// casOldVersionSeen is the auth_session_version the CAS predicate carried.
+	casOldVersionSeen int
+	// beforeCAS, if set, mutates the stored row just before the predicate is
+	// evaluated — a write landing between the service's read and its UPDATE.
+	beforeCAS func(user *models.User)
 }
 
 func (s *casStubAuthUserRepo) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(
-	_ context.Context, userID uint, oldPasswordHash, newPasswordHash, recoveryHash string,
+	_ context.Context, userID uint, oldPasswordHash string, oldSessionVersion int, newPasswordHash, recoveryHash string,
 ) error {
 	s.casUserIDSeen = userID
 	if s.casErr != nil {
 		return s.casErr
 	}
 	s.casOldHashSeen = oldPasswordHash
-	// Simulate the DB CAS: if the stored password already differs from
-	// oldPasswordHash, return ErrResetTokenAlreadyConsumed (0 rows affected).
-	if s.user.PasswordHash != oldPasswordHash {
+	s.casOldVersionSeen = oldSessionVersion
+	if s.beforeCAS != nil {
+		s.beforeCAS(&s.user)
+	}
+	// Simulate the DB CAS: if the stored password or session version already
+	// differs from what the caller read, return ErrResetTokenAlreadyConsumed
+	// (0 rows affected).
+	if s.user.PasswordHash != oldPasswordHash ||
+		NormalizeAuthSessionVersion(s.user.AuthSessionVersion) != oldSessionVersion {
 		return ErrResetTokenAlreadyConsumed
 	}
 	// First winner: apply the write.
@@ -128,7 +139,7 @@ func TestCompleteResetSingleUseViaCAS(t *testing.T) {
 	authSvc := NewAuthService(repo)
 	resetSvc := NewPasswordResetService(authSvc, nil)
 
-	token, err := authSvc.BuildPasswordResetToken(secret, 42, string(originalHash), PasswordResetTokenPurposeRecovery, 30*time.Minute, now)
+	token, err := authSvc.BuildPasswordResetToken(secret, 42, string(originalHash), 1, PasswordResetTokenPurposeRecovery, 30*time.Minute, now)
 	if err != nil {
 		t.Fatalf("BuildPasswordResetToken: %v", err)
 	}
@@ -168,5 +179,53 @@ func TestCompleteResetSingleUseViaCAS(t *testing.T) {
 	// auth_session_version must still be 2 — bumped at most once.
 	if repo.user.AuthSessionVersion != 2 {
 		t.Fatalf("expected auth_session_version to remain 2 after rejected replay, got %d", repo.user.AuthSessionVersion)
+	}
+}
+
+// TestCompleteResetLosesToASessionVersionBumpBetweenResolveAndWrite pins the
+// version term of the reset CAS at the service layer: the token resolves
+// against the row at version 1, then a revocation (or a recovery-code
+// rotation) bumps the column before the UPDATE. The password hash is unchanged,
+// so only the version term can make the reset lose — and it must, writing
+// nothing.
+func TestCompleteResetLosesToASessionVersionBumpBetweenResolveAndWrite(t *testing.T) {
+	secret := []byte("test-secret-cas-version")
+	now := time.Date(2026, time.June, 11, 10, 0, 0, 0, time.UTC)
+
+	originalHash, err := bcrypt.GenerateFromPassword([]byte("StrongPass1"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("hash original password: %v", err)
+	}
+
+	repo := &casStubAuthUserRepo{}
+	repo.user = models.User{
+		ID:                 42,
+		PasswordHash:       string(originalHash),
+		RecoveryCodeHash:   "old-recovery",
+		LocalAuthEnabled:   true,
+		AuthSessionVersion: 1,
+		Role:               models.RoleOwner,
+	}
+	repo.beforeCAS = func(user *models.User) {
+		user.AuthSessionVersion = 2
+	}
+
+	authSvc := NewAuthService(repo)
+	resetSvc := NewPasswordResetService(authSvc, nil)
+
+	token, err := authSvc.BuildPasswordResetToken(secret, 42, string(originalHash), 1, PasswordResetTokenPurposeRecovery, 30*time.Minute, now)
+	if err != nil {
+		t.Fatalf("BuildPasswordResetToken: %v", err)
+	}
+
+	_, _, err = resetSvc.CompleteReset(context.Background(), secret, token, "EvenStronger2", "EvenStronger2", now.Add(time.Minute))
+	if !errors.Is(err, ErrResetTokenAlreadyConsumed) {
+		t.Fatalf("expected the reset to lose to the version bump, got %v", err)
+	}
+	if repo.casOldVersionSeen != 1 {
+		t.Fatalf("expected the CAS to carry the version read at resolve (1), got %d", repo.casOldVersionSeen)
+	}
+	if repo.casConsumed || repo.user.PasswordHash != string(originalHash) || repo.user.RecoveryCodeHash != "old-recovery" {
+		t.Fatal("a reset that lost the CAS must write nothing")
 	}
 }

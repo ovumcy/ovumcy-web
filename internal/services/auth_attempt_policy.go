@@ -53,7 +53,29 @@ func (policy *AuthAttemptPolicy) AddFailure(secretKey []byte, clientKey string, 
 	policy.limiter.AddFailureAll(policy.keys(secretKey, clientKey, identity), now, policy.budget())
 }
 
-func (policy *AuthAttemptPolicy) Reset(secretKey []byte, clientKey string, identity string) {
+// The policy has two success resets, and each caller names the one its flow
+// needs; there is deliberately no plain Reset to fall back on.
+//
+// ResetClient is for flows reachable WITHOUT a session (password sign-in,
+// recovery-code sign-in, the password-reset start, the sign-in TOTP step, the
+// pre-session OIDC link confirmation). It forgives the failures of the client
+// that just succeeded — its own client bucket, and nothing else. The identity
+// bucket is left to age out of its window: it pools the failures of EVERY
+// client that tried this identity, so clearing it on one client's success
+// would let the owner's own sign-in wipe the budget an attacker elsewhere had
+// spent guessing at the same account.
+func (policy *AuthAttemptPolicy) ResetClient(clientKey string) {
+	policy.limiter.ResetAll(policy.keys(nil, clientKey, ""))
+}
+
+// ResetAll is for flows that already require a live session of the account
+// being checked (the settings re-authentication password check, the password
+// change, the TOTP disable confirmation). It clears the client bucket AND the
+// identity bucket. Only the session holder reaches these flows, so the
+// identity bucket holds that owner's own mistakes; keeping it after a correct
+// answer would let ordinary typos accumulate until the owner is locked out of
+// their own settings.
+func (policy *AuthAttemptPolicy) ResetAll(secretKey []byte, clientKey string, identity string) {
 	policy.limiter.ResetAll(policy.keys(secretKey, clientKey, identity))
 }
 

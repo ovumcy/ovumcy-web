@@ -352,7 +352,7 @@ func TestShowResetPasswordPageWithValidNonForcedTokenShowsFormOnly(t *testing.T)
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "reset-page-recovery@example.com", "StrongPass1", true)
 
-	token, err := services.BuildPasswordResetToken([]byte(testHandlerSecretKey), user.ID, user.PasswordHash, services.PasswordResetTokenPurposeRecovery, 30*time.Minute, time.Now())
+	token, err := services.BuildPasswordResetToken([]byte(testHandlerSecretKey), user.ID, user.PasswordHash, user.AuthSessionVersion, services.PasswordResetTokenPurposeRecovery, 30*time.Minute, time.Now())
 	if err != nil {
 		t.Fatalf("BuildPasswordResetToken: %v", err)
 	}
@@ -377,7 +377,7 @@ func TestShowResetPasswordPageWithValidForcedTokenShowsForcedNoticeAndForm(t *te
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "reset-page-forced@example.com", "StrongPass1", true)
 
-	token, err := services.BuildPasswordResetToken([]byte(testHandlerSecretKey), user.ID, user.PasswordHash, services.PasswordResetTokenPurposeForcedLocal, 30*time.Minute, time.Now())
+	token, err := services.BuildPasswordResetToken([]byte(testHandlerSecretKey), user.ID, user.PasswordHash, user.AuthSessionVersion, services.PasswordResetTokenPurposeForcedLocal, 30*time.Minute, time.Now())
 	if err != nil {
 		t.Fatalf("BuildPasswordResetToken: %v", err)
 	}
@@ -408,7 +408,7 @@ func TestShowResetPasswordPageSurfacesFlashAuthErrorThroughDataKey(t *testing.T)
 	if err != nil {
 		t.Fatalf("newSecureCookieCodec: %v", err)
 	}
-	flashBytes, err := json.Marshal(FlashPayload{AuthError: "weak password"})
+	flashBytes, err := json.Marshal(FlashPayload{AuthError: "weak password", ExpiresAt: time.Now().Add(flashCookieTTL)})
 	if err != nil {
 		t.Fatalf("marshal flash: %v", err)
 	}

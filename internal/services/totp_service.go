@@ -118,9 +118,15 @@ func (service *TOTPService) RecordFailure(secretKey []byte, clientKey string, us
 	service.attemptPolicy.AddFailure(secretKey, clientKey, strconv.FormatUint(uint64(userID), 10), now)
 }
 
-// ResetAttempts clears the failure counter after a successful verification.
+// ResetAttempts clears the succeeding client's failure counter after a
+// successful sign-in verification. Its callers (the sign-in TOTP step and the
+// pre-session OIDC link confirmation) run without a session, so the account's
+// identity counter is left to age out (see AuthAttemptPolicy.ResetClient);
+// secretKey and userID are kept so the call names the same operands as its
+// check and its failure.
 func (service *TOTPService) ResetAttempts(secretKey []byte, clientKey string, userID uint) {
-	service.attemptPolicy.Reset(secretKey, clientKey, strconv.FormatUint(uint64(userID), 10))
+	_, _ = secretKey, userID
+	service.attemptPolicy.ResetClient(clientKey)
 }
 
 // CheckDisableRateLimit returns ErrTOTPDisableRateLimited when the client or user
@@ -137,9 +143,12 @@ func (service *TOTPService) RecordDisableFailure(secretKey []byte, clientKey str
 	service.disableAttemptPolicy.AddFailure(secretKey, clientKey, strconv.FormatUint(uint64(userID), 10), now)
 }
 
-// ResetDisableAttempts clears the disable-confirmation failure counter after success.
+// ResetDisableAttempts clears the disable-confirmation failure counters after
+// success — the client's and the account's. Disabling TOTP needs a live session
+// of this account, so the identity counter holds only the owner's own typos
+// (see AuthAttemptPolicy.ResetAll).
 func (service *TOTPService) ResetDisableAttempts(secretKey []byte, clientKey string, userID uint) {
-	service.disableAttemptPolicy.Reset(secretKey, clientKey, strconv.FormatUint(uint64(userID), 10))
+	service.disableAttemptPolicy.ResetAll(secretKey, clientKey, strconv.FormatUint(uint64(userID), 10))
 }
 
 // GenerateSetupKey generates a new TOTP key for the given issuer and account name.

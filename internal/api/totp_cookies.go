@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 const totpPendingCookieTTL = 5 * time.Minute
@@ -26,6 +27,13 @@ type totpPendingCookiePayload struct {
 	// session id the challenge finally mints; empty means either a local
 	// login or an OIDC login with no logout state to carry.
 	OIDCLogoutStateID string `json:"oidc_logout_state_id,omitempty"`
+	// SessionVersion is the account's auth_session_version when the first
+	// factor passed. A password change, a session revocation or any other
+	// posture change bumps that column, and the challenge refuses a grant
+	// minted before it (services.SecondFactorGrantCurrent): a pending grant
+	// must not outlive the credential that earned it. A payload without one is
+	// refused, never read as version 1.
+	SessionVersion int `json:"sv"`
 }
 
 type totpSetupCookiePayload struct {
@@ -41,12 +49,13 @@ var (
 	totpSetupCookieSpec   = sealedCookieSpec{name: totpSetupCookieName, path: "/"}
 )
 
-func (handler *Handler) setTOTPPendingCookie(c fiber.Ctx, userID uint, rememberMe bool, oidcLogoutStateID string) error {
+func (handler *Handler) setTOTPPendingCookie(c fiber.Ctx, userID uint, sessionVersion int, rememberMe bool, oidcLogoutStateID string) error {
 	payload := totpPendingCookiePayload{
 		UserID:            userID,
 		RememberMe:        rememberMe,
 		ExpiresAt:         time.Now().Add(totpPendingCookieTTL),
 		OIDCLogoutStateID: strings.TrimSpace(oidcLogoutStateID),
+		SessionVersion:    services.NormalizeAuthSessionVersion(sessionVersion),
 	}
 	serialized, err := json.Marshal(payload)
 	if err != nil {
@@ -58,9 +67,11 @@ func (handler *Handler) setTOTPPendingCookie(c fiber.Ctx, userID uint, rememberM
 }
 
 // parseTOTPPendingCookie decodes and validates the TOTP pending cookie.
-// Returns the userID, rememberMe flag, the opaque OIDC logout-state reference
-// (empty when there is none — see totpPendingCookiePayload.OIDCLogoutStateID),
-// and any error (including expiry).
+// Returns the payload — owner id, rememberMe flag, the opaque OIDC logout-state
+// reference (empty when there is none — see
+// totpPendingCookiePayload.OIDCLogoutStateID) and the session version the grant
+// is bound to — and any error (including expiry). Whether that version is still
+// the account's current one is the challenge handler's check, against the row.
 //
 // Every rejection clears the cookie on the way out, the way the other sealed
 // readers in this package do. Both TOTP cookies are session-scoped at path "/",
@@ -72,38 +83,43 @@ func (handler *Handler) setTOTPPendingCookie(c fiber.Ctx, userID uint, rememberM
 // clear, and a later caller added without it silently reintroduces the leak.
 // A missing value is the one branch that clears nothing: there is no value to
 // retract, and an empty cookie is already the cleared state.
-func (handler *Handler) parseTOTPPendingCookie(c fiber.Ctx) (uint, bool, string, error) {
+func (handler *Handler) parseTOTPPendingCookie(c fiber.Ctx) (totpPendingCookiePayload, error) {
 	raw := strings.TrimSpace(c.Cookies(totpPendingCookieName))
 	if raw == "" {
-		return 0, false, "", errors.New("totp pending cookie missing")
+		return totpPendingCookiePayload{}, errors.New("totp pending cookie missing")
 	}
 
 	codec, err := handler.cookieCodec()
 	if err != nil {
 		handler.clearTOTPPendingCookie(c)
-		return 0, false, "", err
+		return totpPendingCookiePayload{}, err
 	}
 	decoded, err := codec.open(totpPendingCookieName, raw)
 	if err != nil {
 		handler.clearTOTPPendingCookie(c)
-		return 0, false, "", errors.New("totp pending cookie invalid")
+		return totpPendingCookiePayload{}, errors.New("totp pending cookie invalid")
 	}
 
 	var payload totpPendingCookiePayload
 	if err := json.Unmarshal(decoded, &payload); err != nil {
 		handler.clearTOTPPendingCookie(c)
-		return 0, false, "", errors.New("totp pending cookie malformed")
+		return totpPendingCookiePayload{}, errors.New("totp pending cookie malformed")
 	}
 	if payload.UserID == 0 {
 		handler.clearTOTPPendingCookie(c)
-		return 0, false, "", errors.New("totp pending cookie missing user id")
+		return totpPendingCookiePayload{}, errors.New("totp pending cookie missing user id")
+	}
+	if payload.SessionVersion < 1 {
+		handler.clearTOTPPendingCookie(c)
+		return totpPendingCookiePayload{}, errors.New("totp pending cookie missing session version")
 	}
 	if time.Now().After(payload.ExpiresAt) {
 		handler.clearTOTPPendingCookie(c)
-		return 0, false, "", errors.New("totp pending cookie expired")
+		return totpPendingCookiePayload{}, errors.New("totp pending cookie expired")
 	}
 
-	return payload.UserID, payload.RememberMe, strings.TrimSpace(payload.OIDCLogoutStateID), nil
+	payload.OIDCLogoutStateID = strings.TrimSpace(payload.OIDCLogoutStateID)
+	return payload, nil
 }
 
 // clearTOTPPendingCookie removes the TOTP pending cookie.

@@ -274,7 +274,12 @@ func TestLoginServiceAuthenticateRateLimitsByIdentityAcrossIPs(t *testing.T) {
 // them all green — and an owner who mistypes on Monday, signs in, and mistypes
 // again on Tuesday would be locked out of their own instance by attempts that
 // were already answered correctly.
-func TestLoginServiceAuthenticateClearsTheIdentityCounterOnASuccessfulSignIn(t *testing.T) {
+//
+// The reset is per client: the identity counter pools the failures of every
+// client that tried this address, and one client's success must not wipe the
+// budget another spent guessing at the same account; it ages out with its
+// window instead.
+func TestLoginServiceAuthenticateSuccessClearsOnlyItsOwnClientCounter(t *testing.T) {
 	auth := &stubLoginAuthService{user: models.User{ID: 31}, err: ErrAuthInvalidCreds}
 	service := NewLoginService(auth, &stubLoginResetTokenIssuer{}, NewAttemptLimiter())
 	service.ConfigureAttemptLimits(2, time.Hour)
@@ -292,19 +297,20 @@ func TestLoginServiceAuthenticateClearsTheIdentityCounterOnASuccessfulSignIn(t *
 		t.Fatalf("Authenticate() with the correct password: unexpected error: %v", err)
 	}
 
-	// One more failure. With the counter cleared this is the FIRST recent
-	// failure and the next attempt still reaches the credential check; without
-	// the reset it is the second and the identity is locked.
+	// One more failure. The client bucket was cleared by the success, so this
+	// attempt still reaches the credential check; the identity bucket was not
+	// (it pools every client's failures against this address), so it now holds
+	// two and the next attempt is refused before the lookup, from any client.
 	auth.err = ErrAuthInvalidCreds
 	if _, err := service.Authenticate(context.Background(), secret, clientKey, email, "wrong", loginServiceTestTTL, loginServiceTestNow.Add(2*time.Minute)); !errors.Is(err, ErrAuthInvalidCreds) {
 		t.Fatalf("expected invalid credentials after the successful sign-in, got %v", err)
 	}
 
 	callsBefore := auth.calls
-	if _, err := service.Authenticate(context.Background(), secret, clientKey, email, "wrong", loginServiceTestTTL, loginServiceTestNow.Add(3*time.Minute)); !errors.Is(err, ErrAuthInvalidCreds) {
-		t.Fatalf("expected the successful sign-in to have cleared the earlier failure, got %v", err)
+	if _, err := service.Authenticate(context.Background(), secret, "10.0.0.2", email, "wrong", loginServiceTestTTL, loginServiceTestNow.Add(3*time.Minute)); !errors.Is(err, ErrAuthLoginRateLimited) {
+		t.Fatalf("expected the identity bucket to have survived the successful sign-in, got %v", err)
 	}
-	if auth.calls != callsBefore+1 {
+	if auth.calls != callsBefore {
 		t.Fatalf("expected the credential check to run again after the reset, got %d calls", auth.calls-callsBefore)
 	}
 }

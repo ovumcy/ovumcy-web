@@ -73,8 +73,17 @@ func (service *LoginService) Authenticate(
 	if service.attemptPolicy.TooManyRecent(secretKey, clientKey, normalizedEmail, now) {
 		return LoginResult{}, ErrAuthLoginRateLimited
 	}
+	// An address that normalizes to nothing names no identity bucket, so the
+	// attempt would be budgeted by client alone; it can also name no account.
+	// Refuse it as a failed credential before any lookup.
+	if normalizedEmail == "" {
+		service.attemptPolicy.AddFailure(secretKey, clientKey, normalizedEmail, now)
+		return LoginResult{}, ErrAuthInvalidCreds
+	}
 
-	user, err := service.auth.AuthenticateCredentials(ctx, email, password)
+	// The lookup gets the SAME normalized address the budget is keyed on, so
+	// the account a success is booked against is the one the failures were.
+	user, err := service.auth.AuthenticateCredentials(ctx, normalizedEmail, password)
 	if err != nil {
 		if errors.Is(err, ErrAuthInvalidCreds) {
 			service.attemptPolicy.AddFailure(secretKey, clientKey, normalizedEmail, now)
@@ -82,7 +91,8 @@ func (service *LoginService) Authenticate(
 		return LoginResult{}, err
 	}
 
-	service.attemptPolicy.Reset(secretKey, clientKey, normalizedEmail)
+	// Unauthenticated flow: forgive this client only (see ResetClient).
+	service.attemptPolicy.ResetClient(clientKey)
 	result := LoginResult{User: user}
 
 	// MustChangePassword is a routing flag an operator sets out of band

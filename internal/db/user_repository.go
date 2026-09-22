@@ -1158,8 +1158,18 @@ func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessions(ctx cont
 // writes the new hash; the second finds password_hash != oldHash and affects
 // 0 rows, returning ErrResetTokenAlreadyConsumed.
 //
+// The predicate also carries the auth_session_version the caller read with the
+// user row. The reset token is bound to that version, but the binding is only
+// checked when the token is resolved; a session revocation, recovery-code
+// rotation or 2FA change that lands between that read and this write bumps the
+// column, and without the version in the predicate the reset would still land
+// on the stale grant. oldSessionVersion is the normalized value (>= 1); a
+// legacy row still holding 0 is read by the application as version 1, so the
+// predicate accepts it for that value only.
+//
 // Returns ErrResetTokenAlreadyConsumed when RowsAffected == 0 (token was
-// already redeemed or the password state changed since the token was issued).
+// already redeemed, or the password or session state changed since the row
+// was read).
 //
 // It ALSO force-clears the calendar-feed token in the SAME Updates() — the
 // password-reset arm of the approved force-rotate-on-recovery rule. A reset via
@@ -1174,9 +1184,13 @@ func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessions(ctx cont
 // code arms its own one-time reveal (migration 036) — and for the same
 // consistency reason: the redeem that loses the race must not re-arm a reveal it
 // minted no code for. Regression: TestEveryRecoveryCodeMintClearsItsRevealMark.
-func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx context.Context, userID uint, oldPasswordHash string, newPasswordHash string, recoveryHash string) error {
+func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx context.Context, userID uint, oldPasswordHash string, oldSessionVersion int, newPasswordHash string, recoveryHash string) error {
+	if oldSessionVersion < 1 {
+		return ErrResetTokenAlreadyConsumed
+	}
 	result := repo.database.WithContext(ctx).Model(&models.User{}).
 		Where("id = ? AND password_hash = ?", userID, oldPasswordHash).
+		Where("(auth_session_version = ? OR (? = 1 AND auth_session_version <= 0))", oldSessionVersion, oldSessionVersion).
 		Updates(map[string]any{
 			"password_hash":               newPasswordHash,
 			"recovery_code_hash":          recoveryHash,

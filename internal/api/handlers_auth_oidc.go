@@ -206,7 +206,7 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 			}
 			oidcLogoutStateID = pendingID
 		}
-		if err := handler.setTOTPPendingCookie(c, result.User.ID, false, oidcLogoutStateID); err != nil {
+		if err := handler.setTOTPPendingCookie(c, result.User.ID, result.User.AuthSessionVersion, false, oidcLogoutStateID); err != nil {
 			// codecov:ignore:start -- defensive: the sealed cookie writer fails only on an AEAD seal error
 			spec := authSessionCreateErrorSpec()
 			handler.logSecurityError(c, "auth.oidc_callback", spec)

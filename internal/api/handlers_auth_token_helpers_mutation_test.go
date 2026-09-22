@@ -159,6 +159,8 @@ func TestBuildTokenWithSessionIDKeepsCallerTTL(t *testing.T) {
 	t.Parallel()
 
 	handler, database := newDataAccessTestHandler(t)
+	// Token signing derives its key from the secret and refuses an empty one.
+	handler.secretKey = []byte(testHandlerSecretKey)
 	user := createDataAccessTestUser(t, database, "token-ttl-keep@example.com")
 
 	issuedAt := time.Now()

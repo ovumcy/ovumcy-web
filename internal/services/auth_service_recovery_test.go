@@ -177,7 +177,7 @@ func (stub *stubAuthUserRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(ctx co
 	return nil
 }
 
-func (stub *stubAuthUserRepo) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx context.Context, userID uint, oldPasswordHash string, newPasswordHash string, recoveryHash string) error {
+func (stub *stubAuthUserRepo) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx context.Context, userID uint, oldPasswordHash string, oldSessionVersion int, newPasswordHash string, recoveryHash string) error {
 	return stub.UpdatePasswordRecoveryCodeAndRevokeSessions(ctx, userID, newPasswordHash, recoveryHash, false)
 }
 
@@ -610,7 +610,7 @@ func TestAuthServiceResolveUserByResetToken(t *testing.T) {
 	}
 	service := NewAuthService(repo)
 
-	token, err := service.BuildPasswordResetToken(secret, 42, repo.user.PasswordHash, PasswordResetTokenPurposeRecovery, 30*time.Minute, now)
+	token, err := service.BuildPasswordResetToken(secret, 42, repo.user.PasswordHash, 1, PasswordResetTokenPurposeRecovery, 30*time.Minute, now)
 	if err != nil {
 		t.Fatalf("BuildPasswordResetToken() unexpected error: %v", err)
 	}
@@ -645,7 +645,7 @@ func TestAuthServiceResolveUserByResetTokenRejectsStateMismatch(t *testing.T) {
 		},
 	}
 	service := NewAuthService(repo)
-	token, err := service.BuildPasswordResetToken(secret, 42, string(originalHash), PasswordResetTokenPurposeRecovery, 30*time.Minute, now)
+	token, err := service.BuildPasswordResetToken(secret, 42, string(originalHash), 1, PasswordResetTokenPurposeRecovery, 30*time.Minute, now)
 	if err != nil {
 		t.Fatalf("BuildPasswordResetToken() unexpected error: %v", err)
 	}

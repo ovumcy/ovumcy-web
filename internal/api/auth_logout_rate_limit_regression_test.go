@@ -61,7 +61,7 @@ func (stubLogoutAuthRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(context.Co
 	return nil
 }
 
-func (stubLogoutAuthRepo) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(context.Context, uint, string, string, string) error {
+func (stubLogoutAuthRepo) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(context.Context, uint, string, int, string, string) error {
 	return nil
 }
 
