@@ -326,7 +326,7 @@ func (service *OIDCLoginService) ValidateReauthExchange(ctx context.Context, cod
 		return err
 	}
 
-	_ = service.identities.TouchLastUsed(ctx, identity.ID, identity.UserID, effectiveOIDCLoginTime(now))
+	_ = service.identities.TouchLastUsed(ctx, identity.ID, expectedUserID, effectiveOIDCLoginTime(now))
 	return nil
 }
 
@@ -464,7 +464,7 @@ func (service *OIDCLoginService) ConfirmAndLinkIdentity(ctx context.Context, tar
 			// confirmation. Fail closed.
 			return ErrOIDCLinkFailed
 		}
-		_ = service.identities.TouchLastUsed(ctx, existing.ID, existing.UserID, effectiveOIDCLoginTime(linkTime)) // codecov:ignore -- best-effort last-used touch; error intentionally ignored
+		_ = service.identities.TouchLastUsed(ctx, existing.ID, targetUserID, effectiveOIDCLoginTime(linkTime)) // codecov:ignore -- best-effort last-used touch; error intentionally ignored
 		return nil
 	}
 
