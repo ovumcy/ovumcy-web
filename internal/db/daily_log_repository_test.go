@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -213,5 +214,25 @@ func TestDailyLogWriteScopedToUser(t *testing.T) {
 	}
 	if len(afterSym.SymptomIDs) != 2 || afterSym.SymptomIDs[0] != 11 || afterSym.SymptomIDs[1] != 22 {
 		t.Fatalf("cross-owner UpdateSymptomIDs mutated row R symptom_ids: got %v, want [11 22]", afterSym.SymptomIDs)
+	}
+}
+
+// TestDailyLogWriteRefusesZeroOwner proves Save and UpdateSymptomIDs treat a
+// zero UserID as invalid input rather than a wildcard. Without the guard,
+// Where("user_id = ?", 0) ordinarily matches zero rows (no user is ever id 0)
+// and both methods return nil — a silent no-op indistinguishable from a
+// successful write of an entry nobody asked to persist.
+func TestDailyLogWriteRefusesZeroOwner(t *testing.T) {
+	database := openSQLiteForMigrationBootstrapTest(t, filepath.Join(t.TempDir(), "daily-write-zero-owner.db"))
+	repo := NewDailyLogRepository(database)
+
+	zeroSave := &models.DailyLog{ID: 1, UserID: 0, Date: time.Date(2026, time.June, 1, 0, 0, 0, 0, time.UTC)}
+	if err := repo.Save(context.Background(), zeroSave); !errors.Is(err, ErrDailyLogOwnerRequired) {
+		t.Fatalf("Save with UserID==0: got %v, want ErrDailyLogOwnerRequired", err)
+	}
+
+	zeroSym := &models.DailyLog{ID: 1, UserID: 0, SymptomIDs: []uint{1}}
+	if err := repo.UpdateSymptomIDs(context.Background(), zeroSym); !errors.Is(err, ErrDailyLogOwnerRequired) {
+		t.Fatalf("UpdateSymptomIDs with UserID==0: got %v, want ErrDailyLogOwnerRequired", err)
 	}
 }

@@ -53,6 +53,7 @@ type stubOIDCIdentityStore struct {
 	findErr        error
 	createErr      error
 	touchedID      uint
+	touchedUserID  uint
 	touchedAt      time.Time
 	created        models.OIDCIdentity
 	createCallSeen bool
@@ -139,8 +140,9 @@ func (stub *stubOIDCIdentityStore) DeleteForUserAndRevokeSessions(_ context.Cont
 	return false, nil
 }
 
-func (stub *stubOIDCIdentityStore) TouchLastUsed(ctx context.Context, identityID uint, usedAt time.Time) error {
+func (stub *stubOIDCIdentityStore) TouchLastUsed(ctx context.Context, identityID uint, userID uint, usedAt time.Time) error {
 	stub.touchedID = identityID
+	stub.touchedUserID = userID
 	stub.touchedAt = usedAt
 	return nil
 }

@@ -2,10 +2,18 @@ package db
 
 import (
 	"context"
+	"errors"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"gorm.io/gorm"
 )
+
+// ErrSymptomOwnerRequired is returned by SymptomRepository.Update when the
+// symptom carries no owner. Update scopes its write by symptom.UserID in the
+// query itself (see its doc comment); a zero UserID is invalid input, not a
+// wildcard — matching Where("user_id = ?", 0) would ordinarily just match
+// zero rows and return nil, a silent no-op indistinguishable from success.
+var ErrSymptomOwnerRequired = errors.New("symptom owner is required")
 
 type SymptomRepository struct {
 	database *gorm.DB
@@ -81,6 +89,9 @@ func (repo *SymptomRepository) FindByIDForUser(ctx context.Context, symptomID ui
 // ArchivedAt=nil clears the column. Every caller sources symptom from
 // FindByIDForUser first, so a legitimate write always matches its row.
 func (repo *SymptomRepository) Update(ctx context.Context, symptom *models.SymptomType) error {
+	if symptom.UserID == 0 {
+		return ErrSymptomOwnerRequired
+	}
 	return classifySymptomWriteError(repo.database.WithContext(ctx).
 		Model(symptom).
 		Where("user_id = ?", symptom.UserID).

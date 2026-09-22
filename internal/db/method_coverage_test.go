@@ -98,7 +98,7 @@ func TestOIDCIdentityRepositoryTouchLastUsed(t *testing.T) {
 	}
 
 	touchedAt := time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC)
-	if err := identityRepo.TouchLastUsed(context.Background(), identity.ID, touchedAt); err != nil {
+	if err := identityRepo.TouchLastUsed(context.Background(), identity.ID, user.ID, touchedAt); err != nil {
 		t.Fatalf("TouchLastUsed() unexpected error: %v", err)
 	}
 
@@ -115,7 +115,11 @@ func TestOIDCIdentityRepositoryTouchLastUsed(t *testing.T) {
 	}
 
 	// id == 0 is a no-op guard that must not touch the database.
-	if err := identityRepo.TouchLastUsed(context.Background(), 0, time.Now().UTC()); err != nil {
-		t.Fatalf("TouchLastUsed(0) should be a no-op, got %v", err)
+	if err := identityRepo.TouchLastUsed(context.Background(), 0, user.ID, time.Now().UTC()); err != nil {
+		t.Fatalf("TouchLastUsed(0, userID) should be a no-op, got %v", err)
+	}
+	// userID == 0 is likewise a no-op guard, independent of identityID.
+	if err := identityRepo.TouchLastUsed(context.Background(), identity.ID, 0, time.Now().UTC()); err != nil {
+		t.Fatalf("TouchLastUsed(identityID, 0) should be a no-op, got %v", err)
 	}
 }

@@ -146,15 +146,21 @@ func requireRemainingSignInTx(tx *gorm.DB, userID uint, localSignInOpen bool) er
 // never leaves this file — the caller sees false, nil.
 var errOIDCIdentityNotDeleted = errors.New("oidc identity not deleted")
 
-func (repo *OIDCIdentityRepository) TouchLastUsed(ctx context.Context, identityID uint, usedAt time.Time) error {
-	if identityID == 0 {
+// TouchLastUsed stamps last_used_at on the identity that is both identityID
+// AND owned by userID. Like DeleteForUserAndRevokeSessions it is scoped by
+// the caller-supplied owner in the query, not by identityID alone: an id from
+// a session or claim response is combined with the session's own user_id
+// before it reaches storage, never trusted alone, so a stale or foreign
+// identityID can never touch another owner's row.
+func (repo *OIDCIdentityRepository) TouchLastUsed(ctx context.Context, identityID uint, userID uint, usedAt time.Time) error {
+	if identityID == 0 || userID == 0 {
 		return nil
 	}
 	if usedAt.IsZero() {
 		usedAt = time.Now().UTC()
 	}
 	return repo.database.WithContext(ctx).Model(&models.OIDCIdentity{}).
-		Where("id = ?", identityID).
+		Where("id = ? AND user_id = ?", identityID, userID).
 		Update("last_used_at", usedAt).Error
 }
 
