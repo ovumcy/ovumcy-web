@@ -70,6 +70,39 @@ func TestARevocationIsRefusedWhenTheFenceCannotRecordIt(t *testing.T) {
 	}
 }
 
+// TestAZeroOwnerRevocationNeverAdvancesTheFence pins the other half of the
+// ordering: the fence is ahead of the row WRITE, not ahead of the zero-id
+// refusal. A revocation for an id that names no owner retires no token, so a
+// fence advanced for it records a revocation that never happened — and that
+// record is not inert: every backup taken before it now reads as predating a
+// revocation, so restoring one disarms every armed feed over an event no owner
+// caused.
+func TestAZeroOwnerRevocationNeverAdvancesTheFence(t *testing.T) {
+	repo := openCalendarFeedRepoForTest(t)
+	ctx := context.Background()
+	key := []byte("zero-owner-fence-test-secret-k01")
+
+	_, columns, err := services.GenerateCalendarFeedToken(key)
+	if err != nil {
+		t.Fatalf("GenerateCalendarFeedToken: %v", err)
+	}
+
+	// A fence that would succeed if consulted: the assertion is that it is
+	// never reached, which a refusing fence could not tell apart from a refusal.
+	fence := &refusingCalendarFeedFence{}
+	repo.calendarFeedFence = fence
+
+	if err := repo.SaveCalendarFeedToken(ctx, 0, columns); !errors.Is(err, ErrUserOwnerRequired) {
+		t.Fatalf("SaveCalendarFeedToken must refuse a zero owner, got %v", err)
+	}
+	if err := repo.ClearCalendarFeedToken(ctx, 0); !errors.Is(err, ErrUserOwnerRequired) {
+		t.Fatalf("ClearCalendarFeedToken must refuse a zero owner, got %v", err)
+	}
+	if fence.calls != 0 {
+		t.Fatalf("a refused zero-owner revocation must not touch the fence, got %d call(s)", fence.calls)
+	}
+}
+
 // TestACredentialRotationSurfacesItsOwnWriteFailure covers the arm the fence
 // changes did NOT alter and could have. Both rotations grew an error check so
 // the advance could follow their write; that check has to keep reporting the
