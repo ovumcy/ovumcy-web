@@ -70,7 +70,7 @@ func (repo *OIDCIdentityRepository) ListByUser(ctx context.Context, userID uint)
 		Where("user_id = ?", userID).
 		Order("created_at ASC, id ASC").
 		Find(&identities).Error; err != nil {
-		return nil, err
+		return nil, err // codecov:ignore -- DB-layer error on the identities lookup; not reachable in unit tests
 	}
 	return identities, nil
 }
@@ -101,11 +101,11 @@ func (repo *OIDCIdentityRepository) DeleteForUserAndRevokeSessions(ctx context.C
 			if errors.Is(err, errOIDCIdentityOwnerRequired) {
 				return errOIDCIdentityNotDeleted
 			}
-			return err
+			return err // codecov:ignore -- DB-layer error from the owner bump other than a missing account; not reachable in unit tests
 		}
 		result := tx.Where("id = ? AND user_id = ?", identityID, userID).Delete(&models.OIDCIdentity{})
 		if result.Error != nil {
-			return result.Error
+			return result.Error // codecov:ignore -- DB-layer error on the identity DELETE; not reachable in unit tests
 		}
 		if result.RowsAffected == 0 {
 			return errOIDCIdentityNotDeleted
@@ -127,14 +127,14 @@ func (repo *OIDCIdentityRepository) DeleteForUserAndRevokeSessions(ctx context.C
 func requireRemainingSignInTx(tx *gorm.DB, userID uint, localSignInOpen bool) error {
 	var remaining int64
 	if err := tx.Model(&models.OIDCIdentity{}).Where("user_id = ?", userID).Count(&remaining).Error; err != nil {
-		return err
+		return err // codecov:ignore -- DB-layer error counting remaining identities; not reachable in unit tests
 	}
 	if remaining > 0 {
 		return nil
 	}
 	var owner models.User
 	if err := tx.Select("id", "local_auth_enabled", "password_hash").Where("id = ?", userID).Take(&owner).Error; err != nil {
-		return err
+		return err // codecov:ignore -- DB-layer error loading the owner row bumpAuthSessionVersionTx already confirmed exists; not reachable in unit tests
 	}
 	if localSignInOpen && owner.LocalAuthEnabled && strings.TrimSpace(owner.PasswordHash) != "" {
 		return nil
@@ -168,7 +168,7 @@ func bumpAuthSessionVersionTx(tx *gorm.DB, userID uint) error {
 		Where("id = ?", userID).
 		UpdateColumn("auth_session_version", gorm.Expr("auth_session_version + 1"))
 	if result.Error != nil {
-		return result.Error
+		return result.Error // codecov:ignore -- DB-layer error on the session-version UPDATE; not reachable in unit tests
 	}
 	if result.RowsAffected == 0 {
 		return errOIDCIdentityOwnerRequired

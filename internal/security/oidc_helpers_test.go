@@ -141,6 +141,35 @@ func TestSameOriginURLAndEffectivePort(t *testing.T) {
 	}
 }
 
+// SameOriginURLString validates each operand independently before comparing:
+// a blank or relative URL on either side names no origin, and must be refused
+// rather than compared against whatever the other side happens to parse to.
+func TestSameOriginURLStringRefusesBlankOrRelativeOperands(t *testing.T) {
+	t.Parallel()
+
+	const valid = "https://ovumcy.example.com/login"
+	cases := map[string]struct {
+		left  string
+		right string
+	}{
+		"blank left":     {left: "", right: valid},
+		"relative left":  {left: "/login", right: valid},
+		"blank right":    {left: valid, right: ""},
+		"relative right": {left: valid, right: "/login"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if SameOriginURLString(tc.left, tc.right) {
+				t.Fatalf("expected SameOriginURLString(%q, %q) to refuse", tc.left, tc.right)
+			}
+		})
+	}
+
+	if !SameOriginURLString(valid, "https://ovumcy.example.com:443/logout") {
+		t.Fatal("expected SameOriginURLString to accept the same https origin with an explicit default port")
+	}
+}
+
 func TestOIDCConfigBehaviorFlagsAndAutoProvisionEdges(t *testing.T) {
 	t.Parallel()
 

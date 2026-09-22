@@ -70,6 +70,10 @@ type stubOIDCIdentityStore struct {
 	deleteErr       error
 	deleteCalls     int
 	deletedID       uint
+	// deleteNotFound simulates a delete that loses a race: the owner-scoped read
+	// above found the identity, but by the time the delete runs it is already
+	// gone — (false, nil), not an error.
+	deleteNotFound bool
 
 	deleteLocalSignInOpen bool
 }
@@ -121,6 +125,9 @@ func (stub *stubOIDCIdentityStore) DeleteForUserAndRevokeSessions(_ context.Cont
 	stub.deleteLocalSignInOpen = localSignInOpen
 	if stub.deleteErr != nil {
 		return false, stub.deleteErr
+	}
+	if stub.deleteNotFound {
+		return false, nil
 	}
 	for index, identity := range stub.listed {
 		if identity.ID == identityID && identity.UserID == userID {

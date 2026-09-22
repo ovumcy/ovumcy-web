@@ -245,6 +245,51 @@ func TestOIDCIdentityRepositoryRevokingLinkRollsBackForAMissingOwner(t *testing.
 	}
 }
 
+// A nil identity or a zero UserID names no owner to bump: CreateAndRevokeSessions
+// refuses before opening a transaction, rather than writing an identity row no
+// session-version bump accompanies.
+func TestOIDCIdentityRepositoryCreateAndRevokeSessionsRequiresAnOwner(t *testing.T) {
+	repository, _ := seedOIDCRepositoryOwners(t)
+	ctx := context.Background()
+
+	if err := repository.CreateAndRevokeSessions(ctx, nil); !errors.Is(err, errOIDCIdentityOwnerRequired) {
+		t.Fatalf("expected errOIDCIdentityOwnerRequired for a nil identity, got %v", err)
+	}
+	identity := models.OIDCIdentity{Issuer: "https://id.example.com", Subject: "no-owner"}
+	if err := repository.CreateAndRevokeSessions(ctx, &identity); !errors.Is(err, errOIDCIdentityOwnerRequired) {
+		t.Fatalf("expected errOIDCIdentityOwnerRequired for a zero UserID, got %v", err)
+	}
+}
+
+// A zero userID lists nothing rather than running the query.
+func TestOIDCIdentityRepositoryListByUserWithZeroIDListsNothing(t *testing.T) {
+	repository, _ := seedOIDCRepositoryOwners(t)
+	identities, err := repository.ListByUser(context.Background(), 0)
+	if err != nil || identities != nil {
+		t.Fatalf("expected (nil, nil) for a zero user id, got %v, %v", identities, err)
+	}
+}
+
+// DeleteForUserAndRevokeSessions refuses a zero user or identity id before
+// opening a transaction, and an unlink naming a userID with no user row maps
+// the owner-bump's errOIDCIdentityOwnerRequired to the same not-deleted
+// outcome a foreign-owner unlink reports — the two are indistinguishable to
+// the caller by design (models.go: another owner's id reads as not-found).
+func TestOIDCIdentityRepositoryDeleteRefusesAZeroIDOrAMissingOwner(t *testing.T) {
+	repository, _ := seedOIDCRepositoryOwners(t)
+	ctx := context.Background()
+
+	if deleted, err := repository.DeleteForUserAndRevokeSessions(ctx, 0, 5, true); err != nil || deleted {
+		t.Fatalf("expected a zero user id to delete nothing, got deleted=%v err=%v", deleted, err)
+	}
+	if deleted, err := repository.DeleteForUserAndRevokeSessions(ctx, 1, 0, true); err != nil || deleted {
+		t.Fatalf("expected a zero identity id to delete nothing, got deleted=%v err=%v", deleted, err)
+	}
+	if deleted, err := repository.DeleteForUserAndRevokeSessions(ctx, 99, 5, true); err != nil || deleted {
+		t.Fatalf("expected an unlink naming a missing owner to delete nothing, got deleted=%v err=%v", deleted, err)
+	}
+}
+
 // A blank issuer or subject names no identity, even when a row was stored
 // with that blank value.
 func TestOIDCIdentityRepositoryBlankKeyFindsNothing(t *testing.T) {
