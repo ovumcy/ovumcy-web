@@ -186,12 +186,19 @@ func dashboardReminderBannerForOvulation(cycleContext DashboardCycleContext, tod
 		DashboardReminderBannerOvulationKey,
 	)
 	return DashboardReminderBanner{
-		Show:        true,
-		Kind:        DashboardReminderBannerKindOvulation,
-		TitleKey:    titleKey,
-		DaysUntil:   daysUntil,
-		Countable:   countable,
-		Approximate: !cycleContext.DisplayOvulationExact,
+		Show:      true,
+		Kind:      DashboardReminderBannerKindOvulation,
+		TitleKey:  titleKey,
+		DaysUntil: daysUntil,
+		Countable: countable,
+		// Mirrors dashboard.html's own approximate marker (see the comment
+		// there): DisplayOvulationExact reports whether CalcOvulationDay
+		// clamped the luteal phase, a property of the projection's
+		// arithmetic. A confirmed thermal shift did not come out of that
+		// arithmetic, so a clamped-but-confirmed day must not be flagged
+		// approximate here either — the two surfaces would otherwise
+		// disagree on the same date.
+		Approximate: !cycleContext.DisplayOvulationExact && !cycleContext.DisplayOvulationConfirmed,
 	}, true
 }
 

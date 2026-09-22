@@ -440,6 +440,59 @@ func TestBuildDashboardReminderBannerOvulationThresholdBoundaries(t *testing.T) 
 	}
 }
 
+// TestBuildDashboardReminderBannerConfirmedOvulationIsNeverApproximate mirrors
+// dashboard.html's own approximate marker (`and (not .DisplayOvulationExact)
+// (not .DisplayOvulationConfirmed)`, dashboard.html:115): a confirmed thermal
+// shift beside a clamped (non-exact) luteal-phase projection must not be
+// flagged approximate here either, or the banner and the dashboard hero
+// disagree about the same date. DisplayOvulationExact=false alongside
+// DisplayOvulationConfirmed=true is reachable in production: the
+// confirmation substitution in buildDashboardPredictionDisplay
+// (dashboard_cycle.go) overwrites the projected date but never revisits
+// ovulationExact, which was already set from the (possibly clamped)
+// projection window.
+func TestBuildDashboardReminderBannerConfirmedOvulationIsNeverApproximate(t *testing.T) {
+	today := mustParseDashboardDay(t, "2026-03-10")
+
+	cases := []struct {
+		name       string
+		exact      bool
+		confirmed  bool
+		wantApprox bool
+	}{
+		{
+			name:       "clamped and confirmed reads as certain, not approximate",
+			exact:      false,
+			confirmed:  true,
+			wantApprox: false,
+		},
+		{
+			name:       "clamped and unconfirmed still reads as approximate",
+			exact:      false,
+			confirmed:  false,
+			wantApprox: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cycleContext := DashboardCycleContext{
+				DisplayOvulationDate:      mustParseDashboardDay(t, "2026-03-11"),
+				DisplayOvulationExact:     tc.exact,
+				DisplayOvulationConfirmed: tc.confirmed,
+			}
+
+			banner := BuildDashboardReminderBanner(cycleContext, today, 0)
+			if !banner.Show {
+				t.Fatalf("expected a banner to show, got %#v", banner)
+			}
+			if banner.Approximate != tc.wantApprox {
+				t.Fatalf("expected Approximate=%v, got %v (banner=%#v)", tc.wantApprox, banner.Approximate, banner)
+			}
+		})
+	}
+}
+
 func TestBuildDashboardReminderBannerOvulationSuppressedCases(t *testing.T) {
 	today := mustParseDashboardDay(t, "2026-03-10")
 	withinWindow := mustParseDashboardDay(t, "2026-03-12")
