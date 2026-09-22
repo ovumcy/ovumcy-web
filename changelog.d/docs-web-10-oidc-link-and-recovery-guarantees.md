@@ -8,7 +8,9 @@
   has been retained-but-unreachable since issue #701 — the callback never mints the cookie it reads —
   and the real paths are the authenticated Settings step-up (current password, then a fresh
   `prompt=login` re-authentication at the provider; no separate TOTP challenge) and the operator CLI's
-  `link-oidc-identity` for an account with no working sign-in. `docs/oidc.md` and
+  `link-oidc-identity` for an account with no working sign-in. `README.md`'s own environment-variable
+  summary carried the same stale claim in miniature — "falls back to a verified email match" — and is
+  now aligned with `docs/oidc.md`'s wording. `docs/oidc.md` and
   `docs/self-hosted.md` also undersold `OIDC_LOGIN_MODE=oidc_only`'s local-recovery guarantee as
   hiding buttons "from the browser UX"; `Login`, `Register`, and `ForgotPassword` actually refuse the
   request server-side before doing anything else. `docs/security/oidc-and-sessions.md`'s "same
