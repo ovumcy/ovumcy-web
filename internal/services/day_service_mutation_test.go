@@ -129,3 +129,98 @@ func TestDayService_RefreshDerivedCycleSettings_WritesLutealPhaseAfterUpsert(t *
 		t.Fatalf("expected luteal_phase persisted as %d after upsert, got %d (refresh must not be skipped)", defaultLutealPhaseDays, users.settings.LutealPhase)
 	}
 }
+
+// TestDayService_RefreshDerivedCycleSettings_BoundsAtOwnerZoneNotRequestZone
+// is SEC-M14 (WEB-15): the persisted users.luteal_phase cache must be
+// recomputed at the OWNER's stored timezone, never the request's
+// (header/cookie) zone, because the boot recompute (LutealPhaseRecomputer)
+// reads the same column through resolveOwnerLocation's owner-zone
+// preference with no request to agree with — a write bounded at the
+// request's zone can disagree with the boot pass on any day the two zones
+// name a different date.
+//
+// Fixture: two BBT-confirmed cycles (Jan1->Jan20, 19d, luteal 13; Jan20->Feb8,
+// 19d, luteal 12 — same coverline/rise shape as
+// TestCycleSignals_InferUserLutealPhase_UnchangedByDSTTransitionInCycle)
+// plus a THIRD observed cycle start on Feb 8, the boundary log:
+// InferUserLutealPhase needs 3 starts (2 completed cycles) to refine at all,
+// so whether Feb 8 counts as "observed yet" decides refined (13, true) vs
+// the unrefined default (14, false).
+//
+// now = 2026-02-08T00:30 UTC. The request's zone (UTC, simulated by
+// `requestLocation` below, and normally the fallback resolveOwnerLocation
+// falls back to when an owner has none) already reads today as Feb 8, the
+// boundary log's own date. The owner's stored zone, Pacific/Midway
+// (UTC-11), reads local time as 2026-02-07T13:30 — today is still Feb 7,
+// one calendar day before the boundary log, so the owner has not reached
+// that day yet and the derivation must not use it.
+func TestDayService_RefreshDerivedCycleSettings_BoundsAtOwnerZoneNotRequestZone(t *testing.T) {
+	logs := newDayLogRepositoryStub()
+	day := func(s string) time.Time {
+		parsed, err := time.Parse("2006-01-02", s)
+		if err != nil {
+			t.Fatalf("parse %q: %v", s, err)
+		}
+		return parsed
+	}
+	bbt := func(v float64) *float64 { return &v }
+	seed := func(dateStr string, entry models.DailyLog) {
+		entry.UserID = 42
+		entry.Date = day(dateStr)
+		logs.entries[dateStr] = entry
+	}
+
+	// Cycle 1 (Jan1 -> Jan20, 19d): coverline Jan1-6 @36.20, rise Jan7-9
+	// @36.50 -> ovulation Jan6 (cycle day 6) -> luteal 19-6=13.
+	seed("2026-01-01", models.DailyLog{IsPeriod: true, CycleStart: true, Flow: models.FlowMedium, BBT: bbt(36.20)})
+	seed("2026-01-02", models.DailyLog{BBT: bbt(36.20)})
+	seed("2026-01-03", models.DailyLog{BBT: bbt(36.20)})
+	seed("2026-01-04", models.DailyLog{BBT: bbt(36.20)})
+	seed("2026-01-05", models.DailyLog{BBT: bbt(36.20)})
+	seed("2026-01-06", models.DailyLog{BBT: bbt(36.20)})
+	seed("2026-01-07", models.DailyLog{BBT: bbt(36.50)})
+	seed("2026-01-08", models.DailyLog{BBT: bbt(36.50)})
+	seed("2026-01-09", models.DailyLog{BBT: bbt(36.50)})
+
+	// Cycle 2 (Jan20 -> Feb8, 19d): coverline Jan20-25 @36.20, rise
+	// Jan27-29 @36.50 -> ovulation Jan26 (cycle day 7) -> luteal 19-7=12.
+	seed("2026-01-20", models.DailyLog{IsPeriod: true, CycleStart: true, Flow: models.FlowMedium, BBT: bbt(36.20)})
+	seed("2026-01-21", models.DailyLog{BBT: bbt(36.20)})
+	seed("2026-01-22", models.DailyLog{BBT: bbt(36.20)})
+	seed("2026-01-23", models.DailyLog{BBT: bbt(36.20)})
+	seed("2026-01-24", models.DailyLog{BBT: bbt(36.20)})
+	seed("2026-01-25", models.DailyLog{BBT: bbt(36.20)})
+	seed("2026-01-27", models.DailyLog{BBT: bbt(36.50)})
+	seed("2026-01-28", models.DailyLog{BBT: bbt(36.50)})
+	seed("2026-01-29", models.DailyLog{BBT: bbt(36.50)})
+
+	// The boundary log: the third observed cycle start, with no BBT of its
+	// own — it only needs to exist or not exist in the "observed" set.
+	seed("2026-02-08", models.DailyLog{IsPeriod: true, CycleStart: true, Flow: models.FlowMedium})
+
+	users := &dayserviceCovUserStub{settings: models.User{Timezone: "Pacific/Midway"}}
+	service := dayserviceCovNewService(logs, users)
+
+	now := time.Date(2026, time.February, 8, 0, 30, 0, 0, time.UTC)
+	requestLocation := time.UTC
+
+	// The day being edited is unrelated to the cycle-start chain, so the
+	// write cannot disturb the seeded fixture above.
+	if _, err := service.UpsertDayEntryWithAutoFillAt(context.Background(),
+		42,
+		day("2026-01-15"),
+		DayEntryInput{IsPeriod: false, Flow: models.FlowNone},
+		now,
+		requestLocation,
+	); err != nil {
+		t.Fatalf("UpsertDayEntryWithAutoFillAt: unexpected error: %v", err)
+	}
+
+	// Owner-zone bound (Feb 7): the Feb 8 cycle start is not yet observed,
+	// so only two starts exist and the inference stays unrefined at the
+	// default. A regression that bounds this at requestLocation instead
+	// (UTC, today=Feb 8) counts the boundary start and persists 13.
+	if users.settings.LutealPhase != defaultLutealPhaseDays {
+		t.Fatalf("expected luteal_phase bounded at the OWNER's zone (Pacific/Midway, today=Feb 7) to stay the unrefined default %d; got %d — a request-zone bound (UTC, today=Feb 8) would count the not-yet-owner-observed Feb 8 cycle start and refine it to 13", defaultLutealPhaseDays, users.settings.LutealPhase)
+	}
+}

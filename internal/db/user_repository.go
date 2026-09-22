@@ -1284,6 +1284,12 @@ func (repo *UserRepository) LoadSettingsByID(ctx context.Context, userID uint) (
 			"long_period_warning_cycle_start",
 			"last_period_start",
 			"reminder_lead_days",
+			// The owner's persisted IANA zone (models.User.Timezone doc comment):
+			// not sensitive, not a secret, and needed here so
+			// DayService/ImportService.refreshDerivedCycleSettings can bound the
+			// persisted luteal_phase cache at the OWNER's today via
+			// resolveOwnerLocation instead of the request's zone (SEC-M14).
+			"timezone",
 			// Webhook notification settings (issue #124) load here so the
 			// settings page can render the write-only URL field's status
 			// (configured + host) and the enable/notify toggles. webhook_url is
