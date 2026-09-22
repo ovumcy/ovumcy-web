@@ -16,9 +16,11 @@ package ciguards
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -441,9 +443,47 @@ func TestCheckoutSitesMissingPersistCredentialsFalseCatchesAMissingFlag(t *testi
 // run_frontend's allowlist covers every Tailwind @source, not just web/**.
 // ---------------------------------------------------------------------------
 
-// cssSourceLine matches one Tailwind `@source "..."` declaration in
-// web/src/css/input.css.
-var cssSourceLine = regexp.MustCompile(`@source "([^"]+)";`)
+// stripCSSComments drops CSS comments so prose that mentions the directive is
+// not mistaken for one. It tracks quotes: a glob such as "templates/**/*.html"
+// contains `/*` and `*/` and is not a comment.
+func stripCSSComments(css string) string {
+	var b strings.Builder
+	var quote byte
+	for i := 0; i < len(css); i++ {
+		c := css[i]
+		switch {
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			}
+		case c == '"' || c == '\'':
+			quote = c
+		case c == '/' && i+1 < len(css) && css[i+1] == '*':
+			end := strings.Index(css[i+2:], "*/")
+			if end < 0 {
+				return b.String()
+			}
+			i += 2 + end + 1
+			continue
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
+}
+
+// cssSourceDirective matches every `@source` token; each one must then be
+// classified by cssSourcePath or cssSourceIgnored, or the scan refuses the
+// file — a guard keyed on one spelling of the directive would let a second
+// spelling (single quotes, extra spaces) walk past it.
+var cssSourceDirective = regexp.MustCompile(`@source\b[^;]*;`)
+
+// cssSourcePath matches a path declaration in either quote style.
+var cssSourcePath = regexp.MustCompile(`^@source\s+(?:"([^"]+)"|'([^']+)')\s*;$`)
+
+// cssSourceIgnored matches the forms that add no file to the build's inputs:
+// `@source not "..."` (an exclusion) and `@source inline(...)` (a literal
+// class list, no path).
+var cssSourceIgnored = regexp.MustCompile(`^@source\s+(?:not\s|inline\()`)
 
 // cssSources returns every @source path declared there, resolved to a
 // module-root-relative, forward-slashed path — the same shape a file name in
@@ -460,16 +500,53 @@ func cssSources(t *testing.T) []string {
 		t.Fatalf("read web/src/css/input.css: %v", err)
 	}
 
-	matches := cssSourceLine.FindAllStringSubmatch(string(raw), -1)
-	if len(matches) == 0 {
-		t.Fatal("found zero @source lines in web/src/css/input.css — the scan itself is broken, since the Tailwind build declares its content sources there")
+	sources, err := CSSSourcePaths(string(raw))
+	if err != nil {
+		t.Fatalf("web/src/css/input.css: %v", err)
 	}
-
-	var sources []string
-	for _, m := range matches {
-		sources = append(sources, path.Clean(path.Join("web/src/css", m[1])))
+	if len(sources) == 0 {
+		t.Fatal("found zero @source paths in web/src/css/input.css — the scan itself is broken, since the Tailwind build declares its content sources there")
 	}
 	return sources
+}
+
+// CSSSourcePaths returns every path an `@source` in css declares, resolved
+// against web/src/css, and refuses any `@source` it cannot classify.
+func CSSSourcePaths(css string) ([]string, error) {
+	var sources []string
+	for _, directive := range cssSourceDirective.FindAllString(stripCSSComments(css), -1) {
+		if cssSourceIgnored.MatchString(directive) {
+			continue
+		}
+		m := cssSourcePath.FindStringSubmatch(directive)
+		if m == nil {
+			return nil, fmt.Errorf("unclassified @source directive %q: teach this guard its form before relying on it", directive)
+		}
+		source := m[1] + m[2]
+		sources = append(sources, path.Clean(path.Join("web/src/css", source)))
+	}
+	return sources, nil
+}
+
+func TestCSSSourcePathsReadsEveryDirectiveForm(t *testing.T) {
+	css := `/* @source "ignored/in/a/comment"; */
+@source "../../../internal/a/**/*.html"; /* trailing */
+@source   '../../../internal/b.go' ;
+@source not "../../../internal/c";
+@source inline("underline");
+`
+	got, err := CSSSourcePaths(css)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"internal/a/**/*.html", "internal/b.go"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("CSSSourcePaths = %v, want %v", got, want)
+	}
+
+	if _, err := CSSSourcePaths(`@source url(../x);`); err == nil {
+		t.Fatal("an @source of an unknown form was accepted silently")
+	}
 }
 
 // runFrontendPattern extracts the `grep -E '...'` argument the `changes` job
@@ -567,5 +644,208 @@ func TestFrontendPatternCoversCSSSourcesRefusesAMissingSource(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("dropping the internal/templates alternative from the pattern did not surface it as uncovered: %v", uncovered)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// The `changes` job's detect step, executed rather than read.
+// ---------------------------------------------------------------------------
+
+// detectScript returns the detect step's `run: |` block, de-indented, exactly
+// as the runner hands it to bash.
+func detectScript(t *testing.T) string {
+	t.Helper()
+
+	block := workflowfile.Job(t, ".github/workflows/ci.yml", "changes")
+	start := strings.Index(block, "id: detect")
+	if start < 0 {
+		t.Fatal("no `id: detect` step in the `changes` job")
+	}
+	rest := block[start:]
+	run := strings.Index(rest, "run: |\n")
+	if run < 0 {
+		t.Fatal("the detect step has no `run: |` block")
+	}
+
+	var lines []string
+	indent := -1
+	for _, line := range strings.Split(rest[run+len("run: |\n"):], "\n") {
+		trimmed := strings.TrimLeft(line, " ")
+		if trimmed == "" {
+			lines = append(lines, "")
+			continue
+		}
+		depth := len(line) - len(trimmed)
+		if indent < 0 {
+			indent = depth
+		}
+		if depth < indent {
+			break
+		}
+		lines = append(lines, line[indent:])
+	}
+	return strings.Join(lines, "\n")
+}
+
+// runDetect runs script in a throwaway repository whose `main` holds one file
+// and whose checked-out branch adds files on top, and returns the outputs the
+// script wrote to GITHUB_OUTPUT. The repository is its own `origin`, so the
+// script's `git fetch origin main` resolves without a network.
+func runDetect(t *testing.T, script, event string, files []string) map[string]string {
+	t.Helper()
+
+	dir := t.TempDir()
+	bash := requireBash(t, dir)
+	// Hermetic: the fixture repository must not pick up the machine's git
+	// config (hooks, signing, default branch).
+	env := append(os.Environ(),
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_CONFIG_GLOBAL="+os.DevNull,
+		"GIT_AUTHOR_NAME=ciguards", "GIT_AUTHOR_EMAIL=ciguards@example.invalid",
+		"GIT_COMMITTER_NAME=ciguards", "GIT_COMMITTER_EMAIL=ciguards@example.invalid",
+	)
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = env
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	write := func(name string) {
+		t.Helper()
+		full := filepath.Join(dir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte("x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	git("init", "-q", "-b", "main")
+	write("README.md")
+	git("add", "-A")
+	git("commit", "-q", "-m", "base")
+	git("remote", "add", "origin", dir)
+	git("checkout", "-q", "-b", "change")
+	for _, f := range files {
+		write(f)
+	}
+	git("add", "-A")
+	git("commit", "-q", "-m", "change")
+
+	output := filepath.ToSlash(filepath.Join(t.TempDir(), "output"))
+	// On stdin, not `-c`: the step is long enough that a Windows command line
+	// truncates it silently, inside a comment, with exit status 0.
+	cmd := exec.Command(bash, "-s")
+	cmd.Stdin = strings.NewReader(script)
+	cmd.Dir = dir
+	cmd.Env = append(env, "EVENT_NAME="+event, "BASE_REF=main", "QUEUE_BASE_SHA=", "GITHUB_OUTPUT="+output)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("detect step failed: %v\n%s", err, out)
+	}
+
+	raw, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatalf("detect step wrote no outputs: %v\n%s", err, out)
+	}
+	got := map[string]string{}
+	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+		if k, v, ok := strings.Cut(strings.TrimSpace(line), "="); ok {
+			got[k] = v
+		}
+	}
+	return got
+}
+
+// requireBash returns a bash that can enter dir and run git — being on PATH is
+// not the test (on Windows that is often WSL's, which cannot see the fixture).
+// A guard that reports green because it could not look is worse than none, so
+// only a Windows developer machine outside CI may skip.
+func requireBash(t *testing.T, dir string) string {
+	t.Helper()
+
+	path, err := exec.LookPath("bash")
+	if err == nil {
+		out, probeErr := exec.Command(path, "-c", `cd "$1" && git --version >/dev/null && printf ok`, "probe", filepath.ToSlash(dir)).Output()
+		if got := strings.TrimSpace(string(out)); probeErr != nil || got != "ok" {
+			err = fmt.Errorf("%s answered %q, not \"ok\": %v", path, got, probeErr)
+		}
+	}
+	if err != nil {
+		if runtime.GOOS != "windows" || os.Getenv("CI") != "" {
+			t.Fatalf("bash with git is required to execute the detect step, and this guard proves nothing without it: %v", err)
+		}
+		t.Skipf("bash with git is required to execute the detect step: %v", err)
+	}
+	return path
+}
+
+type detectCase struct {
+	name  string
+	event string
+	files []string
+	want  map[string]string
+}
+
+var detectCases = []detectCase{
+	{"docs only", "pull_request", []string{"docs/a.md"},
+		map[string]string{"run_e2e": "false", "run_core": "false", "run_frontend": "false"}},
+	{"Go test file only", "pull_request", []string{"internal/x/a_test.go"},
+		map[string]string{"run_e2e": "false", "run_core": "true", "run_unit": "true", "run_race": "true", "run_frontend": "false"}},
+	{"Go testdata only", "pull_request", []string{"internal/x/testdata/f.json"},
+		map[string]string{"run_e2e": "false", "run_core": "true"}},
+	{"testdata under e2e", "pull_request", []string{"e2e/testdata/f.json"},
+		map[string]string{"run_e2e": "true", "run_frontend": "true"}},
+	{"prod Go only", "pull_request", []string{"internal/x/a.go"},
+		map[string]string{"run_e2e": "true", "run_core": "true", "run_frontend": "false"}},
+	{"template only", "pull_request", []string{"internal/templates/a.html"},
+		map[string]string{"run_frontend": "true"}},
+	{"this workflow only", "pull_request", []string{".github/workflows/ci.yml"},
+		map[string]string{"run_frontend": "true", "run_e2e": "true"}},
+	{"non-ASCII frontend path", "pull_request", []string{"web/src/js/é.js"},
+		map[string]string{"run_frontend": "true"}},
+	{"push", "push", []string{"web/src/js/a.js"},
+		map[string]string{"run_core": "false", "run_frontend": "false", "run_e2e": "true"}},
+}
+
+func TestDetectStepDecidesEachLaneFromTheDiff(t *testing.T) {
+	script := detectScript(t)
+	for _, c := range detectCases {
+		t.Run(c.name, func(t *testing.T) {
+			got := runDetect(t, script, c.event, c.files)
+			for k, v := range c.want {
+				if got[k] != v {
+					t.Errorf("%s = %q, want %q (all outputs: %v)", k, got[k], v, got)
+				}
+			}
+		})
+	}
+}
+
+// TestDetectStepHarnessRefusesTheUnfixedShapes proves the harness above can
+// fail: each mutation reverts one fix, and the case it exists for must flip.
+func TestDetectStepHarnessRefusesTheUnfixedShapes(t *testing.T) {
+	script := detectScript(t)
+	for _, m := range []struct {
+		name, from, to string
+		files          []string
+		output         string
+	}{
+		{"quoted paths", "git -c core.quotePath=false diff", "git diff", []string{"web/src/js/é.js"}, "run_frontend"},
+		{"workflow not an input", `|\.github/workflows/ci\.yml$`, "", []string{".github/workflows/ci.yml"}, "run_frontend"},
+	} {
+		t.Run(m.name, func(t *testing.T) {
+			mutated := strings.Replace(script, m.from, m.to, 1)
+			if mutated == script {
+				t.Fatalf("%q not found in the detect step: this check no longer reverts anything", m.from)
+			}
+			if got := runDetect(t, mutated, "pull_request", m.files)[m.output]; got != "false" {
+				t.Fatalf("with the fix reverted, %s = %q; the harness cannot see the defect it guards", m.output, got)
+			}
+		})
 	}
 }
