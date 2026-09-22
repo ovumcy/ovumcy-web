@@ -226,8 +226,15 @@ func (service *SettingsService) SaveReminderLeadDays(ctx context.Context, userID
 // equalizeAuthCredentialsTiming: tests replace it with an invocation counter
 // instead of measuring wall-clock time. Production code never reassigns this.
 var equalizeSettingsReauthTiming = func(password string) {
-	_ = bcrypt.CompareHashAndPassword([]byte(credentialsTimingEqualizationHash), []byte(password))
+	_ = settingsReauthEqualizerCompare([]byte(credentialsTimingEqualizationHash), []byte(password))
 }
+
+// settingsReauthEqualizerCompare is the bcrypt call equalizeSettingsReauthTiming
+// spends. The call-site tests swap the equalizer itself out, so they stay green
+// over an empty equalizer body; swapping this instead lets a test prove the body
+// still reaches a real compare against the placeholder hash. Production code
+// never reassigns this.
+var settingsReauthEqualizerCompare = bcrypt.CompareHashAndPassword
 
 func (service *SettingsService) ValidateCurrentPassword(passwordHash string, rawPassword string) error {
 	password := strings.TrimSpace(rawPassword)
