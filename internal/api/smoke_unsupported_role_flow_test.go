@@ -48,6 +48,11 @@ func TestUnsupportedLegacyRoleResetRedeemWritesNothing(t *testing.T) {
 
 func assertRoleRefusedResetRedeemWritesNothing(t *testing.T, purpose string) {
 	t.Helper()
+	// Every purpose fails from the same call site, so each message names its purpose.
+	fail := func(format string, args ...any) {
+		t.Helper()
+		t.Fatalf("[%s] "+format, append([]any{purpose}, args...)...)
+	}
 
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "smoke-legacy-reset-"+purpose+"@example.com", "StrongPass1", true)
@@ -58,19 +63,22 @@ func assertRoleRefusedResetRedeemWritesNothing(t *testing.T, purpose string) {
 		// The recovery purpose is minted by the real start route, as a browser gets it.
 		resetCookieValue = requestResetCookieByRecoveryCode(t, app, user.Email, recoveryCode, "StrongPass1")
 	} else {
+		// The forced purposes are built directly, not through the login and OIDC
+		// routes that mint them in production: this pins the redeem-side resolver
+		// for each purpose, not the minting routes.
 		token, err := services.BuildPasswordResetToken([]byte(testHandlerSecretKey), user.ID, user.PasswordHash, user.AuthSessionVersion, purpose, 30*time.Minute, time.Now())
 		if err != nil {
-			t.Fatalf("BuildPasswordResetToken(%s): %v", purpose, err)
+			fail("BuildPasswordResetToken: %v", err)
 		}
 		resetCookieValue = mustSealResetCookieValueForTest(t, []byte(testHandlerSecretKey), token)
 	}
 
 	var before models.User
 	if err := database.First(&before, user.ID).Error; err != nil {
-		t.Fatalf("load user before redeem: %v", err)
+		fail("load user before redeem: %v", err)
 	}
 	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Update("role", "partner").Error; err != nil {
-		t.Fatalf("set unsupported legacy role: %v", err)
+		fail("set unsupported legacy role: %v", err)
 	}
 
 	redeem := func() *http.Response {
@@ -86,44 +94,48 @@ func assertRoleRefusedResetRedeemWritesNothing(t *testing.T, purpose string) {
 
 	var after models.User
 	if err := database.First(&after, user.ID).Error; err != nil {
-		t.Fatalf("load user after refused redeem: %v", err)
+		fail("load user after refused redeem: %v", err)
 	}
 	if after.PasswordHash != before.PasswordHash {
-		t.Fatal("the role-refused redeem rewrote the password")
+		fail("the role-refused redeem rewrote the password")
 	}
 	if after.RecoveryCodeHash != before.RecoveryCodeHash {
-		t.Fatal("the role-refused redeem rotated the recovery code: the new one was never revealed and the old one is gone")
+		fail("the role-refused redeem rotated the recovery code: the new one was never revealed and the old one is gone")
 	}
 	if after.AuthSessionVersion != before.AuthSessionVersion {
-		t.Fatalf("the role-refused redeem bumped auth_session_version from %d to %d", before.AuthSessionVersion, after.AuthSessionVersion)
+		fail("the role-refused redeem bumped auth_session_version from %d to %d", before.AuthSessionVersion, after.AuthSessionVersion)
 	}
-	assertStatusCode(t, refused, http.StatusBadRequest)
+	if refused.StatusCode != http.StatusBadRequest {
+		fail("expected the role-refused redeem to answer %d, got %d", http.StatusBadRequest, refused.StatusCode)
+	}
 	if got := readAPIError(t, refused.Body); got != "invalid reset token" {
-		t.Fatalf("expected the role-refused redeem to answer as an invalid reset token before any write, got %q", got)
+		fail("expected the role-refused redeem to answer as an invalid reset token before any write, got %q", got)
 	}
 	for _, name := range []string{authCookieName, recoveryCodeCookieName} {
 		if cookie := responseCookie(refused.Cookies(), name); cookie != nil && strings.TrimSpace(cookie.Value) != "" {
-			t.Fatalf("a role-refused redeem must not set %s", name)
+			fail("a role-refused redeem must not set %s", name)
 		}
 	}
 	if cookie := responseCookie(refused.Cookies(), resetPasswordCookieName); cookie == nil || strings.TrimSpace(cookie.Value) != "" {
-		t.Fatalf("a role-refused redeem answers as an invalid reset token and must retract the reset cookie, got %#v", cookie)
+		fail("a role-refused redeem answers as an invalid reset token and must retract the reset cookie, got %#v", cookie)
 	}
 
 	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Update("role", models.RoleOwner).Error; err != nil {
-		t.Fatalf("restore owner role: %v", err)
+		fail("restore owner role: %v", err)
 	}
 	accepted := redeem()
-	assertStatusCode(t, accepted, http.StatusOK)
+	if accepted.StatusCode != http.StatusOK {
+		fail("anchor: expected the owner's redeem to answer %d, got %d", http.StatusOK, accepted.StatusCode)
+	}
 	if cookie := responseCookie(accepted.Cookies(), recoveryCodeCookieName); cookie == nil || strings.TrimSpace(cookie.Value) == "" {
-		t.Fatal("anchor: the same cookie redeemed by an owner must stage the recovery-code reveal — without it the refusal above proves nothing about the role")
+		fail("anchor: the same cookie redeemed by an owner must stage the recovery-code reveal — without it the refusal above proves nothing about the role")
 	}
 	var rewritten models.User
 	if err := database.First(&rewritten, user.ID).Error; err != nil {
-		t.Fatalf("load user after accepted redeem: %v", err)
+		fail("load user after accepted redeem: %v", err)
 	}
 	if rewritten.PasswordHash == before.PasswordHash || rewritten.RecoveryCodeHash == before.RecoveryCodeHash {
-		t.Fatal("anchor: the owner's redeem must rewrite the password and rotate the recovery code on the row — the refusal above is only meaningful against a write that does happen")
+		fail("anchor: the owner's redeem must rewrite the password and rotate the recovery code on the row — the refusal above is only meaningful against a write that does happen")
 	}
 }
 
