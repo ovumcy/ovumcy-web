@@ -1362,9 +1362,10 @@ jobs:
             # The base is held to a plain branch-name charset because it is
             # spliced into a jq program below; any other name (`release/1.x`
             # included) is simply not proven.
-            queue_base_ref="$(printf '%s' "$MERGE_GROUP_HEAD_REF" | sed -nE 's#^refs/heads/gh-readonly-queue/([A-Za-z0-9._-]+)/pr-[0-9]+-[0-9a-f]+$#\1#p')"
-            pr_number="$(printf '%s' "$MERGE_GROUP_HEAD_REF" | sed -nE 's#^refs/heads/gh-readonly-queue/[A-Za-z0-9._-]+/pr-([0-9]+)-[0-9a-f]+$#\1#p')"
-            if [ -z "$pr_number" ] || [ -z "$queue_base_ref" ]; then
+            queue_entry="$(printf '%s' "$MERGE_GROUP_HEAD_REF" | sed -nE 's#^refs/heads/gh-readonly-queue/([A-Za-z0-9._-]+)/pr-([0-9]+)-[0-9a-f]+$#\1 \2#p')"
+            queue_base_ref="${queue_entry% *}"
+            pr_number="${queue_entry#* }"
+            if [ -z "$queue_entry" ]; then
               echo "merge_group.head_ref ($MERGE_GROUP_HEAD_REF) does not match the gh-readonly-queue/<base>/pr-<N>-<sha> shape: cannot identify the queued PR, so this tree is not proven — running the full battery."
             else
               pr_head_sha="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}" --jq '.head.sha // ""' 2>/dev/null || true)"
@@ -1380,20 +1381,18 @@ jobs:
                 if [ "$pr_binding" != "$(printf '%s\t%s' "$pr_number" "$queue_base_ref")" ]; then
                   echo "PR #$pr_number's head ($pr_head_sha) is not bound to exactly PR #$pr_number against $queue_base_ref (read as '${pr_binding:-<none>}'): not proven — running the full battery."
                 else
-                  # A batch of several PRs, or a PR that isn't rebased directly
-                  # onto this exact queue base, fails right here: only a queue
-                  # entry whose PR head has a single parent equal to this
-                  # merge_group's own base can have its rebase (and the PR's
-                  # own `refs/pull/N/merge`) be a no-op onto that head — which
-                  # is what makes the three trees below provably equal rather
-                  # than merely usually equal.
-                  parents_line="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${pr_head_sha}" --jq '.parents | length as $n | "\($n)\t\(.[0].sha // "")"' 2>/dev/null || echo "0")"
-                  parent_count="$(printf '%s' "$parents_line" | cut -f1)"
-                  pr_head_parent="$(printf '%s' "$parents_line" | cut -f2 -s)"
-                  if [ "$parent_count" != "1" ] || [ -z "$pr_head_parent" ] || [ "$pr_head_parent" != "$QUEUE_BASE_SHA" ]; then
-                    echo "PR #$pr_number's head ($pr_head_sha) is not a single-parent commit rebased directly onto this merge group's base ($QUEUE_BASE_SHA) — a batched or stale entry: not proven — running the full battery."
+                  # The PR's `pull_request` run tested the head merged into
+                  # main as main stood THEN — an ancestor of this queue's base,
+                  # since main only moves forward. With this base an ancestor
+                  # of the head, that older main was one too, so the merge the
+                  # run tested is the head's own tree; and the queue's rebase
+                  # of the head onto this base is a no-op, so the queue tree is
+                  # the head's tree as well — checked below rather than assumed
+                  # (a batched entry carries other PRs' changes and fails there).
+                  git fetch --no-tags origin "$pr_head_sha" || true
+                  if [ -z "$QUEUE_BASE_SHA" ] || ! git merge-base --is-ancestor "$QUEUE_BASE_SHA" "$pr_head_sha" 2>/dev/null; then
+                    echo "this merge group's base (${QUEUE_BASE_SHA:-<none>}) is not an ancestor of PR #$pr_number's head ($pr_head_sha) — a stale entry: not proven — running the full battery."
                   else
-                    git fetch --no-tags origin "$pr_head_sha" || true
                     queue_tree="$(git rev-parse HEAD^{tree} 2>/dev/null || true)"
                     pr_tree="$(git rev-parse "${pr_head_sha}^{tree}" 2>/dev/null || true)"
                     if [ -z "$queue_tree" ] || [ -z "$pr_tree" ] || [ "$queue_tree" != "$pr_tree" ]; then
