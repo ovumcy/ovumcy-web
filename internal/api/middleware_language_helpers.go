@@ -35,6 +35,30 @@ func (handler *Handler) LanguageMiddleware(c fiber.Ctx) error {
 		// inheriting this skip.
 		return c.Next()
 	}
+	// The timezone half (X-Ovumcy-Timezone header, ovumcy_tz cookie) no longer
+	// resolves here. See WEB-35: the header admits any short identifier, so
+	// resolving it costs one zoneinfo read/parse, and this middleware runs on
+	// every route, rate-limited or not. resolveOwnerRequestTimezone runs it
+	// instead, gated behind AuthRequired's verified session, so an anonymous
+	// caller cannot buy that cost on a public page or by forging a session
+	// cookie on a protected path — only a request that actually authenticates
+	// reaches it. A route with no AuthRequired in its chain leaves
+	// contextLocationKey unset here; requestLocation (page_request_helpers.go)
+	// already falls back to the server-configured zone when it is absent, so
+	// every anonymous page renders with that fallback instead.
+	language := handler.resolveRequestLanguage(c)
+
+	c.Locals(contextLanguageKey, language)
+	c.Locals(contextMessagesKey, handler.i18n.Messages(language))
+	return c.Next()
+}
+
+// resolveOwnerRequestTimezone resolves the request-local timezone (header,
+// then the ovumcy_tz cookie) for a request AuthRequired has just verified,
+// and refreshes the cookie when the header names a new zone. Call it only
+// after authenticateRequest succeeds — see the WEB-35 note on
+// LanguageMiddleware for why the header is not parsed any earlier.
+func (handler *Handler) resolveOwnerRequestTimezone(c fiber.Ctx) {
 	requestLocation, timezoneCookieValue := resolveRequestLocation(
 		c.Get(timezoneHeaderName),
 		c.Cookies(timezoneCookieName),
@@ -43,13 +67,7 @@ func (handler *Handler) LanguageMiddleware(c fiber.Ctx) error {
 	if timezoneCookieValue != "" && strings.TrimSpace(c.Cookies(timezoneCookieName)) != timezoneCookieValue {
 		handler.setTimezoneCookie(c, timezoneCookieValue)
 	}
-
-	language := handler.resolveRequestLanguage(c)
-
-	c.Locals(contextLanguageKey, language)
-	c.Locals(contextMessagesKey, handler.i18n.Messages(language))
 	c.Locals(contextLocationKey, requestLocation)
-	return c.Next()
 }
 
 // resolveRequestLanguage picks the owner's language from the request alone:
