@@ -145,7 +145,8 @@ func (importmutDataLogs) DeleteByUserAndDayRange(context.Context, uint, time.Tim
 // TestDayService_RefreshDerivedCycleSettings_BoundsAtOwnerZoneNotRequestZone
 // (day_service_mutation_test.go) with the same fixture and boundary instant:
 // a "bulk restore" is the import writer's own slot in the derivation's three
-// writers (services-cycle.md), so it needs its own induced-red proof.
+// writers (day save, bulk restore, boot recompute), so it needs its own
+// induced-red proof.
 // ---------------------------------------------------------------------------
 
 // importmutTZLogs serves a fixed, pre-seeded log set regardless of the

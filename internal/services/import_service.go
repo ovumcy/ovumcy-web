@@ -443,8 +443,8 @@ func resolveImportSymptomIDs(flags ExportSymptomFlags, otherNames []string, buil
 }
 
 // refreshDerivedCycleSettings recomputes the owner's luteal-phase estimate once
-// after a bulk restore ("bulk restore", the second of the derivation's three
-// writers — services-cycle.md). Mirrors DayService.refreshDerivedCycleSettings,
+// after a bulk restore (the second of the derivation's three writers: day
+// save, bulk restore, boot recompute). Mirrors DayService.refreshDerivedCycleSettings,
 // including the owner-zone bound: `location` is only the fallback for an
 // owner with no captured timezone, resolveOwnerLocation prefers the persisted
 // one, same reasoning as the day-save family (day_service.go). Kept as a
