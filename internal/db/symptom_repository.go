@@ -8,11 +8,18 @@ import (
 	"gorm.io/gorm"
 )
 
-// ErrSymptomOwnerRequired is returned by SymptomRepository.Update when the
-// symptom carries no owner. Update scopes its write by symptom.UserID in the
-// query itself (see its doc comment); a zero UserID is invalid input, not a
-// wildcard — matching Where("user_id = ?", 0) would ordinarily just match
-// zero rows and return nil, a silent no-op indistinguishable from success.
+// ErrSymptomOwnerRequired is returned by every SymptomRepository write that
+// would otherwise accept a symptom naming no owner: Update, Create and
+// CreateBatch, and by requireSymptomOwners for the seed rows written inside
+// UserRepository.CreateUserWithSymptoms.
+//
+// The two writes refuse a zero UserID for different reasons, and both are
+// invalid input rather than a wildcard. Update scopes its write by
+// symptom.UserID in the query itself (see its doc comment), where matching
+// Where("user_id = ?", 0) would ordinarily just match zero rows and return
+// nil — a silent no-op indistinguishable from success. Create and CreateBatch
+// would instead succeed, and leave behind a row that no owner-scoped read and
+// no account erasure can ever address again.
 var ErrSymptomOwnerRequired = errors.New("symptom owner is required")
 
 type SymptomRepository struct {
@@ -72,16 +79,30 @@ func (repo *SymptomRepository) Create(ctx context.Context, symptom *models.Sympt
 	return classifySymptomWriteError(repo.database.WithContext(ctx).Create(symptom).Error)
 }
 
+// requireSymptomOwners refuses a batch in which any row names no owner, for
+// the reason given on ErrSymptomOwnerRequired. It is the shared check for
+// every multi-row symptom insert in this package: CreateBatch below, and the
+// seed rows UserRepository.CreateUserWithSymptoms writes through its own
+// transaction handle rather than through this repository. A second insert
+// site that skipped it would write exactly the unreachable rows the first one
+// refuses, so both call this rather than spelling the loop out twice.
+func requireSymptomOwners(symptoms []models.SymptomType) error {
+	for _, symptom := range symptoms {
+		if symptom.UserID == 0 {
+			return ErrSymptomOwnerRequired
+		}
+	}
+	return nil
+}
+
 // CreateBatch refuses the whole batch when any symptom carries a zero
 // UserID, for the same reason as Create.
 func (repo *SymptomRepository) CreateBatch(ctx context.Context, symptoms []models.SymptomType) error {
 	if len(symptoms) == 0 {
 		return nil
 	}
-	for _, symptom := range symptoms {
-		if symptom.UserID == 0 {
-			return ErrSymptomOwnerRequired
-		}
+	if err := requireSymptomOwners(symptoms); err != nil {
+		return err
 	}
 	return classifySymptomWriteError(repo.database.WithContext(ctx).Create(&symptoms).Error)
 }
