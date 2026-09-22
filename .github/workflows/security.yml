@@ -3,6 +3,13 @@ name: Security
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   TRIVY_IMAGE: aquasec/trivy:0.68.2@sha256:05d0126976bdedcd0782a0336f77832dbea1c81b9cc5e4b3a5ea5d2ec863aca7
+  # Pinned once here — the binary cache key below is built from the same
+  # values, so a spelling repeated as a literal in the key would silently
+  # drift from the install line (see "Cache Go tool binaries" in ci.yml).
+  # git SHA for v2.29.0: deb54465fea23d19a77f037e11e6589021f8501d (verified via go list -m -json)
+  GOSEC_VERSION: v2.29.0
+  # git SHA for v1.3.0: 0782b76014f15f24e22a438f30f308df42899ba1 (verified via go list -m -json)
+  GOVULNCHECK_VERSION: v1.3.0
 
 on:
   push:
@@ -43,14 +50,43 @@ jobs:
           persist-credentials: false
 
       - name: Setup Go
+        id: setup-go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
 
+      # Caches the tool BINARY, not golangci-lint's forbidden analysis cache
+      # (see ci.yml's "Cache Go tool binaries" for why that distinction
+      # matters): a compiled binary is a pure function of its pinned version
+      # and the toolchain that built it, and the key names both in full.
+      # No `restore-keys` — a prefix match would serve a binary of a
+      # different pinned version, which is exactly what the full key exists
+      # to prevent.
+      - name: Cache gosec binary
+        id: gosec-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .bin
+          key: ${{ runner.os }}-gotools-go${{ steps.setup-go.outputs.go-version }}-gosec${{ env.GOSEC_VERSION }}
+
+      - name: Verify the restored binary is the pinned version
+        # go version -m reads the embedded module version regardless of
+        # build-time ldflags, unlike `gosec --version` which prints "dev" for
+        # a plain `go install`.
+        if: steps.gosec-cache.outputs.cache-hit == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          installed="$(go version -m "$GOBIN/gosec" | awk '$1=="mod" && $2=="github.com/securego/gosec/v2" {print $3}')"
+          if [ "$installed" != "$GOSEC_VERSION" ]; then
+            echo "::error::cached gosec is ${installed:-<none>}, expected $GOSEC_VERSION"
+            exit 1
+          fi
+
       - name: Install gosec
-        # git SHA for v2.29.0: deb54465fea23d19a77f037e11e6589021f8501d (verified via go list -m -json)
-        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0
+        if: steps.gosec-cache.outputs.cache-hit != 'true'
+        run: go install "github.com/securego/gosec/v2/cmd/gosec@$GOSEC_VERSION"
 
       - name: Prepare security artifact directory
         run: mkdir -p .tmp/security
@@ -87,13 +123,35 @@ jobs:
           persist-credentials: false
 
       - name: Setup Go
+        id: setup-go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
 
+      # See the gosec job's "Cache gosec binary" step for why caching a
+      # compiled tool binary is not the forbidden analysis cache.
+      - name: Cache govulncheck binary
+        id: govulncheck-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .bin
+          key: ${{ runner.os }}-gotools-go${{ steps.setup-go.outputs.go-version }}-govulncheck${{ env.GOVULNCHECK_VERSION }}
+
+      - name: Verify the restored binary is the pinned version
+        if: steps.govulncheck-cache.outputs.cache-hit == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          installed="$(go version -m "$GOBIN/govulncheck" | awk '$1=="mod" && $2=="golang.org/x/vuln" {print $3}')"
+          if [ "$installed" != "$GOVULNCHECK_VERSION" ]; then
+            echo "::error::cached govulncheck is ${installed:-<none>}, expected $GOVULNCHECK_VERSION"
+            exit 1
+          fi
+
       - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.3.0
+        if: steps.govulncheck-cache.outputs.cache-hit != 'true'
+        run: go install "golang.org/x/vuln/cmd/govulncheck@$GOVULNCHECK_VERSION"
 
       - name: Run govulncheck
         # Call-graph reachability gate: govulncheck exits non-zero only when the
