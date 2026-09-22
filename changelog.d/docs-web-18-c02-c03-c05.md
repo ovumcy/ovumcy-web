@@ -14,4 +14,6 @@
   TOTP-enabled) proving that account's recovery path completes end to end. The `403` also gained
   the reason it was missing outright — a successful password replacement whose session-issuance
   step then refuses the account's role (`web sign-in unavailable`) — since that was already
-  reachable and undocumented.
+  reachable and undocumented, and now states what it leaves behind: password and recovery code
+  both already replaced, the rotated code never shown on this path, and no separate sign-in to
+  fall back on, because the same role check gates every web session.
