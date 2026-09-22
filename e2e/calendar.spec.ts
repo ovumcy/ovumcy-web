@@ -76,6 +76,51 @@ async function todayISOFromCalendar(page: Page): Promise<string> {
   return todayISO!;
 }
 
+/** The browser's own current date as an ISO string (not the test runner's clock:
+ * a test that pins the page clock needs the date the page itself sees). */
+async function todayISOFromBrowser(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  });
+}
+
+/**
+ * Registers a fresh owner and drives onboarding to a caller-chosen
+ * `last_period_start`, without arming auto-period-fill (step 2 is submitted
+ * as-is) — the shape two calendar specs need to anchor a prediction on a
+ * specific day rather than on `completeOnboardingIfPresent`'s fixed today-3.
+ *
+ * The step-2 submit and the redirect to `/dashboard` are awaited together
+ * (bound to the click's own navigation, not a generic network-idle wait):
+ * `/dashboard` is server-rendered with no `hx-get` lazy-loads of its own, and
+ * a `networkidle` wait here was measured to never resolve (probed against
+ * this exact call site: 9 minutes, no settle) — some long-lived connection on
+ * that page keeps the network "busy" by Playwright's definition, so
+ * `networkidle` is the wrong signal for this transition, matching this
+ * suite's own rule against binding waits to anything but a concrete signal.
+ */
+async function registerAndOnboardOnDate(page: Page, prefix: string, startISO: string): Promise<void> {
+  const creds = createCredentials(prefix);
+  await registerOwnerViaUI(page, creds);
+  await expectInlineRegisterRecoveryStep(page);
+  await readRecoveryCode(page);
+  await continueFromRecoveryCode(page);
+
+  await selectOnboardingStartDate(page, startISO);
+  await page.locator('form[hx-post="/api/v1/onboarding/steps/1"] button[type="submit"]').click();
+  const stepTwoForm = page.locator('form[hx-post="/api/v1/onboarding/steps/2"]');
+  await expect(stepTwoForm).toBeVisible();
+  await Promise.all([
+    page.waitForURL(/\/dashboard(?:\?.*)?$/, { timeout: 15000 }),
+    stepTwoForm.locator('[data-onboarding-step2-submit]').click(),
+  ]);
+  await setRequestTimezoneFromBrowser(page);
+}
+
 test.describe('Calendar page', () => {
   test('default month renders and navigation prev/next/today works', async ({ page }) => {
     await registerOwnerOnCalendar(page, 'calendar-nav');
@@ -623,34 +668,11 @@ test.describe('Calendar page', () => {
     // anchor that is in-grid regardless of when the test runs.) Enable
     // TrackBBT through the tracking endpoint without logging any BBT, then
     // assert the demoted day carries a tentative dash and no confirmed dot.
-    const creds = createCredentials('calendar-anovulatory-dash');
-    await registerOwnerViaUI(page, creds);
-    await expectInlineRegisterRecoveryStep(page);
-    await readRecoveryCode(page);
-    await continueFromRecoveryCode(page);
-
     // Custom onboarding flow: anchor last_period_start at today-13 so the
     // predicted ovulation (cycle day 14) lands on today, keeping the demoted
     // dash inside the current month's grid on any run date.
-    const startISO = shiftISODate(
-      await page.evaluate(() => {
-        const now = new Date();
-        const yyyy = now.getFullYear();
-        const mm = String(now.getMonth() + 1).padStart(2, '0');
-        const dd = String(now.getDate()).padStart(2, '0');
-        return `${yyyy}-${mm}-${dd}`;
-      }),
-      -13,
-    );
-    await selectOnboardingStartDate(page, startISO);
-    await page.locator('form[hx-post="/api/v1/onboarding/steps/1"] button[type="submit"]').click();
-    const stepTwoForm = page.locator('form[hx-post="/api/v1/onboarding/steps/2"]');
-    await expect(stepTwoForm).toBeVisible();
-    await Promise.all([
-      page.waitForURL(/\/dashboard(?:\?.*)?$/, { timeout: 15000 }),
-      stepTwoForm.locator('[data-onboarding-step2-submit]').click(),
-    ]);
-    await setRequestTimezoneFromBrowser(page);
+    const startISO = shiftISODate(await todayISOFromBrowser(page), -13);
+    await registerAndOnboardOnDate(page, 'calendar-anovulatory-dash', startISO);
 
     // The demotion acts on the PREDICTED ovulation day, and that projection is
     // withheld until one cycle has been observed. Log this cycle's start and the
@@ -751,31 +773,14 @@ test.describe('Calendar page', () => {
     // selectors, and the default goal painted the whole window flat. The tier
     // rules are compounded with the base class now; this pins the RESULT, which
     // is the only form the tie cannot pass green.
-    const creds = createCredentials('calendar-fertile-tiers');
-    await registerOwnerViaUI(page, creds);
-    await expectInlineRegisterRecoveryStep(page);
-    await readRecoveryCode(page);
-    await continueFromRecoveryCode(page);
-
     // Anchor the cycle at day 1 of the current month: on the 28/14 defaults the
     // predicted ovulation is cycle day 14 and the fertile window is the five
     // days before it, so the whole window (edge days 9-11, peak days 12-13,
     // ovulation on the 14th) sits mid-month and is inside that month's grid on
     // every run date — unlike a window anchored relative to today, which can
     // fall past the grid's trailing edge at a month's end.
-    const monthISO = await page.evaluate(() => {
-      const now = new Date();
-      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    });
-    await selectOnboardingStartDate(page, `${monthISO}-01`);
-    await page.locator('form[hx-post="/api/v1/onboarding/steps/1"] button[type="submit"]').click();
-    const stepTwoForm = page.locator('form[hx-post="/api/v1/onboarding/steps/2"]');
-    await expect(stepTwoForm).toBeVisible();
-    await Promise.all([
-      page.waitForURL(/\/dashboard(?:\?.*)?$/, { timeout: 15000 }),
-      stepTwoForm.locator('[data-onboarding-step2-submit]').click(),
-    ]);
-    await setRequestTimezoneFromBrowser(page);
+    const monthISO = (await todayISOFromBrowser(page)).slice(0, 7);
+    await registerAndOnboardOnDate(page, 'calendar-fertile-tiers', `${monthISO}-01`);
 
     // The fertile window is withheld until one cycle has been observed, so the
     // two cycles before this one are logged as well, 28 days apart — the length
