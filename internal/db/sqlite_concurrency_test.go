@@ -166,11 +166,12 @@ func TestSQLiteConcurrentDayWritesNoBusyError(t *testing.T) {
 
 	// A run where every write errors leaves busyCount at 0 too, so "zero BUSY"
 	// alone proves nothing about contention that was never exercised — pin
-	// that the disjoint day slots actually landed a successful write each.
-	wantWrites := int64(workers * daysPerBlock)
-	if n := atomic.LoadInt64(&successCount); n < wantWrites {
-		t.Fatalf("only %d of the %d disjoint day slots recorded a successful write; zero SQLITE_BUSY with few or no writes proves nothing about contention", n, wantWrites)
+	// that every upsert transaction actually succeeded.
+	wantTransactions := int64(workers * iterations)
+	if n := atomic.LoadInt64(&successCount); n != wantTransactions {
+		t.Fatalf("only %d of %d upsert transactions succeeded; zero SQLITE_BUSY with few or no writes proves nothing about contention", n, wantTransactions)
 	}
+	wantWrites := int64(workers * daysPerBlock)
 	if n := atomic.LoadInt64(&busyCount); n > 0 {
 		t.Fatalf("got %d SQLITE_BUSY errors under concurrent day writes; busy_timeout/BEGIN IMMEDIATE not engaging", n)
 	}
