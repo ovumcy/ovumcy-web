@@ -204,6 +204,21 @@ var stepupCompletionHandlers = map[string]string{
 	"ContinueOIDCStepup":               "oidc_stepup_continuation.go",
 }
 
+// stepupSessionHelpers names the session-affecting helpers the three
+// completion handlers above delegate into: applyClearData and
+// applyDeleteAccount share their session re-issue with refreshCurrentSession,
+// which every other posture change also calls. Scanned separately from
+// stepupCompletionHandlers because these helpers return (APIErrorSpec, bool),
+// not a single error, so they cannot share
+// TestEveryStepupCallbackRefusalLeavesThroughTheSettingsRedirect's
+// single-return-value shape check — they get their own derivation instead,
+// below.
+var stepupSessionHelpers = map[string]string{
+	"applyClearData":        "handlers_settings_danger_stepup.go",
+	"applyDeleteAccount":    "handlers_settings_danger_stepup.go",
+	"refreshCurrentSession": "handlers_auth_token_helpers.go",
+}
+
 // inlineStepupRefusalSpecs names every *ErrorSpec constructor the three handlers
 // above call inline, mapped to the constructor itself. A test cannot call a
 // function by a name it read out of a file, so this half is a lookup table — but
@@ -220,38 +235,55 @@ var inlineStepupRefusalSpecs = map[string]func() APIErrorSpec{
 	"settingsErasureNeedsAccountPasswordErrorSpec": settingsErasureNeedsAccountPasswordErrorSpec,
 }
 
+// inlineStepupSessionHelperSpecs is inlineStepupRefusalSpecs's counterpart for
+// applyClearData, applyDeleteAccount and refreshCurrentSession: every
+// *ErrorSpec constructor those three helpers call inline, read from the
+// sources and cross-checked in both directions by
+// TestStepupSessionHelperRefusalSpecsMatchTheHelperSources. Before this guard
+// the set was a hand-typed block inside settingsStepupRefusalSpecs, and
+// nothing checked the hand-typed list against the helpers it claimed to
+// describe.
+var inlineStepupSessionHelperSpecs = map[string]func() APIErrorSpec{
+	"settingsClearDataErrorSpec":        settingsClearDataErrorSpec,
+	"settingsDeleteAccountErrorSpec":    settingsDeleteAccountErrorSpec,
+	"authSessionCreateErrorSpec":        authSessionCreateErrorSpec,
+	"authWebSignInUnavailableErrorSpec": authWebSignInUnavailableErrorSpec,
+}
+
 // settingsStepupRefusalSpecs collects every spec the three step-up completion
-// handlers can flash. Two of its three parts are derived and one is not, and
-// saying which is which is the point of this comment — the earlier wording
-// claimed the whole set was derived, and that is precisely why nobody noticed
-// that the enrollment callback's commit arm answered through
-// respondPasswordChangeError and contributed no specs here at all.
+// handlers can flash. All three parts are derived now; the earlier wording
+// claimed the whole set was derived while one part was still hand-typed, and
+// that gap is precisely why nobody noticed that the enrollment callback's
+// commit arm answered through respondPasswordChangeError and contributed no
+// specs here at all — a derivation claim no test enforces is not a
+// derivation.
 //
 //   - The mapper arms are derived: the same mappers the handlers call, fed the
 //     same sentinels, so a mapper that starts returning a different spec changes
 //     this set with nothing re-typed. mapSettingsPasswordChangeError joined them
 //     when that commit arm was routed to /settings.
-//   - The inline specs are derived by NAME from the handler sources, through
-//     inlineStepupRefusalSpecs above.
-//   - The specs raised inside the HELPERS those handlers call are hand-listed
-//     below, each against the helper that raises it. Nothing derives this part: a
-//     new spec inside applyClearData, applyDeleteAccount or
-//     refreshCurrentSession has to be added here by hand.
+//   - The inline specs the three completion handlers raise directly are
+//     derived by NAME from the handler sources, through inlineStepupRefusalSpecs
+//     above, cross-checked by TestStepupCallbackInlineRefusalSpecsMatchTheHandlerSources.
+//   - The specs raised inside the HELPERS those handlers call — applyClearData,
+//     applyDeleteAccount, refreshCurrentSession — are derived the same way,
+//     through inlineStepupSessionHelperSpecs, cross-checked by
+//     TestStepupSessionHelperRefusalSpecsMatchTheHelperSources. A new spec
+//     raised inside any of the three now fails that guard by name instead of
+//     silently missing this list the way the former hand-typed block could.
 func settingsStepupRefusalSpecs() []APIErrorSpec {
 	foreign := errors.New("some provider failure the mappers do not recognize")
 
-	specs := []APIErrorSpec{
-		// applyClearData / applyDeleteAccount, once the re-auth passed but the
-		// mutation itself failed.
-		settingsClearDataErrorSpec(),
-		settingsDeleteAccountErrorSpec(),
-		// refreshCurrentSession, re-issuing this device's cookie after the
-		// operation bumped auth_session_version. Both reach the callback only
-		// because applyClearData hands its verdict back;
-		// TestApplyClearDataReportsARefusedSessionReissueToItsCaller is what
-		// keeps that true.
-		authSessionCreateErrorSpec(),
-		authWebSignInUnavailableErrorSpec(),
+	specs := []APIErrorSpec{}
+	// applyClearData / applyDeleteAccount, once the re-auth passed but the
+	// mutation itself failed, and refreshCurrentSession re-issuing this
+	// device's cookie after the operation bumped auth_session_version. Both
+	// of refreshCurrentSession's specs reach the callback only because
+	// applyClearData hands its verdict back;
+	// TestApplyClearDataReportsARefusedSessionReissueToItsCaller is what
+	// keeps that true.
+	for _, construct := range inlineStepupSessionHelperSpecs {
+		specs = append(specs, construct())
 	}
 	for _, construct := range inlineStepupRefusalSpecs {
 		specs = append(specs, construct())
@@ -560,14 +592,14 @@ func stepupCompletionReturnPath(expression ast.Expr) string {
 	}
 }
 
-// parseStepupCompletionHandlers returns the AST body of each function named in
-// stepupCompletionHandlers, failing if one has been renamed or moved — a guard
-// that silently scans nothing is worse than no guard.
-func parseStepupCompletionHandlers(t *testing.T) map[string]*ast.FuncDecl {
+// parseNamedFunctionBodies returns the AST body of each function named in
+// sources (function name -> declaring file), failing if one has been renamed
+// or moved — a guard that silently scans nothing is worse than no guard.
+func parseNamedFunctionBodies(t *testing.T, sources map[string]string) map[string]*ast.FuncDecl {
 	t.Helper()
 
 	bodies := map[string]*ast.FuncDecl{}
-	for name, path := range stepupCompletionHandlers {
+	for name, path := range sources {
 		source, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatalf("read %s: %v", path, err)
@@ -585,10 +617,24 @@ func parseStepupCompletionHandlers(t *testing.T) map[string]*ast.FuncDecl {
 			bodies[name] = function
 		}
 		if bodies[name] == nil {
-			t.Fatalf("%s declares no function %s: stepupCompletionHandlers is stale and this guard is scanning nothing", path, name)
+			t.Fatalf("%s declares no function %s: the source map is stale and this guard is scanning nothing", path, name)
 		}
 	}
 	return bodies
+}
+
+// parseStepupCompletionHandlers returns the AST body of each function named in
+// stepupCompletionHandlers.
+func parseStepupCompletionHandlers(t *testing.T) map[string]*ast.FuncDecl {
+	t.Helper()
+	return parseNamedFunctionBodies(t, stepupCompletionHandlers)
+}
+
+// parseStepupSessionHelpers returns the AST body of each function named in
+// stepupSessionHelpers.
+func parseStepupSessionHelpers(t *testing.T) map[string]*ast.FuncDecl {
+	t.Helper()
+	return parseNamedFunctionBodies(t, stepupSessionHelpers)
 }
 
 // TestEveryStepupCallbackRefusalLeavesThroughTheSettingsRedirect is the barrier
@@ -671,6 +717,47 @@ func TestStepupCallbackInlineRefusalSpecsMatchTheHandlerSources(t *testing.T) {
 	for name := range inlineStepupRefusalSpecs {
 		if !named[name] {
 			t.Errorf("inlineStepupRefusalSpecs lists %s(), which no step-up completion handler names any more: drop it, or the list oversells what it derives", name)
+		}
+	}
+}
+
+// TestStepupSessionHelperRefusalSpecsMatchTheHelperSources is
+// TestStepupCallbackInlineRefusalSpecsMatchTheHandlerSources's counterpart for
+// the session-affecting helpers the completion handlers delegate into
+// (applyClearData, applyDeleteAccount, refreshCurrentSession). Before this
+// guard, settingsStepupRefusalSpecs listed those three helpers' specs by
+// hand, and nothing checked the hand-typed list against the sources it
+// claimed to describe — a new spec raised inside any of the three could reach
+// /auth/oidc/callback with every test in the file still green. The names come
+// from the sources, and the comparison runs both ways so the map can neither
+// miss a spec nor keep one nothing raises.
+func TestStepupSessionHelperRefusalSpecsMatchTheHelperSources(t *testing.T) {
+	t.Parallel()
+
+	named := map[string]bool{}
+	for name, function := range parseStepupSessionHelpers(t) {
+		ast.Inspect(function.Body, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			identifier, ok := call.Fun.(*ast.Ident)
+			if !ok || !strings.HasSuffix(identifier.Name, "ErrorSpec") {
+				return true
+			}
+			named[identifier.Name] = true
+			if _, listed := inlineStepupSessionHelperSpecs[identifier.Name]; !listed {
+				t.Errorf(
+					"%s (%s) raises %s(), which inlineStepupSessionHelperSpecs does not list: settingsStepupRefusalSpecs derives its helper block from this map, so an unlisted spec never reaches the step-up refusal render test. Add it there.",
+					name, stepupSessionHelpers[name], identifier.Name,
+				)
+			}
+			return true
+		})
+	}
+	for name := range inlineStepupSessionHelperSpecs {
+		if !named[name] {
+			t.Errorf("inlineStepupSessionHelperSpecs lists %s(), which no session helper names any more: drop it, or the list oversells what it derives", name)
 		}
 	}
 }
