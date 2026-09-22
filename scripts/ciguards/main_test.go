@@ -733,6 +733,17 @@ func runDetect(t *testing.T, script, event string, files []string) map[string]st
 	write("README.md")
 	git("add", "-A")
 	git("commit", "-q", "-m", "base")
+	baseSHA := ""
+	if event == "merge_group" {
+		rev := exec.Command("git", "rev-parse", "HEAD")
+		rev.Dir = dir
+		rev.Env = env
+		sha, err := rev.Output()
+		if err != nil {
+			t.Fatalf("git rev-parse HEAD: %v", err)
+		}
+		baseSHA = strings.TrimSpace(string(sha))
+	}
 	git("remote", "add", "origin", dir)
 	git("checkout", "-q", "-b", "change")
 	for _, f := range files {
@@ -751,7 +762,7 @@ func runDetect(t *testing.T, script, event string, files []string) map[string]st
 	}
 	cmd := exec.Command(bash, "-e", filepath.ToSlash(scriptFile))
 	cmd.Dir = dir
-	cmd.Env = append(env, "EVENT_NAME="+event, "BASE_REF=main", "QUEUE_BASE_SHA=", "GITHUB_OUTPUT="+output)
+	cmd.Env = append(env, "EVENT_NAME="+event, "BASE_REF=main", "QUEUE_BASE_SHA="+baseSHA, "GITHUB_OUTPUT="+output)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("detect step failed: %v\n%s", err, out)
@@ -817,6 +828,10 @@ var detectCases = []detectCase{
 		map[string]string{"run_frontend": "true", "run_e2e": "true"}},
 	{"non-ASCII frontend path", "pull_request", []string{"web/src/js/é.js"},
 		map[string]string{"run_frontend": "true"}},
+	{"merge_group, Go test file only", "merge_group", []string{"internal/x/a_test.go"},
+		map[string]string{"run_e2e": "false", "run_core": "true", "run_frontend": "false"}},
+	{"merge_group, template only", "merge_group", []string{"internal/templates/a.html"},
+		map[string]string{"run_e2e": "true", "run_frontend": "true"}},
 	{"push", "push", []string{"web/src/js/a.js"},
 		map[string]string{"run_core": "false", "run_frontend": "false", "run_e2e": "true"}},
 }
