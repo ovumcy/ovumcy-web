@@ -393,9 +393,11 @@ components:
         sealed a one-time cookie and names where the client must go to spend it.
         `next_step` is the stable programmatic name of that stage; `next_path` is
         the page serving it. The enum is exactly the two stages reached this way
-        (`POST /api/v1/users` and `POST /api/v1/password-resets/redeem`) — the
-        calendar-feed reveal names a stage too and has its own schema, so a new
-        stage extends the enum only if it also answers with this shape.
+        (`register_welcome` from `POST /api/v1/users`; `recovery_code` from
+        `POST /api/v1/password-resets/redeem` and
+        `POST /api/v1/users/current/recovery-code`) — the calendar-feed reveal
+        names a stage too and has its own schema, so a new stage extends the
+        enum only if it also answers with this shape.
       required: [ok, next_step, next_path]
       properties:
         ok:
@@ -1716,19 +1718,24 @@ paths:
                 next_step: "recovery_code"
                 next_path: "/recovery-code"
         '303':
-          description: Redirect to `/login` after success.
+          description: "Redirect to `/recovery-code` after success, when `Accept: application/json` is not set (an htmx request gets `HX-Redirect: /recovery-code` instead)."
         '400':
           $ref: '#/components/responses/ValidationError'
         '403':
           description: |
             Local password recovery is disabled on this deployment (SSO-only).
-            Only a reset token minted by the OIDC sign-in flow for an account
-            carrying `must_change_password` survives this gate and can still be
-            redeemed. A token minted by a LOCAL password — the plain sign-in
-            form, or the OIDC account-link confirmation step's own password
-            challenge — is refused here exactly like an ordinary
-            password-recovery token, since it was produced by the very factor
-            this deployment has disabled.
+            Only a reset token minted by the OIDC sign-in flow survives this
+            gate and can still be redeemed — for an account carrying
+            `must_change_password`, or one whose enrolled TOTP secret has gone
+            unverifiable (undecryptable under the instance's active
+            `SECRET_KEY`, e.g. after a rotation), since neither account can
+            reach a live session through the credential this deployment has
+            disabled and the forced reset is its only way back in. A token
+            minted by a LOCAL password — the plain sign-in form, or the OIDC
+            account-link confirmation step's own password challenge — is
+            refused here exactly like an ordinary password-recovery token,
+            since it was produced by the very factor this deployment has
+            disabled.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
@@ -2772,7 +2779,7 @@ paths:
         Requires the current password (or OIDC-only accounts must first enrol a
         local password via the step-up flow). Bumps `auth_session_version`;
         other devices are signed out, the originating device is refreshed
-        inline.
+        inline. An htmx request is answered with `HX-Redirect: /recovery-code`.
       requestBody:
         required: true
         content:
@@ -2780,7 +2787,20 @@ paths:
             schema: { $ref: '#/components/schemas/PasswordOnlyRequest' }
       responses:
         '200':
-          description: Recovery code surface rendered. JSON clients should follow the redirect to `/recovery-code` to pick up the plaintext code (shown exactly once).
+          description: |
+            Sent when `Accept: application/json` is set. The plaintext code is
+            never in this body — it waits behind `next_path`, sealed in a
+            one-time reveal cookie, exactly like the redeem step of password
+            reset.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NextStepResponse' }
+              example:
+                ok: true
+                next_step: "recovery_code"
+                next_path: "/recovery-code"
+        '303':
+          description: "Redirect to `/recovery-code` when `Accept: application/json` is not set."
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '400': { $ref: '#/components/responses/ValidationError' }
