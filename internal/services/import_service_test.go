@@ -272,6 +272,44 @@ func TestImportServiceRejectsTooLargePayload(t *testing.T) {
 	}
 }
 
+// TestImportServiceRefusesOversizedPayloadBeforeMaterialisingInvalidEntries
+// proves the entry-count refusal fires before any entry is decoded into
+// ExportJSONEntry: every entry here has a field of the wrong JSON type
+// ("date" is a number, not a string), so a per-entry typed decode would fail
+// with ErrImportMalformed for each one. If ImportJSON still answers
+// ErrImportTooLarge, the count was checked against the raw top-level split,
+// not against a result that required decoding — decoding never ran, because
+// decoding this payload can only fail. Induced-red: moving the count check
+// back to after the per-entry decode loop (the pre-fix order) turns this red
+// with ErrImportMalformed instead.
+func TestImportServiceRefusesOversizedPayloadBeforeMaterialisingInvalidEntries(t *testing.T) {
+	rawEntry := `{"date":12345}`
+	entries := make([]string, MaxImportEntries+1)
+	for i := range entries {
+		entries[i] = rawEntry
+	}
+	raw := []byte(`{"entries":[` + strings.Join(entries, ",") + `]}`)
+
+	importService := NewImportService(nil, nil, nil, nil)
+	if _, err := importService.ImportJSON(context.Background(), 1, raw, time.UTC); err != ErrImportTooLarge {
+		t.Fatalf("expected ErrImportTooLarge, got %v", err)
+	}
+}
+
+// TestImportServiceStillRejectsMalformedEntryTypeUnderTheCap is the
+// companion to the oversized case above: the same wrong-typed "date" field,
+// but at a count within MaxImportEntries, must still fail as malformed —
+// proving the count-first check did not loosen validation for payloads that
+// pass the cap.
+func TestImportServiceStillRejectsMalformedEntryTypeUnderTheCap(t *testing.T) {
+	raw := []byte(`{"entries":[{"date":12345}]}`)
+
+	importService := NewImportService(nil, nil, nil, nil)
+	if _, err := importService.ImportJSON(context.Background(), 1, raw, time.UTC); err != ErrImportMalformed {
+		t.Fatalf("expected ErrImportMalformed, got %v", err)
+	}
+}
+
 // TestImportServiceBatchInsertsManyUniqueDays exercises the batched write path at
 // the payload cap with DISTINCT calendar days (the cap test above uses duplicate
 // dates, which never reach the writer). All MaxImportEntries days must import in
