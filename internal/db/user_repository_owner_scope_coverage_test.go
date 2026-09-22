@@ -183,3 +183,74 @@ func TestUserRepositoryRemainingScopedWritersRefuseZeroOwner(t *testing.T) {
 		}
 	}
 }
+
+// TestUserRepositoryRemainingScopedWritersPersist is the success-path half of
+// the coverage above: each of those methods also has an unexercised success
+// line (the write past the guard's `if err != nil` branch), because no other
+// test in this package calls it with a real owner id. One valid-id call per
+// method is enough to run that line; the shared TOTP/webhook/onboarding
+// behavior is already covered elsewhere.
+func TestUserRepositoryRemainingScopedWritersPersist(t *testing.T) {
+	repo := openTimezoneRepoForTest(t)
+	user := createUserForTimezoneTest(t, repo, "owner-scope-success@example.com")
+	ctx := context.Background()
+
+	if err := repo.UpdateDisplayName(ctx, user.ID, "Renamed Owner"); err != nil {
+		t.Fatalf("UpdateDisplayName: %v", err)
+	}
+	if _, err := repo.UpdateInterfaceLanguage(ctx, user.ID, "en"); err != nil {
+		t.Fatalf("UpdateInterfaceLanguage: %v", err)
+	}
+	if err := repo.UpdateReminderLeadDays(ctx, user.ID, 2); err != nil {
+		t.Fatalf("UpdateReminderLeadDays: %v", err)
+	}
+	if err := repo.SaveWebhookSettings(ctx, user.ID, models.WebhookSettingsColumns{
+		Enabled:      true,
+		EncryptedURL: "ciphertext",
+	}); err != nil {
+		t.Fatalf("SaveWebhookSettings: %v", err)
+	}
+	if err := repo.RemoveWebhookDestination(ctx, user.ID); err != nil {
+		t.Fatalf("RemoveWebhookDestination: %v", err)
+	}
+	if err := repo.SaveCalendarFeedToken(ctx, user.ID, models.CalendarFeedTokenColumns{
+		Selector:     "selector",
+		VerifierHash: "hash",
+		VerifierMAC:  "mac",
+		KeyEpoch:     "epoch",
+	}); err != nil {
+		t.Fatalf("SaveCalendarFeedToken: %v", err)
+	}
+	if err := repo.ClearCalendarFeedToken(ctx, user.ID); err != nil {
+		t.Fatalf("ClearCalendarFeedToken: %v", err)
+	}
+	if err := repo.UpdateRecoveryCodeHashAndRevokeSessions(ctx, user.ID, "new-recovery"); err != nil {
+		t.Fatalf("UpdateRecoveryCodeHashAndRevokeSessions: %v", err)
+	}
+	if err := repo.UpdatePasswordAndRevokeSessions(ctx, user.ID, "new-hash", false); err != nil {
+		t.Fatalf("UpdatePasswordAndRevokeSessions: %v", err)
+	}
+	if err := repo.ForceResetPasswordAndRevokeSessions(ctx, user.ID, "forced-hash"); err != nil {
+		t.Fatalf("ForceResetPasswordAndRevokeSessions: %v", err)
+	}
+	if err := repo.UpdatePasswordHashOnly(ctx, user.ID, "hash-only"); err != nil {
+		t.Fatalf("UpdatePasswordHashOnly: %v", err)
+	}
+	if err := repo.BumpAuthSessionVersion(ctx, user.ID); err != nil {
+		t.Fatalf("BumpAuthSessionVersion: %v", err)
+	}
+	if err := repo.ClearAllDataAndResetSettings(ctx, user.ID); err != nil {
+		t.Fatalf("ClearAllDataAndResetSettings: %v", err)
+	}
+
+	reloaded, err := repo.FindByID(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("reload after the writer sequence: %v", err)
+	}
+	if reloaded.DisplayName != "Renamed Owner" {
+		t.Fatalf("expected display name Renamed Owner to persist, got %q", reloaded.DisplayName)
+	}
+	if reloaded.PasswordHash != "hash-only" {
+		t.Fatalf("expected password hash hash-only to persist, got %q", reloaded.PasswordHash)
+	}
+}
