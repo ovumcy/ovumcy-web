@@ -113,17 +113,33 @@ func TestValidateCurrentPasswordEqualizesTimingForNoLocalPassword(t *testing.T) 
 // buy a bcrypt. VerifyReauthPassword counts only ErrSettingsPasswordInvalid as
 // a failure, so an equalized blank submission would be full-cost work no
 // re-auth budget caps — repeatable at the /api limiter's rate.
+//
+// Both account states are driven, and that is the whole point: pinning only
+// the hash-present one leaves a blank submission costing nothing there and a
+// full bcrypt on an account with no local password, which is the account-state
+// distinguisher this file exists to close — buyable with an empty body, by a
+// caller that guesses no password at all.
 func TestValidateCurrentPasswordSpendsNothingOnBlankSubmission(t *testing.T) {
-	count := withCountingSettingsReauthEqualizer(t)
-	service := NewSettingsService(nil)
+	for _, testCase := range []struct {
+		name         string
+		passwordHash string
+	}{
+		{name: "account with a local password", passwordHash: "ignored-hash"},
+		{name: "account with no local password", passwordHash: ""},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			count := withCountingSettingsReauthEqualizer(t)
+			service := NewSettingsService(nil)
 
-	err := service.ValidateCurrentPassword("ignored-hash", "   ")
+			err := service.ValidateCurrentPassword(testCase.passwordHash, "   ")
 
-	if !errors.Is(err, ErrSettingsPasswordMissing) {
-		t.Fatalf("expected ErrSettingsPasswordMissing, got %v", err)
-	}
-	if *count != 0 {
-		t.Fatalf("expected no equalization call on the blank-submission path, got %d", *count)
+			if !errors.Is(err, ErrSettingsPasswordMissing) {
+				t.Fatalf("expected ErrSettingsPasswordMissing, got %v", err)
+			}
+			if *count != 0 {
+				t.Fatalf("expected no equalization call on the blank-submission path, got %d", *count)
+			}
+		})
 	}
 }
 

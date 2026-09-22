@@ -241,16 +241,24 @@ var settingsReauthEqualizerCompare = bcrypt.CompareHashAndPassword
 
 func (service *SettingsService) ValidateCurrentPassword(passwordHash string, rawPassword string) error {
 	password := strings.TrimSpace(rawPassword)
-	if strings.TrimSpace(passwordHash) == "" {
-		equalizeSettingsReauthTiming(password)
-		return ErrSettingsLocalPasswordNotSet
-	}
 	// A blank submission is the caller's own input, not account state, so its
 	// latency discloses nothing — and equalizing it would spend a full
 	// passwordHashCost bcrypt on a branch VerifyReauthPassword never counts as
 	// a failure, i.e. CPU the re-auth budget does not cap.
+	//
+	// It is answered BEFORE the account-state branch below, and not after, for
+	// both halves of that sentence. Answered after, a blank submission would
+	// cost nothing on an account that has a password hash and a full bcrypt on
+	// one that does not — restoring, for free and without guessing anything,
+	// exactly the distinguisher the branch below exists to remove; and the
+	// uncapped CPU would be buyable with an empty body. ValidatePasswordChange
+	// orders the same two checks the same way.
 	if password == "" {
 		return ErrSettingsPasswordMissing
+	}
+	if strings.TrimSpace(passwordHash) == "" {
+		equalizeSettingsReauthTiming(password)
+		return ErrSettingsLocalPasswordNotSet
 	}
 	if bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password)) != nil {
 		// See the same top-up in ValidatePasswordChange: a stored hash below
