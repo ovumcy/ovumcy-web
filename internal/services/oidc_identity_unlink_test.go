@@ -145,6 +145,102 @@ func TestOIDCUnlinkIdentitySurfacesTheStoresLastSignInRefusal(t *testing.T) {
 	}
 }
 
+// A disabled OIDC provider refuses unlink before touching storage.
+func TestOIDCUnlinkIdentityRequiresEnabledProvider(t *testing.T) {
+	t.Parallel()
+
+	service := NewOIDCLoginService(&stubOIDCProviderClient{}, &stubOIDCIdentityStore{}, &stubOIDCUserStore{}, nil)
+	if err := service.UnlinkIdentity(context.Background(), unlinkTestOwner(true), 1); !errors.Is(err, ErrOIDCDisabled) {
+		t.Fatalf("expected ErrOIDCDisabled, got %v", err)
+	}
+}
+
+// A storage fault resolving the owner's identities, or deleting the named
+// one, surfaces as ErrOIDCIdentityResolveFailed — the caller must not need to
+// know the store's own error types, only that the unlink did not happen.
+func TestOIDCUnlinkIdentityMapsStorageFaultsToResolveFailed(t *testing.T) {
+	t.Parallel()
+
+	listFault := &stubOIDCIdentityStore{listErr: errors.New("db fault")}
+	service := newUnlinkTestService(security.OIDCLoginModeHybrid, listFault)
+	if err := service.UnlinkIdentity(context.Background(), unlinkTestOwner(true), 1); !errors.Is(err, ErrOIDCIdentityResolveFailed) {
+		t.Fatalf("list fault: expected ErrOIDCIdentityResolveFailed, got %v", err)
+	}
+
+	deleteFault := &stubOIDCIdentityStore{
+		listed:    []models.OIDCIdentity{{ID: 1, UserID: 7, Issuer: "https://id.example.com", Subject: "a"}},
+		deleteErr: errors.New("db fault"),
+	}
+	service = newUnlinkTestService(security.OIDCLoginModeHybrid, deleteFault)
+	if err := service.UnlinkIdentity(context.Background(), unlinkTestOwner(true), 1); !errors.Is(err, ErrOIDCIdentityResolveFailed) {
+		t.Fatalf("delete fault: expected ErrOIDCIdentityResolveFailed, got %v", err)
+	}
+}
+
+// A delete that finds nothing — the identity vanished between the
+// owner-scoped read above and the delete itself — reports the same not-found
+// the caller sees for a foreign or missing id, never a silent success.
+func TestOIDCUnlinkIdentityReportsNotFoundWhenTheDeleteLosesARace(t *testing.T) {
+	t.Parallel()
+
+	identities := &stubOIDCIdentityStore{
+		listed:         []models.OIDCIdentity{{ID: 1, UserID: 7, Issuer: "https://id.example.com", Subject: "a"}},
+		deleteNotFound: true,
+	}
+	service := newUnlinkTestService(security.OIDCLoginModeHybrid, identities)
+	if err := service.UnlinkIdentity(context.Background(), unlinkTestOwner(true), 1); !errors.Is(err, ErrOIDCIdentityNotFound) {
+		t.Fatalf("expected ErrOIDCIdentityNotFound for a delete that finds nothing, got %v", err)
+	}
+}
+
+// A storage fault listing identities surfaces the same way to the settings
+// page as it does to unlink: ErrOIDCIdentityResolveFailed, not a raw DB error.
+func TestOIDCListLinkedIdentitiesMapsStorageFaultToResolveFailed(t *testing.T) {
+	t.Parallel()
+
+	identities := &stubOIDCIdentityStore{listErr: errors.New("db fault")}
+	service := newUnlinkTestService(security.OIDCLoginModeHybrid, identities)
+	if _, err := service.ListLinkedIdentities(context.Background(), 7); !errors.Is(err, ErrOIDCIdentityResolveFailed) {
+		t.Fatalf("expected ErrOIDCIdentityResolveFailed, got %v", err)
+	}
+}
+
+// A storage fault persisting the confirmed link surfaces as ErrOIDCLinkFailed,
+// the same verdict a lost unique-constraint race reports: the caller cannot
+// tell the two apart and must not need to.
+func TestOIDCConfirmAndLinkIdentitySurfacesAStorageFaultAsLinkFailed(t *testing.T) {
+	t.Parallel()
+
+	identities := &stubOIDCIdentityStore{createErr: errors.New("db fault")}
+	service := newUnlinkTestService(security.OIDCLoginModeHybrid, identities)
+	claims := security.OIDCClaims{Issuer: "https://id.example.com", Subject: "fresh-sub"}
+	if err := service.ConfirmAndLinkIdentity(context.Background(), 7, claims, time.Now()); !errors.Is(err, ErrOIDCLinkFailed) {
+		t.Fatalf("expected ErrOIDCLinkFailed, got %v", err)
+	}
+}
+
+// linkIdentity is the auto-provision sign-in path's persistence step. Its own
+// zero-owner and missing-claim-key guards mirror checks Authenticate and
+// resolveUserForClaims already make before calling it, but stay here as the
+// function's own floor rather than trusting the caller.
+func TestOIDCLinkIdentityRefusesAZeroOwnerOrAMissingClaimKey(t *testing.T) {
+	t.Parallel()
+
+	identities := &stubOIDCIdentityStore{}
+	service := newUnlinkTestService(security.OIDCLoginModeHybrid, identities)
+	valid := security.OIDCClaims{Issuer: "https://id.example.com", Subject: "sub"}
+
+	if err := service.linkIdentity(context.Background(), 0, valid, time.Now()); !errors.Is(err, ErrOIDCLinkFailed) {
+		t.Fatalf("zero owner: expected ErrOIDCLinkFailed, got %v", err)
+	}
+	if err := service.linkIdentity(context.Background(), 7, security.OIDCClaims{Issuer: "https://id.example.com"}, time.Now()); !errors.Is(err, ErrOIDCLinkFailed) {
+		t.Fatalf("missing subject: expected ErrOIDCLinkFailed, got %v", err)
+	}
+	if identities.createCallSeen {
+		t.Fatal("did not expect Create() for either refused call")
+	}
+}
+
 func TestOIDCListLinkedIdentitiesIsOwnerScoped(t *testing.T) {
 	t.Parallel()
 
