@@ -1139,9 +1139,11 @@ jobs:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
           QUEUE_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
-          # Deliberately no `set -e`: this job must never fail, because the
-          # required e2e jobs depend on it and a failed dependency would leave
-          # their required checks unsatisfied. Every branch falls through to
+          # This job must never fail: the required e2e jobs depend on it. The
+          # runner executes a step with no `shell:` as `bash -e`, so errexit IS
+          # on here — every command that may exit non-zero is guarded (`if`,
+          # `|| true`), and scripts/ciguards runs this step under `bash -e`
+          # against fixture diffs to prove it. Every branch falls through to
           # the single verdict write at the end, and `run_e2e` starts at true
           # so only a positive docs-only determination clears it.
           run_e2e=true
