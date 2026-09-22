@@ -36,6 +36,37 @@ func withCountingSettingsReauthEqualizer(t *testing.T) *int {
 	return &count
 }
 
+// TestEqualizeSettingsReauthTimingSpendsThePlaceholderCompare covers the
+// equalizer's own body, which every call-site test below replaces wholesale:
+// the production equalizer must hand the submitted password to bcrypt against
+// the shared placeholder hash — a compare against any other (for example an
+// unparseable) hash returns before doing the cost-12 work the equalizer exists
+// to spend.
+func TestEqualizeSettingsReauthTimingSpendsThePlaceholderCompare(t *testing.T) {
+	original := settingsReauthEqualizerCompare
+	var hashes, passwords []string
+	settingsReauthEqualizerCompare = func(hash []byte, password []byte) error {
+		hashes = append(hashes, string(hash))
+		passwords = append(passwords, string(password))
+		return original(hash, password)
+	}
+	t.Cleanup(func() {
+		settingsReauthEqualizerCompare = original
+	})
+
+	equalizeSettingsReauthTiming("AnyPass1!")
+
+	if len(hashes) != 1 {
+		t.Fatalf("expected exactly 1 bcrypt compare from the equalizer body, got %d", len(hashes))
+	}
+	if hashes[0] != credentialsTimingEqualizationHash {
+		t.Fatalf("expected the equalizer to compare against credentialsTimingEqualizationHash, got %q", hashes[0])
+	}
+	if passwords[0] != "AnyPass1!" {
+		t.Fatalf("expected the equalizer to compare the submitted password, got %q", passwords[0])
+	}
+}
+
 func TestValidateCurrentPasswordEqualizesTimingForNoLocalPassword(t *testing.T) {
 	count := withCountingSettingsReauthEqualizer(t)
 	service := NewSettingsService(nil)
