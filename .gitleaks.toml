@@ -26,8 +26,10 @@ useDefault = true
     # scripts/fixtures/e2e-localhost-cert.pem were removed from the working
     # tree (the e2e TLS cert is now generated at runtime by
     # scripts/e2e-tls-cert/main.go) but remain reachable in git history, which
-    # --log-opts=--all still walks. Both were locally-generated, short-lived
-    # (24h validity) self-signed localhost dev certs, never a real credential.
+    # --log-opts=--all still walks. They are one locally-generated self-signed
+    # pair for CN=127.0.0.1, valid 2026-03-28 to 2036-03-28, used only by the
+    # e2e runner — never a real credential. The private key is public in
+    # history, so the certificate must never be added to any trust store.
     '''^scripts/fixtures/e2e-localhost-(key|cert)\.pem$''',
   ]
 
