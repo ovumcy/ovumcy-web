@@ -5,6 +5,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/db"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -88,22 +90,25 @@ type calendarFeedNoCookieCase struct {
 // docs/SECURITY_INVARIANTS.md's "Calendar feed subscription" claim that the
 // feed carries no `Set-Cookie` on any outcome: internal/api/handlers_calendar_feed.go
 // documents the same thing on ServeCalendarFeed ("It never sets a cookie"),
-// but that promise is the HANDLER's; two app-wide middlewares mounted ahead of
-// it in configureFiberMiddleware — csrf.New and LanguageMiddleware — run for
-// EVERY safe-method request that lacks a matching cookie, calendar clients
-// included, and each mints one of its own regardless of what the handler
-// later returns.
+// but that promise is the HANDLER's; csrf.New, mounted ahead of it in
+// configureFiberMiddleware, runs for EVERY safe-method request that lacks a
+// matching cookie, calendar clients included, and mints one regardless of what
+// the handler later returns. The timezone cookie is minted only by AuthRequired
+// (resolveOwnerRequestTimezone), which the feed route does not carry; the
+// timezone cases below keep that structural exclusion from regressing.
 //
 // The probe token is well-formed (16-char selector + 32-char verifier, see
 // calendarFeedTokenLength in internal/services) but resolves no user, so every
 // case answers the bare 404 the feed gives every unknown/malformed/revoked
 // token. That is deliberate, not a shortcut taken to avoid arming a real feed:
-// both cookies are written by middleware mounted AHEAD of ServeCalendarFeed, so
+// the CSRF cookie is written by middleware mounted AHEAD of ServeCalendarFeed,
+// and the timezone one by AuthRequired, which the route never reaches, so
 // their presence or absence is decided before the handler runs and is
 // identical whether it goes on to answer 200, 404 or 500 — the 404 path here
 // exercises the exact same middleware pass a 200 would.
 func TestCalendarFeedRouteSetsNoCookieOnTheProductionStack(t *testing.T) {
-	app := newCalendarFeedNoCookieTestApp(t)
+	handler, database := newRateLimitTestHandlerAndDB(t)
+	app := newCalendarFeedTestApp(t, handler, 100000)
 	feedTarget := api.CalendarFeedRateLimitPrefix + "/" + strings.Repeat("A", 48) + ".ics"
 
 	cases := []calendarFeedNoCookieCase{
@@ -113,8 +118,8 @@ func TestCalendarFeedRouteSetsNoCookieOnTheProductionStack(t *testing.T) {
 		},
 		{
 			// The header a real calendar client never sends, but which the CSRF
-			// exemption below must not depend on the client omitting: it also
-			// drives LanguageMiddleware's setTimezoneCookie side effect.
+			// exemption below must not depend on the client omitting: on a
+			// route behind AuthRequired it drives setTimezoneCookie.
 			name: "with X-Ovumcy-Timezone header",
 			configure: func(r *http.Request) {
 				r.Header.Set("X-Ovumcy-Timezone", "Europe/Berlin")
@@ -127,7 +132,7 @@ func TestCalendarFeedRouteSetsNoCookieOnTheProductionStack(t *testing.T) {
 			},
 		},
 		{
-			// A stale ovumcy_tz cookie with no header: LanguageMiddleware's own
+			// A stale ovumcy_tz cookie with no header: the timezone
 			// normalization guard would not rewrite this cookie either way, so
 			// this case isolates the CSRF cookie from the timezone one.
 			name: "with a pre-existing ovumcy_tz cookie and no header",
@@ -194,12 +199,13 @@ func TestCalendarFeedRouteSetsNoCookieOnTheProductionStack(t *testing.T) {
 		})
 	}
 
-	// Positive anchor: every case above is a negative assertion, which would
+	// Positive anchors: every case above is a negative assertion, which would
 	// pass just as well if the CSRF/timezone-cookie machinery were dead
-	// app-wide rather than specifically excluded for the feed. Prove it is
-	// alive, on the SAME app instance, against an ordinary unauthenticated
-	// page that carries no such exclusion.
-	t.Run("control: an ordinary page still gets both cookies", func(t *testing.T) {
+	// app-wide rather than specifically excluded for the feed. Prove each is
+	// alive, on the SAME app instance, where it is meant to run: the CSRF
+	// cookie on an ordinary anonymous page, the timezone cookie on an ordinary
+	// page behind AuthRequired — the only place the header is resolved.
+	t.Run("control: an ordinary anonymous page still gets the CSRF cookie", func(t *testing.T) {
 		request := httptest.NewRequest(http.MethodGet, "/privacy", nil)
 		request.Header.Set("X-Ovumcy-Timezone", "Europe/Berlin")
 
@@ -212,17 +218,39 @@ func TestCalendarFeedRouteSetsNoCookieOnTheProductionStack(t *testing.T) {
 		if testResponseCookie(response.Cookies(), "ovumcy_csrf") == nil {
 			t.Fatal("expected /privacy to mint a CSRF cookie — if it doesn't, the feed's cookieless cases above prove nothing")
 		}
+	})
+
+	t.Run("control: an ordinary authenticated page still gets the timezone cookie", func(t *testing.T) {
+		authCookie := loginOnProductionStack(t, app, database, "calendar-feed-tz-control@example.com")
+
+		request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+		request.Header.Set("X-Ovumcy-Timezone", "Europe/Berlin")
+		request.Header.Set("Cookie", authCookie)
+
+		response, err := app.Test(request, testConfigNoTimeout)
+		if err != nil {
+			t.Fatalf("control page request failed: %v", err)
+		}
+		defer func() { _ = response.Body.Close() }()
+
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("expected 200 for an authenticated /dashboard, got %d — fix the probe before trusting the cookie assertion below", response.StatusCode)
+		}
 		if cookie := testResponseCookie(response.Cookies(), "ovumcy_tz"); cookie == nil || cookie.Value != "Europe/Berlin" {
-			t.Fatal("expected /privacy to persist the timezone cookie — if it doesn't, the feed's cookieless cases above prove nothing")
+			t.Fatal("expected an authenticated /dashboard to persist the timezone cookie — if it doesn't, the feed's timezone cases above prove nothing")
 		}
 	})
 
 	// Boundary of the exclusion, on the same production stack: a path that
 	// continues every character of the feed prefix without its separator is
 	// not the feed. No route answers it, so the NotFound catch-all does — and
-	// that 404 must still carry both cookies, or the exclusion has widened
-	// from the feed route to whatever happens to start with its prefix.
-	t.Run("control: a neighbour continuing the prefix's characters still gets both cookies", func(t *testing.T) {
+	// that 404 must still carry the CSRF cookie, or the CSRF skip has widened
+	// from the feed route to whatever happens to start with its prefix. The
+	// timezone cookie has no such boundary to hold: it is resolved only inside
+	// AuthRequired, which carries no feed predicate, so no path's spelling can
+	// widen it. LanguageMiddleware's own feed skip over-matching this neighbour
+	// is pinned by TestCalendarFeedOverMatchPathsKeepLanguageCatalogueAndCSRFSupport.
+	t.Run("control: a neighbour continuing the prefix's characters still gets the CSRF cookie", func(t *testing.T) {
 		neighbour := api.CalendarFeedRateLimitPrefix + "back"
 		request := httptest.NewRequest(http.MethodGet, neighbour, nil)
 		request.Header.Set("X-Ovumcy-Timezone", "Europe/Berlin")
@@ -239,17 +267,52 @@ func TestCalendarFeedRouteSetsNoCookieOnTheProductionStack(t *testing.T) {
 		if testResponseCookie(response.Cookies(), "ovumcy_csrf") == nil {
 			t.Fatalf("expected %s to mint a CSRF cookie — the feed's CSRF skip must not over-match its prefix", neighbour)
 		}
-		if cookie := testResponseCookie(response.Cookies(), "ovumcy_tz"); cookie == nil || cookie.Value != "Europe/Berlin" {
-			t.Fatalf("expected %s to persist the timezone cookie — LanguageMiddleware's feed skip must not over-match its prefix", neighbour)
-		}
 	})
+}
+
+// loginOnProductionStack seeds an owner with a real password hash and signs in
+// through the production login route, CSRF included, returning the auth
+// cookie as a Cookie header value.
+func loginOnProductionStack(t *testing.T, app *fiber.App, database *gorm.DB, email string) string {
+	t.Helper()
+
+	const password = "StrongPass1"
+	user := seedOwner(t, db.NewRepositories(database), email, 14)
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Update("password_hash", string(hash)).Error; err != nil {
+		t.Fatalf("set password hash: %v", err)
+	}
+
+	token, csrfCookie := issueCSRFFormCredentials(t, app)
+	form := url.Values{"csrf_token": {token}, "email": {email}, "password": {password}}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Cookie", csrfCookie)
+
+	response, err := app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("login request failed: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected login status 303, got %d", response.StatusCode)
+	}
+	cookie := testResponseCookie(response.Cookies(), "ovumcy_auth")
+	if cookie == nil || cookie.Value == "" {
+		t.Fatal("auth cookie is missing in login response")
+	}
+	return cookie.Name + "=" + cookie.Value
 }
 
 // TestCalendarFeedRouteSetsNoCookieForAnArmedFeed is the 200 leg
 // TestCalendarFeedRouteSetsNoCookieOnTheProductionStack's own doc comment
 // says the SECURITY.md claim ("no Set-Cookie on any outcome — 200, 404, or
-// 429") only had 404 coverage: both cookies are written by middleware mounted
-// AHEAD of ServeCalendarFeed, so this behaves identically to the 404 cases —
+// 429") only had 404 coverage: neither cookie is decided by ServeCalendarFeed
+// itself (see that test's doc comment), so this behaves identically to the 404 cases —
 // this test exists to make the SECURITY.md citation true, not because a real
 // gap was found on the success path.
 func TestCalendarFeedRouteSetsNoCookieForAnArmedFeed(t *testing.T) {
@@ -390,8 +453,8 @@ func TestCalendarFeedOverMatchPathsKeepLanguageCatalogueAndCSRFSupport(t *testin
 // The instance zone (Pacific/Pago_Pago, UTC-11) and the poller-claimed zone
 // (Pacific/Kiritimati, UTC+14) are picked 25 hours apart on purpose: any two
 // zones with an offset gap over 24h disagree about the calendar date on EVERY
-// possible instant, so the mutation-kill below (temporarily letting
-// LanguageMiddleware run for this route) does not depend on catching the real
+// possible instant, so the mutation-kill below (temporarily resolving the
+// request timezone for this route) does not depend on catching the real
 // clock in the ~14-of-24-hours window a same-day pair such as UTC/Kiritimati
 // would need. The seeded ~28-day period cadence anchors the current cycle so
 // its next projected period lands exactly one day past the instance zone's
