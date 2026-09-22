@@ -164,14 +164,6 @@ func TestSQLiteConcurrentDayWritesNoBusyError(t *testing.T) {
 	close(start)
 	wg.Wait()
 
-	// A run where every write errors leaves busyCount at 0 too, so "zero BUSY"
-	// alone proves nothing about contention that was never exercised — pin
-	// that every upsert transaction actually succeeded.
-	wantTransactions := int64(workers * iterations)
-	if n := atomic.LoadInt64(&successCount); n != wantTransactions {
-		t.Fatalf("only %d of %d upsert transactions succeeded; zero SQLITE_BUSY with few or no writes proves nothing about contention", n, wantTransactions)
-	}
-	wantWrites := int64(workers * daysPerBlock)
 	if n := atomic.LoadInt64(&busyCount); n > 0 {
 		t.Fatalf("got %d SQLITE_BUSY errors under concurrent day writes; busy_timeout/BEGIN IMMEDIATE not engaging", n)
 	}
@@ -181,6 +173,14 @@ func TestSQLiteConcurrentDayWritesNoBusyError(t *testing.T) {
 	if v := otherErr.Load(); v != nil {
 		t.Fatalf("unexpected non-BUSY error observed during concurrent writes: %v", v.(error))
 	}
+	// A run where every write errors leaves busyCount at 0 too, so "zero BUSY"
+	// alone proves nothing about contention that was never exercised — pin
+	// that every upsert transaction actually succeeded.
+	wantTransactions := int64(workers * iterations)
+	if n := atomic.LoadInt64(&successCount); n != wantTransactions {
+		t.Fatalf("only %d of %d upsert transactions succeeded; zero SQLITE_BUSY with few or no writes proves nothing about contention", n, wantTransactions)
+	}
+	wantWrites := int64(workers * daysPerBlock)
 
 	// The final rows are the other half of the proof: a contention-free
 	// success count does not by itself show the data actually landed.
