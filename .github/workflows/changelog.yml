@@ -9,6 +9,13 @@ on:
 permissions:
   contents: read
 
+# Cancel a superseded run when new commits land on the same PR, so a rapid
+# string of fixup pushes doesn't queue every intermediate run to completion.
+# Only cancels pull_request runs — merge_group always runs to completion.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # The job id is the status-check context name; keep it stable.
   changelog-fragment:
