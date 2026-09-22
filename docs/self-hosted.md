@@ -111,11 +111,11 @@ These settings are valid, but they are not required for a safe first deployment:
 OIDC is supported in two public login modes:
 
 - `OIDC_LOGIN_MODE=hybrid` keeps the local username/password flow alongside SSO;
-- `OIDC_LOGIN_MODE=oidc_only` removes public local login, register, and forgot-password entry points from the browser UX.
+- `OIDC_LOGIN_MODE=oidc_only` closes the public local login, register, and forgot-password routes server-side — a direct request is refused before anything else runs, not merely hidden from the page.
 
 [docs/oidc.md](oidc.md#current-contract) owns the account contract; what an operator has to decide here is:
 
-- **A verified email claim never signs anyone in on its own.** Ovumcy uses an existing `(issuer, subject)` link when there is one; an email that merely matches an existing account sends the user to a confirmation step that demands that account's own password, plus its TOTP code when 2FA is on, before the link is stored. Nothing you can configure relaxes that — it is what stops a provider that can assert an email address from taking over the account.
+- **A verified email claim never signs anyone in on its own.** Ovumcy uses an existing `(issuer, subject)` link when there is one; an email that merely matches an existing account is refused as a sign-in and redirected to `/login` with a message pointing at Settings — there is no unauthenticated confirmation page. Completing the link takes one of two authorised paths: sign in with the existing method and use Settings' **Link an OIDC identity** (the account's current password to start, then a fresh interactive re-authentication at the provider — TOTP is not asked again separately, the provider re-authentication stands in for it), or, with no working sign-in at all, the operator's `ovumcy link-oidc-identity` command. Nothing you can configure relaxes that — it is what stops a provider that can assert an email address from taking over the account.
 - `OIDC_AUTO_PROVISION=true` may create a new `owner` account only when `REGISTRATION_MODE=open`, and `OIDC_AUTO_PROVISION_ALLOWED_DOMAINS` narrows that to a domain allowlist.
 - Auto-provisioned users start without a local password and must set one later in `Settings` if they want recovery codes or password-confirmed sensitive actions.
 
