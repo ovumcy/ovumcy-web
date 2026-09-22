@@ -1,7 +1,6 @@
 package api
 
 import (
-	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -170,7 +169,7 @@ func (handler *Handler) UnlinkOIDCIdentity(c fiber.Ctx) error {
 		handler.logSecurityError(c, oidcIdentityUnlinkAction, spec)
 		return handler.respondMappedError(c, spec)
 	}
-	identityID, err := strconv.ParseUint(c.Params("id"), 10, 64)
+	identityID, err := parseRequestUint(c.Params("id"))
 	if err != nil || identityID == 0 {
 		spec := notFoundErrorSpec()
 		handler.logSecurityError(c, oidcIdentityUnlinkAction, spec)
@@ -181,7 +180,7 @@ func (handler *Handler) UnlinkOIDCIdentity(c fiber.Ctx) error {
 		handler.logSecurityError(c, oidcIdentityUnlinkAction, spec)
 		return handler.respondMappedError(c, spec)
 	}
-	if err := handler.oidcService.UnlinkIdentity(c.Context(), *user, uint(identityID)); err != nil {
+	if err := handler.oidcService.UnlinkIdentity(c.Context(), *user, identityID); err != nil {
 		spec := mapOIDCIdentityUnlinkError(err)
 		handler.logSecurityError(c, oidcIdentityUnlinkAction, spec)
 		return handler.respondMappedError(c, spec)

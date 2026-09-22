@@ -77,6 +77,16 @@ type stubOIDCWorkflowService struct {
 	lastIdentityLinkNonce        string
 	lastIdentityLinkUserID       uint
 	lastIdentityLinkMaxAge       time.Duration
+
+	// afterIdentityLinkConfirm, when set, runs once ConfirmAndLinkIdentity's
+	// stand-in has recorded the call and right before the stub returns — the
+	// same point the real service method hands control back to
+	// completeOIDCIdentityLinkStepup, just before it re-issues the session. A
+	// test uses this to mutate the account's row (e.g. flip its role)
+	// in the gap between the handler's own authenticateRequest read and
+	// reissueSessionAfterIdentityChange's later FindByID, which is otherwise
+	// unreachable from outside a single synchronous handler call.
+	afterIdentityLinkConfirm func()
 }
 
 func (stub *stubOIDCWorkflowService) Enabled() bool {
@@ -247,6 +257,9 @@ func (stub *stubOIDCWorkflowService) CompleteIdentityLinkReauth(_ context.Contex
 	}
 	stub.lastConfirmLinkUserID = targetUserID
 	stub.lastConfirmLinkClaims = stub.identityLinkClaims
+	if stub.afterIdentityLinkConfirm != nil {
+		stub.afterIdentityLinkConfirm()
+	}
 	return stub.confirmLinkErr
 }
 
