@@ -14,6 +14,7 @@
 package ciguards
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -699,15 +700,16 @@ func detectScript(t *testing.T) string {
 // run gets the fixture's base commit as QUEUE_BASE_SHA.
 func runDetect(t *testing.T, script, event string, files []string) map[string]string {
 	t.Helper()
-	return runDetectQueue(t, script, event, files, queueBaseReal)
+	return runDetectQueue(t, script, event, files, queueBaseReal, nil)
 }
 
 // queueBaseReal asks runDetectQueue for the fixture's own base commit.
 const queueBaseReal = "<fixture base>"
 
 // runDetectQueue is runDetect with QUEUE_BASE_SHA chosen by the caller, so the
-// merge_group arm's fallbacks (no base, unreachable base) run too.
-func runDetectQueue(t *testing.T, script, event string, files []string, queueBase string) map[string]string {
+// merge_group arm's fallbacks (no base, unreachable base) run too, and with
+// the proven-tree check's `gh api` answers served from api when it is non-nil.
+func runDetectQueue(t *testing.T, script, event string, files []string, queueBase string, api *ghAPI) map[string]string {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -765,6 +767,10 @@ func runDetectQueue(t *testing.T, script, event string, files []string, queueBas
 	}
 	git("add", "-A")
 	git("commit", "-q", "-m", "change")
+	var apiEnv []string
+	if api != nil {
+		apiEnv = api.install(t, bash, git("rev-parse", "HEAD~1"), git("rev-parse", "HEAD"))
+	}
 
 	output := filepath.ToSlash(filepath.Join(t.TempDir(), "output"))
 	// As the runner runs a step with no `shell:` — `bash -e {0}`, from a file.
@@ -777,6 +783,7 @@ func runDetectQueue(t *testing.T, script, event string, files []string, queueBas
 	cmd := exec.Command(bash, "-e", filepath.ToSlash(scriptFile))
 	cmd.Dir = dir
 	cmd.Env = append(env, "EVENT_NAME="+event, "BASE_REF=main", "QUEUE_BASE_SHA="+baseSHA, "GITHUB_OUTPUT="+output)
+	cmd.Env = append(cmd.Env, apiEnv...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("detect step failed: %v\n%s", err, out)
@@ -860,7 +867,7 @@ func TestDetectStepMergeGroupFallbacksRunEverything(t *testing.T) {
 		"unreachable base": "0123456789abcdef0123456789abcdef01234567",
 	} {
 		t.Run(name, func(t *testing.T) {
-			got := runDetectQueue(t, script, "merge_group", []string{"internal/x/a_test.go"}, queueBase)
+			got := runDetectQueue(t, script, "merge_group", []string{"internal/x/a_test.go"}, queueBase, nil)
 			for _, k := range []string{"run_e2e", "run_core", "run_frontend"} {
 				if got[k] != "true" {
 					t.Errorf("%s = %q, want \"true\" (all outputs: %v)", k, got[k], got)
@@ -903,6 +910,242 @@ func TestDetectStepHarnessRefusesTheUnfixedShapes(t *testing.T) {
 			}
 			if got := runDetect(t, mutated, "pull_request", m.files)[m.output]; got != "false" {
 				t.Fatalf("with the fix reverted, %s = %q; the harness cannot see the defect it guards", m.output, got)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// merge_group's proven-tree skip, executed against recorded API answers.
+// ---------------------------------------------------------------------------
+
+// The four `gh api` answers the skip reads were recorded off the real API for
+// PR #839 at 515ea3f4 (testdata/ghapi, trimmed around the fields read). A case
+// is served them with the recorded head and parent swapped for the fixture's
+// own commits, through a real jq running the step's own program as `gh --jq`
+// does — so a wrong path or program in the step fails the proven case instead
+// of reading, silently, as "not proven" forever.
+const (
+	stubRepository    = "ovumcy/ovumcy-web"
+	recordedPRNumber  = "839"
+	recordedHeadSHA   = "515ea3f42b78418f8e0ac9ca3a6b3b4514f84158"
+	recordedParentSHA = "a445e3cea5dd4ad5e1a72a34d4f72dedd2034bda"
+	provenHeadRef     = "refs/heads/gh-readonly-queue/main/pr-" + recordedPRNumber + "-0123abcd"
+)
+
+// ghRoutes is every path the step asks for; {head} is the PR head it read.
+var ghRoutes = []struct{ name, path string }{
+	{"pulls", "repos/" + stubRepository + "/pulls/" + recordedPRNumber},
+	{"commit_pulls", "repos/" + stubRepository + "/commits/{head}/pulls"},
+	{"commit", "repos/" + stubRepository + "/commits/{head}"},
+	{"runs", "repos/" + stubRepository + "/actions/runs?head_sha={head}&event=pull_request&per_page=50"},
+}
+
+// ghStubScript answers `gh api <path> --jq <program>` for an exact path only;
+// any other call shape, or a path nobody recorded, exits non-zero.
+const ghStubScript = `#!/bin/sh
+if [ "$#" -ne 4 ] || [ "$1" != api ] || [ "$3" != --jq ]; then
+  echo "gh stub: unexpected call: $*" >&2
+  exit 2
+fi
+file="$(awk -F '\t' -v p="$2" '$1 == p { print $2 }' "$GH_STUB_DIR/routes")"
+if [ -z "$file" ]; then
+  echo "gh stub: no recorded answer for $2" >&2
+  exit 1
+fi
+[ "$file" != FAIL ] || exit 1
+exec jq -r "$4" "$GH_STUB_DIR/$file"
+`
+
+// ghAPI is one case's answers: the recorded ones, bent by the fields set.
+type ghAPI struct {
+	headRef string
+	// headIsBase serves the fixture's base commit as the PR head, its parent
+	// answer still the base: every answer checks out except the tree.
+	headIsBase bool
+	fail       string                          // this route exits 1
+	edit       func(route string, doc any) any // rewrites one decoded answer
+}
+
+func (api *ghAPI) install(t *testing.T, bash, baseSHA, headSHA string) []string {
+	t.Helper()
+	requireJq(t, bash)
+
+	prHead := headSHA
+	if api.headIsBase {
+		prHead = baseSHA
+	}
+	swap := strings.NewReplacer(recordedHeadSHA, prHead, recordedParentSHA, baseSHA)
+	dir := t.TempDir()
+	var routes strings.Builder
+	for _, r := range ghRoutes {
+		path := strings.ReplaceAll(r.path, "{head}", prHead)
+		if r.name == api.fail {
+			fmt.Fprintf(&routes, "%s\tFAIL\n", path)
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join("testdata", "ghapi", r.name+".json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw = []byte(swap.Replace(string(raw)))
+		if api.edit != nil {
+			var doc any
+			if err := json.Unmarshal(raw, &doc); err != nil {
+				t.Fatalf("%s.json: %v", r.name, err)
+			}
+			if raw, err = json.Marshal(api.edit(r.name, doc)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := os.WriteFile(filepath.Join(dir, r.name+".json"), raw, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		fmt.Fprintf(&routes, "%s\t%s.json\n", path, r.name)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "routes"), []byte(routes.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "gh"), []byte(ghStubScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return []string{
+		"MERGE_GROUP_HEAD_REF=" + api.headRef,
+		"GITHUB_REPOSITORY=" + stubRepository,
+		"GH_TOKEN=stub",
+		"GH_STUB_DIR=" + filepath.ToSlash(dir),
+		"PATH=" + dir + string(os.PathListSeparator) + os.Getenv("PATH"),
+	}
+}
+
+// requireJq holds jq to requireBash's rule: only a Windows machine outside CI
+// may skip.
+func requireJq(t *testing.T, bash string) {
+	t.Helper()
+
+	out, err := exec.Command(bash, "-c", `printf '{"a":"ok"}' | jq -r .a`).Output()
+	if got := strings.TrimSpace(string(out)); err == nil && got != "ok" {
+		err = fmt.Errorf("jq answered %q, not \"ok\"", got)
+	}
+	if err != nil {
+		if runtime.GOOS != "windows" || os.Getenv("CI") != "" {
+			t.Fatalf("jq is required to serve the recorded API answers, and this guard proves nothing without it: %v", err)
+		}
+		t.Skipf("jq is required to serve the recorded API answers: %v", err)
+	}
+}
+
+// on applies f to one route's answer and leaves the others as recorded.
+func on(route string, f func(doc any) any) func(string, any) any {
+	return func(r string, doc any) any {
+		if r != route {
+			return doc
+		}
+		return f(doc)
+	}
+}
+
+// ciRun is the ci.yml run inside a runs answer.
+func ciRun(doc any) map[string]any {
+	for _, r := range doc.(map[string]any)["workflow_runs"].([]any) {
+		if run := r.(map[string]any); run["path"] == ".github/workflows/ci.yml" {
+			return run
+		}
+	}
+	panic("the recorded runs answer holds no ci.yml run")
+}
+
+var (
+	apiProven   = ghAPI{headRef: provenHeadRef}
+	apiSecondPR = ghAPI{headRef: provenHeadRef, edit: on("commit_pulls", func(doc any) any {
+		return append(doc.([]any), map[string]any{"number": 840, "state": "open", "base": map[string]any{"ref": "main"}})
+	})}
+	apiMergeCommit = ghAPI{headRef: provenHeadRef, edit: on("commit", func(doc any) any {
+		c := doc.(map[string]any)
+		c["parents"] = append(c["parents"].([]any), map[string]any{"sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"})
+		return c
+	})}
+	apiOtherTree  = ghAPI{headRef: provenHeadRef, headIsBase: true}
+	apiRunFailed  = ghAPI{headRef: provenHeadRef, edit: on("runs", func(doc any) any { ciRun(doc)["conclusion"] = "failure"; return doc })}
+	apiRunOtherPR = ghAPI{headRef: provenHeadRef, edit: on("runs", func(doc any) any {
+		ciRun(doc)["pull_requests"].([]any)[0].(map[string]any)["number"] = 838
+		return doc
+	})}
+)
+
+// provenTreeFiles holds run_core (a prod Go file) and run_frontend (a
+// template) true absent the skip, so the proven case proves both outputs.
+var provenTreeFiles = []string{"internal/x/a.go", "internal/templates/a.html"}
+
+func TestMergeGroupProvenTreeSkip(t *testing.T) {
+	script := detectScript(t)
+	for _, c := range []struct {
+		name   string
+		api    ghAPI
+		proven bool
+	}{
+		{"one PR rebased onto the queue base, green on this tree", apiProven, true},
+		{"a head_ref of another shape", ghAPI{headRef: "refs/heads/some-other-branch"}, false},
+		{"a base outside the plain branch charset", ghAPI{headRef: "refs/heads/gh-readonly-queue/release/1.x/pr-839-0123abcd"}, false},
+		{"the PR lookup errors", ghAPI{headRef: provenHeadRef, fail: "pulls"}, false},
+		{"the head is in a second open PR", apiSecondPR, false},
+		{"the PR targets another base", ghAPI{headRef: provenHeadRef, edit: on("commit_pulls", func(doc any) any {
+			doc.([]any)[0].(map[string]any)["base"] = map[string]any{"ref": "release"}
+			return doc
+		})}, false},
+		{"the head's parent is not the queue base", ghAPI{headRef: provenHeadRef, edit: on("commit", func(doc any) any {
+			doc.(map[string]any)["parents"].([]any)[0] = map[string]any{"sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"}
+			return doc
+		})}, false},
+		{"the head is a merge commit", apiMergeCommit, false},
+		{"the parent matches, the tree does not", apiOtherTree, false},
+		{"the runs lookup errors", ghAPI{headRef: provenHeadRef, fail: "runs"}, false},
+		{"the ci.yml run failed", apiRunFailed, false},
+		{"the ci.yml run belongs to another PR", apiRunOtherPR, false},
+		{"the ci.yml run names no PR, as a fork's does", ghAPI{headRef: provenHeadRef, edit: on("runs", func(doc any) any {
+			ciRun(doc)["pull_requests"] = []any{}
+			return doc
+		})}, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			want := "true"
+			if c.proven {
+				want = "false"
+			}
+			got := runDetectQueue(t, script, "merge_group", provenTreeFiles, queueBaseReal, &c.api)
+			for _, k := range []string{"run_core", "run_frontend"} {
+				if got[k] != want {
+					t.Errorf("%s = %q, want %q (all outputs: %v)", k, got[k], want, got)
+				}
+			}
+		})
+	}
+}
+
+// TestMergeGroupProvenTreeSkipRefusesEachDroppedCheck removes one check at a
+// time from the live step and serves it the answer that check alone refuses:
+// the entry must then read as proven, or the refusal above passed some other
+// way.
+func TestMergeGroupProvenTreeSkipRefusesEachDroppedCheck(t *testing.T) {
+	script := detectScript(t)
+	for _, m := range []struct {
+		name, from, to string
+		api            ghAPI
+	}{
+		{"PR binding", `if [ "$pr_binding" != "$(printf '%s\t%s' "$pr_number" "$queue_base_ref")" ]; then`, "if false; then", apiSecondPR},
+		{"single parent", `[ "$parent_count" != "1" ] || `, "", apiMergeCommit},
+		{"tree equality", ` || [ "$queue_tree" != "$pr_tree" ]`, "", apiOtherTree},
+		{"run bound to the PR", ` | select(any(.pull_requests[]?; .number == '"$pr_number"' and .base.ref == "'"$queue_base_ref"'"))`, "", apiRunOtherPR},
+		{"run success", `if [ "$run_conclusion" != "success" ]; then`, "if false; then", apiRunFailed},
+	} {
+		t.Run(m.name, func(t *testing.T) {
+			mutated := strings.Replace(script, m.from, m.to, 1)
+			if mutated == script {
+				t.Fatalf("%q not found in the detect step: this check no longer reverts anything", m.from)
+			}
+			got := runDetectQueue(t, mutated, "merge_group", provenTreeFiles, queueBaseReal, &m.api)
+			if got["run_core"] != "false" || got["run_frontend"] != "false" {
+				t.Fatalf("with the %s check dropped, the entry still ran the full battery (run_core=%q, run_frontend=%q); its refusal proves nothing", m.name, got["run_core"], got["run_frontend"])
 			}
 		})
 	}
