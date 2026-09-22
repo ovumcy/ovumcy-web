@@ -1,6 +1,7 @@
 package api
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -44,6 +45,46 @@ func TestPasswordResetRedeemBrowserSurfaceRedirectsToRecoveryCode(t *testing.T) 
 	}
 	if cookie := responseCookieValue(response.Cookies(), recoveryCodeCookieName); cookie == "" {
 		t.Fatal("expected a sealed recovery-code reveal cookie alongside the redirect")
+	}
+}
+
+// TestPasswordResetRedeemHTMXSurfaceAnswersHXRedirectNotJSON pins the third
+// success shape docs/openapi.yaml has to account for. renderRecoveryCodeResponse
+// ends in redirectToPath, which answers an htmx request with 200 + HX-Redirect
+// and Fiber's plain-text status body — not the 303 a plain browser gets, and
+// not the NextStepResponse the 200 declares. The spec says so on both
+// recovery-code operations; without this guard the sentence is unheld prose,
+// and a client generated from the declared 200 (required: ok, next_step,
+// next_path) would be entitled to reject a legitimate htmx response.
+func TestPasswordResetRedeemHTMXSurfaceAnswersHXRedirectNotJSON(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "redeem-htmx-surface@example.com", "StrongPass1", true)
+	recoveryCode := mustSetRecoveryCodeForUser(t, database, user.ID)
+	resetCookie := requestResetCookieByRecoveryCode(t, app, user.Email, recoveryCode, "StrongPass1")
+
+	form := url.Values{
+		"password":         {"EvenStronger2"},
+		"confirm_password": {"EvenStronger2"},
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets/redeem", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("HX-Request", "true")
+	request.Header.Set("Cookie", resetPasswordCookieName+"="+resetCookie)
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusOK)
+	if redirect := response.Header.Get("HX-Redirect"); redirect != "/recovery-code" {
+		t.Fatalf("HX-Redirect = %q, want /recovery-code", redirect)
+	}
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if got := string(body); got != "OK" {
+		t.Fatalf("htmx body = %q, want the plain-text %q docs/openapi.yaml claims for this surface (never the JSON NextStepResponse)", got, "OK")
+	}
+	if cookie := responseCookieValue(response.Cookies(), recoveryCodeCookieName); cookie == "" {
+		t.Fatal("expected a sealed recovery-code reveal cookie alongside the HX-Redirect")
 	}
 }
 
