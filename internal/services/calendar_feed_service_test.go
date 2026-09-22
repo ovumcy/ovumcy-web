@@ -498,6 +498,50 @@ func TestCalendarFeedTimingEqualizationPlaceholderReachesTheVerifierCompare(t *t
 	}
 }
 
+// TestCalendarFeedEqualizerBodyReExecutesTheVerifyPath drives the SHIPPED body
+// of equalizeCalendarFeedTiming, which neither guard above can: both replace
+// the whole var with a counter and never reach the original, and the
+// placeholder test pins the constant without asking whether the body still
+// compares against it. An emptied body therefore left all three green while a
+// selector miss was refused with no verifier work at all — the oracle this
+// helper exists to close, restored in full.
+//
+// It asserts the stand-in row the body builds, not just that a verify
+// happened: the row IS the equalization. A body that verified against the
+// resolved row's own columns, or against an empty MAC, would spend a different
+// amount of work than the verify path it stands in for.
+func TestCalendarFeedEqualizerBodyReExecutesTheVerifyPath(t *testing.T) {
+	const selector = "SELECTOR16CHARSX"
+	const verifier = "VERIFIER"
+
+	type verifyCall struct {
+		token  string
+		stored models.CalendarFeedTokenColumns
+	}
+	calls := []verifyCall{}
+	original := calendarFeedEqualizerVerify
+	calendarFeedEqualizerVerify = func(secretKey []byte, fullToken string, stored models.CalendarFeedTokenColumns) bool {
+		calls = append(calls, verifyCall{token: fullToken, stored: stored})
+		return original(secretKey, fullToken, stored)
+	}
+	t.Cleanup(func() { calendarFeedEqualizerVerify = original })
+
+	equalizeCalendarFeedTiming([]byte(calendarFeedTestSecretKey), selector, verifier)
+
+	if len(calls) != 1 {
+		t.Fatalf("the equalizer body ran %d verifier compares, want exactly 1 — a selector miss must cost what a real verification costs", len(calls))
+	}
+	if want := selector + verifier; calls[0].token != want {
+		t.Fatalf("the equalizer verified token %q, want the presented pair %q: a token that does not split is refused before any MAC work", calls[0].token, want)
+	}
+	if calls[0].stored.Selector != selector {
+		t.Fatalf("the stand-in row carries selector %q, want the presented %q", calls[0].stored.Selector, selector)
+	}
+	if calls[0].stored.VerifierMAC != calendarFeedMACTimingEqualizationValue {
+		t.Fatal("the stand-in row carries a verifier MAC other than the equalization placeholder — the compare then costs whatever that value costs, which is the drift the placeholder test cannot see")
+	}
+}
+
 // TestResolveFeedVerifiesThroughMACNotBcrypt proves the stored MAC is what
 // decides for a row minted after migration 032: the bcrypt column is corrupted to
 // a value that could never verify, and the feed still resolves. If verification

@@ -17,8 +17,13 @@ import (
 // follow-up oracle"). Without this guard a refactor could drop the equalize
 // call on the early-return path and silently downgrade the documented
 // two-request oracle into a stronger one-request timing oracle, with no other
-// test failing. As with the login guards, the placeholder hash is checked
-// separately so the equalizer cannot short-circuit even when overridden here.
+// test failing. As with the login guards, the call-site test below replaces the
+// whole var, so it says nothing about what the body spends, and the placeholder
+// check at the end of this file reads the constant without asking whether the
+// body still compares against it. TestRegistrationEqualizerBodyComparesBothPlaceholders
+// between them is what makes an emptied or halved body red — halved matters
+// here, because this equalizer owes TWO comparisons and dropping one restores
+// half the latency gap.
 
 func TestRegisterOwnerEqualizesTimingForDuplicateEmail(t *testing.T) {
 	original := equalizeRegistrationTiming
@@ -45,6 +50,22 @@ func TestRegisterOwnerEqualizesTimingForDuplicateEmail(t *testing.T) {
 	if gotPassword != "StrongPass1" {
 		t.Fatalf("expected the equalizer to run against the submitted password, got %q", gotPassword)
 	}
+}
+
+// TestRegistrationEqualizerBodyComparesBothPlaceholders drives the SHIPPED
+// body of equalizeRegistrationTiming. The duplicate-email branch has to mirror
+// BuildOwnerUserWithRecovery, which mints TWO bcrypt hashes, so a body that
+// spends one comparison is not a smaller defect than a body that spends none —
+// it leaves exactly the half-cost branch an enumerator reads.
+func TestRegistrationEqualizerBodyComparesBothPlaceholders(t *testing.T) {
+	const submittedPassword = "StrongPass1"
+	recorded := withEqualizerCompareRecorder(t)
+
+	equalizeRegistrationTiming(submittedPassword)
+
+	assertEqualizerSpent(t, *recorded,
+		[]string{credentialsTimingEqualizationHash, recoveryCodeTimingEqualizationHash},
+		submittedPassword)
 }
 
 // TestRecoveryCodeTimingEqualizationHashIsBcryptCompatible mirrors the

@@ -76,6 +76,26 @@ func (ledger *bcryptWorkLedger) drain() int64 {
 	return units
 }
 
+// withEqualizerCompareLedger is the equalizer-side counterpart of
+// withTopUpCompareLedger: it accounts at authTimingEqualizerCompare, the seam
+// the shipped equalizer bodies spend through, and reads each comparison's cost
+// off the hash the body actually handed it.
+//
+// The login ledger below used to add the units from
+// credentialsTimingEqualizationHash in its own wrapper instead — modelled, not
+// measured, and the same defect withTopUpCompareLedger's comment describes one
+// helper up. Emptying equalizeAuthCredentialsTiming left every assertion in
+// this file green while the unknown-address branch paid nothing at all.
+func withEqualizerCompareLedger(t *testing.T, ledger *bcryptWorkLedger) {
+	t.Helper()
+	original := authTimingEqualizerCompare
+	authTimingEqualizerCompare = func(hash []byte, operand []byte) error {
+		ledger.units += bcryptWorkUnits(mustBcryptCost(t, string(hash)))
+		return original(hash, operand)
+	}
+	t.Cleanup(func() { authTimingEqualizerCompare = original })
+}
+
 // withLoginWorkLedger wraps both login-side helpers so the test can account
 // their work. Each wrapper still calls the production helper, so the real
 // bcrypt work is spent exactly as it ships and only the accounting is added.
@@ -86,7 +106,6 @@ func withLoginWorkLedger(t *testing.T) *bcryptWorkLedger {
 	originalEqualize := equalizeAuthCredentialsTiming
 	equalizeAuthCredentialsTiming = func(password string) {
 		ledger.equalizerCalls++
-		ledger.units += bcryptWorkUnits(mustBcryptCost(t, credentialsTimingEqualizationHash))
 		originalEqualize(password)
 	}
 
@@ -102,6 +121,7 @@ func withLoginWorkLedger(t *testing.T) *bcryptWorkLedger {
 		topUpAuthCredentialsTiming = originalTopUp
 	})
 
+	withEqualizerCompareLedger(t, ledger)
 	withTopUpCompareLedger(t, ledger)
 	return ledger
 }
