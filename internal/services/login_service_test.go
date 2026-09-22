@@ -247,6 +247,37 @@ func TestLoginServiceAuthenticatePropagatesInvalidCredentials(t *testing.T) {
 	}
 }
 
+// TestLoginServiceAuthenticateRefusesEmailThatNormalizesToEmpty pins the
+// empty-identity refusal (login_service.go): an address that
+// NormalizeAuthEmail collapses to "" names no account and no attempt-budget
+// bucket, so Authenticate must refuse it as an ordinary failed credential
+// before ever calling the credential lookup — and must still book the failure
+// against the client, so repeated empty-identity attempts eventually
+// rate-limit that client the same as any other guess.
+func TestLoginServiceAuthenticateRefusesEmailThatNormalizesToEmpty(t *testing.T) {
+	auth := &stubLoginAuthService{user: models.User{ID: 5}}
+	reset := &stubLoginResetTokenIssuer{}
+	service := NewLoginService(auth, reset, NewAttemptLimiter())
+	service.ConfigureAttemptLimits(2, time.Hour)
+
+	if _, err := service.Authenticate(context.Background(), []byte("secret"), "127.0.0.1", "   ", "whatever", loginServiceTestTTL, loginServiceTestNow); !errors.Is(err, ErrAuthInvalidCreds) {
+		t.Fatalf("expected ErrAuthInvalidCreds for an address that normalizes to empty, got %v", err)
+	}
+	if auth.calls != 0 {
+		t.Fatalf("expected the credential lookup to be skipped, got %d calls", auth.calls)
+	}
+	if reset.called {
+		t.Fatalf("did not expect reset token issuance")
+	}
+
+	if _, err := service.Authenticate(context.Background(), []byte("secret"), "127.0.0.1", "", "whatever", loginServiceTestTTL, loginServiceTestNow.Add(time.Minute)); !errors.Is(err, ErrAuthInvalidCreds) {
+		t.Fatalf("expected ErrAuthInvalidCreds for an empty address, got %v", err)
+	}
+	if _, err := service.Authenticate(context.Background(), []byte("secret"), "127.0.0.1", "", "whatever", loginServiceTestTTL, loginServiceTestNow.Add(2*time.Minute)); !errors.Is(err, ErrAuthLoginRateLimited) {
+		t.Fatalf("expected the two empty-identity failures to be booked against the client and rate-limit the third, got %v", err)
+	}
+}
+
 func TestLoginServiceAuthenticateRateLimitsByIdentityAcrossIPs(t *testing.T) {
 	auth := &stubLoginAuthService{err: ErrAuthInvalidCreds}
 	reset := &stubLoginResetTokenIssuer{}

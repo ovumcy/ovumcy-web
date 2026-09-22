@@ -83,6 +83,26 @@ func TestSessionAndResetTokensDoNotCrossDomains(t *testing.T) {
 	}
 }
 
+// TestTokenDomainParseRefusesEmptySecretKey pins authTokenDomain.parse's early
+// return (auth_token_domain.go) when the derived signing key cannot even be
+// computed: security.DeriveTokenSigningKey refuses an empty SECRET_KEY
+// (security.ErrTokenSigningKeyMissing), and the domain surfaces that as an
+// ordinary parse failure instead of calling jwt.NewParser with a key it never
+// derived.
+func TestTokenDomainParseRefusesEmptySecretKey(t *testing.T) {
+	now := time.Date(2026, time.September, 22, 9, 0, 0, 0, time.UTC)
+	secret := []byte("test-secret-empty-key-domain")
+
+	resetToken, err := BuildPasswordResetToken(secret, 7, "$2a$10$storedhashstoredhashstoredhashstoredhashstoredhash", 1, PasswordResetTokenPurposeRecovery, time.Hour, now)
+	if err != nil {
+		t.Fatalf("build reset token: %v", err)
+	}
+
+	if _, err := ParsePasswordResetToken(nil, resetToken, now); !errors.Is(err, ErrPasswordResetTokenInvalid) {
+		t.Fatalf("expected ErrPasswordResetTokenInvalid when the secret key is empty, got %v", err)
+	}
+}
+
 // TestResetGrantDiesWithTheSessionVersionItWasMintedAt pins the reset grant's
 // binding to auth_session_version: a grant minted before a recovery-code
 // rotation is refused, though the password hash its fingerprint covers never
