@@ -241,8 +241,18 @@ const calendarFeedMACTimingEqualizationValue = "9f2b7c41d8e6053a1cbf47d92e80a536
 // The comparison can never succeed — and if it somehow did, nothing observes the
 // result: the caller has already resolved no row and returns not-found.
 var equalizeCalendarFeedTiming = func(secretKey []byte, selector string, verifier string) {
-	_ = VerifyCalendarFeedToken(secretKey, selector+verifier, models.CalendarFeedTokenColumns{
+	_ = calendarFeedEqualizerVerify(secretKey, selector+verifier, models.CalendarFeedTokenColumns{
 		Selector:    selector,
 		VerifierMAC: calendarFeedMACTimingEqualizationValue,
 	})
 }
+
+// calendarFeedEqualizerVerify is the seam through which the equalizer above
+// re-executes the verify path. Its counterpart in auth_service.go
+// (authTimingEqualizerCompare) says why the seam is needed: the two tests that
+// name equalizeCalendarFeedTiming replace the whole var with a call counter and
+// never reach the original, so an emptied body — a selector miss refused with
+// no verifier work at all, the exact oracle this helper closes — leaves both of
+// them green. Swapping this drives the shipped body and observes the row it
+// verifies against. Production code never reassigns this.
+var calendarFeedEqualizerVerify = VerifyCalendarFeedToken
