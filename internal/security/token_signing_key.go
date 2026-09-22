@@ -21,12 +21,12 @@ import (
 // already minted under the old label stops verifying, which signs every owner
 // out and voids every outstanding reset grant.
 const (
-	tokenSigningKeySaltLabel = "ovumcy.token-signing.salt.v1"
+	tokenSigningKeySaltLabel = "ovumcy.token-signing.salt.v1" // #nosec G101 -- public HKDF salt label, not a secret; the key material is SECRET_KEY.
 
 	// AuthSessionTokenKeyLabel is the HKDF info label of the auth-session JWT key.
-	AuthSessionTokenKeyLabel = "ovumcy.token-signing.auth-session.v1"
+	AuthSessionTokenKeyLabel = "ovumcy.token-signing.auth-session.v1" // #nosec G101 -- public HKDF info label, not a secret; the key material is SECRET_KEY.
 	// PasswordResetTokenKeyLabel is the HKDF info label of the password-reset JWT key.
-	PasswordResetTokenKeyLabel = "ovumcy.token-signing.password-reset.v1"
+	PasswordResetTokenKeyLabel = "ovumcy.token-signing.password-reset.v1" // #nosec G101 -- public HKDF info label, not a secret; the key material is SECRET_KEY.
 )
 
 var (
