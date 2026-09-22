@@ -542,7 +542,16 @@ func runGate(t *testing.T, script string, env map[string]string, state scenario)
 	bash := bashPath(t)
 	requireWorkingBash(t, bash)
 
-	command := exec.CommandContext(ctx, bash, "-c", preamble+script)
+	// The gate's own step declares `shell: bash`, which GitHub Actions
+	// compiles to `bash --noprofile --norc -eo pipefail {0}` — a FILE, never
+	// `-c`. This script is long enough that handing it to `-c` as a
+	// command-line argument truncates it silently on Windows, and `-c` runs
+	// without the errexit the workflow applies.
+	scriptFile := filepath.Join(dir, "gate.sh")
+	if err := os.WriteFile(scriptFile, []byte(preamble+script), 0o644); err != nil {
+		t.Fatalf("write the gate script: %v", err)
+	}
+	command := exec.CommandContext(ctx, bash, "--noprofile", "--norc", "-eo", "pipefail", filepath.ToSlash(scriptFile))
 	command.Env = append(os.Environ(),
 		"GITHUB_SHA=5049126faa3152cced900c304c3640e4ec724ba5",
 		"GITHUB_REPOSITORY=ovumcy/ovumcy-web",
