@@ -116,6 +116,19 @@ type importPayload struct {
 	Entries []ExportJSONEntry `json:"entries"`
 }
 
+// importPayloadEnvelope mirrors importPayload but keeps each entry as raw JSON
+// instead of decoding it into ExportJSONEntry. ImportJSON uses it to count
+// entries — and refuse an over-cap payload with ErrImportTooLarge — from the
+// cheap top-level split alone, before paying for the per-entry typed decode
+// (one ExportJSONEntry, with its nested slices and struct, per entry) that
+// materialisation is. The body is already bounded to maxRequestBodyBytes
+// (cmd/ovumcy/server.go, 16 MiB) before this ever runs, but a crafted file of
+// many minimal entries can still pack far more than MaxImportEntries into that
+// ceiling, so the count still has to be checked before the expensive decode.
+type importPayloadEnvelope struct {
+	Entries []json.RawMessage `json:"entries"`
+}
+
 // plannedImportDay is a fully validated day held between the parse pass and the
 // atomic write pass. Symptom IDs are resolved only in the write pass, after any
 // missing custom symptoms have been created.
@@ -138,15 +151,22 @@ func (service *ImportService) ImportJSON(ctx context.Context, userID uint, raw [
 		location = time.UTC
 	}
 
-	var payload importPayload
-	if err := json.Unmarshal(raw, &payload); err != nil {
+	var envelope importPayloadEnvelope
+	if err := json.Unmarshal(raw, &envelope); err != nil {
 		return ImportResult{}, ErrImportMalformed
 	}
-	if len(payload.Entries) > MaxImportEntries {
+	if len(envelope.Entries) > MaxImportEntries {
 		return ImportResult{}, ErrImportTooLarge
 	}
 
-	planned, otherOriginals, rejected := service.planEntries(payload.Entries, location)
+	entries := make([]ExportJSONEntry, len(envelope.Entries))
+	for i, rawEntry := range envelope.Entries {
+		if err := json.Unmarshal(rawEntry, &entries[i]); err != nil {
+			return ImportResult{}, ErrImportMalformed
+		}
+	}
+
+	planned, otherOriginals, rejected := service.planEntries(entries, location)
 
 	catalogByKey, builtins, err := service.reconcileSymptoms(ctx, userID, otherOriginals)
 	if err != nil {
