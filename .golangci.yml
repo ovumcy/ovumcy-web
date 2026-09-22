@@ -9,6 +9,8 @@
 # or subjective rules:
 #   - copyloopvar: flags loop-variable copies made redundant by Go 1.22
 #     per-iteration loop variables; pure dead code under go 1.26.
+#   - forbidigo: one pattern, strconv.ParseUint in internal/api production
+#     code; the reason is at its settings below.
 #   - intrange: canonical Go 1.22 `for i := range n` counting loops instead
 #     of the three-clause form.
 #   - misspell: objective spelling fixes in comments and strings; locale left
@@ -53,6 +55,7 @@ linters:
   default: standard
   enable:
     - copyloopvar
+    - forbidigo
     - intrange
     - misspell
     - nolintlint
@@ -67,7 +70,25 @@ linters:
     # the plain command is the correct command.
     paths:
       - node_modules
+    rules:
+      # forbidigo carries one pattern, for internal/api production code only.
+      # path-except is not separator-normalized on Windows (v2.13.2, unlike
+      # path), so a bare `internal/api/` there suppresses every finding.
+      - path-except: internal[/\\]api[/\\]
+        linters: [forbidigo]
+      - path: _test\.go$
+        linters: [forbidigo]
+      - path: internal/api/input_validation_uint_helpers\.go$
+        linters: [forbidigo]
   settings:
+    forbidigo:
+      # A path id parsed at bitSize 64 and converted to uint truncates on a
+      # 32-bit target (CodeQL go/incorrect-integer-conversion). forbidigo sees
+      # the call, not its arguments, so every ParseUint is refused here and
+      # parseRequestUint, which parses at strconv.IntSize, is the one exemption.
+      forbid:
+        - pattern: ^strconv\.ParseUint$
+          msg: use parseRequestUint (internal/api/input_validation_uint_helpers.go), which parses at strconv.IntSize
     nolintlint:
       # Every knob the linter has, all pointing the same way: a directive must
       # name its linters, explain itself, and actually suppress something.
