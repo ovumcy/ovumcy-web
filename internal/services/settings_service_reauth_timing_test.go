@@ -46,9 +46,10 @@ func withCountingSettingsReauthEqualizer(t *testing.T) *int {
 }
 
 // withSettingsReauthWorkLedger is withLoginWorkLedger's settings counterpart:
-// it accounts the bcrypt work a refusal actually spends — the equalizer at the
-// placeholder's cost, plus every comparison the top-up makes — so two refusal
-// paths can be compared as totals rather than as durations.
+// it accounts the bcrypt work a refusal actually spends — every comparison the
+// equalizer body and the top-up make, each at the cost of the hash it was
+// handed — so two refusal paths can be compared as totals rather than as
+// durations.
 func withSettingsReauthWorkLedger(t *testing.T) *bcryptWorkLedger {
 	t.Helper()
 	ledger := &bcryptWorkLedger{}
@@ -56,13 +57,13 @@ func withSettingsReauthWorkLedger(t *testing.T) *bcryptWorkLedger {
 	originalEqualize := equalizeSettingsReauthTiming
 	equalizeSettingsReauthTiming = func(password string) {
 		ledger.equalizerCalls++
-		ledger.units += bcryptWorkUnits(mustBcryptCost(t, credentialsTimingEqualizationHash))
 		originalEqualize(password)
 	}
 	t.Cleanup(func() {
 		equalizeSettingsReauthTiming = originalEqualize
 	})
 
+	withEqualizerCompareLedger(t, ledger)
 	withTopUpCompareLedger(t, ledger)
 	return ledger
 }
@@ -74,28 +75,12 @@ func withSettingsReauthWorkLedger(t *testing.T) *bcryptWorkLedger {
 // unparseable) hash returns before doing the cost-12 work the equalizer exists
 // to spend.
 func TestEqualizeSettingsReauthTimingSpendsThePlaceholderCompare(t *testing.T) {
-	original := settingsReauthEqualizerCompare
-	var hashes, passwords []string
-	settingsReauthEqualizerCompare = func(hash []byte, password []byte) error {
-		hashes = append(hashes, string(hash))
-		passwords = append(passwords, string(password))
-		return original(hash, password)
-	}
-	t.Cleanup(func() {
-		settingsReauthEqualizerCompare = original
-	})
+	const submittedPassword = "AnyPass1!"
+	recorded := withEqualizerCompareRecorder(t)
 
-	equalizeSettingsReauthTiming("AnyPass1!")
+	equalizeSettingsReauthTiming(submittedPassword)
 
-	if len(hashes) != 1 {
-		t.Fatalf("expected exactly 1 bcrypt compare from the equalizer body, got %d", len(hashes))
-	}
-	if hashes[0] != credentialsTimingEqualizationHash {
-		t.Fatalf("expected the equalizer to compare against credentialsTimingEqualizationHash, got %q", hashes[0])
-	}
-	if passwords[0] != "AnyPass1!" {
-		t.Fatalf("expected the equalizer to compare the submitted password, got %q", passwords[0])
-	}
+	assertEqualizerSpent(t, *recorded, []string{credentialsTimingEqualizationHash}, submittedPassword)
 }
 
 func TestValidateCurrentPasswordEqualizesTimingForNoLocalPassword(t *testing.T) {

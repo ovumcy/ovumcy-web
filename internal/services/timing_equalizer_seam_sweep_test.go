@@ -360,7 +360,7 @@ func TestTimingEqualizerVarsSpendThroughASeam(t *testing.T) {
 	for _, name := range scan.found {
 		found[name] = true
 	}
-	for _, want := range []string{"equalizeAuthCredentialsTiming", "equalizeCalendarFeedTiming", "equalizeRegistrationTiming"} {
+	for _, want := range []string{"equalizeAuthCredentialsTiming", "equalizeCalendarFeedTiming", "equalizeRegistrationTiming", "equalizeSettingsReauthTiming"} {
 		if !found[want] {
 			t.Fatalf("the sweep did not find %s among %v — it is no longer measuring the members it exists for", want, scan.found)
 		}
