@@ -1736,11 +1736,13 @@ paths:
             account-link confirmation step's own password challenge — is
             refused here exactly like an ordinary password-recovery token,
             since it was produced by the very factor this deployment has
-            disabled. The second is unrelated to that gate: the password was
-            replaced and a session attempt was made, but session issuance
-            itself refused the account's role (`ErrAuthUnsupportedRole`) — the
-            password change already committed, so the caller must sign in
-            separately rather than retry this redeem.
+            disabled. The second is unrelated to that gate: the redeem itself
+            already committed — the password was replaced and the recovery
+            code rotated — and only the session issuance that follows refused
+            the account's role (`ErrAuthUnsupportedRole`). Signing in
+            separately does not help: the same role check gates every web
+            session. The token is spent, so the redeem cannot be retried, and
+            the rotated recovery code is never shown on this path.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
