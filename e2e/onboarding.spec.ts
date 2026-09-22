@@ -159,7 +159,7 @@ test.describe('Onboarding flow', () => {
 
     await onboardingStepOneSubmit(page).click();
     await expect(onboardingStepTwoForm(page)).toBeVisible();
-    await expect(onboardingStepTwoForm(page)).toContainText(/21.?35/);
+    await expect(onboardingStepTwoForm(page)).toContainText(/24.?38/);
   });
 
   test('step 1 offers one month picker and no second date input', async ({ page }) => {

@@ -155,15 +155,16 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 	seen := make(map[string]struct{}, calendarFeedProjectionCycles*2+1)
 	appendEvent := func(kind string, date time.Time) {
 		key := kind + "-" + date.Format(calendarFeedDateLayout)
+		// codecov:ignore:start -- defensive: a confirmed day is behind today and
+		// every projected ovulation is on or after it, and projected cycles step
+		// strictly forward, so (kind, date) is unique in practice; dedupe guards
+		// the UID invariant if that ever stops holding rather than falling back
+		// to a disambiguating suffix that would break UID stability across
+		// renders.
 		if _, dup := seen[key]; dup {
-			// codecov:ignore -- defensive: a confirmed day is behind today and every
-			// projected ovulation is on or after it, and projected cycles step
-			// strictly forward, so (kind, date) is unique in practice; dedupe guards
-			// the UID invariant if that ever stops holding rather than falling back
-			// to a disambiguating suffix that would break UID stability across
-			// renders.
 			return
 		}
+		// codecov:ignore:end
 		seen[key] = struct{}{}
 		events = append(events, calendarFeedEvent{kind: kind, date: date})
 	}
@@ -207,11 +208,13 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 	// Anchor the first projected cycle to the current/next cycle start exactly as
 	// DashboardUpcomingPredictions does, then step forward one cycle at a time.
 	cycleStart, _, ok := ProjectCycleStart(stats.LastPeriodStart, cycleLength, today)
+	// codecov:ignore:start -- defensive: ProjectCycleStart only reports !ok for a
+	// zero LastPeriodStart or non-positive cycleLength, both already returned
+	// above.
 	if !ok {
-		// codecov:ignore -- defensive: ProjectCycleStart only reports !ok for a zero
-		// LastPeriodStart or non-positive cycleLength, both already returned above.
 		return events
 	}
+	// codecov:ignore:end
 
 	for cycle := range calendarFeedProjectionCycles {
 		anchor := AddCalendarDays(cycleStart, cycle*cycleLength, input.Location)
