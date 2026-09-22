@@ -11,6 +11,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -156,6 +157,68 @@ func TestDayService_RefreshDerivedCycleSettings_WritesLutealPhaseAfterUpsert(t *
 // that day yet and the derivation must not use it.
 func TestDayService_RefreshDerivedCycleSettings_BoundsAtOwnerZoneNotRequestZone(t *testing.T) {
 	logs := newDayLogRepositoryStub()
+	seedOwnerZoneLutealFixture(t, logs)
+
+	users := &dayserviceCovUserStub{settings: models.User{Timezone: "Pacific/Midway"}}
+	service := dayserviceCovNewService(logs, users)
+
+	now := time.Date(2026, time.February, 8, 0, 30, 0, 0, time.UTC)
+	requestLocation := time.UTC
+
+	// The day being edited is unrelated to the cycle-start chain, so the
+	// write cannot disturb the seeded fixture above.
+	if _, err := service.UpsertDayEntryWithAutoFillAt(context.Background(),
+		42,
+		time.Date(2026, time.January, 15, 0, 0, 0, 0, time.UTC),
+		DayEntryInput{IsPeriod: false, Flow: models.FlowNone},
+		now,
+		requestLocation,
+	); err != nil {
+		t.Fatalf("UpsertDayEntryWithAutoFillAt: unexpected error: %v", err)
+	}
+
+	// Owner-zone bound (Feb 7): the Feb 8 cycle start is not yet observed,
+	// so only two starts exist and the inference stays unrefined at the
+	// default. A regression that bounds this at requestLocation instead
+	// (UTC, today=Feb 8) counts the boundary start and persists 13.
+	if users.settings.LutealPhase != defaultLutealPhaseDays {
+		t.Fatalf("expected luteal_phase bounded at the OWNER's zone (Pacific/Midway, today=Feb 7) to stay the unrefined default %d; got %d — a request-zone bound (UTC, today=Feb 8) would count the not-yet-owner-observed Feb 8 cycle start and refine it to 13", defaultLutealPhaseDays, users.settings.LutealPhase)
+	}
+}
+
+// TestDayService_RefreshDerivedCycleSettings_FallsBackToRequestZoneWhenOwnerLoadFails
+// covers the owner-settings read failing: the cache is still recomputed, at
+// the request's zone. Same fixture; now = 2026-02-07T12:00 UTC reads Feb 7 in
+// UTC but Feb 8 in the request zone (Pacific/Kiritimati, UTC+14), so only a
+// request-zone bound counts the Feb 8 start and refines to 13. Skipping the
+// write leaves 0; a UTC or server-local bound leaves the default 14.
+func TestDayService_RefreshDerivedCycleSettings_FallsBackToRequestZoneWhenOwnerLoadFails(t *testing.T) {
+	logs := newDayLogRepositoryStub()
+	seedOwnerZoneLutealFixture(t, logs)
+
+	requestLocation, err := time.LoadLocation("Pacific/Kiritimati")
+	if err != nil {
+		t.Fatalf("load request zone: %v", err)
+	}
+	users := &dayserviceCovUserStub{
+		settings: models.User{Timezone: "Pacific/Midway"},
+		loadErr:  errors.New("settings unavailable"),
+	}
+	service := dayserviceCovNewService(logs, users)
+
+	service.refreshDerivedCycleSettings(context.Background(), 42,
+		time.Date(2026, time.February, 7, 12, 0, 0, 0, time.UTC), requestLocation)
+
+	if users.settings.LutealPhase != 13 {
+		t.Fatalf("expected luteal_phase recomputed at the request zone (Kiritimati, today=Feb 8) as 13 when the owner's settings fail to load; got %d", users.settings.LutealPhase)
+	}
+}
+
+// seedOwnerZoneLutealFixture seeds two BBT-confirmed 19-day cycles (luteal
+// 13 and 12) for user 42 plus a third cycle start on 2026-02-08, the boundary
+// log: InferUserLutealPhase refines to 13 only once Feb 8 counts as observed.
+func seedOwnerZoneLutealFixture(t *testing.T, logs *dayLogRepositoryStub) {
+	t.Helper()
 	day := func(s string) time.Time {
 		parsed, err := time.Parse("2006-01-02", s)
 		if err != nil {
@@ -197,30 +260,4 @@ func TestDayService_RefreshDerivedCycleSettings_BoundsAtOwnerZoneNotRequestZone(
 	// The boundary log: the third observed cycle start, with no BBT of its
 	// own — it only needs to exist or not exist in the "observed" set.
 	seed("2026-02-08", models.DailyLog{IsPeriod: true, CycleStart: true, Flow: models.FlowMedium})
-
-	users := &dayserviceCovUserStub{settings: models.User{Timezone: "Pacific/Midway"}}
-	service := dayserviceCovNewService(logs, users)
-
-	now := time.Date(2026, time.February, 8, 0, 30, 0, 0, time.UTC)
-	requestLocation := time.UTC
-
-	// The day being edited is unrelated to the cycle-start chain, so the
-	// write cannot disturb the seeded fixture above.
-	if _, err := service.UpsertDayEntryWithAutoFillAt(context.Background(),
-		42,
-		day("2026-01-15"),
-		DayEntryInput{IsPeriod: false, Flow: models.FlowNone},
-		now,
-		requestLocation,
-	); err != nil {
-		t.Fatalf("UpsertDayEntryWithAutoFillAt: unexpected error: %v", err)
-	}
-
-	// Owner-zone bound (Feb 7): the Feb 8 cycle start is not yet observed,
-	// so only two starts exist and the inference stays unrefined at the
-	// default. A regression that bounds this at requestLocation instead
-	// (UTC, today=Feb 8) counts the boundary start and persists 13.
-	if users.settings.LutealPhase != defaultLutealPhaseDays {
-		t.Fatalf("expected luteal_phase bounded at the OWNER's zone (Pacific/Midway, today=Feb 7) to stay the unrefined default %d; got %d — a request-zone bound (UTC, today=Feb 8) would count the not-yet-owner-observed Feb 8 cycle start and refine it to 13", defaultLutealPhaseDays, users.settings.LutealPhase)
-	}
 }
