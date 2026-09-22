@@ -1,4 +1,4 @@
-### Internal
+### Fixed
 
 - **`docs/openapi.yaml` now states the real recovery-code and password-reset-redeem responses.**
   `POST /api/v1/users/current/recovery-code` published only "recovery code surface rendered" and told
@@ -10,4 +10,8 @@
   `403` named only an operator-set `must_change_password` as the reason a forced-from-OIDC reset
   token survives the local-auth-disabled gate; an enrolled-but-unverifiable TOTP secret (a
   `SECRET_KEY` rotation) reaches the identical escape hatch and is now named too, with a guard test
-  proving that account's recovery path completes end to end.
+  (local public auth switched off before redeem, against a fixture account that is genuinely
+  TOTP-enabled) proving that account's recovery path completes end to end. The `403` also gained
+  the reason it was missing outright — a successful password replacement whose session-issuance
+  step then refuses the account's role (`web sign-in unavailable`) — since that was already
+  reachable and undocumented.

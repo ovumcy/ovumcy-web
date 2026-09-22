@@ -1723,7 +1723,8 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '403':
           description: |
-            Local password recovery is disabled on this deployment (SSO-only).
+            Two distinct refusals share this status. The first is local
+            password recovery being disabled on this deployment (SSO-only).
             Only a reset token minted by the OIDC sign-in flow survives this
             gate and can still be redeemed — for an account carrying
             `must_change_password`, or one whose enrolled TOTP secret has gone
@@ -1735,13 +1736,25 @@ paths:
             account-link confirmation step's own password challenge — is
             refused here exactly like an ordinary password-recovery token,
             since it was produced by the very factor this deployment has
-            disabled.
+            disabled. The second is unrelated to that gate: the password was
+            replaced and a session attempt was made, but session issuance
+            itself refused the account's role (`ErrAuthUnsupportedRole`) — the
+            password change already committed, so the caller must sign in
+            separately rather than retry this redeem.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
-              example:
-                error: "local recovery unavailable"
-                error_detail: { key: "local recovery unavailable", category: "forbidden", target: "auth_form" }
+              examples:
+                localRecoveryDisabled:
+                  summary: Local recovery unavailable (SSO-only deployment)
+                  value:
+                    error: "local recovery unavailable"
+                    error_detail: { key: "local recovery unavailable", category: "forbidden", target: "auth_form" }
+                webSignInUnavailable:
+                  summary: Password replaced, but the account's role cannot sign in over the web
+                  value:
+                    error: "web sign-in unavailable"
+                    error_detail: { key: "web sign-in unavailable", category: "forbidden", target: "auth_form" }
         '429': { $ref: '#/components/responses/RateLimited' }
 
   # =========================================================================
