@@ -212,12 +212,31 @@ func (service *SettingsService) SaveReminderLeadDays(ctx context.Context, userID
 	return true, nil
 }
 
+// equalizeSettingsReauthTiming runs a bcrypt comparison against the same
+// placeholder hash AuthenticateCredentials uses, so the settings re-auth
+// checks below spend comparable time on every path. Without it, the early
+// "no local password" / "blank submission" returns in ValidateCurrentPassword
+// and ValidatePasswordChange short-circuit before any bcrypt work — measurably
+// faster than a wrong-password compare — and leak, through response timing,
+// whether the account has a local password at all. Both functions are gated by
+// the same reauthPolicy budget (erasure and password change, see the
+// SettingsService.reauthPolicy field comment), so they share one equalizer.
+//
+// Declared as a var for the same test-substitution reason as
+// equalizeAuthCredentialsTiming: tests replace it with an invocation counter
+// instead of measuring wall-clock time. Production code never reassigns this.
+var equalizeSettingsReauthTiming = func(password string) {
+	_ = bcrypt.CompareHashAndPassword([]byte(credentialsTimingEqualizationHash), []byte(password))
+}
+
 func (service *SettingsService) ValidateCurrentPassword(passwordHash string, rawPassword string) error {
+	password := strings.TrimSpace(rawPassword)
 	if strings.TrimSpace(passwordHash) == "" {
+		equalizeSettingsReauthTiming(password)
 		return ErrSettingsLocalPasswordNotSet
 	}
-	password := strings.TrimSpace(rawPassword)
 	if password == "" {
+		equalizeSettingsReauthTiming(password)
 		return ErrSettingsPasswordMissing
 	}
 	if bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password)) != nil {
