@@ -1,12 +1,14 @@
 package services
 
 import (
+	"bytes"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -17,55 +19,128 @@ import (
 // a test that swaps the whole var never runs its body — so an emptied body
 // passes. The members found so far (login, registration, calendar feed) now
 // spend through a seam var the tests can wrap while the shipped body runs. This
-// sweep holds the rule for members added later: every package-level
-// `var equalize…Timing = func…` must call at least one package-level seam var,
-// every seam var it calls must be reassigned in some _test.go of this package,
-// and its body must not call bcrypt.CompareHashAndPassword or
-// VerifyCalendarFeedToken directly.
+// sweep holds the rule for members added later. Every package-level
+// `var equalize…Timing = func…` must:
+//   - call at least one timing seam: a package-level var whose production
+//     value is a timing primitive (bcrypt.CompareHashAndPassword, resolved by
+//     import path so an aliased import counts, or VerifyCalendarFeedToken);
+//   - have every timing seam it calls reassigned in some _test.go of this
+//     package, outside any function that declares a local of the same name;
+//   - not reference a timing primitive directly, called or bound to a local.
 //
 // What it cannot see, stated so its name is not read as more: an equalizer
 // declared with `func` rather than as a var (equalizeRecoveryCodeLookupTiming —
 // not swappable, and pinned to its literal bcrypt calls by
 // TestRecoveryLookupSpendsBothCredentialComparesWithoutShortCircuit), a var not
 // named equalize…Timing, and a body that reaches a primitive through some other
-// helper. The direct-call list is closed at the two primitives above, so a body
-// that calls a seam and also calls another primitive directly (for example
-// security.VerifyCalendarFeedVerifierMAC) passes. A seam counts as tested when
-// some test reassigns it, not when that test asserts what the body spends
-// through it — that is the per-member body tests' job. The members it must find
-// are asserted by name below, so the sweep cannot pass by matching nothing.
+// helper. The primitive list is closed at the two above: a body that calls a
+// timing seam and also calls another primitive directly (for example
+// security.VerifyCalendarFeedVerifierMAC) passes, and an equalizer whose only
+// spend is a new primitive fails until the list names it. A seam counts as
+// tested when some test reassigns it, not when that test asserts what the body
+// spends through it — that is the per-member body tests' job. The members it
+// must find are asserted by name below, so the sweep cannot pass by matching
+// nothing.
 
 var timingEqualizerVarName = regexp.MustCompile(`^equalize\w*Timing$`)
 
-// isDirectTimingPrimitiveCall recognises the calls an equalizer body must make
-// through a seam instead: the bcrypt compare and the calendar-feed verify path.
-func isDirectTimingPrimitiveCall(call *ast.CallExpr) bool {
-	switch fun := call.Fun.(type) {
+const bcryptImportPath = "golang.org/x/crypto/bcrypt"
+
+// bcryptLocalNames returns the names file binds golang.org/x/crypto/bcrypt to.
+func bcryptLocalNames(file *ast.File) map[string]bool {
+	names := map[string]bool{}
+	for _, spec := range file.Imports {
+		path, err := strconv.Unquote(spec.Path.Value)
+		if err != nil || path != bcryptImportPath {
+			continue
+		}
+		if spec.Name != nil {
+			names[spec.Name.Name] = true
+		} else {
+			names["bcrypt"] = true
+		}
+	}
+	return names
+}
+
+// isTimingPrimitiveRef recognises a reference to a timing primitive: the bcrypt
+// compare under whatever name the file imports it, and the calendar-feed verify
+// path.
+func isTimingPrimitiveRef(expr ast.Expr, bcryptNames map[string]bool) bool {
+	switch ref := expr.(type) {
 	case *ast.SelectorExpr:
-		pkg, ok := fun.X.(*ast.Ident)
-		return ok && pkg.Name == "bcrypt" && fun.Sel.Name == "CompareHashAndPassword"
+		pkg, ok := ref.X.(*ast.Ident)
+		return ok && bcryptNames[pkg.Name] && ref.Sel.Name == "CompareHashAndPassword"
 	case *ast.Ident:
-		return fun.Name == "VerifyCalendarFeedToken"
+		return ref.Name == "VerifyCalendarFeedToken"
+	case *ast.ParenExpr:
+		return isTimingPrimitiveRef(ref.X, bcryptNames)
 	}
 	return false
 }
 
+// localNames returns every name node declares below itself: function
+// parameters and results, `:=` targets, and var/const specs.
+func localNames(node ast.Node) map[string]bool {
+	names := map[string]bool{}
+	addFields := func(fields *ast.FieldList) {
+		if fields == nil {
+			return
+		}
+		for _, field := range fields.List {
+			for _, name := range field.Names {
+				names[name.Name] = true
+			}
+		}
+	}
+	ast.Inspect(node, func(child ast.Node) bool {
+		switch decl := child.(type) {
+		case *ast.FuncType:
+			addFields(decl.Params)
+			addFields(decl.Results)
+		case *ast.AssignStmt:
+			if decl.Tok == token.DEFINE {
+				for _, lhs := range decl.Lhs {
+					if ident, ok := lhs.(*ast.Ident); ok {
+						names[ident.Name] = true
+					}
+				}
+			}
+		case *ast.ValueSpec:
+			for _, name := range decl.Names {
+				names[name.Name] = true
+			}
+		case *ast.RangeStmt:
+			for _, expr := range []ast.Expr{decl.Key, decl.Value} {
+				if ident, ok := expr.(*ast.Ident); ok && decl.Tok == token.DEFINE {
+					names[ident.Name] = true
+				}
+			}
+		}
+		return true
+	})
+	return names
+}
+
 // timingEqualizerScan is what the production files contribute to the sweep.
 type timingEqualizerScan struct {
-	found      []string
-	offenders  []string
-	packageVar map[string]bool
-	// calledIdents maps each equalizer to the bare identifiers its body calls;
-	// those naming a package-level var are its seams.
+	found     []string
+	offenders []string
+	// timingSeam holds the package-level vars whose production value is a
+	// timing primitive.
+	timingSeam map[string]bool
+	// calledIdents maps each equalizer to the bare, unshadowed identifiers its
+	// body calls; those naming a timing seam are its seams.
 	calledIdents map[string][]string
 }
 
 func newTimingEqualizerScan() timingEqualizerScan {
-	return timingEqualizerScan{packageVar: map[string]bool{}, calledIdents: map[string][]string{}}
+	return timingEqualizerScan{timingSeam: map[string]bool{}, calledIdents: map[string][]string{}}
 }
 
-// scanTimingEqualizers adds file's package-level vars and equalizer bodies to scan.
+// scanTimingEqualizers adds file's timing seams and equalizer bodies to scan.
 func scanTimingEqualizers(scan *timingEqualizerScan, fileSet *token.FileSet, file *ast.File) {
+	bcryptNames := bcryptLocalNames(file)
 	for _, decl := range file.Decls {
 		gen, ok := decl.(*ast.GenDecl)
 		if !ok || gen.Tok != token.VAR {
@@ -77,8 +152,13 @@ func scanTimingEqualizers(scan *timingEqualizerScan, fileSet *token.FileSet, fil
 				continue
 			}
 			for index, name := range value.Names {
-				scan.packageVar[name.Name] = true
-				if !timingEqualizerVarName.MatchString(name.Name) || index >= len(value.Values) {
+				if index >= len(value.Values) {
+					continue
+				}
+				if isTimingPrimitiveRef(value.Values[index], bcryptNames) {
+					scan.timingSeam[name.Name] = true
+				}
+				if !timingEqualizerVarName.MatchString(name.Name) {
 					continue
 				}
 				literal, ok := value.Values[index].(*ast.FuncLit)
@@ -86,15 +166,17 @@ func scanTimingEqualizers(scan *timingEqualizerScan, fileSet *token.FileSet, fil
 					continue
 				}
 				scan.found = append(scan.found, name.Name)
+				shadowed := localNames(literal)
 				ast.Inspect(literal.Body, func(node ast.Node) bool {
+					if expr, ok := node.(ast.Expr); ok && isTimingPrimitiveRef(expr, bcryptNames) {
+						scan.offenders = append(scan.offenders, name.Name+" at "+fileSet.Position(expr.Pos()).String())
+						return false
+					}
 					call, ok := node.(*ast.CallExpr)
 					if !ok {
 						return true
 					}
-					if isDirectTimingPrimitiveCall(call) {
-						scan.offenders = append(scan.offenders, name.Name+" at "+fileSet.Position(call.Pos()).String())
-					}
-					if ident, ok := call.Fun.(*ast.Ident); ok {
+					if ident, ok := call.Fun.(*ast.Ident); ok && !shadowed[ident.Name] {
 						scan.calledIdents[name.Name] = append(scan.calledIdents[name.Name], ident.Name)
 					}
 					return true
@@ -104,30 +186,38 @@ func scanTimingEqualizers(scan *timingEqualizerScan, fileSet *token.FileSet, fil
 	}
 }
 
-// addReassignedIdents adds every bare identifier assigned with `=` in file.
+// addReassignedIdents adds every bare identifier file assigns with `=`, except
+// inside a function that declares a local of that name.
 func addReassignedIdents(assigned map[string]bool, file *ast.File) {
-	ast.Inspect(file, func(node ast.Node) bool {
-		assign, ok := node.(*ast.AssignStmt)
-		if !ok || assign.Tok != token.ASSIGN {
-			return true
+	for _, decl := range file.Decls {
+		function, ok := decl.(*ast.FuncDecl)
+		if !ok || function.Body == nil {
+			continue
 		}
-		for _, lhs := range assign.Lhs {
-			if ident, ok := lhs.(*ast.Ident); ok {
-				assigned[ident.Name] = true
+		shadowed := localNames(function)
+		ast.Inspect(function.Body, func(node ast.Node) bool {
+			assign, ok := node.(*ast.AssignStmt)
+			if !ok || assign.Tok != token.ASSIGN {
+				return true
 			}
-		}
-		return true
-	})
+			for _, lhs := range assign.Lhs {
+				if ident, ok := lhs.(*ast.Ident); ok && !shadowed[ident.Name] {
+					assigned[ident.Name] = true
+				}
+			}
+			return true
+		})
+	}
 }
 
 // timingEqualizerSeamFailures requires each equalizer to call at least one
-// package-level var, and every one it calls to be reassigned by a test.
+// timing seam, and every one it calls to be reassigned by a test.
 func timingEqualizerSeamFailures(scan timingEqualizerScan, testAssigned map[string]bool) []string {
 	var failures []string
 	for _, equalizer := range scan.found {
 		seams := 0
 		for _, called := range scan.calledIdents[equalizer] {
-			if !scan.packageVar[called] {
+			if !scan.timingSeam[called] {
 				continue
 			}
 			seams++
@@ -136,7 +226,7 @@ func timingEqualizerSeamFailures(scan timingEqualizerScan, testAssigned map[stri
 			}
 		}
 		if seams == 0 {
-			failures = append(failures, equalizer+" calls no package-level seam var")
+			failures = append(failures, equalizer+" calls no timing seam")
 		}
 	}
 	sort.Strings(failures)
@@ -148,17 +238,29 @@ func timingEqualizerSeamFailures(scan timingEqualizerScan, testAssigned map[stri
 // own members change shape.
 func TestTimingEqualizerSweepClassifiesOwnedFixtures(t *testing.T) {
 	const source = `package fixture
+import (
+	"golang.org/x/crypto/bcrypt"
+	bc "golang.org/x/crypto/bcrypt"
+)
 var wrappedSeam = bcrypt.CompareHashAndPassword
-var unwrappedSeam = bcrypt.CompareHashAndPassword
+var unwrappedSeam = bc.CompareHashAndPassword
+var shadowTestedSeam = VerifyCalendarFeedToken
+var clockSeam = time.Now
 var equalizeDirectTiming = func(p string) { _ = bcrypt.CompareHashAndPassword(nil, []byte(p)) }
 var equalizeFeedDirectTiming = func(k []byte, s, v string) { _ = VerifyCalendarFeedToken(k, s+v, x) }
+var equalizeAliasedDirectTiming = func(p string) { _ = wrappedSeam(nil, nil); _ = bc.CompareHashAndPassword(nil, []byte(p)) }
+var equalizeLocalAliasTiming = func(p string) { f := bcrypt.CompareHashAndPassword; _ = wrappedSeam(nil, nil); _ = f(nil, []byte(p)) }
 var equalizeSeamedTiming = func(p string) { _ = wrappedSeam(nil, []byte(p)) }
 var equalizeUntestedSeamTiming = func(p string) { _ = unwrappedSeam(nil, []byte(p)) }
+var equalizeShadowTestedSeamTiming = func(k []byte) { _ = shadowTestedSeam(k, "", x) }
+var equalizeClockOnlyTiming = func(p string) { _ = clockSeam() }
+var equalizeShadowedSeamTiming = func(wrappedSeam func([]byte, []byte) error) { _ = wrappedSeam(nil, nil) }
 var equalizeOtherPrimitiveTiming = func(k []byte) { _ = security.VerifyCalendarFeedVerifierMAC(k, "", "") }
 var notAnEqualizer = func(p string) { _ = bcrypt.CompareHashAndPassword(nil, []byte(p)) }
 `
 	const testSource = `package fixture
-func TestWraps(t *testing.T) { wrappedSeam = func([]byte, []byte) error { return nil } }
+func TestWraps(t *testing.T) { wrappedSeam = func([]byte, []byte) error { return nil }; clockSeam = nil }
+func TestShadows(t *testing.T) { var shadowTestedSeam func(); shadowTestedSeam = nil }
 `
 	fileSet := token.NewFileSet()
 	file, err := parser.ParseFile(fileSet, "fixture.go", source, 0)
@@ -174,17 +276,27 @@ func TestWraps(t *testing.T) { wrappedSeam = func([]byte, []byte) error { return
 	testAssigned := map[string]bool{}
 	addReassignedIdents(testAssigned, testFile)
 
-	wantFound := "equalizeDirectTiming,equalizeFeedDirectTiming,equalizeSeamedTiming,equalizeUntestedSeamTiming,equalizeOtherPrimitiveTiming"
+	wantFound := "equalizeDirectTiming,equalizeFeedDirectTiming,equalizeAliasedDirectTiming,equalizeLocalAliasTiming," +
+		"equalizeSeamedTiming,equalizeUntestedSeamTiming,equalizeShadowTestedSeamTiming,equalizeClockOnlyTiming," +
+		"equalizeShadowedSeamTiming,equalizeOtherPrimitiveTiming"
 	if strings.Join(scan.found, ",") != wantFound {
-		t.Fatalf("classifier found %v, want exactly the five equalize…Timing vars", scan.found)
+		t.Fatalf("classifier found %v, want exactly the fixture's equalize…Timing vars", scan.found)
 	}
-	if len(scan.offenders) != 2 || !strings.HasPrefix(scan.offenders[0], "equalizeDirectTiming ") || !strings.HasPrefix(scan.offenders[1], "equalizeFeedDirectTiming ") {
-		t.Fatalf("classifier flagged %v, want the direct bcrypt and the direct feed-verify bodies only", scan.offenders)
+	var offenderNames []string
+	for _, offender := range scan.offenders {
+		offenderNames = append(offenderNames, strings.Fields(offender)[0])
+	}
+	wantOffenders := "equalizeDirectTiming,equalizeFeedDirectTiming,equalizeAliasedDirectTiming,equalizeLocalAliasTiming"
+	if strings.Join(offenderNames, ",") != wantOffenders {
+		t.Fatalf("classifier flagged %v, want the direct, feed-direct, aliased-import and local-alias bodies only", offenderNames)
 	}
 	wantFailures := []string{
-		"equalizeDirectTiming calls no package-level seam var",
-		"equalizeFeedDirectTiming calls no package-level seam var",
-		"equalizeOtherPrimitiveTiming calls no package-level seam var",
+		"equalizeClockOnlyTiming calls no timing seam",
+		"equalizeDirectTiming calls no timing seam",
+		"equalizeFeedDirectTiming calls no timing seam",
+		"equalizeOtherPrimitiveTiming calls no timing seam",
+		"equalizeShadowTestedSeamTiming spends through shadowTestedSeam, which no test reassigns",
+		"equalizeShadowedSeamTiming calls no timing seam",
 		"equalizeUntestedSeamTiming spends through unwrappedSeam, which no test reassigns",
 	}
 	if failures := timingEqualizerSeamFailures(scan, testAssigned); strings.Join(failures, "\n") != strings.Join(wantFailures, "\n") {
@@ -202,21 +314,46 @@ func TestTimingEqualizerVarsSpendThroughASeam(t *testing.T) {
 
 	fileSet := token.NewFileSet()
 	scan := newTimingEqualizerScan()
-	testAssigned := map[string]bool{}
+	var testFiles []string
 	for _, entry := range entries {
 		name := entry.Name()
 		if entry.IsDir() || !strings.HasSuffix(name, ".go") {
+			continue
+		}
+		if strings.HasSuffix(name, "_test.go") {
+			testFiles = append(testFiles, name)
 			continue
 		}
 		file, err := parser.ParseFile(fileSet, name, nil, 0)
 		if err != nil {
 			t.Fatalf("parse %s: %v", name, err)
 		}
-		if strings.HasSuffix(name, "_test.go") {
-			addReassignedIdents(testAssigned, file)
+		scanTimingEqualizers(&scan, fileSet, file)
+	}
+
+	// Only a test file that names a timing seam can reassign one; parsing the
+	// rest would find nothing.
+	testAssigned := map[string]bool{}
+	for _, name := range testFiles {
+		content, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		namesSeam := false
+		for seam := range scan.timingSeam {
+			if bytes.Contains(content, []byte(seam)) {
+				namesSeam = true
+				break
+			}
+		}
+		if !namesSeam {
 			continue
 		}
-		scanTimingEqualizers(&scan, fileSet, file)
+		file, err := parser.ParseFile(fileSet, name, content, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		addReassignedIdents(testAssigned, file)
 	}
 
 	found := map[string]bool{}
@@ -228,8 +365,13 @@ func TestTimingEqualizerVarsSpendThroughASeam(t *testing.T) {
 			t.Fatalf("the sweep did not find %s among %v — it is no longer measuring the members it exists for", want, scan.found)
 		}
 	}
+	for _, seam := range []string{"authTimingEqualizerCompare", "calendarFeedEqualizerVerify"} {
+		if !scan.timingSeam[seam] {
+			t.Fatalf("the sweep does not recognise %s as a timing seam — its production value is no longer a primitive it knows", seam)
+		}
+	}
 	if len(scan.offenders) != 0 {
-		t.Fatalf("timing equalizer vars call the expensive primitive directly: %v. A test that swaps the var never runs such a body, "+
+		t.Fatalf("timing equalizer vars reference the expensive primitive directly: %v. A test that swaps the var never runs such a body, "+
 			"so emptying it passes the suite; spend through a seam var (authTimingEqualizerCompare, calendarFeedEqualizerVerify) and test the body through it",
 			scan.offenders)
 	}
