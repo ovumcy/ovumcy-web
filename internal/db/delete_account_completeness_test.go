@@ -301,8 +301,6 @@ func TestDeleteAccountAndRelatedDataRollsBackOnChildDeleteError(t *testing.T) {
 				t.Fatalf("drop %s: %v", tc.dropTable, err)
 			}
 
-			// First delete succeeds (TestDeleteAccountAndRelatedDataRemovesAllUserRows,
-			// same package); this is the next one, and it must refuse.
 			if err := repos.Users.DeleteAccountAndRelatedData(context.Background(), user.ID); err == nil {
 				t.Fatal("expected an error when a child-table delete fails, got nil")
 			}
