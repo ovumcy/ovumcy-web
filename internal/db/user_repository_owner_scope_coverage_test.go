@@ -170,7 +170,7 @@ func TestUserRepositoryRemainingScopedWritersRefuseZeroOwner(t *testing.T) {
 			return repo.MarkWebhookDelivered(ctx, 0, time.Now().UTC(), 1)
 		},
 		"ReleaseWebhookWatermark": func() error {
-			return repo.ReleaseWebhookWatermark(ctx, 0, "period", time.Now().UTC(), nil)
+			return repo.ReleaseWebhookWatermark(ctx, 0, models.WebhookReminderTypePeriod, time.Now().UTC(), nil)
 		},
 		"BackfillCalendarFeedVerifierMAC": func() error {
 			return repo.BackfillCalendarFeedVerifierMAC(ctx, 0, "selector", "mac")

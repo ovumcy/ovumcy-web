@@ -98,6 +98,11 @@ func TestAZeroOwnerRevocationNeverAdvancesTheFence(t *testing.T) {
 	if err := repo.ClearCalendarFeedToken(ctx, 0); !errors.Is(err, ErrUserOwnerRequired) {
 		t.Fatalf("ClearCalendarFeedToken must refuse a zero owner, got %v", err)
 	}
+	// Account erasure advances the fence after its commit, as a removal of the
+	// owner's feed; a zero id removes no feed.
+	if err := repo.DeleteAccountAndRelatedData(ctx, 0); !errors.Is(err, ErrUserOwnerRequired) {
+		t.Fatalf("DeleteAccountAndRelatedData must refuse a zero owner, got %v", err)
+	}
 	if fence.calls != 0 {
 		t.Fatalf("a refused zero-owner revocation must not touch the fence, got %d call(s)", fence.calls)
 	}
