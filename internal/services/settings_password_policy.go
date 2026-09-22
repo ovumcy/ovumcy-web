@@ -88,7 +88,9 @@ func (service *SettingsService) ChangePassword(ctx context.Context, attempt Reau
 		return ErrSettingsReauthRateLimited
 	}
 	if err := service.ValidatePasswordChange(user.PasswordHash, currentPassword, newPassword, confirmPassword); err != nil {
-		if errors.Is(err, ErrSettingsInvalidCurrentPassword) {
+		// Same rule as VerifyReauthPassword: the equalized no-local-password
+		// refusal spends a bcrypt, so it draws the budget too.
+		if errors.Is(err, ErrSettingsInvalidCurrentPassword) || errors.Is(err, ErrSettingsLocalPasswordNotSet) {
 			service.reauthPolicy.AddFailure(service.reauthSecretKey, attempt.clientBucket(), identity, now)
 		}
 		return err

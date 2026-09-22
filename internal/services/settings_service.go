@@ -155,7 +155,10 @@ func (service *SettingsService) VerifyReauthPassword(attempt ReauthAttempt, pass
 		return ErrSettingsReauthRateLimited
 	}
 	if err := service.ValidateCurrentPassword(passwordHash, rawPassword); err != nil {
-		if errors.Is(err, ErrSettingsPasswordInvalid) {
+		// Every refusal that spent a bcrypt draws the budget, not only a wrong
+		// password: the no-local-password branch is equalized to a full compare,
+		// and left uncounted it would be CPU no budget caps.
+		if errors.Is(err, ErrSettingsPasswordInvalid) || errors.Is(err, ErrSettingsLocalPasswordNotSet) {
 			service.reauthPolicy.AddFailure(service.reauthSecretKey, attempt.clientBucket(), identity, now)
 		}
 		return err
