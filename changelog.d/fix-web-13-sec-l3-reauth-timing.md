@@ -1,8 +1,9 @@
 ### Fixed
 
-- **The settings re-auth checks that gate password change, clear-data, and account deletion now spend
-  the same bcrypt-shaped work on every early-return path — no local password set, a blank field, a
-  mismatched confirmation — as they do on a real wrong-password compare.** Previously those paths
-  returned before touching bcrypt at all, which made them measurably faster and let response timing
-  tell apart "this account has no local password" from "wrong password" for anyone already holding a
-  session.
+- **The settings re-auth checks that gate password change, clear-data, and account deletion no longer
+  answer an account with no local password faster than a wrong password.** That branch returned
+  before touching bcrypt at all, so response timing told the two apart for anyone already holding a
+  session; it now spends a dummy compare at the current hashing cost, and a wrong password whose
+  stored hash predates that cost is topped up to match. The refusals decided by the submission
+  itself — a blank field, a mismatched confirmation — deliberately stay free: they disclose nothing
+  and draw down no re-auth budget.

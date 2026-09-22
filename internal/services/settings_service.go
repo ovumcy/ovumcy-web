@@ -213,14 +213,17 @@ func (service *SettingsService) SaveReminderLeadDays(ctx context.Context, userID
 }
 
 // equalizeSettingsReauthTiming runs a bcrypt comparison against the same
-// placeholder hash AuthenticateCredentials uses, so the settings re-auth
-// checks below spend comparable time on every path. Without it, the early
-// "no local password" / "blank submission" returns in ValidateCurrentPassword
-// and ValidatePasswordChange short-circuit before any bcrypt work — measurably
-// faster than a wrong-password compare — and leak, through response timing,
-// whether the account has a local password at all. Both functions are gated by
-// the same reauthPolicy budget (erasure and password change, see the
-// SettingsService.reauthPolicy field comment), so they share one equalizer.
+// placeholder hash AuthenticateCredentials uses, so the one settings re-auth
+// refusal that is decided by ACCOUNT STATE — "this account has no local
+// password" in ValidateCurrentPassword and ValidatePasswordChange — costs what
+// a wrong-password compare costs instead of returning before any bcrypt work.
+//
+// Deliberately not spent on the refusals decided by the caller's own
+// submission (blank field, mismatched confirmation): their latency discloses
+// nothing, and neither reaches the AddFailure that draws down the reauthPolicy
+// budget (erasure and password change, see the SettingsService.reauthPolicy
+// field comment), so equalizing them would hand an authenticated client a
+// full-cost bcrypt per request with no budget capping it.
 //
 // Declared as a var for the same test-substitution reason as
 // equalizeAuthCredentialsTiming: tests replace it with an invocation counter
@@ -242,11 +245,18 @@ func (service *SettingsService) ValidateCurrentPassword(passwordHash string, raw
 		equalizeSettingsReauthTiming(password)
 		return ErrSettingsLocalPasswordNotSet
 	}
+	// A blank submission is the caller's own input, not account state, so its
+	// latency discloses nothing — and equalizing it would spend a full
+	// passwordHashCost bcrypt on a branch VerifyReauthPassword never counts as
+	// a failure, i.e. CPU the re-auth budget does not cap.
 	if password == "" {
-		equalizeSettingsReauthTiming(password)
 		return ErrSettingsPasswordMissing
 	}
 	if bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password)) != nil {
+		// See the same top-up in ValidatePasswordChange: a stored hash below
+		// passwordHashCost would otherwise answer faster than the equalized
+		// no-local-password branch above.
+		topUpAuthCredentialsTiming(passwordHash, password)
 		return ErrSettingsPasswordInvalid
 	}
 	return nil

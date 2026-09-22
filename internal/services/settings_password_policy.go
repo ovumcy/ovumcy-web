@@ -27,12 +27,15 @@ func (service *SettingsService) ValidatePasswordChange(passwordHash string, curr
 	newPassword = strings.TrimSpace(newPassword)
 	confirmPassword = strings.TrimSpace(confirmPassword)
 
+	// The two refusals above this line are decided by what the caller itself
+	// submitted, so their latency tells it nothing it did not already know —
+	// and equalizing them would spend a full passwordHashCost bcrypt on a
+	// branch that never reaches AddFailure below, i.e. CPU no re-auth budget
+	// caps. Only the account-state branch below is equalized.
 	if currentPassword == "" || newPassword == "" || confirmPassword == "" {
-		equalizeSettingsReauthTiming(currentPassword)
 		return ErrSettingsPasswordChangeInvalidInput
 	}
 	if newPassword != confirmPassword {
-		equalizeSettingsReauthTiming(currentPassword)
 		return ErrSettingsPasswordMismatch
 	}
 	if strings.TrimSpace(passwordHash) == "" {
@@ -40,6 +43,11 @@ func (service *SettingsService) ValidatePasswordChange(passwordHash string, curr
 		return ErrSettingsLocalPasswordNotSet
 	}
 	if bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(currentPassword)) != nil {
+		// The compare above spends only what the STORED hash carries, so an
+		// account still on a pre-rotation cost is refused faster than the
+		// equalized branch above pays — the same reverse oracle
+		// AuthenticateCredentials closes. Buy the difference here too.
+		topUpAuthCredentialsTiming(passwordHash, currentPassword)
 		return ErrSettingsInvalidCurrentPassword
 	}
 	if currentPassword == newPassword {
