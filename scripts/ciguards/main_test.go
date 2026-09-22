@@ -695,8 +695,19 @@ func detectScript(t *testing.T) string {
 // runDetect runs script in a throwaway repository whose `main` holds one file
 // and whose checked-out branch adds files on top, and returns the outputs the
 // script wrote to GITHUB_OUTPUT. The repository is its own `origin`, so the
-// script's `git fetch origin main` resolves without a network.
+// script's `git fetch origin main` resolves without a network. A merge_group
+// run gets the fixture's base commit as QUEUE_BASE_SHA.
 func runDetect(t *testing.T, script, event string, files []string) map[string]string {
+	t.Helper()
+	return runDetectQueue(t, script, event, files, queueBaseReal)
+}
+
+// queueBaseReal asks runDetectQueue for the fixture's own base commit.
+const queueBaseReal = "<fixture base>"
+
+// runDetectQueue is runDetect with QUEUE_BASE_SHA chosen by the caller, so the
+// merge_group arm's fallbacks (no base, unreachable base) run too.
+func runDetectQueue(t *testing.T, script, event string, files []string, queueBase string) map[string]string {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -709,14 +720,20 @@ func runDetect(t *testing.T, script, event string, files []string) map[string]st
 		"GIT_AUTHOR_NAME=ciguards", "GIT_AUTHOR_EMAIL=ciguards@example.invalid",
 		"GIT_COMMITTER_NAME=ciguards", "GIT_COMMITTER_EMAIL=ciguards@example.invalid",
 	)
-	git := func(args ...string) {
+	git := func(args ...string) string {
 		t.Helper()
 		cmd := exec.Command("git", args...)
 		cmd.Dir = dir
 		cmd.Env = env
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
+		out, err := cmd.Output()
+		if err != nil {
+			var stderr []byte
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				stderr = exitErr.Stderr
+			}
+			t.Fatalf("git %v: %v\n%s", args, err, stderr)
 		}
+		return strings.TrimSpace(string(out))
 	}
 	write := func(name string) {
 		t.Helper()
@@ -734,15 +751,12 @@ func runDetect(t *testing.T, script, event string, files []string) map[string]st
 	git("add", "-A")
 	git("commit", "-q", "-m", "base")
 	baseSHA := ""
-	if event == "merge_group" {
-		rev := exec.Command("git", "rev-parse", "HEAD")
-		rev.Dir = dir
-		rev.Env = env
-		sha, err := rev.Output()
-		if err != nil {
-			t.Fatalf("git rev-parse HEAD: %v", err)
-		}
-		baseSHA = strings.TrimSpace(string(sha))
+	switch {
+	case event != "merge_group":
+	case queueBase == queueBaseReal:
+		baseSHA = git("rev-parse", "HEAD")
+	default:
+		baseSHA = queueBase
 	}
 	git("remote", "add", "origin", dir)
 	git("checkout", "-q", "-b", "change")
@@ -834,6 +848,26 @@ var detectCases = []detectCase{
 		map[string]string{"run_e2e": "true", "run_frontend": "true"}},
 	{"push", "push", []string{"web/src/js/a.js"},
 		map[string]string{"run_core": "false", "run_frontend": "false", "run_e2e": "true"}},
+}
+
+// TestDetectStepMergeGroupFallbacksRunEverything drives the merge_group arm's
+// two fail-safe exits under `bash -e`: a diff that the real base would excuse
+// from e2e must run everything when the base is missing or unreachable.
+func TestDetectStepMergeGroupFallbacksRunEverything(t *testing.T) {
+	script := detectScript(t)
+	for name, queueBase := range map[string]string{
+		"no base":          "",
+		"unreachable base": "0123456789abcdef0123456789abcdef01234567",
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := runDetectQueue(t, script, "merge_group", []string{"internal/x/a_test.go"}, queueBase)
+			for _, k := range []string{"run_e2e", "run_core", "run_frontend"} {
+				if got[k] != "true" {
+					t.Errorf("%s = %q, want \"true\" (all outputs: %v)", k, got[k], got)
+				}
+			}
+		})
+	}
 }
 
 func TestDetectStepDecidesEachLaneFromTheDiff(t *testing.T) {
