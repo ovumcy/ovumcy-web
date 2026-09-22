@@ -10,5 +10,6 @@ instead of off the comparison. Emptying any of the three bodies left the whole
 suite green while the enumeration oracle each exists to close was fully
 restored. Each body now spends through a named compare seam, the ledger accounts
 at that seam, and three new tests drive the shipped bodies and assert the
-comparisons they actually make. No product behaviour changes: the same
-comparisons run against the same placeholders.
+comparisons they actually make. A source sweep refuses any later
+`equalize…Timing` var whose body calls the primitive directly. No product
+behaviour changes: the same comparisons run against the same placeholders.
