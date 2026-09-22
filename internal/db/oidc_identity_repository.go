@@ -39,7 +39,14 @@ func (repo *OIDCIdentityRepository) FindByIssuerSubject(ctx context.Context, iss
 	return identity, true, nil
 }
 
+// Create inserts a new identity row. A zero identity.UserID is refused rather
+// than written: an owner-scoped read or the account-erasure sweep can never
+// address a row with no owner, so it would sit unreachable forever instead of
+// failing loudly at write time.
 func (repo *OIDCIdentityRepository) Create(ctx context.Context, identity *models.OIDCIdentity) error {
+	if identity == nil || identity.UserID == 0 {
+		return errOIDCIdentityOwnerRequired
+	}
 	return classifyOIDCIdentityCreateError(repo.database.WithContext(ctx).Create(identity).Error)
 }
 

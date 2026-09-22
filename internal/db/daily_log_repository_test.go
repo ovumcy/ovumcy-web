@@ -235,4 +235,28 @@ func TestDailyLogWriteRefusesZeroOwner(t *testing.T) {
 	if err := repo.UpdateSymptomIDs(context.Background(), zeroSym); !errors.Is(err, ErrDailyLogOwnerRequired) {
 		t.Fatalf("UpdateSymptomIDs with UserID==0: got %v, want ErrDailyLogOwnerRequired", err)
 	}
+
+	// Create and CreateBatch must refuse a zero-owner row too: a row with no
+	// owner can never be reached by an owner-scoped read or by account erasure,
+	// so it would sit in the table forever instead of failing loudly here.
+	zeroCreate := &models.DailyLog{UserID: 0, Date: time.Date(2026, time.June, 2, 0, 0, 0, 0, time.UTC)}
+	if err := repo.Create(context.Background(), zeroCreate); !errors.Is(err, ErrDailyLogOwnerRequired) {
+		t.Fatalf("Create with UserID==0: got %v, want ErrDailyLogOwnerRequired", err)
+	}
+
+	owner := createDailyLogTestUser(t, database, "daily-write-zero-owner-batch@example.com")
+	zeroBatch := []models.DailyLog{
+		{UserID: owner, Date: time.Date(2026, time.June, 3, 0, 0, 0, 0, time.UTC)},
+		{UserID: 0, Date: time.Date(2026, time.June, 4, 0, 0, 0, 0, time.UTC)},
+	}
+	if err := repo.CreateBatch(context.Background(), zeroBatch); !errors.Is(err, ErrDailyLogOwnerRequired) {
+		t.Fatalf("CreateBatch with a zero-owner entry: got %v, want ErrDailyLogOwnerRequired", err)
+	}
+	logs, err := repo.ListByUser(context.Background(), owner)
+	if err != nil {
+		t.Fatalf("list after refused batch: %v", err)
+	}
+	if len(logs) != 0 {
+		t.Fatalf("expected the whole batch refused (none written), got %d rows", len(logs))
+	}
 }

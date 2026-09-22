@@ -109,3 +109,33 @@ func TestSymptomRepositoryOwnerScoping(t *testing.T) {
 		t.Fatalf("Update with UserID==0: got %v, want ErrSymptomOwnerRequired", err)
 	}
 }
+
+// TestSymptomRepositoryCreateRefusesZeroOwner proves Create and CreateBatch
+// treat a zero UserID as invalid input, mirroring Update: a zero-owner row
+// can never be reached by an owner-scoped read or by account erasure, so it
+// would sit in the table forever instead of failing loudly at write time.
+func TestSymptomRepositoryCreateRefusesZeroOwner(t *testing.T) {
+	database := openSQLiteForMigrationBootstrapTest(t, filepath.Join(t.TempDir(), "symptoms-zero-owner.db"))
+	repo := NewSymptomRepository(database)
+	owner := createDailyLogTestUser(t, database, "symptom-zero-owner@example.com")
+
+	zeroCreate := models.SymptomType{UserID: 0, Name: "No Owner", Icon: "x", Color: "#FF0000"}
+	if err := repo.Create(context.Background(), &zeroCreate); !errors.Is(err, ErrSymptomOwnerRequired) {
+		t.Fatalf("Create with UserID==0: got %v, want ErrSymptomOwnerRequired", err)
+	}
+
+	zeroBatch := []models.SymptomType{
+		{UserID: owner, Name: "Has Owner", Icon: "x", Color: "#FF0000"},
+		{UserID: 0, Name: "No Owner Batch", Icon: "x", Color: "#FF0000"},
+	}
+	if err := repo.CreateBatch(context.Background(), zeroBatch); !errors.Is(err, ErrSymptomOwnerRequired) {
+		t.Fatalf("CreateBatch with a zero-owner entry: got %v, want ErrSymptomOwnerRequired", err)
+	}
+	symptoms, err := repo.ListByUser(context.Background(), owner)
+	if err != nil {
+		t.Fatalf("list after refused batch: %v", err)
+	}
+	if len(symptoms) != 0 {
+		t.Fatalf("expected the whole batch refused (none written), got %d rows", len(symptoms))
+	}
+}

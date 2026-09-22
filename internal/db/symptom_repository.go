@@ -61,13 +61,27 @@ func classifySymptomWriteError(err error) error {
 	return classifyUniqueConstraintError(err, "symptom_types.user_id_name")
 }
 
+// Create inserts a new custom or builtin symptom row. A zero symptom.UserID is
+// refused rather than written: an owner-scoped read or the account-erasure
+// sweep can never address a row with no owner, so it would sit unreachable
+// forever instead of failing loudly at write time.
 func (repo *SymptomRepository) Create(ctx context.Context, symptom *models.SymptomType) error {
+	if symptom.UserID == 0 {
+		return ErrSymptomOwnerRequired
+	}
 	return classifySymptomWriteError(repo.database.WithContext(ctx).Create(symptom).Error)
 }
 
+// CreateBatch refuses the whole batch when any symptom carries a zero
+// UserID, for the same reason as Create.
 func (repo *SymptomRepository) CreateBatch(ctx context.Context, symptoms []models.SymptomType) error {
 	if len(symptoms) == 0 {
 		return nil
+	}
+	for _, symptom := range symptoms {
+		if symptom.UserID == 0 {
+			return ErrSymptomOwnerRequired
+		}
 	}
 	return classifySymptomWriteError(repo.database.WithContext(ctx).Create(&symptoms).Error)
 }
