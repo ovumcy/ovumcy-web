@@ -617,8 +617,11 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - changes
-    # Same fail-safe gate as test-go-shard above.
-    if: ${{ !cancelled() && needs.changes.outputs.run_core != 'false' }}
+    # Same fail-safe shape as test-go-shard above (`!= 'false'`, never `==
+    # 'true'`, so an absent or crashed output still runs it), but its own
+    # ground: `run_frontend`, not `run_core` — a backend-only diff has
+    # nothing for this job's lint/build/test steps to see.
+    if: ${{ !cancelled() && needs.changes.outputs.run_frontend != 'false' }}
     permissions:
       contents: read
 
@@ -721,12 +724,16 @@ jobs:
           set -euo pipefail
           echo "test-go-shard=$SHARD_RESULT test-go-rest=$REST_RESULT test-go-analysis=$ANALYSIS_RESULT coverage-merge=$MERGE_RESULT test-frontend=$FRONTEND_RESULT"
           # `skipped` is a PASS here and only here: the `changes` job cleared
-          # `run_core` — the diff was docs-only, or this is a `push` whose core
-          # suite the merge queue already ran on the identical commit. Either
-          # way it is a decision not to run, not a failure to run. Anything else
-          # — failure, cancelled, or a state this gate has never seen — is this
-          # context's failure, because the whole point of the job is to have a
-          # verdict to report.
+          # the output the lane gates on — `run_core` for the four Go/coverage
+          # lanes, `run_frontend` for test-frontend — either because the diff
+          # is irrelevant to it (docs-only for `run_core`; nothing under
+          # web/e2e/scripts-mjs/package*.json/the three `@source` files for
+          # `run_frontend`) or because this is a `push` whose core suite AND
+          # test-frontend the merge queue already ran on the identical
+          # commit. Either way it is a decision not to run, not a failure to
+          # run. Anything else — failure, cancelled, or a state this gate has
+          # never seen — is this context's failure, because the whole point of
+          # the job is to have a verdict to report.
           for result in "$SHARD_RESULT" "$REST_RESULT" "$ANALYSIS_RESULT" "$MERGE_RESULT" "$FRONTEND_RESULT"; do
             case "$result" in
               success|skipped) ;;
@@ -1077,10 +1084,31 @@ jobs:
       # `run_unit` — the three Go lanes (test-go-shard, test-go-rest,
       # test-go-analysis). A Playwright spec is neither compiled into the Go
       # binary nor go:embed'ed, so an `e2e/**`-only change cannot alter a Go
-      # test, a lint finding or a coverage line. test-FRONTEND deliberately
-      # keeps gating on `run_core` instead: its `lint:types` step type-checks
-      # the e2e suite, so it is the one job such a change must run.
+      # test, a lint finding or a coverage line. test-frontend does not gate on
+      # this output: its own `run_frontend` below is what decides it, because a
+      # backend-only change (Go, migrations, locales) has nothing for
+      # `lint:js`/`lint:types`/`test:unit`/`build` to see either.
       run_unit: ${{ steps.detect.outputs.run_unit }}
+      # `run_frontend` — test-frontend alone. True on anything that job's own
+      # steps read: `web/**` (lint:js's bundle targets, test:unit, build, and
+      # the committed-bundle diff), `e2e/**` and `playwright.config.ts`
+      # (lint:js's e2e scope and lint:types' whole tsconfig), `scripts/*.mjs`
+      # (build-css.mjs/build-js.mjs/run-e2e.mjs/e2e-runtime.mjs, lint:js's
+      # non-recursive "scripts" glob — a Go file under scripts/ never matches
+      # it), package.json/package-lock.json (npm ci's dependency set),
+      # eslint.config.mjs and tsconfig.json (what the two lint steps run
+      # under), and the three files outside web/ that
+      # web/src/css/input.css names as Tailwind `@source` — a template or Go
+      # markup-helper edit reaches the CSS build exactly as a change under
+      # web/ would (scripts/ciguards pins this list against that file's own
+      # `@source` lines, so a fourth source added later cannot drift past
+      # it). Independent of `run_core`/`run_unit` on purpose: a Go-only diff
+      # must not pay this job, and an e2e-spec-only one must, which is the
+      # opposite of what `run_unit` decides for the same diff. Unlike
+      # `run_frontend`'s own event-level fail-safes, `push` IS narrowed here,
+      # same as `run_core` and for the same reason (below): the merge queue
+      # already ran this job on the identical commit.
+      run_frontend: ${{ steps.detect.outputs.run_frontend }}
 
     steps:
       - name: Checkout
@@ -1127,6 +1155,8 @@ jobs:
           # the single verdict write at the end, and `run_e2e` starts at true
           # so only a positive docs-only determination clears it.
           run_e2e=true
+          run_core=true
+          run_frontend=true
           verdict=""
 
           case "$EVENT_NAME" in
@@ -1193,8 +1223,20 @@ jobs:
               # hand edit lands ungated. Detected here beside the runbook and
               # consumed at `run_core` below for the same reason.
               licenses_changes="$(printf '%s\n' "$files" | grep -E '^THIRD_PARTY_LICENSES\.md$' || true)"
+              # Narrower still, and applied only to run_e2e below: a Go test
+              # file or its fixture data never reaches the compiled binary —
+              # `go build` excludes `_test.go`, and `testdata/` is excluded by
+              # the go tool itself (also skipped by scripts/archcheck's own
+              # walk) — so a diff confined to them cannot change what the
+              # browser suite exercises. This does NOT feed run_core below —
+              # a test file IS compiled Go, and running its assertions is
+              # exactly what the Go lanes are there for — so run_core is left
+              # untouched in the branch below that narrows only run_e2e.
+              e2e_irrelevant_changes="$(printf '%s\n' "$app_changes" | grep -E '_test\.go$|(^|/)testdata/' || true)"
+              e2e_changes="$(printf '%s\n' "$app_changes" | grep -vE '_test\.go$|(^|/)testdata/' || true)"
               if [ -z "$app_changes" ]; then
                 run_e2e=false
+                run_core=false
                 if [ -n "$runbook_changes" ]; then
                   verdict="documentation-only change that touches the executed operator runbook: the browser e2e jobs and the race lanes report success without running, and the Go lanes run for it."
                 elif [ -n "$licenses_changes" ]; then
@@ -1202,17 +1244,48 @@ jobs:
                 else
                   verdict="docs/meta-only change: the browser e2e jobs and the unit/race battery report success without running."
                 fi
+              elif [ -z "$e2e_changes" ]; then
+                run_e2e=false
+                verdict="only Go test files and/or testdata changed ($(printf '%s\n' "$e2e_irrelevant_changes" | tr '\n' ' ')): they do not reach the compiled binary, so the browser e2e jobs report success without running; the Go lanes still run for them."
               else
                 verdict="app-affecting change detected: running e2e and the battery."
+              fi
+
+              # test-frontend's own ground, independent of app_changes above:
+              # its steps read web/**, e2e/**, playwright.config.ts,
+              # scripts/*.mjs, package(-lock).json, eslint.config.mjs and
+              # tsconfig.json (see the output comment) — PLUS the three
+              # non-web/ files web/src/css/input.css declares as Tailwind
+              # `@source`: internal/templates/**/*.html,
+              # internal/httpx/markup.go and
+              # internal/api/calendar_days_view_helpers.go. Those feed
+              # `npm run build`'s CSS step exactly as if they lived under
+              # web/, so a template-only diff must still run this job — miss
+              # it and "Committed bundles must match a fresh build" (below)
+              # never re-runs to catch the stale CSS. scripts/ciguards pins
+              # this pattern against every `@source` line in that file, so a
+              # fourth one added later fails CI here rather than drifting
+              # silently. Anything else — a backend-only diff touching
+              # neither — leaves this job with nothing to lint, test or
+              # build.
+              frontend_changes="$(printf '%s\n' "$files" | grep -E '^(web/|e2e/|scripts/[^/]+\.mjs$|package(-lock)?\.json$|eslint\.config\.mjs$|tsconfig\.json$|playwright\.config\.ts$|internal/templates/|internal/httpx/markup\.go$|internal/api/calendar_days_view_helpers\.go$)' || true)"
+              if [ -z "$frontend_changes" ]; then
+                run_frontend=false
+                echo "no frontend input changed: test-frontend reports success without running."
+              else
+                echo "frontend-affecting change detected: running test-frontend."
               fi
             fi
           fi
 
           echo "$verdict"
 
-          # `run_core` starts from the same allowlist verdict — diverge here,
-          # never in a consumer, if the two ever need different file sets — and
-          # then drops the work the merge queue has already done.
+          # `run_core` was already set above, on the SAME allowlist verdict as
+          # run_e2e's docs-only branch (diverge there, never in a consumer, if
+          # the two ever need different file sets) — but NOT on the narrower
+          # test/testdata one that only demotes run_e2e, since a test file is
+          # still compiled Go the unit/race lanes must run. What follows drops
+          # the work the merge queue has already done.
           #
           # A `push` to `main` can only be a merge the queue built: the «Protect
           # main» rule requires a pull request and the queue, and its bypass
@@ -1229,7 +1302,6 @@ jobs:
           # Fail-safe in the same direction as everything above: the clear is
           # written only inside the `push` branch, so an unknown event, a
           # crashed job or an empty output all leave the core suite RUNNING.
-          run_core="$run_e2e"
           # The runbook force, and the only place it is applied: the Go lanes
           # execute the operator runbook (see the detection above), so a diff
           # that touches it needs them even when everything else about the
@@ -1246,7 +1318,8 @@ jobs:
           fi
           if [ "$EVENT_NAME" = "push" ]; then
             run_core=false
-            echo "push to main: the merge queue already ran the core suite on this exact commit; running only the lanes it skips."
+            run_frontend=false
+            echo "push to main: the merge queue already ran the core suite (test-frontend included) on this exact commit; running only the lanes it skips."
           fi
 
           # The two narrower slices. Both start from `run_core`, so everything
@@ -1285,6 +1358,7 @@ jobs:
           echo "run_core=$run_core" >> "$GITHUB_OUTPUT"
           echo "run_race=$run_race" >> "$GITHUB_OUTPUT"
           echo "run_unit=$run_unit" >> "$GITHUB_OUTPUT"
+          echo "run_frontend=$run_frontend" >> "$GITHUB_OUTPUT"
 
   # The browser suite runs here, split across shards, and the required status
   # check named `e2e` is the thin gate job below — the same shape branch
@@ -1842,9 +1916,11 @@ jobs:
     # in `needs:` reported `success`. What those five have in common is that
     # their OWN dependencies (`test-go-shard`, `test-go-rest`,
     # `test-go-analysis`, `coverage-merge`, `test-frontend`, both race lanes)
-    # are `skipped` on `push`, because `changes` clears `run_core` there
-    # unconditionally — which is also why this holds for every push and not
-    # only for those six: nothing about a particular commit takes part in it.
+    # are `skipped` on `push` — `test-go-shard` through `coverage-merge`
+    # because `changes` clears `run_core` there unconditionally, and
+    # `test-frontend` for the matching reason on its own `run_frontend`
+    # output — which is also why this holds for every push and not only for
+    # those six: nothing about a particular commit takes part in it.
     # At `4b3c01d7`, `latest`, `main` and `sha-3891c0f` all pointed at one
     # index 242 commits behind `main`, and `sha-4b3c01d` did not exist at all.
     #
@@ -1875,8 +1951,9 @@ jobs:
     # whatever the commit touched. `image-smoke` and `e2e-postgres-smoke`
     # therefore boot the image on EVERY push to `main`: measured on 5049126f, a
     # documentation-only merge, where `image-smoke` reports `success` in the
-    # push run. Only `run_core` is cleared on push, and it clears the other
-    # three lanes.
+    # push run. Only `run_core` and `run_frontend` are cleared on push, and
+    # together they clear the other three lanes (`test` included, through
+    # both its Go dependencies and `test-frontend`).
     if: >-
       ${{ !cancelled()
       && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')

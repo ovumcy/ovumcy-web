@@ -16,6 +16,7 @@ package ciguards
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -433,5 +434,138 @@ func TestCheckoutSitesMissingPersistCredentialsFalseCatchesAMissingFlag(t *testi
 	}
 	if len(missing) != 1 || !strings.HasPrefix(missing[0], "line 10:") {
 		t.Fatalf("found missing site(s) %v, want exactly line 10 (the second checkout, carrying only fetch-depth)", missing)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// run_frontend's allowlist covers every Tailwind @source, not just web/**.
+// ---------------------------------------------------------------------------
+
+// cssSourceLine matches one Tailwind `@source "..."` declaration in
+// web/src/css/input.css.
+var cssSourceLine = regexp.MustCompile(`@source "([^"]+)";`)
+
+// cssSources returns every @source path declared there, resolved to a
+// module-root-relative, forward-slashed path — the same shape a file name in
+// the `changes` job's diff has. Glob syntax ("**", "*") is kept rather than
+// expanded: the caller decides how to test one against a regexp, because
+// "does the pattern match this literal path" and "does it match every
+// possible expansion of this glob" are different questions.
+func cssSources(t *testing.T) []string {
+	t.Helper()
+
+	cssPath := filepath.Join(repoRoot(t), "web", "src", "css", "input.css")
+	raw, err := os.ReadFile(cssPath)
+	if err != nil {
+		t.Fatalf("read web/src/css/input.css: %v", err)
+	}
+
+	matches := cssSourceLine.FindAllStringSubmatch(string(raw), -1)
+	if len(matches) == 0 {
+		t.Fatal("found zero @source lines in web/src/css/input.css — the scan itself is broken, since the Tailwind build declares its content sources there")
+	}
+
+	var sources []string
+	for _, m := range matches {
+		sources = append(sources, path.Clean(path.Join("web/src/css", m[1])))
+	}
+	return sources
+}
+
+// runFrontendPattern extracts the `grep -E '...'` argument the `changes` job
+// evaluates for `frontend_changes` — the same string the shell step itself
+// runs against a diff, read out by plain substring search rather than a
+// second regexp, so nothing here has to agree with itself about how to escape
+// one.
+func runFrontendPattern(t *testing.T) string {
+	t.Helper()
+
+	block := workflowfile.Job(t, ".github/workflows/ci.yml", "changes")
+	marker := `frontend_changes="$(printf '%s\n' "$files" | grep -E '`
+	start := strings.Index(block, marker)
+	if start < 0 {
+		t.Fatal("no `frontend_changes=` assignment found in the `changes` job — it was renamed or reshaped, and this guard would judge nothing")
+	}
+	rest := block[start+len(marker):]
+	end := strings.Index(rest, "'")
+	if end < 0 {
+		t.Fatal("`frontend_changes=`'s grep -E argument has no closing quote — the line was reshaped, and this guard would judge nothing")
+	}
+	return rest[:end]
+}
+
+// samplePathForSource turns a possibly-globbed @source path into one concrete
+// path a real file there would have. "**" (any depth of directories) and "*"
+// (any single path segment) are Tailwind's only wildcards among these
+// sources; substituting a literal, slash-free segment for each cannot
+// accidentally satisfy an alternative in the pattern that a real expansion
+// would not.
+func samplePathForSource(source string) string {
+	sample := strings.ReplaceAll(source, "**", "sampledir")
+	return strings.ReplaceAll(sample, "*", "samplefile")
+}
+
+// FrontendPatternCoversCSSSources reports every CSS @source (as the concrete
+// sample path a real file there would have) the run_frontend allowlist
+// regexp does not match — named sites, never a count, so the caller can say
+// exactly which `@source` a pattern edit dropped.
+func FrontendPatternCoversCSSSources(pattern string, sources []string) ([]string, error) {
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, fmt.Errorf("run_frontend pattern %q does not compile: %w", pattern, err)
+	}
+	var uncovered []string
+	for _, source := range sources {
+		if !re.MatchString(samplePathForSource(source)) {
+			uncovered = append(uncovered, source)
+		}
+	}
+	return uncovered, nil
+}
+
+// TestRunFrontendPatternCoversEveryCSSSource is the real-file proof: every
+// @source web/src/css/input.css declares today must reach a real diff on
+// test-frontend's run_frontend output, or a change confined to one silently
+// skips the job whose "Committed bundles must match a fresh build" step is
+// the only thing that would catch the resulting stale CSS.
+func TestRunFrontendPatternCoversEveryCSSSource(t *testing.T) {
+	pattern := runFrontendPattern(t)
+	sources := cssSources(t)
+
+	uncovered, err := FrontendPatternCoversCSSSources(pattern, sources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(uncovered) > 0 {
+		t.Fatalf("run_frontend's allowlist does not cover %d @source path(s) declared by web/src/css/input.css: %v", len(uncovered), uncovered)
+	}
+}
+
+// TestFrontendPatternCoversCSSSourcesRefusesAMissingSource proves the guard
+// above actually refuses something, rather than passing vacuously: with the
+// real internal/templates alternative stripped out of the real pattern, the
+// real @source lines from input.css must come back naming exactly that source
+// as uncovered.
+func TestFrontendPatternCoversCSSSourcesRefusesAMissingSource(t *testing.T) {
+	pattern := runFrontendPattern(t)
+	sources := cssSources(t)
+
+	narrowed := strings.Replace(pattern, "internal/templates/|", "", 1)
+	if narrowed == pattern {
+		t.Fatal("the internal/templates alternative was not found in the real pattern — this test no longer narrows anything")
+	}
+
+	uncovered, err := FrontendPatternCoversCSSSources(narrowed, sources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, u := range uncovered {
+		if strings.HasPrefix(u, "internal/templates/") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("dropping the internal/templates alternative from the pattern did not surface it as uncovered: %v", uncovered)
 	}
 }
