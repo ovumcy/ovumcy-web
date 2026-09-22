@@ -14,4 +14,5 @@
   zero-row CAS miss — and now call the same refusal directly before building their query.
   Calendar-feed token issue and clear now refuse a zero id before advancing the restore fence,
   not after: a fence advanced for a revocation that never happened made a restore from any
-  earlier backup disarm every armed feed.
+  earlier backup disarm every armed feed. Account deletion refuses a zero id for the same reason:
+  it erased nothing, reported success, and still advanced the fence.

@@ -1629,6 +1629,11 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 }
 
 func (repo *UserRepository) DeleteAccountAndRelatedData(ctx context.Context, userID uint) error {
+	// A zero id erases nothing, and the fence advance below would then record
+	// a removal no owner caused.
+	if err := requireUserOwnerID(userID); err != nil {
+		return err
+	}
 	err := repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("user_id = ?", userID).Delete(&models.DailyLog{}).Error; err != nil {
 			return err

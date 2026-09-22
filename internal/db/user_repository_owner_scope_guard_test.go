@@ -61,9 +61,10 @@ type userUpdateSite struct {
 	// concatenated: the predicate was assembled from a concatenation rather
 	// than written as one string literal.
 	concatenated bool
-	// guardBeforeClause: requireUserOwnerID is called, and its call sits before
-	// the Where that builds the clause. Order is part of the property — a
-	// refusal reached after the query was built refuses nothing.
+	// guardBeforeClause: requireUserOwnerID is called with its error returned
+	// to the caller, and that check sits before the Where that builds the
+	// clause. Order is part of the property — a refusal reached after the
+	// query was built refuses nothing.
 	guardBeforeClause bool
 	// reportsZeroRows: RowsAffected is not merely read but reaches the caller —
 	// returned, or tested in a condition that returns. A read whose result is
@@ -143,12 +144,6 @@ func scanUserUpdateSites(path string, source []byte) (sites map[string]userUpdat
 		guardAt := -1
 		ast.Inspect(function.Body, func(node ast.Node) bool {
 			switch typed := node.(type) {
-			case *ast.Ident:
-				if typed.Name == "requireUserOwnerID" {
-					if at := int(typed.Pos()); guardAt < 0 || at < guardAt {
-						guardAt = at
-					}
-				}
 			case *ast.ReturnStmt:
 				for _, result := range typed.Results {
 					if mentionsRowsAffected(result) {
@@ -156,10 +151,19 @@ func scanUserUpdateSites(path string, source []byte) (sites map[string]userUpdat
 					}
 				}
 			case *ast.IfStmt:
+				// Only a refusal whose error is returned counts: `_ =
+				// requireUserOwnerID(id)` or a branch that returns nil calls
+				// the guard and still lets the zero id through.
+				if isReturnedOwnerGuard(typed) {
+					if at := int(typed.Pos()); guardAt < 0 || at < guardAt {
+						guardAt = at
+					}
+				}
 				// `if result.RowsAffected == 0 { return Err... }`: the zero-row
 				// outcome reaches the caller through the branch rather than
-				// through the return expression.
-				if mentionsRowsAffected(typed.Cond) && containsReturn(typed.Body) {
+				// through the return expression — but only if the branch hands
+				// back a value; `return nil` there is the silent success itself.
+				if mentionsRowsAffected(typed.Cond) && returnsAValue(typed.Body) {
 					site.reportsZeroRows = true
 				}
 			}
@@ -214,15 +218,67 @@ func mentionsRowsAffected(node ast.Node) bool {
 	return found
 }
 
-func containsReturn(node ast.Node) bool {
-	found := false
-	ast.Inspect(node, func(n ast.Node) bool {
-		if _, ok := n.(*ast.ReturnStmt); ok {
-			found = true
+// isReturnedOwnerGuard matches `if err := requireUserOwnerID(...); err != nil
+// { return ..., err }`: the refusal runs and its error is what the branch
+// hands back.
+func isReturnedOwnerGuard(stmt *ast.IfStmt) bool {
+	assign, ok := stmt.Init.(*ast.AssignStmt)
+	if !ok || len(assign.Lhs) != 1 || len(assign.Rhs) != 1 {
+		return false
+	}
+	call, ok := assign.Rhs[0].(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	if callee, ok := call.Fun.(*ast.Ident); !ok || callee.Name != "requireUserOwnerID" {
+		return false
+	}
+	errName, ok := assign.Lhs[0].(*ast.Ident)
+	if !ok || errName.Name == "_" {
+		return false
+	}
+	cond, ok := stmt.Cond.(*ast.BinaryExpr)
+	if !ok || cond.Op != token.NEQ || !namesIdent(cond.X, errName.Name) || !namesIdent(cond.Y, "nil") {
+		return false
+	}
+	for _, inner := range stmt.Body.List {
+		ret, ok := inner.(*ast.ReturnStmt)
+		if !ok {
+			continue
 		}
-		return !found
-	})
-	return found
+		for _, result := range ret.Results {
+			if namesIdent(result, errName.Name) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// returnsAValue reports whether a branch returns something other than nil or
+// the query's own Error, which is nil on a zero-row UPDATE.
+func returnsAValue(body *ast.BlockStmt) bool {
+	for _, inner := range body.List {
+		ret, ok := inner.(*ast.ReturnStmt)
+		if !ok {
+			continue
+		}
+		for _, result := range ret.Results {
+			if namesIdent(result, "nil") {
+				continue
+			}
+			if selector, ok := result.(*ast.SelectorExpr); ok && selector.Sel.Name == "Error" {
+				continue
+			}
+			return true
+		}
+	}
+	return false
+}
+
+func namesIdent(node ast.Node, name string) bool {
+	ident, ok := node.(*ast.Ident)
+	return ok && ident.Name == name
 }
 
 // unguardedUserUpdateSites names the functions that build the scoping clause
@@ -368,14 +424,34 @@ func TestUserUpdateScopingScanClassifiesEachShape(t *testing.T) {
 			offender: true,
 		},
 		{
+			name:     "guard result discarded",
+			body:     "\t_ = requireUserOwnerID(userID)\n\t_ = repo.database.Model(&models.User{}).Where(\"id = ? AND email = ?\", userID, e).Update(\"a\", 1).Error",
+			offender: true,
+		},
+		{
+			name:     "guard error swallowed by return nil",
+			body:     "\tif err := requireUserOwnerID(userID); err != nil {\n\t\treturn nil\n\t}\n\t_ = repo.database.Model(&models.User{}).Where(\"id = ? AND email = ?\", userID, e).Update(\"a\", 1).Error",
+			offender: true,
+		},
+		{
 			name:     "guard called before the clause is built",
-			body:     "\tif err := requireUserOwnerID(userID); err != nil {\n\t\treturn\n\t}\n\t_ = repo.database.Model(&models.User{}).Where(\"id = ? AND email = ?\", userID, e).Update(\"a\", 1).Error",
+			body:     "\tif err := requireUserOwnerID(userID); err != nil {\n\t\treturn err\n\t}\n\t_ = repo.database.Model(&models.User{}).Where(\"id = ? AND email = ?\", userID, e).Update(\"a\", 1).Error",
 			offender: false,
 		},
 		{
 			name:     "concatenated clause guarded before the clause is built",
-			body:     "\tif err := requireUserOwnerID(userID); err != nil {\n\t\treturn\n\t}\n\t_ = repo.database.Model(&models.User{}).Where(\"id = ? AND \"+col+\" = ?\", userID, v).Update(\"a\", 1).Error",
+			body:     "\tif err := requireUserOwnerID(userID); err != nil {\n\t\treturn false, err\n\t}\n\t_ = repo.database.Model(&models.User{}).Where(\"id = ? AND \"+col+\" = ?\", userID, v).Update(\"a\", 1).Error",
 			offender: false,
+		},
+		{
+			name:     "zero-row branch returns nil",
+			body:     "\tresult := repo.database.Model(&models.User{}).Where(\"id = ? AND email = ?\", userID, e).Update(\"a\", 1)\n\tif result.RowsAffected == 0 {\n\t\treturn nil\n\t}\n\treturn result.Error",
+			offender: true,
+		},
+		{
+			name:     "zero-row branch returns the query error",
+			body:     "\tresult := repo.database.Model(&models.User{}).Where(\"id = ? AND email = ?\", userID, e).Update(\"a\", 1)\n\tif result.RowsAffected == 0 {\n\t\treturn result.Error\n\t}\n\treturn nil",
+			offender: true,
 		},
 		{
 			name:     "zero-row outcome returned",
@@ -384,7 +460,7 @@ func TestUserUpdateScopingScanClassifiesEachShape(t *testing.T) {
 		},
 		{
 			name:     "zero-row outcome reported through a branch",
-			body:     "\tresult := repo.database.Model(&models.User{}).Where(\"id = ? AND email = ?\", userID, e).Update(\"a\", 1)\n\tif result.RowsAffected == 0 {\n\t\treturn\n\t}\n\t_ = result.Error",
+			body:     "\tresult := repo.database.Model(&models.User{}).Where(\"id = ? AND email = ?\", userID, e).Update(\"a\", 1)\n\tif result.RowsAffected == 0 {\n\t\treturn ErrResetTokenAlreadyConsumed\n\t}\n\t_ = result.Error",
 			offender: false,
 		},
 		{
