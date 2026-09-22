@@ -6,8 +6,10 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 // TestUnsupportedLegacyRoleResetRedeemWritesNothing pins the guard that keeps a
@@ -21,16 +23,47 @@ import (
 // handler's own unsupported-role arm after the write is never reached on this
 // route. The claim is proven on the row, not on the status.
 //
+// The route redeems three token purposes through the same resolver — recovery,
+// forced-from-LOCAL and forced-from-OIDC — so each is minted and refused on its
+// own: a role check that moved into one purpose's branch would leave the other
+// two rotating the code.
+//
 // The positive anchor is the same cookie redeemed once the role is back to
-// owner: it succeeds, so the refusal above is the role's doing and not a stale
-// or malformed token.
+// owner: it succeeds AND rewrites the row, so the refusal above is the role's
+// doing and not a stale or malformed token, proven on the same channel.
 func TestUnsupportedLegacyRoleResetRedeemWritesNothing(t *testing.T) {
 	t.Parallel()
 
+	for _, purpose := range []string{
+		services.PasswordResetTokenPurposeRecovery,
+		services.PasswordResetTokenPurposeForcedLocal,
+		services.PasswordResetTokenPurposeForcedOIDC,
+	} {
+		t.Run(purpose, func(t *testing.T) {
+			t.Parallel()
+			assertRoleRefusedResetRedeemWritesNothing(t, purpose)
+		})
+	}
+}
+
+func assertRoleRefusedResetRedeemWritesNothing(t *testing.T, purpose string) {
+	t.Helper()
+
 	app, database := newOnboardingTestApp(t)
-	user := createOnboardingTestUser(t, database, "smoke-legacy-reset@example.com", "StrongPass1", true)
+	user := createOnboardingTestUser(t, database, "smoke-legacy-reset-"+purpose+"@example.com", "StrongPass1", true)
 	recoveryCode := mustSetRecoveryCodeForUser(t, database, user.ID)
-	resetCookieValue := requestResetCookieByRecoveryCode(t, app, user.Email, recoveryCode, "StrongPass1")
+
+	var resetCookieValue string
+	if purpose == services.PasswordResetTokenPurposeRecovery {
+		// The recovery purpose is minted by the real start route, as a browser gets it.
+		resetCookieValue = requestResetCookieByRecoveryCode(t, app, user.Email, recoveryCode, "StrongPass1")
+	} else {
+		token, err := services.BuildPasswordResetToken([]byte(testHandlerSecretKey), user.ID, user.PasswordHash, user.AuthSessionVersion, purpose, 30*time.Minute, time.Now())
+		if err != nil {
+			t.Fatalf("BuildPasswordResetToken(%s): %v", purpose, err)
+		}
+		resetCookieValue = mustSealResetCookieValueForTest(t, []byte(testHandlerSecretKey), token)
+	}
 
 	var before models.User
 	if err := database.First(&before, user.ID).Error; err != nil {
@@ -73,6 +106,9 @@ func TestUnsupportedLegacyRoleResetRedeemWritesNothing(t *testing.T) {
 			t.Fatalf("a role-refused redeem must not set %s", name)
 		}
 	}
+	if cookie := responseCookie(refused.Cookies(), resetPasswordCookieName); cookie == nil || strings.TrimSpace(cookie.Value) != "" {
+		t.Fatalf("a role-refused redeem answers as an invalid reset token and must retract the reset cookie, got %#v", cookie)
+	}
 
 	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Update("role", models.RoleOwner).Error; err != nil {
 		t.Fatalf("restore owner role: %v", err)
@@ -81,6 +117,13 @@ func TestUnsupportedLegacyRoleResetRedeemWritesNothing(t *testing.T) {
 	assertStatusCode(t, accepted, http.StatusOK)
 	if cookie := responseCookie(accepted.Cookies(), recoveryCodeCookieName); cookie == nil || strings.TrimSpace(cookie.Value) == "" {
 		t.Fatal("anchor: the same cookie redeemed by an owner must stage the recovery-code reveal — without it the refusal above proves nothing about the role")
+	}
+	var rewritten models.User
+	if err := database.First(&rewritten, user.ID).Error; err != nil {
+		t.Fatalf("load user after accepted redeem: %v", err)
+	}
+	if rewritten.PasswordHash == before.PasswordHash || rewritten.RecoveryCodeHash == before.RecoveryCodeHash {
+		t.Fatal("anchor: the owner's redeem must rewrite the password and rotate the recovery code on the row — the refusal above is only meaningful against a write that does happen")
 	}
 }
 

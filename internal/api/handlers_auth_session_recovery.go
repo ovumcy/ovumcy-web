@@ -149,6 +149,15 @@ func (handler *Handler) ResetPassword(c fiber.Ctx) error {
 	// minted the 30-day remembered cookie on a device nobody said to remember,
 	// on the one path whose whole premise is that the owner just lost control of
 	// her password.
+	//
+	// CompleteReset has already rotated the recovery code by this line and the
+	// reveal is staged only below, so any refusal here costs the owner a code
+	// she has not seen. The unsupported-role arm is unreachable on purpose:
+	// ResolveUserByResetToken refuses a non-owner as an invalid token before
+	// the write, and that ordering — not this arm — keeps a role refusal from
+	// destroying the account's way back in
+	// (TestUnsupportedLegacyRoleResetRedeemWritesNothing). Moving the role check
+	// after the write would turn this arm into the lossy path.
 	if _, err := handler.setAuthCookie(c, user, false); err != nil {
 		spec := authSessionCreateErrorSpec()
 		if errors.Is(err, services.ErrAuthUnsupportedRole) {
