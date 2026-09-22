@@ -917,6 +917,11 @@ jobs:
     # numbers. It no longer runs at all: this job cascades to skipped off the
     # unit lanes, which `run_core` clears on push.
     #
+    # A merge_group entry the `changes` job finds already proven clears the
+    # unit lanes too, so for that commit Codecov receives no upload from the
+    # queue OR the push: its `main` history skips the point. Accepted — the
+    # entry's own pull_request run uploaded the same tree's numbers.
+    #
     # `coverage-merge` rather than a test lane: the artifact name and contents
     # are unchanged, only the job that produces `coverage-out` moved.
     runs-on: ubuntu-latest
@@ -1345,11 +1350,13 @@ jobs:
           # run_core/run_frontend exactly as the branches above left them,
           # which is the running direction.
           #
-          # Residual, not closed here: a PR retargeted onto this base WITHOUT a
-          # new push keeps the green run it had against its old base — `edited`
-          # is not among the `pull_request` types that start a run, and every
-          # binding below reads the PR's base as it is NOW, while that run
-          # tested the head merged into the old one.
+          # Residual, not closed here: a head that ran green against ANOTHER
+          # base and now sits in a PR on this one without a new push — a PR
+          # retargeted, or a closed PR's branch reopened as a new PR — keeps
+          # that green run. `edited` is not among the `pull_request` types that
+          # start a run, and every binding below reads the PRs as they are NOW
+          # (a run's `pull_requests` is computed at read time from the open
+          # PRs), while that run tested the head merged into the other base.
           if [ "$EVENT_NAME" = "merge_group" ]; then
             proven=""
             # The base is held to a plain branch-name charset because it is
