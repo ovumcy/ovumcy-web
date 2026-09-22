@@ -46,7 +46,7 @@ func assertUsageGoalAvoidWarning(t *testing.T, document *html.Node, wantVisible 
 	warning := warnings[0]
 
 	scope := warning.Parent
-	for scope != nil && !(scope.Type == html.ElementNode && htmlHasAttr(scope, "data-usage-goal-warning-scope")) {
+	for scope != nil && (scope.Type != html.ElementNode || !htmlHasAttr(scope, "data-usage-goal-warning-scope")) {
 		scope = scope.Parent
 	}
 	if scope == nil {
