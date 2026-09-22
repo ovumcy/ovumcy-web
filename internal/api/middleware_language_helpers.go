@@ -13,7 +13,7 @@ func (handler *Handler) LanguageMiddleware(c fiber.Ctx) error {
 		// and reads no request language: ServeCalendarFeed resolves "today"
 		// from the owner's stored users.timezone
 		// (CalendarFeedService.ResolveFeed), and a real calendar client sends
-		// no language cookie. The route carries no AuthRequired either, so the
+		// no language cookie. The route authenticates nobody either, so the
 		// timezone header and cookie are never resolved for it
 		// (resolveOwnerRequestTimezone): an owner whose users.timezone was
 		// never captured gets the instance zone, not the poller's cookies —
@@ -31,13 +31,13 @@ func (handler *Handler) LanguageMiddleware(c fiber.Ctx) error {
 	// resolves here. See WEB-35: the header admits any short identifier, so
 	// resolving it costs one zoneinfo read/parse, and this middleware runs on
 	// every route, rate-limited or not. resolveOwnerRequestTimezone runs it
-	// instead, gated behind AuthRequired's verified session, so an anonymous
-	// caller cannot buy that cost on a public page or by forging a session
-	// cookie on a protected path — only a request that actually authenticates
-	// reaches it. A route with no AuthRequired in its chain leaves
-	// contextLocationKey unset here; requestLocation (page_request_helpers.go)
-	// already falls back to the server-configured zone when it is absent, so
-	// every anonymous page renders with that fallback instead.
+	// instead, called from authenticateRequest once a session has actually
+	// verified, so an anonymous caller cannot buy that cost on a public page
+	// or by forging a session cookie on a protected path. A request that never
+	// authenticates leaves contextLocationKey unset here; requestLocation
+	// (page_request_helpers.go) already falls back to the server-configured
+	// zone when it is absent, so every anonymous page renders with that
+	// fallback instead.
 	language := handler.resolveRequestLanguage(c)
 
 	c.Locals(contextLanguageKey, language)
@@ -46,10 +46,11 @@ func (handler *Handler) LanguageMiddleware(c fiber.Ctx) error {
 }
 
 // resolveOwnerRequestTimezone resolves the request-local timezone (header,
-// then the ovumcy_tz cookie) for a request AuthRequired has just verified,
-// and refreshes the cookie when the header names a new zone. Call it only
-// after authenticateRequest succeeds — see the WEB-35 note on
-// LanguageMiddleware for why the header is not parsed any earlier.
+// then the ovumcy_tz cookie) and refreshes the cookie when the header names a
+// new zone. Its sole caller is authenticateRequest, on that function's success
+// path — see the WEB-35 note on LanguageMiddleware for why the header is not
+// parsed any earlier, and keep it there rather than on any one middleware: a
+// session verified outside AuthRequired is still a verified session.
 func (handler *Handler) resolveOwnerRequestTimezone(c fiber.Ctx) {
 	requestLocation, timezoneCookieValue := resolveRequestLocation(
 		c.Get(timezoneHeaderName),

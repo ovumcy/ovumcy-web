@@ -118,3 +118,33 @@ func TestAnonymousPublicPageNeverResolvesTheTimezoneHeader(t *testing.T) {
 		t.Fatalf("expected no ovumcy_tz cookie on the anonymous login page, got %q", cookie.Value)
 	}
 }
+
+// TestVerifiedSessionOutsideAuthRequiredStillResolvesTheTimezoneHeader pins the
+// gate to the PROPERTY, not to one middleware. AuthRequired is not the only way
+// a session verifies: ShowRecoveryCodePage, the OIDC link-confirm and the two
+// step-up completions call authenticateRequest directly, because the callback
+// they run on has to work for a visitor with no session. Resolution therefore
+// lives in authenticateRequest itself; hang it off AuthRequired and those four
+// render the owner's day in the instance zone with the suite still green.
+//
+// GET /recovery-code carries no AuthRequired. With no reveal staged it
+// redirects, which is all this needs — the ovumcy_tz cookie on that redirect
+// says the header was parsed for a session that genuinely verified.
+func TestVerifiedSessionOutsideAuthRequiredStillResolvesTheTimezoneHeader(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "tz-gate-manual-auth@example.com")
+
+	request := httptest.NewRequest(http.MethodGet, "/recovery-code", nil)
+	request.Header.Set(timezoneHeaderName, "Europe/Belgrade")
+	request.Header.Set("Cookie", ctx.authCookie)
+
+	response, err := ctx.app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("recovery-code request failed: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	cookie := responseCookie(response.Cookies(), timezoneCookieName)
+	if cookie == nil || cookie.Value != "Europe/Belgrade" {
+		t.Fatalf("expected ovumcy_tz=Europe/Belgrade on a route that verifies its own session, got %#v", cookie)
+	}
+}

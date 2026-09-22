@@ -26,10 +26,6 @@ func (handler *Handler) AuthRequired(c fiber.Ctx) error {
 	}
 
 	c.Locals(contextUserKey, user)
-	// WEB-35: resolve the request-local timezone only now that the session has
-	// verified — see resolveOwnerRequestTimezone and the note on
-	// LanguageMiddleware.
-	handler.resolveOwnerRequestTimezone(c)
 	if services.RequiresOnboarding(user) && services.ShouldEnforceOnboardingAccess(c.Path()) {
 		if strings.HasPrefix(c.Path(), "/api/") || acceptsJSON(c) {
 			return respondGlobalMappedError(c, onboardingRequiredErrorSpec())
