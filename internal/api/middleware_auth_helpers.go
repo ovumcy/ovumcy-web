@@ -75,5 +75,11 @@ func (handler *Handler) authenticateRequest(c fiber.Ctx) (*models.User, error) {
 	// without it, erasure performed through the callback logs a health-data
 	// mutation that does not name the owner whose data it erased.
 	c.Locals(contextUserKey, user)
+	// WEB-35: the request-local timezone resolves here for the same reason the
+	// actor above does — this is the one funnel every verified session passes
+	// through. Hanging it off AuthRequired instead would leave the four
+	// handlers that call this directly rendering the owner's day in the
+	// instance zone, and no test would say so.
+	handler.resolveOwnerRequestTimezone(c)
 	return user, nil
 }
