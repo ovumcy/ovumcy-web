@@ -453,7 +453,11 @@ func stripCSSComments(css string) string {
 		c := css[i]
 		switch {
 		case quote != 0:
-			if c == quote {
+			if c == '\\' && i+1 < len(css) {
+				b.WriteByte(c)
+				i++
+				c = css[i]
+			} else if c == quote {
 				quote = 0
 			}
 		case c == '"' || c == '\'':
@@ -530,6 +534,7 @@ func CSSSourcePaths(css string) ([]string, error) {
 
 func TestCSSSourcePathsReadsEveryDirectiveForm(t *testing.T) {
 	css := `/* @source "ignored/in/a/comment"; */
+.x { content: "a\"b"; } /* @source "also/ignored"; */
 @source "../../../internal/a/**/*.html"; /* trailing */
 @source   '../../../internal/b.go' ;
 @source not "../../../internal/c";
@@ -737,10 +742,14 @@ func runDetect(t *testing.T, script, event string, files []string) map[string]st
 	git("commit", "-q", "-m", "change")
 
 	output := filepath.ToSlash(filepath.Join(t.TempDir(), "output"))
-	// On stdin, not `-c`: the step is long enough that a Windows command line
-	// truncates it silently, inside a comment, with exit status 0.
-	cmd := exec.Command(bash, "-s")
-	cmd.Stdin = strings.NewReader(script)
+	// As the runner runs a step with no `shell:` — `bash -e {0}`, from a file.
+	// Not `-c`: the step is long enough that a Windows command line truncates
+	// it silently, inside a comment, with exit status 0.
+	scriptFile := filepath.Join(t.TempDir(), "detect.sh")
+	if err := os.WriteFile(scriptFile, []byte(script), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bash, "-e", filepath.ToSlash(scriptFile))
 	cmd.Dir = dir
 	cmd.Env = append(env, "EVENT_NAME="+event, "BASE_REF=main", "QUEUE_BASE_SHA=", "GITHUB_OUTPUT="+output)
 	out, err := cmd.CombinedOutput()

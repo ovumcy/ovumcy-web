@@ -1114,8 +1114,9 @@ jobs:
         # skip when a change touches *nothing but* docs/meta files, or
         # .clusterfuzzlite/ (a separate ClusterFuzzLite build sandbox that is
         # never compiled into the app binary or go:embed'd — see
-        # .clusterfuzzlite/Dockerfile), that cannot change the running app. Any
-        # path outside the allowlist runs e2e.
+        # .clusterfuzzlite/Dockerfile), that cannot change the running app, or
+        # nothing but Go test files and Go-tree testdata/, which never reach
+        # the binary. Any other path runs e2e.
         #
         # Two events carry a base the diff can stand on: a pull request (its
         # own base branch) and a merge-queue validation run
