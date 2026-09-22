@@ -13,22 +13,14 @@ func (handler *Handler) LanguageMiddleware(c fiber.Ctx) error {
 		// and reads no request language: ServeCalendarFeed resolves "today"
 		// from the owner's stored users.timezone
 		// (CalendarFeedService.ResolveFeed), and a real calendar client sends
-		// none of the language cookie, the timezone header, or the timezone
-		// cookie this middleware reads. Running it here would only mint a
-		// cookie no reader of the response needs: setTimezoneCookie persists
-		// ovumcy_tz for ANY caller naming a zone, cookieless poller included,
-		// which is exactly the Set-Cookie the feed's own contract forbids on
-		// every outcome (docs/SECURITY_INVARIANTS.md → Calendar feed
+		// no language cookie. The route carries no AuthRequired either, so the
+		// timezone header and cookie are never resolved for it
+		// (resolveOwnerRequestTimezone): an owner whose users.timezone was
+		// never captured gets the instance zone, not the poller's cookies —
+		// the same capability URL must not render a different day in the
+		// owner's browser than in the calendar client, and the feed sets no
+		// cookie on any outcome (docs/SECURITY_INVARIANTS.md → Calendar feed
 		// subscription).
-		//
-		// Skipping the whole middleware, not only the cookie write, is the
-		// deliberate part. It also drops the request-chain fallback (header,
-		// then cookie) that an owner whose users.timezone was never captured
-		// used to get for the day boundary; the feed now falls through to the
-		// instance zone for that owner. Keeping the resolution would keep this
-		// route's output dependent on the poller's cookies — the same
-		// capability URL rendering a different day in the owner's browser than
-		// in the calendar client — on a route whose contract is to read none.
 		//
 		// See IsCalendarFeedRequest for why a mutating verb at this same path
 		// shape still falls through to the ordinary branch below instead of
