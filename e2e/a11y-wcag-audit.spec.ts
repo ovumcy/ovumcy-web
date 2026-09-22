@@ -7,8 +7,8 @@ import {
   readRecoveryCode,
   registerOwnerViaUI,
 } from './support/auth-helpers';
-import { applyTheme, expectTextContrastAA } from './support/contrast-helpers';
-import { markCycleStart, shiftISODate, todayISOFromDashboard } from './support/stats-helpers';
+import { applyTheme, expectTextContrastAA, measureTextContrast } from './support/contrast-helpers';
+import { markCycleStart, shiftISODate } from './support/stats-helpers';
 
 /**
  * WCAG 2.2 AA 2.5.8: a pointer target must be at least 24 CSS pixels in both
@@ -52,6 +52,41 @@ test.describe('WCAG AA audit regressions', () => {
     }
   });
 
+  test('the contrast helper normalises a same-colour gradient instead of missing the failure', async ({
+    page,
+  }) => {
+    // The counterexample: white text on a background-image gradient whose two
+    // stops are both opaque white. `measureTextContrast` must flatten the
+    // gradient stop and report the true 1:1 ratio (WCAG's worst case) rather
+    // than treating an unmatched or dropped background-image as "no
+    // background of its own" (which throws) or silently as compliant. This is
+    // a helper contract test, not a rendered app page — a minimal document is
+    // enough to exercise `backgroundStops`' regex extraction and
+    // `flattenOver`'s compositing on a real computed style.
+    await page.setContent(`
+      <style>
+        .swatch {
+          display: inline-block;
+          padding: 4px;
+          color: rgb(255, 255, 255);
+          background-color: transparent;
+          background-image: linear-gradient(rgb(255, 255, 255), rgb(255, 255, 255));
+        }
+      </style>
+      <span class="swatch">white on a white gradient</span>
+    `);
+
+    const measurement = await measureTextContrast(page.locator('.swatch'), 'white-on-white gradient');
+    expect(measurement, 'a rendered, non-empty background must be measurable').not.toBeNull();
+    // Exact equality, not a tolerance: both stops flatten to the same colour
+    // as the text, so contrastRatio's (max+0.05)/(min+0.05) collapses to
+    // (a+0.05)/(a+0.05) with no floating-point remainder.
+    expect(measurement!.worstRatio).toBe(1);
+    for (const stop of measurement!.stops) {
+      expect(stop.ratio).toBe(1);
+    }
+  });
+
   test('calendar phase cells keep day numbers above WCAG AA in both themes', async ({ page }) => {
     test.slow();
 
@@ -62,14 +97,28 @@ test.describe('WCAG AA audit regressions', () => {
     // follows it, so both phase fills are on the page. The window itself is
     // withheld until one cycle has been observed, so the previous cycle's start
     // is seeded too, exactly one 28-day cycle earlier: that is the length the
-    // account settings already carry, so the fertile days land where they always
-    // did and this case keeps measuring contrast rather than the data tier.
-    const today = await todayISOFromDashboard(page);
-    await markCycleStart(page, shiftISODate(today, -34));
-    await markCycleStart(page, shiftISODate(today, -6));
+    // account settings already carry.
+    //
+    // Anchored at day 1 of the current month rather than at a today-derived
+    // offset (e2e.md's calendar-grid-cell rule, #620): on the 28/14 defaults
+    // (models.DefaultPeriodLength=5, the unexported defaultLutealPhaseDays=14
+    // in internal/services/cycles.go) the period spans days 1-5,
+    // CalcOvulationDay(28, 14) predicts ovulation on cycle day 14, and
+    // PredictCycleWindow's fertile window is the five days before it through
+    // ovulation itself — days 9-14. The whole span sits in the first half of
+    // the month on every run date, unlike a window anchored relative to the
+    // live clock, which can fall past the grid's trailing edge at a month's
+    // end.
+    const monthISO = await page.evaluate(() => {
+      const now = new Date();
+      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    });
+    const anchorISO = `${monthISO}-01`;
+    await markCycleStart(page, shiftISODate(anchorISO, -28));
+    await markCycleStart(page, anchorISO);
 
-    await page.goto('/calendar');
-    await expect(page).toHaveURL(/\/calendar/);
+    await page.goto(`/calendar?month=${monthISO}`);
+    await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${monthISO}`));
     await expect(page.locator('.calendar-cell-period').first()).toBeVisible();
     await expect(page.locator('.calendar-cell-fertile').first()).toBeVisible();
 
