@@ -55,16 +55,30 @@ func TestPasswordResetRedeemBrowserSurfaceRedirectsToRecoveryCode(t *testing.T) 
 // token survives the local-auth-disabled gate — an operator-set
 // must_change_password AND an enrolled-but-unverifiable TOTP secret — and
 // claims the account recovery path stays unbroken either way. This proves
-// the second reason all the way through: the token redeems, a session is
-// issued, and a fresh recovery code is minted, exactly like the
-// must_change_password case TestForcedResetFromOIDCRedeemSurvivesLocalPublicAuthBeingOff
-// already covers.
+// the second reason all the way through with local public auth OFF (the gate
+// this 403 describes only fires then — handlers_auth_session_recovery.go's
+// ResetPassword never even calls PasswordResetTokenRefusedByLocalAuthGate
+// while it's on): the token
+// redeems, a session is issued, and a fresh recovery code is minted, exactly
+// like the must_change_password case
+// TestForcedResetFromOIDCRedeemSurvivesLocalPublicAuthBeingOff already
+// covers. The fixture user is genuinely TOTPEnabled with
+// MustChangePassword=false — the account shape
+// TestOIDCLoginServiceAuthenticateRoutesUnverifiableTOTPToForcedReset
+// (internal/services/oidc_login_service_test.go) pins as the one
+// oidc_login_service.go's RequiresPasswordReset expression (around line 399)
+// derives RequiresPasswordReset=true/RequiresTOTP=false for; this test only
+// pins the api-layer redeem, not that derivation itself.
 func TestForcedResetFromOIDCUnverifiableTOTPRedeemCompletesRecovery(t *testing.T) {
 	app, database, stub := newLocalAuthGateTestApp(t)
 	user := createOnboardingTestUser(t, database, "forced-oidc-unverifiable-totp@example.com", "StrongPass1", true)
 	if user.MustChangePassword {
 		t.Fatalf("fixture invariant broken: MustChangePassword=%v", user.MustChangePassword)
 	}
+	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Update("totp_enabled", true).Error; err != nil {
+		t.Fatalf("mark user totp_enabled: %v", err)
+	}
+	user.TOTPEnabled = true
 
 	// The stub bypasses OIDCLoginService.Authenticate's own computation, so
 	// RequiresPasswordReset is set here exactly as the real service derives it
@@ -73,6 +87,8 @@ func TestForcedResetFromOIDCUnverifiableTOTPRedeemCompletesRecovery(t *testing.T
 	// oidc_login_service.go's own RequiresPasswordReset expression produces for
 	// that reason.
 	resetCookie := forcedOIDCResetCookieFromUnverifiableTOTPCallback(t, app, stub, user)
+
+	stub.localPublicAuthEnabled = false
 
 	response := redeemResetCookie(t, app, resetCookie, "EvenStronger2")
 	assertStatusCode(t, response, http.StatusOK)
@@ -87,7 +103,10 @@ func TestForcedResetFromOIDCUnverifiableTOTPRedeemCompletesRecovery(t *testing.T
 // reset reaches CompleteOIDCLogin: RequiresPasswordReset=true with
 // MustChangePassword=false is exactly what an enrolled-but-unverifiable TOTP
 // secret produces (oidc_login_service.go), so the stub is set directly
-// rather than derived from the persisted user's MustChangePassword flag.
+// rather than derived from the persisted user's MustChangePassword flag. The
+// caller now passes in a user carrying the matching TOTPEnabled=true so the
+// result mirrors what CompleteOIDCLogin would actually assemble for that
+// account, not just the bool the handler reads off it.
 func forcedOIDCResetCookieFromUnverifiableTOTPCallback(t *testing.T, app *fiber.App, stub *stubOIDCWorkflowService, user models.User) string {
 	t.Helper()
 
