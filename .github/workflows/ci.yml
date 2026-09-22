@@ -1053,14 +1053,24 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      # Least-privilege additions for the merge_group proven-tree check below:
+      # `pull-requests: read` reads the queued PR's head sha and the PRs that
+      # head belongs to, `actions: read` reads that head sha's own
+      # `pull_request` CI verdict.
+      # Both are read-only and unused by every other event this job handles.
+      pull-requests: read
+      actions: read
     outputs:
       run_e2e: ${{ steps.detect.outputs.run_e2e }}
       # "Run the core suite" — the unit halves, both race lanes and the browser
       # shards: every lane whose evidence the merge queue has already produced
       # for this exact tree. It is `run_e2e` minus the work the queue did, so it
-      # clears on a docs-only diff AND on a `push` to `main`; `run_e2e` above
-      # stays true on push, because e2e-cross-browser, image-smoke and the
-      # Postgres smoke are exactly the lanes the queue does NOT run.
+      # clears on a docs-only diff, on a `push` to `main`, AND on a
+      # `merge_group` run whose one queued PR already ran this exact tree
+      # through `ci.yml`'s own `pull_request` suite to success (detected
+      # below); `run_e2e` above stays true on push, because e2e-cross-browser,
+      # image-smoke and the Postgres smoke are exactly the lanes the queue
+      # does NOT run.
       #
       # Unlike e2e's historical step-level gating below, the unit and race jobs
       # skip at the job level: GitHub reports a skipped job as a satisfied
@@ -1138,6 +1148,8 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
           QUEUE_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          MERGE_GROUP_HEAD_REF: ${{ github.event.merge_group.head_ref }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           # This job must never fail: the required e2e jobs depend on it. The
           # runner executes a step with no `shell:` as `bash -e`, so errexit IS
@@ -1316,6 +1328,101 @@ jobs:
             run_core=false
             run_frontend=false
             echo "push to main: the merge queue already ran the core suite (test-frontend included) on this exact commit; running only the lanes it skips."
+          fi
+
+          # merge_group's own proven-tree skip. Every OTHER queue entry still
+          # runs the full battery: this clears run_core/run_frontend — and with
+          # run_core the Playwright e2e shards, which gate on it as RUN_SHARDS —
+          # only when this exact tree already ran `ci.yml`'s `pull_request`
+          # suite to success, on the ONE queued PR this entry replays, against
+          # this queue's own base branch. It sits after the runbook/licenses
+          # forces (same reasoning as `push`: if that earlier PR run already
+          # covered the runbook/licenses guard on this identical tree, forcing
+          # it again here buys nothing) and is written so that ANY of the
+          # checks below failing — a head_ref that doesn't parse, an API error,
+          # a missing field, a tree mismatch, an unbound, unsuccessful or
+          # absent run — falls through to "not proven" and leaves
+          # run_core/run_frontend exactly as the branches above left them,
+          # which is the running direction.
+          #
+          # Residual, not closed here: a PR retargeted onto this base WITHOUT a
+          # new push keeps the green run it had against its old base — `edited`
+          # is not among the `pull_request` types that start a run, and every
+          # binding below reads the PR's base as it is NOW, while that run
+          # tested the head merged into the old one.
+          if [ "$EVENT_NAME" = "merge_group" ]; then
+            proven=""
+            # The base is held to a plain branch-name charset because it is
+            # spliced into a jq program below; any other name (`release/1.x`
+            # included) is simply not proven.
+            queue_base_ref="$(printf '%s' "$MERGE_GROUP_HEAD_REF" | sed -nE 's#^refs/heads/gh-readonly-queue/([A-Za-z0-9._-]+)/pr-[0-9]+-[0-9a-f]+$#\1#p')"
+            pr_number="$(printf '%s' "$MERGE_GROUP_HEAD_REF" | sed -nE 's#^refs/heads/gh-readonly-queue/[A-Za-z0-9._-]+/pr-([0-9]+)-[0-9a-f]+$#\1#p')"
+            if [ -z "$pr_number" ] || [ -z "$queue_base_ref" ]; then
+              echo "merge_group.head_ref ($MERGE_GROUP_HEAD_REF) does not match the gh-readonly-queue/<base>/pr-<N>-<sha> shape: cannot identify the queued PR, so this tree is not proven — running the full battery."
+            else
+              pr_head_sha="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}" --jq '.head.sha // ""' 2>/dev/null || true)"
+              if ! printf '%s' "$pr_head_sha" | grep -Eq '^[0-9a-f]{40}$'; then
+                echo "could not read PR #$pr_number's head sha from the API (read as '${pr_head_sha:-<none>}'): not proven — running the full battery."
+              else
+                # A green `pull_request` run proves the head merged into the
+                # base AT THAT RUN, so the head must belong to exactly this PR
+                # and this PR must target this queue's base: the same sha in a
+                # second open PR, or this PR aimed at another branch, proves
+                # nothing here.
+                pr_binding="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${pr_head_sha}/pulls" --jq 'if length == 1 then "\(.[0].number)\t\(.[0].base.ref)" else "" end' 2>/dev/null || true)"
+                if [ "$pr_binding" != "$(printf '%s\t%s' "$pr_number" "$queue_base_ref")" ]; then
+                  echo "PR #$pr_number's head ($pr_head_sha) is not bound to exactly PR #$pr_number against $queue_base_ref (read as '${pr_binding:-<none>}'): not proven — running the full battery."
+                else
+                  # A batch of several PRs, or a PR that isn't rebased directly
+                  # onto this exact queue base, fails right here: only a queue
+                  # entry whose PR head has a single parent equal to this
+                  # merge_group's own base can have its rebase (and the PR's
+                  # own `refs/pull/N/merge`) be a no-op onto that head — which
+                  # is what makes the three trees below provably equal rather
+                  # than merely usually equal.
+                  parents_line="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${pr_head_sha}" --jq '.parents | length as $n | "\($n)\t\(.[0].sha // "")"' 2>/dev/null || echo "0")"
+                  parent_count="$(printf '%s' "$parents_line" | cut -f1)"
+                  pr_head_parent="$(printf '%s' "$parents_line" | cut -f2 -s)"
+                  if [ "$parent_count" != "1" ] || [ -z "$pr_head_parent" ] || [ "$pr_head_parent" != "$QUEUE_BASE_SHA" ]; then
+                    echo "PR #$pr_number's head ($pr_head_sha) is not a single-parent commit rebased directly onto this merge group's base ($QUEUE_BASE_SHA) — a batched or stale entry: not proven — running the full battery."
+                  else
+                    git fetch --no-tags origin "$pr_head_sha" || true
+                    queue_tree="$(git rev-parse HEAD^{tree} 2>/dev/null || true)"
+                    pr_tree="$(git rev-parse "${pr_head_sha}^{tree}" 2>/dev/null || true)"
+                    if [ -z "$queue_tree" ] || [ -z "$pr_tree" ] || [ "$queue_tree" != "$pr_tree" ]; then
+                      echo "queue tree (${queue_tree:-<none>}) and PR #$pr_number head tree (${pr_tree:-<none>}) do not match: not proven — running the full battery."
+                    else
+                      # Same event, same workflow file, this exact head sha, a
+                      # run that names this PR against this base, its LATEST
+                      # attempt: the API returns one run object per
+                      # originally-triggered run and a rerun updates that same
+                      # object's own conclusion in place, so there is no older
+                      # attempt hiding behind a newer success to pick the wrong
+                      # one of. A run's `pull_requests` lists the PR only while
+                      # it is open, and never for a fork's PR — so a fork's
+                      # entry is never proven.
+                      runs_filter='[.workflow_runs[] | select(.path == ".github/workflows/ci.yml") | select(any(.pull_requests[]?; .number == '"$pr_number"' and .base.ref == "'"$queue_base_ref"'"))] | sort_by(.created_at) | last | .conclusion // ""'
+                      run_conclusion="$(
+                        gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${pr_head_sha}&event=pull_request&per_page=50" \
+                          --jq "$runs_filter" \
+                          2>/dev/null || true
+                      )"
+                      if [ "$run_conclusion" != "success" ]; then
+                        echo "no successful pull_request run of ci.yml bound to PR #$pr_number against $queue_base_ref found for its head ($pr_head_sha) — read as '${run_conclusion:-<none>}': not proven — running the full battery."
+                      else
+                        proven=1
+                      fi
+                    fi
+                  fi
+                fi
+              fi
+            fi
+
+            if [ -n "$proven" ]; then
+              run_core=false
+              run_frontend=false
+              echo "PR #$pr_number's head ($pr_head_sha) already ran ci.yml's pull_request suite to success on this identical tree against $queue_base_ref: the core Go/race/frontend lanes and the e2e shards report success without running here."
+            fi
           fi
 
           # The two narrower slices. Both start from `run_core`, so everything

@@ -1,0 +1,12 @@
+{
+  "number": 839,
+  "state": "open",
+  "head": {
+    "ref": "ci/skip-slices-test-files-frontend",
+    "sha": "515ea3f42b78418f8e0ac9ca3a6b3b4514f84158"
+  },
+  "base": {
+    "ref": "main",
+    "sha": "ce8718484c475bdc12537473714a4d7161755173"
+  }
+}
