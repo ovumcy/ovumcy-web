@@ -467,7 +467,7 @@ func TestCalendarFeedBodyIgnoresRequestTimezoneSignals(t *testing.T) {
 		}
 		assertNoSetCookie(t, response, "the "+name+" request")
 	}
-	if !bytes.Equal(plainBody, claimedBody) {
+	if !bytes.Equal(withoutICSDTStamp(plainBody), withoutICSDTStamp(claimedBody)) {
 		t.Fatalf("a poller-claimed timezone changed the feed body for an owner with no stored timezone:\nplain:         %q\nzone-claiming: %q", plainBody, claimedBody)
 	}
 
@@ -494,7 +494,21 @@ func TestCalendarFeedBodyIgnoresRequestTimezoneSignals(t *testing.T) {
 	assertNoSetCookie(t, ownerZonedResponse, "the owner-timezone request")
 	ownerZonedBody := mustReadAll(t, ownerZonedResponse)
 
-	if bytes.Equal(plainBody, ownerZonedBody) {
+	if bytes.Equal(withoutICSDTStamp(plainBody), withoutICSDTStamp(ownerZonedBody)) {
 		t.Fatalf("test setup: the owner's own stored timezone must move the projected period date, otherwise this test cannot prove the body is zone-sensitive:\nplain:       %q\nowner-zoned: %q", plainBody, ownerZonedBody)
 	}
+}
+
+// withoutICSDTStamp drops every DTSTAMP line: it carries the render's wall
+// clock to the second, so two requests straddling a second boundary differ
+// there even when nothing zone-dependent does.
+func withoutICSDTStamp(body []byte) []byte {
+	lines := bytes.SplitAfter(body, []byte("\n"))
+	kept := make([][]byte, 0, len(lines))
+	for _, line := range lines {
+		if !bytes.HasPrefix(line, []byte("DTSTAMP:")) {
+			kept = append(kept, line)
+		}
+	}
+	return bytes.Join(kept, nil)
 }
