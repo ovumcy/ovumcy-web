@@ -14,8 +14,17 @@ import (
 // account arrives with no account to act on. A zero id is invalid input, not a
 // wildcard and not a no-op: Where("id = ?", 0) matches zero rows and reports
 // nil, so the caller is told its write succeeded while nothing was written.
-// Today only CompleteOnboarding raises it; the rest of this file's
-// single-account writes are the subject of a separate change.
+// Most users-table UPDATEs in this file are scoped through scopedUserUpdate or
+// scopedUserUpdateTx (via requireUserOwnerID), the only two builders of the
+// bare `id = ?` clause. A handful of compare-and-set writers build a compound
+// `id = ? AND <extra predicate>` clause instead (a webhook watermark claim, a
+// one-time reveal claim, a CAS credential rotation): those either inspect
+// RowsAffected themselves and report a zero-row outcome honestly to the
+// caller, or — where a zero-row outcome is legitimately silent by design
+// (MarkWebhookDelivered, ReleaseWebhookWatermark,
+// BackfillCalendarFeedVerifierMAC) — call requireUserOwnerID directly before
+// building the query, so a zero id cannot hide behind that silence.
+// TestUserRepositoryUpdatesGoThroughTheScopingHelper enforces both shapes.
 var ErrUserOwnerRequired = errors.New("user owner is required")
 
 // CalendarFeedFence records, OUTSIDE the database, that the set of armed
@@ -354,8 +363,48 @@ func (repo *UserRepository) CreateUserWithSymptoms(ctx context.Context, user *mo
 	})
 }
 
+// requireUserOwnerID refuses a zero id rather than letting it reach a
+// `WHERE id = ?` that a zero id would turn into a silent no-op. See
+// ErrUserOwnerRequired.
+func requireUserOwnerID(userID uint) error {
+	if userID == 0 {
+		return ErrUserOwnerRequired
+	}
+	return nil
+}
+
+// scopedUserUpdate is the single builder of a users-table UPDATE query in
+// this file outside a transaction: it refuses a zero id and returns a query
+// already scoped to exactly one row, `Model(&models.User{}).Where("id = ?",
+// userID)`. Every method below that mutates a users row through
+// repo.database goes through it (or scopedUserUpdateTx, its in-transaction
+// twin) rather than repeating the WHERE clause, so a call site cannot drop
+// the zero-id guard by omission and a new site is covered by construction.
+// Guarded by TestUserRepositoryUpdatesGoThroughTheScopingHelper.
+func (repo *UserRepository) scopedUserUpdate(ctx context.Context, userID uint) (*gorm.DB, error) {
+	if err := requireUserOwnerID(userID); err != nil {
+		return nil, err
+	}
+	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID), nil
+}
+
+// scopedUserUpdateTx is scopedUserUpdate's in-transaction variant: a writer
+// running inside `Transaction(func(tx *gorm.DB) error {...})` must build its
+// query off tx, never off repo.database, or it would re-enter a connection
+// outside the transaction's own. Same refusal, same query shape.
+func scopedUserUpdateTx(tx *gorm.DB, userID uint) (*gorm.DB, error) {
+	if err := requireUserOwnerID(userID); err != nil {
+		return nil, err
+	}
+	return tx.Model(&models.User{}).Where("id = ?", userID), nil
+}
+
 func (repo *UserRepository) UpdateDisplayName(ctx context.Context, userID uint, displayName string) error {
-	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Update("display_name", displayName).Error
+	query, err := repo.scopedUserUpdate(ctx, userID)
+	if err != nil {
+		return err
+	}
+	return query.Update("display_name", displayName).Error
 }
 
 // UpdateUserTimezone persists the owner's IANA timezone name (e.g.
@@ -365,7 +414,11 @@ func (repo *UserRepository) UpdateDisplayName(ctx context.Context, userID uint, 
 // single column. It touches no security-posture field, so it deliberately does
 // not bump auth_session_version.
 func (repo *UserRepository) UpdateUserTimezone(ctx context.Context, userID uint, timezone string) error {
-	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Update("timezone", timezone).Error
+	query, err := repo.scopedUserUpdate(ctx, userID)
+	if err != nil {
+		return err
+	}
+	return query.Update("timezone", timezone).Error
 }
 
 // UpdateInterfaceLanguage persists the owner's chosen UI language
@@ -381,9 +434,11 @@ func (repo *UserRepository) UpdateUserTimezone(ctx context.Context, userID uint,
 // stored. The distinction has to come from here, because an UPDATE that matches
 // nothing is not an error to the driver.
 func (repo *UserRepository) UpdateInterfaceLanguage(ctx context.Context, userID uint, language string) (bool, error) {
-	result := repo.database.WithContext(ctx).Model(&models.User{}).
-		Where("id = ?", userID).
-		Update("interface_language", language)
+	query, err := repo.scopedUserUpdate(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	result := query.Update("interface_language", language)
 	if result.Error != nil {
 		return false, result.Error
 	}
@@ -413,7 +468,11 @@ func (repo *UserRepository) UpdateInterfaceLanguage(ctx context.Context, userID 
 // changing anything here. Regression:
 // TestUpdateReminderLeadDaysAdvancesTheRevocationEpoch.
 func (repo *UserRepository) UpdateReminderLeadDays(ctx context.Context, userID uint, leadDays int) error {
-	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+	query, err := repo.scopedUserUpdate(ctx, userID)
+	if err != nil {
+		return err
+	}
+	return query.Updates(map[string]any{
 		"reminder_lead_days":     leadDays,
 		"webhook_config_version": gorm.Expr("webhook_config_version + 1"),
 	}).Error
@@ -497,7 +556,11 @@ func (repo *UserRepository) SaveWebhookSettings(ctx context.Context, userID uint
 			updates["webhook_last_delivered_at"] = nil
 		}
 	}
-	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(updates).Error
+	query, err := repo.scopedUserUpdate(ctx, userID)
+	if err != nil {
+		return err
+	}
+	return query.Updates(updates).Error
 }
 
 // RemoveWebhookDestination withdraws this owner's delivery endpoint and nothing
@@ -524,7 +587,11 @@ func (repo *UserRepository) SaveWebhookSettings(ctx context.Context, userID uint
 // they wanted. Regression: TestRemoveWebhookDestinationLeavesTheKindsAndLeadWindowAlone,
 // TestRemoveWebhookDestinationAdvancesTheRevocationEpoch.
 func (repo *UserRepository) RemoveWebhookDestination(ctx context.Context, userID uint) error {
-	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+	query, err := repo.scopedUserUpdate(ctx, userID)
+	if err != nil {
+		return err
+	}
+	return query.Updates(map[string]any{
 		"webhook_enabled":           false,
 		"webhook_url":               "",
 		"webhook_last_delivered_at": nil,
@@ -565,6 +632,9 @@ func (repo *UserRepository) RemoveWebhookDestination(ctx context.Context, userID
 // moved on. It writes ONE column: not the epoch it pins, not a watermark, not
 // auth_session_version.
 func (repo *UserRepository) MarkWebhookDelivered(ctx context.Context, userID uint, deliveredAt time.Time, configVersion int) error {
+	if err := requireUserOwnerID(userID); err != nil {
+		return err
+	}
 	stamp := deliveredAt.UTC()
 	return repo.database.WithContext(ctx).Model(&models.User{}).
 		Where("id = ? AND webhook_config_version = ?", userID, configVersion).
@@ -839,6 +909,9 @@ func (repo *UserRepository) ClaimWebhookWatermark(ctx context.Context, userID ui
 // the revocation was a clear-data wipe the watermark is already NULL, so the
 // "column = anchor" predicate matches nothing and the wipe stands untouched.
 func (repo *UserRepository) ReleaseWebhookWatermark(ctx context.Context, userID uint, reminderType string, cycleAnchor time.Time, previous *time.Time) error {
+	if err := requireUserOwnerID(userID); err != nil {
+		return err
+	}
 	columns, ok := webhookWatermarkColumns[reminderType]
 	if !ok {
 		return fmt.Errorf("unknown webhook reminder type %q", reminderType)
@@ -891,7 +964,11 @@ func (repo *UserRepository) SaveCalendarFeedToken(ctx context.Context, userID ui
 	if err := repo.advanceCalendarFeedFence(ctx); err != nil {
 		return err
 	}
-	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+	query, err := repo.scopedUserUpdate(ctx, userID)
+	if err != nil {
+		return err
+	}
+	return query.Updates(map[string]any{
 		"calendar_feed_selector":      columns.Selector,
 		"calendar_feed_verifier_hash": columns.VerifierHash,
 		"calendar_feed_verifier_mac":  columns.VerifierMAC,
@@ -962,6 +1039,9 @@ func (repo *UserRepository) ClaimRecoveryCodeReveal(ctx context.Context, userID 
 // caller treats a failed backfill as a missed optimization and still serves the
 // feed.
 func (repo *UserRepository) BackfillCalendarFeedVerifierMAC(ctx context.Context, userID uint, selector string, verifierMAC string) error {
+	if err := requireUserOwnerID(userID); err != nil {
+		return err
+	}
 	return repo.database.WithContext(ctx).Model(&models.User{}).
 		Where("id = ? AND calendar_feed_selector = ? AND (calendar_feed_verifier_mac IS NULL OR calendar_feed_verifier_mac = '')", userID, selector).
 		Update("calendar_feed_verifier_mac", verifierMAC).Error
@@ -980,7 +1060,11 @@ func (repo *UserRepository) ClearCalendarFeedToken(ctx context.Context, userID u
 	if err := repo.advanceCalendarFeedFence(ctx); err != nil {
 		return err
 	}
-	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+	query, err := repo.scopedUserUpdate(ctx, userID)
+	if err != nil {
+		return err
+	}
+	return query.Updates(map[string]any{
 		"calendar_feed_selector":      nil,
 		"calendar_feed_verifier_hash": nil,
 		"calendar_feed_verifier_mac":  nil,
@@ -1094,7 +1178,11 @@ func (repo *UserRepository) FindByCalendarFeedSelector(ctx context.Context, sele
 // of a token that no longer resolves would only make a retained sealed cookie
 // presentable again. Regression: TestEveryRecoveryCodeMintClearsItsRevealMark.
 func (repo *UserRepository) UpdateRecoveryCodeHashAndRevokeSessions(ctx context.Context, userID uint, recoveryHash string) error {
-	if err := repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+	query, err := repo.scopedUserUpdate(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if err := query.Updates(map[string]any{
 		"recovery_code_hash":          recoveryHash,
 		"recovery_code_revealed_at":   nil,
 		"calendar_feed_selector":      nil,
@@ -1109,7 +1197,11 @@ func (repo *UserRepository) UpdateRecoveryCodeHashAndRevokeSessions(ctx context.
 }
 
 func (repo *UserRepository) UpdatePasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, mustChangePassword bool) error {
-	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+	query, err := repo.scopedUserUpdate(ctx, userID)
+	if err != nil {
+		return err
+	}
+	return query.Updates(map[string]any{
 		"password_hash":        passwordHash,
 		"must_change_password": mustChangePassword,
 		"local_auth_enabled":   true,
@@ -1131,7 +1223,11 @@ func (repo *UserRepository) UpdatePasswordAndRevokeSessions(ctx context.Context,
 // force-rotate-on-recovery rule: any feed URL that may have leaked is cleared in
 // the same write that resets the credential and revokes sessions.
 func (repo *UserRepository) ForceResetPasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string) error {
-	if err := repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+	query, err := repo.scopedUserUpdate(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if err := query.Updates(map[string]any{
 		"password_hash":               passwordHash,
 		"must_change_password":        true,
 		"local_auth_enabled":          true,
@@ -1154,7 +1250,11 @@ func (repo *UserRepository) ForceResetPasswordAndRevokeSessions(ctx context.Cont
 // posture is unchanged — same password, stronger hash — so no active session
 // should be revoked by what is an internal storage upgrade.
 func (repo *UserRepository) UpdatePasswordHashOnly(ctx context.Context, userID uint, passwordHash string) error {
-	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Update("password_hash", passwordHash).Error
+	query, err := repo.scopedUserUpdate(ctx, userID)
+	if err != nil {
+		return err
+	}
+	return query.Update("password_hash", passwordHash).Error
 }
 
 // UpdatePasswordRecoveryCodeAndRevokeSessions writes a password hash and a fresh
@@ -1163,7 +1263,11 @@ func (repo *UserRepository) UpdatePasswordHashOnly(ctx context.Context, userID u
 // writes is about to be revealed once, so its consumption mark starts unset
 // (migration 036). Regression: TestEveryRecoveryCodeMintClearsItsRevealMark.
 func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, recoveryHash string, mustChangePassword bool) error {
-	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+	query, err := repo.scopedUserUpdate(ctx, userID)
+	if err != nil {
+		return err
+	}
+	return query.Updates(map[string]any{
 		"password_hash":             passwordHash,
 		"recovery_code_hash":        recoveryHash,
 		"recovery_code_revealed_at": nil,
@@ -1239,7 +1343,11 @@ func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx c
 }
 
 func (repo *UserRepository) BumpAuthSessionVersion(ctx context.Context, userID uint) error {
-	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).UpdateColumn("auth_session_version", gorm.Expr("auth_session_version + 1")).Error
+	query, err := repo.scopedUserUpdate(ctx, userID)
+	if err != nil {
+		return err
+	}
+	return query.UpdateColumn("auth_session_version", gorm.Expr("auth_session_version + 1")).Error
 }
 
 // UpdateTOTPFieldsAndRevokeSessions atomically rewrites the TOTP-related
@@ -1248,7 +1356,11 @@ func (repo *UserRepository) BumpAuthSessionVersion(ctx context.Context, userID u
 // disable change the account's auth posture and therefore must invalidate
 // any session that was issued before the change.
 func (repo *UserRepository) UpdateTOTPFieldsAndRevokeSessions(ctx context.Context, userID uint, encryptedSecret string, enabled bool) error {
-	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+	query, err := repo.scopedUserUpdate(ctx, userID)
+	if err != nil {
+		return err
+	}
+	return query.Updates(map[string]any{
 		"totp_secret":          encryptedSecret,
 		"totp_enabled":         enabled,
 		"totp_last_used_step":  0,
@@ -1263,7 +1375,11 @@ func (repo *UserRepository) UpdateTOTPFieldsAndRevokeSessions(ctx context.Contex
 // account's security posture has not changed, so no active session should
 // be revoked by what is otherwise an internal storage upgrade.
 func (repo *UserRepository) UpdateTOTPSecretCiphertext(ctx context.Context, userID uint, encryptedSecret string) error {
-	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Update("totp_secret", encryptedSecret).Error
+	query, err := repo.scopedUserUpdate(ctx, userID)
+	if err != nil {
+		return err
+	}
+	return query.Update("totp_secret", encryptedSecret).Error
 }
 
 // ClaimTOTPStep atomically claims a TOTP step for the given user. Returns true
@@ -1281,7 +1397,11 @@ func (repo *UserRepository) ClaimTOTPStep(ctx context.Context, userID uint, step
 }
 
 func (repo *UserRepository) UpdateByID(ctx context.Context, userID uint, updates map[string]any) error {
-	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(updates).Error
+	query, err := repo.scopedUserUpdate(ctx, userID)
+	if err != nil {
+		return err
+	}
+	return query.Updates(updates).Error
 }
 
 func (repo *UserRepository) LoadSettingsByID(ctx context.Context, userID uint) (models.User, error) {
@@ -1346,7 +1466,11 @@ func (repo *UserRepository) LoadSettingsByID(ctx context.Context, userID uint) (
 }
 
 func (repo *UserRepository) SaveOnboardingStep1(ctx context.Context, userID uint, start time.Time) error {
-	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+	query, err := repo.scopedUserUpdate(ctx, userID)
+	if err != nil {
+		return err
+	}
+	return query.Updates(map[string]any{
 		"last_period_start": start,
 	}).Error
 }
@@ -1355,7 +1479,11 @@ func (repo *UserRepository) SaveOnboardingStep1(ctx context.Context, userID uint
 // age_group is not among them — onboarding no longer collects it, and the
 // column is written by the settings cycle form only.
 func (repo *UserRepository) SaveOnboardingStep2(ctx context.Context, userID uint, cycleLength int, periodLength int, autoPeriodFill bool, irregularCycle bool, usageGoal string) error {
-	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+	query, err := repo.scopedUserUpdate(ctx, userID)
+	if err != nil {
+		return err
+	}
+	return query.Updates(map[string]any{
 		"cycle_length":     cycleLength,
 		"period_length":    periodLength,
 		"luteal_phase":     14,
@@ -1373,7 +1501,11 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 		if err := tx.Where("user_id = ? AND is_builtin = ?", userID, false).Delete(&models.SymptomType{}).Error; err != nil {
 			return err
 		}
-		return tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+		query, err := scopedUserUpdateTx(tx, userID)
+		if err != nil {
+			return err
+		}
+		return query.Updates(map[string]any{
 			"cycle_length":  models.DefaultCycleLength,
 			"period_length": models.DefaultPeriodLength,
 			"luteal_phase":  14,
@@ -1536,8 +1668,12 @@ func (repo *UserRepository) DeleteAccountAndRelatedData(ctx context.Context, use
 }
 
 func (repo *UserRepository) CompleteOnboarding(ctx context.Context, userID uint, startDay time.Time, periodLength int, autoPeriodFill bool) error {
-	if userID == 0 {
-		return ErrUserOwnerRequired
+	// Checked up front, before any DailyLog write runs inside the
+	// transaction below: letting a zero id reach those writes first would
+	// create owner-less daily-log rows before the users UPDATE ever refused
+	// them.
+	if err := requireUserOwnerID(userID); err != nil {
+		return err
 	}
 	if periodLength <= 0 {
 		return errors.New("invalid period length")
@@ -1587,7 +1723,11 @@ func (repo *UserRepository) CompleteOnboarding(ctx context.Context, userID uint,
 			}
 		}
 
-		return tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+		query, err := scopedUserUpdateTx(tx, userID)
+		if err != nil {
+			return err
+		}
+		return query.Updates(map[string]any{
 			"last_period_start":    startDay,
 			"onboarding_completed": true,
 		}).Error

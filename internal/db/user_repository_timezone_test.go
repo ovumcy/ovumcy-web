@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -90,5 +91,22 @@ func TestUpdateUserTimezoneUnknownUserIsNoop(t *testing.T) {
 
 	if err := repo.UpdateUserTimezone(context.Background(), 99999, "Europe/Belgrade"); err != nil {
 		t.Fatalf("expected no error updating nonexistent user, got %v", err)
+	}
+}
+
+// TestUpdateUserTimezoneRefusesZeroOwner proves scopedUserUpdate's refusal on
+// one representative caller: a zero id must never reach `Where("id = ?", 0)`,
+// which would match zero rows and report success for a write that touched
+// nothing. This is the class WEB-52 finding 3 is about; the other 19 callers
+// of scopedUserUpdate/scopedUserUpdateTx share the same refusal by
+// construction and are held complete by
+// TestUserRepositoryUpdatesGoThroughTheScopingHelper rather than by one
+// behavioral test per method.
+func TestUpdateUserTimezoneRefusesZeroOwner(t *testing.T) {
+	repo := openTimezoneRepoForTest(t)
+
+	err := repo.UpdateUserTimezone(context.Background(), 0, "Europe/Belgrade")
+	if !errors.Is(err, ErrUserOwnerRequired) {
+		t.Fatalf("expected ErrUserOwnerRequired for a zero owner id, got %v", err)
 	}
 }
