@@ -1725,7 +1725,7 @@ func (repo *UserRepository) CompleteOnboarding(ctx context.Context, userID uint,
 
 		query, err := scopedUserUpdateTx(tx, userID)
 		if err != nil {
-			return err
+			return err // codecov:ignore -- unreachable: requireUserOwnerID above already refused a zero userID before this transaction started, and userID does not change inside it
 		}
 		return query.Updates(map[string]any{
 			"last_period_start":    startDay,
