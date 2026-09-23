@@ -43,6 +43,6 @@
   for the API catch-all and 120 for the calendar feed — and each `*_WINDOW` must lie between one
   second and one day. A value outside its range is logged at boot and the default is used, as an
   unparseable value already was. Operators who had set a `*_MAX` above its ceiling get the default
-  from this release and can widen the budget by shortening the window instead; the e2e harness
-  now does exactly that. The bcrypt cost stays the load-bearing limit and is unchanged.
+  from this release; on the three credential endpoints a shorter window does not widen the budget
+  either (see the 30-requests-per-minute rate ceiling entry). The bcrypt cost stays the load-bearing limit and is unchanged.
   Regressions: `TestRateLimitMaxSettingsHaveCeilings`, `TestRateLimitWindowSettingsHaveCeilings`.

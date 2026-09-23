@@ -269,11 +269,12 @@ func overflowRateLimitKey(t *testing.T, handler *api.Handler, method, target str
 	t.Helper()
 
 	app := newScopeGuardApp(t, handler)
-	if status, _ := scopeGuardSend(t, app, method, target); status == http.StatusTooManyRequests {
+	csrfCookie := scopeGuardCSRFCookie(t, app)
+	if status, _ := scopeGuardSend(t, app, csrfCookie, method, target); status == http.StatusTooManyRequests {
 		t.Fatalf("%s %s was refused on the first request; the guard needs one request inside the budget of %d", method, target, scopeGuardBudget)
 	}
 
-	status, body := scopeGuardSend(t, app, method, target)
+	status, body := scopeGuardSend(t, app, csrfCookie, method, target)
 	if status != http.StatusTooManyRequests {
 		return ""
 	}
@@ -289,15 +290,40 @@ func overflowRateLimitKey(t *testing.T, handler *api.Handler, method, target str
 	return payload.Error
 }
 
+// scopeGuardCSRFCookie mints a CSRF cookie with a safe request outside every
+// scoped limiter and outside /api, so fetching it spends no budget the guard
+// measures.
+func scopeGuardCSRFCookie(t *testing.T, app *fiber.App) *http.Cookie {
+	t.Helper()
+
+	response, err := app.Test(httptest.NewRequest(http.MethodGet, "/scope-guard-csrf", nil), testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("mint a csrf cookie: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	if cookie := testResponseCookie(response.Cookies(), "ovumcy_csrf"); cookie != nil && cookie.Value != "" {
+		return cookie
+	}
+	t.Fatal("the csrf middleware set no ovumcy_csrf cookie on a safe request")
+	return nil
+}
+
 // scopeGuardSend drives one request through the chain. It asks for JSON so the
 // rate-limit answer is the envelope carrying the stable key rather than the
 // HTML form redirect the auth limiters serve a browser.
-func scopeGuardSend(t *testing.T, app *fiber.App, method, target string) (int, []byte) {
+//
+// It also carries a valid CSRF pair, so an unsafe method reaches the terminal
+// handler and SUCCEEDS: a limiter that counts only answers below 400 — the
+// per-IP logout row — would otherwise never be spent by the guard's requests,
+// and every spelling would look capped by the /api catch-all alone.
+func scopeGuardSend(t *testing.T, app *fiber.App, csrfCookie *http.Cookie, method, target string) (int, []byte) {
 	t.Helper()
 
 	request := httptest.NewRequest(method, target, strings.NewReader(""))
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
+	request.AddCookie(csrfCookie)
+	request.Header.Set("X-CSRF-Token", csrfCookie.Value)
 
 	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {

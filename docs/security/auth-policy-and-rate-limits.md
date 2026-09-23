@@ -50,9 +50,13 @@ on the per-IP logout row, 200 on the per-account logout budget, 3000 on the API 
 on the calendar page and 120 on the calendar feed, and a `*_WINDOW` must lie between one second
 and one day. A value
 outside its range is logged at boot and replaced by the default, so a misread unit or a stray
-zero cannot widen a budget past its ceiling, let alone switch a limiter off; an operator who needs
-a wider budget shortens the window. The ceilings bound the *rate* of bcrypt work an address can
-demand; the bcrypt cost itself (12) is the load-bearing limit and is not lowered to compensate.
+zero cannot widen a budget past its ceiling, let alone switch a limiter off. On the three
+credential endpoints the pair is also held to a rate: at most 30 requests per minute, checked in
+integers as `MAX × 1 minute ≤ 30 × WINDOW`, so `100` over `200s` is the widest a count of 100 may
+run and a shorter window no longer widens the budget. A pair above that rate is logged at boot and
+BOTH halves fall back to their defaults. The ceilings bound the *rate* of bcrypt work an address
+can demand — at most about half a compare a second; the bcrypt cost itself (12) is the
+load-bearing limit and is not lowered to compensate.
 
 A single-endpoint row above is matched the way the router matches, not by raw path bytes: routing is case-insensitive and ignores trailing slashes, so `POST /LANG` and `POST /lang/` reach the same handler as `POST /lang` and draw on the same budget. The match stays exact rather than prefix-wide — `POST /api/v1/sessions/2fa-challenge` does not spend the sign-in row's budget; it draws on the `/api` catch-all and on its own per-account TOTP budget below.
 
@@ -89,6 +93,9 @@ Plus per-account, identity-keyed budgets enforced by `AuthAttemptPolicy` (`inter
   Tuned by `RATE_LIMIT_LOGOUT_ACCOUNT_MAX` / `RATE_LIMIT_LOGOUT_ACCOUNT_WINDOW` — deliberately its
   own pair, not the `RATE_LIMIT_LOGOUT_*` per-IP row above: the per-IP budget must stay wide enough
   for several owners behind one address, which is exactly why it cannot double as the account budget.
+  That per-IP row is edge middleware and refuses before the handler, so it counts only answers
+  below 400: an unauthenticated or token-less `DELETE` from a shared address is refused without
+  spending it, and cannot hold another owner's API sign-out refused until the window ends.
 - TOTP login challenge: 5 failures / 15 minutes.
 - TOTP disable: 5 failures / 15 minutes.
 - Settings re-authentication: 5 failures / 15 minutes, covering every password-gated settings action except the TOTP disable, whose password check draws its own budget above — `POST /api/v1/users/current/data-wipe/validate`, `POST …/data-wipe`, `DELETE /api/v1/users/current`, `PUT …/password`, `PUT …/2fa` (the TOTP-enrollment confirmation), and `POST …/recovery-code` (recovery-code regeneration). Without it these would be faster password oracles than the login form (the `/api` catch-all allows 300 requests per minute against login's 8 per 15 minutes), and `/data-wipe/validate` changes no state, which makes it a pure oracle. Once the budget is spent the endpoints answer `429` even for the correct password. The budget is keyed on `(client, account)` and on the account alone, deliberately **not** on the client address by itself: several independent owners share one address on a household instance, and one owner mistyping must not lock out the others, while the account-wide bucket still caps an attacker rotating addresses.

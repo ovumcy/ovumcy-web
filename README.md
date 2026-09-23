@@ -397,7 +397,9 @@ AUDIT_LOG_ENABLED=false
 # Each *_MAX has a ceiling (100 for login/register/forgot-password, 600 logout, 200 logout
 # account, 3000 api, 120 calendar feed) and each *_WINDOW must be between 1s and 24h; a value
 # outside its range is logged at boot and the default is used instead — a limiter cannot be
-# widened past its ceiling, let alone switched off. To widen a budget, shorten its window.
+# widened past its ceiling, let alone switched off. The login, register and forgot-password
+# pairs are also held to at most 30 requests per minute (MAX over WINDOW, e.g. 100 with 200s);
+# a pair above that is logged and both halves fall back to the defaults.
 # RATE_LIMIT_LOGIN_MAX=8
 # RATE_LIMIT_LOGIN_WINDOW=15m
 # RATE_LIMIT_REGISTER_MAX=8

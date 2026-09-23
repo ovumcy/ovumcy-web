@@ -1,0 +1,25 @@
+### Changed
+
+- **Breaking: the login, registration and password-reset rate limits are held to 30 requests per
+  minute.** Each `RATE_LIMIT_{LOGIN,REGISTER,FORGOT_PASSWORD}_MAX` / `*_WINDOW` pair must now satisfy
+  `MAX × 1 minute ≤ 30 × WINDOW`. The count ceiling of 100 alone still let 100 over a one-second
+  window through: about 6000 bcrypt compares a minute from one address, where the ceiling now allows
+  about half a compare a second. A pair above the rate is logged at boot, naming the allowed rate
+  and an allowed pair (`100` with `200s`), and both halves fall back to their defaults (8 per 15
+  minutes; 8 per hour for password reset). An operator who widened a credential budget by
+  shortening its window gets the defaults from this release. Set a pair within the rate instead.
+  The per-account login and recovery budgets read the same validated pairs. The one-second window
+  floor is unchanged, and the e2e harness now runs at 100 per 200 s. Regressions:
+  `TestCredentialRateLimitPairsHaveARateCeiling`,
+  `TestCredentialRateLimitRefusalLeavesTheOtherPairsAlone`,
+  `TestCredentialMaxCeilingIsReadOnlyThroughTheRateCheck`.
+
+### Security
+
+- **Refused logout requests no longer spend the per-IP logout budget.** The per-IP row on
+  `DELETE /api/v1/sessions/current` refuses before the handler runs. Until now it counted every
+  request, so anyone behind the same address (a household NAT) could spend it with sixty
+  unauthenticated `DELETE`s. Every other owner's API sign-out was then refused for the rest of the
+  window, with the session still alive. The row now counts only answers below 400. Successful
+  sign-outs still spend it, and each account's own logout budget still bounds them per owner.
+  Regression: `TestLogoutEdgeBudgetIsNotSpentByRefusedRequests`.
