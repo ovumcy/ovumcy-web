@@ -117,9 +117,13 @@ jobs:
             # trivy-fs walks the WHOLE tree for any manifest/lockfile it
             # recognizes (--scanners vuln), not only the repo root — a
             # nested package-lock.json under a workspace is scanned the
-            # same as the root one. Matched by basename at any depth,
-            # across every ecosystem trivy's fs scanner supports.
-            trivyfs_changes="$(printf '%s\n' "$files" | grep -E '(^|/)(go\.(mod|sum)|package(-lock)?\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|requirements[^/]*\.txt|Pipfile\.lock|poetry\.lock|Cargo\.lock|Gemfile\.lock|composer\.lock|pom\.xml|build\.gradle(\.kts)?)$' || true)"
+            # same as the root one. Matched by basename at any depth: the
+            # manifests and lockfiles of Go, npm/yarn/pnpm/bun, Python
+            # (pip, Pipenv, Poetry, uv), Rust, Ruby, PHP, Java (Maven,
+            # Gradle, sbt), .NET (NuGet), Dart, Elixir, Swift/CocoaPods,
+            # Conan and Julia. A text format outside this list is not
+            # caught here; a binary one is, by the fallback below.
+            trivyfs_changes="$(printf '%s\n' "$files" | grep -E '(^|/)(go\.(mod|sum)|package(-lock)?\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb?|requirements[^/]*\.txt|Pipfile\.lock|poetry\.lock|uv\.lock|pyproject\.toml|Cargo\.lock|Gemfile\.lock|composer\.(lock|json)|pom\.xml|build\.gradle(\.kts)?|[^/]*gradle\.lockfile|[^/]*\.sbt\.lock|packages\.lock\.json|packages\.config|[^/]*\.deps\.json|(Directory\.)?Packages\.props|pubspec\.lock|mix\.lock|Podfile\.lock|Package\.resolved|conan\.lock|(Julia)?Manifest\.toml)$' || true)"
             # The manifest list above cannot be exhaustive — trivy's
             # binary/language detectors also read file CONTENT no path
             # pattern can name ahead of time (a compiled Go binary's
