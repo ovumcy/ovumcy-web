@@ -203,6 +203,28 @@ func TestOpenAPIDeclaresRateLimitedOnEveryLimiterCoveredOperation(t *testing.T) 
 		t.Errorf("the app-wide /api limiter (cmd/ovumcy/server.go, mounted with no Next filter) can answer 429 on every /api/v1 operation, but docs/openapi.yaml declares no '429': RateLimited response for:\n  %s",
 			strings.Join(missing, "\n  "))
 	}
+
+	// Outside /api/v1 the /api mount reaches nothing, but a documented operation
+	// can still sit behind a limiter of its own: POST /lang did, and declared no
+	// 429 for it. Those operations are derived from the limiter mounts in the
+	// composition root, not listed here, and the one known member is asserted
+	// by name so a reader that stops seeing it cannot pass as "none to check".
+	outside := limiterCoveredDocumentedOperationsOutsideV1(t, declared)
+	if _, ok := outside[fiber.MethodPost+" "+LanguageSwitchPath]; !ok {
+		t.Fatalf("POST %s is not among the limiter-covered operations read from cmd/ovumcy (got %v); its own limiter mount is wired there, so the mount reader, not the spec, is broken",
+			LanguageSwitchPath, outside)
+	}
+	var missingOutside []string
+	for operation, mount := range outside {
+		if _, ok := declaresRateLimited[operation]; !ok {
+			missingOutside = append(missingOutside, operation+" (limiter at "+mount+")")
+		}
+	}
+	sort.Strings(missingOutside)
+	if len(missingOutside) > 0 {
+		t.Errorf("a limiter mounted in cmd/ovumcy counts these documented operations outside /api/v1, but docs/openapi.yaml declares no '429' for them — add `'429': $ref: '#/components/responses/RateLimited'` to each operation:\n  %s",
+			strings.Join(missingOutside, "\n  "))
+	}
 }
 
 // TestOpenAPIDocumentsEveryTransportStatusTheEnvelopeCovers pins the reverse

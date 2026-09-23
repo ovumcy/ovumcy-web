@@ -1448,6 +1448,9 @@ paths:
         (`users.interface_language`, the same column `PATCH /api/v1/users/current/interface`
         writes), so a later session issue re-serves the switched language instead of reverting
         the cookie to the stored one. The response is the same either way.
+
+        This path is outside `/api`, so the `/api` rate limit does not reach it; it carries a
+        per-IP limit of its own, sized like the `/api` budget, and answers `429` once it is spent.
       security:
         - csrfToken: []
       requestBody:
@@ -1463,11 +1466,30 @@ paths:
                   enum: [en, ru, es, fr, de, it]
                   description: Form field name is `lang` (the handler reads `c.FormValue("lang")`) — distinct from the `language` JSON field on `PATCH /api/v1/users/current/interface`.
                 csrf_token: { type: string }
+                next:
+                  type: string
+                  description: Optional same-origin path to return to; anything else falls back to `/`.
       responses:
         '200':
           description: HTMX-style success.
         '303':
-          description: Redirect to referer or `/`.
+          description: |
+            Redirect to the form's `next` path, or to `/` when `next` is absent or is not a
+            same-origin path.
+        '400':
+          description: |
+            `lang` is missing or blank. The handler raises the transport-level `400`, so the
+            refusal carries the shared `bad_request` key rather than a key of this route's own.
+            A non-blank code the server does not ship is not refused: it falls back to the
+            default language and answers like a success.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "bad_request"
+                error_detail: { key: "bad_request", category: "validation", target: "global" }
+        '429':
+          $ref: '#/components/responses/RateLimited'
 
   # =========================================================================
   # auth
