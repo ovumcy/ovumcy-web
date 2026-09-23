@@ -205,7 +205,11 @@ func TestNoIgnoreUnfixedAmongVulnScansRefusesAnOffendingLine(t *testing.T) {
 // straight into a shell command.
 // ---------------------------------------------------------------------------
 
-var stepHeader = regexp.MustCompile(`(?m)^      - name: `)
+// stepHeader opens one step: any item of a job's `steps:` list at its 6-space
+// indentation, whichever key the item opens on (`- name:`, `- id:`,
+// `- uses:`). Keyed on `- name:` alone, a step opening on another key reads as
+// part of the step above it.
+var stepHeader = regexp.MustCompile(`(?m)^      - `)
 
 // stepBlock cuts one step out of a job block by its `name:`, the same
 // fail-closed shape workflowfile.Job cuts a job out of a workflow with: a

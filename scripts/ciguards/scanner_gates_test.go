@@ -398,13 +398,72 @@ var detectCasesByWorkflow = map[string][]detectCase{
 	},
 }
 
+// jobSteps cuts a job block into its steps, each re-indented so the key its
+// item opens on sits at 8 spaces like the rest of its keys.
+func jobSteps(block string) []string {
+	start := strings.Index(block, "\n    steps:\n")
+	if start < 0 {
+		return nil
+	}
+	var steps []string
+	for _, step := range stepHeader.Split(block[start:], -1)[1:] {
+		steps = append(steps, "        "+step)
+	}
+	return steps
+}
+
+// DiffCallerStepsAreGated returns one problem per step of a `changes` job —
+// its checkout, and its call of the diff action — that does not carry
+// `if: diffEvents`, or that is missing.
+func DiffCallerStepsAreGated(block string) []string {
+	var problems []string
+	steps := jobSteps(block)
+	for _, needle := range []string{"uses: ./" + diffAction + "\n", "uses: actions/checkout@"} {
+		found := false
+		for _, step := range steps {
+			if !strings.Contains(step, needle) {
+				continue
+			}
+			found = true
+			if !strings.Contains(step, "        if: "+diffEvents+"\n") {
+				problems = append(problems, fmt.Sprintf("the step with %q does not carry `if: %s`", strings.TrimSpace(needle), diffEvents))
+			}
+		}
+		if !found {
+			problems = append(problems, fmt.Sprintf("no step with %q", strings.TrimSpace(needle)))
+		}
+	}
+	return problems
+}
+
+func TestDiffCallerStepsAreGatedSplitsOnEveryStepItem(t *testing.T) {
+	checkout := "      - name: Checkout\n        if: " + diffEvents + "\n        uses: actions/checkout@abc\n"
+	detect := "      - name: Detect\n        id: detect\n        run: |\n          true\n"
+	for opening, list := range map[string]string{
+		"id":   "      - id: diff\n        uses: ./" + diffAction + "\n",
+		"uses": "      - uses: ./" + diffAction + "\n        id: diff\n",
+	} {
+		block := "  changes:\n    steps:\n" + checkout + list + detect
+		if problems := DiffCallerStepsAreGated(block); len(problems) != 1 {
+			t.Errorf("a list step opening on `- %s:` with no `if:` gave %v — it was read as part of the gated checkout above it", opening, problems)
+		}
+		gated := strings.Replace(list, "\n", "\n        if: "+diffEvents+"\n", 1)
+		if problems := DiffCallerStepsAreGated("  changes:\n    steps:\n" + checkout + gated + detect); len(problems) != 0 {
+			t.Errorf("a gated list step opening on `- %s:` was refused: %v", opening, problems)
+		}
+	}
+	opensOnIf := "      - if: " + diffEvents + "\n        uses: ./" + diffAction + "\n"
+	if problems := DiffCallerStepsAreGated("  changes:\n    steps:\n" + checkout + opensOnIf); len(problems) != 0 {
+		t.Errorf("a list step opening on its own `- if:` was refused: %v", problems)
+	}
+}
+
 // TestEveryCallerOfTheDiffActionIsGatedAndExecuted enumerates the action's
 // callers from the workflows themselves: each must call it from its `changes`
 // job, put diffEvents on that job's checkout and on the list step — the deep
 // fetch is paid only where a base exists — and have a behaviour table above.
 func TestEveryCallerOfTheDiffActionIsGatedAndExecuted(t *testing.T) {
 	uses := "uses: ./" + diffAction + "\n"
-	gate := "        if: " + diffEvents + "\n"
 
 	callers := map[string]bool{}
 	for _, wf := range allWorkflowFiles(t) {
@@ -420,21 +479,8 @@ func TestEveryCallerOfTheDiffActionIsGatedAndExecuted(t *testing.T) {
 				continue
 			}
 			callers[wf] = true
-			steps := stepHeader.Split(block, -1)[1:]
-			for _, needle := range []string{uses, "uses: actions/checkout@"} {
-				found := false
-				for _, step := range steps {
-					if !strings.Contains(step, needle) {
-						continue
-					}
-					found = true
-					if !strings.Contains(step, gate) {
-						t.Errorf("%s changes: the step with %q does not carry `if: %s`", wf, strings.TrimSpace(needle), diffEvents)
-					}
-				}
-				if !found {
-					t.Errorf("%s changes: no step with %q", wf, strings.TrimSpace(needle))
-				}
+			for _, problem := range DiffCallerStepsAreGated(block) {
+				t.Errorf("%s changes: %s", wf, problem)
 			}
 		}
 	}
