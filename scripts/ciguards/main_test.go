@@ -945,6 +945,12 @@ func runScriptStep(t *testing.T, bash, dir string, env []string, step scriptStep
 		if !known {
 			t.Fatalf("%s: env %s reads ${{ %s }}, which this harness does not evaluate — add it to detectRun.run's table", what, name, expr)
 		}
+		// The runner is Linux, where exec refuses (E2BIG) any one env string
+		// over MAX_ARG_STRLEN, 128 KiB with its NUL. This machine's own
+		// limit may be higher or lower, so the runner's is applied here.
+		if size := len(name) + len("=") + len(value) + 1; size > linuxMaxArgStrlen {
+			t.Fatalf("%s: env %s is %d bytes, over the %d one string may hold on the Linux runner — the step would fail to start (E2BIG)", what, name, size, linuxMaxArgStrlen)
+		}
 		stepEnv = append(stepEnv, name+"="+value)
 	}
 
@@ -970,6 +976,10 @@ func runScriptStep(t *testing.T, bash, dir string, env []string, step scriptStep
 	}
 	return parseStepOutputs(t, string(raw), what)
 }
+
+// linuxMaxArgStrlen is Linux's MAX_ARG_STRLEN (32 pages of 4 KiB): the most
+// one argument or environment string, NUL included, may hold at exec.
+const linuxMaxArgStrlen = 128 << 10
 
 // shellArgs is how the runner starts bash for a step: `bash -e {0}` when the
 // step names no shell, `bash --noprofile --norc -eo pipefail {0}` when it
