@@ -815,12 +815,15 @@ func (r detectRun) run(t *testing.T) map[string]string {
 
 	dir := t.TempDir()
 	bash := requireBash(t, dir)
-	env := hermeticGitEnv()
-	git := func(args ...string) string {
+	// RUNNER_TEMP is job-wide on the runner: the list step writes the file
+	// list under it, and the detect step reads it back from there.
+	env := append(hermeticGitEnv(), "RUNNER_TEMP="+filepath.ToSlash(t.TempDir()))
+	gitIn := func(stdin string, args ...string) string {
 		t.Helper()
 		cmd := exec.Command("git", args...)
 		cmd.Dir = dir
 		cmd.Env = env
+		cmd.Stdin = strings.NewReader(stdin)
 		out, err := cmd.Output()
 		if err != nil {
 			var stderr []byte
@@ -830,6 +833,10 @@ func (r detectRun) run(t *testing.T) map[string]string {
 			t.Fatalf("git %v: %v\n%s", args, err, stderr)
 		}
 		return strings.TrimSpace(string(out))
+	}
+	git := func(args ...string) string {
+		t.Helper()
+		return gitIn("", args...)
 	}
 	write := func(name string, content []byte) {
 		t.Helper()
@@ -856,14 +863,23 @@ func (r detectRun) run(t *testing.T) map[string]string {
 	}
 	git("remote", "add", "origin", dir)
 	git("checkout", "-q", "-b", "change")
-	for _, f := range r.files {
-		write(f, []byte("x\n"))
-	}
 	for _, f := range r.binaries {
 		write(f, []byte{0x00, 0x01, 0x02, 0x00, 0xff})
 	}
 	git("add", "-A")
-	git("commit", "-q", "-m", "change")
+	// The text files enter the commit through the index alone, never the
+	// fixture's filesystem, so a name NTFS cannot hold — a tab, a `"`, a
+	// newline — is committed on every OS, and a list of thousands costs one
+	// git call. protectNTFS is what refuses such a name on Windows.
+	if len(r.files) > 0 {
+		blob := git("hash-object", "-w", "README.md")
+		var index strings.Builder
+		for _, f := range r.files {
+			index.WriteString("100644 " + blob + "\t" + f + "\x00")
+		}
+		gitIn(index.String(), "-c", "core.protectNTFS=false", "update-index", "-z", "--index-info")
+	}
+	git("-c", "core.protectNTFS=false", "commit", "-q", "-m", "change")
 	// The expressions a `changes` step may read, as the runner evaluates them
 	// for this event. One this table does not know fails the run rather than
 	// reading as empty.

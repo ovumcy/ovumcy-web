@@ -60,7 +60,7 @@ jobs:
         id: detect
         env:
           EVENT_NAME: ${{ github.event_name }}
-          CHANGED_FILES: ${{ steps.diff.outputs.files }}
+          CHANGED_FILES_PATH: ${{ steps.diff.outputs.files-path }}
           DIFF_VERDICT: ${{ steps.diff.outputs.verdict }}
         run: |
           # This job must never fail: a failed dependency would skip every
@@ -72,7 +72,14 @@ jobs:
           run_js=true
           run_actions=true
 
-          files="$CHANGED_FILES"
+          # The list arrives as a file the diff action wrote, never through
+          # `env:` (one env string is capped at 128 KiB). No path, or a file
+          # that cannot be read, is an empty list: nothing is narrowed.
+          files=""
+          if [ -n "$CHANGED_FILES_PATH" ] && ! files="$(cat -- "$CHANGED_FILES_PATH")"; then
+            files=""
+            DIFF_VERDICT="the file list at $CHANGED_FILES_PATH could not be read"
+          fi
           if [ -z "$files" ]; then
             verdict="${DIFF_VERDICT:-$EVENT_NAME carries no base to diff against}: running every language."
           else

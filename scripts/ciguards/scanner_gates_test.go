@@ -340,6 +340,69 @@ func TestTrivyFSRunsWhenTheBinaryProbeFails(t *testing.T) {
 	}
 }
 
+// listSizeOutputs names, per caller of the diff action, one output a Go file
+// sets to "true" — the probe TestTheFileListReachesEveryDetectStepWhateverItsSize
+// reads at the end of an oversized list.
+var listSizeOutputs = map[string]string{
+	ciWorkflow:       "run_core",
+	securityWorkflow: "run_go",
+	codeqlWorkflow:   "run_go",
+}
+
+// TestTheFileListReachesEveryDetectStepWhateverItsSize hands every caller a
+// list longer than one environment string may be (128 KiB on Linux, 32767
+// characters on Windows). The list crosses as a file, so the detect step
+// still starts, and the one Go file at its end still decides.
+func TestTheFileListReachesEveryDetectStepWhateverItsSize(t *testing.T) {
+	var files []string
+	dir := "docs/" + strings.Repeat("d", 90) + "/"
+	for i := 0; i < 1500; i++ {
+		files = append(files, fmt.Sprintf("%sf%04d.md", dir, i))
+	}
+	files = append(files, "internal/x/a.go")
+	if size := len(strings.Join(files, "\n")); size <= 128<<10 {
+		t.Fatalf("the list is %d bytes, not over the 128 KiB a Linux env string holds — this test proves nothing", size)
+	}
+	for wf := range detectCasesByWorkflow {
+		output, ok := listSizeOutputs[wf]
+		if !ok {
+			t.Errorf("%s calls the diff action but has no probe output in listSizeOutputs", wf)
+			continue
+		}
+		t.Run(path.Base(wf), func(t *testing.T) {
+			got := detectRun{workflow: wf, event: "pull_request", files: files, queueBase: queueBaseReal}.run(t)
+			if got[output] != "true" {
+				t.Errorf("%s = %q for a %d-file list ending in a Go file, want \"true\"", output, got[output], len(files))
+			}
+		})
+	}
+}
+
+// TestAnUnreadableFileListRunsEverything hands every caller's detect step a
+// list path that names no file: it must read as an empty list, never fail
+// the job and never narrow a lane.
+func TestAnUnreadableFileListRunsEverything(t *testing.T) {
+	list := `echo "files-path=$RUNNER_TEMP/absent/changed-files" >> "$GITHUB_OUTPUT"` + "\n"
+	for wf := range detectCasesByWorkflow {
+		t.Run(path.Base(wf), func(t *testing.T) {
+			got := detectRun{workflow: wf, list: list, event: "pull_request", files: []string{"docs/x.md"}, queueBase: queueBaseReal}.run(t)
+			judged := 0
+			for k, v := range got {
+				if !strings.HasPrefix(k, "run_") {
+					continue
+				}
+				judged++
+				if v != "true" {
+					t.Errorf("%s = %q with an unreadable list, want \"true\" (all outputs: %v)", k, v, got)
+				}
+			}
+			if judged == 0 {
+				t.Fatalf("the detect step wrote no run_* output: %v", got)
+			}
+		})
+	}
+}
+
 // repoGit runs git in the repository under test, in the hermetic environment.
 func repoGit(t *testing.T, args ...string) string {
 	t.Helper()

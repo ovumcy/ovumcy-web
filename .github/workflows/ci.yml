@@ -1160,7 +1160,7 @@ jobs:
         # evaluated even when this job dies), so a crash here cannot skip them.
         env:
           EVENT_NAME: ${{ github.event_name }}
-          CHANGED_FILES: ${{ steps.diff.outputs.files }}
+          CHANGED_FILES_PATH: ${{ steps.diff.outputs.files-path }}
           DIFF_VERDICT: ${{ steps.diff.outputs.verdict }}
           QUEUE_BASE_SHA: ${{ github.event.merge_group.base_sha }}
           MERGE_GROUP_HEAD_REF: ${{ github.event.merge_group.head_ref }}
@@ -1179,7 +1179,14 @@ jobs:
           # The list step above skips every event but pull_request and
           # merge_group, and reports every case it could not determine as an
           # empty list: either way nothing is judged irrelevant here.
-          files="$CHANGED_FILES"
+          # The list arrives as a file the diff action wrote, never through
+          # `env:` (one env string is capped at 128 KiB). No path, or a file
+          # that cannot be read, is an empty list: nothing is narrowed.
+          files=""
+          if [ -n "$CHANGED_FILES_PATH" ] && ! files="$(cat -- "$CHANGED_FILES_PATH")"; then
+            files=""
+            DIFF_VERDICT="the file list at $CHANGED_FILES_PATH could not be read"
+          fi
           if [ -z "$files" ]; then
             verdict="${DIFF_VERDICT:-$EVENT_NAME carries no base to diff against}: nothing is judged irrelevant here."
           else

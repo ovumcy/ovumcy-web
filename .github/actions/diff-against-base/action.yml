@@ -5,9 +5,15 @@ description: >
   and codeql.yml, each of which keeps its own path rules in its own detect step:
   this action decides WHICH files changed, never what they mean.
 
+  The list crosses to the caller as a FILE under $RUNNER_TEMP, never as an
+  output or env value: one environment string is capped at 128 KiB on Linux,
+  and a mass move listed with both sides reaches that, so a detect step fed
+  the list through `env:` would fail to start.
+
   An undetermined list — an event with no base, a base that cannot be fetched or
-  reached, a failed or empty diff — is reported as an EMPTY `files` output with
-  the reason in `verdict`. Every caller reads an empty list as "run everything",
+  reached, a failed or empty diff, no file to hold it — is reported as an EMPTY
+  `files-path` output with the reason in `verdict`. Every caller reads a missing
+  or unreadable file as an empty list, and an empty list as "run everything",
   so no failure here can clear a lane.
 
   Needs a full-history checkout of HEAD first (the `...` diff walks to the merge
@@ -16,16 +22,17 @@ description: >
 outputs:
   base:
     description: >
-      The commit-ish the diff was taken against. Empty whenever `files` is.
+      The commit-ish the diff was taken against. Empty whenever `files-path` is.
     value: ${{ steps.diff.outputs.base }}
-  files:
+  files-path:
     description: >
-      Newline-separated changed paths, unquoted (core.quotePath=false) and with
-      renames split into their two sides. Empty when undetermined.
-    value: ${{ steps.diff.outputs.files }}
+      Path of a file under $RUNNER_TEMP holding the changed paths one per line,
+      unquoted (core.quotePath=false) and with renames split into their two
+      sides. Empty when undetermined.
+    value: ${{ steps.diff.outputs.files-path }}
   verdict:
     description: >
-      Why `files` is empty, when it is; empty when a list was produced.
+      Why `files-path` is empty, when it is; empty when a list was produced.
     value: ${{ steps.diff.outputs.verdict }}
 
 runs:
@@ -45,7 +52,7 @@ runs:
         # callers' required jobs depend on the job running it — and every
         # branch falls through to the single output write at the end.
         base=""
-        files=""
+        list=""
         verdict=""
 
         case "$EVENT_NAME" in
@@ -77,33 +84,30 @@ runs:
         esac
 
         if [ -n "$base" ]; then
+          if [ -z "${RUNNER_TEMP:-}" ] || ! list="$(mktemp "$RUNNER_TEMP/changed-files.XXXXXX")"; then
+            list=""
+            verdict="no file under RUNNER_TEMP to hold the list"
           # quotePath off: a non-ASCII path would otherwise come back C-quoted
-          # ("web/\303\251.js") and miss every anchored pattern a caller
+          # ("web/Ã©.js") and miss every anchored pattern a caller
           # applies. No renames: a move must list its source side too.
-          if ! files="$(git -c core.quotePath=false diff --no-renames --name-only "${base}...HEAD")"; then
-            files=""
+          elif ! git -c core.quotePath=false diff --no-renames --name-only "${base}...HEAD" > "$list"; then
             verdict="git diff ${base}...HEAD failed"
-          elif [ -z "$files" ]; then
+          elif [ ! -s "$list" ]; then
             verdict="empty file list from ${base}...HEAD"
           else
             echo "Changed files against ${base}:"
-            printf '%s\n' "$files"
+            cat "$list"
+            verdict=""
           fi
         fi
-        if [ -z "$files" ]; then
+        if [ -n "$verdict" ]; then
           base=""
+          list=""
           echo "no file list (${verdict}): every caller runs everything."
         fi
 
-        # A path is attacker-chosen on a fork's pull request, so the multiline
-        # delimiter is random rather than a word a file could be named.
-        delimiter="files_$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
         {
           echo "base=$base"
           echo "verdict=$verdict"
-          echo "files<<$delimiter"
-          if [ -n "$files" ]; then
-            printf '%s\n' "$files"
-          fi
-          echo "$delimiter"
+          echo "files-path=$list"
         } >> "$GITHUB_OUTPUT"
