@@ -1496,7 +1496,7 @@ func requireBash(t *testing.T) string {
 // `publish` declares `shell: bash` — `Scan the image before publishing it` and
 // `Sign the pushed digest` declare none and run as `bash -e {0}`, without
 // pipefail — so the flags are read off the step rather than assumed, and a
-// step that does not declare `shell: bash` fails here instead of running. A
+// step naming any other shell fails here instead of running. A
 // script long enough to hold one of these steps also truncates silently on
 // Windows when handed to `-c` as a command-line argument.
 func runBashScript(t *testing.T, bash, job, step, script string) *exec.Cmd {

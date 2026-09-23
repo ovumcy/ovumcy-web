@@ -652,24 +652,21 @@ const diffEvents = "github.event_name == 'pull_request' || github.event_name == 
 const ciWorkflow = ".github/workflows/ci.yml"
 
 // scriptStep is one `run: |` step as the runner sees it: the script, the
-// shell named for it, and its `env:` entries as unevaluated expressions.
+// flags bash runs it under, and its `env:` entries as unevaluated expressions.
 type scriptStep struct {
 	script string
-	shell  string
+	flags  []string
 	env    map[string]string
 }
 
-var (
-	stepEnvLine   = regexp.MustCompile(`^\s+([A-Z][A-Z0-9_]*): \$\{\{ (.+?) \}\}$`)
-	stepShellLine = regexp.MustCompile(`^\s+shell: (\S+)$`)
-)
+var stepEnvLine = regexp.MustCompile(`^\s+([A-Z][A-Z0-9_]*): \$\{\{ (.+?) \}\}$`)
 
-// readScriptStep cuts the step whose `id:` line is idLine out of text: the
-// keys between that line and `run: |` (its env entries and shell), and the
-// block scalar after it, de-indented exactly as the runner hands it to bash.
-// Keys written below the block scalar are not read: a detect step whose
-// `env:` moved there would get an empty file list and redden every case that
-// narrows a lane.
+// readScriptStep cuts the step whose `id:` line is idLine out of text: its
+// env entries between that line and `run: |`, the block scalar after it,
+// de-indented exactly as the runner hands it to bash, and the flags its
+// `shell:` — wherever among the step's keys — compiles to. Env keys written
+// below the block scalar are not read: a detect step whose `env:` moved there
+// would get an empty file list and redden every case that narrows a lane.
 func readScriptStep(t *testing.T, text, idLine, what string) scriptStep {
 	t.Helper()
 
@@ -683,12 +680,10 @@ func readScriptStep(t *testing.T, text, idLine, what string) scriptStep {
 		t.Fatalf("%s has no `run: |` block", what)
 	}
 
-	step := scriptStep{env: map[string]string{}}
+	step := scriptStep{env: map[string]string{}, flags: workflowfile.BashStepFlags(t, what, idLine, stepKeys(text, start))}
 	for _, line := range strings.Split(rest[:run], "\n") {
 		if m := stepEnvLine.FindStringSubmatch(line); m != nil {
 			step.env[m[1]] = m[2]
-		} else if m := stepShellLine.FindStringSubmatch(line); m != nil {
-			step.shell = m[1]
 		}
 	}
 
@@ -711,6 +706,30 @@ func readScriptStep(t *testing.T, text, idLine, what string) scriptStep {
 	}
 	step.script = strings.Join(lines, "\n")
 	return step
+}
+
+// stepKeys returns the step one of whose keys starts at offset key of text:
+// from the `- ` item that opens it to the first line shallower than its keys
+// — the next step's `- ` or a key of whatever holds the steps. Every key of
+// the step, above and below its `run: |`, is in it, so its `shell:` is read
+// wherever it is written.
+func stepKeys(text string, key int) string {
+	lineStart := strings.LastIndex(text[:key], "\n") + 1
+	column := key - lineStart
+	item := strings.Repeat(" ", max(column-2, 0)) + "- "
+	for lineStart > 0 && !strings.HasPrefix(text[lineStart:], item) {
+		lineStart = strings.LastIndex(text[:lineStart-1], "\n") + 1
+	}
+	block := text[lineStart:]
+	first := strings.IndexByte(block, '\n') + 1
+	if first == 0 {
+		return block
+	}
+	dedent := regexp.MustCompile(fmt.Sprintf(`(?m)^ {0,%d}[^\s#]`, column-1))
+	if end := dedent.FindStringIndex(block[first:]); end != nil {
+		return block[:first+end[0]]
+	}
+	return block
 }
 
 // detectStep returns a workflow's `changes` job `detect` step.
@@ -964,7 +983,7 @@ func runScriptStep(t *testing.T, bash, dir string, env []string, step scriptStep
 	if err := os.WriteFile(scriptFile, []byte(step.script), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(bash, append(shellArgs(t, step.shell, what), filepath.ToSlash(scriptFile))...)
+	cmd := exec.Command(bash, append(append([]string(nil), step.flags...), filepath.ToSlash(scriptFile))...)
 	cmd.Dir = dir
 	cmd.Env = append(stepEnv, "GITHUB_OUTPUT="+output)
 	out, err := cmd.CombinedOutput()
@@ -982,22 +1001,6 @@ func runScriptStep(t *testing.T, bash, dir string, env []string, step scriptStep
 // linuxMaxArgStrlen is Linux's MAX_ARG_STRLEN (32 pages of 4 KiB): the most
 // one argument or environment string, NUL included, may hold at exec.
 const linuxMaxArgStrlen = 128 << 10
-
-// shellArgs is how the runner starts bash for a step: `bash -e {0}` when the
-// step names no shell, `bash --noprofile --norc -eo pipefail {0}` when it
-// names `bash` — which a composite action's step must.
-func shellArgs(t *testing.T, shell, what string) []string {
-	t.Helper()
-
-	switch shell {
-	case "":
-		return []string{"-e"}
-	case "bash":
-		return []string{"--noprofile", "--norc", "-eo", "pipefail"}
-	}
-	t.Fatalf("%s runs under `shell: %s`, which this harness does not reproduce", what, shell)
-	return nil
-}
 
 // parseStepOutputs reads GITHUB_OUTPUT in both of its forms: `name=value`,
 // and `name<<DELIMITER` followed by the value's lines and the delimiter alone
