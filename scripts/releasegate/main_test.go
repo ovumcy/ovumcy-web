@@ -72,6 +72,13 @@ const (
 	heavyChecksKey = "HEAVY_CHECKS"
 )
 
+// What runGate's stubs print when the gate asks them for something no fixture
+// serves. A refusal case asserts neither is in the output.
+const (
+	stubUnservedEndpoint = "the gate called an endpoint this fixture does not serve"
+	stubUnexpectedGit    = "the gate ran an unexpected git command"
+)
+
 var (
 	stepHeader = regexp.MustCompile(`(?m)^      - name: `)
 	envEntry   = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*): (.*)$`)
@@ -310,6 +317,45 @@ func TestReleaseTagGateJudgesEachLaneWhereItActuallyRan(t *testing.T) {
 			if !testCase.wantRefusal && err != nil {
 				t.Fatalf("the gate refused a tag it owes: %v\n%s", err, output)
 			}
+			// Under errexit a stub that aborts ends the script with a non-zero
+			// exit, which reads as a refusal. It is the harness refusing, not
+			// the gate judging this state of the world.
+			if testCase.wantRefusal {
+				for _, stubAbort := range []string{stubUnservedEndpoint, stubUnexpectedGit} {
+					if strings.Contains(output, stubAbort) {
+						t.Fatalf("the refusal came from a harness stub (%q), not from the gate's own judgement.\n%s", stubAbort, output)
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestRunGateStopsWhereTheGateStepWould is the positive control for the flags
+// runGate reads off the gate step: under `shell: bash` a failing command ends
+// the script, and so does a pipeline whose first stage fails. The first case is
+// the anchor: a script that fails nowhere has to reach its end, or the other
+// two would pass on a helper that runs nothing.
+func TestRunGateStopsWhereTheGateStepWould(t *testing.T) {
+	for _, testCase := range []struct {
+		name        string
+		script      string
+		wantReached bool
+	}{
+		{name: "nothing fails", script: "true | true\necho reached\n", wantReached: true},
+		{name: "a failing command (errexit)", script: "false\necho reached\n"},
+		{name: "a pipeline whose first stage fails (pipefail)", script: "false | true\necho reached\n"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			output, err := runGate(t, testCase.script, nil, scenario{})
+			reached := strings.Contains(output, "reached")
+
+			if testCase.wantReached && (!reached || err != nil) {
+				t.Fatalf("a script that fails nowhere did not run to its end under the gate step's shell: %v\n%s", err, output)
+			}
+			if !testCase.wantReached && (reached || err == nil) {
+				t.Fatalf("the script ran past a failure under the gate step's shell, which `shell: bash` stops at (exit: %v):\n%s", err, output)
+			}
 		})
 	}
 }
@@ -524,13 +570,13 @@ func runGate(t *testing.T, script string, env map[string]string, state scenario)
 		`  case "$url" in`,
 		`    */actions/runs*) cat ` + write("workflow_runs.tsv", workflowRuns.String()) + ` ;;`,
 		`    */check-runs*) cat ` + write("check_runs.tsv", checkRuns.String()) + ` ;;`,
-		`    *) echo "the gate called an endpoint this fixture does not serve: $*" >&2; return 1 ;;`,
+		`    *) echo "` + stubUnservedEndpoint + `: $*" >&2; return 1 ;;`,
 		`  esac`,
 		`}`,
 		`git() {`,
 		`  case "${1:-}" in`,
 		`    rev-parse) printf '%s\n' "$GITHUB_SHA" ;;`,
-		`    *) echo "the gate ran an unexpected git command: $*" >&2; return 1 ;;`,
+		`    *) echo "` + stubUnexpectedGit + `: $*" >&2; return 1 ;;`,
 		`  esac`,
 		`}`,
 		"",
@@ -542,16 +588,17 @@ func runGate(t *testing.T, script string, env map[string]string, state scenario)
 	bash := bashPath(t)
 	requireWorkingBash(t, bash)
 
-	// The gate's own step declares `shell: bash`, which GitHub Actions
-	// compiles to `bash --noprofile --norc -eo pipefail {0}` — a FILE, never
-	// `-c`. This script is long enough that handing it to `-c` as a
-	// command-line argument truncates it silently on Windows, and `-c` runs
-	// without the errexit the workflow applies.
+	// Run as the runner runs the gate step: a FILE, never `-c`, under the
+	// flags the step's own `shell:` compiles to, read off the step so a step
+	// that stops declaring `shell: bash` fails here rather than running under
+	// flags assumed for it. This script is also long enough that handing it
+	// to `-c` as a command-line argument truncates it silently on Windows.
+	flags := workflowfile.BashStepFlags(t, gateWorkflow, gateStep, stepBlock(t))
 	scriptFile := filepath.Join(dir, "gate.sh")
 	if err := os.WriteFile(scriptFile, []byte(preamble+script), 0o644); err != nil {
 		t.Fatalf("write the gate script: %v", err)
 	}
-	command := exec.CommandContext(ctx, bash, "--noprofile", "--norc", "-eo", "pipefail", filepath.ToSlash(scriptFile))
+	command := exec.CommandContext(ctx, bash, append(flags, filepath.ToSlash(scriptFile))...)
 	command.Env = append(os.Environ(),
 		"GITHUB_SHA=5049126faa3152cced900c304c3640e4ec724ba5",
 		"GITHUB_REPOSITORY=ovumcy/ovumcy-web",
@@ -585,9 +632,9 @@ func bashPath(t *testing.T) string {
 // this suite's fixtures assume — a WSL launcher stub with no distro
 // installed answers a lookup exactly as a real bash does — fails the suite
 // outright, on every machine, whatever the owning lane declared. The probe
-// script matches the preamble every fixture already runs under: a shell
-// unable to report its own exit code correctly would corrupt every case in
-// this file identically.
+// asks only that the shell runs a command and reports what it printed — not
+// the flags a fixture runs under, which runGate reads off the gate step — and
+// a shell failing even that would corrupt every case in this file identically.
 func requireWorkingBash(t *testing.T, path string) {
 	t.Helper()
 	testenv.ProbeShell(t, path, "printf ok", "ok")
