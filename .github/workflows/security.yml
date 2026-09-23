@@ -35,9 +35,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Mirrors ci.yml's own `changes` job: same base resolution, same fail-safe
-  # (an unknown event, a missing base, a failed or empty diff all leave every
-  # scanner running), and only pull_request/merge_group ever narrow anything
+  # Shares ci.yml's `changes` base resolution through the diff-against-base
+  # action, and its fail-safe (an unknown event, a missing base, a failed or
+  # empty diff all leave every scanner running): only pull_request/merge_group
+  # ever narrow anything
   # — push (main), the weekly schedule and workflow_dispatch always get the
   # full battery, exactly as ci.yml's does for the Go lanes.
   changes:
@@ -50,131 +51,103 @@ jobs:
       run_trivyimage: ${{ steps.detect.outputs.run_trivyimage }}
 
     steps:
+      # Only a pull request and a merge group carry a base to diff against, so
+      # only they pay for a full-history checkout; every other event reaches
+      # the detect step with no file list and runs every scanner.
       - name: Checkout
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
 
+      - name: List the files this diff changes
+        id: diff
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        uses: ./.github/actions/diff-against-base
+
       - name: Detect which scanners this diff can affect
         id: detect
         env:
           EVENT_NAME: ${{ github.event_name }}
-          BASE_REF: ${{ github.event.pull_request.base.ref }}
-          QUEUE_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          CHANGED_FILES: ${{ steps.diff.outputs.files }}
+          DIFF_BASE: ${{ steps.diff.outputs.base }}
+          DIFF_VERDICT: ${{ steps.diff.outputs.verdict }}
         run: |
-          # No `set -e`: this job must never fail, since a failed dependency
-          # would skip the scanner jobs into a SATISFIED required check
-          # instead of an honest run. Every branch falls through to the
-          # single verdict write at the end, and every output starts at
-          # true so only a positive, provable determination clears one.
+          # This job must never fail: a failed dependency would skip the
+          # scanner jobs into a SATISFIED required check instead of an honest
+          # run. The runner executes a step with no `shell:` as `bash -e`, so
+          # errexit IS on here — every command that may exit non-zero is
+          # guarded (`if`, `|| true`). Every output starts at true, and an
+          # empty file list (any event but pull_request/merge_group, or a
+          # base or diff the list step could not determine) leaves it there.
           run_go=true
           run_trivyfs=true
           run_trivyimage=true
-          verdict=""
 
-          if [ "$EVENT_NAME" = "pull_request" ] || [ "$EVENT_NAME" = "merge_group" ]; then
-            base=""
-            if [ "$EVENT_NAME" = "pull_request" ]; then
-              if git fetch --no-tags origin "$BASE_REF"; then
-                base="origin/$BASE_REF"
-              else
-                verdict="base ref fetch failed: running every scanner."
-              fi
-            else
-              # HEAD is the queue branch carrying the batched commits; the
-              # base is the main commit the queue branched from. Full
-              # history is checked out above, so this is normally already
-              # present.
-              base="$QUEUE_BASE_SHA"
-              if [ -z "$base" ]; then
-                verdict="no base commit in the merge_group payload: running every scanner."
-              elif ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
-                git fetch --no-tags origin "$base" || true
-                if ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
-                  base=""
-                  verdict="merge_group base commit unreachable: running every scanner."
-                fi
-              fi
-            fi
-
-            if [ -n "$base" ]; then
-              # core.quotePath=false: the default C-quotes any non-ASCII or
-              # control-char byte in a path (`"internal/api/\303\251vil.go"`),
-              # which matches no anchored/suffix pattern below and silently
-              # skips every scanner that path should have forced.
-              # --no-renames: a rename would otherwise list only the
-              # destination side, hiding the source path a scanner still
-              # needs judged against. Same fix as ci.yml (PR #839).
-              if ! files="$(git -c core.quotePath=false diff --no-renames --name-only "${base}...HEAD")"; then
-                verdict="git diff ${base}...HEAD failed: running every scanner."
-              elif [ -z "$files" ]; then
-                verdict="empty file list from ${base}...HEAD: running every scanner."
-              else
-                echo "Changed files against ${base}:"
-                printf '%s\n' "$files"
-
-                # This workflow file itself: an edit can touch a shared env
-                # var, the concurrency group or an upload step that every
-                # job below depends on, so it forces every scanner rather
-                # than being judged by the path rules below.
-                workflow_changed="$(printf '%s\n' "$files" | grep -E '^\.github/workflows/security\.yml$' || true)"
-                # trivy-fs and trivy-image both `uses:` this local composite
-                # action (the retrying image pull); an edit to it can change
-                # what either job actually runs, so it forces both rather
-                # than being judged by the path rules below. gosec and
-                # govulncheck never reference it.
-                pull_retry_changed="$(printf '%s\n' "$files" | grep -E '^\.github/actions/docker-pull-retry/' || true)"
-
-                # gosec + govulncheck: both read compiled Go and nothing
-                # else (locales/templates are go:embed DATA, not source a
-                # Go vulnerability scanner or gosec's AST walk can act on).
-                go_changes="$(printf '%s\n' "$files" | grep -E '(\.go$|^go\.mod$|^go\.sum$)' || true)"
-                # trivy-fs walks the WHOLE tree for any manifest/lockfile it
-                # recognizes (--scanners vuln), not only the repo root — a
-                # nested package-lock.json under a workspace is scanned the
-                # same as the root one. Matched by basename at any depth,
-                # across every ecosystem trivy's fs scanner supports.
-                trivyfs_changes="$(printf '%s\n' "$files" | grep -E '(^|/)(go\.(mod|sum)|package(-lock)?\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|requirements[^/]*\.txt|Pipfile\.lock|poetry\.lock|Cargo\.lock|Gemfile\.lock|composer\.lock|pom\.xml|build\.gradle(\.kts)?)$' || true)"
-                # The manifest list above cannot be exhaustive — trivy's
-                # binary/language detectors also read file CONTENT no path
-                # pattern can name ahead of time (a compiled Go binary's
-                # embedded buildinfo, a JAR, ...). Simplest provably-covering
-                # fallback: git already knows which changed blobs are not
-                # text. `--numstat` marks a binary file with `-` in both
-                # count columns, never in a text file's, so any added or
-                # modified binary forces the scan rather than trying to
-                # enumerate every format trivy might inspect.
-                binary_changes="$(git -c core.quotePath=false diff --no-renames --numstat "${base}...HEAD" | awk -F'\t' '$1 == "-" && $2 == "-" {print $3}')"
-                # trivy-image scans the built runtime image, so its gate is
-                # everything the Dockerfile actually copies into the build:
-                # go.mod/go.sum, non-test *.go under cmd/ and internal/
-                # (which also carries the go:embed'ed templates and locale
-                # JSON — non-Go data the image ships, unlike gosec/govulncheck
-                # above), migrations/, and web/static/ — never web/src/,
-                # which .dockerignore excludes from the build context.
-                trivyimage_changes="$(printf '%s\n' "$files" | grep -vE '_test\.go$' | grep -E '^(Dockerfile(\..*)?|\.dockerignore)$|^go\.(mod|sum)$|^cmd/|^internal/|^migrations/|^web/static/' || true)"
-
-                if [ -n "$workflow_changed" ]; then
-                  verdict="security.yml itself changed: running every scanner."
-                else
-                  run_go=false
-                  run_trivyfs=false
-                  run_trivyimage=false
-                  [ -n "$go_changes" ] && run_go=true
-                  [ -n "$trivyfs_changes" ] && run_trivyfs=true
-                  [ -n "$binary_changes" ] && run_trivyfs=true
-                  [ -n "$trivyimage_changes" ] && run_trivyimage=true
-                  if [ -n "$pull_retry_changed" ]; then
-                    run_trivyfs=true
-                    run_trivyimage=true
-                  fi
-                  verdict="scoped to what changed: gosec/govulncheck=$run_go trivy-fs=$run_trivyfs trivy-image=$run_trivyimage."
-                fi
-              fi
-            fi
+          files="$CHANGED_FILES"
+          if [ -z "$files" ]; then
+            verdict="${DIFF_VERDICT:-$EVENT_NAME carries no base to diff against}: running every scanner."
           else
-            verdict="$EVENT_NAME always runs every scanner in full."
+            # This workflow file itself: an edit can touch a shared env
+            # var, the concurrency group or an upload step that every
+            # job below depends on, so it forces every scanner rather
+            # than being judged by the path rules below.
+            workflow_changed="$(printf '%s\n' "$files" | grep -E '^\.github/workflows/security\.yml$' || true)"
+            # trivy-fs and trivy-image both `uses:` this local composite
+            # action (the retrying image pull); an edit to it can change
+            # what either job actually runs, so it forces both rather
+            # than being judged by the path rules below. gosec and
+            # govulncheck never reference it.
+            pull_retry_changed="$(printf '%s\n' "$files" | grep -E '^\.github/actions/docker-pull-retry/' || true)"
+
+            # gosec + govulncheck: both read compiled Go and nothing
+            # else (locales/templates are go:embed DATA, not source a
+            # Go vulnerability scanner or gosec's AST walk can act on).
+            go_changes="$(printf '%s\n' "$files" | grep -E '(\.go$|^go\.mod$|^go\.sum$)' || true)"
+            # trivy-fs walks the WHOLE tree for any manifest/lockfile it
+            # recognizes (--scanners vuln), not only the repo root — a
+            # nested package-lock.json under a workspace is scanned the
+            # same as the root one. Matched by basename at any depth,
+            # across every ecosystem trivy's fs scanner supports.
+            trivyfs_changes="$(printf '%s\n' "$files" | grep -E '(^|/)(go\.(mod|sum)|package(-lock)?\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|requirements[^/]*\.txt|Pipfile\.lock|poetry\.lock|Cargo\.lock|Gemfile\.lock|composer\.lock|pom\.xml|build\.gradle(\.kts)?)$' || true)"
+            # The manifest list above cannot be exhaustive — trivy's
+            # binary/language detectors also read file CONTENT no path
+            # pattern can name ahead of time (a compiled Go binary's
+            # embedded buildinfo, a JAR, ...). Simplest provably-covering
+            # fallback: git already knows which changed blobs are not
+            # text. `--numstat` marks a binary file with `-` in both
+            # count columns, never in a text file's, so any added or
+            # modified binary forces the scan rather than trying to
+            # enumerate every format trivy might inspect.
+            binary_changes="$(git -c core.quotePath=false diff --no-renames --numstat "${DIFF_BASE}...HEAD" | awk -F'\t' '$1 == "-" && $2 == "-" {print $3}')"
+            # trivy-image scans the built runtime image, so its gate is
+            # everything the Dockerfile copies into the build: go.mod/go.sum,
+            # cmd/, internal/ (which also carries the go:embed'ed templates
+            # and locale JSON — non-Go data the image ships, unlike
+            # gosec/govulncheck above), migrations/, and web/ — web/embed.go
+            # and web/static/ both — minus web/src/ and *_test.go, which
+            # .dockerignore keeps out of the build context. scripts/ciguards
+            # derives that set from the Dockerfile and .dockerignore and
+            # holds this gate to every tracked file in it.
+            trivyimage_changes="$(printf '%s\n' "$files" | grep -vE '_test\.go$|^web/src/' | grep -E '^(Dockerfile(\..*)?|\.dockerignore)$|^go\.(mod|sum)$|^cmd/|^internal/|^migrations/|^web/' || true)"
+
+            if [ -n "$workflow_changed" ]; then
+              verdict="security.yml itself changed: running every scanner."
+            else
+              run_go=false
+              run_trivyfs=false
+              run_trivyimage=false
+              [ -n "$go_changes" ] && run_go=true
+              [ -n "$trivyfs_changes" ] && run_trivyfs=true
+              [ -n "$binary_changes" ] && run_trivyfs=true
+              [ -n "$trivyimage_changes" ] && run_trivyimage=true
+              if [ -n "$pull_retry_changed" ]; then
+                run_trivyfs=true
+                run_trivyimage=true
+              fi
+              verdict="scoped to what changed: gosec/govulncheck=$run_go trivy-fs=$run_trivyfs trivy-image=$run_trivyimage."
+            fi
           fi
 
           echo "$verdict"

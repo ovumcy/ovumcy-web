@@ -419,11 +419,12 @@ func TestTheSplitStillRestsOnWhatCiActuallyDoes(t *testing.T) {
 				gateWorkflow + " reads `test`, `race` and `e2e` from the merge-queue run BECAUSE the push run's verdict for them is vacuous; if the push run now does that work, re-derive the split before changing it",
 		},
 		{
-			// The `*)` arm, matched as code rather than by the verdict
-			// sentence beside it: the fact is that `push` reaches a branch
-			// which clears the base, and a message can be preserved through
+			// The list step's `if:`, matched as code rather than by the
+			// verdict sentence the detect step prints: the fact is that
+			// `push` never produces a file list, so every rule in the detect
+			// step sees an empty one, and a message can be preserved through
 			// exactly the rework this premise needs to notice.
-			text: "            *)\n              base=\"\"",
+			text: "        id: diff\n        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'\n        uses: ./.github/actions/diff-against-base",
 			claim: "a push to `main` now has a base to diff against, so `run_e2e` may go false there. " +
 				gateWorkflow + " requires `success` from `image-smoke` in the push run BECAUSE that lane runs on every push whatever the diff touched; if it can now be skipped, that requirement blocks a documentation-only release tag forever",
 		},
