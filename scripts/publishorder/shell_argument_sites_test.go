@@ -19,24 +19,28 @@ import (
 // (`-c`, `-e`, `-x`, `-u`, `-o`, `-n`, `-t`, `-r`, `-a`, `-v`, ...), the same
 // letters unrelated Go-tool flags draw from (`-count`, `-cover`,
 // `-coverprofile`, `-exec`, `-race`), so the letters alone cannot tell a real
-// cluster from one of those; dashCMaxLetters does. Every cluster this repo
-// writes is two letters (`-c`, `-ec`, `-lc`); the Go-tool flags at five
-// letters or more (`-count`, `-cover`, `-coverprofile`) fall outside the cap.
-// `-race`, at four letters, does not: it IS a lexically valid bash cluster
-// (`-r -a -c -e`), and a guard that stayed quiet because it could not tell
-// `-race` from a real one-liner would be worse than the false positive here
-// — the reviewer reads the offending exec.Command line and sees which one it
-// is.
+// cluster from one of those, and neither can its length: `-euxvc` is a real
+// five-letter cluster. goToolFlagWords names the words exempted instead, so an
+// unknown word fails closed. `-race` and `-exec` stay out of it: each IS a
+// lexically valid bash cluster (`-r -a -c -e`), and a guard that stayed quiet
+// on one would be worse than the false positive — the reviewer reads the
+// offending exec.Command line and sees which one it is.
 var dashCLetters = regexp.MustCompile(`^-[A-Za-z]*c[A-Za-z]*$`)
 
-// dashCMaxLetters bounds a cluster dashCLetters accepts, past the doc
-// comment above.
-const dashCMaxLetters = 4
+// goToolFlagWords are Go-tool flags dashCLetters matches that no shell
+// invocation under scripts/ spells.
+var goToolFlagWords = map[string]bool{
+	"-count":        true,
+	"-cover":        true,
+	"-covermode":    true,
+	"-coverpkg":     true,
+	"-coverprofile": true,
+}
 
-// isDashCFlag reports whether value is a shell flag cluster carrying `c`,
-// short enough to be a real cluster rather than a Go-tool flag word.
+// isDashCFlag reports whether value is a shell flag cluster carrying `c`
+// rather than one of goToolFlagWords.
 func isDashCFlag(value string) bool {
-	return dashCLetters.MatchString(value) && len(value)-1 <= dashCMaxLetters
+	return dashCLetters.MatchString(value) && !goToolFlagWords[value]
 }
 
 // dashCAllowed names every site under scripts/ that may hand a shell its
@@ -213,9 +217,9 @@ func TestClassifyDashCSitesAllowsExactlyOneSitePerEntry(t *testing.T) {
 // inside a function literal and behind a wrapper, a flag held in a variable, a
 // slice, a constant or built by concatenation are found under the function
 // that spells or uses them, a package-level one under the package, two
-// methods of the same name on different receivers are told apart, a
-// narrowly-missed Go-tool flag word is not found, `-race` is, and a script
-// run from a file under `--norc` is not found at all.
+// methods of the same name on different receivers are told apart, a named
+// Go-tool flag word is not found, `-race` and a five-letter cluster are, and a
+// script run from a file under `--norc` is not found at all.
 func TestDashCSitesInClassifiesBothWays(t *testing.T) {
 	const source = `package fixture
 
@@ -257,6 +261,8 @@ func viaGoFlags(bash string) { _ = exec.Command("go", "test", "-coverprofile", "
 
 func viaRace(bash string) { _ = exec.Command("go", "test", "-race") }
 
+func viaLongCluster(bash, script string) { _ = exec.Command(bash, "-euxvc", script) }
+
 func viaFile(bash, file string) { _ = exec.Command(bash, "--noprofile", "--norc", "-eo", "pipefail", file) }
 `
 	fset := token.NewFileSet()
@@ -283,6 +289,7 @@ func viaFile(bash, file string) { _ = exec.Command(bash, "--noprofile", "--norc"
 		"fixture.Runner.exec",
 		"fixture.OtherRunner.exec",
 		"fixture.viaRace",
+		"fixture.viaLongCluster",
 	}, " ")
 	if strings.Join(got, " ") != want {
 		t.Errorf("dashCSitesIn found %q, want %q", got, want)
