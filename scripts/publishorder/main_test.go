@@ -1796,22 +1796,11 @@ func stepNames(t *testing.T, job string) []string {
 	return names
 }
 
-// stepBlock returns the text of one step, from its `- name:` line to the next
-// step at the same indentation.
+// stepBlock returns the text of one step of the publish job.
 func stepBlock(t *testing.T, job, name string) string {
 	t.Helper()
 
-	header := "      - name: " + name + "\n"
-	start := strings.Index(job, header)
-	if start < 0 {
-		t.Fatalf("%s, job %q: no step named %q", publishWorkflow, publishJob, name)
-	}
-	rest := job[start+len(header):]
-
-	if next := stepName.FindStringIndex(rest); next != nil {
-		return rest[:next[0]]
-	}
-	return rest
+	return workflowfile.Step(t, publishWorkflow, publishJob, job, name)
 }
 
 // declaredEnv returns one step's `env:` mapping, minus the entries whose value

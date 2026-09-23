@@ -37,6 +37,13 @@ var jobHeader = regexp.MustCompile(`(?m)^  [A-Za-z0-9_.-]+:[ \t]*$`)
 // or a line of a script, neither of which is the shell the step runs under.
 var stepShellKey = regexp.MustCompile(`(?m)^        shell:(.*)$`)
 
+// stepItem matches the line that opens a step: a sequence item at a step's
+// depth, whatever key it leads with. A step that opens on `- id:` or `- uses:`
+// ends the one above it exactly as a `- name:` does; a reader that stopped only
+// at `- name:` would hand the step above it that step's keys, its `shell:`
+// among them.
+var stepItem = regexp.MustCompile(`(?m)^      - `)
+
 // bashStepFlags is what GitHub Actions compiles `shell: bash` to —
 // `bash --noprofile --norc -eo pipefail {0}` — less the `{0}` the script file
 // fills.
@@ -118,9 +125,38 @@ func JobHeaders(t *testing.T, workflow, content string) []string {
 	return jobHeader.FindAllString(section, -1)
 }
 
+// Step returns the text of one step of a job, block being the job as Job
+// returned it: from below the step's `- name:` line to the next step. It fails
+// closed like Job, for the same reason.
+func Step(t *testing.T, workflow, job, block, step string) string {
+	t.Helper()
+
+	text, err := stepIn(block, step)
+	if err != nil {
+		t.Fatalf("%s, job %q: %v", workflow, job, err)
+	}
+	return text
+}
+
+// stepIn is Step's whole answer, kept out of the `*testing.T` wrapper so that
+// where it stops can be tested rather than only triggered.
+func stepIn(block, step string) (string, error) {
+	header := "      - name: " + step + "\n"
+	start := strings.Index(block, header)
+	if start < 0 {
+		return "", fmt.Errorf("no step named %q — it was renamed or removed, and this guard would judge nothing", step)
+	}
+	rest := block[start+len(header):]
+
+	if next := stepItem.FindStringIndex(rest); next != nil {
+		return rest[:next[0]], nil
+	}
+	return rest, nil
+}
+
 // BashStepFlags returns the flags bash runs a step's script file under, read
-// off the step's own `shell:` key in block (the step's text below its `- name:`
-// line). Only `shell: bash` has flags a harness can reproduce and name: a step
+// off the step's own `shell:` key in block (the step as Step returned it).
+// Only `shell: bash` has flags a harness can reproduce and name: a step
 // that declares no shell runs as `bash -e {0}` on a Linux runner — errexit
 // without pipefail — and any other value is another interpreter or another
 // template. Either is a failure here, never a run under flags assumed for it.

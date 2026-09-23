@@ -150,6 +150,43 @@ func TestJobReadsAJobOutOfARealWorkflow(t *testing.T) {
 	}
 }
 
+// TestStepInStopsAtEveryStepWhateverItOpensOn feeds stepIn a job whose steps
+// open on `- id:` and `- uses:` as well as `- name:`, each declaring a `shell:`
+// the named step above it does not.
+func TestStepInStopsAtEveryStepWhateverItOpensOn(t *testing.T) {
+	const job = "    steps:\n" +
+		"      - name: First\n        run: |\n          true\n" +
+		"      - id: probe\n        shell: bash\n        run: \"true\"\n" +
+		"      - name: Second\n        run: |\n          true\n" +
+		"      - uses: actions/checkout@v4\n        shell: bash\n" +
+		"      - name: Last\n        run: |\n          true\n"
+	const lone = "        run: |\n          true\n"
+
+	for _, step := range []string{"First", "Second", "Last"} {
+		got, err := stepIn(job, step)
+		if err != nil {
+			t.Fatalf("stepIn(%q): %v", step, err)
+		}
+		if got != lone {
+			t.Errorf("stepIn(%q) = %q, want %q", step, got, lone)
+		}
+	}
+
+	if block, err := stepIn(job, "Missing"); err == nil {
+		t.Errorf("stepIn answered %q for a step the job does not declare instead of refusing", block)
+	}
+}
+
+// TestStepReadsAStepOutOfARealWorkflow anchors Step on a workflow the
+// repository ships, so the wrapper is exercised and not only its answer.
+func TestStepReadsAStepOutOfARealWorkflow(t *testing.T) {
+	const workflow = ".github/workflows/docker-image.yml"
+	block := Step(t, workflow, "publish", Job(t, workflow, "publish"), "Checkout")
+	if !strings.Contains(block, "uses: actions/checkout") {
+		t.Errorf("Step read the publish job's Checkout step as %q", block)
+	}
+}
+
 // TestBashStepFlagsIsWhatShellBashCompilesTo pins the answer for the one shell
 // a harness may run a step under, including a trailing YAML comment on the key.
 func TestBashStepFlagsIsWhatShellBashCompilesTo(t *testing.T) {
