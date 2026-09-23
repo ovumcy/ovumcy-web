@@ -1365,6 +1365,9 @@ func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessions(ctx cont
 // consistency reason: the redeem that loses the race must not re-arm a reveal it
 // minted no code for. Regression: TestEveryRecoveryCodeMintClearsItsRevealMark.
 func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx context.Context, userID uint, oldPasswordHash string, oldSessionVersion int, newPasswordHash string, recoveryHash string, beforeCommit func(sessionVersion int) error) error {
+	if err := requireUserOwnerID(userID); err != nil {
+		return err
+	}
 	if oldSessionVersion < 1 {
 		return ErrResetTokenAlreadyConsumed
 	}

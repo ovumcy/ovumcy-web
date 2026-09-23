@@ -159,8 +159,8 @@ func TestRecoveryCodeRotationRefusesAZeroOwnerBeforeItsHook(t *testing.T) {
 				hookCalls++
 				return nil
 			})
-			if err == nil {
-				t.Fatal("a rotation for owner id 0 must be refused")
+			if !errors.Is(err, ErrUserOwnerRequired) {
+				t.Fatalf("a rotation for owner id 0 must be refused as ErrUserOwnerRequired, got %v", err)
 			}
 			if hookCalls != 0 || fence.calls != 0 {
 				t.Fatalf("a refused zero-owner rotation ran its hook %d time(s) and the fence %d time(s)", hookCalls, fence.calls)
