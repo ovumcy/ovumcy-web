@@ -867,19 +867,45 @@ func TestDockerContextSourcesSkipsStageCopiesAndRefusesUnmodelledForms(t *testin
 	}
 }
 
+var imageBuildKey = regexp.MustCompile(`(?m)^          (context|file): (\S+)$`)
+
+// imageBuildDefinition reads, off trivy-image's own build step, the Dockerfile
+// it builds and the ignore file Docker applies to that build: the
+// Dockerfile's own `<Dockerfile>.dockerignore` when one is tracked, which
+// Docker then prefers, else the context root's .dockerignore.
+func imageBuildDefinition(t *testing.T) (dockerfile, dockerignore string) {
+	t.Helper()
+	keys := map[string][]string{}
+	for _, m := range imageBuildKey.FindAllStringSubmatch(workflowfile.Job(t, securityWorkflow, "trivy-image"), -1) {
+		keys[m[1]] = append(keys[m[1]], m[2])
+	}
+	if len(keys["file"]) != 1 || len(keys["context"]) != 1 {
+		t.Fatalf("trivy-image's build step names file %v and context %v, want one of each — it was reshaped, and the derived set would be read off the wrong build", keys["file"], keys["context"])
+	}
+	dockerfile = path.Clean(keys["file"][0])
+	dockerignore = dockerfile + ".dockerignore"
+	if len(trackedFiles(t, dockerignore)) == 0 {
+		dockerignore = path.Join(keys["context"][0], ".dockerignore")
+	}
+	return dockerfile, dockerignore
+}
+
 // imageAffectingFiles derives the set from the repository's own Dockerfile,
-// .dockerignore and git index.
+// .dockerignore and git index, plus those two build-definition files
+// themselves: an edit to either changes the image without touching a file
+// the build copies.
 func imageAffectingFiles(t *testing.T) []string {
 	t.Helper()
-	sources, err := DockerContextSources(workflowfile.Read(t, "Dockerfile"))
+	dockerfile, dockerignore := imageBuildDefinition(t)
+	sources, err := DockerContextSources(workflowfile.Read(t, dockerfile))
 	if err != nil {
-		t.Fatalf("Dockerfile: %v", err)
+		t.Fatalf("%s: %v", dockerfile, err)
 	}
-	rules, err := DockerignoreRules(workflowfile.Read(t, ".dockerignore"))
+	rules, err := DockerignoreRules(workflowfile.Read(t, dockerignore))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("%s: %v", dockerignore, err)
 	}
-	return ImageAffectingFiles(trackedFiles(t), sources, rules)
+	return append(ImageAffectingFiles(trackedFiles(t), sources, rules), dockerfile, dockerignore)
 }
 
 func contains(list []string, s string) bool {
