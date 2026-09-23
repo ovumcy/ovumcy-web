@@ -1076,6 +1076,15 @@ var detectCases = []detectCase{
 		map[string]string{"run_frontend": "true", "run_e2e": "true"}},
 	{"non-ASCII frontend path", "pull_request", []string{"web/src/js/é.js"},
 		map[string]string{"run_frontend": "true"}},
+	// git C-quotes a path holding a tab or a `"` even with quotePath off.
+	{"tab in a frontend path", "pull_request", []string{"web/src/js/t\tx.ts"},
+		map[string]string{"run_frontend": "true"}},
+	{"quote in a frontend path", "pull_request", []string{`web/src/js/q"x.ts`},
+		map[string]string{"run_frontend": "true"}},
+	// A newline-separated list cannot carry this path: undetermined, so
+	// everything runs even though both halves look like documentation.
+	{"newline in a docs path", "pull_request", []string{"docs/n\nx.md"},
+		map[string]string{"run_e2e": "true", "run_core": "true", "run_frontend": "true"}},
 	{"merge_group, Go test file only", "merge_group", []string{"internal/x/a_test.go"},
 		map[string]string{"run_e2e": "false", "run_core": "true", "run_frontend": "false"}},
 	{"merge_group, template only", "merge_group", []string{"internal/templates/a.html"},
@@ -1141,7 +1150,12 @@ func TestDetectStepHarnessRefusesTheUnfixedShapes(t *testing.T) {
 		files          []string
 		output         string
 	}{
-		{"quoted paths", "git -c core.quotePath=false diff", "git diff", true, []string{"web/src/js/é.js"}, "run_frontend"},
+		// Both list the diff quoted again, the way the step listed it before
+		// it read git with -z: a non-ASCII path is quoted under the default
+		// quotePath, and a tab is quoted whatever quotePath says.
+		{"quoted paths", `tr '\0' '\n' < "$list.z" > "$list"`, `git diff --no-renames --name-only "${base}...HEAD" > "$list"`, true, []string{"web/src/js/é.js"}, "run_frontend"},
+		{"quoted control character", `tr '\0' '\n' < "$list.z" > "$list"`, `git -c core.quotePath=false diff --no-renames --name-only "${base}...HEAD" > "$list"`, true, []string{"web/src/js/t\tx.ts"}, "run_frontend"},
+		{"newline carried as two paths", `[ "$(tr -cd '\n' < "$list.z" | wc -c)" -ne 0 ]`, "false", true, []string{"docs/n\nx.md"}, "run_e2e"},
 		{"workflow not an input", `|\.github/workflows/ci\.yml$`, "", false, []string{".github/workflows/ci.yml"}, "run_frontend"},
 	} {
 		t.Run(m.name, func(t *testing.T) {

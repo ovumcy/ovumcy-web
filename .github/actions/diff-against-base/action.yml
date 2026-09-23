@@ -27,8 +27,10 @@ outputs:
   files-path:
     description: >
       Path of a file under $RUNNER_TEMP holding the changed paths one per line,
-      unquoted (core.quotePath=false) and with renames split into their two
-      sides. Empty when undetermined.
+      each exactly as stored — never C-quoted, since git is read with `-z` —
+      and with renames split into their two sides. Empty when undetermined,
+      which includes a diff with a path holding a newline: one line per path
+      cannot carry it.
     value: ${{ steps.diff.outputs.files-path }}
   verdict:
     description: >
@@ -87,17 +89,31 @@ runs:
           if [ -z "${RUNNER_TEMP:-}" ] || ! list="$(mktemp "$RUNNER_TEMP/changed-files.XXXXXX")"; then
             list=""
             verdict="no file under RUNNER_TEMP to hold the list"
-          # quotePath off: a non-ASCII path would otherwise come back C-quoted
-          # ("web/Ã©.js") and miss every anchored pattern a caller
-          # applies. No renames: a move must list its source side too.
-          elif ! git -c core.quotePath=false diff --no-renames --name-only "${base}...HEAD" > "$list"; then
+          # NUL-separated: without -z git C-quotes a non-ASCII path, and even
+          # with core.quotePath off one holding `"`, `\` or a control
+          # character ("web/src/js/t\tx.ts"), which then misses every anchored
+          # pattern a caller applies. No renames: a move must list its source
+          # side too.
+          elif ! git diff -z --no-renames --name-only "${base}...HEAD" > "$list.z"; then
             verdict="git diff ${base}...HEAD failed"
-          elif [ ! -s "$list" ]; then
+          elif [ ! -s "$list.z" ]; then
             verdict="empty file list from ${base}...HEAD"
+          # -z output holds a newline only inside a path. One line per path
+          # cannot carry that path — it would read as two, either of which may
+          # be inert — so the list is undetermined.
+          elif [ "$(tr -cd '\n' < "$list.z" | wc -c)" -ne 0 ]; then
+            verdict="a changed path holds a newline, which a newline-separated list cannot carry"
+          elif ! tr '\0' '\n' < "$list.z" > "$list"; then
+            verdict="the NUL-separated list could not be converted"
           else
+            # A path is attacker-chosen on a fork's pull request, and a line
+            # opening with `::` is a workflow command: the list is printed with
+            # commands stopped under a random token no path can know.
+            stop="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
             echo "Changed files against ${base}:"
+            echo "::stop-commands::${stop}"
             cat "$list"
-            verdict=""
+            echo "::${stop}::"
           fi
         fi
         if [ -n "$verdict" ]; then
