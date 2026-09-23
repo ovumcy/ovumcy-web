@@ -171,10 +171,15 @@ func TestLoginForcedResetCookieWriteFailureReturns500(t *testing.T) {
 func TestRecoveryCodeDeliveryFailuresMapToTheirOwnRefusal(t *testing.T) {
 	user := &models.User{ID: 1, Role: models.RoleOwner, OnboardingCompleted: true}
 
-	noCodec := &Handler{location: time.UTC, authService: &services.AuthService{}}
+	// The key is valid, so the session token signs; only the codec fails. A
+	// handler with no key at all would fail earlier, on the signature, and never
+	// reach the seal this case is about.
+	codecRefused := errors.New("cookie codec unavailable")
+	noCodec := &Handler{location: time.UTC, secretKey: []byte(testHandlerSecretKey), authService: &services.AuthService{}}
+	noCodec.cookieCodecOnce.Do(func() { noCodec.cookieCodecErr = codecRefused })
 	deliver, delivery := noCodec.newRecoveryCodeDelivery(false, services.PostLoginRedirectPath, recoveryCodeSurfaceDedicated)
-	if err := deliver(user, "ABCD-1234"); err == nil || delivery.failure == nil {
-		t.Fatal("a handler with no cookie codec must fail to seal the session")
+	if err := deliver(user, "ABCD-1234"); !errors.Is(err, codecRefused) || !errors.Is(delivery.failure, codecRefused) {
+		t.Fatalf("a handler with no cookie codec must fail to seal the session, got %v", err)
 	}
 	if got := mapRecoveryCodeDeliveryError(delivery.failure).Key; got != authSessionCreateErrorSpec().Key {
 		t.Fatalf("a session that cannot be sealed must map to %q, got %q", authSessionCreateErrorSpec().Key, got)

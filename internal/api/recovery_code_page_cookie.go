@@ -102,7 +102,7 @@ func (handler *Handler) sealRecoveryCodeIssuanceCookie(userID uint, recoveryCode
 
 	serialized, err := json.Marshal(payload)
 	if err != nil {
-		return sealedCookie{}, err
+		return sealedCookie{}, err // codecov:ignore -- json.Marshal of this fixed struct fails only for a time outside years 0-9999, and expiresAt is now plus a TTL
 	}
 	return handler.sealCookie(recoveryCodeCookieSpec, serialized, expiresAt)
 }
