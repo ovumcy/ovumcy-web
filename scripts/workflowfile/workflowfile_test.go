@@ -177,6 +177,42 @@ func TestStepInStopsAtEveryStepWhateverItOpensOn(t *testing.T) {
 	}
 }
 
+// TestStepInStopsBeforeJobLevelKeysAfterTheLastStep is the last-step case:
+// there is no next `      - ` item for stepIn to stop at, so without the
+// dedent check a job-level key written after `steps:` reads as the last
+// step's own.
+func TestStepInStopsBeforeJobLevelKeysAfterTheLastStep(t *testing.T) {
+	const lone = "        run: |\n          true\n"
+
+	for _, testCase := range []struct {
+		name string
+		job  string
+	}{
+		{
+			name: "a job-level scalar key, its own key bleeding in",
+			job: "    steps:\n" +
+				"      - name: Only\n        run: |\n          true\n" +
+				"    defaults:\n      run:\n        shell: bash\n",
+		},
+		{
+			name: "a job-level list key following steps",
+			job: "    steps:\n" +
+				"      - name: Only\n        run: |\n          true\n" +
+				"    needs:\n      - build\n      - test\n",
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			got, err := stepIn(testCase.job, "Only")
+			if err != nil {
+				t.Fatalf("stepIn(%q): %v", "Only", err)
+			}
+			if got != lone {
+				t.Errorf("stepIn(%q) = %q, want %q — it ran on past the last step into the job-level key after `steps:`", "Only", got, lone)
+			}
+		})
+	}
+}
+
 // TestStepReadsAStepOutOfARealWorkflow anchors Step on a workflow the
 // repository ships, so the wrapper is exercised and not only its answer.
 func TestStepReadsAStepOutOfARealWorkflow(t *testing.T) {
