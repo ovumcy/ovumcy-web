@@ -65,8 +65,16 @@ func JobIfSurvivesACancelledOrFailedChanges(condition string) error {
 	if !strings.Contains(condition, "!cancelled()") {
 		return fmt.Errorf("`if:` (%s) has no `!cancelled()` — a failed or cancelled `changes` job skips this job into a satisfied required check instead of running it", condition)
 	}
+	if m := changesStatusRead.FindString(condition); m != "" {
+		return fmt.Errorf("`if:` (%s) reads %s beside `!cancelled()` — that turns false once `changes` fails, and the job still skips into a satisfied required check", condition, m)
+	}
 	return nil
 }
+
+// changesStatusRead matches a read of a dependency's status inside a job
+// condition: `!cancelled()` survives a failed `changes` only while nothing
+// conjoined to it asks whether `changes` succeeded.
+var changesStatusRead = regexp.MustCompile(`\b(success|failure)\(\)|needs(\.changes|\[\s*['"]changes['"]\s*\]|\.\*)\.result`)
 
 // jobIfValue is a job's own single-line `if:` value, or "" when it has none.
 func jobIfValue(block string) string {
@@ -175,6 +183,23 @@ func TestJobIfSurvivesACancelledOrFailedChangesRefusesAMissingIf(t *testing.T) {
 func TestJobIfSurvivesACancelledOrFailedChangesRefusesThePreFixCondition(t *testing.T) {
 	if err := JobIfSurvivesACancelledOrFailedChanges("needs.changes.outputs.run_go != 'false'"); err == nil {
 		t.Fatal("a condition with no !cancelled() was accepted")
+	}
+}
+
+func TestJobIfSurvivesACancelledOrFailedChangesRefusesAStatusConjunct(t *testing.T) {
+	for _, condition := range []string{
+		"${{ !cancelled() && needs.changes.result == 'success' }}",
+		"${{ !cancelled() && needs['changes'].result != 'failure' }}",
+		"${{ !cancelled() && !contains(needs.*.result, 'failure') }}",
+		"${{ !cancelled() && success() }}",
+		"${{ !cancelled() && !failure() }}",
+	} {
+		if err := JobIfSurvivesACancelledOrFailedChanges(condition); err == nil {
+			t.Errorf("%s was accepted, though it skips the job once `changes` fails", condition)
+		}
+	}
+	if err := JobIfSurvivesACancelledOrFailedChanges("${{ !cancelled() && needs.changes.outputs.run_e2e != 'false' && github.event_name == 'push' }}"); err != nil {
+		t.Errorf("a fail-safe output read beside !cancelled() was refused: %v", err)
 	}
 }
 
