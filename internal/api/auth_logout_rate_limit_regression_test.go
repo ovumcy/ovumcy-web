@@ -74,7 +74,9 @@ func (stubLogoutAuthRepo) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(_ conte
 	return nil
 }
 
-func (stubLogoutAuthRepo) UpdatePasswordHashOnly(context.Context, uint, string) error { return nil }
+func (stubLogoutAuthRepo) UpgradePasswordHashCAS(context.Context, uint, string, string) (bool, error) {
+	return true, nil
+}
 
 func (stubLogoutAuthRepo) BumpAuthSessionVersion(context.Context, uint) error { return nil }
 

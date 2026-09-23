@@ -44,10 +44,12 @@ type stubAuthUserRepo struct {
 	updatedRecoveryHash      string
 	updatedPasswordHash      string
 	updatedMustChange        bool
-	updateHashOnlyErr        error
-	updateHashOnlyCalls      int
-	updateHashOnlyUserID     uint
-	updateHashOnlyHash       string
+	upgradeHashErr           error
+	upgradeHashLost          bool
+	upgradeHashCalls         int
+	upgradeHashUserID        uint
+	upgradeHashOld           string
+	upgradeHashNew           string
 	claimRevealErr           error
 	claimRevealUserID        uint
 }
@@ -274,15 +276,19 @@ func TestRegenerateRecoveryCodeRefusesANilUserBeforeItsDelivery(t *testing.T) {
 	}
 }
 
-func (stub *stubAuthUserRepo) UpdatePasswordHashOnly(ctx context.Context, userID uint, passwordHash string) error {
-	stub.updateHashOnlyCalls++
-	if stub.updateHashOnlyErr != nil {
-		return stub.updateHashOnlyErr
+func (stub *stubAuthUserRepo) UpgradePasswordHashCAS(ctx context.Context, userID uint, oldPasswordHash string, newPasswordHash string) (bool, error) {
+	stub.upgradeHashCalls++
+	stub.upgradeHashUserID = userID
+	stub.upgradeHashOld = oldPasswordHash
+	if stub.upgradeHashErr != nil {
+		return false, stub.upgradeHashErr
 	}
-	stub.updateHashOnlyUserID = userID
-	stub.updateHashOnlyHash = passwordHash
-	stub.user.PasswordHash = passwordHash
-	return nil
+	if stub.upgradeHashLost {
+		return false, nil
+	}
+	stub.upgradeHashNew = newPasswordHash
+	stub.user.PasswordHash = newPasswordHash
+	return true, nil
 }
 
 // ClaimRecoveryCodeReveal models the real compare-and-set: the first call

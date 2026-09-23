@@ -154,8 +154,9 @@ func TestUserRepositoryRemainingScopedWritersRefuseZeroOwner(t *testing.T) {
 		"ForceResetPasswordAndRevokeSessions": func() error {
 			return repo.ForceResetPasswordAndRevokeSessions(ctx, 0, "hash")
 		},
-		"UpdatePasswordHashOnly": func() error {
-			return repo.UpdatePasswordHashOnly(ctx, 0, "hash")
+		"UpgradePasswordHashCAS": func() error {
+			_, err := repo.UpgradePasswordHashCAS(ctx, 0, "hash", "upgraded")
+			return err
 		},
 		"BumpAuthSessionVersion": func() error {
 			return repo.BumpAuthSessionVersion(ctx, 0)
@@ -233,8 +234,8 @@ func TestUserRepositoryRemainingScopedWritersPersist(t *testing.T) {
 	if err := repo.ForceResetPasswordAndRevokeSessions(ctx, user.ID, "forced-hash"); err != nil {
 		t.Fatalf("ForceResetPasswordAndRevokeSessions: %v", err)
 	}
-	if err := repo.UpdatePasswordHashOnly(ctx, user.ID, "hash-only"); err != nil {
-		t.Fatalf("UpdatePasswordHashOnly: %v", err)
+	if applied, err := repo.UpgradePasswordHashCAS(ctx, user.ID, "forced-hash", "hash-only"); err != nil || !applied {
+		t.Fatalf("UpgradePasswordHashCAS: applied=%v err=%v", applied, err)
 	}
 	if err := repo.BumpAuthSessionVersion(ctx, user.ID); err != nil {
 		t.Fatalf("BumpAuthSessionVersion: %v", err)

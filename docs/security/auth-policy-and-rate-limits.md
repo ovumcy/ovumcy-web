@@ -9,7 +9,7 @@ _Part of the [Ovumcy security policy](../../SECURITY.md)._
 - Minimum length: 8 Unicode code points.
 - Maximum length: 72 bytes — bcrypt's hard input limit. Longer submissions fail validation with the same stable weak-password error on every password-accepting flow instead of surfacing bcrypt's opaque hashing error.
 - Required character classes: at least one uppercase letter, one lowercase letter, and one digit (`ValidatePasswordStrength` in `internal/services/password_policy.go`).
-- Storage: bcrypt at cost 12 (the `passwordHashCost` constant in `internal/services`, above the library `bcrypt.DefaultCost` of 10) via `golang.org/x/crypto/bcrypt`. Hashes live in `users.password_hash`. A successful login whose stored hash predates this floor is opportunistically re-hashed at cost 12 in place (`UpdatePasswordHashOnly`), so the effective cost rises for existing accounts without forcing a reset; this transparent upgrade does **not** bump `auth_session_version` (the credential is unchanged).
+- Storage: bcrypt at cost 12 (the `passwordHashCost` constant in `internal/services`, above the library `bcrypt.DefaultCost` of 10) via `golang.org/x/crypto/bcrypt`. Hashes live in `users.password_hash`. A successful login whose stored hash predates this floor is opportunistically re-hashed at cost 12 in place (`UpgradePasswordHashCAS`), so the effective cost rises for existing accounts without forcing a reset; this transparent upgrade does **not** bump `auth_session_version` (the credential is unchanged). The write applies only while `password_hash` still holds the hash the login verified, so a password change or reset that lands during the login wins over it.
 
 **Recovery codes:**
 
