@@ -14,5 +14,8 @@ runs that file. The two workflow harnesses read the flags off the step's own
 `set -euo pipefail` prefix. A positive control per harness pins errexit and
 pipefail through the real helper, the release-gate refusal cases now also
 refuse a refusal that came from a harness stub, and a source scan of every
-package under `scripts/` fails on any call that passes a shell a `-c` flag
-outside four named one-line probes.
+package under `scripts/` fails on any call that passes a shell a `-c` flag,
+however it is spelled — a literal, one built by concatenation, or held in a
+variable or a named constant — unless the site is named in the scan's own
+allowlist as a fixed one-line probe the test wrote itself, one `-c` site per
+allowlist entry.
