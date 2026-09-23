@@ -98,8 +98,11 @@ jobs:
             # This workflow file itself: an edit can touch a shared env
             # var, the concurrency group or an upload step that every
             # job below depends on, so it forces every scanner rather
-            # than being judged by the path rules below.
-            workflow_changed="$(printf '%s\n' "$files" | grep -E '^\.github/workflows/security\.yml$' || true)"
+            # than being judged by the path rules below. The diff action
+            # is this detection's other half — it decides which files the
+            # rules below ever see — so an edit to it forces every scanner
+            # too, as it did while that logic lived in this file.
+            workflow_changed="$(printf '%s\n' "$files" | grep -E '^\.github/workflows/security\.yml$|^\.github/actions/diff-against-base/' || true)"
             # trivy-fs and trivy-image both `uses:` this local composite
             # action (the retrying image pull); an edit to it can change
             # what either job actually runs, so it forces both rather
@@ -146,7 +149,7 @@ jobs:
             trivyimage_changes="$(printf '%s\n' "$files" | grep -vE '_test\.go$|^web/src/' | grep -E '^(Dockerfile(\..*)?|\.dockerignore)$|^go\.(mod|sum)$|^cmd/|^internal/|^migrations/|^web/' || true)"
 
             if [ -n "$workflow_changed" ]; then
-              verdict="security.yml itself changed: running every scanner."
+              verdict="security.yml or the diff action it lists with changed: running every scanner."
             else
               run_go=false
               run_trivyfs=false
