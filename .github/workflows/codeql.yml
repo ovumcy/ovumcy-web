@@ -85,8 +85,11 @@ jobs:
           else
             # This workflow file carries the paths-ignore config inline, so an
             # edit to it forces every language rather than being judged by the
-            # rules below.
-            workflow_changed="$(printf '%s\n' "$files" | grep -E '^\.github/workflows/codeql\.yml$' || true)"
+            # rules below. The diff action is this detection's other half —
+            # it decides which files the rules below ever see — so an edit
+            # to it forces every language too, as it did while that logic
+            # lived in this file.
+            workflow_changed="$(printf '%s\n' "$files" | grep -E '^\.github/workflows/codeql\.yml$|^\.github/actions/diff-against-base/' || true)"
 
             go_changes="$(printf '%s\n' "$files" | grep -E '(\.go$|^go\.mod$|^go\.sum$)' || true)"
             # javascript-typescript has no `paths:` restriction above (only
@@ -100,7 +103,7 @@ jobs:
             actions_changes="$(printf '%s\n' "$files" | grep -E '^\.github/' || true)"
 
             if [ -n "$workflow_changed" ]; then
-              verdict="codeql.yml itself changed: running every language."
+              verdict="codeql.yml or the diff action it lists with changed: running every language."
             else
               run_go=false
               run_js=false
