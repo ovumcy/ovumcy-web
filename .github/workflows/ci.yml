@@ -1480,6 +1480,10 @@ jobs:
       contents: read
     needs:
       - changes
+    # `!cancelled()` overrides the implicit success()-of-needs: without it a
+    # FAILED `changes` skips every shard, and the `e2e` gate below passes a
+    # skipped matrix. RUN_E2E/RUN_SHARDS then read empty, which runs the work.
+    if: ${{ !cancelled() }}
     strategy:
       # One shard's failure must not cancel its siblings: the point of the
       # split is to learn everything the browser lane knows in one run.
@@ -1675,6 +1679,9 @@ jobs:
       contents: read
     needs:
       - changes
+    # `!cancelled()`: a FAILED `changes` must not skip this required check into
+    # a satisfied one. RUN_E2E then reads empty, which runs the work.
+    if: ${{ !cancelled() }}
     # Required status check with admin enforcement: always run the job and gate
     # the work per step (see the `e2e` job above) so docs-only PRs stay green
     # without leaving this required check unsatisfied. The Postgres/multi-locale
