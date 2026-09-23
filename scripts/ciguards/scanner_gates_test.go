@@ -226,8 +226,9 @@ func readsNeeds(line string) bool {
 // PassThroughEnvReads judges every read of an `env:` variable that hands a
 // `changes` output on whole: each must be a whole `env.<NAME> != 'false'`
 // conjunct of an `if:`, which an empty pass-through — a failed `changes` —
-// leaves true. It returns the variables it judged at least one `if:` read of,
-// and one problem per read that is not fail-safe.
+// leaves true. A shell read (`$NAME`, `${NAME}`) in a `run:` is refused like
+// `${{ env.NAME }}` there. It returns the variables it judged at least one
+// `if:` read of, and one problem per read that is not fail-safe.
 func PassThroughEnvReads(content string) (judged, problems []string) {
 	lines := strings.Split(content, "\n")
 	for _, line := range lines {
@@ -236,7 +237,7 @@ func PassThroughEnvReads(content string) (judged, problems []string) {
 			continue
 		}
 		name := regexp.QuoteMeta(m[1])
-		read := regexp.MustCompile(`(?i)\benv\s*(?:\.\s*` + name + `\b|\[\s*'` + name + `'\s*\])`)
+		read := regexp.MustCompile(`(?i)\benv\s*(?:\.\s*` + name + `\b|\[\s*'` + name + `'\s*\])|\$\{?` + name + `\b`)
 		failSafe := regexp.MustCompile(`(?i)^env\.` + name + ` != 'false'$`)
 		seen := false
 		for _, l := range lines {
@@ -421,6 +422,8 @@ func TestChangesReadsAreFailSafeRefusesAnUnsafeReadOfAPassThrough(t *testing.T) 
 		"        if: Env.run_e2e == 'true'",
 		"        if: env['RUN_E2E'] == 'true'",
 		"        run: echo ${{ env.RUN_E2E }}",
+		`        run: '[ "$RUN_E2E" = true ] || exit 0'`,
+		"        run: test ${RUN_E2E} = true",
 	} {
 		if err := ChangesReadsAreFailSafe(passThrough + step + "\n"); err == nil {
 			t.Errorf("%q was accepted, though an empty pass-through reads as skip there", step)
