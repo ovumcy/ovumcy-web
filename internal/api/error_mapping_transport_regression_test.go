@@ -116,6 +116,73 @@ func TestRespondMappedErrorSettingsFormRedirectsWithFlashOnly(t *testing.T) {
 	}
 }
 
+// TestRespondAuthErrorRedirectsEveryRoutableSpellingOfAnAuthForm: the router
+// sends /API/v1/sessions, /api/v1/sessions/ and /AUTH/OIDC/start to the same
+// handlers as their lowercase spelling, so a form error there must take the
+// same flash redirect instead of answering a browser with the JSON envelope.
+// The lowercase rows are the positive controls.
+func TestRespondAuthErrorRedirectsEveryRoutableSpellingOfAnAuthForm(t *testing.T) {
+	t.Parallel()
+
+	app, handler := newErrorMappingTransportTestApp(t)
+	authFormError := func(c fiber.Ctx) error {
+		return handler.respondMappedError(c, authFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "invalid credentials"))
+	}
+	app.Post("/api/v1/sessions", authFormError)
+	app.Get("/auth/oidc/start", authFormError)
+
+	for _, probe := range []struct{ method, path string }{
+		{http.MethodPost, "/api/v1/sessions"},
+		{http.MethodPost, "/API/v1/sessions"},
+		{http.MethodPost, "/api/v1/sessions/"},
+		{http.MethodGet, "/auth/oidc/start"},
+		{http.MethodGet, "/AUTH/OIDC/start"},
+		{http.MethodGet, "/auth/oidc/start/"},
+	} {
+		request := httptest.NewRequest(probe.method, probe.path, strings.NewReader("email=owner%40example.com"))
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+		response := mustAppResponse(t, app, request)
+		if response.StatusCode != http.StatusSeeOther || response.Header.Get("Location") != "/login" {
+			t.Errorf("%s %s form error answered %d (Location %q), want 303 to /login like the lowercase spelling",
+				probe.method, probe.path, response.StatusCode, response.Header.Get("Location"))
+			continue
+		}
+		if payload := mustReadFlashPayload(t, handler.secretKey, response.Cookies()); payload.AuthError != "invalid credentials" {
+			t.Errorf("%s %s flashed %#v, want the auth error key", probe.method, probe.path, payload)
+		}
+	}
+}
+
+// TestRespondSettingsErrorRedirectsEveryRoutableSpellingOfTheSettingsForms is
+// the settings twin: a variant spelling of an /api/v1/users/current form is
+// the same handler and owes the same redirect back to /settings. The lowercase
+// row is the positive control.
+func TestRespondSettingsErrorRedirectsEveryRoutableSpellingOfTheSettingsForms(t *testing.T) {
+	t.Parallel()
+
+	app, handler := newErrorMappingTransportTestApp(t)
+
+	for _, path := range []string{
+		"/api/v1/users/current/profile",
+		"/API/v1/users/current/profile",
+		"/Api/V1/Users/Current/profile/",
+	} {
+		request := httptest.NewRequest(http.MethodPatch, path, strings.NewReader("display_name="))
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+		response := mustAppResponse(t, app, request)
+		if response.StatusCode != http.StatusSeeOther || response.Header.Get("Location") != "/settings" {
+			t.Errorf("PATCH %s form error answered %d (Location %q), want 303 to /settings like the lowercase spelling",
+				path, response.StatusCode, response.Header.Get("Location"))
+			continue
+		}
+		if payload := mustReadFlashPayload(t, handler.secretKey, response.Cookies()); payload.SettingsError != "invalid settings input" {
+			t.Errorf("PATCH %s flashed %#v, want the settings error key", path, payload)
+		}
+	}
+}
+
 // bodyLimitGuardTestLimit keeps the compressed probes small: a payload crossing
 // it gzips to a couple of hundred bytes, so the wire cap is never the thing
 // under test.

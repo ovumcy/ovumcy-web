@@ -36,12 +36,13 @@ func (handler *Handler) RespondAuthRateLimited(c fiber.Ctx, errorKey string) err
 }
 
 func (handler *Handler) RespondAPIRateLimited(c fiber.Ctx) error {
+	path := httpx.RoutingNormalizedPath(c.Path())
 	switch {
-	case isV1AuthFormPath(c.Path()):
+	case isV1AuthFormPath(path):
 		return handler.respondRateLimitedMappedError(c, authRateLimitErrorSpec("too many requests"))
-	case strings.HasPrefix(c.Path(), "/api/v1/users/current"):
+	case strings.HasPrefix(path, "/api/v1/users/current"):
 		return handler.respondRateLimitedMappedError(c, settingsRateLimitErrorSpec())
-	case c.Path() == LanguageSwitchPath:
+	case path == LanguageSwitchPath:
 		return handler.respondRateLimitedPageForm(c, globalRateLimitErrorSpec())
 	default:
 		return handler.respondRateLimitedMappedError(c, globalRateLimitErrorSpec())

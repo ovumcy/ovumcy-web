@@ -527,3 +527,72 @@ func TestCalendarFeedRateLimitHandlerAnswers429AndRedactsToken(t *testing.T) {
 		t.Fatalf("expected masked route template in rate-limit log, got %q", logLine)
 	}
 }
+
+// TestRateLimitRefusalsAnswerEveryRoutableSpellingLikeTheLowercaseOne drives
+// the real app past a spent budget with each spelling the router sends to the
+// same handler. The limiters already count /LANG and /lang/ against the /lang
+// budget; the refusal must also TAKE the branch the lowercase spelling takes,
+// or a variant gets JSON painted into the window where the lowercase form gets
+// markup, or an envelope where it gets its flash redirect. The lowercase
+// spelling in each row is the positive control.
+func TestRateLimitRefusalsAnswerEveryRoutableSpellingLikeTheLowercaseOne(t *testing.T) {
+	handler := newRateLimitTestHandler(t)
+
+	cases := []struct {
+		name      string
+		method    string
+		spellings []string
+		location  string
+	}{
+		{name: "language switch page form", method: http.MethodPost, spellings: []string{"/lang", "/LANG", "/lang/"}},
+		{name: "settings form behind the api limiter", method: http.MethodPatch, spellings: []string{"/api/v1/users/current/profile", "/API/v1/users/current/profile", "/api/v1/users/current/profile/"}, location: "/settings"},
+		{name: "auth form behind the api limiter", method: http.MethodPost, spellings: []string{"/api/v1/sessions", "/API/v1/sessions", "/api/v1/sessions/"}, location: "/login"},
+	}
+	for _, testCase := range cases {
+		for _, spelling := range testCase.spellings {
+			t.Run(testCase.name+" "+spelling, func(t *testing.T) {
+				app := newFiberApp(runtimeConfig{
+					Location:        time.UTC,
+					DefaultLanguage: "en",
+					RateLimits: rateLimitSettings{
+						LoginMax:    100,
+						LoginWindow: time.Minute,
+						APIMax:      1,
+						APIWindow:   time.Minute,
+					},
+				}, handler)
+
+				var response *http.Response
+				for attempt := 1; attempt <= 2; attempt++ {
+					request := httptest.NewRequest(testCase.method, spelling, strings.NewReader(""))
+					request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+					request.Header.Set("Accept", "text/html,application/xhtml+xml")
+					var err error
+					response, err = app.Test(request, testConfigNoTimeout)
+					if err != nil {
+						t.Fatalf("%s %s attempt %d failed: %v", testCase.method, spelling, attempt, err)
+					}
+					if attempt == 1 {
+						_ = response.Body.Close()
+					}
+				}
+				defer func() { _ = response.Body.Close() }()
+				body := string(mustReadAll(t, response))
+
+				if testCase.location != "" {
+					if response.StatusCode != http.StatusSeeOther || response.Header.Get("Location") != testCase.location {
+						t.Fatalf("%s %s past its budget answered %d (Location %q, body %q), want 303 to %s like the lowercase spelling",
+							testCase.method, spelling, response.StatusCode, response.Header.Get("Location"), body, testCase.location)
+					}
+					return
+				}
+				if response.StatusCode != http.StatusTooManyRequests {
+					t.Fatalf("%s %s past its budget answered %d, want 429", testCase.method, spelling, response.StatusCode)
+				}
+				if contentType := response.Header.Get("Content-Type"); !strings.Contains(contentType, fiber.MIMETextHTML) || strings.Contains(body, `"error_detail"`) {
+					t.Fatalf("%s %s past its budget answered %q %q, want the page-form status fragment like the lowercase spelling", testCase.method, spelling, contentType, body)
+				}
+			})
+		}
+	}
+}
