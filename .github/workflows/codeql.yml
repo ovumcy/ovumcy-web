@@ -27,10 +27,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Mirrors ci.yml's own `changes` job and security.yml's copy of it: same
-  # base resolution, same fail-safe (unknown event, missing base, failed or
-  # empty diff all leave every language running), and only
-  # pull_request/merge_group ever narrow anything.
+  # Shares ci.yml's `changes` base resolution through the diff-against-base
+  # action, and its fail-safe (unknown event, missing base, failed or empty
+  # diff all leave every language running): only pull_request/merge_group
+  # ever narrow anything.
   changes:
     runs-on: ubuntu-latest
     permissions:
@@ -41,89 +41,68 @@ jobs:
       run_actions: ${{ steps.detect.outputs.run_actions }}
 
     steps:
+      # Only a pull request and a merge group carry a base to diff against, so
+      # only they pay for a full-history checkout; every other event reaches
+      # the detect step with no file list and runs every language.
       - name: Checkout
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
 
+      - name: List the files this diff changes
+        id: diff
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        uses: ./.github/actions/diff-against-base
+
       - name: Detect which CodeQL languages this diff can affect
         id: detect
         env:
           EVENT_NAME: ${{ github.event_name }}
-          BASE_REF: ${{ github.event.pull_request.base.ref }}
-          QUEUE_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          CHANGED_FILES: ${{ steps.diff.outputs.files }}
+          DIFF_VERDICT: ${{ steps.diff.outputs.verdict }}
         run: |
-          # No `set -e`: see security.yml's copy of this job for why it must
-          # never fail. Every output starts at true.
+          # This job must never fail: a failed dependency would skip every
+          # Analyze leg into a SATISFIED required check. The runner executes a
+          # step with no `shell:` as `bash -e`, so errexit IS on here — every
+          # command that may exit non-zero is guarded (`|| true`). Every
+          # output starts at true, and an empty file list leaves it there.
           run_go=true
           run_js=true
           run_actions=true
-          verdict=""
 
-          if [ "$EVENT_NAME" = "pull_request" ] || [ "$EVENT_NAME" = "merge_group" ]; then
-            base=""
-            if [ "$EVENT_NAME" = "pull_request" ]; then
-              if git fetch --no-tags origin "$BASE_REF"; then
-                base="origin/$BASE_REF"
-              else
-                verdict="base ref fetch failed: running every language."
-              fi
-            else
-              base="$QUEUE_BASE_SHA"
-              if [ -z "$base" ]; then
-                verdict="no base commit in the merge_group payload: running every language."
-              elif ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
-                git fetch --no-tags origin "$base" || true
-                if ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
-                  base=""
-                  verdict="merge_group base commit unreachable: running every language."
-                fi
-              fi
-            fi
-
-            if [ -n "$base" ]; then
-              # core.quotePath=false + --no-renames: see security.yml's copy
-              # of this job for why (PR #839's ci.yml fix, same shape).
-              if ! files="$(git -c core.quotePath=false diff --no-renames --name-only "${base}...HEAD")"; then
-                verdict="git diff ${base}...HEAD failed: running every language."
-              elif [ -z "$files" ]; then
-                verdict="empty file list from ${base}...HEAD: running every language."
-              else
-                echo "Changed files against ${base}:"
-                printf '%s\n' "$files"
-
-                # This workflow file carries the paths-ignore config inline,
-                # so an edit to it forces every language rather than being
-                # judged by the rules below.
-                workflow_changed="$(printf '%s\n' "$files" | grep -E '^\.github/workflows/codeql\.yml$' || true)"
-
-                go_changes="$(printf '%s\n' "$files" | grep -E '(\.go$|^go\.mod$|^go\.sum$)' || true)"
-                # javascript-typescript has no `paths:` restriction above
-                # (only the two paths-ignore entries), so CodeQL extracts
-                # every JS/TS/HTML/Vue source in the tree: web/src/js, the
-                # go:embed'ed templates (inline <script> and on* handlers —
-                # internal/templates/*.html), the e2e specs, scripts/, the
-                # root tooling configs, and the npm manifests plus
-                # tsconfig*.json that shape what gets extracted.
-                js_changes="$(printf '%s\n' "$files" | grep -E '(\.(ts|tsx|mts|cts|js|jsx|mjs|cjs|html|htm|vue)$|^package(-lock)?\.json$|(^|/)tsconfig[^/]*\.json$)' || true)"
-                actions_changes="$(printf '%s\n' "$files" | grep -E '^\.github/' || true)"
-
-                if [ -n "$workflow_changed" ]; then
-                  verdict="codeql.yml itself changed: running every language."
-                else
-                  run_go=false
-                  run_js=false
-                  run_actions=false
-                  [ -n "$go_changes" ] && run_go=true
-                  [ -n "$js_changes" ] && run_js=true
-                  [ -n "$actions_changes" ] && run_actions=true
-                  verdict="scoped to what changed: go=$run_go javascript-typescript=$run_js actions=$run_actions."
-                fi
-              fi
-            fi
+          files="$CHANGED_FILES"
+          if [ -z "$files" ]; then
+            verdict="${DIFF_VERDICT:-$EVENT_NAME carries no base to diff against}: running every language."
           else
-            verdict="$EVENT_NAME always runs every language in full."
+            # This workflow file carries the paths-ignore config inline, so an
+            # edit to it forces every language rather than being judged by the
+            # rules below.
+            workflow_changed="$(printf '%s\n' "$files" | grep -E '^\.github/workflows/codeql\.yml$' || true)"
+
+            go_changes="$(printf '%s\n' "$files" | grep -E '(\.go$|^go\.mod$|^go\.sum$)' || true)"
+            # javascript-typescript has no `paths:` restriction above (only
+            # the two paths-ignore entries), so CodeQL extracts every
+            # JS/TS/HTML/Vue source in the tree: web/src/js, the go:embed'ed
+            # templates (inline <script> and on* handlers —
+            # internal/templates/*.html), the e2e specs, scripts/, the root
+            # tooling configs, and the npm manifests and lockfiles at any
+            # depth plus tsconfig*.json that shape what gets extracted.
+            js_changes="$(printf '%s\n' "$files" | grep -E '(\.(ts|tsx|mts|cts|js|jsx|mjs|cjs|html|htm|vue)$|(^|/)(package(-lock)?\.json|npm-shrinkwrap\.json)$|(^|/)tsconfig[^/]*\.json$)' || true)"
+            actions_changes="$(printf '%s\n' "$files" | grep -E '^\.github/' || true)"
+
+            if [ -n "$workflow_changed" ]; then
+              verdict="codeql.yml itself changed: running every language."
+            else
+              run_go=false
+              run_js=false
+              run_actions=false
+              [ -n "$go_changes" ] && run_go=true
+              [ -n "$js_changes" ] && run_js=true
+              [ -n "$actions_changes" ] && run_actions=true
+              verdict="scoped to what changed: go=$run_go javascript-typescript=$run_js actions=$run_actions."
+            fi
           fi
 
           echo "$verdict"

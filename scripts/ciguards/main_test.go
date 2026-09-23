@@ -654,23 +654,61 @@ func TestFrontendPatternCoversCSSSourcesRefusesAMissingSource(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// The `changes` job's detect step, executed rather than read.
+// The `changes` jobs' list and detect steps, executed rather than read.
 // ---------------------------------------------------------------------------
 
-// detectScript returns the detect step's `run: |` block, de-indented, exactly
-// as the runner hands it to bash.
-func detectScript(t *testing.T) string {
+// diffAction is the composite action every `changes` job lists its diff with;
+// each job's own `detect` step then applies that workflow's path rules to the
+// list it outputs.
+const diffAction = ".github/actions/diff-against-base"
+
+// diffEvents is the `if:` each `changes` job puts on its checkout and on its
+// list step: the only events that carry a base to diff against. The harness
+// runs the list step for exactly these events and hands every other event's
+// detect step an empty list, as the runner does when the step is skipped.
+const diffEvents = "github.event_name == 'pull_request' || github.event_name == 'merge_group'"
+
+const ciWorkflow = ".github/workflows/ci.yml"
+
+// scriptStep is one `run: |` step as the runner sees it: the script, the
+// shell named for it, and its `env:` entries as unevaluated expressions.
+type scriptStep struct {
+	script string
+	shell  string
+	env    map[string]string
+}
+
+var (
+	stepEnvLine   = regexp.MustCompile(`^\s+([A-Z][A-Z0-9_]*): \$\{\{ (.+?) \}\}$`)
+	stepShellLine = regexp.MustCompile(`^\s+shell: (\S+)$`)
+)
+
+// readScriptStep cuts the step whose `id:` line is idLine out of text: the
+// keys between that line and `run: |` (its env entries and shell), and the
+// block scalar after it, de-indented exactly as the runner hands it to bash.
+// Keys written below the block scalar are not read: a detect step whose
+// `env:` moved there would get an empty file list and redden every case that
+// narrows a lane.
+func readScriptStep(t *testing.T, text, idLine, what string) scriptStep {
 	t.Helper()
 
-	block := workflowfile.Job(t, ".github/workflows/ci.yml", "changes")
-	start := strings.Index(block, "id: detect")
+	start := strings.Index(text, idLine)
 	if start < 0 {
-		t.Fatal("no `id: detect` step in the `changes` job")
+		t.Fatalf("%s: no %q line", what, idLine)
 	}
-	rest := block[start:]
+	rest := text[start:]
 	run := strings.Index(rest, "run: |\n")
 	if run < 0 {
-		t.Fatal("the detect step has no `run: |` block")
+		t.Fatalf("%s has no `run: |` block", what)
+	}
+
+	step := scriptStep{env: map[string]string{}}
+	for _, line := range strings.Split(rest[:run], "\n") {
+		if m := stepEnvLine.FindStringSubmatch(line); m != nil {
+			step.env[m[1]] = m[2]
+		} else if m := stepShellLine.FindStringSubmatch(line); m != nil {
+			step.shell = m[1]
+		}
 	}
 
 	var lines []string
@@ -690,7 +728,32 @@ func detectScript(t *testing.T) string {
 		}
 		lines = append(lines, line[indent:])
 	}
-	return strings.Join(lines, "\n")
+	step.script = strings.Join(lines, "\n")
+	return step
+}
+
+// detectStep returns a workflow's `changes` job `detect` step.
+func detectStep(t *testing.T, workflow string) scriptStep {
+	t.Helper()
+	return readScriptStep(t, workflowfile.Job(t, workflow, "changes"), "id: detect", workflow+" detect step")
+}
+
+// listStep returns the diff action's one step, the list every detect step reads.
+func listStep(t *testing.T) scriptStep {
+	t.Helper()
+	return readScriptStep(t, workflowfile.Read(t, diffAction+"/action.yml"), "id: diff", diffAction)
+}
+
+// detectScript returns ci.yml's detect script.
+func detectScript(t *testing.T) string {
+	t.Helper()
+	return detectStep(t, ciWorkflow).script
+}
+
+// listScript returns the diff action's script.
+func listScript(t *testing.T) string {
+	t.Helper()
+	return listStep(t).script
 }
 
 // runDetect runs script in a throwaway repository whose `main` holds one file
@@ -711,17 +774,33 @@ const queueBaseReal = "<fixture base>"
 // the proven-tree check's `gh api` answers served from api when it is non-nil.
 func runDetectQueue(t *testing.T, script, event string, files []string, queueBase string, api *ghAPI) map[string]string {
 	t.Helper()
+	return detectRun{workflow: ciWorkflow, detect: script, event: event, files: files, queueBase: queueBase, api: api}.run(t)
+}
+
+// detectRun is one `changes` job executed against a fixture diff: the diff
+// action's list step, then the workflow's detect step fed its outputs through
+// the detect step's own `env:` wiring.
+type detectRun struct {
+	workflow string   // whose detect step runs
+	detect   string   // its script; empty for the real one
+	list     string   // the list step's script; empty for the real one
+	event    string   // github.event_name
+	files    []string // added as text on top of the base
+	binaries []string // added as binary blobs on top of the base
+	// queueBase is merge_group.base_sha: queueBaseReal for the fixture's own
+	// base commit, "" for none, anything else verbatim.
+	queueBase string
+	// api serves the proven-tree check's `gh api` answers; nil leaves `gh`
+	// unstubbed.
+	api *ghAPI
+}
+
+func (r detectRun) run(t *testing.T) map[string]string {
+	t.Helper()
 
 	dir := t.TempDir()
 	bash := requireBash(t, dir)
-	// Hermetic: the fixture repository must not pick up the machine's git
-	// config (hooks, signing, default branch).
-	env := append(os.Environ(),
-		"GIT_CONFIG_NOSYSTEM=1",
-		"GIT_CONFIG_GLOBAL="+os.DevNull,
-		"GIT_AUTHOR_NAME=ciguards", "GIT_AUTHOR_EMAIL=ciguards@example.invalid",
-		"GIT_COMMITTER_NAME=ciguards", "GIT_COMMITTER_EMAIL=ciguards@example.invalid",
-	)
+	env := hermeticGitEnv()
 	git := func(args ...string) string {
 		t.Helper()
 		cmd := exec.Command("git", args...)
@@ -737,65 +816,161 @@ func runDetectQueue(t *testing.T, script, event string, files []string, queueBas
 		}
 		return strings.TrimSpace(string(out))
 	}
-	write := func(name string) {
+	write := func(name string, content []byte) {
 		t.Helper()
 		full := filepath.Join(dir, filepath.FromSlash(name))
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(full, []byte("x\n"), 0o644); err != nil {
+		if err := os.WriteFile(full, content, 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 
 	git("init", "-q", "-b", "main")
-	write("README.md")
+	write("README.md", []byte("x\n"))
 	git("add", "-A")
 	git("commit", "-q", "-m", "base")
 	baseSHA := ""
 	switch {
-	case event != "merge_group":
-	case queueBase == queueBaseReal:
+	case r.event != "merge_group":
+	case r.queueBase == queueBaseReal:
 		baseSHA = git("rev-parse", "HEAD")
 	default:
-		baseSHA = queueBase
+		baseSHA = r.queueBase
 	}
 	git("remote", "add", "origin", dir)
 	git("checkout", "-q", "-b", "change")
-	for _, f := range files {
-		write(f)
+	for _, f := range r.files {
+		write(f, []byte("x\n"))
+	}
+	for _, f := range r.binaries {
+		write(f, []byte{0x00, 0x01, 0x02, 0x00, 0xff})
 	}
 	git("add", "-A")
 	git("commit", "-q", "-m", "change")
-	var apiEnv []string
-	if api != nil {
-		apiEnv = api.install(t, bash, git)
+	// The expressions a `changes` step may read, as the runner evaluates them
+	// for this event. One this table does not know fails the run rather than
+	// reading as empty.
+	github := map[string]string{
+		"github.event_name":                  r.event,
+		"github.event.pull_request.base.ref": "",
+		"github.event.merge_group.base_sha":  baseSHA,
+		"github.event.merge_group.head_ref":  "",
+		"github.token":                       "",
+	}
+	if r.event == "pull_request" {
+		github["github.event.pull_request.base.ref"] = "main"
+	}
+	if r.api != nil {
+		// The stub is job-wide, as the runner's PATH and GITHUB_REPOSITORY
+		// are; the payload fields it bends reach every step alike.
+		env = append(env, r.api.install(t, bash, git, github)...)
+	}
+
+	list := listStep(t)
+	if r.list != "" {
+		list.script = r.list
+	}
+	detect := detectStep(t, r.workflow)
+	if r.detect != "" {
+		detect.script = r.detect
+	}
+
+	listed := map[string]string{}
+	if r.event == "pull_request" || r.event == "merge_group" {
+		listed = runScriptStep(t, bash, dir, env, list, github, nil, "list step")
+	}
+	return runScriptStep(t, bash, dir, env, detect, github, listed, r.workflow+" detect step")
+}
+
+// runScriptStep runs one step in dir and returns what it wrote to
+// GITHUB_OUTPUT. Its env entries are evaluated from github, or — for
+// `steps.diff.outputs.*` — from listed, where an output the list step did not
+// write (or a skipped list step) reads as empty, as it does on the runner.
+func runScriptStep(t *testing.T, bash, dir string, env []string, step scriptStep, github, listed map[string]string, what string) map[string]string {
+	t.Helper()
+
+	stepEnv := append([]string(nil), env...)
+	for name, expr := range step.env {
+		value, known := github[expr]
+		if output, ok := strings.CutPrefix(expr, "steps.diff.outputs."); ok {
+			value, known = listed[output], true
+		}
+		if !known {
+			t.Fatalf("%s: env %s reads ${{ %s }}, which this harness does not evaluate — add it to detectRun.run's table", what, name, expr)
+		}
+		stepEnv = append(stepEnv, name+"="+value)
 	}
 
 	output := filepath.ToSlash(filepath.Join(t.TempDir(), "output"))
-	// As the runner runs a step with no `shell:` — `bash -e {0}`, from a file.
-	// Not `-c`: the step is long enough that a Windows command line truncates
-	// it silently, inside a comment, with exit status 0.
-	scriptFile := filepath.Join(t.TempDir(), "detect.sh")
-	if err := os.WriteFile(scriptFile, []byte(script), 0o644); err != nil {
+	// From a file, as the runner does. Not `-c`: a detect step is long enough
+	// that a Windows command line truncates it silently, inside a comment,
+	// with exit status 0.
+	scriptFile := filepath.Join(t.TempDir(), "step.sh")
+	if err := os.WriteFile(scriptFile, []byte(step.script), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(bash, "-e", filepath.ToSlash(scriptFile))
+	cmd := exec.Command(bash, append(shellArgs(t, step.shell, what), filepath.ToSlash(scriptFile))...)
 	cmd.Dir = dir
-	cmd.Env = append(env, "EVENT_NAME="+event, "BASE_REF=main", "QUEUE_BASE_SHA="+baseSHA, "GITHUB_OUTPUT="+output)
-	cmd.Env = append(cmd.Env, apiEnv...)
+	cmd.Env = append(stepEnv, "GITHUB_OUTPUT="+output)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("detect step failed: %v\n%s", err, out)
+		t.Fatalf("%s failed: %v\n%s", what, err, out)
 	}
 
 	raw, err := os.ReadFile(output)
 	if err != nil {
-		t.Fatalf("detect step wrote no outputs: %v\n%s", err, out)
+		t.Fatalf("%s wrote no outputs: %v\n%s", what, err, out)
 	}
+	return parseStepOutputs(t, string(raw), what)
+}
+
+// shellArgs is how the runner starts bash for a step: `bash -e {0}` when the
+// step names no shell, `bash --noprofile --norc -eo pipefail {0}` when it
+// names `bash` — which a composite action's step must.
+func shellArgs(t *testing.T, shell, what string) []string {
+	t.Helper()
+
+	switch shell {
+	case "":
+		return []string{"-e"}
+	case "bash":
+		return []string{"--noprofile", "--norc", "-eo", "pipefail"}
+	}
+	t.Fatalf("%s runs under `shell: %s`, which this harness does not reproduce", what, shell)
+	return nil
+}
+
+// parseStepOutputs reads GITHUB_OUTPUT in both of its forms: `name=value`,
+// and `name<<DELIMITER` followed by the value's lines and the delimiter alone
+// on a line.
+func parseStepOutputs(t *testing.T, raw, what string) map[string]string {
+	t.Helper()
+
 	got := map[string]string{}
-	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
-		if k, v, ok := strings.Cut(strings.TrimSpace(line), "="); ok {
+	lines := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
+		heredoc, equals := strings.Index(line, "<<"), strings.Index(line, "=")
+		if heredoc > 0 && (equals < 0 || heredoc < equals) {
+			name, delimiter := line[:heredoc], line[heredoc+2:]
+			var value []string
+			closed := false
+			for i++; i < len(lines); i++ {
+				if lines[i] == delimiter {
+					closed = true
+					break
+				}
+				value = append(value, lines[i])
+			}
+			if !closed {
+				t.Fatalf("%s: output %s never reaches its delimiter %q", what, name, delimiter)
+			}
+			got[name] = strings.Join(value, "\n")
+			continue
+		}
+		if k, v, ok := strings.Cut(line, "="); ok {
 			got[k] = v
 		}
 	}
@@ -811,7 +986,9 @@ func requireBash(t *testing.T, dir string) string {
 
 	path, err := exec.LookPath("bash")
 	if err == nil {
-		out, probeErr := exec.Command(path, "-c", `cd "$1" && git --version >/dev/null && printf ok`, "probe", filepath.ToSlash(dir)).Output()
+		probe := exec.Command(path, "-c", `cd "$1" && git --version >/dev/null && printf ok`, "probe", filepath.ToSlash(dir))
+		probe.Env = hermeticGitEnv()
+		out, probeErr := probe.Output()
 		if got := strings.TrimSpace(string(out)); probeErr != nil || got != "ok" {
 			err = fmt.Errorf("%s answered %q, not \"ok\": %v", path, got, probeErr)
 		}
@@ -864,6 +1041,20 @@ var detectCases = []detectCase{
 		map[string]string{"run_e2e": "true", "run_frontend": "true"}},
 	{"push", "push", []string{"web/src/js/a.js"},
 		map[string]string{"run_core": "false", "run_frontend": "false", "run_e2e": "true"}},
+	{"workflow_dispatch", "workflow_dispatch", []string{"docs/a.md"},
+		map[string]string{"run_core": "true", "run_frontend": "true", "run_e2e": "true", "run_unit": "true", "run_race": "true"}},
+}
+
+// hermeticGitEnv is the environment every git this package starts runs in:
+// neither the machine's system nor its global git config (hooks, signing,
+// default branch, quotePath) reaches a fixture or a listing.
+func hermeticGitEnv() []string {
+	return append(os.Environ(),
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_CONFIG_GLOBAL="+os.DevNull,
+		"GIT_AUTHOR_NAME=ciguards", "GIT_AUTHOR_EMAIL=ciguards@example.invalid",
+		"GIT_COMMITTER_NAME=ciguards", "GIT_COMMITTER_EMAIL=ciguards@example.invalid",
+	)
 }
 
 // TestDetectStepMergeGroupFallbacksRunEverything drives the merge_group arm's
@@ -903,21 +1094,31 @@ func TestDetectStepDecidesEachLaneFromTheDiff(t *testing.T) {
 // TestDetectStepHarnessRefusesTheUnfixedShapes proves the harness above can
 // fail: each mutation reverts one fix, and the case it exists for must flip.
 func TestDetectStepHarnessRefusesTheUnfixedShapes(t *testing.T) {
-	script := detectScript(t)
 	for _, m := range []struct {
 		name, from, to string
+		inList         bool
 		files          []string
 		output         string
 	}{
-		{"quoted paths", "git -c core.quotePath=false diff", "git diff", []string{"web/src/js/é.js"}, "run_frontend"},
-		{"workflow not an input", `|\.github/workflows/ci\.yml$`, "", []string{".github/workflows/ci.yml"}, "run_frontend"},
+		{"quoted paths", "git -c core.quotePath=false diff", "git diff", true, []string{"web/src/js/é.js"}, "run_frontend"},
+		{"workflow not an input", `|\.github/workflows/ci\.yml$`, "", false, []string{".github/workflows/ci.yml"}, "run_frontend"},
 	} {
 		t.Run(m.name, func(t *testing.T) {
+			r := detectRun{workflow: ciWorkflow, event: "pull_request", files: m.files, queueBase: queueBaseReal}
+			script, where := detectScript(t), "detect step"
+			if m.inList {
+				script, where = listScript(t), "list step"
+			}
 			mutated := strings.Replace(script, m.from, m.to, 1)
 			if mutated == script {
-				t.Fatalf("%q not found in the detect step: this check no longer reverts anything", m.from)
+				t.Fatalf("%q not found in the %s: this check no longer reverts anything", m.from, where)
 			}
-			if got := runDetect(t, mutated, "pull_request", m.files)[m.output]; got != "false" {
+			if m.inList {
+				r.list = mutated
+			} else {
+				r.detect = mutated
+			}
+			if got := r.run(t)[m.output]; got != "false" {
 				t.Fatalf("with the fix reverted, %s = %q; the harness cannot see the defect it guards", m.output, got)
 			}
 		})
@@ -984,7 +1185,9 @@ type ghAPI struct {
 	edit     func(route string, doc any) any // rewrites one decoded answer
 }
 
-func (api *ghAPI) install(t *testing.T, bash string, git func(...string) string) []string {
+// install writes the stub and returns the process environment that puts it
+// first on PATH; the payload fields it serves go into github.
+func (api *ghAPI) install(t *testing.T, bash string, git func(...string) string, github map[string]string) []string {
 	t.Helper()
 	requireJq(t, bash)
 
@@ -1005,11 +1208,11 @@ func (api *ghAPI) install(t *testing.T, bash string, git func(...string) string)
 		root := git("commit-tree", "-m", "off history", baseSHA+"^{tree}")
 		prHead = git("commit-tree", "-m", "pr head", "-p", root, "HEAD^{tree}")
 	}
-	var env []string
 	if api.baseOffHistory {
-		// Appended after runDetectQueue's own QUEUE_BASE_SHA, so it wins.
-		env = append(env, "QUEUE_BASE_SHA="+git("commit-tree", "-m", "off history", baseSHA+"^{tree}"))
+		github["github.event.merge_group.base_sha"] = git("commit-tree", "-m", "off history", baseSHA+"^{tree}")
 	}
+	github["github.event.merge_group.head_ref"] = api.headRef
+	github["github.token"] = "stub"
 	swap := strings.NewReplacer(recordedHeadSHA, prHead)
 	dir := t.TempDir()
 	var routes strings.Builder
@@ -1044,13 +1247,11 @@ func (api *ghAPI) install(t *testing.T, bash string, git func(...string) string)
 	if err := os.WriteFile(filepath.Join(dir, "gh"), []byte(ghStubScript), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	return append(env,
-		"MERGE_GROUP_HEAD_REF="+api.headRef,
-		"GITHUB_REPOSITORY="+stubRepository,
-		"GH_TOKEN=stub",
-		"GH_STUB_DIR="+filepath.ToSlash(dir),
-		"PATH="+dir+string(os.PathListSeparator)+os.Getenv("PATH"),
-	)
+	return []string{
+		"GITHUB_REPOSITORY=" + stubRepository,
+		"GH_STUB_DIR=" + filepath.ToSlash(dir),
+		"PATH=" + dir + string(os.PathListSeparator) + os.Getenv("PATH"),
+	}
 }
 
 // requireJq returns once jq answers from inside bash.

@@ -1115,11 +1115,20 @@ jobs:
       run_frontend: ${{ steps.detect.outputs.run_frontend }}
 
     steps:
+      # Only a pull request and a merge group carry a base to diff against, so
+      # only they pay for a full-history checkout; every other event reaches
+      # the detect step with no file list and runs everything it runs.
       - name: Checkout
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
+
+      - name: List the files this diff changes
+        id: diff
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        uses: ./.github/actions/diff-against-base
 
       - name: Detect whether browser e2e is needed
         id: detect
@@ -1145,13 +1154,14 @@ jobs:
         # full, so the post-merge safety net stays complete.
         #
         # Undetermined always means RUN — unknown event, missing or unreachable
-        # base, a failed diff, an empty file list. Each fail-safe exit is
-        # written as its own branch rather than left to a default, and the
-        # consumers below repeat it once more (`!= 'false'`, evaluated even
-        # when this job dies), so a crash here cannot skip them.
+        # base, a failed diff, an empty file list. The list step reports each
+        # of them as an empty list with its reason, never as a narrower one,
+        # and the consumers below repeat the fail-safe once more (`!= 'false'`,
+        # evaluated even when this job dies), so a crash here cannot skip them.
         env:
           EVENT_NAME: ${{ github.event_name }}
-          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          CHANGED_FILES: ${{ steps.diff.outputs.files }}
+          DIFF_VERDICT: ${{ steps.diff.outputs.verdict }}
           QUEUE_BASE_SHA: ${{ github.event.merge_group.base_sha }}
           MERGE_GROUP_HEAD_REF: ${{ github.event.merge_group.head_ref }}
           GH_TOKEN: ${{ github.token }}
@@ -1166,128 +1176,90 @@ jobs:
           run_e2e=true
           run_core=true
           run_frontend=true
-          verdict=""
-
-          case "$EVENT_NAME" in
-            pull_request)
-              if git fetch --no-tags origin "$BASE_REF"; then
-                base="origin/$BASE_REF"
+          # The list step above skips every event but pull_request and
+          # merge_group, and reports every case it could not determine as an
+          # empty list: either way nothing is judged irrelevant here.
+          files="$CHANGED_FILES"
+          if [ -z "$files" ]; then
+            verdict="${DIFF_VERDICT:-$EVENT_NAME carries no base to diff against}: nothing is judged irrelevant here."
+          else
+            # Anything NOT matching this docs/meta allowlist forces e2e to run.
+            app_changes="$(printf '%s\n' "$files" | grep -vE '^(docs/|\.clusterfuzzlite/|LICENSE$|\.gitignore$|\.gitattributes$|.*\.md$)' || true)"
+            # One document is not inert text: scripts/backuprestoredoc reads
+            # the Postgres backup and restore commands out of the operator
+            # runbook and RUNS them against an ephemeral database, so an edit
+            # there breaks a test exactly as a Go edit does. It is caught by
+            # BOTH arms of the allowlist above (the `docs/` prefix and the
+            # `.md` suffix), so it is detected separately here — and consumed
+            # at `run_core` below, NOT here: the guard rides the Go lanes
+            # alone, and forcing it through `run_e2e` would buy a runbook
+            # typo a full browser battery that cannot look at it. Measured
+            # 2026-08-20: 10 of the 22 commits touching that file since June
+            # carried no other app-affecting file, so without the force
+            # nearly half of all runbook edits would land with the guard
+            # never having executed. The name is cross-checked from the
+            # guard's own package, so a rename cannot leave this filter
+            # pointing at nothing.
+            runbook_changes="$(printf '%s\n' "$files" | grep -E '^docs/self-hosted\.md$' || true)"
+            # Second not-inert document, same shape: test-go-analysis
+            # regenerates the licenses report and refuses a stale committed
+            # THIRD_PARTY_LICENSES.md block, so an edit to the inventory
+            # alone must still run the lane that judges it — otherwise a
+            # hand edit lands ungated. Detected here beside the runbook and
+            # consumed at `run_core` below for the same reason.
+            licenses_changes="$(printf '%s\n' "$files" | grep -E '^THIRD_PARTY_LICENSES\.md$' || true)"
+            # Narrower still, and applied only to run_e2e below: a Go test
+            # file or its fixture data never reaches the compiled binary —
+            # `go build` excludes `_test.go`, and `testdata/` is excluded by
+            # the go tool itself (also skipped by scripts/archcheck's own
+            # walk) — so a diff confined to them cannot change what the
+            # browser suite exercises. This does NOT feed run_core below —
+            # a test file IS compiled Go, and running its assertions is
+            # exactly what the Go lanes are there for — so run_core is left
+            # untouched in the branch below that narrows only run_e2e.
+            # `testdata/` counts only inside the Go trees: one under e2e/ or
+            # web/ would be a browser-suite or bundle input, not a Go fixture.
+            e2e_inert='_test\.go$|^(cmd|internal|scripts)/(.*/)?testdata/'
+            e2e_irrelevant_changes="$(printf '%s\n' "$app_changes" | grep -E "$e2e_inert" || true)"
+            e2e_changes="$(printf '%s\n' "$app_changes" | grep -vE "$e2e_inert" || true)"
+            if [ -z "$app_changes" ]; then
+              run_e2e=false
+              run_core=false
+              if [ -n "$runbook_changes" ]; then
+                verdict="documentation-only change that touches the executed operator runbook: the browser e2e jobs and the race lanes report success without running, and the Go lanes run for it."
+              elif [ -n "$licenses_changes" ]; then
+                verdict="documentation-only change that touches the licenses inventory: the browser e2e jobs and the race lanes report success without running, and the Go lanes run so the analysis lane can judge the committed block."
               else
-                base=""
-                verdict="base ref fetch failed: running e2e and the battery."
+                verdict="docs/meta-only change: the browser e2e jobs and the unit/race battery report success without running."
               fi
-              ;;
-            merge_group)
-              # HEAD is the queue branch carrying the batched commits; the base
-              # is the main commit the queue branched from. Full history is
-              # checked out above, so this is normally already present.
-              base="$QUEUE_BASE_SHA"
-              if [ -z "$base" ]; then
-                verdict="no base commit in the merge_group payload: running e2e and the battery."
-              elif ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
-                echo "merge_group base commit $base absent after checkout: fetching it"
-                git fetch --no-tags origin "$base" || true
-                if ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
-                  base=""
-                  verdict="merge_group base commit unreachable: running e2e and the battery."
-                fi
-              fi
-              ;;
-            *)
-              base=""
-              verdict="$EVENT_NAME carries no base to diff against: nothing is judged irrelevant here."
-              ;;
-          esac
-
-          if [ -n "$base" ]; then
-            # quotePath off: a non-ASCII path would otherwise come back
-            # C-quoted ("web/\303\251.js") and miss every anchored pattern
-            # below. No renames: a move must list its source side too.
-            if ! files="$(git -c core.quotePath=false diff --no-renames --name-only "${base}...HEAD")"; then
-              verdict="git diff ${base}...HEAD failed: running e2e and the battery."
-            elif [ -z "$files" ]; then
-              verdict="empty file list from ${base}...HEAD: running e2e and the battery."
+            elif [ -z "$e2e_changes" ]; then
+              run_e2e=false
+              verdict="only Go test files and/or testdata changed ($(printf '%s\n' "$e2e_irrelevant_changes" | tr '\n' ' ')): they do not reach the compiled binary, so the browser e2e jobs report success without running; the Go lanes still run for them."
             else
-              echo "Changed files against ${base}:"
-              printf '%s\n' "$files"
-              # Anything NOT matching this docs/meta allowlist forces e2e to run.
-              app_changes="$(printf '%s\n' "$files" | grep -vE '^(docs/|\.clusterfuzzlite/|LICENSE$|\.gitignore$|\.gitattributes$|.*\.md$)' || true)"
-              # One document is not inert text: scripts/backuprestoredoc reads
-              # the Postgres backup and restore commands out of the operator
-              # runbook and RUNS them against an ephemeral database, so an edit
-              # there breaks a test exactly as a Go edit does. It is caught by
-              # BOTH arms of the allowlist above (the `docs/` prefix and the
-              # `.md` suffix), so it is detected separately here — and consumed
-              # at `run_core` below, NOT here: the guard rides the Go lanes
-              # alone, and forcing it through `run_e2e` would buy a runbook
-              # typo a full browser battery that cannot look at it. Measured
-              # 2026-08-20: 10 of the 22 commits touching that file since June
-              # carried no other app-affecting file, so without the force
-              # nearly half of all runbook edits would land with the guard
-              # never having executed. The name is cross-checked from the
-              # guard's own package, so a rename cannot leave this filter
-              # pointing at nothing.
-              runbook_changes="$(printf '%s\n' "$files" | grep -E '^docs/self-hosted\.md$' || true)"
-              # Second not-inert document, same shape: test-go-analysis
-              # regenerates the licenses report and refuses a stale committed
-              # THIRD_PARTY_LICENSES.md block, so an edit to the inventory
-              # alone must still run the lane that judges it — otherwise a
-              # hand edit lands ungated. Detected here beside the runbook and
-              # consumed at `run_core` below for the same reason.
-              licenses_changes="$(printf '%s\n' "$files" | grep -E '^THIRD_PARTY_LICENSES\.md$' || true)"
-              # Narrower still, and applied only to run_e2e below: a Go test
-              # file or its fixture data never reaches the compiled binary —
-              # `go build` excludes `_test.go`, and `testdata/` is excluded by
-              # the go tool itself (also skipped by scripts/archcheck's own
-              # walk) — so a diff confined to them cannot change what the
-              # browser suite exercises. This does NOT feed run_core below —
-              # a test file IS compiled Go, and running its assertions is
-              # exactly what the Go lanes are there for — so run_core is left
-              # untouched in the branch below that narrows only run_e2e.
-              # `testdata/` counts only inside the Go trees: one under e2e/ or
-              # web/ would be a browser-suite or bundle input, not a Go fixture.
-              e2e_inert='_test\.go$|^(cmd|internal|scripts)/(.*/)?testdata/'
-              e2e_irrelevant_changes="$(printf '%s\n' "$app_changes" | grep -E "$e2e_inert" || true)"
-              e2e_changes="$(printf '%s\n' "$app_changes" | grep -vE "$e2e_inert" || true)"
-              if [ -z "$app_changes" ]; then
-                run_e2e=false
-                run_core=false
-                if [ -n "$runbook_changes" ]; then
-                  verdict="documentation-only change that touches the executed operator runbook: the browser e2e jobs and the race lanes report success without running, and the Go lanes run for it."
-                elif [ -n "$licenses_changes" ]; then
-                  verdict="documentation-only change that touches the licenses inventory: the browser e2e jobs and the race lanes report success without running, and the Go lanes run so the analysis lane can judge the committed block."
-                else
-                  verdict="docs/meta-only change: the browser e2e jobs and the unit/race battery report success without running."
-                fi
-              elif [ -z "$e2e_changes" ]; then
-                run_e2e=false
-                verdict="only Go test files and/or testdata changed ($(printf '%s\n' "$e2e_irrelevant_changes" | tr '\n' ' ')): they do not reach the compiled binary, so the browser e2e jobs report success without running; the Go lanes still run for them."
-              else
-                verdict="app-affecting change detected: running e2e and the battery."
-              fi
+              verdict="app-affecting change detected: running e2e and the battery."
+            fi
 
-              # test-frontend's own ground, independent of app_changes above:
-              # its steps read web/**, e2e/**, playwright.config.ts,
-              # scripts/*.mjs, package(-lock).json, eslint.config.mjs and
-              # tsconfig.json — PLUS every file outside web/ that
-              # web/src/css/input.css declares as a Tailwind `@source`. Those
-              # feed `npm run build`'s CSS step exactly as if they lived under
-              # web/, so a template-only diff must still run this job — miss
-              # it and "Committed bundles must match a fresh build" (below)
-              # never re-runs to catch the stale CSS. scripts/ciguards pins
-              # this pattern against every `@source` line in that file, so one
-              # added later fails CI here rather than drifting silently. And
-              # this workflow file: the job's own steps (Node version, npm
-              # scripts, the bundle check) live here, so an edit to them must
-              # run it. Anything else — a backend-only diff — leaves this job
-              # with nothing to lint, test or build.
-              frontend_changes="$(printf '%s\n' "$files" | grep -E '^(web/|e2e/|scripts/[^/]+\.mjs$|package(-lock)?\.json$|eslint\.config\.mjs$|tsconfig\.json$|playwright\.config\.ts$|\.github/workflows/ci\.yml$|internal/templates/|internal/httpx/markup\.go$|internal/api/calendar_days_view_helpers\.go$)' || true)"
-              if [ -z "$frontend_changes" ]; then
-                run_frontend=false
-                echo "no frontend input changed: test-frontend reports success without running."
-              else
-                echo "frontend-affecting change detected: running test-frontend."
-              fi
+            # test-frontend's own ground, independent of app_changes above:
+            # its steps read web/**, e2e/**, playwright.config.ts,
+            # scripts/*.mjs, package(-lock).json, eslint.config.mjs and
+            # tsconfig.json — PLUS every file outside web/ that
+            # web/src/css/input.css declares as a Tailwind `@source`. Those
+            # feed `npm run build`'s CSS step exactly as if they lived under
+            # web/, so a template-only diff must still run this job — miss
+            # it and "Committed bundles must match a fresh build" (below)
+            # never re-runs to catch the stale CSS. scripts/ciguards pins
+            # this pattern against every `@source` line in that file, so one
+            # added later fails CI here rather than drifting silently. And
+            # this workflow file: the job's own steps (Node version, npm
+            # scripts, the bundle check) live here, so an edit to them must
+            # run it. Anything else — a backend-only diff — leaves this job
+            # with nothing to lint, test or build.
+            frontend_changes="$(printf '%s\n' "$files" | grep -E '^(web/|e2e/|scripts/[^/]+\.mjs$|package(-lock)?\.json$|eslint\.config\.mjs$|tsconfig\.json$|playwright\.config\.ts$|\.github/workflows/ci\.yml$|internal/templates/|internal/httpx/markup\.go$|internal/api/calendar_days_view_helpers\.go$)' || true)"
+            if [ -z "$frontend_changes" ]; then
+              run_frontend=false
+              echo "no frontend input changed: test-frontend reports success without running."
+            else
+              echo "frontend-affecting change detected: running test-frontend."
             fi
           fi
 
