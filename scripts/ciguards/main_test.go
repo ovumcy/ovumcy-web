@@ -976,8 +976,12 @@ type ghAPI struct {
 	// baseOffHistory hands the step a queue base that is not an ancestor of
 	// the head: a root commit carrying the base's tree.
 	baseOffHistory bool
-	fail           string                          // this route exits 1
-	edit           func(route string, doc any) any // rewrites one decoded answer
+	// prHeadOn serves as the PR head a commit other than the queue HEAD with
+	// the same tree, as the queue's own commit always is, parented on the
+	// queue base ("base") or on a root off its history ("off").
+	prHeadOn string
+	fail     string                          // this route exits 1
+	edit     func(route string, doc any) any // rewrites one decoded answer
 }
 
 func (api *ghAPI) install(t *testing.T, bash string, git func(...string) string) []string {
@@ -993,6 +997,13 @@ func (api *ghAPI) install(t *testing.T, bash string, git func(...string) string)
 	}
 	if api.headIsBase {
 		prHead = baseSHA
+	}
+	switch api.prHeadOn {
+	case "base":
+		prHead = git("commit-tree", "-m", "pr head", "-p", baseSHA, "HEAD^{tree}")
+	case "off":
+		root := git("commit-tree", "-m", "off history", baseSHA+"^{tree}")
+		prHead = git("commit-tree", "-m", "pr head", "-p", root, "HEAD^{tree}")
 	}
 	var env []string
 	if api.baseOffHistory {
@@ -1078,10 +1089,11 @@ var (
 	apiSecondPR = ghAPI{headRef: provenHeadRef, edit: on("commit_pulls", func(doc any) any {
 		return append(doc.([]any), map[string]any{"number": 840, "state": "open", "base": map[string]any{"ref": "main"}})
 	})}
-	apiOffHistory = ghAPI{headRef: provenHeadRef, baseOffHistory: true}
-	apiOtherTree  = ghAPI{headRef: provenHeadRef, headIsBase: true}
-	apiRunFailed  = ghAPI{headRef: provenHeadRef, edit: on("runs", func(doc any) any { ciRun(doc)["conclusion"] = "failure"; return doc })}
-	apiRunOtherPR = ghAPI{headRef: provenHeadRef, edit: on("runs", func(doc any) any {
+	apiOffHistory     = ghAPI{headRef: provenHeadRef, baseOffHistory: true}
+	apiHeadOffHistory = ghAPI{headRef: provenHeadRef, prHeadOn: "off"}
+	apiOtherTree      = ghAPI{headRef: provenHeadRef, headIsBase: true}
+	apiRunFailed      = ghAPI{headRef: provenHeadRef, edit: on("runs", func(doc any) any { ciRun(doc)["conclusion"] = "failure"; return doc })}
+	apiRunOtherPR     = ghAPI{headRef: provenHeadRef, edit: on("runs", func(doc any) any {
 		ciRun(doc)["pull_requests"].([]any)[0].(map[string]any)["number"] = 838
 		return doc
 	})}
@@ -1100,6 +1112,8 @@ func TestMergeGroupProvenTreeSkip(t *testing.T) {
 	}{
 		{"one PR rebased onto the queue base, green on this tree", apiProven, true},
 		{"a PR of two commits on the queue base", ghAPI{headRef: provenHeadRef, secondCommit: true}, true},
+		{"the queue commit is not the PR head, which descends from the queue base", ghAPI{headRef: provenHeadRef, prHeadOn: "base"}, true},
+		{"the queue commit is not the PR head, which is off the queue base's history", apiHeadOffHistory, false},
 		{"a head_ref of another shape", ghAPI{headRef: "refs/heads/some-other-branch"}, false},
 		{"a base outside the plain branch charset", ghAPI{headRef: "refs/heads/gh-readonly-queue/release/1.x/pr-839-0123abcd"}, false},
 		{"the PR lookup errors", ghAPI{headRef: provenHeadRef, fail: "pulls"}, false},
@@ -1146,6 +1160,7 @@ func TestMergeGroupProvenTreeSkipRefusesEachDroppedCheck(t *testing.T) {
 	}{
 		{"PR binding", `if [ "$pr_binding" != "$(printf '%s\t%s' "$pr_number" "$queue_base_ref")" ]; then`, "if false; then", apiSecondPR},
 		{"base is an ancestor", `! git merge-base --is-ancestor "$QUEUE_BASE_SHA" "$pr_head_sha" 2>/dev/null`, "false", apiOffHistory},
+		{"base is an ancestor of the PR head, not the queue HEAD", `--is-ancestor "$QUEUE_BASE_SHA" "$pr_head_sha"`, `--is-ancestor "$QUEUE_BASE_SHA" HEAD`, apiHeadOffHistory},
 		{"tree equality", ` || [ "$queue_tree" != "$pr_tree" ]`, "", apiOtherTree},
 		{"run bound to the PR", ` | select(any(.pull_requests[]?; .number == '"$pr_number"' and .base.ref == "'"$queue_base_ref"'"))`, "", apiRunOtherPR},
 		{"run success", `if [ "$run_conclusion" != "success" ]; then`, "if false; then", apiRunFailed},
