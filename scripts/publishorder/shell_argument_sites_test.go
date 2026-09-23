@@ -32,8 +32,6 @@ var dashCLetters = regexp.MustCompile(`^-[A-Za-z]*c[A-Za-z]*$`)
 var goToolFlagWords = map[string]bool{
 	"-count":        true,
 	"-cover":        true,
-	"-covermode":    true,
-	"-coverpkg":     true,
 	"-coverprofile": true,
 }
 
@@ -217,9 +215,10 @@ func TestClassifyDashCSitesAllowsExactlyOneSitePerEntry(t *testing.T) {
 // inside a function literal and behind a wrapper, a flag held in a variable, a
 // slice, a constant or built by concatenation are found under the function
 // that spells or uses them, a package-level one under the package, two
-// methods of the same name on different receivers are told apart, a named
-// Go-tool flag word is not found, `-race` and a five-letter cluster are, and a
-// script run from a file under `--norc` is not found at all.
+// methods of the same name on different receivers, generic ones included, are
+// told apart, a returned literal is found, a named Go-tool flag word is not,
+// `-race` and a five-letter cluster are, and a script run from a file under
+// `--norc` is not found at all.
 func TestDashCSitesInClassifiesBothWays(t *testing.T) {
 	const source = `package fixture
 
@@ -263,6 +262,16 @@ func viaRace(bash string) { _ = exec.Command("go", "test", "-race") }
 
 func viaLongCluster(bash, script string) { _ = exec.Command(bash, "-euxvc", script) }
 
+func viaReturn() string { return "-c" }
+
+type Generic[T any] struct{}
+
+type OtherGeneric[T, U any] struct{}
+
+func (*Generic[T]) exec(bash, script string) { _ = exec.Command(bash, "-c", script) }
+
+func (OtherGeneric[T, U]) exec(bash, script string) { _ = exec.Command(bash, "-c", script) }
+
 func viaFile(bash, file string) { _ = exec.Command(bash, "--noprofile", "--norc", "-eo", "pipefail", file) }
 `
 	fset := token.NewFileSet()
@@ -290,6 +299,9 @@ func viaFile(bash, file string) { _ = exec.Command(bash, "--noprofile", "--norc"
 		"fixture.OtherRunner.exec",
 		"fixture.viaRace",
 		"fixture.viaLongCluster",
+		"fixture.viaReturn",
+		"fixture.Generic.exec",
+		"fixture.OtherGeneric.exec",
 	}, " ")
 	if strings.Join(got, " ") != want {
 		t.Errorf("dashCSitesIn found %q, want %q", got, want)
@@ -398,6 +410,10 @@ func receiverTypeName(expr ast.Expr) string {
 		return t.Name
 	case *ast.StarExpr:
 		return receiverTypeName(t.X)
+	case *ast.IndexExpr:
+		return receiverTypeName(t.X)
+	case *ast.IndexListExpr:
+		return receiverTypeName(t.X)
 	default:
 		return ""
 	}
@@ -406,16 +422,21 @@ func receiverTypeName(expr ast.Expr) string {
 // dashCSitesIn returns every `-c` flag file spells or uses, named
 // `<pkg>.<enclosing function>` (`<pkg>.<receiver>.<method>` for a method), or
 // `<pkg>.<package level>` for one declared outside every function. A flag
-// inside a function literal belongs to the declaration that holds it. It
-// checks a const or var's own initializer, an assignment's right side, a call
-// argument and a composite literal's elements — every shape the doc comment
-// above names — folding each through foldConstString first, so a flag built
-// by concatenation or held in a named constant is found the same as a plain
-// literal.
+// inside a function literal belongs to the declaration that holds it. Every
+// string literal is checked wherever it sits — a return value included — and
+// so are a const or var's own initializer, an assignment's right side, a call
+// argument and a composite literal's elements, each folded through
+// foldConstString first, so a flag built by concatenation or held in a named
+// constant is found the same as a plain literal. A position is reported once.
 func dashCSitesIn(fset *token.FileSet, file *ast.File, pkg string, consts map[string]string) []dashCSite {
 	var sites []dashCSite
+	seen := map[token.Pos]bool{}
 	check := func(owner string, expr ast.Expr) {
+		if seen[expr.Pos()] {
+			return
+		}
 		if value, ok := foldConstString(expr, consts); ok && isDashCFlag(value) {
+			seen[expr.Pos()] = true
 			sites = append(sites, dashCSite{function: owner, position: fset.Position(expr.Pos()).String()})
 		}
 	}
@@ -426,6 +447,8 @@ func dashCSitesIn(fset *token.FileSet, file *ast.File, pkg string, consts map[st
 		}
 		ast.Inspect(decl, func(node ast.Node) bool {
 			switch n := node.(type) {
+			case *ast.BasicLit:
+				check(owner, n)
 			case *ast.ValueSpec:
 				for _, value := range n.Values {
 					check(owner, value)

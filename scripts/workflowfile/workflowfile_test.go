@@ -213,6 +213,22 @@ func TestStepInStopsBeforeJobLevelKeysAfterTheLastStep(t *testing.T) {
 	}
 }
 
+// TestStepInKeepsKeysPastAShallowComment pins the other side of the dedent
+// check: a comment written shallower than a step's keys is not a job-level
+// key, so the step's own `shell:` after it still belongs to the step.
+func TestStepInKeepsKeysPastAShallowComment(t *testing.T) {
+	const step = "        run: |\n          true\n      # why sh\n        shell: sh {0}\n"
+	job := "    steps:\n      - name: Only\n" + step
+
+	got, err := stepIn(job, "Only")
+	if err != nil {
+		t.Fatalf("stepIn(%q): %v", "Only", err)
+	}
+	if got != step {
+		t.Errorf("stepIn(%q) = %q, want %q — the shallow comment cut the step before its own `shell:`", "Only", got, step)
+	}
+}
+
 // TestStepReadsAStepOutOfARealWorkflow anchors Step on a workflow the
 // repository ships, so the wrapper is exercised and not only its answer.
 func TestStepReadsAStepOutOfARealWorkflow(t *testing.T) {
