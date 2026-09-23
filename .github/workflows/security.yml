@@ -38,9 +38,8 @@ jobs:
   # Shares ci.yml's `changes` base resolution through the diff-against-base
   # action, and its fail-safe (an unknown event, a missing base, a failed or
   # empty diff all leave every scanner running): only pull_request/merge_group
-  # ever narrow anything
-  # — push (main), the weekly schedule and workflow_dispatch always get the
-  # full battery, exactly as ci.yml's does for the Go lanes.
+  # ever narrow anything — push (main), the weekly schedule and
+  # workflow_dispatch always get the full battery.
   changes:
     runs-on: ubuntu-latest
     permissions:
