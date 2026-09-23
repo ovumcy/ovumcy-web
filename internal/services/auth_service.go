@@ -656,15 +656,13 @@ var equalizeAuthCredentialsTiming = func(password string) {
 
 // authTimingEqualizerCompare is the single seam through which the local-auth
 // equalizers — login, registration, recovery lookup and settings re-auth —
-// spend their bcrypt work. It exists because
-// swapping an equalizer proves nothing about that equalizer's BODY: every test
-// that names one replaces the whole var, and the work ledger in
-// auth_service_timing_cost_topup_test.go reads the equalized branch's cost off
-// the placeholder CONSTANT rather than off the comparison — so an emptied body
-// left the login and registration enumeration oracles wide open with the suite
-// green. Swapping this instead drives the shipped body and accounts the
-// comparisons it actually makes, the way timingTopUpCompare already does for
-// the top-up half. Production code never reassigns this.
+// spend their bcrypt work. It exists because swapping an equalizer var proves
+// nothing about its BODY, and reading a func-declared one's cost off the
+// placeholder CONSTANT proves nothing about the comparisons it makes: both
+// once left an emptied body with the suite green. Swapping this instead drives
+// the shipped body and accounts the comparisons it actually makes, the way
+// timingTopUpCompare does for the top-up half. Production code never
+// reassigns this; TestTimingEqualizerVarsSpendThroughASeam fails if it does.
 var authTimingEqualizerCompare = bcrypt.CompareHashAndPassword
 
 // equalizeRegistrationTiming mirrors the bcrypt work BuildOwnerUserWithRecovery
