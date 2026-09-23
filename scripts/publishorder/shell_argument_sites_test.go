@@ -17,11 +17,16 @@ import (
 // `-lc` as well, which hand the shell its script as an argument the same way.
 var dashCFlag = regexp.MustCompile(`^-[A-Za-z]*c[A-Za-z]*$`)
 
-// dashCAllowed names every function under scripts/ that may hand a shell its
-// command as an argument, keyed `<package directory>.<function>`. Each runs a
-// fixed one-liner the test wrote itself, never a script read out of a workflow
-// or a document: short enough that no command-line limit reaches it, and not a
-// step whose shell and flags it could misstate.
+// dashCAllowed names every site under scripts/ that may hand a shell its
+// command as an argument, keyed `<package directory>.<function>` or, for a
+// method, `<package directory>.<receiver type>.<method>` — a bare function
+// name would collide two methods of the same name on different receivers
+// under one key. Each entry allows exactly one `-c` site: a second one inside
+// an already-allowed function is a fresh offender, not a second instance of
+// the one reviewed. Each runs a fixed one-liner the test wrote itself, never
+// a script read out of a workflow or a document: short enough that no
+// command-line limit reaches it, and not a step whose shell and flags it
+// could misstate.
 var dashCAllowed = map[string]string{
 	"publishorder.requireBash":      "probes that bash answers `printf ok`",
 	"publishorder.requireShellTool": "probes one tool through the shell with a one-line command",
@@ -104,22 +109,16 @@ func TestNoExtractedScriptIsHandedToAShellAsAnArgument(t *testing.T) {
 		t.Fatalf("scan scripts/: %v", walkErr)
 	}
 
-	found := map[string]bool{}
-	var offenders []string
+	var sites []dashCSite
 	for _, pkg := range pkgOrder {
 		files := filesByPkg[pkg]
 		consts := packageConsts(files)
 		for _, file := range files {
-			for _, site := range dashCSitesIn(fset, file, pkg, consts) {
-				if _, ok := dashCAllowed[site.function]; ok {
-					found[site.function] = true
-					continue
-				}
-				offenders = append(offenders, site.function+" at "+site.position)
-			}
+			sites = append(sites, dashCSitesIn(fset, file, pkg, consts)...)
 		}
 	}
 
+	offenders, found := classifyDashCSites(sites, dashCAllowed)
 	if len(offenders) > 0 {
 		t.Errorf("these sites spell the `-c` flag that hands a shell its script as an argument:\n  %s\nWrite the script to a file and run that file under the flags its step declares, as runBashScript here, runGate in releasegate and runScript in backuprestoredoc do.",
 			strings.Join(offenders, "\n  "))
@@ -137,11 +136,33 @@ func TestNoExtractedScriptIsHandedToAShellAsAnArgument(t *testing.T) {
 	}
 }
 
+// classifyDashCSites sorts sites into offenders and the allowed entries they
+// used. An allowed entry answers for exactly one site: a second site under a
+// key already used is an offender, same as a site under a key allowed never.
+func classifyDashCSites(sites []dashCSite, allowed map[string]string) (offenders []string, found map[string]bool) {
+	found = map[string]bool{}
+	used := map[string]bool{}
+	for _, site := range sites {
+		if _, ok := allowed[site.function]; ok {
+			if used[site.function] {
+				offenders = append(offenders, site.function+" at "+site.position+" — a second `-c` site in a function already allowed one")
+				continue
+			}
+			used[site.function] = true
+			found[site.function] = true
+			continue
+		}
+		offenders = append(offenders, site.function+" at "+site.position)
+	}
+	return offenders, found
+}
+
 // TestDashCSitesInClassifiesBothWays feeds the scanner a source this test owns,
 // so its verdict does not rest on the tree it judges: a plain `-c`, a cluster
 // inside a function literal and behind a wrapper, a flag held in a variable, a
 // slice, a constant or built by concatenation are found under the function
-// that spells or uses them, a package-level one under the package, and a
+// that spells or uses them, a package-level one under the package, two
+// methods of the same name on different receivers are told apart, and a
 // script run from a file under `--norc` is not found at all.
 func TestDashCSitesInClassifiesBothWays(t *testing.T) {
 	const source = `package fixture
@@ -172,6 +193,14 @@ const concatFlag = ("-" + "c")
 
 func viaConcatConstant(bash, script string) { _ = exec.Command(bash, concatFlag, script) }
 
+type Runner struct{}
+
+type OtherRunner struct{}
+
+func (Runner) exec(bash, script string) { _ = exec.Command(bash, "-c", script) }
+
+func (OtherRunner) exec(bash, script string) { _ = exec.Command(bash, "-c", script) }
+
 func viaFile(bash, file string) { _ = exec.Command(bash, "--noprofile", "--norc", "-eo", "pipefail", file) }
 `
 	fset := token.NewFileSet()
@@ -195,6 +224,8 @@ func viaFile(bash, file string) { _ = exec.Command(bash, "--noprofile", "--norc"
 		"fixture.viaConcatenation",
 		"fixture." + packageLevel,
 		"fixture.viaConcatConstant",
+		"fixture.Runner.exec",
+		"fixture.OtherRunner.exec",
 	}, " ")
 	if strings.Join(got, " ") != want {
 		t.Errorf("dashCSitesIn found %q, want %q", got, want)
@@ -283,14 +314,40 @@ func foldConstString(expr ast.Expr, consts map[string]string) (string, bool) {
 	}
 }
 
+// funcOwner names the site a FuncDecl's body belongs to: `<pkg>.<function>`,
+// or `<pkg>.<receiver type>.<method>` for a method, so that two methods
+// named alike on different receivers do not share one dashCAllowed key.
+func funcOwner(pkg string, function *ast.FuncDecl) string {
+	if function.Recv != nil && len(function.Recv.List) > 0 {
+		if recv := receiverTypeName(function.Recv.List[0].Type); recv != "" {
+			return pkg + "." + recv + "." + function.Name.Name
+		}
+	}
+	return pkg + "." + function.Name.Name
+}
+
+// receiverTypeName returns a method receiver's type name, unwrapping the
+// pointer a `*T` receiver carries.
+func receiverTypeName(expr ast.Expr) string {
+	switch t := expr.(type) {
+	case *ast.Ident:
+		return t.Name
+	case *ast.StarExpr:
+		return receiverTypeName(t.X)
+	default:
+		return ""
+	}
+}
+
 // dashCSitesIn returns every `-c` flag file spells or uses, named
-// `<pkg>.<enclosing function>`, or `<pkg>.<package level>` for one declared
-// outside every function. A flag inside a function literal belongs to the
-// declaration that holds it. It checks a const or var's own initializer, an
-// assignment's right side, a call argument and a composite literal's
-// elements — every shape the doc comment above names — folding each through
-// foldConstString first, so a flag built by concatenation or held in a named
-// constant is found the same as a plain literal.
+// `<pkg>.<enclosing function>` (`<pkg>.<receiver>.<method>` for a method), or
+// `<pkg>.<package level>` for one declared outside every function. A flag
+// inside a function literal belongs to the declaration that holds it. It
+// checks a const or var's own initializer, an assignment's right side, a call
+// argument and a composite literal's elements — every shape the doc comment
+// above names — folding each through foldConstString first, so a flag built
+// by concatenation or held in a named constant is found the same as a plain
+// literal.
 func dashCSitesIn(fset *token.FileSet, file *ast.File, pkg string, consts map[string]string) []dashCSite {
 	var sites []dashCSite
 	check := func(owner string, expr ast.Expr) {
@@ -301,7 +358,7 @@ func dashCSitesIn(fset *token.FileSet, file *ast.File, pkg string, consts map[st
 	for _, decl := range file.Decls {
 		owner := pkg + "." + packageLevel
 		if function, ok := decl.(*ast.FuncDecl); ok {
-			owner = pkg + "." + function.Name.Name
+			owner = funcOwner(pkg, function)
 		}
 		ast.Inspect(decl, func(node ast.Node) bool {
 			switch n := node.(type) {
