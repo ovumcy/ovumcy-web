@@ -13,9 +13,31 @@ import (
 	"testing"
 )
 
-// dashCFlag matches a shell flag cluster that carries `c` — `-c`, and `-ec` or
-// `-lc` as well, which hand the shell its script as an argument the same way.
-var dashCFlag = regexp.MustCompile(`^-[A-Za-z]*c[A-Za-z]*$`)
+// dashCLetters matches a shell flag cluster that carries `c` — `-c`, and
+// `-ec` or `-lc` as well, which hand the shell its script as an argument the
+// same way. Bash and sh accept most consonants as single-character options
+// (`-c`, `-e`, `-x`, `-u`, `-o`, `-n`, `-t`, `-r`, `-a`, `-v`, ...), the same
+// letters unrelated Go-tool flags draw from (`-count`, `-cover`,
+// `-coverprofile`, `-exec`, `-race`), so the letters alone cannot tell a real
+// cluster from one of those; dashCMaxLetters does. Every cluster this repo
+// writes is two letters (`-c`, `-ec`, `-lc`); the Go-tool flags at five
+// letters or more (`-count`, `-cover`, `-coverprofile`) fall outside the cap.
+// `-race`, at four letters, does not: it IS a lexically valid bash cluster
+// (`-r -a -c -e`), and a guard that stayed quiet because it could not tell
+// `-race` from a real one-liner would be worse than the false positive here
+// — the reviewer reads the offending exec.Command line and sees which one it
+// is.
+var dashCLetters = regexp.MustCompile(`^-[A-Za-z]*c[A-Za-z]*$`)
+
+// dashCMaxLetters bounds a cluster dashCLetters accepts, past the doc
+// comment above.
+const dashCMaxLetters = 4
+
+// isDashCFlag reports whether value is a shell flag cluster carrying `c`,
+// short enough to be a real cluster rather than a Go-tool flag word.
+func isDashCFlag(value string) bool {
+	return dashCLetters.MatchString(value) && len(value)-1 <= dashCMaxLetters
+}
 
 // dashCAllowed names every site under scripts/ that may hand a shell its
 // command as an argument, keyed `<package directory>.<function>` or, for a
@@ -191,8 +213,9 @@ func TestClassifyDashCSitesAllowsExactlyOneSitePerEntry(t *testing.T) {
 // inside a function literal and behind a wrapper, a flag held in a variable, a
 // slice, a constant or built by concatenation are found under the function
 // that spells or uses them, a package-level one under the package, two
-// methods of the same name on different receivers are told apart, and a
-// script run from a file under `--norc` is not found at all.
+// methods of the same name on different receivers are told apart, a
+// narrowly-missed Go-tool flag word is not found, `-race` is, and a script
+// run from a file under `--norc` is not found at all.
 func TestDashCSitesInClassifiesBothWays(t *testing.T) {
 	const source = `package fixture
 
@@ -230,6 +253,10 @@ func (Runner) exec(bash, script string) { _ = exec.Command(bash, "-c", script) }
 
 func (OtherRunner) exec(bash, script string) { _ = exec.Command(bash, "-c", script) }
 
+func viaGoFlags(bash string) { _ = exec.Command("go", "test", "-coverprofile", "-count", "-cover") }
+
+func viaRace(bash string) { _ = exec.Command("go", "test", "-race") }
+
 func viaFile(bash, file string) { _ = exec.Command(bash, "--noprofile", "--norc", "-eo", "pipefail", file) }
 `
 	fset := token.NewFileSet()
@@ -255,6 +282,7 @@ func viaFile(bash, file string) { _ = exec.Command(bash, "--noprofile", "--norc"
 		"fixture.viaConcatConstant",
 		"fixture.Runner.exec",
 		"fixture.OtherRunner.exec",
+		"fixture.viaRace",
 	}, " ")
 	if strings.Join(got, " ") != want {
 		t.Errorf("dashCSitesIn found %q, want %q", got, want)
@@ -380,7 +408,7 @@ func receiverTypeName(expr ast.Expr) string {
 func dashCSitesIn(fset *token.FileSet, file *ast.File, pkg string, consts map[string]string) []dashCSite {
 	var sites []dashCSite
 	check := func(owner string, expr ast.Expr) {
-		if value, ok := foldConstString(expr, consts); ok && dashCFlag.MatchString(value) {
+		if value, ok := foldConstString(expr, consts); ok && isDashCFlag(value) {
 			sites = append(sites, dashCSite{function: owner, position: fset.Position(expr.Pos()).String()})
 		}
 	}
