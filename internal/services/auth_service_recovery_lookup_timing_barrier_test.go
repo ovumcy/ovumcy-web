@@ -1,10 +1,8 @@
 package services
 
 import (
-	"bytes"
 	"go/ast"
 	"go/parser"
-	"go/printer"
 	"go/token"
 	"testing"
 )
@@ -24,8 +22,9 @@ import (
 // combined result decides". A wall-clock budget would pin it flakily on shared
 // CI runners, so this reads the shipped source instead: a comparison written as
 // an `if` CONDITION is a short-circuit by construction, while one written into
-// a variable cannot return before the next statement runs. The same applies to
-// the early-return equalizer, which must spend BOTH operands' compute.
+// a variable cannot return before the next statement runs. The early-return
+// equalizer, which must spend BOTH operands' compute, spends through
+// authTimingEqualizerCompare and is observed at runtime by the test below.
 //
 // What it cannot see: a `return` inserted between the two assignments, or a
 // compare hidden behind a helper it does not name. Neither is invisible to the
@@ -49,24 +48,20 @@ func TestRecoveryLookupSpendsBothCredentialComparesWithoutShortCircuit(t *testin
 		return true
 	})
 
-	for _, functionName := range []string{"FindUserByEmailRecoveryCodeAndPassword", "equalizeRecoveryCodeLookupTiming"} {
-		body, ok := bodies[functionName]
-		if !ok {
-			t.Fatalf("%s is missing from auth_service.go — the recovery reset must verify both operands", functionName)
-		}
-
-		compares := 0
-		ast.Inspect(body, func(node ast.Node) bool {
-			call, ok := node.(*ast.CallExpr)
-			if !ok || !isBcryptCompareCall(call) {
-				return true
-			}
+	body, ok := bodies["FindUserByEmailRecoveryCodeAndPassword"]
+	if !ok {
+		t.Fatal("FindUserByEmailRecoveryCodeAndPassword is missing from auth_service.go — the recovery reset must verify both operands")
+	}
+	compares := 0
+	ast.Inspect(body, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if ok && isBcryptCompareCall(call) {
 			compares++
-			return true
-		})
-		if compares != 2 {
-			t.Fatalf("%s performs %d bcrypt comparisons, want 2 (recovery code AND password)", functionName, compares)
 		}
+		return true
+	})
+	if compares != 2 {
+		t.Fatalf("FindUserByEmailRecoveryCodeAndPassword performs %d bcrypt comparisons, want 2 (recovery code AND password)", compares)
 	}
 
 	ast.Inspect(bodies["FindUserByEmailRecoveryCodeAndPassword"], func(node ast.Node) bool {
@@ -135,85 +130,42 @@ func isBcryptCompareCall(call *ast.CallExpr) bool {
 	return ok && pkg.Name == "bcrypt"
 }
 
-// printExpr renders an AST expression back to source text, so a test can
-// compare what argument a call actually names without hand-walking its node
-// shape (an Ident for a bare name, a nested CallExpr for a wrapped one).
-func printExpr(t *testing.T, fileSet *token.FileSet, expr ast.Expr) string {
-	t.Helper()
-	var buf bytes.Buffer
-	if err := printer.Fprint(&buf, fileSet, expr); err != nil {
-		t.Fatalf("print expression: %v", err)
-	}
-	return buf.String()
-}
-
 // TestRecoveryLookupEqualizerComparesEachPlaceholderAgainstItsOwnOperand is
-// TS-M06's test hardening: the count-only check above (compares != 2) is
-// satisfied by a body that compares the WRONG operand against a placeholder —
-// for example the code against credentialsTimingEqualizationHash and the
-// password against recoveryCodeTimingEqualizationHash. That still passes
-// count==2 while breaking the pairing the helper's own doc comment states:
-// the recovery-code compare must run against the code operand and the
-// password compare against the password operand, each against the
-// placeholder that stands in for it, so the equalizer keeps mirroring the
-// real two-secret compare — including if the two placeholders' costs ever
-// diverge (pinned equal today by TestTimingEqualizationHashesMatchTargetCost
-// in auth_service_hash_cost_test.go, not by this test). This test makes no
-// timing claim of its own. equalizeRecoveryCodeLookupTiming is declared as a
-// bare func (not a swappable var) precisely so its literal calls can be read
-// from source instead of intercepted at runtime — this test reads the two
-// calls' actual arguments, in order, off the shipped body. No wall-clock
-// threshold is involved anywhere in this test.
+// TS-M06's guard on the shipped equalizer body: it records, through
+// authTimingEqualizerCompare, every (hash, operand) pair the body actually
+// hands to bcrypt. A count alone is satisfied by a body that compares the code
+// against credentialsTimingEqualizationHash and the password against
+// recoveryCodeTimingEqualizationHash: two comparisons still run, but they no
+// longer mirror the real two-secret compare each placeholder stands in for —
+// including if the placeholders' costs ever diverge (pinned equal today by
+// TestTimingEqualizationHashesMatchTargetCost, not by this test). The code is
+// submitted un-normalized so a body that skips NormalizeRecoveryCode fails
+// too. No wall-clock threshold is involved.
 func TestRecoveryLookupEqualizerComparesEachPlaceholderAgainstItsOwnOperand(t *testing.T) {
-	fileSet := token.NewFileSet()
-	file, err := parser.ParseFile(fileSet, "auth_service.go", nil, parser.ParseComments)
-	if err != nil {
-		t.Fatalf("parse auth_service.go: %v", err)
+	const submittedCode = "  ovm-abcd-efgh-jklm "
+	const submittedPassword = "WrongGuess1!"
+	normalizedCode := NormalizeRecoveryCode(submittedCode)
+	if normalizedCode == submittedCode {
+		t.Fatalf("NormalizeRecoveryCode left %q unchanged — the fixture no longer tells a normalized operand from a raw one", submittedCode)
 	}
 
-	var body *ast.BlockStmt
-	ast.Inspect(file, func(node ast.Node) bool {
-		decl, ok := node.(*ast.FuncDecl)
-		if ok && decl.Name.Name == "equalizeRecoveryCodeLookupTiming" && decl.Body != nil {
-			body = decl.Body
-		}
-		return true
-	})
-	if body == nil {
-		t.Fatal("equalizeRecoveryCodeLookupTiming is missing from auth_service.go")
-	}
+	recorded := withEqualizerCompareRecorder(t)
+	equalizeRecoveryCodeLookupTiming(submittedCode, submittedPassword)
 
-	type observedCompare struct {
-		hash    string
-		operand string
+	want := []equalizerCompare{
+		{hash: recoveryCodeTimingEqualizationHash, operand: normalizedCode},
+		{hash: credentialsTimingEqualizationHash, operand: submittedPassword},
 	}
-	var observed []observedCompare
-	ast.Inspect(body, func(node ast.Node) bool {
-		call, ok := node.(*ast.CallExpr)
-		if !ok || !isBcryptCompareCall(call) {
-			return true
-		}
-		if len(call.Args) != 2 {
-			t.Fatalf("a bcrypt.CompareHashAndPassword call in equalizeRecoveryCodeLookupTiming has %d arguments, want 2", len(call.Args))
-		}
-		observed = append(observed, observedCompare{
-			hash:    printExpr(t, fileSet, call.Args[0]),
-			operand: printExpr(t, fileSet, call.Args[1]),
-		})
-		return true
-	})
-
-	want := []observedCompare{
-		{hash: "[]byte(recoveryCodeTimingEqualizationHash)", operand: "[]byte(NormalizeRecoveryCode(code))"},
-		{hash: "[]byte(credentialsTimingEqualizationHash)", operand: "[]byte(password)"},
-	}
-	if len(observed) != len(want) {
-		t.Fatalf("equalizeRecoveryCodeLookupTiming spends %d bcrypt comparisons, want %d: %+v", len(observed), len(want), observed)
+	if len(*recorded) != len(want) {
+		t.Fatalf("equalizeRecoveryCodeLookupTiming spent %d bcrypt comparisons, want %d — an early return that spends less than "+
+			"the real two-secret compare is the account-enumeration oracle it exists to close", len(*recorded), len(want))
 	}
 	for index, wantCompare := range want {
-		if observed[index] != wantCompare {
-			t.Fatalf("comparison %d compared %+v, want %+v — the wrong operand against a placeholder still counts as a compare, "+
-				"but no longer mirrors the real two-secret compare each placeholder stands in for", index, observed[index], wantCompare)
+		got := (*recorded)[index]
+		if got != wantCompare {
+			t.Fatalf("comparison %d ran %q against operand %q, want %q against %q — the wrong operand against a placeholder "+
+				"still counts as a compare, but no longer mirrors the real compare that placeholder stands in for",
+				index, hashPrefix(got.hash), got.operand, hashPrefix(wantCompare.hash), wantCompare.operand)
 		}
 	}
 }
