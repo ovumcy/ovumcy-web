@@ -232,7 +232,10 @@ func Steps(block string) []string {
 // runner's `bash -e {0}`) are the two invocations a harness can reproduce and
 // name; any other value is another interpreter or another template, and a
 // composite step without `shell:` is one the runner refuses to load. Each of
-// those is a failure here, never a run under flags assumed for it.
+// those is a failure here, never a run under flags assumed for it. The answer
+// for an absent `shell:` holds only while no workflow sets `defaults.run.shell`
+// or a non-Linux runner, which the block cannot show;
+// TestNoWorkflowMovesTheDefaultShell holds that.
 func BashStepFlags(t *testing.T, workflow, step, block string) []string {
 	t.Helper()
 
