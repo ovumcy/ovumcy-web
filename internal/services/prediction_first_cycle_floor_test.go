@@ -218,7 +218,7 @@ func assertImplantationHint(t *testing.T, user *models.User, today time.Time, lo
 
 	starts := make([]time.Time, 0, len(testCase.startsDaysAgo))
 	for _, daysAgo := range testCase.startsDaysAgo {
-		starts = append(starts, today.AddDate(0, 0, -(daysAgo + implantationHintAgeDays)))
+		starts = append(starts, today.AddDate(0, 0, -(daysAgo+implantationHintAgeDays)))
 	}
 	logs := firstCycleFloorLogs(starts)
 
