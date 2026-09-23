@@ -1,0 +1,300 @@
+package api
+
+import (
+	"fmt"
+	"go/ast"
+	"go/types"
+	"path/filepath"
+	"sort"
+	"strings"
+	"testing"
+
+	"golang.org/x/tools/go/packages"
+)
+
+// This file holds the routing-normalized path barrier. Fiber picks a route
+// against a case-folded, trailing-slash-stripped copy of the path but hands
+// handlers the untouched wire path, so any branch keyed on the raw path sends
+// /API/v1/sessions, /LANG or /lang/ down a different answer than the lowercase
+// spelling that reaches the very same handler. The barrier therefore requires
+// every raw path read in the transport layer (internal/api) and the composition
+// root (cmd/ovumcy) to pass straight into the routing normalization, or to sit
+// in a function declared below as reading the raw bytes on purpose.
+//
+// It lives in this package because the declaration barrier beside it already
+// type-checks both packages once per test binary (loadTreeEvidence), and it
+// reuses that load rather than paying for a second one.
+//
+// Everything is resolved by object through go/types, never by identifier
+// text: the reader is fiber's own Path method (on the Ctx interface and on the
+// concrete context alike), the sinks are the httpx functions themselves, and
+// the enclosing function is its declaration's *types.Func. A text match would
+// miss an aliased context, a renamed import or a method value, and would
+// accept a local helper that merely shares a sink's name.
+
+// rawPathReadersByDesign names, by the enclosing function's full name, each
+// function that reads the raw request path on purpose, with the reason. An
+// entry that no longer reads the raw path fails the barrier as stale.
+var rawPathReadersByDesign = map[string]string{
+	"github.com/ovumcy/ovumcy-web/cmd/ovumcy.csrfMiddlewareConfig":      "the OIDC callback's CSRF exemption matches the raw bytes on purpose: a case or slash variant gets no exemption, which is stricter than the route",
+	"github.com/ovumcy/ovumcy-web/cmd/ovumcy.securityHeadersMiddleware": "the /static cache exemption matches the raw bytes on purpose: a variant spelling keeps no-store, which is the stricter answer",
+	"github.com/ovumcy/ovumcy-web/internal/api.SafeRequestLogPath":      "writes the path into the request log line; nothing branches on it",
+	"github.com/ovumcy/ovumcy-web/internal/api.currentPathWithQuery":    "echoes the address into the rendered layout; nothing branches on it",
+}
+
+// routingNormalizedDecisionSites are the functions whose answer used to fork
+// on the raw path. Each must still read the path through the normalization, so
+// a rewrite that drops the read altogether cannot pass as clean.
+var routingNormalizedDecisionSites = []string{
+	"(*github.com/ovumcy/ovumcy-web/internal/api.Handler).AuthRequired",
+	"(*github.com/ovumcy/ovumcy-web/internal/api.Handler).RespondAPIRateLimited",
+	"(*github.com/ovumcy/ovumcy-web/internal/api.Handler).respondAuthError",
+	"(*github.com/ovumcy/ovumcy-web/internal/api.Handler).respondSettingsError",
+	"(*github.com/ovumcy/ovumcy-web/internal/api.Handler).NotFound",
+	"github.com/ovumcy/ovumcy-web/cmd/ovumcy.rateLimitScope",
+}
+
+const (
+	rawPathModulePath = "github.com/ovumcy/ovumcy-web"
+	rawPathFiberPath  = "github.com/gofiber/fiber/v3"
+	rawPathFastHTTP   = "github.com/valyala/fasthttp"
+)
+
+// rawPathSweptPackages are the packages whose non-test files the barrier reads.
+var rawPathSweptPackages = []string{
+	rawPathModulePath + "/internal/api",
+	rawPathModulePath + "/cmd/ovumcy",
+}
+
+type rawPathVerdict int
+
+const (
+	rawPathOffender rawPathVerdict = iota
+	// rawPathNormalized: the read is the direct path argument of
+	// httpx.RoutingNormalizedPath or httpx.HasRoutingPrefix.
+	rawPathNormalized
+	// rawPathCalendarFeed: the read is the direct path argument of
+	// IsCalendarFeedRequest, which normalizes inside.
+	rawPathCalendarFeed
+	rawPathAllowListed
+)
+
+type rawPathUse struct {
+	location  string
+	enclosing string
+	reader    string
+	verdict   rawPathVerdict
+}
+
+// rawPathSink is a function that takes a raw path and compares it in the
+// router's own normalization; pathArgument is the index of that parameter.
+type rawPathSink struct {
+	pathArgument int
+	verdict      rawPathVerdict
+}
+
+// TestEveryRawRequestPathReadIsRoutingNormalized is the barrier.
+func TestEveryRawRequestPathReadIsRoutingNormalized(t *testing.T) {
+	evidence := loadTreeEvidence(t)
+	sinks := rawPathSinks(t, evidence)
+
+	var uses []rawPathUse
+	for _, path := range rawPathSweptPackages {
+		pkg := evidence.packageByPath(path)
+		if pkg == nil {
+			t.Fatalf("the sweep loaded no package %s, so none of its path reads were judged", path)
+		}
+		uses = append(uses, collectRawPathUses(pkg, sinks)...)
+	}
+
+	var offenders []string
+	for _, use := range uses {
+		if use.verdict == rawPathOffender {
+			offenders = append(offenders, fmt.Sprintf("%s in %s reads %s raw", use.location, describeEnclosing(use.enclosing), use.reader))
+		}
+	}
+	if len(offenders) > 0 {
+		sort.Strings(offenders)
+		t.Fatalf("%d raw request-path read(s) decide behaviour on bytes the router does not compare:\n  %s\n"+
+			"Pass the read straight into httpx.RoutingNormalizedPath (or httpx.HasRoutingPrefix) and branch on that. "+
+			"Only when the raw bytes are deliberately STRICTER than the route, or feed no decision at all, declare the enclosing function in rawPathReadersByDesign with that reason.",
+			len(offenders), strings.Join(offenders, "\n  "))
+	}
+
+	for _, site := range routingNormalizedDecisionSites {
+		if countRawPathUses(uses, site, rawPathNormalized) == 0 {
+			t.Errorf("%s no longer reads the request path through httpx.RoutingNormalizedPath; it is one of the decision sites this barrier exists for, so a rewrite must keep its comparison on the normalized path", site)
+		}
+	}
+	for name := range rawPathReadersByDesign {
+		if countRawPathUses(uses, name, rawPathAllowListed) == 0 {
+			t.Errorf("rawPathReadersByDesign declares %s, which no longer reads the raw request path; the entry is stale and would exempt whatever raw read lands there next — remove it", name)
+		}
+	}
+}
+
+// rawPathSinks resolves the functions a raw path may flow into directly, by
+// their declared objects.
+func rawPathSinks(t *testing.T, evidence *treeEvidence) map[*types.Func]rawPathSink {
+	t.Helper()
+
+	lookup := func(pkgPath, name string) *types.Func {
+		pkg := evidence.packageByPath(pkgPath)
+		if pkg == nil {
+			t.Fatalf("the sweep loaded no package %s, so the sink %s cannot be resolved", pkgPath, name)
+		}
+		fn, ok := pkg.Types.Scope().Lookup(name).(*types.Func)
+		if !ok {
+			t.Fatalf("%s.%s is not a function in the loaded tree; the barrier's sink list is out of date", pkgPath, name)
+		}
+		return fn
+	}
+
+	return map[*types.Func]rawPathSink{
+		lookup(rawPathModulePath+"/internal/httpx", "RoutingNormalizedPath"): {pathArgument: 0, verdict: rawPathNormalized},
+		lookup(rawPathModulePath+"/internal/httpx", "HasRoutingPrefix"):      {pathArgument: 0, verdict: rawPathNormalized},
+		lookup(rawPathModulePath+"/internal/api", "IsCalendarFeedRequest"):   {pathArgument: 1, verdict: rawPathCalendarFeed},
+	}
+}
+
+// collectRawPathUses finds every use — call, method value or method
+// expression — of a raw path reader in pkg's files and judges it.
+func collectRawPathUses(pkg *packages.Package, sinks map[*types.Func]rawPathSink) []rawPathUse {
+	relativeDir := strings.TrimPrefix(strings.TrimPrefix(pkg.PkgPath, rawPathModulePath), "/")
+
+	var uses []rawPathUse
+	for _, file := range pkg.Syntax {
+		for _, decl := range file.Decls {
+			enclosing := ""
+			if function, ok := decl.(*ast.FuncDecl); ok {
+				if object, ok := pkg.TypesInfo.Defs[function.Name].(*types.Func); ok {
+					enclosing = object.FullName()
+				}
+			}
+
+			var stack []ast.Node
+			ast.Inspect(decl, func(node ast.Node) bool {
+				if node == nil {
+					stack = stack[:len(stack)-1]
+					return true
+				}
+				stack = append(stack, node)
+
+				selector, ok := node.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				reader := rawPathReaderName(pkg.TypesInfo, selector)
+				if reader == "" {
+					return true
+				}
+				position := pkg.Fset.Position(selector.Sel.Pos())
+				uses = append(uses, rawPathUse{
+					location:  fmt.Sprintf("%s/%s:%d", relativeDir, filepath.Base(position.Filename), position.Line),
+					enclosing: enclosing,
+					reader:    reader,
+					verdict:   classifyRawPathUse(pkg.TypesInfo, stack, enclosing, sinks),
+				})
+				return true
+			})
+		}
+	}
+	return uses
+}
+
+// rawPathReaderName names the raw path reader selector resolves to, or "" when
+// it is none: fiber's Path and OriginalURL (whatever the receiver — the Ctx
+// interface or the concrete context), and fasthttp's URI.Path and
+// URI.PathOriginal.
+func rawPathReaderName(info *types.Info, selector *ast.SelectorExpr) string {
+	var object types.Object
+	if selection, ok := info.Selections[selector]; ok {
+		object = selection.Obj()
+	} else {
+		object = info.Uses[selector.Sel]
+	}
+	function, ok := object.(*types.Func)
+	if !ok || function.Pkg() == nil {
+		return ""
+	}
+	function = function.Origin()
+
+	switch function.Pkg().Path() {
+	case rawPathFiberPath:
+		if function.Name() == "Path" || function.Name() == "OriginalURL" {
+			return function.FullName()
+		}
+	case rawPathFastHTTP:
+		if (function.Name() == "Path" || function.Name() == "PathOriginal") && receiverTypeName(function) == "URI" {
+			return function.FullName()
+		}
+	}
+	return ""
+}
+
+func receiverTypeName(function *types.Func) string {
+	signature, ok := function.Type().(*types.Signature)
+	if !ok || signature.Recv() == nil {
+		return ""
+	}
+	receiver := signature.Recv().Type()
+	if pointer, ok := receiver.(*types.Pointer); ok {
+		receiver = pointer.Elem()
+	}
+	if named, ok := types.Unalias(receiver).(*types.Named); ok {
+		return named.Obj().Name()
+	}
+	return ""
+}
+
+// classifyRawPathUse judges one reader use. stack ends at the reader's
+// selector. Only a CALL that is itself the direct path argument of a sink is
+// accepted on its own merits; an alias, a method value or a wrapped expression
+// is an offender unless its enclosing function is declared.
+func classifyRawPathUse(info *types.Info, stack []ast.Node, enclosing string, sinks map[*types.Func]rawPathSink) rawPathVerdict {
+	if len(stack) >= 3 {
+		call, isCall := stack[len(stack)-2].(*ast.CallExpr)
+		outer, isOuterCall := stack[len(stack)-3].(*ast.CallExpr)
+		if isCall && isOuterCall && call.Fun == stack[len(stack)-1] {
+			if sink, ok := sinks[calleeFunction(info, outer)]; ok &&
+				sink.pathArgument < len(outer.Args) && outer.Args[sink.pathArgument] == ast.Expr(call) {
+				return sink.verdict
+			}
+		}
+	}
+	if _, declared := rawPathReadersByDesign[enclosing]; declared && enclosing != "" {
+		return rawPathAllowListed
+	}
+	return rawPathOffender
+}
+
+func calleeFunction(info *types.Info, call *ast.CallExpr) *types.Func {
+	var identifier *ast.Ident
+	switch callee := call.Fun.(type) {
+	case *ast.Ident:
+		identifier = callee
+	case *ast.SelectorExpr:
+		identifier = callee.Sel
+	default:
+		return nil
+	}
+	function, _ := info.Uses[identifier].(*types.Func)
+	return function
+}
+
+func countRawPathUses(uses []rawPathUse, enclosing string, verdict rawPathVerdict) int {
+	count := 0
+	for _, use := range uses {
+		if use.enclosing == enclosing && use.verdict == verdict {
+			count++
+		}
+	}
+	return count
+}
+
+func describeEnclosing(enclosing string) string {
+	if enclosing == "" {
+		return "a package-level declaration"
+	}
+	return enclosing
+}

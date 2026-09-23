@@ -33,8 +33,9 @@ func (handler *Handler) AuthRequired(c fiber.Ctx) error {
 	}
 
 	c.Locals(contextUserKey, user)
-	if services.RequiresOnboarding(user) && services.ShouldEnforceOnboardingAccess(c.Path()) {
-		if strings.HasPrefix(httpx.RoutingNormalizedPath(c.Path()), "/api/") || acceptsJSON(c) {
+	path := httpx.RoutingNormalizedPath(c.Path())
+	if services.RequiresOnboarding(user) && services.ShouldEnforceOnboardingAccess(path) {
+		if strings.HasPrefix(path, "/api/") || acceptsJSON(c) {
 			return respondGlobalMappedError(c, onboardingRequiredErrorSpec())
 		}
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/onboarding")

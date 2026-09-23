@@ -13,6 +13,42 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/security"
 )
 
+// TestRateLimitScopeClassifiesEveryRoutableSpelling pins the security-event
+// scope label to the path the router matched: a variant spelling reaches the
+// same auth or settings handler, and its rate-limit event must not be filed
+// under the generic api scope. The lowercase rows are the positive controls.
+func TestRateLimitScopeClassifiesEveryRoutableSpelling(t *testing.T) {
+	app := fiber.New()
+	app.Use(func(c fiber.Ctx) error {
+		return c.SendString(rateLimitScope(c))
+	})
+
+	cases := map[string]string{
+		"/api/v1/sessions":               "auth",
+		"/API/v1/sessions":               "auth",
+		"/api/v1/sessions/":              "auth",
+		"/auth/oidc/start":               "auth",
+		"/AUTH/OIDC/start":               "auth",
+		"/api/v1/users/current/profile":  "settings",
+		"/API/V1/USERS/CURRENT/profile":  "settings",
+		"/api/v1/users/current/profile/": "settings",
+	}
+	for path, want := range cases {
+		response, err := app.Test(httptest.NewRequest(http.MethodGet, path, nil))
+		if err != nil {
+			t.Fatalf("probe %s failed: %v", path, err)
+		}
+		body, err := io.ReadAll(response.Body)
+		_ = response.Body.Close()
+		if err != nil {
+			t.Fatalf("read %s response body: %v", path, err)
+		}
+		if got := string(body); got != want {
+			t.Errorf("rateLimitScope(%s) = %q, want %q", path, got, want)
+		}
+	}
+}
+
 // setValidBootEnv installs a minimal, valid runtime environment so a
 // loadRuntimeConfig call succeeds; individual tests then break one variable to
 // exercise a specific error branch.

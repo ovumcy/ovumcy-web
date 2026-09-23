@@ -127,6 +127,31 @@ func TestNotFoundAPIPathReturnsJSONError(t *testing.T) {
 	}
 }
 
+// TestNotFoundAnswersEveryRoutableSpellingOfAnAPIPathAsJSON: the router folds
+// case, so /API/... is the API surface as much as /api/... is, and a miss
+// there is answered as an API miss — the JSON envelope — even with no Accept
+// header, never with the full HTML page. The lowercase row is the positive
+// control; a trailing slash changes nothing for a prefix match, so the
+// variants are case variants.
+func TestNotFoundAnswersEveryRoutableSpellingOfAnAPIPathAsJSON(t *testing.T) {
+	app, _ := newOnboardingTestApp(t)
+
+	for _, path := range []string{"/api/v1/nope", "/API/v1/nope", "/Api/V1/Nope/"} {
+		response := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, path, nil))
+		if response.StatusCode != http.StatusNotFound {
+			t.Errorf("GET %s answered %d, want 404", path, response.StatusCode)
+			continue
+		}
+		if contentType := response.Header.Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+			t.Errorf("GET %s answered Content-Type %q, want the JSON not-found envelope like the lowercase spelling", path, contentType)
+			continue
+		}
+		if errorMessage := readAPIError(t, response.Body); errorMessage != "not found" {
+			t.Errorf("GET %s answered error %q, want \"not found\"", path, errorMessage)
+		}
+	}
+}
+
 func TestNotFoundHTMXPathReturnsLocalizedStatusErrorMarkup(t *testing.T) {
 	app, _ := newOnboardingTestApp(t)
 

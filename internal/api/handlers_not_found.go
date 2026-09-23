@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/ovumcy/ovumcy-web/internal/httpx"
 )
 
 // notFoundRenderedPath is the address the shared layout renders back into the
@@ -25,7 +26,7 @@ import (
 const notFoundRenderedPath = "/404"
 
 func (handler *Handler) NotFound(c fiber.Ctx) error {
-	if strings.HasPrefix(c.Path(), "/api/") || acceptsJSON(c) || isHTMX(c) {
+	if strings.HasPrefix(httpx.RoutingNormalizedPath(c.Path()), "/api/") || acceptsJSON(c) || isHTMX(c) {
 		return respondNotFoundMappedError(c)
 	}
 

@@ -213,9 +213,10 @@ func RespondRequestHeadersTooLarge(c fiber.Ctx) error {
 }
 
 func (handler *Handler) respondAuthError(c fiber.Ctx, spec APIErrorSpec) error {
-	if (isV1AuthFormPath(c.Path()) || strings.HasPrefix(c.Path(), "/auth/oidc")) && !acceptsJSON(c) && !isHTMX(c) {
+	path := httpx.RoutingNormalizedPath(c.Path())
+	if (isV1AuthFormPath(path) || strings.HasPrefix(path, "/auth/oidc")) && !acceptsJSON(c) && !isHTMX(c) {
 		flash := FlashPayload{AuthError: spec.Key}
-		switch c.Path() {
+		switch path {
 		case "/api/v1/users":
 			handler.setFlashCookie(c, flash)
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/register")
@@ -274,7 +275,7 @@ func (handler *Handler) respondSettingsError(c fiber.Ctx, spec APIErrorSpec) err
 		}
 		return sendHTMLFragment(c.Status(fiber.StatusOK), httpx.StatusErrorMarkup(rendered, flashKey))
 	}
-	if strings.HasPrefix(c.Path(), "/api/v1/users/current") && !acceptsJSON(c) {
+	if strings.HasPrefix(httpx.RoutingNormalizedPath(c.Path()), "/api/v1/users/current") && !acceptsJSON(c) {
 		handler.setFlashCookie(c, FlashPayload{SettingsError: spec.Key})
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
 	}

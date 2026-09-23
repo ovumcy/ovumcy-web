@@ -172,7 +172,7 @@ func newCalendarFeedRateLimitHandler(handler *api.Handler) fiber.Handler {
 }
 
 func rateLimitScope(c fiber.Ctx) string {
-	path := c.Path()
+	path := httpx.RoutingNormalizedPath(c.Path())
 	switch {
 	case strings.HasPrefix(path, "/api/v1/users/current"):
 		return "settings"
