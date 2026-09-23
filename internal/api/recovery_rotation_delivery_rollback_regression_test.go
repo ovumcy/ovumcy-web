@@ -153,6 +153,42 @@ func TestRegenerateRecoveryCodeDeliveryFailureLeavesTheAccountAsItWas(t *testing
 	}
 }
 
+// TestRegenerateRecoveryCodeWriteFailureIsNotReportedAsADeliveryFailure covers
+// the other half of the handler's error split: a rotation that fails in its
+// own write, with the delivery never reached, answers the regeneration error
+// rather than the session one, and sets no cookie.
+func TestRegenerateRecoveryCodeWriteFailureIsNotReportedAsADeliveryFailure(t *testing.T) {
+	t.Parallel()
+
+	ctx := newSettingsSecurityTestContextWithOptions(t, "web58-regenerate-write@example.com", onboardingTestAppOptions{enableCSRF: true})
+	_ = mustSetRecoveryCodeForUser(t, ctx.database, ctx.user.ID)
+
+	armed := &atomic.Bool{}
+	if err := ctx.database.Callback().Update().Before("gorm:update").Register("test:web58_refuse_users_update", func(tx *gorm.DB) {
+		if armed.Load() && tx.Statement.Table == "users" {
+			_ = tx.AddError(errors.New("injected users update failure"))
+		}
+	}); err != nil {
+		t.Fatalf("register update callback: %v", err)
+	}
+
+	before := loadUserRowForRotationTest(t, ctx.database, ctx.user.ID)
+	armed.Store(true)
+	refused := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/recovery-code", url.Values{
+		"password": {"StrongPass1"},
+	}, map[string]string{"Accept": "application/json"})
+	defer func() { _ = refused.Body.Close() }()
+	armed.Store(false)
+
+	if refused.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("expected status 500, got %d", refused.StatusCode)
+	}
+	if got := readAPIError(t, refused.Body); got != "failed to update recovery code" {
+		t.Fatalf("expected the regeneration error, got %q", got)
+	}
+	assertRotationLeftRowAndCookiesUntouched(t, ctx.database, before, refused)
+}
+
 func TestLocalPasswordSetupDeliveryFailureLeavesTheAccountAsItWas(t *testing.T) {
 	t.Parallel()
 

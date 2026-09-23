@@ -254,6 +254,26 @@ func TestRecoveryCodeRotationsRefuseANilDeliveryBeforeTheirWrite(t *testing.T) {
 	}
 }
 
+// TestRegenerateRecoveryCodeRefusesANilUserBeforeItsDelivery pins the
+// ErrAuthUserRequired guard: with no user there is no row to rotate and no
+// owner to deliver to, so neither the repository nor the delivery is reached.
+func TestRegenerateRecoveryCodeRefusesANilUserBeforeItsDelivery(t *testing.T) {
+	service := NewAuthService(&stubAuthUserRepo{})
+	delivered := 0
+	recoveryCode, err := callRotationRecoveringPanic(func() (string, error) {
+		return service.RegenerateRecoveryCode(context.Background(), nil, func(*models.User, string) error {
+			delivered++
+			return nil
+		})
+	})
+	if !errors.Is(err, ErrAuthUserRequired) {
+		t.Fatalf("expected ErrAuthUserRequired, got %v", err)
+	}
+	if recoveryCode != "" || delivered != 0 {
+		t.Fatalf("a refused rotation returned code %q and delivered %d time(s)", recoveryCode, delivered)
+	}
+}
+
 func (stub *stubAuthUserRepo) UpdatePasswordHashOnly(ctx context.Context, userID uint, passwordHash string) error {
 	stub.updateHashOnlyCalls++
 	if stub.updateHashOnlyErr != nil {

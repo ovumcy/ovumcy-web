@@ -8,7 +8,73 @@ import (
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"gorm.io/gorm"
 )
+
+// TestRecoveryCodeRotationSurfacesAFailedStatementAndWritesNothing covers the
+// two statements a rotation runs before its hook: the UPDATE itself and the
+// re-read of the version it stored. Either failing must come back as the
+// rotation's error, with the hook never called, the row as it was and the
+// calendar-feed fence untouched. The database refuses the statement through a
+// gorm callback, the one way to fail it while the connection still answers.
+func TestRecoveryCodeRotationSurfacesAFailedStatementAndWritesNothing(t *testing.T) {
+	t.Parallel()
+
+	faults := []struct {
+		name     string
+		register func(db *gorm.DB, name string, fn func(*gorm.DB)) error
+	}{
+		{"update", func(db *gorm.DB, name string, fn func(*gorm.DB)) error {
+			return db.Callback().Update().Before("gorm:update").Register(name, fn)
+		}},
+		{"version re-read", func(db *gorm.DB, name string, fn func(*gorm.DB)) error {
+			return db.Callback().Query().Before("gorm:query").Register(name, fn)
+		}},
+	}
+
+	for _, rotation := range recoveryRotationsUnderTest() {
+		for _, fault := range faults {
+			t.Run(rotation.name+"/"+fault.name, func(t *testing.T) {
+				t.Parallel()
+
+				repo := openRevealMarkRepoForTest(t)
+				fence := &refusingCalendarFeedFence{}
+				repo.calendarFeedFence = fence
+				before := seedRotationUserForTest(t, repo, "rotation-statement@example.com")
+
+				injected := errors.New("injected users statement failure")
+				armed := false
+				if err := fault.register(repo.database, "test:refuse_users_statement", func(tx *gorm.DB) {
+					if armed && tx.Statement.Table == "users" {
+						_ = tx.AddError(injected)
+					}
+				}); err != nil {
+					t.Fatalf("register callback: %v", err)
+				}
+
+				hookCalls := 0
+				armed = true
+				err := rotation.rotate(repo, before, func(int) error {
+					hookCalls++
+					return nil
+				})
+				armed = false
+				if !errors.Is(err, injected) {
+					t.Fatalf("expected the failed statement back, got %v", err)
+				}
+				if hookCalls != 0 {
+					t.Fatalf("a rotation whose statement failed ran its hook %d time(s)", hookCalls)
+				}
+				if after := reloadUserForRevealMarkTest(t, repo, before.ID); !reflect.DeepEqual(before, after) {
+					t.Fatalf("a rotation whose statement failed changed the row:\nbefore %+v\nafter  %+v", before, after)
+				}
+				if fence.calls != 0 {
+					t.Fatalf("a failed rotation advanced the calendar-feed fence %d time(s)", fence.calls)
+				}
+			})
+		}
+	}
+}
 
 // The three recovery-code rotations run their caller's delivery hook inside
 // the write's transaction, before it commits (WEB-58). A hook that fails must

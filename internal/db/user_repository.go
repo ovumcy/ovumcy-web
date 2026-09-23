@@ -1193,7 +1193,7 @@ func (repo *UserRepository) UpdateRecoveryCodeHashAndRevokeSessions(ctx context.
 	if err := repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		query, err := scopedUserUpdateTx(tx, userID)
 		if err != nil {
-			return err
+			return err // codecov:ignore -- scopedUserUpdateTx refuses only a zero id, which requireUserOwnerID refused above before the transaction opened
 		}
 		if err := query.Updates(map[string]any{
 			"recovery_code_hash":          recoveryHash,
@@ -1226,7 +1226,7 @@ func runBeforeCommit(tx *gorm.DB, userID uint, beforeCommit func(sessionVersion 
 	}
 	query, err := scopedUserUpdateTx(tx, userID)
 	if err != nil {
-		return err
+		return err // codecov:ignore -- scopedUserUpdateTx refuses only a zero id, and every caller ran requireUserOwnerID on this id before opening the transaction
 	}
 	var versions []int
 	if err := query.Pluck("auth_session_version", &versions).Error; err != nil {
@@ -1311,7 +1311,7 @@ func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessions(ctx cont
 	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		query, err := scopedUserUpdateTx(tx, userID)
 		if err != nil {
-			return err
+			return err // codecov:ignore -- scopedUserUpdateTx refuses only a zero id, which requireUserOwnerID refused above before the transaction opened
 		}
 		if err := query.Updates(map[string]any{
 			"password_hash":             passwordHash,
