@@ -70,6 +70,11 @@ Every test-enforceable entry has a corresponding test or set of tests in `SECURI
   leaves the browser sign-out route — which the per-IP row does not cover — with no account-side cap.
   What the session may qualify is only the client bucket, which is `(address, account)` so that a
   household behind one address does not spend one shared per-address budget.
+- The **per-IP logout row counts only successful sign-outs.** It sits in front of
+  `DELETE /api/v1/sessions/current` and refuses before the handler, so every request it counted
+  could keep a session alive: it skips every answer of 400 or above, and a neighbour behind the same
+  address cannot spend it with refused requests. Successful sign-outs still spend it, and each
+  account's own budget above bounds them per owner.
 
 ## Privacy and PII
 

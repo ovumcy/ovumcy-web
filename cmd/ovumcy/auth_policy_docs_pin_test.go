@@ -235,6 +235,9 @@ func TestAuthPolicyDocPinsThePerAccountLockoutThresholds(t *testing.T) {
 var (
 	docCeilingPattern      = regexp.MustCompile(`(\d+) on the ([A-Za-z -]+?)(?: \(|,| and )`)
 	docWindowBoundsPattern = regexp.MustCompile("`\\*_WINDOW` must lie between (one [a-z]+) and (one [a-z]+)")
+	// The credential pairs' rate ceiling, stated once in words and once as the
+	// integer check; both numbers must be the enforced one.
+	docCredentialRatePattern = regexp.MustCompile("at most (\\d+) requests per minute, checked in integers as `MAX × 1 minute ≤ (\\d+) × WINDOW`")
 	docCeilingPhraseToEnvs = map[string][]string{
 		"three credential endpoints": {"RATE_LIMIT_LOGIN_MAX", "RATE_LIMIT_REGISTER_MAX", "RATE_LIMIT_FORGOT_PASSWORD_MAX"},
 		"per-IP logout row":          {"RATE_LIMIT_LOGOUT_MAX"},
@@ -292,6 +295,15 @@ func TestAuthPolicyDocPinsTheRateLimitCeilings(t *testing.T) {
 		if !documented[env] {
 			t.Errorf("%s has a ceiling in config.go that %s does not state", env, authPolicyDoc)
 		}
+	}
+
+	rate := docCredentialRatePattern.FindStringSubmatch(paragraph)
+	if rate == nil {
+		t.Fatal("the doc's credential rate sentence is gone; the per-minute ceiling on the credential pairs is read by nothing")
+	}
+	if stated := mustAtoi(t, rate[1]); stated != rateLimitCredentialPerMinuteCeiling || mustAtoi(t, rate[2]) != stated {
+		t.Errorf("%s states a credential rate of %s requests per minute (checked as ≤ %s × WINDOW), config.go enforces %d",
+			authPolicyDoc, rate[1], rate[2], rateLimitCredentialPerMinuteCeiling)
 	}
 
 	bounds := docWindowBoundsPattern.FindStringSubmatch(paragraph)

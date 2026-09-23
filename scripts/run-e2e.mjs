@@ -626,16 +626,17 @@ async function main() {
     TRUST_PROXY_ENABLED: process.env.TRUST_PROXY_ENABLED ?? (useHTTPSProxy ? "true" : "false"),
     TRUSTED_PROXIES: process.env.TRUSTED_PROXIES ?? (useHTTPSProxy ? "127.0.0.1,::1" : ""),
     // Every RATE_LIMIT_*_MAX has a ceiling (cmd/ovumcy/config.go) above which
-    // the app falls back to its tight default, so the harness widens a budget
-    // by shortening the window, not by asking for more than the ceiling: 100
-    // per 10 s is ten sign-ins a second from one address, far above what a
-    // serial browser run produces, and the same number a real operator may set.
+    // the app falls back to its tight default, and the three credential pairs
+    // are also held to 30 requests per minute (MAX over WINDOW), so a shorter
+    // window no longer widens them: 100 per 200 s is the widest pair the app
+    // accepts, and the same one a real operator may set. A pair above the rate
+    // falls back to 8 per 15 minutes, which a serial run would exhaust.
     RATE_LIMIT_LOGIN_MAX: process.env.RATE_LIMIT_LOGIN_MAX ?? "100",
-    RATE_LIMIT_LOGIN_WINDOW: process.env.RATE_LIMIT_LOGIN_WINDOW ?? "10s",
+    RATE_LIMIT_LOGIN_WINDOW: process.env.RATE_LIMIT_LOGIN_WINDOW ?? "200s",
     RATE_LIMIT_FORGOT_PASSWORD_MAX: process.env.RATE_LIMIT_FORGOT_PASSWORD_MAX ?? "100",
-    RATE_LIMIT_FORGOT_PASSWORD_WINDOW: process.env.RATE_LIMIT_FORGOT_PASSWORD_WINDOW ?? "10s",
+    RATE_LIMIT_FORGOT_PASSWORD_WINDOW: process.env.RATE_LIMIT_FORGOT_PASSWORD_WINDOW ?? "200s",
     RATE_LIMIT_REGISTER_MAX: process.env.RATE_LIMIT_REGISTER_MAX ?? "100",
-    RATE_LIMIT_REGISTER_WINDOW: process.env.RATE_LIMIT_REGISTER_WINDOW ?? "10s",
+    RATE_LIMIT_REGISTER_WINDOW: process.env.RATE_LIMIT_REGISTER_WINDOW ?? "200s",
     RATE_LIMIT_API_MAX: process.env.RATE_LIMIT_API_MAX ?? "3000",
     // The per-account logout budget is keyed on the owner, and a serial suite
     // signs the same owner in and out far more than twenty times: widen it the

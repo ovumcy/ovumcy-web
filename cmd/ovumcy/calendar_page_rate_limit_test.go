@@ -27,7 +27,7 @@ func TestCalendarPageBudgetCoversHeadAndSkipsTheDayPanel(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			app := newRateLimitEnvelopeTestApp(t, handler)
+			app := newRateLimitEnvelopeTestApp(t, handler, rateLimitSurface{})
 			var last int
 			for _, step := range tc.sequence {
 				method, path, _ := strings.Cut(step, " ")

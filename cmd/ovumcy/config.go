@@ -58,8 +58,10 @@ type reminderSchedulerSettings struct {
 // Every RATE_LIMIT_* setting has a ceiling as well as a floor: a value above it
 // falls back to the default (logged at boot) instead of widening the budget,
 // so an oversized max or a stray zero cannot switch a limiter off. A window is
-// only held to [1s, 24h]: a unit slip there (15s for 15m) still widens the
-// budget, and the per-account login budget with it. The ceilings
+// held to [1s, 24h]: a unit slip there (15s for 15m) still widens a
+// non-credential budget. On the credential endpoints the pair is also held to
+// a per-minute rate (getCredentialRateLimit), which is what stops the same
+// slip from widening them and the per-account login budget with them. The ceilings
 // are sized to what a self-hosted instance behind one address can need, not to
 // what the process could survive; the load-bearing cost on the credential
 // endpoints stays the bcrypt compare each request pays (cost 12, ~250 ms of
@@ -71,6 +73,12 @@ const (
 	// compare or hash; the per-account login and recovery budgets read the
 	// same numbers. 100 in a window is already a dozen times the default.
 	rateLimitCredentialMaxCeiling = 100
+	// The count ceiling above does not bound the RATE: 100 over the one-second
+	// window floor is 6000 bcrypt compares a minute from one address. Each
+	// credential pair is therefore also held to this many requests per minute
+	// (max/window), about half a bcrypt a second, and the window floor stays
+	// one second for every other setting.
+	rateLimitCredentialPerMinuteCeiling = 30
 	// Logout is one storage write per request; the per-IP row stays wide
 	// enough for a household behind one address, the per-account budget
 	// never needs more than a handful.
@@ -99,6 +107,30 @@ func getRateLimitMax(key string, fallback int, ceiling int) int {
 
 func getRateLimitWindow(key string, fallback time.Duration) time.Duration {
 	return getEnvDurationInRange(key, fallback, rateLimitWindowFloor, rateLimitWindowCeiling)
+}
+
+// credentialRateWithinCeiling holds a credential pair to
+// rateLimitCredentialPerMinuteCeiling, compared in integers so no rounding can
+// admit a pair a hair above it.
+func credentialRateWithinCeiling(maxRequests int, window time.Duration) bool {
+	return time.Duration(maxRequests)*time.Minute <= rateLimitCredentialPerMinuteCeiling*window
+}
+
+// getCredentialRateLimit reads the MAX/WINDOW pair of a credential endpoint
+// (login, registration, password reset): each half is bounded on its own, then
+// the pair is held to the per-minute rate ceiling. A pair above it falls back
+// to BOTH defaults, logged once — keeping either half would leave a rate the
+// operator never chose. It is the only reader of the credential count ceiling,
+// so a credential setting cannot be read past the rate check.
+func getCredentialRateLimit(maxKey, windowKey string, fallbackMax int, fallbackWindow time.Duration) (int, time.Duration) {
+	maxRequests := getRateLimitMax(maxKey, fallbackMax, rateLimitCredentialMaxCeiling)
+	window := getRateLimitWindow(windowKey, fallbackWindow)
+	if credentialRateWithinCeiling(maxRequests, window) {
+		return maxRequests, window
+	}
+	log.Printf("invalid %s=%d with %s=%s: a credential endpoint allows at most %d requests per minute (for example %s=100 with %s=200s), using fallbacks %d and %s",
+		maxKey, maxRequests, windowKey, window, rateLimitCredentialPerMinuteCeiling, maxKey, windowKey, fallbackMax, fallbackWindow) // #nosec G706 -- operator-managed startup configuration read once at boot, never from a request.
+	return fallbackMax, fallbackWindow
 }
 
 type rateLimitSettings struct {
@@ -230,6 +262,10 @@ func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 		return runtimeConfig{}, err
 	}
 
+	loginMax, loginWindow := getCredentialRateLimit("RATE_LIMIT_LOGIN_MAX", "RATE_LIMIT_LOGIN_WINDOW", 8, 15*time.Minute)
+	registerMax, registerWindow := getCredentialRateLimit("RATE_LIMIT_REGISTER_MAX", "RATE_LIMIT_REGISTER_WINDOW", 8, 15*time.Minute)
+	forgotPasswordMax, forgotPasswordWindow := getCredentialRateLimit("RATE_LIMIT_FORGOT_PASSWORD_MAX", "RATE_LIMIT_FORGOT_PASSWORD_WINDOW", 8, time.Hour)
+
 	return runtimeConfig{
 		Location:              location,
 		SecretKey:             secretKey,
@@ -242,12 +278,12 @@ func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 		HSTSEnabled:           hstsEnabled,
 		OIDC:                  oidcConfig,
 		RateLimits: rateLimitSettings{
-			LoginMax:             getRateLimitMax("RATE_LIMIT_LOGIN_MAX", 8, rateLimitCredentialMaxCeiling),
-			LoginWindow:          getRateLimitWindow("RATE_LIMIT_LOGIN_WINDOW", 15*time.Minute),
-			RegisterMax:          getRateLimitMax("RATE_LIMIT_REGISTER_MAX", 8, rateLimitCredentialMaxCeiling),
-			RegisterWindow:       getRateLimitWindow("RATE_LIMIT_REGISTER_WINDOW", 15*time.Minute),
-			ForgotPasswordMax:    getRateLimitMax("RATE_LIMIT_FORGOT_PASSWORD_MAX", 8, rateLimitCredentialMaxCeiling),
-			ForgotPasswordWindow: getRateLimitWindow("RATE_LIMIT_FORGOT_PASSWORD_WINDOW", time.Hour),
+			LoginMax:             loginMax,
+			LoginWindow:          loginWindow,
+			RegisterMax:          registerMax,
+			RegisterWindow:       registerWindow,
+			ForgotPasswordMax:    forgotPasswordMax,
+			ForgotPasswordWindow: forgotPasswordWindow,
 			LogoutMax:            getRateLimitMax("RATE_LIMIT_LOGOUT_MAX", 60, rateLimitLogoutMaxCeiling),
 			LogoutWindow:         getRateLimitWindow("RATE_LIMIT_LOGOUT_WINDOW", 15*time.Minute),
 			// Defaulted from the service constants so the documented account

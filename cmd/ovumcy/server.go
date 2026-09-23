@@ -188,11 +188,18 @@ func configureFiberMiddleware(app *fiber.App, config runtimeConfig, handler *api
 	app.Use(recover.New())
 	app.Use(newRequestLogger(nil))
 	app.Use(compress.New())
+	// The per-IP logout row refuses BEFORE the handler, so every request it
+	// counts could keep a session alive. It counts only answers below 400: a
+	// neighbour behind the same address (NAT) spending it with unauthenticated
+	// or token-less DELETEs would otherwise hold every other owner's API
+	// sign-out refused until the window ends. Successful logouts still spend
+	// it, and each account's own budget behind it bounds them per owner.
 	app.Use(limiter.New(limiter.Config{
-		Next:         rateLimitOnlyFor(fiber.MethodDelete, "/api/v1/sessions/current"),
-		Max:          config.RateLimits.LogoutMax,
-		Expiration:   config.RateLimits.LogoutWindow,
-		KeyGenerator: keyGen,
+		Next:               rateLimitOnlyFor(fiber.MethodDelete, "/api/v1/sessions/current"),
+		Max:                config.RateLimits.LogoutMax,
+		Expiration:         config.RateLimits.LogoutWindow,
+		SkipFailedRequests: true,
+		KeyGenerator:       keyGen,
 		LimitReached: newAuthRateLimitHandler(handler, authRateLimitConfig{
 			ErrorCode: "too_many_logout_attempts",
 		}),

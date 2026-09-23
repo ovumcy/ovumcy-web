@@ -13,6 +13,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/api"
+	"gorm.io/gorm"
 )
 
 // The rate-limit refusals were the last family answering outside the app-wide
@@ -50,6 +51,10 @@ type rateLimitSurface struct {
 	detailTarget string
 	html         htmlArm
 	htmlLocation string
+	// spendWithSession spends the budget with a request that SUCCEEDS — a
+	// real owner signing out — for a limiter that counts only answers below
+	// 400; an unauthenticated spend would leave its budget untouched.
+	spendWithSession bool
 }
 
 // rateLimitSurfaces enumerates every limiter the composition root registers.
@@ -64,6 +69,8 @@ var rateLimitSurfaces = []rateLimitSurface{
 		detailTarget: "auth_form",
 		html:         htmlArmRedirect,
 		htmlLocation: "/login",
+		// SkipFailedRequests: a refused DELETE no longer spends the row.
+		spendWithSession: true,
 	},
 	{
 		name:         "login",
@@ -152,9 +159,16 @@ var rateLimitSurfaces = []rateLimitSurface{
 // that surface's own limiter. A fresh app per surface keeps the buckets from
 // leaking between them: several limiters count the same /api request, and a
 // shared app would let one surface's exhaustion answer another's probe.
-func newRateLimitEnvelopeTestApp(t *testing.T, handler *api.Handler) *fiber.App {
+func newRateLimitEnvelopeTestApp(t *testing.T, handler *api.Handler, surface rateLimitSurface) *fiber.App {
 	t.Helper()
 
+	// A session spend passes the /api catch-all twice before the probe —
+	// the sign-in, then the sign-out — and the probe must be refused by the
+	// surface's own row, never by the catch-all behind it.
+	apiMax := 1
+	if surface.spendWithSession {
+		apiMax = 2
+	}
 	return newFiberApp(runtimeConfig{
 		Location:        time.UTC,
 		DefaultLanguage: "en",
@@ -167,7 +181,7 @@ func newRateLimitEnvelopeTestApp(t *testing.T, handler *api.Handler) *fiber.App 
 			RegisterWindow:       time.Minute,
 			LogoutMax:            1,
 			LogoutWindow:         time.Minute,
-			APIMax:               1,
+			APIMax:               apiMax,
 			APIWindow:            time.Minute,
 			CalendarFeedMax:      1,
 			CalendarFeedWindow:   time.Minute,
@@ -179,8 +193,17 @@ func newRateLimitEnvelopeTestApp(t *testing.T, handler *api.Handler) *fiber.App 
 
 // spendBudgetAndProbe burns the single allowed request on a surface and returns
 // the response to the one that follows it, which the limiter must refuse.
-func spendBudgetAndProbe(t *testing.T, app *fiber.App, surface rateLimitSurface, headers map[string]string) *http.Response {
+func spendBudgetAndProbe(t *testing.T, app *fiber.App, database *gorm.DB, surface rateLimitSurface, headers map[string]string) *http.Response {
 	t.Helper()
+
+	if surface.spendWithSession {
+		spend := logOutWithSession(t, app, database, "rate-limit-envelope@example.com")
+		_ = spend.Body.Close()
+		if spend.StatusCode >= http.StatusBadRequest {
+			t.Fatalf("%s spend with a real session answered %d; the budget was not spent by a success", surface.name, spend.StatusCode)
+		}
+		return sendRateLimitProbe(t, app, surface, headers)
+	}
 
 	for attempt := 1; attempt <= 2; attempt++ {
 		request := httptest.NewRequest(surface.method, surface.path, strings.NewReader(""))
@@ -201,6 +224,22 @@ func spendBudgetAndProbe(t *testing.T, app *fiber.App, surface rateLimitSurface,
 	return nil
 }
 
+// sendRateLimitProbe sends the one request past a spent budget.
+func sendRateLimitProbe(t *testing.T, app *fiber.App, surface rateLimitSurface, headers map[string]string) *http.Response {
+	t.Helper()
+
+	request := httptest.NewRequest(surface.method, surface.path, strings.NewReader(""))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	for name, value := range headers {
+		request.Header.Set(name, value)
+	}
+	response, err := app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("%s probe failed: %v", surface.name, err)
+	}
+	return response
+}
+
 // TestEveryRateLimiterAnswersThroughTheSharedEnvelope is the JSON half: a
 // refusal from any limiter carries {error, error_detail} with the surface's
 // stable key, plus retry_after_seconds as an EXTENSION member rather than in
@@ -208,12 +247,12 @@ func spendBudgetAndProbe(t *testing.T, app *fiber.App, surface rateLimitSurface,
 // are already in the operator contract — one status keeps one key, and this
 // change must not renumber them.
 func TestEveryRateLimiterAnswersThroughTheSharedEnvelope(t *testing.T) {
-	handler := newRateLimitTestHandler(t)
+	handler, database := newRateLimitTestHandlerAndDB(t)
 
 	for _, surface := range rateLimitSurfaces {
 		t.Run(surface.name, func(t *testing.T) {
-			app := newRateLimitEnvelopeTestApp(t, handler)
-			response := spendBudgetAndProbe(t, app, surface, map[string]string{"Accept": "application/json"})
+			app := newRateLimitEnvelopeTestApp(t, handler, surface)
+			response := spendBudgetAndProbe(t, app, database, surface, map[string]string{"Accept": "application/json"})
 			defer func() { _ = response.Body.Close() }()
 
 			if response.StatusCode != http.StatusTooManyRequests {
@@ -264,12 +303,12 @@ func TestEveryRateLimiterAnswersThroughTheSharedEnvelope(t *testing.T) {
 // keeps the envelope, and the language switch — the one public form with no
 // HTMX behind it — must render markup instead of painting JSON into the window.
 func TestEveryRateLimiterAnswersABrowserWithoutRawJSON(t *testing.T) {
-	handler := newRateLimitTestHandler(t)
+	handler, database := newRateLimitTestHandlerAndDB(t)
 
 	for _, surface := range rateLimitSurfaces {
 		t.Run(surface.name, func(t *testing.T) {
-			app := newRateLimitEnvelopeTestApp(t, handler)
-			response := spendBudgetAndProbe(t, app, surface, map[string]string{
+			app := newRateLimitEnvelopeTestApp(t, handler, surface)
+			response := spendBudgetAndProbe(t, app, database, surface, map[string]string{
 				"Accept":          "text/html,application/xhtml+xml",
 				"Accept-Language": "en",
 			})
@@ -324,7 +363,7 @@ func TestEveryRateLimiterAnswersABrowserWithoutRawJSON(t *testing.T) {
 // locale entries; the logout and registration keys were not, so an HTMX refusal
 // rendered the machine key itself as the visible message in every language.
 func TestRateLimitedHTMXFlowsRenderLocalizedCopy(t *testing.T) {
-	handler := newRateLimitTestHandler(t)
+	handler, database := newRateLimitTestHandlerAndDB(t)
 
 	cases := []struct {
 		surface  rateLimitSurface
@@ -339,8 +378,8 @@ func TestRateLimitedHTMXFlowsRenderLocalizedCopy(t *testing.T) {
 
 	for _, testCase := range cases {
 		t.Run(testCase.surface.name, func(t *testing.T) {
-			app := newRateLimitEnvelopeTestApp(t, handler)
-			response := spendBudgetAndProbe(t, app, testCase.surface, map[string]string{
+			app := newRateLimitEnvelopeTestApp(t, handler, testCase.surface)
+			response := spendBudgetAndProbe(t, app, database, testCase.surface, map[string]string{
 				"HX-Request":      "true",
 				"Accept-Language": "en",
 			})
