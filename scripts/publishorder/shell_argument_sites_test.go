@@ -27,6 +27,8 @@ var dashCAllowed = map[string]string{
 	"publishorder.requireShellTool": "probes one tool through the shell with a one-line command",
 	"backuprestoredoc.writeVolume":  "a fixed `sh -c` inside the throwaway container that fills a volume",
 	"backuprestoredoc.readVolume":   "a fixed `sh -c` inside the throwaway container that reads a volume",
+	"ciguards.requireBash":          "probes that bash can cd into the fixture and run git",
+	"ciguards.requireJq":            "probes that jq answers from inside bash with a one-line filter",
 }
 
 // packageLevel names the owner of a flag literal declared outside every
