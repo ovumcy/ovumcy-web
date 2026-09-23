@@ -7,8 +7,6 @@ import (
 	"go/printer"
 	"go/token"
 	"testing"
-
-	"golang.org/x/crypto/bcrypt"
 )
 
 // Barrier for the recovery-lookup timing oracle.
@@ -149,22 +147,24 @@ func printExpr(t *testing.T, fileSet *token.FileSet, expr ast.Expr) string {
 	return buf.String()
 }
 
-// TestRecoveryLookupEqualizerSpendsBothPlaceholdersAtTargetCost is TS-M06's
-// test hardening: the count-only check above (compares != 2) is satisfied by
-// a body that compares the WRONG operand against a placeholder — for example
-// the code against credentialsTimingEqualizationHash and the password against
-// recoveryCodeTimingEqualizationHash — because the two placeholders share the
-// same cost today. That still passes count==2 while breaking the intent the
-// helper's own doc comment states: the recovery-code compare must run against
-// the code operand and the password compare against the password operand,
-// each at passwordHashCost, so a real "unknown address" refusal genuinely
-// costs what a real "wrong password" refusal costs. equalizeRecoveryCodeLookupTiming
-// is declared as a bare func (not a swappable var) precisely so its literal
-// calls can be read from source instead of intercepted at runtime — this test
-// reads the two calls' actual arguments, in order, off the shipped body, and
-// pins the cost of the two constants those arguments compare against. No
-// wall-clock threshold is involved anywhere in this test.
-func TestRecoveryLookupEqualizerSpendsBothPlaceholdersAtTargetCost(t *testing.T) {
+// TestRecoveryLookupEqualizerComparesEachPlaceholderAgainstItsOwnOperand is
+// TS-M06's test hardening: the count-only check above (compares != 2) is
+// satisfied by a body that compares the WRONG operand against a placeholder —
+// for example the code against credentialsTimingEqualizationHash and the
+// password against recoveryCodeTimingEqualizationHash. That still passes
+// count==2 while breaking the pairing the helper's own doc comment states:
+// the recovery-code compare must run against the code operand and the
+// password compare against the password operand, each against the
+// placeholder that stands in for it, so the equalizer keeps mirroring the
+// real two-secret compare — including if the two placeholders' costs ever
+// diverge (pinned equal today by TestTimingEqualizationHashesMatchTargetCost
+// in auth_service_hash_cost_test.go, not by this test). This test makes no
+// timing claim of its own. equalizeRecoveryCodeLookupTiming is declared as a
+// bare func (not a swappable var) precisely so its literal calls can be read
+// from source instead of intercepted at runtime — this test reads the two
+// calls' actual arguments, in order, off the shipped body. No wall-clock
+// threshold is involved anywhere in this test.
+func TestRecoveryLookupEqualizerComparesEachPlaceholderAgainstItsOwnOperand(t *testing.T) {
 	fileSet := token.NewFileSet()
 	file, err := parser.ParseFile(fileSet, "auth_service.go", nil, parser.ParseComments)
 	if err != nil {
@@ -213,21 +213,7 @@ func TestRecoveryLookupEqualizerSpendsBothPlaceholdersAtTargetCost(t *testing.T)
 	for index, wantCompare := range want {
 		if observed[index] != wantCompare {
 			t.Fatalf("comparison %d compared %+v, want %+v — the wrong operand against a placeholder still counts as a compare, "+
-				"but a rejection then costs the wrong secret's oracle", index, observed[index], wantCompare)
-		}
-	}
-
-	for name, hash := range map[string]string{
-		"recoveryCodeTimingEqualizationHash": recoveryCodeTimingEqualizationHash,
-		"credentialsTimingEqualizationHash":  credentialsTimingEqualizationHash,
-	} {
-		cost, err := bcrypt.Cost([]byte(hash))
-		if err != nil {
-			t.Fatalf("bcrypt.Cost(%s): %v", name, err)
-		}
-		if cost != passwordHashCost {
-			t.Fatalf("%s costs %d, want passwordHashCost (%d) — a cheaper placeholder makes the refusal this helper equalizes measurably faster than a real compare",
-				name, cost, passwordHashCost)
+				"but no longer mirrors the real two-secret compare each placeholder stands in for", index, observed[index], wantCompare)
 		}
 	}
 }
