@@ -1855,9 +1855,25 @@ paths:
     get:
       tags: [days]
       summary: List daily log entries in a date range.
+      description: |
+        Both bounds are required and inclusive: `from` equal to `to` lists that one day. Each
+        bound is read on the request's timezone, and surrounding whitespace is trimmed before
+        it is parsed.
       parameters:
-        - $ref: '#/components/parameters/FromQuery'
-        - $ref: '#/components/parameters/ToQuery'
+        - in: query
+          name: from
+          required: true
+          description: Range start (inclusive), `YYYY-MM-DD` in the request's timezone.
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: to
+          required: true
+          description: Range end (inclusive), `YYYY-MM-DD` in the request's timezone. Not before `from`.
+          schema:
+            type: string
+            format: date
       responses:
         '200':
           description: Array of day entries. Empty array when no rows match the range.
@@ -1867,7 +1883,40 @@ paths:
                 type: array
                 items: { $ref: '#/components/schemas/DailyLog' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '400': { $ref: '#/components/responses/ValidationError' }
+        '400':
+          description: |
+            The range is refused before any row is read, with one of three keys. `from` is checked
+            first, then `to`, then their order, so a request with both bounds wrong names only
+            `from`:
+
+            - `invalid from date`: `from` is missing, blank (whitespace only), not a `YYYY-MM-DD`
+              date, not a real calendar date, or a day the request's timezone never had.
+            - `invalid to date`: the same for `to`, once `from` parsed.
+            - `invalid range`: both parse but `to` is before `from`.
+
+            A missing bound gets the same key as a malformed one; there is no separate
+            "required" key. Every caller except an HTMX request gets the JSON envelope below. An
+            HTMX request (`HX-Request: true`) gets the localized status fragment as `text/html`
+            instead.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              examples:
+                invalidFrom:
+                  summary: "`from` missing or not a date"
+                  value:
+                    error: "invalid from date"
+                    error_detail: { key: "invalid from date", category: "validation", target: "global" }
+                invalidTo:
+                  summary: "`to` missing or not a date"
+                  value:
+                    error: "invalid to date"
+                    error_detail: { key: "invalid to date", category: "validation", target: "global" }
+                invalidRange:
+                  summary: "`to` before `from`"
+                  value:
+                    error: "invalid range"
+                    error_detail: { key: "invalid range", category: "validation", target: "global" }
         '403': { $ref: '#/components/responses/Forbidden' }
         '429': { $ref: '#/components/responses/RateLimited' }
 
