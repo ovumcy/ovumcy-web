@@ -50,8 +50,10 @@ var stepItem = regexp.MustCompile(`(?m)^      - `)
 // this a job-level key written after `steps:` — a `defaults:` whose `shell:`
 // then reads as the step's own — runs on into the block. Every job-level key
 // starts shallower than a step's eight-space keys, whatever it holds beneath
-// it, so this alone also answers for a job-level list following `steps:`.
-var stepDedent = regexp.MustCompile(`(?m)^ {0,7}\S`)
+// it, so this alone also answers for a job-level list following `steps:`. A
+// comment line is not a key at any depth: one written shallower inside a step
+// does not end it before the step's own `shell:`.
+var stepDedent = regexp.MustCompile(`(?m)^ {0,7}[^\s#]`)
 
 // bashStepFlags is what GitHub Actions compiles `shell: bash` to —
 // `bash --noprofile --norc -eo pipefail {0}` — less the `{0}` the script file
