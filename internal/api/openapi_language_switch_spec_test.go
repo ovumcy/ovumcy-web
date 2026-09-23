@@ -202,17 +202,136 @@ func isLimiterNewCall(expr ast.Expr, packageName string) (*ast.CallExpr, bool) {
 	return call, ok && qualifier.Name == packageName && selector.Sel.Name == "New"
 }
 
+// fiberImportPath is the package the root app is built from.
+const fiberImportPath = "github.com/gofiber/fiber/v3"
+
+// compositionRootDir is the one directory whose non-test sources may build a
+// rate limiter: the reader below reads mounts there and nowhere else.
+var compositionRootDir = filepath.Join("..", "..", "cmd", "ovumcy")
+
+// importedPackageName returns the name file refers to importPath by — its
+// alias, or fallback when the import carries none — and "" when the file does
+// not import it.
+func importedPackageName(file *ast.File, importPath string, fallback string) string {
+	for _, spec := range file.Imports {
+		if path, err := strconv.Unquote(spec.Path.Value); err != nil || path != importPath {
+			continue
+		}
+		if spec.Name != nil {
+			return spec.Name.Name
+		}
+		return fallback
+	}
+	return ""
+}
+
+// rootAppIdentifier names the variable the composition root assigns its one
+// fiber.New to. A limiter's prefix is read as the path it counts only when it
+// is mounted on that app: on a Group, or on a second app mounted under a
+// prefix, the prefix is relative, and reading it as absolute drops every
+// operation under the group from the sweep. So there has to be exactly one
+// fiber.New in cmd/ovumcy, assigned to a plain identifier, or this fails.
+func rootAppIdentifier(t *testing.T, fileSet *token.FileSet, files []*ast.File) string {
+	t.Helper()
+	var sites []string
+	var name string
+	for _, file := range files {
+		fiberName := importedPackageName(file, fiberImportPath, "fiber")
+		if fiberName == "" {
+			continue
+		}
+		isFiberNew := func(expr ast.Expr) bool {
+			call, ok := expr.(*ast.CallExpr)
+			if !ok {
+				return false
+			}
+			selector, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok {
+				return false
+			}
+			qualifier, ok := selector.X.(*ast.Ident)
+			return ok && qualifier.Name == fiberName && selector.Sel.Name == "New"
+		}
+		assigned := make(map[ast.Expr]string)
+		ast.Inspect(file, func(node ast.Node) bool {
+			if assign, ok := node.(*ast.AssignStmt); ok && len(assign.Lhs) == 1 && len(assign.Rhs) == 1 {
+				if ident, ok := assign.Lhs[0].(*ast.Ident); ok {
+					assigned[assign.Rhs[0]] = ident.Name
+				}
+			}
+			if expr, ok := node.(ast.Expr); ok && isFiberNew(expr) {
+				sites = append(sites, fileSet.Position(expr.Pos()).String())
+				name = assigned[expr]
+			}
+			return true
+		})
+	}
+	if len(sites) != 1 || name == "" {
+		t.Fatalf("cmd/ovumcy must build exactly one fiber app, assigned to a plain variable, for this guard to tell the root app's limiter mounts from a group's or a sub-app's; fiber.New is called at:\n  %s",
+			strings.Join(sites, "\n  "))
+	}
+	return name
+}
+
+// requireNoLimiterBuiltOutsideCompositionRoot fails on every non-test Go file
+// outside cmd/ovumcy that imports the limiter package. A limiter built there —
+// returned by a constructor and mounted as app.Use(pkg.NewX(...)) — is no
+// limiter.New call in cmd/ovumcy, so it would land in neither the mounts this
+// reader returns nor the list it refuses, and its 429 would never be asked of
+// the spec. The walk skips what the go tool itself ignores (directories named
+// with a leading `.` or `_`, and testdata), plus node_modules.
+func requireNoLimiterBuiltOutsideCompositionRoot(t *testing.T) {
+	t.Helper()
+	root := filepath.Join("..", "..")
+	rootCmd := filepath.Clean(compositionRootDir)
+	var offenders []string
+	walkErr := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		name := entry.Name()
+		if entry.IsDir() {
+			if path != root && (strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") || name == "testdata" || name == "node_modules") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || filepath.Dir(path) == rootCmd {
+			return nil
+		}
+		parsed, parseErr := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+		if parseErr != nil {
+			return fmt.Errorf("parse %s: %w", path, parseErr)
+		}
+		if importedPackageName(parsed, limiterImportPath, "limiter") != "" {
+			offenders = append(offenders, filepath.ToSlash(path))
+		}
+		return nil
+	})
+	if walkErr != nil {
+		t.Fatalf("walk the module for limiter imports: %v", walkErr)
+	}
+	if len(offenders) > 0 {
+		sort.Strings(offenders)
+		t.Fatalf("a non-test file outside cmd/ovumcy imports the limiter package, so a limiter built there reaches the router without this guard reading its prefix or scope — build it in cmd/ovumcy as app.Use([prefix,] limiter.New(limiter.Config{...})):\n  %s",
+			strings.Join(offenders, "\n  "))
+	}
+}
+
 // discoverLimiterMounts returns every limiter the composition root builds, read
 // from cmd/ovumcy's non-test sources, and fails closed: EVERY limiter.New call
-// site in the package has to be a direct argument of a Use call, the one shape
-// whose reach this reader can state. A limiter built anywhere else — assigned
-// to a variable first, returned by a helper, passed to a route registration —
-// fails here by position instead of being skipped, because a limiter this
-// reader drops is a 429 the sweep never asks the spec about.
+// site in the package has to be a direct argument of a Use call on the root
+// app, the one shape whose reach this reader can state. A limiter built
+// anywhere else — assigned to a variable first, returned by a helper, passed to
+// a route registration, mounted on a group, built outside cmd/ovumcy — fails
+// here by position instead of being skipped, because a limiter this reader
+// drops is a 429 the sweep never asks the spec about.
 func discoverLimiterMounts(t *testing.T) []limiterMount {
 	t.Helper()
+	requireNoLimiterBuiltOutsideCompositionRoot(t)
 	fileSet := token.NewFileSet()
-	cmdFiles := parseNonTestGoFiles(t, fileSet, filepath.Join("..", "..", "cmd", "ovumcy"))
+	cmdFiles := parseNonTestGoFiles(t, fileSet, compositionRootDir)
+	rootApp := rootAppIdentifier(t, fileSet, cmdFiles)
 	constants := make(map[string]string)
 	collectStringConstants(cmdFiles, "", constants)
 	collectStringConstants(parseNonTestGoFiles(t, token.NewFileSet(), "."), "api.", constants)
@@ -241,6 +360,10 @@ func discoverLimiterMounts(t *testing.T) []limiterMount {
 				}
 				mounted[newCall] = true
 				mount := limiterMount{source: fileSet.Position(newCall.Pos()).String()}
+				if receiver, isIdent := selector.X.(*ast.Ident); !isIdent || receiver.Name != rootApp {
+					t.Fatalf("%s: the limiter is mounted through a Use whose receiver is not the root app %q, so its prefix is relative to a group or sub-app this guard does not resolve, and the operations under it would drop out of the sweep — mount it as %s.Use with the full prefix",
+						mount.source, rootApp, rootApp)
+				}
 				if argIndex > 0 {
 					prefix, resolved := resolveStringExpr(use.Args[0], constants)
 					if !resolved {
@@ -503,6 +626,9 @@ func requireSpecMentions(t *testing.T, block []string, phrase string, where stri
 type languageSwitchClient struct {
 	name    string
 	headers map[string]string
+	// body replaces the form-encoded blank `lang` when set, for a caller whose
+	// Content-Type is not a form.
+	body string
 }
 
 type languageSwitchAnswer struct {
@@ -543,7 +669,11 @@ func TestOpenAPILanguageSwitchDeclaresTheRefusalsItAnswers(t *testing.T) {
 	// the request's catalogue before they render.
 	handler, _ := newEgressLedgerHandler(t, false)
 	send := func(app *fiber.App, client languageSwitchClient) languageSwitchAnswer {
-		request := httptest.NewRequest(http.MethodPost, LanguageSwitchPath, strings.NewReader(url.Values{"lang": {"  "}}.Encode()))
+		payload := url.Values{"lang": {"  "}}.Encode()
+		if client.body != "" {
+			payload = client.body
+		}
+		request := httptest.NewRequest(http.MethodPost, LanguageSwitchPath, strings.NewReader(payload))
 		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		for name, value := range client.headers {
 			request.Header.Set(name, value)
@@ -611,6 +741,7 @@ func TestOpenAPILanguageSwitchDeclaresTheRefusalsItAnswers(t *testing.T) {
 
 	jsonClient := languageSwitchClient{name: "JSON caller", headers: map[string]string{"Accept": fiber.MIMEApplicationJSON}}
 	formClient := languageSwitchClient{name: "form submission"}
+	jsonBodyClient := languageSwitchClient{name: "JSON body", headers: map[string]string{"Content-Type": fiber.MIMEApplicationJSON}, body: `{"lang":"  "}`}
 	htmxClient := languageSwitchClient{name: "HTMX request", headers: map[string]string{"HX-Request": "true", "Accept": fiber.MIMEApplicationJSON}}
 
 	// JSON caller: the envelope, as the example declares it, on both statuses.
@@ -658,7 +789,27 @@ func TestOpenAPILanguageSwitchDeclaresTheRefusalsItAnswers(t *testing.T) {
 		t.Fatalf("form submission: over the budget answered %d with Retry-After %q, want 429 with the header", answer.status, answer.retryAfter)
 	}
 	requireHTMLFragment("form submission 429", answer)
-	requireSpecMentions(t, rateLimited, "The plain form submission", "POST /lang 429")
+	requireSpecMentions(t, rateLimited, "plain form submission", "POST /lang 429")
+
+	// A JSON body with no Accept header: httpx.AcceptsJSON reads the
+	// Content-Type as a request for JSON too, so this caller gets the envelope
+	// on both statuses — and the 429's description has to name that signal, not
+	// only the Accept header.
+	app = newApp()
+	answer = send(app, jsonBodyClient)
+	if answer.status != http.StatusBadRequest {
+		t.Fatalf("JSON body: a blank lang answered %d, want 400", answer.status)
+	}
+	envelopeLines("JSON body 400", answer)
+	answer = send(app, jsonBodyClient)
+	if answer.status != http.StatusTooManyRequests || answer.retryAfter == "" {
+		t.Fatalf("JSON body: over the budget answered %d with Retry-After %q, want 429 with the header", answer.status, answer.retryAfter)
+	}
+	_, body = envelopeLines("JSON body 429", answer)
+	if seconds, ok := body["retry_after_seconds"].(float64); !ok || seconds < 1 {
+		t.Errorf("JSON body: the 429 body carries no retry_after_seconds: %v", body)
+	}
+	requireSpecMentions(t, rateLimited, "`Content-Type: application/json`", "POST /lang 429")
 
 	// HTMX request, even one that also accepts JSON: the fragment on both.
 	app = newApp()
