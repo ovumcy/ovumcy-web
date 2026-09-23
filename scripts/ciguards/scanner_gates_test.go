@@ -326,6 +326,20 @@ func TestTrivyFSRunsForAnAddedBinary(t *testing.T) {
 	}
 }
 
+// TestTrivyFSRunsWhenTheBinaryProbeFails fails only the `--numstat` call, on a
+// diff no path rule scans: the list step still produces the file list, so
+// gosec and trivy-image stay scoped out, and trivy-fs runs because which blobs
+// are binary is unknown.
+func TestTrivyFSRunsWhenTheBinaryProbeFails(t *testing.T) {
+	got := detectRun{workflow: securityWorkflow, event: "pull_request", files: []string{"docs/notes.md"}, queueBase: queueBaseReal, failGit: "--numstat"}.run(t)
+	want := map[string]string{"run_go": "false", "run_trivyfs": "true", "run_trivyimage": "false"}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("%s = %q, want %q when git diff --numstat fails (all outputs: %v)", k, got[k], v, got)
+		}
+	}
+}
+
 // repoGit runs git in the repository under test, in the hermetic environment.
 func repoGit(t *testing.T, args ...string) string {
 	t.Helper()

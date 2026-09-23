@@ -793,7 +793,22 @@ type detectRun struct {
 	// api serves the proven-tree check's `gh api` answers; nil leaves `gh`
 	// unstubbed.
 	api *ghAPI
+	// failGit makes every git call carrying this exact argument exit 128, in
+	// every step; every other call reaches the real git.
+	failGit string
 }
+
+// failingGitScript shadows git on PATH: it refuses a call carrying
+// $CIGUARDS_FAIL_GIT and hands every other call to the git behind it.
+const failingGitScript = `#!/bin/sh
+for arg in "$@"; do
+  if [ "$arg" = "$CIGUARDS_FAIL_GIT" ]; then
+    echo "git stub: refusing a call with $arg" >&2
+    exit 128
+  fi
+done
+PATH="${PATH#*:}" exec git "$@"
+`
 
 func (r detectRun) run(t *testing.T) map[string]string {
 	t.Helper()
@@ -866,6 +881,16 @@ func (r detectRun) run(t *testing.T) map[string]string {
 		// The stub is job-wide, as the runner's PATH and GITHUB_REPOSITORY
 		// are; the payload fields it bends reach every step alike.
 		env = append(env, r.api.install(t, bash, git, github)...)
+	}
+	if r.failGit != "" {
+		if r.api != nil {
+			t.Fatal("detectRun: api and failGit each put their own directory first on PATH; combine them before using both")
+		}
+		stub := t.TempDir()
+		if err := os.WriteFile(filepath.Join(stub, "git"), []byte(failingGitScript), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		env = append(env, "CIGUARDS_FAIL_GIT="+r.failGit, "PATH="+stub+string(os.PathListSeparator)+os.Getenv("PATH"))
 	}
 
 	list := listStep(t)
