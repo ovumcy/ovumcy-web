@@ -1284,19 +1284,31 @@ func (repo *UserRepository) ForceResetPasswordAndRevokeSessions(ctx context.Cont
 	return nil
 }
 
-// UpdatePasswordHashOnly rewrites only the password_hash column without bumping
-// auth_session_version and without touching must_change_password or
-// local_auth_enabled. It exists for the transparent bcrypt-cost upgrade the
-// auth service performs after a successful login (mirrors
-// UpdateTOTPSecretCiphertext for the TOTP secret): the account's security
-// posture is unchanged — same password, stronger hash — so no active session
-// should be revoked by what is an internal storage upgrade.
-func (repo *UserRepository) UpdatePasswordHashOnly(ctx context.Context, userID uint, passwordHash string) error {
+// UpgradePasswordHashCAS is the transparent bcrypt-cost upgrade the auth
+// service performs after a successful login (mirrors
+// UpdateTOTPSecretCiphertext for the TOTP secret). It rewrites only
+// password_hash, and only while the column still holds oldPasswordHash — the
+// hash that login just verified. auth_session_version, must_change_password
+// and local_auth_enabled are untouched: same password, stronger hash, so no
+// active session is revoked by an internal storage upgrade.
+//
+// The predicate is what makes the upgrade safe to run late. Between the
+// login's read and this write, a password change, reset or operator reset may
+// have rewritten the credential; an unconditional write would put the OLD
+// password back over it with no session-version bump, and the old password
+// would authenticate again after the owner changed it. A lost race returns
+// (false, nil) and leaves the newer credential in place; the error is a
+// database failure only.
+func (repo *UserRepository) UpgradePasswordHashCAS(ctx context.Context, userID uint, oldPasswordHash string, newPasswordHash string) (bool, error) {
 	query, err := repo.scopedUserUpdate(ctx, userID)
 	if err != nil {
-		return err
+		return false, err
 	}
-	return query.Update("password_hash", passwordHash).Error
+	result := query.Where("password_hash = ?", oldPasswordHash).Update("password_hash", newPasswordHash)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
 }
 
 // UpdatePasswordRecoveryCodeAndRevokeSessions writes a password hash and a fresh

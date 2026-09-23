@@ -72,11 +72,13 @@ type AuthUserRepository interface {
 	ForceResetPasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string) error
 	UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, recoveryHash string, mustChangePassword bool, beforeCommit func(sessionVersion int) error) error
 	UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx context.Context, userID uint, oldPasswordHash string, oldSessionVersion int, newPasswordHash string, recoveryHash string, beforeCommit func(sessionVersion int) error) error
-	// UpdatePasswordHashOnly rewrites password_hash WITHOUT bumping
+	// UpgradePasswordHashCAS rewrites password_hash WITHOUT bumping
 	// auth_session_version — a transparent storage-format upgrade (bcrypt cost
-	// rise), not a credential change. Used only by the opportunistic rehash on
-	// successful login; the caller has already proven the password.
-	UpdatePasswordHashOnly(ctx context.Context, userID uint, passwordHash string) error
+	// rise), not a credential change — and only while password_hash still
+	// equals oldPasswordHash. Used only by the opportunistic rehash on
+	// successful login; the caller has already proven the password against
+	// oldPasswordHash. applied is false when a concurrent credential write won.
+	UpgradePasswordHashCAS(ctx context.Context, userID uint, oldPasswordHash string, newPasswordHash string) (applied bool, err error)
 	BumpAuthSessionVersion(ctx context.Context, userID uint) error
 	// ClaimRecoveryCodeReveal atomically consumes the account's one-time
 	// recovery-code reveal, returning true only for the call that consumed it.
@@ -399,13 +401,20 @@ func (service *AuthService) AuthenticateCredentials(ctx context.Context, email s
 // stored bcrypt cost is below passwordHashCost, so the effective cost floor
 // rises for pre-existing accounts without forcing a reset. It runs only after
 // a successful CompareHashAndPassword (the plaintext is proven), rewrites the
-// hash in place via UpdatePasswordHashOnly (no auth_session_version bump — the
-// credential itself is unchanged), and mutates user.PasswordHash so a caller
-// that persists the struct sees the upgraded hash.
+// hash in place via UpgradePasswordHashCAS (no auth_session_version bump — the
+// credential itself is unchanged), and mutates user.PasswordHash only when the
+// write applied, so a caller that persists the struct sees what is stored.
 //
-// Best-effort by design: a costing/read error or a failed write is swallowed
-// so it can never turn a valid login into a failure. On the next login the
-// upgrade is simply retried.
+// The write is conditional on the hash this login compared against: a
+// password change or reset that lands between that compare and the write
+// wins, and the upgrade is dropped rather than restoring the old password over
+// the new one. The login itself still succeeds; the session minted from the
+// stale read dies anyway, because every other password_hash writer bumps
+// auth_session_version.
+//
+// Best-effort by design: a costing/read error, a failed write and a lost race
+// are all swallowed so none can turn a valid login into a failure. On the
+// next login the upgrade is simply retried.
 func (service *AuthService) rehashPasswordIfStale(ctx context.Context, user *models.User, password string) {
 	if user == nil || user.ID == 0 {
 		return
@@ -418,7 +427,8 @@ func (service *AuthService) rehashPasswordIfStale(ctx context.Context, user *mod
 	if err != nil {
 		return
 	}
-	if err := service.users.UpdatePasswordHashOnly(ctx, user.ID, string(upgraded)); err != nil {
+	applied, err := service.users.UpgradePasswordHashCAS(ctx, user.ID, user.PasswordHash, string(upgraded))
+	if err != nil || !applied {
 		return
 	}
 	user.PasswordHash = string(upgraded)
