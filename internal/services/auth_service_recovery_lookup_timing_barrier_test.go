@@ -1,10 +1,14 @@
 package services
 
 import (
+	"bytes"
 	"go/ast"
 	"go/parser"
+	"go/printer"
 	"go/token"
 	"testing"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 // Barrier for the recovery-lookup timing oracle.
@@ -131,4 +135,99 @@ func isBcryptCompareCall(call *ast.CallExpr) bool {
 	}
 	pkg, ok := selector.X.(*ast.Ident)
 	return ok && pkg.Name == "bcrypt"
+}
+
+// printExpr renders an AST expression back to source text, so a test can
+// compare what argument a call actually names without hand-walking its node
+// shape (an Ident for a bare name, a nested CallExpr for a wrapped one).
+func printExpr(t *testing.T, fileSet *token.FileSet, expr ast.Expr) string {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := printer.Fprint(&buf, fileSet, expr); err != nil {
+		t.Fatalf("print expression: %v", err)
+	}
+	return buf.String()
+}
+
+// TestRecoveryLookupEqualizerSpendsBothPlaceholdersAtTargetCost is TS-M06's
+// test hardening: the count-only check above (compares != 2) is satisfied by
+// a body that compares the WRONG operand against a placeholder — for example
+// the code against credentialsTimingEqualizationHash and the password against
+// recoveryCodeTimingEqualizationHash — because the two placeholders share the
+// same cost today. That still passes count==2 while breaking the intent the
+// helper's own doc comment states: the recovery-code compare must run against
+// the code operand and the password compare against the password operand,
+// each at passwordHashCost, so a real "unknown address" refusal genuinely
+// costs what a real "wrong password" refusal costs. equalizeRecoveryCodeLookupTiming
+// is declared as a bare func (not a swappable var) precisely so its literal
+// calls can be read from source instead of intercepted at runtime — this test
+// reads the two calls' actual arguments, in order, off the shipped body, and
+// pins the cost of the two constants those arguments compare against. No
+// wall-clock threshold is involved anywhere in this test.
+func TestRecoveryLookupEqualizerSpendsBothPlaceholdersAtTargetCost(t *testing.T) {
+	fileSet := token.NewFileSet()
+	file, err := parser.ParseFile(fileSet, "auth_service.go", nil, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("parse auth_service.go: %v", err)
+	}
+
+	var body *ast.BlockStmt
+	ast.Inspect(file, func(node ast.Node) bool {
+		decl, ok := node.(*ast.FuncDecl)
+		if ok && decl.Name.Name == "equalizeRecoveryCodeLookupTiming" && decl.Body != nil {
+			body = decl.Body
+		}
+		return true
+	})
+	if body == nil {
+		t.Fatal("equalizeRecoveryCodeLookupTiming is missing from auth_service.go")
+	}
+
+	type observedCompare struct {
+		hash    string
+		operand string
+	}
+	var observed []observedCompare
+	ast.Inspect(body, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok || !isBcryptCompareCall(call) {
+			return true
+		}
+		if len(call.Args) != 2 {
+			t.Fatalf("a bcrypt.CompareHashAndPassword call in equalizeRecoveryCodeLookupTiming has %d arguments, want 2", len(call.Args))
+		}
+		observed = append(observed, observedCompare{
+			hash:    printExpr(t, fileSet, call.Args[0]),
+			operand: printExpr(t, fileSet, call.Args[1]),
+		})
+		return true
+	})
+
+	want := []observedCompare{
+		{hash: "[]byte(recoveryCodeTimingEqualizationHash)", operand: "[]byte(NormalizeRecoveryCode(code))"},
+		{hash: "[]byte(credentialsTimingEqualizationHash)", operand: "[]byte(password)"},
+	}
+	if len(observed) != len(want) {
+		t.Fatalf("equalizeRecoveryCodeLookupTiming spends %d bcrypt comparisons, want %d: %+v", len(observed), len(want), observed)
+	}
+	for index, wantCompare := range want {
+		if observed[index] != wantCompare {
+			t.Fatalf("comparison %d compared %+v, want %+v — the wrong operand against a placeholder still counts as a compare, "+
+				"but a rejection then costs the wrong secret's oracle", index, observed[index], wantCompare)
+		}
+	}
+
+	for name, hash := range map[string]string{
+		"recoveryCodeTimingEqualizationHash": recoveryCodeTimingEqualizationHash,
+		"credentialsTimingEqualizationHash":  credentialsTimingEqualizationHash,
+	} {
+		cost, err := bcrypt.Cost([]byte(hash))
+		if err != nil {
+			t.Fatalf("bcrypt.Cost(%s): %v", name, err)
+		}
+		if cost != passwordHashCost {
+			t.Fatalf("%s costs %d, want passwordHashCost (%d) — a cheaper placeholder makes the refusal this helper equalizes measurably faster than a real compare",
+				name, cost, passwordHashCost)
+		}
+	}
 }
