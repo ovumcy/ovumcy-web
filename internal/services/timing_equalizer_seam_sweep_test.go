@@ -6,11 +6,14 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 // Sweep for the equalizer class WEB-56 found three members of.
@@ -30,10 +33,13 @@ import (
 //     package, outside any function that declares a local of the same name;
 //   - not reference a timing primitive directly, called or bound to a local.
 //
-// And no non-test file may write a timing seam or take its address, anywhere
-// in the file (timingSeamProductionWrites): the body tests swap the
+// And production code may not write a timing seam: the body tests swap the
 // seam themselves, so a production assignment to a no-op would leave every
-// equalizer spending nothing with all of them green.
+// equalizer spending nothing with all of them green. Two guards hold that:
+// timingSeamProductionWrites refuses an `=` or `&` on a seam anywhere in a
+// non-test file, naming the line, and TestTimingSeamsHoldTheirPrimitiveAtRuntime
+// refuses a seam that does not hold its primitive when tests start, whatever
+// spelling wrote it.
 //
 // What it cannot see, stated so its name is not read as more: an equalizer not
 // named equalize…Timing, a method, and a body that reaches a primitive through
@@ -221,13 +227,39 @@ func addReassignedIdents(assigned map[string]bool, file *ast.File) {
 	}
 }
 
-// timingSeamProductionWrites names every place file writes a timing seam or
-// takes its address: anywhere in the file, including a func literal in a
-// package-level var initializer, which addReassignedIdents does not walk.
-// Shadowing is deliberately ignored — a production local named after a seam
-// is refused too, loudly, rather than let a real write hide behind it.
-func timingSeamProductionWrites(fileSet *token.FileSet, file *ast.File, seams map[string]bool) []string {
-	var writes []string
+// seamWrite is one place production code writes a timing seam.
+type seamWrite struct {
+	name     string
+	position token.Position
+}
+
+func (write seamWrite) String() string {
+	return write.name + " at " + write.position.String()
+}
+
+// unparenIdent returns the identifier expr names, through any parentheses:
+// `(seam) = f` and `&(seam)` write the seam as surely as the bare forms.
+func unparenIdent(expr ast.Expr) (*ast.Ident, bool) {
+	for {
+		paren, ok := expr.(*ast.ParenExpr)
+		if !ok {
+			break
+		}
+		expr = paren.X
+	}
+	ident, ok := expr.(*ast.Ident)
+	return ident, ok
+}
+
+// timingSeamProductionWrites names every place file assigns a timing seam
+// with `=` or takes its address: anywhere in the file, including a func
+// literal in a package-level var initializer, which addReassignedIdents does
+// not walk. It matches by name, so shadowing is ignored: an `=` or `&` on a
+// production local named after a seam is refused too, rather than let a real
+// write hide behind it. Writes no name match can see (go:linkname, unsafe) are
+// TestTimingSeamsHoldTheirPrimitiveAtRuntime's.
+func timingSeamProductionWrites(fileSet *token.FileSet, file *ast.File, seams map[string]bool) []seamWrite {
+	var writes []seamWrite
 	ast.Inspect(file, func(node ast.Node) bool {
 		switch expr := node.(type) {
 		case *ast.AssignStmt:
@@ -235,18 +267,42 @@ func timingSeamProductionWrites(fileSet *token.FileSet, file *ast.File, seams ma
 				return true
 			}
 			for _, lhs := range expr.Lhs {
-				if ident, ok := lhs.(*ast.Ident); ok && seams[ident.Name] {
-					writes = append(writes, ident.Name+" at "+fileSet.Position(ident.Pos()).String())
+				if ident, ok := unparenIdent(lhs); ok && seams[ident.Name] {
+					writes = append(writes, seamWrite{ident.Name, fileSet.Position(ident.Pos())})
 				}
 			}
 		case *ast.UnaryExpr:
-			if ident, ok := expr.X.(*ast.Ident); ok && expr.Op == token.AND && seams[ident.Name] {
-				writes = append(writes, ident.Name+" at "+fileSet.Position(ident.Pos()).String())
+			if ident, ok := unparenIdent(expr.X); ok && expr.Op == token.AND && seams[ident.Name] {
+				writes = append(writes, seamWrite{ident.Name, fileSet.Position(ident.Pos())})
 			}
 		}
 		return true
 	})
 	return writes
+}
+
+// timingSeamPrimitives pairs each timing seam's current value with the
+// primitive it must hold in production. TestTimingEqualizerVarsSpendThroughASeam
+// requires its names to be exactly the seams the source sweep finds.
+func timingSeamPrimitives() map[string][2]any {
+	return map[string][2]any{
+		"authTimingEqualizerCompare":  {authTimingEqualizerCompare, bcrypt.CompareHashAndPassword},
+		"calendarFeedEqualizerVerify": {calendarFeedEqualizerVerify, VerifyCalendarFeedToken},
+	}
+}
+
+// TestTimingSeamsHoldTheirPrimitiveAtRuntime is the production-write guard
+// keyed on the seam itself rather than on how a write is spelled: by the time
+// a test runs, every package initializer and init() has run, and each test
+// that swaps a seam restores it in Cleanup. A seam not holding its primitive
+// here was written by production code, however that write was written.
+func TestTimingSeamsHoldTheirPrimitiveAtRuntime(t *testing.T) {
+	for name, pair := range timingSeamPrimitives() {
+		if reflect.ValueOf(pair[0]).Pointer() != reflect.ValueOf(pair[1]).Pointer() {
+			t.Errorf("the timing seam %s does not hold its production primitive when tests start: production code wrote it, "+
+				"and a no-op there leaves every equalizer spending nothing while the body tests, which swap it themselves, stay green", name)
+		}
+	}
 }
 
 // TestTimingSeamProductionWritesClassifiesOwnedFixtures anchors the
@@ -259,19 +315,20 @@ func init() { seam = nil }
 var _ = func() bool { seam = nil; return true }()
 var _ = &seam
 func notASeamWrite() { other = 2; x := seam; _ = x }
+func init() { (seam) = nil; _ = &((seam)) }
 `
 	fileSet := token.NewFileSet()
 	file, err := parser.ParseFile(fileSet, "fixture.go", source, 0)
 	if err != nil {
 		t.Fatalf("parse fixture: %v", err)
 	}
-	var lines []string
+	var positions []string
 	for _, write := range timingSeamProductionWrites(fileSet, file, map[string]bool{"seam": true}) {
-		parts := strings.Split(write, ":")
-		lines = append(lines, strings.Join(parts[len(parts)-2:], ":"))
+		positions = append(positions, strconv.Itoa(write.position.Line)+":"+strconv.Itoa(write.position.Column))
 	}
-	if got, want := strings.Join(lines, ","), "4:15,5:23,6:10"; got != want {
-		t.Fatalf("production writes found at line:column %s, want %s — the init body, the var-initializer literal and the address-of", got, want)
+	if got, want := strings.Join(positions, ","), "4:15,5:23,6:10,8:16,8:36"; got != want {
+		t.Fatalf("production writes found at line:column %s, want %s — the init body, the var-initializer literal, the address-of "+
+			"and both parenthesized forms", got, want)
 	}
 }
 
@@ -403,7 +460,7 @@ func TestTimingEqualizerVarsSpendThroughASeam(t *testing.T) {
 	}
 	// Seams are collected across every file first: a write may sit in a file
 	// parsed before the one that declares the seam.
-	var productionWrites []string
+	var productionWrites []seamWrite
 	for _, file := range productionFiles {
 		productionWrites = append(productionWrites, timingSeamProductionWrites(fileSet, file, scan.timingSeam)...)
 	}
@@ -450,6 +507,16 @@ func TestTimingEqualizerVarsSpendThroughASeam(t *testing.T) {
 		if !scan.timingSeam[seam] {
 			t.Fatalf("the sweep does not recognise %s as a timing seam — its production value is no longer a primitive it knows", seam)
 		}
+	}
+	runtimeChecked := timingSeamPrimitives()
+	for seam := range scan.timingSeam {
+		if _, ok := runtimeChecked[seam]; !ok {
+			t.Fatalf("the timing seam %s is missing from timingSeamPrimitives, so no runtime check refuses a production write to it", seam)
+		}
+	}
+	if len(runtimeChecked) != len(scan.timingSeam) {
+		t.Fatalf("timingSeamPrimitives names %d seams but the source holds %d — a stale entry checks a var that is no longer a seam",
+			len(runtimeChecked), len(scan.timingSeam))
 	}
 	if len(scan.offenders) != 0 {
 		t.Fatalf("timing equalizers reference the expensive primitive directly: %v. A test that swaps the var never runs such a body, "+
