@@ -1339,8 +1339,11 @@ jobs:
           # runs the full battery: this clears run_core/run_frontend — and with
           # run_core the Playwright e2e shards, which gate on it as RUN_SHARDS —
           # only when this exact tree already ran `ci.yml`'s `pull_request`
-          # suite to success, on the ONE queued PR this entry replays, against
-          # this queue's own base branch. It sits after the runbook/licenses
+          # suite to success as the head of the PR this entry's head_ref
+          # names, against this queue's own base branch. That PR need not be
+          # queued alone: a batch passes too when the PRs ahead of it are
+          # already in its head (a PR stacked on them), because that run
+          # tested this same tree. It sits after the runbook/licenses
           # forces (same reasoning as `push`: if that earlier PR run already
           # covered the runbook/licenses guard on this identical tree, forcing
           # it again here buys nothing) and is written so that ANY of the
@@ -1382,13 +1385,16 @@ jobs:
                   echo "PR #$pr_number's head ($pr_head_sha) is not bound to exactly PR #$pr_number against $queue_base_ref (read as '${pr_binding:-<none>}'): not proven — running the full battery."
                 else
                   # The PR's `pull_request` run tested the head merged into
-                  # main as main stood THEN — an ancestor of this queue's base,
-                  # since main only moves forward. With this base an ancestor
-                  # of the head, that older main was one too, so the merge the
-                  # run tested is the head's own tree; and the queue's rebase
-                  # of the head onto this base is a no-op, so the queue tree is
-                  # the head's tree as well — checked below rather than assumed
-                  # (a batched entry carries other PRs' changes and fails there).
+                  # the base as it stood THEN — an ancestor of this queue's
+                  # base because the base only moves forward, a premise that
+                  # holds for a force-push-protected branch, which `main` is;
+                  # the charset above admits other names without checking it.
+                  # With this base an ancestor of the head, that older base was
+                  # one too, so the merge the run tested is the head's own
+                  # tree; the queue tree must equal it as well — checked below
+                  # rather than assumed (an entry carrying a change the head
+                  # lacks, such as a batched PR it is not stacked on, fails
+                  # there).
                   git fetch --no-tags origin "$pr_head_sha" || true
                   if [ -z "$QUEUE_BASE_SHA" ] || ! git merge-base --is-ancestor "$QUEUE_BASE_SHA" "$pr_head_sha" 2>/dev/null; then
                     echo "this merge group's base (${QUEUE_BASE_SHA:-<none>}) is not an ancestor of PR #$pr_number's head ($pr_head_sha) — a stale entry: not proven — running the full battery."
