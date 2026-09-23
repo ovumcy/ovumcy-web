@@ -80,7 +80,6 @@ const (
 )
 
 var (
-	stepHeader = regexp.MustCompile(`(?m)^      - name: `)
 	envEntry   = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*): (.*)$`)
 	needsEntry = regexp.MustCompile(`^      - ([A-Za-z0-9_.-]+)$`)
 )
@@ -724,23 +723,11 @@ func stepEnv(t *testing.T) map[string]string {
 	return env
 }
 
-// stepBlock returns the text of the judging step, from its `- name:` line to
-// the next step at the same indentation.
+// stepBlock returns the text of the judging step.
 func stepBlock(t *testing.T) string {
 	t.Helper()
 
-	block := workflowfile.Job(t, gateWorkflow, gateJob)
-	header := "      - name: " + gateStep + "\n"
-	start := strings.Index(block, header)
-	if start < 0 {
-		t.Fatalf("%s, job %q: no step named %q — the gate was renamed or removed, and this guard would judge nothing", gateWorkflow, gateJob, gateStep)
-	}
-	rest := block[start+len(header):]
-
-	if next := stepHeader.FindStringIndex(rest); next != nil {
-		return rest[:next[0]]
-	}
-	return rest
+	return workflowfile.Step(t, gateWorkflow, gateJob, workflowfile.Job(t, gateWorkflow, gateJob), gateStep)
 }
 
 // rollingNeeds reads `publish-image`'s dependency list, the set of checks
