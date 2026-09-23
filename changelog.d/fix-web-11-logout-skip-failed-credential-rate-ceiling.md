@@ -28,8 +28,12 @@
 - **An API path spelled in another case is refused as an API request.** The router matches paths
   case-insensitively, but the session gate decided between a JSON refusal and the sign-in redirect
   on the raw path, so `DELETE /API/v1/sessions/current` without a session was answered `303` —
-  below 400, so the per-IP logout row still counted it. Every route behind the session gate reached
-  through such a spelling now answers the same `401`/`403` JSON as its lowercase form instead of a
-  redirect to `/login` or `/onboarding`. Regressions:
+  below 400, so the per-IP logout row still counted it. A route behind the session gate reached
+  with an uppercase letter in its `/api/` segment (`/API/…`, `/Api/…`) and no JSON `Accept` header
+  is now refused with a `401`/`403` JSON answer instead of a redirect to `/login` or `/onboarding`;
+  other spellings (`/api/V1/…`, a trailing slash) were already refused as JSON. One gap remains: the
+  onboarding exemption still compares the raw path, so a session that has not finished onboarding
+  gets `403` `onboarding_required` on `DELETE /API/v1/sessions/current` and `/API/v1/onboarding/…`,
+  where the lowercase spelling succeeds. Regressions:
   `TestLogoutEdgeBudgetIsNotSpentByCaseVariantRefusals`,
   `TestAuthRequiredRefusesACaseVariantAPIPathAsAnAPIRequest`.

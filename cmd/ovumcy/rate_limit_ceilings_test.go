@@ -280,8 +280,11 @@ func TestCredentialRateLimitRefusalLeavesTheOtherPairsAlone(t *testing.T) {
 }
 
 // TestCredentialMaxCeilingIsReadOnlyThroughTheRateCheck: the credential count
-// ceiling is referenced by server code only inside getCredentialRateLimit, so a
-// credential setting added later cannot be read past the rate ceiling.
+// ceiling is referenced by server code only inside getCredentialRateLimit, and
+// a string literal containing a LOGIN, REGISTER or FORGOT_PASSWORD key prefix
+// appears only as an argument of that call. A new credential family, a key
+// split before its trailing underscore ("RATE_LIMIT_LOGIN"+"_MAX") or one built
+// with fmt.Sprintf is not caught.
 func TestCredentialMaxCeilingIsReadOnlyThroughTheRateCheck(t *testing.T) {
 	source := serverSourceText(t)
 	start := strings.Index(source, "func getCredentialRateLimit(")
@@ -303,10 +306,12 @@ func TestCredentialMaxCeilingIsReadOnlyThroughTheRateCheck(t *testing.T) {
 
 	// The ceiling constant is only half of it: a credential key read by name
 	// through any other helper skips the rate check without touching the
-	// constant. Every string literal naming one — or starting one, the piece a
-	// concatenation builds it from — must be an argument of a
-	// getCredentialRateLimit call. No constant holds these keys, so no
-	// declaration site is exempt either.
+	// constant. Every string literal containing RATE_LIMIT_LOGIN_,
+	// RATE_LIMIT_REGISTER_ or RATE_LIMIT_FORGOT_PASSWORD_ must be an argument
+	// of a getCredentialRateLimit call. No constant holds these keys, so no
+	// declaration site is exempt either. Not held: a credential family outside
+	// those three, a literal split before the trailing underscore, or a key
+	// formatted at run time.
 	throughRateCheck, elsewhere := credentialKeyLiteralSites(t)
 	for _, site := range elsewhere {
 		t.Errorf("%s names a credential rate-limit key outside a getCredentialRateLimit call; read the pair through getCredentialRateLimit so it is held to the rate ceiling", site)
@@ -322,8 +327,9 @@ func TestCredentialMaxCeilingIsReadOnlyThroughTheRateCheck(t *testing.T) {
 	}
 }
 
-// credentialRateLimitKeyPattern matches a credential RATE_LIMIT_ key or the
-// prefix a concatenation would build one from.
+// credentialRateLimitKeyPattern matches a string containing the prefix of a
+// LOGIN, REGISTER or FORGOT_PASSWORD rate-limit key, trailing underscore
+// included; a literal cut before that underscore does not match.
 var credentialRateLimitKeyPattern = regexp.MustCompile(`RATE_LIMIT_(LOGIN|REGISTER|FORGOT_PASSWORD)_`)
 
 // credentialKeyLiteralSites parses every non-test server Go source (comments
