@@ -637,8 +637,8 @@ func (service *AuthService) RevokeAuthSessions(ctx context.Context, userID uint)
 // password on a real account by one whole cost-12 comparison, which is the
 // account-enumeration oracle this route must not have.
 func equalizeRecoveryCodeLookupTiming(code string, password string) {
-	_ = bcrypt.CompareHashAndPassword([]byte(recoveryCodeTimingEqualizationHash), []byte(NormalizeRecoveryCode(code)))
-	_ = bcrypt.CompareHashAndPassword([]byte(credentialsTimingEqualizationHash), []byte(password))
+	_ = authTimingEqualizerCompare([]byte(recoveryCodeTimingEqualizationHash), []byte(NormalizeRecoveryCode(code)))
+	_ = authTimingEqualizerCompare([]byte(credentialsTimingEqualizationHash), []byte(password))
 }
 
 // equalizeAuthCredentialsTiming runs a bcrypt comparison against a fixed
@@ -654,8 +654,9 @@ var equalizeAuthCredentialsTiming = func(password string) {
 	_ = authTimingEqualizerCompare([]byte(credentialsTimingEqualizationHash), []byte(password))
 }
 
-// authTimingEqualizerCompare is the single seam through which the two
-// equalizers above and below spend their bcrypt work. It exists because
+// authTimingEqualizerCompare is the single seam through which the local-auth
+// equalizers — login, registration, recovery lookup and settings re-auth —
+// spend their bcrypt work. It exists because
 // swapping an equalizer proves nothing about that equalizer's BODY: every test
 // that names one replaces the whole var, and the work ledger in
 // auth_service_timing_cost_topup_test.go reads the equalized branch's cost off

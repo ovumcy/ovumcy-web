@@ -323,24 +323,16 @@ func TestRecoveryLookupAccountsEqualWorkForMissingAccountAndStaleHashes(t *testi
 	}
 	t.Cleanup(func() { topUpRecoveryLookupTiming = originalTopUp })
 	withTopUpCompareLedger(t, ledger)
+	withEqualizerCompareLedger(t, ledger)
 
-	// The unknown-address baseline is read off the two placeholder constants
-	// rather than measured, because equalizeRecoveryCodeLookupTiming compares
-	// against them with a literal bcrypt call the barrier test requires it to
-	// keep. Three guards make that reading safe, and none of them is this test:
-	// TestTimingEqualizationHashesMatchTargetCost pins both placeholders to
-	// passwordHashCost, and
-	// TestRecoveryLookupSpendsBothCredentialComparesWithoutShortCircuit pins
-	// both comparisons to running unconditionally AND pins both early-return
-	// branches to actually calling the equalizer — without that last check,
-	// deleting the call here would leave an unknown address costing nothing and
-	// this test still green.
+	// The unknown-address baseline is measured at authTimingEqualizerCompare,
+	// so an emptied or halved equalizer body, or a deleted equalizer call on
+	// this branch, drops it below the stale branch and fails here.
 	missing := NewAuthService(&stubAuthUserRepo{})
 	if _, err := missing.FindUserByEmailRecoveryCodeAndPassword(context.Background(), "nobody@example.com", submittedCode, submittedPassword); !errors.Is(err, ErrRecoveryCodeNotFound) {
 		t.Fatalf("expected ErrRecoveryCodeNotFound for an unknown address, got %v", err)
 	}
-	missingUnits := bcryptWorkUnits(mustBcryptCost(t, recoveryCodeTimingEqualizationHash)) +
-		bcryptWorkUnits(mustBcryptCost(t, credentialsTimingEqualizationHash))
+	missingUnits := ledger.drain()
 
 	stale := NewAuthService(&stubAuthUserRepo{
 		findByEmailOptionalFound: true,

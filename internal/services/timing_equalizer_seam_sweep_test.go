@@ -20,7 +20,9 @@ import (
 // passes. The members found so far (login, registration, calendar feed) now
 // spend through a seam var the tests can wrap while the shipped body runs. This
 // sweep holds the rule for members added later. Every package-level
-// `var equalize…Timing = func…` must:
+// `var equalize…Timing = func…`, and every top-level `func equalize…Timing` —
+// not swappable, so a direct primitive call in it could only be read off the
+// source text, never observed — must:
 //   - call at least one timing seam: a package-level var whose production
 //     value is a timing primitive (bcrypt.CompareHashAndPassword, resolved by
 //     import path so an aliased import counts, or VerifyCalendarFeedToken);
@@ -28,12 +30,9 @@ import (
 //     package, outside any function that declares a local of the same name;
 //   - not reference a timing primitive directly, called or bound to a local.
 //
-// What it cannot see, stated so its name is not read as more: an equalizer
-// declared with `func` rather than as a var (equalizeRecoveryCodeLookupTiming —
-// not swappable, and pinned to its literal bcrypt calls by
-// TestRecoveryLookupSpendsBothCredentialComparesWithoutShortCircuit), a var not
-// named equalize…Timing, and a body that reaches a primitive through some other
-// helper. The primitive list is closed at the two above: a body that calls a
+// What it cannot see, stated so its name is not read as more: an equalizer not
+// named equalize…Timing, a method, and a body that reaches a primitive through
+// some other helper. The primitive list is closed at the two above: a body that calls a
 // timing seam and also calls another primitive directly (for example
 // security.VerifyCalendarFeedVerifierMAC) passes, and an equalizer whose only
 // spend is a new primitive fails until the list names it. A seam counts as
@@ -141,7 +140,31 @@ func newTimingEqualizerScan() timingEqualizerScan {
 // scanTimingEqualizers adds file's timing seams and equalizer bodies to scan.
 func scanTimingEqualizers(scan *timingEqualizerScan, fileSet *token.FileSet, file *ast.File) {
 	bcryptNames := bcryptLocalNames(file)
+	scanBody := func(name string, function ast.Node, body *ast.BlockStmt) {
+		scan.found = append(scan.found, name)
+		shadowed := localNames(function)
+		ast.Inspect(body, func(node ast.Node) bool {
+			if expr, ok := node.(ast.Expr); ok && isTimingPrimitiveRef(expr, bcryptNames) {
+				scan.offenders = append(scan.offenders, name+" at "+fileSet.Position(expr.Pos()).String())
+				return false
+			}
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			if ident, ok := call.Fun.(*ast.Ident); ok && !shadowed[ident.Name] {
+				scan.calledIdents[name] = append(scan.calledIdents[name], ident.Name)
+			}
+			return true
+		})
+	}
 	for _, decl := range file.Decls {
+		if function, ok := decl.(*ast.FuncDecl); ok {
+			if function.Recv == nil && function.Body != nil && timingEqualizerVarName.MatchString(function.Name.Name) {
+				scanBody(function.Name.Name, function, function.Body)
+			}
+			continue
+		}
 		gen, ok := decl.(*ast.GenDecl)
 		if !ok || gen.Tok != token.VAR {
 			continue
@@ -161,26 +184,9 @@ func scanTimingEqualizers(scan *timingEqualizerScan, fileSet *token.FileSet, fil
 				if !timingEqualizerVarName.MatchString(name.Name) {
 					continue
 				}
-				literal, ok := value.Values[index].(*ast.FuncLit)
-				if !ok {
-					continue
+				if literal, ok := value.Values[index].(*ast.FuncLit); ok {
+					scanBody(name.Name, literal, literal.Body)
 				}
-				scan.found = append(scan.found, name.Name)
-				shadowed := localNames(literal)
-				ast.Inspect(literal.Body, func(node ast.Node) bool {
-					if expr, ok := node.(ast.Expr); ok && isTimingPrimitiveRef(expr, bcryptNames) {
-						scan.offenders = append(scan.offenders, name.Name+" at "+fileSet.Position(expr.Pos()).String())
-						return false
-					}
-					call, ok := node.(*ast.CallExpr)
-					if !ok {
-						return true
-					}
-					if ident, ok := call.Fun.(*ast.Ident); ok && !shadowed[ident.Name] {
-						scan.calledIdents[name.Name] = append(scan.calledIdents[name.Name], ident.Name)
-					}
-					return true
-				})
 			}
 		}
 	}
@@ -256,6 +262,9 @@ var equalizeShadowTestedSeamTiming = func(k []byte) { _ = shadowTestedSeam(k, ""
 var equalizeClockOnlyTiming = func(p string) { _ = clockSeam() }
 var equalizeShadowedSeamTiming = func(wrappedSeam func([]byte, []byte) error) { _ = wrappedSeam(nil, nil) }
 var equalizeOtherPrimitiveTiming = func(k []byte) { _ = security.VerifyCalendarFeedVerifierMAC(k, "", "") }
+func equalizeFuncDirectTiming(p string) { _ = bcrypt.CompareHashAndPassword(nil, []byte(p)) }
+func equalizeFuncSeamedTiming(p string) { _ = wrappedSeam(nil, []byte(p)) }
+func (s S) equalizeMethodTiming(p string) { _ = bcrypt.CompareHashAndPassword(nil, []byte(p)) }
 var notAnEqualizer = func(p string) { _ = bcrypt.CompareHashAndPassword(nil, []byte(p)) }
 `
 	const testSource = `package fixture
@@ -278,22 +287,23 @@ func TestShadows(t *testing.T) { var shadowTestedSeam func(); shadowTestedSeam =
 
 	wantFound := "equalizeDirectTiming,equalizeFeedDirectTiming,equalizeAliasedDirectTiming,equalizeLocalAliasTiming," +
 		"equalizeSeamedTiming,equalizeUntestedSeamTiming,equalizeShadowTestedSeamTiming,equalizeClockOnlyTiming," +
-		"equalizeShadowedSeamTiming,equalizeOtherPrimitiveTiming"
+		"equalizeShadowedSeamTiming,equalizeOtherPrimitiveTiming,equalizeFuncDirectTiming,equalizeFuncSeamedTiming"
 	if strings.Join(scan.found, ",") != wantFound {
-		t.Fatalf("classifier found %v, want exactly the fixture's equalize…Timing vars", scan.found)
+		t.Fatalf("classifier found %v, want exactly the fixture's equalize…Timing vars and top-level funcs", scan.found)
 	}
 	var offenderNames []string
 	for _, offender := range scan.offenders {
 		offenderNames = append(offenderNames, strings.Fields(offender)[0])
 	}
-	wantOffenders := "equalizeDirectTiming,equalizeFeedDirectTiming,equalizeAliasedDirectTiming,equalizeLocalAliasTiming"
+	wantOffenders := "equalizeDirectTiming,equalizeFeedDirectTiming,equalizeAliasedDirectTiming,equalizeLocalAliasTiming,equalizeFuncDirectTiming"
 	if strings.Join(offenderNames, ",") != wantOffenders {
-		t.Fatalf("classifier flagged %v, want the direct, feed-direct, aliased-import and local-alias bodies only", offenderNames)
+		t.Fatalf("classifier flagged %v, want the direct, feed-direct, aliased-import, local-alias and func-direct bodies only", offenderNames)
 	}
 	wantFailures := []string{
 		"equalizeClockOnlyTiming calls no timing seam",
 		"equalizeDirectTiming calls no timing seam",
 		"equalizeFeedDirectTiming calls no timing seam",
+		"equalizeFuncDirectTiming calls no timing seam",
 		"equalizeOtherPrimitiveTiming calls no timing seam",
 		"equalizeShadowTestedSeamTiming spends through shadowTestedSeam, which no test reassigns",
 		"equalizeShadowedSeamTiming calls no timing seam",
@@ -360,7 +370,7 @@ func TestTimingEqualizerVarsSpendThroughASeam(t *testing.T) {
 	for _, name := range scan.found {
 		found[name] = true
 	}
-	for _, want := range []string{"equalizeAuthCredentialsTiming", "equalizeCalendarFeedTiming", "equalizeRegistrationTiming", "equalizeSettingsReauthTiming"} {
+	for _, want := range []string{"equalizeAuthCredentialsTiming", "equalizeCalendarFeedTiming", "equalizeRecoveryCodeLookupTiming", "equalizeRegistrationTiming", "equalizeSettingsReauthTiming"} {
 		if !found[want] {
 			t.Fatalf("the sweep did not find %s among %v — it is no longer measuring the members it exists for", want, scan.found)
 		}
@@ -371,8 +381,8 @@ func TestTimingEqualizerVarsSpendThroughASeam(t *testing.T) {
 		}
 	}
 	if len(scan.offenders) != 0 {
-		t.Fatalf("timing equalizer vars reference the expensive primitive directly: %v. A test that swaps the var never runs such a body, "+
-			"so emptying it passes the suite; spend through a seam var (authTimingEqualizerCompare, calendarFeedEqualizerVerify) and test the body through it",
+		t.Fatalf("timing equalizers reference the expensive primitive directly: %v. A test that swaps the var never runs such a body, "+
+			"and a func-declared one can only be read, never observed; spend through a seam var (authTimingEqualizerCompare, calendarFeedEqualizerVerify) and test the body through it",
 			scan.offenders)
 	}
 	if failures := timingEqualizerSeamFailures(scan, testAssigned); len(failures) != 0 {
