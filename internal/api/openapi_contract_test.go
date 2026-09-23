@@ -211,8 +211,8 @@ func TestOpenAPIDeclaresRateLimitedOnEveryLimiterCoveredOperation(t *testing.T) 
 	// by name so a reader that stops seeing it cannot pass as "none to check".
 	outside := limiterCoveredDocumentedOperationsOutsideV1(t, declared)
 	if _, ok := outside[fiber.MethodPost+" "+LanguageSwitchPath]; !ok {
-		t.Fatalf("POST %s is not among the limiter-covered operations read from cmd/ovumcy (got %v); its own limiter mount is wired there, so the mount reader, not the spec, is broken",
-			LanguageSwitchPath, outside)
+		t.Fatalf("POST %s is not among the limiter-covered operations read from cmd/ovumcy (got %v). If its limiter is still mounted there, the mount reader in this file is broken — fix the reader. If the limiter was removed on purpose, that is a rate-limit change: drop the '429' from POST %s in docs/openapi.yaml and this anchor together",
+			LanguageSwitchPath, outside, LanguageSwitchPath)
 	}
 	var missingOutside []string
 	for operation, mount := range outside {
