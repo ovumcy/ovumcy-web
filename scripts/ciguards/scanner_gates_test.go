@@ -62,7 +62,7 @@ func JobIfSurvivesACancelledOrFailedChanges(condition string) error {
 	if condition == "" {
 		return fmt.Errorf("no job-level `if:` — the implicit success() skips this job when `changes` fails, into a satisfied required check; add `if: ${{ !cancelled() }}`")
 	}
-	if !strings.Contains(condition, "!cancelled()") {
+	if !notCancelled.MatchString(condition) {
 		return fmt.Errorf("`if:` (%s) has no `!cancelled()` — a failed or cancelled `changes` job skips this job into a satisfied required check instead of running it", condition)
 	}
 	if m := changesStatusRead.FindString(condition); m != "" {
@@ -73,8 +73,15 @@ func JobIfSurvivesACancelledOrFailedChanges(condition string) error {
 
 // changesStatusRead matches a status function inside a job condition:
 // `!cancelled()` survives a failed `changes` only while nothing conjoined to it
-// asks whether its dependencies succeeded.
-var changesStatusRead = regexp.MustCompile(`\b(success|failure)\(\)`)
+// asks whether its dependencies succeeded. Every regular expression below
+// that reads an expression is case-insensitive: GitHub Actions resolves
+// context and function names, and compares strings, without regard to case,
+// so `Success()` and `Needs.changes` are the same reads as their lower-case
+// spellings.
+var (
+	changesStatusRead = regexp.MustCompile(`(?i)\b(success|failure)\(\)`)
+	notCancelled      = regexp.MustCompile(`(?i)!cancelled\(\)`)
+)
 
 // NeedsReadsAreFailSafe refuses an expression unless every top-level `&&`
 // conjunct that reads `needs` is exactly failSafeOutputRead: a `changes`
@@ -85,11 +92,7 @@ var changesStatusRead = regexp.MustCompile(`\b(success|failure)\(\)`)
 // `toJSON(needs)`, a `.result`, and the fail-safe read itself negated or
 // buried in a group) outnumber any list of them.
 func NeedsReadsAreFailSafe(expr string) error {
-	expr = strings.TrimSpace(expr)
-	if inner, ok := strings.CutPrefix(expr, "${{"); ok {
-		expr = strings.TrimSuffix(inner, "}}")
-	}
-	for _, conjunct := range topLevelConjuncts(expr) {
+	for _, conjunct := range topLevelConjuncts(expressionBody(expr)) {
 		if needsRead.MatchString(conjunct) && !failSafeOutputRead.MatchString(conjunct) {
 			return fmt.Errorf("`%s` reads `needs` other than as a whole `needs.changes.outputs.<name> != 'false'` conjunct — it can turn false once `changes` fails, and what it gates still skips", conjunct)
 		}
@@ -97,9 +100,18 @@ func NeedsReadsAreFailSafe(expr string) error {
 	return nil
 }
 
+// expressionBody is an `if:` value without its optional `${{ }}` wrapper.
+func expressionBody(expr string) string {
+	expr = strings.TrimSpace(expr)
+	if inner, ok := strings.CutPrefix(expr, "${{"); ok {
+		expr = strings.TrimSpace(strings.TrimSuffix(inner, "}}"))
+	}
+	return expr
+}
+
 var (
-	failSafeOutputRead = regexp.MustCompile(`^needs\.changes\.outputs\.[A-Za-z0-9_]+ != 'false'$`)
-	needsRead          = regexp.MustCompile(`\bneeds\b`)
+	failSafeOutputRead = regexp.MustCompile(`(?i)^needs\.changes\.outputs\.[A-Za-z0-9_]+ != 'false'$`)
+	needsRead          = regexp.MustCompile(`(?i)\bneeds\b`)
 )
 
 // topLevelConjuncts splits an expression on the `&&` operators outside any
@@ -157,21 +169,31 @@ func jobsThatNeedChanges(t *testing.T) []gatedJob {
 // changesOutputComparison matches a comparison against one of `changes`'
 // outputs wherever it appears in a job — its own `if:`, or a matrix job's
 // step-level `env:` expression — so one rule reads both.
-var changesOutputComparison = regexp.MustCompile(`needs\.changes\.outputs\.[A-Za-z_]+\s*(==|!=)\s*'(true|false)'`)
+var changesOutputComparison = regexp.MustCompile(`(?i)needs\.changes\.outputs\.[A-Za-z_]+\s*(==|!=)\s*'(true|false)'`)
 
-// ChangesOutputComparisonsAreFailSafe refuses any read of a `changes` output
-// that is not `!= 'false'` or a whole pass-through — in particular
-// `== 'true'`, which reads an ABSENT or empty output (a crashed `changes` job,
-// an output renamed on one side of an edit) as "do not run". A job that reads no
-// `changes` output at all is refused too: it would wait on `changes` for
-// ordering alone, and it tells this scan it is broken.
+// ChangesOutputComparisonsAreFailSafe refuses a job that reads no `changes`
+// output at all — it would wait on `changes` for ordering alone, or it tells
+// this scan it is broken — and otherwise judges every read by
+// ChangesReadsAreFailSafe.
 func ChangesOutputComparisonsAreFailSafe(content string) error {
-	if !strings.Contains(content, "needs.changes.outputs.") {
+	if !changesOutputRead.MatchString(content) {
 		return fmt.Errorf("reads no `changes` output — either the job needs `changes` for ordering alone, or this scan no longer sees how it reads one")
 	}
+	return ChangesReadsAreFailSafe(content)
+}
+
+// ChangesReadsAreFailSafe refuses, line by line, any read of `needs` — in
+// any spelling: `needs.changes`, `needs['changes']`, `needs.*`,
+// `toJSON(needs)`, a `.result` — that is not a whole `!= 'false'` conjunct
+// of an `if:` or a whole `env:` pass-through, and any read of such a
+// pass-through that is not a whole `env.<NAME> != 'false'` conjunct of an
+// `if:`. `== 'true'` is the shape it exists for: it reads an ABSENT or empty
+// output (a crashed `changes` job, an output renamed on one side of an edit)
+// as "do not run", and a `.result` read turns false the same way.
+func ChangesReadsAreFailSafe(content string) error {
 	var problems []string
 	for _, line := range strings.Split(content, "\n") {
-		if !strings.Contains(line, "needs.changes.outputs.") || envPassThroughLine.MatchString(line) {
+		if !readsNeeds(line) || envPassThroughLine.MatchString(line) {
 			continue
 		}
 		if m := ifLine.FindStringSubmatch(line); m != nil {
@@ -182,25 +204,112 @@ func ChangesOutputComparisonsAreFailSafe(content string) error {
 		}
 		problems = append(problems, fmt.Sprintf("%q is neither an `if:` nor an `env:` entry handing the output on whole", strings.TrimSpace(line)))
 	}
+	_, envProblems := PassThroughEnvReads(content)
+	problems = append(problems, envProblems...)
 	if len(problems) > 0 {
 		return fmt.Errorf("%d read(s) of a `changes` output are not fail-safe: %v", len(problems), problems)
 	}
 	return nil
 }
 
+// readsNeeds reports whether a workflow line reads the `needs` context: the
+// word itself, in any case, on a line that is neither a comment nor the
+// job's own `needs:` key.
+func readsNeeds(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "needs:") {
+		return false
+	}
+	return needsRead.MatchString(line)
+}
+
+// PassThroughEnvReads judges every read of an `env:` variable that hands a
+// `changes` output on whole: each must be a whole `env.<NAME> != 'false'`
+// conjunct of an `if:`, which an empty pass-through — a failed `changes` —
+// leaves true. It returns the variables it judged at least one `if:` read of,
+// and one problem per read that is not fail-safe.
+func PassThroughEnvReads(content string) (judged, problems []string) {
+	lines := strings.Split(content, "\n")
+	for _, line := range lines {
+		m := envPassThroughLine.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		name := regexp.QuoteMeta(m[1])
+		read := regexp.MustCompile(`(?i)\benv\s*(?:\.\s*` + name + `\b|\[\s*'` + name + `'\s*\])`)
+		failSafe := regexp.MustCompile(`(?i)^env\.` + name + ` != 'false'$`)
+		seen := false
+		for _, l := range lines {
+			if strings.HasPrefix(strings.TrimSpace(l), "#") || !read.MatchString(l) {
+				continue
+			}
+			cond := ifLine.FindStringSubmatch(l)
+			if cond == nil {
+				problems = append(problems, fmt.Sprintf("%q reads env.%s, which hands on a `changes` output, outside an `if:`", strings.TrimSpace(l), m[1]))
+				continue
+			}
+			seen = true
+			for _, conjunct := range topLevelConjuncts(expressionBody(cond[1])) {
+				if read.MatchString(conjunct) && !failSafe.MatchString(conjunct) {
+					problems = append(problems, fmt.Sprintf("`%s` reads env.%s, which hands on a `changes` output, other than as a whole `env.%s != 'false'` conjunct — an empty pass-through (a failed `changes`) turns it false and skips the step", conjunct, m[1], m[1]))
+				}
+			}
+		}
+		if seen {
+			judged = append(judged, m[1])
+		}
+	}
+	return judged, problems
+}
+
 // envPassThroughLine is an `env:` entry handing a `changes` output on whole,
-// for the job's steps to compare themselves: it carries an absent output
-// through as empty rather than deciding anything on it. ifLine is a job's or
-// a step's single-line `if:`.
+// for the job's steps to compare themselves (PassThroughEnvReads judges how
+// they do): it carries an absent output through as empty rather than
+// deciding anything on it; its name is a YAML key, matched as spelled, and
+// only its expression without regard to case. changesOutputRead is any read of a `changes`
+// output. ifLine is a job's or a step's single-line `if:`.
 var (
-	envPassThroughLine = regexp.MustCompile(`^\s+[A-Z][A-Z0-9_]*: \$\{\{ needs\.changes\.outputs\.[A-Za-z0-9_]+ \}\}$`)
+	envPassThroughLine = regexp.MustCompile(`^\s+([A-Z_][A-Z0-9_]*): \$\{\{ (?i:needs\.changes\.outputs\.)[A-Za-z0-9_]+ \}\}$`)
+	changesOutputRead  = regexp.MustCompile(`(?i)needs\.changes\.outputs\.`)
 	ifLine             = regexp.MustCompile(`^\s+(?:- )?if: (.+)$`)
 )
+
+// AnalyzeReadsAreFailSafe is codeql.yml `analyze`'s check: its
+// RUN_THIS_LANGUAGE is judged whole by
+// RunThisLanguageNeverSkipsAnUnlistedLanguage, and every other line of the
+// job by ChangesReadsAreFailSafe, as any other job's are.
+func AnalyzeReadsAreFailSafe(content string) error {
+	if err := RunThisLanguageNeverSkipsAnUnlistedLanguage(content); err != nil {
+		return err
+	}
+	return ChangesReadsAreFailSafe(withoutEnvEntry(content, "RUN_THIS_LANGUAGE"))
+}
+
+// withoutEnvEntry drops the `env:` entry `name:` and every line indented
+// deeper below it — the entry's folded value.
+func withoutEnvEntry(content, name string) string {
+	var kept []string
+	cut := -1
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimLeft(line, " ")
+		indent := len(line) - len(trimmed)
+		switch {
+		case cut >= 0 && (trimmed == "" || indent > cut):
+			continue
+		case strings.HasPrefix(trimmed, name+":"):
+			cut = indent
+			continue
+		}
+		cut = -1
+		kept = append(kept, line)
+	}
+	return strings.Join(kept, "\n")
+}
 
 // negatedFalseTerm matches one matrix leg's term in codeql.yml's
 // RUN_THIS_LANGUAGE: a NEGATED equals-false, which keeps a matrix leg outside
 // the named languages defaulting to "run".
-var negatedFalseTerm = regexp.MustCompile(`!\(matrix\.language == '[a-z-]+' && needs\.changes\.outputs\.[A-Za-z_]+ == 'false'\)`)
+var negatedFalseTerm = regexp.MustCompile(`(?i)!\(matrix\.language == '[a-z-]+' && needs\.changes\.outputs\.[A-Za-z_]+ == 'false'\)`)
 
 // RunThisLanguageNeverSkipsAnUnlistedLanguage refuses codeql.yml's
 // RUN_THIS_LANGUAGE unless it is built from exactly one negated-false term
@@ -212,7 +321,7 @@ func RunThisLanguageNeverSkipsAnUnlistedLanguage(content string) error {
 	// env.RUN_THIS_LANGUAGE == 'true' guards compare the already-resolved
 	// string and are the correct shape for a step-level gate.
 	for _, m := range changesOutputComparison.FindAllStringSubmatch(content, -1) {
-		if m[2] == "true" {
+		if strings.EqualFold(m[2], "true") {
 			return fmt.Errorf("RUN_THIS_LANGUAGE compares a `changes` output against 'true' (%q) — that reads an absent/empty output as skip", m[0])
 		}
 	}
@@ -230,7 +339,7 @@ func TestEveryJobThatNeedsChangesSurvivesACancelledOrFailedChanges(t *testing.T)
 		}
 		check := ChangesOutputComparisonsAreFailSafe
 		if j.workflow == codeqlWorkflow && j.job == "analyze" {
-			check = RunThisLanguageNeverSkipsAnUnlistedLanguage
+			check = AnalyzeReadsAreFailSafe
 		}
 		if err := check(j.block); err != nil {
 			t.Errorf("%s %s: %v", j.workflow, j.job, err)
@@ -266,6 +375,8 @@ func TestJobIfSurvivesACancelledOrFailedChangesRefusesAStatusConjunct(t *testing
 		"${{ !cancelled() && !(needs.changes.outputs.run_go != 'false') }}",
 		"${{ !cancelled() && (needs.changes.outputs.run_go != 'false' && false) }}",
 		"${{ !cancelled() && !(true && needs.changes.outputs.run_go != 'false' && true) }}",
+		"${{ !cancelled() && Success() }}",
+		"${{ !cancelled() && Needs.changes.result == 'success' }}",
 	} {
 		if err := JobIfSurvivesACancelledOrFailedChanges(condition); err == nil {
 			t.Errorf("%s was accepted, though it skips the job once `changes` fails", condition)
@@ -285,6 +396,9 @@ func TestChangesOutputComparisonsAreFailSafeRefusesAnEqualsTrueComparison(t *tes
 		"        if: ${{ needs.changes.outputs.run_go }}",
 		"        if: ${{ !(needs.changes.outputs.run_go != 'false') }}",
 		"        run: echo ${{ needs.changes.outputs.run_go }}",
+		"      RUN_GO: ${{ needs.changes.outputs.run_go }}\n      - if: needs['changes'].outputs.run_go == 'true'",
+		"      RUN_GO: ${{ needs.changes.outputs.run_go }}\n      - if: needs.changes.result == 'success'",
+		"      RUN_GO: ${{ needs.changes.outputs.run_go }}\n      - if: !contains(toJSON(needs), 'failure')",
 	} {
 		if err := ChangesOutputComparisonsAreFailSafe(content); err == nil {
 			t.Errorf("%q was accepted, though an absent output reads as skip there", content)
@@ -295,6 +409,58 @@ func TestChangesOutputComparisonsAreFailSafeRefusesAnEqualsTrueComparison(t *tes
 		"      - if: needs.changes.outputs.run_go != 'false' && env.X == 'y'\n"
 	if err := ChangesOutputComparisonsAreFailSafe(accepted); err != nil {
 		t.Errorf("fail-safe comparisons and a whole pass-through were refused: %v", err)
+	}
+}
+
+func TestChangesReadsAreFailSafeRefusesAnUnsafeReadOfAPassThrough(t *testing.T) {
+	passThrough := "    env:\n      RUN_E2E: ${{ needs.changes.outputs.run_e2e }}\n    steps:\n"
+	for _, step := range []string{
+		"      - if: env.RUN_E2E == 'true' && env.X != 'false'",
+		"        if: env.RUN_E2E",
+		"        if: ${{ env.RUN_E2E != 'false' && !(env.RUN_E2E != 'false') }}",
+		"        if: Env.run_e2e == 'true'",
+		"        if: env['RUN_E2E'] == 'true'",
+		"        run: echo ${{ env.RUN_E2E }}",
+	} {
+		if err := ChangesReadsAreFailSafe(passThrough + step + "\n"); err == nil {
+			t.Errorf("%q was accepted, though an empty pass-through reads as skip there", step)
+		}
+	}
+	accepted := passThrough + "      - if: env.RUN_E2E != 'false' && env.RUN_HEAVY == 'true'\n" +
+		"        # env.RUN_E2E == 'true' in a comment reads nothing\n"
+	if err := ChangesReadsAreFailSafe(accepted); err != nil {
+		t.Errorf("a fail-safe read of a pass-through was refused: %v", err)
+	}
+}
+
+// TestPassThroughEnvReadsJudgeTheE2EJobsSteps is the positive control for
+// PassThroughEnvReads on the real workflows: the e2e jobs are where a
+// `changes` output reaches step `if:`s through `env:`, and every such read
+// there must be judged and pass.
+func TestPassThroughEnvReadsJudgeTheE2EJobsSteps(t *testing.T) {
+	for job, want := range map[string]string{
+		"e2e-shard":          "RUN_E2E,RUN_SHARDS",
+		"e2e-postgres-smoke": "RUN_E2E",
+	} {
+		judged, problems := PassThroughEnvReads(workflowfile.Job(t, ciWorkflow, job))
+		if strings.Join(judged, ",") != want || len(problems) != 0 {
+			t.Errorf("ci.yml %s: judged %v with problems %v, want %s judged and none", job, judged, problems, want)
+		}
+	}
+}
+
+func TestAnalyzeReadsAreFailSafeJudgesTheAnalyzeSteps(t *testing.T) {
+	block := workflowfile.Job(t, codeqlWorkflow, "analyze")
+	if err := AnalyzeReadsAreFailSafe(block); err != nil {
+		t.Fatalf("codeql.yml analyze as committed was refused: %v", err)
+	}
+	for _, step := range []string{
+		"      - if: needs.changes.result == 'success'\n        run: true\n",
+		"      - if: needs['changes'].outputs.run_go == 'true'\n        run: true\n",
+	} {
+		if err := AnalyzeReadsAreFailSafe(strings.TrimRight(block, "\n") + "\n\n" + step); err == nil {
+			t.Errorf("an analyze step %q was accepted, though it skips once `changes` fails", step)
+		}
 	}
 }
 
@@ -461,12 +627,15 @@ var detectCasesByWorkflow = map[string][]detectCase{
 			map[string]string{"run_go": "true", "run_trivyfs": "false", "run_trivyimage": "true"}},
 		{"tab in a Go path", "pull_request", []string{"internal/api/t\tx.go"},
 			map[string]string{"run_go": "true", "run_trivyfs": "false", "run_trivyimage": "true"}},
+		// The non-UTF-8 rows pin every lane, "false" ones too: a list lost on
+		// the way reads as "run everything", which the "true" lanes alone
+		// cannot tell from a list that arrived.
 		{"non-UTF-8 Go path", "pull_request", []string{"internal/api/\xff.go"},
-			map[string]string{"run_go": "true", "run_trivyimage": "true"}},
+			map[string]string{"run_go": "true", "run_trivyfs": "false", "run_trivyimage": "true"}},
 		{"non-UTF-8 Dockerfile suffix", "pull_request", []string{"Dockerfile.\xff"},
-			map[string]string{"run_trivyimage": "true"}},
+			map[string]string{"run_go": "false", "run_trivyfs": "false", "run_trivyimage": "true"}},
 		{"non-UTF-8 requirements file", "pull_request", []string{"tools/requirements\xff.txt"},
-			map[string]string{"run_trivyfs": "true"}},
+			map[string]string{"run_go": "false", "run_trivyfs": "true", "run_trivyimage": "false"}},
 		{"newline in a docs path", "pull_request", []string{"docs/n\nx.md"},
 			map[string]string{"run_go": "true", "run_trivyfs": "true", "run_trivyimage": "true"}},
 		{"nested lockfile", "pull_request", []string{"web/workspace/nested/package-lock.json"},
@@ -506,9 +675,9 @@ var detectCasesByWorkflow = map[string][]detectCase{
 		{"non-ASCII Go path", "pull_request", []string{"internal/api/évil.go"},
 			map[string]string{"run_go": "true", "run_js": "false", "run_actions": "false"}},
 		{"non-UTF-8 Go path", "pull_request", []string{"internal/api/\xff.go"},
-			map[string]string{"run_go": "true"}},
+			map[string]string{"run_go": "true", "run_js": "false", "run_actions": "false"}},
 		{"non-UTF-8 tsconfig", "pull_request", []string{"web/tsconfig\xff.json"},
-			map[string]string{"run_js": "true"}},
+			map[string]string{"run_go": "false", "run_js": "true", "run_actions": "false"}},
 		{"quote in a JS path", "pull_request", []string{`web/src/js/q"x.ts`},
 			map[string]string{"run_go": "false", "run_js": "true", "run_actions": "false"}},
 		{"backslash in a JS path", "pull_request", []string{`web/src/js/b\x.ts`},
@@ -736,6 +905,32 @@ func TestTheListIsPrintedWithWorkflowCommandsStopped(t *testing.T) {
 		if !ok || stop >= at || at >= resume {
 			t.Errorf("%s (printed %v, line %d) is not between the stop (line %d) and the resume (line %d):\n%s", f, ok, at, stop, resume, log)
 		}
+	}
+}
+
+// TestTheListGoesUnprintedWithoutAToken shadows od, the list step's source
+// of the stop-commands token, with one that fails and with one that prints a
+// short token: either way the list must not reach the log, where a path
+// could act as a workflow command, and must still reach the detect step as
+// the file — the docs-only diff clearing run_core is what proves it arrived.
+func TestTheListGoesUnprintedWithoutAToken(t *testing.T) {
+	for name, od := range map[string]string{
+		"od fails":         "#!/bin/sh\nexit 1\n",
+		"od prints a stub": "#!/bin/sh\necho 00\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			var log string
+			got := detectRun{workflow: ciWorkflow, event: "pull_request", files: []string{"docs/x.md"}, queueBase: queueBaseReal, listLog: &log, od: od}.run(t)
+			if strings.Contains(log, "docs/x.md") || strings.Contains(log, "::stop-commands::") {
+				t.Errorf("the list was printed with no token to stop workflow commands under:\n%s", log)
+			}
+			if !strings.Contains(log, "not printed") {
+				t.Errorf("the no-token branch did not run — od was not shadowed:\n%s", log)
+			}
+			if got["run_core"] != "false" {
+				t.Errorf("run_core = %q for a docs-only diff with no token, want \"false\" — the list was not handed on (all outputs: %v)", got["run_core"], got)
+			}
+		})
 	}
 }
 
