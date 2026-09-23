@@ -1447,7 +1447,8 @@ paths:
         When the request does carry a valid session, the language is also stored on the account
         (`users.interface_language`, the same column `PATCH /api/v1/users/current/interface`
         writes), so a later session issue re-serves the switched language instead of reverting
-        the cookie to the stored one. The response is the same either way.
+        the cookie to the stored one. The response is the same either way, unless that account
+        write fails (`500`).
 
         This path is outside `/api`, so the `/api` rate limit does not reach it; it carries a
         per-IP limit of its own, sized like the `/api` budget, and answers `429` once it is spent.
@@ -1498,6 +1499,45 @@ paths:
               example:
                 error: "bad_request"
                 error_detail: { key: "bad_request", category: "validation", target: "global" }
+        '403':
+          description: |
+            The CSRF check refused the request: no token; a token that does not match the
+            `ovumcy_csrf` cookie, or one the server no longer holds (idle for over an hour —
+            that answer also clears the cookie, so fetch a page again); an `Origin` that names
+            another site, or over HTTPS with no `Origin`, a missing or foreign `Referer`; or a
+            malformed `Sec-Fetch-Site`. The refusal comes from the CSRF middleware before the
+            handler runs, so no `ovumcy_lang` cookie is set and nothing is stored on the
+            account. It carries the shared `forbidden` key rather than a key of this route's
+            own.
+
+            Every caller except an HTMX request gets the JSON envelope below, whether or not it
+            sends `Accept: application/json` — the plain form submission included. An HTMX
+            request (`HX-Request: true`) gets the localized status fragment as `text/html`
+            instead.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "forbidden"
+                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
+        '500':
+          description: |
+            The request carries a live owner session and a shipped language code, and storing
+            that language on the account failed. The switch is reported as failed rather than
+            kept as a cookie-only change: no `ovumcy_lang` cookie is set. A caller with no
+            session, or one that sends a code the server does not ship, never reaches the
+            account write and never gets this answer.
+
+            A caller whose `Accept` header names `application/json` gets the JSON envelope
+            below. An HTMX request (`HX-Request: true`) outranks it and gets the localized
+            status fragment as `text/html` instead, and so does the plain form submission that
+            does not ask for JSON.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "failed to update interface settings"
+                error_detail: { key: "failed to update interface settings", category: "internal", target: "global" }
         '429':
           $ref: '#/components/responses/RateLimited'
           description: |
