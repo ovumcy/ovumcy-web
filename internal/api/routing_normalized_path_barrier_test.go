@@ -17,12 +17,13 @@ import (
 // handlers the untouched wire path, so any branch keyed on the raw path sends
 // /API/v1/sessions, /LANG or /lang/ down a different answer than the lowercase
 // spelling that reaches the very same handler. The barrier therefore requires
-// every raw path read in the transport layer (internal/api) and the composition
-// root (cmd/ovumcy) to pass straight into the routing normalization, or to sit
-// in a function declared below as reading the raw bytes on purpose.
+// every raw path read in a module package that imports fiber — today the
+// transport layer (internal/api) and the composition root (cmd/ovumcy) — to
+// pass straight into the routing normalization, or to sit in a function
+// declared below as reading the raw bytes on purpose.
 //
 // It lives in this package because the declaration barrier beside it already
-// type-checks both packages once per test binary (loadTreeEvidence), and it
+// type-checks the whole module once per test binary (loadTreeEvidence), and it
 // reuses that load rather than paying for a second one.
 //
 // Everything is resolved by object through go/types, never by identifier
@@ -60,10 +61,30 @@ const (
 	rawPathFastHTTP   = "github.com/valyala/fasthttp"
 )
 
-// rawPathSweptPackages are the packages whose non-test files the barrier reads.
-var rawPathSweptPackages = []string{
+// rawPathRequiredPackages must be in the swept set by name: they hold every
+// decision site, so a sweep that lost either would pass about nothing.
+var rawPathRequiredPackages = []string{
 	rawPathModulePath + "/internal/api",
 	rawPathModulePath + "/cmd/ovumcy",
+}
+
+// rawPathSweptPackages derives the swept set from the loaded tree rather than
+// listing it: every module package whose non-test files import fiber, with the
+// tooling under scripts/ left out. A fixed list would let a new package that
+// reads the fiber path escape the barrier. The tree is loaded without tests,
+// so a package holding only test files imports nothing here and drops out.
+func rawPathSweptPackages(evidence *treeEvidence) []*packages.Package {
+	var swept []*packages.Package
+	for _, pkg := range evidence.packages {
+		if !strings.HasPrefix(pkg.PkgPath, rawPathModulePath+"/") || strings.HasPrefix(pkg.PkgPath, rawPathModulePath+"/scripts/") {
+			continue
+		}
+		if _, importsFiber := pkg.Imports[rawPathFiberPath]; importsFiber {
+			swept = append(swept, pkg)
+		}
+	}
+	sort.Slice(swept, func(i, j int) bool { return swept[i].PkgPath < swept[j].PkgPath })
+	return swept
 }
 
 type rawPathVerdict int
@@ -99,13 +120,19 @@ func TestEveryRawRequestPathReadIsRoutingNormalized(t *testing.T) {
 	sinks := rawPathSinks(t, evidence)
 
 	var uses []rawPathUse
-	for _, path := range rawPathSweptPackages {
-		pkg := evidence.packageByPath(path)
-		if pkg == nil {
-			t.Fatalf("the sweep loaded no package %s, so none of its path reads were judged", path)
-		}
+	swept := map[string]bool{}
+	var sweptPaths []string
+	for _, pkg := range rawPathSweptPackages(evidence) {
+		swept[pkg.PkgPath] = true
+		sweptPaths = append(sweptPaths, pkg.PkgPath)
 		uses = append(uses, collectRawPathUses(pkg, sinks)...)
 	}
+	for _, required := range rawPathRequiredPackages {
+		if !swept[required] {
+			t.Fatalf("the sweep did not select %s, which holds the decision sites; the package filter is wrong, so none of its path reads were judged", required)
+		}
+	}
+	t.Logf("swept %d package(s) importing fiber: %s", len(sweptPaths), strings.Join(sweptPaths, ", "))
 
 	var offenders []string
 	for _, use := range uses {
