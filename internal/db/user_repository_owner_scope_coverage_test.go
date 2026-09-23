@@ -58,7 +58,7 @@ func TestUserRepositoryOwnerScopedWritersPersist(t *testing.T) {
 	}
 	versionBeforeReset := reloaded.AuthSessionVersion
 
-	if err := repo.UpdatePasswordRecoveryCodeAndRevokeSessions(ctx, user.ID, "new-password-hash", "new-recovery-hash", true); err != nil {
+	if err := repo.UpdatePasswordRecoveryCodeAndRevokeSessions(ctx, user.ID, "new-password-hash", "new-recovery-hash", true, nil); err != nil {
 		t.Fatalf("UpdatePasswordRecoveryCodeAndRevokeSessions: %v", err)
 	}
 	reloaded, err = repo.FindByID(ctx, user.ID)
@@ -94,7 +94,7 @@ func TestUserRepositoryOwnerScopedWritersRefuseZeroOwner(t *testing.T) {
 			return repo.UpdateTOTPFieldsAndRevokeSessions(ctx, 0, "secret", true)
 		},
 		"UpdatePasswordRecoveryCodeAndRevokeSessions": func() error {
-			return repo.UpdatePasswordRecoveryCodeAndRevokeSessions(ctx, 0, "hash", "recovery", true)
+			return repo.UpdatePasswordRecoveryCodeAndRevokeSessions(ctx, 0, "hash", "recovery", true, nil)
 		},
 	}
 
@@ -146,7 +146,7 @@ func TestUserRepositoryRemainingScopedWritersRefuseZeroOwner(t *testing.T) {
 			return repo.ClearCalendarFeedToken(ctx, 0)
 		},
 		"UpdateRecoveryCodeHashAndRevokeSessions": func() error {
-			return repo.UpdateRecoveryCodeHashAndRevokeSessions(ctx, 0, "recovery")
+			return repo.UpdateRecoveryCodeHashAndRevokeSessions(ctx, 0, "recovery", nil)
 		},
 		"UpdatePasswordAndRevokeSessions": func() error {
 			return repo.UpdatePasswordAndRevokeSessions(ctx, 0, "hash", false)
@@ -224,7 +224,7 @@ func TestUserRepositoryRemainingScopedWritersPersist(t *testing.T) {
 	if err := repo.ClearCalendarFeedToken(ctx, user.ID); err != nil {
 		t.Fatalf("ClearCalendarFeedToken: %v", err)
 	}
-	if err := repo.UpdateRecoveryCodeHashAndRevokeSessions(ctx, user.ID, "new-recovery"); err != nil {
+	if err := repo.UpdateRecoveryCodeHashAndRevokeSessions(ctx, user.ID, "new-recovery", nil); err != nil {
 		t.Fatalf("UpdateRecoveryCodeHashAndRevokeSessions: %v", err)
 	}
 	if err := repo.UpdatePasswordAndRevokeSessions(ctx, user.ID, "new-hash", false); err != nil {

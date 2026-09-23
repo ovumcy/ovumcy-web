@@ -41,7 +41,10 @@ func (repo *recordingTimezoneRepo) UpdatePasswordAndRevokeSessions(context.Conte
 	return nil
 }
 
-func (repo *recordingTimezoneRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(context.Context, uint, string, string, bool) error {
+func (repo *recordingTimezoneRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(_ context.Context, _ uint, _ string, _ string, _ bool, beforeCommit func(sessionVersion int) error) error {
+	if beforeCommit != nil {
+		return beforeCommit(1)
+	}
 	return nil
 }
 

@@ -10,29 +10,35 @@ import (
 
 // mr3authCASRepo is a minimal AuthUserRepository implementing the CAS surface.
 // Its CAS handler succeeds without touching the *models.User pointer the
-// service mutates, so the only thing that bumps the passed-in userSnap's
-// AuthSessionVersion is the production line auth_service.go:460. This isolates
-// the `+ 1` arithmetic on the in-memory user the service returns to its caller.
+// service mutates directly; the only channel that can move the passed-in
+// userSnap's AuthSessionVersion is the beforeCommit callback the service wires
+// into staged.AuthSessionVersion (auth_service.go, ResetPasswordAndRotateRecoveryCodeCAS).
+// This isolates that wiring from any version arithmetic the repository itself
+// performs.
 type mr3authCASRepo struct {
 	stubAuthUserRepo
 }
 
 func (r *mr3authCASRepo) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(
-	_ context.Context, _ uint, _ string, _ int, _, _ string,
+	_ context.Context, _ uint, _ string, oldSessionVersion int, _, _ string, beforeCommit func(sessionVersion int) error,
 ) error {
-	// Succeed; deliberately do NOT mutate any user state here so the
-	// assertion below pins the service's own mutation of userSnap.
+	// Succeed; deliberately do NOT mutate any user state directly — mirror the
+	// real UPDATE's raw `auth_session_version + 1` off the CAS predicate's own
+	// version term and hand it to beforeCommit, which is the only thing the
+	// assertion below can be pinning.
+	if beforeCommit != nil {
+		return beforeCommit(oldSessionVersion + 1)
+	}
 	return nil
 }
 
-// TestMR3Auth_CASBumpsPassedUserSessionVersion pins auth_service.go:460:81
-// `NormalizeAuthSessionVersion(user.AuthSessionVersion) + 1`. The existing CAS
-// regression test asserts on the STUB-mutated user object, not the userSnap
-// pointer the production line writes. Here the stub's CAS is a no-op on user
-// state, so AuthSessionVersion on userSnap can only reach 2 via line 460.
-//
-// Mutant kill: +→- makes Normalize(1)-1 == 0 (fails want 2); *→Normalize(1)*1
-// == 1 (fails); /→1/1 == 1 (fails).
+// TestMR3Auth_CASBumpsPassedUserSessionVersion pins that
+// ResetPasswordAndRotateRecoveryCodeCAS wires the repo-reported session
+// version (via beforeCommit) into the userSnap pointer it returns to its
+// caller. The existing CAS regression test asserts on the STUB-mutated user
+// object, not the userSnap pointer the service itself writes. Here the stub's
+// CAS never touches user state directly, so AuthSessionVersion on userSnap can
+// only reach 2 via the service's beforeCommit wiring.
 func TestMR3Auth_CASBumpsPassedUserSessionVersion(t *testing.T) {
 	originalHash, err := bcrypt.GenerateFromPassword([]byte("StrongPass1"), bcrypt.DefaultCost)
 	if err != nil {
@@ -51,7 +57,7 @@ func TestMR3Auth_CASBumpsPassedUserSessionVersion(t *testing.T) {
 	}
 
 	recoveryCode, err := service.ResetPasswordAndRotateRecoveryCodeCAS(
-		context.Background(), &userSnap, string(originalHash), "EvenStronger2",
+		context.Background(), &userSnap, string(originalHash), "EvenStronger2", noopRecoveryCodeDelivery,
 	)
 	if err != nil {
 		t.Fatalf("ResetPasswordAndRotateRecoveryCodeCAS: unexpected error: %v", err)

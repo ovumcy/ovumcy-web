@@ -184,7 +184,18 @@ func (handler *Handler) completeLocalPasswordSetupReauth(c fiber.Ctx, state oidc
 		return handler.redirectSettingsRefusal(c, spec)
 	}
 
-	recoveryCode, err := handler.settingsService.FinalizeLocalPasswordSetup(c.Context(), user, state.PasswordHash)
+	// The enrollment revokes every session, this one included, so the device
+	// is re-issued one at the version the write stored. That session and the
+	// new code's reveal are sealed before the write commits: if either cannot
+	// be, nothing is enrolled and the owner keeps the session she is using, with
+	// no recovery code minted that nobody was shown (WEB-58).
+	deliver, delivery := handler.newRecoveryCodeDelivery(sessionWasRemembered(c), settingsContinuePath, recoveryCodeSurfaceDedicated)
+	_, err = handler.settingsService.FinalizeLocalPasswordSetup(c.Context(), user, state.PasswordHash, deliver)
+	if delivery.failure != nil {
+		spec := mapRecoveryCodeDeliveryError(delivery.failure)
+		handler.logSecurityError(c, "auth.local_password_setup.callback", spec)
+		return handler.redirectSettingsRefusal(c, spec)
+	}
 	if err != nil {
 		// The commit's refusals leave the same way the re-auth refusals above
 		// do. respondPasswordChangeError is the CHANGE-PASSWORD FORM's
@@ -212,19 +223,8 @@ func (handler *Handler) completeLocalPasswordSetupReauth(c fiber.Ctx, state oidc
 		handler.logSecurityError(c, "auth.local_password_setup.callback", spec)
 		return handler.redirectSettingsRefusal(c, spec)
 	}
-	if spec, ok := handler.refreshCurrentSession(c, user, "auth.local_password_setup.callback"); !ok {
-		// Same reason one layer down: the change-password route answers this
-		// same spec through respondMappedError, whose global session-create spec
-		// is JSON on every path. The password IS enrolled by this point, so the refusal
-		// reports only that this device's cookie could not be re-issued — a
-		// settings-page banner, on the same channel the erasure step-up's
-		// session-refresh arm already flashes.
-		//
-		// codecov:ignore:start -- the seal error that raises this cannot be
-		// provoked by a request; the terminal guard asserts the route statically.
-		return handler.redirectSettingsRefusal(c, spec)
-		// codecov:ignore:end
-	}
+	handler.installRefreshedSession(c, user, delivery.session, "auth.local_password_setup.callback")
+	handler.writeSealed(c, delivery.reveal)
 
 	// The reveal surface spends the account's one-time reveal mark, so it is
 	// guarded on Fetch Metadata: only a same-origin initiator may claim it
@@ -238,22 +238,8 @@ func (handler *Handler) completeLocalPasswordSetupReauth(c fiber.Ctx, state oidc
 	// becomes true rather than excused, and an attacker's page still cannot
 	// produce one. Same primitive as the outbound hop in
 	// StartLocalPasswordSetupReauth above.
-	nextPath, err := handler.stageRecoveryCodeReveal(c, user, recoveryCode, "/settings", recoveryCodeSurfaceDedicated)
-	if err != nil {
-		// The password IS enrolled by now, so this refusal costs the display of
-		// the code and nothing else — the same shape as the session-reissue arm
-		// above, and it leaves the same way.
-		//
-		// codecov:ignore:start -- the AEAD seal error that raises this cannot be
-		// provoked by a request; the terminal guard asserts the route statically.
-		spec := authRecoveryCodePersistErrorSpec()
-		handler.logSecurityError(c, "auth.local_password_setup.callback", spec)
-		return handler.redirectSettingsRefusal(c, spec)
-		// codecov:ignore:end
-	}
-
 	handler.logSecurityEvent(c, "auth.local_password_setup.callback", "success")
-	return respondOIDCSameOriginHandoff(c, nextPath)
+	return respondOIDCSameOriginHandoff(c, delivery.nextPath)
 }
 
 func (handler *Handler) validateLocalPasswordSetupReauth(ctx context.Context, code, codeVerifier, nonce string, userID uint, now time.Time) error {

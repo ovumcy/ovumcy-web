@@ -1,7 +1,6 @@
 package api
 
 import (
-	"errors"
 	"strings"
 	"time"
 
@@ -126,14 +125,35 @@ func (handler *Handler) ResetPassword(c fiber.Ctx) error {
 		handler.logSecurityError(c, "auth.reset_password", spec)
 		return handler.respondMappedError(c, spec)
 	}
-	user, recoveryCode, err := handler.passwordResetSvc.CompleteReset(
+	// A recovery reset carries no remember-me control — the flow asks for an
+	// email, a recovery code and a password, and never for a device choice — so
+	// it takes the same default an unchecked login box takes. Passing true here
+	// minted the 30-day remembered cookie on a device nobody said to remember,
+	// on the one path whose whole premise is that the owner just lost control of
+	// her password.
+	//
+	// The session and the reveal are sealed inside the reset's own write, before
+	// it commits: a failure to seal either rolls the reset back, so the account
+	// keeps its password, its recovery code and this reset token, and the owner
+	// can simply submit again. Sealing them after the commit is what lost a
+	// rotated code nobody had seen (WEB-58). The role arm of that failure stays
+	// unreachable besides: ResolveUserByResetToken refuses a non-owner before the
+	// write (TestUnsupportedLegacyRoleResetRedeemWritesNothing).
+	deliver, delivery := handler.newRecoveryCodeDelivery(false, services.PostLoginRedirectPath, recoveryCodeSurfaceDedicated)
+	user, _, err := handler.passwordResetSvc.CompleteReset(
 		c.Context(),
 		handler.secretKey,
 		token,
 		input.Password,
 		input.ConfirmPassword,
 		time.Now(),
+		deliver,
 	)
+	if delivery.failure != nil {
+		spec := mapRecoveryCodeDeliveryError(delivery.failure)
+		handler.logSecurityError(c, "auth.reset_password", spec)
+		return handler.respondMappedError(c, spec)
+	}
 	if err != nil {
 		spec := mapPasswordResetCompleteError(err)
 		if spec.Key == "invalid reset token" {
@@ -143,32 +163,11 @@ func (handler *Handler) ResetPassword(c fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 
-	// A recovery reset carries no remember-me control — the flow asks for an
-	// email, a recovery code and a password, and never for a device choice — so
-	// it takes the same default an unchecked login box takes. Passing true here
-	// minted the 30-day remembered cookie on a device nobody said to remember,
-	// on the one path whose whole premise is that the owner just lost control of
-	// her password.
-	//
-	// CompleteReset has already rotated the recovery code by this line and the
-	// reveal is staged only below, so any refusal here costs the owner a code
-	// she has not seen. The unsupported-role arm is unreachable on purpose:
-	// ResolveUserByResetToken refuses a non-owner as an invalid token before
-	// the write, and that ordering — not this arm — keeps a role refusal from
-	// destroying the account's way back in
-	// (TestUnsupportedLegacyRoleResetRedeemWritesNothing). Moving the role check
-	// after the write would turn this arm into the lossy path.
-	if _, err := handler.setAuthCookie(c, user, false); err != nil {
-		spec := authSessionCreateErrorSpec()
-		if errors.Is(err, services.ErrAuthUnsupportedRole) {
-			spec = authWebSignInUnavailableErrorSpec()
-		}
-		handler.logSecurityError(c, "auth.reset_password", spec)
-		return handler.respondMappedError(c, spec)
-	}
+	handler.writeAuthCookie(c, user, delivery.session)
+	handler.writeSealed(c, delivery.reveal)
 	handler.clearOIDCLogoutBridgeCookie(c)
 	handler.clearResetPasswordCookie(c)
 	handler.logSecurityEvent(c, "auth.reset_password", "success")
 
-	return handler.renderRecoveryCodeResponse(c, user, recoveryCode, fiber.StatusOK)
+	return respondRecoveryCodeNextStep(c, fiber.StatusOK, delivery.nextPath)
 }

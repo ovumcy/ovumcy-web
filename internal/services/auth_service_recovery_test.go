@@ -108,16 +108,24 @@ func (stub *stubAuthUserRepo) Create(ctx context.Context, user *models.User) err
 	return nil
 }
 
-func (stub *stubAuthUserRepo) UpdateRecoveryCodeHashAndRevokeSessions(ctx context.Context, userID uint, recoveryHash string) error {
+func (stub *stubAuthUserRepo) UpdateRecoveryCodeHashAndRevokeSessions(ctx context.Context, userID uint, recoveryHash string, beforeCommit func(sessionVersion int) error) error {
 	if stub.updateRecoveryCodeErr != nil {
 		return stub.updateRecoveryCodeErr
+	}
+	// Mirrors the real UPDATE's raw `auth_session_version + 1`: a legacy 0
+	// becomes 1, not NormalizeAuthSessionVersion(0)+1 == 2.
+	newVersion := stub.user.AuthSessionVersion + 1
+	if beforeCommit != nil {
+		if err := beforeCommit(newVersion); err != nil {
+			return err
+		}
 	}
 	stub.updatedUserID = userID
 	stub.updatedRecoveryHash = recoveryHash
 	// The real UPDATE NULLs recovery_code_revealed_at in the same statement, so
 	// a fresh code arrives with its one-time reveal armed.
 	stub.user.RecoveryCodeRevealedAt = nil
-	stub.user.AuthSessionVersion = NormalizeAuthSessionVersion(stub.user.AuthSessionVersion) + 1
+	stub.user.AuthSessionVersion = newVersion
 	return nil
 }
 
@@ -156,9 +164,16 @@ func (stub *stubAuthUserRepo) ForceResetPasswordAndRevokeSessions(ctx context.Co
 	return nil
 }
 
-func (stub *stubAuthUserRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, recoveryHash string, mustChangePassword bool) error {
+func (stub *stubAuthUserRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, recoveryHash string, mustChangePassword bool, beforeCommit func(sessionVersion int) error) error {
 	if stub.updateRecoveryPassErr != nil {
 		return stub.updateRecoveryPassErr
+	}
+	// Mirrors the real UPDATE's raw `auth_session_version + 1`.
+	newVersion := stub.user.AuthSessionVersion + 1
+	if beforeCommit != nil {
+		if err := beforeCommit(newVersion); err != nil {
+			return err
+		}
 	}
 	stub.updateRecoveryCalled = true
 	stub.updatedUserID = userID
@@ -173,13 +188,17 @@ func (stub *stubAuthUserRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(ctx co
 	stub.user.RecoveryCodeRevealedAt = nil
 	stub.user.LocalAuthEnabled = true
 	stub.user.MustChangePassword = mustChangePassword
-	stub.user.AuthSessionVersion = NormalizeAuthSessionVersion(stub.user.AuthSessionVersion) + 1
+	stub.user.AuthSessionVersion = newVersion
 	return nil
 }
 
-func (stub *stubAuthUserRepo) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx context.Context, userID uint, oldPasswordHash string, oldSessionVersion int, newPasswordHash string, recoveryHash string) error {
-	return stub.UpdatePasswordRecoveryCodeAndRevokeSessions(ctx, userID, newPasswordHash, recoveryHash, false)
+func (stub *stubAuthUserRepo) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx context.Context, userID uint, oldPasswordHash string, oldSessionVersion int, newPasswordHash string, recoveryHash string, beforeCommit func(sessionVersion int) error) error {
+	return stub.UpdatePasswordRecoveryCodeAndRevokeSessions(ctx, userID, newPasswordHash, recoveryHash, false, beforeCommit)
 }
+
+// noopRecoveryCodeDelivery satisfies RecoveryCodeDelivery for tests that do
+// not exercise delivery itself.
+func noopRecoveryCodeDelivery(*models.User, string) error { return nil }
 
 func (stub *stubAuthUserRepo) UpdatePasswordHashOnly(ctx context.Context, userID uint, passwordHash string) error {
 	stub.updateHashOnlyCalls++
@@ -659,7 +678,8 @@ func TestAuthServiceRegenerateRecoveryCode(t *testing.T) {
 	repo := &stubAuthUserRepo{}
 	service := NewAuthService(repo)
 
-	recoveryCode, err := service.RegenerateRecoveryCode(context.Background(), 55)
+	user := &models.User{ID: 55}
+	recoveryCode, err := service.RegenerateRecoveryCode(context.Background(), user, noopRecoveryCodeDelivery)
 	if err != nil {
 		t.Fatalf("RegenerateRecoveryCode() unexpected error: %v", err)
 	}
@@ -672,8 +692,14 @@ func TestAuthServiceRegenerateRecoveryCode(t *testing.T) {
 	if repo.updatedRecoveryHash == "" {
 		t.Fatalf("expected non-empty recovery hash update")
 	}
-	if repo.user.AuthSessionVersion != 2 {
-		t.Fatalf("expected AuthSessionVersion to be bumped to 2, got %d", repo.user.AuthSessionVersion)
+	// The stub's user row started at the zero value (AuthSessionVersion 0), and
+	// the real UPDATE increments the raw column (`auth_session_version + 1`),
+	// so a never-set row becomes 1 — not NormalizeAuthSessionVersion(0)+1 == 2.
+	if repo.user.AuthSessionVersion != 1 {
+		t.Fatalf("expected AuthSessionVersion to be bumped to 1, got %d", repo.user.AuthSessionVersion)
+	}
+	if user.AuthSessionVersion != 1 {
+		t.Fatalf("expected the caller's user to carry the rotated AuthSessionVersion 1, got %d", user.AuthSessionVersion)
 	}
 }
 

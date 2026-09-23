@@ -37,24 +37,46 @@ func (spec sealedCookieSpec) sameSiteOrLax() string {
 // A zero expires writes a session-scoped cookie (payloads carry their own
 // TTL in that case).
 func (handler *Handler) writeSealedCookie(c fiber.Ctx, spec sealedCookieSpec, plaintext []byte, expires time.Time) error {
-	encoded, err := handler.sealCookieValue(spec.name, plaintext)
+	sealed, err := handler.sealCookie(spec, plaintext, expires)
 	if err != nil {
 		return err
 	}
+	handler.writeSealed(c, sealed)
+	return nil
+}
 
+// sealedCookie is a cookie value already sealed and not yet written. Sealing
+// is the half that can fail; writing it cannot, so a caller that must not
+// commit anything it could then fail to hand over seals first and writes
+// after (the recovery-code rotations, WEB-58).
+type sealedCookie struct {
+	spec    sealedCookieSpec
+	value   string
+	expires time.Time
+}
+
+func (handler *Handler) sealCookie(spec sealedCookieSpec, plaintext []byte, expires time.Time) (sealedCookie, error) {
+	encoded, err := handler.sealCookieValue(spec.name, plaintext)
+	if err != nil {
+		return sealedCookie{}, err
+	}
+	return sealedCookie{spec: spec, value: encoded, expires: expires}, nil
+}
+
+func (handler *Handler) writeSealed(c fiber.Ctx, sealed sealedCookie) {
+	spec := sealed.spec
 	cookie := &fiber.Cookie{
 		Name:     spec.name,
-		Value:    encoded,
+		Value:    sealed.value,
 		Path:     spec.path,
 		HTTPOnly: true,
 		Secure:   handler.cookieSecure || spec.forceSecure,
 		SameSite: spec.sameSiteOrLax(),
 	}
-	if !expires.IsZero() {
-		cookie.Expires = expires
+	if !sealed.expires.IsZero() {
+		cookie.Expires = sealed.expires
 	}
 	c.Cookie(cookie)
-	return nil
 }
 
 // clearSealedCookie expires the spec's cookie with attributes matching the

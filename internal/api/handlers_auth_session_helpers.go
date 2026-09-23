@@ -1,6 +1,8 @@
 package api
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
@@ -99,45 +101,11 @@ func redirectToPath(c fiber.Ctx, path string) error {
 	return c.Redirect().Status(fiber.StatusSeeOther).To(path)
 }
 
-func (handler *Handler) renderRecoveryCodeResponse(c fiber.Ctx, user *models.User, recoveryCode string, status int) error {
-	continuePath := "/dashboard"
-	if user != nil {
-		continuePath = services.PostLoginRedirectPath(user)
-	}
-	return handler.renderRecoveryCodeResponseWithSurface(c, user, recoveryCode, status, continuePath, recoveryCodeSurfaceDedicated)
-}
-
-func (handler *Handler) renderRecoveryCodeResponseWithContinuePath(c fiber.Ctx, user *models.User, recoveryCode string, status int, continuePath string) error {
-	return handler.renderRecoveryCodeResponseWithSurface(c, user, recoveryCode, status, continuePath, recoveryCodeSurfaceDedicated)
-}
-
-// stageRecoveryCodeReveal seals the one-time reveal and answers the path that
-// displays it. It is split out from the redirect below because one caller — the
-// OIDC step-up that enrolls a local password — must hand the browser over a
-// same-origin document instead of a 303 (completeLocalPasswordSetupReauth says
-// why), and the sealing is identical either way.
-func (handler *Handler) stageRecoveryCodeReveal(c fiber.Ctx, user *models.User, recoveryCode string, continuePath string, surface string) (string, error) {
-	// A recovery code is only ever revealed back to the account it was minted
-	// for, so the reveal cookie must carry that account's id. A caller with no
-	// resolved user leaves the id zero, which the sealer refuses outright — such
-	// a call answers with the mapped persist error rather than sealing a payload
-	// that names no owner.
-	userID := uint(0)
-	if user != nil {
-		userID = user.ID
-	}
-	if err := handler.setRecoveryCodeIssuanceCookie(c, userID, recoveryCode, continuePath, surface); err != nil {
-		return "", err
-	}
-	return recoveryCodeSurfacePath(surface), nil
-}
-
-func (handler *Handler) renderRecoveryCodeResponseWithSurface(c fiber.Ctx, user *models.User, recoveryCode string, status int, continuePath string, surface string) error {
-	nextPath, err := handler.stageRecoveryCodeReveal(c, user, recoveryCode, continuePath, surface)
-	if err != nil {
-		return handler.respondMappedError(c, authRecoveryCodePersistErrorSpec())
-	}
-
+// respondRecoveryCodeNextStep answers a committed rotation with the path that
+// reveals its code: JSON clients are told where to go, browsers are sent there.
+// The completion of a local-password enrollment is the one caller that answers
+// with a same-origin document instead (completeLocalPasswordSetupReauth says why).
+func respondRecoveryCodeNextStep(c fiber.Ctx, status int, nextPath string) error {
 	if acceptsJSON(c) {
 		return c.Status(status).JSON(fiber.Map{
 			"ok":        true,
@@ -147,6 +115,49 @@ func (handler *Handler) renderRecoveryCodeResponseWithSurface(c fiber.Ctx, user 
 	}
 
 	return redirectToPath(c, nextPath)
+}
+
+// recoveryCodeRotationDelivery is what a recovery-code rotation hands back to
+// the browser: the re-issued session and the one-time reveal. Both are sealed
+// inside the rotating write's transaction, before it commits, and written only
+// after it has (services.RecoveryCodeDelivery). Sealing is the part that can
+// fail, so a failure there leaves the previous code and session standing
+// instead of committing a code nobody is shown.
+type recoveryCodeRotationDelivery struct {
+	session  preparedSession
+	reveal   sealedCookie
+	nextPath string
+	// failure is the error the hook itself returned, so the handler can tell a
+	// delivery that could not be sealed from a write that was refused.
+	failure error
+}
+
+// errRecoveryCodeRevealSeal marks a delivery that failed on the reveal rather
+// than on the session.
+var errRecoveryCodeRevealSeal = errors.New("recovery code reveal could not be sealed")
+
+// newRecoveryCodeDelivery returns the hook a rotation seals its delivery
+// through and the slot the hook fills. The slot is written to the response
+// only once the rotation has returned without error.
+func (handler *Handler) newRecoveryCodeDelivery(rememberMe bool, continuePath func(*models.User) string, surface string) (services.RecoveryCodeDelivery, *recoveryCodeRotationDelivery) {
+	delivery := &recoveryCodeRotationDelivery{}
+	deliver := func(user *models.User, recoveryCode string) error {
+		session, err := handler.prepareAuthCookie(user, rememberMe)
+		if err != nil {
+			delivery.failure = err
+			return err
+		}
+		reveal, err := handler.sealRecoveryCodeIssuanceCookie(user.ID, recoveryCode, continuePath(user), surface)
+		if err != nil {
+			delivery.failure = fmt.Errorf("%w: %v", errRecoveryCodeRevealSeal, err)
+			return delivery.failure
+		}
+		delivery.session = session
+		delivery.reveal = reveal
+		delivery.nextPath = recoveryCodeSurfacePath(surface)
+		return nil
+	}
+	return deliver, delivery
 }
 
 func recoveryCodeSurfacePath(surface string) string {

@@ -13,6 +13,21 @@ import (
 var authCookieSpec = sealedCookieSpec{name: authCookieName, path: "/"}
 
 func (handler *Handler) setAuthCookie(c fiber.Ctx, user *models.User, rememberMe bool) (string, error) {
+	session, err := handler.prepareAuthCookie(user, rememberMe)
+	if err != nil {
+		return "", err
+	}
+	return handler.writeAuthCookie(c, user, session), nil
+}
+
+// preparedSession is a session minted and sealed but not yet handed to the
+// browser: everything in issuing one that can fail has already happened.
+type preparedSession struct {
+	cookie    sealedCookie
+	sessionID string
+}
+
+func (handler *Handler) prepareAuthCookie(user *models.User, rememberMe bool) (preparedSession, error) {
 	tokenTTL := defaultAuthTokenTTL
 	if rememberMe {
 		tokenTTL = rememberAuthTokenTTL
@@ -20,7 +35,7 @@ func (handler *Handler) setAuthCookie(c fiber.Ctx, user *models.User, rememberMe
 
 	token, sessionID, err := handler.buildTokenWithSessionID(user, tokenTTL)
 	if err != nil {
-		return "", err
+		return preparedSession{}, err
 	}
 	// Session-scoped unless remember-me: a zero expires keeps the cookie
 	// for the browser session while the token payload carries its own TTL.
@@ -28,11 +43,17 @@ func (handler *Handler) setAuthCookie(c fiber.Ctx, user *models.User, rememberMe
 	if rememberMe {
 		expires = time.Now().Add(tokenTTL)
 	}
-	if err := handler.writeSealedCookie(c, authCookieSpec, []byte(token), expires); err != nil {
-		return "", err
+	cookie, err := handler.sealCookie(authCookieSpec, []byte(token), expires)
+	if err != nil {
+		return preparedSession{}, err
 	}
+	return preparedSession{cookie: cookie, sessionID: sessionID}, nil
+}
+
+func (handler *Handler) writeAuthCookie(c fiber.Ctx, user *models.User, session preparedSession) string {
+	handler.writeSealed(c, session.cookie)
 	handler.applyStoredLanguage(c, user)
-	return sessionID, nil
+	return session.sessionID
 }
 
 // applyStoredLanguage re-issues the language cookie from the account's stored
@@ -40,11 +61,12 @@ func (handler *Handler) setAuthCookie(c fiber.Ctx, user *models.User, rememberMe
 // cleared cookie jar, a second machine — is served the language its owner chose
 // instead of falling back to Accept-Language.
 //
-// It sits inside setAuthCookie on purpose. Every session-issue path goes
-// through that one helper (password login, TOTP challenge completion, OIDC
-// callback, OIDC link-confirm, register pickup, recovery sign-in, and the
-// in-place re-issue after a security-posture change), so the preference cannot
-// hold on one of them and silently not on the next one added.
+// It sits inside writeAuthCookie on purpose. Every session-issue path writes
+// through that one helper — setAuthCookie (password login, TOTP challenge
+// completion, OIDC callback, OIDC link-confirm, register pickup, recovery
+// sign-in, and the in-place re-issue after a security-posture change) and the
+// recovery-code rotations that seal their session before committing — so the
+// preference cannot hold on one of them and silently not on the next one added.
 //
 // An empty column means the owner never chose a language: nothing is written,
 // and resolveRequestLanguage keeps deciding exactly as it did before the column
@@ -191,6 +213,11 @@ func (handler *Handler) buildTokenWithSessionID(user *models.User, ttl time.Dura
 	if ttl <= 0 {
 		ttl = defaultAuthTokenTTL
 	}
+	if handler.sessionIssuanceFault != nil {
+		if err := handler.sessionIssuanceFault(); err != nil {
+			return "", "", err
+		}
+	}
 	return handler.authService.BuildAuthSessionTokenWithSessionID(handler.secretKey, user.ID, user.Role, user.AuthSessionVersion, ttl, time.Now())
 }
 
@@ -251,7 +278,7 @@ func (handler *Handler) rotateOIDCLogoutState(c fiber.Ctx, newSessionID string) 
 // its success arm, writing a success toast, a redirect or a `data_cleared`
 // flash over the refusal that had just been written.
 func (handler *Handler) refreshCurrentSession(c fiber.Ctx, user *models.User, scope string) (APIErrorSpec, bool) {
-	sessionID, err := handler.setAuthCookie(c, user, sessionWasRemembered(c))
+	session, err := handler.prepareAuthCookie(user, sessionWasRemembered(c))
 	if err != nil {
 		handler.clearAuthCookie(c)
 		spec := authSessionCreateErrorSpec()
@@ -261,10 +288,19 @@ func (handler *Handler) refreshCurrentSession(c fiber.Ctx, user *models.User, sc
 		handler.logSecurityError(c, scope, spec)
 		return spec, false
 	}
+	handler.installRefreshedSession(c, user, session, scope)
+	return APIErrorSpec{}, true
+}
+
+// installRefreshedSession writes a session prepared for the request's own
+// user in place of the one it arrived with, and carries that session's
+// provider-logout state over to the new id. Nothing here can refuse: a failed
+// logout-state rotation is logged, and the device stays signed in.
+func (handler *Handler) installRefreshedSession(c fiber.Ctx, user *models.User, session preparedSession, scope string) {
+	sessionID := handler.writeAuthCookie(c, user, session)
 	if err := handler.rotateOIDCLogoutState(c, sessionID); err != nil {
 		handler.logSecurityEvent(c, scope, "provider_logout_state_rotation_failed")
 	}
-	return APIErrorSpec{}, true
 }
 
 func (handler *Handler) decodeSealedAuthCookieToken(rawValue string) (string, error) {

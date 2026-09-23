@@ -89,7 +89,7 @@ func TestClaimRecoveryCodeRevealIsSingleUsePerMint(t *testing.T) {
 		t.Fatal("expected a second claim to lose against the mark already set")
 	}
 
-	if err := repo.UpdateRecoveryCodeHashAndRevokeSessions(ctx, user.ID, "rotated-hash"); err != nil {
+	if err := repo.UpdateRecoveryCodeHashAndRevokeSessions(ctx, user.ID, "rotated-hash", nil); err != nil {
 		t.Fatalf("UpdateRecoveryCodeHashAndRevokeSessions: %v", err)
 	}
 	if mark := reloadUserForRevealMarkTest(t, repo, user.ID).RecoveryCodeRevealedAt; mark != nil {

@@ -149,26 +149,35 @@ func (service *SettingsService) PrepareLocalPasswordHash(user *models.User, newP
 // FinalizeLocalPasswordSetup commits a previously prepared local password
 // hash, mints a fresh recovery code, and flips LocalAuthEnabled. Called only
 // after a successful step-up OIDC re-auth that has been bound to user.ID.
-func (service *SettingsService) FinalizeLocalPasswordSetup(ctx context.Context, user *models.User, preparedPasswordHash string) (string, error) {
+// deliver seals the re-issued session and the code's reveal before the write
+// commits (see RecoveryCodeDelivery); if it fails, nothing is enrolled and user
+// is unchanged.
+func (service *SettingsService) FinalizeLocalPasswordSetup(ctx context.Context, user *models.User, preparedPasswordHash string, deliver RecoveryCodeDelivery) (string, error) {
 	if user == nil || user.LocalAuthEnabled {
 		return "", ErrSettingsPasswordChangeInvalidInput
 	}
 	if strings.TrimSpace(preparedPasswordHash) == "" {
 		return "", ErrSettingsPasswordChangeInvalidInput
 	}
+	if deliver == nil {
+		return "", ErrRecoveryCodeDeliveryRequired
+	}
 
 	recoveryCode, recoveryHash, err := GenerateRecoveryCodeHash()
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", ErrSettingsRecoveryCodeGenerateFailed, err)
 	}
-	if err := service.users.UpdatePasswordRecoveryCodeAndRevokeSessions(ctx, user.ID, preparedPasswordHash, recoveryHash, false); err != nil {
+	staged := *user
+	if err := service.users.UpdatePasswordRecoveryCodeAndRevokeSessions(ctx, user.ID, preparedPasswordHash, recoveryHash, false, func(sessionVersion int) error {
+		staged.PasswordHash = preparedPasswordHash
+		staged.RecoveryCodeHash = recoveryHash
+		staged.LocalAuthEnabled = true
+		staged.AuthSessionVersion = sessionVersion
+		staged.MustChangePassword = false
+		return deliver(&staged, recoveryCode)
+	}); err != nil {
 		return "", fmt.Errorf("%w: %v", ErrSettingsPasswordUpdateFailed, err)
 	}
-
-	user.PasswordHash = preparedPasswordHash
-	user.RecoveryCodeHash = recoveryHash
-	user.LocalAuthEnabled = true
-	user.AuthSessionVersion = NormalizeAuthSessionVersion(user.AuthSessionVersion) + 1
-	user.MustChangePassword = false
+	*user = staged
 	return recoveryCode, nil
 }

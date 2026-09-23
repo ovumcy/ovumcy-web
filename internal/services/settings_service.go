@@ -83,7 +83,7 @@ type SettingsUserRepository interface {
 	UpdateInterfaceLanguage(ctx context.Context, userID uint, language string) (bool, error)
 	UpdateReminderLeadDays(ctx context.Context, userID uint, leadDays int) error
 	UpdatePasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, mustChangePassword bool) error
-	UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, recoveryHash string, mustChangePassword bool) error
+	UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, recoveryHash string, mustChangePassword bool, beforeCommit func(sessionVersion int) error) error
 	UpdateByID(ctx context.Context, userID uint, updates map[string]any) error
 	LoadSettingsByID(ctx context.Context, userID uint) (models.User, error)
 	ClearAllDataAndResetSettings(ctx context.Context, userID uint) error

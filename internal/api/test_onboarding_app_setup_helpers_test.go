@@ -67,6 +67,10 @@ type onboardingTestAppOptions struct {
 	// "this instance sends no reminders" -- correct, and the reason the egress
 	// matrix has to be able to turn it on to reach the states behind it.
 	outboundDeliveryEnabled bool
+	// sessionIssuanceFault is installed as the handler's seam of the same name:
+	// while it returns an error, minting a session fails the way no request can
+	// make it fail. Tests arm it after signing in, so the sign-in itself works.
+	sessionIssuanceFault func() error
 }
 
 func newOnboardingTestAppWithOptions(t *testing.T, options onboardingTestAppOptions) (*fiber.App, *gorm.DB) {
@@ -98,6 +102,7 @@ func newOnboardingTestAppWithOptions(t *testing.T, options onboardingTestAppOpti
 	if options.assetVersion != "" {
 		handler.SetAssetVersion(options.assetVersion)
 	}
+	handler.sessionIssuanceFault = options.sessionIssuanceFault
 
 	app := fiber.New(fiber.Config{BodyLimit: options.bodyLimit})
 	app.Use(handler.LanguageMiddleware)

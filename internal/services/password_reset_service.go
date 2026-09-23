@@ -109,7 +109,11 @@ func (service *PasswordResetService) StartRecovery(ctx context.Context, secretKe
 	return token, nil
 }
 
-func (service *PasswordResetService) CompleteReset(ctx context.Context, secretKey []byte, rawToken string, password string, confirmPassword string, now time.Time) (*models.User, string, error) {
+// CompleteReset redeems a reset token: it rewrites the password and rotates
+// the recovery code in one compare-and-set write. deliver seals the new
+// session and the code's reveal before that write commits (see
+// RecoveryCodeDelivery); if it fails, the reset never happened.
+func (service *PasswordResetService) CompleteReset(ctx context.Context, secretKey []byte, rawToken string, password string, confirmPassword string, now time.Time, deliver RecoveryCodeDelivery) (*models.User, string, error) {
 	if service.auth == nil {
 		return nil, "", errors.New("auth service is required")
 	}
@@ -128,7 +132,7 @@ func (service *PasswordResetService) CompleteReset(ctx context.Context, secretKe
 	// win; the loser receives ErrResetTokenAlreadyConsumed.
 	oldPasswordHash := user.PasswordHash
 
-	recoveryCode, err := service.auth.ResetPasswordAndRotateRecoveryCodeCAS(ctx, user, oldPasswordHash, password)
+	recoveryCode, err := service.auth.ResetPasswordAndRotateRecoveryCodeCAS(ctx, user, oldPasswordHash, password, deliver)
 	if err != nil {
 		return nil, "", err
 	}

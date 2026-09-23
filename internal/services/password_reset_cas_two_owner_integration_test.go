@@ -32,7 +32,7 @@ func TestResetPasswordAndRotateRecoveryCodeCASScopesTheWriteToTheResolvedOwner(t
 	before := readTwoOwnerUser(t, database, ownerA.ID)
 
 	target := readTwoOwnerUser(t, database, ownerB.ID)
-	recoveryCode, err := service.ResetPasswordAndRotateRecoveryCodeCAS(context.Background(), &target, target.PasswordHash, "EvenStronger2")
+	recoveryCode, err := service.ResetPasswordAndRotateRecoveryCodeCAS(context.Background(), &target, target.PasswordHash, "EvenStronger2", noopRecoveryCodeDelivery)
 	if err != nil {
 		t.Fatalf("resetting owner B failed with %v — a CAS scoped to a different owner matches no row", err)
 	}

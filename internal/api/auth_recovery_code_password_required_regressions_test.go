@@ -55,11 +55,12 @@ func TestRegenerateRecoveryCodeRejectsWrongPassword(t *testing.T) {
 // sibling flow — password change, TOTP enable/disable, clear-data — pins the
 // reissue explicitly; this one did not.
 //
-// The gap had teeth: the handler derives the cookie's version by hand
+// The gap had teeth: the handler once derived the cookie's version by hand
 // (NormalizeAuthSessionVersion(user.AuthSessionVersion) + 1) instead of re-reading
 // the row, so an off-by-one or a dropped normalize would hand the caller a cookie
-// that authenticates nothing on its next request. Hence the probe below asserts
-// the REISSUED cookie still works, not merely that some cookie came back.
+// that authenticates nothing on its next request. The version now comes back
+// from the row inside the rotating transaction; the probe below still asserts
+// the REISSUED cookie works, not merely that some cookie came back.
 func TestRegenerateRecoveryCodeBumpsSessionVersionAndReissuesCookie(t *testing.T) {
 	ctx := newSettingsSecurityTestContext(t, "settings-regenerate-success@example.com")
 	preRegenCookie := ctx.authCookie

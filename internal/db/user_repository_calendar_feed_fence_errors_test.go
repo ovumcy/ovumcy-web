@@ -128,7 +128,7 @@ func TestACredentialRotationSurfacesItsOwnWriteFailure(t *testing.T) {
 		t.Fatalf("close the pool: %v", err)
 	}
 
-	if err := repo.UpdateRecoveryCodeHashAndRevokeSessions(ctx, user.ID, "recovery-hash"); err == nil {
+	if err := repo.UpdateRecoveryCodeHashAndRevokeSessions(ctx, user.ID, "recovery-hash", nil); err == nil {
 		t.Fatal("UpdateRecoveryCodeHashAndRevokeSessions must report a failed write rather than fall through to the fence")
 	}
 	if err := repo.ForceResetPasswordAndRevokeSessions(ctx, user.ID, "password-hash"); err == nil {
@@ -164,7 +164,7 @@ func TestPostOperationFenceFailureNeverFailsAnAlreadyCommittedWrite(t *testing.T
 		{
 			name: "UpdateRecoveryCodeHashAndRevokeSessions",
 			run: func(userID uint) error {
-				return repo.UpdateRecoveryCodeHashAndRevokeSessions(ctx, userID, "recovery-hash")
+				return repo.UpdateRecoveryCodeHashAndRevokeSessions(ctx, userID, "recovery-hash", nil)
 			},
 		},
 		{
@@ -178,7 +178,7 @@ func TestPostOperationFenceFailureNeverFailsAnAlreadyCommittedWrite(t *testing.T
 			run: func(userID uint) error {
 				// createUserForTimezoneTest below always seeds PasswordHash
 				// "hash", so the CAS predicate is known without a reload.
-				return repo.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx, userID, "hash", 1, "new-password-hash", "new-recovery-hash")
+				return repo.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx, userID, "hash", 1, "new-password-hash", "new-recovery-hash", nil)
 			},
 		},
 	}

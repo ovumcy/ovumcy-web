@@ -44,7 +44,10 @@ func (repo *usageGoalRecordingRepo) UpdatePasswordAndRevokeSessions(context.Cont
 	return nil
 }
 
-func (repo *usageGoalRecordingRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(context.Context, uint, string, string, bool) error {
+func (repo *usageGoalRecordingRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(_ context.Context, _ uint, _ string, _ string, _ bool, beforeCommit func(sessionVersion int) error) error {
+	if beforeCommit != nil {
+		return beforeCommit(1)
+	}
 	return nil
 }
 

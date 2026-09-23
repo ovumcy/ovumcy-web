@@ -272,7 +272,7 @@ func TestPasswordResetServiceCompleteReset(t *testing.T) {
 		t.Fatalf("BuildPasswordResetToken() unexpected error: %v", err)
 	}
 
-	user, recoveryCode, err := service.CompleteReset(context.Background(), secret, token, "EvenStronger2", "EvenStronger2", now.Add(1*time.Minute))
+	user, recoveryCode, err := service.CompleteReset(context.Background(), secret, token, "EvenStronger2", "EvenStronger2", now.Add(1*time.Minute), noopRecoveryCodeDelivery)
 	if err != nil {
 		t.Fatalf("CompleteReset() unexpected error: %v", err)
 	}
