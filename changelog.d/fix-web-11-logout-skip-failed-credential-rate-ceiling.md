@@ -22,6 +22,8 @@
   unauthenticated `DELETE`s. Every other owner's API sign-out was then refused for the rest of the
   window, with the session still alive. The row now counts only answers below 400. Successful
   sign-outs still spend it, and each account's own logout budget still bounds them per owner.
+  Concurrent refused requests can still keep the row exhausted until the window ends: the limiter
+  counts a request while it is in flight, and one it answers `429` itself keeps its count.
   Regression: `TestLogoutEdgeBudgetIsNotSpentByRefusedRequests`.
 - **An API path spelled in another case is refused as an API request.** The router matches paths
   case-insensitively, but the session gate decided between a JSON refusal and the sign-in redirect

@@ -73,8 +73,11 @@ Every test-enforceable entry has a corresponding test or set of tests in `SECURI
 - The **per-IP logout row counts only successful sign-outs.** It sits in front of
   `DELETE /api/v1/sessions/current` and refuses before the handler, so every request it counted
   could keep a session alive: it skips every answer of 400 or above, and a neighbour behind the same
-  address cannot spend it with refused requests. Successful sign-outs still spend it, and each
-  account's own budget above bounds them per owner.
+  address cannot spend it with refused requests sent one after another. Successful sign-outs still
+  spend it, and each account's own budget above bounds them per owner. Residual: the limiter counts
+  a request before the handler answers and gives the count back only once a refusal comes back,
+  and a request it answers `429` itself keeps its count, so concurrent refused requests can keep the
+  row exhausted until the window ends.
 
 ## Privacy and PII
 

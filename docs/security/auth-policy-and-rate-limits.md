@@ -95,7 +95,9 @@ Plus per-account, identity-keyed budgets enforced by `AuthAttemptPolicy` (`inter
   for several owners behind one address, which is exactly why it cannot double as the account budget.
   That per-IP row is edge middleware and refuses before the handler, so it counts only answers
   below 400: an unauthenticated or token-less `DELETE` from a shared address is refused without
-  spending it, and cannot hold another owner's API sign-out refused until the window ends.
+  spending it. It is counted while it is in flight, though, and a request the row answers `429`
+  itself keeps its count, so concurrent refused requests can keep the row exhausted until the
+  window ends.
 - TOTP login challenge: 5 failures / 15 minutes.
 - TOTP disable: 5 failures / 15 minutes.
 - Settings re-authentication: 5 failures / 15 minutes, covering every password-gated settings action except the TOTP disable, whose password check draws its own budget above — `POST /api/v1/users/current/data-wipe/validate`, `POST …/data-wipe`, `DELETE /api/v1/users/current`, `PUT …/password`, `PUT …/2fa` (the TOTP-enrollment confirmation), and `POST …/recovery-code` (recovery-code regeneration). Without it these would be faster password oracles than the login form (the `/api` catch-all allows 300 requests per minute against login's 8 per 15 minutes), and `/data-wipe/validate` changes no state, which makes it a pure oracle. Once the budget is spent the endpoints answer `429` even for the correct password. The budget is keyed on `(client, account)` and on the account alone, deliberately **not** on the client address by itself: several independent owners share one address on a household instance, and one owner mistyping must not lock out the others, while the account-wide bucket still caps an attacker rotating addresses.
