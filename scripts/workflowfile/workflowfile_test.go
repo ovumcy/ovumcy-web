@@ -229,6 +229,40 @@ func TestStepInKeepsKeysPastAShallowComment(t *testing.T) {
 	}
 }
 
+// TestStepsSplitsEveryStepAndStopsAtTheJob feeds Steps a job whose steps open
+// on three different keys, with a shallow comment inside one and a job-level
+// key after the last: each step is returned whole and alone, and the last one
+// stops before the job's own key.
+func TestStepsSplitsEveryStepAndStopsAtTheJob(t *testing.T) {
+	const job = "    runs-on: ubuntu-latest\n    steps:\n" +
+		"      - name: First\n        run: |\n          true\n      # why sh\n        shell: sh {0}\n" +
+		"      - id: probe\n        shell: bash\n" +
+		"      - if: always()\n        uses: actions/checkout@v4\n" +
+		"    defaults:\n      run:\n        shell: bash\n"
+	want := []string{
+		"        name: First\n        run: |\n          true\n      # why sh\n        shell: sh {0}\n",
+		"        id: probe\n        shell: bash\n",
+		"        if: always()\n        uses: actions/checkout@v4\n",
+	}
+
+	got := Steps(job)
+	if len(got) != len(want) {
+		t.Fatalf("Steps returned %d steps, want %d: %q", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("step %d = %q, want %q", i, got[i], want[i])
+		}
+	}
+
+	if steps := Steps("    runs-on: ubuntu-latest\n    uses: ./.github/workflows/x.yml\n"); steps != nil {
+		t.Errorf("a job with no `steps:` gave %q", steps)
+	}
+	if steps := Steps("    steps:\n      - id: only\n"); len(steps) != 1 {
+		t.Errorf("a job opening on `steps:` gave %q, want its one step", steps)
+	}
+}
+
 // TestStepReadsAStepOutOfARealWorkflow anchors Step on a workflow the
 // repository ships, so the wrapper is exercised and not only its answer.
 func TestStepReadsAStepOutOfARealWorkflow(t *testing.T) {

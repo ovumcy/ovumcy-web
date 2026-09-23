@@ -477,26 +477,12 @@ var detectCasesByWorkflow = map[string][]detectCase{
 	},
 }
 
-// jobSteps cuts a job block into its steps, each re-indented so the key its
-// item opens on sits at 8 spaces like the rest of its keys.
-func jobSteps(block string) []string {
-	start := strings.Index(block, "\n    steps:\n")
-	if start < 0 {
-		return nil
-	}
-	var steps []string
-	for _, step := range stepHeader.Split(block[start:], -1)[1:] {
-		steps = append(steps, "        "+step)
-	}
-	return steps
-}
-
 // DiffCallerStepsAreGated returns one problem per step of a `changes` job —
 // its checkout, and its call of the diff action — that does not carry
 // `if: diffEvents`, or that is missing.
 func DiffCallerStepsAreGated(block string) []string {
 	var problems []string
-	steps := jobSteps(block)
+	steps := workflowfile.Steps(block)
 	for _, needle := range []string{"uses: ./" + diffAction + "\n", "uses: actions/checkout@"} {
 		found := false
 		for _, step := range steps {
