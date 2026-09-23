@@ -157,6 +157,35 @@ func classifyDashCSites(sites []dashCSite, allowed map[string]string) (offenders
 	return offenders, found
 }
 
+// TestClassifyDashCSitesAllowsExactlyOneSitePerEntry proves the allowlist
+// consumption directly, on data this test owns rather than on whatever the
+// real tree happens to hold today: a first `-c` site in an allowed function
+// is exempt, a second in that same function is an offender, and a site under
+// a key the allowlist never named is an offender from the start.
+func TestClassifyDashCSitesAllowsExactlyOneSitePerEntry(t *testing.T) {
+	allowed := map[string]string{"pkg.probe": "a fixed one-liner"}
+	sites := []dashCSite{
+		{function: "pkg.probe", position: "probe.go:1"},
+		{function: "pkg.probe", position: "probe.go:2"},
+		{function: "pkg.other", position: "other.go:1"},
+	}
+
+	offenders, found := classifyDashCSites(sites, allowed)
+
+	if !found["pkg.probe"] {
+		t.Error("classifyDashCSites did not mark pkg.probe found on its first, allowed site")
+	}
+	if len(offenders) != 2 {
+		t.Fatalf("classifyDashCSites returned %d offenders, want 2 (the second pkg.probe site and pkg.other): %q", len(offenders), offenders)
+	}
+	if !strings.Contains(offenders[0], "probe.go:2") {
+		t.Errorf("offenders[0] = %q, want it to name the second pkg.probe site (probe.go:2)", offenders[0])
+	}
+	if !strings.Contains(offenders[1], "pkg.other") {
+		t.Errorf("offenders[1] = %q, want it to name pkg.other, which the allowlist never named", offenders[1])
+	}
+}
+
 // TestDashCSitesInClassifiesBothWays feeds the scanner a source this test owns,
 // so its verdict does not rest on the tree it judges: a plain `-c`, a cluster
 // inside a function literal and behind a wrapper, a flag held in a variable, a
