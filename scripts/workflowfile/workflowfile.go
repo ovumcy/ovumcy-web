@@ -44,6 +44,15 @@ var stepShellKey = regexp.MustCompile(`(?m)^        shell:(.*)$`)
 // among them.
 var stepItem = regexp.MustCompile(`(?m)^      - `)
 
+// stepDedent matches the first line past a step's own depth: fewer than eight
+// spaces of indentation ahead of something other than whitespace. For the last
+// step in a `steps:` list there is no next stepItem to stop at, so without
+// this a job-level key written after `steps:` — a `defaults:` whose `shell:`
+// then reads as the step's own — runs on into the block. Every job-level key
+// starts shallower than a step's eight-space keys, whatever it holds beneath
+// it, so this alone also answers for a job-level list following `steps:`.
+var stepDedent = regexp.MustCompile(`(?m)^ {0,7}\S`)
+
 // bashStepFlags is what GitHub Actions compiles `shell: bash` to —
 // `bash --noprofile --norc -eo pipefail {0}` — less the `{0}` the script file
 // fills.
@@ -148,10 +157,14 @@ func stepIn(block, step string) (string, error) {
 	}
 	rest := block[start+len(header):]
 
-	if next := stepItem.FindStringIndex(rest); next != nil {
-		return rest[:next[0]], nil
+	end := len(rest)
+	if next := stepItem.FindStringIndex(rest); next != nil && next[0] < end {
+		end = next[0]
 	}
-	return rest, nil
+	if dedent := stepDedent.FindStringIndex(rest); dedent != nil && dedent[0] < end {
+		end = dedent[0]
+	}
+	return rest[:end], nil
 }
 
 // BashStepFlags returns the flags bash runs a step's script file under, read
