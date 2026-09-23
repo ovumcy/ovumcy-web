@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -57,10 +58,12 @@ func openAPIResponseBlock(t *testing.T, spec string, path string, method string,
 // internal/api, because the refusal is produced by csrfMiddlewareConfig and
 // ovumcyErrorHandler, and a copy of either there would pin the spec to the copy.
 //
-// Three refusal causes are driven — no token, a token that does not match the
-// cookie, and a valid token sent from another origin — through every caller the
-// route has. Only HTMX gets the fragment; the plain form submission gets the
-// JSON envelope like an API client, so the description has to say so.
+// Five refusal causes are driven — no token, a token that does not match the
+// cookie, a valid token the server no longer holds (a second app stands in for
+// a restart), and a valid token sent from another site or from a sibling
+// subdomain — through every caller the route has. Only HTMX gets the fragment;
+// the plain form submission gets the JSON envelope like an API client, so the
+// description has to say so.
 func TestOpenAPILanguageSwitchDeclaresTheCSRFRefusalItAnswers(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "docs", "openapi.yaml"))
 	if err != nil {
@@ -69,17 +72,25 @@ func TestOpenAPILanguageSwitchDeclaresTheCSRFRefusalItAnswers(t *testing.T) {
 	forbidden := openAPIResponseBlock(t, string(data), "/lang", "post", "403")
 
 	app := newCSRFGuardTestApp(t)
+	restarted := newCSRFGuardTestApp(t)
 	csrfToken, csrfCookie := issueCSRFFormCredentials(t, app)
 	type refusal struct {
 		name   string
+		app    *fiber.App
 		token  string
 		cookie string
 		origin string
+		// clearsCookie: the answer retracts ovumcy_csrf, as the spec says a
+		// token the server no longer holds does.
+		clearsCookie bool
 	}
 	refusals := []refusal{
-		{name: "no token"},
-		{name: "mismatched token", token: "not-the-issued-token", cookie: csrfCookie},
-		{name: "foreign origin", token: csrfToken, cookie: csrfCookie, origin: "http://elsewhere.example"},
+		{name: "no token", app: app},
+		{name: "mismatched token", app: app, token: "not-the-issued-token", cookie: csrfCookie},
+		{name: "token the server no longer holds", app: restarted, token: csrfToken, cookie: csrfCookie, clearsCookie: true},
+		{name: "foreign origin", app: app, token: csrfToken, cookie: csrfCookie, origin: "http://elsewhere.example"},
+		// httptest requests are addressed to example.com.
+		{name: "sibling subdomain", app: app, token: csrfToken, cookie: csrfCookie, origin: "http://sub.example.com"},
 	}
 	clients := []struct {
 		name     string
@@ -125,7 +136,7 @@ func TestOpenAPILanguageSwitchDeclaresTheCSRFRefusalItAnswers(t *testing.T) {
 			for name, value := range client.headers {
 				request.Header.Set(name, value)
 			}
-			response, err := app.Test(request, testConfigNoTimeout)
+			response, err := cause.app.Test(request, testConfigNoTimeout)
 			if err != nil {
 				t.Fatalf("%s: POST /lang: %v", where, err)
 			}
@@ -135,15 +146,24 @@ func TestOpenAPILanguageSwitchDeclaresTheCSRFRefusalItAnswers(t *testing.T) {
 			if response.StatusCode != http.StatusForbidden {
 				t.Fatalf("%s: answered %d, want the CSRF 403", where, response.StatusCode)
 			}
+			cleared := false
 			for _, cookie := range response.Cookies() {
 				if cookie.Name == "ovumcy_lang" {
 					t.Errorf("%s: the refused switch still set ovumcy_lang: %#v", where, cookie)
 				}
+				if cookie.Name == "ovumcy_csrf" && (cookie.MaxAge < 0 || cookie.Value == "" || (!cookie.Expires.IsZero() && cookie.Expires.Before(time.Now()))) {
+					cleared = true
+				}
+			}
+			if cause.clearsCookie && !cleared {
+				t.Errorf("%s: the 403 did not clear ovumcy_csrf; Set-Cookie: %q", where, response.Header.Values("Set-Cookie"))
 			}
 			contentType := response.Header.Get(fiber.HeaderContentType)
 			if client.fragment {
-				if !strings.HasPrefix(contentType, fiber.MIMETextHTML) || json.Valid(body) {
-					t.Errorf("%s: answered 403 as %q (%q), want the text/html status fragment", where, contentType, body)
+				if !strings.HasPrefix(contentType, fiber.MIMETextHTML) || json.Valid(body) ||
+					!strings.Contains(string(body), `class="status-error"`) ||
+					!strings.Contains(string(body), `data-flash-key="common.error.forbidden"`) {
+					t.Errorf("%s: answered 403 as %q (%q), want the text/html status fragment carrying the forbidden key", where, contentType, body)
 				}
 				continue
 			}
@@ -166,7 +186,7 @@ func TestOpenAPILanguageSwitchDeclaresTheCSRFRefusalItAnswers(t *testing.T) {
 		requireOpenAPILine(t, forbidden, want)
 	}
 	joined := strings.Join(forbidden, " ")
-	for _, phrase := range []string{"the plain form submission included", "`HX-Request: true`", "`text/html`", "`Origin` that names"} {
+	for _, phrase := range []string{"the plain form submission included", "`HX-Request: true`", "`text/html`", "issued before the server restarted", "`Origin` whose scheme or host differs", "a sibling subdomain included"} {
 		if !strings.Contains(joined, phrase) {
 			t.Errorf("POST /lang 403: docs/openapi.yaml never mentions %q — the server answers that way and the description has to say so:\n  %s",
 				phrase, strings.Join(forbidden, "\n  "))

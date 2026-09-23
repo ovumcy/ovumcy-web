@@ -1502,10 +1502,11 @@ paths:
         '403':
           description: |
             The CSRF check refused the request: no token; a token that does not match the
-            `ovumcy_csrf` cookie, or one the server no longer holds (idle for over an hour —
-            that answer also clears the cookie, so fetch a page again); an `Origin` that names
-            another site, or over HTTPS with no `Origin`, a missing or foreign `Referer`; or a
-            malformed `Sec-Fetch-Site`. The refusal comes from the CSRF middleware before the
+            `ovumcy_csrf` cookie, or one the server no longer holds (idle for over an hour, or
+            issued before the server restarted — that answer also clears the cookie, so fetch a
+            page again); an `Origin` whose scheme or host differs from the server's, a sibling
+            subdomain included, or over HTTPS with no `Origin`, a missing or foreign `Referer`;
+            or a malformed `Sec-Fetch-Site`. The refusal comes from the CSRF middleware before the
             handler runs, so no `ovumcy_lang` cookie is set and nothing is stored on the
             account. It carries the shared `forbidden` key rather than a key of this route's
             own.
