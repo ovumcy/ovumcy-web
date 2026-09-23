@@ -3,10 +3,13 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
+	"reflect"
 	"regexp"
 	"testing"
 	"time"
 
+	"github.com/ovumcy/ovumcy-web/internal/db"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -199,6 +202,57 @@ func (stub *stubAuthUserRepo) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx
 // noopRecoveryCodeDelivery satisfies RecoveryCodeDelivery for tests that do
 // not exercise delivery itself.
 func noopRecoveryCodeDelivery(*models.User, string) error { return nil }
+
+// callRotationRecoveringPanic reports a panic from rotate as its error. A
+// rotation that reaches its hook with a nil delivery calls it inside the
+// transaction; recovering here lets the case fail its own assertions by name
+// instead of aborting the package run.
+func callRotationRecoveringPanic(rotate func() (string, error)) (recoveryCode string, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("rotation panicked: %v", recovered)
+		}
+	}()
+	return rotate()
+}
+
+// TestRecoveryCodeRotationsRefuseANilDeliveryBeforeTheirWrite pins the
+// ErrRecoveryCodeDeliveryRequired guard of both AuthService rotations against
+// the real user repository: a rotation that names no delivery would mint a code
+// nobody can be shown, so it is refused before the write and the row stays
+// exactly as it was.
+func TestRecoveryCodeRotationsRefuseANilDeliveryBeforeTheirWrite(t *testing.T) {
+	database := newTwoOwnerIntegrationDatabase(t, "ovumcy-rotation-nil-delivery")
+	service := NewAuthService(db.NewUserRepository(database))
+	owner := createTwoOwnerUser(t, database, "rotation-nil-delivery@example.com", withLocalCredentials(t, "OwnerPass1"))
+
+	for _, rotation := range []struct {
+		name   string
+		rotate func(user *models.User) (string, error)
+	}{
+		{"regenerate", func(user *models.User) (string, error) {
+			return service.RegenerateRecoveryCode(context.Background(), user, nil)
+		}},
+		{"reset", func(user *models.User) (string, error) {
+			return service.ResetPasswordAndRotateRecoveryCodeCAS(context.Background(), user, user.PasswordHash, "EvenStronger2", nil)
+		}},
+	} {
+		t.Run(rotation.name, func(t *testing.T) {
+			before := readTwoOwnerUser(t, database, owner.ID)
+			acting := before
+			recoveryCode, err := callRotationRecoveringPanic(func() (string, error) { return rotation.rotate(&acting) })
+			if !errors.Is(err, ErrRecoveryCodeDeliveryRequired) {
+				t.Errorf("expected ErrRecoveryCodeDeliveryRequired, got %v", err)
+			}
+			if recoveryCode != "" {
+				t.Error("a rotation refused for want of a delivery must return no code")
+			}
+			if after := readTwoOwnerUser(t, database, owner.ID); !reflect.DeepEqual(before, after) {
+				t.Fatalf("a rotation with no delivery changed the users row:\nbefore %+v\nafter  %+v", before, after)
+			}
+		})
+	}
+}
 
 func (stub *stubAuthUserRepo) UpdatePasswordHashOnly(ctx context.Context, userID uint, passwordHash string) error {
 	stub.updateHashOnlyCalls++
