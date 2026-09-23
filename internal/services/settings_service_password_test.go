@@ -430,6 +430,41 @@ func TestFinalizeLocalPasswordSetupRejectsWhenAlreadyEnabled(t *testing.T) {
 	}
 }
 
+// TestLocalPasswordEnrollmentRefusesANilDeliveryBeforeItsWrite pins the
+// ErrRecoveryCodeDeliveryRequired guard of FinalizeLocalPasswordSetup against
+// the real user repository: an enrollment that names no delivery would mint a
+// recovery code nobody can be shown, so it is refused before the write and the
+// row stays exactly as it was.
+func TestLocalPasswordEnrollmentRefusesANilDeliveryBeforeItsWrite(t *testing.T) {
+	database := newTwoOwnerIntegrationDatabase(t, "ovumcy-enrollment-nil-delivery")
+	service := NewSettingsService(db.NewUserRepository(database))
+	owner := createTwoOwnerUser(t, database, "enrollment-nil-delivery@example.com", func(user *models.User) {
+		user.PasswordHash = ""
+		user.RecoveryCodeHash = ""
+		user.LocalAuthEnabled = false
+		user.AuthSessionVersion = 1
+	})
+
+	before := readTwoOwnerUser(t, database, owner.ID)
+	acting := before
+	preparedHash, err := service.PrepareLocalPasswordHash(&acting, "EvenStronger2", "EvenStronger2")
+	if err != nil {
+		t.Fatalf("PrepareLocalPasswordHash() unexpected error: %v", err)
+	}
+	recoveryCode, err := callRotationRecoveringPanic(func() (string, error) {
+		return service.FinalizeLocalPasswordSetup(context.Background(), &acting, preparedHash, nil)
+	})
+	if !errors.Is(err, ErrRecoveryCodeDeliveryRequired) {
+		t.Errorf("expected ErrRecoveryCodeDeliveryRequired, got %v", err)
+	}
+	if recoveryCode != "" {
+		t.Error("an enrollment refused for want of a delivery must return no code")
+	}
+	if after := readTwoOwnerUser(t, database, owner.ID); !reflect.DeepEqual(before, after) {
+		t.Fatalf("an enrollment with no delivery changed the users row:\nbefore %+v\nafter  %+v", before, after)
+	}
+}
+
 // TestFinalizeLocalPasswordSetupScopesTheWriteToTheActingOwner drives the
 // local-password enrollment through the REAL user repository with two
 // independent owners in one database.

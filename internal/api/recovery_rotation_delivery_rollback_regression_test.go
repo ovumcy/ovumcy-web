@@ -188,6 +188,15 @@ func TestLocalPasswordSetupDeliveryFailureLeavesTheAccountAsItWas(t *testing.T) 
 	if refused.StatusCode != http.StatusSeeOther || !strings.HasPrefix(refused.Header.Get("Location"), "/settings") {
 		t.Fatalf("expected the refusal to flash back to /settings, got %d to %q", refused.StatusCode, refused.Header.Get("Location"))
 	}
+	// Every refusal on this callback takes the same 303, so the flash is what
+	// names the cause: the delivery failure, not the write it rolled back.
+	flash := responseCookie(refused.Cookies(), flashCookieName)
+	if flash == nil || strings.TrimSpace(flash.Value) == "" {
+		t.Fatal("expected the refusal to carry a settings flash")
+	}
+	if got := decodeFlashCookieForTest(t, flash.Value).SettingsError; got != authSessionCreateErrorSpec().Key {
+		t.Fatalf("expected the flash to carry %q, got %q", authSessionCreateErrorSpec().Key, got)
+	}
 	assertRotationLeftRowAndCookiesUntouched(t, database, before, refused)
 
 	handler.sessionIssuanceFault = nil
