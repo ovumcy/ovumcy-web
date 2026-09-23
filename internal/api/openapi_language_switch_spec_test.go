@@ -7,6 +7,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -23,11 +24,16 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/httpx"
 )
 
+// limiterImportPath is the package every rate limiter in the composition root
+// is built from. The reader below keys on the import, not on the spelling
+// `limiter`, so an aliased import is still read.
+const limiterImportPath = "github.com/gofiber/fiber/v3/middleware/limiter"
+
 // limiterMount is one limiter.New the composition root wires through a Use
-// call: the prefix it is mounted on and how its Next filter scopes it. The
-// limiters are mounted in cmd/ovumcy, which internal/api cannot import, so they
-// are read as source, the same way requireAPIRateLimitMountHasNoNextFilter
-// reads the /api mount.
+// call: the prefix it is mounted on, how its Next filter scopes it, and the
+// function its LimitReached is built by. The limiters are mounted in
+// cmd/ovumcy, which internal/api cannot import, so they are read as source, the
+// same way requireAPIRateLimitMountHasNoNextFilter reads the /api mount.
 type limiterMount struct {
 	source string
 	prefix string
@@ -39,6 +45,9 @@ type limiterMount struct {
 	// opaque is set when Next is anything else. Such a limiter may or may not
 	// reach a given operation under its prefix, and this reader cannot tell.
 	opaque bool
+	// limitReachedBy names the package-level function whose call builds the
+	// LimitReached handler, or is empty when LimitReached is anything else.
+	limitReachedBy string
 }
 
 // covers reports whether the mount's limiter counts a request for the
@@ -157,9 +166,32 @@ func resolveFiberMethod(expr ast.Expr) (string, bool) {
 	return strings.ToUpper(strings.TrimPrefix(selector.Sel.Name, "Method")), true
 }
 
-func isLimiterNewCall(expr ast.Expr) (*ast.CallExpr, bool) {
+// limiterPackageName returns the name a file refers to the limiter package by:
+// its alias when the import carries one, `limiter` otherwise, and "" when the
+// file does not import it. A dot or blank import fails: a limiter.New spelled
+// without a qualifier cannot be told apart from any other New.
+func limiterPackageName(t *testing.T, fileSet *token.FileSet, file *ast.File) string {
+	t.Helper()
+	for _, spec := range file.Imports {
+		importPath, err := strconv.Unquote(spec.Path.Value)
+		if err != nil || importPath != limiterImportPath {
+			continue
+		}
+		if spec.Name == nil {
+			return "limiter"
+		}
+		if spec.Name.Name == "." || spec.Name.Name == "_" {
+			t.Fatalf("%s: the limiter package is imported as %q, so this guard cannot find the limiters built from it — import it by name",
+				fileSet.Position(spec.Pos()), spec.Name.Name)
+		}
+		return spec.Name.Name
+	}
+	return ""
+}
+
+func isLimiterNewCall(expr ast.Expr, packageName string) (*ast.CallExpr, bool) {
 	call, ok := expr.(*ast.CallExpr)
-	if !ok {
+	if !ok || packageName == "" {
 		return nil, false
 	}
 	selector, ok := call.Fun.(*ast.SelectorExpr)
@@ -167,13 +199,16 @@ func isLimiterNewCall(expr ast.Expr) (*ast.CallExpr, bool) {
 		return nil, false
 	}
 	qualifier, ok := selector.X.(*ast.Ident)
-	return call, ok && qualifier.Name == "limiter" && selector.Sel.Name == "New"
+	return call, ok && qualifier.Name == packageName && selector.Sel.Name == "New"
 }
 
-// discoverLimiterMounts returns every limiter.New mounted through a Use call in
-// cmd/ovumcy's non-test sources. A mount whose prefix or Next scope it cannot
-// read fails here rather than being skipped: a limiter this reader drops is a
-// 429 the sweep below never asks the spec about.
+// discoverLimiterMounts returns every limiter the composition root builds, read
+// from cmd/ovumcy's non-test sources, and fails closed: EVERY limiter.New call
+// site in the package has to be a direct argument of a Use call, the one shape
+// whose reach this reader can state. A limiter built anywhere else — assigned
+// to a variable first, returned by a helper, passed to a route registration —
+// fails here by position instead of being skipped, because a limiter this
+// reader drops is a 429 the sweep never asks the spec about.
 func discoverLimiterMounts(t *testing.T) []limiterMount {
 	t.Helper()
 	fileSet := token.NewFileSet()
@@ -183,7 +218,13 @@ func discoverLimiterMounts(t *testing.T) []limiterMount {
 	collectStringConstants(parseNonTestGoFiles(t, token.NewFileSet(), "."), "api.", constants)
 
 	var mounts []limiterMount
+	var unreadable []string
 	for _, file := range cmdFiles {
+		packageName := limiterPackageName(t, fileSet, file)
+		if packageName == "" {
+			continue
+		}
+		mounted := make(map[*ast.CallExpr]bool)
 		ast.Inspect(file, func(node ast.Node) bool {
 			use, ok := node.(*ast.CallExpr)
 			if !ok {
@@ -194,10 +235,11 @@ func discoverLimiterMounts(t *testing.T) []limiterMount {
 				return true
 			}
 			for argIndex, arg := range use.Args {
-				newCall, ok := isLimiterNewCall(arg)
+				newCall, ok := isLimiterNewCall(arg, packageName)
 				if !ok {
 					continue
 				}
+				mounted[newCall] = true
 				mount := limiterMount{source: fileSet.Position(newCall.Pos()).String()}
 				if argIndex > 0 {
 					prefix, resolved := resolveStringExpr(use.Args[0], constants)
@@ -206,16 +248,34 @@ func discoverLimiterMounts(t *testing.T) []limiterMount {
 					}
 					mount.prefix = prefix
 				}
-				mount.readNextFilter(t, newCall, constants)
+				mount.readConfig(t, newCall, constants)
 				mounts = append(mounts, mount)
 			}
 			return true
 		})
+		ast.Inspect(file, func(node ast.Node) bool {
+			if call, ok := isLimiterNewCall(asExpr(node), packageName); ok && !mounted[call] {
+				unreadable = append(unreadable, fileSet.Position(call.Pos()).String())
+			}
+			return true
+		})
+	}
+	if len(unreadable) > 0 {
+		sort.Strings(unreadable)
+		t.Fatalf("limiter.New is called outside a direct app.Use([prefix,] limiter.New(limiter.Config{...})) argument, so this guard cannot tell which operations the limiter counts — mount it in that shape:\n  %s",
+			strings.Join(unreadable, "\n  "))
 	}
 	return mounts
 }
 
-func (mount *limiterMount) readNextFilter(t *testing.T, newCall *ast.CallExpr, constants map[string]string) {
+func asExpr(node ast.Node) ast.Expr {
+	expr, _ := node.(ast.Expr)
+	return expr
+}
+
+// readConfig reads the two fields of the limiter.Config literal the guards
+// depend on: Next (the limiter's scope) and LimitReached (what it answers).
+func (mount *limiterMount) readConfig(t *testing.T, newCall *ast.CallExpr, constants map[string]string) {
 	t.Helper()
 	if len(newCall.Args) == 0 {
 		return
@@ -229,33 +289,45 @@ func (mount *limiterMount) readNextFilter(t *testing.T, newCall *ast.CallExpr, c
 		if !ok {
 			continue
 		}
-		if key, ok := field.Key.(*ast.Ident); !ok || key.Name != "Next" {
+		key, ok := field.Key.(*ast.Ident)
+		if !ok {
 			continue
 		}
-		scope, ok := field.Value.(*ast.CallExpr)
-		if callee, isIdent := scopeCallee(scope, ok); !isIdent || callee != "rateLimitOnlyFor" || len(scope.Args) != 2 {
-			mount.opaque = true
-			return
+		switch key.Name {
+		case "Next":
+			mount.readNextFilter(t, field.Value, constants)
+		case "LimitReached":
+			mount.limitReachedBy = packageFunctionCallee(field.Value)
 		}
-		method, methodOK := resolveFiberMethod(scope.Args[0])
-		path, pathOK := resolveStringExpr(scope.Args[1], constants)
-		if !methodOK || !pathOK {
-			t.Fatalf("%s: rateLimitOnlyFor's arguments are not a fiber.Method* selector and a string literal or constant; this guard cannot read the limiter's scope", mount.source)
-		}
-		mount.scoped, mount.method, mount.path = true, method, path
-		return
 	}
 }
 
-func scopeCallee(scope *ast.CallExpr, isCall bool) (string, bool) {
-	if !isCall {
-		return "", false
+func (mount *limiterMount) readNextFilter(t *testing.T, value ast.Expr, constants map[string]string) {
+	t.Helper()
+	scope, ok := value.(*ast.CallExpr)
+	if !ok || packageFunctionCallee(scope) != "rateLimitOnlyFor" || len(scope.Args) != 2 {
+		mount.opaque = true
+		return
 	}
-	ident, ok := scope.Fun.(*ast.Ident)
+	method, methodOK := resolveFiberMethod(scope.Args[0])
+	path, pathOK := resolveStringExpr(scope.Args[1], constants)
+	if !methodOK || !pathOK {
+		t.Fatalf("%s: rateLimitOnlyFor's arguments are not a fiber.Method* selector and a string literal or constant; this guard cannot read the limiter's scope", mount.source)
+	}
+	mount.scoped, mount.method, mount.path = true, method, path
+}
+
+// packageFunctionCallee names the unqualified function expr calls, or "".
+func packageFunctionCallee(expr ast.Expr) string {
+	call, ok := expr.(*ast.CallExpr)
 	if !ok {
-		return "", false
+		return ""
 	}
-	return ident.Name, true
+	ident, ok := call.Fun.(*ast.Ident)
+	if !ok {
+		return ""
+	}
+	return ident.Name
 }
 
 // limiterCoveredDocumentedOperationsOutsideV1 returns the operations
@@ -302,6 +374,59 @@ func limiterCoveredDocumentedOperationsOutsideV1(t *testing.T, declared map[int]
 			strings.Join(undecidable, "\n  "))
 	}
 	return covered
+}
+
+// requireLanguageSwitchLimiterAnswersThroughRespondAPIRateLimited ties the
+// limiter the behavioural test builds to the one the composition root mounts:
+// every limiter covering POST /lang must build its LimitReached with a function
+// of cmd/ovumcy that returns handler.RespondAPIRateLimited — the responder the
+// test's own limiter answers with. Swapping that constructor on the real mount
+// reddens here, rather than leaving the test proving a responder production no
+// longer uses.
+func requireLanguageSwitchLimiterAnswersThroughRespondAPIRateLimited(t *testing.T) {
+	t.Helper()
+	fileSet := token.NewFileSet()
+	cmdFiles := parseNonTestGoFiles(t, fileSet, filepath.Join("..", "..", "cmd", "ovumcy"))
+	returnsRespondAPIRateLimited := make(map[string]bool)
+	for _, file := range cmdFiles {
+		for _, decl := range file.Decls {
+			function, ok := decl.(*ast.FuncDecl)
+			if !ok || function.Recv != nil || function.Body == nil {
+				continue
+			}
+			ast.Inspect(function.Body, func(node ast.Node) bool {
+				ret, ok := node.(*ast.ReturnStmt)
+				if !ok {
+					return true
+				}
+				for _, result := range ret.Results {
+					call, ok := result.(*ast.CallExpr)
+					if !ok {
+						continue
+					}
+					if selector, ok := call.Fun.(*ast.SelectorExpr); ok && selector.Sel.Name == "RespondAPIRateLimited" {
+						returnsRespondAPIRateLimited[function.Name.Name] = true
+					}
+				}
+				return true
+			})
+		}
+	}
+
+	var covering int
+	for _, mount := range discoverLimiterMounts(t) {
+		if covered, _ := mount.covers(fiber.MethodPost, LanguageSwitchPath); !covered {
+			continue
+		}
+		covering++
+		if !returnsRespondAPIRateLimited[mount.limitReachedBy] {
+			t.Errorf("%s: the limiter covering POST %s builds its LimitReached with %q, which does not return handler.RespondAPIRateLimited — the responder the spec's 429 for this route is pinned against. Wire it through newAPIRateLimitHandler, or re-pin the spec against the new responder",
+				mount.source, LanguageSwitchPath, mount.limitReachedBy)
+		}
+	}
+	if covering == 0 {
+		t.Fatalf("no limiter mounted in cmd/ovumcy covers POST %s; the 429 this test pins has no producer", LanguageSwitchPath)
+	}
 }
 
 // openAPIYAMLBlock returns the lines nested under the key path given, one key
@@ -351,105 +476,6 @@ func requireSpecLine(t *testing.T, block []string, want string, where string) {
 		where, want, strings.Join(block, "\n  "))
 }
 
-// TestOpenAPILanguageSwitchDeclaresTheRefusalsItAnswers pins the two refusals
-// POST /lang answers a JSON caller against what docs/openapi.yaml declares for
-// that operation. The spec published only the 200 and the 303, while the
-// handler refuses a blank `lang` with 400 and the route carries a per-IP
-// limiter of its own that refuses with 429.
-//
-// Both answers are produced, not restated: the 400 by SetLanguage behind the
-// transport-envelope error handler cmd/ovumcy installs (every *fiber.Error goes
-// through RespondTransportError; TestLanguageSwitchRejectionAnswersThroughTheEnvelope
-// pins that wiring on the real stack), the 429 by a real fiber limiter whose
-// refusal is RespondAPIRateLimited, the responder newAPIRateLimitHandler calls
-// for this route. The key, category and target each body carries are then
-// required, verbatim, in the example the spec declares for that status.
-func TestOpenAPILanguageSwitchDeclaresTheRefusalsItAnswers(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "docs", "openapi.yaml"))
-	if err != nil {
-		t.Fatalf("read openapi spec: %v", err)
-	}
-	spec := string(data)
-
-	handler := &Handler{}
-	app := fiber.New(fiber.Config{ErrorHandler: func(c fiber.Ctx, err error) error {
-		var fiberErr *fiber.Error
-		if errors.As(err, &fiberErr) {
-			return RespondTransportError(c, fiberErr.Code)
-		}
-		return RespondTransportError(c, fiber.StatusInternalServerError)
-	}})
-	app.Use(limiter.New(limiter.Config{
-		Max:          1,
-		Expiration:   time.Minute,
-		LimitReached: handler.RespondAPIRateLimited,
-	}))
-	app.Post(LanguageSwitchPath, handler.SetLanguage)
-
-	send := func() (int, http.Header, map[string]any) {
-		request := httptest.NewRequest(http.MethodPost, LanguageSwitchPath, strings.NewReader(url.Values{"lang": {"  "}}.Encode()))
-		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		request.Header.Set("Accept", "application/json")
-		response, err := app.Test(request)
-		if err != nil {
-			t.Fatalf("POST %s: %v", LanguageSwitchPath, err)
-		}
-		defer func() { _ = response.Body.Close() }()
-		var body map[string]any
-		if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
-			t.Fatalf("POST %s answered %d with a body that is not JSON: %v", LanguageSwitchPath, response.StatusCode, err)
-		}
-		if contentType := response.Header.Get(fiber.HeaderContentType); !strings.HasPrefix(contentType, fiber.MIMEApplicationJSON) {
-			t.Fatalf("POST %s answered %d as %q, not application/json", LanguageSwitchPath, response.StatusCode, contentType)
-		}
-		return response.StatusCode, response.Header, body
-	}
-
-	envelopeLines := func(status int, body map[string]any) []string {
-		detail, _ := body["error_detail"].(map[string]any)
-		key, _ := detail["key"].(string)
-		category, _ := detail["category"].(string)
-		target, _ := detail["target"].(string)
-		if key == "" || category == "" || target == "" || body["error"] != key {
-			t.Fatalf("POST %s answered %d without the shared error envelope: %v", LanguageSwitchPath, status, body)
-		}
-		return []string{
-			fmt.Sprintf("error: %q", key),
-			fmt.Sprintf("error_detail: { key: %q, category: %q, target: %q }", key, category, target),
-		}
-	}
-
-	status, _, body := send()
-	if status != http.StatusBadRequest {
-		t.Fatalf("a blank lang answered %d, want 400", status)
-	}
-	badRequest := openAPIYAMLBlock(t, spec, "paths", LanguageSwitchPath, "post", "responses", "'400'")
-	requireSpecLine(t, badRequest, "schema: { $ref: '#/components/schemas/ApiError' }", "POST /lang 400")
-	for _, line := range envelopeLines(status, body) {
-		requireSpecLine(t, badRequest, line, "POST /lang 400")
-	}
-
-	status, header, body := send()
-	if status != http.StatusTooManyRequests {
-		t.Fatalf("the request past the limiter's budget answered %d, want 429", status)
-	}
-	if header.Get(fiber.HeaderRetryAfter) == "" {
-		t.Fatal("the 429 carries no Retry-After header")
-	}
-	if seconds, ok := body["retry_after_seconds"].(float64); !ok || seconds < 1 {
-		t.Fatalf("the 429 body carries no retry_after_seconds: %v", body)
-	}
-	rateLimited := openAPIYAMLBlock(t, spec, "paths", LanguageSwitchPath, "post", "responses", "'429'")
-	requireSpecLine(t, rateLimited, "$ref: '#/components/responses/RateLimited'", "POST /lang 429")
-	component := openAPIYAMLBlock(t, spec, "components", "responses", "RateLimited")
-	requireSpecLine(t, component, "Retry-After:", "components.responses.RateLimited")
-	requireSpecLinePrefix(t, component, "retry_after_seconds:", "components.responses.RateLimited")
-	requireSpecLine(t, component, "schema: { $ref: '#/components/schemas/ApiError' }", "components.responses.RateLimited")
-	for _, line := range envelopeLines(status, body) {
-		requireSpecLine(t, component, line, "components.responses.RateLimited")
-	}
-}
-
 func requireSpecLinePrefix(t *testing.T, block []string, prefix string, where string) {
 	t.Helper()
 	for _, line := range block {
@@ -459,4 +485,198 @@ func requireSpecLinePrefix(t *testing.T, block []string, prefix string, where st
 	}
 	t.Errorf("%s: docs/openapi.yaml carries no line starting %q — the spec no longer describes what the server answers there:\n  %s",
 		where, prefix, strings.Join(block, "\n  "))
+}
+
+// requireSpecMentions requires a phrase in a response's text, joined across
+// lines so a reflowed description still matches.
+func requireSpecMentions(t *testing.T, block []string, phrase string, where string) {
+	t.Helper()
+	if strings.Contains(strings.Join(block, " "), phrase) {
+		return
+	}
+	t.Errorf("%s: docs/openapi.yaml never mentions %q — the server answers that way and the description has to say so:\n  %s",
+		where, phrase, strings.Join(block, "\n  "))
+}
+
+// languageSwitchClient is one way a caller reaches POST /lang; the route answers
+// each a different carrier, so each is driven separately.
+type languageSwitchClient struct {
+	name    string
+	headers map[string]string
+}
+
+type languageSwitchAnswer struct {
+	status      int
+	contentType string
+	retryAfter  string
+	body        []byte
+}
+
+// TestOpenAPILanguageSwitchDeclaresTheRefusalsItAnswers pins the two refusals
+// POST /lang answers against what docs/openapi.yaml declares for that
+// operation. The spec published only the 200 and the 303, while the handler
+// refuses a blank `lang` with 400 and the route carries a per-IP limiter of its
+// own that refuses with 429.
+//
+// Both answers are produced, not restated: the 400 by SetLanguage behind the
+// transport-envelope error handler cmd/ovumcy installs (every *fiber.Error goes
+// through RespondTransportError; TestLanguageSwitchRejectionAnswersThroughTheEnvelope
+// pins that wiring on the real stack), the 429 by a real fiber limiter answering
+// with RespondAPIRateLimited — the responder the real /lang mount reaches, which
+// requireLanguageSwitchLimiterAnswersThroughRespondAPIRateLimited reads out of
+// cmd/ovumcy. The JSON caller's key, category and target are required verbatim
+// in the spec's example; the form and HTMX callers, which get an HTML fragment
+// instead, are required to be named as such in the response's description.
+func TestOpenAPILanguageSwitchDeclaresTheRefusalsItAnswers(t *testing.T) {
+	requireLanguageSwitchLimiterAnswersThroughRespondAPIRateLimited(t)
+
+	data, err := os.ReadFile(filepath.Join("..", "..", "docs", "openapi.yaml"))
+	if err != nil {
+		t.Fatalf("read openapi spec: %v", err)
+	}
+	spec := string(data)
+	badRequest := openAPIYAMLBlock(t, spec, "paths", LanguageSwitchPath, "post", "responses", "'400'")
+	rateLimited := openAPIYAMLBlock(t, spec, "paths", LanguageSwitchPath, "post", "responses", "'429'")
+	component := openAPIYAMLBlock(t, spec, "components", "responses", "RateLimited")
+
+	// A handler built by NewHandler, i18n included: the fragment arms resolve
+	// the request's catalogue before they render.
+	handler, _ := newEgressLedgerHandler(t, false)
+	send := func(app *fiber.App, client languageSwitchClient) languageSwitchAnswer {
+		request := httptest.NewRequest(http.MethodPost, LanguageSwitchPath, strings.NewReader(url.Values{"lang": {"  "}}.Encode()))
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		for name, value := range client.headers {
+			request.Header.Set(name, value)
+		}
+		response, err := app.Test(request)
+		if err != nil {
+			t.Fatalf("%s: POST %s: %v", client.name, LanguageSwitchPath, err)
+		}
+		defer func() { _ = response.Body.Close() }()
+		body, err := io.ReadAll(response.Body)
+		if err != nil {
+			t.Fatalf("%s: read body: %v", client.name, err)
+		}
+		return languageSwitchAnswer{
+			status:      response.StatusCode,
+			contentType: response.Header.Get(fiber.HeaderContentType),
+			retryAfter:  response.Header.Get(fiber.HeaderRetryAfter),
+			body:        body,
+		}
+	}
+	// A fresh app per client: the limiter's budget of one is spent by that
+	// client's own 400, so its second request is the 429.
+	newApp := func() *fiber.App {
+		app := fiber.New(fiber.Config{ErrorHandler: func(c fiber.Ctx, err error) error {
+			var fiberErr *fiber.Error
+			if errors.As(err, &fiberErr) {
+				return RespondTransportError(c, fiberErr.Code)
+			}
+			return RespondTransportError(c, fiber.StatusInternalServerError)
+		}})
+		app.Use(limiter.New(limiter.Config{
+			Max:          1,
+			Expiration:   time.Minute,
+			LimitReached: handler.RespondAPIRateLimited,
+		}))
+		app.Post(LanguageSwitchPath, handler.SetLanguage)
+		return app
+	}
+	envelopeLines := func(where string, answer languageSwitchAnswer) ([]string, map[string]any) {
+		if !strings.HasPrefix(answer.contentType, fiber.MIMEApplicationJSON) {
+			t.Fatalf("%s: answered %d as %q, not application/json", where, answer.status, answer.contentType)
+		}
+		var body map[string]any
+		if err := json.Unmarshal(answer.body, &body); err != nil {
+			t.Fatalf("%s: answered %d with a body that is not JSON: %v", where, answer.status, err)
+		}
+		detail, _ := body["error_detail"].(map[string]any)
+		key, _ := detail["key"].(string)
+		category, _ := detail["category"].(string)
+		target, _ := detail["target"].(string)
+		if key == "" || category == "" || target == "" || body["error"] != key {
+			t.Fatalf("%s: answered %d without the shared error envelope: %v", where, answer.status, body)
+		}
+		return []string{
+			fmt.Sprintf("error: %q", key),
+			fmt.Sprintf("error_detail: { key: %q, category: %q, target: %q }", key, category, target),
+		}, body
+	}
+	requireHTMLFragment := func(where string, answer languageSwitchAnswer) {
+		if !strings.HasPrefix(answer.contentType, fiber.MIMETextHTML) || json.Valid(answer.body) {
+			t.Errorf("%s: answered %d as %q (%q), want the text/html status fragment the spec describes",
+				where, answer.status, answer.contentType, answer.body)
+		}
+	}
+
+	jsonClient := languageSwitchClient{name: "JSON caller", headers: map[string]string{"Accept": fiber.MIMEApplicationJSON}}
+	formClient := languageSwitchClient{name: "form submission"}
+	htmxClient := languageSwitchClient{name: "HTMX request", headers: map[string]string{"HX-Request": "true", "Accept": fiber.MIMEApplicationJSON}}
+
+	// JSON caller: the envelope, as the example declares it, on both statuses.
+	app := newApp()
+	answer := send(app, jsonClient)
+	if answer.status != http.StatusBadRequest {
+		t.Fatalf("JSON caller: a blank lang answered %d, want 400", answer.status)
+	}
+	requireSpecLine(t, badRequest, "schema: { $ref: '#/components/schemas/ApiError' }", "POST /lang 400")
+	lines, _ := envelopeLines("JSON caller 400", answer)
+	for _, line := range lines {
+		requireSpecLine(t, badRequest, line, "POST /lang 400")
+	}
+	answer = send(app, jsonClient)
+	if answer.status != http.StatusTooManyRequests {
+		t.Fatalf("JSON caller: the request past the limiter's budget answered %d, want 429", answer.status)
+	}
+	if answer.retryAfter == "" {
+		t.Error("JSON caller: the 429 carries no Retry-After header")
+	}
+	lines, body := envelopeLines("JSON caller 429", answer)
+	if seconds, ok := body["retry_after_seconds"].(float64); !ok || seconds < 1 {
+		t.Errorf("JSON caller: the 429 body carries no retry_after_seconds: %v", body)
+	}
+	requireSpecLine(t, rateLimited, "$ref: '#/components/responses/RateLimited'", "POST /lang 429")
+	requireSpecLine(t, component, "Retry-After:", "components.responses.RateLimited")
+	requireSpecLinePrefix(t, component, "retry_after_seconds:", "components.responses.RateLimited")
+	requireSpecLine(t, component, "schema: { $ref: '#/components/schemas/ApiError' }", "components.responses.RateLimited")
+	for _, line := range lines {
+		requireSpecLine(t, component, line, "components.responses.RateLimited")
+	}
+
+	// Form submission: the 400 is still the JSON envelope, the 429 is the
+	// fragment — which the 429's description has to name, and the 400's must
+	// not exempt the form from the envelope.
+	app = newApp()
+	answer = send(app, formClient)
+	if answer.status != http.StatusBadRequest {
+		t.Fatalf("form submission: a blank lang answered %d, want 400", answer.status)
+	}
+	envelopeLines("form submission 400", answer)
+	requireSpecMentions(t, badRequest, "the plain form submission included", "POST /lang 400")
+	answer = send(app, formClient)
+	if answer.status != http.StatusTooManyRequests || answer.retryAfter == "" {
+		t.Fatalf("form submission: over the budget answered %d with Retry-After %q, want 429 with the header", answer.status, answer.retryAfter)
+	}
+	requireHTMLFragment("form submission 429", answer)
+	requireSpecMentions(t, rateLimited, "The plain form submission", "POST /lang 429")
+
+	// HTMX request, even one that also accepts JSON: the fragment on both.
+	app = newApp()
+	answer = send(app, htmxClient)
+	if answer.status != http.StatusBadRequest {
+		t.Fatalf("HTMX request: a blank lang answered %d, want 400", answer.status)
+	}
+	requireHTMLFragment("HTMX request 400", answer)
+	answer = send(app, htmxClient)
+	if answer.status != http.StatusTooManyRequests || answer.retryAfter == "" {
+		t.Fatalf("HTMX request: over the budget answered %d with Retry-After %q, want 429 with the header", answer.status, answer.retryAfter)
+	}
+	requireHTMLFragment("HTMX request 429", answer)
+	for _, block := range []struct {
+		where string
+		lines []string
+	}{{"POST /lang 400", badRequest}, {"POST /lang 429", rateLimited}} {
+		requireSpecMentions(t, block.lines, "`HX-Request: true`", block.where)
+		requireSpecMentions(t, block.lines, "`text/html`", block.where)
+	}
 }
