@@ -158,15 +158,62 @@ func stepIn(block, step string) (string, error) {
 		return "", fmt.Errorf("no step named %q — it was renamed or removed, and this guard would judge nothing", step)
 	}
 	rest := block[start+len(header):]
+	return rest[:stepEnd(rest)], nil
+}
 
+// stepEnd is where the step whose keys rest opens on ends: at the next step,
+// or at the first line shallower than a step's keys. Step and Steps both end a
+// step here, so they cannot disagree about where one does.
+func stepEnd(rest string) int {
 	end := len(rest)
-	if next := stepItem.FindStringIndex(rest); next != nil && next[0] < end {
+	if next := stepItem.FindStringIndex(rest); next != nil {
 		end = next[0]
 	}
 	if dedent := stepDedent.FindStringIndex(rest); dedent != nil && dedent[0] < end {
 		end = dedent[0]
 	}
-	return rest[:end], nil
+	return end
+}
+
+// stepsKey opens a job's `steps:` list.
+const stepsKey = "\n    steps:\n"
+
+// Steps returns every step of a job, block being the job as Job returned it,
+// each ending where Step ends a named one — so the last step never reads a
+// job-level key written after `steps:`. The key an item opens on is
+// re-indented to a step key's depth: a step opening on `- if:` carries its
+// `if:` where one opening on `- name:` would. A job with no `steps:` list has
+// none.
+func Steps(block string) []string {
+	// Anchored on a line, as jobSection anchors `jobs:`: a job whose first
+	// key is `steps:` has no newline in front of it.
+	prefixed := "\n" + block
+	start := strings.Index(prefixed, stepsKey)
+	if start < 0 {
+		return nil
+	}
+	rest := prefixed[start+len(stepsKey):]
+
+	var steps []string
+	for {
+		item := stepItem.FindStringIndex(rest)
+		if item == nil {
+			return steps
+		}
+		if dedent := stepDedent.FindStringIndex(rest); dedent != nil && dedent[0] < item[0] {
+			return steps
+		}
+		body := rest[item[1]:]
+		// The opening line sits shallower than a step's keys, so the end is
+		// looked for past it.
+		first := len(body)
+		if newline := strings.IndexByte(body, '\n'); newline >= 0 {
+			first = newline + 1
+		}
+		end := first + stepEnd(body[first:])
+		steps = append(steps, "        "+body[:end])
+		rest = body[end:]
+	}
 }
 
 // BashStepFlags returns the flags bash runs a step's script file under, read

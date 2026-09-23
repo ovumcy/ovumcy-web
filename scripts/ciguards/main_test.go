@@ -205,30 +205,6 @@ func TestNoIgnoreUnfixedAmongVulnScansRefusesAnOffendingLine(t *testing.T) {
 // straight into a shell command.
 // ---------------------------------------------------------------------------
 
-// stepHeader opens one step: any item of a job's `steps:` list at its 6-space
-// indentation, whichever key the item opens on (`- name:`, `- id:`,
-// `- uses:`). Keyed on `- name:` alone, a step opening on another key reads as
-// part of the step above it.
-var stepHeader = regexp.MustCompile(`(?m)^      - `)
-
-// stepBlock cuts one step out of a job block by its `name:`, the same
-// fail-closed shape workflowfile.Job cuts a job out of a workflow with: a
-// renamed or removed step is a failure here, not a silently empty search.
-func stepBlock(t *testing.T, jobBlock, stepName string) string {
-	t.Helper()
-
-	header := "\n      - name: " + stepName + "\n"
-	start := strings.Index(jobBlock, header)
-	if start < 0 {
-		t.Fatalf("no step named %q — it was renamed or removed, and this guard would judge nothing", stepName)
-	}
-	rest := jobBlock[start+len(header):]
-	if next := stepHeader.FindStringIndex(rest); next != nil {
-		return rest[:next[0]]
-	}
-	return rest
-}
-
 // runBody returns a step's `run:` key and everything more indented beneath
 // it — the block-scalar body — stopping at the first line back at or above
 // `run:`'s own indentation: a sibling key (`env:`, `with:`, `if:`, …) or the
@@ -288,8 +264,9 @@ func NoUntrustedRefSplicedIntoRun(body string) error {
 }
 
 func TestChangelogFragmentDoesNotSpliceTheBaseRefIntoRun(t *testing.T) {
-	block := workflowfile.Job(t, ".github/workflows/changelog.yml", "changelog-fragment")
-	step := stepBlock(t, block, "Check changelog fragment")
+	const workflow = ".github/workflows/changelog.yml"
+	block := workflowfile.Job(t, workflow, "changelog-fragment")
+	step := workflowfile.Step(t, workflow, "changelog-fragment", block, "Check changelog fragment")
 
 	if err := NoUntrustedRefSplicedIntoRun(runBody(t, step)); err != nil {
 		t.Fatal(err)
@@ -859,6 +836,9 @@ func (r detectRun) run(t *testing.T) map[string]string {
 	}
 
 	git("init", "-q", "-b", "main")
+	// protectNTFS refuses on Windows a name NTFS cannot hold — a tab, a `"`, a
+	// newline — which the fixtures below commit on every OS.
+	git("config", "core.protectNTFS", "false")
 	write("README.md", []byte("x\n"))
 	git("add", "-A")
 	git("commit", "-q", "-m", "base")
@@ -877,18 +857,17 @@ func (r detectRun) run(t *testing.T) map[string]string {
 	}
 	git("add", "-A")
 	// The text files enter the commit through the index alone, never the
-	// fixture's filesystem, so a name NTFS cannot hold — a tab, a `"`, a
-	// newline — is committed on every OS, and a list of thousands costs one
-	// git call. protectNTFS is what refuses such a name on Windows.
+	// fixture's filesystem, so such a name is committed on every OS, and a
+	// list of thousands costs one git call.
 	if len(r.files) > 0 {
 		blob := git("hash-object", "-w", "README.md")
 		var index strings.Builder
 		for _, f := range r.files {
 			index.WriteString("100644 " + blob + "\t" + f + "\x00")
 		}
-		gitIn(index.String(), "-c", "core.protectNTFS=false", "update-index", "-z", "--index-info")
+		gitIn(index.String(), "update-index", "-z", "--index-info")
 	}
-	git("-c", "core.protectNTFS=false", "commit", "-q", "-m", "change")
+	git("commit", "-q", "-m", "change")
 	// The expressions a `changes` step may read, as the runner evaluates them
 	// for this event. One this table does not know fails the run rather than
 	// reading as empty.
