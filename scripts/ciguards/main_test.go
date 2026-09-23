@@ -779,6 +779,8 @@ type detectRun struct {
 	failGit string
 	// listLog, when non-nil, receives what the list step printed.
 	listLog *string
+	// od, when non-empty, is a script that shadows od on PATH in every step.
+	od string
 }
 
 // failingGitScript shadows git on PATH: it refuses a call carrying
@@ -886,15 +888,25 @@ func (r detectRun) run(t *testing.T) map[string]string {
 		// are; the payload fields it bends reach every step alike.
 		env = append(env, r.api.install(t, bash, git, github)...)
 	}
+	shims := map[string]string{}
 	if r.failGit != "" {
+		shims["git"] = failingGitScript
+		env = append(env, "CIGUARDS_FAIL_GIT="+r.failGit)
+	}
+	if r.od != "" {
+		shims["od"] = r.od
+	}
+	if len(shims) > 0 {
 		if r.api != nil {
-			t.Fatal("detectRun: api and failGit each put their own directory first on PATH; combine them before using both")
+			t.Fatal("detectRun: api and failGit/od each put their own directory first on PATH; combine them before using both")
 		}
 		stub := t.TempDir()
-		if err := os.WriteFile(filepath.Join(stub, "git"), []byte(failingGitScript), 0o755); err != nil {
-			t.Fatal(err)
+		for name, script := range shims {
+			if err := os.WriteFile(filepath.Join(stub, name), []byte(script), 0o755); err != nil {
+				t.Fatal(err)
+			}
 		}
-		env = append(env, "CIGUARDS_FAIL_GIT="+r.failGit, "PATH="+stub+string(os.PathListSeparator)+os.Getenv("PATH"))
+		env = append(env, "PATH="+stub+string(os.PathListSeparator)+os.Getenv("PATH"))
 	}
 
 	list := listStep(t)
