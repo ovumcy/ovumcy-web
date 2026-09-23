@@ -563,7 +563,7 @@ var listSizeOutputs = map[string]string{
 func TestTheFileListReachesEveryDetectStepWhateverItsSize(t *testing.T) {
 	var files []string
 	dir := "docs/" + strings.Repeat("d", 90) + "/"
-	for i := 0; i < 1500; i++ {
+	for i := range 1500 {
 		files = append(files, fmt.Sprintf("%sf%04d.md", dir, i))
 	}
 	files = append(files, "internal/x/a.go")
