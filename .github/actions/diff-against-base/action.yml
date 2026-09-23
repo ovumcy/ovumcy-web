@@ -108,12 +108,17 @@ runs:
           else
             # A path is attacker-chosen on a fork's pull request, and a line
             # opening with `::` is a workflow command: the list is printed with
-            # commands stopped under a random token no path can know.
-            stop="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
-            echo "Changed files against ${base}:"
-            echo "::stop-commands::${stop}"
-            cat "$list"
-            echo "::${stop}::"
+            # commands stopped under a random token no path can know. Without
+            # a token the list goes unprinted: the log is for reading, and the
+            # list the callers read is the file.
+            if stop="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')" && [ "${#stop}" -eq 32 ]; then
+              echo "Changed files against ${base}:"
+              echo "::stop-commands::${stop}"
+              cat "$list" || true
+              echo "::${stop}::"
+            else
+              echo "Changed files against ${base}: not printed, no random token to stop workflow commands under."
+            fi
           fi
         fi
         if [ -n "$verdict" ]; then

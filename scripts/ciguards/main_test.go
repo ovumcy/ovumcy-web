@@ -800,6 +800,8 @@ type detectRun struct {
 	// failGit makes every git call carrying this exact argument exit 128, in
 	// every step; every other call reaches the real git.
 	failGit string
+	// listLog, when non-nil, receives what the list step printed.
+	listLog *string
 }
 
 // failingGitScript shadows git on PATH: it refuses a call carrying
@@ -821,7 +823,10 @@ func (r detectRun) run(t *testing.T) map[string]string {
 	bash := requireBash(t, dir)
 	// RUNNER_TEMP is job-wide on the runner: the list step writes the file
 	// list under it, and the detect step reads it back from there.
-	env := append(hermeticGitEnv(), "RUNNER_TEMP="+filepath.ToSlash(t.TempDir()))
+	// The runner's locale is C.UTF-8, under which grep treats a path that is
+	// not valid UTF-8 as binary; a step that depends on another locale must
+	// set it itself, so this one is imposed whatever the machine's is.
+	env := append(hermeticGitEnv(), "RUNNER_TEMP="+filepath.ToSlash(t.TempDir()), "LC_ALL=C.UTF-8")
 	gitIn := func(stdin string, args ...string) string {
 		t.Helper()
 		cmd := exec.Command("git", args...)
@@ -924,16 +929,22 @@ func (r detectRun) run(t *testing.T) map[string]string {
 
 	listed := map[string]string{}
 	if r.event == "pull_request" || r.event == "merge_group" {
-		listed = runScriptStep(t, bash, dir, env, list, github, nil, "list step")
+		var log string
+		listed, log = runScriptStep(t, bash, dir, env, list, github, nil, "list step")
+		if r.listLog != nil {
+			*r.listLog = log
+		}
 	}
-	return runScriptStep(t, bash, dir, env, detect, github, listed, r.workflow+" detect step")
+	outputs, _ := runScriptStep(t, bash, dir, env, detect, github, listed, r.workflow+" detect step")
+	return outputs
 }
 
 // runScriptStep runs one step in dir and returns what it wrote to
-// GITHUB_OUTPUT. Its env entries are evaluated from github, or — for
-// `steps.diff.outputs.*` — from listed, where an output the list step did not
-// write (or a skipped list step) reads as empty, as it does on the runner.
-func runScriptStep(t *testing.T, bash, dir string, env []string, step scriptStep, github, listed map[string]string, what string) map[string]string {
+// GITHUB_OUTPUT, and what it printed. Its env entries are evaluated from
+// github, or — for `steps.diff.outputs.*` — from listed, where an output the
+// list step did not write (or a skipped list step) reads as empty, as it does
+// on the runner.
+func runScriptStep(t *testing.T, bash, dir string, env []string, step scriptStep, github, listed map[string]string, what string) (map[string]string, string) {
 	t.Helper()
 
 	stepEnv := append([]string(nil), env...)
@@ -974,7 +985,7 @@ func runScriptStep(t *testing.T, bash, dir string, env []string, step scriptStep
 	if err != nil {
 		t.Fatalf("%s wrote no outputs: %v\n%s", what, err, out)
 	}
-	return parseStepOutputs(t, string(raw), what)
+	return parseStepOutputs(t, string(raw), what), string(out)
 }
 
 // linuxMaxArgStrlen is Linux's MAX_ARG_STRLEN (32 pages of 4 KiB): the most
@@ -1075,6 +1086,10 @@ type detectCase struct {
 
 var detectCases = []detectCase{
 	{"docs only", "pull_request", []string{"docs/a.md"},
+		map[string]string{"run_e2e": "false", "run_core": "false", "run_frontend": "false"}},
+	{"non-UTF-8 Go path", "pull_request", []string{"internal/x/\xff.go"},
+		map[string]string{"run_e2e": "true", "run_core": "true"}},
+	{"non-UTF-8 markdown", "pull_request", []string{"\xff.md"},
 		map[string]string{"run_e2e": "false", "run_core": "false", "run_frontend": "false"}},
 	{"Go test file only", "pull_request", []string{"internal/x/a_test.go"},
 		map[string]string{"run_e2e": "false", "run_core": "true", "run_unit": "true", "run_race": "true", "run_frontend": "false"}},

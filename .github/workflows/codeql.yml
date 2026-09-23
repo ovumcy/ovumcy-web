@@ -72,6 +72,14 @@ jobs:
           run_js=true
           run_actions=true
 
+          # A path is bytes, and a fork's pull request chooses them. Under the
+          # runner's C.UTF-8 locale GNU grep drops a line that is not valid
+          # UTF-8 (its "binary file matches" notice goes to stderr), so such a
+          # path would match no pattern: a positive gate would skip its lane,
+          # and a `-v` allowlist would read it as nothing changed. The C locale
+          # matches bytes.
+          export LC_ALL=C
+
           # The list arrives as a file the diff action wrote, never through
           # `env:` (one env string is capped at 128 KiB). No path, or a file
           # that cannot be read, is an empty list: nothing is narrowed.

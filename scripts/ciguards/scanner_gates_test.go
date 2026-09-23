@@ -68,13 +68,28 @@ func JobIfSurvivesACancelledOrFailedChanges(condition string) error {
 	if m := changesStatusRead.FindString(condition); m != "" {
 		return fmt.Errorf("`if:` (%s) reads %s beside `!cancelled()` — that turns false once `changes` fails, and the job still skips into a satisfied required check", condition, m)
 	}
+	if m := needsRead.FindString(failSafeOutputRead.ReplaceAllString(condition, "")); m != "" {
+		return fmt.Errorf("`if:` (%s) reads `%s` other than as `needs.changes.outputs.<name> != 'false'` — any other read of a dependency can turn false once `changes` fails, and the job still skips into a satisfied required check", condition, m)
+	}
 	return nil
 }
 
-// changesStatusRead matches a read of a dependency's status inside a job
-// condition: `!cancelled()` survives a failed `changes` only while nothing
-// conjoined to it asks whether `changes` succeeded.
-var changesStatusRead = regexp.MustCompile(`\b(success|failure)\(\)|needs(\.changes|\[\s*['"]changes['"]\s*\]|\.\*)\.result`)
+// changesStatusRead matches a status function inside a job condition:
+// `!cancelled()` survives a failed `changes` only while nothing conjoined to it
+// asks whether its dependencies succeeded.
+var changesStatusRead = regexp.MustCompile(`\b(success|failure)\(\)`)
+
+// failSafeOutputRead is the one read of a dependency a gated job's `if:` may
+// make: a `changes` output compared unequal to 'false', which an absent or
+// empty output — a failed `changes` — leaves true. Every other `needs` read
+// is refused by allowlist, since the shapes that turn false on a failed
+// `changes` (a reversed or `== 'true'` comparison, a bare output, a
+// `contains()` over it, `toJSON(needs)`, a `.result`) outnumber any list of
+// them.
+var (
+	failSafeOutputRead = regexp.MustCompile(`needs\.changes\.outputs\.[A-Za-z0-9_]+ != 'false'`)
+	needsRead          = regexp.MustCompile(`\bneeds\b\S*`)
+)
 
 // jobIfValue is a job's own single-line `if:` value, or "" when it has none.
 func jobIfValue(block string) string {
@@ -110,28 +125,31 @@ func jobsThatNeedChanges(t *testing.T) []gatedJob {
 // step-level `env:` expression — so one rule reads both.
 var changesOutputComparison = regexp.MustCompile(`needs\.changes\.outputs\.[A-Za-z_]+\s*(==|!=)\s*'(true|false)'`)
 
-// ChangesOutputComparisonsAreFailSafe refuses any comparison against a
-// `changes` output that is not `!= 'false'` — in particular `== 'true'`,
-// which reads an ABSENT or empty output (a crashed `changes` job, an output
-// renamed on one side of an edit) as "do not run". A job that reads no
+// ChangesOutputComparisonsAreFailSafe refuses any read of a `changes` output
+// that is not `!= 'false'` or a whole pass-through — in particular
+// `== 'true'`, which reads an ABSENT or empty output (a crashed `changes` job,
+// an output renamed on one side of an edit) as "do not run". A job that reads no
 // `changes` output at all is refused too: it would wait on `changes` for
 // ordering alone, and it tells this scan it is broken.
 func ChangesOutputComparisonsAreFailSafe(content string) error {
 	if !strings.Contains(content, "needs.changes.outputs.") {
 		return fmt.Errorf("reads no `changes` output — either the job needs `changes` for ordering alone, or this scan no longer sees how it reads one")
 	}
-	matches := changesOutputComparison.FindAllStringSubmatch(content, -1)
-	var offending []string
-	for _, m := range matches {
-		if m[1] != "!=" || m[2] != "false" {
-			offending = append(offending, m[0])
-		}
-	}
-	if len(offending) > 0 {
-		return fmt.Errorf("%d comparison(s) against a `changes` output are not `!= 'false'`: %v", len(offending), offending)
+	rest := passThroughOutputRead.ReplaceAllString(failSafeOutputRead.ReplaceAllString(content, ""), "")
+	if offending := changesOutputRead.FindAllString(rest, -1); len(offending) > 0 {
+		return fmt.Errorf("%d read(s) of a `changes` output are neither `!= 'false'` nor a whole `${{ }}` handed on: %v", len(offending), offending)
 	}
 	return nil
 }
+
+// passThroughOutputRead is a `changes` output handed on whole — to an `env:`
+// entry the job's steps then compare themselves — which carries an absent
+// output through as empty rather than deciding anything on it.
+// changesOutputRead is any other read of one, with the rest of its line.
+var (
+	passThroughOutputRead = regexp.MustCompile(`\$\{\{ needs\.changes\.outputs\.[A-Za-z0-9_]+ \}\}`)
+	changesOutputRead     = regexp.MustCompile(`\S*needs\.changes\.outputs\.[A-Za-z0-9_]+[^\n]*`)
+)
 
 // negatedFalseTerm matches one matrix leg's term in codeql.yml's
 // RUN_THIS_LANGUAGE: a NEGATED equals-false, which keeps a matrix leg outside
@@ -193,6 +211,12 @@ func TestJobIfSurvivesACancelledOrFailedChangesRefusesAStatusConjunct(t *testing
 		"${{ !cancelled() && !contains(needs.*.result, 'failure') }}",
 		"${{ !cancelled() && success() }}",
 		"${{ !cancelled() && !failure() }}",
+		"${{ !cancelled() && 'true' == needs.changes.outputs.run_go }}",
+		"${{ !cancelled() && needs.changes.outputs.run_go == 'true' }}",
+		"${{ !cancelled() && contains(needs.changes.outputs.langs, 'go') }}",
+		"${{ !cancelled() && needs.changes.outputs.run_go }}",
+		"${{ !cancelled() && needs.changes['result'] != 'failure' }}",
+		"${{ !cancelled() && !contains(toJSON(needs), 'failure') }}",
 	} {
 		if err := JobIfSurvivesACancelledOrFailedChanges(condition); err == nil {
 			t.Errorf("%s was accepted, though it skips the job once `changes` fails", condition)
@@ -204,8 +228,18 @@ func TestJobIfSurvivesACancelledOrFailedChangesRefusesAStatusConjunct(t *testing
 }
 
 func TestChangesOutputComparisonsAreFailSafeRefusesAnEqualsTrueComparison(t *testing.T) {
-	if err := ChangesOutputComparisonsAreFailSafe("if: needs.changes.outputs.run_go == 'true'"); err == nil {
-		t.Fatal("an == 'true' comparison was accepted")
+	for _, content := range []string{
+		"if: needs.changes.outputs.run_go == 'true'",
+		"if: env.X == 'y' && 'true' == needs.changes.outputs.run_go",
+		"if: contains(needs.changes.outputs.langs, 'go')",
+		"RUN_GO: ${{ needs.changes.outputs.run_go || 'false' }}",
+	} {
+		if err := ChangesOutputComparisonsAreFailSafe(content); err == nil {
+			t.Errorf("%q was accepted, though an absent output reads as skip there", content)
+		}
+	}
+	if err := ChangesOutputComparisonsAreFailSafe("if: needs.changes.outputs.run_go != 'false'\n      RUN_GO: ${{ needs.changes.outputs.run_go }}\n"); err != nil {
+		t.Errorf("a fail-safe comparison and a whole pass-through were refused: %v", err)
 	}
 }
 
@@ -372,6 +406,12 @@ var detectCasesByWorkflow = map[string][]detectCase{
 			map[string]string{"run_go": "true", "run_trivyfs": "false", "run_trivyimage": "true"}},
 		{"tab in a Go path", "pull_request", []string{"internal/api/t\tx.go"},
 			map[string]string{"run_go": "true", "run_trivyfs": "false", "run_trivyimage": "true"}},
+		{"non-UTF-8 Go path", "pull_request", []string{"internal/api/\xff.go"},
+			map[string]string{"run_go": "true", "run_trivyimage": "true"}},
+		{"non-UTF-8 Dockerfile suffix", "pull_request", []string{"Dockerfile.\xff"},
+			map[string]string{"run_trivyimage": "true"}},
+		{"non-UTF-8 requirements file", "pull_request", []string{"tools/requirements\xff.txt"},
+			map[string]string{"run_trivyfs": "true"}},
 		{"newline in a docs path", "pull_request", []string{"docs/n\nx.md"},
 			map[string]string{"run_go": "true", "run_trivyfs": "true", "run_trivyimage": "true"}},
 		{"nested lockfile", "pull_request", []string{"web/workspace/nested/package-lock.json"},
@@ -410,6 +450,10 @@ var detectCasesByWorkflow = map[string][]detectCase{
 			map[string]string{"run_go": "false", "run_js": "false", "run_actions": "false"}},
 		{"non-ASCII Go path", "pull_request", []string{"internal/api/évil.go"},
 			map[string]string{"run_go": "true", "run_js": "false", "run_actions": "false"}},
+		{"non-UTF-8 Go path", "pull_request", []string{"internal/api/\xff.go"},
+			map[string]string{"run_go": "true"}},
+		{"non-UTF-8 tsconfig", "pull_request", []string{"web/tsconfig\xff.json"},
+			map[string]string{"run_js": "true"}},
 		{"quote in a JS path", "pull_request", []string{`web/src/js/q"x.ts`},
 			map[string]string{"run_go": "false", "run_js": "true", "run_actions": "false"}},
 		{"backslash in a JS path", "pull_request", []string{`web/src/js/b\x.ts`},
@@ -573,8 +617,8 @@ func TestTrivyFSRunsWhenTheBinaryProbeFails(t *testing.T) {
 }
 
 // listSizeOutputs names, per caller of the diff action, one output a Go file
-// sets to "true" — the probe TestTheFileListReachesEveryDetectStepWhateverItsSize
-// reads at the end of an oversized list.
+// sets to "true" and a docs-only list sets to "false" — the probe
+// TestTheFileListReachesEveryDetectStepWhateverItsSize reads.
 var listSizeOutputs = map[string]string{
 	ciWorkflow:       "run_core",
 	securityWorkflow: "run_go",
@@ -584,16 +628,21 @@ var listSizeOutputs = map[string]string{
 // TestTheFileListReachesEveryDetectStepWhateverItsSize hands every caller a
 // list longer than one environment string may be (128 KiB on Linux, 32767
 // characters on Windows). The list crosses as a file, so the detect step
-// still starts, and the one Go file at its end still decides.
+// still starts, and the one Go file at its end still decides. The docs-only
+// list is what proves the list ARRIVED: a list lost on the way reads as
+// "run everything", which the Go-file probe alone cannot tell from success.
 func TestTheFileListReachesEveryDetectStepWhateverItsSize(t *testing.T) {
-	var files []string
+	var docs []string
 	dir := "docs/" + strings.Repeat("d", 90) + "/"
 	for i := range 1500 {
-		files = append(files, fmt.Sprintf("%sf%04d.md", dir, i))
+		docs = append(docs, fmt.Sprintf("%sf%04d.md", dir, i))
 	}
-	files = append(files, "internal/x/a.go")
-	if size := len(strings.Join(files, "\n")); size <= 128<<10 {
+	if size := len(strings.Join(docs, "\n")); size <= 128<<10 {
 		t.Fatalf("the list is %d bytes, not over the 128 KiB a Linux env string holds — this test proves nothing", size)
+	}
+	lists := map[string][]string{
+		"false": docs,
+		"true":  append(append([]string(nil), docs...), "internal/x/a.go"),
 	}
 	for wf := range detectCasesByWorkflow {
 		output, ok := listSizeOutputs[wf]
@@ -601,14 +650,56 @@ func TestTheFileListReachesEveryDetectStepWhateverItsSize(t *testing.T) {
 			t.Errorf("%s calls the diff action but has no probe output in listSizeOutputs", wf)
 			continue
 		}
-		t.Run(path.Base(wf), func(t *testing.T) {
-			got := detectRun{workflow: wf, event: "pull_request", files: files, queueBase: queueBaseReal}.run(t)
-			if got[output] != "true" {
-				t.Errorf("%s = %q for a %d-file list ending in a Go file, want \"true\"", output, got[output], len(files))
-			}
-		})
+		for want, files := range lists {
+			t.Run(path.Base(wf)+"/"+want, func(t *testing.T) {
+				got := detectRun{workflow: wf, event: "pull_request", files: files, queueBase: queueBaseReal}.run(t)
+				if got[output] != want {
+					t.Errorf("%s = %q for a %d-file list, want %q", output, got[output], len(files), want)
+				}
+			})
+		}
 	}
 }
+
+// TestTheListIsPrintedWithWorkflowCommandsStopped holds the list step to
+// printing every path between a `::stop-commands::<token>` line and the
+// `::<token>::` that resumes them: a fork's pull request can name a path that
+// is itself a workflow command. The paths here are ordinary ones, because
+// Windows git will not index a name holding `:`.
+func TestTheListIsPrintedWithWorkflowCommandsStopped(t *testing.T) {
+	files := []string{"docs/x.md", "internal/x/a.go"}
+	var log string
+	detectRun{workflow: ciWorkflow, event: "pull_request", files: files, queueBase: queueBaseReal, listLog: &log}.run(t)
+
+	stop, resume := -1, -1
+	token := ""
+	printed := map[string]int{}
+	for i, line := range strings.Split(strings.ReplaceAll(log, "\r\n", "\n"), "\n") {
+		switch {
+		case stop < 0 && strings.HasPrefix(line, "::stop-commands::"):
+			stop, token = i, strings.TrimPrefix(line, "::stop-commands::")
+		case token != "" && resume < 0 && line == "::"+token+"::":
+			resume = i
+		case contains(files, line):
+			if _, twice := printed[line]; twice {
+				t.Fatalf("%s was printed twice:\n%s", line, log)
+			}
+			printed[line] = i
+		}
+	}
+	if !stopToken.MatchString(token) {
+		t.Fatalf("the stop token is %q, not 32 random hex digits:\n%s", token, log)
+	}
+	for _, f := range files {
+		at, ok := printed[f]
+		if !ok || stop >= at || at >= resume {
+			t.Errorf("%s (printed %v, line %d) is not between the stop (line %d) and the resume (line %d):\n%s", f, ok, at, stop, resume, log)
+		}
+	}
+}
+
+// stopToken is the list step's `::stop-commands::` token: 16 random bytes in hex.
+var stopToken = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
 // TestAnUnreadableFileListRunsEverything hands every caller's detect step a
 // list path that names no file: it must read as an empty list, never fail
