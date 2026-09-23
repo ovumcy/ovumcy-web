@@ -226,9 +226,11 @@ func readsNeeds(line string) bool {
 // PassThroughEnvReads judges every read of an `env:` variable that hands a
 // `changes` output on whole: each must be a whole `env.<NAME> != 'false'`
 // conjunct of an `if:`, which an empty pass-through — a failed `changes` —
-// leaves true. A shell read (`$NAME`, `${NAME}`) in a `run:` is refused like
-// `${{ env.NAME }}` there. It returns the variables it judged at least one
-// `if:` read of, and one problem per read that is not fail-safe.
+// leaves true. Any other mention of NAME as spelled (`$NAME`, `${NAME}`,
+// `printenv NAME`) is refused as a read outside an `if:`; a script FILE that
+// reads the variable is beyond what a scan of the workflow can see.
+// It returns the variables it judged at least one `if:` read of, and one
+// problem per read that is not fail-safe.
 func PassThroughEnvReads(content string) (judged, problems []string) {
 	lines := strings.Split(content, "\n")
 	for _, line := range lines {
@@ -237,11 +239,11 @@ func PassThroughEnvReads(content string) (judged, problems []string) {
 			continue
 		}
 		name := regexp.QuoteMeta(m[1])
-		read := regexp.MustCompile(`(?i)\benv\s*(?:\.\s*` + name + `\b|\[\s*'` + name + `'\s*\])|\$\{?` + name + `\b`)
+		read := regexp.MustCompile(`(?i:\benv\s*(?:\.\s*` + name + `\b|\[\s*'` + name + `'\s*\]))|\b` + name + `\b`)
 		failSafe := regexp.MustCompile(`(?i)^env\.` + name + ` != 'false'$`)
 		seen := false
 		for _, l := range lines {
-			if strings.HasPrefix(strings.TrimSpace(l), "#") || !read.MatchString(l) {
+			if strings.HasPrefix(strings.TrimSpace(l), "#") || envPassThroughLine.MatchString(l) || !read.MatchString(l) {
 				continue
 			}
 			cond := ifLine.FindStringSubmatch(l)
@@ -277,40 +279,56 @@ var (
 
 // AnalyzeReadsAreFailSafe is codeql.yml `analyze`'s check: its
 // RUN_THIS_LANGUAGE is judged whole by
-// RunThisLanguageNeverSkipsAnUnlistedLanguage, and every other line of the
-// job by ChangesReadsAreFailSafe, as any other job's are.
+// RunThisLanguageNeverSkipsAnUnlistedLanguage and must be nothing BUT those
+// negated-false terms — a status read conjoined to them turns every leg off
+// once `changes` fails — and every other line of the job is judged by
+// ChangesReadsAreFailSafe, as any other job's are.
 func AnalyzeReadsAreFailSafe(content string) error {
 	if err := RunThisLanguageNeverSkipsAnUnlistedLanguage(content); err != nil {
 		return err
 	}
-	return ChangesReadsAreFailSafe(withoutEnvEntry(content, "RUN_THIS_LANGUAGE"))
+	rest, value := splitEnvEntry(content, "RUN_THIS_LANGUAGE")
+	for _, conjunct := range topLevelConjuncts(expressionBody(value)) {
+		if !wholeNegatedFalseTerm.MatchString(strings.TrimSpace(conjunct)) {
+			return fmt.Errorf("RUN_THIS_LANGUAGE conjoins `%s` to its negated-false terms — anything else there can turn every leg off once `changes` fails", strings.TrimSpace(conjunct))
+		}
+	}
+	return ChangesReadsAreFailSafe(rest)
 }
 
-// withoutEnvEntry drops the `env:` entry `name:` and every line indented
-// deeper below it — the entry's folded value.
-func withoutEnvEntry(content, name string) string {
-	var kept []string
+// splitEnvEntry cuts the `env:` entry `name:` and every line indented deeper
+// below it — the entry's folded value — out of content, and returns the
+// value joined on one line, without its block-scalar indicator.
+func splitEnvEntry(content, name string) (rest, value string) {
+	var kept, entry []string
 	cut := -1
 	for _, line := range strings.Split(content, "\n") {
 		trimmed := strings.TrimLeft(line, " ")
 		indent := len(line) - len(trimmed)
 		switch {
 		case cut >= 0 && (trimmed == "" || indent > cut):
+			entry = append(entry, trimmed)
 			continue
 		case strings.HasPrefix(trimmed, name+":"):
 			cut = indent
+			if first := strings.TrimSpace(strings.TrimPrefix(trimmed, name+":")); strings.Trim(first, ">|+-") != "" {
+				entry = append(entry, first)
+			}
 			continue
 		}
 		cut = -1
 		kept = append(kept, line)
 	}
-	return strings.Join(kept, "\n")
+	return strings.Join(kept, "\n"), strings.Join(entry, " ")
 }
 
 // negatedFalseTerm matches one matrix leg's term in codeql.yml's
 // RUN_THIS_LANGUAGE: a NEGATED equals-false, which keeps a matrix leg outside
 // the named languages defaulting to "run".
-var negatedFalseTerm = regexp.MustCompile(`(?i)!\(matrix\.language == '[a-z-]+' && needs\.changes\.outputs\.[A-Za-z_]+ == 'false'\)`)
+var (
+	negatedFalseTerm      = regexp.MustCompile(`(?i)!\(matrix\.language == '[a-z-]+' && needs\.changes\.outputs\.[A-Za-z_]+ == 'false'\)`)
+	wholeNegatedFalseTerm = regexp.MustCompile(`^(?:` + negatedFalseTerm.String() + `)$`)
+)
 
 // RunThisLanguageNeverSkipsAnUnlistedLanguage refuses codeql.yml's
 // RUN_THIS_LANGUAGE unless it is built from exactly one negated-false term
@@ -424,6 +442,7 @@ func TestChangesReadsAreFailSafeRefusesAnUnsafeReadOfAPassThrough(t *testing.T) 
 		"        run: echo ${{ env.RUN_E2E }}",
 		`        run: '[ "$RUN_E2E" = true ] || exit 0'`,
 		"        run: test ${RUN_E2E} = true",
+		"        run: printenv RUN_E2E | grep -qx true || exit 0",
 	} {
 		if err := ChangesReadsAreFailSafe(passThrough + step + "\n"); err == nil {
 			t.Errorf("%q was accepted, though an empty pass-through reads as skip there", step)
@@ -463,6 +482,20 @@ func TestAnalyzeReadsAreFailSafeJudgesTheAnalyzeSteps(t *testing.T) {
 	} {
 		if err := AnalyzeReadsAreFailSafe(strings.TrimRight(block, "\n") + "\n\n" + step); err == nil {
 			t.Errorf("an analyze step %q was accepted, though it skips once `changes` fails", step)
+		}
+	}
+	const lastTerm = "needs.changes.outputs.run_actions == 'false')"
+	for _, extra := range []string{
+		" && needs.changes.result == 'success'",
+		" &&\n          Success()",
+		" && !contains(toJSON(needs), 'failure')",
+	} {
+		mutated := strings.Replace(block, lastTerm, lastTerm+extra, 1)
+		if mutated == block {
+			t.Fatalf("RUN_THIS_LANGUAGE no longer ends in %q; the conjunct rows test nothing", lastTerm)
+		}
+		if err := AnalyzeReadsAreFailSafe(mutated); err == nil {
+			t.Errorf("RUN_THIS_LANGUAGE with %q conjoined was accepted, though it turns every leg off once `changes` fails", extra)
 		}
 	}
 }
