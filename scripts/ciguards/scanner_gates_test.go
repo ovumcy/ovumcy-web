@@ -192,8 +192,9 @@ func ChangesOutputComparisonsAreFailSafe(content string) error {
 // as "do not run", and a `.result` read turns false the same way.
 func ChangesReadsAreFailSafe(content string) error {
 	var problems []string
+	scan := needsScan{ifColumn: -1}
 	for _, line := range strings.Split(content, "\n") {
-		if !readsNeeds(line) || envPassThroughLine.MatchString(line) {
+		if !scan.readsNeeds(line) || envPassThroughLine.MatchString(line) {
 			continue
 		}
 		if m := ifLine.FindStringSubmatch(line); m != nil {
@@ -212,15 +213,66 @@ func ChangesReadsAreFailSafe(content string) error {
 	return nil
 }
 
+// needsScan carries across lines what decides whether the word `needs` is an
+// expression reading the context or only prose: a `${{` not yet closed, and an
+// `if:` whose value runs on below its key. Read one line at a time, either
+// would hand its continuation lines to prose and let them through.
+type needsScan struct {
+	inExpr   bool
+	ifColumn int // column of the open `if:` key; -1 when none is open
+}
+
+var ifKey = regexp.MustCompile(`^(\s+(?:- )?)if:(\s|$)`)
+
 // readsNeeds reports whether a workflow line reads the `needs` context: the
-// word itself, in any case, on a line that is neither a comment nor the
-// job's own `needs:` key.
-func readsNeeds(line string) bool {
+// word itself, in any case, inside a `${{ }}` or anywhere in an `if:` value —
+// the one key evaluated as an expression without one — on a line that is
+// neither a comment nor the job's own `needs:` key. A step name or a script
+// line that only says "needs" reads nothing.
+func (s *needsScan) readsNeeds(line string) bool {
 	trimmed := strings.TrimSpace(line)
-	if strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "needs:") {
+	if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 		return false
 	}
-	return needsRead.MatchString(line)
+	indent := len(line) - len(strings.TrimLeft(line, " "))
+	if s.ifColumn >= 0 && indent <= s.ifColumn {
+		s.ifColumn = -1
+	}
+	if m := ifKey.FindStringSubmatch(line); m != nil {
+		s.ifColumn = len(m[1])
+	}
+	expressions := s.expressions(line)
+	if strings.HasPrefix(trimmed, "needs:") {
+		return false
+	}
+	if s.ifColumn >= 0 {
+		return needsRead.MatchString(line)
+	}
+	return needsRead.MatchString(expressions)
+}
+
+// expressions returns the parts of line inside `${{ }}`, a space apart, and
+// carries a `${{` the line leaves open onto the next.
+func (s *needsScan) expressions(line string) string {
+	var inside []string
+	for rest := line; rest != ""; {
+		if !s.inExpr {
+			start := strings.Index(rest, "${{")
+			if start < 0 {
+				break
+			}
+			rest, s.inExpr = rest[start+len("${{"):], true
+			continue
+		}
+		end := strings.Index(rest, "}}")
+		if end < 0 {
+			inside = append(inside, rest)
+			break
+		}
+		inside = append(inside, rest[:end])
+		rest, s.inExpr = rest[end+len("}}"):], false
+	}
+	return strings.Join(inside, " ")
 }
 
 // PassThroughEnvReads judges every read of an `env:` variable that hands a
@@ -428,6 +480,34 @@ func TestChangesOutputComparisonsAreFailSafeRefusesAnEqualsTrueComparison(t *tes
 		"      - if: needs.changes.outputs.run_go != 'false' && env.X == 'y'\n"
 	if err := ChangesOutputComparisonsAreFailSafe(accepted); err != nil {
 		t.Errorf("fail-safe comparisons and a whole pass-through were refused: %v", err)
+	}
+}
+
+// TestChangesReadsAreFailSafeCountsNeedsOnlyWhereItIsRead holds the scan to
+// the places the word is evaluated: prose saying "needs" passes, and a read
+// split over lines — a `${{` left open, an `if:` value below its key — is
+// still refused on the line that holds it.
+func TestChangesReadsAreFailSafeCountsNeedsOnlyWhereItIsRead(t *testing.T) {
+	for _, content := range []string{
+		"        run: echo ${{ needs['changes'].result }}",
+		"      - name: Wait on ${{ needs.changes.result }}",
+		"          X: >-\n            ${{ github.sha\n            || needs.changes.result }}",
+		"    if: >-\n      !cancelled()\n      && needs.changes.result == 'success'",
+		"      - if: >-\n          needs.changes.result == 'success'",
+	} {
+		if err := ChangesReadsAreFailSafe(content + "\n"); err == nil {
+			t.Errorf("%q was accepted, though it reads `needs`", content)
+		}
+	}
+	for _, content := range []string{
+		"      - name: Build what the e2e job needs\n        run: echo this step needs nothing",
+		"    if: ${{ !cancelled() }}\n    steps:\n      - name: Everything the lane needs",
+		"      - if: ${{ !cancelled() }}\n        name: Everything the lane needs",
+		"      - name: ${{ matrix.os }} needs a runner",
+	} {
+		if err := ChangesReadsAreFailSafe(content + "\n"); err != nil {
+			t.Errorf("%q was refused, though it reads no `needs`: %v", content, err)
+		}
 	}
 }
 

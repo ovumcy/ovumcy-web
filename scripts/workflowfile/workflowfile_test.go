@@ -273,36 +273,52 @@ func TestStepReadsAStepOutOfARealWorkflow(t *testing.T) {
 	}
 }
 
-// TestBashStepFlagsIsWhatShellBashCompilesTo pins the answer for the one shell
-// a harness may run a step under, including a trailing YAML comment on the key.
-func TestBashStepFlagsIsWhatShellBashCompilesTo(t *testing.T) {
-	want := "--noprofile --norc -eo pipefail"
+// TestBashStepFlagsIsHowTheRunnerStartsTheStep pins the answer for each
+// invocation a harness may run a step under: `shell: bash` at a workflow
+// step's depth and at a composite action step's, a trailing YAML comment on
+// the key included, and a workflow step with no `shell:` — the shape of
+// `Scan the image before publishing it` — which runs as `bash -e {0}`, without
+// pipefail. A `shell:` deeper than the step's keys is not the step's own.
+func TestBashStepFlagsIsHowTheRunnerStartsTheStep(t *testing.T) {
+	const bash, bare = "--noprofile --norc -eo pipefail", "-e"
 
-	for _, block := range []string{
-		"        shell: bash\n        run: |\n          true\n",
-		"        id: image\n        shell: bash # the step's own\n        run: |\n          true\n",
+	for _, testCase := range []struct {
+		name, block, want string
+	}{
+		{"shell: bash", "        shell: bash\n        run: |\n          true\n", bash},
+		{"a commented shell: bash", "        id: image\n        shell: bash # the step's own\n        run: |\n          true\n", bash},
+		{"a composite step's shell: bash", "      id: diff\n      shell: bash\n      run: |\n        true\n", bash},
+		{"a composite step opening on its item", "    - id: diff\n      shell: bash\n      run: |\n        true\n", bash},
+		{"a comment ahead of the first key", "        # why\n        shell: bash\n", bash},
+		{"no shell declared", "        run: |\n          true\n", bare},
+		{"a shell key only inside the script", "        run: |\n          shell: bash\n", bare},
+		{"a shell key only among an action's inputs", "        with:\n          shell: bash\n", bare},
 	} {
-		flags := BashStepFlags(t, "fixture.yml", "Fixture", block)
-		if got := strings.Join(flags, " "); got != want {
-			t.Errorf("BashStepFlags read %q off\n%s\nwant %q", got, block, want)
-		}
+		t.Run(testCase.name, func(t *testing.T) {
+			flags := BashStepFlags(t, "fixture.yml", "Fixture", testCase.block)
+			if got := strings.Join(flags, " "); got != testCase.want {
+				t.Errorf("BashStepFlags read %q off\n%s\nwant %q", got, testCase.block, testCase.want)
+			}
+		})
 	}
 }
 
 // TestBashStepFlagsRefusesAShellItWasNotHanded is every block a harness must
-// not run under `shell: bash`'s flags. The first is the shape of `Scan the image
-// before publishing it`: no `shell:`, so `bash -e {0}` on the runner.
+// not run under flags it assumed: another interpreter or template, a composite
+// step the runner would refuse, and a block whose own keys it cannot place.
 func TestBashStepFlagsRefusesAShellItWasNotHanded(t *testing.T) {
 	for _, testCase := range []struct {
 		name  string
 		block string
 	}{
-		{name: "no shell declared", block: "        run: |\n          true\n"},
 		{name: "another interpreter", block: "        shell: sh\n        run: |\n          true\n"},
 		{name: "a custom bash template", block: "        shell: bash -e {0}\n        run: |\n          true\n"},
-		{name: "a shell key only inside the script", block: "        run: |\n          shell: bash\n"},
-		{name: "a shell key only among an action's inputs", block: "        with:\n          shell: bash\n"},
 		{name: "two shell keys", block: "        shell: bash\n        shell: bash\n"},
+		{name: "a composite step with no shell", block: "      id: diff\n      run: |\n        true\n"},
+		{name: "a composite step's shell only among its inputs", block: "      with:\n        shell: bash\n"},
+		{name: "a composite step's other interpreter", block: "      shell: pwsh\n"},
+		{name: "keys at neither step depth", block: "          shell: bash\n"},
+		{name: "no key at all", block: "\n        # only a comment\n"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			if flags, err := bashStepFlagsIn(testCase.block); err == nil {

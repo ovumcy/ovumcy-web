@@ -32,11 +32,6 @@ import (
 // job header looks like.
 var jobHeader = regexp.MustCompile(`(?m)^  [A-Za-z0-9_.-]+:[ \t]*$`)
 
-// stepShellKey matches a step's own `shell:` key. Eight spaces is a step key's
-// depth in these workflows; a `shell:` any deeper is an action's `with:` input
-// or a line of a script, neither of which is the shell the step runs under.
-var stepShellKey = regexp.MustCompile(`(?m)^        shell:(.*)$`)
-
 // stepItem matches the line that opens a step: a sequence item at a step's
 // depth, whatever key it leads with. A step that opens on `- id:` or `- uses:`
 // ends the one above it exactly as a `- name:` does; a reader that stopped only
@@ -57,8 +52,22 @@ var stepDedent = regexp.MustCompile(`(?m)^ {0,7}[^\s#]`)
 
 // bashStepFlags is what GitHub Actions compiles `shell: bash` to —
 // `bash --noprofile --norc -eo pipefail {0}` — less the `{0}` the script file
-// fills.
-var bashStepFlags = []string{"--noprofile", "--norc", "-eo", "pipefail"}
+// fills. defaultStepFlags is the same for a workflow step that names no shell,
+// `bash -e {0}` on a Linux runner: errexit without pipefail.
+var (
+	bashStepFlags    = []string{"--noprofile", "--norc", "-eo", "pipefail"}
+	defaultStepFlags = []string{"-e"}
+)
+
+// A step's own keys sit at eight spaces in a workflow (`jobs:` › job ›
+// `steps:` › item) and at six in a composite action (`runs:` › `steps:` ›
+// item). A `shell:` deeper than the step's own keys is an action's `with:`
+// input or a line of a script, neither of which is the shell the step runs
+// under.
+const (
+	workflowStepKeyDepth  = 8
+	compositeStepKeyDepth = 6
+)
 
 // jobsKey is where the search for a job starts. Two-space indentation is not
 // on its own the mark of a job: `on:` nests `push:` and `workflow_call:` at
@@ -217,11 +226,13 @@ func Steps(block string) []string {
 }
 
 // BashStepFlags returns the flags bash runs a step's script file under, read
-// off the step's own `shell:` key in block (the step as Step returned it).
-// Only `shell: bash` has flags a harness can reproduce and name: a step
-// that declares no shell runs as `bash -e {0}` on a Linux runner — errexit
-// without pipefail — and any other value is another interpreter or another
-// template. Either is a failure here, never a run under flags assumed for it.
+// off the step's own `shell:` key in block: a workflow step as Step or Steps
+// returned it, or a composite action's step whose first line is one of its
+// six-space keys. `shell: bash` and a workflow step's absent `shell:` (the
+// runner's `bash -e {0}`) are the two invocations a harness can reproduce and
+// name; any other value is another interpreter or another template, and a
+// composite step without `shell:` is one the runner refuses to load. Each of
+// those is a failure here, never a run under flags assumed for it.
 func BashStepFlags(t *testing.T, workflow, step, block string) []string {
 	t.Helper()
 
@@ -236,16 +247,45 @@ func BashStepFlags(t *testing.T, workflow, step, block string) []string {
 // `*testing.T` wrapper so its refusals can be tested rather than only
 // triggered.
 func bashStepFlagsIn(block string) ([]string, error) {
-	matches := stepShellKey.FindAllStringSubmatch("\n"+block, -1)
-	if len(matches) != 1 {
-		return nil, fmt.Errorf("declares `shell:` %d times, not once — with none the step runs as `bash -e {0}`, which has no pipefail, and a harness that ran it under `shell: bash`'s flags would pass a pipeline the step itself lets through", len(matches))
+	depth := stepKeyDepth(block)
+	if depth != workflowStepKeyDepth && depth != compositeStepKeyDepth {
+		return nil, fmt.Errorf("opens on a key at %d spaces, neither a workflow step's %d nor a composite action step's %d, so which `shell:` is the step's own cannot be told", depth, workflowStepKeyDepth, compositeStepKeyDepth)
+	}
+	shellKey := regexp.MustCompile(`(?m)^` + strings.Repeat(" ", depth) + `shell:(.*)$`)
+
+	matches := shellKey.FindAllStringSubmatch("\n"+block, -1)
+	switch {
+	case len(matches) == 0 && depth == workflowStepKeyDepth:
+		return append([]string(nil), defaultStepFlags...), nil
+	case len(matches) == 0:
+		return nil, fmt.Errorf("is a composite action's step with no `shell:`, which the runner refuses to load")
+	case len(matches) > 1:
+		return nil, fmt.Errorf("declares `shell:` %d times, not once", len(matches))
 	}
 
 	value, _, _ := strings.Cut(matches[0][1], " #")
 	if value = strings.TrimSpace(value); value != "bash" {
-		return nil, fmt.Errorf("declares `shell: %s`, and `shell: bash` is the only shell whose invocation this harness reproduces", value)
+		return nil, fmt.Errorf("declares `shell: %s`, and `shell: bash` or no `shell:` are the only invocations this harness reproduces", value)
 	}
 	return append([]string(nil), bashStepFlags...), nil
+}
+
+// stepKeyDepth is the column of the first key in block: its first line that
+// is neither blank nor a comment, a leading `- ` counted as indentation, since
+// the key an item opens on sits at the depth of the keys below it.
+func stepKeyDepth(block string) int {
+	for _, line := range strings.Split(block, "\n") {
+		trimmed := strings.TrimLeft(line, " ")
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		depth := len(line) - len(trimmed)
+		if strings.HasPrefix(trimmed, "- ") {
+			depth += len("- ")
+		}
+		return depth
+	}
+	return -1
 }
 
 // jobSection returns the document from its `jobs:` key onward, which is the

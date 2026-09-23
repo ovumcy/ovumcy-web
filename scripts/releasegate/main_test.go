@@ -590,7 +590,8 @@ func runGate(t *testing.T, script string, env map[string]string, state scenario)
 
 	// Run as the runner runs the gate step: a FILE, never `-c`, under the
 	// flags the step's own `shell:` compiles to, read off the step so a step
-	// that stops declaring `shell: bash` fails here rather than running under
+	// that drops `shell: bash` runs here under `bash -e` as it does on the
+	// runner, and one naming another shell fails rather than running under
 	// flags assumed for it. This script is also long enough that handing it
 	// to `-c` as a command-line argument truncates it silently on Windows.
 	flags := workflowfile.BashStepFlags(t, gateWorkflow, gateStep, stepBlock(t))
