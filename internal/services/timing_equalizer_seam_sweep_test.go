@@ -17,8 +17,8 @@ import (
 //
 // A timing equalizer declared as a swappable var is tested by swapping it, and
 // a test that swaps the whole var never runs its body — so an emptied body
-// passes. The members found so far (login, registration, calendar feed) now
-// spend through a seam var the tests can wrap while the shipped body runs. This
+// passes. The members found so far (asserted by name below) now spend through
+// a seam var the tests can wrap while the shipped body runs. This
 // sweep holds the rule for members added later. Every package-level
 // `var equalize…Timing = func…`, and every top-level `func equalize…Timing` —
 // not swappable, so a direct primitive call in it could only be read off the
@@ -29,6 +29,10 @@ import (
 //   - have every timing seam it calls reassigned in some _test.go of this
 //     package, outside any function that declares a local of the same name;
 //   - not reference a timing primitive directly, called or bound to a local.
+//
+// And no non-test file may reassign a timing seam: the body tests swap the
+// seam themselves, so a production assignment to a no-op would leave every
+// equalizer spending nothing with all of them green.
 //
 // What it cannot see, stated so its name is not read as more: an equalizer not
 // named equalize…Timing, a method, and a body that reaches a primitive through
@@ -324,6 +328,7 @@ func TestTimingEqualizerVarsSpendThroughASeam(t *testing.T) {
 
 	fileSet := token.NewFileSet()
 	scan := newTimingEqualizerScan()
+	productionAssigned := map[string]bool{}
 	var testFiles []string
 	for _, entry := range entries {
 		name := entry.Name()
@@ -339,6 +344,13 @@ func TestTimingEqualizerVarsSpendThroughASeam(t *testing.T) {
 			t.Fatalf("parse %s: %v", name, err)
 		}
 		scanTimingEqualizers(&scan, fileSet, file)
+		addReassignedIdents(productionAssigned, file)
+	}
+	for seam := range scan.timingSeam {
+		if productionAssigned[seam] {
+			t.Fatalf("production code reassigns the timing seam %s: the equalizer body tests swap it themselves, "+
+				"so a production no-op would leave every equalizer spending nothing with the suite green", seam)
+		}
 	}
 
 	// Only a test file that names a timing seam can reassign one; parsing the
