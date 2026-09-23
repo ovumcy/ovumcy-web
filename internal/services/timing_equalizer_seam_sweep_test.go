@@ -30,7 +30,8 @@ import (
 //     package, outside any function that declares a local of the same name;
 //   - not reference a timing primitive directly, called or bound to a local.
 //
-// And no non-test file may reassign a timing seam: the body tests swap the
+// And no non-test file may write a timing seam or take its address, anywhere
+// in the file (timingSeamProductionWrites): the body tests swap the
 // seam themselves, so a production assignment to a no-op would leave every
 // equalizer spending nothing with all of them green.
 //
@@ -220,6 +221,60 @@ func addReassignedIdents(assigned map[string]bool, file *ast.File) {
 	}
 }
 
+// timingSeamProductionWrites names every place file writes a timing seam or
+// takes its address: anywhere in the file, including a func literal in a
+// package-level var initializer, which addReassignedIdents does not walk.
+// Shadowing is deliberately ignored — a production local named after a seam
+// is refused too, loudly, rather than let a real write hide behind it.
+func timingSeamProductionWrites(fileSet *token.FileSet, file *ast.File, seams map[string]bool) []string {
+	var writes []string
+	ast.Inspect(file, func(node ast.Node) bool {
+		switch expr := node.(type) {
+		case *ast.AssignStmt:
+			if expr.Tok != token.ASSIGN {
+				return true
+			}
+			for _, lhs := range expr.Lhs {
+				if ident, ok := lhs.(*ast.Ident); ok && seams[ident.Name] {
+					writes = append(writes, ident.Name+" at "+fileSet.Position(ident.Pos()).String())
+				}
+			}
+		case *ast.UnaryExpr:
+			if ident, ok := expr.X.(*ast.Ident); ok && expr.Op == token.AND && seams[ident.Name] {
+				writes = append(writes, ident.Name+" at "+fileSet.Position(ident.Pos()).String())
+			}
+		}
+		return true
+	})
+	return writes
+}
+
+// TestTimingSeamProductionWritesClassifiesOwnedFixtures anchors the
+// production-write check on inputs this test owns.
+func TestTimingSeamProductionWritesClassifiesOwnedFixtures(t *testing.T) {
+	const source = `package fixture
+var seam = bcrypt.CompareHashAndPassword
+var other = 1
+func init() { seam = nil }
+var _ = func() bool { seam = nil; return true }()
+var _ = &seam
+func notASeamWrite() { other = 2; x := seam; _ = x }
+`
+	fileSet := token.NewFileSet()
+	file, err := parser.ParseFile(fileSet, "fixture.go", source, 0)
+	if err != nil {
+		t.Fatalf("parse fixture: %v", err)
+	}
+	var lines []string
+	for _, write := range timingSeamProductionWrites(fileSet, file, map[string]bool{"seam": true}) {
+		parts := strings.Split(write, ":")
+		lines = append(lines, strings.Join(parts[len(parts)-2:], ":"))
+	}
+	if got, want := strings.Join(lines, ","), "4:15,5:23,6:10"; got != want {
+		t.Fatalf("production writes found at line:column %s, want %s — the init body, the var-initializer literal and the address-of", got, want)
+	}
+}
+
 // timingEqualizerSeamFailures requires each equalizer to call at least one
 // timing seam, and every one it calls to be reassigned by a test.
 func timingEqualizerSeamFailures(scan timingEqualizerScan, testAssigned map[string]bool) []string {
@@ -328,7 +383,7 @@ func TestTimingEqualizerVarsSpendThroughASeam(t *testing.T) {
 
 	fileSet := token.NewFileSet()
 	scan := newTimingEqualizerScan()
-	productionAssigned := map[string]bool{}
+	var productionFiles []*ast.File
 	var testFiles []string
 	for _, entry := range entries {
 		name := entry.Name()
@@ -344,13 +399,17 @@ func TestTimingEqualizerVarsSpendThroughASeam(t *testing.T) {
 			t.Fatalf("parse %s: %v", name, err)
 		}
 		scanTimingEqualizers(&scan, fileSet, file)
-		addReassignedIdents(productionAssigned, file)
+		productionFiles = append(productionFiles, file)
 	}
-	for seam := range scan.timingSeam {
-		if productionAssigned[seam] {
-			t.Fatalf("production code reassigns the timing seam %s: the equalizer body tests swap it themselves, "+
-				"so a production no-op would leave every equalizer spending nothing with the suite green", seam)
-		}
+	// Seams are collected across every file first: a write may sit in a file
+	// parsed before the one that declares the seam.
+	var productionWrites []string
+	for _, file := range productionFiles {
+		productionWrites = append(productionWrites, timingSeamProductionWrites(fileSet, file, scan.timingSeam)...)
+	}
+	if len(productionWrites) != 0 {
+		t.Fatalf("production code writes a timing seam or takes its address: %v. The equalizer body tests swap the seam themselves, "+
+			"so a production no-op would leave every equalizer spending nothing with the suite green", productionWrites)
 	}
 
 	// Only a test file that names a timing seam can reassign one; parsing the
