@@ -327,3 +327,77 @@ func TestBashStepFlagsRefusesAShellItWasNotHanded(t *testing.T) {
 		})
 	}
 }
+
+// defaultShellMovers returns every line of a workflow that changes what a step
+// with no `shell:` runs under: a `defaults:` block setting a `shell:`, or a
+// `runs-on:` that is not an `ubuntu-` runner (Windows defaults to pwsh). A
+// `runs-on:` whose value is a list or an expression is counted too, since
+// which runner it names cannot be read off the line.
+func defaultShellMovers(content string) []string {
+	var movers []string
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		trimmed := strings.TrimLeft(line, " ")
+		if strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if value, ok := strings.CutPrefix(trimmed, "runs-on:"); ok {
+			if !strings.HasPrefix(strings.TrimSpace(value), "ubuntu-") {
+				movers = append(movers, line)
+			}
+			continue
+		}
+		if !strings.HasPrefix(trimmed, "defaults:") {
+			continue
+		}
+		indent := len(line) - len(trimmed)
+		for _, below := range lines[i+1:] {
+			rest := strings.TrimLeft(below, " ")
+			if rest == "" || strings.HasPrefix(rest, "#") {
+				continue
+			}
+			if len(below)-len(rest) <= indent {
+				break
+			}
+			if strings.HasPrefix(rest, "shell:") {
+				movers = append(movers, line+" › "+rest)
+			}
+		}
+	}
+	return movers
+}
+
+// TestNoWorkflowMovesTheDefaultShell holds the premise of BashStepFlags'
+// answer for a workflow step with no `shell:` — the Linux runner's
+// `bash -e {0}`. A step block does not carry its workflow's or its job's
+// `defaults.run.shell`, nor its job's runner, so a workflow setting either
+// fails here rather than letting a harness run such a step under flags the
+// runner does not use.
+func TestNoWorkflowMovesTheDefaultShell(t *testing.T) {
+	for _, content := range []string{
+		"defaults:\n  run:\n    shell: sh\njobs:\n",
+		"jobs:\n  build:\n    defaults:\n      run:\n        # why\n        shell: bash\n",
+		"jobs:\n  build:\n    runs-on: windows-latest\n",
+		"jobs:\n  build:\n    runs-on: ${{ matrix.os }}\n",
+		"jobs:\n  build:\n    runs-on:\n      - self-hosted\n",
+	} {
+		if movers := defaultShellMovers(content); len(movers) == 0 {
+			t.Errorf("defaultShellMovers found nothing in\n%s", content)
+		}
+	}
+	control := "jobs:\n  build:\n    defaults:\n      run:\n        working-directory: web\n    runs-on: ubuntu-24.04\n    steps:\n      - shell: bash\n"
+	if movers := defaultShellMovers(control); len(movers) != 0 {
+		t.Errorf("defaultShellMovers flagged %q in a workflow that moves nothing", movers)
+	}
+
+	workflows, err := filepath.Glob(filepath.Join(repoRoot(t), ".github", "workflows", "*.yml"))
+	if err != nil || len(workflows) == 0 {
+		t.Fatalf("no workflows found to judge (%v)", err)
+	}
+	for _, path := range workflows {
+		workflow := ".github/workflows/" + filepath.Base(path)
+		if movers := defaultShellMovers(Read(t, workflow)); len(movers) != 0 {
+			t.Errorf("%s: %q changes what a step with no `shell:` runs under, and BashStepFlags answers such a step with the Linux runner's `bash -e`", workflow, movers)
+		}
+	}
+}
