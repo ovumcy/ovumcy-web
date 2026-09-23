@@ -23,3 +23,11 @@
   window, with the session still alive. The row now counts only answers below 400. Successful
   sign-outs still spend it, and each account's own logout budget still bounds them per owner.
   Regression: `TestLogoutEdgeBudgetIsNotSpentByRefusedRequests`.
+- **An API path spelled in another case is refused as an API request.** The router matches paths
+  case-insensitively, but the session gate decided between a JSON refusal and the sign-in redirect
+  on the raw path, so `DELETE /API/v1/sessions/current` without a session was answered `303` —
+  below 400, so the per-IP logout row still counted it. Every route behind the session gate reached
+  through such a spelling now answers the same `401`/`403` JSON as its lowercase form instead of a
+  redirect to `/login` or `/onboarding`. Regressions:
+  `TestLogoutEdgeBudgetIsNotSpentByCaseVariantRefusals`,
+  `TestAuthRequiredRefusesACaseVariantAPIPathAsAnAPIRequest`.

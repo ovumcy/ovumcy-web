@@ -89,3 +89,45 @@ func TestLogoutEdgeBudgetIsNotSpentByRefusedRequests(t *testing.T) {
 		t.Fatalf("a real sign-out answered %d, want success: %s", response.StatusCode, mustReadAll(t, response))
 	}
 }
+
+// TestLogoutEdgeBudgetIsNotSpentByCaseVariantRefusals spends the per-IP logout
+// row with a spelling the case-insensitive router still routes to the logout
+// endpoint and the row still matches — /API/v1/sessions/current — sent with a
+// valid CSRF token, no session and no Accept header. The auth chain has to
+// refuse it as the API request it is (a 4xx), not redirect it to the sign-in
+// page: a 303 is below 400, so the row counts it despite skipping failed
+// requests, and sixty of them held a real owner's sign-out at 429.
+func TestLogoutEdgeBudgetIsNotSpentByCaseVariantRefusals(t *testing.T) {
+	minimalRuntimeEnv(t)
+	limits := loadRateLimits(t)
+	if limits.LogoutMax != 60 {
+		t.Fatalf("shipped per-IP logout budget = %d, want 60; this test spends exactly that many", limits.LogoutMax)
+	}
+
+	handler, database := newRateLimitTestHandlerAndDB(t)
+	app := newFiberApp(runtimeConfig{Location: time.UTC, DefaultLanguage: "en", RateLimits: limits}, handler)
+
+	token, csrfCookie := issueCSRFFormCredentials(t, app)
+	for attempt := 1; attempt <= limits.LogoutMax; attempt++ {
+		request := httptest.NewRequest(http.MethodDelete, "/API/v1/sessions/current", strings.NewReader(""))
+		request.Header.Set("Cookie", csrfCookie)
+		request.Header.Set("X-CSRF-Token", token)
+		response, err := app.Test(request, testConfigNoTimeout)
+		if err != nil {
+			t.Fatalf("case-variant logout request failed: %v", err)
+		}
+		_ = response.Body.Close()
+		if response.StatusCode < http.StatusBadRequest || response.StatusCode == http.StatusTooManyRequests {
+			t.Fatalf("sessionless DELETE /API/v1/sessions/current %d answered %d, want a 4xx refusal other than 429", attempt, response.StatusCode)
+		}
+	}
+
+	response := logOutWithSession(t, app, database, "logout-edge-case-variant@example.com")
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode == http.StatusTooManyRequests {
+		t.Fatalf("a real sign-out after %d case-variant sessionless DELETEs from the same address was answered 429: the per-IP logout row counted requests the auth chain refused", limits.LogoutMax)
+	}
+	if response.StatusCode >= http.StatusBadRequest {
+		t.Fatalf("a real sign-out answered %d, want success: %s", response.StatusCode, mustReadAll(t, response))
+	}
+}
