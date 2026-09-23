@@ -31,7 +31,7 @@ func TestResetPasswordCASMissPropagatesTheSharedAlreadyConsumedSentinel(t *testi
 
 	// A stale oldPasswordHash is exactly the state a replayed or concurrent
 	// redeem reaches the UPDATE in: the CAS predicate matches 0 rows.
-	_, err := service.ResetPasswordAndRotateRecoveryCodeCAS(context.Background(), &target, "not-the-stored-hash", "EvenStronger2")
+	_, err := service.ResetPasswordAndRotateRecoveryCodeCAS(context.Background(), &target, "not-the-stored-hash", "EvenStronger2", noopRecoveryCodeDelivery)
 	if err == nil {
 		t.Fatal("expected a CAS miss on a stale password hash, got no error")
 	}
@@ -45,7 +45,7 @@ func TestResetPasswordCASMissPropagatesTheSharedAlreadyConsumedSentinel(t *testi
 	// Positive anchor: the same call on the CURRENT hash must succeed, or the
 	// assertions above would hold on a service that fails every reset.
 	fresh := readTwoOwnerUser(t, database, owner.ID)
-	if _, err := service.ResetPasswordAndRotateRecoveryCodeCAS(context.Background(), &fresh, fresh.PasswordHash, "EvenStronger2"); err != nil {
+	if _, err := service.ResetPasswordAndRotateRecoveryCodeCAS(context.Background(), &fresh, fresh.PasswordHash, "EvenStronger2", noopRecoveryCodeDelivery); err != nil {
 		t.Fatalf("expected the reset to succeed against the current password hash: %v", err)
 	}
 }

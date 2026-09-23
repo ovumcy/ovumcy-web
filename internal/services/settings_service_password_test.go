@@ -299,6 +299,10 @@ type stubSettingsUserRepo struct {
 	updatedRecoveryHash       string
 	updatedMustChangePassword bool
 	updatePasswordErr         error
+	// priorSessionVersion simulates the row's auth_session_version immediately
+	// before UpdatePasswordRecoveryCodeAndRevokeSessions runs; beforeCommit is
+	// handed priorSessionVersion+1, mirroring the real UPDATE's raw increment.
+	priorSessionVersion int
 }
 
 func (stub *stubSettingsUserRepo) UpdateDisplayName(context.Context, uint, string) error {
@@ -325,13 +329,22 @@ func (stub *stubSettingsUserRepo) UpdatePasswordAndRevokeSessions(ctx context.Co
 	return stub.updatePasswordErr
 }
 
-func (stub *stubSettingsUserRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, recoveryHash string, mustChangePassword bool) error {
+func (stub *stubSettingsUserRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, recoveryHash string, mustChangePassword bool, beforeCommit func(sessionVersion int) error) error {
+	if stub.updatePasswordErr != nil {
+		return stub.updatePasswordErr
+	}
+	newVersion := stub.priorSessionVersion + 1
+	if beforeCommit != nil {
+		if err := beforeCommit(newVersion); err != nil {
+			return err
+		}
+	}
 	stub.updatePasswordCalled = true
 	stub.updatedUserID = userID
 	stub.updatedPasswordHash = passwordHash
 	stub.updatedRecoveryHash = recoveryHash
 	stub.updatedMustChangePassword = mustChangePassword
-	return stub.updatePasswordErr
+	return nil
 }
 
 func (stub *stubSettingsUserRepo) UpdateByID(context.Context, uint, map[string]any) error {
@@ -351,7 +364,7 @@ func (stub *stubSettingsUserRepo) DeleteAccountAndRelatedData(context.Context, u
 }
 
 func TestPrepareAndFinalizeLocalPasswordSetup(t *testing.T) {
-	repo := &stubSettingsUserRepo{}
+	repo := &stubSettingsUserRepo{priorSessionVersion: 5}
 	service := NewSettingsService(repo)
 	user := &models.User{
 		ID:                 77,
@@ -373,7 +386,7 @@ func TestPrepareAndFinalizeLocalPasswordSetup(t *testing.T) {
 		t.Fatal("Prepare must not flip LocalAuthEnabled")
 	}
 
-	recoveryCode, err := service.FinalizeLocalPasswordSetup(context.Background(), user, preparedHash)
+	recoveryCode, err := service.FinalizeLocalPasswordSetup(context.Background(), user, preparedHash, noopRecoveryCodeDelivery)
 	if err != nil {
 		t.Fatalf("FinalizeLocalPasswordSetup() unexpected error: %v", err)
 	}
@@ -408,7 +421,7 @@ func TestFinalizeLocalPasswordSetupRejectsWhenAlreadyEnabled(t *testing.T) {
 	service := NewSettingsService(repo)
 	user := &models.User{ID: 88, LocalAuthEnabled: true}
 
-	_, err := service.FinalizeLocalPasswordSetup(context.Background(), user, "some-bcrypt-hash")
+	_, err := service.FinalizeLocalPasswordSetup(context.Background(), user, "some-bcrypt-hash", noopRecoveryCodeDelivery)
 	if !errors.Is(err, ErrSettingsPasswordChangeInvalidInput) {
 		t.Fatalf("expected ErrSettingsPasswordChangeInvalidInput, got %v", err)
 	}
@@ -451,7 +464,7 @@ func TestFinalizeLocalPasswordSetupScopesTheWriteToTheActingOwner(t *testing.T) 
 	if err != nil {
 		t.Fatalf("PrepareLocalPasswordHash() unexpected error: %v", err)
 	}
-	recoveryCode, err := service.FinalizeLocalPasswordSetup(context.Background(), &acting, preparedHash)
+	recoveryCode, err := service.FinalizeLocalPasswordSetup(context.Background(), &acting, preparedHash, noopRecoveryCodeDelivery)
 	if err != nil {
 		t.Fatalf("FinalizeLocalPasswordSetup() unexpected error: %v", err)
 	}

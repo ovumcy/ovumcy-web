@@ -230,7 +230,6 @@ var stepupSessionHelpers = map[string]string{
 var inlineStepupRefusalSpecs = map[string]func() APIErrorSpec{
 	"authOIDCAuthenticationFailedErrorSpec":        authOIDCAuthenticationFailedErrorSpec,
 	"authOIDCUnavailableErrorSpec":                 authOIDCUnavailableErrorSpec,
-	"authRecoveryCodePersistErrorSpec":             authRecoveryCodePersistErrorSpec,
 	"settingsOIDCReauthMismatchErrorSpec":          settingsOIDCReauthMismatchErrorSpec,
 	"settingsErasureNeedsAccountPasswordErrorSpec": settingsErasureNeedsAccountPasswordErrorSpec,
 }
@@ -321,6 +320,16 @@ func settingsStepupRefusalSpecs() []APIErrorSpec {
 		foreign,
 	} {
 		specs = append(specs, mapSettingsPasswordChangeError(err))
+	}
+	// The delivery arm of completeLocalPasswordSetupReauth: the session or the
+	// reveal could not be sealed before the enrollment committed, so it rolled
+	// back (WEB-58). The mapper tells the reveal, a role and anything else apart.
+	for _, err := range []error{
+		fmt.Errorf("%w: %v", errRecoveryCodeRevealSeal, foreign),
+		services.ErrAuthUnsupportedRole,
+		foreign,
+	} {
+		specs = append(specs, mapRecoveryCodeDeliveryError(err))
 	}
 	return specs
 }
@@ -509,9 +518,6 @@ func TestEverySettingsStepupRefusalKeyMapsToLocalizedCopy(t *testing.T) {
 //   - handler.redirectSettingsRefusal — the refusal channel, flash + 303.
 //   - c.Redirect.Status.To — the plain redirects: /settings after a success or a
 //     flow that finished elsewhere, /login after the account was deleted.
-//   - handler.renderRecoveryCodeResponseWithContinuePath — the one arm that
-//     renders rather than redirects, because the fresh recovery code is shown
-//     once and cannot survive a redirect.
 //   - respondOIDCSameOriginHandoff — a document whose only content is a
 //     meta-refresh to a page on this origin. It is how the enrollment callback
 //     reaches the recovery-code reveal: that surface claims the account's
@@ -529,16 +535,15 @@ func TestEverySettingsStepupRefusalKeyMapsToLocalizedCopy(t *testing.T) {
 //     return is scanned by this same guard, so admitting them delegates the
 //     check rather than skipping it.
 var allowedStepupCompletionTerminals = map[string]string{
-	"handler.redirectSettingsRefusal":                    "the refusal channel the settings page reads",
-	"handler.refuseOIDCStepupCallback":                   "the refusal channel, by the route the arrival can carry",
-	"c.Redirect.Status.To":                               "a plain redirect to a page",
-	"handler.renderRecoveryCodeResponseWithContinuePath": "renders the one-time recovery code",
-	"respondOIDCSameOriginHandoff":                       "a same-origin document that navigates to a page",
-	"handler.dispatchStepupCompletion":                   "dispatches to a handler this guard also scans",
-	"handler.bounceStepupToSameSiteContinue":             "bounces to the same-site leg this guard also scans",
-	"handler.completeLocalPasswordSetupReauth":           "a per-purpose completion this guard also scans",
-	"handler.completeErasureStepupReauth":                "a per-purpose completion this guard also scans",
-	"handler.completeOIDCIdentityLinkStepup":             "a per-purpose completion this guard also scans",
+	"handler.redirectSettingsRefusal":          "the refusal channel the settings page reads",
+	"handler.refuseOIDCStepupCallback":         "the refusal channel, by the route the arrival can carry",
+	"c.Redirect.Status.To":                     "a plain redirect to a page",
+	"respondOIDCSameOriginHandoff":             "a same-origin document that navigates to a page",
+	"handler.dispatchStepupCompletion":         "dispatches to a handler this guard also scans",
+	"handler.bounceStepupToSameSiteContinue":   "bounces to the same-site leg this guard also scans",
+	"handler.completeLocalPasswordSetupReauth": "a per-purpose completion this guard also scans",
+	"handler.completeErasureStepupReauth":      "a per-purpose completion this guard also scans",
+	"handler.completeOIDCIdentityLinkStepup":   "a per-purpose completion this guard also scans",
 }
 
 // stepupCompletionDelegates are the terminals above that are admitted ONLY

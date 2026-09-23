@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -162,18 +163,38 @@ func TestLoginForcedResetCookieWriteFailureReturns500(t *testing.T) {
 	}
 }
 
-func TestRenderRecoveryCodeResponseCookieWriteFailureReturns500(t *testing.T) {
-	handler := &Handler{
-		location: time.UTC,
+// TestRecoveryCodeDeliveryFailuresMapToTheirOwnRefusal pins
+// mapRecoveryCodeDeliveryError over the two ways a delivery can fail to seal:
+// a handler whose cookie codec cannot be built fails on the session, and a
+// reveal the sealer refuses (an empty code) fails on the reveal after the
+// session sealed. Either way the hook reports the failure and fills nothing.
+func TestRecoveryCodeDeliveryFailuresMapToTheirOwnRefusal(t *testing.T) {
+	user := &models.User{ID: 1, Role: models.RoleOwner, OnboardingCompleted: true}
+
+	noCodec := &Handler{location: time.UTC, authService: &services.AuthService{}}
+	deliver, delivery := noCodec.newRecoveryCodeDelivery(false, services.PostLoginRedirectPath, recoveryCodeSurfaceDedicated)
+	if err := deliver(user, "ABCD-1234"); err == nil || delivery.failure == nil {
+		t.Fatal("a handler with no cookie codec must fail to seal the session")
+	}
+	if got := mapRecoveryCodeDeliveryError(delivery.failure).Key; got != authSessionCreateErrorSpec().Key {
+		t.Fatalf("a session that cannot be sealed must map to %q, got %q", authSessionCreateErrorSpec().Key, got)
+	}
+	if delivery.session.sessionID != "" || delivery.nextPath != "" {
+		t.Fatal("a failed delivery must fill nothing a handler could write")
+	}
+
+	sealing := &Handler{location: time.UTC, secretKey: []byte(testHandlerSecretKey), authService: &services.AuthService{}}
+	deliver, delivery = sealing.newRecoveryCodeDelivery(false, services.PostLoginRedirectPath, recoveryCodeSurfaceDedicated)
+	if err := deliver(user, "  "); err == nil || !errors.Is(delivery.failure, errRecoveryCodeRevealSeal) {
+		t.Fatalf("a reveal the sealer refuses must fail as a reveal failure, got %v", delivery.failure)
+	}
+	if delivery.session.sessionID != "" || delivery.nextPath != "" {
+		t.Fatal("a delivery whose reveal failed must not hand back the session it sealed first")
 	}
 
 	app := fiber.New()
 	app.Get("/api/auth/recovery-response-test", func(c fiber.Ctx) error {
-		user := &models.User{
-			ID:   1,
-			Role: models.RoleOwner,
-		}
-		return handler.renderRecoveryCodeResponse(c, user, "ABCD-1234", fiber.StatusCreated)
+		return sealing.respondMappedError(c, mapRecoveryCodeDeliveryError(delivery.failure))
 	})
 
 	request := httptest.NewRequest(http.MethodGet, "/api/auth/recovery-response-test", nil)

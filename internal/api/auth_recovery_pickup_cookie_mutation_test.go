@@ -8,6 +8,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 // This file hardens the register-pickup and recovery-code page cookie helpers
@@ -165,26 +166,23 @@ func TestRecoveryCodeDisplayStateRejectsForeignUserID(t *testing.T) {
 	}
 }
 
-// TestRenderRecoveryCodeResponseStampsIssuingUser drives renderRecoveryCodeResponse
-// through a test route and asserts both render-helper branches in
-// handlers_auth_session_helpers.go:
+// TestRecoveryCodeDeliveryStampsIssuingUser drives the delivery hook a
+// recovery-code rotation seals its reveal through (newRecoveryCodeDelivery)
+// and asserts the two things it decides about the reveal:
 //
-//   - L61 `if user != nil { continuePath = services.PostLoginRedirectPath(user) }`:
-//     a not-yet-onboarded owner routes the recovery-code continue path to
-//     /onboarding rather than the /dashboard default. The CONDITIONALS_NEGATION
-//     mutant (`user == nil`) keeps the default, so the persisted ContinueTarget
-//     drops from onboarding to dashboard.
-//   - L73 `if user != nil { userID = user.ID }`: the issuing owner's id is
-//     stamped into the cookie, which the sibling scoping test relies on. Reading
-//     the cookie back as that same owner recovers the code; the ContinueTarget
-//     assertion below observes L61.
-func TestRenderRecoveryCodeResponseStampsIssuingUser(t *testing.T) {
+//   - the continue path is computed from the ROTATED user it is handed: a
+//     not-yet-onboarded owner continues to /onboarding rather than the
+//     /dashboard default, as services.PostLoginRedirectPath answers for her;
+//   - the issuing owner's id is stamped into the sealed reveal, so reading it
+//     back as that owner recovers the code and reading it as another does not.
+func TestRecoveryCodeDeliveryStampsIssuingUser(t *testing.T) {
 	t.Parallel()
 
 	handler := &Handler{
 		secretKey:    []byte(recoveryCookieMutationSecret),
 		cookieSecure: true,
 		location:     time.UTC,
+		authService:  &services.AuthService{},
 	}
 
 	const issuingOwner = uint(303)
@@ -202,11 +200,16 @@ func TestRenderRecoveryCodeResponseStampsIssuingUser(t *testing.T) {
 
 	app := fiber.New()
 	app.Get("/render", func(c fiber.Ctx) error {
-		return handler.renderRecoveryCodeResponse(c, pendingOwner, "OVUM-RENDER-CODE0", fiber.StatusOK)
+		deliver, delivery := handler.newRecoveryCodeDelivery(false, services.PostLoginRedirectPath, recoveryCodeSurfaceDedicated)
+		if err := deliver(pendingOwner, "OVUM-RENDER-CODE0"); err != nil {
+			t.Fatalf("deliver: %v", err)
+		}
+		handler.writeSealed(c, delivery.reveal)
+		return c.SendStatus(fiber.StatusOK)
 	})
 	app.Get("/open", func(c fiber.Ctx) error {
 		// Read as the issuing owner: recovers the code, and reflects the
-		// onboarding continue target chosen at render time (L61).
+		// onboarding continue target chosen when the reveal was sealed.
 		state := handler.readRecoveryCodeDisplayState(c, issuingOwner, "/dashboard")
 		if state.RecoveryCode != "OVUM-RENDER-CODE0" {
 			t.Fatalf("issuing owner must recover the rendered code, got %q", state.RecoveryCode)
@@ -220,8 +223,8 @@ func TestRenderRecoveryCodeResponseStampsIssuingUser(t *testing.T) {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 	app.Get("/open-foreign", func(c fiber.Ctx) error {
-		// A different owner must NOT recover the code the render helper stamped
-		// with the issuing owner's id (L73 stamps user.ID; L145 enforces it).
+		// A different owner must NOT recover the code the delivery stamped with
+		// the issuing owner's id.
 		state := handler.readRecoveryCodeDisplayState(c, foreignOwner, "/dashboard")
 		if state.RecoveryCode != "" {
 			t.Fatalf("foreign owner must not recover the issuing owner's rendered code, got %q", state.RecoveryCode)
@@ -237,7 +240,7 @@ func TestRenderRecoveryCodeResponseStampsIssuingUser(t *testing.T) {
 
 	cookieValue := responseCookieValue(renderResponse.Cookies(), recoveryCodeCookieName)
 	if cookieValue == "" {
-		t.Fatal("expected renderRecoveryCodeResponse to set the recovery-code cookie")
+		t.Fatal("expected the delivery to seal the recovery-code cookie")
 	}
 
 	openRequest := httptest.NewRequest(http.MethodGet, "/open", nil)

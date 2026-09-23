@@ -69,14 +69,24 @@ var recoveryCodeCookieSpec = sealedCookieSpec{name: recoveryCodeCookieName, path
 // structurally: the read path has no owner to compare against once such a
 // payload exists.
 func (handler *Handler) setRecoveryCodeIssuanceCookie(c fiber.Ctx, userID uint, recoveryCode string, continuePath string, surface string) error {
-	if userID == 0 {
+	sealed, err := handler.sealRecoveryCodeIssuanceCookie(userID, recoveryCode, continuePath, surface)
+	if err != nil {
 		handler.clearRecoveryCodePageCookie(c)
-		return errors.New("recovery code reveal requires an owner id")
+		return err
+	}
+	handler.writeSealed(c, sealed)
+	return nil
+}
+
+// sealRecoveryCodeIssuanceCookie is setRecoveryCodeIssuanceCookie's fallible
+// half, for a rotation that seals the reveal before its write commits.
+func (handler *Handler) sealRecoveryCodeIssuanceCookie(userID uint, recoveryCode string, continuePath string, surface string) (sealedCookie, error) {
+	if userID == 0 {
+		return sealedCookie{}, errors.New("recovery code reveal requires an owner id")
 	}
 	code := strings.TrimSpace(recoveryCode)
 	if code == "" {
-		handler.clearRecoveryCodePageCookie(c)
-		return errors.New("recovery code is required")
+		return sealedCookie{}, errors.New("recovery code is required")
 	}
 	safeContinuePath := services.SanitizeRedirectPath(strings.TrimSpace(continuePath), "/dashboard")
 	expiresAt := time.Now().Add(recoveryCodeCookieTTL)
@@ -92,9 +102,9 @@ func (handler *Handler) setRecoveryCodeIssuanceCookie(c fiber.Ctx, userID uint, 
 
 	serialized, err := json.Marshal(payload)
 	if err != nil {
-		return err
+		return sealedCookie{}, err
 	}
-	return handler.writeSealedCookie(c, recoveryCodeCookieSpec, serialized, expiresAt)
+	return handler.sealCookie(recoveryCodeCookieSpec, serialized, expiresAt)
 }
 
 func sanitizeRecoveryCodeContinueTarget(target string) string {

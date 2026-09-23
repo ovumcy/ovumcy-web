@@ -55,6 +55,10 @@ type Handler struct {
 	registerPickupTokens RegisterPickupTokenStore
 	auditLogEnabled      bool
 	assetVersion         string
+	// sessionIssuanceFault is nil in production. A test sets it to fail session
+	// minting the way no request can (a crypto or codec failure), to prove a
+	// recovery-code rotation rolls back when its delivery cannot be sealed.
+	sessionIssuanceFault func() error
 }
 
 // CalendarDay is one cell of the calendar grid. Every field on it is one the

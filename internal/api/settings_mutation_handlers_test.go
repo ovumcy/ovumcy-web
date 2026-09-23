@@ -345,13 +345,11 @@ func TestUpdateCycleSettings_JSONBodyPersistsLastPeriodStart(t *testing.T) {
 
 // TestCompleteLocalPasswordSetupReauth_SuccessIssuesRecoveryCode drives the OIDC
 // step-up password-setup callback all the way through its happy path to pin the
-// session re-issue guard in completeLocalPasswordSetupReauth
-// (`refreshCurrentSession(...); !ok`). On success the handler must set the
-// recovery-code issuance cookie and
-// redirect to /recovery-code. Negating the guard returns early right
-// after the (successful) session refresh, so neither the redirect nor the
-// recovery cookie is produced. Existing step-up coverage only exercises the error
-// arms (no session / already-local), leaving this success arm uncovered.
+// delivery guard in completeLocalPasswordSetupReauth (`delivery.failure != nil`).
+// On success the handler must set the recovery-code issuance cookie and hand
+// over to /recovery-code. Negating the guard returns early on a delivery that
+// succeeded, so neither the handoff nor the recovery cookie is produced. The
+// failing arm is TestLocalPasswordSetupDeliveryFailureLeavesTheAccountAsItWas.
 func TestCompleteLocalPasswordSetupReauth_SuccessIssuesRecoveryCode(t *testing.T) {
 	stub := &stubOIDCWorkflowService{enabled: true, localPublicAuthEnabled: true} // ValidateReauthExchange -> nil
 	app, database, handler := newSettingsMutationStepupApp(t, stub)

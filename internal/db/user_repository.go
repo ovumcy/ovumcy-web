@@ -1186,23 +1186,56 @@ func (repo *UserRepository) FindByCalendarFeedSelector(ctx context.Context, sele
 // calendar_feed_revealed_at is deliberately left standing — re-arming the reveal
 // of a token that no longer resolves would only make a retained sealed cookie
 // presentable again. Regression: TestEveryRecoveryCodeMintClearsItsRevealMark.
-func (repo *UserRepository) UpdateRecoveryCodeHashAndRevokeSessions(ctx context.Context, userID uint, recoveryHash string) error {
-	query, err := repo.scopedUserUpdate(ctx, userID)
-	if err != nil {
+func (repo *UserRepository) UpdateRecoveryCodeHashAndRevokeSessions(ctx context.Context, userID uint, recoveryHash string, beforeCommit func(sessionVersion int) error) error {
+	if err := requireUserOwnerID(userID); err != nil {
 		return err
 	}
-	if err := query.Updates(map[string]any{
-		"recovery_code_hash":          recoveryHash,
-		"recovery_code_revealed_at":   nil,
-		"calendar_feed_selector":      nil,
-		"calendar_feed_verifier_hash": nil,
-		"calendar_feed_verifier_mac":  nil,
-		"auth_session_version":        gorm.Expr("auth_session_version + 1"),
-	}).Error; err != nil {
+	if err := repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		query, err := scopedUserUpdateTx(tx, userID)
+		if err != nil {
+			return err
+		}
+		if err := query.Updates(map[string]any{
+			"recovery_code_hash":          recoveryHash,
+			"recovery_code_revealed_at":   nil,
+			"calendar_feed_selector":      nil,
+			"calendar_feed_verifier_hash": nil,
+			"calendar_feed_verifier_mac":  nil,
+			"auth_session_version":        gorm.Expr("auth_session_version + 1"),
+		}).Error; err != nil {
+			return err
+		}
+		return runBeforeCommit(tx, userID, beforeCommit)
+	}); err != nil {
 		return err
 	}
 	repo.advanceCalendarFeedFenceBestEffort(ctx)
 	return nil
+}
+
+// runBeforeCommit hands beforeCommit the auth_session_version the write inside
+// tx just stored, before tx commits. A rotation that mints a secret its caller
+// must still deliver — a recovery code, and the session the reveal is claimed
+// under — seals that delivery here, so an error rolls the rotation back rather
+// than committing a code nobody can be shown. The version is re-read from the
+// row, never derived from a struct loaded before the write. A nil hook has
+// nothing to deliver and commits as the write alone did.
+func runBeforeCommit(tx *gorm.DB, userID uint, beforeCommit func(sessionVersion int) error) error {
+	if beforeCommit == nil {
+		return nil
+	}
+	query, err := scopedUserUpdateTx(tx, userID)
+	if err != nil {
+		return err
+	}
+	var versions []int
+	if err := query.Pluck("auth_session_version", &versions).Error; err != nil {
+		return err
+	}
+	if len(versions) != 1 {
+		return ErrUserOwnerRequired // codecov:ignore -- the write above matched this row inside the same transaction
+	}
+	return beforeCommit(versions[0])
 }
 
 func (repo *UserRepository) UpdatePasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, mustChangePassword bool) error {
@@ -1271,19 +1304,27 @@ func (repo *UserRepository) UpdatePasswordHashOnly(ctx context.Context, userID u
 // them. It NULLs recovery_code_revealed_at in the same statement: the code it
 // writes is about to be revealed once, so its consumption mark starts unset
 // (migration 036). Regression: TestEveryRecoveryCodeMintClearsItsRevealMark.
-func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, recoveryHash string, mustChangePassword bool) error {
-	query, err := repo.scopedUserUpdate(ctx, userID)
-	if err != nil {
+func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, recoveryHash string, mustChangePassword bool, beforeCommit func(sessionVersion int) error) error {
+	if err := requireUserOwnerID(userID); err != nil {
 		return err
 	}
-	return query.Updates(map[string]any{
-		"password_hash":             passwordHash,
-		"recovery_code_hash":        recoveryHash,
-		"recovery_code_revealed_at": nil,
-		"must_change_password":      mustChangePassword,
-		"local_auth_enabled":        true,
-		"auth_session_version":      gorm.Expr("auth_session_version + 1"),
-	}).Error
+	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		query, err := scopedUserUpdateTx(tx, userID)
+		if err != nil {
+			return err
+		}
+		if err := query.Updates(map[string]any{
+			"password_hash":             passwordHash,
+			"recovery_code_hash":        recoveryHash,
+			"recovery_code_revealed_at": nil,
+			"must_change_password":      mustChangePassword,
+			"local_auth_enabled":        true,
+			"auth_session_version":      gorm.Expr("auth_session_version + 1"),
+		}).Error; err != nil {
+			return err
+		}
+		return runBeforeCommit(tx, userID, beforeCommit)
+	})
 }
 
 // UpdatePasswordRecoveryCodeAndRevokeSessionsCAS is the single-use variant
@@ -1323,29 +1364,34 @@ func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessions(ctx cont
 // code arms its own one-time reveal (migration 036) — and for the same
 // consistency reason: the redeem that loses the race must not re-arm a reveal it
 // minted no code for. Regression: TestEveryRecoveryCodeMintClearsItsRevealMark.
-func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx context.Context, userID uint, oldPasswordHash string, oldSessionVersion int, newPasswordHash string, recoveryHash string) error {
+func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx context.Context, userID uint, oldPasswordHash string, oldSessionVersion int, newPasswordHash string, recoveryHash string, beforeCommit func(sessionVersion int) error) error {
 	if oldSessionVersion < 1 {
 		return ErrResetTokenAlreadyConsumed
 	}
-	result := repo.database.WithContext(ctx).Model(&models.User{}).
-		Where("id = ? AND password_hash = ?", userID, oldPasswordHash).
-		Where("(auth_session_version = ? OR (? = 1 AND auth_session_version <= 0))", oldSessionVersion, oldSessionVersion).
-		Updates(map[string]any{
-			"password_hash":               newPasswordHash,
-			"recovery_code_hash":          recoveryHash,
-			"recovery_code_revealed_at":   nil,
-			"must_change_password":        false,
-			"local_auth_enabled":          true,
-			"calendar_feed_selector":      nil,
-			"calendar_feed_verifier_hash": nil,
-			"calendar_feed_verifier_mac":  nil,
-			"auth_session_version":        gorm.Expr("auth_session_version + 1"),
-		})
-	if result.Error != nil {
-		return result.Error // codecov:ignore -- DB-layer error on the CAS UPDATE; not reachable in unit tests
-	}
-	if result.RowsAffected == 0 {
-		return ErrResetTokenAlreadyConsumed
+	if err := repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&models.User{}).
+			Where("id = ? AND password_hash = ?", userID, oldPasswordHash).
+			Where("(auth_session_version = ? OR (? = 1 AND auth_session_version <= 0))", oldSessionVersion, oldSessionVersion).
+			Updates(map[string]any{
+				"password_hash":               newPasswordHash,
+				"recovery_code_hash":          recoveryHash,
+				"recovery_code_revealed_at":   nil,
+				"must_change_password":        false,
+				"local_auth_enabled":          true,
+				"calendar_feed_selector":      nil,
+				"calendar_feed_verifier_hash": nil,
+				"calendar_feed_verifier_mac":  nil,
+				"auth_session_version":        gorm.Expr("auth_session_version + 1"),
+			})
+		if result.Error != nil {
+			return result.Error // codecov:ignore -- DB-layer error on the CAS UPDATE; not reachable in unit tests
+		}
+		if result.RowsAffected == 0 {
+			return ErrResetTokenAlreadyConsumed
+		}
+		return runBeforeCommit(tx, userID, beforeCommit)
+	}); err != nil {
+		return err
 	}
 	repo.advanceCalendarFeedFenceBestEffort(ctx)
 	return nil

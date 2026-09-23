@@ -48,7 +48,7 @@ func TestUpdatePasswordRecoveryCodeAndRevokeSessionsCASRejectsReplay(t *testing.
 
 	// First CAS call — must succeed and bump session version.
 	err = repo.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(
-		context.Background(), user.ID, "old-hash", 1, "new-hash", "new-recovery",
+		context.Background(), user.ID, "old-hash", 1, "new-hash", "new-recovery", nil,
 	)
 	if err != nil {
 		t.Fatalf("first CAS call: unexpected error: %v", err)
@@ -70,7 +70,7 @@ func TestUpdatePasswordRecoveryCodeAndRevokeSessionsCASRejectsReplay(t *testing.
 
 	// Second CAS call with the SAME oldPasswordHash — must be rejected.
 	err = repo.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(
-		context.Background(), user.ID, "old-hash", 1, "another-hash", "another-recovery",
+		context.Background(), user.ID, "old-hash", 1, "another-hash", "another-recovery", nil,
 	)
 	if !errors.Is(err, ErrResetTokenAlreadyConsumed) {
 		t.Fatalf("second CAS call: expected ErrResetTokenAlreadyConsumed, got %v", err)
@@ -129,7 +129,7 @@ func TestUpdatePasswordRecoveryCodeAndRevokeSessionsCASLosesToASessionVersionBum
 	if err := repo.BumpAuthSessionVersion(ctx, user.ID); err != nil {
 		t.Fatalf("bump session version: %v", err)
 	}
-	err = repo.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx, user.ID, "old-hash", 1, "new-hash", "new-recovery")
+	err = repo.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx, user.ID, "old-hash", 1, "new-hash", "new-recovery", nil)
 	if !errors.Is(err, ErrResetTokenAlreadyConsumed) {
 		t.Fatalf("expected a reset read before the version bump to lose, got %v", err)
 	}
@@ -142,7 +142,7 @@ func TestUpdatePasswordRecoveryCodeAndRevokeSessionsCASLosesToASessionVersionBum
 	}
 
 	// A version the caller never read is refused outright.
-	if err := repo.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx, user.ID, "old-hash", 0, "new-hash", "new-recovery"); !errors.Is(err, ErrResetTokenAlreadyConsumed) {
+	if err := repo.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx, user.ID, "old-hash", 0, "new-hash", "new-recovery", nil); !errors.Is(err, ErrResetTokenAlreadyConsumed) {
 		t.Fatalf("expected a zero session version to be refused, got %v", err)
 	}
 
@@ -150,10 +150,10 @@ func TestUpdatePasswordRecoveryCodeAndRevokeSessionsCASLosesToASessionVersionBum
 	if err := database.Model(&models.User{}).Where("id = ?", user.ID).UpdateColumn("auth_session_version", 0).Error; err != nil {
 		t.Fatalf("seed legacy version: %v", err)
 	}
-	if err := repo.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx, user.ID, "old-hash", 2, "new-hash", "new-recovery"); !errors.Is(err, ErrResetTokenAlreadyConsumed) {
+	if err := repo.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx, user.ID, "old-hash", 2, "new-hash", "new-recovery", nil); !errors.Is(err, ErrResetTokenAlreadyConsumed) {
 		t.Fatalf("expected a legacy 0 row not to match version 2, got %v", err)
 	}
-	if err := repo.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx, user.ID, "old-hash", 1, "new-hash", "new-recovery"); err != nil {
+	if err := repo.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx, user.ID, "old-hash", 1, "new-hash", "new-recovery", nil); err != nil {
 		t.Fatalf("expected a legacy 0 row to match version 1, got %v", err)
 	}
 	got, err = repo.FindByID(ctx, user.ID)

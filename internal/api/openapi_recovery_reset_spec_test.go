@@ -17,7 +17,7 @@ import (
 // TestPasswordResetRedeemBrowserSurfaceRedirectsToRecoveryCode pins the claim
 // docs/openapi.yaml makes for POST /api/v1/password-resets/redeem's `303`
 // response: the browser surface lands on `/recovery-code`, not `/login`. The
-// handler answers through the same renderRecoveryCodeResponse/redirectToPath
+// handler answers through the same respondRecoveryCodeNextStep/redirectToPath
 // path the JSON body's `next_path` names — see
 // TestResetPasswordJSONSuccessDoesNotExposeRecoveryCode for that half — so a
 // spec that kept naming `/login` here would mislead every non-JSON client
@@ -49,7 +49,7 @@ func TestPasswordResetRedeemBrowserSurfaceRedirectsToRecoveryCode(t *testing.T) 
 }
 
 // TestPasswordResetRedeemHTMXSurfaceAnswersHXRedirectNotJSON pins the third
-// success shape docs/openapi.yaml has to account for. renderRecoveryCodeResponse
+// success shape docs/openapi.yaml has to account for. respondRecoveryCodeNextStep
 // ends in redirectToPath, which answers an htmx request with 200 + HX-Redirect
 // and Fiber's plain-text status body — not the 303 a plain browser gets, and
 // not the NextStepResponse the 200 declares. The spec says so on both

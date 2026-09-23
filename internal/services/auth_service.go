@@ -62,7 +62,7 @@ type AuthUserRepository interface {
 	FindByID(ctx context.Context, userID uint) (models.User, error)
 	FindByIDOptional(ctx context.Context, userID uint) (models.User, bool, error)
 	Create(ctx context.Context, user *models.User) error
-	UpdateRecoveryCodeHashAndRevokeSessions(ctx context.Context, userID uint, recoveryHash string) error
+	UpdateRecoveryCodeHashAndRevokeSessions(ctx context.Context, userID uint, recoveryHash string, beforeCommit func(sessionVersion int) error) error
 	UpdatePasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, mustChangePassword bool) error
 	// ForceResetPasswordAndRevokeSessions is the operator-reset variant: it
 	// rewrites the password, forces change-on-next-login, bumps the session
@@ -70,8 +70,8 @@ type AuthUserRepository interface {
 	// (feed-clear arm of the force-rotate-on-recovery rule). Distinct from the
 	// routine UpdatePasswordAndRevokeSessions, which must NOT touch the feed.
 	ForceResetPasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string) error
-	UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, recoveryHash string, mustChangePassword bool) error
-	UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx context.Context, userID uint, oldPasswordHash string, oldSessionVersion int, newPasswordHash string, recoveryHash string) error
+	UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, recoveryHash string, mustChangePassword bool, beforeCommit func(sessionVersion int) error) error
+	UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx context.Context, userID uint, oldPasswordHash string, oldSessionVersion int, newPasswordHash string, recoveryHash string, beforeCommit func(sessionVersion int) error) error
 	// UpdatePasswordHashOnly rewrites password_hash WITHOUT bumping
 	// auth_session_version — a transparent storage-format upgrade (bcrypt cost
 	// rise), not a credential change. Used only by the opportunistic rehash on
@@ -565,14 +565,41 @@ func (service *AuthService) ResolveUserByResetToken(ctx context.Context, secretK
 	return &user, nil
 }
 
-func (service *AuthService) RegenerateRecoveryCode(ctx context.Context, userID uint) (string, error) {
+// RecoveryCodeDelivery seals everything that hands a freshly rotated recovery
+// code to its owner: the one-time reveal, and the re-issued session the reveal
+// is claimed under. The rotating write calls it after the write and before the
+// commit, with user already carrying the stored values (the session version
+// re-read from the row); an error rolls the rotation back, so the account keeps
+// its previous code rather than committing one nobody can be shown.
+type RecoveryCodeDelivery func(user *models.User, recoveryCode string) error
+
+// ErrRecoveryCodeDeliveryRequired refuses a rotation that names no delivery:
+// the code it would mint could never reach anyone.
+var ErrRecoveryCodeDeliveryRequired = errors.New("recovery code delivery is required")
+
+// RegenerateRecoveryCode rotates the account's recovery code and revokes its
+// sessions. On success user carries the rotated row; on any error, including
+// one from deliver, nothing was written and user is unchanged.
+func (service *AuthService) RegenerateRecoveryCode(ctx context.Context, user *models.User, deliver RecoveryCodeDelivery) (string, error) {
+	if user == nil {
+		return "", ErrAuthUserRequired
+	}
+	if deliver == nil {
+		return "", ErrRecoveryCodeDeliveryRequired
+	}
 	recoveryCode, recoveryHash, err := GenerateRecoveryCodeHash()
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", ErrRecoveryCodeGenerate, err)
 	}
-	if err := service.users.UpdateRecoveryCodeHashAndRevokeSessions(ctx, userID, recoveryHash); err != nil {
+	staged := *user
+	if err := service.users.UpdateRecoveryCodeHashAndRevokeSessions(ctx, user.ID, recoveryHash, func(sessionVersion int) error {
+		staged.RecoveryCodeHash = recoveryHash
+		staged.AuthSessionVersion = sessionVersion
+		return deliver(&staged, recoveryCode)
+	}); err != nil {
 		return "", fmt.Errorf("%w: %v", ErrRecoveryCodeUpdate, err)
 	}
+	*user = staged
 	return recoveryCode, nil
 }
 
@@ -783,9 +810,15 @@ var topUpRecoveryLookupTiming = func(recoveryHash string, code string, passwordH
 // ErrResetTokenAlreadyConsumed. The version term closes the window between
 // resolving the token (which checks the version) and this write: a revocation
 // or posture change landing in between makes the reset lose too.
-func (service *AuthService) ResetPasswordAndRotateRecoveryCodeCAS(ctx context.Context, user *models.User, oldPasswordHash string, newPassword string) (string, error) {
+//
+// deliver runs inside the write's transaction, before its commit (see
+// RecoveryCodeDelivery); an error from it leaves the row, and user, unchanged.
+func (service *AuthService) ResetPasswordAndRotateRecoveryCodeCAS(ctx context.Context, user *models.User, oldPasswordHash string, newPassword string, deliver RecoveryCodeDelivery) (string, error) {
 	if user == nil {
 		return "", ErrAuthUserRequired // codecov:ignore -- defensive; callers always pass a resolved user
+	}
+	if deliver == nil {
+		return "", ErrRecoveryCodeDeliveryRequired
 	}
 
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), passwordHashCost)
@@ -798,14 +831,18 @@ func (service *AuthService) ResetPasswordAndRotateRecoveryCodeCAS(ctx context.Co
 	}
 
 	// CAS predicate prevents concurrent / replayed redeems.
-	if err := service.users.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx, user.ID, oldPasswordHash, NormalizeAuthSessionVersion(user.AuthSessionVersion), string(passwordHash), recoveryHash); err != nil {
+	staged := *user
+	if err := service.users.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx, user.ID, oldPasswordHash, NormalizeAuthSessionVersion(user.AuthSessionVersion), string(passwordHash), recoveryHash, func(sessionVersion int) error {
+		staged.PasswordHash = string(passwordHash)
+		staged.RecoveryCodeHash = recoveryHash
+		staged.LocalAuthEnabled = true
+		staged.AuthSessionVersion = sessionVersion
+		staged.MustChangePassword = false
+		return deliver(&staged, recoveryCode)
+	}); err != nil {
 		return "", err
 	}
-	user.PasswordHash = string(passwordHash)
-	user.RecoveryCodeHash = recoveryHash
-	user.LocalAuthEnabled = true
-	user.AuthSessionVersion = NormalizeAuthSessionVersion(user.AuthSessionVersion) + 1
-	user.MustChangePassword = false
+	*user = staged
 
 	return recoveryCode, nil
 }

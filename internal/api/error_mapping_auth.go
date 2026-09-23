@@ -130,6 +130,21 @@ func mapPasswordRecoveryStartError(err error) APIErrorSpec {
 	}
 }
 
+// mapRecoveryCodeDeliveryError maps a delivery that could not be sealed. The
+// rotation it belonged to was rolled back, so the refusal names what failed
+// and nothing was spent: the reveal, a role the web surface does not serve,
+// or the session itself.
+func mapRecoveryCodeDeliveryError(err error) APIErrorSpec {
+	switch {
+	case errors.Is(err, errRecoveryCodeRevealSeal):
+		return authRecoveryCodePersistErrorSpec()
+	case errors.Is(err, services.ErrAuthUnsupportedRole):
+		return authWebSignInUnavailableErrorSpec()
+	default:
+		return authSessionCreateErrorSpec()
+	}
+}
+
 func mapPasswordResetCompleteError(err error) APIErrorSpec {
 	switch {
 	case errors.Is(err, services.ErrAuthPasswordMismatch):
