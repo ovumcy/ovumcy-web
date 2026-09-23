@@ -647,16 +647,48 @@ func TestCodeQLJavaScriptGateFiresForEveryTrackedNpmManifest(t *testing.T) {
 // Dockerfile and .dockerignore define that set.
 // ---------------------------------------------------------------------------
 
-var dockerCopyInstruction = regexp.MustCompile(`(?i)^(COPY|ADD)\s+(.*)$`)
+var (
+	dockerCopyInstruction = regexp.MustCompile(`(?i)^(COPY|ADD)\s+(.*)$`)
+	dockerRunInstruction  = regexp.MustCompile(`(?i)^RUN\s+(.*)$`)
+)
+
+// runMountReadsContext reports whether one RUN --mount's options bind the
+// build context: a bind mount (the default type) with no `from=` mounts the
+// context itself, whatever its `source=` narrows it to.
+func runMountReadsContext(options string) bool {
+	mountType, fromStage := "bind", false
+	for _, option := range strings.Split(options, ",") {
+		key, value, _ := strings.Cut(option, "=")
+		switch strings.ToLower(key) {
+		case "type":
+			mountType = strings.ToLower(value)
+		case "from":
+			fromStage = true
+		}
+	}
+	return mountType == "bind" && !fromStage
+}
 
 // DockerContextSources returns every build-context path a COPY or ADD in
 // dockerfile reads. An instruction carrying --from reads another stage, not
 // the context, and is skipped. Forms this parser does not model — the JSON
-// array form, heredocs, wildcards, URLs — are refused rather than guessed at.
+// array form, heredocs, wildcards, URLs, and a RUN --mount that binds the
+// context — are refused rather than guessed at.
 func DockerContextSources(dockerfile string) ([]string, error) {
 	joined := strings.ReplaceAll(strings.ReplaceAll(dockerfile, "\r\n", "\n"), "\\\n", " ")
 	var sources []string
 	for _, raw := range strings.Split(joined, "\n") {
+		if run := dockerRunInstruction.FindStringSubmatch(strings.TrimSpace(raw)); run != nil {
+			for _, field := range strings.Fields(run[1]) {
+				if !strings.HasPrefix(field, "--") {
+					break
+				}
+				if options, ok := strings.CutPrefix(field, "--mount="); ok && runMountReadsContext(options) {
+					return nil, fmt.Errorf("%q: a RUN --mount binding the build context is not modelled", raw)
+				}
+			}
+			continue
+		}
 		m := dockerCopyInstruction.FindStringSubmatch(strings.TrimSpace(raw))
 		if m == nil {
 			continue
@@ -816,14 +848,19 @@ func TestDockerignoreRulesMatchAsDockerDoes(t *testing.T) {
 }
 
 func TestDockerContextSourcesSkipsStageCopiesAndRefusesUnmodelledForms(t *testing.T) {
-	got, err := DockerContextSources("FROM x AS b\nCOPY go.mod go.sum ./\ncopy --chown=1:1 web \\\n  ./web\nCOPY --from=b /out/app /app\n# COPY docs ./docs\n")
+	got, err := DockerContextSources("FROM x AS b\nCOPY go.mod go.sum ./\ncopy --chown=1:1 web \\\n  ./web\nCOPY --from=b /out/app /app\n# COPY docs ./docs\n" +
+		"RUN --mount=type=cache,target=/root/.cache go build\nRUN --mount=type=bind,from=b,source=/out,target=/in true\n")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if want := []string{"go.mod", "go.sum", "web"}; strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("sources = %v, want %v", got, want)
 	}
-	for _, refused := range []string{`COPY ["a", "b"]`, "COPY web/*.go ./", "ADD https://example.invalid/x /x", "COPY <<EOF /x"} {
+	for _, refused := range []string{
+		`COPY ["a", "b"]`, "COPY web/*.go ./", "ADD https://example.invalid/x /x", "COPY <<EOF /x",
+		"COPY go.mod ./\nRUN --mount=type=bind,source=go.sum,target=go.sum go mod download",
+		"COPY go.mod ./\nrun --network=none --mount=target=/src make",
+	} {
 		if _, err := DockerContextSources(refused + "\n"); err == nil {
 			t.Errorf("%q was accepted instead of refused", refused)
 		}
