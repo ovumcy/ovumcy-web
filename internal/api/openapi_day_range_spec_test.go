@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -51,6 +52,19 @@ func dayRangeSpecQueryRequired(parameters []string, name string) bool {
 		}
 	}
 	return false
+}
+
+// yamlScalarText reads a one-line YAML scalar in any of its three styles, so an
+// example key written without quotes is compared as the key, not misreported.
+func yamlScalarText(raw string) string {
+	value := strings.TrimSpace(raw)
+	if unquoted, err := strconv.Unquote(value); err == nil && strings.HasPrefix(value, `"`) {
+		return unquoted
+	}
+	if len(value) >= 2 && strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'") {
+		return strings.ReplaceAll(value[1:len(value)-1], "''", "'")
+	}
+	return value
 }
 
 // TestOpenAPIDayRangeDeclaresTheRefusalsItAnswers drives the real GET
@@ -142,6 +156,8 @@ func TestOpenAPIDayRangeDeclaresTheRefusalsItAnswers(t *testing.T) {
 		{name: "both bounds wrong", query: "from=nope&to=nope", key: "invalid from date"},
 		{name: "to omitted", query: "from=2026-01-01", key: "invalid to date"},
 		{name: "to not YYYY-MM-DD", query: "from=2026-01-01&to=20260110", key: "invalid to date"},
+		{name: "to an impossible date", query: "from=2026-02-01&to=2026-02-30", key: "invalid to date"},
+		{name: "to a day the request zone never had", query: "from=2011-12-25&to=2011-12-30", zone: apia, key: "invalid to date"},
 		{name: "to before from", query: "from=2026-01-10&to=2026-01-09", key: "invalid range"},
 	}
 	emitted := map[string]bool{}
@@ -183,14 +199,13 @@ func TestOpenAPIDayRangeDeclaresTheRefusalsItAnswers(t *testing.T) {
 	var declared []string
 	for _, line := range badRequest {
 		if key, ok := strings.CutPrefix(line, "error: "); ok {
-			declared = append(declared, key)
+			declared = append(declared, yamlScalarText(key))
 		}
 	}
 	sort.Strings(declared)
-	for _, quoted := range declared {
-		var key string
-		if err := json.Unmarshal([]byte(quoted), &key); err != nil || !emitted[key] {
-			t.Errorf("GET %s 400: the spec declares key %s, which no refused range answered", dayRangeSpecPath, quoted)
+	for _, key := range declared {
+		if !emitted[key] {
+			t.Errorf("GET %s 400: the spec declares key %q, which no refused range answered", dayRangeSpecPath, key)
 		}
 	}
 
