@@ -1259,9 +1259,11 @@ jobs:
             # added later fails CI here rather than drifting silently. And
             # this workflow file: the job's own steps (Node version, npm
             # scripts, the bundle check) live here, so an edit to them must
-            # run it. Anything else — a backend-only diff — leaves this job
-            # with nothing to lint, test or build.
-            frontend_changes="$(printf '%s\n' "$files" | grep -E '^(web/|e2e/|scripts/[^/]+\.mjs$|package(-lock)?\.json$|eslint\.config\.mjs$|tsconfig\.json$|playwright\.config\.ts$|\.github/workflows/ci\.yml$|internal/templates/|internal/httpx/markup\.go$|internal/api/calendar_days_view_helpers\.go$)' || true)"
+            # run it. So does an edit to the diff action, which lists the
+            # files this detection reads and forced this job while it lived
+            # in this file. Anything else — a backend-only diff — leaves this
+            # job with nothing to lint, test or build.
+            frontend_changes="$(printf '%s\n' "$files" | grep -E '^(web/|e2e/|scripts/[^/]+\.mjs$|package(-lock)?\.json$|eslint\.config\.mjs$|tsconfig\.json$|playwright\.config\.ts$|\.github/workflows/ci\.yml$|\.github/actions/diff-against-base/|internal/templates/|internal/httpx/markup\.go$|internal/api/calendar_days_view_helpers\.go$)' || true)"
             if [ -z "$frontend_changes" ]; then
               run_frontend=false
               echo "no frontend input changed: test-frontend reports success without running."
