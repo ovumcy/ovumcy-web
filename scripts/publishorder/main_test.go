@@ -484,7 +484,7 @@ func TestTheMirrorCopiesTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 				failureMessage = listingNotReady
 			}
 
-			command := runBashScript(t, bash, preamble(testCase.verifyFailures, failureMessage)+"\n"+script)
+			command := runBashScript(t, bash, job, mirrorStep, preamble(testCase.verifyFailures, failureMessage)+"\n"+script)
 			command.Env = append(os.Environ(),
 				"DIGEST="+digest,
 				"TAG_REFS="+testCase.tagRefs,
@@ -1296,7 +1296,7 @@ func TestTheIdentityPatternPinsEveryCharacterOfTheRepository(t *testing.T) {
 			// an empty identity, which is no identity.
 			outputFile := filepath.Join(t.TempDir(), "github_output")
 
-			command := runBashScript(t, bash, preamble+"\n"+script)
+			command := runBashScript(t, bash, job, verifyStep, preamble+"\n"+script)
 			command.Env = append(os.Environ(),
 				"GITHUB_REPOSITORY="+testCase.repository,
 				"IMAGE_DIGEST="+imageName+"@"+digest,
@@ -1378,7 +1378,7 @@ func TestTheImageNameIsDerivedOnceAndLowercased(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			outputs := filepath.ToSlash(filepath.Join(t.TempDir(), "outputs"))
 
-			command := runBashScript(t, bash, script)
+			command := runBashScript(t, bash, job, resolveStep, script)
 			command.Env = append(os.Environ(),
 				"GITHUB_REPOSITORY="+testCase.repository,
 				"GITHUB_OUTPUT="+outputs,
@@ -1435,12 +1435,14 @@ func TestTheTokenParseReadsWhatTheRegistryReturned(t *testing.T) {
 				t.Fatalf("write the fixture answer: %v", err)
 			}
 
-			output, err := runBashScript(t, bash, "set -euo pipefail\ntoken_body="+shellQuote(path)+"\n"+parse).Output()
-			if err != nil {
-				t.Fatalf("the token parse failed on %s: %v", testCase.body, err)
-			}
-			if got := strings.TrimSpace(string(output)); got != testCase.want {
-				t.Errorf("the token parse read %q out of %s, want %q", got, testCase.body, testCase.want)
+			for _, step := range []string{promoteStep, publicStep} {
+				output, err := runBashScript(t, bash, job, step, "set -euo pipefail\ntoken_body="+shellQuote(path)+"\n"+parse).Output()
+				if err != nil {
+					t.Fatalf("the token parse failed on %s under %q's shell: %v", testCase.body, step, err)
+				}
+				if got := strings.TrimSpace(string(output)); got != testCase.want {
+					t.Errorf("the token parse read %q out of %s under %q's shell, want %q", got, testCase.body, step, testCase.want)
+				}
 			}
 		})
 	}
@@ -1489,21 +1491,56 @@ func requireBash(t *testing.T) string {
 }
 
 // runBashScript writes script to a file under t.TempDir() and returns a Cmd
-// that runs it the way every step read out of the workflow in this package
-// does: every step under `publish` in docker-image.yml declares `shell: bash`
-// explicitly, which GitHub Actions compiles to
-// `bash --noprofile --norc -eo pipefail {0}` — a FILE, never `-c`. A script
-// long enough to hold one of these steps truncates silently on Windows when
-// handed to `-c` as a command-line argument, and `-c` runs without the
-// errexit the workflow applies to every one of them.
-func runBashScript(t *testing.T, bash, script string) *exec.Cmd {
+// that runs it the way the runner runs the named step: as a FILE, never `-c`,
+// under the flags that step's own `shell:` compiles to. Not every step under
+// `publish` declares `shell: bash` — `Scan the image before publishing it` and
+// `Sign the pushed digest` declare none and run as `bash -e {0}`, without
+// pipefail — so the flags are read off the step rather than assumed, and a
+// step that does not declare `shell: bash` fails here instead of running. A
+// script long enough to hold one of these steps also truncates silently on
+// Windows when handed to `-c` as a command-line argument.
+func runBashScript(t *testing.T, bash, job, step, script string) *exec.Cmd {
 	t.Helper()
 
+	flags := workflowfile.BashStepFlags(t, publishWorkflow, step, stepBlock(t, job, step))
 	scriptFile := filepath.Join(t.TempDir(), "step.sh")
 	if err := os.WriteFile(scriptFile, []byte(script), 0o644); err != nil {
 		t.Fatalf("write the step script: %v", err)
 	}
-	return exec.Command(bash, "--noprofile", "--norc", "-eo", "pipefail", filepath.ToSlash(scriptFile))
+	return exec.Command(bash, append(flags, filepath.ToSlash(scriptFile))...)
+}
+
+// TestRunBashScriptStopsWhereTheStepWould is the positive control for the
+// flags runBashScript reads off a step: under `shell: bash` a failing command
+// ends the script, and so does a pipeline whose first stage fails. A harness
+// running without either carries a fixture past the line where the real step
+// stopped. The first case is the anchor: a script that fails nowhere has to
+// reach its end, or the other two would pass on a helper that runs nothing.
+func TestRunBashScriptStopsWhereTheStepWould(t *testing.T) {
+	job := workflowfile.Job(t, publishWorkflow, publishJob)
+	bash := requireBash(t)
+
+	for _, testCase := range []struct {
+		name        string
+		script      string
+		wantReached bool
+	}{
+		{name: "nothing fails", script: "true | true\necho reached\n", wantReached: true},
+		{name: "a failing command (errexit)", script: "false\necho reached\n"},
+		{name: "a pipeline whose first stage fails (pipefail)", script: "false | true\necho reached\n"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			output, err := runBashScript(t, bash, job, promoteStep, testCase.script).CombinedOutput()
+			reached := strings.Contains(string(output), "reached")
+
+			if testCase.wantReached && (!reached || err != nil) {
+				t.Fatalf("a script that fails nowhere did not run to its end under %q's shell: %v\n%s", promoteStep, err, output)
+			}
+			if !testCase.wantReached && (reached || err == nil) {
+				t.Fatalf("the script ran past a failure under %q's shell, which `shell: bash` stops at (exit: %v):\n%s", promoteStep, err, output)
+			}
+		})
+	}
 }
 
 // requireShellTool checks a tool THROUGH the shell that will reach it, which is
@@ -1617,7 +1654,7 @@ func runStep(t *testing.T, bash, job, step string, env map[string]string, reg re
 	}
 	preamble := stubRegistry(dir, reg)
 
-	command := runBashScript(t, bash, preamble+"\n"+script)
+	command := runBashScript(t, bash, job, step, preamble+"\n"+script)
 	command.Env = append(os.Environ(),
 		"GITHUB_REPOSITORY=ovumcy/ovumcy-web",
 		"GITHUB_SERVER_URL=https://github.com",

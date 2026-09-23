@@ -1,6 +1,7 @@
 // Package workflowfile reads a GitHub Actions workflow the way the guards that
 // judge one need it read: find the module root, read the file with its line
-// endings normalised, cut one job out of it by name.
+// endings normalised, cut one job out of it by name, and read the shell a step
+// declares for the harnesses that run that step's script.
 //
 // Three test packages assert something about a job declared under
 // `.github/workflows` — publishgate holds ci.yml's `publish-image` gate to a
@@ -30,6 +31,16 @@ import (
 // counting all of them both rest on it, so they cannot disagree about what a
 // job header looks like.
 var jobHeader = regexp.MustCompile(`(?m)^  [A-Za-z0-9_.-]+:[ \t]*$`)
+
+// stepShellKey matches a step's own `shell:` key. Eight spaces is a step key's
+// depth in these workflows; a `shell:` any deeper is an action's `with:` input
+// or a line of a script, neither of which is the shell the step runs under.
+var stepShellKey = regexp.MustCompile(`(?m)^        shell:(.*)$`)
+
+// bashStepFlags is what GitHub Actions compiles `shell: bash` to —
+// `bash --noprofile --norc -eo pipefail {0}` — less the `{0}` the script file
+// fills.
+var bashStepFlags = []string{"--noprofile", "--norc", "-eo", "pipefail"}
 
 // jobsKey is where the search for a job starts. Two-space indentation is not
 // on its own the mark of a job: `on:` nests `push:` and `workflow_call:` at
@@ -105,6 +116,38 @@ func JobHeaders(t *testing.T, workflow, content string) []string {
 		t.Fatalf("%s: %v, so there is nothing here to count", workflow, err)
 	}
 	return jobHeader.FindAllString(section, -1)
+}
+
+// BashStepFlags returns the flags bash runs a step's script file under, read
+// off the step's own `shell:` key in block (the step's text below its `- name:`
+// line). Only `shell: bash` has flags a harness can reproduce and name: a step
+// that declares no shell runs as `bash -e {0}` on a Linux runner — errexit
+// without pipefail — and any other value is another interpreter or another
+// template. Either is a failure here, never a run under flags assumed for it.
+func BashStepFlags(t *testing.T, workflow, step, block string) []string {
+	t.Helper()
+
+	flags, err := bashStepFlagsIn(block)
+	if err != nil {
+		t.Fatalf("%s, step %q: %v", workflow, step, err)
+	}
+	return flags
+}
+
+// bashStepFlagsIn is BashStepFlags' whole answer, kept out of the
+// `*testing.T` wrapper so its refusals can be tested rather than only
+// triggered.
+func bashStepFlagsIn(block string) ([]string, error) {
+	matches := stepShellKey.FindAllStringSubmatch("\n"+block, -1)
+	if len(matches) != 1 {
+		return nil, fmt.Errorf("declares `shell:` %d times, not once — with none the step runs as `bash -e {0}`, which has no pipefail, and a harness that ran it under `shell: bash`'s flags would pass a pipeline the step itself lets through", len(matches))
+	}
+
+	value, _, _ := strings.Cut(matches[0][1], " #")
+	if value = strings.TrimSpace(value); value != "bash" {
+		return nil, fmt.Errorf("declares `shell: %s`, and `shell: bash` is the only shell whose invocation this harness reproduces", value)
+	}
+	return append([]string(nil), bashStepFlags...), nil
 }
 
 // jobSection returns the document from its `jobs:` key onward, which is the

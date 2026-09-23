@@ -149,3 +149,42 @@ func TestJobReadsAJobOutOfARealWorkflow(t *testing.T) {
 		t.Errorf("the publish job read back carries no `runs-on:`, so this is not a job body:\n%s", block)
 	}
 }
+
+// TestBashStepFlagsIsWhatShellBashCompilesTo pins the answer for the one shell
+// a harness may run a step under, including a trailing YAML comment on the key.
+func TestBashStepFlagsIsWhatShellBashCompilesTo(t *testing.T) {
+	want := "--noprofile --norc -eo pipefail"
+
+	for _, block := range []string{
+		"        shell: bash\n        run: |\n          true\n",
+		"        id: image\n        shell: bash # the step's own\n        run: |\n          true\n",
+	} {
+		flags := BashStepFlags(t, "fixture.yml", "Fixture", block)
+		if got := strings.Join(flags, " "); got != want {
+			t.Errorf("BashStepFlags read %q off\n%s\nwant %q", got, block, want)
+		}
+	}
+}
+
+// TestBashStepFlagsRefusesAShellItWasNotHanded is every block a harness must
+// not run under `shell: bash`'s flags. The first is the shape of `Scan the image
+// before publishing it`: no `shell:`, so `bash -e {0}` on the runner.
+func TestBashStepFlagsRefusesAShellItWasNotHanded(t *testing.T) {
+	for _, testCase := range []struct {
+		name  string
+		block string
+	}{
+		{name: "no shell declared", block: "        run: |\n          true\n"},
+		{name: "another interpreter", block: "        shell: sh\n        run: |\n          true\n"},
+		{name: "a custom bash template", block: "        shell: bash -e {0}\n        run: |\n          true\n"},
+		{name: "a shell key only inside the script", block: "        run: |\n          shell: bash\n"},
+		{name: "a shell key only among an action's inputs", block: "        with:\n          shell: bash\n"},
+		{name: "two shell keys", block: "        shell: bash\n        shell: bash\n"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			if flags, err := bashStepFlagsIn(testCase.block); err == nil {
+				t.Fatalf("bashStepFlagsIn answered %q instead of refusing:\n%s", flags, testCase.block)
+			}
+		})
+	}
+}
