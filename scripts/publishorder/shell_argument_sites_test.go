@@ -29,8 +29,12 @@ var dashCAllowed = map[string]string{
 	"backuprestoredoc.readVolume":   "a fixed `sh -c` inside the throwaway container that reads a volume",
 }
 
-// dashCSite is one call that passes a `-c` flag literal, named by the function
-// it is written in.
+// packageLevel names the owner of a flag literal declared outside every
+// function. dashCAllowed never holds it: a package-level flag is reachable from
+// any function in the package, so no one probe can answer for it.
+const packageLevel = "<package level>"
+
+// dashCSite is one `-c` flag literal, named by the function it is written in.
 type dashCSite struct {
 	function string
 	position string
@@ -41,9 +45,10 @@ type dashCSite struct {
 // self-hosting runbook's commands, and any added later — to running such a
 // script from a file. Handed over as an argument, a long script truncates
 // silently on Windows, and it runs under whatever flags the call site spelled
-// rather than the ones the step declares. The scan keys on the flag literal in
-// ANY call, not on `exec.Command` alone, so a wrapper that forwards its
-// arguments to exec is found at the site that spells the flag.
+// rather than the ones the step declares. The scan keys on the flag literal
+// wherever it is written — a call argument, a variable, a constant, a slice of
+// arguments — not on `exec.Command` alone, so neither a wrapper that forwards
+// its arguments to exec nor a flag held in a name escapes it.
 func TestNoExtractedScriptIsHandedToAShellAsAnArgument(t *testing.T) {
 	scripts, err := filepath.Abs("..")
 	if err != nil {
@@ -94,7 +99,7 @@ func TestNoExtractedScriptIsHandedToAShellAsAnArgument(t *testing.T) {
 	}
 
 	if len(offenders) > 0 {
-		t.Errorf("these calls hand a shell its script as a `-c` argument:\n  %s\nWrite the script to a file and run that file under the flags its step declares, as runBashScript here, runGate in releasegate and runScript in backuprestoredoc do.",
+		t.Errorf("these sites spell the `-c` flag that hands a shell its script as an argument:\n  %s\nWrite the script to a file and run that file under the flags its step declares, as runBashScript here, runGate in releasegate and runScript in backuprestoredoc do.",
 			strings.Join(offenders, "\n  "))
 	}
 
@@ -112,8 +117,10 @@ func TestNoExtractedScriptIsHandedToAShellAsAnArgument(t *testing.T) {
 
 // TestDashCSitesInClassifiesBothWays feeds the scanner a source this test owns,
 // so its verdict does not rest on the tree it judges: a plain `-c`, a cluster
-// inside a function literal and behind a wrapper are found under the function
-// that spells them, and a script run from a file under `--norc` is not.
+// inside a function literal and behind a wrapper, a flag held in a variable or
+// a slice are found under the function that spells them, a package-level
+// constant under the package, and a script run from a file under `--norc` is
+// not found at all.
 func TestDashCSitesInClassifiesBothWays(t *testing.T) {
 	const source = `package fixture
 
@@ -122,6 +129,20 @@ import "os/exec"
 func viaArgument(bash, script string) { _ = exec.Command(bash, "-c", script) }
 
 func viaCluster(bash, script string) { go func() { _ = run(bash, "-ec", script) }() }
+
+func viaVariable(bash, script string) {
+	flag := "-c"
+	_ = exec.Command(bash, flag, script)
+}
+
+func viaSlice(bash, script string) {
+	args := []string{"-lc", script}
+	_ = exec.Command(bash, args...)
+}
+
+const shellFlag = "-c"
+
+func viaConstant(bash, script string) { _ = exec.Command(bash, shellFlag, script) }
 
 func viaFile(bash, file string) { _ = exec.Command(bash, "--noprofile", "--norc", "-eo", "pipefail", file) }
 `
@@ -135,37 +156,33 @@ func viaFile(bash, file string) { _ = exec.Command(bash, "--noprofile", "--norc"
 	for _, site := range dashCSitesIn(fset, file, "fixture") {
 		got = append(got, site.function)
 	}
-	if want := "fixture.viaArgument fixture.viaCluster"; strings.Join(got, " ") != want {
+	want := "fixture.viaArgument fixture.viaCluster fixture.viaVariable fixture.viaSlice fixture." + packageLevel
+	if strings.Join(got, " ") != want {
 		t.Errorf("dashCSitesIn found %q, want %q", got, want)
 	}
 }
 
-// dashCSitesIn returns every call in file that passes a `-c` flag literal,
-// named `<pkg>.<enclosing function>`. A call inside a function literal belongs
+// dashCSitesIn returns every string literal in file that spells a `-c` flag,
+// named `<pkg>.<enclosing function>`, or `<pkg>.<package level>` for one
+// declared outside every function. A literal inside a function literal belongs
 // to the declaration that holds it.
 func dashCSitesIn(fset *token.FileSet, file *ast.File, pkg string) []dashCSite {
 	var sites []dashCSite
 	for _, decl := range file.Decls {
-		function, ok := decl.(*ast.FuncDecl)
-		if !ok || function.Body == nil {
-			continue
+		owner := pkg + "." + packageLevel
+		if function, ok := decl.(*ast.FuncDecl); ok {
+			owner = pkg + "." + function.Name.Name
 		}
-		ast.Inspect(function.Body, func(node ast.Node) bool {
-			call, ok := node.(*ast.CallExpr)
-			if !ok {
+		ast.Inspect(decl, func(node ast.Node) bool {
+			literal, ok := node.(*ast.BasicLit)
+			if !ok || literal.Kind != token.STRING {
 				return true
 			}
-			for _, arg := range call.Args {
-				literal, ok := arg.(*ast.BasicLit)
-				if !ok || literal.Kind != token.STRING {
-					continue
-				}
-				if value, err := strconv.Unquote(literal.Value); err == nil && dashCFlag.MatchString(value) {
-					sites = append(sites, dashCSite{
-						function: pkg + "." + function.Name.Name,
-						position: fset.Position(literal.Pos()).String(),
-					})
-				}
+			if value, err := strconv.Unquote(literal.Value); err == nil && dashCFlag.MatchString(value) {
+				sites = append(sites, dashCSite{
+					function: owner,
+					position: fset.Position(literal.Pos()).String(),
+				})
 			}
 			return true
 		})
