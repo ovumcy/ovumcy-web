@@ -144,16 +144,117 @@ func TestRunThisLanguageNeverSkipsAnUnlistedLanguageRefusesTheOldORShape(t *test
 	}
 }
 
-var jobNeedsLine = regexp.MustCompile(`(?m)^    needs:\s*(.+)$`)
+// jobNeedsKey is a job's own `needs:` key and the rest of its line. `[ \t]*`,
+// never `\s*`: the latter crosses the newline of an empty value and reads the
+// block sequence's first item as a scalar.
+var jobNeedsKey = regexp.MustCompile(`(?m)^    needs:[ \t]*(.*)$`)
 
-func jobDeclaresNeedsChanges(t *testing.T, workflow, job string) bool {
-	t.Helper()
-	m := jobNeedsLine.FindStringSubmatch(workflowfile.Job(t, workflow, job))
-	if m == nil {
-		return false
+// yamlScalar strips a trailing comment and one pair of matching quotes.
+func yamlScalar(s string) string {
+	if i := strings.Index(s, " #"); i >= 0 {
+		s = s[:i]
 	}
-	needs := strings.TrimSpace(m[1])
-	return needs == "changes" || needs == "[changes]" || needs == "['changes']"
+	s = strings.TrimSpace(s)
+	if len(s) >= 2 && (s[0] == '\'' || s[0] == '"') && s[len(s)-1] == s[0] {
+		s = s[1 : len(s)-1]
+	}
+	return s
+}
+
+// JobNeeds returns the job ids a job block's `needs:` names, in each of the
+// three forms YAML writes a list in: a scalar (`needs: changes`), a flow
+// sequence (`needs: [changes, build]`, quoted or not) and a block sequence
+// (one `- changes` per line below the key). A job with no `needs:` returns
+// nil. A shape outside those three — a flow sequence spanning lines, an item
+// that is not a scalar — is refused rather than read as some other list.
+func JobNeeds(block string) ([]string, error) {
+	loc := jobNeedsKey.FindStringSubmatchIndex(block)
+	if loc == nil {
+		return nil, nil
+	}
+	inline := yamlScalar(block[loc[2]:loc[3]])
+	switch {
+	case strings.HasPrefix(inline, "["):
+		if !strings.HasSuffix(inline, "]") {
+			return nil, fmt.Errorf("`needs: %s`: a flow sequence spanning lines is not modelled", inline)
+		}
+		var needs []string
+		for _, item := range strings.Split(inline[1:len(inline)-1], ",") {
+			if item = yamlScalar(item); item == "" {
+				return nil, fmt.Errorf("`needs: %s`: an empty item", inline)
+			}
+			needs = append(needs, item)
+		}
+		return needs, nil
+	case inline != "":
+		return []string{inline}, nil
+	}
+	var needs []string
+	for _, line := range strings.Split(block[loc[1]:], "\n")[1:] {
+		trimmed := strings.TrimLeft(line, " ")
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		indent := len(line) - len(trimmed)
+		if indent < 4 || (indent == 4 && !strings.HasPrefix(trimmed, "- ")) {
+			break
+		}
+		if !strings.HasPrefix(trimmed, "- ") {
+			return nil, fmt.Errorf("`needs:` block line %q is not a `- item`", line)
+		}
+		item := yamlScalar(trimmed[2:])
+		if item == "" || strings.ContainsAny(item, "[]{}:") {
+			return nil, fmt.Errorf("`needs:` block item %q is not a job id", line)
+		}
+		needs = append(needs, item)
+	}
+	if len(needs) == 0 {
+		return nil, fmt.Errorf("`needs:` has neither a value nor a block sequence below it")
+	}
+	return needs, nil
+}
+
+func TestJobNeedsReadsEveryYAMLListForm(t *testing.T) {
+	for block, want := range map[string]string{
+		"    needs: changes\n    if: x\n":                          "changes",
+		"    needs: 'changes'  # quoted\n":                         "changes",
+		"    needs: [changes]\n":                                   "changes",
+		"    needs: [build, changes]\n":                            "build,changes",
+		"    needs: [ \"build\" , 'changes' ]\n":                   "build,changes",
+		"    needs:\n      - build\n      - changes\n    if: x\n":  "build,changes",
+		"    needs:\n    - changes\n    - build\n    runs-on: x\n": "changes,build",
+		"    runs-on: x\n":                                         "",
+		"    needs:   \n      # a comment\n      - changes # why\n\n    steps:\n      - name: x\n": "changes",
+	} {
+		got, err := JobNeeds(block)
+		if err != nil {
+			t.Errorf("%q: %v", block, err)
+			continue
+		}
+		if strings.Join(got, ",") != want {
+			t.Errorf("%q: needs = %v, want %q", block, got, want)
+		}
+	}
+	for _, refused := range []string{
+		"    needs: [build,\n      changes]\n",
+		"    needs:\n    runs-on: x\n",
+		"    needs:\n      - [changes]\n",
+		"    needs: [build, , changes]\n",
+	} {
+		if got, err := JobNeeds(refused); err == nil {
+			t.Errorf("%q was read as %v instead of refused", refused, got)
+		}
+	}
+}
+
+// jobNeedsChanges reports whether a job's `needs:` names `changes`.
+func jobNeedsChanges(t *testing.T, workflow, job string) bool {
+	t.Helper()
+	needs, err := JobNeeds(workflowfile.Job(t, workflow, job))
+	if err != nil {
+		t.Fatalf("%s %s: %v", workflow, job, err)
+	}
+	return contains(needs, "changes")
 }
 
 func TestEveryChangesGatedJobInSecurityAndCodeQLIsPinned(t *testing.T) {
@@ -168,7 +269,7 @@ func TestEveryChangesGatedJobInSecurityAndCodeQLIsPinned(t *testing.T) {
 		content := workflowfile.Read(t, wf)
 		for _, header := range workflowfile.JobHeaders(t, wf, content) {
 			name := strings.TrimSuffix(strings.TrimSpace(header), ":")
-			if name == "changes" || !jobDeclaresNeedsChanges(t, wf, name) {
+			if name == "changes" || !jobNeedsChanges(t, wf, name) {
 				continue
 			}
 			key := wf + "::" + name
