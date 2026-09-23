@@ -34,13 +34,19 @@ import (
 // accept a local helper that merely shares a sink's name.
 
 // rawPathReadersByDesign names, by the enclosing function's full name, each
-// function that reads the raw request path on purpose, with the reason. An
-// entry that no longer reads the raw path fails the barrier as stale.
-var rawPathReadersByDesign = map[string]string{
-	"github.com/ovumcy/ovumcy-web/cmd/ovumcy.csrfMiddlewareConfig":      "the OIDC callback's CSRF exemption matches the raw bytes on purpose: a case or slash variant gets no exemption, which is stricter than the route",
-	"github.com/ovumcy/ovumcy-web/cmd/ovumcy.securityHeadersMiddleware": "the /static cache exemption matches the raw bytes on purpose: a variant spelling keeps no-store, which is the stricter answer",
-	"github.com/ovumcy/ovumcy-web/internal/api.SafeRequestLogPath":      "writes the path into the request log line; nothing branches on it",
-	"github.com/ovumcy/ovumcy-web/internal/api.currentPathWithQuery":    "echoes the address into the rendered layout; nothing branches on it",
+// function that reads the raw request path on purpose, with the exact number
+// of raw reads it holds and the reason. The count is what keeps an entry from
+// exempting its whole function: a second raw read added beside the declared
+// one fails the barrier until someone re-justifies it, and so does an entry
+// whose read is gone.
+var rawPathReadersByDesign = map[string]struct {
+	reads  int
+	reason string
+}{
+	"github.com/ovumcy/ovumcy-web/cmd/ovumcy.csrfMiddlewareConfig":      {1, "the OIDC callback's CSRF exemption matches the raw bytes on purpose: a case or slash variant gets no exemption, which is stricter than the route"},
+	"github.com/ovumcy/ovumcy-web/cmd/ovumcy.securityHeadersMiddleware": {1, "the /static cache exemption matches the raw bytes on purpose: a variant spelling keeps no-store, which is the stricter answer"},
+	"github.com/ovumcy/ovumcy-web/internal/api.SafeRequestLogPath":      {1, "writes the path into the request log line; nothing branches on it"},
+	"github.com/ovumcy/ovumcy-web/internal/api.currentPathWithQuery":    {1, "echoes the address into the rendered layout; nothing branches on it"},
 }
 
 // routingNormalizedDecisionSites are the functions whose answer used to fork
@@ -95,7 +101,10 @@ const (
 	// httpx.RoutingNormalizedPath or httpx.HasRoutingPrefix.
 	rawPathNormalized
 	// rawPathCalendarFeed: the read is the direct path argument of
-	// IsCalendarFeedRequest, which normalizes inside.
+	// IsCalendarFeedRequest, which normalizes inside. That it agrees with the
+	// router on every spelling is held by
+	// TestIsCalendarFeedRequestMatchesWhatFiberActuallyDispatches in
+	// cmd/ovumcy, not here.
 	rawPathCalendarFeed
 	rawPathAllowListed
 )
@@ -153,9 +162,12 @@ func TestEveryRawRequestPathReadIsRoutingNormalized(t *testing.T) {
 			t.Errorf("%s no longer reads the request path through httpx.RoutingNormalizedPath; it is one of the decision sites this barrier exists for, so a rewrite must keep its comparison on the normalized path", site)
 		}
 	}
-	for name := range rawPathReadersByDesign {
-		if countRawPathUses(uses, name, rawPathAllowListed) == 0 {
+	for name, declared := range rawPathReadersByDesign {
+		switch got := countRawPathUses(uses, name, rawPathAllowListed); {
+		case got == 0:
 			t.Errorf("rawPathReadersByDesign declares %s, which no longer reads the raw request path; the entry is stale and would exempt whatever raw read lands there next — remove it", name)
+		case got != declared.reads:
+			t.Errorf("%s holds %d raw request-path read(s), but rawPathReadersByDesign declares %d; a new raw read there is not covered by the declared reason (%s) — normalize it, or re-justify and update the count", name, got, declared.reads, declared.reason)
 		}
 	}
 }

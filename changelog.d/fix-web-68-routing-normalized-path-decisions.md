@@ -14,4 +14,7 @@
   `TestEveryRawRequestPathReadIsRoutingNormalized`,
   `TestRateLimitRefusalsAnswerEveryRoutableSpellingLikeTheLowercaseOne`,
   `TestRespondAuthErrorRedirectsEveryRoutableSpellingOfAnAuthForm`,
-  `TestAuthRequiredLetsEveryRoutableSpellingOfSignOutPastTheOnboardingGate`.
+  `TestRespondSettingsErrorRedirectsEveryRoutableSpellingOfTheSettingsForms`,
+  `TestNotFoundAnswersEveryRoutableSpellingOfAnAPIPathAsJSON`,
+  `TestAuthRequiredLetsEveryRoutableSpellingOfSignOutPastTheOnboardingGate`,
+  `TestRateLimitScopeClassifiesEveryRoutableSpelling`.
