@@ -1501,11 +1501,13 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
           description: |
-            Rate limit exceeded. Every answer carries the `Retry-After` header. Only a caller
-            that sends `Accept: application/json` and is not an HTMX request gets the JSON
-            envelope, with `retry_after_seconds`. The plain form submission (this route's primary
-            client) and an HTMX request (`HX-Request: true`) get the localized status fragment
-            as `text/html` instead, with no `retry_after_seconds`.
+            Rate limit exceeded. Every answer carries the `Retry-After` header. A caller that
+            asks for JSON gets the JSON envelope, with `retry_after_seconds`: one whose `Accept`
+            header names `application/json`, or one that sends its body as
+            `Content-Type: application/json`, either one alone being enough. An HTMX request
+            (`HX-Request: true`) outranks both and gets the localized status fragment as
+            `text/html` instead, with no `retry_after_seconds`, and so does the plain form
+            submission (this route's primary client) that asks for neither.
 
   # =========================================================================
   # auth
