@@ -24,15 +24,26 @@ const (
 // cancelled or fails.
 // ---------------------------------------------------------------------------
 
-// changesGatedJobs names every job whose `if:` (or, for a matrix job gated at
-// step level instead, its per-leg run flag) is computed from a `changes`
-// job's detection output. TestEveryChangesGatedJobInSecurityAndCodeQLIsPinned
-// enumerates the set from the workflows, so a job added later with no row
-// here fails rather than going unguarded.
+// changesGatedJobs names every job, in every workflow, whose `needs:` names a
+// `changes` job. The checks run over the set enumerated from the workflows
+// (jobsThatNeedChanges), not over this list, so a job added later is judged
+// before anyone writes a row for it; TestEveryJobThatNeedsChangesIsPinned
+// holds the two to each other both ways, so a job the enumeration stops
+// seeing — a `needs:` form the parser no longer reads — fails by name.
 var changesGatedJobs = []struct {
 	workflow string
 	job      string
 }{
+	{ciWorkflow, "test-go-shard"},
+	{ciWorkflow, "test-go-rest"},
+	{ciWorkflow, "test-go-analysis"},
+	{ciWorkflow, "test-frontend"},
+	{ciWorkflow, "race-services"},
+	{ciWorkflow, "race-rest"},
+	{ciWorkflow, "e2e-shard"},
+	{ciWorkflow, "e2e-postgres-smoke"},
+	{ciWorkflow, "e2e-cross-browser"},
+	{ciWorkflow, "image-smoke"},
 	{securityWorkflow, "gosec"},
 	{securityWorkflow, "govulncheck"},
 	{securityWorkflow, "trivy-fs"},
@@ -40,17 +51,50 @@ var changesGatedJobs = []struct {
 	{codeqlWorkflow, "analyze"},
 }
 
-// JobIfSurvivesACancelledOrFailedChanges refuses a job `if:` that reads a
-// `needs.changes` output without also carrying `!cancelled()`. Without it,
-// GitHub Actions attaches an implicit success()-of-needs predicate to any
-// `if:` with no status-check function of its own: a FAILED or cancelled
-// `changes` job then SKIPS this job rather than running it, and a skipped
-// job is a SATISFIED required check.
+// JobIfSurvivesACancelledOrFailedChanges refuses the job-level `if:` of a job
+// that needs `changes` unless it carries `!cancelled()`; condition is "" for
+// a job with no `if:`. Without it, GitHub Actions attaches an implicit
+// success()-of-needs predicate — to an `if:` with no status-check function of
+// its own, and to a job with no `if:` at all: a FAILED `changes` job then
+// SKIPS this job rather than running it, and a skipped job is a SATISFIED
+// required check, directly or through a gate that accepts `skipped`.
 func JobIfSurvivesACancelledOrFailedChanges(condition string) error {
+	if condition == "" {
+		return fmt.Errorf("no job-level `if:` — the implicit success() skips this job when `changes` fails, into a satisfied required check; add `if: ${{ !cancelled() }}`")
+	}
 	if !strings.Contains(condition, "!cancelled()") {
 		return fmt.Errorf("`if:` (%s) has no `!cancelled()` — a failed or cancelled `changes` job skips this job into a satisfied required check instead of running it", condition)
 	}
 	return nil
+}
+
+// jobIfValue is a job's own single-line `if:` value, or "" when it has none.
+func jobIfValue(block string) string {
+	if m := jobIfLine.FindStringSubmatch(block); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+// gatedJob is one job that needs `changes`, with its block.
+type gatedJob struct {
+	workflow, job, block string
+}
+
+// jobsThatNeedChanges enumerates, from every workflow file, each job whose
+// `needs:` names `changes`.
+func jobsThatNeedChanges(t *testing.T) []gatedJob {
+	t.Helper()
+	var jobs []gatedJob
+	for _, wf := range allWorkflowFiles(t) {
+		for _, header := range workflowfile.JobHeaders(t, wf, workflowfile.Read(t, wf)) {
+			name := strings.TrimSuffix(strings.TrimSpace(header), ":")
+			if name != "changes" && jobNeedsChanges(t, wf, name) {
+				jobs = append(jobs, gatedJob{wf, name, workflowfile.Job(t, wf, name)})
+			}
+		}
+	}
+	return jobs
 }
 
 // changesOutputComparison matches a comparison against one of `changes`'
@@ -61,12 +105,14 @@ var changesOutputComparison = regexp.MustCompile(`needs\.changes\.outputs\.[A-Za
 // ChangesOutputComparisonsAreFailSafe refuses any comparison against a
 // `changes` output that is not `!= 'false'` — in particular `== 'true'`,
 // which reads an ABSENT or empty output (a crashed `changes` job, an output
-// renamed on one side of an edit) as "do not run".
+// renamed on one side of an edit) as "do not run". A job that reads no
+// `changes` output at all is refused too: it would wait on `changes` for
+// ordering alone, and it tells this scan it is broken.
 func ChangesOutputComparisonsAreFailSafe(content string) error {
-	matches := changesOutputComparison.FindAllStringSubmatch(content, -1)
-	if len(matches) == 0 {
-		return fmt.Errorf("found zero comparisons against a `changes` output — the scan itself is broken, since this job is only in this set because it reads one")
+	if !strings.Contains(content, "needs.changes.outputs.") {
+		return fmt.Errorf("reads no `changes` output — either the job needs `changes` for ordering alone, or this scan no longer sees how it reads one")
 	}
+	matches := changesOutputComparison.FindAllStringSubmatch(content, -1)
 	var offending []string
 	for _, m := range matches {
 		if m[1] != "!=" || m[2] != "false" {
@@ -105,21 +151,24 @@ func RunThisLanguageNeverSkipsAnUnlistedLanguage(content string) error {
 	return nil
 }
 
-func TestChangesGatedScannerJobsSurviveACancelledOrFailedChanges(t *testing.T) {
-	for _, j := range changesGatedJobs {
-		block := workflowfile.Job(t, j.workflow, j.job)
-		if err := JobIfSurvivesACancelledOrFailedChanges(jobCondition(t, block)); err != nil {
-			t.Fatalf("%s %s: %v", j.workflow, j.job, err)
+func TestEveryJobThatNeedsChangesSurvivesACancelledOrFailedChanges(t *testing.T) {
+	for _, j := range jobsThatNeedChanges(t) {
+		if err := JobIfSurvivesACancelledOrFailedChanges(jobIfValue(j.block)); err != nil {
+			t.Errorf("%s %s: %v", j.workflow, j.job, err)
 		}
-		if j.job == "analyze" {
-			if err := RunThisLanguageNeverSkipsAnUnlistedLanguage(block); err != nil {
-				t.Fatalf("%s %s: %v", j.workflow, j.job, err)
-			}
-			continue
+		check := ChangesOutputComparisonsAreFailSafe
+		if j.workflow == codeqlWorkflow && j.job == "analyze" {
+			check = RunThisLanguageNeverSkipsAnUnlistedLanguage
 		}
-		if err := ChangesOutputComparisonsAreFailSafe(block); err != nil {
-			t.Fatalf("%s %s: %v", j.workflow, j.job, err)
+		if err := check(j.block); err != nil {
+			t.Errorf("%s %s: %v", j.workflow, j.job, err)
 		}
+	}
+}
+
+func TestJobIfSurvivesACancelledOrFailedChangesRefusesAMissingIf(t *testing.T) {
+	if err := JobIfSurvivesACancelledOrFailedChanges(jobIfValue("    needs:\n      - changes\n    steps:\n        if: ${{ !cancelled() }}\n")); err == nil {
+		t.Fatal("a job with no job-level `if:` (only a step's) was accepted")
 	}
 }
 
@@ -257,7 +306,7 @@ func jobNeedsChanges(t *testing.T, workflow, job string) bool {
 	return contains(needs, "changes")
 }
 
-func TestEveryChangesGatedJobInSecurityAndCodeQLIsPinned(t *testing.T) {
+func TestEveryJobThatNeedsChangesIsPinned(t *testing.T) {
 	pinned := map[string]bool{}
 	for _, j := range changesGatedJobs {
 		pinned[j.workflow+"::"+j.job] = true
@@ -265,22 +314,15 @@ func TestEveryChangesGatedJobInSecurityAndCodeQLIsPinned(t *testing.T) {
 
 	seen := map[string]bool{}
 	var missing []string
-	for _, wf := range []string{securityWorkflow, codeqlWorkflow} {
-		content := workflowfile.Read(t, wf)
-		for _, header := range workflowfile.JobHeaders(t, wf, content) {
-			name := strings.TrimSuffix(strings.TrimSpace(header), ":")
-			if name == "changes" || !jobNeedsChanges(t, wf, name) {
-				continue
-			}
-			key := wf + "::" + name
-			seen[key] = true
-			if !pinned[key] {
-				missing = append(missing, key)
-			}
+	for _, j := range jobsThatNeedChanges(t) {
+		key := j.workflow + "::" + j.job
+		seen[key] = true
+		if !pinned[key] {
+			missing = append(missing, key)
 		}
 	}
 	if len(missing) > 0 {
-		t.Fatalf("job(s) gated on `changes` are not in changesGatedJobs: %v", missing)
+		t.Fatalf("job(s) that need `changes` are not in changesGatedJobs: %v — once TestEveryJobThatNeedsChangesSurvivesACancelledOrFailedChanges passes for them, add each by name", missing)
 	}
 	for _, j := range changesGatedJobs {
 		if key := j.workflow + "::" + j.job; !seen[key] {
