@@ -2,8 +2,14 @@ package main
 
 import (
 	"bytes"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"io/fs"
 	"log"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -294,6 +300,93 @@ func TestCredentialMaxCeilingIsReadOnlyThroughTheRateCheck(t *testing.T) {
 	if outside := strings.Count(source, "rateLimitCredentialMaxCeiling") - inside; outside != 1 {
 		t.Fatalf("rateLimitCredentialMaxCeiling appears %d times outside getCredentialRateLimit, want only its declaration; read a credential pair through getCredentialRateLimit", outside)
 	}
+
+	// The ceiling constant is only half of it: a credential key read by name
+	// through any other helper skips the rate check without touching the
+	// constant. Every string literal naming one — or starting one, the piece a
+	// concatenation builds it from — must be an argument of a
+	// getCredentialRateLimit call. No constant holds these keys, so no
+	// declaration site is exempt either.
+	throughRateCheck, elsewhere := credentialKeyLiteralSites(t)
+	for _, site := range elsewhere {
+		t.Errorf("%s names a credential rate-limit key outside a getCredentialRateLimit call; read the pair through getCredentialRateLimit so it is held to the rate ceiling", site)
+	}
+	for _, key := range []string{
+		"RATE_LIMIT_LOGIN_MAX", "RATE_LIMIT_LOGIN_WINDOW",
+		"RATE_LIMIT_REGISTER_MAX", "RATE_LIMIT_REGISTER_WINDOW",
+		"RATE_LIMIT_FORGOT_PASSWORD_MAX", "RATE_LIMIT_FORGOT_PASSWORD_WINDOW",
+	} {
+		if !throughRateCheck[key] {
+			t.Errorf("%s is not passed to getCredentialRateLimit as a literal; the guard is measuring the wrong thing", key)
+		}
+	}
+}
+
+// credentialRateLimitKeyPattern matches a credential RATE_LIMIT_ key or the
+// prefix a concatenation would build one from.
+var credentialRateLimitKeyPattern = regexp.MustCompile(`RATE_LIMIT_(LOGIN|REGISTER|FORGOT_PASSWORD)_`)
+
+// credentialKeyLiteralSites parses every non-test server Go source (comments
+// are not string literals, so prose naming a key is not a site) and sorts each
+// string literal matching credentialRateLimitKeyPattern into the keys passed
+// directly to getCredentialRateLimit and the positions of every other one.
+func credentialKeyLiteralSites(t *testing.T) (map[string]bool, []string) {
+	t.Helper()
+	fileSet := token.NewFileSet()
+	throughRateCheck := map[string]bool{}
+	var elsewhere []string
+	parsed := 0
+	for _, tree := range []string{".", filepath.Join("..", "..", "internal")} {
+		err := filepath.WalkDir(tree, func(path string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if entry.IsDir() && entry.Name() == "testdata" {
+				return filepath.SkipDir
+			}
+			if entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			file, err := parser.ParseFile(fileSet, path, nil, 0)
+			if err != nil {
+				return err
+			}
+			parsed++
+			rateCheckArgs := map[*ast.BasicLit]bool{}
+			ast.Inspect(file, func(node ast.Node) bool {
+				switch typed := node.(type) {
+				case *ast.CallExpr:
+					if ident, ok := typed.Fun.(*ast.Ident); ok && ident.Name == "getCredentialRateLimit" {
+						for _, arg := range typed.Args {
+							if literal, ok := arg.(*ast.BasicLit); ok {
+								rateCheckArgs[literal] = true
+							}
+						}
+					}
+				case *ast.BasicLit:
+					if typed.Kind != token.STRING || !credentialRateLimitKeyPattern.MatchString(typed.Value) {
+						return true
+					}
+					if rateCheckArgs[typed] {
+						if key, unquoteErr := strconv.Unquote(typed.Value); unquoteErr == nil {
+							throughRateCheck[key] = true
+						}
+						return true
+					}
+					elsewhere = append(elsewhere, fileSet.Position(typed.Pos()).String()+" ("+typed.Value+")")
+				}
+				return true
+			})
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("walk %s: %v", tree, err)
+		}
+	}
+	if parsed == 0 {
+		t.Fatal("no server sources parsed; this guard would pass on an empty corpus")
+	}
+	return throughRateCheck, elsewhere
 }
 
 // credentialWindowRow returns the reader and default of a credential WINDOW
