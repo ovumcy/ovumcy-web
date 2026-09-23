@@ -120,8 +120,9 @@ func credentialRateWithinCeiling(maxRequests int, window time.Duration) bool {
 // (login, registration, password reset): each half is bounded on its own, then
 // the pair is held to the per-minute rate ceiling. A pair above it falls back
 // to BOTH defaults, logged once — keeping either half would leave a rate the
-// operator never chose. It is the only reader of the credential count ceiling,
-// so a credential setting cannot be read past the rate check.
+// operator never chose. It is the only reader of the credential count ceiling
+// and the only place the six LOGIN, REGISTER and FORGOT_PASSWORD keys are
+// named as literals; a key assembled at run time is not held to that.
 func getCredentialRateLimit(maxKey, windowKey string, fallbackMax int, fallbackWindow time.Duration) (int, time.Duration) {
 	maxRequests := getRateLimitMax(maxKey, fallbackMax, rateLimitCredentialMaxCeiling)
 	window := getRateLimitWindow(windowKey, fallbackWindow)
