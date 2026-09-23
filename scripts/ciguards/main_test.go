@@ -1088,6 +1088,10 @@ var detectCases = []detectCase{
 		map[string]string{"run_frontend": "true"}},
 	{"this workflow only", "pull_request", []string{".github/workflows/ci.yml"},
 		map[string]string{"run_frontend": "true", "run_e2e": "true"}},
+	// The diff action decides what every rule here sees; while that logic sat
+	// in this workflow an edit to it forced every lane.
+	{"the diff action only", "pull_request", []string{diffAction + "/action.yml"},
+		map[string]string{"run_frontend": "true", "run_e2e": "true", "run_core": "true"}},
 	{"non-ASCII frontend path", "pull_request", []string{"web/src/js/é.js"},
 		map[string]string{"run_frontend": "true"}},
 	// git C-quotes a path holding a tab or a `"` even with quotePath off.
