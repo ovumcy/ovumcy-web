@@ -118,8 +118,15 @@ jobs:
             # text. `--numstat` marks a binary file with `-` in both
             # count columns, never in a text file's, so any added or
             # modified binary forces the scan rather than trying to
-            # enumerate every format trivy might inspect.
-            binary_changes="$(git -c core.quotePath=false diff --no-renames --numstat "${DIFF_BASE}...HEAD" | awk -F'\t' '$1 == "-" && $2 == "-" {print $3}')"
+            # enumerate every format trivy might inspect. Read on its own,
+            # not piped: this step has no pipefail, so a failed numstat
+            # would carry awk's status and read as "no binary changed".
+            numstat_failed=""
+            if ! numstat="$(git -c core.quotePath=false diff --no-renames --numstat "${DIFF_BASE}...HEAD")"; then
+              numstat=""
+              numstat_failed=1
+            fi
+            binary_changes="$(printf '%s\n' "$numstat" | awk -F'\t' '$1 == "-" && $2 == "-" {print $3}')"
             # trivy-image scans the built runtime image, so its gate is
             # everything the Dockerfile copies into the build: go.mod/go.sum,
             # cmd/, internal/ (which also carries the go:embed'ed templates
@@ -144,6 +151,10 @@ jobs:
               if [ -n "$pull_retry_changed" ]; then
                 run_trivyfs=true
                 run_trivyimage=true
+              fi
+              if [ -n "$numstat_failed" ]; then
+                run_trivyfs=true
+                echo "git diff --numstat against ${DIFF_BASE}...HEAD failed: which changed blobs are binary is unknown, so trivy-fs runs."
               fi
               verdict="scoped to what changed: gosec/govulncheck=$run_go trivy-fs=$run_trivyfs trivy-image=$run_trivyimage."
             fi
