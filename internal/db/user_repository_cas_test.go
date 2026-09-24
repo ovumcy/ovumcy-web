@@ -310,3 +310,30 @@ func TestUpgradePasswordHashCASLosesToACredentialWrite(t *testing.T) {
 		}
 	})
 }
+
+// TestUpgradePasswordHashCASFailsClosedWhenTheUpdateErrors covers the error
+// arm: an upgrade that could not run must report the failure AND read as not
+// applied, or the caller would adopt a hash the row never received.
+func TestUpgradePasswordHashCASFailsClosedWhenTheUpdateErrors(t *testing.T) {
+	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "rehash_closed.db")})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	repo := NewUserRepository(database)
+	user := createUpgradePasswordHashCASUser(t, repo)
+	sqlDB, err := database.DB()
+	if err != nil {
+		t.Fatalf("database.DB() unexpected error: %v", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("close sql db: %v", err)
+	}
+
+	applied, err := repo.UpgradePasswordHashCAS(context.Background(), user.ID, "legacy-hash", "upgraded-hash")
+	if err == nil {
+		t.Fatal("expected UpgradePasswordHashCAS against a closed database to surface an error")
+	}
+	if applied {
+		t.Fatal("an upgrade that errored must never read as applied")
+	}
+}
