@@ -183,8 +183,9 @@ func (service *TOTPService) ValidateCodeRaw(rawSecret, code string) bool {
 // otherwise an internal storage upgrade. It is conditional on the ciphertext
 // this call opened: a re-enrollment or disable landing in between wins, and
 // the upgrade is dropped rather than restoring the old secret over the new
-// one. The session minted from the stale read dies anyway, because both of
-// those writers bump auth_session_version.
+// one. A session minted from the row read before this call dies anyway,
+// because both of those writers bump auth_session_version; a caller that
+// re-reads the row before minting does not inherit that guarantee.
 func (service *TOTPService) ValidateCode(ctx context.Context, userID uint, encryptedSecret, code string) (bool, error) {
 	aad := aadForTOTPSecret(userID)
 	rawSecret, isLegacy, err := security.DecryptField(encryptedSecret, service.secretKey, aad)
