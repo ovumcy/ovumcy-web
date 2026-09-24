@@ -33,7 +33,7 @@ type stubTOTPUserRepo struct {
 	lastClaimStep int64
 }
 
-func (stub *stubTOTPUserRepo) UpdateTOTPFieldsAndRevokeSessions(ctx context.Context, userID uint, encryptedSecret string, enabled bool) error {
+func (stub *stubTOTPUserRepo) UpdateTOTPFieldsAndRevokeSessions(ctx context.Context, userID uint, _ int, encryptedSecret string, enabled bool) error {
 	stub.updateTOTPCalled = true
 	stub.updatedUserID = userID
 	stub.updatedSecret = encryptedSecret
@@ -131,7 +131,7 @@ func TestTOTPService_EnableTOTP_StoresEncryptedSecret(t *testing.T) {
 	svc := NewTOTPService(repo, []byte("test-secret-key-32-bytes-padding!"), nil)
 
 	rawSecret := "JBSWY3DPEHPK3PXP"
-	if err := svc.EnableTOTP(context.Background(), 42, rawSecret); err != nil {
+	if err := svc.EnableTOTP(context.Background(), 42, 1, rawSecret); err != nil {
 		t.Fatalf("EnableTOTP() error: %v", err)
 	}
 
@@ -162,7 +162,7 @@ func TestTOTPService_ValidateCode_EncryptDecryptRoundTrip(t *testing.T) {
 		t.Fatalf("GenerateSetupKey() error: %v", err)
 	}
 
-	if err := svc.EnableTOTP(context.Background(), 1, key.Secret()); err != nil {
+	if err := svc.EnableTOTP(context.Background(), 1, 1, key.Secret()); err != nil {
 		t.Fatalf("EnableTOTP() error: %v", err)
 	}
 	encryptedSecret := repo.updatedSecret
@@ -191,7 +191,7 @@ func TestTOTPService_ValidateCode_ReplayRejected(t *testing.T) {
 		t.Fatalf("GenerateSetupKey() error: %v", err)
 	}
 
-	if err := svc.EnableTOTP(context.Background(), 1, key.Secret()); err != nil {
+	if err := svc.EnableTOTP(context.Background(), 1, 1, key.Secret()); err != nil {
 		t.Fatalf("EnableTOTP() error: %v", err)
 	}
 	encryptedSecret := repo.updatedSecret
@@ -236,7 +236,7 @@ func TestTOTPService_ValidateCode_ReplaySurvivesServiceRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateSetupKey() error: %v", err)
 	}
-	if err := svc.EnableTOTP(context.Background(), 1, key.Secret()); err != nil {
+	if err := svc.EnableTOTP(context.Background(), 1, 1, key.Secret()); err != nil {
 		t.Fatalf("EnableTOTP() error: %v", err)
 	}
 	encryptedSecret := repo.updatedSecret
@@ -271,12 +271,12 @@ func TestTOTPService_ValidateCode_SameCodeDifferentUser_Allowed(t *testing.T) {
 		t.Fatalf("GenerateSetupKey() error: %v", err)
 	}
 
-	if err := svc.EnableTOTP(context.Background(), 1, key.Secret()); err != nil {
+	if err := svc.EnableTOTP(context.Background(), 1, 1, key.Secret()); err != nil {
 		t.Fatalf("EnableTOTP() user 1 error: %v", err)
 	}
 	encrypted1 := repo.updatedSecret
 
-	if err := svc.EnableTOTP(context.Background(), 2, key.Secret()); err != nil {
+	if err := svc.EnableTOTP(context.Background(), 2, 1, key.Secret()); err != nil {
 		t.Fatalf("EnableTOTP() user 2 error: %v", err)
 	}
 	encrypted2 := repo.updatedSecret
@@ -305,7 +305,7 @@ func TestTOTPService_DisableTOTP_ClearsFields(t *testing.T) {
 	repo := &stubTOTPUserRepo{}
 	svc := NewTOTPService(repo, []byte("test-secret-key-32-bytes-padding!"), nil)
 
-	if err := svc.DisableTOTP(context.Background(), 99); err != nil {
+	if err := svc.DisableTOTP(context.Background(), 99, 1); err != nil {
 		t.Fatalf("DisableTOTP() error: %v", err)
 	}
 
@@ -327,7 +327,7 @@ func TestTOTPService_EnableTOTP_RepoError(t *testing.T) {
 	repo := &stubTOTPUserRepo{updateErr: ErrTOTPUpdateFailed}
 	svc := NewTOTPService(repo, []byte("test-secret-key-32-bytes-padding!"), nil)
 
-	err := svc.EnableTOTP(context.Background(), 1, "JBSWY3DPEHPK3PXP")
+	err := svc.EnableTOTP(context.Background(), 1, 1, "JBSWY3DPEHPK3PXP")
 	if err == nil {
 		t.Fatal("EnableTOTP() should propagate repo error")
 	}

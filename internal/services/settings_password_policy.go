@@ -104,7 +104,10 @@ func (service *SettingsService) ChangePassword(ctx context.Context, attempt Reau
 		return fmt.Errorf("%w: %v", ErrSettingsPasswordHashFailed, err)
 	}
 
-	if err := service.users.UpdatePasswordAndRevokeSessions(ctx, user.ID, string(hashedPassword), false); err != nil {
+	if err := service.users.UpdatePasswordAndRevokeSessions(ctx, user.ID, NormalizeAuthSessionVersion(user.AuthSessionVersion), string(hashedPassword), false); err != nil {
+		if errors.Is(err, ErrAuthSessionVersionChanged) {
+			return ErrAuthSessionVersionChanged
+		}
 		return fmt.Errorf("%w: %v", ErrSettingsPasswordUpdateFailed, err)
 	}
 	user.PasswordHash = string(hashedPassword)
@@ -168,7 +171,7 @@ func (service *SettingsService) FinalizeLocalPasswordSetup(ctx context.Context, 
 		return "", fmt.Errorf("%w: %v", ErrSettingsRecoveryCodeGenerateFailed, err)
 	}
 	staged := *user
-	if err := service.users.UpdatePasswordRecoveryCodeAndRevokeSessions(ctx, user.ID, preparedPasswordHash, recoveryHash, false, func(sessionVersion int) error {
+	if err := service.users.UpdatePasswordRecoveryCodeAndRevokeSessions(ctx, user.ID, NormalizeAuthSessionVersion(user.AuthSessionVersion), preparedPasswordHash, recoveryHash, false, func(sessionVersion int) error {
 		staged.PasswordHash = preparedPasswordHash
 		staged.RecoveryCodeHash = recoveryHash
 		staged.LocalAuthEnabled = true
@@ -176,6 +179,9 @@ func (service *SettingsService) FinalizeLocalPasswordSetup(ctx context.Context, 
 		staged.MustChangePassword = false
 		return deliver(&staged, recoveryCode)
 	}); err != nil {
+		if errors.Is(err, ErrAuthSessionVersionChanged) {
+			return "", ErrAuthSessionVersionChanged
+		}
 		return "", fmt.Errorf("%w: %v", ErrSettingsPasswordUpdateFailed, err)
 	}
 	*user = staged

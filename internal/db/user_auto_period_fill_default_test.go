@@ -193,7 +193,7 @@ func TestClearAllDataTurnsAutoPeriodFillOff(t *testing.T) {
 		t.Fatalf("seed the owner's settings: %v", err)
 	}
 
-	if err := repo.ClearAllDataAndResetSettings(context.Background(), user.ID); err != nil {
+	if err := repo.ClearAllDataAndResetSettings(context.Background(), user.ID, storedSessionVersionForTest(t, repo, user.ID)); err != nil {
 		t.Fatalf("ClearAllDataAndResetSettings: %v", err)
 	}
 

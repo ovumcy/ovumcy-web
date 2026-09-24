@@ -62,15 +62,15 @@ type AuthUserRepository interface {
 	FindByID(ctx context.Context, userID uint) (models.User, error)
 	FindByIDOptional(ctx context.Context, userID uint) (models.User, bool, error)
 	Create(ctx context.Context, user *models.User) error
-	UpdateRecoveryCodeHashAndRevokeSessions(ctx context.Context, userID uint, recoveryHash string, beforeCommit func(sessionVersion int) error) error
-	UpdatePasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, mustChangePassword bool) error
+	UpdateRecoveryCodeHashAndRevokeSessions(ctx context.Context, userID uint, expectedSessionVersion int, recoveryHash string, beforeCommit func(sessionVersion int) error) error
+	UpdatePasswordAndRevokeSessions(ctx context.Context, userID uint, expectedSessionVersion int, passwordHash string, mustChangePassword bool) error
 	// ForceResetPasswordAndRevokeSessions is the operator-reset variant: it
 	// rewrites the password, forces change-on-next-login, bumps the session
 	// version, AND force-clears the calendar-feed token in one atomic update
 	// (feed-clear arm of the force-rotate-on-recovery rule). Distinct from the
 	// routine UpdatePasswordAndRevokeSessions, which must NOT touch the feed.
 	ForceResetPasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string) error
-	UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, recoveryHash string, mustChangePassword bool, beforeCommit func(sessionVersion int) error) error
+	UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, expectedSessionVersion int, passwordHash string, recoveryHash string, mustChangePassword bool, beforeCommit func(sessionVersion int) error) error
 	UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx context.Context, userID uint, oldPasswordHash string, oldSessionVersion int, newPasswordHash string, recoveryHash string, beforeCommit func(sessionVersion int) error) error
 	// UpgradePasswordHashCAS rewrites password_hash WITHOUT bumping
 	// auth_session_version — a transparent storage-format upgrade (bcrypt cost
@@ -602,11 +602,14 @@ func (service *AuthService) RegenerateRecoveryCode(ctx context.Context, user *mo
 		return "", fmt.Errorf("%w: %v", ErrRecoveryCodeGenerate, err)
 	}
 	staged := *user
-	if err := service.users.UpdateRecoveryCodeHashAndRevokeSessions(ctx, user.ID, recoveryHash, func(sessionVersion int) error {
+	if err := service.users.UpdateRecoveryCodeHashAndRevokeSessions(ctx, user.ID, NormalizeAuthSessionVersion(user.AuthSessionVersion), recoveryHash, func(sessionVersion int) error {
 		staged.RecoveryCodeHash = recoveryHash
 		staged.AuthSessionVersion = sessionVersion
 		return deliver(&staged, recoveryCode)
 	}); err != nil {
+		if errors.Is(err, ErrAuthSessionVersionChanged) {
+			return "", ErrAuthSessionVersionChanged
+		}
 		return "", fmt.Errorf("%w: %v", ErrRecoveryCodeUpdate, err)
 	}
 	*user = staged

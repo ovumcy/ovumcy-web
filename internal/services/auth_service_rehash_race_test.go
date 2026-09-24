@@ -86,7 +86,11 @@ func changeRehashRaceOwnerPassword(t *testing.T, repo *db.UserRepository, userID
 	t.Helper()
 
 	newHash := mintBcryptHashAtCost(t, rehashRaceNewPassword, passwordHashCost)
-	if err := repo.UpdatePasswordAndRevokeSessions(context.Background(), userID, newHash, false); err != nil {
+	current, err := repo.FindByID(context.Background(), userID)
+	if err != nil {
+		t.Fatalf("load the owner before changing the password: %v", err)
+	}
+	if err := repo.UpdatePasswordAndRevokeSessions(context.Background(), userID, current.AuthSessionVersion, newHash, false); err != nil {
 		t.Fatalf("change password: %v", err)
 	}
 }

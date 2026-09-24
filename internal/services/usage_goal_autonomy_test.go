@@ -40,11 +40,11 @@ func (repo *usageGoalRecordingRepo) UpdateReminderLeadDays(context.Context, uint
 	return nil
 }
 
-func (repo *usageGoalRecordingRepo) UpdatePasswordAndRevokeSessions(context.Context, uint, string, bool) error {
+func (repo *usageGoalRecordingRepo) UpdatePasswordAndRevokeSessions(context.Context, uint, int, string, bool) error {
 	return nil
 }
 
-func (repo *usageGoalRecordingRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(_ context.Context, _ uint, _ string, _ string, _ bool, beforeCommit func(sessionVersion int) error) error {
+func (repo *usageGoalRecordingRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(_ context.Context, _ uint, _ int, _ string, _ string, _ bool, beforeCommit func(sessionVersion int) error) error {
 	if beforeCommit != nil {
 		return beforeCommit(1)
 	}
@@ -61,7 +61,7 @@ func (repo *usageGoalRecordingRepo) LoadSettingsByID(context.Context, uint) (mod
 	return models.User{}, nil
 }
 
-func (repo *usageGoalRecordingRepo) ClearAllDataAndResetSettings(context.Context, uint) error {
+func (repo *usageGoalRecordingRepo) ClearAllDataAndResetSettings(context.Context, uint, int) error {
 	return nil
 }
 

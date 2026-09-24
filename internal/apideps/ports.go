@@ -53,11 +53,15 @@ type OIDCWorkflowService interface {
 	// and returns the version it left the account at; a session is minted only
 	// while a fresh read still shows that version.
 	ConfirmAndLinkIdentity(ctx context.Context, targetUserID uint, expectedSessionVersion int, claims security.OIDCClaims, linkTime time.Time) (int, error)
-	CompleteIdentityLinkReauth(ctx context.Context, code string, codeVerifier string, expectedNonce string, targetUserID uint, expectedSessionVersion int, maxAuthAge time.Duration, now time.Time) error
+	// CompleteIdentityLinkReauth links through ConfirmAndLinkIdentity and
+	// returns the session version it left the account at, with the same
+	// contract.
+	CompleteIdentityLinkReauth(ctx context.Context, code string, codeVerifier string, expectedNonce string, targetUserID uint, expectedSessionVersion int, maxAuthAge time.Duration, now time.Time) (int, error)
 	// UnlinkIdentity removes one identity from the account and bumps its
-	// AuthSessionVersion in the same write; the caller has already verified
-	// the current local password.
-	UnlinkIdentity(ctx context.Context, user models.User, identityID uint) error
+	// AuthSessionVersion in the same write — only from the version user
+	// carries — and returns the version it left the account at; the caller
+	// has already verified the current local password.
+	UnlinkIdentity(ctx context.Context, user models.User, identityID uint) (int, error)
 	// ListLinkedIdentities returns the identities bound to userID, for the
 	// owner's own settings page.
 	ListLinkedIdentities(ctx context.Context, userID uint) ([]services.LinkedOIDCIdentity, error)

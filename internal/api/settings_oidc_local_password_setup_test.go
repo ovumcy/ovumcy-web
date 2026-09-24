@@ -44,17 +44,27 @@ func newOIDCStepupFixture(t *testing.T, email string) *oidcStepupFixture {
 // the step-up callbacks emit.
 func newOIDCStepupFixtureWithAudit(t *testing.T, email string, auditLogEnabled bool) *oidcStepupFixture {
 	t.Helper()
+	return newOIDCStepupFixtureWithOptions(t, email, onboardingTestAppOptions{auditLogEnabled: auditLogEnabled}, nil)
+}
+
+// newOIDCStepupFixtureWithOptions builds the fixture on top of options. When
+// wrap is set, the app gets the service it returns in place of the stub, so a
+// race regression can route a workflow method through the real service while
+// the stub keeps recording the step-up start the callback helpers read back.
+func newOIDCStepupFixtureWithOptions(t *testing.T, email string, options onboardingTestAppOptions, wrap func(*stubOIDCWorkflowService) OIDCWorkflowService) *oidcStepupFixture {
+	t.Helper()
 
 	stub := newStubOIDCWorkflowService(true)
 	stub.localPublicAuthEnabled = true
 	stub.reauthURL = "https://id.example.com/authorize?prompt=login"
 
-	app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{
-		enableCSRF:      true,
-		cookieSecure:    true,
-		oidcService:     stub,
-		auditLogEnabled: auditLogEnabled,
-	})
+	options.enableCSRF = true
+	options.cookieSecure = true
+	options.oidcService = stub
+	if wrap != nil {
+		options.oidcService = wrap(stub)
+	}
+	app, database := newOnboardingTestAppWithOptions(t, options)
 
 	user := models.User{
 		Email:               strings.ToLower(strings.TrimSpace(email)),

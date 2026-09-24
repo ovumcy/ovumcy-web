@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -209,7 +210,12 @@ func (handler *Handler) completeErasureStepupReauth(c fiber.Ctx, state oidcStepu
 // step-up callback: the auth_session_version bump below has to happen exactly
 // once and identically on both paths, and two copies of it would drift.
 func (handler *Handler) applyClearData(c fiber.Ctx, user *models.User) (APIErrorSpec, bool) {
-	if err := handler.settingsService.ClearAllData(c.Context(), user.ID); err != nil {
+	if err := handler.settingsService.ClearAllData(c.Context(), user.ID, user.AuthSessionVersion); err != nil {
+		if errors.Is(err, services.ErrAuthSessionVersionChanged) {
+			// Nothing was erased: the session that passed the erasure re-auth
+			// was revoked in between, so the wipe is refused with it.
+			return handler.refuseSessionRevokedDuring(c, clearDataMutation.action, "clear_data"), false
+		}
 		spec := settingsClearDataErrorSpec()
 		handler.logMutationError(c, clearDataMutation, spec)
 		return spec, false

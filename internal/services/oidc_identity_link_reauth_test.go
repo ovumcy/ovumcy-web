@@ -27,7 +27,7 @@ func TestOIDCLoginServiceCompleteIdentityLinkReauthLinksOnFreshExchange(t *testi
 	}
 	service := NewOIDCLoginService(client, identities, &stubOIDCUserStore{}, nil)
 
-	if err := service.CompleteIdentityLinkReauth(context.Background(), "code", "verifier", "nonce", 42, 1, 5*time.Minute, now); err != nil {
+	if _, err := service.CompleteIdentityLinkReauth(context.Background(), "code", "verifier", "nonce", 42, 1, 5*time.Minute, now); err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
 	if !identities.createCallSeen {
@@ -53,7 +53,7 @@ func TestOIDCLoginServiceCompleteIdentityLinkReauthRefusesStaleExchange(t *testi
 	}
 	service := NewOIDCLoginService(client, identities, &stubOIDCUserStore{}, nil)
 
-	err := service.CompleteIdentityLinkReauth(context.Background(), "code", "verifier", "nonce", 42, 1, 5*time.Minute, now)
+	_, err := service.CompleteIdentityLinkReauth(context.Background(), "code", "verifier", "nonce", 42, 1, 5*time.Minute, now)
 	if !errors.Is(err, ErrOIDCReauthStale) {
 		t.Fatalf("expected ErrOIDCReauthStale, got %v", err)
 	}
@@ -91,7 +91,7 @@ func TestOIDCLoginServiceCompleteIdentityLinkReauthRefusesIATOnlyExchange(t *tes
 	}
 	service := NewOIDCLoginService(client, identities, &stubOIDCUserStore{}, nil)
 
-	err := service.CompleteIdentityLinkReauth(context.Background(), "code", "verifier", "nonce", 42, 1, 5*time.Minute, now)
+	_, err := service.CompleteIdentityLinkReauth(context.Background(), "code", "verifier", "nonce", 42, 1, 5*time.Minute, now)
 	if !errors.Is(err, ErrOIDCReauthAuthTimeMissing) {
 		t.Fatalf("expected ErrOIDCReauthAuthTimeMissing for an iat-only token, got %v", err)
 	}
@@ -123,7 +123,7 @@ func TestOIDCLoginServiceCompleteIdentityLinkReauthRefusesCrossUserClaim(t *test
 	}
 	service := NewOIDCLoginService(client, identities, &stubOIDCUserStore{}, nil)
 
-	err := service.CompleteIdentityLinkReauth(context.Background(), "code", "verifier", "nonce", 42, 1, 5*time.Minute, now)
+	_, err := service.CompleteIdentityLinkReauth(context.Background(), "code", "verifier", "nonce", 42, 1, 5*time.Minute, now)
 	if !errors.Is(err, ErrOIDCLinkFailed) {
 		t.Fatalf("expected ErrOIDCLinkFailed for a cross-user claim, got %v", err)
 	}
@@ -140,7 +140,7 @@ func TestOIDCLoginServiceCompleteIdentityLinkReauthRequiresEnabledProvider(t *te
 
 	service := NewOIDCLoginService(&stubOIDCProviderClient{}, &stubOIDCIdentityStore{}, &stubOIDCUserStore{}, nil)
 
-	if err := service.CompleteIdentityLinkReauth(context.Background(), "code", "verifier", "nonce", 42, 1, 5*time.Minute, time.Now()); !errors.Is(err, ErrOIDCDisabled) {
+	if _, err := service.CompleteIdentityLinkReauth(context.Background(), "code", "verifier", "nonce", 42, 1, 5*time.Minute, time.Now()); !errors.Is(err, ErrOIDCDisabled) {
 		t.Fatalf("expected ErrOIDCDisabled, got %v", err)
 	}
 }
@@ -153,7 +153,7 @@ func TestOIDCLoginServiceCompleteIdentityLinkReauthRequiresTargetUserID(t *testi
 	identities := &stubOIDCIdentityStore{}
 	service := NewOIDCLoginService(&stubOIDCProviderClient{enabled: true}, identities, &stubOIDCUserStore{}, nil)
 
-	if err := service.CompleteIdentityLinkReauth(context.Background(), "code", "verifier", "nonce", 0, 1, 5*time.Minute, time.Now()); !errors.Is(err, ErrOIDCLinkFailed) {
+	if _, err := service.CompleteIdentityLinkReauth(context.Background(), "code", "verifier", "nonce", 0, 1, 5*time.Minute, time.Now()); !errors.Is(err, ErrOIDCLinkFailed) {
 		t.Fatalf("expected ErrOIDCLinkFailed for a zero target user id, got %v", err)
 	}
 	if identities.createCallSeen {
@@ -182,7 +182,7 @@ func TestOIDCLoginServiceCompleteIdentityLinkReauthRequiresNonEmptyInputs(t *tes
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			err := service.CompleteIdentityLinkReauth(context.Background(), tc.code, tc.codeVerifier, tc.nonce, 42, 1, 5*time.Minute, time.Now())
+			_, err := service.CompleteIdentityLinkReauth(context.Background(), tc.code, tc.codeVerifier, tc.nonce, 42, 1, 5*time.Minute, time.Now())
 			if !errors.Is(err, ErrOIDCCallbackInvalid) {
 				t.Fatalf("expected ErrOIDCCallbackInvalid, got %v", err)
 			}
@@ -198,7 +198,7 @@ func TestOIDCLoginServiceCompleteIdentityLinkReauthMapsExchangeFailure(t *testin
 	client := &stubOIDCProviderClient{enabled: true, exchangeErr: ErrOIDCUnavailable}
 	service := NewOIDCLoginService(client, &stubOIDCIdentityStore{}, &stubOIDCUserStore{}, nil)
 
-	err := service.CompleteIdentityLinkReauth(context.Background(), "code", "verifier", "nonce", 42, 1, 5*time.Minute, time.Now())
+	_, err := service.CompleteIdentityLinkReauth(context.Background(), "code", "verifier", "nonce", 42, 1, 5*time.Minute, time.Now())
 	if !errors.Is(err, ErrOIDCAuthenticationFailed) {
 		t.Fatalf("expected ErrOIDCAuthenticationFailed, got %v", err)
 	}

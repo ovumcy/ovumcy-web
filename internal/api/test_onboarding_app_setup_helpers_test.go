@@ -71,6 +71,11 @@ type onboardingTestAppOptions struct {
 	// while it returns an error, minting a session fails the way no request can
 	// make it fail. Tests arm it after signing in, so the sign-in itself works.
 	sessionIssuanceFault func() error
+	// revokingWrites, when set, is installed around the user repository the
+	// auth, settings and TOTP services write through, for the race regressions
+	// that commit another write between a request's authentication and its own
+	// revoking write (see revokingWriteHooks).
+	revokingWrites *revokingWriteHooks
 }
 
 func newOnboardingTestAppWithOptions(t *testing.T, options onboardingTestAppOptions) (*fiber.App, *gorm.DB) {
@@ -158,7 +163,8 @@ func newTestHandlerDependencies(database *gorm.DB, i18nManager *i18n.Manager, op
 	// origin and the provider redirect takes its return address from the
 	// configuration, so both stay observable on a switched-off instance —
 	// which is the state in which a stored row must NOT produce a hop.
-	dependencies := bootstrap.BuildDependencies(db.NewRepositories(database), []byte(testAppSecretKey), i18nManager, bootstrap.Options{
+	repositories := db.NewRepositories(database)
+	dependencies := bootstrap.BuildDependencies(repositories, []byte(testAppSecretKey), i18nManager, bootstrap.Options{
 		RegistrationMode: registrationMode,
 		OIDCConfig: security.OIDCConfig{
 			Enabled:               appOptions.oidcEnabled,
@@ -177,6 +183,9 @@ func newTestHandlerDependencies(database *gorm.DB, i18nManager *i18n.Manager, op
 	})
 	if appOptions.dayService != nil {
 		dependencies.DayService = appOptions.dayService(database)
+	}
+	if appOptions.revokingWrites != nil {
+		appOptions.revokingWrites.install(&dependencies, repositories.Users)
 	}
 	return dependencies
 }

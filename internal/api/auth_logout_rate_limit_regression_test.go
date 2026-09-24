@@ -45,14 +45,14 @@ func (stubLogoutAuthRepo) FindByIDOptional(context.Context, uint) (models.User, 
 
 func (stubLogoutAuthRepo) Create(context.Context, *models.User) error { return nil }
 
-func (stubLogoutAuthRepo) UpdateRecoveryCodeHashAndRevokeSessions(_ context.Context, _ uint, _ string, beforeCommit func(sessionVersion int) error) error {
+func (stubLogoutAuthRepo) UpdateRecoveryCodeHashAndRevokeSessions(_ context.Context, _ uint, _ int, _ string, beforeCommit func(sessionVersion int) error) error {
 	if beforeCommit != nil {
 		return beforeCommit(1)
 	}
 	return nil
 }
 
-func (stubLogoutAuthRepo) UpdatePasswordAndRevokeSessions(context.Context, uint, string, bool) error {
+func (stubLogoutAuthRepo) UpdatePasswordAndRevokeSessions(context.Context, uint, int, string, bool) error {
 	return nil
 }
 
@@ -60,7 +60,7 @@ func (stubLogoutAuthRepo) ForceResetPasswordAndRevokeSessions(context.Context, u
 	return nil
 }
 
-func (stubLogoutAuthRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(_ context.Context, _ uint, _ string, _ string, _ bool, beforeCommit func(sessionVersion int) error) error {
+func (stubLogoutAuthRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(_ context.Context, _ uint, _ int, _ string, _ string, _ bool, beforeCommit func(sessionVersion int) error) error {
 	if beforeCommit != nil {
 		return beforeCommit(1)
 	}

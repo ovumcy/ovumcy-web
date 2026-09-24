@@ -61,7 +61,7 @@ type TOTPUserRepository interface {
 	// UpdateTOTPFieldsAndRevokeSessions writes the new TOTP-related columns AND
 	// bumps auth_session_version in the same transaction, so toggling 2FA
 	// invalidates every active auth cookie for the account.
-	UpdateTOTPFieldsAndRevokeSessions(ctx context.Context, userID uint, encryptedSecret string, enabled bool) error
+	UpdateTOTPFieldsAndRevokeSessions(ctx context.Context, userID uint, expectedSessionVersion int, encryptedSecret string, enabled bool) error
 	// UpgradeTOTPSecretCiphertextCAS rewrites just the encrypted secret column
 	// WITHOUT bumping auth_session_version or touching totp_enabled — and only
 	// while totp_secret still equals oldCiphertext. It exists for transparent
@@ -243,12 +243,21 @@ func findValidatedTOTPStep(rawSecret, code string, now time.Time) (int64, bool) 
 // level swap of one user's encrypted secret into another row fails to open.
 // The underlying repository call also bumps auth_session_version so every
 // active auth cookie issued before 2FA was enabled is revoked.
-func (service *TOTPService) EnableTOTP(ctx context.Context, userID uint, rawSecret string) error {
+//
+// expectedSessionVersion is the AuthSessionVersion of the session that proved
+// the enrollment code. The write happens only from that version: an account
+// revoked by another write in between is left untouched and the result is
+// ErrAuthSessionVersionChanged, so the caller never re-issues a session that
+// would outlive that revocation.
+func (service *TOTPService) EnableTOTP(ctx context.Context, userID uint, expectedSessionVersion int, rawSecret string) error {
 	encrypted, err := security.EncryptField(rawSecret, service.secretKey, aadForTOTPSecret(userID))
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrTOTPSecretEncrypt, err)
 	}
-	if err := service.users.UpdateTOTPFieldsAndRevokeSessions(ctx, userID, encrypted, true); err != nil {
+	if err := service.users.UpdateTOTPFieldsAndRevokeSessions(ctx, userID, NormalizeAuthSessionVersion(expectedSessionVersion), encrypted, true); err != nil {
+		if errors.Is(err, ErrAuthSessionVersionChanged) {
+			return ErrAuthSessionVersionChanged
+		}
 		return fmt.Errorf("%w: %v", ErrTOTPUpdateFailed, err)
 	}
 	return nil
@@ -256,9 +265,13 @@ func (service *TOTPService) EnableTOTP(ctx context.Context, userID uint, rawSecr
 
 // DisableTOTP clears the TOTP secret and sets totp_enabled=false for the user.
 // As with EnableTOTP, this bumps auth_session_version so any session that
-// existed while 2FA was on is invalidated when 2FA is taken back off.
-func (service *TOTPService) DisableTOTP(ctx context.Context, userID uint) error {
-	if err := service.users.UpdateTOTPFieldsAndRevokeSessions(ctx, userID, "", false); err != nil {
+// existed while 2FA was on is invalidated when 2FA is taken back off. The write
+// happens only from expectedSessionVersion, as in EnableTOTP.
+func (service *TOTPService) DisableTOTP(ctx context.Context, userID uint, expectedSessionVersion int) error {
+	if err := service.users.UpdateTOTPFieldsAndRevokeSessions(ctx, userID, NormalizeAuthSessionVersion(expectedSessionVersion), "", false); err != nil {
+		if errors.Is(err, ErrAuthSessionVersionChanged) {
+			return ErrAuthSessionVersionChanged
+		}
 		return fmt.Errorf("%w: %v", ErrTOTPUpdateFailed, err)
 	}
 	return nil

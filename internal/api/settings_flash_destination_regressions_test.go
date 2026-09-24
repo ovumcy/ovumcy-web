@@ -132,7 +132,7 @@ func TestTOTPEnrollmentConfirmationRendersOnTheRedirectTarget(t *testing.T) {
 // silent.
 func TestTOTPDisableConfirmationRendersOnTheRedirectTarget(t *testing.T) {
 	ctx := newTOTPSettingsContext(t, "totp-disable-confirmation@example.com")
-	if err := getTOTPServiceForTest(ctx.database).EnableTOTP(context.Background(), ctx.user.ID, "JBSWY3DPEHPK3PXP"); err != nil {
+	if err := getTOTPServiceForTest(ctx.database).EnableTOTP(context.Background(), ctx.user.ID, ctx.user.AuthSessionVersion, "JBSWY3DPEHPK3PXP"); err != nil {
 		t.Fatalf("EnableTOTP setup: %v", err)
 	}
 	ctx.refreshAuthCookie(t)

@@ -299,7 +299,7 @@ func testUpgradePasswordHashCASPreservesSessionVersion(t *testing.T, repo *UserR
 // write the old password back, with no session-version bump.
 func testUpgradePasswordHashCASLosesToACredentialWrite(t *testing.T, repo *UserRepository) {
 	user := createUpgradePasswordHashCASUser(t, repo, "rehash-lost@example.com")
-	if err := repo.UpdatePasswordAndRevokeSessions(context.Background(), user.ID, "changed-hash", false); err != nil {
+	if err := repo.UpdatePasswordAndRevokeSessions(context.Background(), user.ID, storedSessionVersionForTest(t, repo, user.ID), "changed-hash", false); err != nil {
 		t.Fatalf("UpdatePasswordAndRevokeSessions: %v", err)
 	}
 

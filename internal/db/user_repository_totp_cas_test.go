@@ -79,7 +79,7 @@ func testUpgradeTOTPSecretCiphertextCASPreservesSessionAndFactor(t *testing.T, r
 // session-version bump.
 func testUpgradeTOTPSecretCiphertextCASLosesToAReEnrollment(t *testing.T, repo *UserRepository) {
 	user := createUpgradeTOTPSecretCiphertextCASUser(t, repo, "totp-reenrolled@example.com")
-	if err := repo.UpdateTOTPFieldsAndRevokeSessions(context.Background(), user.ID, "reenrolled-ciphertext", true); err != nil {
+	if err := repo.UpdateTOTPFieldsAndRevokeSessions(context.Background(), user.ID, storedSessionVersionForTest(t, repo, user.ID), "reenrolled-ciphertext", true); err != nil {
 		t.Fatalf("UpdateTOTPFieldsAndRevokeSessions: %v", err)
 	}
 
@@ -91,7 +91,7 @@ func testUpgradeTOTPSecretCiphertextCASLosesToAReEnrollment(t *testing.T, repo *
 // secret back into a row whose factor was just turned off.
 func testUpgradeTOTPSecretCiphertextCASLosesToADisable(t *testing.T, repo *UserRepository) {
 	user := createUpgradeTOTPSecretCiphertextCASUser(t, repo, "totp-disabled@example.com")
-	if err := repo.UpdateTOTPFieldsAndRevokeSessions(context.Background(), user.ID, "", false); err != nil {
+	if err := repo.UpdateTOTPFieldsAndRevokeSessions(context.Background(), user.ID, storedSessionVersionForTest(t, repo, user.ID), "", false); err != nil {
 		t.Fatalf("UpdateTOTPFieldsAndRevokeSessions: %v", err)
 	}
 

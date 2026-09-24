@@ -321,7 +321,7 @@ func (stub *stubSettingsUserRepo) UpdateReminderLeadDays(context.Context, uint, 
 	return nil
 }
 
-func (stub *stubSettingsUserRepo) UpdatePasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, mustChangePassword bool) error {
+func (stub *stubSettingsUserRepo) UpdatePasswordAndRevokeSessions(ctx context.Context, userID uint, _ int, passwordHash string, mustChangePassword bool) error {
 	stub.updatePasswordCalled = true
 	stub.updatedUserID = userID
 	stub.updatedPasswordHash = passwordHash
@@ -329,7 +329,7 @@ func (stub *stubSettingsUserRepo) UpdatePasswordAndRevokeSessions(ctx context.Co
 	return stub.updatePasswordErr
 }
 
-func (stub *stubSettingsUserRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, recoveryHash string, mustChangePassword bool, beforeCommit func(sessionVersion int) error) error {
+func (stub *stubSettingsUserRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, _ int, passwordHash string, recoveryHash string, mustChangePassword bool, beforeCommit func(sessionVersion int) error) error {
 	if stub.updatePasswordErr != nil {
 		return stub.updatePasswordErr
 	}
@@ -355,7 +355,7 @@ func (stub *stubSettingsUserRepo) LoadSettingsByID(context.Context, uint) (model
 	return models.User{}, nil
 }
 
-func (stub *stubSettingsUserRepo) ClearAllDataAndResetSettings(context.Context, uint) error {
+func (stub *stubSettingsUserRepo) ClearAllDataAndResetSettings(context.Context, uint, int) error {
 	return nil
 }
 

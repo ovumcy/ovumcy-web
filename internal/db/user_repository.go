@@ -1186,23 +1186,26 @@ func (repo *UserRepository) FindByCalendarFeedSelector(ctx context.Context, sele
 // calendar_feed_revealed_at is deliberately left standing — re-arming the reveal
 // of a token that no longer resolves would only make a retained sealed cookie
 // presentable again. Regression: TestEveryRecoveryCodeMintClearsItsRevealMark.
-func (repo *UserRepository) UpdateRecoveryCodeHashAndRevokeSessions(ctx context.Context, userID uint, recoveryHash string, beforeCommit func(sessionVersion int) error) error {
+//
+// The session-version bump is a compare-and-set from expectedSessionVersion,
+// the version the caller verified the current password against
+// (updateFromAuthSessionVersionTx): if another write revoked the account's
+// sessions in between, nothing is rotated and the result is
+// models.ErrAuthSessionVersionChanged. The session beforeCommit seals is
+// minted inside this transaction, after the row is locked, so no later
+// revocation can land between the write and that mint.
+func (repo *UserRepository) UpdateRecoveryCodeHashAndRevokeSessions(ctx context.Context, userID uint, expectedSessionVersion int, recoveryHash string, beforeCommit func(sessionVersion int) error) error {
 	if err := requireUserOwnerID(userID); err != nil {
 		return err
 	}
 	if err := repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		query, err := scopedUserUpdateTx(tx, userID)
-		if err != nil {
-			return err // codecov:ignore -- scopedUserUpdateTx refuses only a zero id, which requireUserOwnerID refused above before the transaction opened
-		}
-		if err := query.Updates(map[string]any{
+		if _, err := updateFromAuthSessionVersionTx(tx, userID, expectedSessionVersion, map[string]any{
 			"recovery_code_hash":          recoveryHash,
 			"recovery_code_revealed_at":   nil,
 			"calendar_feed_selector":      nil,
 			"calendar_feed_verifier_hash": nil,
 			"calendar_feed_verifier_mac":  nil,
-			"auth_session_version":        gorm.Expr("auth_session_version + 1"),
-		}).Error; err != nil {
+		}); err != nil {
 			return err
 		}
 		return runBeforeCommit(tx, userID, beforeCommit)
@@ -1238,17 +1241,26 @@ func runBeforeCommit(tx *gorm.DB, userID uint, beforeCommit func(sessionVersion 
 	return beforeCommit(versions[0])
 }
 
-func (repo *UserRepository) UpdatePasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, mustChangePassword bool) error {
-	query, err := repo.scopedUserUpdate(ctx, userID)
-	if err != nil {
+// UpdatePasswordAndRevokeSessions rewrites the password hash and revokes every
+// session, by a compare-and-set of auth_session_version from
+// expectedSessionVersion, the version the caller verified the current password
+// against (updateFromAuthSessionVersionTx). If another write revoked the
+// account's sessions in between, nothing is written and the result is
+// models.ErrAuthSessionVersionChanged; on success the stored version is
+// exactly expectedSessionVersion+1, the one the caller re-issues its session
+// at.
+func (repo *UserRepository) UpdatePasswordAndRevokeSessions(ctx context.Context, userID uint, expectedSessionVersion int, passwordHash string, mustChangePassword bool) error {
+	if err := requireUserOwnerID(userID); err != nil {
 		return err
 	}
-	return query.Updates(map[string]any{
-		"password_hash":        passwordHash,
-		"must_change_password": mustChangePassword,
-		"local_auth_enabled":   true,
-		"auth_session_version": gorm.Expr("auth_session_version + 1"),
-	}).Error
+	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		_, err := updateFromAuthSessionVersionTx(tx, userID, expectedSessionVersion, map[string]any{
+			"password_hash":        passwordHash,
+			"must_change_password": mustChangePassword,
+			"local_auth_enabled":   true,
+		})
+		return err
+	})
 }
 
 // ForceResetPasswordAndRevokeSessions is the operator-driven variant of
@@ -1315,23 +1327,24 @@ func (repo *UserRepository) UpgradePasswordHashCAS(ctx context.Context, userID u
 // them. It NULLs recovery_code_revealed_at in the same statement: the code it
 // writes is about to be revealed once, so its consumption mark starts unset
 // (migration 036). Regression: TestEveryRecoveryCodeMintClearsItsRevealMark.
-func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, recoveryHash string, mustChangePassword bool, beforeCommit func(sessionVersion int) error) error {
+//
+// The session-version bump is a compare-and-set from expectedSessionVersion,
+// the version of the session whose step-up authorised the enrollment
+// (updateFromAuthSessionVersionTx): if another write revoked the account's
+// sessions in between, nothing is enrolled and the result is
+// models.ErrAuthSessionVersionChanged.
+func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, expectedSessionVersion int, passwordHash string, recoveryHash string, mustChangePassword bool, beforeCommit func(sessionVersion int) error) error {
 	if err := requireUserOwnerID(userID); err != nil {
 		return err
 	}
 	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		query, err := scopedUserUpdateTx(tx, userID)
-		if err != nil {
-			return err // codecov:ignore -- scopedUserUpdateTx refuses only a zero id, which requireUserOwnerID refused above before the transaction opened
-		}
-		if err := query.Updates(map[string]any{
+		if _, err := updateFromAuthSessionVersionTx(tx, userID, expectedSessionVersion, map[string]any{
 			"password_hash":             passwordHash,
 			"recovery_code_hash":        recoveryHash,
 			"recovery_code_revealed_at": nil,
 			"must_change_password":      mustChangePassword,
 			"local_auth_enabled":        true,
-			"auth_session_version":      gorm.Expr("auth_session_version + 1"),
-		}).Error; err != nil {
+		}); err != nil {
 			return err
 		}
 		return runBeforeCommit(tx, userID, beforeCommit)
@@ -1424,17 +1437,24 @@ func (repo *UserRepository) BumpAuthSessionVersion(ctx context.Context, userID u
 // for the user is invalidated in the same transaction. Both 2FA enable and
 // disable change the account's auth posture and therefore must invalidate
 // any session that was issued before the change.
-func (repo *UserRepository) UpdateTOTPFieldsAndRevokeSessions(ctx context.Context, userID uint, encryptedSecret string, enabled bool) error {
-	query, err := repo.scopedUserUpdate(ctx, userID)
-	if err != nil {
+//
+// The increment is a compare-and-set from expectedSessionVersion, the version
+// the caller verified its factors against (updateFromAuthSessionVersionTx): if
+// another write revoked the account's sessions in between, nothing is written
+// and the result is models.ErrAuthSessionVersionChanged; on success the stored
+// version is exactly expectedSessionVersion+1.
+func (repo *UserRepository) UpdateTOTPFieldsAndRevokeSessions(ctx context.Context, userID uint, expectedSessionVersion int, encryptedSecret string, enabled bool) error {
+	if err := requireUserOwnerID(userID); err != nil {
 		return err
 	}
-	return query.Updates(map[string]any{
-		"totp_secret":          encryptedSecret,
-		"totp_enabled":         enabled,
-		"totp_last_used_step":  0,
-		"auth_session_version": gorm.Expr("auth_session_version + 1"),
-	}).Error
+	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		_, err := updateFromAuthSessionVersionTx(tx, userID, expectedSessionVersion, map[string]any{
+			"totp_secret":         encryptedSecret,
+			"totp_enabled":        enabled,
+			"totp_last_used_step": 0,
+		})
+		return err
+	})
 }
 
 // UpgradeTOTPSecretCiphertextCAS is the transparent re-encryption of a legacy
@@ -1574,7 +1594,15 @@ func (repo *UserRepository) SaveOnboardingStep2(ctx context.Context, userID uint
 	}).Error
 }
 
-func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, userID uint) error {
+// ClearAllDataAndResetSettings erases the owner's logs and custom symptoms and
+// resets every preference, in one transaction that also revokes every session.
+// The revocation is a compare-and-set of auth_session_version from
+// expectedSessionVersion, the version the caller verified its re-auth factor
+// against (updateFromAuthSessionVersionTx): if another write revoked the
+// account's sessions in between, the whole wipe rolls back with
+// models.ErrAuthSessionVersionChanged; on success the stored version is exactly
+// expectedSessionVersion+1.
+func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, userID uint, expectedSessionVersion int) error {
 	if err := repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("user_id = ?", userID).Delete(&models.DailyLog{}).Error; err != nil {
 			return err
@@ -1582,11 +1610,7 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 		if err := tx.Where("user_id = ? AND is_builtin = ?", userID, false).Delete(&models.SymptomType{}).Error; err != nil {
 			return err
 		}
-		query, err := scopedUserUpdateTx(tx, userID)
-		if err != nil {
-			return err
-		}
-		return query.Updates(map[string]any{
+		_, err := updateFromAuthSessionVersionTx(tx, userID, expectedSessionVersion, map[string]any{
 			"cycle_length":  models.DefaultCycleLength,
 			"period_length": models.DefaultPeriodLength,
 			"luteal_phase":  14,
@@ -1683,14 +1707,16 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 			// Only a mint clears a mark, and the mints this wipe leaves possible
 			// (generate a feed, regenerate the code) each clear their own in the
 			// same write. Account deletion removes the row and the marks with it.
-			// Bump auth_session_version inside the same transaction so a
-			// successful clear-data wipe also revokes every auth cookie that
-			// existed before the wipe. Without this bump a stolen session that
-			// was used to trigger the wipe would retain authenticated access
-			// to the freshly-empty account, and a legitimate "panic clear"
-			// gesture would not actually sign other devices out.
-			"auth_session_version": gorm.Expr("auth_session_version + 1"),
-		}).Error
+			//
+			// auth_session_version is bumped by the helper, inside the same
+			// transaction, so a successful clear-data wipe also revokes every
+			// auth cookie that existed before the wipe. Without this bump a
+			// stolen session that was used to trigger the wipe would retain
+			// authenticated access to the freshly-empty account, and a
+			// legitimate "panic clear" gesture would not actually sign other
+			// devices out.
+		})
+		return err
 	}); err != nil {
 		return err
 	}

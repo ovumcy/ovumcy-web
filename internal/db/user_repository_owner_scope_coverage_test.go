@@ -46,7 +46,7 @@ func TestUserRepositoryOwnerScopedWritersPersist(t *testing.T) {
 		t.Fatalf("expected onboarding step 2 to persist cycle/period length, got %d/%d", reloaded.CycleLength, reloaded.PeriodLength)
 	}
 
-	if err := repo.UpdateTOTPFieldsAndRevokeSessions(ctx, user.ID, "encrypted-secret", true); err != nil {
+	if err := repo.UpdateTOTPFieldsAndRevokeSessions(ctx, user.ID, storedSessionVersionForTest(t, repo, user.ID), "encrypted-secret", true); err != nil {
 		t.Fatalf("UpdateTOTPFieldsAndRevokeSessions: %v", err)
 	}
 	reloaded, err = repo.FindByID(ctx, user.ID)
@@ -58,7 +58,7 @@ func TestUserRepositoryOwnerScopedWritersPersist(t *testing.T) {
 	}
 	versionBeforeReset := reloaded.AuthSessionVersion
 
-	if err := repo.UpdatePasswordRecoveryCodeAndRevokeSessions(ctx, user.ID, "new-password-hash", "new-recovery-hash", true, nil); err != nil {
+	if err := repo.UpdatePasswordRecoveryCodeAndRevokeSessions(ctx, user.ID, versionBeforeReset, "new-password-hash", "new-recovery-hash", true, nil); err != nil {
 		t.Fatalf("UpdatePasswordRecoveryCodeAndRevokeSessions: %v", err)
 	}
 	reloaded, err = repo.FindByID(ctx, user.ID)
@@ -91,10 +91,10 @@ func TestUserRepositoryOwnerScopedWritersRefuseZeroOwner(t *testing.T) {
 			return repo.SaveOnboardingStep2(ctx, 0, 28, 5, true, false, "health")
 		},
 		"UpdateTOTPFieldsAndRevokeSessions": func() error {
-			return repo.UpdateTOTPFieldsAndRevokeSessions(ctx, 0, "secret", true)
+			return repo.UpdateTOTPFieldsAndRevokeSessions(ctx, 0, 1, "secret", true)
 		},
 		"UpdatePasswordRecoveryCodeAndRevokeSessions": func() error {
-			return repo.UpdatePasswordRecoveryCodeAndRevokeSessions(ctx, 0, "hash", "recovery", true, nil)
+			return repo.UpdatePasswordRecoveryCodeAndRevokeSessions(ctx, 0, 1, "hash", "recovery", true, nil)
 		},
 	}
 
@@ -146,10 +146,10 @@ func TestUserRepositoryRemainingScopedWritersRefuseZeroOwner(t *testing.T) {
 			return repo.ClearCalendarFeedToken(ctx, 0)
 		},
 		"UpdateRecoveryCodeHashAndRevokeSessions": func() error {
-			return repo.UpdateRecoveryCodeHashAndRevokeSessions(ctx, 0, "recovery", nil)
+			return repo.UpdateRecoveryCodeHashAndRevokeSessions(ctx, 0, 1, "recovery", nil)
 		},
 		"UpdatePasswordAndRevokeSessions": func() error {
-			return repo.UpdatePasswordAndRevokeSessions(ctx, 0, "hash", false)
+			return repo.UpdatePasswordAndRevokeSessions(ctx, 0, 1, "hash", false)
 		},
 		"ForceResetPasswordAndRevokeSessions": func() error {
 			return repo.ForceResetPasswordAndRevokeSessions(ctx, 0, "hash")
@@ -166,7 +166,7 @@ func TestUserRepositoryRemainingScopedWritersRefuseZeroOwner(t *testing.T) {
 			return err
 		},
 		"ClearAllDataAndResetSettings": func() error {
-			return repo.ClearAllDataAndResetSettings(ctx, 0)
+			return repo.ClearAllDataAndResetSettings(ctx, 0, 1)
 		},
 		"MarkWebhookDelivered": func() error {
 			return repo.MarkWebhookDelivered(ctx, 0, time.Now().UTC(), 1)
@@ -226,10 +226,10 @@ func TestUserRepositoryRemainingScopedWritersPersist(t *testing.T) {
 	if err := repo.ClearCalendarFeedToken(ctx, user.ID); err != nil {
 		t.Fatalf("ClearCalendarFeedToken: %v", err)
 	}
-	if err := repo.UpdateRecoveryCodeHashAndRevokeSessions(ctx, user.ID, "new-recovery", nil); err != nil {
+	if err := repo.UpdateRecoveryCodeHashAndRevokeSessions(ctx, user.ID, storedSessionVersionForTest(t, repo, user.ID), "new-recovery", nil); err != nil {
 		t.Fatalf("UpdateRecoveryCodeHashAndRevokeSessions: %v", err)
 	}
-	if err := repo.UpdatePasswordAndRevokeSessions(ctx, user.ID, "new-hash", false); err != nil {
+	if err := repo.UpdatePasswordAndRevokeSessions(ctx, user.ID, storedSessionVersionForTest(t, repo, user.ID), "new-hash", false); err != nil {
 		t.Fatalf("UpdatePasswordAndRevokeSessions: %v", err)
 	}
 	if err := repo.ForceResetPasswordAndRevokeSessions(ctx, user.ID, "forced-hash"); err != nil {
@@ -241,7 +241,7 @@ func TestUserRepositoryRemainingScopedWritersPersist(t *testing.T) {
 	if err := repo.BumpAuthSessionVersion(ctx, user.ID); err != nil {
 		t.Fatalf("BumpAuthSessionVersion: %v", err)
 	}
-	if err := repo.ClearAllDataAndResetSettings(ctx, user.ID); err != nil {
+	if err := repo.ClearAllDataAndResetSettings(ctx, user.ID, storedSessionVersionForTest(t, repo, user.ID)); err != nil {
 		t.Fatalf("ClearAllDataAndResetSettings: %v", err)
 	}
 

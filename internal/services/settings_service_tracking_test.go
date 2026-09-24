@@ -142,11 +142,11 @@ func (stub *stubSettingsTrackingUserRepo) UpdateReminderLeadDays(_ context.Conte
 	return stub.reminderErr
 }
 
-func (stub *stubSettingsTrackingUserRepo) UpdatePasswordAndRevokeSessions(context.Context, uint, string, bool) error {
+func (stub *stubSettingsTrackingUserRepo) UpdatePasswordAndRevokeSessions(context.Context, uint, int, string, bool) error {
 	return nil
 }
 
-func (stub *stubSettingsTrackingUserRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(_ context.Context, _ uint, _ string, _ string, _ bool, beforeCommit func(sessionVersion int) error) error {
+func (stub *stubSettingsTrackingUserRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(_ context.Context, _ uint, _ int, _ string, _ string, _ bool, beforeCommit func(sessionVersion int) error) error {
 	if beforeCommit != nil {
 		return beforeCommit(1)
 	}
@@ -163,7 +163,7 @@ func (stub *stubSettingsTrackingUserRepo) LoadSettingsByID(context.Context, uint
 	return models.User{}, nil
 }
 
-func (stub *stubSettingsTrackingUserRepo) ClearAllDataAndResetSettings(context.Context, uint) error {
+func (stub *stubSettingsTrackingUserRepo) ClearAllDataAndResetSettings(context.Context, uint, int) error {
 	return nil
 }
 

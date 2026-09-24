@@ -85,7 +85,7 @@ func assertFeedClearedAndVersionBumped(t *testing.T, repo *UserRepository, userI
 func TestRecoveryCodeRegenForceClearsFeedAtomically(t *testing.T) {
 	repo, userID := createArmedFeedUserForForceClear(t, "regen-feed-clear@example.com")
 
-	if err := repo.UpdateRecoveryCodeHashAndRevokeSessions(context.Background(), userID, "new-recovery-hash", nil); err != nil {
+	if err := repo.UpdateRecoveryCodeHashAndRevokeSessions(context.Background(), userID, storedSessionVersionForTest(t, repo, userID), "new-recovery-hash", nil); err != nil {
 		t.Fatalf("UpdateRecoveryCodeHashAndRevokeSessions: %v", err)
 	}
 
@@ -175,7 +175,7 @@ func TestForceOperatorResetForceClearsFeedAtomically(t *testing.T) {
 func TestRoutinePasswordChangeDoesNotClearFeed(t *testing.T) {
 	repo, userID := createArmedFeedUserForForceClear(t, "routine-change-keeps-feed@example.com")
 
-	if err := repo.UpdatePasswordAndRevokeSessions(context.Background(), userID, "routine-new-hash", false); err != nil {
+	if err := repo.UpdatePasswordAndRevokeSessions(context.Background(), userID, storedSessionVersionForTest(t, repo, userID), "routine-new-hash", false); err != nil {
 		t.Fatalf("UpdatePasswordAndRevokeSessions: %v", err)
 	}
 

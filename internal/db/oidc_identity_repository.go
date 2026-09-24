@@ -106,16 +106,24 @@ func (repo *OIDCIdentityRepository) ListByUser(ctx context.Context, userID uint)
 // second unlink waits and its next statement sees the first one's commit, and
 // the database write lock on SQLite, where BEGIN IMMEDIATE already serialises
 // the whole transaction.
-func (repo *OIDCIdentityRepository) DeleteForUserAndRevokeSessions(ctx context.Context, userID uint, identityID uint, localSignInOpen bool) (bool, error) {
+//
+// The bump is a compare-and-set from expectedSessionVersion, the version the
+// caller verified the current password against: an account found at any
+// other version was revoked by another write in between, and the unlink rolls
+// back with models.ErrAuthSessionVersionChanged rather than let the caller
+// re-issue a session that outlives that revocation. Of two concurrent unlinks
+// verified against the same version, the second therefore refuses on the
+// version before it counts anything.
+func (repo *OIDCIdentityRepository) DeleteForUserAndRevokeSessions(ctx context.Context, userID uint, identityID uint, expectedSessionVersion int, localSignInOpen bool) (bool, error) {
 	if userID == 0 || identityID == 0 {
 		return false, nil
 	}
 	err := repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := bumpAuthSessionVersionTx(tx, userID); err != nil {
+		if err := bumpAuthSessionVersionFromTx(tx, userID, expectedSessionVersion); err != nil {
 			if errors.Is(err, errOIDCIdentityOwnerRequired) {
 				return errOIDCIdentityNotDeleted
 			}
-			return err // codecov:ignore -- DB-layer error from the owner bump other than a missing account; not reachable in unit tests
+			return err
 		}
 		result := tx.Where("id = ? AND user_id = ?", identityID, userID).Delete(&models.OIDCIdentity{})
 		if result.Error != nil {
@@ -148,7 +156,7 @@ func requireRemainingSignInTx(tx *gorm.DB, userID uint, localSignInOpen bool) er
 	}
 	var owner models.User
 	if err := tx.Select("id", "local_auth_enabled", "password_hash").Where("id = ?", userID).Take(&owner).Error; err != nil {
-		return err // codecov:ignore -- DB-layer error loading the owner row bumpAuthSessionVersionTx already confirmed exists; not reachable in unit tests
+		return err // codecov:ignore -- DB-layer error loading the owner row bumpAuthSessionVersionFromTx already confirmed exists; not reachable in unit tests
 	}
 	if localSignInOpen && owner.LocalAuthEnabled && strings.TrimSpace(owner.PasswordHash) != "" {
 		return nil
@@ -180,48 +188,16 @@ func (repo *OIDCIdentityRepository) TouchLastUsed(ctx context.Context, identityI
 
 var errOIDCIdentityOwnerRequired = errors.New("oidc identity owner is required")
 
-// bumpAuthSessionVersionTx increments the account's session version inside tx
-// and refuses a zero-row outcome, so a link or unlink naming an account that
-// does not exist rolls back instead of committing a write no session tracks.
-func bumpAuthSessionVersionTx(tx *gorm.DB, userID uint) error {
-	result := tx.Model(&models.User{}).
-		Where("id = ?", userID).
-		UpdateColumn("auth_session_version", gorm.Expr("auth_session_version + 1"))
-	if result.Error != nil {
-		return result.Error // codecov:ignore -- DB-layer error on the session-version UPDATE; not reachable in unit tests
-	}
-	if result.RowsAffected == 0 {
-		return errOIDCIdentityOwnerRequired
-	}
-	return nil
-}
-
 // bumpAuthSessionVersionFromTx moves the account from expectedSessionVersion to
-// the next version inside tx, or refuses: errOIDCIdentityOwnerRequired when the
-// account does not exist, models.ErrAuthSessionVersionChanged when it holds any
-// other version. A legacy row still holding 0 reads as version 1, so it matches
-// an expected 1 and is written as 2 — a literal, not an increment, or the
-// bumped row would read as the version it was revoking.
+// the next version inside tx (updateFromAuthSessionVersionTx), or refuses:
+// errOIDCIdentityOwnerRequired when the account does not exist, so a link or
+// unlink naming no account rolls back instead of committing a write no session
+// tracks, and models.ErrAuthSessionVersionChanged when it holds any other
+// version.
 func bumpAuthSessionVersionFromTx(tx *gorm.DB, userID uint, expectedSessionVersion int) error {
-	if expectedSessionVersion < 1 {
-		expectedSessionVersion = 1
-	}
-	result := tx.Model(&models.User{}).
-		Where("id = ?", userID).
-		Where("(auth_session_version = ? OR (? = 1 AND auth_session_version <= 0))", expectedSessionVersion, expectedSessionVersion).
-		UpdateColumn("auth_session_version", expectedSessionVersion+1)
-	if result.Error != nil {
-		return result.Error // codecov:ignore -- DB-layer error on the session-version UPDATE; not reachable in unit tests
-	}
-	if result.RowsAffected == 1 {
-		return nil
-	}
-	var owners int64
-	if err := tx.Model(&models.User{}).Where("id = ?", userID).Count(&owners).Error; err != nil {
-		return err // codecov:ignore -- DB-layer error counting the account after a refused bump; not reachable in unit tests
-	}
-	if owners == 0 {
+	_, err := updateFromAuthSessionVersionTx(tx, userID, expectedSessionVersion, nil)
+	if errors.Is(err, ErrUserOwnerRequired) {
 		return errOIDCIdentityOwnerRequired
 	}
-	return models.ErrAuthSessionVersionChanged
+	return err
 }
