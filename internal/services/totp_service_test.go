@@ -21,8 +21,10 @@ type stubTOTPUserRepo struct {
 	updateTOTPCalled bool
 
 	reencryptErr          error
+	reencryptLost         bool
 	reencryptCalled       bool
 	reencryptedUserID     uint
+	reencryptedOld        string
 	reencryptedCiphertext string
 
 	claimErr      error
@@ -42,11 +44,15 @@ func (stub *stubTOTPUserRepo) UpdateTOTPFieldsAndRevokeSessions(ctx context.Cont
 	return stub.updateErr
 }
 
-func (stub *stubTOTPUserRepo) UpdateTOTPSecretCiphertext(ctx context.Context, userID uint, encryptedSecret string) error {
+func (stub *stubTOTPUserRepo) UpgradeTOTPSecretCiphertextCAS(ctx context.Context, userID uint, oldCiphertext string, newCiphertext string) (bool, error) {
 	stub.reencryptCalled = true
 	stub.reencryptedUserID = userID
-	stub.reencryptedCiphertext = encryptedSecret
-	return stub.reencryptErr
+	stub.reencryptedOld = oldCiphertext
+	stub.reencryptedCiphertext = newCiphertext
+	if stub.reencryptErr != nil {
+		return false, stub.reencryptErr
+	}
+	return !stub.reencryptLost, nil
 }
 
 func (stub *stubTOTPUserRepo) ClaimTOTPStep(ctx context.Context, userID uint, step int64) (bool, error) {

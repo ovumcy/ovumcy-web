@@ -45,8 +45,14 @@ func (r *dbUserRepoForTest) UpdateTOTPFieldsAndRevokeSessions(ctx context.Contex
 	}).Error
 }
 
-func (r *dbUserRepoForTest) UpdateTOTPSecretCiphertext(ctx context.Context, userID uint, encryptedSecret string) error {
-	return r.db.Model(&models.User{}).Where("id = ?", userID).Update("totp_secret", encryptedSecret).Error
+func (r *dbUserRepoForTest) UpgradeTOTPSecretCiphertextCAS(ctx context.Context, userID uint, oldCiphertext string, newCiphertext string) (bool, error) {
+	result := r.db.Model(&models.User{}).
+		Where("id = ? AND totp_secret = ?", userID, oldCiphertext).
+		Update("totp_secret", newCiphertext)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
 }
 
 func (r *dbUserRepoForTest) ClaimTOTPStep(ctx context.Context, userID uint, step int64) (bool, error) {

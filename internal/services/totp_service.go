@@ -62,12 +62,14 @@ type TOTPUserRepository interface {
 	// bumps auth_session_version in the same transaction, so toggling 2FA
 	// invalidates every active auth cookie for the account.
 	UpdateTOTPFieldsAndRevokeSessions(ctx context.Context, userID uint, encryptedSecret string, enabled bool) error
-	// UpdateTOTPSecretCiphertext rewrites just the encrypted secret column
-	// WITHOUT bumping auth_session_version or touching totp_enabled. It exists
-	// for transparent re-encryption of legacy ciphertexts under the new
-	// aad-bound format on a successful 2FA login: nothing about the account's
-	// security posture changed, so no active session should be revoked.
-	UpdateTOTPSecretCiphertext(ctx context.Context, userID uint, encryptedSecret string) error
+	// UpgradeTOTPSecretCiphertextCAS rewrites just the encrypted secret column
+	// WITHOUT bumping auth_session_version or touching totp_enabled — and only
+	// while totp_secret still equals oldCiphertext. It exists for transparent
+	// re-encryption of legacy ciphertexts under the new aad-bound format on a
+	// successful 2FA login: nothing about the account's security posture
+	// changed, so no active session should be revoked. applied is false when a
+	// concurrent re-enrollment or disable won.
+	UpgradeTOTPSecretCiphertextCAS(ctx context.Context, userID uint, oldCiphertext string, newCiphertext string) (applied bool, err error)
 	// ClaimTOTPStep atomically advances totp_last_used_step to step iff it is
 	// strictly greater than the persisted value. Returns true when the row was
 	// updated (the step is now consumed by this caller) and false when the step
@@ -178,7 +180,11 @@ func (service *TOTPService) ValidateCodeRaw(rawSecret, code string) bool {
 // re-encrypt the secret under the current aad-bound format after a
 // successful step claim. The re-encryption uses a session-version-preserving
 // repo call so the user's current login does not get invalidated by what is
-// otherwise an internal storage upgrade.
+// otherwise an internal storage upgrade. It is conditional on the ciphertext
+// this call opened: a re-enrollment or disable landing in between wins, and
+// the upgrade is dropped rather than restoring the old secret over the new
+// one. The session minted from the stale read dies anyway, because both of
+// those writers bump auth_session_version.
 func (service *TOTPService) ValidateCode(ctx context.Context, userID uint, encryptedSecret, code string) (bool, error) {
 	aad := aadForTOTPSecret(userID)
 	rawSecret, isLegacy, err := security.DecryptField(encryptedSecret, service.secretKey, aad)
@@ -202,7 +208,7 @@ func (service *TOTPService) ValidateCode(ctx context.Context, userID uint, encry
 	// next login and is operationally observable via the security log.
 	if isLegacy {
 		if reEncrypted, encryptErr := security.EncryptField(rawSecret, service.secretKey, aad); encryptErr == nil {
-			_ = service.users.UpdateTOTPSecretCiphertext(ctx, userID, reEncrypted)
+			_, _ = service.users.UpgradeTOTPSecretCiphertextCAS(ctx, userID, encryptedSecret, reEncrypted)
 		}
 	}
 	return true, nil

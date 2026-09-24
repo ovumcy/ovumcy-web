@@ -103,7 +103,12 @@ func TestTOTPService_ValidateCode_LegacyCiphertextReencrypts(t *testing.T) {
 	}
 
 	if !repo.reencryptCalled {
-		t.Fatal("ValidateCode succeeded on legacy ciphertext but did not invoke UpdateTOTPSecretCiphertext for re-encryption")
+		t.Fatal("ValidateCode succeeded on legacy ciphertext but did not invoke UpgradeTOTPSecretCiphertextCAS for re-encryption")
+	}
+	// The write is conditioned on the ciphertext this check opened, not on
+	// anything read later.
+	if repo.reencryptedOld != legacyTOTPCiphertext {
+		t.Fatal("re-encryption was conditioned on a ciphertext other than the one the check opened")
 	}
 	if repo.reencryptedUserID != legacyTOTPOwnerID {
 		t.Errorf("re-encrypt called for userID=%d, want %d", repo.reencryptedUserID, legacyTOTPOwnerID)
@@ -124,5 +129,33 @@ func TestTOTPService_ValidateCode_LegacyCiphertextReencrypts(t *testing.T) {
 
 	if repo.updateTOTPCalled {
 		t.Fatal("lazy re-encryption must not call UpdateTOTPFieldsAndRevokeSessions (would bump auth_session_version and sign the user out)")
+	}
+}
+
+// TestTOTPService_ValidateCode_ReencryptOutcomeNeverFailsTheCheck covers the
+// two non-applied outcomes of the lazy re-encryption: a lost race (a
+// re-enrollment or disable won) and a database failure. Both are swallowed —
+// the code was valid against the secret this check opened, and the upgrade is
+// simply retried on the next login.
+func TestTOTPService_ValidateCode_ReencryptOutcomeNeverFailsTheCheck(t *testing.T) {
+	for name, repo := range map[string]*stubTOTPUserRepo{
+		"lost race":     {reencryptLost: true},
+		"write failure": {reencryptErr: context.DeadlineExceeded},
+	} {
+		t.Run(name, func(t *testing.T) {
+			svc := NewTOTPService(repo, []byte(legacyTOTPSecretKey), nil)
+			code, err := totp.GenerateCode(legacyTOTPRawSecret, nowForTOTPTest())
+			if err != nil {
+				t.Fatalf("GenerateCode: %v", err)
+			}
+
+			valid, err := svc.ValidateCode(context.Background(), legacyTOTPOwnerID, legacyTOTPCiphertext, code)
+			if err != nil || !valid {
+				t.Fatalf("ValidateCode = (%v, %v), want (true, nil) whatever the re-encryption outcome", valid, err)
+			}
+			if !repo.reencryptCalled {
+				t.Fatal("the re-encryption was never attempted, so this case measures nothing")
+			}
+		})
 	}
 }

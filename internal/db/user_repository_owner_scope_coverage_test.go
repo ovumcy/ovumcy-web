@@ -161,8 +161,9 @@ func TestUserRepositoryRemainingScopedWritersRefuseZeroOwner(t *testing.T) {
 		"BumpAuthSessionVersion": func() error {
 			return repo.BumpAuthSessionVersion(ctx, 0)
 		},
-		"UpdateTOTPSecretCiphertext": func() error {
-			return repo.UpdateTOTPSecretCiphertext(ctx, 0, "secret")
+		"UpgradeTOTPSecretCiphertextCAS": func() error {
+			_, err := repo.UpgradeTOTPSecretCiphertextCAS(ctx, 0, "secret", "resealed")
+			return err
 		},
 		"ClearAllDataAndResetSettings": func() error {
 			return repo.ClearAllDataAndResetSettings(ctx, 0)

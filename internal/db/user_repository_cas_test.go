@@ -193,21 +193,28 @@ func TestOpenSQLiteConnectionPoolLimits(t *testing.T) {
 	}
 }
 
-// TestUpgradePasswordHashCAS runs every case on both shipped drivers, one
-// database per driver: the predicate's row count is the driver's to report, so
-// SQLite alone would not pin what a Postgres deployment does. Each case seeds
-// its own row.
 func TestUpgradePasswordHashCAS(t *testing.T) {
-	cases := []struct {
-		name string
-		run  func(t *testing.T, repo *UserRepository)
-	}{
+	runCASCasesOnEachDriver(t, []casDriverCase{
 		{"preserves the session version", testUpgradePasswordHashCASPreservesSessionVersion},
 		{"loses to a credential write", testUpgradePasswordHashCASLosesToACredentialWrite},
-	}
+	})
+}
+
+type casDriverCase struct {
+	name string
+	run  func(t *testing.T, repo *UserRepository)
+}
+
+// runCASCasesOnEachDriver runs every case on both shipped drivers, one
+// database per driver: a compare-and-set's row count is the driver's to
+// report, so SQLite alone would not pin what a Postgres deployment does. Each
+// case seeds its own row.
+func runCASCasesOnEachDriver(t *testing.T, cases []casDriverCase) {
+	t.Helper()
+
 	configs := map[string]func(t *testing.T) Config{
 		"sqlite": func(t *testing.T) Config {
-			return Config{Driver: DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "rehash_test.db")}
+			return Config{Driver: DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "cas_driver_test.db")}
 		},
 		"postgres": startPostgresTestConfig,
 	}

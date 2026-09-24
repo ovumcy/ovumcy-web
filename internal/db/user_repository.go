@@ -1437,18 +1437,30 @@ func (repo *UserRepository) UpdateTOTPFieldsAndRevokeSessions(ctx context.Contex
 	}).Error
 }
 
-// UpdateTOTPSecretCiphertext rewrites only the encrypted TOTP secret column
-// without bumping auth_session_version and without touching totp_enabled or
-// totp_last_used_step. It exists for transparent re-encryption of legacy
-// (pre-aad-binding) ciphertexts under the current aad-bound format: the
-// account's security posture has not changed, so no active session should
-// be revoked by what is otherwise an internal storage upgrade.
-func (repo *UserRepository) UpdateTOTPSecretCiphertext(ctx context.Context, userID uint, encryptedSecret string) error {
+// UpgradeTOTPSecretCiphertextCAS is the transparent re-encryption of a legacy
+// (pre-aad-binding) TOTP ciphertext under the current aad-bound format, run
+// after a successful 2FA code check. It rewrites only totp_secret, and only
+// while the column still holds oldCiphertext — the ciphertext that check just
+// opened. auth_session_version, totp_enabled and totp_last_used_step are
+// untouched: same secret, new sealing, so no active session is revoked by an
+// internal storage upgrade.
+//
+// The predicate is what makes the upgrade safe to run late. Between the
+// check's read and this write, a re-enrollment or a disable may have rewritten
+// the secret; an unconditional write would put the OLD secret back over it
+// with no session-version bump, and the replaced authenticator would pass 2FA
+// again. A lost race returns (false, nil) and leaves the newer secret in
+// place; the error is a database failure only.
+func (repo *UserRepository) UpgradeTOTPSecretCiphertextCAS(ctx context.Context, userID uint, oldCiphertext string, newCiphertext string) (bool, error) {
 	query, err := repo.scopedUserUpdate(ctx, userID)
 	if err != nil {
-		return err
+		return false, err
 	}
-	return query.Update("totp_secret", encryptedSecret).Error
+	result := query.Where("totp_secret = ?", oldCiphertext).Update("totp_secret", newCiphertext)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
 }
 
 // ClaimTOTPStep atomically claims a TOTP step for the given user. Returns true
