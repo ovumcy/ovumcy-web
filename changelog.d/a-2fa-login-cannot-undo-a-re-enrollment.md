@@ -5,5 +5,5 @@
   without revoking sessions. The reseal was written unconditionally, after the code check, so a
   re-enrollment or a disable landing in between was overwritten by the OLD secret, and the retired
   authenticator passed 2FA again. The reseal now applies only while the stored ciphertext is still
-  the one the check opened; when a re-enrollment or disable wins, the reseal is dropped, the check
-  still succeeds, and the session it minted is revoked by the competing write as before.
+  the one the check opened; when a re-enrollment or disable wins, the reseal is dropped and the
+  check still succeeds.
