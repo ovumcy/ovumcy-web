@@ -80,7 +80,7 @@ func TestOIDCIdentityRepositoryLinkAndUnlinkRevokeTheOwnersSessions(t *testing.T
 	ctx := context.Background()
 
 	identity := models.OIDCIdentity{UserID: 1, Issuer: "https://id.example.com", Subject: "linked", CreatedAt: time.Now().UTC()}
-	if err := repository.CreateAndRevokeSessions(ctx, &identity); err != nil {
+	if err := repository.CreateAndRevokeSessions(ctx, &identity, 1); err != nil {
 		t.Fatalf("CreateAndRevokeSessions: %v", err)
 	}
 	if got := version(1); got != 2 {
@@ -237,7 +237,7 @@ func TestOIDCIdentityRepositoryRevokingLinkRollsBackForAMissingOwner(t *testing.
 	ctx := context.Background()
 
 	identity := models.OIDCIdentity{UserID: 99, Issuer: "https://id.example.com", Subject: "orphan", CreatedAt: time.Now().UTC()}
-	if err := repository.CreateAndRevokeSessions(ctx, &identity); err == nil {
+	if err := repository.CreateAndRevokeSessions(ctx, &identity, 1); err == nil {
 		t.Fatal("expected a link to a missing account to fail")
 	}
 	if _, found, _ := repository.FindByIssuerSubject(ctx, identity.Issuer, identity.Subject); found {
@@ -252,11 +252,11 @@ func TestOIDCIdentityRepositoryCreateAndRevokeSessionsRequiresAnOwner(t *testing
 	repository, _ := seedOIDCRepositoryOwners(t)
 	ctx := context.Background()
 
-	if err := repository.CreateAndRevokeSessions(ctx, nil); !errors.Is(err, errOIDCIdentityOwnerRequired) {
+	if err := repository.CreateAndRevokeSessions(ctx, nil, 1); !errors.Is(err, errOIDCIdentityOwnerRequired) {
 		t.Fatalf("expected errOIDCIdentityOwnerRequired for a nil identity, got %v", err)
 	}
 	identity := models.OIDCIdentity{Issuer: "https://id.example.com", Subject: "no-owner"}
-	if err := repository.CreateAndRevokeSessions(ctx, &identity); !errors.Is(err, errOIDCIdentityOwnerRequired) {
+	if err := repository.CreateAndRevokeSessions(ctx, &identity, 1); !errors.Is(err, errOIDCIdentityOwnerRequired) {
 		t.Fatalf("expected errOIDCIdentityOwnerRequired for a zero UserID, got %v", err)
 	}
 }

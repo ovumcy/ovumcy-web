@@ -292,6 +292,9 @@ func TestMapLinkOIDCIdentityLinkErrorBranches(t *testing.T) {
 	if err := mapLinkOIDCIdentityLinkError(services.ErrOIDCLinkFailed); err == nil || !strings.Contains(err.Error(), "already linked to a different account") {
 		t.Fatalf("expected a cross-user-claim refusal, got %v", err)
 	}
+	if err := mapLinkOIDCIdentityLinkError(services.ErrAuthSessionVersionChanged); err == nil || !strings.Contains(err.Error(), "nothing was linked") {
+		t.Fatalf("expected a retry refusal for a concurrent revocation, got %v", err)
+	}
 	if err := mapLinkOIDCIdentityLinkError(services.ErrOIDCIdentityResolveFailed); err == nil || !strings.Contains(err.Error(), "link oidc identity") {
 		t.Fatalf("expected the generic fallback for a storage failure, got %v", err)
 	}

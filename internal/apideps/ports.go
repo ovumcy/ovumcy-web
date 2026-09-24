@@ -49,8 +49,11 @@ type OIDCWorkflowService interface {
 	StartReauth(ctx context.Context, state string, nonce string, codeVerifier string) (string, error)
 	Authenticate(ctx context.Context, code string, codeVerifier string, expectedNonce string, now time.Time) (services.OIDCLoginResult, error)
 	ValidateReauthExchange(ctx context.Context, code string, codeVerifier string, expectedNonce string, expectedUserID uint, maxAuthAge time.Duration, now time.Time) error
-	ConfirmAndLinkIdentity(ctx context.Context, targetUserID uint, claims security.OIDCClaims, linkTime time.Time) error
-	CompleteIdentityLinkReauth(ctx context.Context, code string, codeVerifier string, expectedNonce string, targetUserID uint, maxAuthAge time.Duration, now time.Time) error
+	// ConfirmAndLinkIdentity writes the link only from expectedSessionVersion
+	// and returns the version it left the account at; a session is minted only
+	// while a fresh read still shows that version.
+	ConfirmAndLinkIdentity(ctx context.Context, targetUserID uint, expectedSessionVersion int, claims security.OIDCClaims, linkTime time.Time) (int, error)
+	CompleteIdentityLinkReauth(ctx context.Context, code string, codeVerifier string, expectedNonce string, targetUserID uint, expectedSessionVersion int, maxAuthAge time.Duration, now time.Time) error
 	// UnlinkIdentity removes one identity from the account and bumps its
 	// AuthSessionVersion in the same write; the caller has already verified
 	// the current local password.

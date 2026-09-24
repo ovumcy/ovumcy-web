@@ -38,13 +38,33 @@ func (enabledOIDCProviderForLinkTest) ExchangeCode(context.Context, string, stri
 // service and repository, so the link's AuthSessionVersion bump lands in the
 // same database the session check reads. It is bound after the app exists,
 // because the database is created by the app helper.
+//
+// beforeLink and afterLink commit a concurrent write on either side of the
+// link; linkFromStoredVersion hands the link the version stored at that moment
+// instead of the one the handler verified, which is what the link did before
+// it took a version at all.
 type realLinkOIDCWorkflowService struct {
 	*stubOIDCWorkflowService
 	real *services.OIDCLoginService
+
+	beforeLink            func()
+	afterLink             func()
+	linkFromStoredVersion bool
+	storedVersion         func() int
 }
 
-func (service *realLinkOIDCWorkflowService) ConfirmAndLinkIdentity(ctx context.Context, targetUserID uint, claims security.OIDCClaims, linkTime time.Time) error {
-	return service.real.ConfirmAndLinkIdentity(ctx, targetUserID, claims, linkTime)
+func (service *realLinkOIDCWorkflowService) ConfirmAndLinkIdentity(ctx context.Context, targetUserID uint, expectedSessionVersion int, claims security.OIDCClaims, linkTime time.Time) (int, error) {
+	if service.beforeLink != nil {
+		service.beforeLink()
+	}
+	if service.linkFromStoredVersion {
+		expectedSessionVersion = service.storedVersion()
+	}
+	linkedVersion, err := service.real.ConfirmAndLinkIdentity(ctx, targetUserID, expectedSessionVersion, claims, linkTime)
+	if service.afterLink != nil {
+		service.afterLink()
+	}
+	return linkedVersion, err
 }
 
 // A confirmed link bumps AuthSessionVersion in the same write, so the session

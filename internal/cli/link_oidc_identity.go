@@ -172,11 +172,23 @@ func runLinkOIDCIdentityCommand(databaseConfig db.Config, oidcConfig security.OI
 	}()
 
 	repositories, _ := buildRepositories(database, calendarFeedFencePath())
-	userService := services.NewOperatorUserService(repositories.Users, services.NewAuthService(repositories.Users))
+	authService := services.NewAuthService(repositories.Users)
+	userService := services.NewOperatorUserService(repositories.Users, authService)
 
 	target, err := resolveOperatorUser(userService, opts.userID, normalizedEmail)
 	if err != nil {
 		return mapOperatorUserLookupError(err, opts.userID, normalizedEmail)
+	}
+
+	// The link revokes sessions only from the version it is handed. This command
+	// mints no session, so a revocation landing after this read only fails the
+	// command for a rerun.
+	account, err := authService.FindByID(context.Background(), target.ID)
+	if err != nil {
+		// codecov:ignore:start -- the account was resolved a line above; only a
+		// storage fault or a concurrent deletion between the two reads lands here.
+		return mapOperatorUserLookupError(err, opts.userID, normalizedEmail)
+		// codecov:ignore:end
 	}
 
 	oidcLoginService := services.NewOIDCLoginService(oidcClient, repositories.OIDCIdentities, repositories.Users, nil)
@@ -184,7 +196,7 @@ func runLinkOIDCIdentityCommand(databaseConfig db.Config, oidcConfig security.OI
 		Issuer:  issuer,
 		Subject: strings.TrimSpace(opts.subject),
 	}
-	if err := oidcLoginService.ConfirmAndLinkIdentity(context.Background(), target.ID, claims, time.Now()); err != nil {
+	if _, err := oidcLoginService.ConfirmAndLinkIdentity(context.Background(), target.ID, account.AuthSessionVersion, claims, time.Now()); err != nil {
 		return mapLinkOIDCIdentityLinkError(err)
 	}
 
@@ -207,6 +219,8 @@ func mapLinkOIDCIdentityLinkError(err error) error {
 		return errors.New("OIDC is not enabled on this instance (set OIDC_ENABLED=true)")
 	case errors.Is(err, services.ErrOIDCLinkFailed):
 		return errors.New("that (issuer, subject) pair is already linked to a different account")
+	case errors.Is(err, services.ErrAuthSessionVersionChanged):
+		return errors.New("the account's sessions changed while linking; nothing was linked, run the command again")
 	default:
 		return fmt.Errorf("link oidc identity: %w", err)
 	}

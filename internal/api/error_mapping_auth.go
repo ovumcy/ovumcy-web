@@ -237,6 +237,8 @@ func mapOIDCLinkConfirmPasswordError(err error) APIErrorSpec {
 // mapper above.
 func mapOIDCLinkConfirmError(err error) APIErrorSpec {
 	switch {
+	case errors.Is(err, services.ErrAuthSessionVersionChanged):
+		return authSessionCreateErrorSpec()
 	case errors.Is(err, services.ErrOIDCLinkFailed),
 		errors.Is(err, services.ErrOIDCIdentityResolveFailed):
 		return authOIDCUnavailableErrorSpec()

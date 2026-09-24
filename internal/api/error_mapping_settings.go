@@ -95,6 +95,8 @@ func mapOIDCIdentityLinkReauthError(err error) APIErrorSpec {
 		return settingsOIDCReauthStaleErrorSpec()
 	case errors.Is(err, services.ErrOIDCLinkFailed):
 		return settingsOIDCIdentityLinkClaimedErrorSpec()
+	case errors.Is(err, services.ErrAuthSessionVersionChanged):
+		return authSessionCreateErrorSpec()
 	case errors.Is(err, services.ErrOIDCDisabled),
 		errors.Is(err, services.ErrOIDCUnavailable),
 		errors.Is(err, services.ErrOIDCIdentityResolveFailed):

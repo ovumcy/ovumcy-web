@@ -64,6 +64,10 @@ var (
 	// same error from inside the delete transaction, where the check that holds
 	// under concurrency runs.
 	ErrOIDCUnlinkLastSignIn = models.ErrOIDCUnlinkLastSignIn
+	// ErrAuthSessionVersionChanged indicates the account's sessions were
+	// revoked by another write after the caller verified its factors, so the
+	// link was not written: the caller refuses rather than mint a session.
+	ErrAuthSessionVersionChanged = models.ErrAuthSessionVersionChanged
 )
 
 type OIDCProviderClient interface {
@@ -78,8 +82,10 @@ type OIDCIdentityStore interface {
 	FindByIssuerSubject(ctx context.Context, issuer string, subject string) (models.OIDCIdentity, bool, error)
 	Create(ctx context.Context, identity *models.OIDCIdentity) error
 	// CreateAndRevokeSessions binds an identity to an EXISTING account and
-	// bumps its AuthSessionVersion in the same atomic write.
-	CreateAndRevokeSessions(ctx context.Context, identity *models.OIDCIdentity) error
+	// bumps its AuthSessionVersion in the same atomic write — only from
+	// expectedSessionVersion; any other stored version rolls the link back with
+	// ErrAuthSessionVersionChanged.
+	CreateAndRevokeSessions(ctx context.Context, identity *models.OIDCIdentity, expectedSessionVersion int) error
 	ListByUser(ctx context.Context, userID uint) ([]models.OIDCIdentity, error)
 	// DeleteForUserAndRevokeSessions removes one owner-scoped identity and bumps
 	// the owner's AuthSessionVersion in the same atomic write; false means no
@@ -445,27 +451,34 @@ func (service *OIDCLoginService) authenticateExchange(ctx context.Context, excha
 // touches last-used. It refuses linkage if the (issuer, subject) is already
 // taken by a different user — guarding against a concurrent claim from a
 // second confirmation flow.
-func (service *OIDCLoginService) ConfirmAndLinkIdentity(ctx context.Context, targetUserID uint, claims security.OIDCClaims, linkTime time.Time) error {
+//
+// expectedSessionVersion is the AuthSessionVersion the caller verified its
+// factors against. The link is written only from that version, and the
+// returned version is the one this call left the account at: a caller that
+// mints a session does so only while a fresh read still shows it, so a
+// revocation landing on either side of the link write is never outlived.
+func (service *OIDCLoginService) ConfirmAndLinkIdentity(ctx context.Context, targetUserID uint, expectedSessionVersion int, claims security.OIDCClaims, linkTime time.Time) (int, error) {
 	if !service.Enabled() {
-		return ErrOIDCDisabled
+		return 0, ErrOIDCDisabled
 	}
 	if targetUserID == 0 || !hasIdentityKey(claims) {
-		return ErrOIDCLinkFailed
+		return 0, ErrOIDCLinkFailed
 	}
+	expectedSessionVersion = NormalizeAuthSessionVersion(expectedSessionVersion)
 
 	existing, found, err := service.identities.FindByIssuerSubject(ctx, claims.Issuer, claims.Subject)
 	if err != nil {
-		return ErrOIDCIdentityResolveFailed
+		return 0, ErrOIDCIdentityResolveFailed
 	}
 	if found {
 		if existing.UserID != targetUserID {
 			// (issuer, subject) was claimed by somebody else between the OIDC
 			// callback that issued the pending-link cookie and this
 			// confirmation. Fail closed.
-			return ErrOIDCLinkFailed
+			return 0, ErrOIDCLinkFailed
 		}
 		_ = service.identities.TouchLastUsed(ctx, existing.ID, targetUserID, effectiveOIDCLoginTime(linkTime)) // codecov:ignore -- best-effort last-used touch; error intentionally ignored
-		return nil
+		return expectedSessionVersion, nil
 	}
 
 	// An explicit link changes how an existing account can be entered, so it
@@ -474,10 +487,13 @@ func (service *OIDCLoginService) ConfirmAndLinkIdentity(ctx context.Context, tar
 	// auto-provision path keeps linkIdentity: that account was created by this
 	// very sign-in and has no earlier session to revoke.
 	identity := newOIDCIdentityRecord(targetUserID, claims, linkTime)
-	if err := service.identities.CreateAndRevokeSessions(ctx, &identity); err != nil {
-		return ErrOIDCLinkFailed
+	if err := service.identities.CreateAndRevokeSessions(ctx, &identity, expectedSessionVersion); err != nil {
+		if errors.Is(err, ErrAuthSessionVersionChanged) {
+			return 0, ErrAuthSessionVersionChanged
+		}
+		return 0, ErrOIDCLinkFailed
 	}
-	return nil
+	return expectedSessionVersion + 1, nil
 }
 
 // ListLinkedIdentities returns the identities bound to userID for the owner's
@@ -571,7 +587,10 @@ func (service *OIDCLoginService) UnlinkIdentity(ctx context.Context, user models
 // that has never been linked to anyone. Reusing it would make first-time
 // linking impossible; the freshness check is the part worth sharing, the
 // "already linked" check is not.
-func (service *OIDCLoginService) CompleteIdentityLinkReauth(ctx context.Context, code string, codeVerifier string, expectedNonce string, targetUserID uint, maxAuthAge time.Duration, now time.Time) error {
+//
+// expectedSessionVersion is the version of the session that started the
+// step-up; see ConfirmAndLinkIdentity.
+func (service *OIDCLoginService) CompleteIdentityLinkReauth(ctx context.Context, code string, codeVerifier string, expectedNonce string, targetUserID uint, expectedSessionVersion int, maxAuthAge time.Duration, now time.Time) error {
 	if !service.Enabled() {
 		return ErrOIDCDisabled
 	}
@@ -591,7 +610,8 @@ func (service *OIDCLoginService) CompleteIdentityLinkReauth(ctx context.Context,
 		return err
 	}
 
-	return service.ConfirmAndLinkIdentity(ctx, targetUserID, exchange.Claims, now)
+	_, err = service.ConfirmAndLinkIdentity(ctx, targetUserID, expectedSessionVersion, exchange.Claims, now)
+	return err
 }
 
 func (service *OIDCLoginService) authenticateLinkedIdentity(ctx context.Context, exchange security.OIDCExchangeResult, loginTime time.Time) (OIDCLoginResult, bool, error) {
