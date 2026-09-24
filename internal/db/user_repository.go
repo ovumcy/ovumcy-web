@@ -1285,10 +1285,9 @@ func (repo *UserRepository) ForceResetPasswordAndRevokeSessions(ctx context.Cont
 }
 
 // UpgradePasswordHashCAS is the transparent bcrypt-cost upgrade the auth
-// service performs after a successful login (mirrors
-// UpdateTOTPSecretCiphertext for the TOTP secret). It rewrites only
-// password_hash, and only while the column still holds oldPasswordHash — the
-// hash that login just verified. auth_session_version, must_change_password
+// service performs after a successful login. It rewrites only password_hash,
+// and only while the column still holds oldPasswordHash — the hash that login
+// just verified. auth_session_version, must_change_password
 // and local_auth_enabled are untouched: same password, stronger hash, so no
 // active session is revoked by an internal storage upgrade.
 //
