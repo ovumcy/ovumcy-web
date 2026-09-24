@@ -82,11 +82,11 @@ type SettingsUserRepository interface {
 	UpdateUserTimezone(ctx context.Context, userID uint, timezone string) error
 	UpdateInterfaceLanguage(ctx context.Context, userID uint, language string) (bool, error)
 	UpdateReminderLeadDays(ctx context.Context, userID uint, leadDays int) error
-	UpdatePasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, mustChangePassword bool) error
-	UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, recoveryHash string, mustChangePassword bool, beforeCommit func(sessionVersion int) error) error
+	UpdatePasswordAndRevokeSessions(ctx context.Context, userID uint, expectedSessionVersion int, passwordHash string, mustChangePassword bool) error
+	UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, expectedSessionVersion int, passwordHash string, recoveryHash string, mustChangePassword bool, beforeCommit func(sessionVersion int) error) error
 	UpdateByID(ctx context.Context, userID uint, updates map[string]any) error
 	LoadSettingsByID(ctx context.Context, userID uint) (models.User, error)
-	ClearAllDataAndResetSettings(ctx context.Context, userID uint) error
+	ClearAllDataAndResetSettings(ctx context.Context, userID uint, expectedSessionVersion int) error
 	DeleteAccountAndRelatedData(ctx context.Context, userID uint) error
 }
 
@@ -377,8 +377,13 @@ func (service *SettingsService) LoadSettings(ctx context.Context, userID uint) (
 	return service.users.LoadSettingsByID(ctx, userID)
 }
 
-func (service *SettingsService) ClearAllData(ctx context.Context, userID uint) error {
-	return service.users.ClearAllDataAndResetSettings(ctx, userID)
+// ClearAllData erases the account's tracked data and resets its settings,
+// revoking its sessions in the same write — only from expectedSessionVersion,
+// the version of the session that passed the erasure re-auth. An account
+// revoked by another write in between is left untouched and the result is
+// ErrAuthSessionVersionChanged.
+func (service *SettingsService) ClearAllData(ctx context.Context, userID uint, expectedSessionVersion int) error {
+	return service.users.ClearAllDataAndResetSettings(ctx, userID, NormalizeAuthSessionVersion(expectedSessionVersion))
 }
 
 func (service *SettingsService) DeleteAccount(ctx context.Context, userID uint) error {

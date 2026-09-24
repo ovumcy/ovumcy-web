@@ -98,13 +98,13 @@ func recoveryRotationsUnderTest() []recoveryRotationUnderTest {
 			name:          "regenerate",
 			advancesFence: true,
 			rotate: func(repo *UserRepository, user models.User, beforeCommit func(int) error) error {
-				return repo.UpdateRecoveryCodeHashAndRevokeSessions(ctx, user.ID, "rotated-recovery", beforeCommit)
+				return repo.UpdateRecoveryCodeHashAndRevokeSessions(ctx, user.ID, user.AuthSessionVersion, "rotated-recovery", beforeCommit)
 			},
 		},
 		{
 			name: "local password setup",
 			rotate: func(repo *UserRepository, user models.User, beforeCommit func(int) error) error {
-				return repo.UpdatePasswordRecoveryCodeAndRevokeSessions(ctx, user.ID, "rotated-hash", "rotated-recovery", false, beforeCommit)
+				return repo.UpdatePasswordRecoveryCodeAndRevokeSessions(ctx, user.ID, user.AuthSessionVersion, "rotated-hash", "rotated-recovery", false, beforeCommit)
 			},
 		},
 		{

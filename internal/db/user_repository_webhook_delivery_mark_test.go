@@ -267,7 +267,7 @@ func TestClearAllDataClearsTheDeliveryMarkWithBothWatermarks(t *testing.T) {
 		t.Fatal("the fixture did not set all three columns: the wipe assertion below would pass vacuously")
 	}
 
-	if err := repo.ClearAllDataAndResetSettings(ctx, user.ID); err != nil {
+	if err := repo.ClearAllDataAndResetSettings(ctx, user.ID, storedSessionVersionForTest(t, repo, user.ID)); err != nil {
 		t.Fatalf("ClearAllDataAndResetSettings: %v", err)
 	}
 

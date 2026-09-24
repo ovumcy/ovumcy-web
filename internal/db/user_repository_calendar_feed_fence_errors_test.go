@@ -128,7 +128,7 @@ func TestACredentialRotationSurfacesItsOwnWriteFailure(t *testing.T) {
 		t.Fatalf("close the pool: %v", err)
 	}
 
-	if err := repo.UpdateRecoveryCodeHashAndRevokeSessions(ctx, user.ID, "recovery-hash", nil); err == nil {
+	if err := repo.UpdateRecoveryCodeHashAndRevokeSessions(ctx, user.ID, user.AuthSessionVersion, "recovery-hash", nil); err == nil {
 		t.Fatal("UpdateRecoveryCodeHashAndRevokeSessions must report a failed write rather than fall through to the fence")
 	}
 	if err := repo.ForceResetPasswordAndRevokeSessions(ctx, user.ID, "password-hash"); err == nil {
@@ -164,7 +164,7 @@ func TestPostOperationFenceFailureNeverFailsAnAlreadyCommittedWrite(t *testing.T
 		{
 			name: "UpdateRecoveryCodeHashAndRevokeSessions",
 			run: func(userID uint) error {
-				return repo.UpdateRecoveryCodeHashAndRevokeSessions(ctx, userID, "recovery-hash", nil)
+				return repo.UpdateRecoveryCodeHashAndRevokeSessions(ctx, userID, storedSessionVersionForTest(t, repo, userID), "recovery-hash", nil)
 			},
 		},
 		{

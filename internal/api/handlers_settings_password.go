@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -44,6 +45,9 @@ func (handler *Handler) ChangePassword(c fiber.Ctx) error {
 
 	attempt := services.ReauthAttempt{ClientKey: c.IP(), UserID: user.ID, Now: time.Now()}
 	if err := handler.settingsService.ChangePassword(c.Context(), attempt, user, input.CurrentPassword, input.NewPassword, input.ConfirmPassword); err != nil {
+		if errors.Is(err, services.ErrAuthSessionVersionChanged) {
+			return handler.respondMappedError(c, handler.refuseSessionRevokedDuring(c, "auth.password_change", "password_change"))
+		}
 		return handler.respondPasswordChangeError(c, err)
 	}
 
@@ -196,6 +200,12 @@ func (handler *Handler) completeLocalPasswordSetupReauth(c fiber.Ctx, state oidc
 		handler.logSecurityError(c, "auth.local_password_setup.callback", spec)
 		return handler.redirectSettingsRefusal(c, spec)
 	}
+	// The enrollment is written only from the version this session carries: a
+	// revocation committed since the request was authenticated refuses it, and
+	// this device is signed out rather than re-issued past that revocation.
+	if errors.Is(err, services.ErrAuthSessionVersionChanged) {
+		return handler.redirectSettingsRefusal(c, handler.refuseSessionRevokedDuring(c, "auth.local_password_setup.callback", "local_password_setup"))
+	}
 	if err != nil {
 		// The commit's refusals leave the same way the re-auth refusals above
 		// do. respondPasswordChangeError is the CHANGE-PASSWORD FORM's
@@ -205,8 +215,9 @@ func (handler *Handler) completeLocalPasswordSetupReauth(c fiber.Ctx, state oidc
 		// through to the JSON envelope — rendered as the page to a browser
 		// returning from the identity provider.
 		//
-		// Where each mapped key lands is deliberate. Finalize can raise exactly
-		// three: ErrSettingsPasswordChangeInvalidInput carries
+		// Where each mapped key lands is deliberate. Past the revoked-session
+		// refusal answered above, Finalize can raise exactly three more:
+		// ErrSettingsPasswordChangeInvalidInput carries
 		// services.SettingsPasswordChangeKeyInvalidInput, which
 		// IsChangePasswordErrorMessage attaches to the enrollment form rather
 		// than to the page banner, and that is the right place here too — it

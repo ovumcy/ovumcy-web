@@ -1,8 +1,11 @@
 package api
 
 import (
+	"errors"
+
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 func (handler *Handler) RegenerateRecoveryCode(c fiber.Ctx) error {
@@ -39,6 +42,9 @@ func (handler *Handler) RegenerateRecoveryCode(c fiber.Ctx) error {
 		spec := mapRecoveryCodeDeliveryError(delivery.failure)
 		handler.logSecurityError(c, "auth.recovery_code_regenerate", spec)
 		return handler.respondMappedError(c, spec)
+	}
+	if errors.Is(err, services.ErrAuthSessionVersionChanged) {
+		return handler.respondMappedError(c, handler.refuseSessionRevokedDuring(c, "auth.recovery_code_regenerate", "recovery_code_regenerate"))
 	}
 	if err != nil {
 		spec := mapRecoveryCodeRegenerationError(err)

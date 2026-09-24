@@ -93,7 +93,11 @@ func seedReencryptRaceOwner(t *testing.T, database *gorm.DB, email string) model
 func reEnrollReencryptRaceOwner(t *testing.T, repo *db.UserRepository, userID uint) {
 	t.Helper()
 
-	if err := NewTOTPService(repo, []byte(legacyTOTPSecretKey), nil).EnableTOTP(context.Background(), userID, reencryptRaceReEnrolledSeed); err != nil {
+	current, err := repo.FindByID(context.Background(), userID)
+	if err != nil {
+		t.Fatalf("load the owner before re-enrolling: %v", err)
+	}
+	if err := NewTOTPService(repo, []byte(legacyTOTPSecretKey), nil).EnableTOTP(context.Background(), userID, current.AuthSessionVersion, reencryptRaceReEnrolledSeed); err != nil {
 		t.Fatalf("re-enroll: %v", err)
 	}
 }

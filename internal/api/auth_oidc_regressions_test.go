@@ -201,12 +201,16 @@ func (stub *stubOIDCWorkflowService) ConfirmAndLinkIdentity(ctx context.Context,
 
 // UnlinkIdentity records what the handler asked for and answers unlinkErr.
 // The handler's own gates (password, id parse) are what the api tests pin;
-// the service rules live in internal/services.
-func (stub *stubOIDCWorkflowService) UnlinkIdentity(_ context.Context, user models.User, identityID uint) error {
+// the service rules live in internal/services. The stub writes nothing, so the
+// session version it reports is the one the account still holds.
+func (stub *stubOIDCWorkflowService) UnlinkIdentity(_ context.Context, user models.User, identityID uint) (int, error) {
 	stub.unlinkCalls++
 	stub.lastUnlinkUserID = user.ID
 	stub.lastUnlinkIdentityID = identityID
-	return stub.unlinkErr
+	if stub.unlinkErr != nil {
+		return 0, stub.unlinkErr
+	}
+	return services.NormalizeAuthSessionVersion(user.AuthSessionVersion), nil
 }
 
 // assertStepupExchangeMatchesStart pins that a step-up completion validated
@@ -253,7 +257,10 @@ func (stub *stubOIDCWorkflowService) ListLinkedIdentities(_ context.Context, _ u
 	return stub.linkedIdentities, stub.listLinkedErr
 }
 
-func (stub *stubOIDCWorkflowService) CompleteIdentityLinkReauth(_ context.Context, code string, codeVerifier string, expectedNonce string, targetUserID uint, expectedSessionVersion int, maxAuthAge time.Duration, _ time.Time) error {
+// CompleteIdentityLinkReauth records the exchange and answers like
+// ConfirmAndLinkIdentity's stand-in: it writes nothing, so the session version
+// it reports is the one the step-up started from.
+func (stub *stubOIDCWorkflowService) CompleteIdentityLinkReauth(_ context.Context, code string, codeVerifier string, expectedNonce string, targetUserID uint, expectedSessionVersion int, maxAuthAge time.Duration, _ time.Time) (int, error) {
 	stub.lastIdentityLinkSessionVersion = expectedSessionVersion
 	stub.lastIdentityLinkCode = code
 	stub.lastIdentityLinkCodeVerifier = codeVerifier
@@ -261,14 +268,17 @@ func (stub *stubOIDCWorkflowService) CompleteIdentityLinkReauth(_ context.Contex
 	stub.lastIdentityLinkUserID = targetUserID
 	stub.lastIdentityLinkMaxAge = maxAuthAge
 	if stub.identityLinkReauthErr != nil {
-		return stub.identityLinkReauthErr
+		return 0, stub.identityLinkReauthErr
 	}
 	stub.lastConfirmLinkUserID = targetUserID
 	stub.lastConfirmLinkClaims = stub.identityLinkClaims
 	if stub.afterIdentityLinkConfirm != nil {
 		stub.afterIdentityLinkConfirm()
 	}
-	return stub.confirmLinkErr
+	if stub.confirmLinkErr != nil {
+		return 0, stub.confirmLinkErr
+	}
+	return services.NormalizeAuthSessionVersion(expectedSessionVersion), nil
 }
 
 func TestLoginPageWithOIDCEnabledShowsSSOButton(t *testing.T) {

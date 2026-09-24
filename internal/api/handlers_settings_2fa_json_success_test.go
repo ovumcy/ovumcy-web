@@ -97,7 +97,7 @@ func TestVerifyTOTP2FAEnrollmentAnswersAJSONCallerWithTheDeclaredBody(t *testing
 
 func TestDisableTOTP2FAAnswersAJSONCallerWithTheDeclaredBody(t *testing.T) {
 	ctx := newTOTPSettingsContext(t, "totp-disable-json@example.com")
-	if err := getTOTPServiceForTest(ctx.database).EnableTOTP(context.Background(), ctx.user.ID, "JBSWY3DPEHPK3PXP"); err != nil {
+	if err := getTOTPServiceForTest(ctx.database).EnableTOTP(context.Background(), ctx.user.ID, ctx.user.AuthSessionVersion, "JBSWY3DPEHPK3PXP"); err != nil {
 		t.Fatalf("EnableTOTP: %v", err)
 	}
 	// EnableTOTP bumped auth_session_version, so the pre-enable cookie would

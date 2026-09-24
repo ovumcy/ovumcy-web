@@ -162,7 +162,7 @@ func TestClearAllDataAdvancesTheWebhookRevocationEpoch(t *testing.T) {
 
 	epoch := armWebhookForClaimTest(t, repo, user.ID)
 
-	if err := repo.ClearAllDataAndResetSettings(context.Background(), user.ID); err != nil {
+	if err := repo.ClearAllDataAndResetSettings(context.Background(), user.ID, storedSessionVersionForTest(t, repo, user.ID)); err != nil {
 		t.Fatalf("ClearAllDataAndResetSettings: %v", err)
 	}
 
@@ -283,7 +283,7 @@ func TestClaimWebhookWatermarkIsLostAfterClearData(t *testing.T) {
 	snapshotEpoch := armWebhookForClaimTest(t, repo, user.ID)
 	anchor := time.Date(2026, time.May, 30, 0, 0, 0, 0, time.UTC)
 
-	if err := repo.ClearAllDataAndResetSettings(context.Background(), user.ID); err != nil {
+	if err := repo.ClearAllDataAndResetSettings(context.Background(), user.ID, storedSessionVersionForTest(t, repo, user.ID)); err != nil {
 		t.Fatalf("ClearAllDataAndResetSettings: %v", err)
 	}
 
@@ -370,7 +370,7 @@ func TestReleaseWebhookWatermarkLeavesAClearDataWipeAlone(t *testing.T) {
 		t.Fatalf("fixture precondition: the second claim must be won, got claimed=%v err=%v", claimed, err)
 	}
 
-	if err := repo.ClearAllDataAndResetSettings(context.Background(), user.ID); err != nil {
+	if err := repo.ClearAllDataAndResetSettings(context.Background(), user.ID, storedSessionVersionForTest(t, repo, user.ID)); err != nil {
 		t.Fatalf("ClearAllDataAndResetSettings: %v", err)
 	}
 	if err := repo.ReleaseWebhookWatermark(context.Background(), user.ID, models.WebhookReminderTypePeriod, second, &first); err != nil {

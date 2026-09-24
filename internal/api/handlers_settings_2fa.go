@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"html/template"
 	"image/png"
 	"strings"
@@ -101,7 +102,13 @@ func (handler *Handler) VerifyTOTP2FAEnrollment(c fiber.Ctx) error {
 		return handler.respondMappedError(c, totpInvalidCodeErrorSpec())
 	}
 
-	if err := handler.totpService.EnableTOTP(c.Context(), user.ID, rawSecret); err != nil {
+	if err := handler.totpService.EnableTOTP(c.Context(), user.ID, user.AuthSessionVersion, rawSecret); err != nil {
+		if errors.Is(err, services.ErrAuthSessionVersionChanged) {
+			// Nothing was enrolled and this session is revoked: the seed goes
+			// with it, and a fresh sign-in starts a fresh enrollment.
+			handler.clearTOTPSetupCookie(c)
+			return handler.respondMappedError(c, handler.refuseSessionRevokedDuring(c, "settings.2fa.verify", "totp_enable"))
+		}
 		handler.logSecurityError(c, "settings.2fa.verify", totpInternalErrorSpec())
 		return handler.respondMappedError(c, totpInternalErrorSpec())
 	}
@@ -183,7 +190,10 @@ func (handler *Handler) DisableTOTP2FA(c fiber.Ctx) error {
 
 	handler.totpService.ResetDisableAttempts(handler.secretKey, c.IP(), user.ID)
 
-	if err := handler.totpService.DisableTOTP(c.Context(), user.ID); err != nil {
+	if err := handler.totpService.DisableTOTP(c.Context(), user.ID, user.AuthSessionVersion); err != nil {
+		if errors.Is(err, services.ErrAuthSessionVersionChanged) {
+			return handler.respondMappedError(c, handler.refuseSessionRevokedDuring(c, "settings.2fa.disable", "totp_disable"))
+		}
 		handler.logSecurityError(c, "settings.2fa.disable", totpInternalErrorSpec())
 		return handler.respondMappedError(c, totpInternalErrorSpec())
 	}

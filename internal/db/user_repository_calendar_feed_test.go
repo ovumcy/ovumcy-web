@@ -230,7 +230,7 @@ func TestClearAllDataResetsCalendarFeedColumns(t *testing.T) {
 		t.Fatalf("seed token: %v", err)
 	}
 
-	if err := repo.ClearAllDataAndResetSettings(context.Background(), user.ID); err != nil {
+	if err := repo.ClearAllDataAndResetSettings(context.Background(), user.ID, storedSessionVersionForTest(t, repo, user.ID)); err != nil {
 		t.Fatalf("ClearAllDataAndResetSettings: %v", err)
 	}
 

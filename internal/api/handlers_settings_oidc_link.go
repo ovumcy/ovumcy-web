@@ -1,9 +1,11 @@
 package api
 
 import (
+	"errors"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 // Linking a NEW OIDC identity to the currently authenticated account
@@ -138,7 +140,11 @@ func (handler *Handler) completeOIDCIdentityLinkStepup(c fiber.Ctx, state oidcSt
 
 	ctx, cancel := oidcRequestContext(c)
 	defer cancel()
-	if err := handler.oidcService.CompleteIdentityLinkReauth(ctx, code, state.CodeVerifier, state.Nonce, user.ID, user.AuthSessionVersion, stepupReauthMaxAge, time.Now()); err != nil {
+	linkedSessionVersion, err := handler.oidcService.CompleteIdentityLinkReauth(ctx, code, state.CodeVerifier, state.Nonce, user.ID, user.AuthSessionVersion, stepupReauthMaxAge, time.Now())
+	if errors.Is(err, services.ErrAuthSessionVersionChanged) {
+		return handler.redirectSettingsRefusal(c, handler.refuseSessionRevokedDuring(c, oidcIdentityLinkStepupAction, "link"))
+	}
+	if err != nil {
 		spec := mapOIDCIdentityLinkReauthError(err)
 		handler.logSecurityError(c, oidcIdentityLinkStepupAction, spec)
 		return handler.redirectSettingsRefusal(c, spec)
@@ -147,7 +153,7 @@ func (handler *Handler) completeOIDCIdentityLinkStepup(c fiber.Ctx, state oidcSt
 	handler.logSecurityEvent(c, oidcIdentityLinkStepupAction, "linked")
 	// The link bumped AuthSessionVersion in the same write, revoking every
 	// earlier session; this device keeps signing in on a re-issued one.
-	if spec, ok := handler.reissueSessionAfterIdentityChange(c, user.ID, oidcIdentityLinkStepupAction); !ok {
+	if spec, ok := handler.reissueSessionAfterIdentityChange(c, user.ID, linkedSessionVersion, oidcIdentityLinkStepupAction, "link"); !ok {
 		return handler.redirectSettingsRefusal(c, spec)
 	}
 	handler.setFlashCookie(c, FlashPayload{SettingsSuccess: "oidc_identity_linked"})
@@ -180,13 +186,17 @@ func (handler *Handler) UnlinkOIDCIdentity(c fiber.Ctx) error {
 		handler.logSecurityError(c, oidcIdentityUnlinkAction, spec)
 		return handler.respondMappedError(c, spec)
 	}
-	if err := handler.oidcService.UnlinkIdentity(c.Context(), *user, identityID); err != nil {
+	unlinkedSessionVersion, err := handler.oidcService.UnlinkIdentity(c.Context(), *user, identityID)
+	if errors.Is(err, services.ErrAuthSessionVersionChanged) {
+		return handler.respondMappedError(c, handler.refuseSessionRevokedDuring(c, oidcIdentityUnlinkAction, "unlink"))
+	}
+	if err != nil {
 		spec := mapOIDCIdentityUnlinkError(err)
 		handler.logSecurityError(c, oidcIdentityUnlinkAction, spec)
 		return handler.respondMappedError(c, spec)
 	}
 	handler.logSecurityEvent(c, oidcIdentityUnlinkAction, "unlinked")
-	if spec, ok := handler.reissueSessionAfterIdentityChange(c, user.ID, oidcIdentityUnlinkAction); !ok {
+	if spec, ok := handler.reissueSessionAfterIdentityChange(c, user.ID, unlinkedSessionVersion, oidcIdentityUnlinkAction, "unlink"); !ok {
 		return handler.respondMappedError(c, spec)
 	}
 	if acceptsJSON(c) {
@@ -205,7 +215,12 @@ func (handler *Handler) UnlinkOIDCIdentity(c fiber.Ctx) error {
 // version. It reloads rather than incrementing in memory: an already-linked
 // pair is a no-op that bumps nothing, and the stored version is the only one a
 // session can be checked against.
-func (handler *Handler) reissueSessionAfterIdentityChange(c fiber.Ctx, userID uint, scope string) (APIErrorSpec, bool) {
+//
+// changedSessionVersion is the version the link or unlink left the account at.
+// The session is re-issued only while the reload still shows it: a revocation
+// committed after that write would otherwise be carried into the new session
+// and outlived by it, so the device is signed out instead.
+func (handler *Handler) reissueSessionAfterIdentityChange(c fiber.Ctx, userID uint, changedSessionVersion int, scope string, action string) (APIErrorSpec, bool) {
 	fresh, err := handler.authService.FindByID(c.Context(), userID)
 	if err != nil {
 		// codecov:ignore:start -- the account was resolved by this same request;
@@ -215,6 +230,9 @@ func (handler *Handler) reissueSessionAfterIdentityChange(c fiber.Ctx, userID ui
 		handler.logSecurityError(c, scope, spec)
 		return spec, false
 		// codecov:ignore:end
+	}
+	if !services.AuthSessionVersionsMatch(changedSessionVersion, fresh.AuthSessionVersion) {
+		return handler.refuseSessionRevokedDuring(c, scope, action), false
 	}
 	return handler.refreshCurrentSession(c, &fresh, scope)
 }

@@ -34,7 +34,7 @@ func TestOIDCUnlinkIdentityRemovesTheOwnersIdentityAndRevokesSessions(t *testing
 	}}
 	service := newUnlinkTestService(security.OIDCLoginModeHybrid, identities)
 
-	if err := service.UnlinkIdentity(context.Background(), unlinkTestOwner(true), 1); err != nil {
+	if _, err := service.UnlinkIdentity(context.Background(), unlinkTestOwner(true), 1); err != nil {
 		t.Fatalf("UnlinkIdentity() unexpected error: %v", err)
 	}
 	if identities.deletedID != 1 || identities.deleteCalls != 1 {
@@ -55,7 +55,7 @@ func TestOIDCUnlinkIdentityRefusesAnotherOwnersIdentity(t *testing.T) {
 	service := newUnlinkTestService(security.OIDCLoginModeHybrid, identities)
 
 	for _, identityID := range []uint{2, 0, 99} {
-		err := service.UnlinkIdentity(context.Background(), unlinkTestOwner(true), identityID)
+		_, err := service.UnlinkIdentity(context.Background(), unlinkTestOwner(true), identityID)
 		if !errors.Is(err, ErrOIDCIdentityNotFound) {
 			t.Fatalf("identity %d: expected ErrOIDCIdentityNotFound, got %v", identityID, err)
 		}
@@ -83,7 +83,7 @@ func TestOIDCUnlinkIdentityRefusesToRemoveTheLastSignInMethod(t *testing.T) {
 			{ID: 1, UserID: 7, Issuer: "https://id.example.com", Subject: "only"},
 		}}
 		service := newUnlinkTestService(tc.mode, identities)
-		err := service.UnlinkIdentity(context.Background(), unlinkTestOwner(tc.withPassword), 1)
+		_, err := service.UnlinkIdentity(context.Background(), unlinkTestOwner(tc.withPassword), 1)
 		if !errors.Is(err, tc.want) || (tc.want == nil && err != nil) {
 			t.Fatalf("%s: expected %v, got %v", name, tc.want, err)
 		}
@@ -106,7 +106,7 @@ func TestOIDCUnlinkIdentityAllowsRemovingOneOfTwoWithoutAPassword(t *testing.T) 
 		{ID: 2, UserID: 7, Issuer: "https://id.example.com", Subject: "b"},
 	}}
 	service := newUnlinkTestService(security.OIDCLoginModeOIDCOnly, identities)
-	if err := service.UnlinkIdentity(context.Background(), unlinkTestOwner(false), 2); err != nil {
+	if _, err := service.UnlinkIdentity(context.Background(), unlinkTestOwner(false), 2); err != nil {
 		t.Fatalf("UnlinkIdentity() unexpected error: %v", err)
 	}
 	if identities.deletedID != 2 {
@@ -136,7 +136,7 @@ func TestOIDCUnlinkIdentitySurfacesTheStoresLastSignInRefusal(t *testing.T) {
 			deleteErr: models.ErrOIDCUnlinkLastSignIn,
 		}
 		service := newUnlinkTestService(tc.mode, identities)
-		if err := service.UnlinkIdentity(context.Background(), unlinkTestOwner(false), 2); !errors.Is(err, ErrOIDCUnlinkLastSignIn) {
+		if _, err := service.UnlinkIdentity(context.Background(), unlinkTestOwner(false), 2); !errors.Is(err, ErrOIDCUnlinkLastSignIn) {
 			t.Fatalf("%s: expected ErrOIDCUnlinkLastSignIn from the store's refusal, got %v", name, err)
 		}
 		if identities.deleteLocalSignInOpen != tc.wantOpen {
@@ -150,7 +150,7 @@ func TestOIDCUnlinkIdentityRequiresEnabledProvider(t *testing.T) {
 	t.Parallel()
 
 	service := NewOIDCLoginService(&stubOIDCProviderClient{}, &stubOIDCIdentityStore{}, &stubOIDCUserStore{}, nil)
-	if err := service.UnlinkIdentity(context.Background(), unlinkTestOwner(true), 1); !errors.Is(err, ErrOIDCDisabled) {
+	if _, err := service.UnlinkIdentity(context.Background(), unlinkTestOwner(true), 1); !errors.Is(err, ErrOIDCDisabled) {
 		t.Fatalf("expected ErrOIDCDisabled, got %v", err)
 	}
 }
@@ -163,7 +163,7 @@ func TestOIDCUnlinkIdentityMapsStorageFaultsToResolveFailed(t *testing.T) {
 
 	listFault := &stubOIDCIdentityStore{listErr: errors.New("db fault")}
 	service := newUnlinkTestService(security.OIDCLoginModeHybrid, listFault)
-	if err := service.UnlinkIdentity(context.Background(), unlinkTestOwner(true), 1); !errors.Is(err, ErrOIDCIdentityResolveFailed) {
+	if _, err := service.UnlinkIdentity(context.Background(), unlinkTestOwner(true), 1); !errors.Is(err, ErrOIDCIdentityResolveFailed) {
 		t.Fatalf("list fault: expected ErrOIDCIdentityResolveFailed, got %v", err)
 	}
 
@@ -172,7 +172,7 @@ func TestOIDCUnlinkIdentityMapsStorageFaultsToResolveFailed(t *testing.T) {
 		deleteErr: errors.New("db fault"),
 	}
 	service = newUnlinkTestService(security.OIDCLoginModeHybrid, deleteFault)
-	if err := service.UnlinkIdentity(context.Background(), unlinkTestOwner(true), 1); !errors.Is(err, ErrOIDCIdentityResolveFailed) {
+	if _, err := service.UnlinkIdentity(context.Background(), unlinkTestOwner(true), 1); !errors.Is(err, ErrOIDCIdentityResolveFailed) {
 		t.Fatalf("delete fault: expected ErrOIDCIdentityResolveFailed, got %v", err)
 	}
 }
@@ -188,7 +188,7 @@ func TestOIDCUnlinkIdentityReportsNotFoundWhenTheDeleteLosesARace(t *testing.T) 
 		deleteNotFound: true,
 	}
 	service := newUnlinkTestService(security.OIDCLoginModeHybrid, identities)
-	if err := service.UnlinkIdentity(context.Background(), unlinkTestOwner(true), 1); !errors.Is(err, ErrOIDCIdentityNotFound) {
+	if _, err := service.UnlinkIdentity(context.Background(), unlinkTestOwner(true), 1); !errors.Is(err, ErrOIDCIdentityNotFound) {
 		t.Fatalf("expected ErrOIDCIdentityNotFound for a delete that finds nothing, got %v", err)
 	}
 }

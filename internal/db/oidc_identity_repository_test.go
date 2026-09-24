@@ -88,7 +88,7 @@ func TestOIDCIdentityRepositoryLinkAndUnlinkRevokeTheOwnersSessions(t *testing.T
 	}
 
 	// Another owner's id: nothing deleted, nobody's version moves.
-	deleted, err := repository.DeleteForUserAndRevokeSessions(ctx, 2, identity.ID, true)
+	deleted, err := repository.DeleteForUserAndRevokeSessions(ctx, 2, identity.ID, version(2), true)
 	if err != nil || deleted {
 		t.Fatalf("expected a foreign-owner unlink to delete nothing, got deleted=%v err=%v", deleted, err)
 	}
@@ -99,7 +99,7 @@ func TestOIDCIdentityRepositoryLinkAndUnlinkRevokeTheOwnersSessions(t *testing.T
 		t.Fatal("expected the identity to survive another owner's unlink")
 	}
 
-	deleted, err = repository.DeleteForUserAndRevokeSessions(ctx, 1, identity.ID, true)
+	deleted, err = repository.DeleteForUserAndRevokeSessions(ctx, 1, identity.ID, version(1), true)
 	if err != nil || !deleted {
 		t.Fatalf("expected the owner's unlink to delete, got deleted=%v err=%v", deleted, err)
 	}
@@ -127,7 +127,7 @@ func TestOIDCIdentityRepositoryRefusesToDeleteTheLastSignInMethod(t *testing.T) 
 	}
 
 	// One of two may go even with local sign-in closed.
-	deleted, err := repository.DeleteForUserAndRevokeSessions(ctx, 1, first.ID, false)
+	deleted, err := repository.DeleteForUserAndRevokeSessions(ctx, 1, first.ID, version(1), false)
 	if err != nil || !deleted {
 		t.Fatalf("expected one of two identities to be removable, got deleted=%v err=%v", deleted, err)
 	}
@@ -137,7 +137,7 @@ func TestOIDCIdentityRepositoryRefusesToDeleteTheLastSignInMethod(t *testing.T) 
 
 	// The last one may not while local sign-in is closed, although the account
 	// holds a password.
-	deleted, err = repository.DeleteForUserAndRevokeSessions(ctx, 1, second.ID, false)
+	deleted, err = repository.DeleteForUserAndRevokeSessions(ctx, 1, second.ID, version(1), false)
 	if !errors.Is(err, models.ErrOIDCUnlinkLastSignIn) || deleted {
 		t.Fatalf("expected ErrOIDCUnlinkLastSignIn for the last identity, got deleted=%v err=%v", deleted, err)
 	}
@@ -149,7 +149,7 @@ func TestOIDCIdentityRepositoryRefusesToDeleteTheLastSignInMethod(t *testing.T) 
 	}
 
 	// With local sign-in open and a stored password, the account keeps a way in.
-	deleted, err = repository.DeleteForUserAndRevokeSessions(ctx, 1, second.ID, true)
+	deleted, err = repository.DeleteForUserAndRevokeSessions(ctx, 1, second.ID, version(1), true)
 	if err != nil || !deleted {
 		t.Fatalf("expected the last identity to be removable with a usable password, got deleted=%v err=%v", deleted, err)
 	}
@@ -190,6 +190,10 @@ func TestOIDCIdentityRepositoryConcurrentUnlinksKeepOneSignInMethod(t *testing.T
 			}
 		}
 
+		var from int
+		if err := database.Raw(`SELECT auth_session_version FROM users WHERE id = ?`, userID).Scan(&from).Error; err != nil {
+			t.Fatalf("round %d: load version: %v", round, err)
+		}
 		var wg sync.WaitGroup
 		start := make(chan struct{})
 		results := make([]error, len(pair))
@@ -199,18 +203,24 @@ func TestOIDCIdentityRepositoryConcurrentUnlinksKeepOneSignInMethod(t *testing.T
 			go func(index int) {
 				defer wg.Done()
 				<-start
-				deleted[index], results[index] = repository.DeleteForUserAndRevokeSessions(ctx, userID, pair[index].ID, false)
+				deleted[index], results[index] = repository.DeleteForUserAndRevokeSessions(ctx, userID, pair[index].ID, from, false)
 			}(index)
 		}
 		close(start)
 		wg.Wait()
 
+		// Both contenders verified the same version, so the loser is refused
+		// by the version compare-and-set before it counts anything; a caller
+		// that re-reads the version in between meets the last-sign-in check
+		// instead, which the sequential test above pins on its own. Either
+		// refusal keeps the account's way in.
 		wins, refusals := 0, 0
 		for index := range pair {
 			switch {
 			case results[index] == nil && deleted[index]:
 				wins++
-			case errors.Is(results[index], models.ErrOIDCUnlinkLastSignIn):
+			case errors.Is(results[index], models.ErrOIDCUnlinkLastSignIn),
+				errors.Is(results[index], models.ErrAuthSessionVersionChanged):
 				refusals++
 			default:
 				t.Fatalf("round %d: unexpected outcome deleted=%v err=%v", round, deleted[index], results[index])
@@ -298,13 +308,13 @@ func TestOIDCIdentityRepositoryDeleteRefusesAZeroIDOrAMissingOwner(t *testing.T)
 	repository, _ := seedOIDCRepositoryOwners(t)
 	ctx := context.Background()
 
-	if deleted, err := repository.DeleteForUserAndRevokeSessions(ctx, 0, 5, true); err != nil || deleted {
+	if deleted, err := repository.DeleteForUserAndRevokeSessions(ctx, 0, 5, 1, true); err != nil || deleted {
 		t.Fatalf("expected a zero user id to delete nothing, got deleted=%v err=%v", deleted, err)
 	}
-	if deleted, err := repository.DeleteForUserAndRevokeSessions(ctx, 1, 0, true); err != nil || deleted {
+	if deleted, err := repository.DeleteForUserAndRevokeSessions(ctx, 1, 0, 1, true); err != nil || deleted {
 		t.Fatalf("expected a zero identity id to delete nothing, got deleted=%v err=%v", deleted, err)
 	}
-	if deleted, err := repository.DeleteForUserAndRevokeSessions(ctx, 99, 5, true); err != nil || deleted {
+	if deleted, err := repository.DeleteForUserAndRevokeSessions(ctx, 99, 5, 1, true); err != nil || deleted {
 		t.Fatalf("expected an unlink naming a missing owner to delete nothing, got deleted=%v err=%v", deleted, err)
 	}
 }

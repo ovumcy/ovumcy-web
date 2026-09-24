@@ -38,7 +38,7 @@ func TestClearAllDataRollsBackWipeAndVersionBumpTogether(t *testing.T) {
 		t.Fatalf("drop symptom_types: %v", err)
 	}
 
-	if err := repo.ClearAllDataAndResetSettings(context.Background(), user.ID); err == nil {
+	if err := repo.ClearAllDataAndResetSettings(context.Background(), user.ID, storedSessionVersionForTest(t, repo, user.ID)); err == nil {
 		t.Fatal("expected clear-data to fail once symptom_types is gone")
 	}
 
@@ -79,7 +79,7 @@ func TestClearAllDataResetsDisplayPreferences(t *testing.T) {
 		t.Fatalf("seed preferences: %v", err)
 	}
 
-	if err := repo.ClearAllDataAndResetSettings(context.Background(), user.ID); err != nil {
+	if err := repo.ClearAllDataAndResetSettings(context.Background(), user.ID, storedSessionVersionForTest(t, repo, user.ID)); err != nil {
 		t.Fatalf("ClearAllDataAndResetSettings: %v", err)
 	}
 
@@ -117,7 +117,7 @@ func TestClearAllDataPreservesInterfaceLanguage(t *testing.T) {
 		t.Fatalf("seed timezone: %v", err)
 	}
 
-	if err := repo.ClearAllDataAndResetSettings(context.Background(), user.ID); err != nil {
+	if err := repo.ClearAllDataAndResetSettings(context.Background(), user.ID, storedSessionVersionForTest(t, repo, user.ID)); err != nil {
 		t.Fatalf("ClearAllDataAndResetSettings: %v", err)
 	}
 
@@ -158,7 +158,7 @@ func TestClearAllDataResetsTimezoneAndKeepsIdentity(t *testing.T) {
 		t.Fatalf("expected seeded timezone Europe/Belgrade, got %q", before.Timezone)
 	}
 
-	if err := repo.ClearAllDataAndResetSettings(context.Background(), user.ID); err != nil {
+	if err := repo.ClearAllDataAndResetSettings(context.Background(), user.ID, storedSessionVersionForTest(t, repo, user.ID)); err != nil {
 		t.Fatalf("ClearAllDataAndResetSettings: %v", err)
 	}
 

@@ -92,7 +92,7 @@ type OIDCIdentityStore interface {
 	// row with that id belongs to userID. Inside that write it refuses, with
 	// ErrOIDCUnlinkLastSignIn, a delete that leaves no identity and no usable
 	// local password (localSignInOpen: the instance accepts password sign-in).
-	DeleteForUserAndRevokeSessions(ctx context.Context, userID uint, identityID uint, localSignInOpen bool) (bool, error)
+	DeleteForUserAndRevokeSessions(ctx context.Context, userID uint, identityID uint, expectedSessionVersion int, localSignInOpen bool) (bool, error)
 	TouchLastUsed(ctx context.Context, identityID uint, userID uint, usedAt time.Time) error
 }
 
@@ -530,17 +530,25 @@ func (service *OIDCLoginService) ListLinkedIdentities(ctx context.Context, userI
 //     instance (OIDC_LOGIN_MODE=hybrid);
 //   - the delete bumps AuthSessionVersion in the same write, so every session
 //     issued before the unlink — including one a removed identity minted —
-//     is revoked.
-func (service *OIDCLoginService) UnlinkIdentity(ctx context.Context, user models.User, identityID uint) error {
+//     is revoked;
+//   - the delete is written only from the session version user carries (the
+//     one the request was authenticated with): an account revoked by another
+//     write in between is left as it was and the result is
+//     ErrAuthSessionVersionChanged.
+//
+// On success it returns the session version the delete left the account at; a
+// caller re-issuing this device's session does so only while a fresh read
+// still shows it.
+func (service *OIDCLoginService) UnlinkIdentity(ctx context.Context, user models.User, identityID uint) (int, error) {
 	if !service.Enabled() {
-		return ErrOIDCDisabled
+		return 0, ErrOIDCDisabled
 	}
 	if user.ID == 0 || identityID == 0 {
-		return ErrOIDCIdentityNotFound
+		return 0, ErrOIDCIdentityNotFound
 	}
 	identities, err := service.identities.ListByUser(ctx, user.ID)
 	if err != nil {
-		return ErrOIDCIdentityResolveFailed
+		return 0, ErrOIDCIdentityResolveFailed
 	}
 	owned := false
 	for _, identity := range identities {
@@ -550,29 +558,33 @@ func (service *OIDCLoginService) UnlinkIdentity(ctx context.Context, user models
 		}
 	}
 	if !owned {
-		return ErrOIDCIdentityNotFound
+		return 0, ErrOIDCIdentityNotFound
 	}
 	localSignInOpen := service.LocalPublicAuthEnabled()
 	localSignInAvailable := user.LocalAuthEnabled &&
 		strings.TrimSpace(user.PasswordHash) != "" &&
 		localSignInOpen
 	if len(identities) <= 1 && !localSignInAvailable {
-		return ErrOIDCUnlinkLastSignIn
+		return 0, ErrOIDCUnlinkLastSignIn
 	}
 	// The read above answers the common case; the store re-checks the same rule
 	// inside the delete transaction, which is what holds against a concurrent
 	// unlink of the account's other identity.
-	deleted, err := service.identities.DeleteForUserAndRevokeSessions(ctx, user.ID, identityID, localSignInOpen)
+	expectedSessionVersion := NormalizeAuthSessionVersion(user.AuthSessionVersion)
+	deleted, err := service.identities.DeleteForUserAndRevokeSessions(ctx, user.ID, identityID, expectedSessionVersion, localSignInOpen)
 	if errors.Is(err, ErrOIDCUnlinkLastSignIn) {
-		return ErrOIDCUnlinkLastSignIn
+		return 0, ErrOIDCUnlinkLastSignIn
+	}
+	if errors.Is(err, ErrAuthSessionVersionChanged) {
+		return 0, ErrAuthSessionVersionChanged
 	}
 	if err != nil {
-		return ErrOIDCIdentityResolveFailed
+		return 0, ErrOIDCIdentityResolveFailed
 	}
 	if !deleted {
-		return ErrOIDCIdentityNotFound
+		return 0, ErrOIDCIdentityNotFound
 	}
-	return nil
+	return expectedSessionVersion + 1, nil
 }
 
 // CompleteIdentityLinkReauth authorises a NEW OIDC identity link from an
@@ -589,29 +601,29 @@ func (service *OIDCLoginService) UnlinkIdentity(ctx context.Context, user models
 // "already linked" check is not.
 //
 // expectedSessionVersion is the version of the session that started the
-// step-up; see ConfirmAndLinkIdentity.
-func (service *OIDCLoginService) CompleteIdentityLinkReauth(ctx context.Context, code string, codeVerifier string, expectedNonce string, targetUserID uint, expectedSessionVersion int, maxAuthAge time.Duration, now time.Time) error {
+// step-up; see ConfirmAndLinkIdentity, whose returned session version this
+// passes back (an already-linked no-op leaves expectedSessionVersion).
+func (service *OIDCLoginService) CompleteIdentityLinkReauth(ctx context.Context, code string, codeVerifier string, expectedNonce string, targetUserID uint, expectedSessionVersion int, maxAuthAge time.Duration, now time.Time) (int, error) {
 	if !service.Enabled() {
-		return ErrOIDCDisabled
+		return 0, ErrOIDCDisabled
 	}
 	if targetUserID == 0 {
-		return ErrOIDCLinkFailed
+		return 0, ErrOIDCLinkFailed
 	}
 	if strings.TrimSpace(code) == "" || strings.TrimSpace(codeVerifier) == "" || strings.TrimSpace(expectedNonce) == "" {
-		return ErrOIDCCallbackInvalid
+		return 0, ErrOIDCCallbackInvalid
 	}
 
 	exchange, err := service.client.ExchangeCode(ctx, code, codeVerifier, expectedNonce)
 	if err != nil {
-		return ErrOIDCAuthenticationFailed
+		return 0, ErrOIDCAuthenticationFailed
 	}
 
 	if err := reauthFreshnessVerdict(exchange.Claims, maxAuthAge, now); err != nil {
-		return err
+		return 0, err
 	}
 
-	_, err = service.ConfirmAndLinkIdentity(ctx, targetUserID, expectedSessionVersion, exchange.Claims, now)
-	return err
+	return service.ConfirmAndLinkIdentity(ctx, targetUserID, expectedSessionVersion, exchange.Claims, now)
 }
 
 func (service *OIDCLoginService) authenticateLinkedIdentity(ctx context.Context, exchange security.OIDCExchangeResult, loginTime time.Time) (OIDCLoginResult, bool, error) {

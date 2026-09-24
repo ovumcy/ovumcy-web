@@ -76,7 +76,14 @@ func TestCompleteOIDCLinkConfirmationRefusesASessionARevocationCommittedMidwayWo
 					t.Errorf("GenerateSetupKey: %v", err)
 					return
 				}
-				if err := totpService.EnableTOTP(context.Background(), user.ID, key.Secret()); err != nil {
+				// Another device's re-enrollment: it was authenticated at the
+				// version the account holds right now.
+				var current models.User
+				if err := database.First(&current, user.ID).Error; err != nil {
+					t.Errorf("load the account before re-enrolling: %v", err)
+					return
+				}
+				if err := totpService.EnableTOTP(context.Background(), user.ID, current.AuthSessionVersion, key.Secret()); err != nil {
 					t.Errorf("EnableTOTP: %v", err)
 				}
 			}

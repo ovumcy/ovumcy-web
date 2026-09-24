@@ -27,16 +27,18 @@ func setupTOTPForUser(t *testing.T, database *gorm.DB, userID uint, secretKey []
 	if err != nil {
 		t.Fatalf("GenerateSetupKey: %v", err)
 	}
-	if err := svc.EnableTOTP(context.Background(), userID, key.Secret()); err != nil {
+	if err := svc.EnableTOTP(context.Background(), userID, 1, key.Secret()); err != nil {
 		t.Fatalf("EnableTOTP: %v", err)
 	}
 	return key.Secret()
 }
 
 // dbUserRepoForTest adapts *gorm.DB to services.TOTPUserRepository for test setup.
+// Its TOTP write bumps the session version unconditionally: it seeds fixtures,
+// and the compare-and-set the production repository runs is not its subject.
 type dbUserRepoForTest struct{ db *gorm.DB }
 
-func (r *dbUserRepoForTest) UpdateTOTPFieldsAndRevokeSessions(ctx context.Context, userID uint, encryptedSecret string, enabled bool) error {
+func (r *dbUserRepoForTest) UpdateTOTPFieldsAndRevokeSessions(ctx context.Context, userID uint, _ int, encryptedSecret string, enabled bool) error {
 	return r.db.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
 		"totp_secret":          encryptedSecret,
 		"totp_enabled":         enabled,

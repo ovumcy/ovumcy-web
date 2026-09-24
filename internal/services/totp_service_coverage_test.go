@@ -39,7 +39,7 @@ func totpserviceCovEnroll(t *testing.T, svc *TOTPService, repo *stubTOTPUserRepo
 	if err != nil {
 		t.Fatalf("GenerateSetupKey: %v", err)
 	}
-	if err := svc.EnableTOTP(context.Background(), userID, key.Secret()); err != nil {
+	if err := svc.EnableTOTP(context.Background(), userID, 1, key.Secret()); err != nil {
 		t.Fatalf("EnableTOTP(%d): %v", userID, err)
 	}
 	return key.Secret(), repo.updatedSecret

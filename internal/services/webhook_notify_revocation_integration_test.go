@@ -195,7 +195,11 @@ func TestNotifyPassCannotDeliverAfterTheOwnerRevoked(t *testing.T) {
 		{
 			name: "all data cleared",
 			revoke: func(t *testing.T, fixture webhookRevocationFixture) {
-				if err := fixture.repo.ClearAllDataAndResetSettings(context.Background(), fixture.ownerID); err != nil {
+				current, err := fixture.repo.FindByID(context.Background(), fixture.ownerID)
+				if err != nil {
+					t.Fatalf("load the owner before clearing data: %v", err)
+				}
+				if err := fixture.repo.ClearAllDataAndResetSettings(context.Background(), fixture.ownerID, current.AuthSessionVersion); err != nil {
 					t.Fatalf("clear all data: %v", err)
 				}
 			},

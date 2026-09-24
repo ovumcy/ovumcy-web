@@ -44,7 +44,7 @@ func TestTOTPService_ValidateCode_RejectsCiphertextFromAnotherUser(t *testing.T)
 	if err != nil {
 		t.Fatalf("GenerateSetupKey user 1: %v", err)
 	}
-	if err := svc.EnableTOTP(context.Background(), 1, keyOne.Secret()); err != nil {
+	if err := svc.EnableTOTP(context.Background(), 1, 1, keyOne.Secret()); err != nil {
 		t.Fatalf("EnableTOTP user 1: %v", err)
 	}
 	user1Ciphertext := repo.updatedSecret

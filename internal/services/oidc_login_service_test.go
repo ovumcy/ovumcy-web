@@ -128,7 +128,7 @@ func (stub *stubOIDCIdentityStore) ListByUser(_ context.Context, userID uint) ([
 	return owned, nil
 }
 
-func (stub *stubOIDCIdentityStore) DeleteForUserAndRevokeSessions(_ context.Context, userID uint, identityID uint, localSignInOpen bool) (bool, error) {
+func (stub *stubOIDCIdentityStore) DeleteForUserAndRevokeSessions(_ context.Context, userID uint, identityID uint, _ int, localSignInOpen bool) (bool, error) {
 	stub.deleteCalls++
 	stub.deleteLocalSignInOpen = localSignInOpen
 	if stub.deleteErr != nil {

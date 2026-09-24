@@ -292,6 +292,22 @@ func (handler *Handler) refreshCurrentSession(c fiber.Ctx, user *models.User, sc
 	return APIErrorSpec{}, true
 }
 
+// refuseSessionRevokedDuring answers a posture change that found this
+// request's session already revoked: another write (a password change, a TOTP
+// re-enrollment, a sign-out everywhere) moved the account's session version
+// after the request was authenticated, so the change was refused — or, for an
+// identity link or unlink, went in but can no longer be carried into a session
+// that would outlive that revocation. The session is cleared rather than
+// re-issued, the event is recorded as session_revoked_during_<action>, and the
+// returned spec is answered on whichever channel the caller uses.
+func (handler *Handler) refuseSessionRevokedDuring(c fiber.Ctx, scope string, action string) APIErrorSpec {
+	handler.clearAuthCookie(c)
+	handler.logSecurityEvent(c, scope, "session_revoked_during_"+action)
+	spec := authSessionCreateErrorSpec()
+	handler.logSecurityError(c, scope, spec)
+	return spec
+}
+
 // installRefreshedSession writes a session prepared for the request's own
 // user in place of the one it arrived with, and carries that session's
 // provider-logout state over to the new id. Nothing here can refuse: a failed
