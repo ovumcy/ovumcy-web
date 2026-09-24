@@ -54,15 +54,22 @@ func (repo *OIDCIdentityRepository) Create(ctx context.Context, identity *models
 // that account's auth_session_version in the same transaction: a new sign-in
 // identity changes how the account can be entered, so every session issued
 // before the link is invalidated together with the write that made it.
-func (repo *OIDCIdentityRepository) CreateAndRevokeSessions(ctx context.Context, identity *models.OIDCIdentity) error {
+//
+// The bump is a compare-and-set from expectedSessionVersion, the version the
+// caller verified its factors against, to the next one. An account found at
+// any other version was revoked by another write in between (a password
+// change, a TOTP re-enrollment); the link then rolls back with
+// models.ErrAuthSessionVersionChanged, because the caller would otherwise
+// mint a session at the version that revocation produced and survive it.
+func (repo *OIDCIdentityRepository) CreateAndRevokeSessions(ctx context.Context, identity *models.OIDCIdentity, expectedSessionVersion int) error {
 	if identity == nil || identity.UserID == 0 {
 		return errOIDCIdentityOwnerRequired
 	}
 	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := classifyOIDCIdentityCreateError(tx.Create(identity).Error); err != nil {
+		if err := bumpAuthSessionVersionFromTx(tx, identity.UserID, expectedSessionVersion); err != nil {
 			return err
 		}
-		return bumpAuthSessionVersionTx(tx, identity.UserID)
+		return classifyOIDCIdentityCreateError(tx.Create(identity).Error)
 	})
 }
 
@@ -187,4 +194,34 @@ func bumpAuthSessionVersionTx(tx *gorm.DB, userID uint) error {
 		return errOIDCIdentityOwnerRequired
 	}
 	return nil
+}
+
+// bumpAuthSessionVersionFromTx moves the account from expectedSessionVersion to
+// the next version inside tx, or refuses: errOIDCIdentityOwnerRequired when the
+// account does not exist, models.ErrAuthSessionVersionChanged when it holds any
+// other version. A legacy row still holding 0 reads as version 1, so it matches
+// an expected 1 and is written as 2 — a literal, not an increment, or the
+// bumped row would read as the version it was revoking.
+func bumpAuthSessionVersionFromTx(tx *gorm.DB, userID uint, expectedSessionVersion int) error {
+	if expectedSessionVersion < 1 {
+		expectedSessionVersion = 1
+	}
+	result := tx.Model(&models.User{}).
+		Where("id = ?", userID).
+		Where("(auth_session_version = ? OR (? = 1 AND auth_session_version <= 0))", expectedSessionVersion, expectedSessionVersion).
+		UpdateColumn("auth_session_version", expectedSessionVersion+1)
+	if result.Error != nil {
+		return result.Error // codecov:ignore -- DB-layer error on the session-version UPDATE; not reachable in unit tests
+	}
+	if result.RowsAffected == 1 {
+		return nil
+	}
+	var owners int64
+	if err := tx.Model(&models.User{}).Where("id = ?", userID).Count(&owners).Error; err != nil {
+		return err // codecov:ignore -- DB-layer error counting the account after a refused bump; not reachable in unit tests
+	}
+	if owners == 0 {
+		return errOIDCIdentityOwnerRequired
+	}
+	return models.ErrAuthSessionVersionChanged
 }

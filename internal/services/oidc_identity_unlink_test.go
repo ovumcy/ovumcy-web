@@ -214,7 +214,7 @@ func TestOIDCConfirmAndLinkIdentitySurfacesAStorageFaultAsLinkFailed(t *testing.
 	identities := &stubOIDCIdentityStore{createErr: errors.New("db fault")}
 	service := newUnlinkTestService(security.OIDCLoginModeHybrid, identities)
 	claims := security.OIDCClaims{Issuer: "https://id.example.com", Subject: "fresh-sub"}
-	if err := service.ConfirmAndLinkIdentity(context.Background(), 7, claims, time.Now()); !errors.Is(err, ErrOIDCLinkFailed) {
+	if _, err := service.ConfirmAndLinkIdentity(context.Background(), 7, 1, claims, time.Now()); !errors.Is(err, ErrOIDCLinkFailed) {
 		t.Fatalf("expected ErrOIDCLinkFailed, got %v", err)
 	}
 }
@@ -271,7 +271,7 @@ func TestOIDCConfirmAndLinkIdentityRevokesSessionsInTheSameWrite(t *testing.T) {
 	identities := &stubOIDCIdentityStore{}
 	service := newUnlinkTestService(security.OIDCLoginModeHybrid, identities)
 	claims := security.OIDCClaims{Issuer: "https://id.example.com", Subject: "fresh-sub"}
-	if err := service.ConfirmAndLinkIdentity(context.Background(), 7, claims, time.Now()); err != nil {
+	if _, err := service.ConfirmAndLinkIdentity(context.Background(), 7, 1, claims, time.Now()); err != nil {
 		t.Fatalf("ConfirmAndLinkIdentity() unexpected error: %v", err)
 	}
 	if !identities.revokedOnCreate {
@@ -291,7 +291,7 @@ func TestOIDCBlankSubjectIsRefusedAtLinkAndSignIn(t *testing.T) {
 	} {
 		identities := &stubOIDCIdentityStore{}
 		service := newUnlinkTestService(security.OIDCLoginModeHybrid, identities)
-		if err := service.ConfirmAndLinkIdentity(context.Background(), 7, claims, time.Now()); !errors.Is(err, ErrOIDCLinkFailed) {
+		if _, err := service.ConfirmAndLinkIdentity(context.Background(), 7, 1, claims, time.Now()); !errors.Is(err, ErrOIDCLinkFailed) {
 			t.Fatalf("%s: link expected ErrOIDCLinkFailed, got %v", name, err)
 		}
 

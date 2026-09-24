@@ -138,7 +138,7 @@ func (handler *Handler) completeOIDCIdentityLinkStepup(c fiber.Ctx, state oidcSt
 
 	ctx, cancel := oidcRequestContext(c)
 	defer cancel()
-	if err := handler.oidcService.CompleteIdentityLinkReauth(ctx, code, state.CodeVerifier, state.Nonce, user.ID, stepupReauthMaxAge, time.Now()); err != nil {
+	if err := handler.oidcService.CompleteIdentityLinkReauth(ctx, code, state.CodeVerifier, state.Nonce, user.ID, user.AuthSessionVersion, stepupReauthMaxAge, time.Now()); err != nil {
 		spec := mapOIDCIdentityLinkReauthError(err)
 		handler.logSecurityError(c, oidcIdentityLinkStepupAction, spec)
 		return handler.redirectSettingsRefusal(c, spec)

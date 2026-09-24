@@ -142,6 +142,12 @@ func (handler *Handler) CompleteOIDCLinkConfirmation(c fiber.Ctx) error {
 		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
+	// The version the password and TOTP checks below are verified against. The
+	// link is written only from it (ConfirmAndLinkIdentity), so a revocation
+	// committed while those checks run — a TOTP re-enrollment, a password
+	// change — refuses the link instead of being outlived by the session minted
+	// at the end of this handler.
+	verifiedSessionVersion := targetUser.AuthSessionVersion
 
 	// Verify the password through the same LoginService path as the login
 	// form, so link-confirm shares the per-(client, identity) failure budget
@@ -202,7 +208,8 @@ func (handler *Handler) CompleteOIDCLinkConfirmation(c fiber.Ctx) error {
 		Subject: payload.Subject,
 		Email:   payload.Email,
 	}
-	if err := handler.oidcService.ConfirmAndLinkIdentity(c.Context(), payload.TargetUserID, claims, time.Now()); err != nil {
+	linkedSessionVersion, err := handler.oidcService.ConfirmAndLinkIdentity(c.Context(), payload.TargetUserID, verifiedSessionVersion, claims, time.Now())
+	if err != nil {
 		handler.clearOIDCLinkPendingCookie(c)
 		spec := mapOIDCLinkConfirmError(err)
 		handler.logSecurityError(c, "auth.oidc_link_confirm", spec)
@@ -239,8 +246,9 @@ func (handler *Handler) CompleteOIDCLinkConfirmation(c fiber.Ctx) error {
 	// ConfirmAndLinkIdentity bumped AuthSessionVersion in the same write as the
 	// link, so the targetUser read above now carries a revoked version: a
 	// session minted from it is refused on the very next request. Reload the
-	// account and mint at the stored version, as the Settings link does
-	// (reissueSessionAfterIdentityChange).
+	// account and mint at the stored version — but only while it is still the
+	// version the link left: a revocation committed after the link write would
+	// otherwise be carried into the new session and outlived by it.
 	linkedUser, err := handler.authService.FindByID(c.Context(), payload.TargetUserID)
 	if err != nil {
 		// codecov:ignore:start -- the account was resolved by this same request;
@@ -250,6 +258,13 @@ func (handler *Handler) CompleteOIDCLinkConfirmation(c fiber.Ctx) error {
 		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 		// codecov:ignore:end
+	}
+	if !services.AuthSessionVersionsMatch(linkedSessionVersion, linkedUser.AuthSessionVersion) {
+		handler.logSecurityEvent(c, "auth.oidc_link_confirm", "session_revoked_during_link")
+		spec := authSessionCreateErrorSpec()
+		handler.logSecurityError(c, "auth.oidc_link_confirm", spec)
+		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 	targetUser = linkedUser
 

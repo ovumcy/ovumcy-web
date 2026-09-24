@@ -35,6 +35,7 @@ func TestMapOIDCIdentityLinkReauthError(t *testing.T) {
 		// omits auth_time the stale copy's "try again" is a loop with no exit.
 		{name: "missing auth_time maps to its own refusal", err: services.ErrOIDCReauthAuthTimeMissing, want: settingsOIDCReauthAuthTimeMissingErrorSpec()},
 		{name: "cross-user claim maps to claimed", err: services.ErrOIDCLinkFailed, want: settingsOIDCIdentityLinkClaimedErrorSpec()},
+		{name: "sessions revoked since the step-up began maps to session create", err: services.ErrAuthSessionVersionChanged, want: authSessionCreateErrorSpec()},
 		{name: "oidc disabled maps to unavailable", err: services.ErrOIDCDisabled, want: authOIDCUnavailableErrorSpec()},
 		{name: "oidc unavailable maps to unavailable", err: services.ErrOIDCUnavailable, want: authOIDCUnavailableErrorSpec()},
 		{name: "identity resolve failed maps to unavailable", err: services.ErrOIDCIdentityResolveFailed, want: authOIDCUnavailableErrorSpec()},
@@ -378,6 +379,9 @@ func TestOIDCIdentityLinkStepupCompletesAndCreatesTheBinding(t *testing.T) {
 
 	if fixture.oidcStub.lastIdentityLinkUserID != fixture.user.ID {
 		t.Fatalf("expected CompleteIdentityLinkReauth to run for user %d, got %d", fixture.user.ID, fixture.oidcStub.lastIdentityLinkUserID)
+	}
+	if want := services.NormalizeAuthSessionVersion(fixture.user.AuthSessionVersion); services.NormalizeAuthSessionVersion(fixture.oidcStub.lastIdentityLinkSessionVersion) != want {
+		t.Fatalf("expected the link to revoke from the step-up session's version %d, got %d", want, fixture.oidcStub.lastIdentityLinkSessionVersion)
 	}
 	fixture.oidcStub.assertIdentityLinkExchangeMatchesStart(t, "callback-code")
 	if fixture.oidcStub.lastConfirmLinkUserID != fixture.user.ID {

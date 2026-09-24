@@ -78,6 +78,8 @@ type stubOIDCWorkflowService struct {
 	lastIdentityLinkUserID       uint
 	lastIdentityLinkMaxAge       time.Duration
 
+	lastIdentityLinkSessionVersion int
+
 	// afterIdentityLinkConfirm, when set, runs once ConfirmAndLinkIdentity's
 	// stand-in has recorded the call and right before the stub returns — the
 	// same point the real service method hands control back to
@@ -186,10 +188,15 @@ func (stub *stubOIDCWorkflowService) ValidateReauthExchange(_ context.Context, c
 	return stub.reauthErr
 }
 
-func (stub *stubOIDCWorkflowService) ConfirmAndLinkIdentity(ctx context.Context, targetUserID uint, claims security.OIDCClaims, _ time.Time) error {
+// ConfirmAndLinkIdentity writes nothing, so it reports the account left at the
+// version it was handed — what the real service answers for an existing link.
+func (stub *stubOIDCWorkflowService) ConfirmAndLinkIdentity(ctx context.Context, targetUserID uint, expectedSessionVersion int, claims security.OIDCClaims, _ time.Time) (int, error) {
 	stub.lastConfirmLinkUserID = targetUserID
 	stub.lastConfirmLinkClaims = claims
-	return stub.confirmLinkErr
+	if stub.confirmLinkErr != nil {
+		return 0, stub.confirmLinkErr
+	}
+	return services.NormalizeAuthSessionVersion(expectedSessionVersion), nil
 }
 
 // UnlinkIdentity records what the handler asked for and answers unlinkErr.
@@ -246,7 +253,8 @@ func (stub *stubOIDCWorkflowService) ListLinkedIdentities(_ context.Context, _ u
 	return stub.linkedIdentities, stub.listLinkedErr
 }
 
-func (stub *stubOIDCWorkflowService) CompleteIdentityLinkReauth(_ context.Context, code string, codeVerifier string, expectedNonce string, targetUserID uint, maxAuthAge time.Duration, _ time.Time) error {
+func (stub *stubOIDCWorkflowService) CompleteIdentityLinkReauth(_ context.Context, code string, codeVerifier string, expectedNonce string, targetUserID uint, expectedSessionVersion int, maxAuthAge time.Duration, _ time.Time) error {
+	stub.lastIdentityLinkSessionVersion = expectedSessionVersion
 	stub.lastIdentityLinkCode = code
 	stub.lastIdentityLinkCodeVerifier = codeVerifier
 	stub.lastIdentityLinkNonce = expectedNonce
@@ -1794,6 +1802,7 @@ func TestMapOIDCLinkConfirmError(t *testing.T) {
 		{name: "identity resolve failed maps to unavailable", err: services.ErrOIDCIdentityResolveFailed, want: authOIDCUnavailableErrorSpec()},
 		{name: "oidc disabled maps to unavailable", err: services.ErrOIDCDisabled, want: authOIDCUnavailableErrorSpec()},
 		{name: "oidc unavailable maps to unavailable", err: services.ErrOIDCUnavailable, want: authOIDCUnavailableErrorSpec()},
+		{name: "sessions revoked since verification maps to session create", err: services.ErrAuthSessionVersionChanged, want: authSessionCreateErrorSpec()},
 		{name: "unknown error falls back to authentication failed", err: errors.New("unmapped storage error"), want: authOIDCAuthenticationFailedErrorSpec()},
 	}
 

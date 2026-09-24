@@ -43,4 +43,11 @@ var (
 	// delete transaction, after locking the account row, so two concurrent
 	// unlinks cannot each count the other's identity and remove both.
 	ErrOIDCUnlinkLastSignIn = errors.New("oidc unlink would remove the last sign-in method")
+
+	// ErrAuthSessionVersionChanged reports that a revoking write found the
+	// account at a session version other than the one its caller verified a
+	// factor against: another write revoked the account's sessions in between,
+	// and this write rolled back rather than hand its caller a session that
+	// outlives that revocation.
+	ErrAuthSessionVersionChanged = errors.New("auth session version changed since it was read")
 )

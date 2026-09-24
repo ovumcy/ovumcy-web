@@ -64,6 +64,9 @@ type stubOIDCIdentityStore struct {
 	lastIssuer  string
 	lastSubject string
 
+	revokedFromVersion int
+	revokeErr          error
+
 	revokedOnCreate bool
 	listed          []models.OIDCIdentity
 	listErr         error
@@ -102,8 +105,12 @@ func (stub *stubOIDCIdentityStore) Create(ctx context.Context, identity *models.
 // CreateAndRevokeSessions records into the same fields as Create — a link is a
 // link to the assertions that read them — and additionally marks that the
 // write carried the session-version bump.
-func (stub *stubOIDCIdentityStore) CreateAndRevokeSessions(ctx context.Context, identity *models.OIDCIdentity) error {
+func (stub *stubOIDCIdentityStore) CreateAndRevokeSessions(ctx context.Context, identity *models.OIDCIdentity, expectedSessionVersion int) error {
 	stub.revokedOnCreate = true
+	stub.revokedFromVersion = expectedSessionVersion
+	if stub.revokeErr != nil {
+		return stub.revokeErr
+	}
 	return stub.Create(ctx, identity)
 }
 
@@ -360,7 +367,7 @@ func TestOIDCLoginServiceConfirmAndLinkIdentityPersistsLink(t *testing.T) {
 		Subject: "first-login-sub",
 		Email:   "owner@example.com",
 	}
-	if err := service.ConfirmAndLinkIdentity(context.Background(), 9, claims, now); err != nil {
+	if _, err := service.ConfirmAndLinkIdentity(context.Background(), 9, 1, claims, now); err != nil {
 		t.Fatalf("ConfirmAndLinkIdentity() unexpected error: %v", err)
 	}
 	if !identities.createCallSeen {
@@ -371,6 +378,42 @@ func TestOIDCLoginServiceConfirmAndLinkIdentityPersistsLink(t *testing.T) {
 	}
 	if identities.created.LastUsedAt == nil || !identities.created.LastUsedAt.Equal(now) {
 		t.Fatalf("expected LastUsedAt=%s, got %+v", now, identities.created.LastUsedAt)
+	}
+}
+
+// The link revokes only from the version the caller verified and reports the
+// version it left: the next one after a write, the verified one when the pair
+// was already linked and nothing was written. A store that found the version
+// moved surfaces as ErrAuthSessionVersionChanged, never as a plain link
+// failure the Settings mapper would word as "claimed by another account".
+func TestOIDCLoginServiceConfirmAndLinkIdentityCarriesTheVerifiedSessionVersion(t *testing.T) {
+	t.Parallel()
+
+	claims := security.OIDCClaims{Issuer: "https://id.example.com", Subject: "versioned-sub"}
+	link := func(identities *stubOIDCIdentityStore, expected int) (int, error) {
+		service := NewOIDCLoginService(&stubOIDCProviderClient{enabled: true}, identities, &stubOIDCUserStore{}, nil)
+		return service.ConfirmAndLinkIdentity(context.Background(), 9, expected, claims, time.Now())
+	}
+
+	written := &stubOIDCIdentityStore{}
+	if version, err := link(written, 4); err != nil || version != 5 || written.revokedFromVersion != 4 {
+		t.Fatalf("expected a write from version 4 leaving 5, got version=%d from=%d err=%v", version, written.revokedFromVersion, err)
+	}
+	legacy := &stubOIDCIdentityStore{}
+	if version, err := link(legacy, 0); err != nil || version != 2 || legacy.revokedFromVersion != 1 {
+		t.Fatalf("expected a legacy zero to revoke from 1 leaving 2, got version=%d from=%d err=%v", version, legacy.revokedFromVersion, err)
+	}
+	existing := &stubOIDCIdentityStore{found: true, identity: models.OIDCIdentity{ID: 3, UserID: 9, Issuer: claims.Issuer, Subject: claims.Subject}}
+	if version, err := link(existing, 4); err != nil || version != 4 || existing.revokedOnCreate {
+		t.Fatalf("expected an existing link to write nothing and report version 4, got version=%d revoked=%v err=%v", version, existing.revokedOnCreate, err)
+	}
+	moved := &stubOIDCIdentityStore{revokeErr: models.ErrAuthSessionVersionChanged}
+	if version, err := link(moved, 4); !errors.Is(err, ErrAuthSessionVersionChanged) || errors.Is(err, ErrOIDCLinkFailed) || version != 0 {
+		t.Fatalf("expected ErrAuthSessionVersionChanged and no version, got version=%d err=%v", version, err)
+	}
+	failed := &stubOIDCIdentityStore{revokeErr: errors.New("disk full")}
+	if _, err := link(failed, 4); !errors.Is(err, ErrOIDCLinkFailed) {
+		t.Fatalf("expected any other store error to read as ErrOIDCLinkFailed, got %v", err)
 	}
 }
 
@@ -394,7 +437,7 @@ func TestOIDCLoginServiceConfirmAndLinkIdentityRefusesCrossUserClaim(t *testing.
 	service := NewOIDCLoginService(&stubOIDCProviderClient{enabled: true}, identities, &stubOIDCUserStore{}, nil)
 
 	claims := security.OIDCClaims{Issuer: "https://id.example.com", Subject: "first-login-sub"}
-	if err := service.ConfirmAndLinkIdentity(context.Background(), 9, claims, now); !errors.Is(err, ErrOIDCLinkFailed) {
+	if _, err := service.ConfirmAndLinkIdentity(context.Background(), 9, 1, claims, now); !errors.Is(err, ErrOIDCLinkFailed) {
 		t.Fatalf("expected ErrOIDCLinkFailed for cross-user claim, got %v", err)
 	}
 	if identities.createCallSeen {
