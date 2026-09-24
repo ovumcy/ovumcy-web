@@ -135,8 +135,8 @@ func TestTOTPService_ValidateCode_LegacyCiphertextReencrypts(t *testing.T) {
 // TestTOTPService_ValidateCode_ReencryptOutcomeNeverFailsTheCheck covers the
 // two non-applied outcomes of the lazy re-encryption: a lost race (a
 // re-enrollment or disable won) and a database failure. Both are swallowed —
-// the code was valid against the secret this check opened, and the upgrade is
-// simply retried on the next login.
+// the code was valid against the secret this check opened. A failed write is
+// retried on the next login; a lost race leaves the newer secret in place.
 func TestTOTPService_ValidateCode_ReencryptOutcomeNeverFailsTheCheck(t *testing.T) {
 	for name, repo := range map[string]*stubTOTPUserRepo{
 		"lost race":     {reencryptLost: true},

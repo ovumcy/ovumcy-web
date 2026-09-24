@@ -43,7 +43,11 @@ func (repo *interleavingReencryptRepo) UpgradeTOTPSecretCiphertextCAS(ctx contex
 		hook()
 	}
 	applied, err := repo.UserRepository.UpgradeTOTPSecretCiphertextCAS(ctx, userID, oldCiphertext, newCiphertext)
-	repo.upgraded = &applied
+	// A failed write leaves upgraded nil: ValidateCode swallows the error, so
+	// only this record tells a lost race from a broken predicate.
+	if err == nil {
+		repo.upgraded = &applied
+	}
 	if hook := repo.afterUpgrade; hook != nil {
 		repo.afterUpgrade = nil
 		hook()
@@ -174,7 +178,7 @@ func testReencryptLosesToAReEnrollmentBetweenCheckAndWrite(t *testing.T, databas
 		t.Fatalf("a check whose code matched must not fail on a lost re-encryption: valid %v, err %v", valid, err)
 	}
 	if repo.upgraded == nil || *repo.upgraded {
-		t.Fatal("the re-encryption applied over the re-enrolled secret, or never ran")
+		t.Fatal("the re-encryption applied over the re-enrolled secret, never ran, or failed")
 	}
 
 	stored := readTwoOwnerUser(t, database, owner.ID)
@@ -223,7 +227,7 @@ func testReencryptBeforeAReEnrollmentKeepsIt(t *testing.T, database *gorm.DB) {
 		t.Fatalf("ValidateCode: valid %v, err %v", valid, err)
 	}
 	if repo.upgraded == nil || !*repo.upgraded {
-		t.Fatal("the uncontended re-encryption was not applied")
+		t.Fatal("the uncontended re-encryption was not applied, never ran, or failed")
 	}
 
 	stored := readTwoOwnerUser(t, database, owner.ID)
