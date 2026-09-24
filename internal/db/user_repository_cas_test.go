@@ -193,12 +193,18 @@ func TestOpenSQLiteConnectionPoolLimits(t *testing.T) {
 	}
 }
 
-// upgradePasswordHashCASDrivers runs a case on both shipped drivers: the
-// predicate's row count is the driver's to report, so SQLite alone would not
-// pin what a Postgres deployment does.
-func upgradePasswordHashCASDrivers(t *testing.T, run func(t *testing.T, repo *UserRepository)) {
-	t.Helper()
-
+// TestUpgradePasswordHashCAS runs every case on both shipped drivers, one
+// database per driver: the predicate's row count is the driver's to report, so
+// SQLite alone would not pin what a Postgres deployment does. Each case seeds
+// its own row.
+func TestUpgradePasswordHashCAS(t *testing.T) {
+	cases := []struct {
+		name string
+		run  func(t *testing.T, repo *UserRepository)
+	}{
+		{"preserves the session version", testUpgradePasswordHashCASPreservesSessionVersion},
+		{"loses to a credential write", testUpgradePasswordHashCASLosesToACredentialWrite},
+	}
 	configs := map[string]func(t *testing.T) Config{
 		"sqlite": func(t *testing.T) Config {
 			return Config{Driver: DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "rehash_test.db")}
@@ -216,16 +222,19 @@ func upgradePasswordHashCASDrivers(t *testing.T, run func(t *testing.T, repo *Us
 					_ = sqlDB.Close()
 				}
 			})
-			run(t, NewUserRepository(database))
+			repo := NewUserRepository(database)
+			for _, tc := range cases {
+				t.Run(tc.name, func(t *testing.T) { tc.run(t, repo) })
+			}
 		})
 	}
 }
 
-func createUpgradePasswordHashCASUser(t *testing.T, repo *UserRepository) *models.User {
+func createUpgradePasswordHashCASUser(t *testing.T, repo *UserRepository, email string) *models.User {
 	t.Helper()
 
 	user := &models.User{
-		Email:              "rehash@example.com",
+		Email:              email,
 		PasswordHash:       "legacy-hash",
 		RecoveryCodeHash:   "recovery-hash",
 		LocalAuthEnabled:   true,
@@ -243,91 +252,77 @@ func createUpgradePasswordHashCASUser(t *testing.T, repo *UserRepository) *model
 	return user
 }
 
-// TestUpgradePasswordHashCASPreservesSessionVersion asserts the transparent
+// testUpgradePasswordHashCASPreservesSessionVersion asserts the transparent
 // bcrypt-cost upgrade rewrites password_hash without bumping
 // auth_session_version and without disturbing the other credential columns —
 // the account's security posture is unchanged, so no active session may be
 // revoked by an internal storage upgrade.
-func TestUpgradePasswordHashCASPreservesSessionVersion(t *testing.T) {
-	upgradePasswordHashCASDrivers(t, func(t *testing.T, repo *UserRepository) {
-		user := createUpgradePasswordHashCASUser(t, repo)
+func testUpgradePasswordHashCASPreservesSessionVersion(t *testing.T, repo *UserRepository) {
+	user := createUpgradePasswordHashCASUser(t, repo, "rehash-applied@example.com")
 
-		applied, err := repo.UpgradePasswordHashCAS(context.Background(), user.ID, "legacy-hash", "upgraded-hash")
-		if err != nil {
-			t.Fatalf("UpgradePasswordHashCAS: %v", err)
-		}
-		if !applied {
-			t.Fatal("the upgrade against the current hash reported not applied")
-		}
+	applied, err := repo.UpgradePasswordHashCAS(context.Background(), user.ID, "legacy-hash", "upgraded-hash")
+	if err != nil {
+		t.Fatalf("UpgradePasswordHashCAS: %v", err)
+	}
+	if !applied {
+		t.Fatal("the upgrade against the current hash reported not applied")
+	}
 
-		got, err := repo.FindByID(context.Background(), user.ID)
-		if err != nil {
-			t.Fatalf("find after rehash: %v", err)
-		}
-		if got.PasswordHash != "upgraded-hash" {
-			t.Fatalf("expected password_hash 'upgraded-hash', got %q", got.PasswordHash)
-		}
-		if got.AuthSessionVersion != 4 {
-			t.Fatalf("expected auth_session_version to stay 4 (no revoke), got %d", got.AuthSessionVersion)
-		}
-		if got.RecoveryCodeHash != "recovery-hash" {
-			t.Fatalf("expected recovery_code_hash untouched, got %q", got.RecoveryCodeHash)
-		}
-		if !got.LocalAuthEnabled {
-			t.Fatal("expected local_auth_enabled untouched (true)")
-		}
-	})
+	got, err := repo.FindByID(context.Background(), user.ID)
+	if err != nil {
+		t.Fatalf("find after rehash: %v", err)
+	}
+	if got.PasswordHash != "upgraded-hash" {
+		t.Fatalf("expected password_hash 'upgraded-hash', got %q", got.PasswordHash)
+	}
+	if got.AuthSessionVersion != 4 {
+		t.Fatalf("expected auth_session_version to stay 4 (no revoke), got %d", got.AuthSessionVersion)
+	}
+	if got.RecoveryCodeHash != "recovery-hash" {
+		t.Fatalf("expected recovery_code_hash untouched, got %q", got.RecoveryCodeHash)
+	}
+	if !got.LocalAuthEnabled {
+		t.Fatal("expected local_auth_enabled untouched (true)")
+	}
 }
 
-// TestUpgradePasswordHashCASLosesToACredentialWrite is the predicate itself: a
+// testUpgradePasswordHashCASLosesToACredentialWrite is the predicate itself: a
 // password change that lands after the login read the hash must survive the
 // upgrade that login then attempts. Without the predicate the upgrade would
 // write the old password back, with no session-version bump.
-func TestUpgradePasswordHashCASLosesToACredentialWrite(t *testing.T) {
-	upgradePasswordHashCASDrivers(t, func(t *testing.T, repo *UserRepository) {
-		user := createUpgradePasswordHashCASUser(t, repo)
-		if err := repo.UpdatePasswordAndRevokeSessions(context.Background(), user.ID, "changed-hash", false); err != nil {
-			t.Fatalf("UpdatePasswordAndRevokeSessions: %v", err)
-		}
+func testUpgradePasswordHashCASLosesToACredentialWrite(t *testing.T, repo *UserRepository) {
+	user := createUpgradePasswordHashCASUser(t, repo, "rehash-lost@example.com")
+	if err := repo.UpdatePasswordAndRevokeSessions(context.Background(), user.ID, "changed-hash", false); err != nil {
+		t.Fatalf("UpdatePasswordAndRevokeSessions: %v", err)
+	}
 
-		applied, err := repo.UpgradePasswordHashCAS(context.Background(), user.ID, "legacy-hash", "upgraded-legacy-hash")
-		if err != nil {
-			t.Fatalf("a lost race is not a database failure, got %v", err)
-		}
-		if applied {
-			t.Fatal("the upgrade reported applied against a hash the row no longer holds")
-		}
+	applied, err := repo.UpgradePasswordHashCAS(context.Background(), user.ID, "legacy-hash", "upgraded-legacy-hash")
+	if err != nil {
+		t.Fatalf("a lost race is not a database failure, got %v", err)
+	}
+	if applied {
+		t.Fatal("the upgrade reported applied against a hash the row no longer holds")
+	}
 
-		got, err := repo.FindByID(context.Background(), user.ID)
-		if err != nil {
-			t.Fatalf("find after lost upgrade: %v", err)
-		}
-		if got.PasswordHash != "changed-hash" {
-			t.Fatalf("password_hash = %q after the lost upgrade, want the changed credential kept", got.PasswordHash)
-		}
-		if got.AuthSessionVersion != 5 {
-			t.Fatalf("auth_session_version = %d, want 5: bumped once by the change, never by the upgrade", got.AuthSessionVersion)
-		}
-	})
+	got, err := repo.FindByID(context.Background(), user.ID)
+	if err != nil {
+		t.Fatalf("find after lost upgrade: %v", err)
+	}
+	if got.PasswordHash != "changed-hash" {
+		t.Fatalf("password_hash = %q after the lost upgrade, want the changed credential kept", got.PasswordHash)
+	}
+	if got.AuthSessionVersion != 5 {
+		t.Fatalf("auth_session_version = %d, want 5: bumped once by the change, never by the upgrade", got.AuthSessionVersion)
+	}
 }
 
 // TestUpgradePasswordHashCASFailsClosedWhenTheUpdateErrors covers the error
 // arm: an upgrade that could not run must report the failure AND read as not
 // applied, or the caller would adopt a hash the row never received.
 func TestUpgradePasswordHashCASFailsClosedWhenTheUpdateErrors(t *testing.T) {
-	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "rehash_closed.db")})
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	repo := NewUserRepository(database)
-	user := createUpgradePasswordHashCASUser(t, repo)
-	sqlDB, err := database.DB()
-	if err != nil {
-		t.Fatalf("database.DB() unexpected error: %v", err)
-	}
-	if err := sqlDB.Close(); err != nil {
-		t.Fatalf("close sql db: %v", err)
-	}
+	repo := openRevealMarkRepoForTest(t)
+	user := createUpgradePasswordHashCASUser(t, repo, "rehash-closed@example.com")
+	closeRevealMarkRepoHandle(t, repo)
 
 	applied, err := repo.UpgradePasswordHashCAS(context.Background(), user.ID, "legacy-hash", "upgraded-hash")
 	if err == nil {
