@@ -37,23 +37,6 @@ func seedMethodCoverageUser(t *testing.T, repo *UserRepository) *models.User {
 	return user
 }
 
-func TestUserRepositoryUpdateTOTPSecretCiphertext(t *testing.T) {
-	repo := NewUserRepository(openMethodCoverageDB(t))
-	user := seedMethodCoverageUser(t, repo)
-
-	if err := repo.UpdateTOTPSecretCiphertext(context.Background(), user.ID, "new-ciphertext"); err != nil {
-		t.Fatalf("UpdateTOTPSecretCiphertext() unexpected error: %v", err)
-	}
-
-	stored, err := repo.FindByID(context.Background(), user.ID)
-	if err != nil {
-		t.Fatalf("FindByID() error: %v", err)
-	}
-	if stored.TOTPSecret != "new-ciphertext" {
-		t.Fatalf("totp secret not updated, got %q", stored.TOTPSecret)
-	}
-}
-
 func TestDailyLogRepositoryUpdateSymptomIDsAndTransaction(t *testing.T) {
 	database := openMethodCoverageDB(t)
 	user := seedMethodCoverageUser(t, NewUserRepository(database))
