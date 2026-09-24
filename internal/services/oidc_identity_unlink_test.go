@@ -205,6 +205,37 @@ func TestOIDCListLinkedIdentitiesMapsStorageFaultToResolveFailed(t *testing.T) {
 	}
 }
 
+// A disabled OIDC provider refuses a link confirmation before touching storage.
+func TestOIDCConfirmAndLinkIdentityRequiresEnabledProvider(t *testing.T) {
+	t.Parallel()
+
+	identities := &stubOIDCIdentityStore{}
+	service := NewOIDCLoginService(&stubOIDCProviderClient{}, identities, &stubOIDCUserStore{}, nil)
+	claims := security.OIDCClaims{Issuer: "https://id.example.com", Subject: "fresh-sub"}
+	if _, err := service.ConfirmAndLinkIdentity(context.Background(), 7, 1, claims, time.Now()); !errors.Is(err, ErrOIDCDisabled) {
+		t.Fatalf("expected ErrOIDCDisabled, got %v", err)
+	}
+	if identities.lastSubject != "" {
+		t.Fatalf("expected no identity lookup, got one for subject %q", identities.lastSubject)
+	}
+}
+
+// A storage fault resolving whether the pair is already linked surfaces as
+// ErrOIDCIdentityResolveFailed and links nothing.
+func TestOIDCConfirmAndLinkIdentityMapsALookupFaultToResolveFailed(t *testing.T) {
+	t.Parallel()
+
+	identities := &stubOIDCIdentityStore{findErr: errors.New("db fault")}
+	service := newUnlinkTestService(security.OIDCLoginModeHybrid, identities)
+	claims := security.OIDCClaims{Issuer: "https://id.example.com", Subject: "fresh-sub"}
+	if _, err := service.ConfirmAndLinkIdentity(context.Background(), 7, 1, claims, time.Now()); !errors.Is(err, ErrOIDCIdentityResolveFailed) {
+		t.Fatalf("expected ErrOIDCIdentityResolveFailed, got %v", err)
+	}
+	if identities.createCallSeen {
+		t.Fatal("expected no link write after a failed lookup")
+	}
+}
+
 // A storage fault persisting the confirmed link surfaces as ErrOIDCLinkFailed,
 // the same verdict a lost unique-constraint race reports: the caller cannot
 // tell the two apart and must not need to.
