@@ -205,8 +205,8 @@ func (service *TOTPService) ValidateCode(ctx context.Context, userID uint, encry
 	}
 
 	// Best-effort lazy re-encryption: failure here MUST NOT block login.
-	// A persistent inability to upgrade the row will surface again on the
-	// next login and is operationally observable via the security log.
+	// A failed write leaves the legacy ciphertext for the next login to
+	// retry; a lost race leaves a newer secret that needs no upgrade.
 	if isLegacy {
 		if reEncrypted, encryptErr := security.EncryptField(rawSecret, service.secretKey, aad); encryptErr == nil {
 			_, _ = service.users.UpgradeTOTPSecretCiphertextCAS(ctx, userID, encryptedSecret, reEncrypted)
