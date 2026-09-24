@@ -277,3 +277,37 @@ func TestAuthenticateCredentialsRehashFailureDoesNotFailLogin(t *testing.T) {
 		t.Fatalf("returned hash cost = %d, want unchanged %d after failed write", got, bcrypt.DefaultCost)
 	}
 }
+
+// TestAuthenticateCredentialsLostRehashRaceKeepsTheVerifiedHash covers the
+// (false, nil) outcome: a credential write won between the compare and the
+// upgrade. The login still succeeds, and the returned struct keeps the hash it
+// verified — adopting the upgrade would hand the caller a hash the row never
+// received.
+func TestAuthenticateCredentialsLostRehashRaceKeepsTheVerifiedHash(t *testing.T) {
+	legacyHash, err := bcrypt.GenerateFromPassword([]byte("StrongPass1"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	repo := &stubAuthUserRepo{
+		upgradeHashLost: true,
+		findByEmailUser: models.User{
+			ID:               77,
+			Email:            "login@example.com",
+			PasswordHash:     string(legacyHash),
+			LocalAuthEnabled: true,
+			Role:             models.RoleOwner,
+		},
+	}
+	service := NewAuthService(repo)
+
+	user, err := service.AuthenticateCredentials(context.Background(), "login@example.com", "StrongPass1")
+	if err != nil {
+		t.Fatalf("expected login to succeed despite a lost rehash race, got %v", err)
+	}
+	if repo.upgradeHashCalls != 1 {
+		t.Fatalf("expected the rehash write to be attempted once, got %d", repo.upgradeHashCalls)
+	}
+	if user.PasswordHash != string(legacyHash) {
+		t.Fatal("returned user carries a hash other than the verified one after a lost race")
+	}
+}
