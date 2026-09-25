@@ -109,11 +109,11 @@ verify it against the numbers.
 # Go: unit + integration + property + fuzz seeds.
 # Scoped to the module's Go trees (not ./...) so a local node_modules/ — where a
 # vendored JS dependency ships a .go file — isn't swept into the wildcard.
-# -timeout 20m declares the same budget CI does: Go's default is 10 minutes PER
-# PACKAGE, and internal/api's DB-integration suite sits at that edge, so the
-# default run dies as `panic: test timed out after 10m0s` with a goroutine dump
-# that reads like a product bug. Read that panic as the budget, not as a defect.
-go test ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/... -timeout 20m
+# -timeout 30m: Go's default is 10 minutes PER PACKAGE, and internal/api's
+# DB-integration suite alone took 887-1101 s here (CI shards it into 20m cells),
+# so the default dies as `panic: test timed out after 10m0s` with a goroutine
+# dump that reads like a product bug. Read that panic as the budget, not a defect.
+go test ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/... -timeout 30m
 
 # Active fuzzing of a single target
 go test ./internal/services/ -run '^$' -fuzz FuzzParseDayDate -fuzztime 30s
@@ -152,7 +152,7 @@ both so a partial local rerun cannot leave any of the profile stale:
 rm -f coverage.out
 go clean -testcache
 go test ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/... \
-  -timeout 20m \
+  -timeout 30m \
   -coverprofile=coverage.out -covermode=atomic \
   -coverpkg=./cmd/...,./internal/...,./migrations/...,./scripts/...,./web/... \
   -count=1
