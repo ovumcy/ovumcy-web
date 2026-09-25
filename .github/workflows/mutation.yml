@@ -26,8 +26,8 @@ jobs:
     # targets) before internal/api — by far the largest, slowest target —
     # ever got a turn. Splitting also improves wall-clock via parallelism.
     #
-    # internal/api and internal/services are each additionally split into 5
-    # file-subset shards. internal/api first (issue #161): a single unsharded
+    # internal/api and internal/services are each additionally split into
+    # file-subset shards (14 and 10). internal/api first (issue #161): a single unsharded
     # internal_api run (manual dispatch 28741574692, job 85225182461) was killed
     # at the 3h0m0s hard cap, having reached only ~85% of the package's files at
     # a steady, non-decelerating mutant rate. internal/services followed
@@ -37,11 +37,13 @@ jobs:
     # In both cases the heavier DB-integration tests (not raw file count) are
     # the bottleneck. gremlins v0.6.0 has no package-subdivision or
     # --include-files flag, only repeatable --exclude-files <regexp>, so
-    # scripts/mutation.sh partitions each package's own files into 5 groups at
-    # run time (round-robin over a live, sorted directory listing — never a
-    # hardcoded file list) and each shard excludes every file not in its group.
-    # 5 shards puts each at ~17–23 files with comfortable margin under the
-    # timeout even versus a pessimistic multi-hour full-package estimate.
+    # scripts/mutation.sh partitions each package's own files into groups at
+    # run time (dealt by estimated mutation weight over a live directory
+    # listing — never a hardcoded file list; see scripts/mutationpartition)
+    # and each shard excludes every file not in its group. The counts come
+    # from the 2026-08-31..09-21 runs, in which 5 shards left every
+    # internal/api cell at this timeout with 52-96% of its files reached;
+    # the arithmetic is beside SHARDED_PKGS in scripts/mutation.sh.
     # This is a hang guard, not a runtime target — the job is advisory
     # (continue-on-error below) regardless.
     timeout-minutes: 180
@@ -49,6 +51,10 @@ jobs:
       contents: read
     strategy:
       fail-fast: false
+      # 25 cells, but never more runners at once than the 11 this job held
+      # before the split: a weekly advisory job must not take the whole
+      # concurrent-job allowance from the pull requests and the merge queue.
+      max-parallel: 11
       matrix:
         include:
           - slug: internal_services_1
@@ -56,12 +62,26 @@ jobs:
           - slug: internal_services_3
           - slug: internal_services_4
           - slug: internal_services_5
+          - slug: internal_services_6
+          - slug: internal_services_7
+          - slug: internal_services_8
+          - slug: internal_services_9
+          - slug: internal_services_10
           - slug: internal_security
           - slug: internal_api_1
           - slug: internal_api_2
           - slug: internal_api_3
           - slug: internal_api_4
           - slug: internal_api_5
+          - slug: internal_api_6
+          - slug: internal_api_7
+          - slug: internal_api_8
+          - slug: internal_api_9
+          - slug: internal_api_10
+          - slug: internal_api_11
+          - slug: internal_api_12
+          - slug: internal_api_13
+          - slug: internal_api_14
     env:
       GOBIN: ${{ github.workspace }}/.bin
       MUTATION_WORKERS: "2"
@@ -95,10 +115,31 @@ jobs:
         # Advisory: gremlins runs without thresholds, so it exits 0 regardless of
         # score. continue-on-error guards against infrastructure hiccups too —
         # the next step turns a missing report into a hard failure instead.
+        #
+        # GOFLAGS -timeout: gremlins' coverage pass is a plain `go test -cover`
+        # of the whole package with no -timeout, so Go's 10-minute default
+        # applies — and internal/api's pass took 7m22s-9m02s, dying of
+        # `panic: test timed out after 10m0s` (api_4 on 2026-09-21, api_1 on
+        # 09-07). Each per-mutant run passes its own -timeout on the command
+        # line, which overrides GOFLAGS, so this reaches the coverage pass only.
+        #
+        # ulimit -v: every early internal/services failure (9 of 9 inspected,
+        # 08-31..09-21) was the runner VM itself shutting down while an
+        # INCREMENT_DECREMENT mutant on a `for` loop's `x++` was in flight —
+        # `x--` never ends, the loop body appends, and the slice grows until
+        # the VM runs out of memory long before gremlins' per-mutant timeout.
+        # A per-process address-space cap makes that test binary die of "out
+        # of memory" instead, which gremlins records as a killed mutant, and
+        # leaves the runner alive. Go reserves ~1 GiB of address space at
+        # start, so the cap sits well above any legitimate build or test.
         continue-on-error: true
         env:
           GREMLINS: ${{ github.workspace }}/.bin/gremlins
-        run: bash scripts/mutation.sh baseline "${{ matrix.slug }}"
+          GOFLAGS: -timeout=30m
+          MUTATION_VMEM_KB: "6291456"
+        run: |
+          ulimit -v "$MUTATION_VMEM_KB"
+          bash scripts/mutation.sh baseline "${{ matrix.slug }}"
 
       - name: Verify mutation output was produced
         # Silent-failure guard. The step above is continue-on-error and the
@@ -123,7 +164,7 @@ jobs:
           if-no-files-found: ignore
 
   mutation-merge:
-    # Combines each sharded package's 5 shard JSON reports into one
+    # Combines each sharded package's shard JSON reports into one
     # .tmp/mutation/<base>.json so downstream consumers (the test-suite auditor,
     # a future internal-<base>.md score refresh) can read a single file matching
     # the naming convention every other target already uses, instead of learning
