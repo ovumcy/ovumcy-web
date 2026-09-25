@@ -740,6 +740,8 @@
   "settings.egress.state.feed.issued_current_key": "Ein Kalenderlink ist gespeichert und wurde mit dem Schlüssel erstellt, den diese Instanz jetzt verwendet; ihn hier zurückzuziehen kappt ihn.",
   "settings.egress.evidence.feed.none": "Für diesen Link ist keine einmalige Anzeige verzeichnet.",
   "settings.egress.evidence.feed.recorded": "Einmalige Anzeige verwendet am",
+  "settings.egress.feed_polled.none": "Noch kein Kalender hat diesen Feed abgerufen.",
+  "settings.egress.feed_polled.recorded": "Zuletzt von einem Kalender abgerufen am",
   "settings.egress.payload.feed.uid": "Ein Ereignis-Identifikator, gebildet aus dem Erinnerungstyp und seinem Datum",
   "settings.egress.payload.feed.dtstamp": "Der Zeitpunkt, an dem der Feed erzeugt wurde",
   "settings.egress.payload.feed.dtstart": "Das vorhergesagte Datum, auf das sich das Ereignis bezieht",

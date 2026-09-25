@@ -161,10 +161,22 @@
       <p class="journal-muted text-sm">{{t .Messages "settings.calendar_feed.subtitle"}}</p>
 
       <p class="field-label" data-egress-feed-status data-egress-state-key="{{.Egress.Feed.StateKey}}">{{t .Messages .Egress.Feed.StateKey}}</p>
-      {{/* The reveal mark, and nothing else. There is no fetch count, no "last
-           opened" and no rotation history here: polls of the feed are
-           deliberately unaudited, so no field exists that could answer them. */}}
+      {{/* The reveal mark, and nothing else besides the one exception below.
+           There is no fetch count, no "in use" and no rotation history here:
+           polls of the feed are unaudited on purpose. The one exception is the
+           last-polled DATE (migration 040, WEB-46) rendered just under it, on
+           its own line with its own key: a coarse, day-granular, owner-facing
+           signal, never a per-request log. */}}
       <p class="journal-muted text-sm" data-egress-feed-evidence>{{t .Messages .Egress.Feed.EvidenceKey}}{{if .Egress.Feed.EvidenceISO}} <time datetime="{{.Egress.Feed.EvidenceISO}}" data-egress-feed-revealed-at>{{.Egress.Feed.EvidenceText}}</time>{{end}}</p>
+      {{/* The polled date is a DATE, not an instant: it never carries a
+           datetime attribute built by egressTimestampStrings — that helper
+           shifts by request location, and this value is already the owner's
+           own calendar day. */}}
+      {{if .Egress.Feed.PolledISO}}
+      <p class="journal-muted text-sm" data-egress-feed-polled>{{t .Messages .Egress.Feed.PolledKey}} <time datetime="{{.Egress.Feed.PolledISO}}" data-egress-feed-polled-on>{{.Egress.Feed.PolledText}}</time></p>
+      {{else}}
+      <p class="journal-muted text-sm" data-egress-feed-polled>{{t .Messages .Egress.Feed.PolledKey}}</p>
+      {{end}}
       <p class="journal-muted text-sm" data-egress-feed-hint>{{t .Messages "settings.calendar_feed.url_hint"}}</p>
 
       <div>

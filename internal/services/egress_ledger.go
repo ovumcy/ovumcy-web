@@ -22,9 +22,13 @@ import (
 // sentence it drives can be shown wrong by something the instance observes.
 //
 // What is deliberately absent is as load-bearing as what is here. There is no
-// count, no "last fetched", no "in use" and no rotation history for the .ics
-// feed: polls are unaudited on purpose, and adding a field here is how that
-// decision would be reversed by accident. There is no "revoked" either — revoke,
+// count, no "in use" and no rotation history for the .ics feed: polls are
+// unaudited on purpose, and adding a field here beyond the one exception below
+// is how that decision would be reversed by accident. The one exception is
+// LastPolledOn (migration 040, WEB-46): the owner's calendar day of the most
+// recent successful, token-verified poll, coarsened to day granularity with no
+// IP, no user agent and no per-request row — an owner-facing signal, not a
+// per-request log. There is no "revoked" either — revoke,
 // the restore fence, the rotation sentinel and a recovery-code regeneration all
 // clear the same three columns, so "revoked" is indistinguishable from "never
 // created" and would be a sentence with no falsifier.
@@ -203,7 +207,11 @@ type EgressFeedLedger struct {
 	// RevealedAt marks the one-time reveal as CONSUMED. It is not a fetch, not a
 	// display, and not a count: the server observes a claim being spent and
 	// nothing about whether the link was ever opened.
-	RevealedAt    *time.Time
+	RevealedAt *time.Time
+	// LastPolledOn is the owner's calendar day of the most recent successful,
+	// token-verified poll (migration 040, WEB-46) — the one deliberate exception
+	// to "polls are unaudited" the comment above names.
+	LastPolledOn  *time.Time
 	PayloadFields []EgressPayloadField
 }
 
@@ -300,6 +308,7 @@ func (service *EgressLedgerService) BuildEgressLedger(ctx context.Context, row E
 		Feed: EgressFeedLedger{
 			State:         feedState,
 			RevealedAt:    revealEvidenceForState(feedState, feedStatus.RevealedAt),
+			LastPolledOn:  pollEvidenceForState(feedState, feedStatus.LastPolledOn),
 			PayloadFields: CalendarFeedPayloadFields(),
 		},
 	}
@@ -434,4 +443,17 @@ func revealEvidenceForState(state EgressFeedState, revealedAt *time.Time) *time.
 		return nil
 	}
 	return revealedAt
+}
+
+// pollEvidenceForState suppresses the last-polled mark where there is no link
+// for it to be about, on the same two states revealEvidenceForState suppresses
+// on: a mark rendered for an unread row or an absent link would be a date about
+// nothing. It is not suppressed for EgressFeedIssuedPreviousKey, exactly as the
+// reveal mark is not — a poll recorded under a since-rotated key is still true
+// history about a link that existed, not a claim about the current one.
+func pollEvidenceForState(state EgressFeedState, lastPolledOn *time.Time) *time.Time {
+	if state == EgressFeedUnknown || state == EgressFeedNone {
+		return nil
+	}
+	return lastPolledOn
 }

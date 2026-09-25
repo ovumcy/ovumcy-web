@@ -740,6 +740,8 @@
   "settings.egress.state.feed.issued_current_key": "Un link del calendario è memorizzato, creato con la chiave che questa istanza usa ora, quindi ritirarlo qui lo interrompe.",
   "settings.egress.evidence.feed.none": "Nessuna visualizzazione una tantum è registrata per questo link.",
   "settings.egress.evidence.feed.recorded": "Visualizzazione una tantum usata il",
+  "settings.egress.feed_polled.none": "Nessun calendario ha ancora controllato questo feed.",
+  "settings.egress.feed_polled.recorded": "Ultimo controllo di un calendario il",
   "settings.egress.payload.feed.uid": "Un identificatore di evento costruito dal tipo di promemoria e dalla sua data",
   "settings.egress.payload.feed.dtstamp": "Il momento in cui il feed è stato generato",
   "settings.egress.payload.feed.dtstart": "La data prevista coperta dall'evento",

@@ -144,9 +144,15 @@ func (service *CalendarFeedSettingsService) ClaimFeedReveal(ctx context.Context,
 // saw the row -- and the one claim an owner would act on by generating a second
 // token beside a first one that still works.
 //
-// RevealedAt marks the one-time reveal as CONSUMED. It is emphatically not a
-// fetch record: polls of the .ics feed are deliberately unaudited, and no field
-// here can say whether anyone ever subscribed.
+// RevealedAt marks the one-time reveal as CONSUMED. It is not a fetch record on
+// its own: it says the link was shown to a person once, never whether anyone
+// subscribed.
+//
+// LastPolledOn (migration 040, WEB-46) is the one deliberate exception to "polls
+// of the .ics feed are unaudited": the owner's calendar day on which a
+// successful, token-verified poll most recently served the feed, coarsened to
+// day granularity with no IP, no user agent and no per-request row. It is not
+// a fetch count and not a client identity — only the one date.
 //
 // KeyEpoch is the row's stamp and CurrentKeyEpoch the value this instance
 // derives from its running SECRET_KEY. Their comparison is the only honest thing
@@ -159,6 +165,7 @@ type CalendarFeedStatus struct {
 	Known           bool
 	Configured      bool
 	RevealedAt      *time.Time
+	LastPolledOn    *time.Time
 	KeyEpoch        string
 	CurrentKeyEpoch string
 }
@@ -189,6 +196,7 @@ func (service *CalendarFeedSettingsService) BuildFeedStatus(ctx context.Context,
 		Known:           true,
 		Configured:      strings.TrimSpace(user.CalendarFeedSelector) != "",
 		RevealedAt:      user.CalendarFeedRevealedAt,
+		LastPolledOn:    user.CalendarFeedLastPolledOn,
 		KeyEpoch:        strings.TrimSpace(user.CalendarFeedKeyEpoch),
 		CurrentKeyEpoch: currentEpoch,
 	}

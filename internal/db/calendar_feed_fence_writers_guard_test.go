@@ -207,6 +207,83 @@ func TestEveryCalendarFeedWriterAdvancesTheRestoreFence(t *testing.T) {
 	}
 }
 
+// TestEveryCalendarFeedSelectorWriterAlsoClearsTheLastPolledMark is WEB-46's
+// completeness guard, and it reuses the scan above rather than restating it: a
+// hand-written list of the writers would agree with itself while a new writer
+// went unguarded, and the AST is the one place both this guard and the fence
+// guard read from, so they cannot drift into disagreeing about what a
+// "writer" is. SECURITY.md cites it, and the member-level behavior of each of
+// the eight writers this scan finds is exercised one subtest per site in
+// user_repository_calendar_feed_last_polled_test.go.
+//
+// Every function that writes calendar_feed_selector (a map-literal key, so a
+// READER naming it in a Select list — LoadSettingsByID — is not caught) must
+// also name calendar_feed_last_polled_on in the same map: the mark is a fact
+// about the token the selector names, and a selector write that leaves the
+// mark standing lets a stale "last checked" date survive the link it was
+// about.
+func TestEveryCalendarFeedSelectorWriterAlsoClearsTheLastPolledMark(t *testing.T) {
+	const path = "user_repository.go"
+	const selectorColumn = `"calendar_feed_selector"`
+	const markColumn = `"calendar_feed_last_polled_on"`
+
+	source, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	fileSet := token.NewFileSet()
+	parsed, err := parser.ParseFile(fileSet, path, source, parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+
+	selectorWriters := map[string]bool{}
+	marksCleared := map[string]bool{}
+	for _, declaration := range parsed.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if !ok || function.Body == nil {
+			continue
+		}
+		ast.Inspect(function.Body, func(node ast.Node) bool {
+			keyValue, ok := node.(*ast.KeyValueExpr)
+			if !ok {
+				return true
+			}
+			key, ok := keyValue.Key.(*ast.BasicLit)
+			if !ok || key.Kind != token.STRING {
+				return true
+			}
+			switch key.Value {
+			case selectorColumn:
+				selectorWriters[function.Name.Name] = true
+			case markColumn:
+				marksCleared[function.Name.Name] = true
+			}
+			return true
+		})
+	}
+
+	// Anti-vacuity, by site name: arming and revoking must both be found among
+	// the selector writers, or the scan is looking at the wrong thing and
+	// would report success over an empty set.
+	for _, required := range []string{"SaveCalendarFeedToken", "ClearCalendarFeedToken"} {
+		if !selectorWriters[required] {
+			t.Fatalf("the scan did not find %s among the calendar_feed_selector writers (%v): it is not measuring what it claims", required, sortedNamesOf(selectorWriters))
+		}
+	}
+
+	var missing []string
+	for name := range selectorWriters {
+		if !marksCleared[name] {
+			missing = append(missing, name)
+		}
+	}
+	sort.Strings(missing)
+	if len(missing) > 0 {
+		t.Fatalf("these writers change calendar_feed_selector but never decide the fate of calendar_feed_last_polled_on, so a stale last-checked date could outlive the link it described: %v", missing)
+	}
+}
+
 func sortedNamesOf(set map[string]bool) []string {
 	names := make([]string, 0, len(set))
 	for name := range set {

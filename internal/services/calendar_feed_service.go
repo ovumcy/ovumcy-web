@@ -44,6 +44,12 @@ type CalendarFeedService struct {
 type CalendarFeedUserStore interface {
 	FindByCalendarFeedSelector(ctx context.Context, selector string) (models.User, bool, error)
 	BackfillCalendarFeedVerifierMAC(ctx context.Context, userID uint, selector string, verifierMAC string) error
+	// MarkCalendarFeedPolled records, at most once per owner calendar day, that
+	// a successful token-verified poll served the feed for `day` (WEB-46,
+	// rendered on the settings card). The caller (ResolveFeed) drops the
+	// error: a missed write costs one calendar day of staleness on the "last
+	// checked" indicator, never a failed poll.
+	MarkCalendarFeedPolled(ctx context.Context, userID uint, selector string, day time.Time) error
 }
 
 // CalendarFeedDayReader loads the resolved owner's day logs for the prediction
@@ -193,7 +199,41 @@ func (service *CalendarFeedService) ResolveFeed(ctx context.Context, token strin
 		Location:   feedLocation,
 		Disclaimer: disclaimer,
 	})
+	// The build succeeded: this is a successful, token-verified poll. Record
+	// the coarse day mark (WEB-46) synchronously, AFTER the body the caller
+	// will answer with is already built — the write can never turn this
+	// success into a failure, and its error (dropped in markPolled) can never
+	// change what is returned here.
+	//
+	// `today` is anchored to feedLocation's own midnight, not UTC's, so it is
+	// re-canonicalized to the repo's UTC-midnight DATE form (CalendarDay(...,
+	// time.UTC), the same construction Timezones-and-calendar-day arithmetic
+	// asks every date-only stored value to go through) before it is compared
+	// against or written over the stored mark. Comparing `today` itself against
+	// a UTC-anchored `loaded` value would be exactly the location-midnight vs
+	// UTC-midnight mismatch that rule warns against: correct on many days,
+	// silently wrong in every zone on the day the offset crosses midnight.
+	service.markPolled(ctx, user.ID, selector, CalendarDay(today, time.UTC), user.CalendarFeedLastPolledOn)
 	return feed, true, nil
+}
+
+// markPolled records that `day` (the owner's calendar day this poll served,
+// already resolved by the caller) was successfully polled, skipping the write
+// entirely — no query at all — when the row loaded earlier in this same
+// request already holds it: a calendar client polling every few minutes must
+// not cost a DB write on every request, only the first one on a new owner-day.
+// `loaded` may also be AFTER `day` (clock skew, a concurrent later poll that
+// already landed); that is skipped too; the repository's own compare-and-set
+// enforces the same monotonic rule as a second line of defense.
+//
+// The write is best-effort: its error is ignored and never logged, per the
+// approved design (a poll answers the identical 200 whether or not the mark
+// lands, and no failure path ever reaches this call in the first place).
+func (service *CalendarFeedService) markPolled(ctx context.Context, userID uint, selector string, day time.Time, loaded *time.Time) {
+	if loaded != nil && !loaded.Before(day) {
+		return
+	}
+	_ = service.users.MarkCalendarFeedPolled(ctx, userID, selector, day)
 }
 
 // backfillVerifierMAC derives the keyed verifier MAC for a row minted before

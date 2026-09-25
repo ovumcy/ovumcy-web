@@ -273,6 +273,43 @@ type User struct {
 	// both bulk disarms leave it alone — they clear the token, and a stamp
 	// without a token states nothing.
 	CalendarFeedKeyEpoch string `gorm:"column:calendar_feed_key_epoch"`
+	// CalendarFeedLastPolledOn records the owner's calendar day (in
+	// users.timezone) on which a successful, token-verified poll of the .ics
+	// feed most recently served this owner's data (migration 040, WEB-46). It
+	// is a coarse presence signal by design: day granularity, no IP, no user
+	// agent, no per-request row, so it gives an owner something to act on
+	// ("this keeps moving after I unsubscribed everywhere -- rotate the link")
+	// without becoming the per-request audit log the feed is deliberately
+	// without (docs/security/known-disclosures.md).
+	//
+	// Stored in the repo's UTC-midnight DATE form, like LastPeriodStart: the
+	// VALUE is the owner's calendar day (services.DateAtLocation(now,
+	// feedLocation) in CalendarFeedService.ResolveFeed, the same "today" the
+	// feed body itself is built from), re-anchored to UTC midnight for
+	// storage.
+	//
+	// NIL means "never successfully polled since this column existed" -- every
+	// row that predates migration 040 and every feed nobody has fetched yet.
+	// Written by UserRepository.MarkCalendarFeedPolled, a monotonic
+	// compare-and-set pinned to the selector the poll just verified
+	// (WHERE id = ? AND calendar_feed_selector = ? AND (this column IS NULL OR
+	// < the day)), called synchronously after ResolveFeed builds a successful
+	// feed body and skipped outright when the loaded row already holds today
+	// -- so a calendar client polling every few minutes costs at most one
+	// UPDATE per owner-day. Its error is ignored and never logged: the feed
+	// answers the identical 200 whether or not the mark lands, and no failure
+	// path (404, 500) ever reaches this write.
+	//
+	// Cleared everywhere calendar_feed_selector is written, in the same
+	// statement: SaveCalendarFeedToken (mint/rotate starts a fresh mark for
+	// the fresh link), ClearCalendarFeedToken (revoke), both bulk disarms,
+	// UpdateRecoveryCodeHashAndRevokeSessions, ForceResetPasswordAndRevokeSessions,
+	// UpdatePasswordRecoveryCodeAndRevokeSessionsCAS, and
+	// ClearAllDataAndResetSettings -- the complete set, pinned by an AST guard
+	// in calendar_feed_fence_writers_guard_test.go so the date never survives
+	// past the token it was about. Rendered on the settings card and cited by
+	// SECURITY.md's Calendar Feed Subscription rows.
+	CalendarFeedLastPolledOn *time.Time `gorm:"column:calendar_feed_last_polled_on;type:date"`
 }
 
 // CalendarFeedTokenColumns is the transport-free narrow view of the three stored
