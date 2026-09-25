@@ -110,9 +110,10 @@ verify it against the numbers.
 # Scoped to the module's Go trees (not ./...) so a local node_modules/ — where a
 # vendored JS dependency ships a .go file — isn't swept into the wildcard.
 # -timeout 30m: Go's default is 10 minutes PER PACKAGE, and internal/api's
-# DB-integration suite alone took 887-1101 s here (CI shards it into 20m cells),
-# so the default dies as `panic: test timed out after 10m0s` with a goroutine
-# dump that reads like a product bug. Read that panic as the budget, not a defect.
+# DB-integration suite alone took 887-1101 s here (measured 2026-09-20; CI
+# shards it into 20m cells), so the default dies as
+# `panic: test timed out after 10m0s` with a goroutine dump that reads like a
+# product bug. Read that panic as the budget, not a defect.
 go test ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/... -timeout 30m
 
 # Active fuzzing of a single target
