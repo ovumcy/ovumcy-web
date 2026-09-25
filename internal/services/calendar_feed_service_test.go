@@ -34,6 +34,14 @@ type stubFeedUserStore struct {
 	backfilledSel    string
 	backfilledMAC    string
 	backfillErr      error
+
+	// markCalls and the fields below it back the WEB-46 last-polled regressions
+	// in calendar_feed_service_last_polled_test.go.
+	markCalls    int
+	markedUserID uint
+	markedSel    string
+	markedDay    time.Time
+	markErr      error
 }
 
 func (s *stubFeedUserStore) FindByCalendarFeedSelector(_ context.Context, selector string) (models.User, bool, error) {
@@ -56,6 +64,18 @@ func (s *stubFeedUserStore) BackfillCalendarFeedVerifierMAC(_ context.Context, u
 		return s.backfillErr
 	}
 	s.user.CalendarFeedVerifierMAC = verifierMAC
+	return nil
+}
+
+func (s *stubFeedUserStore) MarkCalendarFeedPolled(_ context.Context, userID uint, selector string, day time.Time) error {
+	s.markCalls++
+	s.markedUserID = userID
+	s.markedSel = selector
+	s.markedDay = day
+	if s.markErr != nil {
+		return s.markErr
+	}
+	s.user.CalendarFeedLastPolledOn = &day
 	return nil
 }
 

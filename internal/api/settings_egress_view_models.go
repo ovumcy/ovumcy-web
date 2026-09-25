@@ -34,6 +34,11 @@ type settingsEgressPathView struct {
 	EvidenceISO  string
 	EvidenceText string
 	PayloadKeys  []string
+	// PolledKey/PolledISO/PolledText carry the calendar-feed last-polled mark
+	// (WEB-46); left zero on the webhook path, which has no such mark.
+	PolledKey  string
+	PolledISO  string
+	PolledText string
 }
 
 // settingsEgressView is the whole owner-only block.
@@ -69,9 +74,14 @@ func buildSettingsEgressView(c fiber.Ctx, ledger services.EgressLedger, location
 	if ledger.Feed.RevealedAt != nil {
 		feedEvidenceKey = "settings.egress.evidence.feed.recorded"
 	}
+	feedPolledKey := "settings.egress.feed_polled.none"
+	if ledger.Feed.LastPolledOn != nil {
+		feedPolledKey = "settings.egress.feed_polled.recorded"
+	}
 
 	webhookISO, webhookText := egressTimestampStrings(language, location, ledger.Webhook.LastDeliveredAt)
 	feedISO, feedText := egressTimestampStrings(language, location, ledger.Feed.RevealedAt)
+	feedPolledISO, feedPolledText := feedPolledDisplayString(language, ledger.Feed.LastPolledOn)
 
 	return settingsEgressView{
 		Section:    string(ledger.Section),
@@ -98,6 +108,9 @@ func buildSettingsEgressView(c fiber.Ctx, ledger services.EgressLedger, location
 			EvidenceISO:  feedISO,
 			EvidenceText: feedText,
 			PayloadKeys:  egressFeedPayloadMessageKeys(ledger.Feed.PayloadFields),
+			PolledKey:    feedPolledKey,
+			PolledISO:    feedPolledISO,
+			PolledText:   feedPolledText,
 		},
 		FeedActionable:   ledger.Feed.State != services.EgressFeedUnknown,
 		FeedTokenPresent: egressFeedTokenPresent(ledger.Feed.State),
@@ -127,6 +140,23 @@ func egressTimestampStrings(language string, location *time.Location, value *tim
 	}
 	stamp := value.In(location)
 	return stamp.Format(time.RFC3339), services.LocalizedDateDisplay(language, stamp)
+}
+
+// feedPolledDisplayString renders the last-polled DAY (WEB-46), and
+// deliberately never through egressTimestampStrings: that helper resolves
+// `.In(location)` because its two callers hold an instant, but
+// CalendarFeedLastPolledOn is stored as the repo's UTC-midnight DATE form for
+// the owner's OWN calendar day (users.timezone), already resolved once in
+// ResolveFeed. Shifting it again into the viewer's request location here would
+// re-derive a second, possibly different, calendar day — the mismatch
+// timezone-calendar.md warns against — so the display is built straight from
+// the stored value's own Y-M-D via LocalizedDateDisplay/CalendarDayKey, never
+// via `.In(loc)`.
+func feedPolledDisplayString(language string, value *time.Time) (iso, text string) {
+	if value == nil {
+		return "", ""
+	}
+	return services.CalendarDayKey(*value), services.LocalizedDateDisplay(language, *value)
 }
 
 // egressFeedTokenPresent reports whether a link exists to rotate or withdraw.

@@ -753,6 +753,8 @@
   "settings.egress.state.feed.issued_current_key": "Ссылка на календарь сохранена и создана под ключом, который этот экземпляр использует сейчас, поэтому отзыв здесь её отключит.",
   "settings.egress.evidence.feed.none": "Для этой ссылки не зафиксировано ни одного одноразового показа.",
   "settings.egress.evidence.feed.recorded": "Одноразовый показ использован",
+  "settings.egress.feed_polled.none": "Ни один календарь ещё не обращался к этой ленте.",
+  "settings.egress.feed_polled.recorded": "Последняя проверка календарём",
   "settings.egress.payload.feed.uid": "Идентификатор события, построенный из типа напоминания и его даты",
   "settings.egress.payload.feed.dtstamp": "Момент, когда была сгенерирована лента",
   "settings.egress.payload.feed.dtstart": "Предполагаемая дата, к которой относится событие",

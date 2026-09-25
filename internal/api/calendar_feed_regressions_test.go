@@ -448,6 +448,13 @@ func (failingFeedUserStore) BackfillCalendarFeedVerifierMAC(context.Context, uin
 	return nil
 }
 
+// MarkCalendarFeedPolled is never reached here: the lookup above always fails
+// first, so ResolveFeed never gets far enough to call it. The stub exists only
+// to satisfy CalendarFeedUserStore (WEB-46).
+func (failingFeedUserStore) MarkCalendarFeedPolled(context.Context, uint, string, time.Time) error {
+	return nil
+}
+
 // failingFeedDayReader satisfies the day-reader port; it is never reached
 // because the user lookup fails first, but ResolveFeed needs a non-nil reader.
 type failingFeedDayReader struct{}

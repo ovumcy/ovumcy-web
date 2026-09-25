@@ -45,10 +45,14 @@ var (
 // calendarFeedRevealEgress tags the one-time reveal of the subscribe URL. The
 // URL is a standing read-only capability over the owner's predicted cycle, so
 // the audited moment is the one where it reaches a person — the later polls by
-// a calendar client are deliberately not audited (a bearer-token route that
+// a calendar client are not per-request audited (a bearer-token route that
 // answers 404 with no oracle would have to log its own refusals to be useful,
 // which is an oracle moved into the log; see docs/security/known-disclosures.md).
-// The event records the fact of the reveal; the URL never enters the line.
+// The one exception, at day granularity, is users.calendar_feed_last_polled_on
+// (migration 040, WEB-46): the owner's calendar day of the most recent
+// successful poll, with no IP, no user agent and no per-request row — an
+// owner-facing signal on the settings card, not an audit log entry. The event
+// below records the fact of the reveal; the URL never enters the line.
 var calendarFeedRevealEgress = healthEgressKind{action: "settings.calendar_feed_reveal", target: "calendar_feed"}
 
 // calendarFeedRevealPath is the dedicated one-time reveal page the generate and
