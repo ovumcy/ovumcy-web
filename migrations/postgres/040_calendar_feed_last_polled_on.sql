@@ -1,0 +1,35 @@
+-- Postgres mirror of migrations/040_calendar_feed_last_polled_on.sql (item
+-- 23+1, privacy ledger, WEB-46). Same version number and basename so schema
+-- history stays aligned across engines.
+--
+-- NO BACKFILL: an upgraded row says "never successfully polled" until one
+-- lands, which is the true statement for a feed no client has fetched since
+-- the upgrade.
+--
+-- The value is the OWNER's calendar day in users.timezone -- the same
+-- "today" ResolveFeed already resolves to build the feed body -- stored as
+-- the repo's UTC-midnight DATE form, like last_period_start. It is written
+-- by UserRepository.MarkCalendarFeedPolled, a monotonic compare-and-set
+-- pinned to the token's own selector, called synchronously right after
+-- ResolveFeed builds a successful feed body and skipped outright when the
+-- row already loaded in that request holds today's date, so a calendar
+-- client polling every few minutes costs at most one UPDATE per owner-day.
+-- Errors are ignored and never logged -- the feed answers the identical 200
+-- whether or not the mark lands.
+--
+-- Cleared everywhere calendar_feed_selector is written, in the same
+-- statement -- mint/rotate, revoke, both bulk disarms, recovery-code
+-- rotation, an operator-forced reset, the recovery-code password-reset CAS,
+-- and a clear-data wipe -- the complete set, pinned by an AST guard.
+--
+-- No index: read one row at a time by owner id on the settings path.
+--
+-- ALTER TABLE ADD COLUMN IF NOT EXISTS keeps the migration idempotent across
+-- the postgres test bootstrap and rolling deploys (in addition to the
+-- runner's own already-exists skip). Rollback (forward-only repo) is
+-- documented in the commit body, not here.
+--
+-- NOTE: keep prose in this file free of semicolons -- the migration runner
+-- splits statements on the semicolon character without stripping SQL comments.
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS calendar_feed_last_polled_on DATE;

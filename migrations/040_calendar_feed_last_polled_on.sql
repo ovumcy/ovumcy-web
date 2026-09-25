@@ -1,0 +1,39 @@
+-- Item 23+1 of the privacy ledger (WEB-46): the day of the last successful,
+-- token-verified poll of the owner's .ics calendar feed. Nullable, no default,
+-- no backfill -- an upgraded row says "never successfully polled" until one
+-- lands, which is the true statement for a feed no client has fetched since
+-- the upgrade.
+--
+-- The value is the OWNER's calendar day in users.timezone -- the same "today"
+-- ResolveFeed already resolves to build the feed body -- stored as the
+-- repo's UTC-midnight DATE form, like last_period_start. It is written by
+-- UserRepository.MarkCalendarFeedPolled, a monotonic compare-and-set pinned
+-- to the token's own selector (WHERE id = ? AND calendar_feed_selector = ?
+-- AND (this column IS NULL OR < the day)), called synchronously right after
+-- ResolveFeed builds a successful feed body. The write is skipped outright,
+-- with no query at all, when the row already loaded in that same request
+-- holds today's date, so a calendar client polling every few minutes costs
+-- at most one UPDATE per owner-day rather than one per request. Errors are
+-- ignored and never logged -- the feed answers the identical 200 whether or
+-- not the mark lands, and no failure path (404, 500) ever reaches this
+-- write.
+--
+-- Cleared everywhere calendar_feed_selector is written, in the same
+-- statement: SaveCalendarFeedToken (mint/rotate starts a fresh mark for the
+-- fresh link), ClearCalendarFeedToken (revoke), both bulk disarms
+-- (DisarmCalendarFeedTokensWithoutMAC, DisarmAllCalendarFeedTokens),
+-- UpdateRecoveryCodeHashAndRevokeSessions, ForceResetPasswordAndRevokeSessions,
+-- UpdatePasswordRecoveryCodeAndRevokeSessionsCAS, and
+-- ClearAllDataAndResetSettings -- the complete set, so the date never
+-- survives past the link it was about. An AST guard
+-- (calendar_feed_fence_writers_guard_test.go) pins that completeness the same
+-- way the restore-fence writer guard already pins its own set.
+--
+-- No index: read one row at a time by owner id on the settings path, exactly
+-- like calendar_feed_key_epoch beside it.
+--
+-- NOTE: keep prose in this file free of semicolons -- the migration runner
+-- splits statements on the semicolon character without stripping SQL comments,
+-- so a semicolon inside a comment is mis-parsed as a statement boundary.
+
+ALTER TABLE users ADD COLUMN calendar_feed_last_polled_on DATE;
