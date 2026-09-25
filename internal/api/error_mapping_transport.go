@@ -236,13 +236,15 @@ func (handler *Handler) respondAuthError(c fiber.Ctx, spec APIErrorSpec) error {
 		case "/api/v1/sessions/2fa-challenge":
 			handler.setFlashCookie(c, flash)
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/auth/2fa")
-		// codecov:ignore:start -- forward-compat safety net: every current isV1AuthFormPath member
-		// either has an explicit case above or (logout) responds through global specs, so this arm
-		// is unreachable until a new auth-form path is enumerated.
+		// default is reachable: the SSO limiter is mounted on the whole /auth/oidc
+		// prefix (not just start/callback), so a refusal on a sub-path with no case
+		// of its own — the OIDC logout bridge, its redirect leg, link-confirm,
+		// callback/continue — lands here too. Every one of those is a page-flow
+		// continuation, so the same /login redirect it already gets for the listed
+		// cases is the right fallback, not a gap.
 		default:
 			handler.setFlashCookie(c, flash)
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
-			// codecov:ignore:end
 		}
 	}
 	return apiError(c, spec)
@@ -253,9 +255,17 @@ func (handler *Handler) respondAuthError(c fiber.Ctx, spec APIErrorSpec) error {
 // explicitly rather than prefix-matched on /api/v1/ because the broader v1
 // surface (days, symptoms, settings) returns JSON or HTMX status fragments
 // and must NOT flash-redirect on error.
+//
+// DELETE /api/v1/sessions/current is deliberately absent (WEB-72): it is not a
+// form a browser can submit (forms carry only GET/POST), so a plain-HTML
+// client refusing here — most often the edge rate limiter, before the handler
+// ever runs — must get the same mapped-error envelope any other API rejection
+// gets, not a redirect to /login. The signed-out browser's OWN
+// too-many-attempts refusal still redirects; Handler.Logout does that
+// explicitly, never through this path list.
 func isV1AuthFormPath(path string) bool {
 	switch path {
-	case "/api/v1/users", "/api/v1/sessions", "/api/v1/sessions/current",
+	case "/api/v1/users", "/api/v1/sessions",
 		"/api/v1/sessions/2fa-challenge", "/api/v1/password-resets",
 		"/api/v1/password-resets/redeem":
 		return true

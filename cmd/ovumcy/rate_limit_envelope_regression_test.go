@@ -62,13 +62,17 @@ type rateLimitSurface struct {
 // real registration count by TestRateLimitSurfaceTableCoversEveryLimiter.
 var rateLimitSurfaces = []rateLimitSurface{
 	{
+		// WEB-72: the per-IP logout row refuses before the handler, so a plain
+		// (no JSON Accept, no HX-Request) client must get the 429 envelope like
+		// any other API rejection, never the 303 flash-redirect a signed-out
+		// browser's own too-many-attempts refusal uses (Handler.Logout answers
+		// that one directly, not through this table's path).
 		name:         "logout",
 		method:       http.MethodDelete,
 		path:         "/api/v1/sessions/current",
 		key:          "too_many_logout_attempts",
 		detailTarget: "auth_form",
-		html:         htmlArmRedirect,
-		htmlLocation: "/login",
+		html:         htmlArmEnvelope,
 		// SkipFailedRequests: a refused DELETE no longer spends the row.
 		spendWithSession: true,
 	},
@@ -334,6 +338,9 @@ func TestEveryRateLimiterAnswersABrowserWithoutRawJSON(t *testing.T) {
 				}
 				if _, ok := payload["error_detail"]; !ok {
 					t.Fatalf("%s answered without error_detail: %q", surface.name, body)
+				}
+				if strings.TrimSpace(response.Header.Get("Retry-After")) == "" {
+					t.Fatalf("%s browser refusal answered without a Retry-After header", surface.name)
 				}
 			case htmlArmFragment:
 				if response.StatusCode != http.StatusTooManyRequests {
