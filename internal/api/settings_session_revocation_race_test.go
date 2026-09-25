@@ -374,6 +374,40 @@ func assertRevokedMidwayRefusal(t *testing.T, run revokingWriteRun, response *ht
 	assertAuthCookieCleared(t, run.app, response)
 }
 
+// assertIdentityChangeAppliedRefusal is assertRevokedMidwayRefusal's
+// counterpart for reissueSessionAfterIdentityChange's OTHER refusal: the link
+// or unlink (or its no-op already-linked confirmation) has already gone
+// through by the time a separate revocation's version wins the reload, so
+// "failed to create session" would be false. The link case still flashes and
+// redirects — completeOIDCIdentityLinkStepup runs on /auth/oidc/callback — but
+// onto /login on the auth channel, not /settings on the settings channel: the
+// cleared cookie would bounce /settings to /login anyway and drop the flash
+// nothing there reads. The unlink case is respondMappedError's plain JSON
+// envelope, unaffected by that trap (its route is not a settings-form path).
+func assertIdentityChangeAppliedRefusal(t *testing.T, run revokingWriteRun, response *http.Response) {
+	t.Helper()
+	spec := authIdentityChangeAppliedSignInAgainErrorSpec()
+	if run.flash {
+		assertStatusCode(t, response, http.StatusSeeOther)
+		if location := response.Header.Get("Location"); location != "/login" {
+			t.Fatalf("expected the refusal to land on /login, got Location %q", location)
+		}
+		flashCookie := responseCookie(response.Cookies(), flashCookieName)
+		if flashCookie == nil || strings.TrimSpace(flashCookie.Value) == "" {
+			t.Fatal("expected a refusal flash cookie")
+		}
+		if payload := decodeFlashCookieForTest(t, flashCookie.Value); payload.AuthError != spec.Key {
+			t.Fatalf("expected auth_error=%q, got %q (settings channel holds %q)", spec.Key, payload.AuthError, payload.SettingsError)
+		}
+	} else {
+		body := mustReadBodyString(t, response.Body)
+		if response.StatusCode != spec.Status || !strings.Contains(body, spec.Key) {
+			t.Fatalf("expected %d %q, got %d: %s", spec.Status, spec.Key, response.StatusCode, body)
+		}
+	}
+	assertAuthCookieCleared(t, run.app, response)
+}
+
 func assertAuthCookieCleared(t *testing.T, app *fiber.App, response *http.Response) {
 	t.Helper()
 	authCookie := responseCookie(response.Cookies(), authCookieName)
@@ -482,14 +516,25 @@ func TestSettingsIdentityChangesRefuseASessionARevocationCommittedMidwayWouldNot
 		revokeAfter       bool
 		fromStoredVersion bool
 		wantRefused       bool
+		// wantChangeApplied marks a refusal that comes from
+		// reissueSessionAfterIdentityChange's post-commit version-mismatch arm
+		// rather than the write's own compare-and-set: the link or unlink (or its
+		// no-op already-linked confirmation) has already gone through by the
+		// time the race is observed, so the refusal answers
+		// authIdentityChangeAppliedSignInAgainErrorSpec on /login instead of
+		// authSessionCreateErrorSpec on /settings. "sign-out before the write"
+		// (without alreadyLinked) still fails the write's own CAS and keeps the
+		// old refusal; only a write that already committed (revokeAfter) or never
+		// needed to (alreadyLinked) reaches the new one.
+		wantChangeApplied bool
 	}{
 		{name: "link: sign-out before the write", revokeBefore: true, wantRefused: true},
-		{name: "link: sign-out after the write", revokeAfter: true, wantRefused: true},
-		{name: "link: sign-out before an already-linked confirmation", alreadyLinked: true, revokeBefore: true, wantRefused: true},
+		{name: "link: sign-out after the write", revokeAfter: true, wantRefused: true, wantChangeApplied: true},
+		{name: "link: sign-out before an already-linked confirmation", alreadyLinked: true, revokeBefore: true, wantRefused: true, wantChangeApplied: true},
 		{name: "link: negative control: write from the stored version", revokeBefore: true, fromStoredVersion: true},
 		{name: "link: positive control: no concurrent write"},
 		{name: "unlink: sign-out before the write", unlink: true, revokeBefore: true, wantRefused: true},
-		{name: "unlink: sign-out after the write", unlink: true, revokeAfter: true, wantRefused: true},
+		{name: "unlink: sign-out after the write", unlink: true, revokeAfter: true, wantRefused: true, wantChangeApplied: true},
 		{name: "unlink: negative control: write from the stored version", unlink: true, revokeBefore: true, fromStoredVersion: true},
 		{name: "unlink: positive control: no concurrent write", unlink: true},
 	}
@@ -596,7 +641,11 @@ func TestSettingsIdentityChangesRefuseASessionARevocationCommittedMidwayWouldNot
 
 			run := revokingWriteRun{app: fixture.app, flash: !tc.unlink}
 			if tc.wantRefused {
-				assertRevokedMidwayRefusal(t, run, response)
+				if tc.wantChangeApplied {
+					assertIdentityChangeAppliedRefusal(t, run, response)
+				} else {
+					assertRevokedMidwayRefusal(t, run, response)
+				}
 				return
 			}
 			if response.StatusCode >= http.StatusBadRequest {
