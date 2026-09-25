@@ -204,7 +204,7 @@ func (handler *Handler) completeLocalPasswordSetupReauth(c fiber.Ctx, state oidc
 	// revocation committed since the request was authenticated refuses it, and
 	// this device is signed out rather than re-issued past that revocation.
 	if errors.Is(err, services.ErrAuthSessionVersionChanged) {
-		return handler.redirectSettingsRefusal(c, handler.refuseSessionRevokedDuring(c, "auth.local_password_setup.callback", "local_password_setup"))
+		return handler.redirectSignedOutRefusal(c, handler.refuseSessionRevokedDuring(c, "auth.local_password_setup.callback", "local_password_setup"))
 	}
 	if err != nil {
 		// The commit's refusals leave the same way the re-auth refusals above

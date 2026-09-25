@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -210,7 +211,7 @@ var stepupCompletionHandlers = map[string]string{
 // completion handlers above delegate into: applyClearData and
 // applyDeleteAccount share their session re-issue with refreshCurrentSession,
 // which every other posture change also calls. Scanned separately from
-// stepupCompletionHandlers because these helpers return (APIErrorSpec, bool),
+// stepupCompletionHandlers because these helpers return a spec and a verdict,
 // not a single error, so they cannot share
 // TestEveryStepupCallbackRefusalLeavesThroughTheSettingsRedirect's
 // single-return-value shape check — they get their own derivation instead,
@@ -519,6 +520,9 @@ func TestEverySettingsStepupRefusalKeyMapsToLocalizedCopy(t *testing.T) {
 // JSON envelope or hands it to the top-level ErrorHandler.
 //
 //   - handler.redirectSettingsRefusal — the refusal channel, flash + 303.
+//   - handler.redirectSignedOutRefusal — the same, for a refusal raised after
+//     the auth cookie was cleared: flash on the auth channel + 303 to /login,
+//     the one page that still renders for a device with no session.
 //   - c.Redirect.Status.To — the plain redirects: /settings after a success or a
 //     flow that finished elsewhere, /login after the account was deleted.
 //   - respondOIDCSameOriginHandoff — a document whose only content is a
@@ -539,6 +543,7 @@ func TestEverySettingsStepupRefusalKeyMapsToLocalizedCopy(t *testing.T) {
 //     check rather than skipping it.
 var allowedStepupCompletionTerminals = map[string]string{
 	"handler.redirectSettingsRefusal":          "the refusal channel the settings page reads",
+	"handler.redirectSignedOutRefusal":         "the refusal channel the sign-in page reads, once the cookie is gone",
 	"handler.refuseOIDCStepupCallback":         "the refusal channel, by the route the arrival can carry",
 	"c.Redirect.Status.To":                     "a plain redirect to a page",
 	"respondOIDCSameOriginHandoff":             "a same-origin document that navigates to a page",
@@ -842,10 +847,12 @@ func TestLocalPasswordSetupCommitFailureRendersOnTheSettingsPage(t *testing.T) {
 }
 
 // clearDataProbeVerdict is what applyClearData hands back to its caller: the
-// spec key, and whether the operation may be reported as done.
+// spec key, whether the operation may be reported as done, and whether this
+// device was signed out on the way.
 type clearDataProbeVerdict struct {
-	OK  bool   `json:"ok"`
-	Key string `json:"key"`
+	OK        bool   `json:"ok"`
+	SignedOut bool   `json:"signed_out"`
+	Key       string `json:"key"`
 }
 
 // probeApplyClearData calls applyClearData on a real request context and reports
@@ -863,8 +870,12 @@ func probeApplyClearData(t *testing.T, handler *Handler, user *models.User) clea
 
 	app := fiber.New()
 	app.Post("/__probe/clear-data", func(c fiber.Ctx) error {
-		spec, ok := handler.applyClearData(c, user)
-		return c.Status(fiber.StatusOK).JSON(fiber.Map{"ok": ok, "key": spec.Key})
+		spec, outcome := handler.applyClearData(c, user)
+		return c.Status(fiber.StatusOK).JSON(fiber.Map{
+			"ok":         outcome == clearDataApplied,
+			"signed_out": outcome == clearDataRefusedSignedOut,
+			"key":        spec.Key,
+		})
 	})
 
 	response := mustAppResponse(t, app, httptest.NewRequest(http.MethodPost, "/__probe/clear-data", nil))
@@ -902,11 +913,12 @@ func TestApplyClearDataReportsARefusedSessionReissueToItsCaller(t *testing.T) {
 	t.Parallel()
 
 	for _, testCase := range []struct {
-		name    string
-		slug    string
-		role    string
-		wantOK  bool
-		wantKey string
+		name          string
+		slug          string
+		role          string
+		wantOK        bool
+		wantSignedOut bool
+		wantKey       string
 	}{
 		{
 			name: "the session re-issue is refused",
@@ -914,9 +926,10 @@ func TestApplyClearDataReportsARefusedSessionReissueToItsCaller(t *testing.T) {
 			// The one non-owner value the users table's CHECK constraint still
 			// accepts, which is what makes this arm reachable from a row rather
 			// than only from a fault injected into the codec.
-			role:    "partner",
-			wantOK:  false,
-			wantKey: settingsDataClearedSignInAgainErrorSpec().Key,
+			role:          "partner",
+			wantOK:        false,
+			wantSignedOut: true,
+			wantKey:       settingsDataClearedSignInAgainErrorSpec().Key,
 		},
 		{
 			name:   "the session is re-issued",
@@ -958,6 +971,12 @@ func TestApplyClearDataReportsARefusedSessionReissueToItsCaller(t *testing.T) {
 					verdict.OK, testCase.wantOK,
 				)
 			}
+			if verdict.SignedOut != testCase.wantSignedOut {
+				t.Fatalf(
+					"applyClearData reported signed_out=%t, want %t: the refused re-issue has already cleared the cookie, so a caller reading it as a live-session refusal sends the owner to /settings, which bounces to /login without the message",
+					verdict.SignedOut, testCase.wantSignedOut,
+				)
+			}
 			if verdict.Key != testCase.wantKey {
 				t.Fatalf(
 					"applyClearData handed back spec key %q, want %q: the spec has to be the one the session re-issue chose, since that is the copy the settings page renders",
@@ -986,9 +1005,9 @@ func TestApplyClearDataReportsARefusedSessionReissueToItsCaller(t *testing.T) {
 // arm for /api/v1/users/current redirects to /settings — which requires the
 // very cookie applyClearData just cleared. That bounces to /login and drops
 // the SettingsError flash on a channel /login never reads, the same trap
-// completeErasureStepupReauth's identical check exists for. JSON and HTMX
-// callers never hit that redirect at all, so all three formats are driven
-// here to prove the fix is format-aware, not merely present.
+// completeErasureStepupReauth answers through redirectSignedOutRefusal. The
+// three formats leave differently — JSON keeps the mapped envelope, HTMX is sent
+// to /login by HX-Redirect, a plain form by 303 — so all three are driven.
 func TestClearAllDataAnswersARefusedSessionReissueByFormat(t *testing.T) {
 	t.Parallel()
 
@@ -1003,7 +1022,7 @@ func TestClearAllDataAnswersARefusedSessionReissueByFormat(t *testing.T) {
 	}{
 		{name: "plain html client lands on /login, not /settings", slug: "html", accept: "text/html", wantStatus: http.StatusSeeOther},
 		{name: "json client gets the mapped 401 envelope", slug: "json", accept: "application/json", wantStatus: http.StatusUnauthorized},
-		{name: "htmx client gets the mapped fragment", slug: "htmx", accept: "text/html", htmx: true, wantStatus: http.StatusOK},
+		{name: "htmx client is sent to /login by HX-Redirect", slug: "htmx", accept: "text/html", htmx: true, wantStatus: http.StatusOK},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
@@ -1060,30 +1079,13 @@ func TestClearAllDataAnswersARefusedSessionReissueByFormat(t *testing.T) {
 				t.Fatalf("clear-data refused reissue (%s) = %d, want %d: %s", testCase.name, response.StatusCode, testCase.wantStatus, mustReadBodyString(t, response.Body))
 			}
 
-			switch {
-			case testCase.htmx:
-				translationKey := services.AuthErrorTranslationKey(wantKey)
-				body := mustReadBodyString(t, response.Body)
-				if !strings.Contains(body, `data-flash-key="`+translationKey+`"`) {
-					t.Fatalf("expected the HTMX fragment to carry data-flash-key %q, got %q", translationKey, body)
-				}
-			case testCase.accept == "application/json":
+			if testCase.accept == "application/json" {
 				body := mustReadBodyString(t, response.Body)
 				if !strings.Contains(body, wantKey) {
 					t.Fatalf("expected the JSON envelope to carry %q, got %q", wantKey, body)
 				}
-			default:
-				if location := response.Header.Get("Location"); location != "/login" {
-					t.Fatalf("expected the plain-HTML refusal to land on /login (not /settings, which the cleared cookie would bounce to /login anyway and lose the flash), got %q", location)
-				}
-				flashCookie := responseCookie(response.Cookies(), flashCookieName)
-				if flashCookie == nil || strings.TrimSpace(flashCookie.Value) == "" {
-					t.Fatal("expected a flash cookie carrying the refusal")
-				}
-				payload := decodeFlashCookieForTest(t, flashCookie.Value)
-				if payload.AuthError != wantKey {
-					t.Fatalf("expected the refusal %q on the auth flash channel (the one /login reads), got AuthError=%q SettingsError=%q", wantKey, payload.AuthError, payload.SettingsError)
-				}
+			} else {
+				assertSignedOutRefusal(t, response, wantKey, testCase.htmx)
 			}
 
 			// Anti-vacuity: the wipe itself must have happened, so a refusal above
@@ -1097,5 +1099,77 @@ func TestClearAllDataAnswersARefusedSessionReissueByFormat(t *testing.T) {
 				t.Fatalf("expected the account row to carry auth_session_version=2 after the wipe, got %d matching rows: the probe never reached the session re-issue", remaining)
 			}
 		})
+	}
+}
+
+// assertSignedOutRefusal pins redirectSignedOutRefusal's page-bound answer: the
+// refusal rides the auth flash channel, and the browser is sent to /login — by
+// 303, or by HX-Redirect for an HTMX caller. A redirect to /settings would be
+// bounced to /login by the cleared cookie and arrive there without the message.
+func assertSignedOutRefusal(t *testing.T, response *http.Response, wantKey string, htmx bool) {
+	t.Helper()
+
+	if htmx {
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("expected 200 carrying HX-Redirect, got %d", response.StatusCode)
+		}
+		if redirect := response.Header.Get("HX-Redirect"); redirect != "/login" {
+			t.Fatalf("expected HX-Redirect /login, got %q", redirect)
+		}
+	} else {
+		if response.StatusCode != http.StatusSeeOther {
+			t.Fatalf("expected 303, got %d", response.StatusCode)
+		}
+		if location := response.Header.Get("Location"); location != "/login" {
+			t.Fatalf("expected the refusal to land on /login, got Location %q", location)
+		}
+	}
+	flashCookie := responseCookie(response.Cookies(), flashCookieName)
+	if flashCookie == nil || strings.TrimSpace(flashCookie.Value) == "" {
+		t.Fatal("expected a flash cookie carrying the refusal")
+	}
+	if payload := decodeFlashCookieForTest(t, flashCookie.Value); payload.AuthError != wantKey {
+		t.Fatalf("expected %q on the auth flash channel (the one /login reads), got AuthError=%q SettingsError=%q", wantKey, payload.AuthError, payload.SettingsError)
+	}
+}
+
+// TestErasureStepupReissueFailureLandsOnLogin drives completeErasureStepupReauth
+// itself through a wipe that commits and a session re-issue that then fails —
+// the arm TestApplyClearDataReportsARefusedSessionReissueToItsCaller pins only
+// at applyClearData's seam. The re-issue is failed through the handler's
+// session-issuance seam, armed after the step-up start so the callback's own
+// authentication still passes and only the post-wipe re-mint is refused.
+func TestErasureStepupReissueFailureLandsOnLogin(t *testing.T) {
+	t.Parallel()
+
+	var armed atomic.Bool
+	fault := func() error {
+		if armed.Load() {
+			return errors.New("injected session issuance fault")
+		}
+		return nil
+	}
+	fixture := newOIDCStepupFixtureWithOptions(t, "settings-erasure-reissue-failure@example.com", onboardingTestAppOptions{sessionIssuanceFault: fault}, nil)
+	fixture.oidcStub.reauthErr = nil
+	seedStepupDayEntry(t, fixture)
+
+	startResponse := postErasureStepupStart(t, fixture, "/api/v1/users/current/data-wipe/step-up")
+	defer func() { _ = startResponse.Body.Close() }()
+	stepupCookie := readStepupCookie(t, startResponse)
+	state := extractStepupCallbackState(t, fixture)
+
+	armed.Store(true)
+	callbackResponse := postOIDCStepupCallback(t, fixture, stepupCookie, state, "callback-code")
+	defer func() { _ = callbackResponse.Body.Close() }()
+
+	// Anti-vacuity: the wipe committed, so the refusal below can only have come
+	// from the re-issue that follows it.
+	if got := countStepupDayEntries(t, fixture); got != 0 {
+		t.Fatalf("expected the wipe to have committed before the re-issue failed, day entries = %d", got)
+	}
+	assertSignedOutRefusal(t, callbackResponse, settingsDataClearedSignInAgainErrorSpec().Key, false)
+	authCookie := responseCookie(callbackResponse.Cookies(), authCookieName)
+	if authCookie == nil || strings.TrimSpace(authCookie.Value) != "" {
+		t.Fatalf("expected the auth cookie to be cleared after the refused re-issue, got %v", authCookie)
 	}
 }

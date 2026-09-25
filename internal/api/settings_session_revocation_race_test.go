@@ -96,9 +96,11 @@ type revokingWriteRun struct {
 	userID     uint
 	authCookie string
 	send       func() *http.Response
-	// flash marks a site that answers on the settings page's flash rather
-	// than with the mapped JSON error.
+	// flash marks a site that answers a browser navigation with a flash and a
+	// redirect rather than with the mapped JSON error; htmx marks one answered
+	// to an HTMX request, whose redirect rides HX-Redirect.
 	flash bool
+	htmx  bool
 }
 
 type revokingWriteSite struct {
@@ -210,6 +212,32 @@ func revokingWriteSites() []revokingWriteSite {
 					t.Fatalf("create a tracked day: %v", err)
 				}
 				return settingsRevokingWriteRun(t, ctx, http.MethodPost, "/api/v1/users/current/data-wipe", url.Values{"password": {"StrongPass1"}}, "")
+			},
+			effect: func(t *testing.T, database *gorm.DB, userID uint) string {
+				var days int64
+				if err := database.Model(&models.DailyLog{}).Where("user_id = ?", userID).Count(&days).Error; err != nil {
+					t.Fatalf("count tracked days: %v", err)
+				}
+				return fmt.Sprintf("days=%d", days)
+			},
+		},
+		{
+			// The same wipe submitted by a plain browser form: the refused write
+			// has already cleared the cookie, so the answer has to land on /login
+			// rather than as the JSON envelope the site above asks for.
+			name: "clear data from a browser form",
+			prepare: func(t *testing.T, hooks *revokingWriteHooks) revokingWriteRun {
+				ctx := revokingWriteSettingsContext(t, "race-clear-data-browser@example.com", hooks)
+				day := models.DailyLog{UserID: ctx.user.ID, Date: time.Date(2026, time.March, 3, 0, 0, 0, 0, time.UTC), IsPeriod: true, Flow: models.FlowMedium}
+				if err := ctx.database.Create(&day).Error; err != nil {
+					t.Fatalf("create a tracked day: %v", err)
+				}
+				run := settingsRevokingWriteRun(t, ctx, http.MethodPost, "/api/v1/users/current/data-wipe", url.Values{"password": {"StrongPass1"}}, "")
+				run.flash = true
+				run.send = func() *http.Response {
+					return settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/data-wipe", url.Values{"password": {"StrongPass1"}}, map[string]string{"Accept": "text/html"})
+				}
+				return run
 			},
 			effect: func(t *testing.T, database *gorm.DB, userID uint) string {
 				var days int64
@@ -348,23 +376,14 @@ func TestSettingsRevokingWritesRefuseASessionARevocationCommittedMidwayWouldNotR
 }
 
 // assertRevokedMidwayRefusal pins the refusal a revoked-midway request gets:
-// authSessionCreateErrorSpec on the handler's own channel, and a cleared auth
-// cookie that opens nothing.
+// authSessionCreateErrorSpec, and a cleared auth cookie that opens nothing. A
+// page-bound answer lands on /login on the auth channel — the cleared cookie
+// would bounce /settings there anyway and drop a settings flash on the way.
 func assertRevokedMidwayRefusal(t *testing.T, run revokingWriteRun, response *http.Response) {
 	t.Helper()
 	spec := authSessionCreateErrorSpec()
-	if run.flash {
-		assertStatusCode(t, response, http.StatusSeeOther)
-		if location := response.Header.Get("Location"); location != "/settings" {
-			t.Fatalf("expected the refusal back to /settings, got Location %q", location)
-		}
-		flashCookie := responseCookie(response.Cookies(), flashCookieName)
-		if flashCookie == nil || strings.TrimSpace(flashCookie.Value) == "" {
-			t.Fatal("expected a refusal flash cookie")
-		}
-		if payload := decodeFlashCookieForTest(t, flashCookie.Value); payload.SettingsError != spec.Key {
-			t.Fatalf("expected settings_error=%q, got %q", spec.Key, payload.SettingsError)
-		}
+	if run.flash || run.htmx {
+		assertSignedOutRefusal(t, response, spec.Key, run.htmx)
 	} else {
 		body := mustReadBodyString(t, response.Body)
 		if response.StatusCode != spec.Status || !strings.Contains(body, spec.Key) {
@@ -378,27 +397,14 @@ func assertRevokedMidwayRefusal(t *testing.T, run revokingWriteRun, response *ht
 // counterpart for reissueSessionAfterIdentityChange's OTHER refusal: the link
 // or unlink (or its no-op already-linked confirmation) has already gone
 // through by the time a separate revocation's version wins the reload, so
-// "failed to create session" would be false. The link case still flashes and
-// redirects — completeOIDCIdentityLinkStepup runs on /auth/oidc/callback — but
-// onto /login on the auth channel, not /settings on the settings channel: the
-// cleared cookie would bounce /settings to /login anyway and drop the flash
-// nothing there reads. The unlink case is respondMappedError's plain JSON
-// envelope, unaffected by that trap (its route is not a settings-form path).
+// "failed to create session" would be false. Page-bound answers land on /login
+// on the auth channel, exactly as assertRevokedMidwayRefusal's do; a JSON caller
+// gets the mapped envelope.
 func assertIdentityChangeAppliedRefusal(t *testing.T, run revokingWriteRun, response *http.Response) {
 	t.Helper()
 	spec := authIdentityChangeAppliedSignInAgainErrorSpec()
-	if run.flash {
-		assertStatusCode(t, response, http.StatusSeeOther)
-		if location := response.Header.Get("Location"); location != "/login" {
-			t.Fatalf("expected the refusal to land on /login, got Location %q", location)
-		}
-		flashCookie := responseCookie(response.Cookies(), flashCookieName)
-		if flashCookie == nil || strings.TrimSpace(flashCookie.Value) == "" {
-			t.Fatal("expected a refusal flash cookie")
-		}
-		if payload := decodeFlashCookieForTest(t, flashCookie.Value); payload.AuthError != spec.Key {
-			t.Fatalf("expected auth_error=%q, got %q (settings channel holds %q)", spec.Key, payload.AuthError, payload.SettingsError)
-		}
+	if run.flash || run.htmx {
+		assertSignedOutRefusal(t, response, spec.Key, run.htmx)
 	} else {
 		body := mustReadBodyString(t, response.Body)
 		if response.StatusCode != spec.Status || !strings.Contains(body, spec.Key) {
@@ -521,12 +527,15 @@ func TestSettingsIdentityChangesRefuseASessionARevocationCommittedMidwayWouldNot
 		// rather than the write's own compare-and-set: the link or unlink (or its
 		// no-op already-linked confirmation) has already gone through by the
 		// time the race is observed, so the refusal answers
-		// authIdentityChangeAppliedSignInAgainErrorSpec on /login instead of
-		// authSessionCreateErrorSpec on /settings. "sign-out before the write"
-		// (without alreadyLinked) still fails the write's own CAS and keeps the
-		// old refusal; only a write that already committed (revokeAfter) or never
+		// authIdentityChangeAppliedSignInAgainErrorSpec instead of
+		// authSessionCreateErrorSpec. "sign-out before the write" (without
+		// alreadyLinked) still fails the write's own CAS and keeps the old
+		// refusal; only a write that already committed (revokeAfter) or never
 		// needed to (alreadyLinked) reaches the new one.
 		wantChangeApplied bool
+		// htmx sends the unlink as the settings page's HTMX request instead of
+		// JSON, so the signed-out refusal has a page to redirect.
+		htmx bool
 	}{
 		{name: "link: sign-out before the write", revokeBefore: true, wantRefused: true},
 		{name: "link: sign-out after the write", revokeAfter: true, wantRefused: true, wantChangeApplied: true},
@@ -537,6 +546,8 @@ func TestSettingsIdentityChangesRefuseASessionARevocationCommittedMidwayWouldNot
 		{name: "unlink: sign-out after the write", unlink: true, revokeAfter: true, wantRefused: true, wantChangeApplied: true},
 		{name: "unlink: negative control: write from the stored version", unlink: true, revokeBefore: true, fromStoredVersion: true},
 		{name: "unlink: positive control: no concurrent write", unlink: true},
+		{name: "unlink (htmx): sign-out before the write", unlink: true, htmx: true, revokeBefore: true, wantRefused: true},
+		{name: "unlink (htmx): sign-out after the write", unlink: true, htmx: true, revokeAfter: true, wantRefused: true, wantChangeApplied: true},
 	}
 	for index, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -572,7 +583,12 @@ func TestSettingsIdentityChangesRefuseASessionARevocationCommittedMidwayWouldNot
 				giveLinkFixtureAPassword(t, fixture)
 				identityID := strconv.FormatUint(uint64(fixture.identity.ID), 10)
 				send = func() *http.Response {
-					response := deleteOIDCIdentity(t, fixture, identityID, linkFixturePassword, true)
+					var response *http.Response
+					if tc.htmx {
+						response = deleteOIDCIdentityWithFormat(t, fixture, identityID, linkFixturePassword, "text/html", true)
+					} else {
+						response = deleteOIDCIdentity(t, fixture, identityID, linkFixturePassword, true)
+					}
 					t.Cleanup(func() { _ = response.Body.Close() })
 					return response
 				}
@@ -639,7 +655,7 @@ func TestSettingsIdentityChangesRefuseASessionARevocationCommittedMidwayWouldNot
 				}
 			}
 
-			run := revokingWriteRun{app: fixture.app, flash: !tc.unlink}
+			run := revokingWriteRun{app: fixture.app, flash: !tc.unlink, htmx: tc.htmx}
 			if tc.wantRefused {
 				if tc.wantChangeApplied {
 					assertIdentityChangeAppliedRefusal(t, run, response)

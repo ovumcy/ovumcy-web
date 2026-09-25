@@ -324,3 +324,33 @@ func (handler *Handler) redirectSettingsRefusal(c fiber.Ctx, spec APIErrorSpec) 
 	handler.setFlashCookie(c, FlashPayload{SettingsError: spec.Key})
 	return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
 }
+
+// redirectSignedOutRefusal answers a refusal raised after this device's auth
+// cookie was already cleared: a revocation raced the change, or the change
+// committed and no session could be re-issued past it. Neither
+// redirectSettingsRefusal nor respondSettingsError's plain-HTML arm can carry
+// it — /settings needs the cookie that is gone, so AuthRequired bounces the
+// browser to /login and the SettingsError flash is read by nothing there. The
+// refusal rides flash.AuthError, the channel the sign-in page reads, and the
+// browser is sent to /login directly (HX-Redirect for HTMX, whose swapped
+// fragment would sit on a page that no longer has a session). Like
+// redirectSettingsRefusal it ignores Accept: a step-up callback is a navigation
+// back from the provider, and a page is the only answer it can show.
+func (handler *Handler) redirectSignedOutRefusal(c fiber.Ctx, spec APIErrorSpec) error {
+	handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
+	if isHTMX(c) {
+		c.Set("HX-Redirect", "/login")
+		return c.SendStatus(fiber.StatusOK)
+	}
+	return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
+}
+
+// respondSignedOutRefusal is redirectSignedOutRefusal for a route that also
+// serves JSON clients: they have no page to land on and keep the mapped status
+// and key.
+func (handler *Handler) respondSignedOutRefusal(c fiber.Ctx, spec APIErrorSpec) error {
+	if acceptsJSON(c) {
+		return handler.respondMappedError(c, spec)
+	}
+	return handler.redirectSignedOutRefusal(c, spec)
+}
