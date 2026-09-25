@@ -812,11 +812,12 @@ type languageSwitchAnswer struct {
 // refuses a blank `lang` with 400 and the route carries a per-IP limiter of its
 // own that refuses with 429.
 //
-// Both answers are produced, not restated: the 400 by SetLanguage behind the
-// transport-envelope error handler cmd/ovumcy installs (every *fiber.Error goes
-// through RespondTransportError; TestLanguageSwitchRejectionAnswersThroughTheEnvelope
-// pins that wiring on the real stack), the 429 by a real fiber limiter answering
-// with RespondAPIRateLimited — the responder the real /lang mount reaches, which
+// Both answers are produced, not restated: the 400 by SetLanguage's own blank
+// check through RespondLanguageSwitchTransportError, the page-form-aware
+// responder every other refusal on this route answers with
+// (TestLanguageSwitchRejectionAnswersThroughTheEnvelope pins that wiring on the
+// real stack), the 429 by a real fiber limiter answering with
+// RespondAPIRateLimited — the responder the real /lang mount reaches, which
 // requireLanguageSwitchLimiterAnswersThroughRespondAPIRateLimited reads out of
 // cmd/ovumcy. The JSON caller's key, category and target are required verbatim
 // in the spec's example; the form and HTMX callers, which get an HTML fragment
@@ -942,16 +943,16 @@ func TestOpenAPILanguageSwitchDeclaresTheRefusalsItAnswers(t *testing.T) {
 		requireSpecLine(t, component, line, "components.responses.RateLimited")
 	}
 
-	// Form submission: the 400 is still the JSON envelope, the 429 is the
-	// fragment — which the 429's description has to name, and the 400's must
-	// not exempt the form from the envelope.
+	// Form submission: both the 400 and the 429 are the fragment — a plain
+	// HTML navigation, this route's primary client — and both descriptions
+	// have to name it.
 	app = newApp()
 	answer = send(app, formClient)
 	if answer.status != http.StatusBadRequest {
 		t.Fatalf("form submission: a blank lang answered %d, want 400", answer.status)
 	}
-	envelopeLines("form submission 400", answer)
-	requireSpecMentions(t, badRequest, "the plain form submission included", "POST /lang 400")
+	requireHTMLFragment("form submission 400", answer)
+	requireSpecMentions(t, badRequest, "plain form submission", "POST /lang 400")
 	answer = send(app, formClient)
 	if answer.status != http.StatusTooManyRequests || answer.retryAfter == "" {
 		t.Fatalf("form submission: over the budget answered %d with Retry-After %q, want 429 with the header", answer.status, answer.retryAfter)

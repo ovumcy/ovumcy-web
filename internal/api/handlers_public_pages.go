@@ -10,7 +10,7 @@ import (
 func (handler *Handler) SetLanguage(c fiber.Ctx) error {
 	languageInput := strings.TrimSpace(c.FormValue("lang"))
 	if languageInput == "" {
-		return fiber.ErrBadRequest
+		return handler.RespondLanguageSwitchTransportError(c, fiber.StatusBadRequest)
 	}
 
 	language := handler.i18n.NormalizeLanguage(languageInput)
@@ -31,6 +31,21 @@ func (handler *Handler) SetLanguage(c fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusOK)
 	}
 	return c.Redirect().Status(fiber.StatusSeeOther).To(nextPath)
+}
+
+// RespondLanguageSwitchTransportError answers a transport-level refusal on
+// POST /lang — the 400 above (a blank `lang`) and the CSRF 403 the middleware
+// in the composition root raises before this handler ever runs — through the
+// same page-form negotiation the route's other refusals (429, 500) already
+// answer with: a plain HTML navigation gets the shared localized status
+// fragment instead of the JSON envelope painted into the browser window; JSON
+// and HTMX callers keep that envelope, and the status and stable key are
+// unchanged either way.
+//
+// Exported because the CSRF middleware's ErrorHandler is built in cmd/ovumcy,
+// which cannot see the unexported responders this route's other refusals use.
+func (handler *Handler) RespondLanguageSwitchTransportError(c fiber.Ctx, status int) error {
+	return handler.respondPageFormMappedError(c, transportErrorSpecForStatus(status))
 }
 
 // persistSwitchedLanguage stores the switched language on the account when the

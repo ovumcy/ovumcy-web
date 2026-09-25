@@ -195,37 +195,70 @@ func TestUnmatchedRouteAnswersThroughTheEnvelope(t *testing.T) {
 }
 
 // TestLanguageSwitchRejectionAnswersThroughTheEnvelope covers the one app
-// handler that returns a naked fiber sentinel on a validation failure. It is a
-// public, unauthenticated route reachable from every page's language switcher,
-// so its rejection was the bare "Bad Request" for anyone who submitted the form
-// without a language.
+// handler that used to return a naked fiber sentinel on a validation failure.
+// It is a public, unauthenticated route reachable from every page's language
+// switcher, so its rejection was the bare "Bad Request" for anyone who
+// submitted the form without a language.
+//
+// Driven through the real middleware stack (newCSRFGuardTestApp -> the actual
+// composition-root wiring, CSRF included), for all three carriers: a JSON
+// caller keeps the mapped envelope, while a plain HTML navigation — this
+// route's primary client, with no HTMX and no JavaScript behind it — gets the
+// same localized status fragment an HTMX request already got, matching the
+// route's 429 and 500. WEB-71.
 func TestLanguageSwitchRejectionAnswersThroughTheEnvelope(t *testing.T) {
 	app := newCSRFGuardTestApp(t)
 	token, cookie := issueCSRFFormCredentials(t, app)
 
-	form := url.Values{"csrf_token": {token}, "lang": {"   "}}
-	request := httptest.NewRequest(http.MethodPost, "/lang", strings.NewReader(form.Encode()))
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("Cookie", cookie)
+	clients := []struct {
+		name     string
+		headers  map[string]string
+		fragment bool
+	}{
+		{name: "JSON caller", headers: map[string]string{"Accept": fiber.MIMEApplicationJSON}},
+		{name: "form submission", fragment: true},
+		{name: "HTMX request", headers: map[string]string{"HX-Request": "true", "Accept": fiber.MIMEApplicationJSON}, fragment: true},
+	}
 
-	response, err := app.Test(request, testConfigNoTimeout)
-	if err != nil {
-		t.Fatalf("language switch request failed: %v", err)
-	}
-	defer func() { _ = response.Body.Close() }()
+	for _, client := range clients {
+		t.Run(client.name, func(t *testing.T) {
+			form := url.Values{"csrf_token": {token}, "lang": {"   "}}
+			request := httptest.NewRequest(http.MethodPost, "/lang", strings.NewReader(form.Encode()))
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			request.Header.Set("Cookie", cookie)
+			for name, value := range client.headers {
+				request.Header.Set(name, value)
+			}
 
-	// 400 rather than 403 is itself part of the assertion: it proves the request
-	// carried a valid token and reached the handler, so the rejection under test
-	// is the handler's own and not the CSRF middleware's.
-	if response.StatusCode != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400 — a blank language must be refused by the handler, not by CSRF", response.StatusCode)
+			response, err := app.Test(request, testConfigNoTimeout)
+			if err != nil {
+				t.Fatalf("language switch request failed: %v", err)
+			}
+			defer func() { _ = response.Body.Close() }()
+
+			// 400 rather than 403 is itself part of the assertion: it proves
+			// the request carried a valid token and reached the handler, so
+			// the rejection under test is the handler's own and not the CSRF
+			// middleware's.
+			if response.StatusCode != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400 — a blank language must be refused by the handler, not by CSRF", response.StatusCode)
+			}
+			body := mustReadAll(t, response)
+			if strings.TrimSpace(string(body)) == "Bad Request" {
+				t.Fatalf("language switch rejection answered with fiber's bare text: %q", body)
+			}
+			contentType := response.Header.Get(fiber.HeaderContentType)
+			if client.fragment {
+				if !strings.HasPrefix(contentType, fiber.MIMETextHTML) || json.Valid(body) ||
+					!strings.Contains(string(body), `class="status-error"`) ||
+					!strings.Contains(string(body), `data-flash-key="common.error.bad_request"`) {
+					t.Fatalf("%s: answered 400 as %q (%q), want the text/html status fragment carrying the bad_request key", client.name, contentType, body)
+				}
+				return
+			}
+			assertTransportErrorEnvelope(t, body, "bad_request", "validation")
+		})
 	}
-	body := mustReadAll(t, response)
-	if strings.TrimSpace(string(body)) == "Bad Request" {
-		t.Fatalf("language switch rejection answered with fiber's bare text: %q", body)
-	}
-	assertTransportErrorEnvelope(t, body, "bad_request", "validation")
 }
 
 // envelopeExemptRoutes is the closed set of registered routes whose rejections

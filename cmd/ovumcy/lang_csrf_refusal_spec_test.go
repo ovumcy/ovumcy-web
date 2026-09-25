@@ -61,9 +61,10 @@ func openAPIResponseBlock(t *testing.T, spec string, path string, method string,
 // Five refusal causes are driven — no token, a token that does not match the
 // cookie, a valid token the server no longer holds (a second app stands in for
 // a restart), and a valid token sent from another site or from a sibling
-// subdomain — through every caller the route has. Only HTMX gets the fragment;
-// the plain form submission gets the JSON envelope like an API client, so the
-// description has to say so.
+// subdomain — through every caller the route has. A caller asking for JSON
+// gets the envelope; every plain HTML navigation — the bare form post and the
+// browser form that names text/html — gets the fragment an HTMX request
+// already got, so the description has to say so for all three.
 func TestOpenAPILanguageSwitchDeclaresTheCSRFRefusalItAnswers(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "docs", "openapi.yaml"))
 	if err != nil {
@@ -98,8 +99,8 @@ func TestOpenAPILanguageSwitchDeclaresTheCSRFRefusalItAnswers(t *testing.T) {
 		fragment bool
 	}{
 		{name: "JSON caller", headers: map[string]string{"Accept": fiber.MIMEApplicationJSON}},
-		{name: "form submission"},
-		{name: "browser form", headers: map[string]string{"Accept": "text/html,application/xhtml+xml"}},
+		{name: "form submission", fragment: true},
+		{name: "browser form", headers: map[string]string{"Accept": "text/html,application/xhtml+xml"}, fragment: true},
 		{name: "HTMX request", headers: map[string]string{"HX-Request": "true", "Accept": fiber.MIMEApplicationJSON}, fragment: true},
 	}
 
@@ -186,7 +187,7 @@ func TestOpenAPILanguageSwitchDeclaresTheCSRFRefusalItAnswers(t *testing.T) {
 		requireOpenAPILine(t, forbidden, want)
 	}
 	joined := strings.Join(forbidden, " ")
-	for _, phrase := range []string{"the plain form submission included", "`HX-Request: true`", "`text/html`", "issued before the server restarted", "`Origin` whose scheme or host differs", "a sibling subdomain included"} {
+	for _, phrase := range []string{"plain form submission", "`HX-Request: true`", "`text/html`", "issued before the server restarted", "`Origin` whose scheme or host differs", "a sibling subdomain included"} {
 		if !strings.Contains(joined, phrase) {
 			t.Errorf("POST /lang 403: docs/openapi.yaml never mentions %q — the server answers that way and the description has to say so:\n  %s",
 				phrase, strings.Join(forbidden, "\n  "))

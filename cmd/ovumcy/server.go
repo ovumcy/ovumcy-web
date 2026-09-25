@@ -17,6 +17,7 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/gofiber/fiber/v3/middleware/static"
 	"github.com/ovumcy/ovumcy-web/internal/api"
+	"github.com/ovumcy/ovumcy-web/internal/httpx"
 	"github.com/ovumcy/ovumcy-web/internal/security"
 	staticassets "github.com/ovumcy/ovumcy-web/web"
 )
@@ -385,6 +386,15 @@ func csrfMiddlewareConfig(cookieSecure bool, handler *api.Handler) csrf.Config {
 				Key:   "reason",
 				Value: api.CSRFFailureReason(err),
 			})
+			// POST /lang is the app's one public form with no HTMX and no
+			// JavaScript behind it, so its CSRF 403 answers a plain HTML
+			// navigation through the same page-form fragment its 400 and its
+			// rate-limit 429 already use; JSON and HTMX callers, and every
+			// other CSRF-protected route, keep the bare fiber.ErrForbidden
+			// that ovumcyErrorHandler envelopes unchanged.
+			if httpx.RoutingNormalizedPath(c.Path()) == api.LanguageSwitchPath {
+				return handler.RespondLanguageSwitchTransportError(c, fiber.StatusForbidden)
+			}
 			return fiber.ErrForbidden
 		},
 	}
