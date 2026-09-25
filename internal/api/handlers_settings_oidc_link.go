@@ -142,7 +142,7 @@ func (handler *Handler) completeOIDCIdentityLinkStepup(c fiber.Ctx, state oidcSt
 	defer cancel()
 	linkedSessionVersion, err := handler.oidcService.CompleteIdentityLinkReauth(ctx, code, state.CodeVerifier, state.Nonce, user.ID, user.AuthSessionVersion, stepupReauthMaxAge, time.Now())
 	if errors.Is(err, services.ErrAuthSessionVersionChanged) {
-		return handler.redirectSettingsRefusal(c, handler.refuseSessionRevokedDuring(c, oidcIdentityLinkStepupAction, "link"))
+		return handler.redirectSignedOutRefusal(c, handler.refuseSessionRevokedDuring(c, oidcIdentityLinkStepupAction, "link"))
 	}
 	if err != nil {
 		spec := mapOIDCIdentityLinkReauthError(err)
@@ -153,15 +153,10 @@ func (handler *Handler) completeOIDCIdentityLinkStepup(c fiber.Ctx, state oidcSt
 	handler.logSecurityEvent(c, oidcIdentityLinkStepupAction, "linked")
 	// The link bumped AuthSessionVersion in the same write, revoking every
 	// earlier session; this device keeps signing in on a re-issued one.
+	// Every refusal reissueSessionAfterIdentityChange returns has already
+	// cleared the auth cookie.
 	if spec, ok := handler.reissueSessionAfterIdentityChange(c, user.ID, linkedSessionVersion, oidcIdentityLinkStepupAction, "link"); !ok {
-		// Not redirectSettingsRefusal: every failure reissueSessionAfterIdentityChange
-		// can return here has already cleared the auth cookie, so /settings would
-		// bounce straight to /login and the SettingsError flash it carries is read
-		// by nothing there — the owner would see a silent, unexplained logout
-		// right after confirming the link. Flashing AuthError and landing on
-		// /login directly is the channel the login page actually reads.
-		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
+		return handler.redirectSignedOutRefusal(c, spec)
 	}
 	handler.setFlashCookie(c, FlashPayload{SettingsSuccess: "oidc_identity_linked"})
 	return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
@@ -195,7 +190,7 @@ func (handler *Handler) UnlinkOIDCIdentity(c fiber.Ctx) error {
 	}
 	unlinkedSessionVersion, err := handler.oidcService.UnlinkIdentity(c.Context(), *user, identityID)
 	if errors.Is(err, services.ErrAuthSessionVersionChanged) {
-		return handler.respondMappedError(c, handler.refuseSessionRevokedDuring(c, oidcIdentityUnlinkAction, "unlink"))
+		return handler.respondSignedOutRefusal(c, handler.refuseSessionRevokedDuring(c, oidcIdentityUnlinkAction, "unlink"))
 	}
 	if err != nil {
 		spec := mapOIDCIdentityUnlinkError(err)
@@ -204,7 +199,7 @@ func (handler *Handler) UnlinkOIDCIdentity(c fiber.Ctx) error {
 	}
 	handler.logSecurityEvent(c, oidcIdentityUnlinkAction, "unlinked")
 	if spec, ok := handler.reissueSessionAfterIdentityChange(c, user.ID, unlinkedSessionVersion, oidcIdentityUnlinkAction, "unlink"); !ok {
-		return handler.respondMappedError(c, spec)
+		return handler.respondSignedOutRefusal(c, spec)
 	}
 	if acceptsJSON(c) {
 		return c.JSON(fiber.Map{"ok": true})
@@ -232,10 +227,11 @@ func (handler *Handler) reissueSessionAfterIdentityChange(c fiber.Ctx, userID ui
 	if err != nil {
 		// codecov:ignore:start -- the account was resolved by this same request;
 		// only a storage fault between the two reads reaches this line.
+		// The link or unlink has already committed, so the fault is logged as
+		// the session failure it is while the owner is told the change landed.
 		handler.clearAuthCookie(c)
-		spec := authSessionCreateErrorSpec()
-		handler.logSecurityError(c, scope, spec)
-		return spec, false
+		handler.logSecurityError(c, scope, authSessionCreateErrorSpec())
+		return authIdentityChangeAppliedSignInAgainErrorSpec(), false
 		// codecov:ignore:end
 	}
 	if !services.AuthSessionVersionsMatch(changedSessionVersion, fresh.AuthSessionVersion) {

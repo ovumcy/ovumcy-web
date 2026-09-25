@@ -26,15 +26,21 @@ const (
 	deleteAccountStepupAction = "settings.delete_account.step_up"
 )
 
-// dataClearedSignInAgainRefusalKey is settingsDataClearedSignInAgainErrorSpec's
-// key, read once at package init rather than by calling the constructor again
-// at the completion callback's dispatch site below: the source-derived guards
-// in settings_stepup_refusal_render_test.go attribute every *ErrorSpec() CALL
-// inside completeErasureStepupReauth's body to that handler, and this spec is
-// actually raised one level down, inside applyClearData (tracked separately
-// through inlineStepupSessionHelperSpecs) — a second call here would tell the
-// guard the handler raises it directly, which is not true.
-var dataClearedSignInAgainRefusalKey = settingsDataClearedSignInAgainErrorSpec().Key
+// clearDataOutcome is applyClearData's verdict. It is typed rather than read
+// back off the spec's key because the two refusals differ in whether this
+// device still has a session, and that decides which page can still show them.
+type clearDataOutcome int
+
+const (
+	clearDataApplied clearDataOutcome = iota
+	// clearDataRefused: nothing was erased and this device's session is intact.
+	clearDataRefused
+	// clearDataRefusedSignedOut: this device's auth cookie is already cleared —
+	// a revocation refused the wipe, or the wipe committed and no session could
+	// be re-issued past it — so the refusal leaves through
+	// redirectSignedOutRefusal.
+	clearDataRefusedSignedOut
+)
 
 // erasureStepupFlow binds one erasure operation to the audit identities it logs
 // under, so neither the start nor the completion handler re-derives which
@@ -202,18 +208,11 @@ func (handler *Handler) completeErasureStepupReauth(c fiber.Ctx, state oidcStepu
 	handler.logSecurityEvent(c, flow.stepupAction, "success")
 	switch state.Operation {
 	case oidcStepupErasureClearData:
-		if spec, ok := handler.applyClearData(c, user); !ok {
-			if spec.Key == dataClearedSignInAgainRefusalKey {
-				// Not redirectSettingsRefusal: the wipe already committed and
-				// refreshCurrentSession has already cleared the auth cookie, so
-				// /settings would bounce straight to /login and lose the
-				// SettingsError flash it carries — the owner would see a silent,
-				// unexplained logout right after confirming the erasure. The
-				// other applyClearData refusals (nothing erased) keep using
-				// redirectSettingsRefusal below: the session there is still live.
-				handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-				return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
-			}
+		spec, outcome := handler.applyClearData(c, user)
+		switch outcome {
+		case clearDataRefusedSignedOut:
+			return handler.redirectSignedOutRefusal(c, spec)
+		case clearDataRefused:
 			return handler.redirectSettingsRefusal(c, spec)
 		}
 		handler.setFlashCookie(c, FlashPayload{SettingsSuccess: "data_cleared"})
@@ -230,16 +229,17 @@ func (handler *Handler) completeErasureStepupReauth(c fiber.Ctx, state oidcStepu
 // the single implementation shared by the password-gated handler and the
 // step-up callback: the auth_session_version bump below has to happen exactly
 // once and identically on both paths, and two copies of it would drift.
-func (handler *Handler) applyClearData(c fiber.Ctx, user *models.User) (APIErrorSpec, bool) {
+func (handler *Handler) applyClearData(c fiber.Ctx, user *models.User) (APIErrorSpec, clearDataOutcome) {
 	if err := handler.settingsService.ClearAllData(c.Context(), user.ID, user.AuthSessionVersion); err != nil {
 		if errors.Is(err, services.ErrAuthSessionVersionChanged) {
 			// Nothing was erased: the session that passed the erasure re-auth
-			// was revoked in between, so the wipe is refused with it.
-			return handler.refuseSessionRevokedDuring(c, clearDataMutation.action, "clear_data"), false
+			// was revoked in between, so the wipe is refused with it — and
+			// refuseSessionRevokedDuring clears this device's cookie.
+			return handler.refuseSessionRevokedDuring(c, clearDataMutation.action, "clear_data"), clearDataRefusedSignedOut
 		}
 		spec := settingsClearDataErrorSpec()
 		handler.logMutationError(c, clearDataMutation, spec)
-		return spec, false
+		return spec, clearDataRefused
 	}
 
 	// ClearAllDataAndResetSettings bumps auth_session_version atomically;
@@ -259,11 +259,11 @@ func (handler *Handler) applyClearData(c fiber.Ctx, user *models.User) (APIError
 	// spec, because unlike settingsClearDataErrorSpec above (nothing erased),
 	// the data here is already gone.
 	if _, ok := handler.refreshCurrentSession(c, user, clearDataMutation.action); !ok {
-		return settingsDataClearedSignInAgainErrorSpec(), false
+		return settingsDataClearedSignInAgainErrorSpec(), clearDataRefusedSignedOut
 	}
 
 	handler.logMutationSuccess(c, clearDataMutation)
-	return APIErrorSpec{}, true
+	return APIErrorSpec{}, clearDataApplied
 }
 
 // applyDeleteAccount removes the account and retracts this device's session.

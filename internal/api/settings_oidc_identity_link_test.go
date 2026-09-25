@@ -669,6 +669,53 @@ func TestOIDCIdentityUnlinkBrowserSuccessRedirectsToSettings(t *testing.T) {
 func TestOIDCIdentityUnlinkReissueFailureIsReportedAsARefusal(t *testing.T) {
 	t.Parallel()
 
+	// The cookie is already cleared by the time the refusal is answered, so
+	// every page-bound format lands on /login; JSON keeps the mapped envelope.
+	for _, testCase := range []struct {
+		name   string
+		accept string
+		htmx   bool
+	}{
+		{name: "json", accept: "application/json"},
+		{name: "htmx", accept: "text/html", htmx: true},
+		{name: "html", accept: "text/html"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			response, stub, userID := probeRefusedUnlinkReissue(t, testCase.name, testCase.accept, testCase.htmx)
+			defer func() { _ = response.Body.Close() }()
+
+			// authIdentityChangeAppliedSignInAgainErrorSpec, not
+			// authWebSignInUnavailableErrorSpec (refreshCurrentSession's own
+			// internal spec): the unlink already committed before the reissue was
+			// asked, so "failed to create session" would tell the owner nothing
+			// happened, which is false. See reissueSessionAfterIdentityChange.
+			wantSpec := authIdentityChangeAppliedSignInAgainErrorSpec()
+			if testCase.accept == "application/json" {
+				if response.StatusCode != wantSpec.Status {
+					t.Fatalf("expected the refused reissue's status %d, got %d: %s", wantSpec.Status, response.StatusCode, mustReadBodyString(t, response.Body))
+				}
+				if body := mustReadBodyString(t, response.Body); !strings.Contains(body, wantSpec.Key) {
+					t.Fatalf("expected the refused-reissue key %q in the body, got %q", wantSpec.Key, body)
+				}
+			} else {
+				assertSignedOutRefusal(t, response, wantSpec.Key, testCase.htmx)
+			}
+			// Anti-vacuity: the unlink itself ran before the reissue was asked, so
+			// a refusal above can only have come from the reissue and not from the
+			// service call being skipped.
+			if stub.unlinkCalls != 1 || stub.lastUnlinkUserID != userID {
+				t.Fatalf("expected UnlinkIdentity to have run for user %d before the reissue, got %d calls for user %d", userID, stub.unlinkCalls, stub.lastUnlinkUserID)
+			}
+		})
+	}
+}
+
+// probeRefusedUnlinkReissue runs UnlinkOIDCIdentity for a "partner" row in the
+// given format and returns the response, the stub it called, and the row's id.
+func probeRefusedUnlinkReissue(t *testing.T, slug, accept string, htmx bool) (*http.Response, *stubOIDCWorkflowService, uint) {
+	t.Helper()
+
 	stub := newStubOIDCWorkflowService(true)
 	// newSettingsMutationStepupApp's own app ends in a catch-all
 	// app.Use(handler.NotFound) registered after every production route, so a
@@ -685,7 +732,7 @@ func TestOIDCIdentityUnlinkReissueFailureIsReportedAsARefusal(t *testing.T) {
 		t.Fatalf("hash probe password: %v", err)
 	}
 	user := models.User{
-		Email:            "oidc-unlink-reissue-refused@example.com",
+		Email:            "oidc-unlink-reissue-refused-" + slug + "@example.com",
 		LocalAuthEnabled: true,
 		PasswordHash:     string(hash),
 		// The one non-owner value the users table's CHECK constraint still
@@ -713,29 +760,11 @@ func TestOIDCIdentityUnlinkReissueFailureIsReportedAsARefusal(t *testing.T) {
 	form := url.Values{"password": {password}}
 	request := httptest.NewRequest(http.MethodDelete, "/__probe/oidc-unlink/1", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	request.Header.Set("Accept", "application/json")
-	response := mustAppResponse(t, app, request)
-	defer func() { _ = response.Body.Close() }()
-
-	// authIdentityChangeAppliedSignInAgainErrorSpec, not
-	// authWebSignInUnavailableErrorSpec (refreshCurrentSession's own internal
-	// spec): the unlink already committed before the reissue was asked, so
-	// "failed to create session" would tell the owner nothing happened, which
-	// is false. See reissueSessionAfterIdentityChange.
-	wantSpec := authIdentityChangeAppliedSignInAgainErrorSpec()
-	if response.StatusCode != wantSpec.Status {
-		t.Fatalf("expected the refused reissue's status %d, got %d: %s", wantSpec.Status, response.StatusCode, mustReadBodyString(t, response.Body))
+	request.Header.Set("Accept", accept)
+	if htmx {
+		request.Header.Set("HX-Request", "true")
 	}
-	if body := mustReadBodyString(t, response.Body); !strings.Contains(body, wantSpec.Key) {
-		t.Fatalf("expected the refused-reissue key %q in the body, got %q", wantSpec.Key, body)
-	}
-	// Anti-vacuity: the unlink itself ran before the reissue was asked, so a
-	// refusal above can only have come from the reissue and not from the
-	// service call being skipped. The stub writes nothing, so "the identity row
-	// is absent" is this call having actually reached the service.
-	if stub.unlinkCalls != 1 || stub.lastUnlinkUserID != user.ID {
-		t.Fatalf("expected UnlinkIdentity to have run for user %d before the reissue, got %d calls for user %d", user.ID, stub.unlinkCalls, stub.lastUnlinkUserID)
-	}
+	return mustAppResponse(t, app, request), stub, user.ID
 }
 
 // TestOIDCIdentityLinkStepupReissueFailureIsReportedAsARefusal is the
@@ -784,7 +813,7 @@ func TestOIDCIdentityLinkStepupReissueFailureIsReportedAsARefusal(t *testing.T) 
 	// Not redirectSettingsRefusal: completeOIDCIdentityLinkStepup's reissue
 	// failure arm has already cleared the auth cookie, so it flashes AuthError
 	// and lands on /login directly rather than /settings, which would bounce
-	// there anyway and lose the flash. See the handler's own comment.
+	// there anyway and lose the flash. See redirectSignedOutRefusal.
 	if callbackResponse.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected the refused reissue to redirect, got %d", callbackResponse.StatusCode)
 	}
