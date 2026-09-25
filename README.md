@@ -496,9 +496,9 @@ Common commands from the repository root:
 
 ```bash
 # scoped past node_modules/, where a vendored JS dep ships a .go file;
-# -timeout 20m raises Go's 10-minute PER PACKAGE default, which internal/api
+# -timeout 30m raises Go's 10-minute PER PACKAGE default, which internal/api
 # outruns on a dev host (see TESTING.md)
-go test ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/... -timeout 20m
+go test ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/... -timeout 30m
 npm run build
 go run ./cmd/ovumcy
 ```

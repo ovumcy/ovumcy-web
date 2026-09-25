@@ -15,10 +15,10 @@ npm ci
 
 ```bash
 # scoped past node_modules/, where a vendored JS dep ships a .go file;
-# -timeout 20m is the budget CI declares too — internal/api runs close enough to
-# Go's 10-minute PER PACKAGE default that the default aborts the run with
+# -timeout 30m: internal/api outruns Go's 10-minute PER PACKAGE default on a dev
+# host (CI shards it into 20m cells), so the default aborts the run with
 # `panic: test timed out after 10m0s` (see TESTING.md)
-go test ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/... -timeout 20m
+go test ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/... -timeout 30m
 go run ./scripts/archcheck
 npm run lint:js
 npm run lint:types
