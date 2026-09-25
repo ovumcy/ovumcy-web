@@ -1489,11 +1489,17 @@ paths:
             A non-blank code the server does not ship is not refused: it falls back to the
             instance's default language and answers like a success.
 
-            A caller whose `Accept` header names `application/json` gets the JSON envelope
-            below. An HTMX request (`HX-Request: true`) outranks it and gets the localized
-            status fragment as `text/html` instead, and so does the plain form submission
-            that does not ask for JSON.
+            A caller that asks for JSON gets the JSON envelope below: one whose `Accept`
+            header names `application/json`, or one that sends its body as
+            `Content-Type: application/json`, either one alone being enough. An HTMX request
+            (`HX-Request: true`) outranks both and gets the localized status fragment as
+            `text/html` instead, and so does a plain form submission that asks for neither —
+            one sending `Accept: */*` or no `Accept` header at all included. That fragment is
+            the whole page the browser shows, so it ends with a link back to the form's `next`
+            path, or to `/` when `next` is absent or is not a same-origin path.
           content:
+            text/html:
+              schema: { type: string }
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
               example:
@@ -1511,11 +1517,17 @@ paths:
             account. It carries the shared `forbidden` key rather than a key of this route's
             own.
 
-            A caller whose `Accept` header names `application/json` gets the JSON envelope
-            below. An HTMX request (`HX-Request: true`) outranks it and gets the localized
-            status fragment as `text/html` instead, and so does the plain form submission
-            that does not ask for JSON.
+            A caller that asks for JSON gets the JSON envelope below: one whose `Accept`
+            header names `application/json`, or one that sends its body as
+            `Content-Type: application/json`, either one alone being enough. An HTMX request
+            (`HX-Request: true`) outranks both and gets the localized status fragment as
+            `text/html` instead, and so does a plain form submission that asks for neither —
+            one sending `Accept: */*` or no `Accept` header at all included. That fragment is
+            the whole page the browser shows, so it ends with a link back to the form's `next`
+            path, or to `/` when `next` is absent or is not a same-origin path.
           content:
+            text/html:
+              schema: { type: string }
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
               example:
@@ -1529,11 +1541,20 @@ paths:
             session, or one that sends a code the server does not ship, never reaches the
             account write and never gets this answer.
 
-            A caller whose `Accept` header names `application/json` gets the JSON envelope
-            below. An HTMX request (`HX-Request: true`) outranks it and gets the localized
-            status fragment as `text/html` instead, and so does the plain form submission that
-            does not ask for JSON.
+            Any other fault while answering the request, such as a recovered panic, is a `500`
+            too, carrying the shared `internal_error` key.
+
+            A caller that asks for JSON gets the JSON envelope below: one whose `Accept`
+            header names `application/json`, or one that sends its body as
+            `Content-Type: application/json`, either one alone being enough. An HTMX request
+            (`HX-Request: true`) outranks both and gets the localized status fragment as
+            `text/html` instead, and so does a plain form submission that asks for neither —
+            one sending `Accept: */*` or no `Accept` header at all included. That fragment is
+            the whole page the browser shows, so it ends with a link back to the form's `next`
+            path, or to `/` when `next` is absent or is not a same-origin path.
           content:
+            text/html:
+              schema: { type: string }
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
               example:
