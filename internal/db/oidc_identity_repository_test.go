@@ -156,8 +156,14 @@ func TestOIDCIdentityRepositoryRefusesToDeleteTheLastSignInMethod(t *testing.T) 
 }
 
 // Two concurrent unlinks of an account's two identities, with no local
-// sign-in to fall back on: each pre-read sees the other identity, so only the
-// in-transaction check can keep one. Exactly one delete may win, every round.
+// sign-in to fall back on: each pre-read sees the other identity, so no
+// caller-side read can keep one. Both were verified against the same session
+// version, so the first commit moves it and the second is refused by the
+// version compare-and-set before it counts anything — that refusal, every
+// round, not whichever one the schedule happens to produce. Retried from the
+// version the winner left, which the compare-and-set no longer refuses, the
+// loser meets the last-sign-in check inside the delete transaction instead.
+// Exactly one delete may win, every round.
 func TestOIDCIdentityRepositoryConcurrentUnlinksKeepOneSignInMethod(t *testing.T) {
 	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "oidc-unlink-race.db")})
 	if err != nil {
@@ -209,29 +215,42 @@ func TestOIDCIdentityRepositoryConcurrentUnlinksKeepOneSignInMethod(t *testing.T
 		close(start)
 		wg.Wait()
 
-		// Both contenders verified the same version, so the loser is refused
-		// by the version compare-and-set before it counts anything; a caller
-		// that re-reads the version in between meets the last-sign-in check
-		// instead, which the sequential test above pins on its own. Either
-		// refusal keeps the account's way in.
-		wins, refusals := 0, 0
+		wins, loser := 0, -1
 		for index := range pair {
 			switch {
 			case results[index] == nil && deleted[index]:
 				wins++
-			case errors.Is(results[index], models.ErrOIDCUnlinkLastSignIn),
-				errors.Is(results[index], models.ErrAuthSessionVersionChanged):
-				refusals++
+			case errors.Is(results[index], models.ErrAuthSessionVersionChanged) && !deleted[index]:
+				loser = index
 			default:
-				t.Fatalf("round %d: unexpected outcome deleted=%v err=%v", round, deleted[index], results[index])
+				t.Fatalf("round %d: expected a win or a session-version refusal, got deleted=%v err=%v", round, deleted[index], results[index])
 			}
 		}
-		if wins != 1 || refusals != 1 {
-			t.Fatalf("round %d: expected one win and one refusal, got %d/%d", round, wins, refusals)
+		if wins != 1 || loser < 0 {
+			t.Fatalf("round %d: expected one win and one session-version refusal, got %d wins (loser %d)", round, wins, loser)
+		}
+		var moved int
+		if err := database.Raw(`SELECT auth_session_version FROM users WHERE id = ?`, userID).Scan(&moved).Error; err != nil {
+			t.Fatalf("round %d: reload version: %v", round, err)
+		}
+		if moved != from+1 {
+			t.Fatalf("round %d: expected the winner alone to move the version to %d, got %d", round, from+1, moved)
+		}
+
+		// A removal the version no longer refuses still may not take the last
+		// identity: the check inside the delete transaction refuses it and
+		// rolls its bump back.
+		retried, err := repository.DeleteForUserAndRevokeSessions(ctx, userID, pair[loser].ID, moved, false)
+		if !errors.Is(err, models.ErrOIDCUnlinkLastSignIn) || retried {
+			t.Fatalf("round %d: expected the retry from version %d to meet the last-sign-in check, got deleted=%v err=%v", round, moved, retried, err)
 		}
 		remaining, err := repository.ListByUser(ctx, userID)
-		if err != nil || len(remaining) != 1 {
-			t.Fatalf("round %d: expected one identity left, got %d (err %v)", round, len(remaining), err)
+		if err != nil || len(remaining) != 1 || remaining[0].ID != pair[loser].ID {
+			t.Fatalf("round %d: expected only the loser's identity %d left, got %v (err %v)", round, pair[loser].ID, remaining, err)
+		}
+		var after int
+		if err := database.Raw(`SELECT auth_session_version FROM users WHERE id = ?`, userID).Scan(&after).Error; err != nil || after != moved {
+			t.Fatalf("round %d: expected the refused retry to roll its bump back to %d, got %d (err %v)", round, moved, after, err)
 		}
 		// Reset for the next round: drop the survivor directly.
 		if err := database.Where("user_id = ?", userID).Delete(&models.OIDCIdentity{}).Error; err != nil {

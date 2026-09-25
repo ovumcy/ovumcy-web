@@ -80,66 +80,98 @@ func TestUserRepositoryRevokingWritesMoveOnlyFromTheVerifiedSessionVersion(t *te
 	})
 }
 
-func assertRevokingWritesMoveOnlyFromTheVerifiedSessionVersion(t *testing.T, database *gorm.DB) {
-	t.Helper()
-	repo := NewUserRepository(database)
+// sessionVersionCase is one account state a revoking write meets: the version
+// stored on the row, the version the caller verified, and what the write must
+// leave behind.
+type sessionVersionCase struct {
+	name        string
+	stored      int
+	expected    int
+	wantErr     error
+	wantVersion int
+}
 
-	seeded := 0
-	seed := func(version int) uint {
-		t.Helper()
-		seeded++
-		email := fmt.Sprintf("session-cas-%d@example.com", seeded)
-		if err := database.Exec(
-			`INSERT INTO users (email, password_hash, recovery_code_hash, totp_secret, cycle_length, role, created_at, local_auth_enabled, auth_session_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			email, "seeded-hash", "seeded-recovery", "seeded-ciphertext", 35, "owner", time.Now().UTC(), true, version,
-		).Error; err != nil {
-			t.Fatalf("insert %s: %v", email, err)
-		}
-		var userID uint
-		if err := database.Raw(`SELECT id FROM users WHERE email = ?`, email).Scan(&userID).Error; err != nil || userID == 0 {
-			t.Fatalf("resolve %s: %v (id %d)", email, err, userID)
-		}
-		return userID
-	}
-	read := func(userID uint, column string) (int, string) {
-		t.Helper()
-		var row struct {
-			Version int
-			Value   string
-		}
-		if err := database.Raw(`SELECT auth_session_version AS version, CAST(`+column+` AS TEXT) AS value FROM users WHERE id = ?`, userID).Scan(&row).Error; err != nil {
-			t.Fatalf("load %d: %v", userID, err)
-		}
-		return row.Version, row.Value
-	}
+// sessionVersionRevokedInBetween names the case the compare-and-set exists
+// for: a revocation committed after the caller verified its version.
+const sessionVersionRevokedInBetween = "revoked since it was verified"
 
-	cases := []struct {
-		name        string
-		stored      int
-		expected    int
-		wantErr     error
-		wantVersion int
-	}{
+func sessionVersionCases() []sessionVersionCase {
+	return []sessionVersionCase{
 		{name: "verified version", stored: 3, expected: 3, wantVersion: 4},
-		{name: "revoked since it was verified", stored: 4, expected: 3, wantErr: models.ErrAuthSessionVersionChanged, wantVersion: 4},
+		{name: sessionVersionRevokedInBetween, stored: 4, expected: 3, wantErr: models.ErrAuthSessionVersionChanged, wantVersion: 4},
 		{name: "legacy zero row read as version 1", stored: 0, expected: 1, wantVersion: 2},
 		{name: "legacy zero expected on a legacy row", stored: 0, expected: 0, wantVersion: 2},
 		{name: "legacy zero row revoked since it was read", stored: 0, expected: 2, wantErr: models.ErrAuthSessionVersionChanged, wantVersion: 0},
 	}
+}
+
+// sessionVersionFixture seeds accounts at a chosen session version and reads
+// back what a write left on them.
+type sessionVersionFixture struct {
+	t        *testing.T
+	database *gorm.DB
+	seeded   int
+}
+
+func (fixture *sessionVersionFixture) seed(version int) uint {
+	fixture.t.Helper()
+	fixture.seeded++
+	email := fmt.Sprintf("session-cas-%d@example.com", fixture.seeded)
+	if err := fixture.database.Exec(
+		`INSERT INTO users (email, password_hash, recovery_code_hash, totp_secret, cycle_length, role, created_at, local_auth_enabled, auth_session_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		email, "seeded-hash", "seeded-recovery", "seeded-ciphertext", 35, "owner", time.Now().UTC(), true, version,
+	).Error; err != nil {
+		fixture.t.Fatalf("insert %s: %v", email, err)
+	}
+	var userID uint
+	if err := fixture.database.Raw(`SELECT id FROM users WHERE email = ?`, email).Scan(&userID).Error; err != nil || userID == 0 {
+		fixture.t.Fatalf("resolve %s: %v (id %d)", email, err, userID)
+	}
+	return userID
+}
+
+func (fixture *sessionVersionFixture) read(userID uint, column string) (int, string) {
+	fixture.t.Helper()
+	var row struct {
+		Version int
+		Value   string
+	}
+	if err := fixture.database.Raw(`SELECT auth_session_version AS version, CAST(`+column+` AS TEXT) AS value FROM users WHERE id = ?`, userID).Scan(&row).Error; err != nil {
+		fixture.t.Fatalf("load %d: %v", userID, err)
+	}
+	return row.Version, row.Value
+}
+
+// mismatch runs write against a freshly seeded account in the state tc
+// describes and reports how the outcome departs from tc, or "" when the write
+// did exactly what tc requires.
+func (fixture *sessionVersionFixture) mismatch(repo *UserRepository, write sessionVersionWriteUnderTest, tc sessionVersionCase) string {
+	fixture.t.Helper()
+	userID := fixture.seed(tc.stored)
+	_, before := fixture.read(userID, write.column)
+	err := write.write(repo, userID, tc.expected)
+	if !errors.Is(err, tc.wantErr) {
+		return fmt.Sprintf("expected error %v, got %v", tc.wantErr, err)
+	}
+	version, after := fixture.read(userID, write.column)
+	if version != tc.wantVersion {
+		return fmt.Sprintf("expected stored version %d, got %d", tc.wantVersion, version)
+	}
+	if written := after != before; written != (tc.wantErr == nil) {
+		return fmt.Sprintf("expected written=%v, %s went %q -> %q", tc.wantErr == nil, write.column, before, after)
+	}
+	return ""
+}
+
+func assertRevokingWritesMoveOnlyFromTheVerifiedSessionVersion(t *testing.T, database *gorm.DB) {
+	t.Helper()
+	repo := NewUserRepository(database)
+	fixture := &sessionVersionFixture{t: t, database: database}
+
 	for _, write := range sessionVersionWritesUnderTest() {
-		for _, tc := range cases {
-			userID := seed(tc.stored)
-			_, before := read(userID, write.column)
-			err := write.write(repo, userID, tc.expected)
-			if !errors.Is(err, tc.wantErr) {
-				t.Fatalf("%s, %s: expected error %v, got %v", write.name, tc.name, tc.wantErr, err)
-			}
-			version, after := read(userID, write.column)
-			if version != tc.wantVersion {
-				t.Fatalf("%s, %s: expected stored version %d, got %d", write.name, tc.name, tc.wantVersion, version)
-			}
-			if written := after != before; written != (tc.wantErr == nil) {
-				t.Fatalf("%s, %s: expected written=%v, %s went %q -> %q", write.name, tc.name, tc.wantErr == nil, write.column, before, after)
+		for _, tc := range sessionVersionCases() {
+			if mismatch := fixture.mismatch(repo, write, tc); mismatch != "" {
+				t.Fatalf("%s, %s: %s", write.name, tc.name, mismatch)
 			}
 		}
 
@@ -150,10 +182,10 @@ func assertRevokingWritesMoveOnlyFromTheVerifiedSessionVersion(t *testing.T, dat
 		// Concurrent writes verified against the same version: the first
 		// commit moves the version, so every other one must find it moved and
 		// roll back.
-		racer := seed(1)
+		racer := fixture.seed(1)
 		const contenders = 3
 		for round := range 5 {
-			from, _ := read(racer, write.column)
+			from, _ := fixture.read(racer, write.column)
 			var wg sync.WaitGroup
 			start := make(chan struct{})
 			results := make([]error, contenders)
@@ -181,20 +213,22 @@ func assertRevokingWritesMoveOnlyFromTheVerifiedSessionVersion(t *testing.T, dat
 			if wins != 1 {
 				t.Fatalf("%s round %d: expected exactly one write to win, got %d (%v)", write.name, round, wins, results)
 			}
-			if got, _ := read(racer, write.column); got != from+1 {
+			if got, _ := fixture.read(racer, write.column); got != from+1 {
 				t.Fatalf("%s round %d: expected version %d, got %d", write.name, round, from+1, got)
 			}
 		}
 	}
 }
 
-// Negative control for the case above: the increment every revoking write
-// used before the compare-and-set, run against the same account revoked since
-// its caller verified version 3, succeeds and lands on a version one past the
-// revocation — the version the caller would then mint its session at, which
-// no longer reflects that the revocation happened. The compare-and-set against
-// the same row refuses.
-func TestUnconditionalSessionVersionIncrementCarriesAnInterveningRevocation(t *testing.T) {
+// Negative control for the cases above: they must tell the compare-and-set
+// apart from the write shape it replaced, where every revoking write changed
+// its column and added one to whatever version it found. Run through the same
+// fixture and cases, that shape passes the verified-version case and must
+// fail the revoked-in-between one, where it lands one past the revocation —
+// the version its caller then mints a session at. A case table or a mismatch
+// check that stopped comparing would let the old shape through, and the test
+// above would stay green while checking nothing.
+func TestSessionVersionCasesRejectTheUnconditionalIncrement(t *testing.T) {
 	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "user-session-cas-control.db")})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
@@ -204,28 +238,24 @@ func TestUnconditionalSessionVersionIncrementCarriesAnInterveningRevocation(t *t
 			_ = sqlDB.Close()
 		}
 	})
-	if err := database.Exec(
-		`INSERT INTO users (email, password_hash, role, created_at, local_auth_enabled, auth_session_version) VALUES (?, ?, ?, ?, ?, ?)`,
-		"session-cas-control@example.com", "hash", "owner", time.Now().UTC(), true, 4,
-	).Error; err != nil {
-		t.Fatalf("insert: %v", err)
+	repo := NewUserRepository(database)
+	fixture := &sessionVersionFixture{t: t, database: database}
+	increment := sessionVersionWriteUnderTest{name: "unconditional increment", column: "password_hash", write: func(_ *UserRepository, userID uint, _ int) error {
+		return database.Model(&models.User{}).Where("id = ?", userID).UpdateColumns(map[string]any{
+			"password_hash":        "changed-hash",
+			"auth_session_version": gorm.Expr("auth_session_version + 1"),
+		}).Error
+	}}
+
+	verdicts := make(map[string]string)
+	for _, tc := range sessionVersionCases() {
+		verdicts[tc.name] = fixture.mismatch(repo, increment, tc)
 	}
-	var userID uint
-	if err := database.Raw(`SELECT id FROM users WHERE email = ?`, "session-cas-control@example.com").Scan(&userID).Error; err != nil || userID == 0 {
-		t.Fatalf("resolve: %v (id %d)", err, userID)
+	if mismatch, present := verdicts["verified version"]; !present || mismatch != "" {
+		t.Fatalf("expected the old shape to pass the verified-version case (present=%v), got %q", present, mismatch)
 	}
-	const verified = 3
-	if err := database.Transaction(func(tx *gorm.DB) error {
-		_, err := updateFromAuthSessionVersionTx(tx, userID, verified, nil)
-		return err
-	}); !errors.Is(err, models.ErrAuthSessionVersionChanged) {
-		t.Fatalf("expected the compare-and-set to refuse, got %v", err)
-	}
-	if err := database.Model(&models.User{}).Where("id = ?", userID).UpdateColumn("auth_session_version", gorm.Expr("auth_session_version + 1")).Error; err != nil {
-		t.Fatalf("unconditional increment: %v", err)
-	}
-	if got := storedSessionVersionForTest(t, NewUserRepository(database), userID); got != verified+2 {
-		t.Fatalf("expected the unconditional increment to carry the revocation to %d, got %d", verified+2, got)
+	if mismatch, present := verdicts[sessionVersionRevokedInBetween]; !present || mismatch == "" {
+		t.Fatalf("expected the %q case to reject the unconditional increment (present=%v)", sessionVersionRevokedInBetween, present)
 	}
 }
 
