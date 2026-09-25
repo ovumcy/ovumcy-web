@@ -774,6 +774,9 @@ jobs:
     env:
       OVUMCY_REQUIRE_TZDATA: "1"
 
+    # Four cells, not three: once internal/db left race-rest (race-db below),
+    # the slowest of three cells here (8.2-10.2 min over five full-battery runs
+    # on 2026-09-24) became the longest race lane.
     strategy:
       fail-fast: false
       matrix:
@@ -781,6 +784,7 @@ jobs:
           - 1
           - 2
           - 3
+          - 4
 
     steps:
       - name: Checkout
@@ -812,6 +816,73 @@ jobs:
           echo "shard ${{ matrix.shard }}/${{ strategy.job-total }} selects $(grep -cE '^(Test|Example|Fuzz)' "$RUNNER_TEMP/tests.txt") listed tests split by racepartition"
           go test -race -timeout 20m -run "$run_pattern" ./internal/services/
 
+  # internal/db alone was 849.550 s of the 866.827 s race-rest's package sweep
+  # reported (job 105883670056, 2026-09-19), against 156 s without the
+  # detector, and the next package in that lane took 13 s: the lane WAS this
+  # one package, and it was the critical path of every full pull-request and
+  # merge-queue run. Its SQLite driver is pure Go (modernc.org/sqlite, C
+  # transpiled to Go), which the detector instruments line by line. Split by
+  # test NAME exactly as race-services splits internal/services: the names
+  # come from `go test -list`, scripts/racepartition owns the split, and every
+  # listed test runs in exactly one cell.
+  race-db:
+    runs-on: ubuntu-latest
+    needs:
+      - changes
+    # Same slice as the other race lanes: `run_race`, read fail-safe.
+    if: ${{ !cancelled() && needs.changes.outputs.run_race != 'false' }}
+    permissions:
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        shard:
+          - 1
+          - 2
+          - 3
+          - 4
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Go test with race detector — internal/db shard
+        # No OVUMCY_REQUIRE_POSTGRES, for the reason race-rest gives below:
+        # test-go-rest owns the container suite and declares the variable.
+        #
+        # The count check runs before the split. With fewer listed tests than
+        # cells, a cell's pattern matches nothing, that cell runs nothing and
+        # reports success — and a listing that came back empty would do that
+        # in EVERY cell, a green lane with no test behind it. Round-robin over
+        # at least as many names as cells gives every cell one or more.
+        #
+        # `./internal/db/...`, the tree race-rest raced, not the one package:
+        # a subpackage added later is listed, split and raced by construction
+        # instead of dropping out of every race lane.
+        env:
+          CGO_ENABLED: "1"
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test -list '.*' ./internal/db/... > "$RUNNER_TEMP/tests.txt"
+          listed="$(grep -cE '^(Test|Example|Fuzz)' "$RUNNER_TEMP/tests.txt" || true)"
+          if [ "$listed" -lt ${{ strategy.job-total }} ]; then
+            echo "::error::internal/db lists $listed test(s) for ${{ strategy.job-total }} cells: a cell would select none and pass having run nothing"
+            exit 1
+          fi
+          run_pattern="$(go run ./scripts/racepartition -shard=${{ matrix.shard }} -of=${{ strategy.job-total }} < "$RUNNER_TEMP/tests.txt")"
+          echo "shard ${{ matrix.shard }}/${{ strategy.job-total }} takes its share of $listed listed tests"
+          go test -race -timeout 20m -run "$run_pattern" ./internal/db/...
+
   race-rest:
     runs-on: ubuntu-latest
     needs:
@@ -842,14 +913,16 @@ jobs:
         # instance in production — racing it only produces library noise, not ovumcy
         # bugs. The concurrency that is ours lives in the packages below.
         #
-        # internal/services is NOT here: it is sharded in race-services above.
-        # These four trees ran 100 s of the lane's 589 s together, so they stay
-        # whole — splitting them would buy nothing and cost a job.
+        # internal/services and internal/db are NOT here: each is sharded in a
+        # lane of its own above (race-services, race-db). The three trees left
+        # reported 17.277 s together (security 13.029, i18n 3.221, httpx 1.027;
+        # job 105883670056), so they stay whole — splitting them would buy
+        # nothing and cost a job.
         #
         # No OVUMCY_REQUIRE_POSTGRES here, deliberately, and it is not an
-        # oversight to be tidied up: internal/db and internal/i18n do reach
-        # internal/testdb's gate, so a broken database would skip those cases
-        # quietly on this lane. test-go-rest OWNS that suite and declares the
+        # oversight to be tidied up: internal/i18n does reach internal/testdb's
+        # gate (as internal/db does in race-db), so a broken database would skip
+        # those cases quietly on these lanes. test-go-rest OWNS that suite and declares the
         # variable; a lane declares what it owns, and this one only brushes it.
         # Declaring it here would instead start running container-backed tests
         # under the race detector on a required lane — real added cost and a
@@ -860,7 +933,7 @@ jobs:
         # `-timeout 20m`: the declared budget from the coverage lanes above.
         # The race detector is strictly slower per test, so an undeclared
         # 10-minute default is armed harder here than where it was measured.
-        run: go test -race -timeout 20m ./internal/db/... ./internal/security/... ./internal/i18n/... ./internal/httpx/...
+        run: go test -race -timeout 20m ./internal/security/... ./internal/i18n/... ./internal/httpx/...
 
       - name: Go test with race detector — cross-owner isolation
         # The exclusion above is by package, not by property, and the property
@@ -875,14 +948,17 @@ jobs:
 
   # Thin gate job named exactly `race` — branch protection's required status
   # check is pinned to that literal name, which a matrix job cannot provide
-  # (its contexts are `race-services (1)`, ...). Same shape and same reasoning
-  # as the `test` and `e2e` gates: WITHOUT AN `if`, A FAILED DEPENDENCY SKIPS
-  # THIS JOB, and a skipped required check counts as satisfied — which would
-  # report a green `race` on a run where every shard failed.
+  # (its contexts are `race-services (1)`, `race-db (1)`, ...). Same shape and
+  # same reasoning as the `test` and `e2e` gates: WITHOUT AN `if`, A FAILED
+  # DEPENDENCY SKIPS THIS JOB, and a skipped required check counts as
+  # satisfied — which would report a green `race` on a run where every shard
+  # failed. Every race lane is judged here by name; a lane missing from this
+  # list would run, fail, and leave `race` green.
   race:
     runs-on: ubuntu-latest
     needs:
       - race-services
+      - race-db
       - race-rest
     if: ${{ !cancelled() }}
     permissions:
@@ -891,14 +967,15 @@ jobs:
       - name: Judge the race lanes
         env:
           SERVICES_RESULT: ${{ needs.race-services.result }}
+          DB_RESULT: ${{ needs.race-db.result }}
           REST_RESULT: ${{ needs.race-rest.result }}
         run: |
           set -euo pipefail
-          echo "race-services=$SERVICES_RESULT race-rest=$REST_RESULT"
+          echo "race-services=$SERVICES_RESULT race-db=$DB_RESULT race-rest=$REST_RESULT"
           # `skipped` is a PASS here and only here, for the same reason as in
-          # the other two gates: the `changes` job cleared `run_core`, which is
+          # the other two gates: the `changes` job cleared `run_race`, which is
           # a decision not to run rather than a failure to run.
-          for result in "$SERVICES_RESULT" "$REST_RESULT"; do
+          for result in "$SERVICES_RESULT" "$DB_RESULT" "$REST_RESULT"; do
             case "$result" in
               success|skipped) ;;
               *) echo "::error::a race lane reported \"$result\""; exit 1 ;;
@@ -1498,11 +1575,15 @@ jobs:
       # One shard's failure must not cancel its siblings: the point of the
       # split is to learn everything the browser lane knows in one run.
       fail-fast: false
+      # Four shards: after race-db, the slowest of three browser shards
+      # (6.6-7.2 min over five full-battery runs on 2026-09-24) sat right
+      # behind the race lanes on the critical path.
       matrix:
         shard:
           - 1
           - 2
           - 3
+          - 4
     # Historical note:
     # this job gates each work STEP instead of using a job-level `if` because
     # job-level skips were believed to leave the required check unsatisfied —
