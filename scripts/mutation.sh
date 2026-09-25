@@ -46,10 +46,12 @@
 # files into the shard count SHARDED_PKGS declares for it and, for shard N,
 # excludes every file that is NOT in group N. The partition is computed at run
 # time from a live directory listing (never a hardcoded file list) so it
-# self-heals as files are added/removed — see shard_files below. Round-robin
-# assignment (file index modulo shard count over the sorted file list) balances
-# shard weight better than contiguous alphabetical blocks, since large handler_*
-# files cluster together mid-alphabet.
+# self-heals as files are added/removed — see shard_files below. Files are
+# dealt by WEIGHT, not by count (scripts/mutationpartition): each is weighed by
+# the operators gremlins' default mutators rewrite and dealt heaviest first to
+# the lightest shard. Round-robin by file count, the earlier rule, left the
+# five internal/services shards holding 462..868 candidates (tree of
+# 2026-09-25), so the heaviest cells hit the 3h cap while others idled.
 
 set -euo pipefail
 
@@ -68,13 +70,17 @@ TARGETS=(
 # internal/api and internal/services are each sharded (see header comment):
 # both outgrew the 3h CI timeout as a single unsharded job (internal/api first,
 # issue #161; internal/services once its integration/property suites expanded).
-# Shard counts were picked for comfortable margin — 5 shards gives each one a
-# small (~17–22-file) slice with room to spare even under a pessimistic
-# multi-hour full-package estimate. Keep this registry in sync with the matrix
-# in .github/workflows/mutation.yml. Entries are "slug-base:package-dir:count".
+# Shard counts come from the weekly runs of 2026-08-31..09-21, where 5 shards
+# each left every internal/api cell at the 180-minute cap with 52-96% of its
+# files reached. Measured on those logs, one mutation candidate costs about
+# 1.24 wall-minutes in internal/api and 0.41 in internal/services at 2 workers;
+# 14 and 10 shards put an evenly weighted cell near 115 and 120 minutes, plus
+# gremlins' coverage run (up to ~9 and ~2 minutes). Keep this registry in sync
+# with the matrix in .github/workflows/mutation.yml. Entries are
+# "slug-base:package-dir:count".
 SHARDED_PKGS=(
-  "internal_api:./internal/api:5"
-  "internal_services:./internal/services:5"
+  "internal_api:./internal/api:14"
+  "internal_services:./internal/services:10"
 )
 
 # shard_pkg_field <slug-base> <dir|count> looks up a sharded package's directory
@@ -118,12 +124,16 @@ shard_files() {
 }
 
 # shard_select <pkg-dir> <shard-num> <shard-count> prints the basenames assigned
-# to shard <shard-num> (1-based), via round-robin: the file at sorted index i
-# (0-based) goes to shard (i % shard-count) + 1.
+# to shard <shard-num> (1-based). scripts/mutationpartition deals shard_files'
+# own list by estimated mutation weight; it reads the names from that list, so
+# the partition and verify-shards' proof of it can never see different
+# populations. A failure (no Go toolchain, an unreadable file, a name it
+# refuses) is a non-zero status here, which every caller must check: an empty
+# selection read as success would exclude every file from the shard.
 shard_select() {
   local pkg_dir="$1" shard_num="$2" total="$3"
-  shard_files "$pkg_dir" | awk -v shard="$shard_num" -v total="$total" \
-    'NR % total == shard % total'
+  shard_files "$pkg_dir" | go run ./scripts/mutationpartition \
+    -dir "$pkg_dir" -shard "$shard_num" -of "$total"
 }
 
 # shard_exclude_args <pkg-dir> <shard-num> <shard-count> prints one
@@ -138,7 +148,7 @@ shard_select() {
 shard_exclude_args() {
   local pkg_dir="$1" shard_num="$2" total="$3"
   local keep_list
-  keep_list="$(shard_select "$pkg_dir" "$shard_num" "$total")"
+  keep_list="$(shard_select "$pkg_dir" "$shard_num" "$total")" || return 1
   while IFS= read -r fname; do
     [[ -z "$fname" ]] && continue
     if ! grep -qxF "$fname" <<<"$keep_list"; then
@@ -198,10 +208,20 @@ verify_one_partition() {
 
   local shard_num
   for ((shard_num = 1; shard_num <= total; shard_num++)); do
-    local count
-    count="$(shard_select "$pkg_dir" "$shard_num" "$total" | grep -c . || true)"
+    local selected count
+    # One partition call per shard, checked: `|| rc=1` at the call site has
+    # turned set -e off in this function, so an unchecked failure would read
+    # as an empty shard and surface only as a "gap" naming the wrong cause.
+    if ! selected="$(shard_select "$pkg_dir" "$shard_num" "$total")"; then
+      echo "::error::$base: could not compute shard $shard_num of $total (scripts/mutationpartition failed)" >&2
+      rm -f "$union_file"
+      return 1
+    fi
+    count="$(grep -c . <<<"$selected" || true)"
     echo ">> shard $shard_num: $count files"
-    shard_select "$pkg_dir" "$shard_num" "$total" >>"$union_file"
+    if [[ -n "$selected" ]]; then
+      printf '%s\n' "$selected" >>"$union_file"
+    fi
   done
 
   local union_count dup_count overlap_found=0
@@ -234,7 +254,7 @@ verify_one_partition() {
 
 run_baseline() {
   # Optional single package slug (e.g. "internal_security", or a shard slug
-  # "internal_api_1".."internal_api_5" / "internal_services_1".."internal_services_5")
+  # "internal_api_<n>" / "internal_services_<n>", n up to the SHARDED_PKGS count)
   # to run just one target — used by CI's per-target matrix jobs so each gets a
   # fresh runner instead of accumulating disk/cache across all targets.
   local only="${1:-}"
@@ -292,7 +312,19 @@ run_baseline() {
     echo ">> baseline mutation: $pkg_dir (shard $shard_num/$total)"
     echo ">> shard $shard_num files:"
     shard_select "$pkg_dir" "$shard_num" "$total" | sed 's/^/     /'
-    mapfile -t exclude_args < <(shard_exclude_args "$pkg_dir" "$shard_num" "$total")
+    # Taken through a checked command substitution, not `mapfile < <(...)`: a
+    # process substitution's status is never read, so a partition that failed
+    # there would arrive as an EMPTY exclusion list — and an empty list turns
+    # this shard into a full, unsharded run of the package under its name.
+    local exclusions
+    exclusions="$(shard_exclude_args "$pkg_dir" "$shard_num" "$total")" || {
+      echo "error: could not compute the exclusions for $slug (scripts/mutationpartition failed)" >&2
+      exit 1
+    }
+    local -a exclude_args=()
+    if [[ -n "$exclusions" ]]; then
+      mapfile -t exclude_args <<<"$exclusions"
+    fi
     "$GREMLINS" unleash "$pkg_dir" \
       --workers "$WORKERS" \
       --output "$TMP_DIR/${slug}.json" \
