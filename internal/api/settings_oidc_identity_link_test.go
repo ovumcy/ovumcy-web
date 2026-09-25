@@ -717,7 +717,12 @@ func TestOIDCIdentityUnlinkReissueFailureIsReportedAsARefusal(t *testing.T) {
 	response := mustAppResponse(t, app, request)
 	defer func() { _ = response.Body.Close() }()
 
-	wantSpec := authWebSignInUnavailableErrorSpec()
+	// authIdentityChangeAppliedSignInAgainErrorSpec, not
+	// authWebSignInUnavailableErrorSpec (refreshCurrentSession's own internal
+	// spec): the unlink already committed before the reissue was asked, so
+	// "failed to create session" would tell the owner nothing happened, which
+	// is false. See reissueSessionAfterIdentityChange.
+	wantSpec := authIdentityChangeAppliedSignInAgainErrorSpec()
 	if response.StatusCode != wantSpec.Status {
 		t.Fatalf("expected the refused reissue's status %d, got %d: %s", wantSpec.Status, response.StatusCode, mustReadBodyString(t, response.Body))
 	}
@@ -726,7 +731,8 @@ func TestOIDCIdentityUnlinkReissueFailureIsReportedAsARefusal(t *testing.T) {
 	}
 	// Anti-vacuity: the unlink itself ran before the reissue was asked, so a
 	// refusal above can only have come from the reissue and not from the
-	// service call being skipped.
+	// service call being skipped. The stub writes nothing, so "the identity row
+	// is absent" is this call having actually reached the service.
 	if stub.unlinkCalls != 1 || stub.lastUnlinkUserID != user.ID {
 		t.Fatalf("expected UnlinkIdentity to have run for user %d before the reissue, got %d calls for user %d", user.ID, stub.unlinkCalls, stub.lastUnlinkUserID)
 	}
@@ -770,17 +776,97 @@ func TestOIDCIdentityLinkStepupReissueFailureIsReportedAsARefusal(t *testing.T) 
 
 	// Anti-vacuity: the link itself completed before the reissue ran, so a
 	// refusal below can only have come from the reissue and not from
-	// ConfirmAndLinkIdentity never being asked.
+	// ConfirmAndLinkIdentity never being asked. The stub writes nothing, so
+	// this is "the identity row is present after the link" for a fake service.
 	if fixture.oidcStub.lastConfirmLinkUserID != fixture.user.ID {
 		t.Fatalf("expected the link to have been confirmed before the reissue ran, got user id %d", fixture.oidcStub.lastConfirmLinkUserID)
+	}
+	// Not redirectSettingsRefusal: completeOIDCIdentityLinkStepup's reissue
+	// failure arm has already cleared the auth cookie, so it flashes AuthError
+	// and lands on /login directly rather than /settings, which would bounce
+	// there anyway and lose the flash. See the handler's own comment.
+	if callbackResponse.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected the refused reissue to redirect, got %d", callbackResponse.StatusCode)
+	}
+	if location := callbackResponse.Header.Get("Location"); location != "/login" {
+		t.Fatalf("expected the refused reissue to land on /login, got %q", location)
 	}
 	flashCookie := responseCookie(callbackResponse.Cookies(), flashCookieName)
 	if flashCookie == nil || strings.TrimSpace(flashCookie.Value) == "" {
 		t.Fatal("expected a flash cookie carrying the refused reissue")
 	}
-	wantKey := authWebSignInUnavailableErrorSpec().Key
-	if payload := decodeFlashCookieForTest(t, flashCookie.Value); payload.SettingsError != wantKey {
-		t.Fatalf("expected the refused-reissue key %q on the settings flash channel, got %q", wantKey, payload.SettingsError)
+	// authIdentityChangeAppliedSignInAgainErrorSpec, not
+	// authWebSignInUnavailableErrorSpec: the link already committed, so the
+	// generic session-create refusal would tell the owner nothing happened,
+	// which is false.
+	wantKey := authIdentityChangeAppliedSignInAgainErrorSpec().Key
+	payload := decodeFlashCookieForTest(t, flashCookie.Value)
+	if payload.AuthError != wantKey {
+		t.Fatalf("expected the refused-reissue key %q on the auth flash channel (the one /login reads), got AuthError=%q SettingsError=%q", wantKey, payload.AuthError, payload.SettingsError)
+	}
+}
+
+// TestOIDCIdentityLinkStepupVersionRaceDuringReissueIsReportedAsARefusal is
+// TestOIDCIdentityLinkStepupReissueFailureIsReportedAsARefusal's sibling for
+// reissueSessionAfterIdentityChange's OTHER failure arm: not refreshCurrentSession
+// refusing the re-mint, but the version-mismatch branch, where a second write
+// moves auth_session_version again between the link's commit and this reload.
+// The stub's afterIdentityLinkConfirm hook lands the race in that exact gap,
+// the same technique the sibling test uses for its own gap.
+func TestOIDCIdentityLinkStepupVersionRaceDuringReissueIsReportedAsARefusal(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "settings-oidc-link-version-race@example.com")
+	fixture.oidcStub.identityLinkClaims = security.OIDCClaims{
+		Issuer:  "https://id.example.com",
+		Subject: "version-race-subject",
+	}
+	fixture.oidcStub.afterIdentityLinkConfirm = func() {
+		// A concurrent write (another device signing out everywhere, a second
+		// posture change) bumps the version again right after the link
+		// committed but before reissueSessionAfterIdentityChange's reload sees
+		// it — the pre-existing revocation has to win over this device's link.
+		if err := fixture.database.Model(&models.User{}).
+			Where("id = ?", fixture.user.ID).
+			UpdateColumn("auth_session_version", fixture.user.AuthSessionVersion+2).Error; err != nil {
+			t.Fatalf("bump the fixture's version to provoke the race: %v", err)
+		}
+	}
+
+	startResponse := postOIDCIdentityLinkStepupStart(t, fixture)
+	defer func() { _ = startResponse.Body.Close() }()
+	stepupCookie := readStepupCookie(t, startResponse)
+	state := extractStepupCallbackState(t, fixture)
+
+	callbackResponse := postOIDCStepupCallback(t, fixture, stepupCookie, state, "callback-code")
+	defer func() { _ = callbackResponse.Body.Close() }()
+
+	// Anti-vacuity: the link itself completed before the race was provoked, so
+	// the refusal below can only have come from the version-mismatch arm.
+	if fixture.oidcStub.lastConfirmLinkUserID != fixture.user.ID {
+		t.Fatalf("expected the link to have been confirmed before the race ran, got user id %d", fixture.oidcStub.lastConfirmLinkUserID)
+	}
+	if callbackResponse.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected the refused reissue to redirect, got %d", callbackResponse.StatusCode)
+	}
+	if location := callbackResponse.Header.Get("Location"); location != "/login" {
+		t.Fatalf("expected the version-race refusal to land on /login, got %q", location)
+	}
+	flashCookie := responseCookie(callbackResponse.Cookies(), flashCookieName)
+	if flashCookie == nil || strings.TrimSpace(flashCookie.Value) == "" {
+		t.Fatal("expected a flash cookie carrying the version-race refusal")
+	}
+	wantKey := authIdentityChangeAppliedSignInAgainErrorSpec().Key
+	payload := decodeFlashCookieForTest(t, flashCookie.Value)
+	if payload.AuthError != wantKey {
+		t.Fatalf("expected the refused-reissue key %q on the auth flash channel, got AuthError=%q SettingsError=%q", wantKey, payload.AuthError, payload.SettingsError)
+	}
+	// The session must not survive the race: this device's own cookie was
+	// cleared by refuseSessionRevokedDuring, exactly as for every other
+	// sign-out-everywhere event it answers.
+	authCookie := responseCookie(callbackResponse.Cookies(), authCookieName)
+	if authCookie == nil || strings.TrimSpace(authCookie.Value) != "" {
+		t.Fatalf("expected the auth cookie to be cleared after the version race, got %v", authCookie)
 	}
 }
 

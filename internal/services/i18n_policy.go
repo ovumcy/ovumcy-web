@@ -182,6 +182,19 @@ var authErrorTranslationKeys = map[string]string{ // #nosec G101 -- false positi
 	// can act on: submit the pair again.
 	"failed to secure password": "settings.error.password_secure_failed",
 	"failed to update password": "settings.error.password_update_failed",
+	// Both keys below are the opposite case from "failed to create session"
+	// above: that spec means the write never landed, while these two mean it
+	// did — an OIDC identity link/unlink or a clear-data wipe already committed
+	// and bumped AuthSessionVersion, but the session could not be carried
+	// forward past it (a revocation raced the reload, or the re-mint itself
+	// failed). Their own sentence says the change went through and asks the
+	// owner to sign in again, rather than the generic internal-error copy that
+	// would leave them guessing whether anything happened. Regression:
+	// api.TestOIDCIdentityLinkStepupReissueFailureIsReportedAsARefusal,
+	// api.TestOIDCIdentityUnlinkReissueFailureIsReportedAsARefusal,
+	// api.TestApplyClearDataReportsARefusedSessionReissueToItsCaller.
+	"identity change applied sign in again": "auth.error.identity_change_applied_sign_in_again",
+	"data cleared sign in again":            "settings.error.data_cleared_sign_in_again",
 }
 
 var settingsStatusTranslationKeys = map[string]string{

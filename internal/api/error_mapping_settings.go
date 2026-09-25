@@ -196,6 +196,16 @@ func settingsClearDataErrorSpec() APIErrorSpec {
 	return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to clear data")
 }
 
+// settingsDataClearedSignInAgainErrorSpec answers a clear-data whose wipe and
+// AuthSessionVersion bump already committed but whose session could not be
+// re-issued afterward. Distinct from settingsClearDataErrorSpec, which means
+// nothing was erased: here the data is already gone, so telling the owner
+// "failed to clear data" would be false, and 401 (not 500) says the right next
+// step is signing in again, since the caller has already cleared the cookie.
+func settingsDataClearedSignInAgainErrorSpec() APIErrorSpec {
+	return settingsFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "data cleared sign in again")
+}
+
 func settingsValidatePasswordErrorSpec() APIErrorSpec {
 	return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to validate password")
 }

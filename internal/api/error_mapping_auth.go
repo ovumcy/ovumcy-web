@@ -171,6 +171,19 @@ func authSessionCreateErrorSpec() APIErrorSpec {
 	return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to create session")
 }
 
+// authIdentityChangeAppliedSignInAgainErrorSpec answers a link or unlink whose
+// AuthSessionVersion bump already committed but whose session could not be
+// carried forward — a revocation raced the post-commit reload, or the re-mint
+// itself failed. Unlike authSessionCreateErrorSpec, this tells the owner the
+// change went through rather than leaving them to guess whether anything
+// happened: "failed to create session" describes a write that never landed,
+// which is false here. 401 rather than 500: the account's cookie has already
+// been cleared by the caller, so the correct next step is signing in again,
+// not retrying a request that already succeeded.
+func authIdentityChangeAppliedSignInAgainErrorSpec() APIErrorSpec {
+	return authFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "identity change applied sign in again")
+}
+
 func authSessionRevokeErrorSpec() APIErrorSpec {
 	return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to revoke session")
 }
