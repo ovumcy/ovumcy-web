@@ -236,6 +236,11 @@ func (handler *Handler) respondAuthError(c fiber.Ctx, spec APIErrorSpec) error {
 		case "/api/v1/sessions/2fa-challenge":
 			handler.setFlashCookie(c, flash)
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/auth/2fa")
+		case "/api/v1/sessions/current":
+			// No <form> can submit DELETE and there is no page to send the client
+			// back to, so a plain client refused here by either limiter gets the
+			// mapped-error envelope, never a redirect (WEB-72).
+			return apiError(c, spec)
 		// default is reachable: the SSO limiter is mounted on the whole /auth/oidc
 		// prefix (not just start/callback), so a refusal on a sub-path with no case
 		// of its own — the OIDC logout bridge, its redirect leg, link-confirm,
@@ -256,16 +261,13 @@ func (handler *Handler) respondAuthError(c fiber.Ctx, spec APIErrorSpec) error {
 // surface (days, symptoms, settings) returns JSON or HTMX status fragments
 // and must NOT flash-redirect on error.
 //
-// DELETE /api/v1/sessions/current is deliberately absent (WEB-72): it is not a
-// form a browser can submit (forms carry only GET/POST), so a plain-HTML
-// client refusing here — most often the edge rate limiter, before the handler
-// ever runs — must get the same mapped-error envelope any other API rejection
-// gets, not a redirect to /login. The signed-out browser's OWN
-// too-many-attempts refusal still redirects; Handler.Logout does that
-// explicitly, never through this path list.
+// DELETE /api/v1/sessions/current stays a member although no <form> can submit
+// DELETE: this predicate also selects RespondAPIRateLimited's spec for the
+// app-wide /api limiter, whose auth_form target JSON and HTMX clients already
+// see. respondAuthError refuses the redirect for it with its own case instead.
 func isV1AuthFormPath(path string) bool {
 	switch path {
-	case "/api/v1/users", "/api/v1/sessions",
+	case "/api/v1/users", "/api/v1/sessions", "/api/v1/sessions/current",
 		"/api/v1/sessions/2fa-challenge", "/api/v1/password-resets",
 		"/api/v1/password-resets/redeem":
 		return true

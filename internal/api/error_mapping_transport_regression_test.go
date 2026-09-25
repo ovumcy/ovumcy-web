@@ -154,6 +154,32 @@ func TestRespondAuthErrorRedirectsEveryRoutableSpellingOfAnAuthForm(t *testing.T
 	}
 }
 
+// TestRespondAuthErrorDefaultArmRedirectsAnUnlistedOIDCSubPath pins what the
+// default arm inside respondAuthError's switch is FOR: the SSO limiter is
+// mounted on the whole /auth/oidc prefix, not just /start and /callback, so a
+// refusal on a sub-path with no case of its own — here the OIDC logout bridge
+// — still takes the isV1AuthFormPath/oidc-prefix branch and must fall through
+// to the same /login redirect the listed cases get. Without this the comment
+// above that arm would claim a shape no test exercises.
+func TestRespondAuthErrorDefaultArmRedirectsAnUnlistedOIDCSubPath(t *testing.T) {
+	t.Parallel()
+
+	app, handler := newErrorMappingTransportTestApp(t)
+	app.Get(oidcLogoutBridgePath, func(c fiber.Ctx) error {
+		return handler.respondMappedError(c, authFormErrorSpec(fiber.StatusTooManyRequests, APIErrorCategoryRateLimited, "too many sso attempts"))
+	})
+
+	request := httptest.NewRequest(http.MethodGet, oidcLogoutBridgePath, nil)
+	response := mustAppResponse(t, app, request)
+	if response.StatusCode != http.StatusSeeOther || response.Header.Get("Location") != "/login" {
+		t.Fatalf("%s form error answered %d (Location %q), want 303 to /login via the default arm",
+			oidcLogoutBridgePath, response.StatusCode, response.Header.Get("Location"))
+	}
+	if payload := mustReadFlashPayload(t, handler.secretKey, response.Cookies()); payload.AuthError != "too many sso attempts" {
+		t.Fatalf("%s flashed %#v, want the auth error key", oidcLogoutBridgePath, payload)
+	}
+}
+
 // TestRespondSettingsErrorRedirectsEveryRoutableSpellingOfTheSettingsForms is
 // the settings twin: a variant spelling of an /api/v1/users/current form is
 // the same handler and owes the same redirect back to /settings. The lowercase
