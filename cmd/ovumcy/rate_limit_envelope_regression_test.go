@@ -435,3 +435,97 @@ func TestRateLimitSurfaceTableCoversEveryLimiter(t *testing.T) {
 		t.Fatalf("configureFiberMiddleware registers %d limiters but the surface table has %d rows; every limiter declares the answer it owes", registrations, len(rateLimitSurfaces))
 	}
 }
+
+// TestLogoutPathAlsoAnswersThroughTheAppWideAPICatchAllLimiter covers the
+// SECOND limiter that reaches DELETE /api/v1/sessions/current: the app-wide
+// "/api" catch-all (server.go's app.Use("/api", limiter.New(...)), the same
+// mount the "api catch-all" row in rateLimitSurfaces drives on a different
+// path), mounted behind the narrower per-IP logout row that the "logout" row
+// above spends. WEB-72 fixed the redirect by adding a non-redirecting case in
+// respondAuthError, not by removing the path from isV1AuthFormPath — so this
+// limiter must keep building the exact spec it always did (auth_form target,
+// key "too many requests") for a JSON client, while a plain client now gets
+// that spec's 429 + Retry-After instead of the 303 to /login it used to get,
+// and an HTMX client is unaffected either way. Drives the real
+// configureFiberMiddleware, with the per-IP logout row's own budget left wide
+// so only the catch-all trips.
+func TestLogoutPathAlsoAnswersThroughTheAppWideAPICatchAllLimiter(t *testing.T) {
+	minimalRuntimeEnv(t)
+	limits := loadRateLimits(t)
+	limits.APIMax = 1
+	limits.APIWindow = time.Minute
+
+	newCatchAllTrippedApp := func(t *testing.T) *fiber.App {
+		t.Helper()
+		handler, _ := newRateLimitTestHandlerAndDB(t)
+		app := newFiberApp(runtimeConfig{Location: time.UTC, DefaultLanguage: "en", RateLimits: limits}, handler)
+		spend := deleteCurrentSession(t, app, "", "")
+		_ = spend.Body.Close()
+		return app
+	}
+
+	t.Run("json keeps the auth_form target", func(t *testing.T) {
+		app := newCatchAllTrippedApp(t)
+		request := httptest.NewRequest(http.MethodDelete, "/api/v1/sessions/current", strings.NewReader(""))
+		request.Header.Set("Accept", "application/json")
+		response, err := app.Test(request, testConfigNoTimeout)
+		if err != nil {
+			t.Fatalf("probe failed: %v", err)
+		}
+		defer func() { _ = response.Body.Close() }()
+		if response.StatusCode != http.StatusTooManyRequests {
+			t.Fatalf("status = %d, want 429", response.StatusCode)
+		}
+		payload := map[string]any{}
+		if err := json.Unmarshal(mustReadAll(t, response), &payload); err != nil {
+			t.Fatalf("unmarshal envelope: %v", err)
+		}
+		detail, ok := payload["error_detail"].(map[string]any)
+		if !ok || detail["target"] != "auth_form" {
+			t.Fatalf("error_detail = %v, want target=auth_form — the catch-all limiter must keep the spec it always built for this path", payload["error_detail"])
+		}
+		if strings.TrimSpace(response.Header.Get("Retry-After")) == "" {
+			t.Fatal("answered without a Retry-After header")
+		}
+	})
+
+	t.Run("plain client gets 429 not a redirect", func(t *testing.T) {
+		app := newCatchAllTrippedApp(t)
+		request := httptest.NewRequest(http.MethodDelete, "/api/v1/sessions/current", strings.NewReader(""))
+		response, err := app.Test(request, testConfigNoTimeout)
+		if err != nil {
+			t.Fatalf("probe failed: %v", err)
+		}
+		defer func() { _ = response.Body.Close() }()
+		if response.StatusCode != http.StatusTooManyRequests {
+			t.Fatalf("status = %d, want 429 — before WEB-72 this fell to respondAuthError's default arm and redirected to /login", response.StatusCode)
+		}
+		if strings.TrimSpace(response.Header.Get("Retry-After")) == "" {
+			t.Fatal("answered without a Retry-After header")
+		}
+		if !strings.Contains(string(mustReadAll(t, response)), `"error_detail"`) {
+			t.Fatal("expected the mapped-error envelope")
+		}
+	})
+
+	t.Run("htmx is unaffected", func(t *testing.T) {
+		app := newCatchAllTrippedApp(t)
+		request := httptest.NewRequest(http.MethodDelete, "/api/v1/sessions/current", strings.NewReader(""))
+		request.Header.Set("HX-Request", "true")
+		response, err := app.Test(request, testConfigNoTimeout)
+		if err != nil {
+			t.Fatalf("probe failed: %v", err)
+		}
+		defer func() { _ = response.Body.Close() }()
+		if response.StatusCode != http.StatusTooManyRequests {
+			t.Fatalf("status = %d, want 429", response.StatusCode)
+		}
+		body := string(mustReadAll(t, response))
+		if !strings.Contains(body, `class="status-error"`) {
+			t.Fatalf("expected the shared status fragment, got %q", body)
+		}
+		if strings.Contains(body, `"error_detail"`) {
+			t.Fatalf("painted the JSON envelope into an HTMX fragment: %q", body)
+		}
+	})
+}
