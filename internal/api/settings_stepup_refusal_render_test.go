@@ -9,6 +9,7 @@ import (
 	"go/token"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -18,6 +19,7 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/i18n"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // Every settings step-up (local-password enrollment, erasure, OIDC identity
@@ -243,10 +245,11 @@ var inlineStepupRefusalSpecs = map[string]func() APIErrorSpec{
 // nothing checked the hand-typed list against the helpers it claimed to
 // describe.
 var inlineStepupSessionHelperSpecs = map[string]func() APIErrorSpec{
-	"settingsClearDataErrorSpec":        settingsClearDataErrorSpec,
-	"settingsDeleteAccountErrorSpec":    settingsDeleteAccountErrorSpec,
-	"authSessionCreateErrorSpec":        authSessionCreateErrorSpec,
-	"authWebSignInUnavailableErrorSpec": authWebSignInUnavailableErrorSpec,
+	"settingsClearDataErrorSpec":              settingsClearDataErrorSpec,
+	"settingsDeleteAccountErrorSpec":          settingsDeleteAccountErrorSpec,
+	"authSessionCreateErrorSpec":              authSessionCreateErrorSpec,
+	"authWebSignInUnavailableErrorSpec":       authWebSignInUnavailableErrorSpec,
+	"settingsDataClearedSignInAgainErrorSpec": settingsDataClearedSignInAgainErrorSpec,
 }
 
 // settingsStepupRefusalSpecs collects every spec the three step-up completion
@@ -913,7 +916,7 @@ func TestApplyClearDataReportsARefusedSessionReissueToItsCaller(t *testing.T) {
 			// than only from a fault injected into the codec.
 			role:    "partner",
 			wantOK:  false,
-			wantKey: authWebSignInUnavailableErrorSpec().Key,
+			wantKey: settingsDataClearedSignInAgainErrorSpec().Key,
 		},
 		{
 			name:   "the session is re-issued",
@@ -971,6 +974,127 @@ func TestApplyClearDataReportsARefusedSessionReissueToItsCaller(t *testing.T) {
 			}
 			if remaining != 0 {
 				t.Fatalf("day entries after applyClearData = %d, want 0: the probe never reached the session re-issue", remaining)
+			}
+		})
+	}
+}
+
+// TestClearAllDataAnswersARefusedSessionReissueByFormat is
+// TestApplyClearDataReportsARefusedSessionReissueToItsCaller's HTTP-level
+// counterpart: applyClearData reports the refusal correctly, but ClearAllData
+// is the route a browser actually reaches, and respondMappedError's plain-HTML
+// arm for /api/v1/users/current redirects to /settings — which requires the
+// very cookie applyClearData just cleared. That bounces to /login and drops
+// the SettingsError flash on a channel /login never reads, the same trap
+// completeErasureStepupReauth's identical check exists for. JSON and HTMX
+// callers never hit that redirect at all, so all three formats are driven
+// here to prove the fix is format-aware, not merely present.
+func TestClearAllDataAnswersARefusedSessionReissueByFormat(t *testing.T) {
+	t.Parallel()
+
+	wantKey := settingsDataClearedSignInAgainErrorSpec().Key
+
+	for _, testCase := range []struct {
+		name       string
+		slug       string
+		accept     string
+		htmx       bool
+		wantStatus int
+	}{
+		{name: "plain html client lands on /login, not /settings", slug: "html", accept: "text/html", wantStatus: http.StatusSeeOther},
+		{name: "json client gets the mapped 401 envelope", slug: "json", accept: "application/json", wantStatus: http.StatusUnauthorized},
+		{name: "htmx client gets the mapped fragment", slug: "htmx", accept: "text/html", htmx: true, wantStatus: http.StatusOK},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			stub := newStubOIDCWorkflowService(true)
+			_, database, handler := newSettingsMutationStepupApp(t, stub)
+
+			password := "StrongPass1"
+			hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.MinCost)
+			if err != nil {
+				t.Fatalf("hash probe password: %v", err)
+			}
+			user := models.User{
+				Email:            "clear-data-format-" + testCase.slug + "@example.com",
+				LocalAuthEnabled: true,
+				PasswordHash:     string(hash),
+				// Same non-owner value the table's CHECK constraint still accepts,
+				// which is what makes the session re-issue fail from a row a test
+				// can create rather than from an injected codec fault.
+				Role:                "partner",
+				OnboardingCompleted: true,
+				AuthSessionVersion:  1,
+				CycleLength:         28,
+				PeriodLength:        5,
+				AutoPeriodFill:      true,
+				CreatedAt:           time.Now().UTC(),
+			}
+			if err := database.Create(&user).Error; err != nil {
+				t.Fatalf("create the probe account: %v", err)
+			}
+
+			// Same reason as TestOIDCIdentityUnlinkReissueFailureIsReportedAsARefusal:
+			// no registered route can carry a non-owner session into ClearAllData
+			// (OwnerOnly resolves the role first), so the probe injects the session
+			// user directly via Locals, the same seam ClearAllData reads through
+			// currentUser.
+			app := fiber.New()
+			app.Post("/__probe/clear-data", func(c fiber.Ctx) error {
+				c.Locals(contextUserKey, &user)
+				return handler.ClearAllData(c)
+			})
+
+			form := url.Values{"password": {password}}
+			request := httptest.NewRequest(http.MethodPost, "/__probe/clear-data", strings.NewReader(form.Encode()))
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			request.Header.Set("Accept", testCase.accept)
+			if testCase.htmx {
+				request.Header.Set("HX-Request", "true")
+			}
+			response := mustAppResponse(t, app, request)
+			defer func() { _ = response.Body.Close() }()
+
+			if response.StatusCode != testCase.wantStatus {
+				t.Fatalf("clear-data refused reissue (%s) = %d, want %d: %s", testCase.name, response.StatusCode, testCase.wantStatus, mustReadBodyString(t, response.Body))
+			}
+
+			switch {
+			case testCase.htmx:
+				translationKey := services.AuthErrorTranslationKey(wantKey)
+				body := mustReadBodyString(t, response.Body)
+				if !strings.Contains(body, `data-flash-key="`+translationKey+`"`) {
+					t.Fatalf("expected the HTMX fragment to carry data-flash-key %q, got %q", translationKey, body)
+				}
+			case testCase.accept == "application/json":
+				body := mustReadBodyString(t, response.Body)
+				if !strings.Contains(body, wantKey) {
+					t.Fatalf("expected the JSON envelope to carry %q, got %q", wantKey, body)
+				}
+			default:
+				if location := response.Header.Get("Location"); location != "/login" {
+					t.Fatalf("expected the plain-HTML refusal to land on /login (not /settings, which the cleared cookie would bounce to /login anyway and lose the flash), got %q", location)
+				}
+				flashCookie := responseCookie(response.Cookies(), flashCookieName)
+				if flashCookie == nil || strings.TrimSpace(flashCookie.Value) == "" {
+					t.Fatal("expected a flash cookie carrying the refusal")
+				}
+				payload := decodeFlashCookieForTest(t, flashCookie.Value)
+				if payload.AuthError != wantKey {
+					t.Fatalf("expected the refusal %q on the auth flash channel (the one /login reads), got AuthError=%q SettingsError=%q", wantKey, payload.AuthError, payload.SettingsError)
+				}
+			}
+
+			// Anti-vacuity: the wipe itself must have happened, so a refusal above
+			// can only have come from the session re-issue and not from ClearAllData
+			// failing earlier (e.g. on the password check).
+			var remaining int64
+			if err := database.Model(&models.User{}).Where("id = ? AND auth_session_version = ?", user.ID, 2).Count(&remaining).Error; err != nil {
+				t.Fatalf("count the bumped row after the wipe: %v", err)
+			}
+			if remaining != 1 {
+				t.Fatalf("expected the account row to carry auth_session_version=2 after the wipe, got %d matching rows: the probe never reached the session re-issue", remaining)
 			}
 		})
 	}

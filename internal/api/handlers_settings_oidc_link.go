@@ -154,7 +154,14 @@ func (handler *Handler) completeOIDCIdentityLinkStepup(c fiber.Ctx, state oidcSt
 	// The link bumped AuthSessionVersion in the same write, revoking every
 	// earlier session; this device keeps signing in on a re-issued one.
 	if spec, ok := handler.reissueSessionAfterIdentityChange(c, user.ID, linkedSessionVersion, oidcIdentityLinkStepupAction, "link"); !ok {
-		return handler.redirectSettingsRefusal(c, spec)
+		// Not redirectSettingsRefusal: every failure reissueSessionAfterIdentityChange
+		// can return here has already cleared the auth cookie, so /settings would
+		// bounce straight to /login and the SettingsError flash it carries is read
+		// by nothing there — the owner would see a silent, unexplained logout
+		// right after confirming the link. Flashing AuthError and landing on
+		// /login directly is the channel the login page actually reads.
+		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 	handler.setFlashCookie(c, FlashPayload{SettingsSuccess: "oidc_identity_linked"})
 	return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
@@ -232,7 +239,23 @@ func (handler *Handler) reissueSessionAfterIdentityChange(c fiber.Ctx, userID ui
 		// codecov:ignore:end
 	}
 	if !services.AuthSessionVersionsMatch(changedSessionVersion, fresh.AuthSessionVersion) {
-		return handler.refuseSessionRevokedDuring(c, scope, action), false
+		// The link or unlink committed at changedSessionVersion, but a later
+		// write moved the version again before this reload could see it, so the
+		// pre-existing sign-out-everywhere event has to win. refuseSessionRevokedDuring
+		// still clears the cookie and logs session_revoked_during_<action> exactly
+		// as it does for every other caller; only the spec answered to THIS
+		// caller differs, because unlike a refused password change or 2FA
+		// toggle, the identity change here already committed — "failed to
+		// create session" would tell the owner nothing happened, which is false.
+		handler.refuseSessionRevokedDuring(c, scope, action)
+		return authIdentityChangeAppliedSignInAgainErrorSpec(), false
 	}
-	return handler.refreshCurrentSession(c, &fresh, scope)
+	if _, ok := handler.refreshCurrentSession(c, &fresh, scope); !ok {
+		// refreshCurrentSession has already cleared the cookie and logged the
+		// underlying failure under scope; the change itself still committed,
+		// so the caller answers with the dedicated spec above instead of the
+		// generic session-create failure logged internally.
+		return authIdentityChangeAppliedSignInAgainErrorSpec(), false
+	}
+	return APIErrorSpec{}, true
 }

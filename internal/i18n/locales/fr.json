@@ -136,6 +136,7 @@
   "auth.error.local_recovery_unavailable": "La récupération locale n'est pas disponible tant qu'un mot de passe local n'est pas défini pour ce compte.",
   "auth.error.too_many_forgot_password_attempts": "Trop de tentatives de récupération. Veuillez patienter 1 heure.",
   "auth.error.invalid_reset_token": "Le lien de réinitialisation est invalide ou expiré.",
+  "auth.error.identity_change_applied_sign_in_again": "Le lien avec votre fournisseur d'identité a été mis à jour. Veuillez vous reconnecter pour continuer.",
 
   "onboarding.progress.step1": "Étape 1 sur 2",
   "onboarding.progress.step2": "Étape 2 sur 2",
@@ -366,6 +367,7 @@
   "settings.error.oidc_identity_already_linked": "Cette identité est déjà associée à un autre compte.",
   "settings.error.erasure_requires_password": "Ce compte possède désormais un mot de passe local. Confirmez cette action avec ce mot de passe.",
   "settings.error.clear_data_failed": "Impossible d'effacer vos données. Veuillez réessayer.",
+  "settings.error.data_cleared_sign_in_again": "Vos données ont été effacées. Veuillez vous reconnecter pour continuer.",
   "settings.error.delete_account_failed": "Impossible de supprimer le compte. Veuillez réessayer.",
   "settings.error.password_secure_failed": "Impossible de sécuriser votre nouveau mot de passe. Rien n'a été modifié. Veuillez réessayer.",
   "settings.error.password_update_failed": "Impossible d'enregistrer votre nouveau mot de passe. Rien n'a été modifié. Veuillez réessayer.",

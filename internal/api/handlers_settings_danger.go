@@ -46,6 +46,16 @@ func (handler *Handler) ClearAllData(c fiber.Ctx) error {
 	// The wipe itself lives in applyClearData, shared with the OIDC step-up
 	// callback, so the session-version bump has exactly one implementation.
 	if spec, applied := handler.applyClearData(c, user); !applied {
+		if spec.Key == dataClearedSignInAgainRefusalKey && !acceptsJSON(c) && !isHTMX(c) {
+			// Not respondMappedError: applyClearData has already cleared this
+			// device's auth cookie, and respondSettingsError's plain-HTML arm
+			// redirects to /settings — which requires that same cookie and would
+			// bounce straight to /login, losing the SettingsError flash it carries
+			// (flash.AuthError is the channel /login actually reads). Same trap as
+			// the OIDC step-up callback's identical check, for the same reason.
+			handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
+			return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
+		}
 		return handler.respondMappedError(c, spec)
 	}
 
