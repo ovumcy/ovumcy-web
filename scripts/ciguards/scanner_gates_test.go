@@ -39,6 +39,7 @@ var changesGatedJobs = []struct {
 	{ciWorkflow, "test-go-analysis"},
 	{ciWorkflow, "test-frontend"},
 	{ciWorkflow, "race-services"},
+	{ciWorkflow, "race-db"},
 	{ciWorkflow, "race-rest"},
 	{ciWorkflow, "e2e-shard"},
 	{ciWorkflow, "e2e-postgres-smoke"},
