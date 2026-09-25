@@ -13,7 +13,14 @@ import (
 // standard envelope with both the legacy top-level `error` string key and the
 // richer `error_detail` object describing category and target. The top-level
 // key stays for backward compatibility with clients that already parse it.
+//
+// A plain HTML navigation submitting POST /lang is the one route-level
+// exception, taken here rather than per cause so every refusal on that route —
+// handler, CSRF, recovered panic, request deadline — answers the same page.
 func apiError(c fiber.Ctx, spec APIErrorSpec) error {
+	if isLanguageSwitchPageNavigation(c) {
+		return sendLanguageSwitchStatusFragment(c, spec)
+	}
 	if responseFormat(c) == httpx.ResponseFormatHTMX {
 		return sendHTMLFragment(c.Status(spec.Status), localizedStatusErrorMarkup(c, spec))
 	}
@@ -66,7 +73,7 @@ func localizedStatusErrorMarkup(c fiber.Ctx, spec APIErrorSpec) string {
 // and nothing about the contract.
 func (handler *Handler) respondPageFormStatusFragment(c fiber.Ctx, spec APIErrorSpec) error {
 	handler.ensureRequestMessages(c)
-	return sendHTMLFragment(c.Status(spec.Status), localizedStatusErrorMarkup(c, spec))
+	return sendLanguageSwitchStatusFragment(c, spec)
 }
 
 // respondPageFormMappedError is the page-form counterpart of respondMappedError:

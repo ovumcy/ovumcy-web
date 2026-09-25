@@ -64,7 +64,8 @@ func openAPIResponseBlock(t *testing.T, spec string, path string, method string,
 // subdomain — through every caller the route has. A caller asking for JSON
 // gets the envelope; every plain HTML navigation — the bare form post and the
 // browser form that names text/html — gets the fragment an HTMX request
-// already got, so the description has to say so for all three.
+// already got, plus a link back to the form's `next` path, so the description
+// has to say so for all three.
 func TestOpenAPILanguageSwitchDeclaresTheCSRFRefusalItAnswers(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "docs", "openapi.yaml"))
 	if err != nil {
@@ -122,7 +123,7 @@ func TestOpenAPILanguageSwitchDeclaresTheCSRFRefusalItAnswers(t *testing.T) {
 	for _, cause := range refusals {
 		for _, client := range clients {
 			where := cause.name + ", " + client.name
-			form := url.Values{"lang": {"ru"}}
+			form := url.Values{"lang": {"ru"}, "next": {"/calendar"}}
 			if cause.token != "" {
 				form.Set("csrf_token", cause.token)
 			}
@@ -166,6 +167,11 @@ func TestOpenAPILanguageSwitchDeclaresTheCSRFRefusalItAnswers(t *testing.T) {
 					!strings.Contains(string(body), `data-flash-key="common.error.forbidden"`) {
 					t.Errorf("%s: answered 403 as %q (%q), want the text/html status fragment carrying the forbidden key", where, contentType, body)
 				}
+				// The fragment is the whole page a browser shows: an idle token
+				// must leave the owner a way back to where the form was.
+				if client.headers["HX-Request"] == "" && !strings.Contains(string(body), `<a href="/calendar">`) {
+					t.Errorf("%s: the 403 page carries no link back to the form's next path: %q", where, body)
+				}
 				continue
 			}
 			if !strings.HasPrefix(contentType, fiber.MIMEApplicationJSON) {
@@ -186,8 +192,11 @@ func TestOpenAPILanguageSwitchDeclaresTheCSRFRefusalItAnswers(t *testing.T) {
 	} {
 		requireOpenAPILine(t, forbidden, want)
 	}
+	requireOpenAPILine(t, forbidden, "text/html:")
 	joined := strings.Join(forbidden, " ")
-	for _, phrase := range []string{"plain form submission", "`HX-Request: true`", "`text/html`", "issued before the server restarted", "`Origin` whose scheme or host differs", "a sibling subdomain included"} {
+	// "plain form submission that asks for neither", not the bare noun: the
+	// description it replaced named the plain form submission too, as a JSON caller.
+	for _, phrase := range []string{"plain form submission that asks for neither", "`Content-Type: application/json`", "link back to the form's `next`", "`HX-Request: true`", "`text/html`", "issued before the server restarted", "`Origin` whose scheme or host differs", "a sibling subdomain included"} {
 		if !strings.Contains(joined, phrase) {
 			t.Errorf("POST /lang 403: docs/openapi.yaml never mentions %q — the server answers that way and the description has to say so:\n  %s",
 				phrase, strings.Join(forbidden, "\n  "))

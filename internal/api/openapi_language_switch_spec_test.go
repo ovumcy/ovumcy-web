@@ -813,10 +813,10 @@ type languageSwitchAnswer struct {
 // own that refuses with 429.
 //
 // Both answers are produced, not restated: the 400 by SetLanguage's own blank
-// check through RespondLanguageSwitchTransportError, the page-form-aware
-// responder every other refusal on this route answers with
-// (TestLanguageSwitchRejectionAnswersThroughTheEnvelope pins that wiring on the
-// real stack), the 429 by a real fiber limiter answering with
+// check, returned as a *fiber.Error and answered through RespondTransportError,
+// whose negotiation sends a plain HTML navigation of POST /lang the page
+// fragment (TestLanguageSwitchRejectionAnswersThroughTheEnvelope pins that
+// wiring on the real stack); the 429 by a real fiber limiter answering with
 // RespondAPIRateLimited — the responder the real /lang mount reaches, which
 // requireLanguageSwitchLimiterAnswersThroughRespondAPIRateLimited reads out of
 // cmd/ovumcy. The JSON caller's key, category and target are required verbatim
@@ -952,7 +952,10 @@ func TestOpenAPILanguageSwitchDeclaresTheRefusalsItAnswers(t *testing.T) {
 		t.Fatalf("form submission: a blank lang answered %d, want 400", answer.status)
 	}
 	requireHTMLFragment("form submission 400", answer)
-	requireSpecMentions(t, badRequest, "plain form submission", "POST /lang 400")
+	// Pinned on wording only the corrected description carries: the one it
+	// replaced also said "plain form submission", about the opposite answer.
+	requireSpecMentions(t, badRequest, "plain form submission that asks for neither", "POST /lang 400")
+	requireSpecLine(t, badRequest, "text/html:", "POST /lang 400")
 	answer = send(app, formClient)
 	if answer.status != http.StatusTooManyRequests || answer.retryAfter == "" {
 		t.Fatalf("form submission: over the budget answered %d with Retry-After %q, want 429 with the header", answer.status, answer.retryAfter)
@@ -970,6 +973,7 @@ func TestOpenAPILanguageSwitchDeclaresTheRefusalsItAnswers(t *testing.T) {
 		t.Fatalf("JSON body: a blank lang answered %d, want 400", answer.status)
 	}
 	envelopeLines("JSON body 400", answer)
+	requireSpecMentions(t, badRequest, "`Content-Type: application/json`", "POST /lang 400")
 	answer = send(app, jsonBodyClient)
 	if answer.status != http.StatusTooManyRequests || answer.retryAfter == "" {
 		t.Fatalf("JSON body: over the budget answered %d with Retry-After %q, want 429 with the header", answer.status, answer.retryAfter)

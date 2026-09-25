@@ -195,7 +195,7 @@ func TestUnmatchedRouteAnswersThroughTheEnvelope(t *testing.T) {
 }
 
 // TestLanguageSwitchRejectionAnswersThroughTheEnvelope covers the one app
-// handler that used to return a naked fiber sentinel on a validation failure.
+// handler that returns a naked fiber sentinel on a validation failure.
 // It is a public, unauthenticated route reachable from every page's language
 // switcher, so its rejection was the bare "Bad Request" for anyone who
 // submitted the form without a language.
@@ -222,7 +222,7 @@ func TestLanguageSwitchRejectionAnswersThroughTheEnvelope(t *testing.T) {
 
 	for _, client := range clients {
 		t.Run(client.name, func(t *testing.T) {
-			form := url.Values{"csrf_token": {token}, "lang": {"   "}}
+			form := url.Values{"csrf_token": {token}, "lang": {"   "}, "next": {"/calendar"}}
 			request := httptest.NewRequest(http.MethodPost, "/lang", strings.NewReader(form.Encode()))
 			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			request.Header.Set("Cookie", cookie)
@@ -253,6 +253,9 @@ func TestLanguageSwitchRejectionAnswersThroughTheEnvelope(t *testing.T) {
 					!strings.Contains(string(body), `class="status-error"`) ||
 					!strings.Contains(string(body), `data-flash-key="common.error.bad_request"`) {
 					t.Fatalf("%s: answered 400 as %q (%q), want the text/html status fragment carrying the bad_request key", client.name, contentType, body)
+				}
+				if client.headers["HX-Request"] == "" && !strings.Contains(string(body), `<a href="/calendar">`) {
+					t.Errorf("%s: the 400 page carries no link back to the form's next path: %q", client.name, body)
 				}
 				return
 			}

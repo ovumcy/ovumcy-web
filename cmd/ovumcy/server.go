@@ -17,7 +17,6 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/gofiber/fiber/v3/middleware/static"
 	"github.com/ovumcy/ovumcy-web/internal/api"
-	"github.com/ovumcy/ovumcy-web/internal/httpx"
 	"github.com/ovumcy/ovumcy-web/internal/security"
 	staticassets "github.com/ovumcy/ovumcy-web/web"
 )
@@ -146,8 +145,11 @@ func fiberConfig(proxy proxySettings) fiber.Config {
 // error in the app's own format: an explicit *fiber.Error keeps its status and
 // is rendered through the shared mapped-error negotiation
 // (api.RespondTransportError → JSON envelope for API clients, localized status
-// fragment for HTMX), while anything else — a raw error, a recovered panic —
-// becomes a generic 500 rendered the same way.
+// fragment for HTMX and for a plain HTML navigation submitting POST /lang), while
+// anything else — a raw error, a recovered panic — becomes a generic 500
+// rendered the same way. Handlers and middleware therefore return the
+// *fiber.Error rather than answering it themselves, so the request log's
+// safe_error still records why the request was refused.
 //
 // Only the status crosses the boundary. Neither the *fiber.Error's message nor
 // the raw error's text reaches the body: framework messages are bare English
@@ -386,15 +388,6 @@ func csrfMiddlewareConfig(cookieSecure bool, handler *api.Handler) csrf.Config {
 				Key:   "reason",
 				Value: api.CSRFFailureReason(err),
 			})
-			// POST /lang is the app's one public form with no HTMX and no
-			// JavaScript behind it, so its CSRF 403 answers a plain HTML
-			// navigation through the same page-form fragment its 400 and its
-			// rate-limit 429 already use; JSON and HTMX callers, and every
-			// other CSRF-protected route, keep the bare fiber.ErrForbidden
-			// that ovumcyErrorHandler envelopes unchanged.
-			if httpx.RoutingNormalizedPath(c.Path()) == api.LanguageSwitchPath {
-				return handler.RespondLanguageSwitchTransportError(c, fiber.StatusForbidden)
-			}
 			return fiber.ErrForbidden
 		},
 	}
