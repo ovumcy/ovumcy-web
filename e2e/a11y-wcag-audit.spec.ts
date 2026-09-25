@@ -100,7 +100,8 @@ test.describe('WCAG AA audit regressions', () => {
     // account settings already carry.
     //
     // Anchored at day 1 of the current month rather than at a today-derived
-    // offset (e2e.md's calendar-grid-cell rule, #620): on the 28/14 defaults
+    // offset: the grid renders only the viewed month padded to whole weeks, so
+    // a cell is asserted in its own month's view (#620). On the 28/14 defaults
     // (models.DefaultPeriodLength=5, the unexported defaultLutealPhaseDays=14
     // in internal/services/cycles.go) the period spans days 1-5,
     // CalcOvulationDay(28, 14) predicts ovulation on cycle day 14, and
