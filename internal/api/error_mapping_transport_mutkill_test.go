@@ -24,10 +24,11 @@ import (
 // status body must render the localized value. Negating `localized != key`
 // leaves the bare "invalid input" spec key in the body.
 func TestApiErrorHTMXSubstitutesLocalizedAuthMessage(t *testing.T) {
+	handler := &Handler{}
 	app := fiber.New()
 	app.Get("/apierr", func(c fiber.Ctx) error {
 		c.Locals(contextMessagesKey, map[string]string{"auth.error.invalid_input": "SENTINEL_AUTH_LOCALIZED"})
-		return apiError(c, globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid input"))
+		return handler.apiError(c, globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid input"))
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/apierr", nil)

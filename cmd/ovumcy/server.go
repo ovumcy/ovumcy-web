@@ -71,7 +71,7 @@ const (
 // If new code here starts making a decision (not just wiring an
 // already-tested collaborator), pull it into its own tested function instead.
 func newFiberApp(config runtimeConfig, handler *api.Handler) *fiber.App {
-	app := fiber.New(fiberConfig(config.Proxy))
+	app := fiber.New(fiberConfig(config.Proxy, handler))
 	configureFiberMiddleware(app, config, handler)
 	registerStaticContentTypes()
 	app.Use("/static", newStaticAssetHandler())
@@ -109,10 +109,10 @@ func newStaticAssetHandler() fiber.Handler {
 	})
 }
 
-func fiberConfig(proxy proxySettings) fiber.Config {
+func fiberConfig(proxy proxySettings, handler *api.Handler) fiber.Config {
 	appConfig := fiber.Config{
 		AppName:      "Ovumcy",
-		ErrorHandler: ovumcyErrorHandler,
+		ErrorHandler: newOvumcyErrorHandler(handler),
 		BodyLimit:    maxRequestBodyBytes,
 		ReadTimeout:  30 * time.Second,
 		// Socket deadlines, not work budgets. fasthttp arms the write deadline
@@ -141,15 +141,23 @@ func fiberConfig(proxy proxySettings) fiber.Config {
 	return appConfig
 }
 
-// ovumcyErrorHandler is the top-level Fiber error handler. It answers EVERY
-// error in the app's own format: an explicit *fiber.Error keeps its status and
-// is rendered through the shared mapped-error negotiation
-// (api.RespondTransportError → JSON envelope for API clients, localized status
-// fragment for HTMX and for a plain HTML navigation submitting POST /lang), while
-// anything else — a raw error, a recovered panic — becomes a generic 500
-// rendered the same way. Handlers and middleware therefore return the
-// *fiber.Error rather than answering it themselves, so the request log's
-// safe_error still records why the request was refused.
+// newOvumcyErrorHandler builds the top-level Fiber error handler, closed over
+// the composition root's single *api.Handler. It answers EVERY error in the
+// app's own format: an explicit *fiber.Error keeps its status and is rendered
+// through the shared mapped-error negotiation (handler.RespondTransportError →
+// JSON envelope for API clients, localized status fragment for HTMX and for a
+// plain HTML navigation submitting POST /lang), while anything else — a raw
+// error, a recovered panic — becomes a generic 500 rendered the same way.
+// Handlers and middleware therefore return the *fiber.Error rather than
+// answering it themselves, so the request log's safe_error still records why
+// the request was refused.
+//
+// This runs on requests fiber never routed at all — a request head or body
+// that overflowed before any middleware ran — so it cannot assume
+// LanguageMiddleware has resolved the request's locale catalogue.
+// handler.RespondTransportError and handler.RespondRequestHeadersTooLarge
+// resolve it themselves before rendering either markup arm, so the localized
+// fragment still carries real copy rather than the raw machine key.
 //
 // Only the status crosses the boundary. Neither the *fiber.Error's message nor
 // the raw error's text reaches the body: framework messages are bare English
@@ -162,24 +170,26 @@ func fiberConfig(proxy proxySettings) fiber.Config {
 // parse path, and the pre-routing rejections that used to be the only mapped
 // ones (413, 431) are simply the two the framework raises most visibly. See
 // docs/SECURITY_INVARIANTS.md for the surrounding transport invariants.
-func ovumcyErrorHandler(c fiber.Ctx, err error) error {
-	var fiberErr *fiber.Error
-	if !errors.As(err, &fiberErr) {
-		return api.RespondTransportError(c, fiber.StatusInternalServerError)
+func newOvumcyErrorHandler(handler *api.Handler) fiber.ErrorHandler {
+	return func(c fiber.Ctx, err error) error {
+		var fiberErr *fiber.Error
+		if !errors.As(err, &fiberErr) {
+			return handler.RespondTransportError(c, fiber.StatusInternalServerError)
+		}
+		// A request head that overflows the read buffer answers through the same
+		// mapped spec as everything else — RespondRequestHeadersTooLarge resolves the
+		// identical 431 entry — plus an explicit log line. Without that line the
+		// rejection is effectively invisible to the operator: the head never parsed,
+		// so by the time the request logger runs the context carries no method or
+		// path and the entry reads "404 | GET | /" — indistinguishable from ordinary
+		// not-found noise, while the user is looking at a 431. Nothing about the
+		// request is logged; there is nothing parsed to log.
+		if fiberErr.Code == fiber.StatusRequestHeaderFieldsTooLarge {
+			log.Printf("request rejected: 431 request header fields too large — the request head did not fit the server read buffer")
+			return handler.RespondRequestHeadersTooLarge(c)
+		}
+		return handler.RespondTransportError(c, fiberErr.Code)
 	}
-	// A request head that overflows the read buffer answers through the same
-	// mapped spec as everything else — RespondRequestHeadersTooLarge resolves the
-	// identical 431 entry — plus an explicit log line. Without that line the
-	// rejection is effectively invisible to the operator: the head never parsed,
-	// so by the time the request logger runs the context carries no method or
-	// path and the entry reads "404 | GET | /" — indistinguishable from ordinary
-	// not-found noise, while the user is looking at a 431. Nothing about the
-	// request is logged; there is nothing parsed to log.
-	if fiberErr.Code == fiber.StatusRequestHeaderFieldsTooLarge {
-		log.Printf("request rejected: 431 request header fields too large — the request head did not fit the server read buffer")
-		return api.RespondRequestHeadersTooLarge(c)
-	}
-	return api.RespondTransportError(c, fiberErr.Code)
 }
 
 func configureFiberMiddleware(app *fiber.App, config runtimeConfig, handler *api.Handler) {

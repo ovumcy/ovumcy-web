@@ -26,7 +26,7 @@ const calendarFeedRouteShapeMarker = "MARKER"
 func calendarFeedDispatchProbeApp(t *testing.T) *fiber.App {
 	t.Helper()
 
-	app := fiber.New(fiberConfig(proxySettings{}))
+	app := fiber.New(fiberConfig(proxySettings{}, nil))
 	app.Get("/calendar/feed/:token.ics", func(c fiber.Ctx) error {
 		return c.SendString(calendarFeedRouteShapeMarker)
 	})

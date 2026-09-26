@@ -41,12 +41,12 @@ func (handler *Handler) Ready(c fiber.Ctx) error {
 func (handler *Handler) render(c fiber.Ctx, name string, data fiber.Map) error {
 	tmpl, ok := handler.templates[name]
 	if !ok {
-		return respondGlobalMappedError(c, templateNotFoundErrorSpec())
+		return handler.respondGlobalMappedError(c, templateNotFoundErrorSpec())
 	}
 	payload := handler.withTemplateDefaults(c, data)
 	var output bytes.Buffer
 	if err := tmpl.ExecuteTemplate(&output, "base", payload); err != nil {
-		return respondGlobalMappedError(c, templateRenderErrorSpec())
+		return handler.respondGlobalMappedError(c, templateRenderErrorSpec())
 	}
 	c.Type("html", "utf-8")
 	return c.Send(output.Bytes())
@@ -55,7 +55,7 @@ func (handler *Handler) render(c fiber.Ctx, name string, data fiber.Map) error {
 func (handler *Handler) renderPartial(c fiber.Ctx, name string, data fiber.Map) error {
 	output, err := handler.renderPartialString(c, name, data)
 	if err != nil {
-		return respondGlobalMappedError(c, partialRenderErrorSpec())
+		return handler.respondGlobalMappedError(c, partialRenderErrorSpec())
 	}
 	return sendHTMLFragment(c, output)
 }

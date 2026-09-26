@@ -1224,7 +1224,7 @@ func TestFiberConfigAppliesTrustedProxySettings(t *testing.T) {
 		Enabled:        true,
 		Header:         "X-Forwarded-For",
 		TrustedProxies: []string{"127.0.0.1", "::1"},
-	})
+	}, nil)
 
 	if config.ProxyHeader != "X-Forwarded-For" {
 		t.Fatalf("expected proxy header to be applied, got %q", config.ProxyHeader)
@@ -1246,7 +1246,7 @@ func TestFiberConfigAppliesTrustedProxySettings(t *testing.T) {
 // restore (~8-12 MiB) — the documented import capacity would be unreachable
 // over HTTP.
 func TestFiberConfigSetsImportSizedBodyLimit(t *testing.T) {
-	config := fiberConfig(proxySettings{})
+	config := fiberConfig(proxySettings{}, nil)
 
 	if config.BodyLimit != maxRequestBodyBytes {
 		t.Fatalf("expected BodyLimit=%d, got %d", maxRequestBodyBytes, config.BodyLimit)
@@ -1334,7 +1334,7 @@ func TestWriteTimeoutBoundsTheResponseWriteNotTheHandler(t *testing.T) {
 // rather than routing it through serverErrorHandler — enforcement of the cap
 // itself is covered by TestFiberAppEnforcesBodyLimit.)
 func TestOvumcyErrorHandlerMapsBodyLimitTo413(t *testing.T) {
-	app := fiber.New(fiber.Config{ErrorHandler: ovumcyErrorHandler})
+	app := fiber.New(fiber.Config{ErrorHandler: newOvumcyErrorHandler(newRateLimitTestHandler(t))})
 	app.Post("/api/v1/imports/json", func(c fiber.Ctx) error {
 		return fiber.ErrRequestEntityTooLarge
 	})
@@ -1380,7 +1380,7 @@ func TestOvumcyErrorHandlerMapsBodyLimitTo413(t *testing.T) {
 // rejected before any handler runs. A tiny BodyLimit keeps the body small.
 func TestFiberAppEnforcesBodyLimit(t *testing.T) {
 	app := fiber.New(fiber.Config{
-		ErrorHandler: ovumcyErrorHandler,
+		ErrorHandler: newOvumcyErrorHandler(newRateLimitTestHandler(t)),
 		BodyLimit:    16,
 	})
 	handlerReached := false
@@ -1467,7 +1467,7 @@ func TestSecurityHeadersMiddlewareAddsHSTSWhenSecureCookiesEnabled(t *testing.T)
 // app-wide. The message a *fiber.Error carries is now never echoed: the client
 // gets the stable key mapped from the status instead.
 func TestOvumcyErrorHandlerMasksRawErrorsAndEnvelopesFiberErrors(t *testing.T) {
-	app := fiber.New(fiber.Config{ErrorHandler: ovumcyErrorHandler})
+	app := fiber.New(fiber.Config{ErrorHandler: newOvumcyErrorHandler(newRateLimitTestHandler(t))})
 	app.Get("/fiber-error", func(c fiber.Ctx) error {
 		return fiber.ErrForbidden
 	})
@@ -2528,7 +2528,7 @@ func TestRequestLoggerUsesSafeRouteTemplateWithoutIP(t *testing.T) {
 		Enabled:        true,
 		Header:         "X-Real-IP",
 		TrustedProxies: []string{"0.0.0.0"},
-	}))
+	}, nil))
 	app.Use(newRequestLogger(&output))
 	var observedIP string
 	app.Put("/api/v1/days/:date", func(c fiber.Ctx) error {
@@ -2585,7 +2585,7 @@ func TestRateLimitLogDoesNotLogQueryPII(t *testing.T) {
 		Enabled:        true,
 		Header:         "X-Real-IP",
 		TrustedProxies: []string{"0.0.0.0"},
-	}))
+	}, nil))
 	var observedIP string
 	app.Put("/api/v1/days/:date", func(c fiber.Ctx) error {
 		observedIP = c.IP()

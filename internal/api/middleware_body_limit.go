@@ -47,40 +47,45 @@ import "github.com/gofiber/fiber/v3"
 // into a large decompressed one for free: a highly compressible payload sized to
 // stay just inside the cap costs BodyLimit bytes of allocation on a route that
 // reads nothing, on the cheapest unauthenticated surfaces the app has.
-func requestBodyLimitGuard(c fiber.Ctx) error {
-	if !requestMethodCanCarryAReadBody(c.Method()) {
-		return c.Next()
-	}
-	if len(c.Request().Header.ContentEncoding()) == 0 {
-		return c.Next()
-	}
+// requestBodyLimitGuard is a factory rather than a bare fiber.Handler because
+// its 413 answer, RespondRequestEntityTooLarge, resolves the request's locale
+// catalogue and needs the handler to do it.
+func requestBodyLimitGuard(handler *Handler) fiber.Handler {
+	return func(c fiber.Ctx) error {
+		if !requestMethodCanCarryAReadBody(c.Method()) {
+			return c.Next()
+		}
+		if len(c.Request().Header.ContentEncoding()) == 0 {
+			return c.Next()
+		}
 
-	statusBeforeProbe := c.Response().StatusCode()
-	_ = c.Body()
-	statusAfterProbe := c.Response().StatusCode()
-	// The overflow test comes first, and is an equality against 413 rather than
-	// "the status changed": were it second, a 413 already standing on the
-	// response would make statusAfterProbe == statusBeforeProbe and hand the
-	// over-limit body — fiber's substituted error string — to the handler. No
-	// middleware upstream of this one stamps 413 today, so the guard would be
-	// resting on that staying true. Ordered this way it fails closed instead: a
-	// 413 on the response once the probe returns is answered as one, whether the
-	// probe or something upstream put it there, because nothing here can tell
-	// the two apart.
-	if statusAfterProbe == fiber.StatusRequestEntityTooLarge {
-		return RespondRequestEntityTooLarge(c)
-	}
-	if statusAfterProbe == statusBeforeProbe {
+		statusBeforeProbe := c.Response().StatusCode()
+		_ = c.Body()
+		statusAfterProbe := c.Response().StatusCode()
+		// The overflow test comes first, and is an equality against 413 rather than
+		// "the status changed": were it second, a 413 already standing on the
+		// response would make statusAfterProbe == statusBeforeProbe and hand the
+		// over-limit body — fiber's substituted error string — to the handler. No
+		// middleware upstream of this one stamps 413 today, so the guard would be
+		// resting on that staying true. Ordered this way it fails closed instead: a
+		// 413 on the response once the probe returns is answered as one, whether the
+		// probe or something upstream put it there, because nothing here can tell
+		// the two apart.
+		if statusAfterProbe == fiber.StatusRequestEntityTooLarge {
+			return handler.RespondRequestEntityTooLarge(c)
+		}
+		if statusAfterProbe == statusBeforeProbe {
+			return c.Next()
+		}
+
+		// fiber also stamps a status when it refuses to decode at all (415 for an
+		// unknown encoding, 501 for "compress"). Those are a different condition,
+		// answered as before by the handler that reads the body; undo the stamp so
+		// the probe leaves no trace on the response the handler goes on to write.
+		c.Response().ResetBody()
+		c.Status(statusBeforeProbe)
 		return c.Next()
 	}
-
-	// fiber also stamps a status when it refuses to decode at all (415 for an
-	// unknown encoding, 501 for "compress"). Those are a different condition,
-	// answered as before by the handler that reads the body; undo the stamp so
-	// the probe leaves no trace on the response the handler goes on to write.
-	c.Response().ResetBody()
-	c.Status(statusBeforeProbe)
-	return c.Next()
 }
 
 // requestMethodCanCarryAReadBody reports whether a request with this method can

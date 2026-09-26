@@ -83,8 +83,9 @@ var responseHeaderBaselines = sync.Pool{New: func() any { return new(fasthttp.Re
 // wall-clock wait; the composition root passes RequestBudget. A non-positive
 // value falls back to it rather than being honoured, so a miswired caller
 // cannot remove the bound — the same guard ReadinessService puts on its own
-// probe timeout.
-func RequestDeadlineGuard(budget time.Duration) fiber.Handler {
+// probe timeout. handler is threaded through because RespondRequestTimeout
+// resolves the request's locale catalogue and needs it to do so.
+func RequestDeadlineGuard(budget time.Duration, handler *Handler) fiber.Handler {
 	if budget <= 0 {
 		budget = RequestBudget
 	}
@@ -121,7 +122,7 @@ func RequestDeadlineGuard(budget time.Duration) fiber.Handler {
 			// Cache-Control alone would leave a 503 privately cacheable for an
 			// hour.
 			baseline.CopyTo(&c.Response().Header)
-			return RespondRequestTimeout(c)
+			return handler.RespondRequestTimeout(c)
 		}
 		return err
 	}
