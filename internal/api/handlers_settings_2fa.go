@@ -107,7 +107,7 @@ func (handler *Handler) VerifyTOTP2FAEnrollment(c fiber.Ctx) error {
 			// Nothing was enrolled and this session is revoked: the seed goes
 			// with it, and a fresh sign-in starts a fresh enrollment.
 			handler.clearTOTPSetupCookie(c)
-			return handler.respondMappedError(c, handler.refuseSessionRevokedDuring(c, "settings.2fa.verify", "totp_enable"))
+			return handler.respondSignedOutRefusal(c, handler.refuseSessionRevokedDuring(c, "settings.2fa.verify", "totp_enable"))
 		}
 		handler.logSecurityError(c, "settings.2fa.verify", totpInternalErrorSpec())
 		return handler.respondMappedError(c, totpInternalErrorSpec())
@@ -129,11 +129,11 @@ func (handler *Handler) VerifyTOTP2FAEnrollment(c fiber.Ctx) error {
 		// in the setup cookie only until the first code verifies, and by this
 		// line it has verified.
 		handler.clearTOTPSetupCookie(c)
-		// This route answers on its own path, so respondMappedError is the right
-		// channel — but the answer only stands if the handler stops here. The
-		// success arm below writes an HTMX toast or a 303 over whatever was
-		// already in the response.
-		return handler.respondMappedError(c, spec)
+		// refreshCurrentSession has cleared the auth cookie, so the refusal goes
+		// out on the signed-out channel — and only stands if the handler stops
+		// here. The success arm below writes an HTMX toast or a 303 over
+		// whatever was already in the response.
+		return handler.respondSignedOutRefusal(c, spec)
 	}
 
 	handler.clearTOTPSetupCookie(c)
@@ -192,7 +192,7 @@ func (handler *Handler) DisableTOTP2FA(c fiber.Ctx) error {
 
 	if err := handler.totpService.DisableTOTP(c.Context(), user.ID, user.AuthSessionVersion); err != nil {
 		if errors.Is(err, services.ErrAuthSessionVersionChanged) {
-			return handler.respondMappedError(c, handler.refuseSessionRevokedDuring(c, "settings.2fa.disable", "totp_disable"))
+			return handler.respondSignedOutRefusal(c, handler.refuseSessionRevokedDuring(c, "settings.2fa.disable", "totp_disable"))
 		}
 		handler.logSecurityError(c, "settings.2fa.disable", totpInternalErrorSpec())
 		return handler.respondMappedError(c, totpInternalErrorSpec())
@@ -209,7 +209,7 @@ func (handler *Handler) DisableTOTP2FA(c fiber.Ctx) error {
 		//
 		// codecov:ignore:start -- owner-only route: only the AEAD seal error is
 		// left, and no request-shaped input provokes it.
-		return handler.respondMappedError(c, spec)
+		return handler.respondSignedOutRefusal(c, spec)
 		// codecov:ignore:end
 	}
 

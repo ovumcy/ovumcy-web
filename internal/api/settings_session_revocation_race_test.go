@@ -2,12 +2,14 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -32,9 +34,13 @@ import (
 // instead of the one the request authenticated with: the compare-and-set
 // degrades to the unconditional bump these writes made before they took a
 // version, which is what the negative controls measure.
+//
+// sessionIssuanceFault is installed as the handler's seam of the same name, so
+// a site's write can commit and the session re-issue after it still fail.
 type revokingWriteHooks struct {
-	beforeWrite   func()
-	storedVersion func() int
+	beforeWrite          func()
+	storedVersion        func() int
+	sessionIssuanceFault func() error
 }
 
 // install rebuilds the three services that make a revoking write before a
@@ -109,22 +115,30 @@ type revokingWriteSite struct {
 	// effect renders the site's own write as stored, so "nothing was written"
 	// is a comparison against the value before the request.
 	effect func(t *testing.T, database *gorm.DB, userID uint) string
+	// reissuesAfterCommit marks a site that re-issues this device's session
+	// through refreshCurrentSession once its write committed, so a failed
+	// re-issue leaves it signed out with the change in place.
+	reissuesAfterCommit bool
 }
 
 func revokingWriteSettingsContext(t *testing.T, email string, hooks *revokingWriteHooks) settingsSecurityTestContext {
 	t.Helper()
-	return newSettingsSecurityTestContextWithOptions(t, email, onboardingTestAppOptions{enableCSRF: true, revokingWrites: hooks})
+	return newSettingsSecurityTestContextWithOptions(t, email, onboardingTestAppOptions{enableCSRF: true, revokingWrites: hooks, sessionIssuanceFault: hooks.sessionIssuanceFault})
 }
 
-func settingsRevokingWriteRun(t *testing.T, ctx settingsSecurityTestContext, method string, path string, form url.Values, extraCookie string) revokingWriteRun {
+func settingsRevokingWriteRun(t *testing.T, ctx settingsSecurityTestContext, method string, path string, form url.Values, extraCookie string, htmx bool) revokingWriteRun {
 	t.Helper()
 	return revokingWriteRun{
 		app:        ctx.app,
 		database:   ctx.database,
 		userID:     ctx.user.ID,
 		authCookie: ctx.authCookie,
+		htmx:       htmx,
 		send: func() *http.Response {
 			headers := map[string]string{"Accept": "application/json"}
+			if htmx {
+				headers = map[string]string{"HX-Request": "true"}
+			}
 			if extraCookie != "" {
 				headers["Cookie"] = joinCookieHeader(ctx.authCookie, cookiePair(ctx.csrfCookie), extraCookie)
 			}
@@ -143,35 +157,51 @@ func storedUserForRace(t *testing.T, database *gorm.DB, userID uint) models.User
 }
 
 func revokingWriteSites() []revokingWriteSite {
+	sites := append(settingsPostureRevokingWriteSites(false), settingsPostureRevokingWriteSites(true)...)
+	return append(sites, erasureRevokingWriteSites()...)
+}
+
+// settingsPostureRevokingWriteSites are the settings-page posture changes that
+// serve both JSON clients and the page's own HTMX forms. The HTMX variant is
+// the one a signed-out refusal reaches from the browser: the cookie is already
+// cleared, so the answer has to send the page to /login rather than swap an
+// error envelope into a page that no longer has a session.
+func settingsPostureRevokingWriteSites(htmx bool) []revokingWriteSite {
+	suffix, tag := "", ""
+	if htmx {
+		suffix, tag = " (HTMX)", "-htmx"
+	}
 	return []revokingWriteSite{
 		{
-			name: "password change",
+			name:                "password change" + suffix,
+			reissuesAfterCommit: true,
 			prepare: func(t *testing.T, hooks *revokingWriteHooks) revokingWriteRun {
-				ctx := revokingWriteSettingsContext(t, "race-password-change@example.com", hooks)
+				ctx := revokingWriteSettingsContext(t, "race-password-change"+tag+"@example.com", hooks)
 				return settingsRevokingWriteRun(t, ctx, http.MethodPut, "/api/v1/users/current/password", url.Values{
 					"current_password": {"StrongPass1"},
 					"new_password":     {"EvenStronger2"},
 					"confirm_password": {"EvenStronger2"},
-				}, "")
+				}, "", htmx)
 			},
 			effect: func(t *testing.T, database *gorm.DB, userID uint) string {
 				return storedUserForRace(t, database, userID).PasswordHash
 			},
 		},
 		{
-			name: "recovery code regeneration",
+			name: "recovery code regeneration" + suffix,
 			prepare: func(t *testing.T, hooks *revokingWriteHooks) revokingWriteRun {
-				ctx := revokingWriteSettingsContext(t, "race-recovery-regenerate@example.com", hooks)
-				return settingsRevokingWriteRun(t, ctx, http.MethodPost, "/api/v1/users/current/recovery-code", url.Values{"password": {"StrongPass1"}}, "")
+				ctx := revokingWriteSettingsContext(t, "race-recovery-regenerate"+tag+"@example.com", hooks)
+				return settingsRevokingWriteRun(t, ctx, http.MethodPost, "/api/v1/users/current/recovery-code", url.Values{"password": {"StrongPass1"}}, "", htmx)
 			},
 			effect: func(t *testing.T, database *gorm.DB, userID uint) string {
 				return storedUserForRace(t, database, userID).RecoveryCodeHash
 			},
 		},
 		{
-			name: "TOTP enrollment",
+			name:                "TOTP enrollment" + suffix,
+			reissuesAfterCommit: true,
 			prepare: func(t *testing.T, hooks *revokingWriteHooks) revokingWriteRun {
-				ctx := revokingWriteSettingsContext(t, "race-totp-enable@example.com", hooks)
+				ctx := revokingWriteSettingsContext(t, "race-totp-enable"+tag+"@example.com", hooks)
 				key, err := getTOTPServiceForTest(ctx.database).GenerateSetupKey("Ovumcy", ctx.user.Email)
 				if err != nil {
 					t.Fatalf("GenerateSetupKey: %v", err)
@@ -181,7 +211,7 @@ func revokingWriteSites() []revokingWriteSite {
 					t.Fatalf("GenerateCode: %v", err)
 				}
 				setupCookie := sealTOTPSetupCookieForTest(t, []byte(testAppSecretKey), ctx.user.ID, key.Secret())
-				return settingsRevokingWriteRun(t, ctx, http.MethodPut, "/api/v1/users/current/2fa", url.Values{"code": {code}, "password": {"StrongPass1"}}, setupCookie)
+				return settingsRevokingWriteRun(t, ctx, http.MethodPut, "/api/v1/users/current/2fa", url.Values{"code": {code}, "password": {"StrongPass1"}}, setupCookie, htmx)
 			},
 			effect: func(t *testing.T, database *gorm.DB, userID uint) string {
 				user := storedUserForRace(t, database, userID)
@@ -189,20 +219,26 @@ func revokingWriteSites() []revokingWriteSite {
 			},
 		},
 		{
-			name: "TOTP disable",
+			name:                "TOTP disable" + suffix,
+			reissuesAfterCommit: true,
 			prepare: func(t *testing.T, hooks *revokingWriteHooks) revokingWriteRun {
-				ctx := revokingWriteSettingsContext(t, "race-totp-disable@example.com", hooks)
+				ctx := revokingWriteSettingsContext(t, "race-totp-disable"+tag+"@example.com", hooks)
 				if err := getTOTPServiceForTest(ctx.database).EnableTOTP(context.Background(), ctx.user.ID, ctx.user.AuthSessionVersion, "JBSWY3DPEHPK3PXP"); err != nil {
 					t.Fatalf("EnableTOTP setup: %v", err)
 				}
 				ctx.refreshAuthCookie(t)
-				return settingsRevokingWriteRun(t, ctx, http.MethodDelete, "/api/v1/users/current/2fa", url.Values{"password": {"StrongPass1"}}, "")
+				return settingsRevokingWriteRun(t, ctx, http.MethodDelete, "/api/v1/users/current/2fa", url.Values{"password": {"StrongPass1"}}, "", htmx)
 			},
 			effect: func(t *testing.T, database *gorm.DB, userID uint) string {
 				user := storedUserForRace(t, database, userID)
 				return fmt.Sprintf("enabled=%v secret=%q", user.TOTPEnabled, user.TOTPSecret)
 			},
 		},
+	}
+}
+
+func erasureRevokingWriteSites() []revokingWriteSite {
+	return []revokingWriteSite{
 		{
 			name: "clear data",
 			prepare: func(t *testing.T, hooks *revokingWriteHooks) revokingWriteRun {
@@ -211,7 +247,7 @@ func revokingWriteSites() []revokingWriteSite {
 				if err := ctx.database.Create(&day).Error; err != nil {
 					t.Fatalf("create a tracked day: %v", err)
 				}
-				return settingsRevokingWriteRun(t, ctx, http.MethodPost, "/api/v1/users/current/data-wipe", url.Values{"password": {"StrongPass1"}}, "")
+				return settingsRevokingWriteRun(t, ctx, http.MethodPost, "/api/v1/users/current/data-wipe", url.Values{"password": {"StrongPass1"}}, "", false)
 			},
 			effect: func(t *testing.T, database *gorm.DB, userID uint) string {
 				var days int64
@@ -232,7 +268,7 @@ func revokingWriteSites() []revokingWriteSite {
 				if err := ctx.database.Create(&day).Error; err != nil {
 					t.Fatalf("create a tracked day: %v", err)
 				}
-				run := settingsRevokingWriteRun(t, ctx, http.MethodPost, "/api/v1/users/current/data-wipe", url.Values{"password": {"StrongPass1"}}, "")
+				run := settingsRevokingWriteRun(t, ctx, http.MethodPost, "/api/v1/users/current/data-wipe", url.Values{"password": {"StrongPass1"}}, "", false)
 				run.flash = true
 				run.send = func() *http.Response {
 					return settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/data-wipe", url.Values{"password": {"StrongPass1"}}, map[string]string{"Accept": "text/html"})
@@ -372,6 +408,45 @@ func TestSettingsRevokingWritesRefuseASessionARevocationCommittedMidwayWouldNotR
 				assertPreRequestSessionRevoked(t, run.app, run.authCookie)
 			})
 		}
+	}
+}
+
+// A posture change whose write committed and whose session re-issue then
+// failed has cleared this device's cookie inside refreshCurrentSession, so it
+// is the same signed-out refusal as a revocation that raced the write: a JSON
+// client keeps the mapped envelope, an HTMX form is sent to /login with the
+// refusal on the auth flash channel. The fault is armed after prepare, whose
+// own sign-in must still succeed.
+func TestSettingsPostureReissueFailureAnswersSignedOut(t *testing.T) {
+	t.Parallel()
+
+	for _, site := range append(settingsPostureRevokingWriteSites(false), settingsPostureRevokingWriteSites(true)...) {
+		if !site.reissuesAfterCommit {
+			continue
+		}
+		t.Run(site.name, func(t *testing.T) {
+			t.Parallel()
+
+			var armed atomic.Bool
+			hooks := &revokingWriteHooks{sessionIssuanceFault: func() error {
+				if armed.Load() {
+					return errors.New("injected session issuance fault")
+				}
+				return nil
+			}}
+			run := site.prepare(t, hooks)
+			effectBefore := site.effect(t, run.database, run.userID)
+
+			armed.Store(true)
+			response := run.send()
+
+			// Anti-vacuity: the write committed, so the refusal can only have
+			// come from the re-issue after it.
+			if effectAfter := site.effect(t, run.database, run.userID); effectAfter == effectBefore {
+				t.Fatalf("expected the write to commit before the re-issue failed, stored value unchanged: %s", effectAfter)
+			}
+			assertRevokedMidwayRefusal(t, run, response)
+		})
 	}
 }
 

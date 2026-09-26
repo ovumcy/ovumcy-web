@@ -44,7 +44,7 @@ func (handler *Handler) RegenerateRecoveryCode(c fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 	if errors.Is(err, services.ErrAuthSessionVersionChanged) {
-		return handler.respondMappedError(c, handler.refuseSessionRevokedDuring(c, "auth.recovery_code_regenerate", "recovery_code_regenerate"))
+		return handler.respondSignedOutRefusal(c, handler.refuseSessionRevokedDuring(c, "auth.recovery_code_regenerate", "recovery_code_regenerate"))
 	}
 	if err != nil {
 		spec := mapRecoveryCodeRegenerationError(err)
