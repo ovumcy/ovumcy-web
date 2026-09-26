@@ -43,7 +43,7 @@ const (
 	// records serialize to ~8-12 MiB, so 16 MiB keeps the documented import
 	// capacity reachable over HTTP with headroom, while still bounding the body
 	// far below fiber's per-connection buffers. Exceeding it yields a mapped 413
-	// (ovumcyErrorHandler → api.RespondTransportError, stable key
+	// (newOvumcyErrorHandler → handler.RespondTransportError, stable key
 	// "request_too_large") rather than a bare fasthttp error.
 	maxRequestBodyBytes = 16 << 20
 
