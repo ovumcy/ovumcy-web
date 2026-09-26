@@ -20,9 +20,10 @@ import (
 //
 // Both markup arms resolve the request's locale catalogue via
 // ensureRequestMessages before rendering: a mapped rejection can be produced
-// before LanguageMiddleware has run (the edge limiters, the request-budget
-// guard, the pre-routing body/header rejections, and CSRF's ErrorHandler all
-// sit ahead of it, or bypass the middleware chain entirely), and without this
+// on a context LanguageMiddleware never touched — fiber's own body/head
+// rejections (413/431), which reach the ErrorHandler before any middleware
+// runs; an error or recovered panic from middleware registered ahead of it;
+// and the calendar feed route, which the middleware skips — and without this
 // a fragment renders its own machine key as the visible message. It is a
 // no-op when messages are already present, so a request that already passed
 // LanguageMiddleware pays nothing extra. The JSON envelope carries no
