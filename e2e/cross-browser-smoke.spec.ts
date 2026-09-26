@@ -49,6 +49,21 @@ async function todayISO(page: Page): Promise<string> {
 }
 
 test.describe('Cross-browser smoke', () => {
+  // firefox occasionally needs much longer than 30s to signal 'load' back to the
+  // driver on the very first navigation right after launch (CI CPU contention on
+  // shared runners) — every push run this reddened on (35922831649, 35789251460,
+  // 35675761133, 35618629075) shows the server answering the request and all 9
+  // page resources in well under 300ms (app access log + trace network timings),
+  // so nothing here is actually hanging; it is the browser/driver lifecycle
+  // signal that is slow to arrive. test.slow() triples the timeout, scoped to
+  // firefox only, without touching the global 30s default the other suites rely on.
+  test.beforeEach(async ({}, testInfo) => {
+    test.slow(
+      testInfo.project.name === 'firefox',
+      'firefox is slow to signal load on its first post-launch navigation under CI load (WEB-79)'
+    );
+  });
+
   test('owner can register, recover, onboard, and reach the dashboard', async ({ page }) => {
     await registerOwnerAndReachDashboard(page, 'cross-browser-auth');
   });
