@@ -46,19 +46,19 @@ func (handler *Handler) ChangePassword(c fiber.Ctx) error {
 	attempt := services.ReauthAttempt{ClientKey: c.IP(), UserID: user.ID, Now: time.Now()}
 	if err := handler.settingsService.ChangePassword(c.Context(), attempt, user, input.CurrentPassword, input.NewPassword, input.ConfirmPassword); err != nil {
 		if errors.Is(err, services.ErrAuthSessionVersionChanged) {
-			return handler.respondMappedError(c, handler.refuseSessionRevokedDuring(c, "auth.password_change", "password_change"))
+			return handler.respondSignedOutRefusal(c, handler.refuseSessionRevokedDuring(c, "auth.password_change", "password_change"))
 		}
 		return handler.respondPasswordChangeError(c, err)
 	}
 
 	if spec, ok := handler.refreshPasswordChangeSession(c, user); !ok {
-		// respondMappedError is the right channel on this route; returning is
-		// what makes it the answer, since respondPasswordChanged below would
-		// otherwise write `{"ok":true}` over it.
+		// The auth cookie is already cleared, so the refusal goes out on the
+		// signed-out channel; returning is what makes it the answer, since
+		// respondPasswordChanged below would otherwise write `{"ok":true}` over it.
 		//
 		// codecov:ignore:start -- owner-only route behind AuthRequired, so only
 		// the AEAD seal error is left and no request-shaped input provokes it.
-		return handler.respondMappedError(c, spec)
+		return handler.respondSignedOutRefusal(c, spec)
 		// codecov:ignore:end
 	}
 

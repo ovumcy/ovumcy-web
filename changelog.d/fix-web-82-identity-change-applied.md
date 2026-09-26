@@ -13,7 +13,9 @@
   to the settings page, which bounced to sign-in and dropped the message, or — for a
   password-confirmed clear-data sent from a plain form — rendered a raw JSON error. A browser is
   now redirected to `/login` with the message, and an HTMX request gets `HX-Redirect: /login`
-  instead of an inline banner on a page that no longer has a session.
+  instead of an inline banner on a page that no longer has a session. The same now holds for a
+  password change, a recovery-code regeneration, and turning two-factor authentication on or
+  off, which used to answer the settings form with an error envelope after signing it out.
 
 ### Changed
 

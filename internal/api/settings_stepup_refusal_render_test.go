@@ -207,19 +207,21 @@ var stepupCompletionHandlers = map[string]string{
 	"ContinueOIDCStepup":               "oidc_stepup_continuation.go",
 }
 
-// stepupSessionHelpers names the session-affecting helpers the three
-// completion handlers above delegate into: applyClearData and
-// applyDeleteAccount share their session re-issue with refreshCurrentSession,
-// which every other posture change also calls. Scanned separately from
+// stepupSessionHelpers names the session-affecting helpers the completion
+// handlers above delegate into: applyClearData and applyDeleteAccount share
+// their session re-issue with refreshCurrentSession, which every other posture
+// change also calls, and the identity-link completion re-issues through
+// reissueSessionAfterIdentityChange. Scanned separately from
 // stepupCompletionHandlers because these helpers return a spec and a verdict,
 // not a single error, so they cannot share
 // TestEveryStepupCallbackRefusalLeavesThroughTheSettingsRedirect's
 // single-return-value shape check — they get their own derivation instead,
 // below.
 var stepupSessionHelpers = map[string]string{
-	"applyClearData":        "handlers_settings_danger_stepup.go",
-	"applyDeleteAccount":    "handlers_settings_danger_stepup.go",
-	"refreshCurrentSession": "handlers_auth_token_helpers.go",
+	"applyClearData":                    "handlers_settings_danger_stepup.go",
+	"applyDeleteAccount":                "handlers_settings_danger_stepup.go",
+	"refreshCurrentSession":             "handlers_auth_token_helpers.go",
+	"reissueSessionAfterIdentityChange": "handlers_settings_oidc_link.go",
 }
 
 // inlineStepupRefusalSpecs names every *ErrorSpec constructor the three handlers
@@ -238,19 +240,20 @@ var inlineStepupRefusalSpecs = map[string]func() APIErrorSpec{
 }
 
 // inlineStepupSessionHelperSpecs is inlineStepupRefusalSpecs's counterpart for
-// applyClearData, applyDeleteAccount and refreshCurrentSession: every
-// *ErrorSpec constructor those three helpers call inline, read from the
+// the stepupSessionHelpers: every *ErrorSpec constructor those helpers call
+// inline, read from the
 // sources and cross-checked in both directions by
 // TestStepupSessionHelperRefusalSpecsMatchTheHelperSources. Before this guard
 // the set was a hand-typed block inside settingsStepupRefusalSpecs, and
 // nothing checked the hand-typed list against the helpers it claimed to
 // describe.
 var inlineStepupSessionHelperSpecs = map[string]func() APIErrorSpec{
-	"settingsClearDataErrorSpec":              settingsClearDataErrorSpec,
-	"settingsDeleteAccountErrorSpec":          settingsDeleteAccountErrorSpec,
-	"authSessionCreateErrorSpec":              authSessionCreateErrorSpec,
-	"authWebSignInUnavailableErrorSpec":       authWebSignInUnavailableErrorSpec,
-	"settingsDataClearedSignInAgainErrorSpec": settingsDataClearedSignInAgainErrorSpec,
+	"settingsClearDataErrorSpec":                    settingsClearDataErrorSpec,
+	"settingsDeleteAccountErrorSpec":                settingsDeleteAccountErrorSpec,
+	"authSessionCreateErrorSpec":                    authSessionCreateErrorSpec,
+	"authWebSignInUnavailableErrorSpec":             authWebSignInUnavailableErrorSpec,
+	"settingsDataClearedSignInAgainErrorSpec":       settingsDataClearedSignInAgainErrorSpec,
+	"authIdentityChangeAppliedSignInAgainErrorSpec": authIdentityChangeAppliedSignInAgainErrorSpec,
 }
 
 // settingsStepupRefusalSpecs collects every spec the three step-up completion
@@ -269,10 +272,10 @@ var inlineStepupSessionHelperSpecs = map[string]func() APIErrorSpec{
 //     derived by NAME from the handler sources, through inlineStepupRefusalSpecs
 //     above, cross-checked by TestStepupCallbackInlineRefusalSpecsMatchTheHandlerSources.
 //   - The specs raised inside the HELPERS those handlers call — applyClearData,
-//     applyDeleteAccount, refreshCurrentSession — are derived the same way,
-//     through inlineStepupSessionHelperSpecs, cross-checked by
-//     TestStepupSessionHelperRefusalSpecsMatchTheHelperSources. A new spec
-//     raised inside any of the three now fails that guard by name instead of
+//     applyDeleteAccount, refreshCurrentSession, reissueSessionAfterIdentityChange —
+//     are derived the same way, through inlineStepupSessionHelperSpecs,
+//     cross-checked by TestStepupSessionHelperRefusalSpecsMatchTheHelperSources.
+//     A new spec raised inside any of them now fails that guard by name instead of
 //     silently missing this list the way the former hand-typed block could.
 func settingsStepupRefusalSpecs() []APIErrorSpec {
 	foreign := errors.New("some provider failure the mappers do not recognize")
