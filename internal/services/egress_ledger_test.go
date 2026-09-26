@@ -77,6 +77,45 @@ func TestEgressLedgerFeedIsUnknownWhenTheRunningEpochCannotBeDerived(t *testing.
 	}
 }
 
+// TestEgressLedgerFeedUnknownCarriesNoLastPolledMark pins the unknown half of
+// the polled-mark suppression (the none half is pinned by the settings render
+// test): a stored link whose state this process cannot measure must not carry
+// a polled date, since the card would then date a link it cannot vouch for. The
+// same status with the running epoch available is the control — the mark must
+// survive there, or the absence check passes for a reason unrelated to state.
+func TestEgressLedgerFeedUnknownCarriesNoLastPolledMark(t *testing.T) {
+	t.Parallel()
+
+	polledOn := time.Date(2026, 9, 20, 0, 0, 0, 0, time.UTC)
+	build := func(currentEpoch string) EgressLedger {
+		service := NewEgressLedgerService(
+			&stubEgressWebhookDisplay{display: WebhookURLDisplay{Readability: WebhookURLAbsent}},
+			&stubEgressFeedStatus{status: CalendarFeedStatus{
+				Known:           true,
+				Configured:      true,
+				KeyEpoch:        "stored-epoch",
+				CurrentKeyEpoch: currentEpoch,
+				LastPolledOn:    &polledOn,
+			}},
+			true,
+		)
+		return service.BuildEgressLedger(context.Background(), EgressLedgerInput{UserID: 10})
+	}
+
+	control := build("stored-epoch")
+	if control.Feed.State != EgressFeedIssuedCurrentKey || control.Feed.LastPolledOn == nil {
+		t.Fatalf("control: expected issued_current_key with the polled mark kept, got %q, mark=%v", control.Feed.State, control.Feed.LastPolledOn)
+	}
+
+	unknown := build("")
+	if unknown.Feed.State != EgressFeedUnknown {
+		t.Fatalf("expected unknown when the running epoch is unavailable, got %q", unknown.Feed.State)
+	}
+	if unknown.Feed.LastPolledOn != nil {
+		t.Fatalf("expected no polled mark in the unknown state, got %v", unknown.Feed.LastPolledOn)
+	}
+}
+
 // TestEgressLedgerEvaluatesReadabilityBeforeEveryToggle is C4's order, stated as
 // the case that fails under the natural reverse order. A row whose ciphertext no
 // longer opens AND whose delivery flag is off must report the key problem: an
