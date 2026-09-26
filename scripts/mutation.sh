@@ -73,14 +73,20 @@ TARGETS=(
 # Shard counts come from the weekly runs of 2026-08-31..09-21, where 5 shards
 # each left every internal/api cell at the 180-minute cap with 52-96% of its
 # files reached. Measured on those logs, one mutation candidate costs about
-# 1.24 wall-minutes in internal/api and 0.41 in internal/services at 2 workers;
-# 14 and 10 shards put an evenly weighted cell near 115 and 120 minutes, plus
-# gremlins' coverage run (up to ~9 and ~2 minutes). Keep this registry in sync
-# with the matrix in .github/workflows/mutation.yml. Entries are
+# 1.24 wall-minutes in internal/api and 0.41 in internal/services at 2 workers.
+# The 0.41 estimate undershot: run 36138463409 (2026-09-25, 10 internal/services
+# shards near-equal at ~290 weight each) actually took 101-172 wall-minutes on
+# the 8 that finished (rate up to 0.594/weight, not 0.41), and the other 2
+# (internal_services_6, _7 — no single file heavier than 97 of either shard's
+# ~289, so the cost is not one file to isolate) were still running when the cap
+# cancelled them. 14 shards brings internal/services to ~207 weight each,
+# which the worst observed rate puts at ~123 minutes — the same ~32% cap
+# headroom internal/api's 14-way split already carries. Keep this registry in
+# sync with the matrix in .github/workflows/mutation.yml. Entries are
 # "slug-base:package-dir:count".
 SHARDED_PKGS=(
   "internal_api:./internal/api:14"
-  "internal_services:./internal/services:10"
+  "internal_services:./internal/services:14"
 )
 
 # shard_pkg_field <slug-base> <dir|count> looks up a sharded package's directory
