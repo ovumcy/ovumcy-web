@@ -24,14 +24,19 @@ type languageSwitchRefusal struct {
 
 func sendLanguageSwitchRefusal(t *testing.T, app *fiber.App, method string, form url.Values, headers map[string]string) languageSwitchRefusal {
 	t.Helper()
-	request := httptest.NewRequest(method, api.LanguageSwitchPath, strings.NewReader(form.Encode()))
+	return sendPageFormRefusal(t, app, method, api.LanguageSwitchPath, form, headers)
+}
+
+func sendPageFormRefusal(t *testing.T, app *fiber.App, method string, path string, form url.Values, headers map[string]string) languageSwitchRefusal {
+	t.Helper()
+	request := httptest.NewRequest(method, path, strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	for name, value := range headers {
 		request.Header.Set(name, value)
 	}
 	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
-		t.Fatalf("%s %s: %v", method, api.LanguageSwitchPath, err)
+		t.Fatalf("%s %s: %v", method, path, err)
 	}
 	defer func() { _ = response.Body.Close() }()
 	return languageSwitchRefusal{
@@ -68,6 +73,12 @@ func TestLanguageSwitchTransportRefusalsAnswerThePage(t *testing.T) {
 	faulty.Post(api.LanguageSwitchPath, func(fiber.Ctx) error {
 		panic("language switch fault")
 	})
+	unrelatedFaultyPaths := []string{"/language", api.LanguageSwitchPath + "/extra", "/settings"}
+	for _, path := range unrelatedFaultyPaths {
+		faulty.Post(path, func(fiber.Ctx) error {
+			panic("unrelated route fault")
+		})
+	}
 
 	slow := fiber.New(fiberConfig(proxySettings{}))
 	slow.Post(api.LanguageSwitchPath, api.RequestDeadlineGuard(time.Millisecond), func(c fiber.Ctx) error {
@@ -83,7 +94,27 @@ func TestLanguageSwitchTransportRefusalsAnswerThePage(t *testing.T) {
 	offsite := url.Values{"lang": {"ru"}, "next": {"//elsewhere.example/phish"}}
 	requireLanguageSwitchPage(t, "off-site next", sendLanguageSwitchRefusal(t, faulty, http.MethodPost, offsite, nil), http.StatusInternalServerError, "/")
 
-	answer := sendLanguageSwitchRefusal(t, faulty, http.MethodPost, form, map[string]string{"Accept": fiber.MIMEApplicationJSON})
+	// The redirect sanitizer admits a same-origin path carrying `"` and `<`, so
+	// the attribute escaping is what keeps a crafted next inside the href.
+	breakout := url.Values{"lang": {"ru"}, "next": {`/"><x>`}}
+	answer := sendLanguageSwitchRefusal(t, faulty, http.MethodPost, breakout, nil)
+	requireLanguageSwitchPage(t, "markup in next", answer, http.StatusInternalServerError, "/&#34;&gt;&lt;x&gt;")
+	if strings.Contains(answer.body, "<x>") {
+		t.Fatalf("markup in next: the crafted path reached the page unescaped: %q", answer.body)
+	}
+
+	// Only POST /lang itself is the page form. A plain HTML navigation refused
+	// on any other path, including one that merely starts with it, keeps the
+	// app-wide envelope.
+	for _, path := range unrelatedFaultyPaths {
+		answer := sendPageFormRefusal(t, faulty, http.MethodPost, path, form, nil)
+		if answer.status != http.StatusInternalServerError || strings.Contains(answer.body, "<a href=") {
+			t.Fatalf("POST %s: answered %d as %q (%q), want the 500 envelope", path, answer.status, answer.contentType, answer.body)
+		}
+		assertTransportErrorEnvelope(t, []byte(answer.body), "internal_error", "internal")
+	}
+
+	answer = sendLanguageSwitchRefusal(t, faulty, http.MethodPost, form, map[string]string{"Accept": fiber.MIMEApplicationJSON})
 	if answer.status != http.StatusInternalServerError {
 		t.Fatalf("JSON caller: answered %d, want 500", answer.status)
 	}
