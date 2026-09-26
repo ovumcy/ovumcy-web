@@ -36,8 +36,8 @@ func TestSettingsCardShowsTheLastPolledDateAfterASuccessfulPoll(t *testing.T) {
 	if !strings.Contains(body, "data-egress-feed-polled-on") {
 		t.Fatal("expected the settings card to render the last-polled date after a successful poll")
 	}
-	if !strings.Contains(body, "Last checked by a calendar on") {
-		t.Fatal("expected the recorded wording on the settings card")
+	if !strings.Contains(body, "data-egress-feed-polled>Last checked by a calendar on <time") {
+		t.Fatal("expected the recorded wording, followed by the date, on the data-egress-feed-polled element")
 	}
 }
 
@@ -52,8 +52,8 @@ func TestSettingsCardOmitsTheLastPolledDateWhenNeverPolled(t *testing.T) {
 	if strings.Contains(body, "data-egress-feed-polled-on") {
 		t.Fatal("expected no last-polled date element for a feed that was never polled")
 	}
-	if !strings.Contains(body, "No calendar has polled this feed yet.") {
-		t.Fatal("expected the none wording on an unpolled feed's settings card")
+	if !strings.Contains(body, "data-egress-feed-polled>No calendar has polled this feed yet.</p>") {
+		t.Fatal("expected the none wording, alone, on an unpolled feed's data-egress-feed-polled element")
 	}
 }
 
