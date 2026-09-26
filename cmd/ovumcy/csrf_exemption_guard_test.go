@@ -185,7 +185,7 @@ func TestCSRFPredicateSkipsTheCookielessFeedGETAndHEADWithoutWideningTheMutating
 	// StrictRouting are both off there, and this predicate has to agree with
 	// the router's own normalization of the probed spellings, not a
 	// coincidentally-matching default.
-	probe := fiber.New(fiberConfig(proxySettings{}))
+	probe := fiber.New(fiberConfig(proxySettings{}, nil))
 	probe.Use(func(c fiber.Ctx) error {
 		if next(c) {
 			return c.SendStatus(fiber.StatusTeapot)

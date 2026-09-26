@@ -869,9 +869,9 @@ func TestOpenAPILanguageSwitchDeclaresTheRefusalsItAnswers(t *testing.T) {
 		app := fiber.New(fiber.Config{ErrorHandler: func(c fiber.Ctx, err error) error {
 			var fiberErr *fiber.Error
 			if errors.As(err, &fiberErr) {
-				return RespondTransportError(c, fiberErr.Code)
+				return handler.RespondTransportError(c, fiberErr.Code)
 			}
-			return RespondTransportError(c, fiber.StatusInternalServerError)
+			return handler.RespondTransportError(c, fiber.StatusInternalServerError)
 		}})
 		app.Use(limiter.New(limiter.Config{
 			Max:          1,

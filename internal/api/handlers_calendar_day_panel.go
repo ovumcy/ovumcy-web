@@ -9,7 +9,7 @@ import (
 )
 
 func (handler *Handler) CalendarDayPanel(c fiber.Ctx) error {
-	user, handled, err := currentUserOrUnauthorized(c)
+	user, handled, err := handler.currentUserOrUnauthorized(c)
 	if err != nil {
 		return err
 	}

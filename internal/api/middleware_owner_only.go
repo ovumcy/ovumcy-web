@@ -10,12 +10,12 @@ func (handler *Handler) OwnerOnly(c fiber.Ctx) error {
 	if !ok {
 		spec := unauthorizedErrorSpec()
 		handler.logSecurityError(c, "access.owner_only", spec)
-		return respondGlobalMappedError(c, spec)
+		return handler.respondGlobalMappedError(c, spec)
 	}
 	if !services.IsOwnerUser(user) {
 		spec := ownerAccessRequiredErrorSpec()
 		handler.logSecurityError(c, "access.owner_only", spec)
-		return respondGlobalMappedError(c, spec)
+		return handler.respondGlobalMappedError(c, spec)
 	}
 	return c.Next()
 }

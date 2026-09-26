@@ -27,7 +27,7 @@ const notFoundRenderedPath = "/404"
 
 func (handler *Handler) NotFound(c fiber.Ctx) error {
 	if strings.HasPrefix(httpx.RoutingNormalizedPath(c.Path()), "/api/") || acceptsJSON(c) || isHTMX(c) {
-		return respondNotFoundMappedError(c)
+		return handler.respondNotFoundMappedError(c)
 	}
 
 	currentUser := handler.optionalAuthenticatedUser(c)

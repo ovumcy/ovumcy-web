@@ -89,7 +89,8 @@ func (handler *Handler) resolveRequestLanguage(c fiber.Ctx) string {
 // load a zoneinfo entry from a client-supplied name, which is precisely the
 // per-request work a cap exists to bound — resolving it ahead of the limiter
 // would hand a flood the cost the limiter was protecting. Language resolution
-// is a cookie read plus a map lookup, and it runs only on a refusal.
+// is a cookie read plus one merge of the locale's catalogue over the default
+// one (what LanguageMiddleware pays per request), and it runs only on a refusal.
 func (handler *Handler) ensureRequestMessages(c fiber.Ctx) {
 	if len(currentMessages(c)) > 0 {
 		return

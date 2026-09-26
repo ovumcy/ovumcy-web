@@ -57,8 +57,8 @@ func settingsFormErrorSpec(status int, category APIErrorCategory, key string) AP
 	}
 }
 
-func respondGlobalMappedError(c fiber.Ctx, spec APIErrorSpec) error {
-	return apiError(c, spec)
+func (handler *Handler) respondGlobalMappedError(c fiber.Ctx, spec APIErrorSpec) error {
+	return handler.apiError(c, spec)
 }
 
 func (handler *Handler) respondMappedError(c fiber.Ctx, spec APIErrorSpec) error {
@@ -68,6 +68,6 @@ func (handler *Handler) respondMappedError(c fiber.Ctx, spec APIErrorSpec) error
 	case APIErrorTargetSettingsForm:
 		return handler.respondSettingsError(c, spec)
 	default:
-		return apiError(c, spec)
+		return handler.apiError(c, spec)
 	}
 }

@@ -78,7 +78,7 @@ func newCSRFOriginProbeApp(t *testing.T, posture csrfProbePosture) *fiber.App {
 		}
 	}
 
-	app := fiber.New(fiberConfig(proxy))
+	app := fiber.New(fiberConfig(proxy, handler))
 	app.Use(csrf.New(csrfMiddlewareConfig(true, handler)))
 	app.Get(csrfProbeTokenPath, func(c fiber.Ctx) error {
 		return c.SendString(csrf.TokenFromContext(c))

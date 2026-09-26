@@ -20,8 +20,8 @@ func RegisterRoutes(app *fiber.App, handler *Handler) {
 	// it themselves and pass against an app that never does. Deleting it is
 	// pinned by TestRegisterRoutesMountsTheDeadlineGuardDownToTheRepository,
 	// which observes the context at the repository, not at the handler.
-	app.Use(RequestDeadlineGuard(RequestBudget))
-	app.Use(requestBodyLimitGuard)
+	app.Use(RequestDeadlineGuard(RequestBudget, handler))
+	app.Use(requestBodyLimitGuard(handler))
 	registerPageRoutes(app, handler)
 	registerV1APIRoutes(app, handler)
 	registerHEADTwins(app)

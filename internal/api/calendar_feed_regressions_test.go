@@ -498,9 +498,9 @@ func TestCalendarFeedReturns500OnInfrastructureError(t *testing.T) {
 	app := fiber.New(fiber.Config{ErrorHandler: func(c fiber.Ctx, err error) error {
 		var fiberErr *fiber.Error
 		if !errors.As(err, &fiberErr) {
-			return RespondTransportError(c, fiber.StatusInternalServerError)
+			return handler.RespondTransportError(c, fiber.StatusInternalServerError)
 		}
-		return RespondTransportError(c, fiberErr.Code)
+		return handler.RespondTransportError(c, fiberErr.Code)
 	}})
 	app.Get(calendarFeedRoutePath, handler.ServeCalendarFeed)
 

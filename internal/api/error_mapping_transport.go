@@ -17,11 +17,24 @@ import (
 // A plain HTML navigation submitting POST /lang is the one route-level
 // exception, taken here rather than per cause so every refusal on that route —
 // handler, CSRF, recovered panic, request deadline — answers the same page.
-func apiError(c fiber.Ctx, spec APIErrorSpec) error {
+//
+// Both markup arms resolve the request's locale catalogue via
+// ensureRequestMessages before rendering: a mapped rejection can be produced
+// on a context LanguageMiddleware never touched — fiber's own body/head
+// rejections (413/431), which reach the ErrorHandler before any middleware
+// runs; an error or recovered panic from middleware registered ahead of it;
+// and the calendar feed route, which the middleware skips — and without this
+// a fragment renders its own machine key as the visible message. It is a
+// no-op when messages are already present, so a request that already passed
+// LanguageMiddleware pays nothing extra. The JSON envelope carries no
+// localized text, so it does not need the catalogue at all.
+func (handler *Handler) apiError(c fiber.Ctx, spec APIErrorSpec) error {
 	if isLanguageSwitchPageNavigation(c) {
+		handler.ensureRequestMessages(c)
 		return sendLanguageSwitchStatusFragment(c, spec)
 	}
 	if responseFormat(c) == httpx.ResponseFormatHTMX {
+		handler.ensureRequestMessages(c)
 		return sendHTMLFragment(c.Status(spec.Status), localizedStatusErrorMarkup(c, spec))
 	}
 	return c.Status(spec.Status).JSON(apiErrorEnvelope(spec))
@@ -155,8 +168,8 @@ func transportErrorSpecForStatus(status int) APIErrorSpec {
 // arbitrary internal text at worst — table names, file paths, driver messages.
 // The client gets the app's own stable key instead, which is both safer and more
 // useful to parse.
-func RespondTransportError(c fiber.Ctx, status int) error {
-	return apiError(c, transportErrorSpecForStatus(status))
+func (handler *Handler) RespondTransportError(c fiber.Ctx, status int) error {
+	return handler.apiError(c, transportErrorSpecForStatus(status))
 }
 
 // requestTooLargeErrorSpec maps a transport-level 413 (fiber's BodyLimit
@@ -175,11 +188,12 @@ func requestTooLargeErrorSpec() APIErrorSpec {
 // It is exported because fiber enforces BodyLimit in its core server error
 // path (App.serverErrorHandler) on a fresh context before app middleware runs,
 // so the top-level ErrorHandler in cmd/ovumcy must reach it directly rather
-// than through a route handler. Localization is best-effort: on that early
-// path request-scoped messages are absent, so the response falls back to the
-// stable key, which is exactly what a machine client keys on.
-func RespondRequestEntityTooLarge(c fiber.Ctx) error {
-	return apiError(c, requestTooLargeErrorSpec())
+// than through a route handler. On that early path request-scoped messages
+// are absent, but apiError resolves the catalogue itself via
+// ensureRequestMessages before either markup arm, so the localized fragment
+// still renders real copy rather than falling back to the stable key.
+func (handler *Handler) RespondRequestEntityTooLarge(c fiber.Ctx) error {
+	return handler.apiError(c, requestTooLargeErrorSpec())
 }
 
 // requestTimeoutErrorSpec maps a request that outlived its budget
@@ -196,8 +210,8 @@ func requestTimeoutErrorSpec() APIErrorSpec {
 // RespondRequestTimeout renders that 503 through the same content-negotiated
 // formatting as every other mapped error. Exported because the guard that
 // detects the condition is middleware, registered in the composition root.
-func RespondRequestTimeout(c fiber.Ctx) error {
-	return apiError(c, requestTimeoutErrorSpec())
+func (handler *Handler) RespondRequestTimeout(c fiber.Ctx) error {
+	return handler.apiError(c, requestTimeoutErrorSpec())
 }
 
 // requestHeadersTooLargeErrorSpec maps a transport-level 431 (the request head —
@@ -215,8 +229,8 @@ func requestHeadersTooLargeErrorSpec() APIErrorSpec {
 // never parsed, so the top-level ErrorHandler in cmd/ovumcy must reach it
 // directly. Nothing about the rejected request is echoed — with an unparseable
 // head there is no method, path, or cookie value to leak even by accident.
-func RespondRequestHeadersTooLarge(c fiber.Ctx) error {
-	return apiError(c, requestHeadersTooLargeErrorSpec())
+func (handler *Handler) RespondRequestHeadersTooLarge(c fiber.Ctx) error {
+	return handler.apiError(c, requestHeadersTooLargeErrorSpec())
 }
 
 func (handler *Handler) respondAuthError(c fiber.Ctx, spec APIErrorSpec) error {
@@ -247,7 +261,7 @@ func (handler *Handler) respondAuthError(c fiber.Ctx, spec APIErrorSpec) error {
 			// No <form> can submit DELETE and there is no page to send the client
 			// back to, so a plain client refused here by either limiter gets the
 			// mapped-error envelope, never a redirect (WEB-72).
-			return apiError(c, spec)
+			return handler.apiError(c, spec)
 		// default is reachable: the SSO limiter is mounted on the whole /auth/oidc
 		// prefix (not just start/callback), so a refusal on a sub-path with no case
 		// of its own — the OIDC logout bridge, its redirect leg, link-confirm,
@@ -259,7 +273,7 @@ func (handler *Handler) respondAuthError(c fiber.Ctx, spec APIErrorSpec) error {
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 		}
 	}
-	return apiError(c, spec)
+	return handler.apiError(c, spec)
 }
 
 // isV1AuthFormPath enumerates the v1 auth endpoints that accept browser form
@@ -298,7 +312,7 @@ func (handler *Handler) respondSettingsError(c fiber.Ctx, spec APIErrorSpec) err
 		handler.setFlashCookie(c, FlashPayload{SettingsError: spec.Key})
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
 	}
-	return apiError(c, spec)
+	return handler.apiError(c, spec)
 }
 
 // redirectSettingsRefusal flashes a refusal the SETTINGS page can render and
