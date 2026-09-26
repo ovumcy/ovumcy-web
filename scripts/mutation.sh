@@ -73,17 +73,20 @@ TARGETS=(
 # Shard counts come from the weekly runs of 2026-08-31..09-21, where 5 shards
 # each left every internal/api cell at the 180-minute cap with 52-96% of its
 # files reached. Measured on those logs, one mutation candidate costs about
-# 1.24 wall-minutes in internal/api and 0.41 in internal/services at 2 workers.
-# The 0.41 estimate undershot: run 36138463409 (2026-09-25, 10 internal/services
-# shards near-equal at ~290 weight each) actually took 101-172 wall-minutes on
-# the 8 that finished (rate up to 0.594/weight, not 0.41), and the other 2
+# 1.24 wall-minutes in internal/api and 0.41 in internal/services at 2 workers,
+# plus gremlins' coverage run (up to ~9 and ~2 minutes). The 0.41 estimate
+# undershot: run 36138463409 (2026-09-25, 10 internal/services shards
+# near-equal at ~290 weight each) actually took 101-172 wall-minutes on the 8
+# that finished (rate up to 0.594/weight, not 0.41); the other 2
 # (internal_services_6, _7 — no single file heavier than 97 of either shard's
-# ~289, so the cost is not one file to isolate) were still running when the cap
-# cancelled them. 14 shards brings internal/services to ~207 weight each,
-# which the worst observed rate puts at ~123 minutes — the same ~32% cap
-# headroom internal/api's 14-way split already carries. Keep this registry in
-# sync with the matrix in .github/workflows/mutation.yml. Entries are
-# "slug-base:package-dir:count".
+# ~289) hit the 180-minute cap still running, which only lower-bounds their
+# rate — >= 180/289 ≈ 0.623/weight, with no upper bound, since the cap cut
+# them off before one showed. 14 shards brings internal/services to ~207
+# weight each: at that lower bound the slow cells land near ~129 minutes, and
+# the 180-minute cap tolerates up to ~0.87/weight (180/207) — about 1.4x the
+# lower bound — before a cell hits it again. The next dispatched run is the
+# confirmation either way. Keep this registry in sync with the matrix in
+# .github/workflows/mutation.yml. Entries are "slug-base:package-dir:count".
 SHARDED_PKGS=(
   "internal_api:./internal/api:14"
   "internal_services:./internal/services:14"
