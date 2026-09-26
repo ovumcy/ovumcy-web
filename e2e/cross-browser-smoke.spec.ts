@@ -52,7 +52,7 @@ test.describe('Cross-browser smoke', () => {
   // On CI runners a cold firefox can take over 30s to report 'load' for its first
   // navigation although the server answers in milliseconds (WEB-79). Scoped to
   // firefox so the global 30s default stays in force everywhere else.
-  test.beforeEach(async ({}, testInfo) => {
+  test.beforeEach(({}, testInfo) => {
     test.slow(
       testInfo.project.name === 'firefox',
       'firefox is slow to signal load on its first post-launch navigation under CI load (WEB-79)'
