@@ -468,6 +468,7 @@ func TestSettingsPostureReissueFailureAnswersSignedOut(t *testing.T) {
 			originalWriter := log.Writer()
 			var auditOutput bytes.Buffer
 			log.SetOutput(&auditOutput)
+			t.Cleanup(func() { log.SetOutput(originalWriter) })
 			response := run.send()
 			log.SetOutput(originalWriter)
 

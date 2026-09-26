@@ -197,9 +197,10 @@ var authErrorTranslationKeys = map[string]string{ // #nosec G101 -- false positi
 	"data cleared sign in again":            "settings.error.data_cleared_sign_in_again",
 	// The password-change and TOTP enable/disable counterparts of the two keys
 	// above (WEB-85): a password change or a TOTP toggle bumped
-	// AuthSessionVersion and committed, but the follow-up session re-issue could
-	// not be carried out (a revocation raced the reload, or the re-mint itself
-	// failed). Same reasoning as above: "failed to create session" would be
+	// AuthSessionVersion and committed, but the follow-up re-mint of this
+	// device's session failed. A revocation that raced the write is refused by
+	// the write itself, commits nothing, and keeps "failed to create session".
+	// Same reasoning as above: "failed to create session" would be
 	// false here, since the change already landed. The TOTP pair rides the flat
 	// error.totp_* namespace rather than settings.error.*, matching the other
 	// TOTP-route specs (totp_invalid_code, totp_session_expired,
