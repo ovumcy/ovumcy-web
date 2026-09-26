@@ -195,6 +195,18 @@ var authErrorTranslationKeys = map[string]string{ // #nosec G101 -- false positi
 	// api.TestApplyClearDataReportsARefusedSessionReissueToItsCaller.
 	"identity change applied sign in again": "auth.error.identity_change_applied_sign_in_again",
 	"data cleared sign in again":            "settings.error.data_cleared_sign_in_again",
+	// The password-change and TOTP enable/disable counterparts of the two keys
+	// above (WEB-85): a password change or a TOTP toggle bumped
+	// AuthSessionVersion and committed, but the follow-up session re-issue could
+	// not be carried out (a revocation raced the reload, or the re-mint itself
+	// failed). Same reasoning as above: "failed to create session" would be
+	// false here, since the change already landed. The TOTP pair rides the flat
+	// error.totp_* namespace rather than settings.error.*, matching the other
+	// TOTP-route specs (totp_invalid_code, totp_session_expired,
+	// totp_internal_error) they answer alongside.
+	"password changed sign in again":    "settings.error.password_changed_sign_in_again",
+	"two factor enabled sign in again":  "error.totp_enabled_sign_in_again",
+	"two factor disabled sign in again": "error.totp_disabled_sign_in_again",
 }
 
 var settingsStatusTranslationKeys = map[string]string{

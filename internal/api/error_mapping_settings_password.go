@@ -33,6 +33,18 @@ func mapLocalPasswordSetupReauthError(err error) APIErrorSpec {
 	}
 }
 
+// passwordChangedSignInAgainErrorSpec answers a ChangePassword whose write
+// (the new hash and the AuthSessionVersion bump) already committed but whose
+// session could not be re-issued afterward. Same reasoning as
+// settingsDataClearedSignInAgainErrorSpec: the password already changed, so
+// "failed to create session" would be false, and 401 says the right next step
+// is signing in again — with the NEW password — since the caller has already
+// cleared the cookie. Built with settingsFormErrorSpec, matching every other
+// spec mapSettingsPasswordChangeError below returns.
+func passwordChangedSignInAgainErrorSpec() APIErrorSpec {
+	return settingsFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "password changed sign in again")
+}
+
 func mapSettingsPasswordChangeError(err error) APIErrorSpec {
 	switch {
 	// Checked first: an exhausted re-auth budget is refused before the current

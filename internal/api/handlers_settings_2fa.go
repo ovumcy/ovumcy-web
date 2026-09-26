@@ -119,7 +119,12 @@ func (handler *Handler) VerifyTOTP2FAEnrollment(c fiber.Ctx) error {
 	// is invalidated on its next request.
 	user.AuthSessionVersion = services.NormalizeAuthSessionVersion(user.AuthSessionVersion) + 1
 	user.TOTPEnabled = true
-	if spec, ok := handler.refreshCurrentSession(c, user, "settings.2fa.verify"); !ok {
+	// Logged before the reissue attempt below, not after: EnableTOTP has
+	// already committed, so the event is true regardless of whether this
+	// device's session can be carried forward past it (precedent: "unlinked"
+	// before UnlinkOIDCIdentity's reissue).
+	handler.logSecurityEvent(c, "settings.2fa.verify", "enabled")
+	if _, ok := handler.refreshCurrentSession(c, user, "settings.2fa.verify"); !ok {
 		// The setup cookie is cleared HERE and not only in the success arm
 		// below. EnableTOTP has already persisted the encrypted secret, so the
 		// enrollment seed this sealed cookie carries is spent — and stopping at
@@ -132,12 +137,15 @@ func (handler *Handler) VerifyTOTP2FAEnrollment(c fiber.Ctx) error {
 		// refreshCurrentSession has cleared the auth cookie, so the refusal goes
 		// out on the signed-out channel — and only stands if the handler stops
 		// here. The success arm below writes an HTMX toast or a 303 over
-		// whatever was already in the response.
-		return handler.respondSignedOutRefusal(c, spec)
+		// whatever was already in the response. The enrollment already
+		// committed (unlike a failure inside EnableTOTP itself, refused above),
+		// so the caller is told to sign in again rather than that it failed;
+		// refreshCurrentSession still logs authSessionCreateErrorSpec
+		// internally under this scope.
+		return handler.respondSignedOutRefusal(c, totpEnabledSignInAgainErrorSpec())
 	}
 
 	handler.clearTOTPSetupCookie(c)
-	handler.logSecurityEvent(c, "settings.2fa.verify", "enabled")
 
 	if isHTMX(c) {
 		messages := currentMessages(c)
@@ -204,16 +212,21 @@ func (handler *Handler) DisableTOTP2FA(c fiber.Ctx) error {
 	user.AuthSessionVersion = services.NormalizeAuthSessionVersion(user.AuthSessionVersion) + 1
 	user.TOTPEnabled = false
 	user.TOTPSecret = ""
-	if spec, ok := handler.refreshCurrentSession(c, user, "settings.2fa.disable"); !ok {
-		// Same stop-here reason as the enable arm above.
+	// Logged before the reissue attempt below: DisableTOTP has already
+	// committed, so the event is true either way (precedent: "unlinked" before
+	// UnlinkOIDCIdentity's reissue).
+	handler.logSecurityEvent(c, "settings.2fa.disable", "disabled")
+	if _, ok := handler.refreshCurrentSession(c, user, "settings.2fa.disable"); !ok {
+		// Same stop-here reason as the enable arm above: the disable already
+		// committed, so the caller is told to sign in again rather than that it
+		// failed; refreshCurrentSession still logs authSessionCreateErrorSpec
+		// internally under this scope.
 		//
 		// codecov:ignore:start -- owner-only route: only the AEAD seal error is
 		// left, and no request-shaped input provokes it.
-		return handler.respondSignedOutRefusal(c, spec)
+		return handler.respondSignedOutRefusal(c, totpDisabledSignInAgainErrorSpec())
 		// codecov:ignore:end
 	}
-
-	handler.logSecurityEvent(c, "settings.2fa.disable", "disabled")
 
 	if isHTMX(c) {
 		messages := currentMessages(c)

@@ -340,6 +340,7 @@
   "settings.error.delete_account_failed": "No se pudo eliminar la cuenta. Inténtalo de nuevo.",
   "settings.error.password_secure_failed": "No se pudo proteger tu nueva contraseña. No se cambió nada. Inténtalo de nuevo.",
   "settings.error.password_update_failed": "No se pudo guardar tu nueva contraseña. No se cambió nada. Inténtalo de nuevo.",
+  "settings.error.password_changed_sign_in_again": "Tu contraseña fue cambiada. Inicia sesión de nuevo con tu nueva contraseña.",
   "settings.symptoms.error.name_required": "Introduce un nombre para el síntoma.",
   "settings.symptoms.error.name_too_long": "Usa 40 caracteres o menos. Para detalles más largos, usa las notas.",
   "settings.symptoms.error.invalid_characters": "Usa solo texto sin formato. No se permiten etiquetas ni signos de menor o mayor.",
@@ -854,6 +855,8 @@
   "error.totp_session_expired": "Tu sesión ha caducado. Vuelve a iniciar sesión.",
   "error.totp_internal_error": "Algo ha ido mal. Inténtalo de nuevo.",
   "error.totp_too_many_attempts": "Demasiados intentos. Espera y vuelve a intentarlo.",
+  "error.totp_enabled_sign_in_again": "La autenticación de dos factores fue activada. Inicia sesión de nuevo para continuar.",
+  "error.totp_disabled_sign_in_again": "La autenticación de dos factores fue desactivada. Inicia sesión de nuevo para continuar.",
 
   "common.back_to_settings": "Volver a la configuración"
 }
