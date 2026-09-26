@@ -740,7 +740,7 @@
   "settings.egress.state.feed.issued_current_key": "A calendar link is stored, created under the key this instance uses now, so withdrawing it here cuts it off.",
   "settings.egress.evidence.feed.none": "No one-time reveal is recorded for this link.",
   "settings.egress.evidence.feed.recorded": "One-time reveal used on",
-  "settings.egress.feed_polled.none": "No calendar has polled this feed yet.",
+  "settings.egress.feed_polled.none": "No calendar check is recorded for this link.",
   "settings.egress.feed_polled.recorded": "Last checked by a calendar on",
   "settings.egress.payload.feed.uid": "An event identifier built from the reminder type and its date",
   "settings.egress.payload.feed.dtstamp": "The moment the feed was generated",

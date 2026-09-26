@@ -52,8 +52,23 @@ func TestSettingsCardOmitsTheLastPolledDateWhenNeverPolled(t *testing.T) {
 	if strings.Contains(body, "data-egress-feed-polled-on") {
 		t.Fatal("expected no last-polled date element for a feed that was never polled")
 	}
-	if !strings.Contains(body, "data-egress-feed-polled>No calendar has polled this feed yet.</p>") {
+	if !strings.Contains(body, "data-egress-feed-polled>No calendar check is recorded for this link.</p>") {
 		t.Fatal("expected the none wording, alone, on an unpolled feed's data-egress-feed-polled element")
+	}
+}
+
+// TestSettingsCardOmitsThePolledLineWithoutALink proves the "none" sentence is
+// never said about a link that does not exist: with no feed stored the card
+// carries no polled line at all.
+func TestSettingsCardOmitsThePolledLineWithoutALink(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "feed-polled-render-no-link@example.com")
+
+	body := fetchPageBody(t, ctx.app, "/settings", ctx.authCookie)
+	if !strings.Contains(body, `data-egress-feed-state="none"`) {
+		t.Fatal("expected the feed path to render in the no-link state; the absence check below would pass vacuously")
+	}
+	if strings.Contains(body, "data-egress-feed-polled") {
+		t.Fatal("expected no polled line when no calendar link is stored")
 	}
 }
 

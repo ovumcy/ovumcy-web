@@ -74,9 +74,15 @@ func buildSettingsEgressView(c fiber.Ctx, ledger services.EgressLedger, location
 	if ledger.Feed.RevealedAt != nil {
 		feedEvidenceKey = "settings.egress.evidence.feed.recorded"
 	}
-	feedPolledKey := "settings.egress.feed_polled.none"
-	if ledger.Feed.LastPolledOn != nil {
-		feedPolledKey = "settings.egress.feed_polled.recorded"
+	// No link, or a row that could not be read, gets no polled line at all: the
+	// "none" sentence is a statement about a stored link and would otherwise
+	// assert something the server never observed.
+	feedPolledKey := ""
+	if egressFeedTokenPresent(ledger.Feed.State) {
+		feedPolledKey = "settings.egress.feed_polled.none"
+		if ledger.Feed.LastPolledOn != nil {
+			feedPolledKey = "settings.egress.feed_polled.recorded"
+		}
 	}
 
 	webhookISO, webhookText := egressTimestampStrings(language, location, ledger.Webhook.LastDeliveredAt)
@@ -148,10 +154,10 @@ func egressTimestampStrings(language string, location *time.Location, value *tim
 // CalendarFeedLastPolledOn is stored as the repo's UTC-midnight DATE form for
 // the owner's OWN calendar day (users.timezone), already resolved once in
 // ResolveFeed. Shifting it again into the viewer's request location here would
-// re-derive a second, possibly different, calendar day — the mismatch
-// timezone-calendar.md warns against — so the display is built straight from
-// the stored value's own Y-M-D via LocalizedDateDisplay/CalendarDayKey, never
-// via `.In(loc)`.
+// re-derive a second, possibly different, calendar day — a stored date-only
+// value is shown from its own Y-M-D and never re-resolved through a location —
+// so the display is built straight from it via
+// LocalizedDateDisplay/CalendarDayKey, never via `.In(loc)`.
 func feedPolledDisplayString(language string, value *time.Time) (iso, text string) {
 	if value == nil {
 		return "", ""
