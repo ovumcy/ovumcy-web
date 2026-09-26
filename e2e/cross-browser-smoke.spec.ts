@@ -49,14 +49,9 @@ async function todayISO(page: Page): Promise<string> {
 }
 
 test.describe('Cross-browser smoke', () => {
-  // firefox occasionally needs much longer than 30s to signal 'load' back to the
-  // driver on the very first navigation right after launch (CI CPU contention on
-  // shared runners) — every push run this reddened on (35922831649, 35789251460,
-  // 35675761133, 35618629075) shows the server answering the request and all 9
-  // page resources in well under 300ms (app access log + trace network timings),
-  // so nothing here is actually hanging; it is the browser/driver lifecycle
-  // signal that is slow to arrive. test.slow() triples the timeout, scoped to
-  // firefox only, without touching the global 30s default the other suites rely on.
+  // On CI runners a cold firefox can take over 30s to report 'load' for its first
+  // navigation although the server answers in milliseconds (WEB-79). Scoped to
+  // firefox so the global 30s default stays in force everywhere else.
   test.beforeEach(async ({}, testInfo) => {
     test.slow(
       testInfo.project.name === 'firefox',
