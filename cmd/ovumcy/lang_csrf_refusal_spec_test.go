@@ -56,7 +56,7 @@ func openAPIResponseBlock(t *testing.T, spec string, path string, method string,
 // CSRF middleware answers on POST /lang against what docs/openapi.yaml declares
 // for it. It lives here, not beside the route's other spec pins in
 // internal/api, because the refusal is produced by csrfMiddlewareConfig and
-// ovumcyErrorHandler, and a copy of either there would pin the spec to the copy.
+// newOvumcyErrorHandler, and a copy of either there would pin the spec to the copy.
 //
 // Five refusal causes are driven — no token, a token that does not match the
 // cookie, a valid token the server no longer holds (a second app stands in for
