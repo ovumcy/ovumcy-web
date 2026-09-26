@@ -38,7 +38,7 @@ func seedArmedFeedForPolledTest(t *testing.T, repo *UserRepository, email string
 }
 
 // TestMarkCalendarFeedPolledWritesOnceThenNoOpsTheSameDay pins the write-once
-// shape the design constraint asks for: a repeated poll on the same owner-day
+// shape: a repeated poll on the same owner-day
 // must not cost a second write's worth of change (RowsAffected==0 on retry),
 // and the stored date must not move.
 func TestMarkCalendarFeedPolledWritesOnceThenNoOpsTheSameDay(t *testing.T) {
@@ -142,9 +142,9 @@ func TestMarkCalendarFeedPolledRefusesAZeroOwnerID(t *testing.T) {
 }
 
 // TestEveryCalendarFeedSelectorClearingSiteAlsoClearsTheLastPolledMark walks
-// each of the eight sites that NULL calendar_feed_selector and proves the
+// each site that NULLs calendar_feed_selector and proves the
 // mark goes with it, one subtest per site so a failure names exactly which
-// one regressed (the AST guard in calendar_feed_fence_writers_guard_test.go
+// one regressed (the type-resolved guard in calendar_feed_fence_writers_guard_test.go
 // pins that the SET is complete; this pins that each MEMBER actually behaves).
 func TestEveryCalendarFeedSelectorClearingSiteAlsoClearsTheLastPolledMark(t *testing.T) {
 	ctx := context.Background()

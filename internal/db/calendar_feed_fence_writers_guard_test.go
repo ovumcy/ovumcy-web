@@ -1,12 +1,19 @@
 package db
 
 import (
+	"fmt"
 	"go/ast"
+	"go/constant"
 	"go/parser"
 	"go/token"
+	"go/types"
 	"os"
 	"sort"
+	"strings"
 	"testing"
+
+	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/go/types/typeutil"
 )
 
 // calendarFeedAccessColumns are the three columns that decide whether a
@@ -208,80 +215,177 @@ func TestEveryCalendarFeedWriterAdvancesTheRestoreFence(t *testing.T) {
 }
 
 // TestEveryCalendarFeedSelectorWriterAlsoClearsTheLastPolledMark is WEB-46's
-// completeness guard, and it reuses the scan above rather than restating it: a
-// hand-written list of the writers would agree with itself while a new writer
-// went unguarded, and the AST is the one place both this guard and the fence
-// guard read from, so they cannot drift into disagreeing about what a
-// "writer" is. SECURITY.md cites it, and the member-level behavior of each of
-// the eight writers this scan finds is exercised one subtest per site in
-// user_repository_calendar_feed_last_polled_test.go.
+// completeness guard. The mark is a fact about the token the selector names,
+// so every write of calendar_feed_selector must null
+// calendar_feed_last_polled_on in the same statement, or a stale "last
+// checked" date outlives the link it was about.
 //
-// Every function that writes calendar_feed_selector (a map-literal key, so a
-// READER naming it in a Select list — LoadSettingsByID — is not caught) must
-// also name calendar_feed_last_polled_on in the same map: the mark is a fact
-// about the token the selector names, and a selector write that leaves the
-// mark standing lets a stale "last checked" date survive the link it was
-// about.
+// Columns are resolved by the type checker over every non-test file of this
+// package, not matched as string literals in one file: a map key spelled as a
+// named constant is the same column, and a single-column Update, raw SQL in
+// Exec, a models.User field write, or a key added to a map by index all write
+// the selector with no literal "calendar_feed_selector" map key to match. None
+// of those four can null the mark in the same statement, so they are refused
+// outright. The behavior of each writer this guard finds is exercised one
+// subtest per site in user_repository_calendar_feed_last_polled_test.go.
 func TestEveryCalendarFeedSelectorWriterAlsoClearsTheLastPolledMark(t *testing.T) {
-	const path = "user_repository.go"
-	const selectorColumn = `"calendar_feed_selector"`
-	const markColumn = `"calendar_feed_last_polled_on"`
+	const selectorColumn = "calendar_feed_selector"
+	const markColumn = "calendar_feed_last_polled_on"
 
-	source, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
-	}
-	fileSet := token.NewFileSet()
-	parsed, err := parser.ParseFile(fileSet, path, source, parser.SkipObjectResolution)
-	if err != nil {
-		t.Fatalf("parse %s: %v", path, err)
-	}
-
-	selectorWriters := map[string]bool{}
-	marksCleared := map[string]bool{}
-	for _, declaration := range parsed.Decls {
-		function, ok := declaration.(*ast.FuncDecl)
-		if !ok || function.Body == nil {
-			continue
+	pkg := loadTypedDBPackage(t)
+	info := pkg.TypesInfo
+	selectorField := userModelField(t, pkg, "CalendarFeedSelector")
+	columnOf := func(expr ast.Expr) string {
+		value := info.Types[expr].Value
+		if value == nil || value.Kind() != constant.String {
+			return ""
 		}
-		ast.Inspect(function.Body, func(node ast.Node) bool {
-			keyValue, ok := node.(*ast.KeyValueExpr)
-			if !ok {
-				return true
-			}
-			key, ok := keyValue.Key.(*ast.BasicLit)
-			if !ok || key.Kind != token.STRING {
-				return true
-			}
-			switch key.Value {
-			case selectorColumn:
-				selectorWriters[function.Name.Name] = true
-			case markColumn:
-				marksCleared[function.Name.Name] = true
-			}
-			return true
-		})
+		return constant.StringVal(value)
+	}
+	isMap := func(expr ast.Expr) bool {
+		kind := info.TypeOf(expr)
+		if kind == nil {
+			return false
+		}
+		_, ok := kind.Underlying().(*types.Map)
+		return ok
 	}
 
+	clearingWriters := map[string]bool{}
+	var violations []string
+	for _, file := range pkg.Syntax {
+		for _, declaration := range file.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Body == nil {
+				continue
+			}
+			name := function.Name.Name
+			refuse := func(node ast.Node, what string) {
+				violations = append(violations, fmt.Sprintf("%s at %s: %s", name, pkg.Fset.Position(node.Pos()), what))
+			}
+			ast.Inspect(function.Body, func(node ast.Node) bool {
+				switch typed := node.(type) {
+				case *ast.CompositeLit:
+					if !isMap(typed) {
+						return true
+					}
+					writesSelector, nullsMark := false, false
+					for _, element := range typed.Elts {
+						keyValue, ok := element.(*ast.KeyValueExpr)
+						if !ok {
+							continue
+						}
+						switch columnOf(keyValue.Key) {
+						case selectorColumn:
+							writesSelector = true
+						case markColumn:
+							nullsMark = info.Types[keyValue.Value].IsNil()
+						}
+					}
+					switch {
+					case writesSelector && nullsMark:
+						clearingWriters[name] = true
+					case writesSelector:
+						refuse(typed, "a column map writes calendar_feed_selector without nulling calendar_feed_last_polled_on")
+					}
+				case *ast.AssignStmt:
+					for _, target := range typed.Lhs {
+						switch lhs := target.(type) {
+						case *ast.IndexExpr:
+							if isMap(lhs.X) && columnOf(lhs.Index) == selectorColumn {
+								refuse(typed, "calendar_feed_selector is added to a column map by index; write it in one map literal beside the mark")
+							}
+						case *ast.SelectorExpr:
+							if info.Uses[lhs.Sel] == selectorField {
+								refuse(typed, "models.User.CalendarFeedSelector is assigned; a struct write cannot null the mark in the same statement")
+							}
+						}
+					}
+				case *ast.KeyValueExpr:
+					if key, ok := typed.Key.(*ast.Ident); ok && info.Uses[key] == selectorField {
+						refuse(typed, "a models.User literal sets CalendarFeedSelector; a struct write cannot null the mark in the same statement")
+					}
+				case *ast.CallExpr:
+					callee, ok := typeutil.Callee(info, typed).(*types.Func)
+					if !ok || callee.Pkg() == nil || callee.Pkg().Path() != "gorm.io/gorm" || len(typed.Args) == 0 {
+						return true
+					}
+					switch callee.Name() {
+					case "Update", "UpdateColumn":
+						if columnOf(typed.Args[0]) == selectorColumn {
+							refuse(typed, callee.Name()+" writes calendar_feed_selector alone, leaving the mark standing")
+						}
+					case "Exec":
+						if strings.Contains(columnOf(typed.Args[0]), selectorColumn) {
+							refuse(typed, "raw SQL names calendar_feed_selector; write it through a column map beside the mark")
+						}
+					}
+				}
+				return true
+			})
+		}
+	}
+
+	sort.Strings(violations)
+	for _, violation := range violations {
+		t.Error(violation)
+	}
 	// Anti-vacuity, by site name: arming and revoking must both be found among
-	// the selector writers, or the scan is looking at the wrong thing and
-	// would report success over an empty set.
+	// the writers that null the mark, or the resolution is looking at the wrong
+	// thing and would report success over an empty set.
 	for _, required := range []string{"SaveCalendarFeedToken", "ClearCalendarFeedToken"} {
-		if !selectorWriters[required] {
-			t.Fatalf("the scan did not find %s among the calendar_feed_selector writers (%v): it is not measuring what it claims", required, sortedNamesOf(selectorWriters))
+		if !clearingWriters[required] {
+			t.Errorf("the scan did not find %s among the calendar_feed_selector writers that null the mark (%v): it is not measuring what it claims", required, sortedNamesOf(clearingWriters))
 		}
 	}
+}
 
-	var missing []string
-	for name := range selectorWriters {
-		if !marksCleared[name] {
-			missing = append(missing, name)
+// loadTypedDBPackage type-checks this package's non-test sources. It fails
+// closed: a package that does not type-check resolves no column, and a guard
+// that resolves nothing passes over everything.
+func loadTypedDBPackage(t *testing.T) *packages.Package {
+	t.Helper()
+	config := &packages.Config{
+		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax |
+			packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports,
+		Tests: false,
+	}
+	loaded, err := packages.Load(config, ".")
+	if err != nil {
+		t.Fatalf("type-check the db package: %v", err)
+	}
+	if len(loaded) != 1 {
+		t.Fatalf("expected one package, loaded %d", len(loaded))
+	}
+	for _, packageError := range loaded[0].Errors {
+		t.Fatalf("the db package does not type-check: %v", packageError)
+	}
+	return loaded[0]
+}
+
+// userModelField resolves a models.User field to its declaration, so a use is
+// matched by object identity rather than by spelling.
+func userModelField(t *testing.T, pkg *packages.Package, field string) types.Object {
+	t.Helper()
+	models, ok := pkg.Imports["github.com/ovumcy/ovumcy-web/internal/models"]
+	if !ok {
+		t.Fatal("the db package no longer imports internal/models")
+	}
+	user := models.Types.Scope().Lookup("User")
+	if user == nil {
+		t.Fatal("internal/models declares no User")
+	}
+	structure, ok := user.Type().Underlying().(*types.Struct)
+	if !ok {
+		t.Fatal("models.User is not a struct")
+	}
+	for index := 0; index < structure.NumFields(); index++ {
+		if candidate := structure.Field(index); candidate.Name() == field {
+			return candidate
 		}
 	}
-	sort.Strings(missing)
-	if len(missing) > 0 {
-		t.Fatalf("these writers change calendar_feed_selector but never decide the fate of calendar_feed_last_polled_on, so a stale last-checked date could outlive the link it described: %v", missing)
-	}
+	t.Fatalf("models.User has no field %s", field)
+	return nil
 }
 
 func sortedNamesOf(set map[string]bool) []string {

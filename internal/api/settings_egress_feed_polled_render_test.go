@@ -14,7 +14,7 @@ import (
 // present only after a poll actually happened. The three clear-site tests
 // below pin that the card cannot go on showing a date for a link the owner
 // just revoked, rotated, or wiped: db/user_repository_calendar_feed_last_polled_test.go
-// already proves EVERY one of the eight clearing sites at the repository
+// already proves every clearing site at the repository
 // layer; these three cover the ones reachable through this package's own
 // HTTP handlers, end to end through the real render.
 
