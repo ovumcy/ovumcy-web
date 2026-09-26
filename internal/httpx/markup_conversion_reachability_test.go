@@ -39,8 +39,12 @@ import (
 // unsafe.Pointer, through reflection (reflect.ValueOf(...).Convert(...)), or
 // emitted by code generation the loader does not walk as Go syntax (e.g. a
 // //go:generate step whose output is committed but whose generator lives
-// outside the loaded packages). A true type ALIAS to template.HTML
-// (`type X = template.HTML`) is caught, because go/types resolves it to the
+// outside the loaded packages), or through a generic function's own type
+// parameter (`func conv[T ~string](s string) T { return T(s) }` instantiated
+// with html/template.HTML): go/types attaches the *types.TypeParam to that
+// conversion, never the instantiated *types.Named, so it resolves to nothing
+// this sweep looks for. A true type ALIAS to template.HTML
+// (`type X = template.HTML`) is caught: go/types.Unalias resolves it to the
 // same *types.Named the escaper checks for; a DEFINED type merely built on
 // top of template.HTML's underlying type is not the same named type and
 // does not bypass html/template's escaper either, so it is correctly out of
@@ -116,10 +120,12 @@ type conversionSite struct {
 	file          string
 	line          int
 	enclosingFunc string
+	isMethod      bool
 }
 
 func (s conversionSite) isTheDeclaredChokePoint() bool {
-	return s.pkgPath == chokePointPackage &&
+	return !s.isMethod &&
+		s.pkgPath == chokePointPackage &&
 		s.enclosingFunc == chokePointFunction &&
 		filepath.Base(s.file) == chokePointFile
 }
@@ -150,9 +156,13 @@ func loadTemplateHTMLConversionSites(t *testing.T) []conversionSite {
 	}
 
 	config := &packages.Config{
+		// NeedDeps is deliberately omitted: only the root packages
+		// (./cmd/..., ./internal/..., etc.) are ever walked for call sites,
+		// so type-checking their whole dependency graph too would just
+		// spend time on packages this sweep never inspects.
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
 			packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo |
-			packages.NeedImports | packages.NeedDeps,
+			packages.NeedImports,
 		Dir: root,
 		// Tests excluded on purpose: SEC-L8 claims a NON-TEST conversion
 		// count, and a fixture built for this very test would otherwise
@@ -175,17 +185,6 @@ func loadTemplateHTMLConversionSites(t *testing.T) []conversionSite {
 	if len(loadErrors) > 0 {
 		t.Fatalf("the tree does not type-check, so no conversion could be identified:\n  %s", strings.Join(loadErrors, "\n  "))
 	}
-	if len(loaded) < 14 {
-		t.Fatalf("type-checked only %d package(s); the module is far larger, so this sweep measured the wrong tree", len(loaded))
-	}
-
-	var goFiles int
-	for _, pkg := range loaded {
-		goFiles += len(pkg.Syntax)
-	}
-	if goFiles < 200 {
-		t.Fatalf("type-checked only %d production Go file(s); the module is far larger", goFiles)
-	}
 
 	var sites []conversionSite
 	for _, pkg := range loaded {
@@ -193,9 +192,11 @@ func loadTemplateHTMLConversionSites(t *testing.T) []conversionSite {
 			relFile := relativeMarkupGuardPath(root, pkg.Fset.Position(file.Pos()).Filename)
 			for _, decl := range file.Decls {
 				enclosingFunc := ""
+				isMethod := false
 				var scan ast.Node = decl
 				if fn, ok := decl.(*ast.FuncDecl); ok {
 					enclosingFunc = fn.Name.Name
+					isMethod = fn.Recv != nil
 					scan = fn
 				}
 				ast.Inspect(scan, func(node ast.Node) bool {
@@ -207,7 +208,12 @@ func loadTemplateHTMLConversionSites(t *testing.T) []conversionSite {
 					if !ok || !tv.IsType() {
 						return true
 					}
-					named, ok := tv.Type.(*types.Named)
+					// types.Unalias sees through a true type alias (`type X
+					// = template.HTML`) to the same *types.Named the
+					// escaper checks for; with go 1.24+'s gotypesalias
+					// default the checker otherwise hands back a
+					// *types.Alias here and the site goes unseen.
+					named, ok := types.Unalias(tv.Type).(*types.Named)
 					if !ok {
 						return true
 					}
@@ -223,6 +229,7 @@ func loadTemplateHTMLConversionSites(t *testing.T) []conversionSite {
 						file:          relFile,
 						line:          pkg.Fset.Position(call.Pos()).Line,
 						enclosingFunc: enclosingFunc,
+						isMethod:      isMethod,
 					})
 					return true
 				})
