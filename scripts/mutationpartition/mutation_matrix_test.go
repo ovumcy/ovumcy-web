@@ -90,9 +90,8 @@ func parseMatrixSlugs(t *testing.T, path string) []string {
 // declares for each registered package. Neither file constrains the other at
 // build time, and scripts/mutation.sh verify-shards only proves a package's
 // files partition cleanly across its own declared count — it does not read
-// mutation.yml, so dropping a slug from the matrix (as happened to
-// internal_services_14, WEB-78/WEB-79) leaves that shard silently unrun while
-// every other check stays green.
+// mutation.yml, so a slug dropped from the matrix leaves that shard silently
+// unrun while every other check stays green.
 func TestMutationMatrixMatchesShardedPackages(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
