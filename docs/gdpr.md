@@ -32,7 +32,7 @@ The `/privacy` page renders a public-facing privacy notice that states what is s
 
 The full data inventory lives in [`docs/security/data-handling.md`](security/data-handling.md#data-inventory) under "Data Inventory". The short version:
 
-- `users`: identity, password/recovery hashes, cycle preferences, tracking flags, interface language, optional encrypted TOTP secret.
+- `users`: identity, password/recovery hashes, cycle preferences, tracking flags, interface language, optional encrypted TOTP secret, and — once the owner generates a calendar feed — its token columns and the day it was last polled.
 - `daily_logs`: per-day cycle entries, owner-controlled symptoms, free-text notes.
 - `symptom_types`: owner-managed symptom catalogue.
 - `oidc_identities`: federated-login link (only when OIDC is enabled).
