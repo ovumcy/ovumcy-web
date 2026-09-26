@@ -975,11 +975,11 @@ func (repo *UserRepository) SaveCalendarFeedToken(ctx context.Context, userID ui
 		return err
 	}
 	return query.Updates(map[string]any{
-		"calendar_feed_selector":       columns.Selector,
-		"calendar_feed_verifier_hash":  columns.VerifierHash,
-		"calendar_feed_verifier_mac":   columns.VerifierMAC,
-		"calendar_feed_revealed_at":    nil,
-		"calendar_feed_key_epoch":      columns.KeyEpoch,
+		"calendar_feed_selector":      columns.Selector,
+		"calendar_feed_verifier_hash": columns.VerifierHash,
+		"calendar_feed_verifier_mac":  columns.VerifierMAC,
+		"calendar_feed_revealed_at":   nil,
+		"calendar_feed_key_epoch":     columns.KeyEpoch,
 		// A mint/rotate starts a fresh mark for the fresh link: the previous
 		// token's poll history says nothing about whether anyone has polled
 		// THIS one yet, and NULL is the "never successfully polled" state

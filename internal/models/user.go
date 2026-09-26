@@ -305,7 +305,7 @@ type User struct {
 	// the fresh link), ClearCalendarFeedToken (revoke), both bulk disarms,
 	// UpdateRecoveryCodeHashAndRevokeSessions, ForceResetPasswordAndRevokeSessions,
 	// UpdatePasswordRecoveryCodeAndRevokeSessionsCAS, and
-	// ClearAllDataAndResetSettings -- the complete set, pinned by an AST guard
+	// ClearAllDataAndResetSettings -- the complete set, pinned by a type-resolved guard
 	// in calendar_feed_fence_writers_guard_test.go so the date never survives
 	// past the token it was about. Rendered on the settings card and cited by
 	// SECURITY.md's Calendar Feed Subscription rows.

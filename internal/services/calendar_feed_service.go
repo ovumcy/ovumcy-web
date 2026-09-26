@@ -207,12 +207,11 @@ func (service *CalendarFeedService) ResolveFeed(ctx context.Context, token strin
 	//
 	// `today` is anchored to feedLocation's own midnight, not UTC's, so it is
 	// re-canonicalized to the repo's UTC-midnight DATE form (CalendarDay(...,
-	// time.UTC), the same construction Timezones-and-calendar-day arithmetic
-	// asks every date-only stored value to go through) before it is compared
-	// against or written over the stored mark. Comparing `today` itself against
-	// a UTC-anchored `loaded` value would be exactly the location-midnight vs
-	// UTC-midnight mismatch that rule warns against: correct on many days,
-	// silently wrong in every zone on the day the offset crosses midnight.
+	// time.UTC), the one form every date-only stored value is kept in) before
+	// it is compared against or written over the stored mark. Comparing `today`
+	// itself against a UTC-anchored `loaded` value would mix a location's
+	// midnight with UTC's: correct on many days, silently wrong in every zone
+	// on the day the offset crosses midnight.
 	service.markPolled(ctx, user.ID, selector, CalendarDay(today, time.UTC), user.CalendarFeedLastPolledOn)
 	return feed, true, nil
 }
@@ -226,9 +225,9 @@ func (service *CalendarFeedService) ResolveFeed(ctx context.Context, token strin
 // already landed); that is skipped too; the repository's own compare-and-set
 // enforces the same monotonic rule as a second line of defense.
 //
-// The write is best-effort: its error is ignored and never logged, per the
-// approved design (a poll answers the identical 200 whether or not the mark
-// lands, and no failure path ever reaches this call in the first place).
+// The write is best-effort: its error is ignored and never logged, because a
+// poll answers the identical 200 whether or not the mark lands, and no failure
+// path ever reaches this call in the first place.
 func (service *CalendarFeedService) markPolled(ctx context.Context, userID uint, selector string, day time.Time, loaded *time.Time) {
 	if loaded != nil && !loaded.Before(day) {
 		return

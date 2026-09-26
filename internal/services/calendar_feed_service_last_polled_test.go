@@ -42,8 +42,8 @@ func TestResolveFeedMarksThePollUnderTheOwnersDayAtUTCPlus14(t *testing.T) {
 // TestResolveFeedMarksThePollUnderTheOwnersDayAtUTCMinus11 is the west-of-UTC
 // boundary: at 2026-03-11 09:00 UTC the owner (Pacific/Pago_Pago, UTC-11) is
 // still on 2026-03-10, a day the UTC clock has already left behind. This is
-// the direction .In(loc) style shifts get wrong in the OTHER test class
-// (view-layer rendering); here it pins that ResolveFeed's own day resolution
+// the direction .In(loc) style shifts get wrong in view-layer rendering;
+// here it pins that ResolveFeed's own day resolution
 // (which the mark reuses verbatim) gets it right.
 func TestResolveFeedMarksThePollUnderTheOwnersDayAtUTCMinus11(t *testing.T) {
 	owner, token := armedFeedUser(t, 72, "2026-02-25")
@@ -63,8 +63,8 @@ func TestResolveFeedMarksThePollUnderTheOwnersDayAtUTCMinus11(t *testing.T) {
 	}
 }
 
-// TestResolveFeedSkipsTheMarkWriteWhenTheLoadedRowAlreadyHoldsToday pins the
-// design constraint that a repeated poll the same owner-day must not cost a
+// TestResolveFeedSkipsTheMarkWriteWhenTheLoadedRowAlreadyHoldsToday pins
+// that a repeated poll the same owner-day must not cost a
 // DB write: the row loaded by FindByCalendarFeedSelector already carries
 // today's date, so ResolveFeed must not even ATTEMPT the write.
 func TestResolveFeedSkipsTheMarkWriteWhenTheLoadedRowAlreadyHoldsToday(t *testing.T) {
@@ -133,7 +133,7 @@ func TestResolveFeedMarksAPre032RowInTheSameRequestItBackfills(t *testing.T) {
 }
 
 // TestResolveFeedWritesNoMarkOnAnyFailureOrRefusalPath is the completeness
-// sweep the design constraint needs from the other side: the mark write must
+// sweep from the other side: the mark write must
 // never be reached unless BuildCalendarFeedICS actually ran.
 func TestResolveFeedWritesNoMarkOnAnyFailureOrRefusalPath(t *testing.T) {
 	original := equalizeCalendarFeedTiming
