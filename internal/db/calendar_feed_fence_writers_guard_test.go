@@ -379,7 +379,7 @@ func userModelField(t *testing.T, pkg *packages.Package, field string) types.Obj
 	if !ok {
 		t.Fatal("models.User is not a struct")
 	}
-	for index := 0; index < structure.NumFields(); index++ {
+	for index := range structure.NumFields() {
 		if candidate := structure.Field(index); candidate.Name() == field {
 			return candidate
 		}
