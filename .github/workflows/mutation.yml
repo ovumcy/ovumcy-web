@@ -27,7 +27,7 @@ jobs:
     # ever got a turn. Splitting also improves wall-clock via parallelism.
     #
     # internal/api and internal/services are each additionally split into
-    # file-subset shards (14 and 10). internal/api first (issue #161): a single unsharded
+    # file-subset shards (14 each). internal/api first (issue #161): a single unsharded
     # internal_api run (manual dispatch 28741574692, job 85225182461) was killed
     # at the 3h0m0s hard cap, having reached only ~85% of the package's files at
     # a steady, non-decelerating mutant rate. internal/services followed
@@ -43,7 +43,9 @@ jobs:
     # and each shard excludes every file not in its group. The counts come
     # from the 2026-08-31..09-21 runs, in which 5 shards left every
     # internal/api cell at this timeout with 52-96% of its files reached;
-    # the arithmetic is beside SHARDED_PKGS in scripts/mutation.sh.
+    # internal/services grew from 10 to 14 the same way, after run 36138463409
+    # (2026-09-25) cancelled internal_services_6 and _7 at this cap — the
+    # arithmetic for both is beside SHARDED_PKGS in scripts/mutation.sh.
     # This is a hang guard, not a runtime target — the job is advisory
     # (continue-on-error below) regardless.
     timeout-minutes: 180
@@ -51,7 +53,7 @@ jobs:
       contents: read
     strategy:
       fail-fast: false
-      # 25 cells, but never more runners at once than the 11 this job held
+      # 29 cells, but never more runners at once than the 11 this job held
       # before the split: a weekly advisory job must not take the whole
       # concurrent-job allowance from the pull requests and the merge queue.
       max-parallel: 11
@@ -67,6 +69,10 @@ jobs:
           - slug: internal_services_8
           - slug: internal_services_9
           - slug: internal_services_10
+          - slug: internal_services_11
+          - slug: internal_services_12
+          - slug: internal_services_13
+          - slug: internal_services_14
           - slug: internal_security
           - slug: internal_api_1
           - slug: internal_api_2
