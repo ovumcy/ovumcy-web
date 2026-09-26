@@ -296,7 +296,7 @@ type User struct {
 	// < the day)), called synchronously after ResolveFeed builds a successful
 	// feed body and skipped outright when the loaded row already holds today
 	// -- so a calendar client polling every few minutes costs at most one
-	// UPDATE per owner-day. Its error is ignored and never logged: the feed
+	// UPDATE per owner-day. Its error is ignored and not logged by the app: the feed
 	// answers the identical 200 whether or not the mark lands, and no failure
 	// path (404, 500) ever reaches this write.
 	//
