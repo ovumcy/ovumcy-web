@@ -340,6 +340,7 @@
   "settings.error.delete_account_failed": "Impossibile eliminare l'account. Riprova.",
   "settings.error.password_secure_failed": "Impossibile proteggere la tua nuova password. Non è stato modificato nulla. Riprova.",
   "settings.error.password_update_failed": "Impossibile salvare la tua nuova password. Non è stato modificato nulla. Riprova.",
+  "settings.error.password_changed_sign_in_again": "La tua password è stata modificata. Accedi di nuovo con la tua nuova password.",
   "settings.symptoms.error.name_required": "Inserisci un nome per il sintomo.",
   "settings.symptoms.error.name_too_long": "Usa al massimo 40 caratteri. Per dettagli più lunghi, usa le note.",
   "settings.symptoms.error.invalid_characters": "Usa solo testo semplice. Tag e parentesi angolari non sono consentiti.",
@@ -852,6 +853,8 @@
   "error.totp_session_expired": "La tua sessione di accesso è scaduta. Accedi di nuovo.",
   "error.totp_internal_error": "Si è verificato un errore. Riprova.",
   "error.totp_too_many_attempts": "Troppi tentativi. Attendi e riprova.",
+  "error.totp_enabled_sign_in_again": "L'autenticazione a due fattori è stata attivata. Accedi di nuovo per continuare.",
+  "error.totp_disabled_sign_in_again": "L'autenticazione a due fattori è stata disattivata. Accedi di nuovo per continuare.",
 
   "common.back_to_settings": "Torna alle impostazioni"
 }

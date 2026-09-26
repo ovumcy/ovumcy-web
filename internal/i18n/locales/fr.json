@@ -371,6 +371,7 @@
   "settings.error.delete_account_failed": "Impossible de supprimer le compte. Veuillez réessayer.",
   "settings.error.password_secure_failed": "Impossible de sécuriser votre nouveau mot de passe. Rien n'a été modifié. Veuillez réessayer.",
   "settings.error.password_update_failed": "Impossible d'enregistrer votre nouveau mot de passe. Rien n'a été modifié. Veuillez réessayer.",
+  "settings.error.password_changed_sign_in_again": "Votre mot de passe a été modifié. Veuillez vous reconnecter avec votre nouveau mot de passe.",
 
   "settings.symptoms.error.name_required": "Saisissez un nom de symptôme.",
   "settings.symptoms.error.name_too_long": "Utilisez 40 caractères ou moins. Pour plus de détails, utilisez les notes.",
@@ -900,6 +901,8 @@
   "error.totp_session_expired": "Votre session de connexion a expiré. Veuillez vous reconnecter.",
   "error.totp_internal_error": "Une erreur est survenue. Veuillez réessayer.",
   "error.totp_too_many_attempts": "Trop de tentatives. Veuillez patienter et réessayer.",
+  "error.totp_enabled_sign_in_again": "L'authentification à deux facteurs a été activée. Veuillez vous reconnecter pour continuer.",
+  "error.totp_disabled_sign_in_again": "L'authentification à deux facteurs a été désactivée. Veuillez vous reconnecter pour continuer.",
 
   "common.back_to_settings": "Retour aux paramètres"
 }

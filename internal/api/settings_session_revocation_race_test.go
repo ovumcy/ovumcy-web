@@ -1,9 +1,11 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -119,11 +121,22 @@ type revokingWriteSite struct {
 	// through refreshCurrentSession once its write committed, so a failed
 	// re-issue leaves it signed out with the change in place.
 	reissuesAfterCommit bool
+	// reissueFailureSpec is the spec a reissuesAfterCommit site answers with
+	// when the write committed but the reissue itself failed (WEB-85): the
+	// change already landed, so it is never authSessionCreateErrorSpec.
+	// nil for a site that is not reissuesAfterCommit.
+	reissueFailureSpec func() APIErrorSpec
+	// securityEventAction/securityEventOutcome name the audit line a
+	// reissuesAfterCommit site's write logs BEFORE the reissue attempt
+	// (precedent: "unlinked" before UnlinkOIDCIdentity's reissue), so a failed
+	// reissue must still show the event as having fired.
+	securityEventAction  string
+	securityEventOutcome string
 }
 
 func revokingWriteSettingsContext(t *testing.T, email string, hooks *revokingWriteHooks) settingsSecurityTestContext {
 	t.Helper()
-	return newSettingsSecurityTestContextWithOptions(t, email, onboardingTestAppOptions{enableCSRF: true, revokingWrites: hooks, sessionIssuanceFault: hooks.sessionIssuanceFault})
+	return newSettingsSecurityTestContextWithOptions(t, email, onboardingTestAppOptions{enableCSRF: true, auditLogEnabled: true, revokingWrites: hooks, sessionIssuanceFault: hooks.sessionIssuanceFault})
 }
 
 func settingsRevokingWriteRun(t *testing.T, ctx settingsSecurityTestContext, method string, path string, form url.Values, extraCookie string, htmx bool) revokingWriteRun {
@@ -173,8 +186,11 @@ func settingsPostureRevokingWriteSites(htmx bool) []revokingWriteSite {
 	}
 	return []revokingWriteSite{
 		{
-			name:                "password change" + suffix,
-			reissuesAfterCommit: true,
+			name:                 "password change" + suffix,
+			reissuesAfterCommit:  true,
+			reissueFailureSpec:   passwordChangedSignInAgainErrorSpec,
+			securityEventAction:  "auth.password_change",
+			securityEventOutcome: "success",
 			prepare: func(t *testing.T, hooks *revokingWriteHooks) revokingWriteRun {
 				ctx := revokingWriteSettingsContext(t, "race-password-change"+tag+"@example.com", hooks)
 				return settingsRevokingWriteRun(t, ctx, http.MethodPut, "/api/v1/users/current/password", url.Values{
@@ -198,8 +214,11 @@ func settingsPostureRevokingWriteSites(htmx bool) []revokingWriteSite {
 			},
 		},
 		{
-			name:                "TOTP enrollment" + suffix,
-			reissuesAfterCommit: true,
+			name:                 "TOTP enrollment" + suffix,
+			reissuesAfterCommit:  true,
+			reissueFailureSpec:   totpEnabledSignInAgainErrorSpec,
+			securityEventAction:  "settings.2fa.verify",
+			securityEventOutcome: "enabled",
 			prepare: func(t *testing.T, hooks *revokingWriteHooks) revokingWriteRun {
 				ctx := revokingWriteSettingsContext(t, "race-totp-enable"+tag+"@example.com", hooks)
 				key, err := getTOTPServiceForTest(ctx.database).GenerateSetupKey("Ovumcy", ctx.user.Email)
@@ -219,8 +238,11 @@ func settingsPostureRevokingWriteSites(htmx bool) []revokingWriteSite {
 			},
 		},
 		{
-			name:                "TOTP disable" + suffix,
-			reissuesAfterCommit: true,
+			name:                 "TOTP disable" + suffix,
+			reissuesAfterCommit:  true,
+			reissueFailureSpec:   totpDisabledSignInAgainErrorSpec,
+			securityEventAction:  "settings.2fa.disable",
+			securityEventOutcome: "disabled",
 			prepare: func(t *testing.T, hooks *revokingWriteHooks) revokingWriteRun {
 				ctx := revokingWriteSettingsContext(t, "race-totp-disable"+tag+"@example.com", hooks)
 				if err := getTOTPServiceForTest(ctx.database).EnableTOTP(context.Background(), ctx.user.ID, ctx.user.AuthSessionVersion, "JBSWY3DPEHPK3PXP"); err != nil {
@@ -417,16 +439,21 @@ func TestSettingsRevokingWritesRefuseASessionARevocationCommittedMidwayWouldNotR
 // client keeps the mapped envelope, an HTMX form is sent to /login with the
 // refusal on the auth flash channel. The fault is armed after prepare, whose
 // own sign-in must still succeed.
+//
+// Each site answers its OWN reissueFailureSpec rather than the generic
+// authSessionCreateErrorSpec (WEB-85): the write committed, so "failed to
+// create session"/"failed to ... " would be false, and the site's own
+// "... sign in again" key says so. The security event each site's write logs
+// (enabled/disabled/success) is asserted too, over the audit stream captured
+// around the request — which is why this test and its subtests do not call
+// t.Parallel(): the stream is the package-wide *log.Logger, and asserting on
+// it races against any OTHER test writing through it concurrently.
 func TestSettingsPostureReissueFailureAnswersSignedOut(t *testing.T) {
-	t.Parallel()
-
 	for _, site := range append(settingsPostureRevokingWriteSites(false), settingsPostureRevokingWriteSites(true)...) {
 		if !site.reissuesAfterCommit {
 			continue
 		}
 		t.Run(site.name, func(t *testing.T) {
-			t.Parallel()
-
 			var armed atomic.Bool
 			hooks := &revokingWriteHooks{sessionIssuanceFault: func() error {
 				if armed.Load() {
@@ -438,25 +465,29 @@ func TestSettingsPostureReissueFailureAnswersSignedOut(t *testing.T) {
 			effectBefore := site.effect(t, run.database, run.userID)
 
 			armed.Store(true)
+			originalWriter := log.Writer()
+			var auditOutput bytes.Buffer
+			log.SetOutput(&auditOutput)
 			response := run.send()
+			log.SetOutput(originalWriter)
 
 			// Anti-vacuity: the write committed, so the refusal can only have
 			// come from the re-issue after it.
 			if effectAfter := site.effect(t, run.database, run.userID); effectAfter == effectBefore {
 				t.Fatalf("expected the write to commit before the re-issue failed, stored value unchanged: %s", effectAfter)
 			}
-			assertRevokedMidwayRefusal(t, run, response)
+			assertMappedRefusal(t, run, response, site.reissueFailureSpec())
+			assertSecurityEventNamesActor(t, auditOutput.String(), site.securityEventAction, site.securityEventOutcome, run.userID)
 		})
 	}
 }
 
-// assertRevokedMidwayRefusal pins the refusal a revoked-midway request gets:
-// authSessionCreateErrorSpec, and a cleared auth cookie that opens nothing. A
-// page-bound answer lands on /login on the auth channel — the cleared cookie
-// would bounce /settings there anyway and drop a settings flash on the way.
-func assertRevokedMidwayRefusal(t *testing.T, run revokingWriteRun, response *http.Response) {
+// assertMappedRefusal pins the refusal a signed-out-mid-request answers with:
+// the given spec, and a cleared auth cookie that opens nothing. A page-bound
+// answer lands on /login on the auth channel — the cleared cookie would bounce
+// /settings there anyway and drop a settings flash on the way.
+func assertMappedRefusal(t *testing.T, run revokingWriteRun, response *http.Response, spec APIErrorSpec) {
 	t.Helper()
-	spec := authSessionCreateErrorSpec()
 	if run.flash || run.htmx {
 		assertSignedOutRefusal(t, response, spec.Key, run.htmx)
 	} else {
@@ -468,25 +499,23 @@ func assertRevokedMidwayRefusal(t *testing.T, run revokingWriteRun, response *ht
 	assertAuthCookieCleared(t, run.app, response)
 }
 
-// assertIdentityChangeAppliedRefusal is assertRevokedMidwayRefusal's
-// counterpart for reissueSessionAfterIdentityChange's OTHER refusal: the link
-// or unlink (or its no-op already-linked confirmation) has already gone
-// through by the time a separate revocation's version wins the reload, so
-// "failed to create session" would be false. Page-bound answers land on /login
-// on the auth channel, exactly as assertRevokedMidwayRefusal's do; a JSON caller
-// gets the mapped envelope.
+// assertRevokedMidwayRefusal is assertMappedRefusal pinned to
+// authSessionCreateErrorSpec, for the sites whose write itself was refused by
+// a revocation that raced it (nothing committed, unlike the reissue-only
+// failures above).
+func assertRevokedMidwayRefusal(t *testing.T, run revokingWriteRun, response *http.Response) {
+	t.Helper()
+	assertMappedRefusal(t, run, response, authSessionCreateErrorSpec())
+}
+
+// assertIdentityChangeAppliedRefusal is assertMappedRefusal's counterpart for
+// reissueSessionAfterIdentityChange's OTHER refusal: the link or unlink (or
+// its no-op already-linked confirmation) has already gone through by the time
+// a separate revocation's version wins the reload, so "failed to create
+// session" would be false.
 func assertIdentityChangeAppliedRefusal(t *testing.T, run revokingWriteRun, response *http.Response) {
 	t.Helper()
-	spec := authIdentityChangeAppliedSignInAgainErrorSpec()
-	if run.flash || run.htmx {
-		assertSignedOutRefusal(t, response, spec.Key, run.htmx)
-	} else {
-		body := mustReadBodyString(t, response.Body)
-		if response.StatusCode != spec.Status || !strings.Contains(body, spec.Key) {
-			t.Fatalf("expected %d %q, got %d: %s", spec.Status, spec.Key, response.StatusCode, body)
-		}
-	}
-	assertAuthCookieCleared(t, run.app, response)
+	assertMappedRefusal(t, run, response, authIdentityChangeAppliedSignInAgainErrorSpec())
 }
 
 func assertAuthCookieCleared(t *testing.T, app *fiber.App, response *http.Response) {

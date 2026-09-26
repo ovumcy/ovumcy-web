@@ -51,18 +51,25 @@ func (handler *Handler) ChangePassword(c fiber.Ctx) error {
 		return handler.respondPasswordChangeError(c, err)
 	}
 
-	if spec, ok := handler.refreshPasswordChangeSession(c, user); !ok {
+	// Logged before the reissue attempt below: ChangePassword has already
+	// committed, so the event is true either way (precedent: "unlinked" before
+	// UnlinkOIDCIdentity's reissue).
+	handler.logSecurityEvent(c, "auth.password_change", "success")
+	if _, ok := handler.refreshPasswordChangeSession(c, user); !ok {
 		// The auth cookie is already cleared, so the refusal goes out on the
 		// signed-out channel; returning is what makes it the answer, since
 		// respondPasswordChanged below would otherwise write `{"ok":true}` over it.
+		// The change already committed, so the caller is told to sign in again
+		// (with the new password) rather than that it failed;
+		// refreshCurrentSession still logs authSessionCreateErrorSpec internally
+		// under this scope.
 		//
 		// codecov:ignore:start -- owner-only route behind AuthRequired, so only
 		// the AEAD seal error is left and no request-shaped input provokes it.
-		return handler.respondSignedOutRefusal(c, spec)
+		return handler.respondSignedOutRefusal(c, passwordChangedSignInAgainErrorSpec())
 		// codecov:ignore:end
 	}
 
-	handler.logSecurityEvent(c, "auth.password_change", "success")
 	return handler.respondPasswordChanged(c)
 }
 

@@ -184,6 +184,26 @@ func authIdentityChangeAppliedSignInAgainErrorSpec() APIErrorSpec {
 	return authFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "identity change applied sign in again")
 }
 
+// totpEnabledSignInAgainErrorSpec answers a TOTP enrollment whose EnableTOTP
+// write (the encrypted secret and the AuthSessionVersion bump) already
+// committed but whose session could not be re-issued afterward. Same
+// reasoning as authIdentityChangeAppliedSignInAgainErrorSpec above: the
+// enrollment went through, so "failed to create session" would be false, and
+// 401 says the right next step is signing in again, since the caller has
+// already cleared the cookie. Built with authFormErrorSpec rather than
+// settingsFormErrorSpec, matching totpInvalidCodeErrorSpec and its siblings on
+// the same VerifyTOTP2FAEnrollment route.
+func totpEnabledSignInAgainErrorSpec() APIErrorSpec {
+	return authFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "two factor enabled sign in again")
+}
+
+// totpDisabledSignInAgainErrorSpec is totpEnabledSignInAgainErrorSpec's
+// counterpart for DisableTOTP2FA: the disable already committed, only the
+// follow-up re-issue failed.
+func totpDisabledSignInAgainErrorSpec() APIErrorSpec {
+	return authFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "two factor disabled sign in again")
+}
+
 func authSessionRevokeErrorSpec() APIErrorSpec {
 	return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to revoke session")
 }

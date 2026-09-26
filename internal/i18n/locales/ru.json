@@ -340,6 +340,7 @@
   "settings.error.delete_account_failed": "Не удалось удалить аккаунт. Пожалуйста, попробуйте ещё раз.",
   "settings.error.password_secure_failed": "Не удалось защитить новый пароль. Ничего не изменилось. Пожалуйста, попробуйте ещё раз.",
   "settings.error.password_update_failed": "Не удалось сохранить новый пароль. Ничего не изменилось. Пожалуйста, попробуйте ещё раз.",
+  "settings.error.password_changed_sign_in_again": "Ваш пароль был изменён. Пожалуйста, войдите снова с новым паролем.",
   "settings.symptoms.error.name_required": "Укажите название симптома.",
   "settings.symptoms.error.name_too_long": "Не больше 40 символов. Для длинных описаний используйте заметки.",
   "settings.symptoms.error.invalid_characters": "Допустим только обычный текст без тегов и угловых скобок.",
@@ -867,6 +868,8 @@
   "error.totp_session_expired": "Сессия входа истекла. Пожалуйста, войдите снова.",
   "error.totp_internal_error": "Что-то пошло не так. Попробуйте ещё раз.",
   "error.totp_too_many_attempts": "Слишком много попыток. Пожалуйста, подождите и попробуйте снова.",
+  "error.totp_enabled_sign_in_again": "Двухфакторная аутентификация была включена. Пожалуйста, войдите снова, чтобы продолжить.",
+  "error.totp_disabled_sign_in_again": "Двухфакторная аутентификация была отключена. Пожалуйста, войдите снова, чтобы продолжить.",
 
   "common.back_to_settings": "Назад к настройкам"
 }

@@ -340,6 +340,7 @@
   "settings.error.delete_account_failed": "Could not delete the account. Please try again.",
   "settings.error.password_secure_failed": "Could not secure your new password. Nothing was changed. Please try again.",
   "settings.error.password_update_failed": "Could not save your new password. Nothing was changed. Please try again.",
+  "settings.error.password_changed_sign_in_again": "Your password was changed. Please sign in again with your new password.",
   "settings.symptoms.error.name_required": "Enter a symptom name.",
   "settings.symptoms.error.name_too_long": "Use 40 characters or fewer. For longer details, use notes.",
   "settings.symptoms.error.invalid_characters": "Use plain text only. Tags and angle brackets are not allowed.",
@@ -852,6 +853,8 @@
   "error.totp_session_expired": "Your login session expired. Please sign in again.",
   "error.totp_internal_error": "Something went wrong. Please try again.",
   "error.totp_too_many_attempts": "Too many attempts. Please wait and try again.",
+  "error.totp_enabled_sign_in_again": "Two-factor authentication was enabled. Please sign in again to continue.",
+  "error.totp_disabled_sign_in_again": "Two-factor authentication was disabled. Please sign in again to continue.",
 
   "common.back_to_settings": "Back to settings"
 }
