@@ -250,7 +250,7 @@ func uniformRateLimits(t *testing.T, budget int, window time.Duration) rateLimit
 func newScopeGuardApp(t *testing.T, handler *api.Handler) *fiber.App {
 	t.Helper()
 
-	app := fiber.New(fiberConfig(proxySettings{}))
+	app := fiber.New(fiberConfig(proxySettings{}, handler))
 	configureFiberMiddleware(app, runtimeConfig{
 		RateLimits: uniformRateLimits(t, scopeGuardBudget, time.Minute),
 	}, handler)
@@ -389,7 +389,7 @@ func TestScopedRateLimitersCoverEveryRoutableSpellingOfTheirPath(t *testing.T) {
 func TestFiberRoutesEveryScopedLimiterPathSpellingToItsOwnRoute(t *testing.T) {
 	specs := discoverScopedLimiterSpecs(t)
 
-	app := fiber.New(fiberConfig(proxySettings{}))
+	app := fiber.New(fiberConfig(proxySettings{}, nil))
 	var observedPath string
 	app.Use(func(c fiber.Ctx) error {
 		observedPath = c.Path()

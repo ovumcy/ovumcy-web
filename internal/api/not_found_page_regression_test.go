@@ -198,12 +198,13 @@ func TestNotFoundHTMXPathReturnsLocalizedStatusErrorMarkup(t *testing.T) {
 func TestNotFoundHTMXNeverLeaksRawTitleKeyWhenTranslationMissing(t *testing.T) {
 	t.Parallel()
 
+	handler := &Handler{}
 	app := fiber.New()
 	app.Get("/probe", func(c fiber.Ctx) error {
 		// Empty catalog => translateMessage returns the key verbatim, forcing the
 		// human-fallback branch.
 		c.Locals(contextMessagesKey, map[string]string{})
-		return respondNotFoundMappedError(c)
+		return handler.respondNotFoundMappedError(c)
 	})
 
 	request := httptest.NewRequest(http.MethodGet, "/probe", nil)

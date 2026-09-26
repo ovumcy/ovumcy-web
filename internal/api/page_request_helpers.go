@@ -29,10 +29,10 @@ func (handler *Handler) currentUserOrRedirectToLogin(c fiber.Ctx) (*models.User,
 	return user, false, nil
 }
 
-func currentUserOrUnauthorized(c fiber.Ctx) (*models.User, bool, error) {
+func (handler *Handler) currentUserOrUnauthorized(c fiber.Ctx) (*models.User, bool, error) {
 	user, ok := currentUser(c)
 	if !ok {
-		if sendErr := respondGlobalMappedError(c, unauthorizedErrorSpec()); sendErr != nil {
+		if sendErr := handler.respondGlobalMappedError(c, unauthorizedErrorSpec()); sendErr != nil {
 			return nil, false, sendErr
 		}
 		return nil, true, nil

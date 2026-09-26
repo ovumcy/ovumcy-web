@@ -64,7 +64,7 @@ var transportEnvelopeStatuses = map[int]transportEnvelopeExpectation{
 // added to the mapped table later inherits the assertion by being named here;
 // one that is never added is still covered by the two fallback rows.
 func TestOvumcyErrorHandlerEnvelopesEveryFiberErrorStatus(t *testing.T) {
-	app := fiber.New(fiber.Config{ErrorHandler: ovumcyErrorHandler})
+	app := fiber.New(fiber.Config{ErrorHandler: newOvumcyErrorHandler(newRateLimitTestHandler(t))})
 	app.Get("/probe/:status", func(c fiber.Ctx) error {
 		status, err := strconv.Atoi(c.Params("status"))
 		if err != nil {

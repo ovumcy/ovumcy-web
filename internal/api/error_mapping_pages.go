@@ -60,7 +60,7 @@ func statsFetchErrorSpec() APIErrorSpec {
 	return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to fetch stats")
 }
 
-func respondNotFoundMappedError(c fiber.Ctx) error {
+func (handler *Handler) respondNotFoundMappedError(c fiber.Ctx) error {
 	spec := notFoundErrorSpec()
 	if isHTMX(c) {
 		message, translated := lookupMessage(currentMessages(c), "not_found.title")
@@ -69,5 +69,5 @@ func respondNotFoundMappedError(c fiber.Ctx) error {
 		}
 		return sendHTMLFragment(c.Status(spec.Status), httpx.StatusErrorMarkup(message, "not_found.title"))
 	}
-	return respondGlobalMappedError(c, spec)
+	return handler.respondGlobalMappedError(c, spec)
 }

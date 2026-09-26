@@ -69,9 +69,10 @@ func TestCurrentUserOrUnauthorizedWhenMissing(t *testing.T) {
 	t.Parallel()
 
 	var observedHandled bool
+	handler := &Handler{}
 	app := fiber.New()
 	app.Get("/", func(c fiber.Ctx) error {
-		_, handled, err := currentUserOrUnauthorized(c)
+		_, handled, err := handler.currentUserOrUnauthorized(c)
 		observedHandled = handled
 		return err
 	})

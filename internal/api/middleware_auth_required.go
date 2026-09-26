@@ -21,13 +21,13 @@ func (handler *Handler) AuthRequired(c fiber.Ctx) error {
 		if errors.Is(err, services.ErrAuthUnsupportedRole) {
 			spec := authWebSignInUnavailableErrorSpec()
 			if strings.HasPrefix(httpx.RoutingNormalizedPath(c.Path()), "/api/") || acceptsJSON(c) {
-				return respondGlobalMappedError(c, spec)
+				return handler.respondGlobalMappedError(c, spec)
 			}
 			handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 		}
 		if strings.HasPrefix(httpx.RoutingNormalizedPath(c.Path()), "/api/") || acceptsJSON(c) {
-			return respondGlobalMappedError(c, unauthorizedErrorSpec())
+			return handler.respondGlobalMappedError(c, unauthorizedErrorSpec())
 		}
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
@@ -37,7 +37,7 @@ func (handler *Handler) AuthRequired(c fiber.Ctx) error {
 		path := httpx.RoutingNormalizedPath(c.Path())
 		if services.ShouldEnforceOnboardingAccess(path) {
 			if strings.HasPrefix(path, "/api/") || acceptsJSON(c) {
-				return respondGlobalMappedError(c, onboardingRequiredErrorSpec())
+				return handler.respondGlobalMappedError(c, onboardingRequiredErrorSpec())
 			}
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/onboarding")
 		}

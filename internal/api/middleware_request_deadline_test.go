@@ -20,7 +20,7 @@ import (
 // for a database connection underneath it.
 func TestRequestDeadlineGuardThreadsADeadlineToTheHandler(t *testing.T) {
 	app := fiber.New()
-	app.Use(RequestDeadlineGuard(RequestBudget))
+	app.Use(RequestDeadlineGuard(RequestBudget, &Handler{}))
 
 	var (
 		sawDeadline bool
@@ -156,7 +156,7 @@ func TestRegisterRoutesMountsTheDeadlineGuardDownToTheRepository(t *testing.T) {
 func TestRequestDeadlineGuardRefusesToBeUnbounded(t *testing.T) {
 	for _, budget := range []time.Duration{0, -time.Second} {
 		app := fiber.New()
-		app.Use(RequestDeadlineGuard(budget))
+		app.Use(RequestDeadlineGuard(budget, &Handler{}))
 
 		var remaining time.Duration
 		hadDeadline := false
@@ -192,7 +192,7 @@ func TestRequestDeadlineGuardRefusesToBeUnbounded(t *testing.T) {
 // broken".
 func TestRequestDeadlineGuardAnswersAnExpiredBudgetAsMappedUnavailable(t *testing.T) {
 	app := fiber.New()
-	app.Use(RequestDeadlineGuard(time.Millisecond))
+	app.Use(RequestDeadlineGuard(time.Millisecond, &Handler{}))
 	app.Get("/slow", func(c fiber.Ctx) error {
 		// Stand in for a repository call that outlives the budget: block on the
 		// request context exactly as database/sql does while waiting for a free
@@ -259,7 +259,7 @@ func TestRequestDeadlineGuardDiscardsTheHandlerResponseOnAnExpiredBudget(t *test
 		c.Cookie(&fiber.Cookie{Name: "ovumcy_csrf", Value: "middleware-issued"})
 		return c.Next()
 	})
-	app.Use(RequestDeadlineGuard(time.Millisecond))
+	app.Use(RequestDeadlineGuard(time.Millisecond, &Handler{}))
 	app.Get("/slow", func(c fiber.Ctx) error {
 		// A handler whose work has already committed — the session is issued and
 		// the post-sign-in redirect prepared — and only then does the budget run

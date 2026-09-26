@@ -243,8 +243,9 @@ func TestRequestTooLargeErrorSpecIsCanonical(t *testing.T) {
 // client receives the shared status-error fragment carrying the stable key.
 func TestRespondRequestEntityTooLargeNegotiatesFormat(t *testing.T) {
 	t.Run("json envelope", func(t *testing.T) {
+		handler := &Handler{}
 		app := fiber.New()
-		app.Post("/probe", RespondRequestEntityTooLarge)
+		app.Post("/probe", handler.RespondRequestEntityTooLarge)
 
 		request := httptest.NewRequest(http.MethodPost, "/probe", strings.NewReader("{}"))
 		request.Header.Set("Content-Type", "application/json")
@@ -279,8 +280,9 @@ func TestRespondRequestEntityTooLargeNegotiatesFormat(t *testing.T) {
 	})
 
 	t.Run("htmx status fragment", func(t *testing.T) {
+		handler := &Handler{i18n: newRateLimitResponderTestI18n(t)}
 		app := fiber.New()
-		app.Post("/probe", RespondRequestEntityTooLarge)
+		app.Post("/probe", handler.RespondRequestEntityTooLarge)
 
 		request := httptest.NewRequest(http.MethodPost, "/probe", strings.NewReader("{}"))
 		request.Header.Set("HX-Request", "true")
@@ -300,11 +302,18 @@ func TestRespondRequestEntityTooLargeNegotiatesFormat(t *testing.T) {
 		// The flash key is the RESOLVED i18n key, not the spec key: it is what a
 		// surface asserts on and what a localized rendering keys off. This app
 		// carries no request-scoped messages — the early-path case the exported
-		// responder is built for — so the visible text still falls back to the
-		// machine key while the hook already points at real copy.
+		// responder is built for — but RespondRequestEntityTooLarge resolves the
+		// catalogue itself (apiError -> ensureRequestMessages) before rendering,
+		// so the visible text is the real English copy rather than a fallback to
+		// the machine key (WEB-86).
+		expected := newRateLimitResponderTestI18n(t).Messages(i18n.LangEN)["common.error.request_too_large"]
+		if strings.TrimSpace(expected) == "" {
+			t.Fatal("locale en defines no common.error.request_too_large")
+		}
 		assertBodyContainsAll(t, string(body),
 			bodyStringMatch{fragment: `class="status-error"`, message: "expected shared status-error wrapper for HTMX 413"},
 			bodyStringMatch{fragment: `data-flash-key="common.error.request_too_large"`, message: "expected the resolved i18n key on the HTMX 413 fragment"},
+			bodyStringMatch{fragment: expected, message: "expected the localized request-too-large sentence, not the raw machine key"},
 		)
 	})
 }

@@ -131,7 +131,7 @@ func TestRateLimitKeyGeneratorBucketing(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			app := fiber.New(fiberConfig(tc.proxy))
+			app := fiber.New(fiberConfig(tc.proxy, nil))
 			app.Use(limiter.New(limiter.Config{
 				Max:          maxReqs,
 				Expiration:   time.Minute,

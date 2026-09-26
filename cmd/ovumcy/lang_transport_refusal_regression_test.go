@@ -14,6 +14,7 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/csrf"
 	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/ovumcy/ovumcy-web/internal/api"
+	"github.com/ovumcy/ovumcy-web/internal/i18n"
 )
 
 type languageSwitchRefusal struct {
@@ -68,7 +69,9 @@ func requireLanguageSwitchPage(t *testing.T, where string, answer languageSwitch
 // into the window. A JSON caller keeps the envelope, and another method on the
 // same path is an unrouted request like any other. WEB-71.
 func TestLanguageSwitchTransportRefusalsAnswerThePage(t *testing.T) {
-	faulty := fiber.New(fiberConfig(proxySettings{}))
+	handler := newRateLimitTestHandler(t)
+
+	faulty := fiber.New(fiberConfig(proxySettings{}, handler))
 	faulty.Use(recover.New())
 	faulty.Post(api.LanguageSwitchPath, func(fiber.Ctx) error {
 		panic("language switch fault")
@@ -80,8 +83,8 @@ func TestLanguageSwitchTransportRefusalsAnswerThePage(t *testing.T) {
 		})
 	}
 
-	slow := fiber.New(fiberConfig(proxySettings{}))
-	slow.Post(api.LanguageSwitchPath, api.RequestDeadlineGuard(time.Millisecond), func(c fiber.Ctx) error {
+	slow := fiber.New(fiberConfig(proxySettings{}, handler))
+	slow.Post(api.LanguageSwitchPath, api.RequestDeadlineGuard(time.Millisecond, handler), func(c fiber.Ctx) error {
 		<-c.Context().Done()
 		return nil
 	})
@@ -147,7 +150,7 @@ func TestLanguageSwitchRefusalsReachTheRequestLog(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			var logged bytes.Buffer
-			app := fiber.New(fiberConfig(proxySettings{}))
+			app := fiber.New(fiberConfig(proxySettings{}, handler))
 			app.Use(newRequestLogger(&logged))
 			app.Use(handler.LanguageMiddleware)
 			if tc.csrf {
@@ -162,4 +165,114 @@ func TestLanguageSwitchRefusalsReachTheRequestLog(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestLanguageSwitchOversizedBodyAnswersLocalizedRefusal is WEB-86: fasthttp
+// enforces BodyLimit in its own wire-level reader (App.serverErrorHandler),
+// on a context no app.Use middleware has touched yet — LanguageMiddleware
+// included — so the rejection reaches the top-level ErrorHandler
+// (newOvumcyErrorHandler -> handler.RespondTransportError) with no
+// request-scoped messages in locals. The two markup arms of apiError must
+// resolve the request's own locale catalogue themselves
+// (ensureRequestMessages) rather than rendering the raw machine key.
+//
+// The in-memory app.Test transport cannot simulate the wire-level rejection
+// itself — it surfaces fasthttp's read error to the Go caller rather than a
+// routed response (see TestFiberAppEnforcesBodyLimit in main_test.go) — so,
+// exactly as TestOvumcyErrorHandlerMapsBodyLimitTo413 does, the handler
+// returns the same *fiber.Error the real rejection carries. Built on
+// fiberConfig (this file's app-building helper) with NO LanguageMiddleware
+// registered, which is precisely the shape of the early path: neither this
+// nor the pre-routing 431 ever run behind it.
+func TestLanguageSwitchOversizedBodyAnswersLocalizedRefusal(t *testing.T) {
+	handler := newRateLimitTestHandler(t)
+
+	manager, err := i18n.NewManager(i18n.LangEN)
+	if err != nil {
+		t.Fatalf("init i18n manager: %v", err)
+	}
+	ruMessages := manager.Messages(i18n.LangRU)
+	expectedCopy := strings.TrimSpace(ruMessages["common.error.request_too_large"])
+	if expectedCopy == "" {
+		t.Fatal("locale ru defines no common.error.request_too_large")
+	}
+	expectedBack := strings.TrimSpace(ruMessages["common.back"])
+	if expectedBack == "" {
+		t.Fatal("locale ru defines no common.back")
+	}
+
+	app := fiber.New(fiberConfig(proxySettings{}, handler))
+	app.Post(api.LanguageSwitchPath, func(fiber.Ctx) error {
+		return fiber.ErrRequestEntityTooLarge
+	})
+
+	send := func(t *testing.T, headers map[string]string) *http.Response {
+		t.Helper()
+		request := httptest.NewRequest(http.MethodPost, api.LanguageSwitchPath, strings.NewReader("lang=ru"))
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		request.Header.Set("Cookie", "ovumcy_lang=ru")
+		for name, value := range headers {
+			request.Header.Set(name, value)
+		}
+		response, err := app.Test(request, testConfigNoTimeout)
+		if err != nil {
+			t.Fatalf("request failed: %v", err)
+		}
+		return response
+	}
+
+	t.Run("plain HTML navigation", func(t *testing.T) {
+		response := send(t, map[string]string{"Accept": "text/html"})
+		defer func() { _ = response.Body.Close() }()
+		if response.StatusCode != http.StatusRequestEntityTooLarge {
+			t.Fatalf("status = %d, want 413", response.StatusCode)
+		}
+		body := string(mustReadAll(t, response))
+		if !strings.Contains(body, expectedCopy) {
+			t.Fatalf("plain nav: expected the Russian request_too_large copy %q, got %q", expectedCopy, body)
+		}
+		if !strings.Contains(body, expectedBack) {
+			t.Fatalf("plain nav: expected the Russian back label %q, got %q", expectedBack, body)
+		}
+		if strings.Contains(body, ">request_too_large<") || strings.Contains(body, ">common.back<") {
+			t.Fatalf("plain nav: raw machine key leaked as visible text: %q", body)
+		}
+	})
+
+	t.Run("htmx request", func(t *testing.T) {
+		response := send(t, map[string]string{"HX-Request": "true"})
+		defer func() { _ = response.Body.Close() }()
+		if response.StatusCode != http.StatusRequestEntityTooLarge {
+			t.Fatalf("status = %d, want 413", response.StatusCode)
+		}
+		body := string(mustReadAll(t, response))
+		if !strings.Contains(body, `class="status-error"`) {
+			t.Fatalf("htmx: expected the shared status-error fragment, got %q", body)
+		}
+		if !strings.Contains(body, expectedCopy) {
+			t.Fatalf("htmx: expected the Russian request_too_large copy %q, got %q", expectedCopy, body)
+		}
+		if strings.Contains(body, ">request_too_large<") {
+			t.Fatalf("htmx: raw machine key leaked as visible text: %q", body)
+		}
+	})
+
+	// Positive control: the JSON envelope for the same oversized request still
+	// carries the unlocalized machine key unchanged — this fix touches only the
+	// two markup arms, never the JSON contract.
+	t.Run("json client control", func(t *testing.T) {
+		response := send(t, map[string]string{"Accept": "application/json"})
+		defer func() { _ = response.Body.Close() }()
+		if response.StatusCode != http.StatusRequestEntityTooLarge {
+			t.Fatalf("status = %d, want 413", response.StatusCode)
+		}
+		body := mustReadAll(t, response)
+		payload := map[string]any{}
+		if err := json.Unmarshal(body, &payload); err != nil {
+			t.Fatalf("unmarshal JSON envelope %q: %v", body, err)
+		}
+		if payload["error"] != "request_too_large" {
+			t.Fatalf("json control: error key = %v, want %q", payload["error"], "request_too_large")
+		}
+	})
 }

@@ -273,7 +273,7 @@ func TestCalendarFeedLimiterUsesItsOwnBudgetNotTheAPIBudget(t *testing.T) {
 	// app's, and the routing flags the shipped config carries are what decide
 	// which spellings of a path reach a route at all (see
 	// rate_limit_scope_guard_test.go).
-	app := fiber.New(fiberConfig(proxySettings{}))
+	app := fiber.New(fiberConfig(proxySettings{}, handler))
 	configureFiberMiddleware(app, runtimeConfig{
 		RateLimits: rateLimitSettings{
 			APIMax:             100,
@@ -330,7 +330,7 @@ func TestLanguageSwitchIsRateLimited(t *testing.T) {
 	// Built on the shipped fiberConfig for the reason above: the spelling
 	// variants of /lang this test does not send are covered by the sweep in
 	// rate_limit_scope_guard_test.go, and both need the shipped routing flags.
-	app := fiber.New(fiberConfig(proxySettings{}))
+	app := fiber.New(fiberConfig(proxySettings{}, handler))
 	configureFiberMiddleware(app, runtimeConfig{
 		RateLimits: rateLimitSettings{
 			APIMax:    2,

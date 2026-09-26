@@ -18,9 +18,10 @@ import (
 func TestApiErrorJSONEmitsErrorDetailEnvelope(t *testing.T) {
 	t.Parallel()
 
+	handler := &Handler{}
 	app := fiber.New()
 	app.Get("/api/test/global-validation", func(c fiber.Ctx) error {
-		return respondGlobalMappedError(c, globalErrorSpec(
+		return handler.respondGlobalMappedError(c, globalErrorSpec(
 			fiber.StatusBadRequest,
 			APIErrorCategoryValidation,
 			"invalid input",
@@ -113,10 +114,11 @@ func TestApiErrorJSONErrorDetailReflectsTarget(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
+			handler := &Handler{}
 			app := fiber.New()
 			spec := tc.spec
 			app.Get("/api/test/case", func(c fiber.Ctx) error {
-				return apiError(c, spec)
+				return handler.apiError(c, spec)
 			})
 
 			request := httptest.NewRequest(http.MethodGet, "/api/test/case", nil)

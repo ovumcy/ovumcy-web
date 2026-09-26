@@ -281,7 +281,7 @@ func TestRequestBodyLimitGuardRejectsOnlyTheOverflowStamp(t *testing.T) {
 	t.Parallel()
 
 	app := fiber.New(fiber.Config{BodyLimit: bodyLimitGuardTestLimit})
-	app.Use(requestBodyLimitGuard)
+	app.Use(requestBodyLimitGuard(&Handler{}))
 
 	routeReached := false
 	app.Post("/probe", func(c fiber.Ctx) error {
@@ -363,7 +363,7 @@ func TestRequestBodyLimitGuardSkipsMethodsThatReachNoBodyReader(t *testing.T) {
 	t.Parallel()
 
 	app := fiber.New(fiber.Config{BodyLimit: bodyLimitGuardTestLimit})
-	app.Use(requestBodyLimitGuard)
+	app.Use(requestBodyLimitGuard(&Handler{}))
 
 	var observedRawBody []byte
 	app.Get("/bodyless", func(c fiber.Ctx) error {
@@ -503,7 +503,7 @@ func TestRequestBodyLimitGuardAnswersTheMappedEnvelopeOverAnUpstream413Stamp(t *
 		c.Status(fiber.StatusRequestEntityTooLarge)
 		return c.Next()
 	})
-	app.Use(requestBodyLimitGuard)
+	app.Use(requestBodyLimitGuard(&Handler{}))
 
 	routeReached := false
 	var observedBody string
@@ -592,11 +592,12 @@ func TestTransportErrorSpecForStatusIsTotal(t *testing.T) {
 func TestRespondTransportErrorNegotiatesFormat(t *testing.T) {
 	t.Parallel()
 
+	handler := &Handler{}
 	newApp := func() *fiber.App {
 		app := fiber.New()
 		app.Get("/probe", func(c fiber.Ctx) error {
 			c.Locals(contextMessagesKey, map[string]string{"common.error.forbidden": "Localized refusal."})
-			return RespondTransportError(c, fiber.StatusForbidden)
+			return handler.RespondTransportError(c, fiber.StatusForbidden)
 		})
 		return app
 	}
@@ -746,7 +747,7 @@ func TestRequestTimeoutRendersLocalizedCopyToAnHTMXCaller(t *testing.T) {
 				c.Locals(contextMessagesKey, messages)
 				return c.Next()
 			})
-			app.Use(RequestDeadlineGuard(time.Millisecond))
+			app.Use(RequestDeadlineGuard(time.Millisecond, &Handler{}))
 			app.Get("/slow", func(c fiber.Ctx) error {
 				<-c.Context().Done()
 				return c.SendString("handler finished anyway")
@@ -777,11 +778,11 @@ func newErrorMappingTransportTestApp(t *testing.T) (*fiber.App, *Handler) {
 	app := fiber.New()
 
 	app.Get("/api/test/global", func(c fiber.Ctx) error {
-		return respondGlobalMappedError(c, globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid input"))
+		return handler.respondGlobalMappedError(c, globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid input"))
 	})
 	app.Get("/api/test/htmx", func(c fiber.Ctx) error {
 		c.Locals(contextMessagesKey, map[string]string{"cycle start replace required": "Localized cycle start conflict."})
-		return respondGlobalMappedError(c, globalErrorSpec(fiber.StatusConflict, APIErrorCategoryConflict, "cycle start replace required"))
+		return handler.respondGlobalMappedError(c, globalErrorSpec(fiber.StatusConflict, APIErrorCategoryConflict, "cycle start replace required"))
 	})
 	app.Post("/api/v1/users", func(c fiber.Ctx) error {
 		return handler.respondMappedError(c, authFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "weak password"))
