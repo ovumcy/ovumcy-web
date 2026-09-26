@@ -738,7 +738,7 @@
   "settings.egress.state.feed.issued_current_key": "Hay un enlace de calendario almacenado, creado con la clave que esta instancia usa ahora, así que retirarlo aquí lo corta.",
   "settings.egress.evidence.feed.none": "No hay ninguna visualización única registrada para este enlace.",
   "settings.egress.evidence.feed.recorded": "Visualización única usada el",
-  "settings.egress.feed_polled.none": "Ningún calendario ha consultado este feed todavía.",
+  "settings.egress.feed_polled.none": "No hay ninguna consulta de calendario registrada para este enlace.",
   "settings.egress.feed_polled.recorded": "Última comprobación por un calendario el",
   "settings.egress.payload.feed.uid": "Un identificador de evento construido a partir del tipo de recordatorio y su fecha",
   "settings.egress.payload.feed.dtstamp": "El momento en que se generó el feed",

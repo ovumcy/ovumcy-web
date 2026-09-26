@@ -473,7 +473,7 @@
   "settings.egress.state.feed.issued_current_key": "Un lien de calendrier est stocké, créé avec la clé que cette instance utilise actuellement, donc le retirer ici le coupe.",
   "settings.egress.evidence.feed.none": "Aucune ouverture unique n'est enregistrée pour ce lien.",
   "settings.egress.evidence.feed.recorded": "Ouverture unique utilisée le",
-  "settings.egress.feed_polled.none": "Aucun calendrier n'a encore consulté ce flux.",
+  "settings.egress.feed_polled.none": "Aucune consultation par un calendrier n'est enregistrée pour ce lien.",
   "settings.egress.feed_polled.recorded": "Dernière vérification par un calendrier le",
   "settings.egress.payload.feed.uid": "Un identifiant d'événement construit à partir du type de rappel et de sa date",
   "settings.egress.payload.feed.dtstamp": "Le moment où le flux a été généré",
