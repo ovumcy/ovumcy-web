@@ -235,11 +235,17 @@ func (handler *Handler) redirectToPostRegisterSignin(c fiber.Ctx, reason string)
 // response would not already tell them.
 func (handler *Handler) redirectToPostRegisterSigninKeepingPickupCookie(c fiber.Ctx, payload registerPickupPayload, reason string) error {
 	if err := handler.setRegisterPickupCookie(c, payload); err != nil {
-		// The payload stopped sealing (its own TTL just lapsed mid-request, or
-		// the codec broke a second time) — nothing to keep alive, so fall back
-		// to the ordinary clearing exit rather than leaving a broken Set-Cookie
+		// codecov:ignore:start -- unreachable in practice within one request:
+		// the codec that must fail here already built and opened this very
+		// payload moments ago at pop time, and Handler caches it once
+		// (cookieCodecOnce), so it cannot start refusing mid-request. The
+		// other failure setRegisterPickupCookie can return, payload.validAt
+		// going false, would need this single request to outlive the
+		// pickup's own TTL. Nothing to keep alive either way, so fall back to
+		// the ordinary clearing exit rather than leaving a broken Set-Cookie
 		// a retry could never use anyway.
 		return handler.redirectToPostRegisterSignin(c, reason)
+		// codecov:ignore:end
 	}
 	handler.setFlashCookie(c, FlashPayload{AuthError: "register pickup unavailable"})
 	if reason != "" {
