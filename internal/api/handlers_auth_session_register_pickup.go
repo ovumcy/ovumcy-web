@@ -263,7 +263,11 @@ func (handler *Handler) redirectToPostRegisterSigninKeepingPickupCookie(c fiber.
 		return handler.redirectToPostRegisterSignin(c, reason)
 		// codecov:ignore:end
 	}
-	handler.setFlashCookie(c, FlashPayload{AuthError: "register pickup unavailable"})
+	// Same GET /register/welcome request redirectToPostRegisterSignin answers
+	// from, so the flash goes through the same origin-aware writer (WEB-40
+	// round 3): a stated same-origin return navigation gets the page slot,
+	// everything else the exempt slot.
+	handler.setFlashCookieForRequestOrigin(c, FlashPayload{AuthError: "register pickup unavailable"})
 	if reason != "" {
 		handler.logSecurityEvent(c, "auth.register_pickup", "redirect_signin", securityEventField("reason", reason))
 	}
