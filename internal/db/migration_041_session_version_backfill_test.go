@@ -90,7 +90,6 @@ func TestMigration041BackfillsLegacyAuthSessionVersionToOne(t *testing.T) {
 func TestMigration041ABumpOnABackfilledLegacyRowRevokesALiveSession(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "ovumcy-041-bump.db")
 	database := openSQLiteForMigrationBootstrapTest(t, databasePath)
-	repo := NewUserRepository(database)
 
 	email := "legacy-bump-041@example.com"
 	if err := database.Exec(
@@ -117,7 +116,7 @@ func TestMigration041ABumpOnABackfilledLegacyRowRevokesALiveSession(t *testing.T
 	}
 
 	reopened := openSQLiteForMigrationBootstrapTest(t, databasePath)
-	repo = NewUserRepository(reopened)
+	repo := NewUserRepository(reopened)
 
 	var backfilled int
 	if err := reopened.Raw(`SELECT auth_session_version FROM users WHERE id = ?`, userID).Scan(&backfilled).Error; err != nil {

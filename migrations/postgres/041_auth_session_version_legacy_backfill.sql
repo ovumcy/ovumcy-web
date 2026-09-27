@@ -1,5 +1,5 @@
 -- Postgres mirror of migrations/041_auth_session_version_legacy_backfill.sql
--- (backfill users.auth_session_version <= 0 to 1; WEB-50/WEB-65, F1 of the
+-- (backfill users.auth_session_version <= 0 to 1 -- WEB-50/WEB-65, F1 of the
 -- WEB-12 security audit). Same version number so schema history stays aligned
 -- across engines.
 --
