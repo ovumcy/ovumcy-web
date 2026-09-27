@@ -232,7 +232,11 @@ func (handler *Handler) redirectToPostRegisterSignin(c fiber.Ctx, reason string)
 // unavailable cookie secret) that no request can provoke, so restoring the
 // cookie opens no enumeration oracle: an attacker cannot make this branch
 // fire on demand to learn anything a normal missing/tampered/decoy/replay
-// response would not already tell them.
+// response would not already tell them. The auth-cookie branch has no second
+// way in either: buildTokenWithSessionID also refuses a non-owner role
+// (services.ValidateSupportedWebUser), but a user this handler just resolved
+// off a freshly-issued pickup token is always role owner, so that refusal
+// can never fire here.
 func (handler *Handler) redirectToPostRegisterSigninKeepingPickupCookie(c fiber.Ctx, payload registerPickupPayload, reason string) error {
 	if err := handler.setRegisterPickupCookie(c, payload); err != nil {
 		// codecov:ignore:start -- unreachable in practice within one request:
@@ -240,8 +244,10 @@ func (handler *Handler) redirectToPostRegisterSigninKeepingPickupCookie(c fiber.
 		// payload moments ago at pop time, and Handler caches it once
 		// (cookieCodecOnce), so it cannot start refusing mid-request. The
 		// other failure setRegisterPickupCookie can return, payload.validAt
-		// going false, would need this single request to outlive the
-		// pickup's own TTL. Nothing to keep alive either way, so fall back to
+		// going false, would need this single request to still be running
+		// once the payload's own EXP passes — not the full 5-minute TTL from
+		// scratch, only whatever of it remained when this request popped the
+		// cookie. Nothing to keep alive either way, so fall back to
 		// the ordinary clearing exit rather than leaving a broken Set-Cookie
 		// a retry could never use anyway.
 		return handler.redirectToPostRegisterSignin(c, reason)
