@@ -472,7 +472,19 @@ components:
         remember_me:
           type: boolean
           default: false
-          description: When true, the issued `ovumcy_auth` cookie carries an explicit ~7-day Expires. Otherwise the cookie is browser-session-scoped.
+          description: >-
+            Chooses the lifetime of the `ovumcy_auth` cookie this sign-in
+            issues. When true, the cookie is persistent: its `Expires` is set
+            30 days after sign-in, and the session token sealed inside it
+            expires at the same time. When false or absent, the cookie carries
+            neither `Expires` nor `Max-Age`, so the browser drops it when it
+            closes; the session token inside still expires 7 days after
+            sign-in, so a browser left open longer is signed out then. Either
+            way the cookie is `HttpOnly`, `SameSite=Lax` and `Path=/`, and
+            `Secure` when the server runs with `COOKIE_SECURE` enabled. A
+            sign-in answered with `requires_totp` keeps the choice: the cookie
+            `POST /api/v1/sessions/2fa-challenge` issues carries the lifetime
+            chosen here.
       additionalProperties: false
 
     RecoveryCodeRequiredResponse:
