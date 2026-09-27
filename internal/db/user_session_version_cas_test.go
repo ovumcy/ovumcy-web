@@ -107,6 +107,11 @@ func sessionVersionCases() []sessionVersionCase {
 		{name: "legacy zero row does not match version 1", stored: 0, expected: 1, wantErr: models.ErrAuthSessionVersionChanged, wantVersion: 0},
 		{name: "legacy zero expected on a legacy row does not match", stored: 0, expected: 0, wantErr: models.ErrAuthSessionVersionChanged, wantVersion: 0},
 		{name: "legacy zero row revoked since it was read", stored: 0, expected: 2, wantErr: models.ErrAuthSessionVersionChanged, wantVersion: 0},
+		// expectedSessionVersion below 1 is refused outright (WEB-50/WEB-65): a
+		// caller passing the un-normalized legacy expectation 0 must not match a
+		// row already backfilled to 1, even though 1 is exactly what migration
+		// 041 would have turned that caller's own stored 0 into.
+		{name: "un-normalized expected 0 does not match a backfilled row at 1", stored: 1, expected: 0, wantErr: models.ErrAuthSessionVersionChanged, wantVersion: 1},
 	}
 }
 
