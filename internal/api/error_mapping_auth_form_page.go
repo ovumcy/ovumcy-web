@@ -13,11 +13,11 @@ import (
 // envelope — the same shape #862 built for POST /lang (WEB-84). A plain <form>
 // action is the route key, not the page it renders on.
 //
-// oidcLinkConfirmPath is the one OIDC-related plain form: /auth/oidc/start,
-// /auth/oidc/callback and the logout bridge are none of them a page a browser
-// submits (start and the bridge are GET-only; the callback is CSRF-exempt,
-// protected instead by the sealed one-time state cookie), so they carry no
-// entry here.
+// No OIDC route is a member: /auth/oidc/start, /auth/oidc/callback and the
+// logout bridge are none of them a page a browser submits (start and the
+// bridge are GET-only; the callback is CSRF-exempt, protected instead by the
+// sealed one-time state cookie), and /auth/oidc/link-confirm carries no entry
+// either — that route is unreachable today and a sibling issue removes it.
 //
 // Deliberately absent: POST /logout and DELETE /api/v1/sessions/current. Both
 // answer the mapped envelope today for a plain browser Accept, and WEB-84
@@ -30,7 +30,32 @@ var plainAuthFormPagePaths = map[string]struct{}{
 	"/api/v1/sessions/2fa-challenge": {},
 	"/api/v1/password-resets":        {},
 	"/api/v1/password-resets/redeem": {},
-	oidcLinkConfirmPath:              {},
+}
+
+// plainAuthFormPageBackPaths maps each plain auth-form route to the page that
+// renders the form it received the POST from. Fixed and server-side, keyed by
+// route — never derived from the request — because unlike POST /lang, none of
+// these forms carry a `next` field for a refusal's back link to read: without
+// a fixed mapping every refusal here would link to "/" instead of back to the
+// form the owner was on. Every key here is also a key of plainAuthFormPagePaths;
+// TestPlainAuthFormPagePathsAllHaveAFixedBackLink pins that they stay in step.
+var plainAuthFormPageBackPaths = map[string]string{
+	"/api/v1/users":                  "/register",
+	"/api/v1/sessions":               "/login",
+	"/api/v1/sessions/2fa-challenge": "/auth/2fa",
+	"/api/v1/password-resets":        "/forgot-password",
+	"/api/v1/password-resets/redeem": "/reset-password",
+}
+
+// plainAuthFormPageBackPath resolves the fixed back link for a plain-auth-form
+// route (already httpx.RoutingNormalizedPath-normalized). "/" is a defensive
+// fallback only — every path isPlainAuthFormPageNavigation admits is a key
+// above, by construction of plainAuthFormPagePaths.
+func plainAuthFormPageBackPath(path string) string {
+	if back, ok := plainAuthFormPageBackPaths[path]; ok {
+		return back
+	}
+	return "/"
 }
 
 // isPlainAuthFormPageNavigation reports whether c is a plain HTML POST to one

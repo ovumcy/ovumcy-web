@@ -31,9 +31,24 @@ func isLanguageSwitchPageNavigation(c fiber.Ctx) bool {
 // fragment followed by a link back to the form's sanitized `next` path: the
 // fragment is the whole page the browser shows, and without the link a refused
 // switch — most often an idle CSRF token — is a dead end. Status and stable key
-// still come from the spec.
+// still come from the spec. /lang is the one plain form that carries a `next`
+// field to read the back link from; every other plain-form caller of the
+// shared fragment (the plain auth-form pages, WEB-84) has no such field and
+// uses sendStatusFragmentWithBackLink directly with a fixed, route-mapped back
+// path instead.
 func sendLanguageSwitchStatusFragment(c fiber.Ctx, spec APIErrorSpec) error {
 	back := services.SanitizeRedirectPath(c.FormValue("next"), "/")
+	return sendStatusFragmentWithBackLink(c, spec, back)
+}
+
+// sendStatusFragmentWithBackLink answers one mapped spec as the shared status
+// fragment followed by a link to `back`. The fragment replaces the whole page
+// the browser was looking at, so without the link a refusal is a dead end.
+// Status and stable key still come from the spec; `back` is the only thing
+// that varies between callers, and each caller is responsible for it being
+// safe (a fixed, server-owned path, or a value already run through
+// services.SanitizeRedirectPath) — this helper does not sanitize it again.
+func sendStatusFragmentWithBackLink(c fiber.Ctx, spec APIErrorSpec, back string) error {
 	label := languageSwitchBackLabelKey
 	if localized, translated := lookupMessage(currentMessages(c), languageSwitchBackLabelKey); translated {
 		label = localized

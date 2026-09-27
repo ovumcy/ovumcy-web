@@ -18,14 +18,20 @@ import (
 // taken here rather than per cause so every refusal on that route — handler,
 // CSRF, recovered panic, request deadline — answers the same page. A plain
 // HTML POST to one of the auth pages (login, register, forgot/reset password,
-// 2FA challenge, OIDC link-confirm — plainAuthFormPagePaths) is the second: a
-// CSRF refusal or a transport-level rejection there is raised before the
-// handler ever builds a domain spec, so it never reaches respondAuthError's
-// flash-redirect and would otherwise paint the JSON envelope into the browser
-// window (WEB-84). Logout (POST /logout, DELETE /api/v1/sessions/current) is
-// deliberately not in that set — its answer is a decision for its own issue —
-// so it keeps falling through to the JSON/HTMX arms below like every other
-// route.
+// 2FA challenge — plainAuthFormPagePaths) is the second: a CSRF refusal or a
+// transport-level rejection there — any apiError call this route reaches,
+// whatever raised it: CSRF 403, 413 body-too-large, a 503 request-deadline
+// timeout — is raised before the handler ever builds a domain spec, so it
+// never reaches respondAuthError's flash-redirect and would otherwise paint
+// the JSON envelope into the browser window (WEB-84). A domain-mapped 429
+// (the per-IP or per-account login/registration/recovery rate limit) is
+// NOT one of these: it carries a spec whose Target is APIErrorTargetAuthForm,
+// so respondMappedError dispatches it through respondAuthError, which
+// flash-redirects a plain HTML client before apiError is ever called —
+// unaffected by this branch. Logout (POST /logout, DELETE
+// /api/v1/sessions/current) is deliberately not in that set — its answer is a
+// decision for its own issue — so it keeps falling through to the JSON/HTMX
+// arms below like every other route.
 //
 // Both markup arms resolve the request's locale catalogue via
 // ensureRequestMessages before rendering: a mapped rejection can be produced
@@ -43,7 +49,7 @@ func (handler *Handler) apiError(c fiber.Ctx, spec APIErrorSpec) error {
 		return sendLanguageSwitchStatusFragment(c, spec)
 	}
 	if isPlainAuthFormPageNavigation(c) {
-		return handler.respondPageFormStatusFragment(c, spec)
+		return handler.respondPlainAuthFormPageStatusFragment(c, spec)
 	}
 	if responseFormat(c) == httpx.ResponseFormatHTMX {
 		handler.ensureRequestMessages(c)
@@ -100,6 +106,19 @@ func localizedStatusErrorMarkup(c fiber.Ctx, spec APIErrorSpec) string {
 func (handler *Handler) respondPageFormStatusFragment(c fiber.Ctx, spec APIErrorSpec) error {
 	handler.ensureRequestMessages(c)
 	return sendLanguageSwitchStatusFragment(c, spec)
+}
+
+// respondPlainAuthFormPageStatusFragment is respondPageFormStatusFragment's
+// counterpart for apiError's plain-auth-form-page branch (WEB-84). The other
+// arm reads its back link from the form's sanitized `next` field, which /lang
+// carries and these forms do not; here the back link is the fixed,
+// server-owned mapping in plainAuthFormPageBackPaths, keyed by route, so a
+// refusal always returns to the actual page the submission came from rather
+// than falling back to "/" for want of a `next` field to read.
+func (handler *Handler) respondPlainAuthFormPageStatusFragment(c fiber.Ctx, spec APIErrorSpec) error {
+	handler.ensureRequestMessages(c)
+	back := plainAuthFormPageBackPath(httpx.RoutingNormalizedPath(c.Path()))
+	return sendStatusFragmentWithBackLink(c, spec, back)
 }
 
 // respondPageFormMappedError is the page-form counterpart of respondMappedError:

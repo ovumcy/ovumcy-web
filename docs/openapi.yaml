@@ -1637,6 +1637,13 @@ paths:
                     error_detail: { key: "forbidden", category: "forbidden", target: "global" }
         '429':
           $ref: '#/components/responses/RateLimited'
+          description: |
+            Rate limit exceeded (per-IP registration budget). Unlike this route's `403` above, a
+            plain browser Accept does NOT get the WEB-84 status fragment here: this rejection
+            carries a domain spec whose target is `auth_form`, so it flash-redirects to `/register`
+            with the error flashed (see the `303` above) before the shared negotiation in `apiError`
+            — the fragment's carrier — is ever reached. A caller that asks for JSON keeps the JSON
+            envelope with `retry_after_seconds` below.
 
   /api/v1/sessions:
     post:
@@ -1712,6 +1719,14 @@ paths:
                     error_detail: { key: "forbidden", category: "forbidden", target: "global" }
         '429':
           $ref: '#/components/responses/RateLimited'
+          description: |
+            Rate limit exceeded (per-IP login budget plus the per-account `AuthAttemptPolicy`
+            budget). Unlike this route's `403` above, a plain browser Accept does NOT get the
+            WEB-84 status fragment here: this rejection carries a domain spec whose target is
+            `auth_form`, so it flash-redirects to `/login` with the error flashed (see the `303`
+            above) before the shared negotiation in `apiError` — the fragment's carrier — is ever
+            reached. A caller that asks for JSON keeps the JSON envelope with
+            `retry_after_seconds` below.
 
   /api/v1/sessions/2fa-challenge:
     post:
@@ -1762,6 +1777,13 @@ paths:
                 error_detail: { key: "forbidden", category: "forbidden", target: "global" }
         '429':
           $ref: '#/components/responses/RateLimited'
+          description: |
+            Rate limit exceeded (per-account TOTP budget: 5 attempts / 15 min). Unlike this
+            route's `403` above, a plain browser Accept does NOT get the WEB-84 status fragment
+            here: this rejection carries a domain spec whose target is `auth_form`, so it
+            flash-redirects to `/auth/2fa` with the error flashed (see the `303` above) before the
+            shared negotiation in `apiError` — the fragment's carrier — is ever reached. A caller
+            that asks for JSON keeps the JSON envelope with `retry_after_seconds` below.
 
   /api/v1/sessions/current:
     delete:
@@ -1871,6 +1893,13 @@ paths:
                     error_detail: { key: "forbidden", category: "forbidden", target: "global" }
         '429':
           $ref: '#/components/responses/RateLimited'
+          description: |
+            Rate limit exceeded (per-IP recovery budget: default 8 / 1 hour). Unlike this route's
+            `403` above, a plain browser Accept does NOT get the WEB-84 status fragment here: this
+            rejection carries a domain spec whose target is `auth_form`, so it flash-redirects to
+            `/forgot-password` with the error flashed (see the `303` above) before the shared
+            negotiation in `apiError` — the fragment's carrier — is ever reached. A caller that
+            asks for JSON keeps the JSON envelope with `retry_after_seconds` below.
 
   /api/v1/password-resets/redeem:
     post:
@@ -1947,7 +1976,16 @@ paths:
                   value:
                     error: "forbidden"
                     error_detail: { key: "forbidden", category: "forbidden", target: "global" }
-        '429': { $ref: '#/components/responses/RateLimited' }
+        '429':
+          $ref: '#/components/responses/RateLimited'
+          description: |
+            Rate limit exceeded (this route shares the recovery-start budget). Unlike this
+            route's `403` above, a plain browser Accept does NOT get the WEB-84 status fragment
+            here: this rejection carries a domain spec whose target is `auth_form`, so it
+            flash-redirects to `/reset-password` with the error flashed (see the `303` above)
+            before the shared negotiation in `apiError` — the fragment's carrier — is ever
+            reached. A caller that asks for JSON keeps the JSON envelope with
+            `retry_after_seconds` below.
 
   # =========================================================================
   # onboarding

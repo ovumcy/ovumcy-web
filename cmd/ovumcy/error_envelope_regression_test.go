@@ -218,16 +218,23 @@ func TestCSRFDenialOnLogoutStaysEnveloped(t *testing.T) {
 // /auth/oidc/callback and the logout bridge carry no entry: start and the
 // bridge are GET-only (CSRF never validates a safe method) and the callback is
 // CSRF-exempt, protected instead by the sealed one-time state cookie.
+// /auth/oidc/link-confirm carries no entry either — its route is unreachable
+// today and a sibling issue removes it.
+// back is the fixed page each route's fragment must link to — the page that
+// renders the form the refusal was submitted from. None of these forms carry
+// a `next` field, unlike POST /lang, so the fragment cannot read the back
+// link from the request; it comes from api.plainAuthFormPageBackPaths
+// instead. Read from routes.go, not guessed.
 var plainAuthFormPageProbeRoutes = []struct {
 	name string
 	path string
+	back string
 }{
-	{name: "login", path: "/api/v1/sessions"},
-	{name: "register", path: "/api/v1/users"},
-	{name: "forgot-password", path: "/api/v1/password-resets"},
-	{name: "reset-password", path: "/api/v1/password-resets/redeem"},
-	{name: "2fa challenge", path: "/api/v1/sessions/2fa-challenge"},
-	{name: "oidc link-confirm", path: "/auth/oidc/link-confirm"},
+	{name: "login", path: "/api/v1/sessions", back: "/login"},
+	{name: "register", path: "/api/v1/users", back: "/register"},
+	{name: "forgot-password", path: "/api/v1/password-resets", back: "/forgot-password"},
+	{name: "reset-password", path: "/api/v1/password-resets/redeem", back: "/reset-password"},
+	{name: "2fa challenge", path: "/api/v1/sessions/2fa-challenge", back: "/auth/2fa"},
 }
 
 // TestCSRFDenialOnPlainAuthFormPagesAnswersTheFragment is the per-route sweep
@@ -256,6 +263,9 @@ func TestCSRFDenialOnPlainAuthFormPagesAnswersTheFragment(t *testing.T) {
 					!strings.Contains(string(body), `class="status-error"`) ||
 					!strings.Contains(string(body), `data-flash-key="common.error.forbidden"`) {
 					t.Fatalf("%s: expected the shared page-form status fragment, got %q (%q)", route.name, contentType, body)
+				}
+				if want := `<a href="` + route.back + `">`; !strings.Contains(string(body), want) {
+					t.Fatalf("%s: expected the fragment's back link to point at %q (the form's own page), got %q", route.name, want, body)
 				}
 			})
 
