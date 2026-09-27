@@ -18,10 +18,10 @@ import (
 )
 
 // TestMapOIDCIdentityLinkReauthError unit-tests every branch of the pure
-// mapper directly, the same style TestMapOIDCLinkConfirmError already uses:
-// cheaper and more precise than driving a full HTTP round-trip for each
-// outcome, especially for the cross-user-claim and generic-unavailable arms
-// that a step-up flow cannot easily provoke end-to-end.
+// mapper directly: cheaper and more precise than driving a full HTTP
+// round-trip for each outcome, especially for the cross-user-claim and
+// generic-unavailable arms that a step-up flow cannot easily provoke
+// end-to-end.
 func TestMapOIDCIdentityLinkReauthError(t *testing.T) {
 	t.Parallel()
 
@@ -58,7 +58,7 @@ func TestMapOIDCIdentityLinkReauthError(t *testing.T) {
 
 // End-to-end coverage of the Settings identity-link step-up (issue #701): the
 // authenticated replacement for the public /auth/oidc/link-confirm route,
-// which stays closed (see auth_oidc_regressions_test.go).
+// removed for good in WEB-77 (see auth_oidc_regressions_test.go).
 //
 // Reuses the oidcStepupFixture built for the local-password step-up: it wires
 // a stubbed provider whose reauth verdict the test controls and an
@@ -355,8 +355,9 @@ func TestOIDCIdentityLinkStepupCallbackRefusesAForeignSession(t *testing.T) {
 // TestOIDCIdentityLinkStepupCompletesAndCreatesTheBinding is the positive
 // anchor for (c): a fresh reauth after the start must call
 // ConfirmAndLinkIdentity for the SAME account that started the flow, with the
-// (issuer, subject) the exchange resolved to — exactly the binding the (now
-// closed) public /auth/oidc/link-confirm route used to create.
+// (issuer, subject) the exchange resolved to — exactly the binding the
+// (removed for good in WEB-77) public /auth/oidc/link-confirm route used to
+// create.
 func TestOIDCIdentityLinkStepupCompletesAndCreatesTheBinding(t *testing.T) {
 	t.Parallel()
 

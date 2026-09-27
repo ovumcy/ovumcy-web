@@ -185,17 +185,6 @@ func (stub *stubOIDCWorkflowService) ValidateReauthExchange(_ context.Context, c
 	return stub.reauthErr
 }
 
-// ConfirmAndLinkIdentity writes nothing, so it reports the account left at the
-// version it was handed — what the real service answers for an existing link.
-func (stub *stubOIDCWorkflowService) ConfirmAndLinkIdentity(ctx context.Context, targetUserID uint, expectedSessionVersion int, claims security.OIDCClaims, _ time.Time) (int, error) {
-	stub.lastConfirmLinkUserID = targetUserID
-	stub.lastConfirmLinkClaims = claims
-	if stub.confirmLinkErr != nil {
-		return 0, stub.confirmLinkErr
-	}
-	return services.NormalizeAuthSessionVersion(expectedSessionVersion), nil
-}
-
 // UnlinkIdentity records what the handler asked for and answers unlinkErr.
 // The handler's own gates (password, id parse) are what the api tests pin;
 // the service rules live in internal/services. The stub writes nothing, so the
@@ -1192,6 +1181,18 @@ func TestOIDCCallbackPendingLinkNeverMintsPendingCookieAndRedirectsToLogin(t *te
 	payload := decodeFlashCookieForTest(t, flashCookie.Value)
 	if payload.AuthError != authOIDCLinkConfirmUnavailableErrorSpec().Key {
 		t.Fatalf("expected flash auth_error %q, got %q", authOIDCLinkConfirmUnavailableErrorSpec().Key, payload.AuthError)
+	}
+	// The refusal must mint no pending-link cookie — the property #701 already
+	// established and this handoff must not regress: the response sets nothing
+	// beyond the flash and the state cookie's clear (never the sealed
+	// "ovumcy_oidc_link_pending" cookie the retired link-confirm handler read).
+	if pending := responseCookie(response.Cookies(), "ovumcy_oidc_link_pending"); pending != nil {
+		t.Fatalf("expected no ovumcy_oidc_link_pending cookie, got %q", pending.Value)
+	}
+	for _, cookie := range response.Cookies() {
+		if cookie.Name != flashCookieName && cookie.Name != oidcStateCookieName {
+			t.Fatalf("expected only the flash cookie and the state cookie's clear, got unexpected cookie %q", cookie.Name)
+		}
 	}
 }
 

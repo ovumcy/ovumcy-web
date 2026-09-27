@@ -104,8 +104,7 @@ func TestValidateClearDataPasswordAcceptsCorrectPassword(t *testing.T) {
 // state, so without a budget it is a pure oracle capped only by the /api
 // catch-all — 300 guesses per minute against 8 per 15 minutes on the login form.
 // Once the budget is spent the endpoint must answer 429 even for the CORRECT
-// password, mirroring the login-budget contract of
-// TestCompleteOIDCLinkConfirmationRateLimitsPasswordAttempts.
+// password, mirroring the login form's own budget contract.
 func TestValidateClearDataPasswordRateLimitsGuessesAndRefusesCorrectPassword(t *testing.T) {
 	scenario := setupClearDataScenario(t)
 	ctx := settingsSecurityTestContext{

@@ -86,9 +86,8 @@ func TestLoginServiceAuthenticateForcedResetIssuesToken(t *testing.T) {
 		t.Fatalf("expected reset ttl %s, got %s", loginServiceTestTTL, reset.lastTTL)
 	}
 	// Authenticate only reaches the mint branch after AuthenticateCredentials
-	// verifies a LOCAL password (the stub above stands in for it) — the same
-	// call OIDC link-confirm's password challenge makes (A1). It must always
-	// mint PasswordResetTokenPurposeForcedLocal, never forced-from-OIDC:
+	// verifies a LOCAL password (the stub above stands in for it). It must
+	// always mint PasswordResetTokenPurposeForcedLocal, never forced-from-OIDC:
 	// mislabelling it would let the token bypass the instance-wide
 	// local-sign-in gate on exactly the path that just proved a local
 	// password (PRIV-4).

@@ -26,10 +26,9 @@ import (
 //     its redeem must stop just as sharply.
 //   - PasswordResetTokenPurposeForcedLocal — minted after a LOCAL password
 //     authenticates against an account carrying MustChangePassword: the plain
-//     login route, and OIDC link-confirm's own password challenge (A1 — both
-//     go through LoginService.Authenticate, which never checks an OIDC gate).
-//     This is gated exactly like recovery: the factor that produced it is the
-//     one the operator disabled.
+//     login route, through LoginService.Authenticate, which never checks an
+//     OIDC gate. This is gated exactly like recovery: the factor that
+//     produced it is the one the operator disabled.
 //   - PasswordResetTokenPurposeForcedOIDC — minted by CompleteOIDCLogin
 //     without ever checking a local password. An oidc_only instance
 //     legitimately mints and must keep redeeming these with local sign-in

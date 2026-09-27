@@ -12,7 +12,7 @@ import (
 // the re-auth budget: the erasure gate must not be a faster password oracle than
 // the login form. Once the budget is spent the CORRECT password is refused too —
 // that is what makes it a budget rather than a speed bump, and it mirrors the
-// login-budget contract asserted by the OIDC link-confirm regression.
+// login form's own budget contract.
 func TestVerifyReauthPasswordRefusesCorrectPasswordOnceBudgetSpent(t *testing.T) {
 	service := NewSettingsService(nil)
 	service.ConfigureReauthAttempts([]byte("test-secret"), NewAttemptLimiter(), 3, time.Minute)

@@ -121,10 +121,10 @@ func TestAnonymousPublicPageNeverResolvesTheTimezoneHeader(t *testing.T) {
 
 // TestVerifiedSessionOutsideAuthRequiredStillResolvesTheTimezoneHeader pins the
 // gate to the PROPERTY, not to one middleware. AuthRequired is not the only way
-// a session verifies: ShowRecoveryCodePage, the OIDC link-confirm and the two
-// step-up completions call authenticateRequest directly, because the callback
-// they run on has to work for a visitor with no session. Resolution therefore
-// lives in authenticateRequest itself; hang it off AuthRequired and those four
+// a session verifies: ShowRecoveryCodePage and the two step-up completions
+// call authenticateRequest directly, because the callback they run on has to
+// work for a visitor with no session. Resolution therefore lives in
+// authenticateRequest itself; hang it off AuthRequired and those three
 // render the owner's day in the instance zone with the suite still green.
 //
 // GET /recovery-code carries no AuthRequired. With no reveal staged it

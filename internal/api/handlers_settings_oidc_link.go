@@ -105,9 +105,9 @@ func (handler *Handler) StartOIDCIdentityLinkStepup(c fiber.Ctx) error {
 // the account that started the flow is still the one that owns this session,
 // then hands the exchange straight to CompleteIdentityLinkReauth, which
 // verifies freshness and persists the link via ConfirmAndLinkIdentity — the
-// same service method the (now closed) public link-confirm route used to
-// call, and the same one the operator CLI command calls for the no-session
-// recovery case.
+// same service method the public link-confirm route used to call before
+// WEB-77 removed it for good, and the same one the operator CLI command
+// calls for the no-session recovery case.
 func (handler *Handler) completeOIDCIdentityLinkStepup(c fiber.Ctx, state oidcStepupState, exchange oidcCallbackExchange) error {
 	if state.Purpose != oidcStepupPurposeIdentityLink {
 		// codecov:ignore:start -- forward-compat guard: validAt already refused a
