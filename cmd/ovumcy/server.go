@@ -244,6 +244,33 @@ func configureFiberMiddleware(app *fiber.App, config runtimeConfig, handler *api
 			ErrorCode: "too_many_forgot_password_attempts",
 		}),
 	}))
+	// WEB-70: the 2FA login challenge and the password-reset redeem each verify
+	// a credential and used to draw on the /api catch-all alone (300/min) —
+	// wide enough for a bcrypt-hashing redeem (no service-level attempt budget
+	// behind it at all) or a TOTP challenge hammered across many accounts
+	// behind one address. Same credential ceiling and per-minute rate as
+	// login/register/forgot-password above, and registered before the /api
+	// catch-all below for the same reason those three are: mounted after it,
+	// the wider catch-all budget would refuse first on every request past its
+	// own count and this row would never be the one answering.
+	app.Use(limiter.New(limiter.Config{
+		Next:         rateLimitOnlyFor(fiber.MethodPost, "/api/v1/sessions/2fa-challenge"),
+		Max:          config.RateLimits.TOTPChallengeMax,
+		Expiration:   config.RateLimits.TOTPChallengeWindow,
+		KeyGenerator: keyGen,
+		LimitReached: newAuthRateLimitHandler(handler, authRateLimitConfig{
+			ErrorCode: "too_many_totp_challenge_attempts",
+		}),
+	}))
+	app.Use(limiter.New(limiter.Config{
+		Next:         rateLimitOnlyFor(fiber.MethodPost, "/api/v1/password-resets/redeem"),
+		Max:          config.RateLimits.PasswordResetRedeemMax,
+		Expiration:   config.RateLimits.PasswordResetRedeemWindow,
+		KeyGenerator: keyGen,
+		LimitReached: newAuthRateLimitHandler(handler, authRateLimitConfig{
+			ErrorCode: "too_many_password_reset_redeem_attempts",
+		}),
+	}))
 	app.Use("/auth/oidc", limiter.New(limiter.Config{
 		Max:          config.RateLimits.LoginMax,
 		Expiration:   config.RateLimits.LoginWindow,

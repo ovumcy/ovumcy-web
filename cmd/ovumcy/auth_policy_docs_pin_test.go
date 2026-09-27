@@ -107,24 +107,28 @@ func TestAuthPolicyDocPinsTheRateLimitEnvVariables(t *testing.T) {
 	}
 
 	maxByEnv := map[string]int{
-		"RATE_LIMIT_LOGIN_MAX":           config.RateLimits.LoginMax,
-		"RATE_LIMIT_REGISTER_MAX":        config.RateLimits.RegisterMax,
-		"RATE_LIMIT_FORGOT_PASSWORD_MAX": config.RateLimits.ForgotPasswordMax,
-		"RATE_LIMIT_LOGOUT_MAX":          config.RateLimits.LogoutMax,
-		"RATE_LIMIT_LOGOUT_ACCOUNT_MAX":  config.RateLimits.LogoutAccountMax,
-		"RATE_LIMIT_API_MAX":             config.RateLimits.APIMax,
-		"RATE_LIMIT_CALENDAR_FEED_MAX":   config.RateLimits.CalendarFeedMax,
-		"RATE_LIMIT_CALENDAR_MAX":        config.RateLimits.CalendarMax,
+		"RATE_LIMIT_LOGIN_MAX":                 config.RateLimits.LoginMax,
+		"RATE_LIMIT_REGISTER_MAX":              config.RateLimits.RegisterMax,
+		"RATE_LIMIT_FORGOT_PASSWORD_MAX":       config.RateLimits.ForgotPasswordMax,
+		"RATE_LIMIT_TOTP_CHALLENGE_MAX":        config.RateLimits.TOTPChallengeMax,
+		"RATE_LIMIT_PASSWORD_RESET_REDEEM_MAX": config.RateLimits.PasswordResetRedeemMax,
+		"RATE_LIMIT_LOGOUT_MAX":                config.RateLimits.LogoutMax,
+		"RATE_LIMIT_LOGOUT_ACCOUNT_MAX":        config.RateLimits.LogoutAccountMax,
+		"RATE_LIMIT_API_MAX":                   config.RateLimits.APIMax,
+		"RATE_LIMIT_CALENDAR_FEED_MAX":         config.RateLimits.CalendarFeedMax,
+		"RATE_LIMIT_CALENDAR_MAX":              config.RateLimits.CalendarMax,
 	}
 	windowByEnv := map[string]time.Duration{
-		"RATE_LIMIT_LOGIN_WINDOW":           config.RateLimits.LoginWindow,
-		"RATE_LIMIT_REGISTER_WINDOW":        config.RateLimits.RegisterWindow,
-		"RATE_LIMIT_FORGOT_PASSWORD_WINDOW": config.RateLimits.ForgotPasswordWindow,
-		"RATE_LIMIT_LOGOUT_WINDOW":          config.RateLimits.LogoutWindow,
-		"RATE_LIMIT_LOGOUT_ACCOUNT_WINDOW":  config.RateLimits.LogoutAccountWindow,
-		"RATE_LIMIT_API_WINDOW":             config.RateLimits.APIWindow,
-		"RATE_LIMIT_CALENDAR_FEED_WINDOW":   config.RateLimits.CalendarFeedWindow,
-		"RATE_LIMIT_CALENDAR_WINDOW":        config.RateLimits.CalendarWindow,
+		"RATE_LIMIT_LOGIN_WINDOW":                 config.RateLimits.LoginWindow,
+		"RATE_LIMIT_REGISTER_WINDOW":              config.RateLimits.RegisterWindow,
+		"RATE_LIMIT_FORGOT_PASSWORD_WINDOW":       config.RateLimits.ForgotPasswordWindow,
+		"RATE_LIMIT_TOTP_CHALLENGE_WINDOW":        config.RateLimits.TOTPChallengeWindow,
+		"RATE_LIMIT_PASSWORD_RESET_REDEEM_WINDOW": config.RateLimits.PasswordResetRedeemWindow,
+		"RATE_LIMIT_LOGOUT_WINDOW":                config.RateLimits.LogoutWindow,
+		"RATE_LIMIT_LOGOUT_ACCOUNT_WINDOW":        config.RateLimits.LogoutAccountWindow,
+		"RATE_LIMIT_API_WINDOW":                   config.RateLimits.APIWindow,
+		"RATE_LIMIT_CALENDAR_FEED_WINDOW":         config.RateLimits.CalendarFeedWindow,
+		"RATE_LIMIT_CALENDAR_WINDOW":              config.RateLimits.CalendarWindow,
 	}
 
 	known := map[string]bool{}
@@ -238,13 +242,13 @@ var (
 	// The credential pairs' rate ceiling, stated once in words and once as the
 	// integer check; both numbers must be the enforced one.
 	docCredentialRatePattern = regexp.MustCompile("at most (\\d+) requests per minute, checked in integers as `MAX × 1 minute ≤ (\\d+) × WINDOW`")
-	docCeilingPhraseToEnvs = map[string][]string{
-		"three credential endpoints": {"RATE_LIMIT_LOGIN_MAX", "RATE_LIMIT_REGISTER_MAX", "RATE_LIMIT_FORGOT_PASSWORD_MAX"},
-		"per-IP logout row":          {"RATE_LIMIT_LOGOUT_MAX"},
-		"per-account logout budget":  {"RATE_LIMIT_LOGOUT_ACCOUNT_MAX"},
-		"API catch-all":              {"RATE_LIMIT_API_MAX"},
-		"calendar page":              {"RATE_LIMIT_CALENDAR_MAX"},
-		"calendar feed":              {"RATE_LIMIT_CALENDAR_FEED_MAX"},
+	docCeilingPhraseToEnvs   = map[string][]string{
+		"five credential endpoints": {"RATE_LIMIT_LOGIN_MAX", "RATE_LIMIT_REGISTER_MAX", "RATE_LIMIT_FORGOT_PASSWORD_MAX", "RATE_LIMIT_TOTP_CHALLENGE_MAX", "RATE_LIMIT_PASSWORD_RESET_REDEEM_MAX"},
+		"per-IP logout row":         {"RATE_LIMIT_LOGOUT_MAX"},
+		"per-account logout budget": {"RATE_LIMIT_LOGOUT_ACCOUNT_MAX"},
+		"API catch-all":             {"RATE_LIMIT_API_MAX"},
+		"calendar page":             {"RATE_LIMIT_CALENDAR_MAX"},
+		"calendar feed":             {"RATE_LIMIT_CALENDAR_FEED_MAX"},
 	}
 	docWindowWords = map[string]time.Duration{"one second": time.Second, "one minute": time.Minute, "one hour": time.Hour, "one day": 24 * time.Hour}
 )

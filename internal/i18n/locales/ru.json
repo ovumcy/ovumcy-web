@@ -123,6 +123,8 @@
   "auth.error.web_sign_in_unavailable": "Этот аккаунт недоступен в Ovumcy Web.",
   "auth.error.local_recovery_unavailable": "Локальное восстановление пароля недоступно, пока для аккаунта не задан локальный пароль.",
   "auth.error.too_many_forgot_password_attempts": "Слишком много попыток восстановления. Подождите 1 час.",
+  "auth.error.too_many_totp_challenge_attempts": "Слишком много попыток ввода кода двухфакторной аутентификации. Подождите 15 минут.",
+  "auth.error.too_many_password_reset_redeem_attempts": "Слишком много попыток сброса пароля. Подождите 15 минут.",
   "auth.error.invalid_reset_token": "Ссылка сброса недействительна или истекла.",
   "auth.error.identity_change_applied_sign_in_again": "Связь с провайдером идентификации обновлена. Войдите снова, чтобы продолжить.",
   "onboarding.progress.step1": "Шаг 1 из 2",

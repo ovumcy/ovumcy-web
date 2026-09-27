@@ -397,15 +397,20 @@ AUDIT_LOG_ENABLED=false
 # Each *_MAX has a ceiling (100 for login/register/forgot-password, 600 logout, 200 logout
 # account, 3000 api, 120 calendar feed) and each *_WINDOW must be between 1s and 24h; a value
 # outside its range is logged at boot and the default is used instead — a limiter cannot be
-# widened past its ceiling, let alone switched off. The login, register and forgot-password
-# pairs are also held to at most 30 requests per minute (MAX over WINDOW, e.g. 100 with 200s);
-# a pair above that is logged and both halves fall back to the defaults.
+# widened past its ceiling, let alone switched off. The login, register, forgot-password, 2FA
+# challenge and password-reset redeem pairs are also held to at most 30 requests per minute
+# (MAX over WINDOW, e.g. 100 with 200s); a pair above that is logged and both halves fall back
+# to the defaults.
 # RATE_LIMIT_LOGIN_MAX=8
 # RATE_LIMIT_LOGIN_WINDOW=15m
 # RATE_LIMIT_REGISTER_MAX=8
 # RATE_LIMIT_REGISTER_WINDOW=15m
 # RATE_LIMIT_FORGOT_PASSWORD_MAX=8
 # RATE_LIMIT_FORGOT_PASSWORD_WINDOW=1h
+# RATE_LIMIT_TOTP_CHALLENGE_MAX=8
+# RATE_LIMIT_TOTP_CHALLENGE_WINDOW=15m
+# RATE_LIMIT_PASSWORD_RESET_REDEEM_MAX=8
+# RATE_LIMIT_PASSWORD_RESET_REDEEM_WINDOW=15m
 # RATE_LIMIT_LOGOUT_MAX=60
 # RATE_LIMIT_LOGOUT_WINDOW=15m
 # Per-account (identity-keyed) logout budget, separate from the per-IP pair above

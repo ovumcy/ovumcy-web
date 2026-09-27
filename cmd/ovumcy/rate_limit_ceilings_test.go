@@ -30,6 +30,8 @@ var rateLimitCeilingCases = []struct {
 	{key: "RATE_LIMIT_LOGIN_MAX", read: func(s rateLimitSettings) int { return s.LoginMax }, ceiling: rateLimitCredentialMaxCeiling, fallback: 8},
 	{key: "RATE_LIMIT_REGISTER_MAX", read: func(s rateLimitSettings) int { return s.RegisterMax }, ceiling: rateLimitCredentialMaxCeiling, fallback: 8},
 	{key: "RATE_LIMIT_FORGOT_PASSWORD_MAX", read: func(s rateLimitSettings) int { return s.ForgotPasswordMax }, ceiling: rateLimitCredentialMaxCeiling, fallback: 8},
+	{key: "RATE_LIMIT_TOTP_CHALLENGE_MAX", read: func(s rateLimitSettings) int { return s.TOTPChallengeMax }, ceiling: rateLimitCredentialMaxCeiling, fallback: 8},
+	{key: "RATE_LIMIT_PASSWORD_RESET_REDEEM_MAX", read: func(s rateLimitSettings) int { return s.PasswordResetRedeemMax }, ceiling: rateLimitCredentialMaxCeiling, fallback: 8},
 	{key: "RATE_LIMIT_LOGOUT_MAX", read: func(s rateLimitSettings) int { return s.LogoutMax }, ceiling: rateLimitLogoutMaxCeiling, fallback: 60},
 	{key: "RATE_LIMIT_LOGOUT_ACCOUNT_MAX", read: func(s rateLimitSettings) int { return s.LogoutAccountMax }, ceiling: rateLimitLogoutAccountMaxCeiling, fallback: 20},
 	{key: "RATE_LIMIT_API_MAX", read: func(s rateLimitSettings) int { return s.APIMax }, ceiling: rateLimitAPIMaxCeiling, fallback: 300},
@@ -45,6 +47,8 @@ var rateLimitWindowCases = []struct {
 	{key: "RATE_LIMIT_LOGIN_WINDOW", read: func(s rateLimitSettings) time.Duration { return s.LoginWindow }, fallback: 15 * time.Minute},
 	{key: "RATE_LIMIT_REGISTER_WINDOW", read: func(s rateLimitSettings) time.Duration { return s.RegisterWindow }, fallback: 15 * time.Minute},
 	{key: "RATE_LIMIT_FORGOT_PASSWORD_WINDOW", read: func(s rateLimitSettings) time.Duration { return s.ForgotPasswordWindow }, fallback: time.Hour},
+	{key: "RATE_LIMIT_TOTP_CHALLENGE_WINDOW", read: func(s rateLimitSettings) time.Duration { return s.TOTPChallengeWindow }, fallback: 15 * time.Minute},
+	{key: "RATE_LIMIT_PASSWORD_RESET_REDEEM_WINDOW", read: func(s rateLimitSettings) time.Duration { return s.PasswordResetRedeemWindow }, fallback: 15 * time.Minute},
 	{key: "RATE_LIMIT_LOGOUT_WINDOW", read: func(s rateLimitSettings) time.Duration { return s.LogoutWindow }, fallback: 15 * time.Minute},
 	{key: "RATE_LIMIT_LOGOUT_ACCOUNT_WINDOW", read: func(s rateLimitSettings) time.Duration { return s.LogoutAccountWindow }, fallback: 15 * time.Minute},
 	{key: "RATE_LIMIT_API_WINDOW", read: func(s rateLimitSettings) time.Duration { return s.APIWindow }, fallback: time.Minute},
@@ -253,8 +257,8 @@ func TestCredentialRateLimitPairsHaveARateCeiling(t *testing.T) {
 			}
 		})
 	}
-	if credentialRows != 3 {
-		t.Fatalf("found %d credential rows in rateLimitCeilingCases, want login, registration and password reset", credentialRows)
+	if credentialRows != 5 {
+		t.Fatalf("found %d credential rows in rateLimitCeilingCases, want login, registration, forgot-password, the 2FA challenge and the password-reset redeem", credentialRows)
 	}
 }
 
@@ -281,10 +285,11 @@ func TestCredentialRateLimitRefusalLeavesTheOtherPairsAlone(t *testing.T) {
 
 // TestCredentialMaxCeilingIsReadOnlyThroughTheRateCheck: the credential count
 // ceiling is referenced by server code only inside getCredentialRateLimit, and
-// a string literal containing a LOGIN, REGISTER or FORGOT_PASSWORD key prefix
-// appears only as an argument of that call. A new credential family, a key
-// split before its trailing underscore ("RATE_LIMIT_LOGIN"+"_MAX") or one built
-// with fmt.Sprintf is not caught.
+// a string literal containing a LOGIN, REGISTER, FORGOT_PASSWORD,
+// TOTP_CHALLENGE or PASSWORD_RESET_REDEEM key prefix appears only as an
+// argument of that call. A new credential family, a key split before its
+// trailing underscore ("RATE_LIMIT_LOGIN"+"_MAX") or one built with
+// fmt.Sprintf is not caught.
 func TestCredentialMaxCeilingIsReadOnlyThroughTheRateCheck(t *testing.T) {
 	source := serverSourceText(t)
 	start := strings.Index(source, "func getCredentialRateLimit(")
@@ -307,10 +312,11 @@ func TestCredentialMaxCeilingIsReadOnlyThroughTheRateCheck(t *testing.T) {
 	// The ceiling constant is only half of it: a credential key read by name
 	// through any other helper skips the rate check without touching the
 	// constant. Every string literal containing RATE_LIMIT_LOGIN_,
-	// RATE_LIMIT_REGISTER_ or RATE_LIMIT_FORGOT_PASSWORD_ must be an argument
-	// of a getCredentialRateLimit call. No constant holds these keys, so no
+	// RATE_LIMIT_REGISTER_, RATE_LIMIT_FORGOT_PASSWORD_, RATE_LIMIT_TOTP_CHALLENGE_
+	// or RATE_LIMIT_PASSWORD_RESET_REDEEM_ must be an argument of a
+	// getCredentialRateLimit call. No constant holds these keys, so no
 	// declaration site is exempt either. Not held: a credential family outside
-	// those three, a literal split before the trailing underscore, or a key
+	// those five, a literal split before the trailing underscore, or a key
 	// formatted at run time.
 	throughRateCheck, elsewhere := credentialKeyLiteralSites(t)
 	for _, site := range elsewhere {
@@ -320,6 +326,8 @@ func TestCredentialMaxCeilingIsReadOnlyThroughTheRateCheck(t *testing.T) {
 		"RATE_LIMIT_LOGIN_MAX", "RATE_LIMIT_LOGIN_WINDOW",
 		"RATE_LIMIT_REGISTER_MAX", "RATE_LIMIT_REGISTER_WINDOW",
 		"RATE_LIMIT_FORGOT_PASSWORD_MAX", "RATE_LIMIT_FORGOT_PASSWORD_WINDOW",
+		"RATE_LIMIT_TOTP_CHALLENGE_MAX", "RATE_LIMIT_TOTP_CHALLENGE_WINDOW",
+		"RATE_LIMIT_PASSWORD_RESET_REDEEM_MAX", "RATE_LIMIT_PASSWORD_RESET_REDEEM_WINDOW",
 	} {
 		if !throughRateCheck[key] {
 			t.Errorf("%s is not passed to getCredentialRateLimit as a literal; the guard is measuring the wrong thing", key)
@@ -328,9 +336,10 @@ func TestCredentialMaxCeilingIsReadOnlyThroughTheRateCheck(t *testing.T) {
 }
 
 // credentialRateLimitKeyPattern matches a string containing the prefix of a
-// LOGIN, REGISTER or FORGOT_PASSWORD rate-limit key, trailing underscore
-// included; a literal cut before that underscore does not match.
-var credentialRateLimitKeyPattern = regexp.MustCompile(`RATE_LIMIT_(LOGIN|REGISTER|FORGOT_PASSWORD)_`)
+// LOGIN, REGISTER, FORGOT_PASSWORD, TOTP_CHALLENGE or PASSWORD_RESET_REDEEM
+// rate-limit key, trailing underscore included; a literal cut before that
+// underscore does not match.
+var credentialRateLimitKeyPattern = regexp.MustCompile(`RATE_LIMIT_(LOGIN|REGISTER|FORGOT_PASSWORD|TOTP_CHALLENGE|PASSWORD_RESET_REDEEM)_`)
 
 // credentialKeyLiteralSites parses every non-test server Go source (comments
 // are not string literals, so prose naming a key is not a site) and sorts each

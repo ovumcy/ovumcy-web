@@ -123,6 +123,8 @@
   "auth.error.web_sign_in_unavailable": "Questo account non è disponibile su Ovumcy Web.",
   "auth.error.local_recovery_unavailable": "Il recupero password locale è disabilitato finché non viene impostata una password locale.",
   "auth.error.too_many_forgot_password_attempts": "Troppi tentativi di recupero. Attendi 1 ora.",
+  "auth.error.too_many_totp_challenge_attempts": "Troppi tentativi di codice a due fattori. Attendi 15 minuti.",
+  "auth.error.too_many_password_reset_redeem_attempts": "Troppi tentativi di reimpostazione della password. Attendi 15 minuti.",
   "auth.error.invalid_reset_token": "Il link di reimpostazione non è valido o è scaduto.",
   "auth.error.identity_change_applied_sign_in_again": "Il collegamento con il tuo provider di identità è stato aggiornato. Accedi di nuovo per continuare.",
   "onboarding.progress.step1": "Passo 1 di 2",
