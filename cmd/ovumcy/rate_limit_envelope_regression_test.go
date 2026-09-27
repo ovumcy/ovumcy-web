@@ -155,6 +155,33 @@ var rateLimitSurfaces = []rateLimitSurface{
 		detailTarget: "global",
 		html:         htmlArmEnvelope,
 	},
+	{
+		// WEB-70: the 2FA login challenge verifies a credential (a TOTP code)
+		// and used to draw on the /api catch-all alone. respondAuthError's
+		// "/api/v1/sessions/2fa-challenge" case redirects a plain browser back
+		// to the challenge page.
+		name:         "totp challenge",
+		method:       http.MethodPost,
+		path:         "/api/v1/sessions/2fa-challenge",
+		key:          "too_many_totp_challenge_attempts",
+		detailTarget: "auth_form",
+		html:         htmlArmRedirect,
+		htmlLocation: "/auth/2fa",
+	},
+	{
+		// WEB-70: the password-reset redeem verifies a credential (a signed
+		// reset token) and pays a bcrypt hash of the new password on every
+		// well-formed request, with no service-level attempt budget behind it
+		// at all. respondAuthError's "/api/v1/password-resets/redeem" case
+		// redirects a plain browser back to the reset-password form.
+		name:         "password reset redeem",
+		method:       http.MethodPost,
+		path:         "/api/v1/password-resets/redeem",
+		key:          "too_many_password_reset_redeem_attempts",
+		detailTarget: "auth_form",
+		html:         htmlArmRedirect,
+		htmlLocation: "/reset-password",
+	},
 }
 
 // newRateLimitEnvelopeTestApp builds the REAL app — fiberConfig plus
@@ -177,20 +204,24 @@ func newRateLimitEnvelopeTestApp(t *testing.T, handler *api.Handler, surface rat
 		Location:        time.UTC,
 		DefaultLanguage: "en",
 		RateLimits: rateLimitSettings{
-			LoginMax:             1,
-			LoginWindow:          time.Minute,
-			ForgotPasswordMax:    1,
-			ForgotPasswordWindow: time.Minute,
-			RegisterMax:          1,
-			RegisterWindow:       time.Minute,
-			LogoutMax:            1,
-			LogoutWindow:         time.Minute,
-			APIMax:               apiMax,
-			APIWindow:            time.Minute,
-			CalendarFeedMax:      1,
-			CalendarFeedWindow:   time.Minute,
-			CalendarMax:          1,
-			CalendarWindow:       time.Minute,
+			LoginMax:                  1,
+			LoginWindow:               time.Minute,
+			ForgotPasswordMax:         1,
+			ForgotPasswordWindow:      time.Minute,
+			RegisterMax:               1,
+			RegisterWindow:            time.Minute,
+			TOTPChallengeMax:          1,
+			TOTPChallengeWindow:       time.Minute,
+			PasswordResetRedeemMax:    1,
+			PasswordResetRedeemWindow: time.Minute,
+			LogoutMax:                 1,
+			LogoutWindow:              time.Minute,
+			APIMax:                    apiMax,
+			APIWindow:                 time.Minute,
+			CalendarFeedMax:           1,
+			CalendarFeedWindow:        time.Minute,
+			CalendarMax:               1,
+			CalendarWindow:            time.Minute,
 		},
 	}, handler)
 }
@@ -381,6 +412,8 @@ func TestRateLimitedHTMXFlowsRenderLocalizedCopy(t *testing.T) {
 		{surface: rateLimitSurfaces[2], flashKey: "auth.error.too_many_register_attempts"},
 		{surface: rateLimitSurfaces[3], flashKey: "auth.error.too_many_forgot_password_attempts"},
 		{surface: rateLimitSurfaces[4], flashKey: "auth.error.too_many_sso_attempts"},
+		{surface: rateLimitSurfaces[9], flashKey: "auth.error.too_many_totp_challenge_attempts"},
+		{surface: rateLimitSurfaces[10], flashKey: "auth.error.too_many_password_reset_redeem_attempts"},
 	}
 
 	for _, testCase := range cases {

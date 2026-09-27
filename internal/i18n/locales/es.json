@@ -123,6 +123,8 @@
   "auth.error.web_sign_in_unavailable": "Esta cuenta no está disponible en Ovumcy Web.",
   "auth.error.local_recovery_unavailable": "La recuperación local no está disponible hasta que esta cuenta tenga una contraseña local.",
   "auth.error.too_many_forgot_password_attempts": "Demasiados intentos de recuperación. Espera 1 hora.",
+  "auth.error.too_many_totp_challenge_attempts": "Demasiados intentos de código de dos factores. Espera 15 minutos.",
+  "auth.error.too_many_password_reset_redeem_attempts": "Demasiados intentos de restablecimiento de contraseña. Espera 15 minutos.",
   "auth.error.invalid_reset_token": "El enlace de restablecimiento no es válido o ha caducado.",
   "auth.error.identity_change_applied_sign_in_again": "El enlace con tu proveedor de identidad se actualizó. Inicia sesión de nuevo para continuar.",
   "onboarding.progress.step1": "Paso 1 de 2",

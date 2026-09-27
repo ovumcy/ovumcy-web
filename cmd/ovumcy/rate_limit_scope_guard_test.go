@@ -45,11 +45,12 @@ type scopedLimiterSpec struct {
 
 // scopedLimiterFloor guards against a vacuous pass. Discovery walks the package
 // source, so a rename of rateLimitOnlyFor — or a parser that silently matches
-// nothing — would otherwise sweep an empty set and report success. Five scoped
-// limiters are wired today (logout, login, register, forgot-password, language
-// switch); removing one is a conscious rate-limit change that updates this floor
+// nothing — would otherwise sweep an empty set and report success. Eight scoped
+// limiters are wired today (logout, login, register, forgot-password, the 2FA
+// challenge, the password-reset redeem, language switch, the calendar page);
+// removing one is a conscious rate-limit change that updates this floor
 // together with SECURITY.md.
-const scopedLimiterFloor = 5
+const scopedLimiterFloor = 8
 
 // scopeGuardBudget is the per-limiter budget the guard runs every limiter at:
 // one request inside the budget, the next one over it. Small enough that the
@@ -556,10 +557,11 @@ const (
 // limiterConfigFloor guards against a vacuous pass, the way scopedLimiterFloor
 // does for the call sites: the sweep below walks the package for limiter.Config
 // literals, so a walk that silently matched none would report success over an
-// empty set. Eight limiters are wired today — logout, login, register,
-// forgot-password, the /auth/oidc catch-all, the language switch, the /api
-// catch-all and the calendar feed.
-const limiterConfigFloor = 8
+// empty set. Eleven limiters are wired today — logout, login, register,
+// forgot-password, the 2FA challenge, the password-reset redeem, the
+// /auth/oidc catch-all, the language switch, the /api catch-all, the calendar
+// feed and the calendar page.
+const limiterConfigFloor = 11
 
 // isQualified reports whether expr is the qualified name pkg.name.
 func isQualified(expr ast.Expr, pkg, name string) bool {

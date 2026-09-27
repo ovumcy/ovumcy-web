@@ -1679,9 +1679,10 @@ paths:
       summary: Submit the TOTP code in the 2FA challenge.
       description: |
         Requires the `ovumcy_totp_pending` cookie issued by a successful
-        password login. Per-account TOTP rate limit: 5 attempts / 15 min.
-        Replayed codes within the 30-second step are rejected with the same
-        response shape as an invalid code.
+        password login. Per-IP rate limit: default 8 / 15 min, on top of the
+        per-account TOTP rate limit: 5 attempts / 15 min. Replayed codes
+        within the 30-second step are rejected with the same response shape as
+        an invalid code.
       security:
         - csrfToken: []
       requestBody:
@@ -1802,6 +1803,7 @@ paths:
       description: |
         Requires the `ovumcy_reset_password` cookie issued by `POST
         /api/v1/password-resets`. Bumps `auth_session_version` on success.
+        Per-IP rate limit: default 8 / 15 min.
       security:
         - csrfToken: []
       requestBody:

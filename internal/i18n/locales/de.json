@@ -123,6 +123,8 @@
   "auth.error.web_sign_in_unavailable": "Dieses Konto ist in Ovumcy Web nicht verfügbar.",
   "auth.error.local_recovery_unavailable": "Die lokale Wiederherstellung ist erst verfügbar, wenn für dieses Konto ein lokales Passwort gesetzt wurde.",
   "auth.error.too_many_forgot_password_attempts": "Zu viele Wiederherstellungsversuche. Bitte warten Sie 1 Stunde.",
+  "auth.error.too_many_totp_challenge_attempts": "Zu viele Zwei-Faktor-Code-Versuche. Bitte warten Sie 15 Minuten.",
+  "auth.error.too_many_password_reset_redeem_attempts": "Zu viele Versuche zum Zurücksetzen des Passworts. Bitte warten Sie 15 Minuten.",
   "auth.error.invalid_reset_token": "Der Zurücksetzungslink ist ungültig oder abgelaufen.",
   "auth.error.identity_change_applied_sign_in_again": "Ihre Anbieterverknüpfung wurde aktualisiert. Bitte melden Sie sich erneut an, um fortzufahren.",
   "onboarding.progress.step1": "Schritt 1 von 2",

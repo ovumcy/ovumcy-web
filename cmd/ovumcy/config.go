@@ -117,12 +117,14 @@ func credentialRateWithinCeiling(maxRequests int, window time.Duration) bool {
 }
 
 // getCredentialRateLimit reads the MAX/WINDOW pair of a credential endpoint
-// (login, registration, password reset): each half is bounded on its own, then
-// the pair is held to the per-minute rate ceiling. A pair above it falls back
-// to BOTH defaults, logged once — keeping either half would leave a rate the
-// operator never chose. It is the only reader of the credential count ceiling
-// and the only place the six LOGIN, REGISTER and FORGOT_PASSWORD keys are
-// named as literals; a key assembled at run time is not held to that.
+// (login, registration, password reset, the 2FA challenge, the password-reset
+// redeem): each half is bounded on its own, then the pair is held to the
+// per-minute rate ceiling. A pair above it falls back to BOTH defaults, logged
+// once — keeping either half would leave a rate the operator never chose. It
+// is the only reader of the credential count ceiling and the only place the
+// ten LOGIN, REGISTER, FORGOT_PASSWORD, TOTP_CHALLENGE and
+// PASSWORD_RESET_REDEEM keys are named as literals; a key assembled at run
+// time is not held to that.
 func getCredentialRateLimit(maxKey, windowKey string, fallbackMax int, fallbackWindow time.Duration) (int, time.Duration) {
 	maxRequests := getRateLimitMax(maxKey, fallbackMax, rateLimitCredentialMaxCeiling)
 	window := getRateLimitWindow(windowKey, fallbackWindow)
@@ -141,6 +143,15 @@ type rateLimitSettings struct {
 	ForgotPasswordWindow time.Duration
 	RegisterMax          int
 	RegisterWindow       time.Duration
+	// TOTPChallengeMax/TOTPChallengeWindow and PasswordResetRedeemMax/Window
+	// (WEB-70) are the edge rows for the two credential-verifying routes that
+	// used to draw on the /api catch-all alone: the 2FA login challenge and the
+	// password-reset redeem. Read through getCredentialRateLimit like the three
+	// pairs above, so they share the same count ceiling and per-minute rate.
+	TOTPChallengeMax          int
+	TOTPChallengeWindow       time.Duration
+	PasswordResetRedeemMax    int
+	PasswordResetRedeemWindow time.Duration
 	// LogoutMax/LogoutWindow size the per-IP edge limiter in front of
 	// DELETE /api/v1/sessions/current. LogoutAccountMax/LogoutAccountWindow
 	// size the per-account, identity-keyed budget AuthService enforces behind
@@ -266,6 +277,16 @@ func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 	loginMax, loginWindow := getCredentialRateLimit("RATE_LIMIT_LOGIN_MAX", "RATE_LIMIT_LOGIN_WINDOW", 8, 15*time.Minute)
 	registerMax, registerWindow := getCredentialRateLimit("RATE_LIMIT_REGISTER_MAX", "RATE_LIMIT_REGISTER_WINDOW", 8, 15*time.Minute)
 	forgotPasswordMax, forgotPasswordWindow := getCredentialRateLimit("RATE_LIMIT_FORGOT_PASSWORD_MAX", "RATE_LIMIT_FORGOT_PASSWORD_WINDOW", 8, time.Hour)
+	// WEB-70: the 2FA challenge and the password-reset redeem each verify a
+	// credential (a TOTP code; a signed reset token plus the new password's own
+	// bcrypt hash) and sat under the /api catch-all alone, with no edge row of
+	// their own. The redeem half pays a bcrypt hash on every well-formed request
+	// with no service-level attempt budget behind it at all — the same CPU-cost
+	// shape login/register/forgot-password are held to above. Same mechanism,
+	// same ceiling; sized like the login pair rather than forgot-password's
+	// 1-hour window, since both are a continuation of an already-started flow.
+	totpChallengeMax, totpChallengeWindow := getCredentialRateLimit("RATE_LIMIT_TOTP_CHALLENGE_MAX", "RATE_LIMIT_TOTP_CHALLENGE_WINDOW", 8, 15*time.Minute)
+	passwordResetRedeemMax, passwordResetRedeemWindow := getCredentialRateLimit("RATE_LIMIT_PASSWORD_RESET_REDEEM_MAX", "RATE_LIMIT_PASSWORD_RESET_REDEEM_WINDOW", 8, 15*time.Minute)
 
 	return runtimeConfig{
 		Location:              location,
@@ -279,14 +300,18 @@ func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 		HSTSEnabled:           hstsEnabled,
 		OIDC:                  oidcConfig,
 		RateLimits: rateLimitSettings{
-			LoginMax:             loginMax,
-			LoginWindow:          loginWindow,
-			RegisterMax:          registerMax,
-			RegisterWindow:       registerWindow,
-			ForgotPasswordMax:    forgotPasswordMax,
-			ForgotPasswordWindow: forgotPasswordWindow,
-			LogoutMax:            getRateLimitMax("RATE_LIMIT_LOGOUT_MAX", 60, rateLimitLogoutMaxCeiling),
-			LogoutWindow:         getRateLimitWindow("RATE_LIMIT_LOGOUT_WINDOW", 15*time.Minute),
+			LoginMax:                  loginMax,
+			LoginWindow:               loginWindow,
+			RegisterMax:               registerMax,
+			RegisterWindow:            registerWindow,
+			ForgotPasswordMax:         forgotPasswordMax,
+			ForgotPasswordWindow:      forgotPasswordWindow,
+			TOTPChallengeMax:          totpChallengeMax,
+			TOTPChallengeWindow:       totpChallengeWindow,
+			PasswordResetRedeemMax:    passwordResetRedeemMax,
+			PasswordResetRedeemWindow: passwordResetRedeemWindow,
+			LogoutMax:                 getRateLimitMax("RATE_LIMIT_LOGOUT_MAX", 60, rateLimitLogoutMaxCeiling),
+			LogoutWindow:              getRateLimitWindow("RATE_LIMIT_LOGOUT_WINDOW", 15*time.Minute),
 			// Defaulted from the service constants so the documented account
 			// budget and the code cannot drift apart.
 			LogoutAccountMax:    getRateLimitMax("RATE_LIMIT_LOGOUT_ACCOUNT_MAX", services.DefaultLogoutAttemptsLimit, rateLimitLogoutAccountMaxCeiling),

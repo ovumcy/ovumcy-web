@@ -123,6 +123,8 @@
   "auth.error.web_sign_in_unavailable": "This account is not available in Ovumcy Web.",
   "auth.error.local_recovery_unavailable": "Local password recovery is disabled until a local password is set.",
   "auth.error.too_many_forgot_password_attempts": "Too many recovery attempts. Please wait 1 hour.",
+  "auth.error.too_many_totp_challenge_attempts": "Too many two-factor code attempts. Please wait 15 minutes.",
+  "auth.error.too_many_password_reset_redeem_attempts": "Too many password reset attempts. Please wait 15 minutes.",
   "auth.error.invalid_reset_token": "Reset link is invalid or expired.",
   "auth.error.identity_change_applied_sign_in_again": "Your identity provider link was updated. Please sign in again to continue.",
   "onboarding.progress.step1": "Step 1 of 2",

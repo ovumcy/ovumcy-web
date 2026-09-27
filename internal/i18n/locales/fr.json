@@ -133,6 +133,8 @@
   "auth.error.web_sign_in_unavailable": "Ce compte n'est pas disponible dans Ovumcy Web.",
   "auth.error.local_recovery_unavailable": "La récupération locale n'est pas disponible tant qu'un mot de passe local n'est pas défini pour ce compte.",
   "auth.error.too_many_forgot_password_attempts": "Trop de tentatives de récupération. Veuillez patienter 1 heure.",
+  "auth.error.too_many_totp_challenge_attempts": "Trop de tentatives de code à deux facteurs. Veuillez patienter 15 minutes.",
+  "auth.error.too_many_password_reset_redeem_attempts": "Trop de tentatives de réinitialisation du mot de passe. Veuillez patienter 15 minutes.",
   "auth.error.invalid_reset_token": "Le lien de réinitialisation est invalide ou expiré.",
   "auth.error.identity_change_applied_sign_in_again": "Le lien avec votre fournisseur d'identité a été mis à jour. Veuillez vous reconnecter pour continuer.",
 
