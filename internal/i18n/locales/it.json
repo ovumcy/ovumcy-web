@@ -781,7 +781,7 @@
   "common.saved_at": "Salvato alle %s",
   "common.error.request_failed": "Richiesta fallita. Riprova.",
   "common.error.too_many_requests": "Troppe richieste. Attendi e riprova.",
-  "common.error.request_too_large": "Quel file è troppo grande da caricare. Scegli un file più piccolo.",
+  "common.error.request_too_large": "Quella richiesta è troppo grande per essere inviata. Riprova con meno dati.",
   "common.error.request_headers_too_large": "Le intestazioni della richiesta sono troppo grandi. Cancella i cookie di questo sito e riprova.",
   "common.error.bad_request": "Il server non ha potuto elaborare questa richiesta. Controlla il modulo e riprova.",
   "common.error.unauthorized": "Non hai effettuato l'accesso. Accedi e riprova.",

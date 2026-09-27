@@ -781,7 +781,7 @@
   "common.saved_at": "Guardado a las %s",
   "common.error.request_failed": "La solicitud falló. Inténtalo de nuevo.",
   "common.error.too_many_requests": "Demasiadas solicitudes. Espera y vuelve a intentarlo.",
-  "common.error.request_too_large": "Ese archivo es demasiado grande para subirlo. Elige un archivo más pequeño.",
+  "common.error.request_too_large": "Esa solicitud es demasiado grande para enviarla. Inténtalo de nuevo con menos datos.",
   "common.error.request_headers_too_large": "Los encabezados de la solicitud son demasiado grandes. Borra las cookies de este sitio e inténtalo de nuevo.",
   "common.error.bad_request": "El servidor no pudo procesar esa solicitud. Revisa el formulario e inténtalo de nuevo.",
   "common.error.unauthorized": "No has iniciado sesión. Inicia sesión e inténtalo de nuevo.",

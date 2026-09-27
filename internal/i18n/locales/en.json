@@ -781,7 +781,7 @@
   "common.saved_at": "Saved at %s",
   "common.error.request_failed": "Request failed. Please try again.",
   "common.error.too_many_requests": "Too many requests. Please wait and try again.",
-  "common.error.request_too_large": "That file is too large to upload. Please choose a smaller file.",
+  "common.error.request_too_large": "That request was too large to send. Please try again with less data.",
   "common.error.request_headers_too_large": "The request headers were too large. Clear this site's cookies and try again.",
   "common.error.bad_request": "The server could not process that request. Please check the form and try again.",
   "common.error.unauthorized": "You are not signed in. Please sign in and try again.",

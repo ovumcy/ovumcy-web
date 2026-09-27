@@ -822,7 +822,7 @@
   "common.saved_at": "Enregistré à %s",
   "common.error.request_failed": "La requête a échoué. Veuillez réessayer.",
   "common.error.too_many_requests": "Trop de requêtes. Veuillez patienter et réessayer.",
-  "common.error.request_too_large": "Ce fichier est trop volumineux pour être importé. Veuillez choisir un fichier plus petit.",
+  "common.error.request_too_large": "Cette requête est trop volumineuse pour être envoyée. Veuillez réessayer avec moins de données.",
   "common.error.request_headers_too_large": "Les en-têtes de la requête sont trop volumineux. Veuillez effacer les cookies de ce site et réessayer.",
   "common.error.bad_request": "Le serveur n'a pas pu traiter cette requête. Veuillez vérifier le formulaire et réessayer.",
   "common.error.unauthorized": "Vous n'êtes pas connecté. Veuillez vous connecter et réessayer.",

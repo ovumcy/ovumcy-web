@@ -781,7 +781,7 @@
   "common.saved_at": "Gespeichert um %s",
   "common.error.request_failed": "Anfrage fehlgeschlagen. Bitte versuchen Sie es erneut.",
   "common.error.too_many_requests": "Zu viele Anfragen. Bitte warten Sie und versuchen Sie es erneut.",
-  "common.error.request_too_large": "Diese Datei ist zu groß zum Hochladen. Bitte wählen Sie eine kleinere Datei.",
+  "common.error.request_too_large": "Diese Anfrage ist zu groß zum Senden. Bitte versuchen Sie es mit weniger Daten erneut.",
   "common.error.request_headers_too_large": "Die Kopfzeilen der Anfrage sind zu groß. Bitte löschen Sie die Cookies dieser Website und versuchen Sie es erneut.",
   "common.error.bad_request": "Der Server konnte diese Anfrage nicht verarbeiten. Bitte prüfen Sie das Formular und versuchen Sie es erneut.",
   "common.error.unauthorized": "Sie sind nicht angemeldet. Bitte melden Sie sich an und versuchen Sie es erneut.",
