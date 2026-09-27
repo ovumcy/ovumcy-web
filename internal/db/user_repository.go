@@ -1412,9 +1412,12 @@ func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessions(ctx cont
 // checked when the token is resolved; a session revocation, recovery-code
 // rotation or 2FA change that lands between that read and this write bumps the
 // column, and without the version in the predicate the reset would still land
-// on the stale grant. oldSessionVersion is the normalized value (>= 1); a
-// legacy row still holding 0 is read by the application as version 1, so the
-// predicate accepts it for that value only.
+// on the stale grant. oldSessionVersion is the normalized value (>= 1). A row
+// stored at 0 or below cannot match: migration 041 (WEB-50/WEB-65) backfills
+// every such row to 1 at boot, so by the time this runs the column is never
+// <= 0, and a legacy-0 arm here would only ever match a row that was force-set
+// by hand after that migration ran -- never a match this predicate should
+// honor.
 //
 // Returns ErrResetTokenAlreadyConsumed when RowsAffected == 0 (token was
 // already redeemed, or the password or session state changed since the row
@@ -1443,7 +1446,7 @@ func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx c
 	if err := repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&models.User{}).
 			Where("id = ? AND password_hash = ?", userID, oldPasswordHash).
-			Where("(auth_session_version = ? OR (? = 1 AND auth_session_version <= 0))", oldSessionVersion, oldSessionVersion).
+			Where("auth_session_version = ?", oldSessionVersion).
 			Updates(map[string]any{
 				"password_hash":                newPasswordHash,
 				"recovery_code_hash":           recoveryHash,

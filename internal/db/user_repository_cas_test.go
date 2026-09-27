@@ -93,8 +93,10 @@ func TestUpdatePasswordRecoveryCodeAndRevokeSessionsCASRejectsReplay(t *testing.
 // pins the auth_session_version term of the reset CAS: the reset token is
 // checked against the version when it is resolved, and a revocation or posture
 // change that bumps the column between that read and the UPDATE must make the
-// reset lose, even though the password hash is unchanged. A legacy row still
-// holding 0 is read as version 1 and must keep matching that value.
+// reset lose, even though the password hash is unchanged. A row stored at 0
+// can no longer match any expected version at all (WEB-50/WEB-65): migration
+// 041 backfills every such row to 1 at boot, so this predicate no longer
+// carries the legacy arm that used to read a stored 0 as version 1.
 func TestUpdatePasswordRecoveryCodeAndRevokeSessionsCASLosesToASessionVersionBump(t *testing.T) {
 	dir := t.TempDir()
 	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(dir, "cas_version_test.db")})
@@ -146,22 +148,26 @@ func TestUpdatePasswordRecoveryCodeAndRevokeSessionsCASLosesToASessionVersionBum
 		t.Fatalf("expected a zero session version to be refused, got %v", err)
 	}
 
-	// A legacy row holding 0 is version 1 to the application.
+	// A row forced to 0 by hand (the shape migration 041 backfills at boot,
+	// never a state a running instance's own writers produce) must not match
+	// ANY expected version any more: the legacy arm that used to read a stored
+	// 0 as version 1 is gone, so the predicate's plain equality can never see
+	// a 0 as a 1.
 	if err := database.Model(&models.User{}).Where("id = ?", user.ID).UpdateColumn("auth_session_version", 0).Error; err != nil {
 		t.Fatalf("seed legacy version: %v", err)
 	}
 	if err := repo.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx, user.ID, "old-hash", 2, "new-hash", "new-recovery", nil); !errors.Is(err, ErrResetTokenAlreadyConsumed) {
-		t.Fatalf("expected a legacy 0 row not to match version 2, got %v", err)
+		t.Fatalf("expected a row at 0 not to match version 2, got %v", err)
 	}
-	if err := repo.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx, user.ID, "old-hash", 1, "new-hash", "new-recovery", nil); err != nil {
-		t.Fatalf("expected a legacy 0 row to match version 1, got %v", err)
+	if err := repo.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx, user.ID, "old-hash", 1, "new-hash", "new-recovery", nil); !errors.Is(err, ErrResetTokenAlreadyConsumed) {
+		t.Fatalf("expected a row at 0 not to match version 1 either, now that the legacy arm is gone, got %v", err)
 	}
 	got, err = repo.FindByID(ctx, user.ID)
 	if err != nil {
-		t.Fatalf("find after legacy CAS: %v", err)
+		t.Fatalf("find after refused CAS: %v", err)
 	}
-	if got.PasswordHash != "new-hash" || got.AuthSessionVersion != 1 {
-		t.Fatalf("expected the legacy reset to land (hash new-hash, version 0+1), got hash %q version %d", got.PasswordHash, got.AuthSessionVersion)
+	if got.PasswordHash != "old-hash" || got.AuthSessionVersion != 0 {
+		t.Fatalf("a refused CAS must write nothing, got hash %q version %d", got.PasswordHash, got.AuthSessionVersion)
 	}
 }
 
