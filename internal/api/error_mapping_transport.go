@@ -390,6 +390,17 @@ func (handler *Handler) redirectSettingsRefusal(c fiber.Ctx, spec APIErrorSpec) 
 	return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
 }
 
+// redirectSettingsRefusalCSRFExempt is redirectSettingsRefusal's twin for a
+// refusal reached through a CSRF-exempt/token-less request (WEB-40): today
+// that is only requireFirstPartyRequest's own refusal for the OIDC step-up
+// continue route, which fires on the cross-site request the guard exists to
+// name. Same shape, same channel discipline (SettingsError only, /settings),
+// different cookie — see exemptFlashCookieSpec.
+func (handler *Handler) redirectSettingsRefusalCSRFExempt(c fiber.Ctx, spec APIErrorSpec) error {
+	handler.setCSRFExemptFlashCookie(c, FlashPayload{SettingsError: spec.Key})
+	return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+}
+
 // redirectSignedOutRefusal answers a refusal raised after this device's auth
 // cookie was already cleared: a revocation raced the change, or the change
 // committed and no session could be re-issued past it. Neither

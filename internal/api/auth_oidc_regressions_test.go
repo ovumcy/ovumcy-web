@@ -353,9 +353,12 @@ func TestOIDCStartFailureClearsStateCookieAndFlashesLoginError(t *testing.T) {
 	if stateCookie.Value != "" {
 		t.Fatalf("expected cleared OIDC state cookie, got %q", stateCookie.Value)
 	}
-	flashCookie := responseCookie(response.Cookies(), flashCookieName)
+	// /auth/oidc/start is an unguarded GET, no CSRF token possible on a safe
+	// method: its own AuthError write goes through the exempt channel
+	// (WEB-40), never the shared page slot.
+	flashCookie := responseCookie(response.Cookies(), exemptFlashCookieName)
 	if flashCookie == nil || strings.TrimSpace(flashCookie.Value) == "" {
-		t.Fatal("expected flash cookie on OIDC start failure")
+		t.Fatal("expected exempt-channel flash cookie on OIDC start failure")
 	}
 }
 
@@ -379,8 +382,11 @@ func TestOIDCCallbackSkipsCSRFAndFallsBackToStateValidation(t *testing.T) {
 	if location := response.Header.Get("Location"); location != "/login" {
 		t.Fatalf("expected redirect to /login, got %q", location)
 	}
-	if flashValue := responseCookieValue(response.Cookies(), flashCookieName); flashValue == "" {
-		t.Fatal("expected flash cookie for invalid OIDC callback")
+	// POST /auth/oidc/callback is the sole CSRF exemption: its state-mismatch
+	// refusal goes through the exempt channel (WEB-40), never the shared page
+	// slot a pending same-origin flash occupies.
+	if flashValue := responseCookieValue(response.Cookies(), exemptFlashCookieName); flashValue == "" {
+		t.Fatal("expected exempt-channel flash cookie for invalid OIDC callback")
 	}
 }
 
@@ -644,9 +650,9 @@ func TestOIDCCallbackProviderErrorRedirectsToLoginWithoutLeakingProviderError(t 
 		t.Fatalf("did not expect OIDC authenticate call on provider error, got %q", stub.lastAuthCode)
 	}
 
-	flashCookie := responseCookie(callbackResponse.Cookies(), flashCookieName)
+	flashCookie := responseCookie(callbackResponse.Cookies(), exemptFlashCookieName)
 	if flashCookie == nil || strings.TrimSpace(flashCookie.Value) == "" {
-		t.Fatal("expected flash cookie on OIDC provider error")
+		t.Fatal("expected exempt-channel flash cookie on OIDC provider error")
 	}
 	if strings.Contains(flashCookie.Value, "access_denied") || strings.Contains(flashCookie.Value, "operator rejected sign-in") {
 		t.Fatalf("did not expect provider error details in flash cookie: %q", flashCookie.Value)
@@ -687,9 +693,9 @@ func TestOIDCCallbackAccountUnavailableRedirectsToLogin(t *testing.T) {
 	if authCookie := responseCookie(callbackResponse.Cookies(), authCookieName); authCookie != nil && strings.TrimSpace(authCookie.Value) != "" {
 		t.Fatal("did not expect auth cookie on unavailable OIDC account")
 	}
-	flashCookie := responseCookie(callbackResponse.Cookies(), flashCookieName)
+	flashCookie := responseCookie(callbackResponse.Cookies(), exemptFlashCookieName)
 	if flashCookie == nil || strings.TrimSpace(flashCookie.Value) == "" {
-		t.Fatal("expected flash cookie on unavailable OIDC account")
+		t.Fatal("expected exempt-channel flash cookie on unavailable OIDC account")
 	}
 }
 
@@ -1119,6 +1125,27 @@ func decodeFlashCookieForTest(t *testing.T, sealed string) FlashPayload {
 	return payload
 }
 
+// decodeExemptFlashCookieForTest is decodeFlashCookieForTest's twin for the
+// WEB-40 exempt channel: the cookie name is bound into the sealed envelope, so
+// a value sealed under exemptFlashCookieName does not open under
+// flashCookieName.
+func decodeExemptFlashCookieForTest(t *testing.T, sealed string) FlashPayload {
+	t.Helper()
+	codec, err := newSecureCookieCodec([]byte(testHandlerSecretKey))
+	if err != nil {
+		t.Fatalf("newSecureCookieCodec: %v", err)
+	}
+	decoded, err := codec.open(exemptFlashCookieName, sealed)
+	if err != nil {
+		t.Fatalf("open exempt flash cookie: %v", err)
+	}
+	payload := FlashPayload{}
+	if err := json.Unmarshal(decoded, &payload); err != nil {
+		t.Fatalf("unmarshal exempt flash payload: %v", err)
+	}
+	return payload
+}
+
 // TestOIDCCallbackPendingLinkNeverMintsPendingCookieAndRedirectsToLogin pins
 // the fail-closed handoff WEB-77 left in place after removing the public
 // link-confirm route for good (issue #701 had already made it unreachable):
@@ -1174,11 +1201,11 @@ func TestOIDCCallbackPendingLinkNeverMintsPendingCookieAndRedirectsToLogin(t *te
 	if authCookie := responseCookie(response.Cookies(), authCookieName); authCookie != nil && strings.TrimSpace(authCookie.Value) != "" {
 		t.Fatalf("did not expect auth cookie to be issued, got %q", authCookie.Value)
 	}
-	flashCookie := responseCookie(response.Cookies(), flashCookieName)
+	flashCookie := responseCookie(response.Cookies(), exemptFlashCookieName)
 	if flashCookie == nil || strings.TrimSpace(flashCookie.Value) == "" {
-		t.Fatal("expected flash cookie explaining the refusal")
+		t.Fatal("expected exempt-channel flash cookie explaining the refusal")
 	}
-	payload := decodeFlashCookieForTest(t, flashCookie.Value)
+	payload := decodeExemptFlashCookieForTest(t, flashCookie.Value)
 	if payload.AuthError != authOIDCLinkConfirmUnavailableErrorSpec().Key {
 		t.Fatalf("expected flash auth_error %q, got %q", authOIDCLinkConfirmUnavailableErrorSpec().Key, payload.AuthError)
 	}
@@ -1190,8 +1217,8 @@ func TestOIDCCallbackPendingLinkNeverMintsPendingCookieAndRedirectsToLogin(t *te
 		t.Fatalf("expected no ovumcy_oidc_link_pending cookie, got %q", pending.Value)
 	}
 	for _, cookie := range response.Cookies() {
-		if cookie.Name != flashCookieName && cookie.Name != oidcStateCookieName {
-			t.Fatalf("expected only the flash cookie and the state cookie's clear, got unexpected cookie %q", cookie.Name)
+		if cookie.Name != exemptFlashCookieName && cookie.Name != oidcStateCookieName {
+			t.Fatalf("expected only the exempt flash cookie and the state cookie's clear, got unexpected cookie %q", cookie.Name)
 		}
 	}
 }

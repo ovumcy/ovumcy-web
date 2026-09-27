@@ -462,11 +462,17 @@ func assertCrossSiteStepupRefusal(t *testing.T, response *http.Response) {
 	if strings.Contains(body, oidcCallbackContinuePath) {
 		t.Fatalf("a refusal must not hand over to the continue route, got %q", body)
 	}
-	flash := responseCookie(response.Cookies(), flashCookieName)
-	if flash == nil || strings.TrimSpace(flash.Value) == "" {
-		t.Fatal("expected the refusal to carry a flash the settings page renders")
+	// The cross-site leg is a token-less write (WEB-40): it seals into the
+	// exempt channel, never the shared page slot, so it never carries
+	// flashCookieName at all.
+	if pageFlash := responseCookie(response.Cookies(), flashCookieName); pageFlash != nil && strings.TrimSpace(pageFlash.Value) != "" {
+		t.Fatalf("a cross-site step-up refusal must not touch the shared page flash slot, got %#v", pageFlash)
 	}
-	payload := decodeFlashCookieForTest(t, flash.Value)
+	flash := responseCookie(response.Cookies(), exemptFlashCookieName)
+	if flash == nil || strings.TrimSpace(flash.Value) == "" {
+		t.Fatal("expected the refusal to carry an exempt-channel flash the settings page renders")
+	}
+	payload := decodeExemptFlashCookieForTest(t, flash.Value)
 	if payload.SettingsError == "" {
 		t.Fatalf("expected the refusal on the settings error channel, got %+v", payload)
 	}

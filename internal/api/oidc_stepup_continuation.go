@@ -152,10 +152,15 @@ func (handler *Handler) clearOIDCStepupContinuationCookie(c fiber.Ctx) {
 // continuation was waiting: an off-origin initiator, an embed, or a
 // speculative load all leave through the same settings refusal, so a page on
 // another site learns neither that a step-up is in flight nor what it was for.
+//
+// This refusal fires on exactly the request requireFirstPartyRequest exists to
+// name — off-origin included — so it is itself a CSRF-exempt/token-less write
+// (WEB-40): the exempt channel, not the shared page slot a same-origin
+// navigation may have pending. See exemptFlashCookieSpec.
 func (handler *Handler) refuseOIDCStepupContinueRequest(c fiber.Ctx, reason string) error {
 	spec := authOIDCAuthenticationFailedErrorSpec()
 	handler.logSecurityError(c, "auth.oidc_callback", spec, SecurityEventField{Key: "refused", Value: reason})
-	return handler.redirectSettingsRefusal(c, spec)
+	return handler.redirectSettingsRefusalCSRFExempt(c, spec)
 }
 
 // refuseOIDCStepupCallback flashes spec against action and returns the owner to
@@ -184,7 +189,12 @@ func (handler *Handler) refuseOIDCStepupContinueRequest(c fiber.Ctx, reason stri
 func (handler *Handler) refuseOIDCStepupCallback(c fiber.Ctx, action string, spec APIErrorSpec) error {
 	handler.logSecurityError(c, action, spec)
 	if callbackArrivedCrossSite(c) {
-		handler.setFlashCookie(c, FlashPayload{SettingsError: spec.Key})
+		// This arm is reached with the request Sec-Fetch-Site itself states as
+		// cross-site (WEB-40): the exempt channel, never the shared page slot —
+		// see exemptFlashCookieSpec. The same-site arm below keeps the ordinary
+		// channel: it runs only once Sec-Fetch-Site has said this is NOT a
+		// cross-site request.
+		handler.setCSRFExemptFlashCookie(c, FlashPayload{SettingsError: spec.Key})
 		return respondOIDCSameOriginHandoff(c, "/settings")
 	}
 	return handler.redirectSettingsRefusal(c, spec)
