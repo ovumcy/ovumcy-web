@@ -99,7 +99,13 @@ func parsePasswordProtectedSettingsAction(c fiber.Ctx) (string, APIErrorSpec, bo
 func (handler *Handler) validateSettingsActionPassword(c fiber.Ctx) (*models.User, APIErrorSpec, SecurityEventField, bool) {
 	user, ok := currentUser(c)
 	if !ok {
+		// codecov:ignore:start -- every caller hangs off the usersCurrent group,
+		// which carries AuthRequired, so a request reaching this helper always
+		// has a resolved session. Kept for the same reason the OIDC identity-link
+		// step-up's own duplicate check does: the helper must stay safe if it is
+		// ever called from somewhere that is not behind AuthRequired.
 		return nil, unauthorizedErrorSpec(), SecurityEventField{}, false
+		// codecov:ignore:end
 	}
 
 	password, spec, valid := parsePasswordProtectedSettingsAction(c)
