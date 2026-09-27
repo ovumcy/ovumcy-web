@@ -65,7 +65,7 @@ ships in the image.
 
 ### Sealed-cookie codec coverage
 
-All eleven AEAD-sealed cookie purposes are exercised by `internal/api/secure_cookie_codec_security_test.go`.
+All twelve AEAD-sealed cookie purposes are exercised by `internal/api/secure_cookie_codec_security_test.go`.
 Each purpose is bound to its own AAD so a ciphertext from one cookie cannot be opened as another.
 (WEB-77 removed the twelfth, `ovumcy_oidc_link_pending`, along with the route it served; a golden
 value sealed under that purpose string still has to open, so it stays pinned in
@@ -76,6 +76,7 @@ here.)
 |--------|:---------:|:----------------------:|:----------------:|
 | `ovumcy_auth` | ✓ | ✓ | ✓ (auth-tag, body byte, nonce) |
 | `ovumcy_flash` | ✓ | ✓ | †  |
+| `ovumcy_flash_exempt` | ✓ | ✓ | †  |
 | `ovumcy_recovery_code` | ✓ | ✓ | †  |
 | `ovumcy_calendar_feed` | ✓ | ✓ | †  |
 | `ovumcy_register_pickup` | ✓ | ✓ | †  |
@@ -92,8 +93,11 @@ representative high-value targets.
 
 Backward-compatibility goldens: `internal/api/secure_cookie_codec_golden_test.go` holds sealed
 values produced by the pre-consolidation codec for the eleven purposes that predate the
-consolidation — `ovumcy_calendar_feed` was minted later and has no such value to pin — and
-`internal/security/field_crypto_golden_test.go` holds AAD-bound and legacy field ciphertexts.
+consolidation, plus one pinned under the current codec for `ovumcy_flash_exempt` (WEB-40), which
+postdates it and so has no genuine pre-consolidation artifact to reuse — twelve entries in total.
+`ovumcy_calendar_feed` also postdates the consolidation and, unlike `ovumcy_flash_exempt`, has no
+entry at all. `internal/security/field_crypto_golden_test.go` holds AAD-bound and legacy field
+ciphertexts.
 They pin the HKDF labels, AAD construction, envelope, and payload layout; never regenerate the
 fixtures to make these tests pass.
 

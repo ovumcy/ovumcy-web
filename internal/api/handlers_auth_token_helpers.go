@@ -180,8 +180,13 @@ func (handler *Handler) clearSessionEndCookies(c fiber.Ctx) {
 	// A flash still riding from before the session ended (a settings message,
 	// a ForgotEmail prefill) belongs to the session that ended. A path that
 	// wants to show a message after ending the session sets its flash after
-	// this call, and the later Set-Cookie for the same name wins.
+	// this call, and the later Set-Cookie for the same name wins. Both flash
+	// channels are cleared here, not only the page slot: a token-less writer
+	// (WEB-40) can seal a message into the exempt channel before the session
+	// it named ever ends — the OIDC callback runs unauthenticated — and that
+	// message belongs to the ended session exactly as much as the page slot's.
 	handler.clearFlashCookie(c)
+	handler.clearCSRFExemptFlashCookie(c)
 }
 
 // sessionWasRemembered reads the owner's remember-me choice back off the session

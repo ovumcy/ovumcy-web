@@ -120,11 +120,12 @@ func TestPopFlashCookiePageSlotWinsWhenBothChannelsArePending(t *testing.T) {
 	if cleared := responseCookie(response.Cookies(), flashCookieName); cleared == nil || cleared.Value != "" {
 		t.Fatalf("expected the page flash cookie retracted, got %#v", cleared)
 	}
-	// The exempt slot is left standing rather than destroyed: nothing read it
-	// this time, so its message survives for the owner's next navigation
-	// instead of being silently lost to the coincidence.
-	if untouched := responseCookie(response.Cookies(), exemptFlashCookieName); untouched != nil {
-		t.Fatalf("expected the exempt flash cookie left untouched when the page slot wins, got %#v", untouched)
+	// The exempt slot is retracted too, not left standing: nothing read its
+	// message this time, and leaving it sealed would surface it on a later,
+	// unrelated render once the page slot that outranked it is gone. The
+	// token-less message is the one to drop.
+	if cleared := responseCookie(response.Cookies(), exemptFlashCookieName); cleared == nil || cleared.Value != "" {
+		t.Fatalf("expected the exempt flash cookie retracted when the page slot wins, got %#v", cleared)
 	}
 }
 

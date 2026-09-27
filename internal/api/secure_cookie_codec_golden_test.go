@@ -33,6 +33,7 @@ func TestSecureCookieCodecOpensPreConsolidationGoldenValues(t *testing.T) {
 	}{
 		{authCookieName, "v2.VIBSLKuwjVMy4xTlTt9kjHR4AuJew-9dygidI1ryVZlKS8MHbyPjBLvj9sWKJ6vDs__CnA"},
 		{flashCookieName, "v2.2sD_NpXqvPYMPWL0wyJ8F3sDMjfwFQCvUrgHzbhkcKlXMh_-HWBxg9M5UUFyLTTO_y31WBc"},
+		{exemptFlashCookieName, "v2.nZlaAlDyZ6WSvqAm-TfHK02Kob8zWcFX0Ifx4ibxhkXWzL5bAenngkdTyqjuBGtef-0Ut6Ei4DbVRMs1"},
 		{recoveryCodeCookieName, "v2.zxcCF0DSlTucB1MgQEwdmQFzFseV6hQ9WBpyKausMSALoGvUogoYIeYfy9XVJJY5dSkBmBPK-NuaDZoveg"},
 		{registerPickupCookieName, "v2.YMm5IAVoAs_DnTwc6I--An05FfRepbUIkEDrXtcME398JGts9tQ1p2LLqnE8fmoOvl8WRDPQBSOkxoClU_dY"},
 		{resetPasswordCookieName, "v2.golsLgDUmURHcZboCdvAvoiwynu8VBuWV1CEG92EvKJ-h8KUqTNB2dRk_vJCXaXSUXsLMGLQgrhonp6XFgg"},
