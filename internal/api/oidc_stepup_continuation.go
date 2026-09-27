@@ -197,7 +197,14 @@ func (handler *Handler) refuseOIDCStepupCallback(c fiber.Ctx, action string, spe
 		handler.setCSRFExemptFlashCookie(c, FlashPayload{SettingsError: spec.Key})
 		return respondOIDCSameOriginHandoff(c, "/settings")
 	}
-	return handler.redirectSettingsRefusal(c, spec)
+	// callbackArrivedCrossSite only matches a STATED "cross-site" (WEB-40 round
+	// 3): a stated "same-site" and a missing Fetch Metadata family both fall
+	// through to here, and neither is evidence this 303 will land on a
+	// same-origin navigation — a sibling subdomain or a client sending no
+	// Sec-Fetch-Site at all can reach this arm too. redirectSettingsRefusal
+	// unconditionally writes the shared page slot, so this arm defers to the
+	// origin-aware variant instead.
+	return handler.redirectSettingsRefusalForRequestOrigin(c, spec)
 }
 
 // callbackArrivedCrossSite reports whether the browser says this request came
@@ -349,7 +356,12 @@ func (handler *Handler) ContinueOIDCStepup(c fiber.Ctx) error {
 	if continuation.Code == "" {
 		spec := authOIDCAuthenticationFailedErrorSpec()
 		handler.logSecurityError(c, "auth.oidc_callback", spec)
-		return handler.redirectSettingsRefusal(c, spec)
+		// requireFirstPartyRequest guards this route but is deliberately
+		// monotone (see firstPartyRequestRefusal): a stated "same-site" origin
+		// or a missing Fetch Metadata family both pass it, so a request that
+		// reaches here with no continuation waiting is not provably the
+		// owner's own return navigation (WEB-40 round 3).
+		return handler.redirectSettingsRefusalForRequestOrigin(c, spec)
 	}
 	handler.clearOIDCStepupContinuationCookie(c)
 

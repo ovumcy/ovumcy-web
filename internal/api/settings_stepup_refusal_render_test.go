@@ -523,6 +523,11 @@ func TestEverySettingsStepupRefusalKeyMapsToLocalizedCopy(t *testing.T) {
 // JSON envelope or hands it to the top-level ErrorHandler.
 //
 //   - handler.redirectSettingsRefusal — the refusal channel, flash + 303.
+//   - handler.redirectSettingsRefusalForRequestOrigin — the same channel, for a
+//     site requireFirstPartyRequest's monotone guard lets through without
+//     proving same-origin (a stated "same-site", "none", or the family
+//     stripped): it picks the page slot or the CSRF-exempt one by whether
+//     Sec-Fetch-Site itself states "same-origin" (WEB-40 round 3).
 //   - handler.redirectSignedOutRefusal — the same, for a refusal raised after
 //     the auth cookie was cleared: flash on the auth channel + 303 to /login,
 //     the one page that still renders for a device with no session.
@@ -545,16 +550,17 @@ func TestEverySettingsStepupRefusalKeyMapsToLocalizedCopy(t *testing.T) {
 //     return is scanned by this same guard, so admitting them delegates the
 //     check rather than skipping it.
 var allowedStepupCompletionTerminals = map[string]string{
-	"handler.redirectSettingsRefusal":          "the refusal channel the settings page reads",
-	"handler.redirectSignedOutRefusal":         "the refusal channel the sign-in page reads, once the cookie is gone",
-	"handler.refuseOIDCStepupCallback":         "the refusal channel, by the route the arrival can carry",
-	"c.Redirect.Status.To":                     "a plain redirect to a page",
-	"respondOIDCSameOriginHandoff":             "a same-origin document that navigates to a page",
-	"handler.dispatchStepupCompletion":         "dispatches to a handler this guard also scans",
-	"handler.bounceStepupToSameSiteContinue":   "bounces to the same-site leg this guard also scans",
-	"handler.completeLocalPasswordSetupReauth": "a per-purpose completion this guard also scans",
-	"handler.completeErasureStepupReauth":      "a per-purpose completion this guard also scans",
-	"handler.completeOIDCIdentityLinkStepup":   "a per-purpose completion this guard also scans",
+	"handler.redirectSettingsRefusal":                 "the refusal channel the settings page reads",
+	"handler.redirectSettingsRefusalForRequestOrigin": "the same channel, deferring page-slot-vs-exempt to Sec-Fetch-Site",
+	"handler.redirectSignedOutRefusal":                "the refusal channel the sign-in page reads, once the cookie is gone",
+	"handler.refuseOIDCStepupCallback":                "the refusal channel, by the route the arrival can carry",
+	"c.Redirect.Status.To":                            "a plain redirect to a page",
+	"respondOIDCSameOriginHandoff":                    "a same-origin document that navigates to a page",
+	"handler.dispatchStepupCompletion":                "dispatches to a handler this guard also scans",
+	"handler.bounceStepupToSameSiteContinue":          "bounces to the same-site leg this guard also scans",
+	"handler.completeLocalPasswordSetupReauth":        "a per-purpose completion this guard also scans",
+	"handler.completeErasureStepupReauth":             "a per-purpose completion this guard also scans",
+	"handler.completeOIDCIdentityLinkStepup":          "a per-purpose completion this guard also scans",
 }
 
 // stepupCompletionDelegates are the terminals above that are admitted ONLY

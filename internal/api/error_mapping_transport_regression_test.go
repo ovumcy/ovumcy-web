@@ -148,7 +148,16 @@ func TestRespondAuthErrorRedirectsEveryRoutableSpellingOfAnAuthForm(t *testing.T
 				probe.method, probe.path, response.StatusCode, response.Header.Get("Location"))
 			continue
 		}
-		if payload := mustReadFlashPayload(t, handler.secretKey, response.Cookies()); payload.AuthError != "invalid credentials" {
+		// The SSO limiter/oidc-prefix arms write the CSRF-exempt channel
+		// (WEB-40): a cross-site top-level GET can reach /auth/oidc/start
+		// carrying no CSRF token, so that arm must never touch the shared page
+		// slot. /api/v1/sessions stays session+CSRF-gated and keeps the page
+		// slot unchanged.
+		readFlash := mustReadFlashPayload
+		if strings.Contains(strings.ToLower(probe.path), "/auth/oidc") {
+			readFlash = mustReadExemptFlashPayload
+		}
+		if payload := readFlash(t, handler.secretKey, response.Cookies()); payload.AuthError != "invalid credentials" {
 			t.Errorf("%s %s flashed %#v, want the auth error key", probe.method, probe.path, payload)
 		}
 	}
@@ -175,7 +184,13 @@ func TestRespondAuthErrorDefaultArmRedirectsAnUnlistedOIDCSubPath(t *testing.T) 
 		t.Fatalf("%s form error answered %d (Location %q), want 303 to /login via the default arm",
 			oidcLogoutBridgePath, response.StatusCode, response.Header.Get("Location"))
 	}
-	if payload := mustReadFlashPayload(t, handler.secretKey, response.Cookies()); payload.AuthError != "too many sso attempts" {
+	// The SSO limiter covers every /auth/oidc/* sub-path (WEB-40), so this
+	// unlisted one must write only the CSRF-exempt channel, never the page
+	// slot a same-origin navigation may have pending.
+	if touched := responseCookie(response.Cookies(), flashCookieName); touched != nil {
+		t.Fatalf("%s must not touch the page flash cookie, got %#v", oidcLogoutBridgePath, touched)
+	}
+	if payload := mustReadExemptFlashPayload(t, handler.secretKey, response.Cookies()); payload.AuthError != "too many sso attempts" {
 		t.Fatalf("%s flashed %#v, want the auth error key", oidcLogoutBridgePath, payload)
 	}
 }
@@ -796,10 +811,24 @@ func newErrorMappingTransportTestApp(t *testing.T) (*fiber.App, *Handler) {
 
 func mustReadFlashPayload(t *testing.T, secretKey []byte, cookies []*http.Cookie) FlashPayload {
 	t.Helper()
+	return mustReadFlashPayloadFromCookie(t, secretKey, cookies, flashCookieName)
+}
 
-	rawValue := responseCookieValue(cookies, flashCookieName)
+// mustReadExemptFlashPayload is mustReadFlashPayload's twin for the WEB-40
+// CSRF-exempt channel: the cookie name is bound into the sealed envelope, so
+// a value sealed under exemptFlashCookieName does not open under
+// flashCookieName.
+func mustReadExemptFlashPayload(t *testing.T, secretKey []byte, cookies []*http.Cookie) FlashPayload {
+	t.Helper()
+	return mustReadFlashPayloadFromCookie(t, secretKey, cookies, exemptFlashCookieName)
+}
+
+func mustReadFlashPayloadFromCookie(t *testing.T, secretKey []byte, cookies []*http.Cookie, cookieName string) FlashPayload {
+	t.Helper()
+
+	rawValue := responseCookieValue(cookies, cookieName)
 	if rawValue == "" {
-		t.Fatal("expected flash cookie in response")
+		t.Fatalf("expected %s cookie in response", cookieName)
 	}
 
 	codec, err := newSecureCookieCodec(secretKey)
@@ -807,14 +836,14 @@ func mustReadFlashPayload(t *testing.T, secretKey []byte, cookies []*http.Cookie
 		t.Fatalf("create secure cookie codec: %v", err)
 	}
 
-	decoded, err := codec.open(flashCookieName, rawValue)
+	decoded, err := codec.open(cookieName, rawValue)
 	if err != nil {
-		t.Fatalf("open flash cookie: %v", err)
+		t.Fatalf("open %s cookie: %v", cookieName, err)
 	}
 
 	payload := FlashPayload{}
 	if err := json.Unmarshal(decoded, &payload); err != nil {
-		t.Fatalf("decode flash cookie payload: %v", err)
+		t.Fatalf("decode %s cookie payload: %v", cookieName, err)
 	}
 	return payload
 }

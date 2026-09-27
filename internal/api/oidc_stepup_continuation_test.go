@@ -485,9 +485,16 @@ func assertCrossSiteStepupRefusal(t *testing.T, response *http.Response) {
 }
 
 // TestSameSiteStepupCallbackRefusalStillRedirects is the other side of that
-// rule: the hand-off document is for the leg that needs it. A same-site
-// callback carries its cookies on an ordinary 303 already, and the same
-// refusal arm serves both legs.
+// rule: the hand-off document is for the leg that needs it. A callback
+// Sec-Fetch-Site does not state as "cross-site" carries its cookies on an
+// ordinary 303 already, and the same refusal arm serves both legs.
+// postOIDCStepupCallback sends no Sec-Fetch-Site header at all — a browser
+// with no Fetch Metadata support — which requireFirstPartyRequest's own
+// monotone rule (see firstPartyRequestRefusal) does not treat as proof of
+// same-origin either, so this arm (WEB-40 round 3) answers on the
+// CSRF-exempt channel, not the shared page slot: the 303 must still fire, but
+// the flash it carries must never be the one a same-origin navigation may
+// have pending.
 func TestSameSiteStepupCallbackRefusalStillRedirects(t *testing.T) {
 	t.Parallel()
 
@@ -501,5 +508,19 @@ func TestSameSiteStepupCallbackRefusalStillRedirects(t *testing.T) {
 	response := postOIDCStepupCallback(t, fixture, stepupCookie, "not-the-sealed-state", "callback-code")
 	defer func() { _ = response.Body.Close() }()
 
-	assertFlashRefusal(t, response)
+	assertStatusCode(t, response, http.StatusSeeOther)
+	if location := response.Header.Get("Location"); location != "/settings" {
+		t.Fatalf("expected the refusal to land on /settings, got %q", location)
+	}
+	if pageFlash := responseCookie(response.Cookies(), flashCookieName); pageFlash != nil && strings.TrimSpace(pageFlash.Value) != "" {
+		t.Fatalf("expected no page-slot flash with no Fetch Metadata sent, got %#v", pageFlash)
+	}
+	exempt := responseCookie(response.Cookies(), exemptFlashCookieName)
+	if exempt == nil || strings.TrimSpace(exempt.Value) == "" {
+		t.Fatal("expected the refusal to carry an exempt-channel flash the settings page renders")
+	}
+	payload := decodeExemptFlashCookieForTest(t, exempt.Value)
+	if payload.SettingsError == "" && payload.AuthError == "" {
+		t.Fatalf("expected an error flash, got %+v", payload)
+	}
 }

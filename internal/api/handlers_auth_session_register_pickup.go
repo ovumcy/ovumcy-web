@@ -212,7 +212,14 @@ func (handler *Handler) refuseRegisterPickupRequest(c fiber.Ctx, reason string) 
 
 func (handler *Handler) redirectToPostRegisterSignin(c fiber.Ctx, reason string) error {
 	handler.clearRegisterPickupCookie(c)
-	handler.setFlashCookie(c, FlashPayload{AuthError: "register pickup unavailable"})
+	// GET /register/welcome is guarded by requireFirstPartyRequest, which is
+	// deliberately monotone (see firstPartyRequestRefusal): a stated
+	// "same-site" origin or a missing Fetch Metadata family both pass it, and
+	// every reason above — including "missing_or_expired", reachable with no
+	// pickup cookie sent at all — writes a flash from that same request
+	// (WEB-40 round 3). Only a STATED "same-origin" is the owner's own return
+	// navigation; every other case defers to the exempt slot.
+	handler.setFlashCookieForRequestOrigin(c, FlashPayload{AuthError: "register pickup unavailable"})
 	if reason != "" {
 		handler.logSecurityEvent(c, "auth.register_pickup", "redirect_signin", securityEventField("reason", reason))
 	}
