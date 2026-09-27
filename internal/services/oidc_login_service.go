@@ -141,9 +141,10 @@ type OIDCLoginResult struct {
 	// forced-reset escape hatch; RequiresTOTP is never set alongside this.
 	RequiresPasswordReset bool
 	// PendingLinkClaims is non-nil only when Authenticate returned
-	// ErrOIDCLinkRequiresConfirmation. The handler stores these in a sealed
-	// short-lived cookie and dispatches to the link-confirmation step, where a
-	// password check guards the actual linkIdentity call.
+	// ErrOIDCLinkRequiresConfirmation. The callback fails closed inline on
+	// this signal (WEB-77): it mints no cookie and issues no session. The
+	// only two ways to complete the link are the authenticated Settings
+	// step-up and the operator CLI.
 	PendingLinkClaims *security.OIDCClaims
 }
 

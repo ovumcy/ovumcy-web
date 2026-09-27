@@ -39,9 +39,10 @@ func (service *PasswordResetService) ConfigureRecoveryAttemptLimits(attempts int
 }
 
 // IssueResetTokenForUser mints a token with the given purpose. Every caller
-// mints one of the two FORCED purposes — the plain login route and OIDC
-// link-confirm's password challenge share this via LoginService, which always
-// passes PasswordResetTokenPurposeForcedLocal; the OIDC callback's own
+// mints one of the two FORCED purposes — the plain login route reaches this
+// via LoginService, which always passes PasswordResetTokenPurposeForcedLocal
+// (WEB-77 removed the only other route that used to share this call, OIDC
+// link-confirm's password challenge); the OIDC callback's own
 // must-change-password branch passes PasswordResetTokenPurposeForcedOIDC
 // directly. StartRecovery below is the only recovery-purpose minter and does
 // not go through this method.

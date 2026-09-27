@@ -39,7 +39,8 @@ const (
 	// currently authenticated account from Settings (issue #701). Linking is a
 	// permanent, password-change-weight binding, so it is authorised the same
 	// way as the other step-ups here: a fresh interactive provider
-	// authentication, never the public unauthenticated link-confirm route.
+	// authentication — WEB-77 removed the only other path, the public
+	// unauthenticated link-confirm route.
 	oidcStepupPurposeIdentityLink oidcStepupPurpose = "identity_link"
 )
 

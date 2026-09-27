@@ -24,16 +24,17 @@ const (
 	// toggle, so its redeem must be gated identically.
 	PasswordResetTokenPurposeRecovery = "password_reset_recovery"
 	// PasswordResetTokenPurposeForcedOIDC marks a token minted after an OIDC
-	// sign-in (or OIDC link-confirm's own OIDC identity attach) resolves to an
-	// account carrying MustChangePassword. An oidc_only instance legitimately
-	// mints and redeems these with local sign-in switched off.
+	// sign-in resolves to an account carrying MustChangePassword. An
+	// oidc_only instance legitimately mints and redeems these with local
+	// sign-in switched off.
 	PasswordResetTokenPurposeForcedOIDC = "password_reset_forced_oidc"
 	// PasswordResetTokenPurposeForcedLocal marks a token minted after a LOCAL
 	// password authenticates successfully against an account carrying
-	// MustChangePassword — the plain login route, and OIDC link-confirm's own
-	// password challenge (LoginService.Authenticate gates both). Unlike the
-	// OIDC purpose, this one must NOT survive the instance toggle being off:
-	// the factor that produced it is exactly the one the operator disabled.
+	// MustChangePassword — the plain login route is LoginService.Authenticate's
+	// sole caller since WEB-77 removed the only other one, OIDC link-confirm's
+	// own password challenge. Unlike the OIDC purpose, this one must NOT
+	// survive the instance toggle being off: the factor that produced it is
+	// exactly the one the operator disabled.
 	PasswordResetTokenPurposeForcedLocal = "password_reset_forced_local"
 )
 

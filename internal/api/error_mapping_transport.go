@@ -264,7 +264,7 @@ func (handler *Handler) respondAuthError(c fiber.Ctx, spec APIErrorSpec) error {
 			return handler.apiError(c, spec)
 		// default is reachable: the SSO limiter is mounted on the whole /auth/oidc
 		// prefix (not just start/callback), so a refusal on a sub-path with no case
-		// of its own — the OIDC logout bridge, its redirect leg, link-confirm,
+		// of its own — the OIDC logout bridge, its redirect leg,
 		// callback/continue — lands here too. Every one of those is a page-flow
 		// continuation, so the same /login redirect it already gets for the listed
 		// cases is the right fallback, not a gap.

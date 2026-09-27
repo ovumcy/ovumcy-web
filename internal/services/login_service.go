@@ -113,11 +113,11 @@ func (service *LoginService) Authenticate(
 
 	if user.MustChangePassword || totpUnverifiable {
 		// Authenticate only reaches this branch after AuthenticateCredentials
-		// has verified a LOCAL password. Both callers that reach here through
-		// it — the plain login route and OIDC link-confirm's own password
-		// challenge — are therefore local authentications, so the token
-		// always carries the forced-from-local purpose, never
-		// forced-from-OIDC. See PasswordResetTokenPurposeForcedLocal.
+		// has verified a LOCAL password, and the plain login route is
+		// Authenticate's only caller (WEB-77 removed the other one, OIDC
+		// link-confirm's own password challenge), so the token always
+		// carries the forced-from-local purpose, never forced-from-OIDC. See
+		// PasswordResetTokenPurposeForcedLocal.
 		token, err := service.reset.IssueResetTokenForUser(secretKey, &user, PasswordResetTokenPurposeForcedLocal, resetTokenTTL, now)
 		if err != nil {
 			return LoginResult{}, ErrLoginResetTokenIssue

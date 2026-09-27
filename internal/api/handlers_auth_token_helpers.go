@@ -63,8 +63,8 @@ func (handler *Handler) writeAuthCookie(c fiber.Ctx, user *models.User, session 
 //
 // It sits inside writeAuthCookie on purpose. Every session-issue path writes
 // through that one helper — setAuthCookie (password login, TOTP challenge
-// completion, OIDC callback, OIDC link-confirm, register pickup, recovery
-// sign-in, and the in-place re-issue after a security-posture change) and the
+// completion, OIDC callback, register pickup, recovery sign-in, and the
+// in-place re-issue after a security-posture change) and the
 // recovery-code rotations that seal their session before committing — so the
 // preference cannot hold on one of them and silently not on the next one added.
 //

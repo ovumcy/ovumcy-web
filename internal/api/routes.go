@@ -100,10 +100,12 @@ func registerV1APIRoutes(app *fiber.App, handler *Handler) {
 	usersCurrent.Post("/data-wipe", handler.OwnerOnly, handler.ClearAllData)
 	usersCurrent.Post("/data-wipe/step-up", handler.OwnerOnly, handler.StartClearDataStepupReauth)
 	usersCurrent.Post("/deletion/step-up", handler.OwnerOnly, handler.StartDeleteAccountStepupReauth)
-	// Authenticated settings path for linking a NEW OIDC identity (issue #701):
-	// the public /auth/oidc/link-confirm route below stays closed, and this is
-	// the replacement — a fresh provider re-authentication gates the same
-	// permanent binding ConfirmAndLinkIdentity performs.
+	// Authenticated settings path for linking a NEW OIDC identity: the public
+	// /auth/oidc/link-confirm route was removed for good (WEB-77; issue #701
+	// had already made it unreachable), and this is the sole authenticated web
+	// entry point — a fresh provider re-authentication gates the same
+	// permanent binding ConfirmAndLinkIdentity performs. The only other way in
+	// is the operator CLI (ovumcy link-oidc-identity).
 	usersCurrent.Post("/oidc/link/step-up", handler.OwnerOnly, handler.StartOIDCIdentityLinkStepup)
 	usersCurrent.Delete("/oidc/identities/:id", handler.OwnerOnly, handler.UnlinkOIDCIdentity)
 

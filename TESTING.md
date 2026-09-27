@@ -65,8 +65,12 @@ ships in the image.
 
 ### Sealed-cookie codec coverage
 
-All twelve AEAD-sealed cookie purposes are exercised by `internal/api/secure_cookie_codec_security_test.go`.
+All eleven AEAD-sealed cookie purposes are exercised by `internal/api/secure_cookie_codec_security_test.go`.
 Each purpose is bound to its own AAD so a ciphertext from one cookie cannot be opened as another.
+(WEB-77 removed the twelfth, `ovumcy_oidc_link_pending`, along with the route it served; a golden
+value sealed under that purpose string still has to open, so it stays pinned in
+`secure_cookie_codec_golden_test.go`'s backward-compat set below, not in the live-purposes table
+here.)
 
 | Cookie | Roundtrip | Cross-purpose rejection | Tamper detection |
 |--------|:---------:|:----------------------:|:----------------:|
@@ -79,13 +83,12 @@ Each purpose is bound to its own AAD so a ciphertext from one cookie cannot be o
 | `ovumcy_oidc_auth` | ✓ | ✓ | †  |
 | `ovumcy_oidc_stepup` | ✓ | ✓ | †  |
 | `ovumcy_oidc_logout_bridge` | ✓ | ✓ | †  |
-| `ovumcy_oidc_link_pending` | ✓ | ✓ | ✓  |
 | `ovumcy_totp_pending` | ✓ | ✓ | ✓  |
 | `ovumcy_totp_setup` | ✓ | ✓ | ✓  |
 
 † AES-256-GCM guarantees tamper detection for all purposes by construction; explicit tests cover
-`ovumcy_auth` (three distinct mutation sites), `ovumcy_totp_pending`, `ovumcy_totp_setup`, and
-`ovumcy_oidc_link_pending` as representative high-value targets.
+`ovumcy_auth` (three distinct mutation sites), `ovumcy_totp_pending`, and `ovumcy_totp_setup` as
+representative high-value targets.
 
 Backward-compatibility goldens: `internal/api/secure_cookie_codec_golden_test.go` holds sealed
 values produced by the pre-consolidation codec for the eleven purposes that predate the

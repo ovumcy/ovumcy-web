@@ -88,8 +88,8 @@ Notes:
 4. Ovumcy validates the sealed state, exchanges the authorization code for tokens, and verifies the ID token plus `nonce`.
 5. If the `(issuer, subject)` identity link already exists, the linked local account is used immediately.
 6. Otherwise, if a verified email claim matches an existing local account, Ovumcy **neither links the two nor signs the user in**. It redirects to `/login` with a message pointing the account holder at Settings: sign in with your existing method, then link the new identity from there.
-   There is no unauthenticated way to complete this link — the public `/auth/oidc/link-confirm` route that used to accept a password on this page stays closed. Without this gate, any provider able to assert an existing user's email address could take over their account.
-   The invariant itself — why an email claim is never enough, the two authorised linking paths (Settings step-up, operator CLI), and why the old public route can never complete a link again — is owned by [docs/security/oidc-and-sessions.md](security/oidc-and-sessions.md); this page keeps the operator-facing flow.
+   There is no unauthenticated way to complete this link — the public `/auth/oidc/link-confirm` route that used to accept a password on this page was removed for good (WEB-77). Without this gate, any provider able to assert an existing user's email address could take over their account.
+   The invariant itself — why an email claim is never enough, the two authorised linking paths (Settings step-up, operator CLI), and why the old public route is gone rather than merely closed — is owned by [docs/security/oidc-and-sessions.md](security/oidc-and-sessions.md); this page keeps the operator-facing flow.
 7. If no account exists and auto-provisioning is enabled, Ovumcy can create a new `owner` account, subject to `REGISTRATION_MODE=open` and any configured domain allowlist. A brand-new account has nothing to take over, so no confirmation applies.
 8. Ovumcy finishes sign-in by issuing the normal local `ovumcy_auth` session cookie for a path that resolved to a session (steps 5 and 7); step 6 never mints one on its own.
 
@@ -436,8 +436,8 @@ To finish the link:
 Things worth knowing before treating it as a bug:
 
 - There is no unauthenticated page that completes this link, at any password
-  strength. That page (`/auth/oidc/link-confirm`) existed once and is now closed for
-  good — see [docs/security/oidc-and-sessions.md](security/oidc-and-sessions.md).
+  strength. That page (`/auth/oidc/link-confirm`) existed once and was removed for
+  good (WEB-77) — see [docs/security/oidc-and-sessions.md](security/oidc-and-sessions.md).
 - The link is refused outright if another account claimed the same
   `(issuer, subject)` in the meantime, on both paths above.
 - There is no configuration switch that skips this. Auto-linking by asserted email

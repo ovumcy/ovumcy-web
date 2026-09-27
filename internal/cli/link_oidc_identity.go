@@ -20,8 +20,8 @@ import (
 // (internal/api's /api/v1/users/current/oidc/link/step-up) or this operator
 // command. The public /auth/oidc/link-confirm route that used to authorise the
 // same binding with a password alone, on a page reachable without a session,
-// stays closed — this command exists so closing it does not strand an account
-// with no working sign-in path at all.
+// was removed for good (WEB-77) — this command exists so closing that path
+// does not strand an account with no working sign-in path at all.
 //
 // Addressing mirrors reset-password exactly (see PR #699): a bare email or
 // `--id <id>`, mutually exclusive, exactly one required. The id form reaches a

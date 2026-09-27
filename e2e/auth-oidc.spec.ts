@@ -203,9 +203,9 @@ test.describe('Auth: OIDC login entry', () => {
     await expect(page).toHaveURL(/\/login$/);
     expectNoSensitiveAuthParams(page.url());
     await expect(page.locator('#login-form')).toBeVisible();
-    // No session was issued, and the retained-but-unreachable link-confirm
-    // route was not armed: without the pending-link cookie its page and its
-    // POST both bounce straight back to /login.
+    // No session was issued, and no pending-link cookie was minted — WEB-77
+    // removed the public link-confirm route and the cookie it used to read
+    // entirely, so there is nothing left for a browser to be handed off to.
     expect(await cookieByName(context, 'ovumcy_auth')).toBeFalsy();
     expect(await cookieByName(context, 'ovumcy_oidc_link_pending')).toBeFalsy();
 

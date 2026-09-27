@@ -97,19 +97,17 @@ func (handler *Handler) ResetPassword(c fiber.Ctx) error {
 	// The decision reads the token's own SIGNED purpose (PRIV-4), never a
 	// cookie-carried bool: only a forced-from-OIDC token is exempt, because
 	// CompleteOIDCLogin mints one without ever checking a local password and an
-	// oidc_only instance must keep redeeming it. A forced-from-LOCAL token — the
-	// plain login route, and OIDC link-confirm's own password challenge — is
-	// gated exactly like a recovery token: the factor that produced it is
-	// exactly what the operator disabled, and refusing its redeem would not
-	// strand anyone, since the account still reaches a genuine forced-from-OIDC
-	// token through a plain OIDC sign-in. CompleteOIDCLinkConfirmation itself
-	// now refuses outright while local sign-in is off (the instance-level gate
-	// added there), so its forced-from-LOCAL token can only be minted while the
-	// toggle is still on; this arm still has to cover the narrow race where the
-	// operator flips the toggle off in the few minutes between that mint and
-	// redemption (the token's ≤30-minute TTL). Refusing it there too is the
-	// correct answer, not a gap: the token was produced by the local-password
-	// factor regardless of when the toggle later moved.
+	// oidc_only instance must keep redeeming it. A forced-from-LOCAL token —
+	// minted only by the plain login route (WEB-77 removed the only other
+	// minter, OIDC link-confirm's own password challenge) — is gated exactly
+	// like a recovery token: the factor that produced it is exactly what the
+	// operator disabled, and refusing its redeem would not strand anyone,
+	// since the account still reaches a genuine forced-from-OIDC token
+	// through a plain OIDC sign-in. This arm still has to cover the narrow
+	// race where the operator flips the toggle off in the few minutes between
+	// that mint and redemption (the token's ≤30-minute TTL). Refusing it
+	// there too is the correct answer, not a gap: the token was produced by
+	// the local-password factor regardless of when the toggle later moved.
 	//
 	// A token that fails to parse (expired, malformed, unrecognised purpose)
 	// never reaches this refusal: PasswordResetTokenRefusedByLocalAuthGate

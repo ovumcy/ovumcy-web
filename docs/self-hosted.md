@@ -665,10 +665,10 @@ three that carry a signed token or a password hash.
 Summing **every** cookie the app can define reaches roughly 2.9 KB, which with a browser's own
 0.6–1.2 KB of headers would sit close to the limit. That total is arithmetic rather than a reachable
 state: the transient cookies in it are mutually exclusive by lifecycle — a password-reset cookie and a
-2FA-setup cookie never coexist — and the four OIDC cookies are each `Path`-scoped to the one
+2FA-setup cookie never coexist — and the three OIDC cookies are each `Path`-scoped to the one
 endpoint that consumes them, so none of them rides on an ordinary page request at all:
-`ovumcy_oidc_auth` and `ovumcy_oidc_stepup` on `/auth/oidc/callback`, `ovumcy_oidc_link_pending`
-on `/auth/oidc/link-confirm`, and `ovumcy_oidc_logout_bridge` on `/auth/oidc/logout`. Ovumcy on
+`ovumcy_oidc_auth` and `ovumcy_oidc_stepup` on `/auth/oidc/callback`, and `ovumcy_oidc_logout_bridge`
+on `/auth/oidc/logout`. Ovumcy on
 its own therefore stays far below the buffer in every state a real flow produces, but the margin comes
 from those exclusions, not from a large absolute gap.
 
