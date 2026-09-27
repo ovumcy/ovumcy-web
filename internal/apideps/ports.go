@@ -31,6 +31,10 @@ type LoginWorkflowService interface {
 // substitute an in-memory implementation without spinning up a database.
 type RegisterPickupTokenStore interface {
 	Issue(ctx context.Context, nonce string, userID uint, expiresAt time.Time) error
+	// Peek resolves a live token's user_id without spending it, so a caller
+	// can seal what it must hand over before the single-use grant is spent
+	// (WEB-64, the WEB-58 shape).
+	Peek(ctx context.Context, nonce string, now time.Time) (uint, bool, error)
 	Consume(ctx context.Context, nonce string, now time.Time) (uint, bool, error)
 }
 
