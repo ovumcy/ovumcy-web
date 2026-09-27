@@ -85,10 +85,25 @@ TARGETS=(
 # weight each: at that lower bound the slow cells land near ~129 minutes, and
 # the 180-minute cap tolerates up to ~0.87/weight (180/207) — about 1.4x the
 # lower bound — before a cell hits it again. The next dispatched run is the
-# confirmation either way. Keep this registry in sync with the matrix in
-# .github/workflows/mutation.yml. Entries are "slug-base:package-dir:count".
+# confirmation either way.
+#
+# internal/api's own 14-shard split (weight ~94-95 each, near-perfectly even —
+# see scripts/mutationpartition) still wasn't enough: run 36274821938
+# (2026-09-27, WEB-88, following WEB-78's baseline) cancelled internal_api_12
+# and _13 at the 180-minute cap while still running (jobs
+# 108495416352/108495416342), which only lower-bounds their rate at
+# >= 180/94 ≈ 1.915/weight, no upper bound — higher than every one of the
+# other 12 internal_api shards that finished on the same run at the same
+# ~94-95 weight each (0.52-1.63/weight), the same "a completed shard's rate
+# understates the one that hit the cap" pattern internal_services showed on
+# 2026-09-25. 20 shards brings internal/api to ~66-67 weight each: the cap
+# then tolerates up to ~2.7/weight (180/67) — about 1.4x that lower bound,
+# the same margin ratio internal_services' 10->14 split used. The next
+# dispatched run is the confirmation either way. Keep this registry in sync
+# with the matrix in .github/workflows/mutation.yml. Entries are
+# "slug-base:package-dir:count".
 SHARDED_PKGS=(
-  "internal_api:./internal/api:14"
+  "internal_api:./internal/api:20"
   "internal_services:./internal/services:14"
 )
 
