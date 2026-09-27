@@ -170,10 +170,10 @@ var rateLimitSurfaces = []rateLimitSurface{
 	},
 	{
 		// WEB-70: the password-reset redeem verifies a credential (a signed
-		// reset token) and pays a bcrypt hash of the new password on every
-		// well-formed request, with no service-level attempt budget behind it
-		// at all. respondAuthError's "/api/v1/password-resets/redeem" case
-		// redirects a plain browser back to the reset-password form.
+		// reset token, checked by ResolveUserByResetToken before any bcrypt
+		// runs) with no service-level attempt budget behind it at all.
+		// respondAuthError's "/api/v1/password-resets/redeem" case redirects
+		// a plain browser back to the reset-password form.
 		name:         "password reset redeem",
 		method:       http.MethodPost,
 		path:         "/api/v1/password-resets/redeem",

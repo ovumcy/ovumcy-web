@@ -278,13 +278,18 @@ func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 	registerMax, registerWindow := getCredentialRateLimit("RATE_LIMIT_REGISTER_MAX", "RATE_LIMIT_REGISTER_WINDOW", 8, 15*time.Minute)
 	forgotPasswordMax, forgotPasswordWindow := getCredentialRateLimit("RATE_LIMIT_FORGOT_PASSWORD_MAX", "RATE_LIMIT_FORGOT_PASSWORD_WINDOW", 8, time.Hour)
 	// WEB-70: the 2FA challenge and the password-reset redeem each verify a
-	// credential (a TOTP code; a signed reset token plus the new password's own
-	// bcrypt hash) and sat under the /api catch-all alone, with no edge row of
-	// their own. The redeem half pays a bcrypt hash on every well-formed request
-	// with no service-level attempt budget behind it at all — the same CPU-cost
-	// shape login/register/forgot-password are held to above. Same mechanism,
-	// same ceiling; sized like the login pair rather than forgot-password's
-	// 1-hour window, since both are a continuation of an already-started flow.
+	// credential and sat under the /api catch-all alone, with no edge row of
+	// their own. Neither pays the login/register/forgot-password CPU-cost shape
+	// (a bcrypt compare on every well-formed request): the 2FA challenge checks
+	// a TOTP code and pays no bcrypt at all, and the redeem first runs
+	// ResolveUserByResetToken (an HMAC JWT parse plus fingerprint/session-version
+	// checks) — only a request carrying a valid token reaches
+	// ResetPasswordAndRotateRecoveryCodeCAS, where the new password is hashed.
+	// The ceiling here instead bounds credential guessing directly — TOTP codes
+	// on one route, reset tokens on the other — with no service-level attempt
+	// budget behind either. Same mechanism, same ceiling as the three pairs
+	// above; sized like the login pair rather than forgot-password's 1-hour
+	// window, since both are a continuation of an already-started flow.
 	totpChallengeMax, totpChallengeWindow := getCredentialRateLimit("RATE_LIMIT_TOTP_CHALLENGE_MAX", "RATE_LIMIT_TOTP_CHALLENGE_WINDOW", 8, 15*time.Minute)
 	passwordResetRedeemMax, passwordResetRedeemWindow := getCredentialRateLimit("RATE_LIMIT_PASSWORD_RESET_REDEEM_MAX", "RATE_LIMIT_PASSWORD_RESET_REDEEM_WINDOW", 8, 15*time.Minute)
 
