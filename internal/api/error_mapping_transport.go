@@ -14,9 +14,18 @@ import (
 // richer `error_detail` object describing category and target. The top-level
 // key stays for backward compatibility with clients that already parse it.
 //
-// A plain HTML navigation submitting POST /lang is the one route-level
-// exception, taken here rather than per cause so every refusal on that route —
-// handler, CSRF, recovered panic, request deadline — answers the same page.
+// A plain HTML navigation submitting POST /lang is one route-level exception,
+// taken here rather than per cause so every refusal on that route — handler,
+// CSRF, recovered panic, request deadline — answers the same page. A plain
+// HTML POST to one of the auth pages (login, register, forgot/reset password,
+// 2FA challenge, OIDC link-confirm — plainAuthFormPagePaths) is the second: a
+// CSRF refusal or a transport-level rejection there is raised before the
+// handler ever builds a domain spec, so it never reaches respondAuthError's
+// flash-redirect and would otherwise paint the JSON envelope into the browser
+// window (WEB-84). Logout (POST /logout, DELETE /api/v1/sessions/current) is
+// deliberately not in that set — its answer is a decision for its own issue —
+// so it keeps falling through to the JSON/HTMX arms below like every other
+// route.
 //
 // Both markup arms resolve the request's locale catalogue via
 // ensureRequestMessages before rendering: a mapped rejection can be produced
@@ -32,6 +41,9 @@ func (handler *Handler) apiError(c fiber.Ctx, spec APIErrorSpec) error {
 	if isLanguageSwitchPageNavigation(c) {
 		handler.ensureRequestMessages(c)
 		return sendLanguageSwitchStatusFragment(c, spec)
+	}
+	if isPlainAuthFormPageNavigation(c) {
+		return handler.respondPageFormStatusFragment(c, spec)
 	}
 	if responseFormat(c) == httpx.ResponseFormatHTMX {
 		handler.ensureRequestMessages(c)
@@ -83,7 +95,8 @@ func localizedStatusErrorMarkup(c fiber.Ctx, spec APIErrorSpec) string {
 // machine key as the visible message.
 //
 // Status and stable key still come from the spec, so this changes the carrier
-// and nothing about the contract.
+// and nothing about the contract. Shared by apiError's plain-auth-form-page
+// branch (WEB-84) as well as POST /lang.
 func (handler *Handler) respondPageFormStatusFragment(c fiber.Ctx, spec APIErrorSpec) error {
 	handler.ensureRequestMessages(c)
 	return sendLanguageSwitchStatusFragment(c, spec)

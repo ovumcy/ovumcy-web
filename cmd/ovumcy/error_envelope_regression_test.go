@@ -104,7 +104,13 @@ func TestOvumcyErrorHandlerEnvelopesEveryFiberErrorStatus(t *testing.T) {
 // TestCSRFDenialAnswersThroughTheEnvelope covers the widest instance of the
 // defect: the CSRF middleware answers `fiber.ErrForbidden` for every mutating
 // route, so before this change every CSRF refusal in the app — API client and
-// browser alike — was the bare string "Forbidden".
+// browser alike — was the bare string "Forbidden". Probed on POST
+// /api/v1/sessions (the login form): one of the plain auth-form pages WEB-84
+// moves off the raw envelope for a plain browser Accept — see "browser
+// accept" below. Logout (POST /logout, DELETE /api/v1/sessions/current) is
+// deliberately not the probe here any more: its own answer is a decision for
+// a separate issue, and TestCSRFDenialOnLogoutStaysEnveloped pins it
+// unchanged.
 //
 // The HTMX arm is the browser-facing half: the app's own forms submit through
 // HTMX, so an expired token there must render the shared status-error fragment
@@ -113,7 +119,7 @@ func TestCSRFDenialAnswersThroughTheEnvelope(t *testing.T) {
 	app := newCSRFGuardTestApp(t)
 
 	t.Run("json client", func(t *testing.T) {
-		response := deleteSessionWithoutCSRFToken(t, app, map[string]string{"Accept": "application/json"})
+		response := csrfDeniedRequest(t, app, http.MethodPost, "/api/v1/sessions", map[string]string{"Accept": "application/json"})
 		defer func() { _ = response.Body.Close() }()
 
 		if response.StatusCode != http.StatusForbidden {
@@ -126,27 +132,33 @@ func TestCSRFDenialAnswersThroughTheEnvelope(t *testing.T) {
 		assertTransportErrorEnvelope(t, body, "forbidden", "forbidden")
 	})
 
-	// A plain browser form post (no HX-Request, Accept: text/html) shares the
-	// non-HTMX branch of the shared negotiation with the JSON client — the same
-	// branch the mapped 413 and 431 have always used. What this change moves is
-	// that it is now the app's own enveloped answer with a stable key rather than
-	// fiber's bare English.
+	// A plain browser form post (no HX-Request, Accept: text/html) to a plain
+	// auth-form page now shares the HTMX branch's shared status-error fragment
+	// (WEB-84), not the JSON envelope's non-HTMX branch it used to share: the
+	// envelope painted into the browser window as text is exactly the defect
+	// this moves off of. JSON/HTMX callers on this same route are unchanged —
+	// the "json client" and "htmx flow" subtests pin that.
 	t.Run("browser accept", func(t *testing.T) {
-		response := deleteSessionWithoutCSRFToken(t, app, map[string]string{"Accept": "text/html,application/xhtml+xml"})
+		response := csrfDeniedRequest(t, app, http.MethodPost, "/api/v1/sessions", map[string]string{"Accept": "text/html,application/xhtml+xml"})
 		defer func() { _ = response.Body.Close() }()
 
 		if response.StatusCode != http.StatusForbidden {
 			t.Fatalf("status = %d, want 403", response.StatusCode)
 		}
 		body := mustReadAll(t, response)
-		if strings.TrimSpace(string(body)) == "Forbidden" {
-			t.Fatalf("csrf denial answered with fiber's bare text: %q", body)
+		if json.Valid(body) {
+			t.Fatalf("csrf denial painted the raw JSON envelope into the browser: %q", body)
 		}
-		assertTransportErrorEnvelope(t, body, "forbidden", "forbidden")
+		contentType := response.Header.Get(fiber.HeaderContentType)
+		if !strings.HasPrefix(contentType, fiber.MIMETextHTML) ||
+			!strings.Contains(string(body), `class="status-error"`) ||
+			!strings.Contains(string(body), `data-flash-key="common.error.forbidden"`) {
+			t.Fatalf("expected the shared page-form status fragment, got %q (%q)", contentType, body)
+		}
 	})
 
 	t.Run("htmx flow", func(t *testing.T) {
-		response := deleteSessionWithoutCSRFToken(t, app, map[string]string{"HX-Request": "true"})
+		response := csrfDeniedRequest(t, app, http.MethodPost, "/api/v1/sessions", map[string]string{"HX-Request": "true"})
 		defer func() { _ = response.Body.Close() }()
 
 		if response.StatusCode != http.StatusForbidden {
@@ -165,6 +177,112 @@ func TestCSRFDenialAnswersThroughTheEnvelope(t *testing.T) {
 			t.Fatalf("expected the stable flash key on the HTMX csrf fragment, got %q", body)
 		}
 	})
+}
+
+// TestCSRFDenialOnLogoutStaysEnveloped pins WEB-84's explicit exclusion:
+// logout is not one of the plain-form auth pages this issue moves to the
+// page-form fragment. No <form> can submit DELETE, and POST /logout replaces
+// the page the owner was already looking at rather than re-rendering a form
+// the owner is about to retry — so its own answer (flash-redirect, fragment,
+// or the envelope kept here) is a decision for a separate issue. A CSRF
+// refusal on either logout route keeps answering the mapped JSON envelope for
+// a plain browser Accept, same as before this PR.
+func TestCSRFDenialOnLogoutStaysEnveloped(t *testing.T) {
+	app := newCSRFGuardTestApp(t)
+
+	for _, route := range []struct {
+		name   string
+		method string
+		path   string
+	}{
+		{name: "DELETE /api/v1/sessions/current", method: http.MethodDelete, path: "/api/v1/sessions/current"},
+		{name: "POST /logout", method: http.MethodPost, path: "/logout"},
+	} {
+		t.Run(route.name, func(t *testing.T) {
+			response := csrfDeniedRequest(t, app, route.method, route.path, map[string]string{"Accept": "text/html,application/xhtml+xml"})
+			defer func() { _ = response.Body.Close() }()
+
+			if response.StatusCode != http.StatusForbidden {
+				t.Fatalf("status = %d, want 403", response.StatusCode)
+			}
+			assertTransportErrorEnvelope(t, mustReadAll(t, response), "forbidden", "forbidden")
+		})
+	}
+}
+
+// plainAuthFormPageProbeRoutes is the WEB-84 sweep: every plain (no HTMX, no
+// JavaScript interception assumed) browser-form auth route whose CSRF refusal
+// now answers the shared page-form status fragment instead of the JSON
+// envelope for a plain browser Accept. "Recovery" folds into forgot/reset
+// password below — there is no separate recovery route. /auth/oidc/start,
+// /auth/oidc/callback and the logout bridge carry no entry: start and the
+// bridge are GET-only (CSRF never validates a safe method) and the callback is
+// CSRF-exempt, protected instead by the sealed one-time state cookie.
+var plainAuthFormPageProbeRoutes = []struct {
+	name string
+	path string
+}{
+	{name: "login", path: "/api/v1/sessions"},
+	{name: "register", path: "/api/v1/users"},
+	{name: "forgot-password", path: "/api/v1/password-resets"},
+	{name: "reset-password", path: "/api/v1/password-resets/redeem"},
+	{name: "2fa challenge", path: "/api/v1/sessions/2fa-challenge"},
+	{name: "oidc link-confirm", path: "/auth/oidc/link-confirm"},
+}
+
+// TestCSRFDenialOnPlainAuthFormPagesAnswersTheFragment is the per-route sweep
+// WEB-84 asks for: a CSRF-refused plain browser POST to any of these routes
+// must answer the shared page-form status fragment (the /lang shape, #862),
+// never the raw JSON envelope — while a JSON or HTMX caller on the SAME route
+// keeps the mapped envelope / HTMX fragment unchanged.
+func TestCSRFDenialOnPlainAuthFormPagesAnswersTheFragment(t *testing.T) {
+	app := newCSRFGuardTestApp(t)
+
+	for _, route := range plainAuthFormPageProbeRoutes {
+		t.Run(route.name, func(t *testing.T) {
+			t.Run("browser accept", func(t *testing.T) {
+				response := csrfDeniedRequest(t, app, http.MethodPost, route.path, map[string]string{"Accept": "text/html,application/xhtml+xml"})
+				defer func() { _ = response.Body.Close() }()
+
+				if response.StatusCode != http.StatusForbidden {
+					t.Fatalf("status = %d, want 403", response.StatusCode)
+				}
+				body := mustReadAll(t, response)
+				if json.Valid(body) {
+					t.Fatalf("%s: csrf denial painted the raw JSON envelope into the browser: %q", route.name, body)
+				}
+				contentType := response.Header.Get(fiber.HeaderContentType)
+				if !strings.HasPrefix(contentType, fiber.MIMETextHTML) ||
+					!strings.Contains(string(body), `class="status-error"`) ||
+					!strings.Contains(string(body), `data-flash-key="common.error.forbidden"`) {
+					t.Fatalf("%s: expected the shared page-form status fragment, got %q (%q)", route.name, contentType, body)
+				}
+			})
+
+			t.Run("json client", func(t *testing.T) {
+				response := csrfDeniedRequest(t, app, http.MethodPost, route.path, map[string]string{"Accept": "application/json"})
+				defer func() { _ = response.Body.Close() }()
+
+				if response.StatusCode != http.StatusForbidden {
+					t.Fatalf("status = %d, want 403", response.StatusCode)
+				}
+				assertTransportErrorEnvelope(t, mustReadAll(t, response), "forbidden", "forbidden")
+			})
+
+			t.Run("htmx flow", func(t *testing.T) {
+				response := csrfDeniedRequest(t, app, http.MethodPost, route.path, map[string]string{"HX-Request": "true"})
+				defer func() { _ = response.Body.Close() }()
+
+				if response.StatusCode != http.StatusForbidden {
+					t.Fatalf("status = %d, want 403", response.StatusCode)
+				}
+				body := string(mustReadAll(t, response))
+				if !strings.Contains(body, `class="status-error"`) || !strings.Contains(body, `data-flash-key="common.error.forbidden"`) {
+					t.Fatalf("%s: expected the shared status-error fragment for an HTMX flow, got %q", route.name, body)
+				}
+			})
+		})
+	}
 }
 
 // TestUnmatchedRouteAnswersThroughTheEnvelope pins the request the framework
@@ -424,10 +542,13 @@ func TestProbeEndpointsKeepFixedOneWordBodies(t *testing.T) {
 	}
 }
 
-func deleteSessionWithoutCSRFToken(t *testing.T, app *fiber.App, headers map[string]string) *http.Response {
+// csrfDeniedRequest sends a token-less mutation to method+path, so the CSRF
+// middleware refuses it before any handler runs — the shared probe behind
+// every CSRF-denial test in this file.
+func csrfDeniedRequest(t *testing.T, app *fiber.App, method string, path string, headers map[string]string) *http.Response {
 	t.Helper()
 
-	request := httptest.NewRequest(http.MethodDelete, "/api/v1/sessions/current", strings.NewReader(""))
+	request := httptest.NewRequest(method, path, strings.NewReader(""))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	for name, value := range headers {
 		request.Header.Set(name, value)
@@ -435,7 +556,7 @@ func deleteSessionWithoutCSRFToken(t *testing.T, app *fiber.App, headers map[str
 
 	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
-		t.Fatalf("token-less mutation failed: %v", err)
+		t.Fatalf("token-less %s %s failed: %v", method, path, err)
 	}
 	return response
 }

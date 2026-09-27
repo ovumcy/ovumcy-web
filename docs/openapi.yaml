@@ -1608,13 +1608,33 @@ paths:
         '400':
           $ref: '#/components/responses/ValidationError'
         '403':
-          description: Registration is closed on this deployment (SSO-only).
+          description: |
+            Registration is closed on this deployment (SSO-only) — carries this route's own key,
+            `local sign-in unavailable`, target `auth_form`; a plain browser Accept flash-redirects
+            to `/register` (see the `303` above) rather than answering here directly.
+
+            A CSRF refusal (no token; a token that does not match the `ovumcy_csrf` cookie, or one
+            the server no longer holds; a foreign `Origin`/`Referer`) is a separate cause reached
+            before the handler runs, so it carries the shared `forbidden` key instead. A caller
+            that asks for JSON gets the JSON envelope; a plain form submission that asks for
+            neither gets the shared localized status fragment as `text/html` (WEB-84) — the same
+            shape `POST /lang` documents above — instead of the raw envelope.
           content:
+            text/html:
+              schema: { type: string }
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
-              example:
-                error: "local sign-in unavailable"
-                error_detail: { key: "local sign-in unavailable", category: "forbidden", target: "auth_form" }
+              examples:
+                registrationClosed:
+                  summary: Local sign-in disabled
+                  value:
+                    error: "local sign-in unavailable"
+                    error_detail: { key: "local sign-in unavailable", category: "forbidden", target: "auth_form" }
+                csrfDenied:
+                  summary: CSRF refusal
+                  value:
+                    error: "forbidden"
+                    error_detail: { key: "forbidden", category: "forbidden", target: "global" }
         '429':
           $ref: '#/components/responses/RateLimited'
 
@@ -1663,13 +1683,33 @@ paths:
         '400':
           $ref: '#/components/responses/ValidationError'
         '403':
-          description: Local sign-in is disabled on this deployment (SSO-only).
+          description: |
+            Local sign-in is disabled on this deployment (SSO-only) — carries this route's own
+            key, `local sign-in unavailable`, target `auth_form`; a plain browser Accept flash-
+            redirects to `/login` (see the `303` above) rather than answering here directly.
+
+            A CSRF refusal (no token; a token that does not match the `ovumcy_csrf` cookie, or one
+            the server no longer holds; a foreign `Origin`/`Referer`) is a separate cause reached
+            before the handler runs, so it carries the shared `forbidden` key instead. A caller
+            that asks for JSON gets the JSON envelope; a plain form submission that asks for
+            neither gets the shared localized status fragment as `text/html` (WEB-84) — the same
+            shape `POST /lang` documents above — instead of the raw envelope.
           content:
+            text/html:
+              schema: { type: string }
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
-              example:
-                error: "local sign-in unavailable"
-                error_detail: { key: "local sign-in unavailable", category: "forbidden", target: "auth_form" }
+              examples:
+                localSignInDisabled:
+                  summary: Local sign-in disabled
+                  value:
+                    error: "local sign-in unavailable"
+                    error_detail: { key: "local sign-in unavailable", category: "forbidden", target: "auth_form" }
+                csrfDenied:
+                  summary: CSRF refusal
+                  value:
+                    error: "forbidden"
+                    error_detail: { key: "forbidden", category: "forbidden", target: "global" }
         '429':
           $ref: '#/components/responses/RateLimited'
 
@@ -1704,6 +1744,22 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
+        '403':
+          description: |
+            A CSRF refusal (no token; a token that does not match the `ovumcy_csrf` cookie, or one
+            the server no longer holds; a foreign `Origin`/`Referer`) reached before the handler
+            runs, carrying the shared `forbidden` key. A caller that asks for JSON gets the JSON
+            envelope below; a plain form submission that asks for neither gets the shared
+            localized status fragment as `text/html` (WEB-84) — the same shape `POST /lang`
+            documents above — instead of the raw envelope.
+          content:
+            text/html:
+              schema: { type: string }
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "forbidden"
+                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
         '429':
           $ref: '#/components/responses/RateLimited'
 
@@ -1785,13 +1841,34 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
         '403':
-          description: Local password recovery is disabled on this deployment (SSO-only).
+          description: |
+            Local password recovery is disabled on this deployment (SSO-only) — carries this
+            route's own key, `local recovery unavailable`, target `auth_form`; a plain browser
+            Accept flash-redirects to `/forgot-password` (see the `303` above) rather than
+            answering here directly.
+
+            A CSRF refusal (no token; a token that does not match the `ovumcy_csrf` cookie, or one
+            the server no longer holds; a foreign `Origin`/`Referer`) is a separate cause reached
+            before the handler runs, so it carries the shared `forbidden` key instead. A caller
+            that asks for JSON gets the JSON envelope; a plain form submission that asks for
+            neither gets the shared localized status fragment as `text/html` (WEB-84) — the same
+            shape `POST /lang` documents above — instead of the raw envelope.
           content:
+            text/html:
+              schema: { type: string }
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
-              example:
-                error: "local recovery unavailable"
-                error_detail: { key: "local recovery unavailable", category: "forbidden", target: "auth_form" }
+              examples:
+                localRecoveryDisabled:
+                  summary: Local recovery disabled
+                  value:
+                    error: "local recovery unavailable"
+                    error_detail: { key: "local recovery unavailable", category: "forbidden", target: "auth_form" }
+                csrfDenied:
+                  summary: CSRF refusal
+                  value:
+                    error: "forbidden"
+                    error_detail: { key: "forbidden", category: "forbidden", target: "global" }
         '429':
           $ref: '#/components/responses/RateLimited'
 
@@ -1843,13 +1920,33 @@ paths:
             account-link confirmation step's own password challenge — is
             refused here exactly like an ordinary password-recovery token,
             since it was produced by the very factor this deployment has
-            disabled.
+            disabled. This carries this route's own key, `local recovery
+            unavailable`, target `auth_form`; a plain browser Accept
+            flash-redirects to `/reset-password` (see the `303` above) rather
+            than answering here directly.
+
+            A CSRF refusal (no token; a token that does not match the `ovumcy_csrf` cookie, or one
+            the server no longer holds; a foreign `Origin`/`Referer`) is a separate cause reached
+            before the handler runs, so it carries the shared `forbidden` key instead. A caller
+            that asks for JSON gets the JSON envelope; a plain form submission that asks for
+            neither gets the shared localized status fragment as `text/html` (WEB-84) — the same
+            shape `POST /lang` documents above — instead of the raw envelope.
           content:
+            text/html:
+              schema: { type: string }
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
-              example:
-                error: "local recovery unavailable"
-                error_detail: { key: "local recovery unavailable", category: "forbidden", target: "auth_form" }
+              examples:
+                localRecoveryDisabled:
+                  summary: Local recovery disabled
+                  value:
+                    error: "local recovery unavailable"
+                    error_detail: { key: "local recovery unavailable", category: "forbidden", target: "auth_form" }
+                csrfDenied:
+                  summary: CSRF refusal
+                  value:
+                    error: "forbidden"
+                    error_detail: { key: "forbidden", category: "forbidden", target: "global" }
         '429': { $ref: '#/components/responses/RateLimited' }
 
   # =========================================================================
