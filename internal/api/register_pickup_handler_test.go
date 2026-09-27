@@ -62,6 +62,15 @@ func TestPickupRegisterDuplicateEmailDecoyRedirectsToLogin(t *testing.T) {
 	pickupRequest := httptest.NewRequest(http.MethodGet, "/register/welcome", nil)
 	pickupRequest.Header.Set("Accept-Language", "en")
 	pickupRequest.Header.Set("Cookie", registerPickupCookieName+"="+decoyPickup)
+	// This request models the browser's own top-level navigation back to
+	// /register/welcome, following the redirect POST /api/v1/users just sent
+	// it — a stated same-origin Sec-Fetch-Site, which is the one case
+	// setFlashCookieForRequestOrigin (flash.go, WEB-40 round 3) sends to the
+	// page slot rather than the CSRF-exempt one. Without this header the
+	// request is indistinguishable from one with no first-party proof at all,
+	// and PickupRegister's redirectToPostRegisterSignin now writes the exempt
+	// slot for that shape instead (TestRegisterPickupMissingWithMissingFetchMetadataDoesNotClobberAPendingPageFlash).
+	sameOriginNavigation.applyTo(pickupRequest)
 
 	pickupResponse := mustAppResponse(t, app, pickupRequest)
 	assertStatusCode(t, pickupResponse, http.StatusSeeOther)
@@ -140,6 +149,11 @@ func TestPickupRegisterTamperedCookieRedirectsToLogin(t *testing.T) {
 	pickupRequest := httptest.NewRequest(http.MethodGet, "/register/welcome", nil)
 	pickupRequest.Header.Set("Accept-Language", "en")
 	pickupRequest.Header.Set("Cookie", registerPickupCookieName+"=v2.tampered-garbage")
+	// Same reasoning as the decoy-email case above: a stated same-origin
+	// Sec-Fetch-Site is what sends this refusal to the page slot rather than
+	// the CSRF-exempt one (flash.go's setFlashCookieForRequestOrigin, WEB-40
+	// round 3).
+	sameOriginNavigation.applyTo(pickupRequest)
 
 	pickupResponse := mustAppResponse(t, app, pickupRequest)
 	assertStatusCode(t, pickupResponse, http.StatusSeeOther)
