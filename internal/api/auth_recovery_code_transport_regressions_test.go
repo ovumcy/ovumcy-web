@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ovumcy/ovumcy-web/internal/services"
 	"golang.org/x/net/html"
 )
 
@@ -157,6 +158,7 @@ func TestRegenerateRecoveryCodeRedirectsToDedicatedRecoveryPage(t *testing.T) {
 	assertRecoveryCodeSurface(t, recoveryPage, recoveryCodeSurfaceExpectations{
 		expectedAction: "/settings",
 		expectedTarget: recoveryCodeContinueTargetSettings,
+		expectedCode:   expectedRecoveryCodeFromSealedCookie(t, recoveryCookie),
 	})
 }
 
@@ -339,6 +341,7 @@ func stringValue(value any) string {
 type recoveryCodeSurfaceExpectations struct {
 	expectedAction string
 	expectedTarget string
+	expectedCode   string
 	inline         bool
 }
 
@@ -347,8 +350,35 @@ func assertRecoveryCodeSurface(t *testing.T, markup string, expectations recover
 
 	document := mustParseHTMLDocument(t, markup)
 	panel := requireRecoveryCodeSurfacePanel(t, document, expectations.inline)
-	assertRenderedRecoveryCodeValue(t, panel)
+	assertRenderedRecoveryCodeValue(t, panel, expectations.expectedCode)
 	assertRecoveryCodeConfirmFormSurface(t, panel, expectations.expectedAction, expectations.expectedTarget)
+}
+
+// expectedRecoveryCodeFromSealedCookie opens the sealed recovery-code page
+// cookie under the shared test app's secret and returns the code it carries.
+// A surface assertion compares the rendered value against what the server
+// actually sealed, rather than merely checking non-emptiness — a rendered
+// code that differs from the sealed one, or that is malformed, must fail.
+func expectedRecoveryCodeFromSealedCookie(t *testing.T, sealed string) string {
+	t.Helper()
+
+	codec, err := newSecureCookieCodec([]byte(testAppSecretKey))
+	if err != nil {
+		t.Fatalf("init secure cookie codec: %v", err)
+	}
+	decoded, err := codec.open(recoveryCodeCookieName, sealed)
+	if err != nil {
+		t.Fatalf("open recovery-code cookie: %v", err)
+	}
+	payload := recoveryCodePagePayload{}
+	if err := json.Unmarshal(decoded, &payload); err != nil {
+		t.Fatalf("decode recovery-code cookie payload: %v", err)
+	}
+	code := strings.TrimSpace(payload.RecoveryCode)
+	if code == "" {
+		t.Fatal("expected a recovery code in the sealed cookie payload")
+	}
+	return code
 }
 
 func requireRecoveryCodeSurfacePanel(t *testing.T, document *html.Node, inline bool) *html.Node {
@@ -369,15 +399,22 @@ func requireRecoveryCodeSurfacePanel(t *testing.T, document *html.Node, inline b
 	return panel
 }
 
-func assertRenderedRecoveryCodeValue(t *testing.T, panel *html.Node) {
+func assertRenderedRecoveryCodeValue(t *testing.T, panel *html.Node, expectedCode string) {
 	t.Helper()
 
 	recoveryCode := htmlElementByID(panel, "recovery-code")
 	if recoveryCode == nil {
 		t.Fatal("expected rendered recovery code")
 	}
-	if normalizeHTMLText(htmlNodeText(recoveryCode)) == "" {
-		t.Fatal("expected non-empty recovery code text")
+	rendered := normalizeHTMLText(htmlNodeText(recoveryCode))
+	if err := services.ValidateRecoveryCodeFormat(rendered); err != nil {
+		t.Fatalf("expected rendered recovery code to match the %s-XXXX-XXXX-XXXX format, got %q", "OVUM", rendered)
+	}
+	if expectedCode == "" {
+		t.Fatal("assertRenderedRecoveryCodeValue requires an expected code to compare against")
+	}
+	if rendered != expectedCode {
+		t.Fatalf("expected rendered recovery code %q, got %q", expectedCode, rendered)
 	}
 }
 
