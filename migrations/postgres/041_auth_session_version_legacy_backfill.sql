@@ -1,0 +1,35 @@
+-- Postgres mirror of migrations/041_auth_session_version_legacy_backfill.sql
+-- (backfill users.auth_session_version <= 0 to 1; WEB-50/WEB-65, F1 of the
+-- WEB-12 security audit). Same version number so schema history stays aligned
+-- across engines.
+--
+-- Every revoking write bumps the column with an arithmetic +1
+-- (gorm.Expr("auth_session_version + 1")) or a literal expectedSessionVersion+1
+-- (updateFromAuthSessionVersionTx, internal/db/auth_session_version_cas.go).
+-- A row genuinely stored at 0 (or below) only reaches the application through
+-- NormalizeAuthSessionVersion, which reads <= 0 as version 1
+-- (AuthSessionVersionsMatch, internal/services/auth_session_policy.go). A bump
+-- against a row at 0 therefore writes 0 + 1 = 1 -- the same value every grant
+-- already minted at that row reads as -- so a password reset, a recovery-code
+-- regeneration, a password change or a TOTP change left every other device
+-- signed in. Column 008 shipped NOT NULL DEFAULT 1, so this can only happen to
+-- a row someone set by hand.
+--
+-- This migration moves the floor once, for good: from here on the column is
+-- never <= 0, so the FIRST bump after this runs already writes a value no
+-- grant made before it can read as current (1 -> 2, not 0 -> 1), and every
+-- writer's plain +1 keeps that true forever after. It is naturally idempotent
+-- -- a row already at 1 or above is untouched, and a re-run matches nothing.
+--
+-- Rollback: none needed, and none possible in the reversible sense -- the
+-- write is forward-only and does not record which rows it touched or what
+-- they held. That is fine: a row this migration moves to 1 was never a
+-- version anything could legitimately have been minted against other than 1
+-- (NormalizeAuthSessionVersion already read it that way), so the backfill
+-- changes no session's validity, only the arithmetic floor writers bump from
+-- after this point.
+--
+-- NOTE: keep prose in this file free of semicolons -- the migration runner
+-- splits statements on the semicolon character without stripping SQL comments.
+
+UPDATE users SET auth_session_version = 1 WHERE auth_session_version <= 0;
