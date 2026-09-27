@@ -300,7 +300,12 @@ func (handler *Handler) respondAuthError(c fiber.Ctx, spec APIErrorSpec) error {
 			handler.setFlashCookie(c, flash)
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/forgot-password")
 		case "/auth/oidc", "/auth/oidc/start", "/auth/oidc/callback":
-			handler.setFlashCookie(c, flash)
+			// The SSO limiter (cmd/ovumcy/server.go) is mounted on the whole
+			// /auth/oidc prefix with no method filter, so a cross-site top-level
+			// GET navigation can trip it and land here carrying no CSRF token or
+			// first-party proof (WEB-40): the exempt channel, never the shared
+			// page slot a same-origin navigation may have pending.
+			handler.setCSRFExemptFlashCookie(c, flash)
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 		case "/api/v1/password-resets/redeem":
 			handler.setFlashCookie(c, flash)
@@ -320,7 +325,10 @@ func (handler *Handler) respondAuthError(c fiber.Ctx, spec APIErrorSpec) error {
 		// continuation, so the same /login redirect it already gets for the listed
 		// cases is the right fallback, not a gap.
 		default:
-			handler.setFlashCookie(c, flash)
+			// Same reasoning as the /auth/oidc case above: this arm is every
+			// other /auth/oidc/* sub-path the SSO limiter also covers, reachable
+			// the same cross-site, token-less way (WEB-40).
+			handler.setCSRFExemptFlashCookie(c, flash)
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 		}
 	}
@@ -398,6 +406,18 @@ func (handler *Handler) redirectSettingsRefusal(c fiber.Ctx, spec APIErrorSpec) 
 // different cookie — see exemptFlashCookieSpec.
 func (handler *Handler) redirectSettingsRefusalCSRFExempt(c fiber.Ctx, spec APIErrorSpec) error {
 	handler.setCSRFExemptFlashCookie(c, FlashPayload{SettingsError: spec.Key})
+	return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+}
+
+// redirectSettingsRefusalForRequestOrigin is redirectSettingsRefusal's third
+// variant, for a site the state secret alone does not gate: the request could
+// be the owner's own same-origin return OR a request Sec-Fetch-Site does not
+// affirmatively label same-origin (WEB-40 round 3). It defers the slot choice
+// to setFlashCookieForRequestOrigin rather than picking one unconditionally,
+// unlike its two siblings above which each know their call site is always one
+// or the other.
+func (handler *Handler) redirectSettingsRefusalForRequestOrigin(c fiber.Ctx, spec APIErrorSpec) error {
+	handler.setFlashCookieForRequestOrigin(c, FlashPayload{SettingsError: spec.Key})
 	return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
 }
 

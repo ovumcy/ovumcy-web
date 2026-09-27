@@ -65,10 +65,12 @@ ships in the image.
 
 ### Sealed-cookie codec coverage
 
-All twelve AEAD-sealed cookie purposes are exercised by `internal/api/secure_cookie_codec_security_test.go`.
+All thirteen live AEAD-sealed cookie purposes are exercised by `internal/api/secure_cookie_codec_security_test.go`.
 Each purpose is bound to its own AAD so a ciphertext from one cookie cannot be opened as another.
-(WEB-77 removed the twelfth, `ovumcy_oidc_link_pending`, along with the route it served; a golden
-value sealed under that purpose string still has to open, so it stays pinned in
+(WEB-77 removed `ovumcy_oidc_link_pending` along with the route it served, and WEB-40 round 3 added
+`ovumcy_oidc_stepup_continue` to this sweep, which the codec had carried since the cross-site
+step-up bounce shipped but this test file had not yet listed; a golden value sealed under the
+removed purpose string still has to open, so it stays pinned in
 `secure_cookie_codec_golden_test.go`'s backward-compat set below, not in the live-purposes table
 here.)
 
@@ -83,6 +85,7 @@ here.)
 | `ovumcy_reset_password` | ✓ | ✓ | †  |
 | `ovumcy_oidc_auth` | ✓ | ✓ | †  |
 | `ovumcy_oidc_stepup` | ✓ | ✓ | †  |
+| `ovumcy_oidc_stepup_continue` | ✓ | ✓ | †  |
 | `ovumcy_oidc_logout_bridge` | ✓ | ✓ | †  |
 | `ovumcy_totp_pending` | ✓ | ✓ | ✓  |
 | `ovumcy_totp_setup` | ✓ | ✓ | ✓  |

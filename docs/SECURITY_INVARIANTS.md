@@ -32,27 +32,41 @@ Every test-enforceable entry has a corresponding test or set of tests in `SECURI
 - **The server-side bound is class-wide**, not a property of those two. Every sealed cookie is bounded on the server in one of three ways: by a live expiry inside its own payload that its reader compares against the clock and refuses once past; by the opaque signed token it wraps, whose own `exp` the verifier enforces (`ovumcy_auth`, `ovumcy_reset_password`, whose sealed bytes are a JWT rather than a struct with a timestamp field); or — only where the payload names no account and carries nothing the server generated, so a replay hands the client back exactly what it already had (`ovumcy_flash`, `ovumcy_flash_exempt`) — by nothing at all. The two exemptions are properties of the payload, never a list of cookie names, so a cookie added later is classified by what it is. `TestEverySealedCookiePayloadCarriesAServerVerifiedExpiry` derives the roster from the declared cookie specs, cross-checks it against every cookie-name constant so a spec built by a helper cannot go unseen, mints each one through its production path, rewrites the bound its payload carries into the past, re-seals it and requires the production reader to refuse it; a sealed cookie it cannot classify fails rather than being skipped.
 - **Flash is two sealed cookies, not one, so a request the CSRF middleware never validates cannot
   overwrite or erase a pending same-origin flash (WEB-40).** `ovumcy_flash` is the page slot every
-  ordinary redirect writes; `ovumcy_flash_exempt` is written only by the handful of writers reachable
-  without a CSRF token — the OIDC callback (`POST /auth/oidc/callback`, the sole CSRF exemption, and
-  its unguarded `GET` query-mode twin), `/auth/oidc/start`, the step-up dispatch chain that shares
-  that same request, the step-up cross-site refusal (`refuseOIDCStepupCallback`'s cross-site arm),
-  and the `requireFirstPartyRequest` refusal handlers that themselves fire on the cross-site request
-  the guard exists to name (`refuseOIDCStepupContinueRequest`, `refuseRegisterPickupRequest`).
-  Because it is a separate cookie, none of those writers ever sends a `Set-Cookie` for
-  `ovumcy_flash` — they cannot overwrite or clear a value they never address. On read,
-  `popFlashCookie` (`internal/api/flash.go`) prefers the page slot whenever it carries anything and
-  falls back to the exempt slot only when the page slot is empty, so a genuine provider refusal
-  still reaches the owner when nothing else is pending; the page slot is always cleared on read, and
-  when it wins the exempt slot is retracted in the same response rather than left standing — the
-  token-less message is the one to drop, so the rare coincidence of both being pending never leaves
-  a stale exempt-channel message to surface on a later, unrelated render. Every
-  other `setFlashCookie` call site sits behind session + CSRF, or behind `requireFirstPartyRequest`
-  having already passed, so it keeps using the page slot unchanged. Regression:
-  `TestOIDCCallbackStateMismatchDoesNotClobberAPendingPageFlash`,
+  ordinary redirect writes; `ovumcy_flash_exempt` is written by two kinds of caller. The first is
+  UNCONDITIONAL — the call site itself is reached only through a request with no CSRF token or
+  first-party proof, so it always uses the exempt slot: the OIDC callback (`POST
+  /auth/oidc/callback`, the sole CSRF exemption, and its unguarded `GET` query-mode twin),
+  `/auth/oidc/start` and every other `/auth/oidc/*` sub-path (the SSO rate limiter is mounted on the
+  whole prefix with no method filter — `RespondAuthRateLimited` → `respondAuthError`), the step-up
+  cross-site refusal (`refuseOIDCStepupCallback`'s cross-site arm), and the
+  `requireFirstPartyRequest` refusal handlers that themselves fire on the cross-site request the
+  guard exists to name (`refuseOIDCStepupContinueRequest`, `refuseRegisterPickupRequest`). The
+  second is ORIGIN-AWARE: `requireFirstPartyRequest` is deliberately monotone (a stated "same-site"
+  origin or the whole Sec-Fetch-Site family missing both pass it — neither proves the request is
+  same-origin), so `refuseOIDCStepupCallback`'s non-cross-site arm, `ContinueOIDCStepup`'s
+  no-continuation arm, and `PickupRegister`'s `redirectToPostRegisterSignin` all defer their choice
+  to `setFlashCookieForRequestOrigin`, which picks the page slot only for a STATED `Sec-Fetch-Site:
+  same-origin` and the exempt slot for everything else, including silence. Because it is a separate
+  cookie, none of those writers ever sends a `Set-Cookie` for `ovumcy_flash` when it chooses the
+  exempt slot — they cannot overwrite or clear a value they never address. On read, `popFlashCookie`
+  (`internal/api/flash.go`) prefers the page slot whenever it carries anything and falls back to the
+  exempt slot only when the page slot is empty, so a genuine provider refusal still reaches the
+  owner when nothing else is pending; the page slot is always cleared on read, and when it wins the
+  exempt slot is retracted in the same response rather than left standing — the token-less message
+  is the one to drop, so the rare coincidence of both being pending never leaves a stale
+  exempt-channel message to surface on a later, unrelated render (a page slot that wins but carries
+  only a field the popping page does not render is a known, documented gap: see the doc comment on
+  `popFlashCookie`). Every other `setFlashCookie` call site sits behind session + CSRF, or behind a
+  step-up dispatch that already matched the sealed state secret, so it keeps using the page slot
+  unchanged. Regression: `TestOIDCCallbackStateMismatchDoesNotClobberAPendingPageFlash`,
+  `TestOIDCCallbackSameSiteStateMismatchDoesNotClobberAPendingPageFlash`,
   `TestPopFlashCookiePageSlotWinsWhenBothChannelsArePending`,
   `TestPopFlashCookieShowsExemptChannelWhenPageSlotIsEmpty`,
   `TestOIDCStepupContinueCrossSiteRefusalDoesNotClobberAPendingPageFlash`,
-  `TestRegisterPickupCrossSiteRefusalDoesNotClobberAPendingPageFlash` (all in
+  `TestOIDCStepupContinueNoContinuationWithMissingFetchMetadataDoesNotClobberAPendingPageFlash`,
+  `TestRegisterPickupCrossSiteRefusalDoesNotClobberAPendingPageFlash`,
+  `TestRegisterPickupMissingWithMissingFetchMetadataDoesNotClobberAPendingPageFlash`,
+  `TestOIDCRateLimitHandlerRedirectUsesSealedFlashCookie` (`cmd/ovumcy`) (the rest in
   `internal/api/flash_exempt_channel_regression_test.go`).
 - The **provider-logout bridge cookie** names the owner beside the session id, and the stored end-session material — the raw `id_token_hint` among it — is resolved and consumed only by that pair. This closes the last path that had no session to scope by: the bridge redirect runs after the auth cookie is gone, so the sealed payload is the only thing naming the account the hop acts for, and the lookup is never the session id on its own. An owner id is mandatory at seal time, and a payload naming none is invalid on read rather than a comparison skipped for want of an operand — it is refused and retracted, and the browser gets a local sign-out at `/login`. Because the payload gained its owner id in a later release, a bridge cookie minted by an earlier version fails closed the same way; that window is bounded by the payload's own one-minute validity.
 - **Provider logout obeys the configuration in force at sign-out, never the stored row.** The row is a carrier of one session's end-session material and outlives a configuration change by up to its seven-day TTL, so the mode is re-read when the sign-out happens: an instance switched to `OIDC_LOGOUT_MODE=local`, or with OIDC turned off, signs the owner out locally from the next request, hands out no end-session `Location`, and drops the row it will not use rather than leaving it to expire. The same predicate gates the write at sign-in and the read at sign-out, so the two cannot answer differently.

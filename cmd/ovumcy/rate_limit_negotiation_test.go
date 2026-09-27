@@ -196,9 +196,18 @@ func TestOIDCRateLimitHandlerRedirectUsesSealedFlashCookie(t *testing.T) {
 		t.Fatalf("expected redirect to /login, got %q", location)
 	}
 
-	flashCookie := testResponseCookie(response.Cookies(), "ovumcy_flash")
+	// The SSO limiter is mounted on the whole /auth/oidc prefix with no method
+	// filter, so a cross-site top-level GET navigation can trip it carrying no
+	// CSRF token or first-party proof (WEB-40): it must write only the
+	// CSRF-exempt channel, never the shared page slot a same-origin navigation
+	// may have pending.
+	if pageFlashCookie := testResponseCookie(response.Cookies(), "ovumcy_flash"); pageFlashCookie != nil && pageFlashCookie.Value != "" {
+		t.Fatalf("did not expect the rate limiter to write the page flash cookie, got %q", pageFlashCookie.Value)
+	}
+
+	flashCookie := testResponseCookie(response.Cookies(), "ovumcy_flash_exempt")
 	if flashCookie == nil {
-		t.Fatal("expected flash cookie in redirect response")
+		t.Fatal("expected exempt flash cookie in redirect response")
 	}
 	if strings.Contains(flashCookie.Value, "access_denied") {
 		t.Fatalf("did not expect sealed flash cookie to expose provider error in plaintext: %q", flashCookie.Value)

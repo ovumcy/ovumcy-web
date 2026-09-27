@@ -223,3 +223,111 @@ func TestRegisterPickupCrossSiteRefusalDoesNotClobberAPendingPageFlash(t *testin
 		t.Fatal("expected the refusal on the exempt channel")
 	}
 }
+
+// sameSiteNavigation models a browser that states this request came from a
+// sibling subdomain: another origin under middleware_first_party_guard.go's
+// own rule (the CSRF middleware compares scheme+host exactly), but not the
+// literal "cross-site" callbackArrivedCrossSite matches on.
+var sameSiteNavigation = secFetchHeaders{site: "same-site", mode: "navigate", dest: "document"}
+
+// TestOIDCCallbackSameSiteStateMismatchDoesNotClobberAPendingPageFlash covers
+// refuseOIDCStepupCallback's SAME-SITE arm (WEB-40 round 3):
+// callbackArrivedCrossSite only matches a stated "cross-site", so a stated
+// "same-site" origin — a sibling subdomain the CSRF middleware itself treats
+// as another origin — used to fall through to redirectSettingsRefusal and
+// clobber the page slot. It now defers to
+// redirectSettingsRefusalForRequestOrigin, which is not fooled by a "same-site"
+// statement either.
+func TestOIDCCallbackSameSiteStateMismatchDoesNotClobberAPendingPageFlash(t *testing.T) {
+	t.Parallel()
+
+	app, _ := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{
+		cookieSecure: true,
+		oidcService:  newStubOIDCWorkflowService(true),
+	})
+
+	pendingFlash := sealPendingPageFlash(t, FlashPayload{SettingsSuccess: "password_changed"})
+
+	request := httptest.NewRequest(http.MethodPost, security.OIDCCallbackPath, strings.NewReader(url.Values{
+		"state": {"attacker-supplied-garbage"},
+		"code":  {"whatever"},
+	}.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Cookie", flashCookieName+"="+pendingFlash)
+	sameSiteNavigation.applyTo(request)
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusSeeOther)
+
+	if touched := responseCookie(response.Cookies(), flashCookieName); touched != nil {
+		t.Fatalf("a same-site callback refusal must not touch the page flash cookie, got %#v", touched)
+	}
+	exempt := responseCookie(response.Cookies(), exemptFlashCookieName)
+	if exempt == nil || strings.TrimSpace(exempt.Value) == "" {
+		t.Fatal("expected the refusal on the exempt channel")
+	}
+}
+
+// TestOIDCStepupContinueNoContinuationWithMissingFetchMetadataDoesNotClobberAPendingPageFlash
+// covers ContinueOIDCStepup's no-continuation arm (WEB-40 round 3).
+// requireFirstPartyRequest is deliberately monotone: a request with the whole
+// Sec-Fetch-Site family stripped passes it (see firstPartyRequestRefusal), so
+// this arm is reachable with no proof the request is same-origin — a stale or
+// already-consumed continuation looks identical to that. It now defers to
+// redirectSettingsRefusalForRequestOrigin instead of unconditionally writing
+// the page slot.
+func TestOIDCStepupContinueNoContinuationWithMissingFetchMetadataDoesNotClobberAPendingPageFlash(t *testing.T) {
+	t.Parallel()
+
+	app, _ := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{
+		cookieSecure: true,
+		oidcService:  newStubOIDCWorkflowService(true),
+	})
+
+	pendingFlash := sealPendingPageFlash(t, FlashPayload{SettingsSuccess: "password_changed"})
+
+	// No continuation cookie is sent, so peekOIDCStepupContinuationCookie
+	// returns the zero continuation and the handler takes the no-continuation
+	// arm. No Sec-Fetch-Site header is set either — the "family stripped" case
+	// requireFirstPartyRequest lets through unproven.
+	request := httptest.NewRequest(http.MethodGet, oidcCallbackContinuePath, nil)
+	request.Header.Set("Cookie", flashCookieName+"="+pendingFlash)
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusSeeOther)
+
+	if touched := responseCookie(response.Cookies(), flashCookieName); touched != nil {
+		t.Fatalf("a no-continuation refusal with no Fetch Metadata must not touch the page flash cookie, got %#v", touched)
+	}
+	if exempt := responseCookie(response.Cookies(), exemptFlashCookieName); exempt == nil || strings.TrimSpace(exempt.Value) == "" {
+		t.Fatal("expected the refusal on the exempt channel")
+	}
+}
+
+// TestRegisterPickupMissingWithMissingFetchMetadataDoesNotClobberAPendingPageFlash
+// covers PickupRegister's redirectToPostRegisterSignin (WEB-40 round 3): a GET
+// with no pickup cookie at all and no Sec-Fetch-Site family reaches
+// PickupRegister (requireFirstPartyRequest only refuses a STATED off-origin
+// value) and used to unconditionally write the page slot via
+// redirectToPostRegisterSignin's setFlashCookie call, even though nothing
+// proves this request is the owner's own.
+func TestRegisterPickupMissingWithMissingFetchMetadataDoesNotClobberAPendingPageFlash(t *testing.T) {
+	t.Parallel()
+
+	app, _ := newOnboardingTestApp(t)
+
+	pendingFlash := sealPendingPageFlash(t, FlashPayload{SettingsSuccess: "password_changed"})
+
+	request := httptest.NewRequest(http.MethodGet, "/register/welcome", nil)
+	request.Header.Set("Cookie", flashCookieName+"="+pendingFlash)
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusSeeOther)
+
+	if touched := responseCookie(response.Cookies(), flashCookieName); touched != nil {
+		t.Fatalf("a missing-pickup refusal with no Fetch Metadata must not touch the page flash cookie, got %#v", touched)
+	}
+	if exempt := responseCookie(response.Cookies(), exemptFlashCookieName); exempt == nil || strings.TrimSpace(exempt.Value) == "" {
+		t.Fatal("expected the refusal on the exempt channel")
+	}
+}

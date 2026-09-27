@@ -19,20 +19,33 @@ var flashCookieSpec = sealedCookieSpec{name: flashCookieName, path: "/"}
 // sole exemption and its unguarded query-mode GET twin (handlers_auth_oidc.go,
 // StartOIDCLogin/CompleteOIDCLogin), the step-up cross-site refusal that runs
 // on that same request (refuseOIDCStepupCallback's cross-site arm,
-// oidc_stepup_continuation.go), and the requireFirstPartyRequest refusals that
+// oidc_stepup_continuation.go), the requireFirstPartyRequest refusals that
 // themselves fire on the cross-site request the guard exists to name
-// (refuseOIDCStepupContinueRequest, refuseRegisterPickupRequest) — seals into
-// THIS cookie via setCSRFExemptFlashCookie, never flashCookieSpec's. Because
-// it is a separate cookie, a token-less writer structurally cannot overwrite
-// or erase flashCookieName's value: it never sends a Set-Cookie for that name
-// at all. See popFlashCookie for the read-side precedence between the two.
+// (refuseOIDCStepupContinueRequest, refuseRegisterPickupRequest), and the
+// /auth/oidc rate limiter (RespondAuthRateLimited → respondAuthError,
+// error_mapping_transport.go): that limiter is mounted on the whole prefix
+// with no method filter, so a cross-site top-level GET navigation can trip it
+// too — seal into THIS cookie via setCSRFExemptFlashCookie, never
+// flashCookieSpec's. Because it is a separate cookie, a token-less writer
+// structurally cannot overwrite or erase flashCookieName's value: it never
+// sends a Set-Cookie for that name at all. See popFlashCookie for the
+// read-side precedence between the two.
 //
-// Every OTHER setFlashCookie call site sits behind either session + CSRF (the
-// authenticated settings routes) or requireFirstPartyRequest already having
-// passed (ContinueOIDCStepup and the per-purpose step-up completions it
-// shares with the direct same-site callback, and PickupRegister's own body) —
-// none of those is reachable by a request carrying no token from another
-// site, so they keep using setFlashCookie/flashCookieSpec unchanged.
+// A THIRD group cannot be sorted at compile time: requireFirstPartyRequest is
+// deliberately monotone (see firstPartyRequestRefusal) and lets through a
+// stated "same-site" origin and a missing Fetch Metadata family, neither of
+// which is evidence of a same-origin request. ContinueOIDCStepup's
+// no-continuation arm, refuseOIDCStepupCallback's same-site arm, and
+// PickupRegister's redirectToPostRegisterSignin all defer their slot choice
+// to setFlashCookieForRequestOrigin, which picks the page slot only for a
+// STATED "same-origin" Sec-Fetch-Site (WEB-40 round 3).
+//
+// Every OTHER setFlashCookie call site sits behind session + CSRF (the
+// authenticated settings routes) or a step-up whose dispatch already matched
+// the sealed state secret (the per-purpose completions the direct same-site
+// callback shares with ContinueOIDCStepup's successful leg) — none of those is
+// reachable by a request carrying no token from another site, so they keep
+// using setFlashCookie/flashCookieSpec unchanged.
 var exemptFlashCookieSpec = sealedCookieSpec{name: exemptFlashCookieName, path: "/"}
 
 func (handler *Handler) setFlashCookie(c fiber.Ctx, payload FlashPayload) {
@@ -44,6 +57,29 @@ func (handler *Handler) setFlashCookie(c fiber.Ctx, payload FlashPayload) {
 // exactly which call sites belong here and why.
 func (handler *Handler) setCSRFExemptFlashCookie(c fiber.Ctx, payload FlashPayload) {
 	handler.writeFlashCookie(c, exemptFlashCookieSpec, handler.clearCSRFExemptFlashCookie, payload)
+}
+
+// setFlashCookieForRequestOrigin is the slot decision for a site that is
+// reached by BOTH a same-origin navigation and one requireFirstPartyRequest's
+// Fetch-Metadata check lets through without proving same-origin (WEB-40
+// round 3): a stated "same-site" origin, a stated "none", or the family
+// missing entirely all satisfy that guard (it is deliberately monotone — see
+// firstPartyRequestRefusal) but none of them is evidence the request is the
+// app's own document, the same standard callbackArrivedCrossSite already
+// applies for the OIDC bounce. So the page slot is reserved for the one value
+// that IS such evidence — a STATED "same-origin" — and every other case,
+// including silence, goes to the exempt slot. This mirrors
+// callbackArrivedCrossSite's monotone reasoning rather than negating it: that
+// helper still decides "is this cross-site" for the bounce; this one decides
+// "is this provably same-origin" for the flash slot, and the two disagree on
+// purpose for "same-site" and "missing", which the bounce runs through
+// unchanged (state-secret gated) but the flash slot must not.
+func (handler *Handler) setFlashCookieForRequestOrigin(c fiber.Ctx, payload FlashPayload) {
+	if strings.EqualFold(strings.TrimSpace(c.Get(headerSecFetchSite)), secFetchSiteSameOrigin) {
+		handler.setFlashCookie(c, payload)
+		return
+	}
+	handler.setCSRFExemptFlashCookie(c, payload)
 }
 
 func (handler *Handler) writeFlashCookie(c fiber.Ctx, spec sealedCookieSpec, clear func(fiber.Ctx), payload FlashPayload) {
@@ -84,6 +120,20 @@ func (handler *Handler) writeFlashCookie(c fiber.Ctx, spec sealedCookieSpec, cle
 // and is no longer there to keep outranking it. The exempt slot is read
 // (and, on its own, cleared) only when the page slot was EMPTY, which is the
 // ordinary case — a genuine provider refusal with nothing else pending.
+//
+// Known accepted gap (F4, round 3): "wins" is decided on flashPayloadEmpty,
+// not on whether the rendering page actually shows one of the page slot's
+// fields. buildSettingsViewData reads only SettingsError/SettingsSuccess and
+// the auth pages read only AuthError/ForgotEmail (see redirectSettingsRefusal
+// and respondAuthError), so a page slot minted for one page kind (e.g. an
+// AuthError meant for /login) that a request instead pops from the OTHER page
+// kind (/settings) is popped, discarded unrendered, AND still outranks and
+// clears a genuinely pending exempt message — losing both. This needs two
+// flashes racing across tabs/page-kinds within the 5-minute TTL, is not
+// reachable by a token-less writer (every page-slot writer is either
+// session+CSRF-gated or state-secret/origin-gated after F1/F2 above), and is
+// left as a documented gap rather than threaded through with a per-page field
+// predicate no other call site needs.
 func (handler *Handler) popFlashCookie(c fiber.Ctx) FlashPayload {
 	if c.Method() == fiber.MethodHead {
 		// The cookie is single-use and a HEAD response always drops the body
