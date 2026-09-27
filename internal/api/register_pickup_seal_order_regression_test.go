@@ -1,7 +1,10 @@
 package api
 
 import (
+	"bytes"
+	"context"
 	"errors"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ovumcy/ovumcy-web/internal/apideps"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"gorm.io/gorm"
 )
@@ -226,5 +230,155 @@ func TestRegisterPickupRecoveryCodeRevealSealFailureLeavesTheTokenRedeemable(t *
 	row = loadRegisterPickupTokenRowForUser(t, database, user.ID)
 	if row.ConsumedAt == nil {
 		t.Fatal("the retried pickup must consume the token")
+	}
+}
+
+// registerPickupConsumeFaultStore wraps the real RegisterPickupTokenStore the
+// composition root builds, delegating Issue and Peek unchanged (embedding),
+// and overrides Consume to force one of the two lost-race outcomes
+// PickupRegister's post-Peek Consume call can hit: a store error, or a
+// concurrent redeem that already won (consumed=false). Both outcomes are hit
+// AFTER the session and the recovery-code reveal are already sealed
+// (WEB-64's Peek-then-seal-then-Consume order), so the two regressions below
+// pin that a losing Consume here discards those sealed values instead of
+// writing them.
+type registerPickupConsumeFaultStore struct {
+	apideps.RegisterPickupTokenStore
+	consumeErr error
+	lostRace   bool
+}
+
+func (s *registerPickupConsumeFaultStore) Consume(ctx context.Context, nonce string, now time.Time) (uint, bool, error) {
+	if s.consumeErr != nil {
+		return 0, false, s.consumeErr
+	}
+	if s.lostRace {
+		return 0, false, nil
+	}
+	return s.RegisterPickupTokenStore.Consume(ctx, nonce, now)
+}
+
+// registerPickupWithConsumeFault registers a fresh user through the real
+// pipeline (so the register_pickup_tokens row and the sealed pickup cookie
+// are both genuine), then replays that cookie against GET /register/welcome
+// under the faulted Consume store, returning the (unclosed) response.
+func registerPickupWithConsumeFault(t *testing.T, store *registerPickupConsumeFaultStore, email string) *http.Response {
+	t.Helper()
+
+	testApp, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{
+		registerPickupTokenStoreWrap: func(real apideps.RegisterPickupTokenStore) apideps.RegisterPickupTokenStore {
+			store.RegisterPickupTokenStore = real
+			return store
+		},
+		auditLogEnabled: true,
+	})
+
+	registerResponse := mustAppResponse(t, testApp, registerRequest(email))
+	if registerResponse.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected registration to redirect, got %d", registerResponse.StatusCode)
+	}
+	pickupValue := responseCookieValue(registerResponse.Cookies(), registerPickupCookieName)
+	if pickupValue == "" {
+		t.Fatalf("expected pickup cookie after register")
+	}
+
+	var registeredUser models.User
+	if err := database.Where("email = ?", email).First(&registeredUser).Error; err != nil {
+		t.Fatalf("load registered user: %v", err)
+	}
+
+	welcomeRequest := httptest.NewRequest(http.MethodGet, "/register/welcome", nil)
+	welcomeRequest.Header.Set("Accept-Language", "en")
+	welcomeRequest.Header.Set("Cookie", registerPickupCookieName+"="+pickupValue)
+	return mustAppResponse(t, testApp, welcomeRequest)
+}
+
+// TestRegisterPickupConsumeStoreErrorDiscardsSealedSessionAndReveal pins the
+// "consume_failed" branch: Consume returning a store error after a
+// successful Peek. The session and the recovery-code reveal are already
+// sealed at that point (WEB-64), and this asserts they are discarded rather
+// than written — the request must land exactly where a missing/tampered
+// pickup does: /login, no auth cookie, no recovery-code cookie, the pickup
+// cookie cleared (this is not one of the two seal failures that keep it
+// live for retry), and the neutral flash.
+func TestRegisterPickupConsumeStoreErrorDiscardsSealedSessionAndReveal(t *testing.T) {
+	t.Parallel()
+
+	store := &registerPickupConsumeFaultStore{consumeErr: errors.New("injected consume store failure")}
+	refused := registerPickupWithConsumeFault(t, store, "web64-pickup-consume-error@example.com")
+	defer func() { _ = refused.Body.Close() }()
+
+	if location := refused.Header.Get("Location"); location != "/login" {
+		t.Fatalf("expected the failed pickup to redirect to /login, got %q", location)
+	}
+	if cookie := responseCookieValue(refused.Cookies(), authCookieName); cookie != "" {
+		t.Fatalf("a pickup whose Consume errored must not set an auth cookie; got %q", cookie)
+	}
+	if cookie := responseCookieValue(refused.Cookies(), recoveryCodeCookieName); cookie != "" {
+		t.Fatalf("a pickup whose Consume errored must not set a recovery-code cookie; got %q", cookie)
+	}
+
+	// consume_failed is not one of the two post-Peek seal failures
+	// (redirectToPostRegisterSigninKeepingPickupCookie): the pickup cookie must
+	// be actively CLEARED here, same as every other non-seal exit.
+	cleared := responseCookie(refused.Cookies(), registerPickupCookieName)
+	if cleared == nil {
+		t.Fatal("expected a Set-Cookie clearing the pickup cookie on a Consume store error")
+	}
+	if strings.TrimSpace(cleared.Value) != "" {
+		t.Fatalf("expected the pickup cookie cleared (empty value) on a Consume store error, got %q", cleared.Value)
+	}
+
+	flash := mustReadFlashPayload(t, []byte(testAppSecretKey), refused.Cookies())
+	if flash.AuthError == "" {
+		t.Fatal("expected the neutral flash AuthError on a Consume store error")
+	}
+}
+
+// TestRegisterPickupConsumeLostRaceDiscardsSealedSessionAndReveal pins the
+// "decoy_or_replay" branch reached from the Consume stage: Consume succeeding
+// but reporting the grant was NOT spent (a concurrent redeem already won).
+// Same assertions as the store-error twin above, plus the security-log
+// reason, since the redirect_signin event already carries it (see
+// TestRegisterPickupFailureLogsRedirectSigninReason in this package).
+func TestRegisterPickupConsumeLostRaceDiscardsSealedSessionAndReveal(t *testing.T) {
+	originalWriter := log.Writer()
+	defer log.SetOutput(originalWriter)
+	var logged bytes.Buffer
+	log.SetOutput(&logged)
+
+	store := &registerPickupConsumeFaultStore{lostRace: true}
+	refused := registerPickupWithConsumeFault(t, store, "web64-pickup-consume-lost-race@example.com")
+	defer func() { _ = refused.Body.Close() }()
+
+	if location := refused.Header.Get("Location"); location != "/login" {
+		t.Fatalf("expected the lost-race pickup to redirect to /login, got %q", location)
+	}
+	if cookie := responseCookieValue(refused.Cookies(), authCookieName); cookie != "" {
+		t.Fatalf("a pickup that lost the Consume race must not set an auth cookie; got %q", cookie)
+	}
+	if cookie := responseCookieValue(refused.Cookies(), recoveryCodeCookieName); cookie != "" {
+		t.Fatalf("a pickup that lost the Consume race must not set a recovery-code cookie; got %q", cookie)
+	}
+
+	cleared := responseCookie(refused.Cookies(), registerPickupCookieName)
+	if cleared == nil {
+		t.Fatal("expected a Set-Cookie clearing the pickup cookie on a lost Consume race")
+	}
+	if strings.TrimSpace(cleared.Value) != "" {
+		t.Fatalf("expected the pickup cookie cleared (empty value) on a lost Consume race, got %q", cleared.Value)
+	}
+
+	flash := mustReadFlashPayload(t, []byte(testAppSecretKey), refused.Cookies())
+	if flash.AuthError == "" {
+		t.Fatal("expected the neutral flash AuthError on a lost Consume race")
+	}
+
+	output := logged.String()
+	if !strings.Contains(output, `action="auth.register_pickup"`) || !strings.Contains(output, `outcome="redirect_signin"`) {
+		t.Fatalf("expected a register_pickup redirect_signin security event, got %q", output)
+	}
+	if !strings.Contains(output, `reason="decoy_or_replay"`) {
+		t.Fatalf("expected the redirect_signin event to carry the decoy_or_replay reason, got %q", output)
 	}
 }

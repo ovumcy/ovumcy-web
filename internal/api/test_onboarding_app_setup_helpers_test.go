@@ -7,6 +7,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/csrf"
+	"github.com/ovumcy/ovumcy-web/internal/apideps"
 	"github.com/ovumcy/ovumcy-web/internal/bootstrap"
 	"github.com/ovumcy/ovumcy-web/internal/db"
 	"github.com/ovumcy/ovumcy-web/internal/i18n"
@@ -75,6 +76,14 @@ type onboardingTestAppOptions struct {
 	// name: while it returns an error, sealing the recovery-code reveal cookie
 	// fails the way no request can make it fail.
 	recoveryCodeIssuanceFault func() error
+	// registerPickupTokenStoreWrap, when set, wraps the real
+	// RegisterPickupTokenStore the composition root builds (dependencies.RegisterPickupTokens)
+	// before it is handed to the handler. It receives the real store so
+	// Issue/Peek can still delegate to it, and returns the store the handler
+	// will use — for the two post-Peek Consume-stage races (a store error, a
+	// concurrent redeem that already won) that a real race cannot reliably
+	// reproduce in a test.
+	registerPickupTokenStoreWrap func(apideps.RegisterPickupTokenStore) apideps.RegisterPickupTokenStore
 	// revokingWrites, when set, is installed around the user repository the
 	// auth, settings and TOTP services write through, for the race regressions
 	// that commit another write between a request's authentication and its own
@@ -191,6 +200,9 @@ func newTestHandlerDependencies(database *gorm.DB, i18nManager *i18n.Manager, op
 	}
 	if appOptions.revokingWrites != nil {
 		appOptions.revokingWrites.install(&dependencies, repositories.Users)
+	}
+	if appOptions.registerPickupTokenStoreWrap != nil {
+		dependencies.RegisterPickupTokens = appOptions.registerPickupTokenStoreWrap(dependencies.RegisterPickupTokens)
 	}
 	return dependencies
 }
