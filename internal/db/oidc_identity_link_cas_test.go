@@ -87,8 +87,13 @@ func assertLinkRevokesOnlyFromTheVerifiedSessionVersion(t *testing.T, database *
 	}{
 		{name: "verified version", stored: 3, expected: 3, wantVersion: 4},
 		{name: "revoked since it was verified", stored: 4, expected: 3, wantErr: models.ErrAuthSessionVersionChanged, wantVersion: 4},
-		{name: "legacy zero row read as version 1", stored: 0, expected: 1, wantVersion: 2},
-		{name: "legacy zero expected on a legacy row", stored: 0, expected: 0, wantVersion: 2},
+		// A row forced to 0 by hand (the shape migration 041 backfills at boot,
+		// never a state a running instance's own writers produce) must not match
+		// any expected version any more (WEB-50/WEB-65): the legacy arm that used
+		// to read a stored 0 as version 1 is gone, so plain equality never sees a
+		// 0 as a 1, whatever the caller expected.
+		{name: "legacy zero row does not match version 1", stored: 0, expected: 1, wantErr: models.ErrAuthSessionVersionChanged, wantVersion: 0},
+		{name: "legacy zero expected on a legacy row does not match", stored: 0, expected: 0, wantErr: models.ErrAuthSessionVersionChanged, wantVersion: 0},
 		{name: "legacy zero row revoked since it was read", stored: 0, expected: 2, wantErr: models.ErrAuthSessionVersionChanged, wantVersion: 0},
 	}
 	for index, tc := range cases {

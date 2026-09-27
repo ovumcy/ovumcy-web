@@ -8,9 +8,13 @@ import (
 )
 
 // authSessionVersionFromPredicate matches an account still at the session
-// version its caller verified a factor against. A legacy row still holding 0
-// reads as version 1, so it matches an expected 1 and nothing else.
-const authSessionVersionFromPredicate = "(auth_session_version = ? OR (? = 1 AND auth_session_version <= 0))"
+// version its caller verified a factor against. Migration 041 (WEB-50/WEB-65)
+// backfilled every row at or below 0 to 1 at boot, so this predicate no
+// longer carries a legacy arm reading a stored 0 as version 1: plain equality
+// is enough, and a row forced back to 0 or below by hand after that boot
+// matches nothing (see the expectedSessionVersion guard below, which keeps
+// the compared value itself out of that range).
+const authSessionVersionFromPredicate = "auth_session_version = ?"
 
 // updateFromAuthSessionVersionTx writes columns to the account and moves its
 // auth_session_version from expectedSessionVersion to the next version, in
@@ -23,9 +27,16 @@ const authSessionVersionFromPredicate = "(auth_session_version = ? OR (? = 1 AND
 // a sign-out everywhere from another device); nothing is written and the
 // result is models.ErrAuthSessionVersionChanged, because the caller would
 // otherwise mint a session at the version that revocation produced and
-// outlive it. A missing account is ErrUserOwnerRequired. The written version
-// is a literal, not an increment: a legacy 0 row is written as 2, or the
-// bumped row would read as the version it was revoking.
+// outlive it. A missing account is ErrUserOwnerRequired.
+//
+// expectedSessionVersion below 1 is refused outright rather than promoted to
+// 1 and matched anyway: every caller normalizes before it reaches here
+// (services.NormalizeAuthSessionVersion), so this only guards a caller that
+// does not, not a path production traffic takes. Silently clamping it would
+// let that caller's un-normalized 0 satisfy the predicate against a row
+// forced to 0 by hand — exactly the match migration 041 exists to make
+// impossible. Refusing keeps that true regardless of what a future caller
+// passes in.
 //
 // The guarantee rests on the UPDATE's predicate being re-evaluated after a
 // lock wait: Postgres re-checks it against the committed row a concurrent
@@ -36,13 +47,13 @@ func updateFromAuthSessionVersionTx(tx *gorm.DB, userID uint, expectedSessionVer
 		return 0, err
 	}
 	if expectedSessionVersion < 1 {
-		expectedSessionVersion = 1
+		return 0, models.ErrAuthSessionVersionChanged
 	}
 	next := expectedSessionVersion + 1
 	values := make(map[string]any, len(columns)+1)
 	maps.Copy(values, columns)
 	values["auth_session_version"] = next
-	result := query.Where(authSessionVersionFromPredicate, expectedSessionVersion, expectedSessionVersion).Updates(values)
+	result := query.Where(authSessionVersionFromPredicate, expectedSessionVersion).Updates(values)
 	if result.Error != nil {
 		return 0, result.Error // codecov:ignore -- DB-layer error on the session-version UPDATE; not reachable in unit tests
 	}
