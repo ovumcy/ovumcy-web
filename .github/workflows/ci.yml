@@ -193,7 +193,8 @@ jobs:
     #             they belong because it is the one already provisioned for
     #             containers (OVUMCY_REQUIRE_POSTGRES above); declaring docker
     #             on a lane that has none would assert a check nothing runs.
-    #   git     — changelogd builds a fixture repository to probe against.
+    #   git     — changelogd builds a fixture repository to probe against, and
+    #             the release gate's ancestry step runs inside a real clone.
     #   tzdata  — every cycle/day timezone regression in internal/services
     #             loads an IANA zone.
     #

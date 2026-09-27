@@ -664,11 +664,17 @@ func sortedKeys(m map[string]string) []string {
 func stepScript(t *testing.T) string {
 	t.Helper()
 
-	block := stepBlock(t)
+	return runScript(t, gateStep, stepBlock(t))
+}
+
+// runScript returns the `run:` block of one of the gate job's steps.
+func runScript(t *testing.T, step, block string) string {
+	t.Helper()
+
 	marker := "        run: |\n"
 	start := strings.Index(block, marker)
 	if start < 0 {
-		t.Fatalf("%s, step %q: no `run: |` block — the gate's script moved, and this guard would run nothing", gateWorkflow, gateStep)
+		t.Fatalf("%s, step %q: no `run: |` block — the gate's script moved, and this guard would run nothing", gateWorkflow, step)
 	}
 
 	var script []string
