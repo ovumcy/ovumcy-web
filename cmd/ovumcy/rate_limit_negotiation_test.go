@@ -30,6 +30,13 @@ import (
 // reuse this constant rather than a second hardcoded copy that could drift.
 const rateLimitTestSecretKey = "test-secret-key"
 
+// rateLimitTestHandlerSecretKey is api.NewHandler's own secret argument below
+// (distinct from rateLimitTestSecretKey, the bootstrap.BuildDependencies
+// app-level secret): it is what seals/opens every cookie the handler writes,
+// including the flash cookies, so a caller decoding one of those must derive
+// its cipher from THIS constant.
+const rateLimitTestHandlerSecretKey = "0123456789abcdef0123456789abcdef"
+
 func newRateLimitTestI18nManager(t *testing.T) *i18n.Manager {
 	t.Helper()
 
@@ -92,7 +99,7 @@ func newRateLimitTestHandlerAndDBAtLocation(t *testing.T, location *time.Locatio
 	i18nManager := newRateLimitTestI18nManager(t)
 
 	handler, err := api.NewHandler(
-		"0123456789abcdef0123456789abcdef",
+		rateLimitTestHandlerSecretKey,
 		location,
 		i18nManager,
 		false,

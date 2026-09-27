@@ -290,6 +290,13 @@ func registerPickupWithConsumeFault(t *testing.T, store *registerPickupConsumeFa
 	welcomeRequest := httptest.NewRequest(http.MethodGet, "/register/welcome", nil)
 	welcomeRequest.Header.Set("Accept-Language", "en")
 	welcomeRequest.Header.Set("Cookie", registerPickupCookieName+"="+pickupValue)
+	// This request models the browser's own top-level navigation back to
+	// /register/welcome, following the redirect POST /api/v1/users just sent
+	// it — a stated same-origin Sec-Fetch-Site, the one shape
+	// setFlashCookieForRequestOrigin (flash.go, WEB-40 round 3) sends to the
+	// page slot rather than the CSRF-exempt one; the callers below read the
+	// page-slot flash via mustReadFlashPayload.
+	sameOriginNavigation.applyTo(welcomeRequest)
 	return mustAppResponse(t, testApp, welcomeRequest)
 }
 

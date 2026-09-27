@@ -37,7 +37,7 @@ Every test-enforceable entry has a corresponding test or set of tests in `SECURI
   first-party proof, so it always uses the exempt slot: the OIDC callback (`POST
   /auth/oidc/callback`, the sole CSRF exemption, and its unguarded `GET` query-mode twin),
   `/auth/oidc/start` and every other `/auth/oidc/*` sub-path (the SSO rate limiter is mounted on the
-  whole prefix with no method filter — `RespondAuthRateLimited` → `respondAuthError`), the step-up
+  whole prefix with no method filter — `RespondAuthRateLimited` → `respondAuthErrorCSRFExempt`), the step-up
   cross-site refusal (`refuseOIDCStepupCallback`'s cross-site arm), the
   `requireFirstPartyRequest` refusal handlers that themselves fire on the cross-site request the
   guard exists to name (`refuseOIDCStepupContinueRequest`, `refuseRegisterPickupRequest`), and —
@@ -75,7 +75,11 @@ Every test-enforceable entry has a corresponding test or set of tests in `SECURI
   `TestOIDCStepupContinueNoContinuationWithMissingFetchMetadataDoesNotClobberAPendingPageFlash`,
   `TestRegisterPickupCrossSiteRefusalDoesNotClobberAPendingPageFlash`,
   `TestRegisterPickupMissingWithMissingFetchMetadataDoesNotClobberAPendingPageFlash`,
-  `TestOIDCRateLimitHandlerRedirectUsesSealedFlashCookie` (`cmd/ovumcy`) (the rest in
+  `TestOIDCRateLimitHandlerRedirectUsesSealedFlashCookie` (`cmd/ovumcy`),
+  `TestEveryLimiterConfigLimitReachedIsDrivenForThePageFlashCookie` (`cmd/ovumcy`),
+  `TestRespondRateLimitedFormErrorPasswordResetDropsForgotEmailAndUsesExemptSlot`,
+  `TestRespondAPIRateLimitedSettingsFormUsesExemptSlot`,
+  `TestRespondAPIRateLimitedAuthFormUsesExemptSlot` (the rest in
   `internal/api/flash_exempt_channel_regression_test.go`).
 - The **provider-logout bridge cookie** names the owner beside the session id, and the stored end-session material — the raw `id_token_hint` among it — is resolved and consumed only by that pair. This closes the last path that had no session to scope by: the bridge redirect runs after the auth cookie is gone, so the sealed payload is the only thing naming the account the hop acts for, and the lookup is never the session id on its own. An owner id is mandatory at seal time, and a payload naming none is invalid on read rather than a comparison skipped for want of an operand — it is refused and retracted, and the browser gets a local sign-out at `/login`. Because the payload gained its owner id in a later release, a bridge cookie minted by an earlier version fails closed the same way; that window is bounded by the payload's own one-minute validity.
 - **Provider logout obeys the configuration in force at sign-out, never the stored row.** The row is a carrier of one session's end-session material and outlives a configuration change by up to its seven-day TTL, so the mode is re-read when the sign-out happens: an instance switched to `OIDC_LOGOUT_MODE=local`, or with OIDC turned off, signs the owner out locally from the next request, hands out no end-session `Location`, and drops the row it will not use rather than leaving it to expire. The same predicate gates the write at sign-in and the read at sign-out, so the two cannot answer differently.

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"go/ast"
 	"go/types"
 	"net/http"
@@ -12,6 +14,8 @@ import (
 	"testing"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/ovumcy/ovumcy-web/internal/api"
+	"github.com/ovumcy/ovumcy-web/internal/security"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -243,6 +247,77 @@ func assertNoPageFlashCookie(t *testing.T, response *http.Response) {
 	}
 }
 
+// assertNoExemptFlashCookie is assertNoPageFlashCookie's counterpart for a
+// global-target spec (the two calendar limiters below): apiError never
+// touches either flash cookie for that target (see respondRateLimitedFormError's
+// default arm), so a probe reaching it must see NEITHER slot written, not just
+// the page one.
+func assertNoExemptFlashCookie(t *testing.T, response *http.Response) {
+	t.Helper()
+	if cookie := testResponseCookie(response.Cookies(), "ovumcy_flash_exempt"); cookie != nil && cookie.Value != "" {
+		t.Fatalf("a global-target limiter refusal must never write the exempt flash cookie either, got %q", cookie.Value)
+	}
+}
+
+// exemptFlashPayloadFromResponse opens the ovumcy_flash_exempt cookie the same
+// way internal/api's sibling tests decode flash cookies (mustReadExemptFlashPayload
+// in internal/api/error_mapping_transport_regression_test.go), reimplemented
+// here because cmd/ovumcy cannot reach internal/api's unexported
+// secureCookieCodec: the envelope is "v2." + base64url(AEAD-seal), AAD-bound to
+// "ovumcy.cookie.<cookie-name>" under security.NewSecureCookieCipher — the same
+// primitive, just without the cookie-name→AAD framing helper that lives in
+// internal/api.
+func exemptFlashPayloadFromResponse(t *testing.T, response *http.Response) api.FlashPayload {
+	t.Helper()
+
+	cookie := testResponseCookie(response.Cookies(), "ovumcy_flash_exempt")
+	if cookie == nil || cookie.Value == "" {
+		t.Fatal("expected the exempt flash cookie in the response")
+	}
+
+	version, encoded, found := strings.Cut(cookie.Value, ".")
+	if !found || version != "v2" || strings.TrimSpace(encoded) == "" {
+		t.Fatalf("exempt flash cookie %q is not a v2 sealed envelope", cookie.Value)
+	}
+	sealed, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil {
+		t.Fatalf("decode exempt flash cookie payload: %v", err)
+	}
+
+	cipher, err := security.NewSecureCookieCipher([]byte(rateLimitTestHandlerSecretKey))
+	if err != nil {
+		t.Fatalf("build secure cookie cipher: %v", err)
+	}
+	plaintext, err := cipher.Open(sealed, []byte("ovumcy.cookie.ovumcy_flash_exempt"))
+	if err != nil {
+		t.Fatalf("open exempt flash cookie: %v", err)
+	}
+
+	var payload api.FlashPayload
+	if err := json.Unmarshal(plaintext, &payload); err != nil {
+		t.Fatalf("decode exempt flash payload JSON: %v", err)
+	}
+	return payload
+}
+
+// assertExemptFlashCookieCarriesFixedKey decodes the exempt flash cookie and
+// requires that fieldValue (the AuthError or SettingsError field the caller's
+// target writes) equals the spec's fixed key — never a value derived from the
+// request the limiter refused — and that ForgotEmail is empty, since a
+// limiter-originated flash never carries the request-supplied email
+// (respondAuthErrorChannel's includeForgotEmail is false for every
+// limiter-originated caller).
+func assertExemptFlashCookieCarriesFixedKey(t *testing.T, response *http.Response, expectedKey string, fieldValue func(api.FlashPayload) string) {
+	t.Helper()
+	payload := exemptFlashPayloadFromResponse(t, response)
+	if got := fieldValue(payload); got != expectedKey {
+		t.Fatalf("expected the exempt flash cookie's fixed key %q, got %q", expectedKey, got)
+	}
+	if payload.ForgotEmail != "" {
+		t.Fatalf("expected no ForgotEmail on a limiter-originated exempt flash, got %q", payload.ForgotEmail)
+	}
+}
+
 func probeAuthRateLimitHandlerNeverWritesPageFlash(t *testing.T) {
 	handler := newRateLimitTestHandler(t)
 	app := fiber.New()
@@ -257,6 +332,7 @@ func probeAuthRateLimitHandlerNeverWritesPageFlash(t *testing.T) {
 	}
 	defer func() { _ = response.Body.Close() }()
 	assertNoPageFlashCookie(t, response)
+	assertExemptFlashCookieCarriesFixedKey(t, response, "too_many_login_attempts", func(p api.FlashPayload) string { return p.AuthError })
 }
 
 func probeAPIRateLimitHandlerNeverWritesPageFlash(t *testing.T) {
@@ -271,8 +347,16 @@ func probeAPIRateLimitHandlerNeverWritesPageFlash(t *testing.T) {
 	}
 	defer func() { _ = response.Body.Close() }()
 	assertNoPageFlashCookie(t, response)
+	assertExemptFlashCookieCarriesFixedKey(t, response, "too many requests", func(p api.FlashPayload) string { return p.SettingsError })
 }
 
+// probeCalendarFeedRateLimitHandlerNeverWritesPageFlash and its /calendar
+// sibling below both answer through globalRateLimitErrorSpec (Target: global),
+// which apiError renders as a bare JSON/HTML status with no Set-Cookie at
+// all — see respondRateLimitedFormError's default arm and the class-wide
+// invariant documented in docs/SECURITY_INVARIANTS.md ("Flash is two sealed
+// cookies..."). Their probes therefore assert the ABSENCE of both slots,
+// never the presence of the exempt one.
 func probeCalendarFeedRateLimitHandlerNeverWritesPageFlash(t *testing.T) {
 	handler := newRateLimitTestHandler(t)
 	app := fiber.New()
@@ -285,6 +369,7 @@ func probeCalendarFeedRateLimitHandlerNeverWritesPageFlash(t *testing.T) {
 	}
 	defer func() { _ = response.Body.Close() }()
 	assertNoPageFlashCookie(t, response)
+	assertNoExemptFlashCookie(t, response)
 }
 
 func probeCalendarPageRateLimitHandlerNeverWritesPageFlash(t *testing.T) {
@@ -299,4 +384,5 @@ func probeCalendarPageRateLimitHandlerNeverWritesPageFlash(t *testing.T) {
 	}
 	defer func() { _ = response.Body.Close() }()
 	assertNoPageFlashCookie(t, response)
+	assertNoExemptFlashCookie(t, response)
 }
