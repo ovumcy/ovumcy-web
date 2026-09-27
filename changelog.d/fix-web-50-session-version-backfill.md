@@ -9,3 +9,11 @@
   signed in. A migration raises any row still at 0 or below to 1 on startup, and every one of those
   compare-and-set writers — the password-reset path and the one shared by the rest — no longer
   treats a stored 0 as a match for version 1.
+
+  Operator note: once this migration is recorded, a rollback to a binary older than it is refused
+  at boot; roll back by deleting the migration's `schema_migrations` row (it is idempotent and
+  reapplies cleanly) or by restoring a pre-upgrade backup. If a row is later hand-edited back to 0
+  or below, every session-revoking write against that account (password change, recovery-code
+  regeneration, TOTP re-enrollment, clear-data, OIDC identity link/unlink) refuses until a
+  sign-out-everywhere or logout moves the counter past 0; a `+1` write landing on such a row in the
+  meantime revokes nothing.

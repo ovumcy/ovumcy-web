@@ -29,14 +29,16 @@ const authSessionVersionFromPredicate = "auth_session_version = ?"
 // otherwise mint a session at the version that revocation produced and
 // outlive it. A missing account is ErrUserOwnerRequired.
 //
-// expectedSessionVersion below 1 is refused outright rather than promoted to
-// 1 and matched anyway: every caller normalizes before it reaches here
+// expectedSessionVersion below 1 is refused outright rather than clamped to 1
+// and matched anyway: every caller normalizes before it reaches here
 // (services.NormalizeAuthSessionVersion), so this only guards a caller that
-// does not, not a path production traffic takes. Silently clamping it would
-// let that caller's un-normalized 0 satisfy the predicate against a row
-// forced to 0 by hand — exactly the match migration 041 exists to make
-// impossible. Refusing keeps that true regardless of what a future caller
-// passes in.
+// does not, not a path production traffic takes. Clamping cannot make an
+// un-normalized 0 match a row forced to 0 by hand — the predicate is plain
+// equality, so a clamped 1 would instead match a row already at 1 (the
+// ordinary post-041 state), letting that caller's un-normalized expectation
+// silently pass a compare-and-set it was never verified against. Refusing
+// keeps expected and stored apart regardless of what a future caller passes
+// in.
 //
 // The guarantee rests on the UPDATE's predicate being re-evaluated after a
 // lock wait: Postgres re-checks it against the committed row a concurrent
