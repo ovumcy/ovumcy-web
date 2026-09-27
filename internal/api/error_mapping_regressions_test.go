@@ -653,6 +653,121 @@ func TestRespondAPIRateLimitedRoutesByRequestShape(t *testing.T) {
 	}
 }
 
+// TestAccountLockoutOmitsRetryAfterUnlikeEdgeRateLimiter locks the WEB-89
+// contract on POST /api/v1/sessions and POST /api/v1/password-resets: the
+// account-lockout 429 (services.ErrAuthLoginRateLimited /
+// services.ErrPasswordRecoveryRateLimited, raised by the attempt-budget
+// service behind the route and answered through mapAuthLoginError /
+// mapPasswordRecoveryStartError -> respondMappedError -> apiError) carries
+// NEITHER a Retry-After header NOR a retry_after_seconds field, because no
+// budget window backs it with a concrete back-off second count. The edge
+// rate-limiter 429 on the same routes (RespondAPIRateLimited, mounted ahead
+// of the handler in cmd/ovumcy/server.go) carries BOTH, derived from the
+// Retry-After it has already stamped. A client conflating the two would
+// either wait on a hint the lockout never gives, or retry a lockout
+// immediately because it saw no hint at all.
+func TestAccountLockoutOmitsRetryAfterUnlikeEdgeRateLimiter(t *testing.T) {
+	tests := []struct {
+		name        string
+		path        string
+		lockoutSpec APIErrorSpec
+	}{
+		{
+			name:        "sessions",
+			path:        "/api/v1/sessions",
+			lockoutSpec: mapAuthLoginError(services.ErrAuthLoginRateLimited),
+		},
+		{
+			name:        "password-resets",
+			path:        "/api/v1/password-resets",
+			lockoutSpec: mapPasswordRecoveryStartError(services.ErrPasswordRecoveryRateLimited),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Run("account lockout carries neither header nor field", func(t *testing.T) {
+				handler := &Handler{}
+				app := fiber.New()
+				app.Post(tt.path, func(c fiber.Ctx) error {
+					// Mirrors the real handlers' own call shape (Login ->
+					// mapAuthLoginError, ForgotPassword ->
+					// mapPasswordRecoveryStartError), each feeding
+					// respondMappedError with no Retry-After header ever set on
+					// this path.
+					return handler.respondMappedError(c, tt.lockoutSpec)
+				})
+
+				request := httptest.NewRequest(http.MethodPost, tt.path, nil)
+				request.Header.Set("Accept", "application/json")
+				response, err := app.Test(request, testConfigNoTimeout)
+				if err != nil {
+					t.Fatalf("app.Test: %v", err)
+				}
+				defer func() { _ = response.Body.Close() }()
+
+				if response.StatusCode != fiber.StatusTooManyRequests {
+					t.Fatalf("status: got %d want 429", response.StatusCode)
+				}
+				if got := response.Header.Get(fiber.HeaderRetryAfter); got != "" {
+					t.Fatalf("did not expect Retry-After on the account-lockout 429, got %q", got)
+				}
+				body, err := io.ReadAll(response.Body)
+				if err != nil {
+					t.Fatalf("read body: %v", err)
+				}
+				payload := map[string]any{}
+				if err := json.Unmarshal(body, &payload); err != nil {
+					t.Fatalf("unmarshal JSON envelope %q: %v", body, err)
+				}
+				if retry, has := payload["retry_after_seconds"]; has {
+					t.Fatalf("did not expect retry_after_seconds on the account-lockout 429, got %v", retry)
+				}
+			})
+
+			t.Run("edge rate limiter carries both", func(t *testing.T) {
+				handler := &Handler{}
+				app := fiber.New()
+				const wantRetryAfter = 9
+				app.Post(tt.path, func(c fiber.Ctx) error {
+					c.Response().Header.Set(fiber.HeaderRetryAfter, strconv.Itoa(wantRetryAfter))
+					return handler.RespondAPIRateLimited(c)
+				})
+
+				request := httptest.NewRequest(http.MethodPost, tt.path, nil)
+				request.Header.Set("Accept", "application/json")
+				response, err := app.Test(request, testConfigNoTimeout)
+				if err != nil {
+					t.Fatalf("app.Test: %v", err)
+				}
+				defer func() { _ = response.Body.Close() }()
+
+				if response.StatusCode != fiber.StatusTooManyRequests {
+					t.Fatalf("status: got %d want 429", response.StatusCode)
+				}
+				if got := response.Header.Get(fiber.HeaderRetryAfter); got != strconv.Itoa(wantRetryAfter) {
+					t.Fatalf("Retry-After: got %q want %q", got, strconv.Itoa(wantRetryAfter))
+				}
+				body, err := io.ReadAll(response.Body)
+				if err != nil {
+					t.Fatalf("read body: %v", err)
+				}
+				payload := map[string]any{}
+				if err := json.Unmarshal(body, &payload); err != nil {
+					t.Fatalf("unmarshal JSON envelope %q: %v", body, err)
+				}
+				retry, has := payload["retry_after_seconds"]
+				if !has {
+					t.Fatalf("expected retry_after_seconds on the edge rate-limiter 429, got %v", payload)
+				}
+				if int(retry.(float64)) != wantRetryAfter {
+					t.Fatalf("retry_after_seconds: got %v want %d", retry, wantRetryAfter)
+				}
+			})
+		})
+	}
+}
+
 // newRateLimitResponderTestI18n supplies the locale manager the browser arms of
 // the rate-limit responder now need. The edge limiters answer BEFORE
 // LanguageMiddleware runs, so a refusal resolves its own catalogue rather than
