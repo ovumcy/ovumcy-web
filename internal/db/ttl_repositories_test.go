@@ -132,6 +132,74 @@ func TestRegisterPickupTokenRepositoryIssuePurgesExpiredRows(t *testing.T) {
 	}
 }
 
+// TestRegisterPickupTokenRepositoryPeek covers the read-only Peek contract:
+// unlike Consume, a successful Peek must NOT spend the token, so a live
+// token stays consumable by a following Consume. Peek shares Consume's
+// indistinguishable-outcomes contract for missing/consumed/expired rows —
+// see Peek's own doc comment.
+func TestRegisterPickupTokenRepositoryPeek(t *testing.T) {
+	database := openSQLiteForMigrationBootstrapTest(t, filepath.Join(t.TempDir(), "pickup-peek.db"))
+	repo := NewRegisterPickupTokenRepository(database)
+	base := time.Now().UTC().Truncate(time.Second)
+
+	assertPeek := func(nonce string, at time.Time, wantUserID uint, wantOK bool) {
+		t.Helper()
+		userID, ok, err := repo.Peek(context.Background(), nonce, at)
+		requireNoErr(t, err, "peek "+nonce)
+		if ok != wantOK || userID != wantUserID {
+			t.Fatalf("peek %q = (%d, %t), want (%d, %t)", nonce, userID, ok, wantUserID, wantOK)
+		}
+	}
+
+	// Live token: Peek reports it without spending it, so a following Consume
+	// still succeeds exactly once.
+	requireNoErr(t, repo.Issue(context.Background(), "peek-live", 42, base.Add(5*time.Minute)), "issue peek-live")
+	assertPeek("peek-live", base, 42, true)
+	assertPeek("peek-live", base, 42, true)
+	assertPickupConsume(t, repo, "peek-live", base, 42, true)
+	assertPickupConsume(t, repo, "peek-live", base, 0, false)
+
+	// Consumed token: Peek must not resurrect it.
+	requireNoErr(t, repo.Issue(context.Background(), "peek-consumed", 43, base.Add(5*time.Minute)), "issue peek-consumed")
+	assertPickupConsume(t, repo, "peek-consumed", base, 43, true)
+	assertPeek("peek-consumed", base, 0, false)
+
+	// Expired token.
+	requireNoErr(t, repo.Issue(context.Background(), "peek-expired", 44, base.Add(-1*time.Minute)), "issue peek-expired")
+	assertPeek("peek-expired", base, 0, false)
+
+	// Unknown / blank / whitespace nonce.
+	assertPeek("peek-does-not-exist", base, 0, false)
+	assertPeek("", base, 0, false)
+	assertPeek("   ", base, 0, false)
+
+	// A zero `now` is treated as the current time, so a token whose TTL is
+	// still ahead of the real clock is reported live.
+	requireNoErr(t, repo.Issue(context.Background(), "peek-zero-now", 45, time.Now().UTC().Add(5*time.Minute)), "issue peek-zero-now")
+	assertPeek("peek-zero-now", time.Time{}, 45, true)
+
+	// A row whose user_id is 0: the schema has no CHECK forbidding it (only
+	// NOT NULL, which 0 satisfies), and Issue's own validation is the only
+	// barrier — bypassed here with a direct insert to reach the row.UserID
+	// == 0 branch. Peek must refuse it exactly like a missing row.
+	requireNoErr(t, database.Exec(
+		"INSERT INTO register_pickup_tokens (nonce, user_id, expires_at, created_at) VALUES (?, 0, ?, ?)",
+		"peek-zero-user", base.Add(5*time.Minute), base,
+	).Error, "insert zero-user-id row")
+	assertPeek("peek-zero-user", base, 0, false)
+
+	// Repository errors propagate: a closed connection surfaces from Peek
+	// instead of being folded into the not-found outcome.
+	sqlDB, err := database.DB()
+	if err != nil {
+		t.Fatalf("database.DB(): %v", err)
+	}
+	requireNoErr(t, sqlDB.Close(), "close sql db")
+	if _, _, err := repo.Peek(context.Background(), "peek-live", base); err == nil {
+		t.Fatal("expected Peek on a closed database to fail")
+	}
+}
+
 // TestOIDCLogoutStateRepositorySaveFindTTL covers the OIDC logout-state
 // persistence: save/find round-trip, session_id upsert, not-found, targeted
 // delete, and TTL sweep.
