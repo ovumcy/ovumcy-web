@@ -1776,14 +1776,25 @@ paths:
                 error: "forbidden"
                 error_detail: { key: "forbidden", category: "forbidden", target: "global" }
         '429':
-          $ref: '#/components/responses/RateLimited'
           description: |
-            Rate limit exceeded (per-account TOTP budget: 5 attempts / 15 min). Unlike this
-            route's `403` above, a plain browser Accept does NOT get the WEB-84 status fragment
-            here: this rejection carries a domain spec whose target is `auth_form`, so it
-            flash-redirects to `/auth/2fa` with the error flashed (see the `303` above) before the
-            shared negotiation in `apiError` — the fragment's carrier — is ever reached. A caller
-            that asks for JSON keeps the JSON envelope with `retry_after_seconds` below.
+            Rate limit exceeded (per-account TOTP budget: 5 attempts / 15 min, key
+            `totp too many attempts`). Unlike this route's `403` above, a plain browser Accept
+            does NOT get the WEB-84 status fragment here: this rejection carries a domain spec
+            whose target is `auth_form`, so it flash-redirects to `/auth/2fa` with the error
+            flashed (see the `303` above) before the shared negotiation in `apiError` — the
+            fragment's carrier — is ever reached. A caller that asks for JSON keeps the JSON
+            envelope below, but unlike the app-wide `RateLimited` response, it carries no
+            `retry_after_seconds`: this budget is checked in the handler
+            (`totpService.CheckRateLimit`), which answers through `respondAuthError` /
+            `apiErrorEnvelope` directly rather than through the edge limiter's
+            `respondRateLimitedMappedError`, and stamps no `Retry-After` header for
+            `retry_after_seconds` to echo.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "totp too many attempts"
+                error_detail: { key: "totp too many attempts", category: "rate_limited", target: "auth_form" }
 
   /api/v1/sessions/current:
     delete:

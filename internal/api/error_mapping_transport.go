@@ -18,17 +18,32 @@ import (
 // taken here rather than per cause so every refusal on that route — handler,
 // CSRF, recovered panic, request deadline — answers the same page. A plain
 // HTML POST to one of the auth pages (login, register, forgot/reset password,
-// 2FA challenge — plainAuthFormPagePaths) is the second: a CSRF refusal or a
-// transport-level rejection there — any apiError call this route reaches,
-// whatever raised it: CSRF 403, 413 body-too-large, a 503 request-deadline
-// timeout — is raised before the handler ever builds a domain spec, so it
-// never reaches respondAuthError's flash-redirect and would otherwise paint
-// the JSON envelope into the browser window (WEB-84). A domain-mapped 429
-// (the per-IP or per-account login/registration/recovery rate limit) is
-// NOT one of these: it carries a spec whose Target is APIErrorTargetAuthForm,
-// so respondMappedError dispatches it through respondAuthError, which
-// flash-redirects a plain HTML client before apiError is ever called —
-// unaffected by this branch. Logout (POST /logout, DELETE
+// 2FA challenge — plainAuthFormPagePaths) is the second, and it is wider than
+// "CSRF or transport-level": isPlainAuthFormPageNavigation is checked before
+// spec.Status or spec.Target is ever inspected, so it catches EVERY apiError
+// call these routes reach for a request negotiated as plain HTML. That
+// negotiation (responseFormat == httpx.ResponseFormatHTML) is
+// NegotiateResponseFormat's default arm, so an absent Accept header or a bare
+// "*/*" lands here exactly like an explicit text/html — this is deliberate: a
+// browser should not see raw JSON for a 500 here any more than for a CSRF 403.
+// Two shapes of rejection meet this branch:
+//   - transport-level, raised before any handler runs: CSRF 403, 413
+//     body-too-large, a 503 request-deadline timeout;
+//   - handler-layer, a domain spec the handler itself builds whose Target is
+//     the default APIErrorTargetGlobal — "failed to create session"
+//     (handlers_auth_session_login.go, handlers_auth_2fa.go), "failed to
+//     create reset token", "failed to create account", "failed to seed
+//     symptoms", "failed to reset password" — because respondMappedError
+//     only routes a Target=APIErrorTargetAuthForm spec through
+//     respondAuthError's flash-redirect; a global-target spec falls straight
+//     through to apiError however late the handler builds it, and meets this
+//     branch the same as a pre-handler transport rejection.
+//
+// A domain-mapped 429 (the per-IP or per-account login/registration/recovery
+// rate limit) is NOT one of these: it carries a spec whose Target is
+// APIErrorTargetAuthForm, so respondMappedError dispatches it through
+// respondAuthError, which flash-redirects a plain HTML client before apiError
+// is ever called — unaffected by this branch. Logout (POST /logout, DELETE
 // /api/v1/sessions/current) is deliberately not in that set — its answer is a
 // decision for its own issue — so it keeps falling through to the JSON/HTMX
 // arms below like every other route.
@@ -101,8 +116,12 @@ func localizedStatusErrorMarkup(c fiber.Ctx, spec APIErrorSpec) string {
 // machine key as the visible message.
 //
 // Status and stable key still come from the spec, so this changes the carrier
-// and nothing about the contract. Shared by apiError's plain-auth-form-page
-// branch (WEB-84) as well as POST /lang.
+// and nothing about the contract. Used by POST /lang (respondPageFormMappedError)
+// — apiError's plain-auth-form-page branch (WEB-84) does NOT share this
+// function: it has no `next` field to read a back link from, so it goes
+// through respondPlainAuthFormPageStatusFragment instead, which reads the
+// fixed, server-owned mapping in plainAuthFormPageBackPaths. Both ultimately
+// answer through the same sendStatusFragmentWithBackLink.
 func (handler *Handler) respondPageFormStatusFragment(c fiber.Ctx, spec APIErrorSpec) error {
 	handler.ensureRequestMessages(c)
 	return sendLanguageSwitchStatusFragment(c, spec)

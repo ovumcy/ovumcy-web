@@ -290,6 +290,18 @@ func TestCSRFDenialOnPlainAuthFormPagesAnswersTheFragment(t *testing.T) {
 				if !strings.Contains(body, `class="status-error"`) || !strings.Contains(body, `data-flash-key="common.error.forbidden"`) {
 					t.Fatalf("%s: expected the shared status-error fragment for an HTMX flow, got %q", route.name, body)
 				}
+				// The bare HTMX status-error fragment (apiError's HTMX arm, via
+				// localizedStatusErrorMarkup) carries no back link — only the
+				// plain-auth-form-page branch's sendStatusFragmentWithBackLink adds
+				// one. Asserting its absence here is what makes this subtest catch a
+				// dropped HTMX exclusion in isPlainAuthFormPageNavigation: without the
+				// exclusion an HTMX request would take the plain-auth-form-page branch
+				// instead and this fragment would carry the fixed <a href="...home
+				// page..."> back link the "browser accept" subtest above already
+				// requires.
+				if strings.Contains(body, "<a href=") {
+					t.Fatalf("%s: expected the bare HTMX fragment with no back link, got %q", route.name, body)
+				}
 			})
 		})
 	}

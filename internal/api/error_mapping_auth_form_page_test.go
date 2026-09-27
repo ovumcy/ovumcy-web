@@ -116,3 +116,84 @@ func TestEveryTransportStatusOnAPlainAuthFormPageAnswersTheFragment(t *testing.T
 		})
 	}
 }
+
+// TestHandlerLayer500OnAPlainAuthFormPageAnswersTheFragment closes the other
+// half of the coverage gap this fix round flagged: the branch does not only
+// catch a transport-level rejection raised before any handler runs — it also
+// catches a handler-layer 500 the handler itself builds, because that spec's
+// Target is the default APIErrorTargetGlobal rather than APIErrorTargetAuthForm,
+// so respondMappedError never routes it through respondAuthError's
+// flash-redirect and it falls straight through to apiError like any other
+// rejection on the route. authSessionCreateErrorSpec (key "failed to create
+// session") is exercised here as the representative: it is what
+// handlers_auth_session_login.go and handlers_auth_2fa.go answer when
+// setAuthCookie/setTOTPPendingCookie fails.
+//
+// A plain browser Accept must get the page-form fragment with its fixed back
+// link, never the raw JSON envelope; a caller whose Accept names
+// application/json must keep the JSON envelope unchanged (WEB-84 leaves JSON
+// clients untouched even for this route's own internal errors).
+func TestHandlerLayer500OnAPlainAuthFormPageAnswersTheFragment(t *testing.T) {
+	handler := &Handler{i18n: newRateLimitResponderTestI18n(t)}
+	app := fiber.New()
+	app.Post("/api/v1/sessions", func(c fiber.Ctx) error {
+		return handler.respondMappedError(c, authSessionCreateErrorSpec())
+	})
+
+	t.Run("browser accept", func(t *testing.T) {
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(""))
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		request.Header.Set("Accept", "text/html,application/xhtml+xml")
+
+		response, err := app.Test(request, testConfigNoTimeout)
+		if err != nil {
+			t.Fatalf("app.Test: %v", err)
+		}
+		defer func() { _ = response.Body.Close() }()
+
+		if response.StatusCode != fiber.StatusInternalServerError {
+			t.Fatalf("status = %d, want 500", response.StatusCode)
+		}
+		bodyBytes, err := io.ReadAll(response.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		body := string(bodyBytes)
+		if strings.HasPrefix(strings.TrimSpace(body), "{") {
+			t.Fatalf("handler-layer 500: painted the raw JSON envelope into the browser, got %q", body)
+		}
+		contentType := response.Header.Get(fiber.HeaderContentType)
+		if !strings.HasPrefix(contentType, fiber.MIMETextHTML) || !strings.Contains(body, `class="status-error"`) {
+			t.Fatalf("handler-layer 500: expected the shared page-form status fragment, got %q (%q)", contentType, body)
+		}
+		if want := `<a href="/login">`; !strings.Contains(body, want) {
+			t.Fatalf("handler-layer 500: expected the fixed back link to /login, got %q", body)
+		}
+	})
+
+	t.Run("json client", func(t *testing.T) {
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(""))
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		request.Header.Set("Accept", "application/json")
+
+		response, err := app.Test(request, testConfigNoTimeout)
+		if err != nil {
+			t.Fatalf("app.Test: %v", err)
+		}
+		defer func() { _ = response.Body.Close() }()
+
+		if response.StatusCode != fiber.StatusInternalServerError {
+			t.Fatalf("status = %d, want 500", response.StatusCode)
+		}
+		bodyBytes, err := io.ReadAll(response.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		if !strings.HasPrefix(strings.TrimSpace(string(bodyBytes)), "{") {
+			t.Fatalf("json client: expected the JSON envelope, got %q", bodyBytes)
+		}
+		if !strings.Contains(string(bodyBytes), `"failed to create session"`) {
+			t.Fatalf("json client: expected the envelope to carry the spec's own key, got %q", bodyBytes)
+		}
+	})
+}
