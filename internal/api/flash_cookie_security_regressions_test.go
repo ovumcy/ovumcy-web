@@ -187,6 +187,38 @@ func TestLogoutRetractsThePendingFlash(t *testing.T) {
 	}
 }
 
+// TestLogoutRetractsTheExemptFlash pins clearSessionEndCookies' other half
+// (WEB-40): a message a token-less writer sealed into the exempt channel
+// before the session it named ever ends belongs to that ended session exactly
+// as much as a page-slot flash does, so logout must retract it too.
+func TestLogoutRetractsTheExemptFlash(t *testing.T) {
+	app, authCookie, csrfCookie, csrfToken := prepareAuthenticatedLogoutCSRFContext(t)
+
+	serialized, err := json.Marshal(FlashPayload{AuthError: "auth.invalid_credentials", ExpiresAt: time.Now().Add(flashCookieTTL)})
+	if err != nil {
+		t.Fatalf("marshal exempt flash payload: %v", err)
+	}
+	form := url.Values{"csrf_token": {csrfToken}}
+	request := httptest.NewRequest(http.MethodDelete, "/api/v1/sessions/current", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Cookie", joinCookieHeader(
+		authCookie,
+		cookiePair(csrfCookie),
+		exemptFlashCookieName+"="+sealCookieForTestApp(t, exemptFlashCookieName, serialized),
+	))
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusSeeOther)
+
+	cleared := responseCookie(response.Cookies(), exemptFlashCookieName)
+	if cleared == nil {
+		t.Fatalf("expected logout to retract %s", exemptFlashCookieName)
+	}
+	if strings.TrimSpace(cleared.Value) != "" || !cleared.Expires.Before(time.Now()) {
+		t.Fatalf("expected %s retracted with an empty value and a past expiry, got %#v", exemptFlashCookieName, cleared)
+	}
+}
+
 // TestSealedEnvelopeAroundPlaintextFlashPayloadIsRefused pins the half of the
 // "sealed cookies" invariant that a shape check on the response cannot reach: a
 // value wearing the v2 envelope over base64url(plaintext JSON) is not a sealed

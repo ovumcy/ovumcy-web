@@ -77,12 +77,13 @@ func (handler *Handler) writeFlashCookie(c fiber.Ctx, spec sealedCookieSpec, cle
 // slot (flashCookieName) wins whenever it carries anything — it is the
 // trusted, same-origin channel every ordinary page redirect writes, and a
 // token-less writer must never outrank it. The page slot is always read and
-// cleared (its existing single-use contract). The exempt slot is read and
-// cleared only when the page slot was EMPTY, which is the ordinary case (a
-// genuine provider refusal with nothing else pending); the rare coincidence
-// of both being pending in the same response leaves the exempt cookie
-// standing rather than destroying its message — it surfaces on the owner's
-// next navigation instead of on this one, never lost outright.
+// cleared (its existing single-use contract). When the page slot wins, the
+// exempt slot is retracted too rather than left standing: a stale
+// token-less message left riding would otherwise surface on a later,
+// unrelated render, once the page slot that outranked it has been consumed
+// and is no longer there to keep outranking it. The exempt slot is read
+// (and, on its own, cleared) only when the page slot was EMPTY, which is the
+// ordinary case — a genuine provider refusal with nothing else pending.
 func (handler *Handler) popFlashCookie(c fiber.Ctx) FlashPayload {
 	if c.Method() == fiber.MethodHead {
 		// The cookie is single-use and a HEAD response always drops the body
@@ -94,6 +95,7 @@ func (handler *Handler) popFlashCookie(c fiber.Ctx) FlashPayload {
 	}
 	page := handler.popFlashCookieBySpec(c, flashCookieName, flashCookieSpec)
 	if !flashPayloadEmpty(page) {
+		handler.clearCSRFExemptFlashCookie(c)
 		return page
 	}
 	return handler.popFlashCookieBySpec(c, exemptFlashCookieName, exemptFlashCookieSpec)
