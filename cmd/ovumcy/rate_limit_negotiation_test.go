@@ -141,6 +141,11 @@ func TestAuthRateLimitHandlerTreatsJSONContentTypeAsJSONRequest(t *testing.T) {
 	}
 }
 
+// TestAuthRateLimitHandlerRedirectUsesSealedFlashCookie pins the WEB-40 round 5
+// fix: every limiter in cmd/ovumcy/server.go runs before csrf.New, so a
+// token-less, cross-site-reachable POST that trips this one must never write
+// the shared page flash slot — only the CSRF-exempt one, with fixed keys, and
+// never the request's own form value.
 func TestAuthRateLimitHandlerRedirectUsesSealedFlashCookie(t *testing.T) {
 	handler := newRateLimitTestHandler(t)
 	app := fiber.New()
@@ -165,9 +170,13 @@ func TestAuthRateLimitHandlerRedirectUsesSealedFlashCookie(t *testing.T) {
 		t.Fatalf("expected redirect to /login, got %q", location)
 	}
 
-	flashCookie := testResponseCookie(response.Cookies(), "ovumcy_flash")
+	if pageFlashCookie := testResponseCookie(response.Cookies(), "ovumcy_flash"); pageFlashCookie != nil && pageFlashCookie.Value != "" {
+		t.Fatalf("did not expect the rate limiter to write the page flash cookie, got %q", pageFlashCookie.Value)
+	}
+
+	flashCookie := testResponseCookie(response.Cookies(), "ovumcy_flash_exempt")
 	if flashCookie == nil {
-		t.Fatal("expected flash cookie in redirect response")
+		t.Fatal("expected exempt flash cookie in redirect response")
 	}
 	if strings.Contains(flashCookie.Value, "rate-limit@example.com") {
 		t.Fatalf("did not expect sealed flash cookie to expose email in plaintext: %q", flashCookie.Value)
@@ -214,6 +223,9 @@ func TestOIDCRateLimitHandlerRedirectUsesSealedFlashCookie(t *testing.T) {
 	}
 }
 
+// TestSettingsAPIRateLimitHandlerRedirectsToSettings also pins WEB-40 round 5:
+// the /api catch-all limiter reaches this path before csrf.New runs too, so
+// its refusal must land in the exempt slot, never the page slot.
 func TestSettingsAPIRateLimitHandlerRedirectsToSettings(t *testing.T) {
 	handler := newRateLimitTestHandler(t)
 	app := fiber.New()
@@ -234,6 +246,13 @@ func TestSettingsAPIRateLimitHandlerRedirectsToSettings(t *testing.T) {
 	}
 	if location := response.Header.Get("Location"); location != "/settings" {
 		t.Fatalf("expected redirect to /settings, got %q", location)
+	}
+
+	if pageFlashCookie := testResponseCookie(response.Cookies(), "ovumcy_flash"); pageFlashCookie != nil && pageFlashCookie.Value != "" {
+		t.Fatalf("did not expect the rate limiter to write the page flash cookie, got %q", pageFlashCookie.Value)
+	}
+	if testResponseCookie(response.Cookies(), "ovumcy_flash_exempt") == nil {
+		t.Fatal("expected exempt flash cookie in redirect response")
 	}
 }
 

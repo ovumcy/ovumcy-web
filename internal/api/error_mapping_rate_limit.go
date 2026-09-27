@@ -84,7 +84,29 @@ func (handler *Handler) respondRateLimitedMappedError(c fiber.Ctx, spec APIError
 	// the shared status fragment translates against has to be resolved here or
 	// the refusal renders its own machine key as the visible message.
 	handler.ensureRequestMessages(c)
-	return handler.respondMappedError(c, spec)
+	return handler.respondRateLimitedFormError(c, spec)
+}
+
+// respondRateLimitedFormError is respondMappedError's limiter-only
+// counterpart (WEB-40 round 5). Every limiter.Config in cmd/ovumcy/server.go
+// is mounted ahead of csrf.New, so a refusal reaching this point carries no
+// CSRF token and no proof of same-origin — exactly the shape the two
+// CSRF-exempt twins below exist for. respondAuthError and respondSettingsError
+// assume the request already cleared CSRF (or, for the OIDC/step-up arms, is
+// already gated on the sealed state secret); that assumption does not hold
+// for a limiter refusal, so this always takes the exempt variant for the two
+// targets that write a page-slot cookie at all. A global-target spec never
+// writes flash (apiError does not touch either cookie), so it needs no
+// exempt twin.
+func (handler *Handler) respondRateLimitedFormError(c fiber.Ctx, spec APIErrorSpec) error {
+	switch spec.Target {
+	case APIErrorTargetAuthForm:
+		return handler.respondAuthErrorCSRFExempt(c, spec)
+	case APIErrorTargetSettingsForm:
+		return handler.respondSettingsErrorCSRFExempt(c, spec)
+	default:
+		return handler.apiError(c, spec)
+	}
 }
 
 // respondRateLimitedPageForm answers a refusal on a route whose client is a

@@ -21,15 +21,23 @@ var flashCookieSpec = sealedCookieSpec{name: flashCookieName, path: "/"}
 // on that same request (refuseOIDCStepupCallback's cross-site arm,
 // oidc_stepup_continuation.go), the requireFirstPartyRequest refusals that
 // themselves fire on the cross-site request the guard exists to name
-// (refuseOIDCStepupContinueRequest, refuseRegisterPickupRequest), and the
-// /auth/oidc rate limiter (RespondAuthRateLimited → respondAuthError,
-// error_mapping_transport.go): that limiter is mounted on the whole prefix
-// with no method filter, so a cross-site top-level GET navigation can trip it
-// too — seal into THIS cookie via setCSRFExemptFlashCookie, never
-// flashCookieSpec's. Because it is a separate cookie, a token-less writer
-// structurally cannot overwrite or erase flashCookieName's value: it never
-// sends a Set-Cookie for that name at all. See popFlashCookie for the
-// read-side precedence between the two.
+// (refuseOIDCStepupContinueRequest, refuseRegisterPickupRequest), and every
+// rate limiter in cmd/ovumcy/server.go whose refusal reaches an auth-form or
+// settings-form target (RespondAuthRateLimited/RespondAPIRateLimited →
+// respondRateLimitedFormError → respondAuthErrorCSRFExempt /
+// respondSettingsErrorCSRFExempt, error_mapping_rate_limit.go,
+// error_mapping_transport.go): every limiter.Config is mounted ahead of
+// csrf.New, so a cross-site, token-less flood can trip any of them — login,
+// register, forgot-password, SSO, logout, and the /api catch-all that also
+// answers the settings and other auth-form paths — not just the SSO one round
+// 4 named. Round 5 additionally drops the forgot-password email from this
+// channel: a request that trips a limiter supplied that value itself, so
+// echoing it back is not a prefill, it is reflecting attacker input — seal
+// into THIS cookie via setCSRFExemptFlashCookie, never flashCookieSpec's.
+// Because it is a separate cookie, a token-less writer structurally cannot
+// overwrite or erase flashCookieName's value: it never sends a Set-Cookie for
+// that name at all. See popFlashCookie for the read-side precedence between
+// the two.
 //
 // A THIRD group cannot be sorted at compile time: requireFirstPartyRequest is
 // deliberately monotone (see firstPartyRequestRefusal) and lets through a
