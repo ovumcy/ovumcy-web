@@ -88,6 +88,12 @@ func (handler *Handler) sealRecoveryCodeIssuanceCookie(userID uint, recoveryCode
 	if code == "" {
 		return sealedCookie{}, errors.New("recovery code is required")
 	}
+	if handler.recoveryCodeIssuanceFault != nil {
+		if err := handler.recoveryCodeIssuanceFault(); err != nil {
+			return sealedCookie{}, err
+		}
+	}
+
 	safeContinuePath := services.SanitizeRedirectPath(strings.TrimSpace(continuePath), "/dashboard")
 	expiresAt := time.Now().Add(recoveryCodeCookieTTL)
 
