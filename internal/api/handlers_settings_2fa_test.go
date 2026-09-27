@@ -14,6 +14,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
+	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
 	"gorm.io/gorm"
 )
@@ -53,6 +54,45 @@ func newTOTPSettingsContext(t *testing.T, email string) settingsSecurityTestCont
 
 func getTOTPServiceForTest(database *gorm.DB) *services.TOTPService {
 	return services.NewTOTPService(&dbUserRepoForTest{database}, []byte("test-secret-key"), nil)
+}
+
+// invalidTOTPCodeForSkewWindow returns a 6-digit code proven NOT to validate
+// against secret across the whole ±1-step skew window the enrollment handler's
+// totp.Validate call checks at the instant it runs (there is no injectable
+// clock on that path — it reads time.Now() itself — so this stays
+// deterministic without one). It computes the codes for a wider window (±3
+// steps, i.e. ±90s around "now") than Validate's own ±1-step skew (±30s) so a
+// step boundary crossed between this computation and the request under test
+// cannot land the excluded set short; the caller re-asserts the precondition
+// with totp.Validate immediately before sending the request.
+func invalidTOTPCodeForSkewWindow(t *testing.T, secret string) string {
+	t.Helper()
+	opts := totp.ValidateOpts{
+		Period:    30,
+		Skew:      1,
+		Digits:    otp.DigitsSix,
+		Algorithm: otp.AlgorithmSHA1,
+	}
+	now := time.Now()
+	excluded := make(map[string]bool, 7)
+	for i := -3; i <= 3; i++ {
+		at := now.Add(time.Duration(i) * 30 * time.Second)
+		code, err := totp.GenerateCodeCustom(secret, at, opts)
+		if err != nil {
+			t.Fatalf("GenerateCodeCustom: %v", err)
+		}
+		excluded[code] = true
+	}
+	for _, candidate := range []string{
+		"000000", "111111", "222222", "333333", "444444",
+		"555555", "666666", "777777", "888888", "999999",
+	} {
+		if !excluded[candidate] {
+			return candidate
+		}
+	}
+	t.Fatal("invalidTOTPCodeForSkewWindow: every candidate collided with the skew window — widen the candidate set")
+	return ""
 }
 
 // --- ShowTOTPSetupPage ---
@@ -218,7 +258,12 @@ func TestVerifyTOTP2FAEnrollment_InvalidCode_DoesNotEnable(t *testing.T) {
 	}
 	setupCookie := sealTOTPSetupCookieForTest(t, []byte("test-secret-key"), ctx.user.ID, key.Secret())
 
-	form := url.Values{"code": {"000000"}, "password": {"StrongPass1"}}
+	code := invalidTOTPCodeForSkewWindow(t, key.Secret())
+	if totp.Validate(code, key.Secret()) {
+		t.Fatalf("test setup produced code %q which validates against the secret right now — precondition failed, cannot prove the negative", code)
+	}
+
+	form := url.Values{"code": {code}, "password": {"StrongPass1"}}
 	cloned := cloneFormValues(form)
 	cloned.Set("csrf_token", ctx.csrfToken)
 
@@ -237,7 +282,7 @@ func TestVerifyTOTP2FAEnrollment_InvalidCode_DoesNotEnable(t *testing.T) {
 		t.Fatalf("reload user: %v", err)
 	}
 	if reloaded.TOTPEnabled {
-		t.Error("TOTPEnabled should be false after invalid code (unless 000000 was coincidentally valid)")
+		t.Error("TOTPEnabled should be false after invalid code (code was proven invalid across the whole skew window above)")
 	}
 
 	// TOTPEnabled==false is satisfied by any refusal, including ones that never reach

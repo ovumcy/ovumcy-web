@@ -6,8 +6,49 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
 )
+
+// invalidTOTPCodeForSkewWindow returns a 6-digit code proven NOT to validate
+// against secret across the whole ±1-step skew window totp.Validate checks
+// at the instant it is called (there is no injectable clock on
+// TOTPService.ValidateCodeRaw — it wraps totp.Validate, which reads
+// time.Now() itself — so this stays deterministic without one). It computes
+// the codes for a wider window (±3 steps, i.e. ±90s around "now") than
+// Validate's own ±1-step skew (±30s) so a step boundary crossed between this
+// computation and the call under test cannot land the excluded set short,
+// then the caller re-asserts the precondition with totp.Validate immediately
+// before exercising the code path under test.
+func invalidTOTPCodeForSkewWindow(t *testing.T, secret string) string {
+	t.Helper()
+	opts := totp.ValidateOpts{
+		Period:    30,
+		Skew:      1,
+		Digits:    otp.DigitsSix,
+		Algorithm: otp.AlgorithmSHA1,
+	}
+	now := time.Now()
+	excluded := make(map[string]bool, 7)
+	for i := -3; i <= 3; i++ {
+		at := now.Add(time.Duration(i) * 30 * time.Second)
+		code, err := totp.GenerateCodeCustom(secret, at, opts)
+		if err != nil {
+			t.Fatalf("GenerateCodeCustom: %v", err)
+		}
+		excluded[code] = true
+	}
+	for _, candidate := range []string{
+		"000000", "111111", "222222", "333333", "444444",
+		"555555", "666666", "777777", "888888", "999999",
+	} {
+		if !excluded[candidate] {
+			return candidate
+		}
+	}
+	t.Fatal("invalidTOTPCodeForSkewWindow: every candidate collided with the skew window — widen the candidate set")
+	return ""
+}
 
 // stubTOTPUserRepo is a minimal stub for TOTPUserRepository used in unit tests.
 // claimedSteps emulates the persisted totp_last_used_step column per userID;
@@ -121,8 +162,13 @@ func TestTOTPService_ValidateCodeRaw_Invalid(t *testing.T) {
 		t.Fatalf("GenerateSetupKey() error: %v", err)
 	}
 
-	if svc.ValidateCodeRaw(key.Secret(), "000000") {
-		t.Error("ValidateCodeRaw() returned true for '000000' — possible but extremely unlikely; rerun to confirm")
+	code := invalidTOTPCodeForSkewWindow(t, key.Secret())
+	if totp.Validate(code, key.Secret()) {
+		t.Fatalf("test setup produced code %q which validates against the secret right now — precondition failed, cannot prove the negative", code)
+	}
+
+	if svc.ValidateCodeRaw(key.Secret(), code) {
+		t.Errorf("ValidateCodeRaw() returned true for %q, proven invalid across the whole skew window", code)
 	}
 }
 
