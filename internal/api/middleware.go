@@ -7,11 +7,19 @@ import (
 )
 
 const (
-	authCookieName               = "ovumcy_auth"
-	languageCookieName           = "ovumcy_lang"
-	timezoneCookieName           = "ovumcy_tz"
-	timezoneHeaderName           = "X-Ovumcy-Timezone"
-	flashCookieName              = "ovumcy_flash"
+	authCookieName     = "ovumcy_auth"
+	languageCookieName = "ovumcy_lang"
+	timezoneCookieName = "ovumcy_tz"
+	timezoneHeaderName = "X-Ovumcy-Timezone"
+	flashCookieName    = "ovumcy_flash"
+	// exemptFlashCookieName is the second flash channel: every write reachable
+	// through a request the CSRF middleware never validates — the OIDC
+	// callback's sole exemption, its unguarded query-mode GET twin, and the
+	// requireFirstPartyRequest refusals that themselves fire on the
+	// cross-site request the guard exists to name — seals into this cookie
+	// instead of flashCookieName's, so it can never overwrite or erase a
+	// pending same-origin flash (WEB-40). See flash.go.
+	exemptFlashCookieName        = "ovumcy_flash_exempt"
 	recoveryCodeCookieName       = "ovumcy_recovery_code"
 	calendarFeedRevealCookieName = "ovumcy_calendar_feed"
 	registerPickupCookieName     = "ovumcy_register_pickup"

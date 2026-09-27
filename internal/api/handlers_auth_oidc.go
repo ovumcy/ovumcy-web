@@ -19,14 +19,14 @@ func (handler *Handler) StartOIDCLogin(c fiber.Ctx) error {
 		// codecov:ignore:start -- defensive: newOIDCAuthState fails only on a crypto/rand error
 		spec := authOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, "auth.oidc_start", spec)
-		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
+		handler.setCSRFExemptFlashCookie(c, FlashPayload{AuthError: spec.Key})
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 		// codecov:ignore:end
 	}
 	if err := handler.setOIDCStateCookie(c, state); err != nil {
 		spec := authOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, "auth.oidc_start", spec)
-		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
+		handler.setCSRFExemptFlashCookie(c, FlashPayload{AuthError: spec.Key})
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 
@@ -54,7 +54,7 @@ func (handler *Handler) StartOIDCLogin(c fiber.Ctx) error {
 		handler.clearOIDCStateCookie(c)
 		spec := mapAuthOIDCError(err)
 		handler.logSecurityError(c, "auth.oidc_start", spec)
-		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
+		handler.setCSRFExemptFlashCookie(c, FlashPayload{AuthError: spec.Key})
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 
@@ -110,14 +110,14 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 		// of is not cancelled by someone else's request to this path.
 		spec := authOIDCAuthenticationFailedErrorSpec()
 		handler.logSecurityError(c, "auth.oidc_callback", spec)
-		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
+		handler.setCSRFExemptFlashCookie(c, FlashPayload{AuthError: spec.Key})
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 	handler.clearOIDCStateCookie(c)
 	if handler.oidcCallbackValue(c, "error") != "" {
 		spec := authOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, "auth.oidc_callback", spec)
-		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
+		handler.setCSRFExemptFlashCookie(c, FlashPayload{AuthError: spec.Key})
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 
@@ -137,13 +137,13 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 		// operator command `ovumcy link-oidc-identity`.
 		spec := authOIDCLinkConfirmUnavailableErrorSpec()
 		handler.logSecurityError(c, "auth.oidc_callback", spec)
-		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
+		handler.setCSRFExemptFlashCookie(c, FlashPayload{AuthError: spec.Key})
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 	if err != nil {
 		spec := mapAuthOIDCError(err)
 		handler.logSecurityError(c, "auth.oidc_callback", spec)
-		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
+		handler.setCSRFExemptFlashCookie(c, FlashPayload{AuthError: spec.Key})
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 
@@ -165,7 +165,7 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 			// codecov:ignore:start -- defensive: reset-token issuance fails only on an HMAC signing error
 			spec := authResetTokenCreateErrorSpec()
 			handler.logSecurityError(c, "auth.oidc_callback", spec)
-			handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
+			handler.setCSRFExemptFlashCookie(c, FlashPayload{AuthError: spec.Key})
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 			// codecov:ignore:end
 		}
@@ -173,7 +173,7 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 			// codecov:ignore:start -- defensive: the reset cookie setter fails only on an AEAD seal error
 			spec := authResetTokenCreateErrorSpec()
 			handler.logSecurityError(c, "auth.oidc_callback", spec)
-			handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
+			handler.setCSRFExemptFlashCookie(c, FlashPayload{AuthError: spec.Key})
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 			// codecov:ignore:end
 		}
@@ -204,7 +204,7 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 				// codecov:ignore:start -- defensive: crypto/rand failure
 				spec := authSessionCreateErrorSpec()
 				handler.logSecurityError(c, "auth.oidc_callback", spec)
-				handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
+				handler.setCSRFExemptFlashCookie(c, FlashPayload{AuthError: spec.Key})
 				return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 				// codecov:ignore:end
 			}
@@ -212,7 +212,7 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 				// codecov:ignore:start -- defensive: fails only on a storage error
 				spec := authSessionCreateErrorSpec()
 				handler.logSecurityError(c, "auth.oidc_callback", spec)
-				handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
+				handler.setCSRFExemptFlashCookie(c, FlashPayload{AuthError: spec.Key})
 				return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 				// codecov:ignore:end
 			}
@@ -222,7 +222,7 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 			// codecov:ignore:start -- defensive: the sealed cookie writer fails only on an AEAD seal error
 			spec := authSessionCreateErrorSpec()
 			handler.logSecurityError(c, "auth.oidc_callback", spec)
-			handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
+			handler.setCSRFExemptFlashCookie(c, FlashPayload{AuthError: spec.Key})
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 			// codecov:ignore:end
 		}
@@ -237,7 +237,7 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 			spec = authOIDCAccountUnavailableErrorSpec()
 		}
 		handler.logSecurityError(c, "auth.oidc_callback", spec)
-		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
+		handler.setCSRFExemptFlashCookie(c, FlashPayload{AuthError: spec.Key})
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 	handler.clearOIDCLogoutBridgeCookie(c)
@@ -251,7 +251,7 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 			// trace on the browser for a sign-in that did not happen — so this
 			// teardown clears exactly what the deliberate ends clear.
 			handler.clearSessionEndCookies(c)
-			handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
+			handler.setCSRFExemptFlashCookie(c, FlashPayload{AuthError: spec.Key})
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 		}
 	} else {

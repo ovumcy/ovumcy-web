@@ -200,8 +200,11 @@ func (handler *Handler) refuseRegisterPickupRequest(c fiber.Ctx, reason string) 
 	// otherwise leave the owner an error about a registration she never started —
 	// a prefetch discards the body but keeps the Set-Cookie. It is the line the
 	// calendar-feed refusal already draws for its own audit line.
+	// This refusal fires on exactly the request requireFirstPartyRequest
+	// exists to name (WEB-40): the exempt channel, never the shared page slot
+	// a same-origin navigation may have pending. See exemptFlashCookieSpec.
 	if strings.TrimSpace(c.Cookies(registerPickupCookieName)) != "" {
-		handler.setFlashCookie(c, FlashPayload{AuthError: "register pickup unavailable"})
+		handler.setCSRFExemptFlashCookie(c, FlashPayload{AuthError: "register pickup unavailable"})
 	}
 	handler.logSecurityEvent(c, "auth.register_pickup", "redirect_signin", securityEventField("reason", reason))
 	return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
