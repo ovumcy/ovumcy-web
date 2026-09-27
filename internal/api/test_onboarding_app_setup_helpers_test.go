@@ -71,6 +71,10 @@ type onboardingTestAppOptions struct {
 	// while it returns an error, minting a session fails the way no request can
 	// make it fail. Tests arm it after signing in, so the sign-in itself works.
 	sessionIssuanceFault func() error
+	// recoveryCodeIssuanceFault is installed as the handler's seam of the same
+	// name: while it returns an error, sealing the recovery-code reveal cookie
+	// fails the way no request can make it fail.
+	recoveryCodeIssuanceFault func() error
 	// revokingWrites, when set, is installed around the user repository the
 	// auth, settings and TOTP services write through, for the race regressions
 	// that commit another write between a request's authentication and its own
@@ -108,6 +112,7 @@ func newOnboardingTestAppWithOptions(t *testing.T, options onboardingTestAppOpti
 		handler.SetAssetVersion(options.assetVersion)
 	}
 	handler.sessionIssuanceFault = options.sessionIssuanceFault
+	handler.recoveryCodeIssuanceFault = options.recoveryCodeIssuanceFault
 
 	app := fiber.New(fiber.Config{BodyLimit: options.bodyLimit})
 	app.Use(handler.LanguageMiddleware)

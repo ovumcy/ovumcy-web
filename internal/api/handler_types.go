@@ -59,6 +59,12 @@ type Handler struct {
 	// minting the way no request can (a crypto or codec failure), to prove a
 	// recovery-code rotation rolls back when its delivery cannot be sealed.
 	sessionIssuanceFault func() error
+	// recoveryCodeIssuanceFault is nil in production. A test sets it to fail
+	// sealing the recovery-code reveal cookie the way no request can (a crypto
+	// or codec failure), the reveal-side twin of sessionIssuanceFault above —
+	// used to prove the register-pickup seal-order fix (WEB-64) leaves the
+	// pickup token retryable when the reveal itself is what fails to seal.
+	recoveryCodeIssuanceFault func() error
 }
 
 // CalendarDay is one cell of the calendar grid. Every field on it is one the

@@ -115,7 +115,12 @@ func (handler *Handler) PickupRegister(c fiber.Ctx) error {
 	// read (Peek), never a spend, so a failure resolving the account or
 	// sealing either the session or the reveal below reaches no Consume call
 	// at all. The single-use grant is spent only once both are sealed
-	// (WEB-64, the WEB-58 shape: seal before the spend).
+	// (WEB-64, the WEB-58 shape: seal before the spend). The DB-side row
+	// staying unconsumed only pays off for a real client if the cookie
+	// carrying its nonce+RC also survives the response: the two post-Peek
+	// seal failures below (auth_cookie_failed, recovery_cookie_failed) hand
+	// the pickup cookie back via redirectToPostRegisterSigninKeepingPickupCookie
+	// instead of the plain redirect every other exit uses.
 	userID, live, err := handler.registerPickupTokens.Peek(c.Context(), payload.Nonce, time.Now())
 	if err != nil {
 		return handler.redirectToPostRegisterSignin(c, "consume_failed")
@@ -146,7 +151,7 @@ func (handler *Handler) PickupRegister(c fiber.Ctx) error {
 	if err != nil {
 		spec := authSessionCreateErrorSpec()
 		handler.logSecurityError(c, "auth.register_pickup", spec)
-		return handler.redirectToPostRegisterSignin(c, "auth_cookie_failed")
+		return handler.redirectToPostRegisterSigninKeepingPickupCookie(c, payload, "auth_cookie_failed")
 	}
 
 	continuePath := services.PostLoginRedirectPath(&user)
@@ -154,7 +159,7 @@ func (handler *Handler) PickupRegister(c fiber.Ctx) error {
 	if err != nil {
 		spec := authRecoveryCodePersistErrorSpec()
 		handler.logSecurityError(c, "auth.register_pickup", spec)
-		return handler.redirectToPostRegisterSignin(c, "recovery_cookie_failed")
+		return handler.redirectToPostRegisterSigninKeepingPickupCookie(c, payload, "recovery_cookie_failed")
 	}
 
 	// Both cookies are sealed and ready to write; only now is the single-use
@@ -204,6 +209,38 @@ func (handler *Handler) refuseRegisterPickupRequest(c fiber.Ctx, reason string) 
 
 func (handler *Handler) redirectToPostRegisterSignin(c fiber.Ctx, reason string) error {
 	handler.clearRegisterPickupCookie(c)
+	handler.setFlashCookie(c, FlashPayload{AuthError: "register pickup unavailable"})
+	if reason != "" {
+		handler.logSecurityEvent(c, "auth.register_pickup", "redirect_signin", securityEventField("reason", reason))
+	}
+	return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
+}
+
+// redirectToPostRegisterSigninKeepingPickupCookie is redirectToPostRegisterSignin's
+// twin for the two outcomes reachable only after Peek succeeded: a failure
+// sealing the auth cookie or the recovery-code reveal (WEB-64). popRegisterPickupCookie
+// above already retracted the pickup cookie as it read it — that read-spends
+// contract is unconditional and covers every other exit from this handler —
+// so this re-seals the SAME payload back onto the response, undoing that
+// retraction for exactly these two branches. The register_pickup_tokens row
+// was only Peeked, never Consumed, so the browser leaving this request still
+// holding the pickup cookie is what lets the owner retry against the very
+// same unconsumed row instead of losing the recovery code the moment sealing
+// glitches.
+//
+// A seal failure here needs a crypto/codec fault (rand.Reader, HKDF, an
+// unavailable cookie secret) that no request can provoke, so restoring the
+// cookie opens no enumeration oracle: an attacker cannot make this branch
+// fire on demand to learn anything a normal missing/tampered/decoy/replay
+// response would not already tell them.
+func (handler *Handler) redirectToPostRegisterSigninKeepingPickupCookie(c fiber.Ctx, payload registerPickupPayload, reason string) error {
+	if err := handler.setRegisterPickupCookie(c, payload); err != nil {
+		// The payload stopped sealing (its own TTL just lapsed mid-request, or
+		// the codec broke a second time) — nothing to keep alive, so fall back
+		// to the ordinary clearing exit rather than leaving a broken Set-Cookie
+		// a retry could never use anyway.
+		return handler.redirectToPostRegisterSignin(c, reason)
+	}
 	handler.setFlashCookie(c, FlashPayload{AuthError: "register pickup unavailable"})
 	if reason != "" {
 		handler.logSecurityEvent(c, "auth.register_pickup", "redirect_signin", securityEventField("reason", reason))
