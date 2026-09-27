@@ -238,13 +238,22 @@ var sameSiteNavigation = secFetchHeaders{site: "same-site", mode: "navigate", de
 // clobber the page slot. It now defers to
 // redirectSettingsRefusalForRequestOrigin, which is not fooled by a "same-site"
 // statement either.
+//
+// This has to actually reach refuseOIDCStepupCallback's non-cross-site arm,
+// which only runs when CompleteOIDCLogin sees a live step-up cookie: a request
+// carrying none falls into the plain login-state branch and never exercises
+// this arm at all, regardless of what the query state says. So a real step-up
+// is started first (fixture.postStart) and the callback below carries that
+// cookie with a mismatching state.
 func TestOIDCCallbackSameSiteStateMismatchDoesNotClobberAPendingPageFlash(t *testing.T) {
 	t.Parallel()
 
-	app, _ := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{
-		cookieSecure: true,
-		oidcService:  newStubOIDCWorkflowService(true),
-	})
+	fixture := newOIDCStepupFixture(t, "samesite-state-mismatch@example.com")
+	fixture.oidcStub.reauthErr = nil
+
+	startResponse := fixture.postStart(t, "EvenStronger2", "EvenStronger2")
+	defer func() { _ = startResponse.Body.Close() }()
+	stepupCookie := readStepupCookie(t, startResponse)
 
 	pendingFlash := sealPendingPageFlash(t, FlashPayload{SettingsSuccess: "password_changed"})
 
@@ -253,11 +262,14 @@ func TestOIDCCallbackSameSiteStateMismatchDoesNotClobberAPendingPageFlash(t *tes
 		"code":  {"whatever"},
 	}.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	request.Header.Set("Cookie", flashCookieName+"="+pendingFlash)
+	request.Header.Set("Cookie", joinCookieHeader(fixture.authCookie, stepupCookie, flashCookieName+"="+pendingFlash))
 	sameSiteNavigation.applyTo(request)
 
-	response := mustAppResponse(t, app, request)
+	response := mustAppResponse(t, fixture.app, request)
 	assertStatusCode(t, response, http.StatusSeeOther)
+	if location := response.Header.Get("Location"); location != "/settings" {
+		t.Fatalf("expected redirect to /settings, got %q", location)
+	}
 
 	if touched := responseCookie(response.Cookies(), flashCookieName); touched != nil {
 		t.Fatalf("a same-site callback refusal must not touch the page flash cookie, got %#v", touched)
@@ -265,6 +277,41 @@ func TestOIDCCallbackSameSiteStateMismatchDoesNotClobberAPendingPageFlash(t *tes
 	exempt := responseCookie(response.Cookies(), exemptFlashCookieName)
 	if exempt == nil || strings.TrimSpace(exempt.Value) == "" {
 		t.Fatal("expected the refusal on the exempt channel")
+	}
+	if payload := decodeExemptFlashCookieForTest(t, exempt.Value); payload.SettingsError == "" {
+		t.Fatalf("expected a settings_error on the exempt channel, got %+v", payload)
+	}
+}
+
+// TestRegisterPickupMissingWithSameOriginFetchMetadataWritesThePageFlash is
+// setFlashCookieForRequestOrigin's positive control (flash.go): a STATED
+// "same-origin" Sec-Fetch-Site must write the ordinary page slot, never the
+// exempt one. Every other case above the helper's ONE same-origin branch —
+// "same-site", missing entirely — drives the exempt slot instead, so none of
+// them exercises this branch; only a stated "same-origin" does.
+func TestRegisterPickupMissingWithSameOriginFetchMetadataWritesThePageFlash(t *testing.T) {
+	t.Parallel()
+
+	app, _ := newOnboardingTestApp(t)
+
+	request := httptest.NewRequest(http.MethodGet, "/register/welcome", nil)
+	sameOriginNavigation.applyTo(request)
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusSeeOther)
+	if location := response.Header.Get("Location"); location != "/login" {
+		t.Fatalf("expected redirect to /login, got %q", location)
+	}
+
+	page := responseCookie(response.Cookies(), flashCookieName)
+	if page == nil || strings.TrimSpace(page.Value) == "" {
+		t.Fatal("expected a stated same-origin request to write the page flash slot")
+	}
+	if payload := decodeFlashCookieForTest(t, page.Value); payload.AuthError == "" {
+		t.Fatalf("expected an auth_error on the page slot, got %+v", payload)
+	}
+	if exempt := responseCookie(response.Cookies(), exemptFlashCookieName); exempt != nil && strings.TrimSpace(exempt.Value) != "" {
+		t.Fatalf("expected no exempt-channel flash for a stated same-origin request, got %#v", exempt)
 	}
 }
 
