@@ -55,8 +55,8 @@ var rawPathReadersByDesign = map[string]struct {
 var routingNormalizedDecisionSites = []string{
 	"(*github.com/ovumcy/ovumcy-web/internal/api.Handler).AuthRequired",
 	"(*github.com/ovumcy/ovumcy-web/internal/api.Handler).RespondAPIRateLimited",
-	"(*github.com/ovumcy/ovumcy-web/internal/api.Handler).respondAuthError",
-	"(*github.com/ovumcy/ovumcy-web/internal/api.Handler).respondSettingsError",
+	"(*github.com/ovumcy/ovumcy-web/internal/api.Handler).respondAuthErrorChannel",
+	"(*github.com/ovumcy/ovumcy-web/internal/api.Handler).respondSettingsErrorChannel",
 	"(*github.com/ovumcy/ovumcy-web/internal/api.Handler).NotFound",
 	"github.com/ovumcy/ovumcy-web/cmd/ovumcy.rateLimitScope",
 }
