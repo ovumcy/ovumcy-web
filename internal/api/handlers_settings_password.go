@@ -238,7 +238,7 @@ func (handler *Handler) completeLocalPasswordSetupReauth(c fiber.Ctx, state oidc
 		// here: the rest are raised by PrepareLocalPasswordHash, which runs on
 		// the form's own route.
 		spec := mapSettingsPasswordChangeError(err)
-		handler.logSecurityError(c, "auth.local_password_setup.callback", spec)
+		handler.logSecurityError(c, "auth.local_password_setup.callback", spec, settingsReauthCauseField(err))
 		return handler.redirectSettingsRefusal(c, spec)
 	}
 	handler.installRefreshedSession(c, user, delivery.session, "auth.local_password_setup.callback")
@@ -278,7 +278,7 @@ func (handler *Handler) refreshPasswordChangeSession(c fiber.Ctx, user *models.U
 
 func (handler *Handler) respondPasswordChangeError(c fiber.Ctx, err error) error {
 	spec := mapSettingsPasswordChangeError(err)
-	handler.logSecurityError(c, "auth.password_change", spec)
+	handler.logSecurityError(c, "auth.password_change", spec, settingsReauthCauseField(err))
 	return handler.respondMappedError(c, spec)
 }
 

@@ -26,9 +26,9 @@ var (
 const clearDataValidateAction = "settings.clear_data_validate"
 
 func (handler *Handler) ValidateClearDataPassword(c fiber.Ctx) error {
-	_, spec, valid := handler.validateSettingsActionPassword(c)
+	_, spec, cause, valid := handler.validateSettingsActionPassword(c)
 	if !valid {
-		handler.logSecurityError(c, clearDataValidateAction, spec)
+		handler.logSecurityError(c, clearDataValidateAction, spec, cause)
 		return handler.respondMappedError(c, spec)
 	}
 
@@ -39,9 +39,9 @@ func (handler *Handler) ValidateClearDataPassword(c fiber.Ctx) error {
 }
 
 func (handler *Handler) ClearAllData(c fiber.Ctx) error {
-	user, spec, valid := handler.validateSettingsActionPassword(c)
+	user, spec, cause, valid := handler.validateSettingsActionPassword(c)
 	if !valid {
-		return handler.failMutation(c, clearDataMutation, spec)
+		return handler.failMutation(c, clearDataMutation, spec, cause)
 	}
 	// The wipe itself lives in applyClearData, shared with the OIDC step-up
 	// callback, so the session-version bump has exactly one implementation.
@@ -61,9 +61,9 @@ func (handler *Handler) ClearAllData(c fiber.Ctx) error {
 }
 
 func (handler *Handler) DeleteAccount(c fiber.Ctx) error {
-	user, spec, valid := handler.validateSettingsActionPassword(c)
+	user, spec, cause, valid := handler.validateSettingsActionPassword(c)
 	if !valid {
-		return handler.failMutation(c, deleteAccountMutation, spec)
+		return handler.failMutation(c, deleteAccountMutation, spec, cause)
 	}
 
 	// Shared with the OIDC step-up callback; see applyClearData above.
@@ -90,15 +90,21 @@ func parsePasswordProtectedSettingsAction(c fiber.Ctx) (string, APIErrorSpec, bo
 	return input.Password, APIErrorSpec{}, true
 }
 
-func (handler *Handler) validateSettingsActionPassword(c fiber.Ctx) (*models.User, APIErrorSpec, bool) {
+// validateSettingsActionPassword returns, alongside the mapped spec, a
+// SecurityEventField naming the underlying VerifyReauthPassword cause (WEB-54:
+// the mapped spec no longer distinguishes "no local password" from "wrong
+// password", but the caller should still log which one happened). The field
+// is the zero value — silently dropped by emitSecurityEvent — on every other
+// refusal (missing password, rate limited) and on success.
+func (handler *Handler) validateSettingsActionPassword(c fiber.Ctx) (*models.User, APIErrorSpec, SecurityEventField, bool) {
 	user, ok := currentUser(c)
 	if !ok {
-		return nil, unauthorizedErrorSpec(), false
+		return nil, unauthorizedErrorSpec(), SecurityEventField{}, false
 	}
 
 	password, spec, valid := parsePasswordProtectedSettingsAction(c)
 	if !valid {
-		return nil, spec, false
+		return nil, spec, SecurityEventField{}, false
 	}
 	// Budgeted re-auth: the erasure gate is a password check reachable with a
 	// session already in hand, so it must not be a faster oracle than the login
@@ -106,8 +112,8 @@ func (handler *Handler) validateSettingsActionPassword(c fiber.Ctx) (*models.Use
 	// is spent.
 	attempt := services.ReauthAttempt{ClientKey: c.IP(), UserID: user.ID, Now: time.Now()}
 	if err := handler.settingsService.VerifyReauthPassword(attempt, user.PasswordHash, password); err != nil {
-		return nil, mapSettingsDeleteAccountPasswordError(err), false
+		return nil, mapSettingsDeleteAccountPasswordError(err), settingsReauthCauseField(err), false
 	}
 
-	return user, APIErrorSpec{}, true
+	return user, APIErrorSpec{}, SecurityEventField{}, true
 }

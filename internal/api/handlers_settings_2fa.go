@@ -76,8 +76,8 @@ func (handler *Handler) VerifyTOTP2FAEnrollment(c fiber.Ctx) error {
 		return handler.respondMappedError(c, unauthorizedErrorSpec())
 	}
 
-	if _, spec, valid := handler.validateSettingsActionPassword(c); !valid {
-		handler.logSecurityError(c, "settings.2fa.verify", spec)
+	if _, spec, cause, valid := handler.validateSettingsActionPassword(c); !valid {
+		handler.logSecurityError(c, "settings.2fa.verify", spec, cause)
 		return handler.respondMappedError(c, spec)
 	}
 

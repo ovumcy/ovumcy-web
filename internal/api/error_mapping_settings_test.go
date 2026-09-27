@@ -154,9 +154,11 @@ func TestMapSettingsDeleteAccountPasswordError(t *testing.T) {
 // 403 "local password required" spec that a wrong password never produced;
 // ValidateCurrentPassword/ValidatePasswordChange already equalize the two
 // refusals' bcrypt cost (SEC-L3, WEB-13), so status/key was the only
-// remaining oracle. The distinction survives only in the security log
-// (logSecurityError is passed the original typed error, never the mapped
-// spec's key).
+// remaining oracle. The distinction survives only in the security log, via
+// the `reauth_cause` field every call site logs alongside the mapped spec
+// (settingsReauthCauseField, read from the raw service error before mapping —
+// logSecurityError itself only ever logs the mapped spec's own key). See
+// TestSettingsReauthCauseFieldDiffersInTheLogWhileTheResponseDoesNot.
 //
 // mapOIDCIdentityUnlinkError's reuse of settingsLocalPasswordRequiredErrorSpec
 // for ErrOIDCUnlinkLastSignIn is deliberately NOT covered here: that refusal

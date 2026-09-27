@@ -24,8 +24,8 @@ func (handler *Handler) RegenerateRecoveryCode(c fiber.Ctx) error {
 	// budgeted, equalized-timing, and answered with the same 401 "invalid
 	// password" a wrong password gets. Regression:
 	// TestSettingsReauthMergesNoLocalPasswordIntoInvalidPassword.
-	if _, spec, valid := handler.validateSettingsActionPassword(c); !valid {
-		handler.logSecurityError(c, "auth.recovery_code_regenerate", spec)
+	if _, spec, cause, valid := handler.validateSettingsActionPassword(c); !valid {
+		handler.logSecurityError(c, "auth.recovery_code_regenerate", spec, cause)
 		return handler.respondMappedError(c, spec)
 	}
 

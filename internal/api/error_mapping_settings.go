@@ -266,3 +266,26 @@ func mapSettingsDeleteAccountPasswordError(err error) APIErrorSpec {
 		return settingsValidatePasswordErrorSpec()
 	}
 }
+
+// settingsReauthCauseField recovers, for the server log only, which of the two
+// merged conditions actually happened before mapSettingsDeleteAccountPasswordError
+// or mapSettingsPasswordChangeError folded it into the caller-visible "invalid
+// password" answer (WEB-54): a wrong password against an account that has one,
+// or an account with no local password at all. Read from the raw service error
+// BEFORE mapping — the mapped APIErrorSpec no longer carries the distinction,
+// by design. Every call site that maps a VerifyReauthPassword or
+// ValidatePasswordChange error passes this alongside the mapped spec so an
+// operator reading the security log can still tell the two apart even though
+// the response cannot. Returns the zero SecurityEventField (silently dropped
+// by emitSecurityEvent) for any other error, including nil.
+func settingsReauthCauseField(err error) SecurityEventField {
+	switch {
+	case errors.Is(err, services.ErrSettingsLocalPasswordNotSet):
+		return securityEventField("reauth_cause", "no_local_password")
+	case errors.Is(err, services.ErrSettingsPasswordInvalid),
+		errors.Is(err, services.ErrSettingsInvalidCurrentPassword):
+		return securityEventField("reauth_cause", "invalid_password")
+	default:
+		return SecurityEventField{}
+	}
+}

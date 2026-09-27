@@ -48,8 +48,18 @@ func newSettingsSecurityTestContextWithOptions(t *testing.T, email string, optio
 
 func newOIDCOnlySettingsSecurityTestContext(t *testing.T, email string) settingsSecurityTestContext {
 	t.Helper()
+	return newOIDCOnlySettingsSecurityTestContextWithOptions(t, email, onboardingTestAppOptions{enableCSRF: true})
+}
 
-	app, database := newOnboardingTestAppWithCSRF(t)
+// newOIDCOnlySettingsSecurityTestContextWithOptions is the audit-flag-aware
+// twin of newOIDCOnlySettingsSecurityTestContext, for regressions that need to
+// capture the security log (e.g. the WEB-54 reauth_cause field) rather than
+// only the response.
+func newOIDCOnlySettingsSecurityTestContextWithOptions(t *testing.T, email string, options onboardingTestAppOptions) settingsSecurityTestContext {
+	t.Helper()
+
+	options.enableCSRF = true
+	app, database := newOnboardingTestAppWithOptions(t, options)
 	user := models.User{
 		Email:               strings.ToLower(strings.TrimSpace(email)),
 		LocalAuthEnabled:    false,

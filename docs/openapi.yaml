@@ -2865,8 +2865,11 @@ paths:
         account's current local password (budgeted like every settings
         re-auth). An account with no local password answers with the SAME
         `401 invalid password` a wrong password gets — the two are
-        indistinguishable to the caller by design, so a live session cannot be
-        used to probe whether an account has a local password set (WEB-54);
+        indistinguishable to the caller by design, so this re-auth's own
+        response is no oracle for whether the account has a local password
+        set (WEB-54; `GET /api/v1/users/current`'s `local_auth_enabled` and
+        the settings page already answer that question directly to a signed-in
+        session, so this endpoint is not what stands between a caller and it);
         set one first through the local-password step-up. On success the link
         bumps `auth_session_version`: every other session is signed out and
         the originating device is re-issued a session. The identity's `email`

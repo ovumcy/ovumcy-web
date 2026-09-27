@@ -206,9 +206,11 @@ func (handler *Handler) logMutationError(c fiber.Ctx, kind healthMutationKind, s
 }
 
 // failMutation is the common tail of mutation handlers: log the
-// denied/failed audit event and respond with the mapped error.
-func (handler *Handler) failMutation(c fiber.Ctx, kind healthMutationKind, spec APIErrorSpec) error {
-	handler.logMutationError(c, kind, spec)
+// denied/failed audit event and respond with the mapped error. extra carries
+// any fields a specific refusal needs the log line to keep beyond the mapped
+// spec's key — e.g. the settings re-auth call sites' reauth_cause (WEB-54).
+func (handler *Handler) failMutation(c fiber.Ctx, kind healthMutationKind, spec APIErrorSpec, extra ...SecurityEventField) error {
+	handler.logMutationError(c, kind, spec, extra...)
 	return handler.respondMappedError(c, spec)
 }
 

@@ -50,13 +50,16 @@ func passwordChangedSignInAgainErrorSpec() APIErrorSpec {
 // SettingsPasswordChangeKeyInvalidCurrent key, same settings_form target — so
 // a wrong current password and "this account has no local password yet" are
 // indistinguishable to the caller; ValidatePasswordChange already equalizes
-// their bcrypt cost (SEC-L3, WEB-13). In practice ChangePassword's own
-// !user.LocalAuthEnabled gate (handlers_settings_password.go) answers an
-// OIDC-only account with the separate, documented "oidc reauth required"
-// refusal before this mapper ever runs, so the merged arm here is
-// defense-in-depth for a account whose LocalAuthEnabled flips between load
-// and write — but it must still fail closed to the SAME answer, never to the
-// old distinguishable one. Regression:
+// their bcrypt cost (SEC-L3, WEB-13). The distinction survives only in the
+// server security log, via settingsReauthCauseField. In practice
+// ChangePassword's own !user.LocalAuthEnabled gate (handlers_settings_password.go)
+// answers an OIDC-only account with the separate, documented "oidc reauth
+// required" refusal before this mapper ever runs, so the merged arm here is
+// defense-in-depth for an account whose password hash is empty despite that
+// gate having passed — ValidatePasswordChange raises
+// ErrSettingsLocalPasswordNotSet on an empty PasswordHash, not on the
+// LocalAuthEnabled flag itself — but it must still fail closed to the SAME
+// answer, never to the old distinguishable one. Regression:
 // TestSettingsReauthMergesNoLocalPasswordIntoInvalidPassword.
 func mapSettingsPasswordChangeError(err error) APIErrorSpec {
 	switch {

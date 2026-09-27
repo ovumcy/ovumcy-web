@@ -52,8 +52,8 @@ func (handler *Handler) StartOIDCIdentityLinkStepup(c fiber.Ctx) error {
 	// current local password (budgeted, like every re-auth) is what proves the
 	// account holder is present. An account without one is refused here and
 	// sets a local password first.
-	if _, spec, valid := handler.validateSettingsActionPassword(c); !valid {
-		handler.logSecurityError(c, oidcIdentityLinkStepupAction, spec)
+	if _, spec, cause, valid := handler.validateSettingsActionPassword(c); !valid {
+		handler.logSecurityError(c, oidcIdentityLinkStepupAction, spec, cause)
 		return handler.respondMappedError(c, spec)
 	}
 
@@ -183,9 +183,9 @@ func (handler *Handler) UnlinkOIDCIdentity(c fiber.Ctx) error {
 		handler.logSecurityError(c, oidcIdentityUnlinkAction, spec)
 		return handler.respondMappedError(c, spec)
 	}
-	user, spec, valid := handler.validateSettingsActionPassword(c)
+	user, spec, cause, valid := handler.validateSettingsActionPassword(c)
 	if !valid {
-		handler.logSecurityError(c, oidcIdentityUnlinkAction, spec)
+		handler.logSecurityError(c, oidcIdentityUnlinkAction, spec, cause)
 		return handler.respondMappedError(c, spec)
 	}
 	unlinkedSessionVersion, err := handler.oidcService.UnlinkIdentity(c.Context(), *user, identityID)
