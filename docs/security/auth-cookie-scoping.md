@@ -1,0 +1,33 @@
+# Auth Cookie Scoping — Design Note (SEC-L9)
+
+_Part of the [Ovumcy security policy](../../SECURITY.md)._
+
+This is a design note, not a change record: it states what the current code does and what that
+implies, without prescribing a fix. No code changes accompany it.
+
+## What the code does today
+
+- The auth cookie's name is the literal `ovumcy_auth` (`authCookieName`, `internal/api/middleware.go:10`) — it does not carry the `__Host-` prefix.
+- Its transport spec is `authCookieSpec = sealedCookieSpec{name: authCookieName, path: "/"}` (`internal/api/handlers_auth_token_helpers.go:13`). `sealedCookieSpec` (`internal/api/sealed_cookie_transport.go:15-26`) has no `Domain` field at all, so `writeSealed` (`sealed_cookie_transport.go:66-80`) never sets a `Domain` attribute on the `Set-Cookie` response for this cookie — the browser applies its default host-only scope.
+- `Secure` is `handler.cookieSecure || spec.forceSecure` (`sealed_cookie_transport.go:73`). `authCookieSpec` does not set `forceSecure`, so `Secure` tracks the operator's `COOKIE_SECURE` setting alone — confirmed by the cookie inventory (`docs/security/cryptography.md:17`, `Secure` column: `COOKIE_SECURE`) and by `TestCookieAttributesRespectForceSecure`'s `"auth (same-site, not forced)"` case (`internal/api/sealed_cookie_force_secure_test.go:64`), which asserts `wantSecure: false` when `COOKIE_SECURE=false`.
+- The read side, `middleware_auth_helpers.go:14`, calls `c.Cookies(authCookieName)`, which in fiber v3 resolves to fasthttp's `RequestHeader.CookieBytes` (`github.com/valyala/fasthttp@v1.74.0/header.go:2150`). That method calls `collectCookies()` (`header.go:3322-3340`), which parses the incoming `Cookie:` header into an ordered `[]argsKV` via `parseRequestCookies` (`cookie.go:548`) in the order pairs appear in the header, then looks the name up with `peekArgBytes`/`peekArgStr` (`args.go:505-523`) — a **forward linear scan that returns on the first match**. If a single `Cookie:` header carries `ovumcy_auth` twice, the server reads whichever occurrence the browser placed first, silently ignoring the rest.
+
+## What that implies
+
+**No `__Host-` prefix, no `Domain` attribute.** The two facts point in opposite directions and the gap between them is the risk. The `__Host-` prefix (RFC 6265bis) is a browser-enforced guarantee that a cookie can only have been set by the exact host it is presented to: the browser refuses to store a `__Host-`-prefixed cookie unless it also has `Secure`, `Path=/`, and *no* `Domain` attribute. `ovumcy_auth` already satisfies all three underlying attribute constraints (`Path=/`, no `Domain`, and `Secure` whenever `COOKIE_SECURE=true`) — it just never adopts the prefix that would make the browser enforce them as an origin guarantee rather than as a coincidence of how the app happens to configure the cookie. Without the prefix, nothing stops a cooperating or compromised sibling on the same registrable domain (a subdomain running other software, a misconfigured reverse-proxy path, or any code that can induce a `Set-Cookie: ovumcy_auth=...; Domain=example.com` response under the parent domain) from planting a same-named cookie that the browser will also attach to requests to this app's host.
+
+**First-wins reading makes the planted cookie's browser-assigned position, not the server's judgment, decide which value is honored.** Browsers order same-name cookies in the `Cookie:` header by most-specific path first, then (for ties) by earliest creation time — an ordering the *client*, not the server, controls once a same-name cookie exists at all. Because `peekArgBytes`/`peekArgStr` return the first match, the server has no independent way to prefer "the cookie it minted" over "the cookie that happens to sort first." A same-registrable-domain actor able to set a cookie with a **more specific path** (or, on plain HTTP, one that simply wins the creation-time tiebreak) can arrange for their planted `ovumcy_auth` to be read on every request instead of the legitimate one.
+
+**`COOKIE_SECURE=false` widens who can plant the conflicting cookie, without changing whether the planted value can be trusted.** When `Secure` is false, a plain on-path network attacker for the domain — not just a same-registrable-domain sibling application — can inject a `Set-Cookie: ovumcy_auth=...` response over unencrypted HTTP and have the browser store it. That lowers the bar for planting a conflicting cookie considerably, from "controls another app on a sibling subdomain" to "sits on the network path of any plaintext HTTP request to the domain."
+
+**This does not, by itself, forge a session.** `ovumcy_auth`'s payload is sealed (AES-256-GCM under a `SECRET_KEY`-derived key, bound to the cookie name via the AEAD tag — *Cookies* in `docs/security/cryptography.md#cookies`) and verified against `users.auth_session_version`. An attacker who cannot produce a value that seals correctly cannot make the planted cookie authenticate as anyone; the practical effect of winning first-wins without also holding `SECRET_KEY` is that the *legitimate* cookie stops being read — a session-continuity / self-inflicted-lockout problem, not an authentication bypass on its own. Turning this into an account compromise requires the planted cookie to carry a value the server will accept, which needs a separate primitive (a `SECRET_KEY` leak, or an unrelated way to obtain a validly sealed token for a chosen session) on top of the scoping and first-wins gaps described here.
+
+## Summary
+
+| Gap | Where it lives | Consequence |
+| --- | --- | --- |
+| No `__Host-` prefix on `ovumcy_auth` | `internal/api/middleware.go:10` | The three attributes the prefix would enforce as an origin guarantee (`Secure`, `Path=/`, no `Domain`) are only ever a coincidence of current config, not a browser-enforced invariant. |
+| `Secure` follows `COOKIE_SECURE` alone (no `forceSecure`) | `internal/api/handlers_auth_token_helpers.go:13`, `sealed_cookie_transport.go:73` | With `COOKIE_SECURE=false`, any on-path plaintext-HTTP attacker for the domain — not only a same-registrable-domain sibling app — can attempt to plant a conflicting cookie. |
+| First-wins duplicate-cookie resolution | fasthttp `args.go:505-523` via `header.go:2150` / `middleware_auth_helpers.go:14` | The server has no way to prefer its own cookie over one an attacker-controlled same-registrable-domain origin planted with a more specific path or earlier creation time; the outcome is decided by browser cookie-jar ordering, which the attacker can influence. |
+
+No code change accompanies this note (per WEB-21 SEC-L9 scope: design note only).
