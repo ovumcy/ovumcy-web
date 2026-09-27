@@ -65,7 +65,7 @@ writeLF("./web/static/js/settings-import.js", settingsImportBundle);
 
 const htmxLicenseBanner =
   "/*!\n" +
-  " * htmx.org 2.0.10\n" +
+  " * htmx.org 2.0.11\n" +
   " * 0BSD License, see THIRD_PARTY_LICENSES.md\n" +
   " */\n";
 

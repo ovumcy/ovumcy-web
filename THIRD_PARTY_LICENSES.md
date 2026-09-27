@@ -73,7 +73,7 @@ file, so a row can name a subpackage (`golang.org/x/net/idna`) or appear beside 
 ## htmx
 
 - **Project:** [htmx](https://htmx.org) ([source](https://github.com/bigskysoftware/htmx))
-- **Version:** 2.0.10 (`node_modules/htmx.org`, see `package.json`)
+- **Version:** 2.0.11 (`node_modules/htmx.org`, see `package.json`)
 - **Files:** `web/static/js/htmx.min.js`
 - **License:** 0BSD (Zero-Clause BSD), per `node_modules/htmx.org/LICENSE` and its
   `package.json` (`"license": "0BSD"`)
