@@ -38,9 +38,18 @@ Every test-enforceable entry has a corresponding test or set of tests in `SECURI
   /auth/oidc/callback`, the sole CSRF exemption, and its unguarded `GET` query-mode twin),
   `/auth/oidc/start` and every other `/auth/oidc/*` sub-path (the SSO rate limiter is mounted on the
   whole prefix with no method filter — `RespondAuthRateLimited` → `respondAuthError`), the step-up
-  cross-site refusal (`refuseOIDCStepupCallback`'s cross-site arm), and the
+  cross-site refusal (`refuseOIDCStepupCallback`'s cross-site arm), the
   `requireFirstPartyRequest` refusal handlers that themselves fire on the cross-site request the
-  guard exists to name (`refuseOIDCStepupContinueRequest`, `refuseRegisterPickupRequest`). The
+  guard exists to name (`refuseOIDCStepupContinueRequest`, `refuseRegisterPickupRequest`), and —
+  round 5 — **every other rate limiter** in `cmd/ovumcy/server.go` whose refusal reaches an
+  auth-form or settings-form target: each is mounted ahead of `csrf.New` exactly like the SSO one,
+  so login, register, forgot-password, logout and the `/api` catch-all (which also answers the
+  settings forms) can all be tripped cross-site and token-less. `RespondAuthRateLimited` /
+  `RespondAPIRateLimited` route a limiter's refusal through `respondRateLimitedFormError`, which
+  always calls `respondAuthErrorCSRFExempt` / `respondSettingsErrorCSRFExempt` rather than the
+  page-slot pair those two share with every non-limiter caller; the forgot-password limiter also
+  stops copying the submitted email into either slot, since a request that trips it supplied that
+  value itself. The
   second is ORIGIN-AWARE: `requireFirstPartyRequest` is deliberately monotone (a stated "same-site"
   origin or the whole Sec-Fetch-Site family missing both pass it — neither proves the request is
   same-origin), so `refuseOIDCStepupCallback`'s non-cross-site arm, `ContinueOIDCStepup`'s

@@ -116,6 +116,110 @@ func TestRespondMappedErrorSettingsFormRedirectsWithFlashOnly(t *testing.T) {
 	}
 }
 
+// TestRespondRateLimitedFormErrorPasswordResetDropsForgotEmailAndUsesExemptSlot
+// is N1's sharpest case (WEB-40 round 5): the forgot-password rate limiter
+// runs before csrf.New, so a cross-site, token-less flood can trip it and, on
+// the pre-fix code, land the attacker's OWN form value into the shared page
+// slot as ForgotEmail. This drives the exact call the limiter's LimitReached
+// handler makes (RespondAuthRateLimited, cmd/ovumcy/ratelimit.go) and asserts
+// both halves of the fix: the write lands in the CSRF-exempt slot, never the
+// page slot, and ForgotEmail is empty regardless of what the request supplied.
+func TestRespondRateLimitedFormErrorPasswordResetDropsForgotEmailAndUsesExemptSlot(t *testing.T) {
+	t.Parallel()
+
+	handler := newRateLimitedFormErrorTestHandler(t)
+	app := fiber.New()
+	app.Post("/api/v1/password-resets", func(c fiber.Ctx) error {
+		return handler.RespondAuthRateLimited(c, "too_many_forgot_password_attempts")
+	})
+
+	form := url.Values{"email": {"attacker-supplied@example.com"}}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusSeeOther)
+
+	location := mustParseLocationHeader(t, response)
+	if location.Path != "/forgot-password" {
+		t.Fatalf("expected rate-limit redirect to /forgot-password, got %q", location.Path)
+	}
+
+	if cookie := responseCookie(response.Cookies(), flashCookieName); cookie != nil && strings.TrimSpace(cookie.Value) != "" {
+		t.Fatalf("a limiter refusal must never write the page flash slot, got %#v", cookie)
+	}
+
+	payload := mustReadExemptFlashPayload(t, handler.secretKey, response.Cookies())
+	if payload.AuthError != "too_many_forgot_password_attempts" {
+		t.Fatalf("expected the rate-limit key in the exempt flash payload, got %#v", payload)
+	}
+	if payload.ForgotEmail != "" {
+		t.Fatalf("expected no attacker-supplied email in the exempt flash payload, got %#v", payload)
+	}
+}
+
+// TestRespondAPIRateLimitedSettingsFormUsesExemptSlot covers the other N1 case:
+// the /api catch-all limiter (cmd/ovumcy/server.go) also runs before
+// csrf.New and reaches PATCH /api/v1/users/current/* through
+// RespondAPIRateLimited -> respondSettingsError's plain-HTML arm.
+func TestRespondAPIRateLimitedSettingsFormUsesExemptSlot(t *testing.T) {
+	t.Parallel()
+
+	handler := newRateLimitedFormErrorTestHandler(t)
+	app := fiber.New()
+	app.Patch("/api/v1/users/current/profile", func(c fiber.Ctx) error {
+		return handler.RespondAPIRateLimited(c)
+	})
+
+	request := httptest.NewRequest(http.MethodPatch, "/api/v1/users/current/profile", strings.NewReader("display_name="))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusSeeOther)
+
+	location := mustParseLocationHeader(t, response)
+	if location.Path != "/settings" {
+		t.Fatalf("expected rate-limit redirect to /settings, got %q", location.Path)
+	}
+
+	if cookie := responseCookie(response.Cookies(), flashCookieName); cookie != nil && strings.TrimSpace(cookie.Value) != "" {
+		t.Fatalf("a limiter refusal must never write the page flash slot, got %#v", cookie)
+	}
+
+	payload := mustReadExemptFlashPayload(t, handler.secretKey, response.Cookies())
+	if payload.SettingsError == "" {
+		t.Fatalf("expected the rate-limit key in the exempt flash payload, got %#v", payload)
+	}
+}
+
+// TestRespondAPIRateLimitedAuthFormUsesExemptSlot is the third N1 case: the
+// /api catch-all limiter also reaches the v1 auth-form paths (POST
+// /api/v1/sessions among them) through RespondAPIRateLimited's
+// isV1AuthFormPath branch, not only through the dedicated login limiter.
+func TestRespondAPIRateLimitedAuthFormUsesExemptSlot(t *testing.T) {
+	t.Parallel()
+
+	handler := newRateLimitedFormErrorTestHandler(t)
+	app := fiber.New()
+	app.Post("/api/v1/sessions", func(c fiber.Ctx) error {
+		return handler.RespondAPIRateLimited(c)
+	})
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader("email=rate-limit%40example.com"))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusSeeOther)
+
+	if cookie := responseCookie(response.Cookies(), flashCookieName); cookie != nil && strings.TrimSpace(cookie.Value) != "" {
+		t.Fatalf("a limiter refusal must never write the page flash slot, got %#v", cookie)
+	}
+	payload := mustReadExemptFlashPayload(t, handler.secretKey, response.Cookies())
+	if payload.AuthError == "" {
+		t.Fatalf("expected the rate-limit key in the exempt flash payload, got %#v", payload)
+	}
+}
+
 // TestRespondAuthErrorRedirectsEveryRoutableSpellingOfAnAuthForm: the router
 // sends /API/v1/sessions, /api/v1/sessions/ and /AUTH/OIDC/start to the same
 // handlers as their lowercase spelling, so a form error there must take the
@@ -151,8 +255,12 @@ func TestRespondAuthErrorRedirectsEveryRoutableSpellingOfAnAuthForm(t *testing.T
 		// The SSO limiter/oidc-prefix arms write the CSRF-exempt channel
 		// (WEB-40): a cross-site top-level GET can reach /auth/oidc/start
 		// carrying no CSRF token, so that arm must never touch the shared page
-		// slot. /api/v1/sessions stays session+CSRF-gated and keeps the page
-		// slot unchanged.
+		// slot. This probe calls handler.respondMappedError directly, bypassing
+		// every rate limiter, so /api/v1/sessions here exercises only
+		// respondAuthError's own routing and keeps the page slot: the login
+		// limiter mounted ahead of it in the real app answers through
+		// respondAuthErrorCSRFExempt instead (round 5) and is covered by
+		// TestAuthRateLimitHandlerRedirectUsesSealedFlashCookie (cmd/ovumcy).
 		readFlash := mustReadFlashPayload
 		if strings.Contains(strings.ToLower(probe.path), "/auth/oidc") {
 			readFlash = mustReadExemptFlashPayload
@@ -807,6 +915,23 @@ func newErrorMappingTransportTestApp(t *testing.T) (*fiber.App, *Handler) {
 	})
 
 	return app, handler
+}
+
+// newRateLimitedFormErrorTestHandler builds a Handler carrying a real i18n
+// manager, which respondRateLimitedFormError's callers need:
+// respondRateLimitedMappedError resolves the request's message catalogue via
+// ensureRequestMessages before dispatching (the limiters answer before
+// LanguageMiddleware runs), and a Handler with a nil i18n manager panics
+// there. newErrorMappingTransportTestApp's bare Handler is fine for the
+// non-rate-limited callers above, which never reach ensureRequestMessages.
+func newRateLimitedFormErrorTestHandler(t *testing.T) *Handler {
+	t.Helper()
+
+	manager, err := i18n.NewManager(i18n.LangEN)
+	if err != nil {
+		t.Fatalf("init i18n manager: %v", err)
+	}
+	return &Handler{secretKey: []byte("test-error-mapping-secret"), i18n: manager}
 }
 
 func mustReadFlashPayload(t *testing.T, secretKey []byte, cookies []*http.Cookie) FlashPayload {

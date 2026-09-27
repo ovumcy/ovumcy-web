@@ -704,6 +704,12 @@ func TestRespondAPIRateLimitedWithoutJSONAcceptFallsBackToMappedError(t *testing
 // path for the auth form variant. Without a JSON Accept header, the
 // response goes through the auth flash + redirect plumbing rather than the
 // JSON envelope, matching what the rate-limited login form sees.
+//
+// The write lands in the CSRF-exempt slot, never the page slot (WEB-40 round
+// 5): the login rate limiter is mounted ahead of csrf.New, so its refusal
+// carries no proof of a token or same-origin request, exactly like the SSO
+// limiter's. respondRateLimitedFormError routes every limiter-originated
+// auth-form refusal through respondAuthErrorCSRFExempt for that reason.
 func TestRespondAuthRateLimitedFallsBackThroughAuthFlash(t *testing.T) {
 	handler := &Handler{
 		secretKey:    []byte(testHandlerSecretKey),
@@ -725,11 +731,14 @@ func TestRespondAuthRateLimitedFallsBackThroughAuthFlash(t *testing.T) {
 	if response.StatusCode != fiber.StatusSeeOther {
 		t.Fatalf("expected 303 redirect for HTML rate-limited auth form, got %d", response.StatusCode)
 	}
-	flashCookie := responseCookie(response.Cookies(), flashCookieName)
-	if flashCookie == nil || flashCookie.Value == "" {
-		t.Fatal("expected flash cookie carrying the rate-limited auth error")
+	if pageCookie := responseCookie(response.Cookies(), flashCookieName); pageCookie != nil && pageCookie.Value != "" {
+		t.Fatalf("did not expect the rate limiter to write the page flash cookie, got %#v", pageCookie)
 	}
-	payload := decodeFlashCookieForTest(t, flashCookie.Value)
+	exemptCookie := responseCookie(response.Cookies(), exemptFlashCookieName)
+	if exemptCookie == nil || exemptCookie.Value == "" {
+		t.Fatal("expected the exempt flash cookie carrying the rate-limited auth error")
+	}
+	payload := mustReadFlashPayloadFromCookie(t, handler.secretKey, response.Cookies(), exemptFlashCookieName)
 	if payload.AuthError != "too many login attempts" {
 		t.Fatalf("expected flash auth_error %q, got %q", "too many login attempts", payload.AuthError)
 	}

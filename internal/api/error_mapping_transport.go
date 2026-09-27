@@ -285,33 +285,61 @@ func (handler *Handler) RespondRequestHeadersTooLarge(c fiber.Ctx) error {
 }
 
 func (handler *Handler) respondAuthError(c fiber.Ctx, spec APIErrorSpec) error {
+	return handler.respondAuthErrorChannel(c, spec, handler.setFlashCookie, true)
+}
+
+// respondAuthErrorCSRFExempt is respondAuthError's counterpart for a refusal
+// reached from a rate limiter (WEB-40 round 5): every limiter.Config in
+// cmd/ovumcy/server.go is mounted ahead of csrf.New, so a limiter's refusal on
+// an auth-form path carries no CSRF token and no proof the request is
+// same-origin — the per-IP budget it spends is charged identically for a
+// cross-site, token-less flood. It shares every redirect target
+// respondAuthErrorChannel computes with respondAuthError — the two must never
+// send the same path to a different page — but writes the CSRF-exempt slot
+// instead of the page slot, and never copies a request-supplied value (the
+// forgot-password email) into it: an attacker who trips the limiter chooses
+// that value. See respondRateLimitedFormError for the dispatch this feeds.
+func (handler *Handler) respondAuthErrorCSRFExempt(c fiber.Ctx, spec APIErrorSpec) error {
+	return handler.respondAuthErrorChannel(c, spec, handler.setCSRFExemptFlashCookie, false)
+}
+
+// respondAuthErrorChannel is respondAuthError and respondAuthErrorCSRFExempt's
+// shared routing: which page a spec's path redirects to. writeFlash picks the
+// cookie (page slot or CSRF-exempt slot); includeForgotEmail is false only for
+// the limiter-originated caller, which must never carry a request-supplied
+// value into either slot.
+func (handler *Handler) respondAuthErrorChannel(c fiber.Ctx, spec APIErrorSpec, writeFlash func(fiber.Ctx, FlashPayload), includeForgotEmail bool) error {
 	path := httpx.RoutingNormalizedPath(c.Path())
 	if (isV1AuthFormPath(path) || strings.HasPrefix(path, "/auth/oidc")) && !acceptsJSON(c) && !isHTMX(c) {
 		flash := FlashPayload{AuthError: spec.Key}
 		switch path {
 		case "/api/v1/users":
-			handler.setFlashCookie(c, flash)
+			writeFlash(c, flash)
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/register")
 		case "/api/v1/sessions":
-			handler.setFlashCookie(c, flash)
+			writeFlash(c, flash)
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 		case "/api/v1/password-resets":
-			flash.ForgotEmail = services.NormalizeAuthEmail(c.FormValue("email"))
-			handler.setFlashCookie(c, flash)
+			if includeForgotEmail {
+				flash.ForgotEmail = services.NormalizeAuthEmail(c.FormValue("email"))
+			}
+			writeFlash(c, flash)
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/forgot-password")
 		case "/auth/oidc", "/auth/oidc/start", "/auth/oidc/callback":
 			// The SSO limiter (cmd/ovumcy/server.go) is mounted on the whole
 			// /auth/oidc prefix with no method filter, so a cross-site top-level
 			// GET navigation can trip it and land here carrying no CSRF token or
 			// first-party proof (WEB-40): the exempt channel, never the shared
-			// page slot a same-origin navigation may have pending.
+			// page slot a same-origin navigation may have pending. Unconditional:
+			// every caller of this arm is already such a request, whether or not
+			// it came from the limiter.
 			handler.setCSRFExemptFlashCookie(c, flash)
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 		case "/api/v1/password-resets/redeem":
-			handler.setFlashCookie(c, flash)
+			writeFlash(c, flash)
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/reset-password")
 		case "/api/v1/sessions/2fa-challenge":
-			handler.setFlashCookie(c, flash)
+			writeFlash(c, flash)
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/auth/2fa")
 		case "/api/v1/sessions/current":
 			// No <form> can submit DELETE and there is no page to send the client
@@ -356,6 +384,19 @@ func isV1AuthFormPath(path string) bool {
 }
 
 func (handler *Handler) respondSettingsError(c fiber.Ctx, spec APIErrorSpec) error {
+	return handler.respondSettingsErrorChannel(c, spec, handler.setFlashCookie)
+}
+
+// respondSettingsErrorCSRFExempt is respondSettingsError's counterpart for a
+// refusal reached from a rate limiter (WEB-40 round 5): the /api catch-all
+// limiter (cmd/ovumcy/server.go) is mounted ahead of csrf.New and reaches the
+// settings-form target the same token-less, cross-site-reachable way the auth
+// limiters reach respondAuthErrorCSRFExempt. See respondRateLimitedFormError.
+func (handler *Handler) respondSettingsErrorCSRFExempt(c fiber.Ctx, spec APIErrorSpec) error {
+	return handler.respondSettingsErrorChannel(c, spec, handler.setCSRFExemptFlashCookie)
+}
+
+func (handler *Handler) respondSettingsErrorChannel(c fiber.Ctx, spec APIErrorSpec, writeFlash func(fiber.Ctx, FlashPayload)) error {
 	if isHTMX(c) {
 		rendered := spec.Key
 		flashKey := spec.Key
@@ -368,7 +409,7 @@ func (handler *Handler) respondSettingsError(c fiber.Ctx, spec APIErrorSpec) err
 		return sendHTMLFragment(c.Status(fiber.StatusOK), httpx.StatusErrorMarkup(rendered, flashKey))
 	}
 	if strings.HasPrefix(httpx.RoutingNormalizedPath(c.Path()), "/api/v1/users/current") && !acceptsJSON(c) {
-		handler.setFlashCookie(c, FlashPayload{SettingsError: spec.Key})
+		writeFlash(c, FlashPayload{SettingsError: spec.Key})
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
 	}
 	return handler.apiError(c, spec)
