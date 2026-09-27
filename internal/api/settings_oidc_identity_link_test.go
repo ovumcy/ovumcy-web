@@ -419,9 +419,12 @@ func TestOIDCIdentityLinkStepupStartRequiresTheAccountPassword(t *testing.T) {
 		submitted    string
 		wantKey      string
 	}{
-		"session only, no password":     {withPassword: true, submitted: "", wantKey: settingsMissingPasswordErrorSpec().Key},
-		"wrong password":                {withPassword: true, submitted: "WrongPass1", wantKey: settingsInvalidPasswordErrorSpec().Key},
-		"account has no local password": {withPassword: false, submitted: "StrongPass1", wantKey: settingsLocalPasswordRequiredErrorSpec().Key},
+		"session only, no password": {withPassword: true, submitted: "", wantKey: settingsMissingPasswordErrorSpec().Key},
+		"wrong password":            {withPassword: true, submitted: "WrongPass1", wantKey: settingsInvalidPasswordErrorSpec().Key},
+		// WEB-54: an account with no local password answers with the SAME key
+		// as a wrong password — settingsInvalidPasswordErrorSpec, not the
+		// distinct "local password required" this used to assert.
+		"account has no local password": {withPassword: false, submitted: "StrongPass1", wantKey: settingsInvalidPasswordErrorSpec().Key},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

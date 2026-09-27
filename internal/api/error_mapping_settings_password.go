@@ -45,6 +45,19 @@ func passwordChangedSignInAgainErrorSpec() APIErrorSpec {
 	return settingsFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "password changed sign in again")
 }
 
+// WEB-54: ErrSettingsInvalidCurrentPassword and ErrSettingsLocalPasswordNotSet
+// answer IDENTICALLY below — same 401, same
+// SettingsPasswordChangeKeyInvalidCurrent key, same settings_form target — so
+// a wrong current password and "this account has no local password yet" are
+// indistinguishable to the caller; ValidatePasswordChange already equalizes
+// their bcrypt cost (SEC-L3, WEB-13). In practice ChangePassword's own
+// !user.LocalAuthEnabled gate (handlers_settings_password.go) answers an
+// OIDC-only account with the separate, documented "oidc reauth required"
+// refusal before this mapper ever runs, so the merged arm here is
+// defense-in-depth for a account whose LocalAuthEnabled flips between load
+// and write — but it must still fail closed to the SAME answer, never to the
+// old distinguishable one. Regression:
+// TestSettingsReauthMergesNoLocalPasswordIntoInvalidPassword.
 func mapSettingsPasswordChangeError(err error) APIErrorSpec {
 	switch {
 	// Checked first: an exhausted re-auth budget is refused before the current
@@ -57,10 +70,8 @@ func mapSettingsPasswordChangeError(err error) APIErrorSpec {
 		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, services.SettingsPasswordChangeKeyInvalidInput)
 	case errors.Is(err, services.ErrSettingsPasswordMismatch):
 		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, services.SettingsPasswordChangeKeyPasswordMismatch)
-	case errors.Is(err, services.ErrSettingsInvalidCurrentPassword):
+	case errors.Is(err, services.ErrSettingsInvalidCurrentPassword), errors.Is(err, services.ErrSettingsLocalPasswordNotSet):
 		return settingsFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, services.SettingsPasswordChangeKeyInvalidCurrent)
-	case errors.Is(err, services.ErrSettingsLocalPasswordNotSet):
-		return settingsLocalPasswordRequiredErrorSpec()
 	case errors.Is(err, services.ErrSettingsNewPasswordMustDiffer):
 		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, services.SettingsPasswordChangeKeyMustDiffer)
 	case errors.Is(err, services.ErrSettingsPasswordTooLong):

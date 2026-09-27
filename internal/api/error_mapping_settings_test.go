@@ -121,9 +121,12 @@ func TestMapSettingsDeleteAccountPasswordError(t *testing.T) {
 			want: settingsInvalidPasswordErrorSpec(),
 		},
 		{
-			name: "local password required",
+			// WEB-54: no local password answers IDENTICALLY to a wrong one —
+			// same spec as "invalid password" above, not the distinct
+			// "local password required" 403 this used to map to.
+			name: "no local password merges into invalid password",
 			err:  services.ErrSettingsLocalPasswordNotSet,
-			want: settingsLocalPasswordRequiredErrorSpec(),
+			want: settingsInvalidPasswordErrorSpec(),
 		},
 		{
 			name: "unknown",
@@ -140,4 +143,46 @@ func TestMapSettingsDeleteAccountPasswordError(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestSettingsReauthMergesNoLocalPasswordIntoInvalidPassword is WEB-54's core
+// regression: the caller-visible refusal for "this account has no local
+// password" must be byte-identical — same status, same key, same category,
+// same target — to the refusal for "that password is wrong", on every
+// settings endpoint that re-authenticates by password. Before this fix the
+// two mappers below answered ErrSettingsLocalPasswordNotSet with a distinct
+// 403 "local password required" spec that a wrong password never produced;
+// ValidateCurrentPassword/ValidatePasswordChange already equalize the two
+// refusals' bcrypt cost (SEC-L3, WEB-13), so status/key was the only
+// remaining oracle. The distinction survives only in the security log
+// (logSecurityError is passed the original typed error, never the mapped
+// spec's key).
+//
+// mapOIDCIdentityUnlinkError's reuse of settingsLocalPasswordRequiredErrorSpec
+// for ErrOIDCUnlinkLastSignIn is deliberately NOT covered here: that refusal
+// fires only after the caller has already proved the current password (a
+// business rule on removing the account's last sign-in method), so it carries
+// no re-auth oracle and is out of this test's scope by design.
+func TestSettingsReauthMergesNoLocalPasswordIntoInvalidPassword(t *testing.T) {
+	t.Run("clear-data/delete-account/2fa-disable/oidc-link/oidc-unlink/recovery-code", func(t *testing.T) {
+		wrongPassword := mapSettingsDeleteAccountPasswordError(services.ErrSettingsPasswordInvalid)
+		noLocalPassword := mapSettingsDeleteAccountPasswordError(services.ErrSettingsLocalPasswordNotSet)
+		if wrongPassword != noLocalPassword {
+			t.Fatalf("wrong password and no local password must answer identically: wrong=%#v noLocalPassword=%#v", wrongPassword, noLocalPassword)
+		}
+		if wrongPassword.Status != fiber.StatusUnauthorized {
+			t.Fatalf("expected the merged refusal to stay 401, got %d", wrongPassword.Status)
+		}
+	})
+
+	t.Run("password change", func(t *testing.T) {
+		wrongPassword := mapSettingsPasswordChangeError(services.ErrSettingsInvalidCurrentPassword)
+		noLocalPassword := mapSettingsPasswordChangeError(services.ErrSettingsLocalPasswordNotSet)
+		if wrongPassword != noLocalPassword {
+			t.Fatalf("wrong current password and no local password must answer identically: wrong=%#v noLocalPassword=%#v", wrongPassword, noLocalPassword)
+		}
+		if wrongPassword.Status != fiber.StatusUnauthorized {
+			t.Fatalf("expected the merged refusal to stay 401, got %d", wrongPassword.Status)
+		}
+	})
 }

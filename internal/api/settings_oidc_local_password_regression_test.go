@@ -40,38 +40,41 @@ func TestSettingsPageForOIDCOnlyAccountShowsLocalPasswordSetup(t *testing.T) {
 	)
 }
 
+// TestOIDCOnlySettingsSensitiveActionsRequireLocalPassword pins WEB-54: an
+// OIDC-only account submitting a password to a password-gated settings action
+// gets the SAME refusal a wrong password on a local-auth account gets — 401
+// "invalid password" — never the old, distinct 403 "local password required"
+// that told the caller outright it had no local password to check against.
+// Regression: TestSettingsReauthMergesNoLocalPasswordIntoInvalidPassword pins
+// the same invariant at the mapper level; this one pins it end to end.
 func TestOIDCOnlySettingsSensitiveActionsRequireLocalPassword(t *testing.T) {
 	t.Parallel()
 
 	ctx := newOIDCOnlySettingsSecurityTestContext(t, "settings-oidc-guard@example.com")
 
 	testCases := []struct {
-		name      string
-		method    string
-		path      string
-		form      url.Values
-		wantError string
+		name   string
+		method string
+		path   string
+		form   url.Values
 	}{
 		{
-			name:      "recovery regeneration",
-			method:    http.MethodPost,
-			path:      "/api/v1/users/current/recovery-code",
-			form:      url.Values{},
-			wantError: "local password required",
+			name:   "recovery regeneration",
+			method: http.MethodPost,
+			path:   "/api/v1/users/current/recovery-code",
+			form:   url.Values{"password": {"unused"}},
 		},
 		{
-			name:      "clear-data validation",
-			method:    http.MethodPost,
-			path:      "/api/v1/users/current/data-wipe/validate",
-			form:      url.Values{"password": {"unused"}},
-			wantError: "local password required",
+			name:   "clear-data validation",
+			method: http.MethodPost,
+			path:   "/api/v1/users/current/data-wipe/validate",
+			form:   url.Values{"password": {"unused"}},
 		},
 		{
-			name:      "delete account",
-			method:    http.MethodDelete,
-			path:      "/api/v1/users/current",
-			form:      url.Values{"password": {"unused"}},
-			wantError: "local password required",
+			name:   "delete account",
+			method: http.MethodDelete,
+			path:   "/api/v1/users/current",
+			form:   url.Values{"password": {"unused"}},
 		},
 	}
 
@@ -83,9 +86,9 @@ func TestOIDCOnlySettingsSensitiveActionsRequireLocalPassword(t *testing.T) {
 			})
 			defer func() { _ = response.Body.Close() }()
 
-			assertStatusCode(t, response, http.StatusForbidden)
-			if got := readAPIError(t, response.Body); got != testCase.wantError {
-				t.Fatalf("expected %q, got %q", testCase.wantError, got)
+			assertStatusCode(t, response, http.StatusUnauthorized)
+			if got := readAPIError(t, response.Body); got != "invalid password" {
+				t.Fatalf("expected %q, got %q", "invalid password", got)
 			}
 		})
 	}

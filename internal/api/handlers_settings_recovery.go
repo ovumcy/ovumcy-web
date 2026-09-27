@@ -15,11 +15,15 @@ func (handler *Handler) RegenerateRecoveryCode(c fiber.Ctx) error {
 		handler.logSecurityError(c, "auth.recovery_code_regenerate", spec)
 		return handler.respondMappedError(c, spec)
 	}
-	if !user.LocalAuthEnabled {
-		spec := settingsLocalPasswordRequiredErrorSpec()
-		handler.logSecurityError(c, "auth.recovery_code_regenerate", spec)
-		return handler.respondMappedError(c, spec)
-	}
+	// WEB-54: no early `!user.LocalAuthEnabled` exit here — that used to answer
+	// an OIDC-only account with a distinct 403 "local password required"
+	// before ever reading the submitted password, which was a faster and
+	// differently-shaped oracle than the one closed everywhere else this
+	// account state is refused. validateSettingsActionPassword now carries
+	// this account exactly like every other password-gated settings action:
+	// budgeted, equalized-timing, and answered with the same 401 "invalid
+	// password" a wrong password gets. Regression:
+	// TestSettingsReauthMergesNoLocalPasswordIntoInvalidPassword.
 	if _, spec, valid := handler.validateSettingsActionPassword(c); !valid {
 		handler.logSecurityError(c, "auth.recovery_code_regenerate", spec)
 		return handler.respondMappedError(c, spec)

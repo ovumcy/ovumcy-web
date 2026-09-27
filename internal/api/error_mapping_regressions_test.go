@@ -416,9 +416,12 @@ func TestMapSettingsPasswordChangeError(t *testing.T) {
 			want: settingsFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "invalid current password"),
 		},
 		{
-			name: "local password required",
+			// WEB-54: no local password answers IDENTICALLY to a wrong current
+			// password — same 401 SettingsPasswordChangeKeyInvalidCurrent spec,
+			// not the distinct "local password required" 403 this used to map to.
+			name: "no local password merges into invalid current password",
 			err:  services.ErrSettingsLocalPasswordNotSet,
-			want: settingsLocalPasswordRequiredErrorSpec(),
+			want: settingsFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "invalid current password"),
 		},
 		{
 			name: "new password must differ",

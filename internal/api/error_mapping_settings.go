@@ -23,6 +23,17 @@ func settingsInvalidPasswordErrorSpec() APIErrorSpec {
 	return settingsFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "invalid password")
 }
 
+// settingsLocalPasswordRequiredErrorSpec is the business-rule refusal for
+// removing an account's LAST sign-in method (mapOIDCIdentityUnlinkError,
+// below): unlike a re-auth failure, it only fires after the caller has
+// already proved the current password, so telling the owner to set one up
+// first discloses nothing an authenticated caller does not already know.
+// WEB-54 removed every OTHER call site — the ones that answered "the account
+// being re-authenticated has no local password" before the password was even
+// checked, which was a caller-visible oracle for "wrong password" vs "no
+// password". settingsInvalidPasswordErrorSpec (and, on the password-change
+// form, SettingsPasswordChangeKeyInvalidCurrent) now stands in for that
+// answer instead. Do not add a new re-auth call site here.
 func settingsLocalPasswordRequiredErrorSpec() APIErrorSpec {
 	return settingsFormErrorSpec(fiber.StatusForbidden, APIErrorCategoryForbidden, "local password required")
 }
@@ -229,6 +240,18 @@ func mapSettingsProfileNormalizeError(err error) APIErrorSpec {
 	}
 }
 
+// mapSettingsDeleteAccountPasswordError maps VerifyReauthPassword's outcome
+// for every settings action gated by validateSettingsActionPassword
+// (clear-data validate/apply, delete account, 2FA disable, the OIDC
+// identity-link step-up start, and OIDC identity unlink). WEB-54: an account
+// with no local password and a wrong password on one that has one answer
+// IDENTICALLY here — same 401, same key, same target — because both are
+// ErrSettingsPasswordInvalid and ErrSettingsLocalPasswordNotSet are the same
+// caller-visible refusal now; ValidateCurrentPassword already equalizes their
+// bcrypt cost (SEC-L3, WEB-13), so neither status/key nor timing tells the two
+// apart. The distinction survives only in the security log, via
+// logSecurityError's typed error. Regression:
+// TestSettingsReauthMergesNoLocalPasswordIntoInvalidPassword.
 func mapSettingsDeleteAccountPasswordError(err error) APIErrorSpec {
 	switch {
 	// Checked first: an exhausted re-auth budget refuses the request before the
@@ -237,10 +260,8 @@ func mapSettingsDeleteAccountPasswordError(err error) APIErrorSpec {
 		return settingsRateLimitErrorSpec()
 	case errors.Is(err, services.ErrSettingsPasswordMissing):
 		return settingsMissingPasswordErrorSpec()
-	case errors.Is(err, services.ErrSettingsPasswordInvalid):
+	case errors.Is(err, services.ErrSettingsPasswordInvalid), errors.Is(err, services.ErrSettingsLocalPasswordNotSet):
 		return settingsInvalidPasswordErrorSpec()
-	case errors.Is(err, services.ErrSettingsLocalPasswordNotSet):
-		return settingsLocalPasswordRequiredErrorSpec()
 	default:
 		return settingsValidatePasswordErrorSpec()
 	}

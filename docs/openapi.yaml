@@ -2699,8 +2699,16 @@ paths:
       description: |
         For accounts with `local_auth_enabled=false` (OIDC-only), this endpoint
         returns `403 oidc reauth required` — those accounts must use the
-        step-up flow at `POST /api/v1/users/current/password/step-up`. Bumps
-        `auth_session_version` on success.
+        step-up flow at `POST /api/v1/users/current/password/step-up`. This is
+        the one accepted, documented exception to the invariant below: it
+        answers before the current-password compare even runs, so it is not
+        that oracle — see [SECURITY_INVARIANTS.md → Authentication and
+        sessions](SECURITY_INVARIANTS.md#authentication-and-sessions).
+        A wrong `current_password` on an account that HAS a local password
+        answers `401 invalid current password`, and that is byte-identical to
+        the account-state refusal a local-password-not-set condition would
+        otherwise produce past this gate (WEB-54) — the two are never
+        distinguishable to the caller. Bumps `auth_session_version` on success.
       requestBody:
         required: true
         content:
@@ -2855,8 +2863,11 @@ paths:
         The provider re-authentication proves control of the identity being
         linked, not of this account, so the request must also carry the
         account's current local password (budgeted like every settings
-        re-auth). An account without a local password is refused with
-        `403 local password required` and sets one first. On success the link
+        re-auth). An account with no local password answers with the SAME
+        `401 invalid password` a wrong password gets — the two are
+        indistinguishable to the caller by design, so a live session cannot be
+        used to probe whether an account has a local password set (WEB-54);
+        set one first through the local-password step-up. On success the link
         bumps `auth_session_version`: every other session is signed out and
         the originating device is re-issued a session. The identity's `email`
         and `email_verified` claims are not consulted — the binding is keyed on
@@ -2933,8 +2944,11 @@ paths:
       tags: [settings]
       summary: Issue a fresh recovery code (owner only).
       description: |
-        Requires the current password (or OIDC-only accounts must first enrol a
-        local password via the step-up flow). Bumps `auth_session_version`;
+        Requires the current password. An account with no local password
+        answers with the SAME `401 invalid password` a wrong password gets
+        (WEB-54) rather than naming its own state — it must first enrol a
+        local password via the step-up flow before this can succeed. Bumps
+        `auth_session_version`;
         other devices are signed out, the originating device is refreshed
         inline. An htmx request is answered with `HX-Redirect: /recovery-code`.
       requestBody:
