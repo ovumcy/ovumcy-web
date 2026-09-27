@@ -44,16 +44,21 @@ Every test-enforceable entry has a corresponding test or set of tests in `SECURI
 - **Settings re-auth's refusal response carries no "does this account have a local password" oracle**
   (WEB-54, closing the gap SEC-L3/WEB-13 left: that fix equalized the bcrypt cost of the two
   refusals but the response still named which one applied). Every settings action gated by the
-  current password — clear-data validate/apply, delete account, 2FA disable, password change,
-  recovery-code regeneration, the OIDC identity-link step-up, and OIDC identity unlink — answers
-  "this account has no local password" and "that password is wrong" with the byte-identical
-  refusal: same status (`401`), same key, same category, same `error_detail.target`. The
-  distinction survives only in the security log — a `reauth_cause` field
-  (`no_local_password` vs `invalid_password`, `settingsReauthCauseField` in `internal/api`) recorded
-  from the raw service error *before* mapping, since the mapped spec's own `reason` key is now
-  identical for both — never in the response (`mapSettingsDeleteAccountPasswordError`,
-  `mapSettingsPasswordChangeError` in `internal/api`). This narrows only the re-auth refusal's own
-  answer: a signed-in session still learns whether the account has a local password from
+  current password through `validateSettingsActionPassword` — clear-data validate/apply, delete
+  account, 2FA enrollment, password change, recovery-code regeneration, the OIDC identity-link
+  step-up, and OIDC identity unlink — answers "this account has no local password" and "that
+  password is wrong" with the byte-identical refusal: same status (`401`), same key, same
+  category, same `error_detail.target`. The distinction survives only in the security log — a
+  `reauth_cause` field (`no_local_password` vs `invalid_password`, `settingsReauthCauseField` in
+  `internal/api`) recorded from the raw service error *before* mapping, since the mapped spec's own
+  `reason` key is now identical for both — never in the response
+  (`mapSettingsDeleteAccountPasswordError`, `mapSettingsPasswordChangeError` in `internal/api`).
+  **2FA disable is out of scope of this bullet**: `DELETE /api/v1/users/current/2fa` never goes
+  through `validateSettingsActionPassword` — it calls `AuthenticateCredentials`
+  (`internal/services/auth_service.go`), which already merges "no local password" and "wrong
+  password" into one `ErrAuthInvalidCreds` at the service layer, and the handler logs the mapped
+  spec with no `reauth_cause` at all (`handlers_settings_2fa.go`). This narrows only the re-auth
+  refusal's own answer: a signed-in session still learns whether the account has a local password from
   `GET /api/v1/users/current`'s `local_auth_enabled` field and from the Settings page itself — both
   already gated by the session, not by this password check, so neither is the oracle being closed.
   Two further answers are deliberately kept distinct,

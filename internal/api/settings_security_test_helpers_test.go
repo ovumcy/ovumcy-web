@@ -95,6 +95,47 @@ func newOIDCOnlySettingsSecurityTestContextWithOptions(t *testing.T, email strin
 	}
 }
 
+// newLocalAuthEnabledEmptyHashSettingsTestContext builds a settings test
+// context for the data-integrity edge state ValidatePasswordChange treats as
+// "no local password": LocalAuthEnabled is true (so ChangePassword's own
+// OIDC-reauth-required gate does not intercept the request before the
+// mapper ever sees it) but PasswordHash is empty. It is the password-change
+// analogue of newOIDCOnlySettingsSecurityTestContextWithOptions, which
+// bypasses the normal onboarding flow the same way to reach a state the
+// ordinary handlers never produce themselves.
+func newLocalAuthEnabledEmptyHashSettingsTestContext(t *testing.T, email string) settingsSecurityTestContext {
+	t.Helper()
+
+	app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{enableCSRF: true, auditLogEnabled: true})
+	user := models.User{
+		Email:               strings.ToLower(strings.TrimSpace(email)),
+		PasswordHash:        "",
+		LocalAuthEnabled:    true,
+		Role:                models.RoleOwner,
+		OnboardingCompleted: true,
+		AuthSessionVersion:  1,
+		CycleLength:         28,
+		PeriodLength:        5,
+		AutoPeriodFill:      true,
+		CreatedAt:           time.Now().UTC(),
+	}
+	if err := database.Create(&user).Error; err != nil {
+		t.Fatalf("create local-auth-enabled empty-hash test user: %v", err)
+	}
+
+	authCookie := issueAuthCookieForUser(t, user)
+	csrfCookie, csrfToken := loadSettingsCSRFContext(t, app, authCookie)
+
+	return settingsSecurityTestContext{
+		app:        app,
+		database:   database,
+		user:       user,
+		authCookie: authCookie,
+		csrfCookie: csrfCookie,
+		csrfToken:  csrfToken,
+	}
+}
+
 // refreshAuthCookie re-issues the context's auth cookie against the latest
 // auth_session_version persisted for the user. Tests that mutate the user row
 // via a back-door service call (for example, enabling TOTP directly through
