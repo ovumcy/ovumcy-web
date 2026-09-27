@@ -182,8 +182,6 @@ func registerPageRoutes(app *fiber.App, handler *Handler) {
 	// session cookie (SameSite=Lax) is delivered to, guarded by the sealed
 	// single-use continuation the callback minted.
 	app.Get(oidcCallbackContinuePath, handler.refuseHEADOnShownOnceSurface, requireFirstPartyRequest(handler.refuseOIDCStepupContinueRequest), handler.ContinueOIDCStepup)
-	app.Get(oidcLinkConfirmPath, handler.ShowOIDCLinkConfirmPage)
-	app.Post(oidcLinkConfirmPath, handler.CompleteOIDCLinkConfirmation)
 	app.Post("/logout", handler.AuthRequired, handler.OwnerOnly, handler.Logout)
 	app.Get("/privacy", handler.ShowPrivacyPage)
 	app.Get("/onboarding", handler.AuthRequired, handler.ShowOnboarding)

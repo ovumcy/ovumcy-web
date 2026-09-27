@@ -248,36 +248,6 @@ func TestLegacyOrUnrecognisedPurposeResetTokenRedeemRefusedAsInvalid(t *testing.
 	}
 }
 
-// TestOIDCLinkConfirmForcedResetMintsLocalPurposeRefusedWhenLocalPublicAuthIsOff
-// is the direct regression for the security review's amendment A1:
-// handlers_auth_oidc_link_confirm.go's own forced-reset mint (:189) must
-// carry PasswordResetTokenPurposeForcedLocal, not ...ForcedOIDC, because the
-// handler authenticates the target with a LOCAL password
-// (LoginService.Authenticate) and never checks an instance-wide OIDC gate.
-// Had it been mislabelled OIDC, this token would have bypassed the
-// local-sign-in gate exactly like PRIV-4's original local-login hole; this
-// test would then see 200 instead of the refusal asserted below.
-func TestOIDCLinkConfirmForcedResetMintsLocalPurposeRefusedWhenLocalPublicAuthIsOff(t *testing.T) {
-	app, database, stub := newLocalAuthGateTestApp(t)
-	user := createOnboardingTestUser(t, database, "reset-gate-link-confirm@example.com", "StrongPass1", true)
-	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Update("must_change_password", true).Error; err != nil {
-		t.Fatalf("mark user must_change_password: %v", err)
-	}
-
-	resetCookieValue := forcedLocalResetCookieFromLinkConfirm(t, app, user, "StrongPass1")
-
-	stub.localPublicAuthEnabled = false
-
-	response := redeemResetCookie(t, app, resetCookieValue, "EvenStronger2")
-	assertStatusCode(t, response, http.StatusForbidden)
-	if got := readAPIError(t, response.Body); got != "local recovery unavailable" {
-		t.Fatalf("expected %q, got %q", "local recovery unavailable", got)
-	}
-	if authCookie := responseCookie(response.Cookies(), authCookieName); authCookie != nil && strings.TrimSpace(authCookie.Value) != "" {
-		t.Fatalf("expected a refused redeem to mint no session, got %#v", authCookie)
-	}
-}
-
 // TestResetPasswordPageFollowsTheRedeemGate is the N+1 coverage A2 mandates:
 // ShowResetPasswordPage must reach the SAME decision as ResetPassword for
 // every token kind, including the expired-forced-OIDC case the finding
@@ -402,41 +372,6 @@ func forcedLocalResetCookieFromLogin(t *testing.T, app *fiber.App, email string,
 	cookieValue := responseCookieValue(response.Cookies(), resetPasswordCookieName)
 	if cookieValue == "" {
 		t.Fatal("expected the forced-reset login to seal a reset-password cookie")
-	}
-	return cookieValue
-}
-
-// forcedLocalResetCookieFromLinkConfirm drives OIDC link-confirm's own LOCAL
-// password challenge for a user carrying MustChangePassword (A1). The
-// resulting mint must carry PasswordResetTokenPurposeForcedLocal even though
-// the surrounding flow is nominally "OIDC": link-confirm authenticates the
-// target through LoginService.Authenticate, the same local-password check the
-// plain login route makes, and never consults an OIDC-specific gate before
-// minting.
-func forcedLocalResetCookieFromLinkConfirm(t *testing.T, app *fiber.App, user models.User, password string) string {
-	t.Helper()
-
-	pendingPayload, err := newOIDCLinkPendingPayload(time.Now().UTC(), user.ID, "https://idp.example", "subject-gate-test", user.Email)
-	if err != nil {
-		t.Fatalf("newOIDCLinkPendingPayload: %v", err)
-	}
-	cookie := sealLinkPendingCookieForTest(t, pendingPayload)
-
-	request := httptest.NewRequest(http.MethodPost, oidcLinkConfirmPath, strings.NewReader(url.Values{
-		"password": {password},
-	}.Encode()))
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	request.Header.Set("Cookie", oidcLinkPendingCookieName+"="+cookie)
-
-	response := mustAppResponse(t, app, request)
-	assertStatusCode(t, response, http.StatusSeeOther)
-	if location := response.Header.Get("Location"); location != "/reset-password" {
-		t.Fatalf("expected link-confirm to route the forced-reset target to /reset-password, got %q", location)
-	}
-
-	cookieValue := responseCookieValue(response.Cookies(), resetPasswordCookieName)
-	if cookieValue == "" {
-		t.Fatal("expected link-confirm to seal a reset-password cookie for a forced-reset target")
 	}
 	return cookieValue
 }

@@ -236,53 +236,12 @@ func authOIDCAccountUnavailableErrorSpec() APIErrorSpec {
 	return authFormErrorSpec(fiber.StatusForbidden, APIErrorCategoryForbidden, "sso sign-in unavailable")
 }
 
-func authOIDCLinkConfirmExpiredErrorSpec() APIErrorSpec {
-	return authFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "sso link confirmation expired")
-}
-
-func authOIDCLinkConfirmInvalidPasswordErrorSpec() APIErrorSpec {
-	return authFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "sso link confirmation invalid password")
-}
-
-func authOIDCLinkConfirmRateLimitedErrorSpec() APIErrorSpec {
-	return authFormErrorSpec(fiber.StatusTooManyRequests, APIErrorCategoryRateLimited, "too many login attempts")
-}
-
-// mapOIDCLinkConfirmPasswordError maps failures of the link-confirm password
-// verification (which runs through LoginService.Authenticate) onto the
-// link-confirm error contract: rate-limited and reset-token-issue failures
-// keep their own specs, everything else is the generic invalid-password
-// response so account state never leaks through error granularity.
-func mapOIDCLinkConfirmPasswordError(err error) APIErrorSpec {
-	switch {
-	case errors.Is(err, services.ErrAuthLoginRateLimited):
-		return authOIDCLinkConfirmRateLimitedErrorSpec()
-	case errors.Is(err, services.ErrLoginResetTokenIssue):
-		return authResetTokenCreateErrorSpec()
-	default:
-		return authOIDCLinkConfirmInvalidPasswordErrorSpec()
-	}
-}
-
-// mapOIDCLinkConfirmError maps failures of the link-confirm flow itself
-// (identity resolution, the link write, provider availability) onto the
-// link-confirm error contract; password-verification failures have their own
-// mapper above.
-func mapOIDCLinkConfirmError(err error) APIErrorSpec {
-	switch {
-	case errors.Is(err, services.ErrAuthSessionVersionChanged):
-		return authSessionCreateErrorSpec()
-	case errors.Is(err, services.ErrOIDCLinkFailed),
-		errors.Is(err, services.ErrOIDCIdentityResolveFailed):
-		return authOIDCUnavailableErrorSpec()
-	case errors.Is(err, services.ErrOIDCDisabled),
-		errors.Is(err, services.ErrOIDCUnavailable):
-		return authOIDCUnavailableErrorSpec()
-	default:
-		return authOIDCAuthenticationFailedErrorSpec()
-	}
-}
-
+// authOIDCLinkConfirmUnavailableErrorSpec answers CompleteOIDCLogin's
+// ErrOIDCLinkRequiresConfirmation handoff (handlers_auth_oidc.go): a fresh
+// (issuer, subject) resolved to a pre-existing local user by email, but the
+// pair has never been linked, and this repo mints no pending-link cookie for
+// that case in any configuration (#701) — the only two ways to complete a
+// link are the authenticated Settings step-up and the operator CLI.
 func authOIDCLinkConfirmUnavailableErrorSpec() APIErrorSpec {
 	return authFormErrorSpec(fiber.StatusForbidden, APIErrorCategoryForbidden, "sso link confirmation unavailable")
 }

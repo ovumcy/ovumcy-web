@@ -18,7 +18,6 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/i18n"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -83,17 +82,6 @@ func newFullPageFallbackApp(t *testing.T, options onboardingTestAppOptions) (*fi
 			return c.Status(fiber.StatusInternalServerError).SendString(stateErr.Error())
 		}
 		if err := handler.setOIDCStepupCookie(c, state); err != nil {
-			return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
-		}
-		return c.SendStatus(fiber.StatusOK)
-	})
-	app.Get("/__seed/link-pending", func(c fiber.Ctx) error {
-		userID := uint(fiber.Query(c, "user_id", 0))
-		payload, payloadErr := newOIDCLinkPendingPayload(time.Now(), userID, "https://issuer.example.com", "subject-1", c.Query("email", ""))
-		if payloadErr != nil {
-			return c.Status(fiber.StatusInternalServerError).SendString(payloadErr.Error())
-		}
-		if err := handler.setOIDCLinkPendingCookie(c, payload); err != nil {
 			return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
 		}
 		return c.SendStatus(fiber.StatusOK)
@@ -414,40 +402,6 @@ func TestFullPageFallbackStepupRedirects(t *testing.T) {
 		response := fullPageRequest(t, app, http.MethodGet, oidcLogoutBridgeRedirectPath, nil, bridgeCookie)
 		assertSeeOther(t, response, "/login")
 	})
-}
-
-func TestFullPageFallbackLinkConfirmRejectsUnsupportedRoleTarget(t *testing.T) {
-	// A legacy non-owner target never reaches identity linking: the shared
-	// LoginService password gate refuses unsupported roles, so the submission
-	// bounces back to the link-confirm form (enumeration-safe retry) and no
-	// session or link is created.
-	stub := &stubOIDCWorkflowService{enabled: true, localPublicAuthEnabled: true}
-	app, database, _ := newFullPageFallbackApp(t, onboardingTestAppOptions{oidcService: stub, cookieSecure: true})
-
-	passwordHash, err := bcrypt.GenerateFromPassword([]byte("StrongPass1"), bcrypt.MinCost)
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	legacy := models.User{
-		Email:               "fullpage-link-partner@example.com",
-		PasswordHash:        string(passwordHash),
-		LocalAuthEnabled:    true,
-		Role:                "partner",
-		OnboardingCompleted: true,
-		CycleLength:         28,
-		PeriodLength:        5,
-		CreatedAt:           time.Now().UTC(),
-	}
-	if err := database.Create(&legacy).Error; err != nil {
-		t.Fatalf("create partner user: %v", err)
-	}
-
-	pendingCookie, seedResponse := seedCookieHeader(t, app, "/__seed/link-pending?user_id="+utoa(legacy.ID)+"&email="+url.QueryEscape(legacy.Email))
-	_ = seedResponse.Body.Close()
-
-	form := url.Values{"password": {"StrongPass1"}}
-	response := fullPageRequest(t, app, http.MethodPost, oidcLinkConfirmPath, form, pendingCookie)
-	assertSeeOther(t, response, oidcLinkConfirmPath)
 }
 
 func TestFullPageFallbackOIDCStartWithoutSecureCookiesRedirects(t *testing.T) {

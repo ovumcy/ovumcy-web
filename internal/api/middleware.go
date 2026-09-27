@@ -23,7 +23,6 @@ const (
 	// only reader.
 	oidcStepupContinuationCookieName = "ovumcy_oidc_stepup_continue"
 	oidcCallbackContinuePath         = "/auth/oidc/callback/continue"
-	oidcLinkPendingCookieName        = "ovumcy_oidc_link_pending"
 	oidcLogoutBridgeCookieName       = "ovumcy_oidc_logout_bridge"
 	totpPendingCookieName            = "ovumcy_totp_pending"
 	totpSetupCookieName              = "ovumcy_totp_setup"

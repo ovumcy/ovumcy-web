@@ -81,66 +81,6 @@ func TestLoginRoutesUnverifiableTOTPToForcedResetWithoutMustChangePassword(t *te
 	}
 }
 
-// TestCompleteOIDCLinkConfirmationRoutesUnverifiableTOTPToResetWithoutASession
-// is the link-confirm sibling of the test above, pinning the THIRD, separately
-// -reasoned TOTP consumer this change touches: CompleteOIDCLinkConfirmation
-// used to gate on the raw targetUser.TOTPEnabled column directly, demanding a
-// totp_code in the same submission whenever it was true — regardless of
-// whether the stored secret could ever be decrypted. An account whose secret
-// is unverifiable (SECRET_KEY rotation) and carries no must_change_password
-// flag must reach /reset-password (via LoginService.Authenticate's own
-// forced-reset result, computed a few lines above the TOTP gate in the
-// handler) WITHOUT the submission ever carrying a valid totp_code — there is
-// no code that could ever be valid for this account.
-func TestCompleteOIDCLinkConfirmationRoutesUnverifiableTOTPToResetWithoutASession(t *testing.T) {
-	t.Parallel()
-
-	stub := newStubOIDCWorkflowService(true)
-	app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{
-		cookieSecure: true,
-		oidcService:  stub,
-	})
-	user := createOnboardingTestUser(t, database, "link-unverifiable-totp@example.com", "StrongPass1", true)
-	setupTOTPForUser(t, database, user.ID, []byte(testHandlerSecretKey))
-
-	rotated, err := security.EncryptField("does-not-matter", []byte("a-completely-different-secret-k"), []byte("irrelevant-aad"))
-	if err != nil {
-		t.Fatalf("EncryptField: %v", err)
-	}
-	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Update("totp_secret", rotated).Error; err != nil {
-		t.Fatalf("corrupt totp_secret: %v", err)
-	}
-
-	pendingPayload, err := newOIDCLinkPendingPayload(time.Now().UTC(), user.ID, "https://idp.example", "subject-unverifiable-totp", user.Email)
-	if err != nil {
-		t.Fatalf("newOIDCLinkPendingPayload: %v", err)
-	}
-	cookie := sealLinkPendingCookieForTest(t, pendingPayload)
-
-	// No totp_code field at all — there is no valid code for this account, so
-	// the submission does not attempt one. The old TOTPEnabled-only gate would
-	// have refused this as a missing/invalid code and kept the user stuck on
-	// the link-confirm form forever.
-	postRequest := httptest.NewRequest(http.MethodPost, oidcLinkConfirmPath, strings.NewReader(url.Values{
-		"password": {"StrongPass1"},
-	}.Encode()))
-	postRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	postRequest.Header.Set("Cookie", oidcLinkPendingCookieName+"="+cookie)
-
-	response := mustAppResponse(t, app, postRequest)
-	assertStatusCode(t, response, http.StatusSeeOther)
-	if location := response.Header.Get("Location"); location != "/reset-password" {
-		t.Fatalf("expected redirect to /reset-password for an unverifiable-TOTP target, got %q", location)
-	}
-	resetCookie := responseCookie(response.Cookies(), resetPasswordCookieName)
-	if resetCookie == nil || strings.TrimSpace(resetCookie.Value) == "" {
-		t.Fatal("expected a reset-password cookie on the forced-reset recovery path")
-	}
-	if authCookie := responseCookie(response.Cookies(), authCookieName); authCookie != nil && strings.TrimSpace(authCookie.Value) != "" {
-		t.Fatal("did not expect an auth cookie for an unverifiable-TOTP target — that would be a second-factor bypass")
-	}
-}
-
 // TestOIDCCallbackRoutesRequiresPasswordResetToResetEvenWithoutMustChangePassword
 // isolates the handler's own consumption of OIDCLoginResult from
 // OIDCLoginService.Authenticate's computation of it (already pinned at the

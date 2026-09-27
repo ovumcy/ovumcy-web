@@ -16,10 +16,10 @@ import (
 // step-up in this file is: a fresh interactive re-authentication at the
 // provider (prompt=login, max_age=0), never a form on a page reachable
 // without a session. The public /auth/oidc/link-confirm route that used to
-// authorise this with a password alone, on an unauthenticated page, stays
-// closed (handlers_auth_oidc_link_confirm.go) — this is the replacement, and
-// the only other way in is the operator CLI's `link-oidc-identity` command
-// for the no-session recovery case (internal/cli).
+// authorise this with a password alone, on an unauthenticated page, is
+// removed for good (WEB-77) — this is the replacement, and the only other
+// way in is the operator CLI's `link-oidc-identity` command for the
+// no-session recovery case (internal/cli).
 const oidcIdentityLinkStepupAction = "settings.oidc_identity_link.step_up"
 
 // StartOIDCIdentityLinkStepup begins the step-up that authorises linking a new

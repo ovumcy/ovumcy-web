@@ -262,20 +262,6 @@ var sealedCookieExpiryProbes = map[string]sealedCookieExpiryProbe{
 			return strings.TrimSpace(handler.peekOIDCStepupContinuationCookie(c).Code) != ""
 		},
 	},
-	oidcLinkPendingCookieName: {
-		mint: func(handler *Handler, c fiber.Ctx) error {
-			payload, err := newOIDCLinkPendingPayload(
-				time.Now(), sealedExpirySweepUserID, "https://idp.example.test", "subject-1", "owner@example.test")
-			if err != nil {
-				return err
-			}
-			return handler.setOIDCLinkPendingCookie(c, payload)
-		},
-		honours: func(handler *Handler, c fiber.Ctx) bool {
-			_, ok := handler.readOIDCLinkPendingCookie(c)
-			return ok
-		},
-	},
 	oidcLogoutBridgeCookieName: {
 		mint: func(handler *Handler, c fiber.Ctx) error {
 			return handler.setOIDCLogoutBridgeCookie(c, "sweep-session-id", sealedExpirySweepUserID, time.Now())

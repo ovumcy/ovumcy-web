@@ -787,3 +787,52 @@ func TestSettingsIdentityChangesRefuseASessionARevocationCommittedMidwayWouldNot
 		})
 	}
 }
+
+// enabledOIDCProviderForLinkTest is the smallest provider the real
+// OIDCLoginService accepts as enabled. The identity-link CAS race above never
+// talks to the provider, so the exchange methods are never reached.
+//
+// Moved here from the now-deleted public link-confirm route's own CAS
+// regressions (WEB-77): the invariant this helper exercises —
+// ConfirmAndLinkIdentity's CAS and the post-link session re-mint — is not
+// specific to that retired route, and this file's own
+// TestSettingsIdentityChangesRefuseASessionARevocationCommittedMidwayWouldNotReach
+// pins it for the identity link/unlink path that is still live.
+type enabledOIDCProviderForLinkTest struct{}
+
+func (enabledOIDCProviderForLinkTest) Enabled() bool                { return true }
+func (enabledOIDCProviderForLinkTest) LocalPublicAuthEnabled() bool { return true }
+func (enabledOIDCProviderForLinkTest) Config() security.OIDCConfig {
+	return security.OIDCConfig{Enabled: true, LoginMode: security.OIDCLoginModeHybrid}
+}
+func (enabledOIDCProviderForLinkTest) AuthCodeURL(context.Context, string, string, string, map[string]string) (string, error) {
+	panic("this fixture never starts a provider round trip")
+}
+func (enabledOIDCProviderForLinkTest) ExchangeCode(context.Context, string, string, string) (security.OIDCExchangeResult, error) {
+	panic("this fixture never exchanges a code")
+}
+
+// storedAuthSessionVersion re-reads the persisted AuthSessionVersion,
+// bypassing any in-memory copy the request path might still be holding.
+func storedAuthSessionVersion(t *testing.T, database *gorm.DB, userID uint) int {
+	t.Helper()
+	var user models.User
+	if err := database.First(&user, userID).Error; err != nil {
+		t.Fatalf("load user %d: %v", userID, err)
+	}
+	return user.AuthSessionVersion
+}
+
+// linkConfirmSessionOpensDashboard reports whether the auth cookie the
+// response set, if any, is accepted on the next request.
+func linkConfirmSessionOpensDashboard(t *testing.T, app *fiber.App, response *http.Response) bool {
+	t.Helper()
+	authCookie := responseCookie(response.Cookies(), authCookieName)
+	if authCookie == nil || strings.TrimSpace(authCookie.Value) == "" {
+		return false
+	}
+	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", cookiePair(authCookie))
+	return mustAppResponse(t, app, request).StatusCode == http.StatusOK
+}

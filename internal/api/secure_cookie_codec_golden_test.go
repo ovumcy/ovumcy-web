@@ -39,7 +39,11 @@ func TestSecureCookieCodecOpensPreConsolidationGoldenValues(t *testing.T) {
 		{oidcStateCookieName, "v2.rmbc94eERUnhhwjU6sFQNDNLX0mOKwMNSGiI0BkyqgHho1kzflWDSkUb6Go-tT-nVNZdiEmiXTzM"},
 		{oidcStepupCookieName, "v2.GXSUnh-HkP4iRXFHuNBjwKeNyv-22O9L9vfPDl_BRrI-9N41OZHOREDmABKhelECktVF_k2DTlxf4G4"},
 		{oidcLogoutBridgeCookieName, "v2.DIBWpW7REF62pOimpC70E-rhzqtfM4_ckXpsZtbfhQIxXRDOgry9i87mlRmGNYCfvvHPLpII9aqOECnloWfgUBye"},
-		{oidcLinkPendingCookieName, "v2.Ix1ndeGmQY91PzOhvfy8b3OBYpxm3wYu6TVawibE6yZaa05TkNyscff53E-hSU7C1HeIEjrrtBWPZWr44iBoKxw"},
+		// "ovumcy_oidc_link_pending": WEB-77 removed the cookie's production
+		// declaration along with the route it served, but a golden value sealed
+		// under that purpose string must still open — this pins the codec's
+		// backward-compat format, not any longer-lived production reader.
+		{"ovumcy_oidc_link_pending", "v2.Ix1ndeGmQY91PzOhvfy8b3OBYpxm3wYu6TVawibE6yZaa05TkNyscff53E-hSU7C1HeIEjrrtBWPZWr44iBoKxw"},
 		{totpPendingCookieName, "v2.M52wvyOIgi7GVk_6t-V8p9a6wQRSrbbGaG3tZJgaTBKmGWBroGh6AGlKmrDk5Ky5GvzcOR2VCxRZV2mb"},
 		{totpSetupCookieName, "v2.Gm5QgnG9LpCbTluV7hz1qdwZVfABB7JeURmL8C6JQRwsYFUhRODjNOg_RYyE0pRqIe9Kqd_Vr65Jbg"},
 	}

@@ -126,7 +126,19 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 
 	result, err := handler.oidcService.Authenticate(ctx, code, oidcState.CodeVerifier, oidcState.Nonce, time.Now())
 	if errors.Is(err, services.ErrOIDCLinkRequiresConfirmation) {
-		return handler.startOIDCLinkConfirmation(c, result)
+		// The service resolved a fresh (issuer, subject) to a pre-existing local
+		// user by email but the pair has never been linked. Auto-linking here
+		// would let a malicious or sloppy upstream IdP take over the account by
+		// asserting a verified email it does not control, so this fails closed —
+		// no pending-link cookie is minted, for any account, in any
+		// configuration (#701) — and the only two ways to complete the link are
+		// the authenticated Settings step-up
+		// (StartOIDCIdentityLinkStepup/completeOIDCIdentityLinkStepup) and the
+		// operator command `ovumcy link-oidc-identity`.
+		spec := authOIDCLinkConfirmUnavailableErrorSpec()
+		handler.logSecurityError(c, "auth.oidc_callback", spec)
+		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 	if err != nil {
 		spec := mapAuthOIDCError(err)

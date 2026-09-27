@@ -15,8 +15,8 @@ import (
 // specific surviving/not-covered gremlins mutant so the mutant is killed:
 //
 //   - The per-purpose TTL constants (oidcStateCookieTTL, oidcStepupCookieTTL,
-//     oidcLinkPendingCookieTTL, resetPasswordCookieTTL, recoveryCodeCookieTTL,
-//     totpPendingCookieTTL) were ARITHMETIC_BASE "NOT COVERED": `N * time.Minute`
+//     resetPasswordCookieTTL, recoveryCodeCookieTTL, totpPendingCookieTTL)
+//     were ARITHMETIC_BASE "NOT COVERED": `N * time.Minute`
 //     mutates to `N / time.Minute` == 0s (integer division; N < 60e9 ns), so a
 //     freshly issued cookie would expire immediately. Each test pins the expiry
 //     distance against a *literal* duration — never the production constant,
@@ -100,28 +100,6 @@ func TestNewOIDCStepupStateExpiryHonorsTenMinuteTTL(t *testing.T) {
 
 	if !state.validAt(now) {
 		t.Fatal("freshly issued OIDC stepup state must be valid at issuance time")
-	}
-}
-
-// --- oidcLinkPendingCookieTTL: 5 * time.Minute (payload ExpiresAt) ----------
-
-func TestNewOIDCLinkPendingPayloadExpiryHonorsFiveMinuteTTL(t *testing.T) {
-	t.Parallel()
-
-	now := time.Date(2026, 6, 2, 9, 0, 0, 0, time.UTC)
-	payload, err := newOIDCLinkPendingPayload(now, 11, "https://idp.example", "subject-123", "user@example.test")
-	if err != nil {
-		t.Fatalf("newOIDCLinkPendingPayload: %v", err)
-	}
-
-	expiresAt, err := time.Parse(time.RFC3339Nano, payload.ExpiresAt)
-	if err != nil {
-		t.Fatalf("parse ExpiresAt %q: %v", payload.ExpiresAt, err)
-	}
-	assertDurationApprox(t, "oidc link-pending cookie TTL", expiresAt.UTC().Sub(now.UTC()), 5*time.Minute)
-
-	if !payload.validAt(now) {
-		t.Fatal("freshly issued OIDC link-pending payload must be valid at issuance time")
 	}
 }
 

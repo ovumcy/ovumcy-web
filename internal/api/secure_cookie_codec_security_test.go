@@ -32,7 +32,6 @@ func TestSecureCookieCodecRoundtripsAllKnownPurposes(t *testing.T) {
 		oidcStateCookieName,
 		oidcStepupCookieName,
 		oidcLogoutBridgeCookieName,
-		oidcLinkPendingCookieName,
 		totpPendingCookieName,
 		totpSetupCookieName,
 	}
@@ -80,7 +79,6 @@ func TestSecureCookieCodecRejectsCrossPurposeOpen(t *testing.T) {
 		oidcStateCookieName,
 		oidcStepupCookieName,
 		oidcLogoutBridgeCookieName,
-		oidcLinkPendingCookieName,
 		totpPendingCookieName,
 		totpSetupCookieName,
 	}
@@ -133,7 +131,7 @@ func TestSecureCookieCodecRejectsTamperedCiphertext(t *testing.T) {
 	}
 }
 
-func TestSecureCookieCodecRejectsTamperedCiphertextForTOTPAndLinkPendingCookies(t *testing.T) {
+func TestSecureCookieCodecRejectsTamperedCiphertextForTOTPCookies(t *testing.T) {
 	t.Parallel()
 
 	codec, err := newSecureCookieCodec([]byte("test-secret-key"))
@@ -141,7 +139,7 @@ func TestSecureCookieCodecRejectsTamperedCiphertextForTOTPAndLinkPendingCookies(
 		t.Fatalf("new secure cookie codec: %v", err)
 	}
 
-	for _, purpose := range []string{oidcLinkPendingCookieName, totpPendingCookieName, totpSetupCookieName} {
+	for _, purpose := range []string{totpPendingCookieName, totpSetupCookieName} {
 
 		t.Run(purpose, func(t *testing.T) {
 			t.Parallel()

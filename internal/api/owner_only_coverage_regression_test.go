@@ -88,8 +88,6 @@ func TestUnsupportedRoleRejectedAcrossEveryAuthedV1Route(t *testing.T) {
 		"GET /auth/2fa":                       {},
 		"POST /auth/oidc/callback":            {},
 		"GET /auth/oidc/callback/continue":    {},
-		"GET " + oidcLinkConfirmPath:          {},
-		"POST " + oidcLinkConfirmPath:         {},
 		"GET /privacy":                        {},
 		// The calendar (.ics) feed authenticates by the PATH TOKEN alone — a
 		// calendar client sends no cookie — so it is intentionally NOT behind
