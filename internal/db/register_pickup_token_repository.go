@@ -56,6 +56,40 @@ func (repo *RegisterPickupTokenRepository) Issue(ctx context.Context, nonce stri
 	})
 }
 
+// Peek reports the user_id a live, unconsumed, unexpired token identified by
+// nonce would resolve to, without spending it. A caller that must seal
+// something fallible — a session, a one-time reveal — before the single-use
+// grant is spent calls Peek first and Consume only once every seal has
+// succeeded, so a sealing failure leaves the token exactly as redeemable as
+// it was (WEB-64, the WEB-58 shape: seal before the spend). A missing,
+// already-consumed, or expired row returns (0, false, nil), matching
+// Consume's own indistinguishable-outcomes contract; callers MUST treat all
+// three cases the same way for the same reason Consume's doc states.
+func (repo *RegisterPickupTokenRepository) Peek(ctx context.Context, nonce string, now time.Time) (uint, bool, error) {
+	trimmed := strings.TrimSpace(nonce)
+	if trimmed == "" {
+		return 0, false, nil
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+
+	var row models.RegisterPickupToken
+	err := repo.database.WithContext(ctx).
+		Where("nonce = ? AND consumed_at IS NULL AND expires_at > ?", trimmed, now.UTC()).
+		First(&row).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, false, nil
+		}
+		return 0, false, err
+	}
+	if row.UserID == 0 {
+		return 0, false, nil
+	}
+	return row.UserID, true, nil
+}
+
 // Consume atomically marks the row identified by nonce as consumed and
 // returns the original user_id. A row that does not exist, has already been
 // consumed, or has expired returns (0, false, nil) — callers MUST treat all

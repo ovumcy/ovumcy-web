@@ -110,15 +110,17 @@ func (handler *Handler) PickupRegister(c fiber.Ctx) error {
 		return handler.redirectToPostRegisterSignin(c, "missing_or_expired")
 	}
 
-	// Atomic single-use consume: a captured cookie that has already been
-	// exchanged once, or a decoy whose nonce was never persisted, returns
-	// consumed == false here and falls through to the same neutral
-	// "register pickup unavailable" /login redirect.
-	userID, consumed, err := handler.registerPickupTokens.Consume(c.Context(), payload.Nonce, time.Now())
+	// The token stays exactly as redeemable as it is until there is something
+	// sealed and ready to hand over: identifying the pending pickup is a
+	// read (Peek), never a spend, so a failure resolving the account or
+	// sealing either the session or the reveal below reaches no Consume call
+	// at all. The single-use grant is spent only once both are sealed
+	// (WEB-64, the WEB-58 shape: seal before the spend).
+	userID, live, err := handler.registerPickupTokens.Peek(c.Context(), payload.Nonce, time.Now())
 	if err != nil {
 		return handler.redirectToPostRegisterSignin(c, "consume_failed")
 	}
-	if !consumed || userID == 0 {
+	if !live || userID == 0 {
 		return handler.redirectToPostRegisterSignin(c, "decoy_or_replay")
 	}
 
@@ -138,28 +140,39 @@ func (handler *Handler) PickupRegister(c fiber.Ctx) error {
 	// The pickup form carries no remember-me control either, so it takes the same
 	// default for the same reason — the N+1 site of the recovery reset above, and
 	// the only other place that asked for a remembered device on the owner's
-	// behalf.
-	if _, err := handler.setAuthCookie(c, &user, false); err != nil {
+	// behalf. Sealed here, not written: writing waits until the token is
+	// actually spent below.
+	session, err := handler.prepareAuthCookie(&user, false)
+	if err != nil {
 		spec := authSessionCreateErrorSpec()
 		handler.logSecurityError(c, "auth.register_pickup", spec)
 		return handler.redirectToPostRegisterSignin(c, "auth_cookie_failed")
 	}
-	handler.clearOIDCLogoutBridgeCookie(c)
 
 	continuePath := services.PostLoginRedirectPath(&user)
-	// The teardown below undoes a session this request issued moments ago, so it
-	// retracts everything a deliberate session end retracts rather than the auth
-	// cookie alone. Nothing else is live for an account created seconds earlier,
-	// and the language cookie setAuthCookie may have written is a trace of a
-	// sign-in that is being abandoned. Stating the rule per call site — "this one
-	// wrote only the auth cookie" — would have to be re-derived every time
-	// setAuthCookie learns to write one more thing; it already learned once.
-	if err := handler.setRecoveryCodeIssuanceCookie(c, user.ID, payload.RC, continuePath, recoveryCodeSurfaceInlineRegister); err != nil {
-		handler.clearSessionEndCookies(c) // codecov:ignore -- the issuance cookie fails only on an AEAD seal error; the owner id it refuses an unattributed seal for is non-zero by the pickup token that reached this line
+	reveal, err := handler.sealRecoveryCodeIssuanceCookie(user.ID, payload.RC, continuePath, recoveryCodeSurfaceInlineRegister)
+	if err != nil {
 		spec := authRecoveryCodePersistErrorSpec()
 		handler.logSecurityError(c, "auth.register_pickup", spec)
 		return handler.redirectToPostRegisterSignin(c, "recovery_cookie_failed")
 	}
+
+	// Both cookies are sealed and ready to write; only now is the single-use
+	// grant spent. A lost race — a concurrent redeem, or the token expiring
+	// in the interval above — leaves consumed false: the sealed values above
+	// are discarded, nothing is written to the response, and the request
+	// falls through to the same neutral redirect a replay always got.
+	consumedUserID, consumed, err := handler.registerPickupTokens.Consume(c.Context(), payload.Nonce, time.Now())
+	if err != nil {
+		return handler.redirectToPostRegisterSignin(c, "consume_failed")
+	}
+	if !consumed || consumedUserID != userID {
+		return handler.redirectToPostRegisterSignin(c, "decoy_or_replay")
+	}
+
+	handler.writeAuthCookie(c, &user, session)
+	handler.clearOIDCLogoutBridgeCookie(c)
+	handler.writeSealed(c, reveal)
 
 	handler.logSecurityEvent(c, "auth.register_pickup", "success")
 	return c.Redirect().Status(fiber.StatusSeeOther).To("/register")
