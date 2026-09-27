@@ -183,6 +183,18 @@ var sealedCookieExpiryProbes = map[string]sealedCookieExpiryProbe{
 		},
 		spentOnRead: true,
 	},
+	exemptFlashCookieName: {
+		mint: func(handler *Handler, c fiber.Ctx) error {
+			handler.setCSRFExemptFlashCookie(c, FlashPayload{
+				AuthError: "auth.invalid_credentials",
+			})
+			return nil
+		},
+		honours: func(handler *Handler, c fiber.Ctx) bool {
+			return strings.TrimSpace(handler.popFlashCookie(c).AuthError) != ""
+		},
+		spentOnRead: true,
+	},
 	calendarFeedRevealCookieName: {
 		mint: func(handler *Handler, c fiber.Ctx) error {
 			return handler.setCalendarFeedRevealCookie(
