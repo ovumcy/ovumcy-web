@@ -99,11 +99,23 @@ TARGETS=(
 # 2026-09-25. 20 shards brings internal/api to ~66-67 weight each: the cap
 # then tolerates up to ~2.7/weight (180/67) — about 1.4x that lower bound,
 # the same margin ratio internal_services' 10->14 split used. The next
-# dispatched run is the confirmation either way. Keep this registry in sync
+# dispatched run is the confirmation either way.
+#
+# 20 was not enough either: runs 36351058682 and 36413106904 (2026-09-27/28)
+# both cancelled internal_api_20 at the cap, and _18 took 151 minutes, at an
+# identical ~65-66 weight per shard. Wall time per shard ranged 28..>180 minutes
+# on that even weight (0.4..>2.77 min/weight), so the token-count weight ranks
+# files badly: it ignores which tests cover a file, and a handler that only the
+# DB-backed step-up/OIDC suites reach costs several times a helper the fast
+# tests kill. No per-file rate is recoverable from per-shard wall times, so
+# the fix is finer shards, not a re-weighting: 30 shards bring internal/api to
+# ~43-44 weight each, and the slowest observed rate (>=2.77/weight) then lands
+# near 122 minutes plus the fixed whole-package coverage pass (up to ~9), a
+# ~1.4x margin to the cap. Keep this registry in sync
 # with the matrix in .github/workflows/mutation.yml. Entries are
 # "slug-base:package-dir:count".
 SHARDED_PKGS=(
-  "internal_api:./internal/api:20"
+  "internal_api:./internal/api:30"
   "internal_services:./internal/services:14"
 )
 
