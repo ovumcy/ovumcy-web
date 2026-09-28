@@ -225,6 +225,36 @@ func Steps(block string) []string {
 	}
 }
 
+// The keys the runner, not the step's script, honours to let a failure
+// through: `if:` skips a step and `continue-on-error:` records its failure as
+// non-blocking. A harness that runs the script sees neither. A step's keys sit
+// at eight spaces and a job's at four; a job's `if:` is its trigger, not a
+// weakening, so only `continue-on-error:` counts there.
+var (
+	stepFailOpenKey = regexp.MustCompile(`(?m)^ {8}(if|continue-on-error):.*$`)
+	jobFailOpenKey  = regexp.MustCompile(`(?m)^ {4}continue-on-error:.*$`)
+)
+
+// StepFailOpenKeys returns the keys of step, as Step or Steps returned it,
+// that let the runner pass the step whatever its script decides.
+func StepFailOpenKeys(step string) []string {
+	return trimmedMatches(stepFailOpenKey, step)
+}
+
+// JobFailOpenKeys returns the keys of job, as Job returned it, that let the
+// runner conclude the job successful after one of its steps failed.
+func JobFailOpenKeys(job string) []string {
+	return trimmedMatches(jobFailOpenKey, job)
+}
+
+func trimmedMatches(pattern *regexp.Regexp, text string) []string {
+	var found []string
+	for _, match := range pattern.FindAllString(text, -1) {
+		found = append(found, strings.TrimSpace(match))
+	}
+	return found
+}
+
 // BashStepFlags returns the flags bash runs a step's script file under, read
 // off the step's own `shell:` key in block: a workflow step as Step or Steps
 // returned it, or a composite action's step whose first line is one of its

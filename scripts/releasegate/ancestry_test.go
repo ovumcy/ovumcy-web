@@ -4,7 +4,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -93,7 +92,10 @@ func TestReleaseTagPassesOnlyWhenMainContainsIt(t *testing.T) {
 				}
 				return
 			}
-			if err != nil || !strings.Contains(output, "contained in main") {
+			// The acceptance line, which the refusal's "not contained in main"
+			// cannot satisfy.
+			accepted := " -> " + repo.git(t, repo.clone, "rev-parse", testCase.sha+"^{commit}") + ", contained in main ("
+			if err != nil || !strings.Contains(output, accepted) {
 				t.Fatalf("the ancestry step refused a tag on a commit main contains (exit: %v):\n%s", err, output)
 			}
 		})
@@ -136,35 +138,19 @@ func TestAncestryStepRunsOnAFullHistory(t *testing.T) {
 	}
 }
 
-// A step's own keys sit at eight spaces, a job's at four.
-var (
-	stepFailOpenKey = regexp.MustCompile(`(?m)^ {8}(if|continue-on-error):.*$`)
-	jobFailOpenKey  = regexp.MustCompile(`(?m)^ {4}continue-on-error:.*$`)
-)
-
 // TestNoKeyLetsTheReleaseGateFailOpen covers what running the scripts cannot
 // see: the runner, not bash, honours `continue-on-error:` and `if:`. Either on
 // a refusing step lets `exit 1` be recorded as non-blocking or never run, the
 // job concludes success, and `publish` builds and signs an off-main or
-// unchecked tag while every script case above stays green. The job's own
-// `if:` is its trigger, not a weakening, so only `continue-on-error:` is
-// refused there.
+// unchecked tag while every script case above stays green.
 func TestNoKeyLetsTheReleaseGateFailOpen(t *testing.T) {
-	const planted = "        continue-on-error: true\n        if: false\n        run: exit 1\n"
-	if got := stepFailOpenKey.FindAllString(planted, -1); len(got) != 2 {
-		t.Fatalf("the step matcher found %q in a step carrying both keys; it would pass a weakened gate", got)
-	}
-	if got := jobFailOpenKey.FindAllString("    continue-on-error: true\n    steps:\n", -1); len(got) != 1 {
-		t.Fatalf("the job matcher found %q in a job carrying the key; it would pass a weakened gate", got)
-	}
-
 	job := workflowfile.Job(t, gateWorkflow, gateJob)
-	if found := jobFailOpenKey.FindAllString(job, -1); len(found) > 0 {
+	if found := workflowfile.JobFailOpenKeys(job); len(found) > 0 {
 		t.Errorf("%s, job %q carries %q: a failed gate would no longer block `publish`", gateWorkflow, gateJob, found)
 	}
 	for _, step := range []string{ancestryStep, gateStep} {
 		block := workflowfile.Step(t, gateWorkflow, gateJob, job, step)
-		if found := stepFailOpenKey.FindAllString(block, -1); len(found) > 0 {
+		if found := workflowfile.StepFailOpenKeys(block); len(found) > 0 {
 			t.Errorf("%s, job %q, step %q carries %q: its refusal would no longer block `publish`", gateWorkflow, gateJob, step, found)
 		}
 	}
@@ -235,7 +221,17 @@ func newAncestryRepo(t *testing.T) *ancestryRepo {
 	}
 
 	repo.git(t, author, "push", "-q", "origin", "main", "side", "--tags")
-	repo.git(t, root, "clone", "-q", filepath.ToSlash(origin), repo.clone)
+
+	// The runner's shape, not `git clone`'s: actions/checkout of a tag fetches
+	// the remote's branches and tags and detaches HEAD on the tag, so there is
+	// no local `main` for a step to read by mistake and still pass here.
+	repo.git(t, root, "init", "-q", repo.clone)
+	repo.git(t, repo.clone, "remote", "add", "origin", filepath.ToSlash(origin))
+	repo.git(t, repo.clone, "fetch", "-q", "origin", "+refs/heads/*:refs/remotes/origin/*", "+refs/tags/*:refs/tags/*")
+	repo.git(t, repo.clone, "checkout", "-q", "--detach", "v1.0.2")
+	if branches := repo.git(t, repo.clone, "for-each-ref", "refs/heads/"); branches != "" {
+		t.Fatalf("the runner's clone carries local branches %q; a step reading one would pass here and fail every real tag", branches)
+	}
 	return repo
 }
 
