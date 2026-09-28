@@ -1,6 +1,6 @@
 ### Security
 
-- **A forced password-reset link minted by local sign-in no longer outlives the operator switching
+- **Breaking (API shape): a forced password-reset link minted by local sign-in no longer outlives the operator switching
   local sign-in off.** The earlier fix for this ("A password-reset link no longer outlives local
   sign-in") decided at redeem time from a `forced` flag carried in the sealed reset cookie — not
   forgeable, but not signed into the token either, and every mint path set it the same way regardless

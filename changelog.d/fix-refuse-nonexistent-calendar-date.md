@@ -1,6 +1,6 @@
 ### Fixed
 
-- **A date your time zone never had is now refused instead of quietly saving the
+- **Breaking (API shape): a date your time zone never had is now refused instead of quietly saving the
   day before.** A zone that crosses the date line skips a whole calendar day
   (Pacific/Apia had no 2011-12-30, Pacific/Kiritimati no 1994-12-31). Entering
   one used to parse as the previous day and report success, so the save, the

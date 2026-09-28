@@ -1,6 +1,6 @@
 ### Security
 
-- **A password-reset link no longer outlives local sign-in.** Turning local public authentication
+- **Breaking (API shape): a password-reset link no longer outlives local sign-in.** Turning local public authentication
   off (`OIDC_LOGIN_MODE=oidc_only`) stopped the recovery flow from *starting* — `/forgot-password`
   refused — but nothing stopped a reset that had already started. A token minted the minute before
   the switch still redeemed: it rewrote the password, turned the account's local sign-in back on,

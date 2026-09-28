@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Ovumcy API
-  version: 1.0.0
+  version: 2.0.0
   summary: HTTP API surface of the ovumcy-web self-hosted deployment.
   description: |
     This document specifies the **current** state of the JSON-emitting HTTP
@@ -11,11 +11,21 @@ info:
 
     Stability — per [CONTRIBUTING.md](../CONTRIBUTING.md#api-stability-contract):
 
-    - `/api/v1/*` is the canonical, stable HTTP surface. Wrappers and external
-      integrations should target this prefix exclusively.
-    - Field additions are non-breaking and may ship in any minor release.
-    - Field renames, removals, status code changes, route moves, and error key
-      changes are breaking and require a new major version (`/api/v2/*`).
+    - `/api/v1/*` is the only HTTP API prefix; wrappers and external
+      integrations should target it exclusively. There is no `/api/v2/*` and
+      none is planned: a breaking change ships in a new major release of
+      Ovumcy on the same prefix.
+    - Non-breaking, any minor or patch release: a new response field, a new
+      optional request field, a new endpoint. A client that validates
+      responses strictly must validate against the spec of the release it runs.
+    - Breaking, major release only: renaming or removing a field, requiring a
+      request member that was optional, refusing one that was accepted,
+      changing what a field or an operation means, changing a status code, a
+      route or an error key. Each ships as a **Breaking** entry in
+      CHANGELOG.md.
+    - A correction that makes this document describe what the server already
+      does is not a breaking change, even when the corrected text is stricter;
+      it is listed under **Fixed**.
     - The export payload (`/api/v1/exports/*`) follows the separate stability
       contract documented in [docs/export.md](export.md).
 
