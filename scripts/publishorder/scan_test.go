@@ -27,9 +27,6 @@ var (
 	// A step-level `env:` entry for the list would narrow what one step reads
 	// below what the job declares.
 	platformsOverride = regexp.MustCompile(`(?m)^\s+` + platformsKey + `:`)
-	// A step's own keys sit at eight spaces, a job's at four.
-	stepFailOpenKey = regexp.MustCompile(`(?m)^ {8}(if|continue-on-error):.*$`)
-	jobFailOpenKey  = regexp.MustCompile(`(?m)^ {4}continue-on-error:.*$`)
 )
 
 // TestTheScanCoversEveryPlatformThePushBuilds holds the scan to the bytes the
@@ -85,16 +82,8 @@ func TestTheScanCoversEveryPlatformThePushBuilds(t *testing.T) {
 // attested and tagged while the order tests, which read step names, and the
 // script cases stay green.
 func TestNoKeyLetsTheScanOrWhatFollowsItFailOpen(t *testing.T) {
-	const planted = "        continue-on-error: true\n        if: ${{ always() }}\n        run: exit 1\n"
-	if got := stepFailOpenKey.FindAllString(planted, -1); len(got) != 2 {
-		t.Fatalf("the step matcher found %q in a step carrying both keys; it would pass a weakened gate", got)
-	}
-	if got := jobFailOpenKey.FindAllString("    continue-on-error: true\n    steps:\n", -1); len(got) != 1 {
-		t.Fatalf("the job matcher found %q in a job carrying the key; it would pass a weakened gate", got)
-	}
-
 	job := workflowfile.Job(t, publishWorkflow, publishJob)
-	if found := jobFailOpenKey.FindAllString(job, -1); len(found) > 0 {
+	if found := workflowfile.JobFailOpenKeys(job); len(found) > 0 {
 		t.Errorf("%s, job %q carries %q: a refused scan would no longer fail the release", publishWorkflow, publishJob, found)
 	}
 
@@ -104,7 +93,7 @@ func TestNoKeyLetsTheScanOrWhatFollowsItFailOpen(t *testing.T) {
 		t.Fatalf("%s, job %q: no %q … %q … %q window in %v", publishWorkflow, publishJob, pushStep, scanStep, promoteStep, steps)
 	}
 	for _, name := range steps[from : through+1] {
-		if found := stepFailOpenKey.FindAllString(withoutComments(stepBlock(t, job, name)), -1); len(found) > 0 {
+		if found := workflowfile.StepFailOpenKeys(stepBlock(t, job, name)); len(found) > 0 {
 			t.Errorf("%s, job %q, step %q carries %q: a refused scan would no longer stop the signature and the tags", publishWorkflow, publishJob, name, found)
 		}
 	}
