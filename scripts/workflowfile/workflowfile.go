@@ -1,7 +1,9 @@
 // Package workflowfile reads a GitHub Actions workflow the way the guards that
 // judge one need it read: find the module root, read the file with its line
-// endings normalised, cut one job out of it by name, and read the shell a step
-// declares for the harnesses that run that step's script.
+// endings normalised, cut one job out of it by name, read the shell a step
+// declares for the harnesses that run that step's script, and find the runner
+// keys (`if:`, `continue-on-error:`) that would let a gate step fail open —
+// which no harness running the script can see.
 //
 // Three test packages assert something about a job declared under
 // `.github/workflows` — publishgate holds ci.yml's `publish-image` gate to a

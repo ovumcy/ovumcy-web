@@ -80,7 +80,9 @@ func TestTheScanCoversEveryPlatformThePushBuilds(t *testing.T) {
 // `if:`. `continue-on-error:` on the scan, or `if: always()` on any step from
 // the push through the promotion, lets a digest the scan refused be signed,
 // attested and tagged while the order tests, which read step names, and the
-// script cases stay green.
+// script cases stay green. The window runs on to the anonymous read-back of
+// the public tags: skipped or non-blocking, it lets a tag that does not
+// resolve to the signed digest stand under a green job.
 func TestNoKeyLetsTheScanOrWhatFollowsItFailOpen(t *testing.T) {
 	job := workflowfile.Job(t, publishWorkflow, publishJob)
 	if found := workflowfile.JobFailOpenKeys(job); len(found) > 0 {
@@ -88,13 +90,13 @@ func TestNoKeyLetsTheScanOrWhatFollowsItFailOpen(t *testing.T) {
 	}
 
 	steps := stepNames(t, job)
-	from, through := slices.Index(steps, pushStep), slices.Index(steps, promoteStep)
-	if from < 0 || through < from || !slices.Contains(steps[from:through+1], scanStep) {
-		t.Fatalf("%s, job %q: no %q … %q … %q window in %v", publishWorkflow, publishJob, pushStep, scanStep, promoteStep, steps)
+	from, through := slices.Index(steps, pushStep), slices.Index(steps, publicStep)
+	if from < 0 || through < from || !slices.Contains(steps[from:through+1], scanStep) || !slices.Contains(steps[from:through+1], promoteStep) {
+		t.Fatalf("%s, job %q: no %q … %q … %q … %q window in %v", publishWorkflow, publishJob, pushStep, scanStep, promoteStep, publicStep, steps)
 	}
 	for _, name := range steps[from : through+1] {
 		if found := workflowfile.StepFailOpenKeys(stepBlock(t, job, name)); len(found) > 0 {
-			t.Errorf("%s, job %q, step %q carries %q: a refused scan would no longer stop the signature and the tags", publishWorkflow, publishJob, name, found)
+			t.Errorf("%s, job %q, step %q carries %q: a refused scan or a mismatched public tag would no longer fail the release", publishWorkflow, publishJob, name, found)
 		}
 	}
 }
