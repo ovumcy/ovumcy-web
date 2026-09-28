@@ -172,6 +172,181 @@ func TestCheckIgnoresAnEditToAnExistingFragment(t *testing.T) {
 	}
 }
 
+// landOnMain commits a file on the feature branch, fast-forwards main to it, and
+// starts a fresh branch from there, so the file counts as already landed.
+func landOnMain(t *testing.T, dir, name, content string) {
+	t.Helper()
+	writeFile(t, dir, name, content)
+	commitAll(t, dir, "chore: land "+name)
+	run(t, dir, "checkout", "-q", "main")
+	run(t, dir, "merge", "-q", "--ff-only", "feature")
+	run(t, dir, "checkout", "-q", "-b", "later")
+}
+
+func TestCheckRefusesAnUnreleasedEditBesideAnAddedFragment(t *testing.T) {
+	dir := initRepo(t)
+	writeFile(t, dir, "changelog.d/some-branch.md", "### Added\n\n- **A new thing.**\n")
+	writeFile(t, dir, "CHANGELOG.md", strings.Replace(fixtureChangelog,
+		"- **A frozen entry.** Written before fragments existed, and still waiting for a\n  release to carry it out.",
+		"- **A frozen entry, quietly reworded.**", 1))
+	commitAll(t, dir, "feat: a new thing, and a rewrite of a waiting entry")
+
+	failure, err := check(dir, "main", gitOutput)
+	if err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	for _, want := range []string{"CHANGELOG.md is edited outside release assembly", "@@ -"} {
+		if !strings.Contains(failure, want) {
+			t.Fatalf("an added fragment must not license an [Unreleased] rewrite; failure lacks %q:\n%s", want, failure)
+		}
+	}
+}
+
+func TestCheckRefusesDeletingAnUnreleasedEntryBesideAnAddedFragment(t *testing.T) {
+	dir := initRepo(t)
+	writeFile(t, dir, "changelog.d/some-branch.md", "### Added\n\n- **A new thing.**\n")
+	writeFile(t, dir, "CHANGELOG.md", strings.Replace(fixtureChangelog,
+		"### Fixed\n\n- **A frozen entry.** Written before fragments existed, and still waiting for a\n  release to carry it out.\n\n", "", 1))
+	commitAll(t, dir, "feat: a new thing, and a waiting entry dropped")
+
+	failure, err := check(dir, "main", gitOutput)
+	if err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	if !strings.Contains(failure, "CHANGELOG.md is edited outside release assembly") {
+		t.Fatalf("a pure deletion in the [Unreleased] body must be refused, got:\n%s", failure)
+	}
+}
+
+func TestCheckAllowsReleaseAssemblyThatAlsoRewritesTheUnreleasedBody(t *testing.T) {
+	dir := initRepo(t)
+	writeFile(t, dir, "changelog.d/some-branch.md", "none\n\nAssembly commit carries its own marker.\n")
+	assembled := strings.Replace(fixtureChangelog,
+		"### Fixed\n\n- **A frozen entry.** Written before fragments existed, and still waiting for a\n  release to carry it out.\n\n## [1.0.0] - 2026-01-01",
+		"## [1.1.0] - 2026-02-02\n\n### Fixed\n\n- **A frozen entry.**\n\n## [1.0.0] - 2026-01-01", 1)
+	writeFile(t, dir, "CHANGELOG.md", assembled)
+	commitAll(t, dir, "chore: cut 1.1.0")
+
+	failure, err := check(dir, "main", gitOutput)
+	if err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	if failure != "" {
+		t.Fatalf("release assembly rewrites the [Unreleased] body and must pass, got:\n%s", failure)
+	}
+}
+
+func TestCheckAllowsACorrectionInsideReleasedText(t *testing.T) {
+	dir := initRepo(t)
+	writeFile(t, dir, "changelog.d/fix-typo.md", "none\n\nA typo in the 1.0.0 entry.\n")
+	writeFile(t, dir, "CHANGELOG.md", strings.Replace(fixtureChangelog, "- **The first release.**", "- **The first release, corrected.**", 1))
+	commitAll(t, dir, "docs: correct a released entry")
+
+	failure, err := check(dir, "main", gitOutput)
+	if err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	if failure != "" {
+		t.Fatalf("a correction strictly inside a released section must pass beside its fragment, got:\n%s", failure)
+	}
+}
+
+func TestCheckOwesAFragmentEvenForACorrectionInsideReleasedText(t *testing.T) {
+	dir := initRepo(t)
+	writeFile(t, dir, "CHANGELOG.md", strings.Replace(fixtureChangelog, "- **The first release.**", "- **The first release, corrected.**", 1))
+	commitAll(t, dir, "docs: correct a released entry")
+
+	failure, err := check(dir, "main", gitOutput)
+	if err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	if !strings.Contains(failure, "adds no fragment") {
+		t.Fatalf("a correction without a fragment of its own must still owe one, got:\n%s", failure)
+	}
+}
+
+func TestCheckRefusesAModifiedInvalidFragment(t *testing.T) {
+	dir := initRepo(t)
+	landOnMain(t, dir, "changelog.d/landed-earlier.md", "### Added\n\n- **Landed on main already.**\n")
+	writeFile(t, dir, "changelog.d/landed-earlier.md", "### Improved\n\n- **Reworded under a header nothing accepts.**\n")
+	writeFile(t, dir, "changelog.d/mine.md", "### Added\n\n- **My own entry.**\n")
+	commitAll(t, dir, "docs: reword someone else's fragment, badly")
+
+	failure, err := check(dir, "main", gitOutput)
+	if err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	if !strings.Contains(failure, "changelog.d/landed-earlier.md") || !strings.Contains(failure, "### Improved") {
+		t.Fatalf("an invalid edit to a landed fragment must be refused and named, got:\n%s", failure)
+	}
+}
+
+func TestCheckAllowsAModifiedValidFragmentBesideAnAddedOne(t *testing.T) {
+	dir := initRepo(t)
+	landOnMain(t, dir, "changelog.d/landed-earlier.md", "### Added\n\n- **Landed on main already.**\n")
+	writeFile(t, dir, "changelog.d/landed-earlier.md", "### Added\n\n- **Reworded, still valid.**\n")
+	writeFile(t, dir, "changelog.d/mine.md", "none\n\nOnly a wording fix.\n")
+	commitAll(t, dir, "docs: reword someone else's fragment")
+
+	failure, err := check(dir, "main", gitOutput)
+	if err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	if failure != "" {
+		t.Fatalf("a valid edit to a landed fragment beside an added one must pass, got:\n%s", failure)
+	}
+}
+
+func TestChangedFragmentsCoversAddedModifiedAndRenamedOnly(t *testing.T) {
+	nameStatus := strings.Join([]string{
+		"A\tchangelog.d/added.md",
+		"M\tchangelog.d/modified.md",
+		"D\tchangelog.d/gone.md",
+		"R087\tchangelog.d/old.md\tchangelog.d/renamed.md",
+		"M\tchangelog.d/notes.txt",
+		"M\tdocs/changelog.d/elsewhere.md",
+		"M\tCHANGELOG.md",
+		"",
+	}, "\n")
+
+	got := changedFragments(nameStatus)
+	want := []string{"changelog.d/added.md", "changelog.d/modified.md", "changelog.d/renamed.md"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("changedFragments = %v, want %v", got, want)
+	}
+}
+
+func TestEditsOutsideReleasedTextReadsNewSidePositions(t *testing.T) {
+	// fixtureChangelog: line 5 is "## [Unreleased]", lines 9-12 the frozen
+	// entry, line 14 "## [1.0.0]", line 18 the last line of the file.
+	cases := []struct {
+		name string
+		hunk string
+		want bool
+	}{
+		{"title line", "@@ -1 +1 @@", true},
+		{"unreleased body", "@@ -11,2 +11,2 @@", true},
+		{"unreleased body deletion", "@@ -10,3 +9,0 @@", true},
+		{"blank line above the release heading", "@@ -13,1 +13,0 @@", true},
+		{"the release heading itself rewritten", "@@ -14 +14 @@", true},
+		{"deletion right after the release heading", "@@ -15,1 +14,0 @@", false},
+		{"released body line", "@@ -18 +18 @@", false},
+		{"released body addition", "@@ -18,0 +19,2 @@", false},
+	}
+	for _, tc := range cases {
+		got := len(editsOutsideReleasedText(tc.hunk+"\n-x\n+y\n", fixtureChangelog)) > 0
+		if got != tc.want {
+			t.Errorf("%s (%s): refused = %v, want %v", tc.name, tc.hunk, got, tc.want)
+		}
+	}
+	if got := editsOutsideReleasedText("@@ -3 +3 @@\n", "# Changelog\n\n## [Unreleased]\n"); len(got) != 1 {
+		t.Errorf("a file with no released heading has no released text to correct, got %v", got)
+	}
+	if got := editsOutsideReleasedText("", fixtureChangelog); len(got) != 0 {
+		t.Errorf("an empty diff has nothing to refuse, got %v", got)
+	}
+}
+
 func TestCheckReportsAnUnusableBaseRef(t *testing.T) {
 	dir := initRepo(t)
 	if _, err := check(dir, "origin/does-not-exist", gitOutput); err == nil {
