@@ -479,12 +479,14 @@ jobs:
         # nothing about the digest that gets signed. Trivy resolves each
         # platform's manifest out of the pushed index itself, so a platform the
         # index lacks is an error, not a skipped scan. Scanning after the push
-        # publishes nothing: the digest carries no tag until the promotion, and
-        # a refusal here leaves it unsigned and unreferenced, as a failed
-        # signature would.
+        # tags nothing: the digest carries no tag until the promotion, and a
+        # refusal here leaves it untagged and unsigned, as a failed signature
+        # would — but still pullable by digest from the public package, and
+        # that digest is printed in this job's log.
         #
-        # The registry is read with the job's GHCR login, mounted read-only;
-        # the Docker socket the old local scan needed is no longer handed in.
+        # The registry is read with the job's registry login, mounted
+        # read-only; the Docker socket the old local scan needed is no longer
+        # handed in.
         shell: bash
         env:
           IMAGE_REF: ${{ steps.image.outputs.name }}@${{ steps.build.outputs.digest }}
@@ -496,25 +498,32 @@ jobs:
             exit 1
           fi
 
-          IFS=',' read -r -a platforms <<< "${IMAGE_PLATFORMS}"
-          if [ "${#platforms[@]}" -eq 0 ]; then
+          if [ -z "${IMAGE_PLATFORMS}" ]; then
             echo "::error::IMAGE_PLATFORMS names no platform, so this scan would judge nothing."
             exit 1
           fi
-          for platform in "${platforms[@]}"; do
-            if [[ ! "${platform}" =~ ^[a-z0-9]+/[a-z0-9]+(/[a-z0-9]+)?$ ]]; then
-              echo "::error::IMAGE_PLATFORMS entry '${platform}' is not an os/arch[/variant] platform, so the push and this scan would not agree on what ships."
-              exit 1
-            fi
-          done
+          # The whole list is matched, not its split: `read -a` drops a
+          # trailing empty entry, which a per-entry check would never see.
+          entry='[a-z0-9]+/[a-z0-9]+(/[a-z0-9]+)?'
+          if [[ ! "${IMAGE_PLATFORMS}" =~ ^${entry}(,${entry})*$ ]]; then
+            echo "::error::IMAGE_PLATFORMS is '${IMAGE_PLATFORMS}', not a comma-separated list of os/arch[/variant] platforms, so the push and this scan could disagree on what ships."
+            exit 1
+          fi
+          IFS=',' read -r -a platforms <<< "${IMAGE_PLATFORMS}"
 
-          # One cache for every run: the vulnerability DB is fetched once, so
-          # every platform is judged against the same DB.
+          docker_config="${DOCKER_CONFIG:-${HOME}/.docker}/config.json"
+          if [ ! -f "${docker_config}" ]; then
+            echo "::error::no registry login at ${docker_config}, so the pushed digest cannot be read."
+            exit 1
+          fi
+
+          # One cache for every run, so the vulnerability DB is fetched once
+          # rather than once per platform.
           mkdir -p "${RUNNER_TEMP}/trivy-cache"
           for platform in "${platforms[@]}"; do
             echo "::group::${platform} of ${IMAGE_REF}"
             # One line: the guard against `--ignore-unfixed` reads Trivy calls line by line.
-            docker run --rm -v "${HOME}/.docker/config.json:/root/.docker/config.json:ro" -v "${RUNNER_TEMP}/trivy-cache:/root/.cache/trivy" "${TRIVY_IMAGE}" image --image-src remote --platform "${platform}" --scanners vuln --skip-version-check --severity HIGH,CRITICAL --format table --exit-code 1 "${IMAGE_REF}"
+            docker run --rm -v "${docker_config}:/root/.docker/config.json:ro" -v "${RUNNER_TEMP}/trivy-cache:/root/.cache/trivy" "${TRIVY_IMAGE}" image --image-src remote --platform "${platform}" --scanners vuln --skip-version-check --severity HIGH,CRITICAL --format table --exit-code 1 "${IMAGE_REF}"
             echo "::endgroup::"
           done
 

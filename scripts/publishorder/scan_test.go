@@ -3,6 +3,7 @@ package publishorder
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -21,6 +22,16 @@ const (
 	stubTrivy     = "stub/trivy@sha256:0000000000000000000000000000000000000000000000000000000000000000"
 )
 
+var (
+	platformEntry = regexp.MustCompile(`^[a-z0-9]+/[a-z0-9]+(/[a-z0-9]+)?$`)
+	// A step-level `env:` entry for the list would narrow what one step reads
+	// below what the job declares.
+	platformsOverride = regexp.MustCompile(`(?m)^\s+` + platformsKey + `:`)
+	// A step's own keys sit at eight spaces, a job's at four.
+	stepFailOpenKey = regexp.MustCompile(`(?m)^ {8}(if|continue-on-error):.*$`)
+	jobFailOpenKey  = regexp.MustCompile(`(?m)^ {4}continue-on-error:.*$`)
+)
+
 // TestTheScanCoversEveryPlatformThePushBuilds holds the scan to the bytes the
 // signature covers. It used to judge a separate `load: true` rebuild of
 // linux/amd64 alone: bytes that shared a GHA cache with the push, which is no
@@ -33,6 +44,12 @@ func TestTheScanCoversEveryPlatformThePushBuilds(t *testing.T) {
 		if !slices.Contains(declared, platform) {
 			t.Errorf("%s, job %q: %s is %q, which lacks %s — a platform the release ships unscanned or does not ship at all",
 				publishWorkflow, publishJob, platformsKey, jobEnv(job)[platformsKey], platform)
+		}
+	}
+	for _, platform := range declared {
+		if !platformEntry.MatchString(platform) {
+			t.Errorf("%s, job %q: %s entry %q is not an os/arch[/variant] platform; the scan step refuses it, but only once a release is already pushed",
+				publishWorkflow, publishJob, platformsKey, platform)
 		}
 	}
 
@@ -49,9 +66,46 @@ func TestTheScanCoversEveryPlatformThePushBuilds(t *testing.T) {
 	}
 
 	for _, name := range stepNames(t, job) {
-		if strings.Contains(withoutComments(stepBlock(t, job, name)), "load: true") {
+		block := withoutComments(stepBlock(t, job, name))
+		if strings.Contains(block, "load: true") {
 			t.Errorf("%s, job %q: step %q loads an image locally. The only image this job may judge is the pushed digest",
 				publishWorkflow, publishJob, name)
+		}
+		if platformsOverride.MatchString(block) {
+			t.Errorf("%s, job %q: step %q declares its own %s. The push and the scan must read the job's one list, or the scan can walk fewer platforms than the push built",
+				publishWorkflow, publishJob, name, platformsKey)
+		}
+	}
+}
+
+// TestNoKeyLetsTheScanOrWhatFollowsItFailOpen covers what running the scan's
+// script cannot see: the runner, not bash, honours `continue-on-error:` and
+// `if:`. `continue-on-error:` on the scan, or `if: always()` on any step from
+// the push through the promotion, lets a digest the scan refused be signed,
+// attested and tagged while the order tests, which read step names, and the
+// script cases stay green.
+func TestNoKeyLetsTheScanOrWhatFollowsItFailOpen(t *testing.T) {
+	const planted = "        continue-on-error: true\n        if: ${{ always() }}\n        run: exit 1\n"
+	if got := stepFailOpenKey.FindAllString(planted, -1); len(got) != 2 {
+		t.Fatalf("the step matcher found %q in a step carrying both keys; it would pass a weakened gate", got)
+	}
+	if got := jobFailOpenKey.FindAllString("    continue-on-error: true\n    steps:\n", -1); len(got) != 1 {
+		t.Fatalf("the job matcher found %q in a job carrying the key; it would pass a weakened gate", got)
+	}
+
+	job := workflowfile.Job(t, publishWorkflow, publishJob)
+	if found := jobFailOpenKey.FindAllString(job, -1); len(found) > 0 {
+		t.Errorf("%s, job %q carries %q: a refused scan would no longer fail the release", publishWorkflow, publishJob, found)
+	}
+
+	steps := stepNames(t, job)
+	from, through := slices.Index(steps, pushStep), slices.Index(steps, promoteStep)
+	if from < 0 || through < from || !slices.Contains(steps[from:through+1], scanStep) {
+		t.Fatalf("%s, job %q: no %q … %q … %q window in %v", publishWorkflow, publishJob, pushStep, scanStep, promoteStep, steps)
+	}
+	for _, name := range steps[from : through+1] {
+		if found := stepFailOpenKey.FindAllString(withoutComments(stepBlock(t, job, name)), -1); len(found) > 0 {
+			t.Errorf("%s, job %q, step %q carries %q: a refused scan would no longer stop the signature and the tags", publishWorkflow, publishJob, name, found)
 		}
 	}
 }
@@ -75,12 +129,13 @@ func TestTheScanRunsTrivyOnEveryPlatformOfThePushedDigest(t *testing.T) {
 		}
 		return declared[:index+1]
 	}
-	platformList := func(list string) *string { return &list }
 
 	for _, testCase := range []struct {
 		name         string
 		ref          string
 		platforms    *string
+		noLogin      bool
+		dockerConfig bool
 		failPlatform string
 		wantScanned  []string
 		wantRefusal  string
@@ -91,11 +146,29 @@ func TestTheScanRunsTrivyOnEveryPlatformOfThePushedDigest(t *testing.T) {
 		{name: "the push reported no digest", ref: imageName + "@", wantRefusal: "reported no digest"},
 		{name: "a tag instead of a digest", ref: imageName + ":latest", wantRefusal: "reported no digest"},
 		{name: "no platform declared", ref: pushed, platforms: new(string), wantRefusal: "names no platform"},
-		{name: "an empty platform entry", ref: pushed, platforms: platformList("linux/amd64,,linux/arm64"), wantRefusal: "is not an os/arch"},
-		{name: "a malformed platform entry", ref: pushed, platforms: platformList("linux/amd64, linux/arm64"), wantRefusal: "is not an os/arch"},
+		{name: "an empty platform entry", ref: pushed, platforms: new("linux/amd64,,linux/arm64"), wantRefusal: "not a comma-separated list"},
+		{name: "a trailing comma", ref: pushed, platforms: new("linux/amd64,linux/arm64,"), wantRefusal: "not a comma-separated list"},
+		{name: "a malformed platform entry", ref: pushed, platforms: new("linux/amd64, linux/arm64"), wantRefusal: "not a comma-separated list"},
+		{name: "no registry login", ref: pushed, noLogin: true, wantRefusal: "no registry login"},
+		{name: "the login is where DOCKER_CONFIG points", ref: pushed, dockerConfig: true, wantScanned: declared},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			runnerTemp := filepath.ToSlash(t.TempDir())
+			home := filepath.ToSlash(t.TempDir())
+			configDir, dockerConfigEnv := home+"/.docker", ""
+			if testCase.dockerConfig {
+				configDir = filepath.ToSlash(t.TempDir())
+				dockerConfigEnv = configDir
+			}
+			if !testCase.noLogin {
+				if err := os.MkdirAll(configDir, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(configDir+"/config.json", []byte(`{"auths":{}}`), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
 			preamble := strings.Join([]string{
 				`docker() {`,
 				`  echo "DOCKER-RUN $*"`,
@@ -104,7 +177,7 @@ func TestTheScanRunsTrivyOnEveryPlatformOfThePushedDigest(t *testing.T) {
 				"",
 			}, "\n")
 			command := runBashScript(t, bash, job, scanStep, preamble+stepScript(t, job, scanStep))
-			command.Env = append(os.Environ(), "HOME=/stub-home", "RUNNER_TEMP="+runnerTemp, "TRIVY_IMAGE="+stubTrivy)
+			command.Env = append(os.Environ(), "HOME="+home, "DOCKER_CONFIG="+dockerConfigEnv, "RUNNER_TEMP="+runnerTemp, "TRIVY_IMAGE="+stubTrivy)
 			for key, value := range jobEnv(job) {
 				command.Env = append(command.Env, key+"="+value)
 			}
@@ -116,13 +189,20 @@ func TestTheScanRunsTrivyOnEveryPlatformOfThePushedDigest(t *testing.T) {
 			out, err := command.CombinedOutput()
 			output := string(out)
 
+			// Git Bash rewrites HOME to its /d/… form, so the login mount is
+			// matched without the drive; the tail still names this case's dir.
+			configTail := strings.TrimPrefix(configDir, filepath.VolumeName(configDir))
+			mounts := []string{
+				configTail + "/config.json:/root/.docker/config.json:ro ",
+				" -v " + runnerTemp + "/trivy-cache:/root/.cache/trivy ",
+			}
 			var scanned []string
 			for _, line := range strings.Split(output, "\n") {
 				args, ok := strings.CutPrefix(strings.TrimSpace(line), "DOCKER-RUN ")
 				if !ok {
 					continue
 				}
-				scanned = append(scanned, requireTrivyScan(t, strings.Fields(args), testCase.ref, runnerTemp+"/trivy-cache:/root/.cache/trivy"))
+				scanned = append(scanned, requireTrivyScan(t, strings.Fields(args), testCase.ref, mounts))
 			}
 
 			if !slices.Equal(scanned, testCase.wantScanned) {
@@ -142,21 +222,21 @@ func TestTheScanRunsTrivyOnEveryPlatformOfThePushedDigest(t *testing.T) {
 
 // requireTrivyScan checks one `docker` call is the gate's scan of ref — the
 // same scanner, threshold and exit code as the required `trivy-image` check,
-// read from the registry rather than a local daemon, from the one cache every
-// platform's run shares — and returns its platform.
-func requireTrivyScan(t *testing.T, args []string, ref, cacheMount string) string {
+// read from the registry with the job's login rather than a local daemon, from
+// the one cache every platform's run shares — and returns its platform.
+func requireTrivyScan(t *testing.T, args []string, ref string, mounts []string) string {
 	t.Helper()
 
 	joined := " " + strings.Join(args, " ") + " "
-	for _, want := range []string{
+	want := []string{
 		" run --rm ",
-		" -v " + cacheMount + " ",
 		" " + stubTrivy + " image ",
 		" --image-src remote ",
 		" --scanners vuln ",
 		" --severity HIGH,CRITICAL ",
 		" --exit-code 1 ",
-	} {
+	}
+	for _, want := range append(want, mounts...) {
 		if !strings.Contains(joined, want) {
 			t.Errorf("a scan was run without %q: %v", strings.TrimSpace(want), args)
 		}
