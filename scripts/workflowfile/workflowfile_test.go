@@ -277,7 +277,7 @@ func TestStepReadsAStepOutOfARealWorkflow(t *testing.T) {
 // invocation a harness may run a step under: `shell: bash` at a workflow
 // step's depth and at a composite action step's, a trailing YAML comment on
 // the key included, and a workflow step with no `shell:` — the shape of
-// `Scan the image before publishing it` — which runs as `bash -e {0}`, without
+// `Sign the pushed digest` — which runs as `bash -e {0}`, without
 // pipefail. A `shell:` deeper than the step's keys is not the step's own.
 func TestBashStepFlagsIsHowTheRunnerStartsTheStep(t *testing.T) {
 	const bash, bare = "--noprofile --norc -eo pipefail", "-e"
