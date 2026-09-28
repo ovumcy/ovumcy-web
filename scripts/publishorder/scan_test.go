@@ -101,6 +101,25 @@ func TestNoKeyLetsTheScanOrWhatFollowsItFailOpen(t *testing.T) {
 	}
 }
 
+// mirrorEnabledIf is the one `if:` the Docker Hub mirror steps may carry: the
+// switch that turns the mirror on. Anything else on them, or any
+// `continue-on-error:`, lets the runner pass a mirror that was never signed or
+// never read back.
+const mirrorEnabledIf = "if: ${{ env.DOCKERHUB_PUBLISH_USERNAME != '' }}"
+
+// TestNoKeyLetsTheDockerHubMirrorFailOpen holds the mirror's login, copy and
+// read-back to the runner's own keys, which running their scripts cannot see.
+func TestNoKeyLetsTheDockerHubMirrorFailOpen(t *testing.T) {
+	job := workflowfile.Job(t, publishWorkflow, publishJob)
+	for _, name := range []string{mirrorLoginStep, mirrorStep, mirrorVerifyStep} {
+		found := workflowfile.StepFailOpenKeys(stepBlock(t, job, name))
+		if !slices.Equal(found, []string{mirrorEnabledIf}) {
+			t.Errorf("%s, job %q, step %q carries %q, want only %q: a mirror the runner passes after a failure is published unsigned or unverified",
+				publishWorkflow, publishJob, name, found, mirrorEnabledIf)
+		}
+	}
+}
+
 // TestTheScanRunsTrivyOnEveryPlatformOfThePushedDigest runs the step's real
 // script with `docker` shadowed, so what is proven is which scans it asks for
 // and how it treats their verdicts — not Trivy's own platform resolution,
