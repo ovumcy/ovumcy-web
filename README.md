@@ -296,6 +296,8 @@ gh attestation verify oci://ghcr.io/ovumcy/ovumcy-web:v1.9.2 --repo ovumcy/ovumc
 docker buildx imagetools inspect ghcr.io/ovumcy/ovumcy-web:v1.9.2 --format '{{ json .SBOM }}'
 ```
 
+**An untagged, unsigned digest can exist in the GHCR package, and it is safe to ignore.** The release workflow pushes the image by digest, scans every platform, and only then signs and tags it. When the scan refuses, or a step between the push and the signature fails, that digest stays in the public package: no tag, no signature, still pullable by digest, and printed in the failed run's log. Nothing you are told to run resolves to it — every tag and every command above points at a signed release, and the Cosign check in step 1 fails on a digest that was never signed. It is kept rather than deleted on purpose: the workflow's `GITHUB_TOKEN` cannot delete package versions, and a token that could (`delete:packages`) would be a new long-lived secret in the publish path, a larger risk than an unsigned digest that verification already refuses.
+
 For public GHCR images, pull does not require GitHub login. `docker compose up -d` is enough because `pull_policy: always` is enabled.
 
 ```bash
