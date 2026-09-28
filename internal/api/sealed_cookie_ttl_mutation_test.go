@@ -128,6 +128,9 @@ func TestTOTPPendingCookieExpiryHonorsFiveMinuteTTL(t *testing.T) {
 	}
 	defer func() { _ = response.Body.Close() }()
 	after := time.Now()
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("expected status 204, got %d", response.StatusCode)
+	}
 
 	sealed := responseCookieValue(response.Cookies(), totpPendingCookieName)
 	if sealed == "" {
@@ -178,6 +181,9 @@ func TestResetPasswordCookieExpiresHonorsThirtyMinuteTTL(t *testing.T) {
 	}
 	defer func() { _ = response.Body.Close() }()
 	after := time.Now()
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("expected status 204, got %d", response.StatusCode)
+	}
 
 	cookie := responseCookie(response.Cookies(), resetPasswordCookieName)
 	if cookie == nil {
@@ -215,6 +221,9 @@ func TestRecoveryCodeCookieExpiresHonorsTwentyMinuteTTL(t *testing.T) {
 	}
 	defer func() { _ = response.Body.Close() }()
 	after := time.Now()
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("expected status 204, got %d", response.StatusCode)
+	}
 
 	cookie := responseCookie(response.Cookies(), recoveryCodeCookieName)
 	if cookie == nil {
@@ -253,6 +262,10 @@ func TestClearSealedCookieBackdatesExpiryIntoThePast(t *testing.T) {
 		t.Fatalf("request: %v", err)
 	}
 	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("expected status 204, got %d", response.StatusCode)
+	}
 
 	cookie := responseCookie(response.Cookies(), resetPasswordCookieName)
 	if cookie == nil {
@@ -382,6 +395,9 @@ func TestFlashCookieExpiresHonorsFiveMinuteTTL(t *testing.T) {
 	}
 	defer func() { _ = response.Body.Close() }()
 	after := time.Now()
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("expected status 204, got %d", response.StatusCode)
+	}
 
 	cookie := responseCookie(response.Cookies(), flashCookieName)
 	if cookie == nil {
@@ -428,6 +444,9 @@ func TestCalendarFeedRevealCookieExpiresHonorsTwentyMinuteTTL(t *testing.T) {
 	}
 	defer func() { _ = response.Body.Close() }()
 	after := time.Now()
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("expected status 204, got %d", response.StatusCode)
+	}
 
 	cookie := responseCookie(response.Cookies(), calendarFeedRevealCookieName)
 	if cookie == nil {

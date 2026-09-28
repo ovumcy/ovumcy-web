@@ -88,6 +88,9 @@ func TestWriteSealedCookieForcesSecureForCrossSiteSpecs(t *testing.T) {
 				t.Fatalf("seal request: %v", err)
 			}
 			defer func() { _ = response.Body.Close() }()
+			if response.StatusCode != fiber.StatusNoContent {
+				t.Fatalf("expected /seal to reach 204, got %d", response.StatusCode)
+			}
 
 			cookie := responseCookie(response.Cookies(), testCase.spec.name)
 			if cookie == nil {
@@ -182,6 +185,9 @@ func TestClearSealedCookieForcesSecureForCrossSiteSpecs(t *testing.T) {
 				t.Fatalf("clear request: %v", err)
 			}
 			defer func() { _ = response.Body.Close() }()
+			if response.StatusCode != fiber.StatusNoContent {
+				t.Fatalf("expected /clear to reach 204, got %d", response.StatusCode)
+			}
 
 			if captured == nil {
 				t.Fatalf("expected clearSealedCookie to call c.Cookie for %s", testCase.spec.name)

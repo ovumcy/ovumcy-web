@@ -65,6 +65,9 @@ func TestOIDCLogoutBridgeCookieRoundTripPreservesPayload(t *testing.T) {
 		t.Fatalf("open request: %v", err)
 	}
 	defer func() { _ = openResponse.Body.Close() }()
+	if openResponse.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("expected /open to reach 204, got %d; the in-handler round-trip assertions may have been skipped", openResponse.StatusCode)
+	}
 }
 
 func TestOIDCLogoutBridgeCookieRejectsTamperedByte(t *testing.T) {
@@ -110,6 +113,12 @@ func TestOIDCLogoutBridgeCookieRejectsTamperedByte(t *testing.T) {
 		t.Fatalf("open tampered request: %v", err)
 	}
 	defer func() { _ = openResponse.Body.Close() }()
+	if openResponse.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("expected /open to reach 204, got %d; the in-handler tampered-cookie assertion may have been skipped", openResponse.StatusCode)
+	}
+	// The reader's tamper branch must also retract the cookie on THIS response,
+	// not merely refuse to decode it on a later re-open.
+	assertSealedCookieCleared(t, openResponse.Cookies(), oidcLogoutBridgeCookieName, oidcLogoutBridgePath)
 }
 
 func TestOIDCLogoutBridgeCookieRejectsForeignKey(t *testing.T) {
@@ -159,6 +168,12 @@ func TestOIDCLogoutBridgeCookieRejectsForeignKey(t *testing.T) {
 		t.Fatalf("open request: %v", err)
 	}
 	defer func() { _ = openResponse.Body.Close() }()
+	if openResponse.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("expected /open to reach 204, got %d; the in-handler foreign-key assertion may have been skipped", openResponse.StatusCode)
+	}
+	// A rotated-key handler must retract the cookie on THIS response, not
+	// merely refuse to decode it on a later re-open.
+	assertSealedCookieCleared(t, openResponse.Cookies(), oidcLogoutBridgeCookieName, oidcLogoutBridgePath)
 }
 
 // TestOIDCLogoutBridgeCookieRefusesToMintWithoutAnOwner pins the seal-time
@@ -198,15 +213,19 @@ func TestOIDCLogoutBridgeCookieRefusesToMintWithoutAnOwner(t *testing.T) {
 		t.Fatalf("unattributed seal request: %v", err)
 	}
 	defer func() { _ = refused.Body.Close() }()
-	if value := responseCookieValue(refused.Cookies(), oidcLogoutBridgeCookieName); value != "" {
-		t.Fatalf("a refused mint must leave no usable bridge cookie behind, got %q", value)
+	if refused.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("expected /seal-unattributed to reach 204, got %d; the in-handler refusal may have been skipped", refused.StatusCode)
 	}
+	assertSealedCookieCleared(t, refused.Cookies(), oidcLogoutBridgeCookieName, oidcLogoutBridgePath)
 
 	minted, err := app.Test(httptest.NewRequest("GET", "/seal-attributed", nil), testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("attributed seal request: %v", err)
 	}
 	defer func() { _ = minted.Body.Close() }()
+	if minted.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("expected /seal-attributed to reach 204, got %d", minted.StatusCode)
+	}
 	if responseCookieValue(minted.Cookies(), oidcLogoutBridgeCookieName) == "" {
 		t.Fatal("the same call naming an owner must mint a bridge cookie; without this anchor the refusal above proves nothing")
 	}
@@ -261,11 +280,11 @@ func TestOIDCLogoutBridgeCookieRefusesAnUnattributedPayloadAndRetractsIt(t *test
 		t.Fatalf("open request: %v", err)
 	}
 	defer func() { _ = response.Body.Close() }()
-
-	cleared := responseCookie(response.Cookies(), oidcLogoutBridgeCookieName)
-	if cleared == nil || cleared.Value != "" {
-		t.Fatalf("a refused bridge cookie must be retracted in the same response, got %#v", cleared)
+	if response.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("expected /open to reach 204, got %d; the in-handler refusal may have been skipped", response.StatusCode)
 	}
+
+	assertSealedCookieCleared(t, response.Cookies(), oidcLogoutBridgeCookieName, oidcLogoutBridgePath)
 }
 
 // flipLastBaseEncodedByte XORs the last byte of the base64url-decoded portion
