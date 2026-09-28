@@ -132,10 +132,19 @@ func assertSealedCookieCleared(t *testing.T, cookies []*http.Cookie, name string
 	if cookie.Value != "" {
 		t.Fatalf("expected %s cleared with an empty value, got %q", name, cookie.Value)
 	}
-	if !cookie.Expires.Before(time.Now()) {
-		t.Fatalf("expected %s cleared with an Expires in the past, got %s", name, cookie.Expires)
+	// A zero Expires (no attribute at all, or one net/http failed to parse) must
+	// not satisfy "cleared": require either an explicit negative Max-Age (net/http
+	// parses Max-Age=0 as MaxAge -1, so MaxAge<0 covers both spellings) or a
+	// non-zero Expires actually in the past. `!cookie.Expires.Before(time.Now())`
+	// alone accepts the zero value, since the zero time.Time is always "before
+	// now" — that hole is exactly what dropping the Expires line produces.
+	if cookie.MaxAge >= 0 && (cookie.Expires.IsZero() || !cookie.Expires.Before(time.Now())) {
+		t.Fatalf("expected %s cleared with an Expires in the past or a negative Max-Age, got Expires=%s MaxAge=%d", name, cookie.Expires, cookie.MaxAge)
 	}
-	if wantPath != "" && cookie.Path != wantPath {
+	if wantPath == "" {
+		t.Fatal("assertSealedCookieCleared: wantPath must not be empty; every clearing cookie is issued on a specific path")
+	}
+	if cookie.Path != wantPath {
 		t.Fatalf("expected %s cleared on path %q, got %q", name, wantPath, cookie.Path)
 	}
 }

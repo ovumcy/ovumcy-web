@@ -275,7 +275,13 @@ func TestClearSealedCookieBackdatesExpiryIntoThePast(t *testing.T) {
 		t.Fatalf("expected an empty clearing cookie value, got %q", cookie.Value)
 	}
 	// -1h backdating must put the expiry at least half an hour before the
-	// request began; a 0s (un-backdated) clear would sit at ~requestStart.
+	// request began; a 0s (un-backdated) clear would sit at ~requestStart. A
+	// zero Expires (the Expires attribute dropped entirely) must not satisfy
+	// this either: cookie.Expires.Before(cutoff) is trivially true for the zero
+	// time.Time, so require a genuinely-set, in-the-past expiry.
+	if cookie.Expires.IsZero() {
+		t.Fatal("expected clearing cookie to carry an explicit Expires attribute, got none")
+	}
 	cutoff := requestStart.Add(-30 * time.Minute)
 	if !cookie.Expires.Before(cutoff) {
 		t.Fatalf("expected clearing cookie expiry before %s (backdated ~1h), got %s", cutoff, cookie.Expires)
