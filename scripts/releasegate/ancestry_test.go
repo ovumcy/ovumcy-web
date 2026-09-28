@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -132,6 +133,40 @@ func TestAncestryStepRunsOnAFullHistory(t *testing.T) {
 	if checkoutAt < 0 || ancestryAt < 0 || ancestryAt < checkoutAt {
 		t.Fatalf("%s, job %q: step %q must run after %q (found at %d and %d)",
 			gateWorkflow, gateJob, ancestryStep, checkoutStep, ancestryAt, checkoutAt)
+	}
+}
+
+// A step's own keys sit at eight spaces, a job's at four.
+var (
+	stepFailOpenKey = regexp.MustCompile(`(?m)^ {8}(if|continue-on-error):.*$`)
+	jobFailOpenKey  = regexp.MustCompile(`(?m)^ {4}continue-on-error:.*$`)
+)
+
+// TestNoKeyLetsTheReleaseGateFailOpen covers what running the scripts cannot
+// see: the runner, not bash, honours `continue-on-error:` and `if:`. Either on
+// a refusing step lets `exit 1` be recorded as non-blocking or never run, the
+// job concludes success, and `publish` builds and signs an off-main or
+// unchecked tag while every script case above stays green. The job's own
+// `if:` is its trigger, not a weakening, so only `continue-on-error:` is
+// refused there.
+func TestNoKeyLetsTheReleaseGateFailOpen(t *testing.T) {
+	const planted = "        continue-on-error: true\n        if: false\n        run: exit 1\n"
+	if got := stepFailOpenKey.FindAllString(planted, -1); len(got) != 2 {
+		t.Fatalf("the step matcher found %q in a step carrying both keys; it would pass a weakened gate", got)
+	}
+	if got := jobFailOpenKey.FindAllString("    continue-on-error: true\n    steps:\n", -1); len(got) != 1 {
+		t.Fatalf("the job matcher found %q in a job carrying the key; it would pass a weakened gate", got)
+	}
+
+	job := workflowfile.Job(t, gateWorkflow, gateJob)
+	if found := jobFailOpenKey.FindAllString(job, -1); len(found) > 0 {
+		t.Errorf("%s, job %q carries %q: a failed gate would no longer block `publish`", gateWorkflow, gateJob, found)
+	}
+	for _, step := range []string{ancestryStep, gateStep} {
+		block := workflowfile.Step(t, gateWorkflow, gateJob, job, step)
+		if found := stepFailOpenKey.FindAllString(block, -1); len(found) > 0 {
+			t.Errorf("%s, job %q, step %q carries %q: its refusal would no longer block `publish`", gateWorkflow, gateJob, step, found)
+		}
 	}
 }
 
