@@ -475,16 +475,21 @@ components:
           description: >-
             Chooses the lifetime of the `ovumcy_auth` cookie this sign-in
             issues. When true, the cookie is persistent: its `Expires` is set
-            30 days after sign-in, and the session token sealed inside it
-            expires at the same time. When false or absent, the cookie carries
-            neither `Expires` nor `Max-Age`, so the browser drops it when it
-            closes; the session token inside still expires 7 days after
-            sign-in, so a browser left open longer is signed out then. Either
-            way the cookie is `HttpOnly`, `SameSite=Lax` and `Path=/`, and
-            `Secure` when the server runs with `COOKIE_SECURE` enabled. A
-            sign-in answered with `requires_totp` keeps the choice: the cookie
-            `POST /api/v1/sessions/2fa-challenge` issues carries the lifetime
-            chosen here.
+            30 days after the cookie is issued, and the session token sealed
+            inside it expires at the same time. When false or absent, the
+            cookie carries neither `Expires` nor `Max-Age`, so it lasts for the
+            browser session; the session token inside still expires 7 days
+            after the cookie is issued, so a browser session that runs longer
+            is signed out then. Either way the cookie is `HttpOnly`,
+            `SameSite=Lax` and `Path=/`, and `Secure` when the server runs with
+            `COOKIE_SECURE` enabled. A sign-in answered with `requires_totp`
+            keeps the choice: the cookie `POST /api/v1/sessions/2fa-challenge`
+            issues carries the lifetime chosen here. A sign-in redirected to
+            `/reset-password` does not: the cookie
+            `POST /api/v1/password-resets/redeem` then issues is always
+            browser-session-scoped. A later re-issue of the session, after a
+            password change or turning 2FA on or off, keeps the kind of cookie
+            chosen here, with its lifetime counted from the re-issue.
       additionalProperties: false
 
     RecoveryCodeRequiredResponse:

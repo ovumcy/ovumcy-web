@@ -12,13 +12,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gofiber/fiber/v3"
+	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 	"github.com/pquerna/otp/totp"
+	"gorm.io/gorm"
 )
 
 var (
-	rememberMeSpecPersistentDays = regexp.MustCompile("its `Expires` is set (\\d+) days after sign-in, and the session token sealed inside it expires at the same time")
-	rememberMeSpecSessionDays    = regexp.MustCompile("the session token inside still expires (\\d+) days after sign-in")
+	rememberMeSpecPersistentDays = regexp.MustCompile("its `Expires` is set (\\d+) days after the cookie is issued, and the session token sealed inside it expires at the same time")
+	rememberMeSpecSessionDays    = regexp.MustCompile("the session token inside still expires (\\d+) days after the cookie is issued")
 )
 
 // rememberMeSpecLifetimes reads the two lifetimes LoginRequest.remember_me
@@ -70,34 +73,85 @@ func TestOpenAPILoginRememberMeDeclaresTheCookieItIssues(t *testing.T) {
 		}
 	}
 
-	for _, cookieSecure := range []bool{false, true} {
-		app, database := newOnboardingTestAppWithCookieSecure(t, cookieSecure)
-		for _, transport := range []string{"json", "form"} {
-			for _, remember := range []bool{false, true} {
-				name := transport + "/remember=" + strconv.FormatBool(remember) + "/cookie_secure=" + strconv.FormatBool(cookieSecure)
-				t.Run(name, func(t *testing.T) {
-					email := "remember-spec-" + transport + "-" + strconv.FormatBool(remember) + "-" + strconv.FormatBool(cookieSecure) + "@example.com"
-					createOnboardingTestUser(t, database, email, "StrongPass1", true)
-
-					request := rememberMeSpecLoginRequest(transport, email, remember)
-					issuedFrom := time.Now()
-					response := mustAppResponse(t, app, request)
-					issuedTo := time.Now()
-					if transport == "json" {
-						assertStatusCode(t, response, http.StatusOK)
-					} else {
-						assertStatusCode(t, response, http.StatusSeeOther)
-					}
-
-					want := sessionScoped
-					if remember {
-						want = persistent
-					}
-					assertRememberMeSpecCookie(t, response, remember, cookieSecure, want, issuedFrom, issuedTo)
-				})
-			}
-		}
+	// Secure is one writer-wide attribute, independent of transport and of the
+	// remember choice, so COOKIE_SECURE=true needs a single sign-in; every
+	// bcrypt login here costs real seconds in an already long package.
+	cases := []struct {
+		transport    string
+		remember     bool
+		cookieSecure bool
+	}{
+		{"json", false, false},
+		{"json", true, false},
+		{"form", false, false},
+		{"form", true, false},
+		{"form", true, true},
 	}
+	apps := map[bool]*fiber.App{}
+	databases := map[bool]*gorm.DB{}
+	for _, cookieSecure := range []bool{false, true} {
+		apps[cookieSecure], databases[cookieSecure] = newOnboardingTestAppWithCookieSecure(t, cookieSecure)
+	}
+	for _, tc := range cases {
+		name := tc.transport + "/remember=" + strconv.FormatBool(tc.remember) + "/cookie_secure=" + strconv.FormatBool(tc.cookieSecure)
+		t.Run(name, func(t *testing.T) {
+			app := apps[tc.cookieSecure]
+			email := "remember-spec-" + tc.transport + "-" + strconv.FormatBool(tc.remember) + "-" + strconv.FormatBool(tc.cookieSecure) + "@example.com"
+			createOnboardingTestUser(t, databases[tc.cookieSecure], email, "StrongPass1", true)
+
+			request := rememberMeSpecLoginRequest(tc.transport, email, tc.remember)
+			issuedFrom := time.Now()
+			response := mustAppResponse(t, app, request)
+			issuedTo := time.Now()
+			if tc.transport == "json" {
+				assertStatusCode(t, response, http.StatusOK)
+			} else {
+				assertStatusCode(t, response, http.StatusSeeOther)
+			}
+
+			want := sessionScoped
+			if tc.remember {
+				want = persistent
+			}
+			assertRememberMeSpecCookie(t, response, tc.remember, tc.cookieSecure, want, issuedFrom, issuedTo)
+		})
+	}
+}
+
+// TestOpenAPILoginRememberMeIsNotCarriedThroughAForcedReset pins the spec's
+// exception: a sign-in the server sends to /reset-password issues no session
+// itself, and the redeem that does mints a browser-session cookie whatever
+// the sign-in asked for.
+func TestOpenAPILoginRememberMeIsNotCarriedThroughAForcedReset(t *testing.T) {
+	description, _, sessionScoped := rememberMeSpecLifetimes(t)
+	if !strings.Contains(description, "`POST /api/v1/password-resets/redeem` then issues is always browser-session-scoped") {
+		t.Fatalf("LoginRequest.remember_me: docs/openapi.yaml no longer says a forced reset drops the choice:\n  %s", description)
+	}
+
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "remember-spec-forced-reset@example.com", "StrongPass1", true)
+	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Update("must_change_password", true).Error; err != nil {
+		t.Fatalf("mark user must_change_password: %v", err)
+	}
+
+	loginResponse := mustAppResponse(t, app, rememberMeSpecLoginRequest("form", user.Email, true))
+	assertStatusCode(t, loginResponse, http.StatusSeeOther)
+	if location := loginResponse.Header.Get("Location"); location != "/reset-password" {
+		t.Fatalf("Location = %q, want /reset-password; the leg below would not be the forced reset", location)
+	}
+	if cookie := responseCookie(loginResponse.Cookies(), authCookieName); cookie != nil && cookie.Value != "" {
+		t.Fatal("the forced-reset sign-in issued ovumcy_auth itself")
+	}
+	resetCookie := responseCookieValue(loginResponse.Cookies(), resetPasswordCookieName)
+	if resetCookie == "" {
+		t.Fatal("expected the forced-reset sign-in to seal a reset-password cookie")
+	}
+
+	issuedFrom := time.Now()
+	redeemResponse := redeemResetCookie(t, app, resetCookie, "EvenStronger2")
+	issuedTo := time.Now()
+	assertStatusCode(t, redeemResponse, http.StatusOK)
+	assertRememberMeSpecCookie(t, redeemResponse, false, false, sessionScoped, issuedFrom, issuedTo)
 }
 
 // TestOpenAPILoginRememberMeSurvivesTheTOTPChallenge pins the spec's last
