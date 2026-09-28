@@ -391,6 +391,166 @@ components:
           enum: [true]
       additionalProperties: false
 
+    ProbeStatus:
+      type: object
+      description: Fixed body of a probe that answers `200`.
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+      additionalProperties: false
+
+    ProbeUnavailable:
+      type: object
+      description: Fixed body of `/readyz` when storage does not answer; it carries no failure detail.
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [unavailable]
+      additionalProperties: false
+
+    TrackingSettingsUpdated:
+      type: object
+      description: |
+        JSON answer of the tracking-preferences save: the outcome key and the
+        saved settings, normalised the way they are stored (an unrecognised
+        `temperature_unit` reads as `c`, an unrecognised `week_starts_on` as
+        `sunday`).
+      required: [ok, status, track_bbt, temperature_unit, track_cervical_mucus, hide_sex_chip, hide_cycle_factors, hide_notes_field, show_historical_phases, week_starts_on]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        status:
+          type: string
+          enum: [tracking_updated]
+        track_bbt: { type: boolean }
+        temperature_unit:
+          type: string
+          enum: [c, f]
+        track_cervical_mucus: { type: boolean }
+        hide_sex_chip: { type: boolean }
+        hide_cycle_factors: { type: boolean }
+        hide_notes_field: { type: boolean }
+        show_historical_phases: { type: boolean }
+        week_starts_on:
+          type: string
+          enum: [sunday, monday]
+      additionalProperties: false
+
+    ProfileUpdated:
+      type: object
+      description: |
+        JSON answer of the profile save. `status` is `profile_name_cleared`
+        when a non-blank display name was replaced by an empty one, otherwise
+        `profile_updated`; `display_name` is the saved, trimmed value (`""`
+        once cleared).
+      required: [ok, status, display_name]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        status:
+          type: string
+          enum: [profile_updated, profile_name_cleared]
+        display_name:
+          type: string
+          maxLength: 64
+      additionalProperties: false
+
+    InterfaceSettingsUpdated:
+      type: object
+      description: JSON answer of the interface save; `language` and `theme` are the normalised values the save accepted.
+      required: [ok, status, language, theme]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        status:
+          type: string
+          enum: [interface_updated]
+        language:
+          type: string
+          enum: [en, ru, es, fr, de, it]
+        theme:
+          type: string
+          enum: [light, dark, system]
+      additionalProperties: false
+
+    RemindersUpdated:
+      type: object
+      description: JSON answer of the reminder save. `reminder_lead_days` is the stored value; every save clamps it to 0–14.
+      required: [ok, status, reminder_lead_days]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        status:
+          type: string
+          enum: [reminders_updated]
+        reminder_lead_days:
+          type: integer
+          minimum: 0
+          maximum: 14
+      additionalProperties: false
+
+    TimezoneUpdated:
+      type: object
+      description: JSON answer of the timezone save. `changed` is `false` when the stored zone already equalled the canonical form of the posted one.
+      required: [ok, changed]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        changed: { type: boolean }
+      additionalProperties: false
+
+    WebhookSettingsUpdated:
+      type: object
+      description: |
+        JSON answer of the webhook save. The three flags echo the REQUEST, not
+        the stored state: with `webhook_remove_url: true` delivery is turned
+        off while `webhook_enabled` still reports the posted value. The
+        endpoint URL is never echoed.
+      required: [ok, status, webhook_enabled, notify_period, notify_ovulation]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        status:
+          type: string
+          enum: [webhook_updated]
+        webhook_enabled: { type: boolean }
+        notify_period: { type: boolean }
+        notify_ovulation: { type: boolean }
+      additionalProperties: false
+
+    WebhookRemoved:
+      type: object
+      required: [ok, status]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        status:
+          type: string
+          enum: [webhook_removed]
+      additionalProperties: false
+
+    CalendarFeedRevoked:
+      type: object
+      required: [ok, status]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        status:
+          type: string
+          enum: [calendar_feed_revoked]
+      additionalProperties: false
+
     ImportResult:
       type: object
       required: [ok, added, skipped, rejected]
@@ -1027,7 +1187,6 @@ components:
         - flow
         - mood_rating
         - sex_activity
-        - bbt
         - cervical_mucus
         - cycle_factors
         - symptoms
@@ -1134,10 +1293,10 @@ components:
         has_data: { type: boolean }
         date_from:
           type: string
-          format: date
+          description: First exported day as `YYYY-MM-DD`, or `""` when `has_data` is `false`.
         date_to:
           type: string
-          format: date
+          description: Last exported day as `YYYY-MM-DD`, or `""` when `has_data` is `false`.
 
     CycleSettings:
       type: object
@@ -1265,7 +1424,8 @@ components:
         `show_cycle_factors` and `show_notes_field` fields instead — the
         toggles read "show" in the interface — and the server converts the two
         vocabularies in a single place. Every field is a full snapshot: an
-        omitted flag reads as `false`, it is not a no-op.
+        omitted flag reads as `false`, it is not a no-op; an omitted or
+        unrecognised `week_starts_on` reads as `sunday`.
       properties:
         track_bbt: { type: boolean }
         temperature_unit:
@@ -1276,6 +1436,9 @@ components:
         hide_cycle_factors: { type: boolean }
         hide_notes_field: { type: boolean }
         show_historical_phases: { type: boolean }
+        week_starts_on:
+          type: string
+          enum: [sunday, monday]
 
     TimezoneSettings:
       type: object
@@ -1462,6 +1625,9 @@ paths:
       responses:
         '200':
           description: Service is alive.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProbeStatus' }
 
   /readyz:
     get:
@@ -1477,8 +1643,14 @@ paths:
       responses:
         '200':
           description: Service is ready.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProbeStatus' }
         '503':
           description: Service is not ready.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProbeUnavailable' }
 
   /lang:
     post:
@@ -2597,7 +2769,7 @@ paths:
           description: Saved.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/OkResponse' }
+              schema: { $ref: '#/components/schemas/ProfileUpdated' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '400': { $ref: '#/components/responses/ValidationError' }
@@ -2617,7 +2789,7 @@ paths:
           description: Saved.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/OkResponse' }
+              schema: { $ref: '#/components/schemas/InterfaceSettingsUpdated' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '400': { $ref: '#/components/responses/ValidationError' }
@@ -2637,7 +2809,7 @@ paths:
           description: Saved.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/OkResponse' }
+              schema: { $ref: '#/components/schemas/TrackingSettingsUpdated' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '400': { $ref: '#/components/responses/ValidationError' }
@@ -2664,7 +2836,7 @@ paths:
           description: Saved.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/OkResponse' }
+              schema: { $ref: '#/components/schemas/TimezoneUpdated' }
         '204':
           description: Saved (HTMX request).
         '400':
@@ -2700,7 +2872,7 @@ paths:
           description: Saved.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/OkResponse' }
+              schema: { $ref: '#/components/schemas/WebhookSettingsUpdated' }
         '400':
           description: |
             Invalid webhook URL (empty when enabling, or non-http(s) scheme), or
@@ -2740,7 +2912,7 @@ paths:
           description: Endpoint withdrawn.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/OkResponse' }
+              schema: { $ref: '#/components/schemas/WebhookRemoved' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '500':
@@ -2803,7 +2975,7 @@ paths:
           description: Feed disabled.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/OkResponse' }
+              schema: { $ref: '#/components/schemas/CalendarFeedRevoked' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '500':
@@ -2893,7 +3065,7 @@ paths:
           description: Saved.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/OkResponse' }
+              schema: { $ref: '#/components/schemas/RemindersUpdated' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '400': { $ref: '#/components/responses/ValidationError' }
