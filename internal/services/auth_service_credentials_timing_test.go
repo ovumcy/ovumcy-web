@@ -46,7 +46,7 @@ func withCountingCredentialsEqualizer(t *testing.T) *int {
 func TestAuthenticateCredentialsEqualizesTimingForMissingUser(t *testing.T) {
 	count := withCountingCredentialsEqualizer(t)
 	service := NewAuthService(&stubAuthUserRepo{
-		findByEmailErr: errors.New("not found"),
+		emailErr: errors.New("not found"),
 	})
 
 	_, err := service.AuthenticateCredentials(context.Background(), "nonexistent@example.com", "AnyPass1!")
@@ -61,12 +61,14 @@ func TestAuthenticateCredentialsEqualizesTimingForMissingUser(t *testing.T) {
 
 func TestAuthenticateCredentialsEqualizesTimingForDisabledLocalAuth(t *testing.T) {
 	count := withCountingCredentialsEqualizer(t)
-	service := NewAuthService(&stubAuthUserRepo{
-		findByEmailUser: models.User{
-			LocalAuthEnabled: false,
-			PasswordHash:     "",
-		},
-	})
+	// The account must be FOUND, or the refusal comes from the unknown-address
+	// branch and this test measures nothing the missing-user test does not.
+	service := NewAuthService(&stubAuthUserRepo{emailMatches: []models.User{{
+		ID:               7,
+		Email:            "oidc-only@example.com",
+		Role:             models.RoleOwner,
+		LocalAuthEnabled: false,
+	}}})
 
 	_, err := service.AuthenticateCredentials(context.Background(), "oidc-only@example.com", "AnyPass1!")
 

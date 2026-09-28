@@ -50,8 +50,10 @@ var emailResolverCallersThatMustStay = []string{
 // first — the web sign-in paths did exactly that. Both halves are resolved by
 // declaration, never by the spelling of a call:
 //
-//   - no function in the tree reads rows under an email predicate except the
-//     named readers, and none of those can return a single row;
+//   - no function declaration or package-level initializer in the tree reads
+//     rows under an email predicate except the named readers, and none of
+//     those can return a single row (the predicate shapes the scan sees, and
+//     the ones it does not, are listed on findEmailReaders);
 //   - the row-returning reader is referenced only from resolveUniqueUserByEmail,
 //     whether called on *db.UserRepository itself or through any interface
 //     (or constraint) it satisfies, as a call or as a method value.
@@ -131,6 +133,15 @@ func TestEmailLookupGuardRecognisesItsOwnFixtures(t *testing.T) {
 			t.Errorf("%s: singleRow = %v, want %v", name, reader.singleRow, wantSingle)
 		}
 	}
+	blankReaders := map[bool]int{}
+	for name, reader := range readers {
+		if strings.HasPrefix(name, emailGuardDBPath+"._@") && strings.Contains(reader.at, emailGuardFixtureFile) {
+			blankReaders[reader.singleRow]++
+		}
+	}
+	if blankReaders[true] != 1 || blankReaders[false] != 1 {
+		t.Errorf("the two blank-named initializer readers must be reported apart (one single-row, one not), got %v", blankReaders)
+	}
 	if _, ok := readers[fixtureMethod("emailGuardFixtureProjectionOnly")]; ok {
 		t.Error("emailGuardFixtureProjectionOnly only selects and orders by email; it filters on nothing and must not count as an email reader")
 	}
@@ -146,10 +157,24 @@ func TestEmailLookupGuardRecognisesItsOwnFixtures(t *testing.T) {
 		}
 	}
 
-	for name := range findEmailReaders(withoutEmailGuardFixtures(loaded)) {
-		if strings.Contains(name, "emailGuardFixture") {
-			t.Errorf("%s survived the fixture filter: the tree guard would judge its own fixtures", name)
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatalf("resolve module root: %v", err)
+	}
+	bystanderKept := false
+	for _, pkg := range withoutEmailGuardFixtures(loaded) {
+		for _, file := range pkg.Syntax {
+			path := filepath.Clean(pkg.Fset.Position(file.Package).Filename)
+			switch {
+			case path == emailGuardBystanderPath(root):
+				bystanderKept = true
+			case filepath.Base(path) == emailGuardFixtureFile:
+				t.Errorf("%s survived the fixture filter: the tree guard would judge its own fixtures", path)
+			}
 		}
+	}
+	if !bystanderKept {
+		t.Error("the fixture filter dropped the bystander, which only shares the fixtures' file name: a real source of that name would escape the tree guard")
 	}
 }
 
@@ -170,6 +195,16 @@ const emailGuardFixturePredicate = "lower(trim(email)) = ?"
 var emailGuardFixtureVarInitializer = func(repo *UserRepository, email string) (user models.User) {
 	repo.database.Where("email = ?", email).First(&user)
 	return user
+}
+
+var _ = func(repo *UserRepository, email string) (user models.User) {
+	repo.database.Where("email = ?", email).Take(&user)
+	return user
+}
+
+var _ = func(repo *UserRepository, email string) (users []models.User) {
+	repo.database.Where("email = ?", email).Find(&users)
+	return users
 }
 
 func (repo *UserRepository) emailGuardFixtureSQLQueryRow(conn *sql.DB, email string) (id uint) {
@@ -321,8 +356,11 @@ func findEmailReaders(loaded []*packages.Package) map[string]emailReader {
 							continue
 						}
 						for index, initializer := range value.Values {
-							name := value.Names[min(index, len(value.Names)-1)]
-							record(pkg, pkg.PkgPath+"."+name.Name, initializer)
+							name := pkg.PkgPath + "." + value.Names[min(index, len(value.Names)-1)].Name
+							if strings.HasSuffix(name, "._") {
+								name += "@" + pkg.Fset.Position(initializer.Pos()).String()
+							}
+							record(pkg, name, initializer)
 						}
 					}
 				}
@@ -490,9 +528,10 @@ func emailGuardPackage(t *testing.T, loaded []*packages.Package, pkgPath string)
 }
 
 var (
-	emailGuardLoadOnce sync.Once
-	emailGuardLoaded   []*packages.Package
-	emailGuardLoadErr  error
+	emailGuardLoadOnce     sync.Once
+	emailGuardLoaded       []*packages.Package
+	emailGuardFixturePaths map[string]bool
+	emailGuardLoadErr      error
 )
 
 // loadEmailGuardTree type-checks the tree's production sources with the
@@ -515,12 +554,23 @@ func loadEmailGuardPackages() ([]*packages.Package, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve module root: %w", err)
 	}
+	overlay := emailGuardFixtureOverlay(root)
+	emailGuardFixturePaths = map[string]bool{}
+	for path := range overlay {
+		emailGuardFixturePaths[filepath.Clean(path)] = true
+	}
+	// The bystander shares the fixtures' basename but is not one of them: the
+	// fixture test requires it to survive withoutEmailGuardFixtures, so the
+	// filter stays keyed on the overlay paths, never on a file name a real
+	// source could carry.
+	overlay[emailGuardBystanderPath(root)] = []byte("package models\n\nconst emailGuardFixtureBystander = 1\n")
+
 	patterns := []string{"./cmd/...", "./internal/...", "./migrations/...", "./scripts/...", "./web/..."}
 	config := &packages.Config{
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax |
 			packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports,
 		Dir:     root,
-		Overlay: emailGuardFixtureOverlay(root),
+		Overlay: overlay,
 		Tests:   false,
 	}
 	loaded, err := packages.Load(config, patterns...)
@@ -539,6 +589,10 @@ func loadEmailGuardPackages() ([]*packages.Package, error) {
 	return loaded, nil
 }
 
+func emailGuardBystanderPath(root string) string {
+	return filepath.Join(root, "internal", "models", emailGuardFixtureFile)
+}
+
 // withoutEmailGuardFixtures drops the overlaid fixture files from each
 // package's syntax, leaving the shared type information intact, so the tree
 // guard scans only real sources.
@@ -548,7 +602,7 @@ func withoutEmailGuardFixtures(loaded []*packages.Package) []*packages.Package {
 		view := *pkg
 		view.Syntax = nil
 		for _, file := range pkg.Syntax {
-			if filepath.Base(pkg.Fset.Position(file.Package).Filename) != emailGuardFixtureFile {
+			if !emailGuardFixturePaths[filepath.Clean(pkg.Fset.Position(file.Package).Filename)] {
 				view.Syntax = append(view.Syntax, file)
 			}
 		}

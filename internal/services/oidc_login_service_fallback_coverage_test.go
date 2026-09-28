@@ -1,11 +1,11 @@
 package services
 
-// oidc_login_service_fallback_coverage_test.go — covers the role check in the
-// auto-provision conflict fallback (oidc_login_service.go:374), which gremlins
-// reported as NOT COVERED. The pre-existing "fallback" test in
-// oidc_login_service_coverage_test.go actually hit the direct-found role check
-// (line 347) because the single-result stubOIDCUserStore returns found on the
-// FIRST lookup; reaching line 374 needs a miss-then-find sequence.
+// oidc_login_service_fallback_coverage_test.go — covers the email-lookup
+// failures of OIDC sign-in: a store error in findUserByEmail, and the
+// re-lookup in autoProvisionOrLookupUser after an ErrAuthEmailExists conflict
+// (role check, store error, ambiguous address). The single-result
+// stubOIDCUserStore answers the FIRST lookup already, so reaching the
+// re-lookup needs the miss-then-find store below.
 
 import (
 	"context"

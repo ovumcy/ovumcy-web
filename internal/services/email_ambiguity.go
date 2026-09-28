@@ -9,14 +9,14 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
-// AmbiguousEmailError is returned by every CLI-facing lookup below when a
-// normalized address answers for more than one row — a legacy duplicate the
-// boot-time email renormalizer left standing (two accounts on one mailbox,
-// see RenormalizeUserEmail in internal/db) because it resolves the SAME
-// conflict by keeping the older row's address and locking the newer one out
-// under a form no address-taking command accepts. Silently acting on gorm's
-// arbitrary first match would act on the WRONG account; the caller must
-// re-address by id instead (`ovumcy users list` prints it).
+// AmbiguousEmailError is returned by resolveUniqueUserByEmail when a
+// normalized address answers for more than one row — two accounts on one
+// mailbox, possible only on a database whose idx_users_email_normalized was
+// dropped or restored away outside the app (the migration refuses to build it
+// over duplicates, and the boot-time renormalizer never creates one: it keeps
+// the older row's address and leaves a colliding row as stored). Silently
+// acting on the first match would act on the WRONG account; an operator
+// command re-addresses by id instead (`ovumcy users list` prints it).
 //
 // Error() names every matching id so a caller with no command-specific
 // mapping (today: `users delete`, `webhook show|set`) still surfaces an

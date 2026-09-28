@@ -104,13 +104,15 @@ func TestAuthenticateCredentialsRehashesStaleCost(t *testing.T) {
 		t.Fatalf("hash password: %v", err)
 	}
 	repo := &stubAuthUserRepo{
-		findByEmailUser: models.User{
-			ID:                 77,
-			Email:              "login@example.com",
-			PasswordHash:       string(legacyHash),
-			LocalAuthEnabled:   true,
-			Role:               models.RoleOwner,
-			AuthSessionVersion: 3,
+		emailMatches: []models.User{
+			{
+				ID:                 77,
+				Email:              "login@example.com",
+				PasswordHash:       string(legacyHash),
+				LocalAuthEnabled:   true,
+				Role:               models.RoleOwner,
+				AuthSessionVersion: 3,
+			},
 		},
 	}
 	service := NewAuthService(repo)
@@ -153,12 +155,14 @@ func TestAuthenticateCredentialsSkipsRehashAtTargetCost(t *testing.T) {
 		t.Fatalf("hash password: %v", err)
 	}
 	repo := &stubAuthUserRepo{
-		findByEmailUser: models.User{
-			ID:               77,
-			Email:            "login@example.com",
-			PasswordHash:     string(currentHash),
-			LocalAuthEnabled: true,
-			Role:             models.RoleOwner,
+		emailMatches: []models.User{
+			{
+				ID:               77,
+				Email:            "login@example.com",
+				PasswordHash:     string(currentHash),
+				LocalAuthEnabled: true,
+				Role:             models.RoleOwner,
+			},
 		},
 	}
 	service := NewAuthService(repo)
@@ -180,12 +184,14 @@ func TestAuthenticateCredentialsWrongPasswordDoesNotRehash(t *testing.T) {
 		t.Fatalf("hash password: %v", err)
 	}
 	repo := &stubAuthUserRepo{
-		findByEmailUser: models.User{
-			ID:               77,
-			Email:            "login@example.com",
-			PasswordHash:     string(legacyHash),
-			LocalAuthEnabled: true,
-			Role:             models.RoleOwner,
+		emailMatches: []models.User{
+			{
+				ID:               77,
+				Email:            "login@example.com",
+				PasswordHash:     string(legacyHash),
+				LocalAuthEnabled: true,
+				Role:             models.RoleOwner,
+			},
 		},
 	}
 	service := NewAuthService(repo)
@@ -254,12 +260,14 @@ func TestAuthenticateCredentialsRehashFailureDoesNotFailLogin(t *testing.T) {
 	}
 	repo := &stubAuthUserRepo{
 		upgradeHashErr: context.DeadlineExceeded,
-		findByEmailUser: models.User{
-			ID:               77,
-			Email:            "login@example.com",
-			PasswordHash:     string(legacyHash),
-			LocalAuthEnabled: true,
-			Role:             models.RoleOwner,
+		emailMatches: []models.User{
+			{
+				ID:               77,
+				Email:            "login@example.com",
+				PasswordHash:     string(legacyHash),
+				LocalAuthEnabled: true,
+				Role:             models.RoleOwner,
+			},
 		},
 	}
 	service := NewAuthService(repo)
@@ -290,12 +298,14 @@ func TestAuthenticateCredentialsLostRehashRaceKeepsTheVerifiedHash(t *testing.T)
 	}
 	repo := &stubAuthUserRepo{
 		upgradeHashLost: true,
-		findByEmailUser: models.User{
-			ID:               77,
-			Email:            "login@example.com",
-			PasswordHash:     string(legacyHash),
-			LocalAuthEnabled: true,
-			Role:             models.RoleOwner,
+		emailMatches: []models.User{
+			{
+				ID:               77,
+				Email:            "login@example.com",
+				PasswordHash:     string(legacyHash),
+				LocalAuthEnabled: true,
+				Role:             models.RoleOwner,
+			},
 		},
 	}
 	service := NewAuthService(repo)

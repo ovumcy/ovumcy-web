@@ -210,7 +210,7 @@ func TestAuthenticateCredentialsAccountsEqualWorkForMissingAccountAndStaleHash(t
 
 	ledger := withLoginWorkLedger(t)
 
-	missing := NewAuthService(&stubAuthUserRepo{findByEmailErr: errors.New("not found")})
+	missing := NewAuthService(&stubAuthUserRepo{emailErr: errors.New("not found")})
 	if _, err := missing.AuthenticateCredentials(context.Background(), "nobody@example.com", submittedPassword); !errors.Is(err, ErrAuthInvalidCreds) {
 		t.Fatalf("expected ErrAuthInvalidCreds for an unknown address, got %v", err)
 	}
@@ -222,13 +222,13 @@ func TestAuthenticateCredentialsAccountsEqualWorkForMissingAccountAndStaleHash(t
 		t.Fatalf("unknown-address branch accounts to %d work units, want %d (2^passwordHashCost)", missingUnits, want)
 	}
 
-	stale := NewAuthService(&stubAuthUserRepo{findByEmailUser: models.User{
+	stale := NewAuthService(&stubAuthUserRepo{emailMatches: []models.User{{
 		ID:               7,
 		Email:            "owner@example.com",
 		Role:             models.RoleOwner,
 		LocalAuthEnabled: true,
 		PasswordHash:     staleHash,
-	}})
+	}}})
 	if _, err := stale.AuthenticateCredentials(context.Background(), "owner@example.com", submittedPassword); !errors.Is(err, ErrAuthInvalidCreds) {
 		t.Fatalf("expected ErrAuthInvalidCreds for a wrong password, got %v", err)
 	}
@@ -258,13 +258,13 @@ func TestAuthenticateCredentialsAccountsEqualWorkForMissingAccountAndStaleHash(t
 func TestAuthenticateCredentialsAccountsFullWorkForAnUnparseableStoredHash(t *testing.T) {
 	ledger := withLoginWorkLedger(t)
 
-	service := NewAuthService(&stubAuthUserRepo{findByEmailUser: models.User{
+	service := NewAuthService(&stubAuthUserRepo{emailMatches: []models.User{{
 		ID:               9,
 		Email:            "owner@example.com",
 		Role:             models.RoleOwner,
 		LocalAuthEnabled: true,
 		PasswordHash:     "not-a-bcrypt-hash",
-	}})
+	}}})
 	if _, err := service.AuthenticateCredentials(context.Background(), "owner@example.com", "WrongGuess1!"); !errors.Is(err, ErrAuthInvalidCreds) {
 		t.Fatalf("expected ErrAuthInvalidCreds for an unparseable stored hash, got %v", err)
 	}
@@ -283,13 +283,13 @@ func TestAuthenticateCredentialsAddsNoWorkForACurrentCostHash(t *testing.T) {
 	currentHash := mintBcryptHashAtCost(t, "CorrectHorse1!", passwordHashCost)
 	ledger := withLoginWorkLedger(t)
 
-	service := NewAuthService(&stubAuthUserRepo{findByEmailUser: models.User{
+	service := NewAuthService(&stubAuthUserRepo{emailMatches: []models.User{{
 		ID:               11,
 		Email:            "owner@example.com",
 		Role:             models.RoleOwner,
 		LocalAuthEnabled: true,
 		PasswordHash:     currentHash,
-	}})
+	}}})
 	if _, err := service.AuthenticateCredentials(context.Background(), "owner@example.com", "WrongGuess1!"); !errors.Is(err, ErrAuthInvalidCreds) {
 		t.Fatalf("expected ErrAuthInvalidCreds for a wrong password, got %v", err)
 	}
@@ -335,14 +335,15 @@ func TestRecoveryLookupAccountsEqualWorkForMissingAccountAndStaleHashes(t *testi
 	missingUnits := ledger.drain()
 
 	stale := NewAuthService(&stubAuthUserRepo{
-		findByEmailOptionalFound: true,
-		findByEmailOptionalUser: models.User{
-			ID:               13,
-			Email:            "owner@example.com",
-			Role:             models.RoleOwner,
-			LocalAuthEnabled: true,
-			PasswordHash:     stalePasswordHash,
-			RecoveryCodeHash: staleRecoveryHash,
+		emailMatches: []models.User{
+			{
+				ID:               13,
+				Email:            "owner@example.com",
+				Role:             models.RoleOwner,
+				LocalAuthEnabled: true,
+				PasswordHash:     stalePasswordHash,
+				RecoveryCodeHash: staleRecoveryHash,
+			},
 		},
 	})
 	if _, err := stale.FindUserByEmailRecoveryCodeAndPassword(context.Background(), "owner@example.com", submittedCode, submittedPassword); !errors.Is(err, ErrRecoveryCodeNotFound) {

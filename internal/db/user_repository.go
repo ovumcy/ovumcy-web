@@ -179,9 +179,9 @@ func (repo *UserRepository) FindByIDOptional(ctx context.Context, userID uint) (
 // database without idx_users_email_normalized can hold more than one row on
 // one mailbox — the migration refuses to build the index over duplicates, so
 // only an index dropped or restored away outside the app leaves that state —
-// and a single-row lookup would hand back whichever row the query reached first. There is deliberately no
-// single-row variant: every caller resolves through
-// services.resolveUniqueUserByEmail, which refuses an ambiguous match
+// and a single-row lookup would hand back whichever row the query reached
+// first. There is deliberately no single-row variant: every caller resolves
+// through services.resolveUniqueUserByEmail, which refuses an ambiguous match
 // (email_lookup_ambiguity_guard_test.go in internal/services keeps it so).
 func (repo *UserRepository) FindAllByNormalizedEmail(ctx context.Context, email string) ([]models.User, error) {
 	var users []models.User
