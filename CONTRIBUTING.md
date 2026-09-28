@@ -127,18 +127,23 @@ parallel one. Endpoints content-negotiate, so the JSON shape is part of the cont
 - Breaking, major release only: renaming or removing a field, requiring a request
   member that was optional, refusing one that was accepted, changing what a field or
   an operation means, changing a status code, a route or an error key. Each ships as
-  a **Breaking** entry in CHANGELOG.md that names what a client has to change.
+  a **Breaking** entry in CHANGELOG.md that names what a client has to change (the
+  marker is described under Changelog Fragments below).
 - A correction that makes docs/openapi.yaml describe what the server already does is
   not a breaking change, even when the corrected text is stricter than the old one;
   it is listed under **Fixed**.
-- The export payload follows docs/export.md.
+- `info.version` in docs/openapi.yaml names the major release the contract belongs
+  to — `2.0.0` for every v2.x release — and changes only with a major release.
+- The export payload (`GET /api/v1/exports/{json,csv,summary}`) follows the separate
+  stability contract in [docs/export.md](docs/export.md).
 
 v2.0.0 is the first major release under this policy. It changes `/api/v1/*` in place;
 the largest changes: `GET /api/v1/stats/overview` publishes an explicit payload that
 withholds suppressed predictions, `PATCH /api/v1/users/current/cycle` updates only the
-members a request names, `POST /api/v1/password-resets` requires the account password,
-and onboarding step 2 refuses `age_group`. The **Breaking** entries of the v2.0.0
-section of CHANGELOG.md are the complete list.
+members a JSON request names, `POST /api/v1/password-resets` requires the account
+password, and onboarding step 2 refuses `age_group`. The **Breaking (API shape)**
+entries of the v2.0.0 section of CHANGELOG.md are the complete list of `/api/v1/*`
+breaks.
 
 If you script against `/api/v1/*` from outside the bundled UI, pin a specific image
 tag and re-validate on every upgrade: minor and patch releases within a major are
@@ -165,6 +170,12 @@ header plus the entry:
   `### Removed`, `### Fixed`, `### Security` — plus the two this changelog has always carried after
   them, `### Internal` and `### Dependencies`. Several sections may appear in one fragment; assembly
   puts them in that order.
+- An entry for a breaking `/api/v1/*` change (as the API Stability Contract above defines it) stays
+  in its ordinary section — usually `### Changed` or `### Fixed`; there is no `### Breaking` header —
+  and opens its bold summary with `Breaking (API shape):`, for example
+  `- **Breaking (API shape): onboarding step 2 no longer accepts age_group.**`. The entry names what
+  a client has to change. A break is judged against the last release, so a route that has not been
+  released yet carries no marker.
 - A pull request with no user-visible change adds a fragment whose first line is exactly `none`;
   anything below that line is ignored, so the reason can be written underneath it.
 - `CHANGELOG.md` itself is edited directly only by release assembly and by corrections to text that

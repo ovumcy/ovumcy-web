@@ -21,11 +21,13 @@ info:
     - Breaking, major release only: renaming or removing a field, requiring a
       request member that was optional, refusing one that was accepted,
       changing what a field or an operation means, changing a status code, a
-      route or an error key. Each ships as a **Breaking** entry in
+      route or an error key. Each ships as a **Breaking (API shape)** entry in
       CHANGELOG.md.
     - A correction that makes this document describe what the server already
       does is not a breaking change, even when the corrected text is stricter;
       it is listed under **Fixed**.
+    - `info.version` names the major release this contract belongs to
+      (`2.0.0` for every v2.x release) and changes only with a major release.
     - The export payload (`/api/v1/exports/*`) follows the separate stability
       contract documented in [docs/export.md](export.md).
 
