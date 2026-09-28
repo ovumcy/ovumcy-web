@@ -437,6 +437,10 @@ jobs:
       # during them can leave the aliases written before it, and every alias
       # that exists points at the signed digest — which is the guarantee, and
       # it holds either way.
+      #
+      # That untagged manifest is left in the package on purpose, not cleaned
+      # up: the reason is written where operators read the verification steps,
+      # in README.md.
       - name: Push the image by digest, under no public tag
         id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
