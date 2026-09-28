@@ -9,10 +9,12 @@
 //
 //	changelogd check
 //	    CI gate for pull requests. Env BASE_REF (default origin/main) names the
-//	    base to diff against. Passes when the branch adds at least one valid
-//	    fragment under changelog.d/, or when it edits CHANGELOG.md itself in a
-//	    way only release assembly and post-release corrections do (adding a
-//	    "## [" heading). Exit 0 when the gate passes, 1 when it fails.
+//	    base to diff against. Passes when the branch adds at least one fragment
+//	    under changelog.d/, or when it edits CHANGELOG.md itself in a way only
+//	    release assembly does (adding a "## [" heading); every added or modified
+//	    fragment must be valid. Independently of either, a CHANGELOG.md edit
+//	    that is neither assembly nor confined to an already-released section
+//	    fails. Exit 0 when the gate passes, 1 when it fails.
 //
 //	changelogd assemble -version X.Y.Z [-date YYYY-MM-DD]
 //	    Run by hand at release time. Folds every accumulated fragment, plus
@@ -33,6 +35,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -127,31 +130,125 @@ func check(root, baseRef string, git gitRunner) (string, error) {
 		return "", fmt.Errorf("diff against %s: %w", baseRef, err)
 	}
 
-	if fragments := addedFragments(nameStatus); len(fragments) > 0 {
-		var problems []string
-		for _, fragment := range fragments {
-			data, readErr := os.ReadFile(filepath.Join(root, filepath.FromSlash(fragment)))
-			if readErr != nil {
-				return "", fmt.Errorf("read fragment %s: %w", fragment, readErr)
-			}
-			if err := validateFragment(fragment, string(data)); err != nil {
-				problems = append(problems, "  "+err.Error())
-			}
+	// Every fragment the branch touches is judged, added or edited: an edited
+	// fragment is not this branch's entry (see addedFragments) but its text
+	// still reaches CHANGELOG.md at release assembly.
+	var fragmentProblems []string
+	for _, fragment := range changedFragments(nameStatus) {
+		data, readErr := os.ReadFile(filepath.Join(root, filepath.FromSlash(fragment)))
+		if readErr != nil {
+			return "", fmt.Errorf("read fragment %s: %w", fragment, readErr)
 		}
-		if len(problems) > 0 {
-			return "changelog fragment check FAILED:\n" + strings.Join(problems, "\n") + "\n\n" + fragmentFormatHelp(), nil
+		if err := validateFragment(fragment, string(data)); err != nil {
+			fragmentProblems = append(fragmentProblems, "  "+err.Error())
 		}
-		return "", nil
 	}
 
+	// CHANGELOG.md is judged whether or not a fragment was added: an added
+	// fragment must not license a rewrite of the [Unreleased] body beside it.
 	changelogDiff, err := git(root, "diff", "--unified=0", "--no-color", baseRef+"...HEAD", "--", changelogFile)
 	if err != nil {
 		return "", fmt.Errorf("diff %s against %s: %w", changelogFile, baseRef, err)
 	}
-	if addsReleaseHeading(changelogDiff) {
+	assembly := addsReleaseHeading(changelogDiff)
+	var offending []string
+	if !assembly && strings.TrimSpace(changelogDiff) != "" {
+		current, showErr := git(root, "show", "HEAD:"+changelogFile)
+		if showErr != nil {
+			return "", fmt.Errorf("read %s at HEAD: %w", changelogFile, showErr)
+		}
+		offending = editsOutsideReleasedText(changelogDiff, current)
+	}
+
+	if len(fragmentProblems) > 0 || len(offending) > 0 {
+		var report []string
+		if len(fragmentProblems) > 0 {
+			report = append(report, strings.Join(fragmentProblems, "\n")+"\n\n"+fragmentFormatHelp())
+		}
+		if len(offending) > 0 {
+			report = append(report, changelogEditHelp(offending))
+		}
+		return "changelog fragment check FAILED:\n" + strings.Join(report, "\n"), nil
+	}
+
+	if len(addedFragments(nameStatus)) > 0 || assembly {
 		return "", nil
 	}
 	return missingFragmentHelp(), nil
+}
+
+// changedFragments returns every changelog.d/*.md path whose content this
+// branch introduces or rewrites: added (A), modified (M) and the destination of
+// a rename (R). A deletion carries no content to judge. Unlike addedFragments it
+// says nothing about whether the branch owes a fragment of its own.
+func changedFragments(nameStatus string) []string {
+	var changed []string
+	for _, line := range strings.Split(nameStatus, "\n") {
+		fields := strings.Split(strings.TrimRight(line, "\r"), "\t")
+		if len(fields) < 2 || fields[0] == "" {
+			continue
+		}
+		switch fields[0][0] {
+		case 'A', 'M', 'R':
+		default:
+			continue
+		}
+		path := fields[len(fields)-1]
+		if strings.HasPrefix(path, fragmentDir+"/") && strings.HasSuffix(path, ".md") {
+			changed = append(changed, path)
+		}
+	}
+	sort.Strings(changed)
+	return changed
+}
+
+// hunkHeader matches a unified-diff hunk header; group 1 is the first line of
+// the hunk in the new file, group 2 its length (absent means 1).
+var hunkHeader = regexp.MustCompile(`^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@`)
+
+// editsOutsideReleasedText returns the hunk headers of a `--unified=0`
+// CHANGELOG.md diff that touch anything but an already-released version
+// section: the title, the "[Unreleased]" body, or a hunk that reaches up to the
+// first release heading. current is the file as of HEAD. An edit strictly below
+// the first "## [x.y.z]" heading is a correction to released text and is not
+// reported; a file with no released heading has no such text, so every hunk is.
+func editsOutsideReleasedText(diff, current string) []string {
+	firstReleased := 0
+	for i, line := range strings.Split(current, "\n") {
+		trimmed := strings.TrimRight(line, "\r")
+		if strings.HasPrefix(trimmed, "## [") && trimmed != "## [Unreleased]" {
+			firstReleased = i + 1
+			break
+		}
+	}
+	var offending []string
+	for _, line := range strings.Split(diff, "\n") {
+		m := hunkHeader.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		start, _ := strconv.Atoi(m[1])
+		length := 1
+		if m[2] != "" {
+			length, _ = strconv.Atoi(m[2])
+		}
+		// A hunk that only deletes lines reports the line it follows, so it sits
+		// inside a released section from the heading line onwards; a hunk that
+		// writes lines must begin below the heading.
+		inside := firstReleased > 0 && ((length == 0 && start >= firstReleased) || (length > 0 && start > firstReleased))
+		if !inside {
+			offending = append(offending, strings.TrimSpace(line))
+		}
+	}
+	return offending
+}
+
+func changelogEditHelp(offending []string) string {
+	return "\n" + changelogFile + " is edited outside release assembly and outside an already-released section:\n" +
+		"  " + strings.Join(offending, "\n  ") + "\n\n" +
+		"Put the entry in " + fragmentDir + "/<branch-name>.md instead. " + changelogFile + " is edited by hand only below\n" +
+		"the first released \"## [x.y.z]\" heading (a correction to released text), or by release assembly,\n" +
+		"which adds a new \"## [\" heading.\n"
 }
 
 // addedFragments returns the changelog.d/*.md paths this branch adds, taken
