@@ -47,8 +47,9 @@ jobs:
     # (2026-09-25) cancelled internal_services_6 and _7 at this cap. 14 shards
     # still wasn't enough for internal/api: run 36274821938 (2026-09-27,
     # WEB-88) cancelled internal_api_12 and _13 at this cap too, so
-    # internal/api grew from 14 to 20 the same way — the arithmetic for all
-    # three splits is beside SHARDED_PKGS in scripts/mutation.sh.
+    # internal/api grew from 14 to 20 the same way, then to 30 after runs
+    # 36351058682 and 36413106904 cancelled internal_api_20 — the arithmetic
+    # for all four splits is beside SHARDED_PKGS in scripts/mutation.sh.
     # This is a hang guard, not a runtime target — the job is advisory
     # (continue-on-error below) regardless.
     timeout-minutes: 180
@@ -56,7 +57,7 @@ jobs:
       contents: read
     strategy:
       fail-fast: false
-      # 35 cells, but never more runners at once than the 11 this job held
+      # 45 cells, but never more runners at once than the 11 this job held
       # before the split: a weekly advisory job must not take the whole
       # concurrent-job allowance from the pull requests and the merge queue.
       max-parallel: 11
@@ -97,6 +98,16 @@ jobs:
           - slug: internal_api_18
           - slug: internal_api_19
           - slug: internal_api_20
+          - slug: internal_api_21
+          - slug: internal_api_22
+          - slug: internal_api_23
+          - slug: internal_api_24
+          - slug: internal_api_25
+          - slug: internal_api_26
+          - slug: internal_api_27
+          - slug: internal_api_28
+          - slug: internal_api_29
+          - slug: internal_api_30
     env:
       GOBIN: ${{ github.workspace }}/.bin
       MUTATION_WORKERS: "2"
