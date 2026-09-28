@@ -20,8 +20,8 @@ import (
 )
 
 var (
-	rememberMeSpecPersistentDays = regexp.MustCompile("its `Expires` is set (\\d+) days after the cookie is issued, and the session token sealed inside it expires at the same time")
-	rememberMeSpecSessionDays    = regexp.MustCompile("the session token inside still expires (\\d+) days after the cookie is issued")
+	rememberMeSpecPersistentDays = regexp.MustCompile("its `Expires` is set " + `(\d+) days after the cookie is issued, and the session token sealed inside it expires at the same time`)
+	rememberMeSpecSessionDays    = regexp.MustCompile(`the session token inside still expires (\d+) days after the cookie is issued`)
 )
 
 // rememberMeSpecLifetimes reads the two lifetimes LoginRequest.remember_me
