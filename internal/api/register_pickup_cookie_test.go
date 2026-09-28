@@ -141,6 +141,9 @@ func TestSetAndPopRegisterPickupCookieRoundTrip(t *testing.T) {
 		t.Fatalf("set request: %v", err)
 	}
 	defer func() { _ = setResp.Body.Close() }()
+	if setResp.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("expected /set to reach 204, got %d", setResp.StatusCode)
+	}
 	for _, c := range setResp.Cookies() {
 		if c.Name == registerPickupCookieName {
 			cookieValue = c.Value
@@ -164,6 +167,9 @@ func TestSetAndPopRegisterPickupCookieRoundTrip(t *testing.T) {
 		t.Fatalf("pop request: %v", err)
 	}
 	defer func() { _ = popResp.Body.Close() }()
+	if popResp.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("expected /welcome to reach 204, got %d", popResp.StatusCode)
+	}
 
 	if !poppedOK {
 		t.Fatal("expected popRegisterPickupCookie to succeed")
@@ -171,6 +177,9 @@ func TestSetAndPopRegisterPickupCookieRoundTrip(t *testing.T) {
 	if popped.Nonce != original.Nonce || popped.RC != original.RC || popped.EXP != original.EXP {
 		t.Fatalf("payload not preserved across round-trip: got %+v want %+v", popped, original)
 	}
+	// popRegisterPickupCookie is single-use: it clears the cookie unconditionally
+	// on the SAME response, before it even looks at whether the pop succeeded.
+	assertSealedCookieCleared(t, popResp.Cookies(), registerPickupCookieName, registerPickupCookieSpec.path)
 }
 
 func TestPopRegisterPickupCookieWrongKeyReturnsEmpty(t *testing.T) {
@@ -224,10 +233,14 @@ func TestPopRegisterPickupCookieWrongKeyReturnsEmpty(t *testing.T) {
 		t.Fatalf("pop request: %v", err)
 	}
 	defer func() { _ = popResp.Body.Close() }()
+	if popResp.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("expected /welcome to reach 204, got %d", popResp.StatusCode)
+	}
 
 	if poppedOK {
 		t.Fatalf("expected wrong-key pop to fail, got %+v", popped)
 	}
+	assertSealedCookieCleared(t, popResp.Cookies(), registerPickupCookieName, registerPickupCookieSpec.path)
 }
 
 func TestPopRegisterPickupCookieTamperedValueReturnsEmpty(t *testing.T) {
@@ -248,8 +261,12 @@ func TestPopRegisterPickupCookieTamperedValueReturnsEmpty(t *testing.T) {
 		t.Fatalf("pop request: %v", err)
 	}
 	defer func() { _ = popResp.Body.Close() }()
+	if popResp.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("expected /welcome to reach 204, got %d", popResp.StatusCode)
+	}
 
 	if poppedOK {
 		t.Fatal("expected tampered pickup cookie to be rejected")
 	}
+	assertSealedCookieCleared(t, popResp.Cookies(), registerPickupCookieName, registerPickupCookieSpec.path)
 }

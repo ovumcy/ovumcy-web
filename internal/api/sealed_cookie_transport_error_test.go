@@ -37,6 +37,9 @@ func TestSealedCookieTransportFailsClosedWithoutSecret(t *testing.T) {
 		t.Fatalf("request failed: %v", err)
 	}
 	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("expected status 204, got %d", response.StatusCode)
+	}
 
 	for _, cookie := range response.Cookies() {
 		if cookie.Name == flashCookieName || cookie.Name == authCookieName {
@@ -63,6 +66,9 @@ func TestSetFlashCookieClearsOnEmptyPayload(t *testing.T) {
 		t.Fatalf("request failed: %v", err)
 	}
 	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("expected status 204, got %d", response.StatusCode)
+	}
 
 	cookie := responseCookie(response.Cookies(), flashCookieName)
 	if cookie == nil {

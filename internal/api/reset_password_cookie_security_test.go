@@ -118,6 +118,9 @@ func TestResetPasswordCookieRoundTripPreservesPayload(t *testing.T) {
 		t.Fatalf("open request: %v", err)
 	}
 	defer func() { _ = openResponse.Body.Close() }()
+	if openResponse.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("expected /open to reach 204, got %d; the in-handler round-trip assertion may have been skipped", openResponse.StatusCode)
+	}
 }
 
 func TestResetPasswordCookieRejectsTamperedByte(t *testing.T) {
@@ -162,6 +165,10 @@ func TestResetPasswordCookieRejectsTamperedByte(t *testing.T) {
 		t.Fatalf("open tampered request: %v", err)
 	}
 	defer func() { _ = openResponse.Body.Close() }()
+	if openResponse.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("expected /open to reach 204, got %d; the in-handler tampered-cookie assertion may have been skipped", openResponse.StatusCode)
+	}
+	assertSealedCookieCleared(t, openResponse.Cookies(), resetPasswordCookieName, resetPasswordCookieSpec.path)
 }
 
 func TestResetPasswordCookieRejectsForeignKey(t *testing.T) {
@@ -210,6 +217,10 @@ func TestResetPasswordCookieRejectsForeignKey(t *testing.T) {
 		t.Fatalf("open request: %v", err)
 	}
 	defer func() { _ = openResponse.Body.Close() }()
+	if openResponse.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("expected /open to reach 204, got %d; the in-handler foreign-key assertion may have been skipped", openResponse.StatusCode)
+	}
+	assertSealedCookieCleared(t, openResponse.Cookies(), resetPasswordCookieName, resetPasswordCookieSpec.path)
 }
 
 // TestResetPasswordCookieReaderClearsWhenCodecUnavailable drives
@@ -241,6 +252,10 @@ func TestResetPasswordCookieReaderClearsWhenCodecUnavailable(t *testing.T) {
 		t.Fatalf("open request: %v", err)
 	}
 	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("expected /open to reach 204, got %d; the in-handler assertion may have been skipped", response.StatusCode)
+	}
+	assertSealedCookieCleared(t, response.Cookies(), resetPasswordCookieName, resetPasswordCookieSpec.path)
 }
 
 // TestResetPasswordCookieReaderClearsOnNonJSONPlaintext drives
@@ -281,6 +296,10 @@ func TestResetPasswordCookieReaderClearsOnNonJSONPlaintext(t *testing.T) {
 		t.Fatalf("open request: %v", err)
 	}
 	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("expected /open to reach 204, got %d; the in-handler assertion may have been skipped", response.StatusCode)
+	}
+	assertSealedCookieCleared(t, response.Cookies(), resetPasswordCookieName, resetPasswordCookieSpec.path)
 }
 
 // TestResetPasswordCookieReaderClearsOnBlankToken drives readResetPasswordCookie's
@@ -313,4 +332,8 @@ func TestResetPasswordCookieReaderClearsOnBlankToken(t *testing.T) {
 		t.Fatalf("open request: %v", err)
 	}
 	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("expected /open to reach 204, got %d; the in-handler assertion may have been skipped", response.StatusCode)
+	}
+	assertSealedCookieCleared(t, response.Cookies(), resetPasswordCookieName, resetPasswordCookieSpec.path)
 }

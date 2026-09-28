@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -112,6 +113,31 @@ func responseCookie(cookies []*http.Cookie, name string) *http.Cookie {
 		}
 	}
 	return nil
+}
+
+// assertSealedCookieCleared fails unless cookies carries a clearing Set-Cookie
+// for name: an empty value, an Expires timestamp in the past (clearSealedCookie
+// backdates by an hour), and a Path matching the one the cookie was issued
+// under. Observing these attributes on the response itself is the point —
+// inferring "cleared" from a later re-open returning empty only proves the
+// reader rejects the value, never that the server actually told the browser
+// to drop it.
+func assertSealedCookieCleared(t *testing.T, cookies []*http.Cookie, name string, wantPath string) {
+	t.Helper()
+
+	cookie := responseCookie(cookies, name)
+	if cookie == nil {
+		t.Fatalf("expected a clearing Set-Cookie for %s", name)
+	}
+	if cookie.Value != "" {
+		t.Fatalf("expected %s cleared with an empty value, got %q", name, cookie.Value)
+	}
+	if !cookie.Expires.Before(time.Now()) {
+		t.Fatalf("expected %s cleared with an Expires in the past, got %s", name, cookie.Expires)
+	}
+	if wantPath != "" && cookie.Path != wantPath {
+		t.Fatalf("expected %s cleared on path %q, got %q", name, wantPath, cookie.Path)
+	}
 }
 
 func readAPIError(t *testing.T, body io.Reader) string {
