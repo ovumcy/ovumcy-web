@@ -3,6 +3,7 @@ package workflowfile
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -260,6 +261,33 @@ func TestStepsSplitsEveryStepAndStopsAtTheJob(t *testing.T) {
 	}
 	if steps := Steps("    steps:\n      - id: only\n"); len(steps) != 1 {
 		t.Errorf("a job opening on `steps:` gave %q, want its one step", steps)
+	}
+}
+
+// TestFailOpenKeysFindOnlyTheRunnerKeysAtTheirDepth holds both readers to the
+// keys they exist for: a step's own `if:` and `continue-on-error:`, one a
+// step opens on included, never a same-named key nested under `with:` or a
+// commented one; and at a job's depth only `continue-on-error:`, never the
+// job's `if:` trigger or a step's key below it.
+func TestFailOpenKeysFindOnlyTheRunnerKeysAtTheirDepth(t *testing.T) {
+	const step = "        continue-on-error: true\n        if: ${{ always() }}\n" +
+		"        with:\n          if: nested\n        # if: commented\n        run: exit 1\n"
+	if got, want := StepFailOpenKeys(step), []string{"continue-on-error: true", "if: ${{ always() }}"}; !slices.Equal(got, want) {
+		t.Errorf("StepFailOpenKeys = %q, want %q", got, want)
+	}
+
+	opensOnIf := Steps("    steps:\n      - if: false\n        name: Gate\n        run: exit 1\n")
+	if len(opensOnIf) != 1 || !slices.Equal(StepFailOpenKeys(opensOnIf[0]), []string{"if: false"}) {
+		t.Errorf("a step opening on `- if:` gave %q from Steps; its key must be found at a step's depth", opensOnIf)
+	}
+
+	const job = "    if: github.ref_type == 'tag'\n    continue-on-error: true\n    steps:\n" +
+		"      - name: Gate\n        continue-on-error: true\n        run: exit 1\n"
+	if got, want := JobFailOpenKeys(job), []string{"continue-on-error: true"}; !slices.Equal(got, want) {
+		t.Errorf("JobFailOpenKeys = %q, want %q", got, want)
+	}
+	if got := StepFailOpenKeys("        run: exit 1\n"); got != nil {
+		t.Errorf("a step with no runner key gave %q", got)
 	}
 }
 
