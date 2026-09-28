@@ -145,7 +145,8 @@ func vulnScanLines(t *testing.T, workflow string) []string {
 
 // NoIgnoreUnfixedAmongVulnScans refuses any vulnerability-gating Trivy
 // invocation that carries --ignore-unfixed. REL-7: it was set on the
-// filesystem scan, the image scan, and the pre-publish re-scan — all three
+// filesystem scan, the image scan, and the publish job's scan of the digest
+// it signs (then a pre-publish re-scan of a local rebuild) — all three
 // required or gating checks, all three writing what the Security tab or the
 // publish gate reads — so a CRITICAL with no upstream fix yet, the ordinary
 // case for a fresh CVE, tripped none of them.

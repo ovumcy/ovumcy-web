@@ -501,11 +501,20 @@ jobs:
             echo "::error::IMAGE_PLATFORMS names no platform, so this scan would judge nothing."
             exit 1
           fi
+          for platform in "${platforms[@]}"; do
+            if [[ ! "${platform}" =~ ^[a-z0-9]+/[a-z0-9]+(/[a-z0-9]+)?$ ]]; then
+              echo "::error::IMAGE_PLATFORMS entry '${platform}' is not an os/arch[/variant] platform, so the push and this scan would not agree on what ships."
+              exit 1
+            fi
+          done
 
+          # One cache for every run: the vulnerability DB is fetched once, so
+          # every platform is judged against the same DB.
+          mkdir -p "${RUNNER_TEMP}/trivy-cache"
           for platform in "${platforms[@]}"; do
             echo "::group::${platform} of ${IMAGE_REF}"
             # One line: the guard against `--ignore-unfixed` reads Trivy calls line by line.
-            docker run --rm -v "${HOME}/.docker/config.json:/root/.docker/config.json:ro" "${TRIVY_IMAGE}" image --image-src remote --platform "${platform}" --scanners vuln --skip-version-check --severity HIGH,CRITICAL --format table --exit-code 1 "${IMAGE_REF}"
+            docker run --rm -v "${HOME}/.docker/config.json:/root/.docker/config.json:ro" -v "${RUNNER_TEMP}/trivy-cache:/root/.cache/trivy" "${TRIVY_IMAGE}" image --image-src remote --platform "${platform}" --scanners vuln --skip-version-check --severity HIGH,CRITICAL --format table --exit-code 1 "${IMAGE_REF}"
             echo "::endgroup::"
           done
 
