@@ -15,44 +15,42 @@ import (
 )
 
 type stubAuthUserRepo struct {
-	existsByEmail            bool
-	existsByEmailErr         error
-	findAllByEmail           []models.User
-	findByEmailUser          models.User
-	findByEmailErr           error
-	findByEmailOptionalEmail string
-	findByEmailOptionalUser  models.User
-	findByEmailOptionalFound bool
-	findByEmailOptionalErr   error
-	findByIDOptionalUser     models.User
-	findByIDOptionalFound    bool
-	findByIDOptionalErr      error
-	user                     models.User
-	findByIDErr              error
-	createErr                error
-	createCalled             bool
-	createdUser              models.User
-	updatePasswordErr        error
-	updatePasswordCalled     bool
-	forceResetErr            error
-	forceResetCalled         bool
-	updateRecoveryPassErr    error
-	updateRecoveryCalled     bool
-	bumpSessionErr           error
-	bumpSessionCalled        bool
-	updateRecoveryCodeErr    error
-	updatedUserID            uint
-	updatedRecoveryHash      string
-	updatedPasswordHash      string
-	updatedMustChange        bool
-	upgradeHashErr           error
-	upgradeHashLost          bool
-	upgradeHashCalls         int
-	upgradeHashUserID        uint
-	upgradeHashOld           string
-	upgradeHashNew           string
-	claimRevealErr           error
-	claimRevealUserID        uint
+	existsByEmail    bool
+	existsByEmailErr error
+	// emailMatches is FindAllByNormalizedEmail's answer; emailFor, when set,
+	// limits it to that one address; emailErr fails the lookup.
+	emailMatches          []models.User
+	emailFor              string
+	emailErr              error
+	findByIDOptionalUser  models.User
+	findByIDOptionalFound bool
+	findByIDOptionalErr   error
+	user                  models.User
+	findByIDErr           error
+	createErr             error
+	createCalled          bool
+	createdUser           models.User
+	updatePasswordErr     error
+	updatePasswordCalled  bool
+	forceResetErr         error
+	forceResetCalled      bool
+	updateRecoveryPassErr error
+	updateRecoveryCalled  bool
+	bumpSessionErr        error
+	bumpSessionCalled     bool
+	updateRecoveryCodeErr error
+	updatedUserID         uint
+	updatedRecoveryHash   string
+	updatedPasswordHash   string
+	updatedMustChange     bool
+	upgradeHashErr        error
+	upgradeHashLost       bool
+	upgradeHashCalls      int
+	upgradeHashUserID     uint
+	upgradeHashOld        string
+	upgradeHashNew        string
+	claimRevealErr        error
+	claimRevealUserID     uint
 }
 
 func (stub *stubAuthUserRepo) ExistsByNormalizedEmail(context.Context, string) (bool, error) {
@@ -62,31 +60,18 @@ func (stub *stubAuthUserRepo) ExistsByNormalizedEmail(context.Context, string) (
 	return stub.existsByEmail, nil
 }
 
-// FindAllByNormalizedEmail answers from the fields the two single-row lookups
-// it replaced read: findByEmail* for the credential path, findByEmailOptional*
-// and user for the recovery path. findAllByEmail seeds a duplicate address.
+// FindAllByNormalizedEmail answers with emailMatches, optionally narrowed to
+// emailFor, or fails with emailErr. There is no fallback to stub.user — a
+// test that needs FindAllByNormalizedEmail to see stub.user sets emailMatches
+// explicitly.
 func (stub *stubAuthUserRepo) FindAllByNormalizedEmail(ctx context.Context, email string) ([]models.User, error) {
 	switch {
-	case stub.findAllByEmail != nil:
-		return stub.findAllByEmail, nil
-	case stub.findByEmailErr != nil:
-		return nil, stub.findByEmailErr
-	case stub.findByEmailOptionalErr != nil:
-		return nil, stub.findByEmailOptionalErr
-	case stub.findByEmailOptionalEmail != "" && stub.findByEmailOptionalEmail != email:
+	case stub.emailErr != nil:
+		return nil, stub.emailErr
+	case stub.emailFor != "" && stub.emailFor != email:
 		return nil, nil
-	case stub.findByEmailOptionalFound:
-		return []models.User{stub.findByEmailOptionalUser}, nil
-	case stubUserIsSeeded(stub.findByEmailUser):
-		return []models.User{stub.findByEmailUser}, nil
-	case stubUserIsSeeded(stub.user):
-		return []models.User{stub.user}, nil
 	}
-	return nil, nil
-}
-
-func stubUserIsSeeded(user models.User) bool {
-	return user.ID != 0 || user.Email != "" || user.RecoveryCodeHash != "" || user.PasswordHash != ""
+	return stub.emailMatches, nil
 }
 
 func (stub *stubAuthUserRepo) FindByID(context.Context, uint) (models.User, error) {
@@ -570,12 +555,14 @@ func TestAuthServiceAuthenticateCredentials(t *testing.T) {
 	}
 
 	repo := &stubAuthUserRepo{
-		findByEmailUser: models.User{
-			ID:               77,
-			Email:            "login@example.com",
-			PasswordHash:     string(passwordHash),
-			LocalAuthEnabled: true,
-			Role:             models.RoleOwner,
+		emailMatches: []models.User{
+			{
+				ID:               77,
+				Email:            "login@example.com",
+				PasswordHash:     string(passwordHash),
+				LocalAuthEnabled: true,
+				Role:             models.RoleOwner,
+			},
 		},
 	}
 	service := NewAuthService(repo)
@@ -592,7 +579,7 @@ func TestAuthServiceAuthenticateCredentials(t *testing.T) {
 		t.Fatalf("expected ErrAuthInvalidCreds for wrong password, got %v", err)
 	}
 
-	repo.findByEmailErr = errors.New("user not found")
+	repo.emailErr = errors.New("user not found")
 	if _, err := service.AuthenticateCredentials(context.Background(), "missing@example.com", "StrongPass1"); !errors.Is(err, ErrAuthInvalidCreds) {
 		t.Fatalf("expected ErrAuthInvalidCreds for missing user, got %v", err)
 	}
@@ -609,15 +596,16 @@ func TestAuthServiceFindUserByEmailRecoveryCodeAndPassword(t *testing.T) {
 	}
 
 	repo := &stubAuthUserRepo{
-		findByEmailOptionalEmail: "owner@example.com",
-		findByEmailOptionalFound: true,
-		findByEmailOptionalUser: models.User{
-			ID:               22,
-			Email:            "owner@example.com",
-			PasswordHash:     string(passwordHash),
-			RecoveryCodeHash: recoveryHash,
-			LocalAuthEnabled: true,
-			Role:             models.RoleOwner,
+		emailFor: "owner@example.com",
+		emailMatches: []models.User{
+			{
+				ID:               22,
+				Email:            "owner@example.com",
+				PasswordHash:     string(passwordHash),
+				RecoveryCodeHash: recoveryHash,
+				LocalAuthEnabled: true,
+				Role:             models.RoleOwner,
+			},
 		},
 	}
 	service := NewAuthService(repo)
@@ -645,15 +633,16 @@ func TestAuthServiceFindUserByEmailRecoveryCodeAndPasswordRejectsWrongPassword(t
 	}
 
 	repo := &stubAuthUserRepo{
-		findByEmailOptionalEmail: "owner@example.com",
-		findByEmailOptionalFound: true,
-		findByEmailOptionalUser: models.User{
-			ID:               22,
-			Email:            "owner@example.com",
-			PasswordHash:     string(passwordHash),
-			RecoveryCodeHash: recoveryHash,
-			LocalAuthEnabled: true,
-			Role:             models.RoleOwner,
+		emailFor: "owner@example.com",
+		emailMatches: []models.User{
+			{
+				ID:               22,
+				Email:            "owner@example.com",
+				PasswordHash:     string(passwordHash),
+				RecoveryCodeHash: recoveryHash,
+				LocalAuthEnabled: true,
+				Role:             models.RoleOwner,
+			},
 		},
 	}
 	service := NewAuthService(repo)
@@ -672,13 +661,14 @@ func TestAuthServiceFindUserByEmailRecoveryCodeAndPasswordRejectsMismatch(t *tes
 	}
 
 	repo := &stubAuthUserRepo{
-		findByEmailOptionalEmail: "owner@example.com",
-		findByEmailOptionalFound: true,
-		findByEmailOptionalUser: models.User{
-			ID:               22,
-			Email:            "owner@example.com",
-			RecoveryCodeHash: recoveryHash,
-			LocalAuthEnabled: true,
+		emailFor: "owner@example.com",
+		emailMatches: []models.User{
+			{
+				ID:               22,
+				Email:            "owner@example.com",
+				RecoveryCodeHash: recoveryHash,
+				LocalAuthEnabled: true,
+			},
 		},
 	}
 	service := NewAuthService(repo)

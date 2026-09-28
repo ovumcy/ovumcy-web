@@ -85,15 +85,16 @@ func TestPasswordResetServiceStartRecoveryWrongPasswordAddsFailure(t *testing.T)
 	}
 
 	repo := &stubAuthUserRepo{
-		findByEmailOptionalEmail: "owner@example.com",
-		findByEmailOptionalFound: true,
-		findByEmailOptionalUser: models.User{
-			ID:               77,
-			Email:            "owner@example.com",
-			PasswordHash:     string(passwordHash),
-			RecoveryCodeHash: recoveryHash,
-			LocalAuthEnabled: true,
-			Role:             models.RoleOwner,
+		emailFor: "owner@example.com",
+		emailMatches: []models.User{
+			{
+				ID:               77,
+				Email:            "owner@example.com",
+				PasswordHash:     string(passwordHash),
+				RecoveryCodeHash: recoveryHash,
+				LocalAuthEnabled: true,
+				Role:             models.RoleOwner,
+			},
 		},
 	}
 	service := NewPasswordResetService(NewAuthService(repo), NewAttemptLimiter())
@@ -131,15 +132,16 @@ func TestPasswordResetServiceStartRecoveryAnswersAnUnknownAddressLikeAKnownOne(t
 
 	newService := func() *PasswordResetService {
 		repo := &stubAuthUserRepo{
-			findByEmailOptionalEmail: "owner@example.com",
-			findByEmailOptionalFound: true,
-			findByEmailOptionalUser: models.User{
-				ID:               77,
-				Email:            "owner@example.com",
-				PasswordHash:     string(passwordHash),
-				RecoveryCodeHash: recoveryHash,
-				LocalAuthEnabled: true,
-				Role:             models.RoleOwner,
+			emailFor: "owner@example.com",
+			emailMatches: []models.User{
+				{
+					ID:               77,
+					Email:            "owner@example.com",
+					PasswordHash:     string(passwordHash),
+					RecoveryCodeHash: recoveryHash,
+					LocalAuthEnabled: true,
+					Role:             models.RoleOwner,
+				},
 			},
 		}
 		service := NewPasswordResetService(NewAuthService(repo), NewAttemptLimiter())
@@ -211,15 +213,17 @@ func TestPasswordResetServiceStartRecoverySuccessResetsLimiter(t *testing.T) {
 		t.Fatalf("hash password: %v", err)
 	}
 
+	ownerUser := models.User{
+		ID:               77,
+		Email:            "owner@example.com",
+		PasswordHash:     string(passwordHash),
+		RecoveryCodeHash: recoveryHash,
+		LocalAuthEnabled: true,
+		Role:             models.RoleOwner,
+	}
 	repo := &stubAuthUserRepo{
-		user: models.User{
-			ID:               77,
-			Email:            "owner@example.com",
-			PasswordHash:     string(passwordHash),
-			RecoveryCodeHash: recoveryHash,
-			LocalAuthEnabled: true,
-			Role:             models.RoleOwner,
-		},
+		user:         ownerUser,
+		emailMatches: []models.User{ownerUser},
 	}
 	authService := NewAuthService(repo)
 	limiter := NewAttemptLimiter()

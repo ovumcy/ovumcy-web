@@ -52,7 +52,9 @@ var (
 	// not actually control. The handler must capture the pending claims and
 	// require an explicit confirmation step (current local password) before
 	// linkIdentity is called. OIDCLoginResult.PendingLinkClaims carries the
-	// claims to persist; OIDCLoginResult.User carries the target user.
+	// claims to persist; OIDCLoginResult.User carries the target user. Both are
+	// empty when the address is one two accounts share (findUserByEmail): there
+	// is no single target, so a caller must check PendingLinkClaims for nil.
 	ErrOIDCLinkRequiresConfirmation = errors.New("oidc identity link requires confirmation")
 	// ErrOIDCIdentityNotFound indicates an unlink named no identity bound to the
 	// requesting account — missing, zero, or another owner's id alike.
@@ -388,9 +390,9 @@ func (service *OIDCLoginService) Authenticate(ctx context.Context, code string, 
 
 	result, err := service.authenticateExchange(ctx, exchange, effectiveOIDCLoginTime(now))
 	if errors.Is(err, ErrOIDCLinkRequiresConfirmation) {
-		// Preserve the pending-link payload (User + PendingLinkClaims) so the
-		// handler can stash them in the confirmation cookie. Logout state is
-		// intentionally not built — no session was issued.
+		// Preserve the pending-link payload (User + PendingLinkClaims; empty for
+		// a shared address) so the handler can stash them in the confirmation
+		// cookie. Logout state is intentionally not built — no session was issued.
 		return result, err
 	}
 	if err != nil {
