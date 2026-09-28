@@ -688,8 +688,10 @@ components:
     DailyLog:
       type: object
       description: |
-        A persisted day record. `date` is stored as UTC midnight on disk and
-        rendered in the caller's timezone at read time.
+        A day record: a stored one, or the `id: 0` placeholder that
+        `GET /api/v1/days/{date}` answers for a day without one. `date` is
+        stored as UTC midnight on disk and returned as that calendar day, with
+        no timezone shift.
       required: [id, user_id, date, is_period, flow, mood, sex_activity, cervical_mucus, pregnancy_test]
       properties:
         id:
@@ -2175,10 +2177,23 @@ paths:
       - $ref: '#/components/parameters/DateParam'
     get:
       tags: [days]
-      summary: Read a single day's entry.
+      summary: Read a single day's entry (owner only).
+      description: |
+        For a date the request accepts, the status does not depend on whether
+        the day has a stored record: a day with no record is answered `200`
+        with a placeholder built at
+        read time and never stored: `id` is `0`, `user_id` is the caller,
+        `date` is the requested date, `is_period`, `cycle_start` and
+        `is_uncertain` are `false`, `flow`, `sex_activity`, `cervical_mucus`
+        and `pregnancy_test` are `none`, `mood` is `0`, `notes` is empty,
+        `cycle_factor_keys` and `symptom_ids` are `[]`, `bbt` is absent, and
+        `created_at` and `updated_at` are `0001-01-01T00:00:00Z`.
+        `id: 0` means "no stored record"; a stored record always has a
+        non-zero `id`. A stored record can still hold no data (a `PUT` that
+        sends no values creates one), so ask `HEAD` whether the day holds data.
       responses:
         '200':
-          description: The day record.
+          description: 'The stored day record, or the `id: 0` placeholder when the day has none.'
           content:
             application/json:
               schema: { $ref: '#/components/schemas/DailyLog' }
@@ -2188,16 +2203,20 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
     head:
       tags: [days]
-      summary: Check whether the day has any persisted data (owner only).
+      summary: Check whether the day holds any entered data (owner only).
       description: |
-        Returns `200` if the day has at least one persisted field and `404`
-        otherwise. The response body is empty (HEAD); clients must branch on
-        the status code.
+        Answers, without a body, whether the day holds data: `200` when a
+        stored record for the day carries at least one entered value — period,
+        a flow other than `none`, mood 1–5, intimacy, BBT, cervical mucus, a
+        pregnancy test, a cycle factor, a symptom, or non-blank notes — and
+        `404` otherwise, including when a record exists but carries none of
+        them. Here `404` is an answer, not an error. Clients branch on the
+        status code.
       responses:
         '200':
-          description: Day has persisted data.
+          description: The day holds data.
         '404':
-          description: Day has no persisted data.
+          description: The day holds no data, whether or not a record is stored.
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '400': { $ref: '#/components/responses/ValidationError' }
