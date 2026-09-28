@@ -127,8 +127,8 @@ parallel one. Endpoints content-negotiate, so the JSON shape is part of the cont
 - Breaking, major release only: renaming or removing a field, requiring a request
   member that was optional, refusing one that was accepted, changing what a field or
   an operation means, changing a status code, a route or an error key. Each ships as
-  a **Breaking** entry in CHANGELOG.md that names what a client has to change (the
-  marker is described under Changelog Fragments below).
+  a **Breaking (API shape)** entry in CHANGELOG.md that names what a client has to
+  change (the marker is described under Changelog Fragments below).
 - A correction that makes docs/openapi.yaml describe what the server already does is
   not a breaking change, even when the corrected text is stricter than the old one;
   it is listed under **Fixed**.
@@ -147,7 +147,7 @@ breaks.
 
 If you script against `/api/v1/*` from outside the bundled UI, pin a specific image
 tag and re-validate on every upgrade: minor and patch releases within a major are
-safe; before a major upgrade, read its **Breaking** entries.
+safe; before a major upgrade, read its **Breaking (API shape)** entries.
 
 ## Changelog Fragments
 
@@ -174,8 +174,8 @@ header plus the entry:
   in its ordinary section — usually `### Changed` or `### Fixed`; there is no `### Breaking` header —
   and opens its bold summary with `Breaking (API shape):`, for example
   `- **Breaking (API shape): onboarding step 2 no longer accepts age_group.**`. The entry names what
-  a client has to change. A break is judged against the last release, so a route that has not been
-  released yet carries no marker.
+  a client has to change. A break is judged against the last release, so a route, or a behaviour
+  introduced and changed again between two releases, that no release shipped carries no marker.
 - A pull request with no user-visible change adds a fragment whose first line is exactly `none`;
   anything below that line is ignored, so the reason can be written underneath it.
 - `CHANGELOG.md` itself is edited directly only by release assembly and by corrections to text that
