@@ -1497,8 +1497,9 @@ func requireBash(t *testing.T) string {
 // runBashScript writes script to a file under t.TempDir() and returns a Cmd
 // that runs it the way the runner runs the named step: as a FILE, never `-c`,
 // under the flags that step's own `shell:` compiles to. Not every step under
-// `publish` declares `shell: bash` — `Sign the pushed digest` declares none and run as `bash -e {0}`, without
-// pipefail — so the flags are read off the step rather than assumed, and a
+// `publish` declares `shell: bash` — `Sign the pushed digest` declares none and
+// runs as `bash -e {0}`, without pipefail — so the flags are read off the step
+// rather than assumed, and a
 // step naming any other shell fails here instead of running. A
 // script long enough to hold one of these steps also truncates silently on
 // Windows when handed to `-c` as a command-line argument.
