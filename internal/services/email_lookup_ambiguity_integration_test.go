@@ -59,6 +59,10 @@ func TestWebSignInRefusesAMailboxTwoAccountsShare(t *testing.T) {
 		_, unknownErr := auth.AuthenticateCredentials(ctx, unknown, password)
 		unknownUnits := ledger.drain()
 
+		if !errors.Is(unknownErr, ErrAuthInvalidCreds) {
+			t.Fatalf("anchor: an unknown address must be refused with ErrAuthInvalidCreds, got %v", unknownErr)
+		}
+
 		user, err := auth.AuthenticateCredentials(ctx, shared, password)
 		if !errors.Is(err, ErrAuthInvalidCreds) || err.Error() != unknownErr.Error() || user.ID != 0 {
 			t.Fatalf("an ambiguous address must be refused as an unknown one (%v), got user %d, err %v", unknownErr, user.ID, err)
@@ -75,6 +79,10 @@ func TestWebSignInRefusesAMailboxTwoAccountsShare(t *testing.T) {
 		_, unknownErr := auth.FindUserByEmailRecoveryCodeAndPassword(ctx, unknown, recoveryCode, password)
 		unknownUnits := ledger.drain()
 
+		if !errors.Is(unknownErr, ErrRecoveryCodeNotFound) {
+			t.Fatalf("anchor: an unknown address must be refused with ErrRecoveryCodeNotFound, got %v", unknownErr)
+		}
+
 		user, err := auth.FindUserByEmailRecoveryCodeAndPassword(ctx, shared, recoveryCode, password)
 		if !errors.Is(err, ErrRecoveryCodeNotFound) || err.Error() != unknownErr.Error() || user != nil {
 			t.Fatalf("an ambiguous address must be refused as an unknown one (%v), got user %v, err %v", unknownErr, user, err)
@@ -84,24 +92,24 @@ func TestWebSignInRefusesAMailboxTwoAccountsShare(t *testing.T) {
 		}
 	})
 
+	provisioner := &stubOIDCAutoProvisioner{}
+	ssoAs := func(email string) (OIDCLoginResult, error) {
+		client := &stubOIDCProviderClient{
+			enabled: true,
+			config:  security.OIDCConfig{Enabled: true, AutoProvision: true},
+			exchange: security.OIDCExchangeResult{Claims: security.OIDCClaims{
+				Issuer:        twoOwnerIssuerA,
+				Subject:       "fresh-subject-" + email,
+				Email:         email,
+				EmailVerified: true,
+				AuthTime:      now.Add(-time.Minute),
+			}},
+		}
+		return NewOIDCLoginService(client, repositories.OIDCIdentities, repositories.Users, provisioner).Authenticate(ctx, "code", "verifier", "nonce", now)
+	}
+
 	t.Run("sso sign-in", func(t *testing.T) {
 		solo := createTwoOwnerUser(t, database, "solo@example.com", nil)
-		provisioner := &stubOIDCAutoProvisioner{}
-		ssoAs := func(email string) (OIDCLoginResult, error) {
-			client := &stubOIDCProviderClient{
-				enabled: true,
-				config:  security.OIDCConfig{Enabled: true, AutoProvision: true},
-				exchange: security.OIDCExchangeResult{Claims: security.OIDCClaims{
-					Issuer:        twoOwnerIssuerA,
-					Subject:       "fresh-subject-" + email,
-					Email:         email,
-					EmailVerified: true,
-					AuthTime:      now.Add(-time.Minute),
-				}},
-			}
-			return NewOIDCLoginService(client, repositories.OIDCIdentities, repositories.Users, provisioner).Authenticate(ctx, "code", "verifier", "nonce", now)
-		}
-
 		_, soloErr := ssoAs(solo.Email)
 		if !errors.Is(soloErr, ErrOIDCLinkRequiresConfirmation) {
 			t.Fatalf("anchor: a single unlinked account must be refused for confirmation, got %v", soloErr)
@@ -130,5 +138,8 @@ func TestWebSignInRefusesAMailboxTwoAccountsShare(t *testing.T) {
 	}
 	if user, err := auth.FindUserByEmailRecoveryCodeAndPassword(ctx, shared, recoveryCode, password); err != nil || user == nil || user.ID != first.ID {
 		t.Fatalf("anchor: the now-unique address must resolve account %d for recovery, got %v (err=%v)", first.ID, user, err)
+	}
+	if result, err := ssoAs(shared); !errors.Is(err, ErrOIDCLinkRequiresConfirmation) || result.User.ID != first.ID {
+		t.Fatalf("anchor: SSO on the now-unique address must offer account %d for link confirmation, got %d (err=%v)", first.ID, result.User.ID, err)
 	}
 }
