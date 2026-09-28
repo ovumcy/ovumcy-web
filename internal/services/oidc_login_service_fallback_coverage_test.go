@@ -23,16 +23,108 @@ import (
 // stub for the rest of the interface (FindByID).
 type oidcCovMissThenFindUserStore struct {
 	*stubOIDCUserStore
-	calls    int
-	fallback models.User
+	calls       int
+	fallback    models.User
+	fallbackAll []models.User
+	fallbackErr error
 }
 
 func (s *oidcCovMissThenFindUserStore) FindAllByNormalizedEmail(_ context.Context, _ string) ([]models.User, error) {
 	s.calls++
-	if s.calls == 1 {
+	switch {
+	case s.calls == 1:
 		return nil, nil
+	case s.fallbackErr != nil:
+		return nil, s.fallbackErr
+	case s.fallbackAll != nil:
+		return s.fallbackAll, nil
 	}
 	return []models.User{s.fallback}, nil
+}
+
+func newOIDCCovAutoProvisionService(users OIDCUserStore, identities *stubOIDCIdentityStore, provisioner *stubOIDCAutoProvisioner) *OIDCLoginService {
+	return NewOIDCLoginService(&stubOIDCProviderClient{
+		enabled: true,
+		config: security.OIDCConfig{
+			Enabled:       true,
+			AutoProvision: true,
+		},
+		exchange: security.OIDCExchangeResult{
+			Claims: security.OIDCClaims{
+				Issuer:        "https://id.example.com",
+				Subject:       "shared-sub",
+				Email:         "shared@example.com",
+				EmailVerified: true,
+			},
+		},
+	}, identities, users, provisioner)
+}
+
+func TestOIDCLoginServiceEmailLookupStoreErrorFailsResolution(t *testing.T) {
+	t.Parallel()
+
+	provisioner := &stubOIDCAutoProvisioner{}
+	identities := &stubOIDCIdentityStore{}
+	users := &stubOIDCUserStore{byEmailErr: errors.New("db down")}
+	service := newOIDCCovAutoProvisionService(users, identities, provisioner)
+
+	_, err := service.Authenticate(context.Background(), "code", "verifier", "nonce", time.Time{})
+	if !errors.Is(err, ErrOIDCIdentityResolveFailed) {
+		t.Fatalf("expected ErrOIDCIdentityResolveFailed, got %v", err)
+	}
+	if provisioner.called || identities.createCallSeen {
+		t.Fatalf("a failed email lookup must neither provision nor link: provisioned=%v linked=%v", provisioner.called, identities.createCallSeen)
+	}
+}
+
+func TestOIDCLoginServiceAutoProvisionConflictFallbackLookupFailures(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name  string
+		users *oidcCovMissThenFindUserStore
+		want  error
+	}{
+		{
+			name: "store error",
+			users: &oidcCovMissThenFindUserStore{
+				stubOIDCUserStore: &stubOIDCUserStore{},
+				fallbackErr:       errors.New("db down"),
+			},
+			want: ErrOIDCIdentityResolveFailed,
+		},
+		{
+			name: "ambiguous address",
+			users: &oidcCovMissThenFindUserStore{
+				stubOIDCUserStore: &stubOIDCUserStore{},
+				fallbackAll: []models.User{
+					{ID: 3, Email: "shared@example.com", Role: models.RoleOwner},
+					{ID: 4, Email: "shared@example.com", Role: models.RoleOwner},
+				},
+			},
+			want: ErrOIDCLinkRequiresConfirmation,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			provisioner := &stubOIDCAutoProvisioner{err: ErrAuthEmailExists}
+			identities := &stubOIDCIdentityStore{}
+			service := newOIDCCovAutoProvisionService(tc.users, identities, provisioner)
+
+			_, err := service.Authenticate(context.Background(), "code", "verifier", "nonce", time.Time{})
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("expected %v, got %v", tc.want, err)
+			}
+			if !provisioner.called || tc.users.calls != 2 {
+				t.Fatalf("expected miss, provision conflict, re-lookup; provisioned=%v lookups=%d", provisioner.called, tc.users.calls)
+			}
+			if identities.createCallSeen {
+				t.Fatalf("a failed re-lookup must not link an identity, got %+v", identities.created)
+			}
+		})
+	}
 }
 
 func TestOIDCLoginServiceAutoProvisionConflictFallbackRejectsUnsupportedRole(t *testing.T) {

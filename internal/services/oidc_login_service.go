@@ -656,7 +656,7 @@ func (service *OIDCLoginService) resolveUserForClaims(ctx context.Context, claim
 	return service.findOrProvisionUser(ctx, normalizedEmail, loginTime)
 }
 
-// findUserByEmail refuses an address two legacy accounts share with the answer
+// findUserByEmail refuses an address two accounts share with the answer
 // a single unlinked account gets — ErrOIDCLinkRequiresConfirmation — so the
 // callback never tells a shared mailbox from an ordinary one, and neither
 // account is linked, signed in, or provisioned beside.

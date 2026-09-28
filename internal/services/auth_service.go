@@ -368,7 +368,7 @@ func (service *AuthService) BuildOIDCOwnerUser(email string, createdAt time.Time
 }
 
 func (service *AuthService) AuthenticateCredentials(ctx context.Context, email string, password string) (models.User, error) {
-	// An address two legacy accounts share is refused exactly as an unknown
+	// An address two accounts share is refused exactly as an unknown
 	// one — same sentinel, same bcrypt spend — so the duplicate stays
 	// invisible and neither account is picked for the caller.
 	user, found, err := resolveUniqueUserByEmail(ctx, service.users, email)

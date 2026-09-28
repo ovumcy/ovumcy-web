@@ -64,7 +64,7 @@ func (stub *stubAuthUserRepo) ExistsByNormalizedEmail(context.Context, string) (
 
 // FindAllByNormalizedEmail answers from the fields the two single-row lookups
 // it replaced read: findByEmail* for the credential path, findByEmailOptional*
-// and user for the recovery path. findAllByEmail seeds a legacy duplicate.
+// and user for the recovery path. findAllByEmail seeds a duplicate address.
 func (stub *stubAuthUserRepo) FindAllByNormalizedEmail(ctx context.Context, email string) ([]models.User, error) {
 	switch {
 	case stub.findAllByEmail != nil:

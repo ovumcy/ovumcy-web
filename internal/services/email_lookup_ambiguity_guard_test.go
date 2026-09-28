@@ -7,8 +7,8 @@ import (
 	"go/types"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"golang.org/x/tools/go/packages"
@@ -18,6 +18,8 @@ import (
 const (
 	emailGuardDBPath       = "github.com/ovumcy/ovumcy-web/internal/db"
 	emailGuardServicesPath = "github.com/ovumcy/ovumcy-web/internal/services"
+	emailGuardGormPath     = "gorm.io/gorm"
+	emailGuardFixtureFile  = "zz_email_guard_fixture.go"
 
 	emailGuardRowReader = "(*" + emailGuardDBPath + ".UserRepository).FindAllByNormalizedEmail"
 )
@@ -54,13 +56,13 @@ var emailResolverCallersThatMustStay = []string{
 //     whether called on *db.UserRepository itself or through any interface
 //     (or constraint) it satisfies, as a call or as a method value.
 func TestEveryEmailAddressedAccountLookupRefusesAnAmbiguousMatch(t *testing.T) {
-	loaded := loadEmailGuardTree(t, nil, "./cmd/...", "./internal/...", "./migrations/...", "./scripts/...", "./web/...")
+	loaded := withoutEmailGuardFixtures(loadEmailGuardTree(t))
 
 	readers := findEmailReaders(loaded)
 	if _, ok := readers[emailGuardRowReader]; !ok {
-		t.Fatalf("the scan did not find %s among the email readers (%v): it is not measuring what it claims", emailGuardRowReader, sortedEmailReaderNames(readers))
+		t.Fatalf("the scan did not find %s among the email readers (%v): it is not measuring what it claims", emailGuardRowReader, sortedKeys(readers))
 	}
-	for _, name := range sortedEmailReaderNames(readers) {
+	for _, name := range sortedKeys(readers) {
 		reader := readers[name]
 		if reader.singleRow {
 			t.Errorf("%s (%s) reads ONE row under an email predicate: on a legacy database it silently picks one of two accounts; return every match and resolve through resolveUniqueUserByEmail", name, reader.at)
@@ -106,13 +108,88 @@ func TestEveryEmailAddressedAccountLookupRefusesAnAmbiguousMatch(t *testing.T) {
 // services packages and type-checked with them, so each shape resolves exactly
 // as a real one would.
 func TestEmailLookupGuardRecognisesItsOwnFixtures(t *testing.T) {
-	root := emailGuardModuleRoot(t)
-	overlay := map[string][]byte{
-		filepath.Join(root, "internal", "db", "zz_email_guard_fixture.go"): []byte(`package db
+	loaded := loadEmailGuardTree(t)
 
-import "github.com/ovumcy/ovumcy-web/internal/models"
+	fixtureMethod := func(name string) string { return "(*" + emailGuardDBPath + ".UserRepository)." + name }
+	readers := findEmailReaders(loaded)
+	for name, wantSingle := range map[string]bool{
+		fixtureMethod("emailGuardFixtureFirst"):                true,
+		fixtureMethod("emailGuardFixtureFindIntoStruct"):       true,
+		fixtureMethod("emailGuardFixtureInlineCondition"):      true,
+		fixtureMethod("emailGuardFixtureStructCondition"):      false,
+		fixtureMethod("emailGuardFixtureUpperCaseColumn"):      true,
+		fixtureMethod("emailGuardFixtureOtherStructCondition"): true,
+		fixtureMethod("emailGuardFixtureSQLQueryRow"):          true,
+		fixtureMethod("emailGuardFixtureSQLRowsScan"):          false,
+		emailGuardDBPath + ".emailGuardFixtureVarInitializer":  true,
+	} {
+		reader, ok := readers[name]
+		switch {
+		case !ok:
+			t.Errorf("%s reads under an email predicate but the scan did not find it", name)
+		case reader.singleRow != wantSingle:
+			t.Errorf("%s: singleRow = %v, want %v", name, reader.singleRow, wantSingle)
+		}
+	}
+	if _, ok := readers[fixtureMethod("emailGuardFixtureProjectionOnly")]; ok {
+		t.Error("emailGuardFixtureProjectionOnly only selects and orders by email; it filters on nothing and must not count as an email reader")
+	}
+
+	rowReader := lookupEmailGuardMethod(t, loaded, emailGuardDBPath, "UserRepository", "FindAllByNormalizedEmail")
+	found := map[string]bool{}
+	for _, site := range referencesTo(loaded, rowReader) {
+		found[site.enclosingName()] = true
+	}
+	for _, name := range []string{"emailGuardFixtureThroughAnInterface", "emailGuardFixtureMethodValue", "emailGuardFixtureThroughAConstraint", "emailGuardFixtureThroughAnEmbeddedInterface", "resolveUniqueUserByEmail"} {
+		if !found[emailGuardServicesPath+"."+name] {
+			t.Errorf("the reference scan missed %s (found %v)", name, sortedKeys(found))
+		}
+	}
+
+	for name := range findEmailReaders(withoutEmailGuardFixtures(loaded)) {
+		if strings.Contains(name, "emailGuardFixture") {
+			t.Errorf("%s survived the fixture filter: the tree guard would judge its own fixtures", name)
+		}
+	}
+}
+
+// emailGuardFixtureOverlay is type-checked into the one shared load; the tree
+// guard drops these files again through withoutEmailGuardFixtures.
+func emailGuardFixtureOverlay(root string) map[string][]byte {
+	return map[string][]byte{
+		filepath.Join(root, "internal", "db", emailGuardFixtureFile): []byte(`package db
+
+import (
+	"database/sql"
+
+	"github.com/ovumcy/ovumcy-web/internal/models"
+)
 
 const emailGuardFixturePredicate = "lower(trim(email)) = ?"
+
+var emailGuardFixtureVarInitializer = func(repo *UserRepository, email string) (user models.User) {
+	repo.database.Where("email = ?", email).First(&user)
+	return user
+}
+
+func (repo *UserRepository) emailGuardFixtureSQLQueryRow(conn *sql.DB, email string) (id uint) {
+	_ = conn.QueryRow("SELECT id FROM users WHERE email = ?", email).Scan(&id)
+	return id
+}
+
+func (repo *UserRepository) emailGuardFixtureSQLRowsScan(conn *sql.DB, email string) (ids []uint) {
+	rows, err := conn.Query("SELECT id FROM users WHERE email = ?", email)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id uint
+		_ = rows.Scan(&id)
+		ids = append(ids, id)
+	}
+	return ids
+}
 
 func (repo *UserRepository) emailGuardFixtureFirst(email string) (user models.User) {
 	repo.database.Where("email = ?", email).First(&user)
@@ -149,7 +226,7 @@ func (repo *UserRepository) emailGuardFixtureProjectionOnly() (users []models.Us
 	return users
 }
 `),
-		filepath.Join(root, "internal", "services", "zz_email_guard_fixture.go"): []byte(`package services
+		filepath.Join(root, "internal", "services", emailGuardFixtureFile): []byte(`package services
 
 import "context"
 
@@ -171,40 +248,6 @@ func emailGuardFixtureThroughAnEmbeddedInterface(ctx context.Context, holder ema
 	_, _ = holder.FindAllByNormalizedEmail(ctx, "owner@example.com")
 }
 `),
-	}
-	loaded := loadEmailGuardTree(t, overlay, "./internal/db", "./internal/services", "./internal/models")
-
-	fixtureMethod := func(name string) string { return "(*" + emailGuardDBPath + ".UserRepository)." + name }
-	readers := findEmailReaders(loaded)
-	for name, wantSingle := range map[string]bool{
-		"emailGuardFixtureFirst":                true,
-		"emailGuardFixtureFindIntoStruct":       true,
-		"emailGuardFixtureInlineCondition":      true,
-		"emailGuardFixtureStructCondition":      false,
-		"emailGuardFixtureUpperCaseColumn":      true,
-		"emailGuardFixtureOtherStructCondition": true,
-	} {
-		reader, ok := readers[fixtureMethod(name)]
-		switch {
-		case !ok:
-			t.Errorf("%s reads under an email predicate but the scan did not find it", name)
-		case reader.singleRow != wantSingle:
-			t.Errorf("%s: singleRow = %v, want %v", name, reader.singleRow, wantSingle)
-		}
-	}
-	if _, ok := readers[fixtureMethod("emailGuardFixtureProjectionOnly")]; ok {
-		t.Error("emailGuardFixtureProjectionOnly only selects and orders by email; it filters on nothing and must not count as an email reader")
-	}
-
-	rowReader := lookupEmailGuardMethod(t, loaded, emailGuardDBPath, "UserRepository", "FindAllByNormalizedEmail")
-	found := map[string]bool{}
-	for _, site := range referencesTo(loaded, rowReader) {
-		found[site.enclosingName()] = true
-	}
-	for _, name := range []string{"emailGuardFixtureThroughAnInterface", "emailGuardFixtureMethodValue", "emailGuardFixtureThroughAConstraint", "emailGuardFixtureThroughAnEmbeddedInterface", "resolveUniqueUserByEmail"} {
-		if !found[emailGuardServicesPath+"."+name] {
-			t.Errorf("the reference scan missed %s (found %v)", name, sortedKeys(found))
-		}
 	}
 }
 
@@ -232,7 +275,9 @@ var (
 		"FirstOrInit": true, "FirstOrCreate": true,
 		"QueryRow": true, "QueryRowContext": true,
 	}
-	// queryDestinationReads return one row when handed a non-slice destination.
+	// queryDestinationReads return one row when handed a non-slice
+	// destination — in gorm only: database/sql's and pgx's Scan copy the
+	// current row of a query already counted above.
 	queryDestinationReads = map[string]bool{"Find": true, "Scan": true}
 	// queryProjections name columns without filtering on them.
 	queryProjections = map[string]bool{
@@ -248,28 +293,39 @@ var (
 // struct field named Email — gorm's column email — in a struct condition.
 //
 // Deliberately narrower than "every email-keyed read": the unit is one
-// function declaration, so a query whose predicate is built in one function
-// and read in another (a helper returning *gorm.DB, a named Scope) is not
-// joined up, and a column name held in a non-constant variable is not seen.
-// Neither shape exists in the tree; each would pass this scan.
+// function declaration or one package-level variable initializer (a func
+// literal assigned there included), so a query whose predicate is built in one
+// function and read in another (a helper returning *gorm.DB, a named Scope) is
+// not joined up, and a column name held in a non-constant variable is not
+// seen. Neither shape exists in the tree; each would pass this scan.
 func findEmailReaders(loaded []*packages.Package) map[string]emailReader {
 	readers := map[string]emailReader{}
+	record := func(pkg *packages.Package, name string, node ast.Node) {
+		namesEmail, reads, singleRow := scanEmailRead(pkg.TypesInfo, node)
+		if namesEmail && reads {
+			readers[name] = emailReader{at: pkg.Fset.Position(node.Pos()).String(), singleRow: singleRow}
+		}
+	}
 	for _, pkg := range loaded {
 		for _, file := range pkg.Syntax {
 			for _, declaration := range file.Decls {
-				function, ok := declaration.(*ast.FuncDecl)
-				if !ok || function.Body == nil {
-					continue
+				switch typed := declaration.(type) {
+				case *ast.FuncDecl:
+					if object, ok := pkg.TypesInfo.Defs[typed.Name].(*types.Func); ok && typed.Body != nil {
+						record(pkg, object.FullName(), typed.Body)
+					}
+				case *ast.GenDecl:
+					for _, spec := range typed.Specs {
+						value, ok := spec.(*ast.ValueSpec)
+						if !ok {
+							continue
+						}
+						for index, initializer := range value.Values {
+							name := value.Names[min(index, len(value.Names)-1)]
+							record(pkg, pkg.PkgPath+"."+name.Name, initializer)
+						}
+					}
 				}
-				namesEmail, reads, singleRow := scanEmailRead(pkg.TypesInfo, function.Body)
-				if !namesEmail || !reads {
-					continue
-				}
-				object, ok := pkg.TypesInfo.Defs[function.Name].(*types.Func)
-				if !ok {
-					continue
-				}
-				readers[object.FullName()] = emailReader{at: pkg.Fset.Position(function.Pos()).String(), singleRow: singleRow}
 			}
 		}
 	}
@@ -294,7 +350,7 @@ func scanEmailRead(info *types.Info, body ast.Node) (namesEmail bool, reads bool
 			name := callee.Name()
 			reads = reads || queryRowReads[name]
 			singleRow = singleRow || querySingleRowReads[name] ||
-				(queryDestinationReads[name] && len(call.Args) > 0 && !pointsToSlice(info.TypeOf(call.Args[0])))
+				(callee.Pkg().Path() == emailGuardGormPath && queryDestinationReads[name] && len(call.Args) > 0 && !pointsToSlice(info.TypeOf(call.Args[0])))
 			visit(call.Fun, filtering)
 			for _, argument := range call.Args {
 				visit(argument, filtering || !queryProjections[name])
@@ -321,7 +377,7 @@ func isQueryAPI(callee *types.Func) bool {
 		return false
 	}
 	path := callee.Pkg().Path()
-	return path == "gorm.io/gorm" || path == "database/sql" || strings.HasPrefix(path, "github.com/jackc/pgx/")
+	return path == emailGuardGormPath || path == "database/sql" || strings.HasPrefix(path, "github.com/jackc/pgx/")
 }
 
 func pointsToSlice(kind types.Type) bool {
@@ -433,21 +489,43 @@ func emailGuardPackage(t *testing.T, loaded []*packages.Package, pkgPath string)
 	return nil
 }
 
-// loadEmailGuardTree type-checks the named packages' production sources. It
-// fails closed: a package that does not type-check resolves nothing, and a
-// guard that resolves nothing passes over everything.
-func loadEmailGuardTree(t *testing.T, overlay map[string][]byte, patterns ...string) []*packages.Package {
+var (
+	emailGuardLoadOnce sync.Once
+	emailGuardLoaded   []*packages.Package
+	emailGuardLoadErr  error
+)
+
+// loadEmailGuardTree type-checks the tree's production sources with the
+// fixture overlay, once for both guard tests. It fails closed: a package that
+// does not type-check resolves nothing, and a guard that resolves nothing
+// passes over everything.
+func loadEmailGuardTree(t *testing.T) []*packages.Package {
 	t.Helper()
+	emailGuardLoadOnce.Do(func() {
+		emailGuardLoaded, emailGuardLoadErr = loadEmailGuardPackages()
+	})
+	if emailGuardLoadErr != nil {
+		t.Fatal(emailGuardLoadErr)
+	}
+	return emailGuardLoaded
+}
+
+func loadEmailGuardPackages() ([]*packages.Package, error) {
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		return nil, fmt.Errorf("resolve module root: %w", err)
+	}
+	patterns := []string{"./cmd/...", "./internal/...", "./migrations/...", "./scripts/...", "./web/..."}
 	config := &packages.Config{
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax |
 			packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports,
-		Dir:     emailGuardModuleRoot(t),
-		Overlay: overlay,
+		Dir:     root,
+		Overlay: emailGuardFixtureOverlay(root),
 		Tests:   false,
 	}
 	loaded, err := packages.Load(config, patterns...)
 	if err != nil {
-		t.Fatalf("load %v: %v", patterns, err)
+		return nil, fmt.Errorf("load %v: %w", patterns, err)
 	}
 	var failures []string
 	for _, pkg := range loaded {
@@ -456,25 +534,25 @@ func loadEmailGuardTree(t *testing.T, overlay map[string][]byte, patterns ...str
 		}
 	}
 	if len(failures) > 0 {
-		t.Fatalf("the tree does not type-check:\n%v", failures)
+		return nil, fmt.Errorf("the tree does not type-check:\n%v", failures)
 	}
-	return loaded
+	return loaded, nil
 }
 
-func emailGuardModuleRoot(t *testing.T) string {
-	t.Helper()
-	root, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatalf("resolve module root: %v", err)
+// withoutEmailGuardFixtures drops the overlaid fixture files from each
+// package's syntax, leaving the shared type information intact, so the tree
+// guard scans only real sources.
+func withoutEmailGuardFixtures(loaded []*packages.Package) []*packages.Package {
+	filtered := make([]*packages.Package, 0, len(loaded))
+	for _, pkg := range loaded {
+		view := *pkg
+		view.Syntax = nil
+		for _, file := range pkg.Syntax {
+			if filepath.Base(pkg.Fset.Position(file.Package).Filename) != emailGuardFixtureFile {
+				view.Syntax = append(view.Syntax, file)
+			}
+		}
+		filtered = append(filtered, &view)
 	}
-	return root
-}
-
-func sortedEmailReaderNames(readers map[string]emailReader) []string {
-	names := make([]string, 0, len(readers))
-	for name := range readers {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
+	return filtered
 }
