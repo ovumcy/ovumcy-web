@@ -2,6 +2,7 @@ package publishorder
 
 import (
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -64,6 +65,18 @@ func TestTheScanRunsTrivyOnEveryPlatformOfThePushedDigest(t *testing.T) {
 	bash := requireBash(t)
 	pushed := imageName + "@" + digest
 
+	// The scan walks the job's list in order and stops at the first finding,
+	// so what a failing platform leaves scanned is read off that same list.
+	declared := strings.Split(jobEnv(job)[platformsKey], ",")
+	scannedThrough := func(platform string) []string {
+		index := slices.Index(declared, platform)
+		if index < 0 {
+			t.Fatalf("%s is %q, which lacks %s", platformsKey, jobEnv(job)[platformsKey], platform)
+		}
+		return declared[:index+1]
+	}
+	platformList := func(list string) *string { return &list }
+
 	for _, testCase := range []struct {
 		name         string
 		ref          string
@@ -72,14 +85,17 @@ func TestTheScanRunsTrivyOnEveryPlatformOfThePushedDigest(t *testing.T) {
 		wantScanned  []string
 		wantRefusal  string
 	}{
-		{name: "every platform clean", ref: pushed, wantScanned: requiredPlatforms},
-		{name: "arm64 carries a finding", ref: pushed, failPlatform: "linux/arm64", wantScanned: requiredPlatforms, wantRefusal: "exit"},
-		{name: "amd64 carries a finding", ref: pushed, failPlatform: "linux/amd64", wantScanned: requiredPlatforms[:1], wantRefusal: "exit"},
+		{name: "every platform clean", ref: pushed, wantScanned: declared},
+		{name: "arm64 carries a finding", ref: pushed, failPlatform: "linux/arm64", wantScanned: scannedThrough("linux/arm64"), wantRefusal: "exit"},
+		{name: "amd64 carries a finding", ref: pushed, failPlatform: "linux/amd64", wantScanned: scannedThrough("linux/amd64"), wantRefusal: "exit"},
 		{name: "the push reported no digest", ref: imageName + "@", wantRefusal: "reported no digest"},
 		{name: "a tag instead of a digest", ref: imageName + ":latest", wantRefusal: "reported no digest"},
 		{name: "no platform declared", ref: pushed, platforms: new(string), wantRefusal: "names no platform"},
+		{name: "an empty platform entry", ref: pushed, platforms: platformList("linux/amd64,,linux/arm64"), wantRefusal: "is not an os/arch"},
+		{name: "a malformed platform entry", ref: pushed, platforms: platformList("linux/amd64, linux/arm64"), wantRefusal: "is not an os/arch"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
+			runnerTemp := filepath.ToSlash(t.TempDir())
 			preamble := strings.Join([]string{
 				`docker() {`,
 				`  echo "DOCKER-RUN $*"`,
@@ -88,7 +104,7 @@ func TestTheScanRunsTrivyOnEveryPlatformOfThePushedDigest(t *testing.T) {
 				"",
 			}, "\n")
 			command := runBashScript(t, bash, job, scanStep, preamble+stepScript(t, job, scanStep))
-			command.Env = append(os.Environ(), "HOME=/stub-home", "TRIVY_IMAGE="+stubTrivy)
+			command.Env = append(os.Environ(), "HOME=/stub-home", "RUNNER_TEMP="+runnerTemp, "TRIVY_IMAGE="+stubTrivy)
 			for key, value := range jobEnv(job) {
 				command.Env = append(command.Env, key+"="+value)
 			}
@@ -106,7 +122,7 @@ func TestTheScanRunsTrivyOnEveryPlatformOfThePushedDigest(t *testing.T) {
 				if !ok {
 					continue
 				}
-				scanned = append(scanned, requireTrivyScan(t, strings.Fields(args), testCase.ref))
+				scanned = append(scanned, requireTrivyScan(t, strings.Fields(args), testCase.ref, runnerTemp+"/trivy-cache:/root/.cache/trivy"))
 			}
 
 			if !slices.Equal(scanned, testCase.wantScanned) {
@@ -126,13 +142,15 @@ func TestTheScanRunsTrivyOnEveryPlatformOfThePushedDigest(t *testing.T) {
 
 // requireTrivyScan checks one `docker` call is the gate's scan of ref — the
 // same scanner, threshold and exit code as the required `trivy-image` check,
-// read from the registry rather than a local daemon — and returns its platform.
-func requireTrivyScan(t *testing.T, args []string, ref string) string {
+// read from the registry rather than a local daemon, from the one cache every
+// platform's run shares — and returns its platform.
+func requireTrivyScan(t *testing.T, args []string, ref, cacheMount string) string {
 	t.Helper()
 
 	joined := " " + strings.Join(args, " ") + " "
 	for _, want := range []string{
 		" run --rm ",
+		" -v " + cacheMount + " ",
 		" " + stubTrivy + " image ",
 		" --image-src remote ",
 		" --scanners vuln ",
