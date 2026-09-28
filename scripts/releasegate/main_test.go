@@ -582,34 +582,43 @@ func runGate(t *testing.T, script string, env map[string]string, state scenario)
 		"",
 	}, "\n")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-
 	bash := bashPath(t)
 	requireWorkingBash(t, bash)
 
-	// Run as the runner runs the gate step: a FILE, never `-c`, under the
-	// flags the step's own `shell:` compiles to, read off the step so a step
-	// that drops `shell: bash` runs here under `bash -e` as it does on the
-	// runner, and one naming another shell fails rather than running under
-	// flags assumed for it. This script is also long enough that handing it
-	// to `-c` as a command-line argument truncates it silently on Windows.
-	flags := workflowfile.BashStepFlags(t, gateWorkflow, gateStep, stepBlock(t))
-	scriptFile := filepath.Join(dir, "gate.sh")
-	if err := os.WriteFile(scriptFile, []byte(preamble+script), 0o644); err != nil {
-		t.Fatalf("write the gate script: %v", err)
-	}
-	command := exec.CommandContext(ctx, bash, append(flags, filepath.ToSlash(scriptFile))...)
-	command.Env = append(os.Environ(),
+	environ := append(os.Environ(),
 		"GITHUB_SHA=5049126faa3152cced900c304c3640e4ec724ba5",
 		"GITHUB_REPOSITORY=ovumcy/ovumcy-web",
 		"GITHUB_REF_NAME=v2.0.0",
 		"GH_TOKEN=stub",
 	)
 	for key, value := range env {
-		command.Env = append(command.Env, key+"="+value)
+		environ = append(environ, key+"="+value)
+	}
+	return runStepScript(t, bash, gateStep, stepBlock(t), preamble+script, "", environ)
+}
+
+// runStepScript runs script as the runner runs the named step of the gate job:
+// a FILE, never `-c`, under the flags the step's own `shell:` compiles to, read
+// off the step so a step that drops `shell: bash` runs here under `bash -e` as
+// it does on the runner, and one naming another shell fails rather than
+// running under flags assumed for it. These scripts are also long enough that
+// handing one to `-c` as a command-line argument truncates it silently on
+// Windows. dir is the working directory; empty keeps the test's own.
+func runStepScript(t *testing.T, bash, step, block, script, dir string, environ []string) (string, error) {
+	t.Helper()
+
+	flags := workflowfile.BashStepFlags(t, gateWorkflow, step, block)
+	scriptFile := filepath.Join(t.TempDir(), "step.sh")
+	if err := os.WriteFile(scriptFile, []byte(script), 0o644); err != nil {
+		t.Fatalf("write the script of step %q: %v", step, err)
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	command := exec.CommandContext(ctx, bash, append(flags, filepath.ToSlash(scriptFile))...)
+	command.Dir = dir
+	command.Env = environ
 	output, err := command.CombinedOutput()
 	return string(output), err
 }
