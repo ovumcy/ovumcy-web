@@ -30,10 +30,7 @@ var (
 
 type OperatorUserRepository interface {
 	ListOperatorUserSummaries(ctx context.Context) ([]models.OperatorUserSummary, error)
-	FindByNormalizedEmailOptional(ctx context.Context, email string) (models.User, bool, error)
-	// FindAllByNormalizedEmail is the ambiguity-aware counterpart
-	// GetUserByEmail resolves through instead of FindByNormalizedEmailOptional:
-	// see resolveUniqueUserByEmail.
+	// FindAllByNormalizedEmail is read only through resolveUniqueUserByEmail.
 	FindAllByNormalizedEmail(ctx context.Context, email string) ([]models.User, error)
 	FindByIDOptional(ctx context.Context, userID uint) (models.User, bool, error)
 	ExistsByNormalizedEmailExcludingUser(ctx context.Context, email string, excludeUserID uint) (bool, error)

@@ -23,14 +23,6 @@ func (stubLogoutAuthRepo) ExistsByNormalizedEmail(context.Context, string) (bool
 	return false, nil
 }
 
-func (stubLogoutAuthRepo) FindByNormalizedEmail(context.Context, string) (models.User, error) {
-	return models.User{}, nil
-}
-
-func (stubLogoutAuthRepo) FindByNormalizedEmailOptional(context.Context, string) (models.User, bool, error) {
-	return models.User{}, false, nil
-}
-
 func (stubLogoutAuthRepo) FindAllByNormalizedEmail(context.Context, string) ([]models.User, error) {
 	return nil, nil
 }

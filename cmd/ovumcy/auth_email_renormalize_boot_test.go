@@ -40,9 +40,9 @@ func TestMustRenormalizeAuthEmailsAcrossBoots(t *testing.T) {
 
 	mustRenormalizeAuthEmails(repositories)
 
-	repaired, err := repositories.Users.FindByNormalizedEmail(context.Background(), "boot-legacy@example.com")
-	if err != nil || repaired.ID != legacy.ID {
-		t.Fatalf("first boot must repair the legacy row (err=%v, id=%d, want %d)", err, repaired.ID, legacy.ID)
+	repaired, err := repositories.Users.FindAllByNormalizedEmail(context.Background(), "boot-legacy@example.com")
+	if err != nil || len(repaired) != 1 || repaired[0].ID != legacy.ID {
+		t.Fatalf("first boot must repair the legacy row (err=%v, matches=%d, want id %d)", err, len(repaired), legacy.ID)
 	}
 	first, found, err := repositories.AppState.Get(context.Background(), models.AppStateKeyAuthEmailRenormalizeV1)
 	if err != nil || !found || first == "" {

@@ -27,12 +27,12 @@ type oidcCovMissThenFindUserStore struct {
 	fallback models.User
 }
 
-func (s *oidcCovMissThenFindUserStore) FindByNormalizedEmailOptional(_ context.Context, _ string) (models.User, bool, error) {
+func (s *oidcCovMissThenFindUserStore) FindAllByNormalizedEmail(_ context.Context, _ string) ([]models.User, error) {
 	s.calls++
 	if s.calls == 1 {
-		return models.User{}, false, nil
+		return nil, nil
 	}
-	return s.fallback, true, nil
+	return []models.User{s.fallback}, nil
 }
 
 func TestOIDCLoginServiceAutoProvisionConflictFallbackRejectsUnsupportedRole(t *testing.T) {

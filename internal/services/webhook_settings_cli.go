@@ -20,10 +20,7 @@ var ErrWebhookOwnerNotFound = errors.New("webhook owner not found")
 // WebhookSettingsRepository (the slice-1 write surface) so the save path's
 // interface stays minimal; *db.UserRepository satisfies both.
 type WebhookOwnerReader interface {
-	FindByNormalizedEmailOptional(ctx context.Context, email string) (models.User, bool, error)
-	// FindAllByNormalizedEmail is the ambiguity-aware counterpart resolveOwner
-	// resolves through instead of FindByNormalizedEmailOptional: see
-	// resolveUniqueUserByEmail.
+	// FindAllByNormalizedEmail is read only through resolveUniqueUserByEmail.
 	FindAllByNormalizedEmail(ctx context.Context, email string) ([]models.User, error)
 }
 

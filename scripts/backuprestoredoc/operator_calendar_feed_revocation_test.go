@@ -643,8 +643,8 @@ func assertOperatorCLIRemovedTheAccount(t *testing.T, result operatorCLIResult) 
 func assertRunbookAccountPresent(t *testing.T, repos *db.Repositories, email string) {
 	t.Helper()
 
-	if _, found, err := repos.Users.FindByNormalizedEmailOptional(context.Background(), email); err != nil || !found {
-		t.Errorf("the account %s must still be there after a refused removal (found=%v, err=%v)", email, found, err)
+	if matches, err := repos.Users.FindAllByNormalizedEmail(context.Background(), email); err != nil || len(matches) != 1 {
+		t.Errorf("the account %s must still be there after a refused removal (matches=%d, err=%v)", email, len(matches), err)
 	}
 }
 

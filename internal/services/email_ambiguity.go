@@ -51,15 +51,17 @@ type normalizedEmailFinder interface {
 	FindAllByNormalizedEmail(ctx context.Context, email string) ([]models.User, error)
 }
 
-// resolveUniqueUserByEmail is the ambiguity-aware counterpart to a bare
-// FindByNormalizedEmailOptional call, shared by every service that resolves
-// an account by email on behalf of an operator: OperatorUserService.GetUserByEmail
-// (which `users delete` and `reset-password` both resolve their target through)
-// and WebhookSettingsCLIService.resolveOwner.
+// resolveUniqueUserByEmail is the one way this package resolves an account by
+// email: operator commands (OperatorUserService.GetUserByEmail,
+// WebhookSettingsCLIService.resolveOwner) and the web sign-in paths
+// (AuthenticateCredentials, FindUserByEmailRecoveryCodeAndPassword,
+// OIDCLoginService.findUserByEmail) alike; email_lookup_ambiguity_guard_test.go
+// refuses any other reader of FindAllByNormalizedEmail.
 // It returns (user, false, nil) when nothing matches — the caller decides how
 // to report "not found" in its own vocabulary — and *AmbiguousEmailError when
 // more than one row matches, rather than silently returning whichever row the
-// underlying query happened to return first.
+// underlying query happened to return first. A web caller must translate that
+// error into its ordinary refusal: its message names account ids.
 func resolveUniqueUserByEmail(ctx context.Context, finder normalizedEmailFinder, normalizedEmail string) (models.User, bool, error) {
 	matches, err := finder.FindAllByNormalizedEmail(ctx, normalizedEmail)
 	if err != nil {

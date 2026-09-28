@@ -23,14 +23,6 @@ type stubWebhookReader struct {
 	findAllByEmailUsers []models.User
 }
 
-func (s *stubWebhookReader) FindByNormalizedEmailOptional(_ context.Context, email string) (models.User, bool, error) {
-	s.gotEmail = email
-	if s.lookErr != nil {
-		return models.User{}, false, s.lookErr
-	}
-	return s.user, s.found, nil
-}
-
 func (s *stubWebhookReader) FindAllByNormalizedEmail(_ context.Context, email string) ([]models.User, error) {
 	s.gotEmail = email
 	if s.lookErr != nil {
