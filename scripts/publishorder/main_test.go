@@ -96,6 +96,8 @@ const (
 	publicStep  = "Verify every public tag anonymously and against the signed digest"
 
 	installCosignStep = "Install Cosign"
+	pullTrivyStep     = "Pull Trivy image"
+	scanStep          = "Scan every platform of the pushed digest before signing it"
 
 	mirrorLoginStep  = "Log in to Docker Hub for the mirror"
 	mirrorStep       = "Mirror the signed digest to Docker Hub"
@@ -190,6 +192,7 @@ func TestNoPublicTagIsCreatedBeforeTheSignature(t *testing.T) {
 	}
 
 	push := index(pushStep)
+	scan := index(scanStep)
 	sign := index(signStep)
 	attest := index(attestStep)
 	verify := index(verifyStep)
@@ -203,6 +206,8 @@ func TestNoPublicTagIsCreatedBeforeTheSignature(t *testing.T) {
 		because        string
 	}{
 		{push, sign, pushStep, signStep, "there is nothing to sign until the digest is pushed"},
+		{push, scan, pushStep, scanStep, "the scan reads the pushed digest out of the registry, so there is nothing to read before the push"},
+		{scan, sign, scanStep, signStep, "a signature is the release's claim that the digest was judged; signing before the scan signs whatever it would have refused"},
 		{sign, promote, signStep, promoteStep, "a tag written before the signature is an unsigned public release for as long as the signing step takes, and forever if it fails"},
 		{attest, promote, attestStep, promoteStep, "provenance is promised for every published image, so the alias must not exist before the attestation does"},
 		{verify, promote, verifyStep, promoteStep, "the signature and the attestation are two API calls that reported success; the promotion is gated on reading them back, not on their exit codes"},
@@ -277,10 +282,9 @@ func TestOnlyReviewedStepsRunBeforeThePromotion(t *testing.T) {
 		"Log in to GHCR",
 		resolveStep,
 		"Extract Docker metadata",
-		"Build runtime image for the pre-publish scan",
-		"Pull Trivy image",
-		"Scan the image before publishing it",
 		pushStep,
+		pullTrivyStep,
+		scanStep,
 		installCosignStep,
 		signStep,
 		attestStep,
@@ -1493,8 +1497,7 @@ func requireBash(t *testing.T) string {
 // runBashScript writes script to a file under t.TempDir() and returns a Cmd
 // that runs it the way the runner runs the named step: as a FILE, never `-c`,
 // under the flags that step's own `shell:` compiles to. Not every step under
-// `publish` declares `shell: bash` — `Scan the image before publishing it` and
-// `Sign the pushed digest` declare none and run as `bash -e {0}`, without
+// `publish` declares `shell: bash` — `Sign the pushed digest` declares none and run as `bash -e {0}`, without
 // pipefail — so the flags are read off the step rather than assumed, and a
 // step naming any other shell fails here instead of running. A
 // script long enough to hold one of these steps also truncates silently on
