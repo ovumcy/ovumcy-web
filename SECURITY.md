@@ -85,6 +85,7 @@ Detailed security design lives in per-concern documents under [`docs/security/`]
 - [Password & Auth Policy, Rate Limits](docs/security/auth-policy-and-rate-limits.md) — password/recovery/TOTP policy and the per-IP / per-account rate limits.
 - [Threat Model](docs/security/threat-model.md) — in-scope defences and explicit out-of-scope assumptions.
 - [Logging Policy](docs/security/logging.md) — the off-by-default audit stream and request-log sanitization.
+- [Auth Cookie Scoping](docs/security/auth-cookie-scoping.md) — design note (SEC-L9) on what the `ovumcy_auth` cookie's name, `Domain` and `Secure` attributes are today and what that implies.
 
 ## GDPR Cross-Reference
 
