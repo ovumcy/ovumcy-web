@@ -57,8 +57,8 @@ const credentialsTimingEqualizationHash = "$2a$12$pI5aDx1kby9ZEk9.2NzhBeq77y41xg
 
 type AuthUserRepository interface {
 	ExistsByNormalizedEmail(ctx context.Context, email string) (bool, error)
-	FindByNormalizedEmail(ctx context.Context, email string) (models.User, error)
-	FindByNormalizedEmailOptional(ctx context.Context, email string) (models.User, bool, error)
+	// FindAllByNormalizedEmail is read only through resolveUniqueUserByEmail.
+	FindAllByNormalizedEmail(ctx context.Context, email string) ([]models.User, error)
 	FindByID(ctx context.Context, userID uint) (models.User, error)
 	FindByIDOptional(ctx context.Context, userID uint) (models.User, bool, error)
 	Create(ctx context.Context, user *models.User) error
@@ -167,10 +167,6 @@ func (service *AuthService) RegistrationEmailExists(ctx context.Context, email s
 
 func (service *AuthService) CreateUser(ctx context.Context, user *models.User) error {
 	return service.users.Create(ctx, user)
-}
-
-func (service *AuthService) FindByNormalizedEmail(ctx context.Context, email string) (models.User, error) {
-	return service.users.FindByNormalizedEmail(ctx, email)
 }
 
 func (service *AuthService) FindByID(ctx context.Context, userID uint) (models.User, error) {
@@ -372,8 +368,11 @@ func (service *AuthService) BuildOIDCOwnerUser(email string, createdAt time.Time
 }
 
 func (service *AuthService) AuthenticateCredentials(ctx context.Context, email string, password string) (models.User, error) {
-	user, err := service.users.FindByNormalizedEmail(ctx, email)
-	if err != nil {
+	// An address two legacy accounts share is refused exactly as an unknown
+	// one — same sentinel, same bcrypt spend — so the duplicate stays
+	// invisible and neither account is picked for the caller.
+	user, found, err := resolveUniqueUserByEmail(ctx, service.users, email)
+	if err != nil || !found {
 		equalizeAuthCredentialsTiming(password)
 		return models.User{}, ErrAuthInvalidCreds
 	}
@@ -460,7 +459,13 @@ func (service *AuthService) FindUserByEmailRecoveryCodeAndPassword(ctx context.C
 	if normalizedEmail == "" {
 		return nil, ErrRecoveryCodeNotFound
 	}
-	user, found, err := service.users.FindByNormalizedEmailOptional(ctx, normalizedEmail)
+	user, found, err := resolveUniqueUserByEmail(ctx, service.users, normalizedEmail)
+	var ambiguous *AmbiguousEmailError
+	if errors.As(err, &ambiguous) {
+		// Refused as an unknown address, for the reason AuthenticateCredentials
+		// gives; the error names the matching ids and must not travel further.
+		found, err = false, nil
+	}
 	if err != nil {
 		return nil, err
 	}

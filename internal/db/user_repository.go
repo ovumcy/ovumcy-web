@@ -174,32 +174,15 @@ func (repo *UserRepository) FindByIDOptional(ctx context.Context, userID uint) (
 	return user, true, nil
 }
 
-func (repo *UserRepository) FindByNormalizedEmail(ctx context.Context, email string) (models.User, error) {
-	var user models.User
-	if err := repo.database.WithContext(ctx).Where("lower(trim(email)) = ?", email).First(&user).Error; err != nil {
-		return models.User{}, err
-	}
-	return user, nil
-}
-
-func (repo *UserRepository) FindByNormalizedEmailOptional(ctx context.Context, email string) (models.User, bool, error) {
-	var user models.User
-	if err := repo.database.WithContext(ctx).Where("lower(trim(email)) = ?", email).First(&user).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return models.User{}, false, nil
-		}
-		return models.User{}, false, err
-	}
-	return user, true, nil
-}
-
-// FindAllByNormalizedEmail returns every row matching the normalized address,
-// ordered by id, instead of gorm's arbitrary first match. A legacy database
-// can hold more than one: two accounts on one mailbox is exactly the case the
-// boot-time email renormalizer leaves standing (RenormalizeUserEmail) when it
-// keeps the older row's address and locks the newer one out. A caller acting
-// on a single row must use this, not FindByNormalizedEmailOptional, wherever
-// picking the wrong one silently would be a mistake worth refusing instead.
+// FindAllByNormalizedEmail is the ONLY row-returning lookup by email this
+// repository offers. It returns every matching row, ordered by id, because a
+// database without idx_users_email_normalized can hold more than one row on
+// one mailbox — the migration refuses to build the index over duplicates, so
+// only an index dropped or restored away outside the app leaves that state —
+// and a single-row lookup would hand back whichever row the query reached first. There is deliberately no
+// single-row variant: every caller resolves through
+// services.resolveUniqueUserByEmail, which refuses an ambiguous match
+// (email_lookup_ambiguity_guard_test.go in internal/services keeps it so).
 func (repo *UserRepository) FindAllByNormalizedEmail(ctx context.Context, email string) ([]models.User, error) {
 	var users []models.User
 	if err := repo.database.WithContext(ctx).
@@ -1185,7 +1168,7 @@ func (repo *UserRepository) DisarmAllCalendarFeedTokens(ctx context.Context) (in
 // FindByCalendarFeedSelector resolves the single owner whose calendar_feed_selector
 // equals selector, for the by-selector feed lookup (a later slice). It returns
 // (user, true, nil) on a hit and (zero, false, nil) when no row matches — the
-// same not-found shape as FindByNormalizedEmailOptional — so the caller can keep
+// same not-found shape as FindByIDOptional — so the caller can keep
 // a missing selector and a wrong verifier observationally identical (no oracle).
 //
 // An empty selector is treated as an immediate miss and never hits the database:

@@ -44,13 +44,6 @@ func (stub *stubOperatorUserRepo) ListOperatorUserSummaries(context.Context) ([]
 	return stub.listUsers, nil
 }
 
-func (stub *stubOperatorUserRepo) FindByNormalizedEmailOptional(context.Context, string) (models.User, bool, error) {
-	if stub.findErr != nil {
-		return models.User{}, false, stub.findErr
-	}
-	return stub.user, stub.found, nil
-}
-
 func (stub *stubOperatorUserRepo) FindAllByNormalizedEmail(context.Context, string) ([]models.User, error) {
 	if stub.findErr != nil {
 		return nil, stub.findErr

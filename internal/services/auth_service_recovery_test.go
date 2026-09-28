@@ -17,6 +17,7 @@ import (
 type stubAuthUserRepo struct {
 	existsByEmail            bool
 	existsByEmailErr         error
+	findAllByEmail           []models.User
 	findByEmailUser          models.User
 	findByEmailErr           error
 	findByEmailOptionalEmail string
@@ -61,27 +62,31 @@ func (stub *stubAuthUserRepo) ExistsByNormalizedEmail(context.Context, string) (
 	return stub.existsByEmail, nil
 }
 
-func (stub *stubAuthUserRepo) FindByNormalizedEmail(context.Context, string) (models.User, error) {
-	if stub.findByEmailErr != nil {
-		return models.User{}, stub.findByEmailErr
+// FindAllByNormalizedEmail answers from the fields the two single-row lookups
+// it replaced read: findByEmail* for the credential path, findByEmailOptional*
+// and user for the recovery path. findAllByEmail seeds a legacy duplicate.
+func (stub *stubAuthUserRepo) FindAllByNormalizedEmail(ctx context.Context, email string) ([]models.User, error) {
+	switch {
+	case stub.findAllByEmail != nil:
+		return stub.findAllByEmail, nil
+	case stub.findByEmailErr != nil:
+		return nil, stub.findByEmailErr
+	case stub.findByEmailOptionalErr != nil:
+		return nil, stub.findByEmailOptionalErr
+	case stub.findByEmailOptionalEmail != "" && stub.findByEmailOptionalEmail != email:
+		return nil, nil
+	case stub.findByEmailOptionalFound:
+		return []models.User{stub.findByEmailOptionalUser}, nil
+	case stubUserIsSeeded(stub.findByEmailUser):
+		return []models.User{stub.findByEmailUser}, nil
+	case stubUserIsSeeded(stub.user):
+		return []models.User{stub.user}, nil
 	}
-	return stub.findByEmailUser, nil
+	return nil, nil
 }
 
-func (stub *stubAuthUserRepo) FindByNormalizedEmailOptional(ctx context.Context, email string) (models.User, bool, error) {
-	if stub.findByEmailOptionalErr != nil {
-		return models.User{}, false, stub.findByEmailOptionalErr
-	}
-	if stub.findByEmailOptionalEmail != "" && stub.findByEmailOptionalEmail != email {
-		return models.User{}, false, nil
-	}
-	if stub.findByEmailOptionalFound {
-		return stub.findByEmailOptionalUser, true, nil
-	}
-	if stub.user.ID != 0 || stub.user.Email != "" || stub.user.RecoveryCodeHash != "" || stub.user.PasswordHash != "" {
-		return stub.user, true, nil
-	}
-	return models.User{}, false, nil
+func stubUserIsSeeded(user models.User) bool {
+	return user.ID != 0 || user.Email != "" || user.RecoveryCodeHash != "" || user.PasswordHash != ""
 }
 
 func (stub *stubAuthUserRepo) FindByID(context.Context, uint) (models.User, error) {

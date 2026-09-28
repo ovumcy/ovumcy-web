@@ -24,20 +24,3 @@ func TestAuthServiceCreateUserDelegates(t *testing.T) {
 		t.Fatalf("CreateUser error = %v, want %v", err, wantErr)
 	}
 }
-
-func TestAuthServiceFindByNormalizedEmailDelegates(t *testing.T) {
-	service := NewAuthService(&stubAuthUserRepo{findByEmailUser: models.User{ID: 42}})
-	got, err := service.FindByNormalizedEmail(context.Background(), "owner@example.com")
-	if err != nil {
-		t.Fatalf("FindByNormalizedEmail() unexpected error: %v", err)
-	}
-	if got.ID != 42 {
-		t.Fatalf("FindByNormalizedEmail returned user ID %d, want 42", got.ID)
-	}
-
-	wantErr := errors.New("lookup failed")
-	failing := NewAuthService(&stubAuthUserRepo{findByEmailErr: wantErr})
-	if _, err := failing.FindByNormalizedEmail(context.Background(), "owner@example.com"); !errors.Is(err, wantErr) {
-		t.Fatalf("FindByNormalizedEmail error = %v, want %v", err, wantErr)
-	}
-}

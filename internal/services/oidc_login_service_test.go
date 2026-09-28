@@ -164,6 +164,7 @@ type stubOIDCUserStore struct {
 	lastLookupID    uint
 	byEmail         models.User
 	byEmailFound    bool
+	byEmailAll      []models.User
 	byEmailErr      error
 	lastLookupEmail string
 }
@@ -192,15 +193,17 @@ func (stub *stubOIDCUserStore) FindByID(_ context.Context, userID uint) (models.
 	return stub.byID, nil
 }
 
-func (stub *stubOIDCUserStore) FindByNormalizedEmailOptional(ctx context.Context, email string) (models.User, bool, error) {
+func (stub *stubOIDCUserStore) FindAllByNormalizedEmail(ctx context.Context, email string) ([]models.User, error) {
 	stub.lastLookupEmail = email
-	if stub.byEmailErr != nil {
-		return models.User{}, false, stub.byEmailErr
+	switch {
+	case stub.byEmailErr != nil:
+		return nil, stub.byEmailErr
+	case stub.byEmailAll != nil:
+		return stub.byEmailAll, nil
+	case !stub.byEmailFound:
+		return nil, nil
 	}
-	if !stub.byEmailFound {
-		return models.User{}, false, nil
-	}
-	return stub.byEmail, true, nil
+	return []models.User{stub.byEmail}, nil
 }
 
 func TestOIDCLoginServiceResponseMode(t *testing.T) {

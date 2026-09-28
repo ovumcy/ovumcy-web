@@ -53,9 +53,9 @@ func TestAuthEmailRenormalizerAgainstRealRepositories(t *testing.T) {
 	}
 
 	// The decorated solo row is reachable by its bare address again.
-	found, err := repo.FindByNormalizedEmail(ctx, "solo@example.com")
-	if err != nil || found.ID != decorated.ID {
-		t.Fatalf("expected solo@example.com to resolve user %d, got %d (err=%v)", decorated.ID, found.ID, err)
+	found, err := repo.FindAllByNormalizedEmail(ctx, "solo@example.com")
+	if err != nil || len(found) != 1 || found[0].ID != decorated.ID {
+		t.Fatalf("expected solo@example.com to resolve exactly user %d, got %d matches (err=%v)", decorated.ID, len(found), err)
 	}
 
 	// The collider stays as stored: its bare address belongs to dupOwner.
@@ -63,9 +63,9 @@ func TestAuthEmailRenormalizerAgainstRealRepositories(t *testing.T) {
 	if colliderRow.Email != "second account <dup@example.com>" {
 		t.Fatalf("collider row must stay untouched, got %q", colliderRow.Email)
 	}
-	owner, err := repo.FindByNormalizedEmail(ctx, "dup@example.com")
-	if err != nil || owner.ID != dupOwner.ID {
-		t.Fatalf("dup@example.com must still resolve its original owner %d, got %d (err=%v)", dupOwner.ID, owner.ID, err)
+	owner, err := repo.FindAllByNormalizedEmail(ctx, "dup@example.com")
+	if err != nil || len(owner) != 1 || owner[0].ID != dupOwner.ID {
+		t.Fatalf("dup@example.com must still resolve only its original owner %d, got %d matches (err=%v)", dupOwner.ID, len(owner), err)
 	}
 
 	// Case-only row lowered; identity untouched otherwise.

@@ -107,7 +107,8 @@ type LinkedOIDCIdentity struct {
 
 type OIDCUserStore interface {
 	FindByID(ctx context.Context, userID uint) (models.User, error)
-	FindByNormalizedEmailOptional(ctx context.Context, email string) (models.User, bool, error)
+	// FindAllByNormalizedEmail is read only through resolveUniqueUserByEmail.
+	FindAllByNormalizedEmail(ctx context.Context, email string) ([]models.User, error)
 }
 
 type OIDCAutoProvisioner interface {
@@ -655,10 +656,26 @@ func (service *OIDCLoginService) resolveUserForClaims(ctx context.Context, claim
 	return service.findOrProvisionUser(ctx, normalizedEmail, loginTime)
 }
 
-func (service *OIDCLoginService) findOrProvisionUser(ctx context.Context, normalizedEmail string, loginTime time.Time) (models.User, bool, error) {
-	user, found, err := service.users.FindByNormalizedEmailOptional(ctx, normalizedEmail)
-	if err != nil {
+// findUserByEmail refuses an address two legacy accounts share with the answer
+// a single unlinked account gets — ErrOIDCLinkRequiresConfirmation — so the
+// callback never tells a shared mailbox from an ordinary one, and neither
+// account is linked, signed in, or provisioned beside.
+func (service *OIDCLoginService) findUserByEmail(ctx context.Context, normalizedEmail string) (models.User, bool, error) {
+	user, found, err := resolveUniqueUserByEmail(ctx, service.users, normalizedEmail)
+	var ambiguous *AmbiguousEmailError
+	switch {
+	case errors.As(err, &ambiguous):
+		return models.User{}, false, ErrOIDCLinkRequiresConfirmation
+	case err != nil:
 		return models.User{}, false, ErrOIDCIdentityResolveFailed
+	}
+	return user, found, nil
+}
+
+func (service *OIDCLoginService) findOrProvisionUser(ctx context.Context, normalizedEmail string, loginTime time.Time) (models.User, bool, error) {
+	user, found, err := service.findUserByEmail(ctx, normalizedEmail)
+	if err != nil {
+		return models.User{}, false, err
 	}
 	if found {
 		if err := ValidateSupportedWebUser(&user); err != nil {
@@ -681,9 +698,9 @@ func (service *OIDCLoginService) autoProvisionOrLookupUser(ctx context.Context, 
 		return models.User{}, false, ErrOIDCProvisionFailed
 	}
 
-	user, found, lookupErr := service.users.FindByNormalizedEmailOptional(ctx, normalizedEmail)
+	user, found, lookupErr := service.findUserByEmail(ctx, normalizedEmail)
 	if lookupErr != nil {
-		return models.User{}, false, ErrOIDCIdentityResolveFailed
+		return models.User{}, false, lookupErr
 	}
 	if !found {
 		return models.User{}, false, ErrOIDCProvisionFailed
