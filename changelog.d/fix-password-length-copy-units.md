@@ -1,6 +1,6 @@
 ### Fixed
 
-- **A password refused for being too long now says so, instead of being called weak.** The maximum
+- **Breaking (API shape): a password refused for being too long now says so, instead of being called weak.** The maximum
   is bcrypt's 72-byte input limit and is unchanged, but it was enforced through the same error as
   the composition rules and advertised as "8 to 72 characters" in every locale. A passphrase in a
   non-Latin script reaches the cap at roughly half that many characters — a 37-character Cyrillic

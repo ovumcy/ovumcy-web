@@ -1,6 +1,6 @@
 ### Security
 
-- **Settings actions that ask for the current password no longer say outright that an account has
+- **Breaking (API shape): settings actions that ask for the current password no longer say outright that an account has
   no local password set.** Clear-data, delete account, enroll two-factor sign-in, change password,
   regenerate the recovery code, and link or unlink an OIDC identity used to answer "local password
   required" (403) for that account state but "invalid password" (401) for a wrong password on an

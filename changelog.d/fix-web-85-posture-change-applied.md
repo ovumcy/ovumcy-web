@@ -1,6 +1,6 @@
 ### Changed
 
-- **JSON API:** when a password change (`PUT /api/v1/users/current/password`) or a two-factor
+- **Breaking (API shape), JSON API:** when a password change (`PUT /api/v1/users/current/password`) or a two-factor
   enable/disable (`PUT`/`DELETE /api/v1/users/current/2fa`) has committed but its session could
   not be re-issued, the response is now `401` with category `unauthorized` instead of `500`. The
   error key is `password changed sign in again`, `two factor enabled sign in again`, or

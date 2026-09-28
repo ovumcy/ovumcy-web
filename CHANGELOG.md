@@ -798,7 +798,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still wins over an exported variable: removing an endpoint cannot arm the
   wrong one.
 
-- **A compressed request body that only passes the 16 MiB cap once decompressed
+- **Breaking (API shape): a compressed request body that only passes the 16 MiB cap once decompressed
   now answers with the standard `413 request_too_large` envelope.** The cap is
   applied to the decompressed stream inside the framework's body accessor, which
   reports the overflow by stamping `413` on the response and handing the handler

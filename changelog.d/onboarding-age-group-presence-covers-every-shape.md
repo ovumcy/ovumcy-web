@@ -1,6 +1,6 @@
 ### Fixed
 
-- **Onboarding step 2's refusal of the removed `age_group` field now covers every shape the
+- **Breaking (API shape): onboarding step 2's refusal of the removed `age_group` field now covers every shape the
   endpoint accepts, not only a form body and a JSON string.** The presence check told "the field is
   not there" apart from "the field is there but malformed" by inspecting the outcome of a typed
   decode, which reads a JSON number or `null` for `age_group` as absent (the typed probe fails with

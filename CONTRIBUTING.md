@@ -114,13 +114,35 @@ spots, kept as shipped:
 
 `internal/api/routes.go` is the source of truth for HTTP endpoints; [docs/openapi.yaml](docs/openapi.yaml) is the authoritative description of the JSON surface.
 
-`/api/v1/*` is the canonical, stable HTTP surface. External wrappers and integrations should target this prefix exclusively. Endpoints content-negotiate and emit JSON when the client sends `Accept: application/json` (or HTML/HTMX otherwise), so the JSON shape is part of the v1 contract:
+`/api/v1/*` is the only HTTP API prefix, and external wrappers and integrations should
+target it exclusively. There is no `/api/v2/*` and none is planned: a breaking change
+ships in a new major release of Ovumcy on the same `/api/v1/*` prefix, never under a
+parallel one. Endpoints content-negotiate, so the JSON shape is part of the contract:
 
-- Field additions are non-breaking and may ship in any minor release.
-- Field renames, removals, status code changes, route moves, and error key changes are breaking; they require a new major version (`/api/v2/*`) shipped alongside `/api/v1/*` long enough for callers to migrate.
-- The export payload (`GET /api/v1/exports/{json,csv,summary}`) follows the separate stability contract documented in [docs/export.md](docs/export.md).
+- Non-breaking, any minor or patch release: a new response field, a new optional
+  request field, a new endpoint. A published response schema that lists its fields
+  exactly (`additionalProperties: false`) fails a strict validator on a new field,
+  so a client that validates responses strictly must validate against the spec of
+  the release it runs.
+- Breaking, major release only: renaming or removing a field, requiring a request
+  member that was optional, refusing one that was accepted, changing what a field or
+  an operation means, changing a status code, a route or an error key. Each ships as
+  a **Breaking** entry in CHANGELOG.md that names what a client has to change.
+- A correction that makes docs/openapi.yaml describe what the server already does is
+  not a breaking change, even when the corrected text is stricter than the old one;
+  it is listed under **Fixed**.
+- The export payload follows docs/export.md.
 
-If you are scripting against `/api/v1/*` from outside the bundled UI, pin to a specific image tag and re-validate on every upgrade — `v1.x.y` minor bumps are safe; major bumps surface in [CHANGELOG.md](CHANGELOG.md) with the breaking entries called out.
+v2.0.0 is the first major release under this policy. It changes `/api/v1/*` in place;
+the largest changes: `GET /api/v1/stats/overview` publishes an explicit payload that
+withholds suppressed predictions, `PATCH /api/v1/users/current/cycle` updates only the
+members a request names, `POST /api/v1/password-resets` requires the account password,
+and onboarding step 2 refuses `age_group`. The **Breaking** entries of the v2.0.0
+section of CHANGELOG.md are the complete list.
+
+If you script against `/api/v1/*` from outside the bundled UI, pin a specific image
+tag and re-validate on every upgrade: minor and patch releases within a major are
+safe; before a major upgrade, read its **Breaking** entries.
 
 ## Changelog Fragments
 

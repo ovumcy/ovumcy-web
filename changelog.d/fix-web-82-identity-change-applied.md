@@ -19,7 +19,7 @@
 
 ### Changed
 
-- **JSON API:** when an identity unlink (`DELETE /api/v1/users/current/oidc/identities/:id`) or a
+- **Breaking (API shape), JSON API:** when an identity unlink (`DELETE /api/v1/users/current/oidc/identities/:id`) or a
   data wipe (`POST /api/v1/users/current/data-wipe`) has committed but its session could not be
   re-issued, the response is now `401` with category `unauthorized` instead of `500`. The error
   key is `identity change applied sign in again` for the unlink and `data cleared sign in again`

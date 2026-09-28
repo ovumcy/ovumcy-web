@@ -1,6 +1,6 @@
 ### Fixed
 
-- **Enabling or disabling 2FA now answers a JSON client with a body.** `PUT` and
+- **Breaking (API shape): enabling or disabling 2FA now answers a JSON client with a body.** `PUT` and
   `DELETE /api/v1/users/current/2fa` content-negotiated on `HX-Request` alone: an HTMX caller got
   the inline status markup and *everyone else* — an API client sending `Accept: application/json`
   included — was redirected to `/settings`, a response carrying nothing a non-browser client can
