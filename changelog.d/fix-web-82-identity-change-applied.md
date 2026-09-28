@@ -25,3 +25,5 @@
   key is `identity change applied sign in again` for the unlink and `data cleared sign in again`
   for the wipe, replacing `failed to create session`; both mean the change took effect and the
   client must sign in again. A refusal that changed nothing keeps its previous status and key.
+  The unlink route is new in this release; for a client of v1.9.2 the break is the data wipe's
+  `500`.
