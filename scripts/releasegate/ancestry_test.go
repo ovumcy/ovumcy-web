@@ -1,13 +1,12 @@
 package releasegate
 
 import (
-	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/testenv"
 	"github.com/ovumcy/ovumcy-web/scripts/workflowfile"
@@ -28,13 +27,14 @@ type ancestryRepo struct {
 	clone string
 	env   []string
 	// The commits and tag objects the cases point GITHUB_SHA at.
-	mainOld, mainTip, offMain         string
-	annotatedOnMain, annotatedOffMain string
+	mainOld, mainTip, offMain                            string
+	annotatedOnTip, annotatedBehindTip, annotatedOffMain string
 }
 
-// TestReleaseTagOffMainIsRefused runs the ancestry step's REAL script, under
-// the flags its `shell:` compiles to, against a real repository. Each case
-// pins one way the step could be weakened and still look like a check:
+// TestReleaseTagPassesOnlyWhenMainContainsIt runs the ancestry step's REAL
+// script, under the flags its `shell:` compiles to, against a real repository.
+// The acceptances pin the normal release shapes; each refusal pins one way the
+// step could be weakened and still look like a check:
 //
 //   - `|| true`, a dropped `exit 1`, or the step deleted: the off-main tag
 //     passes.
@@ -44,8 +44,17 @@ type ancestryRepo struct {
 //     search finds it and the off-main tag passes.
 //   - trusting the checkout's `origin/main` instead of the explicit forced
 //     fetch: the clone's `origin/main` is planted on the off-main commit.
-func TestReleaseTagOffMainIsRefused(t *testing.T) {
+func TestReleaseTagPassesOnlyWhenMainContainsIt(t *testing.T) {
 	repo := newAncestryRepo(t)
+
+	bash := bashPath(t)
+	requireWorkingBash(t, bash)
+	block := workflowfile.Step(t, gateWorkflow, gateJob, workflowfile.Job(t, gateWorkflow, gateJob), ancestryStep)
+	script := runScript(t, ancestryStep, block)
+	if !strings.Contains(script, "merge-base --is-ancestor") {
+		t.Fatalf("%s, step %q no longer asks merge-base --is-ancestor; reachability is a commit-graph question:\n%s",
+			gateWorkflow, ancestryStep, script)
+	}
 
 	for _, testCase := range []struct {
 		name        string
@@ -54,8 +63,9 @@ func TestReleaseTagOffMainIsRefused(t *testing.T) {
 		wantRefusal bool
 	}{
 		{name: "lightweight tag on main's tip", sha: repo.mainTip},
+		{name: "annotated tag on main's tip", sha: repo.annotatedOnTip},
 		{name: "lightweight tag behind main's tip", sha: repo.mainOld},
-		{name: "annotated tag behind main's tip", sha: repo.annotatedOnMain},
+		{name: "annotated tag behind main's tip", sha: repo.annotatedBehindTip},
 		{name: "lightweight tag on a branch main never merged", sha: repo.offMain, wantRefusal: true},
 		{name: "annotated tag on a branch main never merged", sha: repo.annotatedOffMain, wantRefusal: true},
 		{
@@ -71,7 +81,8 @@ func TestReleaseTagOffMainIsRefused(t *testing.T) {
 				t.Cleanup(func() { repo.git(t, repo.clone, "update-ref", "refs/remotes/origin/main", repo.mainTip) })
 			}
 
-			output, err := repo.runAncestryStep(t, testCase.sha)
+			environ := append(slices.Clone(repo.env), "GITHUB_SHA="+testCase.sha, "GITHUB_REF_NAME=v1.0.0")
+			output, err := runStepScript(t, bash, ancestryStep, block, script, repo.clone, environ)
 			if testCase.wantRefusal {
 				if err == nil {
 					t.Fatalf("the ancestry step let a tag on a commit main does not contain through:\n%s", output)
@@ -91,11 +102,19 @@ func TestReleaseTagOffMainIsRefused(t *testing.T) {
 // TestAncestryStepRunsOnAFullHistory pins the checkout the step reads. On the
 // default depth of 1 there is no history for merge-base to walk: every tag
 // behind `main`'s tip would be refused, and the pressure to "fix" that is
-// exactly the weakening the step exists to prevent.
+// exactly the weakening the step exists to prevent. Comments are skipped: the
+// step's own rationale may quote the key it no longer carries.
 func TestAncestryStepRunsOnAFullHistory(t *testing.T) {
 	job := workflowfile.Job(t, gateWorkflow, gateJob)
 	checkout := workflowfile.Step(t, gateWorkflow, gateJob, job, checkoutStep)
-	if !strings.Contains(checkout, "fetch-depth: 0") {
+
+	fullHistory := false
+	for _, line := range strings.Split(checkout, "\n") {
+		if strings.TrimSpace(line) == "fetch-depth: 0" {
+			fullHistory = true
+		}
+	}
+	if !fullHistory {
 		t.Fatalf("%s, job %q, step %q: no `fetch-depth: 0`; the ancestry check has no history to walk on a shallow clone:\n%s",
 			gateWorkflow, gateJob, checkoutStep, checkout)
 	}
@@ -135,7 +154,7 @@ func newAncestryRepo(t *testing.T) *ancestryRepo {
 		t.Fatalf("write the empty git config: %v", err)
 	}
 	repo := &ancestryRepo{
-		env: append(os.Environ(),
+		env: append(withoutGitEnv(os.Environ()),
 			"GIT_CONFIG_NOSYSTEM=1",
 			"GIT_CONFIG_GLOBAL="+filepath.ToSlash(emptyConfig),
 			"GIT_AUTHOR_NAME=releasegate", "GIT_AUTHOR_EMAIL=releasegate@example.invalid",
@@ -159,22 +178,40 @@ func newAncestryRepo(t *testing.T) *ancestryRepo {
 	commit("root")
 	repo.mainOld = commit("old")
 
-	repo.git(t, author, "switch", "-q", "-c", "side")
+	repo.git(t, author, "switch", "-q", "--create", "side")
 	repo.offMain = commit("off-main")
 	repo.git(t, author, "switch", "-q", "main")
 	repo.mainTip = commit("Revert \"off-main\"\n\nThis reverts commit " + repo.offMain + ".")
 
 	repo.git(t, author, "tag", "-a", "-m", "on main", "v1.0.0", repo.mainOld)
 	repo.git(t, author, "tag", "-a", "-m", "off main", "v1.0.1", repo.offMain)
-	repo.annotatedOnMain = repo.git(t, author, "rev-parse", "v1.0.0")
+	repo.git(t, author, "tag", "-a", "-m", "tip", "v1.0.2", repo.mainTip)
+	repo.annotatedBehindTip = repo.git(t, author, "rev-parse", "v1.0.0")
 	repo.annotatedOffMain = repo.git(t, author, "rev-parse", "v1.0.1")
-	if repo.annotatedOnMain == repo.mainOld || repo.annotatedOffMain == repo.offMain {
-		t.Fatal("the annotated tags resolve to their commits; the dereference cases would test nothing")
+	repo.annotatedOnTip = repo.git(t, author, "rev-parse", "v1.0.2")
+	for tag, commit := range map[string]string{
+		repo.annotatedBehindTip: repo.mainOld,
+		repo.annotatedOffMain:   repo.offMain,
+		repo.annotatedOnTip:     repo.mainTip,
+	} {
+		if tag == commit {
+			t.Fatal("an annotated tag resolves to its commit; the annotated cases would test nothing")
+		}
 	}
 
 	repo.git(t, author, "push", "-q", "origin", "main", "side", "--tags")
 	repo.git(t, root, "clone", "-q", filepath.ToSlash(origin), repo.clone)
 	return repo
+}
+
+// withoutGitEnv drops every GIT_* variable. A git hook exports GIT_DIR and
+// GIT_INDEX_FILE, and either one outranks the working directory: a suite run
+// from a hook would otherwise commit, tag and push into the repository under
+// test rather than the fixture.
+func withoutGitEnv(environ []string) []string {
+	return slices.DeleteFunc(slices.Clone(environ), func(entry string) bool {
+		return strings.HasPrefix(strings.ToUpper(entry), "GIT_")
+	})
 }
 
 func (r *ancestryRepo) git(t *testing.T, dir string, args ...string) string {
@@ -188,38 +225,4 @@ func (r *ancestryRepo) git(t *testing.T, dir string, args ...string) string {
 		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, output)
 	}
 	return strings.TrimSpace(string(output))
-}
-
-// runAncestryStep runs the step as the runner does — a file, under the flags
-// its `shell:` compiles to — inside the clone, with GITHUB_SHA at sha.
-func (r *ancestryRepo) runAncestryStep(t *testing.T, sha string) (string, error) {
-	t.Helper()
-
-	block := workflowfile.Step(t, gateWorkflow, gateJob, workflowfile.Job(t, gateWorkflow, gateJob), ancestryStep)
-	script := runScript(t, ancestryStep, block)
-	if !strings.Contains(script, "merge-base --is-ancestor") {
-		t.Fatalf("%s, step %q no longer asks merge-base --is-ancestor; reachability is a commit-graph question:\n%s",
-			gateWorkflow, ancestryStep, script)
-	}
-
-	bash := bashPath(t)
-	requireWorkingBash(t, bash)
-
-	scriptFile := filepath.Join(t.TempDir(), "ancestry.sh")
-	if err := os.WriteFile(scriptFile, []byte(script), 0o644); err != nil {
-		t.Fatalf("write the ancestry script: %v", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-
-	flags := workflowfile.BashStepFlags(t, gateWorkflow, ancestryStep, block)
-	command := exec.CommandContext(ctx, bash, append(flags, filepath.ToSlash(scriptFile))...)
-	command.Dir = r.clone
-	command.Env = append(append([]string{}, r.env...),
-		"GITHUB_SHA="+sha,
-		"GITHUB_REF_NAME=v1.0.0",
-	)
-	output, err := command.CombinedOutput()
-	return string(output), err
 }
