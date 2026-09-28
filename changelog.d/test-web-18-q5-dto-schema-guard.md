@@ -10,5 +10,6 @@
   `""` for an account with no data; `ExportJSONEntry` no longer lists `bbt` as required, since a day
   with no measurement omits it; and the tracking save's request body lists `week_starts_on`. The
   server's behaviour is unchanged. A new contract test drives every JSON success response through
-  the real router and compares its keys with the declared schema in both directions, so an
-  undocumented key or a missing required one fails the suite.
+  the real router and compares its keys with the declared schema in both directions, along with
+  enums and numeric and length bounds, so an undocumented key, a missing required one or an
+  undeclared value fails the suite.

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -479,11 +480,11 @@ func openAPIResponseSchemaGuardTable() []openAPIResponseSchemaGuardEntry {
 	}
 }
 
-// The schema guard compares keys; the spec text that came with the settings
+// The schema guard compares keys and value keywords; the spec text that came with the settings
 // echo schemas also makes claims about VALUES, each pinned here against the
 // server that answers them.
 func TestOpenAPIResponseSchemaDescriptionsMatchTheValuesTheServerAnswers(t *testing.T) {
-	schemas, _ := loadOpenAPISchemaGuardDocument(t)
+	schemas, declared := loadOpenAPISchemaGuardDocument(t)
 	decodeStatus := func(t *testing.T, status int, body []byte, want int) map[string]any {
 		t.Helper()
 		requireSchemaGuardStatus(t, "request", status, body, want)
@@ -606,7 +607,7 @@ func TestOpenAPIResponseSchemaDescriptionsMatchTheValuesTheServerAnswers(t *test
 		if decoded["status"] != "unavailable" {
 			t.Fatalf("want status unavailable, got %v", decoded)
 		}
-		if found := schemas.violations(decoded, parseOpenAPIFlowSchema("{ $ref: '#/components/schemas/ProbeUnavailable' }"), "body", 0); len(found) > 0 {
+		if found := schemas.violations(decoded, readyUnavailableSchema(t), "body", 0); len(found) > 0 {
 			t.Fatalf("the 503 body departs from ProbeUnavailable: %v", found)
 		}
 	})
@@ -622,17 +623,31 @@ func TestOpenAPIResponseSchemaDescriptionsMatchTheValuesTheServerAnswers(t *test
 		if decoded["requires_totp"] != true {
 			t.Fatalf("want requires_totp true, got %v", decoded)
 		}
-		if found := schemas.violations(decoded, parseOpenAPIFlowSchema("{ $ref: '#/components/schemas/LoginTOTPRequiredResponse' }"), "body", 0); len(found) > 0 {
-			t.Fatalf("the second-factor login body departs from LoginTOTPRequiredResponse: %v", found)
+		// Validated against the operation's own oneOf: the closed OkResponse
+		// refuses this body, so only a declared second-factor alternative passes it.
+		if found := schemas.violations(decoded, declared["POST /api/v1/sessions"].schema, "body", 0); len(found) > 0 {
+			t.Fatalf("the second-factor login body matches no alternative POST /api/v1/sessions declares: %v", found)
 		}
 	})
 }
 
-// schemaGuardWebhookSave enables delivery to a public literal address, so the
-// save needs no name resolution.
+// schemaGuardWebhookSave enables delivery to a reserved `.example` host, which
+// never resolves, so nothing in the test can reach a real endpoint.
 var schemaGuardWebhookSave = map[string]any{
 	"webhook_enabled":          true,
-	"webhook_url":              "https://93.184.215.14/hook",
+	"webhook_url":              "https://ntfy.example/schema-guard",
 	"webhook_notify_period":    true,
 	"webhook_notify_ovulation": false,
+}
+
+// readyUnavailableSchema is the schema the spec declares for the /readyz 503,
+// read from the operation itself so a changed or removed declaration fails.
+func readyUnavailableSchema(t *testing.T) *openAPINode {
+	t.Helper()
+	document := parseOpenAPIDocument(t, filepath.Join("..", "..", "docs", "openapi.yaml"))
+	schema := document.get("paths").get("/readyz").get("get").get("responses").get("503").get("content").get("application/json").get("schema")
+	if schema == nil {
+		t.Fatal("docs/openapi.yaml declares no JSON body for the /readyz 503")
+	}
+	return schema
 }
