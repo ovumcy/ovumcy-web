@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
@@ -25,10 +26,12 @@ var methodOverrideAllowed = map[string]bool{
 // application/x-www-form-urlencoded and that carries no Content-Encoding.
 // Everything else passes through untouched: JSON and other bodies, multipart
 // (no form in the app declares an enctype), every non-POST verb (htmx already
-// sends the real one), and the query string, which is never read. The field is
-// bound through the form binder rather than PostArgs directly: the binder folds
+// sends the real one), and the query string, which is never read. The body is
+// bound through the form binder before PostArgs is read: the binder folds
 // a mixed-case Content-Type before fasthttp parses and caches the body, which a
-// raw PostArgs call would cache as empty and hide csrf_token from CSRF.
+// raw PostArgs call would cache as empty and hide csrf_token from CSRF. A body
+// that provably names no such field is not bound at all; see
+// methodOverrideBodyMayNameTheField.
 //
 // On a plain urlencoded body, a present field outside the allowlist, empty or
 // repeated, is refused with a 400 instead of being ignored, so such a form never
@@ -42,12 +45,6 @@ var methodOverrideAllowed = map[string]bool{
 // in the app can send either shape with an override: none declares an enctype,
 // browsers never compress a form, and the templates guard fails on an
 // overridden form that gains a multipart enctype.
-//
-// The 400 is answered ahead of every limiter, so it is not metered. That costs
-// no more log output than metering would: a limiter's own refusal writes a
-// rate-limit line and a security event on top of the access-log line, and the
-// /api catch-all cannot move above this middleware without also moving above
-// the narrower credential limiters that must refuse before it.
 //
 // ORDER IS LOAD-BEARING. The composition root mounts this with app.Use ahead of
 // the rate limiters and CSRF, after only other app-wide Use middleware:
@@ -67,19 +64,33 @@ func MethodOverride(handler *Handler) fiber.Handler {
 			return c.Next()
 		}
 
-		input := struct {
-			Method []string `form:"_method"`
-		}{}
-		if err := c.Bind().Form(&input); err != nil || input.Method == nil {
+		if !methodOverrideBodyMayNameTheField(c.Body()) {
+			return c.Next()
+		}
+
+		// The bind only normalizes the Content-Type and parses the body into
+		// PostArgs; the field is read from PostArgs itself. The binder collapses
+		// keys that differ only in case or encoding (_method and _METHOD,
+		// %5Fmethod) into one value, so trusting its result would let a form
+		// hide a second, disallowed verb behind the first.
+		if err := c.Bind().Form(&struct{}{}); err != nil {
 			// An unbindable body is left as the POST it arrived as: the CSRF
 			// extractor binds the same way and finds no form token in it either.
 			return c.Next()
 		}
-
-		if len(input.Method) != 1 {
+		var requested []string
+		for key, value := range c.Request().PostArgs().All() {
+			if bytes.EqualFold(key, []byte(methodOverrideKey)) {
+				requested = append(requested, string(value))
+			}
+		}
+		if len(requested) == 0 {
+			return c.Next()
+		}
+		if len(requested) != 1 {
 			return refuseMethodOverride(c, handler, "ambiguous")
 		}
-		verb := strings.ToUpper(strings.TrimSpace(input.Method[0]))
+		verb := strings.ToUpper(strings.TrimSpace(requested[0]))
 		if !methodOverrideAllowed[verb] {
 			return refuseMethodOverride(c, handler, "not_allowed")
 		}
@@ -88,8 +99,32 @@ func MethodOverride(handler *Handler) fiber.Handler {
 			// rather than run the POST route the form did not ask for.
 			return handler.RespondTransportError(c, fiber.StatusInternalServerError)
 		}
+		handler.LogSecurityEvent(c, "method_override", "applied", SecurityEventField{Key: "verb", Value: verb})
 		return c.Next()
 	}
+}
+
+// methodOverrideKey is the form field MethodOverride reads.
+const methodOverrideKey = "_method"
+
+// methodOverrideBodyMayNameTheField reports whether an urlencoded body could
+// bind to the override field, so the common body without one skips the bind.
+// It must never answer false for a body the binder would read the field from:
+//   - the binder matches form keys to the tag case-insensitively (fiber binder
+//     mapping.go lower-cases the field name, gofiber/schema cache.go lower-cases
+//     the lookup), so the literal search folds ASCII case too;
+//   - a percent-encoded key (%5Fmethod, _m%65thod) only decodes to the field
+//     name inside the binder, so any '%' byte makes the answer true.
+func methodOverrideBodyMayNameTheField(body []byte) bool {
+	if bytes.IndexByte(body, '%') >= 0 {
+		return true
+	}
+	for start := 0; start+len(methodOverrideKey) <= len(body); start++ {
+		if bytes.EqualFold(body[start:start+len(methodOverrideKey)], []byte(methodOverrideKey)) {
+			return true
+		}
+	}
+	return false
 }
 
 func refuseMethodOverride(c fiber.Ctx, handler *Handler, reason string) error {
