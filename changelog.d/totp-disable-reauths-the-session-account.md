@@ -8,4 +8,5 @@
   against the signed-in account's own stored password. The attempt limit, the "invalid
   credentials" answer and its timing are unchanged. As on sign-in and the other Settings
   confirmations, spaces around the password are ignored, and a disable no longer upgrades an older
-  stored password hash (sign-in still does).
+  stored password hash (sign-in still does). The failed-attempt count is cleared only once the
+  disable has gone through, not when the password alone was right.

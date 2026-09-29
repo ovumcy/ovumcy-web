@@ -242,8 +242,8 @@ func mapSettingsProfileNormalizeError(err error) APIErrorSpec {
 
 // mapSettingsDeleteAccountPasswordError maps VerifyReauthPassword's outcome
 // for every settings action gated by validateSettingsActionPassword
-// (clear-data validate/apply, delete account, 2FA disable, the OIDC
-// identity-link step-up start, and OIDC identity unlink). WEB-54: an account
+// (clear-data validate/apply, delete account, the OIDC identity-link step-up
+// start, and OIDC identity unlink). WEB-54: an account
 // with no local password and a wrong password on one that has one answer
 // IDENTICALLY here — same 401, same key, same target — because both are
 // ErrSettingsPasswordInvalid and ErrSettingsLocalPasswordNotSet are the same

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 // The 2FA disable route re-authenticates the session user against that user's
@@ -182,6 +184,65 @@ func TestDisableTOTP2FASuccessResetsTheDisableBudget(t *testing.T) {
 		// so EnableTOTP and the next cookie carry the current version.
 		ctx.refreshAuthCookie(t)
 		enableTOTPForSettingsTest(t, &ctx)
+	}
+}
+
+// TestDisableTOTP2FARefusedWriteDoesNotResetTheDisableBudget pins the order of
+// the reset against the write: a correct password whose DisableTOTP is refused
+// (a revocation bumped auth_session_version after the request loaded the user)
+// must leave the totp.disable count where it was. The bump is committed by a
+// callback on the disable's own UPDATE, so the compare-and-set fails exactly
+// once, after the password check has passed.
+func TestDisableTOTP2FARefusedWriteDoesNotResetTheDisableBudget(t *testing.T) {
+	ctx := newTOTPSettingsContext(t, "totp-disable-refused-write@example.com")
+	enableTOTPForSettingsTest(t, &ctx)
+
+	for attempt := range services.DefaultTOTPDisableAttemptsLimit - 1 {
+		resp := sendDisableTOTP(t, ctx, "WrongPassword1")
+		assertDisableTOTPRefused(t, resp, http.StatusUnauthorized, disableTOTPInvalidKey, "wrong password, attempt "+strconv.Itoa(attempt+1))
+	}
+
+	const revokeBeforeDisable = "test:totp-disable-revoke-before-cas"
+	var revoked atomic.Bool
+	if err := ctx.database.Callback().Update().Before("gorm:update").Register(revokeBeforeDisable, func(tx *gorm.DB) {
+		updates, ok := tx.Statement.Dest.(map[string]any)
+		if !ok {
+			return
+		}
+		if _, disablesTOTP := updates["totp_enabled"]; !disablesTOTP || !revoked.CompareAndSwap(false, true) {
+			return
+		}
+		if err := tx.Session(&gorm.Session{NewDB: true}).Exec("UPDATE users SET auth_session_version = auth_session_version + 1 WHERE id = ?", ctx.user.ID).Error; err != nil {
+			t.Errorf("simulate the mid-request revocation: %v", err)
+		}
+	}); err != nil {
+		t.Fatalf("register the revocation callback: %v", err)
+	}
+	t.Cleanup(func() { _ = ctx.database.Callback().Update().Remove(revokeBeforeDisable) })
+
+	resp := sendDisableTOTP(t, ctx, "StrongPass1")
+	if !revoked.Load() {
+		t.Fatal("anchor: the correct-password request never reached DisableTOTP's write")
+	}
+	if resp.StatusCode == http.StatusOK {
+		t.Fatalf("a disable whose compare-and-set failed answered 200")
+	}
+	if !totpEnabledInDatabase(t, ctx) {
+		t.Fatal("a disable whose compare-and-set failed still turned 2FA off")
+	}
+
+	// The revocation invalidated the old cookie; sign the same owner back in at
+	// the version it left, from the same client address.
+	ctx.refreshAuthCookie(t)
+
+	// One failure short of the limit was spent before the refused write. If that
+	// write reset the count, this correct password would be accepted below.
+	resp = sendDisableTOTP(t, ctx, "WrongPassword1")
+	assertDisableTOTPRefused(t, resp, http.StatusUnauthorized, disableTOTPInvalidKey, "the failure that reaches the limit")
+	resp = sendDisableTOTP(t, ctx, "StrongPass1")
+	assertDisableTOTPRefused(t, resp, http.StatusTooManyRequests, disableTOTPRateLimitedKey, "correct password after the refused write kept the count")
+	if !totpEnabledInDatabase(t, ctx) {
+		t.Fatal("a rate-limited disable turned 2FA off")
 	}
 }
 
