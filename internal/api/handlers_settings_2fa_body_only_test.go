@@ -17,25 +17,42 @@ import (
 
 // twoFARequest describes one PUT/DELETE /api/v1/users/current/2fa call. The
 // body and the query are set independently so a test can put a value in one
-// and not the other.
+// and not the other. contentEncoding, when set, is sent as Content-Encoding and
+// the body is expected to already be encoded that way.
 type twoFARequest struct {
-	method       string
-	query        string
-	contentType  string
-	body         string
-	setupCookie  string
-	withSession  bool
-	withCSRFHead bool
+	method          string
+	query           string
+	contentType     string
+	contentEncoding string
+	body            string
+	setupCookie     string
+	withSession     bool
+	withCSRFHead    bool
 }
 
 func send2FARequest(t *testing.T, ctx settingsSecurityTestContext, spec twoFARequest) *http.Response {
 	t.Helper()
+	req := new2FARequest(ctx, spec)
+	resp, err := ctx.app.Test(req, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("%s %s: %v", spec.method, req.URL, err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	return resp
+}
+
+// new2FARequest builds the request send2FARequest sends, for a caller that
+// needs app.Test's error rather than a response (a body refused on the wire).
+func new2FARequest(ctx settingsSecurityTestContext, spec twoFARequest) *http.Request {
 	target := "/api/v1/users/current/2fa"
 	if spec.query != "" {
 		target += "?" + spec.query
 	}
 	req := httptest.NewRequest(spec.method, target, strings.NewReader(spec.body))
 	req.Header.Set("Content-Type", spec.contentType)
+	if spec.contentEncoding != "" {
+		req.Header.Set("Content-Encoding", spec.contentEncoding)
+	}
 	req.Header.Set("Accept-Language", "en")
 	req.Header.Set("Accept", "application/json")
 	cookies := []string{cookiePair(ctx.csrfCookie), spec.setupCookie}
@@ -46,12 +63,7 @@ func send2FARequest(t *testing.T, ctx settingsSecurityTestContext, spec twoFAReq
 	if spec.withCSRFHead {
 		req.Header.Set("X-CSRF-Token", ctx.csrfToken)
 	}
-	resp, err := ctx.app.Test(req, testConfigNoTimeout)
-	if err != nil {
-		t.Fatalf("%s %s: %v", spec.method, target, err)
-	}
-	t.Cleanup(func() { _ = resp.Body.Close() })
-	return resp
+	return req
 }
 
 // assert2FARefusal checks the status and that the error envelope names the
