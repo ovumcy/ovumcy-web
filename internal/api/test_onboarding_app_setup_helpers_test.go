@@ -124,6 +124,7 @@ func newOnboardingTestAppWithOptions(t *testing.T, options onboardingTestAppOpti
 	handler.recoveryCodeIssuanceFault = options.recoveryCodeIssuanceFault
 
 	app := fiber.New(fiber.Config{BodyLimit: options.bodyLimit})
+	app.Use(MethodOverride(handler))
 	app.Use(handler.LanguageMiddleware)
 	if options.enableCSRF {
 		app.Use(csrf.New(testCSRFMiddlewareConfig(options.cookieSecure, handler)))
