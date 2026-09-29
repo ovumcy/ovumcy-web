@@ -7,9 +7,10 @@ import (
 )
 
 // HealthRepository answers the storage-reachability probe behind the readiness
-// endpoint. It reads no rows and holds no domain state — it only proves that a
-// connection can be obtained and that the engine answers a query — so it is
-// unscoped by user_id and returns nothing a caller could inspect.
+// endpoint and the boot-time schema check. It reads no rows and holds no domain
+// state — it only proves that a connection can be obtained and that the engine
+// answers a query, or reads the engine's own catalog — so it is unscoped by
+// user_id and returns nothing a caller could inspect.
 type HealthRepository struct {
 	database *gorm.DB
 }
