@@ -11,7 +11,8 @@
 //	    CI gate for pull requests. Env BASE_REF (default origin/main) names the
 //	    base to diff against. Passes when the branch adds at least one fragment
 //	    under changelog.d/, or when it edits CHANGELOG.md itself in a way only
-//	    release assembly does (adding a "## [" heading); every added or modified
+//	    release assembly does (adding the "## [x.y.z]" heading of a new release,
+//	    not re-typing an existing one); every added or modified
 //	    fragment must be valid. Independently of either, a CHANGELOG.md edit
 //	    that is neither assembly nor confined to an already-released section
 //	    fails. Exit 0 when the gate passes, 1 when it fails.
@@ -203,20 +204,23 @@ func changedFragments(nameStatus string) []string {
 }
 
 // hunkHeader matches a unified-diff hunk header; group 1 is the first line of
-// the hunk in the new file, group 2 its length (absent means 1).
+// the hunk in the new file, group 2 its length (absent means 1) — unread, since
+// a pure deletion and a write are judged by the same first line.
 var hunkHeader = regexp.MustCompile(`^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@`)
 
 // editsOutsideReleasedText returns the hunk headers of a `--unified=0`
 // CHANGELOG.md diff that touch anything but an already-released version
 // section: the title, the "[Unreleased]" body, or a hunk that reaches up to the
-// first release heading. current is the file as of HEAD. An edit strictly below
-// the first "## [x.y.z]" heading is a correction to released text and is not
-// reported; a file with no released heading has no such text, so every hunk is.
+// first release heading. current is the file as of HEAD. The first released
+// heading is the first line matching releaseHeadingPattern, so an
+// "## [Unreleased]" with a suffix is never mistaken for it. An edit from that
+// heading line onwards — the heading belongs to its section, so a date
+// correction is one — is a correction to released text and is not reported; a
+// file with no released heading has no such text, so every hunk is.
 func editsOutsideReleasedText(diff, current string) []string {
 	firstReleased := 0
 	for i, line := range strings.Split(current, "\n") {
-		trimmed := strings.TrimRight(line, "\r")
-		if strings.HasPrefix(trimmed, "## [") && trimmed != "## [Unreleased]" {
+		if releaseHeadingPattern.MatchString(strings.TrimRight(line, "\r")) {
 			firstReleased = i + 1
 			break
 		}
@@ -228,14 +232,10 @@ func editsOutsideReleasedText(diff, current string) []string {
 			continue
 		}
 		start, _ := strconv.Atoi(m[1])
-		length := 1
-		if m[2] != "" {
-			length, _ = strconv.Atoi(m[2])
-		}
-		// A hunk that only deletes lines reports the line it follows, so it sits
-		// inside a released section from the heading line onwards; a hunk that
-		// writes lines must begin below the heading.
-		inside := firstReleased > 0 && ((length == 0 && start >= firstReleased) || (length > 0 && start > firstReleased))
+		// A hunk that only deletes lines reports the line it follows, and one that
+		// writes lines reports its first written line; either way the hunk is inside
+		// a released section when that line is the heading line or below it.
+		inside := firstReleased > 0 && start >= firstReleased
 		if !inside {
 			offending = append(offending, strings.TrimSpace(line))
 		}
@@ -247,8 +247,8 @@ func changelogEditHelp(offending []string) string {
 	return "\n" + changelogFile + " is edited outside release assembly and outside an already-released section:\n" +
 		"  " + strings.Join(offending, "\n  ") + "\n\n" +
 		"Put the entry in " + fragmentDir + "/<branch-name>.md instead. " + changelogFile + " is edited by hand only below\n" +
-		"the first released \"## [x.y.z]\" heading (a correction to released text), or by release assembly,\n" +
-		"which adds a new \"## [\" heading.\n"
+		"the first released \"## [x.y.z]\" heading, that heading included (a correction to released text), or by\n" +
+		"release assembly, which adds the heading of a new release.\n"
 }
 
 // addedFragments returns the changelog.d/*.md paths this branch adds, taken
@@ -271,15 +271,42 @@ func addedFragments(nameStatus string) []string {
 	return added
 }
 
-// addsReleaseHeading reports whether a CHANGELOG.md diff adds a "## [" heading,
-// which is what release assembly and a correction to an already-released
-// section look like — and what an ordinary entry never looks like.
+// releaseHeadingPattern matches a released version's heading as CHANGELOG.md
+// and `assemble` write it — "## [1.9.2] - 2026-07-24" — with the date optional
+// and trailing whitespace tolerated. Group 1 is the version. "## [Unreleased]"
+// does not match, nor does any heading carrying another suffix, so neither can
+// be taken for a released section.
+var releaseHeadingPattern = regexp.MustCompile(`^## \[(\d+\.\d+\.\d+)\](?: - \d{4}-\d{2}-\d{2})?\s*$`)
+
+// bracketedHeadingPattern reads the bracketed label of any "## [" line, on the
+// removed side of a diff where the line's exact shape is not the question.
+var bracketedHeadingPattern = regexp.MustCompile(`^\s*## \[([^\]]*)\]`)
+
+// addsReleaseHeading reports whether a CHANGELOG.md diff adds the heading of a
+// NEW release, which is what release assembly looks like and what an ordinary
+// entry never does. A heading counts only when its version is not on a removed
+// "## [" line of the same diff: re-typing an existing heading (a date
+// correction, a whitespace touch) removes and adds the same version and is not
+// a release. "## [Unreleased]" never counts.
 func addsReleaseHeading(diff string) bool {
+	removed := map[string]bool{}
+	var added []string
 	for _, line := range strings.Split(diff, "\n") {
-		if !strings.HasPrefix(line, "+") || strings.HasPrefix(line, "+++") {
-			continue
+		line = strings.TrimRight(line, "\r")
+		switch {
+		case strings.HasPrefix(line, "+++"), strings.HasPrefix(line, "---"):
+		case strings.HasPrefix(line, "-"):
+			if m := bracketedHeadingPattern.FindStringSubmatch(line[1:]); m != nil {
+				removed[m[1]] = true
+			}
+		case strings.HasPrefix(line, "+"):
+			if m := releaseHeadingPattern.FindStringSubmatch(line[1:]); m != nil {
+				added = append(added, m[1])
+			}
 		}
-		if strings.HasPrefix(strings.TrimSpace(line[1:]), "## [") {
+	}
+	for _, version := range added {
+		if !removed[version] {
 			return true
 		}
 	}

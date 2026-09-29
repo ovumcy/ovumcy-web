@@ -184,11 +184,13 @@ header plus the entry:
   anything still frozen under `[Unreleased]`) into a new released section in Keep a Changelog order
   and deletes the consumed fragments.
 - The `changelog-fragment` CI check enforces this: it fails a pull request that adds neither a valid
-  fragment nor a new `## [` heading in `CHANGELOG.md`, and it names the file and the problem when a
-  fragment (added or modified) has an unknown section header or no entry text. It also fails a
-  pull request that edits `CHANGELOG.md` above the first released `## [x.y.z]` heading — the title
-  or the `[Unreleased]` body — unless it adds a release heading (assembly), whether or not a
-  fragment is added beside it.
+  fragment nor the heading of a new release (`## [x.y.z]`) in `CHANGELOG.md`, and it names the file
+  and the problem when a fragment (added or modified) has an unknown section header or no entry
+  text. It also fails a pull request that edits `CHANGELOG.md` above the first released
+  `## [x.y.z]` heading — the title or the `[Unreleased]` body — unless it adds a new release
+  heading (assembly), whether or not a fragment is added beside it. Re-typing an existing heading,
+  such as a date correction, is not assembly: that heading belongs to its released section, so
+  correcting it is allowed, and it never licenses an edit above it.
 - Dependency updates opened by Dependabot are exempt: the check stays required for them but returns
   success without a fragment, since the bot cannot write one. Nothing collects their entries
   automatically either: at release time the `### Dependencies` section is compiled from

@@ -328,7 +328,7 @@ func TestEditsOutsideReleasedTextReadsNewSidePositions(t *testing.T) {
 		{"unreleased body", "@@ -11,2 +11,2 @@", true},
 		{"unreleased body deletion", "@@ -10,3 +9,0 @@", true},
 		{"blank line above the release heading", "@@ -13,1 +13,0 @@", true},
-		{"the release heading itself rewritten", "@@ -14 +14 @@", true},
+		{"the release heading itself rewritten", "@@ -14 +14 @@", false},
 		{"deletion right after the release heading", "@@ -15,1 +14,0 @@", false},
 		{"released body line", "@@ -18 +18 @@", false},
 		{"released body addition", "@@ -18,0 +19,2 @@", false},
@@ -344,6 +344,92 @@ func TestEditsOutsideReleasedTextReadsNewSidePositions(t *testing.T) {
 	}
 	if got := editsOutsideReleasedText("", fixtureChangelog); len(got) != 0 {
 		t.Errorf("an empty diff has nothing to refuse, got %v", got)
+	}
+}
+
+func TestEditsOutsideReleasedTextKeepsASuffixedUnreleasedHeadingAboveTheBoundary(t *testing.T) {
+	// Line 3 is "## [Unreleased] - TBD", line 5 its body, line 7 the first release
+	// heading. Neither the suffix nor trailing whitespace may turn the
+	// [Unreleased] section into released text.
+	for _, unreleased := range []string{"## [Unreleased] - TBD", "## [Unreleased] "} {
+		current := "# Changelog\n\n" + unreleased + "\n\n- **Waiting.**\n\n## [1.0.0] - 2026-01-01\n\n- **Shipped.**\n"
+		for _, hunk := range []string{"@@ -3 +3 @@", "@@ -5 +5 @@"} {
+			if got := editsOutsideReleasedText(hunk+"\n", current); len(got) != 1 {
+				t.Errorf("%q with hunk %s: an [Unreleased] edit must be refused, got %v", unreleased, hunk, got)
+			}
+		}
+		if got := editsOutsideReleasedText("@@ -9 +9 @@\n", current); len(got) != 0 {
+			t.Errorf("%q: a correction below the first release heading must pass, got %v", unreleased, got)
+		}
+	}
+}
+
+func TestCheckRefusesAnUnreleasedRewriteBesideAWhitespaceTouchOfItsHeading(t *testing.T) {
+	dir := initRepo(t)
+	writeFile(t, dir, "changelog.d/some-branch.md", "### Added\n\n- **A new thing.**\n")
+	touched := strings.Replace(fixtureChangelog, "## [Unreleased]\n", "## [Unreleased] \n", 1)
+	writeFile(t, dir, "CHANGELOG.md", strings.Replace(touched,
+		"- **A frozen entry.** Written before fragments existed, and still waiting for a\n  release to carry it out.",
+		"- **A frozen entry, quietly reworded.**", 1))
+	commitAll(t, dir, "feat: a rewrite dressed as a heading touch")
+
+	failure, err := check(dir, "main", gitOutput)
+	if err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	if !strings.Contains(failure, "CHANGELOG.md is edited outside release assembly") {
+		t.Fatalf("touching the [Unreleased] heading must not make a rewrite beside it assembly, got:\n%s", failure)
+	}
+}
+
+func TestCheckRefusesAnUnreleasedRewriteBesideADateEditOfAReleasedHeading(t *testing.T) {
+	dir := initRepo(t)
+	writeFile(t, dir, "changelog.d/some-branch.md", "### Added\n\n- **A new thing.**\n")
+	retyped := strings.Replace(fixtureChangelog, "## [1.0.0] - 2026-01-01", "## [1.0.0] - 2026-01-02", 1)
+	writeFile(t, dir, "CHANGELOG.md", strings.Replace(retyped,
+		"- **A frozen entry.** Written before fragments existed, and still waiting for a\n  release to carry it out.",
+		"- **A frozen entry, quietly reworded.**", 1))
+	commitAll(t, dir, "feat: a rewrite dressed as a date correction")
+
+	failure, err := check(dir, "main", gitOutput)
+	if err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	if !strings.Contains(failure, "CHANGELOG.md is edited outside release assembly") {
+		t.Fatalf("re-typing a release heading must not make a rewrite beside it assembly, got:\n%s", failure)
+	}
+}
+
+func TestCheckAllowsADateCorrectionOfAReleasedHeadingBesideANoneFragment(t *testing.T) {
+	dir := initRepo(t)
+	writeFile(t, dir, "changelog.d/fix-date.md", "none\n\nThe 1.0.0 release date was mistyped.\n")
+	writeFile(t, dir, "CHANGELOG.md", strings.Replace(fixtureChangelog, "## [1.0.0] - 2026-01-01", "## [1.0.0] - 2026-01-02", 1))
+	commitAll(t, dir, "docs: correct a release date")
+
+	failure, err := check(dir, "main", gitOutput)
+	if err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	if failure != "" {
+		t.Fatalf("a date correction of a released heading is a correction to released text and must pass, got:\n%s", failure)
+	}
+}
+
+func TestCheckPassesOnWhatAssembleWrites(t *testing.T) {
+	dir := initRepo(t)
+	landOnMain(t, dir, "CHANGELOG.md", fixtureChangelog+"\n[Unreleased]: https://example.com/o/r/compare/v1.0.0...HEAD\n[1.0.0]: https://example.com/o/r/releases/tag/v1.0.0\n")
+	writeFile(t, dir, "changelog.d/a.md", "### Added\n\n- **A new thing.**\n")
+	if _, err := assemble(dir, "1.1.0", "2026-02-02"); err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	commitAll(t, dir, "chore: cut 1.1.0")
+
+	failure, err := check(dir, "main", gitOutput)
+	if err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	if failure != "" {
+		t.Fatalf("the diff assemble writes (new heading, rewritten [Unreleased] body, moved links) must pass without a fragment, got:\n%s", failure)
 	}
 }
 
@@ -377,9 +463,23 @@ func TestAddedFragmentsCollectsOnlyAddedMarkdownUnderChangelogD(t *testing.T) {
 func TestAddsReleaseHeadingReadsAddedLinesOnly(t *testing.T) {
 	cases := map[string]bool{
 		"+++ b/CHANGELOG.md\n+## [1.2.3] - 2026-02-02\n":  true,
+		"+++ b/CHANGELOG.md\n+## [1.2.3]\n":               true,
 		"+++ b/CHANGELOG.md\n+- **An ordinary entry.**\n": false,
 		"+++ b/CHANGELOG.md\n-## [1.2.3] - 2026-02-02\n":  false,
 		"": false,
+		// A new release heading beside an unrelated removed one is assembly.
+		"-## [1.0.0] - 2026-01-01\n+## [1.2.3] - 2026-02-02\n": true,
+		// Re-typing an existing heading — a date, a whitespace touch — is not.
+		"-## [1.2.3] - 2026-02-02\n+## [1.2.3] - 2026-02-03\n":  false,
+		"-## [1.2.3] - 2026-02-02\n+## [1.2.3] - 2026-02-02 \n": false,
+		// "[Unreleased]" never counts, whatever its suffix or spacing.
+		"-## [Unreleased]\n+## [Unreleased] \n":       false,
+		"+## [Unreleased]\n":                          false,
+		"+## [Unreleased] - TBD\n":                    false,
+		"+## [1.2] - 2026-02-02\n":                    false,
+		"+## [1.2.3] - soon\n":                        false,
+		"+## [1.2.3] - 2026-02-02\n-## [1.2.3]\n":     false,
+		"+## [2.0.0] - 2026-02-02\n+## [1.2.3] - x\n": true,
 	}
 	for diff, want := range cases {
 		if got := addsReleaseHeading(diff); got != want {
