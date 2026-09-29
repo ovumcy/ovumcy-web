@@ -201,10 +201,19 @@ func (handler *Handler) DisableTOTP2FA(c fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 
-	if _, err := handler.authService.AuthenticateCredentials(c.Context(), user.Email, password); err != nil {
+	// Re-authenticate against the session user's own stored hash, never by
+	// resolving an account from its email: an email lookup can name a
+	// different row than the session's, and refuses a mailbox two accounts
+	// share. The unbudgeted ValidateCurrentPassword is used on purpose —
+	// totp.disable above is this route's only attempt budget, and
+	// VerifyReauthPassword would draw the separate settings.reauth one.
+	// ValidateCurrentPassword equalizes the no-local-password branch to a
+	// full bcrypt compare, and every refusal it returns spent one, so each
+	// is booked against the budget.
+	if err := handler.settingsService.ValidateCurrentPassword(user.PasswordHash, password); err != nil {
 		handler.totpService.RecordDisableFailure(handler.secretKey, c.IP(), user.ID, time.Now())
 		spec := authFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "invalid credentials")
-		handler.logSecurityError(c, "settings.2fa.disable", spec)
+		handler.logSecurityError(c, "settings.2fa.disable", spec, settingsReauthCauseField(err))
 		return handler.respondMappedError(c, spec)
 	}
 

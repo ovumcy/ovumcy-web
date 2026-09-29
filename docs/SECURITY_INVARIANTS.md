@@ -106,10 +106,12 @@ Every test-enforceable entry has a corresponding test or set of tests in `SECURI
   `reason` key is now identical for both — never in the response
   (`mapSettingsDeleteAccountPasswordError`, `mapSettingsPasswordChangeError` in `internal/api`).
   **2FA disable is out of scope of this bullet**: `DELETE /api/v1/users/current/2fa` never goes
-  through `validateSettingsActionPassword` — it calls `AuthenticateCredentials`
-  (`internal/services/auth_service.go`), which already merges "no local password" and "wrong
-  password" into one `ErrAuthInvalidCreds` at the service layer, and the handler logs the mapped
-  spec with no `reauth_cause` at all (`handlers_settings_2fa.go`). This narrows only the re-auth
+  through `validateSettingsActionPassword` — it checks the password with the unbudgeted
+  `ValidateCurrentPassword` (`internal/services/settings_service.go`) against the session
+  account's own stored hash, never an account looked up by email, draws only its own
+  `totp.disable` attempt budget, and answers "no local password" and "wrong password" with the one
+  `401 invalid credentials`; the handler logs the same `reauth_cause` field as the actions above
+  (`handlers_settings_2fa.go`). This narrows only the re-auth
   refusal's own answer: a signed-in session still learns whether the account has a local password from
   `GET /api/v1/users/current`'s `local_auth_enabled` field and from the Settings page itself — both
   already gated by the session, not by this password check, so neither is the oracle being closed.
