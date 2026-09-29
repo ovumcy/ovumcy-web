@@ -6,6 +6,7 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -19,32 +20,18 @@ import (
 // member name is a parameter, so a caller passing "password" would read it from
 // the URL unseen by the query-read sweep. Each exempted function is resolved by
 // declaration in the type-checked package, and every use of it must be a direct
-// call whose key argument is a constant from the exemption's keys.
+// call whose key argument is a constant from the exemption's keys, and the
+// function must look up the very value it was passed (judgeExemptBody), or the
+// callers' keys vouch for nothing.
 func TestExemptLookupCallersPassOnlyDeclaredKeys(t *testing.T) {
+	evidence := loadTreeEvidence(t)
+	imports := importableTypes(evidence)
+	lookups := fiberLookups(t, imports)
 	assertExemptCallerJudgeAnswersBothWays(t)
+	assertExemptBodyJudgeAnswersBothWays(t, imports, lookups)
 
-	root, err := moduleRootForBarrier()
-	if err != nil {
-		t.Fatal(err)
-	}
 	for _, exemption := range unresolvedKeyExemptions {
-		config := &packages.Config{
-			Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
-				packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo,
-			Dir: root,
-		}
-		loaded, err := packages.Load(config, "./"+filepath.ToSlash(filepath.Dir(exemption.file)))
-		if err != nil {
-			t.Fatalf("type-checking %s: %v", exemption.file, err)
-		}
-		if len(loaded) != 1 {
-			t.Fatalf("type-checking %s: want one package, got %d", exemption.file, len(loaded))
-		}
-		if errs := loaded[0].Errors; len(errs) > 0 {
-			t.Fatalf("type-checking %s: %v", exemption.file, errs)
-		}
-		pkg := loaded[0]
-
+		pkg := exemptionPackage(t, evidence, exemption)
 		fn := resolveExemptFunction(t, pkg.Types, exemption)
 		if at := filepath.ToSlash(pkg.Fset.Position(fn.Pos()).Filename); !strings.HasSuffix(at, "/"+exemption.file) {
 			t.Fatalf("%s is declared in %s, not %s", exemption.declKey(), at, exemption.file)
@@ -55,10 +42,33 @@ func TestExemptLookupCallersPassOnlyDeclaredKeys(t *testing.T) {
 				t.Errorf("no caller of %s passes %q: drop the key from the exemption, or the judge has stopped seeing the calls", exemption.declKey(), key)
 			}
 		}
+		violations = append(violations, judgeExemptBody(pkg.Fset, pkg.Syntax, pkg.TypesInfo, fn, exemption, lookups)...)
 		for _, violation := range violations {
 			t.Errorf("%s", violation)
 		}
 	}
+}
+
+// exemptionPackage returns the type-checked package that declares exemption.
+func exemptionPackage(t *testing.T, evidence *treeEvidence, exemption lookupExemption) *packages.Package {
+	t.Helper()
+	pkg := evidence.packageByPath(modulePath + "/" + path.Dir(exemption.file))
+	if pkg == nil {
+		t.Fatalf("%s: the type-checked tree has no package %s", exemption.declKey(), path.Dir(exemption.file))
+	}
+	return pkg
+}
+
+// exemptKeyParam resolves the parameter an exempted function's lookup is keyed
+// by, and its index.
+func exemptKeyParam(fn *types.Func, name string) (*types.Var, int) {
+	params := fn.Signature().Params()
+	for i := range params.Len() {
+		if params.At(i).Name() == name {
+			return params.At(i), i
+		}
+	}
+	return nil, -1
 }
 
 func resolveExemptFunction(t *testing.T, pkg *types.Package, exemption lookupExemption) *types.Func {
@@ -92,13 +102,7 @@ func resolveExemptFunction(t *testing.T, pkg *types.Package, exemption lookupExe
 // non-constant key, a key outside the exemption, or fn taken as a value, whose
 // later calls cannot be traced.
 func judgeExemptCallers(fset *token.FileSet, files []*ast.File, info *types.Info, fn *types.Func, exemption lookupExemption) (map[string]bool, []string) {
-	signature := fn.Type().(*types.Signature)
-	keyIndex := -1
-	for i := range signature.Params().Len() {
-		if signature.Params().At(i).Name() == exemption.keyParam {
-			keyIndex = i
-		}
-	}
+	_, keyIndex := exemptKeyParam(fn, exemption.keyParam)
 	if keyIndex < 0 {
 		return nil, []string{exemption.declKey() + " has no parameter " + exemption.keyParam}
 	}
@@ -215,5 +219,148 @@ func use(h *Handler, c any, name string) {
 	}
 	if len(violations) != 3 {
 		t.Errorf("the judge must report only the three bad uses; got %v", violations)
+	}
+}
+
+// judgeExemptBody holds the exempted function to what its exemption assumes:
+// every lookup inside it whose key is not a constant is keyed by keyParam, and
+// keyParam still holds what the caller passed — nothing shadows it, assigns to
+// it or takes its address. The parameter is resolved by declaration, so a
+// variable that merely shares its name is not it.
+func judgeExemptBody(fset *token.FileSet, files []*ast.File, info *types.Info, fn *types.Func, exemption lookupExemption, lookups map[*types.Func]bool) []string {
+	keyVar, _ := exemptKeyParam(fn, exemption.keyParam)
+	if keyVar == nil {
+		return []string{exemption.declKey() + " has no parameter " + exemption.keyParam}
+	}
+	var body *ast.BlockStmt
+	for _, file := range files {
+		for _, decl := range file.Decls {
+			if declaration, ok := decl.(*ast.FuncDecl); ok && info.Defs[declaration.Name] == fn {
+				body = declaration.Body
+			}
+		}
+	}
+	if body == nil {
+		return []string{exemption.declKey() + " has no body to judge"}
+	}
+
+	var violations []string
+	report := func(node ast.Node, what string) {
+		violations = append(violations, fset.Position(node.Pos()).String()+": "+exemption.function+" "+what+", so the key its callers pass is not the key it reads")
+	}
+	keyed := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		switch node := n.(type) {
+		case *ast.Ident:
+			object := info.Defs[node]
+			if object == nil {
+				object = info.Uses[node]
+			}
+			if v, ok := object.(*types.Var); ok && v != keyVar && !v.IsField() && node.Name == exemption.keyParam {
+				report(node, "shadows "+exemption.keyParam)
+			}
+		case *ast.AssignStmt:
+			for _, lhs := range node.Lhs {
+				if isVarUse(info, lhs, keyVar) {
+					report(lhs, "assigns to "+exemption.keyParam)
+				}
+			}
+		case *ast.RangeStmt:
+			if node.Tok == token.ASSIGN && ((node.Key != nil && isVarUse(info, node.Key, keyVar)) || (node.Value != nil && isVarUse(info, node.Value, keyVar))) {
+				report(node, "assigns to "+exemption.keyParam)
+			}
+		case *ast.UnaryExpr:
+			if node.Op == token.AND && isVarUse(info, node.X, keyVar) {
+				report(node, "takes the address of "+exemption.keyParam)
+			}
+		case *ast.CallExpr:
+			if lookup, _, index := lookupCall(info, lookups, node); lookup != nil && index < len(node.Args) && info.Types[node.Args[index]].Value == nil {
+				if isVarUse(info, node.Args[index], keyVar) {
+					keyed = true
+				} else {
+					report(node, "looks a member up by something other than "+exemption.keyParam)
+				}
+			}
+		}
+		return true
+	})
+	if !keyed {
+		violations = append(violations, exemption.declKey()+" holds no lookup keyed by "+exemption.keyParam+": the exemption clears nothing")
+	}
+	return violations
+}
+
+// assertExemptBodyJudgeAnswersBothWays type-checks one function the body judge
+// must accept and one per shape it must refuse.
+func assertExemptBodyJudgeAnswersBothWays(t *testing.T, imports fixtureImporter, lookups map[*types.Func]bool) {
+	t.Helper()
+	const source = `package fixture
+
+import "github.com/gofiber/fiber/v3"
+
+type Handler struct{ name string }
+
+func (h *Handler) direct(c fiber.Ctx, name string) string {
+	if h.name != "" {
+		return string(c.Request().PostArgs().Peek(name))
+	}
+	return c.Query(name) + c.Query("day")
+}
+
+func (h *Handler) reassigned(c fiber.Ctx, name string) string {
+	name = "password"
+	return c.Query(name)
+}
+
+func (h *Handler) shadowed(c fiber.Ctx, name string) string {
+	if name := "password"; name != "" {
+		return c.Query(name)
+	}
+	return c.Query(name)
+}
+
+func (h *Handler) addressed(c fiber.Ctx, name string) string {
+	*(&name) = "password"
+	return c.Query(name)
+}
+
+func (h *Handler) rekeyed(c fiber.Ctx, name string) string {
+	key := name + "_hash"
+	return c.Query(name) + c.Query(key)
+}
+
+func (h *Handler) unkeyed(c fiber.Ctx, name string) string {
+	return name + c.Query("day")
+}
+
+func (h *Handler) foreign(c fiber.Ctx, name string) string {
+	key := name + "_hash"
+	return c.Query(name) + string(c.RequestCtx().FormValue(key))
+}
+`
+	fset := token.NewFileSet()
+	file, pkg, info := typeCheckFixture(t, fset, "fixture", imports, source)
+	for function, want := range map[string]string{
+		"direct":     "",
+		"reassigned": "assigns to name",
+		"shadowed":   "shadows name",
+		"addressed":  "takes the address of name",
+		"rekeyed":    "looks a member up by something other than name",
+		"unkeyed":    "holds no lookup keyed by name",
+		// fasthttp's FormValue is no fiber lookup; isLookup takes it by name.
+		"foreign": "looks a member up by something other than name",
+	} {
+		exemption := lookupExemption{file: "fixture.go", receiver: "Handler", function: function, keyParam: "name"}
+		violations := judgeExemptBody(fset, []*ast.File{file}, info, resolveExemptFunction(t, pkg, exemption), exemption, lookups)
+		found := false
+		for _, violation := range violations {
+			found = found || (want != "" && strings.Contains(violation, want))
+		}
+		switch {
+		case want == "" && len(violations) != 0:
+			t.Errorf("the body judge must accept %s; got %v", function, violations)
+		case want != "" && !found:
+			t.Errorf("the body judge must report %q in %s; got %v", want, function, violations)
+		}
 	}
 }
