@@ -49,14 +49,18 @@ func main() {
 	database := mustOpenDatabase(config.DatabaseConfig)
 	i18nManager := mustNewI18nManager(config.DefaultLanguage)
 	repositories, calendarFeedFence := bootstrap.BuildRepositories(database, config.CalendarFeedFencePath)
-	// All four boot passes must run after mustOpenDatabase (migrations applied)
-	// and before any listener exists: no feed poll can race the revocation, no
+	// The schema check comes first: every pass below assumes the schema the
+	// migrations built, and it only reads.
+	mustVerifySchemaInvariants(repositories)
+	// Every boot pass must run after mustOpenDatabase (migrations applied) and
+	// before any listener exists: no feed poll can race the revocation, no
 	// request can observe a half-repaired identity, and no surface can render a
 	// prediction from a luteal-phase estimate the upgrade has not corrected yet.
-	// The fourth does not fail the boot — see recomputeDerivedLutealPhases.
-	// The restore fence runs first because its disarm is the wider one: it
-	// answers "is this even the database that holds my revocations", which the
-	// key-rotation sentinel behind it assumes.
+	// The luteal recompute does not fail the boot — see
+	// recomputeDerivedLutealPhases.
+	// Of the passes that write, the restore fence runs first because its disarm
+	// is the wider one: it answers "is this even the database that holds my
+	// revocations", which the key-rotation sentinel behind it assumes.
 	mustEnforceCalendarFeedRestoreFence(calendarFeedFence)
 	mustEnforceCalendarFeedKeyRotation(repositories, []byte(config.SecretKey))
 	mustRenormalizeAuthEmails(repositories)
@@ -199,6 +203,18 @@ const bootPassStorageBudget = 5 * time.Minute
 // copies of the same WithTimeout is the shape that drifts.
 func bootPassContext() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), bootPassStorageBudget)
+}
+
+// mustVerifySchemaInvariants stops the boot when a schema fact the application
+// relies on but never re-establishes itself does not hold (see
+// bootstrap.VerifySchemaInvariants). The refusal names what is missing and how to
+// restore it; nothing is repaired here.
+func mustVerifySchemaInvariants(repositories *db.Repositories) {
+	ctx, cancel := bootPassContext()
+	defer cancel()
+	if err := bootstrap.VerifySchemaInvariants(ctx, repositories); err != nil {
+		log.Fatalf("schema check failed: %v", err) // codecov:ignore -- log.Fatalf exits the process; TestServerRefusesToStartWithoutTheNormalizedEmailIndex pins the exit through the built binary
+	}
 }
 
 // mustEnforceCalendarFeedRestoreFence runs the boot-time calendar-feed restore

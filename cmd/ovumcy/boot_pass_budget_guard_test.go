@@ -57,7 +57,7 @@ func TestEveryBootPassRunsOnTheBoundedContext(t *testing.T) {
 	const (
 		windowOpens  = "BuildRepositories"
 		windowCloses = "BuildDependencies"
-		knownPasses  = 4
+		knownPasses  = 5
 	)
 
 	fileSet := token.NewFileSet()
@@ -95,6 +95,12 @@ func TestEveryBootPassRunsOnTheBoundedContext(t *testing.T) {
 
 	if len(passNames) < knownPasses {
 		t.Fatalf("the boot window yielded %d pass call(s) %v, fewer than the %d known to run there — the sweep did not reach what it is meant to guard", len(passNames), passNames, knownPasses)
+	}
+	// The count alone would let the schema check be swapped for any other
+	// pass; every pass after it assumes the schema it verifies, so it is pinned
+	// by name to the front of the window.
+	if passNames[0] != "mustVerifySchemaInvariants" {
+		t.Fatalf("the boot window must open with mustVerifySchemaInvariants(), got %v", passNames)
 	}
 
 	for _, name := range passNames {
