@@ -540,7 +540,7 @@ func TestTheMirrorCopiesTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 				// the source would go vacuous the day the source moves.
 				if slices.ContainsFunc(strings.Split(string(output), "\n"), func(line string) bool {
 					fields := strings.Fields(line)
-					return len(fields) == 5 && fields[0] == "COSIGN" && fields[1] == "copy" && strings.HasPrefix(fields[4], mirrorName+":")
+					return len(fields) > 2 && fields[0] == "COSIGN" && fields[1] == "copy" && strings.HasPrefix(fields[len(fields)-1], mirrorName+":")
 				}) {
 					t.Errorf("the step wrote a mirrored alias on a run it refused, and a red run retracts no tag:\n%s", output)
 				}
