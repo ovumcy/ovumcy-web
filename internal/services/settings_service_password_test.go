@@ -16,7 +16,7 @@ import (
 func TestValidatePasswordChangeRejectsInvalidInput(t *testing.T) {
 	service := NewSettingsService(nil)
 
-	err := service.ValidatePasswordChange("hash", " ", "NewPass1", "NewPass1")
+	err := service.ValidatePasswordChange(localPasswordUser("hash"), " ", "NewPass1", "NewPass1")
 	if !errors.Is(err, ErrSettingsPasswordChangeInvalidInput) {
 		t.Fatalf("expected ErrSettingsPasswordChangeInvalidInput, got %v", err)
 	}
@@ -30,7 +30,7 @@ func TestValidatePasswordChangeRejectsMismatch(t *testing.T) {
 		t.Fatalf("hash password: %v", err)
 	}
 
-	err = service.ValidatePasswordChange(string(passwordHash), "StrongPass1", "NewPass1", "OtherPass1")
+	err = service.ValidatePasswordChange(localPasswordUser(string(passwordHash)), "StrongPass1", "NewPass1", "OtherPass1")
 	if !errors.Is(err, ErrSettingsPasswordMismatch) {
 		t.Fatalf("expected ErrSettingsPasswordMismatch, got %v", err)
 	}
@@ -44,7 +44,7 @@ func TestValidatePasswordChangeRejectsInvalidCurrentPassword(t *testing.T) {
 		t.Fatalf("hash password: %v", err)
 	}
 
-	err = service.ValidatePasswordChange(string(passwordHash), "WrongPass1", "NewPass1", "NewPass1")
+	err = service.ValidatePasswordChange(localPasswordUser(string(passwordHash)), "WrongPass1", "NewPass1", "NewPass1")
 	if !errors.Is(err, ErrSettingsInvalidCurrentPassword) {
 		t.Fatalf("expected ErrSettingsInvalidCurrentPassword, got %v", err)
 	}
@@ -58,7 +58,7 @@ func TestValidatePasswordChangeRejectsUnchangedPassword(t *testing.T) {
 		t.Fatalf("hash password: %v", err)
 	}
 
-	err = service.ValidatePasswordChange(string(passwordHash), "StrongPass1", "StrongPass1", "StrongPass1")
+	err = service.ValidatePasswordChange(localPasswordUser(string(passwordHash)), "StrongPass1", "StrongPass1", "StrongPass1")
 	if !errors.Is(err, ErrSettingsNewPasswordMustDiffer) {
 		t.Fatalf("expected ErrSettingsNewPasswordMustDiffer, got %v", err)
 	}
@@ -72,7 +72,7 @@ func TestValidatePasswordChangeRejectsWeakPassword(t *testing.T) {
 		t.Fatalf("hash password: %v", err)
 	}
 
-	err = service.ValidatePasswordChange(string(passwordHash), "StrongPass1", "12345678", "12345678")
+	err = service.ValidatePasswordChange(localPasswordUser(string(passwordHash)), "StrongPass1", "12345678", "12345678")
 	if !errors.Is(err, ErrSettingsWeakPassword) {
 		t.Fatalf("expected ErrSettingsWeakPassword, got %v", err)
 	}
@@ -101,7 +101,7 @@ func TestSettingsPasswordFormsSeparateTooLongFromWeak(t *testing.T) {
 		t.Fatalf("test setup: passphrase is %d runes / %d bytes, want <= %d runes and > %d bytes", runes, bytes, maxPasswordBytes, maxPasswordBytes)
 	}
 
-	err = service.ValidatePasswordChange(string(passwordHash), "StrongPass1", tooLong, tooLong)
+	err = service.ValidatePasswordChange(localPasswordUser(string(passwordHash)), "StrongPass1", tooLong, tooLong)
 	if !errors.Is(err, ErrSettingsPasswordTooLong) {
 		t.Fatalf("ValidatePasswordChange: expected ErrSettingsPasswordTooLong, got %v", err)
 	}
@@ -114,7 +114,7 @@ func TestSettingsPasswordFormsSeparateTooLongFromWeak(t *testing.T) {
 	}
 
 	// The composition failures keep the weak sentinel on both entry points.
-	if err := service.ValidatePasswordChange(string(passwordHash), "StrongPass1", "12345678", "12345678"); !errors.Is(err, ErrSettingsWeakPassword) {
+	if err := service.ValidatePasswordChange(localPasswordUser(string(passwordHash)), "StrongPass1", "12345678", "12345678"); !errors.Is(err, ErrSettingsWeakPassword) {
 		t.Fatalf("ValidatePasswordChange: expected ErrSettingsWeakPassword for a composition failure, got %v", err)
 	}
 	if _, err := service.PrepareLocalPasswordHash(&models.User{}, "12345678", "12345678"); !errors.Is(err, ErrSettingsWeakPassword) {
@@ -130,7 +130,7 @@ func TestValidatePasswordChangeAcceptsValidInput(t *testing.T) {
 		t.Fatalf("hash password: %v", err)
 	}
 
-	if err := service.ValidatePasswordChange(string(passwordHash), "StrongPass1", "EvenStronger2", "EvenStronger2"); err != nil {
+	if err := service.ValidatePasswordChange(localPasswordUser(string(passwordHash)), "StrongPass1", "EvenStronger2", "EvenStronger2"); err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
 }
@@ -147,6 +147,7 @@ func TestChangePasswordUpdatesHashedPassword(t *testing.T) {
 	user := &models.User{
 		ID:                 42,
 		PasswordHash:       string(currentHash),
+		LocalAuthEnabled:   true,
 		AuthSessionVersion: 3,
 	}
 
@@ -183,6 +184,7 @@ func TestChangePasswordPropagatesValidationErrorWithoutUpdate(t *testing.T) {
 	user := &models.User{
 		ID:                 42,
 		PasswordHash:       string(currentHash),
+		LocalAuthEnabled:   true,
 		AuthSessionVersion: 1,
 	}
 
@@ -209,7 +211,7 @@ func TestChangePasswordRefusesOnceReauthBudgetSpent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
-	user := &models.User{ID: 42, PasswordHash: string(currentHash), AuthSessionVersion: 1}
+	user := &models.User{ID: 42, PasswordHash: string(currentHash), LocalAuthEnabled: true, AuthSessionVersion: 1}
 	attempt := ReauthAttempt{
 		ClientKey: "203.0.113.10",
 		UserID:    user.ID,
@@ -249,7 +251,7 @@ func TestChangePasswordSuccessClearsTheAccountCounterAcrossClients(t *testing.T)
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
-	user := &models.User{ID: 42, PasswordHash: string(currentHash), AuthSessionVersion: 1}
+	user := &models.User{ID: 42, PasswordHash: string(currentHash), LocalAuthEnabled: true, AuthSessionVersion: 1}
 	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 	laptop := ReauthAttempt{ClientKey: "203.0.113.10", UserID: user.ID, Now: now}
 	phone := ReauthAttempt{ClientKey: "198.51.100.7", UserID: user.ID, Now: now}
@@ -282,8 +284,9 @@ func TestChangePasswordWrapsUpdateError(t *testing.T) {
 	}
 
 	user := &models.User{
-		ID:           42,
-		PasswordHash: string(currentHash),
+		ID:               42,
+		PasswordHash:     string(currentHash),
+		LocalAuthEnabled: true,
 	}
 
 	err = service.ChangePassword(context.Background(), ReauthAttempt{ClientKey: "test-client"}, user, "StrongPass1", "EvenStronger2", "EvenStronger2")

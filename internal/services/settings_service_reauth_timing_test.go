@@ -87,7 +87,7 @@ func TestValidateCurrentPasswordEqualizesTimingForNoLocalPassword(t *testing.T) 
 	count := withCountingSettingsReauthEqualizer(t)
 	service := NewSettingsService(nil)
 
-	err := service.ValidateCurrentPassword("", "AnyPass1!")
+	err := service.ValidateCurrentPassword(localPasswordUser(""), "AnyPass1!")
 
 	if !errors.Is(err, ErrSettingsLocalPasswordNotSet) {
 		t.Fatalf("expected ErrSettingsLocalPasswordNotSet, got %v", err)
@@ -120,7 +120,7 @@ func TestValidateCurrentPasswordSpendsNothingOnBlankSubmission(t *testing.T) {
 			count := withCountingSettingsReauthEqualizer(t)
 			service := NewSettingsService(nil)
 
-			err := service.ValidateCurrentPassword(testCase.passwordHash, "   ")
+			err := service.ValidateCurrentPassword(localPasswordUser(testCase.passwordHash), "   ")
 
 			if !errors.Is(err, ErrSettingsPasswordMissing) {
 				t.Fatalf("expected ErrSettingsPasswordMissing, got %v", err)
@@ -146,7 +146,7 @@ func TestValidateCurrentPasswordDoesNotEqualizeOnRealCompare(t *testing.T) {
 		t.Fatalf("hash password: %v", err)
 	}
 
-	if err := service.ValidateCurrentPassword(string(passwordHash), "WrongPass1"); !errors.Is(err, ErrSettingsPasswordInvalid) {
+	if err := service.ValidateCurrentPassword(localPasswordUser(string(passwordHash)), "WrongPass1"); !errors.Is(err, ErrSettingsPasswordInvalid) {
 		t.Fatalf("expected ErrSettingsPasswordInvalid, got %v", err)
 	}
 	if *count != 0 {
@@ -166,7 +166,7 @@ func TestValidatePasswordChangeDoesNotEqualizeOnRealCompare(t *testing.T) {
 		t.Fatalf("hash password: %v", err)
 	}
 
-	if err := service.ValidatePasswordChange(string(passwordHash), "WrongPass1", "NewPass1", "NewPass1"); !errors.Is(err, ErrSettingsInvalidCurrentPassword) {
+	if err := service.ValidatePasswordChange(localPasswordUser(string(passwordHash)), "WrongPass1", "NewPass1", "NewPass1"); !errors.Is(err, ErrSettingsInvalidCurrentPassword) {
 		t.Fatalf("expected ErrSettingsInvalidCurrentPassword, got %v", err)
 	}
 	if *count != 0 {
@@ -178,7 +178,7 @@ func TestValidatePasswordChangeSpendsNothingOnInvalidInput(t *testing.T) {
 	count := withCountingSettingsReauthEqualizer(t)
 	service := NewSettingsService(nil)
 
-	err := service.ValidatePasswordChange("hash", " ", "NewPass1", "NewPass1")
+	err := service.ValidatePasswordChange(localPasswordUser("hash"), " ", "NewPass1", "NewPass1")
 
 	if !errors.Is(err, ErrSettingsPasswordChangeInvalidInput) {
 		t.Fatalf("expected ErrSettingsPasswordChangeInvalidInput, got %v", err)
@@ -192,7 +192,7 @@ func TestValidatePasswordChangeSpendsNothingOnMismatch(t *testing.T) {
 	count := withCountingSettingsReauthEqualizer(t)
 	service := NewSettingsService(nil)
 
-	err := service.ValidatePasswordChange("hash", "StrongPass1", "NewPass1", "OtherPass1")
+	err := service.ValidatePasswordChange(localPasswordUser("hash"), "StrongPass1", "NewPass1", "OtherPass1")
 
 	if !errors.Is(err, ErrSettingsPasswordMismatch) {
 		t.Fatalf("expected ErrSettingsPasswordMismatch, got %v", err)
@@ -206,7 +206,7 @@ func TestValidatePasswordChangeEqualizesTimingForNoLocalPassword(t *testing.T) {
 	count := withCountingSettingsReauthEqualizer(t)
 	service := NewSettingsService(nil)
 
-	err := service.ValidatePasswordChange("", "StrongPass1", "NewPass1", "NewPass1")
+	err := service.ValidatePasswordChange(localPasswordUser(""), "StrongPass1", "NewPass1", "NewPass1")
 
 	if !errors.Is(err, ErrSettingsLocalPasswordNotSet) {
 		t.Fatalf("expected ErrSettingsLocalPasswordNotSet, got %v", err)
@@ -228,7 +228,7 @@ func TestSettingsReauthRefusalsSpendEqualWorkAcrossStoredCosts(t *testing.T) {
 
 	noLocalPassword := func() int64 {
 		ledger := withSettingsReauthWorkLedger(t)
-		if err := service.ValidateCurrentPassword("", "WrongPass1"); !errors.Is(err, ErrSettingsLocalPasswordNotSet) {
+		if err := service.ValidateCurrentPassword(localPasswordUser(""), "WrongPass1"); !errors.Is(err, ErrSettingsLocalPasswordNotSet) {
 			t.Fatalf("expected ErrSettingsLocalPasswordNotSet, got %v", err)
 		}
 		return ledger.units
@@ -241,7 +241,7 @@ func TestSettingsReauthRefusalsSpendEqualWorkAcrossStoredCosts(t *testing.T) {
 		}
 
 		ledger := withSettingsReauthWorkLedger(t)
-		if err := service.ValidateCurrentPassword(string(passwordHash), "WrongPass1"); !errors.Is(err, ErrSettingsPasswordInvalid) {
+		if err := service.ValidateCurrentPassword(localPasswordUser(string(passwordHash)), "WrongPass1"); !errors.Is(err, ErrSettingsPasswordInvalid) {
 			t.Fatalf("expected ErrSettingsPasswordInvalid, got %v", err)
 		}
 		spent := ledger.units + bcryptWorkUnits(storedCost)
@@ -262,7 +262,7 @@ func TestSettingsReauthNoLocalPasswordRefusalDrawsTheBudget(t *testing.T) {
 		refuse func(service *SettingsService, attempt ReauthAttempt) error
 	}{
 		{"erasure", func(service *SettingsService, attempt ReauthAttempt) error {
-			return service.VerifyReauthPassword(attempt, "", "AnyPass1")
+			return service.VerifyReauthPassword(attempt, localPasswordUser(""), "AnyPass1")
 		}},
 		{"password change", func(service *SettingsService, attempt ReauthAttempt) error {
 			user := &models.User{ID: 42, LocalAuthEnabled: true}

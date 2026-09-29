@@ -145,16 +145,16 @@ func (service *SettingsService) ConfigureReauthAttempts(secretKey []byte, limite
 // VerifyReauthPassword is the budgeted form of ValidateCurrentPassword: the one
 // entry point every password-gated settings action must use. The budget is
 // checked before the compare, so an exhausted budget refuses the correct
-// password too; only a genuinely wrong password counts as a failure, since a
-// blank submission or an account without local auth is a client error rather
-// than a guess.
-func (service *SettingsService) VerifyReauthPassword(attempt ReauthAttempt, passwordHash string, rawPassword string) error {
+// password too. A blank submission is uncounted; a wrong password and the
+// no-local-password refusal (empty hash or local_auth_enabled=false) both spend
+// an equalized bcrypt and draw the budget.
+func (service *SettingsService) VerifyReauthPassword(attempt ReauthAttempt, user *models.User, rawPassword string) error {
 	now := attempt.at()
 	identity := attempt.identity()
 	if service.reauthPolicy.TooManyRecent(service.reauthSecretKey, attempt.clientBucket(), identity, now) {
 		return ErrSettingsReauthRateLimited
 	}
-	if err := service.ValidateCurrentPassword(passwordHash, rawPassword); err != nil {
+	if err := service.ValidateCurrentPassword(user, rawPassword); err != nil {
 		// Every refusal that spent a bcrypt draws the budget, not only a wrong
 		// password: the no-local-password branch is equalized to a full compare,
 		// and left uncounted it would be CPU no budget caps.
@@ -237,8 +237,21 @@ var equalizeSettingsReauthTiming = func(password string) {
 	_ = authTimingEqualizerCompare([]byte(credentialsTimingEqualizationHash), []byte(password))
 }
 
-func (service *SettingsService) ValidateCurrentPassword(passwordHash string, rawPassword string) error {
+// reauthPasswordHash is the hash a settings re-auth may compare against.
+// AuthenticateCredentials refuses an account whose local_auth_enabled is off
+// even when a hash is stored, so a re-auth must not accept that hash either:
+// the account is answered as having no local password, through the same
+// equalized branch as an empty hash (WEB-112).
+func reauthPasswordHash(user *models.User) string {
+	if user == nil || !user.LocalAuthEnabled {
+		return ""
+	}
+	return user.PasswordHash
+}
+
+func (service *SettingsService) ValidateCurrentPassword(user *models.User, rawPassword string) error {
 	password := strings.TrimSpace(rawPassword)
+	passwordHash := reauthPasswordHash(user)
 	// A blank submission is the caller's own input, not account state, so its
 	// latency discloses nothing — and equalizing it would spend a full
 	// passwordHashCost bcrypt on a branch VerifyReauthPassword never counts as

@@ -57,8 +57,9 @@ func passwordChangedSignInAgainErrorSpec() APIErrorSpec {
 // required" refusal before this mapper ever runs, so the merged arm here is
 // defense-in-depth for an account whose password hash is empty despite that
 // gate having passed — ValidatePasswordChange raises
-// ErrSettingsLocalPasswordNotSet on an empty PasswordHash, not on the
-// LocalAuthEnabled flag itself — but it must still fail closed to the SAME
+// ErrSettingsLocalPasswordNotSet on an empty PasswordHash as well as on a
+// cleared LocalAuthEnabled flag (WEB-112), so only the empty-hash state can
+// reach this mapper past the gate — but it must still fail closed to the SAME
 // answer, never to the old distinguishable one. Regression:
 // TestSettingsReauthMergesNoLocalPasswordIntoInvalidPassword.
 func mapSettingsPasswordChangeError(err error) APIErrorSpec {

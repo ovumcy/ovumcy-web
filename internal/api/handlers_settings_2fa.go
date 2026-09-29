@@ -203,7 +203,7 @@ func (handler *Handler) DisableTOTP2FA(c fiber.Ctx) error {
 
 	// The hash comes from the session user, never an email lookup; the compare is unbudgeted
 	// on purpose because totp.disable above is this route's only attempt budget.
-	if err := handler.settingsService.ValidateCurrentPassword(user.PasswordHash, password); err != nil {
+	if err := handler.settingsService.ValidateCurrentPassword(user, password); err != nil {
 		handler.totpService.RecordDisableFailure(handler.secretKey, c.IP(), user.ID, time.Now())
 		spec := authFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "invalid credentials")
 		handler.logSecurityError(c, "settings.2fa.disable", spec, settingsReauthCauseField(err))
