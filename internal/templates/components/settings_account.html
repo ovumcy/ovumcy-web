@@ -70,6 +70,7 @@
           data-weak-password-message="{{t .Messages "auth.password_requirements"}}"
           data-save-feedback>
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <input type="hidden" name="_method" value="PUT">
           {{template "password_username_context_field" (dict "Value" .CurrentUser.Email)}}
 
           {{template "password_toggle_field" (dict
@@ -226,6 +227,7 @@
               </p>
               {{if $.CurrentUser.LocalAuthEnabled}}
               <form
+                action="/api/v1/users/current/oidc/identities/{{.ID}}"
                 method="post"
                 hx-delete="/api/v1/users/current/oidc/identities/{{.ID}}"
                 hx-target="#oidc-unlink-feedback-{{.ID}}"
@@ -235,6 +237,7 @@
                 class="space-y-2"
                 data-oidc-unlink-form>
                 <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+                <input type="hidden" name="_method" value="DELETE">
                 {{template "password_username_context_field" (dict "Value" $.CurrentUser.Email)}}
                 <div class="settings-form-actions">
                   <div class="min-w-0 flex-1 space-y-1 sm:max-w-xs">

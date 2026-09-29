@@ -21,6 +21,7 @@
       hx-swap="innerHTML"
       class="space-y-4">
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="_method" value="DELETE">
 
       <div class="space-y-2">
         <label class="field-label" for="settings-2fa-disable-password">
@@ -76,6 +77,7 @@
       hx-swap="innerHTML"
       class="space-y-4">
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="_method" value="PUT">
       {{template "password_username_context_field" (dict "Value" .CurrentUser.Email)}}
 
       <div class="space-y-2">
