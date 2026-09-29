@@ -9,7 +9,7 @@ import (
 
 func parseCredentials(c fiber.Ctx) (credentialsInput, error) {
 	credentials := credentialsInput{}
-	if err := c.Bind().Body(&credentials); err != nil {
+	if err := bindRequestBody(c, &credentials); err != nil {
 		return credentialsInput{}, err
 	}
 
@@ -20,7 +20,6 @@ func parseCredentials(c fiber.Ctx) (credentialsInput, error) {
 	credentials.Email = email
 	credentials.Password = password
 	credentials.ConfirmPassword = strings.TrimSpace(credentials.ConfirmPassword)
-	credentials.RememberMe = credentials.RememberMe || services.ParseBoolLike(c.FormValue("remember_me"))
 
 	return credentials, nil
 }

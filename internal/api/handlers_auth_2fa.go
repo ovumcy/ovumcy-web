@@ -31,20 +31,18 @@ func (handler *Handler) ShowTOTPChallengePage(c fiber.Ctx) error {
 	return handler.render(c, "auth_2fa", data)
 }
 
-// parseTOTPChallengeCode reads the submitted code from either transport the
-// endpoint serves: the JSON body `docs/openapi.yaml` publishes for API clients,
-// and the urlencoded form the challenge page posts. `c.FormValue` alone never
-// sees a JSON body, so a spec-conforming client got `totp invalid code` for
-// every code it sent — indistinguishable from a wrong one.
+// parseTOTPChallengeCode reads the submitted code from the request body, over
+// either transport the endpoint serves: the JSON body `docs/openapi.yaml`
+// publishes for API clients, and the urlencoded form the challenge page posts.
+// A body that cannot be decoded yields "", answered as `totp invalid code`
+// exactly like a wrong code. The query string is never consulted, so a code
+// carried in a link is not a submission.
 func parseTOTPChallengeCode(c fiber.Ctx) string {
-	if hasJSONBody(c) {
-		input := totpChallengeInput{}
-		if err := c.Bind().Body(&input); err != nil {
-			return ""
-		}
-		return strings.TrimSpace(input.Code)
+	input := totpChallengeInput{}
+	if err := bindRequestBody(c, &input); err != nil {
+		return ""
 	}
-	return strings.TrimSpace(c.FormValue("code"))
+	return strings.TrimSpace(input.Code)
 }
 
 // VerifyTOTPLogin validates the 6-digit TOTP code submitted on the challenge page.

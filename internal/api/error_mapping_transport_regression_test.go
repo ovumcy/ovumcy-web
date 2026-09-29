@@ -88,6 +88,43 @@ func TestRespondMappedErrorAuthFormRedirectsWithFlashOnly(t *testing.T) {
 	}
 }
 
+// TestPasswordResetErrorFlashCarriesTheBodyEmailOnly pins where the
+// forgot-password flash takes its email from: the submitted body. A `?email=`
+// planted in the URL must neither replace it nor stand in for a body without one.
+func TestPasswordResetErrorFlashCarriesTheBodyEmailOnly(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name  string
+		query string
+		body  url.Values
+		want  string
+	}{
+		{name: "body email wins over a conflicting query email", query: "?email=other@example.com", body: url.Values{"email": {"Body@Example.com"}}, want: "body@example.com"},
+		{name: "body email without any query", query: "", body: url.Values{"email": {"Body@Example.com"}}, want: "body@example.com"},
+		{name: "query email alone is not carried", query: "?email=other@example.com", body: url.Values{"other": {"1"}}, want: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			handler := &Handler{secretKey: []byte("test-error-mapping-secret")}
+			app := fiber.New()
+			app.Post("/api/v1/password-resets", func(c fiber.Ctx) error {
+				return handler.respondMappedError(c, authFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid input"))
+			})
+
+			request := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets"+tc.query, strings.NewReader(tc.body.Encode()))
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+			response := mustAppResponse(t, app, request)
+			assertStatusCode(t, response, http.StatusSeeOther)
+
+			payload := mustReadFlashPayload(t, handler.secretKey, response.Cookies())
+			if payload.ForgotEmail != tc.want {
+				t.Fatalf("ForgotEmail = %q, want %q", payload.ForgotEmail, tc.want)
+			}
+		})
+	}
+}
+
 func TestRespondMappedErrorSettingsFormRedirectsWithFlashOnly(t *testing.T) {
 	t.Parallel()
 

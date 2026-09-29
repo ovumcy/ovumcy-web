@@ -92,7 +92,11 @@ func (handler *Handler) VerifyTOTP2FAEnrollment(c fiber.Ctx) error {
 		return handler.respondMappedError(c, totpSessionExpiredErrorSpec())
 	}
 
-	code := strings.TrimSpace(c.FormValue("code"))
+	// A body that cannot be decoded leaves the code empty and is answered as an
+	// invalid code, like a missing one.
+	input := totpChallengeInput{}
+	_ = bindRequestBody(c, &input)
+	code := strings.TrimSpace(input.Code)
 	if len(code) != 6 {
 		return handler.respondMappedError(c, totpInvalidCodeErrorSpec())
 	}
@@ -178,7 +182,11 @@ func (handler *Handler) DisableTOTP2FA(c fiber.Ctx) error {
 		return handler.respondMappedError(c, unauthorizedErrorSpec())
 	}
 
-	password := c.FormValue("password")
+	input := passwordProtectedSettingsInput{}
+	if err := bindRequestBody(c, &input); err != nil && hasJSONBody(c) {
+		return handler.respondMappedError(c, settingsInvalidInputErrorSpec())
+	}
+	password := input.Password
 	if strings.TrimSpace(password) == "" {
 		return handler.respondMappedError(c, settingsInvalidInputErrorSpec())
 	}

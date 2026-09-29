@@ -79,7 +79,7 @@ func (handler *Handler) DeleteAccount(c fiber.Ctx) error {
 
 func parsePasswordProtectedSettingsAction(c fiber.Ctx) (string, APIErrorSpec, bool) {
 	input := passwordProtectedSettingsInput{}
-	if err := c.Bind().Body(&input); err != nil && hasJSONBody(c) {
+	if err := bindRequestBody(c, &input); err != nil && hasJSONBody(c) {
 		spec := settingsMissingPasswordErrorSpec()
 		return "", spec, false
 	}
