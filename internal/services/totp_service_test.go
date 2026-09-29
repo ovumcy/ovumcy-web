@@ -480,7 +480,7 @@ func TestTOTPService_CheckRateLimit_ClientIPIsolation(t *testing.T) {
 	}
 }
 
-// --- rate-limit: disable (CheckDisableRateLimit / RecordDisableFailure / ResetDisableAttempts) ---
+// --- rate-limit: disable (the totp.disable ReauthBudget) ---
 
 func TestTOTPService_CheckDisableRateLimit_BelowLimit_ReturnsNil(t *testing.T) {
 	repo := &stubTOTPUserRepo{}
@@ -489,11 +489,11 @@ func TestTOTPService_CheckDisableRateLimit_BelowLimit_ReturnsNil(t *testing.T) {
 	now := time.Now()
 
 	for range DefaultTOTPDisableAttemptsLimit - 1 {
-		svc.RecordDisableFailure(secretKey, "1.2.3.4", 1, now)
+		recordDisableFailure(svc, secretKey, "1.2.3.4", 1, now)
 	}
 
-	if err := svc.CheckDisableRateLimit(secretKey, "1.2.3.4", 1, now); err != nil {
-		t.Errorf("CheckDisableRateLimit() after %d failures = %v, want nil", DefaultTOTPDisableAttemptsLimit-1, err)
+	if err := checkDisableBudget(svc, secretKey, "1.2.3.4", 1, now); err != nil {
+		t.Errorf("disable budget after %d failures = %v, want nil", DefaultTOTPDisableAttemptsLimit-1, err)
 	}
 }
 
@@ -504,12 +504,12 @@ func TestTOTPService_CheckDisableRateLimit_AtLimit_ReturnsErrTOTPDisableRateLimi
 	now := time.Now()
 
 	for range DefaultTOTPDisableAttemptsLimit {
-		svc.RecordDisableFailure(secretKey, "1.2.3.4", 1, now)
+		recordDisableFailure(svc, secretKey, "1.2.3.4", 1, now)
 	}
 
-	err := svc.CheckDisableRateLimit(secretKey, "1.2.3.4", 1, now)
+	err := checkDisableBudget(svc, secretKey, "1.2.3.4", 1, now)
 	if !errors.Is(err, ErrTOTPDisableRateLimited) {
-		t.Errorf("CheckDisableRateLimit() after %d failures = %v, want ErrTOTPDisableRateLimited", DefaultTOTPDisableAttemptsLimit, err)
+		t.Errorf("disable budget after %d failures = %v, want ErrTOTPDisableRateLimited", DefaultTOTPDisableAttemptsLimit, err)
 	}
 }
 
@@ -520,21 +520,21 @@ func TestTOTPService_ResetDisableAttempts_ClearsLimit(t *testing.T) {
 	now := time.Now()
 
 	for range DefaultTOTPDisableAttemptsLimit {
-		svc.RecordDisableFailure(secretKey, "1.2.3.4", 1, now)
+		recordDisableFailure(svc, secretKey, "1.2.3.4", 1, now)
 	}
-	if err := svc.CheckDisableRateLimit(secretKey, "1.2.3.4", 1, now); !errors.Is(err, ErrTOTPDisableRateLimited) {
+	if err := checkDisableBudget(svc, secretKey, "1.2.3.4", 1, now); !errors.Is(err, ErrTOTPDisableRateLimited) {
 		t.Fatalf("precondition: disable limiter not tripped after %d failures, err=%v", DefaultTOTPDisableAttemptsLimit, err)
 	}
 
-	svc.ResetDisableAttempts(secretKey, "1.2.3.4", 1)
+	resetDisableBudget(svc, secretKey, "1.2.3.4", 1)
 
-	if err := svc.CheckDisableRateLimit(secretKey, "1.2.3.4", 1, now); err != nil {
-		t.Errorf("CheckDisableRateLimit() after ResetDisableAttempts = %v, want nil", err)
+	if err := checkDisableBudget(svc, secretKey, "1.2.3.4", 1, now); err != nil {
+		t.Errorf("disable budget after Reset = %v, want nil", err)
 	}
 	// Disabling TOTP is session-bound: the account's counter is cleared too,
 	// so the same account is open from any client.
-	if err := svc.CheckDisableRateLimit(secretKey, "5.6.7.8", 1, now); err != nil {
-		t.Errorf("CheckDisableRateLimit() for the same account from another client = %v, want nil", err)
+	if err := checkDisableBudget(svc, secretKey, "5.6.7.8", 1, now); err != nil {
+		t.Errorf("disable budget for the same account from another client = %v, want nil", err)
 	}
 }
 
@@ -548,9 +548,9 @@ func TestTOTPService_DisableAndVerifyLimitsAreIndependent(t *testing.T) {
 	now := time.Now()
 
 	for range DefaultTOTPDisableAttemptsLimit {
-		svc.RecordDisableFailure(secretKey, "1.2.3.4", 1, now)
+		recordDisableFailure(svc, secretKey, "1.2.3.4", 1, now)
 	}
-	if err := svc.CheckDisableRateLimit(secretKey, "1.2.3.4", 1, now); !errors.Is(err, ErrTOTPDisableRateLimited) {
+	if err := checkDisableBudget(svc, secretKey, "1.2.3.4", 1, now); !errors.Is(err, ErrTOTPDisableRateLimited) {
 		t.Fatalf("precondition: disable limiter not tripped, err=%v", err)
 	}
 	if err := svc.CheckRateLimit(secretKey, "1.2.3.4", 1, now); err != nil {

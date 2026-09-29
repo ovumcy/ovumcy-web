@@ -83,21 +83,19 @@ func (service *SettingsService) ChangePassword(ctx context.Context, attempt Reau
 	// factor, so it draws on the same budget as the erasure flows. Without this
 	// the change-password form would be a faster password oracle than the login
 	// form it protects.
-	now := attempt.at()
-	identity := attempt.identity()
-	if service.reauthPolicy.TooManyRecent(service.reauthSecretKey, attempt.clientBucket(), identity, now) {
-		return ErrSettingsReauthRateLimited
-	}
-	if err := service.ValidatePasswordChange(user, currentPassword, newPassword, confirmPassword); err != nil {
-		// Same rule as VerifyReauthPassword: the equalized no-local-password
-		// refusal spends a bcrypt, so it draws the budget too.
-		if errors.Is(err, ErrSettingsInvalidCurrentPassword) || errors.Is(err, ErrSettingsLocalPasswordNotSet) {
-			service.reauthPolicy.AddFailure(service.reauthSecretKey, attempt.clientBucket(), identity, now)
-		}
+	//
+	// It goes through the same budgeted verify as VerifyReauth; only the compare
+	// differs. ValidatePasswordChange is that compare because the current-password
+	// check cannot be lifted out of it: the blank and mismatch refusals on all
+	// three fields must answer before the account-state branch, or their latency
+	// would reopen the distinguisher that branch's equalization removes.
+	budget := service.SettingsReauthBudget()
+	if err := budget.verify(attempt, func() error {
+		return service.ValidatePasswordChange(user, currentPassword, newPassword, confirmPassword)
+	}); err != nil {
 		return err
 	}
-	// Session-bound flow: clear the client and the account counters (see ResetAll).
-	service.reauthPolicy.ResetAll(service.reauthSecretKey, attempt.clientBucket(), identity)
+	budget.Reset(attempt)
 
 	newPassword = strings.TrimSpace(newPassword)
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), passwordHashCost)
