@@ -151,14 +151,28 @@ func check(root, baseRef string, git gitRunner) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("diff %s against %s: %w", changelogFile, baseRef, err)
 	}
-	assembly := addsReleaseHeading(changelogDiff)
 	var offending []string
-	if !assembly && strings.TrimSpace(changelogDiff) != "" {
+	assembly := false
+	if strings.TrimSpace(changelogDiff) != "" {
 		current, showErr := git(root, "show", "HEAD:"+changelogFile)
 		if showErr != nil {
 			return "", fmt.Errorf("read %s at HEAD: %w", changelogFile, showErr)
 		}
-		offending = editsOutsideReleasedText(changelogDiff, current)
+		assembly = addsReleaseHeading(changelogDiff, current)
+		if !assembly {
+			// The diff's old-side positions belong to the merge base, so the released
+			// boundary is read there: read at HEAD, a heading this very diff adds above
+			// the [Unreleased] body would move the boundary up and license its rewrite.
+			mergeBase, mbErr := git(root, "merge-base", baseRef, "HEAD")
+			if mbErr != nil {
+				return "", fmt.Errorf("merge base of %s and HEAD: %w", baseRef, mbErr)
+			}
+			base, baseErr := git(root, "show", strings.TrimSpace(mergeBase)+":"+changelogFile)
+			if baseErr != nil {
+				return "", fmt.Errorf("read %s at the merge base: %w", changelogFile, baseErr)
+			}
+			offending = editsOutsideReleasedText(changelogDiff, base)
+		}
 	}
 
 	if len(fragmentProblems) > 0 || len(offending) > 0 {
@@ -204,22 +218,25 @@ func changedFragments(nameStatus string) []string {
 }
 
 // hunkHeader matches a unified-diff hunk header; group 1 is the first line of
-// the hunk in the new file, group 2 its length (absent means 1) — unread, since
-// a pure deletion and a write are judged by the same first line.
-var hunkHeader = regexp.MustCompile(`^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@`)
+// the hunk in the old file (for a pure insertion, the line it follows), group 2
+// its length there (absent means 1) — unread, since a deletion and an insertion
+// are judged by the same first line.
+var hunkHeader = regexp.MustCompile(`^@@ -(\d+)(?:,(\d+))? \+\d+(?:,\d+)? @@`)
 
 // editsOutsideReleasedText returns the hunk headers of a `--unified=0`
 // CHANGELOG.md diff that touch anything but an already-released version
 // section: the title, the "[Unreleased]" body, or a hunk that reaches up to the
-// first release heading. current is the file as of HEAD. The first released
-// heading is the first line matching releaseHeadingPattern, so an
-// "## [Unreleased]" with a suffix is never mistaken for it. An edit from that
-// heading line onwards — the heading belongs to its section, so a date
-// correction is one — is a correction to released text and is not reported; a
-// file with no released heading has no such text, so every hunk is.
-func editsOutsideReleasedText(diff, current string) []string {
+// first release heading. base is the file the diff starts from, whose line
+// numbers the hunks' old side carries; a boundary read from the changed file
+// would move with a heading the diff itself adds. The first released heading is
+// the first line matching releaseHeadingPattern, so an "## [Unreleased]" with a
+// suffix is never mistaken for it. An edit from that heading line onwards — the
+// heading belongs to its section, so a date correction is one — is a correction
+// to released text and is not reported; a file with no released heading has no
+// such text, so every hunk is.
+func editsOutsideReleasedText(diff, base string) []string {
 	firstReleased := 0
-	for i, line := range strings.Split(current, "\n") {
+	for i, line := range strings.Split(base, "\n") {
 		if releaseHeadingPattern.MatchString(strings.TrimRight(line, "\r")) {
 			firstReleased = i + 1
 			break
@@ -232,9 +249,9 @@ func editsOutsideReleasedText(diff, current string) []string {
 			continue
 		}
 		start, _ := strconv.Atoi(m[1])
-		// A hunk that only deletes lines reports the line it follows, and one that
-		// writes lines reports its first written line; either way the hunk is inside
-		// a released section when that line is the heading line or below it.
+		// A hunk that only inserts lines reports the line it follows, and one that
+		// removes or rewrites lines its first removed line; either way the hunk is
+		// inside a released section when that line is the heading line or below it.
 		inside := firstReleased > 0 && start >= firstReleased
 		if !inside {
 			offending = append(offending, strings.TrimSpace(line))
@@ -278,26 +295,24 @@ func addedFragments(nameStatus string) []string {
 // be taken for a released section.
 var releaseHeadingPattern = regexp.MustCompile(`^## \[(\d+\.\d+\.\d+)\](?: - \d{4}-\d{2}-\d{2})?\s*$`)
 
-// bracketedHeadingPattern reads the bracketed label of any "## [" line, on the
-// removed side of a diff where the line's exact shape is not the question.
-var bracketedHeadingPattern = regexp.MustCompile(`^\s*## \[([^\]]*)\]`)
-
-// addsReleaseHeading reports whether a CHANGELOG.md diff adds the heading of a
-// NEW release, which is what release assembly looks like and what an ordinary
-// entry never does. A heading counts only when its version is not on a removed
-// "## [" line of the same diff: re-typing an existing heading (a date
-// correction, a whitespace touch) removes and adds the same version and is not
-// a release. "## [Unreleased]" never counts.
-func addsReleaseHeading(diff string) bool {
-	removed := map[string]bool{}
+// addsReleaseHeading reports whether a CHANGELOG.md diff adds a NEW release,
+// which is what release assembly looks like and what an ordinary entry never
+// does. Two things must hold. The diff adds more release-heading lines than it
+// removes, so a heading re-typed in place — a date correction, a whitespace
+// touch, a changed version — nets to zero and is not a release. And every
+// added version is, in current (the file as of HEAD), the heading of exactly
+// one section, so a heading that repeats a version the file already carries is
+// not a release either. "## [Unreleased]" never counts.
+func addsReleaseHeading(diff, current string) bool {
+	removed := 0
 	var added []string
 	for _, line := range strings.Split(diff, "\n") {
 		line = strings.TrimRight(line, "\r")
 		switch {
 		case strings.HasPrefix(line, "+++"), strings.HasPrefix(line, "---"):
 		case strings.HasPrefix(line, "-"):
-			if m := bracketedHeadingPattern.FindStringSubmatch(line[1:]); m != nil {
-				removed[m[1]] = true
+			if releaseHeadingPattern.MatchString(line[1:]) {
+				removed++
 			}
 		case strings.HasPrefix(line, "+"):
 			if m := releaseHeadingPattern.FindStringSubmatch(line[1:]); m != nil {
@@ -305,12 +320,21 @@ func addsReleaseHeading(diff string) bool {
 			}
 		}
 	}
-	for _, version := range added {
-		if !removed[version] {
-			return true
+	if len(added) <= removed {
+		return false
+	}
+	headings := map[string]int{}
+	for _, line := range strings.Split(current, "\n") {
+		if m := releaseHeadingPattern.FindStringSubmatch(strings.TrimRight(line, "\r")); m != nil {
+			headings[m[1]]++
 		}
 	}
-	return false
+	for _, version := range added {
+		if headings[version] != 1 {
+			return false
+		}
+	}
+	return true
 }
 
 // validateFragment accepts either the "none" marker or a fragment whose first

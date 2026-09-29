@@ -316,9 +316,9 @@ func TestChangedFragmentsCoversAddedModifiedAndRenamedOnly(t *testing.T) {
 	}
 }
 
-func TestEditsOutsideReleasedTextReadsNewSidePositions(t *testing.T) {
-	// fixtureChangelog: line 5 is "## [Unreleased]", lines 9-12 the frozen
-	// entry, line 14 "## [1.0.0]", line 18 the last line of the file.
+func TestEditsOutsideReleasedTextReadsOldSidePositions(t *testing.T) {
+	// fixtureChangelog is the base: line 5 is "## [Unreleased]", lines 9-12 the
+	// frozen entry, line 14 "## [1.0.0]", line 18 the last line of the file.
 	cases := []struct {
 		name string
 		hunk string
@@ -328,6 +328,8 @@ func TestEditsOutsideReleasedTextReadsNewSidePositions(t *testing.T) {
 		{"unreleased body", "@@ -11,2 +11,2 @@", true},
 		{"unreleased body deletion", "@@ -10,3 +9,0 @@", true},
 		{"blank line above the release heading", "@@ -13,1 +13,0 @@", true},
+		{"insertion directly above the release heading", "@@ -13,0 +14,2 @@", true},
+		{"unreleased tail removed together with the heading it touches", "@@ -12,3 +12 @@", true},
 		{"the release heading itself rewritten", "@@ -14 +14 @@", false},
 		{"deletion right after the release heading", "@@ -15,1 +14,0 @@", false},
 		{"released body line", "@@ -18 +18 @@", false},
@@ -461,30 +463,98 @@ func TestAddedFragmentsCollectsOnlyAddedMarkdownUnderChangelogD(t *testing.T) {
 }
 
 func TestAddsReleaseHeadingReadsAddedLinesOnly(t *testing.T) {
+	// The file as of HEAD: every version the cases add is its heading exactly once.
+	const head = "# Changelog\n\n## [Unreleased]\n\n## [2.0.0] - 2026-02-02\n\n## [1.2.3] - 2026-02-02\n\n## [1.0.0] - 2026-01-01\n"
 	cases := map[string]bool{
 		"+++ b/CHANGELOG.md\n+## [1.2.3] - 2026-02-02\n":  true,
 		"+++ b/CHANGELOG.md\n+## [1.2.3]\n":               true,
 		"+++ b/CHANGELOG.md\n+- **An ordinary entry.**\n": false,
 		"+++ b/CHANGELOG.md\n-## [1.2.3] - 2026-02-02\n":  false,
 		"": false,
-		// A new release heading beside an unrelated removed one is assembly.
-		"-## [1.0.0] - 2026-01-01\n+## [1.2.3] - 2026-02-02\n": true,
-		// Re-typing an existing heading — a date, a whitespace touch — is not.
+		// Re-typing a heading — a date, a whitespace touch, the version itself —
+		// removes one release heading and adds one: no release.
 		"-## [1.2.3] - 2026-02-02\n+## [1.2.3] - 2026-02-03\n":  false,
 		"-## [1.2.3] - 2026-02-02\n+## [1.2.3] - 2026-02-02 \n": false,
+		"-## [1.0.0] - 2026-01-01\n+## [1.2.3] - 2026-02-02\n":  false,
+		"+## [1.2.3] - 2026-02-02\n-## [1.2.3]\n":               false,
+		// One more heading added than removed is a release.
+		"-## [1.0.0] - 2026-01-01\n+## [1.2.3] - 2026-02-02\n+## [2.0.0] - 2026-02-02\n": true,
 		// "[Unreleased]" never counts, whatever its suffix or spacing.
-		"-## [Unreleased]\n+## [Unreleased] \n":       false,
-		"+## [Unreleased]\n":                          false,
-		"+## [Unreleased] - TBD\n":                    false,
-		"+## [1.2] - 2026-02-02\n":                    false,
-		"+## [1.2.3] - soon\n":                        false,
-		"+## [1.2.3] - 2026-02-02\n-## [1.2.3]\n":     false,
+		"-## [Unreleased]\n+## [Unreleased] \n": false,
+		"+## [Unreleased]\n":                    false,
+		"+## [Unreleased] - TBD\n":              false,
+		"+## [1.2] - 2026-02-02\n":              false,
+		"+## [1.2.3] - soon\n":                  false,
+		// A version HEAD does not carry as a heading is not assembly's output.
+		"+## [3.0.0] - 2026-02-02\n":                  false,
 		"+## [2.0.0] - 2026-02-02\n+## [1.2.3] - x\n": true,
 	}
 	for diff, want := range cases {
-		if got := addsReleaseHeading(diff); got != want {
+		if got := addsReleaseHeading(diff, head); got != want {
 			t.Errorf("addsReleaseHeading(%q) = %v, want %v", diff, got, want)
 		}
+	}
+
+	// A version the file carries twice is a copy of a heading, not a new one; one
+	// copy among several new headings still spoils the whole diff.
+	const duplicated = head + "\n## [1.2.3] - 2026-02-02\n"
+	for _, diff := range []string{
+		"+## [1.2.3] - 2026-02-02\n",
+		"+## [2.0.0] - 2026-02-02\n+## [1.2.3] - 2026-02-02\n",
+	} {
+		if addsReleaseHeading(diff, duplicated) {
+			t.Errorf("addsReleaseHeading(%q) accepted a version HEAD carries twice", diff)
+		}
+	}
+}
+
+func TestCheckRefusesAnUnreleasedRewriteBesideARetypedReleaseVersion(t *testing.T) {
+	dir := initRepo(t)
+	writeFile(t, dir, "changelog.d/some-branch.md", "### Added\n\n- **A new thing.**\n")
+	retyped := strings.Replace(fixtureChangelog, "## [1.0.0] - 2026-01-01", "## [1.0.1] - 2026-01-01", 1)
+	writeFile(t, dir, "CHANGELOG.md", strings.Replace(retyped,
+		"- **A frozen entry.** Written before fragments existed, and still waiting for a\n  release to carry it out.",
+		"- **A frozen entry, quietly reworded.**", 1))
+	commitAll(t, dir, "feat: a rewrite dressed as a version correction")
+
+	failure, err := check(dir, "main", gitOutput)
+	if err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	if !strings.Contains(failure, "CHANGELOG.md is edited outside release assembly") {
+		t.Fatalf("re-typing a release version removes one heading and adds one, and must not make a rewrite beside it assembly, got:\n%s", failure)
+	}
+}
+
+func TestCheckRefusesAnUnreleasedRewriteBesideACopiedReleaseHeading(t *testing.T) {
+	dir := initRepo(t)
+	writeFile(t, dir, "changelog.d/some-branch.md", "### Added\n\n- **A new thing.**\n")
+	writeFile(t, dir, "CHANGELOG.md", strings.Replace(fixtureChangelog,
+		"### Fixed\n\n- **A frozen entry.** Written before fragments existed, and still waiting for a\n  release to carry it out.\n\n",
+		"## [1.0.0] - 2026-01-01\n\n", 1))
+	commitAll(t, dir, "feat: a rewrite dressed as a second heading for 1.0.0")
+
+	failure, err := check(dir, "main", gitOutput)
+	if err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	if !strings.Contains(failure, "CHANGELOG.md is edited outside release assembly") {
+		t.Fatalf("a heading repeating a version the file already carries must not make a rewrite beside it assembly, got:\n%s", failure)
+	}
+}
+
+func TestCheckAllowsAVersionCorrectionOfAReleasedHeadingBesideANoneFragment(t *testing.T) {
+	dir := initRepo(t)
+	writeFile(t, dir, "changelog.d/fix-version.md", "none\n\nThe first release's version was mistyped.\n")
+	writeFile(t, dir, "CHANGELOG.md", strings.Replace(fixtureChangelog, "## [1.0.0] - 2026-01-01", "## [1.0.1] - 2026-01-01", 1))
+	commitAll(t, dir, "docs: correct a release version")
+
+	failure, err := check(dir, "main", gitOutput)
+	if err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	if failure != "" {
+		t.Fatalf("a version-only re-type of the first released heading is a correction to released text and must pass, got:\n%s", failure)
 	}
 }
 
