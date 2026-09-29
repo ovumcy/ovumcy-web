@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/services"
 	"github.com/pquerna/otp/totp"
 )
 
@@ -275,6 +276,55 @@ func TestTOTPSettingsReadCodeAndPasswordFromTheBodyOnly(t *testing.T) {
 		}
 		if !totpEnabledInDatabase(t, ctx) {
 			t.Fatal("a refused request disabled 2FA")
+		}
+	})
+}
+
+// TestDisableTOTP2FARefusesABodyItCouldNotDecodeWhole pins the refusal to the
+// bind error, not to the body's declared type: an XML body whose Password
+// element decodes before the syntax error leaves a usable password in the input
+// struct, and a body the binder rejected is not a submission whatever its type.
+func TestDisableTOTP2FARefusesABodyItCouldNotDecodeWhole(t *testing.T) {
+	partialXML := func(password string) string {
+		return `<disable><Password>` + password + `</Password><broken>`
+	}
+
+	t.Run("the correct password before the syntax error is refused and 2FA stays on", func(t *testing.T) {
+		ctx := newTOTPSettingsContext(t, "totp-partial-xml-correct@example.com")
+		enableTOTPForSettingsTest(t, &ctx)
+
+		resp := send2FARequest(t, ctx, twoFARequest{
+			method: http.MethodDelete, contentType: "application/xml",
+			body: partialXML("StrongPass1"), withSession: true, withCSRFHead: true,
+		})
+		assert2FARefusal(t, resp, http.StatusBadRequest, "invalid settings input", "partial xml body")
+		if !totpEnabledInDatabase(t, ctx) {
+			t.Fatal("a partially decoded XML body carrying the correct password disabled 2FA")
+		}
+	})
+
+	t.Run("a refused body draws nothing from the failed-password budget", func(t *testing.T) {
+		ctx := newTOTPSettingsContext(t, "totp-partial-xml-budget@example.com")
+		enableTOTPForSettingsTest(t, &ctx)
+
+		for attempt := range services.DefaultTOTPDisableAttemptsLimit {
+			resp := send2FARequest(t, ctx, twoFARequest{
+				method: http.MethodDelete, contentType: "application/xml",
+				body: partialXML("WrongPass9"), withSession: true, withCSRFHead: true,
+			})
+			assert2FARefusal(t, resp, http.StatusBadRequest, "invalid settings input", "partial xml body with a wrong password")
+			if t.Failed() {
+				t.Fatalf("attempt %d was not refused as invalid input", attempt)
+			}
+		}
+
+		resp := send2FARequest(t, ctx, twoFARequest{
+			method: http.MethodDelete, contentType: "application/json",
+			body: jsonBodyFor(map[string]string{"password": "StrongPass1"}), withSession: true, withCSRFHead: true,
+		})
+		assert2FAOkEnvelope(t, ctx.app, resp)
+		if totpEnabledInDatabase(t, ctx) {
+			t.Fatal("the failed-password budget was drawn by refused bodies: the correct JSON request did not disable 2FA")
 		}
 	})
 }
