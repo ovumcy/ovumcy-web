@@ -108,7 +108,7 @@ func TestTheMirrorCopyRetriesOnlyDockerHubsRateLimit(t *testing.T) {
 			failures:    mirrorCopyAttempts * 10,
 			message:     unknownManifest,
 			wantCalls:   1,
-			wantRefusal: "not on Docker Hub's rate limit",
+			wantRefusal: "not on a registry's rate limit",
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
