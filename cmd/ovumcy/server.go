@@ -201,6 +201,10 @@ func configureFiberMiddleware(app *fiber.App, config runtimeConfig, handler *api
 	app.Use(recover.New())
 	app.Use(newRequestLogger(nil))
 	app.Use(compress.New())
+	// Ahead of every limiter and CSRF, behind only app-wide Use middleware: both
+	// must key on the verb a form's _method makes the router run. See
+	// api.MethodOverride for why nothing route-specific may precede it.
+	app.Use(api.MethodOverride(handler))
 	// The per-IP logout row refuses BEFORE the handler, so every request it
 	// counts could keep a session alive. It counts only answers below 400: a
 	// neighbour behind the same address (NAT) spending it with unauthenticated
