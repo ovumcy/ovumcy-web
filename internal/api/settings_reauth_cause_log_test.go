@@ -75,10 +75,10 @@ func TestSettingsReauthCauseFieldDiffersInTheLogWhileTheResponseDoesNot(t *testi
 
 // TestDisableTOTP2FAReauthCauseFieldDiffersInTheLogWhileTheResponseDoesNot is
 // the 2FA-disable sibling: DisableTOTP2FA re-authenticates with the unbudgeted
-// ValidateCurrentPassword and logs its refusal itself, so it is a third,
+// ValidateCurrentPassword and logs its refusal itself, so it is an
 // independent call site of settingsReauthCauseField. A wrong password and an
-// account with no local password get one byte-identical 401, and only the
-// settings.2fa.disable log line tells them apart.
+// account with no local password get the same 401 status and error key, and
+// only the settings.2fa.disable log line tells them apart.
 func TestDisableTOTP2FAReauthCauseFieldDiffersInTheLogWhileTheResponseDoesNot(t *testing.T) {
 	originalWriter := log.Writer()
 	defer log.SetOutput(originalWriter)
