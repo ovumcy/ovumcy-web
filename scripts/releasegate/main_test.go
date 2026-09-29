@@ -749,27 +749,16 @@ func stepBlock(t *testing.T) string {
 
 // rollingNeeds reads `publish-image`'s dependency list, the set of checks
 // `:latest` waits for. The release gate is compared against it rather than
-// against a copy of it kept here.
+// against a copy of it kept here. It reads through jobNeeds, the reader that
+// holds `publish` to the gate, so the two `needs:` lists this package judges
+// cannot be read under different rules.
 func rollingNeeds(t *testing.T) []string {
 	t.Helper()
 
 	block := workflowfile.Job(t, rollingWorkflow, rollingJob)
-	marker := "    needs:\n"
-	start := strings.Index(block, marker)
-	if start < 0 {
-		t.Fatalf("%s, job %q: no `needs:` list", rollingWorkflow, rollingJob)
-	}
-
-	var needs []string
-	for _, line := range strings.Split(block[start+len(marker):], "\n") {
-		match := needsEntry.FindStringSubmatch(line)
-		if match == nil {
-			break
-		}
-		needs = append(needs, match[1])
-	}
-	if len(needs) == 0 {
-		t.Fatalf("%s, job %q lists no dependencies, so there is nothing to hold the release gate to", rollingWorkflow, rollingJob)
+	needs, err := jobNeeds(block)
+	if err != nil {
+		t.Fatalf("%s, job %q: `needs:` cannot be read (%v), so there is nothing to hold the release gate to", rollingWorkflow, rollingJob, err)
 	}
 	return needs
 }
