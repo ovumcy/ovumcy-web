@@ -920,19 +920,22 @@ jobs:
         env:
           MIRROR_PATH: ${{ steps.image.outputs.path }}
         run: |
-          set -uo pipefail
+          # `shell: bash` runs this under `-eo pipefail`; errexit is turned
+          # off because no answer here may end the step.
+          set +e
+          set -u
           config="${DOCKER_CONFIG:-$HOME/.docker}/config.json"
           key='https://index.docker.io/v1/'
           token_url="https://auth.docker.io/token?service=registry.docker.io&scope=repository:${MIRROR_PATH}:pull"
           probe="https://registry-1.docker.io/v2/${MIRROR_PATH}/manifests/latest"
+          token_body="$(mktemp)"
+          trap 'rm -f "$token_body"' EXIT
 
           if [ ! -f "$config" ]; then
             echo "::warning::no docker config at ${config}, so cosign reads Docker Hub anonymously."
             exit 0
           fi
-          echo "credsStore set: $(jq -r 'has("credsStore")' "$config")"
-          echo "credHelpers entry for Docker Hub: $(jq -r --arg k "$key" '(.credHelpers // {}) | (has($k) or has("docker.io") or has("index.docker.io"))' "$config")"
-          echo "inline auth under ${key}: $(jq -r --arg k "$key" '(.auths[$k].auth // "") != ""' "$config")"
+          python3 -c 'import json, pathlib, sys; c = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")); k = sys.argv[2]; h = c.get("credHelpers") or {}; print("credsStore set:", "credsStore" in c); print("credHelpers entry for Docker Hub:", any(n in h for n in (k, "docker.io", "index.docker.io"))); print("inline auth under " + k + ":", bool((c.get("auths") or {}).get(k, {}).get("auth")))' "$config" "$key"
 
           # $1 labels the reading; stdin carries the token request's
           # Authorization header, or nothing for an anonymous one.
@@ -940,17 +943,19 @@ jobs:
           # token request's status is reported rather than folded into a
           # transport failure.
           rate_limit_view() {
-            local response status token
-            if ! response="$(curl -sS --max-time 20 -w '\n%{http_code}' -H @- "$token_url")"; then
+            local status token
+            if ! status="$(curl -sS --max-time 20 -o "$token_body" -w '%{http_code}' -H @- "$token_url")"; then
               echo "$1: the token request got no answer"
               return 0
             fi
-            status="${response##*$'\n'}"
             if [ "$status" != 200 ]; then
               echo "$1: the token request was answered HTTP ${status}"
               return 0
             fi
-            token="$(printf '%s' "${response%$'\n'*}" | jq -r '.token // empty')"
+            # The one token parse every registry step in this job uses.
+            token="$(
+              python3 -c 'import json, pathlib, sys; body = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")); print(body.get("token", ""))' "$token_body"
+            )"
             if [ -z "$token" ]; then
               echo "$1: the token response carried no token"
               return 0
@@ -964,7 +969,7 @@ jobs:
           }
 
           rate_limit_view anonymous < /dev/null
-          auth="$(jq -r --arg k "$key" '.auths[$k].auth // empty' "$config")"
+          auth="$(python3 -c 'import json, pathlib, sys; c = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")); print((c.get("auths") or {}).get(sys.argv[2], {}).get("auth", ""))' "$config" "$key")"
           if [ -n "$auth" ]; then
             printf 'Authorization: Basic %s\n' "$auth" | rate_limit_view mirror-login
           else
@@ -1070,8 +1075,9 @@ jobs:
           # where it lands: a copy moves content-addressed bytes, to a digest
           # or to an alias `--force` rewrites to that same digest; a read-back
           # changes nothing; and a signing call refused partway leaves at most
-          # one more Rekor entry and bundle for the same digest and identity,
-          # which the read-back accepts like the first.
+          # one extra Rekor entry and bundle per repeated attempt, all for the
+          # same digest and identity, which the read-back accepts like the
+          # first.
           call_log="$(mktemp)"
           trap 'rm -f "$call_log"' EXIT
 
