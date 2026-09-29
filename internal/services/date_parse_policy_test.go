@@ -112,6 +112,65 @@ func TestParseDayDateResolvesADayWhoseMidnightIsSkipped(t *testing.T) {
 	}
 }
 
+// TestParseDayDateAcceptsExactlyTheDocumentedRangeInEveryZone pins both edges of
+// DayDateMin..DayDateMax from each side, in zones on both sides of UTC: the bound
+// is read off the parsed calendar components, so a zone's offset must move
+// neither edge. Pacific/Kiritimati (UTC+14) would pull 1900-01-01 before the
+// bound and Pacific/Pago_Pago (UTC-11) would push 9999-12-30 past it if the
+// comparison ran on the resolved instant instead.
+func TestParseDayDateAcceptsExactlyTheDocumentedRangeInEveryZone(t *testing.T) {
+	t.Parallel()
+
+	if DayDateMin != "1900-01-01" || DayDateMax != "9999-12-30" {
+		t.Fatalf("accepted range is %s..%s, the documented range is 1900-01-01..9999-12-30", DayDateMin, DayDateMax)
+	}
+
+	cases := []struct {
+		day      string
+		accepted bool
+	}{
+		{day: "0001-01-01", accepted: false},
+		{day: "1899-12-31", accepted: false},
+		{day: "1900-01-01", accepted: true},
+		{day: "1900-01-02", accepted: true},
+		{day: "9999-12-29", accepted: true},
+		{day: "9999-12-30", accepted: true},
+		{day: "9999-12-31", accepted: false},
+	}
+
+	for _, zone := range []string{"UTC", "Pacific/Kiritimati", "America/Santiago", "Pacific/Pago_Pago"} {
+		location, err := time.LoadLocation(zone)
+		if err != nil {
+			t.Fatalf("load %s: %v", zone, err)
+		}
+		for _, tc := range cases {
+			got, err := ParseDayDate(tc.day, location)
+			if !tc.accepted {
+				if !errors.Is(err, ErrDayDateOutOfRange) {
+					t.Errorf("ParseDayDate(%s, %s) = %s, %v; want ErrDayDateOutOfRange", tc.day, zone, got.Format(time.RFC3339), err)
+				}
+				if !got.IsZero() {
+					t.Errorf("ParseDayDate(%s, %s) returned %s alongside the refusal; want the zero time", tc.day, zone, got.Format(time.RFC3339))
+				}
+				continue
+			}
+			if err != nil {
+				t.Errorf("ParseDayDate(%s, %s): %v, want the day accepted", tc.day, zone, err)
+				continue
+			}
+			if key := CalendarDayKey(got); key != tc.day {
+				t.Errorf("ParseDayDate(%s, %s) = %q, want the same calendar day back", tc.day, zone, key)
+			}
+			// The upper edge is where the read range ends: the [start, end) bounds
+			// of an accepted day must stay inside year 9999, or the range end is
+			// unencodable and, stored as text, sorts before its own start.
+			if _, end := DayRange(got, location); end.Year() > 9999 {
+				t.Errorf("DayRange(%s, %s) ends in year %d, want an accepted day's range to stay encodable", tc.day, zone, end.Year())
+			}
+		}
+	}
+}
+
 func TestParseDayDateNormalizesToLocationDate(t *testing.T) {
 	t.Parallel()
 

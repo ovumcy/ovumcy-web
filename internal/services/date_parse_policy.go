@@ -14,11 +14,30 @@ var (
 	// (Pacific/Apia 2011-12-30, Pacific/Kiritimati 1994-12-31). It is invalid
 	// input, not a date to resolve: there is no instant to resolve it to.
 	ErrDayDateNonexistent = errors.New("date does not exist in this timezone")
+
+	// ErrDayDateOutOfRange reports a well-formed, real calendar date outside
+	// [DayDateMin, DayDateMax]. It is invalid input like the two above, and every
+	// caller answers it with the same invalid-date outcome as a malformed value.
+	ErrDayDateOutOfRange = errors.New("date is outside the accepted range")
+)
+
+// The calendar days ParseDayDate accepts, inclusive, as zero-padded ISO dates.
+// The lower edge keeps year 1 — Go's zero time, which the day readers treat as
+// "unset" — out of every date input. The upper edge is one day short of year
+// 9999's end because a day's read range ends at the NEXT day's midnight:
+// 9999-12-31 would end in year 10000, which SQLite's text-stored timestamps
+// order before the range start and time.MarshalJSON refuses to encode.
+// A four-digit year with fixed-width month and day orders as text exactly as it
+// orders as a calendar, so the bound is compared on the parsed components.
+const (
+	DayDateMin = "1900-01-01"
+	DayDateMax = "9999-12-30"
 )
 
 // ParseDayDate parses a YYYY-MM-DD form value as a calendar day on the
 // request-local calendar and returns the start of that day in `location` —
 // midnight, or the day's first existing instant when a DST jump skips it.
+// A date outside DayDateMin..DayDateMax is refused with ErrDayDateOutOfRange.
 // A date the zone never had at all is refused with ErrDayDateNonexistent.
 // The two cases are deliberately different: a missing MIDNIGHT still names a
 // real day and resolves forward to its first instant, while a missing DAY has
@@ -45,6 +64,13 @@ func ParseDayDate(raw string, location *time.Location) (time.Time, error) {
 	parsed, err := time.Parse("2006-01-02", value)
 	if err != nil {
 		return time.Time{}, err
+	}
+
+	// The range is a property of the calendar date, not of an instant, so it is
+	// checked on the parsed components before any zone is applied: the accepted
+	// set is the same in every request timezone.
+	if canonical := parsed.Format("2006-01-02"); canonical < DayDateMin || canonical > DayDateMax {
+		return time.Time{}, ErrDayDateOutOfRange
 	}
 
 	year, month, day := parsed.Date()
