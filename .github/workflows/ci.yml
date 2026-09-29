@@ -815,7 +815,8 @@ jobs:
           go test -list '.*' ./internal/services/ > "$RUNNER_TEMP/tests.txt"
           run_pattern="$(go run ./scripts/racepartition -shard=${{ matrix.shard }} -of=${{ strategy.job-total }} < "$RUNNER_TEMP/tests.txt")"
           echo "shard ${{ matrix.shard }}/${{ strategy.job-total }} selects $(grep -cE '^(Test|Example|Fuzz)' "$RUNNER_TEMP/tests.txt") listed tests split by racepartition"
-          go test -race -timeout 20m -run "$run_pattern" ./internal/services/
+          # checkptr stays on for this module's own code; only modernc.org/... (the SQLite driver) skips it
+          go test -race -gcflags='modernc.org/...=-d=checkptr=0' -timeout 20m -run "$run_pattern" ./internal/services/
 
   # internal/db alone was 849.550 s of the 866.827 s race-rest's package sweep
   # reported (job 105883670056, 2026-09-19), against 156 s without the
@@ -882,7 +883,7 @@ jobs:
           fi
           run_pattern="$(go run ./scripts/racepartition -shard=${{ matrix.shard }} -of=${{ strategy.job-total }} < "$RUNNER_TEMP/tests.txt")"
           echo "shard ${{ matrix.shard }}/${{ strategy.job-total }} takes its share of $listed listed tests"
-          go test -race -timeout 20m -run "$run_pattern" ./internal/db/...
+          go test -race -gcflags='modernc.org/...=-d=checkptr=0' -timeout 20m -run "$run_pattern" ./internal/db/...
 
   race-rest:
     runs-on: ubuntu-latest
@@ -934,7 +935,7 @@ jobs:
         # `-timeout 20m`: the declared budget from the coverage lanes above.
         # The race detector is strictly slower per test, so an undeclared
         # 10-minute default is armed harder here than where it was measured.
-        run: go test -race -timeout 20m ./internal/security/... ./internal/i18n/... ./internal/httpx/...
+        run: go test -race -gcflags='modernc.org/...=-d=checkptr=0' -timeout 20m ./internal/security/... ./internal/i18n/... ./internal/httpx/...
 
       - name: Go test with race detector — cross-owner isolation
         # The exclusion above is by package, not by property, and the property
@@ -945,7 +946,7 @@ jobs:
         # back to the package.
         env:
           CGO_ENABLED: "1"
-        run: go test -race -timeout 20m -count=1 -run TestOwnerIsolationHoldsUnderConcurrentCrossOwnerRequests ./internal/api/
+        run: go test -race -gcflags='modernc.org/...=-d=checkptr=0' -timeout 20m -count=1 -run TestOwnerIsolationHoldsUnderConcurrentCrossOwnerRequests ./internal/api/
 
   # Thin gate job named exactly `race` — branch protection's required status
   # check is pinned to that literal name, which a matrix job cannot provide
