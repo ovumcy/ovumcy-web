@@ -7,8 +7,10 @@ import (
 )
 
 // bindRequestBody decodes the request BODY into out, and only for the three
-// body transports the API declares for auth inputs: JSON, urlencoded form and
-// multipart form. Any other media type is refused with
+// body transports it accepts for auth inputs: JSON, urlencoded form and
+// multipart form. The API reference lists JSON and urlencoded; multipart is
+// accepted because the browser form binder always accepted it. Any other media
+// type is refused with
 // fiber.ErrUnprocessableEntity and fills nothing. That includes application/xml
 // and text/xml, the CBOR and MsgPack types and a vendor "+json" type: the
 // underlying binder decodes all of them, an XML decoder keeps whatever it read
