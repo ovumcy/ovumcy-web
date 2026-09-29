@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -726,8 +727,23 @@ func TestWebhookJSONSaveAnswersAMappedErrorWhenTheReadAfterTheWriteFails(t *test
 	if response.StatusCode != http.StatusInternalServerError {
 		t.Fatalf("expected a mapped 500 when the read after the write fails, got %d", response.StatusCode)
 	}
-	if body := mustReadBodyString(t, response.Body); strings.Contains(body, "webhook_enabled") {
+	body := mustReadBodyString(t, response.Body)
+	if strings.Contains(body, "webhook_enabled") {
 		t.Fatalf("a save answer carrying the switch was built without a read: %s", body)
+	}
+	var envelope struct {
+		Error       string `json:"error"`
+		ErrorDetail struct {
+			Key string `json:"key"`
+		} `json:"error_detail"`
+	}
+	if err := json.Unmarshal([]byte(body), &envelope); err != nil {
+		t.Fatalf("decode error envelope: %v (body %s)", err, body)
+	}
+	// The write committed and only the read failed: the key must name the read,
+	// not the write, so a client re-reads instead of retrying a save that landed.
+	if envelope.Error != "failed to load settings" || envelope.ErrorDetail.Key != "failed to load settings" {
+		t.Fatalf("expected the read-failure key %q, got error=%q key=%q", "failed to load settings", envelope.Error, envelope.ErrorDetail.Key)
 	}
 	if !reloadEgressUser(t, database, owner.ID).WebhookEnabled {
 		t.Fatal("precondition: the write must have committed before the read failed")
