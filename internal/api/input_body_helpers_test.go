@@ -67,6 +67,12 @@ type queryRead struct {
 	// unresolvedKey marks a lookup whose member name is neither a string literal
 	// nor a package constant: the only reads an exemption can clear.
 	unresolvedKey bool
+	keyArg        ast.Expr
+}
+
+func isIdentNamed(expr ast.Expr, name string) bool {
+	ident, ok := expr.(*ast.Ident)
+	return ok && ident.Name == name
 }
 
 // lookupExemption names one production function allowed to look a member up
@@ -106,7 +112,7 @@ func declKey(path string, fn *ast.FuncDecl) string {
 // parameters from the URL under OIDC_RESPONSE_MODE=query. They are
 // provider-originated, not user credentials, and the sealed one-time state
 // cookie is what authorises the exchange. The exemption clears only a lookup
-// with an unresolvable key inside that function — an auth member read by name
+// inside that function whose key is keyParam itself — an auth member read by name
 // there is still refused — and the sweep fails when an entry no longer clears
 // anything, so it cannot outlive the code it excuses.
 var unresolvedKeyExemptions = []lookupExemption{{
@@ -229,7 +235,7 @@ func findQueryReads(node ast.Node, consts map[string]string) []queryRead {
 			case resolved && authInputKeys[key]:
 				reads = append(reads, queryRead{at: call.Pos(), key: key, how: how})
 			case !resolved && len(call.Args) > index:
-				reads = append(reads, queryRead{at: call.Pos(), how: how, bulk: true, unresolvedKey: true,
+				reads = append(reads, queryRead{at: call.Pos(), how: how, bulk: true, unresolvedKey: true, keyArg: call.Args[index],
 					note: "its member name is not a literal or package constant, so a credential can be read through it unseen"})
 			}
 		}
@@ -367,9 +373,9 @@ func TestAuthFieldsAreNeverReadFromTheQueryString(t *testing.T) {
 	// non-auth members through them, so a scan that found none has stopped
 	// recognising calls.
 	seenLookups := 0
-	exempt := map[string]bool{}
+	exemptKeyParam := map[string]string{}
 	for _, exemption := range unresolvedKeyExemptions {
-		exempt[exemption.declKey()] = true
+		exemptKeyParam[exemption.declKey()] = exemption.keyParam
 	}
 	exemptionsUsed := map[string]bool{}
 	var violations []string
@@ -395,7 +401,7 @@ func TestAuthFieldsAreNeverReadFromTheQueryString(t *testing.T) {
 					exemption = declKey(path, fn)
 				}
 				for _, read := range findQueryReads(decl, consts) {
-					if exempt[exemption] && read.unresolvedKey {
+					if param, ok := exemptKeyParam[exemption]; ok && read.unresolvedKey && isIdentNamed(read.keyArg, param) {
 						exemptionsUsed[exemption] = true
 						continue
 					}

@@ -117,22 +117,27 @@ func judgeExemptCallers(fset *token.FileSet, files []*ast.File, info *types.Info
 				return true
 			}
 			var ident *ast.Ident
+			index := keyIndex
 			switch fun := ast.Unparen(call.Fun).(type) {
 			case *ast.Ident:
 				ident = fun
 			case *ast.SelectorExpr:
 				ident = fun.Sel
+				// (*Handler).lookup(h, c, "code") passes the receiver first.
+				if selection := info.Selections[fun]; selection != nil && selection.Kind() == types.MethodExpr {
+					index++
+				}
 			}
 			if ident == nil || info.Uses[ident] != fn {
 				return true
 			}
 			called[ident] = true
 			at := fset.Position(call.Pos()).String()
-			if keyIndex >= len(call.Args) {
+			if index >= len(call.Args) {
 				violations = append(violations, at+": "+exemption.function+" called without its "+exemption.keyParam+" argument")
 				return true
 			}
-			value := info.Types[call.Args[keyIndex]].Value
+			value := info.Types[call.Args[index]].Value
 			if value == nil || value.Kind() != constant.String {
 				violations = append(violations, at+": "+exemption.function+" is passed a key that is not a string constant, so it can read any member from the URL")
 				return true
@@ -174,6 +179,7 @@ func use(h *Handler, c any, name string) {
 	_ = h.lookup(c, name)
 	read := h.lookup
 	_ = read(c, "code")
+	_ = (*Handler).lookup(h, c, "code")
 }
 `
 	fset := token.NewFileSet()
@@ -181,7 +187,11 @@ func use(h *Handler, c any, name string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	info := &types.Info{Types: map[ast.Expr]types.TypeAndValue{}, Uses: map[*ast.Ident]types.Object{}}
+	info := &types.Info{
+		Types:      map[ast.Expr]types.TypeAndValue{},
+		Uses:       map[*ast.Ident]types.Object{},
+		Selections: map[*ast.SelectorExpr]*types.Selection{},
+	}
 	pkg, err := (&types.Config{}).Check("fixture", fset, []*ast.File{file}, info)
 	if err != nil {
 		t.Fatal(err)
