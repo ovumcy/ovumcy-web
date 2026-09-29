@@ -24,8 +24,8 @@ const (
 // release tag can arrive: on `main`'s tip, behind it, or on a branch `main`
 // never merged.
 type ancestryRepo struct {
-	clone string
-	env   []string
+	origin, clone string
+	env           []string
 	// The commits and tag objects the cases point GITHUB_SHA at.
 	mainOld, mainTip, offMain                            string
 	annotatedOnTip, annotatedBehindTip, annotatedOffMain string
@@ -44,6 +44,11 @@ type ancestryRepo struct {
 //     search finds it and the off-main tag passes.
 //   - trusting the checkout's `origin/main` instead of the explicit forced
 //     fetch: the clone's `origin/main` is planted on the off-main commit.
+//   - reading main by the short name `origin/main`: origin carries a tag of
+//     that name on the off-main commit, and gitrevisions resolves
+//     `refs/tags/origin/main` before `refs/remotes/origin/main`. Every refusal
+//     must also name main's real tip, so a short name left in the `rev-parse`
+//     alone, whose sha only the message prints, is caught too.
 func TestReleaseTagPassesOnlyWhenMainContainsIt(t *testing.T) {
 	repo := newAncestryRepo(t)
 
@@ -60,6 +65,7 @@ func TestReleaseTagPassesOnlyWhenMainContainsIt(t *testing.T) {
 		name        string
 		sha         string
 		staleMain   string
+		shadowTag   string
 		wantRefusal bool
 	}{
 		{name: "lightweight tag on main's tip", sha: repo.mainTip},
@@ -74,11 +80,20 @@ func TestReleaseTagPassesOnlyWhenMainContainsIt(t *testing.T) {
 			staleMain:   repo.offMain,
 			wantRefusal: true,
 		},
+		{
+			name:        "off-main tag with origin carrying a tag named origin/main on it",
+			sha:         repo.offMain,
+			shadowTag:   "origin/main",
+			wantRefusal: true,
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			if testCase.staleMain != "" {
 				repo.git(t, repo.clone, "update-ref", "refs/remotes/origin/main", testCase.staleMain)
 				t.Cleanup(func() { repo.git(t, repo.clone, "update-ref", "refs/remotes/origin/main", repo.mainTip) })
+			}
+			if testCase.shadowTag != "" {
+				repo.shadowMain(t, testCase.shadowTag, testCase.sha)
 			}
 
 			environ := append(slices.Clone(repo.env), "GITHUB_SHA="+testCase.sha, "GITHUB_REF_NAME=v1.0.0")
@@ -89,6 +104,9 @@ func TestReleaseTagPassesOnlyWhenMainContainsIt(t *testing.T) {
 				}
 				if !strings.Contains(output, "::error::") || !strings.Contains(output, "not contained in main") {
 					t.Fatalf("the ancestry step failed, but not with its refusal — a harness or git failure is not a verdict (exit: %v):\n%s", err, output)
+				}
+				if !strings.Contains(output, "not contained in main ("+repo.mainTip+")") {
+					t.Fatalf("the ancestry step refused, but named something other than main's tip %s as main:\n%s", repo.mainTip, output)
 				}
 				return
 			}
@@ -183,13 +201,13 @@ func newAncestryRepo(t *testing.T) *ancestryRepo {
 		),
 	}
 
-	origin := filepath.Join(root, "origin.git")
+	repo.origin = filepath.Join(root, "origin.git")
 	author := filepath.Join(root, "author")
 	repo.clone = filepath.Join(root, "runner")
 
-	repo.git(t, root, "init", "-q", "--bare", "-b", "main", origin)
+	repo.git(t, root, "init", "-q", "--bare", "-b", "main", repo.origin)
 	repo.git(t, root, "init", "-q", "-b", "main", author)
-	repo.git(t, author, "remote", "add", "origin", filepath.ToSlash(origin))
+	repo.git(t, author, "remote", "add", "origin", filepath.ToSlash(repo.origin))
 
 	commit := func(message string) string {
 		repo.git(t, author, "commit", "-q", "--allow-empty", "-m", message)
@@ -226,13 +244,36 @@ func newAncestryRepo(t *testing.T) *ancestryRepo {
 	// the remote's branches and tags and detaches HEAD on the tag, so there is
 	// no local `main` for a step to read by mistake and still pass here.
 	repo.git(t, root, "init", "-q", repo.clone)
-	repo.git(t, repo.clone, "remote", "add", "origin", filepath.ToSlash(origin))
-	repo.git(t, repo.clone, "fetch", "-q", "origin", "+refs/heads/*:refs/remotes/origin/*", "+refs/tags/*:refs/tags/*")
+	repo.git(t, repo.clone, "remote", "add", "origin", filepath.ToSlash(repo.origin))
+	repo.fetchLikeCheckout(t)
 	repo.git(t, repo.clone, "checkout", "-q", "--detach", "v1.0.2")
 	if branches := repo.git(t, repo.clone, "for-each-ref", "refs/heads/"); branches != "" {
 		t.Fatalf("the runner's clone carries local branches %q; a step reading one would pass here and fail every real tag", branches)
 	}
 	return repo
+}
+
+// fetchLikeCheckout fetches what actions/checkout with `fetch-depth: 0`
+// fetches: every remote branch and every remote tag.
+func (r *ancestryRepo) fetchLikeCheckout(t *testing.T) {
+	t.Helper()
+
+	r.git(t, r.clone, "fetch", "-q", "origin", "+refs/heads/*:refs/remotes/origin/*", "+refs/tags/*:refs/tags/*")
+}
+
+// shadowMain puts a tag named name on sha in origin and lets the runner's
+// checkout fetch it, then proves the fixture bites: the short name must now
+// resolve to the tag, not to main's tip, or the case would judge nothing.
+func (r *ancestryRepo) shadowMain(t *testing.T, name, sha string) {
+	t.Helper()
+
+	r.git(t, r.origin, "tag", name, sha)
+	t.Cleanup(func() { r.git(t, r.origin, "tag", "-d", name) })
+	r.fetchLikeCheckout(t)
+	t.Cleanup(func() { r.git(t, r.clone, "tag", "-d", name) })
+	if got := r.git(t, r.clone, "-c", "core.warnAmbiguousRefs=false", "rev-parse", "--quiet", "--verify", name+"^{commit}"); got != sha {
+		t.Fatalf("a tag named %q on %s does not shadow the remote-tracking ref (it resolves to %s); the case would test nothing", name, sha, got)
+	}
 }
 
 // withoutGitEnv drops every GIT_* variable. A git hook exports GIT_DIR and

@@ -110,13 +110,17 @@ jobs:
           sha="$(git rev-parse "${GITHUB_SHA}^{commit}")"
 
           # Explicit refspec rather than trusting the checkout's ref layout on a
-          # tag event.
-          git fetch --no-tags --force origin "+refs/heads/main:refs/remotes/origin/main"
-          main_sha="$(git rev-parse origin/main)"
+          # tag event. Every read below names the FULL ref: gitrevisions tries
+          # `refs/tags/<name>` before `refs/remotes/<name>`, and the checkout's
+          # `fetch-depth: 0` brings every remote tag, so a pushed tag named
+          # `origin/main` would otherwise stand in for main.
+          main_ref="refs/remotes/origin/main"
+          git fetch --no-tags --force origin "+refs/heads/main:${main_ref}"
+          main_sha="$(git rev-parse "$main_ref")"
 
           # `--is-ancestor`, never a string search through `git log`: the
           # question is reachability, and only the commit graph answers it.
-          if ! git merge-base --is-ancestor "$sha" origin/main; then
+          if ! git merge-base --is-ancestor "$sha" "$main_ref"; then
             echo "::error::tag ${GITHUB_REF_NAME} points at ${sha}, which is not contained in main (${main_sha}). Nothing on this repository's release path has judged that commit, and branch protection guards merges into main, not tags. Merge it to main first."
             exit 1
           fi
