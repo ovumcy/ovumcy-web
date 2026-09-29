@@ -59,6 +59,31 @@ func TestCSRFTokenIsNeverReadFromTheQueryString(t *testing.T) {
 			},
 			wantStatus: http.StatusForbidden,
 		},
+		// The two bodies below name the token the way the body binder reads it
+		// for the extractor's tagged struct: the field's own name, because the
+		// struct carries a form tag only. A body type the API never declared
+		// must not be a token source whatever the binder would make of it.
+		{
+			name: "token only in an xml body",
+			build: func(_ *testing.T, token string) (string, string, string, string) {
+				return "", `<login><email>a@example.com</email><password>Wrong1</password><Token>` + token + `</Token></login>`, "application/xml", ""
+			},
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name: "token only in a vendor +json body member",
+			build: func(_ *testing.T, token string) (string, string, string, string) {
+				return "", `{"email":"a@example.com","password":"Wrong1","csrf_token":"` + token + `","Token":"` + token + `"}`, "application/vnd.api+json", ""
+			},
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name: "form content type with a charset parameter",
+			build: func(_ *testing.T, token string) (string, string, string, string) {
+				return "", url.Values{"email": {"a@example.com"}, "password": {"Wrong1"}, "csrf_token": {token}}.Encode(), "application/x-www-form-urlencoded; charset=UTF-8", ""
+			},
+			wantStatus: http.StatusUnauthorized,
+		},
 		{
 			name: "urlencoded body token beside a wrong query token",
 			build: func(_ *testing.T, token string) (string, string, string, string) {

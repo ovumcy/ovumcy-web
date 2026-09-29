@@ -183,7 +183,7 @@ func (handler *Handler) DisableTOTP2FA(c fiber.Ctx) error {
 	}
 
 	input := passwordProtectedSettingsInput{}
-	if err := bindRequestBody(c, &input); err != nil && hasJSONBody(c) {
+	if err := bindRequestBody(c, &input); err != nil {
 		return handler.respondMappedError(c, settingsInvalidInputErrorSpec())
 	}
 	password := input.Password

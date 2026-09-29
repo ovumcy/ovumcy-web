@@ -24,11 +24,15 @@ import (
 // keeps the exact form-then-header order and the ErrTokenNotFound sentinel.
 func CSRFTokenExtractor() extractors.Extractor {
 	return extractors.FromCustom("csrf_token", func(c fiber.Ctx) (string, error) {
-		// Form bodies only. The query string never carries the token, and a
-		// JSON body is skipped: this extractor runs ahead of the body-size
-		// guard, and decoding a compressed JSON body here would inflate it
-		// before that guard could refuse it. A JSON client sends the header.
-		if !hasJSONBody(c) {
+		// The token is bound from a urlencoded or multipart form body and from
+		// no other body type. The query string never carries it, and every
+		// other body is skipped: this extractor runs ahead of the body-size
+		// guard, and the body binder decodes and content-decodes JSON, XML,
+		// CBOR and MsgPack (a vendor "+json" type included), so binding one
+		// here would inflate a compressed body before that guard could refuse
+		// it and would accept a token from a body type the API never
+		// declared. A non-form client sends the header.
+		if hasFormBody(c) {
 			input := struct {
 				Token string `form:"csrf_token"`
 			}{}
@@ -43,6 +47,17 @@ func CSRFTokenExtractor() extractors.Extractor {
 		}
 		return "", csrf.ErrTokenNotFound
 	})
+}
+
+// hasFormBody reports whether the request declares a urlencoded or multipart
+// form body. The media type is compared without parameters and without regard
+// to case, the way the body binder itself dispatches, so a mixed-case
+// declaration that the binder would read as a form is read as one here too.
+func hasFormBody(c fiber.Ctx) bool {
+	mediaType, _, _ := strings.Cut(c.Get(fiber.HeaderContentType), ";")
+	mediaType = strings.TrimSpace(mediaType)
+	return strings.EqualFold(mediaType, fiber.MIMEApplicationForm) ||
+		strings.EqualFold(mediaType, fiber.MIMEMultipartForm)
 }
 
 // CSRFFailureReason maps the error returned by the CSRF middleware into a
