@@ -905,6 +905,14 @@ jobs:
         # to drive the delay to zero, and it reads these two off the block
         # below to hold the SHIPPED budget to more than one attempt — which a
         # fixture supplying its own number cannot do.
+        #
+        # `COPY_ATTEMPTS`/`COPY_DELAY_SECONDS` bound the same kind of wait for
+        # the copies, and for one verdict only: Docker Hub's 429. Runs
+        # 36512010639 and 36512597460 were refused with it 8 minutes apart,
+        # during a merge burst, AFTER the login below had succeeded and, in the
+        # first, after the same step's pushes to Docker Hub had been accepted:
+        # the credential reached cosign, and the throttle still answered.
+        # `scripts/releasegate` reads these two off the block as well.
         if: ${{ env.DOCKERHUB_PUBLISH_USERNAME != '' }}
         shell: bash
         env:
@@ -915,6 +923,8 @@ jobs:
           IDENTITY_REGEXP: ${{ steps.verify.outputs.identity_regexp }}
           VERIFY_ATTEMPTS: 6
           VERIFY_DELAY_SECONDS: 10
+          COPY_ATTEMPTS: 4
+          COPY_DELAY_SECONDS: 30
         run: |
           set -euo pipefail
 
@@ -972,7 +982,44 @@ jobs:
           # the signing call failed, which is the defect `scripts/publishorder`
           # exists to refuse; that it would be the mirror rather than GHCR
           # does not make it a different defect.
-          cosign copy --force "${IMAGE_NAME}@${DIGEST}" "${MIRROR_NAME}@${DIGEST}"
+          #
+          # Every copy goes through mirror_copy, which asks again on ONE
+          # verdict: Docker Hub's rate limit, matched by its words and never by
+          # a bare `429`, which a digest in any other error can contain. Every
+          # other refusal is an answer and ends the step on the first attempt,
+          # as does a limit still standing after the last; a copy is never
+          # passed over. Asking again is safe because each copy is idempotent:
+          # content-addressed bytes, to a digest or to an alias `--force`
+          # rewrites to that same digest.
+          copy_log="$(mktemp)"
+          trap 'rm -f "$copy_log"' EXIT
+
+          mirror_copy() {
+            local attempt=1
+            while true; do
+              if cosign copy --force "$1" "$2" > "$copy_log" 2>&1; then
+                cat "$copy_log"
+                return 0
+              fi
+              cat "$copy_log"
+
+              if ! grep -qE 'TOOMANYREQUESTS|429 Too Many Requests' "$copy_log"; then
+                echo "::error::copying $1 to $2 failed, and not on Docker Hub's rate limit — the cosign output above says what it is. The mirror is incomplete and this run fails."
+                exit 1
+              fi
+
+              if [ "${attempt}" -ge "${COPY_ATTEMPTS}" ]; then
+                echo "::error::copying $1 to $2 was refused by Docker Hub's rate limit on all ${COPY_ATTEMPTS} attempts. The mirror is incomplete and this run fails."
+                exit 1
+              fi
+
+              echo "attempt ${attempt} of ${COPY_ATTEMPTS} copying $1 to $2 hit Docker Hub's rate limit; waiting $(( attempt * COPY_DELAY_SECONDS ))s."
+              sleep "$(( attempt * COPY_DELAY_SECONDS ))"
+              attempt=$(( attempt + 1 ))
+            done
+          }
+
+          mirror_copy "${IMAGE_NAME}@${DIGEST}" "${MIRROR_NAME}@${DIGEST}"
 
           # The signature does not travel with those bytes — the section
           # comment above says why — so it is issued here, against the mirror's
@@ -1003,7 +1050,7 @@ jobs:
           # Waiting is the whole of the change: a signature that never appears
           # still fails this step, and no alias is written when it does.
           verify_log="$(mktemp)"
-          trap 'rm -f "$verify_log"' EXIT
+          trap 'rm -f "$copy_log" "$verify_log"' EXIT
 
           attempt=1
           while true; do
@@ -1059,7 +1106,7 @@ jobs:
           # with a 404 means the aliases can no longer be written by `cosign
           # copy` after the signature.
           for tag in "${tags[@]}"; do
-            cosign copy --force "${MIRROR_NAME}@${DIGEST}" "${MIRROR_NAME}:${tag}"
+            mirror_copy "${MIRROR_NAME}@${DIGEST}" "${MIRROR_NAME}:${tag}"
             echo "${MIRROR_NAME}:${tag} <- ${MIRROR_NAME}@${DIGEST}"
           done
 
