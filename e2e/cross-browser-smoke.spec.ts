@@ -49,24 +49,6 @@ async function todayISO(page: Page): Promise<string> {
 }
 
 test.describe('Cross-browser smoke', () => {
-  // A worker reuses one firefox Browser process across every test in this file, and that
-  // process itself is cold at the start of a worker — not just a single test's first
-  // navigation. test.slow() below only stretches the timeout budget of whichever test
-  // happens to run first; it does not warm the process, so a later test's first
-  // navigation in a fresh context can still hit the slow path (WEB-79, run 36349315902,
-  // job 108704758483: the timeout recurred on the THIRD test in this file). Prime the
-  // process once per worker before any real test runs.
-  test.beforeAll(async ({ browser }, testInfo) => {
-    if (testInfo.project.name !== 'firefox') {
-      return;
-    }
-    test.setTimeout(90_000);
-    const context = await browser.newContext();
-    const page = await context.newPage();
-    await page.goto('/login');
-    await context.close();
-  });
-
   // On CI runners a cold firefox can take over 30s to report 'load' for its first
   // navigation although the server answers in milliseconds (WEB-79). Scoped to
   // firefox so the global 30s default stays in force everywhere else.
