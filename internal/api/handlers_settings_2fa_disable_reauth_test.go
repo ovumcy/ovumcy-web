@@ -190,9 +190,10 @@ func TestDisableTOTP2FASuccessResetsTheDisableBudget(t *testing.T) {
 // TestDisableTOTP2FARefusedWriteDoesNotResetTheDisableBudget pins the order of
 // the reset against the write: a correct password whose DisableTOTP is refused
 // (a revocation bumped auth_session_version after the request loaded the user)
-// must leave the totp.disable count where it was. The bump is committed by a
-// callback on the disable's own UPDATE, so the compare-and-set fails exactly
-// once, after the password check has passed.
+// must leave the totp.disable count where it was. A callback on the disable's
+// own UPDATE bumps the version inside its transaction, so the compare-and-set
+// fails exactly once, after the password check has passed, and the rollback
+// takes the bump with it.
 func TestDisableTOTP2FARefusedWriteDoesNotResetTheDisableBudget(t *testing.T) {
 	ctx := newTOTPSettingsContext(t, "totp-disable-refused-write@example.com")
 	enableTOTPForSettingsTest(t, &ctx)
@@ -224,15 +225,13 @@ func TestDisableTOTP2FARefusedWriteDoesNotResetTheDisableBudget(t *testing.T) {
 	if !revoked.Load() {
 		t.Fatal("anchor: the correct-password request never reached DisableTOTP's write")
 	}
-	if resp.StatusCode == http.StatusOK {
-		t.Fatalf("a disable whose compare-and-set failed answered 200")
-	}
+	assertDisableTOTPRefused(t, resp, http.StatusInternalServerError, "failed to create session", "the compare-and-set refusal arm")
 	if !totpEnabledInDatabase(t, ctx) {
 		t.Fatal("a disable whose compare-and-set failed still turned 2FA off")
 	}
 
-	// The revocation invalidated the old cookie; sign the same owner back in at
-	// the version it left, from the same client address.
+	// The refusal cleared the auth cookie; sign the same owner back in at the
+	// version it kept, from the same client address.
 	ctx.refreshAuthCookie(t)
 
 	// One failure short of the limit was spent before the refused write. If that
