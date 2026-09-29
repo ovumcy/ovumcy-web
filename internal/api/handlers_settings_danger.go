@@ -120,7 +120,7 @@ func (handler *Handler) validateSettingsActionPassword(c fiber.Ctx) (*models.Use
 	// form. VerifyReauthPassword refuses even a correct password once the budget
 	// is spent.
 	attempt := services.ReauthAttempt{ClientKey: c.IP(), UserID: user.ID, Now: time.Now()}
-	if err := handler.settingsService.VerifyReauthPassword(attempt, user.PasswordHash, password); err != nil {
+	if err := handler.settingsService.VerifyReauthPassword(attempt, user, password); err != nil {
 		return nil, mapSettingsDeleteAccountPasswordError(err), settingsReauthCauseField(err), false
 	}
 

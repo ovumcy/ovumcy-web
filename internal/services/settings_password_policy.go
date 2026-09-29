@@ -22,7 +22,8 @@ var (
 	ErrSettingsPasswordUpdateFailed       = errors.New("settings password update failed")
 )
 
-func (service *SettingsService) ValidatePasswordChange(passwordHash string, currentPassword string, newPassword string, confirmPassword string) error {
+func (service *SettingsService) ValidatePasswordChange(user *models.User, currentPassword string, newPassword string, confirmPassword string) error {
+	passwordHash := reauthPasswordHash(user)
 	currentPassword = strings.TrimSpace(currentPassword)
 	newPassword = strings.TrimSpace(newPassword)
 	confirmPassword = strings.TrimSpace(confirmPassword)
@@ -87,7 +88,7 @@ func (service *SettingsService) ChangePassword(ctx context.Context, attempt Reau
 	if service.reauthPolicy.TooManyRecent(service.reauthSecretKey, attempt.clientBucket(), identity, now) {
 		return ErrSettingsReauthRateLimited
 	}
-	if err := service.ValidatePasswordChange(user.PasswordHash, currentPassword, newPassword, confirmPassword); err != nil {
+	if err := service.ValidatePasswordChange(user, currentPassword, newPassword, confirmPassword); err != nil {
 		// Same rule as VerifyReauthPassword: the equalized no-local-password
 		// refusal spends a bcrypt, so it draws the budget too.
 		if errors.Is(err, ErrSettingsInvalidCurrentPassword) || errors.Is(err, ErrSettingsLocalPasswordNotSet) {
