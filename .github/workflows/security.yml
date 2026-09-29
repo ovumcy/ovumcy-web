@@ -387,9 +387,12 @@ jobs:
   # It posts no required context, so `trivy-image` judges it: that job reads
   # this one's verdict FILE, not its job result, because a job that needs
   # `changes` may read `needs` only as a fail-safe `changes` comparison. The
-  # verdict is Trivy's exit code, so a build that never got as far as a scan
-  # leaves none and is a refusal too. The findings are in this job's log; the
-  # one SARIF entry in the Security tab stays `trivy-image`'s.
+  # verdict is Trivy's exit code, and the job's first step writes a verdict that
+  # is no exit code at all: an attempt that fails before the scan (checkout,
+  # login, build) still uploads that placeholder and replaces what an earlier
+  # attempt of the same run left, so a re-run cannot be judged on its
+  # predecessor's `0`. The findings are in this job's log; the one SARIF entry
+  # in the Security tab stays `trivy-image`'s.
   trivy-image-arm64:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.run_trivyimage != 'false' }}
@@ -400,6 +403,14 @@ jobs:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
 
     steps:
+      - name: Mark the verdict unscanned
+        # First, before anything that can fail: whatever stops this attempt
+        # afterwards, the upload below still has a file to send, and it reads
+        # `unscanned`, which `trivy-image` refuses. The scan overwrites it.
+        run: |
+          mkdir -p .tmp/security
+          echo unscanned > .tmp/security/verdict
+
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -433,9 +444,6 @@ jobs:
             type=gha,scope=trivy-image-arm64
           cache-to: type=gha,mode=max,scope=trivy-image-arm64
 
-      - name: Prepare verdict directory
-        run: mkdir -p .tmp/security
-
       - name: Pull Trivy image
         uses: ./.github/actions/docker-pull-retry
         with:
@@ -443,9 +451,9 @@ jobs:
 
       - name: Run Trivy image scan
         # Same scanner, threshold and `--exit-code 1` as `trivy-image`'s own
-        # scan, and no `--ignore-unfixed` for the same reason. The exit code is
-        # kept, then re-raised: the verdict file below has to exist whether or
-        # not the scan found anything.
+        # scan (a guard compares the flags), and no `--ignore-unfixed` for the
+        # same reason. The exit code is kept, then re-raised: it replaces the
+        # placeholder verdict whether or not the scan found anything.
         run: |
           rc=0
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "${{ github.workspace }}:/work" -w /work "${{ env.TRIVY_IMAGE }}" image --scanners vuln --skip-version-check --severity HIGH,CRITICAL --format table --exit-code 1 ovumcy-security:${{ github.sha }} || rc=$?
@@ -458,8 +466,9 @@ jobs:
         with:
           name: verdict-trivy-image-arm64
           path: .tmp/security/verdict
-          # A re-run of this job must replace the verdict a failed attempt
-          # left, or `trivy-image` would go on reading the old red.
+          # `if: always()` plus `overwrite`: every attempt of this job, however
+          # far it got, replaces the artifact an earlier attempt left, or
+          # `trivy-image` would go on reading the old verdict, red or green.
           overwrite: true
           if-no-files-found: error
 

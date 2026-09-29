@@ -25,6 +25,8 @@ const (
 	securityWorkflow = ".github/workflows/security.yml"
 	requiredScanJob  = "trivy-image"
 	scanStepName     = "Run Trivy image scan"
+
+	unscannedStepName = "Mark the verdict unscanned"
 )
 
 var (
@@ -65,6 +67,50 @@ func stepText(block, name string) (string, bool) {
 		rest = rest[:next]
 	}
 	return rest, true
+}
+
+// scanThresholdFlags are the Trivy flags that decide WHAT a scan fails on. The
+// format and output flags legitimately differ between the jobs and are not
+// among them.
+var scanThresholdFlags = []string{"scanners", "severity", "exit-code"}
+
+func quotedFlag(value string) string {
+	if value == "" {
+		return "no value"
+	}
+	return "`" + value + "`"
+}
+
+// trivyScanFlags reads the threshold flags off a step's `docker run … image …`
+// invocation, comments left out. A severity list compares as a set. It is nil
+// when the step has no `image` subcommand; a flag the invocation lacks is "".
+func trivyScanFlags(step string) map[string]string {
+	fields := strings.Fields(withoutComments(step))
+	start := slices.Index(fields, "image")
+	if start < 0 {
+		return nil
+	}
+	flags := map[string]string{}
+	for i := start + 1; i < len(fields); i++ {
+		name, value, joined := strings.Cut(strings.TrimPrefix(fields[i], "--"), "=")
+		if !strings.HasPrefix(fields[i], "--") || !slices.Contains(scanThresholdFlags, name) {
+			continue
+		}
+		if !joined {
+			if i+1 == len(fields) {
+				break
+			}
+			i++
+			value = fields[i]
+		}
+		if name == "severity" {
+			parts := strings.Split(value, ",")
+			slices.Sort(parts)
+			value = strings.Join(parts, ",")
+		}
+		flags[name] = value
+	}
+	return flags
 }
 
 // imageCoverageProblems judges security.yml against the release's platform
@@ -115,9 +161,26 @@ func imageCoverageProblems(security string, release []string) []string {
 	if !ok || !slices.Contains(image, requiredScanJob) {
 		return append(problems, "job "+requiredScanJob+" no longer builds the image itself")
 	}
+	gateScan, _ := stepText(gate, scanStepName)
+	gateFlags := trivyScanFlags(gateScan)
+	if gateFlags == nil {
+		problems = append(problems, requiredScanJob+" has no `image` scan in its step "+scanStepName+", so there is no threshold to hold the other jobs to")
+	}
 	for _, name := range image {
 		if name == requiredScanJob {
 			continue
+		}
+		if gateFlags != nil {
+			scan, _ := stepText(blocks[name], scanStepName)
+			flags := trivyScanFlags(scan)
+			if flags == nil {
+				problems = append(problems, name+" has no `image` scan in its step "+scanStepName)
+			}
+			for _, flag := range scanThresholdFlags {
+				if flags != nil && flags[flag] != gateFlags[flag] {
+					problems = append(problems, name+" scans with `--"+flag+"` "+quotedFlag(flags[flag])+", "+requiredScanJob+" with "+quotedFlag(gateFlags[flag])+": the two scans judge different findings")
+				}
+			}
 		}
 		verdict := "verdict-" + name
 		if !strings.Contains(gate, "\n      - "+name+"\n") {
@@ -149,6 +212,18 @@ func TestTrivyImageJudgesEveryPlatformTheReleaseShips(t *testing.T) {
 	}
 }
 
+// inJob replaces the first `old` inside one job's block, so a drift lands in
+// the job the case names and not in an earlier job that spells it the same.
+func inJob(t *testing.T, content, job, old, replacement string) string {
+	t.Helper()
+	_, blocks := securityJobs(content)
+	block, ok := blocks[job]
+	if !ok || !strings.Contains(block, old) {
+		t.Fatalf("job %q has no %q to change", job, old)
+	}
+	return strings.Replace(content, block, strings.Replace(block, old, replacement, 1), 1)
+}
+
 // TestTrivyImageCoverageGuardGoesRedWhenTheListsDrift feeds the guard the
 // drifts it exists for, so a check that read nothing would fail here.
 func TestTrivyImageCoverageGuardGoesRedWhenTheListsDrift(t *testing.T) {
@@ -167,6 +242,11 @@ func TestTrivyImageCoverageGuardGoesRedWhenTheListsDrift(t *testing.T) {
 		{"the arm64 build runs under emulation", strings.Replace(security, "runs-on: ubuntu-24.04-arm", "runs-on: ubuntu-latest", 1), release, "native one"},
 		{"trivy-image stops waiting for the arm64 job", strings.Replace(security, "      - trivy-image-arm64\n", "", 1), release, "does not need trivy-image-arm64"},
 		{"the arm64 job forgets overwrite", strings.Replace(security, "overwrite: true", "overwrite: false", 1), release, "overwrite: true"},
+		{"the arm64 scan narrows the severity", inJob(t, security, "trivy-image-arm64", "--severity HIGH,CRITICAL", "--severity CRITICAL"), release, "`--severity` `CRITICAL`"},
+		{"the arm64 scan drops the exit code", inJob(t, security, "trivy-image-arm64", " --exit-code 1", ""), release, "`--exit-code` no value"},
+		{"the arm64 scan changes the scanners", inJob(t, security, "trivy-image-arm64", "--scanners vuln", "--scanners vuln,secret"), release, "`--scanners`"},
+		{"the required job's own threshold moves", inJob(t, security, "trivy-image", "--severity HIGH,CRITICAL", "--severity CRITICAL"), release, "`--severity`"},
+		{"the arm64 scan is no longer an image scan", inJob(t, security, "trivy-image-arm64", " image --scanners", " fs --scanners"), release, "has no `image` scan"},
 		{"trivy-image reads another artifact", strings.Replace(security, "          name: verdict-trivy-image-arm64\n          path: .tmp/security/arm64", "          name: verdict-other\n          path: .tmp/security/arm64", 1), release, "does not download"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -184,10 +264,10 @@ func TestTrivyImageCoverageGuardGoesRedWhenTheListsDrift(t *testing.T) {
 	}
 }
 
-// runStepScript runs one step's `run:` block the way the runner does (bash -e),
-// in a temp directory, with `docker` shadowed by the stub, and returns the
-// directory and the outcome.
-func runStepScript(t *testing.T, bash, block, stub string) (string, error) {
+// runStepIn runs one step's `run:` block the way the runner does (bash -e), in
+// a directory the caller keeps so two steps of one job can run one after the
+// other over the same workspace, with `docker` shadowed by the stub.
+func runStepIn(t *testing.T, bash, dir, block, stub string) error {
 	t.Helper()
 
 	marker := "        run: |\n"
@@ -201,10 +281,6 @@ func runStepScript(t *testing.T, bash, block, stub string) (string, error) {
 	}
 	body := placeholder.ReplaceAllString(strings.Join(script, "\n"), "x")
 
-	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, ".tmp", "security"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	file := filepath.Join(dir, "step.sh")
 	if err := os.WriteFile(file, []byte(stub+body), 0o644); err != nil {
 		t.Fatal(err)
@@ -213,7 +289,7 @@ func runStepScript(t *testing.T, bash, block, stub string) (string, error) {
 	command.Dir = dir
 	out, err := command.CombinedOutput()
 	t.Logf("%s", out)
-	return dir, err
+	return err
 }
 
 // The verdict travels as a file: the scan writes it where the upload reads it,
@@ -259,8 +335,44 @@ func TestTheArm64VerdictTravelsFromTheScanToTheRequiredCheck(t *testing.T) {
 				t.Errorf("a %s hand-over step in %s carries %q, want only `if: always()`: the verdict is owed even when the amd64 scan failed", platform, requiredScanJob, found)
 			}
 		}
+		if found := workflowfile.StepFailOpenKeys(upload); !slices.Equal(found, []string{"if: always()"}) {
+			t.Errorf("%s's upload carries %q, want only `if: always()`: an attempt that stopped early must still replace the last attempt's verdict", helper, found)
+		}
 
 		verdictFile := path.Base(uploaded[1])
+
+		// An attempt that dies before the scan (checkout, login, build) has
+		// written nothing of its own, and the artifact of the attempt before it
+		// is still in the run. So the job's first step leaves a verdict that
+		// no exit code can equal, at the path the upload reads.
+		unscanned, ok := stepText(block, unscannedStepName)
+		if !ok || !strings.Contains(block, "    steps:\n      - name: "+unscannedStepName+"\n") {
+			t.Fatalf("%s does not start with the step %q: a failure before its scan would leave the previous attempt's verdict in place", helper, unscannedStepName)
+		}
+		if found := workflowfile.StepFailOpenKeys(unscanned); len(found) > 0 {
+			t.Errorf("%s's %q carries %q: the placeholder must be written on every attempt", helper, unscannedStepName, found)
+		}
+		placeholderDir := t.TempDir()
+		if err := runStepIn(t, bash, placeholderDir, unscanned, ""); err != nil {
+			t.Fatalf("%s's %q failed: %v", helper, unscannedStepName, err)
+		}
+		left, readErr := os.ReadFile(filepath.Join(placeholderDir, filepath.FromSlash(uploaded[1])))
+		if readErr != nil || strings.TrimSpace(string(left)) == "" || strings.TrimSpace(string(left)) == "0" {
+			t.Fatalf("%q wrote %q (%v) to the path the upload reads, %s, want a non-empty verdict that is not 0", unscannedStepName, left, readErr, uploaded[1])
+		}
+		t.Run(helper+"/the placeholder", func(t *testing.T) {
+			judgeDir := t.TempDir()
+			target := filepath.Join(judgeDir, filepath.FromSlash(fetched[1]), verdictFile)
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(target, left, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if judged, err := judgeIn(t, bash, judge, judgeDir); err == nil {
+				t.Fatalf("the judge step passed the placeholder verdict %q:\n%s", left, judged)
+			}
+		})
 		for _, testCase := range []struct {
 			name      string
 			exit      string
@@ -273,7 +385,12 @@ func TestTheArm64VerdictTravelsFromTheScanToTheRequiredCheck(t *testing.T) {
 		} {
 			t.Run(helper+"/"+testCase.name, func(t *testing.T) {
 				stub := "docker() { return " + testCase.exit + "; }\n"
-				dir, err := runStepScript(t, bash, scan, stub)
+				// The placeholder is already in the workspace when the scan runs.
+				dir := t.TempDir()
+				if err := runStepIn(t, bash, dir, unscanned, ""); err != nil {
+					t.Fatal(err)
+				}
+				err := runStepIn(t, bash, dir, scan, stub)
 				if (err == nil) != testCase.wantScan {
 					t.Fatalf("the scan step exited %v for Trivy exit %s, want pass=%v", err, testCase.exit, testCase.wantScan)
 				}
