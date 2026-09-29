@@ -13,4 +13,6 @@
   `csrf_token` form field, the only two the API reference declares. Browser forms are unaffected.
   `PUT` and `DELETE /api/v1/users/current/2fa` now also accept the JSON body the other
   password-protected settings calls take (`{"password", "code"}` and `{"password"}`), and the API
-  reference declares it.
+  reference declares it. Those inputs are read from JSON, urlencoded and multipart bodies only: a
+  body of any other type (XML, CBOR, MessagePack, a vendor `+json`) is refused rather than decoded,
+  and so is a password-protected settings call whose body the decoder could not read whole.

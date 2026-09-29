@@ -49,17 +49,6 @@ func CSRFTokenExtractor() extractors.Extractor {
 	})
 }
 
-// hasFormBody reports whether the request declares a urlencoded or multipart
-// form body. The media type is compared without parameters and without regard
-// to case, the way the body binder itself dispatches, so a mixed-case
-// declaration that the binder would read as a form is read as one here too.
-func hasFormBody(c fiber.Ctx) bool {
-	mediaType, _, _ := strings.Cut(c.Get(fiber.HeaderContentType), ";")
-	mediaType = strings.TrimSpace(mediaType)
-	return strings.EqualFold(mediaType, fiber.MIMEApplicationForm) ||
-		strings.EqualFold(mediaType, fiber.MIMEMultipartForm)
-}
-
 // CSRFFailureReason maps the error returned by the CSRF middleware into a
 // stable, log-safe reason key. Only the documented sentinel errors carry a
 // meaningful classification; anything else is collapsed to "csrf rejected"

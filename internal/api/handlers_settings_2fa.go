@@ -92,10 +92,14 @@ func (handler *Handler) VerifyTOTP2FAEnrollment(c fiber.Ctx) error {
 		return handler.respondMappedError(c, totpSessionExpiredErrorSpec())
 	}
 
-	// A body that cannot be decoded leaves the code empty and is answered as an
-	// invalid code, like a missing one.
+	// A body the binder rejected is answered as an invalid code, like a missing
+	// one, and its code is never used: a decoder may have filled the field
+	// before it stopped, and a code taken from half a body is not one the
+	// client sent.
 	input := totpChallengeInput{}
-	_ = bindRequestBody(c, &input)
+	if err := bindRequestBody(c, &input); err != nil {
+		return handler.respondMappedError(c, totpInvalidCodeErrorSpec())
+	}
 	code := strings.TrimSpace(input.Code)
 	if len(code) != 6 {
 		return handler.respondMappedError(c, totpInvalidCodeErrorSpec())

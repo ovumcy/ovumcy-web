@@ -61,6 +61,63 @@ func TestSettingsDeleteAccountRejectsInvalidPassword(t *testing.T) {
 	}
 }
 
+// TestSettingsDeleteAccountRefusesABodyItCouldNotDecodeWhole pins the password
+// step-up's read of the body to the binder's verdict: a body whose type the API
+// does not declare (XML, whole or cut off after the password), or one the
+// binder rejected part-way, is refused with the correct password in it, the
+// account stays, and a form request with that password afterwards still deletes
+// it (the refusals spent nothing that locks the owner out).
+func TestSettingsDeleteAccountRefusesABodyItCouldNotDecodeWhole(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "settings-delete-whole-body@example.com")
+
+	send := func(contentType, body string) *http.Response {
+		request := httptest.NewRequest(http.MethodDelete, "/api/v1/users/current", strings.NewReader(body))
+		request.Header.Set("Content-Type", contentType)
+		request.Header.Set("Accept", "application/json")
+		request.Header.Set("X-CSRF-Token", ctx.csrfToken)
+		request.Header.Set("Cookie", joinCookieHeader(ctx.authCookie, cookiePair(ctx.csrfCookie)))
+		response, err := ctx.app.Test(request, testConfigNoTimeout)
+		if err != nil {
+			t.Fatalf("delete-account request failed: %v", err)
+		}
+		t.Cleanup(func() { _ = response.Body.Close() })
+		return response
+	}
+	usersCount := func() int64 {
+		var count int64
+		if err := ctx.database.Model(&models.User{}).Where("id = ?", ctx.user.ID).Count(&count).Error; err != nil {
+			t.Fatalf("count users: %v", err)
+		}
+		return count
+	}
+
+	for _, tc := range []struct{ name, contentType, body string }{
+		{"well-formed xml", "application/xml", `<d><Password>StrongPass1</Password></d>`},
+		{"partial xml", "application/xml", `<d><Password>StrongPass1</Password><broken>`},
+		{"text xml", "text/xml", `<d><Password>StrongPass1</Password></d>`},
+		{"json with the password given twice, the last of the wrong type", "application/json", `{"password":"StrongPass1","password":7}`},
+	} {
+		response := send(tc.contentType, tc.body)
+		if response.StatusCode != http.StatusBadRequest {
+			t.Errorf("%s: status = %d, want 400", tc.name, response.StatusCode)
+		}
+		if got := readAPIError(t, response.Body); got != "invalid password" {
+			t.Errorf("%s: error = %q, want the missing-password refusal", tc.name, got)
+		}
+		if usersCount() != 1 {
+			t.Fatalf("%s: the account was deleted from a body the binder rejected", tc.name)
+		}
+	}
+
+	control := send("application/x-www-form-urlencoded", url.Values{"password": {"StrongPass1"}}.Encode())
+	if control.StatusCode != http.StatusOK {
+		t.Fatalf("form control: status = %d, want 200", control.StatusCode)
+	}
+	if usersCount() != 0 {
+		t.Fatal("form control: the account survived a correct password in a form body")
+	}
+}
+
 func TestSettingsDeleteAccountDeletesUserAndClearsAuthRelatedCookies(t *testing.T) {
 	ctx := newSettingsSecurityTestContext(t, "settings-delete-success@example.com")
 	seedSettingsDeleteAccountHealthData(t, ctx)
