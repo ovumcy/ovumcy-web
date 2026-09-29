@@ -41,7 +41,10 @@ export default defineConfig({
     },
     {
       name: 'firefox',
-      use: { ...devices['Desktop Firefox'] },
+      // No video on firefox: the screencast recorder is one more consumer of a process
+      // that stalls as a whole under CI load (WEB-79: every subresource served in ~110ms
+      // and 'load' still never fired). Trace and screenshot on failure remain.
+      use: { ...devices['Desktop Firefox'], video: 'off' },
     },
     {
       name: 'webkit',
