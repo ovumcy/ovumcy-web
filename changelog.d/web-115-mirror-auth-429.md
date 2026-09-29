@@ -7,7 +7,7 @@
   accepted. Every copy in that step now asks again on that one verdict, up to four attempts with a
   growing pause, and on nothing else: any other refusal still fails the step on its first attempt,
   and a limit still standing after the last attempt fails it too, so the mirror is never reported
-  published with a copy missing. The retry is matched on Docker Hub's own wording rather than on a
+  published with a copy missing. The retry is matched on the registry's own wording rather than on a
   bare `429`, which a digest in an unrelated error can contain. `scripts/releasegate` runs the
   step's real script against a shimmed `cosign` and `sleep` to hold it to both halves and to the
   growing pause between attempts, and holds the shipped budget to more than one attempt with a

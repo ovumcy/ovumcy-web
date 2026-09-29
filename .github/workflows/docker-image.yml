@@ -907,7 +907,7 @@ jobs:
         # fixture supplying its own number cannot do.
         #
         # `COPY_ATTEMPTS`/`COPY_DELAY_SECONDS` bound the same kind of wait for
-        # the copies, and for one verdict only: Docker Hub's 429. Runs
+        # the copies, and for one verdict only: a registry's 429. Runs
         # 36512010639 and 36512597460 were refused with it 8 minutes apart,
         # during a merge burst, AFTER the login below had succeeded and, in the
         # first, after the same step's pushes to Docker Hub had been accepted:
@@ -984,8 +984,9 @@ jobs:
           # does not make it a different defect.
           #
           # Every copy goes through mirror_copy, which asks again on ONE
-          # verdict: Docker Hub's rate limit, matched by its words and never by
-          # a bare `429`, which a digest in any other error can contain. Every
+          # verdict: a registry's rate limit (Docker Hub's, or GHCR's on the
+          # source read), matched by its words and never by a bare `429`,
+          # which a digest in any other error can contain. Every
           # other refusal is an answer and ends the step on the first attempt,
           # as does a limit still standing after the last; a copy is never
           # passed over. Asking again is safe because each copy is idempotent:
@@ -1004,16 +1005,16 @@ jobs:
               cat "$copy_log"
 
               if ! grep -qE 'TOOMANYREQUESTS|429 Too Many Requests' "$copy_log"; then
-                echo "::error::copying $1 to $2 failed, and not on Docker Hub's rate limit — the cosign output above says what it is. The mirror is incomplete and this run fails."
+                echo "::error::copying $1 to $2 failed, and not on a registry's rate limit — the cosign output above says what it is. The mirror is incomplete and this run fails."
                 exit 1
               fi
 
               if [ "${attempt}" -ge "${COPY_ATTEMPTS}" ]; then
-                echo "::error::copying $1 to $2 was refused by Docker Hub's rate limit on all ${COPY_ATTEMPTS} attempts. The mirror is incomplete and this run fails."
+                echo "::error::copying $1 to $2 was refused by a registry's rate limit on all ${COPY_ATTEMPTS} attempts. The mirror is incomplete and this run fails."
                 exit 1
               fi
 
-              echo "attempt ${attempt} of ${COPY_ATTEMPTS} copying $1 to $2 hit Docker Hub's rate limit; waiting $(( attempt * COPY_DELAY_SECONDS ))s."
+              echo "attempt ${attempt} of ${COPY_ATTEMPTS} copying $1 to $2 hit a registry's rate limit; waiting $(( attempt * COPY_DELAY_SECONDS ))s."
               sleep "$(( attempt * COPY_DELAY_SECONDS ))"
               attempt=$(( attempt + 1 ))
             done
