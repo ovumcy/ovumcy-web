@@ -94,6 +94,7 @@
       hx-confirm="{{t $.Messages "settings.symptoms.confirm_hide"}}"
       data-confirm-accept="{{t $.Messages "settings.symptoms.hide"}}">
       <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+      <input type="hidden" name="_method" value="DELETE">
       <button type="submit" class="btn-secondary">{{t $.Messages "settings.symptoms.hide"}}</button>
     </form>
     {{else}}
