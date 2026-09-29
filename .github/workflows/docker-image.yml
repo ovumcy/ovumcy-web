@@ -908,18 +908,23 @@ jobs:
         # sends it on every read, so which quota Docker Hub charges is taken
         # from Docker Hub's own answer: `docker-ratelimit-source` is the
         # runner's IP for an anonymous pull and the account for an
-        # authenticated one. Asked with HEAD, which the quota does not count.
+        # authenticated one. Asked with HEAD, which the quota does not count,
+        # of the mirror's own repository under a pull-only token, which is
+        # the scope cosign's reads there ask for: a token restricted to that
+        # repository would be refused anywhere else and answer nothing.
         #
         # Informational: it never fails the job. The credential reaches curl
         # on stdin only — never as an argument, never in the log.
         if: ${{ env.DOCKERHUB_PUBLISH_USERNAME != '' }}
         shell: bash
+        env:
+          MIRROR_PATH: ${{ steps.image.outputs.path }}
         run: |
           set -uo pipefail
           config="${DOCKER_CONFIG:-$HOME/.docker}/config.json"
           key='https://index.docker.io/v1/'
-          token_url='https://auth.docker.io/token?service=registry.docker.io&scope=repository:ratelimitpreview/test:pull'
-          probe='https://registry-1.docker.io/v2/ratelimitpreview/test/manifests/latest'
+          token_url="https://auth.docker.io/token?service=registry.docker.io&scope=repository:${MIRROR_PATH}:pull"
+          probe="https://registry-1.docker.io/v2/${MIRROR_PATH}/manifests/latest"
 
           if [ ! -f "$config" ]; then
             echo "::warning::no docker config at ${config}, so cosign reads Docker Hub anonymously."
@@ -931,15 +936,27 @@ jobs:
 
           # $1 labels the reading; stdin carries the token request's
           # Authorization header, or nothing for an anonymous one.
+          # A refused credential is the most telling answer here, so the
+          # token request's status is reported rather than folded into a
+          # transport failure.
           rate_limit_view() {
-            local token
-            token="$(curl -fsS -H @- "$token_url" | jq -r '.token // empty')" || token=''
+            local response status token
+            if ! response="$(curl -sS --max-time 20 -w '\n%{http_code}' -H @- "$token_url")"; then
+              echo "$1: the token request got no answer"
+              return 0
+            fi
+            status="${response##*$'\n'}"
+            if [ "$status" != 200 ]; then
+              echo "$1: the token request was answered HTTP ${status}"
+              return 0
+            fi
+            token="$(printf '%s' "${response%$'\n'*}" | jq -r '.token // empty')"
             if [ -z "$token" ]; then
-              echo "$1: no token issued"
+              echo "$1: the token response carried no token"
               return 0
             fi
             printf 'Authorization: Bearer %s\n' "$token" \
-              | curl -sS -I -H @- "$probe" \
+              | curl -sS --max-time 20 -I -H "Accept: ${MANIFEST_ACCEPT}" -H @- "$probe" \
               | tr -d '\r' \
               | grep -iE '^(HTTP/|ratelimit-limit:|ratelimit-remaining:|docker-ratelimit-source:)' \
               | sed "s/^/$1: /"
@@ -1155,8 +1172,9 @@ jobs:
           # the first copy already landed, so Docker Hub answers each blob as
           # present and receives only the manifest under the tag. The source is
           # GHCR rather than the mirror because a copy's reads are its cost on
-          # Docker Hub's pull quota: one alias is ~14 manifest GETs (the index,
-          # each platform, and a sig/att/sbom tag probe per entity), and runs
+          # Docker Hub's pull quota: one alias is up to ~14 manifest GETs (the
+          # index, each platform, and a sig/att/sbom tag probe per entity, most
+          # of which answer 404), and runs
           # 36512010639 and 36512597460 were refused on that quota. Read from
           # GHCR, the aliases cost Docker Hub only writes
           # and the HEADs that precede them, which the quota does not count.
