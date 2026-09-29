@@ -136,7 +136,10 @@ components:
       name: date
       in: path
       required: true
-      description: Calendar day in the user's timezone, ISO 8601 (`YYYY-MM-DD`).
+      description: |
+        Calendar day in the user's timezone, ISO 8601 (`YYYY-MM-DD`), from `1900-01-01` through
+        `9999-12-30` inclusive. A date outside that range, a malformed one, and a day the
+        timezone never had are all refused with `400` and the key `invalid date`.
       schema:
         type: string
         format: date
@@ -145,7 +148,9 @@ components:
       name: from
       in: query
       required: false
-      description: Range start (inclusive), `YYYY-MM-DD` in the user's timezone.
+      description: |
+        Range start (inclusive), `YYYY-MM-DD` in the user's timezone, from `1900-01-01`
+        through `9999-12-30`; a date outside that range is refused with `400`.
       schema:
         type: string
         format: date
@@ -153,7 +158,9 @@ components:
       name: to
       in: query
       required: false
-      description: Range end (inclusive), `YYYY-MM-DD` in the user's timezone.
+      description: |
+        Range end (inclusive), `YYYY-MM-DD` in the user's timezone, from `1900-01-01`
+        through `9999-12-30`; a date outside that range is refused with `400`.
       schema:
         type: string
         format: date
@@ -2282,7 +2289,7 @@ paths:
       description: |
         Both bounds are required and inclusive: `from` equal to `to` lists that one day. Each
         bound is read on the request's timezone, and surrounding whitespace is trimmed before
-        it is parsed.
+        it is parsed. Each bound is a date from `1900-01-01` through `9999-12-30`.
       parameters:
         - in: query
           name: from
@@ -2314,7 +2321,8 @@ paths:
             `from`:
 
             - `invalid from date`: `from` is missing, blank (whitespace only), not a `YYYY-MM-DD`
-              date, not a real calendar date, or a day the request's timezone never had.
+              date, not a real calendar date, outside `1900-01-01` through `9999-12-30`, or a day
+              the request's timezone never had.
             - `invalid to date`: the same for `to`, once `from` parsed.
             - `invalid range`: both parse but `to` is before `from`.
 
@@ -2675,7 +2683,8 @@ paths:
         overwritten or deleted, so no re-authentication is required (unlike
         clear-data). Every field is re-validated server-side and scoped to the
         session owner; malformed or duplicate day records are dropped and
-        reported in the counts rather than aborting the restore. State-mutating,
+        reported in the counts rather than aborting the restore; a day dated outside
+        `1900-01-01` through `9999-12-30` is one of them. State-mutating,
         so CSRF-protected. See [docs/export.md](export.md).
       requestBody:
         required: true
