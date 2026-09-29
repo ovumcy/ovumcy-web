@@ -390,8 +390,10 @@ jobs:
   # verdict is Trivy's exit code, and the job's first step writes a verdict that
   # is no exit code at all: an attempt that fails before the scan (checkout,
   # login, build) still uploads that placeholder and replaces what an earlier
-  # attempt of the same run left, so a re-run cannot be judged on its
-  # predecessor's `0`. The verdict lives under the runner's temp directory, not
+  # attempt of the same run left, so a re-run whose first step ran cannot be
+  # judged on its predecessor's `0`. An attempt that dies before any step (a
+  # lost runner) uploads nothing, and the gate reads the earlier attempt's
+  # verdict: a scan of the same commit in the same run. The verdict lives under the runner's temp directory, not
   # in the workspace: on a fresh runner `actions/checkout` empties a workspace
   # that has no `.git`, and would take a placeholder written there with it. The
   # findings are in this job's log; the one SARIF entry in the Security tab
