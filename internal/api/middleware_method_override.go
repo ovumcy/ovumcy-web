@@ -72,12 +72,13 @@ func MethodOverride(handler *Handler) fiber.Handler {
 		// PostArgs; the field is read from PostArgs itself. The binder collapses
 		// keys that differ only in case or encoding (_method and _METHOD,
 		// %5Fmethod) into one value, so trusting its result would let a form
-		// hide a second, disallowed verb behind the first.
-		if err := c.Bind().Form(&struct{}{}); err != nil {
-			// An unbindable body is left as the POST it arrived as: the CSRF
-			// extractor binds the same way and finds no form token in it either.
-			return c.Next()
-		}
+		// hide a second, disallowed verb behind the first. Its error is not
+		// consulted: it comes from mapping a key onto the struct (an unmatched
+		// bracket, as in a[=1), which runs after the Content-Type fold and after
+		// the whole body is parsed into PostArgs, and says nothing about whether
+		// the body names _method. Returning on it would run the POST for
+		// _method=GET&a[=1.
+		_ = c.Bind().Form(&struct{}{})
 		var requested []string
 		for key, value := range c.Request().PostArgs().All() {
 			if bytes.EqualFold(key, []byte(methodOverrideKey)) {

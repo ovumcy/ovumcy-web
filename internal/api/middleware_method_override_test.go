@@ -328,6 +328,14 @@ func TestMethodOverrideHonoursTheFieldWhateverItsSpelling(t *testing.T) {
 		{"_method=GET&_METHOD=DELETE", http.StatusBadRequest, ""},
 		{"_METHOD=DELETE&_method=GET", http.StatusBadRequest, ""},
 		{"_m%65thod=PUT&_Method=PUT&x=1", http.StatusBadRequest, ""},
+		// A key the binder cannot map (unmatched bracket) fails the bind, but the
+		// body is a plain urlencoded form all the same: the field still decides.
+		{"_method=GET&a[=1", http.StatusBadRequest, ""},
+		{"a[=1&_METHOD=GET", http.StatusBadRequest, ""},
+		{"_method=DELETE&a[=1", http.StatusOK, "ran DELETE"},
+		{"a[=1&_m%65thod=PUT", http.StatusOK, "ran PUT"},
+		{"a[=1", http.StatusOK, "ran POST"},
+		{"a]=1&x=2", http.StatusOK, "ran POST"},
 	}
 	for _, testCase := range cases {
 		status, body := probeAnswer(t, app, methodOverrideRawRequest(testCase.body))
@@ -420,4 +428,42 @@ func TestMethodOverrideEmitsTheAppliedEventOnlyWhenItOverrides(t *testing.T) {
 	if line := output.String(); !strings.Contains(line, `outcome="denied"`) || strings.Contains(line, `outcome="applied"`) {
 		t.Errorf("refused override logged %q, want denied and never applied", line)
 	}
+}
+
+// The bind folds a mixed-case Content-Type in place, so the /content-type echo
+// tells whether the middleware read a body at all: a body it must leave alone
+// comes back with the spelling it arrived with. Reading the field from a gzip or
+// multipart body answers "ran POST" either way (fiber restores the raw bytes
+// after decoding, and multipart parts are not in PostArgs), so the answer alone
+// cannot pin the guard.
+func TestMethodOverrideDoesNotReadABodyItMustLeaveAlone(t *testing.T) {
+	t.Parallel()
+	app := newMethodOverrideProbeApp(t, false)
+
+	t.Run("content-encoded form body", func(t *testing.T) {
+		const mixedCase = "Application/X-WWW-Form-URLEncoded"
+		var compressed bytes.Buffer
+		gz := gzip.NewWriter(&compressed)
+		_, _ = gz.Write([]byte("_method=DELETE"))
+		_ = gz.Close()
+		request := httptest.NewRequest(http.MethodPost, "/content-type", &compressed)
+		request.Header.Set("Content-Type", mixedCase)
+		request.Header.Set("Content-Encoding", "gzip")
+		if status, body := probeAnswer(t, app, request); status != http.StatusOK || body != mixedCase {
+			t.Fatalf("got %d content-type %q, want the body left unread with %q", status, body, mixedCase)
+		}
+	})
+
+	t.Run("multipart body", func(t *testing.T) {
+		var payload bytes.Buffer
+		writer := multipart.NewWriter(&payload)
+		_ = writer.WriteField("_method", "DELETE")
+		_ = writer.Close()
+		mixedCase := "Multipart/Form-Data; boundary=" + writer.Boundary()
+		request := httptest.NewRequest(http.MethodPost, "/content-type", &payload)
+		request.Header.Set("Content-Type", mixedCase)
+		if status, body := probeAnswer(t, app, request); status != http.StatusOK || body != mixedCase {
+			t.Fatalf("got %d content-type %q, want the body left unread with %q", status, body, mixedCase)
+		}
+	})
 }
