@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -435,5 +436,79 @@ func TestMapSettingsWebhookSaveErrorDefaultsToInternal(t *testing.T) {
 	other := mapSettingsWebhookSaveError(errors.New("db write exploded"))
 	if other.Status != http.StatusInternalServerError {
 		t.Fatalf("expected a generic error -> 500, got %d", other.Status)
+	}
+}
+
+// decodeWebhookJSONAnswer reads a JSON save answer into a generic map so the
+// assertions see exactly the keys and values a client would.
+func decodeWebhookJSONAnswer(t *testing.T, response *http.Response) map[string]any {
+	t.Helper()
+
+	assertStatusCode(t, response, http.StatusOK)
+	var answer map[string]any
+	if err := json.Unmarshal([]byte(mustReadBodyString(t, response.Body)), &answer); err != nil {
+		t.Fatalf("decode webhook save answer: %v", err)
+	}
+	return answer
+}
+
+// TestWebhookJSONAnswerReportsTheSavedSwitchWhenRemovalForcesDeliveryOff pins
+// the JSON answer to the stored row on the one request the service rewrites:
+// webhook_remove_url clears the endpoint and turns delivery off whatever
+// webhook_enabled said. The answer used to repeat the posted value.
+func TestWebhookJSONAnswerReportsTheSavedSwitchWhenRemovalForcesDeliveryOff(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "webhook-json-remove@example.com")
+	headers := map[string]string{"Accept": "application/json"}
+
+	seed := webhookJSONRequestWithCSRF(t, ctx, `{"webhook_enabled":true,"webhook_url":"https://ntfy.example/json-remove","webhook_notify_period":true,"webhook_notify_ovulation":true}`, headers)
+	defer func() { _ = seed.Body.Close() }()
+	if answer := decodeWebhookJSONAnswer(t, seed); answer["webhook_enabled"] != true {
+		t.Fatalf("precondition: the seed save must arm delivery, got %v", answer)
+	}
+
+	response := webhookJSONRequestWithCSRF(t, ctx, `{"webhook_enabled":true,"webhook_remove_url":true,"webhook_notify_period":true}`, headers)
+	defer func() { _ = response.Body.Close() }()
+	answer := decodeWebhookJSONAnswer(t, response)
+
+	stored := reloadUserForWebhook(t, ctx, ctx.user.ID)
+	if stored.WebhookEnabled || stored.WebhookURL != "" {
+		t.Fatalf("webhook_remove_url must clear the endpoint and disable delivery; stored enabled=%v url set=%v", stored.WebhookEnabled, stored.WebhookURL != "")
+	}
+	if answer["webhook_enabled"] != false {
+		t.Fatalf("the answer must report the forced-off switch, got %v", answer)
+	}
+	if answer["notify_period"] != stored.WebhookNotifyPeriod || answer["notify_ovulation"] != stored.WebhookNotifyOvulation {
+		t.Fatalf("the answer's notify flags must equal the stored row (period=%v ovulation=%v), got %v", stored.WebhookNotifyPeriod, stored.WebhookNotifyOvulation, answer)
+	}
+}
+
+// TestWebhookJSONAnswerMatchesTheStoredRowAfterAPlainSave is the counterpart on
+// a save the service stores as asked: the answer carries the stored flags, the
+// same five keys as before, and nothing of the endpoint.
+func TestWebhookJSONAnswerMatchesTheStoredRowAfterAPlainSave(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "webhook-json-plain@example.com")
+
+	response := webhookJSONRequestWithCSRF(t, ctx, `{"webhook_enabled":true,"webhook_url":"https://ntfy.example/plain-topic?token=tk_plain_do_not_leak","webhook_notify_period":false,"webhook_notify_ovulation":true}`, map[string]string{"Accept": "application/json"})
+	defer func() { _ = response.Body.Close() }()
+	answer := decodeWebhookJSONAnswer(t, response)
+
+	stored := reloadUserForWebhook(t, ctx, ctx.user.ID)
+	if !stored.WebhookEnabled || stored.WebhookNotifyPeriod || !stored.WebhookNotifyOvulation {
+		t.Fatalf("precondition: stored enabled=%v period=%v ovulation=%v", stored.WebhookEnabled, stored.WebhookNotifyPeriod, stored.WebhookNotifyOvulation)
+	}
+	want := map[string]any{
+		"ok":               true,
+		"status":           services.SettingsWebhookUpdatedStatus,
+		"webhook_enabled":  stored.WebhookEnabled,
+		"notify_period":    stored.WebhookNotifyPeriod,
+		"notify_ovulation": stored.WebhookNotifyOvulation,
+	}
+	if len(answer) != len(want) {
+		t.Fatalf("the answer must keep exactly its five keys, got %v", answer)
+	}
+	for key, value := range want {
+		if answer[key] != value {
+			t.Fatalf("answer[%q] = %v, want the stored %v (answer %v)", key, answer[key], value, answer)
+		}
 	}
 }
