@@ -101,7 +101,7 @@ const (
 
 	mirrorLoginStep  = "Log in to Docker Hub for the mirror"
 	mirrorProbeStep  = "Report Docker Hub's rate-limit view of the mirror login"
-	mirrorStep       ="Mirror the signed digest to Docker Hub"
+	mirrorStep       = "Mirror the signed digest to Docker Hub"
 	mirrorVerifyStep = "Verify every mirrored tag anonymously and against the signed digest"
 )
 
