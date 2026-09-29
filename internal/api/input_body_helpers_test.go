@@ -69,21 +69,53 @@ type queryRead struct {
 	unresolvedKey bool
 }
 
-// unresolvedKeyExemptions names, by file and function, the one production site
-// allowed to look a member up under a name the guard cannot resolve. The key is
-// "<path under the repository root> <function name>".
-//
-// oidcCallbackValue (internal/api/oidc_helpers.go) reads the provider's callback
-// parameters (code, state, error) from the URL under OIDC_RESPONSE_MODE=query:
-// they are provider-originated, not user credentials, and the sealed one-time
-// state cookie is what authorises the exchange. Its name argument is a parameter
-// whose values are the literals at its call sites. The exemption clears only a
-// lookup with an unresolvable key inside that function — an auth member read by
-// name there is still refused — and the sweep fails when an entry no longer
-// clears anything, so it cannot outlive the code it excuses.
-var unresolvedKeyExemptions = map[string]string{
-	"internal/api/oidc_helpers.go oidcCallbackValue": "OIDC response_mode=query: provider-originated parameters, gated by the sealed state cookie",
+// lookupExemption names one production function allowed to look a member up
+// under a name the guard cannot resolve, because that name is its keyParam.
+// Exempting the lookup moves the guard to the function's callers:
+// TestExemptLookupCallersPassOnlyDeclaredKeys resolves the function by
+// declaration and requires every caller to pass a constant from keys.
+type lookupExemption struct {
+	file     string // path under the repository root
+	receiver string // named receiver type; "" for a plain function
+	function string
+	keyParam string
+	keys     []string
 }
+
+func (exemption lookupExemption) declKey() string {
+	return exemption.file + " " + exemption.receiver + "." + exemption.function
+}
+
+// declKey is the same key for a parsed declaration, so the AST sweep and the
+// type-checked caller test name one object.
+func declKey(path string, fn *ast.FuncDecl) string {
+	receiver := ""
+	if fn.Recv != nil && len(fn.Recv.List) == 1 {
+		typ := fn.Recv.List[0].Type
+		if star, ok := typ.(*ast.StarExpr); ok {
+			typ = star.X
+		}
+		if ident, ok := typ.(*ast.Ident); ok {
+			receiver = ident.Name
+		}
+	}
+	return path + " " + receiver + "." + fn.Name.Name
+}
+
+// unresolvedKeyExemptions: oidcCallbackValue reads the provider's callback
+// parameters from the URL under OIDC_RESPONSE_MODE=query. They are
+// provider-originated, not user credentials, and the sealed one-time state
+// cookie is what authorises the exchange. The exemption clears only a lookup
+// with an unresolvable key inside that function — an auth member read by name
+// there is still refused — and the sweep fails when an entry no longer clears
+// anything, so it cannot outlive the code it excuses.
+var unresolvedKeyExemptions = []lookupExemption{{
+	file:     "internal/api/oidc_helpers.go",
+	receiver: "Handler",
+	function: "oidcCallbackValue",
+	keyParam: "name",
+	keys:     []string{"code", "state", "error"},
+}}
 
 // calleeSelector returns the selector a call goes through, looking past the
 // type-argument list of a generic call: fiber.Query[string](c, "code") has an
@@ -335,6 +367,10 @@ func TestAuthFieldsAreNeverReadFromTheQueryString(t *testing.T) {
 	// non-auth members through them, so a scan that found none has stopped
 	// recognising calls.
 	seenLookups := 0
+	exempt := map[string]bool{}
+	for _, exemption := range unresolvedKeyExemptions {
+		exempt[exemption.declKey()] = true
+	}
 	exemptionsUsed := map[string]bool{}
 	var violations []string
 	for _, files := range filesByDir {
@@ -356,10 +392,10 @@ func TestAuthFieldsAreNeverReadFromTheQueryString(t *testing.T) {
 			for _, decl := range file.Decls {
 				exemption := ""
 				if fn, ok := decl.(*ast.FuncDecl); ok {
-					exemption = path + " " + fn.Name.Name
+					exemption = declKey(path, fn)
 				}
 				for _, read := range findQueryReads(decl, consts) {
-					if _, exempt := unresolvedKeyExemptions[exemption]; exempt && read.unresolvedKey {
+					if exempt[exemption] && read.unresolvedKey {
 						exemptionsUsed[exemption] = true
 						continue
 					}
@@ -375,9 +411,9 @@ func TestAuthFieldsAreNeverReadFromTheQueryString(t *testing.T) {
 	if seenLookups == 0 {
 		t.Fatal("the sweep found no FormValue/Query lookup at all: it is not reading the code it claims to police")
 	}
-	for exemption := range unresolvedKeyExemptions {
-		if !exemptionsUsed[exemption] {
-			t.Errorf("unresolvedKeyExemptions names %q, which no longer holds a lookup with an unresolvable key: remove the entry", exemption)
+	for _, exemption := range unresolvedKeyExemptions {
+		if !exemptionsUsed[exemption.declKey()] {
+			t.Errorf("unresolvedKeyExemptions names %q, which no longer holds a lookup with an unresolvable key: remove the entry", exemption.declKey())
 		}
 	}
 	sort.Strings(violations)
