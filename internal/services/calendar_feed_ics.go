@@ -154,6 +154,12 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 	events := make([]calendarFeedEvent, 0, calendarFeedProjectionCycles*2+1)
 	seen := make(map[string]struct{}, calendarFeedProjectionCycles*2+1)
 	appendEvent := func(kind string, date time.Time) {
+		// An all-day event spells its exclusive DTEND as the following day, and an
+		// RFC 5545 DATE has a four-digit year, so the last day an event can name is
+		// 9999-12-30: an event whose end has no spelling is left out (projectedDay).
+		if projectedDay(AddCalendarDays(date, 1, date.Location())).IsZero() {
+			return
+		}
 		key := kind + "-" + date.Format(calendarFeedDateLayout)
 		// codecov:ignore:start -- defensive: a confirmed day is behind today and
 		// every projected ovulation is on or after it, and projected cycles step

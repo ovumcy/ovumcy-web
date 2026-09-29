@@ -406,7 +406,7 @@ func applyPredictedCycleStats(stats *CycleStats) {
 		stats.LutealPhase = defaultLutealPhaseDays
 	}
 
-	stats.NextPeriodStart = AddCalendarDays(stats.LastPeriodStart, predictionCycleLength, time.UTC)
+	stats.NextPeriodStart = projectedDay(AddCalendarDays(stats.LastPeriodStart, predictionCycleLength, time.UTC))
 	window := PredictCycleWindow(
 		stats.LastPeriodStart,
 		predictionCycleLength,
@@ -414,6 +414,10 @@ func applyPredictedCycleStats(stats *CycleStats) {
 	)
 	if !window.Calculable {
 		clearPredictedCycleWindow(stats)
+		return
+	}
+	if projectedDay(window.OvulationDate).IsZero() {
+		clearUnspellableCycleWindow(stats)
 		return
 	}
 
@@ -461,6 +465,15 @@ func clearPredictedCycleWindow(stats *CycleStats) {
 	stats.OvulationImpossible = true
 	stats.FertilityWindowStart = time.Time{}
 	stats.FertilityWindowEnd = time.Time{}
+}
+
+// clearUnspellableCycleWindow withholds a window whose ovulation — its last day —
+// falls after 9999-12-31 (projectedDay). The window goes as a whole rather than
+// as a start without its end, and OvulationImpossible stays false: the cycle has
+// room for an ovulation, there is just no four-digit day to name it by.
+func clearUnspellableCycleWindow(stats *CycleStats) {
+	clearPredictedCycleWindow(stats)
+	stats.OvulationImpossible = false
 }
 
 func cycleDayAt(lastPeriodStart time.Time, today time.Time) int {

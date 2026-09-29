@@ -418,19 +418,24 @@ func DashboardPredictionRange(user *models.User, stats CycleStats, predictedStar
 		return time.Time{}, time.Time{}, false
 	}
 
+	var rangeStart, rangeEnd time.Time
 	if dashboardIrregularPredictionRangeEnabled(user, stats) {
-		return AddCalendarDays(stats.LastPeriodStart, stats.MinCycleLength, location),
-			AddCalendarDays(stats.LastPeriodStart, stats.MaxCycleLength, location),
-			true
+		rangeStart = AddCalendarDays(stats.LastPeriodStart, stats.MinCycleLength, location)
+		rangeEnd = AddCalendarDays(stats.LastPeriodStart, stats.MaxCycleLength, location)
+	} else {
+		spanDays := dashboardPredictionRegularSpan(stats)
+		if spanDays <= 0 {
+			return time.Time{}, time.Time{}, false
+		}
+		rangeStart = AddCalendarDays(predictedStart, -spanDays, location)
+		rangeEnd = AddCalendarDays(predictedStart, spanDays, location)
 	}
-
-	spanDays := dashboardPredictionRegularSpan(stats)
-	if spanDays <= 0 {
+	// A range whose last day falls after 9999-12-31 is absent as a whole, like a
+	// projected window, rather than a start with no end (projectedDay).
+	if projectedDay(rangeEnd).IsZero() {
 		return time.Time{}, time.Time{}, false
 	}
-	return AddCalendarDays(predictedStart, -spanDays, location),
-		AddCalendarDays(predictedStart, spanDays, location),
-		true
+	return rangeStart, rangeEnd, true
 }
 
 func DashboardOvulationRange(nextPeriodRangeStart time.Time, nextPeriodRangeEnd time.Time, lutealPhase int, location *time.Location) (time.Time, time.Time, bool) {
@@ -478,7 +483,7 @@ func DashboardUpcomingPredictions(stats CycleStats, user *models.User, today tim
 		return prediction
 	}
 
-	prediction.NextPeriodStart = AddCalendarDays(cycleStart, cycleLength, today.Location())
+	prediction.NextPeriodStart = projectedDay(AddCalendarDays(cycleStart, cycleLength, today.Location()))
 	window := PredictCycleWindow(cycleStart, cycleLength, stats.LutealPhase)
 	// window.OvulationDate is a UTC-midnight date-only value while today is a
 	// location-midnight working value, so the two are compared as calendar days
@@ -495,8 +500,8 @@ func DashboardUpcomingPredictions(stats CycleStats, user *models.User, today tim
 		prediction.OvulationImpossible = true
 		return prediction
 	}
-	prediction.OvulationDate = window.OvulationDate
-	prediction.OvulationExact = window.OvulationExact
+	prediction.OvulationDate = projectedDay(window.OvulationDate)
+	prediction.OvulationExact = window.OvulationExact && !prediction.OvulationDate.IsZero()
 	prediction.OvulationImpossible = false
 	return prediction
 }
@@ -596,12 +601,19 @@ func buildDashboardPredictionDisplay(user *models.User, logs []models.DailyLog, 
 		today,
 		DashboardProjectionCycleLength(user, stats),
 	)
+	// The line names the predicted period's first and last day, so a band whose
+	// last day falls after 9999-12-31 is withheld with its first day.
+	nextPeriodStart := prediction.NextPeriodStart
+	nextPeriodEnd := dashboardNextPeriodEnd(nextPeriodStart, stats, location)
+	if nextPeriodEnd.IsZero() {
+		nextPeriodStart = time.Time{}
+	}
 
 	display := dashboardPredictionDisplay{
-		nextPeriodStart:     prediction.NextPeriodStart,
-		nextPeriodEnd:       dashboardNextPeriodEnd(prediction.NextPeriodStart, stats, location),
+		nextPeriodStart:     nextPeriodStart,
+		nextPeriodEnd:       nextPeriodEnd,
 		nextPeriodPrompt:    stats.LastPeriodStart.IsZero(),
-		nextPeriodNeedsData: dashboardNeedsNextPeriodData(user, stats, prediction.NextPeriodStart),
+		nextPeriodNeedsData: dashboardNeedsNextPeriodData(user, stats, nextPeriodStart),
 		ovulationDate:       prediction.OvulationDate,
 		ovulationNeedsData:  dashboardNeedsOvulationData(user, stats),
 		ovulationExact:      prediction.OvulationExact,
@@ -768,7 +780,7 @@ func dashboardNextPeriodEnd(nextPeriodStart time.Time, stats CycleStats, locatio
 		return time.Time{}
 	}
 
-	return AddCalendarDays(nextPeriodStart, periodLength-1, location)
+	return projectedDay(AddCalendarDays(nextPeriodStart, periodLength-1, location))
 }
 
 func dashboardNextPeriodInPast(display dashboardPredictionDisplay, today time.Time) bool {

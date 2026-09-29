@@ -969,6 +969,12 @@ components:
         `suppression` for whether and why. The instance withholds a claim it
         cannot stand behind rather than qualifying it, so an absent date is a
         decision, never a gap in the data.
+
+        A projected date is also `null`, with `suppression` unchanged, when it
+        would fall after `9999-12-31`: `format: date` has a four-digit year.
+        Only a cycle logged in late 9999 projects that far. The fertile window
+        is then `null` as a whole once `ovulation_date` would pass that day,
+        never a start without its end.
       required:
         - current_cycle_day
         - current_phase
@@ -1010,9 +1016,13 @@ components:
             `luteal` are decided by comparing today against `ovulation_date`, so
             naming one of them beside a null `ovulation_date` would spell out the
             very day that null withholds. The field is therefore reported in
-            every state, and when `ovulation_date` is null it carries only
-            `menstrual` — read off recorded or projected bleeding — or `unknown`.
-            Read `suppression` for why the date is absent.
+            every state, and it carries only `menstrual` — read off recorded or
+            projected bleeding — or `unknown` whenever `ovulation_date` is null,
+            and whenever `suppression.fertility` is true, even beside a
+            confirmed `ovulation_date` reported under `cycle_overdue` alone.
+            `suppression` accounts for a null date only when it withheld it: a
+            cycle with `ovulation_impossible`, or one whose projected day would
+            fall after `9999-12-31`, has `suppression.fertility` false.
         current_fertility:
           type: string
           enum: [fertile, not_fertile, unknown]
@@ -1020,8 +1030,11 @@ components:
             Whether today falls inside the fertile window this response
             reports — the projected one, or the one derived from the confirmed
             shift when `ovulation_confirmed`, never a mix of the two. The axis
-            orthogonal to `current_phase`. `unknown` whenever
-            `suppression.fertility` is true.
+            orthogonal to `current_phase`. `unknown` whenever the fertile window
+            is null: when `suppression.fertility` is true, even beside a
+            confirmed `ovulation_date` reported under `cycle_overdue` alone; when
+            `ovulation_impossible` is true; and when the window would end after
+            `9999-12-31`. The last two leave `suppression.fertility` false.
         average_cycle_length:
           type: number
           format: double
@@ -1070,7 +1083,9 @@ components:
         next_period_start:
           type: [string, "null"]
           format: date
-          description: Projected. Null when `suppression.predictions` is true.
+          description: >-
+            Projected. Null when `suppression.predictions` is true, or when the
+            projection would fall after `9999-12-31`.
         ovulation_date:
           type: [string, "null"]
           format: date
@@ -1088,7 +1103,8 @@ components:
             still reported — the cycle has outrun the length its projection was
             rolled from, and the confirmed day is not such a projection. Every
             projected field stays null then, and the fertile window and
-            `current_fertility` stay withheld.
+            `current_fertility` stay withheld. A projected day that would fall
+            after `9999-12-31` is null too.
         ovulation_exact:
           type: boolean
           description: >-
@@ -1132,14 +1148,16 @@ components:
             Projected, or derived from the confirmed shift when
             `ovulation_confirmed` — then `ovulation_date` minus five days,
             clamped to `last_period_start`. Null when `suppression.fertility`
-            is true.
+            is true, or when the window's last day would fall after
+            `9999-12-31`.
         fertility_window_end:
           type: [string, "null"]
           format: date
           description: >-
             Projected, or derived from the confirmed shift when
             `ovulation_confirmed` — then `ovulation_date` itself. Null when
-            `suppression.fertility` is true.
+            `suppression.fertility` is true, or when it would fall after
+            `9999-12-31`.
         pregnancy_paused:
           type: boolean
           description: >-
@@ -3406,9 +3424,30 @@ paths:
               schema: { $ref: '#/components/schemas/OkResponse' }
         '303':
           description: "Browser redirect to `/settings`, which reads the success flash, when `Accept: application/json` is not set."
-        '401': { $ref: '#/components/responses/Unauthorized' }
+        '401':
+          description: |
+            No session (`unauthorized`); a wrong current password (`invalid
+            password`); a setup cookie that is missing, expired, or was minted
+            for another account (`totp session expired`); a code that is
+            missing, not six digits, or does not verify against the pending
+            secret (`totp invalid code`); or, once the enrollment has committed,
+            a session that cannot be carried past it (`two factor enabled sign
+            in again`). A wrong code is a `401`, never a `400`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "totp invalid code"
+                error_detail: { key: "totp invalid code", category: "unauthorized", target: "auth_form" }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '400': { $ref: '#/components/responses/ValidationError' }
+        '400':
+          description: The current password is missing, or the body carrying it fails to bind.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "invalid password"
+                error_detail: { key: "invalid password", category: "validation", target: "settings_form" }
         '429': { $ref: '#/components/responses/RateLimited' }
     delete:
       tags: [settings]
