@@ -38,8 +38,10 @@ func TestGetDayAcceptsOnlyTheDocumentedDateRange(t *testing.T) {
 	}
 
 	// The bound is on the calendar date, so a zone at either end of the offset
-	// range moves neither edge.
-	for _, timezone := range []string{"", "Pacific/Kiritimati", "Pacific/Pago_Pago"} {
+	// range moves neither edge. Asia/Tokyo and Pacific/Auckland had a positive
+	// offset in 1900, which is what would pull 1900-01-01 before the bound if the
+	// comparison ran on the resolved instant; the other two had negative ones.
+	for _, timezone := range []string{"", "Asia/Tokyo", "Pacific/Auckland", "Pacific/Kiritimati", "Pacific/Pago_Pago"} {
 		for _, tc := range cases {
 			path := "/api/v1/days/" + tc.date
 			status, raw := sendDayRequest(t, app, http.MethodGet, path, authCookie, timezone, "")
@@ -122,6 +124,20 @@ func TestDayRoutesRefuseAnOutOfRangeDate(t *testing.T) {
 			status, raw := sendDayRequest(t, app, method, path, authCookie, "", body)
 			if status != http.StatusBadRequest {
 				t.Errorf("%s %s: status %d, want 400 (%s)", method, path, status, raw)
+				continue
+			}
+			// A HEAD answer has no body to read; its status is the whole contract.
+			if method == http.MethodHead {
+				continue
+			}
+			// The status alone is shared with other refusals of the same route (a
+			// cycle-start answers 400 for its own reasons), so the key must name
+			// the date.
+			var envelope struct {
+				Error string `json:"error"`
+			}
+			if err := json.Unmarshal(raw, &envelope); err != nil || envelope.Error != invalidDateKey {
+				t.Errorf("%s %s: body %s, want the %q error", method, path, raw, invalidDateKey)
 			}
 		}
 	}

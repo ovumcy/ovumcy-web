@@ -77,14 +77,17 @@ func isCalendarMonthQueryShape(value string) bool {
 // isCalendarDayQueryShape mirrors the format half of ParseDayDate: the
 // "2006-01-02" layout after trimming.
 //
-// ParseDayDate additionally refuses a date the request's own zone skips
-// entirely (a DST jump over local midnight), which needs a *time.Location this
-// policy deliberately does not take — it also filters `back` values, where no
-// request zone applies. The residual is therefore exactly "a well-formed date
-// that does not exist in the viewer's zone": ten digits and two dashes, which
-// cannot carry an address, a token or an error code. The page itself still
-// refuses such a date through ParseDayDate; only the rendered address is
-// slightly more permissive than the consumer.
+// ParseDayDate additionally refuses two kinds of well-formed date: one outside
+// the accepted range (DayDateMin..DayDateMax), and one the request's own zone
+// skips entirely (a DST jump over local midnight). The zone half needs a
+// *time.Location this policy deliberately does not take — it also filters
+// `back` values, where no request zone applies — and the range half is left to
+// the same single parse entry point rather than restated here. The residual is
+// therefore exactly "a well-formed date that is out of range or does not exist
+// in the viewer's zone": ten digits and two dashes, which cannot carry an
+// address, a token or an error code. The page itself still refuses such a date
+// through ParseDayDate; only the rendered address is slightly more permissive
+// than the consumer.
 func isCalendarDayQueryShape(value string) bool {
 	_, err := time.Parse("2006-01-02", strings.TrimSpace(value))
 	return err == nil
