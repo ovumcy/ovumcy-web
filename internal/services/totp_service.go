@@ -131,27 +131,9 @@ func (service *TOTPService) ResetAttempts(secretKey []byte, clientKey string, us
 	service.attemptPolicy.ResetClient(clientKey)
 }
 
-// CheckDisableRateLimit returns ErrTOTPDisableRateLimited when the client or user
-// has exceeded the allowed number of disable-confirmation password attempts.
-func (service *TOTPService) CheckDisableRateLimit(secretKey []byte, clientKey string, userID uint, now time.Time) error {
-	if service.disableAttemptPolicy.TooManyRecent(secretKey, clientKey, strconv.FormatUint(uint64(userID), 10), now) {
-		return ErrTOTPDisableRateLimited
-	}
-	return nil
-}
-
-// RecordDisableFailure records a failed disable-confirmation password attempt.
-func (service *TOTPService) RecordDisableFailure(secretKey []byte, clientKey string, userID uint, now time.Time) {
-	service.disableAttemptPolicy.AddFailure(secretKey, clientKey, strconv.FormatUint(uint64(userID), 10), now)
-}
-
-// ResetDisableAttempts clears the disable-confirmation failure counters after
-// success — the client's and the account's. Disabling TOTP needs a live session
-// of this account, so the identity counter holds only the owner's own typos
-// (see AuthAttemptPolicy.ResetAll).
-func (service *TOTPService) ResetDisableAttempts(secretKey []byte, clientKey string, userID uint) {
-	service.disableAttemptPolicy.ResetAll(secretKey, clientKey, strconv.FormatUint(uint64(userID), 10))
-}
+// The disable-confirmation password has no check/record/reset of its own here:
+// it is drawn through DisableReauthBudget and SettingsService.VerifyReauth, the
+// one re-auth path (settings_reauth_budget.go).
 
 // GenerateSetupKey generates a new TOTP key for the given issuer and account name.
 // The raw secret (key.Secret()) should be passed to ValidateCodeRaw during enrollment

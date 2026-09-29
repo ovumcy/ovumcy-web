@@ -191,20 +191,26 @@ func (handler *Handler) DisableTOTP2FA(c fiber.Ctx) error {
 		return handler.respondMappedError(c, settingsInvalidInputErrorSpec())
 	}
 	password := input.Password
+	// This route's own request check, answered before any budget is read: a
+	// blank password is refused as invalid input here, uncounted, where the
+	// settings actions answer it after their budget check. VerifyReauth still
+	// trims the password it compares.
 	if strings.TrimSpace(password) == "" {
 		return handler.respondMappedError(c, settingsInvalidInputErrorSpec())
 	}
 
-	if err := handler.totpService.CheckDisableRateLimit(handler.secretKey, c.IP(), user.ID, time.Now()); err != nil {
-		spec := totpDisableRateLimitedErrorSpec()
-		handler.logSecurityError(c, "settings.2fa.disable", spec)
-		return handler.respondMappedError(c, spec)
-	}
-
-	// The hash comes from the session user, never an email lookup; the compare is unbudgeted
-	// on purpose because totp.disable above is this route's only attempt budget.
-	if err := handler.settingsService.ValidateCurrentPassword(user, password); err != nil {
-		handler.totpService.RecordDisableFailure(handler.secretKey, c.IP(), user.ID, time.Now())
+	// The same budgeted verify as every other Settings action, against the session
+	// user's own hash (never an email lookup); only the budget differs.
+	// totp.disable is this route's only attempt budget: settings.reauth is not
+	// drawn here.
+	attempt := services.ReauthAttempt{ClientKey: c.IP(), UserID: user.ID, Now: time.Now()}
+	disableBudget := handler.totpService.DisableReauthBudget(handler.secretKey)
+	if err := handler.settingsService.VerifyReauth(disableBudget, attempt, user, password); err != nil {
+		if errors.Is(err, services.ErrTOTPDisableRateLimited) {
+			spec := totpDisableRateLimitedErrorSpec()
+			handler.logSecurityError(c, "settings.2fa.disable", spec)
+			return handler.respondMappedError(c, spec)
+		}
 		spec := authFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "invalid credentials")
 		handler.logSecurityError(c, "settings.2fa.disable", spec, settingsReauthCauseField(err))
 		return handler.respondMappedError(c, spec)
@@ -219,7 +225,7 @@ func (handler *Handler) DisableTOTP2FA(c fiber.Ctx) error {
 	}
 	// Only a disable that committed clears the budget: a correct password whose
 	// write was refused (a revocation landed mid-request) proved nothing lasting.
-	handler.totpService.ResetDisableAttempts(handler.secretKey, c.IP(), user.ID)
+	disableBudget.Reset(attempt)
 
 	// DisableTOTP bumped auth_session_version atomically; mirror the bump in
 	// memory and refresh this device's cookie so every other session that

@@ -142,29 +142,19 @@ func (service *SettingsService) ConfigureReauthAttempts(secretKey []byte, limite
 	service.reauthPolicy = NewAuthAttemptPolicy("settings.reauth", limiter, attempts, window)
 }
 
-// VerifyReauthPassword is the budgeted form of ValidateCurrentPassword: the one
-// entry point every password-gated settings action must use. The budget is
-// checked before the compare, so an exhausted budget refuses the correct
-// password too. A blank submission is uncounted; a wrong password and the
-// no-local-password refusal (empty hash or local_auth_enabled=false) both spend
-// an equalized bcrypt and draw the budget.
+// VerifyReauthPassword is VerifyReauth against the settings.reauth budget,
+// followed at once by that budget's reset: the entry point every password-gated
+// settings action uses. The budget is checked before the compare, so an
+// exhausted budget refuses the correct password too. A blank submission is
+// uncounted; a wrong password and the no-local-password refusal (empty hash or
+// local_auth_enabled=false) both spend an equalized bcrypt and draw the budget.
+// The reset runs before the caller's write, as it always has for these actions.
 func (service *SettingsService) VerifyReauthPassword(attempt ReauthAttempt, user *models.User, rawPassword string) error {
-	now := attempt.at()
-	identity := attempt.identity()
-	if service.reauthPolicy.TooManyRecent(service.reauthSecretKey, attempt.clientBucket(), identity, now) {
-		return ErrSettingsReauthRateLimited
-	}
-	if err := service.ValidateCurrentPassword(user, rawPassword); err != nil {
-		// Every refusal that spent a bcrypt draws the budget, not only a wrong
-		// password: the no-local-password branch is equalized to a full compare,
-		// and left uncounted it would be CPU no budget caps.
-		if errors.Is(err, ErrSettingsPasswordInvalid) || errors.Is(err, ErrSettingsLocalPasswordNotSet) {
-			service.reauthPolicy.AddFailure(service.reauthSecretKey, attempt.clientBucket(), identity, now)
-		}
+	budget := service.SettingsReauthBudget()
+	if err := service.VerifyReauth(budget, attempt, user, rawPassword); err != nil {
 		return err
 	}
-	// Session-bound flow: clear the client and the account counters (see ResetAll).
-	service.reauthPolicy.ResetAll(service.reauthSecretKey, attempt.clientBucket(), identity)
+	budget.Reset(attempt)
 	return nil
 }
 

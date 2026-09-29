@@ -164,6 +164,32 @@ func TestDisableTOTP2FABudgetIsTOTPDisableOnlyAndLeavesSettingsReauthUndrawn(t *
 	}
 }
 
+// TestSettingsReauthBudgetIsSettingsOnlyAndLeavesTOTPDisableUndrawn is the
+// other half of the routing the one re-auth helper is given: a settings action
+// spends settings.reauth, refuses the correct password once it is spent, and the
+// 2FA disable, which draws only totp.disable, still accepts the correct password.
+func TestSettingsReauthBudgetIsSettingsOnlyAndLeavesTOTPDisableUndrawn(t *testing.T) {
+	ctx := newTOTPSettingsContext(t, "settings-reauth-budget-split@example.com")
+	enableTOTPForSettingsTest(t, &ctx)
+
+	validate := func(password string) *http.Response {
+		return settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/data-wipe/validate", url.Values{
+			"password": {password},
+		}, map[string]string{"Accept": "application/json"})
+	}
+	for attempt := range services.DefaultSettingsReauthAttemptsLimit {
+		if resp := validate("WrongPassword1"); resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("clear-data validate, wrong password %d: status = %d, want 401", attempt+1, resp.StatusCode)
+		}
+	}
+	if resp := validate("StrongPass1"); resp.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("clear-data validate, correct password after the budget: status = %d, want 429", resp.StatusCode)
+	}
+
+	resp := sendDisableTOTP(t, ctx, "StrongPass1")
+	assertDisableTOTPSucceeded(t, ctx, resp, "2FA disable after the settings.reauth budget was spent")
+}
+
 // TestDisableTOTP2FASuccessResetsTheDisableBudget spends all but one attempt,
 // disables with the correct password, re-enables, and spends all but one
 // attempt again: without the reset the second round trips the limiter early.

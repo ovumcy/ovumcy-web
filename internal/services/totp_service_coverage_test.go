@@ -291,21 +291,21 @@ func TestTOTPService_CheckDisableRateLimit_WindowExpiry(t *testing.T) {
 	staleTime := time.Now().Add(-(DefaultTOTPDisableAttemptsWindow + time.Second))
 	now := time.Now()
 	for range DefaultTOTPDisableAttemptsLimit {
-		svc.RecordDisableFailure(secretKey, "10.0.0.3", 60, staleTime)
+		recordDisableFailure(svc, secretKey, "10.0.0.3", 60, staleTime)
 	}
 
-	if err := svc.CheckDisableRateLimit(secretKey, "10.0.0.3", 60, now); err != nil {
-		t.Errorf("CheckDisableRateLimit() = %v after %d failures outside window; want nil",
+	if err := checkDisableBudget(svc, secretKey, "10.0.0.3", 60, now); err != nil {
+		t.Errorf("disable budget = %v after %d failures outside window; want nil",
 			err, DefaultTOTPDisableAttemptsLimit)
 	}
 
 	freshTime := now.Add(-(DefaultTOTPDisableAttemptsWindow - time.Second))
 	for range DefaultTOTPDisableAttemptsLimit {
-		svc.RecordDisableFailure(secretKey, "10.0.0.4", 61, freshTime)
+		recordDisableFailure(svc, secretKey, "10.0.0.4", 61, freshTime)
 	}
 
-	if err := svc.CheckDisableRateLimit(secretKey, "10.0.0.4", 61, now); err == nil {
-		t.Errorf("CheckDisableRateLimit() = nil after %d failures inside window; want ErrTOTPDisableRateLimited",
+	if err := checkDisableBudget(svc, secretKey, "10.0.0.4", 61, now); err == nil {
+		t.Errorf("disable budget = nil after %d failures inside window; want ErrTOTPDisableRateLimited",
 			DefaultTOTPDisableAttemptsLimit)
 	}
 }
