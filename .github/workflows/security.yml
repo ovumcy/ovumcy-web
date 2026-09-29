@@ -391,8 +391,11 @@ jobs:
   # is no exit code at all: an attempt that fails before the scan (checkout,
   # login, build) still uploads that placeholder and replaces what an earlier
   # attempt of the same run left, so a re-run cannot be judged on its
-  # predecessor's `0`. The findings are in this job's log; the one SARIF entry
-  # in the Security tab stays `trivy-image`'s.
+  # predecessor's `0`. The verdict lives under the runner's temp directory, not
+  # in the workspace: on a fresh runner `actions/checkout` empties a workspace
+  # that has no `.git`, and would take a placeholder written there with it. The
+  # findings are in this job's log; the one SARIF entry in the Security tab
+  # stays `trivy-image`'s.
   trivy-image-arm64:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.run_trivyimage != 'false' }}
@@ -406,10 +409,12 @@ jobs:
       - name: Mark the verdict unscanned
         # First, before anything that can fail: whatever stops this attempt
         # afterwards, the upload below still has a file to send, and it reads
-        # `unscanned`, which `trivy-image` refuses. The scan overwrites it.
+        # `unscanned`, which `trivy-image` refuses. The scan overwrites it. The
+        # file is outside the workspace, which the checkout after this step may
+        # empty; the runner's temp directory is per job and left alone by it.
         run: |
-          mkdir -p .tmp/security
-          echo unscanned > .tmp/security/verdict
+          mkdir -p "${{ runner.temp }}/trivy-image-arm64"
+          echo unscanned > "${{ runner.temp }}/trivy-image-arm64/verdict"
 
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -457,7 +462,7 @@ jobs:
         run: |
           rc=0
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "${{ github.workspace }}:/work" -w /work "${{ env.TRIVY_IMAGE }}" image --scanners vuln --skip-version-check --severity HIGH,CRITICAL --format table --exit-code 1 ovumcy-security:${{ github.sha }} || rc=$?
-          echo "$rc" > .tmp/security/verdict
+          echo "$rc" > "${{ runner.temp }}/trivy-image-arm64/verdict"
           exit "$rc"
 
       - name: Hand the verdict to trivy-image
@@ -465,7 +470,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: verdict-trivy-image-arm64
-          path: .tmp/security/verdict
+          path: ${{ runner.temp }}/trivy-image-arm64/verdict
           # `if: always()` plus `overwrite`: every attempt of this job, however
           # far it got, replaces the artifact an earlier attempt left, or
           # `trivy-image` would go on reading the old verdict, red or green.

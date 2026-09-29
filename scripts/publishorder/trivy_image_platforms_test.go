@@ -35,8 +35,85 @@ var (
 	jobRunner         = regexp.MustCompile(`(?m)^    runs-on: (\S+)[ \t]*$`)
 	placeholder       = regexp.MustCompile(`\$\{\{[^}]*\}\}`)
 	artifactName      = regexp.MustCompile(`(?m)^\s+name: (\S+)[ \t]*$`)
-	artifactPath      = regexp.MustCompile(`(?m)^\s+path: (\S+)[ \t]*$`)
+	artifactPath      = regexp.MustCompile(`(?m)^\s+path: (\S.*?)[ \t]*$`)
+	// verdictRedirect is the line of a step that writes the verdict, and its
+	// target with or without quotes: the placeholder's or the scan's own.
+	verdictRedirect = regexp.MustCompile(`(?m)^\s*echo (?:unscanned|"\$rc") > (?:"([^"]+)"|(\S+))[ \t]*$`)
 )
+
+const (
+	runnerTempExpr = "${{ runner.temp }}"
+	workspaceExpr  = "${{ github.workspace }}"
+)
+
+// verdictPathProblems judges where a helper job keeps its verdict. The
+// placeholder step, the scan and the upload must name one path, and it must be
+// under the runner's temp directory: `actions/checkout` empties a workspace
+// that has no `.git`, and a placeholder written there before it is gone when a
+// later step fails, which leaves the upload with no file and the previous
+// attempt's artifact in place.
+func verdictPathProblems(block string) []string {
+	var problems []string
+	seen := map[string]bool{}
+	for _, leg := range []struct{ label, step string }{
+		{"the placeholder step", unscannedStepName},
+		{"the scan step", scanStepName},
+	} {
+		text, _ := stepText(block, leg.step)
+		found := verdictRedirect.FindStringSubmatch(text)
+		if found == nil {
+			problems = append(problems, leg.label+" writes no verdict in a form this guard reads")
+			continue
+		}
+		seen[found[1]+found[2]] = true
+	}
+	upload, _ := stepText(block, "Hand the verdict to trivy-image")
+	if found := artifactPath.FindStringSubmatch(upload); found == nil {
+		problems = append(problems, "the upload names no `path:`")
+	} else {
+		seen[found[1]] = true
+	}
+	if len(seen) > 1 {
+		var paths []string
+		for p := range seen {
+			paths = append(paths, p)
+		}
+		slices.Sort(paths)
+		problems = append(problems, "the placeholder, the scan and the upload do not name one verdict path: "+strings.Join(paths, ", "))
+	}
+	for p := range seen {
+		if !strings.HasPrefix(p, runnerTempExpr+"/") {
+			problems = append(problems, "the verdict path "+p+" is not under "+runnerTempExpr+", so a checkout that empties the workspace can remove it")
+		}
+	}
+	return problems
+}
+
+// runnerPath turns the workflow's verdict path into the file the harness wrote:
+// the runner's temp directory is a directory of its own, and a path that is not
+// absolute is the workspace's, as a step's working directory makes it.
+func runnerPath(expr, workspace, temp string) string {
+	resolved := filepath.FromSlash(strings.ReplaceAll(strings.ReplaceAll(expr, runnerTempExpr, filepath.ToSlash(temp)), workspaceExpr, filepath.ToSlash(workspace)))
+	if !filepath.IsAbs(resolved) {
+		resolved = filepath.Join(workspace, resolved)
+	}
+	return resolved
+}
+
+// emptyLikeCheckout does what actions/checkout does to a directory that has
+// no `.git`: deletes every entry in it.
+func emptyLikeCheckout(t *testing.T, dir string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if err := os.RemoveAll(filepath.Join(dir, entry.Name())); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
 
 // securityJobs cuts security.yml into its jobs, in file order.
 func securityJobs(content string) (names []string, blocks map[string]string) {
@@ -266,8 +343,9 @@ func TestTrivyImageCoverageGuardGoesRedWhenTheListsDrift(t *testing.T) {
 
 // runStepIn runs one step's `run:` block the way the runner does (bash -e), in
 // a directory the caller keeps so two steps of one job can run one after the
-// other over the same workspace, with `docker` shadowed by the stub.
-func runStepIn(t *testing.T, bash, dir, block, stub string) error {
+// other over the same workspace, with `docker` shadowed by the stub. The
+// runner's temp directory is `temp`, a directory of its own outside `dir`.
+func runStepIn(t *testing.T, bash, dir, temp, block, stub string) error {
 	t.Helper()
 
 	marker := "        run: |\n"
@@ -279,7 +357,8 @@ func runStepIn(t *testing.T, bash, dir, block, stub string) error {
 	for _, line := range strings.Split(block[start+len(marker):], "\n") {
 		script = append(script, strings.TrimPrefix(line, "          "))
 	}
-	body := placeholder.ReplaceAllString(strings.Join(script, "\n"), "x")
+	body := strings.ReplaceAll(strings.Join(script, "\n"), runnerTempExpr, filepath.ToSlash(temp))
+	body = placeholder.ReplaceAllString(body, "x")
 
 	file := filepath.Join(dir, "step.sh")
 	if err := os.WriteFile(file, []byte(stub+body), 0o644); err != nil {
@@ -352,11 +431,18 @@ func TestTheArm64VerdictTravelsFromTheScanToTheRequiredCheck(t *testing.T) {
 		if found := workflowfile.StepFailOpenKeys(unscanned); len(found) > 0 {
 			t.Errorf("%s's %q carries %q: the placeholder must be written on every attempt", helper, unscannedStepName, found)
 		}
-		placeholderDir := t.TempDir()
-		if err := runStepIn(t, bash, placeholderDir, unscanned, ""); err != nil {
+		// The checkout that follows empties a workspace with no `.git`, so the
+		// verdict is kept where it cannot reach: one path for the placeholder,
+		// the scan and the upload, outside the workspace.
+		if problems := verdictPathProblems(block); len(problems) > 0 {
+			t.Errorf("%s keeps its verdict where a checkout can remove it or the legs disagree:\n%s", helper, strings.Join(problems, "\n"))
+		}
+		placeholderDir, placeholderTemp := t.TempDir(), t.TempDir()
+		if err := runStepIn(t, bash, placeholderDir, placeholderTemp, unscanned, ""); err != nil {
 			t.Fatalf("%s's %q failed: %v", helper, unscannedStepName, err)
 		}
-		left, readErr := os.ReadFile(filepath.Join(placeholderDir, filepath.FromSlash(uploaded[1])))
+		emptyLikeCheckout(t, placeholderDir)
+		left, readErr := os.ReadFile(runnerPath(uploaded[1], placeholderDir, placeholderTemp))
 		if readErr != nil || strings.TrimSpace(string(left)) == "" || strings.TrimSpace(string(left)) == "0" {
 			t.Fatalf("%q wrote %q (%v) to the path the upload reads, %s, want a non-empty verdict that is not 0", unscannedStepName, left, readErr, uploaded[1])
 		}
@@ -386,15 +472,16 @@ func TestTheArm64VerdictTravelsFromTheScanToTheRequiredCheck(t *testing.T) {
 			t.Run(helper+"/"+testCase.name, func(t *testing.T) {
 				stub := "docker() { return " + testCase.exit + "; }\n"
 				// The placeholder is already in the workspace when the scan runs.
-				dir := t.TempDir()
-				if err := runStepIn(t, bash, dir, unscanned, ""); err != nil {
+				dir, temp := t.TempDir(), t.TempDir()
+				if err := runStepIn(t, bash, dir, temp, unscanned, ""); err != nil {
 					t.Fatal(err)
 				}
-				err := runStepIn(t, bash, dir, scan, stub)
+				emptyLikeCheckout(t, dir)
+				err := runStepIn(t, bash, dir, temp, scan, stub)
 				if (err == nil) != testCase.wantScan {
 					t.Fatalf("the scan step exited %v for Trivy exit %s, want pass=%v", err, testCase.exit, testCase.wantScan)
 				}
-				written, readErr := os.ReadFile(filepath.Join(dir, filepath.FromSlash(uploaded[1])))
+				written, readErr := os.ReadFile(runnerPath(uploaded[1], dir, temp))
 				if readErr != nil || strings.TrimSpace(string(written)) != testCase.exit {
 					t.Fatalf("the scan wrote verdict %q (%v) to the path the upload reads, %s, want %s", written, readErr, uploaded[1], testCase.exit)
 				}
@@ -439,6 +526,42 @@ func TestTheArm64VerdictTravelsFromTheScanToTheRequiredCheck(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestTheArm64VerdictPathGuardGoesRedWhenThePathDrifts feeds the path guard the
+// drifts it exists for, each on the real job, so a guard that read nothing
+// would fail here.
+func TestTheArm64VerdictPathGuardGoesRedWhenThePathDrifts(t *testing.T) {
+	const helper = requiredScanJob + "-arm64"
+	security := workflowfile.Read(t, securityWorkflow)
+	_, blocks := securityJobs(security)
+	job := blocks[helper]
+	if problems := verdictPathProblems(job); len(problems) > 0 {
+		t.Fatalf("the guard refuses the workflow's own job, so the cases below prove nothing: %v", problems)
+	}
+	target := runnerTempExpr + "/" + helper + "/verdict"
+
+	for _, testCase := range []struct {
+		name  string
+		block string
+		want  string
+	}{
+		{"every leg moves back into the workspace, relative", strings.ReplaceAll(job, target, ".tmp/security/verdict"), "is not under " + runnerTempExpr},
+		{"every leg moves to the workspace expression", strings.ReplaceAll(job, target, workspaceExpr+"/.tmp/security/verdict"), "is not under " + runnerTempExpr},
+		{"the scan writes elsewhere", strings.Replace(job, `echo "$rc" > "`+target+`"`, `echo "$rc" > "`+runnerTempExpr+`/other/verdict"`, 1), "do not name one verdict path"},
+		{"the upload reads elsewhere", strings.Replace(job, "path: "+target, "path: "+runnerTempExpr+"/other/verdict", 1), "do not name one verdict path"},
+		{"the placeholder writes elsewhere", strings.Replace(job, "echo unscanned > \""+target+"\"", "echo unscanned > .tmp/security/verdict", 1), "do not name one verdict path"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			if testCase.block == job {
+				t.Fatal("the case changes nothing")
+			}
+			problems := strings.Join(verdictPathProblems(testCase.block), "\n")
+			if !strings.Contains(problems, testCase.want) {
+				t.Errorf("the guard answered %q, want a problem naming %q", problems, testCase.want)
+			}
+		})
 	}
 }
 
