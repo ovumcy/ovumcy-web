@@ -24,8 +24,19 @@ import (
 // keeps the exact form-then-header order and the ErrTokenNotFound sentinel.
 func CSRFTokenExtractor() extractors.Extractor {
 	return extractors.FromCustom("csrf_token", func(c fiber.Ctx) (string, error) {
-		if token := strings.TrimSpace(c.FormValue("csrf_token")); token != "" {
-			return token, nil
+		// Form bodies only. The query string never carries the token, and a
+		// JSON body is skipped: this extractor runs ahead of the body-size
+		// guard, and decoding a compressed JSON body here would inflate it
+		// before that guard could refuse it. A JSON client sends the header.
+		if !hasJSONBody(c) {
+			input := struct {
+				Token string `form:"csrf_token"`
+			}{}
+			if bindRequestBody(c, &input) == nil {
+				if token := strings.TrimSpace(input.Token); token != "" {
+					return token, nil
+				}
+			}
 		}
 		if token := strings.TrimSpace(c.Get("X-CSRF-Token")); token != "" {
 			return token, nil

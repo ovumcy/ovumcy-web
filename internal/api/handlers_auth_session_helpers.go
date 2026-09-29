@@ -12,7 +12,7 @@ import (
 
 func parseForgotPasswordInput(c fiber.Ctx) (forgotPasswordInput, string) {
 	input := forgotPasswordInput{}
-	if err := c.Bind().Body(&input); err != nil {
+	if err := bindRequestBody(c, &input); err != nil {
 		return forgotPasswordInput{}, "invalid input"
 	}
 	input.Email = services.NormalizeAuthEmail(input.Email)
@@ -70,7 +70,7 @@ func jsonBodyOmitsPassword(c fiber.Ctx) bool {
 	// forgotPasswordInput before calling, and this probe is a strict subset of it
 	// whose single member accepts everything that bind accepted, plus null. A
 	// body that reaches here has already decoded once.
-	if err := c.Bind().Body(&probe); err != nil {
+	if err := bindRequestBody(c, &probe); err != nil {
 		return false
 	}
 	// codecov:ignore:end
@@ -79,7 +79,7 @@ func jsonBodyOmitsPassword(c fiber.Ctx) bool {
 
 func parseResetPasswordInput(c fiber.Ctx) (resetPasswordInput, string) {
 	input := resetPasswordInput{}
-	if err := c.Bind().Body(&input); err != nil {
+	if err := bindRequestBody(c, &input); err != nil {
 		return resetPasswordInput{}, "invalid input"
 	}
 

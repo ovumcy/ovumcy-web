@@ -321,7 +321,9 @@ func (handler *Handler) respondAuthErrorChannel(c fiber.Ctx, spec APIErrorSpec, 
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 		case "/api/v1/password-resets":
 			if includeForgotEmail {
-				flash.ForgotEmail = services.NormalizeAuthEmail(c.FormValue("email"))
+				input := forgotPasswordInput{}
+				_ = bindRequestBody(c, &input)
+				flash.ForgotEmail = services.NormalizeAuthEmail(input.Email)
 			}
 			writeFlash(c, flash)
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/forgot-password")

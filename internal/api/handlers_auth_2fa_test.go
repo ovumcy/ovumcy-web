@@ -670,6 +670,58 @@ func TestVerifyTOTPLogin_InvalidCodeRendersLocalizedErrorNotTheSpecKey(t *testin
 	}
 }
 
+// TestVerifyTOTPLogin_IgnoresACodeInTheQueryString pins the challenge's input
+// to the request body. FormValue searched the URL first, so a valid code
+// carried in a link completed the second factor for a body that held none — or
+// a wrong one — and a code in a URL is logged and replayable.
+func TestVerifyTOTPLogin_IgnoresACodeInTheQueryString(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		contentType string
+		body        func(csrfToken string) string
+	}{
+		{"form without a code", "application/x-www-form-urlencoded", func(csrf string) string { return url.Values{"csrf_token": {csrf}}.Encode() }},
+		{"form with a wrong code", "application/x-www-form-urlencoded", func(csrf string) string {
+			return url.Values{"code": {"000000"}, "csrf_token": {csrf}}.Encode()
+		}},
+		{"json without a code", "application/json", func(string) string { return `{}` }},
+		{"json with a wrong code", "application/json", func(string) string { return `{"code":"000000"}` }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app, database := newOnboardingTestAppWithCSRF(t)
+			user := createOnboardingTestUser(t, database, "totp-query-code@example.com", "StrongPass1", true)
+			secretKey := []byte("test-secret-key")
+			rawSecret := setupTOTPForUser(t, database, user.ID, secretKey)
+			pendingCookie := sealTOTPPendingCookieForTest(t, secretKey, user.ID, false)
+
+			validCode, err := totp.GenerateCode(rawSecret, time.Now())
+			if err != nil {
+				t.Fatalf("GenerateCode: %v", err)
+			}
+
+			csrfToken, csrfCookieHeader := extractCSRFCookieAndToken(t, app)
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/sessions/2fa-challenge?code="+validCode,
+				strings.NewReader(tc.body(csrfToken)))
+			req.Header.Set("Content-Type", tc.contentType)
+			req.Header.Set("X-CSRF-Token", csrfToken)
+			req.Header.Set("Cookie", joinCookieHeader(pendingCookie, csrfCookieHeader))
+			req.Header.Set("Accept-Language", "en")
+			resp, err := app.Test(req, testConfigNoTimeout)
+			if err != nil {
+				t.Fatalf("POST /api/v1/sessions/2fa-challenge: %v", err)
+			}
+			defer func() { _ = resp.Body.Close() }()
+
+			if authCookie := responseCookie(resp.Cookies(), authCookieName); authCookie != nil && authCookie.Value != "" {
+				t.Fatal("a code carried only in the query completed the second factor")
+			}
+			if tc.contentType == "application/json" && resp.StatusCode != http.StatusUnauthorized {
+				t.Fatalf("status = %d, want 401 (totp invalid code)", resp.StatusCode)
+			}
+		})
+	}
+}
+
 // --- small helpers for extracting CSRF without a full settings context ---
 
 func extractCSRFCookieAndToken(t *testing.T, app *fiber.App) (string, string) {

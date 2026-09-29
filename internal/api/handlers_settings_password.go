@@ -266,7 +266,7 @@ func (handler *Handler) validateLocalPasswordSetupReauth(ctx context.Context, co
 
 func parseChangePasswordInput(c fiber.Ctx) (changePasswordInput, error) {
 	input := changePasswordInput{}
-	if err := c.Bind().Body(&input); err != nil {
+	if err := bindRequestBody(c, &input); err != nil {
 		return changePasswordInput{}, err
 	}
 	return input, nil
