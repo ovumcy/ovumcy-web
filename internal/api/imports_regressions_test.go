@@ -177,10 +177,7 @@ func gzipImportPayload(t *testing.T, decodedSize int) []byte {
 	t.Helper()
 
 	entry := `{"entries":[{"date":"2026-07-01","period":true,"flow":"medium","cycle_factors":[]}]}`
-	if decodedSize < len(entry) {
-		t.Fatalf("decodedSize %d is below the minimum valid payload of %d bytes", decodedSize, len(entry))
-	}
-	payload := entry + strings.Repeat(" ", decodedSize-len(entry))
+	payload := padBodyToSize(t, entry, decodedSize)
 
 	var compressed bytes.Buffer
 	writer := gzip.NewWriter(&compressed)

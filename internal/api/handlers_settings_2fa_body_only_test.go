@@ -95,15 +95,28 @@ func totpEnabledInDatabase(t *testing.T, ctx settingsSecurityTestContext) bool {
 // validates against it, and a code proven not to.
 func enrollmentFixture(t *testing.T, ctx settingsSecurityTestContext) (setupCookie, validCode, wrongCode string) {
 	t.Helper()
+	setupCookie, secret := enrollmentSecretFixture(t, ctx)
+	return setupCookie, currentTOTPCode(t, secret), invalidTOTPCodeForSkewWindow(t, secret)
+}
+
+// enrollmentSecretFixture returns a setup cookie for a fresh secret and the
+// secret itself, for a caller that has to mint its code at the moment it sends.
+func enrollmentSecretFixture(t *testing.T, ctx settingsSecurityTestContext) (setupCookie, secret string) {
+	t.Helper()
 	key, err := getTOTPServiceForTest(ctx.database).GenerateSetupKey("Ovumcy", ctx.user.Email)
 	if err != nil {
 		t.Fatalf("GenerateSetupKey: %v", err)
 	}
-	code, err := totp.GenerateCode(key.Secret(), time.Now())
+	return sealTOTPSetupCookieForTest(t, []byte("test-secret-key"), ctx.user.ID, key.Secret()), key.Secret()
+}
+
+func currentTOTPCode(t *testing.T, secret string) string {
+	t.Helper()
+	code, err := totp.GenerateCode(secret, time.Now())
 	if err != nil {
 		t.Fatalf("GenerateCode: %v", err)
 	}
-	return sealTOTPSetupCookieForTest(t, []byte("test-secret-key"), ctx.user.ID, key.Secret()), code, invalidTOTPCodeForSkewWindow(t, key.Secret())
+	return code
 }
 
 func enableTOTPForSettingsTest(t *testing.T, ctx *settingsSecurityTestContext) {

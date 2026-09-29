@@ -27,27 +27,15 @@ import (
 // envelope before any handler runs.
 
 // twoFASweepPassword is the password createOnboardingTestUser gives the
-// account behind newTOTPSettingsContext.
+// account behind newSettingsSecurityTestContextWithOptions.
 const twoFASweepPassword = "StrongPass1"
-
-// paddedJSONBody returns the JSON object for fields followed by insignificant
-// whitespace, exactly size bytes long, so the same decodable request sits at
-// or one byte past the cap.
-func paddedJSONBody(t *testing.T, fields map[string]string, size int) string {
-	t.Helper()
-	body := jsonBodyFor(fields)
-	if len(body) > size {
-		t.Fatalf("JSON body %q is %d bytes, longer than the %d requested", body, len(body), size)
-	}
-	return body + strings.Repeat(" ", size-len(body))
-}
 
 // twoFASweepBody encodes a padded JSON body of decodedSize bytes for the named
 // encoding: "identity" sends it as is, "gzip" compresses it, so decodedSize is
 // the wire size for the first and the decoded size for the second.
 func twoFASweepBody(t *testing.T, encoding string, fields map[string]string, decodedSize int) (body, contentEncoding string) {
 	t.Helper()
-	plain := paddedJSONBody(t, fields, decodedSize)
+	plain := padBodyToSize(t, jsonBodyFor(fields), decodedSize)
 	switch encoding {
 	case "identity":
 		return plain, ""
@@ -72,7 +60,8 @@ func TestTOTPSettingsBodyLimitHoldsPerMethodAtAndPastTheCap(t *testing.T) {
 		method    string
 		encoding  string
 		// overCapEnvelope is true where the refusal is requestBodyLimitGuard's
-		// mapped envelope, false where it is the wire cap's bare 413.
+		// mapped envelope, false where fasthttp refuses the wire body while
+		// reading it and app.Test returns fasthttp.ErrBodyTooLarge, no response.
 		overCapEnvelope bool
 	}{
 		{operation: "enroll 2FA, plain JSON", method: http.MethodPut, encoding: "identity", overCapEnvelope: false},
@@ -87,19 +76,23 @@ func TestTOTPSettingsBodyLimitHoldsPerMethodAtAndPastTheCap(t *testing.T) {
 				"totp-sweep-"+strings.ToLower(row.method)+"-"+row.encoding+"@example.com",
 				onboardingTestAppOptions{enableCSRF: true, bodyLimit: limit})
 
-			fields := map[string]string{"password": twoFASweepPassword}
-			setupCookie := ""
+			setupCookie, secret := "", ""
 			enabledBefore := false
 			if row.method == http.MethodPut {
-				var code string
-				setupCookie, code, _ = enrollmentFixture(t, ctx)
-				fields["code"] = code
+				setupCookie, secret = enrollmentSecretFixture(t, ctx)
 			} else {
 				enableTOTPForSettingsTest(t, &ctx)
 				enabledBefore = true
 			}
 
+			// The enrollment code is minted as each request is built, so the
+			// at-cap success never carries a code whose step ran out while the
+			// refusal before it was being served.
 			request := func(size int) twoFARequest {
+				fields := map[string]string{"password": twoFASweepPassword}
+				if secret != "" {
+					fields["code"] = currentTOTPCode(t, secret)
+				}
 				body, contentEncoding := twoFASweepBody(t, row.encoding, fields, size)
 				return twoFARequest{
 					method: row.method, contentType: "application/json", contentEncoding: contentEncoding,
@@ -138,8 +131,14 @@ func TestTOTPSettingsBodyLimitHoldsPerMethodAtAndPastTheCap(t *testing.T) {
 // compressed DELETE refused on its decoded size never reached the handler: the
 // correct password in such a body leaves 2FA on, and a full budget's worth of
 // wrong passwords in such bodies leaves the failed-password budget untouched,
-// so the correct request that follows still disables 2FA. The second subtest
-// is the anchor: the same wrong passwords inside the cap do exhaust it.
+// so the correct request that follows still disables 2FA. The last subtest is
+// the anchor: the same wrong passwords inside the cap do exhaust it.
+//
+// The budget claim has its own account. Fiber's over-limit placeholder text
+// fails to bind and would never draw an attempt, so the claim is only falsified
+// by a handler that received the password; the padded body carries it whole in
+// its first limit bytes, so a guard that forwarded the decoded prefix instead of
+// refusing would draw the budget here, even behind a 413 it still answered.
 func TestTOTPDisableOverCapCompressedBodyDrawsNothingFromTheBudget(t *testing.T) {
 	const limit = bodyLimitGuardTestLimit
 
@@ -152,8 +151,8 @@ func TestTOTPDisableOverCapCompressedBodyDrawsNothingFromTheBudget(t *testing.T)
 		})
 	}
 
-	t.Run("refused past the cap: 2FA stays on and the budget is not drawn", func(t *testing.T) {
-		ctx := newSettingsSecurityTestContextWithOptions(t, "totp-sweep-budget-overcap@example.com",
+	t.Run("refused past the cap: the correct password leaves 2FA on", func(t *testing.T) {
+		ctx := newSettingsSecurityTestContextWithOptions(t, "totp-sweep-overcap-correct@example.com",
 			onboardingTestAppOptions{enableCSRF: true, bodyLimit: limit})
 		enableTOTPForSettingsTest(t, &ctx)
 
@@ -162,6 +161,12 @@ func TestTOTPDisableOverCapCompressedBodyDrawsNothingFromTheBudget(t *testing.T)
 		if !totpEnabledInDatabase(t, ctx) {
 			t.Fatal("a compressed body refused on its decoded size disabled 2FA")
 		}
+	})
+
+	t.Run("refused past the cap: wrong passwords draw nothing from the budget", func(t *testing.T) {
+		ctx := newSettingsSecurityTestContextWithOptions(t, "totp-sweep-budget-overcap@example.com",
+			onboardingTestAppOptions{enableCSRF: true, bodyLimit: limit})
+		enableTOTPForSettingsTest(t, &ctx)
 
 		for attempt := range services.DefaultTOTPDisableAttemptsLimit {
 			assert2FARefusal(t, sendGzipDelete(t, ctx, "WrongPass9", limit+1),
@@ -169,7 +174,11 @@ func TestTOTPDisableOverCapCompressedBodyDrawsNothingFromTheBudget(t *testing.T)
 				"wrong password past the cap, attempt "+strconv.Itoa(attempt+1))
 		}
 
-		assert2FAOkEnvelope(t, ctx.app, sendGzipDelete(t, ctx, twoFASweepPassword, limit))
+		resp := sendGzipDelete(t, ctx, twoFASweepPassword, limit)
+		if resp.StatusCode == http.StatusTooManyRequests {
+			t.Fatal("refused over-cap bodies drew the failed-password budget: the correct request after them was throttled")
+		}
+		assert2FAOkEnvelope(t, ctx.app, resp)
 		if totpEnabledInDatabase(t, ctx) {
 			t.Fatal("the correct request after the refused ones did not disable 2FA")
 		}
@@ -230,9 +239,8 @@ func TestTOTPDisableRefusesACompressedFormBody(t *testing.T) {
 // TestTOTPSettingsJSONRefusalsHoldOverBothEncodings pins the JSON refusals of
 // both 2FA mutations over a plain and a gzip body: a wrong password and a
 // missing session are 401, a wrong enrollment code is 401 totp invalid code,
-// and a missing CSRF header is 403. None of them changes the 2FA state. The
-// CSRF 403 is this test app's bare framework refusal, so it is asserted by
-// status only.
+// and a missing CSRF header is the CSRF middleware's 403. None of them changes
+// the 2FA state.
 func TestTOTPSettingsJSONRefusalsHoldOverBothEncodings(t *testing.T) {
 	for _, encoding := range []string{"identity", "gzip"} {
 		encode := func(t *testing.T, fields map[string]string) (string, string) {
@@ -245,53 +253,70 @@ func TestTOTPSettingsJSONRefusalsHoldOverBothEncodings(t *testing.T) {
 		}
 
 		t.Run("enroll 2FA, "+encoding, func(t *testing.T) {
-			ctx := newTOTPSettingsContext(t, "totp-sweep-refusals-put-"+encoding+"@example.com")
+			ctx := newSettingsSecurityTestContextWithOptions(t, "totp-sweep-refusals-put-"+encoding+"@example.com",
+				onboardingTestAppOptions{enableCSRF: true, auditLogEnabled: true})
 			setupCookie, code, wrongCode := enrollmentFixture(t, ctx)
 
-			put := func(fields map[string]string, withSession, withCSRFHead bool) *http.Response {
+			put := func(fields map[string]string, withSession, withCSRFHead bool) twoFARequest {
 				body, contentEncoding := encode(t, fields)
-				return send2FARequest(t, ctx, twoFARequest{
+				return twoFARequest{
 					method: http.MethodPut, contentType: "application/json", contentEncoding: contentEncoding,
 					body: body, setupCookie: setupCookie, withSession: withSession, withCSRFHead: withCSRFHead,
-				})
+				}
 			}
 			valid := map[string]string{"password": twoFASweepPassword, "code": code}
 
-			assert2FARefusal(t, put(map[string]string{"password": "WrongPass9", "code": code}, true, true),
+			assert2FARefusal(t, send2FARequest(t, ctx, put(map[string]string{"password": "WrongPass9", "code": code}, true, true)),
 				http.StatusUnauthorized, "invalid password", "wrong password")
-			assert2FARefusal(t, put(map[string]string{"password": twoFASweepPassword, "code": wrongCode}, true, true),
+			assert2FARefusal(t, send2FARequest(t, ctx, put(map[string]string{"password": twoFASweepPassword, "code": wrongCode}, true, true)),
 				http.StatusUnauthorized, "totp invalid code", "wrong code")
-			assert2FARefusal(t, put(valid, false, true), http.StatusUnauthorized, "unauthorized", "missing session")
-			if resp := put(valid, true, false); resp.StatusCode != http.StatusForbidden {
-				t.Errorf("missing CSRF header: status = %d, want 403", resp.StatusCode)
-			}
+			assert2FARefusal(t, send2FARequest(t, ctx, put(valid, false, true)), http.StatusUnauthorized, "unauthorized", "missing session")
+			assert2FACSRFRefusal(t, ctx, put(valid, true, false))
 			if totpEnabledInDatabase(t, ctx) {
 				t.Fatal("a refused enrollment enabled 2FA")
 			}
 		})
 
 		t.Run("disable 2FA, "+encoding, func(t *testing.T) {
-			ctx := newTOTPSettingsContext(t, "totp-sweep-refusals-delete-"+encoding+"@example.com")
+			ctx := newSettingsSecurityTestContextWithOptions(t, "totp-sweep-refusals-delete-"+encoding+"@example.com",
+				onboardingTestAppOptions{enableCSRF: true, auditLogEnabled: true})
 			enableTOTPForSettingsTest(t, &ctx)
 
-			del := func(fields map[string]string, withSession, withCSRFHead bool) *http.Response {
+			del := func(fields map[string]string, withSession, withCSRFHead bool) twoFARequest {
 				body, contentEncoding := encode(t, fields)
-				return send2FARequest(t, ctx, twoFARequest{
+				return twoFARequest{
 					method: http.MethodDelete, contentType: "application/json", contentEncoding: contentEncoding,
 					body: body, withSession: withSession, withCSRFHead: withCSRFHead,
-				})
+				}
 			}
 			valid := map[string]string{"password": twoFASweepPassword}
 
-			assert2FARefusal(t, del(map[string]string{"password": "WrongPass9"}, true, true),
+			assert2FARefusal(t, send2FARequest(t, ctx, del(map[string]string{"password": "WrongPass9"}, true, true)),
 				http.StatusUnauthorized, "invalid credentials", "wrong password")
-			assert2FARefusal(t, del(valid, false, true), http.StatusUnauthorized, "unauthorized", "missing session")
-			if resp := del(valid, true, false); resp.StatusCode != http.StatusForbidden {
-				t.Errorf("missing CSRF header: status = %d, want 403", resp.StatusCode)
-			}
+			assert2FARefusal(t, send2FARequest(t, ctx, del(valid, false, true)), http.StatusUnauthorized, "unauthorized", "missing session")
+			assert2FACSRFRefusal(t, ctx, del(valid, true, false))
 			if !totpEnabledInDatabase(t, ctx) {
 				t.Fatal("a refused disable turned 2FA off")
 			}
 		})
+	}
+}
+
+// assert2FACSRFRefusal sends spec, which carries no CSRF header, and requires
+// the 403 to be the CSRF middleware's own: the response body is the framework's
+// bare Forbidden and says nothing about who refused, so the proof is the
+// csrf/denied security event with reason "missing token", which only the CSRF
+// ErrorHandler emits. Any other guard answering 403 in its place fails here.
+// ctx's app must run with the audit stream on.
+func assert2FACSRFRefusal(t *testing.T, ctx settingsSecurityTestContext, spec twoFARequest) {
+	t.Helper()
+	resp, logOutput := captureAuditedRequest(t, ctx.app, new2FARequest(ctx, spec))
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("missing CSRF header: status = %d, want 403", resp.StatusCode)
+	}
+	line := securityEventLine(t, logOutput, "csrf", "denied")
+	if !strings.Contains(line, `reason="missing token"`) {
+		t.Errorf("missing CSRF header: csrf denial %q does not name the missing token", line)
 	}
 }
