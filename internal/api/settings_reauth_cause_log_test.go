@@ -73,6 +73,48 @@ func TestSettingsReauthCauseFieldDiffersInTheLogWhileTheResponseDoesNot(t *testi
 	}
 }
 
+// TestDisableTOTP2FAReauthCauseFieldDiffersInTheLogWhileTheResponseDoesNot is
+// the 2FA-disable sibling: DisableTOTP2FA re-authenticates with the unbudgeted
+// ValidateCurrentPassword and logs its refusal itself, so it is a third,
+// independent call site of settingsReauthCauseField. A wrong password and an
+// account with no local password get one byte-identical 401, and only the
+// settings.2fa.disable log line tells them apart.
+func TestDisableTOTP2FAReauthCauseFieldDiffersInTheLogWhileTheResponseDoesNot(t *testing.T) {
+	originalWriter := log.Writer()
+	defer log.SetOutput(originalWriter)
+
+	wrongPasswordCtx := newSettingsSecurityTestContextWithOptions(t, "totp-disable-cause-wrong-password@example.com", onboardingTestAppOptions{enableCSRF: true, auditLogEnabled: true})
+	enableTOTPForSettingsTest(t, &wrongPasswordCtx)
+	noLocalPasswordCtx := newOIDCOnlySettingsSecurityTestContextWithOptions(t, "totp-disable-cause-no-local-password@example.com", onboardingTestAppOptions{auditLogEnabled: true})
+	enableTOTPForSettingsTest(t, &noLocalPasswordCtx)
+
+	var wrongPasswordLog bytes.Buffer
+	log.SetOutput(&wrongPasswordLog)
+	wrongPasswordResponse := sendDisableTOTP(t, wrongPasswordCtx, "NotTheRealPassword1")
+	assertDisableTOTPRefused(t, wrongPasswordResponse, http.StatusUnauthorized, disableTOTPInvalidKey, "wrong password")
+
+	var noLocalPasswordLog bytes.Buffer
+	log.SetOutput(&noLocalPasswordLog)
+	noLocalPasswordResponse := sendDisableTOTP(t, noLocalPasswordCtx, "unused")
+	assertDisableTOTPRefused(t, noLocalPasswordResponse, http.StatusUnauthorized, disableTOTPInvalidKey, "no local password")
+
+	wrongPasswordLine := securityEventLine(t, wrongPasswordLog.String(), "settings.2fa.disable", "denied")
+	noLocalPasswordLine := securityEventLine(t, noLocalPasswordLog.String(), "settings.2fa.disable", "denied")
+
+	if !strings.Contains(wrongPasswordLine, `reauth_cause="invalid_password"`) {
+		t.Fatalf("expected the wrong-password log line to carry reauth_cause=invalid_password, got %q", wrongPasswordLine)
+	}
+	if !strings.Contains(noLocalPasswordLine, `reauth_cause="no_local_password"`) {
+		t.Fatalf("expected the no-local-password log line to carry reauth_cause=no_local_password, got %q", noLocalPasswordLine)
+	}
+	if strings.Contains(wrongPasswordLine, `reauth_cause="no_local_password"`) {
+		t.Fatalf("wrong-password log line must not also carry reauth_cause=no_local_password: %q", wrongPasswordLine)
+	}
+	if strings.Contains(noLocalPasswordLine, `reauth_cause="invalid_password"`) {
+		t.Fatalf("no-local-password log line must not also carry reauth_cause=invalid_password: %q", noLocalPasswordLine)
+	}
+}
+
 // TestPasswordChangeReauthCauseFieldDiffersInTheLogWhileTheResponseDoesNot is
 // the password-change sibling of
 // TestSettingsReauthCauseFieldDiffersInTheLogWhileTheResponseDoesNot: the

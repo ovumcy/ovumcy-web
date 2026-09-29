@@ -201,23 +201,14 @@ func (handler *Handler) DisableTOTP2FA(c fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 
-	// Re-authenticate against the session user's own stored hash, never by
-	// resolving an account from its email: an email lookup can name a
-	// different row than the session's, and refuses a mailbox two accounts
-	// share. The unbudgeted ValidateCurrentPassword is used on purpose —
-	// totp.disable above is this route's only attempt budget, and
-	// VerifyReauthPassword would draw the separate settings.reauth one.
-	// ValidateCurrentPassword equalizes the no-local-password branch to a
-	// full bcrypt compare, and every refusal it returns spent one, so each
-	// is booked against the budget.
+	// The hash comes from the session user, never an email lookup; the compare is unbudgeted
+	// on purpose because totp.disable above is this route's only attempt budget.
 	if err := handler.settingsService.ValidateCurrentPassword(user.PasswordHash, password); err != nil {
 		handler.totpService.RecordDisableFailure(handler.secretKey, c.IP(), user.ID, time.Now())
 		spec := authFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "invalid credentials")
 		handler.logSecurityError(c, "settings.2fa.disable", spec, settingsReauthCauseField(err))
 		return handler.respondMappedError(c, spec)
 	}
-
-	handler.totpService.ResetDisableAttempts(handler.secretKey, c.IP(), user.ID)
 
 	if err := handler.totpService.DisableTOTP(c.Context(), user.ID, user.AuthSessionVersion); err != nil {
 		if errors.Is(err, services.ErrAuthSessionVersionChanged) {
@@ -226,6 +217,9 @@ func (handler *Handler) DisableTOTP2FA(c fiber.Ctx) error {
 		handler.logSecurityError(c, "settings.2fa.disable", totpInternalErrorSpec())
 		return handler.respondMappedError(c, totpInternalErrorSpec())
 	}
+	// Only a disable that committed clears the budget: a correct password whose
+	// write was refused (a revocation landed mid-request) proved nothing lasting.
+	handler.totpService.ResetDisableAttempts(handler.secretKey, c.IP(), user.ID)
 
 	// DisableTOTP bumped auth_session_version atomically; mirror the bump in
 	// memory and refresh this device's cookie so every other session that
