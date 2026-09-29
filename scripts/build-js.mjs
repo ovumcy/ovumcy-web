@@ -1,5 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const appBundleSources = [
@@ -116,6 +115,8 @@ function build() {
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// argv[1] is unresolved while import.meta.url is realpath'd by the ESM loader;
+// comparing them raw turns a run through a junction into a silent no-op.
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   build();
 }
