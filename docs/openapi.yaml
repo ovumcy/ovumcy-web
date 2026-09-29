@@ -2890,6 +2890,19 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '429': { $ref: '#/components/responses/RateLimited' }
+        '500':
+          description: |
+            `failed to update webhook settings` - persistence failed and nothing
+            was saved. `failed to load settings` - the save COMMITTED and only the
+            read-back that builds the answer failed, so re-read the settings
+            rather than retry as if nothing had been stored. Neither carries the
+            endpoint.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "failed to load settings"
+                error_detail: { key: "failed to load settings", category: "internal", target: "global" }
     delete:
       tags: [settings]
       summary: Withdraw the stored webhook endpoint (owner only).
