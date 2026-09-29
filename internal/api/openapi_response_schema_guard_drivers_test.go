@@ -540,11 +540,9 @@ func TestOpenAPIResponseSchemaDescriptionsMatchTheValuesTheServerAnswers(t *test
 		}
 	})
 
-	// WEB-99: the webhook save echoes the posted `webhook_enabled` even when
-	// `webhook_remove_url` turned delivery off. WebhookSettingsUpdated documents
-	// that echo as it is; this pins the documented behaviour, not a desired one,
-	// and is expected to change when WEB-99 is fixed.
-	t.Run("WebhookSettingsUpdated echoes the request, not the stored switch", func(t *testing.T) {
+	// WebhookSettingsUpdated reports the flags as saved: a `webhook_remove_url`
+	// save turns delivery off, and the answer says so whatever was posted.
+	t.Run("WebhookSettingsUpdated reports the stored switch, not the request", func(t *testing.T) {
 		owner := newSchemaGuardOwnerWithOptions(t, onboardingTestAppOptions{outboundDeliveryEnabled: true})
 		reload := func(t *testing.T) models.User {
 			t.Helper()
@@ -561,17 +559,18 @@ func TestOpenAPIResponseSchemaDescriptionsMatchTheValuesTheServerAnswers(t *test
 				seeded.WebhookEnabled, seeded.WebhookURL != "", seeded.WebhookNotifyPeriod, seeded.WebhookNotifyOvulation)
 		}
 
-		// notify_period is omitted (stored true) and notify_ovulation posted true
-		// (stored false), so an echo of the stored flags cannot pass for one of
-		// the request.
-		echo := decode(t)(owner.send(t, http.MethodPost, "/api/v1/users/current/webhook", map[string]any{
+		// webhook_enabled is posted true against a removal that forces it off;
+		// notify_period is omitted and notify_ovulation posted true, and both are
+		// stored as sent.
+		answer := decode(t)(owner.send(t, http.MethodPost, "/api/v1/users/current/webhook", map[string]any{
 			"webhook_enabled": true, "webhook_remove_url": true, "webhook_notify_ovulation": true,
 		}))
-		if echo["webhook_enabled"] != true || echo["notify_period"] != false || echo["notify_ovulation"] != true {
-			t.Fatalf("want the request echoed (enabled true, notify_period false, notify_ovulation true), got %v", echo)
-		}
-		if stored := reload(t); stored.WebhookEnabled || stored.WebhookURL != "" {
+		stored := reload(t)
+		if stored.WebhookEnabled || stored.WebhookURL != "" {
 			t.Fatalf("webhook_remove_url must clear the endpoint and disable delivery; stored enabled=%v url set=%v", stored.WebhookEnabled, stored.WebhookURL != "")
+		}
+		if answer["webhook_enabled"] != false || answer["notify_period"] != false || answer["notify_ovulation"] != true {
+			t.Fatalf("want the saved state (enabled false, notify_period false, notify_ovulation true), got %v", answer)
 		}
 	})
 

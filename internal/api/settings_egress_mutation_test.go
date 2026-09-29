@@ -690,6 +690,50 @@ func TestEgressMutationAnswersAMappedErrorWhenTheRebuildCannotRead(t *testing.T)
 	}
 }
 
+// TestWebhookJSONSaveAnswersAMappedErrorWhenTheReadAfterTheWriteFails covers the
+// JSON arm between the write and the body. The write has committed, so a body
+// assembled from the request would report a state nobody read back; the honest
+// answer is a failure, with no flag in it.
+func TestWebhookJSONSaveAnswersAMappedErrorWhenTheReadAfterTheWriteFails(t *testing.T) {
+	handler, database := newEgressLedgerHandler(t, true)
+	owner := createEgressLedgerUser(t, database, "webhook-json-read-fails@example.com", models.RoleOwner)
+	dependencies := newTestHandlerDependencies(database, mustEnglishManager(t), onboardingTestAppOptions{outboundDeliveryEnabled: true})
+	handler.settingsViewService = services.NewSettingsViewService(
+		failingSettingsLoader{},
+		dependencies.ExportService,
+		dependencies.SymptomService,
+		services.NewEgressLedgerService(dependencies.WebhookSettingsService, dependencies.CalendarFeedSettings, true),
+	)
+	handler.webhookSettingsSvc = dependencies.WebhookSettingsService
+
+	app := fiber.New()
+	app.Use(handler.LanguageMiddleware)
+	app.Use(func(c fiber.Ctx) error {
+		c.Locals(contextUserKey, owner)
+		return c.Next()
+	})
+	app.Post("/api/v1/users/current/webhook", handler.UpdateWebhookSettings)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users/current/webhook", strings.NewReader(`{"webhook_enabled":true,"webhook_url":"https://ntfy.example.test/read-fails","webhook_notify_period":true}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json")
+	response, err := app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("json save request failed: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("expected a mapped 500 when the read after the write fails, got %d", response.StatusCode)
+	}
+	if body := mustReadBodyString(t, response.Body); strings.Contains(body, "webhook_enabled") {
+		t.Fatalf("a save answer carrying the switch was built without a read: %s", body)
+	}
+	if !reloadEgressUser(t, database, owner.ID).WebhookEnabled {
+		t.Fatal("precondition: the write must have committed before the read failed")
+	}
+}
+
 // TestARefusalFallsBackToTheMappedErrorWhenTheRebuildCannotRead is the same arm
 // on the refusal path. Answering a refusal with the card means READING the row
 // to build it, and that read can fail on its own — at which point the card is

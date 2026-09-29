@@ -510,10 +510,10 @@ components:
     WebhookSettingsUpdated:
       type: object
       description: |
-        JSON answer of the webhook save. The three flags echo the REQUEST, not
-        the stored state: with `webhook_remove_url: true` delivery is turned
-        off while `webhook_enabled` still reports the posted value. The
-        endpoint URL is never echoed.
+        JSON answer of the webhook save. The three flags report the settings AS
+        SAVED, read back after the write, not the request: with
+        `webhook_remove_url: true` delivery is turned off and `webhook_enabled`
+        reports `false` whatever was posted. The endpoint URL is never echoed.
       required: [ok, status, webhook_enabled, notify_period, notify_ovulation]
       properties:
         ok:
