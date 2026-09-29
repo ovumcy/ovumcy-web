@@ -100,7 +100,8 @@ const (
 	scanStep          = "Scan every platform of the pushed digest before signing it"
 
 	mirrorLoginStep  = "Log in to Docker Hub for the mirror"
-	mirrorStep       = "Mirror the signed digest to Docker Hub"
+	mirrorProbeStep  = "Report Docker Hub's rate-limit view of the mirror login"
+	mirrorStep       ="Mirror the signed digest to Docker Hub"
 	mirrorVerifyStep = "Verify every mirrored tag anonymously and against the signed digest"
 )
 
@@ -318,7 +319,7 @@ func TestTheDockerHubMirrorRunsAfterTheWholeGhcrReleaseIsVerified(t *testing.T) 
 		t.Fatalf("%s, job %q: no step named %q, so this guard cannot find the window it is meant to hold", publishWorkflow, publishJob, publicStep)
 	}
 
-	want := []string{publicStep, mirrorLoginStep, mirrorStep, mirrorVerifyStep}
+	want := []string{publicStep, mirrorLoginStep, mirrorProbeStep, mirrorStep, mirrorVerifyStep}
 	if got := steps[public:]; !slices.Equal(got, want) {
 		t.Errorf("%s, job %q ends on these steps:\n  %v\nand this guard has reviewed:\n  %v\nNothing may reach Docker Hub before %q has resolved every GHCR alias to the signed digest, and the mirror is not published until %q has resolved every Docker Hub alias to the same one",
 			publishWorkflow, publishJob, got, want, publicStep, mirrorVerifyStep)
@@ -390,15 +391,15 @@ func TestTheMirrorCopiesTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 			// The bytes cross once, to a DIGEST destination, so Docker Hub
 			// holds the manifest under no alias at all; the mirror is signed
 			// and read back there; only then is an alias written, and each
-			// from the mirror's own digest, which is the same manifest and
-			// costs a manifest write rather than a second transfer. Every
-			// source is a digest, which is the part that matters.
+			// from GHCR's digest — the same manifest, whose blobs already
+			// crossed, so it costs Docker Hub a manifest write and no pulls.
+			// Every source is a digest, which is the part that matters.
 			wantCosign: []string{
 				"COSIGN copy --force " + imageName + "@" + digest + " " + mirrorName + "@" + digest,
 				"COSIGN sign --yes " + mirrorName + "@" + digest,
 				"COSIGN verify --certificate-identity-regexp " + identityRegexp + " --certificate-oidc-issuer https://token.actions.githubusercontent.com " + mirrorName + "@" + digest,
-				"COSIGN copy --force " + mirrorName + "@" + digest + " " + mirrorName + ":v2.0.0",
-				"COSIGN copy --force " + mirrorName + "@" + digest + " " + mirrorName + ":latest",
+				"COSIGN copy --force " + imageName + "@" + digest + " " + mirrorName + ":v2.0.0",
+				"COSIGN copy --force " + imageName + "@" + digest + " " + mirrorName + ":latest",
 			},
 		},
 		{
@@ -424,7 +425,7 @@ func TestTheMirrorCopiesTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 				"COSIGN sign --yes " + mirrorName + "@" + digest,
 				"COSIGN verify --certificate-identity-regexp " + identityRegexp + " --certificate-oidc-issuer https://token.actions.githubusercontent.com " + mirrorName + "@" + digest,
 				"COSIGN verify --certificate-identity-regexp " + identityRegexp + " --certificate-oidc-issuer https://token.actions.githubusercontent.com " + mirrorName + "@" + digest,
-				"COSIGN copy --force " + mirrorName + "@" + digest + " " + mirrorName + ":v2.0.0",
+				"COSIGN copy --force " + imageName + "@" + digest + " " + mirrorName + ":v2.0.0",
 			},
 		},
 		{
@@ -535,7 +536,12 @@ func TestTheMirrorCopiesTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 				// The one refusal that happens after the copy and the signing
 				// call: those write nothing an operator can name, and a `:tag`
 				// destination is the thing a red run cannot retract.
-				if strings.Contains(string(output), "COSIGN copy --force "+mirrorName+"@"+digest+" "+mirrorName+":") {
+				// Judged on the destination alone: a check that also named
+				// the source would go vacuous the day the source moves.
+				if slices.ContainsFunc(strings.Split(string(output), "\n"), func(line string) bool {
+					fields := strings.Fields(line)
+					return len(fields) == 5 && fields[0] == "COSIGN" && fields[1] == "copy" && strings.HasPrefix(fields[4], mirrorName+":")
+				}) {
 					t.Errorf("the step wrote a mirrored alias on a run it refused, and a red run retracts no tag:\n%s", output)
 				}
 				return
