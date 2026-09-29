@@ -271,7 +271,10 @@ func (r *ancestryRepo) shadowMain(t *testing.T, name, sha string) {
 	t.Cleanup(func() { r.git(t, r.origin, "tag", "-d", name) })
 	r.fetchLikeCheckout(t)
 	t.Cleanup(func() { r.git(t, r.clone, "tag", "-d", name) })
-	if got := r.git(t, r.clone, "-c", "core.warnAmbiguousRefs=false", "rev-parse", "--quiet", "--verify", name+"^{commit}"); got != sha {
+	// git warns on stderr that the name is ambiguous, and r.git combines the
+	// streams, so the resolved sha is the last line.
+	resolved := strings.Split(r.git(t, r.clone, "rev-parse", "--quiet", "--verify", name+"^{commit}"), "\n")
+	if got := strings.TrimSpace(resolved[len(resolved)-1]); got != sha {
 		t.Fatalf("a tag named %q on %s does not shadow the remote-tracking ref (it resolves to %s); the case would test nothing", name, sha, got)
 	}
 }
