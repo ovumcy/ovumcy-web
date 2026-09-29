@@ -62,6 +62,48 @@ func buildMigratedTemplate() {
 	migratedTemplatePath = path
 }
 
+// TestMigratedSQLiteConfigHandsOutAnIsolatedCopy pins the helper's one promise:
+// every call returns a fresh file, never the shared template, so a write in one
+// test cannot be seen by another or leak into later copies.
+func TestMigratedSQLiteConfigHandsOutAnIsolatedCopy(t *testing.T) {
+	first := migratedSQLiteConfig(t, filepath.Join(t.TempDir(), "first.db"))
+	second := migratedSQLiteConfig(t, filepath.Join(t.TempDir(), "second.db"))
+	if first.SQLitePath == migratedTemplatePath || second.SQLitePath == migratedTemplatePath {
+		t.Fatalf("helper returned the shared template path %q", migratedTemplatePath)
+	}
+	if first.SQLitePath == second.SQLitePath {
+		t.Fatalf("two calls returned the same path %q", first.SQLitePath)
+	}
+
+	database, err := OpenDatabase(first)
+	if err != nil {
+		t.Fatalf("open first copy: %v", err)
+	}
+	if err := database.Exec("CREATE TABLE copy_isolation_probe (id INTEGER)").Error; err != nil {
+		t.Fatalf("write to first copy: %v", err)
+	}
+	sqlDB, err := database.DB()
+	if err != nil {
+		t.Fatalf("first copy sql.DB: %v", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("close first copy: %v", err)
+	}
+
+	third, err := OpenDatabase(migratedSQLiteConfig(t, filepath.Join(t.TempDir(), "third.db")))
+	if err != nil {
+		t.Fatalf("open third copy: %v", err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, dbErr := third.DB(); dbErr == nil {
+			_ = sqlDB.Close()
+		}
+	})
+	if third.Migrator().HasTable("copy_isolation_probe") {
+		t.Fatalf("a write to one copy is visible in a later copy: the template is shared")
+	}
+}
+
 // migratedSQLiteConfig copies the migrated template to path and returns a
 // Config that opens the copy.
 func migratedSQLiteConfig(t testing.TB, path string) Config {
