@@ -81,6 +81,18 @@ func (provider i18nDisclaimerProvider) Message(language string, key string) stri
 	return provider.manager.Messages(language)[key]
 }
 
+// VerifySchemaInvariants checks the schema facts the application relies on but
+// must never re-establish itself, and returns an error naming the first one that
+// does not hold. The boot calls it once the migrations have applied and before
+// any boot pass or listener: a missing idx_users_email_normalized can only have
+// been dropped out of band or lost in a restore, it never comes back on its own,
+// and without it a registration race can create two accounts on one address.
+// Nothing here repairs: re-creating an index at boot would bypass the migration
+// that first checks the table for rows the index cannot cover.
+func VerifySchemaInvariants(ctx context.Context, repositories *db.Repositories) error {
+	return repositories.Health.VerifyNormalizedEmailIndex(ctx)
+}
+
 // BuildNotifyService assembles the request-free webhook notify pass (issue #124,
 // slice 3) from the SAME repositories and secret the web path uses, so a future
 // in-process scheduler (#125) can reuse this exact recipe. secretKey decrypts
