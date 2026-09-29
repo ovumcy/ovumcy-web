@@ -49,6 +49,7 @@ var changesGatedJobs = []struct {
 	{securityWorkflow, "govulncheck"},
 	{securityWorkflow, "trivy-fs"},
 	{securityWorkflow, "trivy-image"},
+	{securityWorkflow, "trivy-image-arm64"},
 	{codeqlWorkflow, "analyze"},
 }
 
