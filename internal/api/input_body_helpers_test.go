@@ -7,11 +7,12 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -37,10 +38,16 @@ var authInputKeys = map[string]bool{
 	"consent":          true,
 }
 
-// queryReadingLookups are the request-level lookups that consult the query
-// string, alone or together with the body. Each takes the member name as its
-// first argument.
-var queryReadingLookups = map[string]bool{"FormValue": true, "Query": true}
+// queryReadingLookups are the request-level lookups that consult the URL (its
+// query string, its path parameters), alone or together with the body. Each
+// takes the member name as its first argument as a method (c.Query("code")),
+// and as its second as fiber's generic function (fiber.Query[string](c, "code")).
+var queryReadingLookups = map[string]bool{"FormValue": true, "Query": true, "Params": true}
+
+// wholeQueryReaders return the entire query string or every query member at
+// once, so no key can clear them: nothing in the scanned source uses one, and a
+// credential rides through them whatever it is named.
+var wholeQueryReaders = map[string]bool{"Queries": true, "QueryString": true}
 
 // queryArgsReaders are the methods of the request URI's query-argument set
 // that take a member name.
@@ -56,45 +63,110 @@ type queryRead struct {
 	key  string
 	how  string
 	bulk bool
+	note string
+}
+
+// calleeSelector returns the selector a call goes through, looking past the
+// type-argument list of a generic call: fiber.Query[string](c, "code") has an
+// index expression, not a selector, as its Fun.
+func calleeSelector(call *ast.CallExpr) (selector *ast.SelectorExpr, generic bool) {
+	fun := call.Fun
+	switch f := fun.(type) {
+	case *ast.IndexExpr:
+		fun, generic = f.X, true
+	case *ast.IndexListExpr:
+		fun, generic = f.X, true
+	}
+	selector, _ = fun.(*ast.SelectorExpr)
+	return selector, generic
+}
+
+// receiverChainHasCall reports whether a call to name sits anywhere in the
+// receiver chain of expr, so c.Bind().WithoutAutoHandling().Query(&in) is seen
+// as reaching Bind() however many modifiers sit in between.
+func receiverChainHasCall(expr ast.Expr, name string) bool {
+	for {
+		switch e := expr.(type) {
+		case *ast.CallExpr:
+			selector, _ := calleeSelector(e)
+			if selector == nil {
+				return false
+			}
+			if selector.Sel.Name == name {
+				return true
+			}
+			expr = selector.X
+		case *ast.SelectorExpr:
+			expr = e.X
+		case *ast.ParenExpr:
+			expr = e.X
+		default:
+			return false
+		}
+	}
 }
 
 // findQueryReads returns every read in node that takes an auth member from the
-// query string. Key names resolve through consts, so a key spelled through a
-// package-level constant is judged like the literal. Bulk binders
-// (Bind().Query, Bind().All) name no member: they fill every field of the
-// struct they are handed, a password included, so they are reported whatever
-// the struct.
+// URL. Key names resolve through consts, so a key spelled through a
+// package-level constant is judged like the literal. Reads that name no
+// member are reported whatever the struct or key, because they hand back a
+// password as readily as anything else: a Query or All bind whose receiver chain
+// contains Bind() (Bind() itself is refused when held in a variable, where its
+// later calls cannot be traced), Queries(), QueryString(), and a QueryArgs()
+// that is not used as the direct receiver of one member read with a key that is
+// not an auth member (held in a variable, ranged over, passed on).
 func findQueryReads(node ast.Node, consts map[string]string) []queryRead {
 	var reads []queryRead
+	var stack []ast.Node
 	ast.Inspect(node, func(n ast.Node) bool {
+		if n == nil {
+			stack = stack[:len(stack)-1]
+			return true
+		}
+		ancestors := stack
+		stack = append(stack, n)
+
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
 			return true
 		}
-		selector, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok {
+		selector, generic := calleeSelector(call)
+		if selector == nil {
 			return true
 		}
 		name := selector.Sel.Name
 
-		if inner, ok := selector.X.(*ast.CallExpr); ok {
-			if innerSel, ok := inner.Fun.(*ast.SelectorExpr); ok {
-				switch {
-				case innerSel.Sel.Name == "Bind" && (name == "Query" || name == "All"):
-					reads = append(reads, queryRead{at: call.Pos(), how: "Bind()." + name, bulk: true})
-					return true
-				case innerSel.Sel.Name == "QueryArgs" && queryArgsReaders[name]:
-					if key, ok := memberKey(call, consts); ok && authInputKeys[key] {
-						reads = append(reads, queryRead{at: call.Pos(), key: key, how: "QueryArgs()." + name})
-					}
-					return true
-				}
+		switch {
+		case !generic && (name == "Query" || name == "All") && receiverChainHasCall(selector.X, "Bind"):
+			reads = append(reads, queryRead{at: call.Pos(), how: "Bind()..." + name, bulk: true,
+				note: "fills every field of its target, credentials included"})
+			return true
+		case !generic && name == "Bind" && len(call.Args) == 0 && !isDirectReceiver(ancestors, call):
+			reads = append(reads, queryRead{at: call.Pos(), how: "Bind() held outside a call chain", bulk: true,
+				note: "its Query and All cannot be traced from here"})
+			return true
+		case wholeQueryReaders[name]:
+			reads = append(reads, queryRead{at: call.Pos(), how: name + "()", bulk: true,
+				note: "returns every query member, credentials included"})
+			return true
+		case !generic && name == "QueryArgs":
+			if read, flagged := queryArgsRead(ancestors, call, consts); flagged {
+				reads = append(reads, read)
 			}
-		}
-
-		if queryReadingLookups[name] {
-			if key, ok := memberKey(call, consts); ok && authInputKeys[key] {
-				reads = append(reads, queryRead{at: call.Pos(), key: key, how: name})
+			return true
+		case queryReadingLookups[name]:
+			// fiber's generic lookups take the request first and the member
+			// second; the method forms take the member first.
+			index := 0
+			if generic {
+				index = 1
+			}
+			if key, ok := memberKey(call, index, consts); ok && authInputKeys[key] {
+				how := name
+				if generic {
+					how = "generic " + name
+				}
+				reads = append(reads, queryRead{at: call.Pos(), key: key, how: how})
 			}
 		}
 		return true
@@ -102,13 +174,43 @@ func findQueryReads(node ast.Node, consts map[string]string) []queryRead {
 	return reads
 }
 
-// memberKey resolves the first argument of a lookup to a string: a literal, or
-// an identifier naming a package-level string constant.
-func memberKey(call *ast.CallExpr, consts map[string]string) (string, bool) {
-	if len(call.Args) == 0 {
+// isDirectReceiver reports whether call is the receiver of a selector that is
+// itself called, given the ancestors that lead to it: c.Bind().Body(..) yes,
+// b := c.Bind() no.
+func isDirectReceiver(ancestors []ast.Node, call *ast.CallExpr) bool {
+	if len(ancestors) == 0 {
+		return false
+	}
+	parent, ok := ancestors[len(ancestors)-1].(*ast.SelectorExpr)
+	return ok && parent.X == call
+}
+
+// queryArgsRead judges a QueryArgs() call. It is cleared only as the direct
+// receiver of a member read whose key is a known non-auth member; a read of an
+// auth member names it, and any other use is reported as an untraceable one.
+func queryArgsRead(ancestors []ast.Node, call *ast.CallExpr, consts map[string]string) (queryRead, bool) {
+	if isDirectReceiver(ancestors, call) && len(ancestors) >= 2 {
+		parent, _ := ancestors[len(ancestors)-1].(*ast.SelectorExpr)
+		if outer, ok := ancestors[len(ancestors)-2].(*ast.CallExpr); ok && outer.Fun == parent && queryArgsReaders[parent.Sel.Name] {
+			if key, ok := memberKey(outer, 0, consts); ok {
+				if authInputKeys[key] {
+					return queryRead{at: outer.Pos(), key: key, how: "QueryArgs()." + parent.Sel.Name}, true
+				}
+				return queryRead{}, false
+			}
+		}
+	}
+	return queryRead{at: call.Pos(), how: "QueryArgs() outside a direct member read", bulk: true,
+		note: "the member it is asked for cannot be traced from here"}, true
+}
+
+// memberKey resolves the argument at index of a lookup to a string: a literal,
+// or an identifier naming a package-level string constant.
+func memberKey(call *ast.CallExpr, index int, consts map[string]string) (string, bool) {
+	if len(call.Args) <= index {
 		return "", false
 	}
-	switch arg := call.Args[0].(type) {
+	switch arg := call.Args[index].(type) {
 	case *ast.BasicLit:
 		if arg.Kind != token.STRING {
 			return "", false
@@ -151,68 +253,79 @@ func packageStringConsts(files []*ast.File) map[string]string {
 }
 
 // TestAuthFieldsAreNeverReadFromTheQueryString derives every read of an auth
-// member from the package source and refuses any that reaches the URL query
-// string. fiber's FormValue searches the query BEFORE the body, so a
-// `?remember_me=1` outranked the body's own value; the class is closed here at
-// every site, with no exemption list to keep current — a handler added later is
-// judged by the same rule, and reads its input through bindRequestBody.
+// member from the production source and refuses any that reaches the URL.
+// fiber's FormValue searches the query BEFORE the body, so a `?remember_me=1`
+// outranked the body's own value; the class is closed here at every site, with
+// no exemption list to keep current — a handler added later is judged by the
+// same rule, and reads its input through bindRequestBody.
+//
+// Scope: every non-test Go file under internal/ and cmd/, not only this
+// package, each package judged with its own constants. Nothing outside
+// internal/api reads the request today; the wider net costs one directory walk.
 func TestAuthFieldsAreNeverReadFromTheQueryString(t *testing.T) {
 	assertQueryReadSweepAnswersBothWays(t)
 
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatalf("read package dir: %v", err)
-	}
 	fileSet := token.NewFileSet()
-	var files []*ast.File
-	for _, entry := range entries {
-		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		parsed, err := parser.ParseFile(fileSet, name, nil, 0)
+	filesByDir := map[string][]*ast.File{}
+	for _, root := range []string{"../../internal", "../../cmd"} {
+		err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			parsed, err := parser.ParseFile(fileSet, path, nil, 0)
+			if err != nil {
+				return err
+			}
+			dir := filepath.ToSlash(filepath.Dir(path))
+			filesByDir[dir] = append(filesByDir[dir], parsed)
+			return nil
+		})
 		if err != nil {
-			t.Fatalf("parse %s: %v", name, err)
+			t.Fatalf("parse production source under %s: %v", root, err)
 		}
-		files = append(files, parsed)
 	}
-	if len(files) == 0 {
-		t.Fatal("no production source parsed: the sweep is measuring nothing")
+	if len(filesByDir["../../internal/api"]) == 0 {
+		t.Fatal("no internal/api source parsed: the sweep is measuring nothing")
 	}
-	consts := packageStringConsts(files)
 
-	// The sweep must see the lookups it polices: the package reads plenty of
+	// The sweep must see the lookups it polices: the code reads plenty of
 	// non-auth members through them, so a scan that found none has stopped
 	// recognising calls.
 	seenLookups := 0
 	var violations []string
-	for _, file := range files {
-		ast.Inspect(file, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			if selector, ok := call.Fun.(*ast.SelectorExpr); ok && queryReadingLookups[selector.Sel.Name] {
-				if _, ok := memberKey(call, consts); ok {
-					seenLookups++
+	for _, files := range filesByDir {
+		consts := packageStringConsts(files)
+		for _, file := range files {
+			ast.Inspect(file, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok {
+					return true
 				}
+				if selector, generic := calleeSelector(call); selector != nil && !generic && queryReadingLookups[selector.Sel.Name] {
+					if _, ok := memberKey(call, 0, consts); ok {
+						seenLookups++
+					}
+				}
+				return true
+			})
+			for _, read := range findQueryReads(file, consts) {
+				what := read.how + "(" + strconv.Quote(read.key) + ")"
+				if read.bulk {
+					what = read.how + " (" + read.note + ")"
+				}
+				violations = append(violations, fileSet.Position(read.at).String()+": "+what)
 			}
-			return true
-		})
-		for _, read := range findQueryReads(file, consts) {
-			what := read.how + "(" + strconv.Quote(read.key) + ")"
-			if read.bulk {
-				what = read.how + " (fills every field of its target, credentials included)"
-			}
-			violations = append(violations, fileSet.Position(read.at).String()+": "+what)
 		}
 	}
 	if seenLookups == 0 {
-		t.Fatal("the sweep found no FormValue/Query lookup at all: it is not reading the package it claims to police")
+		t.Fatal("the sweep found no FormValue/Query lookup at all: it is not reading the code it claims to police")
 	}
 	sort.Strings(violations)
 	for _, violation := range violations {
-		t.Errorf("%s reads an auth input from a source that includes the URL query string — read it from the body with bindRequestBody, which never consults the query", violation)
+		t.Errorf("%s reads an auth input from a source that includes the URL — read it from the body with bindRequestBody, which never consults it", violation)
 	}
 }
 
@@ -228,8 +341,21 @@ func assertQueryReadSweepAnswersBothWays(t *testing.T) {
 		`_ = c.Query("code")`:                                               "Query",
 		`_ = c.Request().URI().QueryArgs().Peek("email")`:                   "QueryArgs().Peek",
 		`_ = c.Request().URI().QueryArgs().Has("remember_me")`:              "QueryArgs().Has",
-		`_ = c.Bind().Query(&in)`:                                           "Bind().Query",
-		`_ = c.Bind().All(&in)`:                                             "Bind().All",
+		`_ = c.Bind().Query(&in)`:                                           "Bind()...Query",
+		`_ = c.Bind().All(&in)`:                                             "Bind()...All",
+		`_ = c.Bind().WithoutAutoHandling().Query(&in)`:                     "Bind()...Query",
+		`_ = c.Bind().SkipValidation(true).All(&in)`:                        "Bind()...All",
+		`b := c.Bind(); _ = b.Query(&in)`:                                   "Bind() held",
+		`_ = fiber.Query[string](c, "password")`:                            "generic Query",
+		`_ = fiber.Query[string](c, csrfFieldName)`:                         "generic Query",
+		`_ = fiber.Params[string](c, "code")`:                               "generic Params",
+		`_ = c.Params("password")`:                                          "Params",
+		`_ = c.Queries()["code"]`:                                           "Queries()",
+		`_ = c.Req().Queries()`:                                             "Queries()",
+		`_ = c.Request().URI().QueryString()`:                               "QueryString()",
+		`args := c.Request().URI().QueryArgs(); _ = args.Peek("password")`:  "QueryArgs() outside",
+		`c.Request().URI().QueryArgs().VisitAll(func(k, v []byte) {})`:      "QueryArgs() outside",
+		`_ = c.Request().URI().QueryArgs().Peek(name)`:                      "QueryArgs() outside",
 		`_ = c.FormValue(csrfFieldName)`:                                    "FormValue",
 		`_ = c.FormValue("csrf_token")`:                                     "FormValue",
 		`_ = strings.TrimSpace(c.FormValue("consent"))`:                     "FormValue",
@@ -240,11 +366,11 @@ func assertQueryReadSweepAnswersBothWays(t *testing.T) {
 	consts := map[string]string{"csrfFieldName": "csrf_token"}
 	for source, wantHow := range flagged {
 		reads := findQueryReads(parseFunctionBodyForTest(t, source), consts)
-		if len(reads) == 0 {
-			t.Fatalf("the sweep must flag %s", source)
-		}
-		if !strings.HasPrefix(reads[0].how, wantHow) {
-			t.Fatalf("the sweep flagged %s as %s, want %s", source, reads[0].how, wantHow)
+		switch {
+		case len(reads) == 0:
+			t.Errorf("the sweep must flag %s", source)
+		case !strings.HasPrefix(reads[0].how, wantHow):
+			t.Errorf("the sweep flagged %s as %s, want %s", source, reads[0].how, wantHow)
 		}
 	}
 
@@ -255,6 +381,13 @@ func assertQueryReadSweepAnswersBothWays(t *testing.T) {
 		`_ = c.Request().PostArgs().Peek("password")`,
 		`_ = bindRequestBody(c, &in)`,
 		`_ = logoutURL.Query()`,
+		`_ = logoutURL.Query().Get("password")`,
+		`_ = fiber.Query[string](c, "day")`,
+		`_ = fiber.Params[string](c, "id")`,
+		`_ = c.Params("id")`,
+		`_ = c.Bind().Body(&in)`,
+		`_ = c.Bind().WithoutAutoHandling().Body(&in)`,
+		`_ = c.Bind().Header(&in)`,
 	} {
 		if reads := findQueryReads(parseFunctionBodyForTest(t, source), consts); len(reads) != 0 {
 			t.Fatalf("the sweep must not flag %s, got %v", source, reads)
@@ -262,9 +395,17 @@ func assertQueryReadSweepAnswersBothWays(t *testing.T) {
 	}
 }
 
+func isUnprocessable(err error) bool {
+	var fiberErr *fiber.Error
+	return errors.As(err, &fiberErr) && fiberErr.Code == fiber.StatusUnprocessableEntity
+}
+
 // TestBindRequestBodyReadsOnlyTheBody drives the helper through every body
 // transport with a conflicting `?field=` in the query: the body's value wins
-// where the transport has one, and the query's value is never the answer.
+// where the transport has one, and the query's value is never the answer. A
+// body type the API does not declare for auth inputs (XML, CBOR, MsgPack, a
+// vendor "+json") is refused with 422 and fills nothing, even where the binder
+// underneath would have decoded it.
 func TestBindRequestBodyReadsOnlyTheBody(t *testing.T) {
 	type target struct {
 		Field string `json:"field" form:"field"`
@@ -310,13 +451,19 @@ func TestBindRequestBodyReadsOnlyTheBody(t *testing.T) {
 		{name: "mixed-case form content type", contentType: "Application/X-WWW-Form-Urlencoded", body: []byte("field=from-body"), want: "from-body"},
 		{name: "mixed-case form content type without the member", contentType: "Application/X-WWW-Form-Urlencoded", body: []byte("other=1"), want: ""},
 		{name: "gzip json", contentType: "application/json", encoding: "gzip", body: gzipped(`{"field":"from-body"}`), want: "from-body"},
-		{
-			name: "unknown content type", contentType: "text/plain", body: []byte("field=from-body"),
-			wantErr: func(err error) bool {
-				var fiberErr *fiber.Error
-				return errors.As(err, &fiberErr) && fiberErr.Code == fiber.StatusUnprocessableEntity
-			},
-		},
+		{name: "json with parameters", contentType: "application/json; charset=utf-8", body: []byte(`{"field":"from-body"}`), want: "from-body"},
+		{name: "mixed-case json content type", contentType: "Application/JSON", body: []byte(`{"field":"from-body"}`), want: "from-body"},
+		{name: "unknown content type", contentType: "text/plain", body: []byte("field=from-body"), wantErr: isUnprocessable},
+		{name: "no content type", contentType: "", body: []byte("field=from-body"), wantErr: isUnprocessable},
+		// The binder decodes these; the API declares none of them for an auth
+		// input, and an XML decoder keeps what it read before a syntax error.
+		{name: "application/xml", contentType: "application/xml", body: []byte(`<target><Field>from-body</Field></target>`), wantErr: isUnprocessable},
+		{name: "text/xml", contentType: "text/xml", body: []byte(`<target><Field>from-body</Field></target>`), wantErr: isUnprocessable},
+		{name: "mixed-case xml with parameters", contentType: "Application/XML; charset=utf-8", body: []byte(`<target><Field>from-body</Field></target>`), wantErr: isUnprocessable},
+		{name: "partial xml", contentType: "application/xml", body: []byte(`<target><Field>from-body</Field><broken>`), wantErr: isUnprocessable},
+		{name: "vendor json", contentType: "application/vnd.api+json", body: []byte(`{"field":"from-body"}`), wantErr: isUnprocessable},
+		{name: "cbor", contentType: "application/cbor", body: []byte("\xa1efield\x69from-body"), wantErr: isUnprocessable},
+		{name: "msgpack", contentType: "application/msgpack", body: []byte("\x81\xa5field\xa9from-body"), wantErr: isUnprocessable},
 		{name: "malformed json", contentType: "application/json", body: []byte(`{"field":`), wantErr: func(err error) bool { return err != nil }},
 	}
 
@@ -345,8 +492,8 @@ func TestBindRequestBodyReadsOnlyTheBody(t *testing.T) {
 				if !tc.wantErr(bindErr) {
 					t.Fatalf("bind error = %v, want the refusal the case names", bindErr)
 				}
-				if got.Field == "from-query" {
-					t.Fatal("the query value was bound although the body could not be")
+				if got.Field != "" {
+					t.Fatalf("Field = %q after a refusal, want nothing filled (the query carried %q)", got.Field, "from-query")
 				}
 				return
 			}

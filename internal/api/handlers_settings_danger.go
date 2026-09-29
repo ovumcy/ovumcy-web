@@ -79,7 +79,10 @@ func (handler *Handler) DeleteAccount(c fiber.Ctx) error {
 
 func parsePasswordProtectedSettingsAction(c fiber.Ctx) (string, APIErrorSpec, bool) {
 	input := passwordProtectedSettingsInput{}
-	if err := bindRequestBody(c, &input); err != nil && hasJSONBody(c) {
+	// A body the binder rejected is refused whole, whatever its type: a decoder
+	// may have filled the password before it stopped, and a password taken from
+	// half a body is not one the client sent.
+	if err := bindRequestBody(c, &input); err != nil {
 		spec := settingsMissingPasswordErrorSpec()
 		return "", spec, false
 	}

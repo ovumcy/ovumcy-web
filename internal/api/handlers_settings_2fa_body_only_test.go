@@ -280,6 +280,97 @@ func TestTOTPSettingsReadCodeAndPasswordFromTheBodyOnly(t *testing.T) {
 	})
 }
 
+// TestVerifyTOTP2FAEnrollmentRefusesABodyItCouldNotDecodeWhole is the PUT
+// counterpart: the password step binds the body first, so a body that reaches
+// the code read has already decoded once. A second decode that fails — the code
+// member given twice, the last of the wrong type, which leaves the valid first
+// value in place — must not enroll with the code it left behind. The code is
+// valid and the password correct in every case, so only the refusal of the body
+// itself keeps 2FA off.
+func TestVerifyTOTP2FAEnrollmentRefusesABodyItCouldNotDecodeWhole(t *testing.T) {
+	cases := []struct {
+		name, contentType string
+		body              func(code string) string
+		wantStatus        int
+		wantKey           string
+	}{
+		{
+			name: "a valid code followed by the same member of the wrong type", contentType: "application/json",
+			body:       func(code string) string { return `{"password":"StrongPass1","code":"` + code + `","code":7}` },
+			wantStatus: http.StatusUnauthorized, wantKey: "totp invalid code",
+		},
+		{
+			name: "a code of the wrong type", contentType: "application/json",
+			body:       func(string) string { return `{"password":"StrongPass1","code":123456}` },
+			wantStatus: http.StatusUnauthorized, wantKey: "totp invalid code",
+		},
+		{
+			name: "a partial xml body", contentType: "application/xml",
+			body: func(code string) string {
+				return `<e><Password>StrongPass1</Password><Code>` + code + `</Code><broken>`
+			},
+			wantStatus: http.StatusBadRequest, wantKey: "invalid password",
+		},
+		{
+			name: "a well-formed xml body", contentType: "application/xml",
+			body: func(code string) string {
+				return `<e><Password>StrongPass1</Password><Code>` + code + `</Code></e>`
+			},
+			wantStatus: http.StatusBadRequest, wantKey: "invalid password",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := newTOTPSettingsContext(t, "totp-put-whole-body-"+strings.ReplaceAll(tc.name, " ", "-")+"@example.com")
+			setupCookie, code, _ := enrollmentFixture(t, ctx)
+
+			resp := send2FARequest(t, ctx, twoFARequest{
+				method: http.MethodPut, contentType: tc.contentType,
+				body: tc.body(code), setupCookie: setupCookie, withSession: true, withCSRFHead: true,
+			})
+			assert2FARefusal(t, resp, tc.wantStatus, tc.wantKey, tc.name)
+			if totpEnabledInDatabase(t, ctx) {
+				t.Fatal("a body the binder rejected enrolled 2FA with the code it left behind")
+			}
+		})
+	}
+}
+
+// TestTOTPSettingsRefuseABodyTypeTheAPIDoesNotDeclare pins the transports of the
+// 2FA mutations to JSON and forms: a well-formed XML body with the correct
+// password (and code) is refused on both, and 2FA is left as it was.
+func TestTOTPSettingsRefuseABodyTypeTheAPIDoesNotDeclare(t *testing.T) {
+	for _, contentType := range []string{"application/xml", "text/xml"} {
+		t.Run("PUT "+contentType, func(t *testing.T) {
+			ctx := newTOTPSettingsContext(t, "totp-put-undeclared-"+strings.ReplaceAll(contentType, "/", "-")+"@example.com")
+			setupCookie, code, _ := enrollmentFixture(t, ctx)
+
+			resp := send2FARequest(t, ctx, twoFARequest{
+				method: http.MethodPut, contentType: contentType,
+				body:        `<e><Password>StrongPass1</Password><Code>` + code + `</Code></e>`,
+				setupCookie: setupCookie, withSession: true, withCSRFHead: true,
+			})
+			assert2FARefusal(t, resp, http.StatusBadRequest, "invalid password", contentType)
+			if totpEnabledInDatabase(t, ctx) {
+				t.Fatal("an undeclared body type enrolled 2FA")
+			}
+		})
+		t.Run("DELETE "+contentType, func(t *testing.T) {
+			ctx := newTOTPSettingsContext(t, "totp-delete-undeclared-"+strings.ReplaceAll(contentType, "/", "-")+"@example.com")
+			enableTOTPForSettingsTest(t, &ctx)
+
+			resp := send2FARequest(t, ctx, twoFARequest{
+				method: http.MethodDelete, contentType: contentType,
+				body: `<e><Password>StrongPass1</Password></e>`, withSession: true, withCSRFHead: true,
+			})
+			assert2FARefusal(t, resp, http.StatusBadRequest, "invalid settings input", contentType)
+			if !totpEnabledInDatabase(t, ctx) {
+				t.Fatal("an undeclared body type disabled 2FA")
+			}
+		})
+	}
+}
+
 // TestDisableTOTP2FARefusesABodyItCouldNotDecodeWhole pins the refusal to the
 // bind error, not to the body's declared type: an XML body whose Password
 // element decodes before the syntax error leaves a usable password in the input
