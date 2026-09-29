@@ -111,7 +111,7 @@ const mirrorEnabledIf = "if: ${{ env.DOCKERHUB_PUBLISH_USERNAME != '' }}"
 // read-back to the runner's own keys, which running their scripts cannot see.
 func TestNoKeyLetsTheDockerHubMirrorFailOpen(t *testing.T) {
 	job := workflowfile.Job(t, publishWorkflow, publishJob)
-	for _, name := range []string{mirrorLoginStep, mirrorStep, mirrorVerifyStep} {
+	for _, name := range []string{mirrorLoginStep, mirrorProbeStep, mirrorStep, mirrorVerifyStep} {
 		found := workflowfile.StepFailOpenKeys(stepBlock(t, job, name))
 		if !slices.Equal(found, []string{mirrorEnabledIf}) {
 			t.Errorf("%s, job %q, step %q carries %q, want only %q: a mirror the runner passes after a failure is published unsigned or unverified",

@@ -47,7 +47,7 @@ func TestTheMirrorCopyRetriesOnlyDockerHubsRateLimit(t *testing.T) {
 	script := runScript(t, mirrorStepName, block)
 
 	crossRegistry := "COSIGN copy --force " + mirrorImage + "@" + mirrorDigest + " " + mirrorName + "@" + mirrorDigest
-	latestAlias := "COSIGN copy --force " + mirrorName + "@" + mirrorDigest + " " + mirrorName + ":latest"
+	latestAlias := "COSIGN copy --force " + mirrorImage + "@" + mirrorDigest + " " + mirrorName + ":latest"
 	signed := "COSIGN sign --yes " + mirrorName + "@" + mirrorDigest
 
 	for _, testCase := range []struct {
@@ -144,12 +144,8 @@ func TestTheMirrorCopyRetriesOnlyDockerHubsRateLimit(t *testing.T) {
 				t.Errorf("the step paused %q, want %q:\n%s", sleeps, testCase.wantSleeps, output)
 			}
 
-			// The cross-registry copy reads GHCR; every alias reads the mirror.
-			source := mirrorName + "@" + mirrorDigest
-			if testCase.failDest == mirrorName+"@"+mirrorDigest {
-				source = mirrorImage + "@" + mirrorDigest
-			}
-			refused := "COSIGN copy --force " + source + " " + testCase.failDest
+			// Every copy, the cross-registry one and each alias, reads GHCR.
+			refused := "COSIGN copy --force " + mirrorImage + "@" + mirrorDigest + " " + testCase.failDest
 			if got := strings.Count(output, refused+"\n"); got != testCase.wantCalls {
 				t.Errorf("the step ran %q %d time(s), want %d:\n%s", refused, got, testCase.wantCalls, output)
 			}

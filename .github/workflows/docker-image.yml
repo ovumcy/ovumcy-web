@@ -887,7 +887,7 @@ jobs:
       # `cosign verify docker.io/…` command SECURITY.md gives an operator
       # answer at all.
       #
-      # Absent the publishing credential all three steps skip and GHCR
+      # Absent the publishing credential all four steps skip and GHCR
       # publishes exactly as before. The credential is deliberately NOT the
       # `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` pair above: that one exists for
       # authenticated base-image pulls and security.yml hands it to jobs that
@@ -899,6 +899,61 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_PUBLISH_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PUBLISH_TOKEN }}
+
+      - name: Report Docker Hub's rate-limit view of the mirror login
+        # Runs 36512010639 and 36512597460 were refused with Docker Hub's
+        # "unauthenticated pull rate limit" although the login above had
+        # succeeded and cosign's pushes with it were accepted. cosign v3.0.6
+        # reads that login through go-containerregistry's DefaultKeychain and
+        # sends it on every read, so which quota Docker Hub charges is taken
+        # from Docker Hub's own answer: `docker-ratelimit-source` is the
+        # runner's IP for an anonymous pull and the account for an
+        # authenticated one. Asked with HEAD, which the quota does not count.
+        #
+        # Informational: it never fails the job. The credential reaches curl
+        # on stdin only — never as an argument, never in the log.
+        if: ${{ env.DOCKERHUB_PUBLISH_USERNAME != '' }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          config="${DOCKER_CONFIG:-$HOME/.docker}/config.json"
+          key='https://index.docker.io/v1/'
+          token_url='https://auth.docker.io/token?service=registry.docker.io&scope=repository:ratelimitpreview/test:pull'
+          probe='https://registry-1.docker.io/v2/ratelimitpreview/test/manifests/latest'
+
+          if [ ! -f "$config" ]; then
+            echo "::warning::no docker config at ${config}, so cosign reads Docker Hub anonymously."
+            exit 0
+          fi
+          echo "credsStore set: $(jq -r 'has("credsStore")' "$config")"
+          echo "credHelpers entry for Docker Hub: $(jq -r --arg k "$key" '(.credHelpers // {}) | (has($k) or has("docker.io") or has("index.docker.io"))' "$config")"
+          echo "inline auth under ${key}: $(jq -r --arg k "$key" '(.auths[$k].auth // "") != ""' "$config")"
+
+          # $1 labels the reading; stdin carries the token request's
+          # Authorization header, or nothing for an anonymous one.
+          rate_limit_view() {
+            local token
+            token="$(curl -fsS -H @- "$token_url" | jq -r '.token // empty')" || token=''
+            if [ -z "$token" ]; then
+              echo "$1: no token issued"
+              return 0
+            fi
+            printf 'Authorization: Bearer %s\n' "$token" \
+              | curl -sS -I -H @- "$probe" \
+              | tr -d '\r' \
+              | grep -iE '^(HTTP/|ratelimit-limit:|ratelimit-remaining:|docker-ratelimit-source:)' \
+              | sed "s/^/$1: /"
+            return 0
+          }
+
+          rate_limit_view anonymous < /dev/null
+          auth="$(jq -r --arg k "$key" '.auths[$k].auth // empty' "$config")"
+          if [ -n "$auth" ]; then
+            printf 'Authorization: Basic %s\n' "$auth" | rate_limit_view mirror-login
+          else
+            echo "mirror-login: no inline auth under ${key} to read with"
+          fi
+          exit 0
 
       - name: Mirror the signed digest to Docker Hub
         # `VERIFY_ATTEMPTS`/`VERIFY_DELAY_SECONDS` bound how long the read-back
@@ -1096,10 +1151,15 @@ jobs:
           # signed. `--force` is what lets a moving alias — `latest`, `main` —
           # be rewritten on a later release rather than failing the run.
           #
-          # Every alias is copied from the MIRROR's own digest, the manifest
-          # the line above proved signed, which lets the registry answer each
-          # blob as already present rather than transferring the same bytes
-          # once per tag.
+          # Every alias is copied from GHCR's digest — the same bytes, which
+          # the first copy already landed, so Docker Hub answers each blob as
+          # present and receives only the manifest under the tag. The source is
+          # GHCR rather than the mirror because a copy's reads are its cost on
+          # Docker Hub's pull quota: one alias is ~14 manifest GETs (the index,
+          # each platform, and a sig/att/sbom tag probe per entity), and runs
+          # 36512010639 and 36512597460 were refused on that quota. Read from
+          # GHCR, the aliases cost Docker Hub only writes
+          # and the HEADs that precede them, which the quota does not count.
           #
           # These copies run AFTER the signature and do not disturb it, but
           # only because Docker Hub serves the referrers API: `cosign copy`
@@ -1111,8 +1171,8 @@ jobs:
           # with a 404 means the aliases can no longer be written by `cosign
           # copy` after the signature.
           for tag in "${tags[@]}"; do
-            mirror_copy "${MIRROR_NAME}@${DIGEST}" "${MIRROR_NAME}:${tag}"
-            echo "${MIRROR_NAME}:${tag} <- ${MIRROR_NAME}@${DIGEST}"
+            mirror_copy "${IMAGE_NAME}@${DIGEST}" "${MIRROR_NAME}:${tag}"
+            echo "${MIRROR_NAME}:${tag} <- ${IMAGE_NAME}@${DIGEST}"
           done
 
       - name: Verify every mirrored tag anonymously and against the signed digest
