@@ -19,6 +19,10 @@ import (
 // such form must carry one naming its htmx verb, submit to the same URL, and
 // stay urlencoded. This guard holds the whole template tree to that, so a new
 // form cannot reintroduce the class.
+//
+// A form with an htmx verb and no method="post" is the same class one step
+// worse: without JavaScript it submits as GET to the page it is on, putting
+// every field (a password included) in the query string. It fails here too.
 
 // methodOverrideExemption names one form the guard skips, and why.
 type methodOverrideExemption struct {
@@ -35,34 +39,43 @@ var methodOverrideExemptions = []methodOverrideExemption{
 	},
 	// The PATCH forms below fail closed without JS today (405: only PATCH is
 	// registered for their URLs). They are outside WEB-107's six forms and are
-	// tracked as a follow-up: each needs only the hidden _method input, since
-	// PATCH is already allowlisted. The list may only shrink.
-	{file: "components/settings_account.html", verb: "PATCH", url: "/api/v1/users/current/profile", reason: "tracked follow-up to WEB-107"},
-	{file: "components/settings_interface.html", verb: "PATCH", url: "/api/v1/users/current/interface", reason: "tracked follow-up to WEB-107"},
-	{file: "components/settings_tracking.html", verb: "PATCH", url: "/api/v1/users/current/tracking", reason: "tracked follow-up to WEB-107"},
-	{file: "components/settings_cycle.html", verb: "PATCH", url: "/api/v1/users/current/cycle", reason: "tracked follow-up to WEB-107"},
-	{file: "components/settings_cycle.html", verb: "PATCH", url: "/api/v1/users/current/reminders", reason: "tracked follow-up to WEB-107"},
-	{file: "components/settings_symptoms.html", verb: "PATCH", url: "/api/v1/symptoms/{{.Symptom.ID}}", reason: "tracked follow-up to WEB-107"},
-	{file: "dashboard.html", verb: "PATCH", url: "/api/v1/users/current/cycle", reason: "tracked follow-up to WEB-107"},
+	// tracked as WEB-119: each needs only the hidden _method input, since PATCH
+	// is already allowlisted. The list may only shrink.
+	{file: "components/settings_account.html", verb: "PATCH", url: "/api/v1/users/current/profile", reason: "WEB-119: no-JS 405; add the hidden _method input"},
+	{file: "components/settings_interface.html", verb: "PATCH", url: "/api/v1/users/current/interface", reason: "WEB-119: no-JS 405; add the hidden _method input"},
+	{file: "components/settings_tracking.html", verb: "PATCH", url: "/api/v1/users/current/tracking", reason: "WEB-119: no-JS 405; add the hidden _method input"},
+	{file: "components/settings_cycle.html", verb: "PATCH", url: "/api/v1/users/current/cycle", reason: "WEB-119: no-JS 405; add the hidden _method input"},
+	{file: "components/settings_cycle.html", verb: "PATCH", url: "/api/v1/users/current/reminders", reason: "WEB-119: no-JS 405; add the hidden _method input"},
+	{file: "components/settings_symptoms.html", verb: "PATCH", url: "/api/v1/symptoms/{{.Symptom.ID}}", reason: "WEB-119: no-JS 405; add the hidden _method input"},
+	{file: "dashboard.html", verb: "PATCH", url: "/api/v1/users/current/cycle", reason: "WEB-119: no-JS 405; add the hidden _method input"},
+	// The forms below carry an htmx verb but no method="post": without JS they
+	// submit as GET to the page they are on and put their fields in the query
+	// string (WEB-120). The list may only shrink.
+	{file: "components/settings_danger_zone.html", verb: "DELETE", url: "/api/v1/users/current", reason: "WEB-120: no-JS falls back to GET; fix pending"},
+	{file: "day_editor_partial.html", verb: "PUT", url: "/api/v1/days/{{.DateString}}", reason: "WEB-120: no-JS falls back to GET; fix pending"},
+	{file: "day_editor_partial.html", verb: "DELETE", url: "/api/v1/days/{{.DateString}}?source=calendar", reason: "WEB-120: no-JS falls back to GET; fix pending"},
+	{file: "dashboard.html", verb: "PUT", url: "/api/v1/days/{{.Today}}", reason: "WEB-120: no-JS falls back to GET; fix pending"},
 }
 
-// overrideForm is one <form> that declares method="post" and an htmx verb.
+// overrideForm is one <form> that declares an htmx verb.
 type overrideForm struct {
 	line      int
 	verb      string
 	hxURL     string
 	action    string
 	multipart bool
+	post      bool     // method="post" is declared; anything else is a GET without JS
 	methods   []string // values of every hidden _method input inside the form
 }
 
 var templateActionPattern = regexp.MustCompile(`(?s)\{\{.*?\}\}`)
 
-// overrideFormsInTemplate returns every post form with an hx-put, hx-patch or
-// hx-delete attribute. Template actions are replaced first by placeholders —
-// the same text always by the same placeholder, so an action URL and an hx URL
-// built from the same expression still compare equal — because an action such
-// as {{t .Messages "key"}} puts double quotes inside a quoted attribute.
+// overrideFormsInTemplate returns every form with an hx-put, hx-patch or
+// hx-delete attribute, whatever its method. Template actions are replaced first
+// by placeholders — the same text always by the same placeholder, so an action
+// URL and an hx URL built from the same expression still compare equal —
+// because an action such as {{t .Messages "key"}} puts double quotes inside a
+// quoted attribute.
 func overrideFormsInTemplate(source string) []overrideForm {
 	placeholders := map[string]string{}
 	originals := map[string]string{}
@@ -102,9 +115,6 @@ func overrideFormsInTemplate(source string) []overrideForm {
 		case (kind == html.StartTagToken || kind == html.SelfClosingTagToken) && token.Data == "form":
 			attrs := tokenAttrs(token)
 			current = nil
-			if !strings.EqualFold(attrs["method"], "post") {
-				continue
-			}
 			for _, verb := range []string{"put", "patch", "delete"} {
 				if url, ok := attrs["hx-"+verb]; ok {
 					forms = append(forms, overrideForm{
@@ -112,6 +122,7 @@ func overrideFormsInTemplate(source string) []overrideForm {
 						verb:      strings.ToUpper(verb),
 						hxURL:     restore(url),
 						action:    restore(attrs["action"]),
+						post:      strings.EqualFold(attrs["method"], "post"),
 						multipart: strings.Contains(strings.ToLower(attrs["enctype"]), "multipart"),
 					})
 					current = &forms[len(forms)-1]
@@ -141,6 +152,9 @@ func tokenAttrs(token html.Token) map[string]string {
 // overrideFormProblem reports what is wrong with form, or "" when nothing is.
 func overrideFormProblem(form overrideForm) string {
 	var problems []string
+	if !form.post {
+		problems = append(problems, "declares no method=\"post\": without JS it submits as GET to the current page and puts its fields in the query string")
+	}
 	if len(form.methods) != 1 || form.methods[0] != form.verb {
 		problems = append(problems, fmt.Sprintf("needs exactly one <input type=\"hidden\" name=\"_method\" value=\"%s\">, has %q", form.verb, form.methods))
 	}
@@ -188,7 +202,7 @@ func TestEveryPostFormWithAnHTMXVerbCarriesTheMatchingMethodOverride(t *testing.
 		t.Fatalf("walk templates: %v", err)
 	}
 	if scanned == 0 {
-		t.Fatal("scanned no post form with an htmx verb: the scan is broken, not the tree clean")
+		t.Fatal("scanned no form with an htmx verb: the scan is broken, not the tree clean")
 	}
 
 	var stale []string
@@ -202,7 +216,7 @@ func TestEveryPostFormWithAnHTMXVerbCarriesTheMatchingMethodOverride(t *testing.
 	}
 	sort.Strings(failures)
 	if len(failures) > 0 {
-		t.Errorf("post forms with an htmx verb that a no-JS browser would submit wrongly:\n\t%s", strings.Join(failures, "\n\t"))
+		t.Errorf("forms with an htmx verb that a no-JS browser would submit wrongly:\n\t%s", strings.Join(failures, "\n\t"))
 	}
 	if len(stale) > 0 {
 		t.Errorf("exemptions that match no form any more; delete them:\n\t%s", strings.Join(stale, "\n\t"))
@@ -234,6 +248,9 @@ func TestMethodOverrideFormScanClassifiesItsOwnFixtures(t *testing.T) {
   <input type="hidden" name="_method" value="PUT">
 </form>
 <form action="/g" hx-delete="/g"></form>
+<form action="/i" method="get" hx-put="/i">
+  <input type="hidden" name="_method" value="PUT">
+</form>
 <form action="/h" method="post" hx-post="/h"></form>
 <input type="hidden" name="_method" value="DELETE">
 `
@@ -248,9 +265,11 @@ func TestMethodOverrideFormScanClassifiesItsOwnFixtures(t *testing.T) {
 		{"/d", false}, // no action
 		{"/e", false}, // multipart
 		{"/f", false}, // repeated
+		{"/g", false}, // no method: a GET without JS, even with no _method to send
+		{"/i", false}, // method="get", even with the field
 	}
 	if len(forms) != len(want) {
-		t.Fatalf("scan found %d forms, want %d (the GET form, the hx-post form and the stray input must be ignored): %+v", len(forms), len(want), forms)
+		t.Fatalf("scan found %d forms, want %d (the hx-post form and the stray input must be ignored): %+v", len(forms), len(want), forms)
 	}
 	for index, expected := range want {
 		form := forms[index]

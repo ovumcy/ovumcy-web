@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"compress/gzip"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -27,6 +28,11 @@ const methodOverrideProbePath = "/probe"
 // verb that ran it, so a test reads the routing decision straight off the body.
 func newMethodOverrideProbeApp(t *testing.T, withCSRF bool) *fiber.App {
 	t.Helper()
+	return newMethodOverrideProbeAppWithAudit(t, withCSRF, false)
+}
+
+func newMethodOverrideProbeAppWithAudit(t *testing.T, withCSRF bool, auditLogEnabled bool) *fiber.App {
+	t.Helper()
 
 	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "method-override.db")})
 	if err != nil {
@@ -45,6 +51,7 @@ func newMethodOverrideProbeApp(t *testing.T, withCSRF bool) *fiber.App {
 	if err != nil {
 		t.Fatalf("init handler: %v", err)
 	}
+	handler.auditLogEnabled = auditLogEnabled
 
 	app := fiber.New(fiber.Config{BodyLimit: 4 * 1024})
 	app.Use(MethodOverride(handler))
@@ -61,6 +68,7 @@ func newMethodOverrideProbeApp(t *testing.T, withCSRF bool) *fiber.App {
 	app.Delete(methodOverrideProbePath, answer)
 	app.Delete("/delete-only", answer)
 	app.Post(security.OIDCCallbackPath, answer)
+	app.Post("/content-type", func(c fiber.Ctx) error { return c.SendString(c.Get(fiber.HeaderContentType)) })
 	return app
 }
 
@@ -278,5 +286,138 @@ func TestMethodOverrideReadsNoBodyPastTheBodyLimit(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "body size exceeds") {
 		t.Fatalf("over-limit form: unexpected error %v", err)
+	}
+}
+
+func methodOverrideRawRequest(body string) *http.Request {
+	request := httptest.NewRequest(http.MethodPost, methodOverrideProbePath, strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Accept", "application/json")
+	return request
+}
+
+// The binder decodes a percent-encoded key and matches it to the tag without
+// regard to case, so the pre-check that skips the bind must not be fooled by
+// either: each body below names _method to the binder without containing the
+// literal lower-case key.
+func TestMethodOverrideHonoursTheFieldWhateverItsSpelling(t *testing.T) {
+	t.Parallel()
+	app := newMethodOverrideProbeApp(t, false)
+
+	cases := []struct {
+		body       string
+		wantStatus int
+		wantBody   string
+	}{
+		{"%5Fmethod=DELETE", http.StatusOK, "ran DELETE"},
+		{"%5fmethod=PATCH", http.StatusOK, "ran PATCH"},
+		{"_m%65thod=DELETE", http.StatusOK, "ran DELETE"},
+		{"%5F%6D%65%74%68%6F%64=PUT", http.StatusOK, "ran PUT"},
+		{"_METHOD=DELETE", http.StatusOK, "ran DELETE"},
+		{"_Method=put", http.StatusOK, "ran PUT"},
+		{"name=x&_mEtHoD=DELETE", http.StatusOK, "ran DELETE"},
+		{"%5Fmethod=GET", http.StatusBadRequest, ""},
+		{"_m%65thod=", http.StatusBadRequest, ""},
+		{"_METHOD=GET", http.StatusBadRequest, ""},
+		{"%5Fmethod=DELETE&_method=DELETE", http.StatusBadRequest, ""},
+		// The binder collapses keys that differ only in case or encoding into
+		// one value; the middleware counts them itself, so each spelling of a
+		// second field is a repeat whatever the values, in either order.
+		{"%5Fmethod=DELETE&_METHOD=DELETE", http.StatusBadRequest, ""},
+		{"_method=DELETE&_METHOD=GET", http.StatusBadRequest, ""},
+		{"_method=GET&_METHOD=DELETE", http.StatusBadRequest, ""},
+		{"_METHOD=DELETE&_method=GET", http.StatusBadRequest, ""},
+		{"_m%65thod=PUT&_Method=PUT&x=1", http.StatusBadRequest, ""},
+	}
+	for _, testCase := range cases {
+		status, body := probeAnswer(t, app, methodOverrideRawRequest(testCase.body))
+		if status != testCase.wantStatus || (testCase.wantBody != "" && body != testCase.wantBody) {
+			t.Errorf("body %q: got %d %q, want %d %q", testCase.body, status, body, testCase.wantStatus, testCase.wantBody)
+		}
+	}
+}
+
+func TestMethodOverrideSkipsTheBindForABodyThatCannotNameTheField(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]bool{
+		"":                       false,
+		"name=x&other=y":         false,
+		"csrf_token=abc":         false,
+		"_meth=DELETE":           false,
+		"method=DELETE":          false,
+		"_method=DELETE":         true,
+		"x=1&_Method=DELETE":     true,
+		"_METHOD[]=DELETE":       true,
+		"%5Fmethod=DELETE":       true,
+		"_m%65thod=DELETE":       true,
+		"name=100%25":            true, // any percent escape forces the bind
+		"name=a+b&_meth%6Fd=PUT": true,
+		"name=Ã©&_method=x":      true,
+	}
+	for body, want := range cases {
+		if got := methodOverrideBodyMayNameTheField([]byte(body)); got != want {
+			t.Errorf("methodOverrideBodyMayNameTheField(%q) = %v, want %v", body, got, want)
+		}
+	}
+
+	// Observable through the request: the form binder folds a mixed-case
+	// Content-Type in place, so a body that was bound comes out lower-cased and
+	// one that was skipped keeps the spelling it arrived with.
+	app := newMethodOverrideProbeApp(t, false)
+	const mixedCase = "Application/X-WWW-Form-URLEncoded"
+	request := httptest.NewRequest(http.MethodPost, "/content-type", strings.NewReader("name=x"))
+	request.Header.Set("Content-Type", mixedCase)
+	if status, body := probeAnswer(t, app, request); status != http.StatusOK || body != mixedCase {
+		t.Errorf("a body without the field was bound: got %d content-type %q, want it left as %q", status, body, mixedCase)
+	}
+	request = httptest.NewRequest(http.MethodPost, "/content-type", strings.NewReader("name=x&_method=POST"))
+	request.Header.Set("Content-Type", mixedCase)
+	if status, body := probeAnswer(t, app, request); status != http.StatusBadRequest {
+		t.Errorf("_method=POST: got %d %q, want 400", status, body)
+	}
+}
+
+// Not parallel: it swaps the process-wide log writer to read the audit line.
+func TestMethodOverrideEmitsTheAppliedEventOnlyWhenItOverrides(t *testing.T) {
+	originalWriter := log.Writer()
+	defer log.SetOutput(originalWriter)
+	var output bytes.Buffer
+	log.SetOutput(&output)
+
+	app := newMethodOverrideProbeAppWithAudit(t, false, true)
+
+	if status, body := probeAnswer(t, app, methodOverrideRawRequest("_method=delete")); status != http.StatusOK || body != "ran DELETE" {
+		t.Fatalf("override: got %d %q, want 200 \"ran DELETE\"", status, body)
+	}
+	const applied = `security event: action="method_override" outcome="applied" method="DELETE"`
+	if line := output.String(); !strings.Contains(line, applied) || !strings.Contains(line, `verb="DELETE"`) {
+		t.Fatalf("applied override logged %q, want a line with %s and verb=\"DELETE\"", line, applied)
+	}
+
+	for name, request := range map[string]*http.Request{
+		"no field":       methodOverrideRawRequest("name=x"),
+		"encoded absent": methodOverrideRawRequest("name=100%25"),
+		"real DELETE": func() *http.Request {
+			request := httptest.NewRequest(http.MethodDelete, methodOverrideProbePath, strings.NewReader("_method=PUT"))
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			return request
+		}(),
+	} {
+		output.Reset()
+		if status, body := probeAnswer(t, app, request); status != http.StatusOK {
+			t.Fatalf("%s: got %d %q, want 200", name, status, body)
+		}
+		if strings.Contains(output.String(), `outcome="applied"`) {
+			t.Errorf("%s logged an applied override: %q", name, output.String())
+		}
+	}
+
+	output.Reset()
+	if status, _ := probeAnswer(t, app, methodOverrideRawRequest("_method=GET")); status != http.StatusBadRequest {
+		t.Fatalf("refused override: want 400, got %d", status)
+	}
+	if line := output.String(); !strings.Contains(line, `outcome="denied"`) || strings.Contains(line, `outcome="applied"`) {
+		t.Errorf("refused override logged %q, want denied and never applied", line)
 	}
 }

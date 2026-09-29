@@ -111,12 +111,16 @@ func (form noJSForm) submit(t *testing.T, app *fiber.App, typed url.Values, drop
 }
 
 type noJSFormCase struct {
-	app      *fiber.App
-	page     string
-	cookies  map[string]string
-	match    func(*html.Node) bool
-	typed    func(t *testing.T, form noJSForm) url.Values
-	verb     string
+	app     *fiber.App
+	page    string
+	cookies map[string]string
+	match   func(*html.Node) bool
+	typed   func(t *testing.T, form noJSForm) url.Values
+	verb    string
+	// redirect is the Location a successful no-JS submit must answer with: a
+	// browser follows a 303 See Other and lands there; anything else leaves the
+	// person on a raw response document.
+	redirect string
 	happened func(t *testing.T) bool
 }
 
@@ -154,11 +158,12 @@ func calendarRevokeCase(t *testing.T) (noJSFormCase, settingsSecurityTestContext
 		t.Fatal("precondition: the armed feed stored no selector")
 	}
 	return noJSFormCase{
-		app:     ctx.app,
-		page:    "/settings",
-		cookies: authCookieMap(t, ctx.authCookie),
-		match:   formWithFlag("data-settings-calendar-feed-revoke"),
-		verb:    http.MethodDelete,
+		app:      ctx.app,
+		page:     "/settings",
+		cookies:  authCookieMap(t, ctx.authCookie),
+		match:    formWithFlag("data-settings-calendar-feed-revoke"),
+		verb:     http.MethodDelete,
+		redirect: "/settings",
 		happened: func(t *testing.T) bool {
 			return reloadUserForNoJSForm(t, ctx).CalendarFeedSelector == ""
 		},
@@ -181,11 +186,12 @@ func TestNoJSSettingsFormsPerformTheActionTheyName(t *testing.T) {
 			}
 			target := "/api/v1/symptoms/" + strconv.FormatUint(uint64(symptom.ID), 10)
 			return noJSFormCase{
-				app:     ctx.app,
-				page:    "/settings",
-				cookies: authCookieMap(t, ctx.authCookie),
-				match:   formWithAttr("hx-delete", target),
-				verb:    http.MethodDelete,
+				app:      ctx.app,
+				page:     "/settings",
+				cookies:  authCookieMap(t, ctx.authCookie),
+				match:    formWithAttr("hx-delete", target),
+				verb:     http.MethodDelete,
+				redirect: "/settings",
 				happened: func(t *testing.T) bool {
 					var stored models.SymptomType
 					if err := ctx.database.First(&stored, symptom.ID).Error; err != nil {
@@ -198,11 +204,12 @@ func TestNoJSSettingsFormsPerformTheActionTheyName(t *testing.T) {
 		"change password": func(t *testing.T) noJSFormCase {
 			ctx := newSettingsSecurityTestContext(t, "nojs-change-password@example.com")
 			return noJSFormCase{
-				app:     ctx.app,
-				page:    "/settings",
-				cookies: authCookieMap(t, ctx.authCookie),
-				match:   formWithAttr("id", "settings-change-password-form"),
-				verb:    http.MethodPut,
+				app:      ctx.app,
+				page:     "/settings",
+				cookies:  authCookieMap(t, ctx.authCookie),
+				match:    formWithAttr("id", "settings-change-password-form"),
+				verb:     http.MethodPut,
+				redirect: "/settings",
 				typed: func(*testing.T, noJSForm) url.Values {
 					return url.Values{
 						"current_password": {"StrongPass1"},
@@ -224,11 +231,12 @@ func TestNoJSSettingsFormsPerformTheActionTheyName(t *testing.T) {
 				{ID: fixture.identity.ID, Issuer: fixture.stepupIssuer, LinkedAt: time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)},
 			}
 			return noJSFormCase{
-				app:     fixture.app,
-				page:    "/settings",
-				cookies: authCookieMap(t, fixture.authCookie),
-				match:   formWithFlag("data-oidc-unlink-form"),
-				verb:    http.MethodDelete,
+				app:      fixture.app,
+				page:     "/settings",
+				cookies:  authCookieMap(t, fixture.authCookie),
+				match:    formWithFlag("data-oidc-unlink-form"),
+				verb:     http.MethodDelete,
+				redirect: "/settings",
 				typed: func(*testing.T, noJSForm) url.Values {
 					return url.Values{"password": {linkFixturePassword}}
 				},
@@ -251,11 +259,12 @@ func TestNoJSSettingsFormsPerformTheActionTheyName(t *testing.T) {
 			}
 			ctx.refreshAuthCookie(t)
 			return noJSFormCase{
-				app:     ctx.app,
-				page:    "/settings/2fa",
-				cookies: authCookieMap(t, ctx.authCookie),
-				match:   formWithAttr("hx-delete", "/api/v1/users/current/2fa"),
-				verb:    http.MethodDelete,
+				app:      ctx.app,
+				page:     "/settings/2fa",
+				cookies:  authCookieMap(t, ctx.authCookie),
+				match:    formWithAttr("hx-delete", "/api/v1/users/current/2fa"),
+				verb:     http.MethodDelete,
+				redirect: "/settings",
 				typed: func(*testing.T, noJSForm) url.Values {
 					return url.Values{"password": {"StrongPass1"}}
 				},
@@ -267,11 +276,12 @@ func TestNoJSSettingsFormsPerformTheActionTheyName(t *testing.T) {
 		"2fa enable": func(t *testing.T) noJSFormCase {
 			ctx := newTOTPSettingsContext(t, "nojs-2fa-enable@example.com")
 			return noJSFormCase{
-				app:     ctx.app,
-				page:    "/settings/2fa",
-				cookies: authCookieMap(t, ctx.authCookie),
-				match:   formWithAttr("hx-put", "/api/v1/users/current/2fa"),
-				verb:    http.MethodPut,
+				app:      ctx.app,
+				page:     "/settings/2fa",
+				cookies:  authCookieMap(t, ctx.authCookie),
+				match:    formWithAttr("hx-put", "/api/v1/users/current/2fa"),
+				verb:     http.MethodPut,
+				redirect: "/settings",
 				typed: func(t *testing.T, form noJSForm) url.Values {
 					code, err := totp.GenerateCode(form.secret, time.Now())
 					if err != nil {
@@ -311,8 +321,11 @@ func TestNoJSSettingsFormsPerformTheActionTheyName(t *testing.T) {
 				typed = c.typed(t, form)
 			}
 			response := form.submit(t, c.app, typed)
-			if response.StatusCode >= http.StatusBadRequest {
-				t.Fatalf("no-JS submit: status %d: %s", response.StatusCode, mustReadBodyString(t, response.Body))
+			if response.StatusCode != http.StatusSeeOther {
+				t.Fatalf("no-JS submit: status %d, want 303 See Other: %s", response.StatusCode, mustReadBodyString(t, response.Body))
+			}
+			if location := response.Header.Get("Location"); location != c.redirect {
+				t.Fatalf("no-JS submit: Location %q, want %q", location, c.redirect)
 			}
 			if !c.happened(t) {
 				t.Fatalf("no-JS submit answered %d but the action did not run", response.StatusCode)
