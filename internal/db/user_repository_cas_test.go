@@ -18,7 +18,7 @@ import (
 //     ErrResetTokenAlreadyConsumed because the stored hash already changed.
 func TestUpdatePasswordRecoveryCodeAndRevokeSessionsCASRejectsReplay(t *testing.T) {
 	dir := t.TempDir()
-	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(dir, "cas_test.db")})
+	database, err := OpenDatabase(migratedSQLiteConfig(t, filepath.Join(dir, "cas_test.db")))
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestUpdatePasswordRecoveryCodeAndRevokeSessionsCASRejectsReplay(t *testing.
 // carries the legacy arm that used to read a stored 0 as version 1.
 func TestUpdatePasswordRecoveryCodeAndRevokeSessionsCASLosesToASessionVersionBump(t *testing.T) {
 	dir := t.TempDir()
-	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(dir, "cas_version_test.db")})
+	database, err := OpenDatabase(migratedSQLiteConfig(t, filepath.Join(dir, "cas_version_test.db")))
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
@@ -220,7 +220,7 @@ func runCASCasesOnEachDriver(t *testing.T, cases []casDriverCase) {
 
 	configs := map[string]func(t *testing.T) Config{
 		"sqlite": func(t *testing.T) Config {
-			return Config{Driver: DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "cas_driver_test.db")}
+			return migratedSQLiteConfig(t, filepath.Join(t.TempDir(), "cas_driver_test.db"))
 		},
 		"postgres": startPostgresTestConfig,
 	}

@@ -12,7 +12,7 @@ import (
 func openHealthProbeDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "health-probe.db")})
+	database, err := OpenDatabase(migratedSQLiteConfig(t, filepath.Join(t.TempDir(), "health-probe.db")))
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}

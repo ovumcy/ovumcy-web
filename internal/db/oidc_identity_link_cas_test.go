@@ -21,7 +21,7 @@ import (
 // the two engines provide differently.
 func TestOIDCIdentityRepositoryLinkRevokesOnlyFromTheVerifiedSessionVersion(t *testing.T) {
 	t.Run("sqlite", func(t *testing.T) {
-		database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "oidc-link-cas.db")})
+		database, err := OpenDatabase(migratedSQLiteConfig(t, filepath.Join(t.TempDir(), "oidc-link-cas.db")))
 		if err != nil {
 			t.Fatalf("open sqlite: %v", err)
 		}
