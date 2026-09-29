@@ -14,7 +14,7 @@ import (
 // ON CONFLICT (key) update) rather than erroring on the primary-key collision or
 // appending a second row.
 func TestAppStateRepositoryRoundTripAndUpsert(t *testing.T) {
-	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "app-state.db")})
+	database, err := OpenDatabase(migratedSQLiteConfig(t, filepath.Join(t.TempDir(), "app-state.db")))
 	if err != nil {
 		t.Fatalf("OpenDatabase() unexpected error: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestAppStateRepositoryRoundTripAndUpsert(t *testing.T) {
 // absent key raising an error would turn every ordinary first boot — and every
 // unfenced start after the first — into a failed start.
 func TestAppStateRepositoryDeleteRemovesTheKeyAndToleratesAMissingOne(t *testing.T) {
-	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "app-state-delete.db")})
+	database, err := OpenDatabase(migratedSQLiteConfig(t, filepath.Join(t.TempDir(), "app-state-delete.db")))
 	if err != nil {
 		t.Fatalf("OpenDatabase() unexpected error: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestAppStateRepositoryDeleteIsIdempotentOnPostgres(t *testing.T) {
 // TestAppStateRepositoryRejectsBlankKey covers the guard: an empty/whitespace key
 // is not a valid marker. Get treats it as missing; Set refuses it.
 func TestAppStateRepositoryRejectsBlankKey(t *testing.T) {
-	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "app-state-blank.db")})
+	database, err := OpenDatabase(migratedSQLiteConfig(t, filepath.Join(t.TempDir(), "app-state-blank.db")))
 	if err != nil {
 		t.Fatalf("OpenDatabase() unexpected error: %v", err)
 	}
@@ -174,7 +174,7 @@ func TestAppStateRepositoryRejectsBlankKey(t *testing.T) {
 // relies on this so a real DB failure fails its catch-up safe rather than
 // silently reading "never ran".
 func TestAppStateRepositoryGetSurfacesNonNotFoundError(t *testing.T) {
-	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "app-state-closed.db")})
+	database, err := OpenDatabase(migratedSQLiteConfig(t, filepath.Join(t.TempDir(), "app-state-closed.db")))
 	if err != nil {
 		t.Fatalf("OpenDatabase() unexpected error: %v", err)
 	}

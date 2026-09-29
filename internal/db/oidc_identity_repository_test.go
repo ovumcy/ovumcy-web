@@ -165,7 +165,7 @@ func TestOIDCIdentityRepositoryRefusesToDeleteTheLastSignInMethod(t *testing.T) 
 // loser meets the last-sign-in check inside the delete transaction instead.
 // Exactly one delete may win, every round.
 func TestOIDCIdentityRepositoryConcurrentUnlinksKeepOneSignInMethod(t *testing.T) {
-	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "oidc-unlink-race.db")})
+	database, err := OpenDatabase(migratedSQLiteConfig(t, filepath.Join(t.TempDir(), "oidc-unlink-race.db")))
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}

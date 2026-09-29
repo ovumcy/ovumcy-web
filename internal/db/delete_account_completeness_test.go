@@ -113,7 +113,7 @@ func userScopedTablesFromSchema(t *testing.T, database *gorm.DB) []string {
 func TestDeleteAccountAndRelatedDataRemovesAllUserRows(t *testing.T) {
 	t.Run("sqlite", func(t *testing.T) {
 		dir := t.TempDir()
-		database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(dir, "erasure.db")})
+		database, err := OpenDatabase(migratedSQLiteConfig(t, filepath.Join(dir, "erasure.db")))
 		requireNoErr(t, err, "open sqlite")
 		t.Cleanup(func() {
 			if sqlDB, err := database.DB(); err == nil {
@@ -238,7 +238,7 @@ func TestDeleteAccountAndRelatedDataRollsBackOnChildDeleteError(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(dir, "delerr.db")})
+			database, err := OpenDatabase(migratedSQLiteConfig(t, filepath.Join(dir, "delerr.db")))
 			if err != nil {
 				t.Fatalf("open sqlite: %v", err)
 			}

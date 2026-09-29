@@ -63,7 +63,7 @@ func sessionVersionWritesUnderTest() []sessionVersionWriteUnderTest {
 // wait, which the two engines provide differently.
 func TestUserRepositoryRevokingWritesMoveOnlyFromTheVerifiedSessionVersion(t *testing.T) {
 	t.Run("sqlite", func(t *testing.T) {
-		database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "user-session-cas.db")})
+		database, err := OpenDatabase(migratedSQLiteConfig(t, filepath.Join(t.TempDir(), "user-session-cas.db")))
 		if err != nil {
 			t.Fatalf("open sqlite: %v", err)
 		}
@@ -239,7 +239,7 @@ func assertRevokingWritesMoveOnlyFromTheVerifiedSessionVersion(t *testing.T, dat
 // check that stopped comparing would let the old shape through, and the test
 // above would stay green while checking nothing.
 func TestSessionVersionCasesRejectTheUnconditionalIncrement(t *testing.T) {
-	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "user-session-cas-control.db")})
+	database, err := OpenDatabase(migratedSQLiteConfig(t, filepath.Join(t.TempDir(), "user-session-cas-control.db")))
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
@@ -272,7 +272,7 @@ func TestSessionVersionCasesRejectTheUnconditionalIncrement(t *testing.T) {
 // The shared compare-and-set refuses a zero owner before it builds a query,
 // like every other users-table writer.
 func TestUpdateFromAuthSessionVersionRefusesAZeroOwner(t *testing.T) {
-	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "user-session-cas-zero.db")})
+	database, err := OpenDatabase(migratedSQLiteConfig(t, filepath.Join(t.TempDir(), "user-session-cas-zero.db")))
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
