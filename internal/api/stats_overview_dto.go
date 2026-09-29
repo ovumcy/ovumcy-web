@@ -126,6 +126,7 @@ type StatsOverviewResponse struct {
 // them, so the clearing stays the caller's obligation and the verdict travels
 // with the data.
 func newStatsOverviewResponse(stats services.CycleStats, suppression services.PredictionSuppression, confirmed bool, disclaimer string) StatsOverviewResponse {
+	fertilityWindowStart, fertilityWindowEnd := statsOverviewDateRange(stats.FertilityWindowStart, stats.FertilityWindowEnd)
 	return StatsOverviewResponse{
 		CurrentCycleDay:      stats.CurrentCycleDay,
 		CurrentPhase:         stats.CurrentPhase,
@@ -146,8 +147,8 @@ func newStatsOverviewResponse(stats services.CycleStats, suppression services.Pr
 		OvulationExact:       stats.OvulationExact,
 		OvulationConfirmed:   confirmed,
 		OvulationImpossible:  stats.OvulationImpossible,
-		FertilityWindowStart: statsOverviewDate(stats.FertilityWindowStart),
-		FertilityWindowEnd:   statsOverviewDate(stats.FertilityWindowEnd),
+		FertilityWindowStart: fertilityWindowStart,
+		FertilityWindowEnd:   fertilityWindowEnd,
 		PregnancyPaused:      stats.PregnancyPaused,
 		Suppression:          newStatsOverviewSuppression(suppression),
 		Disclaimer:           disclaimer,
@@ -175,10 +176,27 @@ func newStatsOverviewSuppression(suppression services.PredictionSuppression) Sta
 // the other's zone moves it a calendar day in half the world's offsets (the
 // issue #48 class). Formatting where the value already sits names the day it
 // was computed for.
+//
+// A date after 9999-12-31 is null as well: `format: date` has a four-digit
+// year, and the services already answer such a projection as absent, so this
+// is the floor under a producer that one day forgets to.
 func statsOverviewDate(value time.Time) *string {
-	if value.IsZero() {
+	if value.IsZero() || value.Year() > 9999 {
 		return nil
 	}
 	formatted := value.Format(statsOverviewDateLayout)
 	return &formatted
+}
+
+// statsOverviewDateRange renders a range's two ends as a pair: both, or neither.
+// The schema promises the fertile window is never a start without its end, so a
+// range with one end absent or past 9999-12-31 is published null as a whole.
+// This is wire shape, not display policy: every producer already clears the
+// two together, and this holds the promise for one that one day does not.
+func statsOverviewDateRange(start time.Time, end time.Time) (*string, *string) {
+	startDate, endDate := statsOverviewDate(start), statsOverviewDate(end)
+	if startDate == nil || endDate == nil {
+		return nil, nil
+	}
+	return startDate, endDate
 }

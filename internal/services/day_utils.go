@@ -175,6 +175,24 @@ func AddCalendarDays(day time.Time, days int, location *time.Location) time.Time
 	return CalendarDay(stepped, location)
 }
 
+// lastProjectableYear is the last year a projected date may name. Every surface
+// spells a date with a four-digit year — `format: date` on the API, an RFC 5545
+// DATE in the feed — and time.MarshalJSON refuses a later one. Day inputs stop
+// at DayDateMax, but a date derived from a late-9999 day can still cross it.
+const lastProjectableYear = 9999
+
+// projectedDay answers a derived date that falls after 9999-12-31 as absent —
+// the zero time, which every surface already reads as "no projection" — instead
+// of a year-10000 date no surface can spell. The step itself stays exact:
+// time.Time holds year 10000 fine, so this belongs where a projection is
+// published, not inside the arithmetic that walks past it.
+func projectedDay(day time.Time) time.Time {
+	if day.Year() > lastProjectableYear {
+		return time.Time{}
+	}
+	return day
+}
+
 // uniqueSymptomIDs returns a day's symptom ids in their stored order with
 // repeats removed. Every surface that COUNTS symptoms per day walks the slice
 // through this (or through uniqueKnownSymptomIDs, which filters unknown ids on

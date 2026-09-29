@@ -290,6 +290,11 @@ func appendCurrentBaselinePreFertile(preFertileMap map[string]bool, stats CycleS
 		if !window.Calculable || window.FertilityWindowStart.IsZero() {
 			return
 		}
+		// A window whose ovulation falls after 9999-12-31 is withheld as a whole
+		// (clearUnspellableCycleWindow), and its lead-in goes with it.
+		if projectedDay(window.OvulationDate).IsZero() {
+			return
+		}
 		fertilityStart = window.FertilityWindowStart
 	}
 
@@ -472,6 +477,11 @@ func appendPredictedWindow(preFertileMap map[string]bool, fertilityEdgeMap map[s
 	if !window.Calculable {
 		return
 	}
+	// Withheld as a whole once its ovulation falls after 9999-12-31, exactly
+	// as the current cycle's window is (clearUnspellableCycleWindow).
+	if projectedDay(window.OvulationDate).IsZero() {
+		return
+	}
 
 	// cycleStart arrives from appendPredictedCycles as a REQUEST-ZONE midnight,
 	// so this step needs the same treatment as its siblings; location is
@@ -526,6 +536,12 @@ func appendCurrentCycleBBTSignal(user *models.User, logs []models.DailyLog, stat
 }
 
 func buildCalendarDayState(day time.Time, monthStart time.Time, todayKey string, latestLogByDate map[string]models.DailyLog, hasDataMap map[string]bool, predictions calendarPredictionMaps) CalendarDayState {
+	// The December 9999 grid fills its last week with year-10000 cells. They are
+	// drawn, but no projection is named on them (projectedDay): an empty set of
+	// maps reads false for every key.
+	if projectedDay(day).IsZero() {
+		predictions = calendarPredictionMaps{}
+	}
 	key := day.Format("2006-01-02")
 	entry, hasEntry := latestLogByDate[key]
 	isOvulation := predictions.ovulation[key]
