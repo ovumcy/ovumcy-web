@@ -14,10 +14,11 @@ import (
 // tag that passed the gate and was signed on GHCR is copied there by `cosign
 // copy`. Twice on 2026-09-29 (runs 36512010639, 36512597460) that copy was
 // refused with Docker Hub's 429 during a merge burst, once on the
-// cross-registry copy and once on an alias. The step now asks again on that
-// one verdict; these cases hold it to asking on nothing else and to failing
-// the run when the throttle outlasts the budget, which is what keeps a retry
-// from turning an incomplete mirror into a green release.
+// cross-registry copy and once on an alias. Every cosign call in the step now
+// asks again on that one verdict — the copies, the signing call and the
+// read-back alike; these cases hold it to asking on nothing else, to failing
+// the run when the throttle outlasts the budget, and to naming the throttle
+// rather than a signer when the read-back is the call it refuses.
 const (
 	mirrorJob      = "publish"
 	mirrorStepName = "Mirror the signed digest to Docker Hub"
@@ -49,15 +50,18 @@ func TestTheMirrorCopyRetriesOnlyDockerHubsRateLimit(t *testing.T) {
 	crossRegistry := "COSIGN copy --force " + mirrorImage + "@" + mirrorDigest + " " + mirrorName + "@" + mirrorDigest
 	latestAlias := "COSIGN copy --force " + mirrorImage + "@" + mirrorDigest + " " + mirrorName + ":latest"
 	signed := "COSIGN sign --yes " + mirrorName + "@" + mirrorDigest
+	readBack := "COSIGN verify --certificate-identity-regexp " + mirrorIdentity + " --certificate-oidc-issuer https://token.actions.githubusercontent.com " + mirrorName + "@" + mirrorDigest
 
 	for _, testCase := range []struct {
 		name string
-		// failDest is the copy destination the registry refuses, failures
-		// how many times, and message what cosign prints when it does.
+		// verb and failDest pick the call the registry refuses — the cosign
+		// subcommand and its last argument — failures how many times, and
+		// message what cosign prints when it does.
+		verb     string
 		failDest string
 		failures int
 		message  string
-		// wantCalls is how many times the refused copy may run: every
+		// wantCalls is how many times the refused call may run: every
 		// attempt of the budget for the throttle, one for anything else.
 		wantCalls int
 		// wantSleeps is every pause the step takes, in order: one between
@@ -65,9 +69,12 @@ func TestTheMirrorCopyRetriesOnlyDockerHubsRateLimit(t *testing.T) {
 		wantSleeps  []string
 		wantRefusal string
 		wantOrdered []string
+		// wantAbsent is output the step must not produce at all.
+		wantAbsent []string
 	}{
 		{
 			name:        "the cross-registry copy is throttled, then accepted",
+			verb:        "copy",
 			failDest:    mirrorName + "@" + mirrorDigest,
 			failures:    mirrorCopyAttempts - 1,
 			message:     throttledGet,
@@ -77,6 +84,7 @@ func TestTheMirrorCopyRetriesOnlyDockerHubsRateLimit(t *testing.T) {
 		},
 		{
 			name:        "an alias copy is throttled on a HEAD, then accepted",
+			verb:        "copy",
 			failDest:    mirrorName + ":latest",
 			failures:    1,
 			message:     throttledHead,
@@ -86,6 +94,7 @@ func TestTheMirrorCopyRetriesOnlyDockerHubsRateLimit(t *testing.T) {
 		},
 		{
 			name:        "the throttle outlasts the budget before anything is signed",
+			verb:        "copy",
 			failDest:    mirrorName + "@" + mirrorDigest,
 			failures:    mirrorCopyAttempts * 10,
 			message:     throttledGet,
@@ -95,6 +104,7 @@ func TestTheMirrorCopyRetriesOnlyDockerHubsRateLimit(t *testing.T) {
 		},
 		{
 			name:        "the throttle outlasts the budget on an alias",
+			verb:        "copy",
 			failDest:    mirrorName + ":latest",
 			failures:    mirrorCopyAttempts * 10,
 			message:     throttledHead,
@@ -104,22 +114,67 @@ func TestTheMirrorCopyRetriesOnlyDockerHubsRateLimit(t *testing.T) {
 		},
 		{
 			name:        "a refusal that is not the throttle is asked once",
+			verb:        "copy",
 			failDest:    mirrorName + "@" + mirrorDigest,
 			failures:    mirrorCopyAttempts * 10,
 			message:     unknownManifest,
 			wantCalls:   1,
 			wantRefusal: "not on a registry's rate limit",
 		},
+		{
+			name:        "the signing call is throttled, then accepted",
+			verb:        "sign",
+			failDest:    mirrorName + "@" + mirrorDigest,
+			failures:    1,
+			message:     throttledGet,
+			wantCalls:   2,
+			wantSleeps:  []string{"SLEEP 1"},
+			wantOrdered: []string{crossRegistry, signed, "SLEEP 1", signed, readBack, latestAlias},
+		},
+		{
+			name:        "a signing refusal that is not the throttle is asked once",
+			verb:        "sign",
+			failDest:    mirrorName + "@" + mirrorDigest,
+			failures:    mirrorCopyAttempts * 10,
+			message:     unknownManifest,
+			wantCalls:   1,
+			wantRefusal: "not on a registry's rate limit",
+			wantAbsent:  []string{readBack, latestAlias},
+		},
+		{
+			// A throttled read-back is a slow registry, not a stranger's
+			// signature: it is asked again past the limit, and publishes.
+			name:        "the read-back is throttled, then accepted",
+			verb:        "verify",
+			failDest:    mirrorName + "@" + mirrorDigest,
+			failures:    mirrorCopyAttempts - 1,
+			message:     throttledGet,
+			wantCalls:   mirrorCopyAttempts,
+			wantSleeps:  []string{"SLEEP 1", "SLEEP 2"},
+			wantOrdered: []string{signed, readBack, "SLEEP 1", readBack, "SLEEP 2", readBack, latestAlias},
+			wantAbsent:  []string{"signer identity"},
+		},
+		{
+			name:        "the throttle outlasts the budget on the read-back",
+			verb:        "verify",
+			failDest:    mirrorName + "@" + mirrorDigest,
+			failures:    mirrorCopyAttempts * 10,
+			message:     throttledGet,
+			wantCalls:   mirrorCopyAttempts,
+			wantSleeps:  []string{"SLEEP 1", "SLEEP 2"},
+			wantRefusal: "rate limit on all",
+			wantAbsent:  []string{"signer identity", latestAlias},
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			// The sleep shim records each pause instead of taking it, so the
 			// fixture runs the shipped arithmetic at a one-second unit without
 			// waiting on it.
-			preamble := `copies=0` + "\n" +
+			preamble := `calls=0` + "\n" +
 				`sleep() { printf 'SLEEP %s\n' "$*" >&2; }` + "\n" +
 				`cosign() { printf 'COSIGN %s\n' "$*" >&2; ` +
-				`if [ "$1" = copy ] && [ "$4" = ` + shellQuote(testCase.failDest) + ` ]; then copies=$(( copies + 1 )); ` +
-				`if [ "$copies" -le ` + strconv.Itoa(testCase.failures) + ` ]; then printf '%s\n' ` + shellQuote(testCase.message) + ` >&2; return 1; fi; fi; ` +
+				`if [ "$1" = ` + shellQuote(testCase.verb) + ` ] && [ "${@: -1}" = ` + shellQuote(testCase.failDest) + ` ]; then calls=$(( calls + 1 )); ` +
+				`if [ "$calls" -le ` + strconv.Itoa(testCase.failures) + ` ]; then printf '%s\n' ` + shellQuote(testCase.message) + ` >&2; return 1; fi; fi; ` +
 				`return 0; }`
 
 			output, err := runStepScript(t, bash, mirrorStepName, block, preamble+"\n"+script, "", append(os.Environ(),
@@ -130,8 +185,8 @@ func TestTheMirrorCopyRetriesOnlyDockerHubsRateLimit(t *testing.T) {
 				"IDENTITY_REGEXP="+mirrorIdentity,
 				"VERIFY_ATTEMPTS=1",
 				"VERIFY_DELAY_SECONDS=0",
-				"COPY_ATTEMPTS="+strconv.Itoa(mirrorCopyAttempts),
-				"COPY_DELAY_SECONDS=1",
+				"RATE_LIMIT_ATTEMPTS="+strconv.Itoa(mirrorCopyAttempts),
+				"RATE_LIMIT_DELAY_SECONDS=1",
 			))
 
 			var sleeps []string
@@ -145,9 +200,19 @@ func TestTheMirrorCopyRetriesOnlyDockerHubsRateLimit(t *testing.T) {
 			}
 
 			// Every copy, the cross-registry one and each alias, reads GHCR.
-			refused := "COSIGN copy --force " + mirrorImage + "@" + mirrorDigest + " " + testCase.failDest
+			refused := map[string]string{
+				"copy":   "COSIGN copy --force " + mirrorImage + "@" + mirrorDigest + " " + testCase.failDest,
+				"sign":   signed,
+				"verify": readBack,
+			}[testCase.verb]
 			if got := strings.Count(output, refused+"\n"); got != testCase.wantCalls {
 				t.Errorf("the step ran %q %d time(s), want %d:\n%s", refused, got, testCase.wantCalls, output)
+			}
+
+			for _, absent := range testCase.wantAbsent {
+				if strings.Contains(output, absent) {
+					t.Errorf("the step printed %q:\n%s", absent, output)
+				}
 			}
 
 			if testCase.wantRefusal != "" {
@@ -157,7 +222,7 @@ func TestTheMirrorCopyRetriesOnlyDockerHubsRateLimit(t *testing.T) {
 				if !strings.Contains(output, "::error::") || !strings.Contains(output, testCase.wantRefusal) {
 					t.Errorf("the step failed without saying %q:\n%s", testCase.wantRefusal, output)
 				}
-				if testCase.failDest == mirrorName+"@"+mirrorDigest && strings.Contains(output, signed) {
+				if testCase.verb == "copy" && testCase.failDest == mirrorName+"@"+mirrorDigest && strings.Contains(output, signed) {
 					t.Errorf("the step signed a mirror whose bytes never crossed:\n%s", output)
 				}
 				return
@@ -187,8 +252,8 @@ func TestTheShippedMirrorCopyBudgetActuallyWaits(t *testing.T) {
 		atLeast int
 		why     string
 	}{
-		{"COPY_ATTEMPTS", 2, "one attempt is the copy the throttle refused on runs 36512010639 and 36512597460"},
-		{"COPY_DELAY_SECONDS", 1, "a zero pause spends the attempts inside the same second the throttle answered in"},
+		{"RATE_LIMIT_ATTEMPTS", 2, "one attempt is the copy the throttle refused on runs 36512010639 and 36512597460"},
+		{"RATE_LIMIT_DELAY_SECONDS", 1, "a zero pause spends the attempts inside the same second the throttle answered in"},
 	} {
 		raw, ok := env[knob.name]
 		if !ok {

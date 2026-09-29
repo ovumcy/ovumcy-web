@@ -982,8 +982,9 @@ jobs:
         # below to hold the SHIPPED budget to more than one attempt — which a
         # fixture supplying its own number cannot do.
         #
-        # `COPY_ATTEMPTS`/`COPY_DELAY_SECONDS` bound the same kind of wait for
-        # the copies, and for one verdict only: a registry's 429. Runs
+        # `RATE_LIMIT_ATTEMPTS`/`RATE_LIMIT_DELAY_SECONDS` bound the same kind
+        # of wait for every cosign call here, and for one verdict only: a
+        # registry's 429. Runs
         # 36512010639 and 36512597460 were refused with it 8 minutes apart,
         # during a merge burst, AFTER the login below had succeeded and, in the
         # first, after the same step's pushes to Docker Hub had been accepted:
@@ -999,8 +1000,8 @@ jobs:
           IDENTITY_REGEXP: ${{ steps.verify.outputs.identity_regexp }}
           VERIFY_ATTEMPTS: 6
           VERIFY_DELAY_SECONDS: 10
-          COPY_ATTEMPTS: 4
-          COPY_DELAY_SECONDS: 30
+          RATE_LIMIT_ATTEMPTS: 4
+          RATE_LIMIT_DELAY_SECONDS: 30
         run: |
           set -euo pipefail
 
@@ -1059,41 +1060,51 @@ jobs:
           # exists to refuse; that it would be the mirror rather than GHCR
           # does not make it a different defect.
           #
-          # Every copy goes through mirror_copy, which asks again on ONE
-          # verdict: a registry's rate limit (Docker Hub's, or GHCR's on the
-          # source read), matched by its words and never by a bare `429`,
-          # which a digest in any other error can contain. Every
-          # other refusal is an answer and ends the step on the first attempt,
-          # as does a limit still standing after the last; a copy is never
-          # passed over. Asking again is safe because each copy is idempotent:
-          # content-addressed bytes, to a digest or to an alias `--force`
-          # rewrites to that same digest.
-          copy_log="$(mktemp)"
-          trap 'rm -f "$copy_log"' EXIT
+          # Every cosign call goes through rate_limited, which asks again on
+          # ONE verdict: a registry's rate limit (Docker Hub's, or GHCR's on
+          # the source read), matched by its words and never by a bare `429`,
+          # which a digest in any other error can contain. Any other refusal
+          # goes back to the caller, which judges it on the first attempt; a
+          # limit still standing after the last ends the step. Nothing is
+          # passed over. Asking again is safe because every call is idempotent
+          # where it lands: a copy moves content-addressed bytes, to a digest
+          # or to an alias `--force` rewrites to that same digest; a read-back
+          # changes nothing; and a signing call refused partway leaves at most
+          # one more Rekor entry and bundle for the same digest and identity,
+          # which the read-back accepts like the first.
+          call_log="$(mktemp)"
+          trap 'rm -f "$call_log"' EXIT
 
-          mirror_copy() {
-            local attempt=1
+          rate_limited() {
+            local what="$1" attempt=1
+            shift
             while true; do
-              if cosign copy --force "$1" "$2" > "$copy_log" 2>&1; then
-                cat "$copy_log"
+              if "$@" > "$call_log" 2>&1; then
+                cat "$call_log"
                 return 0
               fi
-              cat "$copy_log"
+              cat "$call_log"
 
-              if ! grep -qE 'TOOMANYREQUESTS|429 Too Many Requests' "$copy_log"; then
-                echo "::error::copying $1 to $2 failed, and not on a registry's rate limit — the cosign output above says what it is. The mirror is incomplete and this run fails."
+              if ! grep -qE 'TOOMANYREQUESTS|429 Too Many Requests' "$call_log"; then
+                return 1
+              fi
+
+              if [ "${attempt}" -ge "${RATE_LIMIT_ATTEMPTS}" ]; then
+                echo "::error::${what} was refused by a registry's rate limit on all ${RATE_LIMIT_ATTEMPTS} attempts. The mirror is incomplete and this run fails."
                 exit 1
               fi
 
-              if [ "${attempt}" -ge "${COPY_ATTEMPTS}" ]; then
-                echo "::error::copying $1 to $2 was refused by a registry's rate limit on all ${COPY_ATTEMPTS} attempts. The mirror is incomplete and this run fails."
-                exit 1
-              fi
-
-              echo "attempt ${attempt} of ${COPY_ATTEMPTS} copying $1 to $2 hit a registry's rate limit; waiting $(( attempt * COPY_DELAY_SECONDS ))s."
-              sleep "$(( attempt * COPY_DELAY_SECONDS ))"
+              echo "attempt ${attempt} of ${RATE_LIMIT_ATTEMPTS} ${what} hit a registry's rate limit; waiting $(( attempt * RATE_LIMIT_DELAY_SECONDS ))s."
+              sleep "$(( attempt * RATE_LIMIT_DELAY_SECONDS ))"
               attempt=$(( attempt + 1 ))
             done
+          }
+
+          mirror_copy() {
+            if ! rate_limited "copying $1 to $2" cosign copy --force "$1" "$2"; then
+              echo "::error::copying $1 to $2 failed, and not on a registry's rate limit — the cosign output above says what it is. The mirror is incomplete and this run fails."
+              exit 1
+            fi
           }
 
           mirror_copy "${IMAGE_NAME}@${DIGEST}" "${MIRROR_NAME}@${DIGEST}"
@@ -1103,7 +1114,10 @@ jobs:
           # own name and the digest just copied. Nothing about the image is
           # re-derived: the same content, the same digest, the same OIDC
           # identity that signed it on GHCR.
-          cosign sign --yes "${MIRROR_NAME}@${DIGEST}"
+          if ! rate_limited "signing ${MIRROR_NAME}@${DIGEST}" cosign sign --yes "${MIRROR_NAME}@${DIGEST}"; then
+            echo "::error::signing ${MIRROR_NAME}@${DIGEST} failed, and not on a registry's rate limit — the cosign output above says what it is. No Docker Hub alias is written, so nothing is published there this run."
+            exit 1
+          fi
 
           # Read back before any alias exists, exactly as `Verify the signature
           # and provenance before promoting` reads GHCR's back: signing is an
@@ -1126,19 +1140,14 @@ jobs:
           #
           # Waiting is the whole of the change: a signature that never appears
           # still fails this step, and no alias is written when it does.
-          verify_log="$(mktemp)"
-          trap 'rm -f "$copy_log" "$verify_log"' EXIT
-
           attempt=1
           while true; do
-            if cosign verify \
+            if rate_limited "reading back the signature on ${MIRROR_NAME}@${DIGEST}" cosign verify \
               --certificate-identity-regexp "${IDENTITY_REGEXP}" \
               --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-              "${MIRROR_NAME}@${DIGEST}" > "$verify_log" 2>&1; then
-              cat "$verify_log"
+              "${MIRROR_NAME}@${DIGEST}"; then
               break
             fi
-            cat "$verify_log"
 
             # ONE verdict is worth asking again about. `no signatures found`
             # is cosign saying the referrers listing holds nothing for this
@@ -1146,8 +1155,11 @@ jobs:
             # does not match, a certificate issued to someone else, a
             # transport error — and retrying it would spend the whole budget
             # and then report an absence, which is not what was found. A
-            # mirror signed by a stranger must not read like a slow registry.
-            if ! grep -q 'no signatures found' "$verify_log"; then
+            # mirror signed by a stranger must not read like a slow registry,
+            # and a slow registry must not read like a stranger: a rate limit
+            # never reaches this point, because rate_limited has either asked
+            # again past it or ended the step naming it.
+            if ! grep -q 'no signatures found' "$call_log"; then
               echo "::error::${MIRROR_NAME}@${DIGEST} did not verify against this repository's signer identity, and the refusal is not a missing signature — the cosign output above says what it is. No Docker Hub alias is written, so nothing is published there this run."
               exit 1
             fi
