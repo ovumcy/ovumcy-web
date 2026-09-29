@@ -64,6 +64,25 @@ type queryRead struct {
 	how  string
 	bulk bool
 	note string
+	// unresolvedKey marks a lookup whose member name is neither a string literal
+	// nor a package constant: the only reads an exemption can clear.
+	unresolvedKey bool
+}
+
+// unresolvedKeyExemptions names, by file and function, the one production site
+// allowed to look a member up under a name the guard cannot resolve. The key is
+// "<path under the repository root> <function name>".
+//
+// oidcCallbackValue (internal/api/oidc_helpers.go) reads the provider's callback
+// parameters (code, state, error) from the URL under OIDC_RESPONSE_MODE=query:
+// they are provider-originated, not user credentials, and the sealed one-time
+// state cookie is what authorises the exchange. Its name argument is a parameter
+// whose values are the literals at its call sites. The exemption clears only a
+// lookup with an unresolvable key inside that function — an auth member read by
+// name there is still refused — and the sweep fails when an entry no longer
+// clears anything, so it cannot outlive the code it excuses.
+var unresolvedKeyExemptions = map[string]string{
+	"internal/api/oidc_helpers.go oidcCallbackValue": "OIDC response_mode=query: provider-originated parameters, gated by the sealed state cookie",
 }
 
 // calleeSelector returns the selector a call goes through, looking past the
@@ -108,7 +127,10 @@ func receiverChainHasCall(expr ast.Expr, name string) bool {
 
 // findQueryReads returns every read in node that takes an auth member from the
 // URL. Key names resolve through consts, so a key spelled through a
-// package-level constant is judged like the literal. Reads that name no
+// package-level constant is judged like the literal; a key that resolves to
+// neither is reported as untraceable, as a wrapper such as
+// func field(c fiber.Ctx, name string) string { return c.FormValue(name) }
+// would otherwise hand a password past the guard. Reads that name no
 // member are reported whatever the struct or key, because they hand back a
 // password as readily as anything else: a Query or All bind whose receiver chain
 // contains Bind() (Bind() itself is refused when held in a variable, where its
@@ -157,21 +179,37 @@ func findQueryReads(node ast.Node, consts map[string]string) []queryRead {
 		case queryReadingLookups[name]:
 			// fiber's generic lookups take the request first and the member
 			// second; the method forms take the member first.
+			// fiber.Query(c, "day", 0) infers its type argument and has no index
+			// expression, but it is the same generic function.
+			if !generic && isFiberPackage(selector.X) {
+				generic = true
+			}
 			index := 0
 			if generic {
 				index = 1
 			}
-			if key, ok := memberKey(call, index, consts); ok && authInputKeys[key] {
-				how := name
-				if generic {
-					how = "generic " + name
-				}
+			how := name
+			if generic {
+				how = "generic " + name
+			}
+			key, resolved := memberKey(call, index, consts)
+			switch {
+			case resolved && authInputKeys[key]:
 				reads = append(reads, queryRead{at: call.Pos(), key: key, how: how})
+			case !resolved && len(call.Args) > index:
+				reads = append(reads, queryRead{at: call.Pos(), how: how, bulk: true, unresolvedKey: true,
+					note: "its member name is not a literal or package constant, so a credential can be read through it unseen"})
 			}
 		}
 		return true
 	})
 	return reads
+}
+
+// isFiberPackage reports whether expr is the identifier of the fiber package.
+func isFiberPackage(expr ast.Expr) bool {
+	ident, ok := expr.(*ast.Ident)
+	return ok && ident.Name == "fiber"
 }
 
 // isDirectReceiver reports whether call is the receiver of a selector that is
@@ -255,9 +293,11 @@ func packageStringConsts(files []*ast.File) map[string]string {
 // TestAuthFieldsAreNeverReadFromTheQueryString derives every read of an auth
 // member from the production source and refuses any that reaches the URL.
 // fiber's FormValue searches the query BEFORE the body, so a `?remember_me=1`
-// outranked the body's own value; the class is closed here at every site, with
-// no exemption list to keep current — a handler added later is judged by the
-// same rule, and reads its input through bindRequestBody.
+// outranked the body's own value; the class is closed here at every site — a
+// handler added later is judged by the same rule, and reads its input through
+// bindRequestBody. The one exemption is unresolvedKeyExemptions: a single named
+// function may look a member up under a name the guard cannot resolve, because
+// a lookup it cannot resolve is otherwise refused as untraceable.
 //
 // Scope: every non-test Go file under internal/ and cmd/, not only this
 // package, each package judged with its own constants. Nothing outside
@@ -295,6 +335,7 @@ func TestAuthFieldsAreNeverReadFromTheQueryString(t *testing.T) {
 	// non-auth members through them, so a scan that found none has stopped
 	// recognising calls.
 	seenLookups := 0
+	exemptionsUsed := map[string]bool{}
 	var violations []string
 	for _, files := range filesByDir {
 		consts := packageStringConsts(files)
@@ -311,17 +352,33 @@ func TestAuthFieldsAreNeverReadFromTheQueryString(t *testing.T) {
 				}
 				return true
 			})
-			for _, read := range findQueryReads(file, consts) {
-				what := read.how + "(" + strconv.Quote(read.key) + ")"
-				if read.bulk {
-					what = read.how + " (" + read.note + ")"
+			path := strings.TrimPrefix(filepath.ToSlash(fileSet.Position(file.Pos()).Filename), "../../")
+			for _, decl := range file.Decls {
+				exemption := ""
+				if fn, ok := decl.(*ast.FuncDecl); ok {
+					exemption = path + " " + fn.Name.Name
 				}
-				violations = append(violations, fileSet.Position(read.at).String()+": "+what)
+				for _, read := range findQueryReads(decl, consts) {
+					if _, exempt := unresolvedKeyExemptions[exemption]; exempt && read.unresolvedKey {
+						exemptionsUsed[exemption] = true
+						continue
+					}
+					what := read.how + "(" + strconv.Quote(read.key) + ")"
+					if read.bulk {
+						what = read.how + " (" + read.note + ")"
+					}
+					violations = append(violations, fileSet.Position(read.at).String()+": "+what)
+				}
 			}
 		}
 	}
 	if seenLookups == 0 {
 		t.Fatal("the sweep found no FormValue/Query lookup at all: it is not reading the code it claims to police")
+	}
+	for exemption := range unresolvedKeyExemptions {
+		if !exemptionsUsed[exemption] {
+			t.Errorf("unresolvedKeyExemptions names %q, which no longer holds a lookup with an unresolvable key: remove the entry", exemption)
+		}
 	}
 	sort.Strings(violations)
 	for _, violation := range violations {
@@ -362,6 +419,12 @@ func assertQueryReadSweepAnswersBothWays(t *testing.T) {
 		`_ = c.Request().URI().QueryArgs().Peek("recovery_code")`:           "QueryArgs().Peek",
 		`_ = c.FormValue("current_password")`:                               "FormValue",
 		`_ = c.FormValue("new_password") + c.FormValue("confirm_password")`: "FormValue",
+		`name := "password"; _ = c.FormValue(name)`:                         "FormValue",
+		`field := func(c fiber.Ctx, name string) string { return c.FormValue(name) }; _ = field(c, "password")`: "FormValue",
+		`_ = c.Query("co" + "de")`:           "Query",
+		`_ = c.Params(lookupName())`:         "Params",
+		`_ = fiber.Query[string](c, name)`:   "generic Query",
+		`_ = fiber.Query(c, "password", "")`: "generic Query",
 	}
 	consts := map[string]string{"csrfFieldName": "csrf_token"}
 	for source, wantHow := range flagged {
@@ -383,6 +446,7 @@ func assertQueryReadSweepAnswersBothWays(t *testing.T) {
 		`_ = logoutURL.Query()`,
 		`_ = logoutURL.Query().Get("password")`,
 		`_ = fiber.Query[string](c, "day")`,
+		`_ = fiber.Query(c, "day", 0)`,
 		`_ = fiber.Params[string](c, "id")`,
 		`_ = c.Params("id")`,
 		`_ = c.Bind().Body(&in)`,
@@ -403,7 +467,7 @@ func isUnprocessable(err error) bool {
 // TestBindRequestBodyReadsOnlyTheBody drives the helper through every body
 // transport with a conflicting `?field=` in the query: the body's value wins
 // where the transport has one, and the query's value is never the answer. A
-// body type the API does not declare for auth inputs (XML, CBOR, MsgPack, a
+// body type the helper does not accept for auth inputs (XML, CBOR, MsgPack, a
 // vendor "+json") is refused with 422 and fills nothing, even where the binder
 // underneath would have decoded it.
 func TestBindRequestBodyReadsOnlyTheBody(t *testing.T) {
@@ -455,7 +519,7 @@ func TestBindRequestBodyReadsOnlyTheBody(t *testing.T) {
 		{name: "mixed-case json content type", contentType: "Application/JSON", body: []byte(`{"field":"from-body"}`), want: "from-body"},
 		{name: "unknown content type", contentType: "text/plain", body: []byte("field=from-body"), wantErr: isUnprocessable},
 		{name: "no content type", contentType: "", body: []byte("field=from-body"), wantErr: isUnprocessable},
-		// The binder decodes these; the API declares none of them for an auth
+		// The binder decodes these; the helper accepts none of them for an auth
 		// input, and an XML decoder keeps what it read before a syntax error.
 		{name: "application/xml", contentType: "application/xml", body: []byte(`<target><Field>from-body</Field></target>`), wantErr: isUnprocessable},
 		{name: "text/xml", contentType: "text/xml", body: []byte(`<target><Field>from-body</Field></target>`), wantErr: isUnprocessable},
