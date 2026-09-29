@@ -10,6 +10,49 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
+// TestImportPlanEntriesRejectsADateOutsideTheAcceptedRange pins that a row dated
+// outside DayDateMin..DayDateMax is counted as rejected while every other row in
+// the file is still planned, in zones on both sides of UTC.
+func TestImportPlanEntriesRejectsADateOutsideTheAcceptedRange(t *testing.T) {
+	t.Parallel()
+
+	entries := []ExportJSONEntry{
+		{Date: "0001-01-01", Period: true},
+		{Date: "1899-12-31", Period: true},
+		{Date: "1900-01-01", Period: true},
+		{Date: "2026-01-10", Period: true},
+		{Date: "9999-12-30", Period: true},
+		{Date: "9999-12-31", Period: true},
+	}
+
+	for _, zone := range []string{"UTC", "Asia/Tokyo", "Pacific/Pago_Pago"} {
+		location, err := time.LoadLocation(zone)
+		if err != nil {
+			t.Fatalf("load %s: %v", zone, err)
+		}
+
+		planned, _, rejected := (&ImportService{}).planEntries(entries, location)
+		if rejected != 3 {
+			t.Errorf("%s: rejected = %d, want the 3 out-of-range rows", zone, rejected)
+		}
+		var got []string
+		for _, day := range planned {
+			got = append(got, CalendarDayKey(day.dayStart))
+		}
+		want := []string{"1900-01-01", "2026-01-10", "9999-12-30"}
+		if len(got) != len(want) {
+			t.Errorf("%s: planned %v, want %v", zone, got, want)
+			continue
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Errorf("%s: planned %v, want %v", zone, got, want)
+				break
+			}
+		}
+	}
+}
+
 // --- in-memory stubs with injectable errors, for the branches an integration
 // DB never exercises (repository failures, best-effort refresh, defaults). ---
 

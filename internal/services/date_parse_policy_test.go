@@ -115,9 +115,13 @@ func TestParseDayDateResolvesADayWhoseMidnightIsSkipped(t *testing.T) {
 // TestParseDayDateAcceptsExactlyTheDocumentedRangeInEveryZone pins both edges of
 // DayDateMin..DayDateMax from each side, in zones on both sides of UTC: the bound
 // is read off the parsed calendar components, so a zone's offset must move
-// neither edge. Pacific/Kiritimati (UTC+14) would pull 1900-01-01 before the
-// bound and Pacific/Pago_Pago (UTC-11) would push 9999-12-30 past it if the
-// comparison ran on the resolved instant instead.
+// neither edge. The list needs zones whose offset in 1900 had each sign, because
+// the lower edge is only reachable through the historical offset: Asia/Tokyo
+// (+9) and Pacific/Auckland (+11:30) put local midnight of 1900-01-01 at
+// 1899-12-31 in UTC, so a comparison on the resolved instant's UTC date would
+// refuse the first accepted day there. Kiritimati, Pago_Pago and Santiago all
+// had negative offsets in 1900 and cannot show that; they stay as the
+// negative-offset side and as the far-future controls for the upper edge.
 func TestParseDayDateAcceptsExactlyTheDocumentedRangeInEveryZone(t *testing.T) {
 	t.Parallel()
 
@@ -138,7 +142,7 @@ func TestParseDayDateAcceptsExactlyTheDocumentedRangeInEveryZone(t *testing.T) {
 		{day: "9999-12-31", accepted: false},
 	}
 
-	for _, zone := range []string{"UTC", "Pacific/Kiritimati", "America/Santiago", "Pacific/Pago_Pago"} {
+	for _, zone := range []string{"UTC", "Asia/Tokyo", "Pacific/Auckland", "Pacific/Kiritimati", "America/Santiago", "Pacific/Pago_Pago"} {
 		location, err := time.LoadLocation(zone)
 		if err != nil {
 			t.Fatalf("load %s: %v", zone, err)
