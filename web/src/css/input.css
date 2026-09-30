@@ -3390,12 +3390,11 @@
     box-shadow: var(--elevation-2);
   }
 
-  /* A day past DayDateMax is rendered disabled; it must not read as clickable. */
+  /* A day past DayDateMax is rendered disabled; it must not read as clickable.
+     No pointer events means no hover lift, and the selection ring is untouched. */
   &:disabled {
     opacity: var(--btn-inactive-opacity);
-    cursor: not-allowed;
-    transform: none !important;
-    box-shadow: none !important;
+    pointer-events: none;
   }
 
   &:focus {
