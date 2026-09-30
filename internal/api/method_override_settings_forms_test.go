@@ -35,6 +35,7 @@ type noJSForm struct {
 	cookies map[string]string
 	// secret is the manual TOTP secret the 2FA setup page shows, when it does.
 	secret string
+	node   *html.Node
 }
 
 // renderNoJSForm GETs page with cookies and returns the first form match
@@ -76,7 +77,7 @@ func renderNoJSForm(t *testing.T, app *fiber.App, page string, cookies map[strin
 	secret := strings.TrimSpace(htmlNodeText(htmlFindElement(document, func(node *html.Node) bool {
 		return node.Type == html.ElementNode && htmlHasAttr(node, "data-totp-manual-secret")
 	})))
-	return noJSForm{action: htmlAttr(form, "action"), fields: fields, cookies: held, secret: secret}
+	return noJSForm{action: htmlAttr(form, "action"), fields: fields, cookies: held, secret: secret, node: form}
 }
 
 func cookieHeaderFromMap(cookies map[string]string) string {

@@ -61,6 +61,19 @@
             min="{{.MinDate}}"
             max="{{.MaxDate}}"
             data-onboarding-start-date>
+          {{/* The picker needs JavaScript; without it this field is the date.
+               Scripts drop it. It follows the hidden input above because the
+               step binds the last value of a repeated field. */}}
+          <input
+            type="date"
+            class="input-field w-auto"
+            name="last_period_start"
+            value="{{.LastPeriodStart}}"
+            min="{{.MinDate}}"
+            max="{{.MaxDate}}"
+            required
+            aria-labelledby="last-period-start-label"
+            data-nojs-only>
 
           <div class="flex flex-wrap gap-2">
             <button type="button" class="btn-soft text-sm onboarding-shortcut" data-onboarding-shortcut="today">{{t .Messages "onboarding.step1.today"}}</button>
