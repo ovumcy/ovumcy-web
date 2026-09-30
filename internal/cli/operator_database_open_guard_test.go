@@ -2,8 +2,8 @@ package cli
 
 import (
 	"go/ast"
+	"go/token"
 	"go/types"
-	"sort"
 	"testing"
 
 	"golang.org/x/tools/go/packages"
@@ -15,80 +15,126 @@ const (
 	operatorGuardBootstrapPath = "github.com/ovumcy/ovumcy-web/internal/bootstrap"
 )
 
+// operatorGuardSite is one reference in the cli package: the function a
+// declaration resolves to, and the function whose body (or whose function
+// literal) mentions it. A package-level declaration outside any function has a
+// nil enclosing.
+type operatorGuardSite struct {
+	callee    *types.Func
+	enclosing *types.Func
+}
+
 // TestOperatorCommandsOpenTheDatabaseOnlyThroughTheSchemaCheck keeps the
 // schema refusal from being bypassed by a subcommand added later: in the
 // shipped cli package, every way to reach a migrated database with its
 // repositories is referenced from exactly one function, and that function is
-// the one that runs bootstrap.VerifySchemaInvariants. References are resolved
-// by declaration through types.Info, so an alias, a method value or a renamed
-// import cannot hide one. `repair` opens with db.OpenDatabaseWithoutMigrations
-// on purpose — it exists for a database a migration refuses — and builds no
-// repository set, so it is outside this class.
+// the one that runs bootstrap.VerifySchemaInvariants under the shared storage
+// budget. One pass over the package records every reference to a function
+// declaration as a (callee, enclosing) pair of *types.Func objects; the rules
+// and the anti-vacuity anchors below are all read from that one record.
+// References are resolved by declaration through types.Info, so an alias, a
+// method value, a renamed import or a same-named method on another type cannot
+// hide one. `repair` opens with db.OpenDatabaseWithoutMigrations on purpose —
+// it exists for a database a migration refuses — and builds no repository set,
+// so it is outside this class.
 func TestOperatorCommandsOpenTheDatabaseOnlyThroughTheSchemaCheck(t *testing.T) {
 	t.Parallel()
 
 	pkg := loadOperatorGuardPackage(t)
-	allowed := map[string]string{
-		operatorGuardDBPath + ".OpenDatabase":             "openOperatorRepositories",
-		operatorGuardCLIPath + ".buildRepositories":       "openOperatorRepositories",
-		operatorGuardBootstrapPath + ".BuildRepositories": "buildRepositories",
-		operatorGuardDBPath + ".NewRepositories":          "",
+	references := collectOperatorGuardReferences(pkg)
+
+	open := resolveOperatorGuardFunc(t, pkg, operatorGuardCLIPath, "openOperatorRepositories")
+	build := resolveOperatorGuardFunc(t, pkg, operatorGuardCLIPath, "buildRepositories")
+	openDatabase := resolveOperatorGuardFunc(t, pkg, operatorGuardDBPath, "OpenDatabase")
+	newRepositories := resolveOperatorGuardFunc(t, pkg, operatorGuardDBPath, "NewRepositories")
+	buildBootstrap := resolveOperatorGuardFunc(t, pkg, operatorGuardBootstrapPath, "BuildRepositories")
+	verify := resolveOperatorGuardFunc(t, pkg, operatorGuardBootstrapPath, "VerifySchemaInvariants")
+	passContext := resolveOperatorGuardFunc(t, pkg, operatorGuardBootstrapPath, "PassContext")
+
+	// Each guarded function and the ONLY function allowed to reference it.
+	// db.NewRepositories has none: every set is built through buildRepositories.
+	allowed := map[*types.Func]*types.Func{
+		openDatabase:    open,
+		build:           open,
+		buildBootstrap:  build,
+		newRepositories: nil,
+		verify:          open,
+	}
+	for site, position := range references {
+		want, guarded := allowed[site.callee]
+		if !guarded || (want != nil && site.enclosing == want) {
+			continue
+		}
+		t.Errorf("%s references %s at %s: open the database through openOperatorRepositories, which refuses one the server would not boot on",
+			operatorGuardName(site.enclosing), operatorGuardQualifiedName(site.callee), pkg.Fset.Position(position))
 	}
 
-	found := map[string]bool{}
+	// Anti-vacuity: the load-bearing sites, each asserted by name. A scan that
+	// reached none of them would report every rule above as satisfied.
+	required := []operatorGuardSite{
+		{openDatabase, open},
+		{build, open},
+		{buildBootstrap, build},
+		{verify, open},
+		// The schema check must run under the same storage budget as the
+		// server's boot passes, or a stalled catalog read hangs the command.
+		{passContext, open},
+	}
+	for _, command := range []string{"runUsersCommand", "runResetPasswordCommand", "runLinkOIDCIdentityCommand", "runNotifyOperatorCommand", "openWebhookCLIService"} {
+		required = append(required, operatorGuardSite{open, resolveOperatorGuardFunc(t, pkg, operatorGuardCLIPath, command)})
+	}
+	for _, site := range required {
+		if _, found := references[site]; !found {
+			t.Errorf("%s was not found referencing %s: the scan is not measuring what it claims, or the command no longer goes through it",
+				operatorGuardName(site.enclosing), operatorGuardQualifiedName(site.callee))
+		}
+	}
+}
+
+// collectOperatorGuardReferences is the single pass: every identifier in the
+// package that resolves to a function declaration, keyed by that function and
+// by the function declaration that encloses the identifier, with the position
+// of one such reference.
+func collectOperatorGuardReferences(pkg *packages.Package) map[operatorGuardSite]token.Pos {
+	references := map[operatorGuardSite]token.Pos{}
 	for _, file := range pkg.Syntax {
 		for _, decl := range file.Decls {
-			enclosing := "package-level declaration"
-			if fn, ok := decl.(*ast.FuncDecl); ok {
-				enclosing = fn.Name.Name
+			var enclosing *types.Func
+			if declared, ok := decl.(*ast.FuncDecl); ok {
+				enclosing, _ = pkg.TypesInfo.Defs[declared.Name].(*types.Func)
 			}
 			ast.Inspect(decl, func(node ast.Node) bool {
 				ident, ok := node.(*ast.Ident)
 				if !ok {
 					return true
 				}
-				fn, ok := pkg.TypesInfo.Uses[ident].(*types.Func)
-				if !ok || fn.Pkg() == nil {
+				callee, ok := pkg.TypesInfo.Uses[ident].(*types.Func)
+				if !ok {
 					return true
 				}
-				name := fn.Pkg().Path() + "." + fn.Name()
-				want, guarded := allowed[name]
-				if !guarded {
-					return true
+				site := operatorGuardSite{callee: callee.Origin(), enclosing: enclosing}
+				if _, seen := references[site]; !seen {
+					references[site] = ident.Pos()
 				}
-				if enclosing != want {
-					t.Errorf("%s references %s at %s: open the database through openOperatorRepositories, which refuses one the server would not boot on", enclosing, name, pkg.Fset.Position(ident.Pos()))
-					return true
-				}
-				found[name] = true
 				return true
 			})
 		}
 	}
-	for name, want := range allowed {
-		if want != "" && !found[name] {
-			t.Errorf("%s was not found referencing %s: the scan is not measuring what it claims", want, name)
-		}
-	}
+	return references
+}
 
-	verify := lookupOperatorGuardFunc(t, operatorGuardBootstrapPath, "VerifySchemaInvariants", pkg)
-	open := pkg.Types.Scope().Lookup("openOperatorRepositories")
-	if open == nil {
-		t.Fatal("openOperatorRepositories is not declared in the cli package")
+func operatorGuardName(fn *types.Func) string {
+	if fn == nil {
+		return "package-level declaration"
 	}
-	if callers := referencingFunctions(pkg, verify); len(callers) != 1 || callers[0] != "openOperatorRepositories" {
-		t.Errorf("bootstrap.VerifySchemaInvariants is referenced from %v, want only openOperatorRepositories", callers)
-	}
+	return fn.Name()
+}
 
-	callers := map[string]bool{}
-	for _, name := range referencingFunctions(pkg, open) {
-		callers[name] = true
+func operatorGuardQualifiedName(fn *types.Func) string {
+	if fn.Pkg() == nil {
+		return fn.Name()
 	}
-	for _, entry := range []string{"runUsersCommand", "runResetPasswordCommand", "runLinkOIDCIdentityCommand", "RunNotifyCommand", "openWebhookCLIService"} {
-		if !callers[entry] {
-			t.Errorf("%s no longer opens its database through openOperatorRepositories", entry)
-		}
-	}
+	return fn.Pkg().Path() + "." + fn.Name()
 }
 
 func loadOperatorGuardPackage(t *testing.T) *packages.Package {
@@ -106,40 +152,22 @@ func loadOperatorGuardPackage(t *testing.T) *packages.Package {
 	return loaded[0]
 }
 
-func lookupOperatorGuardFunc(t *testing.T, path string, name string, pkg *packages.Package) types.Object {
+// resolveOperatorGuardFunc returns the function declared as path.name, looked
+// up in the cli package itself or in a package it imports.
+func resolveOperatorGuardFunc(t *testing.T, pkg *packages.Package, path string, name string) *types.Func {
 	t.Helper()
 
-	imported, ok := pkg.Imports[path]
-	if !ok {
-		t.Fatalf("%s does not import %s", operatorGuardCLIPath, path)
-	}
-	object := imported.Types.Scope().Lookup(name)
-	if object == nil {
-		t.Fatalf("%s.%s is not declared", path, name)
-	}
-	return object
-}
-
-func referencingFunctions(pkg *packages.Package, target types.Object) []string {
-	names := map[string]bool{}
-	for _, file := range pkg.Syntax {
-		for _, decl := range file.Decls {
-			enclosing := "package-level declaration"
-			if fn, ok := decl.(*ast.FuncDecl); ok {
-				enclosing = fn.Name.Name
-			}
-			ast.Inspect(decl, func(node ast.Node) bool {
-				if ident, ok := node.(*ast.Ident); ok && pkg.TypesInfo.Uses[ident] == target {
-					names[enclosing] = true
-				}
-				return true
-			})
+	scope := pkg.Types.Scope()
+	if path != operatorGuardCLIPath {
+		imported, ok := pkg.Imports[path]
+		if !ok {
+			t.Fatalf("%s does not import %s", operatorGuardCLIPath, path)
 		}
+		scope = imported.Types.Scope()
 	}
-	sorted := make([]string, 0, len(names))
-	for name := range names {
-		sorted = append(sorted, name)
+	fn, ok := scope.Lookup(name).(*types.Func)
+	if !ok {
+		t.Fatalf("%s.%s is not a declared function", path, name)
 	}
-	sort.Strings(sorted)
-	return sorted
+	return fn
 }

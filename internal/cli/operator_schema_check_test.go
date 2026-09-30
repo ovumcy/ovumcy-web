@@ -52,8 +52,8 @@ func TestOperatorCommandsRefuseADatabaseWithoutTheNormalizedEmailIndex(t *testin
 		{"webhook set", func(config db.Config, owner models.User, output *bytes.Buffer) error {
 			return runWebhookCommand(config, testWebhookSecretKey, []string{"set", owner.Email, "--enabled=true", "--url-stdin"}, strings.NewReader(testWebhookURLWithToken+"\n"), output)
 		}},
-		{"notify", func(config db.Config, _ models.User, _ *bytes.Buffer) error {
-			return RunNotifyCommand(config, testWebhookSecretKey, "en", time.UTC, false, nil)
+		{"notify", func(config db.Config, _ models.User, output *bytes.Buffer) error {
+			return runNotifyOperatorCommand(config, testWebhookSecretKey, "en", time.UTC, false, nil, output)
 		}},
 	}
 
