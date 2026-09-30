@@ -108,7 +108,7 @@ func (repo *HealthRepository) loadIndexCatalogEntry(ctx context.Context, indexNa
 // to one lowercase, space-free form: SQLite stores the CREATE statement as
 // written, less IF NOT EXISTS, while Postgres reconstructs it with the table
 // schema-qualified, the access method named and trim(x) in its SQL-standard
-// spelling.
+// spelling — or, before Postgres 14, as btrim(x).
 func canonicalIndexDefinition(definition string, schemaPrefix string) string {
 	text := strings.ToLower(strings.Join(strings.Fields(definition), " "))
 	if schemaPrefix != "" {
@@ -117,6 +117,7 @@ func canonicalIndexDefinition(definition string, schemaPrefix string) string {
 	for _, rendering := range []struct{ from, to string }{
 		{" using btree", ""},
 		{"trim(both from ", "trim("},
+		{"btrim(", "trim("},
 		{`"`, ""},
 		{" ", ""},
 	} {
