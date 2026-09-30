@@ -162,7 +162,7 @@ func (handler *Handler) applyUpsertDayAcknowledgements(c fiber.Ctx, request upse
 		}
 	}
 
-	feedback, feedbackErr := handler.dayService.ResolveDayFeedback(c.Context(), request.user, request.day, time.Now().In(request.location), request.location)
+	feedback, feedbackErr := handler.dayService.ResolveDayFeedback(c.Context(), request.user, request.day, handler.clockNow().In(request.location), request.location)
 	// The no-JS redirect carries no notice, so the warning is not recorded as
 	// shown there; it stays pending for a save that can display it.
 	if feedbackErr == nil && feedback.ShowLongPeriodWarning && !feedback.LongPeriodCycleStart.IsZero() && !dayFormNavigation(c) {
@@ -221,7 +221,7 @@ func (handler *Handler) MarkCycleStart(c fiber.Ctx) error {
 	// (no new action, no new stream), so an operator can see that the check
 	// did not run on a request that still answers 204. Regression:
 	// TestMarkCycleStartAuditsAnUnresolvedImplantationPolicy.
-	cycleStartPolicy, policyErr := handler.dayService.ResolveManualCycleStartPolicy(c.Context(), user, day, time.Now().In(location), location)
+	cycleStartPolicy, policyErr := handler.dayService.ResolveManualCycleStartPolicy(c.Context(), user, day, handler.clockNow().In(location), location)
 	var auditFields []SecurityEventField
 	if policyErr != nil {
 		auditFields = append(auditFields, securityEventField("cycle_start_policy", "unresolved"))
@@ -231,7 +231,7 @@ func (handler *Handler) MarkCycleStart(c fiber.Ctx) error {
 		c.Context(),
 		user.ID,
 		day,
-		time.Now().In(location),
+		handler.clockNow().In(location),
 		location,
 		services.ManualCycleStartOptions{
 			ReplaceExisting: services.ParseBoolLike(c.FormValue("replace_existing")),

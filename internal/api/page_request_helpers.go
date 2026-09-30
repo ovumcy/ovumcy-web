@@ -61,7 +61,7 @@ func (handler *Handler) requestLocation(c fiber.Ctx) *time.Location {
 
 func (handler *Handler) currentPageViewContext(c fiber.Ctx) (string, map[string]string, time.Time) {
 	location := handler.requestLocation(c)
-	return currentLanguage(c), currentMessages(c), time.Now().In(location)
+	return currentLanguage(c), currentMessages(c), handler.clockNow().In(location)
 }
 
 func (handler *Handler) optionalAuthenticatedUser(c fiber.Ctx) *models.User {

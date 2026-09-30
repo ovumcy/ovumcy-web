@@ -25,7 +25,7 @@ func (handler *Handler) ExportJSON(c fiber.Ctx) error {
 	if err != nil {
 		return handler.failEgress(c, exportJSONEgress, exportFetchLogsErrorSpec())
 	}
-	now := time.Now().In(location)
+	now := handler.clockNow().In(location)
 
 	payload := fiber.Map{
 		"exported_at": now.Format(time.RFC3339),

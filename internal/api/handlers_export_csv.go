@@ -3,7 +3,6 @@ package api
 import (
 	"bytes"
 	"encoding/csv"
-	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
@@ -28,7 +27,7 @@ func (handler *Handler) ExportCSV(c fiber.Ctx) error {
 	if err != nil {
 		return handler.failEgress(c, exportCSVEgress, exportFetchLogsErrorSpec())
 	}
-	now := time.Now().In(location)
+	now := handler.clockNow().In(location)
 
 	var output bytes.Buffer
 	writer := csv.NewWriter(&output)

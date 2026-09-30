@@ -1,8 +1,6 @@
 package api
 
 import (
-	"time"
-
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
@@ -17,7 +15,7 @@ func (handler *Handler) ShowOnboarding(c fiber.Ctx) error {
 	}
 
 	location := handler.requestLocation(c)
-	now := services.DateAtLocation(time.Now().In(location), location)
+	now := services.DateAtLocation(handler.clockNow().In(location), location)
 	data := handler.buildOnboardingViewData(c, user, now, location)
 	return handler.render(c, "onboarding", data)
 }

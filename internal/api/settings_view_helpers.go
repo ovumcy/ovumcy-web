@@ -21,7 +21,7 @@ func (handler *Handler) buildSettingsViewData(c fiber.Ctx, user *models.User, fl
 			FlashSuccess: flash.SettingsSuccess,
 			FlashError:   flash.SettingsError,
 		},
-		time.Now().In(location),
+		handler.clockNow().In(location),
 		location,
 	)
 	if err != nil {
