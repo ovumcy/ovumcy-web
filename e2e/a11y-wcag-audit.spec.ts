@@ -4,11 +4,12 @@ import {
   continueFromRecoveryCode,
   createCredentials,
   expectInlineRegisterRecoveryStep,
+  ONBOARDING_START_DAYS_AGO,
   readRecoveryCode,
   registerOwnerViaUI,
 } from './support/auth-helpers';
 import { applyTheme, expectTextContrastAA, measureTextContrast } from './support/contrast-helpers';
-import { markCycleStart, shiftISODate } from './support/stats-helpers';
+import { isoToday, markCycleStart, shiftISODate } from './support/stats-helpers';
 
 /**
  * WCAG 2.2 AA 2.5.8: a pointer target must be at least 24 CSS pixels in both
@@ -93,45 +94,44 @@ test.describe('WCAG AA audit regressions', () => {
     await registerOwnerAndReachDashboard(page, 'a11y-calendar-contrast');
     await page.setViewportSize({ width: 1280, height: 900 });
 
-    // A recorded cycle start paints period cells and the fertile window that
-    // follows it, so both phase fills are on the page. The window itself is
-    // withheld until one cycle has been observed, so the previous cycle's start
-    // is seeded too, exactly one 28-day cycle earlier: that is the length the
-    // account settings already carry.
-    //
-    // Anchored at day 1 of the current month rather than at a today-derived
-    // offset: the grid renders only the viewed month padded to whole weeks, so
-    // a cell is asserted in its own month's view (#620). On the 28/14 defaults
-    // (models.DefaultPeriodLength=5, the unexported defaultLutealPhaseDays=14
-    // in internal/services/cycles.go) the period spans days 1-5,
+    // Onboarding has already recorded the current cycle's start, with its period
+    // days, ONBOARDING_START_DAYS_AGO days back; any later start would replace it
+    // as the current cycle. The window is withheld until one cycle has been
+    // observed, so the previous start is seeded exactly one 28-day cycle before
+    // it: that is the length the account settings already carry. On the 28/14
+    // defaults (models.DefaultPeriodLength=5, the unexported
+    // defaultLutealPhaseDays=14 in internal/services/cycles.go)
     // CalcOvulationDay(28, 14) predicts ovulation on cycle day 14, and
     // PredictCycleWindow's fertile window is the five days before it through
-    // ovulation itself — days 9-14. The whole span sits in the first half of
-    // the month on every run date, unlike a window anchored relative to the
-    // live clock, which can fall past the grid's trailing edge at a month's
-    // end.
-    const monthISO = await page.evaluate(() => {
-      const now = new Date();
-      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    });
-    const anchorISO = `${monthISO}-01`;
-    await markCycleStart(page, shiftISODate(anchorISO, -28));
-    await markCycleStart(page, anchorISO);
+    // ovulation itself, cycle days 9-14 (today+5..today+10).
+    //
+    // The grid renders only the viewed month padded to whole weeks, and a
+    // completed cycle's phases are not painted by default, so each phase is
+    // asserted in the month that holds it (#620): the period in the current
+    // start's month, the window in today+7's. One month cannot hold both near a
+    // month's end: on 2026-09-30 the start was Sep 27 and the window Oct 4-9,
+    // past the September grid's last cell (Oct 3).
+    const currentStartISO = shiftISODate(isoToday(), -ONBOARDING_START_DAYS_AGO);
+    await markCycleStart(page, shiftISODate(currentStartISO, -28));
 
-    await page.goto(`/calendar?month=${monthISO}`);
-    await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${monthISO}`));
-    await expect(page.locator('.calendar-cell-period').first()).toBeVisible();
-    await expect(page.locator('.calendar-cell-fertile').first()).toBeVisible();
+    const views = [
+      { month: currentStartISO.slice(0, 7), selector: '.calendar-cell-period', label: 'period cell' },
+      { month: shiftISODate(isoToday(), 7).slice(0, 7), selector: '.calendar-cell-fertile', label: 'fertile cell' },
+    ];
+    for (const view of views) {
+      await page.goto(`/calendar?month=${view.month}`);
+      await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${view.month}`));
+      await expect(page.locator(view.selector).first()).toBeVisible();
 
-    for (const theme of THEMES) {
-      await applyTheme(page, theme);
-      // The cell inherits the very colour `.calendar-day-number` paints, and it
-      // is the element that carries the phase fill, so measuring the cell is
-      // measuring the day number against its own background — flattened, which
-      // is what a reader sees: the phase colours are laid down at 0.16-0.37
-      // alpha, never at full strength.
-      await expectTextContrastAA(page, '.calendar-cell-period', `period cell (${theme})`);
-      await expectTextContrastAA(page, '.calendar-cell-fertile', `fertile cell (${theme})`);
+      for (const theme of THEMES) {
+        await applyTheme(page, theme);
+        // The cell inherits the very colour `.calendar-day-number` paints, and it
+        // is the element that carries the phase fill, so measuring the cell is
+        // measuring the day number against its own background — flattened, which
+        // is what a reader sees: the phase colours are laid down at 0.16-0.37
+        // alpha, never at full strength.
+        await expectTextContrastAA(page, view.selector, `${view.label} (${theme})`);
+      }
     }
   });
 
