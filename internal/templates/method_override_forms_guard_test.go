@@ -307,3 +307,152 @@ func TestMethodOverrideFormScanClassifiesItsOwnFixtures(t *testing.T) {
 		t.Errorf("form lines %d and %d, want 2 and 5", forms[0].line, forms[1].line)
 	}
 }
+
+// Every <form>, not only the ones that carry an htmx verb. A form with neither
+// method="post" nor an action submits as GET to the page it is on without
+// JavaScript, putting its fields in the query string; the htmx guard above
+// cannot see it when it has no hx-put, hx-patch or hx-delete to find.
+
+// anyForm is one <form> of a template, whatever attributes it carries.
+type anyForm struct {
+	line      int
+	method    string
+	hasAction bool
+	attrs     map[string]string
+}
+
+func anyFormsInTemplate(source string) []anyForm {
+	// An action such as {{t .Messages "key"}} puts double quotes inside a quoted
+	// attribute; a placeholder keeps the tokenizer in step and the line numbers.
+	stripped := templateActionPattern.ReplaceAllStringFunc(source, func(action string) string {
+		return "TPLACTION" + strings.Repeat("\n", strings.Count(action, "\n"))
+	})
+	var forms []anyForm
+	line := 1
+	tokenizer := html.NewTokenizer(strings.NewReader(stripped))
+	for {
+		kind := tokenizer.Next()
+		if kind == html.ErrorToken {
+			return forms
+		}
+		startLine := line
+		line += strings.Count(string(tokenizer.Raw()), "\n")
+		token := tokenizer.Token()
+		if (kind != html.StartTagToken && kind != html.SelfClosingTagToken) || token.Data != "form" {
+			continue
+		}
+		attrs := tokenAttrs(token)
+		forms = append(forms, anyForm{
+			line:      startLine,
+			method:    strings.ToLower(attrs["method"]),
+			hasAction: strings.TrimSpace(attrs["action"]) != "",
+			attrs:     attrs,
+		})
+	}
+}
+
+// formExemption names one form that is not a post form, found by its file and
+// by an attribute only it carries.
+type formExemption struct {
+	file      string
+	attribute string
+	reason    string
+}
+
+var formMethodExemptions = []formExemption{
+	{
+		file: "components/recovery.html", attribute: "data-recovery-code-confirm",
+		reason: "a GET that continues to the next page once the recovery code is confirmed saved; it carries no field but the confirmation checkbox",
+	},
+	{
+		file: "components/settings_import.html", attribute: "data-import-form",
+		reason: "read by script only: the import posts through fetch and this form has no no-JS path to misroute",
+	},
+}
+
+func formProblem(form anyForm) string {
+	var problems []string
+	if form.method != "post" {
+		problems = append(problems, fmt.Sprintf("method %q, want \"post\": without JS it submits as GET and puts its fields in the query string", form.method))
+	}
+	if !form.hasAction {
+		problems = append(problems, "declares no action: without JS it posts to the page it is on")
+	}
+	return strings.Join(problems, "; ")
+}
+
+func TestEveryFormIsAPostFormWithAnActionOrNamedAsAGetForm(t *testing.T) {
+	used := map[int]bool{}
+	var failures []string
+	scanned := 0
+
+	err := fs.WalkDir(Files, ".", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".html") {
+			return err
+		}
+		source, err := fs.ReadFile(Files, path)
+		if err != nil {
+			return err
+		}
+		for _, form := range anyFormsInTemplate(string(source)) {
+			scanned++
+			exempt := false
+			for index, exemption := range formMethodExemptions {
+				if _, carries := form.attrs[exemption.attribute]; exemption.file == path && carries {
+					used[index] = true
+					exempt = true
+				}
+			}
+			if exempt {
+				continue
+			}
+			if problem := formProblem(form); problem != "" {
+				failures = append(failures, fmt.Sprintf("%s:%d: %s", path, form.line, problem))
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk templates: %v", err)
+	}
+	if scanned == 0 {
+		t.Fatal("scanned no <form>: the scan is broken, not the tree clean")
+	}
+
+	sort.Strings(failures)
+	if len(failures) > 0 {
+		t.Errorf("forms a no-JS browser would submit as GET:\n\t%s", strings.Join(failures, "\n\t"))
+	}
+	for index, exemption := range formMethodExemptions {
+		if strings.TrimSpace(exemption.reason) == "" {
+			t.Errorf("exemption %s %s has no reason", exemption.file, exemption.attribute)
+		}
+		if !used[index] {
+			t.Errorf("exemption %s %s matches no form any more; delete it", exemption.file, exemption.attribute)
+		}
+	}
+}
+
+func TestFormMethodScanClassifiesItsOwnFixtures(t *testing.T) {
+	fixture := `
+<form action="/a" method="post" class="x" data-note="{{t .Messages "k"}}"></form>
+<form action="/b" hx-get="/b"></form>
+<form method="post"></form>
+<form action="/d" method="get"></form>
+<form class="plain"></form>
+<form action="/f" method="POST"></form>
+`
+	forms := anyFormsInTemplate(fixture)
+	want := []bool{true, false, false, false, false, true}
+	if len(forms) != len(want) {
+		t.Fatalf("scan found %d forms, want %d: %+v", len(forms), len(want), forms)
+	}
+	for index, ok := range want {
+		if problem := formProblem(forms[index]); (problem == "") != ok {
+			t.Errorf("form %d (line %d): ok=%v, want %v (problem %q)", index, forms[index].line, problem == "", ok, problem)
+		}
+	}
+	if forms[0].line != 2 || forms[5].line != 7 {
+		t.Errorf("form lines %d and %d, want 2 and 7", forms[0].line, forms[5].line)
+	}
+}
