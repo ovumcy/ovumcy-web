@@ -152,8 +152,12 @@ func TestMethodOverrideRefusesAVerbOutsideTheAllowlist(t *testing.T) {
 // An app whose RequestMethods omit an allowlisted verb leaves c.Method(verb) a
 // no-op; the override must then fail closed instead of running the POST route.
 func TestMethodOverrideFailsClosedWhenTheAppCannotRouteTheVerb(t *testing.T) {
-	t.Parallel()
-	handler := newMethodOverrideProbeHandler(t, false)
+	originalWriter := log.Writer()
+	defer log.SetOutput(originalWriter)
+	var output bytes.Buffer
+	log.SetOutput(&output)
+
+	handler := newMethodOverrideProbeHandler(t, true)
 	app := fiber.New(fiber.Config{RequestMethods: []string{
 		fiber.MethodGet, fiber.MethodHead, fiber.MethodPost, fiber.MethodPut, fiber.MethodDelete,
 	}})
@@ -164,6 +168,12 @@ func TestMethodOverrideFailsClosedWhenTheAppCannotRouteTheVerb(t *testing.T) {
 	status, body := probeAnswer(t, app, request)
 	if status != http.StatusInternalServerError || strings.HasPrefix(body, "ran ") {
 		t.Fatalf("_method=PATCH on an app without PATCH: got %d %q, want 500 without reaching a route", status, body)
+	}
+	if !strings.Contains(body, `"error"`) {
+		t.Errorf("_method=PATCH on an app without PATCH: want the app's error envelope, got %q", body)
+	}
+	if strings.Contains(output.String(), `outcome="applied"`) {
+		t.Errorf("an override that never happened was logged as applied: %q", output.String())
 	}
 }
 
