@@ -151,8 +151,10 @@ safe; before a major upgrade, read its **Breaking (API shape)** entries.
 
 ## Changelog Fragments
 
-Every pull request adds one changelog fragment, `changelog.d/<branch-name>.md`, instead of editing
-[CHANGELOG.md](CHANGELOG.md); Dependabot's pull requests are the one exception, described below.
+Every pull request adds one changelog fragment, `changelog.d/<slug>.md` — the slug is the branch name
+without its type prefix, so `fix/web123-cli-schema-check` adds `changelog.d/web123-cli-schema-check.md`
+— instead of editing [CHANGELOG.md](CHANGELOG.md); Dependabot's pull requests are the one exception,
+described below. The check refuses a pull request none of whose added fragments carries that name.
 Several pull requests inserting an entry at the same anchor in the `[Unreleased]` section was this
 repository's only recurring merge conflict, and rebasing replays the earlier commit straight back
 into the contested spot; a file per branch has no shared anchor.

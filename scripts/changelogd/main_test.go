@@ -37,14 +37,14 @@ func TestCheckFailsWhenBranchAddsNoFragment(t *testing.T) {
 	writeFile(t, dir, "internal/app.go", "package app\n")
 	commitAll(t, dir, "feat: something user-visible")
 
-	failure, err := check(dir, "main", gitOutput)
+	failure, err := check(dir, "main", "", gitOutput)
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
 	if failure == "" {
 		t.Fatal("expected the gate to fail on a branch with no changelog.d/ fragment")
 	}
-	for _, want := range []string{"adds no fragment", "changelog.d/<branch-name>.md", "### Fixed", "none"} {
+	for _, want := range []string{"adds no fragment", "changelog.d/<slug>.md", "### Fixed", "none"} {
 		if !strings.Contains(failure, want) {
 			t.Errorf("failure message does not mention %q:\n%s", want, failure)
 		}
@@ -56,7 +56,7 @@ func TestCheckPassesOnAddedFragment(t *testing.T) {
 	writeFile(t, dir, "changelog.d/some-branch.md", "### Added\n\n- **A new thing.**\n")
 	commitAll(t, dir, "feat: a new thing")
 
-	failure, err := check(dir, "main", gitOutput)
+	failure, err := check(dir, "main", "", gitOutput)
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestCheckPassesOnNoneMarkerFragment(t *testing.T) {
 	writeFile(t, dir, "changelog.d/chore-branch.md", "none\n\nOnly the CI workflow moved; nothing an operator can observe.\n")
 	commitAll(t, dir, "chore: nothing user-visible")
 
-	failure, err := check(dir, "main", gitOutput)
+	failure, err := check(dir, "main", "", gitOutput)
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestCheckFailsOnUnknownSectionHeaderAndNamesTheFile(t *testing.T) {
 	writeFile(t, dir, "changelog.d/bad-branch.md", "### Improved\n\n- **Not a Keep a Changelog section.**\n")
 	commitAll(t, dir, "feat: wrong header")
 
-	failure, err := check(dir, "main", gitOutput)
+	failure, err := check(dir, "main", "", gitOutput)
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestCheckFailsOnFragmentWithoutEntryText(t *testing.T) {
 	writeFile(t, dir, "changelog.d/empty-branch.md", "### Added\n\n")
 	commitAll(t, dir, "feat: header only")
 
-	failure, err := check(dir, "main", gitOutput)
+	failure, err := check(dir, "main", "", gitOutput)
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestCheckFailsOnFragmentTextBeforeTheFirstHeader(t *testing.T) {
 	writeFile(t, dir, "changelog.d/loose-branch.md", "- **An entry with no section.**\n")
 	commitAll(t, dir, "feat: no header")
 
-	failure, err := check(dir, "main", gitOutput)
+	failure, err := check(dir, "main", "", gitOutput)
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestCheckPassesWhenChangelogGainsAReleaseHeading(t *testing.T) {
 		"## [1.1.0] - 2026-02-02\n\n### Added\n\n- **An assembled release.**\n\n## [1.0.0] - 2026-01-01", 1))
 	commitAll(t, dir, "chore: cut 1.1.0")
 
-	failure, err := check(dir, "main", gitOutput)
+	failure, err := check(dir, "main", "", gitOutput)
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestCheckFailsWhenChangelogGainsAnEntryButNoReleaseHeading(t *testing.T) {
 		"### Fixed\n\n- **An entry written straight into Unreleased.**\n", 1))
 	commitAll(t, dir, "fix: edit the changelog by hand")
 
-	failure, err := check(dir, "main", gitOutput)
+	failure, err := check(dir, "main", "", gitOutput)
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestCheckIgnoresAnEditToAnExistingFragment(t *testing.T) {
 	writeFile(t, dir, "changelog.d/landed-earlier.md", "### Added\n\n- **Reworded by another branch.**\n")
 	commitAll(t, dir, "docs: reword someone else's fragment")
 
-	failure, err := check(dir, "main", gitOutput)
+	failure, err := check(dir, "main", "", gitOutput)
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestCheckRefusesAnUnreleasedEditBesideAnAddedFragment(t *testing.T) {
 		"- **A frozen entry, quietly reworded.**", 1))
 	commitAll(t, dir, "feat: a new thing, and a rewrite of a waiting entry")
 
-	failure, err := check(dir, "main", gitOutput)
+	failure, err := check(dir, "main", "", gitOutput)
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestCheckRefusesDeletingAnUnreleasedEntryBesideAnAddedFragment(t *testing.T
 		"### Fixed\n\n- **A frozen entry.** Written before fragments existed, and still waiting for a\n  release to carry it out.\n\n", "", 1))
 	commitAll(t, dir, "feat: a new thing, and a waiting entry dropped")
 
-	failure, err := check(dir, "main", gitOutput)
+	failure, err := check(dir, "main", "", gitOutput)
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
@@ -227,7 +227,7 @@ func TestCheckAllowsReleaseAssemblyThatAlsoRewritesTheUnreleasedBody(t *testing.
 	writeFile(t, dir, "CHANGELOG.md", assembled)
 	commitAll(t, dir, "chore: cut 1.1.0")
 
-	failure, err := check(dir, "main", gitOutput)
+	failure, err := check(dir, "main", "", gitOutput)
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
@@ -242,7 +242,7 @@ func TestCheckAllowsACorrectionInsideReleasedText(t *testing.T) {
 	writeFile(t, dir, "CHANGELOG.md", strings.Replace(fixtureChangelog, "- **The first release.**", "- **The first release, corrected.**", 1))
 	commitAll(t, dir, "docs: correct a released entry")
 
-	failure, err := check(dir, "main", gitOutput)
+	failure, err := check(dir, "main", "", gitOutput)
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
@@ -256,7 +256,7 @@ func TestCheckOwesAFragmentEvenForACorrectionInsideReleasedText(t *testing.T) {
 	writeFile(t, dir, "CHANGELOG.md", strings.Replace(fixtureChangelog, "- **The first release.**", "- **The first release, corrected.**", 1))
 	commitAll(t, dir, "docs: correct a released entry")
 
-	failure, err := check(dir, "main", gitOutput)
+	failure, err := check(dir, "main", "", gitOutput)
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
@@ -272,7 +272,7 @@ func TestCheckRefusesAModifiedInvalidFragment(t *testing.T) {
 	writeFile(t, dir, "changelog.d/mine.md", "### Added\n\n- **My own entry.**\n")
 	commitAll(t, dir, "docs: reword someone else's fragment, badly")
 
-	failure, err := check(dir, "main", gitOutput)
+	failure, err := check(dir, "main", "", gitOutput)
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
@@ -288,7 +288,7 @@ func TestCheckAllowsAModifiedValidFragmentBesideAnAddedOne(t *testing.T) {
 	writeFile(t, dir, "changelog.d/mine.md", "none\n\nOnly a wording fix.\n")
 	commitAll(t, dir, "docs: reword someone else's fragment")
 
-	failure, err := check(dir, "main", gitOutput)
+	failure, err := check(dir, "main", "", gitOutput)
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
@@ -375,7 +375,7 @@ func TestCheckRefusesAnUnreleasedRewriteBesideAWhitespaceTouchOfItsHeading(t *te
 		"- **A frozen entry, quietly reworded.**", 1))
 	commitAll(t, dir, "feat: a rewrite dressed as a heading touch")
 
-	failure, err := check(dir, "main", gitOutput)
+	failure, err := check(dir, "main", "", gitOutput)
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
@@ -393,7 +393,7 @@ func TestCheckRefusesAnUnreleasedRewriteBesideADateEditOfAReleasedHeading(t *tes
 		"- **A frozen entry, quietly reworded.**", 1))
 	commitAll(t, dir, "feat: a rewrite dressed as a date correction")
 
-	failure, err := check(dir, "main", gitOutput)
+	failure, err := check(dir, "main", "", gitOutput)
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
@@ -408,7 +408,7 @@ func TestCheckAllowsADateCorrectionOfAReleasedHeadingBesideANoneFragment(t *test
 	writeFile(t, dir, "CHANGELOG.md", strings.Replace(fixtureChangelog, "## [1.0.0] - 2026-01-01", "## [1.0.0] - 2026-01-02", 1))
 	commitAll(t, dir, "docs: correct a release date")
 
-	failure, err := check(dir, "main", gitOutput)
+	failure, err := check(dir, "main", "", gitOutput)
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
@@ -426,7 +426,7 @@ func TestCheckPassesOnWhatAssembleWrites(t *testing.T) {
 	}
 	commitAll(t, dir, "chore: cut 1.1.0")
 
-	failure, err := check(dir, "main", gitOutput)
+	failure, err := check(dir, "main", "", gitOutput)
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
@@ -437,7 +437,7 @@ func TestCheckPassesOnWhatAssembleWrites(t *testing.T) {
 
 func TestCheckReportsAnUnusableBaseRef(t *testing.T) {
 	dir := initRepo(t)
-	if _, err := check(dir, "origin/does-not-exist", gitOutput); err == nil {
+	if _, err := check(dir, "origin/does-not-exist", "", gitOutput); err == nil {
 		t.Fatal("expected an error, not a verdict, when the base ref cannot be resolved")
 	}
 }
@@ -517,7 +517,7 @@ func TestCheckRefusesAnUnreleasedRewriteBesideARetypedReleaseVersion(t *testing.
 		"- **A frozen entry, quietly reworded.**", 1))
 	commitAll(t, dir, "feat: a rewrite dressed as a version correction")
 
-	failure, err := check(dir, "main", gitOutput)
+	failure, err := check(dir, "main", "", gitOutput)
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
@@ -534,7 +534,7 @@ func TestCheckRefusesAnUnreleasedRewriteBesideACopiedReleaseHeading(t *testing.T
 		"## [1.0.0] - 2026-01-01\n\n", 1))
 	commitAll(t, dir, "feat: a rewrite dressed as a second heading for 1.0.0")
 
-	failure, err := check(dir, "main", gitOutput)
+	failure, err := check(dir, "main", "", gitOutput)
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
@@ -549,7 +549,7 @@ func TestCheckAllowsAVersionCorrectionOfAReleasedHeadingBesideANoneFragment(t *t
 	writeFile(t, dir, "CHANGELOG.md", strings.Replace(fixtureChangelog, "## [1.0.0] - 2026-01-01", "## [1.0.1] - 2026-01-01", 1))
 	commitAll(t, dir, "docs: correct a release version")
 
-	failure, err := check(dir, "main", gitOutput)
+	failure, err := check(dir, "main", "", gitOutput)
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
