@@ -55,32 +55,105 @@ func main() {
 	}
 	changed := parseDiffAddedLines(diffOut)
 
-	var uncovered []string
+	var uncovered, underLeadingMarker []string
 	for file, lines := range changed {
 		blocks, ok := coverage[file]
 		if !ok {
 			continue // file absent from the profile -> non-coverable (no-test pkg, tooling)
 		}
-		ignored := markedLines(file)
-		for _, line := range lines {
-			if lineState(blocks, line) == stateUncovered && !lineIgnored(blocks, line, ignored) {
-				uncovered = append(uncovered, fmt.Sprintf("%s:%d", file, line))
-			}
-		}
+		fileUncovered, fileTrapped := uncoveredLines(file, blocks, lines)
+		uncovered = append(uncovered, fileUncovered...)
+		underLeadingMarker = append(underLeadingMarker, fileTrapped...)
 	}
 
 	if len(uncovered) > 0 {
-		sort.Strings(uncovered)
-		fmt.Fprintf(os.Stderr, "patch coverage gate FAILED: %d modified coverable line(s) not covered by tests:\n", len(uncovered))
-		for _, u := range uncovered {
-			fmt.Fprintf(os.Stderr, "  %s\n", u)
-		}
-		fmt.Fprintln(os.Stderr, "\nAdd tests covering these lines, or, for a genuinely unreachable line,")
-		fmt.Fprintln(os.Stderr, "annotate it with a trailing // codecov:ignore (or wrap a region in")
-		fmt.Fprintln(os.Stderr, "// codecov:ignore:start ... // codecov:ignore:end) stating why.")
+		fmt.Fprint(os.Stderr, failureReport(uncovered, underLeadingMarker))
 		os.Exit(1)
 	}
 	fmt.Println("patch coverage gate OK: every modified coverable line is covered by tests.")
+}
+
+// uncoveredLines returns the "file:line" entries of the changed lines that are
+// uncovered and not excluded, plus the subset sitting under a leading
+// codecov:ignore comment line, which the gate does not honour.
+func uncoveredLines(file string, blocks []coverBlock, lines []int) (uncovered, underLeadingMarker []string) {
+	ignored := markedLines(file)
+	var source []string
+	if data, err := os.ReadFile(file); err == nil {
+		source = strings.Split(string(data), "\n")
+	}
+	for _, line := range lines {
+		if lineState(blocks, line) != stateUncovered || lineIgnored(blocks, line, ignored) {
+			continue
+		}
+		entry := fmt.Sprintf("%s:%d", file, line)
+		uncovered = append(uncovered, entry)
+		if hasLeadingIgnoreMarker(source, blocks, line) {
+			underLeadingMarker = append(underLeadingMarker, entry)
+		}
+	}
+	return uncovered, underLeadingMarker
+}
+
+// failureReport renders the gate's failure output. When some uncovered lines sit
+// under a leading codecov:ignore comment, it names that trap and its fix; the
+// verdict is unchanged, only the message grows.
+func failureReport(uncovered, underLeadingMarker []string) string {
+	uncovered = append([]string(nil), uncovered...)
+	sort.Strings(uncovered)
+	var b strings.Builder
+	fmt.Fprintf(&b, "patch coverage gate FAILED: %d modified coverable line(s) not covered by tests:\n", len(uncovered))
+	for _, u := range uncovered {
+		fmt.Fprintf(&b, "  %s\n", u)
+	}
+	b.WriteString("\nAdd tests covering these lines, or, for a genuinely unreachable line,\n")
+	b.WriteString("annotate it with a trailing // codecov:ignore (or wrap a region in\n")
+	b.WriteString("// codecov:ignore:start ... // codecov:ignore:end) stating why.\n")
+	if len(underLeadingMarker) > 0 {
+		trapped := append([]string(nil), underLeadingMarker...)
+		sort.Strings(trapped)
+		b.WriteString("\nHint: these uncovered line(s) sit directly under a leading // codecov:ignore comment\n")
+		b.WriteString("on its own line. The marker exempts only the line it is written on, so the comment\n")
+		b.WriteString("exempts nothing beneath it. Move the marker to the end of the line it should exempt,\n")
+		b.WriteString("or wrap the arm in // codecov:ignore:start ... // codecov:ignore:end:\n")
+		for _, u := range trapped {
+			fmt.Fprintf(&b, "  %s\n", u)
+		}
+	}
+	return b.String()
+}
+
+// hasLeadingIgnoreMarker reports whether the nearest preceding non-blank line
+// above the uncovered line — or above the start of an uncovered coverage block
+// containing it, so the body of an if arm counts — is a comment-only line
+// carrying codecov:ignore (not the :start or :end block delimiters).
+func hasLeadingIgnoreMarker(source []string, blocks []coverBlock, line int) bool {
+	starts := []int{line}
+	for _, b := range blocks {
+		if !b.covered && line >= b.start && line <= b.end {
+			starts = append(starts, b.start)
+		}
+	}
+	for _, start := range starts {
+		for i := start - 2; i >= 0 && i < len(source); i-- {
+			trimmed := strings.TrimSpace(source[i])
+			if trimmed == "" {
+				continue
+			}
+			if isLeadingIgnoreComment(trimmed) {
+				return true
+			}
+			break
+		}
+	}
+	return false
+}
+
+func isLeadingIgnoreComment(trimmed string) bool {
+	return strings.HasPrefix(trimmed, "//") &&
+		strings.Contains(trimmed, "codecov:ignore") &&
+		!strings.Contains(trimmed, "codecov:ignore:start") &&
+		!strings.Contains(trimmed, "codecov:ignore:end")
 }
 
 // parseCoverageProfile maps each repo-relative .go file to its coverage blocks.
