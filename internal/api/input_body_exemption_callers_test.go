@@ -347,7 +347,7 @@ func (h *Handler) foreign(c fiber.Ctx, name string) string {
 		"addressed":  "takes the address of name",
 		"rekeyed":    "looks a member up by something other than name",
 		"unkeyed":    "holds no lookup keyed by name",
-		// fasthttp's FormValue is no fiber lookup; isLookup takes it by name.
+		// fasthttp's FormValue is no fiber lookup; lookupKey takes it by name.
 		"foreign": "looks a member up by something other than name",
 	} {
 		exemption := lookupExemption{file: "fixture.go", receiver: "Handler", function: function, keyParam: "name"}
