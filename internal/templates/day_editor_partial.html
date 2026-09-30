@@ -173,8 +173,8 @@
       data-day-delete-date="{{.DateString}}">
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
       <input type="hidden" name="_method" value="DELETE">
-      {{/* hx-confirm needs JavaScript; without it, this required box is the confirmation. */}}
-      <noscript><label class="journal-muted text-sm"><input type="checkbox" required data-day-delete-nojs-confirm> {{t .Messages "confirm.delete_entry"}}</label></noscript>
+      {{/* hx-confirm needs JavaScript; without it, this required box is the confirmation. Scripts drop it. */}}
+      <label class="journal-muted text-sm" data-nojs-only><input type="checkbox" required data-day-delete-nojs-confirm> {{t .Messages "confirm.delete_entry"}}</label>
       <button type="submit" class="danger-link" data-day-delete-button>{{t .Messages "calendar.delete_entry"}}</button>
     </form>
   </div>
