@@ -67,10 +67,10 @@ func openOperatorRepositories(databaseConfig db.Config, fencePath string) (*db.R
 	}
 	sqlDB, err := database.DB()
 	if err != nil {
-		// codecov:ignore -- defensive: (*gorm.DB).DB() only errors when the pool
-		// is unavailable, which cannot happen on the handle OpenDatabase just returned.
+		// codecov:ignore:start -- defensive: (*gorm.DB).DB() only errors when the
+		// pool is unavailable, which cannot happen on the handle OpenDatabase just returned.
 		return nil, nil, nil, fmt.Errorf("database init failed: %w", err)
-	}
+	} // codecov:ignore:end
 	closeDatabase := func() { _ = sqlDB.Close() }
 
 	repositories, fence := buildRepositories(database, fencePath)
