@@ -3390,6 +3390,14 @@
     box-shadow: var(--elevation-2);
   }
 
+  /* A day past DayDateMax is rendered disabled; it must not read as clickable. */
+  &:disabled {
+    opacity: var(--btn-inactive-opacity);
+    cursor: not-allowed;
+    transform: none !important;
+    box-shadow: none !important;
+  }
+
   &:focus {
     outline: none;
     border-color: rgba(212, 165, 116, 0.95);

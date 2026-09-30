@@ -12,7 +12,6 @@ type CalendarDayState struct {
 	Day        int
 	InMonth    bool
 	IsToday    bool
-	IsFuture   bool
 
 	OpenEditDirectly bool
 	IsPeriod         bool
@@ -564,7 +563,6 @@ func buildCalendarDayState(day time.Time, monthStart time.Time, today time.Time,
 		Day:                    day.Day(),
 		InMonth:                day.Month() == monthStart.Month(),
 		IsToday:                daysFromToday == 0,
-		IsFuture:               daysFromToday > 0,
 		OpenEditDirectly:       openEditDirectly,
 		IsPeriod:               hasEntry && entry.IsPeriod,
 		IsPredicted:            isPredictedPeriod,
