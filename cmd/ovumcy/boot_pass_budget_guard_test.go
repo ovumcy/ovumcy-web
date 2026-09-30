@@ -43,7 +43,7 @@ func TestBootPassContextCarriesAStorageBudget(t *testing.T) {
 // before the dependencies are built, which is the window in main() where the
 // database is open, the migrations have applied and no listener exists yet. So
 // the guard reads that window out of main()'s own body and holds whatever it
-// finds there to the budget. A fourth pass added to the window later is covered
+// finds there to the budget. A pass added to the window later is covered
 // without anyone remembering to extend a list — including one wired behind a
 // config flag, since collectBootPassCalls descends into nested blocks. What it
 // does not claim to cover is written on that function, and the floor below is

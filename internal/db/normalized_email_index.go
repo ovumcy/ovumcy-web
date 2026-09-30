@@ -29,7 +29,7 @@ const normalizedEmailIndexRestore = "delete migration 002's ledger row " +
 // VerifyNormalizedEmailIndex returns nil only when NormalizedEmailIndexName
 // exists as migration 002 defines it: UNIQUE, on users, keyed on
 // lower(trim(email)), with no predicate, and on Postgres valid and ready. It
-// reads the engine's catalog — sqlite_master, or pg_indexes and pg_index — and
+// reads the engine's catalog — sqlite_master, or pg_class and pg_index — and
 // writes nothing, so a refusal leaves the database exactly as it found it.
 func (repo *HealthRepository) VerifyNormalizedEmailIndex(ctx context.Context) error {
 	index, found, err := repo.loadIndexCatalogEntry(ctx, NormalizedEmailIndexName)
@@ -72,20 +72,24 @@ type indexCatalogEntry struct {
 // loadIndexCatalogEntry reads one index's DDL from the catalog. On Postgres it
 // looks only in current_schema(), where the migrations built the index, returns
 // that schema as pg_get_indexdef quotes it, because the definition qualifies the
-// table with it, and joins pg_index for indisvalid, which pg_indexes does not
-// expose. indisvalid alone suffices: a concurrent build marks an index ready
-// before valid, and a concurrent drop clears valid before ready and live.
+// table with it, and reads indisvalid from pg_index. Every join is on OIDs, so
+// the answer does not depend on search_path or on privileges on the schema, as
+// resolving the name through a regclass cast would. pg_get_indexdef(c.oid) is
+// the expression pg_indexes.indexdef is built from. indisvalid alone suffices:
+// a concurrent build marks an index ready before valid, and a concurrent drop
+// clears valid before ready and live.
 func (repo *HealthRepository) loadIndexCatalogEntry(ctx context.Context, indexName string) (indexCatalogEntry, bool, error) {
 	var query string
 	switch dialect := repo.database.Name(); dialect {
 	case string(DriverSQLite):
 		query = `SELECT COALESCE(sql, '') AS definition, '' AS schema_prefix, 1 AS usable FROM sqlite_master WHERE type = 'index' AND name = ?`
 	case string(DriverPostgres):
-		query = `SELECT listed.indexdef AS definition, quote_ident(listed.schemaname) AS schema_prefix,
+		query = `SELECT pg_get_indexdef(listed.oid) AS definition, quote_ident(space.nspname) AS schema_prefix,
 			state.indisvalid AS usable
-			FROM pg_indexes AS listed
-			JOIN pg_index AS state ON state.indexrelid = format('%I.%I', listed.schemaname, listed.indexname)::regclass
-			WHERE listed.schemaname = current_schema() AND listed.indexname = ?`
+			FROM pg_class AS listed
+			JOIN pg_namespace AS space ON space.oid = listed.relnamespace
+			JOIN pg_index AS state ON state.indexrelid = listed.oid
+			WHERE space.nspname = current_schema() AND listed.relname = ?`
 	default:
 		return indexCatalogEntry{}, false, fmt.Errorf("unsupported database dialect %q", dialect) // codecov:ignore -- OpenDatabase builds only sqlite and postgres handles
 	}

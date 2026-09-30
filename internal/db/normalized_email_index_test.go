@@ -71,6 +71,10 @@ func runNormalizedEmailIndexChecks(t *testing.T, config Config) {
 	})
 
 	if config.Driver == DriverPostgres {
+		var listed string
+		if err := database.Raw("SELECT indexdef FROM pg_indexes WHERE schemaname = current_schema() AND indexname = ?", NormalizedEmailIndexName).Scan(&listed).Error; err != nil || listed != migrated {
+			t.Fatalf("the catalog read must report the definition pg_indexes lists, got %q against %q (err=%v)", migrated, listed, err)
+		}
 		t.Run("an index a failed CREATE INDEX CONCURRENTLY left behind", func(t *testing.T) {
 			leaveAFailedConcurrentBuild(t, database, migrated)
 			requireUnusableIndexRefused(t, repo, migrated)

@@ -173,23 +173,24 @@ func mustOpenDatabase(databaseConfig db.Config) *gorm.DB {
 //
 // The value is deliberately far above any plausible pass, because the failure
 // this introduces is the opposite one: a budget set near the real cost turns a
-// slow start into a broken start. The heaviest of the three reads every owner's
-// day logs once, and on the SQLite baseline that is a handful of accounts over a
-// few thousand rows with the write lock uncontended, since nothing is serving
-// yet. Five minutes is around two orders of magnitude of headroom, so reaching
+// slow start into a broken start. The heaviest pass, the luteal recompute, reads
+// every owner's day logs once, and on the SQLite baseline that is a handful of
+// accounts over a few thousand rows with the write lock uncontended, since
+// nothing is serving yet. Five minutes is around two orders of magnitude of headroom, so reaching
 // it means storage is stuck rather than slow — which is the case each pass's own
-// failure policy should then decide, and they decide it differently: the two
-// must* wrappers stop the boot, the luteal recompute logs and lets the server
-// start.
+// failure policy should then decide, and they decide it differently: the must*
+// wrappers stop the boot, the luteal recompute logs and lets the server start.
 //
 // The budget is PER PASS and the passes run in sequence, so the boot's own worst
-// case is this value times the number of passes — fifteen minutes today, not
-// five. Size a healthcheck start period or a deployment timeout against that
-// product, not against this constant.
+// case is this value times the number of passes that call bootPassContext, not
+// this value alone. Size a healthcheck start period or a deployment timeout
+// against that product, not against this constant.
 //
 // It also makes every pass one that can stop half-done, which each pass must
-// already survive, and all three do: the feed sentinel records its epoch only
-// after disarming, so an interrupted run re-detects the rotation next boot; the
+// already survive, and each does: the schema check only reads; the restore
+// fence records its token only after disarming, so an interrupted run meets the
+// same mismatch next boot; the feed sentinel records its epoch only after
+// disarming, so an interrupted run re-detects the rotation next boot; the
 // email repair leaves its marker unwritten and every rewrite is idempotent; the
 // luteal recompute counts a cut-off row as a failure, which withholds the marker
 // for the same reason. A pass added here that writes its marker first, or whose
@@ -198,9 +199,9 @@ func mustOpenDatabase(databaseConfig db.Config) *gorm.DB {
 const bootPassStorageBudget = 5 * time.Minute
 
 // bootPassContext returns the bounded context a boot pass runs under, together
-// with the cancel its caller must defer. It exists so the three passes cannot
-// drift apart on the budget or on whether they have one at all — three inline
-// copies of the same WithTimeout is the shape that drifts.
+// with the cancel its caller must defer. It exists so the boot passes cannot
+// drift apart on the budget or on whether they have one at all — an inline copy
+// of the same WithTimeout in each pass is the shape that drifts.
 func bootPassContext() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), bootPassStorageBudget)
 }
@@ -287,7 +288,7 @@ func mustRenormalizeAuthEmails(repositories *db.Repositories) {
 // services.LutealPhaseRecomputer; this wrapper wires repositories and prints the
 // operator-facing line.
 //
-// Deliberately NOT a must* wrapper, unlike the two passes above: the column is a
+// Deliberately NOT a must* wrapper, unlike the passes above: the column is a
 // derived cache with a safe fallback, so a storage error must not turn into an
 // instance that will not start. It is logged, the marker stays unwritten, and the
 // next boot retries.
