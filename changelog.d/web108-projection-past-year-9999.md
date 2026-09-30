@@ -8,7 +8,8 @@
   is `null` as a whole. The dashboard, the webhook reminders, the calendar grid and the calendar
   feed leave the same dates out: the grid withholds such a window with its pre-fertile lead-in and
   marks nothing on the year-10000 days that close its last week, and the feed also drops an event
-  on 9999-12-31, whose end date would fall in year 10000. Accepted day input is unchanged.
+  on 9999-12-31, whose end date would fall in year 10000. The calendar page no longer navigates past
+  9999-12, where its next-month link led to an invalid-month answer. Accepted day input is unchanged.
 - **The 2FA enrollment docs name the status a wrong code gets.** `docs/openapi.yaml` listed `400`
   for `PUT /api/v1/users/current/2fa`; the server answers a wrong, missing or malformed code with
   `401` `totp invalid code`, and keeps `400` for a missing password. The spec now says so.
