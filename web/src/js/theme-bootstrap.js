@@ -50,6 +50,10 @@
     meta.setAttribute("content", theme === THEME_DARK ? THEME_COLOR_DARK : THEME_COLOR_LIGHT);
   }
 
+  // Scripts run on this page, so the [data-nojs-only] stand-ins stay out of the
+  // first paint (input.css); app.js removes them once it initializes.
+  document.documentElement.setAttribute("data-scripted", "");
+
   var theme = resolveTheme();
   document.documentElement.setAttribute("data-theme", theme);
   window.__ovumcyTheme = theme;

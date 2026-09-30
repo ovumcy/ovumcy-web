@@ -2258,7 +2258,20 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '400': { $ref: '#/components/responses/ValidationError' }
+        '400':
+          description: |
+            The date is missing, unparseable or outside the allowed range.
+
+            A caller that sends no `Accept` header, or one naming `application/json`, gets
+            the JSON envelope below. An HTMX request (`HX-Request: true`), and a browser form
+            submission whose `Accept` names `text/html`, get the localized status fragment
+            as `text/html` instead. For the browser that fragment is the whole page, so it
+            ends with a link back to `/onboarding?step=1`.
+          content:
+            text/html:
+              schema: { type: string }
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '429': { $ref: '#/components/responses/RateLimited' }
 
@@ -2278,7 +2291,20 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '400': { $ref: '#/components/responses/ValidationError' }
+        '400':
+          description: |
+            The step's input is invalid.
+
+            A caller that sends no `Accept` header, or one naming `application/json`, gets
+            the JSON envelope below. An HTMX request (`HX-Request: true`), and a browser form
+            submission whose `Accept` names `text/html`, get the localized status fragment
+            as `text/html` instead. For the browser that fragment is the whole page, so it
+            ends with a link back to `/onboarding?step=2`.
+          content:
+            text/html:
+              schema: { type: string }
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '429': { $ref: '#/components/responses/RateLimited' }
 
@@ -2494,14 +2520,35 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
-        '400': { $ref: '#/components/responses/ValidationError' }
+        '400':
+          description: |
+            The date is invalid for a manual cycle start, or the mark closes a short gap
+            and was sent without `mark_uncertain=true`.
+
+            A caller that sends no `Accept` header, or one naming `application/json`, gets
+            the JSON envelope below. An HTMX request (`HX-Request: true`), and a browser form
+            submission whose `Accept` names `text/html`, get the localized status fragment
+            as `text/html` instead. For the browser that fragment is the whole page, so it
+            ends with a link back to the calendar day when `source=calendar`, and to
+            `/dashboard` otherwise.
+          content:
+            text/html:
+              schema: { type: string }
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '409':
           description: |
             The day already carries a cycle start (or data that marking one would
             overwrite). Resend with `replace_existing=true` to take it.
+
+            The carrier follows the same rule as the `400` above: an HTMX request or a
+            `text/html` browser form submission gets the localized fragment with its link
+            back, and every other caller gets the JSON envelope.
           content:
+            text/html:
+              schema: { type: string }
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
               example:

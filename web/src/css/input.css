@@ -38,6 +38,13 @@
   ::file-selector-button {
     border-color: var(--color-gray-200, currentcolor);
   }
+
+  /* A control that stands in for a script (data-nojs-only) is for browsers
+     without JavaScript. theme-bootstrap.js marks the root before first paint,
+     so with scripts on it never flashes before app.js removes it. */
+  :root[data-scripted] [data-nojs-only] {
+    display: none;
+  }
 }
 
 @utility app-shell {
