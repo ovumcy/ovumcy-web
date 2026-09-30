@@ -152,6 +152,7 @@
               hx-swap="innerHTML"
               data-usage-goal-quick-switch-form>
               <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <input type="hidden" name="_method" value="PATCH">
               <input type="hidden" name="usage_goal" value="{{.}}">
               <button type="submit" class="btn-soft text-sm" data-usage-goal-choice="{{.}}">{{usageGoalLabel $.Messages .}}</button>
             </form>
