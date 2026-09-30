@@ -1,9 +1,97 @@
 package main
 
 import (
+	"bytes"
+	"errors"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 )
+
+// runMainEnv marks the child process a test starts to run main() itself: main
+// reads its branch from the process environment and exits the process, so the
+// only way to prove that wiring is a real child with a controlled environment.
+const runMainEnv = "CHANGELOGD_TEST_RUN_MAIN"
+
+func TestMain(m *testing.M) {
+	if os.Getenv(runMainEnv) == "1" {
+		os.Args = []string{"changelogd", "check"}
+		main()
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
+
+// runMainCheck runs `changelogd check` (the real main) in dir against base main
+// with GITHUB_HEAD_REF set to headRef — or unset when setHeadRef is false — and
+// returns the exit code and stderr.
+func runMainCheck(t *testing.T, dir string, setHeadRef bool, headRef string) (int, string) {
+	t.Helper()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	var env []string
+	for _, kv := range os.Environ() {
+		if strings.HasPrefix(kv, "GITHUB_HEAD_REF=") || strings.HasPrefix(kv, "BASE_REF=") || strings.HasPrefix(kv, runMainEnv+"=") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	env = append(env, runMainEnv+"=1", "BASE_REF=main")
+	if setHeadRef {
+		env = append(env, "GITHUB_HEAD_REF="+headRef)
+	}
+	cmd := exec.Command(exe)
+	cmd.Dir = dir
+	cmd.Env = env
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	err = cmd.Run()
+	if err == nil {
+		return 0, stderr.String()
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("run main: %v", err)
+	}
+	return exitErr.ExitCode(), stderr.String()
+}
+
+// main passes GITHUB_HEAD_REF to the check: the CI checkout is a detached merge
+// commit, so a misspelled variable would leave the name rule silently skipped.
+// The repository's checked-out branch is "feature", which owes
+// changelog.d/feature.md, so each verdict below tells the two sources apart.
+func TestMainReadsTheBranchFromGithubHeadRef(t *testing.T) {
+	dir := initRepo(t)
+	writeFile(t, dir, "changelog.d/web133-slug.md", "### Internal\n\n- **Named after the pull request branch.**\n")
+	commitAll(t, dir, "ci: add a fragment")
+
+	t.Run("GITHUB_HEAD_REF naming the fragment passes although the checked-out branch differs", func(t *testing.T) {
+		if code, stderr := runMainCheck(t, dir, true, "ci/web133-slug"); code != 0 {
+			t.Fatalf("exit %d, want 0 (stderr: %s)", code, stderr)
+		}
+	})
+	t.Run("GITHUB_HEAD_REF naming another fragment is refused and the failure names it", func(t *testing.T) {
+		code, stderr := runMainCheck(t, dir, true, "fix/web133-other")
+		if code != 1 || !strings.Contains(stderr, "changelog.d/web133-other.md") || strings.Contains(stderr, "changelog.d/feature.md") {
+			t.Fatalf("exit %d, want 1 naming changelog.d/web133-other.md only (stderr: %s)", code, stderr)
+		}
+	})
+	t.Run("an empty GITHUB_HEAD_REF falls back to the checked-out branch", func(t *testing.T) {
+		code, stderr := runMainCheck(t, dir, true, "")
+		if code != 1 || !strings.Contains(stderr, "changelog.d/feature.md") {
+			t.Fatalf("exit %d, want 1 naming changelog.d/feature.md (stderr: %s)", code, stderr)
+		}
+	})
+	t.Run("an unset GITHUB_HEAD_REF on a detached HEAD skips the name", func(t *testing.T) {
+		run(t, dir, "checkout", "-q", "--detach")
+		if code, stderr := runMainCheck(t, dir, false, ""); code != 0 {
+			t.Fatalf("exit %d, want 0 (stderr: %s)", code, stderr)
+		}
+	})
+}
 
 // --- fragment naming ---------------------------------------------------------
 
