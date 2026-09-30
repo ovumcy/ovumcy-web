@@ -147,11 +147,13 @@ func (service *SettingsService) ConfigureReauthAttempts(secretKey []byte, limite
 // before the compare, so an exhausted budget refuses the correct password too. A
 // blank submission is uncounted; a wrong password and the no-local-password
 // refusal (empty hash or local_auth_enabled=false) both spend an equalized
-// bcrypt and draw the budget. Like VerifyReauth it never resets: the caller
-// clears SettingsReauthBudget once the write the password authorised has
-// committed, so a correct password whose write was refused keeps the count.
-func (service *SettingsService) VerifyReauthPassword(attempt ReauthAttempt, user *models.User, rawPassword string) error {
-	return service.VerifyReauth(service.SettingsReauthBudget(), attempt, user, rawPassword)
+// bcrypt and draw the budget. Like VerifyReauth it never resets: it hands back
+// the budget it drew, and the caller resets that one once the write the password
+// authorised has committed, so a correct password whose write was refused keeps
+// the count.
+func (service *SettingsService) VerifyReauthPassword(attempt ReauthAttempt, user *models.User, rawPassword string) (ReauthBudget, error) {
+	budget := service.SettingsReauthBudget()
+	return budget, service.VerifyReauth(budget, attempt, user, rawPassword)
 }
 
 func (service *SettingsService) UpdateDisplayName(ctx context.Context, userID uint, displayName string) error {

@@ -262,7 +262,8 @@ func TestSettingsReauthNoLocalPasswordRefusalDrawsTheBudget(t *testing.T) {
 		refuse func(service *SettingsService, attempt ReauthAttempt) error
 	}{
 		{"erasure", func(service *SettingsService, attempt ReauthAttempt) error {
-			return service.VerifyReauthPassword(attempt, localPasswordUser(""), "AnyPass1")
+			_, err := service.VerifyReauthPassword(attempt, localPasswordUser(""), "AnyPass1")
+			return err
 		}},
 		{"password change", func(service *SettingsService, attempt ReauthAttempt) error {
 			user := &models.User{ID: 42, LocalAuthEnabled: true}

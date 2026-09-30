@@ -35,11 +35,14 @@ const (
 	clearDataApplied clearDataOutcome = iota
 	// clearDataRefused: nothing was erased and this device's session is intact.
 	clearDataRefused
-	// clearDataRefusedSignedOut: this device's auth cookie is already cleared —
-	// a revocation refused the wipe, or the wipe committed and no session could
-	// be re-issued past it — so the refusal leaves through
+	// clearDataRefusedSignedOut: a revocation refused the wipe and this device's
+	// auth cookie is already cleared, so the refusal leaves through
 	// redirectSignedOutRefusal.
 	clearDataRefusedSignedOut
+	// clearDataAppliedSignedOut: the wipe committed but no session could be
+	// re-issued past it. It leaves like clearDataRefusedSignedOut, but the data
+	// is gone, so whatever the wipe was gated on counts as spent.
+	clearDataAppliedSignedOut
 )
 
 // erasureStepupFlow binds one erasure operation to the audit identities it logs
@@ -210,7 +213,7 @@ func (handler *Handler) completeErasureStepupReauth(c fiber.Ctx, state oidcStepu
 	case oidcStepupErasureClearData:
 		spec, outcome := handler.applyClearData(c, user)
 		switch outcome {
-		case clearDataRefusedSignedOut:
+		case clearDataRefusedSignedOut, clearDataAppliedSignedOut:
 			return handler.redirectSignedOutRefusal(c, spec)
 		case clearDataRefused:
 			return handler.redirectSettingsRefusal(c, spec)
@@ -259,7 +262,7 @@ func (handler *Handler) applyClearData(c fiber.Ctx, user *models.User) (APIError
 	// spec, because unlike settingsClearDataErrorSpec above (nothing erased),
 	// the data here is already gone.
 	if _, ok := handler.refreshCurrentSession(c, user, clearDataMutation.action); !ok {
-		return settingsDataClearedSignInAgainErrorSpec(), clearDataRefusedSignedOut
+		return settingsDataClearedSignInAgainErrorSpec(), clearDataAppliedSignedOut
 	}
 
 	handler.logMutationSuccess(c, clearDataMutation)
