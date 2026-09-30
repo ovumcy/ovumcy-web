@@ -39,17 +39,6 @@ var methodOverrideExemptions = []methodOverrideExemption{
 		file: "components/settings_egress.html", verb: "DELETE", url: "/api/v1/users/current/webhook",
 		reason: "its no-JS POST deliberately reaches the save endpoint, which removes the destination when the form's hidden webhook_remove_url is set",
 	},
-	// The PATCH forms below fail closed without JS today (405: only PATCH is
-	// registered for their URLs). They are outside WEB-107's six forms and are
-	// tracked as WEB-119: each needs only the hidden _method input, since PATCH
-	// is already allowlisted. The list may only shrink.
-	{file: "components/settings_account.html", verb: "PATCH", url: "/api/v1/users/current/profile", reason: "WEB-119: no-JS 405; add the hidden _method input"},
-	{file: "components/settings_interface.html", verb: "PATCH", url: "/api/v1/users/current/interface", reason: "WEB-119: no-JS 405; add the hidden _method input"},
-	{file: "components/settings_tracking.html", verb: "PATCH", url: "/api/v1/users/current/tracking", reason: "WEB-119: no-JS 405; add the hidden _method input"},
-	{file: "components/settings_cycle.html", verb: "PATCH", url: "/api/v1/users/current/cycle", reason: "WEB-119: no-JS 405; add the hidden _method input"},
-	{file: "components/settings_cycle.html", verb: "PATCH", url: "/api/v1/users/current/reminders", reason: "WEB-119: no-JS 405; add the hidden _method input"},
-	{file: "components/settings_symptoms.html", verb: "PATCH", url: "/api/v1/symptoms/{{.Symptom.ID}}", reason: "WEB-119: no-JS 405; add the hidden _method input"},
-	{file: "dashboard.html", verb: "PATCH", url: "/api/v1/users/current/cycle", reason: "WEB-119: no-JS 405; add the hidden _method input"},
 }
 
 // overrideForm is one <form> that declares an htmx verb.

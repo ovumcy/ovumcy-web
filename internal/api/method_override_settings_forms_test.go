@@ -305,6 +305,112 @@ func TestNoJSSettingsFormsPerformTheActionTheyName(t *testing.T) {
 	}
 }
 
+// WEB-119: the settings and dashboard forms htmx submits as PATCH carry the same
+// hidden _method for the no-JavaScript path.
+func TestNoJSPatchFormsPerformTheActionTheyName(t *testing.T) {
+	t.Parallel()
+
+	patchCase := func(t *testing.T, email string, page string, match func(*html.Node) bool, redirect string,
+		typed url.Values, happened func(t *testing.T, ctx settingsSecurityTestContext) bool) noJSFormCase {
+		ctx := newSettingsSecurityTestContext(t, email)
+		return noJSFormCase{
+			app:      ctx.app,
+			page:     page,
+			cookies:  authCookieMap(t, ctx.authCookie),
+			match:    match,
+			verb:     http.MethodPatch,
+			redirect: redirect,
+			typed:    func(*testing.T, noJSForm) url.Values { return typed },
+			happened: func(t *testing.T) bool { return happened(t, ctx) },
+		}
+	}
+
+	cases := map[string]func(t *testing.T) noJSFormCase{
+		"profile": func(t *testing.T) noJSFormCase {
+			return patchCase(t, "nojs-profile@example.com", "/settings",
+				formWithAttr("hx-patch", "/api/v1/users/current/profile"), "/settings",
+				url.Values{"display_name": {"NoJS Name"}},
+				func(t *testing.T, ctx settingsSecurityTestContext) bool {
+					return reloadUserForNoJSForm(t, ctx).DisplayName == "NoJS Name"
+				})
+		},
+		"interface": func(t *testing.T) noJSFormCase {
+			return patchCase(t, "nojs-interface@example.com", "/settings",
+				formWithAttr("hx-patch", "/api/v1/users/current/interface"), "/settings",
+				url.Values{"language": {"ru"}, "theme": {"dark"}},
+				func(t *testing.T, ctx settingsSecurityTestContext) bool {
+					return reloadUserForNoJSForm(t, ctx).InterfaceLanguage == "ru"
+				})
+		},
+		"tracking": func(t *testing.T) noJSFormCase {
+			return patchCase(t, "nojs-tracking@example.com", "/settings",
+				formWithAttr("hx-patch", "/api/v1/users/current/tracking"), "/settings",
+				url.Values{"track_bbt": {"true"}, "temperature_unit": {"c"}, "week_starts_on": {"sunday"}},
+				func(t *testing.T, ctx settingsSecurityTestContext) bool {
+					return reloadUserForNoJSForm(t, ctx).TrackBBT
+				})
+		},
+		"cycle": func(t *testing.T) noJSFormCase {
+			return patchCase(t, "nojs-cycle@example.com", "/settings",
+				formWithAttr("hx-patch", "/api/v1/users/current/cycle"), "/settings",
+				url.Values{"cycle_length": {"31"}, "period_length": {"4"}, "usage_goal": {"health"}},
+				func(t *testing.T, ctx settingsSecurityTestContext) bool {
+					user := reloadUserForNoJSForm(t, ctx)
+					return user.CycleLength == 31 && user.PeriodLength == 4
+				})
+		},
+		"reminders": func(t *testing.T) noJSFormCase {
+			return patchCase(t, "nojs-reminders@example.com", "/settings",
+				formWithAttr("hx-patch", "/api/v1/users/current/reminders"), "/settings",
+				url.Values{"reminder_lead_days": {"7"}},
+				func(t *testing.T, ctx settingsSecurityTestContext) bool {
+					return reloadUserForNoJSForm(t, ctx).ReminderLeadDays == 7
+				})
+		},
+		"symptom edit": func(t *testing.T) noJSFormCase {
+			ctx := newSettingsSecurityTestContext(t, "nojs-symptom-edit@example.com")
+			symptom := models.SymptomType{UserID: ctx.user.ID, Name: "NoJS before", Icon: "A", Color: "#111111"}
+			if err := ctx.database.Create(&symptom).Error; err != nil {
+				t.Fatalf("create symptom: %v", err)
+			}
+			target := "/api/v1/symptoms/" + strconv.FormatUint(uint64(symptom.ID), 10)
+			return noJSFormCase{
+				app:      ctx.app,
+				page:     "/settings",
+				cookies:  authCookieMap(t, ctx.authCookie),
+				match:    formWithAttr("hx-patch", target),
+				verb:     http.MethodPatch,
+				redirect: "/settings",
+				typed: func(*testing.T, noJSForm) url.Values {
+					return url.Values{"name": {"NoJS after"}, "icon": {"A"}, "color": {"#111111"}}
+				},
+				happened: func(t *testing.T) bool {
+					var stored models.SymptomType
+					if err := ctx.database.First(&stored, symptom.ID).Error; err != nil {
+						t.Fatalf("reload symptom: %v", err)
+					}
+					return stored.Name == "NoJS after"
+				},
+			}
+		},
+		"dashboard usage goal switch": func(t *testing.T) noJSFormCase {
+			return patchCase(t, "nojs-usage-goal@example.com", "/dashboard",
+				formWithFlag("data-usage-goal-quick-switch-form"), "/dashboard",
+				url.Values{},
+				func(t *testing.T, ctx settingsSecurityTestContext) bool {
+					return reloadUserForNoJSForm(t, ctx).UsageGoal != models.UsageGoalHealth
+				})
+		},
+	}
+
+	for name, build := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			runNoJSFormCase(t, build(t))
+		})
+	}
+}
+
 // runNoJSFormCase renders the case's form, proves the submit is refused without
 // its csrf_token, then submits it as a browser without JavaScript would and
 // checks the redirect and the effect.

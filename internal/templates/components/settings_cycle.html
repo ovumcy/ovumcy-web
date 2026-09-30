@@ -16,6 +16,7 @@
       data-settings-unsaved-accept="{{t .Messages "settings.draft.discard"}}"
       data-save-feedback>
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="_method" value="PATCH">
 
       {{/* The three values that describe one cycle share one surface: they are
            read and adjusted together, and separate blocks for each turned a
@@ -189,6 +190,7 @@
       data-settings-reminders-form
       data-save-feedback>
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="_method" value="PATCH">
 
       {{/* One number, so one row: the label, the field and its own save sit on
            the same line instead of stacking four blocks deep. */}}

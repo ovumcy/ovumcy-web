@@ -21,6 +21,7 @@
       data-settings-unsaved-accept="{{t .Messages "settings.draft.discard"}}"
       data-save-feedback>
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="_method" value="PATCH">
 
       {{/* No helper line under these five toggles. Each one used to carry two
            sentences: the first restated its own label (under "Show BBT field",

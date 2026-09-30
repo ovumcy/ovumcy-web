@@ -19,6 +19,7 @@
           class="space-y-3"
           data-save-feedback>
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <input type="hidden" name="_method" value="PATCH">
 
           {{/* The account email is one fact, so it sits in the row beside the
                name it belongs with instead of in a card of its own. */}}

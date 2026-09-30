@@ -16,6 +16,7 @@
       data-settings-unsaved-prompt="{{t .Messages "settings.draft.unsaved_prompt"}}"
       data-settings-unsaved-accept="{{t .Messages "settings.draft.discard"}}">
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="_method" value="PATCH">
 
       <div class="settings-interface-grid">
         <section class="card-quiet settings-interface-panel space-y-3">
