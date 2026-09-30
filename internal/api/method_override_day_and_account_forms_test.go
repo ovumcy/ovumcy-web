@@ -311,7 +311,7 @@ func TestNoJSDaySaveLeavesTheLongPeriodWarningPending(t *testing.T) {
 
 // TestNoJSDayDeleteAsksForConfirmation pins the confirmation a browser without
 // JavaScript gets instead of hx-confirm: a required checkbox the form cannot be
-// submitted without, rendered only when scripting is off.
+// submitted without, dropped by scripts, so only a browser without them keeps it.
 func TestNoJSDayDeleteAsksForConfirmation(t *testing.T) {
 	t.Parallel()
 	ctx := newSettingsSecurityTestContext(t, "nojs-day-delete-confirm@example.com")
@@ -345,7 +345,7 @@ func TestNoJSDayDeleteAsksForConfirmation(t *testing.T) {
 	if htmlAttr(confirm, "type") != "checkbox" || !htmlHasAttr(confirm, "required") {
 		t.Fatalf("confirmation box type=%q required=%v, want a required checkbox", htmlAttr(confirm, "type"), htmlHasAttr(confirm, "required"))
 	}
-	if confirm.Parent == nil || confirm.Parent.Parent == nil || confirm.Parent.Parent.Data != "noscript" {
-		t.Fatal("the confirmation box must sit in <noscript>: with JavaScript, hx-confirm asks instead")
+	if confirm.Parent == nil || !htmlHasAttr(confirm.Parent, "data-nojs-only") {
+		t.Fatal("the confirmation label must carry data-nojs-only: with JavaScript, hx-confirm asks and scripts drop the box")
 	}
 }
