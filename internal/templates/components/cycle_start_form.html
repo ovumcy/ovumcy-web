@@ -39,6 +39,15 @@
 
   <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
   <input type="hidden" name="ack_period_tip" value="false" data-period-tip-ack>
+  {{/* The confirm dialog needs JavaScript; without it these boxes are the
+       confirmation. Scripts drop them. Each precedes its hidden twin because
+       the server reads the first value of a repeated field. */}}
+  {{- if .Conflict}}
+  <label class="journal-muted text-sm" data-nojs-only><input type="checkbox" name="replace_existing" value="true" required> {{t .Messages "cycle start replace required"}}</label>
+  {{- end}}
+  {{- if gt .ShortGap 0}}
+  <label class="journal-muted text-sm" data-nojs-only><input type="checkbox" name="mark_uncertain" value="true" required> {{t .Messages "cycle start confirmation required"}}</label>
+  {{- end}}
   <input type="hidden" name="replace_existing" value="false" data-cycle-start-replace-input>
   <input type="hidden" name="mark_uncertain" value="false" data-cycle-start-uncertain-input>
   <button type="submit" class="{{if .Active}}btn-primary{{else}}btn-secondary{{end}}" {{if eq .Surface "dashboard"}}data-dashboard-cycle-start-button{{else}}data-day-cycle-start-button{{end}}>{{t .Messages "dashboard.manual_cycle_start"}}</button>

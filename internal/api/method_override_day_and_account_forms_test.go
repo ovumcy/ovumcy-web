@@ -31,12 +31,19 @@ func accountExists(t *testing.T, ctx settingsSecurityTestContext) bool {
 // day when iso is empty.
 func periodLoggedOn(t *testing.T, ctx settingsSecurityTestContext, iso string) bool {
 	t.Helper()
+	return dailyLogOn(t, ctx, iso, func(log models.DailyLog) bool { return log.IsPeriod })
+}
+
+// dailyLogOn reports whether the user has an entry on iso, or on any day when
+// iso is empty, for which has is true.
+func dailyLogOn(t *testing.T, ctx settingsSecurityTestContext, iso string, has func(models.DailyLog) bool) bool {
+	t.Helper()
 	var logs []models.DailyLog
 	if err := ctx.database.Where("user_id = ?", ctx.user.ID).Find(&logs).Error; err != nil {
 		t.Fatalf("load daily logs: %v", err)
 	}
 	for _, log := range logs {
-		if log.IsPeriod && (iso == "" || log.Date.Format("2006-01-02") == iso) {
+		if has(log) && (iso == "" || log.Date.Format("2006-01-02") == iso) {
 			return true
 		}
 	}

@@ -66,6 +66,10 @@ func (handler *Handler) apiError(c fiber.Ctx, spec APIErrorSpec) error {
 	if isPlainAuthFormPageNavigation(c) {
 		return handler.respondPlainAuthFormPageStatusFragment(c, spec)
 	}
+	if back, ok := plainPageFormBackPath(c); ok {
+		handler.ensureRequestMessages(c)
+		return sendStatusFragmentWithBackLink(c, spec, back)
+	}
 	if responseFormat(c) == httpx.ResponseFormatHTMX {
 		handler.ensureRequestMessages(c)
 		return sendHTMLFragment(c.Status(spec.Status), localizedStatusErrorMarkup(c, spec))

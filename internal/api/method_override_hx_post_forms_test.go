@@ -1,8 +1,13 @@
 package api
 
 import (
+	"html/template"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"golang.org/x/net/html"
@@ -12,7 +17,10 @@ import (
 // that declared no action or method, so without JavaScript they submitted as
 // GET to the page they were on: the CSRF token, the timezone, the last period
 // date and the cycle lengths landed in the query string, and nothing was saved.
-// They now post to their htmx URL; no _method is needed or rendered.
+// They now post to their htmx URL; no _method is needed or rendered. Where the
+// htmx surface relies on a script (the onboarding date picker, the cycle-start
+// confirm dialog) the form carries a data-nojs-only control that scripts drop,
+// and a refusal answers a page with a link back instead of the JSON envelope.
 
 // postingToItsHTMXURL narrows match to a form whose action is its hx-post URL.
 func postingToItsHTMXURL(match func(*html.Node) bool) func(*html.Node) bool {
@@ -21,36 +29,60 @@ func postingToItsHTMXURL(match func(*html.Node) bool) func(*html.Node) bool {
 	}
 }
 
-type onboardingNoJSContext struct {
-	ctx     settingsSecurityTestContext
-	cookies map[string]string
-}
-
-func newOnboardingNoJSContext(t *testing.T, email string) onboardingNoJSContext {
-	t.Helper()
-	app, database := newOnboardingTestAppWithCSRF(t)
-	user := createOnboardingTestUser(t, database, email, "StrongPass1", false)
-	authCookie := loginAndExtractAuthCookieWithCSRF(t, app, user.Email, "StrongPass1")
-	return onboardingNoJSContext{
-		ctx:     settingsSecurityTestContext{app: app, database: database, user: user, authCookie: authCookie},
-		cookies: authCookieMap(t, authCookie),
-	}
-}
-
-// cycleStartMarkedOn reports whether the user has an explicit cycle start on
-// iso, or on any day when iso is empty.
-func cycleStartMarkedOn(t *testing.T, ctx settingsSecurityTestContext, iso string) bool {
-	t.Helper()
-	var logs []models.DailyLog
-	if err := ctx.database.Where("user_id = ?", ctx.user.ID).Find(&logs).Error; err != nil {
-		t.Fatalf("load daily logs: %v", err)
-	}
-	for _, log := range logs {
-		if log.CycleStart && (iso == "" || log.Date.Format("2006-01-02") == iso) {
-			return true
+// browserFormBody serializes form as a browser without JavaScript does: every
+// named input in document order, a checkbox or radio only when checked, and
+// the value typed into a visible field in place of its own. A name in checked
+// overrides the box's rendered state.
+func browserFormBody(form *html.Node, checked map[string]bool, typed map[string]string) url.Values {
+	body := url.Values{}
+	for _, input := range htmlFindElements(form, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && node.Data == "input"
+	}) {
+		name := htmlAttr(input, "name")
+		if name == "" {
+			continue
+		}
+		switch htmlAttr(input, "type") {
+		case "hidden":
+			body.Add(name, htmlAttr(input, "value"))
+		case "checkbox", "radio":
+			on, stated := checked[name]
+			if !stated {
+				on = htmlHasAttr(input, "checked")
+			}
+			if on {
+				body.Add(name, htmlAttr(input, "value"))
+			}
+		default:
+			if value, ok := typed[name]; ok {
+				body.Add(name, value)
+			} else {
+				body.Add(name, htmlAttr(input, "value"))
+			}
 		}
 	}
-	return false
+	return body
+}
+
+func cycleStartOn(t *testing.T, ctx settingsSecurityTestContext, iso string) bool {
+	t.Helper()
+	return dailyLogOn(t, ctx, iso, func(log models.DailyLog) bool { return log.CycleStart })
+}
+
+// newOnboardingNoJSContext is a signed-in owner who has not finished onboarding.
+func newOnboardingNoJSContext(t *testing.T, email string) settingsSecurityTestContext {
+	t.Helper()
+	ctx := newSettingsSecurityTestContext(t, email)
+	if err := ctx.database.Model(&models.User{}).Where("id = ?", ctx.user.ID).Update("onboarding_completed", false).Error; err != nil {
+		t.Fatalf("reopen onboarding: %v", err)
+	}
+	return ctx
+}
+
+func utcToday() (time.Time, string) {
+	day := time.Now().UTC()
+	day = time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, time.UTC)
+	return day, day.Format("2006-01-02")
 }
 
 func TestNoJSHXPostFormsPostToTheirEndpoint(t *testing.T) {
@@ -58,52 +90,54 @@ func TestNoJSHXPostFormsPostToTheirEndpoint(t *testing.T) {
 
 	cases := map[string]func(t *testing.T) noJSFormCase{
 		"onboarding step 1": func(t *testing.T) noJSFormCase {
-			o := newOnboardingNoJSContext(t, "nojs-onboarding-step1@example.com")
+			ctx := newOnboardingNoJSContext(t, "nojs-onboarding-step1@example.com")
 			_, iso := noJSDay()
 			return noJSFormCase{
-				app:      o.ctx.app,
+				app:      ctx.app,
 				page:     "/onboarding",
-				cookies:  o.cookies,
+				cookies:  authCookieMap(t, ctx.authCookie),
 				match:    postingToItsHTMXURL(formWithAttr("data-onboarding-form-step", "1")),
 				redirect: "/onboarding?step=2",
-				typed: func(*testing.T, noJSForm) url.Values {
-					return url.Values{"last_period_start": {iso}}
+				typed: func(_ *testing.T, form noJSForm) url.Values {
+					return browserFormBody(form.node, nil, map[string]string{"last_period_start": iso})
 				},
 				happened: func(t *testing.T) bool {
-					return reloadUserForNoJSForm(t, o.ctx).LastPeriodStart != nil
+					start := reloadUserForNoJSForm(t, ctx).LastPeriodStart
+					return start != nil && start.Format("2006-01-02") == iso
 				},
 			}
 		},
 		"onboarding step 2": func(t *testing.T) noJSFormCase {
-			o := newOnboardingNoJSContext(t, "nojs-onboarding-step2@example.com")
+			ctx := newOnboardingNoJSContext(t, "nojs-onboarding-step2@example.com")
 			day, _ := noJSDay()
-			if err := o.ctx.database.Model(&models.User{}).Where("id = ?", o.ctx.user.ID).Update("last_period_start", day).Error; err != nil {
+			if err := ctx.database.Model(&models.User{}).Where("id = ?", ctx.user.ID).Update("last_period_start", day).Error; err != nil {
 				t.Fatalf("seed step 1: %v", err)
 			}
 			return noJSFormCase{
-				app:      o.ctx.app,
+				app:      ctx.app,
 				page:     "/onboarding?step=2",
-				cookies:  o.cookies,
+				cookies:  authCookieMap(t, ctx.authCookie),
 				match:    postingToItsHTMXURL(formWithAttr("data-onboarding-form-step", "2")),
 				redirect: "/dashboard",
-				typed: func(*testing.T, noJSForm) url.Values {
-					return url.Values{"cycle_length": {"30"}, "period_length": {"5"}, "auto_period_fill": {"true"}}
+				typed: func(_ *testing.T, form noJSForm) url.Values {
+					return browserFormBody(form.node, nil, map[string]string{"cycle_length": "30"})
 				},
 				happened: func(t *testing.T) bool {
-					user := reloadUserForNoJSForm(t, o.ctx)
+					user := reloadUserForNoJSForm(t, ctx)
 					return user.OnboardingCompleted && user.CycleLength == 30
 				},
 			}
 		},
 		"dashboard cycle start": func(t *testing.T) noJSFormCase {
 			ctx := newSettingsSecurityTestContext(t, "nojs-dashboard-cycle-start@example.com")
+			_, today := utcToday()
 			return noJSFormCase{
 				app:      ctx.app,
 				page:     "/dashboard",
 				cookies:  authCookieMap(t, ctx.authCookie),
 				match:    postingToItsHTMXURL(formWithFlag("data-dashboard-cycle-start-form")),
 				redirect: "/dashboard",
-				happened: func(t *testing.T) bool { return cycleStartMarkedOn(t, ctx, "") },
+				happened: func(t *testing.T) bool { return cycleStartOn(t, ctx, today) },
 			}
 		},
 		"calendar cycle start": func(t *testing.T) noJSFormCase {
@@ -115,7 +149,7 @@ func TestNoJSHXPostFormsPostToTheirEndpoint(t *testing.T) {
 				cookies:  authCookieMap(t, ctx.authCookie),
 				match:    postingToItsHTMXURL(formWithFlag("data-day-cycle-start-form")),
 				redirect: calendarLanding(iso),
-				happened: func(t *testing.T) bool { return cycleStartMarkedOn(t, ctx, iso) },
+				happened: func(t *testing.T) bool { return cycleStartOn(t, ctx, iso) },
 			}
 		},
 	}
@@ -125,5 +159,132 @@ func TestNoJSHXPostFormsPostToTheirEndpoint(t *testing.T) {
 			t.Parallel()
 			runNoJSFormCase(t, build(t))
 		})
+	}
+}
+
+// assertRefusalPage checks a no-JS refusal answered a page, not the JSON
+// envelope: the mapped status, text/html, and a link back to the form's page.
+func assertRefusalPage(t *testing.T, response *http.Response, status int, back string) {
+	t.Helper()
+	body := mustReadBodyString(t, response.Body)
+	if response.StatusCode != status {
+		t.Fatalf("status %d, want %d: %s", response.StatusCode, status, body)
+	}
+	if contentType := response.Header.Get("Content-Type"); !strings.HasPrefix(contentType, "text/html") {
+		t.Fatalf("Content-Type %q, want text/html: %s", contentType, body)
+	}
+	if want := `href="` + template.HTMLEscapeString(back) + `"`; !strings.Contains(body, want) {
+		t.Fatalf("refusal page has no %s: %s", want, body)
+	}
+}
+
+// cycleStartConflictCase is a calendar day two days after a recorded cycle
+// start: marking it both replaces that start and closes a short gap.
+func cycleStartConflictCase(t *testing.T, email string) (settingsSecurityTestContext, noJSForm, string, string) {
+	t.Helper()
+	ctx := newSettingsSecurityTestContext(t, email)
+	day, iso := noJSDay()
+	earlier := day.AddDate(0, 0, -2)
+	if err := ctx.database.Create(&models.DailyLog{UserID: ctx.user.ID, Date: earlier, IsPeriod: true, CycleStart: true, Flow: models.FlowMedium}).Error; err != nil {
+		t.Fatalf("seed earlier cycle start: %v", err)
+	}
+	form := renderNoJSForm(t, ctx.app, "/calendar/day/"+iso, authCookieMap(t, ctx.authCookie),
+		postingToItsHTMXURL(formWithFlag("data-day-cycle-start-form")))
+	return ctx, form, iso, earlier.Format("2006-01-02")
+}
+
+func TestNoJSCycleStartConfirmsAConflictWithItsOwnBoxes(t *testing.T) {
+	t.Parallel()
+
+	t.Run("the boxes precede their hidden twins", func(t *testing.T) {
+		t.Parallel()
+		_, form, _, _ := cycleStartConflictCase(t, "nojs-cycle-start-boxes@example.com")
+		body := browserFormBody(form.node, map[string]bool{"replace_existing": true, "mark_uncertain": true}, nil)
+		for _, name := range []string{"replace_existing", "mark_uncertain"} {
+			if got := body[name]; len(got) != 2 || got[0] != "true" || got[1] != "false" {
+				t.Fatalf("%s serializes as %q, want the checked box before the hidden false", name, got)
+			}
+		}
+	})
+
+	t.Run("unconfirmed answers a page with a way back", func(t *testing.T) {
+		t.Parallel()
+		ctx, form, iso, earlier := cycleStartConflictCase(t, "nojs-cycle-start-unconfirmed@example.com")
+		response := form.submit(t, ctx.app, browserFormBody(form.node, nil, nil))
+		assertRefusalPage(t, response, http.StatusConflict, calendarLanding(iso))
+		if cycleStartOn(t, ctx, iso) || !cycleStartOn(t, ctx, earlier) {
+			t.Fatal("the refused mark changed the recorded cycle start")
+		}
+	})
+
+	t.Run("confirmed replaces the earlier start", func(t *testing.T) {
+		t.Parallel()
+		ctx, form, iso, earlier := cycleStartConflictCase(t, "nojs-cycle-start-confirmed@example.com")
+		response := form.submit(t, ctx.app, browserFormBody(form.node, map[string]bool{"replace_existing": true, "mark_uncertain": true}, nil))
+		if response.StatusCode != http.StatusSeeOther || response.Header.Get("Location") != calendarLanding(iso) {
+			t.Fatalf("status %d Location %q, want 303 %q", response.StatusCode, response.Header.Get("Location"), calendarLanding(iso))
+		}
+		if !cycleStartOn(t, ctx, iso) || cycleStartOn(t, ctx, earlier) {
+			t.Fatal("the confirmed mark did not replace the earlier cycle start")
+		}
+	})
+
+	t.Run("an API client keeps the JSON envelope", func(t *testing.T) {
+		t.Parallel()
+		ctx, form, _, _ := cycleStartConflictCase(t, "nojs-cycle-start-api@example.com")
+		request := httptest.NewRequest(http.MethodPost, form.action, strings.NewReader(""))
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		request.Header.Set("X-CSRF-Token", ctx.csrfToken)
+		request.Header.Set("Cookie", ctx.authCookie+"; "+ctx.csrfCookie.Name+"="+ctx.csrfCookie.Value)
+		response := mustAppResponse(t, ctx.app, request)
+		assertStatusCode(t, response, http.StatusConflict)
+		if contentType := response.Header.Get("Content-Type"); !strings.HasPrefix(contentType, "application/json") {
+			t.Fatalf("Content-Type %q, want JSON", contentType)
+		}
+	})
+}
+
+func TestNoJSOnboardingStep1WithoutADateAnswersAPageWithAWayBack(t *testing.T) {
+	t.Parallel()
+	ctx := newOnboardingNoJSContext(t, "nojs-onboarding-empty-date@example.com")
+	form := renderNoJSForm(t, ctx.app, "/onboarding", authCookieMap(t, ctx.authCookie),
+		postingToItsHTMXURL(formWithAttr("data-onboarding-form-step", "1")))
+	response := form.submit(t, ctx.app, browserFormBody(form.node, nil, map[string]string{"last_period_start": ""}))
+	assertRefusalPage(t, response, http.StatusBadRequest, "/onboarding?step=1")
+	if reloadUserForNoJSForm(t, ctx).LastPeriodStart != nil {
+		t.Fatal("the refused step saved a date")
+	}
+}
+
+// TestNoJSCycleStartShowsTheImplantationCautionBeforeTheMark pins where the
+// no-JS path gets its caution: the confirm dialog and the htmx notice both need
+// JavaScript, so the page that renders the form must state it beside the button.
+func TestNoJSCycleStartShowsTheImplantationCautionBeforeTheMark(t *testing.T) {
+	t.Parallel()
+	ctx := newSettingsSecurityTestContext(t, "nojs-cycle-start-implantation@example.com")
+	// Same shape as TestMarkCycleStartImplantationWarningSetsEncodedNoticeWithKey:
+	// two starts 28 days apart put today 6-12 days past the projected ovulation.
+	today, _ := utcToday()
+	for _, daysAgo := range []int{50, 22} {
+		if err := ctx.database.Create(&models.DailyLog{UserID: ctx.user.ID, Date: today.AddDate(0, 0, -daysAgo), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium}).Error; err != nil {
+			t.Fatalf("seed cycle start %d days back: %v", daysAgo, err)
+		}
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", ctx.authCookie)
+	response := mustAppResponse(t, ctx.app, request)
+	assertStatusCode(t, response, http.StatusOK)
+	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+
+	section := htmlFindElement(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlAttr(node, "id") == "dashboard-cycle-start"
+	})
+	if section == nil || htmlFindElement(section, postingToItsHTMXURL(formWithFlag("data-dashboard-cycle-start-form"))) == nil {
+		t.Fatal("the dashboard rendered no no-JS cycle-start form")
+	}
+	if !strings.Contains(htmlNodeText(section), "timing alone cannot tell") {
+		t.Fatalf("the cycle-start section carries no implantation caution: %q", htmlNodeText(section))
 	}
 }
