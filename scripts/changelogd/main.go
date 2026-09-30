@@ -322,17 +322,20 @@ func changelogEditHelp(offending []string, headRef string) string {
 
 // addedFragments returns the changelog.d/*.md paths this branch adds, taken
 // from `git diff --name-status` output. Status A counts, and so does the
-// DESTINATION of a rename (R<score>): when the branch deletes one fragment and
-// adds a near-identical one, rename detection reports a single R line, and the
-// new path is this branch's entry. A rename's source, a rename out of
-// changelog.d/, an edit (M) to a fragment another branch already landed and a
-// deletion are not entries. A missing changelog.d/ directory simply yields
-// nothing.
+// DESTINATION of a rename (R<score>) whose source lies outside changelog.d/.
+// A rename WITHIN changelog.d/ is a landed fragment moved under this branch's
+// name — the same text another branch wrote — so it is no more this branch's
+// entry than an edit (M) to that fragment would be. A rename's source, a rename
+// out of changelog.d/ and a deletion are not entries either. A missing
+// changelog.d/ directory simply yields nothing.
 func addedFragments(nameStatus string) []string {
 	var added []string
 	for _, line := range strings.Split(nameStatus, "\n") {
 		fields := strings.Split(strings.TrimRight(line, "\r"), "\t")
 		if len(fields) < 2 || fields[0] == "" || (fields[0] != "A" && fields[0][0] != 'R') {
+			continue
+		}
+		if fields[0][0] == 'R' && len(fields) >= 3 && strings.HasPrefix(fields[1], fragmentDir+"/") {
 			continue
 		}
 		path := fields[len(fields)-1]
