@@ -220,7 +220,7 @@ func check(root, baseRef, headRef string, git gitRunner) (string, error) {
 			report = append(report, strings.Join(fragmentProblems, "\n")+"\n\n"+fragmentFormatHelp())
 		}
 		if len(offending) > 0 {
-			report = append(report, changelogEditHelp(offending))
+			report = append(report, changelogEditHelp(offending, headRef))
 		}
 		return "changelog fragment check FAILED:\n" + strings.Join(report, "\n"), nil
 	}
@@ -312,10 +312,10 @@ func editsOutsideReleasedText(diff, base string) []string {
 	return offending
 }
 
-func changelogEditHelp(offending []string) string {
+func changelogEditHelp(offending []string, headRef string) string {
 	return "\n" + changelogFile + " is edited outside release assembly and outside an already-released section:\n" +
 		"  " + strings.Join(offending, "\n  ") + "\n\n" +
-		"Put the entry in " + fragmentDir + "/<branch-name>.md instead. " + changelogFile + " is edited by hand only below\n" +
+		"Put the entry in " + fragmentNameHelp(headRef) + " instead. " + changelogFile + " is edited by hand only below\n" +
 		"the first released \"## [x.y.z]\" heading, that heading included (a correction to released text), or by\n" +
 		"release assembly, which adds the heading of a new release.\n"
 }

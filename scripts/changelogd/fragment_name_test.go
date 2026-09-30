@@ -66,6 +66,21 @@ func TestCheckNamesTheExactFragmentWhenTheBranchAddsNone(t *testing.T) {
 	}
 }
 
+func TestCheckPointsAnUnreleasedEditAtTheBranchFragment(t *testing.T) {
+	dir := initRepo(t)
+	writeFile(t, dir, "CHANGELOG.md", strings.Replace(fixtureChangelog,
+		"- **A frozen entry.**", "- **A new entry typed into the backlog.**\n- **A frozen entry.**", 1))
+	commitAll(t, dir, "fix: edit the backlog")
+
+	failure, err := check(dir, "main", "fix/web200-something", gitOutput)
+	if err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	if !strings.Contains(failure, "Put the entry in changelog.d/web200-something.md instead.") {
+		t.Fatalf("expected the CHANGELOG.md refusal to name the branch fragment, got:\n%s", failure)
+	}
+}
+
 func TestCheckDoesNotOweABranchFragmentForReleaseAssembly(t *testing.T) {
 	dir := initRepo(t)
 	writeFile(t, dir, "CHANGELOG.md", strings.Replace(fixtureChangelog,
