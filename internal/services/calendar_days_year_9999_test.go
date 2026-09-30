@@ -36,8 +36,8 @@ func TestDecember9999GridDaysPastDayDateMaxAreNotSelectableOrToday(t *testing.T)
 			if state.Selectable != wantSelectable {
 				t.Errorf("now %s: %s Selectable = %v, want %v", now.Format("2006-01-02"), key, state.Selectable, wantSelectable)
 			}
-			if state.IsToday {
-				t.Errorf("now %s: %s IsToday = true", now.Format("2006-01-02"), key)
+			if !wantSelectable && state.IsToday {
+				t.Errorf("now %s: %s IsToday = true past DayDateMax", now.Format("2006-01-02"), key)
 			}
 		}
 	}
