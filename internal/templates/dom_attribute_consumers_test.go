@@ -75,7 +75,6 @@ var domAttrConsumerResidual = map[string]string{
 
 	// Container and landmark hooks: addressable by design, addressed by nobody.
 	"data-cycle-stack-rows":             "stats cycle-stack list container",
-	"data-dashboard-cycle-start-form":   "manual cycle-start form container",
 	"data-dashboard-quick-actions":      "quick-action row container; the buttons carry their own data-quick-action",
 	"data-dashboard-shell":              "dashboard page shell",
 	"data-export-presets":               "export preset row container",

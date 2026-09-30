@@ -20,6 +20,8 @@
                      manual cycle-start policy this day was evaluated under. */}}
 {{define "cycle_start_form"}}
 <form
+  action="{{.Endpoint}}"
+  method="post"
   hx-post="{{.Endpoint}}"
   hx-target="{{.Target}}"
   hx-swap="innerHTML"

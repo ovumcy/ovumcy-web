@@ -22,7 +22,9 @@ import (
 //
 // A form with an htmx verb and no method="post" is the same class one step
 // worse: without JavaScript it submits as GET to the page it is on, putting
-// every field (a password included) in the query string. It fails here too.
+// every field (a password included) in the query string. It fails here too,
+// and so does an hx-post form without method="post" and an action equal to its
+// hx-post URL; such a form needs no _method and must not carry one.
 
 // methodOverrideExemption names one form the guard skips, and why.
 type methodOverrideExemption struct {
@@ -63,8 +65,9 @@ type overrideForm struct {
 
 var templateActionPattern = regexp.MustCompile(`(?s)\{\{.*?\}\}`)
 
-// overrideFormsInTemplate returns every form with an hx-put, hx-patch or
-// hx-delete attribute, whatever its method. Template actions are replaced first
+// overrideFormsInTemplate returns every form with an hx-put, hx-patch,
+// hx-delete or hx-post attribute, whatever its method; a form with more than
+// one is classified by the first in that order. Template actions are replaced first
 // by placeholders — the same text always by the same placeholder, so an action
 // URL and an hx URL built from the same expression still compare equal —
 // because an action such as {{t .Messages "key"}} puts double quotes inside a
@@ -108,7 +111,7 @@ func overrideFormsInTemplate(source string) []overrideForm {
 		case (kind == html.StartTagToken || kind == html.SelfClosingTagToken) && token.Data == "form":
 			attrs := tokenAttrs(token)
 			current = nil
-			for _, verb := range []string{"put", "patch", "delete"} {
+			for _, verb := range []string{"put", "patch", "delete", "post"} {
 				if url, ok := attrs["hx-"+verb]; ok {
 					forms = append(forms, overrideForm{
 						line:      startLine,
@@ -148,13 +151,17 @@ func overrideFormProblem(form overrideForm) string {
 	if !form.post {
 		problems = append(problems, "declares no method=\"post\": without JS it submits as GET to the current page and puts its fields in the query string")
 	}
-	if len(form.methods) != 1 || form.methods[0] != form.verb {
+	if form.verb == "POST" {
+		if len(form.methods) != 0 {
+			problems = append(problems, fmt.Sprintf("must carry no _method: its no-JS POST already is the htmx verb, has %q", form.methods))
+		}
+	} else if len(form.methods) != 1 || form.methods[0] != form.verb {
 		problems = append(problems, fmt.Sprintf("needs exactly one <input type=\"hidden\" name=\"_method\" value=\"%s\">, has %q", form.verb, form.methods))
 	}
 	if form.action != form.hxURL {
 		problems = append(problems, fmt.Sprintf("action %q must equal hx-%s %q", form.action, strings.ToLower(form.verb), form.hxURL))
 	}
-	if form.multipart {
+	if form.multipart && form.verb != "POST" {
 		problems = append(problems, "must stay urlencoded: _method is not read from a multipart body")
 	}
 	return strings.Join(problems, "; ")
@@ -244,7 +251,19 @@ func TestMethodOverrideFormScanClassifiesItsOwnFixtures(t *testing.T) {
 <form action="/i" method="get" hx-put="/i">
   <input type="hidden" name="_method" value="PUT">
 </form>
-<form action="/h" method="post" hx-post="/h"></form>
+<form action="/h?source=x" method="post" hx-post="/h?source=x"></form>
+<form hx-post="/j"></form>
+<form method="post" hx-post="/k"></form>
+<form action="/l" hx-post="/l"></form>
+<form action="/m-other" method="post" hx-post="/m"></form>
+<form action="/n" method="post" hx-post="/n">
+  <input type="hidden" name="_method" value="DELETE">
+</form>
+<form action="/o" method="post" hx-post="/o" enctype="multipart/form-data"></form>
+<form action="/p" method="post" hx-delete="/p" hx-post="/p">
+  <input type="hidden" name="_method" value="DELETE">
+</form>
+<form action="/q" method="post"></form>
 <input type="hidden" name="_method" value="DELETE">
 `
 	forms := overrideFormsInTemplate(fixture)
@@ -260,9 +279,20 @@ func TestMethodOverrideFormScanClassifiesItsOwnFixtures(t *testing.T) {
 		{"/f", false}, // repeated
 		{"/g", false}, // no method: a GET without JS, even with no _method to send
 		{"/i", false}, // method="get", even with the field
+		{"/h?source=x", true},
+		{"/j", false}, // hx-post alone: a GET to the current page without JS
+		{"/k", false}, // hx-post, no action
+		{"/l", false}, // hx-post, no method
+		{"/m", false}, // hx-post, action elsewhere
+		{"/n", false}, // hx-post with a _method that would turn it into DELETE
+		{"/o", true},  // hx-post needs no _method, so multipart is fine
+		{"/p", true},  // hx-delete wins over hx-post
 	}
 	if len(forms) != len(want) {
-		t.Fatalf("scan found %d forms, want %d (the hx-post form and the stray input must be ignored): %+v", len(forms), len(want), forms)
+		t.Fatalf("scan found %d forms, want %d (the form without an htmx verb and the stray input must be ignored): %+v", len(forms), len(want), forms)
+	}
+	if forms[len(forms)-1].verb != "DELETE" {
+		t.Errorf("form /p classified as %s, want DELETE", forms[len(forms)-1].verb)
 	}
 	for index, expected := range want {
 		form := forms[index]
