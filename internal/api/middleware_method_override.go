@@ -101,12 +101,24 @@ func MethodOverride(handler *Handler) fiber.Handler {
 			return handler.RespondTransportError(c, fiber.StatusInternalServerError)
 		}
 		handler.LogSecurityEvent(c, "method_override", "applied", SecurityEventField{Key: "verb", Value: verb})
+		c.Locals(methodOverrideAppliedKey{}, true)
 		return c.Next()
 	}
 }
 
 // methodOverrideKey is the form field MethodOverride reads.
 const methodOverrideKey = "_method"
+
+type methodOverrideAppliedKey struct{}
+
+// arrivedAsOverriddenFormPost reports whether MethodOverride routed this
+// request from a browser form POST: the one transport that is a page
+// navigation and must be answered with a redirect, while a client sending the
+// real verb keeps its own response.
+func arrivedAsOverriddenFormPost(c fiber.Ctx) bool {
+	applied, _ := c.Locals(methodOverrideAppliedKey{}).(bool)
+	return applied
+}
 
 // methodOverrideBodyMayNameTheField reports whether an urlencoded body could
 // bind to the override field, so the common body without one skips the bind.

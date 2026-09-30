@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"golang.org/x/net/html"
 )
 
 // WEB-120: the account-deletion form and the three day forms declared an htmx
@@ -172,31 +173,179 @@ func TestNoJSDeleteAccountRequiresThePasswordInTheBody(t *testing.T) {
 }
 
 // TestDayWritesAnswerProgrammaticClientsAsBefore pins the other side of the
-// no-JS redirects: they apply only to a browser form, so a client that asks for
-// JSON keeps the entry body and the 204.
+// no-JS redirects: they apply only to a form POST the override routed, so a
+// client sending the real verb keeps the entry body and the 204 — with or
+// without an Accept header, and even with the calendar form's own fields.
 func TestDayWritesAnswerProgrammaticClientsAsBefore(t *testing.T) {
 	t.Parallel()
-	ctx := newSettingsSecurityTestContext(t, "nojs-day-programmatic@example.com")
-	_, iso := noJSDay()
 
-	send := func(method string, target string, body string) *http.Response {
-		request := httptest.NewRequest(method, target, strings.NewReader(body))
-		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		request.Header.Set("Accept", "application/json")
-		request.Header.Set("X-CSRF-Token", ctx.csrfToken)
-		request.Header.Set("Cookie", ctx.authCookie+"; "+ctx.csrfCookie.Name+"="+ctx.csrfCookie.Value)
-		return mustAppResponse(t, ctx.app, request)
+	for _, accept := range []string{"application/json", ""} {
+		t.Run("Accept="+accept, func(t *testing.T) {
+			t.Parallel()
+			ctx := newSettingsSecurityTestContext(t, "nojs-day-programmatic-"+strings.ReplaceAll(accept, "/", "-")+"@example.com")
+			_, iso := noJSDay()
+
+			send := func(method string, target string, body string) *http.Response {
+				request := httptest.NewRequest(method, target, strings.NewReader(body))
+				request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+				if accept != "" {
+					request.Header.Set("Accept", accept)
+				}
+				request.Header.Set("X-CSRF-Token", ctx.csrfToken)
+				request.Header.Set("Cookie", ctx.authCookie+"; "+ctx.csrfCookie.Name+"="+ctx.csrfCookie.Value)
+				return mustAppResponse(t, ctx.app, request)
+			}
+
+			saved := send(http.MethodPut, "/api/v1/days/"+iso, url.Values{"is_period": {"true"}, "source": {"calendar"}, "_method": {"PUT"}}.Encode())
+			assertStatusCode(t, saved, http.StatusOK)
+			if contentType := saved.Header.Get("Content-Type"); !strings.HasPrefix(contentType, "application/json") {
+				t.Fatalf("PUT answered Content-Type %q, want JSON", contentType)
+			}
+
+			deleted := send(http.MethodDelete, "/api/v1/days/"+iso+"?source=calendar", url.Values{"_method": {"DELETE"}}.Encode())
+			assertStatusCode(t, deleted, http.StatusNoContent)
+			if periodLoggedOn(t, ctx, iso) {
+				t.Fatal("the programmatic DELETE left the entry")
+			}
+		})
+	}
+}
+
+// TestHTMXDayFormsAreUnaffectedByTheFieldsTheyNowCarry sends each day form the
+// way htmx does — its real verb, every rendered hidden input in the body, the
+// new _method and source included — and expects the fragment htmx swaps in.
+func TestHTMXDayFormsAreUnaffectedByTheFieldsTheyNowCarry(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		page   func(iso string) string
+		match  func(*html.Node) bool
+		verb   string
+		typed  url.Values
+		seeded bool
+		want   bool
+	}{
+		"calendar save": {
+			page:  func(iso string) string { return "/calendar/day/" + iso + "?mode=edit" },
+			match: formWithFlag("data-day-editor-form"), verb: http.MethodPut,
+			typed: url.Values{"is_period": {"true"}}, want: true,
+		},
+		"calendar delete": {
+			page:  func(iso string) string { return "/calendar/day/" + iso + "?mode=edit" },
+			match: formWithFlag("data-day-delete-form"), verb: http.MethodDelete,
+			seeded: true, want: false,
+		},
+		"dashboard save": {
+			page:  func(string) string { return "/dashboard" },
+			match: formWithFlag("data-dashboard-save-form"), verb: http.MethodPut,
+			typed: url.Values{"is_period": {"true"}}, want: true,
+		},
 	}
 
-	saved := send(http.MethodPut, "/api/v1/days/"+iso, url.Values{"is_period": {"true"}, "source": {"calendar"}}.Encode())
-	assertStatusCode(t, saved, http.StatusOK)
-	if contentType := saved.Header.Get("Content-Type"); !strings.HasPrefix(contentType, "application/json") {
-		t.Fatalf("PUT answered Content-Type %q, want JSON", contentType)
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			ctx := newSettingsSecurityTestContext(t, "htmx-day-"+strings.ReplaceAll(name, " ", "-")+"@example.com")
+			day, iso := noJSDay()
+			if c.seeded {
+				if err := ctx.database.Create(&models.DailyLog{UserID: ctx.user.ID, Date: day, IsPeriod: true, Flow: models.FlowNone}).Error; err != nil {
+					t.Fatalf("create daily log: %v", err)
+				}
+			}
+			form := renderNoJSForm(t, ctx.app, c.page(iso), authCookieMap(t, ctx.authCookie), c.match)
+			body := cloneFormValues(form.fields)
+			for key, values := range c.typed {
+				body[key] = values
+			}
+			request := httptest.NewRequest(c.verb, form.action, strings.NewReader(body.Encode()))
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			request.Header.Set("HX-Request", "true")
+			request.Header.Set("Accept-Language", "en")
+			request.Header.Set("Cookie", cookieHeaderFromMap(form.cookies))
+			response := mustAppResponse(t, ctx.app, request)
+			assertStatusCode(t, response, http.StatusOK)
+			if trigger := response.Header.Get("HX-Trigger"); trigger != "calendar-day-updated" {
+				t.Fatalf("HX-Trigger %q, want calendar-day-updated", trigger)
+			}
+			if got := periodLoggedOn(t, ctx, ""); got != c.want {
+				t.Fatalf("period logged = %v after the htmx %s, want %v", got, c.verb, c.want)
+			}
+		})
+	}
+}
+
+// TestNoJSDaySaveLeavesTheLongPeriodWarningPending pins that the no-JS save,
+// whose redirect carries no notice, does not record the long-period warning as
+// shown: the ninth period day saved without JavaScript leaves it pending.
+func TestNoJSDaySaveLeavesTheLongPeriodWarningPending(t *testing.T) {
+	t.Parallel()
+	ctx := newSettingsSecurityTestContext(t, "nojs-long-period@example.com")
+	if err := ctx.database.Model(&models.User{}).Where("id = ?", ctx.user.ID).Update("auto_period_fill", false).Error; err != nil {
+		t.Fatalf("disable auto period fill: %v", err)
+	}
+	cycleStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
+	for offset := range 8 {
+		entry := models.DailyLog{UserID: ctx.user.ID, Date: cycleStart.AddDate(0, 0, offset), IsPeriod: true, Flow: models.FlowMedium}
+		if err := ctx.database.Create(&entry).Error; err != nil {
+			t.Fatalf("seed period day: %v", err)
+		}
 	}
 
-	deleted := send(http.MethodDelete, "/api/v1/days/"+iso+"?source=calendar", "")
-	assertStatusCode(t, deleted, http.StatusNoContent)
-	if periodLoggedOn(t, ctx, iso) {
-		t.Fatal("the programmatic DELETE left the entry")
+	form := renderNoJSForm(t, ctx.app, "/calendar/day/2026-03-09?mode=edit", authCookieMap(t, ctx.authCookie), formWithFlag("data-day-editor-form"))
+	response := form.submit(t, ctx.app, url.Values{"is_period": {"true"}, "flow": {models.FlowMedium}})
+	if response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("no-JS save: status %d, want 303", response.StatusCode)
+	}
+	if !periodLoggedOn(t, ctx, "2026-03-09") {
+		t.Fatal("precondition: the ninth period day was not saved")
+	}
+
+	var persisted models.User
+	if err := ctx.database.Select("long_period_warning_cycle_start").First(&persisted, ctx.user.ID).Error; err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if persisted.LongPeriodWarningCycleStart != nil {
+		t.Fatal("the no-JS save recorded the long-period warning as shown, but its redirect showed nothing")
+	}
+}
+
+// TestNoJSDayDeleteAsksForConfirmation pins the confirmation a browser without
+// JavaScript gets instead of hx-confirm: a required checkbox the form cannot be
+// submitted without, rendered only when scripting is off.
+func TestNoJSDayDeleteAsksForConfirmation(t *testing.T) {
+	t.Parallel()
+	ctx := newSettingsSecurityTestContext(t, "nojs-day-delete-confirm@example.com")
+	day, iso := noJSDay()
+	if err := ctx.database.Create(&models.DailyLog{UserID: ctx.user.ID, Date: day, IsPeriod: true, Flow: models.FlowNone}).Error; err != nil {
+		t.Fatalf("create daily log: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/calendar/day/"+iso+"?mode=edit", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", ctx.authCookie)
+	response := mustAppResponse(t, ctx.app, request)
+	assertStatusCode(t, response, http.StatusOK)
+	document, err := html.ParseWithOptions(strings.NewReader(mustReadBodyString(t, response.Body)), html.ParseOptionEnableScripting(false))
+	if err != nil {
+		t.Fatalf("parse without scripting: %v", err)
+	}
+
+	form := htmlFindElement(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && node.Data == "form" && htmlHasAttr(node, "data-day-delete-form")
+	})
+	if form == nil {
+		t.Fatal("no day delete form rendered")
+	}
+	confirm := htmlFindElement(form, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && node.Data == "input" && htmlHasAttr(node, "data-day-delete-nojs-confirm")
+	})
+	if confirm == nil {
+		t.Fatal("the delete form has no no-JS confirmation box")
+	}
+	if htmlAttr(confirm, "type") != "checkbox" || !htmlHasAttr(confirm, "required") {
+		t.Fatalf("confirmation box type=%q required=%v, want a required checkbox", htmlAttr(confirm, "type"), htmlHasAttr(confirm, "required"))
+	}
+	if confirm.Parent == nil || confirm.Parent.Parent == nil || confirm.Parent.Parent.Data != "noscript" {
+		t.Fatal("the confirmation box must sit in <noscript>: with JavaScript, hx-confirm asks instead")
 	}
 }
