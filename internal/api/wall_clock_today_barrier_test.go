@@ -35,7 +35,7 @@ import (
 // entry carries the reason; an entry whose function no longer localises the
 // wall clock is stale and fails the barrier.
 var wallClockLocalisedForExpiry = map[string]string{
-	"Handler.Register":       "the register-pickup cookie's issue time, which only its TTL reads",
+	"Handler.Register":       "the account's created-at stamp and the register-pickup cookie's issue time; instants, not a calendar day",
 	"Handler.ForgotPassword": "the recovery attempt's issue time, which only the reset token's TTL reads",
 }
 
@@ -159,10 +159,9 @@ func (h Handler) expiresAToken() time.Time { return time.Now().Add(time.Minute) 
 }
 
 type wallClockObjects struct {
-	wallNow     types.Object
-	localise    types.Object
-	handlerNow  types.Object
-	handlerType string
+	wallNow    types.Object
+	localise   types.Object
+	handlerNow types.Object
 }
 
 type clockReadSummary struct {
@@ -190,12 +189,12 @@ func wallClockObjectsFor(t *testing.T, pkg *types.Package) wallClockObjects {
 	if timePkg == nil {
 		t.Fatalf("%s imports no time package", pkg.Path())
 	}
-	objects := wallClockObjects{wallNow: timePkg.Scope().Lookup("Now"), handlerType: "Handler"}
+	objects := wallClockObjects{wallNow: timePkg.Scope().Lookup("Now")}
 	if _, ok := objects.wallNow.(*types.Func); !ok {
 		t.Fatalf("time.Now did not resolve to a function")
 	}
 	objects.localise = methodNamed(t, timePkg.Scope().Lookup("Time"), "In")
-	objects.handlerNow = methodNamed(t, pkg.Scope().Lookup(objects.handlerType), "clockNow")
+	objects.handlerNow = methodNamed(t, pkg.Scope().Lookup("Handler"), "clockNow")
 	return objects
 }
 
@@ -205,7 +204,7 @@ func methodNamed(t *testing.T, typeName types.Object, method string) types.Objec
 	if !ok {
 		t.Fatalf("%s is not a named type", typeName.Name())
 	}
-	for index := 0; index < named.NumMethods(); index++ {
+	for index := range named.NumMethods() {
 		if candidate := named.Method(index); candidate.Name() == method {
 			return candidate
 		}
@@ -245,7 +244,12 @@ func summariseClockReads(fileSet *token.FileSet, files []*ast.File, info *types.
 				}
 				return true
 			})
-			summaries[declaredFunctionName(defined)] = summary
+			name := declaredFunctionName(defined)
+			if _, taken := summaries[name]; taken {
+				// Several init functions share one name; none may overwrite another.
+				name += " at " + summary.position.String()
+			}
+			summaries[name] = summary
 		}
 	}
 	return summaries
