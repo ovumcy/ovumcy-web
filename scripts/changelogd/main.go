@@ -10,7 +10,9 @@
 //	changelogd check
 //	    CI gate for pull requests. Env BASE_REF (default origin/main) names the
 //	    base to diff against. Passes when the branch adds at least one fragment
-//	    under changelog.d/, or when it edits CHANGELOG.md itself in a way only
+//	    under changelog.d/ — one of them named changelog.d/<slug>.md, the slug
+//	    being the branch (GITHUB_HEAD_REF in CI, else the current branch)
+//	    without its type/ prefix — or when it edits CHANGELOG.md itself in a way only
 //	    release assembly does (adding the "## [x.y.z]" heading of a new release,
 //	    not re-typing an existing one); every added or modified
 //	    fragment must be valid. Independently of either, a CHANGELOG.md edit
@@ -86,7 +88,11 @@ func main() {
 	}
 	switch os.Args[1] {
 	case "check":
-		failure, err := check(".", envOr("BASE_REF", "origin/main"), gitOutput)
+		headRef, err := resolveHeadRef(".", os.Getenv("GITHUB_HEAD_REF"), gitOutput)
+		if err != nil {
+			fatalf("changelog fragment check: %v", err)
+		}
+		failure, err := check(".", envOr("BASE_REF", "origin/main"), headRef, gitOutput)
 		if err != nil {
 			fatalf("changelog fragment check: %v", err)
 		}
@@ -122,10 +128,43 @@ func gitOutput(dir string, args ...string) (string, error) {
 	return string(out), nil
 }
 
+// resolveHeadRef names the branch a fragment is owed for: the pull request's
+// head branch in CI (GITHUB_HEAD_REF — the checkout there is a detached merge
+// commit), otherwise the current branch. A detached HEAD outside CI names no
+// branch and yields "", which skips the naming rule.
+func resolveHeadRef(root, ciHeadRef string, git gitRunner) (string, error) {
+	if ref := strings.TrimSpace(ciHeadRef); ref != "" {
+		return ref, nil
+	}
+	out, err := git(root, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return "", fmt.Errorf("resolve the current branch: %w", err)
+	}
+	if ref := strings.TrimSpace(out); ref != "HEAD" {
+		return ref, nil
+	}
+	return "", nil
+}
+
+// fragmentPathForBranch is the fragment a branch owes: changelog.d/<slug>.md,
+// the slug being the branch name without its leading type/ segment (fix/,
+// feat/, ci/, …), with any further "/" turned into "-" so the fragment stays
+// directly under changelog.d/.
+func fragmentPathForBranch(headRef string) string {
+	slug := headRef
+	if _, rest, found := strings.Cut(headRef, "/"); found {
+		slug = rest
+	}
+	return fragmentDir + "/" + strings.ReplaceAll(slug, "/", "-") + ".md"
+}
+
 // check reports whether the branch satisfies the fragment rule. It returns an
 // empty string when the gate passes, the failure text when it fails, and an
-// error only when the check itself could not be carried out.
-func check(root, baseRef string, git gitRunner) (string, error) {
+// error only when the check itself could not be carried out. headRef is the
+// branch the pull request comes from; when it is known, one of the fragments
+// the branch adds must carry its slug (fragmentPathForBranch), and "" skips
+// that rule.
+func check(root, baseRef, headRef string, git gitRunner) (string, error) {
 	nameStatus, err := git(root, "diff", "--name-status", "--no-color", baseRef+"...HEAD")
 	if err != nil {
 		return "", fmt.Errorf("diff against %s: %w", baseRef, err)
@@ -186,10 +225,23 @@ func check(root, baseRef string, git gitRunner) (string, error) {
 		return "changelog fragment check FAILED:\n" + strings.Join(report, "\n"), nil
 	}
 
-	if len(addedFragments(nameStatus)) > 0 || assembly {
+	if assembly {
 		return "", nil
 	}
-	return missingFragmentHelp(), nil
+	added := addedFragments(nameStatus)
+	if len(added) == 0 {
+		return missingFragmentHelp(headRef), nil
+	}
+	if headRef == "" {
+		return "", nil
+	}
+	want := fragmentPathForBranch(headRef)
+	for _, fragment := range added {
+		if fragment == want {
+			return "", nil
+		}
+	}
+	return misnamedFragmentHelp(headRef, want, added), nil
 }
 
 // changedFragments returns every changelog.d/*.md path whose content this
@@ -432,10 +484,28 @@ func fragmentFormatHelp() string {
 		"    none\n"
 }
 
-func missingFragmentHelp() string {
+// fragmentNameHelp says which file to add: the exact path when the branch is
+// known, the rule otherwise.
+func fragmentNameHelp(headRef string) string {
+	if headRef != "" {
+		return fragmentPathForBranch(headRef)
+	}
+	return fragmentDir + "/<slug>.md (the branch name without its type/ prefix)"
+}
+
+func misnamedFragmentHelp(headRef, want string, added []string) string {
+	return "changelog fragment check FAILED: branch " + headRef + " adds no fragment named " + want + ".\n" +
+		"\n" +
+		"It adds: " + strings.Join(added, ", ") + "\n" +
+		"Rename the entry to " + want + ": the fragment is named after the branch without its\n" +
+		"type/ prefix, so each pull request's entry has a file no other branch writes. Rename it before\n" +
+		"the pull request is queued — a queued branch refuses pushes.\n"
+}
+
+func missingFragmentHelp(headRef string) string {
 	return "changelog fragment check FAILED: this branch adds no fragment under " + fragmentDir + "/.\n" +
 		"\n" +
-		"Add " + fragmentDir + "/<branch-name>.md and put the changelog entry there instead of in\n" +
+		"Add " + fragmentNameHelp(headRef) + " and put the changelog entry there instead of in\n" +
 		changelogFile + ", which is rewritten only by release assembly\n" +
 		"(go run ./scripts/changelogd assemble -version X.Y.Z) and by corrections to already-released text.\n" +
 		"\n" + fragmentFormatHelp()
