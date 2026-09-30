@@ -33,6 +33,29 @@ func newMethodOverrideProbeApp(t *testing.T, withCSRF bool) *fiber.App {
 
 func newMethodOverrideProbeAppWithAudit(t *testing.T, withCSRF bool, auditLogEnabled bool) *fiber.App {
 	t.Helper()
+	handler := newMethodOverrideProbeHandler(t, auditLogEnabled)
+
+	app := fiber.New(fiber.Config{BodyLimit: 4 * 1024})
+	app.Use(MethodOverride(handler))
+	if withCSRF {
+		app.Use(csrf.New(testCSRFMiddlewareConfig(false, handler)))
+	}
+	app.Get("/token", func(c fiber.Ctx) error {
+		return c.SendString(csrf.TokenFromContext(c))
+	})
+	answer := func(c fiber.Ctx) error { return c.SendString("ran " + c.Method()) }
+	app.Post(methodOverrideProbePath, answer)
+	app.Put(methodOverrideProbePath, answer)
+	app.Patch(methodOverrideProbePath, answer)
+	app.Delete(methodOverrideProbePath, answer)
+	app.Delete("/delete-only", answer)
+	app.Post(security.OIDCCallbackPath, answer)
+	app.Post("/content-type", func(c fiber.Ctx) error { return c.SendString(c.Get(fiber.HeaderContentType)) })
+	return app
+}
+
+func newMethodOverrideProbeHandler(t *testing.T, auditLogEnabled bool) *Handler {
+	t.Helper()
 
 	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "method-override.db")})
 	if err != nil {
@@ -52,24 +75,7 @@ func newMethodOverrideProbeAppWithAudit(t *testing.T, withCSRF bool, auditLogEna
 		t.Fatalf("init handler: %v", err)
 	}
 	handler.auditLogEnabled = auditLogEnabled
-
-	app := fiber.New(fiber.Config{BodyLimit: 4 * 1024})
-	app.Use(MethodOverride(handler))
-	if withCSRF {
-		app.Use(csrf.New(testCSRFMiddlewareConfig(false, handler)))
-	}
-	app.Get("/token", func(c fiber.Ctx) error {
-		return c.SendString(csrf.TokenFromContext(c))
-	})
-	answer := func(c fiber.Ctx) error { return c.SendString("ran " + c.Method()) }
-	app.Post(methodOverrideProbePath, answer)
-	app.Put(methodOverrideProbePath, answer)
-	app.Patch(methodOverrideProbePath, answer)
-	app.Delete(methodOverrideProbePath, answer)
-	app.Delete("/delete-only", answer)
-	app.Post(security.OIDCCallbackPath, answer)
-	app.Post("/content-type", func(c fiber.Ctx) error { return c.SendString(c.Get(fiber.HeaderContentType)) })
-	return app
+	return handler
 }
 
 func methodOverrideFormRequest(target string, form url.Values, contentType string) *http.Request {
@@ -140,6 +146,24 @@ func TestMethodOverrideRefusesAVerbOutsideTheAllowlist(t *testing.T) {
 	ambiguous := methodOverrideFormRequest(methodOverrideProbePath, url.Values{"_method": {"DELETE", "DELETE"}}, "application/x-www-form-urlencoded")
 	if status, body := probeAnswer(t, app, ambiguous); status != http.StatusBadRequest {
 		t.Fatalf("repeated _method: got %d %q, want 400", status, body)
+	}
+}
+
+// An app whose RequestMethods omit an allowlisted verb leaves c.Method(verb) a
+// no-op; the override must then fail closed instead of running the POST route.
+func TestMethodOverrideFailsClosedWhenTheAppCannotRouteTheVerb(t *testing.T) {
+	t.Parallel()
+	handler := newMethodOverrideProbeHandler(t, false)
+	app := fiber.New(fiber.Config{RequestMethods: []string{
+		fiber.MethodGet, fiber.MethodHead, fiber.MethodPost, fiber.MethodPut, fiber.MethodDelete,
+	}})
+	app.Use(MethodOverride(handler))
+	app.Post(methodOverrideProbePath, func(c fiber.Ctx) error { return c.SendString("ran " + c.Method()) })
+
+	request := methodOverrideFormRequest(methodOverrideProbePath, url.Values{"_method": {"PATCH"}}, "application/x-www-form-urlencoded")
+	status, body := probeAnswer(t, app, request)
+	if status != http.StatusInternalServerError || strings.HasPrefix(body, "ran ") {
+		t.Fatalf("_method=PATCH on an app without PATCH: got %d %q, want 500 without reaching a route", status, body)
 	}
 }
 
