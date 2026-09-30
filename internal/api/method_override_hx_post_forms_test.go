@@ -30,38 +30,70 @@ func postingToItsHTMXURL(match func(*html.Node) bool) func(*html.Node) bool {
 }
 
 // browserFormBody serializes form as a browser without JavaScript does: every
-// named input in document order, a checkbox or radio only when checked, and
-// the value typed into a visible field in place of its own. A name in checked
-// overrides the box's rendered state.
+// named, enabled control in document order, a checkbox or radio only when
+// checked, a select's selected (else first) option, and the value typed into a
+// visible field in place of its own. A name in checked overrides the box's
+// rendered state.
 func browserFormBody(form *html.Node, checked map[string]bool, typed map[string]string) url.Values {
 	body := url.Values{}
-	for _, input := range htmlFindElements(form, func(node *html.Node) bool {
-		return node.Type == html.ElementNode && node.Data == "input"
+	for _, control := range htmlFindElements(form, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && (node.Data == "input" || node.Data == "select" || node.Data == "textarea")
 	}) {
-		name := htmlAttr(input, "name")
-		if name == "" {
+		name := htmlAttr(control, "name")
+		if name == "" || htmlHasAttr(control, "disabled") {
 			continue
 		}
-		switch htmlAttr(input, "type") {
-		case "hidden":
-			body.Add(name, htmlAttr(input, "value"))
-		case "checkbox", "radio":
+		if value, ok := typed[name]; ok && control.Data != "input" {
+			body.Add(name, value)
+			continue
+		}
+		switch {
+		case control.Data == "textarea":
+			body.Add(name, htmlNodeText(control))
+		case control.Data == "select":
+			body.Add(name, selectedOptionValue(control))
+		case htmlAttr(control, "type") == "hidden":
+			body.Add(name, htmlAttr(control, "value"))
+		case htmlAttr(control, "type") == "checkbox" || htmlAttr(control, "type") == "radio":
 			on, stated := checked[name]
 			if !stated {
-				on = htmlHasAttr(input, "checked")
+				on = htmlHasAttr(control, "checked")
 			}
 			if on {
-				body.Add(name, htmlAttr(input, "value"))
+				body.Add(name, htmlAttr(control, "value"))
 			}
 		default:
 			if value, ok := typed[name]; ok {
 				body.Add(name, value)
 			} else {
-				body.Add(name, htmlAttr(input, "value"))
+				body.Add(name, htmlAttr(control, "value"))
 			}
 		}
 	}
 	return body
+}
+
+func selectedOptionValue(selectNode *html.Node) string {
+	options := htmlFindElements(selectNode, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && node.Data == "option"
+	})
+	chosen := (*html.Node)(nil)
+	for _, option := range options {
+		if htmlHasAttr(option, "selected") {
+			chosen = option
+			break
+		}
+	}
+	if chosen == nil && len(options) > 0 {
+		chosen = options[0]
+	}
+	if chosen == nil {
+		return ""
+	}
+	if htmlHasAttr(chosen, "value") {
+		return htmlAttr(chosen, "value")
+	}
+	return strings.TrimSpace(htmlNodeText(chosen))
 }
 
 func cycleStartOn(t *testing.T, ctx settingsSecurityTestContext, iso string) bool {
@@ -261,30 +293,43 @@ func TestNoJSOnboardingStep1WithoutADateAnswersAPageWithAWayBack(t *testing.T) {
 // JavaScript, so the page that renders the form must state it beside the button.
 func TestNoJSCycleStartShowsTheImplantationCautionBeforeTheMark(t *testing.T) {
 	t.Parallel()
-	ctx := newSettingsSecurityTestContext(t, "nojs-cycle-start-implantation@example.com")
-	// Same shape as TestMarkCycleStartImplantationWarningSetsEncodedNoticeWithKey:
-	// two starts 28 days apart put today 6-12 days past the projected ovulation.
-	today, _ := utcToday()
-	for _, daysAgo := range []int{50, 22} {
-		if err := ctx.database.Create(&models.DailyLog{UserID: ctx.user.ID, Date: today.AddDate(0, 0, -daysAgo), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium}).Error; err != nil {
-			t.Fatalf("seed cycle start %d days back: %v", daysAgo, err)
-		}
+	_, today := utcToday()
+	surfaces := map[string]struct {
+		page string
+		form string
+	}{
+		"dashboard":          {"/dashboard", "data-dashboard-cycle-start-form"},
+		"calendar day":       {"/calendar/day/" + today, "data-day-cycle-start-form"},
+		"calendar day, edit": {"/calendar/day/" + today + "?mode=edit", "data-day-cycle-start-form"},
 	}
+	for name, surface := range surfaces {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			ctx := newSettingsSecurityTestContext(t, "nojs-implantation-"+strings.ReplaceAll(strings.ReplaceAll(name, " ", "-"), ",", "")+"@example.com")
+			// Same shape as TestMarkCycleStartImplantationWarningSetsEncodedNoticeWithKey:
+			// two starts 28 days apart put today 6-12 days past the projected ovulation.
+			day, _ := utcToday()
+			for _, daysAgo := range []int{50, 22} {
+				if err := ctx.database.Create(&models.DailyLog{UserID: ctx.user.ID, Date: day.AddDate(0, 0, -daysAgo), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium}).Error; err != nil {
+					t.Fatalf("seed cycle start %d days back: %v", daysAgo, err)
+				}
+			}
 
-	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
-	request.Header.Set("Accept-Language", "en")
-	request.Header.Set("Cookie", ctx.authCookie)
-	response := mustAppResponse(t, ctx.app, request)
-	assertStatusCode(t, response, http.StatusOK)
-	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+			request := httptest.NewRequest(http.MethodGet, surface.page, nil)
+			request.Header.Set("Accept-Language", "en")
+			request.Header.Set("Cookie", ctx.authCookie)
+			response := mustAppResponse(t, ctx.app, request)
+			assertStatusCode(t, response, http.StatusOK)
+			document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
 
-	section := htmlFindElement(document, func(node *html.Node) bool {
-		return node.Type == html.ElementNode && htmlAttr(node, "id") == "dashboard-cycle-start"
-	})
-	if section == nil || htmlFindElement(section, postingToItsHTMXURL(formWithFlag("data-dashboard-cycle-start-form"))) == nil {
-		t.Fatal("the dashboard rendered no no-JS cycle-start form")
-	}
-	if !strings.Contains(htmlNodeText(section), "timing alone cannot tell") {
-		t.Fatalf("the cycle-start section carries no implantation caution: %q", htmlNodeText(section))
+			form := htmlFindElement(document, postingToItsHTMXURL(formWithFlag(surface.form)))
+			if form == nil {
+				t.Fatalf("%s rendered no no-JS cycle-start form", surface.page)
+			}
+			// The form sits in its button row; the caution is in the card around it.
+			if text := htmlNodeText(form.Parent.Parent); !strings.Contains(text, "timing alone cannot tell") {
+				t.Fatalf("the cycle-start form on %s stands without the implantation caution: %q", surface.page, text)
+			}
+		})
 	}
 }
