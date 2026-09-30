@@ -2,7 +2,6 @@ package services
 
 import (
 	"errors"
-	"strconv"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
@@ -13,8 +12,8 @@ import (
 // (SettingsService.SettingsReauthBudget) and totp.disable for the 2FA disable
 // confirmation (TOTPService.DisableReauthBudget). SettingsService.VerifyReauth is
 // verify around the current-password compare; ChangePassword wraps its own
-// three-field compare in the same verify. The admission check and the failure
-// booking are therefore written once, whatever the budget.
+// three-field compare in the same verify. The admission check, the failure
+// booking and the bucket keys are therefore written once, whatever the budget.
 //
 // Verifying and resetting are separate steps on purpose. Verify admits, compares
 // and books a failure; it never clears the count. The caller calls Reset once the
@@ -23,10 +22,6 @@ import (
 type ReauthBudget struct {
 	policy    *AuthAttemptPolicy
 	secretKey []byte
-	// keys names the two buckets an attempt draws: the client bucket and the
-	// account identity. They are the budget's own, not the attempt's, because
-	// the two budgets predate one another and key differently.
-	keys func(attempt ReauthAttempt) (clientKey string, identity string)
 	// limited is the refusal an exhausted budget answers, so each caller keeps
 	// the rate-limit response its route already had.
 	limited error
@@ -39,25 +34,25 @@ func (service *SettingsService) SettingsReauthBudget() ReauthBudget {
 	return ReauthBudget{
 		policy:    service.reauthPolicy,
 		secretKey: service.reauthSecretKey,
-		keys: func(attempt ReauthAttempt) (string, string) {
-			return attempt.clientBucket(), attempt.identity()
-		},
-		limited: ErrSettingsReauthRateLimited,
+		limited:   ErrSettingsReauthRateLimited,
 	}
 }
 
 // DisableReauthBudget is the totp.disable budget, the only one the 2FA disable
-// confirmation draws. Its buckets keep the keying the route has always had: the
-// client key as given and the decimal account id as the identity.
+// confirmation draws.
 func (service *TOTPService) DisableReauthBudget(secretKey []byte) ReauthBudget {
 	return ReauthBudget{
 		policy:    service.disableAttemptPolicy,
 		secretKey: secretKey,
-		keys: func(attempt ReauthAttempt) (string, string) {
-			return attempt.ClientKey, strconv.FormatUint(uint64(attempt.UserID), 10)
-		},
-		limited: ErrTOTPDisableRateLimited,
+		limited:   ErrTOTPDisableRateLimited,
 	}
+}
+
+// keys names the two buckets an attempt draws. The client bucket carries the
+// account (see ReauthAttempt.clientBucket), so accounts sharing one address
+// never draw each other's budget.
+func (budget ReauthBudget) keys(attempt ReauthAttempt) (clientKey string, identity string) {
+	return attempt.clientBucket(), attempt.identity()
 }
 
 func (budget ReauthBudget) exhausted(attempt ReauthAttempt) bool {
