@@ -193,3 +193,18 @@ func TestVerifyNormalizedEmailIndexReportsAnUnreadableCatalog(t *testing.T) {
 		t.Fatalf("a catalog that cannot be read must be reported, got %v", err)
 	}
 }
+
+// Postgres before 14 deparses trim(email) as btrim(email); a server on 13 must
+// not refuse the index migration 002 built there. ltrim and rtrim stay other keys.
+func TestNormalizedEmailIndexAcceptsThePrePostgres14Rendering(t *testing.T) {
+	const pg13 = "CREATE UNIQUE INDEX idx_users_email_normalized ON public.users USING btree (lower(btrim(email)))"
+	if got := canonicalIndexDefinition(pg13, "public"); !isNormalizedEmailIndexDefinition(got) {
+		t.Fatalf("the Postgres 13 rendering must be accepted, canonical %q", got)
+	}
+	for _, other := range []string{"ltrim", "rtrim"} {
+		definition := strings.Replace(pg13, "btrim", other, 1)
+		if isNormalizedEmailIndexDefinition(canonicalIndexDefinition(definition, "public")) {
+			t.Fatalf("index %q must be refused", definition)
+		}
+	}
+}
