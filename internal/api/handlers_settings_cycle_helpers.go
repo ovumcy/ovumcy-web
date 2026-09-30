@@ -5,7 +5,6 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
@@ -124,7 +123,7 @@ func (handler *Handler) parseCycleSettingsInput(c fiber.Ctx, user *models.User) 
 		if resolved.Present == (services.CycleSettingsMembers{}) && !resolved.LastPeriodStartSet {
 			return services.CycleSettingsUpdate{}, "invalid settings input"
 		}
-		update, err := handler.settingsService.ValidateCycleSettings(resolved, time.Now().In(location), location)
+		update, err := handler.settingsService.ValidateCycleSettings(resolved, handler.clockNow().In(location), location)
 		if err != nil {
 			return services.CycleSettingsUpdate{}, cycleSettingsValidationErrorKey(err)
 		}
@@ -155,7 +154,7 @@ func (handler *Handler) parseCycleSettingsInput(c fiber.Ctx, user *models.User) 
 		// A form body is a full snapshot by construction, so every member is
 		// present and every column is the form's to write.
 		Present: services.AllCycleSettingsMembers(),
-	}, time.Now().In(location), location)
+	}, handler.clockNow().In(location), location)
 	if err != nil {
 		return services.CycleSettingsUpdate{}, cycleSettingsValidationErrorKey(err)
 	}

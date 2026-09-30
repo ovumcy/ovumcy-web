@@ -2,7 +2,6 @@ package api
 
 import (
 	"errors"
-	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
@@ -30,7 +29,7 @@ func (handler *Handler) OnboardingStep1(c fiber.Ctx) error {
 	}
 
 	location := handler.requestLocationFromOnboardingForm(c)
-	today := services.DateAtLocation(time.Now().In(location), location)
+	today := services.DateAtLocation(handler.clockNow().In(location), location)
 	values, validationError := handler.parseOnboardingStep1Values(c, today, location)
 	if validationError != "" {
 		return handler.failMutation(c, onboardingCycleStartMutation, onboardingValidationErrorSpec(validationError))

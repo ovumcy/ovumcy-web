@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/httpx"
@@ -59,7 +58,7 @@ func setEncodedResponseNotice(c fiber.Ctx, noticeKey string, message string) {
 }
 
 func (handler *Handler) sendDaySaveStatus(c fiber.Ctx, messageKey string) error {
-	timestamp := time.Now().In(handler.requestLocation(c)).Format("15:04")
+	timestamp := handler.clockNow().In(handler.requestLocation(c)).Format("15:04")
 	patternKey := messageKey
 	if patternKey == "" {
 		patternKey = "common.saved_at"

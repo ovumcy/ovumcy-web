@@ -171,8 +171,7 @@ func seedLateYear9999Cycles(t *testing.T, database *gorm.DB, userID uint, lastSt
 // accepted day, through the routes, with the handler's clock set to it.
 func TestOverviewAndFeedRoutesAnswerProjectionsPastYear9999AsAbsent(t *testing.T) {
 	now := time.Date(9999, 12, 30, 12, 0, 0, 0, time.UTC)
-	clock := now
-	app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{now: func() time.Time { return clock }})
+	app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{now: func() time.Time { return now }})
 
 	owner := createOnboardingTestUser(t, database, "overview-year-9999@example.com", "StrongPass1", true)
 	seedLateYear9999Cycles(t, database, owner.ID, time.Date(9999, 12, 20, 0, 0, 0, 0, time.UTC))
@@ -215,9 +214,10 @@ func TestOverviewAndFeedRoutesAnswerProjectionsPastYear9999AsAbsent(t *testing.T
 		t.Fatalf("payload spells %s:\n%s", match, body)
 	}
 
-	// The feed: the same owner at the same today names no projected event,
-	// while a control owner whose next start is 9999-12-30 still gets that one,
-	// so the empty feed is the year and not an unread history.
+	// The feed: an owner with the same history at the same today names no
+	// projected event, while a control owner whose next start is 9999-12-30
+	// still gets that one, so the empty feed is the year and not an unread
+	// history. Each case owns its app, so its today is its own.
 	for _, tc := range []struct {
 		email     string
 		lastStart time.Time
@@ -227,23 +227,12 @@ func TestOverviewAndFeedRoutesAnswerProjectionsPastYear9999AsAbsent(t *testing.T
 		{email: "feed-year-9999@example.com", lastStart: time.Date(9999, 12, 20, 0, 0, 0, 0, time.UTC), now: now},
 		{email: "feed-year-9999-control@example.com", lastStart: time.Date(9999, 12, 2, 0, 0, 0, 0, time.UTC), now: time.Date(9999, 12, 29, 12, 0, 0, 0, time.UTC), wantStart: "99991230"},
 	} {
-		feedOwner := createOnboardingTestUser(t, database, tc.email, "StrongPass1", true)
-		seedLateYear9999Cycles(t, database, feedOwner.ID, tc.lastStart)
-		token := armCalendarFeedForUser(t, database, feedOwner.ID)
+		feedApp, feedDatabase := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{now: func() time.Time { return tc.now }})
+		feedOwner := createOnboardingTestUser(t, feedDatabase, tc.email, "StrongPass1", true)
+		seedLateYear9999Cycles(t, feedDatabase, feedOwner.ID, tc.lastStart)
+		token := armCalendarFeedForUser(t, feedDatabase, feedOwner.ID)
 
-		clock = tc.now
-		feedResponse, err := app.Test(httptest.NewRequest(http.MethodGet, calendarFeedURL(token), nil), testConfigNoTimeout)
-		if err != nil {
-			t.Fatalf("%s: GET feed: %v", tc.email, err)
-		}
-		feedBody, err := io.ReadAll(feedResponse.Body)
-		if err != nil {
-			t.Fatalf("%s: read feed: %v", tc.email, err)
-		}
-		if feedResponse.StatusCode != http.StatusOK {
-			t.Fatalf("%s: GET feed = %d:\n%s", tc.email, feedResponse.StatusCode, feedBody)
-		}
-		feed := string(feedBody)
+		_, feed := mustServeCalendarFeed(t, feedApp, token, tc.email)
 		if match := fiveDigitYearDate.FindString(feed); match != "" {
 			t.Fatalf("%s: feed spells %s:\n%s", tc.email, match, feed)
 		}
