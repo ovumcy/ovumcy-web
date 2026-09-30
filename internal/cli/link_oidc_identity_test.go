@@ -359,15 +359,15 @@ func TestRunLinkOIDCIdentityCommandRefusesInvalidDatabaseConfig(t *testing.T) {
 
 // TestRunLinkOIDCIdentityCommandReportsAGenericLookupFailure drives a REAL
 // storage error (rather than a constructed sentinel) through
-// mapOperatorUserLookupError's default arm: with the users table gone, the
-// id lookup fails for reasons that are not "not found", and the command must
-// say so rather than misreport it as an unknown id.
+// mapOperatorUserLookupError's default arm: with the row unreadable, the id
+// lookup fails for reasons that are not "not found", and the command must say
+// so rather than misreport it as an unknown id.
 func TestRunLinkOIDCIdentityCommandReportsAGenericLookupFailure(t *testing.T) {
 	t.Parallel()
 
 	databasePath := filepath.Join(t.TempDir(), "cli-link-oidc-lookup-failure.db")
 	user := createCLILinkOIDCUser(t, databasePath, "cli-link-lookup-failure@example.com")
-	dropCLILinkOIDCTable(t, databasePath, "users")
+	corruptCLILinkOIDCUserRow(t, databasePath, user.ID)
 
 	err := runLinkOIDCIdentityCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
@@ -380,7 +380,9 @@ func TestRunLinkOIDCIdentityCommandReportsAGenericLookupFailure(t *testing.T) {
 	}
 }
 
-func dropCLILinkOIDCTable(t *testing.T, databasePath string, table string) {
+// corruptCLILinkOIDCUserRow leaves the schema intact, so the command gets past
+// its schema check, and makes the one row unreadable.
+func corruptCLILinkOIDCUserRow(t *testing.T, databasePath string, userID uint) {
 	t.Helper()
 	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath})
 	if err != nil {
@@ -391,8 +393,8 @@ func dropCLILinkOIDCTable(t *testing.T, databasePath string, table string) {
 		t.Fatalf("open sql db: %v", err)
 	}
 	defer func() { _ = sqlDB.Close() }()
-	if err := database.Exec("DROP TABLE " + table).Error; err != nil {
-		t.Fatalf("drop table %s: %v", table, err)
+	if err := database.Exec("UPDATE users SET created_at = 'not a timestamp' WHERE id = ?", userID).Error; err != nil {
+		t.Fatalf("corrupt user %d: %v", userID, err)
 	}
 }
 

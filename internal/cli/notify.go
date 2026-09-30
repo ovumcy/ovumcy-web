@@ -68,21 +68,11 @@ func RunNotifyCommand(
 		return err
 	}
 
-	database, err := db.OpenDatabase(databaseConfig)
+	repositories, _, closeDatabase, err := openOperatorRepositories(databaseConfig, calendarFeedFencePath())
 	if err != nil {
-		return fmt.Errorf("database init failed: %w", err)
+		return err
 	}
-	sqlDB, err := database.DB()
-	if err != nil {
-		// codecov:ignore -- defensive: (*gorm.DB).DB() only errors when the
-		// underlying connection pool is unavailable, which cannot happen on the
-		// handle OpenDatabase just returned successfully. Mirrors the same guard in
-		// users.go; kept so a future driver change fails cleanly instead of panicking.
-		return fmt.Errorf("database init failed: %w", err)
-	}
-	defer func() {
-		_ = sqlDB.Close()
-	}()
+	defer closeDatabase()
 
 	i18nManager, err := i18n.NewManager(defaultLanguage)
 	if err != nil {
@@ -94,7 +84,6 @@ func RunNotifyCommand(
 		return fmt.Errorf("i18n init failed: %w", err)
 	}
 
-	repositories, _ := buildRepositories(database, calendarFeedFencePath())
 	service := bootstrap.BuildNotifyService(repositories, []byte(secretKey), i18nManager, blockPrivateAddresses)
 
 	return runNotifyCommand(service, opts, time.Now(), location, os.Stdout)

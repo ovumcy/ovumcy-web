@@ -155,23 +155,11 @@ func runLinkOIDCIdentityCommand(databaseConfig db.Config, oidcConfig security.OI
 		return fmt.Errorf("issuer %q does not match the configured OIDC_ISSUER_URL %q", issuer, configuredIssuer)
 	}
 
-	database, err := db.OpenDatabase(databaseConfig)
+	repositories, _, closeDatabase, err := openOperatorRepositories(databaseConfig, calendarFeedFencePath())
 	if err != nil {
-		return fmt.Errorf("database init failed: %w", err)
+		return err
 	}
-	sqlDB, err := database.DB()
-	if err != nil {
-		// codecov:ignore:start -- defensive: gorm's DB() accessor fails only if the
-		// dialector has no underlying *sql.DB, which neither the sqlite nor the
-		// postgres driver this command can be configured with ever lacks.
-		return fmt.Errorf("database init failed: %w", err)
-		// codecov:ignore:end
-	}
-	defer func() {
-		_ = sqlDB.Close()
-	}()
-
-	repositories, _ := buildRepositories(database, calendarFeedFencePath())
+	defer closeDatabase()
 	authService := services.NewAuthService(repositories.Users)
 	userService := services.NewOperatorUserService(repositories.Users, authService)
 
