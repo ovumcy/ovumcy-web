@@ -1,8 +1,10 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"strings"
 	"testing"
@@ -165,29 +167,33 @@ func seedLateYear9999Cycles(t *testing.T, database *gorm.DB, userID uint, lastSt
 	}
 }
 
-// GET /api/v1/stats/overview and the feed route read the wall clock and have no
-// seam to set it, so no HTTP request can meet a late-9999 today. This runs what
-// those two handlers run — the handler's own bootstrap-built services over a
-// seeded database, then the overview's publishing adapter and DTO, encoded as
-// c.JSON encodes it — at the last accepted day.
-func TestOverviewAndFeedReadPathsAnswerProjectionsPastYear9999AsAbsent(t *testing.T) {
-	_, database := newOnboardingTestApp(t)
-	handler := mustFeedHandler(t, database)
-	ctx := context.Background()
+// GET /api/v1/stats/overview and GET /calendar/feed/:token.ics at the last
+// accepted day, through the routes, with the handler's clock set to it.
+func TestOverviewAndFeedRoutesAnswerProjectionsPastYear9999AsAbsent(t *testing.T) {
+	now := time.Date(9999, 12, 30, 12, 0, 0, 0, time.UTC)
+	clock := now
+	app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{now: func() time.Time { return clock }})
 
 	owner := createOnboardingTestUser(t, database, "overview-year-9999@example.com", "StrongPass1", true)
 	seedLateYear9999Cycles(t, database, owner.ID, time.Date(9999, 12, 20, 0, 0, 0, 0, time.UTC))
-	now := time.Date(9999, 12, 30, 12, 0, 0, 0, time.UTC)
 
-	stats, logs, err := handler.statsService.BuildOverviewStats(ctx, &owner, now, time.UTC)
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/stats/overview", nil)
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Cookie", issueAuthCookieForUser(t, owner))
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
-		t.Fatalf("build overview stats: %v", err)
+		t.Fatalf("GET /api/v1/stats/overview: %v", err)
 	}
-	published, suppression, confirmed := services.PublishedOverviewStats(&owner, logs, stats, services.DateAtLocation(now, time.UTC), time.UTC)
-	payload := newStatsOverviewResponse(published, suppression, confirmed, "")
-	body, err := json.Marshal(payload)
+	body, err := io.ReadAll(response.Body)
 	if err != nil {
-		t.Fatalf("encode stats overview: %v", err)
+		t.Fatalf("read stats overview: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/v1/stats/overview = %d:\n%s", response.StatusCode, body)
+	}
+	var payload StatsOverviewResponse
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("decode stats overview: %v\n%s", err, body)
 	}
 	if payload.LastPeriodStart == nil || *payload.LastPeriodStart != "9999-12-20" {
 		t.Fatalf("precondition: last_period_start = %v, want 9999-12-20 read from the database:\n%s", payload.LastPeriodStart, body)
@@ -225,9 +231,17 @@ func TestOverviewAndFeedReadPathsAnswerProjectionsPastYear9999AsAbsent(t *testin
 		seedLateYear9999Cycles(t, database, feedOwner.ID, tc.lastStart)
 		token := armCalendarFeedForUser(t, database, feedOwner.ID)
 
-		feedBody, ok, err := handler.calendarFeedService.ResolveFeed(ctx, token, tc.now, time.UTC)
-		if err != nil || !ok {
-			t.Fatalf("%s: resolve feed ok=%v err=%v", tc.email, ok, err)
+		clock = tc.now
+		feedResponse, err := app.Test(httptest.NewRequest(http.MethodGet, calendarFeedURL(token), nil), testConfigNoTimeout)
+		if err != nil {
+			t.Fatalf("%s: GET feed: %v", tc.email, err)
+		}
+		feedBody, err := io.ReadAll(feedResponse.Body)
+		if err != nil {
+			t.Fatalf("%s: read feed: %v", tc.email, err)
+		}
+		if feedResponse.StatusCode != http.StatusOK {
+			t.Fatalf("%s: GET feed = %d:\n%s", tc.email, feedResponse.StatusCode, feedBody)
 		}
 		feed := string(feedBody)
 		if match := fiveDigitYearDate.FindString(feed); match != "" {

@@ -89,6 +89,8 @@ type onboardingTestAppOptions struct {
 	// that commit another write between a request's authentication and its own
 	// revoking write (see revokingWriteHooks).
 	revokingWrites *revokingWriteHooks
+	// now is installed as the handler's clock seam; nil keeps the wall clock.
+	now func() time.Time
 }
 
 func newOnboardingTestAppWithOptions(t *testing.T, options onboardingTestAppOptions) (*fiber.App, *gorm.DB) {
@@ -122,6 +124,7 @@ func newOnboardingTestAppWithOptions(t *testing.T, options onboardingTestAppOpti
 	}
 	handler.sessionIssuanceFault = options.sessionIssuanceFault
 	handler.recoveryCodeIssuanceFault = options.recoveryCodeIssuanceFault
+	handler.now = options.now
 
 	app := fiber.New(fiber.Config{BodyLimit: options.bodyLimit})
 	app.Use(MethodOverride(handler))

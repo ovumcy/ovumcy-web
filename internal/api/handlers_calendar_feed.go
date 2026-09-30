@@ -2,7 +2,6 @@ package api
 
 import (
 	"strings"
-	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/httpx"
@@ -149,7 +148,7 @@ func isCalendarFeedRequestPath(path string) bool {
 func (handler *Handler) ServeCalendarFeed(c fiber.Ctx) error {
 	token := c.Params("token")
 	location := handler.requestLocation(c)
-	now := time.Now().In(location)
+	now := handler.clockNow().In(location)
 
 	body, ok, err := handler.calendarFeedService.ResolveFeed(c.Context(), token, now, location)
 	if err != nil {

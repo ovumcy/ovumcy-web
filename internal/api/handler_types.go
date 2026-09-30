@@ -65,6 +65,16 @@ type Handler struct {
 	// used to prove the register-pickup seal-order fix (WEB-64) leaves the
 	// pickup token retryable when the reveal itself is what fails to seal.
 	recoveryCodeIssuanceFault func() error
+	// now is nil in production, which reads time.Now (clockNow). A test sets it
+	// to meet a today the real clock cannot reach, such as the last accepted day.
+	now func() time.Time
+}
+
+func (handler *Handler) clockNow() time.Time {
+	if handler.now == nil {
+		return time.Now()
+	}
+	return handler.now()
 }
 
 // CalendarDay is one cell of the calendar grid. Every field on it is one the

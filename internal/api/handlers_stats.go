@@ -1,8 +1,6 @@
 package api
 
 import (
-	"time"
-
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
@@ -14,7 +12,7 @@ func (handler *Handler) GetStatsOverview(c fiber.Ctx) error {
 	}
 
 	location := handler.requestLocation(c)
-	now := time.Now().In(location)
+	now := handler.clockNow().In(location)
 	stats, logs, err := handler.statsService.BuildOverviewStats(c.Context(), user, now, location)
 	if err != nil {
 		return handler.respondMappedError(c, statsFetchErrorSpec())
