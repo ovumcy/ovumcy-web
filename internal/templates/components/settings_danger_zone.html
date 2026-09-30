@@ -68,6 +68,8 @@
         <h3 class="field-label field-label-lg">{{t .Messages "settings.delete_account.title"}}</h3>
       </div>
       <form
+        action="/api/v1/users/current"
+        method="post"
         hx-delete="/api/v1/users/current"
         hx-target="#delete-account-feedback"
         hx-swap="innerHTML"
@@ -75,6 +77,7 @@
         data-confirm-accept="{{t .Messages "settings.delete_account.submit"}}"
         class="space-y-4">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="_method" value="DELETE">
         {{template "password_username_context_field" (dict "Value" .CurrentUser.Email)}}
 
         <div class="settings-form-actions">

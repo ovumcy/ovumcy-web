@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/ovumcy/ovumcy-web/internal/httpx"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
@@ -96,7 +97,7 @@ func (handler *Handler) UpsertDay(c fiber.Ctx) error {
 	if request.payload.ConfirmCycleStart && entry.CycleStart {
 		handler.logMutationSuccess(c, cycleStartMarkMutation)
 	}
-	return handler.respondUpsertDaySuccess(c, entry, feedback, feedbackErr)
+	return handler.respondUpsertDaySuccess(c, request.day, entry, feedback, feedbackErr)
 }
 
 func (handler *Handler) resolveUpsertDayRequest(c fiber.Ctx) (upsertDayRequest, APIErrorSpec, bool) {
@@ -171,8 +172,17 @@ func (handler *Handler) applyUpsertDayAcknowledgements(c fiber.Ctx, request upse
 	return feedback, feedbackErr
 }
 
-func (handler *Handler) respondUpsertDaySuccess(c fiber.Ctx, entry models.DailyLog, feedback services.DayFeedbackState, feedbackErr error) error {
-	if isHTMX(c) {
+func (handler *Handler) respondUpsertDaySuccess(c fiber.Ctx, day time.Time, entry models.DailyLog, feedback services.DayFeedbackState, feedbackErr error) error {
+	switch responseFormat(c) {
+	case httpx.ResponseFormatHTML:
+		// A day form submitted without JavaScript: send the browser back to the
+		// page the form was on. The calendar editor names itself in a hidden
+		// `source` field; the dashboard form is the default.
+		if c.FormValue("source") == "calendar" {
+			return c.Redirect().Status(fiber.StatusSeeOther).To(calendarDayPath(day))
+		}
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/dashboard")
+	case httpx.ResponseFormatHTMX:
 		c.Set("HX-Trigger", "calendar-day-updated")
 		if feedbackErr == nil {
 			if feedback.ShowSpottingCycleWarning {
@@ -247,8 +257,13 @@ func (handler *Handler) MarkCycleStart(c fiber.Ctx) error {
 	}
 
 	if c.Query("source") == "calendar" {
-		month := day.Format("2006-01")
-		return redirectOrJSON(c, "/calendar?month="+month+"&day="+day.Format("2006-01-02"))
+		return redirectOrJSON(c, calendarDayPath(day))
 	}
 	return redirectOrJSON(c, "/dashboard")
+}
+
+// calendarDayPath is the calendar page opened on day, where a calendar form
+// submitted without JavaScript lands.
+func calendarDayPath(day time.Time) string {
+	return "/calendar?month=" + day.Format("2006-01") + "&day=" + day.Format("2006-01-02")
 }
