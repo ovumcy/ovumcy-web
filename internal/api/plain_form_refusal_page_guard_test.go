@@ -33,7 +33,7 @@ type plainFormRefusalExemption struct {
 // without JavaScript paints it as the page. Each needs a fixed back link in
 // plainPageFormBackPath or a flash redirect. The list may only shrink. A date
 // or id in an action stands for the template action the file carries there.
-const plainFormRefusalGap = "WEB-134: a refusal before the handler paints the JSON envelope without JS; fix pending"
+const plainFormRefusalGap = "WEB-135: a refusal before the handler paints the JSON envelope without JS; fix pending"
 
 var plainFormRefusalExemptions = []plainFormRefusalExemption{
 	{file: "components/settings_account.html", action: "/api/v1/users/current/oidc/identities/2026-09-27", reason: plainFormRefusalGap},
