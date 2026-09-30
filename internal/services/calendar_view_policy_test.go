@@ -177,6 +177,28 @@ func TestCalendarMaximumNavigableMonth(t *testing.T) {
 	}
 }
 
+// WEB-108: the three-year horizon stops at 9999-12. A year-10000 month key has
+// five digits and does not parse back, so from late 9996 on the bound is the
+// last month a four-digit year spells, and that month offers no "next" link.
+func TestCalendarMaximumNavigableMonthStopsAtYear9999(t *testing.T) {
+	for _, tc := range []struct {
+		now  time.Time
+		want string
+	}{
+		{now: time.Date(9996, time.December, 31, 12, 0, 0, 0, time.UTC), want: "9999-12-01"},
+		{now: time.Date(9997, time.January, 1, 12, 0, 0, 0, time.UTC), want: "9999-12-01"},
+		{now: time.Date(9999, time.December, 30, 12, 0, 0, 0, time.UTC), want: "9999-12-01"},
+	} {
+		maxMonth := CalendarMaximumNavigableMonth(tc.now, time.UTC)
+		if got := maxMonth.Format("2006-01-02"); got != tc.want {
+			t.Fatalf("now %s: maximum month = %s, want %s", tc.now.Format("2006-01-02"), got, tc.want)
+		}
+		if _, next := CalendarAdjacentMonthValuesWithinBounds(maxMonth, time.Time{}, maxMonth); next != "" {
+			t.Fatalf("now %s: next month at the bound = %q, want none", tc.now.Format("2006-01-02"), next)
+		}
+	}
+}
+
 // With a zero minMonth there is no lower bound, so the previous month is always
 // offered — the complement of the bounded case below.
 func TestCalendarAdjacentMonthValuesWithoutMinimumMonth(t *testing.T) {

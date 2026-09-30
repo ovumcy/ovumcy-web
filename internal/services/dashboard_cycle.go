@@ -602,11 +602,12 @@ func buildDashboardPredictionDisplay(user *models.User, logs []models.DailyLog, 
 		DashboardProjectionCycleLength(user, stats),
 	)
 	// The line names the predicted period's first and last day, so a band whose
-	// last day falls after 9999-12-31 is withheld with its first day.
+	// last day falls after 9999-12-31 is withheld with its first day. The check
+	// reads the year itself: an end absent for any other reason leaves the start.
 	nextPeriodStart := prediction.NextPeriodStart
 	nextPeriodEnd := dashboardNextPeriodEnd(nextPeriodStart, stats, location)
-	if nextPeriodEnd.IsZero() {
-		nextPeriodStart = time.Time{}
+	if pastLastProjectableYear(nextPeriodEnd) {
+		nextPeriodStart, nextPeriodEnd = time.Time{}, time.Time{}
 	}
 
 	display := dashboardPredictionDisplay{
@@ -780,7 +781,9 @@ func dashboardNextPeriodEnd(nextPeriodStart time.Time, stats CycleStats, locatio
 		return time.Time{}
 	}
 
-	return projectedDay(AddCalendarDays(nextPeriodStart, periodLength-1, location))
+	// Returned as computed, even past 9999-12-31: buildDashboardPredictionDisplay
+	// withholds such a band whole, start included, which a zero end cannot say.
+	return AddCalendarDays(nextPeriodStart, periodLength-1, location)
 }
 
 func dashboardNextPeriodInPast(display dashboardPredictionDisplay, today time.Time) bool {

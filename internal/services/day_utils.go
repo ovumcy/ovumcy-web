@@ -187,10 +187,17 @@ const lastProjectableYear = 9999
 // time.Time holds year 10000 fine, so this belongs where a projection is
 // published, not inside the arithmetic that walks past it.
 func projectedDay(day time.Time) time.Time {
-	if day.Year() > lastProjectableYear {
+	if pastLastProjectableYear(day) {
 		return time.Time{}
 	}
 	return day
+}
+
+// pastLastProjectableYear reports whether day falls after 9999-12-31, for a
+// caller that must tell that apart from a date that is absent for another
+// reason — which projectedDay's zero answer cannot.
+func pastLastProjectableYear(day time.Time) bool {
+	return day.Year() > lastProjectableYear
 }
 
 // uniqueSymptomIDs returns a day's symptom ids in their stored order with

@@ -91,14 +91,20 @@ func CalendarAdjacentMonthValuesWithinBounds(monthStart time.Time, minMonth time
 // it is a COST bound: appendPredictedCycles chains forward from "now" to the
 // requested grid one cycle at a time, so the distance this function allows is
 // the distance that loop can ever be asked to cross for a legitimately
-// clamped request (WEB-14 SEC-H5).
+// clamped request (WEB-14 SEC-H5). It never passes 9999-12 (WEB-108): a month
+// key for year 10000 is five digits, which parseCalendarMonthQuery refuses, so
+// a "next" link to it would lead to an invalid-month answer.
 func CalendarMaximumNavigableMonth(now time.Time, location *time.Location) time.Time {
 	if location == nil {
 		location = time.UTC
 	}
 
 	today := CalendarDay(DateAtLocation(now, location), time.UTC)
-	return calendarMonthAnchor(today.AddDate(3, 0, 0), location)
+	horizon := today.AddDate(3, 0, 0)
+	if pastLastProjectableYear(horizon) {
+		horizon = time.Date(lastProjectableYear, time.December, 1, 0, 0, 0, 0, time.UTC)
+	}
+	return calendarMonthAnchor(horizon, location)
 }
 
 func CalendarMinimumNavigableMonth(user *models.User, location *time.Location) time.Time {
