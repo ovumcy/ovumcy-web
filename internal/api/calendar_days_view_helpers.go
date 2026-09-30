@@ -104,6 +104,7 @@ func (handler *Handler) buildCalendarDays(states []services.CalendarDayState) []
 			StateKey:               stateKey,
 			OvulationDot:           state.IsOvulation,
 			TentativeOvulationMark: state.IsTentativeOvulation,
+			Selectable:             state.Selectable,
 		})
 	}
 	return days

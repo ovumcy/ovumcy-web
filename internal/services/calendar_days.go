@@ -47,6 +47,10 @@ type CalendarDayState struct {
 	IsPredictedFertileOverlap bool
 	HasData                   bool
 	HasSex                    bool
+	// Selectable is false on a grid cell whose date ParseDayDate refuses, such
+	// as the 9999-12-31 and year-10000 days on the December 9999 grid. The cell
+	// is drawn, but a day request for it could only fail.
+	Selectable bool
 }
 
 func CalendarLogRange(monthStart time.Time) (time.Time, time.Time) {
@@ -66,7 +70,7 @@ func BuildCalendarDayStates(user *models.User, monthStart time.Time, logs []mode
 	// the same location, so both operands stay start-of-day in one zone.
 	predictionMaps := buildCalendarPredictionMaps(user, logs, stats, CalendarDay(gridEnd, location), now, location)
 
-	todayKey := DateAtLocation(now, location).Format("2006-01-02")
+	today := DateAtLocation(now, location)
 
 	// The grid is a run of CALENDAR days, so it is counted and stepped as
 	// calendar days rather than by adding 24h-ish increments to an instant and
@@ -77,7 +81,7 @@ func BuildCalendarDayStates(user *models.User, monthStart time.Time, logs []mode
 	days := make([]CalendarDayState, 0, gridDayCount)
 	for offset := range gridDayCount {
 		day := gridStart.AddDate(0, 0, offset)
-		days = append(days, buildCalendarDayState(day, monthStart, todayKey, latestLogByDate, hasDataMap, predictionMaps))
+		days = append(days, buildCalendarDayState(day, monthStart, today, latestLogByDate, hasDataMap, predictionMaps))
 	}
 
 	return days
@@ -535,7 +539,7 @@ func appendCurrentCycleBBTSignal(user *models.User, logs []models.DailyLog, stat
 	ovulationMap[CalendarDayKey(ovulationSignal)] = true
 }
 
-func buildCalendarDayState(day time.Time, monthStart time.Time, todayKey string, latestLogByDate map[string]models.DailyLog, hasDataMap map[string]bool, predictions calendarPredictionMaps) CalendarDayState {
+func buildCalendarDayState(day time.Time, monthStart time.Time, today time.Time, latestLogByDate map[string]models.DailyLog, hasDataMap map[string]bool, predictions calendarPredictionMaps) CalendarDayState {
 	// The December 9999 grid fills its last week with year-10000 cells. They are
 	// drawn, but no projection is named on them (projectedDay): an empty set of
 	// maps reads false for every key.
@@ -551,14 +555,16 @@ func buildCalendarDayState(day time.Time, monthStart time.Time, todayKey string,
 	isPredictedPeriod := predictions.predictedPeriod[key]
 	isPredictedStartWindow := predictions.predictedStartRange[key]
 	openEditDirectly := !hasDataMap[key]
+	// Days, not keys: "10000-01-01" orders as text before any four-digit year.
+	daysFromToday := CalendarDaysBetween(today, day)
 
 	return CalendarDayState{
 		Date:                   day,
 		DateString:             key,
 		Day:                    day.Day(),
 		InMonth:                day.Month() == monthStart.Month(),
-		IsToday:                key == todayKey,
-		IsFuture:               key > todayKey,
+		IsToday:                daysFromToday == 0,
+		IsFuture:               daysFromToday > 0,
 		OpenEditDirectly:       openEditDirectly,
 		IsPeriod:               hasEntry && entry.IsPeriod,
 		IsPredicted:            isPredictedPeriod,
@@ -575,5 +581,6 @@ func buildCalendarDayState(day time.Time, monthStart time.Time, todayKey string,
 		IsPredictedFertileOverlap: isPredictedPeriod && (isFertilityEdge || isFertilityPeak),
 		HasData:                   hasDataMap[key],
 		HasSex:                    hasEntry && NormalizeDaySexActivity(entry.SexActivity) != models.SexActivityNone,
+		Selectable:                dayDateAccepted(day),
 	}
 }

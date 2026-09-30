@@ -34,6 +34,28 @@ const (
 	DayDateMax = "9999-12-30"
 )
 
+var (
+	dayDateMinDay = mustParseDayDateBound(DayDateMin)
+	dayDateMaxDay = mustParseDayDateBound(DayDateMax)
+)
+
+func mustParseDayDateBound(value string) time.Time {
+	bound, err := time.Parse("2006-01-02", value)
+	if err != nil {
+		panic(err)
+	}
+	return bound
+}
+
+// dayDateAccepted reports whether day's calendar date is one ParseDayDate
+// accepts, so a surface can decline to offer a date the parse would refuse. It
+// compares calendar components, never keys: past year 9999 a key grows a fifth
+// digit and "10000-01-01" orders as text before DayDateMax.
+func dayDateAccepted(day time.Time) bool {
+	calendar := dateOnly(day)
+	return !calendar.Before(dayDateMinDay) && !calendar.After(dayDateMaxDay)
+}
+
 // ParseDayDate parses a YYYY-MM-DD form value as a calendar day on the
 // request-local calendar and returns the start of that day in `location` —
 // midnight, or the day's first existing instant when a DST jump skips it.
