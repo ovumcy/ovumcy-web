@@ -11,6 +11,8 @@
 
   {{if and .IsOwner .EditMode}}
   <form
+    action="/api/v1/days/{{.DateString}}"
+    method="post"
     hx-put="/api/v1/days/{{.DateString}}"
     hx-target="#calendar-save-status"
     hx-swap="innerHTML"
@@ -21,6 +23,8 @@
     data-day-save-failed-text="{{t .Messages "daylog.save_failed"}}"
     data-day-save-retry-label="{{t .Messages "daylog.save_retry"}}">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input type="hidden" name="_method" value="PUT">
+    <input type="hidden" name="source" value="calendar">
     <input type="hidden" name="ack_period_tip" value="false" data-period-tip-ack>
 
     <label class="period-toggle" data-binary-toggle data-active="{{if .Log.IsPeriod}}true{{else}}false{{end}}">
@@ -158,6 +162,8 @@
   {{if .HasDayData}}
   <div class="panel-danger-zone">
     <form
+      action="/api/v1/days/{{.DateString}}?source=calendar"
+      method="post"
       hx-delete="/api/v1/days/{{.DateString}}?source=calendar"
       hx-target="#day-editor"
       hx-swap="innerHTML"
@@ -165,6 +171,8 @@
       data-confirm-accept="{{t .Messages "confirm.yes"}}"
       data-day-delete-form
       data-day-delete-date="{{.DateString}}">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="_method" value="DELETE">
       <button type="submit" class="danger-link" data-day-delete-button>{{t .Messages "calendar.delete_entry"}}</button>
     </form>
   </div>

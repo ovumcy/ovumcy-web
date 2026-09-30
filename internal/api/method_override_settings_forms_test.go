@@ -299,38 +299,45 @@ func TestNoJSSettingsFormsPerformTheActionTheyName(t *testing.T) {
 	for name, build := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			c := build(t)
-			form := renderNoJSForm(t, c.app, c.page, c.cookies, c.match)
-			if got := form.fields.Get("_method"); got != c.verb {
-				t.Fatalf("rendered _method=%q, want %q", got, c.verb)
-			}
-			typed := url.Values{}
-			if c.typed != nil {
-				typed = c.typed(t, form)
-			}
-
-			refused := form.submit(t, c.app, typed, "csrf_token")
-			if refused.StatusCode != http.StatusForbidden {
-				t.Fatalf("without csrf_token: status %d, want 403", refused.StatusCode)
-			}
-			if c.happened(t) {
-				t.Fatal("without csrf_token the action ran anyway")
-			}
-
-			if c.typed != nil {
-				typed = c.typed(t, form)
-			}
-			response := form.submit(t, c.app, typed)
-			if response.StatusCode != http.StatusSeeOther {
-				t.Fatalf("no-JS submit: status %d, want 303 See Other: %s", response.StatusCode, mustReadBodyString(t, response.Body))
-			}
-			if location := response.Header.Get("Location"); location != c.redirect {
-				t.Fatalf("no-JS submit: Location %q, want %q", location, c.redirect)
-			}
-			if !c.happened(t) {
-				t.Fatalf("no-JS submit answered %d but the action did not run", response.StatusCode)
-			}
+			runNoJSFormCase(t, build(t))
 		})
+	}
+}
+
+// runNoJSFormCase renders the case's form, proves the submit is refused without
+// its csrf_token, then submits it as a browser without JavaScript would and
+// checks the redirect and the effect.
+func runNoJSFormCase(t *testing.T, c noJSFormCase) {
+	t.Helper()
+	form := renderNoJSForm(t, c.app, c.page, c.cookies, c.match)
+	if got := form.fields.Get("_method"); got != c.verb {
+		t.Fatalf("rendered _method=%q, want %q", got, c.verb)
+	}
+	typed := url.Values{}
+	if c.typed != nil {
+		typed = c.typed(t, form)
+	}
+
+	refused := form.submit(t, c.app, typed, "csrf_token")
+	if refused.StatusCode != http.StatusForbidden {
+		t.Fatalf("without csrf_token: status %d, want 403", refused.StatusCode)
+	}
+	if c.happened(t) {
+		t.Fatal("without csrf_token the action ran anyway")
+	}
+
+	if c.typed != nil {
+		typed = c.typed(t, form)
+	}
+	response := form.submit(t, c.app, typed)
+	if response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("no-JS submit: status %d, want 303 See Other: %s", response.StatusCode, mustReadBodyString(t, response.Body))
+	}
+	if location := response.Header.Get("Location"); location != c.redirect {
+		t.Fatalf("no-JS submit: Location %q, want %q", location, c.redirect)
+	}
+	if !c.happened(t) {
+		t.Fatalf("no-JS submit answered %d but the action did not run", response.StatusCode)
 	}
 }
 

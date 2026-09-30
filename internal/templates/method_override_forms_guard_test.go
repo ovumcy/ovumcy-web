@@ -48,13 +48,6 @@ var methodOverrideExemptions = []methodOverrideExemption{
 	{file: "components/settings_cycle.html", verb: "PATCH", url: "/api/v1/users/current/reminders", reason: "WEB-119: no-JS 405; add the hidden _method input"},
 	{file: "components/settings_symptoms.html", verb: "PATCH", url: "/api/v1/symptoms/{{.Symptom.ID}}", reason: "WEB-119: no-JS 405; add the hidden _method input"},
 	{file: "dashboard.html", verb: "PATCH", url: "/api/v1/users/current/cycle", reason: "WEB-119: no-JS 405; add the hidden _method input"},
-	// The forms below carry an htmx verb but no method="post": without JS they
-	// submit as GET to the page they are on and put their fields in the query
-	// string (WEB-120). The list may only shrink.
-	{file: "components/settings_danger_zone.html", verb: "DELETE", url: "/api/v1/users/current", reason: "WEB-120: no-JS falls back to GET; fix pending"},
-	{file: "day_editor_partial.html", verb: "PUT", url: "/api/v1/days/{{.DateString}}", reason: "WEB-120: no-JS falls back to GET; fix pending"},
-	{file: "day_editor_partial.html", verb: "DELETE", url: "/api/v1/days/{{.DateString}}?source=calendar", reason: "WEB-120: no-JS falls back to GET; fix pending"},
-	{file: "dashboard.html", verb: "PUT", url: "/api/v1/days/{{.Today}}", reason: "WEB-120: no-JS falls back to GET; fix pending"},
 }
 
 // overrideForm is one <form> that declares an htmx verb.
