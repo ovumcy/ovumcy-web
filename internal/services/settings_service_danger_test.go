@@ -43,10 +43,11 @@ func TestVerifyReauthPasswordRefusesCorrectPasswordOnceBudgetSpent(t *testing.T)
 	}
 }
 
-// TestVerifyReauthPasswordSuccessResetsBudget proves failures below the limit do
-// not accumulate forever: a correct password clears the counter, so ordinary
+// TestSettingsReauthResetAfterSuccessRestoresTheBudget proves failures below the
+// limit do not accumulate forever: a correct password followed by the caller's
+// reset (once its write has committed) clears the counter, so ordinary
 // mistyping never walks an owner into a lockout.
-func TestVerifyReauthPasswordSuccessResetsBudget(t *testing.T) {
+func TestSettingsReauthResetAfterSuccessRestoresTheBudget(t *testing.T) {
 	service := NewSettingsService(nil)
 	service.ConfigureReauthAttempts([]byte("test-secret"), NewAttemptLimiter(), 3, time.Minute)
 
@@ -65,6 +66,7 @@ func TestVerifyReauthPasswordSuccessResetsBudget(t *testing.T) {
 	if err := service.VerifyReauthPassword(attempt, localPasswordUser(string(passwordHash)), "StrongPass1"); err != nil {
 		t.Fatalf("correct password within budget: got %v, want success", err)
 	}
+	service.SettingsReauthBudget().Reset(attempt)
 	// Counter cleared: the full budget is available again.
 	for i := 1; i <= 3; i++ {
 		if err := service.VerifyReauthPassword(attempt, localPasswordUser(string(passwordHash)), "WrongPass1"); !errors.Is(err, ErrSettingsPasswordInvalid) {
@@ -73,13 +75,13 @@ func TestVerifyReauthPasswordSuccessResetsBudget(t *testing.T) {
 	}
 }
 
-// TestVerifyReauthPasswordSuccessClearsTheAccountCounterAcrossClients pins the
+// TestSettingsReauthResetClearsTheAccountCounterAcrossClients pins the
 // session-bound side of the reset split: re-auth runs only inside the owner's
-// own session, so a correct password clears the ACCOUNT counter as well, not
-// just the succeeding client's. Failures typed from one device and a success
+// own session, so the reset after a correct password clears the ACCOUNT counter
+// as well, not just the succeeding client's. Failures typed from one device and a success
 // from another must leave a third device the full budget; a client-only reset
 // would leave the account counter at two and refuse the second attempt.
-func TestVerifyReauthPasswordSuccessClearsTheAccountCounterAcrossClients(t *testing.T) {
+func TestSettingsReauthResetClearsTheAccountCounterAcrossClients(t *testing.T) {
 	service := NewSettingsService(nil)
 	service.ConfigureReauthAttempts([]byte("test-secret"), NewAttemptLimiter(), 3, time.Minute)
 
@@ -100,6 +102,7 @@ func TestVerifyReauthPasswordSuccessClearsTheAccountCounterAcrossClients(t *test
 	if err := service.VerifyReauthPassword(phone, localPasswordUser(string(passwordHash)), "StrongPass1"); err != nil {
 		t.Fatalf("phone correct password within budget: got %v, want success", err)
 	}
+	service.SettingsReauthBudget().Reset(phone)
 	for i := 1; i <= 3; i++ {
 		if err := service.VerifyReauthPassword(tablet, localPasswordUser(string(passwordHash)), "WrongPass1"); !errors.Is(err, ErrSettingsPasswordInvalid) {
 			t.Fatalf("tablet attempt %d: got %v, want ErrSettingsPasswordInvalid (account counter survived the session-bound success)", i, err)

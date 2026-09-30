@@ -142,20 +142,16 @@ func (service *SettingsService) ConfigureReauthAttempts(secretKey []byte, limite
 	service.reauthPolicy = NewAuthAttemptPolicy("settings.reauth", limiter, attempts, window)
 }
 
-// VerifyReauthPassword is VerifyReauth against the settings.reauth budget,
-// followed at once by that budget's reset: the entry point every password-gated
-// settings action uses. The budget is checked before the compare, so an
-// exhausted budget refuses the correct password too. A blank submission is
-// uncounted; a wrong password and the no-local-password refusal (empty hash or
-// local_auth_enabled=false) both spend an equalized bcrypt and draw the budget.
-// The reset runs before the caller's write, as it always has for these actions.
+// VerifyReauthPassword is VerifyReauth against the settings.reauth budget: the
+// verify step every password-gated settings action uses. The budget is checked
+// before the compare, so an exhausted budget refuses the correct password too. A
+// blank submission is uncounted; a wrong password and the no-local-password
+// refusal (empty hash or local_auth_enabled=false) both spend an equalized
+// bcrypt and draw the budget. Like VerifyReauth it never resets: the caller
+// clears SettingsReauthBudget once the write the password authorised has
+// committed, so a correct password whose write was refused keeps the count.
 func (service *SettingsService) VerifyReauthPassword(attempt ReauthAttempt, user *models.User, rawPassword string) error {
-	budget := service.SettingsReauthBudget()
-	if err := service.VerifyReauth(budget, attempt, user, rawPassword); err != nil {
-		return err
-	}
-	budget.Reset(attempt)
-	return nil
+	return service.VerifyReauth(service.SettingsReauthBudget(), attempt, user, rawPassword)
 }
 
 func (service *SettingsService) UpdateDisplayName(ctx context.Context, userID uint, displayName string) error {

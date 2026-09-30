@@ -100,7 +100,7 @@ func TestVerifyReauthDrawsOnlyTheBudgetItIsGiven(t *testing.T) {
 // TestVerifyReauthLeavesTheResetToTheCaller pins the split between the verify
 // step and the reset: a correct password through VerifyReauth keeps the count it
 // found, and only budget.Reset clears it. VerifyReauthPassword, the settings.reauth
-// composition, still resets at once.
+// verify, keeps the count too: the settings actions clear it after their write.
 func TestVerifyReauthLeavesTheResetToTheCaller(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -133,9 +133,9 @@ func TestVerifyReauthLeavesTheResetToTheCaller(t *testing.T) {
 	if err := fixture.settings.VerifyReauthPassword(fixture.attempt, fixture.user, reauthBudgetFixturePassword); err != nil {
 		t.Fatalf("VerifyReauthPassword one short of the limit = %v, want nil", err)
 	}
-	fixture.spend(t, fixture.settings.SettingsReauthBudget(), DefaultSettingsReauthAttemptsLimit-1)
-	if err := fixture.settings.VerifyReauthPassword(fixture.attempt, fixture.user, reauthBudgetFixturePassword); err != nil {
-		t.Fatalf("VerifyReauthPassword after a reset and %d fresh failures = %v, want nil", DefaultSettingsReauthAttemptsLimit-1, err)
+	fixture.spend(t, fixture.settings.SettingsReauthBudget(), 1)
+	if err := fixture.settings.VerifyReauthPassword(fixture.attempt, fixture.user, reauthBudgetFixturePassword); !errors.Is(err, ErrSettingsReauthRateLimited) {
+		t.Fatalf("VerifyReauthPassword after a success and one more failure = %v, want ErrSettingsReauthRateLimited: the verify cleared the count before the caller's write", err)
 	}
 }
 

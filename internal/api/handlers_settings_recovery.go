@@ -24,7 +24,8 @@ func (handler *Handler) RegenerateRecoveryCode(c fiber.Ctx) error {
 	// budgeted, equalized-timing, and answered with the same 401 "invalid
 	// password" a wrong password gets. Regression:
 	// TestSettingsReauthMergesNoLocalPasswordIntoInvalidPassword.
-	if _, spec, cause, valid := handler.validateSettingsActionPassword(c); !valid {
+	reauth, spec, cause, valid := handler.validateSettingsActionPassword(c)
+	if !valid {
 		handler.logSecurityError(c, "auth.recovery_code_regenerate", spec, cause)
 		return handler.respondMappedError(c, spec)
 	}
@@ -55,6 +56,10 @@ func (handler *Handler) RegenerateRecoveryCode(c fiber.Ctx) error {
 		handler.logSecurityError(c, "auth.recovery_code_regenerate", spec)
 		return handler.respondMappedError(c, spec)
 	}
+	// The rotation committed and its delivery was sealed: only now does the
+	// correct password clear settings.reauth. A rotation that rolled back, for
+	// whatever reason, leaves the count where it was.
+	reauth.resetBudget()
 
 	handler.writeAuthCookie(c, user, delivery.session)
 	handler.writeSealed(c, delivery.reveal)
