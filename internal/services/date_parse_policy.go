@@ -42,7 +42,7 @@ var (
 func mustParseDayDateBound(value string) time.Time {
 	bound, err := time.Parse("2006-01-02", value)
 	if err != nil {
-		panic(err)
+		panic(err) // codecov:ignore -- DayDateMin and DayDateMax are constant ISO dates; a typo in them fails every test at package init
 	}
 	return bound
 }
