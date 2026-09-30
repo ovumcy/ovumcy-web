@@ -95,7 +95,6 @@ func (service *SettingsService) ChangePassword(ctx context.Context, attempt Reau
 	}); err != nil {
 		return err
 	}
-	budget.Reset(attempt)
 
 	newPassword = strings.TrimSpace(newPassword)
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), passwordHashCost)
@@ -109,6 +108,9 @@ func (service *SettingsService) ChangePassword(ctx context.Context, attempt Reau
 		}
 		return fmt.Errorf("%w: %v", ErrSettingsPasswordUpdateFailed, err)
 	}
+	// Only a change that committed clears the budget: a correct current
+	// password whose write was refused proved nothing lasting.
+	budget.Reset(attempt)
 	user.PasswordHash = string(hashedPassword)
 	user.LocalAuthEnabled = true
 	user.AuthSessionVersion = NormalizeAuthSessionVersion(user.AuthSessionVersion) + 1

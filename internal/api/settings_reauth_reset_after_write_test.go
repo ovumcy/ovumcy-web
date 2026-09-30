@@ -271,6 +271,46 @@ func TestRegenerateRecoveryCodeResetsSettingsReauthOnlyAfterTheRotationCommits(t
 	}, "recovery-code")
 }
 
+func TestChangePasswordResetsSettingsReauthOnlyAfterTheChangeCommits(t *testing.T) {
+	runSettingsReauthWriteCases(t, func(t *testing.T, email string) reauthWriteCase {
+		ctx := newSettingsSecurityTestContext(t, email)
+		stored, _ := storedSettingsReauthUser(t, ctx.database, ctx.user.ID)
+		priorHash := stored.PasswordHash
+		return reauthWriteCase{
+			send: func(t *testing.T, password string) *http.Response {
+				return settingsFormRequestWithCSRF(t, ctx, http.MethodPut, "/api/v1/users/current/password", url.Values{
+					"current_password": {password},
+					"new_password":     {"EvenStronger2"},
+					"confirm_password": {"EvenStronger2"},
+				}, map[string]string{"Accept": "application/json"})
+			},
+			wantApplied: http.StatusOK,
+			refuse: func(t *testing.T) *atomic.Bool {
+				return refuseReauthWriteOnce(t, ctx.database, "update", "users", "password_hash")
+			},
+			wantRefused: http.StatusInternalServerError,
+			stillIntact: func(t *testing.T) {
+				if stored, _ := storedSettingsReauthUser(t, ctx.database, ctx.user.ID); stored.PasswordHash != priorHash {
+					t.Fatal("a refused change replaced the password hash")
+				}
+			},
+			// The committed change stored the new password and revoked the
+			// session; the old password is written back directly, outside the
+			// service, so the budget the next round finds is the one the change
+			// left behind.
+			rearm: func(t *testing.T) {
+				if stored, _ := storedSettingsReauthUser(t, ctx.database, ctx.user.ID); stored.PasswordHash == priorHash {
+					t.Fatal("anchor: the change answered success but the password hash is unchanged")
+				}
+				if err := ctx.database.Model(&models.User{}).Where("id = ?", ctx.user.ID).Update("password_hash", priorHash).Error; err != nil {
+					t.Fatalf("restore the owner's password: %v", err)
+				}
+				ctx.refreshAuthCookie(t)
+			},
+		}
+	}, "password-change")
+}
+
 func TestTOTPEnrollmentResetsSettingsReauthOnlyAfterTheEnrollmentCommits(t *testing.T) {
 	runSettingsReauthWriteCases(t, func(t *testing.T, email string) reauthWriteCase {
 		ctx := newTOTPSettingsContext(t, email)
