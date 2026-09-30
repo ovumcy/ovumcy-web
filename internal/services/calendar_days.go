@@ -554,15 +554,13 @@ func buildCalendarDayState(day time.Time, monthStart time.Time, today time.Time,
 	isPredictedPeriod := predictions.predictedPeriod[key]
 	isPredictedStartWindow := predictions.predictedStartRange[key]
 	openEditDirectly := !hasDataMap[key]
-	// Days, not keys: "10000-01-01" orders as text before any four-digit year.
-	daysFromToday := CalendarDaysBetween(today, day)
 
 	return CalendarDayState{
 		Date:                   day,
 		DateString:             key,
 		Day:                    day.Day(),
 		InMonth:                day.Month() == monthStart.Month(),
-		IsToday:                daysFromToday == 0,
+		IsToday:                CalendarDaysBetween(today, day) == 0,
 		OpenEditDirectly:       openEditDirectly,
 		IsPeriod:               hasEntry && entry.IsPeriod,
 		IsPredicted:            isPredictedPeriod,

@@ -7,8 +7,7 @@ import (
 
 // WEB-125: the December 9999 grid fills its last week with days ParseDayDate
 // refuses. They are drawn, but not offered for selection, and none of them is
-// today — which a comparison of date keys got wrong, because "10000-01-01"
-// orders as text before every four-digit year.
+// today, whatever today is.
 func TestDecember9999GridDaysPastDayDateMaxAreNotSelectableOrToday(t *testing.T) {
 	t.Parallel()
 
