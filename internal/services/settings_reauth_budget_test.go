@@ -140,6 +140,39 @@ func TestVerifyReauthLeavesTheResetToTheCaller(t *testing.T) {
 	}
 }
 
+// TestReauthBudgetsKeepAccountsOnOneAddressApart pins the keying every budget
+// shares: an account that spends its budget from an address leaves another
+// account behind the same address (a household NAT) its full budget, while the
+// spent account stays refused.
+func TestReauthBudgetsKeepAccountsOnOneAddressApart(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		budget  func(reauthBudgetFixture) ReauthBudget
+		limit   int
+		limited error
+	}{
+		{"totp.disable", reauthBudgetFixture.disableBudget, DefaultTOTPDisableAttemptsLimit, ErrTOTPDisableRateLimited},
+		{"settings.reauth", func(fixture reauthBudgetFixture) ReauthBudget { return fixture.settings.SettingsReauthBudget() }, DefaultSettingsReauthAttemptsLimit, ErrSettingsReauthRateLimited},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := newReauthBudgetFixture(t)
+			budget := tc.budget(fixture)
+			fixture.spend(t, budget, tc.limit)
+
+			if err := fixture.settings.VerifyReauth(budget, fixture.attempt, fixture.user, reauthBudgetFixturePassword); !errors.Is(err, tc.limited) {
+				t.Fatalf("anchor: correct password on the spent account = %v, want %v", err, tc.limited)
+			}
+			neighbour := *fixture.user
+			neighbour.ID = fixture.user.ID + 1
+			neighbourAttempt := fixture.attempt
+			neighbourAttempt.UserID = neighbour.ID
+			if err := fixture.settings.VerifyReauth(budget, neighbourAttempt, &neighbour, reauthBudgetFixturePassword); err != nil {
+				t.Fatalf("correct password for another account on the same address = %v, want nil", err)
+			}
+		})
+	}
+}
+
 // TestVerifyReauthTrimsAndLeavesABlankSubmissionUncounted pins the trim and the
 // blank refusal every budget shares: surrounding whitespace is not part of the
 // password, and a blank one is refused without drawing either budget.
