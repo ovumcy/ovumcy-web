@@ -87,6 +87,7 @@ type CalendarDay struct {
 	StateKey               string
 	OvulationDot           bool
 	TentativeOvulationMark bool
+	Selectable             bool
 }
 
 type FlashPayload struct {

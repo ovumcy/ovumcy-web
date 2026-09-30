@@ -64,9 +64,13 @@
         <div class="relative">
           <button
             type="button"
+            {{if .Selectable}}
             hx-get="/calendar/day/{{.DateString}}{{if .OpenEditDirectly}}?mode=edit{{end}}"
             hx-target="#day-editor"
             hx-swap="innerHTML"
+            {{else}}
+            disabled
+            {{end}}
             data-day="{{.DateString}}"
             data-calendar-state="{{.StateKey}}"
             data-calendar-has-data="{{if .HasData}}true{{else}}false{{end}}"
