@@ -15,7 +15,7 @@ import (
 // TestOperatorCommandsRefuseADatabaseWithoutTheNormalizedEmailIndex drives
 // every account subcommand against a database whose idx_users_email_normalized
 // was dropped out of band. Each must answer with the server's own boot refusal
-// before it prompts, reads or writes anything: without the index, `users
+// before it asks for a password or touches an account: without the index, `users
 // create` or `users set-email` can put a second account on an address.
 func TestOperatorCommandsRefuseADatabaseWithoutTheNormalizedEmailIndex(t *testing.T) {
 	t.Parallel()
