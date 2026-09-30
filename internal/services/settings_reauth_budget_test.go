@@ -103,12 +103,13 @@ func TestVerifyReauthDrawsOnlyTheBudgetItIsGiven(t *testing.T) {
 // verify, keeps the count too: the settings actions clear it after their write.
 func TestVerifyReauthLeavesTheResetToTheCaller(t *testing.T) {
 	for _, tc := range []struct {
-		name   string
-		budget func(reauthBudgetFixture) ReauthBudget
-		limit  int
+		name    string
+		budget  func(reauthBudgetFixture) ReauthBudget
+		limit   int
+		limited error
 	}{
-		{"totp.disable", reauthBudgetFixture.disableBudget, DefaultTOTPDisableAttemptsLimit},
-		{"settings.reauth", func(fixture reauthBudgetFixture) ReauthBudget { return fixture.settings.SettingsReauthBudget() }, DefaultSettingsReauthAttemptsLimit},
+		{"totp.disable", reauthBudgetFixture.disableBudget, DefaultTOTPDisableAttemptsLimit, ErrTOTPDisableRateLimited},
+		{"settings.reauth", func(fixture reauthBudgetFixture) ReauthBudget { return fixture.settings.SettingsReauthBudget() }, DefaultSettingsReauthAttemptsLimit, ErrSettingsReauthRateLimited},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fixture := newReauthBudgetFixture(t)
@@ -118,8 +119,8 @@ func TestVerifyReauthLeavesTheResetToTheCaller(t *testing.T) {
 				t.Fatalf("correct password one short of the limit = %v, want nil", err)
 			}
 			fixture.spend(t, budget, 1)
-			if err := fixture.settings.VerifyReauth(budget, fixture.attempt, fixture.user, reauthBudgetFixturePassword); err == nil {
-				t.Fatal("a successful verify cleared the count: the reset is the caller's step")
+			if err := fixture.settings.VerifyReauth(budget, fixture.attempt, fixture.user, reauthBudgetFixturePassword); !errors.Is(err, tc.limited) {
+				t.Fatalf("verify after a success and one more failure = %v, want %v: a successful verify cleared the count, and the reset is the caller's step", err, tc.limited)
 			}
 			budget.Reset(fixture.attempt)
 			if err := fixture.settings.VerifyReauth(budget, fixture.attempt, fixture.user, reauthBudgetFixturePassword); err != nil {
@@ -130,11 +131,11 @@ func TestVerifyReauthLeavesTheResetToTheCaller(t *testing.T) {
 
 	fixture := newReauthBudgetFixture(t)
 	fixture.spend(t, fixture.settings.SettingsReauthBudget(), DefaultSettingsReauthAttemptsLimit-1)
-	if err := fixture.settings.VerifyReauthPassword(fixture.attempt, fixture.user, reauthBudgetFixturePassword); err != nil {
+	if _, err := fixture.settings.VerifyReauthPassword(fixture.attempt, fixture.user, reauthBudgetFixturePassword); err != nil {
 		t.Fatalf("VerifyReauthPassword one short of the limit = %v, want nil", err)
 	}
 	fixture.spend(t, fixture.settings.SettingsReauthBudget(), 1)
-	if err := fixture.settings.VerifyReauthPassword(fixture.attempt, fixture.user, reauthBudgetFixturePassword); !errors.Is(err, ErrSettingsReauthRateLimited) {
+	if _, err := fixture.settings.VerifyReauthPassword(fixture.attempt, fixture.user, reauthBudgetFixturePassword); !errors.Is(err, ErrSettingsReauthRateLimited) {
 		t.Fatalf("VerifyReauthPassword after a success and one more failure = %v, want ErrSettingsReauthRateLimited: the verify cleared the count before the caller's write", err)
 	}
 }

@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/db"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
@@ -360,4 +363,110 @@ func TestOIDCIdentityUnlinkResetsSettingsReauthOnlyAfterTheUnlinkCommits(t *test
 			},
 		}
 	}, "oidc-unlink")
+}
+
+// TestClearDataResetsSettingsReauthWhenOnlyTheSessionCannotFollowTheWipe covers
+// the wipe that commits but cannot carry this device's session past it: the data
+// is gone, so the password it was gated on counts as spent and the budget clears,
+// as it does after an enrollment or an unlink whose re-issue fails. The re-issue
+// is refused through the role gate, like
+// TestClearAllDataAnswersARefusedSessionReissueByFormat, which is also why the
+// probe injects the session user directly: no route carries a non-owner session
+// into ClearAllData.
+func TestClearDataResetsSettingsReauthWhenOnlyTheSessionCannotFollowTheWipe(t *testing.T) {
+	_, database, handler := newSettingsMutationStepupApp(t, newStubOIDCWorkflowService(true))
+	hash, err := bcrypt.GenerateFromPassword([]byte(reauthWriteCorrectPassword), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("hash the probe password: %v", err)
+	}
+	user := models.User{
+		Email:               "reauth-reset-wipe-signed-out@example.com",
+		LocalAuthEnabled:    true,
+		PasswordHash:        string(hash),
+		Role:                "partner",
+		OnboardingCompleted: true,
+		AuthSessionVersion:  1,
+		CycleLength:         28,
+		PeriodLength:        5,
+		AutoPeriodFill:      true,
+		CreatedAt:           time.Now().UTC(),
+	}
+	if err := database.Create(&user).Error; err != nil {
+		t.Fatalf("create the probe account: %v", err)
+	}
+	app := fiber.New()
+	app.Post("/__probe/clear-data", func(c fiber.Ctx) error {
+		c.Locals(contextUserKey, &user)
+		return handler.ClearAllData(c)
+	})
+
+	wantVersion := 1
+	assertCommittedWriteClearsTheSettingsReauthCount(t, reauthWriteCase{
+		send: func(t *testing.T, password string) *http.Response {
+			request := httptest.NewRequest(http.MethodPost, "/__probe/clear-data", strings.NewReader(url.Values{"password": {password}}.Encode()))
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			request.Header.Set("Accept", "application/json")
+			resp := mustAppResponse(t, app, request)
+			t.Cleanup(func() { _ = resp.Body.Close() })
+			return resp
+		},
+		// The signed-out refusal's JSON arm; the wipe behind it is proven in rearm.
+		wantApplied: http.StatusUnauthorized,
+		rearm: func(t *testing.T) {
+			wantVersion++
+			stored, _ := storedSettingsReauthUser(t, database, user.ID)
+			if stored.AuthSessionVersion != wantVersion {
+				t.Fatalf("anchor: auth_session_version = %d, want %d: the wipe never committed, so the refusal was not the session re-issue's", stored.AuthSessionVersion, wantVersion)
+			}
+		},
+	})
+}
+
+// TestClearDataPrecheckResetsSettingsReauthAtOnce pins the pre-check's own
+// reset: it writes nothing, so the correct password is all it authorised and the
+// count clears as soon as it is confirmed.
+func TestClearDataPrecheckResetsSettingsReauthAtOnce(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "reauth-reset-precheck@example.com")
+	assertCommittedWriteClearsTheSettingsReauthCount(t, reauthWriteCase{
+		send: func(t *testing.T, password string) *http.Response {
+			return settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/data-wipe/validate", url.Values{
+				"password": {password},
+			}, map[string]string{"Accept": "application/json"})
+		},
+		wantApplied: http.StatusOK,
+		rearm:       func(*testing.T) {},
+	})
+}
+
+// TestOIDCIdentityLinkStepupStartResetsSettingsReauthOnlyOnceItRedirects pins
+// the step-up start's reset: the start writes nothing and the provider callback
+// that writes the link does not re-ask the password, so the count clears once
+// the redirect is issued, and a start the provider refused keeps it.
+func TestOIDCIdentityLinkStepupStartResetsSettingsReauthOnlyOnceItRedirects(t *testing.T) {
+	runSettingsReauthWriteCases(t, func(t *testing.T, email string) reauthWriteCase {
+		fixture := newOIDCStepupFixture(t, email)
+		giveLinkFixtureAPassword(t, fixture)
+		var reached *atomic.Bool
+		return reauthWriteCase{
+			send: func(t *testing.T, password string) *http.Response {
+				resp := postOIDCIdentityLinkStepupStartWithPassword(t, fixture, password)
+				t.Cleanup(func() { _ = resp.Body.Close() })
+				if reached != nil && fixture.oidcStub.lastReauthState != "" {
+					reached.Store(true)
+				}
+				return resp
+			},
+			wantApplied: http.StatusOK,
+			refuse: func(t *testing.T) *atomic.Bool {
+				reached = &atomic.Bool{}
+				fixture.oidcStub.lastReauthState = ""
+				fixture.oidcStub.reauthStartErr = services.ErrOIDCUnavailable
+				return reached
+			},
+			wantRefused: http.StatusServiceUnavailable,
+			// The start writes nothing, refused or not.
+			stillIntact: func(*testing.T) {},
+			rearm:       func(*testing.T) {},
+		}
+	}, "oidc-link-start")
 }

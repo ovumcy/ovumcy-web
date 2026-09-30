@@ -44,7 +44,8 @@ func TestSettingsReauthRefusesAStoredHashWhileLocalSignInIsOff(t *testing.T) {
 			return service.ValidateCurrentPassword(user, correctPassword)
 		}},
 		{"VerifyReauthPassword", func(service *SettingsService, user *models.User) error {
-			return service.VerifyReauthPassword(attempt, user, correctPassword)
+			_, err := service.VerifyReauthPassword(attempt, user, correctPassword)
+			return err
 		}},
 		{"ValidatePasswordChange", func(service *SettingsService, user *models.User) error {
 			return service.ValidatePasswordChange(user, correctPassword, "EvenStronger2", "EvenStronger2")
@@ -128,7 +129,8 @@ func TestSettingsReauthSignInDisabledRefusalDrawsTheBudget(t *testing.T) {
 		refuse func(service *SettingsService, attempt ReauthAttempt, user *models.User) error
 	}{
 		{"erasure", func(service *SettingsService, attempt ReauthAttempt, user *models.User) error {
-			return service.VerifyReauthPassword(attempt, user, correctPassword)
+			_, err := service.VerifyReauthPassword(attempt, user, correctPassword)
+			return err
 		}},
 		{"password change", func(service *SettingsService, attempt ReauthAttempt, user *models.User) error {
 			return service.ChangePassword(context.Background(), attempt, user, correctPassword, "EvenStronger2", "EvenStronger2")

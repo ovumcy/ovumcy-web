@@ -55,9 +55,13 @@ func (handler *Handler) ClearAllData(c fiber.Ctx) error {
 		return handler.respondSignedOutRefusal(c, spec)
 	case clearDataRefused:
 		return handler.respondMappedError(c, spec)
+	case clearDataAppliedSignedOut:
+		// The wipe committed; only carrying this session past it failed.
+		reauth.resetBudget()
+		return handler.respondSignedOutRefusal(c, spec)
 	}
-	// Only a wipe that committed and carried this session past it clears the
-	// budget: a correct password whose wipe was refused proved nothing lasting.
+	// Only a wipe that committed clears the budget: a correct password whose
+	// wipe was refused proved nothing lasting.
 	reauth.resetBudget()
 
 	if acceptsJSON(c) {
@@ -147,9 +151,10 @@ func (handler *Handler) validateSettingsActionPassword(c fiber.Ctx) (settingsRea
 	// form. VerifyReauthPassword refuses even a correct password once the budget
 	// is spent, and never clears it: that is the caller's step, after its write.
 	attempt := services.ReauthAttempt{ClientKey: c.IP(), UserID: user.ID, Now: time.Now()}
-	if err := handler.settingsService.VerifyReauthPassword(attempt, user, password); err != nil {
+	budget, err := handler.settingsService.VerifyReauthPassword(attempt, user, password)
+	if err != nil {
 		return settingsReauth{}, mapSettingsDeleteAccountPasswordError(err), settingsReauthCauseField(err), false
 	}
 
-	return settingsReauth{user: user, budget: handler.settingsService.SettingsReauthBudget(), attempt: attempt}, APIErrorSpec{}, SecurityEventField{}, true
+	return settingsReauth{user: user, budget: budget, attempt: attempt}, APIErrorSpec{}, SecurityEventField{}, true
 }

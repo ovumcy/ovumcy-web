@@ -882,7 +882,7 @@ func probeApplyClearData(t *testing.T, handler *Handler, user *models.User) clea
 		spec, outcome := handler.applyClearData(c, user)
 		return c.Status(fiber.StatusOK).JSON(fiber.Map{
 			"ok":         outcome == clearDataApplied,
-			"signed_out": outcome == clearDataRefusedSignedOut,
+			"signed_out": outcome == clearDataRefusedSignedOut || outcome == clearDataAppliedSignedOut,
 			"key":        spec.Key,
 		})
 	})

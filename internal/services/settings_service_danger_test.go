@@ -25,12 +25,12 @@ func TestVerifyReauthPasswordRefusesCorrectPasswordOnceBudgetSpent(t *testing.T)
 	attempt := ReauthAttempt{ClientKey: "203.0.113.10", UserID: 42, Now: now}
 
 	for i := 1; i <= 3; i++ {
-		if err := service.VerifyReauthPassword(attempt, localPasswordUser(string(passwordHash)), "WrongPass1"); !errors.Is(err, ErrSettingsPasswordInvalid) {
+		if _, err := service.VerifyReauthPassword(attempt, localPasswordUser(string(passwordHash)), "WrongPass1"); !errors.Is(err, ErrSettingsPasswordInvalid) {
 			t.Fatalf("wrong-password attempt %d: got %v, want ErrSettingsPasswordInvalid", i, err)
 		}
 	}
 
-	if err := service.VerifyReauthPassword(attempt, localPasswordUser(string(passwordHash)), "StrongPass1"); !errors.Is(err, ErrSettingsReauthRateLimited) {
+	if _, err := service.VerifyReauthPassword(attempt, localPasswordUser(string(passwordHash)), "StrongPass1"); !errors.Is(err, ErrSettingsReauthRateLimited) {
 		t.Fatalf("correct password after the budget was spent: got %v, want ErrSettingsReauthRateLimited", err)
 	}
 
@@ -38,7 +38,7 @@ func TestVerifyReauthPasswordRefusesCorrectPasswordOnceBudgetSpent(t *testing.T)
 	// per-account bucket must not turn one owner's failures into a lockout for
 	// another owner sharing the address (household self-hosting behind one NAT).
 	other := ReauthAttempt{ClientKey: "203.0.113.10", UserID: 43, Now: now}
-	if err := service.VerifyReauthPassword(other, localPasswordUser(string(passwordHash)), "StrongPass1"); err != nil {
+	if _, err := service.VerifyReauthPassword(other, localPasswordUser(string(passwordHash)), "StrongPass1"); err != nil {
 		t.Fatalf("second account on the same address: got %v, want success", err)
 	}
 }
@@ -59,17 +59,18 @@ func TestSettingsReauthResetAfterSuccessRestoresTheBudget(t *testing.T) {
 	attempt := ReauthAttempt{ClientKey: "203.0.113.10", UserID: 42, Now: now}
 
 	for i := 1; i <= 2; i++ {
-		if err := service.VerifyReauthPassword(attempt, localPasswordUser(string(passwordHash)), "WrongPass1"); !errors.Is(err, ErrSettingsPasswordInvalid) {
+		if _, err := service.VerifyReauthPassword(attempt, localPasswordUser(string(passwordHash)), "WrongPass1"); !errors.Is(err, ErrSettingsPasswordInvalid) {
 			t.Fatalf("wrong-password attempt %d: got %v", i, err)
 		}
 	}
-	if err := service.VerifyReauthPassword(attempt, localPasswordUser(string(passwordHash)), "StrongPass1"); err != nil {
+	budget, err := service.VerifyReauthPassword(attempt, localPasswordUser(string(passwordHash)), "StrongPass1")
+	if err != nil {
 		t.Fatalf("correct password within budget: got %v, want success", err)
 	}
-	service.SettingsReauthBudget().Reset(attempt)
+	budget.Reset(attempt)
 	// Counter cleared: the full budget is available again.
 	for i := 1; i <= 3; i++ {
-		if err := service.VerifyReauthPassword(attempt, localPasswordUser(string(passwordHash)), "WrongPass1"); !errors.Is(err, ErrSettingsPasswordInvalid) {
+		if _, err := service.VerifyReauthPassword(attempt, localPasswordUser(string(passwordHash)), "WrongPass1"); !errors.Is(err, ErrSettingsPasswordInvalid) {
 			t.Fatalf("post-reset attempt %d: got %v, want ErrSettingsPasswordInvalid (budget was not reset)", i, err)
 		}
 	}
@@ -95,16 +96,17 @@ func TestSettingsReauthResetClearsTheAccountCounterAcrossClients(t *testing.T) {
 	tablet := ReauthAttempt{ClientKey: "192.0.2.44", UserID: 42, Now: now}
 
 	for i := 1; i <= 2; i++ {
-		if err := service.VerifyReauthPassword(laptop, localPasswordUser(string(passwordHash)), "WrongPass1"); !errors.Is(err, ErrSettingsPasswordInvalid) {
+		if _, err := service.VerifyReauthPassword(laptop, localPasswordUser(string(passwordHash)), "WrongPass1"); !errors.Is(err, ErrSettingsPasswordInvalid) {
 			t.Fatalf("laptop wrong-password attempt %d: got %v", i, err)
 		}
 	}
-	if err := service.VerifyReauthPassword(phone, localPasswordUser(string(passwordHash)), "StrongPass1"); err != nil {
+	budget, err := service.VerifyReauthPassword(phone, localPasswordUser(string(passwordHash)), "StrongPass1")
+	if err != nil {
 		t.Fatalf("phone correct password within budget: got %v, want success", err)
 	}
-	service.SettingsReauthBudget().Reset(phone)
+	budget.Reset(phone)
 	for i := 1; i <= 3; i++ {
-		if err := service.VerifyReauthPassword(tablet, localPasswordUser(string(passwordHash)), "WrongPass1"); !errors.Is(err, ErrSettingsPasswordInvalid) {
+		if _, err := service.VerifyReauthPassword(tablet, localPasswordUser(string(passwordHash)), "WrongPass1"); !errors.Is(err, ErrSettingsPasswordInvalid) {
 			t.Fatalf("tablet attempt %d: got %v, want ErrSettingsPasswordInvalid (account counter survived the session-bound success)", i, err)
 		}
 	}
@@ -124,11 +126,11 @@ func TestVerifyReauthPasswordDoesNotSpendBudgetOnBlankSubmission(t *testing.T) {
 	attempt := ReauthAttempt{ClientKey: "203.0.113.10", UserID: 42, Now: time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)}
 
 	for i := 1; i <= 5; i++ {
-		if err := service.VerifyReauthPassword(attempt, localPasswordUser(string(passwordHash)), "   "); !errors.Is(err, ErrSettingsPasswordMissing) {
+		if _, err := service.VerifyReauthPassword(attempt, localPasswordUser(string(passwordHash)), "   "); !errors.Is(err, ErrSettingsPasswordMissing) {
 			t.Fatalf("blank submission %d: got %v, want ErrSettingsPasswordMissing", i, err)
 		}
 	}
-	if err := service.VerifyReauthPassword(attempt, localPasswordUser(string(passwordHash)), "StrongPass1"); err != nil {
+	if _, err := service.VerifyReauthPassword(attempt, localPasswordUser(string(passwordHash)), "StrongPass1"); err != nil {
 		t.Fatalf("correct password after blank submissions: got %v, want success", err)
 	}
 }
