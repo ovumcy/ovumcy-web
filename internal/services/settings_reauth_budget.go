@@ -7,12 +7,14 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
-// ReauthBudget is the attempt budget one password re-auth draws. There is one
-// re-auth path — SettingsService.VerifyReauth — and the budget is its only
-// parameter: settings.reauth for the settings actions (SettingsService.ReauthBudget)
-// and totp.disable for the 2FA disable confirmation (TOTPService.DisableReauthBudget).
-// The trim, the blank refusal, the equalized compare and the failure booking are
-// therefore written once, whatever the budget.
+// ReauthBudget is the attempt budget one password re-auth draws. Every re-auth
+// runs through its verify step, and the budget is that step's only parameter:
+// settings.reauth for the settings actions and the password change
+// (SettingsService.SettingsReauthBudget) and totp.disable for the 2FA disable
+// confirmation (TOTPService.DisableReauthBudget). SettingsService.VerifyReauth is
+// verify around the current-password compare; ChangePassword wraps its own
+// three-field compare in the same verify. The admission check and the failure
+// booking are therefore written once, whatever the budget.
 //
 // Verifying and resetting are separate steps on purpose. Verify admits, compares
 // and books a failure; it never clears the count. The caller calls Reset once the
