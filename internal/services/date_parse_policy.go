@@ -91,7 +91,7 @@ func ParseDayDate(raw string, location *time.Location) (time.Time, error) {
 	// The range is a property of the calendar date, not of an instant, so it is
 	// checked on the parsed components before any zone is applied: the accepted
 	// set is the same in every request timezone.
-	if canonical := parsed.Format("2006-01-02"); canonical < DayDateMin || canonical > DayDateMax {
+	if !dayDateAccepted(parsed) {
 		return time.Time{}, ErrDayDateOutOfRange
 	}
 

@@ -19,7 +19,6 @@ func TestBuildCalendarDaysRendersFuturePeriodEntryAsRecordedPeriod(t *testing.T)
 			Day:        17,
 			InMonth:    true,
 			IsPeriod:   true,
-			IsFuture:   false,
 		},
 		{
 			Date:       time.Date(2026, time.March, 20, 0, 0, 0, 0, time.UTC),
@@ -27,7 +26,6 @@ func TestBuildCalendarDaysRendersFuturePeriodEntryAsRecordedPeriod(t *testing.T)
 			Day:        20,
 			InMonth:    true,
 			IsPeriod:   true,
-			IsFuture:   true,
 		},
 	})
 
