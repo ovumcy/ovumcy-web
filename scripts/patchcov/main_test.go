@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -129,6 +130,98 @@ func TestMarkedLinesAndLineIgnored(t *testing.T) {
 	}
 	if lineIgnored(blocks, 6, marked) {
 		t.Fatal("line 6 should not be ignored")
+	}
+}
+
+const leadingMarkerHint = "leading // codecov:ignore comment"
+
+func writeSource(t *testing.T, lines ...string) string {
+	t.Helper()
+	src := filepath.Join(t.TempDir(), "x.go")
+	if err := os.WriteFile(src, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return src
+}
+
+func TestFailureReportHintsAtTheLeadingMarkerTrap(t *testing.T) {
+	// In every fixture the uncovered if arm spans armStart..armStart+2.
+	cases := []struct {
+		name        string
+		source      []string
+		armStart    int
+		wantFailure bool
+		wantHint    bool
+	}{
+		{
+			name: "leading marker above the arm",
+			source: []string{
+				"package x", "func A() error {",
+				"\t// codecov:ignore -- unreachable",
+				"\tif err := f(); err != nil {", "\t\treturn err", "\t}", "\treturn nil", "}",
+			},
+			armStart: 4, wantFailure: true, wantHint: true,
+		},
+		{
+			name: "leading marker separated by a blank line",
+			source: []string{
+				"package x", "func A() error {",
+				"\t// codecov:ignore -- unreachable", "",
+				"\tif err := f(); err != nil {", "\t\treturn err", "\t}", "\treturn nil",
+			},
+			armStart: 5, wantFailure: true, wantHint: true,
+		},
+		{
+			name: "trailing marker",
+			source: []string{
+				"package x", "func A() error {", "\t// an ordinary comment",
+				"\tif err := f(); err != nil {", "\t\treturn err // codecov:ignore -- unreachable", "\t}", "\treturn nil",
+			},
+			armStart: 4,
+		},
+		{
+			name: "start and end block",
+			source: []string{
+				"package x", "func A() error {", "\t// codecov:ignore:start",
+				"\tif err := f(); err != nil {", "\t\treturn err", "\t}", "\t// codecov:ignore:end", "\treturn nil",
+			},
+			armStart: 4,
+		},
+		{
+			name: "ordinary uncovered line",
+			source: []string{
+				"package x", "func A() error {", "\t// an ordinary comment",
+				"\tif err := f(); err != nil {", "\t\treturn err", "\t}", "\treturn nil",
+			},
+			armStart: 4, wantFailure: true,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			file := writeSource(t, c.source...)
+			arm := []coverBlock{{start: c.armStart, end: c.armStart + 2, covered: false}}
+			lines := []int{c.armStart, c.armStart + 1, c.armStart + 2}
+			uncovered, trapped := uncoveredLines(file, arm, lines)
+			if (len(uncovered) > 0) != c.wantFailure {
+				t.Fatalf("uncovered = %v, want failure = %v", uncovered, c.wantFailure)
+			}
+			if (len(trapped) > 0) != c.wantHint {
+				t.Fatalf("trapped = %v, want hint = %v", trapped, c.wantHint)
+			}
+			if !c.wantFailure {
+				return
+			}
+			report := failureReport(uncovered, trapped)
+			if !strings.Contains(report, "patch coverage gate FAILED") {
+				t.Fatalf("report lost the failure verdict:\n%s", report)
+			}
+			if got := strings.Contains(report, leadingMarkerHint); got != c.wantHint {
+				t.Fatalf("hint present = %v, want %v in:\n%s", got, c.wantHint, report)
+			}
+			if c.wantHint && !strings.Contains(report, "end of the line") {
+				t.Fatalf("hint does not name the fix (move the marker to the end of the line):\n%s", report)
+			}
+		})
 	}
 }
 
