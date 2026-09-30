@@ -47,7 +47,7 @@ var authInputKeys = map[string]bool{
 // takes the member name as its first argument as a method (c.Query("code")),
 // and as its second as fiber's generic function (fiber.Query[string](c, "code")).
 // fiberLookups resolves the names to their declarations in fiberPackagePath;
-// isLookup also takes a method of one of these names declared anywhere else.
+// lookupKey also takes a callee of one of these names declared anywhere else.
 var queryReadingLookups = map[string]bool{"FormValue": true, "Query": true, "Params": true}
 
 const fiberPackagePath = "github.com/gofiber/fiber/v3"
@@ -198,20 +198,56 @@ func fiberLookups(t *testing.T, imports fixtureImporter) map[*types.Func]bool {
 	return lookups
 }
 
-// isLookup reports whether fn reads a member from the URL: a fiber lookup by
-// declaration, or, failing closed, any method of a lookup's name declared
-// outside fiber. A call through the caller's own interface (a local one, a type
-// assertion) resolves to that interface's method, not fiber's, and a type
-// outside the tree has no body the sweep reads — fasthttp's
-// (*RequestCtx).FormValue consults the query before the body. A plain function
-// needs no such net: fiber's are resolved, and one in the tree is swept itself.
-func isLookup(lookups map[*types.Func]bool, fn *types.Func) bool {
-	if lookups[fn.Origin()] {
-		return true
+// lookupKey reports whether obj, the object a call or a value names, reads a
+// member from the URL, and at which argument it takes the member name: a fiber
+// lookup by declaration, or, failing closed, a callee of a lookup's name the
+// sweep cannot see through. That is any method declared outside fiber — a call
+// through the caller's own interface (a local one, a type assertion) resolves to
+// that interface's method, not fiber's, and a type outside the tree has no body
+// the sweep reads: fasthttp's (*RequestCtx).FormValue consults the query before
+// the body — a func-typed variable or struct field, which may hold any of them,
+// and a plain function declared outside both fiber and this module (one in the
+// module is swept itself). Only a callee whose key parameter is a string names a
+// member: pgx's Query(ctx, sql) is no lookup. A method takes the key first; a
+// callee without a receiver first too, or second after the request, as fiber's
+// generic functions do.
+func lookupKey(lookups map[*types.Func]bool, obj types.Object) (keyIndex int, ok bool) {
+	if obj == nil || !queryReadingLookups[obj.Name()] {
+		return 0, false
 	}
-	signature := fn.Signature()
-	return signature.Recv() != nil && queryReadingLookups[fn.Name()] && signature.Params().Len() > 0 &&
-		(fn.Pkg() == nil || fn.Pkg().Path() != fiberPackagePath)
+	var signature *types.Signature
+	switch obj := obj.(type) {
+	case *types.Func:
+		if lookups[obj.Origin()] {
+			return lookupKeyIndex(obj), true
+		}
+		pkg := ""
+		if obj.Pkg() != nil {
+			pkg = obj.Pkg().Path()
+		}
+		signature = obj.Signature()
+		if pkg == fiberPackagePath || (signature.Recv() == nil && (pkg == modulePath || strings.HasPrefix(pkg, modulePath+"/"))) {
+			return 0, false
+		}
+	case *types.Var:
+		signature, _ = obj.Type().Underlying().(*types.Signature)
+		if signature == nil {
+			return 0, false
+		}
+	default:
+		return 0, false
+	}
+	isString := func(index int) bool {
+		params := signature.Params()
+		return index < params.Len() && types.Identical(params.At(index).Type().Underlying(), types.Typ[types.String])
+	}
+	switch {
+	case isString(0):
+		return 0, true
+	case signature.Recv() == nil && isString(1):
+		return 1, true
+	}
+	return 0, false
 }
 
 // lookupKeyIndex is where a lookup takes the member name: first for a method,
@@ -223,11 +259,11 @@ func lookupKeyIndex(fn *types.Func) int {
 	return 0
 }
 
-// lookupCall resolves call to the lookup it calls (isLookup), by declaration:
+// lookupCall resolves call to the lookup it calls (lookupKey), by declaration:
 // an aliased import, a parenthesised callee and a method expression
 // (fiber.Ctx.Query(c, "code"), which takes the receiver first) are all the same
-// lookup. fn is nil when call is not a lookup.
-func lookupCall(info *types.Info, lookups map[*types.Func]bool, call *ast.CallExpr) (fn *types.Func, callee *ast.Ident, keyIndex int) {
+// lookup. lookup is nil when call is not a lookup.
+func lookupCall(info *types.Info, lookups map[*types.Func]bool, call *ast.CallExpr) (lookup types.Object, callee *ast.Ident, keyIndex int) {
 	fun := ast.Unparen(call.Fun)
 	switch f := fun.(type) {
 	case *ast.IndexExpr:
@@ -246,15 +282,24 @@ func lookupCall(info *types.Info, lookups map[*types.Func]bool, call *ast.CallEx
 	default:
 		return nil, nil, 0
 	}
-	fn, _ = info.Uses[callee].(*types.Func)
-	if fn == nil || !isLookup(lookups, fn) {
+	lookup = info.Uses[callee]
+	keyIndex, ok := lookupKey(lookups, lookup)
+	if !ok {
 		return nil, nil, 0
 	}
-	keyIndex = lookupKeyIndex(fn)
 	if methodExpr {
 		keyIndex++
 	}
-	return fn, callee, keyIndex
+	return lookup, callee, keyIndex
+}
+
+// describeLookup names a lookup in a report: fiber's generic functions apart
+// from the methods of the same name.
+func describeLookup(lookup types.Object) string {
+	if fn, ok := lookup.(*types.Func); ok && fn.Signature().Recv() == nil && fn.Pkg() != nil && fn.Pkg().Path() == fiberPackagePath {
+		return "generic " + fn.Name()
+	}
+	return lookup.Name()
 }
 
 // findQueryReads returns every read in node that takes an auth member from the
@@ -289,12 +334,9 @@ func findQueryReads(node ast.Node, info *types.Info, lookups map[*types.Func]boo
 		if !ok {
 			return true
 		}
-		if fn, callee, index := lookupCall(info, lookups, call); fn != nil {
+		if lookup, callee, index := lookupCall(info, lookups, call); lookup != nil {
 			called[callee] = true
-			how := fn.Name()
-			if fn.Signature().Recv() == nil {
-				how = "generic " + how
-			}
+			how := describeLookup(lookup)
 			key, resolved := memberKey(info, call, index)
 			switch {
 			case resolved && authInputKeys[key]:
@@ -333,8 +375,11 @@ func findQueryReads(node ast.Node, info *types.Info, lookups map[*types.Func]boo
 		if !ok || called[ident] {
 			return true
 		}
-		if fn, ok := info.Uses[ident].(*types.Func); ok && isLookup(lookups, fn) {
-			reads = append(reads, queryRead{at: ident.Pos(), how: fn.Name() + " taken as a value", bulk: true,
+		if lookup := info.Uses[ident]; lookup != nil {
+			if _, ok := lookupKey(lookups, lookup); !ok {
+				return true
+			}
+			reads = append(reads, queryRead{at: ident.Pos(), how: lookup.Name() + " taken as a value", bulk: true,
 				note: "the member it is later asked for cannot be traced from here"})
 		}
 		return true
@@ -578,7 +623,7 @@ func containsLookup(node ast.Node, info *types.Info, lookups map[*types.Func]boo
 	found := false
 	ast.Inspect(node, func(n ast.Node) bool {
 		if call, ok := n.(*ast.CallExpr); ok {
-			if fn, _, _ := lookupCall(info, lookups, call); fn != nil {
+			if lookup, _, _ := lookupCall(info, lookups, call); lookup != nil {
 				found = true
 			}
 		}
@@ -632,6 +677,7 @@ func typeCheckFixture(t *testing.T, fset *token.FileSet, path string, imports ty
 const queryReadFixtureHeader = `package fixture
 
 import (
+	"context"
 	"net/url"
 	"strings"
 
@@ -653,6 +699,12 @@ func lookupName() string { return "" }
 
 type former interface{ FormValue(key string, def ...string) string }
 
+type reader struct{ FormValue func(key string) string }
+
+type store struct{}
+
+func (store) Query(ctx context.Context, sql string) error { return nil }
+
 func bindRequestBody(c fiber.Ctx, out any) error { return nil }
 `
 
@@ -661,6 +713,8 @@ const queryReadFixtureRoutes = `package routes
 const IDParam = "id"
 
 const CodeParam = "co" + "de"
+
+func Params(key string) string { return key }
 `
 
 // assertQueryReadSweepAnswersBothWays anchors the sweep on fixtures it owns: one
@@ -722,6 +776,9 @@ func assertQueryReadSweepAnswersBothWays(t *testing.T, imports fixtureImporter, 
 		{`_ = ((c.Bind)().All)(&in)`, "Bind()...All"},
 		{`b := (c.Bind)(); _ = b.Query(&in)`, "Bind() held"},
 		{`_ = (c.Request().URI().QueryArgs)().Peek("password")`, `QueryArgs().Peek("password")`},
+		{`_ = reader{}.FormValue("password")`, `FormValue("password")`},
+		{`Query := func(key string) string { return key }; _ = Query("code")`, `Query("code")`},
+		{`_ = routes.Params("password")`, `Params("password")`},
 	}
 	unflagged := []string{
 		`_ = c.FormValue("lang")`,
@@ -743,6 +800,7 @@ func assertQueryReadSweepAnswersBothWays(t *testing.T, imports fixtureImporter, 
 		`_ = c.Params(routes.IDParam)`,
 		`_ = c.Query(dayKey)`,
 		`_ = c.RequestCtx().FormValue("lang")`,
+		`_ = store{}.Query(context.Background(), "select 1")`,
 	}
 
 	source := strings.Builder{}
