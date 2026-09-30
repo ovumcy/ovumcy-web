@@ -125,17 +125,11 @@ func runResetPasswordCommand(databaseConfig db.Config, args []string, fencePath 
 		}
 	}
 
-	database, err := db.OpenDatabase(databaseConfig)
+	repositories, fence, closeDatabase, err := openOperatorRepositories(databaseConfig, fencePath)
 	if err != nil {
-		return fmt.Errorf("database init failed: %w", err)
+		return err
 	}
-	sqlDB, err := database.DB()
-	if err != nil {
-		return fmt.Errorf("database init failed: %w", err)
-	}
-	defer func() {
-		_ = sqlDB.Close()
-	}()
+	defer closeDatabase()
 
 	if prompt == nil {
 		return errors.New("password prompt is required")
@@ -161,7 +155,6 @@ func runResetPasswordCommand(databaseConfig db.Config, args []string, fencePath 
 		return mapResetPasswordError(err, opts, normalizedEmail)
 	}
 
-	repositories, fence := buildRepositories(database, fencePath)
 	authService := services.NewAuthService(repositories.Users)
 	operatorUsers := services.NewOperatorUserService(repositories.Users, authService)
 

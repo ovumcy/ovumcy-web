@@ -49,19 +49,12 @@ func runUsersCommand(databaseConfig db.Config, args []string, fencePath string, 
 		return errors.New("usage: ovumcy users <list|delete|create|set-email>")
 	}
 
-	database, err := db.OpenDatabase(databaseConfig)
+	repositories, fence, closeDatabase, err := openOperatorRepositories(databaseConfig, fencePath)
 	if err != nil {
-		return fmt.Errorf("database init failed: %w", err)
+		return err
 	}
-	sqlDB, err := database.DB()
-	if err != nil {
-		return fmt.Errorf("database init failed: %w", err)
-	}
-	defer func() {
-		_ = sqlDB.Close()
-	}()
+	defer closeDatabase()
 
-	repositories, fence := buildRepositories(database, fencePath)
 	service := services.NewOperatorUserService(repositories.Users, services.NewAuthService(repositories.Users))
 
 	switch subcommand {

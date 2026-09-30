@@ -128,23 +128,13 @@ func runWebhookCommand(databaseConfig db.Config, secretKey string, args []string
 // uses (services.NewWebhookSettingsService, mirroring bootstrap.BuildNotifyService's
 // settings half). It returns a cleanup that closes the DB handle.
 func openWebhookCLIService(databaseConfig db.Config, secretKey string) (*services.WebhookSettingsCLIService, func(), error) {
-	database, err := db.OpenDatabase(databaseConfig)
+	repositories, _, closeDatabase, err := openOperatorRepositories(databaseConfig, calendarFeedFencePath())
 	if err != nil {
-		return nil, nil, fmt.Errorf("database init failed: %w", err)
+		return nil, nil, err
 	}
-	sqlDB, err := database.DB()
-	if err != nil {
-		// codecov:ignore -- defensive: (*gorm.DB).DB() only errors when the pool
-		// is unavailable, which cannot happen on the handle OpenDatabase just
-		// returned. Mirrors the same guard in users.go/notify.go.
-		return nil, nil, fmt.Errorf("database init failed: %w", err)
-	}
-
-	repositories, _ := buildRepositories(database, calendarFeedFencePath())
 	settingsService := services.NewWebhookSettingsService(repositories.Users, []byte(secretKey))
 	cliService := services.NewWebhookSettingsCLIService(repositories.Users, settingsService)
-	cleanup := func() { _ = sqlDB.Close() }
-	return cliService, cleanup, nil
+	return cliService, closeDatabase, nil
 }
 
 // runWebhookShow prints the owner's webhook status: configured/not and the

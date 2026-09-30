@@ -52,6 +52,35 @@ func buildRepositories(database *gorm.DB, fencePath string) (*db.Repositories, *
 	return bootstrap.BuildRepositories(database, fencePath)
 }
 
+// openOperatorRepositories is the one way an account subcommand opens the
+// database: it migrates, builds the repositories through buildRepositories, and
+// refuses a database the server itself would not boot on
+// (bootstrap.VerifySchemaInvariants) with the server's own words. Without it,
+// `users create` and `users set-email` on a database that lost
+// idx_users_email_normalized could put a second account on an address while
+// the server was down for exactly that reason. Nothing is repaired here either.
+// The returned cleanup closes the handle; on error there is nothing to close.
+func openOperatorRepositories(databaseConfig db.Config, fencePath string) (*db.Repositories, *services.CalendarFeedRestoreFence, func(), error) {
+	database, err := db.OpenDatabase(databaseConfig)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("database init failed: %w", err)
+	}
+	sqlDB, err := database.DB()
+	if err != nil {
+		// codecov:ignore -- defensive: (*gorm.DB).DB() only errors when the pool
+		// is unavailable, which cannot happen on the handle OpenDatabase just returned.
+		return nil, nil, nil, fmt.Errorf("database init failed: %w", err)
+	}
+	closeDatabase := func() { _ = sqlDB.Close() }
+
+	repositories, fence := buildRepositories(database, fencePath)
+	if err := bootstrap.VerifySchemaInvariants(context.Background(), repositories); err != nil {
+		closeDatabase()
+		return nil, nil, nil, fmt.Errorf("schema check failed: %w", err)
+	}
+	return repositories, fence, closeDatabase, nil
+}
+
 // confirmOperatorFeedRevocation is the gate every subcommand that revokes an
 // owner's calendar feed (`users delete`, a forced `reset-password`) must pass
 // immediately before the write that performs the revocation, and only once
