@@ -270,7 +270,7 @@ func removedFragments(nameStatus string) []string {
 		switch {
 		case fields[0] == "D":
 			path = fields[1]
-		case fields[0][0] == 'R' && len(fields) >= 3 && fields[1] != fields[2]:
+		case fields[0][0] == 'R' && len(fields) >= 3:
 			path = fields[1]
 		default:
 			continue

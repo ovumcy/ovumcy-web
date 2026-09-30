@@ -549,10 +549,18 @@ func TestRemovedFragmentsCollectsDeletionsAndRenameSources(t *testing.T) {
 // the same way, even beside a fragment that carries the branch's name.
 func TestCheckRefusesDeletingALandedFragment(t *testing.T) {
 	dir := initRepo(t)
-	landOnMain(t, dir, "changelog.d/landed-elsewhere.md", "### Fixed\n\n- **Another branch's entry.**\n")
+	landOnMain(t, dir, "changelog.d/landed-elsewhere.md", "### Fixed\n\n- **Another branch's entry about the calendar feed token rotation and its cookie.**\n")
 	run(t, dir, "rm", "-q", "changelog.d/landed-elsewhere.md")
-	writeFile(t, dir, "changelog.d/web133-own.md", "### Fixed\n\n- **This branch's own, unrelated entry.**\n")
+	writeFile(t, dir, "changelog.d/web133-own.md", "### Security\n\n- **Operator commands refuse a database missing its normalized-email index before any write.**\n")
 	commitAll(t, dir, "fix: drop another fragment")
+
+	nameStatus, err := gitOutput(dir, "diff", "--name-status", "--no-color", "-M", "main...HEAD")
+	if err != nil {
+		t.Fatalf("git diff: %v", err)
+	}
+	if !strings.Contains(nameStatus, "D\tchangelog.d/landed-elsewhere.md") || strings.Contains(nameStatus, "R") {
+		t.Fatalf("fixture must be a plain deletion beside an addition, got:\n%s", nameStatus)
+	}
 
 	failure, err := check(dir, "main", "fix/web133-own", gitOutput)
 	if err != nil {
@@ -560,6 +568,28 @@ func TestCheckRefusesDeletingALandedFragment(t *testing.T) {
 	}
 	if !strings.Contains(failure, "changelog.d/landed-elsewhere.md") {
 		t.Fatalf("deleting a landed fragment must be refused by name, got:\n%s", failure)
+	}
+}
+
+// The name-status diff pins rename detection, so a user's diff.renames setting
+// cannot classify the branch differently from CI.
+func TestCheckPinsRenameDetection(t *testing.T) {
+	dir := initRepo(t)
+	writeFile(t, dir, "changelog.d/web133-pin.md", "### Internal\n\n- **Pin.**\n")
+	commitAll(t, dir, "ci: pin")
+
+	var nameStatusArgs []string
+	recording := func(root string, args ...string) (string, error) {
+		if len(args) > 1 && args[0] == "diff" && args[1] == "--name-status" {
+			nameStatusArgs = args
+		}
+		return gitOutput(root, args...)
+	}
+	if _, err := check(dir, "main", "", recording); err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	if !strings.Contains(strings.Join(nameStatusArgs, " "), " -M ") {
+		t.Fatalf("the name-status diff must pass -M, got: %v", nameStatusArgs)
 	}
 }
 
