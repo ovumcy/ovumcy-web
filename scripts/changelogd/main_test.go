@@ -463,7 +463,7 @@ func TestAddedFragmentsCollectsOnlyAddedMarkdownUnderChangelogD(t *testing.T) {
 
 // A rename into changelog.d/ from elsewhere is the branch's entry; a rename
 // within changelog.d/ moves a landed fragment and is not.
-func TestAddedFragmentsCountsTheDestinationOfARename(t *testing.T) {
+func TestAddedFragmentsCountsARenameOnlyFromOutsideChangelogD(t *testing.T) {
 	cases := []struct {
 		name       string
 		nameStatus string
@@ -481,6 +481,7 @@ func TestAddedFragmentsCountsTheDestinationOfARename(t *testing.T) {
 		{"landed-fragment rename alongside an added fragment", "A\tchangelog.d/b.md\nR096\tchangelog.d/old.md\tchangelog.d/a.md\n", []string{"changelog.d/b.md"}},
 		{"rename with CRLF line endings", "R100\tdocs/note.md\tchangelog.d/new.md\r\n", []string{"changelog.d/new.md"}},
 		{"edit and deletion stay uncounted", "M\tchangelog.d/existing.md\nD\tchangelog.d/gone.md\n", nil},
+		{"a truncated rename line is not counted", "R100\tchangelog.d/new.md\n", nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -517,8 +518,70 @@ func TestCheckRefusesALandedFragmentRenamedUnderTheBranchName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
-	if failure == "" {
-		t.Fatal("a landed fragment renamed under the branch name satisfied the gate")
+	if !strings.Contains(failure, "changelog.d/landed-elsewhere.md") {
+		t.Fatalf("a landed fragment renamed under the branch name must be refused by name, got:\n%s", failure)
+	}
+}
+
+func TestRemovedFragmentsCollectsDeletionsAndRenameSources(t *testing.T) {
+	cases := []struct {
+		name       string
+		nameStatus string
+		want       []string
+	}{
+		{"deletion", "D\tchangelog.d/gone.md\n", []string{"changelog.d/gone.md"}},
+		{"rename within changelog.d", "R100\tchangelog.d/old.md\tchangelog.d/new.md\n", []string{"changelog.d/old.md"}},
+		{"rename out of changelog.d", "R100\tchangelog.d/old.md\tdocs/old.md\n", []string{"changelog.d/old.md"}},
+		{"rename into changelog.d", "R100\tdocs/note.md\tchangelog.d/new.md\n", nil},
+		{"added and modified", "A\tchangelog.d/a.md\nM\tchangelog.d/b.md\n", nil},
+		{"deletion outside changelog.d", "D\tdocs/gone.md\nD\tchangelog.d/gone.txt\n", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := removedFragments(tc.nameStatus); strings.Join(got, ",") != strings.Join(tc.want, ",") {
+				t.Fatalf("removedFragments(%q) = %v, want %v", tc.nameStatus, got, tc.want)
+			}
+		})
+	}
+}
+
+// A deletion git does not pair as a rename (the copy was rewritten) is refused
+// the same way, even beside a fragment that carries the branch's name.
+func TestCheckRefusesDeletingALandedFragment(t *testing.T) {
+	dir := initRepo(t)
+	landOnMain(t, dir, "changelog.d/landed-elsewhere.md", "### Fixed\n\n- **Another branch's entry.**\n")
+	run(t, dir, "rm", "-q", "changelog.d/landed-elsewhere.md")
+	writeFile(t, dir, "changelog.d/web133-own.md", "### Fixed\n\n- **This branch's own, unrelated entry.**\n")
+	commitAll(t, dir, "fix: drop another fragment")
+
+	failure, err := check(dir, "main", "fix/web133-own", gitOutput)
+	if err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	if !strings.Contains(failure, "changelog.d/landed-elsewhere.md") {
+		t.Fatalf("deleting a landed fragment must be refused by name, got:\n%s", failure)
+	}
+}
+
+// Release assembly is the one diff that removes landed fragments.
+func TestCheckAllowsAssemblyToRemoveLandedFragments(t *testing.T) {
+	dir := initRepo(t)
+	run(t, dir, "checkout", "-q", "main")
+	writeFile(t, dir, "CHANGELOG.md", fixtureChangelog+"\n[Unreleased]: https://example.com/o/r/compare/v1.0.0...HEAD\n[1.0.0]: https://example.com/o/r/releases/tag/v1.0.0\n")
+	writeFile(t, dir, "changelog.d/landed.md", "### Added\n\n- **A landed thing.**\n")
+	commitAll(t, dir, "chore: a changelog and a landed fragment on main")
+	run(t, dir, "checkout", "-q", "-B", "release")
+	if _, err := assemble(dir, "1.1.0", "2026-02-02"); err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	commitAll(t, dir, "chore: cut 1.1.0")
+
+	failure, err := check(dir, "main", "", gitOutput)
+	if err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	if failure != "" {
+		t.Fatalf("assembly removing landed fragments must pass, got:\n%s", failure)
 	}
 }
 

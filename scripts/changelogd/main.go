@@ -165,7 +165,9 @@ func fragmentPathForBranch(headRef string) string {
 // the branch adds must carry its slug (fragmentPathForBranch), and "" skips
 // that rule.
 func check(root, baseRef, headRef string, git gitRunner) (string, error) {
-	nameStatus, err := git(root, "diff", "--name-status", "--no-color", baseRef+"...HEAD")
+	// -M pins rename detection on, so a user's diff.renames setting cannot
+	// classify the same branch differently here and in CI.
+	nameStatus, err := git(root, "diff", "--name-status", "--no-color", "-M", baseRef+"...HEAD")
 	if err != nil {
 		return "", fmt.Errorf("diff against %s: %w", baseRef, err)
 	}
@@ -214,13 +216,23 @@ func check(root, baseRef, headRef string, git gitRunner) (string, error) {
 		}
 	}
 
-	if len(fragmentProblems) > 0 || len(offending) > 0 {
+	// A fragment on the base is another branch's entry awaiting release; only
+	// assembly may remove it, or its entry never reaches CHANGELOG.md.
+	var removed []string
+	if !assembly {
+		removed = removedFragments(nameStatus)
+	}
+
+	if len(fragmentProblems) > 0 || len(offending) > 0 || len(removed) > 0 {
 		var report []string
 		if len(fragmentProblems) > 0 {
 			report = append(report, strings.Join(fragmentProblems, "\n")+"\n\n"+fragmentFormatHelp())
 		}
 		if len(offending) > 0 {
 			report = append(report, changelogEditHelp(offending, headRef))
+		}
+		if len(removed) > 0 {
+			report = append(report, removedFragmentHelp(removed))
 		}
 		return "changelog fragment check FAILED:\n" + strings.Join(report, "\n"), nil
 	}
@@ -242,6 +254,40 @@ func check(root, baseRef, headRef string, git gitRunner) (string, error) {
 		}
 	}
 	return misnamedFragmentHelp(headRef, want, added), nil
+}
+
+// removedFragments returns the changelog.d/*.md paths present on the base that
+// this branch deletes (D) or renames away (the source of an R). Release
+// assembly is the only diff allowed to do either.
+func removedFragments(nameStatus string) []string {
+	var removed []string
+	for _, line := range strings.Split(nameStatus, "\n") {
+		fields := strings.Split(strings.TrimRight(line, "\r"), "\t")
+		if len(fields) < 2 || fields[0] == "" {
+			continue
+		}
+		var path string
+		switch {
+		case fields[0] == "D":
+			path = fields[1]
+		case fields[0][0] == 'R' && len(fields) >= 3 && fields[1] != fields[2]:
+			path = fields[1]
+		default:
+			continue
+		}
+		if strings.HasPrefix(path, fragmentDir+"/") && strings.HasSuffix(path, ".md") {
+			removed = append(removed, path)
+		}
+	}
+	sort.Strings(removed)
+	return removed
+}
+
+func removedFragmentHelp(removed []string) string {
+	return "\nThis branch deletes or renames a fragment another branch already landed:\n" +
+		"  " + strings.Join(removed, "\n  ") + "\n\n" +
+		"Its entry has not been released yet, and only release assembly removes a fragment. Correct a\n" +
+		"wrong fragment in place, and add this branch's own fragment beside it.\n"
 }
 
 // changedFragments returns every changelog.d/*.md path whose content this
@@ -335,7 +381,7 @@ func addedFragments(nameStatus string) []string {
 		if len(fields) < 2 || fields[0] == "" || (fields[0] != "A" && fields[0][0] != 'R') {
 			continue
 		}
-		if fields[0][0] == 'R' && len(fields) >= 3 && strings.HasPrefix(fields[1], fragmentDir+"/") {
+		if fields[0][0] == 'R' && (len(fields) < 3 || strings.HasPrefix(fields[1], fragmentDir+"/")) {
 			continue
 		}
 		path := fields[len(fields)-1]
