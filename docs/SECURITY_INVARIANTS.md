@@ -106,9 +106,9 @@ Every test-enforceable entry has a corresponding test or set of tests in `SECURI
   `reason` key is now identical for both — never in the response
   (`mapSettingsDeleteAccountPasswordError`, `mapSettingsPasswordChangeError` in `internal/api`).
   **2FA disable is out of scope of this bullet**: `DELETE /api/v1/users/current/2fa` never goes
-  through `validateSettingsActionPassword` — it checks the password with the unbudgeted
-  `ValidateCurrentPassword` (`internal/services/settings_service.go`) against the session
-  account's own stored hash, never an account looked up by email, draws only its own
+  through `validateSettingsActionPassword` — it checks the password with the same budgeted
+  `SettingsService.VerifyReauth` (`internal/services/settings_reauth_budget.go`) against the
+  session account's own stored hash, never an account looked up by email, draws only its own
   `totp.disable` attempt budget, and answers "no local password" and "wrong password" with the one
   `401 invalid credentials`; the handler logs the same `reauth_cause` field as the actions above
   (`handlers_settings_2fa.go`). This narrows only the re-auth
