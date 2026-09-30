@@ -59,6 +59,9 @@ func buildRepositories(database *gorm.DB, fencePath string) (*db.Repositories, *
 // `users create` and `users set-email` on a database that lost
 // idx_users_email_normalized could put a second account on an address while
 // the server was down for exactly that reason. Nothing is repaired here either.
+// The check runs under the same storage budget as the server's boot passes, so
+// a database that accepts the read and never answers ends in a refusal rather
+// than a hung command.
 // The returned cleanup closes the handle; on error there is nothing to close.
 func openOperatorRepositories(databaseConfig db.Config, fencePath string) (*db.Repositories, *services.CalendarFeedRestoreFence, func(), error) {
 	database, err := db.OpenDatabase(databaseConfig)
@@ -74,7 +77,9 @@ func openOperatorRepositories(databaseConfig db.Config, fencePath string) (*db.R
 	closeDatabase := func() { _ = sqlDB.Close() }
 
 	repositories, fence := buildRepositories(database, fencePath)
-	if err := bootstrap.VerifySchemaInvariants(context.Background(), repositories); err != nil {
+	ctx, cancel := bootstrap.PassContext()
+	defer cancel()
+	if err := bootstrap.VerifySchemaInvariants(ctx, repositories); err != nil {
 		closeDatabase()
 		return nil, nil, nil, fmt.Errorf("schema check failed: %w", err)
 	}

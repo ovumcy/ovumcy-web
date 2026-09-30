@@ -63,6 +63,21 @@ func RunNotifyCommand(
 	blockPrivateAddresses bool,
 	args []string,
 ) error {
+	return runNotifyOperatorCommand(databaseConfig, secretKey, defaultLanguage, location, blockPrivateAddresses, args, os.Stdout)
+}
+
+// runNotifyOperatorCommand is RunNotifyCommand with its output stream injected,
+// so a test can read what the command printed instead of the process's real
+// stdout. RunNotifyCommand is its only production caller and passes os.Stdout.
+func runNotifyOperatorCommand(
+	databaseConfig db.Config,
+	secretKey string,
+	defaultLanguage string,
+	location *time.Location,
+	blockPrivateAddresses bool,
+	args []string,
+	output io.Writer,
+) error {
 	opts, err := parseNotifyArgs(args)
 	if err != nil {
 		return err
@@ -86,7 +101,7 @@ func RunNotifyCommand(
 
 	service := bootstrap.BuildNotifyService(repositories, []byte(secretKey), i18nManager, blockPrivateAddresses)
 
-	return runNotifyCommand(service, opts, time.Now(), location, os.Stdout)
+	return runNotifyCommand(service, opts, time.Now(), location, output)
 }
 
 // runNotifyCommand runs one notify pass and prints a secret-free report. now and
