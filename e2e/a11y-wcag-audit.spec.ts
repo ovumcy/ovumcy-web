@@ -4,7 +4,6 @@ import {
   continueFromRecoveryCode,
   createCredentials,
   expectInlineRegisterRecoveryStep,
-  ONBOARDING_START_DAYS_AGO,
   readRecoveryCode,
   registerOwnerViaUI,
 } from './support/auth-helpers';
@@ -94,9 +93,9 @@ test.describe('WCAG AA audit regressions', () => {
     await registerOwnerAndReachDashboard(page, 'a11y-calendar-contrast');
     await page.setViewportSize({ width: 1280, height: 900 });
 
-    // Onboarding has already recorded the current cycle's start, with its period
-    // days, ONBOARDING_START_DAYS_AGO days back; any later start would replace it
-    // as the current cycle. The window is withheld until one cycle has been
+    // completeOnboardingIfPresent has already recorded the current cycle's start,
+    // with its period days, at today-3; any later start would replace it as the
+    // current cycle. The window is withheld until one cycle has been
     // observed, so the previous start is seeded exactly one 28-day cycle before
     // it: that is the length the account settings already carry. On the 28/14
     // defaults (models.DefaultPeriodLength=5, the unexported
@@ -110,13 +109,23 @@ test.describe('WCAG AA audit regressions', () => {
     // asserted in the month that holds it (#620): the period in the current
     // start's month, the window in today+7's. One month cannot hold both near a
     // month's end: on 2026-09-30 the start was Sep 27 and the window Oct 4-9,
-    // past the September grid's last cell (Oct 3).
-    const currentStartISO = shiftISODate(isoToday(), -ONBOARDING_START_DAYS_AGO);
+    // past the September grid's last cell (Oct 3). Padding cells from the
+    // neighbouring months are excluded: whether any carries a phase depends on
+    // the run date, and their faded style is not the one under test.
+    const currentStartISO = shiftISODate(isoToday(), -3);
     await markCycleStart(page, shiftISODate(currentStartISO, -28));
 
     const views = [
-      { month: currentStartISO.slice(0, 7), selector: '.calendar-cell-period', label: 'period cell' },
-      { month: shiftISODate(isoToday(), 7).slice(0, 7), selector: '.calendar-cell-fertile', label: 'fertile cell' },
+      {
+        month: currentStartISO.slice(0, 7),
+        selector: '.calendar-cell-period:not(.calendar-cell-out)',
+        label: 'period cell',
+      },
+      {
+        month: shiftISODate(isoToday(), 7).slice(0, 7),
+        selector: '.calendar-cell-fertile:not(.calendar-cell-out)',
+        label: 'fertile cell',
+      },
     ];
     for (const view of views) {
       await page.goto(`/calendar?month=${view.month}`);

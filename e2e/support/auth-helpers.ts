@@ -11,9 +11,6 @@ const RECOVERY_CODE_PATTERN = /^OVUM-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
 
 export const DEFAULT_STRONG_PASSWORD = 'StrongPass1';
 
-/** How many days before today completeOnboardingIfPresent records the current cycle's start. */
-export const ONBOARDING_START_DAYS_AGO = 3;
-
 export function createCredentials(prefix: string, password = DEFAULT_STRONG_PASSWORD): Credentials {
   const suffix = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
   return {
@@ -153,7 +150,7 @@ export async function completeOnboardingIfPresent(page: Page): Promise<void> {
   const isStepTwoVisible = await stepTwoForm.isVisible().catch(() => false);
 
   if (isStepOneVisible) {
-    await selectOnboardingStartDate(page, shiftISODate(isoToday(), -ONBOARDING_START_DAYS_AGO));
+    await selectOnboardingStartDate(page, shiftISODate(isoToday(), -3));
     await stepOneForm.locator('button[type="submit"]').click();
   }
 
