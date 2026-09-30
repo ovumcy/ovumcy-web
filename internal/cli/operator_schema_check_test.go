@@ -98,6 +98,24 @@ func TestOperatorRepositoriesOpenAMigratedDatabase(t *testing.T) {
 	}
 }
 
+// TestOperatorNotifyWritesItsReportToTheInjectedOutput is the control for the
+// notify row above: that row's "printed nothing" claim only means something
+// while the injected writer is the one a completed pass prints to.
+func TestOperatorNotifyWritesItsReportToTheInjectedOutput(t *testing.T) {
+	t.Parallel()
+
+	databasePath := createCLIUsersDatabase(t)
+	config := db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath}
+
+	var output bytes.Buffer
+	if err := runNotifyOperatorCommand(config, testWebhookSecretKey, "en", time.UTC, false, []string{"--dry-run"}, &output); err != nil {
+		t.Fatalf("notify on a migrated database: %v", err)
+	}
+	if !strings.Contains(output.String(), "Webhook notify pass complete") {
+		t.Fatalf("the report did not reach the injected writer, got %q", output.String())
+	}
+}
+
 func dropCLINormalizedEmailIndex(t *testing.T, config db.Config) {
 	t.Helper()
 
