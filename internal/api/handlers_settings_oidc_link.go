@@ -52,11 +52,11 @@ func (handler *Handler) StartOIDCIdentityLinkStepup(c fiber.Ctx) error {
 	// current local password (budgeted, like every re-auth) is what proves the
 	// account holder is present. An account without one is refused here and
 	// sets a local password first.
-	if _, spec, cause, valid := handler.validateSettingsActionPassword(c); !valid {
+	reauth, spec, cause, valid := handler.validateSettingsActionPassword(c)
+	if !valid {
 		handler.logSecurityError(c, oidcIdentityLinkStepupAction, spec, cause)
 		return handler.respondMappedError(c, spec)
 	}
-
 	state, err := newOIDCIdentityLinkStepupState(time.Now(), user.ID)
 	if err != nil {
 		// codecov:ignore:start -- defensive: state minting fails only on a crypto/rand error
@@ -90,6 +90,10 @@ func (handler *Handler) StartOIDCIdentityLinkStepup(c fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 
+	// This start writes nothing to the account, and the provider callback that
+	// writes the link does not re-ask the password, so the budget clears once
+	// the redirect is issued.
+	reauth.resetBudget()
 	handler.logSecurityEvent(c, oidcIdentityLinkStepupAction, "redirect_issued")
 	if acceptsJSON(c) {
 		return c.JSON(fiber.Map{"ok": true, "redirect_url": authURL})
@@ -183,11 +187,12 @@ func (handler *Handler) UnlinkOIDCIdentity(c fiber.Ctx) error {
 		handler.logSecurityError(c, oidcIdentityUnlinkAction, spec)
 		return handler.respondMappedError(c, spec)
 	}
-	user, spec, cause, valid := handler.validateSettingsActionPassword(c)
+	reauth, spec, cause, valid := handler.validateSettingsActionPassword(c)
 	if !valid {
 		handler.logSecurityError(c, oidcIdentityUnlinkAction, spec, cause)
 		return handler.respondMappedError(c, spec)
 	}
+	user := reauth.user
 	unlinkedSessionVersion, err := handler.oidcService.UnlinkIdentity(c.Context(), *user, identityID)
 	if errors.Is(err, services.ErrAuthSessionVersionChanged) {
 		return handler.respondSignedOutRefusal(c, handler.refuseSessionRevokedDuring(c, oidcIdentityUnlinkAction, "unlink"))
@@ -197,6 +202,9 @@ func (handler *Handler) UnlinkOIDCIdentity(c fiber.Ctx) error {
 		handler.logSecurityError(c, oidcIdentityUnlinkAction, spec)
 		return handler.respondMappedError(c, spec)
 	}
+	// Only an unlink that committed clears settings.reauth: a correct password
+	// whose unlink was refused (the last way in, a revocation) keeps the count.
+	reauth.resetBudget()
 	handler.logSecurityEvent(c, oidcIdentityUnlinkAction, "unlinked")
 	if spec, ok := handler.reissueSessionAfterIdentityChange(c, user.ID, unlinkedSessionVersion, oidcIdentityUnlinkAction, "unlink"); !ok {
 		return handler.respondSignedOutRefusal(c, spec)

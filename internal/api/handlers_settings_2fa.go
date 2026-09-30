@@ -76,7 +76,8 @@ func (handler *Handler) VerifyTOTP2FAEnrollment(c fiber.Ctx) error {
 		return handler.respondMappedError(c, unauthorizedErrorSpec())
 	}
 
-	if _, spec, cause, valid := handler.validateSettingsActionPassword(c); !valid {
+	reauth, spec, cause, valid := handler.validateSettingsActionPassword(c)
+	if !valid {
 		handler.logSecurityError(c, "settings.2fa.verify", spec, cause)
 		return handler.respondMappedError(c, spec)
 	}
@@ -120,6 +121,10 @@ func (handler *Handler) VerifyTOTP2FAEnrollment(c fiber.Ctx) error {
 		handler.logSecurityError(c, "settings.2fa.verify", totpInternalErrorSpec())
 		return handler.respondMappedError(c, totpInternalErrorSpec())
 	}
+	// Only an enrollment that committed clears settings.reauth: a correct
+	// password whose enrollment was refused (an expired seed, a wrong code, a
+	// revocation mid-request) proved nothing lasting.
+	reauth.resetBudget()
 
 	// EnableTOTP atomically bumped auth_session_version on the user row; mirror
 	// the bump in memory and re-issue the auth cookie so this device stays
