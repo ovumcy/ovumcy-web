@@ -461,23 +461,25 @@ func TestAddedFragmentsCollectsOnlyAddedMarkdownUnderChangelogD(t *testing.T) {
 	}
 }
 
-// Rename detection can pair the fragment a branch adds with one it deletes; the
-// pair is reported as one R line whose destination is the branch's entry.
+// A rename into changelog.d/ from elsewhere is the branch's entry; a rename
+// within changelog.d/ moves a landed fragment and is not.
 func TestAddedFragmentsCountsTheDestinationOfARename(t *testing.T) {
 	cases := []struct {
 		name       string
 		nameStatus string
 		want       []string
 	}{
-		{"rename within changelog.d", "R100\tchangelog.d/old.md\tchangelog.d/new.md\n", []string{"changelog.d/new.md"}},
-		{"rename with a partial score", "R087\tchangelog.d/old.md\tchangelog.d/new.md\n", []string{"changelog.d/new.md"}},
+		{"rename within changelog.d", "R100\tchangelog.d/old.md\tchangelog.d/new.md\n", nil},
+		{"rename within changelog.d with a partial score", "R087\tchangelog.d/old.md\tchangelog.d/new.md\n", nil},
 		{"rename into changelog.d from elsewhere", "R100\tdocs/note.md\tchangelog.d/new.md\n", []string{"changelog.d/new.md"}},
+		{"rename into changelog.d with a partial score", "R087\tdocs/note.md\tchangelog.d/new.md\n", []string{"changelog.d/new.md"}},
 		{"rename to a destination outside changelog.d", "R100\tchangelog.d/old.md\tdocs/new.md\n", nil},
 		{"rename out of changelog.d", "R100\tchangelog.d/old.md\tinternal/old.md\n", nil},
 		{"rename whose destination is not markdown", "R100\tchangelog.d/old.md\tchangelog.d/new.txt\n", nil},
 		{"rename to a look-alike directory", "R100\tchangelog.d/old.md\tdocs/changelog.d/new.md\n", nil},
-		{"rename alongside an added fragment", "A\tchangelog.d/b.md\nR096\tchangelog.d/old.md\tchangelog.d/a.md\n", []string{"changelog.d/a.md", "changelog.d/b.md"}},
-		{"rename with CRLF line endings", "R100\tchangelog.d/old.md\tchangelog.d/new.md\r\n", []string{"changelog.d/new.md"}},
+		{"rename alongside an added fragment", "A\tchangelog.d/b.md\nR096\tdocs/old.md\tchangelog.d/a.md\n", []string{"changelog.d/a.md", "changelog.d/b.md"}},
+		{"landed-fragment rename alongside an added fragment", "A\tchangelog.d/b.md\nR096\tchangelog.d/old.md\tchangelog.d/a.md\n", []string{"changelog.d/b.md"}},
+		{"rename with CRLF line endings", "R100\tdocs/note.md\tchangelog.d/new.md\r\n", []string{"changelog.d/new.md"}},
 		{"edit and deletion stay uncounted", "M\tchangelog.d/existing.md\nD\tchangelog.d/gone.md\n", nil},
 	}
 	for _, tc := range cases {
@@ -490,10 +492,10 @@ func TestAddedFragmentsCountsTheDestinationOfARename(t *testing.T) {
 	}
 }
 
-// End to end through real git: the branch deletes a fragment and adds a
-// near-identical one, which git reports as a rename, and the gate must see the
-// new fragment as the branch's entry.
-func TestCheckCountsAFragmentGitReportsAsARename(t *testing.T) {
+// End to end through real git: the branch deletes a fragment another branch
+// landed and re-adds its text under this branch's name, which git reports as a
+// rename. That is not an entry this branch wrote, so the gate refuses it.
+func TestCheckRefusesALandedFragmentRenamedUnderTheBranchName(t *testing.T) {
 	dir := initRepo(t)
 	const body = "### Internal\n\n- **A long enough entry that rename detection pairs the two paths.**\n- **Second line so a single changed word stays above the similarity threshold.**\n"
 	run(t, dir, "checkout", "-q", "main")
@@ -515,8 +517,8 @@ func TestCheckCountsAFragmentGitReportsAsARename(t *testing.T) {
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
-	if failure != "" {
-		t.Fatalf("expected the renamed-in fragment to satisfy the gate, got:\n%s", failure)
+	if failure == "" {
+		t.Fatal("a landed fragment renamed under the branch name satisfied the gate")
 	}
 }
 
