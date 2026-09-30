@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
-	"github.com/ovumcy/ovumcy-web/internal/httpx"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
@@ -45,8 +44,8 @@ func (handler *Handler) DeleteDay(c fiber.Ctx) error {
 	if source == "dashboard" {
 		return redirectOrJSON(c, "/dashboard")
 	}
-	if source == "calendar" && responseFormat(c) == httpx.ResponseFormatHTML {
-		return c.Redirect().Status(fiber.StatusSeeOther).To(calendarDayPath(day))
+	if source == "calendar" && dayFormNavigation(c) {
+		return redirectOrJSON(c, calendarDayPath(day))
 	}
 	return c.SendStatus(204)
 }

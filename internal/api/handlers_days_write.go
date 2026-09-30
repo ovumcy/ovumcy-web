@@ -163,7 +163,9 @@ func (handler *Handler) applyUpsertDayAcknowledgements(c fiber.Ctx, request upse
 	}
 
 	feedback, feedbackErr := handler.dayService.ResolveDayFeedback(c.Context(), request.user, request.day, time.Now().In(request.location), request.location)
-	if feedbackErr == nil && feedback.ShowLongPeriodWarning && !feedback.LongPeriodCycleStart.IsZero() {
+	// The no-JS redirect carries no notice, so the warning is not recorded as
+	// shown there; it stays pending for a save that can display it.
+	if feedbackErr == nil && feedback.ShowLongPeriodWarning && !feedback.LongPeriodCycleStart.IsZero() && !dayFormNavigation(c) {
 		if err := handler.dayService.AcknowledgeLongPeriodWarning(c.Context(), request.user.ID, feedback.LongPeriodCycleStart, request.location); err == nil { // codecov:ignore -- best-effort long-period-warning ack; error intentionally swallowed
 			acknowledgedCycleStart := feedback.LongPeriodCycleStart
 			request.user.LongPeriodWarningCycleStart = &acknowledgedCycleStart
@@ -173,16 +175,18 @@ func (handler *Handler) applyUpsertDayAcknowledgements(c fiber.Ctx, request upse
 }
 
 func (handler *Handler) respondUpsertDaySuccess(c fiber.Ctx, day time.Time, entry models.DailyLog, feedback services.DayFeedbackState, feedbackErr error) error {
-	switch responseFormat(c) {
-	case httpx.ResponseFormatHTML:
+	if dayFormNavigation(c) {
 		// A day form submitted without JavaScript: send the browser back to the
-		// page the form was on. The calendar editor names itself in a hidden
-		// `source` field; the dashboard form is the default.
+		// page the form was on. The calendar editor names itself with
+		// source=calendar, a hidden field (FormValue reads the query string
+		// first, so the ?source= DeleteDay uses works here too); the dashboard
+		// form is the default.
 		if c.FormValue("source") == "calendar" {
-			return c.Redirect().Status(fiber.StatusSeeOther).To(calendarDayPath(day))
+			return redirectOrJSON(c, calendarDayPath(day))
 		}
-		return c.Redirect().Status(fiber.StatusSeeOther).To("/dashboard")
-	case httpx.ResponseFormatHTMX:
+		return redirectOrJSON(c, "/dashboard")
+	}
+	if isHTMX(c) {
 		c.Set("HX-Trigger", "calendar-day-updated")
 		if feedbackErr == nil {
 			if feedback.ShowSpottingCycleWarning {
@@ -260,6 +264,13 @@ func (handler *Handler) MarkCycleStart(c fiber.Ctx) error {
 		return redirectOrJSON(c, calendarDayPath(day))
 	}
 	return redirectOrJSON(c, "/dashboard")
+}
+
+// dayFormNavigation reports whether a day write came from a day form submitted
+// without JavaScript. A client that sends PUT or DELETE itself, form body or
+// not, keeps its JSON or 204.
+func dayFormNavigation(c fiber.Ctx) bool {
+	return arrivedAsOverriddenFormPost(c) && responseFormat(c) == httpx.ResponseFormatHTML
 }
 
 // calendarDayPath is the calendar page opened on day, where a calendar form
