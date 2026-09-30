@@ -74,14 +74,13 @@ var domAttrConsumerResidual = map[string]string{
 	"data-temperature-unit":   "the unit is rendered in the field label; no reader",
 
 	// Container and landmark hooks: addressable by design, addressed by nobody.
-	"data-cycle-stack-rows":             "stats cycle-stack list container",
-	"data-dashboard-quick-actions":      "quick-action row container; the buttons carry their own data-quick-action",
-	"data-dashboard-shell":              "dashboard page shell",
-	"data-export-presets":               "export preset row container",
-	"data-onboarding-usage-goal":        "usage-goal step container; the spec addresses the choices",
-	"data-settings-reminders-form":      "reminder settings form container",
-	"data-stats-factor-patterns":        "stats factor-pattern grid container",
-	"data-usage-goal-quick-switch-form": "quick-switch form container; the spec addresses data-usage-goal-choice",
+	"data-cycle-stack-rows":        "stats cycle-stack list container",
+	"data-dashboard-quick-actions": "quick-action row container; the buttons carry their own data-quick-action",
+	"data-dashboard-shell":         "dashboard page shell",
+	"data-export-presets":          "export preset row container",
+	"data-onboarding-usage-goal":   "usage-goal step container; the spec addresses the choices",
+	"data-settings-reminders-form": "reminder settings form container",
+	"data-stats-factor-patterns":   "stats factor-pattern grid container",
 
 	// Control hooks nothing drives.
 	"data-day-editor-cancel":           "calendar day-editor cancel button",
