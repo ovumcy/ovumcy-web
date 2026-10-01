@@ -31,7 +31,10 @@ func decodeJSONBody(t *testing.T, body io.Reader, target any) {
 // These regressions pin the no-JS full-page fallback contract: a plain
 // browser form submission (no HX-Request header, no Accept: application/json)
 // must land on a 303 redirect with the outcome carried in the sealed flash
-// cookie, never a bare error body. The HTMX/JSON negotiation paths are pinned
+// cookie, never a bare error body. The exception is a refusal before the
+// handler on the day forms, the usage-goal switch and the cycle settings form,
+// and a validation refusal of a day: it answers a page with a fixed link back
+// and sets no cookie, flash included (pinned in day_form_refusal_page_test.go). The HTMX/JSON negotiation paths are pinned
 // by the per-domain aggregators; only the full-page tails live here.
 
 // newFullPageFallbackApp mirrors newOnboardingTestAppWithOptions but returns

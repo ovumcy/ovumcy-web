@@ -42,7 +42,6 @@ var plainFormRefusalExemptions = []plainFormRefusalExemption{
 	{file: "components/settings_account.html", action: "/api/v1/users/current/password/step-up", reason: plainFormRefusalGap},
 	{file: "components/settings_account.html", action: "/api/v1/users/current/profile", reason: plainFormRefusalGap},
 	{file: "components/settings_account.html", action: "/api/v1/users/current/recovery-code", reason: plainFormRefusalGap},
-	{file: "components/settings_cycle.html", action: "/api/v1/users/current/cycle", reason: plainFormRefusalGap},
 	{file: "components/settings_cycle.html", action: "/api/v1/users/current/reminders", reason: plainFormRefusalGap},
 	{file: "components/settings_danger_zone.html", action: "/api/v1/users/current", reason: plainFormRefusalGap},
 	{file: "components/settings_danger_zone.html", action: "/api/v1/users/current/data-wipe", reason: plainFormRefusalGap},
@@ -56,10 +55,6 @@ var plainFormRefusalExemptions = []plainFormRefusalExemption{
 	{file: "components/settings_symptoms.html", action: "/api/v1/symptoms/2026-09-27", reason: plainFormRefusalGap},
 	{file: "components/settings_symptoms.html", action: "/api/v1/symptoms/2026-09-27/restore", reason: plainFormRefusalGap},
 	{file: "components/settings_tracking.html", action: "/api/v1/users/current/tracking", reason: plainFormRefusalGap},
-	{file: "dashboard.html", action: "/api/v1/days/2026-09-27", reason: plainFormRefusalGap},
-	{file: "dashboard.html", action: "/api/v1/users/current/cycle", reason: plainFormRefusalGap},
-	{file: "day_editor_partial.html", action: "/api/v1/days/2026-09-27", reason: plainFormRefusalGap},
-	{file: "day_editor_partial.html", action: "/api/v1/days/2026-09-27?source=calendar", reason: plainFormRefusalGap},
 	{file: "settings_2fa.html", action: "/api/v1/users/current/2fa", reason: plainFormRefusalGap},
 }
 

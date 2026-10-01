@@ -479,6 +479,7 @@
   "dashboard.bbt_range_error": "Enter a value between %s and %s %s.",
   "dashboard.error.invalid_cervical_mucus": "Select a valid cervical mucus value.",
   "dashboard.error.invalid_pregnancy_test": "Select a valid pregnancy test value.",
+  "dashboard.error.invalid_day_entry": "This entry could not be saved. Check the date and the values you entered, then try again.",
   "dashboard.pregnancy_test": "Pregnancy test",
   "dashboard.pregnancy_test.none": "None",
   "dashboard.pregnancy_test.negative": "Negative",

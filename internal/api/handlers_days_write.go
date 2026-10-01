@@ -72,8 +72,7 @@ var (
 func (handler *Handler) UpsertDay(c fiber.Ctx) error {
 	request, spec, ok := handler.resolveUpsertDayRequest(c)
 	if !ok {
-		handler.logMutationError(c, dayUpsertMutation, spec)
-		return handler.respondMappedError(c, spec)
+		return handler.failDayMutation(c, dayUpsertMutation, spec)
 	}
 
 	entry, err := handler.dayService.UpsertDayEntryWithAutoFill(
@@ -84,7 +83,7 @@ func (handler *Handler) UpsertDay(c fiber.Ctx) error {
 		request.location,
 	)
 	if err != nil {
-		return handler.failMutation(c, dayUpsertMutation, mapDayUpsertError(err))
+		return handler.failDayMutation(c, dayUpsertMutation, mapDayUpsertError(err))
 	}
 
 	feedback, feedbackErr := handler.applyUpsertDayAcknowledgements(c, request)
@@ -271,6 +270,20 @@ func (handler *Handler) MarkCycleStart(c fiber.Ctx) error {
 // not, keeps its JSON or 204.
 func dayFormNavigation(c fiber.Ctx) bool {
 	return arrivedAsOverriddenFormPost(c) && responseFormat(c) == httpx.ResponseFormatHTML
+}
+
+// failDayMutation records and answers a refused day write or delete. A day form
+// submitted without JavaScript has no inline error to fill, so its validation
+// refusal is answered 422 on the same page-shaped refusal as a refusal before
+// the handler: the localized message and a link back to the page the form is
+// on. Only the status changes, and only for that transport: a JSON or HTMX
+// client keeps the 400 and its envelope, and the long-period acknowledgement
+// stays off on this path (dayFormNavigation).
+func (handler *Handler) failDayMutation(c fiber.Ctx, kind healthMutationKind, spec APIErrorSpec) error {
+	if dayFormNavigation(c) && spec.Category == APIErrorCategoryValidation && spec.Status == fiber.StatusBadRequest {
+		spec.Status = fiber.StatusUnprocessableEntity
+	}
+	return handler.failMutation(c, kind, spec)
 }
 
 // calendarDayPath is the calendar page opened on day, where a calendar form

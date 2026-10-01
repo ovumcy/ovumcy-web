@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -43,6 +44,10 @@ type onboardingTestAppOptions struct {
 	oidcService      OIDCWorkflowService
 	auditLogEnabled  bool
 	assetVersion     string
+	// envelopeTransportErrors routes a *fiber.Error the app returns (a CSRF
+	// refusal) through RespondTransportError, as the production error handler
+	// does; without it the bare test app answers fiber's default text/plain.
+	envelopeTransportErrors bool
 	// oidcEnabled and oidcLogoutMode are the two halves of the configuration
 	// the provider-logout gate reads at sign-out time. The package default
 	// leaves OIDC off and the mode at its `local` default, under which a
@@ -126,7 +131,17 @@ func newOnboardingTestAppWithOptions(t *testing.T, options onboardingTestAppOpti
 	handler.recoveryCodeIssuanceFault = options.recoveryCodeIssuanceFault
 	handler.now = options.now
 
-	app := fiber.New(fiber.Config{BodyLimit: options.bodyLimit})
+	appConfig := fiber.Config{BodyLimit: options.bodyLimit}
+	if options.envelopeTransportErrors {
+		appConfig.ErrorHandler = func(c fiber.Ctx, err error) error {
+			var fiberErr *fiber.Error
+			if errors.As(err, &fiberErr) {
+				return handler.RespondTransportError(c, fiberErr.Code)
+			}
+			return handler.RespondTransportError(c, fiber.StatusInternalServerError)
+		}
+	}
+	app := fiber.New(appConfig)
 	app.Use(MethodOverride(handler))
 	app.Use(handler.LanguageMiddleware)
 	if options.enableCSRF {
