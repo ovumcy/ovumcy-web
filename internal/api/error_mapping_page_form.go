@@ -63,9 +63,12 @@ func plainPageFormBackPath(c fiber.Ctx) (string, bool) {
 
 // dayFormBackPath is the page a day form was posted from: the calendar day when
 // the form says source=calendar and the date parses, the dashboard otherwise.
+// The day editor says it in a hidden field and the cycle-start form in its
+// query; FormValue reads the query first, then the body, as the success path
+// does (respondUpsertDaySuccess).
 func dayFormBackPath(c fiber.Ctx, date string) string {
 	day, err := time.Parse("2006-01-02", date)
-	if err == nil && c.Query("source") == "calendar" {
+	if err == nil && c.FormValue("source") == "calendar" {
 		return calendarDayPath(day)
 	}
 	return "/dashboard"
