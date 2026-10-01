@@ -184,8 +184,11 @@ func TestDashboardOffersAQuickUsageGoalSwitchForOwner(t *testing.T) {
 		t.Fatalf("expected one form per offered mode, got %d forms for %d modes", len(forms), len(choices))
 	}
 	for _, form := range forms {
-		if got := htmlAttr(form, "hx-patch"); got != "/api/v1/users/current/cycle" {
-			t.Fatalf("expected the quick switch to patch the existing cycle endpoint, got %q", got)
+		if got := htmlAttr(form, "hx-patch"); got != "/api/v1/users/current/cycle?source=dashboard" {
+			t.Fatalf("expected the quick switch to patch the existing cycle endpoint, marked as the dashboard's, got %q", got)
+		}
+		if got := htmlAttr(form, "action"); got != "/api/v1/users/current/cycle?source=dashboard" {
+			t.Fatalf("expected the quick switch to post to the same marked endpoint without JavaScript, got %q", got)
 		}
 		// A goal-only patch: nothing else about the cycle may ride along, or a
 		// stale dashboard would silently rewrite settings changed elsewhere.

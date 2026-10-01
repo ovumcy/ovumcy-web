@@ -3196,9 +3196,9 @@ paths:
             A caller that asks for JSON gets the JSON envelope. A browser form submitted without
             JavaScript — a `POST` carrying the hidden `_method=PATCH` field, with an `Accept`
             that names `text/html` — gets the shared localized status fragment as `text/html`
-            instead, ending with a link back to `/settings` when the form's `source` query
-            parameter is `settings` and to `/dashboard` otherwise (the dashboard's usage-goal
-            switch posts here without one). The link is fixed by the route, and no cookie,
+            instead, ending with a link back to `/dashboard` when the form's `source` query
+            parameter is `dashboard` (the dashboard's usage-goal switch) and to `/settings`
+            otherwise (the settings form posts here without one). The link is fixed by the route, and no cookie,
             flash included, is set.
           content:
             text/html:

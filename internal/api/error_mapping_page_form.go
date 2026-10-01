@@ -41,11 +41,12 @@ func plainPageFormBackPath(c fiber.Ctx) (string, bool) {
 		return "/onboarding?step=2", true
 	case "/api/v1/users/current/cycle":
 		// The same route serves the dashboard's goal switch and the settings
-		// section; the settings form names itself, the dashboard is the default.
-		if c.Query("source") == "settings" {
-			return "/settings", true
+		// section; the dashboard form names itself, and anything else lands on
+		// settings, so an odd value is never echoed.
+		if c.Query("source") == "dashboard" {
+			return "/dashboard", true
 		}
-		return "/dashboard", true
+		return "/settings", true
 	}
 	rest, ok := strings.CutPrefix(path, "/api/v1/days/")
 	if !ok {
