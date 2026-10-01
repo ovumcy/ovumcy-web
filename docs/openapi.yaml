@@ -2938,12 +2938,14 @@ paths:
       tags: [settings]
       summary: Update interface preferences (owner only).
       description: |
-        A refusal raised before the handler runs (a stale CSRF token, a rate limit) answers a
+        A refusal raised before the handler runs (a stale CSRF token) answers a
         browser form submission without JavaScript — `Accept` names `text/html`, the form's
         hidden `_method` field makes it arrive as PATCH — with the shared localized status
         fragment as `text/html`, under the refusal's own status and key, ending with a link back
         to `/settings`, instead of the JSON envelope. Every other caller, one that sends PATCH
         itself included, keeps the JSON envelope.
+        A rate limit is not answered so: a browser is redirected `303` to `/settings` with the
+        refusal in a flash message, as before, and a JSON caller keeps the `429` envelope.
       requestBody:
         required: true
         content:
@@ -2965,12 +2967,14 @@ paths:
       tags: [settings]
       summary: Update tracking preferences (owner only).
       description: |
-        A refusal raised before the handler runs (a stale CSRF token, a rate limit) answers a
+        A refusal raised before the handler runs (a stale CSRF token) answers a
         browser form submission without JavaScript — `Accept` names `text/html`, the form's
         hidden `_method` field makes it arrive as PATCH — with the shared localized status
         fragment as `text/html`, under the refusal's own status and key, ending with a link back
         to `/settings`, instead of the JSON envelope. Every other caller, one that sends PATCH
         itself included, keeps the JSON envelope.
+        A rate limit is not answered so: a browser is redirected `303` to `/settings` with the
+        refusal in a flash message, as before, and a JSON caller keeps the `429` envelope.
       requestBody:
         required: true
         content:
@@ -3260,12 +3264,14 @@ paths:
         how many days ahead the dashboard period/ovulation reminder appears. The
         value is clamped to 0–14; it does not bump auth_session_version.
 
-        A refusal raised before the handler runs (a stale CSRF token, a rate limit) answers a
+        A refusal raised before the handler runs (a stale CSRF token) answers a
         browser form submission without JavaScript — `Accept` names `text/html`, the form's
         hidden `_method` field makes it arrive as PATCH — with the shared localized status
         fragment as `text/html`, under the refusal's own status and key, ending with a link back
         to `/settings`, instead of the JSON envelope. Every other caller, one that sends PATCH
         itself included, keeps the JSON envelope.
+        A rate limit is not answered so: a browser is redirected `303` to `/settings` with the
+        refusal in a flash message, as before, and a JSON caller keeps the `429` envelope.
       requestBody:
         required: true
         content:
