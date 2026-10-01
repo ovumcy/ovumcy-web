@@ -352,7 +352,7 @@ func TestNoJSPatchFormsPerformTheActionTheyName(t *testing.T) {
 		},
 		"cycle": func(t *testing.T) noJSFormCase {
 			return patchCase(t, "nojs-cycle@example.com", "/settings",
-				formWithAttr("hx-patch", "/api/v1/users/current/cycle"), "/settings",
+				formWithAttr("hx-patch", "/api/v1/users/current/cycle?source=settings"), "/settings",
 				url.Values{"cycle_length": {"31"}, "period_length": {"4"}, "usage_goal": {"health"}},
 				func(t *testing.T, ctx settingsSecurityTestContext) bool {
 					user := reloadUserForNoJSForm(t, ctx)
