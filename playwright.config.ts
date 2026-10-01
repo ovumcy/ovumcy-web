@@ -41,10 +41,17 @@ export default defineConfig({
     },
     {
       name: 'firefox',
-      // No video on firefox: the screencast recorder is one more consumer of a process
-      // that stalls as a whole under CI load (WEB-79: every subresource served in ~110ms
-      // and 'load' still never fired). Trace and screenshot on failure remain.
-      use: { ...devices['Desktop Firefox'], video: 'off' },
+      // The app sends COOP same-origin, so a fresh context's first navigation swaps the
+      // browsing context, and Playwright's firefox (<= r1543, @playwright/test 1.63) can
+      // reuse a stale juggler channel and never settle the goto: microsoft/playwright#42731,
+      // fixed in r1551. Drop this pref once the installed firefox is r1551 or later.
+      // COOP is still enforced by chromium and webkit here, and the header is pinned in Go.
+      use: {
+        ...devices['Desktop Firefox'],
+        launchOptions: {
+          firefoxUserPrefs: { 'browser.tabs.remote.useCrossOriginOpenerPolicy': false },
+        },
+      },
     },
     {
       name: 'webkit',
