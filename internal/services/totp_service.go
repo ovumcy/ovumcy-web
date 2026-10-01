@@ -121,9 +121,10 @@ func (service *TOTPService) RecordFailure(secretKey []byte, clientKey string, us
 }
 
 // ResetAttempts clears the succeeding client's failure counter after a
-// successful sign-in verification. Its callers (the sign-in TOTP step and the
-// pre-session OIDC link confirmation) run without a session, so the account's
-// identity counter is left to age out (see AuthAttemptPolicy.ResetClient);
+// successful sign-in verification. Its one caller, the sign-in TOTP step, runs
+// it only after the session is minted, so a correct code whose session could
+// not be issued keeps the count. That step runs without a session, so the
+// account's identity counter is left to age out (see AuthAttemptPolicy.ResetClient);
 // secretKey and userID are kept so the call names the same operands as its
 // check and its failure.
 func (service *TOTPService) ResetAttempts(secretKey []byte, clientKey string, userID uint) {

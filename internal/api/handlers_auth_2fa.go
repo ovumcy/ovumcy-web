@@ -120,7 +120,6 @@ func (handler *Handler) VerifyTOTPLogin(c fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 
-	handler.totpService.ResetAttempts(handler.secretKey, c.IP(), userID)
 	handler.clearTOTPPendingCookie(c)
 
 	sessionID, err := handler.setAuthCookie(c, &user, rememberMe)
@@ -143,22 +142,21 @@ func (handler *Handler) VerifyTOTPLogin(c fiber.Ctx) error {
 	// just minted.
 	if oidcLogoutStateID != "" {
 		if err := handler.moveOIDCLogoutState(c.Context(), oidcLogoutStateID, sessionID, userID, time.Now()); err != nil {
-			// codecov:ignore:start -- defensive: this call site always passes a
-			// non-empty, freshly Saved oldSessionID against the real DB-backed
-			// service, so a non-nil error here can only come from a genuine storage
-			// fault; moveOIDCLogoutState's own arms are unit-tested directly against
-			// a stub store (handlers_auth_oidc_move_logout_state_test.go)
 			spec := authSessionCreateErrorSpec()
 			handler.logSecurityError(c, "auth.2fa", spec)
 			handler.clearSessionEndCookies(c)
 			return handler.respondMappedError(c, spec)
-			// codecov:ignore:end
 		}
 	} else {
 		_ = handler.oidcLogoutStateSvc.Delete(c.Context(), sessionID, userID)
 	}
 	handler.clearOIDCLogoutBridgeCookie(c)
 
+	// The client's failure count is forgiven only now that the session is
+	// minted and its provider-logout state has followed it: a correct code
+	// whose session could not be issued proved nothing lasting, so a refusal
+	// above keeps the count it found.
+	handler.totpService.ResetAttempts(handler.secretKey, c.IP(), userID)
 	handler.logSecurityEvent(c, "auth.2fa", "success")
 	return redirectOrJSON(c, "/")
 }

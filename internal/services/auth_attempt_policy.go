@@ -56,9 +56,8 @@ func (policy *AuthAttemptPolicy) AddFailure(secretKey []byte, clientKey string, 
 // The policy has two success resets, and each caller names the one its flow
 // needs; there is deliberately no plain Reset to fall back on.
 //
-// ResetClient is for flows reachable WITHOUT a session (password sign-in,
-// recovery-code sign-in, the password-reset start, the sign-in TOTP step, the
-// pre-session OIDC link confirmation). It forgives the failures of the client
+// ResetClient is for flows reachable WITHOUT a session (password sign-in, the
+// password-reset start, the sign-in TOTP step). It forgives the failures of the client
 // that just succeeded — its own client bucket, and nothing else. The identity
 // bucket is left to age out of its window: it pools the failures of EVERY
 // client that tried this identity, so clearing it on one client's success
