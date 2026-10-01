@@ -57,12 +57,12 @@ func (policy *AuthAttemptPolicy) AddFailure(secretKey []byte, clientKey string, 
 // needs; there is deliberately no plain Reset to fall back on.
 //
 // ResetClient is for flows reachable WITHOUT a session (password sign-in, the
-// password-reset start, the sign-in TOTP step). It forgives the failures of the client
-// that just succeeded — its own client bucket, and nothing else. The identity
-// bucket is left to age out of its window: it pools the failures of EVERY
-// client that tried this identity, so clearing it on one client's success
-// would let the owner's own sign-in wipe the budget an attacker elsewhere had
-// spent guessing at the same account.
+// password-reset start, the sign-in TOTP step). It forgives the failures of
+// the client that just succeeded — its own client bucket, and nothing else.
+// The identity bucket is left to age out of its window: it pools the failures
+// of EVERY client that tried this identity, so clearing it on one client's
+// success would let the owner's own sign-in wipe the budget an attacker
+// elsewhere had spent guessing at the same account.
 func (policy *AuthAttemptPolicy) ResetClient(clientKey string) {
 	policy.limiter.ResetAll(policy.keys(nil, clientKey, ""))
 }
