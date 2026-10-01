@@ -3774,7 +3774,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
         '303':
-          description: "Browser redirect to `/settings`, which reads the success flash, when `Accept: application/json` is not set."
+          description: "Browser redirect when `Accept: application/json` is not set: to `/settings` with the success flash, or with the refusal flash for a blank password or a spent attempt budget; to `/login` when the session was revoked during the disable."
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403':
           description: |
@@ -3787,8 +3787,9 @@ paths:
             instead, ending with a link back to `/settings/2fa`, the page that hosts the form.
             The link is fixed by the route, and no cookie, flash included, is set. A blank
             password, and a spent attempt budget, still flash onto `/settings`. A wrong password
-            answers this same page under `401` with the `invalid credentials` key, and any other
-            refusal the handler raises answers it with its own status and key.
+            answers this same page under `401` with the `invalid credentials` key. A session
+            revoked during the disable is redirected `303` to `/login`, and any other refusal the
+            handler raises answers this page with its own status and key.
           content:
             text/html:
               schema: { type: string }
