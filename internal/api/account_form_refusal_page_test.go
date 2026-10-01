@@ -210,6 +210,34 @@ func TestNoJSTwoFactorEnrolWrongCodeAnswersAPageKeepingItsStatus(t *testing.T) {
 	assertRefusalPageCarrying(t, response, http.StatusUnauthorized, englishCopy(t, services.AuthErrorTranslationKey("totp invalid code")), "/settings/2fa")
 }
 
+// TestNoJSTwoFactorDisableRefusalsSplitByTheirTarget pins the two answers the
+// disable form documents: a wrong password is a shared-envelope refusal and
+// reads as the 401 page back to the two-factor page, while a blank password is
+// a settings-form refusal and keeps its flash redirect to /settings.
+func TestNoJSTwoFactorDisableRefusalsSplitByTheirTarget(t *testing.T) {
+	t.Parallel()
+
+	c := accountFormRefusalCases()["2fa disable"]
+	t.Run("wrong password", func(t *testing.T) {
+		t.Parallel()
+		subject := c.build(t, "refusal-2fa-disable-wrong@example.com")
+		form := renderNoJSForm(t, subject.app, c.page, subject.cookies, c.match)
+		response := form.submit(t, subject.app, url.Values{"password": {"NotThePassword9"}})
+		assertRefusalPageCarrying(t, response, http.StatusUnauthorized, englishCopy(t, services.AuthErrorTranslationKey("invalid credentials")), "/settings/2fa")
+	})
+	t.Run("blank password", func(t *testing.T) {
+		t.Parallel()
+		subject := c.build(t, "refusal-2fa-disable-blank@example.com")
+		form := renderNoJSForm(t, subject.app, c.page, subject.cookies, c.match)
+		response := form.submit(t, subject.app, url.Values{"password": {" "}})
+		defer func() { _ = response.Body.Close() }()
+		assertStatusCode(t, response, http.StatusSeeOther)
+		if location := response.Header.Get("Location"); location != "/settings" {
+			t.Fatalf("Location %q, want /settings", location)
+		}
+	})
+}
+
 // TestAccountFormRefusalsKeepTheirEnvelopeForOtherClients pins that the page is
 // for a form submitted without JavaScript: a caller that asks for JSON, one
 // that sends the real verb and an htmx request keep what they always had.
