@@ -9,10 +9,12 @@
 //
 //	changelogd check
 //	    CI gate for pull requests. Env BASE_REF (default origin/main) names the
-//	    base to diff against. Passes when the branch adds at least one fragment
-//	    under changelog.d/ — one of them named changelog.d/<slug>.md, the slug
+//	    base to diff against. Passes when the branch adds exactly one fragment
+//	    under changelog.d/, named changelog.d/<slug>.md, the slug
 //	    being the branch (GITHUB_HEAD_REF in CI, else the current branch)
-//	    without its type/ prefix — or when it edits CHANGELOG.md itself in a way only
+//	    without its type/ prefix — setting GITHUB_HEAD_REF locally overrides the
+//	    current branch, e.g. to check a detached worktree against the name its
+//	    pull request will carry — or when it edits CHANGELOG.md itself in a way only
 //	    release assembly does (adding the "## [x.y.z]" heading of a new release,
 //	    not re-typing an existing one); every added or modified
 //	    fragment must be valid. Independently of either, a CHANGELOG.md edit
@@ -218,9 +220,26 @@ func check(root, baseRef, headRef string, git gitRunner) (string, error) {
 
 	// A fragment on the base is another branch's entry awaiting release; only
 	// assembly may remove it, or its entry never reaches CHANGELOG.md.
+	// A fragment whose base content is the none marker carries no entry, so
+	// removing it loses nothing; removedFragments asks for that content.
 	var removed []string
 	if !assembly {
-		removed = removedFragments(nameStatus)
+		mergeBase := ""
+		atBase := func(path string) (string, error) {
+			if mergeBase == "" {
+				out, mbErr := git(root, "merge-base", baseRef, "HEAD")
+				if mbErr != nil {
+					return "", fmt.Errorf("merge base of %s and HEAD: %w", baseRef, mbErr)
+				}
+				mergeBase = strings.TrimSpace(out)
+			}
+			return git(root, "show", mergeBase+":"+path)
+		}
+		atHead := func(path string) (string, error) { return git(root, "show", "HEAD:"+path) }
+		removed, err = removedFragments(nameStatus, atBase, atHead)
+		if err != nil {
+			return "", err
+		}
 	}
 
 	if len(fragmentProblems) > 0 || len(offending) > 0 || len(removed) > 0 {
@@ -245,49 +264,91 @@ func check(root, baseRef, headRef string, git gitRunner) (string, error) {
 		return missingFragmentHelp(headRef), nil
 	}
 	if headRef == "" {
+		if len(added) > 1 {
+			return extraFragmentsHelp(fragmentNameHelp(headRef), added), nil
+		}
 		return "", nil
 	}
 	want := fragmentPathForBranch(headRef)
+	named := false
 	for _, fragment := range added {
 		if fragment == want {
-			return "", nil
+			named = true
 		}
 	}
-	return misnamedFragmentHelp(headRef, want, added), nil
+	switch {
+	case !named:
+		return misnamedFragmentHelp(headRef, want, added), nil
+	case len(added) > 1:
+		return extraFragmentsHelp(want, added), nil
+	}
+	return "", nil
 }
+
+func extraFragmentsHelp(want string, added []string) string {
+	return "changelog fragment check FAILED: this branch adds more than one fragment.\n" +
+		"\n" +
+		"It adds: " + strings.Join(added, ", ") + "\n" +
+		"A branch adds exactly one fragment, " + want + ": merge the entries into it, or\n" +
+		"fold the others into it, so release assembly does not carry two entries for one change.\n"
+}
+
+// fileReader returns the content of a path at one fixed revision.
+type fileReader func(path string) (string, error)
 
 // removedFragments returns the changelog.d/*.md paths present on the base that
 // this branch deletes (D) or renames away (the source of an R). Release
-// assembly is the only diff allowed to do either.
-func removedFragments(nameStatus string) []string {
+// assembly is the only diff allowed to do either. A fragment whose content on
+// the base is the none marker (atBase) holds no entry, so deleting it is
+// allowed; a rename is allowed only when its destination (atHead) is a none
+// fragment too, so a none fragment cannot be renamed into a real entry.
+func removedFragments(nameStatus string, atBase, atHead fileReader) ([]string, error) {
 	var removed []string
 	for _, line := range strings.Split(nameStatus, "\n") {
 		fields := strings.Split(strings.TrimRight(line, "\r"), "\t")
 		if len(fields) < 2 || fields[0] == "" {
 			continue
 		}
-		var path string
+		var path, dest string
 		switch {
 		case fields[0] == "D":
 			path = fields[1]
 		case fields[0][0] == 'R' && len(fields) >= 3:
-			path = fields[1]
+			path, dest = fields[1], fields[2]
 		default:
 			continue
 		}
-		if strings.HasPrefix(path, fragmentDir+"/") && strings.HasSuffix(path, ".md") {
-			removed = append(removed, path)
+		if !strings.HasPrefix(path, fragmentDir+"/") || !strings.HasSuffix(path, ".md") {
+			continue
 		}
+		base, err := atBase(path)
+		if err != nil {
+			return nil, fmt.Errorf("read %s at the merge base: %w", path, err)
+		}
+		if isNoneMarker(base) {
+			if dest == "" {
+				continue
+			}
+			content, err := atHead(dest)
+			if err != nil {
+				return nil, fmt.Errorf("read %s at HEAD: %w", dest, err)
+			}
+			if isNoneMarker(content) {
+				continue
+			}
+		}
+		removed = append(removed, path)
 	}
 	sort.Strings(removed)
-	return removed
+	return removed, nil
 }
 
 func removedFragmentHelp(removed []string) string {
 	return "\nThis branch deletes or renames a fragment another branch already landed:\n" +
 		"  " + strings.Join(removed, "\n  ") + "\n\n" +
-		"Its entry has not been released yet, and only release assembly removes a fragment. Correct a\n" +
-		"wrong fragment in place, and add this branch's own fragment beside it.\n"
+		"Its entry has not been released yet, and only release assembly removes a fragment (a fragment\n" +
+		"whose content is the none marker holds no entry and may be deleted). Correct a wrong fragment\n" +
+		"in place, and add this branch's own fragment beside it.\n"
 }
 
 // changedFragments returns every changelog.d/*.md path whose content this

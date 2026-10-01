@@ -538,10 +538,119 @@ func TestRemovedFragmentsCollectsDeletionsAndRenameSources(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := removedFragments(tc.nameStatus); strings.Join(got, ",") != strings.Join(tc.want, ",") {
+			landed := func(string) (string, error) { return "### Fixed\n\n- **Landed.**\n", nil }
+			got, err := removedFragments(tc.nameStatus, landed, landed)
+			if err != nil {
+				t.Fatalf("removedFragments: %v", err)
+			}
+			if strings.Join(got, ",") != strings.Join(tc.want, ",") {
 				t.Fatalf("removedFragments(%q) = %v, want %v", tc.nameStatus, got, tc.want)
 			}
 		})
+	}
+}
+
+// A landed fragment whose content is the none marker (a reason may follow it)
+// holds no entry, so a branch may delete it; a real entry stays protected.
+func TestCheckAllowsDeletingALandedNoneFragmentButNotARealOne(t *testing.T) {
+	cases := []struct {
+		name    string
+		landed  string
+		refused bool
+	}{
+		{"none with a reason underneath", "none\n\nTest-only change; nothing observable.\n", false},
+		{"bare none", "none\n", false},
+		{"a real entry", "### Fixed\n\n- **Another branch's entry about the calendar feed token rotation.**\n", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := initRepo(t)
+			landOnMain(t, dir, "changelog.d/landed-elsewhere.md", tc.landed)
+			run(t, dir, "rm", "-q", "changelog.d/landed-elsewhere.md")
+			writeFile(t, dir, "changelog.d/web136-own.md", "none\n\nOwn fragment.\n")
+			commitAll(t, dir, "fix: drop another fragment")
+
+			failure, err := check(dir, "main", "fix/web136-own", gitOutput)
+			if err != nil {
+				t.Fatalf("check: %v", err)
+			}
+			if tc.refused != strings.Contains(failure, "changelog.d/landed-elsewhere.md") {
+				t.Fatalf("refused = %v expected, got:\n%s", tc.refused, failure)
+			}
+			if !tc.refused && failure != "" {
+				t.Fatalf("expected the gate to pass, got:\n%s", failure)
+			}
+		})
+	}
+}
+
+// Renaming a landed none fragment into a real entry is not a removal of
+// nothing: the destination carries text, so the rename stays refused.
+func TestCheckRefusesRenamingALandedNoneFragmentIntoARealEntry(t *testing.T) {
+	const noneBody = "none\n\nA long enough reason that rename detection pairs the two paths.\nSecond line so the similarity stays above the threshold.\nThird line likewise.\n"
+	cases := []struct {
+		name    string
+		renamed string
+		refused bool
+	}{
+		{"rewritten into a real entry", "### Fixed\n\n- **Now a real entry.**\n\nA long enough reason that rename detection pairs the two paths.\nSecond line so the similarity stays above the threshold.\nThird line likewise.\n", true},
+		{"still none", noneBody, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := initRepo(t)
+			landOnMain(t, dir, "changelog.d/landed-elsewhere.md", noneBody)
+			run(t, dir, "rm", "-q", "changelog.d/landed-elsewhere.md")
+			writeFile(t, dir, "changelog.d/web136-renamed.md", tc.renamed)
+			commitAll(t, dir, "fix: rename the fragment")
+
+			nameStatus, err := gitOutput(dir, "diff", "--name-status", "--no-color", "-M", "main...HEAD")
+			if err != nil {
+				t.Fatalf("git diff: %v", err)
+			}
+			if !strings.HasPrefix(nameStatus, "R") {
+				t.Fatalf("fixture must make git report a rename, got:\n%s", nameStatus)
+			}
+			failure, err := check(dir, "main", "fix/web136-renamed", gitOutput)
+			if err != nil {
+				t.Fatalf("check: %v", err)
+			}
+			if tc.refused != strings.Contains(failure, "changelog.d/landed-elsewhere.md") {
+				t.Fatalf("refused = %v expected, got:\n%s", tc.refused, failure)
+			}
+		})
+	}
+}
+
+func TestCheckRefusesASecondAddedFragment(t *testing.T) {
+	dir := initRepo(t)
+	writeFile(t, dir, "changelog.d/web136-own.md", "### Fixed\n\n- **The entry.**\n")
+	writeFile(t, dir, "changelog.d/web136-extra.md", "### Fixed\n\n- **A second one.**\n")
+	commitAll(t, dir, "fix: two fragments")
+
+	failure, err := check(dir, "main", "fix/web136-own", gitOutput)
+	if err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	for _, want := range []string{"more than one fragment", "changelog.d/web136-extra.md"} {
+		if !strings.Contains(failure, want) {
+			t.Errorf("failure does not mention %q:\n%s", want, failure)
+		}
+	}
+
+	// Without a known branch the name rule is skipped, but one entry is still the limit.
+	if failure, err := check(dir, "main", "", gitOutput); err != nil || !strings.Contains(failure, "more than one fragment") {
+		t.Fatalf("a detached head must still refuse a second fragment, got %q, %v", failure, err)
+	}
+}
+
+func TestCheckPassesOnTheSingleNamedFragment(t *testing.T) {
+	dir := initRepo(t)
+	writeFile(t, dir, "changelog.d/web136-own.md", "### Fixed\n\n- **The entry.**\n")
+	commitAll(t, dir, "fix: one fragment")
+
+	if failure, err := check(dir, "main", "fix/web136-own", gitOutput); err != nil || failure != "" {
+		t.Fatalf("the single correctly named fragment must pass, got %q, %v", failure, err)
 	}
 }
 
