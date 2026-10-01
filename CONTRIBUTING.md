@@ -193,6 +193,12 @@ header plus the entry:
   heading (assembly), whether or not a fragment is added beside it. Re-typing an existing heading,
   such as a date correction, is not assembly: that heading belongs to its released section, so
   correcting it is allowed, and it never licenses an edit above it.
+- A pull request adds exactly one fragment: a second added fragment is refused, and so is deleting
+  or renaming away a fragment another branch landed, unless that fragment's content is `none`
+  (it holds no entry). A `none` fragment renamed into a real entry stays refused. To check the
+  naming rule locally against the branch name a pull request will carry — on a detached worktree,
+  or under another branch name — set `GITHUB_HEAD_REF` (the variable CI provides); it overrides
+  the current branch.
 - Dependency updates opened by Dependabot are exempt: the check stays required for them but returns
   success without a fragment, since the bot cannot write one. Nothing collects their entries
   automatically either: at release time the `### Dependencies` section is compiled from
