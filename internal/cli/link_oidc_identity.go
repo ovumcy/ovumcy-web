@@ -160,6 +160,29 @@ func runLinkOIDCIdentityCommand(databaseConfig db.Config, oidcConfig security.OI
 		return err
 	}
 	defer closeDatabase()
+	return linkOIDCIdentity(
+		linkOIDCRepositories{Users: repositories.Users, OIDCIdentities: repositories.OIDCIdentities},
+		oidcClient, opts, normalizedEmail, issuer, output,
+	)
+}
+
+// linkOIDCUserRepository is the user storage the link needs: the account
+// lookups plus the session-version bump the link performs.
+type linkOIDCUserRepository interface {
+	services.AuthUserRepository
+	services.OperatorUserRepository
+	services.OIDCUserStore
+}
+
+// linkOIDCRepositories is the storage linkOIDCIdentity runs against. It is
+// narrower than db.Repositories so a test can hand it a user repository that
+// fails, which the concrete db.UserRepository cannot be made to do on demand.
+type linkOIDCRepositories struct {
+	Users          linkOIDCUserRepository
+	OIDCIdentities services.OIDCIdentityStore
+}
+
+func linkOIDCIdentity(repositories linkOIDCRepositories, oidcClient *security.OIDCClient, opts linkOIDCIdentityOptions, normalizedEmail string, issuer string, output io.Writer) error {
 	authService := services.NewAuthService(repositories.Users)
 	userService := services.NewOperatorUserService(repositories.Users, authService)
 

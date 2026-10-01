@@ -2,6 +2,8 @@ package cli
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -357,44 +359,46 @@ func TestRunLinkOIDCIdentityCommandRefusesInvalidDatabaseConfig(t *testing.T) {
 	}
 }
 
-// TestRunLinkOIDCIdentityCommandReportsAGenericLookupFailure drives a REAL
-// storage error (rather than a constructed sentinel) through
-// mapOperatorUserLookupError's default arm: with the row unreadable, the id
-// lookup fails for reasons that are not "not found", and the command must say
-// so rather than misreport it as an unknown id.
-func TestRunLinkOIDCIdentityCommandReportsAGenericLookupFailure(t *testing.T) {
+// failingLinkOIDCUserRepository fails the one read the id lookup performs and
+// panics on any other, so the test also proves the command stops there. The
+// embedded nil interface is deliberate: a call the test did not expect is a
+// nil dereference, not a silent pass.
+type failingLinkOIDCUserRepository struct {
+	linkOIDCUserRepository
+	err error
+}
+
+func (repo failingLinkOIDCUserRepository) FindByIDOptional(context.Context, uint) (models.User, bool, error) {
+	return models.User{}, false, repo.err
+}
+
+// TestLinkOIDCIdentityReportsAGenericLookupFailure drives a storage error —
+// injected through a failing user repository — through
+// mapOperatorUserLookupError's default arm: the id lookup fails for reasons
+// that are not "not found", and the command must say so rather than misreport
+// it as an unknown id.
+func TestLinkOIDCIdentityReportsAGenericLookupFailure(t *testing.T) {
 	t.Parallel()
 
-	databasePath := filepath.Join(t.TempDir(), "cli-link-oidc-lookup-failure.db")
-	user := createCLILinkOIDCUser(t, databasePath, "cli-link-lookup-failure@example.com")
-	corruptCLILinkOIDCUserRow(t, databasePath, user.ID)
+	storageErr := errors.New("storage unavailable")
+	opts, err := parseLinkOIDCIdentityArgs([]string{"--id", "7", "--issuer", "https://idp.example.com", "--subject", "sub"})
+	if err != nil {
+		t.Fatalf("parse args: %v", err)
+	}
 
-	err := runLinkOIDCIdentityCommand(
-		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
-		validLinkOIDCIdentityConfig(),
-		[]string{"--id", strconv.FormatUint(uint64(user.ID), 10), "--issuer", "https://idp.example.com", "--subject", "sub"},
-		nil,
+	err = linkOIDCIdentity(
+		linkOIDCRepositories{Users: failingLinkOIDCUserRepository{err: storageErr}},
+		security.NewOIDCClient(validLinkOIDCIdentityConfig()),
+		opts, "", "https://idp.example.com", nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "look up account") {
 		t.Fatalf("expected the generic lookup-failure wording, got %v", err)
 	}
-}
-
-// corruptCLILinkOIDCUserRow leaves the schema intact, so the command gets past
-// its schema check, and makes the one row unreadable.
-func corruptCLILinkOIDCUserRow(t *testing.T, databasePath string, userID uint) {
-	t.Helper()
-	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath})
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+	if !errors.Is(err, services.ErrOperatorUserLookupFailed) {
+		t.Fatalf("expected the refusal to wrap the lookup-failure sentinel, got %v", err)
 	}
-	sqlDB, err := database.DB()
-	if err != nil {
-		t.Fatalf("open sql db: %v", err)
-	}
-	defer func() { _ = sqlDB.Close() }()
-	if err := database.Exec("UPDATE users SET created_at = 'not a timestamp' WHERE id = ?", userID).Error; err != nil {
-		t.Fatalf("corrupt user %d: %v", userID, err)
+	if strings.Contains(err.Error(), "no account") || strings.Contains(err.Error(), "not found") {
+		t.Fatalf("a storage failure must not read as an unknown id, got %v", err)
 	}
 }
 
