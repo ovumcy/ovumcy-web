@@ -44,11 +44,13 @@ type totpChallengeResetFixture struct {
 	probeCookie   string
 }
 
-// newTOTPChallengeResetFixture drives a TOTP-gated OIDC sign-in up to the
-// challenge, so the pending cookie carries an opaque id under which the
-// callback staged provider-logout state, and seeds a second TOTP account whose
-// pending cookie the probe uses.
-func newTOTPChallengeResetFixture(t *testing.T, slug string) totpChallengeResetFixture {
+// newTOTPChallengeResetFixture seeds a TOTP account at the challenge and a
+// second TOTP account whose pending cookie the probe uses. With viaOIDC the
+// first account reaches the challenge through a TOTP-gated OIDC sign-in, so its
+// pending cookie carries an opaque id under which the callback staged
+// provider-logout state; without it the pending cookie is the one a local
+// password sign-in leaves, carrying no such id.
+func newTOTPChallengeResetFixture(t *testing.T, slug string, viaOIDC bool) totpChallengeResetFixture {
 	t.Helper()
 
 	stub := newStubOIDCWorkflowService(true)
@@ -61,8 +63,31 @@ func newTOTPChallengeResetFixture(t *testing.T, slug string) totpChallengeResetF
 
 	user := createOnboardingTestUser(t, database, "totp-reset-"+slug+"@example.com", "StrongPass1", true)
 	rawSecret := setupTOTPForUser(t, database, user.ID, secretKey)
+	pendingCookie := sealTOTPPendingCookieForTest(t, secretKey, user.ID, false)
+	if viaOIDC {
+		pendingCookie = stageTOTPGatedOIDCSignIn(t, app, database, stub, user.ID)
+	}
+
+	probeUser := createOnboardingTestUser(t, database, "totp-reset-probe-"+slug+"@example.com", "StrongPass1", true)
+	probeSecret := setupTOTPForUser(t, database, probeUser.ID, secretKey)
+
+	return totpChallengeResetFixture{
+		app:           app,
+		database:      database,
+		rawSecret:     rawSecret,
+		pendingCookie: pendingCookie,
+		probeSecret:   probeSecret,
+		probeCookie:   sealTOTPPendingCookieForTest(t, secretKey, probeUser.ID, false),
+	}
+}
+
+// stageTOTPGatedOIDCSignIn drives an OIDC sign-in of userID through start and
+// callback up to the TOTP challenge and returns the pending cookie it minted.
+func stageTOTPGatedOIDCSignIn(t *testing.T, app *fiber.App, database *gorm.DB, stub *stubOIDCWorkflowService, userID uint) string {
+	t.Helper()
+
 	var linked models.User
-	if err := database.First(&linked, user.ID).Error; err != nil {
+	if err := database.First(&linked, userID).Error; err != nil {
 		t.Fatalf("reload user: %v", err)
 	}
 	stub.result = services.OIDCLoginResult{
@@ -93,18 +118,7 @@ func newTOTPChallengeResetFixture(t *testing.T, slug string) totpChallengeResetF
 	if pendingCookie == nil || strings.TrimSpace(pendingCookie.Value) == "" {
 		t.Fatal("expected a TOTP pending cookie from the OIDC callback")
 	}
-
-	probeUser := createOnboardingTestUser(t, database, "totp-reset-probe-"+slug+"@example.com", "StrongPass1", true)
-	probeSecret := setupTOTPForUser(t, database, probeUser.ID, secretKey)
-
-	return totpChallengeResetFixture{
-		app:           app,
-		database:      database,
-		rawSecret:     rawSecret,
-		pendingCookie: totpPendingCookieName + "=" + pendingCookie.Value,
-		probeSecret:   probeSecret,
-		probeCookie:   sealTOTPPendingCookieForTest(t, secretKey, probeUser.ID, false),
-	}
+	return totpPendingCookieName + "=" + pendingCookie.Value
 }
 
 // sendTOTPChallengeJSON submits code as a JSON client and returns the status
@@ -182,7 +196,7 @@ func refuseOIDCLogoutStateSaveOnce(t *testing.T, database *gorm.DB) *atomic.Bool
 
 func TestTOTPChallengeResetsTheBudgetOnlyAfterTheSessionLands(t *testing.T) {
 	t.Run("refused session keeps the count", func(t *testing.T) {
-		fixture := newTOTPChallengeResetFixture(t, "refused")
+		fixture := newTOTPChallengeResetFixture(t, "refused", true)
 		spendTOTPChallengeFailures(t, fixture, services.DefaultTOTPAttemptsLimit-1)
 
 		fired := refuseOIDCLogoutStateSaveOnce(t, fixture.database)
@@ -206,22 +220,36 @@ func TestTOTPChallengeResetsTheBudgetOnlyAfterTheSessionLands(t *testing.T) {
 	})
 
 	t.Run("positive control: a landed session clears the count", func(t *testing.T) {
-		fixture := newTOTPChallengeResetFixture(t, "landed")
-		spendTOTPChallengeFailures(t, fixture, services.DefaultTOTPAttemptsLimit-1)
-
-		code, err := totp.GenerateCode(fixture.rawSecret, time.Now())
-		if err != nil {
-			t.Fatalf("GenerateCode: %v", err)
-		}
-		status, body := sendTOTPChallengeJSON(t, fixture.app, fixture.pendingCookie, code)
-		if status != http.StatusOK {
-			t.Fatalf("correct code: status = %d body = %s, want 200", status, body)
-		}
-
-		for attempt := range 2 {
-			status, body = sendTOTPChallengeJSON(t, fixture.app, fixture.probeCookie, wrongTOTPCode(t, fixture.probeSecret))
-			assertTOTPChallengeAnswer(t, status, body, http.StatusUnauthorized, "totp invalid code",
-				"probe code "+strconv.Itoa(attempt+1)+" after the landed session cleared the count")
-		}
+		assertLandedTOTPSessionClearsTheCount(t, newTOTPChallengeResetFixture(t, "landed", true))
 	})
+
+	// A local password sign-in reaches the challenge with no staged
+	// provider-logout state, so its success takes the other arm of the
+	// relocation; the count must clear there too.
+	t.Run("positive control: a local sign-in clears the count", func(t *testing.T) {
+		assertLandedTOTPSessionClearsTheCount(t, newTOTPChallengeResetFixture(t, "local", false))
+	})
+}
+
+// assertLandedTOTPSessionClearsTheCount spends one failure short of the limit,
+// lands a session with the correct code, and holds that the probe account then
+// still has two failures before this client is rate limited.
+func assertLandedTOTPSessionClearsTheCount(t *testing.T, fixture totpChallengeResetFixture) {
+	t.Helper()
+	spendTOTPChallengeFailures(t, fixture, services.DefaultTOTPAttemptsLimit-1)
+
+	code, err := totp.GenerateCode(fixture.rawSecret, time.Now())
+	if err != nil {
+		t.Fatalf("GenerateCode: %v", err)
+	}
+	status, body := sendTOTPChallengeJSON(t, fixture.app, fixture.pendingCookie, code)
+	if status != http.StatusOK {
+		t.Fatalf("correct code: status = %d body = %s, want 200", status, body)
+	}
+
+	for attempt := range 2 {
+		status, body = sendTOTPChallengeJSON(t, fixture.app, fixture.probeCookie, wrongTOTPCode(t, fixture.probeSecret))
+		assertTOTPChallengeAnswer(t, status, body, http.StatusUnauthorized, "totp invalid code",
+			"probe code "+strconv.Itoa(attempt+1)+" after the landed session cleared the count")
+	}
 }
