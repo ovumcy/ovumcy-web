@@ -325,7 +325,9 @@ func TestEveryNoJSPostFormActionAnswersARefusalAsAPage(t *testing.T) {
 
 	// The load-bearing sites, by name: a scan that lost the onboarding forms, the
 	// forms whose action is a template field, or the hidden override field would
-	// pass for a clean tree.
+	// pass for a clean tree. The danger-zone and egress anchors are the only place
+	// the guard names those templates: with the exemption list empty, a scan that
+	// lost them would regress silently.
 	seen := map[string]bool{}
 	for _, form := range forms {
 		seen[form.file+" "+form.action+" "+form.override] = true
