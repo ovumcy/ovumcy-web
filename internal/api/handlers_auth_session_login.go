@@ -75,10 +75,11 @@ func (handler *Handler) Login(c fiber.Ctx) error {
 		handler.logSecurityError(c, "auth.login", spec)
 		return handler.respondMappedError(c, spec)
 	}
+	clientKey := c.IP()
 	result, err := handler.loginService.Authenticate(
 		c.Context(),
 		handler.secretKey,
-		c.IP(),
+		clientKey,
 		credentials.Email,
 		credentials.Password,
 		30*time.Minute,
@@ -92,15 +93,14 @@ func (handler *Handler) Login(c fiber.Ctx) error {
 
 	// Each arm below forgives the client's failures only once the cookie that
 	// carries the sign-in onward has been issued: a correct password whose
-	// sign-in could not continue keeps the count it found. The client key is
-	// the one Authenticate was given.
+	// sign-in could not continue keeps the count it found.
 	if result.RequiresPasswordReset {
 		if err := handler.setResetPasswordCookie(c, result.ResetToken); err != nil {
 			spec := authResetTokenCreateErrorSpec()
 			handler.logSecurityError(c, "auth.login", spec)
 			return handler.respondMappedError(c, spec)
 		}
-		handler.loginService.ResetAttempts(c.IP())
+		handler.loginService.ResetAttempts(clientKey)
 		handler.logSecurityEvent(c, "auth.login", "reset_required")
 		if acceptsJSON(c) {
 			return handler.respondMappedError(c, passwordChangeRequiredErrorSpec())
@@ -114,7 +114,7 @@ func (handler *Handler) Login(c fiber.Ctx) error {
 			handler.logSecurityError(c, "auth.login", spec)
 			return handler.respondMappedError(c, spec)
 		}
-		handler.loginService.ResetAttempts(c.IP())
+		handler.loginService.ResetAttempts(clientKey)
 		handler.logSecurityEvent(c, "auth.login", "totp_required")
 		if acceptsJSON(c) {
 			return c.Status(fiber.StatusOK).JSON(fiber.Map{"requires_totp": true})
@@ -133,7 +133,7 @@ func (handler *Handler) Login(c fiber.Ctx) error {
 	}
 	handler.clearOIDCLogoutBridgeCookie(c)
 
-	handler.loginService.ResetAttempts(c.IP())
+	handler.loginService.ResetAttempts(clientKey)
 	handler.logSecurityEvent(
 		c,
 		"auth.login",
