@@ -482,7 +482,7 @@
   "dashboard.bbt_range_error": "Введите значение от %s до %s %s.",
   "dashboard.error.invalid_cervical_mucus": "Выберите корректное значение цервикальной слизи.",
   "dashboard.error.invalid_pregnancy_test": "Выберите корректное значение теста на беременность.",
-  "dashboard.error.invalid_day_entry": "Не удалось сохранить запись. Проверьте дату и введённые значения и попробуйте ещё раз.",
+  "dashboard.error.invalid_day_entry": "Этот день или одно из его значений недопустимо. Проверьте дату и введённые данные и попробуйте ещё раз.",
   "dashboard.pregnancy_test": "Тест на беременность",
   "dashboard.pregnancy_test.none": "Нет теста",
   "dashboard.pregnancy_test.negative": "Отрицательный",
