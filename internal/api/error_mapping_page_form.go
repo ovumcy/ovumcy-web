@@ -11,11 +11,11 @@ import (
 // plainPageFormBackPath resolves the page a browser posted one of the in-app
 // hx-post forms from when it did so without JavaScript: the onboarding steps,
 // the manual cycle-start control, the day editors, the cycle settings and the
-// settings forms for reminders, interface, tracking, symptoms, the account
-// and the second factor. A refusal there would otherwise paint the JSON
-// envelope as the page, so apiError answers the localized status fragment with
-// a link back instead — same status, same key. No cookie rides on it, the
-// flash included.
+// settings forms for reminders, interface, tracking, symptoms, the account,
+// the second factor, and the erasure and egress sections. A refusal there
+// would otherwise paint the JSON envelope as the page, so apiError answers the
+// localized status fragment with a link back instead — same status, same key.
+// No cookie rides on it, the flash included.
 //
 // Scoped tighter than isPlainAuthFormPageNavigation: the request must also say
 // it accepts text/html, because API clients post form bodies to these routes
@@ -91,14 +91,24 @@ func dayFormSource(c fiber.Ctx) string {
 
 // settingsFormBackPath is the one place that maps a settings-page form route
 // onto the page that hosts it: the reminders, interface, tracking, symptoms,
-// profile, password, recovery-code and SSO link or unlink forms live on
-// /settings, the two-factor enrol and disable forms on /settings/2fa. The back
-// link is one fixed path per route. A symptom or identity id is matched as one
-// path segment and never reaches the href. A form on a settings page that needs
-// a page-shaped refusal gets its case here.
+// profile, password, recovery-code and SSO link or unlink forms, the erasure
+// forms (delete account, clear data and their step-ups) and the egress forms
+// (webhook, calendar feed) live on /settings, the two-factor enrol and disable
+// forms on /settings/2fa. The back link is one fixed path per route. A symptom
+// or identity id is matched as one path segment and never reaches the href. The
+// account root is matched exactly, never as a prefix: every route under it
+// would otherwise answer a page. A form on a settings page that needs a
+// page-shaped refusal gets its case here.
 func settingsFormBackPath(path string) (string, bool) {
 	switch path {
-	case "/api/v1/users/current/reminders",
+	case "/api/v1/users/current", // DELETE: delete the account. Exact, never a prefix.
+		"/api/v1/users/current/data-wipe",
+		"/api/v1/users/current/data-wipe/step-up",
+		"/api/v1/users/current/deletion/step-up",
+		"/api/v1/users/current/webhook",
+		"/api/v1/users/current/calendar-feed",
+		"/api/v1/users/current/calendar-feed/rotate",
+		"/api/v1/users/current/reminders",
 		"/api/v1/users/current/interface",
 		"/api/v1/users/current/tracking",
 		"/api/v1/symptoms",
