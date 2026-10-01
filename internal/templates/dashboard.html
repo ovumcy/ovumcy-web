@@ -145,9 +145,9 @@
             data-usage-goal-quick-switch>
             {{range .UsageGoalAlternatives}}
             <form
-              action="/api/v1/users/current/cycle"
+              action="/api/v1/users/current/cycle?source=dashboard"
               method="post"
-              hx-patch="/api/v1/users/current/cycle"
+              hx-patch="/api/v1/users/current/cycle?source=dashboard"
               hx-target="#dashboard-usage-goal-status"
               hx-swap="innerHTML"
               data-usage-goal-quick-switch-form>
