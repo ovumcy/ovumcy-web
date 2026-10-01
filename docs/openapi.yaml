@@ -194,7 +194,9 @@ components:
     ValidationError:
       description: |
         Request body, path, or query parameters failed validation. The server
-        answers `400` — it has no `422` branch, and a client that needs to tell a
+        answers `400`; the one `422` is the browser day form submitted without
+        JavaScript, which `PUT` and `DELETE /api/v1/days/{date}` declare
+        themselves. A client that needs to tell a
         validation refusal apart from any other `400` reads
         `error_detail.category`, which is `validation` for every response using
         this component. `error_detail.target` follows the surface: `global` for
@@ -2466,8 +2468,37 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/DailyLog' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
+        '403':
+          description: |
+            The caller is not the owner, or the request was refused before the handler runs
+            (CSRF) with the shared `forbidden` key.
+
+            A caller that asks for JSON gets the JSON envelope. A browser form submitted without
+            JavaScript — a `POST` carrying the hidden `_method=PUT` field, with an `Accept` that
+            names `text/html` — gets the shared localized status fragment as `text/html` instead.
+            For the browser that fragment is the whole page, so it ends with a link back to the
+            calendar day when the form's `source` query parameter is `calendar`, and to
+            `/dashboard` otherwise. The link is fixed by the route; nothing else the request
+            carries reaches it, and no cookie, flash included, is set.
+          content:
+            text/html:
+              schema: { type: string }
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "forbidden"
+                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '422':
+          description: |
+            The same validation refusal as the `400`, answered to a browser form submitted
+            without JavaScript (a `POST` carrying `_method=PUT` and an `Accept` that names
+            `text/html`): the localized message as `text/html`, with the link back described on
+            the `403`. A JSON or HTMX caller never receives this status; it gets the `400` and
+            its envelope.
+          content:
+            text/html:
+              schema: { type: string }
         '429': { $ref: '#/components/responses/RateLimited' }
     delete:
       tags: [days]
@@ -2491,8 +2522,35 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
+        '403':
+          description: |
+            The caller is not the owner, or the request was refused before the handler runs
+            (CSRF) with the shared `forbidden` key.
+
+            A caller that asks for JSON gets the JSON envelope. A browser form submitted without
+            JavaScript — a `POST` carrying the hidden `_method=DELETE` field, with an `Accept`
+            that names `text/html` — gets the shared localized status fragment as `text/html`
+            instead, ending with a link back to the calendar day when `source=calendar` and to
+            `/dashboard` otherwise. The link is fixed by the route, and no cookie, flash
+            included, is set.
+          content:
+            text/html:
+              schema: { type: string }
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "forbidden"
+                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '422':
+          description: |
+            The same validation refusal as the `400`, answered to a browser form submitted
+            without JavaScript (a `POST` carrying `_method=DELETE` and an `Accept` that names
+            `text/html`): the localized message as `text/html`, with the link back described on
+            the `403`. A JSON or HTMX caller never receives this status.
+          content:
+            text/html:
+              schema: { type: string }
         '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/v1/days/{date}/cycle-start:
@@ -3130,7 +3188,26 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
+        '403':
+          description: |
+            The caller is not the owner, or the request was refused before the handler runs
+            (CSRF) with the shared `forbidden` key.
+
+            A caller that asks for JSON gets the JSON envelope. A browser form submitted without
+            JavaScript — a `POST` carrying the hidden `_method=PATCH` field, with an `Accept`
+            that names `text/html` — gets the shared localized status fragment as `text/html`
+            instead, ending with a link back to `/settings` when the form's `source` query
+            parameter is `settings` and to `/dashboard` otherwise (the dashboard's usage-goal
+            switch posts here without one). The link is fixed by the route, and no cookie,
+            flash included, is set.
+          content:
+            text/html:
+              schema: { type: string }
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "forbidden"
+                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
         '400': { $ref: '#/components/responses/ValidationError' }
         '429': { $ref: '#/components/responses/RateLimited' }
 
