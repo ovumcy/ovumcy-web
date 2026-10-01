@@ -16,13 +16,15 @@ import (
 // proves that for Login's session arm through its issuance fault; the
 // TOTP-pending and forced-reset arms have no such fault to inject. This barrier
 // starts from the obligation, not from the reset: it resolves the login port's
-// Authenticate by declaration and holds every production function that calls
-// it. In each, every return after the first Authenticate call either sits in
-// the body of an `if <error> != nil` guard — the sign-in did not land — or is
-// reached only through a reset statement that itself follows, in its own
-// block, an `if err := <issuer>(…); err != nil { …; return … }` whose issuer
-// reaches a fiber cookie write. A new arm that answers without that reset, or a
-// second caller that never resets, fails here; so does a reset anywhere else.
+// Authenticate by declaration (and any method implementing it) and holds every
+// production function body that calls it, function literals included. In each,
+// every return after the first Authenticate call either sits in the body of an
+// `if <error> != nil` guard — the sign-in did not land — or is reached only
+// through a reset statement that itself follows, in its own block, an
+// `if err := <issuer>(…); err != nil { …; return … }` whose issuer is one of
+// the sign-in cookie setters. A new arm that answers without that reset, a
+// second caller that never resets, Authenticate taken as a value, or a reset
+// anywhere else fails here.
 func TestLoginResetsOnlyAfterEachArmIssuesItsCookie(t *testing.T) {
 	root, err := moduleRootForBarrier()
 	if err != nil {
@@ -40,37 +42,56 @@ func TestLoginResetsOnlyAfterEachArmIssuesItsCookie(t *testing.T) {
 		t.Fatalf("internal/api did not type-check cleanly (%d package(s)): %v", len(loaded), settingsReauthLoadErrors(loaded))
 	}
 	pkg := loaded[0]
+	port := loginServicePort(t, pkg.Types)
 	sweep := loginResetSweep{
 		info:         pkg.TypesInfo,
 		fset:         pkg.Fset,
-		authenticate: loginServiceMethod(t, pkg.Types, "Authenticate"),
-		reset:        loginServiceMethod(t, pkg.Types, "ResetAttempts"),
-		issuers:      loginCookieWriters(t, pkg),
+		port:         port,
+		authenticate: loginPortMethod(t, port, pkg.Types, "Authenticate"),
+		reset:        loginPortMethod(t, port, pkg.Types, "ResetAttempts"),
+		issuers:      map[*types.Func]string{},
+		exits:        map[string][]string{},
+	}
+	// The sign-in issuers are named, and each must still write a cookie: a
+	// fourth sign-in cookie joins this list deliberately, never by default.
+	writers := loginCookieWriters(t, pkg)
+	for _, name := range []string{"setResetPasswordCookie", "setTOTPPendingCookie", "setAuthCookie"} {
+		issuer := settingsReauthMethod(t, pkg.Types, "Handler", name)
+		if _, ok := writers[issuer]; !ok {
+			t.Fatalf("%s reaches no call taking a *fiber.Cookie; the sweep's cookie model no longer matches the code", name)
+		}
+		sweep.issuers[issuer] = name
 	}
 	login := settingsReauthMethod(t, pkg.Types, "Handler", "Login")
 
-	exits := map[string][]string{}
 	for _, file := range pkg.Syntax {
 		for _, decl := range file.Decls {
-			function, ok := decl.(*ast.FuncDecl)
-			if !ok || function.Body == nil {
-				continue
+			owner := "package-level declaration"
+			if function, ok := decl.(*ast.FuncDecl); ok {
+				owner = function.Name.Name
+				if object, ok := sweep.info.Defs[function.Name].(*types.Func); ok && object == login {
+					owner = "Handler.Login"
+				}
+				if function.Body != nil {
+					sweep.body(function.Body, owner)
+				}
 			}
-			name := function.Name.Name
-			if object, ok := sweep.info.Defs[function.Name].(*types.Func); ok && object == login {
-				name = "Handler.Login"
-			}
-			sweep.function(function, name, exits)
+			ast.Inspect(decl, func(node ast.Node) bool {
+				if literal, ok := node.(*ast.FuncLit); ok {
+					sweep.body(literal.Body, "a func literal in "+owner+" at "+sweep.where(literal))
+				}
+				return true
+			})
 		}
 	}
 	if len(sweep.problems) > 0 {
 		sort.Strings(sweep.problems)
-		t.Fatalf("the login budget is not reset after each sign-in lands: %s. Call handler.loginService.ResetAttempts as a statement directly below the arm's cookie issuance and its error return, on every arm that answers a correct password", strings.Join(sweep.problems, "; "))
+		t.Fatalf("the login budget is not reset after each sign-in lands: %s. Call handler.loginService.Authenticate directly, and handler.loginService.ResetAttempts as a statement directly below the arm's sign-in cookie issuance and its error return, on every arm that answers a correct password", strings.Join(sweep.problems, "; "))
 	}
 
 	// Anti-vacuity by name: Login is an Authenticate caller, and each of its
 	// arms answers through the issuer that paid for its reset.
-	arms, ok := exits["Handler.Login"]
+	arms, ok := sweep.exits["Handler.Login"]
 	if !ok {
 		t.Fatalf("the sweep never reached Handler.Login's Authenticate call; it resolved the wrong object or read the wrong files")
 	}
@@ -83,57 +104,110 @@ func TestLoginResetsOnlyAfterEachArmIssuesItsCookie(t *testing.T) {
 type loginResetSweep struct {
 	info         *types.Info
 	fset         *token.FileSet
+	port         *types.Interface
 	authenticate *types.Func
 	reset        *types.Func
 	issuers      map[*types.Func]string
+	exits        map[string][]string
 	problems     []string
 }
 
-// function checks one declaration and records, under name, the sorted issuers
-// whose resets pay for its success exits.
-func (sweep *loginResetSweep) function(function *ast.FuncDecl, name string, exits map[string][]string) {
+// isAuthenticate reports whether function is the port's Authenticate or a
+// method that implements it, so a caller holding a concrete service counts.
+func (sweep *loginResetSweep) isAuthenticate(function *types.Func) bool {
+	if function == nil {
+		return false
+	}
+	if function == sweep.authenticate {
+		return true
+	}
+	signature, ok := function.Type().(*types.Signature)
+	if !ok || signature.Recv() == nil || function.Name() != sweep.authenticate.Name() {
+		return false
+	}
+	return types.Implements(signature.Recv().Type(), sweep.port)
+}
+
+// body checks one function body, not the function literals nested in it
+// (each is a body of its own), and records under name the sorted issuers whose
+// resets pay for its success exits.
+func (sweep *loginResetSweep) body(body *ast.BlockStmt, name string) {
 	var first *ast.CallExpr
-	ast.Inspect(function.Body, func(node ast.Node) bool {
-		if call, ok := node.(*ast.CallExpr); ok && first == nil && loginStaticCallee(sweep.info, call) == sweep.authenticate {
+	called := map[*ast.Ident]bool{}
+	loginInspectOwn(body, func(node ast.Node) {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return
+		}
+		switch fun := ast.Unparen(call.Fun).(type) {
+		case *ast.SelectorExpr:
+			called[fun.Sel] = true
+		case *ast.Ident:
+			called[fun] = true
+		}
+		if first == nil && sweep.isAuthenticate(loginStaticCallee(sweep.info, call)) {
 			first = call
 		}
-		return true
 	})
-	placed := map[*ast.SelectorExpr]bool{}
+	loginInspectOwn(body, func(node ast.Node) {
+		selector, ok := node.(*ast.SelectorExpr)
+		if !ok || called[selector.Sel] {
+			return
+		}
+		if function, ok := sweep.info.Uses[selector.Sel].(*types.Func); ok && sweep.isAuthenticate(function.Origin()) {
+			sweep.problems = append(sweep.problems, "Authenticate at "+sweep.where(selector)+" in "+name+" is taken as a value, so the exits of whatever calls it cannot be held")
+		}
+	})
+
+	walk := loginExitWalk{sweep: sweep, name: name, placed: map[*ast.SelectorExpr]bool{}, paidBy: map[string]bool{}}
 	if first != nil {
-		paidBy := map[string]bool{}
-		sweep.block(function.Body.List, first.Pos(), "", false, name, placed, paidBy)
+		walk.after = first.Pos()
+		walk.block(body.List, "", false)
 		var names []string
-		for issuer := range paidBy {
+		for issuer := range walk.paidBy {
 			names = append(names, issuer)
 		}
 		sort.Strings(names)
-		exits[name] = names
+		sweep.exits[name] = names
 	}
-	ast.Inspect(function.Body, func(node ast.Node) bool {
+	loginInspectOwn(body, func(node ast.Node) {
 		selector, ok := node.(*ast.SelectorExpr)
-		if !ok || sweep.info.Uses[selector.Sel] != sweep.reset || placed[selector] {
-			return true
+		if !ok || sweep.info.Uses[selector.Sel] != sweep.reset || walk.placed[selector] {
+			return
 		}
 		if first == nil {
 			sweep.problems = append(sweep.problems, "ResetAttempts at "+sweep.where(selector)+" is reached from "+name+", which calls no Authenticate")
 		} else {
 			sweep.problems = append(sweep.problems, "ResetAttempts at "+sweep.where(selector)+" in "+name+" is not a direct call statement")
 		}
-		return true
 	})
+}
+
+func (sweep *loginResetSweep) where(node ast.Node) string {
+	return sweep.fset.Position(node.Pos()).String()
+}
+
+// loginExitWalk follows one body's statements path by path from its first
+// Authenticate call.
+type loginExitWalk struct {
+	sweep  *loginResetSweep
+	name   string
+	after  token.Pos
+	placed map[*ast.SelectorExpr]bool
+	paidBy map[string]bool
 }
 
 // block walks statements on one path. paid names the issuer whose reset has
 // already run on this path ("" for none); failing marks the body of an error
 // guard, whose returns owe nothing.
-func (sweep *loginResetSweep) block(statements []ast.Stmt, after token.Pos, paid string, failing bool, name string, placed map[*ast.SelectorExpr]bool, paidBy map[string]bool) {
+func (walk *loginExitWalk) block(statements []ast.Stmt, paid string, failing bool) {
+	sweep := walk.sweep
 	for index, statement := range statements {
 		if selector := loginResetCallStatement(sweep.info, statement, sweep.reset); selector != nil {
-			placed[selector] = true
+			walk.placed[selector] = true
 			issuer := loginPrecedingIssuer(sweep.info, statements[:index], sweep.issuers)
 			if issuer == "" {
-				sweep.problems = append(sweep.problems, "ResetAttempts at "+sweep.where(selector)+" in "+name+" follows no issued cookie in its block")
+				sweep.problems = append(sweep.problems, "ResetAttempts at "+sweep.where(selector)+" in "+walk.name+" follows no issued sign-in cookie in its block")
 				continue
 			}
 			paid = issuer
@@ -141,55 +215,63 @@ func (sweep *loginResetSweep) block(statements []ast.Stmt, after token.Pos, paid
 		}
 		switch statement := statement.(type) {
 		case *ast.ReturnStmt:
-			if statement.Pos() < after || failing {
+			if statement.Pos() < walk.after || failing {
 				continue
 			}
 			if paid == "" {
-				sweep.problems = append(sweep.problems, name+" answers at "+sweep.where(statement)+" after Authenticate without resetting the budget behind an issued cookie")
+				sweep.problems = append(sweep.problems, walk.name+" answers at "+sweep.where(statement)+" after Authenticate without resetting the budget behind an issued sign-in cookie")
 				continue
 			}
-			paidBy[paid] = true
+			walk.paidBy[paid] = true
 		case *ast.IfStmt:
-			sweep.block(statement.Body.List, after, paid, failing || loginErrorGuard(sweep.info, statement.Cond), name, placed, paidBy)
+			walk.block(statement.Body.List, paid, failing || loginErrorGuard(sweep.info, statement.Cond))
 			if statement.Else != nil {
-				sweep.block([]ast.Stmt{statement.Else}, after, paid, failing, name, placed, paidBy)
+				walk.block([]ast.Stmt{statement.Else}, paid, failing)
 			}
 		case *ast.BlockStmt:
-			sweep.block(statement.List, after, paid, failing, name, placed, paidBy)
+			walk.block(statement.List, paid, failing)
 		case *ast.LabeledStmt:
-			sweep.block([]ast.Stmt{statement.Stmt}, after, paid, failing, name, placed, paidBy)
+			walk.block([]ast.Stmt{statement.Stmt}, paid, failing)
 		case *ast.ForStmt:
-			sweep.block(statement.Body.List, after, paid, failing, name, placed, paidBy)
+			walk.block(statement.Body.List, paid, failing)
 		case *ast.RangeStmt:
-			sweep.block(statement.Body.List, after, paid, failing, name, placed, paidBy)
+			walk.block(statement.Body.List, paid, failing)
 		case *ast.SwitchStmt:
-			sweep.clauses(statement.Body, after, paid, failing, name, placed, paidBy)
+			walk.clauses(statement.Body, paid, failing)
 		case *ast.TypeSwitchStmt:
-			sweep.clauses(statement.Body, after, paid, failing, name, placed, paidBy)
+			walk.clauses(statement.Body, paid, failing)
 		case *ast.SelectStmt:
-			sweep.clauses(statement.Body, after, paid, failing, name, placed, paidBy)
+			walk.clauses(statement.Body, paid, failing)
 		}
 	}
 }
 
-func (sweep *loginResetSweep) clauses(body *ast.BlockStmt, after token.Pos, paid string, failing bool, name string, placed map[*ast.SelectorExpr]bool, paidBy map[string]bool) {
+func (walk *loginExitWalk) clauses(body *ast.BlockStmt, paid string, failing bool) {
 	for _, clause := range body.List {
 		switch clause := clause.(type) {
 		case *ast.CaseClause:
-			sweep.block(clause.Body, after, paid, failing, name, placed, paidBy)
+			walk.block(clause.Body, paid, failing)
 		case *ast.CommClause:
-			sweep.block(clause.Body, after, paid, failing, name, placed, paidBy)
+			walk.block(clause.Body, paid, failing)
 		}
 	}
 }
 
-func (sweep *loginResetSweep) where(node ast.Node) string {
-	return sweep.fset.Position(node.Pos()).String()
+// loginInspectOwn visits body's nodes without entering nested function literals.
+func loginInspectOwn(body *ast.BlockStmt, visit func(ast.Node)) {
+	ast.Inspect(body, func(node ast.Node) bool {
+		if _, nested := node.(*ast.FuncLit); nested {
+			return false
+		}
+		if node != nil {
+			visit(node)
+		}
+		return true
+	})
 }
 
-// loginServiceMethod resolves name on the type of Handler's loginService
-// field, so the object is the port method Login calls.
-func loginServiceMethod(t *testing.T, pkg *types.Package, name string) *types.Func {
+// loginServicePort is the interface type of Handler's loginService field.
+func loginServicePort(t *testing.T, pkg *types.Package) *types.Interface {
 	t.Helper()
 	handlerType, ok := pkg.Scope().Lookup("Handler").(*types.TypeName)
 	if !ok {
@@ -200,7 +282,16 @@ func loginServiceMethod(t *testing.T, pkg *types.Package, name string) *types.Fu
 	if !ok {
 		t.Fatalf("Handler has no loginService field")
 	}
-	method, _, _ := types.LookupFieldOrMethod(fieldVar.Type(), false, pkg, name)
+	port, ok := fieldVar.Type().Underlying().(*types.Interface)
+	if !ok {
+		t.Fatalf("Handler.loginService is not an interface (%s)", fieldVar.Type())
+	}
+	return port
+}
+
+func loginPortMethod(t *testing.T, port *types.Interface, pkg *types.Package, name string) *types.Func {
+	t.Helper()
+	method, _, _ := types.LookupFieldOrMethod(port, false, pkg, name)
 	function, ok := method.(*types.Func)
 	if !ok {
 		t.Fatalf("loginService's type has no %s method", name)
@@ -300,17 +391,25 @@ func loginStaticCallee(info *types.Info, call *ast.CallExpr) *types.Func {
 	return function.Origin()
 }
 
-// loginErrorGuard reports whether cond is `<value of type error> != nil`.
-func loginErrorGuard(info *types.Info, cond ast.Expr) bool {
+// loginErrorGuardOperand returns the checked expression when cond is
+// `<value of type error> != nil`, and nil otherwise.
+func loginErrorGuardOperand(info *types.Info, cond ast.Expr) ast.Expr {
 	comparison, ok := ast.Unparen(cond).(*ast.BinaryExpr)
 	if !ok || comparison.Op != token.NEQ {
-		return false
+		return nil
 	}
 	right, ok := ast.Unparen(comparison.Y).(*ast.Ident)
 	if !ok || info.Uses[right] != types.Universe.Lookup("nil") {
-		return false
+		return nil
 	}
-	return types.Identical(info.TypeOf(comparison.X), types.Universe.Lookup("error").Type())
+	if !types.Identical(info.TypeOf(comparison.X), types.Universe.Lookup("error").Type()) {
+		return nil
+	}
+	return ast.Unparen(comparison.X)
+}
+
+func loginErrorGuard(info *types.Info, cond ast.Expr) bool {
+	return loginErrorGuardOperand(info, cond) != nil
 }
 
 // loginResetCallStatement returns the selector of statement when statement is
@@ -324,7 +423,7 @@ func loginResetCallStatement(info *types.Info, statement ast.Stmt, reset *types.
 	if !ok || loginStaticCallee(info, call) != reset {
 		return nil
 	}
-	selector, _ := call.Fun.(*ast.SelectorExpr)
+	selector, _ := ast.Unparen(call.Fun).(*ast.SelectorExpr)
 	return selector
 }
 
@@ -345,10 +444,10 @@ func loginPrecedingIssuer(info *types.Info, statements []ast.Stmt, issuers map[*
 			continue
 		}
 		name, ok := issuers[loginStaticCallee(info, call)]
-		if !ok || !loginErrorGuard(info, guard.Cond) {
+		if !ok {
 			continue
 		}
-		checked, ok := ast.Unparen(guard.Cond.(*ast.BinaryExpr).X).(*ast.Ident)
+		checked, ok := loginErrorGuardOperand(info, guard.Cond).(*ast.Ident)
 		if !ok || !loginAssignDefines(info, init, info.Uses[checked]) {
 			continue
 		}
