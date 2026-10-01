@@ -351,7 +351,7 @@ func TestEveryNoJSPostFormActionAnswersARefusalAsAPage(t *testing.T) {
 		"components/cycle_start_form.html /api/v1/days/2026-09-27/cycle-start?source=dashboard ",
 		"components/cycle_start_form.html /api/v1/days/2026-09-27/cycle-start?source=calendar ",
 		"dashboard.html /api/v1/users/current/cycle?source=dashboard PATCH",
-		"day_editor_partial.html /api/v1/days/2026-09-27?source=calendar PUT",
+		"day_editor_partial.html /api/v1/days/2026-09-27 PUT",
 		"day_editor_partial.html /api/v1/days/2026-09-27?source=calendar DELETE",
 		"components/settings_interface.html /api/v1/users/current/interface PATCH",
 		"components/settings_symptoms.html /api/v1/symptoms/2026-09-27 DELETE",
