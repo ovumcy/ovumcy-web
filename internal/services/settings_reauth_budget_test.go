@@ -169,6 +169,9 @@ func TestReauthBudgetsKeepAccountsOnOneAddressApart(t *testing.T) {
 			if err := fixture.settings.VerifyReauth(budget, neighbourAttempt, &neighbour, reauthBudgetFixturePassword); err != nil {
 				t.Fatalf("correct password for another account on the same address = %v, want nil", err)
 			}
+			if err := fixture.settings.VerifyReauth(budget, fixture.attempt, fixture.user, reauthBudgetFixturePassword); !errors.Is(err, tc.limited) {
+				t.Fatalf("correct password on the spent account after its neighbour's = %v, want %v: the two accounts share a bucket", err, tc.limited)
+			}
 		})
 	}
 }
