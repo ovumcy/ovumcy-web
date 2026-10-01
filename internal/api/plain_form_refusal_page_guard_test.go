@@ -198,12 +198,20 @@ func resolvePlainFormAction(enclosing, raw string, sources map[string]string) ([
 		return resolvePlainFormField(enclosing, field[1], raw, sources)
 	}
 	rest := raw
+	skipped := false
 	for strings.HasPrefix(rest, "{{") {
 		end := strings.Index(rest, "}}")
 		if end < 0 {
 			break
 		}
 		rest = rest[end+2:]
+		skipped = true
+	}
+	// A leading field is read as the app's base path, which only holds for a
+	// path under /api/v1/. Anything else after it would be classified as a page
+	// path and dropped, though the field may well be the one carrying /api/v1.
+	if skipped && !strings.HasPrefix(rest, "/api/v1/") {
+		return nil, fmt.Sprintf("action %q follows a leading template action with %q rather than /api/v1/..., so the scan cannot tell what the field carries", raw, rest)
 	}
 	return classifyPlainFormAction(raw, plainFormActionPattern.ReplaceAllString(rest, plainFormSampleDate))
 }
@@ -419,6 +427,7 @@ func TestPlainPostFormScanClassifiesItsOwnFixtures(t *testing.T) {
 <form action="{{if .X}}/api/v1/g{{else}}/api/v1/h{{end}}" method="post"></form>
 <form method="post"></form>
 <form action="https://example.test/x" method="post"></form>
+<form action="{{.APIBase}}/users/current/x" method="post"></form>
 {{end}}
 `,
 		"caller.html": `
@@ -449,6 +458,9 @@ func TestPlainPostFormScanClassifiesItsOwnFixtures(t *testing.T) {
 		"branches on a template condition",
 		"declares no action",
 		"neither a path nor a base path",
+		// A leading field is the base path only before /api/v1/; before anything
+		// else the scan cannot tell whether the field carries /api/v1.
+		"cannot tell what the field carries",
 	}
 	if len(reasons) != len(wantReasons) {
 		t.Fatalf("unresolved reasons %q, want %d", reasons, len(wantReasons))
@@ -477,6 +489,7 @@ func TestPlainPostFormScanClassifiesItsOwnFixtures(t *testing.T) {
 		// No action.
 		{"", "", 27, true},
 		{"https://example.test/x", "", 28, true},
+		{"{{.APIBase}}/users/current/x", "", 29, true},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("scan got %d forms %+v, want %d %+v", len(got), got, len(want), want)
