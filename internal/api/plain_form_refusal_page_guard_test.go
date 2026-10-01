@@ -48,23 +48,14 @@ type plainFormRefusalExemption struct {
 	file, action, reason string
 }
 
-// The forms below answer a refusal raised outside their handler (a stale CSRF
-// token, a limiter, a transport rejection) with the JSON envelope, so a browser
-// without JavaScript paints it as the page. Each needs a fixed back link in
-// plainPageFormBackPath or a flash redirect. The list may only shrink, and an
-// entry whose form now answers a page fails the test until it is deleted. A
-// date or id in an action stands for the template action the file carries there.
-const plainFormRefusalGap = "WEB-135: a refusal before the handler paints the JSON envelope without JS; fix pending"
-
-var plainFormRefusalExemptions = []plainFormRefusalExemption{
-	{file: "components/settings_danger_zone.html", action: "/api/v1/users/current", reason: plainFormRefusalGap},
-	{file: "components/settings_danger_zone.html", action: "/api/v1/users/current/data-wipe", reason: plainFormRefusalGap},
-	{file: "components/settings_danger_zone.html", action: "/api/v1/users/current/data-wipe/step-up", reason: plainFormRefusalGap},
-	{file: "components/settings_danger_zone.html", action: "/api/v1/users/current/deletion/step-up", reason: plainFormRefusalGap},
-	{file: "components/settings_egress.html", action: "/api/v1/users/current/calendar-feed", reason: plainFormRefusalGap},
-	{file: "components/settings_egress.html", action: "/api/v1/users/current/calendar-feed/rotate", reason: plainFormRefusalGap},
-	{file: "components/settings_egress.html", action: "/api/v1/users/current/webhook", reason: plainFormRefusalGap},
-}
+// A form that answers a refusal raised outside its handler (a stale CSRF token,
+// a limiter, a transport rejection) with the JSON envelope paints it as the page
+// in a browser without JavaScript. Every form now answers a page, so the list is
+// empty. The mechanism stays for a form that cannot yet: an entry names the file
+// and action (a date or id in an action stands for the template action the file
+// carries there) with a reason, fails once its form answers a page, and fails
+// when it matches no form.
+var plainFormRefusalExemptions = []plainFormRefusalExemption{}
 
 // plainPostForm is one <form method="post"> the scan reports. An action it could
 // not resolve is kept with the reason, never dropped: the test fails on it.

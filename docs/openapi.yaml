@@ -2911,7 +2911,24 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '400': { $ref: '#/components/responses/ValidationError' }
         '429': { $ref: '#/components/responses/RateLimited' }
-        '403': { $ref: '#/components/responses/Forbidden' }
+        '403':
+          description: |
+            The caller is not the owner, or the request was refused before the handler runs
+            (CSRF) with the shared `forbidden` key.
+
+            A caller that asks for JSON gets the JSON envelope. A browser form submitted without
+            JavaScript — a `POST` carrying the hidden `_method=DELETE` field, with an `Accept`
+            that names `text/html` — gets the shared localized status fragment as `text/html`
+            instead, ending with a link back to `/settings`. The link is fixed by the route, and
+            no cookie, flash included, is set.
+          content:
+            text/html:
+              schema: { type: string }
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "forbidden"
+                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
 
   /api/v1/users/current/profile:
     patch:
@@ -3083,7 +3100,23 @@ paths:
                 error: "invalid webhook url"
                 error_detail: { key: "invalid webhook url", category: "validation", target: "settings_form" }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
+        '403':
+          description: |
+            The caller is not the owner, or the request was refused before the handler runs
+            (CSRF) with the shared `forbidden` key.
+
+            A caller that asks for JSON gets the JSON envelope. A browser form submitted without
+            JavaScript, with an `Accept` that names `text/html`, gets the shared localized status
+            fragment as `text/html` instead, ending with a link back to `/settings`. The link is
+            fixed by the route, and no cookie, flash included, is set.
+          content:
+            text/html:
+              schema: { type: string }
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "forbidden"
+                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
         '429': { $ref: '#/components/responses/RateLimited' }
         '500':
           description: |
@@ -3122,7 +3155,24 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/WebhookRemoved' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
+        '403':
+          description: |
+            The caller is not the owner, or the request was refused before the handler runs
+            (CSRF) with the shared `forbidden` key.
+
+            A caller that asks for JSON gets the JSON envelope. A browser form submitted without
+            JavaScript — a `POST` carrying the hidden `_method=DELETE` field, with an `Accept`
+            that names `text/html` — gets the shared localized status fragment as `text/html`
+            instead, ending with a link back to `/settings`. The link is fixed by the route, and
+            no cookie, flash included, is set.
+          content:
+            text/html:
+              schema: { type: string }
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "forbidden"
+                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
         '500':
           description: Persistence failed. Carries no endpoint.
           content:
@@ -3160,7 +3210,23 @@ paths:
         '303':
           description: "Browser redirect to the one-time reveal page (`/settings/calendar-feed`) when `Accept: application/json` is not set."
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
+        '403':
+          description: |
+            The caller is not the owner, or the request was refused before the handler runs
+            (CSRF) with the shared `forbidden` key.
+
+            A caller that asks for JSON gets the JSON envelope. A browser form submitted without
+            JavaScript, with an `Accept` that names `text/html`, gets the shared localized status
+            fragment as `text/html` instead, ending with a link back to `/settings`. The link is
+            fixed by the route, and no cookie, flash included, is set.
+          content:
+            text/html:
+              schema: { type: string }
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "forbidden"
+                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
         '500':
           description: Token generation or persistence failed. Carries no token.
           content:
@@ -3185,7 +3251,24 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/CalendarFeedRevoked' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
+        '403':
+          description: |
+            The caller is not the owner, or the request was refused before the handler runs
+            (CSRF) with the shared `forbidden` key.
+
+            A caller that asks for JSON gets the JSON envelope. A browser form submitted without
+            JavaScript — a `POST` carrying the hidden `_method=DELETE` field, with an `Accept`
+            that names `text/html` — gets the shared localized status fragment as `text/html`
+            instead, ending with a link back to `/settings`. The link is fixed by the route, and
+            no cookie, flash included, is set.
+          content:
+            text/html:
+              schema: { type: string }
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "forbidden"
+                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
         '500':
           description: Persistence failed. Carries no token.
           content:
@@ -3218,7 +3301,23 @@ paths:
         '303':
           description: "Browser redirect to the one-time reveal page (`/settings/calendar-feed`) when `Accept: application/json` is not set."
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
+        '403':
+          description: |
+            The caller is not the owner, or the request was refused before the handler runs
+            (CSRF) with the shared `forbidden` key.
+
+            A caller that asks for JSON gets the JSON envelope. A browser form submitted without
+            JavaScript, with an `Accept` that names `text/html`, gets the shared localized status
+            fragment as `text/html` instead, ending with a link back to `/settings`. The link is
+            fixed by the route, and no cookie, flash included, is set.
+          content:
+            text/html:
+              schema: { type: string }
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "forbidden"
+                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
         '500':
           description: Token generation or persistence failed. Carries no token.
           content:
@@ -3431,8 +3530,9 @@ paths:
         answered, on success, with a same-origin interstitial page instead of
         the JSON body, because the settings page CSP pins `form-action` to
         `'self'` across the whole redirect chain; the responses below describe
-        the JSON surface, and a refusal on the browser one flashes onto
-        `/settings` rather than carrying the status.
+        the JSON surface, and a refusal the handler raises on the browser one
+        flashes onto `/settings` rather than carrying the status. A refusal
+        before the handler is the `403` below.
       responses:
         '200':
           description: OIDC redirect URL emitted.
@@ -3440,7 +3540,23 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/StartLocalPasswordSetupResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
+        '403':
+          description: |
+            The caller is not the owner, or the request was refused before the handler runs
+            (CSRF) with the shared `forbidden` key.
+
+            A caller that asks for JSON gets the JSON envelope. A browser form submitted without
+            JavaScript, with an `Accept` that names `text/html`, gets the shared localized status
+            fragment as `text/html` instead, ending with a link back to `/settings`. The link is
+            fixed by the route, and no cookie, flash included, is set.
+          content:
+            text/html:
+              schema: { type: string }
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "forbidden"
+                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
         '400':
           description: The account has a local password, so this flow does not apply; the erasure is confirmed with that password instead.
           content:
@@ -3466,8 +3582,9 @@ paths:
         answered, on success, with a same-origin interstitial page instead of
         the JSON body, because the settings page CSP pins `form-action` to
         `'self'` across the whole redirect chain; the responses below describe
-        the JSON surface, and a refusal on the browser one flashes onto
-        `/settings` rather than carrying the status.
+        the JSON surface, and a refusal the handler raises on the browser one
+        flashes onto `/settings` rather than carrying the status. A refusal
+        before the handler is the `403` below.
       responses:
         '200':
           description: OIDC redirect URL emitted.
@@ -3475,7 +3592,23 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/StartLocalPasswordSetupResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
+        '403':
+          description: |
+            The caller is not the owner, or the request was refused before the handler runs
+            (CSRF) with the shared `forbidden` key.
+
+            A caller that asks for JSON gets the JSON envelope. A browser form submitted without
+            JavaScript, with an `Accept` that names `text/html`, gets the shared localized status
+            fragment as `text/html` instead, ending with a link back to `/settings`. The link is
+            fixed by the route, and no cookie, flash included, is set.
+          content:
+            text/html:
+              schema: { type: string }
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "forbidden"
+                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
         '400':
           description: The account has a local password, so this flow does not apply; the erasure is confirmed with that password instead.
           content:
@@ -3845,6 +3978,22 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
+        '403':
+          description: |
+            The caller is not the owner, or the request was refused before the handler runs
+            (CSRF) with the shared `forbidden` key.
+
+            A caller that asks for JSON gets the JSON envelope. A browser form submitted without
+            JavaScript, with an `Accept` that names `text/html`, gets the shared localized status
+            fragment as `text/html` instead, ending with a link back to `/settings`. The link is
+            fixed by the route, and no cookie, flash included, is set.
+          content:
+            text/html:
+              schema: { type: string }
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "forbidden"
+                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
         '400': { $ref: '#/components/responses/ValidationError' }
         '429': { $ref: '#/components/responses/RateLimited' }
