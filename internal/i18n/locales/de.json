@@ -479,7 +479,7 @@
   "dashboard.bbt_range_error": "Geben Sie einen Wert zwischen %s und %s %s ein.",
   "dashboard.error.invalid_cervical_mucus": "Wählen Sie einen gültigen Wert für Zervixschleim.",
   "dashboard.error.invalid_pregnancy_test": "Wählen Sie einen gültigen Wert für den Schwangerschaftstest.",
-  "dashboard.error.invalid_day_entry": "Dieser Eintrag konnte nicht gespeichert werden. Prüfen Sie das Datum und Ihre Eingaben und versuchen Sie es erneut.",
+  "dashboard.error.invalid_day_entry": "Dieser Tag oder einer seiner Werte ist ungültig. Prüfen Sie das Datum und Ihre Eingaben und versuchen Sie es erneut.",
   "dashboard.pregnancy_test": "Schwangerschaftstest",
   "dashboard.pregnancy_test.none": "Kein Test",
   "dashboard.pregnancy_test.negative": "Negativ",
