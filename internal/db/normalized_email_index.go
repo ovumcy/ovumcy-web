@@ -18,6 +18,11 @@ const NormalizedEmailIndexName = "idx_users_email_normalized"
 // Postgres renders trim(x) as TRIM(BOTH FROM x).
 const normalizedEmailIndexKey = "lower(trim(email))"
 
+// normalizedEmailIndexPurpose is the reason all three refusals give, in words
+// that fit whoever reads them: the server's boot log and an operator command
+// both print this error.
+const normalizedEmailIndexPurpose = "the index is what stops two accounts from sharing one email address"
+
 // normalizedEmailIndexRestore is the remedy both refusals end with. The index is
 // never re-created at boot: re-applying migration 002 is what checks the table
 // for addresses two accounts already share before building it, and names them.
@@ -38,14 +43,14 @@ func (repo *HealthRepository) VerifyNormalizedEmailIndex(ctx context.Context) er
 	}
 	if !found {
 		return fmt.Errorf(
-			"unique index %s on users (%s) is missing, and the server does not start without it: it is what stops two accounts from sharing one email address. With the server stopped, %s",
-			NormalizedEmailIndexName, normalizedEmailIndexKey, normalizedEmailIndexRestore,
+			"unique index %s on users (%s) is missing: %s. With the server stopped, %s",
+			NormalizedEmailIndexName, normalizedEmailIndexKey, normalizedEmailIndexPurpose, normalizedEmailIndexRestore,
 		)
 	}
 	if !isNormalizedEmailIndexDefinition(canonicalIndexDefinition(index.Definition, index.SchemaPrefix)) {
 		return fmt.Errorf(
-			"index %s is not the unique index on users (%s) that migration 002 builds (found %q), and the server does not start without it: it is what stops two accounts from sharing one email address. With the server stopped, drop it (DROP INDEX %s), then %s",
-			NormalizedEmailIndexName, normalizedEmailIndexKey, index.Definition, NormalizedEmailIndexName, normalizedEmailIndexRestore,
+			"index %s is not the unique index on users (%s) that migration 002 builds (found %q): %s. With the server stopped, drop it (DROP INDEX %s), then %s",
+			NormalizedEmailIndexName, normalizedEmailIndexKey, index.Definition, normalizedEmailIndexPurpose, NormalizedEmailIndexName, normalizedEmailIndexRestore,
 		)
 	}
 	// A CREATE INDEX CONCURRENTLY or REINDEX that fails — on two rows already
@@ -54,8 +59,8 @@ func (repo *HealthRepository) VerifyNormalizedEmailIndex(ctx context.Context) er
 	// re-apply, so this remedy drops it first.
 	if !index.Usable {
 		return fmt.Errorf(
-			"index %s has the definition migration 002 builds but the database marks it invalid, as a failed CREATE INDEX CONCURRENTLY or REINDEX leaves it, so it does not stop two accounts from sharing one email address, and the server does not start without it. With the server stopped, drop it (DROP INDEX %s), then %s",
-			NormalizedEmailIndexName, NormalizedEmailIndexName, normalizedEmailIndexRestore,
+			"index %s has the definition migration 002 builds but the database marks it invalid, as a failed CREATE INDEX CONCURRENTLY or REINDEX leaves it, so it does not do what the index is for: %s. With the server stopped, drop it (DROP INDEX %s), then %s",
+			NormalizedEmailIndexName, normalizedEmailIndexPurpose, NormalizedEmailIndexName, normalizedEmailIndexRestore,
 		)
 	}
 	return nil

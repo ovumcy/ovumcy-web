@@ -60,6 +60,7 @@ func runNormalizedEmailIndexChecks(t *testing.T, config Config) {
 					t.Fatalf("refusal must contain %q, got %v", want, err)
 				}
 			}
+			requireOperatorNeutralRefusal(t, err)
 		})
 	}
 
@@ -103,6 +104,7 @@ func runNormalizedEmailIndexChecks(t *testing.T, config Config) {
 		if !strings.Contains(err.Error(), NormalizedEmailIndexName+" on users (lower(trim(email))) is missing") || !strings.Contains(err.Error(), remedy) {
 			t.Fatalf("refusal must name the index and the remedy, got %v", err)
 		}
+		requireOperatorNeutralRefusal(t, err)
 
 		if err := database.Exec(remedy).Error; err != nil {
 			t.Fatalf("apply the remedy: %v", err)
@@ -165,6 +167,21 @@ func requireUnusableIndexRefused(t *testing.T, repo *HealthRepository, migrated 
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("refusal must contain %q, got %v", want, err)
 		}
+	}
+	requireOperatorNeutralRefusal(t, err)
+}
+
+// requireOperatorNeutralRefusal holds the one wording the server's boot log and
+// the operator commands both print: it states why the index matters and says
+// nothing about what the server will or will not do, which is false for a CLI
+// reader.
+func requireOperatorNeutralRefusal(t *testing.T, err error) {
+	t.Helper()
+	if !strings.Contains(err.Error(), normalizedEmailIndexPurpose) {
+		t.Fatalf("refusal must state the index's purpose, got %v", err)
+	}
+	if strings.Contains(err.Error(), "does not start") {
+		t.Fatalf("refusal must not speak for the server's start-up, got %v", err)
 	}
 }
 
