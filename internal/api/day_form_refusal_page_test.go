@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -274,7 +275,8 @@ func TestNoJSDayFormRefusalLinkIgnoresWhatTheRequestCarries(t *testing.T) {
 
 // TestNoJSDayDeleteFailureAnswersAPageKeepingItsStatus pins a refusal the
 // handler raises after validation: the delete the store fails keeps its 500 and
-// still lands on a page with the link back to the calendar day, not on JSON.
+// still lands on a page with the link back to the calendar day, not on JSON,
+// and the page says it in words rather than with the machine key.
 func TestNoJSDayDeleteFailureAnswersAPageKeepingItsStatus(t *testing.T) {
 	t.Parallel()
 
@@ -289,14 +291,7 @@ func TestNoJSDayDeleteFailureAnswersAPageKeepingItsStatus(t *testing.T) {
 	}
 
 	response := form.submit(t, ctx.app, nil)
-	defer func() { _ = response.Body.Close() }()
-	assertStatusCode(t, response, http.StatusInternalServerError)
-	if contentType := response.Header.Get("Content-Type"); !strings.HasPrefix(contentType, "text/html") {
-		t.Fatalf("Content-Type %q, want text/html", contentType)
-	}
-	if body := mustReadBodyString(t, response.Body); !strings.Contains(body, `<a href="`+template.HTMLEscapeString(calendarLanding(iso))+`"`) {
-		t.Fatalf("body lacks the link back to the calendar day: %s", body)
-	}
+	assertRefusalPageCarrying(t, response, http.StatusInternalServerError, englishCopy(t, "common.error.internal_error"), calendarLanding(iso))
 }
 
 // TestDayWriteRefusalsKeepTheirStatusAndEnvelopeForOtherClients pins the other
@@ -369,28 +364,61 @@ func TestDayWriteRefusalsKeepTheirStatusAndEnvelopeForOtherClients(t *testing.T)
 	})
 }
 
-// TestEveryDayValidationRefusalHasLocalizedCopyInEveryLocale walks the specs
-// the day writes can answer 400 with, from the source: the page that now
-// carries them has no machine key to fall back on. The refusal of the manual
-// cycle-start mark, which PUT and DELETE never raise, is its own route's.
-func TestEveryDayValidationRefusalHasLocalizedCopyInEveryLocale(t *testing.T) {
+// TestEveryDayAndCycleRefusalHasLocalizedCopyInEveryLocale walks, from the
+// source, every global-target spec the day save, the day delete and the cycle
+// settings handlers can hand apiError, and requires copy for each in every
+// locale: the page that now carries a browser's refusal has no machine key to
+// fall back on, so an unmapped key would be shown to the person verbatim. The
+// walk starts at the handlers and follows each function that returns a spec, so
+// a spec added to one of them later is covered without a list to update. The
+// settings-form-target specs of the cycle route are not on this arm: a browser
+// is flash-redirected for them. The manual cycle-start mark's refusals, which
+// these three never raise and which predate the page, are its own route's.
+func TestEveryDayAndCycleRefusalHasLocalizedCopyInEveryLocale(t *testing.T) {
 	t.Parallel()
 
-	file, err := parser.ParseFile(token.NewFileSet(), "error_mapping_days.go", nil, 0)
+	files, err := filepath.Glob("*.go")
 	if err != nil {
-		t.Fatalf("parse error_mapping_days.go: %v", err)
+		t.Fatalf("list package sources: %v", err)
 	}
-	feeders := map[string]bool{
-		"invalidDateErrorSpec":       true,
-		"invalidPayloadErrorSpec":    true,
-		"invalidSymptomIDsErrorSpec": true,
-		"mapDayUpsertError":          true,
+	handlerMethods := map[string]*ast.FuncDecl{}
+	specFuncs := map[string]*ast.FuncDecl{}
+	fileSet := token.NewFileSet()
+	for _, name := range files {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fileSet, name, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				continue
+			}
+			if fn.Recv == nil {
+				if results := fn.Type.Results; results != nil && len(results.List) == 1 {
+					if result, ok := results.List[0].Type.(*ast.Ident); ok && result.Name == "APIErrorSpec" {
+						specFuncs[fn.Name.Name] = fn
+					}
+				}
+				continue
+			}
+			if star, ok := fn.Recv.List[0].Type.(*ast.StarExpr); ok {
+				if receiver, ok := star.X.(*ast.Ident); ok && receiver.Name == "Handler" {
+					handlerMethods[fn.Name.Name] = fn
+				}
+			}
+		}
 	}
+
 	mentionsCycleStartMark := func(clause *ast.CaseClause) bool {
 		found := false
 		for _, expr := range clause.List {
 			ast.Inspect(expr, func(node ast.Node) bool {
-				if selector, ok := node.(*ast.SelectorExpr); ok && selector.Sel.Name == "ErrManualCycleStartConfirmationNeeded" {
+				if selector, ok := node.(*ast.SelectorExpr); ok &&
+					(selector.Sel.Name == "ErrManualCycleStartConfirmationNeeded" || selector.Sel.Name == "ErrManualCycleStartReplaceRequired") {
 					found = true
 				}
 				return !found
@@ -400,35 +428,55 @@ func TestEveryDayValidationRefusalHasLocalizedCopyInEveryLocale(t *testing.T) {
 	}
 
 	keys := map[string]bool{}
-	for _, decl := range file.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || !feeders[fn.Name.Name] {
-			continue
+	visited := map[string]bool{}
+	var visit func(fn *ast.FuncDecl)
+	visit = func(fn *ast.FuncDecl) {
+		if visited[fn.Name.Name] {
+			return
 		}
+		visited[fn.Name.Name] = true
 		ast.Inspect(fn.Body, func(node ast.Node) bool {
 			if clause, ok := node.(*ast.CaseClause); ok && mentionsCycleStartMark(clause) {
 				return false
 			}
 			call, ok := node.(*ast.CallExpr)
-			if !ok || len(call.Args) != 3 {
+			if !ok {
 				return true
 			}
 			callee, ok := call.Fun.(*ast.Ident)
-			category, categoryOK := call.Args[1].(*ast.Ident)
-			key, keyOK := call.Args[2].(*ast.BasicLit)
-			if ok && callee.Name == "globalErrorSpec" && categoryOK && category.Name == "APIErrorCategoryValidation" && keyOK && key.Kind == token.STRING {
-				unquoted, err := strconv.Unquote(key.Value)
-				if err != nil {
-					t.Fatalf("unquote %s: %v", key.Value, err)
+			if !ok {
+				return true
+			}
+			if callee.Name == "globalErrorSpec" && len(call.Args) == 3 {
+				if key, ok := call.Args[2].(*ast.BasicLit); ok && key.Kind == token.STRING {
+					unquoted, err := strconv.Unquote(key.Value)
+					if err != nil {
+						t.Fatalf("unquote %s: %v", key.Value, err)
+					}
+					keys[unquoted] = true
 				}
-				keys[unquoted] = true
+				return true
+			}
+			if spec, ok := specFuncs[callee.Name]; ok {
+				visit(spec)
 			}
 			return true
 		})
 	}
-	for _, named := range []string{"invalid date", "invalid payload", "invalid symptom ids", "invalid bbt value"} {
+	for _, root := range []string{"UpsertDay", "resolveUpsertDayRequest", "DeleteDay", "UpdateCycleSettings", "updateUsageGoalOnly"} {
+		fn, ok := handlerMethods[root]
+		if !ok {
+			t.Fatalf("handler method %s not found: the walk lost its root", root)
+		}
+		visit(fn)
+	}
+	for _, named := range []string{
+		"invalid date", "invalid payload", "invalid symptom ids", "invalid bbt value", "unauthorized",
+		"failed to load day", "failed to create day", "failed to update day", "failed to delete day",
+		"failed to update cycle settings",
+	} {
 		if !keys[named] {
-			t.Fatalf("the walk found no %q among %d day validation keys: it is broken, not the class empty", named, len(keys))
+			t.Fatalf("the walk found no %q among %d keys: it is broken, not the class empty", named, len(keys))
 		}
 	}
 
@@ -440,7 +488,7 @@ func TestEveryDayValidationRefusalHasLocalizedCopyInEveryLocale(t *testing.T) {
 		t.Run(key, func(t *testing.T) {
 			translationKey := services.AuthErrorTranslationKey(key)
 			if translationKey == "" {
-				t.Fatalf("day validation key %q has no entry in the error translation map: the 422 page would show it raw", key)
+				t.Fatalf("day or cycle refusal key %q has no entry in the error translation map: the refusal page would show it raw", key)
 			}
 			for _, language := range manager.SupportedLanguages() {
 				if strings.TrimSpace(manager.Messages(language)[translationKey]) == "" {
