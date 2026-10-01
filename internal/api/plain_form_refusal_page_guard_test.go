@@ -339,6 +339,8 @@ func TestEveryNoJSPostFormActionAnswersARefusalAsAPage(t *testing.T) {
 		"day_editor_partial.html /api/v1/days/2026-09-27?source=calendar DELETE",
 		"components/settings_interface.html /api/v1/users/current/interface PATCH",
 		"components/settings_symptoms.html /api/v1/symptoms/2026-09-27 DELETE",
+		"components/settings_danger_zone.html /api/v1/users/current DELETE",
+		"components/settings_egress.html /api/v1/users/current/calendar-feed DELETE",
 	} {
 		if !seen[anchor] {
 			t.Fatalf("the scan found no form %q: the scan is broken, not the tree clean", anchor)
