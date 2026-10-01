@@ -308,6 +308,7 @@ type anyForm struct {
 	method    string
 	hasAction bool
 	attrs     map[string]string
+	named     []string // name of every named control inside the form
 }
 
 func anyFormsInTemplate(source string) []anyForm {
@@ -317,6 +318,7 @@ func anyFormsInTemplate(source string) []anyForm {
 		return "TPLACTION" + strings.Repeat("\n", strings.Count(action, "\n"))
 	})
 	var forms []anyForm
+	open := false
 	line := 1
 	tokenizer := html.NewTokenizer(strings.NewReader(stripped))
 	for {
@@ -327,16 +329,28 @@ func anyFormsInTemplate(source string) []anyForm {
 		startLine := line
 		line += strings.Count(string(tokenizer.Raw()), "\n")
 		token := tokenizer.Token()
-		if (kind != html.StartTagToken && kind != html.SelfClosingTagToken) || token.Data != "form" {
+		if kind == html.EndTagToken && token.Data == "form" {
+			open = false
 			continue
 		}
-		attrs := tokenAttrs(token)
-		forms = append(forms, anyForm{
-			line:      startLine,
-			method:    strings.ToLower(attrs["method"]),
-			hasAction: strings.TrimSpace(attrs["action"]) != "",
-			attrs:     attrs,
-		})
+		if kind != html.StartTagToken && kind != html.SelfClosingTagToken {
+			continue
+		}
+		switch token.Data {
+		case "form":
+			attrs := tokenAttrs(token)
+			forms = append(forms, anyForm{
+				line:      startLine,
+				method:    strings.ToLower(attrs["method"]),
+				hasAction: strings.TrimSpace(attrs["action"]) != "",
+				attrs:     attrs,
+			})
+			open = true
+		case "input", "select", "textarea", "button":
+			if name := tokenAttrs(token)["name"]; open && name != "" {
+				forms[len(forms)-1].named = append(forms[len(forms)-1].named, name)
+			}
+		}
 	}
 }
 
@@ -370,6 +384,28 @@ func formProblem(form anyForm) string {
 	return strings.Join(problems, "; ")
 }
 
+// exemptFormProblem reports why an exempt form is not what its exemption says:
+// a GET form (method="get" with an action) or a form read by script only (no
+// method, no action). Either way no named control may sit inside it — without
+// JS a named field would travel in the query string — and a form that declares
+// method="post", or a method other than get, was never exempt from the post
+// checks.
+func exemptFormProblem(form anyForm) string {
+	var problems []string
+	switch {
+	case form.method == "get" && form.hasAction:
+	case form.method == "" && !form.hasAction:
+	case form.method == "get":
+		problems = append(problems, "a GET form without an action submits to the page it is on")
+	default:
+		problems = append(problems, fmt.Sprintf("method %q with action=%v is neither a GET form nor a script-only form", form.method, form.hasAction))
+	}
+	if len(form.named) != 0 {
+		problems = append(problems, fmt.Sprintf("carries named controls %q that would travel in the query string", form.named))
+	}
+	return strings.Join(problems, "; ")
+}
+
 func TestEveryFormIsAPostFormWithAnActionOrNamedAsAGetForm(t *testing.T) {
 	used := map[int]bool{}
 	var failures []string
@@ -393,6 +429,9 @@ func TestEveryFormIsAPostFormWithAnActionOrNamedAsAGetForm(t *testing.T) {
 				}
 			}
 			if exempt {
+				if problem := exemptFormProblem(form); problem != "" {
+					failures = append(failures, fmt.Sprintf("%s:%d: exempt, but %s", path, form.line, problem))
+				}
 				continue
 			}
 			if problem := formProblem(form); problem != "" {
@@ -443,5 +482,40 @@ func TestFormMethodScanClassifiesItsOwnFixtures(t *testing.T) {
 	}
 	if forms[0].line != 2 || forms[5].line != 7 {
 		t.Errorf("form lines %d and %d, want 2 and 7", forms[0].line, forms[5].line)
+	}
+}
+
+// TestExemptFormCheckClassifiesItsOwnFixtures anchors the check that an exempt
+// form really is a GET or script-only form, on inputs this file owns.
+func TestExemptFormCheckClassifiesItsOwnFixtures(t *testing.T) {
+	fixture := `
+<form action="/a" method="get"><input type="checkbox"><button type="submit">go</button></form>
+<form class="script"><input type="file"><button>send</button></form>
+<form action="/c" method="post"></form>
+<form action="/d" method="get"><input name="q"></form>
+<form class="script"><select name="{{.Name}}"></select></form>
+<form method="get"></form>
+<form action="/g"></form>
+<input name="outside">
+<form action="/h" method="get"><textarea name="t"></textarea></form>
+<form action="/i" method="get"><button name="b" value="1">go</button></form>
+`
+	forms := anyFormsInTemplate(fixture)
+	// In order: GET with an action and unnamed controls; script-only with
+	// unnamed controls; a post form; a GET carrying a field; a script-only form
+	// carrying a templated name; a GET with no action; an action with no method;
+	// a named textarea; a named button.
+	want := []string{"", "", "neither a GET form", "named controls", "named controls", "without an action", "neither a GET form", "named controls", "named controls"}
+	if len(forms) != len(want) {
+		t.Fatalf("scan found %d forms, want %d: %+v", len(forms), len(want), forms)
+	}
+	for index, fragment := range want {
+		problem := exemptFormProblem(forms[index])
+		if (fragment == "") != (problem == "") || !strings.Contains(problem, fragment) {
+			t.Errorf("form %d (line %d): problem %q, want one holding %q", index, forms[index].line, problem, fragment)
+		}
+	}
+	if len(forms[len(forms)-1].named) != 1 || len(forms[0].named) != 0 {
+		t.Errorf("named controls leaked across forms: first %v, last %v", forms[0].named, forms[len(forms)-1].named)
 	}
 }

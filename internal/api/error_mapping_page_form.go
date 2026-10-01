@@ -10,10 +10,11 @@ import (
 
 // plainPageFormBackPath resolves the page a browser posted one of the in-app
 // hx-post forms from when it did so without JavaScript: the onboarding steps,
-// the manual cycle-start control, the day editors and the cycle settings. A
-// refusal there would otherwise paint the JSON envelope as the page, so
-// apiError answers the localized status fragment with a link back instead —
-// same status, same key. No cookie rides on it, the flash included.
+// the manual cycle-start control, the day editors, the cycle settings and the
+// settings forms for reminders, interface, tracking and symptoms. A refusal
+// there would otherwise paint the JSON envelope as the page, so apiError
+// answers the localized status fragment with a link back instead — same
+// status, same key. No cookie rides on it, the flash included.
 //
 // Scoped tighter than isPlainAuthFormPageNavigation: the request must also say
 // it accepts text/html, because API clients post form bodies to these routes
@@ -47,6 +48,9 @@ func plainPageFormBackPath(c fiber.Ctx) (string, bool) {
 			return "/dashboard", true
 		}
 		return "/settings", true
+	}
+	if back, ok := settingsFormBackPath(path); ok {
+		return back, true
 	}
 	rest, ok := strings.CutPrefix(path, "/api/v1/days/")
 	if !ok {
@@ -82,4 +86,28 @@ func dayFormSource(c fiber.Ctx) string {
 		return source
 	}
 	return string(c.Request().PostArgs().Peek("source"))
+}
+
+// settingsFormBackPath is the one place that maps a settings-page form route
+// onto the page that hosts it: the reminders, interface, tracking and symptoms
+// forms. Every one lives on /settings, so the back link is that one fixed path.
+// A symptom id is matched as one path segment and never reaches the href. A
+// form on the settings page that needs a page-shaped refusal gets its case here.
+func settingsFormBackPath(path string) (string, bool) {
+	switch path {
+	case "/api/v1/users/current/reminders",
+		"/api/v1/users/current/interface",
+		"/api/v1/users/current/tracking",
+		"/api/v1/symptoms":
+		return "/settings", true
+	}
+	rest, ok := strings.CutPrefix(path, "/api/v1/symptoms/")
+	if !ok {
+		return "", false
+	}
+	id, _ := strings.CutSuffix(rest, "/restore")
+	if id == "" || strings.Contains(id, "/") {
+		return "", false
+	}
+	return "/settings", true
 }

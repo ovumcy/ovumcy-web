@@ -14,6 +14,8 @@ import (
 func TestPlainPageFormBackPathAdmitsOnlyBrowserFormPostsItCanLinkBackFrom(t *testing.T) {
 	t.Parallel()
 
+	// The real override middleware, so a form that names PATCH or DELETE arrives
+	// here the way it does in production: as that verb, flagged as a form post.
 	app := fiber.New()
 	app.Use(MethodOverride(newBareRefusalHandler(t)))
 	app.All("/*", func(c fiber.Ctx) error {
@@ -23,6 +25,7 @@ func TestPlainPageFormBackPathAdmitsOnlyBrowserFormPostsItCanLinkBackFrom(t *tes
 
 	const browser = "text/html,application/xhtml+xml"
 	const calendar = "true /calendar?month=2026-09&day=2026-09-27"
+	const settings = "true /settings"
 	cases := []struct {
 		name, method, target, accept, hx, body, want string
 	}{
@@ -54,8 +57,22 @@ func TestPlainPageFormBackPathAdmitsOnlyBrowserFormPostsItCanLinkBackFrom(t *tes
 		{name: "cycle form, odd source", method: http.MethodPost, target: "/api/v1/users/current/cycle?source=//evil.example", accept: browser, body: "_method=PATCH", want: "true /settings"},
 		{name: "cycle form real PATCH", method: http.MethodPatch, target: "/api/v1/users/current/cycle?source=dashboard", accept: browser, want: "false "},
 		{name: "cycle form JSON client", method: http.MethodPost, target: "/api/v1/users/current/cycle", accept: "application/json", body: "_method=PATCH", want: "false "},
-		{name: "reminders form is another route", method: http.MethodPost, target: "/api/v1/users/current/reminders", accept: browser, body: "_method=PATCH", want: "false "},
-		{name: "other api route", method: http.MethodPost, target: "/api/v1/symptoms", accept: browser, want: "false "},
+		{name: "symptom create", method: http.MethodPost, target: "/api/v1/symptoms", accept: browser, want: settings},
+		{name: "symptom restore", method: http.MethodPost, target: "/api/v1/symptoms/7/restore", accept: browser, want: settings},
+		{name: "symptom edit, PATCH by override", method: http.MethodPost, target: "/api/v1/symptoms/7", accept: browser, body: "_method=PATCH", want: settings},
+		{name: "symptom hide, DELETE by override", method: http.MethodPost, target: "/api/v1/symptoms/7", accept: browser, body: "_method=DELETE", want: settings},
+		{name: "reminders, PATCH by override", method: http.MethodPost, target: "/api/v1/users/current/reminders", accept: browser, body: "_method=PATCH", want: settings},
+		{name: "interface, PATCH by override", method: http.MethodPost, target: "/api/v1/users/current/interface", accept: browser, body: "_method=PATCH", want: settings},
+		{name: "tracking, PATCH by override", method: http.MethodPost, target: "/api/v1/users/current/tracking", accept: browser, body: "_method=PATCH", want: settings},
+		{name: "symptom id never reaches the link", method: http.MethodPost, target: "/api/v1/symptoms/%22%3E%3Cb%3E", accept: browser, want: settings},
+		{name: "symptom path with a second segment", method: http.MethodPost, target: "/api/v1/symptoms/7/8", accept: browser, want: "false "},
+		{name: "symptom restore with no id", method: http.MethodPost, target: "/api/v1/symptoms//restore", accept: browser, want: "false "},
+		{name: "PATCH sent as PATCH keeps the envelope", method: http.MethodPatch, target: "/api/v1/users/current/interface", accept: browser, want: "false "},
+		{name: "DELETE sent as DELETE keeps the envelope", method: http.MethodDelete, target: "/api/v1/symptoms/7", accept: browser, want: "false "},
+		{name: "override on a route with no page", method: http.MethodPost, target: "/api/v1/stats/overview", accept: browser, body: "_method=PATCH", want: "false "},
+		{name: "settings override from htmx", method: http.MethodPost, target: "/api/v1/symptoms/7", accept: browser, hx: "true", body: "_method=PATCH", want: "false "},
+		{name: "settings override without text/html", method: http.MethodPost, target: "/api/v1/symptoms/7", accept: "", body: "_method=PATCH", want: "false "},
+		{name: "other api route", method: http.MethodPost, target: "/api/v1/stats/overview", accept: browser, want: "false "},
 		{name: "no text/html in Accept", method: http.MethodPost, target: "/api/v1/onboarding/steps/1", accept: "", want: "false "},
 		{name: "JSON client", method: http.MethodPost, target: "/api/v1/onboarding/steps/1", accept: "application/json, text/html", want: "false "},
 		{name: "htmx", method: http.MethodPost, target: "/api/v1/onboarding/steps/1", accept: browser, hx: "true", want: "false "},

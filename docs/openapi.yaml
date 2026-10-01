@@ -2635,6 +2635,12 @@ paths:
     post:
       tags: [symptoms]
       summary: Create a custom symptom (owner only).
+      description: |
+        A refusal raised before the handler runs (a stale CSRF token, a rate limit) answers a
+        browser form submission without JavaScript — `Accept` names `text/html` — with the
+        shared localized status fragment as `text/html`, under the refusal's own status and
+        key, ending with a link back to `/settings`, instead of the JSON envelope. Every other
+        caller keeps the JSON envelope.
       requestBody:
         required: true
         content:
@@ -2658,6 +2664,13 @@ paths:
     patch:
       tags: [symptoms]
       summary: Update a symptom (owner only).
+      description: |
+        A refusal raised before the handler runs (a stale CSRF token, a rate limit) answers a
+        browser form submission without JavaScript — `Accept` names `text/html`, the form's
+        hidden `_method` field makes it arrive as PATCH — with the shared localized status
+        fragment as `text/html`, under the refusal's own status and key, ending with a link back
+        to `/settings`, instead of the JSON envelope. Every other caller, one that sends PATCH
+        itself included, keeps the JSON envelope.
       requestBody:
         required: true
         content:
@@ -2683,6 +2696,13 @@ paths:
         entries that reference the symptom keep the ID so historical entries
         remain readable; new entries cannot select an archived symptom until
         it is restored via `POST /api/v1/symptoms/{id}/restore`.
+
+        A refusal raised before the handler runs (a stale CSRF token, a rate limit) answers a
+        browser form submission without JavaScript — `Accept` names `text/html`, the form's
+        hidden `_method` field makes it arrive as DELETE — with the shared localized status
+        fragment as `text/html`, under the refusal's own status and key, ending with a link back
+        to `/settings`, instead of the JSON envelope. Every other caller, one that sends DELETE
+        itself included, keeps the JSON envelope.
       responses:
         '200':
           description: Archived.
@@ -2699,6 +2719,12 @@ paths:
     post:
       tags: [symptoms]
       summary: Restore a previously archived symptom (owner only).
+      description: |
+        A refusal raised before the handler runs (a stale CSRF token, a rate limit) answers a
+        browser form submission without JavaScript — `Accept` names `text/html` — with the
+        shared localized status fragment as `text/html`, under the refusal's own status and
+        key, ending with a link back to `/settings`, instead of the JSON envelope. Every other
+        caller keeps the JSON envelope.
       parameters:
         - $ref: '#/components/parameters/SymptomId'
       responses:
@@ -2911,6 +2937,13 @@ paths:
     patch:
       tags: [settings]
       summary: Update interface preferences (owner only).
+      description: |
+        A refusal raised before the handler runs (a stale CSRF token, a rate limit) answers a
+        browser form submission without JavaScript — `Accept` names `text/html`, the form's
+        hidden `_method` field makes it arrive as PATCH — with the shared localized status
+        fragment as `text/html`, under the refusal's own status and key, ending with a link back
+        to `/settings`, instead of the JSON envelope. Every other caller, one that sends PATCH
+        itself included, keeps the JSON envelope.
       requestBody:
         required: true
         content:
@@ -2931,6 +2964,13 @@ paths:
     patch:
       tags: [settings]
       summary: Update tracking preferences (owner only).
+      description: |
+        A refusal raised before the handler runs (a stale CSRF token, a rate limit) answers a
+        browser form submission without JavaScript — `Accept` names `text/html`, the form's
+        hidden `_method` field makes it arrive as PATCH — with the shared localized status
+        fragment as `text/html`, under the refusal's own status and key, ending with a link back
+        to `/settings`, instead of the JSON envelope. Every other caller, one that sends PATCH
+        itself included, keeps the JSON envelope.
       requestBody:
         required: true
         content:
@@ -3219,6 +3259,13 @@ paths:
         Sets the shared reminder lead window (users.reminder_lead_days) governing
         how many days ahead the dashboard period/ovulation reminder appears. The
         value is clamped to 0–14; it does not bump auth_session_version.
+
+        A refusal raised before the handler runs (a stale CSRF token, a rate limit) answers a
+        browser form submission without JavaScript — `Accept` names `text/html`, the form's
+        hidden `_method` field makes it arrive as PATCH — with the shared localized status
+        fragment as `text/html`, under the refusal's own status and key, ending with a link back
+        to `/settings`, instead of the JSON envelope. Every other caller, one that sends PATCH
+        itself included, keeps the JSON envelope.
       requestBody:
         required: true
         content:
