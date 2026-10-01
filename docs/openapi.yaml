@@ -2944,8 +2944,9 @@ paths:
         fragment as `text/html`, under the refusal's own status and key, ending with a link back
         to `/settings`, instead of the JSON envelope. Every other caller, one that sends PATCH
         itself included, keeps the JSON envelope.
-        A rate limit is not answered so: a browser is redirected `303` to `/settings` with the
-        refusal in a flash message, as before, and a JSON caller keeps the `429` envelope.
+        A rate limit is not answered so: a caller that does not ask for JSON is redirected `303`
+        to `/settings` with the refusal in a flash message, as before, an htmx request gets the
+        status fragment under `200`, and a JSON caller keeps the `429` envelope.
       requestBody:
         required: true
         content:
@@ -2973,8 +2974,9 @@ paths:
         fragment as `text/html`, under the refusal's own status and key, ending with a link back
         to `/settings`, instead of the JSON envelope. Every other caller, one that sends PATCH
         itself included, keeps the JSON envelope.
-        A rate limit is not answered so: a browser is redirected `303` to `/settings` with the
-        refusal in a flash message, as before, and a JSON caller keeps the `429` envelope.
+        A rate limit is not answered so: a caller that does not ask for JSON is redirected `303`
+        to `/settings` with the refusal in a flash message, as before, an htmx request gets the
+        status fragment under `200`, and a JSON caller keeps the `429` envelope.
       requestBody:
         required: true
         content:
@@ -3270,8 +3272,9 @@ paths:
         fragment as `text/html`, under the refusal's own status and key, ending with a link back
         to `/settings`, instead of the JSON envelope. Every other caller, one that sends PATCH
         itself included, keeps the JSON envelope.
-        A rate limit is not answered so: a browser is redirected `303` to `/settings` with the
-        refusal in a flash message, as before, and a JSON caller keeps the `429` envelope.
+        A rate limit is not answered so: a caller that does not ask for JSON is redirected `303`
+        to `/settings` with the refusal in a flash message, as before, an htmx request gets the
+        status fragment under `200`, and a JSON caller keeps the `429` envelope.
       requestBody:
         required: true
         content:
