@@ -63,13 +63,23 @@ func plainPageFormBackPath(c fiber.Ctx) (string, bool) {
 
 // dayFormBackPath is the page a day form was posted from: the calendar day when
 // the form says source=calendar and the date parses, the dashboard otherwise.
-// The day editor says it in a hidden field and the cycle-start form in its
-// query; FormValue reads the query first, then the body, as the success path
-// does (respondUpsertDaySuccess).
+// The cycle-start and delete forms say it in the query, the day editor's save
+// in a hidden field.
 func dayFormBackPath(c fiber.Ctx, date string) string {
 	day, err := time.Parse("2006-01-02", date)
-	if err == nil && c.FormValue("source") == "calendar" {
+	if err == nil && dayFormSource(c) == "calendar" {
 		return calendarDayPath(day)
 	}
 	return "/dashboard"
+}
+
+// dayFormSource reads the query, then the body field only of a form
+// MethodOverride has already parsed into PostArgs (urlencoded, no
+// Content-Encoding). A limiter refusal reaches here ahead of CSRF and the body
+// cap, so no other body — multipart, compressed — is parsed for a link.
+func dayFormSource(c fiber.Ctx) string {
+	if source := c.Query("source"); source != "" || !arrivedAsOverriddenFormPost(c) {
+		return source
+	}
+	return string(c.Request().PostArgs().Peek("source"))
 }
