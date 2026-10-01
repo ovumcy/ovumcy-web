@@ -79,10 +79,7 @@ const (
 	stubUnexpectedGit    = "the gate ran an unexpected git command"
 )
 
-var (
-	envEntry   = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*): (.*)$`)
-	needsEntry = regexp.MustCompile(`^      - ([A-Za-z0-9_.-]+)$`)
-)
+var envEntry = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*): (.*)$`)
 
 // checkRun is one row of the check-runs endpoint as the gate's `--jq` projects
 // it: which suite it belongs to, the context name, and the conclusion.
@@ -749,14 +746,14 @@ func stepBlock(t *testing.T) string {
 
 // rollingNeeds reads `publish-image`'s dependency list, the set of checks
 // `:latest` waits for. The release gate is compared against it rather than
-// against a copy of it kept here. It reads through jobNeeds, the reader that
-// holds `publish` to the gate, so the two `needs:` lists this package judges
+// against a copy of it kept here. It reads through workflowfile.JobNeeds, the
+// reader that holds `publish` to the gate, so the two `needs:` lists this package judges
 // cannot be read under different rules.
 func rollingNeeds(t *testing.T) []string {
 	t.Helper()
 
 	block := workflowfile.Job(t, rollingWorkflow, rollingJob)
-	needs, err := jobNeeds(block)
+	needs, err := workflowfile.JobNeeds(block)
 	if err != nil {
 		t.Fatalf("%s, job %q: `needs:` cannot be read (%v), so there is nothing to hold the release gate to", rollingWorkflow, rollingJob, err)
 	}

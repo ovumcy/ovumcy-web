@@ -48,7 +48,6 @@
 package publishgate
 
 import (
-	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -81,20 +80,23 @@ var wantNeeds = []string{"e2e", "e2e-cross-browser", "e2e-postgres-smoke", "imag
 // referred back to a reader rather than guessed at.
 const eventDisjunction = "(github.event_name == 'push' || github.event_name == 'workflow_dispatch')"
 
-var (
-	needsEntry  = regexp.MustCompile(`^-[ \t]+([A-Za-z0-9_.-]+)$`)
-	plainName   = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
-	foldMarker  = regexp.MustCompile(`^[>|][-+]?[ \t]*`)
-	whitespaces = regexp.MustCompile(`[ \t\n\r]+`)
-)
-
 // TestPublishImageGateOverridesTheImplicitSuccessAndJudgesEveryDependency reads
 // the real workflow and judges the gate it declares.
 func TestPublishImageGateOverridesTheImplicitSuccessAndJudgesEveryDependency(t *testing.T) {
 	block := workflowfile.Job(t, workflowPath, publishJob)
-	needs := jobNeeds(t, block)
+	needs, err := workflowfile.JobNeeds(block)
+	if err != nil {
+		t.Fatalf("%s: %q: `needs:` cannot be read (%v), so it is gated on nothing the guard can see", workflowPath, publishJob, err)
+	}
+	// This job's `if:` is a folded block scalar, the one shape the shared
+	// reader's strict condition reader refuses; the folded reader is named here
+	// so the exception is visible at the call.
+	condition, err := workflowfile.JobFoldedCondition(block)
+	if err != nil {
+		t.Fatalf("%s: %q: the job-level `if:` cannot be read (%v)", workflowPath, publishJob, err)
+	}
 
-	for _, problem := range gateProblems(jobField(t, block, "if"), needs) {
+	for _, problem := range gateProblems(condition, needs) {
 		t.Errorf("%s, job %q: %s", workflowPath, publishJob, problem)
 	}
 
@@ -143,92 +145,6 @@ func gateProblems(condition string, needs []string) []string {
 	}
 
 	return problems
-}
-
-// jobNeeds reads the job's dependency list off the workflow rather than
-// restating it, so the per-dependency assertions grow with the job.
-func jobNeeds(t *testing.T, block string) []string {
-	t.Helper()
-
-	needs := parseNeeds(jobFieldLines(t, block, "needs"))
-	if len(needs) == 0 {
-		t.Fatalf("%s: %q lists no dependencies, so it is gated on nothing at all", workflowPath, publishJob)
-	}
-	return needs
-}
-
-// parseNeeds reads a dependency list in any of the three spellings YAML allows
-// for it. All three are the same list to GitHub, so all three have to be the
-// same list here: a reader that knew only the block sequence would report "no
-// dependencies at all" over a workflow that in fact declares six, and the
-// per-dependency checks would never run.
-func parseNeeds(lines []string) []string {
-	var needs []string
-
-	if inline := strings.TrimSpace(strings.Join(lines, " ")); strings.HasPrefix(inline, "[") {
-		for _, item := range strings.Split(strings.Trim(inline, "[]"), ",") {
-			if name := strings.TrimSpace(item); plainName.MatchString(name) {
-				needs = append(needs, name)
-			}
-		}
-		return needs
-	}
-
-	for _, line := range lines {
-		if match := needsEntry.FindStringSubmatch(line); match != nil {
-			needs = append(needs, match[1])
-		}
-	}
-	if len(needs) == 0 && len(lines) == 1 && plainName.MatchString(lines[0]) {
-		// `needs: one-job`, the single-dependency spelling.
-		return []string{lines[0]}
-	}
-	return needs
-}
-
-// jobField returns the value of one key of the job mapping as a single line,
-// with the block-scalar indicator stripped and whitespace collapsed, so that
-// folding an expression across lines does not change what this file matches on.
-func jobField(t *testing.T, block, key string) string {
-	t.Helper()
-
-	joined := strings.TrimSpace(strings.Join(jobFieldLines(t, block, key), " "))
-	return whitespaces.ReplaceAllString(foldMarker.ReplaceAllString(joined, ""), " ")
-}
-
-// jobFieldLines returns one key of the job mapping line by line — the text
-// after the colon, then every more-indented line under it, comments and blank
-// lines dropped. A sequence value has to stay line-shaped: collapsing it would
-// run its entries together into one string with no item boundary left.
-func jobFieldLines(t *testing.T, block, key string) []string {
-	t.Helper()
-
-	var (
-		value   []string
-		reading bool
-	)
-	for _, line := range strings.Split(block, "\n") {
-		switch {
-		case strings.HasPrefix(line, "    "+key+":"):
-			reading = true
-			value = append(value, strings.TrimSpace(strings.TrimPrefix(line, "    "+key+":")))
-			continue
-		case !reading:
-			continue
-		case strings.TrimSpace(line) == "":
-			continue
-		case strings.HasPrefix(strings.TrimSpace(line), "#"):
-			continue
-		case strings.HasPrefix(line, "     "):
-			value = append(value, strings.TrimSpace(line))
-			continue
-		}
-		reading = false
-	}
-	if len(value) == 0 {
-		t.Fatalf("%s: %q has no `%s:` key", workflowPath, publishJob, key)
-	}
-	return value
 }
 
 // goodCondition rebuilds the shape the workflow declares out of wantNeeds, so
@@ -297,30 +213,6 @@ func TestGateProblemsRefusesEveryShapeThatReadsGreenWhileGatingOnNothing(t *test
 			got := gateProblems(testCase.condition, wantNeeds)
 			if len(got) != testCase.want {
 				t.Fatalf("got %d problems %q, want %d", len(got), got, testCase.want)
-			}
-		})
-	}
-}
-
-// TestParseNeedsReadsEveryYAMLSpellingOfADependencyList holds the reader to all
-// three spellings. A reader that knew only one of them would report the gate as
-// depending on nothing over a reformatted but identical workflow, and skip
-// every per-dependency check on the way.
-func TestParseNeedsReadsEveryYAMLSpellingOfADependencyList(t *testing.T) {
-	for _, testCase := range []struct {
-		name  string
-		lines []string
-		want  string
-	}{
-		{"block sequence", []string{"", "- test", "- image-smoke"}, "test,image-smoke"},
-		{"flow sequence", []string{"[test, image-smoke]"}, "test,image-smoke"},
-		{"flow sequence folded over two lines", []string{"[test,", "image-smoke]"}, "test,image-smoke"},
-		{"a single dependency as a scalar", []string{"test"}, "test"},
-		{"an empty list", []string{""}, ""},
-	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			if got := strings.Join(parseNeeds(testCase.lines), ","); got != testCase.want {
-				t.Fatalf("got %q, want %q", got, testCase.want)
 			}
 		})
 	}

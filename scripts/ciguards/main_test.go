@@ -85,22 +85,6 @@ func allWorkflowFiles(t *testing.T) []string {
 // REL-6: patch-coverage runs in the merge queue.
 // ---------------------------------------------------------------------------
 
-var jobIfLine = regexp.MustCompile(`(?m)^    if: (.*)$`)
-
-// jobCondition returns a job's own single-line `if:` value, at the 4-space
-// indentation a job key sits under its 2-space job header. Conditions in this
-// repository are not folded across lines the way publishgate's is; a folded
-// condition here is refused rather than mis-parsed.
-func jobCondition(t *testing.T, block string) string {
-	t.Helper()
-
-	match := jobIfLine.FindStringSubmatch(block)
-	if match == nil {
-		t.Fatalf("job has no single-line `if:` key at 4-space indentation — it was reshaped, and this guard would judge nothing")
-	}
-	return match[1]
-}
-
 // PatchCoverageRunsInTheQueue refuses a patch-coverage `if:` that does not
 // admit merge_group. REL-6: this is a REQUIRED check, but it used to run only
 // on `pull_request` — in the merge_group suite that actually decides queue
@@ -117,7 +101,11 @@ func PatchCoverageRunsInTheQueue(condition string) error {
 func TestPatchCoverageRunsInTheMergeQueue(t *testing.T) {
 	block := workflowfile.Job(t, ".github/workflows/ci.yml", "patch-coverage")
 
-	if err := PatchCoverageRunsInTheQueue(jobCondition(t, block)); err != nil {
+	condition, err := workflowfile.JobIf(block)
+	if err != nil {
+		t.Fatalf("patch-coverage's job-level `if:` cannot be read (%v) — it was reshaped, and this guard would judge nothing", err)
+	}
+	if err := PatchCoverageRunsInTheQueue(condition); err != nil {
 		t.Fatal(err)
 	}
 }
