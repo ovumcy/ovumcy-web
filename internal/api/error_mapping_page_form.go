@@ -11,10 +11,11 @@ import (
 // plainPageFormBackPath resolves the page a browser posted one of the in-app
 // hx-post forms from when it did so without JavaScript: the onboarding steps,
 // the manual cycle-start control, the day editors, the cycle settings and the
-// settings forms for reminders, interface, tracking and symptoms. A refusal
-// there would otherwise paint the JSON envelope as the page, so apiError
-// answers the localized status fragment with a link back instead — same
-// status, same key. No cookie rides on it, the flash included.
+// settings forms for reminders, interface, tracking, symptoms, the account
+// and the second factor. A refusal there would otherwise paint the JSON
+// envelope as the page, so apiError answers the localized status fragment with
+// a link back instead — same status, same key. No cookie rides on it, the
+// flash included.
 //
 // Scoped tighter than isPlainAuthFormPageNavigation: the request must also say
 // it accepts text/html, because API clients post form bodies to these routes
@@ -89,16 +90,35 @@ func dayFormSource(c fiber.Ctx) string {
 }
 
 // settingsFormBackPath is the one place that maps a settings-page form route
-// onto the page that hosts it: the reminders, interface, tracking and symptoms
-// forms. Every one lives on /settings, so the back link is that one fixed path.
-// A symptom id is matched as one path segment and never reaches the href. A
-// form on the settings page that needs a page-shaped refusal gets its case here.
+// onto the page that hosts it: the reminders, interface, tracking, symptoms,
+// profile, password, recovery-code and SSO link or unlink forms live on
+// /settings, the two-factor enrol and disable forms on /settings/2fa. The back
+// link is one fixed path per route. A symptom or identity id is matched as one
+// path segment and never reaches the href. A form on a settings page that needs
+// a page-shaped refusal gets its case here.
 func settingsFormBackPath(path string) (string, bool) {
 	switch path {
 	case "/api/v1/users/current/reminders",
 		"/api/v1/users/current/interface",
 		"/api/v1/users/current/tracking",
-		"/api/v1/symptoms":
+		"/api/v1/symptoms",
+		"/api/v1/users/current/profile",
+		"/api/v1/users/current/password",
+		"/api/v1/users/current/password/step-up",
+		"/api/v1/users/current/recovery-code",
+		"/api/v1/users/current/oidc/link/step-up":
+		return "/settings", true
+	case "/api/v1/users/current/2fa":
+		// Enrolling and disabling both live on the second-factor page.
+		return "/settings/2fa", true
+	}
+	if id, ok := strings.CutPrefix(path, "/api/v1/users/current/oidc/identities/"); ok {
+		// The unlink form of one linked identity: every identity's form sits on
+		// the same page. A bare collection path never gets here: the routing
+		// normalization trims its trailing slash, so the prefix no longer matches.
+		if id == "" || strings.Contains(id, "/") {
+			return "", false
+		}
 		return "/settings", true
 	}
 	rest, ok := strings.CutPrefix(path, "/api/v1/symptoms/")

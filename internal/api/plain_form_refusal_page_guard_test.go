@@ -57,12 +57,6 @@ type plainFormRefusalExemption struct {
 const plainFormRefusalGap = "WEB-135: a refusal before the handler paints the JSON envelope without JS; fix pending"
 
 var plainFormRefusalExemptions = []plainFormRefusalExemption{
-	{file: "components/settings_account.html", action: "/api/v1/users/current/oidc/identities/2026-09-27", reason: plainFormRefusalGap},
-	{file: "components/settings_account.html", action: "/api/v1/users/current/oidc/link/step-up", reason: plainFormRefusalGap},
-	{file: "components/settings_account.html", action: "/api/v1/users/current/password", reason: plainFormRefusalGap},
-	{file: "components/settings_account.html", action: "/api/v1/users/current/password/step-up", reason: plainFormRefusalGap},
-	{file: "components/settings_account.html", action: "/api/v1/users/current/profile", reason: plainFormRefusalGap},
-	{file: "components/settings_account.html", action: "/api/v1/users/current/recovery-code", reason: plainFormRefusalGap},
 	{file: "components/settings_danger_zone.html", action: "/api/v1/users/current", reason: plainFormRefusalGap},
 	{file: "components/settings_danger_zone.html", action: "/api/v1/users/current/data-wipe", reason: plainFormRefusalGap},
 	{file: "components/settings_danger_zone.html", action: "/api/v1/users/current/data-wipe/step-up", reason: plainFormRefusalGap},
@@ -70,7 +64,6 @@ var plainFormRefusalExemptions = []plainFormRefusalExemption{
 	{file: "components/settings_egress.html", action: "/api/v1/users/current/calendar-feed", reason: plainFormRefusalGap},
 	{file: "components/settings_egress.html", action: "/api/v1/users/current/calendar-feed/rotate", reason: plainFormRefusalGap},
 	{file: "components/settings_egress.html", action: "/api/v1/users/current/webhook", reason: plainFormRefusalGap},
-	{file: "settings_2fa.html", action: "/api/v1/users/current/2fa", reason: plainFormRefusalGap},
 }
 
 // plainPostForm is one <form method="post"> the scan reports. An action it could
