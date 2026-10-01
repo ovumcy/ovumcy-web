@@ -1,4 +1,28 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
+
+function bundledFirefoxRevision(): number {
+  const manifest = join(dirname(require.resolve('playwright-core/package.json')), 'browsers.json');
+  const { browsers } = JSON.parse(readFileSync(manifest, 'utf8')) as {
+    browsers: { name: string; revision: string }[];
+  };
+  const revision = Number(browsers.find((browser) => browser.name === 'firefox')?.revision);
+  if (!Number.isInteger(revision)) {
+    throw new Error(`cannot read the firefox revision from ${manifest}`);
+  }
+  return revision;
+}
+
+// The app sends COOP same-origin, so a fresh context's first navigation swaps the
+// browsing context, and Playwright's firefox before r1551 can reuse a stale juggler
+// channel and never settle the goto (microsoft/playwright#42731). Keyed on the bundled
+// revision so the bump past r1551 drops the workaround by itself and a surviving hang
+// shows up again. No spec asserts COOP in a browser; the header is pinned in Go.
+const firefoxCoopWorkaround =
+  bundledFirefoxRevision() < 1551
+    ? { launchOptions: { firefoxUserPrefs: { 'browser.tabs.remote.useCrossOriginOpenerPolicy': false } } }
+    : {};
 
 const envWorkers = Number.parseInt(process.env.PLAYWRIGHT_WORKERS ?? '', 10);
 const workers = Number.isInteger(envWorkers) && envWorkers > 0 ? envWorkers : undefined;
@@ -41,17 +65,7 @@ export default defineConfig({
     },
     {
       name: 'firefox',
-      // The app sends COOP same-origin, so a fresh context's first navigation swaps the
-      // browsing context, and Playwright's firefox (<= r1543, @playwright/test 1.63) can
-      // reuse a stale juggler channel and never settle the goto: microsoft/playwright#42731,
-      // fixed in r1551. Drop this pref once the installed firefox is r1551 or later.
-      // COOP is still enforced by chromium and webkit here, and the header is pinned in Go.
-      use: {
-        ...devices['Desktop Firefox'],
-        launchOptions: {
-          firefoxUserPrefs: { 'browser.tabs.remote.useCrossOriginOpenerPolicy': false },
-        },
-      },
+      use: { ...devices['Desktop Firefox'], ...firefoxCoopWorkaround },
     },
     {
       name: 'webkit',
