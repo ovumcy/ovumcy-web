@@ -35,6 +35,8 @@ func TestPlainPageFormBackPathAdmitsOnlyBrowserFormPostsItCanLinkBackFrom(t *tes
 		{name: "day form, calendar source", method: http.MethodPost, target: "/api/v1/days/2026-09-27?source=calendar", accept: browser, want: calendar},
 		{name: "day form saved as PUT", method: http.MethodPost, target: "/api/v1/days/2026-09-27?source=calendar", accept: browser, body: "_method=PUT", want: calendar},
 		{name: "day form deleted as DELETE", method: http.MethodPost, target: "/api/v1/days/2026-09-27?source=calendar", accept: browser, body: "_method=DELETE", want: calendar},
+		{name: "calendar day form names its source in a field", method: http.MethodPost, target: "/api/v1/days/2026-09-27", accept: browser, body: "_method=PUT&source=calendar", want: calendar},
+		{name: "odd source field never picks a page", method: http.MethodPost, target: "/api/v1/days/2026-09-27", accept: browser, body: "_method=PUT&source=https://evil.example/", want: "true /dashboard"},
 		{name: "dashboard day form saved as PUT", method: http.MethodPost, target: "/api/v1/days/2026-09-27", accept: browser, body: "_method=PUT", want: "true /dashboard"},
 		{name: "unparseable day date falls back to the dashboard", method: http.MethodPost, target: "/api/v1/days/not-a-date?source=calendar", accept: browser, want: "true /dashboard"},
 		{name: "odd source never picks a page", method: http.MethodPost, target: "/api/v1/days/2026-09-27?source=https://evil.example/", accept: browser, want: "true /dashboard"},

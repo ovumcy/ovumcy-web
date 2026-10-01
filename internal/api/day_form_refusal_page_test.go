@@ -345,6 +345,16 @@ func TestDayWriteRefusalsKeepTheirStatusAndEnvelopeForOtherClients(t *testing.T)
 		}
 		_ = response.Body.Close()
 	})
+	for name, accept := range map[string]string{"form POST with no Accept": "", "form POST that accepts anything": "*/*"} {
+		t.Run(name, func(t *testing.T) {
+			response := send(http.MethodPost, form+"&_method=PUT", "application/x-www-form-urlencoded", map[string]string{"Accept": accept}, true)
+			assertStatusCode(t, response, http.StatusBadRequest)
+			if contentType := response.Header.Get("Content-Type"); !strings.HasPrefix(contentType, "application/json") {
+				t.Fatalf("Content-Type %q, want JSON", contentType)
+			}
+			_ = response.Body.Close()
+		})
+	}
 	t.Run("htmx", func(t *testing.T) {
 		response := send(http.MethodPut, form, "application/x-www-form-urlencoded", map[string]string{"HX-Request": "true"}, true)
 		defer func() { _ = response.Body.Close() }()

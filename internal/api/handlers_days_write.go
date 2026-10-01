@@ -276,11 +276,12 @@ func dayFormNavigation(c fiber.Ctx) bool {
 // submitted without JavaScript has no inline error to fill, so its validation
 // refusal is answered 422 on the same page-shaped refusal as a refusal before
 // the handler: the localized message and a link back to the page the form is
-// on. Only the status changes, and only for that transport: a JSON or HTMX
-// client keeps the 400 and its envelope, and the long-period acknowledgement
-// stays off on this path (dayFormNavigation).
+// on. Only the status changes, and only when that page answers
+// (plainPageFormBackPath): a JSON or HTMX client, and a form POST whose Accept
+// does not name text/html, keep the 400 and the envelope. The long-period
+// acknowledgement stays off on this path (dayFormNavigation).
 func (handler *Handler) failDayMutation(c fiber.Ctx, kind healthMutationKind, spec APIErrorSpec) error {
-	if dayFormNavigation(c) && spec.Category == APIErrorCategoryValidation && spec.Status == fiber.StatusBadRequest {
+	if _, page := plainPageFormBackPath(c); page && dayFormNavigation(c) && spec.Category == APIErrorCategoryValidation && spec.Status == fiber.StatusBadRequest {
 		spec.Status = fiber.StatusUnprocessableEntity
 	}
 	return handler.failMutation(c, kind, spec)

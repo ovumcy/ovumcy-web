@@ -11,9 +11,9 @@
 
   {{if and .IsOwner .EditMode}}
   <form
-    action="/api/v1/days/{{.DateString}}?source=calendar"
+    action="/api/v1/days/{{.DateString}}"
     method="post"
-    hx-put="/api/v1/days/{{.DateString}}?source=calendar"
+    hx-put="/api/v1/days/{{.DateString}}"
     hx-target="#calendar-save-status"
     hx-swap="innerHTML"
     class="space-y-5 calendar-day-editor-form"
