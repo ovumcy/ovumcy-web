@@ -3785,10 +3785,10 @@ paths:
             JavaScript — a `POST` carrying the hidden `_method=DELETE` field, with an `Accept`
             that names `text/html` — gets the shared localized status fragment as `text/html`
             instead, ending with a link back to `/settings/2fa`, the page that hosts the form.
-            The link is fixed by the route, and no cookie, flash included, is set. A refusal the
-            handler raises for a settings form (a wrong password, say) still flashes onto
-            `/settings`; any other refusal it raises answers this same page with its own status
-            and key.
+            The link is fixed by the route, and no cookie, flash included, is set. A blank
+            password, and a spent attempt budget, still flash onto `/settings`. A wrong password
+            answers this same page under `401` with the `invalid credentials` key, and any other
+            refusal the handler raises answers it with its own status and key.
           content:
             text/html:
               schema: { type: string }
