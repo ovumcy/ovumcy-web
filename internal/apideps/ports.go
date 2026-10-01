@@ -24,6 +24,9 @@ type RegistrationWorkflowService interface {
 
 type LoginWorkflowService interface {
 	Authenticate(ctx context.Context, secretKey []byte, clientKey string, email string, password string, resetTokenTTL time.Duration, now time.Time) (services.LoginResult, error)
+	// ResetAttempts clears the signing-in client's failure count; the caller
+	// runs it only once the sign-in's cookie has been issued.
+	ResetAttempts(clientKey string)
 }
 
 // RegisterPickupTokenStore persists and atomically consumes the nonces that

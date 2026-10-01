@@ -60,6 +60,20 @@ func (service *LoginService) SetTOTPVerifier(verifier TOTPFactorVerifier) {
 	service.totp = verifier
 }
 
+// ResetAttempts forgives the failures of the client that just signed in. The
+// caller runs it only after the cookie that carries the sign-in onward — the
+// session, the TOTP-pending or the forced-reset cookie — has been issued, so a
+// correct password whose sign-in then failed keeps the count it found.
+// clientKey must be the one Authenticate was given. Password sign-in runs
+// without a session, so only the client bucket is cleared and the account's
+// identity bucket is left to age out (see AuthAttemptPolicy.ResetClient).
+func (service *LoginService) ResetAttempts(clientKey string) {
+	service.attemptPolicy.ResetClient(clientKey)
+}
+
+// Authenticate checks the password and routes the sign-in. It never resets
+// the attempt budget, even on success: that is ResetAttempts, run by the
+// caller once the sign-in has landed.
 func (service *LoginService) Authenticate(
 	ctx context.Context,
 	secretKey []byte,
@@ -91,8 +105,10 @@ func (service *LoginService) Authenticate(
 		return LoginResult{}, err
 	}
 
-	// Unauthenticated flow: forgive this client only (see ResetClient).
-	service.attemptPolicy.ResetClient(clientKey)
+	// A correct password does not reset the budget here: the sign-in can
+	// still fail below (the reset token) and in the caller (the cookie that
+	// carries it onward). The caller resets through ResetAttempts once that
+	// cookie is issued.
 	result := LoginResult{User: user}
 
 	// MustChangePassword is a routing flag an operator sets out of band
