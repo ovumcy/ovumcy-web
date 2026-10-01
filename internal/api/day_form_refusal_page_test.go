@@ -220,12 +220,19 @@ func TestNoJSDayFormRefusalLinkIgnoresWhatTheRequestCarries(t *testing.T) {
 	forbidden := englishCopy(t, "common.error.forbidden")
 	cases := map[string]struct {
 		action string
+		typed  url.Values
 		drop   []string
 		status int
 		want   string
 	}{
 		"bad date": {
 			action: "/api/v1/days/2026-13-45?source=calendar",
+			status: http.StatusUnprocessableEntity,
+			want:   invalidEntry,
+		},
+		"bad date, delete": {
+			action: "/api/v1/days/2026-13-45?source=calendar",
+			typed:  url.Values{"_method": {"DELETE"}},
 			status: http.StatusUnprocessableEntity,
 			want:   invalidEntry,
 		},
@@ -255,9 +262,40 @@ func TestNoJSDayFormRefusalLinkIgnoresWhatTheRequestCarries(t *testing.T) {
 			form := renderNoJSForm(t, ctx.app, "/calendar/day/"+iso+"?mode=edit", authCookieMap(t, ctx.authCookie), formWithFlag("data-day-editor-form"))
 			form.action = strings.ReplaceAll(c.action, "{iso}", iso)
 
-			response := form.submit(t, ctx.app, url.Values{"mood": {"abc"}}, c.drop...)
+			typed := c.typed
+			if typed == nil {
+				typed = url.Values{"mood": {"abc"}}
+			}
+			response := form.submit(t, ctx.app, typed, c.drop...)
 			assertRefusalPageCarrying(t, response, c.status, c.want, "/dashboard")
 		})
+	}
+}
+
+// TestNoJSDayDeleteFailureAnswersAPageKeepingItsStatus pins a refusal the
+// handler raises after validation: the delete the store fails keeps its 500 and
+// still lands on a page with the link back to the calendar day, not on JSON.
+func TestNoJSDayDeleteFailureAnswersAPageKeepingItsStatus(t *testing.T) {
+	t.Parallel()
+
+	ctx := newRefusalPageContext(t, "refusal-delete-failure@example.com")
+	day, iso := noJSDay()
+	if err := ctx.database.Create(&models.DailyLog{UserID: ctx.user.ID, Date: day, IsPeriod: true, Flow: models.FlowNone}).Error; err != nil {
+		t.Fatalf("create daily log: %v", err)
+	}
+	form := renderNoJSForm(t, ctx.app, "/calendar/day/"+iso+"?mode=edit", authCookieMap(t, ctx.authCookie), formWithFlag("data-day-delete-form"))
+	if err := ctx.database.Migrator().DropTable(&models.DailyLog{}); err != nil {
+		t.Fatalf("drop daily logs: %v", err)
+	}
+
+	response := form.submit(t, ctx.app, nil)
+	defer func() { _ = response.Body.Close() }()
+	assertStatusCode(t, response, http.StatusInternalServerError)
+	if contentType := response.Header.Get("Content-Type"); !strings.HasPrefix(contentType, "text/html") {
+		t.Fatalf("Content-Type %q, want text/html", contentType)
+	}
+	if body := mustReadBodyString(t, response.Body); !strings.Contains(body, `<a href="`+template.HTMLEscapeString(calendarLanding(iso))+`"`) {
+		t.Fatalf("body lacks the link back to the calendar day: %s", body)
 	}
 }
 
