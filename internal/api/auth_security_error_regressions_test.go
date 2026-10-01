@@ -20,6 +20,8 @@ type stubLoginWorkflowService struct {
 	err    error
 }
 
+func (stub *stubLoginWorkflowService) ResetAttempts(string) {}
+
 func (stub *stubLoginWorkflowService) Authenticate(context.Context, []byte, string, string, string, time.Duration, time.Time) (services.LoginResult, error) {
 	if stub.err != nil {
 		return services.LoginResult{}, stub.err
