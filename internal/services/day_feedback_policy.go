@@ -99,10 +99,13 @@ func resolveDaySaveMessageKey(user *models.User, day time.Time, stats CycleStats
 	if user.UnpredictableCycle {
 		return daySaveMessageNeutral
 	}
-	// `day` arrives as a location-midnight working value while the stats
-	// fields carry UTC-midnight calendar days; re-anchor `day` to UTC-midnight
-	// of its calendar components so the instant comparisons below cannot
-	// shift a day across the UTC offset (issue #48 class).
+	// `day` arrives as a location-midnight working value, and so do the window
+	// bounds: they come from the owner's baseline and the confirmed-shift
+	// resolver, which anchor every date at the owner's local midnight. Each side
+	// is therefore re-anchored to UTC-midnight of its own calendar components
+	// before they are ordered, so the comparisons below read calendar days and
+	// never instants (issue #48 class). Anchoring only `day` would be right in
+	// UTC and one day off at an end of the window in every other zone.
 	day = dateOnly(day)
 	if !stats.LastPeriodStart.IsZero() {
 		cycleDay := cycleDayAt(stats.LastPeriodStart, day)
@@ -130,8 +133,8 @@ func resolveDaySaveMessageKey(user *models.User, day time.Time, stats CycleStats
 	// rather than softening the fertile one.
 	if !suppression.FertilitySuppressed &&
 		!stats.FertilityWindowStart.IsZero() &&
-		!day.Before(stats.FertilityWindowStart) &&
-		!day.After(stats.FertilityWindowEnd) {
+		!day.Before(dateOnly(stats.FertilityWindowStart)) &&
+		!day.After(dateOnly(stats.FertilityWindowEnd)) {
 		return daySaveMessageFertile
 	}
 	return daySaveMessageNeutral
