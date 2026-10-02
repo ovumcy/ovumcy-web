@@ -106,7 +106,7 @@ func collectReadKeys(sources map[string]string, consts map[string]string, strict
 				return true
 			}
 			if key, ok := unquoteKey(lit); ok {
-				unread = append(unread, fmt.Sprintf("%s:%s %s", name, fset.Position(lit.Pos()).String(), key))
+				unread = append(unread, fmt.Sprintf("%s %s", fset.Position(lit.Pos()).String(), key))
 			}
 			return true
 		})
