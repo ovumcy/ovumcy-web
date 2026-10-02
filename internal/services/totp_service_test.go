@@ -388,15 +388,17 @@ func TestTOTPService_EnableTOTP_RepoError(t *testing.T) {
 }
 
 func TestTOTPService_EnableTOTP_RefusesAZeroEnrollmentStep(t *testing.T) {
-	repo := &stubTOTPUserRepo{}
-	svc := NewTOTPService(repo, []byte("test-secret-key-32-bytes-padding!"), nil)
+	for _, enrollment := range []TOTPEnrollmentStep{{}, {step: -1}} {
+		repo := &stubTOTPUserRepo{}
+		svc := NewTOTPService(repo, []byte("test-secret-key-32-bytes-padding!"), nil)
 
-	err := svc.EnableTOTP(context.Background(), 42, 1, "JBSWY3DPEHPK3PXP", TOTPEnrollmentStep{})
-	if !errors.Is(err, ErrTOTPEnrollmentStepMissing) {
-		t.Fatalf("EnableTOTP(zero step) error = %v, want ErrTOTPEnrollmentStepMissing", err)
-	}
-	if repo.updateTOTPCalled {
-		t.Fatal("EnableTOTP(zero step) wrote the TOTP columns")
+		err := svc.EnableTOTP(context.Background(), 42, 1, "JBSWY3DPEHPK3PXP", enrollment)
+		if !errors.Is(err, ErrTOTPEnrollmentStepMissing) {
+			t.Fatalf("EnableTOTP(step %d) error = %v, want ErrTOTPEnrollmentStepMissing", enrollment.step, err)
+		}
+		if repo.updateTOTPCalled {
+			t.Fatalf("EnableTOTP(step %d) wrote the TOTP columns", enrollment.step)
+		}
 	}
 }
 
