@@ -431,9 +431,10 @@ func (root compositionRoot) everyCallPassesRoot(calls []*ast.CallExpr, index int
 // the spec.
 //
 // The walk skips what the go tool does not build as this module: directories
-// named with a leading dot or underscore, testdata, any directory holding its
-// own go.mod, and node_modules — a dependency tree owns no module code, and a
-// package there may ship a Go file of its own (flatted does). A symlink or
+// named with a leading dot or underscore, testdata, and node_modules — a
+// dependency tree owns no module code, and a package there may ship a Go file
+// of its own (flatted does). A nested module is still read: a replace
+// directive can build it into the binary. A symlink or
 // other irregular entry (a junction on Windows) is followed when it names a
 // file and fails when it names a directory or cannot be resolved, since
 // WalkDir would otherwise pass over it in silence; that includes a linked
@@ -471,9 +472,6 @@ func limiterOffendersOutsideCompositionRoot(root, rootCmd string) ([]string, err
 				return nil
 			}
 			if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") || name == "testdata" || name == "node_modules" {
-				return filepath.SkipDir
-			}
-			if _, statErr := os.Stat(filepath.Join(path, "go.mod")); statErr == nil {
 				return filepath.SkipDir
 			}
 			return nil
