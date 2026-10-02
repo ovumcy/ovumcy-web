@@ -158,10 +158,21 @@ jobs:
         # of memory" instead, which gremlins records as a killed mutant, and
         # leaves the runner alive. Go reserves ~1 GiB of address space at
         # start, so the cap sits well above any legitimate build or test.
+        #
+        # GOMEMLIMIT: that cap also binds gremlins' unmutated coverage pass,
+        # and internal_api_20 of run 36942283202 died in it with `fatal error:
+        # out of memory` at 4.1 GB in use, 10 minutes in, while the other 29
+        # shards ran the same pass. A local trace of the first 9 minutes of that
+        # suite shows 634 MB of heap over a 97 MB live set, which points at GC
+        # pacing rather than retained memory (the cause is not proven): a soft
+        # limit makes the collector work before the heap nears the cap. It is
+        # not a cap, so a runaway mutant still ends at ulimit -v or its own
+        # timeout. The next dispatched run is the confirmation.
         continue-on-error: true
         env:
           GREMLINS: ${{ github.workspace }}/.bin/gremlins
           GOFLAGS: -timeout=30m
+          GOMEMLIMIT: 3GiB
           MUTATION_VMEM_KB: "6291456"
         run: |
           ulimit -v "$MUTATION_VMEM_KB"
