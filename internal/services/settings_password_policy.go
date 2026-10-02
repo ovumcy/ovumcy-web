@@ -31,8 +31,8 @@ func (service *SettingsService) ValidatePasswordChange(user *models.User, curren
 	// The two refusals above this line are decided by what the caller itself
 	// submitted, so their latency tells it nothing it did not already know —
 	// and equalizing them would spend a full passwordHashCost bcrypt on a
-	// branch that never reaches AddFailure below, i.e. CPU no re-auth budget
-	// caps. Only the account-state branch below is equalized.
+	// branch that never reserves a re-auth attempt below, i.e. CPU no re-auth
+	// budget caps. Only the account-state branch below is equalized.
 	if currentPassword == "" || newPassword == "" || confirmPassword == "" {
 		return ErrSettingsPasswordChangeInvalidInput
 	}

@@ -211,10 +211,10 @@ func (service *SettingsService) SaveReminderLeadDays(ctx context.Context, userID
 //
 // Deliberately not spent on the refusals decided by the caller's own
 // submission (blank field, mismatched confirmation): their latency discloses
-// nothing, and neither reaches the AddFailure that draws down the reauthPolicy
-// budget (erasure and password change, see the SettingsService.reauthPolicy
-// field comment), so equalizing them would hand an authenticated client a
-// full-cost bcrypt per request with no budget capping it.
+// nothing, and neither reserves an attempt of the reauthPolicy budget (erasure
+// and password change, see the SettingsService.reauthPolicy field comment), so
+// equalizing them would hand an authenticated client a full-cost bcrypt per
+// request with no budget capping it.
 //
 // Declared as a var for the same test-substitution reason as
 // equalizeAuthCredentialsTiming: tests replace it with an invocation counter
