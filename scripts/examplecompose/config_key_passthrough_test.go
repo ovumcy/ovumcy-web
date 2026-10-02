@@ -373,6 +373,67 @@ func loadExampleStacks(t *testing.T, root string) []stack {
 	return stacks
 }
 
+// judgeStacks holds every stack to every key: the key must reach the app as a
+// passthrough of the operator's value, or be exempted (absent) or pinned (a
+// literal) by the tables above. It returns what it refused, and which entries
+// of each table it relied on.
+func judgeStacks(keys map[string]bool, stacks []stack) (problems []string, exempted, pinned map[string]bool) {
+	exempted = map[string]bool{}
+	pinned = map[string]bool{}
+	for _, key := range sortedKeys(keys) {
+		for _, s := range stacks {
+			if value, set := s.env[key]; set {
+				if isPassthrough(key, value) {
+					continue
+				}
+				if rule, ok := pinnedLiterals[key]; ok && (rule.applies == nil || rule.applies(s)) {
+					pinned[key] = true
+					continue
+				}
+				problems = append(problems, fmt.Sprintf("%s: sets %s to %q, so the operator's value is ignored; write `%s: ${%s:-<default>}`, or pin the key in pinnedLiterals with the reason the stack must fix it", s.path, key, value, key, key))
+				continue
+			}
+			if rule, ok := forwardingExemptions[key]; ok && (rule.applies == nil || rule.applies(s)) {
+				exempted[key] = true
+				continue
+			}
+			problems = append(problems, fmt.Sprintf("%s: does not forward %s, so the app ignores the operator's value and runs on the in-code default; add `%s: ${%s:-}` to its environment block, or exempt the key in forwardingExemptions with the reason the stack must not carry it", s.path, key, key, key))
+		}
+	}
+	return problems, exempted, pinned
+}
+
+// TestStackJudgmentRefusesWhatIgnoresTheOperator proves the judgment on
+// fixture stacks: a literal that ignores .env, a key left out, and a
+// substitution of another variable are each refused naming the key, while a
+// passthrough, a pinned literal and an exempted absence are not.
+func TestStackJudgmentRefusesWhatIgnoresTheOperator(t *testing.T) {
+	keys := map[string]bool{"REGISTRATION_MODE": true, "HSTS_ENABLED": true, "AUDIT_LOG_ENABLED": true, "TRUST_PROXY_ENABLED": true, "PORT": true}
+	fixture := stack{path: "fixture/docker-compose.yml", env: map[string]string{
+		"REGISTRATION_MODE":   "open",
+		"AUDIT_LOG_ENABLED":   "${HSTS_ENABLED:-false}",
+		"TRUST_PROXY_ENABLED": `"true"`,
+	}}
+	problems, exempted, pinned := judgeStacks(keys, []stack{fixture})
+	joined := strings.Join(problems, "\n")
+	for _, want := range []string{"sets REGISTRATION_MODE to", "sets AUDIT_LOG_ENABLED to", "does not forward HSTS_ENABLED,"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("want a refusal containing %q, got:\n%s", want, joined)
+		}
+	}
+	if len(problems) != 3 {
+		t.Errorf("want exactly the three refusals, got %d:\n%s", len(problems), joined)
+	}
+	if !pinned["TRUST_PROXY_ENABLED"] || !exempted["PORT"] {
+		t.Errorf("a pinned literal and an exempted absence must be accepted and recorded, got pinned=%v exempted=%v", pinned, exempted)
+	}
+
+	problems, _, _ = judgeStacks(map[string]bool{"REGISTRATION_MODE": true}, []stack{{path: "fixture/docker-compose.yml", env: map[string]string{"REGISTRATION_MODE": "${REGISTRATION_MODE:-open}"}}})
+	if len(problems) != 0 {
+		t.Errorf("a passthrough must be accepted, got %v", problems)
+	}
+}
+
 // TestEveryExampleStackForwardsEveryRuntimeConfigKey asserts that each key the
 // binary reads reaches the app in every shipped example stack, or is exempted
 // above with a stated reason.
@@ -413,27 +474,9 @@ func TestEveryExampleStackForwardsEveryRuntimeConfigKey(t *testing.T) {
 		}
 	}
 
-	exempted := map[string]bool{}
-	pinned := map[string]bool{}
-	for _, key := range sortedKeys(keys) {
-		for _, s := range stacks {
-			if value, set := s.env[key]; set {
-				if isPassthrough(key, value) {
-					continue
-				}
-				if rule, ok := pinnedLiterals[key]; ok && (rule.applies == nil || rule.applies(s)) {
-					pinned[key] = true
-					continue
-				}
-				t.Errorf("%s: sets %s to %q, so the operator's value is ignored; write `%s: ${%s:-<default>}`, or pin the key in pinnedLiterals with the reason the stack must fix it", s.path, key, value, key, key)
-				continue
-			}
-			if rule, ok := forwardingExemptions[key]; ok && (rule.applies == nil || rule.applies(s)) {
-				exempted[key] = true
-				continue
-			}
-			t.Errorf("%s: does not forward %s, so the app ignores the operator's value and runs on the in-code default; add `%s: ${%s:-}` to its environment block, or exempt the key in forwardingExemptions with the reason the stack must not carry it", s.path, key, key, key)
-		}
+	problems, exempted, pinned := judgeStacks(keys, stacks)
+	for _, problem := range problems {
+		t.Error(problem)
 	}
 
 	// An exemption that no stack needs any more, or for a key the binary no
