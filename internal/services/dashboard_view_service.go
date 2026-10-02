@@ -445,9 +445,9 @@ func (service *DashboardViewService) entryContextLogs(ctx context.Context, user 
 // second, near-duplicate daily_logs query for a range that mostly overlaps
 // the full history. Otherwise it falls back to the single ranged query.
 func (service *DashboardViewService) buildDashboardStats(ctx context.Context, user *models.User, symptoms []models.SymptomType, today time.Time, now time.Time, location *time.Location) (CycleStats, []models.DailyLog, error) {
-	statsFrom := today.AddDate(-2, 0, 0)
 	if !requiresEntryContextLogs(user, symptoms) {
-		stats, _, err := service.stats.BuildCycleStatsForRange(ctx, user, statsFrom, today, now, location)
+		statsFrom, statsTo := StatsOverviewRange(today)
+		stats, _, err := service.stats.BuildCycleStatsForRange(ctx, user, statsFrom, statsTo, now, location)
 		if err != nil {
 			return CycleStats{}, nil, fmt.Errorf("%w: %v", ErrDashboardViewLoadStats, err)
 		}
@@ -458,7 +458,7 @@ func (service *DashboardViewService) buildDashboardStats(ctx context.Context, us
 	if err != nil {
 		return CycleStats{}, nil, err
 	}
-	rangeLogs := FilterLogsByDateRange(logs, statsFrom, today, location)
+	rangeLogs := FilterLogsToStatsHistory(logs, today, location)
 	stats := service.stats.BuildCycleStatsFromLogs(user, rangeLogs, now, location)
 	return stats, logs, nil
 }

@@ -307,7 +307,7 @@ func (service *WebhookNotifyService) processOwner(
 	// counter: the decision already knows which reminders its own watermark
 	// withheld, so the Report can prove "sent once, then skipped" without the pass
 	// deciding a second time. That second decision was pure and I/O-free but not
-	// cheap — it rebuilt the owner's cycle statistics from their whole logged
+	// cheap — it rebuilt the owner's cycle statistics from their logged
 	// history, so the counter cost as much as the work it counted.
 	due, watermarkSuppressed := decideDueReminders(&user, settings, dayLogs, now, ownerLocation)
 	report.SkippedIdempotent += watermarkSuppressed

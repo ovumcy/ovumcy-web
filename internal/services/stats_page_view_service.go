@@ -207,7 +207,8 @@ func (service *StatsService) BuildStatsPageViewData(ctx context.Context, user *m
 }
 
 func (service *StatsService) buildStatsPageBaseData(ctx context.Context, user *models.User, cycleLabelPattern string, now time.Time, location *time.Location, maxTrendPoints int) (statsPageBaseData, error) {
-	stats, logs, err := service.BuildCycleStatsForRange(ctx, user, now.AddDate(-2, 0, 0), now, now, location)
+	statsFrom, statsTo := StatsOverviewRange(now)
+	stats, logs, err := service.BuildCycleStatsForRange(ctx, user, statsFrom, statsTo, now, location)
 	if err != nil {
 		return statsPageBaseData{}, fmt.Errorf("%w: %v", ErrStatsPageViewLoadStats, err)
 	}

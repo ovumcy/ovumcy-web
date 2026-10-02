@@ -86,7 +86,7 @@ func (service *StatsService) BuildCycleStatsForRange(ctx context.Context, user *
 // owner record a start two days ahead. The surfaces that looked safe were safe
 // by accident — the dashboard and the .ics feed pre-bound the set they pass
 // (FilterLogsByDateRange, the fetched range), and the webhook notify pass, the
-// one surface that speaks to a destination outside the instance, passes the
+// one surface that speaks to a destination outside the instance, passed the
 // whole stored history. So a positive test today plus a permitted start
 // tomorrow left the owner paused everywhere they could look and unpaused in the
 // payload leaving the instance. Bounding here rather than at each caller is what
@@ -113,8 +113,22 @@ func (service *StatsService) BuildCycleStatsFromLogs(user *models.User, logs []m
 	return BuildCycleStatsFromLogs(user, logs, now, location)
 }
 
+// StatsOverviewRange is the one history window every surface derives its cycle
+// statistics from: the dashboard, the calendar, the stats page, the JSON API, the
+// .ics feed and the webhook reminder pass. A surface that read a different span
+// would hold different cycle lengths, and with them a different overdue verdict,
+// so one of two surfaces could publish a projection the other had withheld.
 func StatsOverviewRange(now time.Time) (time.Time, time.Time) {
 	return now.AddDate(-statsOverviewWindowYears, 0, 0), now
+}
+
+// FilterLogsToStatsHistory narrows an unbounded log slice to StatsOverviewRange
+// around the owner-local today, for a caller that already holds the whole stored
+// history in memory and so cannot ask the repository for the range. Bounds and
+// inclusion are FilterLogsByDateRange's, which is the shape the ranged query uses.
+func FilterLogsToStatsHistory(logs []models.DailyLog, now time.Time, location *time.Location) []models.DailyLog {
+	from, to := StatsOverviewRange(DateAtLocation(now, location))
+	return FilterLogsByDateRange(logs, from, to, location)
 }
 
 // BuildOverviewStats also returns the logs it fetched, alongside the derived
