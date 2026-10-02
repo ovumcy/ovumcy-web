@@ -3,15 +3,16 @@ package examplecompose
 import (
 	"fmt"
 	"go/ast"
-	"go/parser"
-	"go/token"
+	"go/constant"
+	"go/types"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"testing"
+
+	"golang.org/x/tools/go/packages"
 )
 
 // The example stacks carry an explicit `environment:` allowlist and no
@@ -21,109 +22,19 @@ import (
 // with self-service registration, and every remedy the operator docs name
 // (editing .env, setting the variable) changed nothing.
 //
-// The set of keys is read from the binary's own sources, not listed here, so a
-// key added tomorrow is judged by the next run: a stack either forwards it or
-// the exemption table below says why it does not.
+// The set of keys is read from the binary's own type-checked sources, not
+// listed here, so a key added tomorrow is judged by the next run: a stack either
+// forwards it or the exemption table below says why it does not. A key is
+// identified by declaration, never by the shape of the node that names it: the
+// readers are the functions whose bodies hand a parameter to os.Getenv or
+// os.LookupEnv (directly or through another reader), and a key is the constant
+// value the type checker resolves for the argument in that position, whether it
+// is a literal, a constant of this package or another, or a constant
+// expression. An argument that is neither a constant nor a reader's own
+// parameter cannot be resolved and fails the run instead of being skipped.
 
-// envKeyShape is what a configuration variable name looks like. It is applied
-// to a whole string literal, so a message or a fallback value is never a key.
+// envKeyShape is what a configuration variable name looks like.
 var envKeyShape = regexp.MustCompile(`^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$`)
-
-// keyReaders maps a reader-function name prefix in cmd/ovumcy to how many of
-// its leading arguments name an environment variable. The remaining arguments
-// are fallbacks and limits, which are never keys.
-var keyReaders = []struct {
-	prefix string
-	keyArg int
-}{
-	{"getEnv", 1},
-	{"getRateLimit", 1},
-	{"getCredentialRateLimit", 2},
-	{"resolveSecretFromEnvOrFile", 2},
-}
-
-// readerKeyArgs reports how many leading arguments of call name environment
-// variables, resolving os.Getenv/os.LookupEnv and the in-package helpers.
-func readerKeyArgs(call *ast.CallExpr) int {
-	switch fn := call.Fun.(type) {
-	case *ast.Ident:
-		for _, reader := range keyReaders {
-			if strings.HasPrefix(fn.Name, reader.prefix) {
-				return reader.keyArg
-			}
-		}
-	case *ast.SelectorExpr:
-		if pkg, ok := fn.X.(*ast.Ident); ok && pkg.Name == "os" && (fn.Sel.Name == "Getenv" || fn.Sel.Name == "LookupEnv") {
-			return 1
-		}
-	}
-	return 0
-}
-
-// collectReadKeys returns every environment variable the given sources read,
-// and the key-shaped literals of the files named in strictFiles that no reader
-// call accounts for. A key passed as a package constant (security.X) resolves
-// through consts, keyed by the constant's name.
-func collectReadKeys(sources map[string]string, consts map[string]string, strictFiles map[string]bool) (keys map[string]bool, unread []string, err error) {
-	keys = map[string]bool{}
-	fset := token.NewFileSet()
-	for _, name := range sortedKeys(sources) {
-		file, parseErr := parser.ParseFile(fset, name, sources[name], parser.SkipObjectResolution)
-		if parseErr != nil {
-			return nil, nil, parseErr
-		}
-		viaReader := map[*ast.BasicLit]bool{}
-		ast.Inspect(file, func(node ast.Node) bool {
-			call, ok := node.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			limit := readerKeyArgs(call)
-			for i, arg := range call.Args {
-				if i >= limit {
-					break
-				}
-				switch value := arg.(type) {
-				case *ast.BasicLit:
-					if key, ok := unquoteKey(value); ok {
-						keys[key] = true
-						viaReader[value] = true
-					}
-				case *ast.SelectorExpr:
-					if key, ok := consts[value.Sel.Name]; ok && envKeyShape.MatchString(key) {
-						keys[key] = true
-					}
-				}
-			}
-			return true
-		})
-		if !strictFiles[name] {
-			continue
-		}
-		ast.Inspect(file, func(node ast.Node) bool {
-			lit, ok := node.(*ast.BasicLit)
-			if !ok || lit.Kind != token.STRING || viaReader[lit] {
-				return true
-			}
-			if key, ok := unquoteKey(lit); ok {
-				unread = append(unread, fmt.Sprintf("%s %s", fset.Position(lit.Pos()).String(), key))
-			}
-			return true
-		})
-	}
-	return keys, unread, nil
-}
-
-func unquoteKey(lit *ast.BasicLit) (string, bool) {
-	if lit.Kind != token.STRING {
-		return "", false
-	}
-	value, err := strconv.Unquote(lit.Value)
-	if err != nil || len(value) < 2 || !envKeyShape.MatchString(value) {
-		return "", false
-	}
-	return value, true
-}
 
 func sortedKeys[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))
@@ -134,65 +45,239 @@ func sortedKeys[V any](m map[string]V) []string {
 	return out
 }
 
-// loadBinarySources reads the non-test Go files of cmd/ovumcy plus the string
-// constants of internal/security (where the fence path variable is named).
-func loadBinarySources(t *testing.T, root string) (sources map[string]string, consts map[string]string) {
-	t.Helper()
-	sources = map[string]string{}
-	dir := filepath.Join(root, "cmd", "ovumcy")
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("read %s: %v", dir, err)
-	}
-	for _, entry := range entries {
-		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		content, err := os.ReadFile(filepath.Join(dir, name))
-		if err != nil {
-			t.Fatalf("read %s: %v", name, err)
-		}
-		sources[name] = string(content)
-	}
+// isStdEnvRead is true for os.Getenv and os.LookupEnv, identified by the
+// declaring package, so a user function that merely shares the name is not one.
+func isStdEnvRead(fn *types.Func) bool {
+	return fn.Pkg() != nil && fn.Pkg().Path() == "os" && (fn.Name() == "Getenv" || fn.Name() == "LookupEnv")
+}
 
-	consts = map[string]string{}
-	securityDir := filepath.Join(root, "internal", "security")
-	securityEntries, err := os.ReadDir(securityDir)
-	if err != nil {
-		t.Fatalf("read %s: %v", securityDir, err)
+// calleeFunc resolves the function a call invokes to its declaration.
+func calleeFunc(info *types.Info, call *ast.CallExpr) *types.Func {
+	var ident *ast.Ident
+	switch fun := ast.Unparen(call.Fun).(type) {
+	case *ast.Ident:
+		ident = fun
+	case *ast.SelectorExpr:
+		ident = fun.Sel
+	default:
+		return nil
 	}
-	fset := token.NewFileSet()
-	for _, entry := range securityEntries {
-		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
+	fn, _ := info.Uses[ident].(*types.Func)
+	if fn == nil {
+		return nil
+	}
+	return fn.Origin()
+}
+
+// keyArgIndexes lists which arguments of call name an environment variable:
+// the first argument of os.Getenv/os.LookupEnv, or the parameters a derived
+// reader hands to one.
+func keyArgIndexes(info *types.Info, call *ast.CallExpr, readers map[*types.Func]map[int]bool) []int {
+	fn := calleeFunc(info, call)
+	if fn == nil {
+		return nil
+	}
+	if isStdEnvRead(fn) {
+		return []int{0}
+	}
+	var indexes []int
+	for index := range readers[fn] {
+		indexes = append(indexes, index)
+	}
+	sort.Ints(indexes)
+	return indexes
+}
+
+// paramIndex reports which parameter of fn the expression arg is, when it is
+// exactly one.
+func paramIndex(info *types.Info, fn *types.Func, arg ast.Expr) (int, bool) {
+	ident, ok := ast.Unparen(arg).(*ast.Ident)
+	if !ok {
+		return 0, false
+	}
+	variable, ok := info.Uses[ident].(*types.Var)
+	if !ok {
+		return 0, false
+	}
+	params := fn.Type().(*types.Signature).Params()
+	for i := range params.Len() {
+		if params.At(i) == variable {
+			return i, true
 		}
-		file, err := parser.ParseFile(fset, filepath.Join(securityDir, name), nil, parser.SkipObjectResolution)
-		if err != nil {
-			t.Fatalf("parse %s: %v", name, err)
-		}
-		for _, decl := range file.Decls {
-			gen, ok := decl.(*ast.GenDecl)
-			if !ok || gen.Tok != token.CONST {
-				continue
-			}
-			for _, spec := range gen.Specs {
-				valueSpec := spec.(*ast.ValueSpec)
-				for i, ident := range valueSpec.Names {
-					if i >= len(valueSpec.Values) {
+	}
+	return 0, false
+}
+
+// deriveReaders finds every function that reads an environment variable named
+// by one of its parameters, and which parameters those are, by running to a
+// fixed point: a function is a reader when its body passes a parameter to
+// os.Getenv, os.LookupEnv or an already-derived reader.
+func deriveReaders(pkgs []*packages.Package) map[*types.Func]map[int]bool {
+	readers := map[*types.Func]map[int]bool{}
+	for changed := true; changed; {
+		changed = false
+		for _, pkg := range pkgs {
+			for _, file := range pkg.Syntax {
+				for _, decl := range file.Decls {
+					funcDecl, ok := decl.(*ast.FuncDecl)
+					if !ok || funcDecl.Body == nil {
 						continue
 					}
-					if lit, ok := valueSpec.Values[i].(*ast.BasicLit); ok && lit.Kind == token.STRING {
-						if value, err := strconv.Unquote(lit.Value); err == nil {
-							consts[ident.Name] = value
-						}
+					self, _ := pkg.TypesInfo.Defs[funcDecl.Name].(*types.Func)
+					if self == nil {
+						continue
 					}
+					ast.Inspect(funcDecl.Body, func(node ast.Node) bool {
+						call, ok := node.(*ast.CallExpr)
+						if !ok {
+							return true
+						}
+						for _, index := range keyArgIndexes(pkg.TypesInfo, call, readers) {
+							if index >= len(call.Args) {
+								continue
+							}
+							param, flows := paramIndex(pkg.TypesInfo, self, call.Args[index])
+							if !flows || readers[self][param] {
+								continue
+							}
+							if readers[self] == nil {
+								readers[self] = map[int]bool{}
+							}
+							readers[self][param] = true
+							changed = true
+						}
+						return true
+					})
 				}
 			}
 		}
 	}
-	return sources, consts
+	return readers
+}
+
+// scanReads returns every environment variable the packages read, with the
+// positions that read it, and the key arguments it could not resolve.
+func scanReads(pkgs []*packages.Package, readers map[*types.Func]map[int]bool) (reads map[string][]string, unresolved []string) {
+	reads = map[string][]string{}
+	for _, pkg := range pkgs {
+		info := pkg.TypesInfo
+		for _, file := range pkg.Syntax {
+			for _, decl := range file.Decls {
+				var self *types.Func
+				if funcDecl, ok := decl.(*ast.FuncDecl); ok {
+					self, _ = info.Defs[funcDecl.Name].(*types.Func)
+				}
+				ast.Inspect(decl, func(node ast.Node) bool {
+					call, ok := node.(*ast.CallExpr)
+					if !ok {
+						return true
+					}
+					for _, index := range keyArgIndexes(info, call, readers) {
+						if index >= len(call.Args) {
+							continue
+						}
+						arg := call.Args[index]
+						position := pkg.Fset.Position(arg.Pos())
+						where := fmt.Sprintf("%s:%d", filepath.Base(position.Filename), position.Line)
+						if value := info.Types[arg].Value; value != nil && value.Kind() == constant.String {
+							key := constant.StringVal(value)
+							if envKeyShape.MatchString(key) {
+								reads[key] = append(reads[key], where)
+							} else {
+								unresolved = append(unresolved, fmt.Sprintf("%s: %q is read as an environment variable but is not shaped like one", where, key))
+							}
+							continue
+						}
+						if self != nil {
+							if _, flows := paramIndex(info, self, arg); flows {
+								continue
+							}
+						}
+						unresolved = append(unresolved, fmt.Sprintf("%s: the environment variable name is neither a constant nor a parameter of the reader that passes it on", where))
+					}
+					return true
+				})
+			}
+		}
+	}
+	return reads, unresolved
+}
+
+// binaryPackages loads the module packages the server binary is built from:
+// cmd/ovumcy and every package under internal/ it imports, directly or not.
+// Test files are excluded, and so is a package the binary never links, such as
+// a test-support package that reads its own environment.
+func binaryPackages(t *testing.T, root string) []*packages.Package {
+	t.Helper()
+	loaded := loadPackages(t, root, "./cmd/ovumcy", "./internal/...")
+	byID := map[string]*packages.Package{}
+	var main *packages.Package
+	for _, pkg := range loaded {
+		byID[pkg.ID] = pkg
+		if strings.HasSuffix(pkg.PkgPath, "/cmd/ovumcy") {
+			main = pkg
+		}
+	}
+	if main == nil {
+		t.Fatal("cmd/ovumcy was not among the loaded packages: the scan is not reaching the binary")
+	}
+	seen := map[string]bool{}
+	var linked []*packages.Package
+	var walk func(*packages.Package)
+	walk = func(pkg *packages.Package) {
+		if seen[pkg.ID] {
+			return
+		}
+		seen[pkg.ID] = true
+		if len(pkg.Syntax) > 0 {
+			linked = append(linked, pkg)
+		}
+		for _, imported := range pkg.Imports {
+			if next, ok := byID[imported.ID]; ok {
+				walk(next)
+			}
+		}
+	}
+	walk(main)
+	return linked
+}
+
+// loadPackages type-checks the packages matching patterns under dir, failing
+// closed when any of them does not type-check: an unresolved identifier would
+// leave exactly the evidence this scan reads empty.
+func loadPackages(t *testing.T, dir string, patterns ...string) []*packages.Package {
+	t.Helper()
+	config := &packages.Config{
+		Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
+			packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports,
+		Dir:   dir,
+		Tests: false,
+	}
+	loaded, err := packages.Load(config, patterns...)
+	if err != nil {
+		t.Fatalf("type-checking %v: %v", patterns, err)
+	}
+	var problems []string
+	for _, pkg := range loaded {
+		for _, packageError := range pkg.Errors {
+			problems = append(problems, pkg.PkgPath+": "+packageError.Error())
+		}
+	}
+	if len(problems) > 0 {
+		t.Fatalf("the packages do not type-check, so no key could be identified:\n  %s", strings.Join(problems, "\n  "))
+	}
+	return loaded
+}
+
+// readerNamed returns the parameters of the reader declared as name in a
+// package whose path ends with pkgSuffix.
+func readerNamed(readers map[*types.Func]map[int]bool, pkgSuffix, name string) map[int]bool {
+	for fn, indexes := range readers {
+		if fn.Name() == name && fn.Pkg() != nil && strings.HasSuffix(fn.Pkg().Path(), pkgSuffix) {
+			return indexes
+		}
+	}
+	return nil
 }
 
 // stack is one shipped compose file's ovumcy service.
@@ -203,15 +288,19 @@ type stack struct {
 }
 
 var (
-	serviceHeader   = regexp.MustCompile(`(?m)^  [A-Za-z0-9_-]+:\s*$`)
-	environmentKey  = regexp.MustCompile(`^\s{6}(?:-\s*)?([A-Z][A-Z0-9_]*)\s*[:=]\s*(.*?)\s*$`)
+	serviceHeader = regexp.MustCompile(`(?m)^  [A-Za-z0-9_-]+:\s*$`)
+	// environmentKey reads one entry: an optional list marker, the key, and an
+	// optional separator with the value after it. A list entry with no
+	// separator (`- KEY`) is compose's bare passthrough.
+	environmentKey  = regexp.MustCompile(`^\s{6}(-\s*)?([A-Z][A-Z0-9_]*)(?:(\s*[:=])\s*(.*?))?\s*$`)
 	environmentHead = regexp.MustCompile(`^\s{4}environment:\s*$`)
 )
 
 // parseOvumcyEnvironment returns the keys set in the environment block of the
 // service that runs the ovumcy image, or ok=false when the file has no such
-// service. Both the map form (`KEY: value`) and the list form (`- KEY=value`)
-// are read; a commented-out line is not a key.
+// service. The map form (`KEY: value`) and the list form (`- KEY=value`, and
+// the bare `- KEY`, which compose reads from the shell or .env) are read; a
+// commented-out line is not a key.
 func parseOvumcyEnvironment(content string) (env map[string]string, ok bool) {
 	headers := serviceHeader.FindAllStringIndex(content, -1)
 	for i, header := range headers {
@@ -234,7 +323,13 @@ func parseOvumcyEnvironment(content string) (env map[string]string, ok bool) {
 			case strings.TrimSpace(line) == "" || strings.HasPrefix(strings.TrimSpace(line), "#"):
 			case environmentKey.MatchString(line):
 				match := environmentKey.FindStringSubmatch(line)
-				env[match[1]] = match[2]
+				key, listEntry, separated, value := match[2], match[1] != "", match[3] != "", match[4]
+				switch {
+				case separated:
+					env[key] = value
+				case listEntry:
+					env[key] = "${" + key + "}"
+				}
 			default:
 				inBlock = false
 			}
@@ -296,6 +391,9 @@ var forwardingExemptions = map[string]exemption{
 	"PORT": {
 		reason: "the example stacks address the app on its default port 8080 (the proxy configs name ovumcy:8080, the local postgres stack publishes 8080:8080), so a PORT override would break the stack instead of tuning it",
 	},
+	"OVUMCY_WEBHOOK_URL": {
+		reason: "the operator CLI reads it for the single invocation that sets an owner's webhook endpoint, and refuses a run that also pipes a URL on stdin; carried in the container's own environment it would be ambient on every later run and make that second source impossible",
+	},
 	"DB_PATH": {
 		reason:  "the stack fixes DB_DRIVER to postgres, which never opens the SQLite file, so the path would be read by nothing",
 		applies: fixesPostgresDriver,
@@ -322,7 +420,7 @@ var pinnedLiterals = map[string]exemption{
 		applies: composesDatabaseURL,
 	},
 	"DB_PATH": {
-		reason:  "the path is where the stack mounts its data volume, so another path would write outside the volume and lose the data on the next container replacement",
+		reason:  "the path is a file inside the stack's data volume, so another path would write outside the volume and lose the data on the next container replacement",
 		applies: func(s stack) bool { return !fixesPostgresDriver(s) },
 	},
 	"CALENDAR_FEED_FENCE_PATH": {
@@ -439,21 +537,33 @@ func TestStackJudgmentRefusesWhatIgnoresTheOperator(t *testing.T) {
 // above with a stated reason.
 func TestEveryExampleStackForwardsEveryRuntimeConfigKey(t *testing.T) {
 	root := repoRoot(t)
-	sources, consts := loadBinarySources(t, root)
-	keys, unread, err := collectReadKeys(sources, consts, map[string]bool{"config.go": true})
-	if err != nil {
-		t.Fatalf("scan cmd/ovumcy: %v", err)
+	binary := binaryPackages(t, root)
+	readers := deriveReaders(binary)
+	reads, unresolved := scanReads(binary, readers)
+	for _, problem := range unresolved {
+		t.Errorf("%s: resolve it to a constant, or read it through a helper that takes the name as a parameter, so the example stacks can be held to it", problem)
 	}
-	for _, literal := range unread {
-		t.Errorf("config.go holds a key-shaped literal no known reader accounts for (%s): read it through one of the env helpers so the example stacks are held to it, or extend keyReaders", literal)
+	keys := map[string]bool{}
+	for key := range reads {
+		keys[key] = true
 	}
 
 	// The scan has to reach the keys the failure that motivated it dropped, and
 	// each way a key is spelled: a direct literal, the second name of a pair
-	// reader, a *_FILE twin and a constant from another package.
+	// reader, a *_FILE twin and a constant declared in another package. The
+	// readers are asserted by name too, so a scan that derived none of them (and
+	// so found only the direct os.Getenv reads) cannot pass on the keys alone.
 	for _, want := range []string{"REGISTRATION_MODE", "HSTS_ENABLED", "RATE_LIMIT_PASSWORD_RESET_REDEEM_WINDOW", "SECRET_KEY_FILE", "CALENDAR_FEED_FENCE_PATH", "TZ"} {
 		if !keys[want] {
 			t.Fatalf("the source scan did not find %s: it is not reaching the keys the binary reads (found %d)", want, len(keys))
+		}
+	}
+	for name, wantIndexes := range map[string][]int{"getEnv": {0}, "getCredentialRateLimit": {0, 1}, "resolveSecretFromEnvOrFile": {0, 1}} {
+		got := readerNamed(readers, "/cmd/ovumcy", name)
+		for _, index := range wantIndexes {
+			if !got[index] {
+				t.Fatalf("reader %s was not derived with parameter %d as a key (got %v): the scan is not following parameters into os.Getenv", name, index, got)
+			}
 		}
 	}
 
@@ -532,39 +642,122 @@ func TestPassthroughNamesTheKeyItself(t *testing.T) {
 	}
 }
 
-// TestConfigKeyScanSeesEachWayAKeyIsRead proves the source scan on fixtures it
-// owns: each reader spelling yields its keys, a fallback or limit argument is
-// never a key, and a key-shaped literal outside a reader is reported rather
-// than skipped.
-func TestConfigKeyScanSeesEachWayAKeyIsRead(t *testing.T) {
-	sources := map[string]string{
-		"config.go": `package main
-func load() {
-	a := getEnv("ALPHA_KEY", "FALLBACK")
-	b := getRateLimitMax("BETA_MAX", 5, 100)
-	c, d := getCredentialRateLimit("GAMMA_MAX", "GAMMA_WINDOW", 8, 0)
-	e, _ := resolveSecretFromEnvOrFile("DELTA", "DELTA_FILE", 8)
-	f := os.Getenv(security.FencePathEnv)
-	g := getEnvBoolStrict("EPSILON_ENABLED", false)
-	h := notAReader("ZETA_KEY")
-}`,
+// fixtureModule writes a throwaway module under a temp directory and returns
+// its packages, type-checked. The fixture owns every declaration the scan is
+// proved on, so the proof does not depend on what cmd/ovumcy reads today.
+func fixtureModule(t *testing.T, files map[string]string) []*packages.Package {
+	t.Helper()
+	dir := t.TempDir()
+	files["go.mod"] = "module fixture\n\ngo 1.24\n"
+	for name, content := range files {
+		path := filepath.Join(dir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
-	keys, unread, err := collectReadKeys(sources, map[string]string{"FencePathEnv": "FENCE_PATH"}, map[string]bool{"config.go": true})
-	if err != nil {
-		t.Fatal(err)
+	return loadPackages(t, dir, "./...")
+}
+
+// TestConfigKeyScanResolvesKeysByDeclaration proves the source scan on a
+// fixture module: a key is whatever constant the type checker resolves for the
+// argument a derived reader passes to os.Getenv, however it is spelled; a
+// fallback is never a key; and a function that only borrows a reader's name is
+// not one.
+func TestConfigKeyScanResolvesKeysByDeclaration(t *testing.T) {
+	pkgs := fixtureModule(t, map[string]string{
+		"cfg/cfg.go": `package cfg
+
+const RemoteEnv = "REMOTE_KEY"
+`,
+		"main.go": `package main
+
+import (
+	"os"
+
+	"fixture/cfg"
+)
+
+const localEnv = "LOCAL_KEY"
+const joinedEnv = "JOINED_" + "KEY"
+
+func readA(name, fallback string) string { return readB(name) + fallback }
+
+func readB(name string) string { return os.Getenv(name) }
+
+func pair(first, second string, n int) {
+	_ = readA(first, "x")
+	_ = readA(second, "y")
+}
+
+func notAReader(s string) string { return s }
+
+func getEnv(key string) string { return "static" }
+
+func main() {
+	_ = readA("ALPHA_KEY", "FALLBACK_VALUE")
+	_ = readA(localEnv, "")
+	_ = readA(joinedEnv, "")
+	_ = readA(cfg.RemoteEnv, "")
+	pair("PAIR_ONE", "PAIR_TWO", 3)
+	_ = notAReader("ZETA_KEY")
+	_ = getEnv("SHADOW_KEY")
+	_, _ = os.LookupEnv("LOOKUP_KEY")
+}
+`,
+	})
+	readers := deriveReaders(pkgs)
+	reads, unresolved := scanReads(pkgs, readers)
+	if len(unresolved) != 0 {
+		t.Fatalf("every key in the fixture resolves, got unresolved: %v", unresolved)
 	}
-	want := []string{"ALPHA_KEY", "BETA_MAX", "DELTA", "DELTA_FILE", "EPSILON_ENABLED", "FENCE_PATH", "GAMMA_MAX", "GAMMA_WINDOW"}
-	if got := sortedKeys(keys); strings.Join(got, ",") != strings.Join(want, ",") {
+	want := []string{"ALPHA_KEY", "JOINED_KEY", "LOCAL_KEY", "LOOKUP_KEY", "PAIR_ONE", "PAIR_TWO", "REMOTE_KEY"}
+	if got := sortedKeys(reads); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("keys read = %v, want %v", got, want)
 	}
-	if len(unread) != 2 || !strings.Contains(unread[0]+unread[1], "FALLBACK") || !strings.Contains(unread[0]+unread[1], "ZETA_KEY") {
-		t.Fatalf("a fallback-shaped literal and a literal passed to an unknown helper must both be reported, got %v", unread)
+	if got := readerNamed(readers, "fixture", "pair"); !got[0] || !got[1] || got[2] {
+		t.Fatalf("pair reads parameters 0 and 1 and not 2, got %v", got)
+	}
+	if got := readerNamed(readers, "fixture", "getEnv"); len(got) != 0 {
+		t.Fatalf("a function named getEnv that reads nothing is not a reader, got %v", got)
+	}
+}
+
+// TestConfigKeyScanRefusesAKeyItCannotResolve proves the other half: a name
+// that is neither a constant nor a reader's own parameter fails the scan
+// naming its position instead of being skipped.
+func TestConfigKeyScanRefusesAKeyItCannotResolve(t *testing.T) {
+	pkgs := fixtureModule(t, map[string]string{
+		"main.go": `package main
+
+import "os"
+
+func main() {
+	for _, name := range []string{"LOOP_ONE", "LOOP_TWO"} {
+		_ = os.Getenv(name)
+	}
+	_ = os.Getenv("lower_case")
+}
+`,
+	})
+	reads, unresolved := scanReads(pkgs, deriveReaders(pkgs))
+	if len(reads) != 0 {
+		t.Fatalf("nothing in the fixture resolves to a key, got %v", reads)
+	}
+	joined := strings.Join(unresolved, "\n")
+	for _, want := range []string{"main.go:7: the environment variable name is neither a constant nor a parameter", `main.go:9: "lower_case" is read as an environment variable but is not shaped like one`} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("want an unresolved entry containing %q, got:\n%s", want, joined)
+		}
 	}
 }
 
 // TestEnvironmentBlockParserReadsBothForms proves the stack reader on fixtures:
-// map and list forms, a commented-out key that is not a key, a block that ends
-// at the next field, and the service pick by image rather than by name.
+// map and list forms, the bare list passthrough, a commented-out key that is
+// not a key, a block that ends at the next field, and the service pick by image
+// rather than by name.
 func TestEnvironmentBlockParserReadsBothForms(t *testing.T) {
 	content := strings.Join([]string{
 		"services:",
@@ -578,6 +771,7 @@ func TestEnvironmentBlockParserReadsBothForms(t *testing.T) {
 		"      REGISTRATION_MODE: ${REGISTRATION_MODE:-open}",
 		"      # AUDIT_LOG_ENABLED: true",
 		"      - TZ=UTC",
+		"      - HSTS_ENABLED",
 		"      DATABASE_URL: postgres://u:p@postgres/db",
 		"    init: true",
 		"    read_only: true",
@@ -587,8 +781,11 @@ func TestEnvironmentBlockParserReadsBothForms(t *testing.T) {
 	if !ok {
 		t.Fatal("the ovumcy service must be found by its image")
 	}
-	if len(env) != 3 || env["REGISTRATION_MODE"] != "${REGISTRATION_MODE:-open}" || env["TZ"] != "UTC" {
+	if len(env) != 4 || env["REGISTRATION_MODE"] != "${REGISTRATION_MODE:-open}" || env["TZ"] != "UTC" {
 		t.Fatalf("environment read wrongly: %v", env)
+	}
+	if !isPassthrough("HSTS_ENABLED", env["HSTS_ENABLED"]) {
+		t.Fatalf("a bare list entry is compose's passthrough of the same name, got %q", env["HSTS_ENABLED"])
 	}
 	if _, found := env["AUDIT_LOG_ENABLED"]; found {
 		t.Fatal("a commented-out line must not count as a forwarded key")
