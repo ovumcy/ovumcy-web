@@ -71,6 +71,41 @@ func TestDashboardOvulationRangeIsAbsentWhenTheModelCannotPlaceAnEnd(t *testing.
 	}
 }
 
+// TestApplyDashboardPredictionRangesWithholdsTheOvulationRangeWithTheNextPeriodRange
+// pins the other half of the pairing: an irregular account with enough cycles
+// that has no next-period projection to express a spread of gets no ovulation
+// range either, rather than one built from lengths alone.
+func TestApplyDashboardPredictionRangesWithholdsTheOvulationRangeWithTheNextPeriodRange(t *testing.T) {
+	t.Parallel()
+
+	user := &models.User{Role: models.RoleOwner, IrregularCycle: true, CycleLength: 28, LutealPhase: 14}
+	stats := CycleStats{
+		CompletedCycleCount: 3,
+		LastPeriodStart:     mustParseDashboardDay(t, "2026-03-01"),
+		MinCycleLength:      24,
+		MaxCycleLength:      45,
+		LutealPhase:         14,
+	}
+	if !dashboardIrregularPredictionRangeEnabled(user, stats) {
+		t.Fatal("fixture: the irregular range must be enabled for this account")
+	}
+
+	// No next-period start: DashboardPredictionRange reports no range.
+	display := applyDashboardPredictionRanges(dashboardPredictionDisplay{}, user, stats, time.UTC)
+	if display.nextPeriodUseRange || display.ovulationUseRange {
+		t.Fatalf("nextPeriodUseRange = %v, ovulationUseRange = %v; both ranges must be absent without a next-period projection",
+			display.nextPeriodUseRange, display.ovulationUseRange)
+	}
+
+	// The same account with a projection does get both, so the absence above is
+	// the pairing and not a range that can never be built.
+	display = applyDashboardPredictionRanges(dashboardPredictionDisplay{nextPeriodStart: mustParseDashboardDay(t, "2026-03-29")}, user, stats, time.UTC)
+	if !display.nextPeriodUseRange || !display.ovulationUseRange {
+		t.Fatalf("nextPeriodUseRange = %v, ovulationUseRange = %v; both ranges must be present with a projection",
+			display.nextPeriodUseRange, display.ovulationUseRange)
+	}
+}
+
 // TestDashboardOvulationRangeEndpointsEqualPredictCycleWindowProperty draws the
 // anchor, both lengths, the luteal phase and the request zone, and requires each
 // endpoint to be exactly the ovulation PredictCycleWindow reports for the
