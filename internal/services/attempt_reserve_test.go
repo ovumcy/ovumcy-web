@@ -233,6 +233,34 @@ func TestLoginAuthenticateGivesTheSlotBackWhenTheCompareDidNotFail(t *testing.T)
 	}
 }
 
+func TestStartRecoveryGivesTheSlotBackWhenTheLookupErrors(t *testing.T) {
+	repo := &stubAuthUserRepo{emailErr: errors.New("storage unavailable")}
+	service := NewPasswordResetService(NewAuthService(repo), NewAttemptLimiter())
+	service.ConfigureRecoveryAttemptLimits(2, time.Hour)
+	secretKey := []byte("slot-secret-key-0123456789abcdefg")
+	now := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
+	start := func(code string) error {
+		_, err := service.StartRecovery(context.Background(), secretKey, "10.0.0.1", "owner@example.com", code, "StrongPass1", now, 30*time.Minute)
+		return err
+	}
+
+	// A lookup that fails says nothing about the operands: none of these may
+	// keep the slot it reserved.
+	for range 6 {
+		if err := start("OVUM-ABCD-2345-EFGH"); err == nil || errors.Is(err, ErrPasswordRecoveryRateLimited) {
+			t.Fatalf("lookup error = %v, want it passed through", err)
+		}
+	}
+	for range 2 {
+		if err := start("invalid"); !errors.Is(err, ErrPasswordRecoveryCodeInvalid) {
+			t.Fatalf("malformed code = %v, want ErrPasswordRecoveryCodeInvalid: the lookup errors kept their slots", err)
+		}
+	}
+	if err := start("invalid"); !errors.Is(err, ErrPasswordRecoveryRateLimited) {
+		t.Fatalf("attempt past the limit = %v, want ErrPasswordRecoveryRateLimited", err)
+	}
+}
+
 func TestReauthVerifyGivesTheSlotBackOnACorrectPassword(t *testing.T) {
 	fixture := newReauthBudgetFixture(t)
 	budget := fixture.settings.SettingsReauthBudget()
@@ -327,6 +355,18 @@ func TestAttemptReservationRefundIsBoundedByWhatItBooked(t *testing.T) {
 		lapsed.Refund()
 		if got := count(limiter, later); got != 1 {
 			t.Fatalf("count after refunding a reservation older than the window = %d, want 1", got)
+		}
+	})
+
+	t.Run("an attempt aged out of a live entry is not reached", func(t *testing.T) {
+		limiter := NewAttemptLimiter()
+		aged := reserve(limiter, now)
+		reserve(limiter, now.Add(30*time.Minute))
+		later := now.Add(70 * time.Minute)
+		reserve(limiter, later) // prunes the first attempt out of the same entry
+		aged.Refund()
+		if got := count(limiter, later); got != 2 {
+			t.Fatalf("count after refunding an attempt the window had dropped = %d, want 2", got)
 		}
 	})
 

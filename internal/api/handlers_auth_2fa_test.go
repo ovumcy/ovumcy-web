@@ -609,6 +609,44 @@ func TestVerifyTOTPLogin_MalformedCodesNeverDrawTheAttemptBudget(t *testing.T) {
 	}
 }
 
+// TestVerifyTOTPLogin_InternalErrorsNeverDrawTheAttemptBudget pins the other
+// way out that compared no verdict: a correct code whose step claim fails in
+// storage answers an internal error and gives its slot back, so a storage fault
+// cannot lock the owner out of the challenge.
+func TestVerifyTOTPLogin_InternalErrorsNeverDrawTheAttemptBudget(t *testing.T) {
+	app, database := newOnboardingTestAppWithCSRF(t)
+	user := createOnboardingTestUser(t, database, "totp-internal@example.com", "StrongPass1", true)
+	secretKey := []byte("test-secret-key")
+	rawSecret := setupTOTPForUser(t, database, user.ID, secretKey)
+	csrfToken, csrfCookieHeader := extractCSRFCookieAndToken(t, app)
+	if err := database.Exec(`CREATE TRIGGER refuse_totp_step_claim BEFORE UPDATE OF totp_last_used_step ON users BEGIN SELECT RAISE(ABORT, 'claim refused'); END`).Error; err != nil {
+		t.Fatalf("install the failing claim: %v", err)
+	}
+	code, err := totp.GenerateCode(rawSecret, time.Now())
+	if err != nil {
+		t.Fatalf("GenerateCode: %v", err)
+	}
+
+	for attempt := range 2 * services.DefaultTOTPAttemptsLimit {
+		pending := sealTOTPPendingCookieForTest(t, secretKey, user.ID, false)
+		form := url.Values{"code": {code}, "csrf_token": {csrfToken}}
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/sessions/2fa-challenge", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("HX-Request", "true")
+		req.Header.Set("Cookie", joinCookieHeader(pending, csrfCookieHeader))
+		req.Header.Set("Accept-Language", "en")
+		resp, err := app.Test(req, testConfigNoTimeout)
+		if err != nil {
+			t.Fatalf("POST /api/v1/sessions/2fa-challenge: %v", err)
+		}
+		status := resp.StatusCode
+		_ = resp.Body.Close()
+		if status != http.StatusInternalServerError {
+			t.Fatalf("submission %d status = %d, want 500 (the storage fault reaches the handler; 429 means an internal error drew the budget)", attempt+1, status)
+		}
+	}
+}
+
 // TestVerifyTOTPLogin_ReplayCode_Rejected proves the handler rejects a TOTP
 // code that has already been consumed for the same user. Guards against
 // removal of the replay check in ValidateCode or its wiring in the handler.
