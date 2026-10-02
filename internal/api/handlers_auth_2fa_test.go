@@ -27,7 +27,7 @@ func setupTOTPForUser(t *testing.T, database *gorm.DB, userID uint, secretKey []
 	if err != nil {
 		t.Fatalf("GenerateSetupKey: %v", err)
 	}
-	if err := svc.EnableTOTP(context.Background(), userID, 1, key.Secret(), services.TOTPEnrollmentStep{}); err != nil {
+	if err := svc.EnableTOTP(context.Background(), userID, 1, key.Secret(), verifiedEnrollmentStepForTest(t, key.Secret())); err != nil {
 		t.Fatalf("EnableTOTP: %v", err)
 	}
 	return key.Secret()
