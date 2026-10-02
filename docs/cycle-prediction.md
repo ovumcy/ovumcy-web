@@ -206,7 +206,11 @@ These are the exact cases asserted by the reference tests.
   single date. The range and variability statistics (shortest/longest cycle and
   the sample standard deviation) are computed over the same recent-cycle window
   as the median, so an old outlier cycle stops affecting them once it ages out
-  of the window.
+  of the window. The ovulation range runs from the ovulation date the model
+  places in the shortest of those cycles to the one it places in the longest —
+  the same arithmetic as a single projected date, applied once per end — so it
+  agrees with the calendar, the feed and the reminders for the same cycle
+  length.
 
 ### How a BBT temperature shift is detected (the "3-over-6" coverline rule)
 

@@ -260,11 +260,13 @@ func TestBuildDashboardCycleContextUsesRangeForIrregularMode(t *testing.T) {
 	if !context.DisplayOvulationUseRange {
 		t.Fatalf("expected irregular mode to use ovulation range")
 	}
-	if got := context.DisplayOvulationRangeStart.Format("2006-01-02"); got != "2026-03-11" {
-		t.Fatalf("expected ovulation range start 2026-03-11, got %s", got)
+	// Cycle day 1 is 03-01, so a 24-day cycle with a 14-day luteal phase
+	// ovulates on cycle day 10 (03-10) and a 45-day one on cycle day 31 (03-31).
+	if got := context.DisplayOvulationRangeStart.Format("2006-01-02"); got != "2026-03-10" {
+		t.Fatalf("expected ovulation range start 2026-03-10, got %s", got)
 	}
-	if got := context.DisplayOvulationRangeEnd.Format("2006-01-02"); got != "2026-04-01" {
-		t.Fatalf("expected ovulation range end 2026-04-01, got %s", got)
+	if got := context.DisplayOvulationRangeEnd.Format("2006-01-02"); got != "2026-03-31" {
+		t.Fatalf("expected ovulation range end 2026-03-31, got %s", got)
 	}
 	if !context.DisplayOvulationDate.IsZero() {
 		t.Fatalf("expected irregular range to suppress single ovulation date")

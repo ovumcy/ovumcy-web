@@ -1,0 +1,175 @@
+package services
+
+import (
+	"testing"
+	"time"
+
+	"github.com/ovumcy/ovumcy-web/internal/models"
+	"pgregory.net/rapid"
+)
+
+// The irregular-mode ovulation range must name the days the cycle model puts
+// ovulation on in the shortest and in the longest observed cycle. Shifting the
+// next-period range back by the luteal phase lands one day late on both ends,
+// because ovulation is the day BEFORE the luteal phase begins.
+
+// literalOvulationDay restates the documented arithmetic — ovulation falls
+// (cycle length - luteal phase) days into the cycle, never earlier than cycle
+// day 5 — without reading the predictor under test.
+func literalOvulationDay(cycleLength, lutealPhase int) int {
+	day := cycleLength - lutealPhase
+	if day < 5 {
+		day = 5
+	}
+	return day
+}
+
+func TestDashboardOvulationRangeNamesThePredictorsOvulationForBothLengths(t *testing.T) {
+	t.Parallel()
+
+	start := mustParseDashboardDay(t, "2026-03-01")
+	for _, testCase := range []struct {
+		name                 string
+		minLength, maxLength int
+		luteal               int
+		wantStart, wantEnd   string
+	}{
+		{name: "default luteal", minLength: 24, maxLength: 45, luteal: 14, wantStart: "2026-03-10", wantEnd: "2026-03-31"},
+		{name: "unset luteal reads the default", minLength: 24, maxLength: 45, luteal: 0, wantStart: "2026-03-10", wantEnd: "2026-03-31"},
+		{name: "personal luteal 10", minLength: 26, maxLength: 34, luteal: 10, wantStart: "2026-03-16", wantEnd: "2026-03-24"},
+		{name: "single observed length collapses to one day", minLength: 28, maxLength: 28, luteal: 14, wantStart: "2026-03-14", wantEnd: "2026-03-14"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			gotStart, gotEnd, ok := DashboardOvulationRange(start, testCase.minLength, testCase.maxLength, testCase.luteal, time.UTC)
+			if !ok {
+				t.Fatalf("expected a range for lengths %d..%d", testCase.minLength, testCase.maxLength)
+			}
+			if got := gotStart.Format("2006-01-02"); got != testCase.wantStart {
+				t.Errorf("range start = %s, want %s", got, testCase.wantStart)
+			}
+			if got := gotEnd.Format("2006-01-02"); got != testCase.wantEnd {
+				t.Errorf("range end = %s, want %s", got, testCase.wantEnd)
+			}
+		})
+	}
+}
+
+func TestDashboardOvulationRangeIsAbsentWhenTheModelCannotPlaceAnEnd(t *testing.T) {
+	t.Parallel()
+
+	start := mustParseDashboardDay(t, "2026-03-01")
+	if _, _, ok := DashboardOvulationRange(start, 12, 40, 14, time.UTC); ok {
+		t.Fatalf("a 12-day shortest cycle has no modelled ovulation, so no range may be built on it")
+	}
+	if _, _, ok := DashboardOvulationRange(start, 24, 0, 14, time.UTC); ok {
+		t.Fatalf("a missing longest cycle must not yield a range")
+	}
+	if _, _, ok := DashboardOvulationRange(time.Time{}, 24, 45, 14, time.UTC); ok {
+		t.Fatalf("a missing anchor must not yield a range")
+	}
+}
+
+// TestDashboardOvulationRangeEndpointsEqualPredictCycleWindowProperty draws the
+// anchor, both lengths, the luteal phase and the request zone, and requires each
+// endpoint to be exactly the ovulation PredictCycleWindow reports for the
+// matching length — and to match the literal arithmetic.
+func TestDashboardOvulationRangeEndpointsEqualPredictCycleWindowProperty(t *testing.T) {
+	zones := make([]*time.Location, 0, 4)
+	for _, name := range []string{"UTC", "America/New_York", "Asia/Tokyo", "Pacific/Auckland"} {
+		zones = append(zones, calendarDayComparisonZone(t, name))
+	}
+
+	rapid.Check(t, func(t *rapid.T) {
+		start := drawCycleStartDate(t)
+		minLength := rapid.IntRange(15, 60).Draw(t, "minLength")
+		maxLength := rapid.IntRange(minLength, 90).Draw(t, "maxLength")
+		luteal := rapid.IntRange(0, 20).Draw(t, "luteal")
+		location := rapid.SampledFrom(zones).Draw(t, "location")
+
+		gotStart, gotEnd, ok := DashboardOvulationRange(CalendarDay(start, location), minLength, maxLength, luteal, location)
+		if !ok {
+			t.Fatalf("no range for lengths %d..%d luteal %d", minLength, maxLength, luteal)
+		}
+
+		resolved := ResolveLutealPhase(luteal)
+		for _, end := range []struct {
+			name   string
+			got    time.Time
+			length int
+		}{
+			{name: "start", got: gotStart, length: minLength},
+			{name: "end", got: gotEnd, length: maxLength},
+		} {
+			window := PredictCycleWindow(start, end.length, luteal)
+			if !window.Calculable {
+				t.Fatalf("predictor cannot place ovulation in a %d-day cycle", end.length)
+			}
+			if got, want := CalendarDayKey(end.got), CalendarDayKey(window.OvulationDate); got != want {
+				t.Fatalf("range %s = %s, want the predictor's ovulation %s (length %d, luteal %d)", end.name, got, want, end.length, luteal)
+			}
+			literal := CalendarDayKey(start.AddDate(0, 0, literalOvulationDay(end.length, resolved)-1))
+			if got := CalendarDayKey(end.got); got != literal {
+				t.Fatalf("range %s = %s, want %s from the documented arithmetic (length %d, luteal %d)", end.name, got, literal, end.length, luteal)
+			}
+			if h, m, s := end.got.In(location).Clock(); h != 0 || m != 0 || s != 0 {
+				t.Fatalf("range %s %s is not at midnight of the request zone", end.name, end.got)
+			}
+		}
+		if gotEnd.Before(gotStart) {
+			t.Fatalf("range runs backwards: %s .. %s", gotStart, gotEnd)
+		}
+	})
+}
+
+// TestDashboardContextOvulationRangeMatchesThePredictorProperty drives the same
+// property through the context the dashboard renders from, so a caller that
+// stopped passing the observed lengths — or kept deriving the range from the
+// next-period one — is caught where the owner sees it.
+func TestDashboardContextOvulationRangeMatchesThePredictorProperty(t *testing.T) {
+	zones := make([]*time.Location, 0, 3)
+	for _, name := range []string{"UTC", "America/New_York", "Asia/Tokyo"} {
+		zones = append(zones, calendarDayComparisonZone(t, name))
+	}
+
+	rapid.Check(t, func(t *rapid.T) {
+		minLength := rapid.IntRange(20, 30).Draw(t, "minLength")
+		maxLength := rapid.IntRange(minLength, 50).Draw(t, "maxLength")
+		luteal := rapid.IntRange(10, 16).Draw(t, "luteal")
+		location := rapid.SampledFrom(zones).Draw(t, "location")
+
+		start := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
+		today := CalendarDay(time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC), location)
+		user := &models.User{IrregularCycle: true}
+		stats := CycleStats{
+			LastPeriodStart:     CalendarDay(start, location),
+			AverageCycleLength:  float64(minLength+maxLength) / 2,
+			MedianCycleLength:   (minLength + maxLength) / 2,
+			MinCycleLength:      minLength,
+			MaxCycleLength:      maxLength,
+			LutealPhase:         luteal,
+			CurrentCycleDay:     10,
+			CompletedCycleCount: 3,
+			NextPeriodStart:     start.AddDate(0, 0, (minLength+maxLength)/2),
+		}
+
+		context := BuildDashboardCycleContext(user, nil, stats, today, location)
+		if !context.DisplayOvulationUseRange {
+			t.Fatalf("expected an ovulation range for lengths %d..%d luteal %d", minLength, maxLength, luteal)
+		}
+		for _, end := range []struct {
+			name   string
+			got    time.Time
+			length int
+		}{
+			{name: "start", got: context.DisplayOvulationRangeStart, length: minLength},
+			{name: "end", got: context.DisplayOvulationRangeEnd, length: maxLength},
+		} {
+			want := PredictCycleWindow(start, end.length, luteal).OvulationDate
+			if got := CalendarDayKey(end.got); got != CalendarDayKey(want) {
+				t.Fatalf("context range %s = %s, want %s (length %d, luteal %d)", end.name, got, CalendarDayKey(want), end.length, luteal)
+			}
+		}
+	})
+}

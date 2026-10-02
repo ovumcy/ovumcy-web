@@ -438,15 +438,29 @@ func DashboardPredictionRange(user *models.User, stats CycleStats, predictedStar
 	return rangeStart, rangeEnd, true
 }
 
-func DashboardOvulationRange(nextPeriodRangeStart time.Time, nextPeriodRangeEnd time.Time, lutealPhase int, location *time.Location) (time.Time, time.Time, bool) {
-	if nextPeriodRangeStart.IsZero() || nextPeriodRangeEnd.IsZero() {
+// DashboardOvulationRange returns the irregular-mode ovulation range: the
+// ovulation PredictCycleWindow places in the shortest and in the longest
+// observed cycle that starts at lastPeriodStart. Both ends come from the one
+// predictor every other surface (calendar, .ics feed, webhook) reads, so the
+// range can never name a day the model would not. It is not the next-period
+// range shifted back by the luteal phase: ovulation is the day BEFORE the
+// luteal phase begins, so that shift lands one day late on both ends.
+//
+// The range is absent when either length is too short for the model to place
+// an ovulation at all. The ends are returned at location midnight, the shape
+// dashboardOvulationInPast compares against today.
+func DashboardOvulationRange(lastPeriodStart time.Time, minCycleLength int, maxCycleLength int, lutealPhase int, location *time.Location) (time.Time, time.Time, bool) {
+	earliest := PredictCycleWindow(lastPeriodStart, minCycleLength, lutealPhase)
+	latest := PredictCycleWindow(lastPeriodStart, maxCycleLength, lutealPhase)
+	if !earliest.Calculable || !latest.Calculable {
 		return time.Time{}, time.Time{}, false
 	}
 
-	resolvedLutealPhase := ResolveLutealPhase(lutealPhase)
-	rangeStart := AddCalendarDays(nextPeriodRangeStart, -resolvedLutealPhase, location)
-	rangeEnd := AddCalendarDays(nextPeriodRangeEnd, -resolvedLutealPhase, location)
+	rangeStart := CalendarDay(earliest.OvulationDate, location)
+	rangeEnd := CalendarDay(latest.OvulationDate, location)
 	if rangeEnd.Before(rangeStart) {
+		// codecov:ignore -- defensive: ovulation day is non-decreasing in the
+		// cycle length, and the caller admits only MaxCycleLength >= MinCycleLength.
 		return time.Time{}, time.Time{}, false
 	}
 
@@ -735,9 +749,15 @@ func applyDashboardPredictionRanges(display dashboardPredictionDisplay, user *mo
 	if display.ovulationConfirmed {
 		return display
 	}
+	if !display.nextPeriodUseRange {
+		// No next-period range means no projection to express a spread of: the
+		// ovulation range is withheld with it, as before.
+		return display
+	}
 	display.ovulationRangeStart, display.ovulationRangeEnd, display.ovulationUseRange = DashboardOvulationRange(
-		display.nextPeriodRangeStart,
-		display.nextPeriodRangeEnd,
+		stats.LastPeriodStart,
+		stats.MinCycleLength,
+		stats.MaxCycleLength,
 		stats.LutealPhase,
 		location,
 	)
