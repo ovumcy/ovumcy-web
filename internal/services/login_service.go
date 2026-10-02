@@ -84,14 +84,17 @@ func (service *LoginService) Authenticate(
 	now time.Time,
 ) (LoginResult, error) {
 	normalizedEmail := NormalizeAuthEmail(email)
-	if service.attemptPolicy.TooManyRecent(secretKey, clientKey, normalizedEmail, now) {
+	// The attempt is reserved BEFORE the compare and stays booked if the compare
+	// fails: a check that only reads the count would let every request that
+	// arrives during the compare (a full bcrypt) pass the same count.
+	reservation, admitted := service.attemptPolicy.Reserve(secretKey, clientKey, normalizedEmail, now)
+	if !admitted {
 		return LoginResult{}, ErrAuthLoginRateLimited
 	}
 	// An address that normalizes to nothing names no identity bucket, so the
 	// attempt would be budgeted by client alone; it can also name no account.
 	// Refuse it as a failed credential before any lookup.
 	if normalizedEmail == "" {
-		service.attemptPolicy.AddFailure(secretKey, clientKey, normalizedEmail, now)
 		return LoginResult{}, ErrAuthInvalidCreds
 	}
 
@@ -99,11 +102,17 @@ func (service *LoginService) Authenticate(
 	// the account a success is booked against is the one the failures were.
 	user, err := service.auth.AuthenticateCredentials(ctx, normalizedEmail, password)
 	if err != nil {
-		if errors.Is(err, ErrAuthInvalidCreds) {
-			service.attemptPolicy.AddFailure(secretKey, clientKey, normalizedEmail, now)
+		if !errors.Is(err, ErrAuthInvalidCreds) {
+			// Not a verdict on the password (a lookup or storage error): the
+			// attempt is not a failure.
+			reservation.Refund()
 		}
 		return LoginResult{}, err
 	}
+	// The password is correct: the reservation was never a failure. The count
+	// goes back to what it was; the budget is still only reset by the caller
+	// once the sign-in has landed.
+	reservation.Refund()
 
 	// A correct password does not reset the budget here: the sign-in can
 	// still fail below (the reset token) and in the caller (the cookie that

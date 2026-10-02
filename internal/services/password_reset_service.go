@@ -77,28 +77,32 @@ func (service *PasswordResetService) StartRecovery(ctx context.Context, secretKe
 	}
 
 	normalizedEmail := NormalizeAuthEmail(email)
-	if service.recoveryPolicy.TooManyRecent(secretKey, limiterKey, normalizedEmail, now) {
+	// The attempt is reserved before any compare and stays booked on every
+	// refusal below that is a verdict on the operands; a request that errors
+	// without one, or succeeds, gives the slot back. See AttemptLimiter.Reserve.
+	reservation, admitted := service.recoveryPolicy.Reserve(secretKey, limiterKey, normalizedEmail, now)
+	if !admitted {
 		return "", ErrPasswordRecoveryRateLimited
 	}
 	if normalizedEmail == "" {
-		service.recoveryPolicy.AddFailure(secretKey, limiterKey, normalizedEmail, now)
 		return "", ErrPasswordRecoveryInputInvalid
 	}
 
 	code := NormalizeRecoveryCode(rawRecoveryCode)
 	if err := ValidateRecoveryCodeFormat(code); err != nil {
-		service.recoveryPolicy.AddFailure(secretKey, limiterKey, normalizedEmail, now)
 		return "", ErrPasswordRecoveryCodeInvalid
 	}
 
 	user, err := service.auth.FindUserByEmailRecoveryCodeAndPassword(ctx, normalizedEmail, code, password)
 	if err != nil {
 		if errors.Is(err, ErrRecoveryCodeNotFound) {
-			service.recoveryPolicy.AddFailure(secretKey, limiterKey, normalizedEmail, now)
 			return "", ErrPasswordRecoveryCodeInvalid
 		}
+		reservation.Refund()
 		return "", err
 	}
+	// Both factors verified: the reservation was never a failure.
+	reservation.Refund()
 
 	token, err := service.auth.BuildPasswordResetToken(secretKey, user.ID, user.PasswordHash, user.AuthSessionVersion, PasswordResetTokenPurposeRecovery, tokenTTL, now)
 	if err != nil {

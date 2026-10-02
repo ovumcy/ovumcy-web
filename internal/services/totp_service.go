@@ -137,18 +137,18 @@ func (service *TOTPService) ConfigureEnrollAttempts(attempts int, window time.Du
 	service.enrollAttemptPolicy.Configure(attempts, window)
 }
 
-// CheckRateLimit returns ErrTOTPRateLimited when the client or user has exceeded
-// the allowed number of verification attempts within the configured window.
-func (service *TOTPService) CheckRateLimit(secretKey []byte, clientKey string, userID uint, now time.Time) error {
-	if service.attemptPolicy.TooManyRecent(secretKey, clientKey, strconv.FormatUint(uint64(userID), 10), now) {
-		return ErrTOTPRateLimited
+// ReserveAttempt draws one sign-in verification attempt for the client and the
+// user, atomically with the admission check: it returns ErrTOTPRateLimited when
+// either bucket has used up its window, and otherwise books the attempt before
+// the code is compared. The caller leaves the reservation booked when the code
+// is wrong (or a replay) and calls Refund on it when the code is right or the
+// request ended before a code was compared.
+func (service *TOTPService) ReserveAttempt(secretKey []byte, clientKey string, userID uint, now time.Time) (*AttemptReservation, error) {
+	reservation, admitted := service.attemptPolicy.Reserve(secretKey, clientKey, strconv.FormatUint(uint64(userID), 10), now)
+	if !admitted {
+		return nil, ErrTOTPRateLimited
 	}
-	return nil
-}
-
-// RecordFailure records a failed verification attempt for rate-limit tracking.
-func (service *TOTPService) RecordFailure(secretKey []byte, clientKey string, userID uint, now time.Time) {
-	service.attemptPolicy.AddFailure(secretKey, clientKey, strconv.FormatUint(uint64(userID), 10), now)
+	return reservation, nil
 }
 
 // ResetAttempts clears the succeeding client's failure counter after a

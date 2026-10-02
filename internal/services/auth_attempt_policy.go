@@ -45,12 +45,17 @@ func (policy *AuthAttemptPolicy) Configure(attempts int, window time.Duration) {
 	}
 }
 
-func (policy *AuthAttemptPolicy) TooManyRecent(secretKey []byte, clientKey string, identity string, now time.Time) bool {
-	return policy.limiter.TooManyRecentAny(policy.keys(secretKey, clientKey, identity), now, policy.attempts, policy.window)
-}
-
-func (policy *AuthAttemptPolicy) AddFailure(secretKey []byte, clientKey string, identity string, now time.Time) {
-	policy.limiter.AddFailureAll(policy.keys(secretKey, clientKey, identity), now, policy.budget())
+// Reserve is the policy's only way to draw an attempt. It refuses (ok false)
+// when the client bucket or the identity bucket is spent, and otherwise books
+// one provisional attempt under both in the same critical section (see
+// AttemptLimiter.Reserve), so the compare the caller runs next is covered by the
+// limit however many requests arrive at once. The caller leaves the reservation
+// booked when the compare fails and calls Refund on the reservation when it
+// succeeds or never ran. There is deliberately no separate check and no
+// separate failure booking: a check that does not reserve is a window for every
+// concurrent request to read the same count.
+func (policy *AuthAttemptPolicy) Reserve(secretKey []byte, clientKey string, identity string, now time.Time) (*AttemptReservation, bool) {
+	return policy.limiter.Reserve(policy.keys(secretKey, clientKey, identity), now, policy.budget())
 }
 
 // The policy has two success resets, and each caller names the one its flow

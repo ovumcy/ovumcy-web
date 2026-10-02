@@ -56,7 +56,14 @@ func (handler *Handler) VerifyTOTPLogin(c fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 
-	if err := handler.totpService.CheckRateLimit(handler.secretKey, c.IP(), userID, time.Now()); err != nil {
+	// The attempt is reserved here, before any code is compared, and stays
+	// booked only when a compared code is wrong (or replayed). Every other way
+	// out of this handler — a malformed code, a refused grant, an internal
+	// error, a correct code — gives the slot back, so only a failed compare
+	// draws the budget while a burst of concurrent submissions cannot all pass
+	// the same count.
+	reservation, err := handler.totpService.ReserveAttempt(handler.secretKey, c.IP(), userID, time.Now())
+	if err != nil {
 		// Invalidate the pending session so an exhausted (or stolen) cookie
 		// cannot be reused; the user must re-authenticate with their password
 		// to obtain a fresh challenge.
@@ -68,6 +75,7 @@ func (handler *Handler) VerifyTOTPLogin(c fiber.Ctx) error {
 
 	code := parseTOTPChallengeCode(c)
 	if len(code) != 6 {
+		reservation.Refund()
 		spec := totpInvalidCodeErrorSpec()
 		handler.logSecurityError(c, "auth.2fa", spec)
 		return handler.respondMappedError(c, spec)
@@ -83,6 +91,7 @@ func (handler *Handler) VerifyTOTPLogin(c fiber.Ctx) error {
 		// ValidateCode, which would fail every submission with an opaque
 		// internal error instead of sending the owner toward the
 		// operator-reset escape hatch the next login attempt raises.
+		reservation.Refund()
 		spec := totpSessionExpiredErrorSpec()
 		handler.logSecurityError(c, "auth.2fa", spec)
 		return handler.respondMappedError(c, spec)
@@ -92,6 +101,7 @@ func (handler *Handler) VerifyTOTPLogin(c fiber.Ctx) error {
 	// passed refuses it here — before ValidateCode, so a stale grant cannot
 	// even spend the owner's current TOTP step. The owner signs in again.
 	if !services.SecondFactorGrantCurrent(grant.SessionVersion, &user) {
+		reservation.Refund()
 		handler.clearTOTPPendingCookie(c)
 		spec := totpSessionExpiredErrorSpec()
 		handler.logSecurityError(c, "auth.2fa", spec)
@@ -102,23 +112,28 @@ func (handler *Handler) VerifyTOTPLogin(c fiber.Ctx) error {
 	if errors.Is(err, services.ErrTOTPReplayed) {
 		// Same response shape as a plain invalid code so an attacker cannot
 		// distinguish replay from a wrong guess. We log replay separately for
-		// security observability (potential captured-code attempt).
-		handler.totpService.RecordFailure(handler.secretKey, c.IP(), userID, time.Now())
+		// security observability (potential captured-code attempt). The
+		// reservation stays booked: a replay is a failure.
 		spec := totpInvalidCodeErrorSpec()
 		handler.logSecurityEvent(c, "auth.2fa", "replay_rejected")
 		return handler.respondMappedError(c, spec)
 	}
 	if err != nil {
+		reservation.Refund()
 		spec := totpInternalErrorSpec()
 		handler.logSecurityError(c, "auth.2fa", spec)
 		return handler.respondMappedError(c, spec)
 	}
 	if !valid {
-		handler.totpService.RecordFailure(handler.secretKey, c.IP(), userID, time.Now())
+		// The reservation stays booked: a wrong code is a failure.
 		spec := totpInvalidCodeErrorSpec()
 		handler.logSecurityError(c, "auth.2fa", spec)
 		return handler.respondMappedError(c, spec)
 	}
+	// A correct code was never a failure. The count goes back to what it was;
+	// the client's counter is only forgiven further down, once the session is
+	// minted.
+	reservation.Refund()
 
 	handler.clearTOTPPendingCookie(c)
 
