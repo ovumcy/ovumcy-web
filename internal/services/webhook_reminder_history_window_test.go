@@ -143,6 +143,60 @@ func TestWebhookReminderPassAndDashboardReadTheSameHistoryWindow(t *testing.T) {
 	}
 }
 
+// The reminder pass cuts the history to the stats window and then reads the
+// current phase and the confirmed-shift check from the cut set, where the
+// dashboard hands those two the full one. The cut loses nothing they read: the
+// window ends at today inclusive, the phase asks only about today's own row, and
+// the thermal-shift series stops at today. The sweep puts today before, on and
+// after the third elevated reading, with rows (that reading and a logged period)
+// recorded for the days ahead, and requires both reads to agree between the two
+// sets every day.
+func TestStatsWindowCutLeavesThePhaseAndTheConfirmedShiftUnchanged(t *testing.T) {
+	user := dayFeedbackParityUser(43)
+	cycleStart := time.Date(2026, time.February, 26, 0, 0, 0, 0, time.UTC)
+
+	logs := lutealTenLogs(t)
+	for offset := range 6 {
+		logs = append(logs, models.DailyLog{Date: cycleStart.AddDate(0, 0, offset), BBT: new(thermalShiftLowBBT)})
+	}
+	for offset := 14; offset <= 16; offset++ {
+		logs = append(logs, models.DailyLog{Date: cycleStart.AddDate(0, 0, offset), BBT: new(thermalShiftHighBBT)})
+	}
+	logs = append(logs, models.DailyLog{Date: cycleStart.AddDate(0, 0, 17), IsPeriod: true})
+	logs = mergeLogsByDay(logs)
+
+	forEachParityZone(t, func(t *testing.T, location *time.Location) {
+		sawConfirmed, sawUnconfirmed := false, false
+		for offset := 12; offset <= 19; offset++ {
+			now := localNoon(cycleStart.AddDate(0, 0, offset), location)
+			today := DateAtLocation(now, location)
+			windowed := FilterLogsToStatsHistory(logs, now, location)
+			if offset < 17 && len(windowed) >= len(logs) {
+				t.Fatalf("fixture: the window kept all %d rows with rows still ahead of %s", len(logs), CalendarDayKey(today))
+			}
+			stats := BuildCycleStatsFromLogs(user, windowed, now, location)
+			projected := stats.NextPeriodStart.AddDate(0, 0, -1)
+
+			wantSupersedes := ConfirmedOvulationSupersedes(user, logs, stats, projected, today, location)
+			if got := ConfirmedOvulationSupersedes(user, windowed, stats, projected, today, location); got != wantSupersedes {
+				t.Fatalf("on %s the confirmed-shift check = %t from the cut history, %t from the full one", CalendarDayKey(today), got, wantSupersedes)
+			}
+			if wantPhase, gotPhase := DetectCurrentPhase(stats, logs, today, location), DetectCurrentPhase(stats, windowed, today, location); gotPhase != wantPhase {
+				t.Fatalf("on %s the phase = %q from the cut history, %q from the full one", CalendarDayKey(today), gotPhase, wantPhase)
+			}
+			if wantSupersedes {
+				sawConfirmed = true
+			} else {
+				sawUnconfirmed = true
+			}
+		}
+		// Both outcomes occur in the sweep, so agreement is not two constants.
+		if !sawConfirmed || !sawUnconfirmed {
+			t.Fatalf("fixture: the sweep never saw both a confirmed and an unconfirmed shift (confirmed=%t unconfirmed=%t)", sawConfirmed, sawUnconfirmed)
+		}
+	})
+}
+
 // TestFilterLogsToStatsHistoryKeepsTheWindowInclusive pins the edges of the
 // shared window: the day two years back and today are inside, the day before and
 // tomorrow are outside.
