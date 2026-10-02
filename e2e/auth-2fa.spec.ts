@@ -157,8 +157,10 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     await page.locator('form[action="/api/v1/sessions"] button[type="submit"]').click();
     await expect(page).toHaveURL('/auth/2fa', { timeout: 5_000 });
 
-    // Provide valid code on the challenge page
-    const challengeCode = generateSync({ secret, strategy: 'totp' });
+    // Provide valid code on the challenge page. Enrollment consumed the step its
+    // code matched, so the challenge takes the next step's code (inside the
+    // server's ±1-step window).
+    const challengeCode = generateSync({ secret, strategy: 'totp', epoch: Math.floor(Date.now() / 1000) + 30 });
     await page.locator('input[name="code"]').fill(challengeCode);
     await page.locator('form[action="/api/v1/sessions/2fa-challenge"] button[type="submit"]').click();
 
