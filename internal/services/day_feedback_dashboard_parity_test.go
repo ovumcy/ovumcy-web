@@ -24,11 +24,50 @@ func dayFeedbackParityUser(id uint) *models.User {
 	return &models.User{ID: id, Role: models.RoleOwner, CycleLength: 28, PeriodLength: 5, LutealPhase: 14, TrackBBT: true}
 }
 
-// dayFeedbackFertileDays asks ResolveDayFeedback about every day in [from, to]
-// and returns the days it answers with the fertile message, in order. A day the
-// message resolves as self-care is skipped: the early period days carry their own
-// message ahead of the window by design.
-func dayFeedbackFertileDays(t *testing.T, user *models.User, logs []models.DailyLog, now, from, to time.Time) []string {
+// The parity must hold in every request zone, not only in UTC: the stats the
+// feedback and the dashboard read put the window at the owner's local midnight,
+// the day being saved arrives as a local midnight too, and in UTC alone the
+// local and the UTC anchors coincide, so a comparison that mixed them stayed
+// green there. The zones are one east of UTC (Pacific/Auckland, UTC+12/+13),
+// one west (America/Los_Angeles, UTC-7/-8) and UTC itself.
+func dayFeedbackParityZones(t *testing.T) map[string]*time.Location {
+	t.Helper()
+
+	zones := map[string]*time.Location{"UTC": time.UTC}
+	for _, name := range []string{"Pacific/Auckland", "America/Los_Angeles"} {
+		location, err := time.LoadLocation(name)
+		if err != nil {
+			t.Fatalf("LoadLocation(%s): %v", name, err)
+		}
+		zones[name] = location
+	}
+	return zones
+}
+
+// forEachParityZone runs the case once per zone, named after it.
+func forEachParityZone(t *testing.T, run func(t *testing.T, location *time.Location)) {
+	t.Helper()
+
+	for name, location := range dayFeedbackParityZones(t) {
+		t.Run(name, func(t *testing.T) { run(t, location) })
+	}
+}
+
+// localNoon is the instant "now" is on the given calendar day for an owner in
+// location: midday there, which is a different UTC calendar day in some zones.
+func localNoon(day time.Time, location *time.Location) time.Time {
+	year, month, dayOfMonth := day.Date()
+	return time.Date(year, month, dayOfMonth, 12, 0, 0, 0, location)
+}
+
+// dayFeedbackFertileDays asks ResolveDayFeedback about every calendar day in
+// [from, to] and returns the days it answers with the fertile message, in order.
+// from, to and today name calendar days (their date components are read); each
+// request is made the way the handler makes it, with the day at the owner's local
+// midnight and "now" at local midday. A day the message resolves as self-care is
+// skipped: the early period days carry their own message ahead of the window by
+// design.
+func dayFeedbackFertileDays(t *testing.T, user *models.User, logs []models.DailyLog, location *time.Location, today, from, to time.Time) []string {
 	t.Helper()
 
 	repository := newDayLogRepositoryStub()
@@ -39,8 +78,8 @@ func dayFeedbackFertileDays(t *testing.T, user *models.User, logs []models.Daily
 	service := NewDayService(repository, &dayUserRepositoryStub{})
 
 	var fertile []string
-	for day := from; !day.After(to); day = day.AddDate(0, 0, 1) {
-		state, err := service.ResolveDayFeedback(context.Background(), user, day, now, time.UTC)
+	for day := dateOnly(from); !day.After(dateOnly(to)); day = day.AddDate(0, 0, 1) {
+		state, err := service.ResolveDayFeedback(context.Background(), user, CalendarDay(day, location), localNoon(today, location), location)
 		if err != nil {
 			t.Fatalf("ResolveDayFeedback(%s) unexpected error: %v", CalendarDayKey(day), err)
 		}
@@ -51,17 +90,19 @@ func dayFeedbackFertileDays(t *testing.T, user *models.User, logs []models.Daily
 	return fertile
 }
 
-// dashboardFertileDays reads the days of [from, to] the dashboard's published
-// window covers, under the same fertility gate that publishes it.
-func dashboardFertileDays(t *testing.T, user *models.User, logs []models.DailyLog, now, from, to time.Time) []string {
+// dashboardFertileDays reads the calendar days of [from, to] the dashboard's
+// published window covers, under the same fertility gate that publishes it. The
+// window is compared by calendar day, the way a reader of the page sees it.
+func dashboardFertileDays(t *testing.T, user *models.User, logs []models.DailyLog, location *time.Location, today, from, to time.Time) []string {
 	t.Helper()
 
+	now := localNoon(today, location)
 	dashboard := NewDashboardViewService(
 		NewStatsService(nil, nil),
 		&stubDashboardViewerProvider{logEntry: models.DailyLog{Date: now}},
 		&stubDashboardDayStateProvider{logs: logs},
 	)
-	view, err := dashboard.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC)
+	view, err := dashboard.BuildDashboardViewData(context.Background(), user, "en", now, location)
 	if err != nil {
 		t.Fatalf("BuildDashboardViewData() unexpected error: %v", err)
 	}
@@ -70,15 +111,15 @@ func dashboardFertileDays(t *testing.T, user *models.User, logs []models.DailyLo
 	if !view.ShowFertilityStatus || view.Stats.FertilityWindowStart.IsZero() {
 		return fertile
 	}
-	for day := from; !day.After(to); day = day.AddDate(0, 0, 1) {
-		if !day.Before(view.Stats.FertilityWindowStart) && !day.After(view.Stats.FertilityWindowEnd) {
+	for day := dateOnly(from); !day.After(dateOnly(to)); day = day.AddDate(0, 0, 1) {
+		if CalendarDaysBetween(view.Stats.FertilityWindowStart, day) >= 0 && CalendarDaysBetween(day, view.Stats.FertilityWindowEnd) >= 0 {
 			fertile = append(fertile, CalendarDayKey(day))
 		}
 	}
 	return fertile
 }
 
-func dayFeedbackKeyOn(t *testing.T, user *models.User, logs []models.DailyLog, now, day time.Time) string {
+func dayFeedbackKeyOn(t *testing.T, user *models.User, logs []models.DailyLog, location *time.Location, today, day time.Time) string {
 	t.Helper()
 
 	repository := newDayLogRepositoryStub()
@@ -86,7 +127,7 @@ func dayFeedbackKeyOn(t *testing.T, user *models.User, logs []models.DailyLog, n
 		entry.UserID = user.ID
 		repository.entries[CalendarDayKey(entry.Date)] = entry
 	}
-	state, err := NewDayService(repository, &dayUserRepositoryStub{}).ResolveDayFeedback(context.Background(), user, day, now, time.UTC)
+	state, err := NewDayService(repository, &dayUserRepositoryStub{}).ResolveDayFeedback(context.Background(), user, CalendarDay(day, location), localNoon(today, location), location)
 	if err != nil {
 		t.Fatalf("ResolveDayFeedback(%s) unexpected error: %v", CalendarDayKey(day), err)
 	}
@@ -156,25 +197,27 @@ func TestDayFeedbackNamesTheSameFertileDaysAsTheDashboardForAnInferredLuteal(t *
 
 	// The owner saves while looking at cycle day 16, inside the personal window
 	// and past the default one, and at cycle day 10, the reverse.
-	for _, today := range []time.Time{cycleDay(16), cycleDay(10)} {
-		t.Run(CalendarDayKey(today), func(t *testing.T) {
-			from, to := cycleDay(4), cycleDay(27)
-			fromFeedback := dayFeedbackFertileDays(t, user, logs, today, from, to)
-			fromDashboard := dashboardFertileDays(t, user, logs, today, from, to)
-			if !slices.Equal(fromFeedback, fromDashboard) {
-				t.Fatalf("save message is fertile on %v, the dashboard window covers %v", fromFeedback, fromDashboard)
-			}
-			if !slices.Equal(fromFeedback, wantDays) {
-				t.Fatalf("fertile days = %v, want cycle days 13-18 %v", fromFeedback, wantDays)
-			}
-			if got := dayFeedbackKeyOn(t, user, logs, today, cycleDay(10)); got != daySaveMessageNeutral {
-				t.Fatalf("cycle day 10 message = %q, want the neutral one", got)
-			}
-			if got := dayFeedbackKeyOn(t, user, logs, today, cycleDay(16)); got != daySaveMessageFertile {
-				t.Fatalf("cycle day 16 message = %q, want the fertile one", got)
-			}
-		})
-	}
+	forEachParityZone(t, func(t *testing.T, location *time.Location) {
+		for _, today := range []time.Time{cycleDay(16), cycleDay(10)} {
+			t.Run(CalendarDayKey(today), func(t *testing.T) {
+				from, to := cycleDay(4), cycleDay(27)
+				fromFeedback := dayFeedbackFertileDays(t, user, logs, location, today, from, to)
+				fromDashboard := dashboardFertileDays(t, user, logs, location, today, from, to)
+				if !slices.Equal(fromFeedback, fromDashboard) {
+					t.Fatalf("save message is fertile on %v, the dashboard window covers %v", fromFeedback, fromDashboard)
+				}
+				if !slices.Equal(fromFeedback, wantDays) {
+					t.Fatalf("fertile days = %v, want cycle days 13-18 %v", fromFeedback, wantDays)
+				}
+				if got := dayFeedbackKeyOn(t, user, logs, location, today, cycleDay(10)); got != daySaveMessageNeutral {
+					t.Fatalf("cycle day 10 message = %q, want the neutral one", got)
+				}
+				if got := dayFeedbackKeyOn(t, user, logs, location, today, cycleDay(16)); got != daySaveMessageFertile {
+					t.Fatalf("cycle day 16 message = %q, want the fertile one", got)
+				}
+			})
+		}
+	})
 }
 
 // A thermal shift the owner's own temperatures confirm outranks the projection
@@ -209,20 +252,22 @@ func TestDayFeedbackFollowsAConfirmedThermalShiftLikeTheDashboard(t *testing.T) 
 		t.Fatalf("fixture: projected ovulation = %s, want 2026-03-15", got)
 	}
 
-	from, to := cycleDay(4), cycleDay(27)
-	fromFeedback := dayFeedbackFertileDays(t, user, logs, today, from, to)
-	fromDashboard := dashboardFertileDays(t, user, logs, today, from, to)
-	if !slices.Equal(fromFeedback, fromDashboard) {
-		t.Fatalf("save message is fertile on %v, the dashboard window covers %v", fromFeedback, fromDashboard)
-	}
-	wantDays := []string{"2026-03-06", "2026-03-07", "2026-03-08", "2026-03-09", "2026-03-10", "2026-03-11"} // cycle days 9-14
-	if !slices.Equal(fromFeedback, wantDays) {
-		t.Fatalf("fertile days = %v, want the confirmed window %v", fromFeedback, wantDays)
-	}
-	// The projection's own days are past the confirmed ovulation: no fertile line.
-	if got := dayFeedbackKeyOn(t, user, logs, today, cycleDay(16)); got != daySaveMessageNeutral {
-		t.Fatalf("cycle day 16 message = %q, want the neutral one after the confirmed ovulation", got)
-	}
+	forEachParityZone(t, func(t *testing.T, location *time.Location) {
+		from, to := cycleDay(4), cycleDay(27)
+		fromFeedback := dayFeedbackFertileDays(t, user, logs, location, today, from, to)
+		fromDashboard := dashboardFertileDays(t, user, logs, location, today, from, to)
+		if !slices.Equal(fromFeedback, fromDashboard) {
+			t.Fatalf("save message is fertile on %v, the dashboard window covers %v", fromFeedback, fromDashboard)
+		}
+		wantDays := []string{"2026-03-06", "2026-03-07", "2026-03-08", "2026-03-09", "2026-03-10", "2026-03-11"} // cycle days 9-14
+		if !slices.Equal(fromFeedback, wantDays) {
+			t.Fatalf("fertile days = %v, want the confirmed window %v", fromFeedback, wantDays)
+		}
+		// The projection's own days are past the confirmed ovulation: no fertile line.
+		if got := dayFeedbackKeyOn(t, user, logs, location, today, cycleDay(16)); got != daySaveMessageNeutral {
+			t.Fatalf("cycle day 16 message = %q, want the neutral one after the confirmed ovulation", got)
+		}
+	})
 }
 
 // The same history the webhook parity test uses: more than two years of it, so
@@ -231,26 +276,28 @@ func TestDayFeedbackFollowsAConfirmedThermalShiftLikeTheDashboard(t *testing.T) 
 func TestDayFeedbackReadsTheDashboardsHistoryWindow(t *testing.T) {
 	today := time.Date(2026, time.October, 2, 0, 0, 0, 0, time.UTC)
 
-	for _, testCase := range historyWindowCases() {
-		t.Run(testCase.name, func(t *testing.T) {
-			user := historyWindowUser()
-			logs := historyWindowLogs(today, testCase.startsAgo)
+	forEachParityZone(t, func(t *testing.T, location *time.Location) {
+		for _, testCase := range historyWindowCases() {
+			t.Run(testCase.name, func(t *testing.T) {
+				user := historyWindowUser()
+				logs := historyWindowLogs(today, testCase.startsAgo)
 
-			from, to := today.AddDate(0, 0, -45), today.AddDate(0, 0, 5)
-			fromFeedback := dayFeedbackFertileDays(t, user, logs, today, from, to)
-			fromDashboard := dashboardFertileDays(t, user, logs, today, from, to)
-			if !slices.Equal(fromFeedback, fromDashboard) {
-				t.Fatalf("save message is fertile on %v, the dashboard window covers %v", fromFeedback, fromDashboard)
-			}
-			if testCase.wantPaused && len(fromFeedback) != 0 {
-				t.Fatalf("a paused history still gets the fertile message on %v", fromFeedback)
-			}
-			// Control: a history the dashboard does project must reach the message,
-			// so a message that went silent for everyone would not pass the
-			// comparison above on two empty lists.
-			if !testCase.wantPaused && len(fromFeedback) == 0 {
-				t.Fatal("a history the dashboard projects never gets the fertile message")
-			}
-		})
-	}
+				from, to := today.AddDate(0, 0, -45), today.AddDate(0, 0, 5)
+				fromFeedback := dayFeedbackFertileDays(t, user, logs, location, today, from, to)
+				fromDashboard := dashboardFertileDays(t, user, logs, location, today, from, to)
+				if !slices.Equal(fromFeedback, fromDashboard) {
+					t.Fatalf("save message is fertile on %v, the dashboard window covers %v", fromFeedback, fromDashboard)
+				}
+				if testCase.wantPaused && len(fromFeedback) != 0 {
+					t.Fatalf("a paused history still gets the fertile message on %v", fromFeedback)
+				}
+				// Control: a history the dashboard does project must reach the message,
+				// so a message that went silent for everyone would not pass the
+				// comparison above on two empty lists.
+				if !testCase.wantPaused && len(fromFeedback) == 0 {
+					t.Fatal("a history the dashboard projects never gets the fertile message")
+				}
+			})
+		}
+	})
 }
