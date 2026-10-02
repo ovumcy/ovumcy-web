@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -561,6 +562,68 @@ func TestVerifyTOTPLogin_RateLimited_HTMXReturns429(t *testing.T) {
 	}
 	if c := responseCookie(resp.Cookies(), authCookieName); c != nil && c.Value != "" {
 		t.Error("rate-limited request must not issue an auth cookie")
+	}
+}
+
+// TestVerifyTOTPLogin_ConcurrentWrongCodesAreComparedNoMoreThanTheLimit throws a
+// burst of simultaneous wrong codes at one account through the real handler.
+// A 401 is answered only after ValidateCode compared the code and found it
+// wrong, so the number of 401s is the number of comparisons that ran: it must
+// equal the limit, with every other submission refused before any compare. A
+// handler that counted the failures first and booked them after the compare
+// would let the whole burst through.
+func TestVerifyTOTPLogin_ConcurrentWrongCodesAreComparedNoMoreThanTheLimit(t *testing.T) {
+	const burst = 40
+	app, database := newOnboardingTestAppWithCSRF(t)
+	user := createOnboardingTestUser(t, database, "totp-burst@example.com", "StrongPass1", true)
+	secretKey := []byte("test-secret-key")
+	setupTOTPForUser(t, database, user.ID, secretKey)
+	csrfToken, csrfCookieHeader := extractCSRFCookieAndToken(t, app)
+	pending := sealTOTPPendingCookieForTest(t, secretKey, user.ID, false)
+
+	statuses := make([]int, burst)
+	failures := make([]error, burst)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for index := range burst {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			form := url.Values{"code": {"000000"}, "csrf_token": {csrfToken}}
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/sessions/2fa-challenge", strings.NewReader(form.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.Header.Set("HX-Request", "true")
+			req.Header.Set("Cookie", joinCookieHeader(pending, csrfCookieHeader))
+			req.Header.Set("Accept-Language", "en")
+			<-start
+			resp, err := app.Test(req, testConfigNoTimeout)
+			if err != nil {
+				failures[index] = err
+				return
+			}
+			statuses[index] = resp.StatusCode
+			_ = resp.Body.Close()
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	compared, refused := 0, 0
+	for index, status := range statuses {
+		if failures[index] != nil {
+			t.Fatalf("request %d: %v", index, failures[index])
+		}
+		switch status {
+		case http.StatusUnauthorized:
+			compared++
+		case http.StatusTooManyRequests:
+			refused++
+		default:
+			t.Fatalf("request %d status = %d, want 401 (compared) or 429 (refused)", index, status)
+		}
+	}
+	if compared != services.DefaultTOTPAttemptsLimit || refused != burst-services.DefaultTOTPAttemptsLimit {
+		t.Fatalf("%d codes were compared and %d refused, want %d compared and %d refused", compared, refused, services.DefaultTOTPAttemptsLimit, burst-services.DefaultTOTPAttemptsLimit)
 	}
 }
 

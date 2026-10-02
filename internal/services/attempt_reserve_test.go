@@ -136,24 +136,25 @@ func TestReauthVerifyRunsNoMoreComparesThanTheLimitUnderABurst(t *testing.T) {
 	}
 }
 
-func TestTOTPReserveAttemptRunsNoMoreComparesThanTheLimitUnderABurst(t *testing.T) {
+// TestTOTPReserveAttemptAdmitsExactlyTheLimitUnderABurst pins the service
+// bound only: how many reservations the sign-in budget admits for one account
+// across many addresses. That a handler compares a code only after holding such
+// a reservation is pinned by the handler's own burst test in the api package.
+func TestTOTPReserveAttemptAdmitsExactlyTheLimitUnderABurst(t *testing.T) {
 	secretKey := []byte("burst-secret-key-0123456789abcdef")
 	service := NewTOTPService(&stubTOTPUserRepo{}, secretKey, NewAttemptLimiter())
-	var compares atomic.Int64
+	var admitted atomic.Int64
 
 	results := runBurst(burstSize, func(index int) error {
-		reservation, err := service.ReserveAttempt(secretKey, "192.0.2."+string(rune('A'+index)), 7, time.Now())
-		if err != nil {
-			return err
+		_, err := service.ReserveAttempt(secretKey, "192.0.2."+string(rune('A'+index)), 7, time.Now())
+		if err == nil {
+			admitted.Add(1)
 		}
-		_ = reservation // a wrong code: the reservation stays booked
-		compares.Add(1)
-		slowCompare()
-		return nil
+		return err
 	})
 
-	if got := compares.Load(); got > DefaultTOTPAttemptsLimit {
-		t.Fatalf("%d sign-in code comparisons ran against one account with limit %d", got, DefaultTOTPAttemptsLimit)
+	if got := admitted.Load(); got != DefaultTOTPAttemptsLimit {
+		t.Fatalf("%d sign-in reservations were admitted for one account, want the limit %d", got, DefaultTOTPAttemptsLimit)
 	}
 	if got := countErrors(results, ErrTOTPRateLimited); got != burstSize-DefaultTOTPAttemptsLimit {
 		t.Fatalf("%d requests were rate limited, want %d", got, burstSize-DefaultTOTPAttemptsLimit)
