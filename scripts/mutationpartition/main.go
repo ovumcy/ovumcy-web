@@ -13,6 +13,17 @@
 // (longest-processing-time first), which evens the shards to within one
 // file's weight.
 //
+// The operator count alone ranks files badly, though: on an even ~43-weight
+// split of internal/api, wall time ran 19..>180 minutes per shard (run
+// 36942283202), because a mutant costs the time until the first test that
+// kills it, and which tests reach a file differs by an order of magnitude. So
+// each file's weight is scaled by a measured rate — seconds of wall time per
+// candidate — from costs.json, keyed by the package directory's base name. The
+// rates are the per-mutant completion gaps in that run's logs, summed per file
+// and shrunk toward the package mean by five pseudo-mutants; a file the table
+// does not list (new, or never reached) costs the package mean, and a package
+// it does not list costs 1 per candidate, which is the plain operator count.
+//
 // The file NAMES come from stdin — mutation.sh's shard_files is the single
 // source of the population, so the partition and the proof that it covers
 // every file read the same list — and each file's source is read from -dir.
@@ -22,18 +33,58 @@ package main
 
 import (
 	"bufio"
+	_ "embed"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"go/scanner"
 	"go/token"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 )
+
+//go:embed costs.json
+var costsJSON []byte
+
+// PackageCosts is one package's measured seconds per mutation candidate: Files
+// per file name, Default for a file the table does not list.
+type PackageCosts struct {
+	Default float64            `json:"default"`
+	Files   map[string]float64 `json:"files"`
+}
+
+// loadCosts parses the embedded table, keyed by package directory base name.
+func loadCosts() (map[string]PackageCosts, error) {
+	var costs map[string]PackageCosts
+	if err := json.Unmarshal(costsJSON, &costs); err != nil {
+		return nil, fmt.Errorf("costs.json: %w", err)
+	}
+	return costs, nil
+}
+
+// Rate is the seconds one candidate of the named file costs: 1 for a package
+// the table does not list.
+func Rate(costs map[string]PackageCosts, pkg, name string) float64 {
+	entry, ok := costs[pkg]
+	if !ok {
+		return 1
+	}
+	if rate, ok := entry.Files[name]; ok {
+		return rate
+	}
+	return entry.Default
+}
+
+// Cost scales a candidate count by its rate, to whole seconds.
+func Cost(weight int, rate float64) int {
+	return int(math.Round(float64(weight) * rate))
+}
 
 // candidateWeight is how many mutants gremlins v0.6.0's default-enabled
 // mutators (arithmetic-base, conditionals-boundary, conditionals-negation,
@@ -89,13 +140,18 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	costs, err := loadCosts()
+	if err != nil {
+		return err
+	}
+	pkg := filepath.Base(*dir)
 	files := make([]File, 0, len(names))
 	for _, name := range names {
 		src, err := os.ReadFile(filepath.Join(*dir, name))
 		if err != nil {
 			return err
 		}
-		files = append(files, File{Name: name, Weight: Weigh(src)})
+		files = append(files, File{Name: name, Weight: Cost(Weigh(src), Rate(costs, pkg, name))})
 	}
 
 	for _, name := range Partition(files, *of)[*shard-1] {
