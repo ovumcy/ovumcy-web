@@ -33,29 +33,24 @@ func (service *DayService) ResolveDayFeedback(ctx context.Context, user *models.
 
 	day = DateAtLocation(day, location)
 	today := DateAtLocation(now, location)
-	// The same today-bounded timeline BuildCycleStatsFromLogs derives from, for
-	// the same reason: ResolvePregnancyPause lifts a pause on ANY cycle start
-	// later than the positive test and has no today of its own, while manual
-	// entry permits a start two days ahead. On the raw set that start decides
-	// today, and this message would tell the owner their predictions had resumed
-	// while every other surface still showed the pause. The two warnings below
-	// keep the full set on purpose — each asks about the day being edited, not
-	// about what the account's timeline supports today.
-	timeline := filterLogsNotAfter(logs, today)
-	stats := BuildCycleStats(timeline, today)
-	// BuildCycleStats does not resolve the pregnancy pause itself (mirrors
-	// StatsService.BuildCycleStatsFromLogs); resolve it here so the save
-	// message can explain the paused predictions.
-	if _, paused := ResolvePregnancyPause(timeline); paused {
-		stats.PregnancyPaused = true
-	}
+	// The dashboard's own derivation, step for step: the stats come from the same
+	// two-year history window through BuildCycleStatsFromLogs (which bounds the
+	// timeline at today, the pregnancy pause included, and applies the owner's
+	// luteal baseline), and the window then goes through the same confirmed-shift
+	// and suppression gate. Plain BuildCycleStats fixed the luteal phase at its
+	// default of 14 and never saw a thermal shift, so the toast named days the
+	// dashboard did not shade and stayed silent on days it did. The two warnings
+	// below keep the full set on purpose — each asks about the day being edited,
+	// not about what the account's timeline supports today.
+	stats := BuildCycleStatsFromLogs(user, FilterLogsToStatsHistory(logs, today, location), now, location)
+	_, published, suppression := ConfirmedAndPublishedStats(user, logs, stats, today, location)
 	entry, err := service.FetchLogByDate(ctx, user.ID, day, location)
 	if err != nil {
 		return DayFeedbackState{}, err
 	}
 
 	state := DayFeedbackState{
-		MessageKey: resolveDaySaveMessageKey(user, day, stats),
+		MessageKey: resolveDaySaveMessageKey(user, day, published, suppression),
 	}
 
 	if shouldShowSpottingCycleWarning(logs, entry, day, location) {
@@ -90,8 +85,11 @@ func (service *DayService) AcknowledgeLongPeriodWarning(ctx context.Context, use
 
 // resolveDaySaveMessageKey requires a non-nil user: its only caller,
 // ResolveDayFeedback, dereferences user.ID before it gets here, so a nil user
-// panics there rather than reaching a guard in this package.
-func resolveDaySaveMessageKey(user *models.User, day time.Time, stats CycleStats) string {
+// panics there rather than reaching a guard in this package. It reads the
+// PUBLISHED stats and the verdict that came with them
+// (ConfirmedAndPublishedStats), never stats it derived itself: the fertile line
+// may only name a window the dashboard would show.
+func resolveDaySaveMessageKey(user *models.User, day time.Time, stats CycleStats, suppression PredictionSuppression) string {
 	// A positive pregnancy test pauses predictions (ResolvePregnancyPause);
 	// explain the pause right at save time instead of a routine
 	// self-care/fertile message, and carry the red-flag guidance.
@@ -112,10 +110,13 @@ func resolveDaySaveMessageKey(user *models.User, day time.Time, stats CycleStats
 			return daySaveMessageSelfCare
 		}
 	}
-	// The fertile line is a claim about right now, so it may only be made from
-	// a window the other fertility surfaces would still publish — the gate is
-	// FertilityProjectionSuppressed, the one the calendar grid, the .ics feed,
-	// the webhook reminder and the dashboard read. Two of its tiers matter here
+	// The fertile line is an estimate about the window, so it may only be made
+	// from one the other fertility surfaces would still publish — the verdict is
+	// the fertility half of PredictionSuppression, the gate the calendar grid, the
+	// .ics feed, the webhook reminder and the dashboard read (the window itself
+	// is the confirmed one when the owner's temperatures have confirmed a shift,
+	// and the personalised one when their luteal phase has been inferred). Two of
+	// its tiers matter here
 	// beyond the early returns above. Until the first cycle closes there are no
 	// observed cycle lengths, so the window is the default length projected
 	// forward with the default luteal phase: where the only source is
@@ -127,7 +128,7 @@ func resolveDaySaveMessageKey(user *models.User, day time.Time, stats CycleStats
 	// day 61, and saving one of those days called it fertile while every other
 	// surface withheld the window. The save falls back to the neutral message
 	// rather than softening the fertile one.
-	if !FertilityProjectionSuppressed(user, stats) &&
+	if !suppression.FertilitySuppressed &&
 		!stats.FertilityWindowStart.IsZero() &&
 		!day.Before(stats.FertilityWindowStart) &&
 		!day.After(stats.FertilityWindowEnd) {

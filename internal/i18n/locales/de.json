@@ -515,7 +515,7 @@
   "dashboard.autosave_invalid": "Beheben Sie die Formularfehler, um zu speichern",
   "dashboard.autosave_undo": "Rückgängig",
   "dashboard.save_message_self_care": "Gespeichert. Achten Sie heute gut auf sich.",
-  "dashboard.save_message_fertile": "Gespeichert. Sie befinden sich gerade in Ihrem fruchtbaren Fenster.",
+  "dashboard.save_message_fertile": "Gespeichert. Dieser Tag liegt voraussichtlich in Ihrem geschätzten fruchtbaren Fenster.",
   "dashboard.save_message_neutral": "Gespeichert.",
   "dashboard.save_message_pregnancy_paused": "Gespeichert. Nach einem positiven Schwangerschaftstest sind die Zyklusvorhersagen pausiert. Bei Blutungen, Schmerzen oder Schwindel suchen Sie umgehend ärztliche Hilfe.",
   "daylog.title": "Täglicher Eintrag",

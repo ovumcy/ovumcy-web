@@ -155,8 +155,7 @@ func (service *StatsService) BuildStatsPageViewData(ctx context.Context, user *m
 	// confirm, so this page's fertile-window card cannot name the projection
 	// while the grid and the chart name the confirmed day.
 	today := DateAtLocation(now, location)
-	confirmedStats, _ := ResolveConfirmedCycleStats(user, baseData.logs, baseData.stats, today, location)
-	publishedStats, _ := PublishedStats(user, confirmedStats, baseData.logs, today, location)
+	_, publishedStats, _ := ConfirmedAndPublishedStats(user, baseData.logs, baseData.stats, today, location)
 
 	return StatsPageViewData{
 		Stats:                               publishedStats,

@@ -11,3 +11,4 @@
   feed read the last two years. With old cycles outside that window, the app could pause its
   next-period estimate while a reminder was still sent to the webhook endpoint (or the other way
   round). Both now cut the history through one shared helper.
+- **The "saved" message names the same fertile days as the dashboard, and says it is an estimate.** After saving a day the message derived its own cycle statistics with the default 14-day luteal phase and no confirmed temperature shift, so an owner whose luteal phase had been inferred as 10 days heard "fertile" on days the dashboard showed nothing and nothing on days it shaded. It now goes through the same history window, personal baseline, confirmed-shift step and fertility gate as the dashboard. The wording in all six languages now reads as an estimate ("this day is likely inside your estimated fertile window") instead of stating a certainty.
