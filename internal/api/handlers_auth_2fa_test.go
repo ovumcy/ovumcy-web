@@ -517,8 +517,8 @@ func TestVerifyTOTPLogin_InvalidCode_DoesNotIssueSession(t *testing.T) {
 // TestVerifyTOTPLogin_RateLimited_HTMXReturns429 drives more failures than the
 // configured limit through /api/v1/sessions/2fa-challenge via the HTMX path (which surfaces the
 // real status code) and asserts the 6th attempt is rejected with 429 by the
-// rate limiter. Guards against accidental removal of the CheckRateLimit call
-// in the handler or wiring breakage between handler and service.
+// rate limiter. Guards against accidental removal of the attempt reservation in
+// the handler or wiring breakage between handler and service.
 func TestVerifyTOTPLogin_RateLimited_HTMXReturns429(t *testing.T) {
 	app, database := newOnboardingTestAppWithCSRF(t)
 	user := createOnboardingTestUser(t, database, "totp-ratelimit@example.com", "StrongPass1", true)
@@ -561,6 +561,51 @@ func TestVerifyTOTPLogin_RateLimited_HTMXReturns429(t *testing.T) {
 	}
 	if c := responseCookie(resp.Cookies(), authCookieName); c != nil && c.Value != "" {
 		t.Error("rate-limited request must not issue an auth cookie")
+	}
+}
+
+// TestVerifyTOTPLogin_MalformedCodesNeverDrawTheAttemptBudget pins that the
+// attempt the handler reserves before comparing is given back when no code was
+// compared: a submission that is not six characters is the caller's own input,
+// so any number of them leaves the full budget for the real codes after.
+func TestVerifyTOTPLogin_MalformedCodesNeverDrawTheAttemptBudget(t *testing.T) {
+	app, database := newOnboardingTestAppWithCSRF(t)
+	user := createOnboardingTestUser(t, database, "totp-malformed@example.com", "StrongPass1", true)
+	secretKey := []byte("test-secret-key")
+	setupTOTPForUser(t, database, user.ID, secretKey)
+	csrfToken, csrfCookieHeader := extractCSRFCookieAndToken(t, app)
+
+	submit := func(code string) int {
+		t.Helper()
+		// The HTMX path surfaces the real status code; the browser path answers
+		// every refusal with a redirect.
+		pending := sealTOTPPendingCookieForTest(t, secretKey, user.ID, false)
+		form := url.Values{"code": {code}, "csrf_token": {csrfToken}}
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/sessions/2fa-challenge", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("HX-Request", "true")
+		req.Header.Set("Cookie", joinCookieHeader(pending, csrfCookieHeader))
+		req.Header.Set("Accept-Language", "en")
+		resp, err := app.Test(req, testConfigNoTimeout)
+		if err != nil {
+			t.Fatalf("POST /api/v1/sessions/2fa-challenge: %v", err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		return resp.StatusCode
+	}
+
+	for attempt := range 3 * services.DefaultTOTPAttemptsLimit {
+		if status := submit("12345"); status == http.StatusTooManyRequests {
+			t.Fatalf("malformed submission %d was rate limited: it drew the attempt budget", attempt+1)
+		}
+	}
+	for attempt := range services.DefaultTOTPAttemptsLimit {
+		if status := submit("000000"); status == http.StatusTooManyRequests {
+			t.Fatalf("wrong code %d was rate limited before the limit: the malformed submissions kept their slots", attempt+1)
+		}
+	}
+	if status := submit("000000"); status != http.StatusTooManyRequests {
+		t.Fatalf("wrong code past the limit = %d, want 429", status)
 	}
 }
 

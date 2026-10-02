@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	// evictEveryN triggers a full-map stale-key sweep every N AddFailureAll calls.
+	// evictEveryN triggers a full-map stale-key sweep every N admitted reservations.
 	// Keys are partly attacker-influenced (identity:<hmac>), so without periodic
 	// eviction the map grows unboundedly until process restart. N=128 keeps the
 	// sweep rare enough to be O(1) amortised while bounding residual memory.
@@ -45,6 +45,11 @@ type attemptEntry struct {
 	// the caller's window, so the newest is always last.
 	times  []time.Time
 	budget AttemptBudget
+	// gen identifies this incarnation of the entry. It is assigned when the key
+	// first gets an attempt after having none, and kept while attempts are
+	// added to it, so a refund can tell the entry its reservation booked into
+	// from one a reset or a window lapse removed and a later failure re-created.
+	gen uint64
 }
 
 func (entry attemptEntry) newest() time.Time {
@@ -79,7 +84,8 @@ func (entry attemptEntry) blocked(now time.Time) bool {
 type AttemptLimiter struct {
 	mu        sync.Mutex
 	attempts  map[string]attemptEntry
-	addCallsN int // counts AddFailureAll invocations for eviction pacing
+	addCallsN int // counts admitted reservations for eviction pacing
+	nextGen   uint64
 	// sweepAbove is the map size that re-triggers a sweep ahead of the call
 	// counter. It is recomputed after every sweep as "the entries the sweep kept,
 	// plus the room left under the cap in the fullest scope". What a sweep keeps
@@ -109,11 +115,107 @@ func NormalizeLimiterKey(raw string) string {
 	return key
 }
 
-func (limiter *AttemptLimiter) TooManyRecentAny(keys []string, now time.Time, limit int, window time.Duration) bool {
+// AttemptReservation is the provisional attempt Reserve booked under every key
+// of one request. The attempt is counted from the moment it is reserved, so a
+// request that is still comparing a credential already holds its slot. The
+// caller settles it once the compare is over: a compare that failed leaves the
+// reservation booked (it is that failure), anything else — a correct credential,
+// or a request refused before it spent a compare — gives the slot back with
+// Refund.
+type AttemptReservation struct {
+	limiter *AttemptLimiter
+	holds   []attemptHold
+	at      time.Time
+	// settled is guarded by limiter.mu: a reservation is refunded at most once.
+	settled bool
+}
+
+// attemptHold names one booked attempt: the key and the generation of the entry
+// it was appended to, so a refund never reaches an entry that was cleared and
+// re-created since (see attemptEntry.gen).
+type attemptHold struct {
+	key string
+	gen uint64
+}
+
+// Reserve is the one admission path of a budgeted credential check. Under a
+// single hold of the mutex it refuses when ANY key already carries `Limit`
+// attempts inside the window — recording nothing, so a refusal never feeds a
+// bucket — and otherwise books one provisional attempt at `now` under every key
+// and admits the request. Counting and booking in one critical section is what
+// makes the limit a bound on the compares that run: with limit L, at most L
+// reservations are ever admitted per key inside one window, however many
+// requests arrive at once. A check followed by a separate booking after the
+// compare leaves every request that arrives inside the compare unbooked.
+//
+// ok is false when the budget is spent; the reservation is nil then.
+func (limiter *AttemptLimiter) Reserve(keys []string, now time.Time, budget AttemptBudget) (*AttemptReservation, bool) {
 	limiter.mu.Lock()
 	defer limiter.mu.Unlock()
 
-	for _, key := range normalizeLimiterKeys(keys) {
+	normalized := normalizeLimiterKeys(keys)
+	if limiter.atLimitLocked(normalized, now, budget.Limit, budget.Window) {
+		return nil, false
+	}
+	return &AttemptReservation{
+		limiter: limiter,
+		holds:   limiter.bookLocked(normalized, now, budget),
+		at:      now,
+	}, true
+}
+
+// Refund gives the reserved slot back: it removes the one attempt this
+// reservation booked from each key. It is the success path of a compare, and of
+// a request refused before it spent one. It is idempotent, and it is bounded by
+// what the reservation itself booked: an entry that was cleared since (a reset
+// after a committed action) or has aged out of its window holds nothing to
+// remove and is left alone, and a failure booked by another request is never
+// the one removed because the entry's generation must match. Safe on a nil
+// reservation.
+func (reservation *AttemptReservation) Refund() {
+	if reservation == nil {
+		return
+	}
+	limiter := reservation.limiter
+	limiter.mu.Lock()
+	defer limiter.mu.Unlock()
+
+	if reservation.settled {
+		return
+	}
+	reservation.settled = true
+
+	for _, hold := range reservation.holds {
+		entry, ok := limiter.attempts[hold.key]
+		if !ok || entry.gen != hold.gen {
+			continue
+		}
+		index := -1
+		for position, value := range entry.times {
+			if value.Equal(reservation.at) {
+				index = position
+				break
+			}
+		}
+		if index < 0 {
+			continue
+		}
+		remaining := make([]time.Time, 0, len(entry.times)-1)
+		remaining = append(remaining, entry.times[:index]...)
+		remaining = append(remaining, entry.times[index+1:]...)
+		if len(remaining) == 0 {
+			delete(limiter.attempts, hold.key)
+			continue
+		}
+		entry.times = remaining
+		limiter.attempts[hold.key] = entry
+	}
+}
+
+// atLimitLocked reports whether any of the (normalized) keys already carries
+// `limit` attempts inside the window. Must be called with limiter.mu held.
+func (limiter *AttemptLimiter) atLimitLocked(keys []string, now time.Time, limit int, window time.Duration) bool {
+	for _, key := range keys {
 		if len(limiter.pruneLocked(key, now, window)) >= limit {
 			return true
 		}
@@ -121,21 +223,29 @@ func (limiter *AttemptLimiter) TooManyRecentAny(keys []string, now time.Time, li
 	return false
 }
 
-// AddFailureAll records one failure at `now` under every key, judged by budget.
-func (limiter *AttemptLimiter) AddFailureAll(keys []string, now time.Time, budget AttemptBudget) {
-	limiter.mu.Lock()
-	defer limiter.mu.Unlock()
-
-	for _, key := range normalizeLimiterKeys(keys) {
+// bookLocked appends one attempt at `now` under every (normalized) key, judged
+// by budget, paces the eviction sweep and returns what it booked. Must be
+// called with limiter.mu held.
+func (limiter *AttemptLimiter) bookLocked(keys []string, now time.Time, budget AttemptBudget) []attemptHold {
+	holds := make([]attemptHold, 0, len(keys))
+	for _, key := range keys {
 		pruned := limiter.pruneLocked(key, now, budget.Window)
+		gen := limiter.attempts[key].gen
+		if len(pruned) == 0 {
+			limiter.nextGen++
+			gen = limiter.nextGen
+		}
 		limiter.attempts[key] = attemptEntry{
 			times:  append(pruned, now),
 			budget: budget,
+			gen:    gen,
 		}
+		holds = append(holds, attemptHold{key: key, gen: gen})
 	}
 
 	limiter.addCallsN++
 	limiter.maybeEvictStaleLocked(now)
+	return holds
 }
 
 // maybeEvictStaleLocked performs an opportunistic full-map sweep to remove

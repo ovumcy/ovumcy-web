@@ -2085,7 +2085,7 @@ paths:
             fragment's carrier — is ever reached. A caller that asks for JSON keeps the JSON
             envelope below, but unlike the app-wide `RateLimited` response, it carries no
             `retry_after_seconds`: this budget is checked in the handler
-            (`totpService.CheckRateLimit`), which answers through `respondAuthError` /
+            (`totpService.ReserveAttempt`), which answers through `respondAuthError` /
             `apiErrorEnvelope` directly rather than through the edge limiter's
             `respondRateLimitedMappedError`, and stamps no `Retry-After` header for
             `retry_after_seconds` to echo.

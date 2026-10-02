@@ -20,8 +20,9 @@ import (
 // a code, not a password, but checked inside one account's session like these,
 // so it is keyed and reset the same way.
 //
-// Verifying and resetting are separate steps on purpose. Verify admits, compares
-// and books a failure; it never clears the count. The caller calls Reset once the
+// Verifying and resetting are separate steps on purpose. Verify reserves an
+// attempt, compares, and keeps the reservation as a failure or gives it back; it
+// never clears the count. The caller calls Reset once the
 // action the password authorised has actually happened, so a correct password
 // whose write was refused proves nothing lasting and keeps the count it found.
 type ReauthBudget struct {
@@ -75,14 +76,15 @@ func (service *TOTPService) EnrollCodeBudget(secretKey []byte) ReauthBudget {
 // challenge finds it (findValidatedTOTPStep, ±1 step of skew); the caller hands
 // it to EnableTOTP, which records it as consumed.
 func (service *TOTPService) VerifyEnrollmentCode(budget ReauthBudget, attempt ReauthAttempt, rawSecret string, code string) (TOTPEnrollmentStep, error) {
-	if budget.exhausted(attempt) {
+	reservation, admitted := budget.reserve(attempt)
+	if !admitted {
 		return TOTPEnrollmentStep{}, budget.limited
 	}
 	step, found := findValidatedTOTPStep(rawSecret, code, time.Now())
 	if !found {
-		budget.bookFailure(attempt)
 		return TOTPEnrollmentStep{}, ErrTOTPEnrollCodeInvalid
 	}
+	reservation.Refund()
 	return TOTPEnrollmentStep{step: step}, nil
 }
 
@@ -93,14 +95,13 @@ func (budget ReauthBudget) keys(attempt ReauthAttempt) (clientKey string, identi
 	return attempt.clientBucket(), attempt.identity()
 }
 
-func (budget ReauthBudget) exhausted(attempt ReauthAttempt) bool {
+// reserve draws one attempt from both buckets, atomically with the admission
+// check (see AttemptLimiter.Reserve): ok is false when the budget is spent, so
+// no compare runs. The reservation stays booked when the compare fails and is
+// refunded when it succeeds or never spent one.
+func (budget ReauthBudget) reserve(attempt ReauthAttempt) (*AttemptReservation, bool) {
 	clientKey, identity := budget.keys(attempt)
-	return budget.policy.TooManyRecent(budget.secretKey, clientKey, identity, attempt.at())
-}
-
-func (budget ReauthBudget) bookFailure(attempt ReauthAttempt) {
-	clientKey, identity := budget.keys(attempt)
-	budget.policy.AddFailure(budget.secretKey, clientKey, identity, attempt.at())
+	return budget.policy.Reserve(budget.secretKey, clientKey, identity, attempt.at())
 }
 
 // Reset clears the client and the account counters (see ResetAll): every re-auth
@@ -112,19 +113,23 @@ func (budget ReauthBudget) Reset(attempt ReauthAttempt) {
 	budget.policy.ResetAll(budget.secretKey, clientKey, identity)
 }
 
-// verify is the budgeted shape every re-auth shares: the budget is checked
-// before the compare, so an exhausted budget refuses the correct password too;
-// every refusal that spent a bcrypt then draws the budget.
+// verify is the budgeted shape every re-auth shares: an attempt is reserved
+// before the compare, so an exhausted budget refuses the correct password too
+// and no more than the budget's limit of compares can run at once; every refusal
+// that spent a bcrypt keeps its reservation as the failure, and a correct
+// password or a refusal that spent nothing gives it back.
 func (budget ReauthBudget) verify(attempt ReauthAttempt, compare func() error) error {
-	if budget.exhausted(attempt) {
+	reservation, admitted := budget.reserve(attempt)
+	if !admitted {
 		return budget.limited
 	}
 	if err := compare(); err != nil {
-		if reauthRefusalSpentACompare(err) {
-			budget.bookFailure(attempt)
+		if !reauthRefusalSpentACompare(err) {
+			reservation.Refund()
 		}
 		return err
 	}
+	reservation.Refund()
 	return nil
 }
 

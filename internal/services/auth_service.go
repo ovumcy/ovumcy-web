@@ -132,17 +132,16 @@ func LogoutAttemptIdentity(userID uint) string {
 
 // CheckAndRecordLogoutAttempt returns true if the per-account logout rate limit is
 // exceeded for this (clientKey, identity) pair. If not exceeded, it also records
-// the attempt so subsequent calls count it toward the window. The budget lives
+// the attempt so subsequent calls count it toward the window; the check and the
+// booking are one reservation, so a burst cannot pass the cap together, and a
+// logout has no compare to succeed, so the reservation is never refunded. The budget lives
 // in its own limiter under its own scope: a logout is an attempt against this
 // budget only, never a failure against — and never a reset of — the login,
 // recovery or TOTP budgets.
 func (service *AuthService) CheckAndRecordLogoutAttempt(secretKey []byte, clientKey string, identity string, now time.Time) bool {
 	clientBucket := logoutClientBucket(clientKey, identity)
-	if service.logoutAttemptPolicy.TooManyRecent(secretKey, clientBucket, identity, now) {
-		return true
-	}
-	service.logoutAttemptPolicy.AddFailure(secretKey, clientBucket, identity, now)
-	return false
+	_, admitted := service.logoutAttemptPolicy.Reserve(secretKey, clientBucket, identity, now)
+	return !admitted
 }
 
 // logoutClientBucket scopes the client-keyed bucket to the account as well, the
