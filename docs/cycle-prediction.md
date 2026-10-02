@@ -210,7 +210,10 @@ These are the exact cases asserted by the reference tests.
   places in the shortest of those cycles to the one it places in the longest —
   the same arithmetic as a single projected date, applied once per end — so it
   agrees with the calendar, the feed and the reminders for the same cycle
-  length.
+  length. When the shortest observed cycle is under 15 days — too short for the
+  model to place an ovulation — the range starts at the earliest ovulation the
+  model ever names (cycle day 5) instead of being dropped, so the dashboard
+  never falls back to one exact median date for an irregular history.
 
 ### How a BBT temperature shift is detected (the "3-over-6" coverline rule)
 

@@ -70,6 +70,9 @@ const (
 	minLutealPhaseDays       = 10
 	minOvulationCycleDay     = 5
 	minCycleReserveDays      = 10
+	// minPlaceableCycleLength is the shortest cycle in which CalcOvulationDay can
+	// place an ovulation at all: a luteal phase plus the earliest ovulation day.
+	minPlaceableCycleLength = minLutealPhaseDays + minOvulationCycleDay
 )
 
 func BuildCycleStats(logs []models.DailyLog, now time.Time) CycleStats {
@@ -127,7 +130,7 @@ func ResolveLutealPhase(value int) int {
 // reading; the two directions have to move together, or an ovulation observed on
 // a cycle day trains a value that predicts the day before it.
 func CalcOvulationDay(cycleLen, lutealPhase int) (int, bool) {
-	if cycleLen < minLutealPhaseDays+minOvulationCycleDay {
+	if cycleLen < minPlaceableCycleLength {
 		return 0, false
 	}
 
