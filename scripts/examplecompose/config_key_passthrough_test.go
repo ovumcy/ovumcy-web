@@ -256,13 +256,37 @@ type exemption struct {
 // through.
 func composesDatabaseURL(s stack) bool {
 	value, set := s.env["DATABASE_URL"]
-	return set && !strings.HasPrefix(value, "${DATABASE_URL")
+	return set && !isPassthrough("DATABASE_URL", value)
 }
 
 // fixesPostgresDriver is true for a stack that pins DB_DRIVER to postgres
 // rather than leaving the choice to the operator.
 func fixesPostgresDriver(s stack) bool {
-	return s.env["DB_DRIVER"] == "postgres"
+	return unquoted(s.env["DB_DRIVER"]) == "postgres"
+}
+
+// fixesProxyTrust is true for a stack that sets TRUST_PROXY_ENABLED to true,
+// that is, one whose topology puts a reverse proxy in front of the app.
+func fixesProxyTrust(s stack) bool {
+	return unquoted(s.env["TRUST_PROXY_ENABLED"]) == "true"
+}
+
+// unquoted strips the YAML quotes around a scalar.
+func unquoted(value string) string {
+	return strings.Trim(value, `"'`)
+}
+
+// isPassthrough is true when value hands the operator's setting of key to the
+// app: `${KEY}`, `${KEY:-default}`, `${KEY:?message}` and the other
+// substitution forms that name the key itself. A literal, or a substitution of
+// a different variable, leaves the operator's value for key unread.
+func isPassthrough(key, value string) bool {
+	head := "${" + key
+	value = unquoted(value)
+	if !strings.HasPrefix(value, head) || len(value) == len(head) {
+		return false
+	}
+	return strings.ContainsRune("}:-?+", rune(value[len(head)]))
 }
 
 // forwardingExemptions is the whole list of keys an example stack may leave
@@ -279,6 +303,45 @@ var forwardingExemptions = map[string]exemption{
 	"DATABASE_URL_FILE": {
 		reason:  "the stack composes DATABASE_URL from its own postgres service credentials, which takes precedence over a file, so forwarding a file path would be silently ignored",
 		applies: composesDatabaseURL,
+	},
+}
+
+// pinnedLiterals is the whole list of keys an example stack may set to a fixed
+// value instead of passing the operator's through. A key here is set by the
+// stack on purpose, so a value in .env does not reach the app; the runbook names
+// them. A key is not added to make the test pass: it is added only when the
+// stack's own wiring (a mounted volume, the postgres service, the proxy
+// network) would break if the operator could change the value.
+var pinnedLiterals = map[string]exemption{
+	"DB_DRIVER": {
+		reason:  "the stack ships its own postgres service and is wired to it, so the driver is part of the stack",
+		applies: fixesPostgresDriver,
+	},
+	"DATABASE_URL": {
+		reason:  "the stack builds the URL from its own postgres service and the POSTGRES_* credentials, so it is derived rather than passed through",
+		applies: composesDatabaseURL,
+	},
+	"DB_PATH": {
+		reason:  "the path is where the stack mounts its data volume, so another path would write outside the volume and lose the data on the next container replacement",
+		applies: func(s stack) bool { return !fixesPostgresDriver(s) },
+	},
+	"CALENDAR_FEED_FENCE_PATH": {
+		reason: "the path is where the stack mounts the ovumcy_fence volume, so another path would write the restore fence outside the volume and disarm every calendar feed on each start",
+	},
+	"COOKIE_SECURE": {
+		reason:  "the proxy stack serves the app over HTTPS only, so session cookies must stay Secure whatever .env says",
+		applies: fixesProxyTrust,
+	},
+	"TRUST_PROXY_ENABLED": {
+		reason: "whether a reverse proxy fronts the app is the stack's topology: trusting forwarded headers on a stack with no proxy lets any client choose its own address, and distrusting them behind the proxy puts every client behind the proxy's address",
+	},
+	"PROXY_HEADER": {
+		reason:  "the header must be the one this stack's proxy config overwrites with the real client address",
+		applies: fixesProxyTrust,
+	},
+	"TRUSTED_PROXIES": {
+		reason:  "the range must be the stack's own proxy network, which the compose file declares",
+		applies: fixesProxyTrust,
 	},
 }
 
@@ -351,9 +414,18 @@ func TestEveryExampleStackForwardsEveryRuntimeConfigKey(t *testing.T) {
 	}
 
 	exempted := map[string]bool{}
+	pinned := map[string]bool{}
 	for _, key := range sortedKeys(keys) {
 		for _, s := range stacks {
-			if _, forwarded := s.env[key]; forwarded {
+			if value, set := s.env[key]; set {
+				if isPassthrough(key, value) {
+					continue
+				}
+				if rule, ok := pinnedLiterals[key]; ok && (rule.applies == nil || rule.applies(s)) {
+					pinned[key] = true
+					continue
+				}
+				t.Errorf("%s: sets %s to %q, so the operator's value is ignored; write `%s: ${%s:-<default>}`, or pin the key in pinnedLiterals with the reason the stack must fix it", s.path, key, value, key, key)
 				continue
 			}
 			if rule, ok := forwardingExemptions[key]; ok && (rule.applies == nil || rule.applies(s)) {
@@ -376,6 +448,43 @@ func TestEveryExampleStackForwardsEveryRuntimeConfigKey(t *testing.T) {
 		}
 		if !exempted[key] {
 			t.Errorf("exemption for %s is not needed by any stack: every stack forwards it, drop the entry", key)
+		}
+	}
+	for _, key := range sortedKeys(pinnedLiterals) {
+		rule := pinnedLiterals[key]
+		if strings.TrimSpace(rule.reason) == "" {
+			t.Errorf("pin for %s has no reason", key)
+		}
+		if !keys[key] {
+			t.Errorf("pin for %s names a key the binary no longer reads", key)
+		}
+		if !pinned[key] {
+			t.Errorf("pin for %s is not needed by any stack: every stack passes it through, drop the entry", key)
+		}
+	}
+}
+
+// TestPassthroughNamesTheKeyItself proves the value check on fixtures: only a
+// substitution of the key itself forwards the operator's setting.
+func TestPassthroughNamesTheKeyItself(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		want  bool
+	}{
+		{"${REGISTRATION_MODE:-open}", true},
+		{`"${REGISTRATION_MODE:-open}"`, true},
+		{"${REGISTRATION_MODE}", true},
+		{"${REGISTRATION_MODE:?set it}", true},
+		{"open", false},
+		{`"true"`, false},
+		{"", false},
+		{"${REGISTRATION_MODE", false},
+		{"${REGISTRATION_MODE_OTHER:-open}", false},
+		{"${OTHER_KEY:-open}", false},
+		{"prefix-${REGISTRATION_MODE:-open}", false},
+	} {
+		if got := isPassthrough("REGISTRATION_MODE", tc.value); got != tc.want {
+			t.Errorf("isPassthrough(REGISTRATION_MODE, %q) = %v, want %v", tc.value, got, tc.want)
 		}
 	}
 }
