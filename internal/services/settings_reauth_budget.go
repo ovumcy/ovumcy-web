@@ -2,6 +2,7 @@ package services
 
 import (
 	"errors"
+	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
@@ -69,15 +70,20 @@ func (service *TOTPService) EnrollCodeBudget(secretKey []byte) ReauthBudget {
 // does not verify books one failure and answers ErrTOTPEnrollCodeInvalid. Like
 // verify it never resets: the caller calls budget.Reset once EnableTOTP has
 // committed.
-func (service *TOTPService) VerifyEnrollmentCode(budget ReauthBudget, attempt ReauthAttempt, rawSecret string, code string) error {
+//
+// A code that verifies returns the step it matched, found the way the sign-in
+// challenge finds it (findValidatedTOTPStep, ±1 step of skew); the caller hands
+// it to EnableTOTP, which records it as consumed.
+func (service *TOTPService) VerifyEnrollmentCode(budget ReauthBudget, attempt ReauthAttempt, rawSecret string, code string) (TOTPEnrollmentStep, error) {
 	if budget.exhausted(attempt) {
-		return budget.limited
+		return TOTPEnrollmentStep{}, budget.limited
 	}
-	if !service.ValidateCodeRaw(rawSecret, code) {
+	step, found := findValidatedTOTPStep(rawSecret, code, time.Now())
+	if !found {
 		budget.bookFailure(attempt)
-		return ErrTOTPEnrollCodeInvalid
+		return TOTPEnrollmentStep{}, ErrTOTPEnrollCodeInvalid
 	}
-	return nil
+	return TOTPEnrollmentStep{step: step}, nil
 }
 
 // keys names the two buckets an attempt draws. The client bucket carries the

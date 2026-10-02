@@ -46,7 +46,7 @@ func TestUserRepositoryOwnerScopedWritersPersist(t *testing.T) {
 		t.Fatalf("expected onboarding step 2 to persist cycle/period length, got %d/%d", reloaded.CycleLength, reloaded.PeriodLength)
 	}
 
-	if err := repo.UpdateTOTPFieldsAndRevokeSessions(ctx, user.ID, storedSessionVersionForTest(t, repo, user.ID), "encrypted-secret", true); err != nil {
+	if err := repo.UpdateTOTPFieldsAndRevokeSessions(ctx, user.ID, storedSessionVersionForTest(t, repo, user.ID), "encrypted-secret", true, 0); err != nil {
 		t.Fatalf("UpdateTOTPFieldsAndRevokeSessions: %v", err)
 	}
 	reloaded, err = repo.FindByID(ctx, user.ID)
@@ -91,7 +91,7 @@ func TestUserRepositoryOwnerScopedWritersRefuseZeroOwner(t *testing.T) {
 			return repo.SaveOnboardingStep2(ctx, 0, 28, 5, true, false, "health")
 		},
 		"UpdateTOTPFieldsAndRevokeSessions": func() error {
-			return repo.UpdateTOTPFieldsAndRevokeSessions(ctx, 0, 1, "secret", true)
+			return repo.UpdateTOTPFieldsAndRevokeSessions(ctx, 0, 1, "secret", true, 0)
 		},
 		"UpdatePasswordRecoveryCodeAndRevokeSessions": func() error {
 			return repo.UpdatePasswordRecoveryCodeAndRevokeSessions(ctx, 0, 1, "hash", "recovery", true, nil)

@@ -1470,12 +1470,18 @@ func (repo *UserRepository) BumpAuthSessionVersion(ctx context.Context, userID u
 // disable change the account's auth posture and therefore must invalidate
 // any session that was issued before the change.
 //
+// totp_last_used_step is set to lastUsedStep in the same statement. An enable
+// passes the RFC 6238 step its confirmation code matched, so that code is
+// already consumed when the factor goes live and the sign-in challenge
+// (ClaimTOTPStep) refuses it as a replay; a disable passes 0, as there is no
+// secret left whose steps could be claimed.
+//
 // The increment is a compare-and-set from expectedSessionVersion, the version
 // the caller verified its factors against (updateFromAuthSessionVersionTx): if
 // another write revoked the account's sessions in between, nothing is written
 // and the result is models.ErrAuthSessionVersionChanged; on success the stored
 // version is exactly expectedSessionVersion+1.
-func (repo *UserRepository) UpdateTOTPFieldsAndRevokeSessions(ctx context.Context, userID uint, expectedSessionVersion int, encryptedSecret string, enabled bool) error {
+func (repo *UserRepository) UpdateTOTPFieldsAndRevokeSessions(ctx context.Context, userID uint, expectedSessionVersion int, encryptedSecret string, enabled bool, lastUsedStep int64) error {
 	if err := requireUserOwnerID(userID); err != nil {
 		return err
 	}
@@ -1483,7 +1489,7 @@ func (repo *UserRepository) UpdateTOTPFieldsAndRevokeSessions(ctx context.Contex
 		_, err := updateFromAuthSessionVersionTx(tx, userID, expectedSessionVersion, map[string]any{
 			"totp_secret":         encryptedSecret,
 			"totp_enabled":        enabled,
-			"totp_last_used_step": 0,
+			"totp_last_used_step": lastUsedStep,
 		})
 		return err
 	})

@@ -40,22 +40,22 @@ func TestVerifyEnrollmentCodeBooksAWrongCodeAndRefusesTheCorrectOneOnceSpent(t *
 	budget := fixture.enrollBudget()
 
 	for attempt := range DefaultTOTPEnrollAttemptsLimit - 1 {
-		if err := fixture.totp.VerifyEnrollmentCode(budget, fixture.attempt, secret, wrongCode); !errors.Is(err, ErrTOTPEnrollCodeInvalid) {
+		if _, err := fixture.totp.VerifyEnrollmentCode(budget, fixture.attempt, secret, wrongCode); !errors.Is(err, ErrTOTPEnrollCodeInvalid) {
 			t.Fatalf("wrong code, attempt %d = %v, want ErrTOTPEnrollCodeInvalid", attempt+1, err)
 		}
 	}
-	if err := fixture.totp.VerifyEnrollmentCode(budget, fixture.attempt, secret, validCode()); err != nil {
+	if _, err := fixture.totp.VerifyEnrollmentCode(budget, fixture.attempt, secret, validCode()); err != nil {
 		t.Fatalf("correct code one short of the limit = %v, want nil", err)
 	}
-	if err := fixture.totp.VerifyEnrollmentCode(budget, fixture.attempt, secret, wrongCode); !errors.Is(err, ErrTOTPEnrollCodeInvalid) {
+	if _, err := fixture.totp.VerifyEnrollmentCode(budget, fixture.attempt, secret, wrongCode); !errors.Is(err, ErrTOTPEnrollCodeInvalid) {
 		t.Fatalf("wrong code reaching the limit = %v, want ErrTOTPEnrollCodeInvalid", err)
 	}
-	if err := fixture.totp.VerifyEnrollmentCode(budget, fixture.attempt, secret, validCode()); !errors.Is(err, ErrTOTPEnrollRateLimited) {
+	if _, err := fixture.totp.VerifyEnrollmentCode(budget, fixture.attempt, secret, validCode()); !errors.Is(err, ErrTOTPEnrollRateLimited) {
 		t.Fatalf("correct code on the spent budget = %v, want ErrTOTPEnrollRateLimited: a correct code cleared the count, or the budget is not checked first", err)
 	}
 
 	budget.Reset(fixture.attempt)
-	if err := fixture.totp.VerifyEnrollmentCode(budget, fixture.attempt, secret, validCode()); err != nil {
+	if _, err := fixture.totp.VerifyEnrollmentCode(budget, fixture.attempt, secret, validCode()); err != nil {
 		t.Fatalf("correct code after Reset = %v, want nil", err)
 	}
 }
@@ -69,9 +69,9 @@ func TestTOTPEnrollBudgetIsItsOwnScopeAndPerAccount(t *testing.T) {
 	secret, wrongCode, validCode := enrollmentCodesForTest(t, fixture.totp)
 	budget := fixture.enrollBudget()
 	for range DefaultTOTPEnrollAttemptsLimit {
-		_ = fixture.totp.VerifyEnrollmentCode(budget, fixture.attempt, secret, wrongCode)
+		_, _ = fixture.totp.VerifyEnrollmentCode(budget, fixture.attempt, secret, wrongCode)
 	}
-	if err := fixture.totp.VerifyEnrollmentCode(budget, fixture.attempt, secret, validCode()); !errors.Is(err, ErrTOTPEnrollRateLimited) {
+	if _, err := fixture.totp.VerifyEnrollmentCode(budget, fixture.attempt, secret, validCode()); !errors.Is(err, ErrTOTPEnrollRateLimited) {
 		t.Fatalf("anchor: correct code on the spent account = %v, want ErrTOTPEnrollRateLimited", err)
 	}
 
@@ -84,7 +84,7 @@ func TestTOTPEnrollBudgetIsItsOwnScopeAndPerAccount(t *testing.T) {
 
 	neighbour := fixture.attempt
 	neighbour.UserID = fixture.attempt.UserID + 1
-	if err := fixture.totp.VerifyEnrollmentCode(budget, neighbour, secret, validCode()); err != nil {
+	if _, err := fixture.totp.VerifyEnrollmentCode(budget, neighbour, secret, validCode()); err != nil {
 		t.Fatalf("correct code for another account on the same address = %v, want nil", err)
 	}
 }
@@ -97,12 +97,12 @@ func TestTOTPEnrollBudgetHoldsAcrossClientAddresses(t *testing.T) {
 	secret, wrongCode, validCode := enrollmentCodesForTest(t, fixture.totp)
 	budget := fixture.enrollBudget()
 	for range DefaultTOTPEnrollAttemptsLimit {
-		_ = fixture.totp.VerifyEnrollmentCode(budget, fixture.attempt, secret, wrongCode)
+		_, _ = fixture.totp.VerifyEnrollmentCode(budget, fixture.attempt, secret, wrongCode)
 	}
 
 	rotated := fixture.attempt
 	rotated.ClientKey = "203.0.113.99"
-	if err := fixture.totp.VerifyEnrollmentCode(budget, rotated, secret, validCode()); !errors.Is(err, ErrTOTPEnrollRateLimited) {
+	if _, err := fixture.totp.VerifyEnrollmentCode(budget, rotated, secret, validCode()); !errors.Is(err, ErrTOTPEnrollRateLimited) {
 		t.Fatalf("correct code from a fresh address on the spent account = %v, want ErrTOTPEnrollRateLimited", err)
 	}
 }
@@ -114,7 +114,7 @@ func TestTOTPEnrollBudgetIsUndrawnBySettingsReauth(t *testing.T) {
 	secret, _, validCode := enrollmentCodesForTest(t, fixture.totp)
 	fixture.spend(t, fixture.settings.SettingsReauthBudget(), DefaultSettingsReauthAttemptsLimit)
 
-	if err := fixture.totp.VerifyEnrollmentCode(fixture.enrollBudget(), fixture.attempt, secret, validCode()); err != nil {
+	if _, err := fixture.totp.VerifyEnrollmentCode(fixture.enrollBudget(), fixture.attempt, secret, validCode()); err != nil {
 		t.Fatalf("correct code after spending settings.reauth = %v, want nil", err)
 	}
 }
@@ -131,18 +131,18 @@ func TestConfigureEnrollAttemptsSetsTheWindow(t *testing.T) {
 	stale := fixture.attempt
 	stale.Now = fixture.attempt.Now.Add(-2 * time.Minute)
 	for range DefaultTOTPEnrollAttemptsLimit {
-		_ = fixture.totp.VerifyEnrollmentCode(budget, stale, secret, wrongCode)
+		_, _ = fixture.totp.VerifyEnrollmentCode(budget, stale, secret, wrongCode)
 	}
-	if err := fixture.totp.VerifyEnrollmentCode(budget, fixture.attempt, secret, validCode()); err != nil {
+	if _, err := fixture.totp.VerifyEnrollmentCode(budget, fixture.attempt, secret, validCode()); err != nil {
 		t.Fatalf("correct code with every failure outside the one-minute window = %v, want nil", err)
 	}
 
 	recent := fixture.attempt
 	recent.Now = fixture.attempt.Now.Add(-30 * time.Second)
 	for range DefaultTOTPEnrollAttemptsLimit {
-		_ = fixture.totp.VerifyEnrollmentCode(budget, recent, secret, wrongCode)
+		_, _ = fixture.totp.VerifyEnrollmentCode(budget, recent, secret, wrongCode)
 	}
-	if err := fixture.totp.VerifyEnrollmentCode(budget, fixture.attempt, secret, validCode()); !errors.Is(err, ErrTOTPEnrollRateLimited) {
+	if _, err := fixture.totp.VerifyEnrollmentCode(budget, fixture.attempt, secret, validCode()); !errors.Is(err, ErrTOTPEnrollRateLimited) {
 		t.Fatalf("correct code with the limit's failures inside the window = %v, want ErrTOTPEnrollRateLimited", err)
 	}
 }

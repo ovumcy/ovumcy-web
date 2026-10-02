@@ -79,11 +79,14 @@ func testUpgradeTOTPSecretCiphertextCASPreservesSessionAndFactor(t *testing.T, r
 // session-version bump.
 func testUpgradeTOTPSecretCiphertextCASLosesToAReEnrollment(t *testing.T, repo *UserRepository) {
 	user := createUpgradeTOTPSecretCiphertextCASUser(t, repo, "totp-reenrolled@example.com")
-	if err := repo.UpdateTOTPFieldsAndRevokeSessions(context.Background(), user.ID, storedSessionVersionForTest(t, repo, user.ID), "reenrolled-ciphertext", true); err != nil {
+	if err := repo.UpdateTOTPFieldsAndRevokeSessions(context.Background(), user.ID, storedSessionVersionForTest(t, repo, user.ID), "reenrolled-ciphertext", true, 4242); err != nil {
 		t.Fatalf("UpdateTOTPFieldsAndRevokeSessions: %v", err)
 	}
 
 	requireLostTOTPUpgrade(t, repo, user.ID, "reenrolled-ciphertext", true)
+	// The enrollment write records the step its confirmation code matched, so
+	// that code is already consumed when the factor goes live.
+	requireTOTPLastUsedStep(t, repo, user.ID, 4242)
 }
 
 // testUpgradeTOTPSecretCiphertextCASLosesToADisable is the same race against
@@ -91,11 +94,24 @@ func testUpgradeTOTPSecretCiphertextCASLosesToAReEnrollment(t *testing.T, repo *
 // secret back into a row whose factor was just turned off.
 func testUpgradeTOTPSecretCiphertextCASLosesToADisable(t *testing.T, repo *UserRepository) {
 	user := createUpgradeTOTPSecretCiphertextCASUser(t, repo, "totp-disabled@example.com")
-	if err := repo.UpdateTOTPFieldsAndRevokeSessions(context.Background(), user.ID, storedSessionVersionForTest(t, repo, user.ID), "", false); err != nil {
+	if err := repo.UpdateTOTPFieldsAndRevokeSessions(context.Background(), user.ID, storedSessionVersionForTest(t, repo, user.ID), "", false, 0); err != nil {
 		t.Fatalf("UpdateTOTPFieldsAndRevokeSessions: %v", err)
 	}
 
 	requireLostTOTPUpgrade(t, repo, user.ID, "", false)
+	requireTOTPLastUsedStep(t, repo, user.ID, 0)
+}
+
+func requireTOTPLastUsedStep(t *testing.T, repo *UserRepository, userID uint, want int64) {
+	t.Helper()
+
+	got, err := repo.FindByID(context.Background(), userID)
+	if err != nil {
+		t.Fatalf("FindByID: %v", err)
+	}
+	if got.TOTPLastUsedStep != want {
+		t.Fatalf("totp_last_used_step = %d, want %d", got.TOTPLastUsedStep, want)
+	}
 }
 
 func requireLostTOTPUpgrade(t *testing.T, repo *UserRepository, userID uint, wantSecret string, wantEnabled bool) {

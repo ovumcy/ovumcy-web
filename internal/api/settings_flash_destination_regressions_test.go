@@ -12,6 +12,7 @@ import (
 	"github.com/pquerna/otp/totp"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 // A settings verdict is only delivered if the page it redirects to READS the
@@ -132,7 +133,7 @@ func TestTOTPEnrollmentConfirmationRendersOnTheRedirectTarget(t *testing.T) {
 // silent.
 func TestTOTPDisableConfirmationRendersOnTheRedirectTarget(t *testing.T) {
 	ctx := newTOTPSettingsContext(t, "totp-disable-confirmation@example.com")
-	if err := getTOTPServiceForTest(ctx.database).EnableTOTP(context.Background(), ctx.user.ID, ctx.user.AuthSessionVersion, "JBSWY3DPEHPK3PXP"); err != nil {
+	if err := getTOTPServiceForTest(ctx.database).EnableTOTP(context.Background(), ctx.user.ID, ctx.user.AuthSessionVersion, "JBSWY3DPEHPK3PXP", services.TOTPEnrollmentStep{}); err != nil {
 		t.Fatalf("EnableTOTP setup: %v", err)
 	}
 	ctx.refreshAuthCookie(t)

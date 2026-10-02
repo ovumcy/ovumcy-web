@@ -16,6 +16,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/services"
 	"github.com/pquerna/otp/totp"
 	"gorm.io/gorm"
 )
@@ -327,7 +328,7 @@ func openAPIResponseSchemaGuardTable() []openAPIResponseSchemaGuardEntry {
 		}},
 		{operation: "DELETE /api/v1/users/current/2fa", drive: func(t *testing.T) (int, []byte) {
 			owner := newSchemaGuardOwner(t)
-			if err := getTOTPServiceForTest(owner.database).EnableTOTP(context.Background(), owner.user.ID, owner.user.AuthSessionVersion, "JBSWY3DPEHPK3PXP"); err != nil {
+			if err := getTOTPServiceForTest(owner.database).EnableTOTP(context.Background(), owner.user.ID, owner.user.AuthSessionVersion, "JBSWY3DPEHPK3PXP", services.TOTPEnrollmentStep{}); err != nil {
 				t.Fatalf("enable totp: %v", err)
 			}
 			var enrolled models.User

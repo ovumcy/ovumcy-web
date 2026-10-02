@@ -74,8 +74,10 @@ type TOTPFactorVerifier interface {
 type TOTPUserRepository interface {
 	// UpdateTOTPFieldsAndRevokeSessions writes the new TOTP-related columns AND
 	// bumps auth_session_version in the same transaction, so toggling 2FA
-	// invalidates every active auth cookie for the account.
-	UpdateTOTPFieldsAndRevokeSessions(ctx context.Context, userID uint, expectedSessionVersion int, encryptedSecret string, enabled bool) error
+	// invalidates every active auth cookie for the account. lastUsedStep is
+	// written as totp_last_used_step in that same write: the step the
+	// enrollment code matched on enable, 0 on disable.
+	UpdateTOTPFieldsAndRevokeSessions(ctx context.Context, userID uint, expectedSessionVersion int, encryptedSecret string, enabled bool, lastUsedStep int64) error
 	// UpgradeTOTPSecretCiphertextCAS rewrites just the encrypted secret column
 	// WITHOUT bumping auth_session_version or touching totp_enabled — and only
 	// while totp_secret still equals oldCiphertext. It exists for transparent
@@ -160,8 +162,9 @@ func (service *TOTPService) ResetAttempts(secretKey []byte, clientKey string, us
 // one re-auth path (settings_reauth_budget.go).
 
 // GenerateSetupKey generates a new TOTP key for the given issuer and account name.
-// The raw secret (key.Secret()) should be passed to ValidateCodeRaw during enrollment
-// and then to EnableTOTP once the user confirms their code.
+// The raw secret (key.Secret()) should be passed to VerifyEnrollmentCode during
+// enrollment and then, with the step that call returned, to EnableTOTP once the
+// user confirms their code.
 func (service *TOTPService) GenerateSetupKey(issuer, accountName string) (*otp.Key, error) {
 	return totp.Generate(totp.GenerateOpts{
 		Issuer:      issuer,
@@ -169,10 +172,14 @@ func (service *TOTPService) GenerateSetupKey(issuer, accountName string) (*otp.K
 	})
 }
 
-// ValidateCodeRaw validates a 6-digit code against a raw (unencrypted) TOTP secret.
-// Used during enrollment before the secret has been persisted.
-func (service *TOTPService) ValidateCodeRaw(rawSecret, code string) bool {
-	return totp.Validate(code, rawSecret)
+// TOTPEnrollmentStep is the RFC 6238 step an enrollment confirmation code
+// matched. VerifyEnrollmentCode returns it and EnableTOTP stores it as the
+// account's totp_last_used_step in the write that enables the factor, so the
+// confirmation code is already spent when 2FA goes live: the sign-in challenge
+// refuses it as it refuses any replayed step. It is opaque to callers outside
+// this package; the zero value claims no step.
+type TOTPEnrollmentStep struct {
+	step int64
 }
 
 // ValidateCode decrypts the stored TOTP secret, finds which RFC 6238 step the
@@ -250,17 +257,21 @@ func findValidatedTOTPStep(rawSecret, code string, now time.Time) (int64, bool) 
 // The underlying repository call also bumps auth_session_version so every
 // active auth cookie issued before 2FA was enabled is revoked.
 //
+// enrollment is the step VerifyEnrollmentCode matched; the same write records
+// it as totp_last_used_step, so the code that confirmed enrollment cannot pass
+// the first sign-in challenge after it.
+//
 // expectedSessionVersion is the AuthSessionVersion of the session that proved
 // the enrollment code. The write happens only from that version: an account
 // revoked by another write in between is left untouched and the result is
 // ErrAuthSessionVersionChanged, so the caller never re-issues a session that
 // would outlive that revocation.
-func (service *TOTPService) EnableTOTP(ctx context.Context, userID uint, expectedSessionVersion int, rawSecret string) error {
+func (service *TOTPService) EnableTOTP(ctx context.Context, userID uint, expectedSessionVersion int, rawSecret string, enrollment TOTPEnrollmentStep) error {
 	encrypted, err := security.EncryptField(rawSecret, service.secretKey, aadForTOTPSecret(userID))
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrTOTPSecretEncrypt, err)
 	}
-	if err := service.users.UpdateTOTPFieldsAndRevokeSessions(ctx, userID, NormalizeAuthSessionVersion(expectedSessionVersion), encrypted, true); err != nil {
+	if err := service.users.UpdateTOTPFieldsAndRevokeSessions(ctx, userID, NormalizeAuthSessionVersion(expectedSessionVersion), encrypted, true, enrollment.step); err != nil {
 		if errors.Is(err, ErrAuthSessionVersionChanged) {
 			return ErrAuthSessionVersionChanged
 		}
@@ -272,9 +283,11 @@ func (service *TOTPService) EnableTOTP(ctx context.Context, userID uint, expecte
 // DisableTOTP clears the TOTP secret and sets totp_enabled=false for the user.
 // As with EnableTOTP, this bumps auth_session_version so any session that
 // existed while 2FA was on is invalidated when 2FA is taken back off. The write
-// happens only from expectedSessionVersion, as in EnableTOTP.
+// happens only from expectedSessionVersion, as in EnableTOTP. The replay floor
+// returns to 0: with the secret gone there is no step left to claim, and the
+// next enrollment sets its own.
 func (service *TOTPService) DisableTOTP(ctx context.Context, userID uint, expectedSessionVersion int) error {
-	if err := service.users.UpdateTOTPFieldsAndRevokeSessions(ctx, userID, NormalizeAuthSessionVersion(expectedSessionVersion), "", false); err != nil {
+	if err := service.users.UpdateTOTPFieldsAndRevokeSessions(ctx, userID, NormalizeAuthSessionVersion(expectedSessionVersion), "", false, 0); err != nil {
 		if errors.Is(err, ErrAuthSessionVersionChanged) {
 			return ErrAuthSessionVersionChanged
 		}

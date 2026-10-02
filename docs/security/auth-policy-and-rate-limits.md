@@ -26,7 +26,9 @@ _Part of the [Ovumcy security policy](../../SECURITY.md)._
 
 - RFC 6238 with a 30-second step.
 - Secrets are AES-256-GCM encrypted at rest with per-row AAD binding (see *Field-Level Encryption* in [docs/security/cryptography.md](cryptography.md#field-level-encryption)).
-- Replay protection: `users.totp_last_used_step` carries the RFC 6238 step index of the last successfully consumed code. `ClaimTOTPStep` performs an atomic `UPDATE … WHERE totp_last_used_step < ?`, so the same code cannot be consumed twice and concurrent submissions of the same step collapse to a single winner.
+- Replay protection: `users.totp_last_used_step` carries the RFC 6238 step index of the last successfully consumed code. `ClaimTOTPStep` performs an atomic `UPDATE … WHERE totp_last_used_step < ?`,
+  so the same code cannot be consumed twice and concurrent submissions of the same step collapse to a single winner. The code that confirms an enrollment counts as consumed too: the write that
+  enables 2FA stores the step it matched as `totp_last_used_step`, so that code cannot also pass the first sign-in challenge. Disabling 2FA resets the column to 0 together with the secret.
 
 ## Rate Limits
 

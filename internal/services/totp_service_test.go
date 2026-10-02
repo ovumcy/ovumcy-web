@@ -12,9 +12,9 @@ import (
 
 // invalidTOTPCodeForSkewWindow returns a 6-digit code proven NOT to validate
 // against secret across the whole ±1-step skew window totp.Validate checks
-// at the instant it is called (there is no injectable clock on
-// TOTPService.ValidateCodeRaw — it wraps totp.Validate, which reads
-// time.Now() itself — so this stays deterministic without one). It computes
+// at the instant it is called (the enrollment check, VerifyEnrollmentCode,
+// reads time.Now() itself and has no injectable clock, so this stays
+// deterministic without one). It computes
 // the codes for a wider window (±3 steps, i.e. ±90s around "now") than
 // Validate's own ±1-step skew (±30s) so a step boundary crossed between this
 // computation and the call under test cannot land the excluded set short,
@@ -74,13 +74,13 @@ type stubTOTPUserRepo struct {
 	lastClaimStep int64
 }
 
-func (stub *stubTOTPUserRepo) UpdateTOTPFieldsAndRevokeSessions(ctx context.Context, userID uint, _ int, encryptedSecret string, enabled bool) error {
+func (stub *stubTOTPUserRepo) UpdateTOTPFieldsAndRevokeSessions(ctx context.Context, userID uint, _ int, encryptedSecret string, enabled bool, lastUsedStep int64) error {
 	stub.updateTOTPCalled = true
 	stub.updatedUserID = userID
 	stub.updatedSecret = encryptedSecret
 	stub.updatedEnabled = enabled
 	if stub.claimedSteps != nil {
-		stub.claimedSteps[userID] = 0
+		stub.claimedSteps[userID] = lastUsedStep
 	}
 	return stub.updateErr
 }
@@ -134,7 +134,10 @@ func TestTOTPService_GenerateSetupKey(t *testing.T) {
 	}
 }
 
-func TestTOTPService_ValidateCodeRaw_Valid(t *testing.T) {
+// The enrollment check finds its step with findValidatedTOTPStep against the
+// raw, not yet persisted, secret; these two pin that it accepts a current code
+// and refuses one outside the whole skew window.
+func TestFindValidatedTOTPStep_RawSecret_Valid(t *testing.T) {
 	repo := &stubTOTPUserRepo{}
 	svc := NewTOTPService(repo, []byte("test-secret-key-32-bytes-padding!"), nil)
 
@@ -143,17 +146,22 @@ func TestTOTPService_ValidateCodeRaw_Valid(t *testing.T) {
 		t.Fatalf("GenerateSetupKey() error: %v", err)
 	}
 
-	code, err := totp.GenerateCode(key.Secret(), time.Now())
+	now := time.Now()
+	code, err := totp.GenerateCode(key.Secret(), now)
 	if err != nil {
 		t.Fatalf("GenerateCode() error: %v", err)
 	}
 
-	if !svc.ValidateCodeRaw(key.Secret(), code) {
-		t.Error("ValidateCodeRaw() returned false for a valid code")
+	step, found := findValidatedTOTPStep(key.Secret(), code, now)
+	if !found {
+		t.Fatal("findValidatedTOTPStep() found no step for a valid code")
+	}
+	if want := now.Unix() / totpStepSeconds; step != want {
+		t.Errorf("findValidatedTOTPStep() step = %d, want %d", step, want)
 	}
 }
 
-func TestTOTPService_ValidateCodeRaw_Invalid(t *testing.T) {
+func TestFindValidatedTOTPStep_RawSecret_Invalid(t *testing.T) {
 	repo := &stubTOTPUserRepo{}
 	svc := NewTOTPService(repo, []byte("test-secret-key-32-bytes-padding!"), nil)
 
@@ -167,8 +175,8 @@ func TestTOTPService_ValidateCodeRaw_Invalid(t *testing.T) {
 		t.Fatalf("test setup produced code %q which validates against the secret right now — precondition failed, cannot prove the negative", code)
 	}
 
-	if svc.ValidateCodeRaw(key.Secret(), code) {
-		t.Errorf("ValidateCodeRaw() returned true for %q, proven invalid across the whole skew window", code)
+	if _, found := findValidatedTOTPStep(key.Secret(), code, time.Now()); found {
+		t.Errorf("findValidatedTOTPStep() found a step for %q, proven invalid across the whole skew window", code)
 	}
 }
 
@@ -177,7 +185,7 @@ func TestTOTPService_EnableTOTP_StoresEncryptedSecret(t *testing.T) {
 	svc := NewTOTPService(repo, []byte("test-secret-key-32-bytes-padding!"), nil)
 
 	rawSecret := "JBSWY3DPEHPK3PXP"
-	if err := svc.EnableTOTP(context.Background(), 42, 1, rawSecret); err != nil {
+	if err := svc.EnableTOTP(context.Background(), 42, 1, rawSecret, TOTPEnrollmentStep{}); err != nil {
 		t.Fatalf("EnableTOTP() error: %v", err)
 	}
 
@@ -208,7 +216,7 @@ func TestTOTPService_ValidateCode_EncryptDecryptRoundTrip(t *testing.T) {
 		t.Fatalf("GenerateSetupKey() error: %v", err)
 	}
 
-	if err := svc.EnableTOTP(context.Background(), 1, 1, key.Secret()); err != nil {
+	if err := svc.EnableTOTP(context.Background(), 1, 1, key.Secret(), TOTPEnrollmentStep{}); err != nil {
 		t.Fatalf("EnableTOTP() error: %v", err)
 	}
 	encryptedSecret := repo.updatedSecret
@@ -237,7 +245,7 @@ func TestTOTPService_ValidateCode_ReplayRejected(t *testing.T) {
 		t.Fatalf("GenerateSetupKey() error: %v", err)
 	}
 
-	if err := svc.EnableTOTP(context.Background(), 1, 1, key.Secret()); err != nil {
+	if err := svc.EnableTOTP(context.Background(), 1, 1, key.Secret(), TOTPEnrollmentStep{}); err != nil {
 		t.Fatalf("EnableTOTP() error: %v", err)
 	}
 	encryptedSecret := repo.updatedSecret
@@ -282,7 +290,7 @@ func TestTOTPService_ValidateCode_ReplaySurvivesServiceRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateSetupKey() error: %v", err)
 	}
-	if err := svc.EnableTOTP(context.Background(), 1, 1, key.Secret()); err != nil {
+	if err := svc.EnableTOTP(context.Background(), 1, 1, key.Secret(), TOTPEnrollmentStep{}); err != nil {
 		t.Fatalf("EnableTOTP() error: %v", err)
 	}
 	encryptedSecret := repo.updatedSecret
@@ -317,12 +325,12 @@ func TestTOTPService_ValidateCode_SameCodeDifferentUser_Allowed(t *testing.T) {
 		t.Fatalf("GenerateSetupKey() error: %v", err)
 	}
 
-	if err := svc.EnableTOTP(context.Background(), 1, 1, key.Secret()); err != nil {
+	if err := svc.EnableTOTP(context.Background(), 1, 1, key.Secret(), TOTPEnrollmentStep{}); err != nil {
 		t.Fatalf("EnableTOTP() user 1 error: %v", err)
 	}
 	encrypted1 := repo.updatedSecret
 
-	if err := svc.EnableTOTP(context.Background(), 2, 1, key.Secret()); err != nil {
+	if err := svc.EnableTOTP(context.Background(), 2, 1, key.Secret(), TOTPEnrollmentStep{}); err != nil {
 		t.Fatalf("EnableTOTP() user 2 error: %v", err)
 	}
 	encrypted2 := repo.updatedSecret
@@ -373,7 +381,7 @@ func TestTOTPService_EnableTOTP_RepoError(t *testing.T) {
 	repo := &stubTOTPUserRepo{updateErr: ErrTOTPUpdateFailed}
 	svc := NewTOTPService(repo, []byte("test-secret-key-32-bytes-padding!"), nil)
 
-	err := svc.EnableTOTP(context.Background(), 1, 1, "JBSWY3DPEHPK3PXP")
+	err := svc.EnableTOTP(context.Background(), 1, 1, "JBSWY3DPEHPK3PXP", TOTPEnrollmentStep{})
 	if err == nil {
 		t.Fatal("EnableTOTP() should propagate repo error")
 	}

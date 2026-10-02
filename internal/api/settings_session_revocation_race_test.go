@@ -89,8 +89,8 @@ func (repository *revokingWriteUserRepository) UpdateRecoveryCodeHashAndRevokeSe
 	return repository.UserRepository.UpdateRecoveryCodeHashAndRevokeSessions(ctx, userID, repository.hooks.enter(expectedSessionVersion), recoveryHash, beforeCommit)
 }
 
-func (repository *revokingWriteUserRepository) UpdateTOTPFieldsAndRevokeSessions(ctx context.Context, userID uint, expectedSessionVersion int, encryptedSecret string, enabled bool) error {
-	return repository.UserRepository.UpdateTOTPFieldsAndRevokeSessions(ctx, userID, repository.hooks.enter(expectedSessionVersion), encryptedSecret, enabled)
+func (repository *revokingWriteUserRepository) UpdateTOTPFieldsAndRevokeSessions(ctx context.Context, userID uint, expectedSessionVersion int, encryptedSecret string, enabled bool, lastUsedStep int64) error {
+	return repository.UserRepository.UpdateTOTPFieldsAndRevokeSessions(ctx, userID, repository.hooks.enter(expectedSessionVersion), encryptedSecret, enabled, lastUsedStep)
 }
 
 func (repository *revokingWriteUserRepository) ClearAllDataAndResetSettings(ctx context.Context, userID uint, expectedSessionVersion int) error {
@@ -245,7 +245,7 @@ func settingsPostureRevokingWriteSites(htmx bool) []revokingWriteSite {
 			securityEventOutcome: "disabled",
 			prepare: func(t *testing.T, hooks *revokingWriteHooks) revokingWriteRun {
 				ctx := revokingWriteSettingsContext(t, "race-totp-disable"+tag+"@example.com", hooks)
-				if err := getTOTPServiceForTest(ctx.database).EnableTOTP(context.Background(), ctx.user.ID, ctx.user.AuthSessionVersion, "JBSWY3DPEHPK3PXP"); err != nil {
+				if err := getTOTPServiceForTest(ctx.database).EnableTOTP(context.Background(), ctx.user.ID, ctx.user.AuthSessionVersion, "JBSWY3DPEHPK3PXP", services.TOTPEnrollmentStep{}); err != nil {
 					t.Fatalf("EnableTOTP setup: %v", err)
 				}
 				ctx.refreshAuthCookie(t)
