@@ -96,6 +96,10 @@ type onboardingTestAppOptions struct {
 	revokingWrites *revokingWriteHooks
 	// now is installed as the handler's clock seam; nil keeps the wall clock.
 	now func() time.Time
+	// totpEnrollWindow, when non-zero, replaces the totp.enroll budget's window
+	// (through the same ConfigureEnrollAttempts the composition root calls), so a
+	// regression can wait a spent budget out on the wall clock.
+	totpEnrollWindow time.Duration
 }
 
 func newOnboardingTestAppWithOptions(t *testing.T, options onboardingTestAppOptions) (*fiber.App, *gorm.DB) {
@@ -219,6 +223,9 @@ func newTestHandlerDependencies(database *gorm.DB, i18nManager *i18n.Manager, op
 	}
 	if appOptions.revokingWrites != nil {
 		appOptions.revokingWrites.install(&dependencies, repositories.Users)
+	}
+	if appOptions.totpEnrollWindow != 0 {
+		dependencies.TOTPService.ConfigureEnrollAttempts(services.DefaultTOTPEnrollAttemptsLimit, appOptions.totpEnrollWindow)
 	}
 	if appOptions.registerPickupTokenStoreWrap != nil {
 		dependencies.RegisterPickupTokens = appOptions.registerPickupTokenStoreWrap(dependencies.RegisterPickupTokens)

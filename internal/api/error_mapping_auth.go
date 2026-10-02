@@ -39,6 +39,13 @@ func totpDisableRateLimitedErrorSpec() APIErrorSpec {
 	return settingsFormErrorSpec(fiber.StatusTooManyRequests, APIErrorCategoryRateLimited, "totp too many attempts")
 }
 
+// totpEnrollRateLimitedErrorSpec answers a spent totp.enroll budget the way the
+// disable route answers a spent totp.disable one: a settings-form refusal under
+// the same key, so it needs no message of its own.
+func totpEnrollRateLimitedErrorSpec() APIErrorSpec {
+	return settingsFormErrorSpec(fiber.StatusTooManyRequests, APIErrorCategoryRateLimited, "totp too many attempts")
+}
+
 func invalidResetTokenErrorSpec() APIErrorSpec {
 	return authValidationErrorSpec("invalid reset token")
 }

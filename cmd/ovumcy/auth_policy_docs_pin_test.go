@@ -197,6 +197,7 @@ func TestAuthPolicyDocPinsThePerAccountLockoutThresholds(t *testing.T) {
 		"Logout attempts":            {options.LogoutAttempts.Max, options.LogoutAttempts.Window},
 		"TOTP login challenge":       {services.DefaultTOTPAttemptsLimit, services.DefaultTOTPAttemptsWindow},
 		"TOTP disable":               {services.DefaultTOTPDisableAttemptsLimit, services.DefaultTOTPDisableAttemptsWindow},
+		"TOTP enrollment code":       {services.DefaultTOTPEnrollAttemptsLimit, services.DefaultTOTPEnrollAttemptsWindow},
 		"Settings re-authentication": {services.DefaultSettingsReauthAttemptsLimit, services.DefaultSettingsReauthAttemptsWindow},
 	}
 

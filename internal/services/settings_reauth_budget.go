@@ -14,6 +14,10 @@ import (
 // verify around the current-password compare; ChangePassword wraps its own
 // three-field compare in the same verify. The admission check, the failure
 // booking and the bucket keys are therefore written once, whatever the budget.
+// The 2FA enrollment code draws one more budget of the same shape, totp.enroll
+// (TOTPService.EnrollCodeBudget, verified by TOTPService.VerifyEnrollmentCode):
+// a code, not a password, but checked inside one account's session like these,
+// so it is keyed and reset the same way.
 //
 // Verifying and resetting are separate steps on purpose. Verify admits, compares
 // and books a failure; it never clears the count. The caller calls Reset once the
@@ -46,6 +50,34 @@ func (service *TOTPService) DisableReauthBudget(secretKey []byte) ReauthBudget {
 		secretKey: secretKey,
 		limited:   ErrTOTPDisableRateLimited,
 	}
+}
+
+// EnrollCodeBudget is the totp.enroll budget: the one the 2FA enrollment code
+// draws. The enrollment's password is checked separately, against
+// settings.reauth; this budget books only wrong codes.
+func (service *TOTPService) EnrollCodeBudget(secretKey []byte) ReauthBudget {
+	return ReauthBudget{
+		policy:    service.enrollAttemptPolicy,
+		secretKey: secretKey,
+		limited:   ErrTOTPEnrollRateLimited,
+	}
+}
+
+// VerifyEnrollmentCode checks a submitted enrollment code against the pending
+// secret under budget. The budget is checked before the code, so an exhausted
+// budget refuses the correct code too (ErrTOTPEnrollRateLimited); a code that
+// does not verify books one failure and answers ErrTOTPEnrollCodeInvalid. Like
+// verify it never resets: the caller calls budget.Reset once EnableTOTP has
+// committed.
+func (service *TOTPService) VerifyEnrollmentCode(budget ReauthBudget, attempt ReauthAttempt, rawSecret string, code string) error {
+	if budget.exhausted(attempt) {
+		return budget.limited
+	}
+	if !service.ValidateCodeRaw(rawSecret, code) {
+		budget.bookFailure(attempt)
+		return ErrTOTPEnrollCodeInvalid
+	}
+	return nil
 }
 
 // keys names the two buckets an attempt draws. The client bucket carries the
