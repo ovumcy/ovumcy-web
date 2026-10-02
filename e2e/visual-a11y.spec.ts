@@ -426,9 +426,9 @@ test.describe('Visual and accessibility regressions', () => {
       // restores them.
       const fills = new Set<string>();
       for (const [phase, fertility] of [
-        ['menstrual', 'not_fertile'],
-        ['follicular', 'not_fertile'],
-        ['luteal', 'not_fertile'],
+        ['menstrual', 'outside_estimated_window'],
+        ['follicular', 'outside_estimated_window'],
+        ['luteal', 'outside_estimated_window'],
         ['luteal', 'fertile'],
       ]) {
         await editor.evaluate(

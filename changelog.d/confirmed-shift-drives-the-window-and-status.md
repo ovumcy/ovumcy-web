@@ -3,8 +3,8 @@
 - **A confirmed thermal shift now moves the fertile window and the fertility status with it, on
   every surface.** When basal body temperature is tracked and the recorded readings show a sustained
   shift, that shift says the ovulation has already happened — nothing more. Ovumcy already moved the
-  ovulation DAY onto the day inferred from those readings; the window around it and the "fertile
-  today / not fertile today" status stayed on the projection the shift had superseded. An owner
+  ovulation DAY onto the day inferred from those readings; the window around it and the fertility
+  status stayed on the projection the shift had superseded. An owner
   whose shift landed earlier than the model expected therefore read a confirmed ovulation day
   beside a fertile window that ended days later, and a "fertile" status for a day the same
   temperatures had already placed behind them — on the dashboard header and ring, on the month
@@ -13,9 +13,9 @@
 
   All of them now read one resolver: the confirmed day, the six-day window ending on it (clamped to
   the recorded cycle start, exactly as the projected window is), and the status computed over that
-  window. Past the third elevated day the status is "not fertile", which is the only thing the
-  method asserts. The projected next period is deliberately left alone — it stays a projection and
-  is not recomputed from a confirmed ovulation.
+  window. Past the third elevated day the status is "outside the estimated window", which is the
+  only thing the method asserts — never that the day is infertile. The projected next period is
+  deliberately left alone — it stays a projection and is not recomputed from a confirmed ovulation.
 
   The cycle phase moved with them. Ovumcy estimates how long a period lasts from your own average,
   and used to call every day inside that estimate "menstrual" even when the ovulation day published

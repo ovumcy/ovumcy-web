@@ -57,10 +57,29 @@ import (
 // every builder behind a page reads the full stats, because the ribbon, the
 // factor context and the cycle context each apply their own suppression rule to
 // it.
+//
+// OUT-OF-DATE DATA withholds the phase and the fertility status, and nothing
+// else. Once the running cycle has passed the account's reference length
+// (DashboardCycleDataLooksStale) both owner pages already answer "unknown" for
+// the phase and the status, unconditionally — dashboard.html and stats.html
+// test CycleDataStale before anything else — while the projected dates stay
+// published beside the out-of-date banner. A status read against a window the
+// cycle has already outrun is a projection past its own reference range, which
+// the medical-safety floor refuses; publishing it on the JSON API alone is the
+// divergence this function exists to close. The verdict is the pages' own,
+// read off the cycle context rather than re-derived from the signals behind
+// it, and it is NOT a suppression signal: the two suppression bits also decide
+// what the webhook pass and the .ics feed send, and staleness withholds no
+// date. CycleDataStale carries the verdict on the published copy.
 func PublishedStats(user *models.User, stats CycleStats, logs []models.DailyLog, today time.Time, location *time.Location) (CycleStats, PredictionSuppression) {
 	// The verdict is read off the UNCLEARED stats, so the fertility gate cannot
 	// be answered from fields the clearing below has already emptied.
 	suppression := ResolvePredictionSuppression(user, stats)
+	// The pages' out-of-date verdict, resolved where they resolve it: the cycle
+	// context answers false in the two branches that publish no projection at
+	// all (a pregnancy pause, unpredictable-cycle mode) and asks
+	// DashboardCycleDataLooksStale everywhere else.
+	cycleDataStale := BuildDashboardCycleContext(user, logs, stats, today, location).CycleDataStale
 
 	// The two predicates clear different sets because they answer different
 	// questions: FertilityProjectionSuppressed also covers the zero-cycles floor,
@@ -86,7 +105,7 @@ func PublishedStats(user *models.User, stats CycleStats, logs []models.DailyLog,
 		stats.OvulationImpossible = false
 		stats.FertilityWindowStart = time.Time{}
 		stats.FertilityWindowEnd = time.Time{}
-		stats.CurrentFertility = FertilityStatusUnknown
+		withholdFertilityStatus(&stats)
 	}
 	if suppression.PredictionsSuppressed {
 		stats.NextPeriodStart = time.Time{}
@@ -99,6 +118,15 @@ func PublishedStats(user *models.User, stats CycleStats, logs []models.DailyLog,
 	// account only sees "menstrual" (during a logged or projected period) or
 	// "unknown" — never the day the fertility clearing above just withheld.
 	stats.CurrentPhase = DetectCurrentPhase(stats, logs, today, location)
+	// Out-of-date data: "unknown" wins over whatever the recomputation above
+	// answered, "menstrual" included — a projected period the cycle has already
+	// outrun is no more current than its ovulation day, and the pages print
+	// "unknown" here whatever the phase would have been.
+	stats.CycleDataStale = cycleDataStale
+	if cycleDataStale {
+		withholdFertilityStatus(&stats)
+		stats.CurrentPhase = "unknown"
+	}
 	return stats, suppression
 }
 
@@ -163,10 +191,13 @@ func PublishedOverviewStats(user *models.User, logs []models.DailyLog, stats Cyc
 	// temperatures named is not such a projection. It used to come back only
 	// under the fertility gate, a second condition that agreed with that owner
 	// only while every signal withholding the day was also a fertility signal.
-	// The clearing above keeps the window, the fertility status and the phase it
-	// withheld; only the day comes back, so the JSON API names what the
-	// dashboard and the calendar name. Outside every gate the assignment is a
-	// no-op: PublishedStats left the resolved day standing.
+	// The clearing above keeps the window, the fertility status, its basis and
+	// the phase it withheld; only the day comes back, so the JSON API names what
+	// the dashboard and the calendar name. The put-back writes OvulationDate and
+	// nothing else, so it cannot resurrect a "confirmed" basis or a status that
+	// PublishedStats withheld — under the fertility gate or on out-of-date data.
+	// Outside every gate the assignment is a no-op: PublishedStats left the
+	// resolved day standing.
 	if wasConfirmed {
 		published.OvulationDate = confirmedDay
 	}

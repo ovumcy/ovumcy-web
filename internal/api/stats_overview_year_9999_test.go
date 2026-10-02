@@ -105,7 +105,7 @@ func TestStatsOverviewAnswersProjectionsPastYear9999AsNull(t *testing.T) {
 		wantFertility string
 	}{
 		{name: "whole projection past the year", lastStart: time.Date(9999, 12, 20, 0, 0, 0, 0, time.UTC), wantFertility: "unknown"},
-		{name: "ovulation inside the year", lastStart: time.Date(9999, 12, 10, 0, 0, 0, 0, time.UTC), wantOvulation: "9999-12-23", wantFertility: "not_fertile"},
+		{name: "ovulation inside the year", lastStart: time.Date(9999, 12, 10, 0, 0, 0, 0, time.UTC), wantOvulation: "9999-12-23", wantFertility: "outside_estimated_window"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

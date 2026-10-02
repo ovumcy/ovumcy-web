@@ -23,7 +23,7 @@ func ApplyUserCycleBaseline(user *models.User, logs []models.DailyLog, stats Cyc
 	}
 	hasObservedCycleLengths := len(CycleLengths(logs)) >= 1
 	applyObservedBaseline(&stats, user, latestExplicitCycleStart, cycleLength, periodLength, hasObservedCycleLengths, today, location)
-	projected := applyProjectedBaseline(&stats, cycleLength, lutealPhase, location)
+	projected := applyProjectedBaseline(&stats, user, cycleLength, lutealPhase, location)
 	// The inference can succeed (ObservedCycleStarts accepts unflagged period
 	// clusters) while the baseline finds no anchor to project from; then
 	// stats.LutealPhase still holds BuildCycleStats's value, not the inferred one.
@@ -31,7 +31,7 @@ func ApplyUserCycleBaseline(user *models.User, logs []models.DailyLog, stats Cyc
 
 	stats.CurrentCycleDay = baselineCurrentCycleDay(stats.LastPeriodStart, today)
 	stats.CurrentPhase = DetectCurrentPhase(stats, logs, today, location)
-	stats.CurrentFertility = ResolveFertilityStatus(stats, today)
+	setFertilityStatus(&stats, today, FertilityBasisProjection)
 	return stats
 }
 
@@ -74,7 +74,7 @@ func baselineLastPeriodStart(user *models.User, latestExplicitCycleStart time.Ti
 
 // applyProjectedBaseline reports whether it wrote lutealPhase into stats: false
 // on the two early returns, where stats.LutealPhase is left untouched.
-func applyProjectedBaseline(stats *CycleStats, cycleLength int, lutealPhase int, location *time.Location) bool {
+func applyProjectedBaseline(stats *CycleStats, user *models.User, cycleLength int, lutealPhase int, location *time.Location) bool {
 	if stats.LastPeriodStart.IsZero() {
 		return false
 	}
@@ -104,12 +104,52 @@ func applyProjectedBaseline(stats *CycleStats, cycleLength int, lutealPhase int,
 		return true
 	}
 
+	fertilityStart, fertilityEnd := window.FertilityWindowStart, window.FertilityWindowEnd
+	if dashboardIrregularPredictionRangeEnabled(user, *stats) {
+		fertilityStart, fertilityEnd = irregularFertilityWindow(window, stats.LastPeriodStart, stats.MinCycleLength, stats.MaxCycleLength, stats.LutealPhase)
+		// The widened window's last day is the latest ovulation, not the median
+		// one, so it is that day which must still be spellable; past 9999-12-31
+		// the window goes as a whole, exactly as an unspellable median one does.
+		if projectedDay(fertilityEnd).IsZero() {
+			clearUnspellableCycleWindow(stats)
+			return true
+		}
+	}
+
 	stats.OvulationDate = CalendarDay(window.OvulationDate, location)
 	stats.OvulationExact = window.OvulationExact
 	stats.OvulationImpossible = false
-	stats.FertilityWindowStart = locationDateOrZero(window.FertilityWindowStart, location)
-	stats.FertilityWindowEnd = locationDateOrZero(window.FertilityWindowEnd, location)
+	stats.FertilityWindowStart = locationDateOrZero(fertilityStart, location)
+	stats.FertilityWindowEnd = locationDateOrZero(fertilityEnd, location)
 	return true
+}
+
+// irregularFertilityWindow is the current cycle's fertile window for an account
+// in the irregular mode the dashboard shows a next-period and ovulation RANGE
+// for (dashboardIrregularPredictionRangeEnabled). The median window alone is
+// six days placed by one cycle length, while the same account is shown an
+// ovulation range spanning its shortest to its longest recent cycle; a status
+// read against the six days called the rest of that range "outside the window"
+// on the very days the dashboard named as possible ovulation days.
+//
+// The window runs from the shortest cycle's window start to the longest
+// cycle's ovulation day: [ovulation(min) - 5, ovulation(max)]. Both ends come
+// from PredictCycleWindow itself, so the start keeps its clamp to the recorded
+// cycle start and the ovulation arithmetic is the projection's own. A shortest
+// cycle too short for any ovulation to be placed in it starts the window at
+// that same clamp, the cycle start: the earliest start any shorter cycle could
+// reach. The median ovulation day is left alone — this widens the window a
+// status is read against, not the day the projection names.
+func irregularFertilityWindow(median CycleWindowPrediction, periodStart time.Time, minCycleLength int, maxCycleLength int, lutealPhase int) (time.Time, time.Time) {
+	start := dateOnly(periodStart)
+	if earliest := PredictCycleWindow(periodStart, minCycleLength, lutealPhase); earliest.Calculable {
+		start = earliest.FertilityWindowStart
+	}
+	end := median.FertilityWindowEnd
+	if latest := PredictCycleWindow(periodStart, maxCycleLength, lutealPhase); latest.Calculable {
+		end = latest.OvulationDate
+	}
+	return start, end
 }
 
 func locationDateOrZero(day time.Time, location *time.Location) time.Time {

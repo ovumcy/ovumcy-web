@@ -10,7 +10,7 @@ package services
 // "fertile" status for a day the shift had already placed behind the owner. A
 // confirmed shift asserts one thing and no more: the ovulation has happened —
 // which is exactly why the status it produces after the third high day is
-// not_fertile.
+// outside_estimated_window on a confirmed basis, never an infertility claim.
 
 import (
 	"context"
@@ -106,8 +106,11 @@ func TestConfirmedShiftDrivesTheWindowAndFertilityStatus(t *testing.T) {
 	if got := CalendarDayKey(published.FertilityWindowStart); got != "2026-03-06" {
 		t.Fatalf("fertility window start = %s, want 2026-03-06 (confirmed day - 5)", got)
 	}
-	if published.CurrentFertility != FertilityStatusNotFertile {
-		t.Fatalf("current fertility = %q, want %q after the third high day", published.CurrentFertility, FertilityStatusNotFertile)
+	if published.CurrentFertility != FertilityStatusOutsideEstimatedWindow {
+		t.Fatalf("current fertility = %q, want %q after the third high day", published.CurrentFertility, FertilityStatusOutsideEstimatedWindow)
+	}
+	if published.FertilityBasis != FertilityBasisConfirmed {
+		t.Fatalf("fertility basis = %q, want %q after the third high day", published.FertilityBasis, FertilityBasisConfirmed)
 	}
 }
 
@@ -185,8 +188,11 @@ func TestConfirmedShiftDrivesTheWindowWithoutAProjection(t *testing.T) {
 	if resolved.OvulationImpossible {
 		t.Fatal("a recorded shift answers the projection's impossibility claim; it must not survive it")
 	}
-	if resolved.CurrentFertility != FertilityStatusNotFertile {
-		t.Fatalf("current fertility = %q, want %q", resolved.CurrentFertility, FertilityStatusNotFertile)
+	if resolved.CurrentFertility != FertilityStatusOutsideEstimatedWindow {
+		t.Fatalf("current fertility = %q, want %q", resolved.CurrentFertility, FertilityStatusOutsideEstimatedWindow)
+	}
+	if resolved.FertilityBasis != FertilityBasisConfirmed {
+		t.Fatalf("fertility basis = %q, want %q", resolved.FertilityBasis, FertilityBasisConfirmed)
 	}
 
 	fertile, ovulation := calendarFertileDays(t, user, logs, stats, today)
@@ -297,8 +303,11 @@ func TestStatsPagePublishesTheConfirmedWindow(t *testing.T) {
 	if got := CalendarDayKey(viewData.Stats.FertilityWindowStart); got != "2026-03-06" {
 		t.Fatalf("published window start = %s, want 2026-03-06", got)
 	}
-	if viewData.Stats.CurrentFertility != FertilityStatusNotFertile {
-		t.Fatalf("published fertility = %q, want %q", viewData.Stats.CurrentFertility, FertilityStatusNotFertile)
+	if viewData.Stats.CurrentFertility != FertilityStatusOutsideEstimatedWindow {
+		t.Fatalf("published fertility = %q, want %q", viewData.Stats.CurrentFertility, FertilityStatusOutsideEstimatedWindow)
+	}
+	if viewData.Stats.FertilityBasis != FertilityBasisConfirmed {
+		t.Fatalf("published fertility basis = %q, want %q — the status was read against the confirmed window", viewData.Stats.FertilityBasis, FertilityBasisConfirmed)
 	}
 }
 
@@ -325,8 +334,11 @@ func TestDashboardPublishesAndShadesTheConfirmedWindow(t *testing.T) {
 	if got := CalendarDayKey(viewData.Stats.FertilityWindowStart); got != "2026-03-06" {
 		t.Fatalf("published window start = %s, want 2026-03-06", got)
 	}
-	if viewData.Stats.CurrentFertility != FertilityStatusNotFertile {
-		t.Fatalf("published fertility = %q, want %q", viewData.Stats.CurrentFertility, FertilityStatusNotFertile)
+	if viewData.Stats.CurrentFertility != FertilityStatusOutsideEstimatedWindow {
+		t.Fatalf("published fertility = %q, want %q", viewData.Stats.CurrentFertility, FertilityStatusOutsideEstimatedWindow)
+	}
+	if viewData.Stats.FertilityBasis != FertilityBasisConfirmed {
+		t.Fatalf("published fertility basis = %q, want %q — the status was read against the confirmed window", viewData.Stats.FertilityBasis, FertilityBasisConfirmed)
 	}
 
 	if !viewData.CycleHero.Visible {
@@ -507,7 +519,7 @@ func TestConfirmedShiftAtTheEarliestCycleDayNeverCrossesThePeriodStart(t *testin
 // location midnight (DateAtLocation), and ResolveFertilityStatus compares the
 // two as instants. A UTC-midnight window published beside a location-midnight
 // today disagrees by the zone's own offset: a positive offset (Europe/Moscow,
-// UTC+3) reads the window's first day as not_fertile, a negative one
+// UTC+3) reads the window's first day as outside the window, a negative one
 // (America/New_York, UTC-5) reads the confirmed ovulation day itself the same
 // way. Every existing control in this file runs in time.UTC, where the two
 // midnights coincide and the bug is invisible — that vacuousness is itself
@@ -640,7 +652,7 @@ func TestProjectedPeriodBandNeverSwallowsTheProjectedOvulationDay(t *testing.T) 
 // F2: CurrentPhase was computed against the PROJECTED ovulation date before the
 // resolver ran and never recomputed afterward, so a published response could
 // name "ovulation" as the current phase beside a confirmed ovulation_date and a
-// current_fertility of "not_fertile" for the very same day — three claims about
+// current_fertility of "outside_estimated_window" for the very same day — three claims about
 // one day that contradicted each other. Phase and fertility are two orthogonal
 // axes (#416), but both are geometric and both must describe the date actually
 // published beside them.

@@ -131,6 +131,14 @@ func BuildDashboardCycleHero(user *models.User, stats CycleStats, cycleContext D
 	// menstrual card, which is read off recorded bleeding rather than the
 	// suppressed ovulation projection.
 	currentPhase := dashboardCycleHeroCurrentPhase(stats.CurrentPhase, currentDay, periodLength, ovulationDay, cycleLength, fertilitySuppressed)
+	// The fallback above resolves "unknown" off the ribbon's own geometry, so a
+	// day resolveCyclePhase left unnamed because the window still calls it
+	// fertile past the published ovulation day would come back "luteal" here —
+	// on the header the dashboard prints in place of the published phase. The
+	// same rule decides it on both. A suppressed tier keeps its own answer.
+	if !fertilitySuppressed && ovulationTimingUndetermined(stats, input.Today) {
+		currentPhase = "unknown"
+	}
 	phaseCards := dashboardCycleHeroPhaseCards(currentPhase, periodLength, ovulationDay, cycleLength, fertilitySuppressed)
 
 	startWindow := dashboardCycleHeroStartWindow(user, stats, cycleStart, location)

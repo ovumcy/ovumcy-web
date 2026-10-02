@@ -12,6 +12,7 @@ type CycleStats struct {
 	CurrentCycleDay      int       `json:"current_cycle_day"`
 	CurrentPhase         string    `json:"current_phase"`
 	CurrentFertility     string    `json:"current_fertility"`
+	FertilityBasis       string    `json:"fertility_basis"`
 	AverageCycleLength   float64   `json:"average_cycle_length"`
 	MedianCycleLength    int       `json:"median_cycle_length"`
 	MinCycleLength       int       `json:"min_cycle_length"`
@@ -43,6 +44,14 @@ type CycleStats struct {
 	// BuildCycleStats left them. BuildCycleStats never writes anything but the
 	// default (or nothing at all) into LutealPhase, so it leaves this false.
 	LutealPhasePersonalised bool `json:"luteal_phase_personalised"`
+
+	// CycleDataStale is the owner pages' out-of-date verdict
+	// (DashboardCycleContext.CycleDataStale): the running cycle has passed the
+	// account's reference length, so the phase and the fertility status are
+	// withheld while the projected dates stay. PublishedStats is its only
+	// writer; on stats that have not been published it is always false and
+	// means nothing.
+	CycleDataStale bool `json:"cycle_data_stale"`
 }
 
 type detectedCycle struct {
@@ -89,7 +98,7 @@ func BuildCycleStats(logs []models.DailyLog, now time.Time) CycleStats {
 
 	stats.CurrentCycleDay = cycleDayAt(stats.LastPeriodStart, today)
 	stats.CurrentPhase = detectCyclePhase(stats, sorted, today)
-	stats.CurrentFertility = ResolveFertilityStatus(stats, today)
+	setFertilityStatus(&stats, today, FertilityBasisProjection)
 	return stats
 }
 
@@ -508,6 +517,11 @@ func resolveCyclePhase(stats CycleStats, logs []models.DailyLog, today time.Time
 	if periodLoggedOnDay(logs, today) {
 		return "menstrual"
 	}
+	// Ahead of the projected period below: on these days no projection may
+	// name a phase, "menstrual" included (ovulationTimingUndetermined).
+	if ovulationTimingUndetermined(stats, today) {
+		return "unknown"
+	}
 	if opts.includeProjectedPeriod && !stats.LastPeriodStart.IsZero() {
 		periodLength := int(stats.AveragePeriodLength + 0.5)
 		if periodLength <= 0 {
@@ -543,13 +557,59 @@ func resolveCyclePhase(stats CycleStats, logs []models.DailyLog, today time.Time
 	return "luteal"
 }
 
+// ovulationTimingUndetermined is the one rule every phase producer applies —
+// resolveCyclePhase here, the dashboard hero's own label
+// (BuildDashboardCycleHero) — to a day the fertile window still covers AFTER
+// the ovulation day published beside it. Only the irregular range mode builds
+// such a window (irregularFertilityWindow): it runs to the LONGEST recent
+// cycle's ovulation while OvulationDate stays the median one. "Luteal" claims
+// the ovulation is behind the owner, read off one median length, on a day the
+// same stats call fertile because it may still be ahead; a projected period
+// there (the window can outrun NextPeriodStart) claims no more. So no phase is
+// named on those days. A window that ends on its own ovulation day — the median
+// projection, a confirmed shift's — leaves no such day, and the rule is silent.
+//
+// The two conditions are the luteal branch of resolveCyclePhase and the
+// fertile branch of ResolveFertilityStatus, spelled the same way, so a day the
+// status calls fertile can never also be called luteal.
+func ovulationTimingUndetermined(stats CycleStats, today time.Time) bool {
+	if stats.OvulationImpossible || stats.OvulationDate.IsZero() {
+		return false
+	}
+	pastOvulation := !sameDay(today, stats.OvulationDate) && !today.Before(stats.OvulationDate)
+	return pastOvulation && betweenInclusive(today, stats.FertilityWindowStart, stats.FertilityWindowEnd)
+}
+
 // Fertility status is the axis orthogonal to CurrentPhase: whether today falls
-// inside the predicted fertile window. "Fertile" is a status, never a phase —
+// inside the ESTIMATED fertile window. "Fertile" is a status, never a phase —
 // the phase taxonomy is strictly menstrual/follicular/ovulation/luteal/unknown.
+//
+// The value outside the window is a statement about membership in an estimate,
+// never an infertility claim: a window rolled forward from cycle arithmetic
+// often misses the real fertile days, regular cycles included — in a
+// prospective study only about 30% of women had their fertile window entirely
+// within the days clinical guidelines name, and its timing varied widely even
+// among women who reported regular cycles (Wilcox AJ, Dunson D, Baird DD,
+// BMJ 2000, PMID 11082086) — so a day outside it is not a "safe" day. That is
+// why the value names the window rather
+// than the body — FertilityStatusOutsideEstimatedWindow, never "not fertile" —
+// on every surface, the BBT-confirmed post-shift days included: a confirmed
+// shift says the ovulation is behind the owner, and the status still only says
+// that today lies outside the window derived from it.
 const (
-	FertilityStatusFertile    = "fertile"
-	FertilityStatusNotFertile = "not_fertile"
-	FertilityStatusUnknown    = "unknown"
+	FertilityStatusFertile                = "fertile"
+	FertilityStatusOutsideEstimatedWindow = "outside_estimated_window"
+	FertilityStatusUnknown                = "unknown"
+)
+
+// FertilityBasis names the window a fertility status was read against: the
+// projection rolled forward from cycle arithmetic, or the window derived from
+// a thermal shift the owner's own temperatures confirm
+// (ResolveConfirmedCycleStats). It is empty exactly when the status is
+// unknown — a basis describes a window, and an unknown status names none.
+const (
+	FertilityBasisProjection = "projection"
+	FertilityBasisConfirmed  = "confirmed"
 )
 
 // ResolveFertilityStatus reads the same window bounds the calendar shades
@@ -562,7 +622,25 @@ func ResolveFertilityStatus(stats CycleStats, today time.Time) string {
 	if betweenInclusive(today, stats.FertilityWindowStart, stats.FertilityWindowEnd) {
 		return FertilityStatusFertile
 	}
-	return FertilityStatusNotFertile
+	return FertilityStatusOutsideEstimatedWindow
+}
+
+// setFertilityStatus resolves the status against the window already on stats
+// and records which window that was. The status and its basis are written
+// together, here and in withholdFertilityStatus only, so a basis can never
+// stand beside an unknown status nor a status beside no basis.
+func setFertilityStatus(stats *CycleStats, today time.Time, basis string) {
+	stats.CurrentFertility = ResolveFertilityStatus(*stats, today)
+	stats.FertilityBasis = ""
+	if stats.CurrentFertility != FertilityStatusUnknown {
+		stats.FertilityBasis = basis
+	}
+}
+
+// withholdFertilityStatus answers "unknown" and drops the basis with it.
+func withholdFertilityStatus(stats *CycleStats) {
+	stats.CurrentFertility = FertilityStatusUnknown
+	stats.FertilityBasis = ""
 }
 
 func periodLoggedOnDay(logs []models.DailyLog, day time.Time) bool {
