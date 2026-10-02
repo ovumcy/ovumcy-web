@@ -46,8 +46,10 @@ var (
 	ErrTOTPEnrollCodeInvalid = errors.New("totp enroll code invalid")
 	// ErrTOTPEnrollmentStepMissing is an EnableTOTP call whose enrollment step is
 	// not positive: no enrollment code produced it, so there is no step to
-	// record as spent. RFC 6238 step 0 is 1970; no real code matches it.
-	ErrTOTPEnrollmentStepMissing = errors.New("totp enrollment step missing")
+	// record as spent. RFC 6238 step 0 is 1970; no real code matches it. It is
+	// the shared value from internal/models, the one the repository's TOTP
+	// writer raises for the same fact.
+	ErrTOTPEnrollmentStepMissing = models.ErrTOTPEnrollmentStepMissing
 )
 
 // TOTPFactorVerifier answers the question a routing flag like

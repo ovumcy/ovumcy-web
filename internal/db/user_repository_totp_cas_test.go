@@ -25,10 +25,16 @@ func TestUpdateTOTPFieldsRefusesAnEnableWithoutAPositiveStep(t *testing.T) {
 
 func testUpdateTOTPFieldsRefusesAnEnableWithoutAPositiveStep(t *testing.T, repo *UserRepository) {
 	user := createUpgradeTOTPSecretCiphertextCASUser(t, repo, "totp-enable-no-step@example.com")
+	// Start from a disabled factor, so a refused enable that wrote any column
+	// shows in totp_enabled as well as in the secret, step and version.
+	if err := repo.UpdateTOTPFieldsAndRevokeSessions(context.Background(), user.ID, storedSessionVersionForTest(t, repo, user.ID), "", false, 0); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	version := storedSessionVersionForTest(t, repo, user.ID)
 	for _, step := range []int64{0, -1} {
-		err := repo.UpdateTOTPFieldsAndRevokeSessions(context.Background(), user.ID, storedSessionVersionForTest(t, repo, user.ID), "reenrolled-ciphertext", true, step)
-		if !errors.Is(err, ErrTOTPEnableStepRequired) {
-			t.Fatalf("enable with step %d: error = %v, want ErrTOTPEnableStepRequired", step, err)
+		err := repo.UpdateTOTPFieldsAndRevokeSessions(context.Background(), user.ID, version, "reenrolled-ciphertext", true, step)
+		if !errors.Is(err, ErrTOTPEnrollmentStepMissing) {
+			t.Fatalf("enable with step %d: error = %v, want ErrTOTPEnrollmentStepMissing", step, err)
 		}
 	}
 
@@ -36,8 +42,8 @@ func testUpdateTOTPFieldsRefusesAnEnableWithoutAPositiveStep(t *testing.T, repo 
 	if err != nil {
 		t.Fatalf("FindByID: %v", err)
 	}
-	if got.TOTPSecret != "legacy-ciphertext" || got.AuthSessionVersion != 4 || got.TOTPLastUsedStep != 7 {
-		t.Fatalf("refused enable wrote the row: secret=%q version=%d step=%d", got.TOTPSecret, got.AuthSessionVersion, got.TOTPLastUsedStep)
+	if got.TOTPEnabled || got.TOTPSecret != "" || got.TOTPLastUsedStep != 0 || got.AuthSessionVersion != version {
+		t.Fatalf("refused enable wrote the row: enabled=%v secret=%q step=%d version=%d (want %d)", got.TOTPEnabled, got.TOTPSecret, got.TOTPLastUsedStep, got.AuthSessionVersion, version)
 	}
 }
 

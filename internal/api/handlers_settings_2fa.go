@@ -133,8 +133,8 @@ func (handler *Handler) VerifyTOTP2FAEnrollment(c fiber.Ctx) error {
 			handler.clearTOTPSetupCookie(c)
 			return handler.respondSignedOutRefusal(c, handler.refuseSessionRevokedDuring(c, "settings.2fa.verify", "totp_enable"))
 		}
+		// codecov:ignore:start -- defensive: VerifyEnrollmentCode's success path always yields a positive step
 		if errors.Is(err, services.ErrTOTPEnrollmentStepMissing) {
-			// codecov:ignore:start -- defensive: VerifyEnrollmentCode's success path always yields a positive step
 			handler.logSecurityEvent(c, "settings.2fa.verify", "enrollment_step_missing")
 			return handler.respondMappedError(c, totpInternalErrorSpec())
 			// codecov:ignore:end
