@@ -20,7 +20,11 @@ const (
 	DefaultTOTPAttemptsWindow        = 15 * time.Minute
 	DefaultTOTPDisableAttemptsLimit  = 5
 	DefaultTOTPDisableAttemptsWindow = 15 * time.Minute
-	totpStepSeconds                  = 30
+	// The enrollment-code budget mirrors totp.disable: both guard a check an
+	// attacker can only reach with a session for one account already in hand.
+	DefaultTOTPEnrollAttemptsLimit  = 5
+	DefaultTOTPEnrollAttemptsWindow = 15 * time.Minute
+	totpStepSeconds                 = 30
 )
 
 var (
@@ -30,6 +34,16 @@ var (
 	ErrTOTPSecretDecrypt      = errors.New("totp secret decrypt failed")
 	ErrTOTPUpdateFailed       = errors.New("totp update failed")
 	ErrTOTPReplayed           = errors.New("totp code already used")
+)
+
+var (
+	// ErrTOTPEnrollRateLimited is returned once the totp.enroll budget is spent.
+	// It is returned BEFORE the code is checked, so an exhausted budget refuses
+	// the correct code too.
+	ErrTOTPEnrollRateLimited = errors.New("totp enroll rate limited")
+	// ErrTOTPEnrollCodeInvalid is an enrollment code that does not verify
+	// against the pending secret; it has drawn the totp.enroll budget.
+	ErrTOTPEnrollCodeInvalid = errors.New("totp enroll code invalid")
 )
 
 // TOTPFactorVerifier answers the question a routing flag like
@@ -92,6 +106,7 @@ type TOTPService struct {
 	secretKey            []byte
 	attemptPolicy        *AuthAttemptPolicy
 	disableAttemptPolicy *AuthAttemptPolicy
+	enrollAttemptPolicy  *AuthAttemptPolicy
 }
 
 // NewTOTPService creates a TOTPService. secretKey is used to encrypt TOTP secrets
@@ -103,7 +118,15 @@ func NewTOTPService(users TOTPUserRepository, secretKey []byte, limiter *Attempt
 		secretKey:            secretKey,
 		attemptPolicy:        NewAuthAttemptPolicy("totp", limiter, DefaultTOTPAttemptsLimit, DefaultTOTPAttemptsWindow),
 		disableAttemptPolicy: NewAuthAttemptPolicy("totp.disable", limiter, DefaultTOTPDisableAttemptsLimit, DefaultTOTPDisableAttemptsWindow),
+		enrollAttemptPolicy:  NewAuthAttemptPolicy("totp.enroll", limiter, DefaultTOTPEnrollAttemptsLimit, DefaultTOTPEnrollAttemptsWindow),
 	}
+}
+
+// ConfigureEnrollAttempts sets the totp.enroll budget's limit and window, on the
+// limiter the service was built with. Bootstrap applies the defaults: like
+// totp.disable, the budget guards a credential check and is not operator-tunable.
+func (service *TOTPService) ConfigureEnrollAttempts(attempts int, window time.Duration) {
+	service.enrollAttemptPolicy.Configure(attempts, window)
 }
 
 // CheckRateLimit returns ErrTOTPRateLimited when the client or user has exceeded

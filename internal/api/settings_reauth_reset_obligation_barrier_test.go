@@ -10,6 +10,17 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
+// resetObligation is one budget a handler is handed and owes a reset on: the
+// call that hands it out, the reset method the caller owes on the variable it
+// bound the result to, and the callers the sweep must reach to have measured
+// anything.
+type resetObligation struct {
+	budget      string
+	producer    *types.Func
+	reset       *types.Func
+	loadBearing []string
+}
+
 // validateSettingsActionPassword never clears settings.reauth: it hands its
 // caller a settingsReauth whose resetBudget the caller owes once the write the
 // password authorised has committed. Nothing in the type system makes a caller
@@ -20,13 +31,20 @@ import (
 // variable. Where the reset sits relative to the write is the behavioural tests'
 // subject (settings_reauth_reset_after_write_test.go); this is the one that
 // notices a new caller that has no reset at all.
+//
+// The two TOTP budgets a handler takes from the TOTP service carry the same
+// obligation in the same shape: a ReauthBudget bound from DisableReauthBudget
+// (totp.disable) or EnrollCodeBudget (totp.enroll) owes a Reset on that
+// variable. Their placement after the committed write is pinned behaviourally
+// (TestDisableTOTP2FARefusedWriteDoesNotResetTheDisableBudget,
+// TestVerifyTOTP2FAEnrollmentRefusedWriteDoesNotResetTheTOTPEnrollBudget).
 func TestEverySettingsReauthCallerResetsTheBudgetItWasHanded(t *testing.T) {
 	root, err := moduleRootForBarrier()
 	if err != nil {
 		t.Fatalf("locate the module root: %v", err)
 	}
 	loaded, err := packages.Load(&packages.Config{
-		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo,
+		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports,
 		Dir:  root,
 		// Production callers only: a test that validates and never resets is
 		// measuring exactly that.
@@ -39,10 +57,40 @@ func TestEverySettingsReauthCallerResetsTheBudgetItWasHanded(t *testing.T) {
 		t.Fatalf("internal/api did not type-check cleanly (%d package(s)): %v", len(loaded), settingsReauthLoadErrors(loaded))
 	}
 	pkg := loaded[0]
+	servicesPkg := settingsReauthImport(t, pkg.Types, "github.com/ovumcy/ovumcy-web/internal/services")
 
-	validate := settingsReauthMethod(t, pkg.Types, "Handler", "validateSettingsActionPassword")
-	reset := settingsReauthMethod(t, pkg.Types, "settingsReauth", "resetBudget")
+	obligations := []resetObligation{
+		{
+			budget:   "settings.reauth",
+			producer: settingsReauthMethod(t, pkg.Types, "Handler", "validateSettingsActionPassword"),
+			reset:    settingsReauthMethod(t, pkg.Types, "settingsReauth", "resetBudget"),
+			// The wipe is the caller whose reset was most recently moved, and the
+			// step-up start is the one caller whose reset follows a redirect rather
+			// than a write. A sweep that saw neither saw nothing.
+			loadBearing: []string{"ClearAllData", "StartOIDCIdentityLinkStepup"},
+		},
+		{
+			budget:      "totp.disable",
+			producer:    settingsReauthMethod(t, servicesPkg, "TOTPService", "DisableReauthBudget"),
+			reset:       settingsReauthMethod(t, servicesPkg, "ReauthBudget", "Reset"),
+			loadBearing: []string{"DisableTOTP2FA"},
+		},
+		{
+			budget:      "totp.enroll",
+			producer:    settingsReauthMethod(t, servicesPkg, "TOTPService", "EnrollCodeBudget"),
+			reset:       settingsReauthMethod(t, servicesPkg, "ReauthBudget", "Reset"),
+			loadBearing: []string{"VerifyTOTP2FAEnrollment"},
+		},
+	}
+	for _, obligation := range obligations {
+		t.Run(obligation.budget, func(t *testing.T) {
+			assertEveryBindingIsReset(t, pkg, obligation)
+		})
+	}
+}
 
+func assertEveryBindingIsReset(t *testing.T, pkg *packages.Package, obligation resetObligation) {
+	t.Helper()
 	checked := map[string]bool{}
 	var missing []string
 	for _, file := range pkg.Syntax {
@@ -51,16 +99,16 @@ func TestEverySettingsReauthCallerResetsTheBudgetItWasHanded(t *testing.T) {
 			if !ok || function.Body == nil {
 				continue
 			}
-			owed, unbound := settingsReauthBindings(pkg.TypesInfo, function.Body, validate)
+			owed, unbound := settingsReauthBindings(pkg.TypesInfo, function.Body, obligation.producer)
 			if len(owed) == 0 && unbound == 0 {
 				continue
 			}
 			name := function.Name.Name
 			checked[name] = true
 			if unbound > 0 {
-				missing = append(missing, name+" (a validateSettingsActionPassword result bound to no variable)")
+				missing = append(missing, name+" (a "+obligation.producer.Name()+" result bound to no variable)")
 			}
-			paid := settingsReauthResets(pkg.TypesInfo, function.Body, reset)
+			paid := settingsReauthResets(pkg.TypesInfo, function.Body, obligation.reset)
 			for variable := range owed {
 				if !paid[variable] {
 					missing = append(missing, name+" ("+variable.Name()+")")
@@ -69,18 +117,26 @@ func TestEverySettingsReauthCallerResetsTheBudgetItWasHanded(t *testing.T) {
 		}
 	}
 
-	// Anti-vacuity by name: the wipe is the caller whose reset was most recently
-	// moved, and the step-up start is the one caller whose reset follows a
-	// redirect rather than a write. A sweep that saw neither saw nothing.
-	for _, loadBearing := range []string{"ClearAllData", "StartOIDCIdentityLinkStepup"} {
+	for _, loadBearing := range obligation.loadBearing {
 		if !checked[loadBearing] {
-			t.Fatalf("the sweep never reached %s's validateSettingsActionPassword call; it resolved the wrong object or read the wrong files", loadBearing)
+			t.Fatalf("the sweep never reached %s's %s call; it resolved the wrong object or read the wrong files", loadBearing, obligation.producer.Name())
 		}
 	}
 	if len(missing) > 0 {
 		sort.Strings(missing)
-		t.Fatalf("settings.reauth is verified and never reset in: %s. Call resetBudget on the settingsReauth once the write the password authorised has committed (or at once, and say why, if the action writes nothing)", strings.Join(missing, "; "))
+		t.Fatalf("%s is handed out and never reset in: %s. Call %s on the variable once the write the credential authorised has committed (or at once, and say why, if the action writes nothing)", obligation.budget, strings.Join(missing, "; "), obligation.reset.Name())
 	}
+}
+
+func settingsReauthImport(t *testing.T, pkg *types.Package, path string) *types.Package {
+	t.Helper()
+	for _, imported := range pkg.Imports() {
+		if imported.Path() == path {
+			return imported
+		}
+	}
+	t.Fatalf("%s does not import %s", pkg.Path(), path)
+	return nil
 }
 
 func settingsReauthMethod(t *testing.T, pkg *types.Package, typeName string, method string) *types.Func {
@@ -97,8 +153,8 @@ func settingsReauthMethod(t *testing.T, pkg *types.Package, typeName string, met
 	return function
 }
 
-// settingsReauthBindings returns the variables body binds a validate call's
-// first result to, and how many validate calls it makes whose first result is
+// settingsReauthBindings returns the variables body binds a producer call's
+// first result to, and how many producer calls it makes whose first result is
 // bound to nothing.
 func settingsReauthBindings(info *types.Info, body *ast.BlockStmt, validate *types.Func) (map[*types.Var]bool, int) {
 	owed := map[*types.Var]bool{}

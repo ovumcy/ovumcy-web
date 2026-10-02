@@ -159,6 +159,13 @@ func BuildDependencies(repositories *db.Repositories, secretKey []byte, i18nMana
 	webhookSettingsService := services.NewWebhookSettingsService(repositories.Users, secretKey)
 	egressLedgerService := services.NewEgressLedgerService(webhookSettingsService, calendarFeedSettingsService, opts.OutboundDeliveryEnabled)
 	totpService := services.NewTOTPService(repositories.Users, secretKey, attemptLimiter)
+	// The enrollment-code budget (totp.enroll) books every wrong code a signed-in
+	// owner submits while confirming 2FA. Like settings.reauth above it is not
+	// operator-tunable, and its default matches totp.disable.
+	totpService.ConfigureEnrollAttempts(
+		services.DefaultTOTPEnrollAttemptsLimit,
+		services.DefaultTOTPEnrollAttemptsWindow,
+	)
 	// Every session-issuing path consults the same derived TOTP-verifiability
 	// predicate instead of the raw TOTPEnabled column (see TOTPFactorVerifier,
 	// internal/services/totp_service.go): wire it onto the local login service

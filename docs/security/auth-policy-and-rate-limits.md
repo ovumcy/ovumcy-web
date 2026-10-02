@@ -107,6 +107,13 @@ Plus per-account, identity-keyed budgets enforced by `AuthAttemptPolicy` (`inter
   window ends.
 - TOTP login challenge: 5 failures / 15 minutes.
 - TOTP disable: 5 failures / 15 minutes.
+- TOTP enrollment code: 5 failures / 15 minutes, counting each wrong code submitted to
+  `PUT /api/v1/users/current/2fa` (the TOTP-enrollment confirmation); that request's password
+  draws the settings re-authentication budget below, which books only a wrong password. Once this
+  budget is spent the endpoint answers `429` before the code is checked, even for the correct code,
+  and only an enrollment that commits clears it. A missing or wrong-length code is refused without
+  being counted. Keyed like the settings re-authentication budget, on `(client, account)` and on
+  the account alone.
 - Settings re-authentication: 5 failures / 15 minutes, covering every password-gated settings action except the TOTP disable, whose password check draws its own budget above — `POST /api/v1/users/current/data-wipe/validate`, `POST …/data-wipe`, `DELETE /api/v1/users/current`, `PUT …/password`, `PUT …/2fa` (the TOTP-enrollment confirmation), and `POST …/recovery-code` (recovery-code regeneration). Without it these would be faster password oracles than the login form (the `/api` catch-all allows 300 requests per minute against login's 8 per 15 minutes), and `/data-wipe/validate` changes no state, which makes it a pure oracle. Once the budget is spent the endpoints answer `429` even for the correct password. The budget is keyed on `(client, account)` and on the account alone, deliberately **not** on the client address by itself: several independent owners share one address on a household instance, and one owner mistyping must not lock out the others, while the account-wide bucket still caps an attacker rotating addresses.
 
 Per-account budgets are keyed by `HMAC-SHA256(SECRET_KEY, "ovumcy.auth-attempt.identity.v1:" || identity)`, so the limiter never persists the raw identifier.

@@ -101,12 +101,24 @@ func (handler *Handler) VerifyTOTP2FAEnrollment(c fiber.Ctx) error {
 	if err := bindRequestBody(c, &input); err != nil {
 		return handler.respondMappedError(c, totpInvalidCodeErrorSpec())
 	}
+	// A missing or wrong-length code is the caller's own input, refused before
+	// any budget is read and uncounted, like the disable route's blank password.
 	code := strings.TrimSpace(input.Code)
 	if len(code) != 6 {
 		return handler.respondMappedError(c, totpInvalidCodeErrorSpec())
 	}
 
-	if !handler.totpService.ValidateCodeRaw(rawSecret, code) {
+	// The code draws totp.enroll, its own budget: the password above drew
+	// settings.reauth, which books only a wrong password. An exhausted budget
+	// refuses before the code is checked, the correct code included.
+	attempt := services.ReauthAttempt{ClientKey: c.IP(), UserID: user.ID, Now: time.Now()}
+	enrollBudget := handler.totpService.EnrollCodeBudget(handler.secretKey)
+	if err := handler.totpService.VerifyEnrollmentCode(enrollBudget, attempt, rawSecret, code); err != nil {
+		if errors.Is(err, services.ErrTOTPEnrollRateLimited) {
+			spec := totpEnrollRateLimitedErrorSpec()
+			handler.logSecurityError(c, "settings.2fa.verify", spec)
+			return handler.respondMappedError(c, spec)
+		}
 		handler.logSecurityError(c, "settings.2fa.verify", totpInvalidCodeErrorSpec())
 		return handler.respondMappedError(c, totpInvalidCodeErrorSpec())
 	}
@@ -121,10 +133,11 @@ func (handler *Handler) VerifyTOTP2FAEnrollment(c fiber.Ctx) error {
 		handler.logSecurityError(c, "settings.2fa.verify", totpInternalErrorSpec())
 		return handler.respondMappedError(c, totpInternalErrorSpec())
 	}
-	// Only an enrollment that committed clears settings.reauth: a correct
-	// password whose enrollment was refused (an expired seed, a wrong code, a
-	// revocation mid-request) proved nothing lasting.
+	// Only an enrollment that committed clears settings.reauth and totp.enroll: a
+	// correct password or code whose enrollment was refused (an expired seed, a
+	// wrong code, a revocation mid-request) proved nothing lasting.
 	reauth.resetBudget()
+	enrollBudget.Reset(attempt)
 
 	// EnableTOTP atomically bumped auth_session_version on the user row; mirror
 	// the bump in memory and re-issue the auth cookie so this device stays

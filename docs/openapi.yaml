@@ -3827,6 +3827,14 @@ paths:
         Requires the user's current password plus the 6-digit code generated
         against the secret stashed by the `GET /settings/2fa` setup page in
         the `ovumcy_totp_setup` cookie. Bumps `auth_session_version`.
+
+        Two per-account rate limits apply, each 5 attempts / 15 min: the
+        password draws the settings re-authentication budget, and the code
+        draws its own enrollment-code budget, which counts every code that
+        does not verify (a missing or wrong-length code is not counted). Once
+        either is spent the request is refused `429` before that credential is
+        checked, even when it is correct; only an enrollment that commits
+        clears them.
       requestBody:
         required: true
         content:
@@ -3886,7 +3894,31 @@ paths:
               example:
                 error: "invalid password"
                 error_detail: { key: "invalid password", category: "validation", target: "settings_form" }
-        '429': { $ref: '#/components/responses/RateLimited' }
+        '429':
+          description: |
+            Rate limit exceeded, from one of three sources. (1) The enrollment-code budget
+            (per account, 5 attempts / 15 min, key `totp too many attempts`): checked before
+            the code, so it refuses the correct code too. (2) The settings re-authentication
+            budget the password draws (per account, 5 attempts / 15 min, key `too many
+            requests`, target `settings_form`): checked before the password. (3) The app-wide
+            per-IP `/api` limiter (key `too many requests`, target `global`). Only the edge
+            limiter (3) tracks a refill timer, so only its answer carries a `Retry-After`
+            header and `retry_after_seconds`; the two per-account budgets are checked in the
+            handler and answer the same envelope with neither. A browser form submitted
+            without `Accept: application/json` gets a per-account refusal as a `303` to
+            `/settings` with the error flashed, like the other settings-form refusals.
+          headers:
+            Retry-After:
+              description: |
+                Whole seconds until the per-IP budget refills; sent only on the edge
+                limiter's `429`, never on a per-account budget refusal.
+              schema: { type: integer, minimum: 1 }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "totp too many attempts"
+                error_detail: { key: "totp too many attempts", category: "rate_limited", target: "settings_form" }
     delete:
       tags: [settings]
       summary: Disable TOTP 2FA (owner only).
