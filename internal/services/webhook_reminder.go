@@ -196,6 +196,12 @@ func decideDueReminders(user *models.User, settings WebhookReminderSettings, log
 	// count and the overdue verdict all read it: an owner whose old cycles outlive
 	// the window would otherwise be paused in the app while a reminder, built from
 	// a different set of cycles, left the instance for a third-party endpoint.
+	//
+	// The cut also bounds what the phase and the confirmed-shift check below read,
+	// and that loses nothing they use: the window ends at today inclusive, the
+	// phase asks only about today's own row, and the thermal-shift series stops at
+	// today (currentCycleDetectionBound), so rows recorded for the days ahead are
+	// read by neither on the dashboard either. A test pins that equality.
 	logs = FilterLogsToStatsHistory(logs, now, location)
 	// Published through the one adapter every projection surface shares, so this
 	// pass holds the same cleared stats /stats and the JSON API publish, and reads

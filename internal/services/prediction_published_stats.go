@@ -142,13 +142,21 @@ func PublishedStats(user *models.User, stats CycleStats, logs []models.DailyLog,
 // builders and publish the cleared copy, while the day-save message reads only
 // the cleared copy and the verdict. The dashboard, the stats page and the day-save
 // feedback all call it, so "which window does this surface call fertile" has one
-// answer and the save toast cannot name a day the dashboard header does not.
-// PublishedOverviewStats below is the same two steps for the JSON API, which also
-// needs the confirmed flag.
+// answer and the save toast cannot name a day the dashboard header does not. The
+// JSON API's PublishedOverviewStats below runs through the same step, through
+// confirmedAndPublishedStats, which also reports whether a shift was confirmed.
 func ConfirmedAndPublishedStats(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (CycleStats, CycleStats, PredictionSuppression) {
-	confirmed, _ := ResolveConfirmedCycleStats(user, logs, stats, today, location)
-	published, suppression := PublishedStats(user, confirmed, logs, today, location)
+	confirmed, published, suppression, _ := confirmedAndPublishedStats(user, logs, stats, today, location)
 	return confirmed, published, suppression
+}
+
+// confirmedAndPublishedStats is the one implementation of the ordering. The
+// fourth result is the "a thermal shift was confirmed" bit of
+// ResolveConfirmedCycleStats, for the one surface that publishes it.
+func confirmedAndPublishedStats(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (CycleStats, CycleStats, PredictionSuppression, bool) {
+	confirmed, wasConfirmed := ResolveConfirmedCycleStats(user, logs, stats, today, location)
+	published, suppression := PublishedStats(user, confirmed, logs, today, location)
+	return confirmed, published, suppression, wasConfirmed
 }
 
 // PublishedOverviewStats is PublishedStats plus the confirmed-ovulation
@@ -201,9 +209,8 @@ func ConfirmedAndPublishedStats(user *models.User, logs []models.DailyLog, stats
 // PublishedStats only zeroes OvulationDate, so day equality and a presence check
 // coincide by construction — which is why the stricter one is written here.
 func PublishedOverviewStats(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (CycleStats, PredictionSuppression, bool) {
-	resolved, wasConfirmed := ResolveConfirmedCycleStats(user, logs, stats, today, location)
+	resolved, published, suppression, wasConfirmed := confirmedAndPublishedStats(user, logs, stats, today, location)
 	confirmedDay := resolved.OvulationDate
-	published, suppression := PublishedStats(user, resolved, logs, today, location)
 	// The day comes back whenever the confirmation stood: whether it may be
 	// named was already decided, once, by the gate inside
 	// ConfirmedCurrentCycleOvulation (ConfirmedOvulationWithheld) — today it
