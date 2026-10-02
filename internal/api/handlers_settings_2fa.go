@@ -110,10 +110,13 @@ func (handler *Handler) VerifyTOTP2FAEnrollment(c fiber.Ctx) error {
 
 	// The code draws totp.enroll, its own budget: the password above drew
 	// settings.reauth, which books only a wrong password. An exhausted budget
-	// refuses before the code is checked, the correct code included.
+	// refuses before the code is checked, the correct code included. A code
+	// that verifies yields the step it matched, which EnableTOTP records as
+	// consumed, so this code cannot also pass the next sign-in challenge.
 	attempt := services.ReauthAttempt{ClientKey: c.IP(), UserID: user.ID, Now: time.Now()}
 	enrollBudget := handler.totpService.EnrollCodeBudget(handler.secretKey)
-	if err := handler.totpService.VerifyEnrollmentCode(enrollBudget, attempt, rawSecret, code); err != nil {
+	enrollmentStep, err := handler.totpService.VerifyEnrollmentCode(enrollBudget, attempt, rawSecret, code)
+	if err != nil {
 		if errors.Is(err, services.ErrTOTPEnrollRateLimited) {
 			spec := totpEnrollRateLimitedErrorSpec()
 			handler.logSecurityError(c, "settings.2fa.verify", spec)
@@ -123,7 +126,7 @@ func (handler *Handler) VerifyTOTP2FAEnrollment(c fiber.Ctx) error {
 		return handler.respondMappedError(c, totpInvalidCodeErrorSpec())
 	}
 
-	if err := handler.totpService.EnableTOTP(c.Context(), user.ID, user.AuthSessionVersion, rawSecret); err != nil {
+	if err := handler.totpService.EnableTOTP(c.Context(), user.ID, user.AuthSessionVersion, rawSecret, enrollmentStep); err != nil {
 		if errors.Is(err, services.ErrAuthSessionVersionChanged) {
 			// Nothing was enrolled and this session is revoked: the seed goes
 			// with it, and a fresh sign-in starts a fresh enrollment.

@@ -121,7 +121,7 @@ func currentTOTPCode(t *testing.T, secret string) string {
 
 func enableTOTPForSettingsTest(t *testing.T, ctx *settingsSecurityTestContext) {
 	t.Helper()
-	if err := getTOTPServiceForTest(ctx.database).EnableTOTP(context.Background(), ctx.user.ID, ctx.user.AuthSessionVersion, "JBSWY3DPEHPK3PXP"); err != nil {
+	if err := getTOTPServiceForTest(ctx.database).EnableTOTP(context.Background(), ctx.user.ID, ctx.user.AuthSessionVersion, "JBSWY3DPEHPK3PXP", services.TOTPEnrollmentStep{}); err != nil {
 		t.Fatalf("EnableTOTP: %v", err)
 	}
 	ctx.refreshAuthCookie(t)

@@ -97,7 +97,7 @@ func reEnrollReencryptRaceOwner(t *testing.T, repo *db.UserRepository, userID ui
 	if err != nil {
 		t.Fatalf("load the owner before re-enrolling: %v", err)
 	}
-	if err := NewTOTPService(repo, []byte(legacyTOTPSecretKey), nil).EnableTOTP(context.Background(), userID, current.AuthSessionVersion, reencryptRaceReEnrolledSeed); err != nil {
+	if err := NewTOTPService(repo, []byte(legacyTOTPSecretKey), nil).EnableTOTP(context.Background(), userID, current.AuthSessionVersion, reencryptRaceReEnrolledSeed, TOTPEnrollmentStep{}); err != nil {
 		t.Fatalf("re-enroll: %v", err)
 	}
 }

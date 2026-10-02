@@ -46,7 +46,7 @@ func sessionVersionWritesUnderTest() []sessionVersionWriteUnderTest {
 			return repo.UpdatePasswordRecoveryCodeAndRevokeSessions(ctx, userID, expected, "enrolled-hash", "enrolled-recovery", false, nil)
 		}},
 		{name: "UpdateTOTPFieldsAndRevokeSessions", column: "totp_secret", write: func(repo *UserRepository, userID uint, expected int) error {
-			return repo.UpdateTOTPFieldsAndRevokeSessions(ctx, userID, expected, "reenrolled-ciphertext", true)
+			return repo.UpdateTOTPFieldsAndRevokeSessions(ctx, userID, expected, "reenrolled-ciphertext", true, 0)
 		}},
 		{name: "ClearAllDataAndResetSettings", column: "cycle_length", write: func(repo *UserRepository, userID uint, expected int) error {
 			return repo.ClearAllDataAndResetSettings(ctx, userID, expected)
