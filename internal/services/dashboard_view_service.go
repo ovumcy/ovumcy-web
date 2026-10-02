@@ -186,12 +186,11 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 	// shade another. The resolver carries the same medical gate the ovulation
 	// line above already resolves through, so this changes WHICH window is shown
 	// and never whether one is shown at all.
-	confirmedStats, _ := ResolveConfirmedCycleStats(user, logs, stats, today, location)
-
-	// The same helper the stats page and the JSON API publish through, so the
+	//
+	// The same helper the stats page and the day-save message go through, so the
 	// surfaces cannot drift apart on what a suppressed tier is allowed to carry.
 	// Every builder above still reads the uncleared stats.
-	publishedStats, _ := PublishedStats(user, confirmedStats, logs, today, location)
+	confirmedStats, publishedStats, _ := ConfirmedAndPublishedStats(user, logs, stats, today, location)
 
 	return DashboardViewData{
 		Stats:                             publishedStats,

@@ -515,7 +515,7 @@
   "dashboard.autosave_invalid": "Fix the form errors to save",
   "dashboard.autosave_undo": "Undo",
   "dashboard.save_message_self_care": "Saved. Take care of yourself today.",
-  "dashboard.save_message_fertile": "Saved. You are in your fertile window right now.",
+  "dashboard.save_message_fertile": "Saved. This day is likely inside your estimated fertile window.",
   "dashboard.save_message_neutral": "Saved.",
   "dashboard.save_message_pregnancy_paused": "Saved. Cycle predictions are paused after a positive pregnancy test. If you experience bleeding, pain, or dizziness, seek medical care promptly.",
   "daylog.title": "Daily log",

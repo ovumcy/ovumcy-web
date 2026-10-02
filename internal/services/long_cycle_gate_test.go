@@ -418,8 +418,9 @@ func TestLongCycleGateWithholdsTheFertileSaveMessage(t *testing.T) {
 			if first, last := CalendarDaysBetween(lastStart, stats.FertilityWindowStart)+1, CalendarDaysBetween(lastStart, stats.FertilityWindowEnd)+1; first != 9 || last != 14 {
 				t.Fatalf("scenario setup: window on cycle days %d-%d, want 9-14", first, last)
 			}
+			_, published, suppression := ConfirmedAndPublishedStats(user, logs, stats, today, time.UTC)
 			for day := stats.FertilityWindowStart; !day.After(stats.FertilityWindowEnd); day = day.AddDate(0, 0, 1) {
-				if got := resolveDaySaveMessageKey(user, day, stats) == daySaveMessageFertile; got != tc.wantFertile {
+				if got := resolveDaySaveMessageKey(user, day, published, suppression) == daySaveMessageFertile; got != tc.wantFertile {
 					t.Fatalf("saving %s: fertile message = %t, want %t", CalendarDayKey(day), got, tc.wantFertile)
 				}
 			}

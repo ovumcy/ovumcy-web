@@ -518,7 +518,7 @@
   "dashboard.autosave_invalid": "Исправьте ошибки в форме для сохранения",
   "dashboard.autosave_undo": "Отменить",
   "dashboard.save_message_self_care": "Сохранено. Позаботьтесь о себе сегодня.",
-  "dashboard.save_message_fertile": "Сохранено. Сейчас фертильный период.",
+  "dashboard.save_message_fertile": "Сохранено. Этот день, вероятно, попадает в Ваше ориентировочное фертильное окно.",
   "dashboard.save_message_neutral": "Сохранено.",
   "dashboard.save_message_pregnancy_paused": "Сохранено. После положительного теста на беременность прогнозы цикла приостановлены. При кровотечении, боли или головокружении обратитесь к врачу без промедления.",
   "daylog.title": "Дневная запись",

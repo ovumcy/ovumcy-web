@@ -651,7 +651,7 @@
   "dashboard.autosave_invalid": "Corrigez les erreurs du formulaire pour sauvegarder",
   "dashboard.autosave_undo": "Annuler",
   "dashboard.save_message_self_care": "Enregistré. Prenez soin de vous aujourd'hui.",
-  "dashboard.save_message_fertile": "Enregistré. Vous êtes actuellement dans votre fenêtre fertile.",
+  "dashboard.save_message_fertile": "Enregistré. Ce jour se situe probablement dans votre fenêtre fertile estimée.",
   "dashboard.save_message_neutral": "Enregistré.",
   "dashboard.save_message_pregnancy_paused": "Enregistré. Après un test de grossesse positif, les prédictions de cycle sont en pause. En cas de saignement, de douleur ou de vertiges, consultez rapidement un médecin.",
 

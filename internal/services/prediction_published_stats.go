@@ -130,6 +130,27 @@ func PublishedStats(user *models.User, stats CycleStats, logs []models.DailyLog,
 	return stats, suppression
 }
 
+// ConfirmedAndPublishedStats is the two-step gate the owner surfaces that name a
+// fertile window run their derived stats through: a thermal shift the owner's own
+// temperatures confirm outranks the projection (ResolveConfirmedCycleStats), and
+// only then are the values the display policy refuses cleared (PublishedStats).
+// The order is the point — the confirmed window is what the suppression tiers
+// then keep or withhold.
+//
+// It returns all three halves because the callers need different ones: the
+// dashboard and the stats page feed the confirmed, uncleared stats to their
+// builders and publish the cleared copy, while the day-save message reads only
+// the cleared copy and the verdict. The dashboard, the stats page and the day-save
+// feedback all call it, so "which window does this surface call fertile" has one
+// answer and the save toast cannot name a day the dashboard header does not.
+// PublishedOverviewStats below is the same two steps for the JSON API, which also
+// needs the confirmed flag.
+func ConfirmedAndPublishedStats(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (CycleStats, CycleStats, PredictionSuppression) {
+	confirmed, _ := ResolveConfirmedCycleStats(user, logs, stats, today, location)
+	published, suppression := PublishedStats(user, confirmed, logs, today, location)
+	return confirmed, published, suppression
+}
+
 // PublishedOverviewStats is PublishedStats plus the confirmed-ovulation
 // substitution the on-screen surfaces already apply: the calendar's solid
 // marker (calendar_days.go), the dashboard's ovulation line

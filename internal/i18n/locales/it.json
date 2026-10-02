@@ -515,7 +515,7 @@
   "dashboard.autosave_invalid": "Correggi gli errori del modulo per salvare",
   "dashboard.autosave_undo": "Annulla",
   "dashboard.save_message_self_care": "Salvato. Prenditi cura di te oggi.",
-  "dashboard.save_message_fertile": "Salvato. Sei nella tua finestra fertile in questo momento.",
+  "dashboard.save_message_fertile": "Salvato. Questo giorno rientra probabilmente nella tua finestra fertile stimata.",
   "dashboard.save_message_neutral": "Salvato.",
   "dashboard.save_message_pregnancy_paused": "Salvato. Dopo un test di gravidanza positivo, le previsioni del ciclo sono in pausa. In caso di sanguinamento, dolore o vertigini, rivolgiti subito a un medico.",
   "daylog.title": "Registro giornaliero",
