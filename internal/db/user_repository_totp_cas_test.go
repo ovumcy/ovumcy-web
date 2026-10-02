@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -14,6 +15,30 @@ func TestUpgradeTOTPSecretCiphertextCAS(t *testing.T) {
 		{"loses to a re-enrollment", testUpgradeTOTPSecretCiphertextCASLosesToAReEnrollment},
 		{"loses to a disable", testUpgradeTOTPSecretCiphertextCASLosesToADisable},
 	})
+}
+
+func TestUpdateTOTPFieldsRefusesAnEnableWithoutAPositiveStep(t *testing.T) {
+	runCASCasesOnEachDriver(t, []casDriverCase{
+		{"refuses and writes nothing", testUpdateTOTPFieldsRefusesAnEnableWithoutAPositiveStep},
+	})
+}
+
+func testUpdateTOTPFieldsRefusesAnEnableWithoutAPositiveStep(t *testing.T, repo *UserRepository) {
+	user := createUpgradeTOTPSecretCiphertextCASUser(t, repo, "totp-enable-no-step@example.com")
+	for _, step := range []int64{0, -1} {
+		err := repo.UpdateTOTPFieldsAndRevokeSessions(context.Background(), user.ID, storedSessionVersionForTest(t, repo, user.ID), "reenrolled-ciphertext", true, step)
+		if !errors.Is(err, ErrTOTPEnableStepRequired) {
+			t.Fatalf("enable with step %d: error = %v, want ErrTOTPEnableStepRequired", step, err)
+		}
+	}
+
+	got, err := repo.FindByID(context.Background(), user.ID)
+	if err != nil {
+		t.Fatalf("FindByID: %v", err)
+	}
+	if got.TOTPSecret != "legacy-ciphertext" || got.AuthSessionVersion != 4 || got.TOTPLastUsedStep != 7 {
+		t.Fatalf("refused enable wrote the row: secret=%q version=%d step=%d", got.TOTPSecret, got.AuthSessionVersion, got.TOTPLastUsedStep)
+	}
 }
 
 func createUpgradeTOTPSecretCiphertextCASUser(t *testing.T, repo *UserRepository, email string) *models.User {

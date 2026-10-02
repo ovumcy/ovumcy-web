@@ -65,7 +65,7 @@ func getTOTPServiceForTest(database *gorm.DB) *services.TOTPService {
 // one.
 func verifiedEnrollmentStepForTest(t *testing.T, secret string) services.TOTPEnrollmentStep {
 	t.Helper()
-	svc := services.NewTOTPService(nil, []byte("test-secret-key"), nil)
+	svc := getTOTPServiceForTest(nil)
 	for range 2 {
 		code, err := totp.GenerateCode(secret, time.Now().Add(-30*time.Second))
 		if err != nil {
