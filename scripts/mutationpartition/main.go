@@ -14,8 +14,8 @@
 // file's weight.
 //
 // The operator count alone ranks files badly, though: on an even ~43-weight
-// split of internal/api, wall time ran 19..>180 minutes per shard (run
-// 36942283202), because a mutant costs the time until the first test that
+// split of internal/api, the finished shards of run 36942283202 took 19..145
+// minutes (internal_services_9 hit the 180-minute cap), because a mutant costs the time until the first test that
 // kills it, and which tests reach a file differs by an order of magnitude. So
 // each file's weight is scaled by a measured rate — seconds of wall time per
 // candidate — from costs.json, keyed by the package directory's base name. The
