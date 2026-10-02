@@ -446,11 +446,20 @@ func DashboardPredictionRange(user *models.User, stats CycleStats, predictedStar
 // range shifted back by the luteal phase: ovulation is the day BEFORE the
 // luteal phase begins, so that shift lands one day late on both ends.
 //
-// The range is absent when either length is too short for the model to place
-// an ovulation at all. The ends are returned at location midnight, the shape
-// dashboardOvulationInPast compares against today.
+// A shortest cycle too short for the model to place an ovulation in (under
+// minPlaceableCycleLength days) still has an earliest ovulation: the model's
+// own floor, the first cycle day it ever names. The start is taken there rather
+// than the range dropped, because dropping it leaves the single median date on
+// the page as if it were exact, for the very accounts whose cycles vary most.
+// The range is absent only when the longest cycle cannot place an ovulation
+// either, or an observed length is missing. The ends are returned at location
+// midnight, the shape dashboardOvulationInPast compares against today.
 func DashboardOvulationRange(lastPeriodStart time.Time, minCycleLength int, maxCycleLength int, lutealPhase int, location *time.Location) (time.Time, time.Time, bool) {
-	earliest := PredictCycleWindow(lastPeriodStart, minCycleLength, lutealPhase)
+	earliestLength := minCycleLength
+	if earliestLength > 0 && earliestLength < minPlaceableCycleLength {
+		earliestLength = minPlaceableCycleLength
+	}
+	earliest := PredictCycleWindow(lastPeriodStart, earliestLength, lutealPhase)
 	latest := PredictCycleWindow(lastPeriodStart, maxCycleLength, lutealPhase)
 	if !earliest.Calculable || !latest.Calculable {
 		return time.Time{}, time.Time{}, false

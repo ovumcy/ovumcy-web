@@ -56,12 +56,80 @@ func TestDashboardOvulationRangeNamesThePredictorsOvulationForBothLengths(t *tes
 	}
 }
 
+// A shortest cycle under minPlaceableCycleLength days has no modelled ovulation
+// of its own. The range must not vanish for it — the dashboard would then keep
+// the single median date, presented as exact — so its start is the model's
+// floor: the ovulation it places in the shortest cycle it can place.
+func TestDashboardOvulationRangeStartsAtTheModelFloorForAShortestCycleItCannotPlace(t *testing.T) {
+	t.Parallel()
+
+	start := mustParseDashboardDay(t, "2026-03-01")
+	for _, shortest := range []int{1, 12, minPlaceableCycleLength - 1} {
+		for _, luteal := range []int{0, 10, 14} {
+			gotStart, gotEnd, ok := DashboardOvulationRange(start, shortest, 45, luteal, time.UTC)
+			if !ok {
+				t.Fatalf("shortest %d, luteal %d: expected a range, the longest cycle is placeable", shortest, luteal)
+			}
+			if got := gotStart.Format("2006-01-02"); got != "2026-03-05" {
+				t.Errorf("shortest %d, luteal %d: range start = %s, want 2026-03-05 (cycle day 5, the model's earliest)", shortest, luteal, got)
+			}
+			if got, want := gotEnd.Format("2006-01-02"), PredictCycleWindow(start, 45, luteal).OvulationDate.Format("2006-01-02"); got != want {
+				t.Errorf("shortest %d, luteal %d: range end = %s, want %s", shortest, luteal, got, want)
+			}
+		}
+	}
+}
+
+// TestDashboardShowsAnOvulationRangeNotAnExactDayForAShortestCycleUnderTheFloor
+// pins what the owner sees: irregular history 12/30/45 gets the range, and the
+// median-based single date is cleared rather than named as exact.
+func TestDashboardShowsAnOvulationRangeNotAnExactDayForAShortestCycleUnderTheFloor(t *testing.T) {
+	t.Parallel()
+
+	start := mustParseDashboardDay(t, "2026-03-01")
+	today := mustParseDashboardDay(t, "2026-03-03")
+	user := &models.User{IrregularCycle: true}
+	stats := CycleStats{
+		LastPeriodStart:     start,
+		AverageCycleLength:  29,
+		MedianCycleLength:   30,
+		MinCycleLength:      12,
+		MaxCycleLength:      45,
+		LutealPhase:         14,
+		CurrentCycleDay:     3,
+		CompletedCycleCount: 3,
+		NextPeriodStart:     start.AddDate(0, 0, 30),
+	}
+
+	context := BuildDashboardCycleContext(user, nil, stats, today, time.UTC)
+	if !context.DisplayNextPeriodUseRange {
+		t.Fatal("fixture: the next-period range must be shown for this account")
+	}
+	if !context.DisplayOvulationUseRange {
+		t.Fatalf("the ovulation range must be shown wherever the next-period range is; got a single date %s (exact %v)",
+			context.DisplayOvulationDate, context.DisplayOvulationExact)
+	}
+	if !context.DisplayOvulationDate.IsZero() || context.DisplayOvulationExact {
+		t.Fatalf("a range is shown, so the single date must be cleared; got %s (exact %v)",
+			context.DisplayOvulationDate, context.DisplayOvulationExact)
+	}
+	if got := context.DisplayOvulationRangeStart.Format("2006-01-02"); got != "2026-03-05" {
+		t.Errorf("range start = %s, want 2026-03-05", got)
+	}
+	if got, want := context.DisplayOvulationRangeEnd.Format("2006-01-02"), PredictCycleWindow(start, 45, 14).OvulationDate.Format("2006-01-02"); got != want {
+		t.Errorf("range end = %s, want %s", got, want)
+	}
+}
+
 func TestDashboardOvulationRangeIsAbsentWhenTheModelCannotPlaceAnEnd(t *testing.T) {
 	t.Parallel()
 
 	start := mustParseDashboardDay(t, "2026-03-01")
-	if _, _, ok := DashboardOvulationRange(start, 12, 40, 14, time.UTC); ok {
-		t.Fatalf("a 12-day shortest cycle has no modelled ovulation, so no range may be built on it")
+	if _, _, ok := DashboardOvulationRange(start, 12, minPlaceableCycleLength-1, 14, time.UTC); ok {
+		t.Fatalf("a longest cycle with no modelled ovulation leaves nothing to build a range on")
+	}
+	if _, _, ok := DashboardOvulationRange(start, 0, 40, 14, time.UTC); ok {
+		t.Fatalf("a missing shortest cycle must not yield a range")
 	}
 	if _, _, ok := DashboardOvulationRange(start, 24, 0, 14, time.UTC); ok {
 		t.Fatalf("a missing longest cycle must not yield a range")
@@ -118,8 +186,8 @@ func TestDashboardOvulationRangeEndpointsEqualPredictCycleWindowProperty(t *test
 
 	rapid.Check(t, func(t *rapid.T) {
 		start := drawCycleStartDate(t)
-		minLength := rapid.IntRange(15, 60).Draw(t, "minLength")
-		maxLength := rapid.IntRange(minLength, 90).Draw(t, "maxLength")
+		minLength := rapid.IntRange(1, 60).Draw(t, "minLength")
+		maxLength := rapid.IntRange(max(minLength, 15), 90).Draw(t, "maxLength")
 		luteal := rapid.IntRange(0, 20).Draw(t, "luteal")
 		location := rapid.SampledFrom(zones).Draw(t, "location")
 
@@ -127,6 +195,8 @@ func TestDashboardOvulationRangeEndpointsEqualPredictCycleWindowProperty(t *test
 		if !ok {
 			t.Fatalf("no range for lengths %d..%d luteal %d", minLength, maxLength, luteal)
 		}
+		// A shortest cycle the model cannot place is read at the shortest one it can.
+		minLength = max(minLength, 15)
 
 		resolved := ResolveLutealPhase(luteal)
 		for _, end := range []struct {
