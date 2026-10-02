@@ -56,6 +56,19 @@ type statsOverviewState struct {
 	// t.Run would be both unsynchronised and read too early the day a subtest
 	// takes t.Parallel.
 	wantsFertilityHook bool
+	// wantCycleDataStale is the pages' out-of-date verdict for this state. It
+	// withholds the phase and the status and no date, so a state carrying it
+	// alone publishes its projection while answering "unknown" for both.
+	wantCycleDataStale bool
+	// wantCurrentFertility is the status the state publishes; empty means
+	// "unknown", the answer of every withholding state.
+	wantCurrentFertility string
+	// wantCurrentPhase, when set, is the phase the state must publish.
+	wantCurrentPhase string
+	// wantsDashboardPhase says the parity subtest also reads the dashboard
+	// header, which prints the hero's own phase label while the hero is drawn
+	// — a second phase producer the stats page never consults.
+	wantsDashboardPhase bool
 }
 
 func statsOverviewStates() []statsOverviewState {
@@ -119,6 +132,8 @@ func statsOverviewStates() []statsOverviewState {
 			// renders a status, so it is where the two surfaces must agree on the
 			// value rather than both on silence.
 			wantsFertilityHook: true,
+			// Cycle day 46 against a 23-day reference (17 and 28): out of date too.
+			wantCycleDataStale: true,
 		},
 		{
 			// The same overdue tier reached through the history that used to walk
@@ -148,6 +163,57 @@ func statsOverviewStates() []statsOverviewState {
 			wantFertility:      true,
 			wantNextPeriodSet:  false,
 			wantsFertilityHook: true,
+			// Cycle day 61 is inside the 96-day mean the stale check measures.
+			wantCycleDataStale: false,
+		},
+		{
+			// Out of date, not yet overdue: two 28-day cycles and cycle day 31.
+			// The overdue gate needs a day past 35, so nothing is suppressed and
+			// every projected date is published — the next period and the window
+			// already behind today — while both pages print phase and fertility
+			// as unknown. The API published "luteal" and a categorical status
+			// read against a window the cycle had already outrun.
+			name:    "data out of date before the cycle is overdue",
+			history: []int{86, 58, 30},
+			seed: func(t *testing.T, database *gorm.DB, user models.User, today time.Time) {
+				// The fixture's onboarding anchor (six days back) would stay
+				// active and put the account on cycle day 7.
+				updateStatsOverviewUser(t, database, user, map[string]any{
+					"last_period_start": services.AddCalendarDays(today, -30, time.UTC),
+				})
+			},
+			wantReasons:        nil,
+			wantPredictions:    false,
+			wantFertility:      false,
+			wantNextPeriodSet:  true,
+			wantsFertilityHook: true,
+			wantCycleDataStale: true,
+		},
+		{
+			// Irregular range mode, nothing withheld: cycles of 25, 45 and 28
+			// days and cycle day 20. The window runs from the shortest cycle's
+			// window start (day 6) to the longest cycle's ovulation (day 31),
+			// while the published ovulation stays the median day 14 — so today
+			// is fertile, and "luteal" would claim the ovulation is behind the
+			// owner on a day the window says it may be ahead. No phase is named,
+			// on the API and on both pages, the dashboard hero's label included.
+			name:    "irregular range mode past the median ovulation",
+			history: []int{117, 92, 47, 19},
+			seed: func(t *testing.T, database *gorm.DB, user models.User, today time.Time) {
+				updateStatsOverviewUser(t, database, user, map[string]any{
+					"irregular_cycle":   true,
+					"last_period_start": services.AddCalendarDays(today, -19, time.UTC),
+				})
+			},
+			wantReasons:          nil,
+			wantPredictions:      false,
+			wantFertility:        false,
+			wantNextPeriodSet:    true,
+			wantsFertilityHook:   true,
+			wantCycleDataStale:   false,
+			wantCurrentFertility: services.FertilityStatusFertile,
+			wantCurrentPhase:     "unknown",
+			wantsDashboardPhase:  true,
 		},
 	}
 }
@@ -174,24 +240,49 @@ func TestStatsOverviewWithholdsEveryProjectionItsGatesRefuse(t *testing.T) {
 				}
 			}
 
-			// The fertility half, refused in every state here.
-			for field, value := range map[string]*string{
-				"ovulation_date":         payload.OvulationDate,
-				"fertility_window_start": payload.FertilityWindowStart,
-				"fertility_window_end":   payload.FertilityWindowEnd,
-			} {
-				if value != nil {
-					t.Fatalf("%s published as %q while suppression.fertility is true", field, *value)
+			// The fertility half, refused in every suppressed state here.
+			if state.wantFertility {
+				for field, value := range map[string]*string{
+					"ovulation_date":         payload.OvulationDate,
+					"fertility_window_start": payload.FertilityWindowStart,
+					"fertility_window_end":   payload.FertilityWindowEnd,
+				} {
+					if value != nil {
+						t.Fatalf("%s published as %q while suppression.fertility is true", field, *value)
+					}
+				}
+				if payload.OvulationExact {
+					t.Fatal("ovulation_exact is true beside a null ovulation_date")
+				}
+				if payload.OvulationConfirmed {
+					t.Fatal("ovulation_confirmed is true beside a null ovulation_date")
 				}
 			}
-			if payload.CurrentFertility != services.FertilityStatusUnknown {
-				t.Fatalf("current_fertility = %q, want %q while the fertility gate holds", payload.CurrentFertility, services.FertilityStatusUnknown)
+			// The status is withheld by the fertility gate or by out-of-date
+			// data; the one state that withholds neither names its own.
+			wantStatus := state.wantCurrentFertility
+			if wantStatus == "" {
+				wantStatus = services.FertilityStatusUnknown
 			}
-			if payload.OvulationExact {
-				t.Fatal("ovulation_exact is true beside a null ovulation_date")
+			if payload.CurrentFertility != wantStatus {
+				t.Fatalf("current_fertility = %q, want %q (suppression.fertility %v, cycle_data_stale %v)", payload.CurrentFertility, wantStatus, payload.Suppression.Fertility, payload.CycleDataStale)
 			}
-			if payload.OvulationConfirmed {
-				t.Fatal("ovulation_confirmed is true beside a null ovulation_date")
+			// fertility_basis is null exactly when the status is unknown, and
+			// none of these owners has a confirmed shift to read against.
+			if (payload.FertilityBasis == nil) != (payload.CurrentFertility == services.FertilityStatusUnknown) {
+				t.Fatalf("fertility_basis = %v beside current_fertility %q — null exactly when the status is unknown", payload.FertilityBasis, payload.CurrentFertility)
+			}
+			if payload.FertilityBasis != nil && *payload.FertilityBasis != services.FertilityBasisProjection {
+				t.Fatalf("fertility_basis = %q, want %q", *payload.FertilityBasis, services.FertilityBasisProjection)
+			}
+			if state.wantCurrentPhase != "" && payload.CurrentPhase != state.wantCurrentPhase {
+				t.Fatalf("current_phase = %q, want %q", payload.CurrentPhase, state.wantCurrentPhase)
+			}
+			if payload.CycleDataStale != state.wantCycleDataStale {
+				t.Fatalf("cycle_data_stale = %v, want %v", payload.CycleDataStale, state.wantCycleDataStale)
+			}
+			if payload.CycleDataStale && payload.CurrentPhase != "unknown" {
+				t.Fatalf("current_phase = %q beside cycle_data_stale, want unknown — the pages print unknown here", payload.CurrentPhase)
 			}
 			if (payload.NextPeriodStart != nil) != state.wantNextPeriodSet {
 				t.Fatalf("next_period_start present = %v, want %v", payload.NextPeriodStart != nil, state.wantNextPeriodSet)
@@ -273,12 +364,50 @@ func TestStatsOverviewAgreesWithTheStatsPageOnFertility(t *testing.T) {
 				if rendered := htmlAttr(node, "data-fertility-status"); rendered != payload.CurrentFertility {
 					t.Fatalf("the page renders fertility %q while the API publishes %q", rendered, payload.CurrentFertility)
 				}
+				if rendered := htmlAttr(node, "data-stats-current-phase"); rendered != payload.CurrentPhase {
+					t.Fatalf("the page renders phase %q while the API publishes %q", rendered, payload.CurrentPhase)
+				}
+				if rendered := findHTMLNodeWithAttr(document, "data-stats-phase-estimated") != nil; rendered != payload.CycleDataStale {
+					t.Fatalf("the page renders its out-of-date notice = %v while the API publishes cycle_data_stale %v", rendered, payload.CycleDataStale)
+				}
 			}
 			if payload.Suppression.Fertility && findHTMLNodeWithAttr(document, "data-fertile-window") != nil {
 				t.Fatal("the page names a fertile window while the API suppresses the fertility half")
 			}
+			if state.wantsDashboardPhase {
+				dashboard := fetchStatsOverviewDashboardDocument(t, app, authCookie)
+				// The header prints the hero's label in place of the published
+				// phase only while the ribbon is drawn; without it this compares
+				// the published phase with itself.
+				if ribbon := findHTMLNodeWithAttr(dashboard, "data-cycle-ribbon-visible"); ribbon == nil || htmlAttr(ribbon, "data-cycle-ribbon-visible") != "true" {
+					t.Fatal("the dashboard drew no cycle ribbon, so its header did not read the hero's phase")
+				}
+				header := findHTMLNodeWithAttr(dashboard, "data-dashboard-status-header")
+				if header == nil {
+					t.Fatal("the dashboard rendered no status header")
+				}
+				if rendered := htmlAttr(header, "data-dashboard-phase"); rendered != payload.CurrentPhase {
+					t.Fatalf("the dashboard header renders phase %q while the API publishes %q", rendered, payload.CurrentPhase)
+				}
+				if rendered := htmlAttr(header, "data-fertility-status"); rendered != payload.CurrentFertility {
+					t.Fatalf("the dashboard header renders fertility %q while the API publishes %q", rendered, payload.CurrentFertility)
+				}
+			}
 		})
 	}
+}
+
+func fetchStatsOverviewDashboardDocument(t *testing.T, app *fiber.App, authCookie string) *html.Node {
+	t.Helper()
+
+	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", joinCookieHeader(authCookie, timezoneCookieName+"=UTC"))
+	request.Header.Set(timezoneHeaderName, "UTC")
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusOK)
+	return mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
 }
 
 // TestStatsOverviewAgreesWithTheStatsPageOnAPublishedProjection is the parity
@@ -303,6 +432,12 @@ func TestStatsOverviewAgreesWithTheStatsPageOnAPublishedProjection(t *testing.T)
 	}
 	if payload.Suppression.Fertility {
 		t.Fatalf("an owner with observed cycles got the fertility gate: %v", payload.Suppression.Reasons)
+	}
+	if payload.CycleDataStale {
+		t.Fatal("cycle_data_stale on cycle day 7 of a 28-day history")
+	}
+	if payload.FertilityBasis == nil || *payload.FertilityBasis != services.FertilityBasisProjection {
+		t.Fatalf("fertility_basis = %v, want %q beside a published projected status", payload.FertilityBasis, services.FertilityBasisProjection)
 	}
 
 	// The window line is the page's own consequence of that status, so the two

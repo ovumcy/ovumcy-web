@@ -14,7 +14,9 @@ import (
 // the day the shared "3-over-6" detector infers from the temperature signal. It
 // is an inference from an observation, never a measurement of the ovulation
 // itself, and it makes no new claim about fertility beyond what follows from the
-// day: past the window the status is not_fertile, and that is all.
+// day: past the window the status is outside_estimated_window, read against
+// this window (FertilityBasisConfirmed), and that is all — never an
+// infertility claim.
 //
 // It exists because the substitution used to be applied one field at a time.
 // PublishedOverviewStats replaced the DATE and left the window and
@@ -86,8 +88,8 @@ func ResolveConfirmedCycleStats(user *models.User, logs []models.DailyLog, stats
 	// betweenInclusive and ResolveFertilityStatus below compare instants —
 	// so a UTC-midnight window compared against a location-midnight today
 	// disagrees by the zone's own offset (day one of the window read as
-	// not_fertile in UTC+3, the ovulation day itself read as not_fertile in
-	// UTC-5). CalendarDay keeps the calendar date exactly as computed above
+	// outside the window in UTC+3, the ovulation day itself read as outside it
+	// in UTC-5). CalendarDay keeps the calendar date exactly as computed above
 	// and only moves it onto the axis `today` is already on.
 	stats.OvulationDate = CalendarDay(ovulationDayUTC, location)
 	stats.OvulationImpossible = false
@@ -98,6 +100,6 @@ func ResolveConfirmedCycleStats(user *models.User, logs []models.DailyLog, stats
 	// them — read off the ALREADY updated fields, so neither disagrees with the
 	// day a confirmed shift just named.
 	stats.CurrentPhase = DetectCurrentPhase(stats, logs, today, location)
-	stats.CurrentFertility = ResolveFertilityStatus(stats, today)
+	setFertilityStatus(&stats, today, FertilityBasisConfirmed)
 	return stats, true
 }

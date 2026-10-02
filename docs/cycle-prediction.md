@@ -128,6 +128,26 @@ if fertilityStart < periodStart:  fertilityStart = periodStart   (short-cycle cl
 On short cycles the window may overlap menstruation; it is never allowed to
 start before the period.
 
+**Irregular range mode — the current cycle only.** An account with
+irregular-cycle mode on and at least three completed cycles is shown a range of
+possible ovulation days, so its current cycle's window is widened to cover that
+range: it runs from the shortest recent cycle's window start to the longest
+recent cycle's ovulation day, each placed by the same arithmetic as above.
+
+```
+fertilityStart = window(minCycleLength).fertilityStart   (clamp included; periodStart
+                                                          when no ovulation fits)
+fertilityEnd   = window(maxCycleLength).ovulationDate
+```
+
+The published ovulation date stays the median one, so it can sit in the middle
+of this window. On the days after it, up to the window's last day, no phase is
+named (the phase is `unknown`): the ovulation may still be ahead, and "luteal"
+would say it is behind. The window can run past the projected next period;
+it is not cut there, and the calendar marks those days as both. The projected
+cycles chained after the current one keep the median window — a projection of a
+projection is not widened.
+
 ### Step 4 — next period
 
 ```
@@ -395,7 +415,13 @@ whether they reach a surface, never what they are.
 The ~14-day luteal phase and the "6-day fertile window ending at ovulation" are
 standard reproductive-physiology concepts (e.g. the fertile-window work of
 Wilcox et al., *NEJM* 1995). ovumcy applies them as a transparent calendar
-estimate, nothing more.
+estimate, nothing more. An estimated window often misses the real fertile
+days, regular cycles included: in a prospective study only about 30% of women
+had their fertile window entirely within the days clinical guidelines name
+(Wilcox AJ, Dunson D, Baird DD, *BMJ* 2000, PMID 11082086). That is why a day
+outside the window is reported as `outside_estimated_window`, never as a day on
+which conception is not possible, and why the irregular range mode widens the
+current cycle's window rather than narrowing the doubt to one median estimate.
 
 The 24-day short-cycle boundary follows the FIGO AUB System 1 normal range for
 cycle frequency, 24–38 days (Munro MG et al., *Int J Gynecol Obstet*

@@ -981,6 +981,8 @@ components:
         - current_cycle_day
         - current_phase
         - current_fertility
+        - fertility_basis
+        - cycle_data_stale
         - average_cycle_length
         - median_cycle_length
         - min_cycle_length
@@ -1024,19 +1026,62 @@ components:
             confirmed `ovulation_date` reported under `cycle_overdue` alone.
             `suppression` accounts for a null date only when it withheld it: a
             cycle with `ovulation_impossible`, or one whose projected day would
-            fall after `9999-12-31`, has `suppression.fertility` false.
+            fall after `9999-12-31`, has `suppression.fertility` false. Always
+            `unknown` while `cycle_data_stale` is true, whatever the dates
+            beside it, `menstrual` included. Also `unknown`, `menstrual`
+            included, on a day after `ovulation_date` that the fertile window
+            still covers: only the irregular range mode builds such a window
+            (see `fertility_window_end`), and on those days the ovulation may
+            still be ahead, which `luteal` would deny. A day the owner recorded
+            as bleeding stays `menstrual`.
         current_fertility:
           type: string
-          enum: [fertile, not_fertile, unknown]
+          enum: [fertile, outside_estimated_window, unknown]
           description: >-
-            Whether today falls inside the fertile window this response
-            reports — the projected one, or the one derived from the confirmed
-            shift when `ovulation_confirmed`, never a mix of the two. The axis
-            orthogonal to `current_phase`. `unknown` whenever the fertile window
-            is null: when `suppression.fertility` is true, even beside a
-            confirmed `ovulation_date` reported under `cycle_overdue` alone; when
+            Whether today falls inside the ESTIMATED fertile window this
+            response reports — the projected one, or the one derived from the
+            confirmed shift when `ovulation_confirmed`, never a mix of the two;
+            `fertility_basis` says which. It describes membership in an
+            estimate, never the owner's body: `outside_estimated_window` is not
+            an infertility claim and not a safe day — an estimated window often
+            misses the real fertile days, regular cycles included — and it is
+            not a method of contraception. The axis orthogonal to
+            `current_phase`. `unknown` whenever the fertile window is null:
+            when `suppression.fertility` is true, even beside a confirmed
+            `ovulation_date` reported under `cycle_overdue` alone; when
             `ovulation_impossible` is true; and when the window would end after
-            `9999-12-31`. The last two leave `suppression.fertility` false.
+            `9999-12-31`. The last two leave `suppression.fertility` false. Also
+            `unknown` while `cycle_data_stale` is true, with the dates still
+            reported unless a suppression signal withholds them.
+        fertility_basis:
+          type: [string, "null"]
+          enum: [projection, confirmed, null]
+          description: >-
+            The window `current_fertility` was read against: `projection` for
+            the window rolled forward from the cycle history, `confirmed` for
+            the window derived from a thermal shift the owner's own
+            temperatures confirm (`ovulation_confirmed`). Null exactly when
+            `current_fertility` is `unknown`.
+        cycle_data_stale:
+          type: boolean
+          description: >-
+            The day count of the running cycle, from `last_period_start`, is
+            past the account's reference cycle length, so the recorded data is
+            out of date — the verdict the dashboard and the statistics page
+            show as their out-of-date notice. The reference length is the
+            first of these that exists: the mean of the recent observed cycle
+            lengths rounded to the nearest day (before any cycle has been
+            observed, the configured cycle length stands in for that mean);
+            the median observed cycle length; the configured cycle length; 28
+            days. It is a reference only — projected dates are rolled from the
+            median. While true, `current_phase` and `current_fertility` are
+            `unknown` and `fertility_basis` is null; the projected dates are
+            still reported unless a suppression signal withholds them, as the
+            pages still show them. This is not a `suppression` signal: it withholds no date,
+            and the fuller withholding of an overdue cycle is
+            `suppression.reasons` `cycle_overdue`. Always false during a
+            pregnancy pause and in unpredictable-cycle mode, where no fertility
+            status is published at all.
         average_cycle_length:
           type: number
           format: double
@@ -1149,15 +1194,28 @@ components:
           description: >-
             Projected, or derived from the confirmed shift when
             `ovulation_confirmed` — then `ovulation_date` minus five days,
-            clamped to `last_period_start`. Null when `suppression.fertility`
-            is true, or when the window's last day would fall after
-            `9999-12-31`.
+            clamped to `last_period_start`. A projected start is
+            `ovulation_date` minus five days with the same clamp, except in
+            the irregular range mode (irregular-cycle mode with three or more
+            completed cycles): there the current cycle's window opens where
+            the SHORTEST recent cycle's window would — that cycle's ovulation
+            day minus five days, with the same clamp, or `last_period_start`
+            when no ovulation fits in that cycle. Null when
+            `suppression.fertility` is true, or when the window's last day
+            would fall after `9999-12-31`.
         fertility_window_end:
           type: [string, "null"]
           format: date
           description: >-
             Projected, or derived from the confirmed shift when
-            `ovulation_confirmed` — then `ovulation_date` itself. Null when
+            `ovulation_confirmed` — then `ovulation_date` itself. A projected
+            end is `ovulation_date`, except in the irregular range mode (see
+            `fertility_window_start`): there the current cycle's window ends on
+            the LONGEST recent cycle's ovulation day, while `ovulation_date`
+            stays the median projection — so it can sit in the middle of the
+            window, and this end can fall on or after `next_period_start`. The
+            widening covers the current cycle only; the cycles the calendar
+            projects after it keep the median window. Null when
             `suppression.fertility` is true, or when it would fall after
             `9999-12-31`.
         pregnancy_paused:

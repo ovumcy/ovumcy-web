@@ -27,11 +27,11 @@ func TestResolveFertilityStatusFollowsWindowMembership(t *testing.T) {
 		today string
 		want  string
 	}{
-		{"day before the window", "2026-01-14", FertilityStatusNotFertile},
+		{"day before the window", "2026-01-14", FertilityStatusOutsideEstimatedWindow},
 		{"window start", "2026-01-15", FertilityStatusFertile},
 		{"mid-window before ovulation", "2026-01-17", FertilityStatusFertile},
 		{"ovulation day", "2026-01-20", FertilityStatusFertile},
-		{"day after the window", "2026-01-21", FertilityStatusNotFertile},
+		{"day after the window", "2026-01-21", FertilityStatusOutsideEstimatedWindow},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -87,10 +87,20 @@ func TestPhaseAndFertilityAreOrthogonalOnAWindowDay(t *testing.T) {
 		t.Fatalf("expected fertile status on a pre-ovulation window day, got %s", got)
 	}
 
-	// A window that outlives ovulation keeps the status while the phase moves on.
+	// A window that outlives the ovulation day published beside it keeps the
+	// status, and the phase names nothing there: only a window widened past a
+	// median ovulation does that (the irregular range mode), and on those days
+	// the ovulation may still be ahead, which "luteal" would deny. "Fertile"
+	// still never becomes a phase.
 	postOvulation := mustParseDay(t, "2026-01-21")
-	if got := detectCyclePhase(stats, logs, postOvulation); got != "luteal" {
-		t.Fatalf("detectCyclePhase: expected luteal on a post-ovulation window day, got %s", got)
+	if got := detectCyclePhase(stats, logs, postOvulation); got != "unknown" {
+		t.Fatalf("detectCyclePhase: expected unknown on a post-ovulation window day, got %s", got)
+	}
+	if got := DetectCurrentPhase(stats, logs, postOvulation, time.UTC); got != "unknown" {
+		t.Fatalf("DetectCurrentPhase: expected unknown on a post-ovulation window day, got %s", got)
+	}
+	if got := detectCyclePhase(stats, logs, mustParseDay(t, "2026-01-22")); got != "luteal" {
+		t.Fatalf("detectCyclePhase: expected luteal past the window, got %s", got)
 	}
 	if got := ResolveFertilityStatus(stats, postOvulation); got != FertilityStatusFertile {
 		t.Fatalf("expected fertile status on a post-ovulation window day, got %s", got)
@@ -139,13 +149,49 @@ func TestApplyUserCycleBaselineExposesBothAxesOnAFertileDay(t *testing.T) {
 	if stats.CurrentFertility != FertilityStatusFertile {
 		t.Fatalf("expected fertile status on a fertile-window day, got %s", stats.CurrentFertility)
 	}
+	if stats.FertilityBasis != FertilityBasisProjection {
+		t.Fatalf("expected the status to be read against the projection, got basis %q", stats.FertilityBasis)
+	}
 
 	later := mustParseDay(t, "2026-01-20")
 	statsLater := ApplyUserCycleBaseline(user, logs, BuildCycleStats(logs, later), later, time.UTC)
 	if statsLater.CurrentPhase != "luteal" {
 		t.Fatalf("expected luteal phase after the window, got %s", statsLater.CurrentPhase)
 	}
-	if statsLater.CurrentFertility != FertilityStatusNotFertile {
-		t.Fatalf("expected not_fertile status after the window, got %s", statsLater.CurrentFertility)
+	if statsLater.CurrentFertility != FertilityStatusOutsideEstimatedWindow {
+		t.Fatalf("expected outside_estimated_window status after the window, got %s", statsLater.CurrentFertility)
+	}
+	if statsLater.FertilityBasis != FertilityBasisProjection {
+		t.Fatalf("expected the status to be read against the projection, got basis %q", statsLater.FertilityBasis)
+	}
+}
+
+// TestFertilityBasisIsEmptyExactlyWhenTheStatusIsUnknown pins the pairing on
+// the derivation paths that write a status: a basis names the window the status
+// was read against, so it is present beside every known status and absent
+// beside every unknown one.
+func TestFertilityBasisIsEmptyExactlyWhenTheStatusIsUnknown(t *testing.T) {
+	empty := BuildCycleStats(nil, mustParseDay(t, "2026-01-10"))
+	if empty.CurrentFertility != FertilityStatusUnknown || empty.FertilityBasis != "" {
+		t.Fatalf("no history: status %q basis %q, want unknown with no basis", empty.CurrentFertility, empty.FertilityBasis)
+	}
+
+	logs := []models.DailyLog{makeLog(t, "2026-01-01", true), makeLog(t, "2026-01-29", true)}
+	built := BuildCycleStats(logs, mustParseDay(t, "2026-02-05"))
+	if built.CurrentFertility == FertilityStatusUnknown || built.FertilityBasis != FertilityBasisProjection {
+		t.Fatalf("observed history: status %q basis %q, want a known status on the projection", built.CurrentFertility, built.FertilityBasis)
+	}
+
+	withheld := built
+	withholdFertilityStatus(&withheld)
+	if withheld.CurrentFertility != FertilityStatusUnknown || withheld.FertilityBasis != "" {
+		t.Fatalf("withheld: status %q basis %q, want unknown with no basis", withheld.CurrentFertility, withheld.FertilityBasis)
+	}
+
+	impossible := built
+	impossible.OvulationImpossible = true
+	setFertilityStatus(&impossible, mustParseDay(t, "2026-02-05"), FertilityBasisProjection)
+	if impossible.CurrentFertility != FertilityStatusUnknown || impossible.FertilityBasis != "" {
+		t.Fatalf("no window: status %q basis %q, want unknown with no basis", impossible.CurrentFertility, impossible.FertilityBasis)
 	}
 }

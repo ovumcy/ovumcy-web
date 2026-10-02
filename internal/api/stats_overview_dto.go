@@ -88,10 +88,18 @@ type StatsOverviewSuppression struct {
 //
 // Recorded history — the observed lengths, the last period start, the current
 // cycle day — is fact rather than projection and is published in every tier.
+//
+// fertility_basis follows the same rule as a withheld date: null, never an
+// empty string, whenever current_fertility is unknown. cycle_data_stale is the
+// owner pages' out-of-date verdict, copied as services.PublishedStats resolved
+// it; the phase and the status it withholds are already "unknown" in the stats
+// handed here.
 type StatsOverviewResponse struct {
 	CurrentCycleDay      int                      `json:"current_cycle_day"`
 	CurrentPhase         string                   `json:"current_phase"`
 	CurrentFertility     string                   `json:"current_fertility"`
+	FertilityBasis       *string                  `json:"fertility_basis"`
+	CycleDataStale       bool                     `json:"cycle_data_stale"`
 	AverageCycleLength   float64                  `json:"average_cycle_length"`
 	MedianCycleLength    int                      `json:"median_cycle_length"`
 	MinCycleLength       int                      `json:"min_cycle_length"`
@@ -131,6 +139,8 @@ func newStatsOverviewResponse(stats services.CycleStats, suppression services.Pr
 		CurrentCycleDay:      stats.CurrentCycleDay,
 		CurrentPhase:         stats.CurrentPhase,
 		CurrentFertility:     stats.CurrentFertility,
+		FertilityBasis:       statsOverviewOptionalText(stats.FertilityBasis),
+		CycleDataStale:       stats.CycleDataStale,
 		AverageCycleLength:   stats.AverageCycleLength,
 		MedianCycleLength:    stats.MedianCycleLength,
 		MinCycleLength:       stats.MinCycleLength,
@@ -186,6 +196,16 @@ func statsOverviewDate(value time.Time) *string {
 	}
 	formatted := value.Format(statsOverviewDateLayout)
 	return &formatted
+}
+
+// statsOverviewOptionalText spells an absent value as null rather than as an
+// empty string, the payload's one spelling of "withheld". It decides nothing:
+// the services leave the value empty exactly when they withhold it.
+func statsOverviewOptionalText(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 // statsOverviewDateRange renders a range's two ends as a pair: both, or neither.
