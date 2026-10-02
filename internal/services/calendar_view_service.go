@@ -58,7 +58,8 @@ func (service *CalendarViewService) BuildCalendarPageViewData(ctx context.Contex
 		return CalendarPageViewData{}, fmt.Errorf("%w: %v", ErrCalendarViewLoadLogs, err)
 	}
 
-	stats, statsLogs, err := service.stats.BuildCycleStatsForRange(ctx, user, now.AddDate(-2, 0, 0), now, now, location)
+	statsFrom, statsTo := StatsOverviewRange(now)
+	stats, statsLogs, err := service.stats.BuildCycleStatsForRange(ctx, user, statsFrom, statsTo, now, location)
 	if err != nil {
 		return CalendarPageViewData{}, fmt.Errorf("%w: %v", ErrCalendarViewLoadStats, err)
 	}

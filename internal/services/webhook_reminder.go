@@ -174,7 +174,7 @@ func DecideDueReminders(user *models.User, settings WebhookReminderSettings, log
 //
 // The count comes from the same pass that builds the due set because the
 // traversal is not cheap: it rebuilds the owner's cycle statistics from their
-// whole logged history, so deriving the counter by deciding a second time with
+// logged history, so deriving the counter by deciding a second time with
 // the watermarks cleared made the observability cost equal the cost of the work
 // it observes. Nothing about the authoritative decision changes: a kind is
 // counted exactly when its own watermark is what withheld it, which is the
@@ -190,6 +190,13 @@ func decideDueReminders(user *models.User, settings WebhookReminderSettings, log
 	// resolution) without constructing — and without depending on never
 	// dereferencing — a store-less service.
 	today := DateAtLocation(now, location)
+	// The history is cut to the window every in-app surface derives its stats
+	// from, through the same helper the dashboard calls. The notify pass is handed
+	// the owner's whole stored history, and the cycle lengths, the completed-cycle
+	// count and the overdue verdict all read it: an owner whose old cycles outlive
+	// the window would otherwise be paused in the app while a reminder, built from
+	// a different set of cycles, left the instance for a third-party endpoint.
+	logs = FilterLogsToStatsHistory(logs, now, location)
 	// Published through the one adapter every projection surface shares, so this
 	// pass holds the same cleared stats /stats and the JSON API publish, and reads
 	// the verdict it returns rather than asking the predicates a second time.

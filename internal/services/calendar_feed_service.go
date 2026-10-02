@@ -60,9 +60,10 @@ type CalendarFeedDayReader interface {
 }
 
 // calendarFeedStatsWindowYears bounds the log history loaded to compute the
-// feed's predictions. It mirrors the dashboard/stats 2-year window so the feed's
-// cycle baseline is derived from the same span the in-app surfaces use.
-const calendarFeedStatsWindowYears = 2
+// feed's predictions. It IS the dashboard/stats window (statsOverviewWindowYears,
+// the constant behind StatsOverviewRange), not a second copy of its value, so the
+// feed's cycle baseline is derived from the same span the in-app surfaces use.
+const calendarFeedStatsWindowYears = statsOverviewWindowYears
 
 // NewCalendarFeedService wires the feed service from the user store + day reader,
 // the localized-disclaimer provider (the same seam the webhook notify pass uses),
