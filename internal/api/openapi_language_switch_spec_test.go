@@ -430,16 +430,30 @@ func (root compositionRoot) everyCallPassesRoot(calls []*ast.CallExpr, index int
 // reader returns nor the list it refuses, and its 429 would never be asked of
 // the spec.
 //
-// The walk skips exactly what the go tool ignores: directories named with a
-// leading dot or underscore, and testdata. node_modules is not among them, so
-// a Go file under one would build unread; it fails here instead. A symlink or
+// The walk skips what the go tool does not build as this module: directories
+// named with a leading dot or underscore, testdata, any directory holding its
+// own go.mod, and node_modules — a dependency tree owns no module code, and a
+// package there may ship a Go file of its own (flatted does). A symlink or
 // other irregular entry (a junction on Windows) is followed when it names a
 // file and fails when it names a directory or cannot be resolved, since
-// WalkDir would otherwise pass over it in silence.
+// WalkDir would otherwise pass over it in silence; that includes a linked
+// node_modules.
 func requireNoLimiterBuiltOutsideCompositionRoot(t *testing.T) {
 	t.Helper()
-	root := filepath.Join("..", "..")
-	rootCmd := filepath.Clean(compositionRootDir)
+	offenders, walkErr := limiterOffendersOutsideCompositionRoot(filepath.Join("..", ".."), filepath.Clean(compositionRootDir))
+	if walkErr != nil {
+		t.Fatalf("walk the module for limiter imports: %v", walkErr)
+	}
+	if len(offenders) > 0 {
+		t.Fatalf("a file outside cmd/ovumcy may build a limiter this guard does not read: it imports the limiter package, or the walk cannot see inside it. Build limiters in cmd/ovumcy as app.Use([prefix,] limiter.New(limiter.Config{...})), and keep Go files out of linked directories:\n  %s",
+			strings.Join(offenders, "\n  "))
+	}
+}
+
+// limiterOffendersOutsideCompositionRoot is the walk behind
+// requireNoLimiterBuiltOutsideCompositionRoot, parameterised on the root so a
+// pin can run it over a constructed tree.
+func limiterOffendersOutsideCompositionRoot(root, rootCmd string) ([]string, error) {
 	var offenders []string
 	walkErr := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
@@ -453,19 +467,18 @@ func requireNoLimiterBuiltOutsideCompositionRoot(t *testing.T) {
 				return nil
 			}
 		} else if entry.IsDir() {
-			if path != root && (strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") || name == "testdata") {
+			if path == root {
+				return nil
+			}
+			if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") || name == "testdata" || name == "node_modules" {
+				return filepath.SkipDir
+			}
+			if _, statErr := os.Stat(filepath.Join(path, "go.mod")); statErr == nil {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if !strings.HasSuffix(name, ".go") {
-			return nil
-		}
-		if slashed := filepath.ToSlash(path); strings.Contains(slashed, "/node_modules/") {
-			offenders = append(offenders, slashed+" (a Go file under node_modules)")
-			return nil
-		}
-		if strings.HasSuffix(name, "_test.go") || filepath.Dir(path) == rootCmd {
+		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || filepath.Dir(path) == rootCmd {
 			return nil
 		}
 		parsed, parseErr := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
@@ -477,14 +490,8 @@ func requireNoLimiterBuiltOutsideCompositionRoot(t *testing.T) {
 		}
 		return nil
 	})
-	if walkErr != nil {
-		t.Fatalf("walk the module for limiter imports: %v", walkErr)
-	}
-	if len(offenders) > 0 {
-		sort.Strings(offenders)
-		t.Fatalf("a file outside cmd/ovumcy may build a limiter this guard does not read: it imports the limiter package, or the walk cannot see inside it. Build limiters in cmd/ovumcy as app.Use([prefix,] limiter.New(limiter.Config{...})), and keep Go files out of node_modules and out of linked directories:\n  %s",
-			strings.Join(offenders, "\n  "))
-	}
+	sort.Strings(offenders)
+	return offenders, walkErr
 }
 
 // discoverLimiterMounts returns every limiter the composition root builds, read
