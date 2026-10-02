@@ -44,6 +44,10 @@ var (
 	// ErrTOTPEnrollCodeInvalid is an enrollment code that does not verify
 	// against the pending secret; it has drawn the totp.enroll budget.
 	ErrTOTPEnrollCodeInvalid = errors.New("totp enroll code invalid")
+	// ErrTOTPEnrollmentStepMissing is an EnableTOTP call whose enrollment step is
+	// the zero value: no enrollment code was verified, so there is no step to
+	// record as spent. RFC 6238 step 0 is 1970; no real code matches it.
+	ErrTOTPEnrollmentStepMissing = errors.New("totp enrollment step missing")
 )
 
 // TOTPFactorVerifier answers the question a routing flag like
@@ -177,7 +181,7 @@ func (service *TOTPService) GenerateSetupKey(issuer, accountName string) (*otp.K
 // account's totp_last_used_step in the write that enables the factor, so the
 // confirmation code is already spent when 2FA goes live: the sign-in challenge
 // refuses it as it refuses any replayed step. It is opaque to callers outside
-// this package; the zero value claims no step.
+// this package; EnableTOTP refuses the zero value.
 type TOTPEnrollmentStep struct {
 	step int64
 }
@@ -259,7 +263,9 @@ func findValidatedTOTPStep(rawSecret, code string, now time.Time) (int64, bool) 
 //
 // enrollment is the step VerifyEnrollmentCode matched; the same write records
 // it as totp_last_used_step, so the code that confirmed enrollment cannot pass
-// the first sign-in challenge after it.
+// the first sign-in challenge after it. The zero value is refused with
+// ErrTOTPEnrollmentStepMissing before anything is written: enabling with it
+// would leave the confirmation code replayable at the first sign-in.
 //
 // expectedSessionVersion is the AuthSessionVersion of the session that proved
 // the enrollment code. The write happens only from that version: an account
@@ -267,6 +273,9 @@ func findValidatedTOTPStep(rawSecret, code string, now time.Time) (int64, bool) 
 // ErrAuthSessionVersionChanged, so the caller never re-issues a session that
 // would outlive that revocation.
 func (service *TOTPService) EnableTOTP(ctx context.Context, userID uint, expectedSessionVersion int, rawSecret string, enrollment TOTPEnrollmentStep) error {
+	if enrollment.step == 0 {
+		return ErrTOTPEnrollmentStepMissing
+	}
 	encrypted, err := security.EncryptField(rawSecret, service.secretKey, aadForTOTPSecret(userID))
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrTOTPSecretEncrypt, err)

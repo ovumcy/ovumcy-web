@@ -255,7 +255,7 @@ func TestNoJSSettingsFormsPerformTheActionTheyName(t *testing.T) {
 		},
 		"2fa disable": func(t *testing.T) noJSFormCase {
 			ctx := newTOTPSettingsContext(t, "nojs-2fa-disable@example.com")
-			if err := getTOTPServiceForTest(ctx.database).EnableTOTP(context.Background(), ctx.user.ID, ctx.user.AuthSessionVersion, "JBSWY3DPEHPK3PXP", services.TOTPEnrollmentStep{}); err != nil {
+			if err := getTOTPServiceForTest(ctx.database).EnableTOTP(context.Background(), ctx.user.ID, ctx.user.AuthSessionVersion, "JBSWY3DPEHPK3PXP", verifiedEnrollmentStepForTest(t, "JBSWY3DPEHPK3PXP")); err != nil {
 				t.Fatalf("EnableTOTP: %v", err)
 			}
 			ctx.refreshAuthCookie(t)

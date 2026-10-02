@@ -84,7 +84,7 @@ func TestDisableTOTP2FAVerifiesTheSessionOwnersOwnHashOnASharedMailbox(t *testin
 		t.Fatalf("create the second owner on the shared mailbox: %v", err)
 	}
 	totpService := getTOTPServiceForTest(ctx.database)
-	if err := totpService.EnableTOTP(context.Background(), other.ID, other.AuthSessionVersion, "JBSWY3DPEHPK3PXP", services.TOTPEnrollmentStep{}); err != nil {
+	if err := totpService.EnableTOTP(context.Background(), other.ID, other.AuthSessionVersion, "JBSWY3DPEHPK3PXP", verifiedEnrollmentStepForTest(t, "JBSWY3DPEHPK3PXP")); err != nil {
 		t.Fatalf("EnableTOTP for the second owner: %v", err)
 	}
 	enableTOTPForSettingsTest(t, &ctx)

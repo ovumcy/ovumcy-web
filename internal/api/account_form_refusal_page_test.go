@@ -102,7 +102,7 @@ func accountFormRefusalCases() map[string]accountFormRefusalCase {
 			back:  "/settings/2fa",
 			build: func(t *testing.T, email string) accountFormSubject {
 				ctx := newRefusalPageContext(t, email)
-				if err := getTOTPServiceForTest(ctx.database).EnableTOTP(context.Background(), ctx.user.ID, ctx.user.AuthSessionVersion, "JBSWY3DPEHPK3PXP", services.TOTPEnrollmentStep{}); err != nil {
+				if err := getTOTPServiceForTest(ctx.database).EnableTOTP(context.Background(), ctx.user.ID, ctx.user.AuthSessionVersion, "JBSWY3DPEHPK3PXP", verifiedEnrollmentStepForTest(t, "JBSWY3DPEHPK3PXP")); err != nil {
 					t.Fatalf("EnableTOTP: %v", err)
 				}
 				ctx.refreshAuthCookie(t)

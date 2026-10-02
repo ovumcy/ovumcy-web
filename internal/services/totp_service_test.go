@@ -185,7 +185,7 @@ func TestTOTPService_EnableTOTP_StoresEncryptedSecret(t *testing.T) {
 	svc := NewTOTPService(repo, []byte("test-secret-key-32-bytes-padding!"), nil)
 
 	rawSecret := "JBSWY3DPEHPK3PXP"
-	if err := svc.EnableTOTP(context.Background(), 42, 1, rawSecret, TOTPEnrollmentStep{}); err != nil {
+	if err := svc.EnableTOTP(context.Background(), 42, 1, rawSecret, pastEnrollmentStep()); err != nil {
 		t.Fatalf("EnableTOTP() error: %v", err)
 	}
 
@@ -216,7 +216,7 @@ func TestTOTPService_ValidateCode_EncryptDecryptRoundTrip(t *testing.T) {
 		t.Fatalf("GenerateSetupKey() error: %v", err)
 	}
 
-	if err := svc.EnableTOTP(context.Background(), 1, 1, key.Secret(), TOTPEnrollmentStep{}); err != nil {
+	if err := svc.EnableTOTP(context.Background(), 1, 1, key.Secret(), pastEnrollmentStep()); err != nil {
 		t.Fatalf("EnableTOTP() error: %v", err)
 	}
 	encryptedSecret := repo.updatedSecret
@@ -245,7 +245,7 @@ func TestTOTPService_ValidateCode_ReplayRejected(t *testing.T) {
 		t.Fatalf("GenerateSetupKey() error: %v", err)
 	}
 
-	if err := svc.EnableTOTP(context.Background(), 1, 1, key.Secret(), TOTPEnrollmentStep{}); err != nil {
+	if err := svc.EnableTOTP(context.Background(), 1, 1, key.Secret(), pastEnrollmentStep()); err != nil {
 		t.Fatalf("EnableTOTP() error: %v", err)
 	}
 	encryptedSecret := repo.updatedSecret
@@ -290,7 +290,7 @@ func TestTOTPService_ValidateCode_ReplaySurvivesServiceRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateSetupKey() error: %v", err)
 	}
-	if err := svc.EnableTOTP(context.Background(), 1, 1, key.Secret(), TOTPEnrollmentStep{}); err != nil {
+	if err := svc.EnableTOTP(context.Background(), 1, 1, key.Secret(), pastEnrollmentStep()); err != nil {
 		t.Fatalf("EnableTOTP() error: %v", err)
 	}
 	encryptedSecret := repo.updatedSecret
@@ -325,12 +325,12 @@ func TestTOTPService_ValidateCode_SameCodeDifferentUser_Allowed(t *testing.T) {
 		t.Fatalf("GenerateSetupKey() error: %v", err)
 	}
 
-	if err := svc.EnableTOTP(context.Background(), 1, 1, key.Secret(), TOTPEnrollmentStep{}); err != nil {
+	if err := svc.EnableTOTP(context.Background(), 1, 1, key.Secret(), pastEnrollmentStep()); err != nil {
 		t.Fatalf("EnableTOTP() user 1 error: %v", err)
 	}
 	encrypted1 := repo.updatedSecret
 
-	if err := svc.EnableTOTP(context.Background(), 2, 1, key.Secret(), TOTPEnrollmentStep{}); err != nil {
+	if err := svc.EnableTOTP(context.Background(), 2, 1, key.Secret(), pastEnrollmentStep()); err != nil {
 		t.Fatalf("EnableTOTP() user 2 error: %v", err)
 	}
 	encrypted2 := repo.updatedSecret
@@ -381,10 +381,30 @@ func TestTOTPService_EnableTOTP_RepoError(t *testing.T) {
 	repo := &stubTOTPUserRepo{updateErr: ErrTOTPUpdateFailed}
 	svc := NewTOTPService(repo, []byte("test-secret-key-32-bytes-padding!"), nil)
 
-	err := svc.EnableTOTP(context.Background(), 1, 1, "JBSWY3DPEHPK3PXP", TOTPEnrollmentStep{})
-	if err == nil {
-		t.Fatal("EnableTOTP() should propagate repo error")
+	err := svc.EnableTOTP(context.Background(), 1, 1, "JBSWY3DPEHPK3PXP", pastEnrollmentStep())
+	if !errors.Is(err, ErrTOTPUpdateFailed) {
+		t.Fatalf("EnableTOTP() error = %v, want the repo error as ErrTOTPUpdateFailed", err)
 	}
+}
+
+func TestTOTPService_EnableTOTP_RefusesAZeroEnrollmentStep(t *testing.T) {
+	repo := &stubTOTPUserRepo{}
+	svc := NewTOTPService(repo, []byte("test-secret-key-32-bytes-padding!"), nil)
+
+	err := svc.EnableTOTP(context.Background(), 42, 1, "JBSWY3DPEHPK3PXP", TOTPEnrollmentStep{})
+	if !errors.Is(err, ErrTOTPEnrollmentStepMissing) {
+		t.Fatalf("EnableTOTP(zero step) error = %v, want ErrTOTPEnrollmentStepMissing", err)
+	}
+	if repo.updateTOTPCalled {
+		t.Fatal("EnableTOTP(zero step) wrote the TOTP columns")
+	}
+}
+
+// pastEnrollmentStep is the step an enrollment confirmed an hour ago would have
+// recorded: nonzero, as EnableTOTP requires, and below the step of any code a
+// test sends now.
+func pastEnrollmentStep() TOTPEnrollmentStep {
+	return TOTPEnrollmentStep{step: time.Now().Add(-time.Hour).Unix() / totpStepSeconds}
 }
 
 // --- rate-limit: verification (CheckRateLimit / RecordFailure / ResetAttempts) ---

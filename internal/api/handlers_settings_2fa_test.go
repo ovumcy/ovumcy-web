@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -54,6 +55,32 @@ func newTOTPSettingsContext(t *testing.T, email string) settingsSecurityTestCont
 
 func getTOTPServiceForTest(database *gorm.DB) *services.TOTPService {
 	return services.NewTOTPService(&dbUserRepoForTest{database}, []byte("test-secret-key"), nil)
+}
+
+// verifiedEnrollmentStepForTest is the step a real confirmation of secret
+// records, found by VerifyEnrollmentCode as the enrollment handler finds it.
+// The code is one step old, so a code the test generates now stays above the
+// replay floor EnableTOTP sets. A step boundary falling between generating and
+// verifying it puts it out of the skew window; the second try does not straddle
+// one.
+func verifiedEnrollmentStepForTest(t *testing.T, secret string) services.TOTPEnrollmentStep {
+	t.Helper()
+	svc := services.NewTOTPService(nil, []byte("test-secret-key"), nil)
+	for range 2 {
+		code, err := totp.GenerateCode(secret, time.Now().Add(-30*time.Second))
+		if err != nil {
+			t.Fatalf("GenerateCode: %v", err)
+		}
+		step, err := svc.VerifyEnrollmentCode(svc.EnrollCodeBudget([]byte("test-secret-key")), services.ReauthAttempt{ClientKey: "fixture"}, secret, code)
+		if err == nil {
+			return step
+		}
+		if !errors.Is(err, services.ErrTOTPEnrollCodeInvalid) {
+			t.Fatalf("VerifyEnrollmentCode: %v", err)
+		}
+	}
+	t.Fatal("VerifyEnrollmentCode refused a one-step-old code twice")
+	return services.TOTPEnrollmentStep{}
 }
 
 // invalidTOTPCodeForSkewWindow returns a 6-digit code proven NOT to validate
@@ -140,7 +167,7 @@ func TestShowTOTPSetupPage_TOTPNotEnabled_RendersQRAndSecret(t *testing.T) {
 func TestShowTOTPSetupPage_TOTPEnabled_ShowsManagementView(t *testing.T) {
 	ctx := newTOTPSettingsContext(t, "totp-setup-enabled@example.com")
 	svc := getTOTPServiceForTest(ctx.database)
-	if err := svc.EnableTOTP(context.Background(), ctx.user.ID, ctx.user.AuthSessionVersion, "JBSWY3DPEHPK3PXP", services.TOTPEnrollmentStep{}); err != nil {
+	if err := svc.EnableTOTP(context.Background(), ctx.user.ID, ctx.user.AuthSessionVersion, "JBSWY3DPEHPK3PXP", verifiedEnrollmentStepForTest(t, "JBSWY3DPEHPK3PXP")); err != nil {
 		t.Fatalf("EnableTOTP: %v", err)
 	}
 	// EnableTOTP bumps auth_session_version atomically, so the pre-enable
@@ -663,7 +690,7 @@ func TestVerifyTOTP2FAEnrollmentClearsTheSetupCookieWhenTheSessionReissueIsRefus
 func TestDisableTOTP2FA_CorrectPassword_DisablesTOTP(t *testing.T) {
 	ctx := newTOTPSettingsContext(t, "totp-disable-correct@example.com")
 	svc := getTOTPServiceForTest(ctx.database)
-	if err := svc.EnableTOTP(context.Background(), ctx.user.ID, ctx.user.AuthSessionVersion, "JBSWY3DPEHPK3PXP", services.TOTPEnrollmentStep{}); err != nil {
+	if err := svc.EnableTOTP(context.Background(), ctx.user.ID, ctx.user.AuthSessionVersion, "JBSWY3DPEHPK3PXP", verifiedEnrollmentStepForTest(t, "JBSWY3DPEHPK3PXP")); err != nil {
 		t.Fatalf("EnableTOTP: %v", err)
 	}
 	// EnableTOTP bumped auth_session_version, so refresh the cookie before
@@ -693,7 +720,7 @@ func TestDisableTOTP2FA_CorrectPassword_DisablesTOTP(t *testing.T) {
 func TestDisableTOTP2FA_WrongPassword_ReturnsError(t *testing.T) {
 	ctx := newTOTPSettingsContext(t, "totp-disable-wrong@example.com")
 	svc := getTOTPServiceForTest(ctx.database)
-	if err := svc.EnableTOTP(context.Background(), ctx.user.ID, ctx.user.AuthSessionVersion, "JBSWY3DPEHPK3PXP", services.TOTPEnrollmentStep{}); err != nil {
+	if err := svc.EnableTOTP(context.Background(), ctx.user.ID, ctx.user.AuthSessionVersion, "JBSWY3DPEHPK3PXP", verifiedEnrollmentStepForTest(t, "JBSWY3DPEHPK3PXP")); err != nil {
 		t.Fatalf("EnableTOTP: %v", err)
 	}
 	// EnableTOTP bumped auth_session_version; without a refreshed cookie the
@@ -725,7 +752,7 @@ func TestDisableTOTP2FA_WrongPassword_ReturnsError(t *testing.T) {
 func TestDisableTOTP2FA_RateLimited_AfterRepeatedWrongPassword(t *testing.T) {
 	ctx := newTOTPSettingsContext(t, "totp-disable-rl@example.com")
 	svc := getTOTPServiceForTest(ctx.database)
-	if err := svc.EnableTOTP(context.Background(), ctx.user.ID, ctx.user.AuthSessionVersion, "JBSWY3DPEHPK3PXP", services.TOTPEnrollmentStep{}); err != nil {
+	if err := svc.EnableTOTP(context.Background(), ctx.user.ID, ctx.user.AuthSessionVersion, "JBSWY3DPEHPK3PXP", verifiedEnrollmentStepForTest(t, "JBSWY3DPEHPK3PXP")); err != nil {
 		t.Fatalf("EnableTOTP: %v", err)
 	}
 

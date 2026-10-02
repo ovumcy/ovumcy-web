@@ -12,7 +12,6 @@ import (
 	"github.com/pquerna/otp/totp"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
-	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 // TestVerifyTOTP2FAEnrollment_BumpsSessionVersion captures the contract that
@@ -80,7 +79,7 @@ func TestVerifyTOTP2FAEnrollment_BumpsSessionVersion(t *testing.T) {
 // gated.
 func TestDisableTOTP2FA_BumpsSessionVersion(t *testing.T) {
 	ctx := newTOTPSettingsContext(t, "totp-disable-bumps-sv@example.com")
-	if err := getTOTPServiceForTest(ctx.database).EnableTOTP(context.Background(), ctx.user.ID, ctx.user.AuthSessionVersion, "JBSWY3DPEHPK3PXP", services.TOTPEnrollmentStep{}); err != nil {
+	if err := getTOTPServiceForTest(ctx.database).EnableTOTP(context.Background(), ctx.user.ID, ctx.user.AuthSessionVersion, "JBSWY3DPEHPK3PXP", verifiedEnrollmentStepForTest(t, "JBSWY3DPEHPK3PXP")); err != nil {
 		t.Fatalf("EnableTOTP setup: %v", err)
 	}
 	ctx.refreshAuthCookie(t)

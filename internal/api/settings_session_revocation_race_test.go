@@ -245,7 +245,7 @@ func settingsPostureRevokingWriteSites(htmx bool) []revokingWriteSite {
 			securityEventOutcome: "disabled",
 			prepare: func(t *testing.T, hooks *revokingWriteHooks) revokingWriteRun {
 				ctx := revokingWriteSettingsContext(t, "race-totp-disable"+tag+"@example.com", hooks)
-				if err := getTOTPServiceForTest(ctx.database).EnableTOTP(context.Background(), ctx.user.ID, ctx.user.AuthSessionVersion, "JBSWY3DPEHPK3PXP", services.TOTPEnrollmentStep{}); err != nil {
+				if err := getTOTPServiceForTest(ctx.database).EnableTOTP(context.Background(), ctx.user.ID, ctx.user.AuthSessionVersion, "JBSWY3DPEHPK3PXP", verifiedEnrollmentStepForTest(t, "JBSWY3DPEHPK3PXP")); err != nil {
 					t.Fatalf("EnableTOTP setup: %v", err)
 				}
 				ctx.refreshAuthCookie(t)
