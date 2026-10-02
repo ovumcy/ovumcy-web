@@ -555,14 +555,14 @@ func TestEveryExampleStackForwardsEveryRuntimeConfigKey(t *testing.T) {
 	// so found only the direct os.Getenv reads) cannot pass on the keys alone.
 	for _, want := range []string{"REGISTRATION_MODE", "HSTS_ENABLED", "RATE_LIMIT_PASSWORD_RESET_REDEEM_WINDOW", "SECRET_KEY_FILE", "CALENDAR_FEED_FENCE_PATH", "TZ"} {
 		if !keys[want] {
-			t.Fatalf("the source scan did not find %s: it is not reaching the keys the binary reads (found %d)", want, len(keys))
+			t.Errorf("the source scan did not find %s: it is not reaching the keys the binary reads (found %d)", want, len(keys))
 		}
 	}
 	for name, wantIndexes := range map[string][]int{"getEnv": {0}, "getCredentialRateLimit": {0, 1}, "resolveSecretFromEnvOrFile": {0, 1}} {
 		got := readerNamed(readers, "/cmd/ovumcy", name)
 		for _, index := range wantIndexes {
 			if !got[index] {
-				t.Fatalf("reader %s was not derived with parameter %d as a key (got %v): the scan is not following parameters into os.Getenv", name, index, got)
+				t.Errorf("reader %s was not derived with parameter %d as a key (got %v): the scan is not following parameters into os.Getenv", name, index, got)
 			}
 		}
 	}
