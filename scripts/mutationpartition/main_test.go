@@ -124,6 +124,48 @@ func f(a, b int) int {
 	}
 }
 
+// A listed file costs its own rate, an unlisted one its package's mean, and a
+// package the table does not list costs the plain candidate count — which is
+// what every fixture directory the tests run against gets.
+func TestRateFallsBackFromFileToPackageToPlainCount(t *testing.T) {
+	costs := map[string]PackageCosts{"api": {Default: 100, Files: map[string]float64{"slow.go": 300}}}
+	for _, c := range []struct {
+		pkg, name string
+		want      float64
+	}{
+		{"api", "slow.go", 300},
+		{"api", "new.go", 100},
+		{"elsewhere", "slow.go", 1},
+	} {
+		if got := Rate(costs, c.pkg, c.name); got != c.want {
+			t.Errorf("Rate(%q, %q) = %v, want %v", c.pkg, c.name, got, c.want)
+		}
+	}
+	if got, want := Cost(0, 300), 0; got != want {
+		t.Errorf("Cost(0, 300) = %d, want %d: a file with no candidates must stay free", got, want)
+	}
+}
+
+// The shipped table is what mutation.sh's shards are dealt by, so a malformed
+// or emptied one must fail here rather than in a matrix job.
+func TestShippedCostsCoverEveryShardedPackage(t *testing.T) {
+	costs, err := loadCosts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pkg := range []string{"api", "services"} {
+		entry, ok := costs[pkg]
+		if !ok || entry.Default <= 0 || len(entry.Files) == 0 {
+			t.Errorf("costs[%q] = %+v, want a positive default and measured files", pkg, entry)
+		}
+		for name, rate := range entry.Files {
+			if rate <= 0 {
+				t.Errorf("costs[%q].Files[%q] = %v, want a positive rate", pkg, name, rate)
+			}
+		}
+	}
+}
+
 func TestReadNamesRefusesWhatShardFilesCannotProduce(t *testing.T) {
 	for _, listing := range []string{
 		"a.go\nb c.go\n",   // a space would split the exclusion argument

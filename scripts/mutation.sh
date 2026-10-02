@@ -107,11 +107,17 @@ TARGETS=(
 # on that even weight (0.4..>2.77 min/weight), so the token-count weight ranks
 # files badly: it ignores which tests cover a file, and a handler that only the
 # DB-backed step-up/OIDC suites reach costs several times a helper the fast
-# tests kill. No per-file rate is recoverable from per-shard wall times, so
-# the fix is finer shards, not a re-weighting: 30 shards bring internal/api to
-# ~43-44 weight each, and the slowest observed rate (>=2.77/weight) then lands
-# near 122 minutes plus the fixed whole-package coverage pass (up to ~9), a
-# ~1.4x margin to the cap. Keep this registry in sync
+# tests kill. Per-shard wall times cannot give a per-file rate, so 30 shards
+# were the first answer: ~43-44 weight each, the slowest observed rate
+# (>=2.77/weight) near 122 minutes plus the whole-package coverage pass (up to
+# ~9), a ~1.4x margin to the cap. Run 36942283202 then showed the weight itself
+# is what misranks: gremlins stamps every mutant's verdict, so each file's cost
+# is recoverable from the gaps between verdicts. scripts/mutationpartition
+# scales each file's weight by that measured rate (its costs.json); on the
+# measured files the heaviest internal/api shard falls from 145 to ~123 minutes
+# and internal/services from past the cap to ~129. One file (stats_page_helpers.go,
+# ~110 minutes alone) bounds how far any split can go. Re-measure after a run
+# that cancels a cell. Keep this registry in sync
 # with the matrix in .github/workflows/mutation.yml. Entries are
 # "slug-base:package-dir:count".
 SHARDED_PKGS=(
