@@ -28,6 +28,13 @@ var (
 	// service, it marks a replay or a concurrent redeem, not a DB failure.
 	ErrResetTokenAlreadyConsumed = errors.New("reset token already consumed")
 
+	// ErrTOTPEnrollmentStepMissing reports a 2FA enable whose replay floor is
+	// not a positive RFC 6238 step: no enrollment code produced it, and with it
+	// the confirmation code would stay valid at the first sign-in. Raised by
+	// the TOTP service ahead of the write, and by the user repository's TOTP
+	// writer for a caller that reaches it directly.
+	ErrTOTPEnrollmentStepMissing = errors.New("totp enrollment step missing")
+
 	// ErrOIDCLogoutStateUnattributed reports that a provider-logout state
 	// read, write or delete arrived with no owner id. Every row is one
 	// owner's, so a missing owner is invalid input rather than a licence to

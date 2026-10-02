@@ -1475,7 +1475,7 @@ func (repo *UserRepository) BumpAuthSessionVersion(ctx context.Context, userID u
 // already consumed when the factor goes live and the sign-in challenge
 // (ClaimTOTPStep) refuses it as a replay; a disable passes 0, as there is no
 // secret left whose steps could be claimed. An enable with a step of 0 or
-// below is refused with ErrTOTPEnableStepRequired and writes nothing: that
+// below is refused with ErrTOTPEnrollmentStepMissing and writes nothing: that
 // floor would leave the confirmation code valid at the first sign-in.
 //
 // The increment is a compare-and-set from expectedSessionVersion, the version
@@ -1488,7 +1488,7 @@ func (repo *UserRepository) UpdateTOTPFieldsAndRevokeSessions(ctx context.Contex
 		return err
 	}
 	if enabled && lastUsedStep <= 0 {
-		return ErrTOTPEnableStepRequired
+		return ErrTOTPEnrollmentStepMissing
 	}
 	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		_, err := updateFromAuthSessionVersionTx(tx, userID, expectedSessionVersion, map[string]any{

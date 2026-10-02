@@ -29,11 +29,10 @@ var ErrResetTokenAlreadyConsumed = models.ErrResetTokenAlreadyConsumed
 // role there is.
 var ErrUnsupportedUserRole = errors.New("unsupported user role")
 
-// ErrTOTPEnableStepRequired is returned by UpdateTOTPFieldsAndRevokeSessions
-// when an enable carries no positive replay floor. The floor is the step the
-// enrollment confirmation code matched; without it that code stays valid at the
-// first sign-in challenge.
-var ErrTOTPEnableStepRequired = errors.New("totp enable requires the enrollment step")
+// ErrTOTPEnrollmentStepMissing is returned by UpdateTOTPFieldsAndRevokeSessions
+// when an enable carries no positive replay floor. It is the shared value from
+// internal/models, the one the TOTP service raises for the same fact.
+var ErrTOTPEnrollmentStepMissing = models.ErrTOTPEnrollmentStepMissing
 
 // ErrOIDCLogoutStateUnattributed is returned by the OIDC logout-state
 // repository when a read, a delete or a write arrives with no owner id. Every
