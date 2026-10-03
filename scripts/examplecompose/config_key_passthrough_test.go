@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"go/ast"
 	"go/constant"
+	"go/token"
 	"go/types"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -34,12 +36,16 @@ import (
 // expression; the argument is identified by its declaration, never by the shape
 // of the node. A function of the module that hands one of its own parameters,
 // unchanged, to such a reader (or to another one) is a reader of that parameter
-// itself, and is found by running that to a fixed point rather than listed. An
-// argument in a reader's name position that is neither a constant nor the
-// enclosing function's own parameter cannot be resolved and fails the run
-// instead of being skipped. A call or mention of os.Environ, os.ExpandEnv or
-// os.Expand from the module fails the run, because the names read through them
-// are not in the source.
+// itself, and is found by running that to a fixed point rather than listed. A
+// parameter is unchanged only if nothing in the function body (a closure
+// included) assigns to it, ranges into it or takes its address;
+// one that does is not followed, and handing it to a reader fails the run
+// naming the position, because the name that reaches the reader is no longer
+// the one the caller passed. An argument in a reader's name position that is
+// neither a constant nor the enclosing function's own parameter cannot be
+// resolved and fails the run instead of being skipped. A call or mention of
+// os.Environ, os.ExpandEnv or os.Expand from the module fails the run, because
+// the names read through them are not in the source.
 //
 // What it does not read, so that a green run is not taken for more:
 //   - Reads inside dependencies, the standard library included. A library that
@@ -183,24 +189,61 @@ func keyArgIndexes(info *types.Info, call *ast.CallExpr, readers map[*types.Func
 	return indexes
 }
 
-// paramIndex reports which parameter of fn the expression arg is, when it is
-// exactly that parameter and nothing computed from it.
-func paramIndex(info *types.Info, fn *types.Func, arg ast.Expr) (int, bool) {
+// ownParam reports which parameter of fn the expression arg names, by
+// declaration, whether or not the function changes it afterwards.
+func ownParam(info *types.Info, fn *types.Func, arg ast.Expr) (int, *types.Var, bool) {
 	ident, ok := ast.Unparen(arg).(*ast.Ident)
 	if !ok || fn == nil {
-		return 0, false
+		return 0, nil, false
 	}
 	variable, ok := info.Uses[ident].(*types.Var)
 	if !ok {
-		return 0, false
+		return 0, nil, false
 	}
 	params := fn.Type().(*types.Signature).Params()
 	for i := range params.Len() {
 		if params.At(i) == variable {
-			return i, true
+			return i, variable, true
 		}
 	}
-	return 0, false
+	return 0, nil, false
+}
+
+// rewritten is true when anything under body assigns to variable (an
+// operator-assignment included), ranges into it, or takes its address, so that
+// what it holds at a later read is no longer what the caller passed. A name
+// parameter is a string, which has no increment.
+func rewritten(info *types.Info, body ast.Node, variable *types.Var) bool {
+	is := func(expr ast.Expr) bool {
+		ident, ok := ast.Unparen(expr).(*ast.Ident)
+		return ok && info.ObjectOf(ident) == variable
+	}
+	found := false
+	ast.Inspect(body, func(node ast.Node) bool {
+		switch node := node.(type) {
+		case *ast.AssignStmt:
+			for _, lhs := range node.Lhs {
+				found = found || is(lhs)
+			}
+		case *ast.RangeStmt:
+			found = found || (node.Key != nil && is(node.Key)) || (node.Value != nil && is(node.Value))
+		case *ast.UnaryExpr:
+			found = found || (node.Op == token.AND && is(node.X))
+		}
+		return !found
+	})
+	return found
+}
+
+// paramIndex reports which parameter of fn the expression arg is, when it is
+// exactly that parameter, nothing computed from it, and the function body never
+// changes it.
+func paramIndex(info *types.Info, fn *types.Func, body ast.Node, arg ast.Expr) (int, bool) {
+	index, variable, ok := ownParam(info, fn, arg)
+	if !ok || rewritten(info, body, variable) {
+		return 0, false
+	}
+	return index, true
 }
 
 // deriveReaders finds every function of pkgs that reads an environment variable
@@ -231,7 +274,7 @@ func deriveReaders(pkgs []*packages.Package) map[*types.Func]map[int]bool {
 							if index >= len(call.Args) {
 								continue
 							}
-							param, flows := paramIndex(pkg.TypesInfo, self, call.Args[index])
+							param, flows := paramIndex(pkg.TypesInfo, self, funcDecl.Body, call.Args[index])
 							if !flows || readers[self][param] {
 								continue
 							}
@@ -288,7 +331,7 @@ func scanModule(dir, pattern string) (moduleScan, error) {
 							scan.problems = append(scan.problems, fmt.Sprintf("%s: %s hands back the whole environment, or expands names found in a string, so the variables read through it are not named in the source; read each variable by name through os.Getenv or os.LookupEnv", where(node), fn.FullName()))
 						}
 					case *ast.CallExpr:
-						scan.addReads(info, self, node, where)
+						scan.addReads(info, self, decl, node, where)
 					}
 					return true
 				})
@@ -302,7 +345,7 @@ func scanModule(dir, pattern string) (moduleScan, error) {
 // addReads records the keys call reads: the constant in each name position, or
 // a problem when that argument is neither a constant nor the enclosing
 // function's own parameter.
-func (s *moduleScan) addReads(info *types.Info, self *types.Func, call *ast.CallExpr, where func(ast.Node) string) {
+func (s *moduleScan) addReads(info *types.Info, self *types.Func, body ast.Node, call *ast.CallExpr, where func(ast.Node) string) {
 	for _, index := range keyArgIndexes(info, call, s.readers) {
 		if index >= len(call.Args) {
 			continue
@@ -313,7 +356,11 @@ func (s *moduleScan) addReads(info *types.Info, self *types.Func, call *ast.Call
 			s.reads[key] = append(s.reads[key], where(arg))
 			continue
 		}
-		if _, flows := paramIndex(info, self, arg); flows {
+		if _, flows := paramIndex(info, self, body, arg); flows {
+			continue
+		}
+		if _, variable, own := ownParam(info, self, arg); own {
+			s.problems = append(s.problems, fmt.Sprintf("%s: parameter %s of %s is assigned to, ranged into or has its address taken, so the name passed to %s is no longer the one the caller handed in and no key can be identified; read it into a new variable under another name, or pass the parameter on unchanged", where(arg), variable.Name(), self.Name(), calledFunc(info, call).FullName()))
 			continue
 		}
 		s.problems = append(s.problems, fmt.Sprintf("%s: the environment variable name passed to %s is neither a constant nor a parameter of the function that passes it on, so no key can be identified; resolve it to a constant, or read it through a helper that takes the name as a parameter", where(arg), calledFunc(info, call).FullName()))
@@ -355,8 +402,13 @@ var (
 // whitespace, so the `#` inside `${KEY:-a#b}` is part of the value. In the map
 // form (`KEY: "a # b"`) a quoted scalar ends at its closing quote and a `#`
 // inside it is content; the list form (`- KEY=value`) is one plain scalar, so
-// quotes there protect nothing.
-func entryValue(raw string, mapForm bool) string {
+// quotes there protect nothing and are part of the value Compose hands the app.
+// The value returned is what the app receives: the quotes of a map-form scalar
+// are removed (its escapes are not decoded, which only a value that is not a
+// plain passthrough could depend on), the quotes of a list-form value stay. The
+// second result is true for a quoted map-form scalar, which is a value even
+// when empty, unlike a bare `KEY:`.
+func entryValue(raw string, mapForm bool) (string, bool) {
 	if mapForm && raw != "" && (raw[0] == '"' || raw[0] == '\'') {
 		quote := raw[0]
 		for i := 1; i < len(raw); i++ {
@@ -366,17 +418,17 @@ func entryValue(raw string, mapForm bool) string {
 			case raw[i] == quote && quote == '\'' && i+1 < len(raw) && raw[i+1] == '\'':
 				i++
 			case raw[i] == quote:
-				return raw[:i+1]
+				return raw[1:i], true
 			}
 		}
-		return strings.TrimSpace(raw)
+		return strings.TrimSpace(raw), false
 	}
 	for i := range len(raw) {
 		if raw[i] == '#' && (i == 0 || raw[i-1] == ' ' || raw[i-1] == '\t') {
-			return strings.TrimSpace(raw[:i])
+			return strings.TrimSpace(raw[:i]), false
 		}
 	}
-	return strings.TrimSpace(raw)
+	return strings.TrimSpace(raw), false
 }
 
 // environmentKeyLine is true for a line that is one environment entry: a key
@@ -426,8 +478,8 @@ func parseOvumcyEnvironment(content string) (env map[string]string, ok bool) {
 				switch {
 				case tail != nil:
 					separator := strings.TrimSpace(tail[1])
-					value := entryValue(tail[2], separator == ":" && !listEntry)
-					if separator == ":" && !listEntry && value == "" {
+					value, quoted := entryValue(tail[2], separator == ":" && !listEntry)
+					if separator == ":" && !listEntry && value == "" && !quoted {
 						// `KEY:` with no value is null in YAML, which compose
 						// resolves from the shell or .env like the bare list entry.
 						value = "${" + key + "}"
@@ -463,29 +515,25 @@ func composesDatabaseURL(s stack) bool {
 // fixesPostgresDriver is true for a stack that pins DB_DRIVER to postgres
 // rather than leaving the choice to the operator.
 func fixesPostgresDriver(s stack) bool {
-	return unquoted(s.env["DB_DRIVER"]) == "postgres"
+	return s.env["DB_DRIVER"] == "postgres"
 }
 
 // fixesProxyTrust is true for a stack that sets TRUST_PROXY_ENABLED to true,
 // that is, one whose topology puts a reverse proxy in front of the app.
 func fixesProxyTrust(s stack) bool {
-	return unquoted(s.env["TRUST_PROXY_ENABLED"]) == "true"
+	return s.env["TRUST_PROXY_ENABLED"] == "true"
 }
 
-// unquoted strips the YAML quotes around a scalar.
-func unquoted(value string) string {
-	return strings.Trim(value, `"'`)
-}
-
-// isPassthrough is true when value hands the operator's setting of key to the
-// app unchanged: `${KEY}`, `${KEY:-default}`, `${KEY-default}`,
-// `${KEY:?message}` and `${KEY?message}`, and nothing after the closing brace.
-// A literal, a substitution of a different variable, the alternate-value forms
-// (`${KEY:+alt}` and `${KEY+alt}` yield `alt` exactly when the operator did set
-// the key) and a substitution with text around it all leave the operator's
-// value for key unread.
+// isPassthrough is true when value, as the app would receive it (the stored
+// value has its map-form quotes removed and its list-form quotes kept), hands
+// the operator's setting of key on unchanged: `${KEY}`, `${KEY:-default}`,
+// `${KEY-default}`, `${KEY:?message}` and `${KEY?message}`, and nothing after
+// the closing brace. A literal, a substitution of a different variable, the
+// alternate-value forms (`${KEY:+alt}` and `${KEY+alt}` yield `alt` exactly when
+// the operator did set the key), a substitution with text around it (a quote
+// character included) all leave the operator's value for key unread.
 func isPassthrough(key, value string) bool {
-	rest, ok := strings.CutPrefix(unquoted(value), "${"+key)
+	rest, ok := strings.CutPrefix(value, "${"+key)
 	if !ok || rest == "" {
 		return false
 	}
@@ -533,42 +581,98 @@ var forwardingExemptions = map[string]exemption{
 	},
 }
 
+// pin is a key an example stack sets to a fixed value instead of passing the
+// operator's through.
+type pin struct {
+	reason  string
+	applies func(stack) bool
+	// accepts decides whether the value the stack writes is the fixed one the pin
+	// names, so a substitution of another variable, which is operator-controlled
+	// under another name, or a literal of the wrong value is not a pin.
+	accepts func(value string) bool
+	// fixed says in words what accepts takes, for the refusal.
+	fixed string
+}
+
+// exactly accepts only one of the given literals, which carry no substitution.
+func exactly(literals ...string) func(string) bool {
+	return func(value string) bool { return slices.Contains(literals, value) }
+}
+
+var (
+	proxyRange = regexp.MustCompile(`^[0-9]{1,3}(\.[0-9]{1,3}){3}/[0-9]{1,2}$`)
+	// substitutedName matches the name in each `$NAME` or `${NAME...` of a value.
+	substitutedName = regexp.MustCompile(`\$\{?([A-Za-z_][A-Za-z0-9_]*)`)
+)
+
+// composedFromPostgresService accepts the URL a stack builds for its own
+// postgres service: that service as the host, and no variable substituted but
+// the three credentials the same stack gives that service.
+func composedFromPostgresService(value string) bool {
+	if !strings.HasPrefix(value, "postgres://") || !strings.Contains(value, "@postgres:5432/") {
+		return false
+	}
+	for _, name := range substitutedName.FindAllStringSubmatch(value, -1) {
+		if !slices.Contains([]string{"POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_DB"}, name[1]) {
+			return false
+		}
+	}
+	return true
+}
+
 // pinnedLiterals is the whole list of keys an example stack may set to a fixed
 // value instead of passing the operator's through. A key here is set by the
 // stack on purpose, so a value in .env does not reach the app; the runbook names
 // them. A key is not added to make the test pass: it is added only when the
 // stack's own wiring (a mounted volume, the postgres service, the proxy
-// network) would break if the operator could change the value.
-var pinnedLiterals = map[string]exemption{
+// network) would break if the operator could change the value, and the value
+// the stack may write is stated beside it.
+var pinnedLiterals = map[string]pin{
 	"DB_DRIVER": {
 		reason:  "the stack ships its own postgres service and is wired to it, so the driver is part of the stack",
 		applies: fixesPostgresDriver,
+		accepts: exactly("postgres"),
+		fixed:   "the literal postgres",
 	},
 	"DATABASE_URL": {
 		reason:  "the stack builds the URL from its own postgres service and the POSTGRES_* credentials, so it is derived rather than passed through",
 		applies: composesDatabaseURL,
+		accepts: composedFromPostgresService,
+		fixed:   "a postgres:// URL to the stack's postgres service with only POSTGRES_USER, POSTGRES_PASSWORD and POSTGRES_DB substituted",
 	},
 	"DB_PATH": {
 		reason:  "the path is a file inside the stack's data volume, so another path would write outside the volume and lose the data on the next container replacement",
 		applies: func(s stack) bool { return !fixesPostgresDriver(s) },
+		accepts: exactly("/app/data/ovumcy.db"),
+		fixed:   "the literal /app/data/ovumcy.db",
 	},
 	"CALENDAR_FEED_FENCE_PATH": {
-		reason: "the path is where the stack mounts the ovumcy_fence volume, so another path would write the restore fence outside the volume and disarm every calendar feed on each start",
+		reason:  "the path is where the stack mounts the ovumcy_fence volume, so another path would write the restore fence outside the volume and disarm every calendar feed on each start",
+		accepts: exactly("/app/fence/calendar-feed.fence"),
+		fixed:   "the literal /app/fence/calendar-feed.fence",
 	},
 	"COOKIE_SECURE": {
 		reason:  "the proxy stack serves the app over HTTPS only, so session cookies must stay Secure whatever .env says",
 		applies: fixesProxyTrust,
+		accepts: exactly("true"),
+		fixed:   "the literal true",
 	},
 	"TRUST_PROXY_ENABLED": {
-		reason: "whether a reverse proxy fronts the app is the stack's topology: trusting forwarded headers on a stack with no proxy lets any client choose its own address, and distrusting them behind the proxy puts every client behind the proxy's address",
+		reason:  "whether a reverse proxy fronts the app is the stack's topology: trusting forwarded headers on a stack with no proxy lets any client choose its own address, and distrusting them behind the proxy puts every client behind the proxy's address",
+		accepts: exactly("true", "false"),
+		fixed:   "the literal true or false",
 	},
 	"PROXY_HEADER": {
 		reason:  "the header must be the one this stack's proxy config overwrites with the real client address",
 		applies: fixesProxyTrust,
+		accepts: exactly("X-Real-IP"),
+		fixed:   "the literal X-Real-IP",
 	},
 	"TRUSTED_PROXIES": {
 		reason:  "the range must be the stack's own proxy network, which the compose file declares",
 		applies: fixesProxyTrust,
+		accepts: proxyRange.MatchString,
+		fixed:   "a literal CIDR range",
 	},
 }
 
@@ -610,11 +714,17 @@ func judgeStacks(keys map[string]bool, stacks []stack) (problems []string, exemp
 	for _, key := range sortedKeys(keys) {
 		for _, s := range stacks {
 			if value, set := s.env[key]; set {
-				if isPassthrough(key, value) {
+				// A pin outranks a passthrough: where a pin applies, the stack fixes
+				// the key, and a value that reads .env is the one thing it must not be.
+				if rule, ok := pinnedLiterals[key]; ok && (rule.applies == nil || rule.applies(s)) {
+					if rule.accepts != nil && rule.accepts(value) {
+						pinned[key] = true
+						continue
+					}
+					problems = append(problems, fmt.Sprintf("%s: sets %s to %q, but the stack fixes this key and its pin accepts only %s, so the value must not come from .env or differ from the one the stack's wiring needs; write that value", s.path, key, value, rule.fixed))
 					continue
 				}
-				if rule, ok := pinnedLiterals[key]; ok && (rule.applies == nil || rule.applies(s)) {
-					pinned[key] = true
+				if isPassthrough(key, value) {
 					continue
 				}
 				problems = append(problems, fmt.Sprintf("%s: sets %s to %q, so the operator's value is ignored; write `%s: ${%s:-<default>}`, or pin the key in pinnedLiterals with the reason the stack must fix it", s.path, key, value, key, key))
@@ -639,7 +749,7 @@ func TestStackJudgmentRefusesWhatIgnoresTheOperator(t *testing.T) {
 	fixture := stack{path: "fixture/docker-compose.yml", env: map[string]string{
 		"REGISTRATION_MODE":   "open",
 		"AUDIT_LOG_ENABLED":   "${HSTS_ENABLED:-false}",
-		"TRUST_PROXY_ENABLED": `"true"`,
+		"TRUST_PROXY_ENABLED": "true",
 	}}
 	problems, exempted, pinned := judgeStacks(keys, []stack{fixture})
 	joined := strings.Join(problems, "\n")
@@ -738,6 +848,9 @@ func TestEveryExampleStackForwardsEveryRuntimeConfigKey(t *testing.T) {
 		if strings.TrimSpace(rule.reason) == "" {
 			t.Errorf("pin for %s has no reason", key)
 		}
+		if rule.accepts == nil || strings.TrimSpace(rule.fixed) == "" {
+			t.Errorf("pin for %s does not say which value the stack may fix", key)
+		}
 		if !keys[key] {
 			t.Errorf("pin for %s names a key the binary no longer reads", key)
 		}
@@ -748,14 +861,18 @@ func TestEveryExampleStackForwardsEveryRuntimeConfigKey(t *testing.T) {
 }
 
 // TestPassthroughNamesTheKeyItself proves the value check on fixtures: only a
-// substitution of the key itself forwards the operator's setting.
+// substitution of the key itself, with no quote characters around it, forwards
+// the operator's setting. The quotes of a map-form scalar are gone by the time
+// the value is stored (see the parser test), so a quote that is still there is
+// a list-form one, which Compose hands the app.
 func TestPassthroughNamesTheKeyItself(t *testing.T) {
 	for _, tc := range []struct {
 		value string
 		want  bool
 	}{
 		{"${REGISTRATION_MODE:-open}", true},
-		{`"${REGISTRATION_MODE:-open}"`, true},
+		{`"${REGISTRATION_MODE:-open}"`, false},
+		{`'${REGISTRATION_MODE}'`, false},
 		{"${REGISTRATION_MODE}", true},
 		{"${REGISTRATION_MODE:?set it}", true},
 		{"open", false},
@@ -780,6 +897,56 @@ func TestPassthroughNamesTheKeyItself(t *testing.T) {
 		if got := isPassthrough("REGISTRATION_MODE", tc.value); got != tc.want {
 			t.Errorf("isPassthrough(REGISTRATION_MODE, %q) = %v, want %v", tc.value, got, tc.want)
 		}
+	}
+}
+
+// TestPinMustBeTheFixedValueItNames proves the pin check on fixture stacks: a
+// pinned key passes only with the value its pin names, so a substitution of
+// another variable (operator-controlled under another name), a literal of the
+// wrong value and a list-form quoted literal are each refused naming the key.
+func TestPinMustBeTheFixedValueItNames(t *testing.T) {
+	proxy := func(entries map[string]string) stack {
+		env := map[string]string{"TRUST_PROXY_ENABLED": "true"}
+		for key, value := range entries {
+			env[key] = value
+		}
+		return stack{path: "fixture/docker-compose.yml", env: env}
+	}
+	accepted := proxy(map[string]string{
+		"COOKIE_SECURE": "true", "PROXY_HEADER": "X-Real-IP", "TRUSTED_PROXIES": "172.30.0.0/29",
+		"DB_PATH": "/app/data/ovumcy.db", "CALENDAR_FEED_FENCE_PATH": "/app/fence/calendar-feed.fence",
+	})
+	keys := map[string]bool{"COOKIE_SECURE": true, "PROXY_HEADER": true, "TRUSTED_PROXIES": true, "TRUST_PROXY_ENABLED": true, "DB_PATH": true, "CALENDAR_FEED_FENCE_PATH": true}
+	problems, _, pinned := judgeStacks(keys, []stack{accepted})
+	if len(problems) != 0 || len(pinned) != len(keys) {
+		t.Fatalf("each key at its pinned value must be accepted and recorded, got problems %v, pinned %v", problems, pinned)
+	}
+	for _, tc := range []struct{ key, value string }{
+		{"TRUSTED_PROXIES", "${PROXY_SUBNET:-172.30.0.0/29}"},
+		{"TRUSTED_PROXIES", "${TRUSTED_PROXIES:-172.30.0.0/29}"},
+		{"COOKIE_SECURE", "${SECURE:-true}"},
+		{"COOKIE_SECURE", "false"},
+		{"PROXY_HEADER", "X-Forwarded-For"},
+		{"TRUST_PROXY_ENABLED", `"true"`},
+		{"DB_PATH", "/tmp/ovumcy.db"},
+		{"CALENDAR_FEED_FENCE_PATH", "${FENCE:-/app/fence/calendar-feed.fence}"},
+	} {
+		stackWith := proxy(map[string]string{tc.key: tc.value})
+		got, _, _ := judgeStacks(map[string]bool{tc.key: true}, []stack{stackWith})
+		if len(got) != 1 || !strings.Contains(got[0], "sets "+tc.key+" to") || !strings.Contains(got[0], "its pin accepts only") {
+			t.Errorf("%s set to %q must be refused by its pin, got %v", tc.key, tc.value, got)
+		}
+	}
+	postgres := stack{path: "fixture/docker-compose.yml", env: map[string]string{
+		"DB_DRIVER":    "postgres",
+		"DATABASE_URL": "postgres://${POSTGRES_USER:-ovumcy}:${POSTGRES_PASSWORD:?set it}@postgres:5432/${POSTGRES_DB:-ovumcy}?sslmode=disable",
+	}}
+	if got, _, _ := judgeStacks(map[string]bool{"DB_DRIVER": true, "DATABASE_URL": true}, []stack{postgres}); len(got) != 0 {
+		t.Fatalf("the composed postgres stack must be accepted, got %v", got)
+	}
+	postgres.env["DATABASE_URL"] = "postgres://${DB_USER}:${POSTGRES_PASSWORD}@postgres:5432/ovumcy"
+	if got, _, _ := judgeStacks(map[string]bool{"DATABASE_URL": true}, []stack{postgres}); len(got) != 1 {
+		t.Fatalf("a URL that substitutes a variable other than the POSTGRES_* credentials must be refused, got %v", got)
 	}
 }
 
@@ -945,6 +1112,82 @@ func main() {}
 	}
 }
 
+// TestConfigKeyScanDoesNotFollowAParameterTheFunctionChanges proves that a
+// parameter the function writes before the read is not "passed on unchanged":
+// the caller's constant is not recorded as a key, and the read fails the run
+// naming the function. A parameter nothing writes is still a reader.
+func TestConfigKeyScanDoesNotFollowAParameterTheFunctionChanges(t *testing.T) {
+	scan := fixtureModule(t, map[string]string{
+		"main.go": `package main
+
+import "os"
+
+func prefixed(name string) string { name = "OVUMCY_" + name; return os.Getenv(name) }
+
+func appended(name string) string { name += "_X"; return os.Getenv(name) }
+
+func throughPointer(name string) string { p := &name; *p = "OTHER"; return os.Getenv(name) }
+
+func inClosure(name string) string {
+	set := func() { name = "OTHER" }
+	set()
+	return os.Getenv(name)
+}
+
+func rangedValue(name string) string {
+	for _, name = range []string{"A", "B"} {
+	}
+	return os.Getenv(name)
+}
+
+func rangedKey(name string) string {
+	for name = range map[string]int{"A": 1} {
+	}
+	return os.Getenv(name)
+}
+
+func redeclared(name string) (string, error) {
+	name, err := os.Getenv("DECLARED_KEY"), error(nil)
+	return os.Getenv(name), err
+}
+
+func unchanged(name string) string { return os.Getenv(name) }
+
+func main() {
+	_ = prefixed("PREFIXED_KEY")
+	_ = appended("APPENDED_KEY")
+	_ = throughPointer("POINTER_KEY")
+	_ = inClosure("CLOSURE_KEY")
+	_ = rangedValue("RANGE_VALUE_KEY")
+	_ = rangedKey("RANGE_KEY_KEY")
+	_, _ = redeclared("REDECLARED_KEY")
+	_ = unchanged("PLAIN_KEY")
+}
+`,
+	})
+	if got := sortedKeys(scan.reads); strings.Join(got, ",") != "DECLARED_KEY,PLAIN_KEY" {
+		t.Errorf("only the unchanged parameter's caller and the literal read are keys, got %v", got)
+	}
+	joined := strings.Join(scan.problems, "\n")
+	for _, name := range []string{"prefixed", "appended", "throughPointer", "inClosure", "rangedValue", "rangedKey", "redeclared"} {
+		want := "parameter name of " + name + " is assigned to, ranged into or has its address taken"
+		if !strings.Contains(joined, want) {
+			t.Errorf("want a problem containing %q, got:\n%s", want, joined)
+		}
+	}
+	if len(scan.problems) != 7 {
+		t.Errorf("want exactly the seven problems, got %d:\n%s", len(scan.problems), joined)
+	}
+	for _, name := range []string{"prefixed", "appended", "throughPointer", "inClosure", "rangedValue", "rangedKey", "redeclared"} {
+		if got := readerNamed(scan.readers, "fixture", name); len(got) != 0 {
+			t.Errorf("%s changes its parameter and is not a reader, got %v", name, got)
+		}
+	}
+	if got := readerNamed(scan.readers, "fixture", "unchanged"); !got[0] {
+		t.Errorf("unchanged hands its parameter on and is a reader of it, got %v", got)
+	}
+}
+
 // TestEnvironmentBlockParserReadsBothForms proves the stack reader on fixtures:
 // map and list forms, the bare list passthrough, a commented-out key that is
 // not a key, a block that ends at the next field, and the service pick by image
@@ -973,6 +1216,9 @@ func TestEnvironmentBlockParserReadsBothForms(t *testing.T) {
 		"      - LIST_COMMENT=${LIST_COMMENT:-x} # note",
 		"      - BARE_COMMENT # note",
 		"      AFTER_BARE: ${AFTER_BARE:-y}",
+		"      MAP_QUOTED: \"${MAP_QUOTED:-x}\"  # quoted map scalar",
+		"      - LIST_QUOTED=\"${LIST_QUOTED:-x}\"",
+		"      EMPTY_QUOTED: \"\"",
 		"      DATABASE_URL: postgres://u:p@postgres/db",
 		"    init: true",
 		"    read_only: true",
@@ -993,10 +1239,19 @@ func TestEnvironmentBlockParserReadsBothForms(t *testing.T) {
 			t.Errorf("%s is a passthrough with a comment after it (or none), got %q", key, env[key])
 		}
 	}
-	if env["QUOTED_HASH"] != `"a # b"` || env["ESCAPED_QUOTE"] != `"a \" # b"` {
-		t.Errorf("a quoted value keeps the # inside its quotes and loses the comment after them, got %q and %q", env["QUOTED_HASH"], env["ESCAPED_QUOTE"])
+	if env["QUOTED_HASH"] != `a # b` || env["ESCAPED_QUOTE"] != `a \" # b` {
+		t.Errorf("a quoted value keeps the # inside its quotes, loses the quotes and the comment after them, got %q and %q", env["QUOTED_HASH"], env["ESCAPED_QUOTE"])
 	}
-	if len(env) != 14 || env["REGISTRATION_MODE"] != "${REGISTRATION_MODE:-open}" || env["TZ"] != "UTC" {
+	if !isPassthrough("MAP_QUOTED", env["MAP_QUOTED"]) {
+		t.Errorf("a quoted map-form substitution reaches the app unquoted, so it is a passthrough, got %q", env["MAP_QUOTED"])
+	}
+	if isPassthrough("LIST_QUOTED", env["LIST_QUOTED"]) || env["LIST_QUOTED"] != `"${LIST_QUOTED:-x}"` {
+		t.Errorf("a quoted list-form substitution hands the app the quote characters, so it is not a passthrough, got %q", env["LIST_QUOTED"])
+	}
+	if value, set := env["EMPTY_QUOTED"]; !set || value != "" || isPassthrough("EMPTY_QUOTED", value) {
+		t.Errorf("a quoted empty map-form scalar is an empty literal, not compose's bare passthrough, got %q (set=%v)", value, set)
+	}
+	if len(env) != 17 || env["REGISTRATION_MODE"] != "${REGISTRATION_MODE:-open}" || env["TZ"] != "UTC" {
 		t.Fatalf("environment read wrongly: %v", env)
 	}
 	if !isPassthrough("HSTS_ENABLED", env["HSTS_ENABLED"]) {
