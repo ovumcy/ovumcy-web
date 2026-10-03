@@ -280,6 +280,8 @@ func TestOnlyReviewedStepsRunBeforeThePromotion(t *testing.T) {
 
 	want := []string{
 		"Checkout",
+		// Reads one environment variable and exits; it writes no tag.
+		mirrorCredentialStep,
 		"Set up QEMU",
 		"Set up Docker Buildx",
 		"Log in to Docker Hub",

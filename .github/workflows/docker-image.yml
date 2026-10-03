@@ -661,6 +661,133 @@ jobs:
 
           echo "every required check passed where its verdict is real: ${QUEUE_CHECKS} in the merge-queue run, ${HEAVY_CHECKS} in the push, release or dispatch run; real jobs (${WORK_CHECKS}) succeeded on this tree."
 
+      # The step above reads ci.yml only. The scanner workflows (Security,
+      # CodeQL, Gitleaks) hold their own required checks, and a release tag
+      # started none of them, so a commit whose scan went red could still be
+      # signed. They are read the same way as ci.yml's work jobs: as JOBS of a
+      # run of that workflow file, started by the merge queue or by a push to
+      # `main`, never as check runs (any token holding `checks: write` can post
+      # one under any name). Each scanner job carries the `changes` job's path
+      # gate, so `skipped` is a lane cleared for the diff and is accepted and
+      # printed; a failed, cancelled or still-running job refuses, and so does a
+      # job that is absent (a renamed lane reads as no verdict), a run that did
+      # not conclude `success`, or no qualifying run at all.
+      - name: Assert the scanners passed on the tagged commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Job names as the check context carries them, `|`-separated because
+          # CodeQL's hold spaces. `trivy-image-arm64` is not a ruleset context
+          # but is the other half of the image scan, so it is read too.
+          SECURITY_JOBS: gosec|govulncheck|trivy-fs|trivy-image|trivy-image-arm64
+          CODEQL_JOBS: Analyze (actions)|Analyze (go)|Analyze (javascript-typescript)
+          GITLEAKS_JOBS: gitleaks
+        run: |
+          set -euo pipefail
+
+          sha="$(git rev-parse "${GITHUB_SHA}^{commit}")"
+          failed=0
+
+          if ! all_runs="$(
+            gh api --paginate \
+              "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${sha}&per_page=100" \
+              --jq '.workflow_runs[] | [.event, (.id | tostring), (.head_branch // ""), (.path // ""), (.conclusion // "pending")] | @tsv'
+          )"; then
+            echo "::error::the workflow runs on ${sha} could not be read, so nothing proves the scanners ran."
+            exit 1
+          fi
+
+          # The newest attempt of a job name speaks for it, as in the step above.
+          jobs_of_runs() {
+            jobs_rows=""
+            for jobs_run in $1; do
+              jobs_page="$(
+                gh api --paginate \
+                  "repos/${GITHUB_REPOSITORY}/actions/runs/${jobs_run}/jobs?filter=all&per_page=100" \
+                  --jq '.jobs[] | [(.run_id | tostring), .name, (.conclusion // "pending"), ((.run_attempt // 1) | tostring)] | @tsv'
+              )" || return 1
+              jobs_rows="${jobs_rows}${jobs_page}"$'\n'
+            done
+            printf '%s' "$jobs_rows" | awk -F'\t' '
+              NF >= 4 {
+                n++
+                key[n] = $1 SUBSEP $2
+                attempt[n] = $4 + 0
+                row[n] = $1 "\t" $2 "\t" $3
+                if (!(key[n] in newest) || attempt[n] > newest[key[n]]) newest[key[n]] = attempt[n]
+              }
+              END { for (i = 1; i <= n; i++) if (attempt[i] == newest[key[i]]) print row[i] }
+            '
+          }
+
+          judge_workflow() {
+            wf_file=".github/workflows/$1"
+            wf_names="$2"
+
+            # The workflow is the file, never the display name; the runs are the
+            # merge queue's and pushes to `main`, the two that run the copy of
+            # the workflow that is on `main`.
+            wf_runs="$(printf '%s\n' "$all_runs" | awk -F'\t' -v want="$wf_file" '$4 == want && ($1 == "merge_group" || ($1 == "push" && $3 == "main"))')"
+            if [ -z "$wf_runs" ]; then
+              echo "::error::no merge-queue run and no push run on main of ${wf_file} exists for ${sha}, so no scan verdict is on record for it."
+              failed=1
+              return
+            fi
+
+            while IFS=$'\t' read -r wf_event wf_id _ _ wf_conclusion; do
+              [ -n "$wf_id" ] || continue
+              if [ "$wf_conclusion" != "success" ]; then
+                echo "::error::the ${wf_event} run ${wf_id} of ${wf_file} for ${sha} concluded \"${wf_conclusion}\", and only \`success\` clears a release tag."
+                failed=1
+              fi
+            done <<< "$wf_runs"
+
+            wf_ids="$(printf '%s\n' "$wf_runs" | awk -F'\t' '{ print $2 }' | sort -u)"
+            if ! wf_jobs="$(jobs_of_runs "$wf_ids")"; then
+              echo "::error::the jobs of the ${wf_file} runs on ${sha} could not be read, so nothing proves the scanners ran."
+              failed=1
+              return
+            fi
+
+            IFS='|' read -r -a wf_job_names <<< "$wf_names"
+            for wf_name in "${wf_job_names[@]}"; do
+              wf_conclusions="$(printf '%s\n' "$wf_jobs" | awk -F'\t' -v want="$wf_name" '$2 == want { print $3 }')"
+              if [ -z "$wf_conclusions" ]; then
+                echo "::error::no \`${wf_name}\` job exists in the ${wf_file} runs on ${sha}: a renamed or dropped scanner lane is no verdict."
+                failed=1
+                continue
+              fi
+              wf_ran=""
+              while IFS= read -r wf_conclusion; do
+                [ -n "$wf_conclusion" ] || continue
+                case "$wf_conclusion" in
+                  success) wf_ran=1 ;;
+                  skipped) ;;
+                  *)
+                    echo "::error::a \`${wf_name}\` job in ${wf_file} for ${sha} concluded \"${wf_conclusion}\", and only \`success\` or a lane cleared for the diff (\`skipped\`) lets a release tag through."
+                    failed=1
+                    ;;
+                esac
+              done <<< "$wf_conclusions"
+              if [ -z "$wf_ran" ]; then
+                echo "::notice::\`${wf_name}\` was skipped in every ${wf_file} run on ${sha}: its path gate cleared the lane for that diff, so no scan of it ran there."
+              else
+                echo "\`${wf_name}\` concluded success on ${sha}."
+              fi
+            done
+          }
+
+          judge_workflow security.yml "$SECURITY_JOBS"
+          judge_workflow codeql.yml "$CODEQL_JOBS"
+          judge_workflow gitleaks.yml "$GITLEAKS_JOBS"
+
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::refusing to publish a release image for ${GITHUB_REF_NAME}: the Security, CodeQL or Gitleaks verdict on ${sha} is not green."
+            exit 1
+          fi
+
+          echo "every scanner job passed or was cleared for the diff on ${sha}."
+
   confirm-main-tip:
     # The alias path only: a release tag moves no alias, so it has no tip to be
     # the newest of.
@@ -829,6 +956,27 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # No `if:` on this step, on purpose: the condition is in the script, so a
+      # runner-side skip cannot pass it. The mirror steps below skip when the
+      # publishing username is empty, which is right for `:latest` and wrong for
+      # a release: a tag reaches here only after verify-release-tag, and
+      # publishing it to GHCR alone while the Docker Hub mirror is silently
+      # absent leaves a release that every operator pulling from Docker Hub
+      # cannot get. Refuse before anything is pushed.
+      - name: Require the Docker Hub mirror credential on a release tag
+        shell: bash
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          set -euo pipefail
+
+          if [ "$REF_TYPE" = "tag" ] && [ -z "${DOCKERHUB_PUBLISH_USERNAME:-}" ]; then
+            echo "::error::DOCKERHUB_PUBLISH_USERNAME is empty on a release tag, so the Docker Hub mirror would be skipped silently. Set the DOCKERHUB_PUBLISH_USERNAME and DOCKERHUB_PUBLISH_TOKEN secrets, then re-run; nothing has been published."
+            exit 1
+          fi
+
+          echo "ref type ${REF_TYPE}: the Docker Hub mirror credential requirement holds."
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
@@ -1502,7 +1650,10 @@ jobs:
       # answer at all.
       #
       # Absent the publishing credential all four steps skip and GHCR
-      # publishes exactly as before. The credential is deliberately NOT the
+      # publishes exactly as before on the `:latest` path. On a release tag
+      # that skip is refused instead, by the step right after checkout, before
+      # anything is pushed: a release is the one publish nothing replaces, and
+      # a mirror that is missing from it must be an error, not a quiet gap. The credential is deliberately NOT the
       # `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` pair above: that one exists for
       # authenticated base-image pulls and security.yml hands it to jobs that
       # run on every pull request, so write access to a public registry must

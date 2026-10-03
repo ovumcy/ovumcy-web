@@ -1823,6 +1823,9 @@ jobs:
     # without leaving this required check unsatisfied. The Postgres/multi-locale
     # coverage this job adds over the plain `e2e` job is also only needed on
     # push/release/dispatch, not on every PR, so RUN_HEAVY gates it further.
+    # The required context is therefore satisfied on a pull request and in the
+    # queue by a run that did no work: it cannot gate a merge, and its real
+    # verdict is the push run's, which the release gate and `publish-image` read.
     #
     # RUN_HEAVY excludes `merge_group` too, which makes this the ONE core-looking
     # lane that `push` must keep: measured 2026-08-18, the job took 3 s in queue
@@ -1933,9 +1936,13 @@ jobs:
       contents: read
     needs:
       - changes
-    # Not a required status check, so cross-browser coverage beyond the plain
-    # `e2e` job's Chromium run is deferred to push/release/dispatch. The
-    # relevance half carries the battery's fail-safe form (`!= 'false'`): a
+    # The ruleset lists this context as required, but it cannot gate a merge:
+    # the `if:` below runs it only on push, release and dispatch, so on a pull
+    # request and in the merge queue it is skipped, and a skipped job satisfies
+    # a required context. Its verdict is real only after the merge, on the push
+    # run, which is why docker-image.yml's release gate and `publish-image`
+    # read it from there and why a failure here holds the release, not the
+    # merge. The relevance half carries the battery's fail-safe form (`!= 'false'`): a
     # `changes` job that died must not silently drop post-merge coverage.
     if: ${{ !cancelled() && needs.changes.outputs.run_e2e != 'false' && (github.event_name == 'push' || github.event_name == 'release' || github.event_name == 'workflow_dispatch') }}
 
@@ -2034,9 +2041,11 @@ jobs:
     # The unit/e2e jobs exercise the app under `go run`; only this job proves the
     # embedded templates/locales/web-static (go:embed) and the static.New asset
     # middleware serve correctly from the shell-less scratch image, and that the
-    # in-container `ovumcy healthcheck`/`readycheck` self-probes pass. Not a required status
-    # check and the image isn't built on PRs at all, so this runs on
-    # push/release/dispatch, catching an asset/embed/packaging regression
+    # in-container `ovumcy healthcheck`/`readycheck` self-probes pass. Not in the
+    # ruleset, and the image isn't built on PRs at all, so this runs only on
+    # push/release/dispatch and cannot gate a merge (the queue reports it
+    # skipped); the release gate and `publish-image` read it from the push run,
+    # catching an asset/embed/packaging regression
     # before it reaches a release tag.
     runs-on: ubuntu-latest
     timeout-minutes: 15

@@ -2,6 +2,13 @@ name: Security
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # What the image scans below can and cannot see: the runtime image is
+  # `FROM scratch`, so it carries no package database (no `/lib/apk/db`), and
+  # Trivy's OS-package detector has nothing to read there. The two Alpine
+  # packages the Dockerfile copies in (tzdata, ca-certificates) are therefore
+  # invisible to `trivy-image` whatever their version; the pins in the
+  # Dockerfile's runtime-assets stage are their only record, and the scan
+  # still covers the Go binary's own modules.
   TRIVY_IMAGE: aquasec/trivy:0.68.2@sha256:05d0126976bdedcd0782a0336f77832dbea1c81b9cc5e4b3a5ea5d2ec863aca7
   # Pinned once here — the binary cache key below is built from the same
   # values, so a spelling repeated as a literal in the key would silently
