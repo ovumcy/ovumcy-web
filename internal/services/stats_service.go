@@ -164,15 +164,13 @@ func (service *StatsService) BuildFlags(user *models.User, logs []models.DailyLo
 	observedCycleCount := len(CycleLengths(logs))
 	completedCycleCount := len(CompletedCycleTrendLengths(logs, now, location))
 	today := DateAtLocation(now, location)
-	cycleDayReference := DashboardCycleReferenceLength(user, stats)
-	cycleStaleAnchor := DashboardCycleStaleAnchor(user, stats, location)
 
 	return StatsFlags{
 		HasObservedCycleData: observedCycleCount > 0,
 		HasTrendData:         trendPointCount > 0,
 		HasInsights:          completedCycleCount >= statsMinimumInsightsCycles,
 		HasReliableTrend:     trendPointCount >= statsReliableTrendCycles,
-		CycleDataStale:       DashboardCycleDataLooksStale(cycleStaleAnchor, today, cycleDayReference),
+		CycleDataStale:       dashboardCycleDataStale(user, stats, today, location),
 		CompletedCycleCount:  completedCycleCount,
 		InsightProgress:      statsInsightProgress(completedCycleCount),
 	}

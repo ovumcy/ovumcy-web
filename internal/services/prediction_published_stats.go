@@ -75,11 +75,8 @@ func PublishedStats(user *models.User, stats CycleStats, logs []models.DailyLog,
 	// The verdict is read off the UNCLEARED stats, so the fertility gate cannot
 	// be answered from fields the clearing below has already emptied.
 	suppression := ResolvePredictionSuppression(user, stats)
-	// The pages' out-of-date verdict, resolved where they resolve it: the cycle
-	// context answers false in the two branches that publish no projection at
-	// all (a pregnancy pause, unpredictable-cycle mode) and asks
-	// DashboardCycleDataLooksStale everywhere else.
-	cycleDataStale := BuildDashboardCycleContext(user, logs, stats, today, location).CycleDataStale
+	// The pages' out-of-date verdict, from the helper both pages call.
+	cycleDataStale := dashboardCycleDataStale(user, stats, today, location)
 
 	// The two predicates clear different sets because they answer different
 	// questions: FertilityProjectionSuppressed also covers the zero-cycles floor,

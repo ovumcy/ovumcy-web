@@ -385,6 +385,19 @@ func DashboardCycleStaleAnchor(user *models.User, stats CycleStats, location *ti
 	return CalendarDay(*user.LastPeriodStart, location)
 }
 
+// dashboardCycleDataStale is the one out-of-date verdict the dashboard, the
+// stats page and the published stats carry. A pregnancy pause and
+// unpredictable-cycle mode publish no projection for the data to be out of date
+// against, so they answer false before the length is measured; a surface that
+// skipped them raised the out-of-date banner, and the "unknown" phase and status
+// it forces, on an account another page called current.
+func dashboardCycleDataStale(user *models.User, stats CycleStats, today time.Time, location *time.Location) bool {
+	if stats.PregnancyPaused || DashboardPredictionDisabled(user) {
+		return false
+	}
+	return DashboardCycleDataLooksStale(DashboardCycleStaleAnchor(user, stats, location), today, DashboardCycleReferenceLength(user, stats))
+}
+
 // dashboardPredictionRegularSpan returns the half-width, in days, of the
 // next-period prediction range for users without irregular-cycle mode.
 // Returns 0 when the user has too few completed cycles for the standard
@@ -580,8 +593,7 @@ func BuildDashboardCycleContext(user *models.User, logs []models.DailyLog, stats
 	// owner's own temperatures named, not a projection, and it is still named
 	// beside the paused estimate (ConfirmedOvulationWithheld).
 	cycleDayWarning := DashboardCycleOverdue(user, stats)
-	cycleStaleAnchor := DashboardCycleStaleAnchor(user, stats, location)
-	cycleDataStale := DashboardCycleDataLooksStale(cycleStaleAnchor, today, cycleDayReference)
+	cycleDataStale := dashboardCycleDataStale(user, stats, today, location)
 	display := buildDashboardPredictionDisplay(user, logs, stats, today, location)
 
 	return DashboardCycleContext{
