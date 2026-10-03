@@ -104,6 +104,14 @@ func BuildDashboardCycleHero(user *models.User, stats CycleStats, cycleContext D
 	fertilitySuppressed := cycleContext.FertilitySuppressed
 
 	ovulationDay, confirmedAnchor := dashboardCycleHeroOvulationDay(stats, cycleContext, cycleLength, cycleStart, location)
+	// A window running past the published ovulation (the range mode's) makes
+	// that day the band's left edge for the header (ovulationTimingUndetermined),
+	// so the cards take it too; the average-based projection would open the band
+	// on another day and the cells would answer differently from the header.
+	undeterminedEnd := dashboardCycleHeroUndeterminedEnd(stats, cycleStart, location, fertilitySuppressed)
+	if undeterminedEnd > 0 && !confirmedAnchor {
+		ovulationDay = CalendarDaysBetween(cycleStart, CalendarDay(stats.OvulationDate, location)) + 1
+	}
 	if confirmedAnchor {
 		// A confirmed day is an OBSERVATION; the projected periodLength above it
 		// is a projection of the average. When they disagree the observation
@@ -142,8 +150,7 @@ func BuildDashboardCycleHero(user *models.User, stats CycleStats, cycleContext D
 	if !fertilitySuppressed && stats.CurrentPhase == "unknown" && ovulationTimingUndetermined(stats, input.Today) {
 		currentPhase = "unknown"
 	}
-	phaseCards := dashboardCycleHeroPhaseCards(currentPhase, periodLength, ovulationDay, cycleLength, fertilitySuppressed,
-		dashboardCycleHeroUndeterminedEnd(stats, cycleStart, location, fertilitySuppressed))
+	phaseCards := dashboardCycleHeroPhaseCards(currentPhase, periodLength, ovulationDay, cycleLength, fertilitySuppressed, undeterminedEnd)
 
 	startWindow := dashboardCycleHeroStartWindow(user, stats, cycleStart, location)
 	axisDays := dashboardCycleHeroAxisDays(cycleLength, startWindow)
@@ -323,9 +330,9 @@ func dashboardCycleHeroPhaseCards(currentPhase string, periodLength int, ovulati
 // dashboardCycleHeroUndeterminedEnd is the cycle day the fertile window ends on
 // when it runs past the published ovulation day — only the irregular range
 // mode's widened window does — and 0 otherwise, so every other ribbon keeps
-// its cards. The band starts at the ribbon's own ovulation card rather than the
-// published (median) day: the ribbon's ovulation day is projected off the
-// average, and any cell of the window past it would otherwise read luteal.
+// its cards. A non-zero answer also moves the ribbon's projected ovulation card
+// onto the published day (BuildDashboardCycleHero). The suppressed tier never
+// gets one: its cards name no ovulation day at all.
 func dashboardCycleHeroUndeterminedEnd(stats CycleStats, cycleStart time.Time, location *time.Location, fertilitySuppressed bool) int {
 	if fertilitySuppressed || cycleStart.IsZero() || stats.OvulationImpossible || stats.OvulationDate.IsZero() || stats.FertilityWindowEnd.IsZero() {
 		return 0

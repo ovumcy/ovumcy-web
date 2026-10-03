@@ -175,10 +175,42 @@ func TestRangeModeHeroKeepsABleedingDayLoggedInsideTheBand(t *testing.T) {
 
 // TestRangeModeHeroRibbonPaintsNoFertileCellLuteal: the hero's cells answer
 // what its header answers. Every ribbon cell the widened window covers past the
-// ribbon's ovulation card is "unknown", the day after the window is luteal
-// again, and the regular-mode ribbon of the same history keeps its four cards.
+// published ovulation is "unknown", the day after the window is luteal again,
+// and the regular-mode ribbon of the same history keeps its four cards. The
+// fixture's 33-day reference projects the ribbon's own ovulation on day 19,
+// five days after the published one, so a walk over days 15..19 is what tells
+// the two anchors apart.
 func TestRangeModeHeroRibbonPaintsNoFertileCellLuteal(t *testing.T) {
 	user, allLogs := rangeModeOvertakingFixture(t)
+	cycleStart := mustParseDay(t, "2026-05-01")
+	walkedBand := 0
+	for cycleDay := 1; cycleDay <= 33; cycleDay++ {
+		today := cycleStart.AddDate(0, 0, cycleDay-1)
+		logs := logsUpTo(allLogs, today)
+		stats := BuildCycleStatsFromLogs(user, logs, today, time.UTC)
+		cycleContext := BuildDashboardCycleContext(user, logs, stats, today, time.UTC)
+		hero := BuildDashboardCycleHero(user, stats, cycleContext, dashboardCycleHeroInput{Logs: logs, Today: today, Location: time.UTC})
+		if !hero.Visible {
+			continue
+		}
+		for _, day := range hero.Days {
+			if day.IsToday && day.Phase != hero.CurrentPhase && hero.CurrentPhase != "menstrual" {
+				t.Errorf("cycle day %d: today's cell says %q while the header says %q", cycleDay, day.Phase, hero.CurrentPhase)
+			}
+		}
+		for _, card := range hero.PhaseCards {
+			if card.IsCurrent && (cycleDay < card.StartDay || cycleDay > card.EndDay) {
+				t.Errorf("cycle day %d: the current card %q covers days %d..%d, not today", cycleDay, card.Phase, card.StartDay, card.EndDay)
+			}
+		}
+		if cycleDay >= 15 && cycleDay <= 19 && hero.CurrentPhase == "unknown" {
+			walkedBand++
+		}
+	}
+	if walkedBand != 5 {
+		t.Fatalf("the walk met %d of the band days 15..19 with an unknown header, want 5", walkedBand)
+	}
+
 	today := mustParseDay(t, "2026-05-20")
 	logs := logsUpTo(allLogs, today)
 	stats := BuildCycleStatsFromLogs(user, logs, today, time.UTC)
