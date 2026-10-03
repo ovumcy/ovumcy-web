@@ -9,6 +9,7 @@ package services
 // fertile because the ovulation may still be ahead. "Luteal" says it is behind.
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -169,6 +170,74 @@ func TestRangeModeHeroKeepsABleedingDayLoggedInsideTheBand(t *testing.T) {
 	}
 	if hero.CurrentPhase != published.CurrentPhase {
 		t.Fatalf("the dashboard hero says %q while the published phase is %q", hero.CurrentPhase, published.CurrentPhase)
+	}
+}
+
+// TestRangeModeHeroRibbonPaintsNoFertileCellLuteal: the hero's cells answer
+// what its header answers. Every ribbon cell the widened window covers past the
+// ribbon's ovulation card is "unknown", the day after the window is luteal
+// again, and the regular-mode ribbon of the same history keeps its four cards.
+func TestRangeModeHeroRibbonPaintsNoFertileCellLuteal(t *testing.T) {
+	user, allLogs := rangeModeOvertakingFixture(t)
+	today := mustParseDay(t, "2026-05-20")
+	logs := logsUpTo(allLogs, today)
+	stats := BuildCycleStatsFromLogs(user, logs, today, time.UTC)
+	assertRangeModeFixture(t, user, stats)
+
+	cycleContext := BuildDashboardCycleContext(user, logs, stats, today, time.UTC)
+	hero := BuildDashboardCycleHero(user, stats, cycleContext, dashboardCycleHeroInput{Logs: logs, Today: today, Location: time.UTC})
+	if !hero.Visible {
+		t.Fatal("the dashboard hero was not drawn, so its cells were never compared")
+	}
+
+	windowEndDay := CalendarDaysBetween(stats.LastPeriodStart, stats.FertilityWindowEnd) + 1
+	unknownCells := 0
+	for _, day := range hero.Days {
+		if day.IsFertile && day.Phase == "luteal" {
+			t.Errorf("cycle day %d: a fertile cell is painted luteal", day.Day)
+		}
+		if day.Phase == "unknown" {
+			unknownCells++
+			if !day.IsFertile {
+				t.Errorf("cycle day %d: an unknown cell outside the fertile window", day.Day)
+			}
+		}
+		if day.Day == windowEndDay+1 && day.Phase != "luteal" {
+			t.Errorf("cycle day %d (the day after the window): phase %q, want luteal", day.Day, day.Phase)
+		}
+		if day.IsToday && day.Phase != hero.CurrentPhase {
+			t.Errorf("today's cell says %q while the header says %q", day.Phase, hero.CurrentPhase)
+		}
+	}
+	if unknownCells == 0 {
+		t.Fatal("the ribbon drew no unknown cell, so the band was never painted")
+	}
+	current := 0
+	for _, card := range hero.PhaseCards {
+		if card.IsCurrent {
+			current++
+			if card.Phase != "unknown" {
+				t.Errorf("the current card is %q, want unknown as the header says", card.Phase)
+			}
+		}
+	}
+	if current != 1 {
+		t.Errorf("%d current cards, want exactly one", current)
+	}
+
+	user.IrregularCycle = false
+	regularStats := BuildCycleStatsFromLogs(user, logs, today, time.UTC)
+	regularContext := BuildDashboardCycleContext(user, logs, regularStats, today, time.UTC)
+	regular := BuildDashboardCycleHero(user, regularStats, regularContext, dashboardCycleHeroInput{Logs: logs, Today: today, Location: time.UTC})
+	if !regular.Visible {
+		t.Fatal("control: the regular-mode hero was not drawn")
+	}
+	phases := make([]string, 0, len(regular.PhaseCards))
+	for _, card := range regular.PhaseCards {
+		phases = append(phases, card.Phase)
+	}
+	if got := strings.Join(phases, ","); got != "menstrual,follicular,ovulation,luteal" {
+		t.Fatalf("control: regular-mode cards %s, want the four named phases", got)
 	}
 }
 

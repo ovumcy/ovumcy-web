@@ -142,7 +142,8 @@ func BuildDashboardCycleHero(user *models.User, stats CycleStats, cycleContext D
 	if !fertilitySuppressed && stats.CurrentPhase == "unknown" && ovulationTimingUndetermined(stats, input.Today) {
 		currentPhase = "unknown"
 	}
-	phaseCards := dashboardCycleHeroPhaseCards(currentPhase, periodLength, ovulationDay, cycleLength, fertilitySuppressed)
+	phaseCards := dashboardCycleHeroPhaseCards(currentPhase, periodLength, ovulationDay, cycleLength, fertilitySuppressed,
+		dashboardCycleHeroUndeterminedEnd(stats, cycleStart, location, fertilitySuppressed))
 
 	startWindow := dashboardCycleHeroStartWindow(user, stats, cycleStart, location)
 	axisDays := dashboardCycleHeroAxisDays(cycleLength, startWindow)
@@ -259,7 +260,11 @@ func dashboardCycleHeroApproximate(cycleContext DashboardCycleContext) bool {
 // the "ovulation" card whose name is the obvious tell. What replaces them is
 // one card carrying no boundary of its own, so that the days keep a status
 // instead of falling through to "beyond".
-func dashboardCycleHeroPhaseCards(currentPhase string, periodLength int, ovulationDay int, cycleLength int, fertilitySuppressed bool) []DashboardCycleHeroPhaseCard {
+//
+// undeterminedEnd > ovulationDay inserts an "unknown" card over
+// (ovulationDay, undeterminedEnd] and starts luteal after it: the cells say
+// what the header says on those days (ovulationTimingUndetermined).
+func dashboardCycleHeroPhaseCards(currentPhase string, periodLength int, ovulationDay int, cycleLength int, fertilitySuppressed bool, undeterminedEnd int) []DashboardCycleHeroPhaseCard {
 	cards := []DashboardCycleHeroPhaseCard{
 		{
 			Phase:     "menstrual",
@@ -283,7 +288,7 @@ func dashboardCycleHeroPhaseCards(currentPhase string, periodLength int, ovulati
 		})
 		return cards
 	}
-	return append(cards,
+	cards = append(cards,
 		DashboardCycleHeroPhaseCard{
 			Phase:     "follicular",
 			StartDay:  periodLength + 1,
@@ -296,13 +301,40 @@ func dashboardCycleHeroPhaseCards(currentPhase string, periodLength int, ovulati
 			EndDay:    ovulationDay,
 			IsCurrent: currentPhase == "ovulation",
 		},
-		DashboardCycleHeroPhaseCard{
-			Phase:     "luteal",
-			StartDay:  ovulationDay + 1,
-			EndDay:    cycleLength,
-			IsCurrent: currentPhase == "luteal",
-		},
 	)
+	lutealStart := ovulationDay + 1
+	if undeterminedEnd > ovulationDay {
+		cards = append(cards, DashboardCycleHeroPhaseCard{
+			Phase:     "unknown",
+			StartDay:  ovulationDay + 1,
+			EndDay:    min(undeterminedEnd, cycleLength),
+			IsCurrent: currentPhase == "unknown",
+		})
+		lutealStart = undeterminedEnd + 1
+	}
+	return append(cards, DashboardCycleHeroPhaseCard{
+		Phase:     "luteal",
+		StartDay:  lutealStart,
+		EndDay:    cycleLength,
+		IsCurrent: currentPhase == "luteal",
+	})
+}
+
+// dashboardCycleHeroUndeterminedEnd is the cycle day the fertile window ends on
+// when it runs past the published ovulation day — only the irregular range
+// mode's widened window does — and 0 otherwise, so every other ribbon keeps
+// its cards. The band starts at the ribbon's own ovulation card rather than the
+// published (median) day: the ribbon's ovulation day is projected off the
+// average, and any cell of the window past it would otherwise read luteal.
+func dashboardCycleHeroUndeterminedEnd(stats CycleStats, cycleStart time.Time, location *time.Location, fertilitySuppressed bool) int {
+	if fertilitySuppressed || cycleStart.IsZero() || stats.OvulationImpossible || stats.OvulationDate.IsZero() || stats.FertilityWindowEnd.IsZero() {
+		return 0
+	}
+	windowEnd := CalendarDay(stats.FertilityWindowEnd, location)
+	if !windowEnd.After(CalendarDay(stats.OvulationDate, location)) {
+		return 0
+	}
+	return CalendarDaysBetween(cycleStart, windowEnd) + 1
 }
 
 // dashboardCycleHeroDaySpan is a closed [StartDay, EndDay] run of cycle days,

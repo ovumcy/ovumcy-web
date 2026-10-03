@@ -264,7 +264,7 @@ func expectCardRange(t *testing.T, card DashboardCycleHeroPhaseCard, phase strin
 // mutant that drops the fertilitySuppressed guard in either one alone is red
 // here and green in the other's test.
 func TestDashboardCycleHeroWithheldStatusIsSuppressionOnly(t *testing.T) {
-	cards := dashboardCycleHeroPhaseCards("follicular", 5, 14, 28, false)
+	cards := dashboardCycleHeroPhaseCards("follicular", 5, 14, 28, false, 0)
 	if len(cards) != 4 {
 		t.Fatalf("expected the four named phase cards without suppression, got %#v", cards)
 	}
@@ -297,7 +297,7 @@ func TestDashboardCycleHeroWithheldStatusIsSuppressionOnly(t *testing.T) {
 func TestDashboardCycleHeroSuppressedAxisStillEndsAtBeyond(t *testing.T) {
 	const cycleLength, axisDays = 28, 32
 
-	cards := dashboardCycleHeroPhaseCards("withheld", 5, 14, cycleLength, true)
+	cards := dashboardCycleHeroPhaseCards("withheld", 5, 14, cycleLength, true, 0)
 	days := dashboardCycleHeroDays(
 		axisDays,
 		14,
