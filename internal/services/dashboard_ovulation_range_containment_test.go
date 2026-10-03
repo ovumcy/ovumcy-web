@@ -72,11 +72,15 @@ func TestIrregularFertileWindowContainsTheDisplayedOvulationRange(t *testing.T) 
 				if !context.DisplayOvulationUseRange {
 					t.Fatal("fixture: the dashboard must show an ovulation range for this account, or the containment below is vacuous")
 				}
-				if got := CalendarDaysBetween(runningStart, context.DisplayOvulationRangeStart) + 1; got != testCase.wantFirstRangeCycleD {
-					t.Fatalf("fixture: the range opens on cycle day %d, want %d", got, testCase.wantFirstRangeCycleD)
-				}
 				if stats.FertilityWindowStart.IsZero() || stats.FertilityWindowEnd.IsZero() {
 					t.Fatal("fixture: the stats carry no fertile window")
+				}
+				// Reported beside the containment checks below, not ahead of them: it
+				// pins the case to the clamp or the floor it is named for, and a range
+				// that moved off that day would otherwise hide whether it also left
+				// the window.
+				if got := CalendarDaysBetween(runningStart, context.DisplayOvulationRangeStart) + 1; got != testCase.wantFirstRangeCycleD {
+					t.Errorf("fixture: the range opens on cycle day %d, want %d", got, testCase.wantFirstRangeCycleD)
 				}
 
 				if CalendarDaysBetween(stats.FertilityWindowStart, context.DisplayOvulationRangeStart) < 0 {
