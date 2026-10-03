@@ -1234,6 +1234,11 @@ func initRepo(t *testing.T) string {
 	testenv.RequireLookPath(t, "git", "git")
 	dir := t.TempDir()
 	run(t, dir, "init", "-q", "-b", "main")
+	// A detached auto-gc/maintenance would still be writing .git/objects/pack
+	// when t.TempDir cleanup runs; repo-local config covers every later git
+	// call in the repo, including gitOutput and the re-executed main.
+	run(t, dir, "config", "gc.auto", "0")
+	run(t, dir, "config", "maintenance.auto", "false")
 	run(t, dir, "config", "user.email", "changelogd@example.test")
 	run(t, dir, "config", "user.name", "changelogd test")
 	run(t, dir, "config", "commit.gpgsign", "false")
