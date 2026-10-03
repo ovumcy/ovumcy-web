@@ -416,6 +416,74 @@ func TestBuildStatsCycleRibbonSuppressesInferredFertilityInUnpredictableMode(t *
 	}
 }
 
+// TestBuildStatsCycleRibbonSuppressesInferredFertilityOnPregnancyPauseAndOverdue
+// pins the two disjuncts of the shared suppression gate that the unpredictable
+// case above does not drive. Each case renders the same history once with the
+// gate open (the anchor: the three claims can appear) and once with exactly one
+// signal set, and requires the claims gone while the recorded rows stay.
+func TestBuildStatsCycleRibbonSuppressesInferredFertilityOnPregnancyPauseAndOverdue(t *testing.T) {
+	logs := statscycleribbonHistory(t)
+	spans := buildCompletedCycleSpans(logs, time.UTC)
+
+	cases := []struct {
+		name  string
+		stats CycleStats
+	}{
+		{"pregnancy pause", CycleStats{LutealPhase: 14, PregnancyPaused: true, CurrentCycleDay: 10}},
+		// 40 is past the 28-day reference (onboarding length) plus the one-week grace.
+		{"overdue cycle", CycleStats{LutealPhase: 14, CurrentCycleDay: 40}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			open := buildStatsCycleRibbon(statscycleribbonOwner(true), CycleStats{LutealPhase: 14, CurrentCycleDay: 10}, logs, spans)
+			fertile, peak, ovulation := statscycleribbonInferredFertility(open)
+			if fertile == 0 || peak == 0 || ovulation == 0 {
+				t.Fatalf("anchor: gate open must shade fertile=%d peak=%d ovulation=%d", fertile, peak, ovulation)
+			}
+
+			ribbon := buildStatsCycleRibbon(statscycleribbonOwner(true), tc.stats, logs, spans)
+			if !ribbon.Visible || len(ribbon.Rows) != len(open.Rows) {
+				t.Fatalf("recorded cycles keep rendering: visible=%v rows=%d", ribbon.Visible, len(ribbon.Rows))
+			}
+			if ribbon.ShowPhases {
+				t.Fatal("ShowPhases must be false under suppression")
+			}
+			fertile, peak, ovulation = statscycleribbonInferredFertility(ribbon)
+			if fertile != 0 || peak != 0 || ovulation != 0 {
+				t.Fatalf("%s must suppress every fertility claim; got fertile=%d peak=%d ovulation=%d", tc.name, fertile, peak, ovulation)
+			}
+			for _, day := range ribbon.Rows[0].Days {
+				if day.Day <= ribbon.Rows[0].PeriodLength && (!day.IsPeriod || day.Phase != "menstrual") {
+					t.Fatalf("day %d is a recorded period day: period=%v phase=%q", day.Day, day.IsPeriod, day.Phase)
+				}
+			}
+		})
+	}
+}
+
+// TestBuildStatsCycleRibbonFirstCycleGateIsTheTwoCycleMinimum records how the
+// "no fertility claim from slider defaults alone" floor reaches this surface: not
+// through FertilityProjectionSuppressed but because the stack stays hidden below
+// two completed cycles, so a row never exists for an account with fewer than two
+// observed cycles, even with the preference on.
+func TestBuildStatsCycleRibbonFirstCycleGateIsTheTwoCycleMinimum(t *testing.T) {
+	logs := statscycleribbonCycle(t, "2026-01-01", 5)
+	logs = append(logs, statscycleribbonCycle(t, "2026-01-31", 5)...)
+	spans := buildCompletedCycleSpans(logs, time.UTC)
+	if len(spans) != 1 {
+		t.Fatalf("fixture must hold exactly one completed cycle, got %d", len(spans))
+	}
+
+	ribbon := buildStatsCycleRibbon(statscycleribbonOwner(true), CycleStats{LutealPhase: 14, CompletedCycleCount: 1}, logs, spans)
+	if ribbon.Visible || len(ribbon.Rows) != 0 {
+		t.Fatalf("one completed cycle draws nothing: visible=%v rows=%d", ribbon.Visible, len(ribbon.Rows))
+	}
+	fertile, peak, ovulation := statscycleribbonInferredFertility(ribbon)
+	if fertile != 0 || peak != 0 || ovulation != 0 {
+		t.Fatalf("no fertility claim below two completed cycles; got %d/%d/%d", fertile, peak, ovulation)
+	}
+}
+
 // statscycleribbonStack builds a stack from consecutive cycle starts: every
 // entry is one cycle's first day plus its period days, and the last start only
 // closes the cycle before it. Lengths therefore come out as the gaps between

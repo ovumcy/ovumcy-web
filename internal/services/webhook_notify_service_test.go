@@ -85,6 +85,37 @@ func (stub stubDisclaimer) Message(_ string, key string) string {
 	}
 }
 
+// TestBuildPayloadWithAnEmptyDisclaimerSendsItEmptyAndKeepsTheRest records the
+// current behaviour when the localized disclaimer resolves to "": buildPayload has
+// no runtime guard, so the reminder still goes out with Disclaimer "" beside an
+// intact title, message and date. That the catalogue key is non-empty in every
+// locale is a build-time property of the locale files, not enforced here; this
+// test pins the gap so closing it is a deliberate change.
+func TestBuildPayloadWithAnEmptyDisclaimerSendsItEmptyAndKeepsTheRest(t *testing.T) {
+	service := &WebhookNotifyService{localized: stubDisclaimer{text: ""}}
+	reminder := DueReminder{
+		Type:      DueReminderTypePeriod,
+		EventDate: time.Date(2026, time.April, 9, 0, 0, 0, 0, time.UTC),
+		LeadDays:  2,
+	}
+
+	payload := service.buildPayload(reminder, "")
+	if payload.Disclaimer != "" {
+		t.Fatalf("an empty disclaimer is passed through unchanged, got %q", payload.Disclaimer)
+	}
+	if payload.Title != "Period reminder" || payload.Message != "Estimated next period around 2026-04-09." {
+		t.Fatalf("title and message are unaffected by the disclaimer: %q / %q", payload.Title, payload.Message)
+	}
+	if payload.Type != DueReminderTypePeriod || payload.EventDate != "2026-04-09" || payload.LeadDays != 2 {
+		t.Fatalf("type, date and lead days are unaffected: %+v", payload)
+	}
+
+	control := (&WebhookNotifyService{localized: stubDisclaimer{text: "estimate only"}}).buildPayload(reminder, "")
+	if control.Disclaimer != "estimate only" {
+		t.Fatalf("control: a non-empty disclaimer is carried verbatim, got %q", control.Disclaimer)
+	}
+}
+
 // watermarkWrite records one watermark advance.
 type watermarkWrite struct {
 	userID       uint

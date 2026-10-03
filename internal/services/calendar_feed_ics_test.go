@@ -427,6 +427,89 @@ func cmpStringSets(a, b []string) string {
 	return ""
 }
 
+// TestBuildCalendarFeedICSWithAnEmptyDisclaimerStillEmitsEveryEvent records the
+// current behaviour when the localized disclaimer resolves to "": the builder has
+// no runtime guard, so every VEVENT is still written, each with an empty
+// DESCRIPTION line. The disclaimer's presence is a property of the locale
+// catalogue, not of this builder; this pins the gap so closing it (suppress the
+// feed, or refuse the empty text) is a deliberate change.
+func TestBuildCalendarFeedICSWithAnEmptyDisclaimerStillEmitsEveryEvent(t *testing.T) {
+	input := CalendarFeedICSInput{
+		User:       predictableFeedUser(t, "2026-03-02"),
+		Logs:       predictableFeedLogs(t),
+		Now:        mustParseDashboardDay(t, "2026-03-20"),
+		Location:   time.UTC,
+		Disclaimer: "",
+	}
+
+	body := string(BuildCalendarFeedICS(input))
+	events := strings.Count(body, "BEGIN:VEVENT")
+	if events == 0 {
+		t.Fatalf("fixture: the feed must project events:\n%s", body)
+	}
+	if got := strings.Count(body, "\r\nDESCRIPTION:\r\n"); got != events {
+		t.Fatalf("every event carries an empty DESCRIPTION line: %d of %d\n%s", got, events, body)
+	}
+
+	input.Disclaimer = "estimate only"
+	control := string(BuildCalendarFeedICS(input))
+	if got := strings.Count(control, "\r\nDESCRIPTION:estimate only\r\n"); got != events {
+		t.Fatalf("control: a non-empty disclaimer reaches every event: %d of %d", got, events)
+	}
+}
+
+// TestBuildCalendarFeedICSProjectsExactlyThreeCyclesAheadAsSingleDays pins the
+// CURRENT horizon on purpose, as a decision to revisit rather than a statement of
+// approval. The feed chains next-period events two and three cycles beyond the
+// first (and an ovulation event per cycle still ahead), each a single all-day date
+// with no widened range. The calendar grid's rule against widening chained cycles
+// concerns the START RANGE only (a spread drawn around a projection of a
+// projection); the grid itself also chains single projected days across the visible
+// month, so the feed's far dates are the same kind of claim, not a wider one. What
+// stays unbounded by data confidence is the count: three cycles, whatever the
+// number of completed cycles behind them.
+func TestBuildCalendarFeedICSProjectsExactlyThreeCyclesAheadAsSingleDays(t *testing.T) {
+	body := string(BuildCalendarFeedICS(CalendarFeedICSInput{
+		User:       predictableFeedUser(t, "2026-03-02"),
+		Logs:       predictableFeedLogs(t),
+		Now:        mustParseDashboardDay(t, "2026-03-20"),
+		Location:   time.UTC,
+		Disclaimer: "estimate only",
+	}))
+
+	var periods []time.Time
+	for _, uid := range extractICSUIDs(t, body) {
+		if rest, ok := strings.CutPrefix(uid, "period-"); ok {
+			periods = append(periods, mustParseDashboardDay(t, rest[:4]+"-"+rest[4:6]+"-"+rest[6:8]))
+		}
+	}
+	if len(periods) != 3 {
+		t.Fatalf("expected exactly three projected period events (this cycle's end and the two after it), got %d:\n%s", len(periods), body)
+	}
+	for i := 1; i < len(periods); i++ {
+		if gap := CalendarDaysBetween(periods[i-1], periods[i]); gap != 28 {
+			t.Fatalf("chained period events are one cycle apart, got %d days between #%d and #%d", gap, i, i+1)
+		}
+	}
+	// 2026-03-02 + 28 days is the first projected start; the third is 56 days later.
+	if want := mustParseDashboardDay(t, "2026-03-30"); !periods[0].Equal(want) {
+		t.Fatalf("first projected period = %s, want %s", periods[0].Format("2006-01-02"), want.Format("2006-01-02"))
+	}
+
+	// Every event is a single all-day date: DTEND is the day after DTSTART.
+	pairs := regexp.MustCompile(`DTSTART;VALUE=DATE:(\d{8})\r\nDTEND;VALUE=DATE:(\d{8})`).FindAllStringSubmatch(body, -1)
+	if len(pairs) != strings.Count(body, "BEGIN:VEVENT") {
+		t.Fatalf("every event has a DTSTART/DTEND pair: %d of %d", len(pairs), strings.Count(body, "BEGIN:VEVENT"))
+	}
+	for _, pair := range pairs {
+		start, _ := time.Parse("20060102", pair[1])
+		end, _ := time.Parse("20060102", pair[2])
+		if end.Sub(start) != 24*time.Hour {
+			t.Fatalf("event %s..%s is not a single all-day date", pair[1], pair[2])
+		}
+	}
+}
+
 func TestBuildCalendarFeedICSProjectsMultipleCyclesAndEscapesDescription(t *testing.T) {
 	user := predictableFeedUser(t, "2026-03-02")
 	now := mustParseDashboardDay(t, "2026-03-20")
