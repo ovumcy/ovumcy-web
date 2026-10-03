@@ -383,6 +383,10 @@ type stack struct {
 	path string // slash-separated, relative to the repository root
 	// env maps each key the service's environment block sets to its raw value.
 	env map[string]string
+	// envFile is true when the service loads an env_file: every key of that file
+	// reaches the app, so a key the environment block leaves out is not ignored,
+	// while one it does set still overrides the file.
+	envFile bool
 }
 
 var (
@@ -395,6 +399,7 @@ var (
 	// value, which may still carry an inline comment.
 	environmentTail = regexp.MustCompile(`^(\s*[:=])\s*(.*)$`)
 	environmentHead = regexp.MustCompile(`^\s{4}environment:\s*$`)
+	envFileHead     = regexp.MustCompile(`(?m)^ {4}env_file:`)
 )
 
 // entryValue returns the value of an environment entry without the inline YAML
@@ -446,55 +451,71 @@ func environmentKeyLine(line string) bool {
 	return rest == "" || (rest != tail && strings.HasPrefix(rest, "#"))
 }
 
-// parseOvumcyEnvironment returns the keys set in the environment block of the
-// service that runs the ovumcy image, or ok=false when the file has no such
-// service. The map form (`KEY: value`) and the list form (`- KEY=value`, and
-// the bare `- KEY`, which compose reads from the shell or .env) are read; a
-// commented-out line is not a key.
-func parseOvumcyEnvironment(content string) (env map[string]string, ok bool) {
+// ovumcyServiceBody returns the text of the service that runs the ovumcy image,
+// or ok=false when the file has no such service.
+func ovumcyServiceBody(content string) (string, bool) {
 	headers := serviceHeader.FindAllStringIndex(content, -1)
 	for i, header := range headers {
 		end := len(content)
 		if i+1 < len(headers) {
 			end = headers[i+1][0]
 		}
-		body := content[header[1]:end]
-		if !ovumcyImage.MatchString(body) {
-			continue
+		if body := content[header[1]:end]; ovumcyImage.MatchString(body) {
+			return body, true
 		}
-		env = map[string]string{}
-		inBlock := false
-		for _, line := range strings.Split(body, "\n") {
-			line = strings.TrimRight(line, "\r")
-			switch {
-			case environmentHead.MatchString(line):
-				inBlock = true
-			case !inBlock:
-			case strings.TrimSpace(line) == "" || strings.HasPrefix(strings.TrimSpace(line), "#"):
-			case environmentKeyLine(line):
-				match := environmentKey.FindStringSubmatch(line)
-				key, listEntry := match[2], match[1] != ""
-				tail := environmentTail.FindStringSubmatch(match[3])
-				switch {
-				case tail != nil:
-					separator := strings.TrimSpace(tail[1])
-					value, quoted := entryValue(tail[2], separator == ":" && !listEntry)
-					if separator == ":" && !listEntry && value == "" && !quoted {
-						// `KEY:` with no value is null in YAML, which compose
-						// resolves from the shell or .env like the bare list entry.
-						value = "${" + key + "}"
-					}
-					env[key] = value
-				case listEntry:
-					env[key] = "${" + key + "}"
-				}
-			default:
-				inBlock = false
-			}
-		}
-		return env, true
 	}
-	return nil, false
+	return "", false
+}
+
+// parseOvumcyEnvironment returns the keys set in the environment block of the
+// service that runs the ovumcy image, or ok=false when the file has no such
+// service. The map form (`KEY: value`) and the list form (`- KEY=value`, and
+// the bare `- KEY`, which compose reads from the shell or .env) are read; a
+// commented-out line is not a key. A line inside the block that is not an entry
+// at the indentation the reader expects (six spaces under a four-space
+// `environment:`) is an error, not the end of the block: another valid YAML
+// indentation would otherwise drop every entry after it unjudged.
+func parseOvumcyEnvironment(content string) (env map[string]string, ok bool, err error) {
+	body, ok := ovumcyServiceBody(content)
+	if !ok {
+		return nil, false, nil
+	}
+	env = map[string]string{}
+	inBlock := false
+	for number, line := range strings.Split(body, "\n") {
+		line = strings.TrimRight(line, "\r")
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case environmentHead.MatchString(line):
+			inBlock = true
+		case !inBlock:
+		case trimmed == "" || strings.HasPrefix(trimmed, "#"):
+		case environmentKeyLine(line):
+			match := environmentKey.FindStringSubmatch(line)
+			key, listEntry := match[2], match[1] != ""
+			tail := environmentTail.FindStringSubmatch(match[3])
+			switch {
+			case tail != nil:
+				separator := strings.TrimSpace(tail[1])
+				value, quoted := entryValue(tail[2], separator == ":" && !listEntry)
+				if separator == ":" && !listEntry && value == "" && !quoted {
+					// `KEY:` with no value is null in YAML, which compose
+					// resolves from the shell or .env like the bare list entry.
+					value = "${" + key + "}"
+				}
+				env[key] = value
+			case listEntry:
+				env[key] = "${" + key + "}"
+			}
+		default:
+			indent := len(line) - len(strings.TrimLeft(line, " \t"))
+			if indent > 4 || (indent == 4 && strings.HasPrefix(trimmed, "-")) {
+				return nil, true, fmt.Errorf("line %d of the ovumcy service (%q) is inside its environment block but is not an entry indented six spaces under a four-space `environment:`, so the entries after it would not be judged; write the block in that form", number+1, trimmed)
+			}
+			inBlock = false
+		}
+	}
+	return env, true, nil
 }
 
 // exemption records a key a stack may legitimately not forward. applies decides
@@ -659,6 +680,7 @@ var pinnedLiterals = map[string]pin{
 	},
 	"TRUST_PROXY_ENABLED": {
 		reason:  "whether a reverse proxy fronts the app is the stack's topology: trusting forwarded headers on a stack with no proxy lets any client choose its own address, and distrusting them behind the proxy puts every client behind the proxy's address",
+		applies: func(s stack) bool { return !s.envFile }, // the root file is the operator's own topology, set in its env file
 		accepts: exactly("true", "false"),
 		fixed:   "the literal true or false",
 	},
@@ -679,27 +701,36 @@ var pinnedLiterals = map[string]pin{
 func loadExampleStacks(t *testing.T, root string) []stack {
 	t.Helper()
 	var stacks []stack
-	err := filepath.WalkDir(filepath.Join(root, "docs", "examples"), func(path string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() || entry.Name() != "docker-compose.yml" {
-			return nil
-		}
+	load := func(path string) error {
 		content, err := os.ReadFile(path)
 		if err != nil {
 			return err
 		}
 		rel, _ := filepath.Rel(root, path)
-		env, ok := parseOvumcyEnvironment(string(content))
+		env, ok, err := parseOvumcyEnvironment(string(content))
+		if err != nil {
+			t.Errorf("%s: %v", filepath.ToSlash(rel), err)
+			return nil
+		}
 		if !ok {
 			// A compose file the judgment cannot read is a stack it would never
 			// hold to the keys: fail on it rather than let it drop out of the run.
 			t.Errorf("%s: no service runs the ovumcy image, so this stack was not judged; make its ovumcy service's image match the pattern the parser reads, or remove the file from docs/examples", filepath.ToSlash(rel))
 			return nil
 		}
-		stacks = append(stacks, stack{path: filepath.ToSlash(rel), env: env})
+		body, _ := ovumcyServiceBody(string(content))
+		stacks = append(stacks, stack{path: filepath.ToSlash(rel), env: env, envFile: envFileHead.MatchString(body)})
 		return nil
+	}
+	// The root compose file ships to operators too, so it is held to the same keys.
+	if err := load(filepath.Join(root, "docker-compose.yml")); err != nil {
+		t.Fatalf("read the root compose file: %v", err)
+	}
+	err := filepath.WalkDir(filepath.Join(root, "docs", "examples"), func(path string, entry os.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || entry.Name() != "docker-compose.yml" {
+			return err
+		}
+		return load(path)
 	})
 	if err != nil {
 		t.Fatalf("walk docs/examples: %v", err)
@@ -735,6 +766,9 @@ func judgeStacks(keys map[string]bool, stacks []stack) (problems []string, exemp
 			}
 			if rule, ok := forwardingExemptions[key]; ok && (rule.applies == nil || rule.applies(s)) {
 				exempted[key] = true
+				continue
+			}
+			if s.envFile {
 				continue
 			}
 			problems = append(problems, fmt.Sprintf("%s: does not forward %s, so the app ignores the operator's value and runs on the in-code default; add `%s: ${%s:-}` to its environment block, or exempt the key in forwardingExemptions with the reason the stack must not carry it", s.path, key, key, key))
@@ -819,6 +853,7 @@ func TestEveryExampleStackForwardsEveryRuntimeConfigKey(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
+		"docker-compose.yml",
 		"docs/examples/postgres/docker-compose.yml",
 		"docs/examples/reverse-proxy/caddy/docker-compose.yml",
 		"docs/examples/reverse-proxy/caddy-postgres/docker-compose.yml",
@@ -1230,9 +1265,9 @@ func TestEnvironmentBlockParserReadsBothForms(t *testing.T) {
 		"    read_only: true",
 		"",
 	}, "\n")
-	env, ok := parseOvumcyEnvironment(content)
-	if !ok {
-		t.Fatal("the ovumcy service must be found by its image")
+	env, ok, err := parseOvumcyEnvironment(content)
+	if err != nil || !ok {
+		t.Fatalf("the ovumcy service must be found by its image and read cleanly, got ok=%v err=%v", ok, err)
 	}
 	if !isPassthrough("LOG_LEVEL", env["LOG_LEVEL"]) {
 		t.Fatalf("a map entry with no value is compose's passthrough of the same name, got %q", env["LOG_LEVEL"])
@@ -1274,5 +1309,59 @@ func TestEnvironmentBlockParserReadsBothForms(t *testing.T) {
 	}
 	if composesDatabaseURL(stack{env: map[string]string{"DATABASE_URL": "${DATABASE_URL:-}"}}) {
 		t.Fatal("a passthrough DATABASE_URL must not count as composed")
+	}
+}
+
+// TestEnvironmentBlockParserRefusesAnEntryItCannotPlace proves that an entry
+// written at another indentation fails with a message naming it, instead of
+// ending the block and leaving every later entry unjudged.
+func TestEnvironmentBlockParserRefusesAnEntryItCannotPlace(t *testing.T) {
+	for name, entry := range map[string]string{
+		"deeper map entry":     "        AUDIT_LOG_ENABLED: ${AUDIT_LOG_ENABLED:-}",
+		"shallower list entry": "    - AUDIT_LOG_ENABLED=${AUDIT_LOG_ENABLED:-}",
+		"odd indentation":      "     AUDIT_LOG_ENABLED: ${AUDIT_LOG_ENABLED:-}",
+		"lowercase key":        "      audit_log_enabled: true",
+	} {
+		content := strings.Join([]string{
+			"services:",
+			"  ovumcy:",
+			"    image: ghcr.io/ovumcy/ovumcy-web:v2.0.0",
+			"    environment:",
+			"      REGISTRATION_MODE: ${REGISTRATION_MODE:-}",
+			entry,
+			"      HSTS_ENABLED: ${HSTS_ENABLED:-}",
+			"    init: true",
+			"",
+		}, "\n")
+		_, _, err := parseOvumcyEnvironment(content)
+		if err == nil || !strings.Contains(err.Error(), strings.TrimSpace(entry)) {
+			t.Errorf("%s: want an error naming the entry %q, got %v", name, strings.TrimSpace(entry), err)
+		}
+	}
+}
+
+// TestEnvFileStackIsJudgedOnWhatItSets proves the env_file reading: a key the
+// environment block leaves out reaches the app through the file and is not
+// refused, while a key it sets as a literal overrides the file and is.
+func TestEnvFileStackIsJudgedOnWhatItSets(t *testing.T) {
+	content := strings.Join([]string{
+		"services:",
+		"  ovumcy:",
+		"    image: ghcr.io/ovumcy/ovumcy-web:v2.0.0",
+		"    env_file:",
+		"      - ./.env",
+		"    environment:",
+		"      - REGISTRATION_MODE=open",
+		"    init: true",
+		"",
+	}, "\n")
+	env, ok, err := parseOvumcyEnvironment(content)
+	body, _ := ovumcyServiceBody(content)
+	if err != nil || !ok || !envFileHead.MatchString(body) {
+		t.Fatalf("the env_file service must be read and flagged, got ok=%v err=%v", ok, err)
+	}
+	problems, _, _ := judgeStacks(map[string]bool{"REGISTRATION_MODE": true, "HSTS_ENABLED": true}, []stack{{path: "fixture/docker-compose.yml", env: env, envFile: true}})
+	if len(problems) != 1 || !strings.Contains(problems[0], "sets REGISTRATION_MODE to") {
+		t.Errorf("want only the literal refused, got %v", problems)
 	}
 }
