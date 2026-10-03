@@ -133,11 +133,10 @@ func resolveDaySaveMessageKey(user *models.User, day time.Time, today time.Time,
 	// surface withheld the window. The save falls back to the neutral message
 	// rather than softening the fertile one.
 	//
-	// A day already behind the owner is a backfill: the window is a projection
-	// about the days ahead, and a past day the owner is recording after the fact
-	// has nothing left to be estimated about, so the line would only read as a
-	// claim about a day that is over. Only today (and the days ahead, which the
-	// window does estimate) may carry it.
+	// The line speaks about the day being saved only when that day is today. A day
+	// already behind the owner is a backfill, recorded after the fact, and the
+	// line would read as a claim about a day that is over; a day still ahead is
+	// not what the owner is living in yet, so it gets no claim either.
 	//
 	// Out-of-date data is a third tier, and the one PublishedStats does not answer
 	// with a cleared window: it withholds the status and the phase and leaves the
@@ -147,7 +146,7 @@ func resolveDaySaveMessageKey(user *models.User, day time.Time, today time.Time,
 	// pages, which print "unknown" there, do not.
 	if !suppression.FertilitySuppressed &&
 		!stats.CycleDataStale &&
-		!day.Before(dateOnly(today)) &&
+		day.Equal(dateOnly(today)) &&
 		!stats.FertilityWindowStart.IsZero() &&
 		!day.Before(dateOnly(stats.FertilityWindowStart)) &&
 		!day.After(dateOnly(stats.FertilityWindowEnd)) {

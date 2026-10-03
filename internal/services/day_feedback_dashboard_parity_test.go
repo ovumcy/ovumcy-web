@@ -119,14 +119,14 @@ func dashboardFertileDays(t *testing.T, user *models.User, logs []models.DailyLo
 	return fertile
 }
 
-// notBefore keeps the calendar-day keys that fall on or after today. The save
-// message is the fertile one only for today and the days ahead, so it is held
-// against the dashboard's window from today on; a day behind the owner is a
-// backfill and answers neutral whatever the window says.
-func notBefore(days []string, today time.Time) []string {
+// onToday keeps only today's calendar-day key. The save message is the fertile
+// one only for a save made on today itself, so it is held against the
+// dashboard's window on that one day; a day behind the owner (a backfill) or
+// ahead of them answers neutral whatever the window says.
+func onToday(days []string, today time.Time) []string {
 	kept := []string{}
 	for _, key := range days {
-		if key >= CalendarDayKey(dateOnly(today)) {
+		if key == CalendarDayKey(dateOnly(today)) {
 			kept = append(kept, key)
 		}
 	}
@@ -220,17 +220,23 @@ func TestDayFeedbackNamesTheSameFertileDaysAsTheDashboardForAnInferredLuteal(t *
 				if !slices.Equal(fromDashboard, wantDays) {
 					t.Fatalf("dashboard window covers %v, want cycle days 13-18 %v", fromDashboard, wantDays)
 				}
-				if !slices.Equal(fromFeedback, notBefore(fromDashboard, today)) {
-					t.Fatalf("save message is fertile on %v, the dashboard window covers %v from today on", fromFeedback, notBefore(fromDashboard, today))
+				if !slices.Equal(fromFeedback, onToday(fromDashboard, today)) {
+					t.Fatalf("save message is fertile on %v, the dashboard window covers %v on today", fromFeedback, onToday(fromDashboard, today))
 				}
-				if !slices.Equal(fromFeedback, notBefore(wantDays, today)) {
-					t.Fatalf("fertile days = %v, want cycle days 13-18 from today on %v", fromFeedback, notBefore(wantDays, today))
+				if !slices.Equal(fromFeedback, onToday(wantDays, today)) {
+					t.Fatalf("fertile days = %v, want cycle days 13-18 on today only %v", fromFeedback, onToday(wantDays, today))
 				}
 				if got := dayFeedbackKeyOn(t, user, logs, location, today, cycleDay(10)); got != daySaveMessageNeutral {
 					t.Fatalf("cycle day 10 message = %q, want the neutral one", got)
 				}
-				if got := dayFeedbackKeyOn(t, user, logs, location, today, cycleDay(16)); got != daySaveMessageFertile {
-					t.Fatalf("cycle day 16 message = %q, want the fertile one", got)
+				// Cycle day 16 is inside the window: fertile when it is today, neutral
+				// when it is a day ahead (today = cycle day 10).
+				wantDay16 := daySaveMessageNeutral
+				if CalendarDayKey(today) == CalendarDayKey(cycleDay(16)) {
+					wantDay16 = daySaveMessageFertile
+				}
+				if got := dayFeedbackKeyOn(t, user, logs, location, today, cycleDay(16)); got != wantDay16 {
+					t.Fatalf("cycle day 16 message = %q, want %q", got, wantDay16)
 				}
 			})
 		}
@@ -277,8 +283,8 @@ func TestDayFeedbackFollowsAConfirmedThermalShiftLikeTheDashboard(t *testing.T) 
 		if !slices.Equal(fromDashboard, wantDays) {
 			t.Fatalf("dashboard window covers %v, want the confirmed window %v", fromDashboard, wantDays)
 		}
-		if !slices.Equal(fromFeedback, notBefore(fromDashboard, today)) {
-			t.Fatalf("save message is fertile on %v, the dashboard window covers %v from today on", fromFeedback, notBefore(fromDashboard, today))
+		if !slices.Equal(fromFeedback, onToday(fromDashboard, today)) {
+			t.Fatalf("save message is fertile on %v, the dashboard window covers %v on today", fromFeedback, onToday(fromDashboard, today))
 		}
 		// A shift is only confirmed once its third warm day is logged, so by then the
 		// whole confirmed window is behind the owner: every day of it is a backfill

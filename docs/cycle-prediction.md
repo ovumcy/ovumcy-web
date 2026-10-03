@@ -371,10 +371,9 @@ window and fertility status derived from it stay withheld. Unpredictable-cycle m
 a pregnancy pause and the first-cycle floor still withhold that day too.
 
 The day-save message adds one more condition of its own: the fertile line is spoken only
-for a day that is today or still ahead (in the owner's timezone). A day the owner records
-after the fact answers the plain "Saved." message even when it sits inside the window the
-current cycle projects, since the estimate describes the days ahead and says nothing
-about a day that is over.
+when the saved day is today (in the owner's timezone). A day the owner records after the
+fact, or a day still ahead, answers the plain "Saved." message even when it sits inside
+the window the current cycle projects.
 
 The floor is the fourth signal and the only partial one. Predicates:
 `FertilityProjectionSuppressed` over `PredictionsSuppressed`

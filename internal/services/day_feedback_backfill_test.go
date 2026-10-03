@@ -5,9 +5,9 @@ import (
 	"time"
 )
 
-// Saving a day the owner is filling in after the fact is not a question about
-// the estimated window: the fertile line is spoken only for today and the days
-// ahead, whatever window the current cycle projects over the day being saved.
+// The fertile line is spoken only when the day being saved is today, whatever
+// window the current cycle projects over it: a day filled in after the fact and
+// a day still ahead both get the neutral message.
 //
 // The history is three 28-day cycles, so the running cycle (started 2026-03-26)
 // projects its default-luteal window on cycle days 9-14, 2026-04-03..04-08.
@@ -27,7 +27,8 @@ func TestDayFeedbackIsNeutralForABackfilledDayInsideTheWindow(t *testing.T) {
 			{"today", "2026-04-05", "2026-04-05", daySaveMessageFertile},
 			{"a past day inside the window", "2026-04-03", "2026-04-05", daySaveMessageNeutral},
 			{"yesterday, the last day behind today", "2026-04-04", "2026-04-05", daySaveMessageNeutral},
-			{"a future day inside the window", "2026-04-07", "2026-04-05", daySaveMessageFertile},
+			{"a future day inside the window", "2026-04-07", "2026-04-05", daySaveMessageNeutral},
+			{"tomorrow, the first day ahead", "2026-04-06", "2026-04-05", daySaveMessageNeutral},
 			{"the window's last day, saved as today", "2026-04-08", "2026-04-08", daySaveMessageFertile},
 			{"the window's last day, backfilled the next day", "2026-04-08", "2026-04-09", daySaveMessageNeutral},
 		} {
