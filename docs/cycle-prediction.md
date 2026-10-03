@@ -370,6 +370,12 @@ naming it — still worded as an estimate, beside the disclaimer — while the f
 window and fertility status derived from it stay withheld. Unpredictable-cycle mode,
 a pregnancy pause and the first-cycle floor still withhold that day too.
 
+The day-save message adds one more condition of its own: the fertile line is spoken only
+for a day that is today or still ahead (in the owner's timezone). A day the owner records
+after the fact answers the plain "Saved." message even when it sits inside the window the
+current cycle projects, since the estimate describes the days ahead and says nothing
+about a day that is over.
+
 The floor is the fourth signal and the only partial one. Predicates:
 `FertilityProjectionSuppressed` over `PredictionsSuppressed`
 (`internal/services/dashboard_cycle.go`) — one predicate rather than a copy per
