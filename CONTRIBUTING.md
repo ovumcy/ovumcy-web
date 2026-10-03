@@ -129,6 +129,9 @@ parallel one. Endpoints content-negotiate, so the JSON shape is part of the cont
   an operation means, changing a status code, a route or an error key. Each ships as
   a **Breaking (API shape)** entry in CHANGELOG.md that names what a client has to
   change (the marker is described under Changelog Fragments below).
+- A new per-account rate limit is not a break: it answers `429` only to a client that
+  was already guessing a credential or a code, and is recorded as an ordinary
+  Security or Added entry.
 - A correction that makes docs/openapi.yaml describe what the server already does is
   not a breaking change, even when the corrected text is stricter than the old one;
   it is listed under **Fixed**.
