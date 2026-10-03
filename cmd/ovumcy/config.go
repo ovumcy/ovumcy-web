@@ -286,8 +286,10 @@ func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 	// checks) — only a request carrying a valid token reaches
 	// ResetPasswordAndRotateRecoveryCodeCAS, where the new password is hashed.
 	// The ceiling here instead bounds credential guessing directly — TOTP codes
-	// on one route, reset tokens on the other — with no service-level attempt
-	// budget behind either. Same mechanism, same ceiling as the three pairs
+	// on one route, reset tokens on the other. Only the 2FA challenge has a
+	// service-level attempt budget behind it (the per-account, per-client
+	// "totp" budget, checked in the handler); the redeem has none, so the edge
+	// ceiling is its only guess bound. Same mechanism, same ceiling as the three pairs
 	// above; sized like the login pair rather than forgot-password's 1-hour
 	// window, since both are a continuation of an already-started flow.
 	totpChallengeMax, totpChallengeWindow := getCredentialRateLimit("RATE_LIMIT_TOTP_CHALLENGE_MAX", "RATE_LIMIT_TOTP_CHALLENGE_WINDOW", 8, 15*time.Minute)
