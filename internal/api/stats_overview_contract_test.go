@@ -215,6 +215,35 @@ func statsOverviewStates() []statsOverviewState {
 			wantCurrentPhase:     "unknown",
 			wantsDashboardPhase:  true,
 		},
+		{
+			// The same day with bleeding logged on it and no cycle start marked:
+			// the anchor stays on the recorded start, so the window still calls
+			// today fertile, and the logged day outranks the band — "menstrual"
+			// on the API and on both pages, the dashboard hero's label included.
+			name:    "irregular range mode with bleeding logged past the median ovulation",
+			history: []int{117, 92, 47, 19},
+			seed: func(t *testing.T, database *gorm.DB, user models.User, today time.Time) {
+				updateStatsOverviewUser(t, database, user, map[string]any{
+					"irregular_cycle":   true,
+					"last_period_start": services.AddCalendarDays(today, -19, time.UTC),
+				})
+				seedStatsOverviewLog(t, database, models.DailyLog{
+					UserID:   user.ID,
+					Date:     today,
+					IsPeriod: true,
+					Flow:     models.FlowLight,
+				})
+			},
+			wantReasons:          nil,
+			wantPredictions:      false,
+			wantFertility:        false,
+			wantNextPeriodSet:    true,
+			wantsFertilityHook:   true,
+			wantCycleDataStale:   false,
+			wantCurrentFertility: services.FertilityStatusFertile,
+			wantCurrentPhase:     "menstrual",
+			wantsDashboardPhase:  true,
+		},
 	}
 }
 

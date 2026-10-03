@@ -25,5 +25,6 @@
   longest cycle's ovulation, on the dashboard, the statistics page, the calendar and the JSON
   overview; the cycles the calendar projects after it keep the median window. The published
   ovulation date stays the median estimate, so on the days between it and the window's end no phase
-  is named — the ovulation may still be ahead of the owner. The window can run past the projected
+  is named — the ovulation may still be ahead of the owner — unless bleeding is logged that day,
+  which stays menstrual. The window can run past the projected
   next period; the calendar marks those days as both.

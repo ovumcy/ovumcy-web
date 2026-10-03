@@ -63,7 +63,9 @@ func assertRangeModeFixture(t *testing.T, user *models.User, stats CycleStats) {
 // (DetectCurrentPhase), the published copy the JSON API and both pages read,
 // and the dashboard hero's label, which the dashboard header prints in place of
 // the published phase — whether it pairs a projection-basis "fertile" with
-// "luteal" or "menstrual".
+// "luteal". "Menstrual" beside it is no contradiction: the window opens five days
+// before the shortest cycle's ovulation, which for a short cycle is still a
+// projected or logged period day.
 func TestRangeModePublishesNoPhaseThatPlacesTheOvulationOnAFertileDay(t *testing.T) {
 	user, allLogs := rangeModeOvertakingFixture(t)
 	cycleStart := mustParseDay(t, "2026-05-01")
@@ -92,7 +94,7 @@ func TestRangeModePublishesNoPhaseThatPlacesTheOvulationOnAFertileDay(t *testing
 			if producer.basis != FertilityBasisProjection || producer.status != FertilityStatusFertile {
 				continue
 			}
-			if producer.phase == "luteal" || producer.phase == "menstrual" {
+			if producer.phase == "luteal" {
 				t.Errorf("cycle day %d (%s): the %s publishes phase %q beside a projected %q — window %s..%s, ovulation %s",
 					cycleDay, CalendarDayKey(today), producer.name, producer.phase, producer.status,
 					CalendarDayKey(stats.FertilityWindowStart), CalendarDayKey(stats.FertilityWindowEnd), CalendarDayKey(stats.OvulationDate))
@@ -132,6 +134,41 @@ func TestRangeModePublishesNoPhaseThatPlacesTheOvulationOnAFertileDay(t *testing
 	published, _, _ := PublishedOverviewStats(user, logs, stats, today, time.UTC)
 	if stats.CurrentPhase != "luteal" || published.CurrentPhase != "luteal" || published.CurrentFertility != FertilityStatusOutsideEstimatedWindow {
 		t.Fatalf("cycle day 32: phase %q / published %q status %q, want luteal outside the window", stats.CurrentPhase, published.CurrentPhase, published.CurrentFertility)
+	}
+}
+
+// TestRangeModeHeroKeepsABleedingDayLoggedInsideTheBand: a period day logged
+// past the median ovulation without a cycle-start mark (bleeding the owner did
+// not call a new cycle) leaves the baseline on the explicit start, so the band
+// and its widened window stay. resolveCyclePhase answers "menstrual" off the log
+// before it asks ovulationTimingUndetermined; the hero's label — what the
+// dashboard header prints — must not turn that into "unknown".
+func TestRangeModeHeroKeepsABleedingDayLoggedInsideTheBand(t *testing.T) {
+	user, allLogs := rangeModeOvertakingFixture(t)
+	today := mustParseDay(t, "2026-05-20")
+	logs := append(logsUpTo(allLogs, today), models.DailyLog{Date: today, IsPeriod: true, Flow: models.FlowLight})
+	stats := BuildCycleStatsFromLogs(user, logs, today, time.UTC)
+
+	if got := CalendarDayKey(stats.LastPeriodStart); got != "2026-05-01" {
+		t.Fatalf("fixture: the unmarked bleeding day moved the anchor to %s, want 2026-05-01", got)
+	}
+	if !dashboardIrregularPredictionRangeEnabled(user, stats) || !ovulationTimingUndetermined(stats, today) {
+		t.Fatalf("fixture: range mode %v, window %s..%s, ovulation %s — today must sit in the band",
+			dashboardIrregularPredictionRangeEnabled(user, stats), CalendarDayKey(stats.FertilityWindowStart),
+			CalendarDayKey(stats.FertilityWindowEnd), CalendarDayKey(stats.OvulationDate))
+	}
+
+	published, _, _ := PublishedOverviewStats(user, logs, stats, today, time.UTC)
+	cycleContext := BuildDashboardCycleContext(user, logs, stats, today, time.UTC)
+	hero := BuildDashboardCycleHero(user, stats, cycleContext, dashboardCycleHeroInput{Logs: logs, Today: today, Location: time.UTC})
+	if !hero.Visible {
+		t.Fatal("the dashboard hero was not drawn, so its label was never compared")
+	}
+	if stats.CurrentPhase != "menstrual" || published.CurrentPhase != "menstrual" {
+		t.Fatalf("phase %q / published %q, want menstrual off the logged bleeding day", stats.CurrentPhase, published.CurrentPhase)
+	}
+	if hero.CurrentPhase != published.CurrentPhase {
+		t.Fatalf("the dashboard hero says %q while the published phase is %q", hero.CurrentPhase, published.CurrentPhase)
 	}
 }
 

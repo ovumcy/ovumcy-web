@@ -143,7 +143,8 @@ fertilityEnd   = window(maxCycleLength).ovulationDate
 The published ovulation date stays the median one, so it can sit in the middle
 of this window. On the days after it, up to the window's last day, no phase is
 named (the phase is `unknown`): the ovulation may still be ahead, and "luteal"
-would say it is behind. The window can run past the projected next period;
+would say it is behind. A day with bleeding logged on it stays `menstrual` —
+a recorded fact outranks the rule. The window can run past the projected next period;
 it is not cut there, and the calendar marks those days as both. The projected
 cycles chained after the current one keep the median window — a projection of a
 projection is not widened.
