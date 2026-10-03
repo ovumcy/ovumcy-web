@@ -35,9 +35,9 @@ var renameColumnStatementPattern = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+([^\
 var removedTableMarkerPattern = regexp.MustCompile(`(?im)^[ \t]*--[ \t]*` + regexp.QuoteMeta(removedTableMarker) + `[ \t]+([^\s;]+)[ \t]*$`)
 var createUniqueIndexStatementPattern = regexp.MustCompile(`(?i)^CREATE\s+UNIQUE\s+INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?(\S+)\s+ON\s+([^\s(]+)\s*\(`)
 
-// duplicateGroupReportLimit caps how many conflicting groups a refusal spells
-// out. An operator needs enough to see the shape of the problem and to start
-// fixing it, not a dump of the table.
+// duplicateGroupReportLimit caps how many conflicting groups a refusal counts;
+// past it the refusal says "more than" this many. An operator needs the shape
+// of the problem, not a scan of the whole table.
 const duplicateGroupReportLimit = 5
 
 type embeddedMigration struct {
@@ -365,7 +365,9 @@ type duplicateGroup struct {
 
 // refuseUniqueIndexOverExistingDuplicates stops a migration that adds a UNIQUE
 // index to a table that already holds rows the index cannot cover, and names
-// the conflicting groups.
+// how many conflicting groups there are. It never prints the key values: they
+// are an owner's id with symptom names, or an email address, and this refusal
+// lands in the always-on boot log on every restart.
 //
 // Left to the engine, the same situation is a bare `UNIQUE constraint failed`
 // (or `could not create unique index`) with nothing an operator can act on:
@@ -373,7 +375,7 @@ type duplicateGroup struct {
 // is the only thing that knows what the key means. The alternative — having the
 // migration delete or merge the extra rows itself — is not available here. This
 // instance stores one person's health history, and a schema change is not
-// consent to lose part of it. So the migration refuses, prints the groups, and
+// consent to lose part of it. So the migration refuses, counts the groups, and
 // leaves every row exactly where it was for the owner to resolve.
 //
 // What it must not do is send the operator somewhere this refusal has already
@@ -409,23 +411,23 @@ func refuseUniqueIndexOverExistingDuplicates(database *gorm.DB, migration embedd
 		return nil
 	}
 
-	rendered := make([]string, 0, duplicateGroupReportLimit)
-	for _, group := range groups {
-		if len(rendered) == duplicateGroupReportLimit {
-			rendered = append(rendered, "and more")
-			break
-		}
-		rendered = append(rendered, fmt.Sprintf("%s -> %d rows", group.ConflictKey, group.RowCount))
+	// The refusal ends the boot and is logged on every restart, so it carries
+	// counts only: the conflicting key values are an owner's id and symptom
+	// names or an email address, and an operator reads them from the database
+	// through the repair command instead of from a log line.
+	count := fmt.Sprintf("%d", len(groups))
+	if len(groups) > duplicateGroupReportLimit {
+		count = fmt.Sprintf("more than %d", duplicateGroupReportLimit)
 	}
 
 	return fmt.Errorf(
-		"refusing migration %s: table %s already holds rows that unique index %s on (%s) cannot cover, and this migration never deletes, merges or rewrites a row to make room for it. Conflicting group(s), keyed as (%s): %s. Nothing was written: the migration was rolled back and the database is unchanged. This refusal is also what stops the server, so it has to be resolved with the instance down, never through the running application: back up the database, then run `ovumcy repair`, which lists the repairs this binary carries and reports what it would change before changing anything. Runbook: docs/self-hosted.md, \"Duplicate rows that refuse a migration\"",
+		"refusing migration %s: table %s already holds rows that unique index %s on (%s) cannot cover, and this migration never deletes, merges or rewrites a row to make room for it. Conflicting group(s), keyed as (%s): %s; the key values are left out of this log on purpose. Nothing was written: the migration was rolled back and the database is unchanged. This refusal is also what stops the server, so it has to be resolved with the instance down, never through the running application: back up the database, then run `ovumcy repair`, which lists the repairs this binary carries and reports what it would change before changing anything. Runbook: docs/self-hosted.md, \"Duplicate rows that refuse a migration\"",
 		migration.Name,
 		intent.Table,
 		intent.IndexName,
 		intent.KeyExprList,
 		intent.KeyExprList,
-		strings.Join(rendered, "; "),
+		count,
 	)
 }
 

@@ -201,11 +201,13 @@ func TestUniqueIndexRefusalNamesAtMostFiveGroupsAndSaysThereAreMore(t *testing.T
 		t.Fatal("six conflicting groups must refuse the migration")
 	}
 	message := err.Error()
-	if groups := strings.Count(message, " -> "); groups != duplicateGroupReportLimit {
-		t.Fatalf("expected %d named groups, got %d in: %s", duplicateGroupReportLimit, groups, message)
+	if !strings.Contains(message, "): more than 5; the key values") {
+		t.Fatalf("a count past the bound must say it is truncated, got: %s", message)
 	}
-	if !strings.Contains(message, "and more") {
-		t.Fatalf("a truncated list must say it is truncated, got: %s", message)
+	for group := range 6 {
+		if strings.Contains(message, fmt.Sprintf("i%d", group)) {
+			t.Fatalf("refusal must not print the conflicting key values, found icon i%d in: %s", group, message)
+		}
 	}
 }
 
@@ -258,9 +260,16 @@ func TestMigrationRefusesToCreateTheSymptomNameIndexOverExistingDuplicates(t *te
 	}
 
 	message := err.Error()
-	for _, fragment := range []string{"037_symptom_name_uniqueness.sql", "symptom_types", "cramps", "2"} {
-		if !strings.Contains(strings.ToLower(message), strings.ToLower(fragment)) {
-			t.Fatalf("refusal must name the conflicting rows, %q is missing from: %s", fragment, message)
+	for _, fragment := range []string{"037_symptom_name_uniqueness.sql", "symptom_types", "ovumcy repair", "): 1; the key values"} {
+		if !strings.Contains(message, fragment) {
+			t.Fatalf("refusal must name the table, the repair command and the group count, %q is missing from: %s", fragment, message)
+		}
+	}
+	// This line is logged on every restart: no owner id, symptom name or the
+	// "<id> | <name>" key the engine renders may reach it.
+	for _, leaked := range []string{"cramps", " | ", " -> ", "symptom-duplicate-owner@example.com"} {
+		if strings.Contains(strings.ToLower(message), leaked) {
+			t.Fatalf("refusal must not print the conflicting key values, found %q in: %s", leaked, message)
 		}
 	}
 
