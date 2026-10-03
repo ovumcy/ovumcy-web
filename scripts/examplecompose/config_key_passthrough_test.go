@@ -693,6 +693,9 @@ func loadExampleStacks(t *testing.T, root string) []stack {
 		rel, _ := filepath.Rel(root, path)
 		env, ok := parseOvumcyEnvironment(string(content))
 		if !ok {
+			// A compose file the judgment cannot read is a stack it would never
+			// hold to the keys: fail on it rather than let it drop out of the run.
+			t.Errorf("%s: no service runs the ovumcy image, so this stack was not judged; make its ovumcy service's image match the pattern the parser reads, or remove the file from docs/examples", filepath.ToSlash(rel))
 			return nil
 		}
 		stacks = append(stacks, stack{path: filepath.ToSlash(rel), env: env})
@@ -818,9 +821,12 @@ func TestEveryExampleStackForwardsEveryRuntimeConfigKey(t *testing.T) {
 	for _, want := range []string{
 		"docs/examples/postgres/docker-compose.yml",
 		"docs/examples/reverse-proxy/caddy/docker-compose.yml",
+		"docs/examples/reverse-proxy/caddy-postgres/docker-compose.yml",
+		"docs/examples/reverse-proxy/nginx/docker-compose.yml",
+		"docs/examples/reverse-proxy/nginx-postgres/docker-compose.yml",
 	} {
 		if !have[want] {
-			t.Fatalf("the stack scan did not find %s: it is not reaching the shipped stacks", want)
+			t.Errorf("the stack scan did not judge %s: it is not reaching the shipped stacks", want)
 		}
 	}
 
