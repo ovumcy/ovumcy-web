@@ -155,7 +155,7 @@ func TestDisableTOTP2FASignInDisabledRefusalDrawsTheBudget(t *testing.T) {
 	ctx, _ := newSignInDisabledSettingsContext(t, "totp-disable-sign-in-off@example.com")
 	enableTOTPForSettingsTest(t, &ctx)
 
-	for attempt := range services.DefaultTOTPDisableAttemptsLimit {
+	for attempt := range services.DefaultSettingsReauthAttemptsLimit {
 		resp := sendDisableTOTP(t, ctx, signInDisabledFixturePassword)
 		assertDisableTOTPRefused(t, resp, http.StatusUnauthorized, disableTOTPInvalidKey, "local sign-in off, attempt "+strconv.Itoa(attempt+1))
 	}

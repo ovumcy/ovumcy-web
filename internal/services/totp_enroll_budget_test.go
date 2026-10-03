@@ -79,7 +79,7 @@ func TestTOTPEnrollBudgetIsItsOwnScopeAndPerAccount(t *testing.T) {
 	if err := fixture.settings.VerifyReauth(fixture.settings.SettingsReauthBudget(), fixture.attempt, fixture.user, reauthBudgetFixturePassword); err != nil {
 		t.Fatalf("settings.reauth after spending totp.enroll = %v, want nil", err)
 	}
-	if err := fixture.settings.VerifyReauth(fixture.disableBudget(), fixture.attempt, fixture.user, reauthBudgetFixturePassword); err != nil {
+	if err := fixture.settings.VerifyReauth(fixture.settings.SettingsReauthBudget(), fixture.attempt, fixture.user, reauthBudgetFixturePassword); err != nil {
 		t.Fatalf("2FA disable after spending totp.enroll = %v, want nil", err)
 	}
 

@@ -125,7 +125,7 @@ func TestDisableTOTP2FAWithoutALocalPasswordIsRefusedAndDrawsTheBudget(t *testin
 	ctx := newOIDCOnlySettingsSecurityTestContext(t, "totp-disable-no-hash@example.com")
 	enableTOTPForSettingsTest(t, &ctx)
 
-	for attempt := range services.DefaultTOTPDisableAttemptsLimit {
+	for attempt := range services.DefaultSettingsReauthAttemptsLimit {
 		resp := sendDisableTOTP(t, ctx, "AnyPassword1")
 		assertDisableTOTPRefused(t, resp, http.StatusUnauthorized, disableTOTPInvalidKey, "no local password, attempt "+strconv.Itoa(attempt+1))
 	}
@@ -146,7 +146,7 @@ func TestDisableTOTP2FASpentBudgetRefusesTheSettingsReauth(t *testing.T) {
 	ctx := newTOTPSettingsContext(t, "totp-disable-budget-shared@example.com")
 	enableTOTPForSettingsTest(t, &ctx)
 
-	for attempt := range services.DefaultTOTPDisableAttemptsLimit {
+	for attempt := range services.DefaultSettingsReauthAttemptsLimit {
 		resp := sendDisableTOTP(t, ctx, "WrongPassword1")
 		assertDisableTOTPRefused(t, resp, http.StatusUnauthorized, disableTOTPInvalidKey, "wrong password, attempt "+strconv.Itoa(attempt+1))
 	}
@@ -202,7 +202,7 @@ func TestDisableTOTP2FASuccessResetsTheDisableBudget(t *testing.T) {
 	enableTOTPForSettingsTest(t, &ctx)
 
 	for round := range 2 {
-		for attempt := range services.DefaultTOTPDisableAttemptsLimit - 1 {
+		for attempt := range services.DefaultSettingsReauthAttemptsLimit - 1 {
 			resp := sendDisableTOTP(t, ctx, "WrongPassword1")
 			assertDisableTOTPRefused(t, resp, http.StatusUnauthorized, disableTOTPInvalidKey,
 				"round "+strconv.Itoa(round+1)+", wrong password "+strconv.Itoa(attempt+1))
@@ -228,7 +228,7 @@ func TestDisableTOTP2FARefusedWriteDoesNotResetTheDisableBudget(t *testing.T) {
 	ctx := newTOTPSettingsContext(t, "totp-disable-refused-write@example.com")
 	enableTOTPForSettingsTest(t, &ctx)
 
-	for attempt := range services.DefaultTOTPDisableAttemptsLimit - 1 {
+	for attempt := range services.DefaultSettingsReauthAttemptsLimit - 1 {
 		resp := sendDisableTOTP(t, ctx, "WrongPassword1")
 		assertDisableTOTPRefused(t, resp, http.StatusUnauthorized, disableTOTPInvalidKey, "wrong password, attempt "+strconv.Itoa(attempt+1))
 	}

@@ -33,7 +33,7 @@ type resetObligation struct {
 // notices a new caller that has no reset at all.
 //
 // The two TOTP budgets a handler takes carry the same obligation in the same
-// shape: a ReauthBudget bound from TOTPDisableReauthBudget (the 2FA disable's
+// shape: a ReauthBudget bound from SettingsReauthBudget (the 2FA disable's
 // draw on settings.reauth) or EnrollCodeBudget (totp.enroll) owes a Reset on that
 // variable. Their placement after the committed write is pinned behaviourally
 // (TestDisableTOTP2FARefusedWriteDoesNotResetTheDisableBudget,
@@ -71,7 +71,7 @@ func TestEverySettingsReauthCallerResetsTheBudgetItWasHanded(t *testing.T) {
 		},
 		{
 			budget:      "2FA disable",
-			producer:    settingsReauthMethod(t, servicesPkg, "SettingsService", "TOTPDisableReauthBudget"),
+			producer:    settingsReauthMethod(t, servicesPkg, "SettingsService", "SettingsReauthBudget"),
 			reset:       settingsReauthMethod(t, servicesPkg, "ReauthBudget", "Reset"),
 			loadBearing: []string{"DisableTOTP2FA"},
 		},

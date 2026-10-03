@@ -18,11 +18,6 @@ import (
 const (
 	DefaultTOTPAttemptsLimit  = 5
 	DefaultTOTPAttemptsWindow = 15 * time.Minute
-	// The 2FA disable confirmation has no budget of its own: it draws the
-	// account's one password re-auth budget (SettingsService.TOTPDisableReauthBudget),
-	// so its figures are that budget's, named here for the disable route.
-	DefaultTOTPDisableAttemptsLimit  = DefaultSettingsReauthAttemptsLimit
-	DefaultTOTPDisableAttemptsWindow = DefaultSettingsReauthAttemptsWindow
 	// The enrollment-code budget mirrors the password re-auth budget: both guard
 	// a check an attacker can only reach with a session for one account already
 	// in hand.
@@ -32,12 +27,11 @@ const (
 )
 
 var (
-	ErrTOTPRateLimited        = errors.New("totp rate limited")
-	ErrTOTPDisableRateLimited = errors.New("totp disable rate limited")
-	ErrTOTPSecretEncrypt      = errors.New("totp secret encrypt failed")
-	ErrTOTPSecretDecrypt      = errors.New("totp secret decrypt failed")
-	ErrTOTPUpdateFailed       = errors.New("totp update failed")
-	ErrTOTPReplayed           = errors.New("totp code already used")
+	ErrTOTPRateLimited   = errors.New("totp rate limited")
+	ErrTOTPSecretEncrypt = errors.New("totp secret encrypt failed")
+	ErrTOTPSecretDecrypt = errors.New("totp secret decrypt failed")
+	ErrTOTPUpdateFailed  = errors.New("totp update failed")
+	ErrTOTPReplayed      = errors.New("totp code already used")
 )
 
 var (
@@ -166,7 +160,7 @@ func (service *TOTPService) ResetAttempts(secretKey []byte, clientKey string, us
 }
 
 // The disable-confirmation password has no budget, check, record or reset of its
-// own here: it is drawn through SettingsService.TOTPDisableReauthBudget and
+// own here: it is drawn through SettingsService.SettingsReauthBudget and
 // SettingsService.VerifyReauth, the one re-auth path (settings_reauth_budget.go).
 
 // GenerateSetupKey generates a new TOTP key for the given issuer and account name.

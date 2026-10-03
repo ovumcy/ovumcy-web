@@ -516,26 +516,26 @@ func TestTOTPService_CheckDisableRateLimit_BelowLimit_ReturnsNil(t *testing.T) {
 	settings := newDisableBudgetSettings([]byte("test-secret-key-32-bytes-padding!"), nil)
 	now := time.Now()
 
-	for range DefaultTOTPDisableAttemptsLimit - 1 {
+	for range DefaultSettingsReauthAttemptsLimit - 1 {
 		recordDisableFailure(settings, "1.2.3.4", 1, now)
 	}
 
 	if err := checkDisableBudget(settings, "1.2.3.4", 1, now); err != nil {
-		t.Errorf("disable budget after %d failures = %v, want nil", DefaultTOTPDisableAttemptsLimit-1, err)
+		t.Errorf("disable budget after %d failures = %v, want nil", DefaultSettingsReauthAttemptsLimit-1, err)
 	}
 }
 
-func TestTOTPService_CheckDisableRateLimit_AtLimit_ReturnsErrTOTPDisableRateLimited(t *testing.T) {
+func TestTOTPService_CheckDisableRateLimit_AtLimit_ReturnsErrSettingsReauthRateLimited(t *testing.T) {
 	settings := newDisableBudgetSettings([]byte("test-secret-key-32-bytes-padding!"), nil)
 	now := time.Now()
 
-	for range DefaultTOTPDisableAttemptsLimit {
+	for range DefaultSettingsReauthAttemptsLimit {
 		recordDisableFailure(settings, "1.2.3.4", 1, now)
 	}
 
 	err := checkDisableBudget(settings, "1.2.3.4", 1, now)
-	if !errors.Is(err, ErrTOTPDisableRateLimited) {
-		t.Errorf("disable budget after %d failures = %v, want ErrTOTPDisableRateLimited", DefaultTOTPDisableAttemptsLimit, err)
+	if !errors.Is(err, ErrSettingsReauthRateLimited) {
+		t.Errorf("disable budget after %d failures = %v, want ErrSettingsReauthRateLimited", DefaultSettingsReauthAttemptsLimit, err)
 	}
 }
 
@@ -543,11 +543,11 @@ func TestTOTPService_ResetDisableAttempts_ClearsLimit(t *testing.T) {
 	settings := newDisableBudgetSettings([]byte("test-secret-key-32-bytes-padding!"), nil)
 	now := time.Now()
 
-	for range DefaultTOTPDisableAttemptsLimit {
+	for range DefaultSettingsReauthAttemptsLimit {
 		recordDisableFailure(settings, "1.2.3.4", 1, now)
 	}
-	if err := checkDisableBudget(settings, "1.2.3.4", 1, now); !errors.Is(err, ErrTOTPDisableRateLimited) {
-		t.Fatalf("precondition: disable limiter not tripped after %d failures, err=%v", DefaultTOTPDisableAttemptsLimit, err)
+	if err := checkDisableBudget(settings, "1.2.3.4", 1, now); !errors.Is(err, ErrSettingsReauthRateLimited) {
+		t.Fatalf("precondition: disable limiter not tripped after %d failures, err=%v", DefaultSettingsReauthAttemptsLimit, err)
 	}
 
 	resetDisableBudget(settings, "1.2.3.4", 1)
@@ -574,10 +574,10 @@ func TestTOTPService_DisableAndVerifyLimitsAreIndependent(t *testing.T) {
 	settings := newDisableBudgetSettings(secretKey, limiter)
 	now := time.Now()
 
-	for range DefaultTOTPDisableAttemptsLimit {
+	for range DefaultSettingsReauthAttemptsLimit {
 		recordDisableFailure(settings, "1.2.3.4", 1, now)
 	}
-	if err := checkDisableBudget(settings, "1.2.3.4", 1, now); !errors.Is(err, ErrTOTPDisableRateLimited) {
+	if err := checkDisableBudget(settings, "1.2.3.4", 1, now); !errors.Is(err, ErrSettingsReauthRateLimited) {
 		t.Fatalf("precondition: disable limiter not tripped, err=%v", err)
 	}
 	if err := svc.CheckRateLimit(secretKey, "1.2.3.4", 1, now); err != nil {
