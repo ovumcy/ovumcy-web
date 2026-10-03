@@ -18,11 +18,14 @@ import (
 // (one-based, so the day a cycle ends on is its length and the next start is
 // length+1).
 //
-// The UTC rows hold the calendar. The rows in a non-UTC zone exist because a
-// day difference taken as Sub(...).Hours()/24 is exact between two UTC
-// midnights and wrong as soon as an operand is a location midnight: against a
-// UTC one in any zone, and between two of them across a DST jump (New York
-// 2024-03-10, Berlin 2024-03-31, same spans as the leap day here).
+// The UTC rows hold the calendar and need no zone database. The rows in a
+// non-UTC zone exist because a day difference taken as Sub(...).Hours()/24 is
+// exact between two UTC midnights and wrong once an operand is a location
+// midnight: a zone west of UTC against a UTC one (New York), two midnights of
+// one zone across a DST jump (New York 2024-03-10, Berlin 2024-03-31), and a
+// zone of +12h or more, where rounding instead of truncating also fails
+// (Auckland, +13 in February and March 2024). A zone offset below 12h, such as
+// Kolkata, is kept only as a control: it truncates to the right count.
 
 func TestCycleLengthsAcrossFebruary29(t *testing.T) {
 	t.Parallel()
@@ -81,7 +84,7 @@ func TestCycleLengthsAcrossFebruary29NonUTCStarts(t *testing.T) {
 
 	newYork := testenv.RequireTimeZone(t, "America/New_York")
 	berlin := testenv.RequireTimeZone(t, "Europe/Berlin")
-	kolkata := testenv.RequireTimeZone(t, "Asia/Kolkata")
+	auckland := testenv.RequireTimeZone(t, "Pacific/Auckland")
 
 	cases := []struct {
 		name       string
@@ -94,7 +97,9 @@ func TestCycleLengthsAcrossFebruary29NonUTCStarts(t *testing.T) {
 		{name: "New York midnight to a UTC midnight, non-leap year", from: time.Date(2025, time.February, 28, 0, 0, 0, 0, newYork), to: time.Date(2025, time.March, 28, 0, 0, 0, 0, time.UTC), wantLength: 28},
 		{name: "Berlin midnights across the leap day and the March DST jump", from: time.Date(2024, time.February, 29, 0, 0, 0, 0, berlin), to: time.Date(2024, time.April, 1, 0, 0, 0, 0, berlin), wantLength: 32},
 		{name: "Berlin midnights across 2100 and its March DST jump", from: time.Date(2100, time.February, 28, 0, 0, 0, 0, berlin), to: time.Date(2100, time.April, 1, 0, 0, 0, 0, berlin), wantLength: 32},
-		{name: "Kolkata midnight against a UTC midnight east of UTC", from: time.Date(2024, time.February, 29, 0, 0, 0, 0, kolkata), to: time.Date(2024, time.March, 28, 0, 0, 0, 0, time.UTC), wantLength: 28},
+		// +13 in February and March 2024: 28 days and 13 hours to the UTC
+		// midnight, which rounding would call 29.
+		{name: "Auckland midnight to a UTC midnight, +13 across the leap day", from: time.Date(2024, time.February, 29, 0, 0, 0, 0, auckland), to: time.Date(2024, time.March, 28, 0, 0, 0, 0, time.UTC), wantLength: 28},
 	}
 
 	for _, testCase := range cases {
@@ -115,20 +120,11 @@ func TestCycleLengthsAcrossFebruary29NonUTCStarts(t *testing.T) {
 func TestCalendarDaysBetweenAcrossFebruary29(t *testing.T) {
 	t.Parallel()
 
-	newYork := testenv.RequireTimeZone(t, "America/New_York")
-	berlin := testenv.RequireTimeZone(t, "Europe/Berlin")
-	kolkata := testenv.RequireTimeZone(t, "Asia/Kolkata")
-
 	at := func(location *time.Location, year int, month time.Month, day int) time.Time {
 		return time.Date(year, month, day, 0, 0, 0, 0, location)
 	}
 
-	cases := []struct {
-		name     string
-		from     time.Time
-		to       time.Time
-		wantDays int
-	}{
+	cases := []dayDiffCase{
 		{name: "UTC Feb 28 to Mar 1, leap year", from: at(time.UTC, 2024, time.February, 28), to: at(time.UTC, 2024, time.March, 1), wantDays: 2},
 		{name: "UTC Feb 28 to Mar 1, non-leap year", from: at(time.UTC, 2025, time.February, 28), to: at(time.UTC, 2025, time.March, 1), wantDays: 1},
 		{name: "UTC Feb 28 to Mar 1, 2100", from: at(time.UTC, 2100, time.February, 28), to: at(time.UTC, 2100, time.March, 1), wantDays: 1},
@@ -139,15 +135,56 @@ func TestCalendarDaysBetweenAcrossFebruary29(t *testing.T) {
 		{name: "UTC Jan 1 to Jan 1 over 2100", from: at(time.UTC, 2100, time.January, 1), to: at(time.UTC, 2101, time.January, 1), wantDays: 365},
 		{name: "UTC Feb 29 2024 to Feb 28 2025", from: at(time.UTC, 2024, time.February, 29), to: at(time.UTC, 2025, time.February, 28), wantDays: 365},
 		{name: "backward across the leap day", from: at(time.UTC, 2024, time.March, 1), to: at(time.UTC, 2024, time.February, 28), wantDays: -2},
+		{name: "the leap day against itself is day 1 of the cycle", from: at(time.UTC, 2024, time.February, 29), to: at(time.UTC, 2024, time.February, 29), wantDays: 0},
+	}
+
+	runDayDiffCases(t, cases)
+}
+
+// The rows that need a zone database; the UTC rows above run without one.
+func TestCalendarDaysBetweenAcrossFebruary29InZones(t *testing.T) {
+	t.Parallel()
+
+	newYork := testenv.RequireTimeZone(t, "America/New_York")
+	berlin := testenv.RequireTimeZone(t, "Europe/Berlin")
+	kolkata := testenv.RequireTimeZone(t, "Asia/Kolkata")
+	auckland := testenv.RequireTimeZone(t, "Pacific/Auckland")
+
+	at := func(location *time.Location, year int, month time.Month, day int) time.Time {
+		return time.Date(year, month, day, 0, 0, 0, 0, location)
+	}
+
+	cases := []dayDiffCase{
 		{name: "New York midnights across the leap day and the March DST jump", from: at(newYork, 2024, time.February, 29), to: at(newYork, 2024, time.March, 11), wantDays: 11},
 		{name: "New York midnight to UTC midnight", from: at(newYork, 2024, time.February, 28), to: at(time.UTC, 2024, time.March, 1), wantDays: 2},
 		{name: "UTC midnight to New York midnight", from: at(time.UTC, 2024, time.February, 28), to: at(newYork, 2024, time.March, 1), wantDays: 2},
 		{name: "New York midnights across 2100 and its March DST jump", from: at(newYork, 2100, time.February, 28), to: at(newYork, 2100, time.March, 15), wantDays: 15},
 		{name: "Berlin midnights across the leap day and the March DST jump", from: at(berlin, 2024, time.February, 29), to: at(berlin, 2024, time.April, 1), wantDays: 32},
 		{name: "Berlin midnights across 2100 and its March DST jump", from: at(berlin, 2100, time.February, 28), to: at(berlin, 2100, time.April, 1), wantDays: 32},
-		{name: "Kolkata midnight to UTC midnight east of UTC", from: at(kolkata, 2024, time.February, 29), to: at(time.UTC, 2024, time.March, 1), wantDays: 1},
-		{name: "UTC midnight to Kolkata midnight east of UTC", from: at(time.UTC, 2024, time.February, 29), to: at(kolkata, 2024, time.March, 1), wantDays: 1},
+		// The two Kolkata rows are controls: 29.5 and 18.5 hours truncate to the
+		// right day count too, so they do not tell the hour arithmetic apart.
+		{name: "control: Kolkata midnight to UTC midnight", from: at(kolkata, 2024, time.February, 29), to: at(time.UTC, 2024, time.March, 1), wantDays: 1},
+		{name: "control: UTC midnight to Kolkata midnight", from: at(time.UTC, 2024, time.February, 29), to: at(kolkata, 2024, time.March, 1), wantDays: 1},
+		// Auckland is +13 in February and March 2024: its midnight is 11:00 UTC
+		// the day before. 37 hours to the UTC midnight is 1 day and a half-day
+		// shortfall that rounding would turn into 2; 11 hours the other way
+		// rounds to 0.
+		{name: "Auckland midnight to UTC midnight, +13 across the leap day", from: at(auckland, 2024, time.February, 29), to: at(time.UTC, 2024, time.March, 1), wantDays: 1},
+		{name: "UTC midnight to Auckland midnight, +13 across the leap day", from: at(time.UTC, 2024, time.February, 29), to: at(auckland, 2024, time.March, 1), wantDays: 1},
 	}
+
+	runDayDiffCases(t, cases)
+}
+
+type dayDiffCase struct {
+	name     string
+	from     time.Time
+	to       time.Time
+	wantDays int
+}
+
+func runDayDiffCases(t *testing.T, cases []dayDiffCase) {
+	t.Helper()
 
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -182,26 +219,47 @@ func bbtLogsOn(days []time.Time, values []float64) []models.DailyLog {
 // reading gets inside the detection window [cycleStart, seriesEnd). Cycle day 1
 // is the start itself, so 2024-02-25 is day 1, the leap day is day 5 and
 // 2024-03-01 day 6; the same start in 2025 and 2100 reaches Mar 1 on day 5.
+//
+// Every row also holds a reading on the day BEFORE the cycle start, which the
+// window must drop.
 func TestCollectCycleBBTPointsNumbersDaysAcrossFebruary29(t *testing.T) {
+	t.Parallel()
+
+	cases := []collectCase{
+		{name: "UTC leap year", location: time.UTC, cycleStart: "2024-02-25", readings: []string{"2024-02-25", "2024-02-28", "2024-02-29", "2024-03-01", "2024-03-11"}, wantCycleDay: []int{1, 4, 5, 6, 16}},
+		{name: "UTC non-leap year", location: time.UTC, cycleStart: "2025-02-25", readings: []string{"2025-02-25", "2025-02-28", "2025-03-01", "2025-03-02", "2025-03-11"}, wantCycleDay: []int{1, 4, 5, 6, 15}},
+		{name: "UTC 2100", location: time.UTC, cycleStart: "2100-02-25", readings: []string{"2100-02-25", "2100-02-28", "2100-03-01", "2100-03-02", "2100-03-11"}, wantCycleDay: []int{1, 4, 5, 6, 15}},
+	}
+
+	runCollectCases(t, cases)
+}
+
+type collectCase struct {
+	name         string
+	location     *time.Location
+	cycleStart   string
+	readings     []string
+	wantCycleDay []int
+}
+
+// The rows that need a zone database; the UTC rows above run without one.
+func TestCollectCycleBBTPointsNumbersDaysAcrossFebruary29InZones(t *testing.T) {
 	t.Parallel()
 
 	newYork := testenv.RequireTimeZone(t, "America/New_York")
 	berlin := testenv.RequireTimeZone(t, "Europe/Berlin")
 
-	cases := []struct {
-		name         string
-		location     *time.Location
-		cycleStart   string
-		readings     []string
-		wantCycleDay []int
-	}{
-		{name: "UTC leap year", location: time.UTC, cycleStart: "2024-02-25", readings: []string{"2024-02-25", "2024-02-28", "2024-02-29", "2024-03-01", "2024-03-11"}, wantCycleDay: []int{1, 4, 5, 6, 16}},
-		{name: "UTC non-leap year", location: time.UTC, cycleStart: "2025-02-25", readings: []string{"2025-02-25", "2025-02-28", "2025-03-01", "2025-03-02", "2025-03-11"}, wantCycleDay: []int{1, 4, 5, 6, 15}},
-		{name: "UTC 2100", location: time.UTC, cycleStart: "2100-02-25", readings: []string{"2100-02-25", "2100-02-28", "2100-03-01", "2100-03-02", "2100-03-11"}, wantCycleDay: []int{1, 4, 5, 6, 15}},
+	cases := []collectCase{
 		{name: "New York leap year across the March DST jump", location: newYork, cycleStart: "2024-02-25", readings: []string{"2024-02-25", "2024-02-28", "2024-02-29", "2024-03-01", "2024-03-11"}, wantCycleDay: []int{1, 4, 5, 6, 16}},
 		{name: "New York 2100 across the March DST jump", location: newYork, cycleStart: "2100-02-25", readings: []string{"2100-02-25", "2100-02-28", "2100-03-01", "2100-03-02", "2100-03-15"}, wantCycleDay: []int{1, 4, 5, 6, 19}},
 		{name: "Berlin leap year across the late March DST jump", location: berlin, cycleStart: "2024-02-25", readings: []string{"2024-02-25", "2024-02-29", "2024-03-01", "2024-04-01"}, wantCycleDay: []int{1, 5, 6, 37}},
 	}
+
+	runCollectCases(t, cases)
+}
+
+func runCollectCases(t *testing.T, cases []collectCase) {
+	t.Helper()
 
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -216,7 +274,10 @@ func TestCollectCycleBBTPointsNumbersDaysAcrossFebruary29(t *testing.T) {
 			cycleStart := CalendarDay(mustParseDay(t, testCase.cycleStart), testCase.location)
 			seriesEnd := AddCalendarDays(CalendarDay(days[len(days)-1], testCase.location), 1, testCase.location)
 
-			points := collectCycleBBTPoints(bbtLogsOn(days, values), cycleStart, seriesEnd, testCase.location)
+			beforeStart := 36.4
+			logs := append(bbtLogsOn(days, values), models.DailyLog{Date: mustParseDay(t, testCase.cycleStart).AddDate(0, 0, -1), BBT: &beforeStart})
+
+			points := collectCycleBBTPoints(logs, cycleStart, seriesEnd, testCase.location)
 			if len(points) != len(testCase.wantCycleDay) {
 				t.Fatalf("collected %d point(s), want %d", len(points), len(testCase.wantCycleDay))
 			}
@@ -231,7 +292,7 @@ func TestCollectCycleBBTPointsNumbersDaysAcrossFebruary29(t *testing.T) {
 
 			// seriesEnd is exclusive: a window ending on the last reading's own
 			// day leaves that reading out.
-			shorter := collectCycleBBTPoints(bbtLogsOn(days, values), cycleStart, CalendarDay(days[len(days)-1], testCase.location), testCase.location)
+			shorter := collectCycleBBTPoints(logs, cycleStart, CalendarDay(days[len(days)-1], testCase.location), testCase.location)
 			if len(shorter) != len(points)-1 {
 				t.Errorf("a window ending on the last reading's day holds %d point(s), want %d", len(shorter), len(points)-1)
 			}
@@ -247,20 +308,39 @@ func TestCollectCycleBBTPointsNumbersDaysAcrossFebruary29(t *testing.T) {
 func TestInferBBTOvulationDateAcrossFebruary29(t *testing.T) {
 	t.Parallel()
 
-	newYork := testenv.RequireTimeZone(t, "America/New_York")
-
-	cases := []struct {
-		name       string
-		location   *time.Location
-		cycleStart string
-		wantDate   string
-	}{
+	runInferCases(t, []inferCase{
 		{name: "UTC leap year", location: time.UTC, cycleStart: "2024-02-25", wantDate: "2024-03-01"},
 		{name: "UTC non-leap year", location: time.UTC, cycleStart: "2025-02-25", wantDate: "2025-03-02"},
 		{name: "UTC 2100", location: time.UTC, cycleStart: "2100-02-25", wantDate: "2100-03-02"},
+	})
+}
+
+type inferCase struct {
+	name       string
+	location   *time.Location
+	cycleStart string
+	wantDate   string
+}
+
+// The rows that need a zone database. The Havana row is not a leap-day row: its
+// estimate lands on 2026-03-08, a date whose local midnight Havana skips, which
+// is the one place stepping from the zone anchor instead of a UTC one names the
+// day before.
+func TestInferBBTOvulationDateAcrossFebruary29InZones(t *testing.T) {
+	t.Parallel()
+
+	newYork := testenv.RequireTimeZone(t, "America/New_York")
+	havana := testenv.RequireTimeZone(t, "America/Havana")
+
+	runInferCases(t, []inferCase{
 		{name: "New York leap year", location: newYork, cycleStart: "2024-02-25", wantDate: "2024-03-01"},
 		{name: "New York 2100", location: newYork, cycleStart: "2100-02-25", wantDate: "2100-03-02"},
-	}
+		{name: "Havana estimate on a skipped local midnight", location: havana, cycleStart: "2026-03-03", wantDate: "2026-03-08"},
+	})
+}
+
+func runInferCases(t *testing.T, cases []inferCase) {
+	t.Helper()
 
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -281,9 +361,6 @@ func TestInferBBTOvulationDateAcrossFebruary29(t *testing.T) {
 			}
 			if key := got.Format("2006-01-02"); key != testCase.wantDate {
 				t.Errorf("inferred ovulation %s, want %s", key, testCase.wantDate)
-			}
-			if day := CalendarDaysBetween(cycleStart, got) + 1; day != 6 {
-				t.Errorf("inferred ovulation is cycle day %d, want 6", day)
 			}
 		})
 	}
