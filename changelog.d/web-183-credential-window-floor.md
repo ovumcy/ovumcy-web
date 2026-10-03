@@ -3,7 +3,8 @@
 - **The login, registration, forgot-password, 2FA challenge and password-reset redeem rate-limit
   windows now start at one minute.** `RATE_LIMIT_{LOGIN,REGISTER,FORGOT_PASSWORD,TOTP_CHALLENGE,PASSWORD_RESET_REDEEM}_WINDOW`
   used to accept anything from one second; a value below `1m` is now out of range like any other
-  out-of-range `RATE_LIMIT_*` value. It is logged once at boot and the pair falls back to BOTH
+  out-of-range `RATE_LIMIT_*` value. A refused window (below `1m`, above a day, unparseable) is
+logged at boot and the pair falls back to BOTH
   defaults (8 per 15 minutes; 8 per hour for forgot-password), as it does above the per-minute
   rate ceiling, which is unchanged. An operator who ran one of these five windows at seconds
   gets the default pair from this release; set `1m` or longer instead. Every other
