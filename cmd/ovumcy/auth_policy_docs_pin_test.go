@@ -240,6 +240,8 @@ func TestAuthPolicyDocPinsThePerAccountLockoutThresholds(t *testing.T) {
 var (
 	docCeilingPattern      = regexp.MustCompile(`(\d+) on the ([A-Za-z -]+?)(?: \(|,| and )`)
 	docWindowBoundsPattern = regexp.MustCompile("`\\*_WINDOW` must lie between (one [a-z]+) and (one [a-z]+)")
+	// The credential windows' own floor, stated beside the general bounds.
+	docCredentialWindowFloorPattern = regexp.MustCompile("credential endpoints the window floor is (one [a-z]+) instead")
 	// The credential pairs' rate ceiling, stated once in words and once as the
 	// integer check; both numbers must be the enforced one.
 	docCredentialRatePattern = regexp.MustCompile("at most (\\d+) requests per minute, checked in integers as `MAX × 1 minute ≤ (\\d+) × WINDOW`")
@@ -323,6 +325,14 @@ func TestAuthPolicyDocPinsTheRateLimitCeilings(t *testing.T) {
 	if floor != rateLimitWindowFloor || ceiling != rateLimitWindowCeiling {
 		t.Errorf("%s bounds every window to [%s, %s], config.go enforces [%s, %s]",
 			authPolicyDoc, floor, ceiling, rateLimitWindowFloor, rateLimitWindowCeiling)
+	}
+
+	credentialFloor := docCredentialWindowFloorPattern.FindStringSubmatch(paragraph)
+	if credentialFloor == nil {
+		t.Fatal("the doc's credential window floor sentence is gone; the floor of the five credential windows is read by nothing")
+	}
+	if stated, ok := docWindowWords[credentialFloor[1]]; !ok || stated != rateLimitCredentialWindowFloor {
+		t.Errorf("%s gives the credential windows a floor of %q, config.go enforces %s", authPolicyDoc, credentialFloor[1], rateLimitCredentialWindowFloor)
 	}
 }
 

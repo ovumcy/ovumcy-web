@@ -59,9 +59,13 @@ type reminderSchedulerSettings struct {
 // falls back to the default (logged at boot) instead of widening the budget,
 // so an oversized max or a stray zero cannot switch a limiter off. A window is
 // held to [1s, 24h]: a unit slip there (15s for 15m) still widens a
-// non-credential budget. On the credential endpoints the pair is also held to
-// a per-minute rate (getCredentialRateLimit), which is what stops the same
-// slip from widening them and the per-account login budget with them. The ceilings
+// non-credential budget. A credential window is held to [1m, 24h]: seconds
+// is not a budget worth the name on the endpoints that guard a password, a
+// recovery token or a TOTP code. A window below the floor falls back on its
+// own, like any other out-of-range value; the MAX beside it is kept. On the
+// credential endpoints the pair is also held to a per-minute rate
+// (getCredentialRateLimit), which is what stops a unit slip from widening
+// them and the per-account login budget with them. The ceilings
 // are sized to what a self-hosted instance behind one address can need, not to
 // what the process could survive; the load-bearing cost on the credential
 // endpoints stays the bcrypt compare each request pays (cost 12, ~250 ms of
@@ -69,15 +73,20 @@ type reminderSchedulerSettings struct {
 const (
 	rateLimitWindowFloor   = time.Second
 	rateLimitWindowCeiling = 24 * time.Hour
+	// The five credential windows (login, registration, forgot-password, the
+	// 2FA challenge, the password-reset redeem) start here instead of at
+	// rateLimitWindowFloor; every other window keeps the one-second floor.
+	rateLimitCredentialWindowFloor = time.Minute
 	// Login, registration and password-reset requests each cost a bcrypt
 	// compare or hash; the per-account login and recovery budgets read the
 	// same numbers. 100 in a window is already a dozen times the default.
 	rateLimitCredentialMaxCeiling = 100
-	// The count ceiling above does not bound the RATE: 100 over the one-second
-	// window floor is 6000 bcrypt compares a minute from one address. Each
+	// The count ceiling above does not bound the RATE: 100 over a one-second
+	// window is 6000 bcrypt compares a minute from one address. Each
 	// credential pair is therefore also held to this many requests per minute
-	// (max/window), about half a bcrypt a second, and the window floor stays
-	// one second for every other setting.
+	// (max/window), about half a bcrypt a second. The credential window floor
+	// keeps the window from being that short; this check is what holds a count
+	// of 100 to a window of at least 200s.
 	rateLimitCredentialPerMinuteCeiling = 30
 	// Logout is one storage write per request; the per-IP row stays wide
 	// enough for a household behind one address, the per-account budget
@@ -109,6 +118,12 @@ func getRateLimitWindow(key string, fallback time.Duration) time.Duration {
 	return getEnvDurationInRange(key, fallback, rateLimitWindowFloor, rateLimitWindowCeiling)
 }
 
+// getCredentialRateLimitWindow is the credential twin of getRateLimitWindow,
+// with the one-minute floor.
+func getCredentialRateLimitWindow(key string, fallback time.Duration) time.Duration {
+	return getEnvDurationInRange(key, fallback, rateLimitCredentialWindowFloor, rateLimitWindowCeiling)
+}
+
 // credentialRateWithinCeiling holds a credential pair to
 // rateLimitCredentialPerMinuteCeiling, compared in integers so no rounding can
 // admit a pair a hair above it.
@@ -118,8 +133,10 @@ func credentialRateWithinCeiling(maxRequests int, window time.Duration) bool {
 
 // getCredentialRateLimit reads the MAX/WINDOW pair of a credential endpoint
 // (login, registration, password reset, the 2FA challenge, the password-reset
-// redeem): each half is bounded on its own, then the pair is held to the
-// per-minute rate ceiling. A pair above it falls back to BOTH defaults, logged
+// redeem): each half is bounded on its own (a window below one minute falls
+// back to its default alone, logged once, and the MAX is kept), then the pair
+// is held to the per-minute rate ceiling. A pair above it falls back to BOTH
+// defaults, logged
 // once — keeping either half would leave a rate the operator never chose. It
 // is the only reader of the credential count ceiling and the only place the
 // ten LOGIN, REGISTER, FORGOT_PASSWORD, TOTP_CHALLENGE and
@@ -127,7 +144,7 @@ func credentialRateWithinCeiling(maxRequests int, window time.Duration) bool {
 // time is not held to that.
 func getCredentialRateLimit(maxKey, windowKey string, fallbackMax int, fallbackWindow time.Duration) (int, time.Duration) {
 	maxRequests := getRateLimitMax(maxKey, fallbackMax, rateLimitCredentialMaxCeiling)
-	window := getRateLimitWindow(windowKey, fallbackWindow)
+	window := getCredentialRateLimitWindow(windowKey, fallbackWindow)
 	if credentialRateWithinCeiling(maxRequests, window) {
 		return maxRequests, window
 	}
