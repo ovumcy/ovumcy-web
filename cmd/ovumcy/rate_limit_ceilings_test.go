@@ -275,8 +275,8 @@ func loadRateLimitsWithLog(t *testing.T) (rateLimitSettings, string) {
 
 // TestCredentialRateLimitWindowsHaveAOneMinuteFloor: the five credential
 // windows start at one minute, not at the one second every other window keeps.
-// A window below it is out of range like any other out-of-range RATE_LIMIT_*
-// value: logged once, and the pair falls back to BOTH defaults, as it does
+// A refused window (below it, above a day, unparseable) is logged and the
+// pair falls back to BOTH defaults, as it does
 // above the rate ceiling — a MAX left beside a default window would be a rate
 // the operator never chose (MAX=2 over 30s would become 2 per 15 minutes).
 // Exactly one minute is accepted with its MAX kept, and a non-credential
@@ -299,7 +299,7 @@ func TestCredentialRateLimitWindowsHaveAOneMinuteFloor(t *testing.T) {
 				t.Fatalf("%s: the default %d equals the configured MAX, so the test cannot tell a kept MAX from a default one", maxKey, fallbackMax)
 			}
 
-			for _, below := range []string{"1s", "30s", "59s", "59999ms"} {
+			for _, below := range []string{"1s", "30s", "59s", "59999ms", "25h", "15 m"} {
 				t.Setenv(windowKey, below)
 				settings, bootLog := loadRateLimitsWithLog(t)
 				if got := readWindow(settings); got != fallbackWindow {

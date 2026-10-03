@@ -58,8 +58,9 @@ on the calendar page and 120 on the calendar feed, and a `*_WINDOW` must lie bet
 and one day. A value
 outside its range is logged at boot and replaced by the default, so a misread unit or a stray
 zero cannot widen a budget past its ceiling, let alone switch a limiter off. On the five
-credential endpoints the window floor is one minute instead: a `*_WINDOW` below it is logged at
-boot and BOTH halves fall back to their defaults, as for a pair above the rate below. On those
+credential endpoints the window floor is one minute instead, and a refused `*_WINDOW` (below it,
+above a day, unparseable) is logged at boot and BOTH halves fall back to their defaults, as for a
+pair above the rate below. On those
 five endpoints the pair is also held to a rate: at most 30 requests per minute, checked in
 integers as `MAX × 1 minute ≤ 30 × WINDOW`, so `100` over `200s` is the widest a count of 100 may
 run and a shorter window no longer widens the budget. A pair above that rate is logged at boot and
