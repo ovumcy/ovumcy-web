@@ -60,17 +60,18 @@ import (
 //
 // OUT-OF-DATE DATA withholds the phase and the fertility status, and nothing
 // else. Once the running cycle has passed the account's reference length
-// (DashboardCycleDataLooksStale) both owner pages already answer "unknown" for
-// the phase and the status, unconditionally — dashboard.html and stats.html
-// test CycleDataStale before anything else — while the projected dates stay
-// published beside the out-of-date banner. A status read against a window the
-// cycle has already outrun is a projection past its own reference range, which
-// the medical-safety floor refuses; publishing it on the JSON API alone is the
-// divergence this function exists to close. The verdict is the pages' own —
-// dashboardCycleDataStale, the one helper the dashboard context and the stats
-// page flags also call — and it is NOT a suppression signal: the two suppression bits also decide
-// what the webhook pass and the .ics feed send, and staleness withholds no
-// date. CycleDataStale carries the verdict on the published copy.
+// (DashboardCycleDataLooksStale) both owner pages answer "unknown" for the
+// phase and the status wherever they show a phase at all — dashboard.html tests
+// CycleDataStale first, stats.html first inside its predictions-enabled branch —
+// while the projected dates stay published beside the out-of-date banner. A
+// status read against a window the cycle has already outrun is a projection
+// past its own reference range, which the medical-safety floor refuses;
+// publishing it on the JSON API alone is the divergence this function exists to
+// close. The verdict is the pages' own — dashboardCycleDataStale, the one helper
+// the dashboard context and the stats page flags also call — and it is NOT a
+// suppression signal: the two suppression bits also decide what the webhook
+// pass and the .ics feed send, and staleness withholds no date. CycleDataStale
+// carries the verdict on the published copy.
 func PublishedStats(user *models.User, stats CycleStats, logs []models.DailyLog, today time.Time, location *time.Location) (CycleStats, PredictionSuppression) {
 	// The verdict is read off the UNCLEARED stats, so the fertility gate cannot
 	// be answered from fields the clearing below has already emptied.
