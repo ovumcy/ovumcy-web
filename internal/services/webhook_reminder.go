@@ -206,6 +206,16 @@ func decideDueReminders(user *models.User, settings WebhookReminderSettings, log
 	// Published through the one adapter every projection surface shares, so this
 	// pass holds the same cleared stats /stats and the JSON API publish, and reads
 	// the verdict it returns rather than asking the predicates a second time.
+	//
+	// The confirmed-shift substitution the dashboard applies between the build and
+	// the publication is deliberately not repeated here: it moves the ovulation
+	// day, the window and the fertility status of the current cycle, and nothing
+	// this pass reads comes from those. The verdict, the projection length, the
+	// next-period and ovulation projections and the cycle anchor are all rebuilt
+	// from the recorded start, the cycle lengths and the luteal phase, and a
+	// confirmed shift is honoured below by ConfirmedOvulationSupersedes. A test
+	// pins the verdict, the length and both projections as the same with and
+	// without the substitution.
 	stats, suppression := PublishedStats(user, BuildCycleStatsFromLogs(user, logs, now, location), logs, today, location)
 
 	// Medical-safety gate: if the app suppresses predictions, emit nothing. The
