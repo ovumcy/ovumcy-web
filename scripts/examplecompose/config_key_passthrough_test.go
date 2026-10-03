@@ -28,6 +28,11 @@ import (
 // listed here, so a key added tomorrow is judged by the next run: a stack either
 // forwards it or the exemption table below says why it does not.
 //
+// A stack forwards `${KEY:-}` and leaves the default to the binary, which reads
+// an empty value as unset. TZ is the one app key that keeps a compose default
+// (`${TZ:-UTC}`): the binary's own default is the host's local zone, so blanking
+// it would change the zone the container runs in.
+//
 // What the scan reads. The packages of this module that cmd/ovumcy links are
 // type-checked, for the host's operating system and architecture with cgo off
 // (the image's build). A key is the constant the type checker resolves for the
