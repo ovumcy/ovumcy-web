@@ -3,7 +3,10 @@ package examplecompose
 import (
 	"fmt"
 	"go/ast"
+	"go/build"
 	"go/constant"
+	"go/parser"
+	"go/token"
 	"go/types"
 	"os"
 	"path/filepath"
@@ -26,12 +29,23 @@ import (
 // listed here, so a key added tomorrow is judged by the next run: a stack either
 // forwards it or the exemption table below says why it does not. A key is
 // identified by declaration, never by the shape of the node that names it: the
-// readers are the functions whose bodies hand a parameter to os.Getenv or
-// os.LookupEnv (directly or through another reader), and a key is the constant
-// value the type checker resolves for the argument in that position, whether it
-// is a literal, a constant of this package or another, or a constant
-// expression. An argument that is neither a constant nor a reader's own
-// parameter cannot be resolved and fails the run instead of being skipped.
+// readers are the functions whose bodies hand a parameter to os.Getenv,
+// os.LookupEnv or syscall.Getenv (directly or through another reader), and a key
+// is the constant value the type checker resolves for the argument in that
+// position, whether it is a literal, a constant of this package or another, or a
+// constant expression. An argument that is neither a constant nor a reader's own
+// parameter cannot be resolved and fails the run instead of being skipped. A
+// standard-library accessor of the whole environment (os.Environ, os.ExpandEnv,
+// os.Expand and the rest of unfollowedEnvAccessors) is refused wherever it is
+// called, because no name reaches it that could be followed.
+//
+// The scan is deliberately narrower than "every way a key can be read". A name
+// held in a local variable, or transformed on its way into a function value or
+// interface method of the module (`fn(strings.TrimSpace(name))`), is not
+// tracked: that takes value tracking, and a direct os.Getenv of such a variable
+// fails closed as unresolved while the same name behind a function value does
+// not. Only a key-shaped constant handed straight to such a call, or through a
+// helper that forwards a parameter unchanged, is refused.
 
 // envKeyShape is what a configuration variable name looks like.
 var envKeyShape = regexp.MustCompile(`^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$`)
@@ -45,10 +59,59 @@ func sortedKeys[V any](m map[string]V) []string {
 	return out
 }
 
-// isStdEnvRead is true for os.Getenv and os.LookupEnv, identified by the
-// declaring package, so a user function that merely shares the name is not one.
-func isStdEnvRead(fn *types.Func) bool {
-	return fn.Pkg() != nil && fn.Pkg().Path() == "os" && (fn.Name() == "Getenv" || fn.Name() == "LookupEnv")
+// followedEnvReads are the standard-library functions that read one variable by
+// the name they are given, with the index of the argument that carries it. They
+// are matched by full name, so a user function that merely shares a name is not
+// one.
+var followedEnvReads = map[string]int{
+	"os.Getenv":      0,
+	"os.LookupEnv":   0,
+	"syscall.Getenv": 0,
+}
+
+// unfollowedEnvAccessors are the standard-library functions that hand the
+// process environment to the caller without a variable name as an argument, so
+// a read through one cannot be followed to the key it wants. A call to one is
+// refused, or sits in envAccessExemptions with the reason it reads nothing the
+// operator configures. The value is why the scan cannot follow it.
+var unfollowedEnvAccessors = map[string]string{
+	"os.Environ":                     "it returns every variable, so the names used are chosen by whatever filters the result",
+	"syscall.Environ":                "it returns every variable, so the names used are chosen by whatever filters the result",
+	"(*os/exec.Cmd).Environ":         "it returns every variable the command will run with, so the names used are chosen by whatever filters the result",
+	"os.ExpandEnv":                   "it substitutes the names written inside a string, which are not call arguments",
+	"os.Expand":                      "it hands the names written inside a string to a mapping function the scan cannot see into",
+	"syscall.GetEnvironmentVariable": "it takes the name as a UTF-16 pointer, not a string constant",
+	"syscall.GetEnvironmentStrings":  "it returns every variable, so the names used are chosen by whatever filters the result",
+	"syscall.FreeEnvironmentStrings": "it is the release half of GetEnvironmentStrings, which is refused where it is called",
+}
+
+// envWrites are the standard-library functions that change the environment
+// without reading a value out of it. A key set here is read, if anywhere, by one
+// of the readers above, which the scan judges where it reads.
+var envWrites = map[string]bool{
+	"os.Setenv": true, "os.Unsetenv": true, "os.Clearenv": true,
+	"syscall.Setenv": true, "syscall.Unsetenv": true, "syscall.Clearenv": true,
+	"syscall.SetEnvironmentVariable": true,
+}
+
+// envAccessExemptions lists the functions of the module allowed to call an
+// unfollowed accessor, by the enclosing function's full name, with the reason
+// the call reads no setting an operator configures. It is empty: an entry is
+// added only with a reason an operator reading the stack would accept.
+var envAccessExemptions = map[string]string{}
+
+// stdEnvReadIndex returns the argument of fn that names the variable it reads,
+// for os.Getenv, os.LookupEnv and syscall.Getenv.
+func stdEnvReadIndex(fn *types.Func) (int, bool) {
+	index, ok := followedEnvReads[fn.FullName()]
+	return index, ok
+}
+
+// envAccessorReason returns why fn, a standard-library accessor of the whole
+// environment, cannot be followed to a key.
+func envAccessorReason(fn *types.Func) (string, bool) {
+	reason, ok := unfollowedEnvAccessors[fn.FullName()]
+	return reason, ok
 }
 
 // callee is what a call invokes, as far as the type checker can tell.
@@ -116,16 +179,16 @@ func calleeOf(info *types.Info, call *ast.CallExpr) (c callee, ok bool) {
 }
 
 // keyArgIndexes lists which arguments of call name an environment variable:
-// the first argument of os.Getenv/os.LookupEnv, or the parameters a derived
-// reader hands to one.
+// the name argument of a standard-library read (followedEnvReads), or the
+// parameters a derived reader hands to one.
 func keyArgIndexes(info *types.Info, call *ast.CallExpr, readers map[*types.Func]map[int]bool) []int {
 	target, ok := calleeOf(info, call)
 	if !ok || target.opaque || target.fn == nil {
 		return nil
 	}
 	fn := target.fn
-	if isStdEnvRead(fn) {
-		return []int{0}
+	if index, isRead := stdEnvReadIndex(fn); isRead {
+		return []int{index}
 	}
 	var indexes []int
 	for index := range readers[fn] {
@@ -232,8 +295,8 @@ func deriveOpaqueSinks(pkgs []*packages.Package, scanned map[*types.Package]bool
 
 // deriveReaders finds every function that reads an environment variable named
 // by one of its parameters, and which parameters those are, by running to a
-// fixed point: a function is a reader when its body passes a parameter to
-// os.Getenv, os.LookupEnv or an already-derived reader.
+// fixed point: a function is a reader when its body passes a parameter to a
+// standard-library read (followedEnvReads) or an already-derived reader.
 func deriveReaders(pkgs []*packages.Package) map[*types.Func]map[int]bool {
 	readers := map[*types.Func]map[int]bool{}
 	for changed := true; changed; {
@@ -298,6 +361,10 @@ func scanReads(pkgs []*packages.Package, readers map[*types.Func]map[int]bool) (
 				if funcDecl, ok := decl.(*ast.FuncDecl); ok {
 					self, _ = info.Defs[funcDecl.Name].(*types.Func)
 				}
+				exempt := false
+				if self != nil {
+					_, exempt = envAccessExemptions[self.FullName()]
+				}
 				// A reader is followed only through a call. Naming one without
 				// calling it (`lookup := os.LookupEnv`) hands it to code the scan
 				// does not read, so each such use is refused.
@@ -315,8 +382,14 @@ func scanReads(pkgs []*packages.Package, readers map[*types.Func]map[int]bool) (
 					if !ok || called[ident] {
 						return true
 					}
-					if fn, isFunc := info.Uses[ident].(*types.Func); isFunc && (isStdEnvRead(fn.Origin()) || readers[fn.Origin()] != nil) {
-						unresolved = append(unresolved, fmt.Sprintf("%s: %s reads an environment variable and is used here without being called, so the names it is given cannot be followed", where(ident), fn.Name()))
+					fn, isFunc := info.Uses[ident].(*types.Func)
+					if !isFunc {
+						return true
+					}
+					_, isRead := stdEnvReadIndex(fn.Origin())
+					_, isAccessor := envAccessorReason(fn.Origin())
+					if isRead || readers[fn.Origin()] != nil || (isAccessor && !exempt) {
+						unresolved = append(unresolved, fmt.Sprintf("%s: %s reads the environment and is used here without being called, so the names it is given cannot be followed", where(ident), fn.Name()))
 					}
 					return true
 				})
@@ -326,6 +399,11 @@ func scanReads(pkgs []*packages.Package, readers map[*types.Func]map[int]bool) (
 						return true
 					}
 					if target, resolved := calleeOf(info, call); resolved {
+						if target.fn != nil && !exempt {
+							if reason, isAccessor := envAccessorReason(target.fn); isAccessor {
+								unresolved = append(unresolved, fmt.Sprintf("%s: %s reads the environment and the scan cannot follow it to a variable name (%s); read each variable by name through os.Getenv or os.LookupEnv, or exempt the calling function in envAccessExemptions with the reason it reads no operator setting", where(call), target.fn.FullName(), reason))
+							}
+						}
 						for index, arg := range call.Args {
 							if !isKeyShapedConstant(info, arg) {
 								continue
@@ -464,12 +542,59 @@ type stack struct {
 
 var (
 	serviceHeader = regexp.MustCompile(`(?m)^  [A-Za-z0-9_-]+:\s*$`)
-	// environmentKey reads one entry: an optional list marker, the key, and an
-	// optional separator with the value after it. A list entry with no
-	// separator (`- KEY`) is compose's bare passthrough.
-	environmentKey  = regexp.MustCompile(`^\s{6}(-\s*)?([A-Z][A-Z0-9_]*)(?:(\s*[:=])\s*(.*?))?\s*$`)
+	// environmentKey reads one entry up to its key: an optional list marker, the
+	// key, and whatever follows it on the line. A list entry with no separator
+	// (`- KEY`) is compose's bare passthrough.
+	environmentKey = regexp.MustCompile(`^\s{6}(-\s*)?([A-Z][A-Z0-9_]*)(.*)$`)
+	// environmentTail splits what follows the key into its separator and the raw
+	// value, which may still carry an inline comment.
+	environmentTail = regexp.MustCompile(`^(\s*[:=])\s*(.*)$`)
 	environmentHead = regexp.MustCompile(`^\s{4}environment:\s*$`)
 )
+
+// entryValue returns the value of an environment entry without the inline YAML
+// comment after it. A comment starts at a `#` that begins the value or follows
+// whitespace, so the `#` inside `${KEY:-a#b}` is part of the value. In the map
+// form (`KEY: "a # b"`) a quoted scalar ends at its closing quote and a `#`
+// inside it is content; the list form (`- KEY=value`) is one plain scalar, so
+// quotes there protect nothing.
+func entryValue(raw string, mapForm bool) string {
+	if mapForm && raw != "" && (raw[0] == '"' || raw[0] == '\'') {
+		quote := raw[0]
+		for i := 1; i < len(raw); i++ {
+			switch {
+			case quote == '"' && raw[i] == '\\':
+				i++
+			case raw[i] == quote && quote == '\'' && i+1 < len(raw) && raw[i+1] == '\'':
+				i++
+			case raw[i] == quote:
+				return raw[:i+1]
+			}
+		}
+		return strings.TrimSpace(raw)
+	}
+	for i := range len(raw) {
+		if raw[i] == '#' && (i == 0 || raw[i-1] == ' ' || raw[i-1] == '\t') {
+			return strings.TrimSpace(raw[:i])
+		}
+	}
+	return strings.TrimSpace(raw)
+}
+
+// environmentKeyLine is true for a line that is one environment entry: a key
+// followed by a separator and a value, or by nothing but an optional comment.
+func environmentKeyLine(line string) bool {
+	match := environmentKey.FindStringSubmatch(line)
+	if match == nil {
+		return false
+	}
+	tail := match[3]
+	if environmentTail.MatchString(tail) {
+		return true
+	}
+	rest := strings.TrimLeft(tail, " \t")
+	return rest == "" || (rest != tail && strings.HasPrefix(rest, "#"))
+}
 
 // parseOvumcyEnvironment returns the keys set in the environment block of the
 // service that runs the ovumcy image, or ok=false when the file has no such
@@ -496,15 +621,19 @@ func parseOvumcyEnvironment(content string) (env map[string]string, ok bool) {
 				inBlock = true
 			case !inBlock:
 			case strings.TrimSpace(line) == "" || strings.HasPrefix(strings.TrimSpace(line), "#"):
-			case environmentKey.MatchString(line):
+			case environmentKeyLine(line):
 				match := environmentKey.FindStringSubmatch(line)
-				key, listEntry, separator, value := match[2], match[1] != "", strings.TrimSpace(match[3]), match[4]
+				key, listEntry := match[2], match[1] != ""
+				tail := environmentTail.FindStringSubmatch(match[3])
 				switch {
-				case separator == ":" && !listEntry && value == "":
-					// `KEY:` with no value is null in YAML, which compose
-					// resolves from the shell or .env like the bare list entry.
-					env[key] = "${" + key + "}"
-				case separator != "":
+				case tail != nil:
+					separator := strings.TrimSpace(tail[1])
+					value := entryValue(tail[2], separator == ":" && !listEntry)
+					if separator == ":" && !listEntry && value == "" {
+						// `KEY:` with no value is null in YAML, which compose
+						// resolves from the shell or .env like the bare list entry.
+						value = "${" + key + "}"
+					}
 					env[key] = value
 				case listEntry:
 					env[key] = "${" + key + "}"
@@ -890,6 +1019,7 @@ const RemoteEnv = "REMOTE_KEY"
 import (
 	"io"
 	"os"
+	"syscall"
 
 	"fixture/cfg"
 )
@@ -929,6 +1059,7 @@ func main() {
 	_ = notAReader("ZETA_KEY")
 	_ = getEnv("SHADOW_KEY")
 	_, _ = os.LookupEnv("LOOKUP_KEY")
+	_, _ = syscall.Getenv("SYSCALL_KEY")
 	_ = readAs[int]("GENERIC_KEY")
 	_ = readAs[string](localEnv)
 	_ = source{}.read("METHOD_KEY")
@@ -942,7 +1073,7 @@ func main() {
 	if len(unresolved) != 0 {
 		t.Fatalf("every key in the fixture resolves, got unresolved: %v", unresolved)
 	}
-	want := []string{"ALPHA_KEY", "GENERIC_KEY", "JOINED_KEY", "LOCAL_KEY", "LOOKUP_KEY", "METHOD_KEY", "PAIR_ONE", "PAIR_TWO", "REMOTE_KEY"}
+	want := []string{"ALPHA_KEY", "GENERIC_KEY", "JOINED_KEY", "LOCAL_KEY", "LOOKUP_KEY", "METHOD_KEY", "PAIR_ONE", "PAIR_TWO", "REMOTE_KEY", "SYSCALL_KEY"}
 	if got := sortedKeys(reads); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("keys read = %v, want %v", got, want)
 	}
@@ -1041,6 +1172,145 @@ func main() {
 	}
 }
 
+// TestConfigKeyScanRefusesAnEnvironmentReadItCannotFollow proves that the
+// accessors of the whole environment cannot be used to read a key unseen: each
+// of os.Environ, syscall.Environ, os.ExpandEnv, os.Expand and exec.Cmd.Environ
+// is refused where it is called, and one named without being called is refused
+// too. A function listed in envAccessExemptions is the only one not refused.
+func TestConfigKeyScanRefusesAnEnvironmentReadItCannotFollow(t *testing.T) {
+	pkgs := fixtureModule(t, map[string]string{
+		"main.go": `package main
+
+import (
+	"os"
+	"os/exec"
+	"syscall"
+)
+
+func viaEnviron() []string { return os.Environ() }
+
+func viaSyscallEnviron() []string { return syscall.Environ() }
+
+func viaExpandEnv() string { return os.ExpandEnv("${EXPAND_KEY}") }
+
+func viaExpand() string {
+	return os.Expand("${EXPAND_FN_KEY}", func(name string) string { return name })
+}
+
+func viaCommand() []string { return exec.Command("true").Environ() }
+
+func namedOnly() func() []string { return os.Environ }
+
+func exempted() string { return os.ExpandEnv("${EXEMPT_KEY}") }
+
+func main() {}
+`,
+	})
+	scan := func() []string {
+		_, unresolved := scanReads(pkgs, deriveReaders(pkgs))
+		return unresolved
+	}
+	unresolved := scan()
+	joined := strings.Join(unresolved, "\n")
+	for _, want := range []string{
+		"os.Environ reads the environment and the scan cannot follow it",
+		"syscall.Environ reads the environment and the scan cannot follow it",
+		"os.ExpandEnv reads the environment and the scan cannot follow it",
+		"os.Expand reads the environment and the scan cannot follow it",
+		"(*os/exec.Cmd).Environ reads the environment and the scan cannot follow it",
+		"Environ reads the environment and is used here without being called",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("want an unresolved entry containing %q, got:\n%s", want, joined)
+		}
+	}
+	// Seven calls or uses name an accessor, and the exempted function's is the
+	// one left out; the same scan with that exemption absent refuses it too.
+	if len(unresolved) != 7 {
+		t.Errorf("want the seven unexempted accessor uses refused, got %d:\n%s", len(unresolved), joined)
+	}
+	envAccessExemptions["fixture.exempted"] = "a fixture function that reads nothing an operator configures"
+	t.Cleanup(func() { delete(envAccessExemptions, "fixture.exempted") })
+	if exempted := scan(); len(exempted) != 6 {
+		t.Errorf("want the exempted function's call left out, got %d:\n%s", len(exempted), strings.Join(exempted, "\n"))
+	}
+}
+
+// TestEveryStandardEnvironmentAccessorIsClassified keeps the accessor tables
+// whole against the standard library itself. The exported functions and methods
+// of os, syscall and os/exec that name the environment, whichever platform
+// declares them, are read from the Go source tree, and each must be followed as
+// a read, refused as an accessor, or listed as a write. A table entry that names
+// nothing in the source fails too, so a renamed or mistyped entry cannot leave
+// the class unguarded.
+func TestEveryStandardEnvironmentAccessorIsClassified(t *testing.T) {
+	root := filepath.Join(build.Default.GOROOT, "src")
+	named := regexp.MustCompile(`(?i)env|^Expand$`)
+	found := map[string]bool{}
+	for _, dir := range []string{"os", "syscall", "os/exec"} {
+		entries, err := os.ReadDir(filepath.Join(root, filepath.FromSlash(dir)))
+		if err != nil {
+			t.Fatalf("reading the standard library source %s: %v", dir, err)
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+				continue
+			}
+			file, err := parser.ParseFile(token.NewFileSet(), filepath.Join(root, filepath.FromSlash(dir), entry.Name()), nil, parser.SkipObjectResolution)
+			if err != nil {
+				t.Fatalf("parsing %s/%s: %v", dir, entry.Name(), err)
+			}
+			for _, decl := range file.Decls {
+				funcDecl, ok := decl.(*ast.FuncDecl)
+				if !ok || !funcDecl.Name.IsExported() || !named.MatchString(funcDecl.Name.Name) {
+					continue
+				}
+				if funcDecl.Recv == nil {
+					found[dir+"."+funcDecl.Name.Name] = true
+					continue
+				}
+				switch recv := funcDecl.Recv.List[0].Type.(type) {
+				case *ast.StarExpr:
+					if ident, isIdent := recv.X.(*ast.Ident); isIdent && ident.IsExported() {
+						found["(*"+dir+"."+ident.Name+")."+funcDecl.Name.Name] = true
+					}
+				case *ast.Ident:
+					if recv.IsExported() {
+						found["("+dir+"."+recv.Name+")."+funcDecl.Name.Name] = true
+					}
+				}
+			}
+		}
+	}
+	for _, name := range sortedKeys(found) {
+		_, followed := followedEnvReads[name]
+		_, refused := unfollowedEnvAccessors[name]
+		if !followed && !refused && !envWrites[name] {
+			t.Errorf("the standard library declares %s, which names the environment and is in none of followedEnvReads, unfollowedEnvAccessors or envWrites: follow it as a read, refuse it as an accessor, or list it as a write", name)
+		}
+	}
+	listed := map[string]bool{}
+	for name := range followedEnvReads {
+		listed[name] = true
+	}
+	for name := range unfollowedEnvAccessors {
+		listed[name] = true
+	}
+	for name := range envWrites {
+		listed[name] = true
+	}
+	for _, name := range sortedKeys(listed) {
+		if !found[name] {
+			t.Errorf("the accessor tables name %s, which the standard library source does not declare", name)
+		}
+	}
+	for name, reason := range envAccessExemptions {
+		if strings.TrimSpace(reason) == "" {
+			t.Errorf("the exemption for %s has no reason", name)
+		}
+	}
+}
+
 // TestEnvironmentBlockParserReadsBothForms proves the stack reader on fixtures:
 // map and list forms, the bare list passthrough, a commented-out key that is
 // not a key, a block that ends at the next field, and the service pick by image
@@ -1061,6 +1331,14 @@ func TestEnvironmentBlockParserReadsBothForms(t *testing.T) {
 		"      - HSTS_ENABLED",
 		"      LOG_LEVEL:",
 		"      - EMPTY_LITERAL=",
+		"      RATE_LIMIT_API_MAX: ${RATE_LIMIT_API_MAX:-300}  # far below the budget",
+		"      QUOTED_HASH: \"a # b\"  # trailing",
+		"      ESCAPED_QUOTE: \"a \\\" # b\"  # trailing",
+		"      HASH_INSIDE: ${HASH_INSIDE:-a#b}",
+		"      NULL_COMMENT: # nothing set here",
+		"      - LIST_COMMENT=${LIST_COMMENT:-x} # note",
+		"      - BARE_COMMENT # note",
+		"      AFTER_BARE: ${AFTER_BARE:-y}",
 		"      DATABASE_URL: postgres://u:p@postgres/db",
 		"    init: true",
 		"    read_only: true",
@@ -1076,7 +1354,15 @@ func TestEnvironmentBlockParserReadsBothForms(t *testing.T) {
 	if isPassthrough("EMPTY_LITERAL", env["EMPTY_LITERAL"]) {
 		t.Fatalf("a list entry that sets the key to nothing pins an empty literal, got %q", env["EMPTY_LITERAL"])
 	}
-	if len(env) != 6 || env["REGISTRATION_MODE"] != "${REGISTRATION_MODE:-open}" || env["TZ"] != "UTC" {
+	for _, key := range []string{"RATE_LIMIT_API_MAX", "HASH_INSIDE", "NULL_COMMENT", "LIST_COMMENT", "BARE_COMMENT", "AFTER_BARE"} {
+		if !isPassthrough(key, env[key]) {
+			t.Errorf("%s is a passthrough with a comment after it (or none), got %q", key, env[key])
+		}
+	}
+	if env["QUOTED_HASH"] != `"a # b"` || env["ESCAPED_QUOTE"] != `"a \" # b"` {
+		t.Errorf("a quoted value keeps the # inside its quotes and loses the comment after them, got %q and %q", env["QUOTED_HASH"], env["ESCAPED_QUOTE"])
+	}
+	if len(env) != 14 || env["REGISTRATION_MODE"] != "${REGISTRATION_MODE:-open}" || env["TZ"] != "UTC" {
 		t.Fatalf("environment read wrongly: %v", env)
 	}
 	if !isPassthrough("HSTS_ENABLED", env["HSTS_ENABLED"]) {
