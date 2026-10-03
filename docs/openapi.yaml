@@ -232,12 +232,15 @@ components:
       description: |
         Rate limit exceeded. Both the header and `retry_after_seconds` below are
         sent only when the refusal came from the per-IP edge limiter, which is
-        the one that tracks a refill timer. On `/api/v1/sessions` and
-        `/api/v1/password-resets`, a 429 can instead come from the per-account
-        (identity + client) attempt-lockout budget, which has no such timer:
-        that answer carries the same envelope and key ("too many login
-        attempts" / "too many recovery attempts") but neither the header nor
-        `retry_after_seconds`.
+        the one that tracks a refill timer. Wherever a route draws a
+        per-account attempt budget, a 429 can instead come from that budget,
+        which has no such timer: sign-in and logout on `/api/v1/sessions`,
+        `/api/v1/password-resets`, the 2FA challenge, 2FA enrollment and
+        disable, and every settings route that re-authenticates with the
+        password. That answer carries the same envelope (keys such as "too
+        many login attempts", "too many recovery attempts", "totp too many
+        attempts", "too many logout attempts", "too many requests") but
+        neither the header nor `retry_after_seconds`.
       headers:
         Retry-After:
           description: |
