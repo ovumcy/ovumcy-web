@@ -1217,7 +1217,9 @@ jobs:
         # skip when a change touches *nothing but* docs/meta files, or
         # .clusterfuzzlite/ (a separate ClusterFuzzLite build sandbox that is
         # never compiled into the app binary or go:embed'd — see
-        # .clusterfuzzlite/Dockerfile), that cannot change the running app, or
+        # .clusterfuzzlite/Dockerfile; its build.sh is the one file there a Go
+        # test reads, so the Go lanes still run for it, below), that cannot
+        # change the running app, or
         # nothing but Go test files and Go-tree testdata/, which never reach
         # the binary. Any other path runs e2e.
         #
@@ -1266,6 +1268,26 @@ jobs:
           # matches bytes.
           export LC_ALL=C
 
+          # What each Go lane's inputs are, one pattern each, written here and
+          # nowhere else. The release gate in docker-image.yml does not read
+          # them: when it accepts a Go job's success from an earlier commit it
+          # cuts THIS step's `run:` text out of the checked-out file and runs it
+          # as a pull_request over the paths that differ, then reads
+          # `run_unit` and `run_race` — so the question "what can change a Go
+          # lane's result" has one answer for the lane filter and the gate
+          # alike, and the step must keep running with nothing but the
+          # environment the gate gives it (the event, the list file, an output
+          # file), reaching no API on that event.
+          #   compiled_re   — what can change the compiled program, and so what
+          #                   the race lanes run for (the workflow directory
+          #                   included: an edit to the race job must run it).
+          #   runbook_re, licenses_re, doc_reader_re — the documents a Go test
+          #                   opens, which force the unit lanes below.
+          compiled_re='(\.go$|^go\.mod$|^go\.sum$|^\.github/)'
+          runbook_re='^docs/self-hosted\.md$'
+          licenses_re='^THIRD_PARTY_LICENSES\.md$'
+          doc_reader_re='^(docs/(openapi\.yaml|SECURITY_INVARIANTS\.md|gdpr\.md|notifications\.md|security/|examples/)|\.clusterfuzzlite/build\.sh$|README\.md$|CHANGELOG\.md$|SECURITY\.md$|changelog\.d/)'
+
           # The list arrives as a file the diff action wrote, never through
           # `env:` (one env string is capped at 128 KiB). No path, or a file
           # that cannot be read, is an empty list: nothing is narrowed.
@@ -1294,14 +1316,29 @@ jobs:
             # never having executed. The name is cross-checked from the
             # guard's own package, so a rename cannot leave this filter
             # pointing at nothing.
-            runbook_changes="$(printf '%s\n' "$files" | grep -E '^docs/self-hosted\.md$' || true)"
+            runbook_changes="$(printf '%s\n' "$files" | grep -E "$runbook_re" || true)"
             # Second not-inert document, same shape: test-go-analysis
             # regenerates the licenses report and refuses a stale committed
             # THIRD_PARTY_LICENSES.md block, so an edit to the inventory
             # alone must still run the lane that judges it — otherwise a
             # hand edit lands ungated. Detected here beside the runbook and
             # consumed at `run_core` below for the same reason.
-            licenses_changes="$(printf '%s\n' "$files" | grep -E '^THIRD_PARTY_LICENSES\.md$' || true)"
+            licenses_changes="$(printf '%s\n' "$files" | grep -E "$licenses_re" || true)"
+            # The same shape for every other file a Go test opens. The two
+            # above were found one at a time, after a break had already
+            # landed; this is the class: the OpenAPI document, the security
+            # invariants and their per-topic pages, the operator pages a docs
+            # test parses, the example compose/proxy files, the readme, the
+            # changelog and its fragments, the security policy, and the fuzz
+            # build script a parity test reads. A diff confined to them is
+            # inert to the browser suite and not to the Go one, and without
+            # this force it reached `main` with every Go lane skipped while
+            # `test` and `race` stayed green (PR 885, run 36349190239; PR 896,
+            # run 36470070737). The list is not hand-kept in step with the
+            # tests: scripts/ciguards derives every path a Go test names and
+            # fails when one of them is inert here, so a document added to a
+            # test later fails there, not silently here.
+            doc_reader_changes="$(printf '%s\n' "$files" | grep -E "$doc_reader_re" || true)"
             # Narrower still, and applied only to run_e2e below: a Go test
             # file or its fixture data never reaches the compiled binary —
             # `go build` excludes `_test.go`, and `testdata/` is excluded by
@@ -1323,6 +1360,8 @@ jobs:
                 verdict="documentation-only change that touches the executed operator runbook: the browser e2e jobs and the race lanes report success without running, and the Go lanes run for it."
               elif [ -n "$licenses_changes" ]; then
                 verdict="documentation-only change that touches the licenses inventory: the browser e2e jobs and the race lanes report success without running, and the Go lanes run so the analysis lane can judge the committed block."
+              elif [ -n "$doc_reader_changes" ]; then
+                verdict="documentation-only change that touches a file a Go test reads: the browser e2e jobs and the race lanes report success without running, and the Go lanes run for it."
               else
                 verdict="docs/meta-only change: the browser e2e jobs and the unit/race battery report success without running."
               fi
@@ -1396,6 +1435,10 @@ jobs:
           if [ -n "${licenses_changes:-}" ]; then
             run_core=true
             echo "the licenses inventory changed: the Go lanes run so the analysis lane can judge the committed block."
+          fi
+          if [ -n "${doc_reader_changes:-}" ]; then
+            run_core=true
+            echo "a file a Go test reads changed: the Go lanes run for it, the browser lanes do not."
           fi
           if [ "$EVENT_NAME" = "push" ]; then
             run_core=false
@@ -1518,20 +1561,20 @@ jobs:
             # it. Measured 2026-08-18 over the last 59 merged pull requests:
             # 22 carried no compiled Go, and 8 of those were `.github/**`, so
             # this carve-out costs a third of the slice and is not optional.
-            compiled="$(printf '%s\n' "$files" | grep -E '(\.go$|^go\.mod$|^go\.sum$|^\.github/)' || true)"
+            compiled="$(printf '%s\n' "$files" | grep -E "$compiled_re" || true)"
             if [ -z "$compiled" ]; then
               run_race=false
               echo "no compiled Go and no workflow change: the race lanes report success without running."
             fi
             # Browser-spec-only: the e2e allowlist plus the docs/meta one.
             beyond_specs="$(printf '%s\n' "$files" | grep -vE '^(e2e/|docs/|\.clusterfuzzlite/|LICENSE$|\.gitignore$|\.gitattributes$|.*\.md$)' || true)"
-            # The runbook and licenses forces above reach `run_core`, and this
-            # slice would take them straight back: `beyond_specs` excuses
-            # every `^docs/` path and every `.md` file, so without the second
-            # and third halves of this condition a runbook-only or
-            # inventory-only diff would clear the Go lanes again — the very
-            # lanes that run the guards reading them.
-            if [ -z "$beyond_specs" ] && [ -z "${runbook_changes:-}" ] && [ -z "${licenses_changes:-}" ]; then
+            # The runbook, licenses and test-read-file forces above reach
+            # `run_core`, and this slice would take them straight back:
+            # `beyond_specs` excuses every `^docs/` path and every `.md` file,
+            # so without the extra halves of this condition a runbook-only,
+            # inventory-only or test-read-file-only diff would clear the Go
+            # lanes again — the very lanes that run the guards reading them.
+            if [ -z "$beyond_specs" ] && [ -z "${runbook_changes:-}" ] && [ -z "${licenses_changes:-}" ] && [ -z "${doc_reader_changes:-}" ]; then
               run_unit=false
               echo "browser specs only: the Go suite reports success without running."
             fi
@@ -2159,21 +2202,20 @@ jobs:
       && needs.image-smoke.result == 'success'
       && needs.e2e-cross-browser.result == 'success' }}
     # A caller cannot grant a called workflow more than it holds, so this must
-    # match the permissions the publish job declares — plus `actions: read` and
-    # `checks: read`, for the tag gate that workflow runs ahead of the publish.
+    # match the permissions the publish job declares — plus `actions: read`,
+    # for the tag gate that workflow runs ahead of the publish.
     # That gate is skipped on this path (it is the tag path's substitute for the
     # `needs:` above, which cannot cross a workflow boundary), but the ceiling
     # has to cover a job the called workflow declares whether or not it runs: a
     # scope this list does not carry fails the CALL, not the skipped job that
     # asked for it, and would stop `:latest` following `main` again — so a
     # permission ADDED over there is a line owed here. The publish job itself is
-    # unaffected: its own permissions block lists neither, so it still receives
-    # neither.
+    # unaffected: its own permissions block does not list `actions`, so it
+    # still does not receive it.
     permissions:
       actions: read
       artifact-metadata: write
       attestations: write
-      checks: read
       contents: read
       id-token: write
       packages: write

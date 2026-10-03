@@ -70,6 +70,15 @@ const (
 const (
 	queueChecksKey = "QUEUE_CHECKS"
 	heavyChecksKey = "HEAVY_CHECKS"
+	// The third: real jobs whose `success` is proof that work ran, which neither
+	// half above carries (see TestReleaseTagGateRequiresARealJobNotAQueueGreen).
+	workChecksKey = "WORK_CHECKS"
+)
+
+// The two real jobs the gate requires, as their check contexts read.
+const (
+	unitJob = "test-go-shard (1)"
+	raceJob = "race-db (1)"
 )
 
 // What runGate's stubs print when the gate asks them for something no fixture
@@ -77,12 +86,19 @@ const (
 const (
 	stubUnservedEndpoint = "the gate called an endpoint this fixture does not serve"
 	stubUnexpectedGit    = "the gate ran an unexpected git command"
+	// stubChecksAPIRead is what the stub prints when the gate asks the Checks
+	// API for anything. runGate and runWalk fail the test on it whatever the
+	// verdict was: nothing a check run says is proof.
+	stubChecksAPIRead = "the gate read the Checks API"
 )
 
 var envEntry = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*): (.*)$`)
 
-// checkRun is one row of the check-runs endpoint as the gate's `--jq` projects
-// it: which suite it belongs to, the context name, and the conclusion.
+// checkRun is one row of a workflow run's list of jobs as the gate's `--jq`
+// projects it: the id of the run it belongs to (the field is still called
+// `suite`, and the fixtures' run ids are the numbers they once used for check
+// suites), the job's name, and its conclusion. The same shape serves the rows a
+// forged check run would carry, which the gate never reads.
 type checkRun struct {
 	suite      string
 	name       string
@@ -90,16 +106,44 @@ type checkRun struct {
 }
 
 // scenario is a state of the API for one commit: which workflow runs exist and
-// under which event, and what check runs each of their suites carries.
+// under which event, and what jobs each of those runs executed.
 type scenario struct {
 	name string
-	// runs maps a check-suite id to the event that produced it, exactly what
+	// runs maps a run id to the event that produced it, exactly what
 	// `actions/runs?head_sha=` reports. The event is the whole of what the gate
 	// selects on, so it is the whole of what a fixture states.
-	runs   map[string]string
+	runs map[string]string
+	// checks are the jobs each run executed, as the first attempt of the run;
+	// reruns are the same kind of row as a later attempt (a re-run of the run),
+	// which then speaks for its name.
 	checks []checkRun
+	reruns []checkRun
+	// forged are check runs somebody with `checks: write` posted to the commit:
+	// the Checks API serves them, the Actions API lists no job behind them, and
+	// the gate must not read them. A gate that asks the Checks API for anything
+	// fails the test that asked it, accepted verdict or not.
+	forged []checkRun
+	// jobsUnreadable makes every read of a run's jobs fail, the way an API
+	// outage does.
+	jobsUnreadable bool
+	// runFiles and runBranches override, per run, the workflow file and the head
+	// branch a run is listed with. The default is a run of ci.yml on `main` (or the
+	// queue's branch for a merge_group run): every other fixture is that, and only
+	// the case that says otherwise is a run the gate must not read.
+	runFiles    map[string]string
+	runBranches map[string]string
 	// wantRefusal is what the gate owes this state of the world.
 	wantRefusal bool
+}
+
+// queueRunBranch is the head branch a merge-queue run carries.
+const queueRunBranch = "gh-readonly-queue/main/pr-962-146b12a848baf4760b815ba52ea36cc5bb3d1522"
+
+// provenQueue is the queue run the proven-tree skip leaves: every gate green
+// and every lane beneath it skipped, the shape observed on 285d14c0.
+func provenQueue(suite string) []checkRun {
+	rows := withConclusion(greenQueue(suite), suite, unitJob, "skipped")
+	return withConclusion(rows, suite, raceJob, "skipped")
 }
 
 // The suite ids the fixtures use. Two suites on one commit is the normal shape
@@ -121,6 +165,9 @@ func greenQueue(suite string) []checkRun {
 		{suite, "e2e-postgres-smoke", "success"},
 		{suite, "image-smoke", "skipped"},
 		{suite, "e2e-cross-browser", "skipped"},
+		// The queue ran the lanes for real here; provenQueue is the other shape.
+		{suite, unitJob, "success"},
+		{suite, raceJob, "success"},
 	}
 }
 
@@ -132,6 +179,9 @@ func greenPush(suite string) []checkRun {
 		{suite, "e2e-postgres-smoke", "success"},
 		{suite, "image-smoke", "success"},
 		{suite, "e2e-cross-browser", "success"},
+		// A push clears every Go lane, so these are skipped on every push.
+		{suite, unitJob, "skipped"},
+		{suite, raceJob, "skipped"},
 	}
 }
 
@@ -537,10 +587,23 @@ func orNone(level string) string {
 // own projection would produce. So these fixtures prove which rows the gate
 // judges and how, and NOT that its jq expressions are spelled right. The
 // endpoints themselves are pinned hard: anything the gate asks for other than
-// the two it is written around is an error here, which is what makes a return
-// to the `check-suites`-by-`head_branch` shape fail loudly rather than be
-// served.
+// the run listing and one run's jobs is an error here, and a read of the
+// Checks API fails the test outright (see stubChecksAPIRead), which is what
+// makes a return to reading check runs fail loudly rather than be served.
 func runGate(t *testing.T, script string, env map[string]string, state scenario) (string, error) {
+	t.Helper()
+
+	output, err := runGateAllowingChecksRead(t, script, env, state)
+	if strings.Contains(output, stubChecksAPIRead) {
+		t.Fatalf("the gate asked the Checks API for something, and no check run is proof: any token holding `checks: write` can post one under any name.\n%s", output)
+	}
+	return output, err
+}
+
+// runGateAllowingChecksRead is runGate without the failure on a read of the
+// Checks API. Only the negative control uses it: a gate that does read check
+// runs has to be run to show what it would have accepted.
+func runGateAllowingChecksRead(t *testing.T, script string, env map[string]string, state scenario) (string, error) {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -552,12 +615,36 @@ func runGate(t *testing.T, script string, env map[string]string, state scenario)
 		return shellQuote(filepath.ToSlash(path))
 	}
 
-	var workflowRuns, checkRuns strings.Builder
+	var workflowRuns, jobRows, forgedRows strings.Builder
 	for _, suite := range sortedKeys(state.runs) {
-		workflowRuns.WriteString(state.runs[suite] + "\t" + suite + "\n")
+		branch := "main"
+		if state.runs[suite] == "merge_group" {
+			branch = queueRunBranch
+		}
+		if override, ok := state.runBranches[suite]; ok {
+			branch = override
+		}
+		file := rollingWorkflow
+		if override, ok := state.runFiles[suite]; ok {
+			file = override
+		}
+		workflowRuns.WriteString(state.runs[suite] + "\t" + suite + "\t" + branch + "\t" + file + "\n")
 	}
+	// A job row is (run id, name, conclusion, attempt), as the jobs endpoint's
+	// projection gives it, `filter=all` listing every attempt of a run.
 	for _, row := range state.checks {
-		checkRuns.WriteString(row.suite + "\t" + row.name + "\t" + row.conclusion + "\n")
+		jobRows.WriteString(row.suite + "\t" + row.name + "\t" + row.conclusion + "\t1\n")
+	}
+	for _, row := range state.reruns {
+		jobRows.WriteString(row.suite + "\t" + row.name + "\t" + row.conclusion + "\t2\n")
+	}
+	for _, row := range state.forged {
+		forgedRows.WriteString(row.suite + "\t" + row.name + "\t" + row.conclusion + "\t1\n")
+	}
+
+	jobsReply := `awk -F'\t' -v id="$id" '$1 == id' ` + write("jobs.tsv", jobRows.String())
+	if state.jobsUnreadable {
+		jobsReply = `echo "the harness made this read fail: $url" >&2; return 1`
 	}
 
 	preamble := strings.Join([]string{
@@ -565,14 +652,19 @@ func runGate(t *testing.T, script string, env map[string]string, state scenario)
 		`  url=""`,
 		`  for arg in "$@"; do case "$arg" in repos/*) url="$arg";; esac; done`,
 		`  case "$url" in`,
+		`    */actions/runs/*/jobs*) id="${url#*/actions/runs/}"; id="${id%%/*}"; ` + jobsReply + ` ;;`,
 		`    */actions/runs*) cat ` + write("workflow_runs.tsv", workflowRuns.String()) + ` ;;`,
-		`    */check-runs*) cat ` + write("check_runs.tsv", checkRuns.String()) + ` ;;`,
+		`    */check-runs*) echo "` + stubChecksAPIRead + `: $url" >&2; cat ` + write("forged_check_runs.tsv", forgedRows.String()) + ` ;;`,
 		`    *) echo "` + stubUnservedEndpoint + `: $*" >&2; return 1 ;;`,
 		`  esac`,
 		`}`,
 		`git() {`,
 		`  case "${1:-}" in`,
 		`    rev-parse) printf '%s\n' "$GITHUB_SHA" ;;`,
+		// The walk to earlier commits: this fixture's history is the tagged
+		// commit alone, so a name with no proof on it has nowhere to look.
+		// workwalk_test.go runs the walk over real history.
+		`    rev-list) printf '%s\n' "$GITHUB_SHA" ;;`,
 		`    *) echo "` + stubUnexpectedGit + `: $*" >&2; return 1 ;;`,
 		`  esac`,
 		`}`,
@@ -591,7 +683,17 @@ func runGate(t *testing.T, script string, env map[string]string, state scenario)
 	for key, value := range env {
 		environ = append(environ, key+"="+value)
 	}
-	return runStepScript(t, bash, gateStep, stepBlock(t), preamble+script, "", environ)
+
+	// The walk reads the lanes' input patterns out of the checked-out ci.yml,
+	// so the script runs where one is, as it does on the runner.
+	workflows := filepath.Join(dir, ".github", "workflows")
+	if err := os.MkdirAll(workflows, 0o755); err != nil {
+		t.Fatalf("create the workflow directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workflows, "ci.yml"), []byte(workflowfile.Read(t, rollingWorkflow)), 0o600); err != nil {
+		t.Fatalf("write ci.yml: %v", err)
+	}
+	return runStepScript(t, bash, gateStep, stepBlock(t), preamble+script, dir, environ)
 }
 
 // runStepScript runs script as the runner runs the named step of the gate job:
@@ -728,7 +830,7 @@ func stepEnv(t *testing.T) map[string]string {
 		env[match[1]] = strings.TrimSpace(match[2])
 	}
 
-	for _, key := range []string{queueChecksKey, heavyChecksKey} {
+	for _, key := range []string{queueChecksKey, heavyChecksKey, workChecksKey} {
 		if env[key] == "" {
 			t.Fatalf("%s, step %q declares no %s. The gate reads each lane's verdict from the run where that lane executes, and this is where the two halves are named; a step without them is judging all five somewhere one of them never ran",
 				gateWorkflow, gateStep, key)

@@ -16,10 +16,34 @@ const publishJob = "publish"
 // they are pinned: whitespace and the `${{ }}` wrapper are the only freedom a
 // rewrite has. The gate must run on every tag, and `publish` may pass a
 // `skipped` gate only where the gate is skipped by design, off the tag path.
+//
+// The second conjunct of `publishCondition` is the tip job's: off the tag path
+// `publish` runs only over that job's `success` AND its answer `true`, and a
+// tag, where the job is skipped by design, passes on the ref type alone. Without
+// the first half a failed tip read would publish; without the second a commit
+// that is no longer the newest on `main` would enter the alias group and cancel
+// a waiting newer one.
 const (
 	gateCondition    = "github.ref_type == 'tag'"
-	publishCondition = "!cancelled() && (needs.verify-release-tag.result == 'success' || (needs.verify-release-tag.result == 'skipped' && github.ref_type != 'tag'))"
+	tipJob           = "confirm-main-tip"
+	publishCondition = "!cancelled() && (needs.verify-release-tag.result == 'success' || (needs.verify-release-tag.result == 'skipped' && github.ref_type != 'tag')) && (github.ref_type == 'tag' || (needs.confirm-main-tip.result == 'success' && needs.confirm-main-tip.outputs.is_tip == 'true'))"
 )
+
+// TestPublishWaitsOnTheTipJob pins the edge for the alias path: its condition
+// reads the tip job's result and output, and a job it does not wait on has
+// neither when the condition is evaluated.
+func TestPublishWaitsOnTheTipJob(t *testing.T) {
+	block := workflowfile.Job(t, gateWorkflow, publishJob)
+	needs, err := workflowfile.JobNeeds(block)
+	if err != nil {
+		t.Fatalf("%s, job %q: `needs:` cannot be read (%v), so nothing shows the job waits on %q:\n%s",
+			gateWorkflow, publishJob, err, tipJob, block)
+	}
+	if !slices.Contains(needs, tipJob) {
+		t.Fatalf("%s, job %q needs %q, not %q: an older commit's publish would enter the alias group without the newest-commit check",
+			gateWorkflow, publishJob, needs, tipJob)
+	}
+}
 
 // TestPublishWaitsOnTheReleaseGate pins the edge itself. Without the need,
 // `publish` starts alongside the gate rather than after it, and its `if:` reads
