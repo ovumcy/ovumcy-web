@@ -63,6 +63,45 @@ func TestCalendarGridKeepsProjectingInTheOutOfDateBand(t *testing.T) {
 	}
 }
 
+// TestCalendarDayPanelModelCarriesNoPredictionOrSuppressionSignal pins what the
+// day panel (/calendar/day/:date) is: a view of ONE recorded day, built from that
+// day's log and the cycle-start policy and carrying no projection. Its model has
+// no field naming a predicted day, a fertility or ovulation claim, a stale verdict
+// or a suppression verdict, so the panel renders identically in the current,
+// out-of-date, overdue, paused and unpredictable states — there is nothing in it
+// for suppression to withhold. The check is by declaration over every field and
+// fails the day a projection field is added, which is when the panel needs its own
+// gate. The grid cell is the anchor: the same predicate finds its predicted and
+// fertility fields.
+func TestCalendarDayPanelModelCarriesNoPredictionOrSuppressionSignal(t *testing.T) {
+	forbidden := []string{"predict", "fertil", "ovulat", "stale", "suppress", "overdue"}
+	namesProjection := func(field string) bool {
+		lower := strings.ToLower(field)
+		for _, word := range forbidden {
+			if strings.Contains(lower, word) {
+				return true
+			}
+		}
+		return false
+	}
+
+	anchored := false
+	cell := reflect.TypeOf(CalendarDayState{})
+	for i := range cell.NumField() {
+		anchored = anchored || namesProjection(cell.Field(i).Name)
+	}
+	if !anchored {
+		t.Fatal("anchor: the grid cell must carry projection fields the predicate recognises")
+	}
+
+	panel := reflect.TypeOf(DayEditorViewData{})
+	for i := range panel.NumField() {
+		if name := panel.Field(i).Name; namesProjection(name) {
+			t.Fatalf("DayEditorViewData.%s names a projection or suppression signal; the day panel was decided to carry none", name)
+		}
+	}
+}
+
 // TestCalendarViewModelsCarryNoOutOfDateSignal states the other half of the same
 // decision: nothing in the grid cell or the calendar page model names the
 // out-of-date verdict, so the page cannot print it. The check is by declaration —

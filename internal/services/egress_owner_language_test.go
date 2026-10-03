@@ -74,6 +74,38 @@ func TestReminderCopyWithoutASentenceSendsTheHeadlineAlone(t *testing.T) {
 	}
 }
 
+// TestReminderTitleCarriesNoEstimateQualifierWhileTheBodyDoes characterizes the
+// English reminder copy as shipped, not as endorsed: the headline a lock screen or
+// ntfy notification shows first reads "Period reminder" / "Ovulation reminder"
+// with no word marking the date as an estimate, while the body line and the
+// disclaimer carry the qualifier. A consumer that shows the title alone shows an
+// unqualified reminder. Changing the title copy is a deliberate product edit and
+// moves this test with it.
+func TestReminderTitleCarriesNoEstimateQualifierWhileTheBodyDoes(t *testing.T) {
+	service := &WebhookNotifyService{localized: newLocaleCopyProvider(t)}
+	eventDate := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
+
+	for _, tc := range []struct {
+		reminderType string
+		title        string
+		message      string
+	}{
+		{DueReminderTypePeriod, "Period reminder", "Estimated next period around 2026-02-10."},
+		{DueReminderTypeOvulation, "Ovulation reminder", "Estimated ovulation around 2026-02-10."},
+	} {
+		payload := service.buildPayload(DueReminder{Type: tc.reminderType, EventDate: eventDate}, i18n.LangEN)
+		if payload.Title != tc.title {
+			t.Errorf("%s title = %q, want %q", tc.reminderType, payload.Title, tc.title)
+		}
+		if strings.Contains(strings.ToLower(payload.Title), "estimate") {
+			t.Errorf("%s title %q now carries an estimate qualifier; update this characterization", tc.reminderType, payload.Title)
+		}
+		if payload.Message != tc.message {
+			t.Errorf("%s message = %q, want %q", tc.reminderType, payload.Message, tc.message)
+		}
+	}
+}
+
 func (provider localeCopyProvider) messages(t *testing.T, language string) map[string]string {
 	t.Helper()
 	messages := provider.manager.Messages(language)
