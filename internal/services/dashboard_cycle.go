@@ -391,6 +391,16 @@ func DashboardCycleStaleAnchor(user *models.User, stats CycleStats, location *ti
 // against, so they answer false before the length is measured; a surface that
 // skipped them raised the out-of-date banner, and the "unknown" phase and status
 // it forces, on an account another page called current.
+//
+// The length measured is the displayed reference, not the overdue gate's, on
+// purpose. It is a different question — "is this account's data out of date" —
+// and it carries no +7 grace, so moving it onto the shorter median flipped
+// ordinary right-skewed histories: 27/28/28/36 (mean 30, median 28) turned stale
+// on cycle day 29, forcing phase and fertility to unknown and raising the amber
+// out-of-date banner while the next-period date was still published. The gate
+// never measures a longer length than this one (dashboardCycleOverdueLength), so
+// the days on which the banner stands beside a published date number seven at
+// most, as they always did.
 func dashboardCycleDataStale(user *models.User, stats CycleStats, today time.Time, location *time.Location) bool {
 	if stats.PregnancyPaused || DashboardPredictionDisabled(user) {
 		return false
@@ -577,17 +587,8 @@ func BuildDashboardCycleContext(user *models.User, logs []models.DailyLog, stats
 	// trigger is the GATE's question, asked against the gate's length — the same
 	// DashboardCycleOverdue reads. Answered against the displayed reference
 	// instead, an inflated mean withheld the window and left the notice invisible:
-	// a blank slot with nothing explaining it.
-	//
-	// The stale check keeps the displayed reference on purpose. It is a different
-	// question — "is this account's data out of date" — and it carries no +7
-	// grace, so moving it onto the shorter median flipped ordinary right-skewed
-	// histories: 27/28/28/36 (mean 30, median 28) turned stale on cycle day 29,
-	// forcing phase and fertility to unknown and raising the amber out-of-date
-	// banner while the next-period date was still published. The gate never
-	// measures a longer length than this one (dashboardCycleOverdueLength), so the
-	// days on which the banner stands beside a published date number seven at
-	// most, as they always did.
+	// a blank slot with nothing explaining it. The stale check below measures the
+	// displayed reference instead (dashboardCycleDataStale says why).
 	//
 	// A BBT-confirmed ovulation outlives the overdue gate: it is a day the
 	// owner's own temperatures named, not a projection, and it is still named
