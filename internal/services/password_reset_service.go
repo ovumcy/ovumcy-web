@@ -78,8 +78,8 @@ func (service *PasswordResetService) StartRecovery(ctx context.Context, secretKe
 
 	normalizedEmail := NormalizeAuthEmail(email)
 	// The attempt is reserved before any compare and stays booked on every
-	// refusal below that is a verdict on the operands; a request that errors
-	// without one, or succeeds, gives the slot back. See AttemptLimiter.Reserve.
+	// refusal and every error below, a storage error included; only a request
+	// that verified both factors gives the slot back. See AttemptLimiter.Reserve.
 	reservation, admitted := service.recoveryPolicy.Reserve(secretKey, limiterKey, normalizedEmail, now)
 	if !admitted {
 		return "", ErrPasswordRecoveryRateLimited
@@ -98,7 +98,10 @@ func (service *PasswordResetService) StartRecovery(ctx context.Context, secretKe
 		if errors.Is(err, ErrRecoveryCodeNotFound) {
 			return "", ErrPasswordRecoveryCodeInvalid
 		}
-		reservation.Refund()
+		// A storage error is not a verdict on the operands, but the attempt stays
+		// booked all the same: failing closed keeps a flapping store from being
+		// a way to compare operands without drawing the budget, and it matches
+		// what the sign-in flow does with the same fault.
 		return "", err
 	}
 	// Both factors verified: the reservation was never a failure.

@@ -215,26 +215,56 @@ func TestLoginAuthenticateGivesTheSlotBackWhenTheCompareDidNotFail(t *testing.T)
 			t.Fatalf("wrong password = %v, want ErrAuthInvalidCreds", err)
 		}
 	}
-	// A correct password and a storage error are not failures: neither may keep
-	// the slot it reserved.
+	// A correct password gives its slot back; the refusal of an unsupported role
+	// is reached only after the password compared correct, so it does too.
 	auth.err = nil
 	if err := authenticate(); err != nil {
 		t.Fatalf("correct password = %v, want success", err)
 	}
-	auth.err = errors.New("storage unavailable")
-	if err := authenticate(); err == nil || errors.Is(err, ErrAuthLoginRateLimited) {
-		t.Fatalf("storage error = %v, want it passed through", err)
+	auth.err = ErrAuthUnsupportedRole
+	if err := authenticate(); !errors.Is(err, ErrAuthUnsupportedRole) {
+		t.Fatalf("unsupported role = %v, want it passed through", err)
 	}
 	auth.err = ErrAuthInvalidCreds
 	if err := authenticate(); !errors.Is(err, ErrAuthInvalidCreds) {
-		t.Fatalf("the limit-th wrong password = %v, want ErrAuthInvalidCreds: a success or an error kept its slot", err)
+		t.Fatalf("the limit-th wrong password = %v, want ErrAuthInvalidCreds: a success or a refused role kept its slot", err)
 	}
 	if err := authenticate(); !errors.Is(err, ErrAuthLoginRateLimited) {
 		t.Fatalf("attempt past the limit = %v, want ErrAuthLoginRateLimited", err)
 	}
 }
 
-func TestStartRecoveryGivesTheSlotBackWhenTheLookupErrors(t *testing.T) {
+// TestLoginAuthenticateKeepsTheSlotOnAStorageError pins the fail-closed policy:
+// an error that is no verdict on the password still keeps the attempt it
+// reserved, so a store that errors cannot be used to compare passwords without
+// drawing the budget. The real credential check answers a lookup fault as a
+// failed credential; the stubbed one here returns the raw error to prove the
+// service itself holds the line.
+func TestLoginAuthenticateKeepsTheSlotOnAStorageError(t *testing.T) {
+	const limit = 3
+	auth := &countingLoginAuth{err: errors.New("storage unavailable")}
+	service := NewLoginService(auth, &stubLoginResetTokenIssuer{}, NewAttemptLimiter())
+	service.ConfigureAttemptLimits(limit, time.Hour)
+	secretKey := []byte("slot-secret-key-0123456789abcdefg")
+	authenticate := func() error {
+		_, err := service.Authenticate(context.Background(), secretKey, "198.51.100.1", "owner@example.com", "pw", loginServiceTestTTL, loginServiceTestNow)
+		return err
+	}
+
+	for range limit {
+		if err := authenticate(); err == nil || errors.Is(err, ErrAuthLoginRateLimited) {
+			t.Fatalf("storage error = %v, want it passed through", err)
+		}
+	}
+	if err := authenticate(); !errors.Is(err, ErrAuthLoginRateLimited) {
+		t.Fatalf("attempt past the limit = %v, want ErrAuthLoginRateLimited: the storage errors gave their slots back", err)
+	}
+	if got := auth.compares.Load(); got != limit {
+		t.Fatalf("%d credential checks ran, want %d", got, limit)
+	}
+}
+
+func TestStartRecoveryKeepsTheSlotWhenTheLookupErrors(t *testing.T) {
 	repo := &stubAuthUserRepo{emailErr: errors.New("storage unavailable")}
 	service := NewPasswordResetService(NewAuthService(repo), NewAttemptLimiter())
 	service.ConfigureRecoveryAttemptLimits(2, time.Hour)
@@ -245,20 +275,15 @@ func TestStartRecoveryGivesTheSlotBackWhenTheLookupErrors(t *testing.T) {
 		return err
 	}
 
-	// A lookup that fails says nothing about the operands: none of these may
-	// keep the slot it reserved.
-	for range 6 {
+	// Fail closed, as sign-in does: a lookup that fails keeps the slot it
+	// reserved, so the limit-th error exhausts the budget.
+	for range 2 {
 		if err := start("OVUM-ABCD-2345-EFGH"); err == nil || errors.Is(err, ErrPasswordRecoveryRateLimited) {
 			t.Fatalf("lookup error = %v, want it passed through", err)
 		}
 	}
-	for range 2 {
-		if err := start("invalid"); !errors.Is(err, ErrPasswordRecoveryCodeInvalid) {
-			t.Fatalf("malformed code = %v, want ErrPasswordRecoveryCodeInvalid: the lookup errors kept their slots", err)
-		}
-	}
-	if err := start("invalid"); !errors.Is(err, ErrPasswordRecoveryRateLimited) {
-		t.Fatalf("attempt past the limit = %v, want ErrPasswordRecoveryRateLimited", err)
+	if err := start("OVUM-ABCD-2345-EFGH"); !errors.Is(err, ErrPasswordRecoveryRateLimited) {
+		t.Fatalf("attempt past the limit = %v, want ErrPasswordRecoveryRateLimited: the lookup errors gave their slots back", err)
 	}
 }
 

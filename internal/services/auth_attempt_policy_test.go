@@ -46,3 +46,49 @@ func TestAuthAttemptPolicyKeysOmitIdentityFingerprintForBlankIdentity(t *testing
 		t.Fatalf("unexpected client key: %q", keys[0])
 	}
 }
+
+// TestNewAuthAttemptPolicyAppliesTheConfigureFloors pins that the constructor
+// takes its figures through the same floors Configure applies: a limit below one
+// would refuse every attempt (the budget would lock the account out before any
+// compare) and a window below a second would drop every attempt at once (the
+// budget would never limit). Either falls back to the default instead.
+func TestNewAuthAttemptPolicyAppliesTheConfigureFloors(t *testing.T) {
+	secretKey := []byte("floor-secret-key")
+	now := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
+
+	for name, figures := range map[string]struct {
+		attempts int
+		window   time.Duration
+	}{
+		"zero limit":           {attempts: 0, window: time.Hour},
+		"negative limit":       {attempts: -3, window: time.Hour},
+		"zero window":          {attempts: 2, window: 0},
+		"sub-second window":    {attempts: 2, window: time.Millisecond},
+		"negative window":      {attempts: 2, window: -time.Minute},
+		"both below the floor": {attempts: 0, window: 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			policy := NewAuthAttemptPolicy("floor", NewAttemptLimiter(), figures.attempts, figures.window)
+
+			if policy.attempts < 1 {
+				t.Fatalf("limit = %d, want at least 1", policy.attempts)
+			}
+			if policy.window < time.Second {
+				t.Fatalf("window = %s, want at least one second", policy.window)
+			}
+			reservation, admitted := policy.Reserve(secretKey, "10.0.0.1", "owner@example.com", now)
+			if !admitted || reservation == nil {
+				t.Fatal("a fresh budget refused its first attempt")
+			}
+			spent := 1
+			for ; spent <= DefaultLoginAttemptsLimit+policy.attempts; spent++ {
+				if _, ok := policy.Reserve(secretKey, "10.0.0.1", "owner@example.com", now); !ok {
+					break
+				}
+			}
+			if spent > DefaultLoginAttemptsLimit+policy.attempts {
+				t.Fatal("the budget never limited")
+			}
+		})
+	}
+}

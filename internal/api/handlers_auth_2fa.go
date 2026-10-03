@@ -45,6 +45,21 @@ func parseTOTPChallengeCode(c fiber.Ctx) string {
 	return strings.TrimSpace(input.Code)
 }
 
+// wellFormedTOTPLoginCode reports whether a submitted sign-in code has the one
+// shape an authenticator produces: exactly six ASCII digits. Anything else can
+// never match, so it is refused without a compare and without the attempt budget.
+func wellFormedTOTPLoginCode(code string) bool {
+	if len(code) != 6 {
+		return false
+	}
+	for index := range len(code) {
+		if code[index] < '0' || code[index] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 // VerifyTOTPLogin validates the 6-digit TOTP code submitted on the challenge page.
 // On success it issues the auth session cookie and redirects to the dashboard.
 func (handler *Handler) VerifyTOTPLogin(c fiber.Ctx) error {
@@ -56,9 +71,21 @@ func (handler *Handler) VerifyTOTPLogin(c fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 
+	// A code that cannot be a TOTP code is refused before the budget is
+	// consulted: no compare happens for it, so it must neither draw an attempt
+	// nor hold a slot (even for the instant before a refund) that the owner's
+	// own submission could then find taken, nor clear the pending cookie when
+	// the budget is spent.
+	code := parseTOTPChallengeCode(c)
+	if !wellFormedTOTPLoginCode(code) {
+		spec := totpInvalidCodeErrorSpec()
+		handler.logSecurityError(c, "auth.2fa", spec)
+		return handler.respondMappedError(c, spec)
+	}
+
 	// The attempt is reserved here, before any code is compared, and stays
 	// booked only when a compared code is wrong (or replayed). Every other way
-	// out of this handler — a malformed code, a refused grant, an internal
+	// out of this handler past this point — a refused grant, an internal
 	// error, a correct code — gives the slot back, so only a failed compare
 	// draws the budget while a burst of concurrent submissions cannot all pass
 	// the same count.
@@ -69,14 +96,6 @@ func (handler *Handler) VerifyTOTPLogin(c fiber.Ctx) error {
 		// to obtain a fresh challenge.
 		handler.clearTOTPPendingCookie(c)
 		spec := totpRateLimitedErrorSpec()
-		handler.logSecurityError(c, "auth.2fa", spec)
-		return handler.respondMappedError(c, spec)
-	}
-
-	code := parseTOTPChallengeCode(c)
-	if len(code) != 6 {
-		reservation.Refund()
-		spec := totpInvalidCodeErrorSpec()
 		handler.logSecurityError(c, "auth.2fa", spec)
 		return handler.respondMappedError(c, spec)
 	}
