@@ -54,17 +54,25 @@ func getEnvIntInRange(key string, fallback, minValue, maxValue int) int {
 // getEnvIntInRange. Every duration setting has an upper bound that is part of
 // its contract, so there is no unbounded variant.
 func getEnvDurationInRange(key string, fallback, minValue, maxValue time.Duration) time.Duration {
+	value, _ := lookupEnvDurationInRange(key, fallback, minValue, maxValue)
+	return value
+}
+
+// lookupEnvDurationInRange is getEnvDurationInRange that also says whether the
+// value was usable: false means the variable was set and refused (logged), so
+// a caller that pairs it with another setting can fall back on both.
+func lookupEnvDurationInRange(key string, fallback, minValue, maxValue time.Duration) (time.Duration, bool) {
 	value := strings.TrimSpace(os.Getenv(key))
 	if value == "" {
-		return fallback
+		return fallback, true
 	}
 
 	parsed, err := time.ParseDuration(value)
 	if err != nil || parsed < minValue || parsed > maxValue {
 		log.Printf("invalid %s=%q, using fallback %s", key, value, fallback) // #nosec G706 -- same operator-managed-startup-configuration boundary as getEnvInt above: value is read once at boot from the operator's own env, never from a request.
-		return fallback
+		return fallback, false
 	}
-	return parsed
+	return parsed, true
 }
 
 // parseBoolEnvValue holds the accepted vocabulary for every boolean env var. Both

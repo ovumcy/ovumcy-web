@@ -404,8 +404,8 @@ AUDIT_LOG_ENABLED=false
 # windows); a value outside its range is logged at boot and the default is used instead — a limiter cannot be
 # widened past its ceiling, let alone switched off. The login, register, forgot-password, 2FA
 # challenge and password-reset redeem pairs are also held to at most 30 requests per minute
-# (MAX over WINDOW, e.g. 100 with 200s); a pair above that is logged and both halves fall back
-# to the defaults.
+# (MAX over WINDOW, e.g. 100 with 200s); a pair above that, or a window below its 1m floor, is
+# logged and both halves fall back to the defaults.
 # RATE_LIMIT_LOGIN_MAX=8
 # RATE_LIMIT_LOGIN_WINDOW=15m
 # RATE_LIMIT_REGISTER_MAX=8

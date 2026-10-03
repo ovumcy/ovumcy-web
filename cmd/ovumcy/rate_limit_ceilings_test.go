@@ -276,11 +276,11 @@ func loadRateLimitsWithLog(t *testing.T) (rateLimitSettings, string) {
 // TestCredentialRateLimitWindowsHaveAOneMinuteFloor: the five credential
 // windows start at one minute, not at the one second every other window keeps.
 // A window below it is out of range like any other out-of-range RATE_LIMIT_*
-// value: logged once, and replaced by its default ALONE — the MAX set beside
-// it is kept, because the window is the only half that is wrong (the pair
-// falls back as a whole only for the rate ceiling, which is the pair's own
-// property). Exactly one minute is accepted, and a non-credential window is
-// still accepted at one second.
+// value: logged once, and the pair falls back to BOTH defaults, as it does
+// above the rate ceiling — a MAX left beside a default window would be a rate
+// the operator never chose (MAX=2 over 30s would become 2 per 15 minutes).
+// Exactly one minute is accepted with its MAX kept, and a non-credential
+// window is still accepted at one second.
 func TestCredentialRateLimitWindowsHaveAOneMinuteFloor(t *testing.T) {
 	credentialWindows := 0
 	for _, row := range rateLimitWindowCases {
@@ -294,6 +294,10 @@ func TestCredentialRateLimitWindowsHaveAOneMinuteFloor(t *testing.T) {
 		t.Run(windowKey, func(t *testing.T) {
 			minimalRuntimeEnv(t)
 			t.Setenv(maxKey, "5")
+			readMax, fallbackMax := credentialMaxRow(t, maxKey)
+			if fallbackMax == 5 {
+				t.Fatalf("%s: the default %d equals the configured MAX, so the test cannot tell a kept MAX from a default one", maxKey, fallbackMax)
+			}
 
 			for _, below := range []string{"1s", "30s", "59s", "59999ms"} {
 				t.Setenv(windowKey, below)
@@ -307,8 +311,8 @@ func TestCredentialRateLimitWindowsHaveAOneMinuteFloor(t *testing.T) {
 				if strings.Count(bootLog, "invalid ") != 1 {
 					t.Fatalf("%s=%s: want one refusal in the boot log, got %q", windowKey, below, bootLog)
 				}
-				if got := credentialMaxRead(t, maxKey)(settings); got != 5 {
-					t.Fatalf("%s=%s: the MAX beside it read back as %d, want the configured 5 kept", windowKey, below, got)
+				if got := readMax(settings); got != fallbackMax {
+					t.Fatalf("%s=%s: the MAX beside it read back as %d, want the default %d with it", windowKey, below, got, fallbackMax)
 				}
 			}
 
@@ -316,6 +320,9 @@ func TestCredentialRateLimitWindowsHaveAOneMinuteFloor(t *testing.T) {
 			settings, bootLog := loadRateLimitsWithLog(t)
 			if got := readWindow(settings); got != time.Minute {
 				t.Fatalf("%s=1m read back as %s, want exactly the floor accepted", windowKey, got)
+			}
+			if got := readMax(settings); got != 5 {
+				t.Fatalf("%s=1m: the MAX beside it read back as %d, want the configured 5 kept", windowKey, got)
 			}
 			if strings.Contains(bootLog, "invalid ") {
 				t.Fatalf("%s=1m is in range but the boot log refused something: %q", windowKey, bootLog)
@@ -345,17 +352,17 @@ func TestCredentialRateLimitWindowsHaveAOneMinuteFloor(t *testing.T) {
 	}
 }
 
-// credentialMaxRead returns the reader of a credential MAX setting from
-// rateLimitCeilingCases.
-func credentialMaxRead(t *testing.T, maxKey string) func(rateLimitSettings) int {
+// credentialMaxRow returns the reader and the default of a credential MAX
+// setting from rateLimitCeilingCases.
+func credentialMaxRow(t *testing.T, maxKey string) (func(rateLimitSettings) int, int) {
 	t.Helper()
 	for _, row := range rateLimitCeilingCases {
 		if row.key == maxKey {
-			return row.read
+			return row.read, row.fallback
 		}
 	}
 	t.Fatalf("no max row for %s", maxKey)
-	return nil
+	return nil, 0
 }
 
 // TestCredentialRateLimitRefusalLeavesTheOtherPairsAlone: one credential pair
