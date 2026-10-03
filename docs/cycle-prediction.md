@@ -212,8 +212,9 @@ These are the exact cases asserted by the reference tests.
   agrees with the calendar, the feed and the reminders for the same cycle
   length. When the shortest observed cycle is under 15 days — too short for the
   model to place an ovulation — the range starts at the earliest ovulation the
-  model ever names (cycle day 5) instead of being dropped, so the dashboard
-  never falls back to one exact median date for an irregular history.
+  model ever names (cycle day 5). Earlier versions derived the range by shifting
+  the next-period range back by the luteal phase, which put that start before
+  cycle day 1 for such a history.
 
 ### How a BBT temperature shift is detected (the "3-over-6" coverline rule)
 
