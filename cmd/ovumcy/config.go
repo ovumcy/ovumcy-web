@@ -61,8 +61,8 @@ type reminderSchedulerSettings struct {
 // held to [1s, 24h]: a unit slip there (15s for 15m) still widens a
 // non-credential budget. A credential window is held to [1m, 24h]: seconds
 // is not a budget worth the name on the endpoints that guard a password, a
-// recovery token or a TOTP code. A window below the floor falls back on its
-// own, like any other out-of-range value; the MAX beside it is kept. On the
+// recovery token or a TOTP code. A window below the floor takes its MAX down
+// to the default with it, as a pair above the rate does. On the
 // credential endpoints the pair is also held to a per-minute rate
 // (getCredentialRateLimit), which is what stops a unit slip from widening
 // them and the per-account login budget with them. The ceilings
@@ -119,9 +119,9 @@ func getRateLimitWindow(key string, fallback time.Duration) time.Duration {
 }
 
 // getCredentialRateLimitWindow is the credential twin of getRateLimitWindow,
-// with the one-minute floor.
-func getCredentialRateLimitWindow(key string, fallback time.Duration) time.Duration {
-	return getEnvDurationInRange(key, fallback, rateLimitCredentialWindowFloor, rateLimitWindowCeiling)
+// with the one-minute floor; false means the window was refused.
+func getCredentialRateLimitWindow(key string, fallback time.Duration) (time.Duration, bool) {
+	return lookupEnvDurationInRange(key, fallback, rateLimitCredentialWindowFloor, rateLimitWindowCeiling)
 }
 
 // credentialRateWithinCeiling holds a credential pair to
@@ -133,18 +133,22 @@ func credentialRateWithinCeiling(maxRequests int, window time.Duration) bool {
 
 // getCredentialRateLimit reads the MAX/WINDOW pair of a credential endpoint
 // (login, registration, password reset, the 2FA challenge, the password-reset
-// redeem): each half is bounded on its own (a window below one minute falls
-// back to its default alone, logged once, and the MAX is kept), then the pair
-// is held to the per-minute rate ceiling. A pair above it falls back to BOTH
-// defaults, logged
-// once — keeping either half would leave a rate the operator never chose. It
+// redeem): each half is bounded on its own, then the pair is held to the
+// per-minute rate ceiling. A pair above it, or a window below the one-minute
+// floor, falls back to BOTH defaults, logged once — keeping either half would
+// leave a rate the operator never chose. It
 // is the only reader of the credential count ceiling and the only place the
 // ten LOGIN, REGISTER, FORGOT_PASSWORD, TOTP_CHALLENGE and
 // PASSWORD_RESET_REDEEM keys are named as literals; a key assembled at run
 // time is not held to that.
 func getCredentialRateLimit(maxKey, windowKey string, fallbackMax int, fallbackWindow time.Duration) (int, time.Duration) {
 	maxRequests := getRateLimitMax(maxKey, fallbackMax, rateLimitCredentialMaxCeiling)
-	window := getCredentialRateLimitWindow(windowKey, fallbackWindow)
+	window, windowOK := getCredentialRateLimitWindow(windowKey, fallbackWindow)
+	if !windowOK {
+		log.Printf("%s=%d ignored beside the refused %s, using fallbacks %d and %s",
+			maxKey, maxRequests, windowKey, fallbackMax, fallbackWindow) // #nosec G706 -- operator-managed startup configuration read once at boot, never from a request.
+		return fallbackMax, fallbackWindow
+	}
 	if credentialRateWithinCeiling(maxRequests, window) {
 		return maxRequests, window
 	}
