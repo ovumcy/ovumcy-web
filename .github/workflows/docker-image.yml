@@ -248,10 +248,12 @@ jobs:
           # a push while `WORK_CHECKS` is not: the heavy lanes execute under
           # those three events and no other, so a run of any of them for this
           # commit is the only place their verdict exists, and a dispatch is how
-          # an operator produces it when the push run was lost. The work jobs
-          # run in the merge-queue run too, which is the copy of the workflow
-          # that lands on `main`, so nothing is gained by trusting a run that
-          # can be started against another branch's copy of ci.yml.
+          # an operator produces it when the push run was lost. A work job is
+          # proof only from the two runs of the copy of ci.yml that is on
+          # `main` (the queue, the push to `main`); a release or a dispatch can
+          # be started against another branch's copy, so it is not read for
+          # them, even when the queue skipped the job for a proven tree and the
+          # ancestor walk below is what looks for the proof instead.
           WORK_CHECKS: test-go-shard (1)|race-db (1)
           ANCESTOR_WALK_BOUND: 20
         run: |
