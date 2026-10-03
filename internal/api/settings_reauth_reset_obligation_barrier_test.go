@@ -36,7 +36,7 @@ type resetObligation struct {
 // shape: a ReauthBudget bound from SettingsReauthBudget (the 2FA disable's
 // draw on settings.reauth) or EnrollCodeBudget (totp.enroll) owes a Reset on that
 // variable. Their placement after the committed write is pinned behaviourally
-// (TestDisableTOTP2FARefusedWriteDoesNotResetTheDisableBudget,
+// (TestDisableTOTP2FARefusedWriteDoesNotResetTheReauthBudget,
 // TestVerifyTOTP2FAEnrollmentRefusedWriteDoesNotResetTheTOTPEnrollBudget).
 func TestEverySettingsReauthCallerResetsTheBudgetItWasHanded(t *testing.T) {
 	root, err := moduleRootForBarrier()

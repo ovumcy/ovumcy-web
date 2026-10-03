@@ -194,10 +194,10 @@ func TestSettingsReauthSpentBudgetRefusesTheTOTPDisable(t *testing.T) {
 	}
 }
 
-// TestDisableTOTP2FASuccessResetsTheDisableBudget spends all but one attempt,
+// TestDisableTOTP2FASuccessResetsTheReauthBudget spends all but one attempt,
 // disables with the correct password, re-enables, and spends all but one
 // attempt again: without the reset the second round trips the limiter early.
-func TestDisableTOTP2FASuccessResetsTheDisableBudget(t *testing.T) {
+func TestDisableTOTP2FASuccessResetsTheReauthBudget(t *testing.T) {
 	ctx := newTOTPSettingsContext(t, "totp-disable-budget-reset@example.com")
 	enableTOTPForSettingsTest(t, &ctx)
 
@@ -217,14 +217,14 @@ func TestDisableTOTP2FASuccessResetsTheDisableBudget(t *testing.T) {
 	}
 }
 
-// TestDisableTOTP2FARefusedWriteDoesNotResetTheDisableBudget pins the order of
+// TestDisableTOTP2FARefusedWriteDoesNotResetTheReauthBudget pins the order of
 // the reset against the write: a correct password whose DisableTOTP is refused
 // (a revocation bumped auth_session_version after the request loaded the user)
-// must leave the totp.disable count where it was. A callback on the disable's
+// must leave the settings.reauth count where it was. A callback on the disable's
 // own UPDATE bumps the version inside its transaction, so the compare-and-set
 // fails exactly once, after the password check has passed, and the rollback
 // takes the bump with it.
-func TestDisableTOTP2FARefusedWriteDoesNotResetTheDisableBudget(t *testing.T) {
+func TestDisableTOTP2FARefusedWriteDoesNotResetTheReauthBudget(t *testing.T) {
 	ctx := newTOTPSettingsContext(t, "totp-disable-refused-write@example.com")
 	enableTOTPForSettingsTest(t, &ctx)
 
