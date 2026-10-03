@@ -695,8 +695,8 @@ jobs:
     # The residual, stated: this job reads the tip before `publish` queues, so
     # a commit can pass here as the tip, lose that status to a newer push in
     # the seconds before its `publish` queues, and still cancel that newer
-    # commit's waiting publish. The aliases then land on this commit, one
-    # green signed commit behind the tip, until the next push. A second read
+    # commit's waiting publish. The aliases then land on this commit, green
+    # and signed but behind the tip, until the next push. A second read
     # inside the group cannot undo it: GitHub cancels the waiting job when
     # this one queues, before any step runs, so skipping there would only
     # leave the aliases further behind.
