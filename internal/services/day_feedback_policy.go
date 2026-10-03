@@ -50,7 +50,7 @@ func (service *DayService) ResolveDayFeedback(ctx context.Context, user *models.
 	}
 
 	state := DayFeedbackState{
-		MessageKey: resolveDaySaveMessageKey(user, day, published, suppression),
+		MessageKey: resolveDaySaveMessageKey(user, day, today, published, suppression),
 	}
 
 	if shouldShowSpottingCycleWarning(logs, entry, day, location) {
@@ -88,8 +88,9 @@ func (service *DayService) AcknowledgeLongPeriodWarning(ctx context.Context, use
 // panics there rather than reaching a guard in this package. It reads the
 // PUBLISHED stats and the verdict that came with them
 // (ConfirmedAndPublishedStats), never stats it derived itself: the fertile line
-// may only name a window the dashboard would show.
-func resolveDaySaveMessageKey(user *models.User, day time.Time, stats CycleStats, suppression PredictionSuppression) string {
+// may only name a window the dashboard would show. `today` is the owner's
+// calendar day, in the same location-midnight shape as `day`.
+func resolveDaySaveMessageKey(user *models.User, day time.Time, today time.Time, stats CycleStats, suppression PredictionSuppression) string {
 	// A positive pregnancy test pauses predictions (ResolvePregnancyPause);
 	// explain the pause right at save time instead of a routine
 	// self-care/fertile message, and carry the red-flag guidance.
@@ -132,6 +133,12 @@ func resolveDaySaveMessageKey(user *models.User, day time.Time, stats CycleStats
 	// surface withheld the window. The save falls back to the neutral message
 	// rather than softening the fertile one.
 	//
+	// A day already behind the owner is a backfill: the window is a projection
+	// about the days ahead, and a past day the owner is recording after the fact
+	// has nothing left to be estimated about, so the line would only read as a
+	// claim about a day that is over. Only today (and the days ahead, which the
+	// window does estimate) may carry it.
+	//
 	// Out-of-date data is a third tier, and the one PublishedStats does not answer
 	// with a cleared window: it withholds the status and the phase and leaves the
 	// projected dates beside the out-of-date banner. This message reads the window,
@@ -140,6 +147,7 @@ func resolveDaySaveMessageKey(user *models.User, day time.Time, stats CycleStats
 	// pages, which print "unknown" there, do not.
 	if !suppression.FertilitySuppressed &&
 		!stats.CycleDataStale &&
+		!day.Before(dateOnly(today)) &&
 		!stats.FertilityWindowStart.IsZero() &&
 		!day.Before(dateOnly(stats.FertilityWindowStart)) &&
 		!day.After(dateOnly(stats.FertilityWindowEnd)) {

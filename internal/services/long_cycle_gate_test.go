@@ -420,7 +420,9 @@ func TestLongCycleGateWithholdsTheFertileSaveMessage(t *testing.T) {
 			}
 			_, published, suppression := ConfirmedAndPublishedStats(user, logs, stats, today, time.UTC)
 			for day := stats.FertilityWindowStart; !day.After(stats.FertilityWindowEnd); day = day.AddDate(0, 0, 1) {
-				if got := resolveDaySaveMessageKey(user, day, published, suppression) == daySaveMessageFertile; got != tc.wantFertile {
+				// The day is saved on itself ("today" = the day): a backfilled day never
+				// gets the fertile line, so only the gate under test may withhold it here.
+				if got := resolveDaySaveMessageKey(user, day, day, published, suppression) == daySaveMessageFertile; got != tc.wantFertile {
 					t.Fatalf("saving %s: fertile message = %t, want %t", CalendarDayKey(day), got, tc.wantFertile)
 				}
 			}

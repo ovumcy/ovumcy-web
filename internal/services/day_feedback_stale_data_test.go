@@ -43,5 +43,26 @@ func TestDayFeedbackIsNeutralInsideTheWindowOnceTheCycleDataIsStale(t *testing.T
 		if got := dayFeedbackKeyOn(t, user, logs, location, stale, savedDay); got != daySaveMessageNeutral {
 			t.Fatalf("saving a day inside the window on a stale cycle resolves to %q, want the neutral message", got)
 		}
+
+		// The window is behind a stale cycle, so a save through the handler's path is
+		// a backfill and neutral for that reason alone. The verdict is held against the
+		// policy itself, with the saved day also standing as today: the stale copy
+		// must answer neutral, and the same copy with only the staleness cleared must
+		// answer fertile, or the check would be a no-op behind the backfill rule.
+		today := DateAtLocation(localNoon(stale, location), location)
+		staleLogs := FilterLogsToStatsHistory(logs, today, location)
+		stats := BuildCycleStatsFromLogs(user, staleLogs, localNoon(stale, location), location)
+		_, published, suppression := ConfirmedAndPublishedStats(user, logs, stats, today, location)
+		saved := DateAtLocation(savedDay, location)
+		if !published.CycleDataStale {
+			t.Fatal("fixture: the published stats of cycle day 30 must carry the out-of-date verdict")
+		}
+		if got := resolveDaySaveMessageKey(user, saved, saved, published, suppression); got != daySaveMessageNeutral {
+			t.Fatalf("a same-day save inside the window on a stale cycle resolves to %q, want the neutral message", got)
+		}
+		published.CycleDataStale = false
+		if got := resolveDaySaveMessageKey(user, saved, saved, published, suppression); got != daySaveMessageFertile {
+			t.Fatalf("with the staleness cleared the same save resolves to %q, want the fertile message", got)
+		}
 	})
 }

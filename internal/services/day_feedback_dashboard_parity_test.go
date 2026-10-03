@@ -119,6 +119,20 @@ func dashboardFertileDays(t *testing.T, user *models.User, logs []models.DailyLo
 	return fertile
 }
 
+// notBefore keeps the calendar-day keys that fall on or after today. The save
+// message is the fertile one only for today and the days ahead, so it is held
+// against the dashboard's window from today on; a day behind the owner is a
+// backfill and answers neutral whatever the window says.
+func notBefore(days []string, today time.Time) []string {
+	kept := []string{}
+	for _, key := range days {
+		if key >= CalendarDayKey(dateOnly(today)) {
+			kept = append(kept, key)
+		}
+	}
+	return kept
+}
+
 func dayFeedbackKeyOn(t *testing.T, user *models.User, logs []models.DailyLog, location *time.Location, today, day time.Time) string {
 	t.Helper()
 
@@ -203,11 +217,14 @@ func TestDayFeedbackNamesTheSameFertileDaysAsTheDashboardForAnInferredLuteal(t *
 				from, to := cycleDay(4), cycleDay(27)
 				fromFeedback := dayFeedbackFertileDays(t, user, logs, location, today, from, to)
 				fromDashboard := dashboardFertileDays(t, user, logs, location, today, from, to)
-				if !slices.Equal(fromFeedback, fromDashboard) {
-					t.Fatalf("save message is fertile on %v, the dashboard window covers %v", fromFeedback, fromDashboard)
+				if !slices.Equal(fromDashboard, wantDays) {
+					t.Fatalf("dashboard window covers %v, want cycle days 13-18 %v", fromDashboard, wantDays)
 				}
-				if !slices.Equal(fromFeedback, wantDays) {
-					t.Fatalf("fertile days = %v, want cycle days 13-18 %v", fromFeedback, wantDays)
+				if !slices.Equal(fromFeedback, notBefore(fromDashboard, today)) {
+					t.Fatalf("save message is fertile on %v, the dashboard window covers %v from today on", fromFeedback, notBefore(fromDashboard, today))
+				}
+				if !slices.Equal(fromFeedback, notBefore(wantDays, today)) {
+					t.Fatalf("fertile days = %v, want cycle days 13-18 from today on %v", fromFeedback, notBefore(wantDays, today))
 				}
 				if got := dayFeedbackKeyOn(t, user, logs, location, today, cycleDay(10)); got != daySaveMessageNeutral {
 					t.Fatalf("cycle day 10 message = %q, want the neutral one", got)
@@ -256,12 +273,18 @@ func TestDayFeedbackFollowsAConfirmedThermalShiftLikeTheDashboard(t *testing.T) 
 		from, to := cycleDay(4), cycleDay(27)
 		fromFeedback := dayFeedbackFertileDays(t, user, logs, location, today, from, to)
 		fromDashboard := dashboardFertileDays(t, user, logs, location, today, from, to)
-		if !slices.Equal(fromFeedback, fromDashboard) {
-			t.Fatalf("save message is fertile on %v, the dashboard window covers %v", fromFeedback, fromDashboard)
-		}
 		wantDays := []string{"2026-03-06", "2026-03-07", "2026-03-08", "2026-03-09", "2026-03-10", "2026-03-11"} // cycle days 9-14
-		if !slices.Equal(fromFeedback, wantDays) {
-			t.Fatalf("fertile days = %v, want the confirmed window %v", fromFeedback, wantDays)
+		if !slices.Equal(fromDashboard, wantDays) {
+			t.Fatalf("dashboard window covers %v, want the confirmed window %v", fromDashboard, wantDays)
+		}
+		if !slices.Equal(fromFeedback, notBefore(fromDashboard, today)) {
+			t.Fatalf("save message is fertile on %v, the dashboard window covers %v from today on", fromFeedback, notBefore(fromDashboard, today))
+		}
+		// A shift is only confirmed once its third warm day is logged, so by then the
+		// whole confirmed window is behind the owner: every day of it is a backfill
+		// and answers neutral, which leaves the sweep empty.
+		if len(fromFeedback) != 0 {
+			t.Fatalf("a backfilled day of the confirmed window got the fertile message on %v", fromFeedback)
 		}
 		// The projection's own days are past the confirmed ovulation: no fertile line.
 		if got := dayFeedbackKeyOn(t, user, logs, location, today, cycleDay(16)); got != daySaveMessageNeutral {
@@ -273,6 +296,11 @@ func TestDayFeedbackFollowsAConfirmedThermalShiftLikeTheDashboard(t *testing.T) 
 // The same history the webhook parity test uses: more than two years of it, so
 // the dashboard's two-year window and the whole stored history disagree about
 // whether the cycle is overdue. The message reads the dashboard's window.
+//
+// The fertile line belongs to a save made today, so each day of the sweep is
+// saved on itself: the message and the dashboard are both asked as of that day.
+// Holding one fixed "today" against past days would compare an empty list with
+// an empty one, since a backfilled day answers neutral whatever the window says.
 func TestDayFeedbackReadsTheDashboardsHistoryWindow(t *testing.T) {
 	today := time.Date(2026, time.October, 2, 0, 0, 0, 0, time.UTC)
 
@@ -282,18 +310,30 @@ func TestDayFeedbackReadsTheDashboardsHistoryWindow(t *testing.T) {
 				user := historyWindowUser()
 				logs := historyWindowLogs(today, testCase.startsAgo)
 
-				from, to := today.AddDate(0, 0, -45), today.AddDate(0, 0, 5)
-				fromFeedback := dayFeedbackFertileDays(t, user, logs, location, today, from, to)
-				fromDashboard := dashboardFertileDays(t, user, logs, location, today, from, to)
-				if !slices.Equal(fromFeedback, fromDashboard) {
-					t.Fatalf("save message is fertile on %v, the dashboard window covers %v", fromFeedback, fromDashboard)
-				}
-				if testCase.wantPaused && len(fromFeedback) != 0 {
-					t.Fatalf("a paused history still gets the fertile message on %v", fromFeedback)
+				var fromFeedback, fromDashboard []string
+				for day := today.AddDate(0, 0, -45); !day.After(today.AddDate(0, 0, 5)); day = day.AddDate(0, 0, 1) {
+					// The first days of a period carry their own message ahead of the window
+					// by design (dayFeedbackFertileDays skips them for the same reason).
+					if dayFeedbackKeyOn(t, user, logs, location, day, day) == daySaveMessageSelfCare {
+						continue
+					}
+					feedback := dayFeedbackFertileDays(t, user, logs, location, day, day, day)
+					dashboard := dashboardFertileDays(t, user, logs, location, day, day, day)
+					if !slices.Equal(feedback, dashboard) {
+						t.Fatalf("saved on %s, the message is fertile on %v, the dashboard window covers %v", CalendarDayKey(day), feedback, dashboard)
+					}
+					if testCase.wantPaused && day.Equal(today) && len(feedback) != 0 {
+						t.Fatalf("a paused history still gets the fertile message on %v", feedback)
+					}
+					fromFeedback = append(fromFeedback, feedback...)
+					fromDashboard = append(fromDashboard, dashboard...)
 				}
 				// Control: a history the dashboard does project must reach the message,
 				// so a message that went silent for everyone would not pass the
 				// comparison above on two empty lists.
+				if !testCase.wantPaused && len(fromDashboard) == 0 {
+					t.Fatal("fixture: the dashboard projects no window over the swept days")
+				}
 				if !testCase.wantPaused && len(fromFeedback) == 0 {
 					t.Fatal("a history the dashboard projects never gets the fertile message")
 				}
