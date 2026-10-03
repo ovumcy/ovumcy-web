@@ -225,13 +225,39 @@ func TestReleaseTagGateReadsTheScannerWorkflows(t *testing.T) {
 		{name: "no CodeQL run exists", world: func(w scannerWorld) scannerWorld { return w.withoutRunsOf(codeqlFile) }, wantRefusal: true},
 		{name: "no Security run exists", world: func(w scannerWorld) scannerWorld { return w.withoutRunsOf(securityFile) }, wantRefusal: true},
 		{
-			name: "a Gitleaks run that did not conclude success",
+			name: "a Gitleaks queue run that did not conclude success",
 			world: func(w scannerWorld) scannerWorld {
-				return w.mapRuns(func(run *scannerRun) {
-					if run.file == gitleaksFile && run.event == "push" {
-						run.conclusion = "cancelled"
-					}
-				})
+				return w.setConclusion(gitleaksFile, "merge_group", "cancelled")
+			},
+			wantRefusal: true,
+		},
+		{
+			// The queue run is the test of the commit that lands; a push run a
+			// newer push cancelled is a duplicate and must not block the tag.
+			name: "queue runs green and the push runs cancelled",
+			world: func(w scannerWorld) scannerWorld {
+				return w.setConclusion(securityFile, "push", "cancelled").
+					setConclusion(codeqlFile, "push", "cancelled").
+					setConclusion(gitleaksFile, "push", "cancelled")
+			},
+		},
+		{
+			name: "queue run failed and the push run green",
+			world: func(w scannerWorld) scannerWorld {
+				return w.setConclusion(securityFile, "merge_group", "failure")
+			},
+			wantRefusal: true,
+		},
+		{
+			name: "no queue run and the push run green",
+			world: func(w scannerWorld) scannerWorld {
+				return w.withoutEvent("merge_group")
+			},
+		},
+		{
+			name: "no queue run and the push run cancelled",
+			world: func(w scannerWorld) scannerWorld {
+				return w.withoutEvent("merge_group").setConclusion(securityFile, "push", "cancelled")
 			},
 			wantRefusal: true,
 		},
@@ -293,6 +319,19 @@ func TestReleaseTagGateReadsTheScannerWorkflows(t *testing.T) {
 			}
 		})
 	}
+}
+
+func (w scannerWorld) setConclusion(file, event, conclusion string) scannerWorld {
+	return w.mapRuns(func(run *scannerRun) {
+		if run.file == file && run.event == event {
+			run.conclusion = conclusion
+		}
+	})
+}
+
+func (w scannerWorld) withoutEvent(event string) scannerWorld {
+	w.runs = slices.DeleteFunc(slices.Clone(w.runs), func(run scannerRun) bool { return run.event == event })
+	return w
 }
 
 func (w scannerWorld) withRun(run scannerRun) scannerWorld {

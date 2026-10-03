@@ -672,6 +672,15 @@ jobs:
       # printed; a failed, cancelled or still-running job refuses, and so does a
       # job that is absent (a renamed lane reads as no verdict), a run that did
       # not conclude `success`, or no qualifying run at all.
+      #
+      # WHICH RUN SPEAKS. The merge-queue run's head SHA is byte-for-byte the
+      # commit that becomes `main`, so it is the authoritative test of the
+      # commit that lands: when one exists for a workflow, only merge-queue runs
+      # are judged (all must be `success`, jobs read from them alone). A push
+      # run on `main` is a duplicate re-test, and these workflows use a per-ref
+      # concurrency group, so a newer push cancels an older pending one; judging
+      # it would block tagging a commit whose queue run was green. Push runs on
+      # `main` are the fallback only when no queue run of that file exists.
       - name: Assert the scanners passed on the tagged commit
         shell: bash
         env:
@@ -726,8 +735,13 @@ jobs:
 
             # The workflow is the file, never the display name; the runs are the
             # merge queue's and pushes to `main`, the two that run the copy of
-            # the workflow that is on `main`.
-            wf_runs="$(printf '%s\n' "$all_runs" | awk -F'\t' -v want="$wf_file" '$4 == want && ($1 == "merge_group" || ($1 == "push" && $3 == "main"))')"
+            # the workflow that is on `main`. The merge-queue run is judged
+            # alone when one exists: its head SHA is the commit that lands, and
+            # the push run is a duplicate re-test that a newer push can cancel.
+            wf_runs="$(printf '%s\n' "$all_runs" | awk -F'\t' -v want="$wf_file" '$4 == want && $1 == "merge_group"')"
+            if [ -z "$wf_runs" ]; then
+              wf_runs="$(printf '%s\n' "$all_runs" | awk -F'\t' -v want="$wf_file" '$4 == want && $1 == "push" && $3 == "main"')"
+            fi
             if [ -z "$wf_runs" ]; then
               echo "::error::no merge-queue run and no push run on main of ${wf_file} exists for ${sha}, so no scan verdict is on record for it."
               failed=1
