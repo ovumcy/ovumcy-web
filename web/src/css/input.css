@@ -991,6 +991,12 @@
     --ribbon-phase: var(--phase-withheld);
   }
 
+  /* Irregular range mode: the fertile window still covers these days after
+     the ovulation estimate, so no phase is named — the same neutral fill. */
+  &[data-phase='unknown'] {
+    --ribbon-phase: var(--phase-withheld);
+  }
+
   /* Past the projected cycle length there is no phase left to claim; the cell
      exists only because the start window reaches it, and it shows the track. */
   &[data-phase='beyond'] {
