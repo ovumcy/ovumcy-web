@@ -168,7 +168,7 @@ func TestTOTPDisableOverCapCompressedBodyDrawsNothingFromTheBudget(t *testing.T)
 			onboardingTestAppOptions{enableCSRF: true, bodyLimit: limit})
 		enableTOTPForSettingsTest(t, &ctx)
 
-		for attempt := range services.DefaultTOTPDisableAttemptsLimit {
+		for attempt := range services.DefaultSettingsReauthAttemptsLimit {
 			assert2FARefusal(t, sendGzipDelete(t, ctx, "WrongPass9", limit+1),
 				http.StatusRequestEntityTooLarge, `"error":"request_too_large"`,
 				"wrong password past the cap, attempt "+strconv.Itoa(attempt+1))
@@ -189,7 +189,7 @@ func TestTOTPDisableOverCapCompressedBodyDrawsNothingFromTheBudget(t *testing.T)
 			onboardingTestAppOptions{enableCSRF: true, bodyLimit: limit})
 		enableTOTPForSettingsTest(t, &ctx)
 
-		for attempt := range services.DefaultTOTPDisableAttemptsLimit {
+		for attempt := range services.DefaultSettingsReauthAttemptsLimit {
 			assert2FARefusal(t, sendGzipDelete(t, ctx, "WrongPass9", limit),
 				http.StatusUnauthorized, "invalid credentials",
 				"wrong password inside the cap, attempt "+strconv.Itoa(attempt+1))

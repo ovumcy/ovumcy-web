@@ -23,16 +23,16 @@ func newDisableBudgetSettings(secretKey []byte, limiter *AttemptLimiter) *Settin
 
 func checkDisableBudget(svc *SettingsService, clientKey string, userID uint, now time.Time) error {
 	attempt := ReauthAttempt{ClientKey: clientKey, UserID: userID, Now: now}
-	return svc.TOTPDisableReauthBudget().verify(attempt, func() error { return nil })
+	return svc.SettingsReauthBudget().verify(attempt, func() error { return nil })
 }
 
 func recordDisableFailure(svc *SettingsService, clientKey string, userID uint, now time.Time) {
 	attempt := ReauthAttempt{ClientKey: clientKey, UserID: userID, Now: now}
-	svc.TOTPDisableReauthBudget().bookFailure(attempt)
+	svc.SettingsReauthBudget().bookFailure(attempt)
 }
 
 func resetDisableBudget(svc *SettingsService, clientKey string, userID uint) {
-	svc.TOTPDisableReauthBudget().Reset(ReauthAttempt{ClientKey: clientKey, UserID: userID})
+	svc.SettingsReauthBudget().Reset(ReauthAttempt{ClientKey: clientKey, UserID: userID})
 }
 
 type reauthBudgetFixture struct {
@@ -64,10 +64,6 @@ func newReauthBudgetFixture(t *testing.T) reauthBudgetFixture {
 	}
 }
 
-func (fixture reauthBudgetFixture) disableBudget() ReauthBudget {
-	return fixture.settings.TOTPDisableReauthBudget()
-}
-
 func (fixture reauthBudgetFixture) spend(t *testing.T, budget ReauthBudget, limit int) {
 	t.Helper()
 	for range limit {
@@ -78,37 +74,45 @@ func (fixture reauthBudgetFixture) spend(t *testing.T, budget ReauthBudget, limi
 }
 
 // TestPasswordReauthsShareOneAccountBudget pins that every password re-auth of
-// one account draws ONE budget: wrong passwords spent through the settings
-// actions refuse the 2FA disable confirmation, and the reverse, each refusal
-// answered with its own route's error. Two budgets would hand a stolen session
+// one account draws ONE budget: wrong passwords spent through VerifyReauth (the
+// 2FA disable confirmation's entry) refuse VerifyReauthPassword (the settings
+// actions' entry), and the reverse. Two budgets would hand a stolen session
 // twice the guesses at one password hash that the sign-in form allows.
 func TestPasswordReauthsShareOneAccountBudget(t *testing.T) {
-	t.Run("settings.reauth spent refuses the 2FA disable", func(t *testing.T) {
+	t.Run("VerifyReauthPassword spent refuses VerifyReauth", func(t *testing.T) {
+		fixture := newReauthBudgetFixture(t)
+		for range DefaultSettingsReauthAttemptsLimit {
+			if _, err := fixture.settings.VerifyReauthPassword(fixture.attempt, fixture.user, "WrongPassword1"); !errors.Is(err, ErrSettingsPasswordInvalid) {
+				t.Fatalf("wrong password = %v, want ErrSettingsPasswordInvalid", err)
+			}
+		}
+
+		if err := fixture.settings.VerifyReauth(fixture.settings.SettingsReauthBudget(), fixture.attempt, fixture.user, reauthBudgetFixturePassword); !errors.Is(err, ErrSettingsReauthRateLimited) {
+			t.Fatalf("correct password on VerifyReauth after spending VerifyReauthPassword = %v, want ErrSettingsReauthRateLimited", err)
+		}
+	})
+	t.Run("VerifyReauth spent refuses VerifyReauthPassword", func(t *testing.T) {
 		fixture := newReauthBudgetFixture(t)
 		fixture.spend(t, fixture.settings.SettingsReauthBudget(), DefaultSettingsReauthAttemptsLimit)
 
-		if err := fixture.settings.VerifyReauth(fixture.disableBudget(), fixture.attempt, fixture.user, reauthBudgetFixturePassword); !errors.Is(err, ErrTOTPDisableRateLimited) {
-			t.Fatalf("correct password on the 2FA disable after spending the settings re-auth = %v, want ErrTOTPDisableRateLimited", err)
+		if _, err := fixture.settings.VerifyReauthPassword(fixture.attempt, fixture.user, reauthBudgetFixturePassword); !errors.Is(err, ErrSettingsReauthRateLimited) {
+			t.Fatalf("correct password on VerifyReauthPassword after spending VerifyReauth = %v, want ErrSettingsReauthRateLimited", err)
 		}
 	})
-	t.Run("2FA disable spent refuses settings.reauth", func(t *testing.T) {
-		fixture := newReauthBudgetFixture(t)
-		fixture.spend(t, fixture.disableBudget(), DefaultTOTPDisableAttemptsLimit)
-
-		if err := fixture.settings.VerifyReauth(fixture.settings.SettingsReauthBudget(), fixture.attempt, fixture.user, reauthBudgetFixturePassword); !errors.Is(err, ErrSettingsReauthRateLimited) {
-			t.Fatalf("correct password on the settings re-auth after spending the 2FA disable = %v, want ErrSettingsReauthRateLimited", err)
-		}
-	})
-	t.Run("the two routes together get no more than one limit", func(t *testing.T) {
+	t.Run("the two entries together get no more than one limit", func(t *testing.T) {
 		fixture := newReauthBudgetFixture(t)
 		fixture.spend(t, fixture.settings.SettingsReauthBudget(), DefaultSettingsReauthAttemptsLimit-2)
-		fixture.spend(t, fixture.disableBudget(), 2)
-
-		if err := fixture.settings.VerifyReauth(fixture.disableBudget(), fixture.attempt, fixture.user, reauthBudgetFixturePassword); !errors.Is(err, ErrTOTPDisableRateLimited) {
-			t.Fatalf("2FA disable after a split spend of one limit = %v, want ErrTOTPDisableRateLimited", err)
+		for range 2 {
+			if _, err := fixture.settings.VerifyReauthPassword(fixture.attempt, fixture.user, "WrongPassword1"); !errors.Is(err, ErrSettingsPasswordInvalid) {
+				t.Fatalf("wrong password = %v, want ErrSettingsPasswordInvalid", err)
+			}
 		}
+
 		if err := fixture.settings.VerifyReauth(fixture.settings.SettingsReauthBudget(), fixture.attempt, fixture.user, reauthBudgetFixturePassword); !errors.Is(err, ErrSettingsReauthRateLimited) {
-			t.Fatalf("settings re-auth after a split spend of one limit = %v, want ErrSettingsReauthRateLimited", err)
+			t.Fatalf("VerifyReauth after a split spend of one limit = %v, want ErrSettingsReauthRateLimited", err)
+		}
+		if _, err := fixture.settings.VerifyReauthPassword(fixture.attempt, fixture.user, reauthBudgetFixturePassword); !errors.Is(err, ErrSettingsReauthRateLimited) {
+			t.Fatalf("VerifyReauthPassword after a split spend of one limit = %v, want ErrSettingsReauthRateLimited", err)
 		}
 	})
 }
@@ -124,7 +128,6 @@ func TestVerifyReauthLeavesTheResetToTheCaller(t *testing.T) {
 		limit   int
 		limited error
 	}{
-		{"2FA disable", reauthBudgetFixture.disableBudget, DefaultTOTPDisableAttemptsLimit, ErrTOTPDisableRateLimited},
 		{"settings.reauth", func(fixture reauthBudgetFixture) ReauthBudget { return fixture.settings.SettingsReauthBudget() }, DefaultSettingsReauthAttemptsLimit, ErrSettingsReauthRateLimited},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -167,7 +170,6 @@ func TestReauthBudgetsKeepAccountsOnOneAddressApart(t *testing.T) {
 		limit   int
 		limited error
 	}{
-		{"2FA disable", reauthBudgetFixture.disableBudget, DefaultTOTPDisableAttemptsLimit, ErrTOTPDisableRateLimited},
 		{"settings.reauth", func(fixture reauthBudgetFixture) ReauthBudget { return fixture.settings.SettingsReauthBudget() }, DefaultSettingsReauthAttemptsLimit, ErrSettingsReauthRateLimited},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -197,14 +199,13 @@ func TestReauthBudgetsKeepAccountsOnOneAddressApart(t *testing.T) {
 // password, and a blank one is refused without drawing either budget.
 func TestVerifyReauthTrimsAndLeavesABlankSubmissionUncounted(t *testing.T) {
 	fixture := newReauthBudgetFixture(t)
-	for _, budget := range []ReauthBudget{fixture.disableBudget(), fixture.settings.SettingsReauthBudget()} {
-		for range DefaultSettingsReauthAttemptsLimit + 1 {
-			if err := fixture.settings.VerifyReauth(budget, fixture.attempt, fixture.user, " \t "); !errors.Is(err, ErrSettingsPasswordMissing) {
-				t.Fatalf("blank password = %v, want ErrSettingsPasswordMissing", err)
-			}
+	budget := fixture.settings.SettingsReauthBudget()
+	for range DefaultSettingsReauthAttemptsLimit + 1 {
+		if err := fixture.settings.VerifyReauth(budget, fixture.attempt, fixture.user, " \t "); !errors.Is(err, ErrSettingsPasswordMissing) {
+			t.Fatalf("blank password = %v, want ErrSettingsPasswordMissing", err)
 		}
-		if err := fixture.settings.VerifyReauth(budget, fixture.attempt, fixture.user, "  "+reauthBudgetFixturePassword+"\t"); err != nil {
-			t.Fatalf("correct password with surrounding whitespace after blanks = %v, want nil", err)
-		}
+	}
+	if err := fixture.settings.VerifyReauth(budget, fixture.attempt, fixture.user, "  "+reauthBudgetFixturePassword+"\t"); err != nil {
+		t.Fatalf("correct password with surrounding whitespace after blanks = %v, want nil", err)
 	}
 }

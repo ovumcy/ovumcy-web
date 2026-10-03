@@ -747,7 +747,7 @@ func TestDisableTOTP2FA_WrongPassword_ReturnsError(t *testing.T) {
 
 // TestDisableTOTP2FA_RateLimited_AfterRepeatedWrongPassword guards against an
 // authenticated session-stealing attacker brute-forcing the password to disable
-// 2FA. After DefaultTOTPDisableAttemptsLimit failures, a subsequent attempt
+// 2FA. After DefaultSettingsReauthAttemptsLimit failures, a subsequent attempt
 // (even with the correct password) must be rejected by the rate limiter.
 func TestDisableTOTP2FA_RateLimited_AfterRepeatedWrongPassword(t *testing.T) {
 	ctx := newTOTPSettingsContext(t, "totp-disable-rl@example.com")
@@ -762,7 +762,7 @@ func TestDisableTOTP2FA_RateLimited_AfterRepeatedWrongPassword(t *testing.T) {
 	ctx.refreshAuthCookie(t)
 
 	wrongForm := url.Values{"password": {"WrongPassword1"}}
-	for attempt := range services.DefaultTOTPDisableAttemptsLimit {
+	for attempt := range services.DefaultSettingsReauthAttemptsLimit {
 		resp := settingsFormRequestWithCSRF(t, ctx, http.MethodDelete, "/api/v1/users/current/2fa", wrongForm, map[string]string{"Accept-Language": "en", "Accept": "application/json"})
 		if resp.StatusCode != http.StatusUnauthorized && resp.StatusCode != http.StatusTooManyRequests {
 			t.Fatalf("attempt %d: status = %d, want 401 or 429", attempt, resp.StatusCode)

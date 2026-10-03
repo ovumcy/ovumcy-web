@@ -423,7 +423,7 @@ func TestDisableTOTP2FARefusesABodyItCouldNotDecodeWhole(t *testing.T) {
 		ctx := newTOTPSettingsContext(t, "totp-partial-xml-budget@example.com")
 		enableTOTPForSettingsTest(t, &ctx)
 
-		for attempt := range services.DefaultTOTPDisableAttemptsLimit {
+		for attempt := range services.DefaultSettingsReauthAttemptsLimit {
 			resp := send2FARequest(t, ctx, twoFARequest{
 				method: http.MethodDelete, contentType: "application/xml",
 				body: partialXML("WrongPass9"), withSession: true, withCSRFHead: true,
