@@ -223,7 +223,7 @@ Startup flow:
 
 1. Copy the example `docker-compose.yml` and `.env.example` into a dedicated deployment directory.
 2. Rename `.env.example` to `.env`.
-3. Set a strong application secret via `SECRET_KEY` or `SECRET_KEY_FILE`, and set `POSTGRES_PASSWORD`.
+3. Set a strong application secret via `SECRET_KEY` or `SECRET_KEY_FILE`, and set `POSTGRES_PASSWORD`. The password is placed unescaped into the `DATABASE_URL` the example stacks build (`postgres://user:password@postgres:5432/db`), so use only URL-safe characters — letters, digits, `-`, `_`, `.`, `~`; for example `openssl rand -hex 24`. A `@`, `:`, `/`, `?`, `#` or `%` in it breaks the URL and the app fails to connect. If you must keep such a character, set `DATABASE_URL` yourself with the password percent-encoded.
 4. Start the stack with `docker compose up -d`.
 5. Confirm `docker compose ps` shows both `postgres` and `ovumcy` healthy.
 6. Confirm `curl -fsS http://127.0.0.1:8080/healthz` succeeds.
@@ -272,28 +272,31 @@ Use the health check that matches your deployment path:
   - `curl -fsS http://127.0.0.1:8080/healthz` should succeed on the host;
   - `curl -fsS http://127.0.0.1:8080/readyz` should succeed on the host.
 - Direct container probe (no host port published):
-  - `docker exec ovumcy /app/ovumcy healthcheck` should exit `0`;
-  - `docker exec ovumcy /app/ovumcy readycheck` should exit `0`.
+  - `docker compose exec ovumcy /app/ovumcy healthcheck` should exit `0`;
+  - `docker compose exec ovumcy /app/ovumcy readycheck` should exit `0`.
+
+  Run these from the directory holding your `docker-compose.yml`; `ovumcy` is the compose service name, which every official stack shares. Only the root `docker-compose.yml` also pins `container_name: ovumcy`, so a bare `docker exec ovumcy` would not find the container in the example stacks.
 
 ### Running the operator CLI against the container
 
-The runtime image is shell-free, so the operator subcommands are reached through `docker exec` on the binary itself. The probes above take no input and run as shown. The account subcommands (`users create`, `reset-password`) ask for a password, and how you invoke them decides how they read it:
+The runtime image is shell-free, so the operator subcommands are reached through `docker compose exec` on the binary itself. The probes above take no input and run as shown. The account subcommands (`users create`, `reset-password`) ask for a password, and how you invoke them decides how they read it:
 
 ```bash
 # Interactive: prompts twice with echo disabled.
-docker exec -it ovumcy /app/ovumcy reset-password owner@example.com
+docker compose exec ovumcy /app/ovumcy reset-password owner@example.com
 
 # Scripted: the password is the first line of stdin. Never pass it in the
 # command line or an environment variable — both are visible to other
-# processes and land in shell history.
-printf '%s\n' "$NEW_PASSWORD" | docker exec -i ovumcy /app/ovumcy reset-password owner@example.com
+# processes and land in shell history. -T turns off the pseudo-terminal
+# that compose allocates by default, so the piped line is read as stdin.
+printf '%s\n' "$NEW_PASSWORD" | docker compose exec -T ovumcy /app/ovumcy reset-password owner@example.com
 ```
 
 Use the scripted form when you need to recover several accounts at once — for example after a `SECRET_KEY` rotation, where every 2FA-enabled owner needs a way back in.
 
-**`reset-password` and `users delete` need the server's own restore fence.** Both remove calendar-feed access, and both confirm and advance the same fence the server uses before that removal is allowed to happen. Run them inside the container, where `CALENDAR_FEED_FENCE_PATH` and the mounted `ovumcy_fence` volume are the server's own — `docker exec` on the running container, or `docker compose run --rm ovumcy /app/ovumcy ...` with the same volumes when it is not up. From a host shell that cannot see that file they refuse and change nothing, naming the variable and what to run instead; an instance that has never started with a fence configured is refused too, because there is nothing yet to advance. See [Calendar Feed Restore Fence](#calendar-feed-restore-fence).
+**`reset-password` and `users delete` need the server's own restore fence.** Both remove calendar-feed access, and both confirm and advance the same fence the server uses before that removal is allowed to happen. Run them inside the container, where `CALENDAR_FEED_FENCE_PATH` and the mounted `ovumcy_fence` volume are the server's own — `docker compose exec` on the running container, or `docker compose run --rm ovumcy /app/ovumcy ...` with the same volumes when it is not up. From a host shell that cannot see that file they refuse and change nothing, naming the variable and what to run instead; an instance that has never started with a fence configured is refused too, because there is nothing yet to advance. See [Calendar Feed Restore Fence](#calendar-feed-restore-fence).
 
-Every subcommand above applies any pending migrations first, exactly as the server does, so none of them runs on a database a migration is refusing. The one that does not is `ovumcy repair`, which exists for that case and opens the database without applying anything. It is also the subcommand you are most likely to reach with `docker compose run --rm` rather than `docker exec`, because the container it would attach to is usually down when you need it. See [Duplicate rows that refuse a migration](#duplicate-rows-that-refuse-a-migration).
+Every subcommand above applies any pending migrations first, exactly as the server does, so none of them runs on a database a migration is refusing. The one that does not is `ovumcy repair`, which exists for that case and opens the database without applying anything. It is also the subcommand you are most likely to reach with `docker compose run --rm` rather than `docker compose exec`, because the container it would attach to is usually down when you need it. See [Duplicate rows that refuse a migration](#duplicate-rows-that-refuse-a-migration).
 
 For the public reverse-proxy stacks, do not treat a missing host-level `127.0.0.1:8080` listener as a problem. In the preferred deployment model, that port is intentionally not published to the host at all.
 
@@ -396,6 +399,8 @@ Recommended baseline:
 - Verify a restore by working through [Post-Restore Verification](#post-restore-verification), not by checking that the app is up. `/readyz` and a normal page load are worth running — a restore changes the storage layer, which is the half `/healthz` deliberately does not check — but they are steps 2-3 of that checklist, and every signal they cover stays green on an empty database. Reading data back is the step that decides whether to trust the restore.
 
 Bind mounts are still valid, but they are an advanced operator path. For bind mounts, stop the app and back up the mounted directory with normal filesystem tools while preserving file contents and access permissions.
+
+A bind-mounted directory must be writable by the container user: the image runs as `10001:10001` and never as root, so a directory the Docker daemon creates for you (owned by `root`) or one owned by your own login makes the app fail at boot with a permission error on the database path. Create it first and hand it over — for example `mkdir -p ./data && sudo chown -R 10001:10001 ./data` for a mount at `/app/data`, and the same for any bind-mounted fence directory (`/app/fence`). Named volumes are initialised from the image with that ownership, which is why they need no such step.
 
 ## Docker Named Volume Backup
 

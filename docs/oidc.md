@@ -429,7 +429,7 @@ To finish the link:
   clear-data/delete-account flows already use — and links on return.
 - **With no working sign-in at all** (an OIDC-only account whose provider changed,
   for example): the operator runs `ovumcy link-oidc-identity <email>|--id <id>
-  --issuer <issuer> --subject <subject>` from the machine `docker exec` reaches.
+  --issuer <issuer> --subject <subject>` from the machine `docker compose exec` reaches.
   A new link signs out every session the account had open, on this path as on
   the Settings one.
 
