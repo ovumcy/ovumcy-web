@@ -59,12 +59,6 @@ type CalendarFeedDayReader interface {
 	FetchLogsForUser(ctx context.Context, userID uint, from time.Time, to time.Time, location *time.Location) ([]models.DailyLog, error)
 }
 
-// calendarFeedStatsWindowYears bounds the log history loaded to compute the
-// feed's predictions. It IS the dashboard/stats window (statsOverviewWindowYears,
-// the constant behind StatsOverviewRange), not a second copy of its value, so the
-// feed's cycle baseline is derived from the same span the in-app surfaces use.
-const calendarFeedStatsWindowYears = statsOverviewWindowYears
-
 // NewCalendarFeedService wires the feed service from the user store + day reader,
 // the localized-disclaimer provider (the same seam the webhook notify pass uses),
 // and the application secret that keys verifier MACs. All are required in
@@ -173,8 +167,11 @@ func (service *CalendarFeedService) ResolveFeed(ctx context.Context, token strin
 	}
 	feedLocation := resolveOwnerLocation(user.Timezone, requestLocation)
 	today := DateAtLocation(now, feedLocation)
-	from := today.AddDate(-calendarFeedStatsWindowYears, 0, 0)
-	logs, err := service.days.FetchLogsForUser(ctx, user.ID, from, today, feedLocation)
+	// The feed's cycle baseline is derived from the span every in-app surface
+	// uses, read from the one function that defines it rather than from a second
+	// copy of its arithmetic.
+	from, to := StatsOverviewRange(today)
+	logs, err := service.days.FetchLogsForUser(ctx, user.ID, from, to, feedLocation)
 	if err != nil {
 		return nil, false, err
 	}

@@ -70,8 +70,7 @@ const calendarDayConstructionPoint = "internal/services/day_utils.go:StartOfCale
 // match the sweep EXACTLY: an entry that no longer matches anything fails too,
 // so a fixed site cannot leave a stale exemption behind.
 var calendarDayBarrierAllowlist = map[string]string{
-	"internal/reminders/next_run.go:fireOnCalendarDay:calendar day built in a location":                                      "deliberate carve-out: a scheduling instant at a runtime hour, not a calendar day, and the two lines below it check the requested date survived and fall back to services.StartOfCalendarDay when it did not.",
-	"internal/services/calendar_feed_service.go:CalendarFeedService.ResolveFeed:calendar day stepped from a location anchor": "deliberate carve-out: a step of whole YEARS producing the lower bound of the log fetch window, not a calendar date anyone reads. The one-sided normalization widens the window by a day and never narrows it, and FetchLogsForUser re-resolves both bounds through DayRange.",
+	"internal/reminders/next_run.go:fireOnCalendarDay:calendar day built in a location": "deliberate carve-out: a scheduling instant at a runtime hour, not a calendar day, and the two lines below it check the requested date survived and fall back to services.StartOfCalendarDay when it did not.",
 }
 
 // calendarDayBarrierBlindSpots is what this sweep provably cannot see. It is

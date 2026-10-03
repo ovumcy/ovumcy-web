@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"reflect"
 	"testing"
 	"time"
 
@@ -191,6 +192,68 @@ func TestStatsWindowCutLeavesThePhaseAndTheConfirmedShiftUnchanged(t *testing.T)
 			}
 		}
 		// Both outcomes occur in the sweep, so agreement is not two constants.
+		if !sawConfirmed || !sawUnconfirmed {
+			t.Fatalf("fixture: the sweep never saw both a confirmed and an unconfirmed shift (confirmed=%t unconfirmed=%t)", sawConfirmed, sawUnconfirmed)
+		}
+	})
+}
+
+// The dashboard puts a confirmed thermal shift ahead of the projection before it
+// publishes; the reminder pass (and the .ics feed beside it) publishes the stats
+// as built and honours the shift through ConfirmedOvulationSupersedes instead.
+// That is only the same answer while the substitution leaves every value those
+// two passes read untouched, so the sweep compares each of them with and without
+// it, on days before and after the shift is confirmed: the suppression verdict,
+// the projection length, and the next-period and ovulation projections. The
+// ovulation reminder's cycle anchor is rebuilt from the same recorded start,
+// cycle length and luteal phase as those projections, so it moves only when they
+// do. A substitution that began to move one of them — the luteal phase or the
+// cycle start, say — would make a reminder leave the instance for a day the
+// dashboard no longer shows.
+func TestReminderInputsAreTheSameWithAndWithoutTheConfirmedShift(t *testing.T) {
+	user := dayFeedbackParityUser(44)
+	cycleStart := time.Date(2026, time.February, 26, 0, 0, 0, 0, time.UTC)
+
+	logs := lutealTenLogs(t)
+	for offset := range 6 {
+		logs = append(logs, models.DailyLog{Date: cycleStart.AddDate(0, 0, offset), BBT: new(thermalShiftLowBBT)})
+	}
+	for offset := 14; offset <= 16; offset++ {
+		logs = append(logs, models.DailyLog{Date: cycleStart.AddDate(0, 0, offset), BBT: new(thermalShiftHighBBT)})
+	}
+	logs = mergeLogsByDay(logs)
+
+	forEachParityZone(t, func(t *testing.T, location *time.Location) {
+		sawConfirmed, sawUnconfirmed := false, false
+		for offset := 12; offset <= 19; offset++ {
+			now := localNoon(cycleStart.AddDate(0, 0, offset), location)
+			today := DateAtLocation(now, location)
+			windowed := FilterLogsToStatsHistory(logs, now, location)
+			raw := BuildCycleStatsFromLogs(user, windowed, now, location)
+			confirmed, wasConfirmed := ResolveConfirmedCycleStats(user, windowed, raw, today, location)
+			day := CalendarDayKey(today)
+
+			if wasConfirmed {
+				sawConfirmed = true
+				// The substitution did something, or the equalities below prove nothing.
+				if sameDay(confirmed.OvulationDate, raw.OvulationDate) {
+					t.Fatalf("fixture: on %s the confirmed ovulation day equals the projected one", day)
+				}
+			} else {
+				sawUnconfirmed = true
+			}
+
+			if got, want := ResolvePredictionSuppression(user, confirmed), ResolvePredictionSuppression(user, raw); !reflect.DeepEqual(got, want) {
+				t.Fatalf("on %s the suppression verdict = %+v with the shift, %+v without", day, got, want)
+			}
+			if got, want := DashboardProjectionCycleLength(user, confirmed), DashboardProjectionCycleLength(user, raw); got != want {
+				t.Fatalf("on %s the projection length = %d with the shift, %d without", day, got, want)
+			}
+			cycleLength := DashboardProjectionCycleLength(user, raw)
+			if got, want := DashboardUpcomingPredictions(confirmed, user, today, cycleLength), DashboardUpcomingPredictions(raw, user, today, cycleLength); !reflect.DeepEqual(got, want) {
+				t.Fatalf("on %s the upcoming predictions = %+v with the shift, %+v without", day, got, want)
+			}
+		}
 		if !sawConfirmed || !sawUnconfirmed {
 			t.Fatalf("fixture: the sweep never saw both a confirmed and an unconfirmed shift (confirmed=%t unconfirmed=%t)", sawConfirmed, sawUnconfirmed)
 		}
