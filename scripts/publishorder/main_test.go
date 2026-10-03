@@ -87,13 +87,14 @@ const (
 	publishWorkflow = ".github/workflows/docker-image.yml"
 	publishJob      = "publish"
 
-	resolveStep = "Resolve the registry image name"
-	pushStep    = "Push the image by digest, under no public tag"
-	signStep    = "Sign the pushed digest"
-	attestStep  = "Attest build provenance"
-	verifyStep  = "Verify the signature and provenance before promoting"
-	promoteStep = "Promote the signed digest to its public tags"
-	publicStep  = "Verify every public tag anonymously and against the signed digest"
+	resolveStep   = "Resolve the registry image name"
+	pushStep      = "Push the image by digest, under no public tag"
+	signStep      = "Sign the pushed digest"
+	attestStep    = "Attest build provenance"
+	verifyStep    = "Verify the signature and provenance before promoting"
+	freshnessStep = "Refuse to move the public aliases backwards"
+	promoteStep   = "Promote the signed digest to its public tags"
+	publicStep    = "Verify every public tag anonymously and against the signed digest"
 
 	installCosignStep = "Install Cosign"
 	pullTrivyStep     = "Pull Trivy image"
@@ -197,6 +198,7 @@ func TestNoPublicTagIsCreatedBeforeTheSignature(t *testing.T) {
 	sign := index(signStep)
 	attest := index(attestStep)
 	verify := index(verifyStep)
+	freshness := index(freshnessStep)
 	promote := index(promoteStep)
 	public := index(publicStep)
 
@@ -212,6 +214,7 @@ func TestNoPublicTagIsCreatedBeforeTheSignature(t *testing.T) {
 		{sign, promote, signStep, promoteStep, "a tag written before the signature is an unsigned public release for as long as the signing step takes, and forever if it fails"},
 		{attest, promote, attestStep, promoteStep, "provenance is promised for every published image, so the alias must not exist before the attestation does"},
 		{verify, promote, verifyStep, promoteStep, "the signature and the attestation are two API calls that reported success; the promotion is gated on reading them back, not on their exit codes"},
+		{freshness, promote, freshnessStep, promoteStep, "the aliases are written by the promotion and mirrored after it, so a run that is older than the live image has to be refused before the first of those writes, not after"},
 		{promote, public, promoteStep, publicStep, "the public check reads the tags the promotion writes"},
 	} {
 		if ordered.earlier >= ordered.later {
@@ -290,6 +293,7 @@ func TestOnlyReviewedStepsRunBeforeThePromotion(t *testing.T) {
 		signStep,
 		attestStep,
 		verifyStep,
+		freshnessStep,
 	}
 
 	if got := steps[:promote]; !slices.Equal(got, want) {

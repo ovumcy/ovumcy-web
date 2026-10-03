@@ -1070,6 +1070,25 @@ type detectCase struct {
 var detectCases = []detectCase{
 	{"docs only", "pull_request", []string{"docs/a.md"},
 		map[string]string{"run_e2e": "false", "run_core": "false", "run_frontend": "false"}},
+	// A document a Go test parses is not inert: the Go lanes run for it, the
+	// race lanes and the browser suite do not. The unit lane is named on its
+	// own because the browser-specs-only slice would otherwise take it back.
+	{"OpenAPI document only", "pull_request", []string{"docs/openapi.yaml"},
+		map[string]string{"run_e2e": "false", "run_core": "true", "run_unit": "true", "run_race": "false", "run_frontend": "false"}},
+	{"changelog fragment only", "pull_request", []string{"changelog.d/web-1-x.md"},
+		map[string]string{"run_e2e": "false", "run_core": "true", "run_unit": "true", "run_race": "false", "run_frontend": "false"}},
+	{"merge_group, changelog only", "merge_group", []string{"CHANGELOG.md"},
+		map[string]string{"run_e2e": "false", "run_core": "true", "run_unit": "true", "run_frontend": "false"}},
+	{"push, OpenAPI document only", "push", []string{"docs/openapi.yaml"},
+		map[string]string{"run_core": "false", "run_frontend": "false", "run_e2e": "true"}},
+	// Only the fuzz build script is read by a Go test; the rest of the sandbox
+	// directory stays inert. The inert row names a file that does not exist, so
+	// the derived-read guard, which collects every existing path a test spells,
+	// does not mistake this fixture for a read of the sandbox's Dockerfile.
+	{"fuzz build script only", "pull_request", []string{".clusterfuzzlite/build.sh"},
+		map[string]string{"run_e2e": "false", "run_core": "true", "run_unit": "true", "run_race": "false", "run_frontend": "false"}},
+	{"fuzz sandbox other file only", "pull_request", []string{".clusterfuzzlite/other-file.txt"},
+		map[string]string{"run_e2e": "false", "run_core": "false", "run_frontend": "false"}},
 	{"non-UTF-8 Go path", "pull_request", []string{"internal/x/\xff.go"},
 		map[string]string{"run_e2e": "true", "run_core": "true"}},
 	{"non-UTF-8 markdown", "pull_request", []string{"\xff.md"},

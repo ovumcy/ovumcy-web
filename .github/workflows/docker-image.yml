@@ -66,7 +66,7 @@ jobs:
   verify-release-tag:
     # Tag path only. The `workflow_call` path from ci.yml already carries
     # `needs: [test, race, e2e, e2e-postgres-smoke, image-smoke]`, so re-gating
-    # it here would be redundant, and a check run named `test` on a commit whose
+    # it here would be redundant, and a job named `test` on a commit whose
     # `test` job is still running (it is the caller) could not conclude.
     #
     # The discriminator is the ref TYPE, not the event name: inside a called
@@ -78,15 +78,19 @@ jobs:
     if: ${{ github.ref_type == 'tag' }}
     runs-on: ubuntu-latest
     permissions:
-      # `actions: read` and `checks: read` are the whole of the widening, and
-      # both live here, not on the publish job below, which keeps exactly the
-      # permissions it had. `actions: read` is what lets the step below ask
-      # which EVENT produced each run on the tagged commit; without it the only
-      # discriminator left is `head_branch`, which cannot tell the push run on
-      # `main` from a scheduled or manually dispatched one, and can recognise
-      # the merge-queue run only by a ref-name convention.
+      # `actions: read` is the whole of the widening, and it lives here, not on
+      # the publish job below, which keeps exactly the permissions it had. It
+      # is what lets the step below ask which EVENT produced each run on the
+      # tagged commit, which workflow FILE, and which JOBS that run executed;
+      # without it the only discriminator left is `head_branch`, which cannot
+      # tell the push run on `main` from a scheduled or manually dispatched
+      # one, and can recognise the merge-queue run only by a ref-name
+      # convention. There is deliberately no `checks:` scope: the Checks API
+      # lists check runs, and a check run of any name can be created by a token
+      # holding `checks: write` against any commit, so nothing read from it is
+      # proof. The step reads nothing about a pull request: no pull request
+      # run is proof here. A test pins the two scopes of this job exactly.
       actions: read
-      checks: read
       contents: read
 
     steps:
@@ -152,10 +156,9 @@ jobs:
           # `image-smoke` gates on the event, so the queue run reports it
           # `skipped`; `e2e-postgres-smoke`'s own `RUN_HEAVY` excludes
           # `merge_group`, so it reports `success` there with every step gated
-          # off. Measured on 6a95d01d, whose two suites the endpoints below
-          # return side by side: `image-smoke` `skipped` in the queue suite
-          # (87906745947) and real in the one that ran on `main` (87908743276).
-          # And for the Postgres lane, 2026-08-18, same commit: 3 s in queue run
+          # off. Measured on 6a95d01d, whose two runs the listing below returns
+          # side by side: `image-smoke` `skipped` in the queue run and real in
+          # the one that ran on `main`. And for the Postgres lane, 2026-08-18, same commit: 3 s in queue run
           # 32081210308 with every step gated off, 240 s in push run 32081716803
           # doing the work. Their real verdict is in the push, release or
           # dispatch run, which is `RUN_HEAVY`.
@@ -177,34 +180,129 @@ jobs:
           # the two stay level. This gate mirrors exactly the six checks
           # publish-image now requires — see ci.yml's `publish-image` job
           # `needs:`.
+          #
+          # Neither half proves that any Go job ran. `test`, `race` and `e2e` in
+          # the merge-queue run are thin gates, and `changes` clears every lane
+          # beneath them — `run_core=false` — when the queued PR's head tree
+          # already ran ci.yml's `pull_request` suite to success on this exact
+          # tree (the proven-tree skip). Measured on 285d14c0: queue run
+          # 37046497163 reports test, race and e2e `success` with test-go-shard,
+          # test-go-rest and every race lane `skipped`; the work ran once, in the
+          # pull_request run of PR 962, which the two halves above never read.
+          # So a tag could be signed with no Go or race job executed in any run
+          # inspected. `WORK_CHECKS` names one real job per lane, as the job's
+          # own name carries it (`<job> (<matrix cell>)`, `|`-separated because
+          # the names hold spaces): each must have concluded `success` on this
+          # commit as a JOB of a run of ci.yml itself — the file, not a display
+          # name — started by the merge queue or by a push to `main`, read from
+          # that run's own list of jobs (`actions/runs/<id>/jobs`). A job is
+          # proof and a check run is not: the Checks API lists every check run
+          # on a commit by name, and any token holding `checks: write` can post
+          # one under any name, with any conclusion, to a check suite of the
+          # Actions app on any commit. So nothing is read from it, for these
+          # jobs or for the gates above; the jobs endpoint lists only what the
+          # run executed. Nothing else is proof: not a job of that name in any
+          # other workflow file, not a run started by hand or by a release, and
+          # not a `pull_request` run, even of ci.yml and even for the PR this
+          # commit came from. A pull request
+          # run executes the copy of ci.yml on the pull request's own branch,
+          # which whoever pushes to that branch wrote, so what it reports is not
+          # what the repository's workflow does; the queue and `main` run the
+          # copy that lands on `main`. `skipped` and `neutral` are not proof.
+          #
+          # A commit whose queue run skipped its lanes for a proven tree has no
+          # such run to point at, and neither has one whose diff is
+          # documentation only. Its Go inputs may be those of an earlier commit,
+          # though, and that commit's run did execute them. So a name still
+          # unproven after the read above is looked up on the first-parent
+          # ancestors, nearest first, for as long as the paths that differ
+          # between the ancestor and the tagged commit — compared directly,
+          # never step by step — are ones ci.yml's own detect step would not run
+          # the lane for: `run_race` for the race job, `run_unit` for the unit
+          # job. The step is the lane filter, so its `run:` text is cut out of
+          # the checked-out ci.yml and executed here as a pull_request over that
+          # path list, and what it answers is the answer: embedded SQL,
+          # templates and locale files reach the unit lane exactly as they reach
+          # it there, and this file carries no list of paths of its own. (The
+          # step clears the race lane for embedded data on the ground that data
+          # cannot introduce a race; the unit job still has to be proven for it,
+          # so the tag as a whole is refused.) The comparison is direct, so a
+          # commit in between that has no run on record costs nothing; a read
+          # that FAILS does: no evidence an ancestor's reads could not return is
+          # stepped over. Each ancestor is judged as the tagged commit is: a
+          # success on it, in a run that counts. A failure refuses outright.
+          # `ANCESTOR_WALK_BOUND` is how far the walk goes before it refuses.
+          # An ancestor's runs are filtered exactly as the tagged commit's are.
+          #
+          # What this settles for the release checklists that say "race from
+          # merge_group" (WEB-22 V7 item 6) or "CI green on the final SHA:
+          # merge_group `test`, `race`, `e2e`" (WEB-24 V2): that wording cannot
+          # be met literally, because a merge_group `test`/`race` is green with
+          # its lanes skipped whenever the proven-tree skip applied. The Go and
+          # race verdict for a tree is the `success` of a real job in a
+          # merge-queue or push run of ci.yml that executed it, and the queue's
+          # three gates say only that the queue was satisfied.
+          # `scripts/releasegate` holds this gate to exactly that reading.
+          WORK_CHECKS: test-go-shard (1)|race-db (1)
+          ANCESTOR_WALK_BOUND: 20
         run: |
           set -euo pipefail
 
           sha="$(git rev-parse "${GITHUB_SHA}^{commit}")"
+
+          # WHICH RUNS A JOB MAY BE READ FROM. Every list of runs below is a list
+          # of rows (event, run id, head branch, workflow file), and a job is
+          # read only from the run of a row that passed both filters here. The
+          # jobs are the run's own, from `actions/runs/<id>/jobs` — never the
+          # commit's check runs, which any token holding `checks: write` can
+          # add to, by any name, whichever workflow it claims to belong to —
+          # and a job NAME proves nothing even there: any other workflow that
+          # triggers on the same commit can declare a job called
+          # `test-go-shard (1)` and have it succeed.
+          #
+          # The workflow is the file, `.github/workflows/ci.yml`, the same
+          # `path` ci.yml's own proven-tree skip selects its run by — never the
+          # display name, which any workflow file may copy. A row with no path is
+          # no match. `ci_runs_only` filters the rows, whatever the list is for.
+          #
+          # What counts as WORK is narrower than what ci.yml runs on: a
+          # merge-queue run, or a push to `main` — the two runs of the copy of
+          # the workflow that is on `main`, and the only ones a change reaches
+          # `main` through. A pull request run executes the copy on the pull
+          # request's branch; a run started by hand (`workflow_dispatch`) or by
+          # a release can be started against any branch whose tip is this
+          # commit, with whatever that branch's copy declares. None of the three
+          # is proof. `proof_run_ids` keeps the ids of the rows that qualify;
+          # nothing is proof that does not come through it.
+          ci_workflow_path=".github/workflows/ci.yml"
+
+          ci_runs_only() {
+            awk -F'\t' -v want="$ci_workflow_path" '$4 == want'
+          }
+
+          proof_run_ids() {
+            awk -F'\t' '$1 == "merge_group" || ($1 == "push" && $3 == "main") { print $2 }' | sort -u
+          }
 
           # Which runs exist for this commit, and under which EVENT. The event
           # is the discriminator, not `head_branch`: a scheduled run and a
           # manually dispatched one both carry `head_branch: main`, and a queue
           # run is otherwise recognisable only by a ref-name convention.
           #
-          # It has to be asked HERE, of the runs, and carried down by
-          # `check_suite_id`, because the check-run response cannot answer it:
-          # the `check_suite` object nested in one carries an id and nothing
-          # else (probed 2026-08-21). Probed again 2026-08-31 on 5049126f,
-          # where this endpoint returns `CI merge_group 90335713116` and `CI
-          # push 90335932105` — one commit, two suites, side by side.
-          #
-          # This is what `actions: read` on the job above buys.
+          # It is asked HERE, of the runs, and carried down by the run's `id`,
+          # which is what the jobs of that run are listed by. This is what
+          # `actions: read` on the job above buys.
           workflow_runs="$(
             gh api --paginate \
               "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${sha}&per_page=100" \
-              --jq '.workflow_runs[] | [.event, (.check_suite_id | tostring)] | @tsv'
+              --jq '.workflow_runs[] | [.event, (.id | tostring), (.head_branch // ""), (.path // "")] | @tsv' |
+              ci_runs_only
           )"
 
-          echo "workflow runs on ${sha} (event, check suite):"
+          echo "ci.yml runs on ${sha} (event, run id, head branch, workflow file):"
           printf '%s\n' "$workflow_runs"
 
-          suite_ids_for_events() {
+          run_ids_for_events() {
             printf '%s\n' "$workflow_runs" | awk -F'\t' -v want="$1" '
               BEGIN { n = split(want, a, " "); for (i = 1; i <= n; i++) keep[a[i]] = 1 }
               keep[$1] { print $2 }
@@ -226,43 +324,80 @@ jobs:
           # run selected here already has this commit as its head_sha, so it ran
           # on this exact tree, and for all three events `changes` finds no base
           # to diff against and leaves `run_e2e` true whatever ref carried it.
-          queue_suite_ids="$(suite_ids_for_events "merge_group")"
-          heavy_suite_ids="$(suite_ids_for_events "push release workflow_dispatch")"
+          queue_run_ids="$(run_ids_for_events "merge_group")"
+          heavy_run_ids="$(run_ids_for_events "push release workflow_dispatch")"
 
-          if [ -z "$queue_suite_ids" ]; then
+          if [ -z "$queue_run_ids" ]; then
             echo "::error::no merge-queue run exists for ${sha}. \`${QUEUE_CHECKS}\` are the lanes the push to \`main\` clears unconditionally, so the queue run is the only place their verdict is real, and this commit has none — nothing has run those lanes against its own diff. There is nothing to wait for and no run to start: a \`merge_group\` run exists only for a commit the queue built, so tag one that reached \`main\` through the queue."
             exit 1
           fi
 
-          if [ -z "$heavy_suite_ids" ]; then
+          if [ -z "$heavy_run_ids" ]; then
             echo "::error::no push, release or workflow_dispatch run exists for ${sha}. \`${HEAVY_CHECKS}\` are exactly the lanes the merge queue does not run, so those events are the only place their verdict is real. Wait for the push run to finish, or dispatch CI on \`main\` for this commit, then re-push the tag."
             exit 1
           fi
 
-          # The endpoint's default `filter=latest` returns the most recent run
-          # per name PER CHECK SUITE, so each of these names appears once per
-          # suite on the sha. Every row is judged, never the first: taking the
-          # first would make the verdict depend on the order the API happened to
-          # return.
-          check_runs="$(
-            gh api --paginate \
-              "repos/${GITHUB_REPOSITORY}/commits/${sha}/check-runs?per_page=100" \
-              --jq '.check_runs[] | [(.check_suite.id | tostring), .name, .conclusion // "pending"] | @tsv'
-          )"
+          # The JOBS of the given runs, one row each (run id, name, conclusion).
+          # `filter=all` lists every attempt of a run, and only the newest
+          # attempt of a name speaks for it: a re-run that is still pending
+          # must not be answered by the attempt-one `success` it replaced, and
+          # a failure that a re-run has since cleared must not stand. A job a
+          # re-run of the failed jobs did not repeat keeps its attempt-one row,
+          # which is then its newest. Two rows of one name in one attempt are
+          # both kept and both judged. A read that fails fails the call, and
+          # every caller handles that itself: errexit is off in a `if`.
+          jobs_of_runs() {
+            jobs_rows=""
+            for jobs_run in $1; do
+              jobs_page="$(
+                gh api --paginate \
+                  "repos/${GITHUB_REPOSITORY}/actions/runs/${jobs_run}/jobs?filter=all&per_page=100" \
+                  --jq '.jobs[] | [(.run_id | tostring), .name, (.conclusion // "pending"), ((.run_attempt // 1) | tostring)] | @tsv'
+              )" || return 1
+              jobs_rows="${jobs_rows}${jobs_page}"$'\n'
+            done
+            printf '%s' "$jobs_rows" | awk -F'\t' '
+              NF >= 4 {
+                n++
+                key[n] = $1 SUBSEP $2
+                attempt[n] = $4 + 0
+                row[n] = $1 "\t" $2 "\t" $3
+                if (!(key[n] in newest) || attempt[n] > newest[key[n]]) newest[key[n]] = attempt[n]
+              }
+              END { for (i = 1; i <= n; i++) if (attempt[i] == newest[key[i]]) print row[i] }
+            '
+          }
+
+          # Queue and heavy runs together cover every run proof is read from:
+          # the proof runs are the queue's and the pushes among the heavy ones.
+          judged_run_ids="$(printf '%s\n%s\n' "$queue_run_ids" "$heavy_run_ids" | sort -u)"
+          if ! run_jobs="$(jobs_of_runs "$judged_run_ids")"; then
+            echo "::error::the jobs of the ci.yml runs on ${sha} could not be read, so nothing proves what ran there."
+            exit 1
+          fi
 
           # Printed whole, and before any judgement: the errors below name one
-          # context at a time, and a refusal is only diagnosable next to what the
-          # suites actually carried — a renamed context and an absent one read
-          # identically otherwise. The suite column joins to the run listing
-          # above, which is where the event for each suite is.
-          echo "check runs on ${sha} (check suite, name, conclusion):"
-          printf '%s\n' "$check_runs"
+          # job at a time, and a refusal is only diagnosable next to what the
+          # runs actually carried — a renamed job and an absent one read
+          # identically otherwise. The run column joins to the run listing
+          # above, which is where the event for each run is. Every row is
+          # judged, never the first: taking the first would make the verdict
+          # depend on the order the API happened to return.
+          echo "jobs of those runs on ${sha} (run id, name, conclusion):"
+          printf '%s\n' "$run_jobs"
 
-          conclusions_in() {
-            printf '%s\n' "$check_runs" | awk -F'\t' -v ids="$(printf '%s ' $1)" -v want="$2" '
+          # The conclusions of one name across the given runs, out of the given
+          # rows (run id, name, conclusion): the tagged commit's own, or an
+          # ancestor's in the walk below.
+          conclusions_of() {
+            printf '%s\n' "$1" | awk -F'\t' -v ids="$(printf '%s ' $2)" -v want="$3" '
               BEGIN { n = split(ids, a, " "); for (i = 1; i <= n; i++) if (a[i] != "") keep[a[i]] = 1 }
               keep[$1] && $2 == want { print $3 }
             '
+          }
+
+          conclusions_in() {
+            conclusions_of "$run_jobs" "$1" "$2"
           }
 
           failed=0
@@ -278,7 +413,7 @@ jobs:
             judge_conclusions="$(conclusions_in "$1" "$2")"
 
             if [ -z "$judge_conclusions" ]; then
-              echo "::error::no \`$2\` check run exists for ${sha} in $3. A tag push starts no CI run of its own, so this commit's checks must already have run there."
+              echo "::error::no \`$2\` job exists for ${sha} in $3. A tag push starts no CI run of its own, so this commit's checks must already have run there."
               failed=1
               return
             fi
@@ -286,18 +421,18 @@ jobs:
             while IFS= read -r conclusion; do
               [ -n "$conclusion" ] || continue
               if [ "$conclusion" != "success" ]; then
-                echo "::error::a \`$2\` check run in $3 for ${sha} concluded \"${conclusion}\", and only \`success\` clears a release tag."
+                echo "::error::a \`$2\` job in $3 for ${sha} concluded \"${conclusion}\", and only \`success\` clears a release tag."
                 failed=1
               fi
             done <<< "$judge_conclusions"
           }
 
           for name in $QUEUE_CHECKS; do
-            judge "$queue_suite_ids" "$name" "the merge-queue run"
+            judge "$queue_run_ids" "$name" "the merge-queue run"
           done
 
           for name in $HEAVY_CHECKS; do
-            judge "$heavy_suite_ids" "$name" "the push, release or dispatch run"
+            judge "$heavy_run_ids" "$name" "the push, release or dispatch run"
           done
 
           # The push run's verdict for the queue-judged three is vacuous, not
@@ -312,23 +447,291 @@ jobs:
               case "$conclusion" in
                 success|skipped) ;;
                 *)
-                  echo "::error::a \`${name}\` check run in the push, release or dispatch run for ${sha} concluded \"${conclusion}\" — every lane beneath it is cleared on that event, so nothing there should have been able to fail."
+                  echo "::error::a \`${name}\` job in the push, release or dispatch run for ${sha} concluded \"${conclusion}\" — every lane beneath it is cleared on that event, so nothing there should have been able to fail."
                   failed=1
                   ;;
               esac
-            done <<< "$(conclusions_in "$heavy_suite_ids" "$name")"
+            done <<< "$(conclusions_in "$heavy_run_ids" "$name")"
+          done
+
+          # Proof that work ran, which no verdict above carries. A queue-run
+          # `test`/`race` is `success` both when its lanes ran and when
+          # `changes` cleared them for a tree its pull request already tested,
+          # so the gates alone cannot tell a tested commit from an untested
+          # one. A real job can: `success` on it means it executed. A row that
+          # failed, was cancelled or is still pending refuses; `skipped` and
+          # `neutral` are neither proof nor refusal.
+          proof_ids="$(printf '%s\n' "$workflow_runs" | proof_run_ids)"
+
+          # Sets `work_proven` (some row concluded success) and `work_bad` (the
+          # last row that was neither success nor skipped/neutral).
+          work_verdict() {
+            work_proven=""
+            work_bad=""
+            while IFS= read -r conclusion; do
+              [ -n "$conclusion" ] || continue
+              case "$conclusion" in
+                success) work_proven=1 ;;
+                skipped|neutral) ;;
+                *) work_bad="$conclusion" ;;
+              esac
+            done <<< "$(conclusions_of "$1" "$2" "$3")"
+          }
+
+          # The `run:` block of ci.yml's detect step, cut out of the checked-out
+          # file (the step's own text, ten spaces of indentation removed) into
+          # the file named by `$1`. Exactly one step of that name with a block
+          # is expected; anything else is an error, so a step that moved or was
+          # renamed refuses the walk rather than being judged by nothing.
+          cut_detect_step() {
+            awk '
+              /^      - name: Detect whether browser e2e is needed$/ { found++; instep = 1; next }
+              instep && !inrun && /^        run: \|$/ { inrun = 1; next }
+              instep && !inrun && /^      - / { instep = 0 }
+              inrun && /^          / { print substr($0, 11); next }
+              inrun && /^[[:space:]]*$/ { print ""; next }
+              inrun { inrun = 0; instep = 0 }
+              END { if (found != 1) exit 3 }
+            ' .github/workflows/ci.yml > "$1" && [ -s "$1" ]
+          }
+
+          # Whether ci.yml's detect step would run the lane for what changed
+          # between the commit `$1` and the tagged commit, compared directly. The
+          # step is the lane filter itself: its text runs here, as it runs for a
+          # pull_request, with the list of the changed paths as its input and
+          # the two outputs it writes as its answer, so the paths each lane runs
+          # for are whatever that step says, with no list of them in this file.
+          # Sets `lane_state` — `clear` (the lane would not run), `runs`, or
+          # `unknown` — and `lane_why`. Nothing but a clean `false` is `clear`.
+          lane_state_between() {
+            lane_state="unknown"
+            lane_why=""
+            if ! git diff -z --no-renames --name-only "$1" "$sha" > "$work_dir/paths.z"; then
+              lane_why="the paths changed between ${1} and ${sha} could not be listed"
+              return 0
+            fi
+            if [ ! -s "$work_dir/paths.z" ]; then
+              lane_state="clear"
+              return 0
+            fi
+            # -z output holds a newline only inside a path, and the list the
+            # detect step reads has one path per line: such a path cannot be
+            # listed, so the lane is not judged.
+            if [ "$(tr -cd '\n' < "$work_dir/paths.z" | wc -c)" -ne 0 ]; then
+              lane_why="a path changed between ${1} and ${sha} holds a newline, which the detect step's list cannot carry"
+              return 0
+            fi
+            if ! tr '\0' '\n' < "$work_dir/paths.z" > "$work_dir/paths"; then
+              lane_why="the paths changed between ${1} and ${sha} could not be converted to a list"
+              return 0
+            fi
+            : > "$work_dir/outputs"
+            if ! EVENT_NAME=pull_request CHANGED_FILES_PATH="$work_dir/paths" DIFF_VERDICT="" QUEUE_BASE_SHA="" MERGE_GROUP_HEAD_REF="" GH_TOKEN="" GITHUB_OUTPUT="$work_dir/outputs" bash -e "$detect_script" > "$work_dir/detect.log" 2>&1; then
+              lane_why="ci.yml's detect step failed on the paths changed between ${1} and ${sha}: $(tail -n 3 "$work_dir/detect.log" | tr '\n' ' ' | cut -c1-200)"
+              return 0
+            fi
+            lane_value="$(sed -n "s/^${lane_output}=//p" "$work_dir/outputs")"
+            case "$lane_value" in
+              false) lane_state="clear" ;;
+              true)
+                lane_state="runs"
+                lane_why="ci.yml's detect step sets ${lane_output} for what changed between ${1} and ${sha} ($(tr '\n' ' ' < "$work_dir/paths" | cut -c1-160)), so a run on ${1} says nothing about it"
+                ;;
+              *) lane_why="ci.yml's detect step wrote ${lane_output} as '${lane_value}' for what changed between ${1} and ${sha}, neither true nor false" ;;
+            esac
+          }
+
+          # Looks for proof that the lane `$1` ran on an earlier commit that
+          # differs from the tagged commit in nothing ci.yml's detect step would
+          # run the lane for. Runs in a subshell (command substitution): prints
+          # one line, the proof on success or why there is none, and every
+          # failure is handled here, not by errexit, which a conditional call
+          # switches off.
+          walk_ancestors() {
+            walk_name="$1"
+            case "$walk_name" in
+              test-go-shard*) lane_output="run_unit" ;;
+              race-db*) lane_output="run_race" ;;
+              *)
+                echo "no output of ci.yml's detect step is known for \`${walk_name}\`, so no earlier commit can stand in for it"
+                return 1
+                ;;
+            esac
+
+            work_dir="$(mktemp -d)"
+            trap 'rm -rf "$work_dir"' EXIT
+            detect_script="$work_dir/detect.sh"
+            if ! cut_detect_step "$detect_script"; then
+              echo "the detect step of .github/workflows/ci.yml could not be cut out (one step named \"Detect whether browser e2e is needed\" with a \`run: |\` block is expected), so what it runs a lane for cannot be derived"
+              return 1
+            fi
+
+            # The tagged commit first, then up to the bound of its first-parent
+            # ancestors, nearest first.
+            if ! listed="$(git rev-list --first-parent --max-count=$((ANCESTOR_WALK_BOUND + 1)) "$sha")"; then
+              echo "the first-parent history of ${sha} could not be listed"
+              return 1
+            fi
+            ancestors="$(printf '%s\n' "$listed" | tail -n +2)"
+
+            walked=0
+            for ancestor in $ancestors; do
+              walked=$((walked + 1))
+
+              lane_state_between "$ancestor"
+              if [ "$lane_state" != "clear" ]; then
+                echo "$lane_why"
+                return 1
+              fi
+
+              if ! ancestor_runs="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${ancestor}&per_page=100" --jq '.workflow_runs[] | [.event, (.id | tostring), (.head_branch // ""), (.path // "")] | @tsv' | ci_runs_only)"; then
+                echo "the runs of ${ancestor} could not be read"
+                return 1
+              fi
+              ancestor_proof_ids="$(printf '%s\n' "$ancestor_runs" | proof_run_ids)"
+              if ! ancestor_jobs="$(jobs_of_runs "$ancestor_proof_ids")"; then
+                echo "the runs of ${ancestor} could not be read: the jobs of its proof runs are not listed"
+                return 1
+              fi
+
+              work_verdict "$ancestor_jobs" "$ancestor_proof_ids" "$walk_name"
+              if [ -n "$work_bad" ]; then
+                echo "a \`${walk_name}\` job on ${ancestor}, whose inputs for this lane are ${sha}'s, concluded \"${work_bad}\""
+                return 1
+              fi
+              if [ -n "$work_proven" ]; then
+                echo "\`${walk_name}\` concluded success on ${ancestor}, whose inputs for this lane are ${sha}'s (${walked} first-parent commit(s) back)."
+                return 0
+              fi
+            done
+
+            if [ "$walked" -ge "$ANCESTOR_WALK_BOUND" ]; then
+              echo "the ${walked} nearest first-parent ancestors all carry this lane's inputs unchanged and none of them has a run of it on record, and the walk stops at ${ANCESTOR_WALK_BOUND}"
+            else
+              echo "history ends after ${walked} first-parent ancestor(s) with none of them holding a run of it"
+            fi
+            return 1
+          }
+
+          IFS='|' read -r -a work_names <<< "$WORK_CHECKS"
+          for name in "${work_names[@]}"; do
+            work_verdict "$run_jobs" "$proof_ids" "$name"
+            if [ -n "$work_bad" ]; then
+              echo "::error::a \`${name}\` job on ${sha} concluded \"${work_bad}\", and only \`success\` is proof the lane ran."
+              failed=1
+              continue
+            fi
+            if [ -n "$work_proven" ]; then
+              echo "\`${name}\` concluded success on ${sha}."
+              continue
+            fi
+
+            # No run of this commit proves it. A commit whose queue run skipped
+            # its lanes for a proven tree, or that only adds documentation, runs
+            # no such lane of its own, so ask whether an earlier commit with the
+            # same inputs ran it. In a subshell: the walk keeps its own
+            # variables and must not overwrite this loop's.
+            if walk_result="$(walk_ancestors "$name")"; then
+              echo "$walk_result"
+              continue
+            fi
+            echo "::error::no \`${name}\` job concluded success on ${sha} in a merge-queue run or a push run on main of ci.yml, and no earlier commit stands in for it: ${walk_result}. \`test\`, \`race\` and \`e2e\` report success in the merge-queue run when \`changes\` cleared every lane beneath them for an already-tested tree, so that green is not evidence a Go job ran. Only a run of ci.yml started by the merge queue or a push to main counts: a job of that name in another workflow, in a pull request run, or in a run started by hand or by a release, does not. Tag a commit that one of those runs executed this job for."
+            failed=1
           done
 
           if [ "$failed" -ne 0 ]; then
-            echo "::error::refusing to publish a release image for ${GITHUB_REF_NAME}: the required checks on ${sha} are not green in the run where their verdict is real."
+            echo "::error::refusing to publish a release image for ${GITHUB_REF_NAME}: the required checks on ${sha} are not green in the run where their verdict is real, or no job proving the Go lanes ran is on record."
             exit 1
           fi
 
-          echo "every required check passed where its verdict is real: ${QUEUE_CHECKS} in the merge-queue run, ${HEAVY_CHECKS} in the push, release or dispatch run."
+          echo "every required check passed where its verdict is real: ${QUEUE_CHECKS} in the merge-queue run, ${HEAVY_CHECKS} in the push, release or dispatch run; real jobs (${WORK_CHECKS}) succeeded on this tree."
+
+  confirm-main-tip:
+    # The alias path only: a release tag moves no alias, so it has no tip to be
+    # the newest of.
+    #
+    # WHY THIS IS A JOB AND NOT A STEP OF `publish`. `publish` holds one
+    # concurrency group per alias set, and GitHub keeps at most ONE pending job
+    # per group: a job that arrives while another waits CANCELS the waiting one.
+    # Publish jobs do not arrive in commit order — a descendant's CI can finish
+    # minutes before its ancestor's (runs 36783421026 and 36782607690) — so with
+    # X publishing and B, the newest commit, waiting, a late arrival A with
+    # X < A < B cancels B. A then promotes and B never publishes: the aliases sit
+    # on A, older than the tip, with nothing to repair them until the next push.
+    # A step inside `publish` runs only after the group has been entered, so
+    # it cannot stop that replacement; this job runs before it, outside the
+    # group, and a publish for a commit that is no longer the newest on `main`
+    # never reaches the group at all.
+    #
+    # Only positive evidence stops a run: `main`'s tip is strictly ahead of this
+    # commit, so a newer commit exists whose own publish owns the aliases. Every
+    # other answer — this commit is the tip, or GitHub reports it identical,
+    # behind or diverged — lets the run on, where the step `Refuse to move the
+    # public aliases backwards` judges it against what is live. A tip that
+    # cannot be read FAILS this job, and `publish` runs only over this job's
+    # `success`, so an API that does not answer publishes nothing.
+    #
+    # The trade, stated: when the newer commit's own checks fail, its publish
+    # never happens and this older, green commit's does not either — the aliases
+    # stay on what they served until a green commit follows. That is the same
+    # "`:latest` stays put when a gate fails" outcome ci.yml's `publish-image`
+    # already accepts, applied to the commit that is `main`'s tip.
+    if: ${{ github.ref_type != 'tag' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      is_tip: ${{ steps.tip.outputs.is_tip }}
+    steps:
+      - name: Stop when a newer commit is already on main
+        id: tip
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # The full ref path, never `commits/main`: a tag named `main` would
+          # answer the short form.
+          tip=""
+          for attempt in 1 2 3; do
+            if tip="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')" && [[ "$tip" =~ ^[0-9a-f]{40}$ ]]; then
+              break
+            fi
+            tip=""
+            sleep $(( attempt * 2 ))
+          done
+          if [ -z "$tip" ]; then
+            echo "::error::the tip of main could not be read, so there is no way to tell whether a newer commit owns the aliases and nothing is published."
+            exit 1
+          fi
+
+          if [ "$tip" = "${GITHUB_SHA}" ]; then
+            echo "${GITHUB_SHA} is the tip of main."
+            echo "is_tip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # `compare/<base>...<head>`: `ahead` means HEAD descends from BASE, so
+          # the tip being `ahead` of this commit is a newer commit on main.
+          if ! relation="$(gh api "repos/${GITHUB_REPOSITORY}/compare/${GITHUB_SHA}...${tip}" --jq '.status')"; then
+            echo "::error::GitHub could not compare ${GITHUB_SHA} with the tip of main (${tip}), so there is no way to tell whether a newer commit owns the aliases and nothing is published."
+            exit 1
+          fi
+
+          if [ "$relation" = "ahead" ]; then
+            echo "::notice::${GITHUB_SHA} is not the newest commit on main: the tip ${tip} descends from it, and that commit's publish owns the aliases. Nothing is published for this one."
+            echo "is_tip=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "main's tip ${tip} is '${relation}' relative to ${GITHUB_SHA}, not a newer commit, so this run goes on to the publish job's own freshness check."
+          echo "is_tip=true" >> "$GITHUB_OUTPUT"
 
   publish:
     needs:
       - verify-release-tag
+      - confirm-main-tip
     # A skipped `needs:` dependency blocks the dependent job unless its own `if`
     # says otherwise, and on the `workflow_call` path the gate above is skipped
     # by design — without this, `:latest` would simply stop publishing.
@@ -337,7 +740,45 @@ jobs:
     # that lets a TAG through, and `skipped` is accepted only where it is
     # expected, off the tag path. A gate that somehow skipped on a tag push
     # therefore blocks the publish rather than waving it past.
-    if: ${{ !cancelled() && (needs.verify-release-tag.result == 'success' || (needs.verify-release-tag.result == 'skipped' && github.ref_type != 'tag')) }}
+    #
+    # The second conjunct is the same shape for `confirm-main-tip`, which is
+    # skipped on a tag by design: off the tag path the publish needs that job's
+    # `success` AND its answer `true`, so a job that failed, was cancelled or
+    # answered nothing never publishes, and a commit that is no longer the
+    # newest on `main` is skipped before it can replace a waiting newer one.
+    if: ${{ !cancelled() && (needs.verify-release-tag.result == 'success' || (needs.verify-release-tag.result == 'skipped' && github.ref_type != 'tag')) && (github.ref_type == 'tag' || (needs.confirm-main-tip.result == 'success' && needs.confirm-main-tip.outputs.is_tip == 'true')) }}
+    # ONE PUBLISH AT A TIME PER ALIAS SET. ci.yml gives every push to `main`
+    # its own concurrency group so that no push run is ever cancelled, and this
+    # job had none, so two commits' publishes ran side by side and each wrote
+    # `:latest`, `:main` and the Docker Hub mirror's aliases unconditionally.
+    # Whichever finished LAST won, not whichever commit was newer: run
+    # 36783421026 (22956b83) promoted at 22:21:11Z and run 36782607690, for its
+    # ancestor 64e4361c, promoted at 22:24:14Z and mirrored at 22:24:17-47Z, so
+    # both registries served the older build until the next push.
+    #
+    # The group serialises the alias writes, which is what lets the step
+    # `Refuse to move the public aliases backwards` read what is live and have
+    # that answer still hold when the promotion writes. It does not order them:
+    # an older commit that reaches this job second is refused by that step, not
+    # by the queue. `cancel-in-progress` stays false so a publish that already
+    # started is never cut off half-promoted; the cost is that GitHub keeps one
+    # PENDING job per group, so a third publish replaces a waiting second one,
+    # which is cancelled. That is a loss unless the replacement is for the
+    # newer commit, and arrival order does not guarantee it — an older commit's
+    # job can reach the group after a newer one is already waiting. What makes
+    # the replacement safe is the job `confirm-main-tip` this one needs: it
+    # runs before the group and lets only a commit that is still `main`'s tip,
+    # as far as it can read, into it, so a job that arrives late for an older
+    # commit never replaces a waiting newer one.
+    #
+    # A release tag moves no alias (`vX.Y.Z` and `sha-…` name one commit), so it
+    # gets a group of its own, per tag: sharing `main`'s would let a later
+    # `main` publish cancel a release waiting its turn, and a release is the
+    # one publish nothing replaces. Inside this called workflow `github.ref` is
+    # the caller's ref, `refs/heads/main` on the `:latest` path.
+    concurrency:
+      group: publish-${{ github.ref_type == 'tag' && github.ref || 'main' }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     permissions:
       artifact-metadata: write
@@ -613,6 +1054,155 @@ jobs:
           gh attestation verify "oci://${IMAGE_DIGEST}" --repo "${GITHUB_REPOSITORY}"
 
           echo "signature and provenance verified on ${IMAGE_DIGEST}, which may now be promoted."
+
+      - name: Refuse to move the public aliases backwards
+        # `latest`, `main` and the Docker Hub mirror's copies of them are
+        # rewritten unconditionally by the steps below, so a run for an OLDER
+        # commit that reaches them after a newer one has published puts the
+        # older build back, and every later check compares an alias to this
+        # run's own digest and agrees. The concurrency group on this job holds
+        # the live aliases still while this step reads them and the promotion
+        # writes; what is read is the commit the live image was built from, its
+        # `org.opencontainers.image.revision` label, and this run may proceed
+        # only if that commit is this one or an ancestor of it.
+        #
+        # The question is NOT whether this commit is contained in `main` —
+        # every commit published from here is, the older run's included — but
+        # whether the commit currently served descends from it, so the answer
+        # comes from comparing the two commits, never from `main`'s tip. The
+        # comparison asks GitHub rather than walking a clone because this job
+        # checks out one commit and no history.
+        #
+        # Unreadable is refused, not waved through: a registry or API that does
+        # not answer leaves nothing to say the alias would move forward. The one
+        # absence that is an answer is no `main` tag at all, the first publish.
+        # A release tag publishes names for one commit and moves no alias, so
+        # it is not asked. The refusal fails the job on purpose: the digest this
+        # run pushed stays untagged, nothing is promoted or mirrored, and the
+        # newer commit's publish owns the aliases.
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE_PATH: ${{ steps.image.outputs.path }}
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            echo "a release tag names one commit and moves no alias, so there is no live alias for this run to fall behind."
+            exit 0
+          fi
+
+          document="$(mktemp)"
+          token_body="$(mktemp)"
+          credential="$(mktemp)"
+          trap 'rm -f "$document" "$token_body" "$credential"' EXIT
+
+          printf 'user = "%s:%s"\n' "${REGISTRY_USER}" "${REGISTRY_PASSWORD}" > "$credential"
+
+          token_status="$(
+            curl -sSL --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors \
+              -o "$token_body" -w '%{http_code}' -K "$credential" \
+              "https://ghcr.io/token?service=ghcr.io&scope=repository:${IMAGE_PATH}:pull"
+          )"
+          if [ "$token_status" != "200" ]; then
+            echo "::error::GHCR returned HTTP ${token_status} for a pull token on ${IMAGE_PATH}, so the commit the live aliases serve cannot be read and nothing is promoted."
+            exit 1
+          fi
+
+          token="$(
+            python3 -c 'import json, pathlib, sys; body = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")); print(body.get("token", ""))' "$token_body"
+          )"
+          if [ -z "$token" ]; then
+            echo "::error::GHCR returned no pull token for ${IMAGE_PATH}, so the commit the live aliases serve cannot be read and nothing is promoted."
+            exit 1
+          fi
+
+          # One read, into the same file each time: $1 is a path under the
+          # repository's registry namespace, and the HTTP status is the answer.
+          fetch() {
+            curl -sSL --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors \
+              -o "$document" -w '%{http_code}' \
+              -H "Authorization: Bearer ${token}" \
+              -H "Accept: ${MANIFEST_ACCEPT}" \
+              "https://ghcr.io/v2/${IMAGE_PATH}/$1"
+          }
+
+          main_status="$(fetch manifests/main)"
+          case "$main_status" in
+            200) ;;
+            404)
+              echo "there is no \`main\` tag on ${IMAGE_PATH} yet, so nothing is live for this run to move backwards."
+              exit 0
+              ;;
+            *)
+              echo "::error::reading the live \`main\` manifest returned HTTP ${main_status}, so there is no way to tell whether this run would move it backwards, and nothing is promoted."
+              exit 1
+              ;;
+          esac
+
+          # `main` is an index. The revision label lives in the image config of
+          # a platform manifest, behind two more reads; the index's attestation
+          # manifests carry no platform, so the first `linux` entry is the image.
+          # A tag that is already a single image manifest has no `manifests`.
+          platform_digest="$(
+            python3 -c 'import json, pathlib, sys; doc = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")); print(next((m.get("digest", "") for m in doc.get("manifests", []) if (m.get("platform") or {}).get("os") == "linux"), ""))' "$document"
+          )"
+          if [ -n "$platform_digest" ]; then
+            if [[ ! "$platform_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::the live \`main\` index lists a platform manifest named '${platform_digest}', which is not a digest, so nothing is promoted."
+              exit 1
+            fi
+            platform_status="$(fetch "manifests/${platform_digest}")"
+            if [ "$platform_status" != "200" ]; then
+              echo "::error::reading the live platform manifest ${platform_digest} returned HTTP ${platform_status}, so nothing is promoted."
+              exit 1
+            fi
+          fi
+
+          config_digest="$(
+            python3 -c 'import json, pathlib, sys; doc = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")); print((doc.get("config") or {}).get("digest", ""))' "$document"
+          )"
+          if [[ ! "$config_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::the live \`main\` image names its config as '${config_digest}', which is not a digest, so nothing is promoted."
+            exit 1
+          fi
+          config_status="$(fetch "blobs/${config_digest}")"
+          if [ "$config_status" != "200" ]; then
+            echo "::error::reading the live image config ${config_digest} returned HTTP ${config_status}, so nothing is promoted."
+            exit 1
+          fi
+
+          live_sha="$(
+            python3 -c 'import json, pathlib, sys; doc = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")); print(((doc.get("config") or {}).get("Labels") or {}).get("org.opencontainers.image.revision", ""))' "$document"
+          )"
+          if [[ ! "$live_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::the live \`main\` image carries no usable org.opencontainers.image.revision label (read as '${live_sha:-<none>}'), so there is no commit to compare this run's against and nothing is promoted."
+            exit 1
+          fi
+
+          # `compare/<base>...<head>` reports where HEAD stands relative to BASE:
+          # `ahead` and `identical` are this commit descending from (or being)
+          # the live one; `behind` is this commit being an ancestor of it.
+          if ! relation="$(gh api "repos/${GITHUB_REPOSITORY}/compare/${live_sha}...${GITHUB_SHA}" --jq '.status')"; then
+            echo "::error::GitHub could not compare the live commit ${live_sha} with ${GITHUB_SHA}, so there is no way to tell whether this run would move the aliases backwards and nothing is promoted."
+            exit 1
+          fi
+
+          case "$relation" in
+            ahead|identical)
+              echo "${GITHUB_SHA} is '${relation}' relative to ${live_sha}, the commit the live aliases serve, so promoting it moves them forward."
+              ;;
+            behind)
+              echo "::error::this run publishes ${GITHUB_SHA}, an ancestor of ${live_sha}, the commit \`main\` and \`latest\` already serve. Promoting it would put an older build back on both registries, so nothing is promoted or mirrored: the digest pushed above stays untagged and the newer commit's publish owns the aliases."
+              exit 1
+              ;;
+            *)
+              echo "::error::GitHub reports ${GITHUB_SHA} as '${relation}' relative to ${live_sha}, the commit the live aliases serve. Only a commit that descends from it may replace it, so nothing is promoted."
+              exit 1
+              ;;
+          esac
 
       - name: Promote the signed digest to its public tags
         # The promotion is a registry tag write and nothing else: the manifest
