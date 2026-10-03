@@ -131,7 +131,15 @@ func resolveDaySaveMessageKey(user *models.User, day time.Time, stats CycleStats
 	// day 61, and saving one of those days called it fertile while every other
 	// surface withheld the window. The save falls back to the neutral message
 	// rather than softening the fertile one.
+	//
+	// Out-of-date data is a third tier, and the one PublishedStats does not answer
+	// with a cleared window: it withholds the status and the phase and leaves the
+	// projected dates beside the out-of-date banner. This message reads the window,
+	// so it asks the same verdict (CycleDataStale on the published copy): a toast
+	// naming a window the cycle has already outrun would say what both owner
+	// pages, which print "unknown" there, do not.
 	if !suppression.FertilitySuppressed &&
+		!stats.CycleDataStale &&
 		!stats.FertilityWindowStart.IsZero() &&
 		!day.Before(dateOnly(stats.FertilityWindowStart)) &&
 		!day.After(dateOnly(stats.FertilityWindowEnd)) {

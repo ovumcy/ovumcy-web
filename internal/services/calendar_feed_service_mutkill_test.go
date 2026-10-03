@@ -25,19 +25,23 @@ func (r *mutkillFeedDayReader) FetchLogsForUser(_ context.Context, _ uint, from 
 	return r.logs, nil
 }
 
-// TestResolveFeedLoadsHistoryWindowBeforeToday kills the
-// calendar_feed_service.go:110 INVERT_NEGATIVES and ARITHMETIC_BASE survivors on:
+// TestResolveFeedLoadsHistoryWindowBeforeToday kills the INVERT_NEGATIVES and
+// ARITHMETIC_BASE survivors on the year offset of the history window the feed
+// requests. That offset used to be the feed's own arithmetic in
+// calendar_feed_service.go and now lives in StatsOverviewRange (stats_service.go):
 //
-//	from, to := StatsOverviewRange(today)
+//	return now.AddDate(-statsOverviewWindowYears, 0, 0), now
 //
-// Both mutants flip the sign of the year offset, so `from` lands two years in the
-// FUTURE, producing an inverted [today+2y, today] window that would load NONE of
-// the owner's cycle history and silently degrade every prediction the feed emits.
+// ResolveFeed reads it with `from, to := StatsOverviewRange(today)`, so the
+// mutated line is the one in StatsOverviewRange, not in the feed. Both mutants
+// flip the sign of the year offset, so `from` lands two years in the FUTURE,
+// producing an inverted [today+2y, today] window that would load NONE of the
+// owner's cycle history and silently degrade every prediction the feed emits.
 // The shared day-reader stub ignores `from`, so no existing test observed the
-// lower bound — which is why both survived. The window is now read from
-// StatsOverviewRange, so the request is also compared with that function's
-// answer: a feed that went back to its own arithmetic would pass the span check
-// and still fail the second comparison the day the window rule changes.
+// lower bound — which is why both survived. The request is also compared with
+// StatsOverviewRange's own answer: a feed that went back to its own arithmetic
+// would pass the span check and still fail the second comparison the day the
+// window rule changes.
 func TestResolveFeedLoadsHistoryWindowBeforeToday(t *testing.T) {
 	user, token := armedFeedUser(t, 77, "2026-03-02")
 	days := &mutkillFeedDayReader{logs: predictableFeedLogs(t)}
