@@ -21,19 +21,45 @@ type AuthAttemptPolicy struct {
 	window   time.Duration
 }
 
+// attemptFigures is one budget's limit and window.
+type attemptFigures struct {
+	attempts int
+	window   time.Duration
+}
+
+// scopeAttemptDefaults is each budget's own default, the figures a policy falls
+// back to when the ones it was built with are below the floor. A scope absent
+// from it takes the sign-in figures; a guard test reads every scope this
+// package constructs a policy for from the source and refuses one missing here.
+var scopeAttemptDefaults = map[string]attemptFigures{
+	"login":           {DefaultLoginAttemptsLimit, DefaultLoginAttemptsWindow},
+	"recovery":        {DefaultRecoveryAttemptsLimit, DefaultRecoveryAttemptsWindow},
+	"logout":          {DefaultLogoutAttemptsLimit, DefaultLogoutAttemptsWindow},
+	"totp":            {DefaultTOTPAttemptsLimit, DefaultTOTPAttemptsWindow},
+	"totp.disable":    {DefaultTOTPDisableAttemptsLimit, DefaultTOTPDisableAttemptsWindow},
+	"totp.enroll":     {DefaultTOTPEnrollAttemptsLimit, DefaultTOTPEnrollAttemptsWindow},
+	"settings.reauth": {DefaultSettingsReauthAttemptsLimit, DefaultSettingsReauthAttemptsWindow},
+}
+
 func NewAuthAttemptPolicy(scope string, limiter *AttemptLimiter, attempts int, window time.Duration) *AuthAttemptPolicy {
 	if limiter == nil {
 		limiter = NewAttemptLimiter()
 	}
 
-	// The policy starts from the defaults and takes the caller's figures only
-	// through Configure's floors: a limit below one would refuse every attempt
-	// and a window below a second would never count one.
+	// The policy starts from the scope's own defaults and takes the caller's
+	// figures only through Configure's floors: a limit below one would refuse
+	// every attempt and a window below a second would never count one. A figure
+	// below its floor leaves THIS budget's default, never another budget's.
+	scope = strings.TrimSpace(scope)
+	defaults, known := scopeAttemptDefaults[scope]
+	if !known {
+		defaults = attemptFigures{DefaultLoginAttemptsLimit, DefaultLoginAttemptsWindow}
+	}
 	policy := &AuthAttemptPolicy{
-		scope:    strings.TrimSpace(scope),
+		scope:    scope,
 		limiter:  limiter,
-		attempts: DefaultLoginAttemptsLimit,
-		window:   DefaultLoginAttemptsWindow,
+		attempts: defaults.attempts,
+		window:   defaults.window,
 	}
 	policy.Configure(attempts, window)
 	return policy

@@ -84,11 +84,12 @@ func (handler *Handler) VerifyTOTPLogin(c fiber.Ctx) error {
 	}
 
 	// The attempt is reserved here, before any code is compared, and stays
-	// booked only when a compared code is wrong (or replayed). Every other way
-	// out of this handler past this point — a refused grant, an internal
-	// error, a correct code — gives the slot back, so only a failed compare
-	// draws the budget while a burst of concurrent submissions cannot all pass
-	// the same count.
+	// booked when a compared code is wrong (or replayed) and when the account
+	// lookup itself fails. Every other way out of this handler past this point —
+	// a grant naming no account or no usable second factor, a stale grant, an
+	// error after the code proved correct, a correct code — gives the slot back,
+	// so only a failed compare or an unanswered lookup draws the budget while a
+	// burst of concurrent submissions cannot all pass the same count.
 	reservation, err := handler.totpService.ReserveAttempt(handler.secretKey, c.IP(), userID, time.Now())
 	if err != nil {
 		// Invalidate the pending session so an exhausted (or stolen) cookie
@@ -100,8 +101,18 @@ func (handler *Handler) VerifyTOTPLogin(c fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 
-	user, err := handler.authService.FindByID(c.Context(), userID)
-	if err != nil || !handler.totpService.Verifiable(user) {
+	user, found, err := handler.authService.FindByIDOptional(c.Context(), userID)
+	if err != nil {
+		// A lookup that failed says nothing about the account, and the attempt
+		// stays booked: giving it back would let a flapping store be a way to
+		// submit codes without drawing the budget, the same fault the sign-in and
+		// recovery flows keep booked. The pending cookie stays, so the owner can
+		// resubmit once the store answers.
+		spec := totpInternalErrorSpec()
+		handler.logSecurityError(c, "auth.2fa", spec)
+		return handler.respondMappedError(c, spec)
+	}
+	if !found || !handler.totpService.Verifiable(user) {
 		// Verifiable, not the raw TOTPEnabled column: a pending-TOTP cookie
 		// naming an account whose secret has since become unverifiable
 		// (SECRET_KEY rotation, or 2FA was disabled after the cookie was

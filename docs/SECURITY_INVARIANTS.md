@@ -140,8 +140,9 @@ Every test-enforceable entry has a corresponding test or set of tests in `SECURI
   The bound holds while a key's entry is tracked: the size cap that keeps the map bounded may evict
   an entry still short of its limit under a flood of more than 1024 distinct fresh keys in one
   scope (an entry at its limit is pinned, so a lockout is never lifted). A wrong credential, a
-  replayed 2FA code and every storage or lookup error stay booked (fail closed); a correct
-  credential, or a refusal that spent no compare, gives the slot back. A 2FA code that is not six
+  replayed 2FA code and every storage or lookup error before a compare stay booked (fail
+  closed); a correct credential, or a refusal that spent no compare, gives the slot back. The one
+  storage error given back is the 2FA step claim failing after the code already matched. A 2FA code that is not six
   digits is refused before the budget is consulted. Regression:
   `TestAttemptLimiterReserveAdmitsExactlyTheLimitUnderABurst` in `internal/services`,
   `TestVerifyTOTPLogin_ConcurrentWrongCodesAreComparedNoMoreThanTheLimit` in `internal/api`.
