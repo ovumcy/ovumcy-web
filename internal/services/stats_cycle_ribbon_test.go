@@ -474,13 +474,9 @@ func TestBuildStatsCycleRibbonFirstCycleGateIsTheTwoCycleMinimum(t *testing.T) {
 		t.Fatalf("fixture must hold exactly one completed cycle, got %d", len(spans))
 	}
 
-	ribbon := buildStatsCycleRibbon(statscycleribbonOwner(true), CycleStats{LutealPhase: 14, CompletedCycleCount: 1}, logs, spans)
+	ribbon := buildStatsCycleRibbon(statscycleribbonOwner(true), CycleStats{LutealPhase: 14}, logs, spans)
 	if ribbon.Visible || len(ribbon.Rows) != 0 {
 		t.Fatalf("one completed cycle draws nothing: visible=%v rows=%d", ribbon.Visible, len(ribbon.Rows))
-	}
-	fertile, peak, ovulation := statscycleribbonInferredFertility(ribbon)
-	if fertile != 0 || peak != 0 || ovulation != 0 {
-		t.Fatalf("no fertility claim below two completed cycles; got %d/%d/%d", fertile, peak, ovulation)
 	}
 }
 

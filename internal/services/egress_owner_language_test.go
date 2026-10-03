@@ -41,7 +41,8 @@ func (provider localeCopyProvider) Message(language string, key string) string {
 // titleOnlyCopyProvider answers the reminder TITLE keys and nothing else, which
 // is the shape of a provider whose catalogue lost the sentence entry. It exists
 // because reminderCopy's empty-template arm is otherwise unreachable from a
-// catalogue-backed provider: the sweep above forbids a blank sentence in any
+// catalogue-backed provider: the sweep below
+// (TestNotifyPayloadCopyResolvesInEveryLocale) forbids a blank sentence in any
 // shipped locale, so the branch that keeps a missing one from rendering as
 // formatting residue has no locale that can exercise it.
 type titleOnlyCopyProvider struct{}
@@ -59,6 +60,9 @@ func (titleOnlyCopyProvider) Message(_ string, key string) string {
 // a missing catalogue sentence from reaching a webhook consumer as Sprintf
 // residue. Without it, reminderCopy would format the empty template and the
 // payload body would read "%!(EXTRA string=2026-02-10)".
+//
+// It pins CURRENT behaviour, not endorsement: the reminder then goes out with the
+// headline alone, so the event date is dropped from the payload entirely.
 func TestReminderCopyWithoutASentenceSendsTheHeadlineAlone(t *testing.T) {
 	service := NewWebhookNotifyService(nil, nil, nil, nil, titleOnlyCopyProvider{})
 	eventDate := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
@@ -70,6 +74,24 @@ func TestReminderCopyWithoutASentenceSendsTheHeadlineAlone(t *testing.T) {
 		}
 		if message != "" {
 			t.Errorf("%s message = %q, want it empty rather than formatted from a missing template", reminderType, message)
+		}
+	}
+}
+
+// TestMedicalDisclaimerIsNonEmptyInEveryShippedLocale is what the two
+// empty-disclaimer pins (the webhook payload and the .ics DESCRIPTION) lean on:
+// neither builder refuses an empty disclaimer, so the invariant that every
+// egress body carries one holds only while no shipped catalogue resolves
+// medical.disclaimer to "".
+func TestMedicalDisclaimerIsNonEmptyInEveryShippedLocale(t *testing.T) {
+	provider := newLocaleCopyProvider(t)
+	languages := provider.manager.SupportedLanguages()
+	if len(languages) == 0 {
+		t.Fatal("anchor: the manager must report shipped locales")
+	}
+	for _, language := range languages {
+		if strings.TrimSpace(provider.Disclaimer(language)) == "" {
+			t.Errorf("locale %q resolves medical.disclaimer to an empty string", language)
 		}
 	}
 }

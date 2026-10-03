@@ -430,9 +430,11 @@ func cmpStringSets(a, b []string) string {
 // TestBuildCalendarFeedICSWithAnEmptyDisclaimerStillEmitsEveryEvent records the
 // current behaviour when the localized disclaimer resolves to "": the builder has
 // no runtime guard, so every VEVENT is still written, each with an empty
-// DESCRIPTION line. The disclaimer's presence is a property of the locale
-// catalogue, not of this builder; this pins the gap so closing it (suppress the
-// feed, or refuse the empty text) is a deliberate change.
+// DESCRIPTION line. This CONTRADICTS the documented invariant that every event
+// carries the medical-safety disclaimer: the invariant currently rests on the
+// locale catalogue never resolving to "" (guarded by a catalogue sweep), not on
+// this builder. The test pins the gap so closing it (suppress the feed, or refuse
+// the empty text) is a deliberate change that updates it.
 func TestBuildCalendarFeedICSWithAnEmptyDisclaimerStillEmitsEveryEvent(t *testing.T) {
 	input := CalendarFeedICSInput{
 		User:       predictableFeedUser(t, "2026-03-02"),
@@ -448,7 +450,7 @@ func TestBuildCalendarFeedICSWithAnEmptyDisclaimerStillEmitsEveryEvent(t *testin
 		t.Fatalf("fixture: the feed must project events:\n%s", body)
 	}
 	if got := strings.Count(body, "\r\nDESCRIPTION:\r\n"); got != events {
-		t.Fatalf("every event carries an empty DESCRIPTION line: %d of %d\n%s", got, events, body)
+		t.Fatalf("pinned: an empty disclaimer is currently emitted as an empty DESCRIPTION on every event (%d of %d); closing the gap should update this test\n%s", got, events, body)
 	}
 
 	input.Disclaimer = "estimate only"
@@ -496,6 +498,18 @@ func TestBuildCalendarFeedICSProjectsExactlyThreeCyclesAheadAsSingleDays(t *test
 		t.Fatalf("first projected period = %s, want %s", periods[0].Format("2006-01-02"), want.Format("2006-01-02"))
 	}
 
+	// Ovulation: cycle 0's day (2026-03-16) is already behind now, so the two
+	// chained cycles carry one each.
+	ovulations := 0
+	for _, uid := range extractICSUIDs(t, body) {
+		if strings.HasPrefix(uid, "ovulation-") {
+			ovulations++
+		}
+	}
+	if ovulations != 2 {
+		t.Fatalf("expected exactly two projected ovulation events (cycles 1 and 2), got %d:\n%s", ovulations, body)
+	}
+
 	// Every event is a single all-day date: DTEND is the day after DTSTART.
 	pairs := regexp.MustCompile(`DTSTART;VALUE=DATE:(\d{8})\r\nDTEND;VALUE=DATE:(\d{8})`).FindAllStringSubmatch(body, -1)
 	if len(pairs) != strings.Count(body, "BEGIN:VEVENT") {
@@ -510,6 +524,8 @@ func TestBuildCalendarFeedICSProjectsExactlyThreeCyclesAheadAsSingleDays(t *test
 	}
 }
 
+// The test below pins CURRENT behaviour — a decision to revisit, not approval:
+// the feed's horizon does not shrink with the data behind it.
 func TestBuildCalendarFeedICSOfAnAccountWithOneCompletedCycleStillProjectsThreeCycles(t *testing.T) {
 	logs := []models.DailyLog{
 		{Date: mustParseDashboardDay(t, "2026-02-02"), IsPeriod: true},
@@ -523,14 +539,20 @@ func TestBuildCalendarFeedICSOfAnAccountWithOneCompletedCycleStillProjectsThreeC
 	}
 
 	body := string(BuildCalendarFeedICS(CalendarFeedICSInput{User: user, Logs: logs, Now: now, Location: time.UTC, Disclaimer: "estimate only"}))
-	periods := 0
+	periods, ovulations := 0, 0
 	for _, uid := range extractICSUIDs(t, body) {
 		if strings.HasPrefix(uid, "period-") {
 			periods++
 		}
+		if strings.HasPrefix(uid, "ovulation-") {
+			ovulations++
+		}
 	}
 	if periods != 3 {
 		t.Fatalf("one completed cycle projects three period events, got %d:\n%s", periods, body)
+	}
+	if ovulations < 1 {
+		t.Fatalf("one completed cycle already clears the first-cycle floor, so ovulation events are projected too, got %d:\n%s", ovulations, body)
 	}
 }
 

@@ -88,9 +88,10 @@ func (stub stubDisclaimer) Message(_ string, key string) string {
 // TestBuildPayloadWithAnEmptyDisclaimerSendsItEmptyAndKeepsTheRest records the
 // current behaviour when the localized disclaimer resolves to "": buildPayload has
 // no runtime guard, so the reminder still goes out with Disclaimer "" beside an
-// intact title, message and date. That the catalogue key is non-empty in every
-// locale is a build-time property of the locale files, not enforced here; this
-// test pins the gap so closing it is a deliberate change.
+// intact title, message and date. This CONTRADICTS the documented invariant that
+// every payload carries the disclaimer: the invariant currently rests on the
+// catalogue never resolving to "" (TestMedicalDisclaimerIsNonEmptyInEveryShippedLocale),
+// not on this builder. The test pins the gap so closing it is a deliberate change.
 func TestBuildPayloadWithAnEmptyDisclaimerSendsItEmptyAndKeepsTheRest(t *testing.T) {
 	service := &WebhookNotifyService{localized: stubDisclaimer{text: ""}}
 	reminder := DueReminder{
@@ -101,7 +102,7 @@ func TestBuildPayloadWithAnEmptyDisclaimerSendsItEmptyAndKeepsTheRest(t *testing
 
 	payload := service.buildPayload(reminder, "")
 	if payload.Disclaimer != "" {
-		t.Fatalf("an empty disclaimer is passed through unchanged, got %q", payload.Disclaimer)
+		t.Fatalf("pinned: an empty disclaimer is currently sent as-is (got %q); closing the gap should update this test", payload.Disclaimer)
 	}
 	if payload.Title != "Period reminder" || payload.Message != "Estimated next period around 2026-04-09." {
 		t.Fatalf("title and message are unaffected by the disclaimer: %q / %q", payload.Title, payload.Message)
