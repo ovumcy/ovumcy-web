@@ -399,8 +399,9 @@ AUDIT_LOG_ENABLED=false
 
 # Rate limits (defaults shown); see SECURITY.md's Rate Limits section for the full policy.
 # Each *_MAX has a ceiling (100 for login/register/forgot-password, 600 logout, 200 logout
-# account, 3000 api, 120 calendar feed) and each *_WINDOW must be between 1s and 24h; a value
-# outside its range is logged at boot and the default is used instead — a limiter cannot be
+# account, 3000 api, 120 calendar feed) and each *_WINDOW must be between 1s and 24h (1m and
+# 24h for the login, register, forgot-password, 2FA challenge and password-reset redeem
+# windows); a value outside its range is logged at boot and the default is used instead — a limiter cannot be
 # widened past its ceiling, let alone switched off. The login, register, forgot-password, 2FA
 # challenge and password-reset redeem pairs are also held to at most 30 requests per minute
 # (MAX over WINDOW, e.g. 100 with 200s); a pair above that is logged and both halves fall back
