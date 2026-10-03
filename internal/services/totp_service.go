@@ -156,8 +156,8 @@ func (service *TOTPService) ReserveAttempt(secretKey []byte, clientKey string, u
 // it only after the session is minted, so a correct code whose session could
 // not be issued keeps the count. That step runs without a session, so the
 // account's identity counter is left to age out (see AuthAttemptPolicy.ResetClient);
-// secretKey and userID are kept so the call names the same operands as its
-// check and its failure.
+// secretKey and userID are kept so the call names the same operands as the
+// ReserveAttempt it settles.
 func (service *TOTPService) ResetAttempts(secretKey []byte, clientKey string, userID uint) {
 	_, _ = secretKey, userID
 	service.attemptPolicy.ResetClient(clientKey)

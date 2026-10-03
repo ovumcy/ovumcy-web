@@ -627,10 +627,11 @@ func TestVerifyTOTPLogin_ConcurrentWrongCodesAreComparedNoMoreThanTheLimit(t *te
 	}
 }
 
-// TestVerifyTOTPLogin_MalformedCodesNeverDrawTheAttemptBudget pins that the
-// attempt the handler reserves before comparing is given back when no code was
-// compared: a submission that is not six characters is the caller's own input,
-// so any number of them leaves the full budget for the real codes after.
+// TestVerifyTOTPLogin_MalformedCodesNeverDrawTheAttemptBudget pins that a code
+// no authenticator could produce leaves the budget untouched: a submission that
+// is not six digits is the caller's own input and no compare runs for it, so any
+// number of them leaves the full budget for the real codes after. That it is
+// refused before the budget is even consulted is the next test's subject.
 func TestVerifyTOTPLogin_MalformedCodesNeverDrawTheAttemptBudget(t *testing.T) {
 	app, database := newOnboardingTestAppWithCSRF(t)
 	user := createOnboardingTestUser(t, database, "totp-malformed@example.com", "StrongPass1", true)
@@ -707,6 +708,154 @@ func TestVerifyTOTPLogin_InternalErrorsNeverDrawTheAttemptBudget(t *testing.T) {
 		if status != http.StatusInternalServerError {
 			t.Fatalf("submission %d status = %d, want 500 (the storage fault reaches the handler; 429 means an internal error drew the budget)", attempt+1, status)
 		}
+	}
+}
+
+// submitTOTPChallengeHTMX posts one code through the HTMX path, which surfaces
+// the real status code, and returns the response for the caller to close.
+func submitTOTPChallengeHTMX(t *testing.T, app *fiber.App, pending string, csrfCookieHeader string, csrfToken string, code string) *http.Response {
+	t.Helper()
+	form := url.Values{"code": {code}, "csrf_token": {csrfToken}}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/sessions/2fa-challenge", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("HX-Request", "true")
+	req.Header.Set("Cookie", joinCookieHeader(pending, csrfCookieHeader))
+	req.Header.Set("Accept-Language", "en")
+	resp, err := app.Test(req, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("POST /api/v1/sessions/2fa-challenge: %v", err)
+	}
+	return resp
+}
+
+// TestVerifyTOTPLogin_MalformedCodeIsRefusedBeforeTheBudgetIsConsulted pins the
+// order: a code that cannot be a TOTP code is answered as an invalid code even
+// when the account's budget is spent, and it leaves the pending cookie in place.
+// A handler that reserved first answered such a request 429 and cleared the
+// cookie, so a malformed body could take the owner's challenge away.
+func TestVerifyTOTPLogin_MalformedCodeIsRefusedBeforeTheBudgetIsConsulted(t *testing.T) {
+	app, database := newOnboardingTestAppWithCSRF(t)
+	user := createOnboardingTestUser(t, database, "totp-malformed-order@example.com", "StrongPass1", true)
+	secretKey := []byte("test-secret-key")
+	setupTOTPForUser(t, database, user.ID, secretKey)
+	csrfToken, csrfCookieHeader := extractCSRFCookieAndToken(t, app)
+	pending := func() string { return sealTOTPPendingCookieForTest(t, secretKey, user.ID, false) }
+
+	for range services.DefaultTOTPAttemptsLimit {
+		resp := submitTOTPChallengeHTMX(t, app, pending(), csrfCookieHeader, csrfToken, "000000")
+		_ = resp.Body.Close()
+	}
+	// Anchor: the budget is spent, so a well-formed code is refused with 429.
+	anchor := submitTOTPChallengeHTMX(t, app, pending(), csrfCookieHeader, csrfToken, "000000")
+	defer func() { _ = anchor.Body.Close() }()
+	if anchor.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("well-formed code with a spent budget = %d, want 429: the premise of this test is broken", anchor.StatusCode)
+	}
+
+	for _, code := range []string{"", "12345", "1234567", "abcdef", "12 456"} {
+		resp := submitTOTPChallengeHTMX(t, app, pending(), csrfCookieHeader, csrfToken, code)
+		status := resp.StatusCode
+		assertTOTPCookieLeftInPlace(t, resp, totpPendingCookieName)
+		_ = resp.Body.Close()
+		if status != http.StatusUnauthorized {
+			t.Fatalf("malformed code %q with a spent budget = %d, want 401: it reached the budget", code, status)
+		}
+	}
+}
+
+// TestVerifyTOTPLogin_ARefusalWithoutACompareKeepsNoSlot pins the refund on the
+// two refusals that come after the reservation and before any compare: a pending
+// grant naming no account or an account with no usable second factor, and a grant
+// older than the account's session version. Twice the limit of each leaves the
+// full budget, so only the wrong codes after them are counted.
+func TestVerifyTOTPLogin_ARefusalWithoutACompareKeepsNoSlot(t *testing.T) {
+	app, database := newOnboardingTestAppWithCSRF(t)
+	secretKey := []byte("test-secret-key")
+	enrolled := createOnboardingTestUser(t, database, "totp-no-slot@example.com", "StrongPass1", true)
+	setupTOTPForUser(t, database, enrolled.ID, secretKey) // bumps auth_session_version from 1 to 2
+	plain := createOnboardingTestUser(t, database, "totp-no-slot-plain@example.com", "StrongPass1", true)
+	csrfToken, csrfCookieHeader := extractCSRFCookieAndToken(t, app)
+
+	stale := totpPendingCookieName + "=" + sealTOTPCookiePayloadForTest(t, secretKey, totpPendingCookieName, totpPendingCookiePayload{
+		UserID:         enrolled.ID,
+		ExpiresAt:      time.Now().Add(5 * time.Minute),
+		SessionVersion: 1,
+	})
+	unknownAccount := totpPendingCookieName + "=" + sealTOTPCookiePayloadForTest(t, secretKey, totpPendingCookieName, totpPendingCookiePayload{
+		UserID:         enrolled.ID + 1000,
+		ExpiresAt:      time.Now().Add(5 * time.Minute),
+		SessionVersion: 1,
+	})
+	noSecondFactor := sealTOTPPendingCookieForTest(t, secretKey, plain.ID, false)
+
+	for name, grant := range map[string]string{
+		"stale grant":      stale,
+		"unknown account":  unknownAccount,
+		"no second factor": noSecondFactor,
+	} {
+		t.Run(name, func(t *testing.T) {
+			for attempt := range 2 * services.DefaultTOTPAttemptsLimit {
+				resp := submitTOTPChallengeHTMX(t, app, grant, csrfCookieHeader, csrfToken, "123456")
+				status := resp.StatusCode
+				_ = resp.Body.Close()
+				if status == http.StatusTooManyRequests {
+					t.Fatalf("refusal %d was rate limited: the refusals before it kept their slots", attempt+1)
+				}
+			}
+		})
+	}
+
+	// The enrolled account's budget is whole: its limit of wrong codes is
+	// compared, and only the next one is refused.
+	for attempt := range services.DefaultTOTPAttemptsLimit {
+		resp := submitTOTPChallengeHTMX(t, app, sealTOTPPendingCookieForTest(t, secretKey, enrolled.ID, false), csrfCookieHeader, csrfToken, "000000")
+		status := resp.StatusCode
+		_ = resp.Body.Close()
+		if status != http.StatusUnauthorized {
+			t.Fatalf("wrong code %d = %d, want 401 (compared): the earlier refusals kept their slots", attempt+1, status)
+		}
+	}
+	resp := submitTOTPChallengeHTMX(t, app, sealTOTPPendingCookieForTest(t, secretKey, enrolled.ID, false), csrfCookieHeader, csrfToken, "000000")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("wrong code past the limit = %d, want 429", resp.StatusCode)
+	}
+}
+
+// TestVerifyTOTPLogin_AReplayedCodeKeepsItsSlot pins the other side of the
+// refund: a replayed code is a compared code that failed, so each replay stays
+// booked and the budget runs out. A handler that gave the slot back for a replay
+// would let a captured code be replayed without limit.
+func TestVerifyTOTPLogin_AReplayedCodeKeepsItsSlot(t *testing.T) {
+	app, database := newOnboardingTestAppWithCSRF(t)
+	user := createOnboardingTestUser(t, database, "totp-replay-slot@example.com", "StrongPass1", true)
+	secretKey := []byte("test-secret-key")
+	rawSecret := setupTOTPForUser(t, database, user.ID, secretKey)
+	csrfToken, csrfCookieHeader := extractCSRFCookieAndToken(t, app)
+	code, err := totp.GenerateCode(rawSecret, time.Now())
+	if err != nil {
+		t.Fatalf("GenerateCode: %v", err)
+	}
+
+	first := submitTOTPChallengeHTMX(t, app, sealTOTPPendingCookieForTest(t, secretKey, user.ID, false), csrfCookieHeader, csrfToken, code)
+	firstStatus := first.StatusCode
+	_ = first.Body.Close()
+	if firstStatus == http.StatusUnauthorized || firstStatus == http.StatusTooManyRequests {
+		t.Fatalf("first submission status = %d, want the code accepted: the replay premise is broken", firstStatus)
+	}
+
+	for attempt := range services.DefaultTOTPAttemptsLimit {
+		resp := submitTOTPChallengeHTMX(t, app, sealTOTPPendingCookieForTest(t, secretKey, user.ID, false), csrfCookieHeader, csrfToken, code)
+		status := resp.StatusCode
+		_ = resp.Body.Close()
+		if status != http.StatusUnauthorized {
+			t.Fatalf("replay %d = %d, want 401 (compared and refused)", attempt+1, status)
+		}
+	}
+	resp := submitTOTPChallengeHTMX(t, app, sealTOTPPendingCookieForTest(t, secretKey, user.ID, false), csrfCookieHeader, csrfToken, code)
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("replay past the limit = %d, want 429: the replays gave their slots back", resp.StatusCode)
 	}
 }
 

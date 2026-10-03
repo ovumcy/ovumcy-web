@@ -102,9 +102,13 @@ func (service *LoginService) Authenticate(
 	// the account a success is booked against is the one the failures were.
 	user, err := service.auth.AuthenticateCredentials(ctx, normalizedEmail, password)
 	if err != nil {
-		if !errors.Is(err, ErrAuthInvalidCreds) {
-			// Not a verdict on the password (a lookup or storage error): the
-			// attempt is not a failure.
+		// Fail closed: the reservation stays booked on every error but one. A
+		// lookup or storage error is already answered as ErrAuthInvalidCreds by
+		// AuthenticateCredentials, and an error of any other kind says nothing
+		// that proves the password was right. The one refusal given its slot
+		// back is the unsupported role, which AuthenticateCredentials reaches
+		// only after the password compared correct.
+		if errors.Is(err, ErrAuthUnsupportedRole) {
 			reservation.Refund()
 		}
 		return LoginResult{}, err

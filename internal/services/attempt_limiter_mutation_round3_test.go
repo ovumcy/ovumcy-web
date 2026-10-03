@@ -7,7 +7,8 @@ import (
 )
 
 // TestMR3Auth_AddFailureAllSweepCounterIncrements pins
-// attempt_limiter.go `limiter.addCallsN++` in AddFailureAll. With
+// attempt_limiter.go `limiter.addCallsN++` in bookLocked, the booking step
+// Reserve runs (the test-only AddFailureAll seed drives the same step). With
 // addCallsN one below the sweep threshold, a single AddFailureAll call must
 // cross the threshold and trigger the stale-key sweep that removes the
 // pre-seeded stale keys, leaving only the just-refreshed live key.

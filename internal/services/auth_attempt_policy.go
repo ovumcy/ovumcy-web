@@ -26,11 +26,14 @@ func NewAuthAttemptPolicy(scope string, limiter *AttemptLimiter, attempts int, w
 		limiter = NewAttemptLimiter()
 	}
 
+	// The policy starts from the defaults and takes the caller's figures only
+	// through Configure's floors: a limit below one would refuse every attempt
+	// and a window below a second would never count one.
 	policy := &AuthAttemptPolicy{
 		scope:    strings.TrimSpace(scope),
 		limiter:  limiter,
-		attempts: attempts,
-		window:   window,
+		attempts: DefaultLoginAttemptsLimit,
+		window:   DefaultLoginAttemptsWindow,
 	}
 	policy.Configure(attempts, window)
 	return policy

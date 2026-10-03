@@ -144,9 +144,14 @@ type attemptHold struct {
 // bucket — and otherwise books one provisional attempt at `now` under every key
 // and admits the request. Counting and booking in one critical section is what
 // makes the limit a bound on the compares that run: with limit L, at most L
-// reservations are ever admitted per key inside one window, however many
-// requests arrive at once. A check followed by a separate booking after the
-// compare leaves every request that arrives inside the compare unbooked.
+// reservations are admitted per key inside one window while its entry is
+// tracked, however many requests arrive at once. A check followed by a separate
+// booking after the compare leaves every request that arrives inside the
+// compare unbooked. The bound is not absolute: the size-cap trim
+// (enforceSizeCapLocked) may evict an entry still short of its limit when one
+// scope sees more than evictAboveSize distinct fresh keys, which resets that
+// key's count. Only an entry already at its limit is pinned. That is the
+// documented trade-off for keeping the map bounded under a flood of minted keys.
 //
 // ok is false when the budget is spent; the reservation is nil then.
 func (limiter *AttemptLimiter) Reserve(keys []string, now time.Time, budget AttemptBudget) (*AttemptReservation, bool) {
