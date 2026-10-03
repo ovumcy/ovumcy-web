@@ -443,21 +443,23 @@ and related tests in `internal/services/cycles_reference_test.go`. Property-base
 tests (`cycles_property_test.go`) additionally assert the invariants for
 thousands of generated inputs.
 
-### Shared golden-vector fixture (lockstep with ovumcy-app)
+### Golden-vector fixture (shared with ovumcy-app in origin, not yet in lockstep)
 
-The worked examples above are pinned to the code by a **shared golden-vector
+The worked examples above are pinned to the code by a **golden-vector
 fixture**, [`internal/services/testdata/cycle-prediction-golden-vectors.json`](../internal/services/testdata/cycle-prediction-golden-vectors.json),
-consumed by `TestCyclePrediction_GoldenVectors`. That file is kept
-**byte-identical** with ovumcy-app's
-`src/services/__fixtures__/cycle-prediction-golden-vectors.json` (ovumcy-app
-PR #75), where it is consumed by `src/services/cycle-prediction-reference.test.ts`.
+consumed by `TestCyclePrediction_GoldenVectors`. The fixture originated with
+ovumcy-app's `src/services/__fixtures__/cycle-prediction-golden-vectors.json`
+(ovumcy-app PR #75), where it is consumed by
+`src/services/cycle-prediction-reference.test.ts`. The two copies are **not**
+currently byte-identical and nothing enforces that they match, so lockstep with
+the app is not established.
 
 The Go source of truth here (`internal/services/cycles.go`) and ovumcy-app's
 TypeScript port (`src/services/cycle-prediction-policy.ts`) are hand-parallel
-implementations; consuming one shared fixture makes any divergence between them
-fail CI on **both** sides instead of drifting silently. If you change the
-prediction math, update the fixture, **both** docs (this file and ovumcy-app's
-`docs/cycle-prediction.md`), and **both** reference tests in the same change.
+implementations; only once the two fixture copies are brought back in sync
+would a divergence between them fail CI on both sides. If you change the
+prediction math, update the fixture, both docs (this file and ovumcy-app's
+`docs/cycle-prediction.md`), and both reference tests in the same change.
 
 #### Projection / anchor section
 
