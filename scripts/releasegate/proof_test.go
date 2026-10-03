@@ -315,7 +315,7 @@ func TestReleaseTagGateReadsJobsAndNeverCheckRuns(t *testing.T) {
 		},
 	} {
 		wantRefusal := testCase.wantOutput != "real jobs ("
-		testCase.scenario.wantRefusal = wantRefusal
+		testCase.wantRefusal = wantRefusal
 		t.Run(testCase.name, func(t *testing.T) {
 			output, err := runGate(t, script, env, testCase.scenario)
 

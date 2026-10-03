@@ -340,8 +340,12 @@ func TestChangeDetectionRunsTheGoLanesForARunbookOnlyDiff(t *testing.T) {
 		why      string
 	}{
 		{
-			fragment: "grep -E '^" + strings.ReplaceAll(runbookPath, ".", `\.`) + "$'",
-			why:      "the runbook is no longer detected at all, so a diff touching only it reads as documentation",
+			fragment: "runbook_re='^" + strings.ReplaceAll(runbookPath, ".", `\.`) + "$'",
+			why:      "the runbook is no longer named by its pattern, so a diff touching only it reads as documentation",
+		},
+		{
+			fragment: `runbook_changes="$(printf '%s\n' "$files" | grep -E "$runbook_re" || true)"`,
+			why:      "the runbook pattern is no longer applied to the changed files, so a diff touching only it reads as documentation",
 		},
 		{
 			fragment: "if [ -n \"${runbook_changes:-}\" ]; then\n            run_core=true",
