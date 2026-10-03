@@ -66,3 +66,50 @@ func TestDayFeedbackIsNeutralInsideTheWindowOnceTheCycleDataIsStale(t *testing.T
 		}
 	})
 }
+
+// The overdue tier of the day-save message. Once the running cycle is more than a
+// week past its own length the fertility half of the verdict is withheld
+// (PredictionSuppression.FertilitySuppressed), and a save must answer the neutral
+// message however the window itself reads. The history is the one above: reference
+// length 28, so cycle day 40 (2026-05-04) is overdue and the stale test's day 30 is
+// not.
+//
+// The end-to-end half proves the fixture really is overdue and neutral. The policy
+// half isolates the verdict: the window and the staleness come from the FRESH
+// published copy, where the same same-day save is fertile, and only the verdict
+// is the overdue one — so the neutral answer can only come from the overdue tier.
+func TestDayFeedbackIsNeutralInsideTheWindowOnceTheCycleIsOverdue(t *testing.T) {
+	user := dayFeedbackParityUser(62)
+	logs := cycleStartLogs(t, "2026-01-01", "2026-01-29", "2026-02-26", "2026-03-26")
+	savedDay := mustParseDay(t, "2026-04-05") // cycle day 11, inside the window
+
+	forEachParityZone(t, func(t *testing.T, location *time.Location) {
+		freshToday := DateAtLocation(localNoon(savedDay, location), location)
+		freshStats := BuildCycleStatsFromLogs(user, FilterLogsToStatsHistory(logs, freshToday, location), localNoon(savedDay, location), location)
+		_, fresh, freshVerdict := ConfirmedAndPublishedStats(user, logs, freshStats, freshToday, location)
+
+		overdueDay := mustParseDay(t, "2026-05-04") // cycle day 40
+		overdueToday := DateAtLocation(localNoon(overdueDay, location), location)
+		overdueStats := BuildCycleStatsFromLogs(user, FilterLogsToStatsHistory(logs, overdueToday, location), localNoon(overdueDay, location), location)
+		_, _, overdueVerdict := ConfirmedAndPublishedStats(user, logs, overdueStats, overdueToday, location)
+
+		if !overdueVerdict.FertilitySuppressed || !PredictionsSuppressed(user, overdueStats) {
+			t.Fatal("fixture: cycle day 40 must be overdue and suppress the fertility half")
+		}
+		if freshVerdict.FertilitySuppressed || fresh.CycleDataStale {
+			t.Fatal("fixture: the fresh copy must publish an unsuppressed, current window")
+		}
+
+		if got := dayFeedbackKeyOn(t, user, logs, location, overdueDay, overdueDay); got != daySaveMessageNeutral {
+			t.Fatalf("a save on an overdue cycle resolves to %q, want the neutral message", got)
+		}
+
+		saved := DateAtLocation(savedDay, location)
+		if got := resolveDaySaveMessageKey(user, saved, saved, fresh, freshVerdict); got != daySaveMessageFertile {
+			t.Fatalf("control: the unsuppressed same-day save resolves to %q, want the fertile message", got)
+		}
+		if got := resolveDaySaveMessageKey(user, saved, saved, fresh, overdueVerdict); got != daySaveMessageNeutral {
+			t.Fatalf("the overdue verdict over an in-window same-day save resolves to %q, want the neutral message", got)
+		}
+	})
+}
