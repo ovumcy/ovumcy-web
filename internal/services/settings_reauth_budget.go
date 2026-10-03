@@ -9,9 +9,13 @@ import (
 
 // ReauthBudget is the attempt budget one password re-auth draws. Every re-auth
 // runs through its verify step, and the budget is that step's only parameter:
-// settings.reauth for the settings actions and the password change
-// (SettingsService.SettingsReauthBudget) and totp.disable for the 2FA disable
-// confirmation (TOTPService.DisableReauthBudget). SettingsService.VerifyReauth is
+// every password re-auth of an account draws the one settings.reauth policy —
+// the settings actions and the password change through
+// SettingsService.SettingsReauthBudget, the 2FA disable confirmation through
+// SettingsService.TOTPDisableReauthBudget, which differs only in the refusal it
+// answers. One policy object, so one bucket per account whichever route spends
+// it: a stolen session gets no more guesses at the password hash than the
+// sign-in form allows. SettingsService.VerifyReauth is
 // verify around the current-password compare; ChangePassword wraps its own
 // three-field compare in the same verify. The admission check, the failure
 // booking and the bucket keys are therefore written once, whatever the budget.
@@ -44,14 +48,15 @@ func (service *SettingsService) SettingsReauthBudget() ReauthBudget {
 	}
 }
 
-// DisableReauthBudget is the totp.disable budget, the only one the 2FA disable
-// confirmation draws.
-func (service *TOTPService) DisableReauthBudget(secretKey []byte) ReauthBudget {
-	return ReauthBudget{
-		policy:    service.disableAttemptPolicy,
-		secretKey: secretKey,
-		limited:   ErrTOTPDisableRateLimited,
-	}
+// TOTPDisableReauthBudget is the budget the 2FA disable confirmation draws: the
+// settings.reauth policy and keys themselves, so its failures and the settings
+// actions' failures fill the same per-account bucket. Only the refusal differs:
+// an exhausted budget answers ErrTOTPDisableRateLimited, the rate-limit response
+// the disable route already had.
+func (service *SettingsService) TOTPDisableReauthBudget() ReauthBudget {
+	budget := service.SettingsReauthBudget()
+	budget.limited = ErrTOTPDisableRateLimited
+	return budget
 }
 
 // EnrollCodeBudget is the totp.enroll budget: the one the 2FA enrollment code

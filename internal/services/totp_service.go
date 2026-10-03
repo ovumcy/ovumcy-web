@@ -16,12 +16,16 @@ import (
 )
 
 const (
-	DefaultTOTPAttemptsLimit         = 5
-	DefaultTOTPAttemptsWindow        = 15 * time.Minute
-	DefaultTOTPDisableAttemptsLimit  = 5
-	DefaultTOTPDisableAttemptsWindow = 15 * time.Minute
-	// The enrollment-code budget mirrors totp.disable: both guard a check an
-	// attacker can only reach with a session for one account already in hand.
+	DefaultTOTPAttemptsLimit  = 5
+	DefaultTOTPAttemptsWindow = 15 * time.Minute
+	// The 2FA disable confirmation has no budget of its own: it draws the
+	// account's one password re-auth budget (SettingsService.TOTPDisableReauthBudget),
+	// so its figures are that budget's, named here for the disable route.
+	DefaultTOTPDisableAttemptsLimit  = DefaultSettingsReauthAttemptsLimit
+	DefaultTOTPDisableAttemptsWindow = DefaultSettingsReauthAttemptsWindow
+	// The enrollment-code budget mirrors the password re-auth budget: both guard
+	// a check an attacker can only reach with a session for one account already
+	// in hand.
 	DefaultTOTPEnrollAttemptsLimit  = 5
 	DefaultTOTPEnrollAttemptsWindow = 15 * time.Minute
 	totpStepSeconds                 = 30
@@ -110,11 +114,10 @@ func aadForTOTPSecret(userID uint) []byte {
 
 // TOTPService handles TOTP secret generation, enrollment, validation, and removal.
 type TOTPService struct {
-	users                TOTPUserRepository
-	secretKey            []byte
-	attemptPolicy        *AuthAttemptPolicy
-	disableAttemptPolicy *AuthAttemptPolicy
-	enrollAttemptPolicy  *AuthAttemptPolicy
+	users               TOTPUserRepository
+	secretKey           []byte
+	attemptPolicy       *AuthAttemptPolicy
+	enrollAttemptPolicy *AuthAttemptPolicy
 }
 
 // NewTOTPService creates a TOTPService. secretKey is used to encrypt TOTP secrets
@@ -122,17 +125,16 @@ type TOTPService struct {
 // pass nil to use a dedicated one.
 func NewTOTPService(users TOTPUserRepository, secretKey []byte, limiter *AttemptLimiter) *TOTPService {
 	return &TOTPService{
-		users:                users,
-		secretKey:            secretKey,
-		attemptPolicy:        NewAuthAttemptPolicy("totp", limiter, DefaultTOTPAttemptsLimit, DefaultTOTPAttemptsWindow),
-		disableAttemptPolicy: NewAuthAttemptPolicy("totp.disable", limiter, DefaultTOTPDisableAttemptsLimit, DefaultTOTPDisableAttemptsWindow),
-		enrollAttemptPolicy:  NewAuthAttemptPolicy("totp.enroll", limiter, DefaultTOTPEnrollAttemptsLimit, DefaultTOTPEnrollAttemptsWindow),
+		users:               users,
+		secretKey:           secretKey,
+		attemptPolicy:       NewAuthAttemptPolicy("totp", limiter, DefaultTOTPAttemptsLimit, DefaultTOTPAttemptsWindow),
+		enrollAttemptPolicy: NewAuthAttemptPolicy("totp.enroll", limiter, DefaultTOTPEnrollAttemptsLimit, DefaultTOTPEnrollAttemptsWindow),
 	}
 }
 
 // ConfigureEnrollAttempts sets the totp.enroll budget's limit and window, on the
 // limiter the service was built with. Bootstrap applies the defaults: like
-// totp.disable, the budget guards a credential check and is not operator-tunable.
+// settings.reauth, the budget guards a credential check and is not operator-tunable.
 func (service *TOTPService) ConfigureEnrollAttempts(attempts int, window time.Duration) {
 	service.enrollAttemptPolicy.Configure(attempts, window)
 }
@@ -163,9 +165,9 @@ func (service *TOTPService) ResetAttempts(secretKey []byte, clientKey string, us
 	service.attemptPolicy.ResetClient(clientKey)
 }
 
-// The disable-confirmation password has no check/record/reset of its own here:
-// it is drawn through DisableReauthBudget and SettingsService.VerifyReauth, the
-// one re-auth path (settings_reauth_budget.go).
+// The disable-confirmation password has no budget, check, record or reset of its
+// own here: it is drawn through SettingsService.TOTPDisableReauthBudget and
+// SettingsService.VerifyReauth, the one re-auth path (settings_reauth_budget.go).
 
 // GenerateSetupKey generates a new TOTP key for the given issuer and account name.
 // The raw secret (key.Secret()) should be passed to VerifyEnrollmentCode during

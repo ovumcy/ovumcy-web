@@ -149,7 +149,8 @@ func BuildDependencies(repositories *db.Repositories, secretKey []byte, i18nMana
 	// Attach the shared limiter and the secret key so the re-auth budget keys on
 	// (client, account) like the other auth policies rather than on the client
 	// alone. The budget itself is not operator-tunable: unlike the edge limiters
-	// it guards a credential check, and the default matches totp.disable.
+	// it guards a credential check. It is the account's one password re-auth
+	// budget: the 2FA disable confirmation draws it too.
 	settingsService.ConfigureReauthAttempts(
 		secretKey,
 		attemptLimiter,
@@ -161,7 +162,7 @@ func BuildDependencies(repositories *db.Repositories, secretKey []byte, i18nMana
 	totpService := services.NewTOTPService(repositories.Users, secretKey, attemptLimiter)
 	// The enrollment-code budget (totp.enroll) books every wrong code a signed-in
 	// owner submits while confirming 2FA. Like settings.reauth above it is not
-	// operator-tunable, and its default matches totp.disable.
+	// operator-tunable, and its default matches settings.reauth's.
 	totpService.ConfigureEnrollAttempts(
 		services.DefaultTOTPEnrollAttemptsLimit,
 		services.DefaultTOTPEnrollAttemptsWindow,

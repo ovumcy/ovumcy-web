@@ -26,9 +26,9 @@ var (
 )
 
 const (
-	// The re-auth budget mirrors totp.disable rather than login: both guard a
-	// password check that an attacker can only reach with a session already in
-	// hand, so the budget is tighter than the 8/15min login budget.
+	// The re-auth budget is tighter than the 8/15min login budget: it guards a
+	// password check an attacker can only reach with a session already in hand.
+	// It is the account's one password re-auth budget, the 2FA disable included.
 	DefaultSettingsReauthAttemptsLimit  = 5
 	DefaultSettingsReauthAttemptsWindow = 15 * time.Minute
 )

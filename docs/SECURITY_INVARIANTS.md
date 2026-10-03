@@ -108,8 +108,9 @@ Every test-enforceable entry has a corresponding test or set of tests in `SECURI
   **2FA disable is out of scope of this bullet**: `DELETE /api/v1/users/current/2fa` never goes
   through `validateSettingsActionPassword` — it checks the password with the same budgeted
   `SettingsService.VerifyReauth` (`internal/services/settings_reauth_budget.go`) against the
-  session account's own stored hash, never an account looked up by email, draws only its own
-  `totp.disable` attempt budget, and answers "no local password" and "wrong password" with the one
+  session account's own stored hash, never an account looked up by email, draws the account's one
+  password re-auth budget (`settings.reauth`, shared with every action above, so failures on either
+  side refuse the other), and answers "no local password" and "wrong password" with the one
   `401 invalid credentials`; the handler logs the same `reauth_cause` field as the actions above
   (`handlers_settings_2fa.go`). This narrows only the re-auth
   refusal's own answer: a signed-in session still learns whether the account has a local password from
@@ -125,8 +126,9 @@ Every test-enforceable entry has a corresponding test or set of tests in `SECURI
   authenticated caller does not already know. Regression:
   `TestSettingsReauthMergesNoLocalPasswordIntoInvalidPassword` in `internal/api`.
 - **The 2FA enrollment code draws its own `totp.enroll` attempt budget** (5 failures / 15 minutes),
-  next to `totp.disable`'s and keyed the same way, per `(client, account)` and per account. The
-  enrollment's password draws `settings.reauth`, which books only a wrong password, so without it a
+  next to the password re-auth budget and keyed the same way, per `(client, account)` and per
+  account. The enrollment's password draws `settings.reauth`, which books only a wrong password, so
+  without it a
   signed-in caller holding the password could guess the six-digit code without limit. Every wrong
   code books one failure; once the budget is spent `PUT /api/v1/users/current/2fa` answers `429`
   before the code is checked, the correct code included; and only an enrollment that committed

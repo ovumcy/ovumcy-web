@@ -36,7 +36,6 @@ var scopeAttemptDefaults = map[string]attemptFigures{
 	"recovery":        {DefaultRecoveryAttemptsLimit, DefaultRecoveryAttemptsWindow},
 	"logout":          {DefaultLogoutAttemptsLimit, DefaultLogoutAttemptsWindow},
 	"totp":            {DefaultTOTPAttemptsLimit, DefaultTOTPAttemptsWindow},
-	"totp.disable":    {DefaultTOTPDisableAttemptsLimit, DefaultTOTPDisableAttemptsWindow},
 	"totp.enroll":     {DefaultTOTPEnrollAttemptsLimit, DefaultTOTPEnrollAttemptsWindow},
 	"settings.reauth": {DefaultSettingsReauthAttemptsLimit, DefaultSettingsReauthAttemptsWindow},
 }

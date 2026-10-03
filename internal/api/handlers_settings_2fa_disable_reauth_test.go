@@ -18,8 +18,8 @@ import (
 
 // The 2FA disable route re-authenticates the session user against that user's
 // OWN stored password hash. It never resolves an account from the session's
-// email, and its only attempt budget is totp.disable: the settings.reauth
-// budget that guards erasure is not drawn here.
+// email, and it draws the account's one password re-auth budget — the same
+// settings.reauth bucket the erasure and password-change checks draw.
 
 const (
 	disableTOTPPath           = "/api/v1/users/current/2fa"
@@ -119,7 +119,7 @@ func TestDisableTOTP2FAVerifiesTheSessionOwnersOwnHashOnASharedMailbox(t *testin
 
 // TestDisableTOTP2FAWithoutALocalPasswordIsRefusedAndDrawsTheBudget pins the
 // empty-hash account (signed in through SSO only): every attempt is the same
-// 401 as a wrong password, and each one is booked against totp.disable, since
+// 401 as a wrong password, and each one is booked against the re-auth budget, since
 // each spent an equalized bcrypt compare.
 func TestDisableTOTP2FAWithoutALocalPasswordIsRefusedAndDrawsTheBudget(t *testing.T) {
 	ctx := newOIDCOnlySettingsSecurityTestContext(t, "totp-disable-no-hash@example.com")
@@ -137,12 +137,13 @@ func TestDisableTOTP2FAWithoutALocalPasswordIsRefusedAndDrawsTheBudget(t *testin
 	}
 }
 
-// TestDisableTOTP2FABudgetIsTOTPDisableOnlyAndLeavesSettingsReauthUndrawn
-// spends the totp.disable budget with wrong passwords, proves it refuses the
-// correct one, and then proves the erasure re-auth budget was never touched:
-// the clear-data password check still accepts the correct password.
-func TestDisableTOTP2FABudgetIsTOTPDisableOnlyAndLeavesSettingsReauthUndrawn(t *testing.T) {
-	ctx := newTOTPSettingsContext(t, "totp-disable-budget-split@example.com")
+// TestDisableTOTP2FASpentBudgetRefusesTheSettingsReauth spends the 2FA
+// disable's budget with wrong passwords, proves it refuses the correct one, and
+// then proves the erasure re-auth is refused too: both draw the account's one
+// password re-auth budget, so a session gets no more guesses at the password
+// than the sign-in form allows.
+func TestDisableTOTP2FASpentBudgetRefusesTheSettingsReauth(t *testing.T) {
+	ctx := newTOTPSettingsContext(t, "totp-disable-budget-shared@example.com")
 	enableTOTPForSettingsTest(t, &ctx)
 
 	for attempt := range services.DefaultTOTPDisableAttemptsLimit {
@@ -159,17 +160,17 @@ func TestDisableTOTP2FABudgetIsTOTPDisableOnlyAndLeavesSettingsReauthUndrawn(t *
 	validate := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/data-wipe/validate", url.Values{
 		"password": {"StrongPass1"},
 	}, map[string]string{"Accept": "application/json"})
-	if validate.StatusCode != http.StatusOK {
-		t.Fatalf("clear-data validate after the 2FA budget: status = %d, want 200 — the disable drew the settings.reauth budget", validate.StatusCode)
+	if validate.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("clear-data validate after the 2FA budget: status = %d, want 429 — the disable drew a budget of its own", validate.StatusCode)
 	}
 }
 
-// TestSettingsReauthBudgetIsSettingsOnlyAndLeavesTOTPDisableUndrawn is the
-// other half of the routing the one re-auth helper is given: a settings action
-// spends settings.reauth, refuses the correct password once it is spent, and the
-// 2FA disable, which draws only totp.disable, still accepts the correct password.
-func TestSettingsReauthBudgetIsSettingsOnlyAndLeavesTOTPDisableUndrawn(t *testing.T) {
-	ctx := newTOTPSettingsContext(t, "settings-reauth-budget-split@example.com")
+// TestSettingsReauthSpentBudgetRefusesTheTOTPDisable is the other half: a
+// settings action spends the re-auth budget, refuses the correct password once
+// it is spent, and the 2FA disable refuses the correct password too, with its
+// own rate-limit answer, leaving 2FA on.
+func TestSettingsReauthSpentBudgetRefusesTheTOTPDisable(t *testing.T) {
+	ctx := newTOTPSettingsContext(t, "settings-reauth-budget-shared@example.com")
 	enableTOTPForSettingsTest(t, &ctx)
 
 	validate := func(password string) *http.Response {
@@ -187,7 +188,10 @@ func TestSettingsReauthBudgetIsSettingsOnlyAndLeavesTOTPDisableUndrawn(t *testin
 	}
 
 	resp := sendDisableTOTP(t, ctx, "StrongPass1")
-	assertDisableTOTPSucceeded(t, ctx, resp, "2FA disable after the settings.reauth budget was spent")
+	assertDisableTOTPRefused(t, resp, http.StatusTooManyRequests, disableTOTPRateLimitedKey, "2FA disable after the settings re-auth budget was spent")
+	if !totpEnabledInDatabase(t, ctx) {
+		t.Fatal("a 2FA disable on a spent re-auth budget turned 2FA off")
+	}
 }
 
 // TestDisableTOTP2FASuccessResetsTheDisableBudget spends all but one attempt,
