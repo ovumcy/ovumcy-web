@@ -510,6 +510,30 @@ func TestBuildCalendarFeedICSProjectsExactlyThreeCyclesAheadAsSingleDays(t *test
 	}
 }
 
+func TestBuildCalendarFeedICSOfAnAccountWithOneCompletedCycleStillProjectsThreeCycles(t *testing.T) {
+	logs := []models.DailyLog{
+		{Date: mustParseDashboardDay(t, "2026-02-02"), IsPeriod: true},
+		{Date: mustParseDashboardDay(t, "2026-03-02"), IsPeriod: true},
+	}
+	now := mustParseDashboardDay(t, "2026-03-20")
+	user := predictableFeedUser(t, "2026-03-02")
+
+	if got := BuildCycleStatsFromLogs(user, logs, now, time.UTC).CompletedCycleCount; got != 1 {
+		t.Fatalf("fixture: the account must hold exactly one completed cycle, got %d", got)
+	}
+
+	body := string(BuildCalendarFeedICS(CalendarFeedICSInput{User: user, Logs: logs, Now: now, Location: time.UTC, Disclaimer: "estimate only"}))
+	periods := 0
+	for _, uid := range extractICSUIDs(t, body) {
+		if strings.HasPrefix(uid, "period-") {
+			periods++
+		}
+	}
+	if periods != 3 {
+		t.Fatalf("one completed cycle projects three period events, got %d:\n%s", periods, body)
+	}
+}
+
 func TestBuildCalendarFeedICSProjectsMultipleCyclesAndEscapesDescription(t *testing.T) {
 	user := predictableFeedUser(t, "2026-03-02")
 	now := mustParseDashboardDay(t, "2026-03-20")
