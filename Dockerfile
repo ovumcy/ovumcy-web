@@ -33,7 +33,17 @@ RUN go build -trimpath -ldflags="-s -w -X main.buildVersion=${BUILD_REVISION}" -
 FROM alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS runtime-assets
 WORKDIR /app
 
-RUN apk add --no-cache tzdata ca-certificates \
+# The two packages are pinned to the revision the v3.24 main repository carried
+# when this line was last bumped, so a rebuild of one commit installs the same
+# files. Alpine keeps only the CURRENT revision of a package in a branch, so a
+# pin goes stale as soon as the branch publishes a newer one and the build then
+# fails with "no such package" until the pin is bumped: read the new revisions
+# from the v3.24 main APKINDEX (the `V:` line under `P:tzdata` and
+# `P:ca-certificates`) or from `apk policy` inside the pinned alpine image, and
+# bump both together with the base image digest above. The runtime stage is
+# `scratch` and carries no package database, so the image scan cannot report
+# these two packages' versions; the pin is the only record of them.
+RUN apk add --no-cache tzdata=2026d-r0 ca-certificates=20260909-r0 \
     && addgroup -S -g 10001 ovumcy \
     && adduser -S -D -H -u 10001 -G ovumcy -h /app ovumcy \
     && mkdir -p /app/data /app/fence
