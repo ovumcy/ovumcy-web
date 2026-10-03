@@ -61,9 +61,10 @@ func TestVerifyEnrollmentCodeBooksAWrongCodeAndRefusesTheCorrectOneOnceSpent(t *
 }
 
 // TestTOTPEnrollBudgetIsItsOwnScopeAndPerAccount pins the keying the budget
-// shares with totp.disable: spending totp.enroll leaves settings.reauth and
-// totp.disable undrawn on the same limiter, and leaves another account behind
-// the same address its whole budget.
+// shares with the password re-auth budget: spending totp.enroll leaves
+// settings.reauth (the settings actions and the 2FA disable) undrawn on the
+// same limiter, and leaves another account behind the same address its whole
+// budget.
 func TestTOTPEnrollBudgetIsItsOwnScopeAndPerAccount(t *testing.T) {
 	fixture := newReauthBudgetFixture(t)
 	secret, wrongCode, validCode := enrollmentCodesForTest(t, fixture.totp)
@@ -79,7 +80,7 @@ func TestTOTPEnrollBudgetIsItsOwnScopeAndPerAccount(t *testing.T) {
 		t.Fatalf("settings.reauth after spending totp.enroll = %v, want nil", err)
 	}
 	if err := fixture.settings.VerifyReauth(fixture.disableBudget(), fixture.attempt, fixture.user, reauthBudgetFixturePassword); err != nil {
-		t.Fatalf("totp.disable after spending totp.enroll = %v, want nil", err)
+		t.Fatalf("2FA disable after spending totp.enroll = %v, want nil", err)
 	}
 
 	neighbour := fixture.attempt

@@ -9,22 +9,30 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// The totp.disable budget is exercised through the same verify every re-auth
-// uses; these three helpers only spell its admission, booking and reset in the
-// shape the rate-limit tests were written against.
+// The 2FA disable budget is exercised through the same verify every re-auth
+// uses; these helpers only spell its admission, booking and reset in the shape
+// the rate-limit tests were written against.
 
-func checkDisableBudget(svc *TOTPService, secretKey []byte, clientKey string, userID uint, now time.Time) error {
-	attempt := ReauthAttempt{ClientKey: clientKey, UserID: userID, Now: now}
-	return svc.DisableReauthBudget(secretKey).verify(attempt, func() error { return nil })
+// newDisableBudgetSettings is a SettingsService wired the way bootstrap wires
+// it, the owner of the budget the 2FA disable confirmation draws.
+func newDisableBudgetSettings(secretKey []byte, limiter *AttemptLimiter) *SettingsService {
+	settings := NewSettingsService(nil)
+	settings.ConfigureReauthAttempts(secretKey, limiter, DefaultSettingsReauthAttemptsLimit, DefaultSettingsReauthAttemptsWindow)
+	return settings
 }
 
-func recordDisableFailure(svc *TOTPService, secretKey []byte, clientKey string, userID uint, now time.Time) {
+func checkDisableBudget(svc *SettingsService, clientKey string, userID uint, now time.Time) error {
 	attempt := ReauthAttempt{ClientKey: clientKey, UserID: userID, Now: now}
-	svc.DisableReauthBudget(secretKey).bookFailure(attempt)
+	return svc.TOTPDisableReauthBudget().verify(attempt, func() error { return nil })
 }
 
-func resetDisableBudget(svc *TOTPService, secretKey []byte, clientKey string, userID uint) {
-	svc.DisableReauthBudget(secretKey).Reset(ReauthAttempt{ClientKey: clientKey, UserID: userID})
+func recordDisableFailure(svc *SettingsService, clientKey string, userID uint, now time.Time) {
+	attempt := ReauthAttempt{ClientKey: clientKey, UserID: userID, Now: now}
+	svc.TOTPDisableReauthBudget().bookFailure(attempt)
+}
+
+func resetDisableBudget(svc *SettingsService, clientKey string, userID uint) {
+	svc.TOTPDisableReauthBudget().Reset(ReauthAttempt{ClientKey: clientKey, UserID: userID})
 }
 
 type reauthBudgetFixture struct {
@@ -57,7 +65,7 @@ func newReauthBudgetFixture(t *testing.T) reauthBudgetFixture {
 }
 
 func (fixture reauthBudgetFixture) disableBudget() ReauthBudget {
-	return fixture.totp.DisableReauthBudget([]byte("reauth-budget-routing-secret-32b!"))
+	return fixture.settings.TOTPDisableReauthBudget()
 }
 
 func (fixture reauthBudgetFixture) spend(t *testing.T, budget ReauthBudget, limit int) {
@@ -69,30 +77,38 @@ func (fixture reauthBudgetFixture) spend(t *testing.T, budget ReauthBudget, limi
 	}
 }
 
-// TestVerifyReauthDrawsOnlyTheBudgetItIsGiven pins the helper's routing: the
-// totp.disable budget's failures never reach settings.reauth, and the reverse,
-// on one shared limiter.
-func TestVerifyReauthDrawsOnlyTheBudgetItIsGiven(t *testing.T) {
-	t.Run("totp.disable", func(t *testing.T) {
-		fixture := newReauthBudgetFixture(t)
-		fixture.spend(t, fixture.disableBudget(), DefaultTOTPDisableAttemptsLimit)
-
-		if err := fixture.settings.VerifyReauth(fixture.disableBudget(), fixture.attempt, fixture.user, reauthBudgetFixturePassword); !errors.Is(err, ErrTOTPDisableRateLimited) {
-			t.Fatalf("correct password on the spent totp.disable budget = %v, want ErrTOTPDisableRateLimited", err)
-		}
-		if err := fixture.settings.VerifyReauth(fixture.settings.SettingsReauthBudget(), fixture.attempt, fixture.user, reauthBudgetFixturePassword); err != nil {
-			t.Fatalf("correct password on settings.reauth after spending totp.disable = %v, want nil", err)
-		}
-	})
-	t.Run("settings.reauth", func(t *testing.T) {
+// TestPasswordReauthsShareOneAccountBudget pins that every password re-auth of
+// one account draws ONE budget: wrong passwords spent through the settings
+// actions refuse the 2FA disable confirmation, and the reverse, each refusal
+// answered with its own route's error. Two budgets would hand a stolen session
+// twice the guesses at one password hash that the sign-in form allows.
+func TestPasswordReauthsShareOneAccountBudget(t *testing.T) {
+	t.Run("settings.reauth spent refuses the 2FA disable", func(t *testing.T) {
 		fixture := newReauthBudgetFixture(t)
 		fixture.spend(t, fixture.settings.SettingsReauthBudget(), DefaultSettingsReauthAttemptsLimit)
 
-		if err := fixture.settings.VerifyReauth(fixture.settings.SettingsReauthBudget(), fixture.attempt, fixture.user, reauthBudgetFixturePassword); !errors.Is(err, ErrSettingsReauthRateLimited) {
-			t.Fatalf("correct password on the spent settings.reauth budget = %v, want ErrSettingsReauthRateLimited", err)
+		if err := fixture.settings.VerifyReauth(fixture.disableBudget(), fixture.attempt, fixture.user, reauthBudgetFixturePassword); !errors.Is(err, ErrTOTPDisableRateLimited) {
+			t.Fatalf("correct password on the 2FA disable after spending the settings re-auth = %v, want ErrTOTPDisableRateLimited", err)
 		}
-		if err := fixture.settings.VerifyReauth(fixture.disableBudget(), fixture.attempt, fixture.user, reauthBudgetFixturePassword); err != nil {
-			t.Fatalf("correct password on totp.disable after spending settings.reauth = %v, want nil", err)
+	})
+	t.Run("2FA disable spent refuses settings.reauth", func(t *testing.T) {
+		fixture := newReauthBudgetFixture(t)
+		fixture.spend(t, fixture.disableBudget(), DefaultTOTPDisableAttemptsLimit)
+
+		if err := fixture.settings.VerifyReauth(fixture.settings.SettingsReauthBudget(), fixture.attempt, fixture.user, reauthBudgetFixturePassword); !errors.Is(err, ErrSettingsReauthRateLimited) {
+			t.Fatalf("correct password on the settings re-auth after spending the 2FA disable = %v, want ErrSettingsReauthRateLimited", err)
+		}
+	})
+	t.Run("the two routes together get no more than one limit", func(t *testing.T) {
+		fixture := newReauthBudgetFixture(t)
+		fixture.spend(t, fixture.settings.SettingsReauthBudget(), DefaultSettingsReauthAttemptsLimit-2)
+		fixture.spend(t, fixture.disableBudget(), 2)
+
+		if err := fixture.settings.VerifyReauth(fixture.disableBudget(), fixture.attempt, fixture.user, reauthBudgetFixturePassword); !errors.Is(err, ErrTOTPDisableRateLimited) {
+			t.Fatalf("2FA disable after a split spend of one limit = %v, want ErrTOTPDisableRateLimited", err)
+		}
+		if err := fixture.settings.VerifyReauth(fixture.settings.SettingsReauthBudget(), fixture.attempt, fixture.user, reauthBudgetFixturePassword); !errors.Is(err, ErrSettingsReauthRateLimited) {
+			t.Fatalf("settings re-auth after a split spend of one limit = %v, want ErrSettingsReauthRateLimited", err)
 		}
 	})
 }
@@ -108,7 +124,7 @@ func TestVerifyReauthLeavesTheResetToTheCaller(t *testing.T) {
 		limit   int
 		limited error
 	}{
-		{"totp.disable", reauthBudgetFixture.disableBudget, DefaultTOTPDisableAttemptsLimit, ErrTOTPDisableRateLimited},
+		{"2FA disable", reauthBudgetFixture.disableBudget, DefaultTOTPDisableAttemptsLimit, ErrTOTPDisableRateLimited},
 		{"settings.reauth", func(fixture reauthBudgetFixture) ReauthBudget { return fixture.settings.SettingsReauthBudget() }, DefaultSettingsReauthAttemptsLimit, ErrSettingsReauthRateLimited},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -151,7 +167,7 @@ func TestReauthBudgetsKeepAccountsOnOneAddressApart(t *testing.T) {
 		limit   int
 		limited error
 	}{
-		{"totp.disable", reauthBudgetFixture.disableBudget, DefaultTOTPDisableAttemptsLimit, ErrTOTPDisableRateLimited},
+		{"2FA disable", reauthBudgetFixture.disableBudget, DefaultTOTPDisableAttemptsLimit, ErrTOTPDisableRateLimited},
 		{"settings.reauth", func(fixture reauthBudgetFixture) ReauthBudget { return fixture.settings.SettingsReauthBudget() }, DefaultSettingsReauthAttemptsLimit, ErrSettingsReauthRateLimited},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -154,7 +154,7 @@ func TestVerifyTOTP2FAEnrollmentCommittedEnrollmentResetsTheTOTPEnrollBudget(t *
 		t.Fatalf("correct code one short of the limit: status = %d, want 200", resp.StatusCode)
 	}
 
-	// Turn 2FA off out of band (its own route draws totp.disable, not this
+	// Turn 2FA off out of band (its own route draws settings.reauth, not this
 	// budget) and carry the session past the revocation that came with it.
 	ctx.refreshAuthCookie(t)
 	if err := getTOTPServiceForTest(ctx.database).DisableTOTP(context.Background(), ctx.user.ID, ctx.user.AuthSessionVersion); err != nil {

@@ -149,7 +149,8 @@ func TestSettingsReauthRefusesAStoredHashWhileLocalSignInIsOff(t *testing.T) {
 // TestDisableTOTP2FASignInDisabledRefusalDrawsTheBudget matches the empty-hash
 // rule (TestDisableTOTP2FAWithoutALocalPasswordIsRefusedAndDrawsTheBudget): the
 // refusal spent an equalized compare, so each one is booked against
-// totp.disable, and the correct password is refused once the budget is gone.
+// the account's re-auth budget, and the correct password is refused once the
+// budget is gone.
 func TestDisableTOTP2FASignInDisabledRefusalDrawsTheBudget(t *testing.T) {
 	ctx, _ := newSignInDisabledSettingsContext(t, "totp-disable-sign-in-off@example.com")
 	enableTOTPForSettingsTest(t, &ctx)

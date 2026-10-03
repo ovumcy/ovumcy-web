@@ -227,11 +227,12 @@ func (handler *Handler) DisableTOTP2FA(c fiber.Ctx) error {
 	}
 
 	// The same budgeted verify as every other Settings action, against the session
-	// user's own hash (never an email lookup); only the budget differs.
-	// totp.disable is this route's only attempt budget: settings.reauth is not
-	// drawn here.
+	// user's own hash (never an email lookup), and the same per-account budget:
+	// the disable draws the account's one password re-auth budget, so its
+	// failures and the settings actions' fill one bucket. Only the refusal
+	// differs (ErrTOTPDisableRateLimited).
 	attempt := services.ReauthAttempt{ClientKey: c.IP(), UserID: user.ID, Now: time.Now()}
-	disableBudget := handler.totpService.DisableReauthBudget(handler.secretKey)
+	disableBudget := handler.settingsService.TOTPDisableReauthBudget()
 	if err := handler.settingsService.VerifyReauth(disableBudget, attempt, user, password); err != nil {
 		if errors.Is(err, services.ErrTOTPDisableRateLimited) {
 			spec := totpDisableRateLimitedErrorSpec()
