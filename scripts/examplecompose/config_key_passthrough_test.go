@@ -51,32 +51,79 @@ func isStdEnvRead(fn *types.Func) bool {
 	return fn.Pkg() != nil && fn.Pkg().Path() == "os" && (fn.Name() == "Getenv" || fn.Name() == "LookupEnv")
 }
 
-// calleeFunc resolves the function a call invokes to its declaration.
-func calleeFunc(info *types.Info, call *ast.CallExpr) *types.Func {
-	var ident *ast.Ident
-	switch fun := ast.Unparen(call.Fun).(type) {
+// callee is what a call invokes, as far as the type checker can tell.
+type callee struct {
+	// fn is the declared function or method, set when the call resolves to one
+	// whose body can be followed.
+	fn *types.Func
+	// ident is the name the call goes through, when it goes through one.
+	ident *ast.Ident
+	// opaque marks a call that reaches its target through a function value, an
+	// interface method or a method expression, so no declaration is followed.
+	opaque bool
+}
+
+// declName returns the identifier that names a function or method in expr.
+func declName(expr ast.Expr) *ast.Ident {
+	switch node := ast.Unparen(expr).(type) {
 	case *ast.Ident:
-		ident = fun
+		return node
 	case *ast.SelectorExpr:
-		ident = fun.Sel
-	default:
-		return nil
+		return node.Sel
 	}
-	fn, _ := info.Uses[ident].(*types.Func)
-	if fn == nil {
-		return nil
+	return nil
+}
+
+// calleeOf resolves what call invokes. ok is false for a call that is not a
+// call of anything a reader could hide in: a type conversion or a builtin.
+func calleeOf(info *types.Info, call *ast.CallExpr) (c callee, ok bool) {
+	fun := ast.Unparen(call.Fun)
+	if tv, found := info.Types[fun]; found && (tv.IsType() || tv.IsBuiltin()) {
+		return callee{}, false
 	}
-	return fn.Origin()
+	// An explicit instantiation (`read[int]("KEY")`) names the generic function.
+	var instantiated ast.Expr
+	switch node := fun.(type) {
+	case *ast.IndexExpr:
+		instantiated = node.X
+	case *ast.IndexListExpr:
+		instantiated = node.X
+	}
+	if instantiated != nil {
+		if ident := declName(instantiated); ident != nil {
+			if _, isFunc := info.Uses[ident].(*types.Func); isFunc {
+				fun = ast.Unparen(instantiated)
+			}
+		}
+	}
+	ident := declName(fun)
+	if ident == nil {
+		return callee{opaque: true}, true
+	}
+	fn, isFunc := info.Uses[ident].(*types.Func)
+	if !isFunc {
+		return callee{opaque: true, ident: ident}, true
+	}
+	if sel, isSel := fun.(*ast.SelectorExpr); isSel {
+		if selection := info.Selections[sel]; selection != nil && selection.Kind() == types.MethodExpr {
+			return callee{opaque: true, ident: ident}, true
+		}
+	}
+	if recv := fn.Type().(*types.Signature).Recv(); recv != nil && types.IsInterface(recv.Type()) {
+		return callee{opaque: true, ident: ident, fn: fn.Origin()}, true
+	}
+	return callee{fn: fn.Origin(), ident: ident}, true
 }
 
 // keyArgIndexes lists which arguments of call name an environment variable:
 // the first argument of os.Getenv/os.LookupEnv, or the parameters a derived
 // reader hands to one.
 func keyArgIndexes(info *types.Info, call *ast.CallExpr, readers map[*types.Func]map[int]bool) []int {
-	fn := calleeFunc(info, call)
-	if fn == nil {
+	target, ok := calleeOf(info, call)
+	if !ok || target.opaque || target.fn == nil {
 		return nil
 	}
+	fn := target.fn
 	if isStdEnvRead(fn) {
 		return []int{0}
 	}
@@ -106,6 +153,81 @@ func paramIndex(info *types.Info, fn *types.Func, arg ast.Expr) (int, bool) {
 		}
 	}
 	return 0, false
+}
+
+// hidesItsBody is true for a call whose body the scan cannot follow and that
+// can reach code of the module: a function value or method expression, or a
+// method of an interface the module declares. An interface of another module
+// (the standard library's io.Writer) is implemented by this module's types but
+// is called by that other code, which is not handed this module's keys.
+func hidesItsBody(target callee, scanned map[*types.Package]bool) bool {
+	return target.opaque && (target.fn == nil || scanned[target.fn.Pkg()])
+}
+
+// isKeyShapedConstant is true for an argument that is a constant string shaped
+// like an environment variable name.
+func isKeyShapedConstant(info *types.Info, arg ast.Expr) bool {
+	value := info.Types[arg].Value
+	return value != nil && value.Kind() == constant.String && envKeyShape.MatchString(constant.StringVal(value))
+}
+
+// deriveOpaqueSinks finds every function that hands a string parameter to a
+// call whose body the scan cannot follow, directly or through another such
+// function, and which parameters those are. A key constant passed in that
+// position goes where no reader can be seen, so scanReads refuses it. The
+// string-typed parameters of one function are many and the calls that carry
+// them are everywhere (a repository lookup by email), so a parameter alone is
+// not reported: only a constant shaped like a variable name reaching one is.
+func deriveOpaqueSinks(pkgs []*packages.Package, scanned map[*types.Package]bool) map[*types.Func]map[int]bool {
+	sinks := map[*types.Func]map[int]bool{}
+	for changed := true; changed; {
+		changed = false
+		for _, pkg := range pkgs {
+			info := pkg.TypesInfo
+			for _, file := range pkg.Syntax {
+				for _, decl := range file.Decls {
+					funcDecl, ok := decl.(*ast.FuncDecl)
+					if !ok || funcDecl.Body == nil {
+						continue
+					}
+					self, _ := info.Defs[funcDecl.Name].(*types.Func)
+					if self == nil {
+						continue
+					}
+					ast.Inspect(funcDecl.Body, func(node ast.Node) bool {
+						call, ok := node.(*ast.CallExpr)
+						if !ok {
+							return true
+						}
+						target, resolved := calleeOf(info, call)
+						if !resolved {
+							return true
+						}
+						for index, arg := range call.Args {
+							forwardsToSink := target.fn != nil && sinks[target.fn][index]
+							if !hidesItsBody(target, scanned) && !forwardsToSink {
+								continue
+							}
+							param, flows := paramIndex(info, self, arg)
+							if !flows || sinks[self][param] {
+								continue
+							}
+							if basic, isBasic := info.TypeOf(arg).Underlying().(*types.Basic); !isBasic || basic.Info()&types.IsString == 0 {
+								continue
+							}
+							if sinks[self] == nil {
+								sinks[self] = map[int]bool{}
+							}
+							sinks[self][param] = true
+							changed = true
+						}
+						return true
+					})
+				}
+			}
+		}
+	}
+	return sinks
 }
 
 // deriveReaders finds every function that reads an environment variable named
@@ -159,32 +281,74 @@ func deriveReaders(pkgs []*packages.Package) map[*types.Func]map[int]bool {
 // positions that read it, and the key arguments it could not resolve.
 func scanReads(pkgs []*packages.Package, readers map[*types.Func]map[int]bool) (reads map[string][]string, unresolved []string) {
 	reads = map[string][]string{}
+	scanned := map[*types.Package]bool{}
+	for _, pkg := range pkgs {
+		scanned[pkg.Types] = true
+	}
+	sinks := deriveOpaqueSinks(pkgs, scanned)
 	for _, pkg := range pkgs {
 		info := pkg.TypesInfo
+		where := func(pos ast.Node) string {
+			position := pkg.Fset.Position(pos.Pos())
+			return fmt.Sprintf("%s:%d", filepath.Base(position.Filename), position.Line)
+		}
 		for _, file := range pkg.Syntax {
 			for _, decl := range file.Decls {
 				var self *types.Func
 				if funcDecl, ok := decl.(*ast.FuncDecl); ok {
 					self, _ = info.Defs[funcDecl.Name].(*types.Func)
 				}
+				// A reader is followed only through a call. Naming one without
+				// calling it (`lookup := os.LookupEnv`) hands it to code the scan
+				// does not read, so each such use is refused.
+				called := map[*ast.Ident]bool{}
+				ast.Inspect(decl, func(node ast.Node) bool {
+					if call, ok := node.(*ast.CallExpr); ok {
+						if target, resolved := calleeOf(info, call); resolved && target.ident != nil {
+							called[target.ident] = true
+						}
+					}
+					return true
+				})
+				ast.Inspect(decl, func(node ast.Node) bool {
+					ident, ok := node.(*ast.Ident)
+					if !ok || called[ident] {
+						return true
+					}
+					if fn, isFunc := info.Uses[ident].(*types.Func); isFunc && (isStdEnvRead(fn.Origin()) || readers[fn.Origin()] != nil) {
+						unresolved = append(unresolved, fmt.Sprintf("%s: %s reads an environment variable and is used here without being called, so the names it is given cannot be followed", where(ident), fn.Name()))
+					}
+					return true
+				})
 				ast.Inspect(decl, func(node ast.Node) bool {
 					call, ok := node.(*ast.CallExpr)
 					if !ok {
 						return true
+					}
+					if target, resolved := calleeOf(info, call); resolved {
+						for index, arg := range call.Args {
+							if !isKeyShapedConstant(info, arg) {
+								continue
+							}
+							if hidesItsBody(target, scanned) {
+								unresolved = append(unresolved, fmt.Sprintf("%s: a variable name is handed to a function value, interface method or method expression, whose body cannot be followed to see whether it reads the environment", where(arg)))
+							} else if target.fn != nil && sinks[target.fn][index] {
+								unresolved = append(unresolved, fmt.Sprintf("%s: a variable name is handed to %s, which passes it to a function value or interface method whose body cannot be followed to see whether it reads the environment", where(arg), target.fn.Name()))
+							}
+						}
 					}
 					for _, index := range keyArgIndexes(info, call, readers) {
 						if index >= len(call.Args) {
 							continue
 						}
 						arg := call.Args[index]
-						position := pkg.Fset.Position(arg.Pos())
-						where := fmt.Sprintf("%s:%d", filepath.Base(position.Filename), position.Line)
+						at := where(arg)
 						if value := info.Types[arg].Value; value != nil && value.Kind() == constant.String {
 							key := constant.StringVal(value)
 							if envKeyShape.MatchString(key) {
-								reads[key] = append(reads[key], where)
+								reads[key] = append(reads[key], at)
 							} else {
-								unresolved = append(unresolved, fmt.Sprintf("%s: %q is read as an environment variable but is not shaped like one", where, key))
+								unresolved = append(unresolved, fmt.Sprintf("%s: %q is read as an environment variable but is not shaped like one", at, key))
 							}
 							continue
 						}
@@ -193,7 +357,7 @@ func scanReads(pkgs []*packages.Package, readers map[*types.Func]map[int]bool) (
 								continue
 							}
 						}
-						unresolved = append(unresolved, fmt.Sprintf("%s: the environment variable name is neither a constant nor a parameter of the reader that passes it on", where))
+						unresolved = append(unresolved, fmt.Sprintf("%s: the environment variable name is neither a constant nor a parameter of the reader that passes it on", at))
 					}
 					return true
 				})
@@ -204,12 +368,15 @@ func scanReads(pkgs []*packages.Package, readers map[*types.Func]map[int]bool) (
 }
 
 // binaryPackages loads the module packages the server binary is built from:
-// cmd/ovumcy and every package under internal/ it imports, directly or not.
-// Test files are excluded, and so is a package the binary never links, such as
-// a test-support package that reads its own environment.
+// cmd/ovumcy and every package of the module it imports, directly or not,
+// wherever it lives in the tree. Test files are excluded, and so is a package
+// the binary never links, such as a test-support package that reads its own
+// environment. Every package of the module is loaded and the walk then keeps
+// the linked ones; a linked module package that was not loaded fails the run
+// instead of going unread.
 func binaryPackages(t *testing.T, root string) []*packages.Package {
 	t.Helper()
-	loaded := loadPackages(t, root, "./cmd/ovumcy", "./internal/...")
+	loaded := loadPackages(t, root, "./...")
 	byID := map[string]*packages.Package{}
 	var main *packages.Package
 	for _, pkg := range loaded {
@@ -221,8 +388,10 @@ func binaryPackages(t *testing.T, root string) []*packages.Package {
 	if main == nil {
 		t.Fatal("cmd/ovumcy was not among the loaded packages: the scan is not reaching the binary")
 	}
+	modulePrefix := strings.TrimSuffix(main.PkgPath, "/cmd/ovumcy") + "/"
 	seen := map[string]bool{}
 	var linked []*packages.Package
+	var notLoaded []string
 	var walk func(*packages.Package)
 	walk = func(pkg *packages.Package) {
 		if seen[pkg.ID] {
@@ -235,10 +404,16 @@ func binaryPackages(t *testing.T, root string) []*packages.Package {
 		for _, imported := range pkg.Imports {
 			if next, ok := byID[imported.ID]; ok {
 				walk(next)
+			} else if strings.HasPrefix(imported.PkgPath, modulePrefix) {
+				notLoaded = append(notLoaded, imported.PkgPath)
 			}
 		}
 	}
 	walk(main)
+	if len(notLoaded) > 0 {
+		sort.Strings(notLoaded)
+		t.Fatalf("the binary links module packages the scan did not load, so their environment reads are unread: %s", strings.Join(notLoaded, ", "))
+	}
 	return linked
 }
 
@@ -323,9 +498,13 @@ func parseOvumcyEnvironment(content string) (env map[string]string, ok bool) {
 			case strings.TrimSpace(line) == "" || strings.HasPrefix(strings.TrimSpace(line), "#"):
 			case environmentKey.MatchString(line):
 				match := environmentKey.FindStringSubmatch(line)
-				key, listEntry, separated, value := match[2], match[1] != "", match[3] != "", match[4]
+				key, listEntry, separator, value := match[2], match[1] != "", strings.TrimSpace(match[3]), match[4]
 				switch {
-				case separated:
+				case separator == ":" && !listEntry && value == "":
+					// `KEY:` with no value is null in YAML, which compose
+					// resolves from the shell or .env like the bare list entry.
+					env[key] = "${" + key + "}"
+				case separator != "":
 					env[key] = value
 				case listEntry:
 					env[key] = "${" + key + "}"
@@ -372,16 +551,39 @@ func unquoted(value string) string {
 }
 
 // isPassthrough is true when value hands the operator's setting of key to the
-// app: `${KEY}`, `${KEY:-default}`, `${KEY:?message}` and the other
-// substitution forms that name the key itself. A literal, or a substitution of
-// a different variable, leaves the operator's value for key unread.
+// app unchanged: `${KEY}`, `${KEY:-default}`, `${KEY-default}`,
+// `${KEY:?message}` and `${KEY?message}`, and nothing after the closing brace.
+// A literal, a substitution of a different variable, the alternate-value forms
+// (`${KEY:+alt}` and `${KEY+alt}` yield `alt` exactly when the operator did set
+// the key) and a substitution with text around it all leave the operator's
+// value for key unread.
 func isPassthrough(key, value string) bool {
-	head := "${" + key
-	value = unquoted(value)
-	if !strings.HasPrefix(value, head) || len(value) == len(head) {
+	rest, ok := strings.CutPrefix(unquoted(value), "${"+key)
+	if !ok || rest == "" {
 		return false
 	}
-	return strings.ContainsRune("}:-?+", rune(value[len(head)]))
+	if rest == "}" {
+		return true
+	}
+	rest = strings.TrimPrefix(rest, ":")
+	if rest == "" || (rest[0] != '-' && rest[0] != '?') {
+		return false
+	}
+	// The operand runs to the brace that closes this substitution, which must be
+	// the last character; it may itself contain a nested `${...}`.
+	depth := 1
+	for i, r := range rest[1:] {
+		switch r {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return i == len(rest[1:])-1
+			}
+		}
+	}
+	return false
 }
 
 // forwardingExemptions is the whole list of keys an example stack may leave
@@ -635,6 +837,17 @@ func TestPassthroughNamesTheKeyItself(t *testing.T) {
 		{"${REGISTRATION_MODE_OTHER:-open}", false},
 		{"${OTHER_KEY:-open}", false},
 		{"prefix-${REGISTRATION_MODE:-open}", false},
+		{"${REGISTRATION_MODE-open}", true},
+		{"${REGISTRATION_MODE?set it}", true},
+		{"${REGISTRATION_MODE:-${FALLBACK:-open}}", true},
+		{"${REGISTRATION_MODE:+open}", false},
+		{"${REGISTRATION_MODE+open}", false},
+		{"${REGISTRATION_MODE:}", false},
+		{"${REGISTRATION_MODE:=open}", false},
+		{"${REGISTRATION_MODE}-x", false},
+		{"${REGISTRATION_MODE:-open}x", false},
+		{"${REGISTRATION_MODE:-open}${REGISTRATION_MODE:-closed}", false},
+		{"${REGISTRATION_MODE:-open", false},
 	} {
 		if got := isPassthrough("REGISTRATION_MODE", tc.value); got != tc.want {
 			t.Errorf("isPassthrough(REGISTRATION_MODE, %q) = %v, want %v", tc.value, got, tc.want)
@@ -675,10 +888,21 @@ const RemoteEnv = "REMOTE_KEY"
 		"main.go": `package main
 
 import (
+	"io"
 	"os"
 
 	"fixture/cfg"
 )
+
+type source struct{}
+
+func (source) read(name string) string { return os.Getenv(name) }
+
+func readAs[T any](name string) T {
+	var zero T
+	_ = os.Getenv(name)
+	return zero
+}
 
 const localEnv = "LOCAL_KEY"
 const joinedEnv = "JOINED_" + "KEY"
@@ -705,6 +929,11 @@ func main() {
 	_ = notAReader("ZETA_KEY")
 	_ = getEnv("SHADOW_KEY")
 	_, _ = os.LookupEnv("LOOKUP_KEY")
+	_ = readAs[int]("GENERIC_KEY")
+	_ = readAs[string](localEnv)
+	_ = source{}.read("METHOD_KEY")
+	var sink io.StringWriter
+	_, _ = sink.WriteString("GET")
 }
 `,
 	})
@@ -713,7 +942,7 @@ func main() {
 	if len(unresolved) != 0 {
 		t.Fatalf("every key in the fixture resolves, got unresolved: %v", unresolved)
 	}
-	want := []string{"ALPHA_KEY", "JOINED_KEY", "LOCAL_KEY", "LOOKUP_KEY", "PAIR_ONE", "PAIR_TWO", "REMOTE_KEY"}
+	want := []string{"ALPHA_KEY", "GENERIC_KEY", "JOINED_KEY", "LOCAL_KEY", "LOOKUP_KEY", "METHOD_KEY", "PAIR_ONE", "PAIR_TWO", "REMOTE_KEY"}
 	if got := sortedKeys(reads); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("keys read = %v, want %v", got, want)
 	}
@@ -754,6 +983,64 @@ func main() {
 	}
 }
 
+// TestConfigKeyScanRefusesACallItCannotFollow proves that a read cannot hide
+// where the scan has no declaration to follow: an interface of the module whose
+// implementation reads the environment, a function value, a method expression,
+// a helper that forwards its parameter to one of those, and a reader or
+// os.LookupEnv named without being called. Each is refused naming its position;
+// a call through an interface the module does not declare is not, and neither
+// is a helper that forwards a parameter when no variable name is passed to it.
+func TestConfigKeyScanRefusesACallItCannotFollow(t *testing.T) {
+	pkgs := fixtureModule(t, map[string]string{
+		"main.go": `package main
+
+import (
+	"io"
+	"os"
+)
+
+type envSource interface{ Get(name string) string }
+
+type osSource struct{}
+
+func (osSource) Get(name string) string { return os.Getenv(name) }
+
+func (osSource) read(name string) string { return os.Getenv(name) }
+
+func readB(name string) string { return os.Getenv(name) }
+
+func throughInterface(src envSource) string { return src.Get("IFACE_KEY") }
+
+func throughValue(fn func(string) string) string { return fn("VALUE_KEY") }
+
+func forwardsAParameter(fn func(string) string, name string) string { return fn(name) }
+
+func throughAHelper() string { return forwardsAParameter(nil, "HELPER_KEY") }
+
+func throughMethodExpression() string { return osSource.read(osSource{}, "EXPR_KEY") }
+
+func namedOnly() func(string) (string, bool) { return os.LookupEnv }
+
+func readerNamedOnly() func(string) string { return readB }
+
+func main() {
+	var sink io.StringWriter
+	_, _ = sink.WriteString("GET")
+}
+`,
+	})
+	_, unresolved := scanReads(pkgs, deriveReaders(pkgs))
+	joined := strings.Join(unresolved, "\n")
+	for _, line := range []int{18, 20, 24, 26, 28, 30} {
+		if !strings.Contains(joined, fmt.Sprintf("main.go:%d:", line)) {
+			t.Errorf("want an unresolved entry at main.go:%d, got:\n%s", line, joined)
+		}
+	}
+	if len(unresolved) != 6 {
+		t.Errorf("want exactly the six hidden reads refused (the standard-library interface call is not one), got %d:\n%s", len(unresolved), joined)
+	}
+}
+
 // TestEnvironmentBlockParserReadsBothForms proves the stack reader on fixtures:
 // map and list forms, the bare list passthrough, a commented-out key that is
 // not a key, a block that ends at the next field, and the service pick by image
@@ -772,6 +1059,8 @@ func TestEnvironmentBlockParserReadsBothForms(t *testing.T) {
 		"      # AUDIT_LOG_ENABLED: true",
 		"      - TZ=UTC",
 		"      - HSTS_ENABLED",
+		"      LOG_LEVEL:",
+		"      - EMPTY_LITERAL=",
 		"      DATABASE_URL: postgres://u:p@postgres/db",
 		"    init: true",
 		"    read_only: true",
@@ -781,7 +1070,13 @@ func TestEnvironmentBlockParserReadsBothForms(t *testing.T) {
 	if !ok {
 		t.Fatal("the ovumcy service must be found by its image")
 	}
-	if len(env) != 4 || env["REGISTRATION_MODE"] != "${REGISTRATION_MODE:-open}" || env["TZ"] != "UTC" {
+	if !isPassthrough("LOG_LEVEL", env["LOG_LEVEL"]) {
+		t.Fatalf("a map entry with no value is compose's passthrough of the same name, got %q", env["LOG_LEVEL"])
+	}
+	if isPassthrough("EMPTY_LITERAL", env["EMPTY_LITERAL"]) {
+		t.Fatalf("a list entry that sets the key to nothing pins an empty literal, got %q", env["EMPTY_LITERAL"])
+	}
+	if len(env) != 6 || env["REGISTRATION_MODE"] != "${REGISTRATION_MODE:-open}" || env["TZ"] != "UTC" {
 		t.Fatalf("environment read wrongly: %v", env)
 	}
 	if !isPassthrough("HSTS_ENABLED", env["HSTS_ENABLED"]) {
