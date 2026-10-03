@@ -17,19 +17,20 @@ import (
 // robustness). Together: transparent and verifiable.
 //
 // The per-vector prediction cases (TestCyclePrediction_GoldenVectors) are driven
-// by a shared golden-vector fixture,
-// testdata/cycle-prediction-golden-vectors.json, that is kept byte-identical
-// with ovumcy-app's src/services/__fixtures__/cycle-prediction-golden-vectors.json
-// (ovumcy-app PR #75). The Go (cycles.go) and TypeScript
-// (cycle-prediction-policy.ts) prediction implementations are hand-parallel
-// ports; consuming one shared file makes any divergence between them fail CI on
-// both sides instead of silently drifting. If the prediction math changes,
-// update the fixture, docs/cycle-prediction.md, and BOTH reference tests
-// (this file and ovumcy-app's cycle-prediction-reference.test.ts) in the same
-// change.
+// by a golden-vector fixture, testdata/cycle-prediction-golden-vectors.json.
+// The fixture originated with ovumcy-app's
+// src/services/__fixtures__/cycle-prediction-golden-vectors.json (ovumcy-app
+// PR #75), but the two copies are NOT currently byte-identical and nothing in
+// CI enforces that they match: lockstep with the app is not established. The Go
+// (cycles.go) and TypeScript (cycle-prediction-policy.ts) prediction
+// implementations are hand-parallel ports; once the copies are brought back in
+// sync, a shared file would make any divergence fail CI on both sides. If the
+// prediction math changes, update the fixture, docs/cycle-prediction.md, and
+// both reference tests (this file and ovumcy-app's
+// cycle-prediction-reference.test.ts) in the same change.
 
-// goldenVectorsFile is the shared golden-vector fixture, vendored byte-identical
-// from ovumcy-app (see the package comment above).
+// goldenVectorsFile is this repository's golden-vector fixture, originally
+// taken from ovumcy-app (see the package comment above).
 const goldenVectorsFile = "cycle-prediction-golden-vectors.json"
 
 // goldenVectorFixture is the parsed shape of the shared fixture. Field names
@@ -201,9 +202,8 @@ func TestLutealPhaseRoundTrip_ReferenceVectors(t *testing.T) {
 }
 
 // TestCyclePrediction_GoldenVectors asserts every vector in the shared fixture
-// against PredictCycleWindow (and the next-period formula), so the Go source of
-// truth and ovumcy-app's TypeScript port cannot drift apart without failing CI
-// on both sides. The fixture uses the TypeScript port's field vocabulary
+// against PredictCycleWindow (and the next-period formula), pinning the Go
+// source of truth to the documented vectors. The fixture uses the TypeScript port's field vocabulary
 // (calculable / fertilityStart / fertilityEnd / ovulationDate / isExact /
 // nextPeriodStart); the mapping onto CycleWindowPrediction is spelled out below.
 func TestCyclePrediction_GoldenVectors(t *testing.T) {
