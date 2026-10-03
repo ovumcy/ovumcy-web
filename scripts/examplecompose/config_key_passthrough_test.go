@@ -1,18 +1,17 @@
 package examplecompose
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
-	"go/build"
 	"go/constant"
-	"go/parser"
-	"go/token"
 	"go/types"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"golang.org/x/tools/go/packages"
@@ -28,16 +27,38 @@ import (
 // The set of keys is read from the binary's own type-checked sources, not
 // listed here, so a key added tomorrow is judged by the next run: a stack either
 // forwards it or the exemption table below says why it does not. A key is
-// identified by declaration, never by the shape of the node that names it: the
-// readers are the functions whose bodies hand a parameter to os.Getenv,
-// os.LookupEnv or syscall.Getenv (directly or through another reader), and a key
-// is the constant value the type checker resolves for the argument in that
-// position, whether it is a literal, a constant of this package or another, or a
-// constant expression. An argument that is neither a constant nor a reader's own
-// parameter cannot be resolved and fails the run instead of being skipped. A
-// standard-library accessor of the whole environment (os.Environ, os.ExpandEnv,
-// os.Expand and the rest of unfollowedEnvAccessors) is refused wherever it is
-// called, because no name reaches it that could be followed.
+// identified by declaration, never by the shape of the node that names it.
+//
+// The function bodies of EVERY package the binary links are read, the standard
+// library and the dependencies included, and the classes below are derived from
+// them, so an accessor added by a new dependency is classified without a table
+// edit. Only the primitives at the bottom of the standard library are named:
+// syscall.Getenv, the one function that reads a variable by name, and
+// syscall.Environ and GetEnvironmentStrings, which return the whole environment
+// (the write primitives only keep a write out of the refusals).
+//   - A reader is a function whose body hands a parameter, unchanged, to a
+//     reader (directly or through another one) down to syscall.Getenv: os.Getenv,
+//     os.LookupEnv, golang.org/x/sys/unix.Getenv and golang.org/x/sys/windows.Getenv
+//     are readers because their bodies are, not because they are listed. A key is
+//     the constant value the type checker resolves for the argument in a
+//     reader's key position, whether it is a literal, a constant of this package
+//     or another, or a constant expression. An argument that is neither a
+//     constant nor a reader's own parameter cannot be resolved and fails the
+//     run instead of being skipped.
+//   - An accessor is a function that returns what it took from the environment
+//     without a key the caller named: its result mentions the whole environment,
+//     a reader handed on as a value (os.ExpandEnv), or a read under a name the
+//     function computes. A call to one from the module is refused, because no
+//     name reaches it that could be followed; so is a call into a package outside
+//     the module whose function name says "env" and that is neither a reader nor
+//     a writer, which covers an operating-system call the bodies cannot show.
+//   - A reader of one fixed variable inside a dependency (time.LoadLocation reads
+//     ZONEINFO) is neither: its key is the dependency's own, not a setting the
+//     module chose.
+//
+// The scan runs once for each operating system the module has code for, so a
+// reader behind a build constraint is read where it is compiled, and a file of a
+// linked package that no scanned system compiles fails the run.
 //
 // The scan is deliberately narrower than "every way a key can be read". A name
 // held in a local variable, or transformed on its way into a function value or
@@ -45,7 +66,10 @@ import (
 // tracked: that takes value tracking, and a direct os.Getenv of such a variable
 // fails closed as unresolved while the same name behind a function value does
 // not. Only a key-shaped constant handed straight to such a call, or through a
-// helper that forwards a parameter unchanged, is refused.
+// helper that forwards a parameter unchanged, is refused. The accessor
+// derivation follows a value through local variables and results, not through a
+// struct field, a channel or a closure's captured state, and a read by code
+// outside Go (an assembly stub, a linkname) is seen only through its name.
 
 // envKeyShape is what a configuration variable name looks like.
 var envKeyShape = regexp.MustCompile(`^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$`)
@@ -59,59 +83,337 @@ func sortedKeys[V any](m map[string]V) []string {
 	return out
 }
 
-// followedEnvReads are the standard-library functions that read one variable by
-// the name they are given, with the index of the argument that carries it. They
-// are matched by full name, so a user function that merely shares a name is not
+// followedEnvReads is the one function at the bottom of the standard library
+// that reads a variable by the name it is given, with the index of the argument
+// that carries it. Every other reader, os.Getenv and the dependencies' wrappers
+// included, is derived from the bodies that hand their parameter down to it. It
+// is matched by full name, so a user function that merely shares a name is not
 // one.
 var followedEnvReads = map[string]int{
-	"os.Getenv":      0,
-	"os.LookupEnv":   0,
 	"syscall.Getenv": 0,
 }
 
-// unfollowedEnvAccessors are the standard-library functions that hand the
-// process environment to the caller without a variable name as an argument, so
-// a read through one cannot be followed to the key it wants. A call to one is
-// refused, or sits in envAccessExemptions with the reason it reads nothing the
-// operator configures. The value is why the scan cannot follow it.
-var unfollowedEnvAccessors = map[string]string{
-	"os.Environ":                     "it returns every variable, so the names used are chosen by whatever filters the result",
-	"syscall.Environ":                "it returns every variable, so the names used are chosen by whatever filters the result",
-	"(*os/exec.Cmd).Environ":         "it returns every variable the command will run with, so the names used are chosen by whatever filters the result",
-	"os.ExpandEnv":                   "it substitutes the names written inside a string, which are not call arguments",
-	"os.Expand":                      "it hands the names written inside a string to a mapping function the scan cannot see into",
-	"syscall.GetEnvironmentVariable": "it takes the name as a UTF-16 pointer, not a string constant",
-	"syscall.GetEnvironmentStrings":  "it returns every variable, so the names used are chosen by whatever filters the result",
-	"syscall.FreeEnvironmentStrings": "it is the release half of GetEnvironmentStrings, which is refused where it is called",
+// wholeEnvPrimitives are the functions at the bottom of the standard library that
+// return the process environment as a whole, so the names used are chosen by
+// whatever filters the result. Every function whose result carries what these
+// return is derived as an accessor.
+var wholeEnvPrimitives = map[string]bool{
+	"syscall.Environ":               true,
+	"syscall.GetEnvironmentStrings": true,
 }
 
-// envWrites are the standard-library functions that change the environment
-// without reading a value out of it. A key set here is read, if anywhere, by one
-// of the readers above, which the scan judges where it reads.
-var envWrites = map[string]bool{
-	"os.Setenv": true, "os.Unsetenv": true, "os.Clearenv": true,
+// envWritePrimitives are the functions at the bottom of the standard library
+// that change the environment without reading a value out of it. A function that
+// reaches one of them is a writer, which the name-based refusal lets through: a
+// key set that way is read, if anywhere, by a reader the scan judges where it
+// reads.
+var envWritePrimitives = map[string]bool{
 	"syscall.Setenv": true, "syscall.Unsetenv": true, "syscall.Clearenv": true,
 	"syscall.SetEnvironmentVariable": true,
 }
 
-// envAccessExemptions lists the functions of the module allowed to call an
-// unfollowed accessor, by the enclosing function's full name, with the reason
-// the call reads no setting an operator configures. It is empty: an entry is
-// added only with a reason an operator reading the stack would accept.
+// envFuncName is what a function that reaches the environment may be called. A
+// function outside the module that matches it and that no body shows to be a
+// reader or a writer is refused where the module calls it.
+var envFuncName = regexp.MustCompile(`(?i)env`)
+
+// envAccessExemptions lists the functions of the module allowed to call a
+// refused accessor, by the enclosing function's full name, with the reason the
+// call reads no setting an operator configures. It is empty: an entry is added
+// only with a reason an operator reading the stack would accept.
 var envAccessExemptions = map[string]string{}
 
 // stdEnvReadIndex returns the argument of fn that names the variable it reads,
-// for os.Getenv, os.LookupEnv and syscall.Getenv.
+// for the primitive syscall.Getenv.
 func stdEnvReadIndex(fn *types.Func) (int, bool) {
 	index, ok := followedEnvReads[fn.FullName()]
 	return index, ok
 }
 
-// envAccessorReason returns why fn, a standard-library accessor of the whole
-// environment, cannot be followed to a key.
-func envAccessorReason(fn *types.Func) (string, bool) {
-	reason, ok := unfollowedEnvAccessors[fn.FullName()]
-	return reason, ok
+// linkedGraph is every package the binary links that has Go source, the standard
+// library and the dependencies among them, and which of them belong to the
+// module under scan.
+type linkedGraph struct {
+	all      []*packages.Package
+	module   []*packages.Package
+	inModule map[*types.Package]bool
+}
+
+// newLinkedGraph walks the imports of roots, each with the source the loader read
+// for it.
+func newLinkedGraph(roots []*packages.Package) linkedGraph {
+	graph := linkedGraph{inModule: map[*types.Package]bool{}}
+	seen := map[string]bool{}
+	var walk func(*packages.Package)
+	walk = func(pkg *packages.Package) {
+		if seen[pkg.ID] {
+			return
+		}
+		seen[pkg.ID] = true
+		if len(pkg.Syntax) > 0 {
+			graph.all = append(graph.all, pkg)
+			if pkg.Module != nil && pkg.Module.Main {
+				graph.module = append(graph.module, pkg)
+				graph.inModule[pkg.Types] = true
+			}
+		}
+		paths := make([]string, 0, len(pkg.Imports))
+		for path := range pkg.Imports {
+			paths = append(paths, path)
+		}
+		sort.Strings(paths)
+		for _, path := range paths {
+			walk(pkg.Imports[path])
+		}
+	}
+	for _, root := range roots {
+		walk(root)
+	}
+	return graph
+}
+
+// envModel is what the bodies of the linked graph say about the environment.
+type envModel struct {
+	graph linkedGraph
+	// readers maps a function to the parameters it reads a variable by.
+	readers map[*types.Func]map[int]bool
+	// accessors are the functions that return the environment or a read under a
+	// name they compute.
+	accessors map[*types.Func]bool
+	// writers are the functions that reach a write primitive.
+	writers map[*types.Func]bool
+}
+
+func buildEnvModel(graph linkedGraph) envModel {
+	readers := deriveReaders(graph.all)
+	return envModel{
+		graph:     graph,
+		readers:   readers,
+		accessors: deriveAccessors(graph.all, readers),
+		writers:   deriveWriters(graph.all),
+	}
+}
+
+// isRead is true for a function that reads a variable by a name it is given.
+func (m envModel) isRead(fn *types.Func) bool {
+	_, primitive := stdEnvReadIndex(fn)
+	return primitive || m.readers[fn] != nil
+}
+
+// isAccessor is true for a primitive that returns the whole environment and for
+// a function derived to return what such a primitive returns.
+func (m envModel) isAccessor(fn *types.Func) bool {
+	return wholeEnvPrimitives[fn.FullName()] || m.accessors[fn]
+}
+
+// refusal returns why fn, called from the module, cannot be followed to a key,
+// and false when the call is one the scan follows or has nothing to follow in.
+func (m envModel) refusal(fn *types.Func) (string, bool) {
+	fn = fn.Origin()
+	if m.graph.inModule[fn.Pkg()] {
+		return "", false
+	}
+	if m.isAccessor(fn) {
+		return "its body returns the environment, or a read under a name it computes, so the names used are chosen by whatever filters the result", true
+	}
+	if m.isRead(fn) || m.writers[fn] {
+		return "", false
+	}
+	if envFuncName.MatchString(fn.Name()) {
+		return "its name says it reaches the environment, and no body the scan can read shows it taking the variable name as an argument", true
+	}
+	return "", false
+}
+
+// isErrorType is true for the built-in error type, which carries no environment
+// text and so does not carry the taint of the call that made it.
+func isErrorType(t types.Type) bool {
+	return t != nil && types.Identical(t, types.Universe.Lookup("error").Type())
+}
+
+// deriveAccessors finds, by running to a fixed point over every body, each
+// function that hands the caller something it took from the environment without
+// a key the caller named. A value is tainted when it is the whole environment
+// (syscall.Environ, or an accessor), a reader handed on as a value, or the result
+// of a read under a name that is neither a constant nor the function's own
+// parameter; the taint follows local variables, and a function is an accessor
+// when a result other than an error mentions it.
+func deriveAccessors(pkgs []*packages.Package, readers map[*types.Func]map[int]bool) map[*types.Func]bool {
+	accessors := map[*types.Func]bool{}
+	reads := func(fn *types.Func) bool {
+		_, primitive := stdEnvReadIndex(fn)
+		return primitive || readers[fn] != nil
+	}
+	for changed := true; changed; {
+		changed = false
+		for _, pkg := range pkgs {
+			info := pkg.TypesInfo
+			for _, file := range pkg.Syntax {
+				for _, decl := range file.Decls {
+					funcDecl, ok := decl.(*ast.FuncDecl)
+					if !ok || funcDecl.Body == nil {
+						continue
+					}
+					self, _ := info.Defs[funcDecl.Name].(*types.Func)
+					if self == nil || accessors[self] {
+						continue
+					}
+					called := map[*ast.Ident]bool{}
+					ast.Inspect(funcDecl.Body, func(node ast.Node) bool {
+						if call, isCall := node.(*ast.CallExpr); isCall {
+							if target, resolved := calleeOf(info, call); resolved && target.ident != nil {
+								called[target.ident] = true
+							}
+						}
+						return true
+					})
+					tainted := map[types.Object]bool{}
+					mentions := func(root ast.Node) bool {
+						found := false
+						ast.Inspect(root, func(node ast.Node) bool {
+							if found {
+								return false
+							}
+							switch node := node.(type) {
+							case *ast.Ident:
+								switch object := info.Uses[node].(type) {
+								case *types.Var:
+									found = tainted[object]
+								case *types.Func:
+									origin := object.Origin()
+									found = wholeEnvPrimitives[origin.FullName()] || accessors[origin] || (!called[node] && reads(origin))
+								}
+							case *ast.CallExpr:
+								for _, index := range keyArgIndexes(info, node, readers) {
+									if index >= len(node.Args) {
+										continue
+									}
+									arg := node.Args[index]
+									if value := info.Types[arg].Value; value != nil && value.Kind() == constant.String {
+										continue
+									}
+									if _, flows := paramIndex(info, self, arg); !flows {
+										found = true
+									}
+								}
+							}
+							return !found
+						})
+						return found
+					}
+					taint := func(expr ast.Expr) {
+						ident, isIdent := ast.Unparen(expr).(*ast.Ident)
+						if !isIdent {
+							return
+						}
+						object := info.ObjectOf(ident)
+						if object != nil && !isErrorType(object.Type()) {
+							tainted[object] = true
+						}
+					}
+					for settled := false; !settled; {
+						before := len(tainted)
+						ast.Inspect(funcDecl.Body, func(node ast.Node) bool {
+							switch stmt := node.(type) {
+							case *ast.AssignStmt:
+								for _, rhs := range stmt.Rhs {
+									if mentions(rhs) {
+										for _, lhs := range stmt.Lhs {
+											taint(lhs)
+										}
+										break
+									}
+								}
+							case *ast.ValueSpec:
+								for _, value := range stmt.Values {
+									if mentions(value) {
+										for _, name := range stmt.Names {
+											taint(name)
+										}
+										break
+									}
+								}
+							case *ast.RangeStmt:
+								if mentions(stmt.X) {
+									if stmt.Key != nil {
+										taint(stmt.Key)
+									}
+									if stmt.Value != nil {
+										taint(stmt.Value)
+									}
+								}
+							}
+							return true
+						})
+						settled = len(tainted) == before
+					}
+					exposes := false
+					results := self.Type().(*types.Signature).Results()
+					ast.Inspect(funcDecl.Body, func(node ast.Node) bool {
+						ret, isReturn := node.(*ast.ReturnStmt)
+						if !isReturn || exposes {
+							return !exposes
+						}
+						if len(ret.Results) == 0 {
+							for i := range results.Len() {
+								if tainted[results.At(i)] {
+									exposes = true
+								}
+							}
+							return true
+						}
+						for _, result := range ret.Results {
+							if !isErrorType(info.TypeOf(result)) && mentions(result) {
+								exposes = true
+							}
+						}
+						return true
+					})
+					if exposes {
+						accessors[self] = true
+						changed = true
+					}
+				}
+			}
+		}
+	}
+	return accessors
+}
+
+// deriveWriters finds every function that reaches a write primitive, directly or
+// through another writer.
+func deriveWriters(pkgs []*packages.Package) map[*types.Func]bool {
+	writers := map[*types.Func]bool{}
+	for changed := true; changed; {
+		changed = false
+		for _, pkg := range pkgs {
+			info := pkg.TypesInfo
+			for _, file := range pkg.Syntax {
+				for _, decl := range file.Decls {
+					funcDecl, ok := decl.(*ast.FuncDecl)
+					if !ok || funcDecl.Body == nil {
+						continue
+					}
+					self, _ := info.Defs[funcDecl.Name].(*types.Func)
+					if self == nil || writers[self] {
+						continue
+					}
+					ast.Inspect(funcDecl.Body, func(node ast.Node) bool {
+						ident, isIdent := node.(*ast.Ident)
+						if !isIdent || writers[self] {
+							return !writers[self]
+						}
+						if fn, isFunc := info.Uses[ident].(*types.Func); isFunc && (envWritePrimitives[fn.Origin().FullName()] || writers[fn.Origin()]) {
+							writers[self] = true
+							changed = true
+						}
+						return true
+					})
+				}
+			}
+		}
+	}
+	return writers
 }
 
 // callee is what a call invokes, as far as the type checker can tell.
@@ -340,16 +642,16 @@ func deriveReaders(pkgs []*packages.Package) map[*types.Func]map[int]bool {
 	return readers
 }
 
-// scanReads returns every environment variable the packages read, with the
-// positions that read it, and the key arguments it could not resolve.
-func scanReads(pkgs []*packages.Package, readers map[*types.Func]map[int]bool) (reads map[string][]string, unresolved []string) {
+// scan returns every environment variable the module's packages read, with the
+// positions that read it, and the key arguments it could not resolve. The
+// readers and accessors it follows or refuses are the ones derived from every
+// linked package.
+func (m envModel) scan() (reads map[string][]string, unresolved []string) {
 	reads = map[string][]string{}
-	scanned := map[*types.Package]bool{}
-	for _, pkg := range pkgs {
-		scanned[pkg.Types] = true
-	}
-	sinks := deriveOpaqueSinks(pkgs, scanned)
-	for _, pkg := range pkgs {
+	readers := m.readers
+	scanned := m.graph.inModule
+	sinks := deriveOpaqueSinks(m.graph.module, scanned)
+	for _, pkg := range m.graph.module {
 		info := pkg.TypesInfo
 		where := func(pos ast.Node) string {
 			position := pkg.Fset.Position(pos.Pos())
@@ -386,9 +688,8 @@ func scanReads(pkgs []*packages.Package, readers map[*types.Func]map[int]bool) (
 					if !isFunc {
 						return true
 					}
-					_, isRead := stdEnvReadIndex(fn.Origin())
-					_, isAccessor := envAccessorReason(fn.Origin())
-					if isRead || readers[fn.Origin()] != nil || (isAccessor && !exempt) {
+					_, refused := m.refusal(fn)
+					if m.isRead(fn.Origin()) || (refused && !exempt) {
 						unresolved = append(unresolved, fmt.Sprintf("%s: %s reads the environment and is used here without being called, so the names it is given cannot be followed", where(ident), fn.Name()))
 					}
 					return true
@@ -400,8 +701,8 @@ func scanReads(pkgs []*packages.Package, readers map[*types.Func]map[int]bool) (
 					}
 					if target, resolved := calleeOf(info, call); resolved {
 						if target.fn != nil && !exempt {
-							if reason, isAccessor := envAccessorReason(target.fn); isAccessor {
-								unresolved = append(unresolved, fmt.Sprintf("%s: %s reads the environment and the scan cannot follow it to a variable name (%s); read each variable by name through os.Getenv or os.LookupEnv, or exempt the calling function in envAccessExemptions with the reason it reads no operator setting", where(call), target.fn.FullName(), reason))
+							if reason, refused := m.refusal(target.fn); refused {
+								unresolved = append(unresolved, fmt.Sprintf("%s: %s reaches the environment and the scan cannot follow it to a variable name (%s); read each variable by name through os.Getenv or os.LookupEnv, or exempt the calling function in envAccessExemptions with the reason it reads no operator setting", where(call), target.fn.FullName(), reason))
 							}
 						}
 						for index, arg := range call.Args {
@@ -445,81 +746,98 @@ func scanReads(pkgs []*packages.Package, readers map[*types.Func]map[int]bool) (
 	return reads, unresolved
 }
 
-// binaryPackages loads the module packages the server binary is built from:
-// cmd/ovumcy and every package of the module it imports, directly or not,
-// wherever it lives in the tree. Test files are excluded, and so is a package
-// the binary never links, such as a test-support package that reads its own
-// environment. Every package of the module is loaded and the walk then keeps
-// the linked ones; a linked module package that was not loaded fails the run
-// instead of going unread.
-func binaryPackages(t *testing.T, root string) []*packages.Package {
-	t.Helper()
-	loaded := loadPackages(t, root, "./...")
-	byID := map[string]*packages.Package{}
-	var main *packages.Package
-	for _, pkg := range loaded {
-		byID[pkg.ID] = pkg
-		if strings.HasSuffix(pkg.PkgPath, "/cmd/ovumcy") {
-			main = pkg
-		}
-	}
-	if main == nil {
-		t.Fatal("cmd/ovumcy was not among the loaded packages: the scan is not reaching the binary")
-	}
-	modulePrefix := strings.TrimSuffix(main.PkgPath, "/cmd/ovumcy") + "/"
-	seen := map[string]bool{}
-	var linked []*packages.Package
-	var notLoaded []string
-	var walk func(*packages.Package)
-	walk = func(pkg *packages.Package) {
-		if seen[pkg.ID] {
-			return
-		}
-		seen[pkg.ID] = true
-		if len(pkg.Syntax) > 0 {
-			linked = append(linked, pkg)
-		}
-		for _, imported := range pkg.Imports {
-			if next, ok := byID[imported.ID]; ok {
-				walk(next)
-			} else if strings.HasPrefix(imported.PkgPath, modulePrefix) {
-				notLoaded = append(notLoaded, imported.PkgPath)
-			}
-		}
-	}
-	walk(main)
-	if len(notLoaded) > 0 {
-		sort.Strings(notLoaded)
-		t.Fatalf("the binary links module packages the scan did not load, so their environment reads are unread: %s", strings.Join(notLoaded, ", "))
-	}
-	return linked
+// scannedPlatforms are the operating systems the module's code is read for: the
+// one the container image is built for, and the others the module has files
+// for. TestEveryLinkedModuleFileIsReadOnSomePlatform fails when a file of a
+// linked package is compiled on none of them, so a platform the module grows
+// code for is named here by that failure.
+var scannedPlatforms = []string{"linux", "windows", "darwin"}
+
+// unscannedModuleFiles are the files of a linked module package that no scanned
+// platform compiles, by path from the repository root, with the reason the
+// binary never runs them. An entry is added only with a reason, and one that a
+// scanned platform now compiles, or that names no file, fails the run.
+var unscannedModuleFiles = map[string]string{
+	"internal/cli/password_prompt_unsupported.go": "the stub for a platform with no terminal support: it returns a constant error and reads no variable",
+	"internal/services/policy_fuzz_libfuzzer.go":  "built only under the gofuzz tag by the fuzzing toolchain, never into the server binary",
 }
 
-// loadPackages type-checks the packages matching patterns under dir, failing
-// closed when any of them does not type-check: an unresolved identifier would
-// leave exactly the evidence this scan reads empty.
-func loadPackages(t *testing.T, dir string, patterns ...string) []*packages.Package {
+var (
+	binaryModelsOnce sync.Once
+	binaryModels     map[string]envModel
+	binaryModelsErr  error
+)
+
+// binaryModel returns the model of cmd/ovumcy for goos, with every package it
+// links, the dependencies and the standard library included, each with the source
+// the type checker read. Test files are excluded, and so is a package the binary
+// never links, such as a test-support package that reads its own environment.
+// The build is the image's (cgo off). Every scanned platform is loaded once, side
+// by side, because each load type-checks the whole graph from source.
+func binaryModel(t *testing.T, root, goos string) envModel {
 	t.Helper()
+	binaryModelsOnce.Do(func() {
+		binaryModels = map[string]envModel{}
+		models := make([]envModel, len(scannedPlatforms))
+		failures := make([]error, len(scannedPlatforms))
+		var wg sync.WaitGroup
+		for i, platform := range scannedPlatforms {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				roots, err := loadPackages(root, platform, "./cmd/ovumcy")
+				if err == nil && (len(roots) != 1 || !strings.HasSuffix(roots[0].PkgPath, "/cmd/ovumcy")) {
+					err = fmt.Errorf("cmd/ovumcy was not the loaded package: the scan is not reaching the binary")
+				}
+				if err != nil {
+					failures[i] = fmt.Errorf("GOOS=%s: %w", platform, err)
+					return
+				}
+				models[i] = buildEnvModel(newLinkedGraph(roots))
+			}()
+		}
+		wg.Wait()
+		binaryModelsErr = errors.Join(failures...)
+		for i, platform := range scannedPlatforms {
+			binaryModels[platform] = models[i]
+		}
+	})
+	if binaryModelsErr != nil {
+		t.Fatalf("loading the binary: %v", binaryModelsErr)
+	}
+	return binaryModels[goos]
+}
+
+// loadPackages type-checks the packages matching patterns under dir with their
+// whole import graph, for goos (the host's when empty), failing closed when any
+// package of the graph does not type-check: an unresolved identifier would leave
+// exactly the evidence this scan reads empty.
+func loadPackages(dir, goos string, patterns ...string) ([]*packages.Package, error) {
+	env := append(os.Environ(), "CGO_ENABLED=0")
+	if goos != "" {
+		env = append(env, "GOOS="+goos)
+	}
 	config := &packages.Config{
-		Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
-			packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports,
+		Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedModule |
+			packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports | packages.NeedDeps,
 		Dir:   dir,
+		Env:   env,
 		Tests: false,
 	}
 	loaded, err := packages.Load(config, patterns...)
 	if err != nil {
-		t.Fatalf("type-checking %v: %v", patterns, err)
+		return nil, fmt.Errorf("type-checking %v: %w", patterns, err)
 	}
 	var problems []string
-	for _, pkg := range loaded {
+	packages.Visit(loaded, nil, func(pkg *packages.Package) {
 		for _, packageError := range pkg.Errors {
 			problems = append(problems, pkg.PkgPath+": "+packageError.Error())
 		}
-	}
+	})
 	if len(problems) > 0 {
-		t.Fatalf("the packages do not type-check, so no key could be identified:\n  %s", strings.Join(problems, "\n  "))
+		return nil, fmt.Errorf("the packages do not type-check, so no key could be identified:\n  %s", strings.Join(problems, "\n  "))
 	}
-	return loaded
+	return loaded, nil
 }
 
 // readerNamed returns the parameters of the reader declared as name in a
@@ -868,12 +1186,17 @@ func TestStackJudgmentRefusesWhatIgnoresTheOperator(t *testing.T) {
 // above with a stated reason.
 func TestEveryExampleStackForwardsEveryRuntimeConfigKey(t *testing.T) {
 	root := repoRoot(t)
-	binary := binaryPackages(t, root)
-	readers := deriveReaders(binary)
-	reads, unresolved := scanReads(binary, readers)
-	for _, problem := range unresolved {
-		t.Errorf("%s: resolve it to a constant, or read it through a helper that takes the name as a parameter, so the example stacks can be held to it", problem)
+	reads := map[string][]string{}
+	for _, goos := range scannedPlatforms {
+		platformReads, unresolved := binaryModel(t, root, goos).scan()
+		for _, problem := range unresolved {
+			t.Errorf("GOOS=%s, %s: resolve it to a constant, or read it through a helper that takes the name as a parameter, so the example stacks can be held to it", goos, problem)
+		}
+		for key, positions := range platformReads {
+			reads[key] = append(reads[key], positions...)
+		}
 	}
+	readers := binaryModel(t, root, scannedPlatforms[0]).readers
 	keys := map[string]bool{}
 	for key := range reads {
 		keys[key] = true
@@ -985,12 +1308,16 @@ func TestPassthroughNamesTheKeyItself(t *testing.T) {
 }
 
 // fixtureModule writes a throwaway module under a temp directory and returns
-// its packages, type-checked. The fixture owns every declaration the scan is
-// proved on, so the proof does not depend on what cmd/ovumcy reads today.
-func fixtureModule(t *testing.T, files map[string]string) []*packages.Package {
+// the model of everything its packages link, type-checked. The fixture owns every
+// declaration the scan is proved on, so the proof does not depend on what
+// cmd/ovumcy reads today. A fixture that brings a go.mod of its own may require a
+// dependency that another directory of the fixture provides.
+func fixtureModule(t *testing.T, files map[string]string) envModel {
 	t.Helper()
 	dir := t.TempDir()
-	files["go.mod"] = "module fixture\n\ngo 1.24\n"
+	if _, own := files["go.mod"]; !own {
+		files["go.mod"] = "module fixture\n\ngo 1.24\n"
+	}
 	for name, content := range files {
 		path := filepath.Join(dir, filepath.FromSlash(name))
 		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
@@ -1000,7 +1327,11 @@ func fixtureModule(t *testing.T, files map[string]string) []*packages.Package {
 			t.Fatal(err)
 		}
 	}
-	return loadPackages(t, dir, "./...")
+	roots, err := loadPackages(dir, "", "./...")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return buildEnvModel(newLinkedGraph(roots))
 }
 
 // TestConfigKeyScanResolvesKeysByDeclaration proves the source scan on a
@@ -1009,7 +1340,7 @@ func fixtureModule(t *testing.T, files map[string]string) []*packages.Package {
 // fallback is never a key; and a function that only borrows a reader's name is
 // not one.
 func TestConfigKeyScanResolvesKeysByDeclaration(t *testing.T) {
-	pkgs := fixtureModule(t, map[string]string{
+	model := fixtureModule(t, map[string]string{
 		"cfg/cfg.go": `package cfg
 
 const RemoteEnv = "REMOTE_KEY"
@@ -1068,8 +1399,8 @@ func main() {
 }
 `,
 	})
-	readers := deriveReaders(pkgs)
-	reads, unresolved := scanReads(pkgs, readers)
+	readers := model.readers
+	reads, unresolved := model.scan()
 	if len(unresolved) != 0 {
 		t.Fatalf("every key in the fixture resolves, got unresolved: %v", unresolved)
 	}
@@ -1089,7 +1420,7 @@ func main() {
 // that is neither a constant nor a reader's own parameter fails the scan
 // naming its position instead of being skipped.
 func TestConfigKeyScanRefusesAKeyItCannotResolve(t *testing.T) {
-	pkgs := fixtureModule(t, map[string]string{
+	model := fixtureModule(t, map[string]string{
 		"main.go": `package main
 
 import "os"
@@ -1102,7 +1433,7 @@ func main() {
 }
 `,
 	})
-	reads, unresolved := scanReads(pkgs, deriveReaders(pkgs))
+	reads, unresolved := model.scan()
 	if len(reads) != 0 {
 		t.Fatalf("nothing in the fixture resolves to a key, got %v", reads)
 	}
@@ -1122,7 +1453,7 @@ func main() {
 // a call through an interface the module does not declare is not, and neither
 // is a helper that forwards a parameter when no variable name is passed to it.
 func TestConfigKeyScanRefusesACallItCannotFollow(t *testing.T) {
-	pkgs := fixtureModule(t, map[string]string{
+	model := fixtureModule(t, map[string]string{
 		"main.go": `package main
 
 import (
@@ -1160,7 +1491,7 @@ func main() {
 }
 `,
 	})
-	_, unresolved := scanReads(pkgs, deriveReaders(pkgs))
+	_, unresolved := model.scan()
 	joined := strings.Join(unresolved, "\n")
 	for _, line := range []int{18, 20, 24, 26, 28, 30} {
 		if !strings.Contains(joined, fmt.Sprintf("main.go:%d:", line)) {
@@ -1174,11 +1505,14 @@ func main() {
 
 // TestConfigKeyScanRefusesAnEnvironmentReadItCannotFollow proves that the
 // accessors of the whole environment cannot be used to read a key unseen: each
-// of os.Environ, syscall.Environ, os.ExpandEnv, os.Expand and exec.Cmd.Environ
-// is refused where it is called, and one named without being called is refused
-// too. A function listed in envAccessExemptions is the only one not refused.
+// of os.Environ, syscall.Environ, os.ExpandEnv and exec.Cmd.Environ is refused
+// where it is called, and one named without being called is refused too, while
+// a standard-library function that reaches the environment without handing it
+// back (a command's Run, a fixed-key read such as os.TempDir, a write) is not.
+// os.Expand is refused only through what its mapping reads. A function listed in
+// envAccessExemptions is the only one not refused.
 func TestConfigKeyScanRefusesAnEnvironmentReadItCannotFollow(t *testing.T) {
-	pkgs := fixtureModule(t, map[string]string{
+	model := fixtureModule(t, map[string]string{
 		"main.go": `package main
 
 import (
@@ -1194,7 +1528,7 @@ func viaSyscallEnviron() []string { return syscall.Environ() }
 func viaExpandEnv() string { return os.ExpandEnv("${EXPAND_KEY}") }
 
 func viaExpand() string {
-	return os.Expand("${EXPAND_FN_KEY}", func(name string) string { return name })
+	return os.Expand("${EXPAND_FN_KEY}", func(name string) string { return os.Getenv(name) })
 }
 
 func viaCommand() []string { return exec.Command("true").Environ() }
@@ -1203,31 +1537,42 @@ func namedOnly() func() []string { return os.Environ }
 
 func exempted() string { return os.ExpandEnv("${EXEMPT_KEY}") }
 
+func runs() error { return exec.Command("true").Run() }
+
+func tempDir() string { return os.TempDir() }
+
+func writes() error { return os.Setenv("WRITTEN_KEY", "x") }
+
 func main() {}
 `,
 	})
 	scan := func() []string {
-		_, unresolved := scanReads(pkgs, deriveReaders(pkgs))
+		_, unresolved := model.scan()
 		return unresolved
 	}
 	unresolved := scan()
 	joined := strings.Join(unresolved, "\n")
 	for _, want := range []string{
-		"os.Environ reads the environment and the scan cannot follow it",
-		"syscall.Environ reads the environment and the scan cannot follow it",
-		"os.ExpandEnv reads the environment and the scan cannot follow it",
-		"os.Expand reads the environment and the scan cannot follow it",
-		"(*os/exec.Cmd).Environ reads the environment and the scan cannot follow it",
+		"os.Environ reaches the environment and the scan cannot follow it",
+		"syscall.Environ reaches the environment and the scan cannot follow it",
+		"os.ExpandEnv reaches the environment and the scan cannot follow it",
+		"(*os/exec.Cmd).Environ reaches the environment and the scan cannot follow it",
 		"Environ reads the environment and is used here without being called",
+		"main.go:16: the environment variable name is neither a constant nor a parameter",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("want an unresolved entry containing %q, got:\n%s", want, joined)
 		}
 	}
-	// Seven calls or uses name an accessor, and the exempted function's is the
-	// one left out; the same scan with that exemption absent refuses it too.
+	for _, unwanted := range []string{"Run", "TempDir", "Setenv", "os.Expand "} {
+		if strings.Contains(joined, unwanted) {
+			t.Errorf("%s reaches the environment without handing it back and must not be refused, got:\n%s", unwanted, joined)
+		}
+	}
+	// Seven calls or uses are refused, and the exempted function's is the one
+	// left out; the same scan with that exemption absent refuses it too.
 	if len(unresolved) != 7 {
-		t.Errorf("want the seven unexempted accessor uses refused, got %d:\n%s", len(unresolved), joined)
+		t.Errorf("want the seven unexempted uses refused, got %d:\n%s", len(unresolved), joined)
 	}
 	envAccessExemptions["fixture.exempted"] = "a fixture function that reads nothing an operator configures"
 	t.Cleanup(func() { delete(envAccessExemptions, "fixture.exempted") })
@@ -1236,77 +1581,282 @@ func main() {}
 	}
 }
 
-// TestEveryStandardEnvironmentAccessorIsClassified keeps the accessor tables
-// whole against the standard library itself. The exported functions and methods
-// of os, syscall and os/exec that name the environment, whichever platform
-// declares them, are read from the Go source tree, and each must be followed as
-// a read, refused as an accessor, or listed as a write. A table entry that names
-// nothing in the source fails too, so a renamed or mistyped entry cannot leave
-// the class unguarded.
-func TestEveryStandardEnvironmentAccessorIsClassified(t *testing.T) {
-	root := filepath.Join(build.Default.GOROOT, "src")
-	named := regexp.MustCompile(`(?i)env|^Expand$`)
-	found := map[string]bool{}
-	for _, dir := range []string{"os", "syscall", "os/exec"} {
-		entries, err := os.ReadDir(filepath.Join(root, filepath.FromSlash(dir)))
-		if err != nil {
-			t.Fatalf("reading the standard library source %s: %v", dir, err)
+// funcNames returns the full names of the functions in set, for an assertion by
+// the name a reader of the scan would look for.
+func funcNames[V any](set map[*types.Func]V) map[string]bool {
+	names := map[string]bool{}
+	for fn := range set {
+		names[fn.FullName()] = true
+	}
+	return names
+}
+
+// TestConfigKeyScanClassifiesADependencyByItsBody proves the closure on a
+// dependency the scan has no table entry for: a wrapper that hands its parameter
+// to a reader is followed to the key the module passes, one that returns the
+// environment, a read under a name it computes or a reader handed on as a value
+// is refused, directly or through another function, and the rest are left
+// alone: a read of one fixed variable inside the dependency, a write, and a
+// function that never reaches the environment. A name that says "env" with no
+// body to show it is refused.
+func TestConfigKeyScanClassifiesADependencyByItsBody(t *testing.T) {
+	model := fixtureModule(t, map[string]string{
+		"go.mod":     "module fixture\n\ngo 1.24\n\nrequire example.com/dep v0.0.0\n\nreplace example.com/dep => ./dep\n",
+		"dep/go.mod": "module example.com/dep\n\ngo 1.24\n",
+		"dep/dep.go": `package dep
+
+import (
+	"os"
+	"strings"
+	"syscall"
+)
+
+func Getenv(name string) string { v, _ := syscall.Getenv(name); return v }
+
+func Lookup(name string) string { return Getenv(name) }
+
+func Environ() []string { return syscall.Environ() }
+
+func Filtered(prefix string) []string {
+	var out []string
+	for _, entry := range Environ() {
+		if strings.HasPrefix(entry, prefix) {
+			out = append(out, entry)
 		}
-		for _, entry := range entries {
-			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+	}
+	return out
+}
+
+func Expanded(s string) string { return os.ExpandEnv(s) }
+
+func Home(windows bool) string {
+	name := "HOME"
+	if windows {
+		name = "USERPROFILE"
+	}
+	return os.Getenv(name)
+}
+
+func Prefixed(name string) string { return os.Getenv("APP_" + strings.ToUpper(name)) }
+
+func Fixed() string { return os.Getenv("FIXED_DEP_KEY") }
+
+func Setenv(key, value string) error { return os.Setenv(key, value) }
+
+func GetEnvironmentVariable(name *uint16) uint32 { return 0 }
+
+func Unrelated() string { return "x" }
+`,
+		"main.go": `package main
+
+import "example.com/dep"
+
+func main() {
+	_ = dep.Getenv("DEP_GETENV_KEY")
+	_ = dep.Lookup("DEP_LOOKUP_KEY")
+	_ = dep.Environ()
+	_ = dep.Filtered("X")
+	_ = dep.Expanded("$A")
+	_ = dep.Home(false)
+	_ = dep.Prefixed("a")
+	_ = dep.Fixed()
+	_ = dep.Setenv("DEP_SET_KEY", "x")
+	_ = dep.GetEnvironmentVariable(nil)
+	_ = dep.Unrelated()
+}
+`,
+	})
+	reads, unresolved := model.scan()
+	if got := sortedKeys(reads); strings.Join(got, ",") != "DEP_GETENV_KEY,DEP_LOOKUP_KEY" {
+		t.Errorf("keys read = %v, want the two the module passes to a dependency reader and not the dependency's own fixed one", got)
+	}
+	joined := strings.Join(unresolved, "\n")
+	for _, name := range []string{"Environ", "Filtered", "Expanded", "Home", "Prefixed", "GetEnvironmentVariable"} {
+		if !strings.Contains(joined, "example.com/dep."+name+" reaches the environment") {
+			t.Errorf("want dep.%s refused, got:\n%s", name, joined)
+		}
+	}
+	for _, name := range []string{"Getenv", "Lookup", "Fixed", "Setenv", "Unrelated"} {
+		if strings.Contains(joined, "example.com/dep."+name+" ") {
+			t.Errorf("dep.%s must not be refused, got:\n%s", name, joined)
+		}
+	}
+	if len(unresolved) != 6 {
+		t.Errorf("want exactly the six refusals, got %d:\n%s", len(unresolved), joined)
+	}
+	readers, accessors, writers := funcNames(model.readers), funcNames(model.accessors), funcNames(model.writers)
+	for _, name := range []string{"Getenv", "Lookup"} {
+		if !readers["example.com/dep."+name] || accessors["example.com/dep."+name] {
+			t.Errorf("dep.%s is a reader and not an accessor", name)
+		}
+	}
+	if !writers["example.com/dep.Setenv"] || accessors["example.com/dep.Setenv"] {
+		t.Error("dep.Setenv is a writer and not an accessor")
+	}
+	if readers["example.com/dep.Fixed"] || accessors["example.com/dep.Fixed"] {
+		t.Error("a read of one fixed variable inside a dependency is neither a reader nor an accessor")
+	}
+}
+
+// TestEnvironmentModelDerivesWhatTheBinaryLinks holds the derivation to the
+// real graph on every scanned platform, by the functions a reader of the scan
+// would name: the readers and accessors of the standard library and of
+// golang.org/x/sys that the module links must have been derived from their
+// bodies (so an empty derivation cannot pass as a clean scan), a reader must not
+// be an accessor, and the primitives the derivation starts from must exist in
+// the standard library. A function that merely reaches the environment (a
+// command's Run) must be neither.
+func TestEnvironmentModelDerivesWhatTheBinaryLinks(t *testing.T) {
+	root := repoRoot(t)
+	primitives := map[string]bool{}
+	for name := range followedEnvReads {
+		primitives[name] = false
+	}
+	for name := range wholeEnvPrimitives {
+		primitives[name] = false
+	}
+	for name := range envWritePrimitives {
+		primitives[name] = false
+	}
+	for _, goos := range scannedPlatforms {
+		model := binaryModel(t, root, goos)
+		readers, accessors, writers := funcNames(model.readers), funcNames(model.accessors), funcNames(model.writers)
+		xsys := "golang.org/x/sys/unix"
+		if goos == "windows" {
+			xsys = "golang.org/x/sys/windows"
+		}
+		for _, name := range []string{"os.Getenv", "os.LookupEnv", xsys + ".Getenv"} {
+			if !readers[name] {
+				t.Errorf("GOOS=%s: %s was not derived as a reader: the derivation is not following parameters down to syscall.Getenv", goos, name)
+			}
+			if accessors[name] {
+				t.Errorf("GOOS=%s: %s reads by the name it is given and must not be an accessor", goos, name)
+			}
+		}
+		for _, name := range []string{"os.Environ", "os.ExpandEnv", xsys + ".Environ"} {
+			if !accessors[name] {
+				t.Errorf("GOOS=%s: %s was not derived as an accessor: the derivation is not following results down to the environment primitives", goos, name)
+			}
+		}
+		if !model.isAccessor(funcNamedIn(t, model, "syscall", "Environ")) {
+			t.Errorf("GOOS=%s: syscall.Environ is a primitive accessor", goos)
+		}
+		if !writers["os.Setenv"] || accessors["os.Setenv"] || readers["os.Setenv"] {
+			t.Errorf("GOOS=%s: os.Setenv is a writer, and neither a reader nor an accessor", goos)
+		}
+		if exec := funcNamedIn(t, model, "os/exec", "Environ"); exec != nil && !model.isAccessor(exec) {
+			t.Errorf("GOOS=%s: (*os/exec.Cmd).Environ was not derived as an accessor", goos)
+		}
+		for _, name := range []string{"(*os/exec.Cmd).Run", "os.TempDir", "os.Setenv"} {
+			if accessors[name] {
+				t.Errorf("GOOS=%s: %s does not hand the environment back and must not be an accessor", goos, name)
+			}
+		}
+		for _, pkg := range model.graph.all {
+			if pkg.PkgPath != "syscall" {
 				continue
 			}
-			file, err := parser.ParseFile(token.NewFileSet(), filepath.Join(root, filepath.FromSlash(dir), entry.Name()), nil, parser.SkipObjectResolution)
-			if err != nil {
-				t.Fatalf("parsing %s/%s: %v", dir, entry.Name(), err)
-			}
-			for _, decl := range file.Decls {
-				funcDecl, ok := decl.(*ast.FuncDecl)
-				if !ok || !funcDecl.Name.IsExported() || !named.MatchString(funcDecl.Name.Name) {
-					continue
-				}
-				if funcDecl.Recv == nil {
-					found[dir+"."+funcDecl.Name.Name] = true
-					continue
-				}
-				switch recv := funcDecl.Recv.List[0].Type.(type) {
-				case *ast.StarExpr:
-					if ident, isIdent := recv.X.(*ast.Ident); isIdent && ident.IsExported() {
-						found["(*"+dir+"."+ident.Name+")."+funcDecl.Name.Name] = true
-					}
-				case *ast.Ident:
-					if recv.IsExported() {
-						found["("+dir+"."+recv.Name+")."+funcDecl.Name.Name] = true
-					}
+			for name := range primitives {
+				if short, isSyscall := strings.CutPrefix(name, "syscall."); isSyscall && pkg.Types.Scope().Lookup(short) != nil {
+					primitives[name] = true
 				}
 			}
 		}
 	}
-	for _, name := range sortedKeys(found) {
-		_, followed := followedEnvReads[name]
-		_, refused := unfollowedEnvAccessors[name]
-		if !followed && !refused && !envWrites[name] {
-			t.Errorf("the standard library declares %s, which names the environment and is in none of followedEnvReads, unfollowedEnvAccessors or envWrites: follow it as a read, refuse it as an accessor, or list it as a write", name)
-		}
-	}
-	listed := map[string]bool{}
-	for name := range followedEnvReads {
-		listed[name] = true
-	}
-	for name := range unfollowedEnvAccessors {
-		listed[name] = true
-	}
-	for name := range envWrites {
-		listed[name] = true
-	}
-	for _, name := range sortedKeys(listed) {
-		if !found[name] {
-			t.Errorf("the accessor tables name %s, which the standard library source does not declare", name)
+	for _, name := range sortedKeys(primitives) {
+		if !primitives[name] {
+			t.Errorf("the derivation starts from %s, which the standard library does not declare on any scanned platform", name)
 		}
 	}
 	for name, reason := range envAccessExemptions {
 		if strings.TrimSpace(reason) == "" {
 			t.Errorf("the exemption for %s has no reason", name)
+		}
+	}
+}
+
+// funcNamedIn returns the function or method called name in the linked package
+// whose path is pkgPath, or nil when the binary does not link that package.
+func funcNamedIn(t *testing.T, model envModel, pkgPath, name string) *types.Func {
+	t.Helper()
+	for _, pkg := range model.graph.all {
+		if pkg.PkgPath != pkgPath {
+			continue
+		}
+		if fn, ok := pkg.Types.Scope().Lookup(name).(*types.Func); ok {
+			return fn
+		}
+		for _, typeName := range pkg.Types.Scope().Names() {
+			named, ok := pkg.Types.Scope().Lookup(typeName).(*types.TypeName)
+			if !ok {
+				continue
+			}
+			methods := types.NewMethodSet(types.NewPointer(named.Type()))
+			for i := range methods.Len() {
+				if fn, isFunc := methods.At(i).Obj().(*types.Func); isFunc && fn.Name() == name && fn.Pkg() == pkg.Types {
+					return fn
+				}
+			}
+		}
+	}
+	if pkgPath == "os/exec" {
+		return nil
+	}
+	t.Fatalf("%s.%s is not declared in a linked package", pkgPath, name)
+	return nil
+}
+
+// TestEveryLinkedModuleFileIsReadOnSomePlatform keeps the platform list whole:
+// every Go file, other than a test, in the directory of a module package the
+// binary links must be compiled on at least one scanned platform, so a reader
+// behind a build constraint no scan compiles cannot go unread.
+func TestEveryLinkedModuleFileIsReadOnSomePlatform(t *testing.T) {
+	root := repoRoot(t)
+	compiled := map[string]bool{}
+	dirs := map[string]bool{}
+	for _, goos := range scannedPlatforms {
+		for _, pkg := range binaryModel(t, root, goos).graph.module {
+			for _, file := range pkg.CompiledGoFiles {
+				compiled[filepath.ToSlash(file)] = true
+				dirs[filepath.ToSlash(filepath.Dir(file))] = true
+			}
+		}
+	}
+	for _, want := range []string{"internal/cli/password_prompt_unix.go", "internal/cli/password_prompt_windows.go"} {
+		if !compiled[filepath.ToSlash(filepath.Join(root, filepath.FromSlash(want)))] {
+			t.Errorf("%s is not among the files the platform scans compiled: the scan is not reaching the platform-specific readers", want)
+		}
+	}
+	rootPrefix := filepath.ToSlash(root) + "/"
+	seen := map[string]bool{}
+	for _, dir := range sortedKeys(dirs) {
+		entries, err := os.ReadDir(filepath.FromSlash(dir))
+		if err != nil {
+			t.Fatalf("reading %s: %v", dir, err)
+		}
+		for _, entry := range entries {
+			name := entry.Name()
+			if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+				continue
+			}
+			path := dir + "/" + name
+			if compiled[path] {
+				continue
+			}
+			relative := strings.TrimPrefix(path, rootPrefix)
+			if _, exempt := unscannedModuleFiles[relative]; exempt {
+				seen[relative] = true
+				continue
+			}
+			t.Errorf("%s is compiled on none of %v, so its environment reads are unread: add the platform it is built for to scannedPlatforms, or list the file in unscannedModuleFiles with the reason the binary never runs it", relative, scannedPlatforms)
+		}
+	}
+	for _, relative := range sortedKeys(unscannedModuleFiles) {
+		if strings.TrimSpace(unscannedModuleFiles[relative]) == "" {
+			t.Errorf("the exemption for %s has no reason", relative)
+		}
+		if !seen[relative] {
+			t.Errorf("the exemption for %s is not needed: the file is compiled on a scanned platform or is not in a linked package, drop the entry", relative)
 		}
 	}
 }
