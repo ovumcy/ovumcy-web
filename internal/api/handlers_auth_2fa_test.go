@@ -822,6 +822,37 @@ func TestVerifyTOTPLogin_ARefusalWithoutACompareKeepsNoSlot(t *testing.T) {
 	}
 }
 
+// TestVerifyTOTPLogin_AFailedAccountLookupKeepsItsSlot pins the fail-closed side
+// of the lookup: when the store cannot answer the account read, the submission
+// answers an internal error and keeps its slot, so the limit of them is spent
+// and the next is refused. A handler that gave the slot back on any lookup error
+// let a flapping store submit codes without ever drawing the budget; the refund
+// belongs to a grant naming no account, which the neighbouring test keeps.
+func TestVerifyTOTPLogin_AFailedAccountLookupKeepsItsSlot(t *testing.T) {
+	app, database := newOnboardingTestAppWithCSRF(t)
+	user := createOnboardingTestUser(t, database, "totp-lookup-fault@example.com", "StrongPass1", true)
+	secretKey := []byte("test-secret-key")
+	setupTOTPForUser(t, database, user.ID, secretKey)
+	csrfToken, csrfCookieHeader := extractCSRFCookieAndToken(t, app)
+	if err := database.Exec(`ALTER TABLE users RENAME TO users_unreachable`).Error; err != nil {
+		t.Fatalf("make the account lookup fail: %v", err)
+	}
+
+	for attempt := range services.DefaultTOTPAttemptsLimit {
+		resp := submitTOTPChallengeHTMX(t, app, sealTOTPPendingCookieForTest(t, secretKey, user.ID, false), csrfCookieHeader, csrfToken, "123456")
+		status := resp.StatusCode
+		_ = resp.Body.Close()
+		if status != http.StatusInternalServerError {
+			t.Fatalf("submission %d status = %d, want 500 (the lookup fault reaches the handler as an internal error)", attempt+1, status)
+		}
+	}
+	resp := submitTOTPChallengeHTMX(t, app, sealTOTPPendingCookieForTest(t, secretKey, user.ID, false), csrfCookieHeader, csrfToken, "123456")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("submission past the limit = %d, want 429: the failed lookups gave their slots back", resp.StatusCode)
+	}
+}
+
 // TestVerifyTOTPLogin_AReplayedCodeKeepsItsSlot pins the other side of the
 // refund: a replayed code is a compared code that failed, so each replay stays
 // booked and the budget runs out. A handler that gave the slot back for a replay

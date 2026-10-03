@@ -172,6 +172,13 @@ func (service *AuthService) FindByID(ctx context.Context, userID uint) (models.U
 	return service.users.FindByID(ctx, userID)
 }
 
+// FindByIDOptional separates an account that does not exist (found false, no
+// error) from a lookup that failed (an error), which FindByID leaves to the
+// caller to tell apart by a storage driver's sentinel.
+func (service *AuthService) FindByIDOptional(ctx context.Context, userID uint) (models.User, bool, error) {
+	return service.users.FindByIDOptional(ctx, userID)
+}
+
 // authPasswordPolicyError translates the shared password-policy verdict into
 // this layer's sentinels. The too-long refusal keeps its own sentinel the whole
 // way to the owner: collapsing it back into ErrAuthWeakPassword here would undo
