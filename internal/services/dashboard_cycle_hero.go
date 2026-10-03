@@ -135,8 +135,11 @@ func BuildDashboardCycleHero(user *models.User, stats CycleStats, cycleContext D
 	// day resolveCyclePhase left unnamed because the window still calls it
 	// fertile past the published ovulation day would come back "luteal" here —
 	// on the header the dashboard prints in place of the published phase. The
-	// same rule decides it on both. A suppressed tier keeps its own answer.
-	if !fertilitySuppressed && ovulationTimingUndetermined(stats, input.Today) {
+	// same rule decides it on both. It overrides only what that fallback
+	// invented: a phase resolveCyclePhase named is already its answer, and a
+	// bleeding day logged inside the band is "menstrual" there before the rule
+	// is asked. A suppressed tier keeps its own answer.
+	if !fertilitySuppressed && stats.CurrentPhase == "unknown" && ovulationTimingUndetermined(stats, input.Today) {
 		currentPhase = "unknown"
 	}
 	phaseCards := dashboardCycleHeroPhaseCards(currentPhase, periodLength, ovulationDay, cycleLength, fertilitySuppressed)

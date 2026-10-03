@@ -517,8 +517,11 @@ func resolveCyclePhase(stats CycleStats, logs []models.DailyLog, today time.Time
 	if periodLoggedOnDay(logs, today) {
 		return "menstrual"
 	}
-	// Ahead of the projected period below: on these days no projection may
-	// name a phase, "menstrual" included (ovulationTimingUndetermined).
+	// A logged bleeding day above outranks this rule. What it overrides is the
+	// luteal branch at the bottom (ovulationTimingUndetermined): it only covers
+	// days after OvulationDate, and the projected period below never runs past
+	// the day before it (the clamp there), so the two never meet. The NEXT
+	// projected period is not modelled here at all.
 	if ovulationTimingUndetermined(stats, today) {
 		return "unknown"
 	}
