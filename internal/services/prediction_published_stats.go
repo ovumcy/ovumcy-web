@@ -66,9 +66,9 @@ import (
 // published beside the out-of-date banner. A status read against a window the
 // cycle has already outrun is a projection past its own reference range, which
 // the medical-safety floor refuses; publishing it on the JSON API alone is the
-// divergence this function exists to close. The verdict is the pages' own,
-// read off the cycle context rather than re-derived from the signals behind
-// it, and it is NOT a suppression signal: the two suppression bits also decide
+// divergence this function exists to close. The verdict is the pages' own —
+// dashboardCycleDataStale, the one helper the dashboard context and the stats
+// page flags also call — and it is NOT a suppression signal: the two suppression bits also decide
 // what the webhook pass and the .ics feed send, and staleness withholds no
 // date. CycleDataStale carries the verdict on the published copy.
 func PublishedStats(user *models.User, stats CycleStats, logs []models.DailyLog, today time.Time, location *time.Location) (CycleStats, PredictionSuppression) {
