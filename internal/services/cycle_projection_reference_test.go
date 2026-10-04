@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/testenv"
 )
 
@@ -151,7 +152,8 @@ func TestCycleProjection_GoldenVectors(t *testing.T) {
 			// day m+1, when the period is due now. Read through
 			// DashboardUpcomingPredictions itself, so the vector pins what the
 			// surfaces show rather than a re-derivation of it.
-			upcoming := DashboardUpcomingPredictions(CycleStats{LastPeriodStart: lastPeriodStart, LutealPhase: vector.Input.LutealPhase}, nil, today, predictionLength)
+			user := &models.User{CycleLength: predictionLength, LutealPhase: vector.Input.LutealPhase}
+			upcoming := DashboardUpcomingPredictions(CycleStats{LastPeriodStart: lastPeriodStart, LutealPhase: vector.Input.LutealPhase}, user, today, predictionLength)
 			assertProjectionDay(t, "displayed next-period start", upcoming.NextPeriodStart, vector.Expected.DisplayedNextPeriodStart)
 
 			// 4. Ovulation date: the window for the projected cycle, rolled
