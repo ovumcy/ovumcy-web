@@ -106,11 +106,7 @@ func dayPanelNamesProjection(value string) string {
 // which follows the account's age, keeps the anchor months navigable.
 func newDayPanelProjectionUser(t *testing.T, database *gorm.DB, band dayPanelProjectionBand) (models.User, []models.DailyLog) {
 	t.Helper()
-	user := createOnboardingTestUser(t, database, "day-panel-projection@example.com", "StrongPass1", true)
-	user.CreatedAt = band.now.AddDate(-1, 0, 0)
-	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Update("created_at", user.CreatedAt).Error; err != nil {
-		t.Fatalf("date the account: %v", err)
-	}
+	user := createOnboardingTestUserAt(t, database, "day-panel-projection@example.com", "StrongPass1", true, band.now.AddDate(-1, 0, 0))
 	logs := make([]models.DailyLog, 0, len(dayPanelProjectionCycleStarts))
 	for _, raw := range dayPanelProjectionCycleStarts {
 		day, err := time.Parse("2006-01-02", raw)

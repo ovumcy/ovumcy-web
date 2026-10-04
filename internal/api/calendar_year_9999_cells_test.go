@@ -18,7 +18,7 @@ func TestDecember9999CalendarCellsPastDayDateMaxAreInert(t *testing.T) {
 
 	now := time.Date(9999, time.December, 30, 12, 0, 0, 0, time.UTC)
 	app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{now: func() time.Time { return now }})
-	user := createOnboardingTestUser(t, database, "calendar-9999@example.com", "StrongPass1", true)
+	user := createOnboardingTestUserAt(t, database, "calendar-9999@example.com", "StrongPass1", true, now.AddDate(-1, 0, 0))
 
 	request := httptest.NewRequest(http.MethodGet, "/calendar?month=9999-12", nil)
 	request.Header.Set("Cookie", issueAuthCookieForUser(t, user))
