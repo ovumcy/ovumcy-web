@@ -145,12 +145,14 @@ func TestCycleProjection_GoldenVectors(t *testing.T) {
 				t.Errorf("projected cycle day = %d, want %d", cycleDay, vector.Expected.ProjectedCycleDay)
 			}
 
-			// 3. Displayed next-period date: the UN-shifted projected start plus
-			// the selected length, re-anchored in the request location. Mirrors
-			// DashboardUpcomingPredictions, which derives the displayed
-			// next-period before the ovulation forward roll.
-			displayedNext := CalendarDay(cycleStart.AddDate(0, 0, predictionLength), today.Location())
-			assertProjectionDay(t, "displayed next-period start", displayedNext, vector.Expected.DisplayedNextPeriodStart)
+			// 3. Displayed next-period date: the period that closes the RUNNING
+			// cycle, the last recorded start plus the selected length. It is not
+			// the step-2 start plus the length: that start rolls a cycle on from
+			// day m+1, when the period is due now. Read through
+			// DashboardUpcomingPredictions itself, so the vector pins what the
+			// surfaces show rather than a re-derivation of it.
+			upcoming := DashboardUpcomingPredictions(CycleStats{LastPeriodStart: lastPeriodStart, LutealPhase: vector.Input.LutealPhase}, nil, today, predictionLength)
+			assertProjectionDay(t, "displayed next-period start", upcoming.NextPeriodStart, vector.Expected.DisplayedNextPeriodStart)
 
 			// 4. Ovulation date: the window for the projected cycle, rolled
 			// forward once if its ovulation already fell before `today` (the

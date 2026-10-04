@@ -175,11 +175,11 @@ func DashboardProjectionCycleLength(user *models.User, stats CycleStats) int {
 // reference, the hero's axis and the stale check's length, unchanged.
 //
 // This is the third medical-safety suppression signal, beside
-// DashboardPredictionDisabled(user) and stats.PregnancyPaused: past this point a
-// projection can only roll a whole cycle forward at a time (ProjectCycleStart),
-// so every date it yields is manufactured rather than estimated, and presenting
-// one as a window is the estimate-presented-as-fact the medical-safety invariant
-// forbids. Every surface that shows a projected window gates on all three —
+// DashboardPredictionDisabled(user) and stats.PregnancyPaused: past this point
+// the projected period is more than a week behind today and the model has no
+// later one to offer but a whole-cycle roll, so every date it yields is
+// manufactured rather than estimated, and presenting one as a window is the
+// estimate-presented-as-fact the medical-safety invariant forbids. Every surface that shows a projected window gates on all three —
 // through PredictionsSuppressed, which is where the three now live together.
 func DashboardCycleOverdue(user *models.User, stats CycleStats) bool {
 	return DashboardCycleDayLooksLong(stats.CurrentCycleDay, dashboardCycleOverdueLength(user, stats))
@@ -555,7 +555,13 @@ func DashboardUpcomingPredictions(stats CycleStats, user *models.User, today tim
 		return prediction
 	}
 
-	prediction.NextPeriodStart = projectedDay(AddCalendarDays(cycleStart, cycleLength, today.Location()))
+	// The next period is the one that closes the RUNNING cycle, even once its
+	// expected day has passed: rolled with the anchor, every surface named a
+	// window a month out from cycle day m+1 until the overdue gate withheld it at
+	// m+8. Past that gate the date is never shown (PredictionsSuppressed). The
+	// ovulation keeps the roll below: a passed ovulation does belong to the next
+	// cycle.
+	prediction.NextPeriodStart = projectedDay(RunningCycleNextPeriodStart(stats.LastPeriodStart, cycleLength, today))
 	window := PredictCycleWindow(cycleStart, cycleLength, stats.LutealPhase)
 	// window.OvulationDate is a UTC-midnight date-only value while today is a
 	// location-midnight working value, so the two are compared as calendar days
@@ -743,10 +749,11 @@ func withholdThinHistoryNextPeriod(display dashboardPredictionDisplay) dashboard
 // pauseDashboardPredictionDisplay withholds the projected window once the
 // running cycle is past its own cycle length by more than a week.
 //
-// DashboardUpcomingPredictions rolls the projection forward one whole cycle at a
-// time (ProjectCycleStart), so it always yields a strictly future date: at cycle
-// day 45 with a 28-day reference the header used to name the anchor plus 56 days
-// as confidently as it names tomorrow. A cycle that is already overdue carries no
+// The projection has nothing left to name here: the running cycle's period is
+// more than a week behind today, and the ovulation still rolls one whole cycle
+// at a time (ProjectCycleStart) — at cycle day 45 with a 28-day reference the
+// header used to name the anchor plus 56 days as confidently as it names
+// tomorrow. A cycle that is already overdue carries no
 // evidence about when the next one starts, and presenting the roll-forward as a
 // window is exactly the estimate-presented-as-fact the medical-safety invariant
 // forbids. Both halves of the phantom projection go — the window and the
@@ -883,8 +890,15 @@ func dashboardNextPeriodEnd(nextPeriodStart time.Time, stats CycleStats, locatio
 	return AddCalendarDays(nextPeriodStart, periodLength-1, location)
 }
 
+// dashboardNextPeriodInPast reports a projected start already behind today: the
+// window's last day, or the single date where no window is shown. The projection
+// stays on the running cycle until the overdue gate (DashboardUpcomingPredictions),
+// so a late period reaches this state rather than a date a cycle on.
 func dashboardNextPeriodInPast(display dashboardPredictionDisplay, today time.Time) bool {
-	return display.nextPeriodUseRange && !display.nextPeriodRangeEnd.IsZero() && display.nextPeriodRangeEnd.Before(today)
+	if display.nextPeriodUseRange {
+		return !display.nextPeriodRangeEnd.IsZero() && display.nextPeriodRangeEnd.Before(today)
+	}
+	return !display.nextPeriodStart.IsZero() && CalendarDaysBetween(display.nextPeriodStart, today) > 0
 }
 
 func dashboardOvulationInPast(display dashboardPredictionDisplay, today time.Time) bool {

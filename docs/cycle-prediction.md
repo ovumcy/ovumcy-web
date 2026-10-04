@@ -333,11 +333,12 @@ on every one of those surfaces: unpredictable-cycle mode (the settings toggle
 cycle length — more than a week past it, a margin that is an explicitly named
 engineering safety rule rather than a clinical cutoff: no guideline says a
 prediction becomes invalid on a particular cycle day, and past that point the
-model can only roll a whole cycle forward at a time, so what it yields is
-manufactured rather than estimated.
+projected period is more than a week behind today and the model has nothing
+later to offer but a whole-cycle roll, so what it would yield is manufactured
+rather than estimated.
 
 That comparison uses the **shorter** of the two cycle lengths: the median-first
-projection length every published date is rolled forward from, and the
+projection length every published date is projected from, and the
 average-first reference length. The average alone cannot carry the decision. A
 period that was never logged merges two cycles into one 300-day gap, which leaves
 the median at 28 and pulls the average of three ordinary cycles to 96, and a rule
@@ -485,8 +486,11 @@ stages:
 2. **Projected cycle start + cycle day** — `ProjectCycleStart` advances the last
    period start by whole cycles up to `today` and reports the 1-based day within
    the current cycle.
-3. **Displayed next-period date** — the projected (un-shifted) start plus the
-   selected length, re-anchored in the request timezone.
+3. **Displayed next-period date** — the last recorded period start plus the
+   selected length, re-anchored in the request timezone: the period that closes
+   the running cycle. It is never rolled a cycle forward with the stage-2 start —
+   from cycle day m+1 that period is late and due now, not a cycle away, and the
+   overdue gate withholds it once it is more than a week behind.
 4. **Ovulation date** — the window for the projected cycle, rolled forward once
    by `ShiftCycleStartToFutureOvulation` when its ovulation already fell before
    `today`, so a displayed ovulation is never in the past.

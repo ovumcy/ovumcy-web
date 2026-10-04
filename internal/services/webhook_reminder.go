@@ -132,12 +132,12 @@ func WebhookReminderSettingsFromNotifyRecord(record models.WebhookNotifyRecord) 
 //     mode with fewer than three completed cycles) ⇒ nothing. This is the
 //     medical-safety gate: never emit a date the app itself refuses to show.
 //
-//     The overdue disjunct also ends a repeat that had no end: past that point
-//     DashboardUpcomingPredictions rolls the projection a whole cycle forward, so
-//     the next-period date it yields is manufactured, and — because that same
-//     date is the period reminder's watermark KEY — every roll produced an anchor
-//     no watermark covered and re-armed a fresh "period soon" send, once per
-//     projected cycle, for as long as the cycle stayed unclosed. Suppressing the
+//     The overdue disjunct also keeps the period reminder's watermark KEY still
+//     while the cycle stays unclosed: a next-period date rolled a whole cycle
+//     forward is an anchor no watermark covers, and it re-armed a fresh "period
+//     soon" send once per projected cycle. DashboardUpcomingPredictions keeps the
+//     period on the running cycle, and this gate is what holds every other date
+//     back once that period is more than a week late. Suppressing the
 //     reminder suppresses the write too: this decision emits nothing, the notify
 //     pass writes a watermark only after a 2xx delivery, so an overdue cycle
 //     leaves the watermarks exactly where the last real send left them. When the

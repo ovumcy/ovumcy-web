@@ -192,6 +192,17 @@ func ProjectCycleStart(lastPeriodStart time.Time, cycleLength int, today time.Ti
 	return projectedStart, projectedCycleDay, true
 }
 
+// RunningCycleNextPeriodStart is the projected start of the period that closes
+// the cycle running from lastPeriodStart, re-anchored in today's location. It is
+// never rolled forward a cycle (unlike ProjectCycleStart): a period expected
+// yesterday is late, not a month away. Zero when no cycle can be projected.
+func RunningCycleNextPeriodStart(lastPeriodStart time.Time, cycleLength int, today time.Time) time.Time {
+	if lastPeriodStart.IsZero() || cycleLength <= 0 {
+		return time.Time{}
+	}
+	return AddCalendarDays(lastPeriodStart, cycleLength, today.Location())
+}
+
 // ShiftCycleStartToFutureOvulation rolls the cycle anchor forward whole cycles
 // until the predicted ovulation is no longer in the past. The guard counts
 // calendar days, matching the lag arithmetic below it: ovulationDate arrives as
