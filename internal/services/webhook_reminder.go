@@ -268,7 +268,7 @@ func decideDueReminders(user *models.User, settings WebhookReminderSettings, log
 	// and the feed have withheld.
 	_, hasConfirmed := ConfirmedCurrentCycleOvulation(user, logs, stats, today, location)
 	if !suppression.FertilitySuppressed &&
-		!(ranges.OvulationUseRange && hasConfirmed) &&
+		(!ranges.OvulationUseRange || !hasConfirmed) &&
 		!ConfirmedOvulationSupersedes(user, logs, stats, prediction.OvulationDate, today, location) {
 		due, ok, watermarked := decideOvulationReminder(stats, settings, prediction, ranges, today, cycleLength, leadDays)
 		if ok {
