@@ -12,6 +12,15 @@ import (
 
 func createOnboardingTestUser(t *testing.T, database *gorm.DB, email string, password string, onboardingCompleted bool) models.User {
 	t.Helper()
+	return createOnboardingTestUserAt(t, database, email, password, onboardingCompleted, time.Now().UTC())
+}
+
+// createOnboardingTestUserAt dates the account explicitly. A test that pins the
+// handler's clock must date the account against that clock: the calendar's
+// look-back floor follows the account's age, so a wall-clock CreatedAt drifts
+// the floor past the pinned months as real time advances.
+func createOnboardingTestUserAt(t *testing.T, database *gorm.DB, email string, password string, onboardingCompleted bool, createdAt time.Time) models.User {
+	t.Helper()
 
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
@@ -27,7 +36,7 @@ func createOnboardingTestUser(t *testing.T, database *gorm.DB, email string, pas
 		CycleLength:         28,
 		PeriodLength:        5,
 		AutoPeriodFill:      true,
-		CreatedAt:           time.Now().UTC(),
+		CreatedAt:           createdAt,
 	}
 	if err := database.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
