@@ -260,7 +260,7 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 	if periodWindow && CalendarDaysBetween(today, ranges.NextPeriodEnd) >= 0 {
 		appendSpan(calendarFeedKindPeriodWindow, ranges.NextPeriodStart, ranges.NextPeriodEnd)
 	}
-	ovulationWindow := includeOvulation && ranges.OvulationUseRange && !hasConfirmed
+	ovulationWindow := includeOvulation && ranges.OvulationUseRange && !hasConfirmed && !prediction.OvulationImpossible
 	if ovulationWindow && CalendarDaysBetween(today, ranges.OvulationEnd) >= 0 {
 		appendSpan(calendarFeedKindOvulationWindow, ranges.OvulationStart, ranges.OvulationEnd)
 	}
