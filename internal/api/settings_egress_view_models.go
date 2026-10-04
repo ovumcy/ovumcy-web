@@ -246,6 +246,8 @@ func egressWebhookPayloadMessageKeys(fields []services.EgressPayloadField) []str
 			keys = append(keys, "settings.egress.payload.webhook.type")
 		case "event_date":
 			keys = append(keys, "settings.egress.payload.webhook.event_date")
+		case "event_date_end":
+			keys = append(keys, "settings.egress.payload.webhook.event_date_end")
 		case "lead_days":
 			keys = append(keys, "settings.egress.payload.webhook.lead_days")
 		}

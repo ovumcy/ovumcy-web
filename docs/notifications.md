@@ -415,11 +415,11 @@ Operator-relevant summary (the full, test-backed claim list lives in
   re-saves their URL under the new key. See the *SECRET_KEY Usage Map* in
   [`SECURITY.md`](../SECURITY.md) for the full rotation impact table.
 - **No secrets in the payload or CLI output.** The JSON payload carries only a
-  title, message, the disclaimer, the reminder type, the estimated event date,
-  and the lead-day count (the ntfy format sends a subset: title, message,
-  disclaimer and a tag for the type) — never the webhook URL, never
-  `SECRET_KEY`, never a health specific beyond the single estimated date. The
-  CLI never prints the URL
+  title, message, the disclaimer, the reminder type, the estimated event date
+  (and its last day, when the estimate is a range), and the lead-day count (the
+  ntfy format sends a subset: title, message, disclaimer and a tag for the
+  type) — never the webhook URL, never `SECRET_KEY`, never a health specific
+  beyond the estimated date or range. The CLI never prints the URL
   or the token at all, and by default prints no reminder type or estimated date
   either; `ovumcy notify --dry-run --show-health-details` is the one way to ask
   for those, and it is opt-in precisely because the answer is health data.
@@ -441,6 +441,12 @@ Operator-relevant summary (the full, test-backed claim list lives in
 consumer (an ntfy topic rule, a Gotify filter, a home-automation flow) can
 route on it without parsing `message`. `disclaimer` is present on every
 payload, unconditionally.
+
+When the app shows the estimate as a range rather than one day, the payload
+adds `event_date_end`, the range's last day, and `event_date` is its first
+day; `message` then names both (*"Next period estimated to start between
+2026-07-11 and 2026-07-17."*). A single-date reminder has no `event_date_end`.
+A range reminder is sent once, when the range comes within the lead window.
 
 #### ntfy-native delivery (`?format=ntfy`)
 
@@ -502,6 +508,15 @@ confirmation replaces is dropped. The confirmed day is withheld in irregular
 (unpredictable) cycle mode, during a pregnancy pause and before the first
 completed cycle, as it is in the app, and earlier cycles are never included.
 Webhook reminders stay future-only and never send a confirmed day.
+
+The feed and the webhook reminders name dates the way the dashboard does.
+Where the dashboard shows a next-period start window (three or more completed
+cycles that vary in length) or, in irregular cycle mode, an ovulation range, the
+feed carries that window as one multi-day event and the reminder names its first
+and last day — never the single middle day the window was built around. With
+irregular cycle mode on and fewer than three completed cycles, the dashboard
+says more cycles are needed instead of naming a date, and the feed and the
+reminders send no projected date at all.
 
 ### How to enable it
 

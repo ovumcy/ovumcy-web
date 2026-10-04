@@ -261,6 +261,15 @@ var localizedFormatContracts = []localizedFormatContract{
 		argumentTypes: []string{"string"},
 		note:          "reminder.EventDate formatted as 2006-01-02",
 	},
+	{
+		// The same payload sentence for a range: first and last day, both ISO.
+		file:          "internal/services/webhook_notify_service.go",
+		function:      "reminderRangeCopy",
+		keys:          []string{"webhook.reminder.period.message_range", "webhook.reminder.ovulation.message_range"},
+		verbs:         []string{"%s", "%s"},
+		argumentTypes: []string{"string", "string"},
+		note:          "reminder.EventDate and reminder.EventDateEnd formatted as 2006-01-02",
+	},
 }
 
 // goFormatSite is one `fmt.Sprintf` whose format string is computed rather than

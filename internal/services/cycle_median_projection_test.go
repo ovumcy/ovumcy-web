@@ -112,21 +112,32 @@ func TestMedianProjectionAgreesAcrossSurfaces(t *testing.T) {
 	cycleContext := BuildDashboardCycleContext(user, nil, stats, today, loc)
 	assertDay("DisplayNextPeriodStart", cycleContext.DisplayNextPeriodStart, medianNext)
 
-	// 3. Webhook period reminder anchor/event (lead wide enough to cover 28 days).
+	// The 60-day outlier gives the spread a start window, centred on the median:
+	// the dashboard prints the window, and the egress surfaces carry the same one.
+	if !cycleContext.DisplayNextPeriodUseRange {
+		t.Fatal("scenario setup: the spread should put the dashboard in start-window mode")
+	}
+	windowStart, windowEnd := cycleContext.DisplayNextPeriodRangeStart, cycleContext.DisplayNextPeriodRangeEnd
+	if CalendarDaysBetween(windowStart, medianNext) != CalendarDaysBetween(medianNext, windowEnd) {
+		t.Fatalf("start window %s..%s is not centred on the median %s", windowStart.Format("2006-01-02"), windowEnd.Format("2006-01-02"), medianNext.Format("2006-01-02"))
+	}
+
+	// 3. Webhook period reminder event (lead wide enough to cover 28 days).
 	reminders := DecideDueReminders(user, enabledWebhookSettings(14), logs, today, loc)
 	period, ok := findDueReminder(reminders, DueReminderTypePeriod)
 	if !ok {
 		t.Fatalf("expected a period reminder within the lead window, got %#v", reminders)
 	}
-	assertDay("webhook period EventDate", period.EventDate, medianNext)
+	assertDay("webhook period EventDate", period.EventDate, windowStart)
+	assertDay("webhook period EventDateEnd", period.EventDateEnd, windowEnd)
 
 	// 4. First .ics period event.
 	events := calendarFeedEvents(CalendarFeedICSInput{User: user, Logs: logs, Now: today, Location: loc})
-	firstPeriod, ok := firstEventOfKind(events, "period")
+	firstPeriod, ok := firstEventOfKind(events, calendarFeedKindPeriodWindow)
 	if !ok {
-		t.Fatalf("expected a period event in the .ics feed, got %#v", events)
+		t.Fatalf("expected a period window in the .ics feed, got %#v", events)
 	}
-	assertDay("first .ics period event", firstPeriod, medianNext)
+	assertDay("first .ics period window", firstPeriod, windowStart)
 
 	// And prove the surfaces are no longer on the mean-based date.
 	if cycleContext.DisplayNextPeriodStart.Format("2006-01-02") == meanNext.Format("2006-01-02") {

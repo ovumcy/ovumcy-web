@@ -168,7 +168,8 @@ func TestBuildDashboardViewDataWithholdsEveryFertilityClaimTheSharedGateSuppress
 // cycles" qualifier while overdue — a qualifier where the floor is suppression.
 //
 // The not-overdue row is the positive anchor: the needs-data message is a real
-// state and must survive, so the fix may not be "pause everything".
+// state and must survive, so the fix may not be "pause everything" — but it
+// carries no date either (DashboardAwaitingIrregularHistory).
 func TestBuildDashboardCycleContextPausesTheNextPeriodEstimateForAnOverdueIrregularAccount(t *testing.T) {
 	today := mustParseDashboardServiceDay(t, dashboardSuppressionDay)
 
@@ -197,8 +198,11 @@ func TestBuildDashboardCycleContextPausesTheNextPeriodEstimateForAnOverdueIrregu
 			if cycleContext.NextPeriodEstimatePaused != testCase.wantOverdue {
 				t.Errorf("NextPeriodEstimatePaused = %v, want %v", cycleContext.NextPeriodEstimatePaused, testCase.wantOverdue)
 			}
-			if got := !cycleContext.DisplayNextPeriodStart.IsZero(); got == testCase.wantOverdue {
-				t.Errorf("DisplayNextPeriodStart present = %v while overdue = %v; an overdue cycle may name no date", got, testCase.wantOverdue)
+			// Neither row names a date: the overdue one is paused, and the thin-history
+			// one shows the "needs more cycles" caption alone — the tier the egress
+			// surfaces withhold through PredictionsSuppressed.
+			if !cycleContext.DisplayNextPeriodStart.IsZero() {
+				t.Errorf("DisplayNextPeriodStart = %s while overdue = %v; this account may be shown no next-period date", cycleContext.DisplayNextPeriodStart.Format("2006-01-02"), testCase.wantOverdue)
 			}
 			if got := cycleContext.DisplayNextPeriodNeedsData; got == testCase.wantOverdue {
 				t.Errorf("DisplayNextPeriodNeedsData = %v while overdue = %v; the qualifier may not stand in for suppression", got, testCase.wantOverdue)
