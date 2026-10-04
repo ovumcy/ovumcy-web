@@ -380,8 +380,8 @@ func TestDashboardCycleHeroFertileWindowRidesTheFirstCycleGate(t *testing.T) {
 }
 
 // TestDashboardCycleHeroStartWindowExtendsTheAxis asserts the graded tail: the
-// days the next period may start on are read from DashboardPredictionRange —
-// the definition the calendar and the status line already use — and the axis
+// days the next period may start on are the header's window — the one the
+// calendar and the status line already use — and the axis
 // grows to reach them, since a window drawn only as far as the average cycle
 // length would hide its own upper half.
 func TestDashboardCycleHeroStartWindowExtendsTheAxis(t *testing.T) {
@@ -401,7 +401,12 @@ func TestDashboardCycleHeroStartWindowExtendsTheAxis(t *testing.T) {
 		NextPeriodStart:     cycleStart.AddDate(0, 0, 28),
 	}
 
-	hero := BuildDashboardCycleHero(user, stats, dashboardcycleheroCovExactContext(), dashboardCycleHeroInput{
+	// The window is the header's, read off the context that resolved it.
+	cycleContext := dashboardcycleheroCovExactContext()
+	cycleContext.DisplayNextPeriodUseRange = true
+	cycleContext.DisplayNextPeriodRangeStart = cycleStart.AddDate(0, 0, 26)
+	cycleContext.DisplayNextPeriodRangeEnd = cycleStart.AddDate(0, 0, 33)
+	hero := BuildDashboardCycleHero(user, stats, cycleContext, dashboardCycleHeroInput{
 		Today:    cycleStart.AddDate(0, 0, 6),
 		Location: time.UTC,
 	})

@@ -38,7 +38,6 @@ var projectionVerdictSurfaces = map[string][]string{
 	"calendarFeedEvents":              {"DashboardAwaitingIrregularHistory", "ResolveProjectionRanges"},
 	"buildDashboardPredictionDisplay": {"DashboardAwaitingIrregularHistory", "ResolveProjectionRanges"},
 	"buildCalendarPredictionMaps":     {"DashboardAwaitingIrregularHistory", "ResolveProjectionRanges"},
-	"BuildDashboardCycleHero":         {"ResolveProjectionRanges"},
 	"PublishedStats":                  {"DashboardAwaitingIrregularHistory"},
 }
 
@@ -52,7 +51,6 @@ var projectionVerdictLoadBearing = [][2]string{
 	{"calendarFeedEvents", "ResolveProjectionRanges"},
 	{"applyDashboardPredictionRanges", "ResolveProjectionRanges"},
 	{"appendPredictedStartRange", "ResolveProjectionRanges"},
-	{"dashboardCycleHeroStartWindow", "ResolveProjectionRanges"},
 }
 
 // projectionVerdictSoleReferrers pins a range builder to the one declaration
