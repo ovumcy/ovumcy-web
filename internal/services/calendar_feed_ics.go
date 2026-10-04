@@ -232,19 +232,6 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 		return events
 	}
 
-	// The chain starts at the running cycle, whose period DashboardUpcomingPredictions
-	// names even once it is late, and reaches as far as it did from the cycle
-	// ProjectCycleStart rolls to: a late period keeps its own day while it is not
-	// behind today, and no later cycle drops off the end.
-	cycleStart, _, ok := ProjectCycleStart(stats.LastPeriodStart, cycleLength, today)
-	// codecov:ignore:start -- defensive: ProjectCycleStart only reports !ok for a
-	// zero LastPeriodStart or non-positive cycleLength, both already returned
-	// above.
-	if !ok {
-		return events
-	}
-	// codecov:ignore:end
-
 	// The next period start and ovulation the dashboard header names take the
 	// header's shape here too (ResolveProjectionRanges): where the page shows a
 	// start window or an ovulation range, the feed carries that window as one
@@ -264,8 +251,13 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 		appendSpan(calendarFeedKindOvulationWindow, ranges.OvulationStart, ranges.OvulationEnd)
 	}
 
-	runningStart := AddCalendarDays(stats.LastPeriodStart, 0, input.Location)
-	cycles := calendarFeedProjectionCycles + max(CalendarDaysBetween(runningStart, cycleStart), 0)/cycleLength
+	// The chain starts at the running cycle, whose period DashboardUpcomingPredictions
+	// names even once it is late, and gains one cycle per whole cycle already
+	// elapsed, so it reaches as far as a chain from today's cycle would: a late
+	// period keeps its own day while it is not behind today, and no later cycle
+	// drops off the end.
+	runningStart := CalendarDay(stats.LastPeriodStart, input.Location)
+	cycles := calendarFeedProjectionCycles + max(CalendarDaysBetween(runningStart, today), 0)/cycleLength
 	for cycle := range cycles {
 		anchor := AddCalendarDays(runningStart, cycle*cycleLength, input.Location)
 

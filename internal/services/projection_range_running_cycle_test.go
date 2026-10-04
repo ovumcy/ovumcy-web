@@ -1,6 +1,7 @@
 package services
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -145,4 +146,60 @@ func TestLatePeriodWindowLeavesOnWebhookAndFeedAsTheHeadersWindow(t *testing.T) 
 			t.Errorf("feed carries %d chained period(s) after the window, want %d — a late period must not shorten the horizon", len(singles), calendarFeedProjectionCycles)
 		}
 	})
+}
+
+func TestRunningCycleNextPeriodStart(t *testing.T) {
+	start := time.Date(2026, time.March, 15, 0, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name   string
+		start  time.Time
+		length int
+		today  time.Time
+		want   string
+	}{
+		{name: "before the median", start: start, length: 28, today: start.AddDate(0, 0, 10), want: "2026-04-12"},
+		{name: "a late period stays on the running cycle", start: start, length: 28, today: start.AddDate(0, 0, 33), want: "2026-04-12"},
+		{name: "no recorded start", length: 28, today: start, want: "0001-01-01"},
+		{name: "no cycle length", start: start, length: 0, today: start, want: "0001-01-01"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := RunningCycleNextPeriodStart(tc.start, tc.length, tc.today).Format("2006-01-02"); got != tc.want {
+				t.Fatalf("RunningCycleNextPeriodStart = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+// With no spread there is no window to stand in for the late period, so the
+// feed's chain itself must start at the running cycle: cycles of 28, 28 and 28
+// days read on cycle day 29 send the period due today, then the usual horizon.
+func TestFeedChainStartsAtTheRunningCycleForALatePeriod(t *testing.T) {
+	logs := irregularVerdictLogs(0, 28, 56, 84)
+	now := irregularVerdictBase.AddDate(0, 0, 84+28)
+	today := DateAtLocation(now, time.UTC)
+	user := irregularVerdictUser(false)
+	stats := BuildCycleStatsFromLogs(user, logs, now, time.UTC)
+	if cycleContext := BuildDashboardCycleContext(user, logs, stats, today, time.UTC); cycleContext.DisplayNextPeriodUseRange ||
+		CalendarDayKey(cycleContext.DisplayNextPeriodStart) != CalendarDayKey(today) {
+		t.Fatalf("fixture: header shows %s (window %t), want the single date today %s",
+			CalendarDayKey(cycleContext.DisplayNextPeriodStart), cycleContext.DisplayNextPeriodUseRange, CalendarDayKey(today))
+	}
+
+	var periods []string
+	for _, event := range calendarFeedEvents(CalendarFeedICSInput{User: user, Logs: logs, Now: now, Location: time.UTC}) {
+		if event.kind == calendarFeedKindPeriodWindow {
+			t.Fatalf("fixture: feed sends a period window %s..%s for a history with no spread", CalendarDayKey(event.date), CalendarDayKey(event.end))
+		}
+		if event.kind == calendarFeedKindPeriod {
+			periods = append(periods, CalendarDayKey(event.date))
+		}
+	}
+	want := []string{CalendarDayKey(today)}
+	for cycle := 1; cycle <= calendarFeedProjectionCycles; cycle++ {
+		want = append(want, CalendarDayKey(AddCalendarDays(today, cycle*28, time.UTC)))
+	}
+	if strings.Join(periods, ",") != strings.Join(want, ",") {
+		t.Fatalf("feed periods %v, want %v — the late period first, then the full horizon", periods, want)
+	}
 }
