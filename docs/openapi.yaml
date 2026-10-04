@@ -1263,6 +1263,7 @@ components:
               - unpredictable_cycle
               - pregnancy_pause
               - cycle_overdue
+              - irregular_needs_more_cycles
               - awaiting_first_cycle
       additionalProperties: false
 

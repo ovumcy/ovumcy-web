@@ -65,7 +65,10 @@
                        below, so each carries its own string. */}}
                   {{printf (t .Messages "dashboard.next_period_start_window") (formatLocalizedDate .Lang .DisplayNextPeriodRangeStart "display") (formatLocalizedDate .Lang .DisplayNextPeriodRangeEnd "display")}}
                 {{else if .DisplayNextPeriodNeedsData}}
-                  {{printf (t .Messages "dashboard.next_period_estimate") (formatLocalizedDate .Lang .DisplayNextPeriodStart "display")}} · {{t .Messages "dashboard.next_period_need_cycles"}}
+                  {{/* No date: the irregular thin-history tier is withheld on
+                       every surface, and a caption beside a date is not a
+                       substitute for withholding it. */}}
+                  {{t .Messages "dashboard.next_period_need_cycles"}}
                 {{else if .DisplayNextPeriodPrompt}}
                   {{t .Messages "dashboard.next_period_prompt"}}
                 {{else if .DisplayNextPeriodStart.IsZero}}

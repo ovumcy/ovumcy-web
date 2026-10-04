@@ -103,6 +103,21 @@ func statsOverviewStates() []statsOverviewState {
 			wantsFertilityHook: false,
 		},
 		{
+			// Two completed cycles in irregular mode: the dashboard says "needs more
+			// cycles" for both dates, so the payload publishes neither.
+			name:    "irregular mode with fewer than three completed cycles",
+			history: []int{62, 34, 6},
+			seed: func(t *testing.T, database *gorm.DB, user models.User, today time.Time) {
+				updateStatsOverviewUser(t, database, user, map[string]any{"irregular_cycle": true})
+			},
+			wantReasons:     []string{"irregular_needs_more_cycles"},
+			wantPredictions: true,
+			wantFertility:   true,
+			// Not a facts-only tier: the page renders its status and answers
+			// "unknown", like the overdue tier.
+			wantsFertilityHook: true,
+		},
+		{
 			name:    "unpredictable cycle mode",
 			history: []int{62, 34, 6},
 			seed: func(t *testing.T, database *gorm.DB, user models.User, today time.Time) {

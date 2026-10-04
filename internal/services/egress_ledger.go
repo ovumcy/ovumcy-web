@@ -153,6 +153,7 @@ type EgressPayloadField string
 //
 // event_date is a PREDICTED date and disclaimer is the medical-safety sentence:
 // both are payload, not decoration, and are named here as things that leave.
+// event_date_end leaves only with a range, and is listed because it can leave.
 func WebhookPayloadFields() []EgressPayloadField {
 	return []EgressPayloadField{
 		"title",
@@ -160,6 +161,7 @@ func WebhookPayloadFields() []EgressPayloadField {
 		"disclaimer",
 		"type",
 		"event_date",
+		"event_date_end",
 		"lead_days",
 	}
 }

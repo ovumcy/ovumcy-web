@@ -153,10 +153,12 @@ type NotifyCopyProvider interface {
 // key assembled from parts would read as unreachable and be deleted by the next
 // catalogue cleanup.
 const (
-	reminderPeriodTitleKey      = "webhook.reminder.period.title"
-	reminderPeriodMessageKey    = "webhook.reminder.period.message"
-	reminderOvulationTitleKey   = "webhook.reminder.ovulation.title"
-	reminderOvulationMessageKey = "webhook.reminder.ovulation.message"
+	reminderPeriodTitleKey           = "webhook.reminder.period.title"
+	reminderPeriodMessageKey         = "webhook.reminder.period.message"
+	reminderPeriodRangeMessageKey    = "webhook.reminder.period.message_range"
+	reminderOvulationTitleKey        = "webhook.reminder.ovulation.title"
+	reminderOvulationMessageKey      = "webhook.reminder.ovulation.message"
+	reminderOvulationRangeMessageKey = "webhook.reminder.ovulation.message_range"
 )
 
 // NotifyReport is the transport-free result of one notify pass. It never carries
@@ -327,7 +329,7 @@ func (service *WebhookNotifyService) processOwner(
 			report.DryRunPreview = append(report.DryRunPreview, NotifyPreviewLine{
 				OwnerID:   record.ID,
 				Type:      reminder.Type,
-				EventDate: reminder.EventDate.Format("2006-01-02"),
+				EventDate: previewEventDate(payload),
 				Host:      host,
 			})
 			continue
@@ -438,7 +440,7 @@ func watermarkForReminderType(settings WebhookReminderSettings, reminderType str
 func (service *WebhookNotifyService) buildPayload(reminder DueReminder, language string) WebhookPayload {
 	disclaimer := service.localized.Disclaimer(language)
 	title, message := service.reminderCopy(reminder, language)
-	return WebhookPayload{
+	payload := WebhookPayload{
 		Title:      title,
 		Message:    message,
 		Disclaimer: disclaimer,
@@ -446,6 +448,20 @@ func (service *WebhookNotifyService) buildPayload(reminder DueReminder, language
 		EventDate:  reminder.EventDate.Format("2006-01-02"),
 		LeadDays:   reminder.LeadDays,
 	}
+	if !reminder.EventDateEnd.IsZero() {
+		payload.EventDateEnd = reminder.EventDateEnd.Format("2006-01-02")
+	}
+	return payload
+}
+
+// previewEventDate is the dry-run spelling of the payload's date: the day, or
+// first..last for a range, so the preview never shows one day where the payload
+// carries a range.
+func previewEventDate(payload WebhookPayload) string {
+	if payload.EventDateEnd == "" {
+		return payload.EventDate
+	}
+	return payload.EventDate + ".." + payload.EventDateEnd
 }
 
 // reminderCopy returns the minimal, secret-free title and message for a
@@ -453,8 +469,12 @@ func (service *WebhookNotifyService) buildPayload(reminder DueReminder, language
 // used to be English literals here, which put the reminder body outside the
 // six-file locale contract (no translator ever saw a key for it) and sent an
 // owner a headline in one language beside a disclaimer in another. The sentence
-// template carries a single %s for the ISO event date.
+// template carries a single %s for the ISO event date; a range is worded by
+// reminderRangeCopy, never as one day.
 func (service *WebhookNotifyService) reminderCopy(reminder DueReminder, language string) (string, string) {
+	if !reminder.EventDateEnd.IsZero() {
+		return service.reminderRangeCopy(reminder, language)
+	}
 	titleKey, messageKey := reminderPeriodTitleKey, reminderPeriodMessageKey
 	if reminder.Type == DueReminderTypeOvulation {
 		titleKey, messageKey = reminderOvulationTitleKey, reminderOvulationMessageKey
@@ -467,6 +487,21 @@ func (service *WebhookNotifyService) reminderCopy(reminder DueReminder, language
 		return title, ""
 	}
 	return title, fmt.Sprintf(template, reminder.EventDate.Format("2006-01-02"))
+}
+
+// reminderRangeCopy is reminderCopy for a reminder carrying a range: the
+// *_range sentences take the first and the last ISO day.
+func (service *WebhookNotifyService) reminderRangeCopy(reminder DueReminder, language string) (string, string) {
+	titleKey, messageKey := reminderPeriodTitleKey, reminderPeriodRangeMessageKey
+	if reminder.Type == DueReminderTypeOvulation {
+		titleKey, messageKey = reminderOvulationTitleKey, reminderOvulationRangeMessageKey
+	}
+	title := service.localized.Message(language, titleKey)
+	template := service.localized.Message(language, messageKey)
+	if template == "" {
+		return title, ""
+	}
+	return title, fmt.Sprintf(template, reminder.EventDate.Format("2006-01-02"), reminder.EventDateEnd.Format("2006-01-02"))
 }
 
 // hostOnly returns the hostname of a URL and nothing else — no scheme, port,

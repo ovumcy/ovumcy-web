@@ -129,6 +129,10 @@ type WebhookPayload struct {
 	// EventDate is the estimated event's calendar day in RFC3339-less YYYY-MM-DD
 	// form (owner-local). Minimized health specific: the date only, no cycle math.
 	EventDate string `json:"event_date"`
+	// EventDateEnd is the last day of the estimated range, in the same form, when
+	// the app shows this event as a range rather than one day (EventDate is then
+	// the range's first day). Absent for a single-date reminder.
+	EventDateEnd string `json:"event_date_end,omitempty"`
 	// LeadDays echoes the lead window that surfaced this reminder.
 	LeadDays int `json:"lead_days"`
 }
