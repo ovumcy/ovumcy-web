@@ -304,7 +304,13 @@ func decidePeriodReminder(settings WebhookReminderSettings, prediction Dashboard
 		return DueReminder{}, false, false
 	}
 	anchor := CalendarDay(eventDate, today.Location())
-	if watermarkCoversAnchor(settings.PeriodWatermark, anchor) {
+	// A watermark anywhere inside the window covers it too: a reminder sent
+	// before windows were keyed on their first day is keyed on the median inside
+	// the window, and announcing the same window again would be a second send for
+	// one cycle. A later window always starts after an earlier one's first day,
+	// so this never covers the next cycle.
+	if watermarkCoversAnchor(settings.PeriodWatermark, anchor) ||
+		(!eventDateEnd.IsZero() && watermarkWithin(settings.PeriodWatermark, eventDate, eventDateEnd)) {
 		return DueReminder{}, false, true
 	}
 	return DueReminder{
@@ -393,6 +399,15 @@ func watermarkCoversAnchor(watermark *time.Time, anchor time.Time) bool {
 		return false
 	}
 	return CalendarDaysBetween(*watermark, anchor) == 0
+}
+
+// watermarkWithin reports whether an incoming watermark falls on or between
+// first and last, by calendar day.
+func watermarkWithin(watermark *time.Time, first time.Time, last time.Time) bool {
+	if watermark == nil || watermark.IsZero() {
+		return false
+	}
+	return CalendarDaysBetween(first, *watermark) >= 0 && CalendarDaysBetween(*watermark, last) >= 0
 }
 
 // ovulationCycleAnchor returns the cycle-start the predicted ovulation belongs
