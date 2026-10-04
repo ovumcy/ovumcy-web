@@ -246,30 +246,32 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 	// The next period start and ovulation the dashboard header names take the
 	// header's shape here too (ResolveProjectionRanges): where the page shows a
 	// start window or an ovulation range, the feed carries that window as one
-	// multi-day event instead of the median day inside it. Only those two events
-	// change — the cycles chained after them are projections of a projection, and
-	// the dashboard names no range for them either. A confirmed ovulation outranks
-	// the ovulation range exactly as it does on the dashboard.
+	// multi-day event instead of the median day inside it. The single event a
+	// window replaces is the one that falls INSIDE it, not the one the rolled
+	// prediction names: an irregular window is placed from the last recorded
+	// start, so once the median has passed and the projection has rolled a cycle
+	// on, the rolled day belongs to the next cycle and stays. A window already
+	// behind today is not sent. The cycles chained after are projections of a
+	// projection, and the dashboard names no range for them either. A confirmed
+	// ovulation outranks the ovulation range exactly as it does on the dashboard.
 	prediction := DashboardUpcomingPredictions(stats, user, today, cycleLength)
 	ranges := ResolveProjectionRanges(user, stats, prediction.NextPeriodStart, input.Location)
-	rangedOvulation := time.Time{}
-	if includeOvulation && ranges.OvulationUseRange && !hasConfirmed {
-		rangedOvulation = prediction.OvulationDate
-		if CalendarDaysBetween(today, ranges.OvulationEnd) >= 0 {
-			appendSpan(calendarFeedKindOvulationWindow, ranges.OvulationStart, ranges.OvulationEnd)
-		}
+	periodWindow := ranges.NextPeriodUseRange
+	if periodWindow && CalendarDaysBetween(today, ranges.NextPeriodEnd) >= 0 {
+		appendSpan(calendarFeedKindPeriodWindow, ranges.NextPeriodStart, ranges.NextPeriodEnd)
+	}
+	ovulationWindow := includeOvulation && ranges.OvulationUseRange && !hasConfirmed
+	if ovulationWindow && CalendarDaysBetween(today, ranges.OvulationEnd) >= 0 {
+		appendSpan(calendarFeedKindOvulationWindow, ranges.OvulationStart, ranges.OvulationEnd)
 	}
 
 	for cycle := range calendarFeedProjectionCycles {
 		anchor := AddCalendarDays(cycleStart, cycle*cycleLength, input.Location)
 
 		nextPeriodStart := AddCalendarDays(anchor, cycleLength, input.Location)
-		if !nextPeriodStart.Before(today) {
-			if ranges.NextPeriodUseRange && CalendarDaysBetween(nextPeriodStart, prediction.NextPeriodStart) == 0 {
-				appendSpan(calendarFeedKindPeriodWindow, ranges.NextPeriodStart, ranges.NextPeriodEnd)
-			} else {
-				appendEvent(calendarFeedKindPeriod, nextPeriodStart)
-			}
+		if !nextPeriodStart.Before(today) &&
+			!(periodWindow && calendarDayWithin(nextPeriodStart, ranges.NextPeriodStart, ranges.NextPeriodEnd)) {
+			appendEvent(calendarFeedKindPeriod, nextPeriodStart)
 		}
 
 		window := PredictCycleWindow(anchor, cycleLength, stats.LutealPhase)
@@ -285,12 +287,18 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 		// ConfirmedOvulationSupersedes bounds that to the confirmation's own cycle,
 		// so the later projected cycles here are untouched.
 		if includeOvulation && window.Calculable && CalendarDaysBetween(window.OvulationDate, today) <= 0 &&
-			(rangedOvulation.IsZero() || CalendarDaysBetween(window.OvulationDate, rangedOvulation) != 0) &&
+			!(ovulationWindow && calendarDayWithin(window.OvulationDate, ranges.OvulationStart, ranges.OvulationEnd)) &&
 			!ConfirmedOvulationSupersedes(user, input.Logs, stats, window.OvulationDate, today, input.Location) {
 			appendEvent(calendarFeedKindOvulation, CalendarDay(window.OvulationDate, input.Location))
 		}
 	}
 	return events
+}
+
+// calendarDayWithin reports whether day falls on or between first and last, by
+// calendar day (the operands may carry different midnight shapes).
+func calendarDayWithin(day time.Time, first time.Time, last time.Time) bool {
+	return CalendarDaysBetween(first, day) >= 0 && CalendarDaysBetween(day, last) >= 0
 }
 
 // renderCalendarFeedICS assembles the RFC 5545 VCALENDAR text. Every line is

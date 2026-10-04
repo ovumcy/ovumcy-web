@@ -7,7 +7,10 @@
   the calendar grid still painted them and `GET /api/v1/stats/overview` still published them. None
   of them does now: the state withholds every projected date on every surface, and the dashboard's
   next-period line shows the "needs more cycles" note on its own, without the date beside it. The
-  stats API names it with a new suppression reason, `irregular_needs_more_cycles`.
+  stats API names it with a new suppression reason, `irregular_needs_more_cycles`. As with the
+  other withholding states, the stats page's inferred phases for past cycles and the late-period
+  hint are not shown in this state either: both are built on ovulation days the app does not yet
+  have the history to place.
 - **Where the dashboard shows a range, reminders and the feed send that range, not one day.** With
   three or more completed cycles that vary in length the dashboard shows a next-period start window
   (and, in irregular cycle mode, an ovulation range) because a single day would overstate the
@@ -15,5 +18,5 @@
   the first and last day ("Next period estimated to start between … and …"), and the JSON payload
   adds `event_date_end` beside `event_date`, which becomes the window's first day; a single-date
   reminder is unchanged and carries no `event_date_end`. The feed carries the window as one
-  multi-day event. Because a window is keyed on its first day, an owner whose reminder for the
-  current cycle already went out before this update may receive it once more, as a range.
+  multi-day event. A reminder already sent for the current cycle before this update is not sent
+  again as a range.
