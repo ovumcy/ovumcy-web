@@ -98,7 +98,7 @@ func TestReminderWithinWindowBoundaries(t *testing.T) {
 			if !tc.zeroDate {
 				eventDate = mustParseWebhookReminderDay(t, tc.eventDate, time.UTC)
 			}
-			if got := reminderWithinWindow(today, eventDate, leadDays); got != tc.want {
+			if got := reminderWithinWindow(today, eventDate, time.Time{}, leadDays); got != tc.want {
 				t.Fatalf("reminderWithinWindow(%s, %s, %d) = %v, want %v",
 					today.Format("2006-01-02"), tc.eventDate, leadDays, got, tc.want)
 			}
@@ -111,11 +111,11 @@ func TestReminderWithinWindowBoundaries(t *testing.T) {
 func TestReminderWithinWindowZeroLeadOnlyToday(t *testing.T) {
 	today := mustParseWebhookReminderDay(t, "2026-03-10", time.UTC)
 
-	if !reminderWithinWindow(today, today, 0) {
+	if !reminderWithinWindow(today, today, time.Time{}, 0) {
 		t.Fatalf("expected event today to be due with a zero lead window")
 	}
 	tomorrow := mustParseWebhookReminderDay(t, "2026-03-11", time.UTC)
-	if reminderWithinWindow(today, tomorrow, 0) {
+	if reminderWithinWindow(today, tomorrow, time.Time{}, 0) {
 		t.Fatalf("expected event tomorrow to be excluded by a zero lead window")
 	}
 }
@@ -390,7 +390,7 @@ func TestDecideDueRemindersSuppressesOverdueCycle(t *testing.T) {
 		// overdue gate this decision emits a "period soon" reminder for a date the
 		// account's own data does not support.
 		prediction := DashboardUpcomingPredictions(stats, user, now, DashboardProjectionCycleLength(user, stats))
-		if !reminderWithinWindow(now, prediction.NextPeriodStart, leadDays) {
+		if !reminderWithinWindow(now, prediction.NextPeriodStart, time.Time{}, leadDays) {
 			t.Fatalf("test setup expects the phantom projection %s inside the %d-day window from %s",
 				prediction.NextPeriodStart.Format("2006-01-02"), leadDays, now.Format("2006-01-02"))
 		}

@@ -76,7 +76,21 @@ func publishedStatsCases() []publishedStatsCase {
 	firstCycle := publishedStatsBase()
 	firstCycle.CompletedCycleCount = 0
 
+	thinIrregular := publishedStatsBase()
+	thinIrregular.CompletedCycleCount = 2
+
 	return []publishedStatsCase{
+		{
+			// Both halves go: the dashboard shows "needs more cycles" in place of
+			// the next period and the ovulation alike.
+			name:            "irregular mode with fewer than three completed cycles",
+			signal:          "DashboardAwaitingIrregularHistory",
+			reason:          SuppressionReasonIrregularNeedsData,
+			user:            &models.User{IrregularCycle: true},
+			stats:           thinIrregular,
+			wantPredictions: true,
+			wantFertility:   true,
+		},
 		{
 			name:            "unpredictable cycle mode",
 			signal:          "DashboardPredictionDisabled",

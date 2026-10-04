@@ -220,8 +220,30 @@ func dashboardCycleOverdueLength(user *models.User, stats CycleStats) int {
 // carried their own copy — so a fourth suppression signal had to be found at
 // four sites, and the one that was missed (the completed-cycle floor below)
 // stayed missing silently. A new signal belongs here, never in a caller.
+//
+// The fourth signal, DashboardAwaitingIrregularHistory, is the irregular-mode
+// thin-history tier. The dashboard has always answered it with "needs more
+// cycles" in place of both dates; the webhook, the .ics feed, the calendar grid
+// and the JSON overview read only this predicate, so until the signal lived here
+// they sent and painted the very dates the dashboard refused.
 func PredictionsSuppressed(user *models.User, stats CycleStats) bool {
-	return DashboardPredictionDisabled(user) || stats.PregnancyPaused || DashboardCycleOverdue(user, stats)
+	return DashboardPredictionDisabled(user) || stats.PregnancyPaused || DashboardCycleOverdue(user, stats) || DashboardAwaitingIrregularHistory(user, stats)
+}
+
+// irregularRangeMinimumCycles is the completed-cycle count irregular-cycle mode
+// needs before its min/max spread is shown as a range rather than withheld.
+const irregularRangeMinimumCycles = 3
+
+// DashboardAwaitingIrregularHistory reports an account in irregular-cycle mode
+// with fewer completed cycles than the mode needs before its spread means
+// anything. Irregular mode trades the single median date for a min/max range;
+// with one or two observed lengths there is no range to show, and the median of
+// one or two irregular cycles is a single date presented with a confidence the
+// owner told the app not to assume. So no projected date is named for it on any
+// surface — the dashboard words the gap as "needs more cycles", the egress
+// passes stay silent.
+func DashboardAwaitingIrregularHistory(user *models.User, stats CycleStats) bool {
+	return user != nil && user.IrregularCycle && stats.CompletedCycleCount < irregularRangeMinimumCycles
 }
 
 // FertilityProjectionSuppressed adds the zero-completed-cycle floor to the three
@@ -303,6 +325,7 @@ const (
 	SuppressionReasonPregnancyPause     SuppressionReason = "pregnancy_pause"
 	SuppressionReasonCycleOverdue       SuppressionReason = "cycle_overdue"
 	SuppressionReasonAwaitingFirstCycle SuppressionReason = "awaiting_first_cycle"
+	SuppressionReasonIrregularNeedsData SuppressionReason = "irregular_needs_more_cycles"
 )
 
 // PredictionSuppression is the resolved verdict of the two predicates above plus
@@ -323,16 +346,16 @@ type PredictionSuppression struct {
 }
 
 // ResolvePredictionSuppression answers what a surface may publish and why. It
-// lives in this file because it is the only place the four signals may be named
+// lives in this file because it is the only place the five signals may be named
 // together: everywhere else they are read through the two predicates.
 //
-// Reasons is ordered by the predicate the signal belongs to — the three
+// Reasons is ordered by the predicate the signal belongs to — the four
 // whole-projection signals first, the fertility-only floor last — so a payload
 // diffed between two releases moves only when the state does. A verdict may
 // carry no reason at all: neither predicate is suppressing, which is the
 // ordinary case.
 //
-// A fifth signal added to either predicate MUST get its reason here, or the
+// A sixth signal added to either predicate MUST get its reason here, or the
 // payload says "suppressed" with nothing naming why.
 // TestEverySuppressionSignalHasAPublishedReason fails until it does.
 func ResolvePredictionSuppression(user *models.User, stats CycleStats) PredictionSuppression {
@@ -349,6 +372,9 @@ func ResolvePredictionSuppression(user *models.User, stats CycleStats) Predictio
 	}
 	if DashboardCycleOverdue(user, stats) {
 		verdict.Reasons = append(verdict.Reasons, SuppressionReasonCycleOverdue)
+	}
+	if DashboardAwaitingIrregularHistory(user, stats) {
+		verdict.Reasons = append(verdict.Reasons, SuppressionReasonIrregularNeedsData)
 	}
 	if DashboardAwaitingFirstCycle(stats) {
 		verdict.Reasons = append(verdict.Reasons, SuppressionReasonAwaitingFirstCycle)
@@ -433,7 +459,7 @@ func dashboardPredictionRegularSpan(stats CycleStats) int {
 }
 
 func dashboardIrregularPredictionRangeEnabled(user *models.User, stats CycleStats) bool {
-	return user != nil && user.IrregularCycle && stats.CompletedCycleCount >= 3 && stats.MinCycleLength > 0 && stats.MaxCycleLength >= stats.MinCycleLength
+	return user != nil && user.IrregularCycle && stats.CompletedCycleCount >= irregularRangeMinimumCycles && stats.MinCycleLength > 0 && stats.MaxCycleLength >= stats.MinCycleLength
 }
 
 func DashboardPredictionRange(user *models.User, stats CycleStats, predictedStart time.Time, location *time.Location) (time.Time, time.Time, bool) {
@@ -690,21 +716,28 @@ func buildDashboardPredictionDisplay(user *models.User, logs []models.DailyLog, 
 	if display.nextPeriodPrompt {
 		return finalizeDashboardPredictionDisplay(display)
 	}
-	// Suppression is the floor, so overdue outranks the thin-history branch
-	// below rather than following it. Both describe a weak estimate, but they
-	// answer with different strengths: nextPeriodNeedsData still NAMES the
-	// projected date and captions it "needs more cycles", which is exactly the
-	// qualifier the medical-safety invariant refuses to accept in place of
-	// withholding. Ordered the other way round, the one cohort that met both —
-	// an irregular account with fewer than three completed cycles, overdue —
-	// was the only one still reading a date past its own cycle length.
+	// Overdue outranks the thin-history branch below: the paused state is what
+	// the header says once the cycle has outrun its own length, and the caption
+	// "needs more cycles" would not explain the missing window.
 	if DashboardCycleOverdue(user, stats) {
 		return pauseDashboardPredictionDisplay(display)
 	}
 	if display.nextPeriodNeedsData {
-		return finalizeDashboardPredictionDisplay(display)
+		return finalizeDashboardPredictionDisplay(withholdThinHistoryNextPeriod(display))
 	}
 	return finalizeDashboardPredictionDisplay(applyDashboardPredictionRanges(display, user, stats, location))
+}
+
+// withholdThinHistoryNextPeriod clears the projected next-period band for the
+// irregular thin-history tier (DashboardAwaitingIrregularHistory), leaving only
+// the "needs more cycles" caption. The header used to name the median date
+// beside that caption, and a qualifier is not a substitute for withholding: the
+// webhook and the .ics feed read the same tier through PredictionsSuppressed
+// and send nothing, so the date had nowhere to agree with but the page.
+func withholdThinHistoryNextPeriod(display dashboardPredictionDisplay) dashboardPredictionDisplay {
+	display.nextPeriodStart = time.Time{}
+	display.nextPeriodEnd = time.Time{}
+	return display
 }
 
 // pauseDashboardPredictionDisplay withholds the projected window once the
@@ -744,23 +777,58 @@ func pauseDashboardPredictionDisplay(display dashboardPredictionDisplay) dashboa
 }
 
 func dashboardNeedsNextPeriodData(user *models.User, stats CycleStats, nextPeriodStart time.Time) bool {
-	return user != nil && user.IrregularCycle && stats.CompletedCycleCount < 3 && !nextPeriodStart.IsZero()
+	return DashboardAwaitingIrregularHistory(user, stats) && !nextPeriodStart.IsZero()
 }
 
 func dashboardNeedsOvulationData(user *models.User, stats CycleStats) bool {
-	return user != nil && user.IrregularCycle && stats.CompletedCycleCount < 3 && !stats.LastPeriodStart.IsZero()
+	return DashboardAwaitingIrregularHistory(user, stats) && !stats.LastPeriodStart.IsZero()
+}
+
+// ProjectionRanges is the shape the next projected period start and ovulation
+// take wherever they are shown or sent: a range when the account's spread says
+// a single day would overstate the estimate, otherwise nothing (the single date
+// stands).
+type ProjectionRanges struct {
+	NextPeriodStart    time.Time
+	NextPeriodEnd      time.Time
+	NextPeriodUseRange bool
+	OvulationStart     time.Time
+	OvulationEnd       time.Time
+	OvulationUseRange  bool
+}
+
+// ResolveProjectionRanges is the one answer to "range or single date" for the
+// projection DashboardUpcomingPredictions names. The dashboard header, the
+// webhook reminder and the .ics feed all read it, so a surface cannot send one
+// day where the page shows a window: the in-app banner already refused to count
+// down to a range, while the reminder and the feed kept sending the median day.
+//
+// The next-period range is DashboardPredictionRange (irregular min/max, or the
+// regular StdDev span). The ovulation range exists only in irregular range mode
+// and only beside a next-period range — no next-period range means no
+// projection spread to express. A confirmed ovulation outranking the range is
+// the caller's decision: each surface already resolves the confirmed day its own
+// way (the dashboard substitutes it, the egress passes skip the superseded
+// projection).
+func ResolveProjectionRanges(user *models.User, stats CycleStats, nextPeriodStart time.Time, location *time.Location) ProjectionRanges {
+	var ranges ProjectionRanges
+	ranges.NextPeriodStart, ranges.NextPeriodEnd, ranges.NextPeriodUseRange = DashboardPredictionRange(user, stats, nextPeriodStart, location)
+	if !ranges.NextPeriodUseRange || !dashboardIrregularPredictionRangeEnabled(user, stats) {
+		return ranges
+	}
+	ranges.OvulationStart, ranges.OvulationEnd, ranges.OvulationUseRange = DashboardOvulationRange(
+		stats.LastPeriodStart,
+		stats.MinCycleLength,
+		stats.MaxCycleLength,
+		stats.LutealPhase,
+		location,
+	)
+	return ranges
 }
 
 func applyDashboardPredictionRanges(display dashboardPredictionDisplay, user *models.User, stats CycleStats, location *time.Location) dashboardPredictionDisplay {
-	display.nextPeriodRangeStart, display.nextPeriodRangeEnd, display.nextPeriodUseRange = DashboardPredictionRange(
-		user,
-		stats,
-		display.nextPeriodStart,
-		location,
-	)
-	if !dashboardIrregularPredictionRangeEnabled(user, stats) {
-		return display
-	}
+	ranges := ResolveProjectionRanges(user, stats, display.nextPeriodStart, location)
+	display.nextPeriodRangeStart, display.nextPeriodRangeEnd, display.nextPeriodUseRange = ranges.NextPeriodStart, ranges.NextPeriodEnd, ranges.NextPeriodUseRange
 	// A confirmed ovulation outranks the range. The range expresses the SPREAD
 	// of a projection, and there is no projection left to express once the
 	// temperatures have named the day — it is built from cycle-length spread and
@@ -768,25 +836,12 @@ func applyDashboardPredictionRanges(display dashboardPredictionDisplay, user *mo
 	// leave the dashboard and the calendar naming different things again, for
 	// the cohort whose model is weakest. The next-period range above is
 	// untouched: that projection is still a projection.
-	if display.ovulationConfirmed {
+	if display.ovulationConfirmed || !ranges.OvulationUseRange {
 		return display
 	}
-	if !display.nextPeriodUseRange {
-		// No next-period range means no projection to express a spread of: the
-		// ovulation range is withheld with it, as before.
-		return display
-	}
-	display.ovulationRangeStart, display.ovulationRangeEnd, display.ovulationUseRange = DashboardOvulationRange(
-		stats.LastPeriodStart,
-		stats.MinCycleLength,
-		stats.MaxCycleLength,
-		stats.LutealPhase,
-		location,
-	)
-	if display.ovulationUseRange {
-		display.ovulationDate = time.Time{}
-		display.ovulationExact = false
-	}
+	display.ovulationRangeStart, display.ovulationRangeEnd, display.ovulationUseRange = ranges.OvulationStart, ranges.OvulationEnd, true
+	display.ovulationDate = time.Time{}
+	display.ovulationExact = false
 	return display
 }
 
