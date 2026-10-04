@@ -232,8 +232,10 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 		return events
 	}
 
-	// Anchor the first projected cycle to the current/next cycle start exactly as
-	// DashboardUpcomingPredictions does, then step forward one cycle at a time.
+	// The chain starts at the running cycle, whose period DashboardUpcomingPredictions
+	// names even once it is late, and reaches as far as it did from the cycle
+	// ProjectCycleStart rolls to: a late period keeps its own day while it is not
+	// behind today, and no later cycle drops off the end.
 	cycleStart, _, ok := ProjectCycleStart(stats.LastPeriodStart, cycleLength, today)
 	// codecov:ignore:start -- defensive: ProjectCycleStart only reports !ok for a
 	// zero LastPeriodStart or non-positive cycleLength, both already returned
@@ -247,11 +249,8 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 	// header's shape here too (ResolveProjectionRanges): where the page shows a
 	// start window or an ovulation range, the feed carries that window as one
 	// multi-day event instead of the median day inside it. The single event a
-	// window replaces is the one that falls INSIDE it, not the one the rolled
-	// prediction names: an irregular window is placed from the last recorded
-	// start, so once the median has passed and the projection has rolled a cycle
-	// on, the rolled day belongs to the next cycle and stays. A window already
-	// behind today is not sent. The cycles chained after are projections of a
+	// window replaces is the one that falls INSIDE it. A window already behind
+	// today is not sent. The cycles chained after are projections of a
 	// projection, and the dashboard names no range for them either. A confirmed
 	// ovulation outranks the ovulation range exactly as it does on the dashboard.
 	prediction := DashboardUpcomingPredictions(stats, user, today, cycleLength)
@@ -265,8 +264,10 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 		appendSpan(calendarFeedKindOvulationWindow, ranges.OvulationStart, ranges.OvulationEnd)
 	}
 
-	for cycle := range calendarFeedProjectionCycles {
-		anchor := AddCalendarDays(cycleStart, cycle*cycleLength, input.Location)
+	runningStart := AddCalendarDays(stats.LastPeriodStart, 0, input.Location)
+	cycles := calendarFeedProjectionCycles + max(CalendarDaysBetween(runningStart, cycleStart), 0)/cycleLength
+	for cycle := range cycles {
+		anchor := AddCalendarDays(runningStart, cycle*cycleLength, input.Location)
 
 		nextPeriodStart := AddCalendarDays(anchor, cycleLength, input.Location)
 		if !nextPeriodStart.Before(today) &&

@@ -64,9 +64,9 @@ const (
 // next_period_start in the payload it already fetches
 // (TestStatsOverviewConfirmsALateShiftOnOrAfterTheProjectedNextPeriodStart), the
 // rendered half compares the dashboard's next-period slot in the very document
-// it takes the ovulation slot from — where the model's start appears rolled one
-// whole cycle past the projected one today has already gone by, which is what
-// this cohort's lateness looks like on that surface. Every other date on either
+// it takes the ovulation slot from — where the model's start is the projected
+// one today has already gone by, which is what this cohort's lateness looks
+// like on that surface. Every other date on either
 // side is derived from the same today, so an anchor held by one half only would
 // leave the other blind to a drifting cohort.
 //
@@ -166,15 +166,15 @@ func TestDashboardNamesALateShiftOnOrAfterTheProjectedNextPeriodStart(t *testing
 			// fails on this very anchor, the paused dashboard rendering no
 			// next-period date (the confirmed day's slot itself outlives the gate).
 			//
-			// The date this surface names is the projected start rolled one whole
-			// cycle on — 28 days, the spacing of the four starts the seed records
-			// — because today has already passed the projected one, which is this
-			// cohort's whole point (DashboardUpcomingPredictions, ProjectCycleStart).
-			// A seed that drifted by a day moves it just the same.
+			// The date this surface names is the projected start itself, though
+			// today has already passed it, which is this cohort's whole point: the
+			// period that closes the running cycle is late, not a cycle away
+			// (DashboardUpcomingPredictions). A seed that drifted by a day moves it
+			// just the same.
 			nextPeriod := dashboardElementTextByDataAttr(t, document, "data-dashboard-next-period")
-			wantNextPeriod := services.LocalizedDateDisplay("en", services.AddCalendarDays(projectedStart, 28, time.UTC))
+			wantNextPeriod := services.LocalizedDateDisplay("en", projectedStart)
 			if !strings.Contains(nextPeriod, wantNextPeriod) {
-				t.Fatalf("fixture anchor: the next-period slot = %q, want %q — one cycle past the seed's projected %s, so the seed's projection and the model's are one date before the ovulation slot is read against it", nextPeriod, wantNextPeriod, services.LocalizedDateDisplay("en", projectedStart))
+				t.Fatalf("fixture anchor: the next-period slot = %q, want %q — the seed's projected start, so the seed's projection and the model's are one date before the ovulation slot is read against it", nextPeriod, wantNextPeriod)
 			}
 
 			if want := services.LocalizedDateDisplay("en", confirmedDay); !strings.Contains(slot, want) {

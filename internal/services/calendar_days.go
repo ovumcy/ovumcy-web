@@ -241,11 +241,11 @@ func buildCalendarPredictionMaps(user *models.User, logs []models.DailyLog, stat
 // DashboardUpcomingPredictions names — rather than deriving a second range, so
 // a day is marked only where the dashboard shows a range (enough completed
 // cycles for the spread to mean something), and never once the suppression
-// signals above have emptied the projected maps. The projection is the ROLLED
-// one: once the median day has passed, the header names the cycle after it,
-// and a grid window left on stats.NextPeriodStart showed a different window
-// from the one the header, the webhook and the .ics feed send. Only that one
-// cycle carries a window: the cycles chained after it are projections of a
+// signals above have emptied the projected maps. That projection stays on the
+// running cycle until the overdue gate, so the window sits around the same day
+// as the grid's own predicted period band (stats.NextPeriodStart), and is the
+// one the header, the webhook and the .ics feed send. Only that one cycle
+// carries a window: the cycles chained after it are projections of a
 // projection, and widening those would present manufactured spread as measured
 // spread.
 func appendPredictedStartRange(startRangeMap map[string]bool, user *models.User, stats CycleStats, today time.Time, location *time.Location) {

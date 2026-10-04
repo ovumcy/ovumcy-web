@@ -364,19 +364,18 @@ func TestWebhookNotifyCrossOwnerWiringHoldsAcrossBothDeliveryFormats(t *testing.
 // fallback would SEND, and a correct one sends nothing to that owner.
 //
 // Fixture (hand-computed): LastPeriodStart = 2026-02-12, CycleLength = 28,
-// lead 3. Instant now = 2026-03-11T12:00:00Z.
-//   - fallback UTC: today = 2026-03-11, 27 days elapsed ⇒ next period
-//     2026-02-12 + 28 = 2026-03-12, one day out ⇒ due.
-//   - owner Pacific/Kiritimati (UTC+14): local wall clock 2026-03-12T02:00,
-//     today = 2026-03-12, 28 days elapsed = one full cycle ⇒ the projection
-//     rolls, the next period moves to 2026-04-09, 28 days out ⇒ not due.
+// lead 3. Instant now = 2026-03-09T05:00:00Z. The next period is
+// 2026-02-12 + 28 = 2026-03-12 in either zone.
+//   - fallback UTC: today = 2026-03-09, three days out ⇒ due.
+//   - owner Pacific/Honolulu (UTC-10): local wall clock 2026-03-08T19:00,
+//     today = 2026-03-08, four days out ⇒ not due.
 //
 // The control owner has no persisted zone, so the pass resolves it through the
 // same fallback: it must send, dated 2026-03-12. That proves the fixture sits
 // inside the window on the fallback's day — without it, the refusal above
 // would also pass on a fixture that is simply never due.
 func TestWebhookNotifyOwnerZoneWithholdsAReminderTheFallbackZoneWouldSend(t *testing.T) {
-	now := time.Date(2026, 3, 11, 12, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 3, 9, 5, 0, 0, 0, time.UTC)
 	lastPeriodStart := time.Date(2026, 2, 12, 0, 0, 0, 0, time.UTC)
 	newRecord := func(id uint, timezone string, url string) models.WebhookNotifyRecord {
 		return models.WebhookNotifyRecord{
@@ -392,10 +391,10 @@ func TestWebhookNotifyOwnerZoneWithholdsAReminderTheFallbackZoneWouldSend(t *tes
 			ReminderLeadDays:    3,
 		}
 	}
-	const ownerURL = "https://kiritimati.example/hook"
+	const ownerURL = "https://honolulu.example/hook"
 	const controlURL = "https://fallback.example/hook"
 	repo := &stubNotifyRepo{records: []models.WebhookNotifyRecord{
-		newRecord(1, "Pacific/Kiritimati", ownerURL),
+		newRecord(1, "Pacific/Honolulu", ownerURL),
 		newRecord(2, "", controlURL),
 	}}
 	logs := stubLogReader{byUser: map[uint][]models.DailyLog{
@@ -413,7 +412,7 @@ func TestWebhookNotifyOwnerZoneWithholdsAReminderTheFallbackZoneWouldSend(t *tes
 	for _, delivery := range deliverer.deliveries() {
 		switch delivery.url {
 		case ownerURL:
-			t.Fatalf("the owner's zone puts the period 28 days out; the pass sent it on the fallback zone's day: %#v", delivery.payload)
+			t.Fatalf("the owner's zone puts the period four days out; the pass sent it on the fallback zone's day: %#v", delivery.payload)
 		case controlURL:
 			controlDeliveries++
 			if got := delivery.payload.EventDate; got != "2026-03-12" {

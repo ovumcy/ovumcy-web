@@ -152,7 +152,7 @@ func BuildDashboardCycleHero(user *models.User, stats CycleStats, cycleContext D
 	}
 	phaseCards := dashboardCycleHeroPhaseCards(currentPhase, periodLength, ovulationDay, cycleLength, fertilitySuppressed, undeterminedEnd)
 
-	startWindow := dashboardCycleHeroStartWindow(user, stats, cycleContext, cycleStart)
+	startWindow := dashboardCycleHeroStartWindow(cycleContext, cycleStart)
 	axisDays := dashboardCycleHeroAxisDays(cycleLength, startWindow)
 
 	return DashboardCycleHero{
@@ -362,23 +362,15 @@ func (span dashboardCycleHeroDaySpan) covers(day int) bool {
 
 // dashboardCycleHeroStartWindow is the run of days the NEXT period may start
 // on: the window the header prints, read from the context that resolved it
-// (ResolveProjectionRanges on the rolled projection, plus the header's own
-// withholding), never a second derivation.
-//
-// The ribbon draws the cycle that opened at cycleStart, so it carries that
-// window only while the window is this cycle's. Once the median day has
-// passed, the header's projection has rolled to the cycle after it, and that
-// window opens past this cycle's projected end: drawing it would stretch the
-// axis toward the following cycle, and drawing the unrolled one instead would
-// contradict the header. The ribbon shows no window rather than either.
-func dashboardCycleHeroStartWindow(user *models.User, stats CycleStats, cycleContext DashboardCycleContext, cycleStart time.Time) dashboardCycleHeroDaySpan {
+// (ResolveProjectionRanges on the projection, plus the header's own
+// withholding), never a second derivation. That projection is the period that
+// closes the cycle opened at cycleStart (DashboardUpcomingPredictions keeps it
+// there until the overdue gate), so the window is always this ribbon's own.
+func dashboardCycleHeroStartWindow(cycleContext DashboardCycleContext, cycleStart time.Time) dashboardCycleHeroDaySpan {
 	if cycleStart.IsZero() || !cycleContext.DisplayNextPeriodUseRange {
 		return dashboardCycleHeroDaySpan{}
 	}
 	windowStart, windowEnd := cycleContext.DisplayNextPeriodRangeStart, cycleContext.DisplayNextPeriodRangeEnd
-	if projectionLength := DashboardProjectionCycleLength(user, stats); projectionLength > 0 && CalendarDaysBetween(cycleStart, windowStart) > projectionLength {
-		return dashboardCycleHeroDaySpan{}
-	}
 	return dashboardCycleHeroSpanFromDates(cycleStart, windowStart, windowEnd, time.Time{})
 }
 

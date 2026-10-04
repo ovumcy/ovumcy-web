@@ -97,20 +97,23 @@ func TestBuildDashboardCycleContext(t *testing.T) {
 	if context.DisplayNextPeriodUseRange {
 		t.Fatalf("did not expect stable cycle context to render next period as an uncertainty range")
 	}
-	if got := context.DisplayNextPeriodStart.Format("2006-01-02"); got != "2026-04-07" {
-		t.Fatalf("expected exact next period start 2026-04-07, got %s", got)
+	// Cycle day 30: the running cycle's period was due yesterday. It stays the
+	// one named — not the anchor plus 56 days — and reads as already behind.
+	if got := context.DisplayNextPeriodStart.Format("2006-01-02"); got != "2026-03-10" {
+		t.Fatalf("expected exact next period start 2026-03-10, got %s", got)
 	}
-	if got := context.DisplayNextPeriodEnd.Format("2006-01-02"); got != "2026-04-11" {
-		t.Fatalf("expected exact next period end 2026-04-11, got %s", got)
+	if got := context.DisplayNextPeriodEnd.Format("2006-01-02"); got != "2026-03-14" {
+		t.Fatalf("expected exact next period end 2026-03-14, got %s", got)
+	}
+	if !context.NextPeriodInPast {
+		t.Fatalf("expected a single next-period date behind today to read as in the past")
 	}
 }
 
 // TestBuildDashboardCycleContextWithholdsTheWindowOnceTheCycleIsOverdue pins the
-// state a rolled-forward projection used to hide. DashboardUpcomingPredictions
-// advances the projection a whole cycle at a time, so it always returns a
-// strictly future date: on cycle day 36 against a 28-day reference the dashboard
-// named the anchor plus 56 days — a window nothing in the account's data
-// supports — with the same confidence it names tomorrow's. Past reference + 7
+// state a rolled-forward projection used to hide: on cycle day 36 against a
+// 28-day reference the dashboard named the anchor plus 56 days — a window nothing
+// in the account's data supports — with the same confidence it names tomorrow's. Past reference + 7
 // there is no window to show, and the cycle day plus the late-cycle notice carry
 // the state on their own.
 //
@@ -214,14 +217,18 @@ func TestBuildDashboardCycleContextKeepsTheWindowAtExactlyTheLateThreshold(t *te
 	if !context.DisplayNextPeriodUseRange {
 		t.Fatalf("expected the uncertainty range to survive at exactly reference + 7")
 	}
-	if got := context.DisplayNextPeriodRangeStart.Format("2006-01-02"); got != "2026-04-05" {
-		t.Fatalf("expected range start 2026-04-05, got %s", got)
+	// The window is the running cycle's, already behind today on day 35.
+	if got := context.DisplayNextPeriodRangeStart.Format("2006-01-02"); got != "2026-03-08" {
+		t.Fatalf("expected range start 2026-03-08, got %s", got)
 	}
-	if got := context.DisplayNextPeriodRangeEnd.Format("2006-01-02"); got != "2026-04-09" {
-		t.Fatalf("expected range end 2026-04-09, got %s", got)
+	if got := context.DisplayNextPeriodRangeEnd.Format("2006-01-02"); got != "2026-03-12" {
+		t.Fatalf("expected range end 2026-03-12, got %s", got)
 	}
-	if got := context.DisplayNextPeriodStart.Format("2006-01-02"); got != "2026-04-07" {
-		t.Fatalf("expected next period start 2026-04-07, got %s", got)
+	if got := context.DisplayNextPeriodStart.Format("2006-01-02"); got != "2026-03-10" {
+		t.Fatalf("expected next period start 2026-03-10, got %s", got)
+	}
+	if !context.NextPeriodInPast {
+		t.Fatalf("expected a window behind today to read as in the past")
 	}
 	if context.DisplayOvulationDate.IsZero() {
 		t.Fatalf("expected the ovulation estimate to survive at exactly reference + 7")

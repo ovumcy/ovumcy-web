@@ -639,18 +639,19 @@ func runOverdueResumePass(t *testing.T, record models.WebhookNotifyRecord, dayLo
 // story an overdue cycle used to break, as four passes over one owner.
 //
 // The watermark is keyed on the PREDICTED next-period date, which is also the
-// reminder's cycle anchor. While a cycle runs past its reference length the
-// projection rolls forward one whole cycle at a time, so before the overdue gate
-// every roll produced an anchor no watermark covered and re-armed a fresh "period
-// soon" send — once per invented cycle, for as long as the cycle stayed open.
+// reminder's cycle anchor. While a cycle ran past its reference length the
+// projection used to roll forward one whole cycle at a time, and before the
+// overdue gate every roll produced an anchor no watermark covered and re-armed a
+// fresh "period soon" send — once per invented cycle, for as long as the cycle
+// stayed open. The period now stays on the running cycle; the gate still owns
+// what an overdue pass may compute and write.
 //
 //   - 2026-03-23, cycle day 26: the honest reminder for 2026-03-26 is sent and its
 //     watermark written.
-//   - 2026-04-20, cycle day 54: the projection has rolled to 2026-04-23, three days
-//     out and inside the lead window, but the account is overdue — nothing is sent,
-//     AND nothing is written, so the watermark still points at 2026-03-26. That is
-//     the resume path: suppression that wrote a watermark for the phantom would
-//     have consumed the next real cycle's key.
+//   - 2026-04-20, cycle day 54: the account is overdue — nothing is computed,
+//     nothing is sent, AND nothing is written, so the watermark still points at
+//     2026-03-26. That is the resume path: an overdue pass that wrote a watermark
+//     would have consumed the next real cycle's key.
 //   - 2026-05-27, after the owner logs the real cycle start on 2026-05-02: the
 //     reminder for the start window around 2026-05-30 fires exactly once past
 //     the stale 2026-03-26 watermark, and advances it to the window's first day.
@@ -681,8 +682,7 @@ func TestNotifyOverdueCycleLeavesNoWatermarkAndResumesOnce(t *testing.T) {
 		t.Fatalf("pass 1 delivered event date = %s, want 2026-03-26", got)
 	}
 
-	// Pass 2 — the period never came and the cycle is overdue. The phantom
-	// 2026-04-23 is in-window, so only the overdue gate keeps it out.
+	// Pass 2 — the period never came and the cycle is overdue: no candidate at all.
 	report2, repo2, deliverer2 := runOverdueResumePass(t, overdueResumeRecord(anchor, &firstWatermark), history, notifyDay(2026, time.April, 20))
 	if report2.Due != 0 || report2.Sent != 0 {
 		t.Fatalf("pass 2 must compute nothing for an overdue cycle, got due=%d sent=%d", report2.Due, report2.Sent)

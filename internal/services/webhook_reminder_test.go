@@ -351,13 +351,15 @@ func regularWebhookCycleStartLogs(t *testing.T) []models.DailyLog {
 // a week (DashboardCycleOverdue) gets no reminder at all.
 //
 // The projection is what makes this necessary. From the 2026-02-26 anchor with a
-// 28-day cycle, DashboardUpcomingPredictions rolls forward a whole cycle at a
-// time, so on 2026-04-20 — cycle day 54 against a 28-day reference — it yields
-// 2026-04-23, three days out and squarely inside the lead window. Nothing in the
-// account's data supports that date: no period was logged, and the reminder would
-// have announced one. The in-window assertion below is the point of the test — it
-// proves the reminder is withheld by the overdue gate and not merely by the
-// window, so the case cannot go quietly green if the gate is removed.
+// 28-day cycle, the next period stays on the running cycle (2026-03-26, long
+// behind), but the ovulation still rolls forward a whole cycle at a time, so on
+// 2026-04-06 — cycle day 40 against a 28-day reference — it yields 2026-04-08,
+// two days out and inside the lead window. Nothing in the account's data
+// supports that date: no period was logged since, and the reminder would have
+// announced an ovulation of a cycle that never started. The in-window assertion
+// below is the point of the test — it proves the reminder is withheld by the
+// overdue gate and not merely by the window, so the case cannot go quietly green
+// if the gate is removed.
 func TestDecideDueRemindersSuppressesOverdueCycle(t *testing.T) {
 	const leadDays = 3
 	user := regularWebhookUser()
@@ -378,7 +380,7 @@ func TestDecideDueRemindersSuppressesOverdueCycle(t *testing.T) {
 	})
 
 	t.Run("an overdue cycle emits nothing", func(t *testing.T) {
-		now := mustParseWebhookReminderDay(t, "2026-04-20", time.UTC)
+		now := mustParseWebhookReminderDay(t, "2026-04-06", time.UTC)
 		stats := NewStatsService(nil, nil).BuildCycleStatsFromLogs(user, logs, now, time.UTC)
 
 		if !DashboardCycleOverdue(user, stats) {
@@ -386,13 +388,16 @@ func TestDecideDueRemindersSuppressesOverdueCycle(t *testing.T) {
 				stats.CurrentCycleDay, DashboardCycleReferenceLength(user, stats))
 		}
 
-		// The rolled-forward projection IS inside the lead window here: without the
-		// overdue gate this decision emits a "period soon" reminder for a date the
-		// account's own data does not support.
+		// The rolled-forward ovulation IS inside the lead window here: without the
+		// overdue gate this decision emits an "ovulation soon" reminder for a date
+		// the account's own data does not support.
 		prediction := DashboardUpcomingPredictions(stats, user, now, DashboardProjectionCycleLength(user, stats))
-		if !reminderWithinWindow(now, prediction.NextPeriodStart, time.Time{}, leadDays) {
-			t.Fatalf("test setup expects the phantom projection %s inside the %d-day window from %s",
-				prediction.NextPeriodStart.Format("2006-01-02"), leadDays, now.Format("2006-01-02"))
+		if got := prediction.NextPeriodStart.Format("2006-01-02"); got != "2026-03-26" {
+			t.Fatalf("test setup expects the running cycle's period 2026-03-26, got %s", got)
+		}
+		if !reminderWithinWindow(now, prediction.OvulationDate, time.Time{}, leadDays) {
+			t.Fatalf("test setup expects the phantom ovulation %s inside the %d-day window from %s",
+				prediction.OvulationDate.Format("2006-01-02"), leadDays, now.Format("2006-01-02"))
 		}
 
 		reminders := DecideDueReminders(user, enabledWebhookSettings(leadDays), logs, now, time.UTC)
