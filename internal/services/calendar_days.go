@@ -220,7 +220,7 @@ func buildCalendarPredictionMaps(user *models.User, logs []models.DailyLog, stat
 		appendCalendarSingleDate(ovulationMap, currentStats.OvulationDate)
 	}
 	appendPredictedCycles(predictedPeriodMap, preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, stats, gridEnd, location, !fertilitySuppressed)
-	appendPredictedStartRange(maps.predictedStartRange, user, stats, location)
+	appendPredictedStartRange(maps.predictedStartRange, user, stats, DateAtLocation(now, location), location)
 	appendHistoricalCycles(preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, logs, stats, user, location)
 	if !fertilitySuppressed {
 		// The BBT pass only ever downgrades the projected ovulation day to
@@ -237,19 +237,24 @@ func buildCalendarPredictionMaps(user *models.User, logs []models.DailyLog, stat
 // shaded predicted-period days are the projected bleeding itself: two different
 // facts that shared one shading on the grid until wave 3.
 //
-// It reads DashboardPredictionRange rather than deriving a second range — one
-// definition, two surfaces — so a day is marked only where the dashboard would
-// already show a range (enough completed cycles for the spread to mean
-// something), and never once the three suppression signals above have emptied
-// the projected maps. Only the next cycle carries a window: the cycles chained
-// after it are projections of a projection, and widening those would present
-// manufactured spread as measured spread.
-func appendPredictedStartRange(startRangeMap map[string]bool, user *models.User, stats CycleStats, location *time.Location) {
-	rangeStart, rangeEnd, hasRange := DashboardPredictionRange(user, stats, CalendarDay(stats.NextPeriodStart, location), location)
-	if !hasRange {
+// It reads the header's own answer — ResolveProjectionRanges on the projection
+// DashboardUpcomingPredictions names — rather than deriving a second range, so
+// a day is marked only where the dashboard shows a range (enough completed
+// cycles for the spread to mean something), and never once the suppression
+// signals above have emptied the projected maps. The projection is the ROLLED
+// one: once the median day has passed, the header names the cycle after it,
+// and a grid window left on stats.NextPeriodStart showed a different window
+// from the one the header, the webhook and the .ics feed send. Only that one
+// cycle carries a window: the cycles chained after it are projections of a
+// projection, and widening those would present manufactured spread as measured
+// spread.
+func appendPredictedStartRange(startRangeMap map[string]bool, user *models.User, stats CycleStats, today time.Time, location *time.Location) {
+	prediction := DashboardUpcomingPredictions(stats, user, today, DashboardProjectionCycleLength(user, stats))
+	ranges := ResolveProjectionRanges(user, stats, CalendarDay(prediction.NextPeriodStart, location), location)
+	if !ranges.NextPeriodUseRange {
 		return
 	}
-	appendCalendarDateRange(startRangeMap, rangeStart, rangeEnd)
+	appendCalendarDateRange(startRangeMap, ranges.NextPeriodStart, ranges.NextPeriodEnd)
 }
 
 // appendCurrentBaselinePeriod shades the CURRENT cycle's projected period band.

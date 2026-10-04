@@ -37,7 +37,8 @@ var projectionVerdictSurfaces = map[string][]string{
 	"decideDueReminders":              {"DashboardAwaitingIrregularHistory", "ResolveProjectionRanges"},
 	"calendarFeedEvents":              {"DashboardAwaitingIrregularHistory", "ResolveProjectionRanges"},
 	"buildDashboardPredictionDisplay": {"DashboardAwaitingIrregularHistory", "ResolveProjectionRanges"},
-	"buildCalendarPredictionMaps":     {"DashboardAwaitingIrregularHistory"},
+	"buildCalendarPredictionMaps":     {"DashboardAwaitingIrregularHistory", "ResolveProjectionRanges"},
+	"BuildDashboardCycleHero":         {"ResolveProjectionRanges"},
 	"PublishedStats":                  {"DashboardAwaitingIrregularHistory"},
 }
 
@@ -50,13 +51,16 @@ var projectionVerdictLoadBearing = [][2]string{
 	{"decideDueReminders", "ResolveProjectionRanges"},
 	{"calendarFeedEvents", "ResolveProjectionRanges"},
 	{"applyDashboardPredictionRanges", "ResolveProjectionRanges"},
+	{"appendPredictedStartRange", "ResolveProjectionRanges"},
+	{"dashboardCycleHeroStartWindow", "ResolveProjectionRanges"},
 }
 
 // projectionVerdictSoleReferrers pins a range builder to the one declaration
-// allowed to call it: a second caller is a surface building the ovulation range
-// beside the shared answer instead of through it.
+// allowed to call it: a second caller is a surface building a next-period or
+// ovulation range beside the shared answer instead of through it.
 var projectionVerdictSoleReferrers = map[string]string{
-	"DashboardOvulationRange": "ResolveProjectionRanges",
+	"DashboardOvulationRange":  "ResolveProjectionRanges",
+	"DashboardPredictionRange": "ResolveProjectionRanges",
 }
 
 func TestEveryProjectedDateSurfaceReachesTheSharedDisplayVerdict(t *testing.T) {
