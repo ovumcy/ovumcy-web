@@ -159,7 +159,9 @@ func buildCalendarPredictionMaps(user *models.User, logs []models.DailyLog, stat
 
 	// Medical-safety suppression gate, the shared predicate every projected
 	// surface gates on (PredictionsSuppressed): unpredictable-cycle mode, a
-	// pregnancy pause, or a cycle running past the account's own cycle length by
+	// pregnancy pause, irregular-cycle mode with fewer than three completed
+	// cycles (DashboardAwaitingIrregularHistory — the dashboard's "needs more
+	// cycles"), or a cycle running past the account's own cycle length by
 	// more than a week (DashboardCycleOverdue). Past that point
 	// stats.NextPeriodStart is a date the account's own data no longer supports:
 	// appendPredictedCycles chains from it, so the grid painted a predicted period

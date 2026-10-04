@@ -499,8 +499,8 @@ test.describe('Onboarding flow', () => {
   // The name says "sparse estimate", not "range", because that is what the
   // assertions below prove. Irregular mode shows a range only once the account
   // has observed cycles to bound it; a freshly onboarded owner has none, so the
-  // dashboard falls back to the "around <date>" estimate plus the
-  // needs-more-cycles note. A name promising a range over assertions checking
+  // dashboard shows the needs-more-cycles note and no date at all. A name
+  // promising a range over assertions checking
   // the sparse fallback is the desync that let its twin in
   // settings-profile-cycle.spec.ts assert an ASCII "-" a locale renders as "—".
   test('step 2 irregular checkbox carries through to the dashboard sparse estimate', async ({
@@ -515,12 +515,11 @@ test.describe('Onboarding flow', () => {
     await irregularCheckbox.check();
     await submitStepTwo(page);
 
-    // Sparse irregular mode: an "around <date>" estimate plus the
-    // needs-more-cycles note, both sourced from the catalogue rather than
-    // re-typed here (the same strings are asserted in three specs).
+    // Sparse irregular mode: the needs-more-cycles note alone, sourced from the
+    // catalogue rather than re-typed here. Equality, not containment: the
+    // state names no date beside the note (the webhook and the feed send none).
     const nextPeriodText = await dashboardNextPeriodText(page);
-    expect(nextPeriodText).toContain(localeText('en', 'dashboard.next_period_estimate').replace('%s', '').trim());
-    expect(nextPeriodText).toContain(localeText('en', 'dashboard.next_period_need_cycles'));
+    expect(nextPeriodText).toBe(localeText('en', 'dashboard.next_period_need_cycles'));
     await expect(page.locator('[data-dashboard-prediction-explainer]')).toHaveAttribute(
       'data-explainer-key',
       'prediction.explainer.irregular_sparse'

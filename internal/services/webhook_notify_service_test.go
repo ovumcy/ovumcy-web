@@ -652,8 +652,8 @@ func runOverdueResumePass(t *testing.T, record models.WebhookNotifyRecord, dayLo
 //     the resume path: suppression that wrote a watermark for the phantom would
 //     have consumed the next real cycle's key.
 //   - 2026-05-27, after the owner logs the real cycle start on 2026-05-02: the
-//     reminder for 2026-05-30 fires exactly once past the stale 2026-03-26
-//     watermark, and advances it.
+//     reminder for the start window around 2026-05-30 fires exactly once past
+//     the stale 2026-03-26 watermark, and advances it to the window's first day.
 //   - Same day, with the advanced watermark: nothing again.
 func TestNotifyOverdueCycleLeavesNoWatermarkAndResumesOnce(t *testing.T) {
 	anchor := notifyDay(2026, time.February, 26)
@@ -709,12 +709,15 @@ func TestNotifyOverdueCycleLeavesNoWatermarkAndResumesOnce(t *testing.T) {
 	if len(writes3) != 1 {
 		t.Fatalf("pass 3 expected one watermark write, got %d", len(writes3))
 	}
+	// The 65-day cycle now in the history gives the new cycle a start window
+	// around its 2026-05-30 median, so the reminder carries the window the
+	// dashboard prints, keyed on the window's first day.
 	resumedWatermark := writes3[0].anchor
-	if got := resumedWatermark.Format("2006-01-02"); got != "2026-05-30" {
-		t.Fatalf("pass 3 watermark = %s, want the new cycle's 2026-05-30", got)
+	if got := resumedWatermark.Format("2006-01-02"); got != "2026-05-25" {
+		t.Fatalf("pass 3 watermark = %s, want the new cycle's window start 2026-05-25", got)
 	}
-	if got := deliverer3.deliveries()[0].payload.EventDate; got != "2026-05-30" {
-		t.Fatalf("pass 3 delivered event date = %s, want 2026-05-30", got)
+	if got := deliverer3.deliveries()[0].payload; got.EventDate != "2026-05-25" || got.EventDateEnd != "2026-06-04" {
+		t.Fatalf("pass 3 delivered %s..%s, want the window 2026-05-25..2026-06-04", got.EventDate, got.EventDateEnd)
 	}
 
 	// Pass 4 — the same day again: exactly once means once.

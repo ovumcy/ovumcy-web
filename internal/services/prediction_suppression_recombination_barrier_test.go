@@ -44,15 +44,16 @@ import (
 // spell a second disjunct, and the day one is handed over is the day this sweep
 // stops covering the surface that reads it.
 var predictionSuppressionSignals = map[string]string{
-	"PredictionDisabled":            "unpredictable-cycle mode",
-	"DashboardPredictionDisabled":   "unpredictable-cycle mode",
-	"PregnancyPaused":               "pregnancy pause",
-	"DashboardCycleOverdue":         "cycle overdue past its own cycle length",
-	"AwaitingFirstCycle":            "the zero-completed-cycle floor",
-	"DashboardAwaitingFirstCycle":   "the zero-completed-cycle floor",
-	"PredictionsSuppressed":         "the whole-projection gate",
-	"FertilitySuppressed":           "the fertility gate",
-	"FertilityProjectionSuppressed": "the fertility gate",
+	"PredictionDisabled":                "unpredictable-cycle mode",
+	"DashboardPredictionDisabled":       "unpredictable-cycle mode",
+	"PregnancyPaused":                   "pregnancy pause",
+	"DashboardCycleOverdue":             "cycle overdue past its own cycle length",
+	"AwaitingFirstCycle":                "the zero-completed-cycle floor",
+	"DashboardAwaitingFirstCycle":       "the zero-completed-cycle floor",
+	"DashboardAwaitingIrregularHistory": "irregular mode with fewer than three completed cycles",
+	"PredictionsSuppressed":             "the whole-projection gate",
+	"FertilitySuppressed":               "the fertility gate",
+	"FertilityProjectionSuppressed":     "the fertility gate",
 }
 
 // predictionSuppressionPredicateFile declares the predicates, so it is the one
