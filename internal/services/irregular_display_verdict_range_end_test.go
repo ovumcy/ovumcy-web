@@ -43,6 +43,20 @@ func TestIrregularSpreadRangeLeavesWithItsLastDay(t *testing.T) {
 		}
 	}
 
+	// A watermark written before windows were keyed on their first day holds the
+	// median inside the window; it still covers the window, so an upgrade does not
+	// announce the current cycle a second time.
+	median := DashboardUpcomingPredictions(stats, user, today, DashboardProjectionCycleLength(user, stats)).NextPeriodStart
+	if !irregularVerdictWithin(median, period.EventDate, period.EventDateEnd) {
+		t.Fatalf("fixture: the median %s should lie inside the window %s..%s", CalendarDayKey(median), CalendarDayKey(period.EventDate), CalendarDayKey(period.EventDateEnd))
+	}
+	oldShape := enabledWebhookSettings(MaxReminderLeadDays)
+	oldShape.PeriodWatermark = &median
+	again, skipped := decideDueReminders(user, oldShape, logs, now, time.UTC)
+	if _, resent := findDueReminder(again, DueReminderTypePeriod); resent || skipped == 0 {
+		t.Fatalf("webhook: an old-shape watermark on the median %s does not cover the window (resent=%t, skipped=%d)", CalendarDayKey(median), resent, skipped)
+	}
+
 	// A single-date reminder keeps the field absent.
 	single := service.buildPayload(DueReminder{Type: DueReminderTypePeriod, EventDate: today}, "en")
 	if single.EventDateEnd != "" {

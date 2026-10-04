@@ -152,7 +152,14 @@ func TestIrregularSpreadSendsTheDashboardRangeNotTheMedian(t *testing.T) {
 
 	events := calendarFeedEvents(CalendarFeedICSInput{User: user, Logs: logs, Now: now, Location: time.UTC})
 	prediction := DashboardUpcomingPredictions(stats, user, today, DashboardProjectionCycleLength(user, stats))
-	var periodWindow, ovulationWindow bool
+	// The median ovulation of this cycle has passed, so the projection has
+	// rolled to the NEXT cycle's day — outside the range, which belongs to this
+	// cycle. That day must stay in the feed: a window replaces only the single
+	// day inside it.
+	if irregularVerdictWithin(prediction.OvulationDate, ovulationStart, ovulationEnd) {
+		t.Fatalf("fixture: the rolled ovulation %s should fall after the range %s..%s", CalendarDayKey(prediction.OvulationDate), CalendarDayKey(ovulationStart), CalendarDayKey(ovulationEnd))
+	}
+	var periodWindow, ovulationWindow, rolledOvulation bool
 	for _, event := range events {
 		day := CalendarDayKey(event.date)
 		switch {
@@ -160,14 +167,19 @@ func TestIrregularSpreadSendsTheDashboardRangeNotTheMedian(t *testing.T) {
 			periodWindow = true
 		case event.kind == "ovulation-window" && day == CalendarDayKey(ovulationStart):
 			ovulationWindow = true
-		case event.kind == "period" && day == CalendarDayKey(prediction.NextPeriodStart):
-			t.Errorf(".ics feed: sends the median next period %s as one day inside the window %s..%s", day, CalendarDayKey(windowStart), CalendarDayKey(windowEnd))
+		case event.kind == "period" && irregularVerdictWithin(event.date, windowStart, windowEnd):
+			t.Errorf(".ics feed: sends the next period %s as one day inside the window %s..%s", day, CalendarDayKey(windowStart), CalendarDayKey(windowEnd))
+		case event.kind == "ovulation" && irregularVerdictWithin(event.date, ovulationStart, ovulationEnd):
+			t.Errorf(".ics feed: sends the ovulation %s as one day inside the range %s..%s", day, CalendarDayKey(ovulationStart), CalendarDayKey(ovulationEnd))
 		case event.kind == "ovulation" && day == CalendarDayKey(prediction.OvulationDate):
-			t.Errorf(".ics feed: sends the median ovulation %s as one day inside the range %s..%s", day, CalendarDayKey(ovulationStart), CalendarDayKey(ovulationEnd))
+			rolledOvulation = true
 		}
 	}
 	if !periodWindow || !ovulationWindow {
 		t.Errorf(".ics feed: period window %t, ovulation window %t, want both", periodWindow, ovulationWindow)
+	}
+	if !rolledOvulation {
+		t.Errorf(".ics feed: drops the next cycle's ovulation %s, which lies outside this cycle's range", CalendarDayKey(prediction.OvulationDate))
 	}
 
 	// The grid's start-window shading is the dashboard's window, day for day.
@@ -185,6 +197,10 @@ func TestIrregularSpreadSendsTheDashboardRangeNotTheMedian(t *testing.T) {
 func irregularVerdictPaintedDays(maps calendarPredictionMaps) int {
 	return len(maps.predictedPeriod) + len(maps.predictedStartRange) + len(maps.preFertile) + len(maps.fertilityEdge) +
 		len(maps.fertilityPeak) + len(maps.ovulation) + len(maps.tentativeOvulation)
+}
+
+func irregularVerdictWithin(day time.Time, first time.Time, last time.Time) bool {
+	return CalendarDaysBetween(first, day) >= 0 && CalendarDaysBetween(day, last) >= 0
 }
 
 func irregularVerdictHasReason(suppression PredictionSuppression, reason SuppressionReason) bool {

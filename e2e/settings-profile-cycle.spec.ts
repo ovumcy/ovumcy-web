@@ -336,13 +336,10 @@ test.describe('Settings: profile and cycle', () => {
     await expect(page).toHaveURL(/\/dashboard$/);
 
     // A freshly onboarded owner has fewer than 3 completed cycles, so irregular
-    // mode renders the "around <date>" estimate, not a range:
+    // mode renders the needs-more-cycles note alone — no date, no range:
     // dashboardNeedsNextPeriodData short-circuits before the range is applied.
     const nextPeriodText = await dashboardNextPeriodText(page);
-    expect(nextPeriodText).toContain(
-      localeText('en', 'dashboard.next_period_estimate').replace('%s', '').trim()
-    );
-    expect(nextPeriodText).toContain(localeText('en', 'dashboard.next_period_need_cycles'));
+    expect(nextPeriodText).toBe(localeText('en', 'dashboard.next_period_need_cycles'));
     // Sparse irregular mode, asserted on the explainer key rather than by
     // forbidding the exact-date separator this state must not render.
     await expect(page.locator('[data-dashboard-prediction-explainer]')).toHaveAttribute(
