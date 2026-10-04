@@ -262,8 +262,13 @@ func decideDueReminders(user *models.User, settings WebhookReminderSettings, log
 	// shift outside the instance, where the dashboard and the grid have already
 	// moved onto the day inferred from the temperature shift. ConfirmedOvulationSupersedes bounds that to
 	// the confirmation's own cycle, so a projection that has rolled into the next
-	// one still sends.
+	// one still sends. A range is the current cycle's, so its gate is the
+	// confirmation itself: Supersedes compares the ROLLED projection and turns
+	// false the day the median passes, which would send the range the dashboard
+	// and the feed have withheld.
+	_, hasConfirmed := ConfirmedCurrentCycleOvulation(user, logs, stats, today, location)
 	if !suppression.FertilitySuppressed &&
+		!(ranges.OvulationUseRange && hasConfirmed) &&
 		!ConfirmedOvulationSupersedes(user, logs, stats, prediction.OvulationDate, today, location) {
 		due, ok, watermarked := decideOvulationReminder(stats, settings, prediction, ranges, today, cycleLength, leadDays)
 		if ok {
