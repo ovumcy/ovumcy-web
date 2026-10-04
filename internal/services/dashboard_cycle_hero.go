@@ -152,7 +152,7 @@ func BuildDashboardCycleHero(user *models.User, stats CycleStats, cycleContext D
 	}
 	phaseCards := dashboardCycleHeroPhaseCards(currentPhase, periodLength, ovulationDay, cycleLength, fertilitySuppressed, undeterminedEnd)
 
-	startWindow := dashboardCycleHeroStartWindow(user, stats, cycleStart, location)
+	startWindow := dashboardCycleHeroStartWindow(user, stats, cycleStart, input.Today, location)
 	axisDays := dashboardCycleHeroAxisDays(cycleLength, startWindow)
 
 	return DashboardCycleHero{
@@ -358,18 +358,31 @@ func (span dashboardCycleHeroDaySpan) covers(day int) bool {
 }
 
 // dashboardCycleHeroStartWindow is the run of days the NEXT period may start
-// on, read from DashboardPredictionRange — the same definition the calendar
-// grid shades and the status line prints, never a second derivation.
-func dashboardCycleHeroStartWindow(user *models.User, stats CycleStats, cycleStart time.Time, location *time.Location) dashboardCycleHeroDaySpan {
+// on, read from the header's own answer (ResolveProjectionRanges on the
+// projection DashboardUpcomingPredictions names) — the window the calendar grid
+// shades and the status line prints, never a second derivation.
+//
+// The ribbon draws the cycle that opened at cycleStart, so it carries that
+// window only while the window is this cycle's. Once the median day has
+// passed, the header's projection has rolled to the cycle after it, and that
+// window opens past this cycle's projected end: drawing it would stretch the
+// axis toward the following cycle, and drawing the unrolled one instead would
+// contradict the header. The ribbon shows no window rather than either.
+func dashboardCycleHeroStartWindow(user *models.User, stats CycleStats, cycleStart time.Time, today time.Time, location *time.Location) dashboardCycleHeroDaySpan {
 	if cycleStart.IsZero() {
 		return dashboardCycleHeroDaySpan{}
 	}
 
-	rangeStart, rangeEnd, hasRange := DashboardPredictionRange(user, stats, CalendarDay(stats.NextPeriodStart, location), location)
-	if !hasRange {
+	projectionLength := DashboardProjectionCycleLength(user, stats)
+	prediction := DashboardUpcomingPredictions(stats, user, today, projectionLength)
+	ranges := ResolveProjectionRanges(user, stats, CalendarDay(prediction.NextPeriodStart, location), location)
+	if !ranges.NextPeriodUseRange {
 		return dashboardCycleHeroDaySpan{}
 	}
-	return dashboardCycleHeroSpanFromDates(cycleStart, rangeStart, rangeEnd, time.Time{})
+	if projectionLength > 0 && CalendarDaysBetween(cycleStart, ranges.NextPeriodStart) > projectionLength {
+		return dashboardCycleHeroDaySpan{}
+	}
+	return dashboardCycleHeroSpanFromDates(cycleStart, ranges.NextPeriodStart, ranges.NextPeriodEnd, time.Time{})
 }
 
 // dashboardCycleHeroFertileSpan is the fertile window as the calendar shades
