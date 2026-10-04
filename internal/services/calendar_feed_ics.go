@@ -270,7 +270,7 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 
 		nextPeriodStart := AddCalendarDays(anchor, cycleLength, input.Location)
 		if !nextPeriodStart.Before(today) &&
-			!(periodWindow && calendarDayWithin(nextPeriodStart, ranges.NextPeriodStart, ranges.NextPeriodEnd)) {
+			(!periodWindow || !calendarDayWithin(nextPeriodStart, ranges.NextPeriodStart, ranges.NextPeriodEnd)) {
 			appendEvent(calendarFeedKindPeriod, nextPeriodStart)
 		}
 
@@ -287,7 +287,7 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 		// ConfirmedOvulationSupersedes bounds that to the confirmation's own cycle,
 		// so the later projected cycles here are untouched.
 		if includeOvulation && window.Calculable && CalendarDaysBetween(window.OvulationDate, today) <= 0 &&
-			!(ovulationWindow && calendarDayWithin(window.OvulationDate, ranges.OvulationStart, ranges.OvulationEnd)) &&
+			(!ovulationWindow || !calendarDayWithin(window.OvulationDate, ranges.OvulationStart, ranges.OvulationEnd)) &&
 			!ConfirmedOvulationSupersedes(user, input.Logs, stats, window.OvulationDate, today, input.Location) {
 			appendEvent(calendarFeedKindOvulation, CalendarDay(window.OvulationDate, input.Location))
 		}
