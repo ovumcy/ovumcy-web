@@ -75,6 +75,11 @@ func TestReminderCopyWithoutASentenceSendsTheHeadlineAlone(t *testing.T) {
 		if message != "" {
 			t.Errorf("%s message = %q, want it empty rather than formatted from a missing template", reminderType, message)
 		}
+
+		rangeTitle, rangeMessage := service.reminderCopy(DueReminder{Type: reminderType, EventDate: eventDate, EventDateEnd: eventDate.AddDate(0, 0, 4)}, "en")
+		if rangeTitle != "Reminder" || rangeMessage != "" {
+			t.Errorf("%s range copy = %q / %q, want the headline alone", reminderType, rangeTitle, rangeMessage)
+		}
 	}
 }
 
