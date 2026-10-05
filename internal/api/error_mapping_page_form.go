@@ -7,6 +7,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/httpx"
+	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 // plainPageFormBackPath resolves the page a browser posted one of the in-app
@@ -84,7 +85,12 @@ const pageFormRefusalTemplate = "page_form_refusal"
 // token the layout reads is the one the middleware already put in the context,
 // if any; rendering mints none and sets no cookie. The rendered address is the
 // back path, never the request's own: the request's path is the API route, which
-// the language switch would send the browser to and the privacy link carry.
+// the language switch would send the browser to and the privacy link carry. That
+// address goes through the same query allowlist as every other page's
+// (currentPathWithQuery): on /lang the back path is the form's own `next`, so a
+// cross-site post would otherwise put any query it likes into the switcher and
+// the outgoing privacy link. The link back itself keeps the whole `next` — it is
+// where a granted switch would have redirected.
 //
 // Should the page fail to render, the bare fragment carries the same refusal
 // rather than a template error mapped back into this branch.
@@ -96,7 +102,7 @@ func (handler *Handler) sendPageFormRefusalPage(c fiber.Ctx, spec APIErrorSpec, 
 	message, flashKey := localizedStatusError(c, spec)
 	payload := handler.withTemplateDefaults(c, fiber.Map{
 		"Title":          localizedPageTitle(currentMessages(c), "app.name", "Ovumcy"),
-		"CurrentPath":    back,
+		"CurrentPath":    services.SanitizeCurrentPathQuery(back),
 		"RefusalMessage": message,
 		"RefusalKey":     flashKey,
 		"BackPath":       back,
