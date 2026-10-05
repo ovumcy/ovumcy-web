@@ -274,7 +274,7 @@ func plainFormRefusalProblems(forms []plainPostForm, exemptions []plainFormRefus
 		page, answer := answersAPage(form)
 		switch {
 		case !exempt && !page:
-			problems = append(problems, fmt.Sprintf("%s:%d (%s): refusal answers %s, want text/html or 303", form.file, form.line, form.action, answer))
+			problems = append(problems, fmt.Sprintf("%s:%d (%s): refusal answers %s, want a text/html page in the shared layout or 303", form.file, form.line, form.action, answer))
 		case exempt && page:
 			problems = append(problems, fmt.Sprintf("%s:%d (%s): exempt, but its refusal now answers %s; delete the exemption", form.file, form.line, form.action, answer))
 		}
@@ -343,6 +343,10 @@ func TestEveryNoJSPostFormActionAnswersARefusalAsAPage(t *testing.T) {
 		"components/settings_symptoms.html /api/v1/symptoms/2026-09-27 DELETE",
 		"components/settings_danger_zone.html /api/v1/users/current DELETE",
 		"components/settings_egress.html /api/v1/users/current/calendar-feed DELETE",
+		// The auth forms answer through apiError's own branch, not the in-app
+		// page-form one; the page they render is held to the same layout check.
+		"forgot_password.html /api/v1/password-resets ",
+		"reset_password.html /api/v1/password-resets/redeem ",
 	} {
 		if !seen[anchor] {
 			t.Fatalf("the scan found no form %q: the scan is broken, not the tree clean", anchor)
@@ -350,6 +354,9 @@ func TestEveryNoJSPostFormActionAnswersARefusalAsAPage(t *testing.T) {
 	}
 
 	handler := newBareRefusalHandler(t)
+	// The real refusal page: the bare handler's broken templates would send every
+	// refusal down the fragment fallback, which is markup but not a page.
+	handler.templates = newRefusalPageTemplates(t)
 	app := fiber.New()
 	app.Use(MethodOverride(handler))
 	app.Use(handler.LanguageMiddleware)
@@ -372,10 +379,18 @@ func TestEveryNoJSPostFormActionAnswersARefusalAsAPage(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: request failed: %v", form.action, err)
 		}
+		rendered, err := io.ReadAll(response.Body)
 		_ = response.Body.Close()
+		if err != nil {
+			t.Fatalf("%s: read body: %v", form.action, err)
+		}
 		contentType := response.Header.Get("Content-Type")
-		page := response.StatusCode == http.StatusSeeOther || strings.HasPrefix(contentType, "text/html")
-		return page, fmt.Sprintf("%d %q", response.StatusCode, contentType)
+		// A page is the shared layout (WEB-264): <html lang> and the main
+		// landmark. A bare text/html fragment is markup, not a page, and leaves
+		// the browser with no language and no way through the app's chrome.
+		layout := strings.Contains(string(rendered), "<html lang=") && strings.Contains(string(rendered), `id="main-content"`)
+		page := response.StatusCode == http.StatusSeeOther || (strings.HasPrefix(contentType, "text/html") && layout)
+		return page, fmt.Sprintf("%d %q layout=%t", response.StatusCode, contentType, layout)
 	}
 
 	if problems := plainFormRefusalProblems(forms, plainFormRefusalExemptions, answersAPage); len(problems) > 0 {

@@ -63,9 +63,9 @@ func openAPIResponseBlock(t *testing.T, spec string, path string, method string,
 // a restart), and a valid token sent from another site or from a sibling
 // subdomain — through every caller the route has. A caller asking for JSON
 // gets the envelope; every plain HTML navigation — the bare form post and the
-// browser form that names text/html — gets the fragment an HTMX request
-// already got, plus a link back to the form's `next` path, so the description
-// has to say so for all three.
+// browser form that names text/html — gets, as a page in the shared layout
+// (WEB-264), the status an HTMX request already got, plus a link back to the
+// form's `next` path, so the description has to say so for all three.
 func TestOpenAPILanguageSwitchDeclaresTheCSRFRefusalItAnswers(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "docs", "openapi.yaml"))
 	if err != nil {
@@ -167,10 +167,11 @@ func TestOpenAPILanguageSwitchDeclaresTheCSRFRefusalItAnswers(t *testing.T) {
 					!strings.Contains(string(body), `data-flash-key="common.error.forbidden"`) {
 					t.Errorf("%s: answered 403 as %q (%q), want the text/html status fragment carrying the forbidden key", where, contentType, body)
 				}
-				// The fragment is the whole page a browser shows: an idle token
-				// must leave the owner a way back to where the form was.
-				if client.headers["HX-Request"] == "" && !strings.Contains(string(body), `<a href="/calendar">`) {
-					t.Errorf("%s: the 403 page carries no link back to the form's next path: %q", where, body)
+				// A plain navigation gets the whole refusal page (WEB-264): the
+				// shared layout in the request's language, and a way back to where
+				// the form was, which an idle token must leave the owner.
+				if client.headers["HX-Request"] == "" {
+					requireNativeFormRefusalPage(t, where, string(body), "en", "common.error.forbidden", "/calendar")
 				}
 				continue
 			}

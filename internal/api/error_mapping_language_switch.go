@@ -27,22 +27,19 @@ func isLanguageSwitchPageNavigation(c fiber.Ctx) bool {
 		responseFormat(c) == httpx.ResponseFormatHTML
 }
 
-// sendLanguageSwitchStatusFragment answers one mapped spec as the shared status
-// fragment followed by a link back to the form's sanitized `next` path: the
-// fragment is the whole page the browser shows, and without the link a refused
-// switch — most often an idle CSRF token — is a dead end. Status and stable key
-// still come from the spec. /lang is the one plain form that carries a `next`
-// field to read the back link from; every other plain-form caller of the
-// shared fragment (the plain auth-form pages, WEB-84) has no such field and
-// uses sendStatusFragmentWithBackLink directly with a fixed, route-mapped back
-// path instead.
-func sendLanguageSwitchStatusFragment(c fiber.Ctx, spec APIErrorSpec) error {
-	back := services.SanitizeRedirectPath(c.FormValue("next"), "/")
-	return sendStatusFragmentWithBackLink(c, spec, back)
+// languageSwitchBackPath is the link a refused language switch offers back: the
+// form's sanitized `next` path, "/" when it has none. The refusal replaces the
+// whole page the browser shows, and without the link a refused switch — most
+// often an idle CSRF token — is a dead end. /lang is the one plain form that
+// carries a `next` field to read the back link from; the plain auth-form pages
+// (WEB-84) have no such field and use a fixed, route-mapped back path instead.
+func languageSwitchBackPath(c fiber.Ctx) string {
+	return services.SanitizeRedirectPath(c.FormValue("next"), "/")
 }
 
 // sendStatusFragmentWithBackLink answers one mapped spec as the shared status
-// fragment followed by a link to `back`. The fragment replaces the whole page
+// fragment followed by a link to `back`: the floor sendPageFormRefusalPage falls
+// back to when the page cannot render. The fragment then replaces the whole page
 // the browser was looking at, so without the link a refusal is a dead end.
 // Status and stable key still come from the spec; `back` is the only thing
 // that varies between callers, and each caller is responsible for it being

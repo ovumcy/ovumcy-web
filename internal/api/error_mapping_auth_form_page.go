@@ -9,9 +9,10 @@ import (
 // interception assumed) browser-form auth routes whose CSRF refusal (an idle
 // or rotated token) or transport-level rejection (raised before any handler
 // runs, so before a domain spec exists to route through respondAuthError) must
-// answer as the shared page-form status fragment rather than the JSON
-// envelope — the same shape #862 built for POST /lang (WEB-84). A plain <form>
-// action is the route key, not the page it renders on.
+// answer as the page-form refusal page (the shared layout around the localized
+// status, sendPageFormRefusalPage) rather than the JSON envelope — the same
+// answer POST /lang gives (WEB-84, WEB-264). A plain <form> action is the route
+// key, not the page it renders on.
 //
 // No OIDC route is a member: /auth/oidc/start, /auth/oidc/callback and the
 // logout bridge are none of them a page a browser submits (start and the
