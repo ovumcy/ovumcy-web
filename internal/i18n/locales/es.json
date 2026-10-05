@@ -520,6 +520,7 @@
   "daylog.title": "Registro diario",
   "daylog.save_failed": "No se pudo guardar: revisa tu conexión. Tu registro sigue aquí.",
   "daylog.save_retry": "Reintentar",
+  "daylog.save_sign_in": "Iniciar sesión en una pestaña nueva",
   "calendar.title": "Calendario",
   "calendar.prev": "Anterior",
   "calendar.next": "Siguiente",

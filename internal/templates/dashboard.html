@@ -322,7 +322,8 @@
         data-autosave-invalid="{{t .Messages "dashboard.autosave_invalid"}}"
         data-autosave-undo="{{t .Messages "dashboard.autosave_undo"}}"
         data-day-save-failed-text="{{t .Messages "daylog.save_failed"}}"
-        data-day-save-retry-label="{{t .Messages "daylog.save_retry"}}">
+        data-day-save-retry-label="{{t .Messages "daylog.save_retry"}}"
+        data-day-save-sign-in-label="{{t .Messages "daylog.save_sign_in"}}">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <input type="hidden" name="_method" value="PUT">
         <input type="hidden" name="ack_period_tip" value="false" data-period-tip-ack>

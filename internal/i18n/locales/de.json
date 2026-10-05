@@ -520,6 +520,7 @@
   "daylog.title": "Täglicher Eintrag",
   "daylog.save_failed": "Speichern nicht möglich — prüfen Sie Ihre Verbindung. Ihr Eintrag ist noch da.",
   "daylog.save_retry": "Erneut versuchen",
+  "daylog.save_sign_in": "In neuem Tab anmelden",
   "calendar.title": "Kalender",
   "calendar.prev": "Zurück",
   "calendar.next": "Weiter",

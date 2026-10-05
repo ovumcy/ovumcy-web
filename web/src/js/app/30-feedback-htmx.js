@@ -394,10 +394,39 @@
     retry.className = "status-notice-action";
     retry.setAttribute("data-day-save-retry", "true");
     retry.textContent = form.getAttribute("data-day-save-retry-label") || "Try again";
+
+    if (messageKey === SESSION_EXPIRED_NOTICE_KEY) {
+      notice.appendChild(daySaveSignInLink(form));
+    }
     notice.appendChild(retry);
 
     target.replaceChildren(notice);
     return true;
+  }
+
+  // A save refused because the session is gone cannot be fixed by retrying in
+  // place, and signing in again in THIS tab navigates away from the only copy
+  // of the entry. So the refusal offers the sign-in page in a new tab: the entry
+  // stays in this page's form, the new tab sets a fresh session cookie, and the
+  // retry beside the link then resubmits the same form under it. The CSRF token
+  // the retry sends is read from the page at send time and survives the
+  // sign-in — the token cookie is not rotated by authentication — so the retry
+  // is not refused for a stale token.
+  //
+  // The link is a fixed same-origin path carrying nothing from the entry or the
+  // account, and nothing from the entry is written anywhere to survive the trip.
+  var SESSION_EXPIRED_NOTICE_KEY = "common.error.unauthorized";
+  var SIGN_IN_PATH = "/login";
+
+  function daySaveSignInLink(form) {
+    var link = document.createElement("a");
+    link.className = "status-notice-action";
+    link.href = SIGN_IN_PATH;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.setAttribute("data-day-save-sign-in", "true");
+    link.textContent = form.getAttribute("data-day-save-sign-in-label") || "Sign in in a new tab";
+    return link;
   }
 
   function renderDaySaveUnreachable(form) {
