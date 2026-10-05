@@ -12,6 +12,7 @@
          this expression disagreed with itself: the journal grid carried no gate
          at all and published the raw classification for every suppressed tier. */}}
     {{$fertilityStatus := .Stats.CurrentFertility}}{{if or .CycleDataStale (not .ShowFertilityStatus)}}{{$fertilityStatus = "unknown"}}{{end}}
+    {{/* The data-* attributes of this header are re-fetched and copied after a pregnancy-result save. */}}
     <section
       class="card dashboard-status-header reveal"
       data-dashboard-status-header
@@ -21,9 +22,11 @@
       <div class="dashboard-status-top">
         <p class="dashboard-cycle-lead">
           <span class="sr-only">{{t .Messages "dashboard.cycle_day"}}</span>
+          {{/* The cycle-day span is re-fetched and swapped after a pregnancy-result save. */}}
           <span class="dashboard-cycle-lead-day" data-dashboard-cycle-day>{{if gt .Stats.CurrentCycleDay 0}}{{if .CycleDataStale}}~{{end}}{{.Stats.CurrentCycleDay}}{{else}}{{.NoDataLabel}}{{end}}</span>
         </p>
 
+        {{/* The status line is re-fetched and swapped after a pregnancy-result save. */}}
         <p class="dashboard-status-line" data-dashboard-status-line>
           <span class="dashboard-status-item">
             <span aria-hidden="true">{{template "icon" (phaseIcon $phase)}}</span>
@@ -175,6 +178,7 @@
            predicted start window and which were actually logged — exist only
            here, so each cell carries its own accessible name instead of the
            ribbon being aria-hidden. */}}
+      {{/* The ribbon is re-fetched and swapped after a pregnancy-result save. */}}
       <div
         class="dashboard-cycle-ribbon-wrap"
         data-dashboard-cycle-ribbon
@@ -200,10 +204,12 @@
       </div>
 
       {{if .HasPredictionExplanationPrimary}}
+      {{/* The explainer is re-fetched and swapped after a pregnancy-result save. */}}
       <p class="journal-muted text-sm" data-dashboard-prediction-explainer data-explainer-key="{{.PredictionExplanationPrimaryKey}}">{{t .Messages .PredictionExplanationPrimaryKey}}</p>
       {{end}}
 
       {{if and .IsOwner .ShowReminderBanner}}
+      {{/* The reminder banner is re-fetched and swapped after a pregnancy-result save. */}}
       <p class="dashboard-status-notice text-sm" data-dashboard-reminder-banner data-reminder-banner-key="{{.ReminderBannerTitleKey}}">
         {{if .ReminderBannerCountable}}{{printf (tn .Messages .Lang .ReminderBannerTitleKey .ReminderBannerDaysUntil) .ReminderBannerDaysUntil}}{{else}}{{t .Messages .ReminderBannerTitleKey}}{{end}}
         {{if .ReminderBannerApproximate}} <span class="journal-muted" data-dashboard-ovulation-approximate>{{t .Messages "dashboard.ovulation_approximate"}}</span>{{end}}
@@ -211,6 +217,7 @@
       {{end}}
 
       {{if or .CycleDataStale .LateCycle.Visible .NextPeriodInPast .OvulationInPast}}
+      {{/* The warnings block is re-fetched and swapped after a pregnancy-result save. */}}
       <div class="dashboard-status-warnings text-sm" data-dashboard-cycle-warnings>
         {{if .LateCycle.Visible}}
         <p
@@ -249,6 +256,7 @@
       {{end}}
 
       {{if .HasPredictionFactorHint}}
+      {{/* The factor hint is re-fetched and swapped after a pregnancy-result save. */}}
       <p class="dashboard-status-factor-hint text-sm" data-dashboard-factor-hint>
         <span class="journal-muted">{{t .Messages .PredictionExplanationSecondaryKey}}</span>
         {{range .PredictionFactorHintKeys}}

@@ -17,17 +17,57 @@ const TODAY = "2026-08-12";
 const STALE_HEADER = "Period likely today";
 const FRESH_HEADER = "Next period estimate paused";
 
-function shell(text, extraClass = "") {
-  return `<section data-dashboard-shell>
-    <section class="card dashboard-status-header${extraClass}" data-dashboard-status-header>
+const STALE_LINE = "Luteal phase";
+const FRESH_LINE = "Predictions paused";
+
+// The real header's structure: the blocks that depend on the pregnancy result
+// beside the goal chip, a live <details> whose quick-switch forms are driven by
+// htmx (hx-patch) — a node cloned out of a fetched page would never be bound.
+function shell(text, { line, phase, explainer = "", warnings = "" }) {
+  return `<section data-dashboard-shell data-phase="${phase}">
+    <section class="card dashboard-status-header reveal" data-dashboard-status-header data-dashboard-phase="${phase}">
+      <div class="dashboard-status-top">
+        <p class="dashboard-cycle-lead"><span class="sr-only">Cycle day</span><span data-dashboard-cycle-day>12</span></p>
+        <p class="dashboard-status-line" data-dashboard-status-line>${line}</p>
+        <details class="dashboard-goal-chip" data-usage-goal-summary>
+          <summary data-usage-goal-chip>Avoiding pregnancy</summary>
+          <div role="group" data-usage-goal-quick-switch>
+            <form
+              action="/api/v1/users/current/cycle?source=dashboard"
+              method="post"
+              hx-patch="/api/v1/users/current/cycle?source=dashboard"
+              hx-target="#dashboard-usage-goal-status"
+              data-usage-goal-quick-switch-form>
+              <input type="hidden" name="usage_goal" value="trying_to_conceive">
+              <button type="submit" data-usage-goal-choice="trying_to_conceive">Trying to conceive</button>
+            </form>
+            <div id="dashboard-usage-goal-status" class="save-status" aria-live="polite"></div>
+          </div>
+        </details>
+      </div>
+      <div data-dashboard-cycle-ribbon></div>
+      ${explainer}
       <p data-dashboard-reminder-banner>${text}</p>
+      ${warnings}
+      <p data-dashboard-prediction-disclaimer>Not medical advice</p>
     </section>
   </section>`;
 }
 
+const STALE_SHELL = shell(STALE_HEADER, {
+  line: STALE_LINE,
+  phase: "luteal",
+  explainer: "<p data-dashboard-prediction-explainer>Estimated from your cycles</p>",
+});
+const FRESH_SHELL = shell(FRESH_HEADER, {
+  line: FRESH_LINE,
+  phase: "unknown",
+  warnings: "<div data-dashboard-cycle-warnings><p data-dashboard-prediction-past>Past</p></div>",
+});
+
 function dashboardPage() {
   return `<!doctype html><html><head><meta name="csrf-token" content="unit-test-token"></head><body>
-  ${shell(STALE_HEADER, " reveal")}
+  ${STALE_SHELL}
   <div data-dashboard-editor>
     <form
       hx-put="/api/v1/days/${TODAY}"
@@ -65,7 +105,7 @@ function installRecorder(window) {
       ok: true,
       status: 200,
       headers: { get: () => null },
-      text: () => Promise.resolve(isGet ? `<!doctype html><html><body>${shell(FRESH_HEADER, " reveal")}</body></html>` : ""),
+      text: () => Promise.resolve(isGet ? `<!doctype html><html><body>${FRESH_SHELL}</body></html>` : ""),
     });
   };
   return calls;
@@ -142,12 +182,70 @@ test("a saved pregnancy result fetches the dashboard again and swaps only the st
     assert.equal(gets(calls)[0].url, "/dashboard");
     assert.equal(bannerText(document), FRESH_HEADER, "the header now carries the server's answer");
     assert.equal(document.querySelectorAll("[data-dashboard-shell]").length, 1);
-    assert.equal(
-      document.querySelector("[data-dashboard-status-header]").classList.contains("reveal"),
-      false,
-      "the entrance animation is not replayed on a refresh"
-    );
     assert.ok(document.querySelector("[data-dashboard-save-form]"), "the journal form is left in place");
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("the swap leaves the goal switch, the shell and the header as the same live nodes", async () => {
+  const { dom } = await loadDashboard();
+  try {
+    const document = dom.window.document;
+    const shellNode = document.querySelector("[data-dashboard-shell]");
+    const header = document.querySelector("[data-dashboard-status-header]");
+    const goalChip = document.querySelector("[data-usage-goal-summary]");
+    const goalForm = document.querySelector("[data-usage-goal-quick-switch-form]");
+    goalChip.open = true;
+
+    pick(document, "positive");
+    await saveNow(dom.window);
+
+    assert.equal(
+      document.querySelector("[data-dashboard-status-line]").textContent.trim(),
+      FRESH_LINE,
+      "the header text changed"
+    );
+    assert.equal(document.querySelector("[data-dashboard-shell]"), shellNode, "the shell is not replaced");
+    assert.equal(document.querySelector("[data-dashboard-status-header]"), header, "the header is not replaced");
+    assert.equal(
+      document.querySelector("[data-usage-goal-quick-switch-form]"),
+      goalForm,
+      "the htmx-driven goal switch form is the same node, still bound"
+    );
+    assert.equal(document.querySelector("[data-usage-goal-summary]"), goalChip);
+    assert.equal(goalChip.open, true, "an open goal chip stays open");
+    assert.equal(header.getAttribute("data-dashboard-phase"), "unknown", "the header's own state attributes follow");
+    assert.equal(header.classList.contains("reveal"), true, "the header is not re-created, so its entrance is not replayed");
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("a block the result adds or removes is placed in the template's order", async () => {
+  const { dom } = await loadDashboard();
+  try {
+    const document = dom.window.document;
+    const header = document.querySelector("[data-dashboard-status-header]");
+    assert.ok(header.querySelector("[data-dashboard-prediction-explainer]"));
+    assert.equal(header.querySelector("[data-dashboard-cycle-warnings]"), null);
+
+    pick(document, "positive");
+    await saveNow(dom.window);
+
+    assert.equal(header.querySelector("[data-dashboard-prediction-explainer]"), null, "a block the server dropped is removed");
+    const warnings = header.querySelector("[data-dashboard-cycle-warnings]");
+    assert.ok(warnings, "a block the server added appears");
+    assert.equal(
+      warnings.nextElementSibling.hasAttribute("data-dashboard-prediction-disclaimer"),
+      true,
+      "it sits before the static disclaimer, where the template renders it"
+    );
+    assert.equal(
+      warnings.previousElementSibling.hasAttribute("data-dashboard-reminder-banner"),
+      true,
+      "and after the banner"
+    );
   } finally {
     dom.window.close();
   }
