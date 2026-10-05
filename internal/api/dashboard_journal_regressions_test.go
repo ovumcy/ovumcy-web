@@ -365,10 +365,10 @@ func TestDashboardPregnancyTestRendersAnUntestedDayAsAbsentData(t *testing.T) {
 		}
 	}
 
-	if !pregnancyTestHasHook(field, "data-pregnancy-test-empty") {
+	if !pregnancyTestShowsHook(field, "data-pregnancy-test-empty") {
 		t.Fatal("expected an untested day to name its own empty state")
 	}
-	if pregnancyTestHasHook(field, "data-pregnancy-test-remove") {
+	if pregnancyTestShowsHook(field, "data-pregnancy-test-remove") {
 		t.Fatal("expected no removal action when there is no result to remove")
 	}
 
@@ -447,7 +447,7 @@ func TestDashboardPregnancyTestOffersRemovalForEitherSavedResult(t *testing.T) {
 			if !htmlHasAttr(carrier, "hidden") {
 				t.Fatal("expected the unset carrier to stay hidden from view")
 			}
-			if pregnancyTestHasHook(field, "data-pregnancy-test-empty") {
+			if pregnancyTestShowsHook(field, "data-pregnancy-test-empty") {
 				t.Fatal("expected no empty state while a result is recorded")
 			}
 		})
@@ -814,6 +814,51 @@ func pregnancyTestHasHook(field *html.Node, hook string) bool {
 	return htmlFindElement(field, func(node *html.Node) bool {
 		return node.Type == html.ElementNode && htmlHasAttr(node, hook)
 	}) != nil
+}
+
+// pregnancyTestShowsHook reports whether the hook is on the page AND visible: the
+// field renders both the empty wording and the removal action and hides the one
+// that does not apply, so the browser can flip between them after an autosave
+// without a reload.
+func pregnancyTestShowsHook(field *html.Node, hook string) bool {
+	return htmlFindElement(field, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, hook) && !htmlHasAttr(node, "hidden")
+	}) != nil
+}
+
+// TestPregnancyTestFieldRendersBothStateSurfacesSoTheBrowserCanFlipThem pins the
+// markup half of the in-place refresh: whichever state the server renders, the
+// empty wording and the removal action are both present, exactly one of them
+// hidden. A branch the server rendered away would leave the script nothing to
+// show after a Positive or Remove result is saved.
+func TestPregnancyTestFieldRendersBothStateSurfacesSoTheBrowserCanFlipThem(t *testing.T) {
+	for _, saved := range []string{models.PregnancyTestNone, models.PregnancyTestPositive} {
+		t.Run(saved, func(t *testing.T) {
+			app, database := newOnboardingTestApp(t)
+			user := createOnboardingTestUser(t, database, "dashboard-pregnancy-flip-"+saved+"@example.com", "StrongPass1", true)
+			if saved != models.PregnancyTestNone {
+				today := services.DateAtLocation(time.Now().In(time.UTC), time.UTC)
+				if err := database.Create(&models.DailyLog{UserID: user.ID, Date: today, Flow: models.FlowNone, PregnancyTest: saved}).Error; err != nil {
+					t.Fatalf("seed daily log: %v", err)
+				}
+			}
+			authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+			field := pregnancyTestField(t, mustParseHTMLDocument(t, mustRenderDashboard(t, app, authCookie, "en")))
+
+			for _, hook := range []string{"data-pregnancy-test-empty", "data-pregnancy-test-remove"} {
+				if !pregnancyTestHasHook(field, hook) {
+					t.Fatalf("expected %s to be rendered whatever the saved state", hook)
+				}
+			}
+			recorded := saved != models.PregnancyTestNone
+			if got := pregnancyTestShowsHook(field, "data-pregnancy-test-remove"); got != recorded {
+				t.Fatalf("expected the removal action visible=%v for saved %q, got %v", recorded, saved, got)
+			}
+			if got := pregnancyTestShowsHook(field, "data-pregnancy-test-empty"); got == recorded {
+				t.Fatalf("expected the empty wording visible=%v for saved %q, got %v", !recorded, saved, got)
+			}
+		})
+	}
 }
 
 // pregnancyTestOptions maps each offered result to its option element.

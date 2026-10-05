@@ -292,7 +292,7 @@ func TestCalendarDayEditorPregnancyTestRemovalClearsTheSavedResult(t *testing.T)
 	if got := htmlAttr(field, "data-pregnancy-test-state"); got != "recorded" {
 		t.Fatalf("expected the day editor to render the saved result, got state %q", got)
 	}
-	if !pregnancyTestHasHook(field, "data-pregnancy-test-remove") {
+	if !pregnancyTestShowsHook(field, "data-pregnancy-test-remove") {
 		t.Fatal("expected the day editor to offer the same removal action as the dashboard journal")
 	}
 
@@ -322,10 +322,10 @@ func TestCalendarDayEditorPregnancyTestRemovalClearsTheSavedResult(t *testing.T)
 	if got := htmlAttr(cleared, "data-pregnancy-test-state"); got != "absent" {
 		t.Fatalf("expected the cleared day to round-trip as absent data, got state %q", got)
 	}
-	if !pregnancyTestHasHook(cleared, "data-pregnancy-test-empty") {
+	if !pregnancyTestShowsHook(cleared, "data-pregnancy-test-empty") {
 		t.Fatal("expected the cleared day to render the empty state")
 	}
-	if pregnancyTestHasHook(cleared, "data-pregnancy-test-remove") {
+	if pregnancyTestShowsHook(cleared, "data-pregnancy-test-remove") {
 		t.Fatal("expected no removal action once the result is gone")
 	}
 }
