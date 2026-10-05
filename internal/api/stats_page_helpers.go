@@ -237,6 +237,7 @@ func (handler *Handler) buildStatsPageData(ctx context.Context, user *models.Use
 		"ShowLongCycleNotice":                 viewData.ShowLongCycleNotice,
 		"ShowPerimenopauseHint":               viewData.ShowPerimenopauseHint,
 		"PredictionDisabled":                  viewData.PredictionDisabled,
+		"ShowPredictionModeCard":              viewData.ShowPredictionModeCard,
 		"IsIrregularMode":                     viewData.IsIrregularMode,
 		"CycleChartSummary":                   cycleChartSummary,
 		"BBTChartSummary":                     bbtChartSummary,
