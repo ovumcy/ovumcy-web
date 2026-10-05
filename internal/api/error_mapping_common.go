@@ -2,8 +2,12 @@ package api
 
 import "github.com/gofiber/fiber/v3"
 
+// unauthorizedErrorKey is the stable key of a request that carries no session.
+// No other refusal uses it, so it alone identifies that case (isSignedOutRefusal).
+const unauthorizedErrorKey = "unauthorized"
+
 func unauthorizedErrorSpec() APIErrorSpec {
-	return globalErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "unauthorized")
+	return globalErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, unauthorizedErrorKey)
 }
 
 func onboardingRequiredErrorSpec() APIErrorSpec {

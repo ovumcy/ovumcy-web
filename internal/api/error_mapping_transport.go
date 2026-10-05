@@ -48,6 +48,11 @@ import (
 // decision for its own issue — so it keeps falling through to the JSON/HTMX
 // arms below like every other route.
 //
+// A plain HTML POST of one of the in-app forms (plainPageFormBackPath) answers
+// a refusal as a page with a link back to the form, except when the session is
+// gone: then it is a 303 to /login with the sign-in notice in the flash, the
+// way a page navigation without a session already lands there.
+//
 // Both markup arms resolve the request's locale catalogue via
 // ensureRequestMessages before rendering: a mapped rejection can be produced
 // on a context LanguageMiddleware never touched — fiber's own body/head
@@ -67,6 +72,12 @@ func (handler *Handler) apiError(c fiber.Ctx, spec APIErrorSpec) error {
 		return handler.respondPlainAuthFormPageStatusFragment(c, spec)
 	}
 	if back, ok := plainPageFormBackPath(c); ok {
+		// plainPageFormBackPath admits only a browser form, so !acceptsJSON
+		// always holds here; it is spelled out so the redirect reads as the
+		// HTML surface it is, which a JSON client never reaches.
+		if !acceptsJSON(c) && isSignedOutRefusal(spec) {
+			return handler.redirectSignedOutRefusal(c, spec)
+		}
 		handler.ensureRequestMessages(c)
 		return sendStatusFragmentWithBackLink(c, spec, back)
 	}
@@ -75,6 +86,18 @@ func (handler *Handler) apiError(c fiber.Ctx, spec APIErrorSpec) error {
 		return sendHTMLFragment(c.Status(spec.Status), localizedStatusErrorMarkup(c, spec))
 	}
 	return c.Status(spec.Status).JSON(apiErrorEnvelope(spec))
+}
+
+// isSignedOutRefusal reports whether spec is the refusal for a request that
+// carries no session at all (AuthRequired, OwnerOnly, a handler finding no
+// user). On a form submitted without JavaScript, the page-shaped refusal's back
+// link would only bounce off AuthRequired again, so apiError sends the browser
+// to the sign-in page instead, the notice riding the flash the sign-in page
+// reads. Other 401s — a wrong current password, a wrong second-factor code —
+// carry their own key, come from a signed-in session, and keep the page with
+// its link back to the form.
+func isSignedOutRefusal(spec APIErrorSpec) bool {
+	return spec.Key == unauthorizedErrorKey
 }
 
 // apiErrorEnvelope is the JSON body every mapped rejection answers with. It is

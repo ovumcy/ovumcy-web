@@ -15,7 +15,9 @@ import (
 // the second factor, and the erasure and egress sections. A refusal there
 // would otherwise paint the JSON envelope as the page, so apiError answers the
 // localized status fragment with a link back instead — same status, same key.
-// No cookie rides on it, the flash included.
+// No cookie rides on it, the flash included. The one refusal that is not
+// answered as that page is a request with no session (isSignedOutRefusal): it
+// is sent to /login with the sign-in notice in the flash.
 //
 // Scoped tighter than isPlainAuthFormPageNavigation: the request must also say
 // it accepts text/html, because API clients post form bodies to these routes
