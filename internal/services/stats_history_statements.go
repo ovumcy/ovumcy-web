@@ -151,8 +151,8 @@ type statsPhaseOccurrence struct {
 //
 // The phase taxonomy is the product's own — menstrual / follicular / ovulation
 // / luteal. Fertility is a separate axis and never appears here.
-func buildSymptomPhaseRecurrenceStatements(logs []models.DailyLog, symptomByID map[uint]models.SymptomType, location *time.Location) []StatsStatement {
-	cycles := buildCompletedCyclePhaseContexts(logs, location)
+func buildSymptomPhaseRecurrenceStatements(logs []models.DailyLog, symptomByID map[uint]models.SymptomType, location *time.Location, ctx BoundaryContext) []StatsStatement {
+	cycles := buildCompletedCyclePhaseContexts(logs, location, ctx)
 	if len(cycles) < minimumPhaseInsightCycles || len(symptomByID) == 0 {
 		return nil
 	}

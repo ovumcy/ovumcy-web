@@ -172,7 +172,7 @@ func TestCompletedCycleCountFromLogsReturnsOneForTwoCycleStarts(t *testing.T) {
 		{Date: mustParseDashboardServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
 		{Date: mustParseDashboardServiceDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true},
 	}
-	if got := completedCycleCountFromLogs(twoCycleStarts); got != 1 {
+	if got := completedCycleCountFromLogs(twoCycleStarts, BoundaryContext{}); got != 1 {
 		t.Fatalf("expected 1 completed cycle for two cycle starts, got %d", got)
 	}
 }

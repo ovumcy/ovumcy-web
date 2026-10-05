@@ -177,7 +177,7 @@ func TestBootRecomputeFixtureEarnsItsExpectation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListByUser: %v", err)
 	}
-	luteal, refined := services.InferUserLutealPhase(logs, time.UTC)
+	luteal, refined := services.InferUserLutealPhase(logs, time.UTC, services.BoundaryContext{})
 	if !refined {
 		t.Fatal("fixture: the seeded history must support an inference; built outside the inference's range it supplies no signal at all")
 	}

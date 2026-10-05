@@ -18,18 +18,32 @@ import { setRequestTimezoneFromBrowser } from './timezone-helpers';
 // module's name.
 export { isoToday, shiftISODate };
 
+/**
+ * Registers and onboards an owner, then turns irregular mode on. Without
+ * `startDaysAgo` onboarding takes `completeOnboardingIfPresent`'s today-3.
+ *
+ * A scenario that needs the current cycle to start on a given day passes it
+ * here rather than editing the last-period-start setting afterwards: the
+ * auto-filled onboarding days are logged period days, so they stay a cycle
+ * boundary of their own, newer than any earlier date the setting is moved to.
+ */
 export async function registerOwnerAndEnableIrregularMode(
   page: Page,
-  prefix: string
+  prefix: string,
+  startDaysAgo?: number
 ): Promise<void> {
-  const credentials = createCredentials(prefix);
+  if (startDaysAgo === undefined) {
+    const credentials = createCredentials(prefix);
 
-  await registerOwnerViaUI(page, credentials);
-  await expectInlineRegisterRecoveryStep(page);
-  await readRecoveryCode(page);
-  await continueFromRecoveryCode(page);
-  await completeOnboardingIfPresent(page);
-  await setRequestTimezoneFromBrowser(page);
+    await registerOwnerViaUI(page, credentials);
+    await expectInlineRegisterRecoveryStep(page);
+    await readRecoveryCode(page);
+    await continueFromRecoveryCode(page);
+    await completeOnboardingIfPresent(page);
+    await setRequestTimezoneFromBrowser(page);
+  } else {
+    await registerAndOnboardWithStartDaysAgo(page, prefix, startDaysAgo);
+  }
 
   await page.goto('/settings');
   await expect(page).toHaveURL(/\/settings$/);

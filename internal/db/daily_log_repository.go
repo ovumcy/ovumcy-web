@@ -54,7 +54,49 @@ func (repo *DailyLogRepository) ListByUser(ctx context.Context, userID uint) ([]
 	if err := repo.database.WithContext(ctx).Where("user_id = ?", userID).Order("date ASC, id ASC").Find(&logs).Error; err != nil {
 		return nil, err
 	}
-	return logs, nil
+	return logs, repo.markSpottingSymptom(ctx, userID, logs)
+}
+
+// markSpottingSymptom resolves, once per read, which of the owner's loaded days
+// carry the built-in Spotting symptom, and sets the read-time flag the cycle
+// boundary rule consumes. A symptom is a per-owner catalog row (and an archived
+// one still labels past days), so the lookup is scoped to the owner and skipped
+// when no loaded day names any symptom at all.
+func (repo *DailyLogRepository) markSpottingSymptom(ctx context.Context, userID uint, logs []models.DailyLog) error {
+	anySymptom := false
+	for index := range logs {
+		if len(logs[index].SymptomIDs) > 0 {
+			anySymptom = true
+			break
+		}
+	}
+	if !anySymptom {
+		return nil
+	}
+
+	var ids []uint
+	if err := repo.database.WithContext(ctx).
+		Model(&models.SymptomType{}).
+		Where("user_id = ? AND is_builtin = ? AND lower(name) = ?", userID, true, "spotting").
+		Pluck("id", &ids).Error; err != nil {
+		return err
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	spotting := make(map[uint]struct{}, len(ids))
+	for _, id := range ids {
+		spotting[id] = struct{}{}
+	}
+	for index := range logs {
+		for _, id := range logs[index].SymptomIDs {
+			if _, ok := spotting[id]; ok {
+				logs[index].HasSpottingSymptom = true
+				break
+			}
+		}
+	}
+	return nil
 }
 
 func (repo *DailyLogRepository) ListByUserRange(ctx context.Context, userID uint, fromStart *time.Time, toEnd *time.Time) ([]models.DailyLog, error) {
@@ -68,6 +110,9 @@ func (repo *DailyLogRepository) ListByUserRange(ctx context.Context, userID uint
 
 	logs := make([]models.DailyLog, 0)
 	if err := query.Order("date ASC, id ASC").Find(&logs).Error; err != nil {
+		return nil, err
+	}
+	if err := repo.markSpottingSymptom(ctx, userID, logs); err != nil {
 		return nil, err
 	}
 	return logs, nil

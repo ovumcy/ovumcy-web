@@ -126,11 +126,11 @@ func TestBuildSymptomPhaseRecurrenceStatementsGatesOnCompletedCycles(t *testing.
 	}
 	logs := buildRecurrenceStatementLogs(t)
 
-	if statements := buildSymptomPhaseRecurrenceStatements(logs[:len(logs)-1], symptomByID, time.UTC); len(statements) != 0 {
+	if statements := buildSymptomPhaseRecurrenceStatements(logs[:len(logs)-1], symptomByID, time.UTC, BoundaryContext{}); len(statements) != 0 {
 		t.Fatalf("expected no recurrence statements with two completed cycles, got %#v", statements)
 	}
 
-	statements := buildSymptomPhaseRecurrenceStatements(logs, symptomByID, time.UTC)
+	statements := buildSymptomPhaseRecurrenceStatements(logs, symptomByID, time.UTC, BoundaryContext{})
 	if len(statements) != 1 {
 		t.Fatalf("expected one recurrence statement at three completed cycles, got %#v", statements)
 	}
@@ -145,7 +145,7 @@ func TestBuildSymptomPhaseRecurrenceStatementsCountsPhaseOccurrences(t *testing.
 		1: {ID: 1, Name: "Headache", Icon: "H"},
 	}
 
-	statements := buildSymptomPhaseRecurrenceStatements(buildRecurrenceStatementLogs(t), symptomByID, time.UTC)
+	statements := buildSymptomPhaseRecurrenceStatements(buildRecurrenceStatementLogs(t), symptomByID, time.UTC, BoundaryContext{})
 	if len(statements) != 1 {
 		t.Fatalf("expected exactly one recurrence statement, got %#v", statements)
 	}
@@ -213,7 +213,7 @@ func TestBuildSymptomPhaseRecurrenceStatementsCapTheShelf(t *testing.T) {
 		}
 	}
 
-	statements := buildSymptomPhaseRecurrenceStatements(logs, symptomByID, time.UTC)
+	statements := buildSymptomPhaseRecurrenceStatements(logs, symptomByID, time.UTC, BoundaryContext{})
 	if len(statements) != statsStatementRecurrenceLimit {
 		t.Fatalf("expected the shelf to keep %d statements, got %d", statsStatementRecurrenceLimit, len(statements))
 	}
@@ -323,12 +323,12 @@ func buildRecurrenceStatementLogs(t *testing.T) []models.DailyLog {
 	for cycle := range 3 {
 		start := mustParseStatsServiceDay(t, "2026-01-01").AddDate(0, 0, cycle*28)
 		logs = append(logs,
-			models.DailyLog{Date: start, IsPeriod: true},
+			models.DailyLog{Date: start, IsPeriod: true, CycleStart: true},
 			models.DailyLog{Date: start.AddDate(0, 0, 9)},
 			models.DailyLog{Date: start.AddDate(0, 0, 21), SymptomIDs: []uint{1}},
 		)
 	}
-	logs = append(logs, models.DailyLog{Date: mustParseStatsServiceDay(t, "2026-01-01").AddDate(0, 0, 84), IsPeriod: true})
+	logs = append(logs, models.DailyLog{Date: mustParseStatsServiceDay(t, "2026-01-01").AddDate(0, 0, 84), IsPeriod: true, CycleStart: true})
 	return logs
 }
 
@@ -342,10 +342,10 @@ func buildStatementPageLogs(today time.Time) []models.DailyLog {
 	for cycle := range 4 {
 		start := today.AddDate(0, 0, -112+cycle*28)
 		logs = append(logs,
-			models.DailyLog{Date: start, IsPeriod: true},
+			models.DailyLog{Date: start, IsPeriod: true, CycleStart: true},
 			models.DailyLog{Date: start.AddDate(0, 0, 9)},
 			models.DailyLog{Date: start.AddDate(0, 0, 21), SymptomIDs: []uint{1}},
 		)
 	}
-	return append(logs, models.DailyLog{Date: today, IsPeriod: true})
+	return append(logs, models.DailyLog{Date: today, IsPeriod: true, CycleStart: true})
 }

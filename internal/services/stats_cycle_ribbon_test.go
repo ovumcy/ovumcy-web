@@ -63,7 +63,7 @@ func TestBuildStatsCycleRibbonWaitsForTwoCompletedCycles(t *testing.T) {
 		statscycleribbonOwner(false),
 		CycleStats{LutealPhase: 14},
 		logs,
-		buildCompletedCycleSpans(logs, time.UTC),
+		buildCompletedCycleSpans(logs, time.UTC, BoundaryContext{}),
 	)
 	if single.Visible {
 		t.Fatal("one completed cycle is not a comparison — the stack must stay hidden")
@@ -74,7 +74,7 @@ func TestBuildStatsCycleRibbonWaitsForTwoCompletedCycles(t *testing.T) {
 		statscycleribbonOwner(false),
 		CycleStats{LutealPhase: 14},
 		logs,
-		buildCompletedCycleSpans(logs, time.UTC),
+		buildCompletedCycleSpans(logs, time.UTC, BoundaryContext{}),
 	)
 	if !pair.Visible {
 		t.Fatal("two completed cycles are the basic-insights tier and must render")
@@ -93,7 +93,7 @@ func TestBuildStatsCycleRibbonSharesOneAxisAcrossRows(t *testing.T) {
 		statscycleribbonOwner(false),
 		CycleStats{LutealPhase: 14},
 		logs,
-		buildCompletedCycleSpans(logs, time.UTC),
+		buildCompletedCycleSpans(logs, time.UTC, BoundaryContext{}),
 	)
 	if !ribbon.Visible {
 		t.Fatal("expected a visible stack for four completed cycles")
@@ -143,7 +143,7 @@ func TestBuildStatsCycleRibbonKeepsOnlyTheMostRecentCycles(t *testing.T) {
 		statscycleribbonOwner(false),
 		CycleStats{LutealPhase: 14},
 		logs,
-		buildCompletedCycleSpans(logs, time.UTC),
+		buildCompletedCycleSpans(logs, time.UTC, BoundaryContext{}),
 	)
 	if len(ribbon.Rows) != statsCycleRibbonRows {
 		t.Fatalf("expected %d rows, got %d", statsCycleRibbonRows, len(ribbon.Rows))
@@ -166,7 +166,7 @@ func TestBuildStatsCycleRibbonDrawsObservedPeriodDaysWithoutInferredPhases(t *te
 		statscycleribbonOwner(false),
 		CycleStats{LutealPhase: 14},
 		logs,
-		buildCompletedCycleSpans(logs, time.UTC),
+		buildCompletedCycleSpans(logs, time.UTC, BoundaryContext{}),
 	)
 	if ribbon.ShowPhases {
 		t.Fatal("did not expect inferred phases with ShowHistoricalPhases off")
@@ -203,7 +203,7 @@ func TestBuildStatsCycleRibbonInfersPhasesOnlyWhenTheOwnerAsked(t *testing.T) {
 		statscycleribbonOwner(true),
 		CycleStats{LutealPhase: 14},
 		logs,
-		buildCompletedCycleSpans(logs, time.UTC),
+		buildCompletedCycleSpans(logs, time.UTC, BoundaryContext{}),
 	)
 	if !ribbon.ShowPhases {
 		t.Fatal("expected inferred phases with ShowHistoricalPhases on")
@@ -310,7 +310,7 @@ func TestBuildStatsCycleRibbonMarksRecordedDays(t *testing.T) {
 		statscycleribbonOwner(false),
 		CycleStats{LutealPhase: 14},
 		logs,
-		buildCompletedCycleSpans(logs, time.UTC),
+		buildCompletedCycleSpans(logs, time.UTC, BoundaryContext{}),
 	)
 
 	logged := []int{}
@@ -374,7 +374,7 @@ func statscycleribbonInferredFertility(ribbon StatsCycleRibbon) (fertile int, pe
 // recorded period days are facts, not projections.
 func TestBuildStatsCycleRibbonSuppressesInferredFertilityInUnpredictableMode(t *testing.T) {
 	logs := statscycleribbonHistory(t)
-	spans := buildCompletedCycleSpans(logs, time.UTC)
+	spans := buildCompletedCycleSpans(logs, time.UTC, BoundaryContext{})
 
 	predicting := buildStatsCycleRibbon(
 		statscycleribbonOwner(true),
@@ -423,7 +423,7 @@ func TestBuildStatsCycleRibbonSuppressesInferredFertilityInUnpredictableMode(t *
 // signal set, and requires the claims gone while the recorded rows stay.
 func TestBuildStatsCycleRibbonSuppressesInferredFertilityOnPregnancyPauseAndOverdue(t *testing.T) {
 	logs := statscycleribbonHistory(t)
-	spans := buildCompletedCycleSpans(logs, time.UTC)
+	spans := buildCompletedCycleSpans(logs, time.UTC, BoundaryContext{})
 
 	cases := []struct {
 		name  string
@@ -469,7 +469,7 @@ func TestBuildStatsCycleRibbonSuppressesInferredFertilityOnPregnancyPauseAndOver
 func TestBuildStatsCycleRibbonFirstCycleGateIsTheTwoCycleMinimum(t *testing.T) {
 	logs := statscycleribbonCycle(t, "2026-01-01", 5)
 	logs = append(logs, statscycleribbonCycle(t, "2026-01-31", 5)...)
-	spans := buildCompletedCycleSpans(logs, time.UTC)
+	spans := buildCompletedCycleSpans(logs, time.UTC, BoundaryContext{})
 	if len(spans) != 1 {
 		t.Fatalf("fixture must hold exactly one completed cycle, got %d", len(spans))
 	}
@@ -548,7 +548,7 @@ func TestBuildStatsCycleRibbonSuppressesAClampedOvulationEstimate(t *testing.T) 
 		statscycleribbonOwner(true),
 		CycleStats{LutealPhase: 14},
 		logs,
-		buildCompletedCycleSpans(logs, time.UTC),
+		buildCompletedCycleSpans(logs, time.UTC, BoundaryContext{}),
 	)
 	if !ribbon.ShowPhases || len(ribbon.Rows) != 2 {
 		t.Fatalf("expected two rows with inferred phases on, got rows=%d showPhases=%v", len(ribbon.Rows), ribbon.ShowPhases)
@@ -609,7 +609,7 @@ func TestBuildStatsCycleRibbonNeverMarksAPeakOutsideTheOvulationPhase(t *testing
 		statscycleribbonOwner(true),
 		CycleStats{LutealPhase: 14},
 		logs,
-		buildCompletedCycleSpans(logs, time.UTC),
+		buildCompletedCycleSpans(logs, time.UTC, BoundaryContext{}),
 	)
 	if !ribbon.ShowPhases {
 		t.Fatal("expected inferred phases on")

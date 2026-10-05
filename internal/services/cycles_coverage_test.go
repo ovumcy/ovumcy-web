@@ -19,27 +19,23 @@ func cyclesCovDay(t *testing.T, s string) time.Time {
 	return d
 }
 
-// cyclesCovPeriodLog returns a DailyLog with IsPeriod=true for the given date.
+// cyclesCovPeriodLog returns a DailyLog with IsPeriod=true for the given date,
+// marked as a cycle start: a lone unmarked period day opens no cycle.
 func cyclesCovPeriodLog(t *testing.T, date string) models.DailyLog {
 	t.Helper()
-	return models.DailyLog{Date: cyclesCovDay(t, date), IsPeriod: true}
+	return models.DailyLog{Date: cyclesCovDay(t, date), IsPeriod: true, CycleStart: true}
 }
 
 // --------------------------------------------------------------------------
-// L63 – BuildCycleStats falls back to detectedStarts when ObservedCycleStarts
-// returns empty (no logs with CycleStart=true or uncertain flags).
+// BuildCycleStats reads CycleBoundaries only: there is no second, looser
+// reading of the starts to fall back on when the boundaries are empty.
 // --------------------------------------------------------------------------
 
-// TestCycles_BuildCycleStats_ObservedStartsFallback exercises the branch at
-// line 63 where observedStarts is empty and the code falls back to using
-// detectedStarts. The fallback is the only path that populates LastPeriodStart
-// correctly in this scenario.
-func TestCycles_BuildCycleStats_ObservedStartsFallback(t *testing.T) {
-	// Two plain period clusters – no CycleStart flag, no IsUncertain flag.
-	// ObservedCycleStarts will find clusters but with no ExplicitStart and
-	// HasUncertainExplicit=false, so it returns the cluster.Start values.
-	// We need a case where ObservedCycleStarts returns nil: all clusters
-	// having HasUncertainExplicit=true and no ExplicitStart.
+// TestCycles_BuildCycleStats_UncertainOnlyClustersOpenNoCycle: every cluster's
+// only cycle-start mark is uncertain, so the one boundary rule withholds all of
+// them. Before it, BuildCycleStats fell back to a looser second detector and
+// took such clusters as starts; that fallback no longer exists.
+func TestCycles_BuildCycleStats_UncertainOnlyClustersOpenNoCycle(t *testing.T) {
 	logs := []models.DailyLog{
 		{Date: cyclesCovDay(t, "2025-03-01"), IsPeriod: true, CycleStart: true, IsUncertain: true},
 		{Date: cyclesCovDay(t, "2025-03-02"), IsPeriod: true},
@@ -49,16 +45,13 @@ func TestCycles_BuildCycleStats_ObservedStartsFallback(t *testing.T) {
 	}
 
 	now := cyclesCovDay(t, "2025-04-05")
-	stats := BuildCycleStats(logs, now)
+	stats := BuildCycleStats(logs, now, BoundaryContext{})
 
-	// Because ObservedCycleStarts skips uncertain-only clusters, it returns nil.
-	// The fallback (line 63-65) assigns detectedStarts, so LastPeriodStart must
-	// equal the last detected start (2025-03-29).
-	if stats.LastPeriodStart.IsZero() {
-		t.Fatal("expected non-zero LastPeriodStart from detectedStarts fallback")
+	if !stats.LastPeriodStart.IsZero() {
+		t.Fatalf("LastPeriodStart = %s, want zero: uncertain-only clusters open no cycle", stats.LastPeriodStart.Format("2006-01-02"))
 	}
-	if got := stats.LastPeriodStart.Format("2006-01-02"); got != "2025-03-29" {
-		t.Fatalf("LastPeriodStart = %s, want 2025-03-29", got)
+	if stats.CompletedCycleCount != 0 {
+		t.Fatalf("CompletedCycleCount = %d, want 0", stats.CompletedCycleCount)
 	}
 }
 
@@ -163,7 +156,7 @@ func TestCycles_DetectCycleStarts_GapBoundary(t *testing.T) {
 		cyclesCovPeriodLog(t, "2026-01-01"),
 		cyclesCovPeriodLog(t, "2026-01-06"), // 5 days later
 	}
-	starts5 := DetectCycleStarts(logs5)
+	starts5 := CycleBoundaries(logs5, BoundaryContext{})
 	if len(starts5) != 1 {
 		t.Fatalf("gap of 5 calendar days (gapDays=4): expected 1 start, got %d", len(starts5))
 	}
@@ -173,7 +166,7 @@ func TestCycles_DetectCycleStarts_GapBoundary(t *testing.T) {
 		cyclesCovPeriodLog(t, "2026-01-01"),
 		cyclesCovPeriodLog(t, "2026-01-07"), // 6 days later
 	}
-	starts6 := DetectCycleStarts(logs6)
+	starts6 := CycleBoundaries(logs6, BoundaryContext{})
 	if len(starts6) != 2 {
 		t.Fatalf("gap of 6 calendar days (gapDays=5): expected 2 starts, got %d", len(starts6))
 	}

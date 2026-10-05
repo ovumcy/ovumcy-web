@@ -501,7 +501,7 @@ func (service *DashboardViewService) buildPickerViewState(user *models.User, day
 		primarySymptoms, extraSymptoms := SplitSymptomsForCollapsedPicker(rankedSymptoms, selectedSymptomID, 8)
 		return selectedSymptomID, rankedSymptoms, primarySymptoms, extraSymptoms, dayFormCycleStartState{}, nil
 	}
-	if len(symptoms) >= 2 && completedCycleCountFromLogs(logs) >= 2 {
+	if len(symptoms) >= 2 && completedCycleCountFromLogs(logs, BoundaryContextFor(user, DateAtLocation(now, location))) >= 2 {
 		rankedSymptoms = RankSymptomsForEntryPicker(symptoms, logs)
 	}
 
@@ -516,8 +516,8 @@ func (service *DashboardViewService) buildPickerViewState(user *models.User, day
 	return selectedSymptomID, rankedSymptoms, primarySymptoms, extraSymptoms, cycleStart, nil
 }
 
-func completedCycleCountFromLogs(logs []models.DailyLog) int {
-	starts := ObservedCycleStarts(logs)
+func completedCycleCountFromLogs(logs []models.DailyLog, ctx BoundaryContext) int {
+	starts := CycleBoundaries(logs, ctx)
 	if len(starts) < 2 {
 		return 0
 	}

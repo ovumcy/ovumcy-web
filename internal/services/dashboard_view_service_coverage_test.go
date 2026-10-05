@@ -357,14 +357,14 @@ func TestDashboardViewServiceSymptomRankingRequiresTwoSymptomsAndTwoCycles(t *te
 
 func TestDashboardViewServiceCompletedCycleCountFromLogsZeroWhenFewerThanTwoStarts(t *testing.T) {
 	// Zero starts → 0
-	if got := completedCycleCountFromLogs(nil); got != 0 {
+	if got := completedCycleCountFromLogs(nil, BoundaryContext{}); got != 0 {
 		t.Fatalf("expected 0 for nil logs, got %d", got)
 	}
 	// One period cluster → 0 (not enough for a completed cycle)
 	oneStart := []models.DailyLog{
 		{Date: mustParseDashboardServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
 	}
-	if got := completedCycleCountFromLogs(oneStart); got != 0 {
+	if got := completedCycleCountFromLogs(oneStart, BoundaryContext{}); got != 0 {
 		t.Fatalf("expected 0 for single cycle start, got %d", got)
 	}
 }
@@ -376,14 +376,14 @@ func TestDashboardViewServiceCompletedCycleCountFromLogsCountsCompletedCycles(t 
 		{Date: mustParseDashboardServiceDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true},
 		{Date: mustParseDashboardServiceDay(t, "2026-02-26"), IsPeriod: true, CycleStart: true},
 	}
-	if got := completedCycleCountFromLogs(threeCycleStarts); got != 2 {
+	if got := completedCycleCountFromLogs(threeCycleStarts, BoundaryContext{}); got != 2 {
 		t.Fatalf("expected 2 completed cycles, got %d", got)
 	}
 	// Four cycle starts → 3 completed cycles.
 	fourCycleStarts := append(threeCycleStarts, models.DailyLog{
 		Date: mustParseDashboardServiceDay(t, "2026-03-26"), IsPeriod: true, CycleStart: true,
 	})
-	if got := completedCycleCountFromLogs(fourCycleStarts); got != 3 {
+	if got := completedCycleCountFromLogs(fourCycleStarts, BoundaryContext{}); got != 3 {
 		t.Fatalf("expected 3 completed cycles, got %d", got)
 	}
 }

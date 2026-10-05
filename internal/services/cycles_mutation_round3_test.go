@@ -52,7 +52,7 @@ func TestMR3Cycles_ObservedStartsNotOverwrittenByDetected(t *testing.T) {
 	logs = mr3cycCluster(logs, mr3cycDay(2026, time.March, 2), 4, false, false)
 
 	now := mr3cycDay(2026, time.March, 10)
-	stats := BuildCycleStats(logs, now)
+	stats := BuildCycleStats(logs, now, BoundaryContext{})
 
 	// Observed starts = {Jan 1, Mar 2} -> 1 completed cycle of 60 days.
 	if stats.CompletedCycleCount != 1 {

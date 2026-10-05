@@ -114,7 +114,7 @@ func ResolveManualCycleStartPolicy(user *models.User, logs []models.DailyLog, da
 
 func potentialImplantationGapDays(user *models.User, logs []models.DailyLog, targetDay time.Time, previousStart time.Time) (int, bool) {
 	filtered := filterLogsNotAfter(logs, AddCalendarDays(targetDay, -1, targetDay.Location()))
-	stats := BuildCycleStats(filtered, targetDay.Add(-time.Second))
+	stats := BuildCycleStats(filtered, targetDay.Add(-time.Second), BoundaryContextFor(user, time.Time{}))
 
 	// The hint is read off the closing cycle's PROJECTED ovulation, so it may
 	// only be offered where every other surface would still publish that
@@ -181,13 +181,7 @@ func potentialImplantationGapDays(user *models.User, logs []models.DailyLog, tar
 }
 
 func LatestCycleStartAnchorBeforeOrOn(user *models.User, logs []models.DailyLog, day time.Time, location *time.Location) time.Time {
-	if location == nil {
-		location = time.UTC
-	}
-
-	targetDay := DateAtLocation(day.In(location), location)
-	explicitStart := latestExplicitCycleStartBeforeOrOn(logs, targetDay, location)
-	return latestCycleStartAnchorBeforeOrOn(user, explicitStart, targetDay, location)
+	return cycleStartAnchorBeforeOrOn(user, logs, day, location)
 }
 
 func ShouldSuggestManualCycleStart(user *models.User, logs []models.DailyLog, logEntry models.DailyLog, day time.Time, now time.Time, location *time.Location) bool {

@@ -173,8 +173,8 @@ func TestBuildDayEditorViewData(t *testing.T) {
 		&stubDashboardStatsProvider{},
 		&stubDashboardViewerProvider{
 			logEntry: models.DailyLog{
-				Date:       day,
-				IsPeriod:   true,
+				Date:     day,
+				IsPeriod: true, CycleStart: true,
 				Flow:       models.FlowLight,
 				SymptomIDs: []uint{7},
 			},
@@ -336,13 +336,13 @@ func TestBuildDashboardViewDataAddsPredictionFactorHintForVariablePatterns(t *te
 		},
 		&stubDashboardDayStateProvider{
 			logs: []models.DailyLog{
-				{Date: mustParseDashboardServiceDay(t, "2026-01-01"), IsPeriod: true},
+				{Date: mustParseDashboardServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
 				{Date: mustParseDashboardServiceDay(t, "2026-01-03"), CycleFactorKeys: []string{models.CycleFactorStress}},
-				{Date: mustParseDashboardServiceDay(t, "2026-01-25"), IsPeriod: true},
+				{Date: mustParseDashboardServiceDay(t, "2026-01-25"), IsPeriod: true, CycleStart: true},
 				{Date: mustParseDashboardServiceDay(t, "2026-01-28"), CycleFactorKeys: []string{models.CycleFactorTravel}},
-				{Date: mustParseDashboardServiceDay(t, "2026-03-10"), IsPeriod: true},
+				{Date: mustParseDashboardServiceDay(t, "2026-03-10"), IsPeriod: true, CycleStart: true},
 				{Date: mustParseDashboardServiceDay(t, "2026-03-12"), CycleFactorKeys: []string{models.CycleFactorStress}},
-				{Date: mustParseDashboardServiceDay(t, "2026-04-20"), IsPeriod: true},
+				{Date: mustParseDashboardServiceDay(t, "2026-04-20"), IsPeriod: true, CycleStart: true},
 			},
 		},
 	)
@@ -437,7 +437,7 @@ func TestDashboardViewProvidersReadOnlyTheSessionOwner(t *testing.T) {
 		hasData: true,
 		logs: []models.DailyLog{
 			{Date: mustParseDashboardServiceDay(t, "2026-02-01"), IsPeriod: true, CycleStart: true},
-			{Date: now, IsPeriod: true},
+			{Date: now, IsPeriod: true, CycleStart: true},
 		},
 	}
 	stats := &stubDashboardStatsProvider{stats: CycleStats{MedianCycleLength: 28}}

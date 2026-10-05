@@ -153,13 +153,13 @@ func TestBuildCalendarPageViewDataHidesPreviousMonthAtLowerBound(t *testing.T) {
 
 func TestBuildCalendarPageViewDataBuildsSharedPredictionExplanation(t *testing.T) {
 	logs := []models.DailyLog{
-		{Date: mustParseCalendarViewDay(t, "2026-01-01"), IsPeriod: true},
+		{Date: mustParseCalendarViewDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
 		{Date: mustParseCalendarViewDay(t, "2026-01-03"), CycleFactorKeys: []string{models.CycleFactorStress}},
-		{Date: mustParseCalendarViewDay(t, "2026-01-25"), IsPeriod: true},
+		{Date: mustParseCalendarViewDay(t, "2026-01-25"), IsPeriod: true, CycleStart: true},
 		{Date: mustParseCalendarViewDay(t, "2026-01-28"), CycleFactorKeys: []string{models.CycleFactorTravel}},
-		{Date: mustParseCalendarViewDay(t, "2026-03-10"), IsPeriod: true},
+		{Date: mustParseCalendarViewDay(t, "2026-03-10"), IsPeriod: true, CycleStart: true},
 		{Date: mustParseCalendarViewDay(t, "2026-03-12"), CycleFactorKeys: []string{models.CycleFactorStress}},
-		{Date: mustParseCalendarViewDay(t, "2026-04-20"), IsPeriod: true},
+		{Date: mustParseCalendarViewDay(t, "2026-04-20"), IsPeriod: true, CycleStart: true},
 	}
 	service := NewCalendarViewService(
 		&stubCalendarViewDayReader{},

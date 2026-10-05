@@ -86,7 +86,7 @@ func TestBuildCycleStatsAnswersAProjectionPastYear9999AsAbsent(t *testing.T) {
 	for _, tc := range lateYear9999Cases() {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			stats := BuildCycleStats(lateYear9999Starts(t, tc.lastStart), mustParseDashboardDay(t, lateYear9999Now))
+			stats := BuildCycleStats(lateYear9999Starts(t, tc.lastStart), mustParseDashboardDay(t, lateYear9999Now), BoundaryContext{})
 			if got := CalendarDayKey(stats.LastPeriodStart); got != tc.lastStart {
 				t.Fatalf("precondition: LastPeriodStart = %q, want %q", got, tc.lastStart)
 			}

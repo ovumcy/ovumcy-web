@@ -699,7 +699,7 @@ func (repo *UserRepository) ListOwnerLutealPhaseRows(ctx context.Context) ([]mod
 	rows := make([]models.LutealPhaseRecomputeRow, 0)
 	if err := repo.database.WithContext(ctx).
 		Model(&models.User{}).
-		Select("id", "timezone", "luteal_phase").
+		Select("id", "timezone", "luteal_phase", "last_period_start").
 		Where("role = ?", models.RoleOwner).
 		Order("id ASC").
 		Find(&rows).Error; err != nil {

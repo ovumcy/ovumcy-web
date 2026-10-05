@@ -78,7 +78,7 @@ func TestDetectCycleStartsGapIsACalendarDayGap(t *testing.T) {
 			t.Parallel()
 
 			logs := periodLogsOn(day(time.March, 1), testCase.secondDay)
-			if got := len(DetectCycleStarts(logs)); got != testCase.wantStarts {
+			if got := len(CycleBoundaries(logs, BoundaryContext{})); got != testCase.wantStarts {
 				t.Errorf("DetectCycleStarts found %d start(s), want %d", got, testCase.wantStarts)
 			}
 		})
@@ -116,11 +116,13 @@ func TestBuildPeriodClustersGapIsACalendarDayGap(t *testing.T) {
 	}
 }
 
-// periodLogsOn builds one period-flagged log per supplied calendar day.
+// periodLogsOn builds one period-flagged log per supplied calendar day, each
+// marked as a cycle start so the cluster gap, not the two-day run, decides the
+// boundaries under test.
 func periodLogsOn(days ...time.Time) []models.DailyLog {
 	logs := make([]models.DailyLog, 0, len(days))
 	for _, day := range days {
-		logs = append(logs, models.DailyLog{Date: day, IsPeriod: true})
+		logs = append(logs, models.DailyLog{Date: day, IsPeriod: true, CycleStart: true})
 	}
 	return logs
 }
@@ -309,7 +311,7 @@ func TestInferUserLutealPhaseRejectsAnImplausiblyLongLutealPhase(t *testing.T) {
 			t.Parallel()
 
 			logs := eggWhiteLutealLogs(testCase.lutealLength)
-			got, refined := InferUserLutealPhase(logs, time.UTC)
+			got, refined := InferUserLutealPhase(logs, time.UTC, BoundaryContext{})
 			if refined != testCase.wantRefined {
 				t.Fatalf("InferUserLutealPhase reported refined=%v for a %d-day luteal phase, want %v", refined, testCase.lutealLength, testCase.wantRefined)
 			}

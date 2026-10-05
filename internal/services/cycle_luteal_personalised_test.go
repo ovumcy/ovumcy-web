@@ -66,7 +66,7 @@ func TestOvulationExactAloneCannotTellDefaultFromPersonalisedLutealPhase(t *test
 		{Date: defaultLastPeriod, IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
 	}
 	defaultNow := mustParseBaselineDay(t, "2026-02-10")
-	defaultStats := ApplyUserCycleBaseline(defaultUser, defaultLogs, BuildCycleStats(defaultLogs, defaultNow), defaultNow, time.UTC)
+	defaultStats := ApplyUserCycleBaseline(defaultUser, defaultLogs, BuildCycleStats(defaultLogs, defaultNow, BoundaryContext{}), defaultNow, time.UTC)
 
 	if defaultStats.LutealPhase != 14 {
 		t.Fatalf("default fixture: stats.LutealPhase = %d, want 14 (the model default)", defaultStats.LutealPhase)
@@ -78,7 +78,7 @@ func TestOvulationExactAloneCannotTellDefaultFromPersonalisedLutealPhase(t *test
 	// Personalised: the round-trip fixture from cycle_luteal_round_trip_test.go,
 	// which infers 13 from two observed cycles and also fits without a clamp.
 	personalisedUser, personalisedLogs, personalisedNow := personalisedBaselineFixture(t, 28, []int{15, 15}, lutealSignalBBT)
-	personalisedStats := ApplyUserCycleBaseline(personalisedUser, personalisedLogs, BuildCycleStats(personalisedLogs, personalisedNow), personalisedNow, time.UTC)
+	personalisedStats := ApplyUserCycleBaseline(personalisedUser, personalisedLogs, BuildCycleStats(personalisedLogs, personalisedNow, BoundaryContext{}), personalisedNow, time.UTC)
 
 	if personalisedStats.LutealPhase != 13 {
 		t.Fatalf("personalised fixture: stats.LutealPhase = %d, want 13 (the live inference)", personalisedStats.LutealPhase)
@@ -117,7 +117,7 @@ func TestLutealPhasePersonalisedTrueButClamped(t *testing.T) {
 	// clamps 20 down to 17 and reports ovulationExact=false.
 	user, logs, now := personalisedBaselineFixture(t, 22, []int{2, 2}, lutealSignalEggWhite)
 
-	luteal, refined := InferUserLutealPhase(logs, time.UTC)
+	luteal, refined := InferUserLutealPhase(logs, time.UTC, BoundaryContext{})
 	if !refined {
 		t.Fatal("fixture: InferUserLutealPhase declined to refine")
 	}
@@ -125,7 +125,7 @@ func TestLutealPhasePersonalisedTrueButClamped(t *testing.T) {
 		t.Fatalf("fixture: inferred luteal phase = %d, want 20", luteal)
 	}
 
-	stats := ApplyUserCycleBaseline(user, logs, BuildCycleStats(logs, now), now, time.UTC)
+	stats := ApplyUserCycleBaseline(user, logs, BuildCycleStats(logs, now, BoundaryContext{}), now, time.UTC)
 
 	if !stats.LutealPhasePersonalised {
 		t.Error("stats.LutealPhasePersonalised = false, want true: the value came from the owner's own logs")
@@ -148,7 +148,7 @@ func TestPublishedStatsClearsLutealPhasePersonalisedUnderFertilitySuppression(t 
 	// that FertilityProjectionSuppressed folds in; any gate that reaches
 	// suppression.FertilitySuppressed exercises the same clearing branch.
 	user.UnpredictableCycle = true
-	stats := ApplyUserCycleBaseline(user, logs, BuildCycleStats(logs, now), now, time.UTC)
+	stats := ApplyUserCycleBaseline(user, logs, BuildCycleStats(logs, now, BoundaryContext{}), now, time.UTC)
 	if !stats.LutealPhasePersonalised {
 		t.Fatal("fixture: stats.LutealPhasePersonalised = false before publishing, want true (the inference must have refined)")
 	}
@@ -181,7 +181,7 @@ func TestLutealPhasePersonalisedStaysFalseWhenTheInferredValueNeverLandsOnLastPe
 		logs[index].CycleStart = false
 	}
 
-	luteal, refined := InferUserLutealPhase(logs, time.UTC)
+	luteal, refined := InferUserLutealPhase(logs, time.UTC, BoundaryContext{})
 	if !refined {
 		t.Fatal("fixture: InferUserLutealPhase declined to refine from unflagged period clusters")
 	}
@@ -189,14 +189,18 @@ func TestLutealPhasePersonalisedStaysFalseWhenTheInferredValueNeverLandsOnLastPe
 		t.Fatalf("fixture: inferred luteal phase = %d, want 13", luteal)
 	}
 
-	stats := ApplyUserCycleBaseline(user, logs, BuildCycleStats(logs, now), now, time.UTC)
-	if !stats.LastPeriodStart.IsZero() {
-		t.Fatalf("fixture: stats.LastPeriodStart = %s, want zero (no flagged start and no user.LastPeriodStart to anchor on)", stats.LastPeriodStart.Format("2006-01-02"))
+	// One boundary rule: the unflagged clusters that let the inference succeed
+	// are the same boundaries the anchor reads, so the gap this test used to pin
+	// (inference without an anchor) cannot open. The flag still follows the
+	// projection: here the inferred value lands, and the flag says so.
+	stats := ApplyUserCycleBaseline(user, logs, BuildCycleStats(logs, now, BoundaryContext{}), now, time.UTC)
+	if stats.LastPeriodStart.IsZero() {
+		t.Fatal("fixture: unflagged two-day clusters must anchor the cycle through the one boundary rule")
 	}
-	if stats.LutealPhase == luteal {
-		t.Fatalf("fixture: stats.LutealPhase = %d equals the inferred value; the test needs the projection to have been skipped", stats.LutealPhase)
+	if stats.LutealPhase != luteal {
+		t.Fatalf("stats.LutealPhase = %d, want the inferred %d now that the anchor exists", stats.LutealPhase, luteal)
 	}
-	if stats.LutealPhasePersonalised {
-		t.Errorf("stats.LutealPhasePersonalised = true while stats.LutealPhase = %d, not the inferred %d: the flag claims a value that never landed", stats.LutealPhase, luteal)
+	if !stats.LutealPhasePersonalised {
+		t.Errorf("stats.LutealPhasePersonalised = false while stats.LutealPhase = %d carries the inferred value", stats.LutealPhase)
 	}
 }

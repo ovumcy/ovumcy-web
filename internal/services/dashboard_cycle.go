@@ -450,10 +450,12 @@ func DashboardCycleStaleAnchor(user *models.User, stats CycleStats, location *ti
 	if !stats.LastPeriodStart.IsZero() {
 		return CalendarDay(stats.LastPeriodStart, location)
 	}
-	if user == nil || user.LastPeriodStart == nil || user.LastPeriodStart.IsZero() {
-		return time.Time{}
+	// Stats carry no anchor: the stored onboarding start is the only boundary
+	// left, read through the boundary rule's own reading of it.
+	if day := OnboardingBoundaryDay(BoundaryContextFor(user, time.Time{})); !day.IsZero() {
+		return CalendarDay(day, location)
 	}
-	return CalendarDay(*user.LastPeriodStart, location)
+	return time.Time{}
 }
 
 // dashboardCycleDataStale is the one out-of-date verdict the dashboard, the
@@ -979,13 +981,14 @@ func dashboardOvulationInPast(display dashboardPredictionDisplay, today time.Tim
 	return !display.ovulationImpossible && !display.ovulationDate.IsZero() && CalendarDaysBetween(display.ovulationDate, today) > 0
 }
 
-func CompletedCycleTrendLengths(logs []models.DailyLog, now time.Time, location *time.Location) []int {
-	starts := DetectCycleStarts(logs)
+func CompletedCycleTrendLengths(logs []models.DailyLog, now time.Time, location *time.Location, ctx BoundaryContext) []int {
+	today := DateAtLocation(now, location)
+	ctx.Today = today
+	starts := CycleBoundaries(logs, ctx)
 	if len(starts) < 2 {
 		return nil
 	}
 
-	today := DateAtLocation(now, location)
 	lengths := make([]int, 0, len(starts)-1)
 	for index := 1; index < len(starts); index++ {
 		previousStart := CalendarDay(starts[index-1], location)

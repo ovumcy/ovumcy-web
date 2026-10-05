@@ -7,7 +7,11 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
-func TestApplyUserCycleBaselineUsesSettingsFallbackWhenNoExplicitCycleStartExists(t *testing.T) {
+// The stored start is one boundary and an unmarked lone period day logged
+// yesterday is another (the period may still be running), so the anchor is
+// that latest boundary rather than the stored start. Before the one boundary
+// rule an unmarked day could not move the anchor off the stored start.
+func TestApplyUserCycleBaselineAnchorsOnARunningPeriodDayNewerThanTheStoredStart(t *testing.T) {
 	userLastPeriod := mustParseBaselineDay(t, "2026-02-07")
 	user := &models.User{
 		Role:            models.RoleOwner,
@@ -22,7 +26,7 @@ func TestApplyUserCycleBaselineUsesSettingsFallbackWhenNoExplicitCycleStartExist
 	}
 
 	now := mustParseBaselineDay(t, "2026-02-17")
-	stats := BuildCycleStats(logs, now)
+	stats := BuildCycleStats(logs, now, BoundaryContextFor(user, now))
 	stats = ApplyUserCycleBaseline(user, logs, stats, now, time.UTC)
 
 	if stats.AverageCycleLength != 9 {
@@ -34,14 +38,14 @@ func TestApplyUserCycleBaselineUsesSettingsFallbackWhenNoExplicitCycleStartExist
 	if stats.AveragePeriodLength != 1 {
 		t.Fatalf("expected average period length 1, got %.2f", stats.AveragePeriodLength)
 	}
-	if stats.LastPeriodStart.Format("2006-01-02") != "2026-02-07" {
-		t.Fatalf("expected settings fallback last period start 2026-02-07, got %s", stats.LastPeriodStart.Format("2006-01-02"))
+	if stats.LastPeriodStart.Format("2006-01-02") != "2026-02-16" {
+		t.Fatalf("expected the running period day as last period start 2026-02-16, got %s", stats.LastPeriodStart.Format("2006-01-02"))
 	}
-	if stats.NextPeriodStart.Format("2006-01-02") != "2026-02-16" {
-		t.Fatalf("expected next period start 2026-02-16, got %s", stats.NextPeriodStart.Format("2006-01-02"))
+	if stats.NextPeriodStart.Format("2006-01-02") != "2026-02-25" {
+		t.Fatalf("expected next period start 2026-02-25 (one observed 9-day cycle past the running day), got %s", stats.NextPeriodStart.Format("2006-01-02"))
 	}
-	if stats.CurrentCycleDay != 11 {
-		t.Fatalf("expected current cycle day 11, got %d", stats.CurrentCycleDay)
+	if stats.CurrentCycleDay != 2 {
+		t.Fatalf("expected current cycle day 2 counted from the running period day, got %d", stats.CurrentCycleDay)
 	}
 	if stats.CurrentPhase != "unknown" {
 		t.Fatalf("expected unknown phase for incompatible projected cycle, got %s", stats.CurrentPhase)
@@ -58,19 +62,19 @@ func TestApplyUserCycleBaselinePrefersExplicitCycleStartOverSettingsFallback(t *
 	}
 
 	logs := []models.DailyLog{
-		{Date: mustParseBaselineDay(t, "2025-01-01"), IsPeriod: true, Flow: models.FlowMedium},
-		{Date: mustParseBaselineDay(t, "2025-01-02"), IsPeriod: true, Flow: models.FlowMedium},
-		{Date: mustParseBaselineDay(t, "2025-01-03"), IsPeriod: true, Flow: models.FlowMedium},
-		{Date: mustParseBaselineDay(t, "2025-01-29"), IsPeriod: true, Flow: models.FlowMedium},
-		{Date: mustParseBaselineDay(t, "2025-01-30"), IsPeriod: true, Flow: models.FlowMedium},
-		{Date: mustParseBaselineDay(t, "2025-01-31"), IsPeriod: true, Flow: models.FlowMedium},
+		{Date: mustParseBaselineDay(t, "2025-01-01"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+		{Date: mustParseBaselineDay(t, "2025-01-02"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+		{Date: mustParseBaselineDay(t, "2025-01-03"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+		{Date: mustParseBaselineDay(t, "2025-01-29"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+		{Date: mustParseBaselineDay(t, "2025-01-30"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+		{Date: mustParseBaselineDay(t, "2025-01-31"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
 		{Date: mustParseBaselineDay(t, "2025-02-26"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
-		{Date: mustParseBaselineDay(t, "2025-02-27"), IsPeriod: true, Flow: models.FlowMedium},
-		{Date: mustParseBaselineDay(t, "2025-02-28"), IsPeriod: true, Flow: models.FlowMedium},
+		{Date: mustParseBaselineDay(t, "2025-02-27"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+		{Date: mustParseBaselineDay(t, "2025-02-28"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
 	}
 
 	now := mustParseBaselineDay(t, "2025-03-05")
-	stats := BuildCycleStats(logs, now)
+	stats := BuildCycleStats(logs, now, BoundaryContext{})
 	stats = ApplyUserCycleBaseline(user, logs, stats, now, time.UTC)
 
 	if stats.AverageCycleLength != 28 {
@@ -96,11 +100,13 @@ func TestApplyUserCycleBaselinePrefersMoreRecentSettingsBaselineOverOlderExplici
 	logs := []models.DailyLog{
 		{Date: mustParseBaselineDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
 		{Date: mustParseBaselineDay(t, "2026-01-25"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
-		{Date: mustParseBaselineDay(t, "2026-03-10"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+		// An unmarked lone period day three days before the stored start: it
+		// joins the stored start's cluster, which opens at the stored start.
+		{Date: mustParseBaselineDay(t, "2026-03-10"), IsPeriod: true, Flow: models.FlowMedium},
 	}
 
 	now := mustParseBaselineDay(t, "2026-03-16")
-	stats := BuildCycleStats(logs, now)
+	stats := BuildCycleStats(logs, now, BoundaryContext{})
 	stats = ApplyUserCycleBaseline(user, logs, stats, now, time.UTC)
 
 	if got := stats.LastPeriodStart.Format("2006-01-02"); got != "2026-03-13" {
@@ -122,11 +128,11 @@ func TestApplyUserCycleBaselineClampsShortCyclePredictionsAwayFromDayOne(t *test
 	}
 
 	logs := []models.DailyLog{
-		{Date: mustParseBaselineDay(t, "2026-02-10"), IsPeriod: true, Flow: models.FlowMedium},
+		{Date: mustParseBaselineDay(t, "2026-02-10"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
 	}
 
 	now := mustParseBaselineDay(t, "2026-02-12")
-	stats := BuildCycleStats(logs, now)
+	stats := BuildCycleStats(logs, now, BoundaryContext{})
 	stats = ApplyUserCycleBaseline(user, logs, stats, now, time.UTC)
 
 	if got := stats.OvulationDate.Format("2006-01-02"); got != "2026-02-14" {
@@ -208,7 +214,7 @@ func TestApplyUserCycleBaselineCurrentCycleDayMatchesLocalCalendarAcrossTimezone
 				{Date: anchor, IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
 			}
 
-			stats := BuildCycleStats(logs, tc.now)
+			stats := BuildCycleStats(logs, tc.now, BoundaryContext{})
 			stats = ApplyUserCycleBaseline(user, logs, stats, tc.now, location)
 
 			if got := stats.LastPeriodStart.Format("2006-01-02"); got != tc.anchor {

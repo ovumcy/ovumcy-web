@@ -62,7 +62,7 @@ func TestShowHistoricalPhasesGovernsTheDrawnMarkersOnly(t *testing.T) {
 	})
 
 	t.Run("the stats cycle stack follows it", func(t *testing.T) {
-		spans := buildCompletedCycleSpans(logs, time.UTC)
+		spans := buildCompletedCycleSpans(logs, time.UTC, BoundaryContext{})
 		off := buildStatsCycleRibbon(statscycleribbonOwner(false), stats, logs, spans)
 		on := buildStatsCycleRibbon(statscycleribbonOwner(true), stats, logs, spans)
 
@@ -80,8 +80,8 @@ func TestShowHistoricalPhasesGovernsTheDrawnMarkersOnly(t *testing.T) {
 	// the SAME data with the preference on and off.
 	t.Run("phase mood insights do not follow it", func(t *testing.T) {
 		service := &StatsService{}
-		off, offOK := service.BuildPhaseMoodInsights(statscycleribbonOwner(false), logs, time.UTC)
-		on, onOK := service.BuildPhaseMoodInsights(statscycleribbonOwner(true), logs, time.UTC)
+		off, offOK := service.BuildPhaseMoodInsights(statscycleribbonOwner(false), logs, time.UTC, BoundaryContext{})
+		on, onOK := service.BuildPhaseMoodInsights(statscycleribbonOwner(true), logs, time.UTC, BoundaryContext{})
 
 		// The reachability anchor reads the ON case: under any gating it is the
 		// larger of the two, so an empty result there is a broken fixture and
@@ -97,14 +97,14 @@ func TestShowHistoricalPhasesGovernsTheDrawnMarkersOnly(t *testing.T) {
 	t.Run("phase symptom insights do not follow it", func(t *testing.T) {
 		// The builder takes no user at all, which is the structural half of the
 		// same statement: it could not consult the preference if it wanted to.
-		insights, ok := buildPhaseSymptomInsightsWithMap(logs, time.UTC, symptomByID)
+		insights, ok := buildPhaseSymptomInsightsWithMap(logs, time.UTC, symptomByID, BoundaryContext{})
 		if !ok || len(insights) == 0 {
 			t.Fatalf("no phase symptom insight to assert on (ok=%v, count=%d) — the fixture does not reach the surface", ok, len(insights))
 		}
 	})
 
 	t.Run("symptom phase recurrence statements do not follow it", func(t *testing.T) {
-		statements := buildSymptomPhaseRecurrenceStatements(logs, symptomByID, time.UTC)
+		statements := buildSymptomPhaseRecurrenceStatements(logs, symptomByID, time.UTC, BoundaryContext{})
 		if len(statements) == 0 {
 			t.Fatal("no recurrence statement to assert on — the fixture does not reach the surface")
 		}
@@ -117,8 +117,8 @@ func TestShowHistoricalPhasesGovernsTheDrawnMarkersOnly(t *testing.T) {
 // at these lines, which is the point — the change is deliberate, and the scope
 // statement in this file has to be rewritten with it.
 var (
-	_ func([]models.DailyLog, *time.Location, map[uint]models.SymptomType) ([]StatsPhaseSymptomInsight, bool) = buildPhaseSymptomInsightsWithMap
-	_ func([]models.DailyLog, map[uint]models.SymptomType, *time.Location) []StatsStatement                   = buildSymptomPhaseRecurrenceStatements
+	_ func([]models.DailyLog, *time.Location, map[uint]models.SymptomType, BoundaryContext) ([]StatsPhaseSymptomInsight, bool) = buildPhaseSymptomInsightsWithMap
+	_ func([]models.DailyLog, map[uint]models.SymptomType, *time.Location, BoundaryContext) []StatsStatement                   = buildSymptomPhaseRecurrenceStatements
 )
 
 // historicalPhaseMarkerCount runs the calendar's historical pass and returns how
@@ -129,6 +129,6 @@ func historicalPhaseMarkerCount(logs []models.DailyLog, stats CycleStats, user *
 	fertilityPeak := map[string]bool{}
 	ovulation := map[string]bool{}
 
-	appendHistoricalCycles(preFertile, fertilityEdge, fertilityPeak, ovulation, logs, stats, user, time.UTC)
+	appendHistoricalCycles(preFertile, fertilityEdge, fertilityPeak, ovulation, logs, stats, user, BoundaryContext{}, time.UTC)
 	return len(preFertile) + len(fertilityEdge) + len(fertilityPeak) + len(ovulation)
 }

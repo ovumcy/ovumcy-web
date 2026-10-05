@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 // exportJSONEgress tags the JSON download as audited health-data egress; see
@@ -30,6 +31,11 @@ func (handler *Handler) ExportJSON(c fiber.Ctx) error {
 	payload := fiber.Map{
 		"exported_at": now.Format(time.RFC3339),
 		"entries":     entries,
+	}
+	// Additive and optional: the owner's onboarding start, a cycle boundary of its
+	// own that no logged day carries. Absent when the account has none.
+	if onboardingStart := services.ExportOnboardingStart(user, from, to); onboardingStart != "" {
+		payload["last_period_start"] = onboardingStart
 	}
 
 	serialized, err := json.MarshalIndent(payload, "", "  ")

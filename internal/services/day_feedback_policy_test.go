@@ -13,9 +13,9 @@ func TestResolveDayFeedbackUsesSelfCareMessageForEarlyPeriodDays(t *testing.T) {
 	users := &dayUserRepositoryStub{}
 	service := NewDayService(logs, users)
 
-	logs.entries["2026-02-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-02-01"), IsPeriod: true}
-	logs.entries["2026-03-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-03-01"), IsPeriod: true}
-	logs.entries["2026-03-02"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-03-02"), IsPeriod: true}
+	logs.entries["2026-02-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-02-01"), IsPeriod: true, CycleStart: true}
+	logs.entries["2026-03-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-03-01"), IsPeriod: true, CycleStart: true}
+	logs.entries["2026-03-02"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-03-02"), IsPeriod: true, CycleStart: true}
 
 	state, err := service.ResolveDayFeedback(context.Background(), &models.User{ID: 10}, mustParseDayFeedbackDate(t, "2026-03-02"), mustParseDayFeedbackDate(t, "2026-03-02"), time.UTC)
 	if err != nil {
@@ -34,10 +34,10 @@ func TestResolveDayFeedbackUsesFertileMessageDuringFertilityWindow(t *testing.T)
 	users := &dayUserRepositoryStub{}
 	service := NewDayService(logs, users)
 
-	logs.entries["2025-12-04"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2025-12-04"), IsPeriod: true}
-	logs.entries["2026-01-04"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-01-04"), IsPeriod: true}
-	logs.entries["2026-02-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-02-01"), IsPeriod: true}
-	logs.entries["2026-03-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-03-01"), IsPeriod: true}
+	logs.entries["2025-12-04"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2025-12-04"), IsPeriod: true, CycleStart: true}
+	logs.entries["2026-01-04"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-01-04"), IsPeriod: true, CycleStart: true}
+	logs.entries["2026-02-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-02-01"), IsPeriod: true, CycleStart: true}
+	logs.entries["2026-03-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-03-01"), IsPeriod: true, CycleStart: true}
 
 	state, err := service.ResolveDayFeedback(context.Background(), &models.User{ID: 10}, mustParseDayFeedbackDate(t, "2026-03-12"), mustParseDayFeedbackDate(t, "2026-03-12"), time.UTC)
 	if err != nil {
@@ -67,7 +67,7 @@ func TestResolveDayFeedbackWithholdsTheFertileMessageBeforeTheFirstCompletedCycl
 	seeded := make([]models.DailyLog, 0, 4)
 	for offset := range 4 {
 		day := firstStart.AddDate(0, 0, offset)
-		entry := models.DailyLog{UserID: 10, Date: day, IsPeriod: true}
+		entry := models.DailyLog{UserID: 10, Date: day, IsPeriod: true, CycleStart: true}
 		logs.entries[day.Format("2006-01-02")] = entry
 		seeded = append(seeded, entry)
 	}
@@ -76,7 +76,7 @@ func TestResolveDayFeedbackWithholdsTheFertileMessageBeforeTheFirstCompletedCycl
 	// completed cycle, and the requested day genuinely inside the projected
 	// window — otherwise the test could go green on a window that moved.
 	day := mustParseDayFeedbackDate(t, "2026-03-12")
-	stats := BuildCycleStats(seeded, day)
+	stats := BuildCycleStats(seeded, day, BoundaryContext{})
 	if stats.CompletedCycleCount != 0 {
 		t.Fatalf("expected zero completed cycles from one logged period start, got %d", stats.CompletedCycleCount)
 	}
@@ -104,8 +104,8 @@ func TestResolveDayFeedbackReturnsNeutralMessageForUnpredictableCycle(t *testing
 	users := &dayUserRepositoryStub{}
 	service := NewDayService(logs, users)
 
-	logs.entries["2026-02-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-02-01"), IsPeriod: true}
-	logs.entries["2026-03-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-03-01"), IsPeriod: true}
+	logs.entries["2026-02-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-02-01"), IsPeriod: true, CycleStart: true}
+	logs.entries["2026-03-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-03-01"), IsPeriod: true, CycleStart: true}
 
 	state, err := service.ResolveDayFeedback(context.Background(), &models.User{ID: 10, UnpredictableCycle: true}, mustParseDayFeedbackDate(t, "2026-03-12"), mustParseDayFeedbackDate(t, "2026-03-12"), time.UTC)
 	if err != nil {
@@ -121,8 +121,8 @@ func TestResolveDayFeedbackUsesPregnancyPausedMessageAfterPositiveTest(t *testin
 	users := &dayUserRepositoryStub{}
 	service := NewDayService(logs, users)
 
-	logs.entries["2026-02-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-02-01"), IsPeriod: true}
-	logs.entries["2026-03-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-03-01"), IsPeriod: true}
+	logs.entries["2026-02-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-02-01"), IsPeriod: true, CycleStart: true}
+	logs.entries["2026-03-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-03-01"), IsPeriod: true, CycleStart: true}
 	logs.entries["2026-03-20"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-03-20"), PregnancyTest: models.PregnancyTestPositive}
 
 	state, err := service.ResolveDayFeedback(context.Background(), &models.User{ID: 10}, mustParseDayFeedbackDate(t, "2026-03-20"), mustParseDayFeedbackDate(t, "2026-03-20"), time.UTC)
@@ -139,12 +139,12 @@ func TestResolveDayFeedbackShowsSpottingWarningOnCycleStart(t *testing.T) {
 	users := &dayUserRepositoryStub{}
 	service := NewDayService(logs, users)
 
-	logs.entries["2026-02-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-02-01"), IsPeriod: true}
+	logs.entries["2026-02-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-02-01"), IsPeriod: true, CycleStart: true}
 	logs.entries["2026-03-01"] = models.DailyLog{
 		UserID:   10,
 		Date:     mustParseDayFeedbackDate(t, "2026-03-01"),
-		IsPeriod: true,
-		Flow:     models.FlowSpotting,
+		IsPeriod: true, CycleStart: true,
+		Flow: models.FlowSpotting,
 	}
 
 	state, err := service.ResolveDayFeedback(context.Background(), &models.User{ID: 10}, mustParseDayFeedbackDate(t, "2026-03-01"), mustParseDayFeedbackDate(t, "2026-03-01"), time.UTC)
@@ -172,8 +172,8 @@ func TestResolveDayFeedbackShowsSpottingWarningForLocalCycleStart(t *testing.T) 
 	logs.entries["2026-03-01"] = models.DailyLog{
 		UserID:   10,
 		Date:     time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC),
-		IsPeriod: true,
-		Flow:     models.FlowSpotting,
+		IsPeriod: true, CycleStart: true,
+		Flow: models.FlowSpotting,
 	}
 
 	state, err := service.ResolveDayFeedback(context.Background(), &models.User{ID: 10}, day, day, location)
@@ -196,7 +196,7 @@ func TestResolveDayFeedbackShowsLongPeriodWarningOnlyOncePerCycle(t *testing.T) 
 		logs.entries[day.Format("2006-01-02")] = models.DailyLog{
 			UserID:   10,
 			Date:     day,
-			IsPeriod: true,
+			IsPeriod: true, CycleStart: true,
 		}
 	}
 
@@ -263,8 +263,8 @@ func TestResolveDayFeedbackSelfCareMessageInUTCPlusZone(t *testing.T) {
 	users := &dayUserRepositoryStub{}
 	service := NewDayService(logs, users)
 
-	logs.entries["2026-02-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-02-01"), IsPeriod: true}
-	logs.entries["2026-03-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-03-01"), IsPeriod: true}
+	logs.entries["2026-02-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-02-01"), IsPeriod: true, CycleStart: true}
+	logs.entries["2026-03-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-03-01"), IsPeriod: true, CycleStart: true}
 
 	tokyo := time.FixedZone("UTC+9", 9*60*60)
 	day := time.Date(2026, time.March, 1, 0, 0, 0, 0, tokyo)
@@ -287,10 +287,10 @@ func TestResolveDayFeedbackFertileMessageOnWindowStartInUTCPlusZone(t *testing.T
 	users := &dayUserRepositoryStub{}
 	service := NewDayService(logs, users)
 
-	logs.entries["2025-12-04"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2025-12-04"), IsPeriod: true}
-	logs.entries["2026-01-04"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-01-04"), IsPeriod: true}
-	logs.entries["2026-02-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-02-01"), IsPeriod: true}
-	logs.entries["2026-03-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-03-01"), IsPeriod: true}
+	logs.entries["2025-12-04"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2025-12-04"), IsPeriod: true, CycleStart: true}
+	logs.entries["2026-01-04"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-01-04"), IsPeriod: true, CycleStart: true}
+	logs.entries["2026-02-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-02-01"), IsPeriod: true, CycleStart: true}
+	logs.entries["2026-03-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-03-01"), IsPeriod: true, CycleStart: true}
 
 	tokyo := time.FixedZone("UTC+9", 9*60*60)
 	// 28-day observed cycle starting 2026-03-01 with the 14-day default luteal

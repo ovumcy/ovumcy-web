@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
@@ -28,7 +29,8 @@ func TestListOwnerLutealPhaseRowsProjectsWhatTheRecomputeDecidesOn(t *testing.T)
 	repository := NewUserRepository(database)
 	ctx := context.Background()
 
-	first := &models.User{Email: "first@example.com", PasswordHash: "hash", Role: models.RoleOwner, Timezone: "America/New_York", LutealPhase: 15}
+	onboardingStart := time.Date(2026, time.March, 9, 0, 0, 0, 0, time.UTC)
+	first := &models.User{Email: "first@example.com", PasswordHash: "hash", Role: models.RoleOwner, Timezone: "America/New_York", LutealPhase: 15, LastPeriodStart: &onboardingStart}
 	second := &models.User{Email: "second@example.com", PasswordHash: "hash", Role: models.RoleOwner, LutealPhase: 12}
 	excluded := &models.User{Email: "excluded@example.com", PasswordHash: "hash", Role: models.RoleOwner, LutealPhase: 19}
 	for _, user := range []*models.User{first, second, excluded} {
@@ -49,15 +51,23 @@ func TestListOwnerLutealPhaseRowsProjectsWhatTheRecomputeDecidesOn(t *testing.T)
 	}
 
 	want := []models.LutealPhaseRecomputeRow{
-		{ID: first.ID, Timezone: "America/New_York", LutealPhase: 15},
+		{ID: first.ID, Timezone: "America/New_York", LutealPhase: 15, LastPeriodStart: &onboardingStart},
 		{ID: second.ID, Timezone: "", LutealPhase: 12},
 	}
 	if len(rows) != len(want) {
 		t.Fatalf("got %d rows (%+v), want %d — the non-owner row must not be listed", len(rows), rows, len(want))
 	}
 	for index, wantRow := range want {
-		if rows[index] != wantRow {
-			t.Fatalf("row %d = %+v, want %+v", index, rows[index], wantRow)
+		got := rows[index]
+		if got.ID != wantRow.ID || got.Timezone != wantRow.Timezone || got.LutealPhase != wantRow.LutealPhase {
+			t.Fatalf("row %d = %+v, want %+v", index, got, wantRow)
+		}
+		// The onboarding start is a cycle boundary the derivation reads; a
+		// projection that dropped last_period_start would hand the boot pass a
+		// zero start and re-derive the column without it.
+		if (got.LastPeriodStart == nil) != (wantRow.LastPeriodStart == nil) ||
+			(wantRow.LastPeriodStart != nil && !got.LastPeriodStart.Equal(*wantRow.LastPeriodStart)) {
+			t.Fatalf("row %d last_period_start = %v, want %v", index, got.LastPeriodStart, wantRow.LastPeriodStart)
 		}
 	}
 }

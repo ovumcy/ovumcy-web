@@ -47,10 +47,10 @@ func TestStatsThresholdsAreNamedPerSurface(t *testing.T) {
 	now := time.Date(2026, 4, 20, 12, 0, 0, 0, time.UTC)
 
 	t.Run("phase mood insights unlock at the pattern minimum", func(t *testing.T) {
-		if _, ok := service.BuildPhaseMoodInsights(owner, belowPattern, time.UTC); ok {
+		if _, ok := service.BuildPhaseMoodInsights(owner, belowPattern, time.UTC, BoundaryContext{}); ok {
 			t.Error("phase mood insights rendered on two completed cycles: the pattern minimum is three, and a surface claiming a phase pattern from two observations is the gate this threshold exists for")
 		}
-		if _, ok := service.BuildPhaseMoodInsights(owner, atPattern, time.UTC); !ok {
+		if _, ok := service.BuildPhaseMoodInsights(owner, atPattern, time.UTC, BoundaryContext{}); !ok {
 			t.Error("phase mood insights withheld at three completed cycles: the pattern minimum moved, and every surface named on minimumPhaseInsightCycles moved with it")
 		}
 	})

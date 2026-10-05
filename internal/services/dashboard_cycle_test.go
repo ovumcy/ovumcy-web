@@ -30,13 +30,13 @@ func TestDashboardCycleStaleAnchorPrefersStatsBaseline(t *testing.T) {
 
 func TestCompletedCycleTrendLengths(t *testing.T) {
 	logs := []models.DailyLog{
-		{Date: mustParseDashboardDay(t, "2026-01-01"), IsPeriod: true},
-		{Date: mustParseDashboardDay(t, "2026-01-29"), IsPeriod: true},
-		{Date: mustParseDashboardDay(t, "2026-02-26"), IsPeriod: true},
+		{Date: mustParseDashboardDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseDashboardDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseDashboardDay(t, "2026-02-26"), IsPeriod: true, CycleStart: true},
 	}
 	now := mustParseDashboardDay(t, "2026-03-10")
 
-	got := CompletedCycleTrendLengths(logs, now, time.UTC)
+	got := CompletedCycleTrendLengths(logs, now, time.UTC, BoundaryContext{})
 	if len(got) != 2 || got[0] != 28 || got[1] != 28 {
 		t.Fatalf("expected [28 28], got %#v", got)
 	}
@@ -53,16 +53,16 @@ func TestCompletedCycleTrendLengthsDSTSpringForward(t *testing.T) {
 	loc := testenv.RequireTimeZone(t, "Europe/Berlin")
 
 	logs := []models.DailyLog{
-		{Date: mustParseDashboardDay(t, "2026-03-15"), IsPeriod: true},
-		{Date: mustParseDashboardDay(t, "2026-04-12"), IsPeriod: true},
+		{Date: mustParseDashboardDay(t, "2026-03-15"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseDashboardDay(t, "2026-04-12"), IsPeriod: true, CycleStart: true},
 	}
 	now := mustParseDashboardDay(t, "2026-05-01")
 
-	got := CompletedCycleTrendLengths(logs, now, loc)
+	got := CompletedCycleTrendLengths(logs, now, loc, BoundaryContext{})
 	if len(got) != 1 || got[0] != 28 {
 		t.Fatalf("expected [28] across the Berlin DST transition, got %#v", got)
 	}
-	if want := CycleLengths(logs); len(want) != 1 || want[0] != got[0] {
+	if want := CycleLengths(logs, BoundaryContext{}); len(want) != 1 || want[0] != got[0] {
 		t.Fatalf("expected CompletedCycleTrendLengths to agree with CycleLengths %#v, got %#v", want, got)
 	}
 }

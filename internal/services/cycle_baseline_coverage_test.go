@@ -28,9 +28,10 @@ func cyclebaselineCovOwner(cycleLen, periodLen, luteal int, lastPeriod *time.Tim
 func cyclebaselineCovPeriodLog(t *testing.T, date string) models.DailyLog {
 	t.Helper()
 	return models.DailyLog{
-		Date:     mustParseBaselineDay(t, date),
-		IsPeriod: true,
-		Flow:     models.FlowMedium,
+		Date:       mustParseBaselineDay(t, date),
+		IsPeriod:   true,
+		CycleStart: true,
+		Flow:       models.FlowMedium,
 	}
 }
 
@@ -42,7 +43,7 @@ func TestCycleBaseline_NilLocationFallbackInApply(t *testing.T) {
 	user := cyclebaselineCovOwner(28, 5, 0, &lp)
 	logs := []models.DailyLog{cyclebaselineCovPeriodLog(t, "2026-01-10")}
 	now := mustParseBaselineDay(t, "2026-01-15")
-	stats := BuildCycleStats(logs, now)
+	stats := BuildCycleStats(logs, now, BoundaryContext{})
 	// Must not panic and must return a non-zero LastPeriodStart.
 	got := ApplyUserCycleBaseline(user, logs, stats, now, nil)
 	if got.LastPeriodStart.IsZero() {
@@ -62,7 +63,7 @@ func TestCycleBaseline_InvalidPeriodLengthDefaultsToModelDefault(t *testing.T) {
 	user := cyclebaselineCovOwner(28, 0, 0, &lp)
 	logs := []models.DailyLog{cyclebaselineCovPeriodLog(t, "2026-03-01")}
 	now := mustParseBaselineDay(t, "2026-03-10")
-	stats := BuildCycleStats(logs, now)
+	stats := BuildCycleStats(logs, now, BoundaryContext{})
 	got := ApplyUserCycleBaseline(user, logs, stats, now, time.UTC)
 	// AveragePeriodLength must be the model default, not 0.
 	if got.AveragePeriodLength != float64(models.DefaultPeriodLength) {
@@ -82,7 +83,7 @@ func TestCycleBaseline_ZeroCycleLengthDoesNotOverwriteStatsWhenNoHistory(t *test
 	user := cyclebaselineCovOwner(0, 5, 0, &lp)
 	logs := []models.DailyLog{cyclebaselineCovPeriodLog(t, "2026-03-01")}
 	now := mustParseBaselineDay(t, "2026-03-10")
-	stats := BuildCycleStats(logs, now)
+	stats := BuildCycleStats(logs, now, BoundaryContext{})
 	got := ApplyUserCycleBaseline(user, logs, stats, now, time.UTC)
 	// With no observed cycles and cycleLength=0, both must stay 0.
 	if got.AverageCycleLength != 0 {
@@ -98,7 +99,7 @@ func TestCycleBaseline_ValidCycleLengthFillsStatsWhenNoHistory(t *testing.T) {
 	user := cyclebaselineCovOwner(30, 5, 0, &lp)
 	logs := []models.DailyLog{cyclebaselineCovPeriodLog(t, "2026-03-01")}
 	now := mustParseBaselineDay(t, "2026-03-10")
-	stats := BuildCycleStats(logs, now)
+	stats := BuildCycleStats(logs, now, BoundaryContext{})
 	got := ApplyUserCycleBaseline(user, logs, stats, now, time.UTC)
 	if got.AverageCycleLength != 30 {
 		t.Fatalf("expected AverageCycleLength=30 from user setting, got %.2f", got.AverageCycleLength)
@@ -117,7 +118,7 @@ func TestCycleBaseline_ValidPeriodLengthFillsAveragePeriodLengthWhenNoHistory(t 
 	user := cyclebaselineCovOwner(28, 7, 0, &lp)
 	logs := []models.DailyLog{cyclebaselineCovPeriodLog(t, "2026-03-01")}
 	now := mustParseBaselineDay(t, "2026-03-10")
-	stats := BuildCycleStats(logs, now)
+	stats := BuildCycleStats(logs, now, BoundaryContext{})
 	got := ApplyUserCycleBaseline(user, logs, stats, now, time.UTC)
 	if got.AveragePeriodLength != 7 {
 		t.Fatalf("expected AveragePeriodLength=7 from user setting, got %.2f", got.AveragePeriodLength)
@@ -142,7 +143,7 @@ func TestCycleBaseline_ProjectionProducesNextPeriodStartForNoHistoryUser(t *test
 	user := cyclebaselineCovOwner(28, 5, 0, &lp)
 	logs := []models.DailyLog{cyclebaselineCovPeriodLog(t, "2026-03-01")}
 	now := mustParseBaselineDay(t, "2026-03-10")
-	stats := BuildCycleStats(logs, now)
+	stats := BuildCycleStats(logs, now, BoundaryContext{})
 	got := ApplyUserCycleBaseline(user, logs, stats, now, time.UTC)
 	// With no observed cycle lengths, predictedCycleLength uses the user's
 	// cycleLength=28 (set via line 51 guard) and produces a NextPeriodStart.
@@ -163,7 +164,7 @@ func TestCycleBaseline_DetectCurrentPhaseNilLocationFallback(t *testing.T) {
 	user := cyclebaselineCovOwner(28, 5, 0, &lp)
 	logs := []models.DailyLog{cyclebaselineCovPeriodLog(t, "2026-03-01")}
 	now := mustParseBaselineDay(t, "2026-03-10")
-	statsBase := BuildCycleStats(logs, now)
+	statsBase := BuildCycleStats(logs, now, BoundaryContext{})
 	statsBase = ApplyUserCycleBaseline(user, logs, statsBase, now, time.UTC)
 	// Calling DetectCurrentPhase with nil location must not panic.
 	got := DetectCurrentPhase(statsBase, logs, now, nil)

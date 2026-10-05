@@ -97,8 +97,8 @@ type completedCycleSpan struct {
 	PeriodLength int
 }
 
-func buildCompletedCycleSpans(logs []models.DailyLog, location *time.Location) []completedCycleSpan {
-	starts := ObservedCycleStarts(logs)
+func buildCompletedCycleSpans(logs []models.DailyLog, location *time.Location, ctx BoundaryContext) []completedCycleSpan {
+	starts := CycleBoundaries(logs, ctx)
 	if len(starts) < 2 {
 		return nil
 	}

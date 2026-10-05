@@ -55,7 +55,7 @@ func StatsCycleFactorContextWindowDays() int {
 }
 
 func buildStatsCycleFactorExplanation(user *models.User, logs []models.DailyLog, stats CycleStats, now time.Time, location *time.Location) (StatsCycleFactorExplanation, bool) {
-	completedCycles := buildCompletedCycleSpans(logs, location)
+	completedCycles := buildCompletedCycleSpans(logs, location, BoundaryContextFor(user, DateAtLocation(now, location)))
 	if !shouldBuildStatsCycleFactorExplanation(user, logs, completedCycles, stats) {
 		return StatsCycleFactorExplanation{}, false
 	}

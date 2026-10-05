@@ -411,7 +411,7 @@ func TestLongCycleGateWithholdsTheFertileSaveMessage(t *testing.T) {
 			logs := longCycleGateLogs(base, tc.startOffsets)
 			lastStart := base.AddDate(0, 0, tc.startOffsets[len(tc.startOffsets)-1])
 			today := lastStart.AddDate(0, 0, tc.cycleDay-1)
-			stats := BuildCycleStats(filterLogsNotAfter(logs, today), today)
+			stats := BuildCycleStats(filterLogsNotAfter(logs, today), today, BoundaryContext{})
 			if stats.FertilityWindowStart.IsZero() {
 				t.Fatal("scenario setup: no projected window to save a day inside")
 			}
@@ -444,7 +444,7 @@ func TestLongCycleGateWithholdsTheImplantationHint(t *testing.T) {
 	offeredInside, overdueInGap := 0, 0
 	for cycleDay := 40; cycleDay <= 70; cycleDay++ {
 		day := lastStart.AddDate(0, 0, cycleDay-1)
-		stats := BuildCycleStats(filterLogsNotAfter(logs, day.AddDate(0, 0, -1)), day.Add(-time.Second))
+		stats := BuildCycleStats(filterLogsNotAfter(logs, day.AddDate(0, 0, -1)), day.Add(-time.Second), BoundaryContext{})
 		stats.CurrentCycleDay = cycleDay
 		overdue := DashboardCycleOverdue(user, stats)
 		window := PredictCycleWindow(lastStart, DashboardProjectionCycleLength(user, stats), stats.LutealPhase)

@@ -353,6 +353,48 @@ func (service *ExportService) BuildCSVRows(ctx context.Context, userID uint, fro
 	return rows, nil
 }
 
+// ExportOnboardingStart is the owner's stored start (users.last_period_start),
+// a cycle boundary of its own, as the export's calendar date. It is empty when
+// the account holds none, or when a requested range leaves the date out — the
+// range limits what leaves the instance, so the start follows it like a day does.
+func ExportOnboardingStart(user *models.User, from *time.Time, to *time.Time) string {
+	if user == nil || user.LastPeriodStart == nil || user.LastPeriodStart.IsZero() {
+		return ""
+	}
+	day := dateOnly(*user.LastPeriodStart)
+	if from != nil && CalendarDaysBetween(dateOnly(*from), day) < 0 {
+		return ""
+	}
+	if to != nil && CalendarDaysBetween(dateOnly(*to), day) > 0 {
+		return ""
+	}
+	return day.Format(exportDateLayout)
+}
+
+// WithOnboardingStartRow marks cycle_start on the onboarding date in the CSV
+// rows, adding a bare row (date and cycle_start only) in date order when no day
+// was logged on it. An empty onboardingStart leaves the rows as they are.
+func WithOnboardingStartRow(rows []ExportCSVRow, onboardingStart string) []ExportCSVRow {
+	if onboardingStart == "" {
+		return rows
+	}
+	position := len(rows)
+	for index := range rows {
+		if rows[index].Date == onboardingStart {
+			rows[index].CycleStart = true
+			return rows
+		}
+		if rows[index].Date > onboardingStart {
+			position = index
+			break
+		}
+	}
+	rows = append(rows, ExportCSVRow{})
+	copy(rows[position+1:], rows[position:])
+	rows[position] = ExportCSVRow{Date: onboardingStart, CycleStart: true}
+	return rows
+}
+
 func (row ExportCSVRow) Columns() []string {
 	cycleFactors := sanitizeCSVTextCell(strings.Join(row.CycleFactors, "; "))
 	otherSymptoms := sanitizeCSVTextCell(strings.Join(row.OtherSymptoms, "; "))

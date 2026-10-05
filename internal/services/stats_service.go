@@ -95,7 +95,7 @@ func (service *StatsService) BuildCycleStatsForRange(ctx context.Context, user *
 // front of is not one.
 func BuildCycleStatsFromLogs(user *models.User, logs []models.DailyLog, now time.Time, location *time.Location) CycleStats {
 	logs = filterLogsNotAfter(logs, DateAtLocation(now, location))
-	stats := BuildCycleStats(logs, now)
+	stats := BuildCycleStats(logs, now, BoundaryContextFor(user, DateAtLocation(now, location)))
 	stats = ApplyUserCycleBaseline(user, logs, stats, now, location)
 	if _, paused := ResolvePregnancyPause(logs); paused {
 		stats.PregnancyPaused = true
@@ -152,7 +152,7 @@ func TrimTrailingCycleTrendLengths(lengths []int, maxPoints int) []int {
 }
 
 func (service *StatsService) BuildTrend(user *models.User, logs []models.DailyLog, now time.Time, location *time.Location, maxTrendPoints int) ([]int, int) {
-	lengths := CompletedCycleTrendLengths(logs, now, location)
+	lengths := CompletedCycleTrendLengths(logs, now, location, BoundaryContextFor(user, DateAtLocation(now, location)))
 	lengths = TrimTrailingCycleTrendLengths(lengths, maxTrendPoints)
 	if len(lengths) == 0 {
 		return lengths, 0
@@ -161,9 +161,10 @@ func (service *StatsService) BuildTrend(user *models.User, logs []models.DailyLo
 }
 
 func (service *StatsService) BuildFlags(user *models.User, logs []models.DailyLog, stats CycleStats, now time.Time, location *time.Location, trendPointCount int) StatsFlags {
-	observedCycleCount := len(CycleLengths(logs))
-	completedCycleCount := len(CompletedCycleTrendLengths(logs, now, location))
 	today := DateAtLocation(now, location)
+	boundaryCtx := BoundaryContextFor(user, today)
+	observedCycleCount := len(CycleLengths(logs, boundaryCtx))
+	completedCycleCount := len(CompletedCycleTrendLengths(logs, now, location, boundaryCtx))
 
 	return StatsFlags{
 		HasObservedCycleData: observedCycleCount > 0,

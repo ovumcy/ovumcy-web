@@ -52,9 +52,21 @@ type CalendarDayState struct {
 	Selectable bool
 }
 
+// calendarLogReadDays is how far either side of the month the calendar's
+// projections and historical pass read.
+const calendarLogReadDays = 70
+
+// calendarLogMarginDays is the load beyond the days the calendar reads. The
+// cycle-boundary rule needs two consecutive period days (or a mark) to open a
+// cycle, so a bleeding run cut by the edge of the loaded slice would lose its
+// qualification. The margin keeps every run that touches the read window whole:
+// a bleeding run is at most a few weeks of days, far inside it.
+const calendarLogMarginDays = 30
+
 func CalendarLogRange(monthStart time.Time) (time.Time, time.Time) {
 	monthEnd := monthStart.AddDate(0, 1, -1)
-	return monthStart.AddDate(0, 0, -70), monthEnd.AddDate(0, 0, 70)
+	reach := calendarLogReadDays + calendarLogMarginDays
+	return monthStart.AddDate(0, 0, -reach), monthEnd.AddDate(0, 0, reach)
 }
 
 func BuildCalendarDayStates(user *models.User, monthStart time.Time, logs []models.DailyLog, stats CycleStats, now time.Time, location *time.Location) []CalendarDayState {
@@ -64,6 +76,18 @@ func BuildCalendarDayStates(user *models.User, monthStart time.Time, logs []mode
 	}
 	gridStart, gridEnd := calendarGridBounds(monthStart, weekStart)
 	latestLogByDate, hasDataMap := buildCalendarLogMaps(logs)
+	// The owner's onboarding start is a recorded cycle boundary, so the grid
+	// draws its day as recorded (CycleBoundaries is the one rule that says so)
+	// instead of leaving it to the projection or to a blank cell.
+	if onboardingDay := OnboardingBoundaryDay(BoundaryContextFor(user, DateAtLocation(now, location))); !onboardingDay.IsZero() {
+		key := CalendarDayKey(onboardingDay)
+		entry := latestLogByDate[key]
+		if !entry.IsPeriod {
+			entry.Date = onboardingDay
+			entry.IsPeriod = true
+			latestLogByDate[key] = entry
+		}
+	}
 	// The projection bound keeps the request-local shape it has always had:
 	// appendPredictedCycles compares it against a CalendarDay value built in
 	// the same location, so both operands stay start-of-day in one zone.
@@ -224,7 +248,7 @@ func buildCalendarPredictionMaps(user *models.User, logs []models.DailyLog, stat
 	}
 	appendPredictedCycles(predictedPeriodMap, preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, stats, gridEnd, location, !fertilitySuppressed)
 	appendPredictedStartRange(maps.predictedStartRange, user, stats, DateAtLocation(now, location), location)
-	appendHistoricalCycles(preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, logs, stats, user, location)
+	appendHistoricalCycles(preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, logs, stats, user, BoundaryContextFor(user, DateAtLocation(now, location)), location)
 	if !fertilitySuppressed {
 		// The BBT pass only ever downgrades the projected ovulation day to
 		// "tentative", so with the fertility maps withheld it would reintroduce
@@ -442,16 +466,15 @@ func appendPredictedCycles(predictedPeriodMap map[string]bool, preFertileMap map
 // predicted-cycles paths instead. Gated on the user's ShowHistoricalPhases
 // preference so that the upstream behavior (predictions only) remains the
 // default for users who want it.
-func appendHistoricalCycles(preFertileMap map[string]bool, fertilityEdgeMap map[string]bool, fertilityPeakMap map[string]bool, ovulationMap map[string]bool, logs []models.DailyLog, stats CycleStats, user *models.User, location *time.Location) {
+func appendHistoricalCycles(preFertileMap map[string]bool, fertilityEdgeMap map[string]bool, fertilityPeakMap map[string]bool, ovulationMap map[string]bool, logs []models.DailyLog, stats CycleStats, user *models.User, boundaryCtx BoundaryContext, location *time.Location) {
 	if user == nil || !user.ShowHistoricalPhases {
 		return
 	}
 
-	starts := make([]time.Time, 0, len(logs))
-	for _, log := range logs {
-		if log.CycleStart {
-			starts = append(starts, CalendarDay(log.Date, location))
-		}
+	boundaries := CycleBoundaries(logs, boundaryCtx)
+	starts := make([]time.Time, 0, len(boundaries))
+	for _, boundary := range boundaries {
+		starts = append(starts, CalendarDay(boundary, location))
 	}
 	if len(starts) < 2 {
 		return

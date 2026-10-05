@@ -1382,6 +1382,14 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ExportJSONEntry'
+        last_period_start:
+          type: string
+          format: date
+          description: >-
+            Optional. The owner's stored onboarding start, a cycle boundary that
+            no logged day carries. Absent when the account has none, or when the
+            requested `from`/`to` range leaves it out. Restore sets it only on an
+            account that holds none.
       additionalProperties: false
 
     ExportSummary:

@@ -68,6 +68,7 @@ Field semantics:
 | --- | --- | --- |
 | `exported_at` | RFC 3339 string | Server time at export, in the user's timezone. |
 | `entries` | array | One entry per logged day. Days with no data are not exported. |
+| `last_period_start` | `YYYY-MM-DD` string, optional | The owner's onboarding start, a cycle boundary no logged day carries. Present only when the account has one and the requested range includes it. Restore sets it only on an account that holds none. |
 | `date` | `YYYY-MM-DD` string | Calendar day in the user's timezone. |
 | `period` | boolean | Whether the day is marked as a period day. |
 | `flow` | string | One of `none`, `spotting`, `light`, `medium`, `heavy`. |
@@ -117,6 +118,7 @@ Cell semantics:
 - CSV-injection mitigation: `Cycle factors`, `Other`, and `Notes` are the only cells built from user-entered text. If such a cell (after stripping leading spaces) starts with `=`, `+`, `-`, `@`, or a tab/CR/LF, a leading `'` is prepended so spreadsheet apps do not interpret it as a formula.
 - `Pregnancy test` was introduced after the 1.1.1 layout and appended after the original columns so existing column positions stay stable, per the stability rule below.
 - `Cycle start` and `Uncertain` are `Yes`/`No`. They are the last two columns, appended after `Pregnancy test` so existing column positions stay stable, per the stability rule below. `Cycle start` marks the manually flagged start of a cycle; `Uncertain` marks a day the owner flagged as uncertain. Both are owner-only.
+- The owner's onboarding start (the JSON export's `last_period_start`, under the same range rule) is marked `Cycle start = Yes` on its row; when no day was logged on it, the file carries a bare row holding only the date and that mark.
 
 ## Summary Export
 

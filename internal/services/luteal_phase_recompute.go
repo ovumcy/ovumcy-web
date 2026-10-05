@@ -159,9 +159,10 @@ func (recomputer *LutealPhaseRecomputer) Run(ctx context.Context) (LutealPhaseRe
 		}
 
 		// deriveUserLutealPhase bounds the history at the owner's own today; this
-		// pass supplies the instant and the zone it is read in.
+		// pass supplies the instant and the zone it is read in, and the owner's
+		// stored onboarding start, which the day save and the restore read too.
 		location := resolveOwnerLocation(row.Timezone, recomputer.fallbackLocation)
-		derived := deriveUserLutealPhase(logs, passNow, location)
+		derived := deriveUserLutealPhase(logs, passNow, location, boundaryContextForStart(row.LastPeriodStart, time.Time{}))
 		if derived == row.LutealPhase {
 			continue
 		}

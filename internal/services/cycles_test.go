@@ -17,7 +17,7 @@ func TestDetectCycleStarts(t *testing.T) {
 		makeLog(t, "2025-02-26", true),
 	}
 
-	starts := DetectCycleStarts(logs)
+	starts := CycleBoundaries(logs, BoundaryContext{})
 	if len(starts) != 3 {
 		t.Fatalf("expected 3 cycle starts, got %d", len(starts))
 	}
@@ -42,7 +42,7 @@ func TestBuildCycleStats(t *testing.T) {
 	}
 
 	now := mustParseDay(t, "2025-03-05")
-	stats := BuildCycleStats(logs, now)
+	stats := BuildCycleStats(logs, now, BoundaryContext{})
 
 	if stats.MedianCycleLength != 28 {
 		t.Fatalf("expected median cycle length 28, got %d", stats.MedianCycleLength)
@@ -89,7 +89,7 @@ func TestBuildCycleStats_ShortCycleLongPeriodAllowsOverlapPredictions(t *testing
 	}
 
 	now := mustParseDay(t, "2026-02-12")
-	stats := BuildCycleStats(logs, now)
+	stats := BuildCycleStats(logs, now, BoundaryContext{})
 
 	if got := stats.OvulationDate.Format("2006-01-02"); got != "2026-02-14" {
 		t.Fatalf("expected ovulation date 2026-02-14, got %s", got)
@@ -110,10 +110,14 @@ func TestBuildCycleStats_ShortCycleLongPeriodAllowsOverlapPredictions(t *testing
 
 func makeLog(t *testing.T, date string, isPeriod bool) models.DailyLog {
 	day := mustParseDay(t, date)
+	// A period day the fixture writes stands for a recorded cycle start: a lone
+	// unmarked period day no longer opens a cycle on its own (the one boundary
+	// rule), so the mark keeps each fixture's cycle starts where it put them.
 	return models.DailyLog{
-		Date:     day,
-		IsPeriod: isPeriod,
-		Flow:     models.FlowNone,
+		Date:       day,
+		IsPeriod:   isPeriod,
+		CycleStart: isPeriod,
+		Flow:       models.FlowNone,
 	}
 }
 

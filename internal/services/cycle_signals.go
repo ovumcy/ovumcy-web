@@ -45,12 +45,12 @@ const (
 // ten calendar days before the next period.
 const maxPlausibleLutealPhaseDays = 20
 
-func InferUserLutealPhase(logs []models.DailyLog, location *time.Location) (int, bool) {
+func InferUserLutealPhase(logs []models.DailyLog, location *time.Location, ctx BoundaryContext) (int, bool) {
 	if location == nil {
 		location = time.UTC
 	}
 
-	starts := ObservedCycleStarts(logs)
+	starts := CycleBoundaries(logs, ctx)
 	if len(starts) < 3 {
 		return defaultLutealPhaseDays, false
 	}
@@ -112,13 +112,15 @@ func InferUserLutealPhase(logs []models.DailyLog, location *time.Location) (int,
 // from a day that has not happened yet. Bounding one writer would be worse than
 // bounding none: the boot recompute would correct the column and the next day
 // save would put the future-dated value straight back, which is precisely the
-// disagreement the paragraph above promises cannot happen. `now` is a required
-// parameter for the same reason — a writer cannot omit the bound by forgetting
-// it. Same shape as the pregnancy pause: the bound belongs to the derivation,
+// disagreement the paragraph above promises cannot happen. `now` and the
+// boundary context (the owner's stored onboarding start) are required parameters
+// for the same reason — a writer cannot omit either by forgetting it. Same shape as the pregnancy pause: the bound belongs to the derivation,
 // never to the caller's fetch.
-func deriveUserLutealPhase(logs []models.DailyLog, now time.Time, location *time.Location) int {
-	observed := filterLogsNotAfter(logs, DateAtLocation(now, location))
-	if lutealPhase, refined := InferUserLutealPhase(observed, location); refined {
+func deriveUserLutealPhase(logs []models.DailyLog, now time.Time, location *time.Location, ctx BoundaryContext) int {
+	today := DateAtLocation(now, location)
+	observed := filterLogsNotAfter(logs, today)
+	ctx.Today = today
+	if lutealPhase, refined := InferUserLutealPhase(observed, location, ctx); refined {
 		return lutealPhase
 	}
 	return defaultLutealPhaseDays

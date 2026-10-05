@@ -75,27 +75,25 @@ const (
 	minPlaceableCycleLength = minLutealPhaseDays + minOvulationCycleDay
 )
 
-func BuildCycleStats(logs []models.DailyLog, now time.Time) CycleStats {
+// BuildCycleStats derives the history statistics from CycleBoundaries. The
+// context carries the owner's onboarding start, a boundary of its own; a zero
+// Today defaults to the calendar day of now.
+func BuildCycleStats(logs []models.DailyLog, now time.Time, ctx BoundaryContext) CycleStats {
 	stats := CycleStats{CurrentPhase: "unknown", CurrentFertility: FertilityStatusUnknown}
 	today := dateOnly(now)
 	sorted := sortDailyLogs(filterLogsNotAfter(logs, today))
-	if len(sorted) == 0 {
+
+	if ctx.Today.IsZero() {
+		ctx.Today = today
+	}
+	starts := CycleBoundaries(sorted, ctx)
+	if len(starts) == 0 {
 		return stats
 	}
 
-	detectedStarts := DetectCycleStarts(sorted)
-	if len(detectedStarts) == 0 {
-		return stats
-	}
-
-	observedStarts := ObservedCycleStarts(sorted)
-	if len(observedStarts) == 0 {
-		observedStarts = detectedStarts
-	}
-
-	cycles := buildCycles(observedStarts, sorted)
-	populateObservedCycleStats(&stats, cycleLengths(observedStarts), cycles)
-	stats.LastPeriodStart = detectedStarts[len(detectedStarts)-1]
+	cycles := buildCycles(starts, sorted)
+	populateObservedCycleStats(&stats, cycleLengths(starts), cycles)
+	stats.LastPeriodStart = starts[len(starts)-1]
 	stats.LutealPhase = defaultLutealPhaseDays
 	applyPredictedCycleStats(&stats)
 
@@ -236,136 +234,6 @@ func PredictCycleWindow(periodStart time.Time, cycleLength int, lutealPhase int)
 		OvulationExact:       ovulationExact,
 		Calculable:           true,
 	}
-}
-
-func DetectCycleStarts(logs []models.DailyLog) []time.Time {
-	if len(logs) == 0 {
-		return nil
-	}
-
-	sorted := sortDailyLogs(logs)
-	starts := make([]time.Time, 0)
-	var previousPeriodDay time.Time
-
-	for _, log := range sorted {
-		day := dateOnly(log.Date)
-		if !log.IsPeriod {
-			continue
-		}
-
-		if previousPeriodDay.IsZero() {
-			starts = append(starts, day)
-			previousPeriodDay = day
-			continue
-		}
-
-		// The gap is the count of clear days BETWEEN the two period days, so
-		// the calendar-day span minus one. CalendarDaysBetween rather than a
-		// spelled-out hour difference: the operands are dateOnly values today,
-		// but nothing at this site says so, and an hour difference reads a
-		// DST-shortened day, or a location midnight against a UTC one, as one
-		// day fewer than it is.
-		gapDays := CalendarDaysBetween(previousPeriodDay, day) - 1
-		if gapDays >= 5 {
-			starts = append(starts, day)
-		}
-		previousPeriodDay = day
-	}
-
-	return starts
-}
-
-type periodCluster struct {
-	Start                time.Time
-	End                  time.Time
-	ExplicitStart        time.Time
-	HasUncertainExplicit bool
-}
-
-func ObservedCycleStarts(logs []models.DailyLog) []time.Time {
-	clusters := buildPeriodClusters(logs)
-	if len(clusters) == 0 {
-		return nil
-	}
-
-	starts := make([]time.Time, 0, len(clusters))
-	for _, cluster := range clusters {
-		switch {
-		case !cluster.ExplicitStart.IsZero():
-			starts = append(starts, cluster.ExplicitStart)
-		case cluster.HasUncertainExplicit:
-			continue
-		default:
-			starts = append(starts, cluster.Start)
-		}
-	}
-	return starts
-}
-
-func DetectExplicitCycleStarts(logs []models.DailyLog) []time.Time {
-	if len(logs) == 0 {
-		return nil
-	}
-
-	sorted := sortDailyLogs(logs)
-	starts := make([]time.Time, 0)
-	seen := make(map[time.Time]struct{}, len(sorted))
-	for _, logEntry := range sorted {
-		if !logEntry.IsPeriod || !logEntry.CycleStart {
-			continue
-		}
-
-		day := dateOnly(logEntry.Date)
-		if _, exists := seen[day]; exists {
-			continue
-		}
-		seen[day] = struct{}{}
-		starts = append(starts, day)
-	}
-	return starts
-}
-
-func buildPeriodClusters(logs []models.DailyLog) []periodCluster {
-	if len(logs) == 0 {
-		return nil
-	}
-
-	sorted := sortDailyLogs(logs)
-	clusters := make([]periodCluster, 0)
-	for _, log := range sorted {
-		if !log.IsPeriod {
-			continue
-		}
-
-		day := dateOnly(log.Date)
-		if len(clusters) == 0 {
-			clusters = append(clusters, periodCluster{Start: day, End: day})
-		} else {
-			lastIndex := len(clusters) - 1
-			// Same clear-days-between count as in DetectCycleStarts, against
-			// the running cluster's last day.
-			gapDays := CalendarDaysBetween(clusters[lastIndex].End, day) - 1
-			if gapDays >= 5 {
-				clusters = append(clusters, periodCluster{Start: day, End: day})
-			} else if day.After(clusters[lastIndex].End) {
-				clusters[lastIndex].End = day
-			}
-		}
-
-		cluster := &clusters[len(clusters)-1]
-		if !log.CycleStart {
-			continue
-		}
-		if log.IsUncertain {
-			cluster.HasUncertainExplicit = true
-			continue
-		}
-		if cluster.ExplicitStart.IsZero() || day.Before(cluster.ExplicitStart) {
-			cluster.ExplicitStart = day
-		}
-	}
-
-	return clusters
 }
 
 func sortDailyLogs(logs []models.DailyLog) []models.DailyLog {
@@ -659,9 +527,9 @@ func periodLoggedOnDay(logs []models.DailyLog, day time.Time) bool {
 	return false
 }
 
-func CycleLengths(logs []models.DailyLog) []int {
-	starts := DetectCycleStarts(logs)
-	return cycleLengths(starts)
+// CycleLengths is the spans between consecutive CycleBoundaries.
+func CycleLengths(logs []models.DailyLog, ctx BoundaryContext) []int {
+	return cycleLengths(CycleBoundaries(logs, ctx))
 }
 
 func buildCycles(starts []time.Time, logs []models.DailyLog) []detectedCycle {

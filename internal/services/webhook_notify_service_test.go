@@ -1259,10 +1259,10 @@ func TestNotifyDecisionMatchesDashboardWithInferredLutealPhase(t *testing.T) {
 	// history the ovulation reminder needs — and leaves the inference to the two
 	// cycles that carry a rise.
 	logs := []models.DailyLog{
-		{Date: day("2024-12-04"), IsPeriod: true, Flow: models.FlowMedium},
-		{Date: day("2025-01-01"), IsPeriod: true, Flow: models.FlowMedium},
-		{Date: day("2025-01-29"), IsPeriod: true, Flow: models.FlowMedium},
-		{Date: day("2025-02-26"), IsPeriod: true, Flow: models.FlowMedium},
+		{Date: day("2024-12-04"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+		{Date: day("2025-01-01"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+		{Date: day("2025-01-29"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+		{Date: day("2025-02-26"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
 
 		// Cycle 1 (Jan1→Jan29, 28 days): coverline window Jan1-6, rise Jan19-21 →
 		// ovulation Jan18 (day before first high) = cycle day 18, luteal = 28-18 = 10.

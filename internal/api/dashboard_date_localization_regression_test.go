@@ -70,7 +70,7 @@ func TestDashboardEnglishRendersOvulationRangeForIrregularMode(t *testing.T) {
 		today.AddDate(0, 0, -5),
 	}
 	for _, day := range cycleStarts {
-		if err := database.Create(&models.DailyLog{UserID: user.ID, Date: day, IsPeriod: true, Flow: models.FlowMedium}).Error; err != nil {
+		if err := database.Create(&models.DailyLog{UserID: user.ID, Date: day, IsPeriod: true, CycleStart: true, Flow: models.FlowMedium}).Error; err != nil {
 			t.Fatalf("create irregular cycle start %s: %v", day.Format("2006-01-02"), err)
 		}
 	}
@@ -131,7 +131,7 @@ func TestDashboardEnglishRendersSharedSparsePredictionExplanationForIrregularMod
 		today.AddDate(0, 0, -28),
 	}
 	for _, day := range cycleStarts {
-		if err := database.Create(&models.DailyLog{UserID: user.ID, Date: day, IsPeriod: true, Flow: models.FlowMedium}).Error; err != nil {
+		if err := database.Create(&models.DailyLog{UserID: user.ID, Date: day, IsPeriod: true, CycleStart: true, Flow: models.FlowMedium}).Error; err != nil {
 			t.Fatalf("create sparse irregular cycle start %s: %v", day.Format("2006-01-02"), err)
 		}
 	}

@@ -21,7 +21,7 @@ func cyclesignalsCovDay(t *testing.T, s string) time.Time {
 // cyclesignalsCovPeriodLog returns a DailyLog marked as period with the given date.
 func cyclesignalsCovPeriodLog(t *testing.T, date string) models.DailyLog {
 	t.Helper()
-	return models.DailyLog{Date: cyclesignalsCovDay(t, date), IsPeriod: true, Flow: models.FlowMedium}
+	return models.DailyLog{Date: cyclesignalsCovDay(t, date), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium}
 }
 
 // cyclesignalsCovBBTLog returns a DailyLog with a BBT reading (no period).
@@ -46,8 +46,8 @@ func TestCycleSignals_InferUserLutealPhase_NilLocationDoesNotPanic(t *testing.T)
 	// enough BBT readings to detect ovulation in each cycle.
 	logs := cyclesignalsCovBuildLutealLogs(t)
 
-	phaseNil, okNil := InferUserLutealPhase(logs, nil)
-	phaseUTC, okUTC := InferUserLutealPhase(logs, time.UTC)
+	phaseNil, okNil := InferUserLutealPhase(logs, nil, BoundaryContext{})
+	phaseUTC, okUTC := InferUserLutealPhase(logs, time.UTC, BoundaryContext{})
 
 	// Both calls must agree — nil location must behave like time.UTC.
 	if okNil != okUTC {
@@ -70,7 +70,7 @@ func TestCycleSignals_InferUserLutealPhase_FewerThanThreeStartsReturnsDefault(t 
 		cyclesignalsCovPeriodLog(t, "2025-01-29"),
 		cyclesignalsCovPeriodLog(t, "2025-01-30"),
 	}
-	phase, ok := InferUserLutealPhase(logs, time.UTC)
+	phase, ok := InferUserLutealPhase(logs, time.UTC, BoundaryContext{})
 	if ok {
 		t.Fatalf("expected ok=false with only 2 observed starts, got ok=true phase=%d", phase)
 	}
@@ -86,7 +86,7 @@ func TestCycleSignals_InferUserLutealPhase_ExactlyThreeStartsIsAccepted(t *testi
 	// Cycles: Jan1→Jan29 (28 days), Jan29→Feb26 (28 days).
 	logs := cyclesignalsCovBuildLutealLogs(t)
 
-	phase, ok := InferUserLutealPhase(logs, time.UTC)
+	phase, ok := InferUserLutealPhase(logs, time.UTC, BoundaryContext{})
 	if !ok {
 		t.Fatal("expected ok=true: exactly 3 observed starts must be accepted")
 	}
@@ -110,7 +110,7 @@ func TestCycleSignals_InferUserLutealPhase_LastStartPairIsIncluded(t *testing.T)
 	// pair would be missing.
 	logs := cyclesignalsCovBuildLutealLogs(t)
 
-	phase, ok := InferUserLutealPhase(logs, time.UTC)
+	phase, ok := InferUserLutealPhase(logs, time.UTC, BoundaryContext{})
 	if !ok {
 		t.Fatalf("expected ok=true with two valid BBT-detected cycles")
 	}
@@ -138,9 +138,9 @@ func TestCycleSignals_InferUserLutealPhase_OutOfRangeLutealLengthIsSkipped(t *te
 
 	logs := []models.DailyLog{
 		// Period clusters.
-		{Date: day("2025-01-01"), IsPeriod: true, Flow: models.FlowMedium},
-		{Date: day("2025-01-29"), IsPeriod: true, Flow: models.FlowMedium},
-		{Date: day("2025-02-26"), IsPeriod: true, Flow: models.FlowMedium},
+		{Date: day("2025-01-01"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+		{Date: day("2025-01-29"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+		{Date: day("2025-02-26"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
 
 		// Cycle 1 BBT — 6-day coverline window then rise Jan16-18.
 		{Date: day("2025-01-01"), BBT: new(36.20)},
@@ -166,7 +166,7 @@ func TestCycleSignals_InferUserLutealPhase_OutOfRangeLutealLengthIsSkipped(t *te
 		{Date: day("2025-02-25"), BBT: new(36.50)},
 	}
 
-	phase, ok := InferUserLutealPhase(logs, time.UTC)
+	phase, ok := InferUserLutealPhase(logs, time.UTC, BoundaryContext{})
 	// Only 1 valid luteal length → returns default, false.
 	if ok {
 		t.Fatalf("expected ok=false when only one cycle has a valid luteal length, got phase=%d", phase)
@@ -186,9 +186,9 @@ func TestCycleSignals_InferUserLutealPhase_LutealLengthOverTwentyIsSkipped(t *te
 	day := func(s string) time.Time { return cyclesignalsCovDay(t, s) }
 
 	logs := []models.DailyLog{
-		{Date: day("2025-01-01"), IsPeriod: true, Flow: models.FlowMedium},
-		{Date: day("2025-01-29"), IsPeriod: true, Flow: models.FlowMedium},
-		{Date: day("2025-02-26"), IsPeriod: true, Flow: models.FlowMedium},
+		{Date: day("2025-01-01"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+		{Date: day("2025-01-29"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+		{Date: day("2025-02-26"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
 
 		// Cycle 1 BBT — coverline window Jan1-6 then rise Jan8-10
 		// (ovulation = Jan8−1 = Jan7 = cycle day 7; luteal = 28-7 = 21 > 20).
@@ -214,7 +214,7 @@ func TestCycleSignals_InferUserLutealPhase_LutealLengthOverTwentyIsSkipped(t *te
 		{Date: day("2025-02-15"), BBT: new(36.50)},
 	}
 
-	phase, ok := InferUserLutealPhase(logs, time.UTC)
+	phase, ok := InferUserLutealPhase(logs, time.UTC, BoundaryContext{})
 	if ok {
 		t.Fatalf("expected ok=false (only one valid cycle), got phase=%d", phase)
 	}
@@ -235,7 +235,7 @@ func TestCycleSignals_InferUserLutealPhase_FewerThanTwoValidLutealLengthsReturns
 		cyclesignalsCovPeriodLog(t, "2025-01-29"),
 		cyclesignalsCovPeriodLog(t, "2025-02-26"),
 	}
-	phase, ok := InferUserLutealPhase(logs, time.UTC)
+	phase, ok := InferUserLutealPhase(logs, time.UTC, BoundaryContext{})
 	if ok {
 		t.Fatalf("expected ok=false with no BBT data, got phase=%d", phase)
 	}
@@ -250,7 +250,7 @@ func TestCycleSignals_InferUserLutealPhase_FewerThanTwoValidLutealLengthsReturns
 
 func TestCycleSignals_InferUserLutealPhase_TwoValidLutealLengthsProducesResult(t *testing.T) {
 	logs := cyclesignalsCovBuildLutealLogs(t)
-	_, ok := InferUserLutealPhase(logs, time.UTC)
+	_, ok := InferUserLutealPhase(logs, time.UTC, BoundaryContext{})
 	if !ok {
 		t.Fatalf("expected ok=true with two valid BBT-inferred cycles")
 	}
@@ -693,7 +693,7 @@ func TestCycleSignals_InferEggWhiteOvulationDate_PeakOnLastCycleDayClampsToPeak(
 func TestCycleSignals_InferUserLutealPhase_CorrectValueFromBBT(t *testing.T) {
 	// Two cycles with BBT-confirmed ovulation on cycle day 15 of 28.
 	logs := cyclesignalsCovBuildLutealLogs(t)
-	phase, ok := InferUserLutealPhase(logs, time.UTC)
+	phase, ok := InferUserLutealPhase(logs, time.UTC, BoundaryContext{})
 	if !ok {
 		t.Fatalf("expected ok=true")
 	}
@@ -751,11 +751,11 @@ func cyclesignalsCovBuildLutealLogs(t *testing.T) []models.DailyLog {
 
 	logs := []models.DailyLog{
 		// Cluster 1: Jan 1
-		{Date: day("2025-01-01"), IsPeriod: true, Flow: models.FlowMedium},
+		{Date: day("2025-01-01"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
 		// Cluster 2: Jan 29
-		{Date: day("2025-01-29"), IsPeriod: true, Flow: models.FlowMedium},
+		{Date: day("2025-01-29"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
 		// Cluster 3: Feb 26
-		{Date: day("2025-02-26"), IsPeriod: true, Flow: models.FlowMedium},
+		{Date: day("2025-02-26"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
 
 		// === Cycle 1 BBT: Jan1→Jan29 ===
 		// 6-day coverline window (days 1-6): max = 36.20

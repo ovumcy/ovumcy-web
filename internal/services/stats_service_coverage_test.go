@@ -116,8 +116,8 @@ func TestStatsServiceBuildFlagsHasTrendDataFalseAtZero(t *testing.T) {
 	now := mustParseStatsServiceDay(t, "2026-05-01")
 	// Two-period logs ensure observedCycleCount > 0, but we pass trendPointCount=0.
 	logs := []models.DailyLog{
-		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
-		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true},
 	}
 	flags := svc.BuildFlags(user, logs, CycleStats{}, now, time.UTC, 0)
 
@@ -136,9 +136,9 @@ func TestStatsServiceBuildFlagsHasInsightsTrueAtExactMinimum(t *testing.T) {
 
 	// Three period-start logs produce exactly 2 completed cycles.
 	logs := []models.DailyLog{
-		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
-		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true},
-		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true, CycleStart: true},
 	}
 	flags := svc.BuildFlags(user, logs, CycleStats{}, now, time.UTC, 2)
 
@@ -202,9 +202,9 @@ func TestStatsServiceStatsInsightProgressAtExactHundred(t *testing.T) {
 
 	// Three period logs → exactly 2 completed cycles.
 	logs := []models.DailyLog{
-		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
-		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true},
-		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true, CycleStart: true},
 	}
 	flags := svc.BuildFlags(user, logs, CycleStats{}, now, time.UTC, 2)
 
@@ -224,8 +224,8 @@ func TestStatsServiceStatsInsightProgressBelowHundredNotCapped(t *testing.T) {
 
 	// Two period logs → exactly 1 completed cycle.
 	logs := []models.DailyLog{
-		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
-		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true},
 	}
 	flags := svc.BuildFlags(user, logs, CycleStats{}, now, time.UTC, 1)
 
