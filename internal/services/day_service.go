@@ -189,7 +189,9 @@ func (service *DayService) DayHasDataForDate(ctx context.Context, userID uint, d
 // It returns the saved entry and the period mark and flow the day carried
 // before the write (the zero value when the day did not exist), so the
 // auto-fill side effects can read the anchor's prior state.
-func (service *DayService) UpsertDayEntry(ctx context.Context, userID uint, dayStart time.Time, payload DayEntryInput, location *time.Location) (models.DailyLog, priorDayState, error) {
+// Both branches first hold the write to the observation bound
+// (validateDayObservationDate) against the row they locked, at now.
+func (service *DayService) UpsertDayEntry(ctx context.Context, userID uint, dayStart time.Time, payload DayEntryInput, now time.Time, location *time.Location) (models.DailyLog, priorDayState, error) {
 	// Defensive normalization: collapse any time-of-day or non-UTC offset on
 	// the incoming dayStart back to canonical UTC-midnight. The intended
 	// contract is "caller already invoked DayRange and is passing canonical
@@ -211,6 +213,12 @@ func (service *DayService) UpsertDayEntry(ctx context.Context, userID uint, dayS
 	entry, found, err := service.logs.FindByUserAndDayRangeForUpdate(ctx, userID, dayRangeStart, dayRangeEnd)
 	if err != nil {
 		return models.DailyLog{}, priorDayState{}, ErrDayEntryLoadFailed
+	}
+	if !found {
+		entry = models.DailyLog{}
+	}
+	if err := validateDayObservationDate(entry, payload, dayStart, now, location); err != nil {
+		return models.DailyLog{}, priorDayState{}, err
 	}
 
 	if found {
@@ -462,7 +470,7 @@ func (service *DayService) writeDayEntryWithAutoFill(ctx context.Context, userID
 // autofill side effects. It carries no transaction of its own so callers can
 // compose it inside a single WithinTransaction boundary.
 func (service *DayService) applyDayWriteAndAutoFill(ctx context.Context, userID uint, dayStart time.Time, normalized DayEntryInput, now time.Time, location *time.Location) (models.DailyLog, error) {
-	entry, previous, err := service.UpsertDayEntry(ctx, userID, dayStart, normalized, location)
+	entry, previous, err := service.UpsertDayEntry(ctx, userID, dayStart, normalized, now, location)
 	if err != nil {
 		return models.DailyLog{}, err
 	}

@@ -300,8 +300,9 @@ test.describe('Settings: password, export, clear data, delete account', () => {
     const todayISO = await todayISOFromCalendar(page);
     const futureISO = shiftISODate(todayISO, 4);
 
+    // A note, not a period: a period is an observation and is refused past
+    // today+2, while a future entry of any other kind is still stored.
     const dayEditorForm = await openCalendarDayEditor(page, futureISO);
-    await dayEditorForm.locator('input[name="is_period"]').check();
     await openCalendarNotes(dayEditorForm);
     await dayEditorForm.locator('#calendar-notes').fill(`future-export-${Date.now()}`);
     await saveDayEditorForm(page, futureISO, dayEditorForm);
@@ -363,8 +364,8 @@ test.describe('Settings: password, export, clear data, delete account', () => {
     const todayISO = await todayISOFromCalendar(page);
     const futureISO = shiftISODate(todayISO, 4);
 
+    // A note, not a period: see the test above.
     const dayEditorForm = await openCalendarDayEditor(page, futureISO);
-    await dayEditorForm.locator('input[name="is_period"]').check();
     await openCalendarNotes(dayEditorForm);
     await dayEditorForm.locator('#calendar-notes').fill(`future-preset-${Date.now()}`);
     await saveDayEditorForm(page, futureISO, dayEditorForm);
