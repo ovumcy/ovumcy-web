@@ -267,16 +267,94 @@
     return "";
   }
 
-  // The status header (cycle day, next period, reminder banner, warnings) is
-  // computed server-side from the saved days, and a pregnancy-test result is
-  // one of the inputs: a positive result pauses the next-period estimate, and
-  // removing it resumes it. The journal itself updates as the owner clicks, so
-  // only the header is fetched again — the dashboard page already answers for
-  // it, and swapping just that block leaves the form (and focus) untouched.
-  // Newest request wins; a failed refresh leaves the header as it was, since the
-  // save itself already succeeded.
+  // The blocks of the status header that are computed from the saved days, and
+  // so can change when a pregnancy-test result does: a positive result pauses
+  // the predictions (status line, ribbon, banner, warnings, explainer), and
+  // removing it resumes them. Each is addressed by its own hook and replaced on
+  // its own. The goal chip beside them is a live <details> with htmx-driven
+  // forms inside it, and a node cloned out of a fetched page is never
+  // htmx-processed — so nothing around these blocks is ever swapped. None of
+  // them holds a form or an hx-* control (only plain links), so the clones need
+  // no htmx.process() or re-initialisation. Order is the template's order: a
+  // block that appears or disappears is placed after the nearest block before it.
+  // The disclaimer is static and listed only as that anchor.
+  var DASHBOARD_PREGNANCY_ALWAYS_PRESENT = [
+    "[data-dashboard-cycle-day]",
+    "[data-dashboard-status-line]"
+  ];
+  var DASHBOARD_PREGNANCY_ORDERED = [
+    { selector: "[data-dashboard-cycle-ribbon]", anchorOnly: false },
+    { selector: "[data-dashboard-prediction-explainer]", anchorOnly: false },
+    { selector: "[data-dashboard-reminder-banner]", anchorOnly: false },
+    { selector: "[data-dashboard-cycle-warnings]", anchorOnly: false },
+    { selector: "[data-dashboard-prediction-disclaimer]", anchorOnly: true },
+    { selector: "[data-dashboard-factor-hint]", anchorOnly: false }
+  ];
+
+  function syncDashboardDataAttributes(current, next) {
+    var index;
+    var name;
+
+    for (index = current.attributes.length - 1; index >= 0; index--) {
+      name = current.attributes[index].name;
+      if (name.indexOf("data-") === 0 && !next.hasAttribute(name)) {
+        current.removeAttribute(name);
+      }
+    }
+    for (index = 0; index < next.attributes.length; index++) {
+      name = next.attributes[index].name;
+      if (name.indexOf("data-") === 0) {
+        current.setAttribute(name, next.attributes[index].value);
+      }
+    }
+  }
+
+  function swapDashboardPregnancyBlocks(header, nextHeader) {
+    var previous = null;
+
+    syncDashboardDataAttributes(header, nextHeader);
+
+    DASHBOARD_PREGNANCY_ALWAYS_PRESENT.forEach(function (selector) {
+      var existing = header.querySelector(selector);
+      var fresh = nextHeader.querySelector(selector);
+      if (existing && fresh) {
+        existing.replaceWith(document.importNode(fresh, true));
+      }
+    });
+
+    DASHBOARD_PREGNANCY_ORDERED.forEach(function (block) {
+      var existing = header.querySelector(block.selector);
+      var fresh = block.anchorOnly ? null : nextHeader.querySelector(block.selector);
+      var clone;
+
+      if (!block.anchorOnly) {
+        if (fresh) {
+          clone = document.importNode(fresh, true);
+          if (existing) {
+            existing.replaceWith(clone);
+          } else if (previous) {
+            previous.after(clone);
+          } else {
+            header.appendChild(clone);
+          }
+          existing = clone;
+        } else if (existing) {
+          existing.remove();
+          existing = null;
+        }
+      }
+      previous = existing || previous;
+    });
+  }
+
+  // The status header is computed server-side from the saved days, and a
+  // pregnancy-test result is one of the inputs. The journal itself updates as
+  // the owner clicks, so the dashboard page is fetched again and only the
+  // dependent blocks above are swapped: the form, its focus and the goal chip
+  // stay as they are. Newest request wins; a failed refresh leaves the header as
+  // it was, since the save itself already succeeded.
   function refreshDashboardStatusHeader() {
-    var current = document.querySelector("[data-dashboard-shell]");
+    var current = document.querySelector("[data-dashboard-status-header]");
     var headers;
     var token;
 
@@ -300,22 +378,16 @@
     }).then(function (text) {
       var next;
       var latest;
-      var revealed;
 
       if (!text || dashboardStatusRefreshToken !== token) {
         return false;
       }
-      next = new window.DOMParser().parseFromString(text, "text/html").querySelector("[data-dashboard-shell]");
-      latest = document.querySelector("[data-dashboard-shell]");
+      next = new window.DOMParser().parseFromString(text, "text/html").querySelector("[data-dashboard-status-header]");
+      latest = document.querySelector("[data-dashboard-status-header]");
       if (!next || !latest) {
         return false;
       }
-      // The entrance animation belongs to the first paint, not to a refresh.
-      revealed = next.querySelectorAll(".reveal");
-      for (var index = 0; index < revealed.length; index++) {
-        revealed[index].classList.remove("reveal");
-      }
-      latest.replaceWith(document.importNode(next, true));
+      swapDashboardPregnancyBlocks(latest, next);
       return true;
     }).catch(function () {
       return false;
