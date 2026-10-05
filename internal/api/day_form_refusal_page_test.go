@@ -448,6 +448,7 @@ func TestEveryDayAndCycleRefusalHasLocalizedCopyInEveryLocale(t *testing.T) {
 	}
 	handlerMethods := map[string]*ast.FuncDecl{}
 	specFuncs := map[string]*ast.FuncDecl{}
+	stringConsts := map[string]string{}
 	fileSet := token.NewFileSet()
 	for _, name := range files {
 		if strings.HasSuffix(name, "_test.go") {
@@ -458,6 +459,26 @@ func TestEveryDayAndCycleRefusalHasLocalizedCopyInEveryLocale(t *testing.T) {
 			t.Fatalf("parse %s: %v", name, err)
 		}
 		for _, decl := range file.Decls {
+			if general, ok := decl.(*ast.GenDecl); ok && general.Tok == token.CONST {
+				// A key may be spelled as a package constant (unauthorizedErrorKey):
+				// it is resolved through its declaration, never skipped.
+				for _, spec := range general.Specs {
+					valueSpec := spec.(*ast.ValueSpec)
+					for index, name := range valueSpec.Names {
+						if index >= len(valueSpec.Values) {
+							continue
+						}
+						if literal, ok := valueSpec.Values[index].(*ast.BasicLit); ok && literal.Kind == token.STRING {
+							value, err := strconv.Unquote(literal.Value)
+							if err != nil {
+								t.Fatalf("unquote %s: %v", literal.Value, err)
+							}
+							stringConsts[name.Name] = value
+						}
+					}
+				}
+				continue
+			}
 			fn, ok := decl.(*ast.FuncDecl)
 			if !ok || fn.Body == nil {
 				continue
@@ -513,12 +534,21 @@ func TestEveryDayAndCycleRefusalHasLocalizedCopyInEveryLocale(t *testing.T) {
 				return true
 			}
 			if callee.Name == "globalErrorSpec" && len(call.Args) == 3 {
-				if key, ok := call.Args[2].(*ast.BasicLit); ok && key.Kind == token.STRING {
+				switch key := call.Args[2].(type) {
+				case *ast.BasicLit:
 					unquoted, err := strconv.Unquote(key.Value)
 					if err != nil {
 						t.Fatalf("unquote %s: %v", key.Value, err)
 					}
 					keys[unquoted] = true
+				case *ast.Ident:
+					value, ok := stringConsts[key.Name]
+					if !ok {
+						t.Fatalf("%s: globalErrorSpec key %s is no package string constant the walk can resolve", fn.Name.Name, key.Name)
+					}
+					keys[value] = true
+				default:
+					t.Fatalf("%s: globalErrorSpec key is neither a literal nor a constant: the walk cannot read it", fn.Name.Name)
 				}
 				return true
 			}
