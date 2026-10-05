@@ -35,7 +35,8 @@ func newServiceBackedHandlerForTest(database *gorm.DB, location *time.Location) 
 	}
 
 	handler := &Handler{
-		location: location,
+		location:  location,
+		secretKey: []byte(testAppSecretKey),
 	}
 	return handler.withDependencies(newTestHandlerDependencies(database, nil))
 }

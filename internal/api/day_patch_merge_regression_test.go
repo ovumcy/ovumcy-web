@@ -210,6 +210,7 @@ func TestPatchDayFormBodyChangesOnlyThePostedFields(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Cookie", fixture.authCookie)
+	bindDayWriteForTest(t, request, fixture.user.ID)
 	response := mustAppResponse(t, fixture.app, request)
 	assertStatusCode(t, response, http.StatusOK)
 
@@ -236,6 +237,7 @@ func TestPatchDayFormNeverReadsAFieldFromTheQueryString(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Cookie", fixture.authCookie)
+	bindDayWriteForTest(t, request, fixture.user.ID)
 	response := mustAppResponse(t, fixture.app, request)
 	assertStatusCode(t, response, http.StatusOK)
 
@@ -261,6 +263,7 @@ func TestPatchDayAcknowledgesThePeriodTipOnAStoredPeriodDay(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Cookie", fixture.authCookie)
+	bindDayWriteForTest(t, request, fixture.user.ID)
 	response := mustAppResponse(t, fixture.app, request)
 	assertStatusCode(t, response, http.StatusOK)
 
@@ -291,6 +294,7 @@ func TestPatchDayMultipartBodyChangesOnlyThePostedFields(t *testing.T) {
 	request.Header.Set("Content-Type", writer.FormDataContentType())
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Cookie", fixture.authCookie)
+	bindDayWriteForTest(t, request, fixture.user.ID)
 	response := mustAppResponse(t, fixture.app, request)
 	assertStatusCode(t, response, http.StatusOK)
 

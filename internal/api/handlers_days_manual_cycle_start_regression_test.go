@@ -89,6 +89,7 @@ func TestMarkCycleStartHTMXWithCSRFRefreshesAndPersists(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Cookie", joinCookieHeader(authCookie, cookiePair(csrfCookie)))
+	bindDayWriteForTest(t, request, user.ID)
 
 	response := mustAppResponse(t, app, request)
 	if response.StatusCode != http.StatusNoContent {
@@ -255,6 +256,7 @@ func TestMarkCycleStartAuditsAnUnresolvedImplantationPolicy(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Cookie", authCookie)
+	bindDayWriteForTest(t, request, user.ID)
 
 	response := mustAppResponse(t, app, request)
 	if response.StatusCode != http.StatusNoContent {
@@ -289,6 +291,7 @@ func TestMarkCycleStartAuditOmitsThePolicyFieldWhenItResolves(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Cookie", authCookie)
+	bindDayWriteForTest(t, request, user.ID)
 
 	response := mustAppResponse(t, app, request)
 	if response.StatusCode != http.StatusNoContent {

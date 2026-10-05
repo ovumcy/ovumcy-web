@@ -474,6 +474,7 @@ func TestUpsertDayRefusesAnImpossibleFahrenheitReadingOverHTMX(t *testing.T) {
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
+	bindDayWriteForTest(t, request, user.ID)
 
 	response := mustAppResponse(t, app, request)
 	assertStatusCode(t, response, http.StatusBadRequest)

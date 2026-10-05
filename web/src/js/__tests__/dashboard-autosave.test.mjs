@@ -21,6 +21,10 @@ const APP_BUNDLE = readAppBundle();
 const TODAY = "2026-08-12";
 const SAVED_LABEL = "Saved";
 const UNDO_LABEL = "Undo";
+// The account binding the page renders; the server refuses a day write from a
+// rendered page that does not carry it, the body-less undo DELETE included.
+const ACCOUNT_BINDING = "unit-test-account-binding";
+const ACCOUNT_HEADER = "X-Ovumcy-Day-Form-Account";
 
 function dashboardPage({ entryExists = false, notes = "", periodFromStoredStart = false } = {}) {
   const storedStartMarker = periodFromStoredStart
@@ -46,6 +50,7 @@ function dashboardPage({ entryExists = false, notes = "", periodFromStoredStart 
       data-day-save-retry-label="Try again">
       <input type="hidden" name="csrf_token" value="unit-test-token">
       ${storedStartMarker}
+      <input type="hidden" name="day_form_account" value="${ACCOUNT_BINDING}">
       <label class="period-toggle" data-binary-toggle data-active="${periodFromStoredStart ? "true" : "false"}">
         <input type="checkbox" name="is_period" value="true" data-period-toggle data-binary-toggle-input${periodFromStoredStart ? " checked" : ""}>
       </label>
@@ -268,6 +273,13 @@ test("undoing the first save of an empty day clears it instead of writing an emp
     assert.equal(calls().length, 2);
     assert.equal(calls()[1].init.method, "DELETE", "an empty day is an absent entry, not an empty one");
     assert.equal(calls()[1].url, `/api/v1/days/${TODAY}?source=dashboard`);
+    assert.equal(calls()[1].init.body, undefined, "the undo DELETE sends no body");
+    assert.equal(
+      calls()[1].init.headers[ACCOUNT_HEADER],
+      ACCOUNT_BINDING,
+      "the body-less undo must name the account the page was rendered for in a header"
+    );
+    assert.equal(calls()[0].init.headers[ACCOUNT_HEADER], ACCOUNT_BINDING, "the save carries the same binding");
     assert.equal(toggle.checked, false, "the screen goes back with it");
   } finally {
     dom.window.close();
