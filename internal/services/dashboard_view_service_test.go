@@ -681,8 +681,18 @@ func TestBuildDashboardViewDataHoldsFertilityBackUntilTheFirstCompletedCycle(t *
 			goal:            models.UsageGoalTrying,
 			wantBridge:      true,
 		},
+		// One and two completed cycles are still below the floor: the header
+		// withholds the date and shows no bridge (the window arrives after three).
 		"trying, one completed cycle": {
 			completedCycles: 1,
+			goal:            models.UsageGoalTrying,
+		},
+		"trying, two completed cycles": {
+			completedCycles: 2,
+			goal:            models.UsageGoalTrying,
+		},
+		"trying, three completed cycles": {
+			completedCycles: 3,
 			goal:            models.UsageGoalTrying,
 			wantFertility:   true,
 			wantOvulation:   true,
@@ -691,8 +701,12 @@ func TestBuildDashboardViewDataHoldsFertilityBackUntilTheFirstCompletedCycle(t *
 			completedCycles: 0,
 			goal:            models.UsageGoalHealth,
 		},
-		"health, one completed cycle": {
-			completedCycles: 1,
+		"health, two completed cycles": {
+			completedCycles: 2,
+			goal:            models.UsageGoalHealth,
+		},
+		"health, three completed cycles": {
+			completedCycles: 3,
 			goal:            models.UsageGoalHealth,
 			wantFertility:   true,
 		},

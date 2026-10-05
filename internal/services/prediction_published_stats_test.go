@@ -79,6 +79,9 @@ func publishedStatsCases() []publishedStatsCase {
 	thinIrregular := publishedStatsBase()
 	thinIrregular.CompletedCycleCount = 2
 
+	twoCycles := publishedStatsBase()
+	twoCycles.CompletedCycleCount = 2
+
 	return []publishedStatsCase{
 		{
 			// Both halves go: the dashboard shows "needs more cycles" in place of
@@ -127,6 +130,19 @@ func publishedStatsCases() []publishedStatsCase {
 			reason:            SuppressionReasonAwaitingFirstCycle,
 			user:              &models.User{},
 			stats:             firstCycle,
+			wantPredictions:   false,
+			wantFertility:     true,
+			wantNextPeriodSet: true,
+		},
+		{
+			// Regular mode below three completed cycles: fertility-only like the
+			// first-cycle tier, with its own reason. Two cycles is the tier's
+			// upper edge; the control at three is the unsuppressed base itself.
+			name:              "one or two completed cycles in regular mode",
+			signal:            "DashboardAwaitingMoreCycles",
+			reason:            SuppressionReasonAwaitingMoreCycles,
+			user:              &models.User{},
+			stats:             twoCycles,
 			wantPredictions:   false,
 			wantFertility:     true,
 			wantNextPeriodSet: true,

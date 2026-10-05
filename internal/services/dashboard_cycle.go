@@ -18,6 +18,9 @@ import (
 //
 // AwaitingFirstCycle reports the earliest data tier — no completed cycle yet —
 // which decides how much detail the header may show (DashboardAwaitingFirstCycle).
+// AwaitingMoreCycles is the next tier up for a regular account, one or two
+// completed cycles (DashboardAwaitingMoreCycles); it only selects the wording
+// that explains the withheld fertility half, the gate is FertilitySuppressed.
 //
 // FertilitySuppressed is that policy already applied, resolved once here from
 // FertilityProjectionSuppressed(user, stats) — the same predicate the calendar
@@ -60,6 +63,7 @@ type DashboardCycleContext struct {
 	DisplayOvulationImpossible bool
 	NextPeriodEstimatePaused   bool
 	AwaitingFirstCycle         bool
+	AwaitingMoreCycles         bool
 	FertilitySuppressed        bool
 	NextPeriodInPast           bool
 	OvulationInPast            bool
@@ -230,9 +234,18 @@ func PredictionsSuppressed(user *models.User, stats CycleStats) bool {
 	return DashboardPredictionDisabled(user) || stats.PregnancyPaused || DashboardCycleOverdue(user, stats) || DashboardAwaitingIrregularHistory(user, stats)
 }
 
+// fertilityMinimumCycles is the completed-cycle count every account needs before
+// the fertility half of the projection (ovulation date, fertile window, peak
+// band) is shown: the same number for regular and irregular mode, so the two
+// never answer differently about how much history is enough. Below it the
+// fertility half rests on one or two observed lengths, which is a configuration
+// default with a couple of data points behind it, not a pattern.
+const fertilityMinimumCycles = 3
+
 // irregularRangeMinimumCycles is the completed-cycle count irregular-cycle mode
-// needs before its min/max spread is shown as a range rather than withheld.
-const irregularRangeMinimumCycles = 3
+// needs before its min/max spread is shown as a range rather than withheld. It
+// is the fertility floor itself, never a second literal of the same number.
+const irregularRangeMinimumCycles = fertilityMinimumCycles
 
 // DashboardAwaitingIrregularHistory reports an account in irregular-cycle mode
 // with fewer completed cycles than the mode needs before its spread means
@@ -246,19 +259,22 @@ func DashboardAwaitingIrregularHistory(user *models.User, stats CycleStats) bool
 	return user != nil && user.IrregularCycle && stats.CompletedCycleCount < irregularRangeMinimumCycles
 }
 
-// FertilityProjectionSuppressed adds the zero-completed-cycle floor to the three
-// signals above, and is the gate for the fertility half of the projection: the
-// fertile window, the peak band and the ovulation date, wherever they are shown
-// or sent — calendar grid, .ics feed, webhook reminder, dashboard banner.
+// FertilityProjectionSuppressed adds the completed-cycle floor — no completed
+// cycle, or fewer than fertilityMinimumCycles for a regular account — to the
+// four signals above, and is the gate for the fertility half of the projection:
+// the fertile window, the peak band and the ovulation date, wherever they are
+// shown or sent — calendar grid, .ics feed, webhook reminder, dashboard banner,
+// JSON overview.
 //
 // The two predicates are deliberately not one. PredictionsSuppressed withholds
-// everything; the first-cycle floor withholds only what has nothing but the
-// onboarding slider behind it, which is exactly the fertility half (see
-// DashboardAwaitingFirstCycle). The next-period estimate keeps its own path: it
-// is anchored on a day the owner recorded and already carries an estimate
-// qualifier, and the dashboard header shows it in this tier too.
+// everything; the floor withholds only what has nothing but the onboarding
+// slider, or one or two observed lengths, behind it, which is exactly the
+// fertility half (see DashboardAwaitingFirstCycle and DashboardAwaitingMoreCycles).
+// The next-period estimate keeps its own path: it is anchored on a day the owner
+// recorded and already carries an estimate qualifier, and the dashboard header
+// shows it in this tier too.
 func FertilityProjectionSuppressed(user *models.User, stats CycleStats) bool {
-	return PredictionsSuppressed(user, stats) || DashboardAwaitingFirstCycle(stats)
+	return PredictionsSuppressed(user, stats) || DashboardAwaitingFirstCycle(stats) || DashboardAwaitingMoreCycles(user, stats)
 }
 
 // ConfirmedOvulationWithheld is the gate on the one fertility value that is not
@@ -281,6 +297,13 @@ func FertilityProjectionSuppressed(user *models.User, stats CycleStats) bool {
 // mode (recorded facts only), a pregnancy pause, and the first-cycle floor each
 // withheld the confirmed day before the overdue gate moved, and nothing here
 // shows that answer wrong.
+//
+// The one-or-two-completed-cycles tier (DashboardAwaitingMoreCycles) is not
+// among them, and that is the same call the irregular thin-history tier already
+// makes: the tier exists because a PROJECTION has too few observed lengths
+// behind it, and a day the detector read off the owner's own recorded
+// temperatures is not that projection. The window and the fertility status
+// derived from it stay withheld with the rest of the fertility half.
 func ConfirmedOvulationWithheld(user *models.User, stats CycleStats) bool {
 	return DashboardPredictionDisabled(user) || stats.PregnancyPaused || DashboardAwaitingFirstCycle(stats)
 }
@@ -314,6 +337,24 @@ func DashboardAwaitingFirstCycle(stats CycleStats) bool {
 	return stats.CompletedCycleCount < 1
 }
 
+// DashboardAwaitingMoreCycles reports a regular-mode account that has completed
+// at least one cycle but fewer than fertilityMinimumCycles. It is the second tier
+// of the same reliability signal as DashboardAwaitingFirstCycle, read off the
+// same CompletedCycleCount: with one or two observed lengths the median is a
+// single data point or the midpoint of two, and an ovulation date or fertile
+// window drawn from it carries a confidence the history cannot back. Like the
+// first tier it is fertility-only — the next-period estimate is anchored on a
+// recorded start and stays.
+//
+// Irregular-mode accounts are not in it: DashboardAwaitingIrregularHistory
+// already withholds BOTH halves for them under the same count and names its own
+// reason, so counting them here would publish two reasons for one state. An
+// account with no completed cycle belongs to the first tier, which keeps its own
+// wording.
+func DashboardAwaitingMoreCycles(user *models.User, stats CycleStats) bool {
+	return !DashboardAwaitingFirstCycle(stats) && !DashboardAwaitingIrregularHistory(user, stats) && stats.CompletedCycleCount < fertilityMinimumCycles
+}
+
 // SuppressionReason names ONE medical-safety signal that withheld a projection,
 // in a stable spelling a client outside the instance may branch on. The strings
 // are wire values: rename one and every consumer's branch goes quiet, so treat
@@ -326,6 +367,7 @@ const (
 	SuppressionReasonCycleOverdue       SuppressionReason = "cycle_overdue"
 	SuppressionReasonAwaitingFirstCycle SuppressionReason = "awaiting_first_cycle"
 	SuppressionReasonIrregularNeedsData SuppressionReason = "irregular_needs_more_cycles"
+	SuppressionReasonAwaitingMoreCycles SuppressionReason = "awaiting_more_cycles"
 )
 
 // PredictionSuppression is the resolved verdict of the two predicates above plus
@@ -378,6 +420,9 @@ func ResolvePredictionSuppression(user *models.User, stats CycleStats) Predictio
 	}
 	if DashboardAwaitingFirstCycle(stats) {
 		verdict.Reasons = append(verdict.Reasons, SuppressionReasonAwaitingFirstCycle)
+	}
+	if DashboardAwaitingMoreCycles(user, stats) {
+		verdict.Reasons = append(verdict.Reasons, SuppressionReasonAwaitingMoreCycles)
 	}
 	return verdict
 }
@@ -590,6 +635,7 @@ func BuildDashboardCycleContext(user *models.User, logs []models.DailyLog, stats
 	// reported "not awaiting" merely because predictions are off would disable
 	// the gate for exactly the accounts with the least data.
 	awaitingFirstCycle := DashboardAwaitingFirstCycle(stats)
+	awaitingMoreCycles := DashboardAwaitingMoreCycles(user, stats)
 	// Resolved beside the tier and carried by every branch below, for the same
 	// reason: a context that answered "not suppressed" on a suppression branch
 	// would hand the banner the very rule it is meant to be gated by.
@@ -600,6 +646,7 @@ func BuildDashboardCycleContext(user *models.User, logs []models.DailyLog, stats
 			PredictionDisabled:  true,
 			PregnancyPaused:     true,
 			AwaitingFirstCycle:  awaitingFirstCycle,
+			AwaitingMoreCycles:  awaitingMoreCycles,
 			FertilitySuppressed: fertilitySuppressed,
 		}
 	}
@@ -610,6 +657,7 @@ func BuildDashboardCycleContext(user *models.User, logs []models.DailyLog, stats
 			CycleDataStale:      false,
 			PredictionDisabled:  true,
 			AwaitingFirstCycle:  awaitingFirstCycle,
+			AwaitingMoreCycles:  awaitingMoreCycles,
 			FertilitySuppressed: fertilitySuppressed,
 		}
 	}
@@ -652,6 +700,7 @@ func BuildDashboardCycleContext(user *models.User, logs []models.DailyLog, stats
 		DisplayOvulationImpossible:  display.ovulationImpossible,
 		NextPeriodEstimatePaused:    display.estimatePaused,
 		AwaitingFirstCycle:          awaitingFirstCycle,
+		AwaitingMoreCycles:          awaitingMoreCycles,
 		FertilitySuppressed:         fertilitySuppressed,
 		NextPeriodInPast:            dashboardNextPeriodInPast(display, today),
 		OvulationInPast:             dashboardOvulationInPast(display, today),

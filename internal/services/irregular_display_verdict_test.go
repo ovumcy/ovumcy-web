@@ -55,8 +55,15 @@ func TestIrregularThinHistorySendsNoDateFromAnySurface(t *testing.T) {
 			// Positive control: the same history without irregular mode does send,
 			// paint and publish — so what follows is the verdict, not a quiet fixture.
 			regular := irregularVerdictUser(false)
-			if len(DecideDueReminders(regular, enabledWebhookSettings(MaxReminderLeadDays), logs, now, time.UTC)) == 0 {
-				t.Fatal("control: a regular owner on this history gets no reminder — the fixture proves nothing")
+			// A regular owner on two completed cycles is below the fertility floor, so
+			// its control is the next-period half alone: the ovulation case has no
+			// reminder to send, the next-period case does.
+			regularReminders := DecideDueReminders(regular, enabledWebhookSettings(MaxReminderLeadDays), logs, now, time.UTC)
+			if _, hasOvulation := findDueReminder(regularReminders, DueReminderTypeOvulation); hasOvulation {
+				t.Fatal("control: a regular owner on two completed cycles must get no ovulation reminder")
+			}
+			if _, hasPeriod := findDueReminder(regularReminders, DueReminderTypePeriod); name == "next period in window" && !hasPeriod {
+				t.Fatal("control: a regular owner on this history gets no period reminder — the fixture proves nothing")
 			}
 			if len(calendarFeedEvents(CalendarFeedICSInput{User: regular, Logs: logs, Now: now, Location: time.UTC})) == 0 {
 				t.Fatal("control: a regular owner on this history gets no feed event")

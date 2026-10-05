@@ -7,15 +7,17 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
-// The zero-completed-cycle floor is one policy with five consumers: the
-// calendar grid, the .ics feed, the webhook reminder pass, the dashboard
-// reminder banner and the implantation-bleeding hint offered when a new cycle
-// start is logged. Until the first cycle closes, the fertile window and the
-// ovulation date are the onboarding cycle-length slider projected forward, so
-// every one of them must withhold the fertility half of the projection — two of
-// the five carry it off the instance. The same table drives a one-completed-
-// cycle history as the positive anchor: the surfaces must resume there, or a
-// guard that simply emptied every projection would read as green.
+// The completed-cycle floor is one policy with five consumers: the calendar
+// grid, the .ics feed, the webhook reminder pass, the dashboard reminder banner
+// and the implantation-bleeding hint offered when a new cycle start is logged.
+// Until the first cycle closes, the fertile window and the ovulation date are
+// the onboarding cycle-length slider projected forward, and with one or two
+// completed cycles they rest on a single observed length or a pair, so every
+// consumer must withhold the fertility half of the projection until three
+// cycles are behind the owner — two of the five carry it off the instance. The
+// same table drives a three-completed-cycle history as the positive anchor: the
+// surfaces must resume there, or a guard that simply emptied every projection
+// would read as green.
 
 // implantationHintAgeDays ages the shared history so that the day being logged
 // sits inside the closing cycle's implantation window. See
@@ -70,9 +72,19 @@ func firstCycleFloorCases() []firstCycleFloorCase {
 			wantCompleted: 0,
 		},
 		{
-			name:                 "one completed cycle: the window has an observed length behind it",
-			startsDaysAgo:        []int{40, 12},
-			wantCompleted:        1,
+			name:          "one completed cycle: a single observed length is not a pattern",
+			startsDaysAgo: []int{40, 12},
+			wantCompleted: 1,
+		},
+		{
+			name:          "two completed cycles: still below the floor",
+			startsDaysAgo: []int{68, 40, 12},
+			wantCompleted: 2,
+		},
+		{
+			name:                 "three completed cycles: the window has a pattern behind it",
+			startsDaysAgo:        []int{96, 68, 40, 12},
+			wantCompleted:        3,
 			wantOvulation:        true,
 			wantFertileDays:      true,
 			wantImplantationHint: true,

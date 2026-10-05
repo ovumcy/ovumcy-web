@@ -193,7 +193,7 @@ func staleBandFixture(t *testing.T) (*models.User, []models.DailyLog, time.Time)
 	t.Helper()
 
 	user := &models.User{Role: models.RoleOwner, CycleLength: 28, PeriodLength: 5}
-	return user, cycleStartLogs(t, "2026-04-05", "2026-05-03", "2026-05-31"), mustParseDay(t, "2026-06-30")
+	return user, cycleStartLogs(t, "2026-03-08", "2026-04-05", "2026-05-03", "2026-05-31"), mustParseDay(t, "2026-06-30")
 }
 
 func TestPublishedStatsWithholdsPhaseAndStatusOnOutOfDateData(t *testing.T) {

@@ -261,6 +261,10 @@ func TestSuppressedFertilityProjectionStillWithholdsTheConfirmedWindow(t *testin
 // production one.
 func TestStatsPagePublishesTheConfirmedWindow(t *testing.T) {
 	logs := []models.DailyLog{
+		// Four starts are three completed cycles, the history the fertility half
+		// needs before the page publishes a window at all.
+		{Date: mustParseStatsServiceDay(t, "2025-12-07"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+		{Date: mustParseStatsServiceDay(t, "2026-01-04"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
 		{Date: mustParseStatsServiceDay(t, "2026-02-01"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
 		{Date: mustParseStatsServiceDay(t, "2026-02-02"), IsPeriod: true, Flow: models.FlowMedium},
 		{Date: mustParseStatsServiceDay(t, "2026-03-01"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},

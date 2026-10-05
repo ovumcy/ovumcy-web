@@ -295,12 +295,14 @@ func periodStartLog(userID uint, day time.Time) models.DailyLog {
 }
 
 // completedCycleStartLogs returns the owner's current cycle start plus the
-// previous start exactly one 28-day cycle earlier. The ovulation reminder is
-// withheld until one cycle has been observed (FertilityProjectionSuppressed),
-// and a previous start one full cycle back observes the same 28 days the record
-// carries, so every projected date stays where the case pins it.
+// three previous starts, each one 28-day cycle earlier. The ovulation reminder
+// is withheld until three cycles have been observed (FertilityProjectionSuppressed),
+// and starts a full cycle apart observe the same 28 days the record carries, so
+// every projected date stays where the case pins it.
 func completedCycleStartLogs(userID uint, day time.Time) []models.DailyLog {
 	return []models.DailyLog{
+		periodStartLog(userID, day.AddDate(0, 0, -84)),
+		periodStartLog(userID, day.AddDate(0, 0, -56)),
 		periodStartLog(userID, day.AddDate(0, 0, -28)),
 		periodStartLog(userID, day),
 	}
@@ -1253,7 +1255,11 @@ func TestNotifyDecisionMatchesDashboardWithInferredLutealPhase(t *testing.T) {
 	// placed so each completed cycle's observed luteal length is 11 days (rise
 	// starts 11 days before the next cycle's start), inferring luteal=11 overall.
 	// The current (third) cycle has no BBT yet, matching a real in-progress cycle.
+	// A fourth, earlier start without BBT makes three completed cycles — the
+	// history the ovulation reminder needs — and leaves the inference to the two
+	// cycles that carry a rise.
 	logs := []models.DailyLog{
+		{Date: day("2024-12-04"), IsPeriod: true, Flow: models.FlowMedium},
 		{Date: day("2025-01-01"), IsPeriod: true, Flow: models.FlowMedium},
 		{Date: day("2025-01-29"), IsPeriod: true, Flow: models.FlowMedium},
 		{Date: day("2025-02-26"), IsPeriod: true, Flow: models.FlowMedium},

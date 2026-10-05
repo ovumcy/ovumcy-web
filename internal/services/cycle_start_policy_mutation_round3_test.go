@@ -45,7 +45,7 @@ func TestMR3Cycles_PotentialImplantationRefusesTheDefaultCycleLength(t *testing.
 			policy.ImplantationGapDays)
 	}
 
-	// Positive anchor: the same day, the same geometry, two recorded 28-day
+	// Positive anchor: the same day, the same geometry, three recorded 28-day
 	// cycles behind it. Without this the assertion above would pass on a hint
 	// that had simply stopped working.
 	recorded := observedCyclesBefore(lastPeriod)

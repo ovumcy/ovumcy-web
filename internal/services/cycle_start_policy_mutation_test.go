@@ -48,7 +48,7 @@ func TestIsAllowedManualCycleStartDate_NonUTCLocationNotForcedToUTC(t *testing.T
 // which length the hint is counted from: the account's own observed median,
 // never the configured cycle length on the settings page.
 func TestPotentialImplantationGapDays_UsesTheObservedMedianNotTheUserLength(t *testing.T) {
-	// Two recorded 28-day cycles, and a user configured to 35. cycleLength must
+	// Three recorded 28-day cycles, and a user configured to 35. cycleLength must
 	// come from predictedCycleLength over the observed median (28). For
 	// previousStart 2026-02-26 that puts ovulation on 2026-03-11, and a
 	// targetDay of 2026-03-17 is a 6-day gap -> inside the implantation window.

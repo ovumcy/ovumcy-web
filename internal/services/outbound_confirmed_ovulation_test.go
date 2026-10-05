@@ -38,7 +38,9 @@ func outboundConfirmedFixture(t *testing.T, withShift bool) (*models.User, []mod
 	}
 
 	logs := make([]models.DailyLog, 0, 24)
-	for _, start := range []string{"2026-01-04", "2026-02-01", "2026-03-01"} {
+	// Four starts are three completed cycles: the history the fertility half
+	// needs before any surface may name a projected ovulation.
+	for _, start := range []string{"2025-12-07", "2026-01-04", "2026-02-01", "2026-03-01"} {
 		cycleStart := mustParseDashboardDay(t, start)
 		for offset := range 5 {
 			logs = append(logs, models.DailyLog{
