@@ -173,7 +173,7 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 	)
 	visibility := dashboardOwnerVisibilityState(user, today, now, location)
 	timingFrame := resolveDashboardTimingFrame(user, cycleContext, visibility)
-	showHighFertilityBadge := dashboardHighFertilityBadge(user, todayLog)
+	showHighFertilityBadge := dashboardHighFertilityBadge(user, cycleContext, todayLog)
 	showSpottingCycleWarning := dashboardSpottingCycleWarning(logs, todayLog, today, location)
 	reminderBanner := DashboardReminderBanner{}
 	if IsOwnerUser(user) {
@@ -358,8 +358,13 @@ func dashboardOwnerVisibilityState(user *models.User, today time.Time, now time.
 	}
 }
 
-func dashboardHighFertilityBadge(user *models.User, todayLog models.DailyLog) bool {
-	return IsOwnerUser(user) && NormalizeDayCervicalMucus(todayLog.CervicalMucus) == models.CervicalMucusEggWhite
+// dashboardHighFertilityBadge is a fertility claim, so it waits for the verdict
+// the cycle context already resolved: while the fertility half is withheld the
+// header says "held back", and today's mucus alone must not contradict it.
+func dashboardHighFertilityBadge(user *models.User, cycleContext DashboardCycleContext, todayLog models.DailyLog) bool {
+	return IsOwnerUser(user) &&
+		!cycleContext.FertilitySuppressed &&
+		NormalizeDayCervicalMucus(todayLog.CervicalMucus) == models.CervicalMucusEggWhite
 }
 
 func dashboardSpottingCycleWarning(logs []models.DailyLog, todayLog models.DailyLog, today time.Time, location *time.Location) bool {

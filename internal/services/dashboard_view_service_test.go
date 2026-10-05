@@ -242,8 +242,66 @@ func TestBuildDashboardViewDataShowsHighFertilityBadgeForEggWhiteMucus(t *testin
 	user := &models.User{ID: 6, Role: models.RoleOwner, CycleLength: 28, TrackCervicalMucus: true}
 	today := mustParseDashboardServiceDay(t, "2026-02-21")
 
+	viewData := buildEggWhiteBadgeViewData(t, user, today, CycleStats{
+		CompletedCycleCount: 3,
+		MedianCycleLength:   28,
+		LastPeriodStart:     mustParseDashboardServiceDay(t, "2026-02-10"),
+		NextPeriodStart:     mustParseDashboardServiceDay(t, "2026-03-10"),
+	})
+	if viewData.CycleContext.FertilitySuppressed {
+		t.Fatalf("control fixture must clear the fertility floor")
+	}
+	if !viewData.ShowHighFertilityBadge {
+		t.Fatalf("expected high-fertility badge for egg-white mucus once the fertility half is shown")
+	}
+}
+
+func TestBuildDashboardViewDataWithholdsHighFertilityBadgeWhileFertilitySuppressed(t *testing.T) {
+	today := mustParseDashboardServiceDay(t, "2026-02-21")
+	lastPeriod := mustParseDashboardServiceDay(t, "2026-02-10")
+	nextPeriod := mustParseDashboardServiceDay(t, "2026-03-10")
+
+	cases := []struct {
+		name  string
+		user  *models.User
+		stats CycleStats
+	}{
+		{
+			name:  "first cycle, trying to conceive",
+			user:  &models.User{ID: 6, Role: models.RoleOwner, CycleLength: 28, TrackCervicalMucus: true, UsageGoal: models.UsageGoalTrying},
+			stats: CycleStats{LastPeriodStart: lastPeriod},
+		},
+		{
+			name:  "irregular mode before its range exists",
+			user:  &models.User{ID: 6, Role: models.RoleOwner, CycleLength: 28, TrackCervicalMucus: true, IrregularCycle: true},
+			stats: CycleStats{CompletedCycleCount: 2, MedianCycleLength: 28, LastPeriodStart: lastPeriod, NextPeriodStart: nextPeriod},
+		},
+		{
+			name:  "pregnancy pause",
+			user:  &models.User{ID: 6, Role: models.RoleOwner, CycleLength: 28, TrackCervicalMucus: true},
+			stats: CycleStats{CompletedCycleCount: 3, MedianCycleLength: 28, LastPeriodStart: lastPeriod, NextPeriodStart: nextPeriod, PregnancyPaused: true},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			viewData := buildEggWhiteBadgeViewData(t, tc.user, today, tc.stats)
+			if !viewData.CycleContext.FertilitySuppressed {
+				t.Fatalf("fixture must be a suppressed tier")
+			}
+			if viewData.ShowFertilityStatus {
+				t.Fatalf("fixture must hold the fertility header back")
+			}
+			if viewData.ShowHighFertilityBadge {
+				t.Fatalf("high-fertility badge must not render beside the withheld fertility header")
+			}
+		})
+	}
+}
+
+func buildEggWhiteBadgeViewData(t *testing.T, user *models.User, today time.Time, stats CycleStats) DashboardViewData {
+	t.Helper()
 	service := NewDashboardViewService(
-		&stubDashboardStatsProvider{},
+		&stubDashboardStatsProvider{stats: stats},
 		&stubDashboardViewerProvider{
 			logEntry: models.DailyLog{
 				Date:          today,
@@ -252,14 +310,11 @@ func TestBuildDashboardViewDataShowsHighFertilityBadgeForEggWhiteMucus(t *testin
 		},
 		&stubDashboardDayStateProvider{},
 	)
-
 	viewData, err := service.BuildDashboardViewData(context.Background(), user, "en", today, time.UTC)
 	if err != nil {
 		t.Fatalf("BuildDashboardViewData() unexpected error: %v", err)
 	}
-	if !viewData.ShowHighFertilityBadge {
-		t.Fatalf("expected high-fertility badge for egg-white mucus")
-	}
+	return viewData
 }
 
 func TestBuildDashboardViewDataAddsPredictionFactorHintForVariablePatterns(t *testing.T) {
