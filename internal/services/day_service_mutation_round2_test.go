@@ -27,7 +27,7 @@ func TestClearAutoFilledPeriodNeighbors_LoopBoundIsExclusive_DoesNotClearDayAtPe
 		Flow:     models.FlowLight,
 	}
 
-	if err := service.ClearAutoFilledPeriodNeighbors(context.Background(), 10, CalendarDay(start, time.UTC), 3, time.UTC); err != nil {
+	if err := service.ClearAutoFilledPeriodNeighbors(context.Background(), 10, CalendarDay(start, time.UTC), 3, models.FlowLight, time.UTC); err != nil {
 		t.Fatalf("ClearAutoFilledPeriodNeighbors: %v", err)
 	}
 

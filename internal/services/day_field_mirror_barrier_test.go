@@ -30,12 +30,11 @@ import (
 // carry, and each is documented at its function.
 var (
 	// dayHasDataOnlyFields may appear in DayHasData and not in the candidate
-	// check: web's auto-fill replays the anchor's Flow into its neighbours, so a
-	// neighbour whose only manual change was a flow override is still inside the
-	// auto-fill window for clearing purposes (day_utils.go).
-	dayHasDataOnlyFields = map[string]string{
-		"Flow": "auto-fill propagates the anchor's flow, so a flow-only neighbour stays clearable",
-	}
+	// check. It is empty: Flow used to sit here, and a hand-logged flow was
+	// erased by the clear walk as a result. The candidate check reads Flow now
+	// (spared only when it equals the flow auto-fill propagated), so the two
+	// predicates agree on every field.
+	dayHasDataOnlyFields = map[string]string{}
 
 	// dayCandidateOnlyFields may appear in IsAutoFilledPeriodCandidate and not
 	// in DayHasData: they mark a day as an anchor rather than as carrying data,
@@ -57,6 +56,7 @@ var (
 // must appear here — the coverage assertion below is what stops a field wired
 // into both functions from shipping with no proof that it flips either.
 var dayManualSignalFixtures = map[string]models.DailyLog{
+	"Flow":            {Flow: models.FlowHeavy},
 	"Mood":            {Mood: MinDayMood},
 	"SexActivity":     {SexActivity: models.SexActivityProtected},
 	"BBT":             {BBT: new(36.5)},
@@ -133,7 +133,7 @@ func TestEveryMirroredDayFieldFlipsBothPredicates(t *testing.T) {
 			}
 			periodEntry := entry
 			periodEntry.IsPeriod = true
-			if IsAutoFilledPeriodCandidate(periodEntry) {
+			if IsAutoFilledPeriodCandidate(periodEntry, "") {
 				t.Errorf("IsAutoFilledPeriodCandidate would clear a period day whose only manual signal is %s", field)
 			}
 		})
@@ -146,7 +146,7 @@ func TestEveryMirroredDayFieldFlipsBothPredicates(t *testing.T) {
 	if !DayHasData(bare) {
 		t.Fatalf("DayHasData denies a bare period day — the fixtures above prove nothing")
 	}
-	if !IsAutoFilledPeriodCandidate(bare) {
+	if !IsAutoFilledPeriodCandidate(bare, "") {
 		t.Fatalf("IsAutoFilledPeriodCandidate refuses a bare period day — the fixtures above prove nothing")
 	}
 }
@@ -187,13 +187,17 @@ func dayPredicateFields(t *testing.T) (hasData, candidate map[string]struct{}) {
 }
 
 // dailyLogFieldsRead collects every `<param>.Field` selector in the body, where
-// <param> is the function's single DailyLog parameter. Reading the parameter's
-// own name rather than a hard-coded "entry" keeps the sweep honest through a
-// rename.
+// <param> is the function's DailyLog-typed parameter (the candidate check takes
+// a second, string parameter beside it). Reading the parameter's own name
+// rather than a hard-coded "entry" keeps the sweep honest through a rename.
 func dailyLogFieldsRead(fn *ast.FuncDecl) map[string]struct{} {
 	param := ""
 	if fn.Type.Params != nil {
 		for _, field := range fn.Type.Params.List {
+			selector, ok := field.Type.(*ast.SelectorExpr)
+			if !ok || selector.Sel.Name != "DailyLog" {
+				continue
+			}
 			for _, name := range field.Names {
 				param = name.Name
 			}

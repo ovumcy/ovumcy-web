@@ -265,24 +265,33 @@ func DayHasData(entry models.DailyLog) bool {
 }
 
 // IsAutoFilledPeriodCandidate reports whether a day log carries no manual
-// signal besides the IsPeriod flag (and the Flow value that
-// AutoFillFollowingPeriodDays propagates from the anchor), so toggling the
-// anchor day off can safely clear it. Days touched manually (mood, intimacy,
-// BBT, mucus, cycle factors, symptoms, notes), days marked as a cycle anchor,
-// and uncertain anchors are kept intact. The Flow field is excluded from the
-// check because web's auto-fill replays the anchor's flow into the neighbors;
-// a neighbor whose only manual change was a flow override therefore falls
-// inside the auto-fill window for clearing purposes. This is the parity
+// signal besides the IsPeriod flag, so toggling the anchor day off can safely
+// clear it. Days touched manually (flow, mood, intimacy, BBT, mucus, cycle
+// factors, symptoms, notes), days marked as a cycle anchor, and uncertain
+// anchors are kept intact.
+//
+// Flow is a manual signal with one exception. Web's auto-fill writes the
+// anchor's own flow into the neighbours it creates, so that single value is
+// the fill's mark rather than the owner's: propagatedFlow is the flow the
+// anchor carried when it was unchecked, and a neighbour whose flow is empty,
+// none or equal to it is still bare. Any other flow (a heavy day inside a
+// medium period, spotting beside a none anchor) was entered by hand. An empty
+// propagatedFlow means the anchor carried none, so every non-none flow counts
+// as manual. A neighbour that happens to carry the same flow by hand is
+// indistinguishable from the fill and stays clearable. This is the parity
 // counterpart of `isAutoFilledPeriodCandidate` in ovumcy-app, where auto-fill
-// does not propagate flow.
+// does not propagate flow and any flow is a signal.
 //
 // The manual-signal fields it tests mirror DayHasData's, and
 // day_field_mirror_barrier_test.go holds the two together: a field wired into
 // one of them alone fails there, naming the field and which side is missing.
-// Flow, CycleStart and IsUncertain are the only asymmetry, each carried in that
-// barrier's exception sets with the reason above.
-func IsAutoFilledPeriodCandidate(entry models.DailyLog) bool {
+// CycleStart and IsUncertain are the only asymmetry, each carried in that
+// barrier's exception set with the reason above.
+func IsAutoFilledPeriodCandidate(entry models.DailyLog, propagatedFlow string) bool {
 	if !entry.IsPeriod || entry.CycleStart || entry.IsUncertain {
+		return false
+	}
+	if flow := strings.TrimSpace(entry.Flow); flow != "" && flow != models.FlowNone && flow != propagatedFlow {
 		return false
 	}
 	if entry.Mood >= MinDayMood && entry.Mood <= MaxDayMood {
