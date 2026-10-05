@@ -428,6 +428,11 @@ test("a calendar save still on the wire is re-sent with keepalive only once the 
   };
   try {
     const form = dayEditorForm(dom.window);
+    const binding = dom.window.document.createElement("input");
+    binding.type = "hidden";
+    binding.name = "day_form_account";
+    binding.value = "unit-test-unload-binding";
+    form.insertBefore(binding, form.firstChild);
     fireOnForm(dom.window, "htmx:beforeSend", {
       requestConfig: {
         elt: form,
@@ -455,6 +460,11 @@ test("a calendar save still on the wire is re-sent with keepalive only once the 
     assert.ok(
       String(calls[0].init.body).includes(new URLSearchParams([["notes", TYPED_NOTE]]).toString()),
       "the re-sent body is the one the open request carries"
+    );
+    assert.deepEqual(
+      new URLSearchParams(String(calls[0].init.body)).getAll("day_form_account"),
+      ["unit-test-unload-binding"],
+      "the re-sent body still names the account the form was rendered for, or the server refuses it"
     );
     assert.ok(
       !String(calls[0].init.body).includes("typed+after+Save"),
