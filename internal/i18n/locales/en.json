@@ -538,6 +538,7 @@
   "calendar.legend.fertility": "Fertility window",
   "calendar.legend.predicted_period_in_fertility": "Predicted period inside the fertile window",
   "calendar.legend.ovulation_group": "Estimated ovulation (dash: no temperature shift yet)",
+  "calendar.legend.ovulation_estimate": "Estimated ovulation",
   "calendar.legend.logged_entry": "Logged entry (heart: sex)",
   "calendar.ovulation_icon": "Ovulation (estimate)",
   "calendar.ovulation_tentative": "Estimated ovulation. No temperature shift confirmed yet.",

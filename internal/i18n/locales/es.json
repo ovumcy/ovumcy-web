@@ -538,6 +538,7 @@
   "calendar.legend.fertility": "Ventana fértil",
   "calendar.legend.predicted_period_in_fertility": "Periodo previsto dentro de la ventana fértil",
   "calendar.legend.ovulation_group": "Ovulación estimada (guion: aún sin cambio térmico)",
+  "calendar.legend.ovulation_estimate": "Ovulación estimada",
   "calendar.legend.logged_entry": "Registro guardado (corazón: sexo)",
   "calendar.ovulation_icon": "Ovulación (estimación)",
   "calendar.ovulation_tentative": "Ovulación estimada. Aún no hay un cambio térmico confirmado.",

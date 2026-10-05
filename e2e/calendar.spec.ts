@@ -233,7 +233,9 @@ test.describe('Calendar page', () => {
     const ovulationDot = legend.locator('.calendar-ovulation-dot');
     const tentativeOvulation = legend.locator('.calendar-ovulation-dash');
     await expect(ovulationDot).toHaveCount(1);
-    await expect(tentativeOvulation).toHaveCount(1);
+    // A fresh owner does not track temperature, and the dash only ever marks a
+    // projection awaiting a temperature shift, so the legend must not draw it.
+    await expect(tentativeOvulation).toHaveCount(0);
 
     const styles = await ovulationDot.evaluate((node) => {
       const computed = window.getComputedStyle(node);

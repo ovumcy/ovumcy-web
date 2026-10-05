@@ -5,11 +5,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"golang.org/x/net/html"
 )
 
 // TestCalendarRendersOvulationTagWithoutFertileOverride pins the ovulation
@@ -72,6 +74,95 @@ func TestCalendarRendersOvulationTagWithoutFertileOverride(t *testing.T) {
 	projectedDayMarkup := extractCalendarDayMarkup(t, projectedRendered, projectedOvulation.Format("2006-01-02"))
 	if !regexp.MustCompile(`calendar-ovulation-dot`).MatchString(projectedDayMarkup) {
 		t.Fatalf("expected projected ovulation dot on %s", projectedOvulation.Format("2006-01-02"))
+	}
+}
+
+// TestCalendarLegendPromisesTheOvulationDashOnlyToOwnersWhoTrackTemperature pins
+// the legend against the grid: the dash marks a projection no temperature shift
+// has confirmed yet, and only an owner with BBT tracking on can ever see one. An
+// owner without it gets the solid dot alone, so the legend must neither draw the
+// dash swatch nor word a "no temperature shift yet" promise for them.
+func TestCalendarLegendPromisesTheOvulationDashOnlyToOwnersWhoTrackTemperature(t *testing.T) {
+	cases := []struct {
+		name     string
+		trackBBT bool
+	}{
+		{name: "track_bbt off", trackBBT: false},
+		{name: "track_bbt on", trackBBT: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			app, database := newOnboardingTestApp(t)
+			user := createOnboardingTestUser(t, database, "calendar-legend-dash@example.com", "StrongPass1", true)
+			periodStart := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -4)
+
+			if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
+				"cycle_length":      28,
+				"period_length":     5,
+				"last_period_start": periodStart,
+				"track_bbt":         tc.trackBBT,
+			}).Error; err != nil {
+				t.Fatalf("update user cycle settings: %v", err)
+			}
+			// One completed cycle clears the first-cycle floor, so the running
+			// cycle's ovulation is projected (see the fixture above).
+			for _, cycleStart := range []time.Time{periodStart.AddDate(0, 0, -28), periodStart} {
+				for offset := range 5 {
+					if err := database.Create(&models.DailyLog{
+						UserID:   user.ID,
+						Date:     cycleStart.AddDate(0, 0, offset),
+						IsPeriod: true,
+						Flow:     models.FlowMedium,
+					}).Error; err != nil {
+						t.Fatalf("create period log: %v", err)
+					}
+				}
+			}
+
+			authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+			ovulation := periodStart.AddDate(0, 0, 13)
+			rendered := renderCalendarMonthHTML(t, app, authCookie, ovulation.Format("2006-01"))
+
+			document := mustParseHTMLDocument(t, rendered)
+			legend := htmlFindElement(document, htmlNodeHasAttr("data-calendar-legend"))
+			if legend == nil {
+				t.Fatalf("expected the calendar legend")
+			}
+			legendDots := htmlFindElements(legend, func(node *html.Node) bool { return htmlHasClass(node, "calendar-ovulation-dot") })
+			if len(legendDots) != 1 {
+				t.Fatalf("expected exactly one ovulation swatch in the legend, got %d", len(legendDots))
+			}
+			legendDashes := htmlFindElements(legend, func(node *html.Node) bool { return htmlHasClass(node, "calendar-ovulation-dash") })
+			legendText := htmlNodeText(legend)
+
+			// The cell is the legend's counterpart: a BBT owner whose shift is
+			// still unconfirmed gets the dash, everyone else the solid dot.
+			dayMarkup := extractCalendarDayMarkup(t, rendered, ovulation.Format("2006-01-02"))
+			hasDot := strings.Contains(dayMarkup, "calendar-ovulation-dot")
+			hasDash := strings.Contains(dayMarkup, "calendar-ovulation-dash")
+			if hasDot == tc.trackBBT || hasDash != tc.trackBBT {
+				t.Fatalf("expected dot=%t dash=%t on the projected day, got %q", !tc.trackBBT, tc.trackBBT, dayMarkup)
+			}
+
+			if tc.trackBBT {
+				if len(legendDashes) != 1 {
+					t.Fatalf("expected the dash swatch in the legend of a BBT owner, got %d", len(legendDashes))
+				}
+				if !strings.Contains(legendText, "no temperature shift yet") {
+					t.Fatalf("expected the temperature wording in the legend of a BBT owner, got %q", legendText)
+				}
+				return
+			}
+			if len(legendDashes) != 0 {
+				t.Fatalf("did not expect a dash swatch in the legend of an owner without BBT tracking, got %d", len(legendDashes))
+			}
+			if strings.Contains(strings.ToLower(legendText), "temperature") {
+				t.Fatalf("did not expect temperature wording in the legend of an owner without BBT tracking, got %q", legendText)
+			}
+			if !strings.Contains(legendText, "Estimated ovulation") {
+				t.Fatalf("expected the plain ovulation entry in the legend, got %q", legendText)
+			}
+		})
 	}
 }
 
