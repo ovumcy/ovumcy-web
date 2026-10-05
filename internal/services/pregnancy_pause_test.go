@@ -52,12 +52,12 @@ func TestResolvePregnancyPauseLiftedByLaterCycleStart(t *testing.T) {
 	}
 }
 
-// TestResolvePregnancyPauseSameDayCycleStartResumes pins the boundary the pause
-// copy promises: "log a new period to resume" must work on the day of the
-// positive test too. The same-row case is the one the product reaches (save a
-// positive, then mark the cycle start on that day); a start logged one day
-// BEFORE the test is an earlier cycle and leaves the pause on.
-func TestResolvePregnancyPauseSameDayCycleStartResumes(t *testing.T) {
+// TestResolvePregnancyPauseSameDayCycleStartKeepsThePause pins the tie rule: no
+// intra-day order is stored, and a bleed on the day of an early positive can be
+// implantation spotting, so a positive result is never swallowed by a start on
+// its own day. Only a start on a LATER calendar day resumes tracking; the pause
+// copy names exactly that (and removing the result).
+func TestResolvePregnancyPauseSameDayCycleStartKeepsThePause(t *testing.T) {
 	positive := ppDay(2026, time.October, 5)
 	tests := []struct {
 		name      string
@@ -69,7 +69,7 @@ func TestResolvePregnancyPauseSameDayCycleStartResumes(t *testing.T) {
 			logs: []models.DailyLog{
 				{Date: positive, IsPeriod: true, CycleStart: true, PregnancyTest: models.PregnancyTestPositive},
 			},
-			wantPause: false,
+			wantPause: true,
 		},
 		{
 			name: "start and positive on separate rows of the same day",
@@ -77,7 +77,7 @@ func TestResolvePregnancyPauseSameDayCycleStartResumes(t *testing.T) {
 				{Date: positive, PregnancyTest: models.PregnancyTestPositive},
 				{Date: positive, IsPeriod: true, CycleStart: true},
 			},
-			wantPause: false,
+			wantPause: true,
 		},
 		{
 			name: "start the day before the positive test",
@@ -86,6 +86,14 @@ func TestResolvePregnancyPauseSameDayCycleStartResumes(t *testing.T) {
 				{Date: positive, PregnancyTest: models.PregnancyTestPositive},
 			},
 			wantPause: true,
+		},
+		{
+			name: "start the day after the positive test",
+			logs: []models.DailyLog{
+				{Date: positive, PregnancyTest: models.PregnancyTestPositive},
+				{Date: positive.AddDate(0, 0, 1), IsPeriod: true, CycleStart: true},
+			},
+			wantPause: false,
 		},
 	}
 	for _, testCase := range tests {
@@ -266,16 +274,16 @@ func TestBuildCycleStatsFromLogsResolvesThePauseOnOneTodayBoundedTimeline(t *tes
 			}
 		}
 
-		// A start on the test day itself is today's resumption: it is inside the
-		// today bound and lifts the pause on every surface alike.
+		// A start on the test day itself loses the tie on every surface alike: the
+		// positive result is never swallowed by a same-day start.
 		sameDay := []models.DailyLog{
 			{Date: positive.AddDate(0, 0, -26), IsPeriod: true, CycleStart: true},
 			{Date: positive, IsPeriod: true, CycleStart: true, PregnancyTest: models.PregnancyTestPositive},
 		}
 		for surface, logs := range pauseParitySurfaceLogs(sameDay, today, location) {
 			stats := BuildCycleStatsFromLogs(user, logs, now, location)
-			if stats.PregnancyPaused {
-				t.Errorf("%s / %s: a cycle start on the positive test's day must lift the pause", zone.name, surface)
+			if !stats.PregnancyPaused {
+				t.Errorf("%s / %s: a cycle start on the positive test's day lifted the pause", zone.name, surface)
 			}
 		}
 

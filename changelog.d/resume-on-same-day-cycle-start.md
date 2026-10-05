@@ -1,7 +1,7 @@
 ### Fixed
 
-- **A cycle start logged on the day of a positive pregnancy test now resumes tracking.** The pause
-  notice tells the owner to log a new period to resume, but a start marked on the test day itself
-  was compared strictly after the test and left predictions paused on every surface. The start now
-  lifts the pause when it falls on or after the test day (and not after the owner's today, as
-  before); a start the day before the test still leaves it paused.
+- **The pregnancy-pause notice now says what actually resumes predictions.** It told the owner to
+  "log a new period", but a period started on the day of the positive test does not lift the pause:
+  the positive result wins a same-day tie, since the day carries no order and a bleed on the day of
+  an early positive can be implantation spotting. The notice, in every language, now names the two
+  things that do resume tracking: a new period starting after the test day, or removing the result.
