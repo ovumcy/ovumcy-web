@@ -3780,6 +3780,49 @@
     window.showToast(notice, "error");
   }
 
+  // A day save answers with the server's own sentence about the day: "Saved.",
+  // the self-care or fertile-window line, or — after a positive pregnancy test
+  // — the prediction pause with its red-flag guidance. The htmx path swaps that
+  // fragment into the status region; the autosave runs on fetch, so it reads
+  // the body itself and shows the sentence in the same region, the way the
+  // calendar editor's swap does. Only the TEXT is adopted: the fragment is
+  // parsed, never assigned as markup, and the node is rebuilt by the shared
+  // dismissible-status helper, so markup in a response renders as characters.
+  // The sentence is the server's; nothing here composes copy.
+  function parseServerStatusSuccess(responseText) {
+    var doc;
+    var node;
+    if (!responseText || responseText.indexOf("status-ok") === -1 || typeof DOMParser !== "function") {
+      return "";
+    }
+    doc = new DOMParser().parseFromString(responseText, "text/html");
+    node = doc.querySelector(".status-ok .toast-message") || doc.querySelector(".status-ok");
+    return node ? String(node.textContent || "").trim() : "";
+  }
+
+  function renderDashboardSaveFeedback(form, responseText) {
+    var target = form && form.querySelector ? form.querySelector(".save-status") : null;
+    var message = parseServerStatusSuccess(String(responseText || ""));
+    var node;
+    if (!target || !message) {
+      return;
+    }
+    node = document.createElement("div");
+    node.className = "status-ok";
+    node.textContent = message;
+    target.replaceChildren(node);
+    scheduleClearSuccessStatus(target);
+  }
+
+  function readDashboardSaveFeedback(response) {
+    if (!response || typeof response.text !== "function") {
+      return Promise.resolve("");
+    }
+    return response.text().catch(function () {
+      return "";
+    });
+  }
+
   function buildDashboardAutosaveBody(form) {
     return new URLSearchParams(new FormData(form));
   }
@@ -4217,7 +4260,10 @@
       if (previousState && dashboardStateValue(sentState, "pregnancy_test") !== dashboardStateValue(previousState, "pregnancy_test")) {
         refreshDashboardStatusHeader();
       }
-      return true;
+      return readDashboardSaveFeedback(response).then(function (text) {
+        renderDashboardSaveFeedback(form, text);
+        return true;
+      });
     }).catch(function () {
       failDashboardAutosave(form, "");
       return false;
