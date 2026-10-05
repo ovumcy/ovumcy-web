@@ -258,6 +258,13 @@ func TestNoJSDayFormValidationRefusalIsAPageWithStatus422(t *testing.T) {
 			form := renderNoJSForm(t, ctx.app, c.page(iso), authCookieMap(t, ctx.authCookie), c.match)
 
 			response := form.submit(t, ctx.app, c.typed)
+			// The handler refused a signed-in request, past AuthRequired: the
+			// account is in the context here, and still none of it renders.
+			body := mustReadBodyString(t, response.Body)
+			if strings.Contains(body, ctx.user.Email) || strings.Contains(body, `action="/logout"`) {
+				t.Fatalf("422 refusal page renders the signed-in account: %s", body)
+			}
+			response.Body = io.NopCloser(strings.NewReader(body))
 			assertRefusalPageCarrying(t, response, http.StatusUnprocessableEntity, invalidEntry, c.back(iso))
 			if periodLoggedOn(t, ctx, "") {
 				t.Fatal("the refused save stored an entry")
