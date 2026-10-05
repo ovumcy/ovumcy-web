@@ -138,6 +138,24 @@ func TestIsAutoFilledPeriodCandidate(t *testing.T) {
 			want:       true,
 		},
 		{
+			name:       "propagated flow spelled with case and padding",
+			entry:      models.DailyLog{IsPeriod: true, Flow: models.FlowLight},
+			propagated: " Light ",
+			want:       true,
+		},
+		{
+			name:       "stored flow spelled with case and padding",
+			entry:      models.DailyLog{IsPeriod: true, Flow: " MEDIUM "},
+			propagated: models.FlowMedium,
+			want:       true,
+		},
+		{
+			name:       "padded propagated flow still differs from another flow",
+			entry:      models.DailyLog{IsPeriod: true, Flow: models.FlowHeavy},
+			propagated: " Light ",
+			want:       false,
+		},
+		{
 			name:  "non-period day",
 			entry: models.DailyLog{IsPeriod: false},
 			want:  false,

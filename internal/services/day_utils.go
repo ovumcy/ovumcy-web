@@ -264,6 +264,14 @@ func DayHasData(entry models.DailyLog) bool {
 	return strings.TrimSpace(entry.Flow) != "" && entry.Flow != models.FlowNone
 }
 
+// comparableDayFlow folds a flow to the spelling writes store (trimmed,
+// lower-case) without mapping an unknown value to none, so a stray value in a
+// row still reads as a signal. Both sides of the propagated-flow comparison go
+// through it, which keeps that comparison symmetric.
+func comparableDayFlow(flow string) string {
+	return strings.ToLower(strings.TrimSpace(flow))
+}
+
 // IsAutoFilledPeriodCandidate reports whether a day log carries no manual
 // signal besides the IsPeriod flag, so toggling the anchor day off can safely
 // clear it. Days touched manually (flow, mood, intimacy, BBT, mucus, cycle
@@ -291,7 +299,7 @@ func IsAutoFilledPeriodCandidate(entry models.DailyLog, propagatedFlow string) b
 	if !entry.IsPeriod || entry.CycleStart || entry.IsUncertain {
 		return false
 	}
-	if flow := strings.TrimSpace(entry.Flow); flow != "" && flow != models.FlowNone && flow != propagatedFlow {
+	if flow := comparableDayFlow(entry.Flow); flow != "" && flow != models.FlowNone && flow != comparableDayFlow(propagatedFlow) {
 		return false
 	}
 	if entry.Mood >= MinDayMood && entry.Mood <= MaxDayMood {

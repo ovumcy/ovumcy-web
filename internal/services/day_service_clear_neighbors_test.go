@@ -165,6 +165,40 @@ func TestUncheckingAutoFilledAnchorStillClearsEveryPropagatedFlowDay(t *testing.
 	}
 }
 
+// The fill's provenance is not stored, so once the anchor's flow differs from
+// what the fill wrote the walk cannot tell the fill days from hand-logged ones
+// and errs toward keeping data: no hand-logged flow is ever lost.
+func TestUncheckingAnchorWhoseFlowChangedAfterTheFillKeepsTheFillDays(t *testing.T) {
+	logs := newDayLogRepositoryStub()
+	service := NewDayService(logs, &dayUserRepositoryStub{settings: models.User{PeriodLength: 5, AutoPeriodFill: true}})
+	ctx := context.Background()
+	anchor := time.Date(2026, time.September, 7, 0, 0, 0, 0, time.UTC)
+	now := anchor.AddDate(0, 0, 14)
+
+	for _, step := range []struct {
+		name  string
+		input DayEntryInput
+	}{
+		{name: "log the anchor light with auto-fill on", input: DayEntryInput{IsPeriod: true, Flow: models.FlowLight}},
+		{name: "edit the anchor to heavy", input: DayEntryInput{IsPeriod: true, Flow: models.FlowHeavy}},
+		{name: "uncheck the anchor", input: DayEntryInput{IsPeriod: false, Flow: models.FlowNone}},
+	} {
+		if _, err := service.UpsertDayEntryWithAutoFillAt(ctx, 10, anchor, step.input, now, time.UTC); err != nil {
+			t.Fatalf("%s: %v", step.name, err)
+		}
+	}
+
+	if logs.entries["2026-09-07"].IsPeriod {
+		t.Fatal("the unchecked anchor must be off")
+	}
+	for _, key := range []string{"2026-09-08", "2026-09-09", "2026-09-10", "2026-09-11"} {
+		kept := logs.entries[key]
+		if !kept.IsPeriod || kept.Flow != models.FlowLight {
+			t.Fatalf("%s carries the fill's light flow, which no longer matches the anchor's, and must be kept, got IsPeriod=%t Flow=%q", key, kept.IsPeriod, kept.Flow)
+		}
+	}
+}
+
 func TestShouldClearAutoFilledNeighbors_DependsOnPreviousDay(t *testing.T) {
 	logs := newDayLogRepositoryStub()
 	service := NewDayService(logs, &dayUserRepositoryStub{})
