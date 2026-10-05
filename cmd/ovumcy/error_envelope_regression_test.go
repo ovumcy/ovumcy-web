@@ -239,8 +239,8 @@ var plainAuthFormPageProbeRoutes = []struct {
 
 // TestCSRFDenialOnPlainAuthFormPagesAnswersTheFragment is the per-route sweep
 // WEB-84 asks for: a CSRF-refused plain browser POST to any of these routes
-// must answer the shared page-form status fragment (the /lang shape, #862),
-// never the raw JSON envelope — while a JSON or HTMX caller on the SAME route
+// must answer the page-form refusal page (the shared layout around the status,
+// the /lang shape, #862, WEB-264), never the raw JSON envelope — while a JSON or HTMX caller on the SAME route
 // keeps the mapped envelope / HTMX fragment unchanged.
 func TestCSRFDenialOnPlainAuthFormPagesAnswersTheFragment(t *testing.T) {
 	app := newCSRFGuardTestApp(t)
@@ -264,9 +264,10 @@ func TestCSRFDenialOnPlainAuthFormPagesAnswersTheFragment(t *testing.T) {
 					!strings.Contains(string(body), `data-flash-key="common.error.forbidden"`) {
 					t.Fatalf("%s: expected the shared page-form status fragment, got %q (%q)", route.name, contentType, body)
 				}
-				if want := `<a href="` + route.back + `">`; !strings.Contains(string(body), want) {
-					t.Fatalf("%s: expected the fragment's back link to point at %q (the form's own page), got %q", route.name, want, body)
-				}
+				// The whole refusal page (WEB-264), its one link back to the
+				// form's own page, and no cookie beyond the CSRF middleware's own.
+				requireNativeFormRefusalPage(t, route.name, string(body), "en", "common.error.forbidden", route.back)
+				requireOnlyCSRFCookie(t, route.name, response)
 			})
 
 			t.Run("json client", func(t *testing.T) {
@@ -344,8 +345,8 @@ func TestUnmatchedRouteAnswersThroughTheEnvelope(t *testing.T) {
 // composition-root wiring, CSRF included), for all three carriers: a JSON
 // caller keeps the mapped envelope, while a plain HTML navigation — this
 // route's primary client, with no HTMX and no JavaScript behind it — gets the
-// same localized status fragment an HTMX request already got, matching the
-// route's 429 and 500. WEB-71.
+// localized status an HTMX request already got, as a page in the shared layout
+// (WEB-264), matching the route's 429 and 500. WEB-71.
 func TestLanguageSwitchRejectionAnswersThroughTheEnvelope(t *testing.T) {
 	app := newCSRFGuardTestApp(t)
 	token, cookie := issueCSRFFormCredentials(t, app)
@@ -394,8 +395,9 @@ func TestLanguageSwitchRejectionAnswersThroughTheEnvelope(t *testing.T) {
 					!strings.Contains(string(body), `data-flash-key="common.error.bad_request"`) {
 					t.Fatalf("%s: answered 400 as %q (%q), want the text/html status fragment carrying the bad_request key", client.name, contentType, body)
 				}
-				if client.headers["HX-Request"] == "" && !strings.Contains(string(body), `<a href="/calendar">`) {
-					t.Errorf("%s: the 400 page carries no link back to the form's next path: %q", client.name, body)
+				if client.headers["HX-Request"] == "" {
+					requireNativeFormRefusalPage(t, client.name, string(body), "en", "common.error.bad_request", "/calendar")
+					requireOnlyCSRFCookie(t, client.name, response)
 				}
 				return
 			}

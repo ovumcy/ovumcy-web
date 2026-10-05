@@ -54,10 +54,53 @@ func requireLanguageSwitchPage(t *testing.T, where string, answer languageSwitch
 	}
 	if !strings.HasPrefix(answer.contentType, fiber.MIMETextHTML) || json.Valid([]byte(answer.body)) ||
 		!strings.Contains(answer.body, `class="status-error"`) {
-		t.Fatalf("%s: answered %d as %q (%q), want the text/html status fragment", where, answer.status, answer.contentType, answer.body)
+		t.Fatalf("%s: answered %d as %q (%q), want the text/html refusal page", where, answer.status, answer.contentType, answer.body)
 	}
-	if want := `<a href="` + backPath + `">`; !strings.Contains(answer.body, want) {
-		t.Errorf("%s: the page carries no %s link back to the form: %q", where, want, answer.body)
+	requireNativeFormRefusalPage(t, where, answer.body, "en", "", backPath)
+}
+
+// requireOnlyCSRFCookie fails when a refusal page set any cookie other than the
+// CSRF middleware's own: rendering the page adds none, the flash included.
+func requireOnlyCSRFCookie(t *testing.T, where string, response *http.Response) {
+	t.Helper()
+	for _, cookie := range response.Cookies() {
+		if cookie.Name != "ovumcy_csrf" {
+			t.Errorf("%s: the refusal page set the cookie %q; only the CSRF middleware's own may ride on it", where, cookie.Name)
+		}
+	}
+}
+
+// requireNativeFormRefusalPage reads a refusal of a form posted without
+// JavaScript the way a browser does (WEB-264): a whole page in the shared
+// layout, <html lang> naming the request's language, the layout's main
+// landmark, and the refusal's own section carrying the stable key (when key is
+// not empty) and exactly one link — back to the form, written as the page
+// escapes it. The layout's signed-out header has links of its own, /login
+// among them, so the back link is looked for inside the section only.
+func requireNativeFormRefusalPage(t *testing.T, where string, body string, language string, key string, backHref string) {
+	t.Helper()
+	if want := `<html lang="` + language + `"`; !strings.Contains(body, want) {
+		t.Errorf("%s: the refusal is not a page in the shared layout speaking %q (no %s): %q", where, language, want, body)
+		return
+	}
+	if !strings.Contains(body, `id="main-content"`) {
+		t.Errorf("%s: the refusal page lacks the layout's main landmark: %q", where, body)
+		return
+	}
+	_, section, found := strings.Cut(body, "data-page-form-refusal")
+	section, _, closed := strings.Cut(section, "</section>")
+	if !found || !closed {
+		t.Errorf("%s: the refusal page lacks its refusal section: %q", where, body)
+		return
+	}
+	if key != "" && !strings.Contains(section, `data-flash-key="`+key+`"`) {
+		t.Errorf("%s: the refusal section carries no stable key %q: %q", where, key, section)
+	}
+	if got := strings.Count(section, "href="); got != 1 {
+		t.Errorf("%s: the refusal section has %d links, want exactly the one back link: %q", where, got, section)
+	}
+	if want := `<a href="` + backHref + `"`; !strings.Contains(section, want) {
+		t.Errorf("%s: the refusal section carries no %s link back to the form: %q", where, want, section)
 	}
 }
 
@@ -98,10 +141,10 @@ func TestLanguageSwitchTransportRefusalsAnswerThePage(t *testing.T) {
 	requireLanguageSwitchPage(t, "off-site next", sendLanguageSwitchRefusal(t, faulty, http.MethodPost, offsite, nil), http.StatusInternalServerError, "/")
 
 	// The redirect sanitizer admits a same-origin path carrying `"` and `<`, so
-	// the attribute escaping is what keeps a crafted next inside the href.
+	// the page's URL escaping is what keeps a crafted next inside the href.
 	breakout := url.Values{"lang": {"ru"}, "next": {`/"><x>`}}
 	answer := sendLanguageSwitchRefusal(t, faulty, http.MethodPost, breakout, nil)
-	requireLanguageSwitchPage(t, "markup in next", answer, http.StatusInternalServerError, "/&#34;&gt;&lt;x&gt;")
+	requireLanguageSwitchPage(t, "markup in next", answer, http.StatusInternalServerError, "/%22%3e%3cx%3e")
 	if strings.Contains(answer.body, "<x>") {
 		t.Fatalf("markup in next: the crafted path reached the page unescaped: %q", answer.body)
 	}

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"html/template"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -48,6 +49,41 @@ func TestPlainAuthFormPageBackPathFallsBackToRootForAnUnmappedPath(t *testing.T)
 	}
 }
 
+// newRefusalPageTemplates parses the real refusal page into the shared layout,
+// for a test handler that renders it rather than the bare-fragment fallback
+// sendPageFormRefusalPage takes when the page is missing.
+func newRefusalPageTemplates(t *testing.T) map[string]*template.Template {
+	t.Helper()
+	parsed, err := parsePageTemplates(newTemplateFuncMap(), []string{pageFormRefusalTemplate})
+	if err != nil {
+		t.Fatalf("parse the refusal page: %v", err)
+	}
+	return parsed
+}
+
+// requireAuthFormRefusalPage reads a plain auth-form refusal the way a browser
+// does (WEB-264): a whole page in the shared layout with <html lang="en">, the
+// layout's main landmark, and the refusal's own section holding the shared
+// status markup and exactly one link, back to the form. The signed-out header
+// links to /login itself, so the back link is looked for inside the section.
+func requireAuthFormRefusalPage(t *testing.T, where string, body string, back string) {
+	t.Helper()
+	if !strings.Contains(body, `<html lang="en"`) || !strings.Contains(body, `id="main-content"`) {
+		t.Fatalf("%s: expected the refusal page in the shared layout, got %q", where, body)
+	}
+	_, section, found := strings.Cut(body, "data-page-form-refusal")
+	section, _, closed := strings.Cut(section, "</section>")
+	if !found || !closed || !strings.Contains(section, `class="status-error"`) {
+		t.Fatalf("%s: the refusal page lacks its status section: %q", where, body)
+	}
+	if got := strings.Count(section, "href="); got != 1 {
+		t.Fatalf("%s: the refusal section has %d links, want exactly the one back link: %q", where, got, section)
+	}
+	if want := `<a href="` + back + `"`; !strings.Contains(section, want) {
+		t.Fatalf("%s: expected the fixed back link %s, got %q", where, want, section)
+	}
+}
+
 // TestEveryTransportStatusOnAPlainAuthFormPageAnswersTheFragment closes the
 // coverage gap the WEB-84 fix round flagged: apiError's
 // isPlainAuthFormPageNavigation branch is checked before the spec's status is
@@ -57,7 +93,8 @@ func TestPlainAuthFormPageBackPathFallsBackToRootForAnUnmappedPath(t *testing.T)
 // reach apiError directly, the same as CSRF's 403 does through
 // RespondTransportError, and are exercised here through RespondTransportError
 // for the same reason CSRF is: both are raised before any handler builds a
-// domain spec.
+// domain spec. The answer is the refusal page in the shared layout (WEB-264),
+// so the handler here carries the real templates.
 //
 // 429 is included for the same reason, but note what it does NOT cover: the
 // app's own login/registration/recovery rate limiters answer through
@@ -76,10 +113,10 @@ func TestEveryTransportStatusOnAPlainAuthFormPageAnswersTheFragment(t *testing.T
 		fiber.StatusTooManyRequests,
 		fiber.StatusServiceUnavailable,
 	}
+	handler := &Handler{i18n: newRateLimitResponderTestI18n(t), templates: newRefusalPageTemplates(t)}
 
 	for _, status := range statuses {
 		t.Run(http.StatusText(status), func(t *testing.T) {
-			handler := &Handler{i18n: newRateLimitResponderTestI18n(t)}
 			app := fiber.New()
 			app.Post("/api/v1/sessions", func(c fiber.Ctx) error {
 				return handler.RespondTransportError(c, status)
@@ -104,14 +141,15 @@ func TestEveryTransportStatusOnAPlainAuthFormPageAnswersTheFragment(t *testing.T
 			}
 			body := string(bodyBytes)
 			if strings.HasPrefix(strings.TrimSpace(body), "{") {
-				t.Fatalf("status %d: expected the page-form fragment, got the raw JSON envelope: %q", status, body)
+				t.Fatalf("status %d: expected the page-form refusal page, got the raw JSON envelope: %q", status, body)
 			}
 			contentType := response.Header.Get(fiber.HeaderContentType)
-			if !strings.HasPrefix(contentType, fiber.MIMETextHTML) || !strings.Contains(body, `class="status-error"`) {
-				t.Fatalf("status %d: expected the shared page-form status fragment, got %q (%q)", status, contentType, body)
+			if !strings.HasPrefix(contentType, fiber.MIMETextHTML) {
+				t.Fatalf("status %d: expected text/html, got %q (%q)", status, contentType, body)
 			}
-			if want := `<a href="/login">`; !strings.Contains(body, want) {
-				t.Fatalf("status %d: expected the fixed back link to /login, got %q", status, body)
+			requireAuthFormRefusalPage(t, http.StatusText(status), body, "/login")
+			if cookies := response.Header.Values(fiber.HeaderSetCookie); len(cookies) != 0 {
+				t.Fatalf("status %d: the refusal page set cookies %v", status, cookies)
 			}
 		})
 	}
@@ -129,12 +167,12 @@ func TestEveryTransportStatusOnAPlainAuthFormPageAnswersTheFragment(t *testing.T
 // handlers_auth_session_login.go and handlers_auth_2fa.go answer when
 // setAuthCookie/setTOTPPendingCookie fails.
 //
-// A plain browser Accept must get the page-form fragment with its fixed back
-// link, never the raw JSON envelope; a caller whose Accept names
-// application/json must keep the JSON envelope unchanged (WEB-84 leaves JSON
-// clients untouched even for this route's own internal errors).
+// A plain browser Accept must get the refusal page with its fixed back link,
+// never the raw JSON envelope; a caller whose Accept names application/json
+// must keep the JSON envelope unchanged (WEB-84 leaves JSON clients untouched
+// even for this route's own internal errors).
 func TestHandlerLayer500OnAPlainAuthFormPageAnswersTheFragment(t *testing.T) {
-	handler := &Handler{i18n: newRateLimitResponderTestI18n(t)}
+	handler := &Handler{i18n: newRateLimitResponderTestI18n(t), templates: newRefusalPageTemplates(t)}
 	app := fiber.New()
 	app.Post("/api/v1/sessions", func(c fiber.Ctx) error {
 		return handler.respondMappedError(c, authSessionCreateErrorSpec())
@@ -163,12 +201,10 @@ func TestHandlerLayer500OnAPlainAuthFormPageAnswersTheFragment(t *testing.T) {
 			t.Fatalf("handler-layer 500: painted the raw JSON envelope into the browser, got %q", body)
 		}
 		contentType := response.Header.Get(fiber.HeaderContentType)
-		if !strings.HasPrefix(contentType, fiber.MIMETextHTML) || !strings.Contains(body, `class="status-error"`) {
-			t.Fatalf("handler-layer 500: expected the shared page-form status fragment, got %q (%q)", contentType, body)
+		if !strings.HasPrefix(contentType, fiber.MIMETextHTML) {
+			t.Fatalf("handler-layer 500: expected text/html, got %q (%q)", contentType, body)
 		}
-		if want := `<a href="/login">`; !strings.Contains(body, want) {
-			t.Fatalf("handler-layer 500: expected the fixed back link to /login, got %q", body)
-		}
+		requireAuthFormRefusalPage(t, "handler-layer 500", body, "/login")
 	})
 
 	t.Run("json client", func(t *testing.T) {

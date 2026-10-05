@@ -116,15 +116,15 @@ func (handler *Handler) respondRateLimitedFormError(c fiber.Ctx, spec APIErrorSp
 // HTML arm differs, and it has to. POST /lang is the application's one public
 // form with no HTMX and no JavaScript behind it, so a refused language switch
 // is a full-page navigation: answering it with the JSON envelope paints the raw
-// envelope into the browser window. It renders the same localized status
-// fragment an HTMX client receives instead — the copy the owner can read, with
-// the stable key beside it, through the shared respondPageFormStatusFragment
-// that the same route's account-write failure also answers with.
+// envelope into the browser window. It renders the refusal page instead — the
+// copy the owner can read, with the stable key beside it, in the shared layout —
+// through the shared respondLanguageSwitchRefusalPage that the same route's
+// account-write failure also answers with.
 func (handler *Handler) respondRateLimitedPageForm(c fiber.Ctx, spec APIErrorSpec) error {
 	if responseFormat(c) != httpx.ResponseFormatHTML {
 		return handler.respondRateLimitedMappedError(c, spec)
 	}
-	return handler.respondPageFormStatusFragment(c, spec)
+	return handler.respondLanguageSwitchRefusalPage(c, spec)
 }
 
 func rateLimitedErrorEnvelope(c fiber.Ctx, spec APIErrorSpec) fiber.Map {

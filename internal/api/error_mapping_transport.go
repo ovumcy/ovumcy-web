@@ -52,7 +52,9 @@ import (
 // a refusal as a full page in the shared layout, with a link back to the form
 // (sendPageFormRefusalPage), except when the session is gone: then it is a 303
 // to /login with the sign-in notice in the flash, the way a page navigation
-// without a session already lands there.
+// without a session already lands there. The /lang and auth-form branches
+// above answer through that same page, each with its own back link and with
+// no redirect: neither is a signed-in form, so neither has a session to lose.
 //
 // Both markup arms resolve the request's locale catalogue via
 // ensureRequestMessages before rendering: a mapped rejection can be produced
@@ -66,11 +68,10 @@ import (
 // localized text, so it does not need the catalogue at all.
 func (handler *Handler) apiError(c fiber.Ctx, spec APIErrorSpec) error {
 	if isLanguageSwitchPageNavigation(c) {
-		handler.ensureRequestMessages(c)
-		return sendLanguageSwitchStatusFragment(c, spec)
+		return handler.respondLanguageSwitchRefusalPage(c, spec)
 	}
 	if isPlainAuthFormPageNavigation(c) {
-		return handler.respondPlainAuthFormPageStatusFragment(c, spec)
+		return handler.respondPlainAuthFormPageRefusal(c, spec)
 	}
 	if back, ok := plainPageFormBackPath(c); ok {
 		// plainPageFormBackPath admits only a browser form, so !acceptsJSON
@@ -140,43 +141,43 @@ func localizedStatusError(c fiber.Ctx, spec APIErrorSpec) (message string, flash
 	return rendered, flashKey
 }
 
-// respondPageFormStatusFragment answers one mapped spec as the shared localized
-// status fragment, `text/html`. It is the arm for a client that is a browser
+// respondLanguageSwitchRefusalPage answers one mapped spec on POST /lang as the
+// page-form refusal page (sendPageFormRefusalPage): the shared layout with
+// <html lang>, the localized message, its stable key and a link back to the
+// form's sanitized `next` path. It is the arm for a client that is a browser
 // performing a full-page form navigation rather than an API caller: the JSON
-// envelope would be painted into the browser window as text. It answers through
-// sendHTMLFragment, which labels the markup `text/html`; a bare SendString would
-// leave it `text/plain` and the browser would show the tags. The catalogue is resolved
-// here because a refusal can be produced before LanguageMiddleware has run (the
-// edge limiters sit ahead of it), and without it the fragment renders its own
-// machine key as the visible message.
+// envelope would be painted into the browser window as text. The catalogue is
+// resolved here because a refusal can be produced before LanguageMiddleware has
+// run (the edge limiters sit ahead of it), and without it the page renders its
+// own machine key as the visible message and the default language as its lang.
 //
 // Status and stable key still come from the spec, so this changes the carrier
-// and nothing about the contract. Used by POST /lang (respondPageFormMappedError)
-// — apiError's plain-auth-form-page branch (WEB-84) does NOT share this
-// function: it has no `next` field to read a back link from, so it goes
-// through respondPlainAuthFormPageStatusFragment instead, which reads the
-// fixed, server-owned mapping in plainAuthFormPageBackPaths. Both ultimately
-// answer through the same sendStatusFragmentWithBackLink.
-func (handler *Handler) respondPageFormStatusFragment(c fiber.Ctx, spec APIErrorSpec) error {
+// and nothing about the contract; no cookie is added to whatever the refused
+// request already set. Used by every /lang refusal: apiError's language-switch
+// branch, the handler's own (respondPageFormMappedError) and the limiter's
+// (respondRateLimitedPageForm).
+func (handler *Handler) respondLanguageSwitchRefusalPage(c fiber.Ctx, spec APIErrorSpec) error {
 	handler.ensureRequestMessages(c)
-	return sendLanguageSwitchStatusFragment(c, spec)
+	return handler.sendPageFormRefusalPage(c, spec, languageSwitchBackPath(c))
 }
 
-// respondPlainAuthFormPageStatusFragment is respondPageFormStatusFragment's
-// counterpart for apiError's plain-auth-form-page branch (WEB-84). The other
-// arm reads its back link from the form's sanitized `next` field, which /lang
-// carries and these forms do not; here the back link is the fixed,
+// respondPlainAuthFormPageRefusal is respondLanguageSwitchRefusalPage's
+// counterpart for apiError's plain-auth-form-page branch (WEB-84): the same
+// page, rendered with no CurrentUser, so it shows nothing an account-agnostic
+// fragment did not — the message and key of the spec and one link back. The
+// other arm reads its back link from the form's sanitized `next` field, which
+// /lang carries and these forms do not; here the back link is the fixed,
 // server-owned mapping in plainAuthFormPageBackPaths, keyed by route, so a
 // refusal always returns to the actual page the submission came from rather
 // than falling back to "/" for want of a `next` field to read.
-func (handler *Handler) respondPlainAuthFormPageStatusFragment(c fiber.Ctx, spec APIErrorSpec) error {
+func (handler *Handler) respondPlainAuthFormPageRefusal(c fiber.Ctx, spec APIErrorSpec) error {
 	handler.ensureRequestMessages(c)
 	back := plainAuthFormPageBackPath(httpx.RoutingNormalizedPath(c.Path()))
-	return sendStatusFragmentWithBackLink(c, spec, back)
+	return handler.sendPageFormRefusalPage(c, spec, back)
 }
 
 // respondPageFormMappedError is the page-form counterpart of respondMappedError:
-// a plain HTML navigation gets the status fragment above, every other
+// a plain HTML navigation gets the refusal page above, every other
 // negotiation keeps the envelope every mapped rejection answers with. Used by
 // `POST /lang` — the one public form with no HTMX and no JavaScript behind it —
 // whose limiter refusal already answers in this shape.
@@ -184,7 +185,7 @@ func (handler *Handler) respondPageFormMappedError(c fiber.Ctx, spec APIErrorSpe
 	if responseFormat(c) != httpx.ResponseFormatHTML {
 		return handler.respondMappedError(c, spec)
 	}
-	return handler.respondPageFormStatusFragment(c, spec)
+	return handler.respondLanguageSwitchRefusalPage(c, spec)
 }
 
 // transportErrorSpecsByStatus maps every HTTP status the app can answer as an

@@ -38,7 +38,7 @@ type htmlArm int
 const (
 	htmlArmRedirect htmlArm = iota
 	htmlArmEnvelope
-	htmlArmFragment
+	htmlArmPage
 )
 
 // rateLimitSurface is one limiter registration in configureFiberMiddleware,
@@ -114,7 +114,7 @@ var rateLimitSurfaces = []rateLimitSurface{
 	},
 	{
 		// The only public form in the app with no HTMX and no JavaScript behind
-		// it, which is why its plain-HTML arm renders a fragment: a refused
+		// it, which is why its plain-HTML arm renders the refusal page: a refused
 		// language switch is a full-page navigation, and the envelope arm painted
 		// raw JSON into the browser window.
 		name:         "language switch",
@@ -122,7 +122,7 @@ var rateLimitSurfaces = []rateLimitSurface{
 		path:         api.LanguageSwitchPath,
 		key:          "too many requests",
 		detailTarget: "global",
-		html:         htmlArmFragment,
+		html:         htmlArmPage,
 	},
 	{
 		name:         "api catch-all",
@@ -373,7 +373,7 @@ func TestEveryRateLimiterAnswersABrowserWithoutRawJSON(t *testing.T) {
 				if strings.TrimSpace(response.Header.Get("Retry-After")) == "" {
 					t.Fatalf("%s browser refusal answered without a Retry-After header", surface.name)
 				}
-			case htmlArmFragment:
+			case htmlArmPage:
 				if response.StatusCode != http.StatusTooManyRequests {
 					t.Fatalf("%s browser refusal: status = %d, want 429", surface.name, response.StatusCode)
 				}
@@ -391,6 +391,11 @@ func TestEveryRateLimiterAnswersABrowserWithoutRawJSON(t *testing.T) {
 				if !strings.Contains(body, `data-flash-key="common.error.too_many_requests"`) {
 					t.Fatalf("%s browser refusal carries no stable flash key: %q", surface.name, body)
 				}
+				// The same refusal page every other /lang refusal answers (WEB-264):
+				// the shared layout, its lang, and the link back to `/`, which a
+				// form with no `next` field resolves to.
+				requireNativeFormRefusalPage(t, surface.name, body, "en", "common.error.too_many_requests", "/")
+				requireOnlyCSRFCookie(t, surface.name, response)
 			}
 		})
 	}
