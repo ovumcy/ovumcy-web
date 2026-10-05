@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/token"
 	"html/template"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -50,8 +51,16 @@ func englishCopy(t *testing.T, key string) string {
 
 // assertRefusalPageCarrying reads a refusal the way a browser does: the status, a
 // text/html body holding the localized message and exactly one link, the link
-// target, and no cookie other than the CSRF one the middleware owns.
+// target, and no cookie other than the CSRF one the middleware owns. The body is
+// a whole page in the shared layout (WEB-264), with <html lang> naming the
+// request's language — English for every caller of this helper; a request in
+// another language is TestNoJSPageFormRefusalSpeaksTheRequestLanguage's.
 func assertRefusalPageCarrying(t *testing.T, response *http.Response, status int, message string, back string) {
+	t.Helper()
+	assertRefusalPageIn(t, response, status, i18n.LangEN, message, back)
+}
+
+func assertRefusalPageIn(t *testing.T, response *http.Response, status int, language string, message string, back string) {
 	t.Helper()
 	defer func() { _ = response.Body.Close() }()
 
@@ -60,20 +69,66 @@ func assertRefusalPageCarrying(t *testing.T, response *http.Response, status int
 		t.Fatalf("Content-Type %q, want text/html", contentType)
 	}
 	body := mustReadBodyString(t, response.Body)
-	if !strings.Contains(body, template.HTMLEscapeString(message)) {
-		t.Fatalf("body lacks the localized message %q: %s", message, body)
+	if want := `<html lang="` + language + `"`; !strings.Contains(body, want) {
+		t.Fatalf("refusal is not a page in the shared layout speaking %q (no %s): %s", language, want, body)
 	}
-	if got := strings.Count(body, "href="); got != 1 {
-		t.Fatalf("body has %d links, want exactly the one back link: %s", got, body)
+	if !strings.Contains(body, `id="main-content"`) {
+		t.Fatalf("refusal page lacks the layout's main landmark: %s", body)
 	}
-	if want := `<a href="` + template.HTMLEscapeString(back) + `"`; !strings.Contains(body, want) {
-		t.Fatalf("body lacks the back link %s: %s", want, body)
+	_, refusal, found := strings.Cut(body, "data-page-form-refusal")
+	refusal, _, closed := strings.Cut(refusal, "</section>")
+	if !found || !closed {
+		t.Fatalf("refusal page lacks its content section: %s", body)
+	}
+	if !strings.Contains(refusal, template.HTMLEscapeString(message)) {
+		t.Fatalf("refusal lacks the localized message %q: %s", message, refusal)
+	}
+	if got := strings.Count(refusal, "href="); got != 1 {
+		t.Fatalf("refusal has %d links, want exactly the one back link: %s", got, refusal)
+	}
+	if want := `<a href="` + template.HTMLEscapeString(back) + `"`; !strings.Contains(refusal, want) {
+		t.Fatalf("refusal lacks the back link %s: %s", want, refusal)
 	}
 	for _, cookie := range response.Cookies() {
-		if cookie.Name == flashCookieName || cookie.Name == exemptFlashCookieName {
-			t.Fatalf("refusal page set the flash cookie %q", cookie.Name)
+		if cookie.Name != "ovumcy_csrf" {
+			t.Fatalf("refusal page set the cookie %q; only the CSRF middleware's own may ride on it", cookie.Name)
 		}
 	}
+}
+
+// TestNoJSPageFormRefusalSpeaksTheRequestLanguage submits a day form without its
+// CSRF token in Russian: the refusal page is the layout with <html lang="ru"> and
+// the Russian copy, no cookie at all, and a signed-in request still renders the
+// signed-out header — nothing of the account reaches the page.
+func TestNoJSPageFormRefusalSpeaksTheRequestLanguage(t *testing.T) {
+	t.Parallel()
+
+	ctx := newRefusalPageContext(t, "refusal-language@example.com")
+	_, iso := noJSDay()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/days/"+iso+"?source=calendar", strings.NewReader("_method=PUT&is_period=true"))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Accept", noJSBrowserAccept)
+	request.Header.Set("Accept-Language", "ru")
+	request.Header.Set("Cookie", ctx.authCookie+"; "+languageCookieName+"="+i18n.LangRU)
+	response := mustAppResponse(t, ctx.app, request)
+	if cookies := response.Header.Values("Set-Cookie"); len(cookies) != 0 {
+		t.Fatalf("CSRF refusal page set cookies %v", cookies)
+	}
+
+	manager, err := i18n.NewManager(i18n.LangEN)
+	if err != nil {
+		t.Fatalf("init i18n manager: %v", err)
+	}
+	forbidden := strings.TrimSpace(manager.Messages(i18n.LangRU)["common.error.forbidden"])
+	if forbidden == "" || forbidden == englishCopy(t, "common.error.forbidden") {
+		t.Fatalf("locale ru has no copy of its own for common.error.forbidden: %q", forbidden)
+	}
+	body := mustReadBodyString(t, response.Body)
+	if strings.Contains(body, ctx.user.Email) || strings.Contains(body, `action="/logout"`) {
+		t.Fatalf("refusal page renders the signed-in account: %s", body)
+	}
+	response.Body = io.NopCloser(strings.NewReader(body))
+	assertRefusalPageIn(t, response, http.StatusForbidden, i18n.LangRU, forbidden, calendarLanding(iso))
 }
 
 type dayFormRefusalCase struct {
