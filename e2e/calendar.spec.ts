@@ -677,11 +677,14 @@ test.describe('Calendar page', () => {
     await registerAndOnboardOnDate(page, 'calendar-anovulatory-dash', startISO);
 
     // The demotion acts on the PREDICTED ovulation day, and that projection is
-    // withheld until one cycle has been observed. Log this cycle's start and the
-    // previous one exactly 28 days before it — the length the account settings
-    // already carry — so the observed cycle changes nothing about where the
-    // predicted ovulation lands, and the latest logged start is still today-13.
-    await markCycleStart(page, shiftISODate(startISO, -28));
+    // withheld until three cycles have been observed. Log this cycle's start and
+    // the three before it, each exactly 28 days from the next — the length the
+    // account settings already carry — so the observed cycles change nothing
+    // about where the predicted ovulation lands, and the latest logged start is
+    // still today-13.
+    for (const cyclesBack of [3, 2, 1]) {
+      await markCycleStart(page, shiftISODate(startISO, -28 * cyclesBack));
+    }
     await markCycleStart(page, startISO);
 
     // Enable TrackBBT via the tracking settings endpoint. Send the full
@@ -784,12 +787,14 @@ test.describe('Calendar page', () => {
     const monthISO = (await todayISOFromBrowser(page)).slice(0, 7);
     await registerAndOnboardOnDate(page, 'calendar-fertile-tiers', `${monthISO}-01`);
 
-    // The fertile window is withheld until one cycle has been observed, so the
-    // two cycles before this one are logged as well, 28 days apart — the length
-    // the account settings already carry, so the window stays mid-month exactly
-    // as described above. Two of them, not one: on a run date that IS the 1st,
-    // the anchor itself has not closed a cycle yet, and the pair before it has.
+    // The fertile window is withheld until three cycles have been observed, so
+    // the three cycles before this one are logged as well, 28 days apart — the
+    // length the account settings already carry, so the window stays mid-month
+    // exactly as described above. Three of them, none counted from the anchor:
+    // on a run date that IS the 1st, the anchor itself has not closed a cycle yet,
+    // and the three before it have.
     const anchorISO = `${monthISO}-01`;
+    await markCycleStart(page, shiftISODate(anchorISO, -84));
     await markCycleStart(page, shiftISODate(anchorISO, -56));
     await markCycleStart(page, shiftISODate(anchorISO, -28));
     await markCycleStart(page, anchorISO);
