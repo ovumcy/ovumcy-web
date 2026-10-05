@@ -462,7 +462,7 @@ func TestPipeline_ClearNeighborsPreservesManualAndBounded(t *testing.T) {
 			before[k] = e.IsPeriod
 		}
 
-		if err := service.ClearAutoFilledPeriodNeighbors(context.Background(), 1, start, periodLength, time.UTC); err != nil {
+		if err := service.ClearAutoFilledPeriodNeighbors(context.Background(), 1, start, periodLength, models.FlowMedium, time.UTC); err != nil {
 			t.Fatalf("ClearAutoFilledPeriodNeighbors: %v", err)
 		}
 

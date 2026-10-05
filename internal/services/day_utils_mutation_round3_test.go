@@ -27,7 +27,7 @@ func TestMR3Day_IsAutoFilledPeriodCandidate_MoodAtMaxBlocksClearing(t *testing.T
 	// be wrongly cleared otherwise). The boundary mutant turns `<= MaxDayMood`
 	// into `< MaxDayMood`, which would make a max-mood period day look bare.
 	entry := models.DailyLog{IsPeriod: true, Mood: MaxDayMood, Flow: models.FlowNone}
-	if IsAutoFilledPeriodCandidate(entry) {
+	if IsAutoFilledPeriodCandidate(entry, "") {
 		t.Fatalf("IsAutoFilledPeriodCandidate(period day, Mood=MaxDayMood=%d) = true, want false", MaxDayMood)
 	}
 }

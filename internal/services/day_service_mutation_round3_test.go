@@ -224,7 +224,7 @@ func TestMR3Day_ClearAutoFilledPeriodNeighbors_NonUTCCoverage(t *testing.T) {
 
 	startDay := CalendarDay(seed.In(zone), zone) // local 2026-02-11
 	logs.clearedKeys = nil
-	if err := service.ClearAutoFilledPeriodNeighbors(context.Background(), 10, startDay, 3, zone); err != nil {
+	if err := service.ClearAutoFilledPeriodNeighbors(context.Background(), 10, startDay, 3, models.FlowLight, zone); err != nil {
 		t.Fatalf("ClearAutoFilledPeriodNeighbors: %v", err)
 	}
 

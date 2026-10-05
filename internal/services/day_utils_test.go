@@ -94,9 +94,10 @@ func TestDayHasData(t *testing.T) {
 
 func TestIsAutoFilledPeriodCandidate(t *testing.T) {
 	tests := []struct {
-		name  string
-		entry models.DailyLog
-		want  bool
+		name       string
+		entry      models.DailyLog
+		propagated string
+		want       bool
 	}{
 		{
 			name:  "bare period day",
@@ -104,9 +105,37 @@ func TestIsAutoFilledPeriodCandidate(t *testing.T) {
 			want:  true,
 		},
 		{
-			name:  "bare period day with propagated flow",
-			entry: models.DailyLog{IsPeriod: true, Flow: models.FlowLight},
+			name:  "period day with the none flow",
+			entry: models.DailyLog{IsPeriod: true, Flow: models.FlowNone},
 			want:  true,
+		},
+		{
+			name:       "bare period day with propagated flow",
+			entry:      models.DailyLog{IsPeriod: true, Flow: models.FlowLight},
+			propagated: models.FlowLight,
+			want:       true,
+		},
+		{
+			name:       "flow differing from the propagated one",
+			entry:      models.DailyLog{IsPeriod: true, Flow: models.FlowHeavy},
+			propagated: models.FlowMedium,
+			want:       false,
+		},
+		{
+			name:  "flow beside an anchor that carried none",
+			entry: models.DailyLog{IsPeriod: true, Flow: models.FlowHeavy},
+			want:  false,
+		},
+		{
+			name:  "spotting beside an anchor that carried none",
+			entry: models.DailyLog{IsPeriod: true, Flow: models.FlowSpotting},
+			want:  false,
+		},
+		{
+			name:       "spotting is bare when the anchor carried it",
+			entry:      models.DailyLog{IsPeriod: true, Flow: models.FlowSpotting},
+			propagated: models.FlowSpotting,
+			want:       true,
 		},
 		{
 			name:  "non-period day",
@@ -167,7 +196,7 @@ func TestIsAutoFilledPeriodCandidate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsAutoFilledPeriodCandidate(tt.entry); got != tt.want {
+			if got := IsAutoFilledPeriodCandidate(tt.entry, tt.propagated); got != tt.want {
 				t.Fatalf("IsAutoFilledPeriodCandidate() = %v, want %v", got, tt.want)
 			}
 		})

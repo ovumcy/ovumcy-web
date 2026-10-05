@@ -170,7 +170,10 @@ func (service *DayService) DayHasDataForDate(ctx context.Context, userID uint, d
 // normalise the payload through NormalizeDayEntryInput first: only the update
 // branch merges anything (mergePreservedDayEntryInput), while the create branch
 // writes the fields exactly as given and applies no preservation of its own.
-func (service *DayService) UpsertDayEntry(ctx context.Context, userID uint, dayStart time.Time, payload DayEntryInput, location *time.Location) (models.DailyLog, bool, error) {
+// It returns the saved entry and the day as it stood before the write (the
+// zero value when the day did not exist), so the auto-fill side effects can
+// read the anchor's prior period mark and flow.
+func (service *DayService) UpsertDayEntry(ctx context.Context, userID uint, dayStart time.Time, payload DayEntryInput, location *time.Location) (models.DailyLog, models.DailyLog, error) {
 	// Defensive normalization: collapse any time-of-day or non-UTC offset on
 	// the incoming dayStart back to canonical UTC-midnight. The intended
 	// contract is "caller already invoked DayRange and is passing canonical
@@ -187,12 +190,11 @@ func (service *DayService) UpsertDayEntry(ctx context.Context, userID uint, dayS
 	dayRangeEnd := dayStart.AddDate(0, 0, 1)
 	entry, found, err := service.logs.FindByUserAndDayRange(ctx, userID, dayRangeStart, dayRangeEnd)
 	if err != nil {
-		return models.DailyLog{}, false, ErrDayEntryLoadFailed
+		return models.DailyLog{}, models.DailyLog{}, ErrDayEntryLoadFailed
 	}
 
-	wasPeriod := false
 	if found {
-		wasPeriod = entry.IsPeriod
+		previous := entry
 		payload = mergePreservedDayEntryInput(entry, payload)
 		entry.IsPeriod = payload.IsPeriod
 		if !payload.IsPeriod {
@@ -209,9 +211,9 @@ func (service *DayService) UpsertDayEntry(ctx context.Context, userID uint, dayS
 		entry.SymptomIDs = payload.SymptomIDs
 		entry.Notes = payload.Notes
 		if err := service.logs.Save(ctx, &entry); err != nil {
-			return models.DailyLog{}, false, ErrDayEntryUpdateFailed
+			return models.DailyLog{}, models.DailyLog{}, ErrDayEntryUpdateFailed
 		}
-		return entry, wasPeriod, nil
+		return entry, previous, nil
 	}
 
 	entry = models.DailyLog{
@@ -229,9 +231,9 @@ func (service *DayService) UpsertDayEntry(ctx context.Context, userID uint, dayS
 		SymptomIDs:      payload.SymptomIDs,
 	}
 	if err := service.logs.Create(ctx, &entry); err != nil {
-		return models.DailyLog{}, false, ErrDayEntryCreateFailed
+		return models.DailyLog{}, models.DailyLog{}, ErrDayEntryCreateFailed
 	}
-	return entry, false, nil
+	return entry, models.DailyLog{}, nil
 }
 
 func mergePreservedDayEntryInput(existing models.DailyLog, payload DayEntryInput) DayEntryInput {
@@ -299,11 +301,11 @@ func (service *DayService) UpsertDayEntryWithAutoFillAt(ctx context.Context, use
 // autofill side effects. It carries no transaction of its own so callers can
 // compose it inside a single WithinTransaction boundary.
 func (service *DayService) applyDayWriteAndAutoFill(ctx context.Context, userID uint, dayStart time.Time, normalized DayEntryInput, now time.Time, location *time.Location) (models.DailyLog, error) {
-	entry, wasPeriod, err := service.UpsertDayEntry(ctx, userID, dayStart, normalized, location)
+	entry, previous, err := service.UpsertDayEntry(ctx, userID, dayStart, normalized, location)
 	if err != nil {
 		return models.DailyLog{}, err
 	}
-	if err := service.applyPeriodAutoFillSideEffects(ctx, userID, dayStart, normalized, wasPeriod, now, location); err != nil {
+	if err := service.applyPeriodAutoFillSideEffects(ctx, userID, dayStart, normalized, previous, now, location); err != nil {
 		return models.DailyLog{}, err
 	}
 	return entry, nil
@@ -346,7 +348,8 @@ func (service *DayService) applyConfirmedCycleStart(ctx context.Context, userID 
 	return entry, nil
 }
 
-func (service *DayService) applyPeriodAutoFillSideEffects(ctx context.Context, userID uint, dayStart time.Time, normalized DayEntryInput, wasPeriod bool, now time.Time, location *time.Location) error {
+func (service *DayService) applyPeriodAutoFillSideEffects(ctx context.Context, userID uint, dayStart time.Time, normalized DayEntryInput, previous models.DailyLog, now time.Time, location *time.Location) error {
+	wasPeriod := previous.IsPeriod
 	if !normalized.IsPeriod && !wasPeriod {
 		return nil
 	}
@@ -362,7 +365,7 @@ func (service *DayService) applyPeriodAutoFillSideEffects(ctx context.Context, u
 	if !autoPeriodFillEnabled {
 		return nil
 	}
-	return service.clearAutoFilledNeighborsIfBare(ctx, userID, dayStart, periodLength, location)
+	return service.clearAutoFilledNeighborsIfBare(ctx, userID, dayStart, periodLength, previous.Flow, location)
 }
 
 func (service *DayService) autoFillNewPeriodAnchor(ctx context.Context, userID uint, dayStart time.Time, wasPeriod bool, autoPeriodFillEnabled bool, periodLength int, flow string, now time.Time, location *time.Location) error {
@@ -379,7 +382,7 @@ func (service *DayService) autoFillNewPeriodAnchor(ctx context.Context, userID u
 	return nil
 }
 
-func (service *DayService) clearAutoFilledNeighborsIfBare(ctx context.Context, userID uint, dayStart time.Time, periodLength int, location *time.Location) error {
+func (service *DayService) clearAutoFilledNeighborsIfBare(ctx context.Context, userID uint, dayStart time.Time, periodLength int, propagatedFlow string, location *time.Location) error {
 	shouldClear, err := service.shouldClearAutoFilledNeighbors(ctx, userID, dayStart, location)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrDayAutoFillCheckFailed, err)
@@ -387,7 +390,7 @@ func (service *DayService) clearAutoFilledNeighborsIfBare(ctx context.Context, u
 	if !shouldClear {
 		return nil
 	}
-	if err := service.ClearAutoFilledPeriodNeighbors(ctx, userID, dayStart, periodLength, location); err != nil {
+	if err := service.ClearAutoFilledPeriodNeighbors(ctx, userID, dayStart, periodLength, propagatedFlow, location); err != nil {
 		return fmt.Errorf("%w: %v", ErrDayAutoFillApplyFailed, err)
 	}
 	return nil
@@ -405,9 +408,11 @@ func (service *DayService) shouldClearAutoFilledNeighbors(ctx context.Context, u
 // ClearAutoFilledPeriodNeighbors walks the periodLength-1 days following
 // startDay and clears IsPeriod (plus the propagated Flow) on every contiguous
 // auto-fill candidate. It stops at the first day that carries any manual
-// signal so user edits are preserved. Mirrors the ovumcy-app
+// signal so user edits are preserved; a flow other than propagatedFlow (the
+// flow the unchecked anchor carried, which is the one value auto-fill writes
+// into its neighbours) is such a signal. Mirrors the ovumcy-app
 // `collectAutoFilledPeriodDaysToClear` heuristic.
-func (service *DayService) ClearAutoFilledPeriodNeighbors(ctx context.Context, userID uint, startDay time.Time, periodLength int, location *time.Location) error {
+func (service *DayService) ClearAutoFilledPeriodNeighbors(ctx context.Context, userID uint, startDay time.Time, periodLength int, propagatedFlow string, location *time.Location) error {
 	if periodLength <= 1 {
 		return nil
 	}
@@ -425,7 +430,7 @@ func (service *DayService) ClearAutoFilledPeriodNeighbors(ctx context.Context, u
 		if !found {
 			break
 		}
-		if !IsAutoFilledPeriodCandidate(entry) {
+		if !IsAutoFilledPeriodCandidate(entry, propagatedFlow) {
 			break
 		}
 
