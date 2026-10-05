@@ -81,8 +81,14 @@ type StatsPageViewData struct {
 	ShowLongCycleNotice   bool
 	ShowPerimenopauseHint bool
 	PredictionDisabled    bool
-	IsIrregularMode       bool
-	IsOwner               bool
+	// ShowPredictionModeCard is false while the pregnancy pause holds: the
+	// phase-or-facts-only card has nothing true to say then (the "facts only /
+	// this mode" wording is the unpredictable-cycle setting's), and the pause
+	// explainer above the grid already names the state. It is resolved from the
+	// cycle context's pause verdict so the template reads one answer.
+	ShowPredictionModeCard bool
+	IsIrregularMode        bool
+	IsOwner                bool
 }
 
 type statsPageBaseData struct {
@@ -200,6 +206,7 @@ func (service *StatsService) BuildStatsPageViewData(ctx context.Context, user *m
 		ShowLongCycleNotice:                 showLongCycleNotice,
 		ShowPerimenopauseHint:               showPerimenopauseHint,
 		PredictionDisabled:                  predictionDisabled,
+		ShowPredictionModeCard:              !cycleContext.PregnancyPaused,
 		IsIrregularMode:                     isIrregularMode,
 		IsOwner:                             isOwner,
 	}, nil
@@ -374,8 +381,13 @@ func isStatsIrregularMode(user *models.User) bool {
 	return user != nil && user.IrregularCycle
 }
 
+// buildStatsPredictionReliability resolves the "how far can the predictions be
+// trusted" card. While the pregnancy pause holds there are no predictions to
+// grade, so the card is withheld: it would still read "building pattern" off the
+// completed cycles behind a surface that has stopped predicting. Regression:
+// TestStatsPageWithholdsTheReliabilityAndModeTilesDuringAPregnancyPause.
 func buildStatsPredictionReliability(user *models.User, flags StatsFlags, stats CycleStats) (int, bool, string, string, bool) {
-	if !HasPersonalCycleRange(user, flags.CompletedCycleCount) {
+	if stats.PregnancyPaused || !HasPersonalCycleRange(user, flags.CompletedCycleCount) {
 		return 0, false, "", "", false
 	}
 

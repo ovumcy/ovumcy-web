@@ -95,7 +95,8 @@
         <p class="stat-value mt-2">{{if gt .Stats.LastPeriodLength 0}}{{.Stats.LastPeriodLength}} {{t .Messages "common.days_short"}}{{else}}{{.NoDataLabel}}{{end}}</p>
       </article>
 
-      <article class="card card-dense reveal">
+      {{if .ShowPredictionModeCard}}
+      <article class="card card-dense reveal" data-stats-mode-card>
         {{if .PredictionDisabled}}
         <p class="stat-label">{{t .Messages "stats.facts_only_title"}}</p>
         <p class="stat-value mt-2">{{t .Messages "stats.facts_only_value"}}</p>
@@ -113,6 +114,7 @@
           {{end}}
         {{end}}
       </article>
+      {{end}}
     </div>
 
     <section class="card p-4 sm:p-5 space-y-4 reveal">
