@@ -164,6 +164,16 @@ test.describe('Dashboard: fertility badge', () => {
       return (await page.locator('meta[name="csrf-token"]').getAttribute('content')) ?? '';
     }
 
+    // An HTMX day write must carry the account binding the rendered journal
+    // form holds; without it the server refuses the save with 409.
+    async function dayFormAccount(): Promise<string> {
+      const binding = await page
+        .locator('form[hx-put^="/api/v1/days/"] input[name="day_form_account"]')
+        .getAttribute('value');
+      expect(binding ?? '', 'the dashboard journal form renders the account binding').not.toBe('');
+      return binding ?? '';
+    }
+
     async function savePeriodDay(isoDate: string) {
       return page.request.put(`/api/v1/days/${isoDate}`, {
         headers: {
@@ -172,7 +182,7 @@ test.describe('Dashboard: fertility badge', () => {
           'HX-Request': 'true',
           'Accept-Language': 'en',
         },
-        form: { is_period: 'true', flow: 'medium' },
+        form: { is_period: 'true', flow: 'medium', day_form_account: await dayFormAccount() },
       });
     }
 
