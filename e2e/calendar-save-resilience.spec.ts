@@ -1,6 +1,7 @@
 import {
   expect,
   test,
+  type Browser,
   type BrowserErrorWatcher,
   type Locator,
   type Page,
@@ -10,14 +11,16 @@ import {
   completeOnboardingIfPresent,
   continueFromRecoveryCode,
   createCredentials,
+  expectDedicatedRecoveryPage,
   expectInlineRegisterRecoveryStep,
+  loginViaUI,
   readRecoveryCode,
   registerOwnerViaUI,
 } from './support/auth-helpers';
 import { expectTextContrastAA } from './support/contrast-helpers';
 import { dashboardTodayISO } from './support/dashboard-helpers';
 import { saveSettingsLanguage } from './support/language-helpers';
-import { localeText } from './support/locale-helpers';
+import { localeText, type Locale } from './support/locale-helpers';
 import { ensureNotesFieldVisible } from './support/note-helpers';
 import {
   attemptDayEditorSave,
@@ -455,5 +458,213 @@ test.describe('dashboard autosave resilience', () => {
     await page.unroute(`**/api/v1/days/${todayISO}`);
     await page.reload();
     await expect(page.locator('#today-notes')).toHaveValue(note);
+  });
+});
+
+/**
+ * A session can end while the owner is typing — another device changed the
+ * account's security posture, which revokes every other session. The save is
+ * then refused with the auth guard's 401, and signing in again in the SAME tab
+ * would navigate away from the only copy of the entry. The notice therefore
+ * offers the sign-in page in a new tab; the entry stays in this page's form,
+ * and the retry beside the link lands once the new tab has signed in. Nothing
+ * from the entry is stored in the browser to survive the trip.
+ */
+const SESSION_EXPIRED_KEY = 'common.error.unauthorized';
+
+/** Signs the same account in on a second device and revokes every other session from there. */
+async function revokeSessionFromAnotherDevice(
+  browser: Browser,
+  browserErrors: BrowserErrorWatcher,
+  credentials: { email: string; password: string }
+): Promise<void> {
+  const otherContext = await browser.newContext();
+  browserErrors.watch(otherContext);
+  try {
+    const otherPage = await otherContext.newPage();
+    await loginViaUI(otherPage, credentials);
+    await expect(otherPage).toHaveURL(/\/dashboard(?:\?.*)?$/);
+    await otherPage.goto('/settings');
+    // Regenerating the recovery code bumps the account's session version and
+    // re-issues a cookie to this device only.
+    const form = otherPage.locator('form[action="/api/v1/users/current/recovery-code"]');
+    await form.locator('#settings-recovery-code-password').fill(credentials.password);
+    await form.locator('button[type="submit"]').click();
+    await expect(otherPage.locator('#confirm-modal')).toBeVisible();
+    await otherPage.locator('#confirm-modal-accept').click();
+    await expectDedicatedRecoveryPage(otherPage);
+  } finally {
+    await otherContext.close();
+  }
+}
+
+/** Follows the notice's sign-in link into the tab it opens and signs in there. */
+async function signInThroughNoticeLink(
+  page: Page,
+  link: Locator,
+  credentials: { email: string; password: string }
+): Promise<void> {
+  const [signInTab] = await Promise.all([page.context().waitForEvent('page'), link.click()]);
+  await signInTab.waitForLoadState();
+  await expect(signInTab).toHaveURL(/\/login(?:\?.*)?$/);
+  await signInTab.locator('#login-email').fill(credentials.email);
+  await signInTab.locator('#login-password').fill(credentials.password);
+  await signInTab.locator('form[action="/api/v1/sessions"] button[type="submit"]').click();
+  await expect(signInTab).toHaveURL(/\/dashboard(?:\?.*)?$/);
+  await signInTab.close();
+}
+
+async function expectSignInLink(page: Page, notice: Locator, locale: Locale): Promise<Locator> {
+  await expect(notice.locator(`[data-notice-key="${SESSION_EXPIRED_KEY}"]`)).toHaveText(
+    localeText(locale, SESSION_EXPIRED_KEY)
+  );
+  const link = notice.locator('a[data-day-save-sign-in]');
+  await expect(link).toBeVisible();
+  await expect(link).toHaveText(localeText(locale, 'daylog.save_sign_in'));
+  await expect(link).toHaveAttribute('target', '_blank');
+  await expect(link).toHaveAttribute('rel', 'noopener');
+  // Same origin, fixed path: nothing from the entry or the account in the URL.
+  const href = await link.evaluate((anchor) => (anchor as HTMLAnchorElement).href);
+  expect(new URL(href).origin).toBe(new URL(page.url()).origin);
+  expect(new URL(href).pathname + new URL(href).search).toBe('/login');
+  await expect(notice.locator('[data-day-save-retry]')).toHaveText(localeText(locale, 'daylog.save_retry'));
+  return link;
+}
+
+/** No draft may be stashed client-side: the live form is the whole mechanism. */
+async function expectNothingStored(page: Page, note: string): Promise<void> {
+  const stored = await page.evaluate(() =>
+    [window.localStorage, window.sessionStorage]
+      .flatMap((storage) => Array.from({ length: storage.length }, (_, index) => storage.getItem(storage.key(index) ?? '') ?? ''))
+      .concat(document.cookie)
+      .join('\n')
+  );
+  expect(stored).not.toContain(note);
+  const cookies = await page.context().cookies();
+  for (const cookie of cookies) {
+    expect(decodeURIComponent(cookie.value)).not.toContain(note);
+  }
+}
+
+async function csrfCookieValue(page: Page): Promise<string | undefined> {
+  return (await page.context().cookies()).find((cookie) => cookie.name === 'ovumcy_csrf')?.value;
+}
+
+test.describe('a day save refused for an ended session', () => {
+  test('dashboard (fr): the notice offers sign-in in a new tab and the retry then saves the entry', async ({
+    browser,
+    browserErrors,
+    page,
+  }) => {
+    // Two devices, two sign-ins and a recovery-code rotation in one flow.
+    test.slow();
+    const credentials = createCredentials('day-save-session-fr');
+    await registerOwnerViaUI(page, credentials);
+    await expectInlineRegisterRecoveryStep(page);
+    await readRecoveryCode(page);
+    await continueFromRecoveryCode(page);
+    await completeOnboardingIfPresent(page);
+    await setRequestTimezoneFromBrowser(page);
+    await page.goto('/settings');
+    await saveSettingsLanguage(page, 'fr');
+    await page.goto('/dashboard');
+    await expect(page).toHaveURL(/\/dashboard$/);
+    const todayISO = await dashboardTodayISO(page);
+
+    await revokeSessionFromAnotherDevice(browser, browserErrors, credentials);
+
+    const note = 'migraine depuis ce matin';
+    const notes = await ensureNotesFieldVisible(page, '#today-notes');
+    const refused = page.waitForResponse(
+      (response) => response.request().method() === 'PUT' && response.url().includes(`/api/v1/days/${todayISO}`)
+    );
+    await notes.fill(note);
+    await page.locator('label.choice-option:has(input[name="mood"][value="4"]) .chip-round').click();
+    expect((await refused).status(), 'the revoked session must be refused by the auth guard').toBe(401);
+
+    const notice = page.locator(DASHBOARD_FAILURE_NOTICE);
+    await expect(notice).toBeVisible();
+    const link = await expectSignInLink(page, notice, 'fr');
+    await expect(notes).toHaveValue(note);
+    await expect(page.locator('input[name="mood"][value="4"]')).toBeChecked();
+    await expectNothingStored(page, note);
+
+    const csrfBefore = await csrfCookieValue(page);
+    await signInThroughNoticeLink(page, link, credentials);
+    // The retry sends the token this page already holds: signing in must not
+    // have rotated it, or the retry would be refused as a forgery.
+    expect(await csrfCookieValue(page)).toBe(csrfBefore);
+    await expect(notes).toHaveValue(note);
+
+    const [retryResponse] = await Promise.all([
+      page.waitForResponse(
+        (response) => response.request().method() === 'PUT' && response.url().includes(`/api/v1/days/${todayISO}`)
+      ),
+      notice.locator('[data-day-save-retry]').click(),
+    ]);
+    expect(retryResponse.status(), 'the retry after signing in must land').toBe(200);
+    await expect(page.locator(DASHBOARD_FAILURE_NOTICE)).toHaveCount(0);
+
+    await page.reload();
+    await expect(page.locator('#today-notes')).toHaveValue(note);
+  });
+
+  test('calendar (de): the notice offers sign-in in a new tab and the retry then saves the entry', async ({
+    browser,
+    browserErrors,
+    page,
+  }) => {
+    // Two devices, two sign-ins and a recovery-code rotation in one flow.
+    test.slow();
+    const credentials = createCredentials('day-save-session-de');
+    await registerOwnerViaUI(page, credentials);
+    await expectInlineRegisterRecoveryStep(page);
+    await readRecoveryCode(page);
+    await continueFromRecoveryCode(page);
+    await completeOnboardingIfPresent(page);
+    await setRequestTimezoneFromBrowser(page);
+    await page.goto('/settings');
+    await saveSettingsLanguage(page, 'de');
+    await page.goto('/calendar');
+    const todayButton = page.locator('button[data-day]:has(.calendar-today-pill)').first();
+    const targetISO = shiftISODate(String(await todayButton.getAttribute('data-day')), -20);
+    browserErrors.allow(
+      htmxRefusalLogFor(`/api/v1/days/${targetISO}`),
+      `this test revokes the session before PUT /api/v1/days/${targetISO}, and htmx logging that 401 is the behaviour under test`
+    );
+
+    const form = await openCalendarDayEditor(page, targetISO);
+    await revokeSessionFromAnotherDevice(browser, browserErrors, credentials);
+
+    const note = 'Kopfschmerzen seit dem Morgen';
+    await fillDayEntry(form, note);
+    const refused = page.waitForResponse(
+      (response) => response.request().method() === 'PUT' && response.url().includes(`/api/v1/days/${targetISO}`)
+    );
+    await attemptDayEditorSave(page, targetISO, form);
+    expect((await refused).status(), 'the revoked session must be refused by the auth guard').toBe(401);
+
+    const notice = page.locator(FAILURE_NOTICE);
+    await expect(notice).toBeVisible();
+    const link = await expectSignInLink(page, notice, 'de');
+    await expectDayEntryStillTyped(form, note);
+    await expectNothingStored(page, note);
+
+    const csrfBefore = await csrfCookieValue(page);
+    await signInThroughNoticeLink(page, link, credentials);
+    expect(await csrfCookieValue(page)).toBe(csrfBefore);
+    await expectDayEntryStillTyped(form, note);
+
+    const [retryResponse] = await Promise.all([
+      page.waitForResponse(
+        (response) => response.request().method() === 'PUT' && response.url().includes(`/api/v1/days/${targetISO}`)
+      ),
+      page.locator(RETRY_BUTTON).click(),
+    ]);
+    expect(retryResponse.ok(), `the retry after signing in failed with ${retryResponse.status()}`).toBeTruthy();
+
+    await page.waitForLoadState('networkidle');
+    const reopened = await openCalendarDayEditor(page, targetISO);
+    await expect(reopened.locator('#calendar-notes')).toHaveValue(note);
   });
 });
