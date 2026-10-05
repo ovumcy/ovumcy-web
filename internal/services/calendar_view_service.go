@@ -37,6 +37,7 @@ type CalendarPageViewData struct {
 	HasPredictionExplanationPrimary   bool
 	HasPredictionExplanationSecondary bool
 	IsOwner                           bool
+	CanDrawTentativeOvulation         bool
 }
 
 type CalendarViewService struct {
@@ -92,5 +93,6 @@ func (service *CalendarViewService) BuildCalendarPageViewData(ctx context.Contex
 		HasPredictionExplanationPrimary:   predictionExplanation.PrimaryKey != "",
 		HasPredictionExplanationSecondary: predictionExplanation.SecondaryKey != "",
 		IsOwner:                           IsOwnerUser(user),
+		CanDrawTentativeOvulation:         CalendarCanDrawTentativeOvulation(user),
 	}, nil
 }
