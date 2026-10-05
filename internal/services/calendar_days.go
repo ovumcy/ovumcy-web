@@ -505,6 +505,16 @@ func appendPredictedWindow(preFertileMap map[string]bool, fertilityEdgeMap map[s
 	appendFertilityWindow(fertilityEdgeMap, fertilityPeakMap, window.FertilityWindowStart, window.FertilityWindowEnd, window.OvulationDate)
 }
 
+// CalendarCanDrawTentativeOvulation answers, for one owner, whether the grid
+// can mark a projected ovulation day as not yet confirmed by a temperature
+// shift. It is the owner-level half of the gate appendCurrentCycleBBTSignal
+// applies (the other half is the recorded cycle anchor, a property of the
+// data, not of the owner), and the calendar legend asks it too, so the legend
+// promises the dash exactly when the grid can draw it.
+func CalendarCanDrawTentativeOvulation(user *models.User) bool {
+	return user != nil && user.TrackBBT
+}
+
 func appendCurrentCycleBBTSignal(user *models.User, logs []models.DailyLog, stats CycleStats, now time.Time, ovulationMap map[string]bool, tentativeOvulationMap map[string]bool, location *time.Location) {
 	// The PROJECTED ovulation date is no longer a precondition, only the subject
 	// of the downgrade below: a projection the model withheld (a median cycle too
@@ -513,7 +523,7 @@ func appendCurrentCycleBBTSignal(user *models.User, logs []models.DailyLog, stat
 	// already confirmed. The window derived from a confirmed day needs no
 	// projection, so the pass now runs on the recorded anchor alone and simply
 	// has nothing to downgrade when there is no projected day.
-	if user == nil || !user.TrackBBT || stats.LastPeriodStart.IsZero() {
+	if !CalendarCanDrawTentativeOvulation(user) || stats.LastPeriodStart.IsZero() {
 		return
 	}
 
