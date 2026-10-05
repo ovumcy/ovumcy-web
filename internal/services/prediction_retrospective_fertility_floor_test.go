@@ -150,6 +150,19 @@ func TestDayFeedbackFertileMessageFollowsTheThreeCycleFloor(t *testing.T) {
 			if got := dayFeedbackKeyOn(t, user, logs, location, today, today); got != testCase.want {
 				t.Fatalf("saving today with %d completed cycles resolves to %q, want %q", testCase.completed, got, testCase.want)
 			}
+
+			// The published stats already clear the window below the floor, so the
+			// end-to-end row above would stay green if the policy's own gate were
+			// dropped. Handing the policy the UNPUBLISHED stats, which still carry
+			// the window, makes the verdict the only thing standing between today and
+			// the fertile line.
+			if stats.FertilityWindowStart.IsZero() {
+				t.Fatal("fixture: the unpublished stats must carry the window the verdict is withholding")
+			}
+			suppression := ResolvePredictionSuppression(user, stats)
+			if got := resolveDaySaveMessageKey(user, today, today, stats, suppression); got != testCase.want {
+				t.Fatalf("the policy with the window in hand resolves to %q with %d completed cycles, want %q", got, testCase.completed, testCase.want)
+			}
 		})
 	}
 }
