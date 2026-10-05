@@ -13,7 +13,7 @@ import (
 )
 
 // TestStatsPageShowsUnknownPhaseWhenCycleDataIsStale reads the phase the page
-// actually renders. The account has two completed cycles, so the insights grid
+// actually renders. The account has three completed cycles, so the insights grid
 // (and with it the current-phase card) is on screen and the only reason left to
 // withhold a phase is the stale anchor — the condition under test. Seeding no
 // cycles at all would replace the whole grid with the empty state, and the card
@@ -97,6 +97,7 @@ func renderStatsPageForCycleAnchorAge(t *testing.T, email string, startedDaysAgo
 	const cycleLength = 30
 	lastPeriodStart := services.DateAtLocation(time.Now().UTC(), time.UTC).AddDate(0, 0, -startedDaysAgo)
 	logs := []models.DailyLog{
+		{UserID: user.ID, Date: lastPeriodStart.AddDate(0, 0, -3*cycleLength), IsPeriod: true},
 		{UserID: user.ID, Date: lastPeriodStart.AddDate(0, 0, -2*cycleLength), IsPeriod: true},
 		{UserID: user.ID, Date: lastPeriodStart.AddDate(0, 0, -cycleLength), IsPeriod: true},
 		{UserID: user.ID, Date: lastPeriodStart, IsPeriod: true},

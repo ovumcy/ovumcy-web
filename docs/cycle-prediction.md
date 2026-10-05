@@ -5,7 +5,7 @@ window, and the next period. It exists so that anyone — users, contributors,
 auditors — can read exactly what the app computes and verify it against the
 code. It covers what is computed; whether a given estimate is *shown* is a
 separate gate, and the one that withholds the whole fertility half until the
-account completes its first cycle is described under "First cycle" below.
+account completes three cycles is described under "Early cycles" below.
 The worked examples below are mirrored 1:1 by automated reference tests
 (`internal/services/cycles_reference_test.go`), so the documentation and the
 implementation cannot silently drift apart.
@@ -178,7 +178,7 @@ These are the exact cases asserted by the reference tests.
   being the gap between two detected period starts). The median is used rather
   than the mean, so a single missed-log gap that merges two cycles cannot skew
   the estimate. When there is not enough history, the owner's configured value
-  is used — for the next-period estimate only; see "First cycle" below.
+  is used — for the next-period estimate only; see "Early cycles" below.
 - **Luteal phase** defaults to the fixed 14-day model value, but is refined for
   the owner when their logs carry enough signal: when basal body temperature or
   cervical-mucus entries place the ovulation inside past cycles, each of those
@@ -310,13 +310,18 @@ promised: the day is inferred from the signal, and, as above, the first elevated
 reading lags the LH-anchored day by days on average. Treat the marker as
 indicative, not diagnostic.
 
-## First cycle — what is computed but not shown
+## Early cycles — what is computed but not shown
 
 The math above runs from the first day logged, but a projection whose only source
 is the onboarding cycle-length slider is a configuration default wearing the
-clothes of a measurement. Until the account completes **one** cycle
-(`CompletedCycleCount >= 1` — the same count the stats page reports as "based on N
-completed cycles"), the whole fertility half of the projection is withheld:
+clothes of a measurement, and one built from one or two observed lengths is a
+single data point or the midpoint of two. Until the account completes **three**
+cycles (`CompletedCycleCount >= 3` — the same count the stats page reports as
+"based on N completed cycles"; regular and irregular mode share the number), the
+whole fertility half of the projection is withheld. With no completed cycle the
+wire reason is `awaiting_first_cycle`; with one or two in regular mode it is
+`awaiting_more_cycles` (irregular mode keeps `irregular_needs_more_cycles`, which
+also withholds the next period). What is withheld:
 
 - the ovulation date, the fertile window and the peak-fertility band on the
   calendar grid;
@@ -324,6 +329,7 @@ completed cycles"), the whole fertility half of the projection is withheld:
 - the ovulation reminder in the webhook pass;
 - the ovulation banner on the dashboard.
 
+The ribbon's phase labels after menstruation withhold the same way.
 The next-period estimate survives this floor, with its own estimate qualifier —
 its anchor is a date the owner actually recorded.
 
@@ -360,16 +366,19 @@ The same gate covers the two places a projected window is read outside those
 surfaces: the day-save message no longer calls a day fertile from a withheld window,
 and logging a new cycle start no longer offers the implantation-bleeding hint counted
 from a withheld ovulation. Both read the fertility gate, so unpredictable-cycle mode,
-a pregnancy pause and the first-cycle floor withhold them too — the hint states a
-number of days since ovulation, and with no completed cycle that ovulation is the
-configured cycle length rolled forward, which is an inference no reader could tell
-from a measurement. One value outlives
+a pregnancy pause and the three-cycle floor withhold them too — the hint states a
+number of days since ovulation, and below three completed cycles that ovulation is
+the configured cycle length, or one or two observed lengths, rolled forward, which
+is an inference no reader could tell from a measurement. One value outlives
 it: an ovulation day the owner's own temperatures confirmed. It was never rolled
 forward from the length that ran out,
 so the dashboard line, the calendar's solid marker and the JSON overview keep
 naming it — still worded as an estimate, beside the disclaimer — while the fertile
 window and fertility status derived from it stay withheld. Unpredictable-cycle mode,
-a pregnancy pause and the first-cycle floor still withhold that day too.
+a pregnancy pause and the zero-completed-cycle floor still withhold that day too;
+the one-or-two-cycle tier of a regular account does not, as the thin-history tier
+of irregular mode does not — it exists because a projection has too few observed
+lengths, and a day read off the owner's own temperatures is not a projection.
 
 The day-save message adds one more condition of its own: the fertile line is spoken only
 when the saved day is today (in the owner's timezone). A day the owner records after the

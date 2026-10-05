@@ -115,7 +115,7 @@ func TestSettingsEgressSurfacesRenderPredictionDisclaimer(t *testing.T) {
 //     what sets Approximate on both the cycle hero and the reminder banner;
 //   - a 3-day period keeps ovulation day 5 clear of periodLength+1, without
 //     which the cycle hero is not drawn and its qualifier never renders;
-//   - one previous cycle clears the first-cycle fertility floor
+//   - three previous cycles clear the completed-cycle fertility floor
 //     (FertilityProjectionSuppressed), without which the ovulation slot and the
 //     ovulation reminder are withheld entirely;
 //   - cycle day 3 puts ovulation two days out, inside the default three-day
@@ -143,7 +143,12 @@ func TestDashboardMarksAnInexactOvulationEstimateWithAddressableQualifiers(t *te
 	}).Error; err != nil {
 		t.Fatalf("update inexact-ovulation cycle context: %v", err)
 	}
-	for _, cycleStart := range []time.Time{lastPeriodStart.AddDate(0, 0, -cycleLength), lastPeriodStart} {
+	for _, cycleStart := range []time.Time{
+		lastPeriodStart.AddDate(0, 0, -3*cycleLength),
+		lastPeriodStart.AddDate(0, 0, -2*cycleLength),
+		lastPeriodStart.AddDate(0, 0, -cycleLength),
+		lastPeriodStart,
+	} {
 		for offset := range periodLength {
 			if err := database.Create(&models.DailyLog{
 				UserID:   user.ID,

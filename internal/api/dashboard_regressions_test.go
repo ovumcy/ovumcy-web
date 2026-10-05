@@ -311,7 +311,7 @@ func TestDashboardAndStatsAgreeOnPhaseAndFertilityOnAFertileWindowDay(t *testing
 	user := createOnboardingTestUser(t, database, "dashboard-fertile-window-day@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
-	// Two completed 28-day cycles unlock the stats KPI row; cycle 28 /
+	// Three completed 28-day cycles lift the fertility floor; cycle 28 /
 	// luteal 14 → ovulation day 14, fertile window days 9–14. Day 12 sits
 	// inside the window with a ±1-day timezone slack on both sides.
 	lastPeriodStart := services.DateAtLocation(time.Now().UTC(), time.UTC).AddDate(0, 0, -11)
@@ -322,7 +322,7 @@ func TestDashboardAndStatsAgreeOnPhaseAndFertilityOnAFertileWindowDay(t *testing
 	}).Error; err != nil {
 		t.Fatalf("update user cycle context: %v", err)
 	}
-	for _, offsetDays := range []int{-67, -39, -11} {
+	for _, offsetDays := range []int{-95, -67, -39, -11} {
 		start := services.DateAtLocation(time.Now().UTC(), time.UTC).AddDate(0, 0, offsetDays)
 		if err := database.Create(&models.DailyLog{
 			UserID:     user.ID,
@@ -421,10 +421,10 @@ func TestStatsFertileWindowCardIsSuppressedByAPregnancyPause(t *testing.T) {
 			}).Error; err != nil {
 				t.Fatalf("seed cycle baseline: %v", err)
 			}
-			// Three recorded starts 28 days apart: two completed cycles, and the
+			// Four recorded starts 28 days apart: three completed cycles, and the
 			// running one on day 12 — inside the fertile window (ovulation day 14,
 			// window days 9-14) with a day of timezone slack on either side.
-			for _, offsetDays := range []int{-67, -39, -11} {
+			for _, offsetDays := range []int{-95, -67, -39, -11} {
 				if err := database.Create(&models.DailyLog{
 					UserID:     user.ID,
 					Date:       today.AddDate(0, 0, offsetDays),
@@ -482,48 +482,67 @@ func TestStatsFertileWindowCardIsSuppressedByAPregnancyPause(t *testing.T) {
 	}
 }
 
-// TestDashboardHeaderWithholdsFertilityUntilTheFirstCompletedCycle is the
-// render regression for the first reliability tier. Both accounts below sit on
-// cycle day 12 of a 28-day baseline — a fertile-window day by the same math the
-// test above uses — and differ only in whether one cycle has been observed.
+// TestDashboardHeaderWithholdsFertilityUntilThreeCompletedCycles is the render
+// regression for the early reliability tiers. Every account below sits on cycle
+// day 12 of a 28-day baseline — a fertile-window day by the same math the test
+// above uses — and differs only in how many cycles have been observed.
 //
 // With none, the fertile window and the ovulation date exist only because the
 // onboarding cycle-length slider was projected forward, so the header shows
 // neither and declares no fertility status; an account tracking to conceive
-// reads one bridge line naming when the window arrives instead. With one
-// completed cycle the header renders exactly as it always did. What the tier
-// never touches is asserted in both states: the phase and the next-period item,
-// which carries its own estimate qualifier.
-func TestDashboardHeaderWithholdsFertilityUntilTheFirstCompletedCycle(t *testing.T) {
+// reads one bridge line naming when the window arrives instead. With one or two
+// completed cycles they rest on too few observed lengths: still withheld, under
+// the explainer that names the three-cycle floor, with no bridge line. With
+// three the header renders exactly as it always did. What the tiers never touch
+// is asserted in every state: the phase and the next-period item, which carries
+// its own estimate qualifier.
+func TestDashboardHeaderWithholdsFertilityUntilThreeCompletedCycles(t *testing.T) {
 	for name, testCase := range map[string]struct {
-		account        string
-		goal           string
-		completedCycle bool
-		wantFertility  bool
-		wantOvulation  bool
-		wantBridge     bool
+		account         string
+		goal            string
+		completedCycles int
+		wantFertility   bool
+		wantOvulation   bool
+		wantBridge      bool
+		// wantExplainerKey is the copy key the explainer line names; empty means
+		// the tier renders no explainer at all.
+		wantExplainerKey string
 	}{
 		"trying to conceive, fresh baseline": {
-			account:    "trying-fresh",
-			goal:       models.UsageGoalTrying,
-			wantBridge: true,
+			account:          "trying-fresh",
+			goal:             models.UsageGoalTrying,
+			wantBridge:       true,
+			wantExplainerKey: "prediction.explainer.awaiting_first_cycle",
 		},
-		"trying to conceive, one completed cycle": {
-			account:        "trying-one-cycle",
-			goal:           models.UsageGoalTrying,
-			completedCycle: true,
-			wantFertility:  true,
-			wantOvulation:  true,
+		"trying to conceive, two completed cycles": {
+			account:          "trying-two-cycles",
+			goal:             models.UsageGoalTrying,
+			completedCycles:  2,
+			wantExplainerKey: "prediction.explainer.awaiting_more_cycles",
+		},
+		"trying to conceive, three completed cycles": {
+			account:         "trying-three-cycles",
+			goal:            models.UsageGoalTrying,
+			completedCycles: 3,
+			wantFertility:   true,
+			wantOvulation:   true,
 		},
 		"general health, fresh baseline": {
-			account: "health-fresh",
-			goal:    models.UsageGoalHealth,
+			account:          "health-fresh",
+			goal:             models.UsageGoalHealth,
+			wantExplainerKey: "prediction.explainer.awaiting_first_cycle",
 		},
 		"general health, one completed cycle": {
-			account:        "health-one-cycle",
-			goal:           models.UsageGoalHealth,
-			completedCycle: true,
-			wantFertility:  true,
+			account:          "health-one-cycle",
+			goal:             models.UsageGoalHealth,
+			completedCycles:  1,
+			wantExplainerKey: "prediction.explainer.awaiting_more_cycles",
+		},
+		"general health, three completed cycles": {
+			account:         "health-three-cycles",
+			goal:            models.UsageGoalHealth,
+			completedCycles: 3,
+			wantFertility:   true,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -538,10 +557,11 @@ func TestDashboardHeaderWithholdsFertilityUntilTheFirstCompletedCycle(t *testing
 			}).Error; err != nil {
 				t.Fatalf("seed cycle baseline: %v", err)
 			}
-			if testCase.completedCycle {
-				// Two recorded starts 28 days apart: one completed cycle, and the
-				// running one still on day 12.
-				for _, offsetDays := range []int{-39, -11} {
+			if testCase.completedCycles > 0 {
+				// completedCycles+1 recorded starts 28 days apart: that many
+				// completed cycles, and the running one still on day 12.
+				for index := range testCase.completedCycles + 1 {
+					offsetDays := -11 - 28*index
 					if err := database.Create(&models.DailyLog{
 						UserID:     user.ID,
 						Date:       today.AddDate(0, 0, offsetDays),
@@ -587,6 +607,15 @@ func TestDashboardHeaderWithholdsFertilityUntilTheFirstCompletedCycle(t *testing
 				if got := htmlAttr(bridge, "data-first-cycle-bridge-key"); got != "dashboard.fertile_window_after_first_cycle" {
 					t.Fatalf("expected the bridge line to name its copy key, got %q", got)
 				}
+			}
+
+			explainer := dashboardElementByDataAttr(document, "data-dashboard-prediction-explainer")
+			if testCase.wantExplainerKey == "" {
+				if explainer != nil {
+					t.Fatalf("expected no prediction explainer, got key %q", htmlAttr(explainer, "data-explainer-key"))
+				}
+			} else if explainer == nil || htmlAttr(explainer, "data-explainer-key") != testCase.wantExplainerKey {
+				t.Fatalf("expected the prediction explainer to name %q", testCase.wantExplainerKey)
 			}
 
 			// The tier withholds the two slider-derived items and nothing else.

@@ -540,14 +540,14 @@ func TestMarkCycleStartImplantationWarningSetsEncodedNoticeWithKey(t *testing.T)
 	user := createOnboardingTestUser(t, database, "fullpage-implantation@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
-	// Two recorded cycle starts 28 days apart: the warning is counted from a
-	// projected ovulation, so the first-cycle floor withholds it until one
-	// cycle has completed and an observed length stands behind the projection.
+	// Four recorded cycle starts 28 days apart: the warning is counted from a
+	// projected ovulation, so the completed-cycle floor withholds it until three
+	// cycles have completed and observed lengths stand behind the projection.
 	// With that 28-day length the predicted ovulation lands 14 days after the
 	// latest start, and the warning covers a new start 6-12 days past
 	// ovulation, so a latest start 22 days back puts today inside the window.
 	todayUTC := services.CalendarDay(time.Now().UTC(), time.UTC)
-	for _, daysAgo := range []int{50, 22} {
+	for _, daysAgo := range []int{106, 78, 50, 22} {
 		previousStart := models.DailyLog{
 			UserID:     user.ID,
 			Date:       todayUTC.AddDate(0, 0, -daysAgo),

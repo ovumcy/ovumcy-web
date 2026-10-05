@@ -36,12 +36,13 @@ func TestCalendarRendersOvulationTagWithoutFertileOverride(t *testing.T) {
 		t.Fatalf("update user cycle settings: %v", err)
 	}
 
-	// The ovulation markers ride the first-cycle floor: the grid withholds a
-	// window whose only source is the cycle-length slider until one cycle has
-	// been observed. So the fixture carries the previous cycle as well, exactly
-	// one 28-day cycle back — the same length the account settings already carry,
-	// which leaves every projected date where this test pins it.
-	for _, cycleStart := range []time.Time{periodStart.AddDate(0, 0, -28), periodStart} {
+	// The ovulation markers ride the completed-cycle floor: the grid withholds a
+	// window resting on the cycle-length slider or on one or two observed
+	// lengths until three cycles have been observed. So the fixture carries the
+	// three previous cycles as well, each exactly 28 days — the same length the
+	// account settings already carry, which leaves every projected date where
+	// this test pins it.
+	for _, cycleStart := range []time.Time{periodStart.AddDate(0, 0, -84), periodStart.AddDate(0, 0, -56), periodStart.AddDate(0, 0, -28), periodStart} {
 		for offset := range 5 {
 			if err := database.Create(&models.DailyLog{
 				UserID:   user.ID,

@@ -24,7 +24,7 @@ import (
 
 // dashboardSuppressionSeed is the shared baseline: a 28-day account whose
 // running cycle is on day 12 — inside the fertile window (ovulation day 14,
-// window days 9-14) with a day of timezone slack on either side — with two
+// window days 9-14) with a day of timezone slack on either side — with three
 // completed cycles behind it.
 func dashboardSuppressionSeed(t *testing.T, database *gorm.DB, userID uint, columns map[string]any) {
 	t.Helper()
@@ -42,7 +42,7 @@ func dashboardSuppressionSeed(t *testing.T, database *gorm.DB, userID uint, colu
 	if err := database.Model(&models.User{}).Where("id = ?", userID).Updates(updates).Error; err != nil {
 		t.Fatalf("seed cycle baseline: %v", err)
 	}
-	for _, offsetDays := range []int{-67, -39, -11} {
+	for _, offsetDays := range []int{-95, -67, -39, -11} {
 		if err := database.Create(&models.DailyLog{
 			UserID:     userID,
 			Date:       today.AddDate(0, 0, offsetDays),
