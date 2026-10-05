@@ -49,7 +49,9 @@ test.describe('Dashboard: pregnancy test pause', () => {
     // hidden "none" carrier is not one of them.
     await expect(control.getByRole('radio')).toHaveCount(2);
     await expect(control.locator('[data-pregnancy-test-empty]')).toBeVisible();
-    await expect(control.locator('[data-pregnancy-test-remove]')).toHaveCount(0);
+    // Both the wording and the Remove button are always in the markup; the
+    // state hides one of them.
+    await expect(control.locator('[data-pregnancy-test-remove]')).toBeHidden();
 
     await dayForm
       .locator('label.choice-option:has(input[name="pregnancy_test"][value="positive"])')
@@ -71,6 +73,7 @@ test.describe('Dashboard: pregnancy test pause', () => {
     await expect(remove).toBeVisible();
     await expect(remove).toHaveAttribute('type', 'button');
     await expect(savedControl.locator('[data-pregnancy-test-remove]')).toHaveCount(1);
+    await expect(savedControl.locator('[data-pregnancy-test-empty]')).toBeHidden();
 
     // Pause: the owner dashboard surfaces the pregnancy-paused explainer.
     // Assert the stable explainer key (locale-independent) rather than copy,
