@@ -95,9 +95,9 @@ test.describe('WCAG AA audit regressions', () => {
 
     // completeOnboardingIfPresent has already recorded the current cycle's start,
     // with its period days, at today-3; any later start would replace it as the
-    // current cycle. The window is withheld until one cycle has been
-    // observed, so the previous start is seeded exactly one 28-day cycle before
-    // it: that is the length the account settings already carry. On the 28/14
+    // current cycle. The window is withheld until three cycles have been
+    // observed, so three earlier starts are seeded, each exactly one 28-day cycle
+    // before the next: that is the length the account settings already carry. On the 28/14
     // defaults (models.DefaultPeriodLength=5, the unexported
     // defaultLutealPhaseDays=14 in internal/services/cycles.go)
     // CalcOvulationDay(28, 14) predicts ovulation on cycle day 14, and
@@ -113,7 +113,9 @@ test.describe('WCAG AA audit regressions', () => {
     // neighbouring months are excluded: whether any carries a phase depends on
     // the run date, and their faded style is not the one under test.
     const currentStartISO = shiftISODate(isoToday(), -3);
-    await markCycleStart(page, shiftISODate(currentStartISO, -28));
+    for (const cyclesBack of [3, 2, 1]) {
+      await markCycleStart(page, shiftISODate(currentStartISO, -28 * cyclesBack));
+    }
 
     const views = [
       {
