@@ -192,14 +192,14 @@ func TestCycleStartPolicy_ResolveManualCycleStartPolicy_AnchorDayBeforeTargetInc
 // stats that feed potentialImplantationGapDays. The mutation would change the
 // cutoff to targetDay (inclusive), potentially skewing the cycle-length stats.
 //
-// Setup: previousStart 2026-02-26, user CycleLength=28, two recorded 28-day
-// cycles behind it (observedCyclesBefore — without them the first-cycle floor
-// withholds the hint and this test would never reach the cutoff it is about).
+// Setup: previousStart 2026-02-26, user CycleLength=28, three recorded 28-day
+// cycles behind it (observedCyclesBefore — without them the completed-cycle
+// floor withholds the hint and this test would never reach the cutoff it is about).
 // Ovulation predicted on 2026-03-11 (cycle day 14 of a 28-day cycle).
 // targetDay = 2026-03-17 → gap = 6 → implantation window (lower edge).
 //
 // We add a synthetic "future" CycleStart on targetDay itself. If that log
-// leaks into stats it closes a third, 19-day cycle, which pulls the median
+// leaks into stats it closes a fourth, 19-day cycle, which pulls the median
 // down and moves the ovulation date, so the result stops being (6,true).
 func TestCycleStartPolicy_PotentialImplantationGapDays_TargetDayLogExcluded(t *testing.T) {
 	user := &models.User{CycleLength: 28}

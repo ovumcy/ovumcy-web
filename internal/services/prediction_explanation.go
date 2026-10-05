@@ -38,6 +38,12 @@ func predictionExplanationPrimaryKey(user *models.User, cycleContext DashboardCy
 	// the owner who had no explanation at all.
 	case cycleContext.AwaitingFirstCycle:
 		return "prediction.explainer.awaiting_first_cycle"
+	// The next tier up for a regular owner: one or two completed cycles. The
+	// fertility half is still withheld, and the sentence names the number the
+	// floor counts to. Irregular owners never carry it (their sparse branch
+	// above answers first, and the context flag excludes them).
+	case cycleContext.AwaitingMoreCycles:
+		return "prediction.explainer.awaiting_more_cycles"
 	// A regular owner with at least one completed cycle behind them gets no
 	// explainer even when the prediction renders as a range: the range is the
 	// affordance, and since wave 2 the next-period line names the quantity it

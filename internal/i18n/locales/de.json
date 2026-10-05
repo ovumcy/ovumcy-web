@@ -487,6 +487,7 @@
   "dashboard.pregnancy_test.remove": "Ergebnis entfernen",
   "prediction.explainer.pregnancy_paused": "Nach einem positiven Schwangerschaftstest pausieren die Zyklusvorhersagen. Sie werden fortgesetzt, sobald nach dem Testtag eine neue Periode beginnt oder wenn Sie bei diesem Test „Ergebnis entfernen“ wählen.",
   "prediction.explainer.awaiting_first_cycle": "Die Fruchtbarkeitsdetails warten auf Ihren ersten abgeschlossenen Zyklus. Bis dahin steht dahinter nur die Zykluslänge aus der Einrichtung.",
+  "prediction.explainer.awaiting_more_cycles": "Die Fruchtbarkeitsdetails warten auf 3 abgeschlossene Zyklen. Bis dahin steht dahinter zu wenig Verlauf, um sie anzuzeigen.",
   "dashboard.median_cycle": "Medianer Zyklus",
   "dashboard.fertile_window": "Fruchtbares Fenster",
   "dashboard.flow.none": "Keine",

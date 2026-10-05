@@ -38,6 +38,11 @@ func confirmedVerdictRows() []confirmedVerdictRow {
 		{signal: "DashboardPredictionDisabled", suppress: func(user *models.User, _ *CycleStats, _ *time.Time) { user.UnpredictableCycle = true }},
 		{signal: "PregnancyPaused", suppress: func(_ *models.User, stats *CycleStats, _ *time.Time) { stats.PregnancyPaused = true }},
 		{signal: "DashboardAwaitingFirstCycle", suppress: func(_ *models.User, stats *CycleStats, _ *time.Time) { stats.CompletedCycleCount = 0 }},
+		// The one-or-two-cycles tier of a regular owner withholds the fertility
+		// PROJECTION for want of history; a day the owner's own temperatures
+		// confirmed is not that projection, so it survives like the irregular
+		// thin-history tier's.
+		{signal: "DashboardAwaitingMoreCycles", wantKept: true, suppress: func(_ *models.User, stats *CycleStats, _ *time.Time) { stats.CompletedCycleCount = 2 }},
 		// The irregular thin-history tier withholds projections; a day the owner's
 		// temperatures confirmed is not one, and the dashboard names it there.
 		{signal: "DashboardAwaitingIrregularHistory", wantKept: true, suppress: func(user *models.User, stats *CycleStats, _ *time.Time) {

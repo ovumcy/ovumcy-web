@@ -148,14 +148,15 @@ func dayFeedbackKeyOn(t *testing.T, user *models.User, logs []models.DailyLog, l
 	return state.MessageKey
 }
 
-// lutealTenLogs is three 28-day cycles from 2026-01-01 whose first two carry a
-// thermal shift on cycle day 18, so the inferred luteal phase is 10 and the
-// current cycle (from 2026-02-26) projects its window on cycle days 13-18,
-// 2026-03-10..15. The default 14 would put it on days 9-14.
+// lutealTenLogs is four 28-day cycles from 2025-12-04 (three completed — the
+// history the fertility half needs before the dashboard names a window) whose
+// first three carry a thermal shift on cycle day 18, so the inferred luteal
+// phase is 10 and the current cycle (from 2026-02-26) projects its window on
+// cycle days 13-18, 2026-03-10..15. The default 14 would put it on days 9-14.
 func lutealTenLogs(t *testing.T) []models.DailyLog {
 	t.Helper()
-	origin := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
-	return mergeLogsByDay(lutealRoundTripLogs(t, origin, 28, []int{18, 18}, lutealSignalBBT))
+	origin := time.Date(2025, time.December, 4, 0, 0, 0, 0, time.UTC)
+	return mergeLogsByDay(lutealRoundTripLogs(t, origin, 28, []int{18, 18, 18}, lutealSignalBBT))
 }
 
 // mergeLogsByDay folds the fixture's separate period and temperature entries for

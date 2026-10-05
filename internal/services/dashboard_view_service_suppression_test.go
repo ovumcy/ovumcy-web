@@ -27,13 +27,13 @@ import (
 // a suppression assertion against a row that was never fertile proves nothing.
 const dashboardSuppressionDay = "2026-03-09"
 
-// dashboardSuppressionStats is a two-completed-cycle history whose projection
+// dashboardSuppressionStats is a three-completed-cycle history whose projection
 // puts today inside the fertile window: every field a suppressed tier must
 // withhold is populated before the tier is applied.
 func dashboardSuppressionStats(t *testing.T) CycleStats {
 	t.Helper()
 	return CycleStats{
-		CompletedCycleCount:  2,
+		CompletedCycleCount:  3,
 		CurrentCycleDay:      10,
 		CurrentPhase:         "follicular",
 		CurrentFertility:     FertilityStatusFertile,
@@ -183,6 +183,7 @@ func TestBuildDashboardCycleContextPausesTheNextPeriodEstimateForAnOverdueIrregu
 		t.Run(name, func(t *testing.T) {
 			user := &models.User{ID: 12, Role: models.RoleOwner, CycleLength: 28, PeriodLength: 5, LutealPhase: 14, IrregularCycle: true}
 			stats := dashboardSuppressionStats(t)
+			stats.CompletedCycleCount = 2 // irregular thin history: below the three-cycle floor
 			stats.CurrentCycleDay = testCase.currentCycleDay
 
 			// Fixture invariants: this is the exact collision — the thin-history

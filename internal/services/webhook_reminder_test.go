@@ -42,15 +42,17 @@ func enabledWebhookSettings(leadDays int) WebhookReminderSettings {
 }
 
 // webhookReminderCycleLogs seeds the cycle start under test plus the previous
-// start exactly one 28-day cycle earlier. The ovulation reminder rides the
-// first-cycle floor (FertilityProjectionSuppressed), so the decision path needs
-// one completed cycle behind it; a previous start one full cycle back is the
-// same 28 days the account settings carry, which leaves every projected date
-// exactly where these cases pin it.
+// start three 28-day cycles earlier, one cycle apart. The ovulation reminder
+// rides the completed-cycle floor (FertilityProjectionSuppressed), so the
+// decision path needs three completed cycles behind it; starts a full cycle
+// apart are the same 28 days the account settings carry, which leaves every
+// projected date exactly where these cases pin it.
 func webhookReminderCycleLogs(t *testing.T, start string) []models.DailyLog {
 	t.Helper()
 	startDay := mustParseWebhookReminderDay(t, start, time.UTC)
 	return []models.DailyLog{
+		{Date: startDay.AddDate(0, 0, -84), IsPeriod: true, CycleStart: true},
+		{Date: startDay.AddDate(0, 0, -56), IsPeriod: true, CycleStart: true},
 		{Date: startDay.AddDate(0, 0, -28), IsPeriod: true, CycleStart: true},
 		{Date: startDay, IsPeriod: true, CycleStart: true},
 	}

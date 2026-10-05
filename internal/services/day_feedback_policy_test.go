@@ -26,14 +26,16 @@ func TestResolveDayFeedbackUsesSelfCareMessageForEarlyPeriodDays(t *testing.T) {
 	}
 }
 
-// The positive anchor for the suppression below: one COMPLETED cycle (two
-// observed starts) makes the fertility window an observation of this account,
+// The positive anchor for the suppression below: three COMPLETED cycles (four
+// observed starts) make the fertility window an observation of this account,
 // and the fertile save message renders.
 func TestResolveDayFeedbackUsesFertileMessageDuringFertilityWindow(t *testing.T) {
 	logs := newDayLogRepositoryStub()
 	users := &dayUserRepositoryStub{}
 	service := NewDayService(logs, users)
 
+	logs.entries["2025-12-04"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2025-12-04"), IsPeriod: true}
+	logs.entries["2026-01-04"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-01-04"), IsPeriod: true}
 	logs.entries["2026-02-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-02-01"), IsPeriod: true}
 	logs.entries["2026-03-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-03-01"), IsPeriod: true}
 
@@ -285,6 +287,8 @@ func TestResolveDayFeedbackFertileMessageOnWindowStartInUTCPlusZone(t *testing.T
 	users := &dayUserRepositoryStub{}
 	service := NewDayService(logs, users)
 
+	logs.entries["2025-12-04"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2025-12-04"), IsPeriod: true}
+	logs.entries["2026-01-04"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-01-04"), IsPeriod: true}
 	logs.entries["2026-02-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-02-01"), IsPeriod: true}
 	logs.entries["2026-03-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-03-01"), IsPeriod: true}
 

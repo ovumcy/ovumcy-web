@@ -50,6 +50,8 @@ var predictionSuppressionSignals = map[string]string{
 	"DashboardCycleOverdue":             "cycle overdue past its own cycle length",
 	"AwaitingFirstCycle":                "the zero-completed-cycle floor",
 	"DashboardAwaitingFirstCycle":       "the zero-completed-cycle floor",
+	"AwaitingMoreCycles":                "the one-or-two-completed-cycles floor",
+	"DashboardAwaitingMoreCycles":       "the one-or-two-completed-cycles floor",
 	"DashboardAwaitingIrregularHistory": "irregular mode with fewer than three completed cycles",
 	"PredictionsSuppressed":             "the whole-projection gate",
 	"FertilitySuppressed":               "the fertility gate",

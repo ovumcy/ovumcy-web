@@ -166,7 +166,9 @@ func WebhookReminderSettingsFromNotifyRecord(record models.WebhookNotifyRecord) 
 //     equals that anchor.
 //
 //   - ovulation-soon: emitted when NotifyOvulation is on and ovulation is
-//     calculable (not impossible, non-zero) and within the same window. Its cycle
+//     calculable (not impossible, non-zero), the fertility half is not withheld
+//     (FertilityProjectionSuppressed: fewer than three completed cycles withholds
+//     it for a regular owner as for an irregular one) and within the same window. Its cycle
 //     anchor is the start of the cycle the ovulation belongs to (derived with the
 //     same projection helpers the dashboard uses). Skipped when the incoming
 //     ovulation watermark already equals that anchor.
@@ -251,10 +253,10 @@ func decideDueReminders(user *models.User, settings WebhookReminderSettings, log
 	if watermarked {
 		watermarkSuppressed++
 	}
-	// The ovulation reminder carries the extra first-cycle floor: before one
-	// cycle has been observed its date comes from the onboarding slider alone,
-	// and this pass sends it to an endpoint outside the instance
-	// (FertilityProjectionSuppressed). The period reminder keeps its own path —
+	// The ovulation reminder carries the extra completed-cycle floor: before
+	// three cycles have been observed its date rests on the onboarding slider
+	// or on one or two observed lengths, and this pass sends it to an endpoint
+	// outside the instance (FertilityProjectionSuppressed). The period reminder keeps its own path —
 	// it is anchored on a recorded cycle start and rides the estimate flag.
 	// A confirmed thermal shift outranks the projection it supersedes. This
 	// reminder says an ovulation is COMING; once the temperatures have named the

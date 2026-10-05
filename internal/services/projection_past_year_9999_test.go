@@ -27,8 +27,8 @@ func lateYear9999Owner() *models.User {
 func lateYear9999Starts(t *testing.T, lastStart string) []models.DailyLog {
 	t.Helper()
 	last := mustParseDashboardDay(t, lastStart)
-	logs := make([]models.DailyLog, 0, 3)
-	for _, back := range []int{56, 28, 0} {
+	logs := make([]models.DailyLog, 0, 4)
+	for _, back := range []int{84, 56, 28, 0} {
 		logs = append(logs, models.DailyLog{Date: last.AddDate(0, 0, -back), IsPeriod: true, CycleStart: true})
 	}
 	return logs

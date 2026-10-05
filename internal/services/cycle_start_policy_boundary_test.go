@@ -83,15 +83,16 @@ func TestShouldSuggestManualCycleStart_RequiresPeriodNonStart(t *testing.T) {
 }
 
 // observedCyclesBefore seeds the recorded history the implantation hint
-// requires: with fewer than two recorded cycle starts there is no measured
-// cycle length, the first-cycle floor inside FertilityProjectionSuppressed
-// withholds the hint, and a fixture probing the window arithmetic would never
-// reach that arithmetic. The two starts are 28 days apart — the length these
-// tests were already written against — so every ovulation date below is
-// unchanged from when the fixture carried no logs at all.
+// requires: with fewer than four recorded cycle starts there are fewer than
+// three completed cycles, the completed-cycle floor inside
+// FertilityProjectionSuppressed withholds the hint, and a fixture probing the
+// window arithmetic would never reach that arithmetic. The starts are 28 days
+// apart — the length these tests were already written against — so every
+// ovulation date below is unchanged from when the fixture carried no logs at
+// all.
 func observedCyclesBefore(start time.Time) []models.DailyLog {
-	logs := make([]models.DailyLog, 0, 10)
-	for _, cycleStart := range []time.Time{start.AddDate(0, 0, -28), start} {
+	logs := make([]models.DailyLog, 0, 20)
+	for _, cycleStart := range []time.Time{start.AddDate(0, 0, -84), start.AddDate(0, 0, -56), start.AddDate(0, 0, -28), start} {
 		for offset := range 5 {
 			logs = append(logs, models.DailyLog{
 				Date:       cycleStart.AddDate(0, 0, offset),
@@ -104,7 +105,7 @@ func observedCyclesBefore(start time.Time) []models.DailyLog {
 }
 
 func TestPotentialImplantationGapDays_WindowBoundary(t *testing.T) {
-	// Two recorded 28-day cycles put an observed length behind the projection
+	// Three recorded 28-day cycles put an observed length behind the projection
 	// and the luteal phase resolves to the 14-day default, so ovulation for the
 	// cycle starting 2026-02-26 lands on 2026-03-11. The implantation warning
 	// fires only for a gap of 6..12 days after that ovulation date.

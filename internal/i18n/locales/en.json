@@ -487,6 +487,7 @@
   "dashboard.pregnancy_test.remove": "Remove result",
   "prediction.explainer.pregnancy_paused": "Cycle predictions are paused after a positive pregnancy test. They resume when a new period starts after the test day, or when you use Remove result on that test.",
   "prediction.explainer.awaiting_first_cycle": "Fertile details wait for your first completed cycle. Until then the only thing behind them is the cycle length from setup.",
+  "prediction.explainer.awaiting_more_cycles": "Fertile details wait for 3 completed cycles. Until then there is too little history behind them to show them.",
   "dashboard.median_cycle": "Median cycle",
   "dashboard.fertile_window": "Fertile window",
   "dashboard.flow.none": "None",

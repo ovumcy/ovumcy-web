@@ -487,6 +487,7 @@
   "dashboard.pregnancy_test.remove": "Rimuovi risultato",
   "prediction.explainer.pregnancy_paused": "Le previsioni del ciclo sono sospese dopo un test di gravidanza positivo. Riprendono quando inizia un nuovo periodo dopo il giorno del test, oppure quando usi «Rimuovi risultato» su quel test.",
   "prediction.explainer.awaiting_first_cycle": "I dettagli sulla fertilità attendono il primo ciclo completato. Fino ad allora dietro di essi c'è solo la durata del ciclo impostata all'inizio.",
+  "prediction.explainer.awaiting_more_cycles": "I dettagli sulla fertilità attendono 3 cicli completati. Fino ad allora dietro di essi c'è troppo poco storico per mostrarli.",
   "dashboard.median_cycle": "Ciclo mediano",
   "dashboard.fertile_window": "Finestra fertile",
   "dashboard.flow.none": "Nessun flusso",

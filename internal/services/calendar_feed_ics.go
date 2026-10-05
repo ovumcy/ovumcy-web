@@ -222,10 +222,11 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 		return events
 	}
 
-	// The ovulation events carry the extra first-cycle floor: with no completed
-	// cycle behind it, the projected ovulation day is the onboarding slider, and
-	// this feed sends it off the instance into a calendar client that keeps it
-	// long after the app would correct it (FertilityProjectionSuppressed).
+	// The ovulation events carry the extra completed-cycle floor: with fewer than
+	// three completed cycles behind it, the projected ovulation day is the
+	// onboarding slider or one or two observed lengths, and this feed sends it off
+	// the instance into a calendar client that keeps it long after the app would
+	// correct it (FertilityProjectionSuppressed).
 	includeOvulation := !suppression.FertilitySuppressed
 	cycleLength := DashboardProjectionCycleLength(user, stats)
 	if stats.LastPeriodStart.IsZero() || cycleLength <= 0 {
