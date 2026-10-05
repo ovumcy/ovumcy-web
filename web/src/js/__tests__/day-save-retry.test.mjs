@@ -611,3 +611,71 @@ test("a failed save writes no draft to client storage", async () => {
     dom.window.close();
   }
 });
+
+// If the account signed in from the other tab is not the one the form was
+// rendered for, the server refuses the save with 409 rather than write the
+// entry into that account. Retrying cannot land it and signing in again is not
+// what is missing, so the notice offers neither — and the entry stays put.
+const ACCOUNT_CHANGED_KEY = "daylog.save_account_changed";
+const ACCOUNT_CHANGED_TEXT = "You're now signed in to a different account. This entry was not saved.";
+const ACCOUNT_CHANGED_FRAGMENT = `<div class="status-error" data-flash-key="${ACCOUNT_CHANGED_KEY}" data-flash-status="error">${ACCOUNT_CHANGED_TEXT}</div>`;
+const FORM_ACCOUNT = "opaque-binding-of-the-rendering-account";
+
+function assertAccountChangedNotice(notice, surface) {
+  assert.ok(notice, `${surface}: the 409 renders a notice`);
+  assert.equal(notice.textContent, ACCOUNT_CHANGED_TEXT, `${surface}: the notice reads the server's localized copy`);
+  assert.equal(notice.querySelector("[data-day-save-retry]"), null, `${surface}: a retry cannot land, so none is offered`);
+  assert.equal(notice.querySelector("[data-day-save-sign-in]"), null, `${surface}: signing in is not what is missing`);
+}
+
+test("a calendar save refused for another account offers no retry and keeps the entry", async () => {
+  const dom = await loadDOMWithScript(APP_BUNDLE, { html: withSignInLabel(PAGE) });
+  try {
+    fireOnForm(dom.window, "htmx:responseError", {
+      target: dom.window.document.getElementById("calendar-save-status"),
+      xhr: { status: 409, responseText: ACCOUNT_CHANGED_FRAGMENT },
+    });
+
+    assertAccountChangedNotice(failureNotice(dom.window), "calendar");
+    assertEntryIntact(dom.window);
+    assertNothingStored(dom.window);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("a dashboard save carries the form's account binding and a 409 for another account offers no retry", async () => {
+  const failing = await loadDashboardWithFailingSave("ok");
+  const { dom, calls } = failing;
+  try {
+    const form = dashboardSaveForm(dom.window);
+    form.setAttribute("data-day-save-sign-in-label", SIGN_IN_LABEL);
+    const binding = dom.window.document.createElement("input");
+    binding.type = "hidden";
+    binding.name = "day_form_account";
+    binding.value = FORM_ACCOUNT;
+    form.insertBefore(binding, form.firstChild);
+
+    dom.window.fetch = (url, init) => {
+      calls.push({ url: String(url), init: init || {} });
+      return Promise.resolve({
+        ok: false,
+        status: 409,
+        headers: { get: () => null },
+        text: () => Promise.resolve(ACCOUNT_CHANGED_FRAGMENT),
+      });
+    };
+    const before = calls.length;
+    await attemptDashboardSave(dom.window);
+
+    assert.ok(calls.length > before, "the save went out");
+    const sent = new URLSearchParams(String(calls[calls.length - 1].init.body || ""));
+    assert.deepEqual(sent.getAll("day_form_account"), [FORM_ACCOUNT], "the body names the account the form was rendered for");
+
+    assertAccountChangedNotice(dashboardFailureNotice(dom.window), "dashboard");
+    assertDashboardEntryIntact(dom.window);
+    assertNothingStored(dom.window);
+  } finally {
+    dom.window.close();
+  }
+});
