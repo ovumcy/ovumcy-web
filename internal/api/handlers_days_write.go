@@ -81,11 +81,14 @@ func (handler *Handler) UpsertDay(c fiber.Ctx) error {
 		return handler.failDayMutation(c, dayUpsertMutation, spec)
 	}
 
-	entry, err := handler.dayService.UpsertDayEntryWithAutoFill(
+	// The handler's clock, as MarkCycleStart reads it: a period or test the
+	// write records is held to the cycle-start bound at this instant.
+	entry, err := handler.dayService.UpsertDayEntryWithAutoFillAt(
 		c.Context(),
 		request.user.ID,
 		request.day,
 		buildUpsertDayEntryInput(request.payload, request.cleanSymptomIDs, request.hidden),
+		handler.clockNow().In(request.location),
 		request.location,
 	)
 	if err != nil {
@@ -105,12 +108,13 @@ func (handler *Handler) PatchDay(c fiber.Ctx) error {
 		return handler.failDayMutation(c, dayUpsertMutation, spec)
 	}
 
-	entry, err := handler.dayService.PatchDayEntryWithAutoFill(
+	entry, err := handler.dayService.PatchDayEntryWithAutoFillAt(
 		c.Context(),
 		request.user.ID,
 		request.day,
 		buildUpsertDayEntryInput(request.payload, request.cleanSymptomIDs, request.hidden),
 		request.fields,
+		handler.clockNow().In(request.location),
 		request.location,
 	)
 	if err != nil {

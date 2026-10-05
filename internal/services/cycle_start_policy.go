@@ -2,6 +2,7 @@ package services
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
@@ -42,6 +43,37 @@ func IsAllowedManualCycleStartDate(day time.Time, now time.Time, location *time.
 
 	day = DateAtLocation(day, location)
 	return !day.After(manualCycleStartMaxDate(now, location))
+}
+
+// ErrDayObservationDateInvalid refuses a day write that records a period or a
+// pregnancy-test result on a day past the bound a cycle start may be marked on.
+// It wraps ErrManualCycleStartDateInvalid, so every transport answers it with
+// the cycle-start refusal and its localized message.
+var ErrDayObservationDateInvalid = fmt.Errorf("%w: a period or pregnancy test recorded past the cycle-start bound", ErrManualCycleStartDateInvalid)
+
+// validateDayObservationDate decides whether a day write may store payload over
+// stored on day. A period and a pregnancy-test result are observations, so a
+// write that records one is held to the bound a cycle start is
+// (IsAllowedManualCycleStartDate: today plus manualCycleStartFutureDays in the
+// owner's zone). Only what the write records is held to it: turning the period
+// on, or storing a test result the day does not already carry. A write that
+// leaves both as stored — a partial write not naming them, a full write
+// re-stating them — and one that clears them go through, so an entry stored
+// ahead of the bound before it existed stays as stored and stays editable.
+//
+// It runs inside UpsertDayEntry, against the row the write locked, so every
+// writer of a day inherits it. day is the canonical UTC-midnight write key.
+func validateDayObservationDate(stored models.DailyLog, payload DayEntryInput, day time.Time, now time.Time, location *time.Location) error {
+	recordsPeriod := payload.IsPeriod && !stored.IsPeriod
+	recordsTest := payload.PregnancyTest != models.PregnancyTestNone &&
+		payload.PregnancyTest != NormalizeDayPregnancyTest(stored.PregnancyTest)
+	if !recordsPeriod && !recordsTest {
+		return nil
+	}
+	if IsAllowedManualCycleStartDate(CalendarDay(day, location), now, location) {
+		return nil
+	}
+	return ErrDayObservationDateInvalid
 }
 
 func ResolveManualCycleStartPolicy(user *models.User, logs []models.DailyLog, day time.Time, now time.Time, location *time.Location) ManualCycleStartPolicy {

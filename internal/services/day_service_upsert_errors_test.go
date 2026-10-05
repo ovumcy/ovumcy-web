@@ -49,7 +49,7 @@ func TestUpsertDayEntryReportsRepositoryFailuresWithNoPriorState(t *testing.T) {
 			service := NewDayService(logs, &dayUserRepositoryStub{})
 
 			_, previous, err := service.UpsertDayEntry(context.Background(), 10, day,
-				DayEntryInput{IsPeriod: true, Flow: models.FlowMedium}, time.UTC)
+				DayEntryInput{IsPeriod: true, Flow: models.FlowMedium}, day, time.UTC)
 			if !errors.Is(err, testCase.expected) {
 				t.Fatalf("expected %v when %s, got %v", testCase.expected, testCase.name, err)
 			}
