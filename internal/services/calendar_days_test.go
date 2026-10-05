@@ -886,7 +886,6 @@ func TestBuildCalendarDayStatesPaintsHistoricalFertileWindowsWhenEnabled(t *test
 		MedianCycleLength:   28,
 		AveragePeriodLength: 5,
 		LutealPhase:         14,
-		CompletedCycleCount: 3,
 		LastPeriodStart:     time.Date(2026, time.February, 1, 0, 0, 0, 0, time.UTC),
 	}
 	user := &models.User{ShowHistoricalPhases: true}

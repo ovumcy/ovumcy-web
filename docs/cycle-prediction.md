@@ -329,10 +329,9 @@ also withholds the next period). What is withheld:
 - the ovulation reminder in the webhook pass;
 - the ovulation banner on the dashboard.
 
-The ribbon's phase labels after menstruation withhold the same way, and so do the
-retrospective marks of the "show historical phases" setting — the calendar's
-ovulation and fertile cells on past cycles and the stats cycle stack's inferred
-phases — since they are the same cycle arithmetic applied to a closed cycle.
+The ribbon's phase labels after menstruation withhold the same way. The floor
+withholds projections only: past completed cycles keep their inferred shading under
+the "show historical phases" setting.
 The next-period estimate survives this floor, with its own estimate qualifier —
 its anchor is a date the owner actually recorded.
 

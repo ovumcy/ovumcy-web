@@ -194,11 +194,13 @@ func buildCalendarPredictionMaps(user *models.User, logs []models.DailyLog, stat
 
 	// The fertility half of the projection carries the extra completed-cycle
 	// floor: until three cycles have been observed, the fertile window, the peak
-	// band and the ovulation day rest on the onboarding slider or on one or two
-	// observed lengths, so the grid paints none of them, projected or
-	// retrospective (FertilityProjectionSuppressed). The predicted period
-	// days keep their anchor in a recorded cycle start and stay — narrowed off a
-	// confirmed day the marker above names, so a band never shades that cell.
+	// band and the ovulation day ahead rest on the onboarding slider or on one or
+	// two observed lengths, so the grid paints none of them projected forward
+	// (FertilityProjectionSuppressed). The historical pass below stays outside
+	// that floor: a completed past cycle has its own record, and it reads
+	// PredictionsSuppressed above like inferred history everywhere. The predicted
+	// period days keep their anchor in a recorded cycle start and stay — narrowed
+	// off a confirmed day the marker above names, so a band never shades that cell.
 
 	// The CURRENT cycle's window follows a thermal shift the owner's own
 	// temperatures confirm — the same triple (day, window, status) the dashboard
@@ -222,12 +224,8 @@ func buildCalendarPredictionMaps(user *models.User, logs []models.DailyLog, stat
 	}
 	appendPredictedCycles(predictedPeriodMap, preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, stats, gridEnd, location, !fertilitySuppressed)
 	appendPredictedStartRange(maps.predictedStartRange, user, stats, DateAtLocation(now, location), location)
+	appendHistoricalCycles(preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, logs, stats, user, location)
 	if !fertilitySuppressed {
-		// Retrospective marks are the same cycle arithmetic applied to a past
-		// cycle, so they read the fertility gate like every other fertility mark:
-		// with one or two completed cycles behind the account a past cycle's
-		// window is as thin an estimate as a future one.
-		appendHistoricalCycles(preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, logs, stats, user, location)
 		// The BBT pass only ever downgrades the projected ovulation day to
 		// "tentative", so with the fertility maps withheld it would reintroduce
 		// the very day the floor just removed, one shade lighter.

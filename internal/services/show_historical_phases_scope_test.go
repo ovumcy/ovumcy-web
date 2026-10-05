@@ -46,7 +46,7 @@ func showHistoricalPhasesScopeSymptoms() map[uint]models.SymptomType {
 // it.
 func TestShowHistoricalPhasesGovernsTheDrawnMarkersOnly(t *testing.T) {
 	logs := showHistoricalPhasesScopeLogs(t)
-	stats := CycleStats{LutealPhase: 14, CompletedCycleCount: 3}
+	stats := CycleStats{LutealPhase: 14}
 	symptomByID := showHistoricalPhasesScopeSymptoms()
 
 	t.Run("the calendar's historical markers follow it", func(t *testing.T) {
