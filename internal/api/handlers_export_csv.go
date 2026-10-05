@@ -27,6 +27,7 @@ func (handler *Handler) ExportCSV(c fiber.Ctx) error {
 	if err != nil {
 		return handler.failEgress(c, exportCSVEgress, exportFetchLogsErrorSpec())
 	}
+	rows = services.WithOnboardingStartRow(rows, services.ExportOnboardingStart(user, from, to))
 	now := handler.clockNow().In(location)
 
 	var output bytes.Buffer

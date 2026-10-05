@@ -29,14 +29,14 @@ func TestStatsPhaseInsightsBuildContextsExcludesShortOvulationlessCycles(t *test
 	//   Jan 21-> Feb 18 : length 28 -> ovulationDay 14           -> kept
 	//   Feb 18-> Mar 18 : length 28 -> ovulationDay 14           -> kept
 	logs := []models.DailyLog{
-		{Date: statsphaseinsightsCovParseDay("2026-01-01"), IsPeriod: true},
-		{Date: statsphaseinsightsCovParseDay("2026-01-07"), IsPeriod: true},
-		{Date: statsphaseinsightsCovParseDay("2026-01-21"), IsPeriod: true},
-		{Date: statsphaseinsightsCovParseDay("2026-02-18"), IsPeriod: true},
-		{Date: statsphaseinsightsCovParseDay("2026-03-18"), IsPeriod: true},
+		{Date: statsphaseinsightsCovParseDay("2026-01-01"), IsPeriod: true, CycleStart: true},
+		{Date: statsphaseinsightsCovParseDay("2026-01-07"), IsPeriod: true, CycleStart: true},
+		{Date: statsphaseinsightsCovParseDay("2026-01-21"), IsPeriod: true, CycleStart: true},
+		{Date: statsphaseinsightsCovParseDay("2026-02-18"), IsPeriod: true, CycleStart: true},
+		{Date: statsphaseinsightsCovParseDay("2026-03-18"), IsPeriod: true, CycleStart: true},
 	}
 
-	got := buildCompletedCyclePhaseContexts(logs, statsphaseinsightsCovLocation)
+	got := buildCompletedCyclePhaseContexts(logs, statsphaseinsightsCovLocation, BoundaryContext{})
 
 	// Original skips both ovulation-less short cycles, leaving exactly the two
 	// valid 28-day cycles. The mutation (ovulationDay < 0) keeps the short cycles.
@@ -63,13 +63,13 @@ func TestStatsPhaseInsightsMoodInsightEmptyPhaseHasNoData(t *testing.T) {
 	// day of each cycle, so follicular, ovulation and luteal phases have zero
 	// qualifying mood entries (count == 0).
 	logs := []models.DailyLog{
-		{Date: statsphaseinsightsCovDay(t, "2026-01-01"), IsPeriod: true, Mood: 3},
-		{Date: statsphaseinsightsCovDay(t, "2026-01-29"), IsPeriod: true, Mood: 3},
-		{Date: statsphaseinsightsCovDay(t, "2026-02-26"), IsPeriod: true, Mood: 3},
-		{Date: statsphaseinsightsCovDay(t, "2026-03-26"), IsPeriod: true}, // opens the 4th start
+		{Date: statsphaseinsightsCovDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true, Mood: 3},
+		{Date: statsphaseinsightsCovDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true, Mood: 3},
+		{Date: statsphaseinsightsCovDay(t, "2026-02-26"), IsPeriod: true, CycleStart: true, Mood: 3},
+		{Date: statsphaseinsightsCovDay(t, "2026-03-26"), IsPeriod: true, CycleStart: true}, // opens the 4th start
 	}
 
-	insights, ok := service.BuildPhaseMoodInsights(owner, logs, statsphaseinsightsCovLocation)
+	insights, ok := service.BuildPhaseMoodInsights(owner, logs, statsphaseinsightsCovLocation, BoundaryContext{})
 	if !ok {
 		t.Fatal("expected phase mood insights to be available")
 	}
@@ -125,14 +125,14 @@ func TestBuildPhaseMoodInsightsDefaultsZeroPeriodLengthToMenstrual(t *testing.T)
 	// Mood out of range) deterministically sorts last and zeroes periodLength.
 	dupFalseLater := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	logs := []models.DailyLog{
-		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true, Mood: 3}, // cycle1 day1, 00:00
-		{Date: dupFalseLater, IsPeriod: false, Mood: 0},                            // dup same day, 12:00 -> periodLength 0
-		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true},          // cycle2 start
-		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true},          // cycle3 start
-		{Date: mustParseStatsServiceDay(t, "2026-03-26"), IsPeriod: true},          // closes cycle3
+		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true, Mood: 3}, // cycle1 day1, 00:00
+		{Date: dupFalseLater, IsPeriod: false, Mood: 0},                                              // dup same day, 12:00 -> periodLength 0
+		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true},          // cycle2 start
+		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true, CycleStart: true},          // cycle3 start
+		{Date: mustParseStatsServiceDay(t, "2026-03-26"), IsPeriod: true, CycleStart: true},          // closes cycle3
 	}
 
-	insights, ok := service.BuildPhaseMoodInsights(owner, logs, time.UTC)
+	insights, ok := service.BuildPhaseMoodInsights(owner, logs, time.UTC, BoundaryContext{})
 	if !ok {
 		t.Fatal("expected phase mood insights to be available (3 completed cycles)")
 	}

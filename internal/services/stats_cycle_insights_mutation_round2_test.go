@@ -37,10 +37,10 @@ func TestStatsCycleInsightsBuildCompletedCycleSpansPeriodLengthMatchesObservedNo
 	// real length with models.DefaultPeriodLength (5); asserting the exact value 1
 	// distinguishes the two.
 	logs := []models.DailyLog{
-		{Date: statscycleinsightsCovDay(t, "2026-01-01"), IsPeriod: true},
-		{Date: statscycleinsightsCovDay(t, "2026-01-29"), IsPeriod: true},
+		{Date: statscycleinsightsCovDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
+		{Date: statscycleinsightsCovDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true},
 	}
-	spans := buildCompletedCycleSpans(logs, time.UTC)
+	spans := buildCompletedCycleSpans(logs, time.UTC, BoundaryContext{})
 	if len(spans) != 1 {
 		t.Fatalf("expected exactly one completed span, got %d", len(spans))
 	}
@@ -69,12 +69,12 @@ func TestStatscycleinsightsBuildCompletedCycleSpansZeroPeriodLengthFallsBackToDe
 	// index (cycleLength = 28 > 0). Deterministic: the sort tie is broken by
 	// time-of-day, not by unstable-sort ordering.
 	logs := []models.DailyLog{
-		{Date: day("2026-01-01T00:00:00"), IsPeriod: true},
+		{Date: day("2026-01-01T00:00:00"), IsPeriod: true, CycleStart: true},
 		{Date: day("2026-01-01T23:59:59"), IsPeriod: false},
-		{Date: day("2026-01-29T00:00:00"), IsPeriod: true},
+		{Date: day("2026-01-29T00:00:00"), IsPeriod: true, CycleStart: true},
 	}
 
-	spans := buildCompletedCycleSpans(logs, time.UTC)
+	spans := buildCompletedCycleSpans(logs, time.UTC, BoundaryContext{})
 	if len(spans) != 1 {
 		t.Fatalf("expected exactly one completed span, got %d", len(spans))
 	}

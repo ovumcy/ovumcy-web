@@ -147,7 +147,9 @@ func TestRangeModePublishesNoPhaseThatPlacesTheOvulationOnAFertileDay(t *testing
 func TestRangeModeHeroKeepsABleedingDayLoggedInsideTheBand(t *testing.T) {
 	user, allLogs := rangeModeOvertakingFixture(t)
 	today := mustParseDay(t, "2026-05-20")
-	logs := append(logsUpTo(allLogs, today), models.DailyLog{Date: today, IsPeriod: true, Flow: models.FlowLight})
+	// Spotting: a bleeding day that never opens a cycle (a lone non-spotting day
+	// today would, by the one boundary rule).
+	logs := append(logsUpTo(allLogs, today), models.DailyLog{Date: today, IsPeriod: true, Flow: models.FlowSpotting})
 	stats := BuildCycleStatsFromLogs(user, logs, today, time.UTC)
 
 	if got := CalendarDayKey(stats.LastPeriodStart); got != "2026-05-01" {

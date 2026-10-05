@@ -30,6 +30,7 @@ func statscycleinsightsCovLog(t *testing.T, day string, isPeriod bool, symptoms 
 	return models.DailyLog{
 		Date:       statscycleinsightsCovDay(t, day),
 		IsPeriod:   isPeriod,
+		CycleStart: isPeriod,
 		SymptomIDs: symptoms,
 	}
 }
@@ -61,7 +62,7 @@ func TestStatsCycleInsightsBuildCompletedCycleSpansSingleStartReturnsNil(t *test
 		statscycleinsightsCovLog(t, "2026-01-01", true),
 		{Date: statscycleinsightsCovDay(t, "2026-01-03"), IsPeriod: false},
 	}
-	spans := buildCompletedCycleSpans(logs, time.UTC)
+	spans := buildCompletedCycleSpans(logs, time.UTC, BoundaryContext{})
 	if spans != nil {
 		t.Fatalf("expected nil with a single cycle start, got %v", spans)
 	}
@@ -75,7 +76,7 @@ func TestStatsCycleInsightsBuildCompletedCycleSpansTwoStartsYieldsOneSpan(t *tes
 		statscycleinsightsCovLog(t, "2026-01-01", true),
 		statscycleinsightsCovLog(t, "2026-01-29", true),
 	}
-	spans := buildCompletedCycleSpans(logs, time.UTC)
+	spans := buildCompletedCycleSpans(logs, time.UTC, BoundaryContext{})
 	if len(spans) != 1 {
 		t.Fatalf("expected exactly one completed span for two starts, got %d", len(spans))
 	}
@@ -96,7 +97,7 @@ func TestStatsCycleInsightsBuildCompletedCycleSpansCountMatchesStarts(t *testing
 		statscycleinsightsCovLog(t, "2026-01-29", true),
 		statscycleinsightsCovLog(t, "2026-02-26", true),
 	}
-	spans := buildCompletedCycleSpans(logs, time.UTC)
+	spans := buildCompletedCycleSpans(logs, time.UTC, BoundaryContext{})
 	if len(spans) != 2 {
 		t.Fatalf("expected two completed spans for three starts, got %d", len(spans))
 	}
@@ -119,7 +120,7 @@ func TestStatsCycleInsightsBuildCompletedCycleSpansPositiveCycleLengthKept(t *te
 		statscycleinsightsCovLog(t, "2026-01-01", true),
 		statscycleinsightsCovLog(t, "2026-01-07", true),
 	}
-	spans := buildCompletedCycleSpans(logs, time.UTC)
+	spans := buildCompletedCycleSpans(logs, time.UTC, BoundaryContext{})
 	if len(spans) != 1 {
 		t.Fatalf("expected one span for a 6-day cycle, got %d", len(spans))
 	}
@@ -149,10 +150,10 @@ func TestStatsCycleInsightsBuildCompletedCycleSpansPeriodLengthDefaultsWhenZero(
 	// We still verify that the fallback path does not corrupt span output when it
 	// would be reached: we check that a normal span has a non-zero PeriodLength.
 	logs := []models.DailyLog{
-		{Date: statscycleinsightsCovDay(t, "2026-01-01"), IsPeriod: true},
-		{Date: statscycleinsightsCovDay(t, "2026-01-29"), IsPeriod: true},
+		{Date: statscycleinsightsCovDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
+		{Date: statscycleinsightsCovDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true},
 	}
-	spans := buildCompletedCycleSpans(logs, time.UTC)
+	spans := buildCompletedCycleSpans(logs, time.UTC, BoundaryContext{})
 	if len(spans) != 1 {
 		t.Fatalf("expected one span, got %d", len(spans))
 	}

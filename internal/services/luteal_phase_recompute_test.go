@@ -122,7 +122,7 @@ func (s *stubLutealRecomputeLogStore) ListByUser(_ context.Context, userID uint)
 func assertInferenceSupports(t *testing.T, logs []models.DailyLog, wantLuteal int, wantRefined bool) {
 	t.Helper()
 
-	luteal, refined := InferUserLutealPhase(logs, time.UTC)
+	luteal, refined := InferUserLutealPhase(logs, time.UTC, BoundaryContext{})
 	if refined != wantRefined {
 		t.Fatalf("fixture: InferUserLutealPhase refined = %v, want %v", refined, wantRefined)
 	}
@@ -352,10 +352,10 @@ func TestDeriveUserLutealPhaseIsTheOneRuleTheCacheIsWrittenBy(t *testing.T) {
 	// contract is exactly two branches, and both are pinned here so a future
 	// edit cannot quietly change what an un-inferable account stores.
 	refinable := lutealRoundTripLogs(t, lutealRecomputeOrigin, 28, []int{14, 14}, lutealSignalEggWhite)
-	if got := deriveUserLutealPhase(refinable, time.Now(), time.UTC); got != 14 {
+	if got := deriveUserLutealPhase(refinable, time.Now(), time.UTC, BoundaryContext{}); got != 14 {
 		t.Fatalf("deriveUserLutealPhase on refinable logs = %d, want 14", got)
 	}
-	if got := deriveUserLutealPhase(nil, time.Now(), time.UTC); got != defaultLutealPhaseDays {
+	if got := deriveUserLutealPhase(nil, time.Now(), time.UTC, BoundaryContext{}); got != defaultLutealPhaseDays {
 		t.Fatalf("deriveUserLutealPhase with no logs = %d, want %d", got, defaultLutealPhaseDays)
 	}
 }

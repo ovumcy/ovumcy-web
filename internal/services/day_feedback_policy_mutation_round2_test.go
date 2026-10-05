@@ -22,7 +22,7 @@ func TestResolveDayFeedbackNoLongPeriodWarningAtEightConsecutiveDays(t *testing.
 		logs.entries[day.Format("2006-01-02")] = models.DailyLog{
 			UserID:   10,
 			Date:     day,
-			IsPeriod: true,
+			IsPeriod: true, CycleStart: true,
 		}
 	}
 
@@ -42,8 +42,8 @@ func TestResolveDayFeedbackUsesSelfCareMessageOnFirstCycleDay(t *testing.T) {
 
 	// Two period starts 28 days apart make 2026-03-01 the last period start.
 	// Querying the same day yields cycleDay == 1 (the lower self-care boundary).
-	logs.entries["2026-02-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-02-01"), IsPeriod: true}
-	logs.entries["2026-03-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-03-01"), IsPeriod: true}
+	logs.entries["2026-02-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-02-01"), IsPeriod: true, CycleStart: true}
+	logs.entries["2026-03-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-03-01"), IsPeriod: true, CycleStart: true}
 
 	state, err := service.ResolveDayFeedback(context.Background(), &models.User{ID: 10}, mustParseDayFeedbackDate(t, "2026-03-01"), mustParseDayFeedbackDate(t, "2026-03-01"), time.UTC)
 	if err != nil {
@@ -61,8 +61,8 @@ func TestResolveDayFeedbackUsesSelfCareMessageOnThirdCycleDay(t *testing.T) {
 
 	// 2026-03-01 is the last period start; 2026-03-03 is cycleDay == 3,
 	// the upper self-care boundary and well before the fertility window.
-	logs.entries["2026-02-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-02-01"), IsPeriod: true}
-	logs.entries["2026-03-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-03-01"), IsPeriod: true}
+	logs.entries["2026-02-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-02-01"), IsPeriod: true, CycleStart: true}
+	logs.entries["2026-03-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-03-01"), IsPeriod: true, CycleStart: true}
 
 	state, err := service.ResolveDayFeedback(context.Background(), &models.User{ID: 10}, mustParseDayFeedbackDate(t, "2026-03-03"), mustParseDayFeedbackDate(t, "2026-03-03"), time.UTC)
 	if err != nil {

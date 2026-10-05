@@ -127,6 +127,40 @@ type importPayload struct {
 // ceiling, so the count still has to be checked before the expensive decode.
 type importPayloadEnvelope struct {
 	Entries []json.RawMessage `json:"entries"`
+	// LastPeriodStart is the export's additive, optional onboarding start. It is
+	// kept raw so a file from an older release (field absent) and a malformed
+	// value both leave the restore of the days untouched.
+	LastPeriodStart json.RawMessage `json:"last_period_start"`
+}
+
+// restoreOnboardingStart puts the exported onboarding start back as the
+// account's last_period_start. Like the day restore it only fills a gap: an
+// account that already holds a start keeps it, and an unreadable or future
+// value is ignored rather than failing the restore of the days.
+func (service *ImportService) restoreOnboardingStart(ctx context.Context, userID uint, raw json.RawMessage, now time.Time, location *time.Location) error {
+	var value string
+	if len(raw) == 0 || json.Unmarshal(raw, &value) != nil {
+		return nil
+	}
+	parsed, err := ParseDayDate(strings.TrimSpace(value), location)
+	if err != nil || service.users == nil {
+		return nil
+	}
+	owner, err := service.users.LoadSettingsByID(ctx, userID)
+	if err != nil {
+		return ErrImportWriteFailed
+	}
+	if owner.LastPeriodStart != nil && !owner.LastPeriodStart.IsZero() {
+		return nil
+	}
+	day := CalendarDay(parsed, time.UTC)
+	if CalendarDaysBetween(DateAtLocation(now, resolveOwnerLocation(owner.Timezone, location)), day) > 0 {
+		return nil
+	}
+	if err := service.users.UpdateByID(ctx, userID, map[string]any{"last_period_start": day}); err != nil {
+		return ErrImportWriteFailed
+	}
+	return nil
 }
 
 // plannedImportDay is a fully validated day held between the parse pass and the
@@ -181,7 +215,11 @@ func (service *ImportService) ImportJSON(ctx context.Context, userID uint, raw [
 	// A restore carries no instant of its own; the derived column must still be
 	// bounded at the owner's today, so the clock is read here rather than
 	// threaded through the import route for this one line.
-	service.refreshDerivedCycleSettings(ctx, userID, time.Now(), location)
+	now := time.Now()
+	if err := service.restoreOnboardingStart(ctx, userID, envelope.LastPeriodStart, now, location); err != nil {
+		return ImportResult{}, err
+	}
+	service.refreshDerivedCycleSettings(ctx, userID, now, location)
 
 	return ImportResult{Added: added, Skipped: skipped, Rejected: rejected}, nil
 }
@@ -478,8 +516,10 @@ func (service *ImportService) refreshDerivedCycleSettings(ctx context.Context, u
 		return
 	}
 	ownerLocation := location
+	boundaryCtx := BoundaryContext{}
 	if userSettings, err := service.users.LoadSettingsByID(ctx, userID); err == nil {
 		ownerLocation = resolveOwnerLocation(userSettings.Timezone, location)
+		boundaryCtx = BoundaryContextFor(&userSettings, time.Time{})
 	}
-	_ = service.users.UpdateByID(ctx, userID, map[string]any{"luteal_phase": deriveUserLutealPhase(logs, now, ownerLocation)})
+	_ = service.users.UpdateByID(ctx, userID, map[string]any{"luteal_phase": deriveUserLutealPhase(logs, now, ownerLocation, boundaryCtx)})
 }

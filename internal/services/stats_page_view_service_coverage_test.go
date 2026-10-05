@@ -24,10 +24,10 @@ func TestStatsPageViewServicePredictionExplanationSecondaryAbsentWhenHintKeysEmp
 	// Logs: 4 period starts, 3 completed cycles with irregular spread (>7 days)
 	// but NO CycleFactorKeys on any log, so HintFactorKeys will be empty.
 	logs := []models.DailyLog{
-		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
-		{Date: mustParseStatsServiceDay(t, "2026-01-20"), IsPeriod: true},
-		{Date: mustParseStatsServiceDay(t, "2026-02-05"), IsPeriod: true},
-		{Date: mustParseStatsServiceDay(t, "2026-03-05"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-20"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-02-05"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-03-05"), IsPeriod: true, CycleStart: true},
 	}
 	service := NewStatsService(
 		&stubStatsDayReader{logsForRange: logs, logsForAll: logs},
@@ -64,9 +64,9 @@ func TestStatsPageViewServiceHasLastCycleSymptomsIsFalseWhenNoneLogged(t *testin
 	// must be false.  The stubStatsSymptomReader with an empty symptoms slice
 	// returns no SymptomType lookups, so buildLastCycleSymptomCounts returns [].
 	logs := []models.DailyLog{
-		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
-		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true},
-		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true, CycleStart: true},
 	}
 	service := NewStatsService(
 		&stubStatsDayReader{logsForRange: logs, logsForAll: logs},
@@ -96,9 +96,9 @@ func TestStatsPageViewServiceHasLastCycleSymptomsIsFalseWhenNoneLogged(t *testin
 func TestStatsPageViewServiceHasSymptomPatternsIsFalseWhenNoneAvailable(t *testing.T) {
 	// No symptom types and no symptom IDs on logs → symptomPatterns empty.
 	logs := []models.DailyLog{
-		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
-		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true},
-		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true, CycleStart: true},
 	}
 	service := NewStatsService(
 		&stubStatsDayReader{logsForRange: logs, logsForAll: logs},
@@ -127,9 +127,9 @@ func TestStatsPageViewServiceHasSymptomPatternsIsFalseWhenNoneAvailable(t *testi
 
 func TestStatsPageViewServiceHasCurrentCycleBBTChartIsFalseWhenNoBBTData(t *testing.T) {
 	logs := []models.DailyLog{
-		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
-		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true},
-		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true, CycleStart: true},
 	}
 	// TrackBBT=false → no BBT entries → chart labels empty
 	service := NewStatsService(
@@ -193,7 +193,7 @@ func statspageviewserviceCovLogsWithNCompletedCycles(t *testing.T, n int) []mode
 	for i := 0; i <= n; i++ {
 		logs = append(logs, models.DailyLog{
 			Date:     base.AddDate(0, 0, i*28),
-			IsPeriod: true,
+			IsPeriod: true, CycleStart: true,
 		})
 	}
 	return logs
@@ -369,7 +369,7 @@ func statspageviewserviceCovIrregularSpreadLogs(t *testing.T, nExtraCycles int) 
 	for _, d := range offsets {
 		logs = append(logs, models.DailyLog{
 			Date:     base.AddDate(0, 0, d),
-			IsPeriod: true,
+			IsPeriod: true, CycleStart: true,
 		})
 	}
 	return logs

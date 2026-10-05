@@ -30,10 +30,10 @@ func predictableFeedLogs(t *testing.T) []models.DailyLog {
 	// Four cycle starts 28 days apart are three completed cycles — the history
 	// the fertility half needs before the feed may send an ovulation date.
 	return []models.DailyLog{
-		{Date: mustParseDashboardDay(t, "2025-12-08"), IsPeriod: true},
-		{Date: mustParseDashboardDay(t, "2026-01-05"), IsPeriod: true},
-		{Date: mustParseDashboardDay(t, "2026-02-02"), IsPeriod: true},
-		{Date: mustParseDashboardDay(t, "2026-03-02"), IsPeriod: true},
+		{Date: mustParseDashboardDay(t, "2025-12-08"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseDashboardDay(t, "2026-01-05"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseDashboardDay(t, "2026-02-02"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseDashboardDay(t, "2026-03-02"), IsPeriod: true, CycleStart: true},
 	}
 }
 
@@ -46,10 +46,10 @@ func predictableFeedLogs(t *testing.T) []models.DailyLog {
 func dayBoundaryFeedLogs(t *testing.T) []models.DailyLog {
 	t.Helper()
 	return []models.DailyLog{
-		{Date: mustParseDashboardDay(t, "2025-12-03"), IsPeriod: true},
-		{Date: mustParseDashboardDay(t, "2025-12-31"), IsPeriod: true},
-		{Date: mustParseDashboardDay(t, "2026-01-28"), IsPeriod: true},
-		{Date: mustParseDashboardDay(t, "2026-02-25"), IsPeriod: true},
+		{Date: mustParseDashboardDay(t, "2025-12-03"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseDashboardDay(t, "2025-12-31"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseDashboardDay(t, "2026-01-28"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseDashboardDay(t, "2026-02-25"), IsPeriod: true, CycleStart: true},
 	}
 }
 
@@ -531,8 +531,8 @@ func TestBuildCalendarFeedICSProjectsExactlyThreeCyclesAheadAsSingleDays(t *test
 // ovulation events wait for three completed cycles.
 func TestBuildCalendarFeedICSOfAnAccountWithOneCompletedCycleProjectsThreePeriodsAndNoOvulation(t *testing.T) {
 	logs := []models.DailyLog{
-		{Date: mustParseDashboardDay(t, "2026-02-02"), IsPeriod: true},
-		{Date: mustParseDashboardDay(t, "2026-03-02"), IsPeriod: true},
+		{Date: mustParseDashboardDay(t, "2026-02-02"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseDashboardDay(t, "2026-03-02"), IsPeriod: true, CycleStart: true},
 	}
 	now := mustParseDashboardDay(t, "2026-03-20")
 	user := predictableFeedUser(t, "2026-03-02")

@@ -20,10 +20,10 @@ func TestStatsPageViewServicePredictionExplanationSecondaryAbsentWhenHintKeysEmp
 	// is false. Under the original guard the secondary explanation must stay
 	// absent; the boundary mutant (>0 -> >=0) would surface it.
 	logs := []models.DailyLog{
-		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
 		{Date: mustParseStatsServiceDay(t, "2026-01-10"), CycleFactorKeys: []string{models.CycleFactorStress}},
-		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true},
-		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true, CycleStart: true},
 	}
 	service := NewStatsService(&stubStatsDayReader{logsForRange: logs, logsForAll: logs}, &stubStatsSymptomReader{})
 	user := &models.User{ID: 130, Role: models.RoleOwner, CycleLength: 28, IrregularCycle: true}
@@ -56,10 +56,10 @@ func TestStatsPageViewServiceHasRecentCycleFactorsFalseWhenOnlyOldCycleFactorsEx
 	// is empty so HasRecentCycleFactors must be false. The boundary mutant on
 	// line 149 (>0 -> >=0) would force it true.
 	logs := []models.DailyLog{
-		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
 		{Date: mustParseStatsServiceDay(t, "2026-01-10"), CycleFactorKeys: []string{models.CycleFactorStress}},
-		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true},
-		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true, CycleStart: true},
 	}
 	service := NewStatsService(&stubStatsDayReader{logsForRange: logs, logsForAll: logs}, &stubStatsSymptomReader{})
 	user := &models.User{ID: 131, Role: models.RoleOwner, CycleLength: 28, IrregularCycle: true}
@@ -91,9 +91,9 @@ func TestStatsPageViewServiceHasCycleFactorPatternSummariesFalseWhenFactorsOnlyI
 	// PatternSummaries are empty. HasCycleFactorPatternSummaries must be false;
 	// the boundary mutant on line 150 (>0 -> >=0) would force it true.
 	logs := []models.DailyLog{
-		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
-		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true},
-		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true, CycleStart: true},
 		{Date: mustParseStatsServiceDay(t, "2026-03-05"), CycleFactorKeys: []string{models.CycleFactorStress}},
 	}
 	service := NewStatsService(&stubStatsDayReader{logsForRange: logs, logsForAll: logs}, &stubStatsSymptomReader{})
@@ -125,9 +125,9 @@ func TestStatsPageViewServiceHasRecentFactorCyclesFalseWhenFactorsOnlyInOngoingC
 	// snapshots -> RecentCycles are empty. HasRecentFactorCycles must be false;
 	// the boundary mutant on line 151 (>0 -> >=0) would force it true.
 	logs := []models.DailyLog{
-		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
-		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true},
-		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true, CycleStart: true},
 		{Date: mustParseStatsServiceDay(t, "2026-03-05"), CycleFactorKeys: []string{models.CycleFactorStress}},
 	}
 	service := NewStatsService(&stubStatsDayReader{logsForRange: logs, logsForAll: logs}, &stubStatsSymptomReader{})
@@ -158,10 +158,10 @@ func TestStatsPageViewServiceHasPredictionFactorHintFalseWhenOnlyOldCycleFactors
 	// recent-window factors) is empty so HasPredictionFactorHint must be false.
 	// The boundary mutant on line 152 (>0 -> >=0) would force it true.
 	logs := []models.DailyLog{
-		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
 		{Date: mustParseStatsServiceDay(t, "2026-01-10"), CycleFactorKeys: []string{models.CycleFactorStress}},
-		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true},
-		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true, CycleStart: true},
 	}
 	service := NewStatsService(&stubStatsDayReader{logsForRange: logs, logsForAll: logs}, &stubStatsSymptomReader{})
 	user := &models.User{ID: 134, Role: models.RoleOwner, CycleLength: 28, IrregularCycle: true}

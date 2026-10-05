@@ -114,7 +114,7 @@ func TestTrimTrailingCycleTrendLengths(t *testing.T) {
 
 func TestBuildCycleStatsForRangeAppliesOwnerBaseline(t *testing.T) {
 	logs := []models.DailyLog{
-		{Date: mustParseStatsServiceDay(t, "2026-02-10"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-02-10"), IsPeriod: true, CycleStart: true},
 	}
 	service := NewStatsService(&stubStatsDayReader{logsForRange: logs}, &stubStatsSymptomReader{})
 	userStart := mustParseStatsServiceDay(t, "2026-02-10")
@@ -190,7 +190,7 @@ func TestStatsOverviewRange(t *testing.T) {
 func TestBuildOverviewStatsUsesOverviewRange(t *testing.T) {
 	dayReader := &stubStatsDayReader{
 		logsForRange: []models.DailyLog{
-			{Date: mustParseStatsServiceDay(t, "2026-02-10"), IsPeriod: true},
+			{Date: mustParseStatsServiceDay(t, "2026-02-10"), IsPeriod: true, CycleStart: true},
 		},
 	}
 	service := NewStatsService(dayReader, &stubStatsSymptomReader{})
@@ -212,10 +212,10 @@ func TestBuildOverviewStatsUsesOverviewRange(t *testing.T) {
 
 func TestBuildTrendAndFlags(t *testing.T) {
 	logs := []models.DailyLog{
-		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
-		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true},
-		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true},
-		{Date: mustParseStatsServiceDay(t, "2026-03-26"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-03-26"), IsPeriod: true, CycleStart: true},
 	}
 	service := NewStatsService(&stubStatsDayReader{}, &stubStatsSymptomReader{})
 	user := &models.User{Role: models.RoleOwner, CycleLength: 28}
@@ -250,8 +250,8 @@ func TestBuildTrendAndFlags(t *testing.T) {
 
 func TestBuildFlagsKeepsInsightsLockedUntilTwoCompletedCycles(t *testing.T) {
 	logs := []models.DailyLog{
-		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
-		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true},
 	}
 	service := NewStatsService(&stubStatsDayReader{}, &stubStatsSymptomReader{})
 	user := &models.User{Role: models.RoleOwner, CycleLength: 28}
@@ -353,7 +353,7 @@ func TestStatsServiceBuildCycleStatsFromLogsIsThePackageFunction(t *testing.T) {
 	now := mustParseStatsServiceDay(t, "2026-03-10")
 
 	direct := BuildCycleStatsFromLogs(user, logs, now, time.UTC)
-	raw := BuildCycleStats(logs, now)
+	raw := BuildCycleStats(logs, now, BoundaryContext{})
 	if direct == raw {
 		t.Fatalf("anchor: the fixture must exercise the baseline and pause steps, got the raw derivation %+v", raw)
 	}

@@ -27,10 +27,11 @@ func TestCalendarRendersSharedPredictionExplainerKeys(t *testing.T) {
 	}
 	for _, day := range cycleStarts {
 		if err := database.Create(&models.DailyLog{
-			UserID:   user.ID,
-			Date:     day,
-			IsPeriod: true,
-			Flow:     models.FlowMedium,
+			UserID:     user.ID,
+			Date:       day,
+			IsPeriod:   true,
+			CycleStart: true,
+			Flow:       models.FlowMedium,
 		}).Error; err != nil {
 			t.Fatalf("create cycle start %s: %v", day.Format("2006-01-02"), err)
 		}

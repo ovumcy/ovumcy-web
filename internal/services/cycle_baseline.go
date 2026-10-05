@@ -15,17 +15,22 @@ func ApplyUserCycleBaseline(user *models.User, logs []models.DailyLog, stats Cyc
 	}
 
 	today := DateAtLocation(now.In(location), location)
-	latestExplicitCycleStart := latestExplicitCycleStartBeforeOrOn(logs, today, location)
+	boundaryCtx := BoundaryContextFor(user, today)
+	boundaries := CycleBoundaries(filterLogsNotAfter(logs, today), boundaryCtx)
 	cycleLength, periodLength, lutealPhase := resolveUserCycleLengths(user)
-	inferredLutealPhase, inferred := InferUserLutealPhase(logs, location)
+	inferredLutealPhase, inferred := InferUserLutealPhase(logs, location, boundaryCtx)
 	if inferred {
 		lutealPhase = inferredLutealPhase
 	}
-	hasObservedCycleLengths := len(CycleLengths(logs)) >= 1
-	applyObservedBaseline(&stats, user, latestExplicitCycleStart, cycleLength, periodLength, hasObservedCycleLengths, today, location)
+	hasObservedCycleLengths := len(cycleLengths(boundaries)) >= 1
+	anchor := time.Time{}
+	if latest := latestBoundaryOnOrBefore(boundaries, today); !latest.IsZero() {
+		anchor = CalendarDay(latest, location)
+	}
+	applyObservedBaseline(&stats, anchor, cycleLength, periodLength, hasObservedCycleLengths)
 	projected := applyProjectedBaseline(&stats, user, cycleLength, lutealPhase, location)
-	// The inference can succeed (ObservedCycleStarts accepts unflagged period
-	// clusters) while the baseline finds no anchor to project from; then
+	// The inference can succeed (it reads the same boundaries the history
+	// statistics do) while the baseline finds no anchor to project from; then
 	// stats.LutealPhase still holds BuildCycleStats's value, not the inferred one.
 	stats.LutealPhasePersonalised = inferred && projected
 
@@ -52,7 +57,9 @@ func resolveUserCycleLengths(user *models.User) (int, int, int) {
 	return cycleLength, periodLength, ResolveLutealPhase(user.LutealPhase)
 }
 
-func applyObservedBaseline(stats *CycleStats, user *models.User, latestExplicitCycleStart time.Time, cycleLength int, periodLength int, hasObservedCycleLengths bool, today time.Time, location *time.Location) {
+// applyObservedBaseline writes the anchor CycleBoundaries produced into the
+// stats, and the owner's configured lengths while no cycle has been observed.
+func applyObservedBaseline(stats *CycleStats, anchor time.Time, cycleLength int, periodLength int, hasObservedCycleLengths bool) {
 	if !hasObservedCycleLengths {
 		if cycleLength > 0 {
 			stats.AverageCycleLength = float64(cycleLength)
@@ -61,15 +68,8 @@ func applyObservedBaseline(stats *CycleStats, user *models.User, latestExplicitC
 		if periodLength > 0 {
 			stats.AveragePeriodLength = float64(periodLength)
 		}
-		stats.LastPeriodStart = baselineLastPeriodStart(user, latestExplicitCycleStart, today, location)
-		return
 	}
-
-	stats.LastPeriodStart = baselineLastPeriodStart(user, latestExplicitCycleStart, today, location)
-}
-
-func baselineLastPeriodStart(user *models.User, latestExplicitCycleStart time.Time, today time.Time, location *time.Location) time.Time {
-	return latestCycleStartAnchorBeforeOrOn(user, latestExplicitCycleStart, today, location)
+	stats.LastPeriodStart = anchor
 }
 
 // applyProjectedBaseline reports whether it wrote lutealPhase into stats: false

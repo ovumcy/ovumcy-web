@@ -234,7 +234,9 @@ func TestPublishedStatsWithholdsPhaseAndStatusOnOutOfDateData(t *testing.T) {
 // pages still print "unknown" — so does the published copy.
 func TestOutOfDateDataOutranksALoggedBleedingDay(t *testing.T) {
 	user, logs, today := staleBandFixture(t)
-	logs = append(logs, models.DailyLog{Date: today, IsPeriod: true, Flow: models.FlowLight})
+	// Spotting: a bleeding day that never opens a cycle (a lone non-spotting day
+	// today would, by the one boundary rule).
+	logs = append(logs, models.DailyLog{Date: today, IsPeriod: true, Flow: models.FlowSpotting})
 	stats := BuildCycleStatsFromLogs(user, logs, today, time.UTC)
 
 	published, _ := PublishedStats(user, stats, logs, today, time.UTC)

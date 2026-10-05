@@ -22,9 +22,38 @@ implementation cannot silently drift apart.
 
 | Input | Meaning | Source |
 |-------|---------|--------|
-| `periodStart` | First day of the current menstrual period (cycle day 1) | Detected from logged period days |
+| `periodStart` | First day of the current menstrual period (cycle day 1) | Where a cycle starts, by the rule below |
 | `cycleLength` | Length of the cycle in days | Median of observed cycles, or the user's configured value |
 | `lutealPhase` | Days that **follow** ovulation, up to and including the day before the next period | **14-day** default, refined toward the owner's own value from logged BBT / cervical-mucus signals when enough cycles carry them |
+
+## Where a cycle starts
+
+One rule decides it, and every surface reads the same answer: the count of
+completed cycles, their lengths, the last period start, the dashboard's cycle
+day, the calendar's "recorded" day, the stats insights and the luteal-phase
+inference. Two screens cannot disagree about the same history.
+
+Period days that sit fewer than five clear days apart form one bleeding
+episode. An episode opens a cycle when it has any of:
+
+- two or more consecutive non-spotting period days;
+- a non-spotting day the owner marked as a cycle start (and did not mark as
+  uncertain);
+- a lone non-spotting period day dated today or yesterday — the period may still
+  be running. It stops counting once a later day passes without a second period
+  day.
+
+The cycle starts on the earliest qualifying day of the episode, and an explicit
+mark wins over the run. Spotting never opens a cycle, even when marked: a day
+whose flow is spotting, or whose only bleeding signal is the Spotting symptom
+with no flow chosen. A lone bleeding day that qualifies under none of the above
+starts no cycle and does not split the cycle around it. An episode whose only
+mark is "uncertain" is held back the same way.
+
+The start date stored at onboarding (the last period start) is a boundary of its
+own. It joins the grouping as a marked, non-spotting day, so a logged episode it
+falls inside or adjoins yields one start, not two. A start dated in the future is
+ignored.
 
 ## The model
 

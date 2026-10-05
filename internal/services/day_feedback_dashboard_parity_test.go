@@ -203,7 +203,7 @@ func TestDayFeedbackNamesTheSameFertileDaysAsTheDashboardForAnInferredLuteal(t *
 	if got := BuildCycleStatsFromLogs(user, logs, nowForStats, time.UTC).LutealPhase; got != 10 {
 		t.Fatalf("fixture: inferred luteal phase = %d, want 10", got)
 	}
-	defaultWindow := BuildCycleStats(logs, nowForStats)
+	defaultWindow := BuildCycleStats(logs, nowForStats, BoundaryContext{})
 	if first, last := CalendarDaysBetween(cycleStart, defaultWindow.FertilityWindowStart)+1, CalendarDaysBetween(cycleStart, defaultWindow.FertilityWindowEnd)+1; first != 9 || last != 14 {
 		t.Fatalf("fixture: the default-luteal window is on cycle days %d-%d, want 9-14", first, last)
 	}

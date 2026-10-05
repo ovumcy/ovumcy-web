@@ -121,12 +121,13 @@ func (service *StatsService) BuildStatsPageViewData(ctx context.Context, user *m
 		return StatsPageViewData{}, fmt.Errorf("%w: %v", ErrStatsPageViewLoadSymptoms, err)
 	}
 	symptomCounts := buildStatsSymptomCountViewData(language, frequencies)
-	phaseMoodInsights, hasPhaseMoodInsights := service.BuildPhaseMoodInsights(user, baseData.logs, location)
+	boundaryCtx := BoundaryContextFor(user, DateAtLocation(now, location))
+	phaseMoodInsights, hasPhaseMoodInsights := service.BuildPhaseMoodInsights(user, baseData.logs, location, boundaryCtx)
 	// The one traversal that yields the completed-cycle lengths feeds every
 	// consumer below, including the statements section, so the tiers there are
 	// read off StatsFlags.CompletedCycleCount's own source rather than a
 	// second count of the same thing.
-	completedCycleLengths := CompletedCycleTrendLengths(baseData.logs, now, location)
+	completedCycleLengths := CompletedCycleTrendLengths(baseData.logs, now, location, boundaryCtx)
 	ownerInsights, err := service.buildOwnerStatsInsights(ctx, user, language, baseData.stats, baseData.logs, completedCycleLengths, now, location)
 	if err != nil {
 		return StatsPageViewData{}, err
@@ -280,12 +281,13 @@ func (service *StatsService) buildOwnerStatsInsights(ctx context.Context, user *
 	if err != nil {
 		return statsOwnerInsightsViewData{}, fmt.Errorf("%w: %v", ErrStatsPageViewLoadSymptoms, err)
 	}
-	completedCycles := buildCompletedCycleSpans(logs, location)
+	boundaryCtx := BoundaryContextFor(user, DateAtLocation(now, location))
+	completedCycles := buildCompletedCycleSpans(logs, location, boundaryCtx)
 	insights.cycleRibbon = buildStatsCycleRibbon(user, stats, logs, completedCycles)
 	insights.lastCycleSymptoms = buildLastCycleSymptomCounts(language, logs, completedCycles, symptomByID, location)
 	insights.symptomPatterns = buildSymptomPatternInsights(logs, completedCycles, symptomByID, location)
-	insights.phaseSymptomInsights, insights.hasPhaseSymptomInsights = buildPhaseSymptomInsightsWithMap(logs, location, symptomByID)
-	insights.statements = append(insights.statements, buildSymptomPhaseRecurrenceStatements(logs, symptomByID, location)...)
+	insights.phaseSymptomInsights, insights.hasPhaseSymptomInsights = buildPhaseSymptomInsightsWithMap(logs, location, symptomByID, boundaryCtx)
+	insights.statements = append(insights.statements, buildSymptomPhaseRecurrenceStatements(logs, symptomByID, location, boundaryCtx)...)
 	return insights, nil
 }
 

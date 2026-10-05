@@ -1,6 +1,5 @@
 import { expect, test, type Page } from './support/fixtures';
 import { mutatingRequestsDuring } from './support/confirm-dialog-helpers';
-import { fillDateField } from './support/date-field-helpers';
 import {
   completeOnboardingIfPresent,
   continueFromRecoveryCode,
@@ -43,19 +42,10 @@ async function registerOwnerAndReachDashboard(page: Page, prefix: string): Promi
   await expect(page).toHaveURL(/\/dashboard$/);
 }
 
-async function setCurrentCycleStart(page: Page, isoDate: string): Promise<void> {
-  await page.goto('/settings');
-  await expect(page).toHaveURL(/\/settings$/);
-
-  const cycleForm = page.locator('#settings-cycle form[action="/api/v1/users/current/cycle"]');
-  await expect(cycleForm).toBeVisible();
-  await fillDateField(cycleForm.locator('#settings-last-period-start'), isoDate);
-  await cycleForm.locator('button[data-save-button]').click();
-  await expect(page.locator('#settings-cycle-status .status-ok')).toBeVisible();
-}
-
 async function seedStatsInsightState(page: Page, prefix: string): Promise<void> {
-  await registerOwnerAndEnableIrregularMode(page, prefix);
+  // The current cycle opens at onboarding, 8 days back; see
+  // registerOwnerAndEnableIrregularMode for why it is not moved there later.
+  await registerOwnerAndEnableIrregularMode(page, prefix, 8);
 
   const today = await todayISOFromDashboard(page);
   const cycleStarts = [-112, -84, -56, -28].map((offset) => shiftISODate(today, offset));
@@ -69,7 +59,6 @@ async function seedStatsInsightState(page: Page, prefix: string): Promise<void> 
   await saveCycleFactorOnDay(page, shiftISODate(cycleStarts[2], 2), 'stress');
 
   const currentCycleStart = shiftISODate(today, -8);
-  await setCurrentCycleStart(page, currentCycleStart);
 
   const bbtDays = [0, 1, 2, 3, 4].map((offset) => shiftISODate(currentCycleStart, offset));
   const bbtValues = ['36.40', '36.45', '36.50', '36.55', '36.60'];

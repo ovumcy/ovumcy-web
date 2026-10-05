@@ -104,7 +104,7 @@ func lutealRoundTripLogs(t *testing.T, origin time.Time, cycleLength int, ovulat
 func assertLutealRoundTrip(t *testing.T, logs []models.DailyLog, location *time.Location, cycleLength, wantOvulationCycleDay int, nextCycleStart time.Time) int {
 	t.Helper()
 
-	luteal, refined := InferUserLutealPhase(logs, location)
+	luteal, refined := InferUserLutealPhase(logs, location, BoundaryContext{})
 	if !refined {
 		t.Fatal("InferUserLutealPhase declined to refine; the fixture must supply at least two usable cycles")
 	}
@@ -243,7 +243,7 @@ func TestInferredLutealPhaseRoundTripsAcrossDSTAndTimezones(t *testing.T) {
 			nextCycleStart := CalendarDay(testCase.origin.AddDate(0, 0, 2*cycleLength), location)
 			zoned := assertLutealRoundTrip(t, logs, location, cycleLength, testCase.observed, nextCycleStart)
 
-			utc, refined := InferUserLutealPhase(logs, time.UTC)
+			utc, refined := InferUserLutealPhase(logs, time.UTC, BoundaryContext{})
 			if !refined {
 				t.Fatal("the UTC control must refine from the same logs")
 			}
@@ -280,7 +280,7 @@ func TestInferredLutealPhaseReachesTheOwnerSurfacesThroughTheBaseline(t *testing
 		LutealPhase: 14,
 	}
 
-	stats := ApplyUserCycleBaseline(&user, logs, BuildCycleStats(logs, now), now, time.UTC)
+	stats := ApplyUserCycleBaseline(&user, logs, BuildCycleStats(logs, now, BoundaryContext{}), now, time.UTC)
 
 	if stats.LutealPhase != 13 {
 		t.Fatalf("stats.LutealPhase = %d, want 13: the live inference must win over the persisted column", stats.LutealPhase)

@@ -57,11 +57,37 @@ func TestCalendarLogRange(t *testing.T) {
 	monthStart := time.Date(2026, time.February, 1, 0, 0, 0, 0, time.UTC)
 	from, to := CalendarLogRange(monthStart)
 
-	if from.Format("2006-01-02") != "2025-11-23" {
-		t.Fatalf("expected range start 2025-11-23, got %s", from.Format("2006-01-02"))
+	if from.Format("2006-01-02") != "2025-10-24" {
+		t.Fatalf("expected range start 2025-10-24, got %s", from.Format("2006-01-02"))
 	}
-	if to.Format("2006-01-02") != "2026-05-09" {
-		t.Fatalf("expected range end 2026-05-09, got %s", to.Format("2006-01-02"))
+	if to.Format("2006-01-02") != "2026-06-08" {
+		t.Fatalf("expected range end 2026-06-08, got %s", to.Format("2006-01-02"))
+	}
+}
+
+// A two-day bleeding run straddling the edge of the days the calendar READS (70
+// days before the month) must reach the boundary rule whole: if the load were cut
+// there, its first day would be dropped, the surviving lone day would open no
+// cycle, and the historical pass would lose that start.
+func TestCalendarLogRangeKeepsATwoDayRunStraddlingTheReadEdgeWhole(t *testing.T) {
+	monthStart := time.Date(2026, time.February, 1, 0, 0, 0, 0, time.UTC)
+	from, to := CalendarLogRange(monthStart)
+
+	readEdge := monthStart.AddDate(0, 0, -calendarLogReadDays)
+	run := []models.DailyLog{
+		{Date: readEdge.AddDate(0, 0, -1), IsPeriod: true},
+		{Date: readEdge, IsPeriod: true},
+	}
+	loaded := make([]models.DailyLog, 0, len(run))
+	for _, entry := range run {
+		if !entry.Date.Before(from) && !entry.Date.After(to) {
+			loaded = append(loaded, entry)
+		}
+	}
+
+	starts := CycleBoundaries(loaded, BoundaryContext{})
+	if len(starts) != 1 || !starts[0].Equal(run[0].Date) {
+		t.Fatalf("starts = %v, want the run's first day %s: the load cut the run", starts, run[0].Date.Format("2006-01-02"))
 	}
 }
 

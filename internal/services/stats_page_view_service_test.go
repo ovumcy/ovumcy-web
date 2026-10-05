@@ -12,10 +12,10 @@ import (
 func TestBuildStatsPageViewDataOwnerBuildsTrendBaselineAndSymptomSummaries(t *testing.T) {
 	dayReader := &stubStatsDayReader{
 		logsForRange: []models.DailyLog{
-			{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
-			{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true},
-			{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true},
-			{Date: mustParseStatsServiceDay(t, "2026-03-26"), IsPeriod: true},
+			{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
+			{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true},
+			{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true, CycleStart: true},
+			{Date: mustParseStatsServiceDay(t, "2026-03-26"), IsPeriod: true, CycleStart: true},
 		},
 		logsForAll: []models.DailyLog{{ID: 1}},
 	}
@@ -38,10 +38,10 @@ func TestBuildStatsPageViewDataOwnerBuildsTrendBaselineAndSymptomSummaries(t *te
 
 func TestBuildStatsPageViewDataIrregularNoticeRespectsUserMode(t *testing.T) {
 	logs := []models.DailyLog{
-		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
-		{Date: mustParseStatsServiceDay(t, "2026-01-25"), IsPeriod: true},
-		{Date: mustParseStatsServiceDay(t, "2026-03-10"), IsPeriod: true},
-		{Date: mustParseStatsServiceDay(t, "2026-04-20"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-25"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-03-10"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-04-20"), IsPeriod: true, CycleStart: true},
 	}
 	service := NewStatsService(&stubStatsDayReader{logsForRange: logs}, &stubStatsSymptomReader{})
 	now := mustParseStatsServiceDay(t, "2026-04-25")
@@ -96,13 +96,13 @@ func TestBuildStatsPageViewDataShowsIrregularInsufficientDataNotice(t *testing.T
 
 func TestBuildStatsPageViewDataBuildsRecentCycleFactorContextForVariablePatterns(t *testing.T) {
 	logs := []models.DailyLog{
-		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
 		{Date: mustParseStatsServiceDay(t, "2026-01-03"), CycleFactorKeys: []string{models.CycleFactorStress}},
-		{Date: mustParseStatsServiceDay(t, "2026-01-25"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-25"), IsPeriod: true, CycleStart: true},
 		{Date: mustParseStatsServiceDay(t, "2026-01-28"), CycleFactorKeys: []string{models.CycleFactorTravel}},
-		{Date: mustParseStatsServiceDay(t, "2026-03-10"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-03-10"), IsPeriod: true, CycleStart: true},
 		{Date: mustParseStatsServiceDay(t, "2026-03-12"), CycleFactorKeys: []string{models.CycleFactorStress}},
-		{Date: mustParseStatsServiceDay(t, "2026-04-20"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-04-20"), IsPeriod: true, CycleStart: true},
 	}
 	service := NewStatsService(&stubStatsDayReader{logsForRange: logs, logsForAll: logs}, &stubStatsSymptomReader{})
 	now := mustParseStatsServiceDay(t, "2026-04-25")
@@ -123,7 +123,9 @@ func TestBuildStatsPageViewDataKeepsRecentBaselineWhenOlderCycleStartsExist(t *t
 		{Date: mustParseStatsServiceDay(t, "2026-01-03"), CycleFactorKeys: []string{models.CycleFactorStress}},
 		{Date: mustParseStatsServiceDay(t, "2026-01-25"), IsPeriod: true, CycleStart: true},
 		{Date: mustParseStatsServiceDay(t, "2026-01-28"), CycleFactorKeys: []string{models.CycleFactorTravel}},
-		{Date: mustParseStatsServiceDay(t, "2026-03-10"), IsPeriod: true, CycleStart: true},
+		// Unmarked lone day before the stored start: it joins the stored start's
+		// cluster, which opens at the stored start (the newer baseline).
+		{Date: mustParseStatsServiceDay(t, "2026-03-10"), IsPeriod: true},
 		{Date: mustParseStatsServiceDay(t, "2026-03-12"), CycleFactorKeys: []string{models.CycleFactorStress}},
 	}
 	service := NewStatsService(&stubStatsDayReader{logsForRange: logs, logsForAll: logs}, &stubStatsSymptomReader{})
@@ -151,8 +153,8 @@ func TestBuildStatsPageViewDataKeepsRecentBaselineWhenOlderCycleStartsExist(t *t
 
 func TestBuildStatsPageViewDataKeepsInsightsHiddenUntilSecondCompletedCycle(t *testing.T) {
 	logs := []models.DailyLog{
-		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
-		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true},
 	}
 	service := NewStatsService(&stubStatsDayReader{logsForRange: logs}, &stubStatsSymptomReader{})
 	now := mustParseStatsServiceDay(t, "2026-02-10")
@@ -300,20 +302,20 @@ func newStatsPatternAndBBTTestFixture(t *testing.T) (*StatsService, *models.User
 	t.Helper()
 
 	logs := []models.DailyLog{
-		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
 		{Date: mustParseStatsServiceDay(t, "2026-01-02"), SymptomIDs: []uint{1}},
 		{Date: mustParseStatsServiceDay(t, "2026-01-05"), SymptomIDs: []uint{2}},
-		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true},
 		{Date: mustParseStatsServiceDay(t, "2026-01-30"), SymptomIDs: []uint{1}},
 		{Date: mustParseStatsServiceDay(t, "2026-02-02"), SymptomIDs: []uint{2}},
-		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true, CycleStart: true},
 		{Date: mustParseStatsServiceDay(t, "2026-02-27"), SymptomIDs: []uint{1}},
 		{Date: mustParseStatsServiceDay(t, "2026-02-28"), SymptomIDs: []uint{1}},
 		{Date: mustParseStatsServiceDay(t, "2026-03-02"), SymptomIDs: []uint{2}},
 		{Date: mustParseStatsServiceDay(t, "2026-03-04"), SymptomIDs: []uint{3}},
 		// Current cycle: 6-day coverline window Mar26-31 (max 36.50), then a
 		// 3-day rise Apr1-3 → first high day 7, marker on day 6.
-		{Date: mustParseStatsServiceDay(t, "2026-03-26"), IsPeriod: true, BBT: new(36.40)},
+		{Date: mustParseStatsServiceDay(t, "2026-03-26"), IsPeriod: true, CycleStart: true, BBT: new(36.40)},
 		{Date: mustParseStatsServiceDay(t, "2026-03-27"), BBT: new(36.45)},
 		{Date: mustParseStatsServiceDay(t, "2026-03-28"), BBT: new(36.50)},
 		{Date: mustParseStatsServiceDay(t, "2026-03-29"), BBT: new(36.42)},

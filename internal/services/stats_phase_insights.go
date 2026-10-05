@@ -61,14 +61,11 @@ type completedCyclePhaseContext struct {
 	OvulationDay int
 }
 
-func buildCompletedCyclePhaseContexts(logs []models.DailyLog, location *time.Location) []completedCyclePhaseContext {
-	// ObservedCycleStarts, the same detector buildCompletedCycleSpans reads, and
-	// for the same reason: it is the one that honours an explicit cycle start and
-	// withholds a cluster whose only explicit start the owner marked uncertain.
-	// The raw gap walk (DetectCycleStarts) keeps that start, and the two used to
-	// run side by side in a single render — the ribbon reporting one merged cycle
-	// where the phase cards counted two.
-	starts := ObservedCycleStarts(logs)
+func buildCompletedCyclePhaseContexts(logs []models.DailyLog, location *time.Location, ctx BoundaryContext) []completedCyclePhaseContext {
+	// CycleBoundaries, the same rule buildCompletedCycleSpans reads: two readings
+	// of the boundaries used to run side by side in a single render — the ribbon
+	// reporting one merged cycle where the phase cards counted two.
+	starts := CycleBoundaries(logs, ctx)
 	if len(starts) < 2 {
 		return nil
 	}
@@ -135,12 +132,12 @@ func findCompletedCycleForDay(day time.Time, cycles []completedCyclePhaseContext
 	return completedCyclePhaseContext{}, false
 }
 
-func (service *StatsService) BuildPhaseMoodInsights(user *models.User, logs []models.DailyLog, location *time.Location) ([]StatsPhaseMoodInsight, bool) {
+func (service *StatsService) BuildPhaseMoodInsights(user *models.User, logs []models.DailyLog, location *time.Location, ctx BoundaryContext) ([]StatsPhaseMoodInsight, bool) {
 	if !IsOwnerUser(user) {
 		return nil, false
 	}
 
-	cycles := buildCompletedCyclePhaseContexts(logs, location)
+	cycles := buildCompletedCyclePhaseContexts(logs, location, ctx)
 	if len(cycles) < minimumPhaseInsightCycles {
 		return nil, false
 	}
@@ -192,8 +189,8 @@ func (service *StatsService) BuildPhaseMoodInsights(user *models.User, logs []mo
 	return insights, hasData
 }
 
-func buildPhaseSymptomInsightsWithMap(logs []models.DailyLog, location *time.Location, symptomByID map[uint]models.SymptomType) ([]StatsPhaseSymptomInsight, bool) {
-	cycles := buildCompletedCyclePhaseContexts(logs, location)
+func buildPhaseSymptomInsightsWithMap(logs []models.DailyLog, location *time.Location, symptomByID map[uint]models.SymptomType, ctx BoundaryContext) ([]StatsPhaseSymptomInsight, bool) {
+	cycles := buildCompletedCyclePhaseContexts(logs, location, ctx)
 	if len(cycles) < minimumPhaseInsightCycles || len(symptomByID) == 0 {
 		return nil, false
 	}

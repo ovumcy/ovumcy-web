@@ -24,9 +24,9 @@ func TestCycleSignals_InferUserLutealPhase_UnchangedByDSTTransitionInCycle(t *te
 
 	logs := []models.DailyLog{
 		// Three observed starts: Mar 1, Mar 20, Apr 8.
-		{Date: day("2025-03-01"), IsPeriod: true, Flow: models.FlowMedium},
-		{Date: day("2025-03-20"), IsPeriod: true, Flow: models.FlowMedium},
-		{Date: day("2025-04-08"), IsPeriod: true, Flow: models.FlowMedium},
+		{Date: day("2025-03-01"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+		{Date: day("2025-03-20"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+		{Date: day("2025-04-08"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
 
 		// Cycle A (Mar1->Mar20, 19 days): coverline window Mar1-6, rise Mar7-9 ->
 		// ovulation Mar6 (day before the first high day) = cycle day 6, so
@@ -56,7 +56,7 @@ func TestCycleSignals_InferUserLutealPhase_UnchangedByDSTTransitionInCycle(t *te
 	}
 
 	// lens = [13, 12] -> round(12.5) = 13, regardless of DST, in every zone.
-	phaseLocal, ok := InferUserLutealPhase(logs, loc)
+	phaseLocal, ok := InferUserLutealPhase(logs, loc, BoundaryContext{})
 	if !ok {
 		t.Fatalf("expected ok=true with two BBT-confirmed cycles")
 	}
@@ -66,7 +66,7 @@ func TestCycleSignals_InferUserLutealPhase_UnchangedByDSTTransitionInCycle(t *te
 
 	// DST-immunity: the same calendar dates evaluated in UTC (no DST) must
 	// produce the identical phase — the location must not change the result.
-	phaseUTC, ok := InferUserLutealPhase(logs, time.UTC)
+	phaseUTC, ok := InferUserLutealPhase(logs, time.UTC, BoundaryContext{})
 	if !ok {
 		t.Fatalf("expected ok=true in UTC as well")
 	}
@@ -85,9 +85,9 @@ func TestCycleSignals_InferUserLutealPhase_LutealLengthExactlyMinIsKept(t *testi
 	day := func(s string) time.Time { return cyclesignalsCovDay(t, s) }
 
 	logs := []models.DailyLog{
-		{Date: day("2025-01-01"), IsPeriod: true, Flow: models.FlowMedium},
-		{Date: day("2025-01-29"), IsPeriod: true, Flow: models.FlowMedium},
-		{Date: day("2025-02-26"), IsPeriod: true, Flow: models.FlowMedium},
+		{Date: day("2025-01-01"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+		{Date: day("2025-01-29"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+		{Date: day("2025-02-26"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
 
 		// Cycle 1 (Jan1->Jan29, 28 days): coverline window Jan1-6, rise Jan19-21 ->
 		// ovulation Jan18 = cycle day 18. luteal = 28-18 = 10 (exactly
@@ -115,7 +115,7 @@ func TestCycleSignals_InferUserLutealPhase_LutealLengthExactlyMinIsKept(t *testi
 		{Date: day("2025-02-15"), BBT: new(36.50)},
 	}
 
-	phase, ok := InferUserLutealPhase(logs, time.UTC)
+	phase, ok := InferUserLutealPhase(logs, time.UTC, BoundaryContext{})
 	if !ok {
 		t.Fatalf("expected ok=true: a luteal length of exactly %d must be kept, giving two valid lengths", minLutealPhaseDays)
 	}
@@ -135,9 +135,9 @@ func TestCycleSignals_InferUserLutealPhase_LutealLengthExactlyTwentyIsKept(t *te
 	day := func(s string) time.Time { return cyclesignalsCovDay(t, s) }
 
 	logs := []models.DailyLog{
-		{Date: day("2025-01-01"), IsPeriod: true, Flow: models.FlowMedium},
-		{Date: day("2025-01-29"), IsPeriod: true, Flow: models.FlowMedium},
-		{Date: day("2025-02-26"), IsPeriod: true, Flow: models.FlowMedium},
+		{Date: day("2025-01-01"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+		{Date: day("2025-01-29"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+		{Date: day("2025-02-26"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
 
 		// Cycle 1 (Jan1->Jan29, 28 days): coverline window Jan1-6, rise Jan9-11 ->
 		// ovulation Jan8 = cycle day 8. luteal = 28-8 = 20 (exactly the upper
@@ -165,7 +165,7 @@ func TestCycleSignals_InferUserLutealPhase_LutealLengthExactlyTwentyIsKept(t *te
 		{Date: day("2025-02-15"), BBT: new(36.50)},
 	}
 
-	phase, ok := InferUserLutealPhase(logs, time.UTC)
+	phase, ok := InferUserLutealPhase(logs, time.UTC, BoundaryContext{})
 	if !ok {
 		t.Fatalf("expected ok=true: a luteal length of exactly 20 must be kept, giving two valid lengths")
 	}

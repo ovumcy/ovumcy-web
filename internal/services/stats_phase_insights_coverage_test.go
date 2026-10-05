@@ -35,10 +35,10 @@ func statsphaseinsightsCovOwner(id uint) *models.User {
 // would allow this through and produce unexpected context entries.
 func TestStatsPhaseInsightsBuildContextsReturnNilForSingleStart(t *testing.T) {
 	logs := []models.DailyLog{
-		{Date: statsphaseinsightsCovDay(t, "2026-01-01"), IsPeriod: true},
+		{Date: statsphaseinsightsCovDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
 		{Date: statsphaseinsightsCovDay(t, "2026-01-05"), Mood: 3},
 	}
-	got := buildCompletedCyclePhaseContexts(logs, statsphaseinsightsCovLocation)
+	got := buildCompletedCyclePhaseContexts(logs, statsphaseinsightsCovLocation, BoundaryContext{})
 	if got != nil {
 		t.Fatalf("expected nil with one cycle start, got %d contexts", len(got))
 	}
@@ -49,10 +49,10 @@ func TestStatsPhaseInsightsBuildContextsReturnNilForSingleStart(t *testing.T) {
 // — the earliest observable positive case past the line-52 boundary.
 func TestStatsPhaseInsightsBuildContextsBuildsContextsForTwoStarts(t *testing.T) {
 	logs := []models.DailyLog{
-		{Date: statsphaseinsightsCovDay(t, "2026-01-01"), IsPeriod: true},
-		{Date: statsphaseinsightsCovDay(t, "2026-01-29"), IsPeriod: true},
+		{Date: statsphaseinsightsCovDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
+		{Date: statsphaseinsightsCovDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true},
 	}
-	got := buildCompletedCyclePhaseContexts(logs, statsphaseinsightsCovLocation)
+	got := buildCompletedCyclePhaseContexts(logs, statsphaseinsightsCovLocation, BoundaryContext{})
 	if len(got) != 1 {
 		t.Fatalf("expected one context for two cycle starts, got %d", len(got))
 	}
@@ -98,16 +98,16 @@ func TestStatsPhaseInsightsMenstrualPhaseUsesDefaultPeriodLength(t *testing.T) {
 	// to see menstrual classification. DefaultPeriodLength=5, so day 3 should
 	// be menstrual in all cycles.
 	logs := []models.DailyLog{
-		{Date: statsphaseinsightsCovDay(t, "2026-01-01"), IsPeriod: true, Mood: 3},
+		{Date: statsphaseinsightsCovDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true, Mood: 3},
 		{Date: statsphaseinsightsCovDay(t, "2026-01-03"), Mood: 2}, // day 3 of cycle → menstrual
-		{Date: statsphaseinsightsCovDay(t, "2026-01-29"), IsPeriod: true, Mood: 3},
+		{Date: statsphaseinsightsCovDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true, Mood: 3},
 		{Date: statsphaseinsightsCovDay(t, "2026-01-31"), Mood: 2}, // day 3 of cycle 2 → menstrual
-		{Date: statsphaseinsightsCovDay(t, "2026-02-26"), IsPeriod: true, Mood: 3},
-		{Date: statsphaseinsightsCovDay(t, "2026-02-28"), Mood: 2},        // day 3 of cycle 3 → menstrual
-		{Date: statsphaseinsightsCovDay(t, "2026-03-26"), IsPeriod: true}, // opens 4th cycle start
+		{Date: statsphaseinsightsCovDay(t, "2026-02-26"), IsPeriod: true, CycleStart: true, Mood: 3},
+		{Date: statsphaseinsightsCovDay(t, "2026-02-28"), Mood: 2},                          // day 3 of cycle 3 → menstrual
+		{Date: statsphaseinsightsCovDay(t, "2026-03-26"), IsPeriod: true, CycleStart: true}, // opens 4th cycle start
 	}
 
-	insights, ok := service.BuildPhaseMoodInsights(owner, logs, statsphaseinsightsCovLocation)
+	insights, ok := service.BuildPhaseMoodInsights(owner, logs, statsphaseinsightsCovLocation, BoundaryContext{})
 	if !ok {
 		t.Fatal("expected phase mood insights to be available")
 	}
@@ -140,13 +140,13 @@ func TestStatsPhaseInsightsBuildContextsSkipsTooShortCycle(t *testing.T) {
 	// DetectCycleStarts needs IsPeriod=true. We'll build three starts but
 	// the first two have a 3-day gap, the second-third have a 28-day gap.
 	logs := []models.DailyLog{
-		{Date: statsphaseinsightsCovDay(t, "2026-01-01"), IsPeriod: true},
-		{Date: statsphaseinsightsCovDay(t, "2026-01-04"), IsPeriod: true}, // 3-day cycle, too short
-		{Date: statsphaseinsightsCovDay(t, "2026-02-01"), IsPeriod: true}, // 28 days from Jan 4
-		{Date: statsphaseinsightsCovDay(t, "2026-03-01"), IsPeriod: true}, // 28 days from Feb 1
-		{Date: statsphaseinsightsCovDay(t, "2026-03-29"), IsPeriod: true}, // 28 days from Mar 1
+		{Date: statsphaseinsightsCovDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
+		{Date: statsphaseinsightsCovDay(t, "2026-01-04"), IsPeriod: true, CycleStart: true}, // 3-day cycle, too short
+		{Date: statsphaseinsightsCovDay(t, "2026-02-01"), IsPeriod: true, CycleStart: true}, // 28 days from Jan 4
+		{Date: statsphaseinsightsCovDay(t, "2026-03-01"), IsPeriod: true, CycleStart: true}, // 28 days from Feb 1
+		{Date: statsphaseinsightsCovDay(t, "2026-03-29"), IsPeriod: true, CycleStart: true}, // 28 days from Mar 1
 	}
-	got := buildCompletedCyclePhaseContexts(logs, statsphaseinsightsCovLocation)
+	got := buildCompletedCyclePhaseContexts(logs, statsphaseinsightsCovLocation, BoundaryContext{})
 	// The 3-day first cycle must be skipped; remaining valid cycles should appear.
 	for _, ctx := range got {
 		if ctx.OvulationDay <= 0 {
@@ -275,16 +275,16 @@ func TestStatsPhaseInsightsMoodInsightEntryCountMatchesLogCount(t *testing.T) {
 	//   - 1 mood log on day 2 — NOT IsPeriod → day 2 > periodLength(1), day 2 < ovulationDay(14) → follicular
 	// So across 3 cycles: menstrual.EntryCount=3, follicular.EntryCount=3.
 	logs := []models.DailyLog{
-		{Date: statsphaseinsightsCovDay(t, "2026-01-01"), IsPeriod: true, Mood: 3}, // day 1 → menstrual
-		{Date: statsphaseinsightsCovDay(t, "2026-01-02"), Mood: 4},                 // day 2 → follicular
-		{Date: statsphaseinsightsCovDay(t, "2026-01-29"), IsPeriod: true, Mood: 3}, // day 1 → menstrual
-		{Date: statsphaseinsightsCovDay(t, "2026-01-30"), Mood: 4},                 // day 2 → follicular
-		{Date: statsphaseinsightsCovDay(t, "2026-02-26"), IsPeriod: true, Mood: 3}, // day 1 → menstrual
-		{Date: statsphaseinsightsCovDay(t, "2026-02-27"), Mood: 4},                 // day 2 → follicular
-		{Date: statsphaseinsightsCovDay(t, "2026-03-26"), IsPeriod: true},          // opens 4th cycle start
+		{Date: statsphaseinsightsCovDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true, Mood: 3}, // day 1 → menstrual
+		{Date: statsphaseinsightsCovDay(t, "2026-01-02"), Mood: 4},                                   // day 2 → follicular
+		{Date: statsphaseinsightsCovDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true, Mood: 3}, // day 1 → menstrual
+		{Date: statsphaseinsightsCovDay(t, "2026-01-30"), Mood: 4},                                   // day 2 → follicular
+		{Date: statsphaseinsightsCovDay(t, "2026-02-26"), IsPeriod: true, CycleStart: true, Mood: 3}, // day 1 → menstrual
+		{Date: statsphaseinsightsCovDay(t, "2026-02-27"), Mood: 4},                                   // day 2 → follicular
+		{Date: statsphaseinsightsCovDay(t, "2026-03-26"), IsPeriod: true, CycleStart: true},          // opens 4th cycle start
 	}
 
-	insights, ok := service.BuildPhaseMoodInsights(owner, logs, statsphaseinsightsCovLocation)
+	insights, ok := service.BuildPhaseMoodInsights(owner, logs, statsphaseinsightsCovLocation, BoundaryContext{})
 	if !ok {
 		t.Fatal("expected phase mood insights to be available")
 	}
@@ -331,13 +331,13 @@ func TestStatsPhaseInsightsSymptomInsightHasDataFalseForPhaseWithNoItems(t *test
 
 	// Build three completed cycles with symptoms only on menstrual days.
 	logs := []models.DailyLog{
-		{Date: statsphaseinsightsCovParseDay("2026-01-01"), IsPeriod: true, SymptomIDs: []uint{1}},
-		{Date: statsphaseinsightsCovParseDay("2026-01-29"), IsPeriod: true, SymptomIDs: []uint{1}},
-		{Date: statsphaseinsightsCovParseDay("2026-02-26"), IsPeriod: true, SymptomIDs: []uint{1}},
-		{Date: statsphaseinsightsCovParseDay("2026-03-26"), IsPeriod: true},
+		{Date: statsphaseinsightsCovParseDay("2026-01-01"), IsPeriod: true, CycleStart: true, SymptomIDs: []uint{1}},
+		{Date: statsphaseinsightsCovParseDay("2026-01-29"), IsPeriod: true, CycleStart: true, SymptomIDs: []uint{1}},
+		{Date: statsphaseinsightsCovParseDay("2026-02-26"), IsPeriod: true, CycleStart: true, SymptomIDs: []uint{1}},
+		{Date: statsphaseinsightsCovParseDay("2026-03-26"), IsPeriod: true, CycleStart: true},
 	}
 
-	insights, hasData := buildPhaseSymptomInsightsWithMap(logs, statsphaseinsightsCovLocation, symptomByID)
+	insights, hasData := buildPhaseSymptomInsightsWithMap(logs, statsphaseinsightsCovLocation, symptomByID, BoundaryContext{})
 	if !hasData {
 		t.Fatal("expected overall hasData=true because menstrual phase has data")
 	}
@@ -387,22 +387,22 @@ func TestStatsPhaseInsightsSymptomInsightPercentageCalculation(t *testing.T) {
 
 	// Three cycles; symptom 1 appears on 2 out of 3 luteal days.
 	logs := []models.DailyLog{
-		{Date: statsphaseinsightsCovParseDay("2026-01-01"), IsPeriod: true},
+		{Date: statsphaseinsightsCovParseDay("2026-01-01"), IsPeriod: true, CycleStart: true},
 		{Date: statsphaseinsightsCovParseDay("2026-01-15"), SymptomIDs: []uint{1}}, // luteal day 1
 		{Date: statsphaseinsightsCovParseDay("2026-01-16"), SymptomIDs: []uint{1}}, // luteal day 2
 		{Date: statsphaseinsightsCovParseDay("2026-01-17")},                        // luteal day 3 — no symptom
-		{Date: statsphaseinsightsCovParseDay("2026-01-29"), IsPeriod: true},
+		{Date: statsphaseinsightsCovParseDay("2026-01-29"), IsPeriod: true, CycleStart: true},
 		{Date: statsphaseinsightsCovParseDay("2026-02-12"), SymptomIDs: []uint{1}}, // luteal
 		{Date: statsphaseinsightsCovParseDay("2026-02-13"), SymptomIDs: []uint{1}},
 		{Date: statsphaseinsightsCovParseDay("2026-02-14")},
-		{Date: statsphaseinsightsCovParseDay("2026-02-26"), IsPeriod: true},
+		{Date: statsphaseinsightsCovParseDay("2026-02-26"), IsPeriod: true, CycleStart: true},
 		{Date: statsphaseinsightsCovParseDay("2026-03-12"), SymptomIDs: []uint{1}},
 		{Date: statsphaseinsightsCovParseDay("2026-03-13"), SymptomIDs: []uint{1}},
 		{Date: statsphaseinsightsCovParseDay("2026-03-14")},
-		{Date: statsphaseinsightsCovParseDay("2026-03-26"), IsPeriod: true},
+		{Date: statsphaseinsightsCovParseDay("2026-03-26"), IsPeriod: true, CycleStart: true},
 	}
 
-	insights, hasData := buildPhaseSymptomInsightsWithMap(logs, statsphaseinsightsCovLocation, symptomByID)
+	insights, hasData := buildPhaseSymptomInsightsWithMap(logs, statsphaseinsightsCovLocation, symptomByID, BoundaryContext{})
 	if !hasData {
 		t.Fatal("expected hasData=true")
 	}
@@ -456,25 +456,25 @@ func TestStatsPhaseInsightsSymptomItemsSortedDescendingByCount(t *testing.T) {
 	// Luteal days (day 15+ of each 28-day cycle, ovulation on day 14):
 	//   Acne(1) appears 3x, Bloating(2) appears 2x, Cramps(3) appears 1x.
 	logs := []models.DailyLog{
-		{Date: statsphaseinsightsCovParseDay("2026-01-01"), IsPeriod: true},
+		{Date: statsphaseinsightsCovParseDay("2026-01-01"), IsPeriod: true, CycleStart: true},
 		// Cycle 1 luteal (day 15 = Jan 15, day 16 = Jan 16, day 17 = Jan 17):
 		{Date: statsphaseinsightsCovParseDay("2026-01-15"), SymptomIDs: []uint{1, 2, 3}},
 		{Date: statsphaseinsightsCovParseDay("2026-01-16"), SymptomIDs: []uint{1, 2}},
 		{Date: statsphaseinsightsCovParseDay("2026-01-17"), SymptomIDs: []uint{1}},
-		{Date: statsphaseinsightsCovParseDay("2026-01-29"), IsPeriod: true},
+		{Date: statsphaseinsightsCovParseDay("2026-01-29"), IsPeriod: true, CycleStart: true},
 		// Cycle 2 luteal:
 		{Date: statsphaseinsightsCovParseDay("2026-02-12"), SymptomIDs: []uint{1, 2, 3}},
 		{Date: statsphaseinsightsCovParseDay("2026-02-13"), SymptomIDs: []uint{1, 2}},
 		{Date: statsphaseinsightsCovParseDay("2026-02-14"), SymptomIDs: []uint{1}},
-		{Date: statsphaseinsightsCovParseDay("2026-02-26"), IsPeriod: true},
+		{Date: statsphaseinsightsCovParseDay("2026-02-26"), IsPeriod: true, CycleStart: true},
 		// Cycle 3 luteal:
 		{Date: statsphaseinsightsCovParseDay("2026-03-12"), SymptomIDs: []uint{1, 2, 3}},
 		{Date: statsphaseinsightsCovParseDay("2026-03-13"), SymptomIDs: []uint{1, 2}},
 		{Date: statsphaseinsightsCovParseDay("2026-03-14"), SymptomIDs: []uint{1}},
-		{Date: statsphaseinsightsCovParseDay("2026-03-26"), IsPeriod: true},
+		{Date: statsphaseinsightsCovParseDay("2026-03-26"), IsPeriod: true, CycleStart: true},
 	}
 
-	insights, hasData := buildPhaseSymptomInsightsWithMap(logs, statsphaseinsightsCovLocation, symptomByID)
+	insights, hasData := buildPhaseSymptomInsightsWithMap(logs, statsphaseinsightsCovLocation, symptomByID, BoundaryContext{})
 	if !hasData {
 		t.Fatal("expected hasData=true")
 	}
@@ -523,16 +523,16 @@ func TestStatsPhaseInsightsSymptomItemsTiesBrokenAlphabetically(t *testing.T) {
 
 	// Both symptoms appear exactly once per cycle across three cycles → tied at 3.
 	logs := []models.DailyLog{
-		{Date: statsphaseinsightsCovParseDay("2026-01-01"), IsPeriod: true},
+		{Date: statsphaseinsightsCovParseDay("2026-01-01"), IsPeriod: true, CycleStart: true},
 		{Date: statsphaseinsightsCovParseDay("2026-01-15"), SymptomIDs: []uint{1, 2}},
-		{Date: statsphaseinsightsCovParseDay("2026-01-29"), IsPeriod: true},
+		{Date: statsphaseinsightsCovParseDay("2026-01-29"), IsPeriod: true, CycleStart: true},
 		{Date: statsphaseinsightsCovParseDay("2026-02-12"), SymptomIDs: []uint{1, 2}},
-		{Date: statsphaseinsightsCovParseDay("2026-02-26"), IsPeriod: true},
+		{Date: statsphaseinsightsCovParseDay("2026-02-26"), IsPeriod: true, CycleStart: true},
 		{Date: statsphaseinsightsCovParseDay("2026-03-12"), SymptomIDs: []uint{1, 2}},
-		{Date: statsphaseinsightsCovParseDay("2026-03-26"), IsPeriod: true},
+		{Date: statsphaseinsightsCovParseDay("2026-03-26"), IsPeriod: true, CycleStart: true},
 	}
 
-	insights, _ := buildPhaseSymptomInsightsWithMap(logs, statsphaseinsightsCovLocation, symptomByID)
+	insights, _ := buildPhaseSymptomInsightsWithMap(logs, statsphaseinsightsCovLocation, symptomByID, BoundaryContext{})
 	var luteal *StatsPhaseSymptomInsight
 	for i := range insights {
 		if insights[i].Phase == "luteal" {
@@ -574,16 +574,16 @@ func TestStatsPhaseInsightsSymptomInsightsTruncatesAtThree(t *testing.T) {
 
 	// All four symptoms appear on every luteal day across three cycles.
 	logs := []models.DailyLog{
-		{Date: statsphaseinsightsCovParseDay("2026-01-01"), IsPeriod: true},
+		{Date: statsphaseinsightsCovParseDay("2026-01-01"), IsPeriod: true, CycleStart: true},
 		{Date: statsphaseinsightsCovParseDay("2026-01-15"), SymptomIDs: []uint{1, 2, 3, 4}},
-		{Date: statsphaseinsightsCovParseDay("2026-01-29"), IsPeriod: true},
+		{Date: statsphaseinsightsCovParseDay("2026-01-29"), IsPeriod: true, CycleStart: true},
 		{Date: statsphaseinsightsCovParseDay("2026-02-12"), SymptomIDs: []uint{1, 2, 3, 4}},
-		{Date: statsphaseinsightsCovParseDay("2026-02-26"), IsPeriod: true},
+		{Date: statsphaseinsightsCovParseDay("2026-02-26"), IsPeriod: true, CycleStart: true},
 		{Date: statsphaseinsightsCovParseDay("2026-03-12"), SymptomIDs: []uint{1, 2, 3, 4}},
-		{Date: statsphaseinsightsCovParseDay("2026-03-26"), IsPeriod: true},
+		{Date: statsphaseinsightsCovParseDay("2026-03-26"), IsPeriod: true, CycleStart: true},
 	}
 
-	insights, hasData := buildPhaseSymptomInsightsWithMap(logs, statsphaseinsightsCovLocation, symptomByID)
+	insights, hasData := buildPhaseSymptomInsightsWithMap(logs, statsphaseinsightsCovLocation, symptomByID, BoundaryContext{})
 	if !hasData {
 		t.Fatal("expected hasData=true")
 	}
@@ -615,16 +615,16 @@ func TestStatsPhaseInsightsSymptomInsightsKeepsThreeItemsWhenExactlyThree(t *tes
 	}
 
 	logs := []models.DailyLog{
-		{Date: statsphaseinsightsCovParseDay("2026-01-01"), IsPeriod: true},
+		{Date: statsphaseinsightsCovParseDay("2026-01-01"), IsPeriod: true, CycleStart: true},
 		{Date: statsphaseinsightsCovParseDay("2026-01-15"), SymptomIDs: []uint{1, 2, 3}},
-		{Date: statsphaseinsightsCovParseDay("2026-01-29"), IsPeriod: true},
+		{Date: statsphaseinsightsCovParseDay("2026-01-29"), IsPeriod: true, CycleStart: true},
 		{Date: statsphaseinsightsCovParseDay("2026-02-12"), SymptomIDs: []uint{1, 2, 3}},
-		{Date: statsphaseinsightsCovParseDay("2026-02-26"), IsPeriod: true},
+		{Date: statsphaseinsightsCovParseDay("2026-02-26"), IsPeriod: true, CycleStart: true},
 		{Date: statsphaseinsightsCovParseDay("2026-03-12"), SymptomIDs: []uint{1, 2, 3}},
-		{Date: statsphaseinsightsCovParseDay("2026-03-26"), IsPeriod: true},
+		{Date: statsphaseinsightsCovParseDay("2026-03-26"), IsPeriod: true, CycleStart: true},
 	}
 
-	insights, _ := buildPhaseSymptomInsightsWithMap(logs, statsphaseinsightsCovLocation, symptomByID)
+	insights, _ := buildPhaseSymptomInsightsWithMap(logs, statsphaseinsightsCovLocation, symptomByID, BoundaryContext{})
 
 	var luteal *StatsPhaseSymptomInsight
 	for i := range insights {

@@ -56,7 +56,7 @@ func TestCycleLengthsAcrossFebruary29(t *testing.T) {
 				days = append(days, mustParseDay(t, raw))
 			}
 
-			lengths := CycleLengths(periodLogsOn(days...))
+			lengths := CycleLengths(periodLogsOn(days...), BoundaryContext{})
 			if len(lengths) != len(testCase.wantLengths) {
 				t.Fatalf("CycleLengths = %v, want %v", lengths, testCase.wantLengths)
 			}

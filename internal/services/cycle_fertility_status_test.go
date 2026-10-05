@@ -108,7 +108,7 @@ func TestPhaseAndFertilityAreOrthogonalOnAWindowDay(t *testing.T) {
 }
 
 func TestBuildCycleStatsPopulatesCurrentFertility(t *testing.T) {
-	empty := BuildCycleStats(nil, mustParseDay(t, "2026-01-10"))
+	empty := BuildCycleStats(nil, mustParseDay(t, "2026-01-10"), BoundaryContext{})
 	if empty.CurrentFertility != FertilityStatusUnknown {
 		t.Fatalf("expected unknown fertility without logs, got %s", empty.CurrentFertility)
 	}
@@ -117,7 +117,7 @@ func TestBuildCycleStatsPopulatesCurrentFertility(t *testing.T) {
 		makeLog(t, "2026-01-01", true),
 		makeLog(t, "2026-01-02", true),
 	}
-	stats := BuildCycleStats(logs, mustParseDay(t, "2026-01-10"))
+	stats := BuildCycleStats(logs, mustParseDay(t, "2026-01-10"), BoundaryContext{})
 	if stats.CurrentFertility != ResolveFertilityStatus(stats, mustParseDay(t, "2026-01-10")) {
 		t.Fatalf("BuildCycleStats fertility %s disagrees with ResolveFertilityStatus", stats.CurrentFertility)
 	}
@@ -140,7 +140,7 @@ func TestApplyUserCycleBaselineExposesBothAxesOnAFertileDay(t *testing.T) {
 	logs := []models.DailyLog{makeLog(t, "2026-01-01", true)}
 
 	now := mustParseDay(t, "2026-01-12")
-	stats := BuildCycleStats(logs, now)
+	stats := BuildCycleStats(logs, now, BoundaryContext{})
 	stats = ApplyUserCycleBaseline(user, logs, stats, now, time.UTC)
 
 	if stats.CurrentPhase != "follicular" {
@@ -154,7 +154,7 @@ func TestApplyUserCycleBaselineExposesBothAxesOnAFertileDay(t *testing.T) {
 	}
 
 	later := mustParseDay(t, "2026-01-20")
-	statsLater := ApplyUserCycleBaseline(user, logs, BuildCycleStats(logs, later), later, time.UTC)
+	statsLater := ApplyUserCycleBaseline(user, logs, BuildCycleStats(logs, later, BoundaryContext{}), later, time.UTC)
 	if statsLater.CurrentPhase != "luteal" {
 		t.Fatalf("expected luteal phase after the window, got %s", statsLater.CurrentPhase)
 	}
@@ -171,13 +171,13 @@ func TestApplyUserCycleBaselineExposesBothAxesOnAFertileDay(t *testing.T) {
 // was read against, so it is present beside every known status and absent
 // beside every unknown one.
 func TestFertilityBasisIsEmptyExactlyWhenTheStatusIsUnknown(t *testing.T) {
-	empty := BuildCycleStats(nil, mustParseDay(t, "2026-01-10"))
+	empty := BuildCycleStats(nil, mustParseDay(t, "2026-01-10"), BoundaryContext{})
 	if empty.CurrentFertility != FertilityStatusUnknown || empty.FertilityBasis != "" {
 		t.Fatalf("no history: status %q basis %q, want unknown with no basis", empty.CurrentFertility, empty.FertilityBasis)
 	}
 
 	logs := []models.DailyLog{makeLog(t, "2026-01-01", true), makeLog(t, "2026-01-29", true)}
-	built := BuildCycleStats(logs, mustParseDay(t, "2026-02-05"))
+	built := BuildCycleStats(logs, mustParseDay(t, "2026-02-05"), BoundaryContext{})
 	if built.CurrentFertility == FertilityStatusUnknown || built.FertilityBasis != FertilityBasisProjection {
 		t.Fatalf("observed history: status %q basis %q, want a known status on the projection", built.CurrentFertility, built.FertilityBasis)
 	}

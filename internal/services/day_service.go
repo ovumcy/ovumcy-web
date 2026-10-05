@@ -951,14 +951,16 @@ func (service *DayService) refreshDerivedCycleSettings(ctx context.Context, user
 	}
 
 	ownerLocation := location
+	boundaryCtx := BoundaryContext{}
 	if userSettings, err := service.users.LoadSettingsByID(ctx, userID); err != nil {
 		log.Printf("refreshDerivedCycleSettings: load timezone for user %d failed: %v", userID, err)
 	} else {
 		ownerLocation = resolveOwnerLocation(userSettings.Timezone, location)
+		boundaryCtx = BoundaryContextFor(&userSettings, time.Time{})
 	}
 
 	if err := service.users.UpdateByID(ctx, userID, map[string]any{
-		"luteal_phase": deriveUserLutealPhase(logs, now, ownerLocation),
+		"luteal_phase": deriveUserLutealPhase(logs, now, ownerLocation, boundaryCtx),
 	}); err != nil {
 		log.Printf("refreshDerivedCycleSettings: update luteal_phase for user %d failed: %v", userID, err)
 	}

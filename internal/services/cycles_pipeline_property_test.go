@@ -180,7 +180,7 @@ func isMidnightUTC(d time.Time) bool {
 func TestPipeline_DetectCycleStarts_BasicShape(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		hist := drawCycleHistory(t)
-		starts := DetectCycleStarts(hist.logs)
+		starts := CycleBoundaries(hist.logs, BoundaryContext{})
 
 		periodDays := make(map[string]bool)
 		periodCount := 0
@@ -206,12 +206,13 @@ func TestPipeline_DetectCycleStarts_BasicShape(t *testing.T) {
 	})
 }
 
-// Invariant 2: a single contiguous run of period days yields exactly ONE cycle
-// start, which is the first day of the run.
+// Invariant 2: a single contiguous run of at least two period days yields
+// exactly ONE cycle start, which is the first day of the run. (A lone unmarked
+// day opens no cycle unless it is today or yesterday: cycle_boundaries_test.go.)
 func TestPipeline_ContiguousRunYieldsOneStart(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		start := drawCycleStartDate(t)
-		runLen := rapid.IntRange(1, 12).Draw(t, "runLen")
+		runLen := rapid.IntRange(2, 12).Draw(t, "runLen")
 
 		logs := make([]models.DailyLog, 0, runLen)
 		for d := range runLen {
@@ -221,7 +222,7 @@ func TestPipeline_ContiguousRunYieldsOneStart(t *testing.T) {
 			})
 		}
 
-		starts := DetectCycleStarts(logs)
+		starts := CycleBoundaries(logs, BoundaryContext{})
 		if len(starts) != 1 {
 			t.Fatalf("contiguous run of %d days produced %d starts, want 1", runLen, len(starts))
 		}
@@ -239,15 +240,14 @@ func TestPipeline_ContiguousRunYieldsOneStart(t *testing.T) {
 func TestPipeline_CycleLengthCentralWithinObservedRange(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		hist := drawCycleHistory(t)
-		stats := BuildCycleStats(hist.logs, hist.now)
+		stats := BuildCycleStats(hist.logs, hist.now, BoundaryContext{})
 
 		if stats.CompletedCycleCount < 1 {
 			return
 		}
-		// The stats are built from ObservedCycleStarts; with explicit CycleStart
-		// flags on each run's first day this equals DetectCycleStarts here. Use
+		// The stats are built from CycleBoundaries over the logs up to today. Use
 		// the same source the stats use to define the band.
-		observed := ObservedCycleStarts(sortDailyLogs(filterLogsNotAfter(hist.logs, dateOnly(hist.now))))
+		observed := CycleBoundaries(sortDailyLogs(filterLogsNotAfter(hist.logs, dateOnly(hist.now))), BoundaryContext{Today: dateOnly(hist.now)})
 		gaps := detectedStartGaps(observed)
 		if len(gaps) == 0 {
 			return
@@ -271,7 +271,7 @@ func TestPipeline_CycleLengthCentralWithinObservedRange(t *testing.T) {
 func TestPipeline_PeriodLengthWithinCycle(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		hist := drawCycleHistory(t)
-		stats := BuildCycleStats(hist.logs, hist.now)
+		stats := BuildCycleStats(hist.logs, hist.now, BoundaryContext{})
 
 		if stats.LastPeriodLength <= 0 {
 			return
@@ -291,8 +291,8 @@ func TestPipeline_PeriodLengthWithinCycle(t *testing.T) {
 func TestPipeline_BuildCycleStatsDeterministic(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		hist := drawCycleHistory(t)
-		a := BuildCycleStats(hist.logs, hist.now)
-		b := BuildCycleStats(hist.logs, hist.now)
+		a := BuildCycleStats(hist.logs, hist.now, BoundaryContext{})
+		b := BuildCycleStats(hist.logs, hist.now, BoundaryContext{})
 		if a != b {
 			t.Fatalf("BuildCycleStats not deterministic:\n a=%+v\n b=%+v", a, b)
 		}
@@ -304,7 +304,7 @@ func TestPipeline_BuildCycleStatsDeterministic(t *testing.T) {
 func TestPipeline_NextPeriodAfterLastStart(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		hist := drawCycleHistory(t)
-		stats := BuildCycleStats(hist.logs, hist.now)
+		stats := BuildCycleStats(hist.logs, hist.now, BoundaryContext{})
 		if stats.LastPeriodStart.IsZero() || stats.NextPeriodStart.IsZero() {
 			return
 		}
@@ -320,7 +320,7 @@ func TestPipeline_NextPeriodAfterLastStart(t *testing.T) {
 func TestPipeline_NextPeriodMatchesFormula(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		hist := drawCycleHistory(t)
-		stats := BuildCycleStats(hist.logs, hist.now)
+		stats := BuildCycleStats(hist.logs, hist.now, BoundaryContext{})
 		if stats.LastPeriodStart.IsZero() || stats.NextPeriodStart.IsZero() {
 			return
 		}
@@ -350,7 +350,7 @@ func TestPipeline_NextPeriodMatchesFormula(t *testing.T) {
 func TestPipeline_OvulationBetweenStartAndNextPeriod(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		hist := drawCycleHistory(t)
-		stats := BuildCycleStats(hist.logs, hist.now)
+		stats := BuildCycleStats(hist.logs, hist.now, BoundaryContext{})
 		if stats.OvulationImpossible || stats.OvulationDate.IsZero() {
 			return
 		}
@@ -558,7 +558,7 @@ func TestPipeline_BaselinePredictionCalendarStableAcrossLocations(t *testing.T) 
 		now := hist.now.AddDate(0, 0, 2)
 
 		// Baseline computed in UTC is the reference.
-		baseStats := BuildCycleStats(hist.logs, now)
+		baseStats := BuildCycleStats(hist.logs, now, BoundaryContext{})
 		utc := ApplyUserCycleBaseline(user, hist.logs, baseStats, now, time.UTC)
 
 		key := func(d time.Time) string {
@@ -569,7 +569,7 @@ func TestPipeline_BaselinePredictionCalendarStableAcrossLocations(t *testing.T) 
 		}
 
 		for _, loc := range locations {
-			locStats := ApplyUserCycleBaseline(user, hist.logs, BuildCycleStats(hist.logs, now), now, loc)
+			locStats := ApplyUserCycleBaseline(user, hist.logs, BuildCycleStats(hist.logs, now, BoundaryContext{}), now, loc)
 			for _, pair := range []struct {
 				name string
 				a, b time.Time
@@ -595,7 +595,7 @@ func TestPipeline_BaselinePredictionCalendarStableAcrossLocations(t *testing.T) 
 func TestPipeline_NeverPanicsOrReturnsNonsense(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		hist := drawCycleHistory(t)
-		stats := BuildCycleStats(hist.logs, hist.now)
+		stats := BuildCycleStats(hist.logs, hist.now, BoundaryContext{})
 
 		// Lengths are either unset (0, meaning "not enough data") or strictly
 		// positive. Never negative.

@@ -93,8 +93,8 @@ func completedCycleAgreementCases(t *testing.T) []completedCycleAgreementCase {
 func TestCompletedCycleSpansAndPhaseContextsAgree(t *testing.T) {
 	for _, testCase := range completedCycleAgreementCases(t) {
 		t.Run(testCase.name, func(t *testing.T) {
-			spans := buildCompletedCycleSpans(testCase.logs, time.UTC)
-			contexts := buildCompletedCyclePhaseContexts(testCase.logs, time.UTC)
+			spans := buildCompletedCycleSpans(testCase.logs, time.UTC, BoundaryContext{})
+			contexts := buildCompletedCyclePhaseContexts(testCase.logs, time.UTC, BoundaryContext{})
 
 			if len(spans) != len(contexts) {
 				t.Errorf("cycle count disagrees: %d span(s) against %d phase context(s) — %s", len(spans), len(contexts), testCase.description)

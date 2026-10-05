@@ -1,7 +1,7 @@
 import { expect, test } from './support/fixtures';
 import { logoutViaAPI } from './support/auth-helpers';
 import { dashboardNextPeriodText } from './support/dashboard-helpers';
-import { displayDatesIn, fillDateField } from './support/date-field-helpers';
+import { displayDatesIn } from './support/date-field-helpers';
 import { localeText } from './support/locale-helpers';
 import {
   markCycleStart,
@@ -155,25 +155,9 @@ test.describe('Stats factor context', () => {
     // — the single input DashboardCycleDataLooksStale keys on. Owners are
     // isolated by user_id, so this account observes only its own dashboard.
     await logoutViaAPI(page);
-    await registerOwnerAndEnableIrregularMode(page, 'stats-factor-stale-baseline');
-
-    const staleCycleForm = page.locator('#settings-cycle form[action="/api/v1/users/current/cycle"]');
-    await expect(staleCycleForm).toBeVisible();
-    await fillDateField(staleCycleForm.locator('#settings-last-period-start'), shiftISODate(today, -30));
-    // Bind to this save's own PATCH: the irregular-mode save inside
-    // registerOwnerAndEnableIrregularMode already left a .status-ok in
-    // #settings-cycle-status, so waiting on that alone resolves instantly and
-    // the /dashboard navigation below aborts a still-in-flight baseline write.
-    const [staleCycleSave] = await Promise.all([
-      page.waitForRequest(
-        (request) =>
-          request.method() === 'PATCH' && request.url().includes('/api/v1/users/current/cycle'),
-      ),
-      staleCycleForm.locator('button[data-save-button]').click(),
-    ]);
-    const staleCycleResponse = await staleCycleSave.response();
-    expect(staleCycleResponse, 'expected a response for PATCH /api/v1/users/current/cycle').not.toBeNull();
-    expect(staleCycleResponse!.ok()).toBeTruthy();
+    // Onboarded 30 days back: the baseline is the onboarding cluster itself, so
+    // no later logged period day can stand in as a newer boundary.
+    await registerOwnerAndEnableIrregularMode(page, 'stats-factor-stale-baseline', 30);
 
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
