@@ -28,6 +28,14 @@ type dayLogRepositoryStub struct {
 	// listErr fails every ListByUser, which the day write only reaches when it
 	// applies a confirmed cycle start.
 	listErr error
+	// lockingReads counts FindByUserAndDayRangeForUpdate calls, the read a
+	// merging write must take so a concurrent merge waits for it.
+	lockingReads int
+}
+
+func (stub *dayLogRepositoryStub) FindByUserAndDayRangeForUpdate(ctx context.Context, userID uint, dayStart time.Time, dayEnd time.Time) (models.DailyLog, bool, error) {
+	stub.lockingReads++
+	return stub.FindByUserAndDayRange(ctx, userID, dayStart, dayEnd)
 }
 
 func newDayLogRepositoryStub() *dayLogRepositoryStub {

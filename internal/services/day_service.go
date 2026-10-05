@@ -55,6 +55,10 @@ type DayLogRepository interface {
 	ListByUserRange(ctx context.Context, userID uint, fromStart *time.Time, toEnd *time.Time) ([]models.DailyLog, error)
 	ListByUserDayRange(ctx context.Context, userID uint, dayStart time.Time, dayEnd time.Time) ([]models.DailyLog, error)
 	FindByUserAndDayRange(ctx context.Context, userID uint, dayStart time.Time, dayEnd time.Time) (models.DailyLog, bool, error)
+	// FindByUserAndDayRangeForUpdate is the read a write merges onto: inside a
+	// transaction it holds the row until commit, where the database has row
+	// locks.
+	FindByUserAndDayRangeForUpdate(ctx context.Context, userID uint, dayStart time.Time, dayEnd time.Time) (models.DailyLog, bool, error)
 	Create(ctx context.Context, entry *models.DailyLog) error
 	CreateBatch(ctx context.Context, entries []models.DailyLog) error
 	Save(ctx context.Context, entry *models.DailyLog) error
@@ -231,6 +235,10 @@ func (service *DayService) UpsertDayEntry(ctx context.Context, userID uint, dayS
 		SymptomIDs:      payload.SymptomIDs,
 	}
 	if err := service.logs.Create(ctx, &entry); err != nil {
+		var uniqueErr interface{ UniqueConstraint() string }
+		if errors.As(err, &uniqueErr) {
+			return models.DailyLog{}, priorDayState{}, errDayEntryCreatedConcurrently
+		}
 		return models.DailyLog{}, priorDayState{}, ErrDayEntryCreateFailed
 	}
 	return entry, priorDayState{}, nil
@@ -242,6 +250,13 @@ type priorDayState struct {
 	IsPeriod bool
 	Flow     string
 }
+
+// errDayEntryCreatedConcurrently is the create failure in which the day had no
+// row when this write read it and a concurrent write inserted one before this
+// insert: the unique (user_id, date) index refused it. It is still
+// ErrDayEntryCreateFailed to every caller that does not retry; the partial
+// write retries it once, onto the row that won.
+var errDayEntryCreatedConcurrently = fmt.Errorf("%w: the day was created by a concurrent write", ErrDayEntryCreateFailed)
 
 func mergePreservedDayEntryInput(existing models.DailyLog, payload DayEntryInput) DayEntryInput {
 	if payload.PreserveSexActivity {
@@ -373,8 +388,12 @@ func (service *DayService) PatchDayEntryWithAutoFillAt(ctx context.Context, user
 	}
 
 	dayStart, dayEnd := DayRange(day, location)
-	return service.writeDayEntryWithAutoFill(ctx, userID, dayStart, now, location, func(txLogs DayLogRepository) (DayEntryInput, error) {
-		existing, found, err := txLogs.FindByUserAndDayRange(ctx, userID, dayStart, dayEnd)
+	resolve := func(txLogs DayLogRepository) (DayEntryInput, error) {
+		// The locking read: a concurrent partial write of the same day waits
+		// for this transaction and then merges onto the row it leaves, rather
+		// than both merging onto one old row and the later commit erasing the
+		// fields the earlier one stated.
+		existing, found, err := txLogs.FindByUserAndDayRangeForUpdate(ctx, userID, dayStart, dayEnd)
 		if err != nil {
 			return DayEntryInput{}, ErrDayEntryLoadFailed
 		}
@@ -382,7 +401,16 @@ func (service *DayService) PatchDayEntryWithAutoFillAt(ctx context.Context, user
 			existing = models.DailyLog{}
 		}
 		return NormalizeDayEntryInput(mergeDayEntryPatch(existing, patch, fields))
-	})
+	}
+	entry, err := service.writeDayEntryWithAutoFill(ctx, userID, dayStart, now, location, resolve)
+	if errors.Is(err, errDayEntryCreatedConcurrently) {
+		// The day had no row to lock and a concurrent write created it first.
+		// One more transaction reads that row and merges onto it; the row now
+		// exists, so the retry updates rather than inserts, and a second
+		// refusal answers as the failed create it is.
+		entry, err = service.writeDayEntryWithAutoFill(ctx, userID, dayStart, now, location, resolve)
+	}
+	return entry, err
 }
 
 // writeDayEntryWithAutoFill runs one day write, its period autofill and an

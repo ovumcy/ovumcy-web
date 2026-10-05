@@ -121,7 +121,7 @@ func (handler *Handler) PatchDay(c fiber.Ctx) error {
 
 // completeDayWrite records and answers a day write that has been saved.
 func (handler *Handler) completeDayWrite(c fiber.Ctx, request upsertDayRequest, entry models.DailyLog) error {
-	feedback, feedbackErr := handler.applyUpsertDayAcknowledgements(c, request)
+	feedback, feedbackErr := handler.applyUpsertDayAcknowledgements(c, request, entry)
 
 	handler.logMutationSuccess(c, dayUpsertMutation)
 	// The inline question's answer can turn this save into a cycle-start mark
@@ -200,8 +200,12 @@ func buildUpsertDayEntryInput(payload dayPayload, cleanSymptomIDs []uint, hidden
 	}
 }
 
-func (handler *Handler) applyUpsertDayAcknowledgements(c fiber.Ctx, request upsertDayRequest) (services.DayFeedbackState, error) {
-	if !request.user.ShownPeriodTip && request.payload.IsPeriod && services.ParseBoolLike(c.FormValue("ack_period_tip")) {
+// applyUpsertDayAcknowledgements records the acknowledgements a saved day
+// write carries. The period tip is acknowledged on the day as written, not on
+// the request: a partial write that leaves is_period out still saves a period
+// day when the stored day is one, and on a full write the two agree.
+func (handler *Handler) applyUpsertDayAcknowledgements(c fiber.Ctx, request upsertDayRequest, entry models.DailyLog) (services.DayFeedbackState, error) {
+	if !request.user.ShownPeriodTip && entry.IsPeriod && services.ParseBoolLike(c.FormValue("ack_period_tip")) {
 		if err := handler.dayService.AcknowledgePeriodTip(c.Context(), request.user.ID); err == nil { // codecov:ignore -- best-effort period-tip ack; error intentionally swallowed, happy path in e2e
 			request.user.ShownPeriodTip = true
 		}

@@ -225,6 +225,34 @@ func TestPatchDayFormBodyChangesOnlyThePostedFields(t *testing.T) {
 	}
 }
 
+// TestPatchDayAcknowledgesThePeriodTipOnAStoredPeriodDay: the period tip is
+// acknowledged on the day as written. A partial write that leaves is_period
+// out of the body still saves a period day here, so its ack_period_tip counts.
+func TestPatchDayAcknowledgesThePeriodTipOnAStoredPeriodDay(t *testing.T) {
+	fixture := newPatchMergeFixture(t, "patch-merge-period-tip@example.com")
+	if err := fixture.database.Model(&models.User{}).Where("id = ?", fixture.user.ID).Update("shown_period_tip", false).Error; err != nil {
+		t.Fatalf("reset period tip: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodPatch, fixture.path, strings.NewReader("mood=3&ack_period_tip=true"))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("HX-Request", "true")
+	request.Header.Set("Cookie", fixture.authCookie)
+	response := mustAppResponse(t, fixture.app, request)
+	assertStatusCode(t, response, http.StatusOK)
+
+	if saved := fixture.stored(t); !saved.IsPeriod || saved.Mood != 3 {
+		t.Fatalf("expected the stored period day kept with the posted mood, got is_period=%v mood=%d", saved.IsPeriod, saved.Mood)
+	}
+	var user models.User
+	if err := fixture.database.Select("shown_period_tip").Where("id = ?", fixture.user.ID).First(&user).Error; err != nil {
+		t.Fatalf("load user: %v", err)
+	}
+	if !user.ShownPeriodTip {
+		t.Fatal("expected ack_period_tip on a partial write of a period day to record the acknowledgement")
+	}
+}
+
 func TestPatchDayMultipartBodyChangesOnlyThePostedFields(t *testing.T) {
 	fixture := newPatchMergeFixture(t, "patch-merge-multipart@example.com")
 
