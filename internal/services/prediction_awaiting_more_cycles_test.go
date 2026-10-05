@@ -76,18 +76,45 @@ func TestAwaitingMoreCyclesIsOneVerdictAcrossTheDashboardSurfaces(t *testing.T) 
 			if cycleContext.FertilitySuppressed != testCase.wantFertility {
 				t.Fatalf("context FertilitySuppressed = %v, want %v", cycleContext.FertilitySuppressed, testCase.wantFertility)
 			}
+			// The timing frame is the trying goal's slot: every other goal gets the
+			// zero frame (resolveDashboardTimingFrame), so asserting the estimate flag
+			// for the avoid and health rows would hold for any implementation. Those
+			// rows are read through the hero ribbon below, which every goal renders.
 			frame := resolveDashboardTimingFrame(user, cycleContext, dashboardOwnerVisibility{})
-			if frame.ShowOvulationEstimate == testCase.wantFertility {
-				t.Fatalf("header ShowOvulationEstimate = %v for the %s goal with the gate %v", frame.ShowOvulationEstimate, testCase.goal, testCase.wantFertility)
+			if testCase.goal == models.UsageGoalTrying {
+				if frame.ShowOvulationEstimate == testCase.wantFertility {
+					t.Fatalf("header ShowOvulationEstimate = %v for the %s goal with the gate %v", frame.ShowOvulationEstimate, testCase.goal, testCase.wantFertility)
+				}
+				if testCase.completed > 0 && frame.ShowFirstCycleBridge {
+					t.Fatal("the first-cycle bridge line belongs to the zero-cycle tier only")
+				}
+				// A regular owner in the one-or-two-cycles tier gets the more-cycles
+				// line, no other row does.
+				wantMoreBridge := !testCase.irregular && testCase.completed >= 1 && testCase.completed <= 2
+				if frame.ShowMoreCyclesBridge != wantMoreBridge {
+					t.Fatalf("ShowMoreCyclesBridge = %v, want %v", frame.ShowMoreCyclesBridge, wantMoreBridge)
+				}
+			} else if frame != (dashboardTimingFrame{}) {
+				t.Fatalf("a %s-goal owner must get the zero timing frame, got %+v", testCase.goal, frame)
 			}
-			if testCase.completed > 0 && frame.ShowFirstCycleBridge {
-				t.Fatal("the first-cycle bridge line belongs to the zero-cycle tier only")
+
+			// The hero ribbon renders for every goal and names the ovulation day only
+			// while the fertility gate is open: in the withheld tier its phase cards are
+			// the menstrual one plus the single withheld card.
+			hero := BuildDashboardCycleHero(user, stats, cycleContext, dashboardCycleHeroInput{Logs: logs, Today: today, Location: location})
+			// Irregular mode under three cycles falls back to the text-first status,
+			// so its hero is not drawn at all.
+			if testCase.completed > 0 && !testCase.irregular && !hero.Visible {
+				t.Fatalf("fixture: the hero must render for the %s goal with %d completed cycles", testCase.goal, testCase.completed)
 			}
-			// The trying goal reads the slot: a regular owner in the one-or-two-cycles
-			// tier gets the more-cycles line, no other row does.
-			wantMoreBridge := testCase.goal == models.UsageGoalTrying && !testCase.irregular && testCase.completed >= 1 && testCase.completed <= 2
-			if frame.ShowMoreCyclesBridge != wantMoreBridge {
-				t.Fatalf("ShowMoreCyclesBridge = %v, want %v", frame.ShowMoreCyclesBridge, wantMoreBridge)
+			if hero.Visible {
+				hasOvulationCard := false
+				for _, card := range hero.PhaseCards {
+					hasOvulationCard = hasOvulationCard || card.Phase == "ovulation"
+				}
+				if hasOvulationCard == testCase.wantFertility {
+					t.Fatalf("hero names an ovulation card = %v for the %s goal with the gate %v (cards %+v)", hasOvulationCard, testCase.goal, testCase.wantFertility, hero.PhaseCards)
+				}
 			}
 
 			if got := BuildOwnerPredictionExplanation(user, cycleContext, false).PrimaryKey; got != testCase.wantExplainer {

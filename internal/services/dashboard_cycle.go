@@ -388,16 +388,16 @@ type PredictionSuppression struct {
 }
 
 // ResolvePredictionSuppression answers what a surface may publish and why. It
-// lives in this file because it is the only place the five signals may be named
+// lives in this file because it is the only place the six signals may be named
 // together: everywhere else they are read through the two predicates.
 //
 // Reasons is ordered by the predicate the signal belongs to — the four
-// whole-projection signals first, the fertility-only floor last — so a payload
+// whole-projection signals first, the two fertility-only floors last — so a payload
 // diffed between two releases moves only when the state does. A verdict may
 // carry no reason at all: neither predicate is suppressing, which is the
 // ordinary case.
 //
-// A sixth signal added to either predicate MUST get its reason here, or the
+// A seventh signal added to either predicate MUST get its reason here, or the
 // payload says "suppressed" with nothing naming why.
 // TestEverySuppressionSignalHasAPublishedReason fails until it does.
 func ResolvePredictionSuppression(user *models.User, stats CycleStats) PredictionSuppression {
