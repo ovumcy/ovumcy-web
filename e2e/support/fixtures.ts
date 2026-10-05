@@ -118,4 +118,4 @@ export const test = base.extend<{ browserErrors: BrowserErrorWatcher }>({
 });
 
 export { expect };
-export type { BrowserContext, Frame, Locator, Page, Request } from '@playwright/test';
+export type { Browser, BrowserContext, Frame, Locator, Page, Request } from '@playwright/test';
