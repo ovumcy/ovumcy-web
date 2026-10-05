@@ -448,6 +448,53 @@ test("focus on a link in a swapped block moves to the same link in the new block
   }
 });
 
+test("focus on one of two links sharing a hook name moves to the link with the same href, not the first", async () => {
+  const links =
+    '<a href="#dashboard-cycle-start" data-late-cycle-action="cycle-start">Start</a>' +
+    '<a href="#dashboard-pregnancy-test" data-late-cycle-action="pregnancy-test">Test</a>';
+  const stale = warningsShell(STALE_HEADER, `<div data-dashboard-cycle-warnings><p>Old</p>${links}</div>`);
+  const fresh = warningsShell(FRESH_HEADER, `<div data-dashboard-cycle-warnings><p>New</p>${links}</div>`);
+  const { dom } = await loadDashboard({ shellHTML: stale, install: recorderFor(fresh) });
+  try {
+    const document = dom.window.document;
+    document.querySelectorAll("[data-dashboard-cycle-warnings] a")[1].focus();
+
+    pick(document, "positive");
+    await saveNow(dom.window);
+
+    const block = document.querySelector("[data-dashboard-cycle-warnings]");
+    assert.equal(block.textContent.includes("New"), true, "the block was swapped");
+    assert.equal(document.activeElement, block.querySelectorAll("a")[1], "focus is on the second link's equivalent");
+    assert.equal(document.activeElement.getAttribute("href"), "#dashboard-pregnancy-test");
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("a hook with the same name and value finds the link when its href changed, and a different value does not", async () => {
+  const stale = warningsShell(
+    STALE_HEADER,
+    '<div data-dashboard-cycle-warnings><p>Old</p><a href="#a" data-late-cycle-action="cycle-start">A</a><a href="#b" data-late-cycle-action="pregnancy-test">B</a></div>'
+  );
+  const fresh = warningsShell(
+    FRESH_HEADER,
+    '<div data-dashboard-cycle-warnings><p>New</p><a href="#x" data-late-cycle-action="cycle-start">A</a><a href="#y" data-late-cycle-action="pregnancy-test">B</a></div>'
+  );
+  const { dom } = await loadDashboard({ shellHTML: stale, install: recorderFor(fresh) });
+  try {
+    const document = dom.window.document;
+    document.querySelectorAll("[data-dashboard-cycle-warnings] a")[1].focus();
+
+    pick(document, "positive");
+    await saveNow(dom.window);
+
+    const block = document.querySelector("[data-dashboard-cycle-warnings]");
+    assert.equal(document.activeElement, block.querySelectorAll("a")[1], "the same hook value wins over the first sharer");
+  } finally {
+    dom.window.close();
+  }
+});
+
 test("focus with no equivalent in the new block lands on the block, then on the status line if it is gone", async () => {
   const stale = warningsShell(STALE_HEADER, `<div data-dashboard-cycle-warnings><p>Old</p>${LINK}</div>`);
   const noLink = warningsShell(FRESH_HEADER, "<div data-dashboard-cycle-warnings><p>New</p></div>");
@@ -464,6 +511,10 @@ test("focus with no equivalent in the new block lands on the block, then on the 
     assert.equal(document.activeElement, block, "the block itself takes focus");
     assert.equal(block.getAttribute("tabindex"), "-1", "focusable by script only, never a tab stop");
     assert.equal(document.querySelector("[data-dashboard-status-line]").hasAttribute("tabindex"), false);
+
+    document.querySelector("[data-usage-goal-chip]").focus();
+    assert.notEqual(document.activeElement, block, "focus moved away from the block");
+    assert.equal(block.hasAttribute("tabindex"), false, "the block's tabindex leaves no residue once it blurs");
   } finally {
     kept.dom.window.close();
   }

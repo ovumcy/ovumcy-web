@@ -3955,7 +3955,7 @@
       if (block !== active) {
         for (var attrIndex = 0; attrIndex < active.attributes.length; attrIndex++) {
           if (active.attributes[attrIndex].name.indexOf("data-") === 0) {
-            hooks.push(active.attributes[attrIndex].name);
+            hooks.push({ name: active.attributes[attrIndex].name, value: active.attributes[attrIndex].value });
           }
         }
       }
@@ -3969,20 +3969,30 @@
     return null;
   }
 
+  // The same href wins across every candidate first; only then a shared hook,
+  // by name AND value, because several links in one block can share a hook
+  // name (data-late-cycle-action) and differ only by what it says.
   function equivalentDashboardFocusTarget(block, saved) {
     var candidates = block.querySelectorAll("*");
     var candidate;
 
     for (var index = 0; index < candidates.length; index++) {
       candidate = candidates[index];
+      if (
+        candidate.tagName === saved.tag &&
+        saved.href !== null &&
+        candidate.getAttribute("href") === saved.href
+      ) {
+        return candidate;
+      }
+    }
+    for (var hookPass = 0; hookPass < candidates.length; hookPass++) {
+      candidate = candidates[hookPass];
       if (candidate.tagName !== saved.tag) {
         continue;
       }
-      if (saved.href !== null && candidate.getAttribute("href") === saved.href) {
-        return candidate;
-      }
       for (var hookIndex = 0; hookIndex < saved.hooks.length; hookIndex++) {
-        if (candidate.hasAttribute(saved.hooks[hookIndex])) {
+        if (candidate.getAttribute(saved.hooks[hookIndex].name) === saved.hooks[hookIndex].value) {
           return candidate;
         }
       }
@@ -4007,8 +4017,17 @@
     }
     target = block.matches(saved.selector) ? equivalentDashboardFocusTarget(block, saved) : null;
     if (!target) {
-      block.setAttribute("tabindex", "-1");
       target = block;
+      if (!block.hasAttribute("tabindex")) {
+        block.setAttribute("tabindex", "-1");
+        block.addEventListener(
+          "blur",
+          function () {
+            block.removeAttribute("tabindex");
+          },
+          { once: true }
+        );
+      }
     }
     if (typeof target.focus === "function") {
       target.focus();
