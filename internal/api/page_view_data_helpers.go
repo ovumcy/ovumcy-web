@@ -75,6 +75,7 @@ func (handler *Handler) buildDashboardViewData(ctx context.Context, user *models
 		"MoreFieldsOpen":                        viewData.MoreFieldsOpen,
 		"ShowOvulationEstimate":                 viewData.ShowOvulationEstimate,
 		"ShowFirstCycleBridge":                  viewData.ShowFirstCycleBridge,
+		"ShowMoreCyclesBridge":                  viewData.ShowMoreCyclesBridge,
 		"ShowFertilityStatus":                   viewData.ShowFertilityStatus,
 		"ShowBBTInVisibleTier":                  viewData.ShowBBTInVisibleTier,
 		"TemperatureUnit":                       bbtView.Unit,

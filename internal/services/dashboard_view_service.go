@@ -79,6 +79,7 @@ type DashboardViewData struct {
 	MoreFieldsOpen                    bool
 	ShowOvulationEstimate             bool
 	ShowFirstCycleBridge              bool
+	ShowMoreCyclesBridge              bool
 	ShowFertilityStatus               bool
 	ShowBBTInVisibleTier              bool
 	AllowManualCycleStart             bool
@@ -218,6 +219,7 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 		MoreFieldsOpen:                    dashboardMoreFieldsHoldData(todayLog, visibility, timingFrame.BBTInVisibleTier),
 		ShowOvulationEstimate:             timingFrame.ShowOvulationEstimate,
 		ShowFirstCycleBridge:              timingFrame.ShowFirstCycleBridge,
+		ShowMoreCyclesBridge:              timingFrame.ShowMoreCyclesBridge,
 		ShowFertilityStatus:               !cycleContext.FertilitySuppressed,
 		ShowBBTInVisibleTier:              timingFrame.BBTInVisibleTier,
 		AllowManualCycleStart:             visibility.AllowManualCycleStart,
@@ -263,9 +265,14 @@ type dashboardOwnerVisibility struct {
 // ShowFirstCycleBridge is the one state where the timing item is replaced
 // rather than dropped: an account with no completed cycle yet gets a single line
 // naming when its fertile window arrives, so the goal it chose still answers it.
+//
+// ShowMoreCyclesBridge is the same replacement one tier up: a regular account
+// with one or two completed cycles has a date the policy still withholds, so the
+// slot says the window arrives after the third cycle instead of staying empty.
 type dashboardTimingFrame struct {
 	ShowOvulationEstimate bool
 	ShowFirstCycleBridge  bool
+	ShowMoreCyclesBridge  bool
 	BBTInVisibleTier      bool
 }
 
@@ -313,8 +320,19 @@ func resolveDashboardTimingFrame(user *models.User, cycleContext DashboardCycleC
 	return dashboardTimingFrame{
 		ShowOvulationEstimate: !cycleContext.FertilitySuppressed || cycleContext.DisplayOvulationConfirmed,
 		ShowFirstCycleBridge:  !cycleContext.PredictionDisabled && cycleContext.AwaitingFirstCycle,
+		ShowMoreCyclesBridge:  resolveDashboardMoreCyclesBridge(cycleContext),
 		BBTInVisibleTier:      visibility.ShowBBTField,
 	}
+}
+
+// resolveDashboardMoreCyclesBridge is the one-or-two-completed-cycles twin of the
+// first-cycle bridge, and it reads the same single question for the same reason:
+// the line names no date, so it asks only whether the account has predictions at
+// all (PredictionDisabled covers unpredictable-cycle mode and a pregnancy pause)
+// and never the fertility gate, which carries the very floor this line is shown
+// in. It is its own function so the sweep's sanctioned residual for it names it.
+func resolveDashboardMoreCyclesBridge(cycleContext DashboardCycleContext) bool {
+	return !cycleContext.PredictionDisabled && cycleContext.AwaitingMoreCycles
 }
 
 // dashboardMoreFieldsHoldData answers whether the journal's "More" disclosure

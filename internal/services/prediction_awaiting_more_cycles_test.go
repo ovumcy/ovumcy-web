@@ -83,6 +83,12 @@ func TestAwaitingMoreCyclesIsOneVerdictAcrossTheDashboardSurfaces(t *testing.T) 
 			if testCase.completed > 0 && frame.ShowFirstCycleBridge {
 				t.Fatal("the first-cycle bridge line belongs to the zero-cycle tier only")
 			}
+			// The trying goal reads the slot: a regular owner in the one-or-two-cycles
+			// tier gets the more-cycles line, no other row does.
+			wantMoreBridge := testCase.goal == models.UsageGoalTrying && !testCase.irregular && testCase.completed >= 1 && testCase.completed <= 2
+			if frame.ShowMoreCyclesBridge != wantMoreBridge {
+				t.Fatalf("ShowMoreCyclesBridge = %v, want %v", frame.ShowMoreCyclesBridge, wantMoreBridge)
+			}
 
 			if got := BuildOwnerPredictionExplanation(user, cycleContext, false).PrimaryKey; got != testCase.wantExplainer {
 				t.Fatalf("explainer = %q, want %q", got, testCase.wantExplainer)

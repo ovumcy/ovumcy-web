@@ -104,6 +104,13 @@ var predictionSuppressionResiduals = map[string]predictionSuppressionResidual{
 			"account has predictions at all, and it cannot read the fertility gate because the first-cycle " +
 			"floor IS the state it is shown in — a gate carrying that floor would gate the bridge on itself",
 	},
+	"internal/services/dashboard_view_service.go:resolveDashboardMoreCyclesBridge": {
+		signals: "the one-or-two-completed-cycles floor + unpredictable-cycle mode",
+		reason: "" +
+			"the same bridge one tier up: the line names no date, so it asks only whether the account has " +
+			"predictions at all, and it cannot read the fertility gate because the one-or-two-cycles floor " +
+			"IS the state it is shown in",
+	},
 }
 
 // predictionSuppressionFinding is one recombination: the site that owns it, the

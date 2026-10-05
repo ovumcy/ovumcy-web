@@ -133,6 +133,14 @@
               class="dashboard-status-item journal-muted"
               data-dashboard-first-cycle-bridge
               data-first-cycle-bridge-key="dashboard.fertile_window_after_first_cycle">{{t .Messages "dashboard.fertile_window_after_first_cycle"}}</span>
+            {{else if .ShowMoreCyclesBridge}}
+            {{/* The same slot for one or two completed cycles: the window is
+                 still withheld, and the line says it arrives after the third. */}}
+            <span class="dashboard-status-separator" aria-hidden="true">·</span>
+            <span
+              class="dashboard-status-item journal-muted"
+              data-dashboard-more-cycles-bridge
+              data-more-cycles-bridge-key="dashboard.fertile_window_after_three_cycles">{{t .Messages "dashboard.fertile_window_after_three_cycles"}}</span>
             {{end}}
             {{if .CycleHero.Approximate}}
             <span class="dashboard-status-separator" aria-hidden="true">·</span>
