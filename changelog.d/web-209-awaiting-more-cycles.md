@@ -10,4 +10,6 @@
   calendar feed and the webhook send no ovulation event until the third cycle completes. The stats
   API names the state with a new suppression reason, `awaiting_more_cycles`, added to the
   `reasons` enum of the overview response; a client that branches on the reasons should accept it.
-  An ovulation day the owner's own temperatures confirmed is still shown.
+  An ovulation day the owner's own temperatures confirmed is still shown. An account trying to
+  conceive sees a line in the dashboard header saying the fertile window appears after the first
+  three completed cycles, in place of the withheld ovulation estimate.

@@ -579,9 +579,26 @@ func TestResolveDashboardTimingFrameGatesTheOvulationEstimateOnEverySuppression(
 		mutateStats  func(*CycleStats)
 		wantEstimate bool
 		wantBridge   bool
+		wantMore     bool
 	}{
 		"stable cycle": {
 			wantEstimate: true,
+		},
+		"awaiting more cycles, one completed": {
+			mutateStats: func(stats *CycleStats) { stats.CompletedCycleCount = 1 },
+			wantMore:    true,
+		},
+		"awaiting more cycles, two completed": {
+			mutateStats: func(stats *CycleStats) { stats.CompletedCycleCount = 2 },
+			wantMore:    true,
+		},
+		"awaiting more cycles with predictions off": {
+			mutateUser:  func(user *models.User) { user.UnpredictableCycle = true },
+			mutateStats: func(stats *CycleStats) { stats.CompletedCycleCount = 2 },
+		},
+		"awaiting more cycles, irregular owner has its own caption": {
+			mutateUser:  func(user *models.User) { user.IrregularCycle = true },
+			mutateStats: func(stats *CycleStats) { stats.CompletedCycleCount = 2 },
 		},
 		"predictions suppressed": {
 			mutateUser:   func(user *models.User) { user.UnpredictableCycle = true },
@@ -648,6 +665,9 @@ func TestResolveDashboardTimingFrameGatesTheOvulationEstimateOnEverySuppression(
 			if frame.ShowFirstCycleBridge != testCase.wantBridge {
 				t.Fatalf("expected the first-cycle bridge line=%v, got %v", testCase.wantBridge, frame.ShowFirstCycleBridge)
 			}
+			if frame.ShowMoreCyclesBridge != testCase.wantMore {
+				t.Fatalf("expected the more-cycles bridge line=%v, got %v", testCase.wantMore, frame.ShowMoreCyclesBridge)
+			}
 			if !frame.BBTInVisibleTier {
 				t.Fatalf("expected the temperature field to stay in the visible tier for this goal")
 			}
@@ -675,6 +695,7 @@ func TestBuildDashboardViewDataHoldsFertilityBackUntilTheFirstCompletedCycle(t *
 		wantFertility   bool
 		wantOvulation   bool
 		wantBridge      bool
+		wantMoreBridge  bool
 	}{
 		"trying, no completed cycle": {
 			completedCycles: 0,
@@ -682,14 +703,16 @@ func TestBuildDashboardViewDataHoldsFertilityBackUntilTheFirstCompletedCycle(t *
 			wantBridge:      true,
 		},
 		// One and two completed cycles are still below the floor: the header
-		// withholds the date and shows no bridge (the window arrives after three).
+		// withholds the date and says the window arrives after three.
 		"trying, one completed cycle": {
 			completedCycles: 1,
 			goal:            models.UsageGoalTrying,
+			wantMoreBridge:  true,
 		},
 		"trying, two completed cycles": {
 			completedCycles: 2,
 			goal:            models.UsageGoalTrying,
+			wantMoreBridge:  true,
 		},
 		"trying, three completed cycles": {
 			completedCycles: 3,
@@ -737,6 +760,9 @@ func TestBuildDashboardViewDataHoldsFertilityBackUntilTheFirstCompletedCycle(t *
 			}
 			if viewData.ShowFirstCycleBridge != testCase.wantBridge {
 				t.Fatalf("expected the first-cycle bridge line=%v, got %v", testCase.wantBridge, viewData.ShowFirstCycleBridge)
+			}
+			if viewData.ShowMoreCyclesBridge != testCase.wantMoreBridge {
+				t.Fatalf("expected the more-cycles bridge line=%v, got %v", testCase.wantMoreBridge, viewData.ShowMoreCyclesBridge)
 			}
 			// The tier moves nothing else: the cycle day and the next-period
 			// estimate the header shows beside them are untouched by it.

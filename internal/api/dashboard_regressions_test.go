@@ -504,6 +504,7 @@ func TestDashboardHeaderWithholdsFertilityUntilThreeCompletedCycles(t *testing.T
 		wantFertility   bool
 		wantOvulation   bool
 		wantBridge      bool
+		wantMoreBridge  bool
 		// wantExplainerKey is the copy key the explainer line names; empty means
 		// the tier renders no explainer at all.
 		wantExplainerKey string
@@ -518,6 +519,14 @@ func TestDashboardHeaderWithholdsFertilityUntilThreeCompletedCycles(t *testing.T
 			account:          "trying-two-cycles",
 			goal:             models.UsageGoalTrying,
 			completedCycles:  2,
+			wantMoreBridge:   true,
+			wantExplainerKey: "prediction.explainer.awaiting_more_cycles",
+		},
+		"trying to conceive, one completed cycle": {
+			account:          "trying-one-cycle",
+			goal:             models.UsageGoalTrying,
+			completedCycles:  1,
+			wantMoreBridge:   true,
 			wantExplainerKey: "prediction.explainer.awaiting_more_cycles",
 		},
 		"trying to conceive, three completed cycles": {
@@ -606,6 +615,16 @@ func TestDashboardHeaderWithholdsFertilityUntilThreeCompletedCycles(t *testing.T
 			if bridge != nil {
 				if got := htmlAttr(bridge, "data-first-cycle-bridge-key"); got != "dashboard.fertile_window_after_first_cycle" {
 					t.Fatalf("expected the bridge line to name its copy key, got %q", got)
+				}
+			}
+
+			moreBridge := htmlFindElement(statusLine, htmlNodeHasAttr("data-dashboard-more-cycles-bridge"))
+			if got := moreBridge != nil; got != testCase.wantMoreBridge {
+				t.Fatalf("expected the more-cycles bridge line=%v, got %v", testCase.wantMoreBridge, got)
+			}
+			if moreBridge != nil {
+				if got := htmlAttr(moreBridge, "data-more-cycles-bridge-key"); got != "dashboard.fertile_window_after_three_cycles" {
+					t.Fatalf("expected the more-cycles bridge line to name its copy key, got %q", got)
 				}
 			}
 
