@@ -10,9 +10,35 @@ import {
 } from './support/auth-helpers';
 import { localeText } from './support/locale-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
-import { openCalendarDayEditor, todayISOFromDashboard } from './support/stats-helpers';
+import { dashboardStatusLine } from './support/dashboard-helpers';
+import {
+  markCycleStartViaAPI,
+  openCalendarDayEditor,
+  shiftISODate,
+  todayISOFromDashboard,
+} from './support/stats-helpers';
 
-async function registerAndSetEggwhiteToday(page: Page, prefix: string): Promise<void> {
+// The best-timing badge is withheld until the account has enough completed
+// cycles for the fertility projection to be published. Three is the floor the
+// regular mode is moving to, so the seeded history stays valid under it.
+const COMPLETED_CYCLES_FOR_FERTILITY = 3;
+
+// Onboarding records the current cycle's start at today-3. Each completed cycle
+// is seeded as a 28-day-earlier start behind it, so N seeds give N completed
+// cycles ending at that anchor.
+async function seedCompletedCycles(page: Page, count: number): Promise<void> {
+  const today = await todayISOFromDashboard(page);
+  const currentStart = shiftISODate(today, -3);
+  for (let index = 1; index <= count; index += 1) {
+    await markCycleStartViaAPI(page, shiftISODate(currentStart, -28 * index));
+  }
+}
+
+async function registerAndSetEggwhiteToday(
+  page: Page,
+  prefix: string,
+  completedCycles: number = COMPLETED_CYCLES_FOR_FERTILITY,
+): Promise<void> {
   const credentials = createCredentials(prefix);
   await registerOwnerViaUI(page, credentials);
   await expectInlineRegisterRecoveryStep(page);
@@ -20,6 +46,7 @@ async function registerAndSetEggwhiteToday(page: Page, prefix: string): Promise<
   await continueFromRecoveryCode(page);
   await completeOnboardingIfPresent(page);
   await setRequestTimezoneFromBrowser(page);
+  await seedCompletedCycles(page, completedCycles);
 
   await page.goto('/settings');
   await expect(page).toHaveURL(/\/settings$/);
@@ -93,6 +120,20 @@ test.describe('Dashboard: fertility badge', () => {
     // the variant is proved by the attribute above rather than by two negated
     // class checks.
     await expect(fertilityBadge).toContainText(localeText('en', 'dashboard.high_fertility_badge'));
+  });
+
+  test('eggwhite cervical mucus shows no badge while the account has no completed cycle', async ({
+    page,
+  }) => {
+    await registerAndSetEggwhiteToday(page, 'fertility-no-history', 0);
+
+    await page.goto('/dashboard');
+    await expect(page).toHaveURL(/\/dashboard$/);
+
+    // The status line itself renders (the phase item is always there), so an
+    // absent badge is the withheld state and not a page that failed to load.
+    await expect(dashboardStatusLine(page)).toBeVisible();
+    await expect(page.locator('[data-fertility-badge]')).toHaveCount(0);
   });
 
   test('marking more than 8 consecutive period days surfaces the long-period warning once', async ({
