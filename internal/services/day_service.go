@@ -170,10 +170,10 @@ func (service *DayService) DayHasDataForDate(ctx context.Context, userID uint, d
 // normalise the payload through NormalizeDayEntryInput first: only the update
 // branch merges anything (mergePreservedDayEntryInput), while the create branch
 // writes the fields exactly as given and applies no preservation of its own.
-// It returns the saved entry and the day as it stood before the write (the
-// zero value when the day did not exist), so the auto-fill side effects can
-// read the anchor's prior period mark and flow.
-func (service *DayService) UpsertDayEntry(ctx context.Context, userID uint, dayStart time.Time, payload DayEntryInput, location *time.Location) (models.DailyLog, models.DailyLog, error) {
+// It returns the saved entry and the period mark and flow the day carried
+// before the write (the zero value when the day did not exist), so the
+// auto-fill side effects can read the anchor's prior state.
+func (service *DayService) UpsertDayEntry(ctx context.Context, userID uint, dayStart time.Time, payload DayEntryInput, location *time.Location) (models.DailyLog, priorDayState, error) {
 	// Defensive normalization: collapse any time-of-day or non-UTC offset on
 	// the incoming dayStart back to canonical UTC-midnight. The intended
 	// contract is "caller already invoked DayRange and is passing canonical
@@ -190,11 +190,11 @@ func (service *DayService) UpsertDayEntry(ctx context.Context, userID uint, dayS
 	dayRangeEnd := dayStart.AddDate(0, 0, 1)
 	entry, found, err := service.logs.FindByUserAndDayRange(ctx, userID, dayRangeStart, dayRangeEnd)
 	if err != nil {
-		return models.DailyLog{}, models.DailyLog{}, ErrDayEntryLoadFailed
+		return models.DailyLog{}, priorDayState{}, ErrDayEntryLoadFailed
 	}
 
 	if found {
-		previous := entry
+		previous := priorDayState{IsPeriod: entry.IsPeriod, Flow: entry.Flow}
 		payload = mergePreservedDayEntryInput(entry, payload)
 		entry.IsPeriod = payload.IsPeriod
 		if !payload.IsPeriod {
@@ -211,7 +211,7 @@ func (service *DayService) UpsertDayEntry(ctx context.Context, userID uint, dayS
 		entry.SymptomIDs = payload.SymptomIDs
 		entry.Notes = payload.Notes
 		if err := service.logs.Save(ctx, &entry); err != nil {
-			return models.DailyLog{}, models.DailyLog{}, ErrDayEntryUpdateFailed
+			return models.DailyLog{}, priorDayState{}, ErrDayEntryUpdateFailed
 		}
 		return entry, previous, nil
 	}
@@ -231,9 +231,16 @@ func (service *DayService) UpsertDayEntry(ctx context.Context, userID uint, dayS
 		SymptomIDs:      payload.SymptomIDs,
 	}
 	if err := service.logs.Create(ctx, &entry); err != nil {
-		return models.DailyLog{}, models.DailyLog{}, ErrDayEntryCreateFailed
+		return models.DailyLog{}, priorDayState{}, ErrDayEntryCreateFailed
 	}
-	return entry, models.DailyLog{}, nil
+	return entry, priorDayState{}, nil
+}
+
+// priorDayState is the part of a day the auto-fill side effects read from
+// before the write: whether it was a period day and the flow it carried.
+type priorDayState struct {
+	IsPeriod bool
+	Flow     string
 }
 
 func mergePreservedDayEntryInput(existing models.DailyLog, payload DayEntryInput) DayEntryInput {
@@ -348,7 +355,7 @@ func (service *DayService) applyConfirmedCycleStart(ctx context.Context, userID 
 	return entry, nil
 }
 
-func (service *DayService) applyPeriodAutoFillSideEffects(ctx context.Context, userID uint, dayStart time.Time, normalized DayEntryInput, previous models.DailyLog, now time.Time, location *time.Location) error {
+func (service *DayService) applyPeriodAutoFillSideEffects(ctx context.Context, userID uint, dayStart time.Time, normalized DayEntryInput, previous priorDayState, now time.Time, location *time.Location) error {
 	wasPeriod := previous.IsPeriod
 	if !normalized.IsPeriod && !wasPeriod {
 		return nil
