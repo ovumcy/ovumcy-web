@@ -106,7 +106,6 @@ func TestNoJSDangerAndEgressFormsAnswerAPreHandlerRefusalAsAPage(t *testing.T) {
 	t.Parallel()
 
 	forbidden := englishCopy(t, "common.error.forbidden")
-	unauthorized := englishCopy(t, "common.error.unauthorized")
 	for name, c := range settingsRefusalCases() {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -117,7 +116,9 @@ func TestNoJSDangerAndEgressFormsAnswerAPreHandlerRefusalAsAPage(t *testing.T) {
 			}
 
 			assertRefusalPageCarrying(t, submitSettingsRefusalForm(t, ctx, c, true, false), http.StatusForbidden, forbidden, "/settings")
-			assertRefusalPageCarrying(t, submitSettingsRefusalForm(t, ctx, c, false, true), http.StatusUnauthorized, unauthorized, "/settings")
+			// Signed out, the page's link back would only bounce off AuthRequired:
+			// the browser is sent to sign in instead (WEB-264).
+			assertSentToSignIn(t, submitSettingsRefusalForm(t, ctx, c, false, true))
 			if c.kept != nil && !c.kept(t, ctx, armed) {
 				t.Fatal("a refused form changed what it names")
 			}
