@@ -516,7 +516,9 @@ feed carries that window as one multi-day event and the reminder names its first
 and last day — never the single middle day the window was built around. With
 irregular cycle mode on and fewer than three completed cycles, the dashboard
 says more cycles are needed instead of naming a date, and the feed and the
-reminders send no projected date at all.
+reminders send no projected date at all. A regular account with fewer than
+three completed cycles gets no ovulation event and no ovulation reminder
+either; its next-period estimate is still sent.
 
 ### How to enable it
 

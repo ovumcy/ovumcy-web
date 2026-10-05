@@ -103,6 +103,19 @@ func statsOverviewStates() []statsOverviewState {
 			wantsFertilityHook: false,
 		},
 		{
+			// Two completed cycles in regular mode: the fertility half is withheld
+			// under its own reason and the next period stays published — not the
+			// irregular tier's reason, and not the zero-cycle one.
+			name:               "regular mode with fewer than three completed cycles",
+			history:            []int{62, 34, 6},
+			seed:               func(*testing.T, *gorm.DB, models.User, time.Time) {},
+			wantReasons:        []string{"awaiting_more_cycles"},
+			wantPredictions:    false,
+			wantFertility:      true,
+			wantNextPeriodSet:  true,
+			wantsFertilityHook: true,
+		},
+		{
 			// Two completed cycles in irregular mode: the dashboard says "needs more
 			// cycles" for both dates, so the payload publishes neither.
 			name:    "irregular mode with fewer than three completed cycles",
@@ -182,14 +195,14 @@ func statsOverviewStates() []statsOverviewState {
 			wantCycleDataStale: false,
 		},
 		{
-			// Out of date, not yet overdue: two 28-day cycles and cycle day 31.
+			// Out of date, not yet overdue: three 28-day cycles and cycle day 31.
 			// The overdue gate needs a day past 35, so nothing is suppressed and
 			// every projected date is published — the next period and the window
 			// already behind today — while both pages print phase and fertility
 			// as unknown. The API published "luteal" and a categorical status
 			// read against a window the cycle had already outrun.
 			name:    "data out of date before the cycle is overdue",
-			history: []int{86, 58, 30},
+			history: []int{114, 86, 58, 30},
 			seed: func(t *testing.T, database *gorm.DB, user models.User, today time.Time) {
 				// The fixture's onboarding anchor (six days back) would stay
 				// active and put the account on cycle day 7.
@@ -358,7 +371,7 @@ func TestStatsOverviewWithholdsEveryProjectionItsGatesRefuse(t *testing.T) {
 func TestStatsOverviewPublishesAWholeProjectionWhenNothingSuppressesIt(t *testing.T) {
 	app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
 	user, authCookie, today := newStatsOverviewOwner(t, app, database, "overview-unsuppressed@example.com")
-	seedStatsOverviewCycleHistory(t, database, user, today, 62, 34, 6)
+	seedStatsOverviewCycleHistory(t, database, user, today, 90, 62, 34, 6)
 
 	_, payload := fetchStatsOverview(t, app, authCookie)
 
@@ -462,7 +475,7 @@ func fetchStatsOverviewDashboardDocument(t *testing.T, app *fiber.App, authCooki
 func TestStatsOverviewAgreesWithTheStatsPageOnAPublishedProjection(t *testing.T) {
 	app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
 	user, authCookie, today := newStatsOverviewOwner(t, app, database, "parity-unsuppressed@example.com")
-	seedStatsOverviewCycleHistory(t, database, user, today, 62, 34, 6)
+	seedStatsOverviewCycleHistory(t, database, user, today, 90, 62, 34, 6)
 
 	_, payload := fetchStatsOverview(t, app, authCookie)
 	document := fetchStatsPageDocument(t, app, authCookie)

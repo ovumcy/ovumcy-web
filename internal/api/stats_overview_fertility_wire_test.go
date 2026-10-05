@@ -41,7 +41,7 @@ func TestStatsOverviewBodiesMatchTheSchemaInEveryFertilityBasis(t *testing.T) {
 		{
 			name: "projection",
 			seed: func(t *testing.T, database *gorm.DB, user models.User, today time.Time) {
-				seedStatsOverviewCycleHistory(t, database, user, today, 62, 34, 6)
+				seedStatsOverviewCycleHistory(t, database, user, today, 90, 62, 34, 6)
 			},
 			wantBasis: services.FertilityBasisProjection,
 		},
@@ -70,7 +70,7 @@ func TestStatsOverviewBodiesMatchTheSchemaInEveryFertilityBasis(t *testing.T) {
 		{
 			name: "out of date",
 			seed: func(t *testing.T, database *gorm.DB, user models.User, today time.Time) {
-				seedStatsOverviewCycleHistory(t, database, user, today, 86, 58, 30)
+				seedStatsOverviewCycleHistory(t, database, user, today, 114, 86, 58, 30)
 				updateStatsOverviewUser(t, database, user, map[string]any{
 					"last_period_start": services.AddCalendarDays(today, -30, time.UTC),
 				})

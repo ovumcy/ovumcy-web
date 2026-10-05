@@ -109,8 +109,8 @@ func TestStatsOverviewAnswersProjectionsPastYear9999AsNull(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			logs := make([]models.DailyLog, 0, 3)
-			for _, back := range []int{56, 28, 0} {
+			logs := make([]models.DailyLog, 0, 4)
+			for _, back := range []int{84, 56, 28, 0} {
 				logs = append(logs, models.DailyLog{Date: tc.lastStart.AddDate(0, 0, -back), IsPeriod: true, CycleStart: true})
 			}
 
@@ -155,11 +155,12 @@ func TestStatsOverviewAnswersProjectionsPastYear9999AsNull(t *testing.T) {
 	}
 }
 
-// seedLateYear9999Cycles records three five-day periods 28 days apart, the last
-// one starting on lastStart.
+// seedLateYear9999Cycles records four five-day periods 28 days apart — three
+// completed cycles, the floor under which the fertility half is withheld — the
+// last one starting on lastStart.
 func seedLateYear9999Cycles(t *testing.T, database *gorm.DB, userID uint, lastStart time.Time) {
 	t.Helper()
-	for _, back := range []int{56, 28, 0} {
+	for _, back := range []int{84, 56, 28, 0} {
 		start := lastStart.AddDate(0, 0, -back)
 		for offset := range 5 {
 			seedStatsOverviewLog(t, database, models.DailyLog{UserID: userID, Date: start.AddDate(0, 0, offset), IsPeriod: true, Flow: models.FlowMedium, CycleStart: offset == 0})

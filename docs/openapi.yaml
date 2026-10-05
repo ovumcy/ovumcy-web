@@ -1103,9 +1103,12 @@ components:
         completed_cycle_count:
           type: integer
           description: >-
-            Completed cycles observed. Zero is the first-cycle floor: the
-            fertility half of the projection has nothing but the onboarding
-            cycle-length setting behind it and is suppressed.
+            Completed cycles observed. Below three the fertility half of the
+            projection (ovulation date, fertile window) is suppressed: at zero
+            it has nothing but the onboarding cycle-length setting behind it
+            (`awaiting_first_cycle`), at one or two it rests on too few observed
+            lengths (`awaiting_more_cycles`, regular mode; irregular mode
+            reports `irregular_needs_more_cycles`).
         average_period_length:
           type: number
           format: double
@@ -1268,6 +1271,10 @@ components:
               - cycle_overdue
               - irregular_needs_more_cycles
               - awaiting_first_cycle
+              - awaiting_more_cycles
+          # awaiting_first_cycle: no completed cycle yet. awaiting_more_cycles:
+          # a regular-mode account with one or two completed cycles. Both
+          # withhold the fertility half only; the next-period estimate stays.
       additionalProperties: false
 
     ExportJSONEntry:

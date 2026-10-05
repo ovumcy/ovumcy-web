@@ -560,9 +560,9 @@ func TestDashboardJournalMoreDisclosureOpensForDataItHolds(t *testing.T) {
 // stops counting a recorded temperature, which is no longer behind it. Every
 // other goal keeps the line and the two tiers it had.
 //
-// Both accounts own one completed cycle: the estimate exists only once there is
-// an observed cycle to project from, and what the same goal reads before that
-// is TestDashboardHeaderWithholdsFertilityUntilTheFirstCompletedCycle's subject.
+// Both accounts own three completed cycles: the estimate exists only once there
+// are enough observed cycles to project from, and what the same goal reads before
+// that is TestDashboardHeaderWithholdsFertilityUntilThreeCompletedCycles's subject.
 func TestDashboardFramesTimingForTheGoalThatIsAboutIt(t *testing.T) {
 	for name, testCase := range map[string]struct {
 		goal   string
@@ -576,7 +576,7 @@ func TestDashboardFramesTimingForTheGoalThatIsAboutIt(t *testing.T) {
 			user := createOnboardingTestUser(t, database, "dashboard-timing-"+testCase.goal+"@example.com", "StrongPass1", true)
 			enableDashboardMeasurementTracking(t, database, user.ID)
 			seedDashboardStableCycleForGoal(t, database, user.ID, testCase.goal)
-			seedDashboardCompletedCycle(t, database, user.ID)
+			seedDashboardCompletedCycles(t, database, user.ID)
 			seedDashboardTodayLog(t, database, user.ID, func(entry *models.DailyLog) {
 				entry.BBT = new(36.6)
 			})
@@ -709,15 +709,15 @@ func seedDashboardStableCycleForGoal(t *testing.T, database *gorm.DB, userID uin
 	}
 }
 
-// seedDashboardCompletedCycle records the two cycle starts that make one
-// completed cycle — the threshold the status header's fertility half waits for —
+// seedDashboardCompletedCycles records the four cycle starts that make three
+// completed cycles — the threshold the status header's fertility half waits for —
 // keeping the running cycle on the same recent anchor
 // seedDashboardStableCycleForGoal set.
-func seedDashboardCompletedCycle(t *testing.T, database *gorm.DB, userID uint) {
+func seedDashboardCompletedCycles(t *testing.T, database *gorm.DB, userID uint) {
 	t.Helper()
 
 	today := services.DateAtLocation(time.Now().UTC(), time.UTC)
-	for _, offsetDays := range []int{-30, -2} {
+	for _, offsetDays := range []int{-86, -58, -30, -2} {
 		if err := database.Create(&models.DailyLog{
 			UserID:     userID,
 			Date:       today.AddDate(0, 0, offsetDays),
