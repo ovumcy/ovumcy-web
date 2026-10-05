@@ -120,6 +120,9 @@ type importmutDataLogs struct{}
 func (importmutDataLogs) FindByUserAndDayRange(context.Context, uint, time.Time, time.Time) (models.DailyLog, bool, error) {
 	return models.DailyLog{}, false, nil
 }
+func (importmutDataLogs) FindByUserAndDayRangeForUpdate(context.Context, uint, time.Time, time.Time) (models.DailyLog, bool, error) {
+	return models.DailyLog{}, false, nil
+}
 func (importmutDataLogs) Create(context.Context, *models.DailyLog) error { return nil }
 func (importmutDataLogs) CreateBatch(context.Context, []models.DailyLog) error {
 	return nil
@@ -157,6 +160,9 @@ type importmutTZLogs struct {
 }
 
 func (s importmutTZLogs) FindByUserAndDayRange(context.Context, uint, time.Time, time.Time) (models.DailyLog, bool, error) {
+	return models.DailyLog{}, false, nil
+}
+func (s importmutTZLogs) FindByUserAndDayRangeForUpdate(context.Context, uint, time.Time, time.Time) (models.DailyLog, bool, error) {
 	return models.DailyLog{}, false, nil
 }
 func (s importmutTZLogs) Create(context.Context, *models.DailyLog) error { return nil }

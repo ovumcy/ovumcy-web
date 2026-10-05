@@ -112,6 +112,121 @@ func TestPatchDayEntryRefusesWhenTheStoredDayCannotBeRead(t *testing.T) {
 	}
 }
 
+// TestPatchDayEntryMergesOntoTheLockingRead pins which read the merge depends
+// on: the locking one, so a concurrent partial write of the same day waits for
+// this one instead of merging onto the same old row. A full write keeps its
+// plain read.
+func TestPatchDayEntryMergesOntoTheLockingRead(t *testing.T) {
+	logs := newDayLogRepositoryStub()
+	service := NewDayService(logs, &dayUserRepositoryStub{})
+	day := time.Date(2026, time.September, 7, 0, 0, 0, 0, time.UTC)
+	seedPatchCycleStartDay(t, logs, day)
+
+	if _, err := service.PatchDayEntryWithAutoFill(context.Background(), 10, day,
+		DayEntryInput{Mood: 3}, DayEntryFields{Mood: true}, time.UTC); err != nil {
+		t.Fatalf("PatchDayEntryWithAutoFill() unexpected error: %v", err)
+	}
+	if logs.lockingReads != 1 {
+		t.Fatalf("expected the partial write to merge onto one locking read, got %d", logs.lockingReads)
+	}
+
+	if _, err := service.UpsertDayEntryWithAutoFill(context.Background(), 10, day,
+		DayEntryInput{IsPeriod: true, Flow: models.FlowLight}, time.UTC); err != nil {
+		t.Fatalf("UpsertDayEntryWithAutoFill() unexpected error: %v", err)
+	}
+	if logs.lockingReads != 1 {
+		t.Fatalf("expected the full write to keep its plain read, got %d locking reads", logs.lockingReads)
+	}
+}
+
+// dayUniqueRefusal is what the repository's Create returns when the unique
+// (user_id, date) index refuses the insert.
+type dayUniqueRefusal struct{}
+
+func (dayUniqueRefusal) Error() string            { return "unique constraint violation" }
+func (dayUniqueRefusal) UniqueConstraint() string { return "daily_logs(user_id, date)" }
+
+// racingCreateDayLogStub plays a concurrent first write of the same day: its
+// first Create stores the competitor's row and then refuses this insert, as the
+// unique index does when the competitor commits first. refuseAlways keeps
+// refusing every insert.
+type racingCreateDayLogStub struct {
+	*dayLogRepositoryStub
+	competitor   *models.DailyLog
+	refuseAlways bool
+	creates      int
+}
+
+func (stub *racingCreateDayLogStub) Create(ctx context.Context, entry *models.DailyLog) error {
+	stub.creates++
+	if stub.competitor != nil {
+		row := *stub.competitor
+		stub.competitor = nil
+		if err := stub.dayLogRepositoryStub.Create(ctx, &row); err != nil {
+			return err
+		}
+		return dayUniqueRefusal{}
+	}
+	if stub.refuseAlways {
+		return dayUniqueRefusal{}
+	}
+	return stub.dayLogRepositoryStub.Create(ctx, entry)
+}
+
+func TestPatchDayEntryRetriesOntoTheDayAConcurrentWriteCreated(t *testing.T) {
+	day := time.Date(2026, time.September, 7, 0, 0, 0, 0, time.UTC)
+	logs := &racingCreateDayLogStub{
+		dayLogRepositoryStub: newDayLogRepositoryStub(),
+		competitor:           &models.DailyLog{UserID: 10, Date: day, Mood: 4},
+	}
+	service := NewDayService(logs, &dayUserRepositoryStub{})
+
+	saved, err := service.PatchDayEntryWithAutoFill(context.Background(), 10, day,
+		DayEntryInput{Notes: "mine"}, DayEntryFields{Notes: true}, time.UTC)
+	if err != nil {
+		t.Fatalf("expected the losing first write to retry onto the winner's row, got %v", err)
+	}
+	if saved.Mood != 4 || saved.Notes != "mine" {
+		t.Fatalf("expected the winner's mood kept and this write's notes added, got mood=%d notes=%q", saved.Mood, saved.Notes)
+	}
+	stored := logs.entries[logs.dayKey(day)]
+	if stored.Mood != 4 || stored.Notes != "mine" {
+		t.Fatalf("expected the stored day to hold both writes, got mood=%d notes=%q", stored.Mood, stored.Notes)
+	}
+	if logs.creates != 1 || logs.lockingReads != 2 {
+		t.Fatalf("expected one refused insert, then one re-read that updates, got creates=%d locking reads=%d", logs.creates, logs.lockingReads)
+	}
+}
+
+func TestPatchDayEntryRetriesARefusedInsertOnlyOnce(t *testing.T) {
+	day := time.Date(2026, time.September, 7, 0, 0, 0, 0, time.UTC)
+	logs := &racingCreateDayLogStub{dayLogRepositoryStub: newDayLogRepositoryStub(), refuseAlways: true}
+	service := NewDayService(logs, &dayUserRepositoryStub{})
+
+	_, err := service.PatchDayEntryWithAutoFill(context.Background(), 10, day,
+		DayEntryInput{Notes: "mine"}, DayEntryFields{Notes: true}, time.UTC)
+	if !errors.Is(err, ErrDayEntryCreateFailed) {
+		t.Fatalf("expected a second refusal to answer as ErrDayEntryCreateFailed, got %v", err)
+	}
+	if logs.creates != 2 {
+		t.Fatalf("expected exactly one retry, got %d inserts", logs.creates)
+	}
+}
+
+func TestUpsertDayEntryDoesNotRetryARefusedInsert(t *testing.T) {
+	day := time.Date(2026, time.September, 7, 0, 0, 0, 0, time.UTC)
+	logs := &racingCreateDayLogStub{dayLogRepositoryStub: newDayLogRepositoryStub(), refuseAlways: true}
+	service := NewDayService(logs, &dayUserRepositoryStub{})
+
+	_, err := service.UpsertDayEntryWithAutoFill(context.Background(), 10, day, DayEntryInput{Flow: models.FlowNone, Notes: "mine"}, time.UTC)
+	if !errors.Is(err, ErrDayEntryCreateFailed) {
+		t.Fatalf("expected a refused full-write insert to stay ErrDayEntryCreateFailed, got %v", err)
+	}
+	if logs.creates != 1 {
+		t.Fatalf("expected the full write not to retry, got %d inserts", logs.creates)
+	}
+}
+
 func TestMergeDayEntryPatchCarriesStoredValuesNormalized(t *testing.T) {
 	stored := models.DailyLog{
 		IsPeriod: true,

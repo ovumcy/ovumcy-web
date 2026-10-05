@@ -8,6 +8,7 @@ import (
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ErrDailyLogOwnerRequired is returned by DailyLogRepository.Save and
@@ -96,8 +97,31 @@ func (repo *DailyLogRepository) ListPeriodDays(ctx context.Context, userID uint)
 }
 
 func (repo *DailyLogRepository) FindByUserAndDayRange(ctx context.Context, userID uint, dayStart time.Time, dayEnd time.Time) (models.DailyLog, bool, error) {
+	return findDailyLogInDayRange(repo.database.WithContext(ctx), userID, dayStart, dayEnd)
+}
+
+// FindByUserAndDayRangeForUpdate is FindByUserAndDayRange for a write that
+// merges onto the row it reads: on PostgreSQL the read is SELECT … FOR UPDATE,
+// so a concurrent transaction merging onto the same day waits for this one to
+// commit and then reads the row it left, instead of both merging onto the same
+// old row and the later commit erasing the earlier one's fields. It locks only
+// inside a transaction (WithinTransaction).
+//
+// SQLite has no row lock and the dialect drops the clause; it needs none,
+// because its write transactions open with BEGIN IMMEDIATE (`_txlock=immediate`,
+// sqlite.go), so a second writer cannot begin its read until the first commits.
+//
+// A day with no row locks nothing. Two first writes of the same day then both
+// insert, and the unique (user_id, date) index refuses the later one — Create
+// reports that as a UniqueConstraintError, which the caller answers by
+// re-running its transaction to read and merge onto the row that won.
+func (repo *DailyLogRepository) FindByUserAndDayRangeForUpdate(ctx context.Context, userID uint, dayStart time.Time, dayEnd time.Time) (models.DailyLog, bool, error) {
+	return findDailyLogInDayRange(repo.database.WithContext(ctx).Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate}), userID, dayStart, dayEnd)
+}
+
+func findDailyLogInDayRange(query *gorm.DB, userID uint, dayStart time.Time, dayEnd time.Time) (models.DailyLog, bool, error) {
 	entry := models.DailyLog{}
-	result := repo.database.WithContext(ctx).
+	result := query.
 		Select(
 			"id",
 			"user_id",
@@ -134,11 +158,16 @@ func (repo *DailyLogRepository) FindByUserAndDayRange(ctx context.Context, userI
 // written: an owner-scoped read or the account-erasure sweep can never
 // address a row with no owner, so it would sit unreachable forever instead of
 // failing loudly at write time.
+//
+// A refusal by the unique (user_id, date) index — the day was created by a
+// concurrent write after this one read it as absent — is a
+// UniqueConstraintError, so a merging writer can tell it from a failed write
+// and retry onto the row that exists now.
 func (repo *DailyLogRepository) Create(ctx context.Context, entry *models.DailyLog) error {
 	if entry.UserID == 0 {
 		return ErrDailyLogOwnerRequired
 	}
-	return repo.database.WithContext(ctx).Create(entry).Error
+	return classifyUniqueConstraintError(repo.database.WithContext(ctx).Create(entry).Error, "daily_logs(user_id, date)")
 }
 
 // importDayInsertBatchSize bounds how many day rows go into a single INSERT.

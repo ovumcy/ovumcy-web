@@ -90,6 +90,10 @@ func (s *mr3dayLogStub) ListByUserDayRange(ctx context.Context, userID uint, day
 	return logs, nil
 }
 
+func (s *mr3dayLogStub) FindByUserAndDayRangeForUpdate(ctx context.Context, userID uint, dayStart time.Time, dayEnd time.Time) (models.DailyLog, bool, error) {
+	return s.FindByUserAndDayRange(ctx, userID, dayStart, dayEnd)
+}
+
 func (s *mr3dayLogStub) FindByUserAndDayRange(ctx context.Context, userID uint, dayStart time.Time, dayEnd time.Time) (models.DailyLog, bool, error) {
 	key := mr3dayKey(dayStart)
 	entry, ok := s.entries[key]

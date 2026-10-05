@@ -69,6 +69,9 @@ func (s *importStubLogs) FindByUserAndDayRange(context.Context, uint, time.Time,
 	}
 	return models.DailyLog{}, false, nil
 }
+func (s *importStubLogs) FindByUserAndDayRangeForUpdate(ctx context.Context, userID uint, dayStart time.Time, dayEnd time.Time) (models.DailyLog, bool, error) {
+	return s.FindByUserAndDayRange(ctx, userID, dayStart, dayEnd)
+}
 func (s *importStubLogs) Create(context.Context, *models.DailyLog) error { return s.createErr }
 func (s *importStubLogs) CreateBatch(context.Context, []models.DailyLog) error {
 	return s.createErr
