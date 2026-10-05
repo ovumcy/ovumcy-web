@@ -11,6 +11,7 @@ package api
 //   DELETE /api/v1/symptoms/:id        — DeleteSymptom (archive)
 //   POST   /api/v1/symptoms/:id/restore — RestoreSymptom
 //   PUT    /api/v1/days/:date           — UpsertDay with a foreign symptom_id
+//   PATCH  /api/v1/days/:date           — PatchDay with a foreign symptom_id
 
 import (
 	"bytes"
@@ -197,17 +198,21 @@ func TestUpsertDayRejectsSymptomIDOwnedByOtherUser(t *testing.T) {
 		t.Fatalf("marshal payload: %v", err)
 	}
 
-	request := httptest.NewRequest(http.MethodPut, "/api/v1/days/2026-03-15", bytes.NewReader(body))
-	request.Header.Set("Content-Type", fiber.MIMEApplicationJSON)
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("Cookie", authCookieA)
+	// The partial write (PATCH) resolves its symptom ids through the same
+	// owner-scoped check, so it is held to the same refusal.
+	for _, method := range []string{http.MethodPut, http.MethodPatch} {
+		request := httptest.NewRequest(method, "/api/v1/days/2026-03-15", bytes.NewReader(body))
+		request.Header.Set("Content-Type", fiber.MIMEApplicationJSON)
+		request.Header.Set("Accept", "application/json")
+		request.Header.Set("Cookie", authCookieA)
 
-	response := mustAppResponse(t, app, request)
-	if response.StatusCode != http.StatusBadRequest {
-		t.Fatalf("expected 400 for cross-user symptom_id in day upsert, got %d", response.StatusCode)
-	}
-	if got := readAPIError(t, response.Body); got != "invalid symptom ids" {
-		t.Fatalf("expected invalid symptom ids error key, got %q", got)
+		response := mustAppResponse(t, app, request)
+		if response.StatusCode != http.StatusBadRequest {
+			t.Fatalf("expected 400 for cross-user symptom_id in day %s, got %d", method, response.StatusCode)
+		}
+		if got := readAPIError(t, response.Body); got != "invalid symptom ids" {
+			t.Fatalf("expected invalid symptom ids error key for %s, got %q", method, got)
+		}
 	}
 
 	// No log row must have been created for user A on that date.

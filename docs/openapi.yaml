@@ -195,7 +195,7 @@ components:
       description: |
         Request body, path, or query parameters failed validation. The server
         answers `400`; the one `422` is the browser day form submitted without
-        JavaScript, which `PUT` and `DELETE /api/v1/days/{date}` declare
+        JavaScript, which `PUT`, `PATCH` and `DELETE /api/v1/days/{date}` declare
         themselves. A client that needs to tell a
         validation refusal apart from any other `400` reads
         `error_detail.category`, which is `validation` for every response using
@@ -794,9 +794,12 @@ components:
     DayPayload:
       type: object
       description: |
-        Day entry payload. A JSON body replaces the whole record with exactly
-        what it states: every field it sends is read, and an omitted field is
-        written as its default. Read is not the same as validated — a
+        Day entry payload. Under `PUT` a JSON body replaces the whole record
+        with exactly what it states: every field it sends is read, and an
+        omitted field is written as its default. Under `PATCH` only the keys
+        the body carries change; an omitted key keeps its stored value and the
+        defaults below do not apply, while an explicit `null` is a stated value
+        and clears the field. Read is not the same as validated — a
         temperature outside the accepted range is refused with 400, an unknown
         spelling of sex_activity, cervical_mucus or pregnancy_test collapses to
         "none", and notes are trimmed. Hidden-field preservation belongs to the
@@ -2518,6 +2521,12 @@ paths:
         impossible value is refused rather than stored as "not measured".
         Hidden-field preservation is a property of the form body the browser day
         editor posts, which this operation does not describe.
+
+        **`PUT` is full replace.** A body that names only some fields clears
+        every other one: `{"mood": 3}` sent to a period day stores a day with no
+        period, flow, temperature or notes, and a day that stops being a period
+        day also stops being a cycle start, which moves the cycle statistics. A
+        client that writes only some fields sends `PATCH` instead.
       requestBody:
         required: true
         content:
@@ -2555,6 +2564,67 @@ paths:
           description: |
             The same validation refusal as the `400`, answered to a browser form submitted
             without JavaScript (a `POST` carrying `_method=PUT` and an `Accept` that names
+            `text/html`): the localized message as `text/html`, with the link back described on
+            the `403`. A JSON or HTMX caller never receives this status; it gets the `400` and
+            its envelope.
+          content:
+            text/html:
+              schema: { type: string }
+        '429': { $ref: '#/components/responses/RateLimited' }
+    patch:
+      tags: [days]
+      summary: Update some fields of a day's entry (owner only).
+      description: |
+        Merges the body into the stored day: only the keys the body carries
+        change, and every field it omits keeps its stored value. `{"mood": 3}`
+        sent to a period day changes the mood and nothing else — the period,
+        flow, temperature, notes and the cycle start stay as stored. An
+        explicit `null` is a stated value and clears the field. A day with no
+        row is created, its omitted fields empty.
+
+        The rules that follow from the period flag apply to the merged day,
+        as under `PUT`: a body stating `is_period: false` also clears the flow
+        and the cycle start, and a flow stated for a day that is not a period
+        day is stored as `none`. A body that omits `is_period` leaves the
+        period flag, the flow and the cycle start as stored. Values are
+        validated and refused exactly as under `PUT`, and the answer is the
+        same: the whole day as persisted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DayPayload' }
+      responses:
+        '200':
+          description: Persisted entry, after the merge.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DailyLog' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: |
+            The caller is not the owner, or the request was refused before the handler runs
+            (CSRF) with the shared `forbidden` key.
+
+            A caller that asks for JSON gets the JSON envelope. A browser form submitted without
+            JavaScript — a `POST` carrying the hidden `_method=PATCH` field, with an `Accept`
+            that names `text/html` — gets the shared localized status fragment as `text/html`
+            instead, ending with a link back to the calendar day when the form's `source` query
+            parameter is `calendar`, and to `/dashboard` otherwise. The link is fixed by the
+            route, and no cookie, flash included, is set.
+          content:
+            text/html:
+              schema: { type: string }
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "forbidden"
+                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '422':
+          description: |
+            The same validation refusal as the `400`, answered to a browser form submitted
+            without JavaScript (a `POST` carrying `_method=PATCH` and an `Accept` that names
             `text/html`): the localized message as `text/html`, with the link back described on
             the `403`. A JSON or HTMX caller never receives this status; it gets the `400` and
             its envelope.

@@ -16,6 +16,9 @@ type upsertDayRequest struct {
 	payload         dayPayload
 	cleanSymptomIDs []uint
 	hidden          preservedDayFields
+	// fields names what a partial write (PatchDay) states; a full write
+	// (UpsertDay) states every field and leaves it zero.
+	fields services.DayEntryFields
 }
 
 // preservedDayFields names the day fields a request must leave to the value
@@ -26,7 +29,8 @@ type upsertDayRequest struct {
 // — so the two halves cannot disagree about which fields those are. That holds
 // by construction rather than by care: resolveUpsertDayRequest reads the
 // transport once and hands the same formBody, and the same resolved set, to
-// both.
+// both. A partial write reads it a third time: parseDayPayloadFields never
+// names a hidden field as stated.
 type preservedDayFields struct {
 	SexActivity   bool
 	BBT           bool
@@ -47,7 +51,7 @@ type preservedDayFields struct {
 // Which fields an account hides is the services layer's answer, and all five
 // come from one TrackingVisibility so that no tracking column is negated in
 // transport. Whether the caller may write this owner's day at all is the
-// route's question — days.Put declares OwnerOnly (routes.go) — and not this
+// route's question — days.Put and days.Patch declare OwnerOnly (routes.go) — and not this
 // set's. Regression: TestUpsertDayRefusesAnImpossibleTemperatureSentAsJSON,
 // TestParseDayPayloadSkipsEveryFieldTheAccountHides.
 func hiddenDayFields(user *models.User, formBody bool) preservedDayFields {
@@ -69,8 +73,10 @@ var (
 	cycleStartMarkMutation = healthMutationKind{action: "health.cycle_start_mark", target: "cycle_start"}
 )
 
+// UpsertDay is the full-replace day write (PUT): the body states the whole
+// day, and a field it omits is cleared.
 func (handler *Handler) UpsertDay(c fiber.Ctx) error {
-	request, spec, ok := handler.resolveUpsertDayRequest(c)
+	request, spec, ok := handler.resolveUpsertDayRequest(c, false)
 	if !ok {
 		return handler.failDayMutation(c, dayUpsertMutation, spec)
 	}
@@ -85,7 +91,36 @@ func (handler *Handler) UpsertDay(c fiber.Ctx) error {
 	if err != nil {
 		return handler.failDayMutation(c, dayUpsertMutation, mapDayUpsertError(err))
 	}
+	return handler.completeDayWrite(c, request, entry)
+}
 
+// PatchDay is the partial day write (PATCH): only the fields the body names
+// change, and every other field — the cycle start included — keeps its
+// stored value. The merge is the services layer's (PatchDayEntryWithAutoFill);
+// this handler only reports which fields arrived. Validation, ownership and
+// the answer are UpsertDay's, and it audits under the same action.
+func (handler *Handler) PatchDay(c fiber.Ctx) error {
+	request, spec, ok := handler.resolveUpsertDayRequest(c, true)
+	if !ok {
+		return handler.failDayMutation(c, dayUpsertMutation, spec)
+	}
+
+	entry, err := handler.dayService.PatchDayEntryWithAutoFill(
+		c.Context(),
+		request.user.ID,
+		request.day,
+		buildUpsertDayEntryInput(request.payload, request.cleanSymptomIDs, request.hidden),
+		request.fields,
+		request.location,
+	)
+	if err != nil {
+		return handler.failDayMutation(c, dayUpsertMutation, mapDayUpsertError(err))
+	}
+	return handler.completeDayWrite(c, request, entry)
+}
+
+// completeDayWrite records and answers a day write that has been saved.
+func (handler *Handler) completeDayWrite(c fiber.Ctx, request upsertDayRequest, entry models.DailyLog) error {
 	feedback, feedbackErr := handler.applyUpsertDayAcknowledgements(c, request)
 
 	handler.logMutationSuccess(c, dayUpsertMutation)
@@ -99,7 +134,7 @@ func (handler *Handler) UpsertDay(c fiber.Ctx) error {
 	return handler.respondUpsertDaySuccess(c, request.day, entry, feedback, feedbackErr)
 }
 
-func (handler *Handler) resolveUpsertDayRequest(c fiber.Ctx) (upsertDayRequest, APIErrorSpec, bool) {
+func (handler *Handler) resolveUpsertDayRequest(c fiber.Ctx, partial bool) (upsertDayRequest, APIErrorSpec, bool) {
 	user, ok := currentUser(c)
 	if !ok {
 		return upsertDayRequest{}, unauthorizedErrorSpec(), false
@@ -117,6 +152,16 @@ func (handler *Handler) resolveUpsertDayRequest(c fiber.Ctx) (upsertDayRequest, 
 	if err != nil {
 		return upsertDayRequest{}, invalidPayloadErrorSpec(), false
 	}
+	// Read after the payload: the form reads above fold the Content-Type
+	// before fasthttp parses the body, so the presence checks see what they
+	// read.
+	var fields services.DayEntryFields
+	if partial {
+		fields, err = parseDayPayloadFields(c, formBody, hidden)
+		if err != nil {
+			return upsertDayRequest{}, invalidPayloadErrorSpec(), false // codecov:ignore -- the bind above already decoded this body with the same decoder; a RawMessage target refuses nothing it accepted
+		}
+	}
 
 	cleanIDs, err := handler.symptomService.ValidateSymptomIDs(c.Context(), user.ID, payload.SymptomIDs)
 	if err != nil {
@@ -130,6 +175,7 @@ func (handler *Handler) resolveUpsertDayRequest(c fiber.Ctx) (upsertDayRequest, 
 		payload:         payload,
 		cleanSymptomIDs: cleanIDs,
 		hidden:          hidden,
+		fields:          fields,
 	}, APIErrorSpec{}, true
 }
 

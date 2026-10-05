@@ -267,6 +267,77 @@ func mergePreservedDayEntryInput(existing models.DailyLog, payload DayEntryInput
 	return payload
 }
 
+// DayEntryFields names the day fields one partial write states. A field it
+// does not name is not that write's subject: PatchDayEntryWithAutoFill keeps
+// its stored value, so an absent field never clears anything.
+//
+// The cycle-start flag is deliberately not a member. It is not a value a
+// write states but a consequence of the stored period flag (a day that stops
+// being a period day stops being a cycle start) or of an explicit mark, so a
+// partial write that leaves is_period alone leaves cycle_start alone too.
+type DayEntryFields struct {
+	IsPeriod        bool
+	Flow            bool
+	Mood            bool
+	SexActivity     bool
+	BBT             bool
+	CervicalMucus   bool
+	PregnancyTest   bool
+	CycleFactorKeys bool
+	Notes           bool
+	SymptomIDs      bool
+}
+
+// mergeDayEntryPatch builds the full day a partial write leaves behind: every
+// field the write names takes the stated value, every other field the stored
+// one. existing is the zero row when the day has none, so an absent field on a
+// new day starts neutral. Stored values are carried in their normalized form,
+// which keeps a legacy spelling already on disk from refusing a write that
+// does not touch it; the stated values are validated afterwards exactly as a
+// full write's are (NormalizeDayEntryInput), and the derived rules apply to
+// the merged day — a stated is_period=false still clears flow and the cycle
+// start, the same way a full write does.
+func mergeDayEntryPatch(existing models.DailyLog, patch DayEntryInput, fields DayEntryFields) DayEntryInput {
+	merged := patch
+	if !fields.IsPeriod {
+		merged.IsPeriod = existing.IsPeriod
+	}
+	if !fields.Flow {
+		merged.Flow = NormalizeDayFlow(existing.Flow)
+	}
+	if !fields.Mood {
+		merged.Mood = 0
+		if IsValidDayMood(existing.Mood) {
+			merged.Mood = existing.Mood
+		}
+	}
+	if !fields.SexActivity {
+		merged.SexActivity = NormalizeDaySexActivity(existing.SexActivity)
+	}
+	if !fields.BBT {
+		merged.BBT = nil
+		if IsValidDayBBT(existing.BBT) {
+			merged.BBT = existing.BBT
+		}
+	}
+	if !fields.CervicalMucus {
+		merged.CervicalMucus = NormalizeDayCervicalMucus(existing.CervicalMucus)
+	}
+	if !fields.PregnancyTest {
+		merged.PregnancyTest = NormalizeDayPregnancyTest(existing.PregnancyTest)
+	}
+	if !fields.CycleFactorKeys {
+		merged.CycleFactorKeys, _ = NormalizeDayCycleFactorKeys(existing.CycleFactorKeys)
+	}
+	if !fields.Notes {
+		merged.Notes = TrimDayNotes(existing.Notes)
+	}
+	if !fields.SymptomIDs {
+		merged.SymptomIDs = append([]uint{}, existing.SymptomIDs...)
+	}
+	return merged
+}
+
 func (service *DayService) UpsertDayEntryWithAutoFill(ctx context.Context, userID uint, day time.Time, payload DayEntryInput, location *time.Location) (models.DailyLog, error) {
 	return service.UpsertDayEntryWithAutoFillAt(ctx, userID, day, payload, time.Now(), location)
 }
@@ -282,11 +353,50 @@ func (service *DayService) UpsertDayEntryWithAutoFillAt(ctx context.Context, use
 	}
 
 	dayStart, _ := DayRange(day, location)
+	return service.writeDayEntryWithAutoFill(ctx, userID, dayStart, now, location, func(DayLogRepository) (DayEntryInput, error) {
+		return normalized, nil
+	})
+}
 
+// PatchDayEntryWithAutoFill is the partial day write: only the fields named
+// in fields change, and every other field keeps its stored value
+// (mergeDayEntryPatch). The merge reads the stored row inside the same
+// transaction as the write, so the day it merges onto is the day it replaces;
+// a per-field precondition on the stored values belongs in that same step.
+func (service *DayService) PatchDayEntryWithAutoFill(ctx context.Context, userID uint, day time.Time, patch DayEntryInput, fields DayEntryFields, location *time.Location) (models.DailyLog, error) {
+	return service.PatchDayEntryWithAutoFillAt(ctx, userID, day, patch, fields, time.Now(), location)
+}
+
+func (service *DayService) PatchDayEntryWithAutoFillAt(ctx context.Context, userID uint, day time.Time, patch DayEntryInput, fields DayEntryFields, now time.Time, location *time.Location) (models.DailyLog, error) {
+	if location == nil {
+		location = time.UTC
+	}
+
+	dayStart, dayEnd := DayRange(day, location)
+	return service.writeDayEntryWithAutoFill(ctx, userID, dayStart, now, location, func(txLogs DayLogRepository) (DayEntryInput, error) {
+		existing, found, err := txLogs.FindByUserAndDayRange(ctx, userID, dayStart, dayEnd)
+		if err != nil {
+			return DayEntryInput{}, ErrDayEntryLoadFailed
+		}
+		if !found {
+			existing = models.DailyLog{}
+		}
+		return NormalizeDayEntryInput(mergeDayEntryPatch(existing, patch, fields))
+	})
+}
+
+// writeDayEntryWithAutoFill runs one day write, its period autofill and an
+// inline cycle-start answer in one transaction. resolve yields the normalized
+// full day to write; it runs inside that transaction against its repository,
+// so a write that depends on the stored row reads the row it replaces.
+func (service *DayService) writeDayEntryWithAutoFill(ctx context.Context, userID uint, dayStart time.Time, now time.Time, location *time.Location, resolve func(DayLogRepository) (DayEntryInput, error)) (models.DailyLog, error) {
 	var entry models.DailyLog
 	if err := service.withinTransaction(ctx, func(txLogs DayLogRepository) error {
 		txService := &DayService{logs: txLogs, users: service.users}
-		var innerErr error
+		normalized, innerErr := resolve(txLogs)
+		if innerErr != nil {
+			return innerErr
+		}
 		entry, innerErr = txService.applyDayWriteAndAutoFill(ctx, userID, dayStart, normalized, now, location)
 		if innerErr != nil {
 			return innerErr
