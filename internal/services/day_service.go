@@ -128,8 +128,20 @@ func (service *DayService) FetchAllLogsForUser(ctx context.Context, userID uint)
 }
 
 func (service *DayService) FetchLogByDate(ctx context.Context, userID uint, day time.Time, location *time.Location) (models.DailyLog, error) {
+	return fetchLogByDate(ctx, service.logs.FindByUserAndDayRange, userID, day, location)
+}
+
+// fetchLogByDateForUpdate is FetchLogByDate through the locking read, for a
+// write that saves the row it returns or builds its values from it: the row
+// it writes back is then the row it read, not one a concurrent write of the
+// same day has since replaced.
+func (service *DayService) fetchLogByDateForUpdate(ctx context.Context, userID uint, day time.Time, location *time.Location) (models.DailyLog, error) {
+	return fetchLogByDate(ctx, service.logs.FindByUserAndDayRangeForUpdate, userID, day, location)
+}
+
+func fetchLogByDate(ctx context.Context, find func(context.Context, uint, time.Time, time.Time) (models.DailyLog, bool, error), userID uint, day time.Time, location *time.Location) (models.DailyLog, error) {
 	dayStart, dayEnd := DayRange(day, location)
-	entry, found, err := service.logs.FindByUserAndDayRange(ctx, userID, dayStart, dayEnd)
+	entry, found, err := find(ctx, userID, dayStart, dayEnd)
 	if err != nil {
 		return models.DailyLog{}, err
 	}
@@ -192,7 +204,11 @@ func (service *DayService) UpsertDayEntry(ctx context.Context, userID uint, dayS
 	}
 	dayRangeStart := dayStart
 	dayRangeEnd := dayStart.AddDate(0, 0, 1)
-	entry, found, err := service.logs.FindByUserAndDayRange(ctx, userID, dayRangeStart, dayRangeEnd)
+	// The locking read: the update below writes back every column of the row
+	// it read — the preserved hidden fields, cycle_start and is_uncertain
+	// included — so a plain read would let it revert a concurrent write of the
+	// same day that committed after this read.
+	entry, found, err := service.logs.FindByUserAndDayRangeForUpdate(ctx, userID, dayRangeStart, dayRangeEnd)
 	if err != nil {
 		return models.DailyLog{}, priorDayState{}, ErrDayEntryLoadFailed
 	}
@@ -568,7 +584,7 @@ func (service *DayService) ClearAutoFilledPeriodNeighbors(ctx context.Context, u
 	for offset := 1; offset < periodLength; offset++ {
 		targetDay := AddCalendarDays(startDay, offset, location)
 		dayRangeStart, dayRangeEnd := DayRange(targetDay, location)
-		entry, found, err := service.logs.FindByUserAndDayRange(ctx, userID, dayRangeStart, dayRangeEnd)
+		entry, found, err := service.logs.FindByUserAndDayRangeForUpdate(ctx, userID, dayRangeStart, dayRangeEnd)
 		if err != nil {
 			return err
 		}
@@ -631,14 +647,17 @@ func (service *DayService) MarkCycleStartManually(ctx context.Context, userID ui
 		return err
 	}
 
-	payload, err := service.manualCycleStartPayload(ctx, userID, day, location)
-	if err != nil {
-		return ErrDayEntryLoadFailed
-	}
-
 	dayStart, _ := DayRange(day, location)
 	if err := service.withinTransaction(ctx, func(txLogs DayLogRepository) error {
 		txService := &DayService{logs: txLogs, users: service.users}
+		// The payload carries every stored field of the day back into the
+		// write, so it is read inside the write's transaction, through the
+		// locking read: a concurrent write of the day committed before this
+		// read is carried, and one after it waits for this commit.
+		payload, err := txService.manualCycleStartPayload(ctx, userID, day, location)
+		if err != nil {
+			return ErrDayEntryLoadFailed
+		}
 		if _, err := txService.applyDayWriteAndAutoFill(ctx, userID, dayStart, payload, now, location); err != nil {
 			return err
 		}
@@ -678,7 +697,7 @@ func validateManualCycleStartOptions(policy ManualCycleStartPolicy, options Manu
 }
 
 func (service *DayService) manualCycleStartPayload(ctx context.Context, userID uint, day time.Time, location *time.Location) (DayEntryInput, error) {
-	existingEntry, err := service.FetchLogByDate(ctx, userID, day, location)
+	existingEntry, err := service.fetchLogByDateForUpdate(ctx, userID, day, location)
 	if err != nil {
 		return DayEntryInput{}, err
 	}
@@ -707,7 +726,7 @@ func (service *DayService) manualCycleStartPayload(ctx context.Context, userID u
 func (service *DayService) persistManualCycleStartFlags(ctx context.Context, userID uint, day time.Time, location *time.Location, options ManualCycleStartOptions, policy ManualCycleStartPolicy) (models.DailyLog, error) {
 	dayStart, _ := DayRange(day, location)
 	dayEnd := dayStart.AddDate(0, 0, 1)
-	entry, found, err := service.logs.FindByUserAndDayRange(ctx, userID, dayStart, dayEnd)
+	entry, found, err := service.logs.FindByUserAndDayRangeForUpdate(ctx, userID, dayStart, dayEnd)
 	if err != nil {
 		return models.DailyLog{}, wrapManualCycleStartFailure(err)
 	}
@@ -786,7 +805,7 @@ func (service *DayService) AutoFillFollowingPeriodDays(ctx context.Context, user
 		if !today.IsZero() && targetDay.After(today) {
 			break
 		}
-		entry, err := service.FetchLogByDate(ctx, userID, targetDay, location)
+		entry, err := service.fetchLogByDateForUpdate(ctx, userID, targetDay, location)
 		if err != nil {
 			return err
 		}
@@ -863,9 +882,20 @@ func (service *DayService) clearCompetingCycleStarts(ctx context.Context, userID
 			continue
 		}
 
-		logEntry.CycleStart = false
-		logEntry.IsUncertain = false
-		if err := service.logs.Save(ctx, &logEntry); err != nil {
+		// The save writes back every column of the row, so it writes the row
+		// the locking read returns, not the list's copy: a concurrent write of
+		// that day committed since the list was read is kept, not reverted.
+		dayStart := logEntry.Date
+		competing, found, err := service.logs.FindByUserAndDayRangeForUpdate(ctx, userID, dayStart, dayStart.AddDate(0, 0, 1))
+		if err != nil {
+			return err
+		}
+		if !found || !competing.CycleStart {
+			continue
+		}
+		competing.CycleStart = false
+		competing.IsUncertain = false
+		if err := service.logs.Save(ctx, &competing); err != nil {
 			return err
 		}
 	}

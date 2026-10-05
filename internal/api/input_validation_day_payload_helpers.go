@@ -40,25 +40,25 @@ func parseDayPayload(c fiber.Ctx, user *models.User, formBody bool, hidden prese
 		payload.BBT = services.ConvertDayBBTToStorage(payload.BBT, temperatureUnit)
 	} else {
 		var err error
-		payload.IsPeriod = services.ParseBoolLike(c.FormValue("is_period"))
-		payload.ConfirmCycleStart = services.ParseBoolLike(c.FormValue("cycle_start"))
-		payload.Flow = strings.ToLower(strings.TrimSpace(c.FormValue("flow")))
-		payload.Mood, err = parseOptionalFormInt(c.FormValue("mood"))
+		payload.IsPeriod = services.ParseBoolLike(formBodyValue(c, "is_period"))
+		payload.ConfirmCycleStart = services.ParseBoolLike(formBodyValue(c, "cycle_start"))
+		payload.Flow = strings.ToLower(strings.TrimSpace(formBodyValue(c, "flow")))
+		payload.Mood, err = parseOptionalFormInt(formBodyValue(c, "mood"))
 		if err != nil {
 			return payload, err
 		}
 		if !hidden.SexActivity {
-			payload.SexActivity = strings.ToLower(strings.TrimSpace(c.FormValue("sex_activity")))
+			payload.SexActivity = strings.ToLower(strings.TrimSpace(formBodyValue(c, "sex_activity")))
 		}
 		if !hidden.CervicalMucus {
-			payload.CervicalMucus = strings.ToLower(strings.TrimSpace(c.FormValue("cervical_mucus")))
+			payload.CervicalMucus = strings.ToLower(strings.TrimSpace(formBodyValue(c, "cervical_mucus")))
 		}
-		payload.PregnancyTest = strings.ToLower(strings.TrimSpace(c.FormValue("pregnancy_test")))
+		payload.PregnancyTest = strings.ToLower(strings.TrimSpace(formBodyValue(c, "pregnancy_test")))
 		if !hidden.Notes {
-			payload.Notes = strings.TrimSpace(c.FormValue("notes"))
+			payload.Notes = strings.TrimSpace(formBodyValue(c, "notes"))
 		}
 		if !hidden.BBT {
-			payload.BBT, err = services.ParseDayBBTRawWithUnit(c.FormValue("bbt"), temperatureUnit)
+			payload.BBT, err = services.ParseDayBBTRawWithUnit(formBodyValue(c, "bbt"), temperatureUnit)
 			if err != nil {
 				return payload, err
 			}
@@ -164,14 +164,15 @@ func parseDayPayloadFields(c fiber.Ctx, formBody bool, hidden preservedDayFields
 	}, nil
 }
 
-// formValuePresent reports whether key arrives in one of the three sources
-// c.FormValue consults: the query string, the urlencoded body, or a multipart
-// field. The multipart form is fiber's own parse, bounded by the app's
-// BodyLimit and already made by the FormValue reads before this runs —
-// fasthttp's would parse again under its own default limit.
+// formValuePresent reports whether key arrives in the form body: the
+// urlencoded body or a multipart field, the two sources formBodyValue reads.
+// The query string is never one — a day field the URL names is not part of the
+// write, so it neither names a field nor supplies its value. The multipart form
+// is fiber's own parse, bounded by the app's BodyLimit and already made by the
+// formBodyValue reads before this runs — fasthttp's would parse again under
+// its own default limit.
 func formValuePresent(c fiber.Ctx, key string) bool {
-	request := c.RequestCtx()
-	if request.QueryArgs().Has(key) || request.PostArgs().Has(key) {
+	if c.RequestCtx().PostArgs().Has(key) {
 		return true
 	}
 	form, err := c.MultipartForm()
@@ -180,6 +181,24 @@ func formValuePresent(c fiber.Ctx, key string) bool {
 	}
 	_, present := form.Value[key]
 	return present
+}
+
+// formBodyValue reads key from the form body only: the urlencoded body, then a
+// multipart field. c.FormValue consults the query string before the body, so a
+// field the URL names would stand in for one the body leaves out — or override
+// one it posts.
+func formBodyValue(c fiber.Ctx, key string) string {
+	if args := c.RequestCtx().PostArgs(); args.Has(key) {
+		return string(args.Peek(key))
+	}
+	form, err := c.MultipartForm()
+	if err != nil {
+		return ""
+	}
+	if values := form.Value[key]; len(values) > 0 {
+		return values[0]
+	}
+	return ""
 }
 
 // parseOptionalFormInt reads a scalar integer a form may legitimately omit. An
