@@ -339,6 +339,7 @@
              from a saved row: posting this back (autosave included) lets an
              un-tick withdraw that start while a mood-only save leaves it. */}}
         {{if .TodayPeriodFromStoredStart}}<input type="hidden" name="period_from_stored_start" value="true">{{end}}
+        <input type="hidden" name="day_form_account" value="{{.DayFormAccount}}">
         <input type="hidden" name="ack_period_tip" value="false" data-period-tip-ack>
 
         {{/* Two one-line rows became one: the jump shortcuts and the period

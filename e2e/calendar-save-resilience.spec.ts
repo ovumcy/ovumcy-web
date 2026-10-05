@@ -667,4 +667,88 @@ test.describe('a day save refused for an ended session', () => {
     const reopened = await openCalendarDayEditor(page, targetISO);
     await expect(reopened.locator('#calendar-notes')).toHaveValue(note);
   });
+
+  /**
+   * The session cookie is browser-wide and the CSRF token is not bound to an
+   * account, so if a DIFFERENT account signs in through the notice's link, the
+   * retry would otherwise write the first person's entry into the second
+   * account. The day form carries an opaque binding to the account that
+   * rendered it, and the server refuses the retry with 409: the notice then
+   * offers neither a retry nor a sign-in, and the entry stays in the form.
+   */
+  test('dashboard (en): a retry after a different account signs in is refused and writes nothing', async ({
+    browser,
+    browserErrors,
+    page,
+  }) => {
+    // Two accounts, three sign-ins and a recovery-code rotation in one flow.
+    test.slow();
+    const secondCredentials = createCredentials('day-save-session-second');
+    const secondContext = await browser.newContext();
+    browserErrors.watch(secondContext);
+    try {
+      const secondPage = await secondContext.newPage();
+      await registerOwnerViaUI(secondPage, secondCredentials);
+      await expectInlineRegisterRecoveryStep(secondPage);
+      await readRecoveryCode(secondPage);
+      await continueFromRecoveryCode(secondPage);
+      await completeOnboardingIfPresent(secondPage);
+    } finally {
+      await secondContext.close();
+    }
+
+    const credentials = createCredentials('day-save-session-first');
+    await registerOwnerViaUI(page, credentials);
+    await expectInlineRegisterRecoveryStep(page);
+    await readRecoveryCode(page);
+    await continueFromRecoveryCode(page);
+    await completeOnboardingIfPresent(page);
+    await setRequestTimezoneFromBrowser(page);
+    await page.goto('/dashboard');
+    await expect(page).toHaveURL(/\/dashboard$/);
+    const todayISO = await dashboardTodayISO(page);
+
+    await revokeSessionFromAnotherDevice(browser, browserErrors, credentials);
+
+    const note = 'first account private note';
+    const notes = await ensureNotesFieldVisible(page, '#today-notes');
+    const refused = page.waitForResponse(
+      (response) => response.request().method() === 'PUT' && response.url().includes(`/api/v1/days/${todayISO}`)
+    );
+    await notes.fill(note);
+    expect((await refused).status(), 'the revoked session must be refused by the auth guard').toBe(401);
+
+    const notice = page.locator(DASHBOARD_FAILURE_NOTICE);
+    await expect(notice).toBeVisible();
+    const link = await expectSignInLink(page, notice, 'en');
+
+    await signInThroughNoticeLink(page, link, secondCredentials);
+    await expect(notes).toHaveValue(note);
+
+    const [retryRequest, retryResponse] = await Promise.all([
+      page.waitForRequest(
+        (request) => request.method() === 'PUT' && request.url().includes(`/api/v1/days/${todayISO}`)
+      ),
+      page.waitForResponse(
+        (response) => response.request().method() === 'PUT' && response.url().includes(`/api/v1/days/${todayISO}`)
+      ),
+      notice.locator('[data-day-save-retry]').click(),
+    ]);
+    expect(retryRequest.postData() ?? '', 'the retry carries the form\'s account binding').toMatch(/(?:^|&)day_form_account=[^&]+/);
+    expect(retryResponse.status(), 'a retry under another account must be refused').toBe(409);
+
+    const refusal = page.locator(DASHBOARD_FAILURE_NOTICE);
+    await expect(refusal.locator('[data-notice-key="daylog.save_account_changed"]')).toHaveText(
+      localeText('en', 'daylog.save_account_changed')
+    );
+    await expect(refusal.locator('[data-day-save-retry]')).toHaveCount(0);
+    await expect(refusal.locator('[data-day-save-sign-in]')).toHaveCount(0);
+    await expect(notes).toHaveValue(note);
+
+    // The page now renders for the second account: its day holds nothing of the
+    // first account's entry.
+    await page.goto('/dashboard');
+    await expect(page.locator('#today-notes')).not.toHaveValue(note);
+    await expect(page.locator('#today-notes')).toHaveValue('');
+  });
 });
