@@ -316,6 +316,7 @@ test("an edit made while a save is in flight still reaches the server on unload"
     assert.equal(flushed.url, `/api/v1/days/${TODAY}`);
     assert.equal(flushed.init.method, "PUT");
     assert.equal(flushed.init.keepalive, true, "an unload request must outlive the page");
+    assert.equal(flushed.init.headers[ACCOUNT_HEADER], ACCOUNT_BINDING, "the unload flush names the account the page was rendered for");
     assert.ok(
       bodyOf(flushed).includes(formValue("notes", "newer edit before navigation")),
       "the newest journal value is what the server must end up holding"
@@ -379,6 +380,7 @@ test("an htmx save still open with a newer edit behind it leaves as one request 
     assert.equal(puts.length, 1, "exactly one unload writer per form: two unordered PUTs let the older land last");
     assert.equal(puts[0].url, `/api/v1/days/${TODAY}`);
     assert.equal(puts[0].init.keepalive, true);
+    assert.equal(puts[0].init.headers[ACCOUNT_HEADER], ACCOUNT_BINDING, "the unload writer names the account the page was rendered for");
     assert.ok(
       bodyOf(puts[0]).includes(formValue("notes", "newer edit typed while it was open")),
       "the journal autosaves, so the newest value typed is the one owed"
