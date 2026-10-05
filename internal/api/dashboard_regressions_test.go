@@ -614,7 +614,9 @@ func TestDashboardTodaySavePersistsPeriodToggleAndNotes(t *testing.T) {
 		"flow":      {models.FlowNone},
 		"notes":     {note},
 	}
-	saveResponse := mustAppResponse(t, app, dashboardSaveRequest(todayRaw, form, authCookie))
+	saveRequest := dashboardSaveRequest(todayRaw, form, authCookie)
+	bindDayWriteForTest(t, saveRequest, user.ID)
+	saveResponse := mustAppResponse(t, app, saveRequest)
 	assertStatusCode(t, saveResponse, http.StatusOK)
 
 	saveBody := mustReadBodyString(t, saveResponse.Body)
@@ -684,6 +686,7 @@ func TestDashboardTodaySavePersistsAndRendersWithNonUTCTimezone(t *testing.T) {
 	saveRequest.Header.Set("HX-Request", "true")
 	saveRequest.Header.Set("Accept-Language", "en")
 	saveRequest.Header.Set("Cookie", authCookie)
+	bindDayWriteForTest(t, saveRequest, user.ID)
 
 	saveResponse, err := app.Test(saveRequest, testConfigNoTimeout)
 	if err != nil {

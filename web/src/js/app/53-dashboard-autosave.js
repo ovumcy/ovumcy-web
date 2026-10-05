@@ -204,7 +204,7 @@
     return new URLSearchParams(new FormData(form));
   }
 
-  function dashboardRequestHeaders() {
+  function dashboardRequestHeaders(form) {
     var headers = {
       "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
       "HX-Request": "true"
@@ -217,6 +217,13 @@
     }
     if (timezone) {
       headers[TIMEZONE_HEADER_NAME] = timezone;
+    }
+    // The account the page was rendered for rides on every request, the
+    // body-less undo DELETE included: the server refuses a day write from a
+    // page rendered for another account, and one that names no account at all.
+    var account = form && form.querySelector ? form.querySelector('input[name="day_form_account"]') : null;
+    if (account) {
+      headers[DAY_FORM_ACCOUNT_HEADER_NAME] = account.value || "";
     }
     return headers;
   }
@@ -587,7 +594,7 @@
     endpoint = dashboardAutosaveEndpoint(form);
     method = endpoint.method;
     url = endpoint.url;
-    headers = dashboardRequestHeaders();
+    headers = dashboardRequestHeaders(form);
     body = buildDashboardAutosaveBody(form);
     // What is on the wire is what the server will hold: snapshot it here, and
     // promote it to "persisted" only once the server has said yes.
@@ -751,7 +758,7 @@
       credentials: "same-origin",
       // Started is started: like every autosave, the undo outlives the page.
       keepalive: true,
-      headers: dashboardRequestHeaders()
+      headers: dashboardRequestHeaders(form)
     }).then(function (response) {
       if (!response.ok) {
         return response.text().catch(function () {
@@ -892,7 +899,7 @@
       request = {
         method: endpoint.method,
         url: endpoint.url,
-        headers: dashboardRequestHeaders(),
+        headers: dashboardRequestHeaders(form),
         body: buildDashboardAutosaveBody(form).toString()
       };
     } else if (htmxSave) {

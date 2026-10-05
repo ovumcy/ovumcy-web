@@ -7,6 +7,9 @@
 
      Parameters (dict):
        Messages, Lang, CSRFToken — page context.
+       DayFormAccount — the rendering account's binding; a write that does
+                     not carry it is refused, so a caller that drops the key
+                     breaks the control rather than unbinding it.
        Surface     — "dashboard" or "calendar"; picks the form/button hooks the
                      browser scripts and the browser specs address.
        Endpoint    — the cycle-start URL, source query included.
@@ -38,6 +41,7 @@
 {{- end}}>
 
   <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  <input type="hidden" name="day_form_account" value="{{.DayFormAccount}}">
   <input type="hidden" name="ack_period_tip" value="false" data-period-tip-ack>
   {{/* The confirm dialog needs JavaScript; without it these boxes are the
        confirmation. Scripts drop them. Each precedes its hidden twin because

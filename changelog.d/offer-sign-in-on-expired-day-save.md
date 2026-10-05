@@ -6,6 +6,9 @@
   leaves the typed entry on the original page, and the retry then saves it; nothing from the entry
   is stored in the browser along the way. If a different account signs in in that tab, the retry
   is refused with "You're now signed in to a different account. This entry was not saved." and
-  writes nothing: each day form carries an opaque binding to the account that rendered it, and a
-  save whose binding names another account answers 409. API clients that do not send the field
-  are unaffected.
+  writes nothing: every day write a page renders (save, delete, the dashboard undo, cycle start)
+  carries an opaque binding to the account that rendered it, and a write whose binding names
+  another account — or a write from a page that carries none — answers 409. A page left open
+  while another account signs in elsewhere in the same browser can therefore no longer save,
+  delete or mark a cycle start in that account. JSON API clients that do not send the binding are
+  unaffected.

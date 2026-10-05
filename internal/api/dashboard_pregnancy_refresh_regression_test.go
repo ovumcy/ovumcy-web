@@ -65,6 +65,7 @@ func TestDashboardRenderedAfterAPregnancyTestSaveCarriesTheUpdatedBlocks(t *test
 		request.Header.Set("HX-Request", "true")
 		request.Header.Set("Accept-Language", "en")
 		request.Header.Set("Cookie", authCookie)
+		bindDayWriteForTest(t, request, user.ID)
 		assertStatusCode(t, mustAppResponse(t, app, request), http.StatusOK)
 	}
 
