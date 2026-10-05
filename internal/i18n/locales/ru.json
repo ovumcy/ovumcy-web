@@ -541,6 +541,7 @@
   "calendar.legend.fertility": "Фертильное окно",
   "calendar.legend.predicted_period_in_fertility": "Прогноз месячных внутри фертильного окна",
   "calendar.legend.ovulation_group": "Предполагаемая овуляция (штрих — сдвиг температуры ещё не подтверждён)",
+  "calendar.legend.ovulation_estimate": "Предполагаемая овуляция",
   "calendar.legend.logged_entry": "Есть запись (сердце — секс)",
   "calendar.ovulation_icon": "Овуляция (оценка)",
   "calendar.ovulation_tentative": "Овуляция предполагается, сдвиг базальной температуры пока не подтверждён.",

@@ -538,6 +538,7 @@
   "calendar.legend.fertility": "Finestra fertile",
   "calendar.legend.predicted_period_in_fertility": "Periodo previsto nella finestra fertile",
   "calendar.legend.ovulation_group": "Ovulazione stimata (trattino: nessuno spostamento della temperatura ancora)",
+  "calendar.legend.ovulation_estimate": "Ovulazione stimata",
   "calendar.legend.logged_entry": "Voce registrata (cuore: sesso)",
   "calendar.ovulation_icon": "Ovulazione (stima)",
   "calendar.ovulation_tentative": "Ovulazione stimata. Nessuno spostamento della temperatura confermato ancora.",

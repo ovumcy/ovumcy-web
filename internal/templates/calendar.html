@@ -49,7 +49,15 @@
         <span class="legend-item"><span class="legend-swatch legend-swatch-start-window" aria-hidden="true"></span>{{t .Messages "calendar.legend.start_window"}}</span>
         <span class="legend-item"><span class="legend-swatch legend-swatch-fertile" aria-hidden="true"></span>{{t .Messages "calendar.legend.fertility"}}</span>
         <span class="legend-item"><span class="legend-swatch legend-swatch-overlap-period-fertile" aria-hidden="true"></span>{{t .Messages "calendar.legend.predicted_period_in_fertility"}}</span>
+        {{/* The dash exists only for owners who track temperature: it marks a
+             projection no temperature shift has confirmed yet, and the grid
+             never draws it without BBT data. Everyone else gets the solid dot
+             alone, so the legend promises no mark the grid cannot show. */}}
+        {{if .CurrentUser.TrackBBT}}
         <span class="legend-item"><span class="calendar-ovulation-dot" aria-hidden="true"></span><span class="calendar-ovulation-dash" aria-hidden="true"></span>{{t .Messages "calendar.legend.ovulation_group"}}</span>
+        {{else}}
+        <span class="legend-item"><span class="calendar-ovulation-dot" aria-hidden="true"></span>{{t .Messages "calendar.legend.ovulation_estimate"}}</span>
+        {{end}}
         {{end}}
         <span class="legend-item"><span class="legend-swatch legend-swatch-today" aria-hidden="true"></span>{{t .Messages "calendar.tag.today"}}</span>
         <span class="legend-item"><span class="calendar-data-marker" aria-hidden="true"></span><span class="calendar-sex-marker" aria-hidden="true">{{template "icon" "heart"}}</span>{{t .Messages "calendar.legend.logged_entry"}}</span>

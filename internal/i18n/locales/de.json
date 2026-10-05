@@ -538,6 +538,7 @@
   "calendar.legend.fertility": "Fruchtbares Fenster",
   "calendar.legend.predicted_period_in_fertility": "Vorhergesagte Periode im fruchtbaren Fenster",
   "calendar.legend.ovulation_group": "Geschätzter Eisprung (Strich: noch keine Temperaturverschiebung)",
+  "calendar.legend.ovulation_estimate": "Geschätzter Eisprung",
   "calendar.legend.logged_entry": "Erfasster Eintrag (Herz: Sex)",
   "calendar.ovulation_icon": "Eisprung (Schätzung)",
   "calendar.ovulation_tentative": "Geschätzter Eisprung. Es wurde noch keine Temperaturverschiebung bestätigt.",

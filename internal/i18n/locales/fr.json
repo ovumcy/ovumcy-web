@@ -679,6 +679,7 @@
   "calendar.legend.fertility": "Fenêtre fertile",
   "calendar.legend.predicted_period_in_fertility": "Règles prédites dans la fenêtre fertile",
   "calendar.legend.ovulation_group": "Ovulation estimée (tiret : pas encore de hausse de température)",
+  "calendar.legend.ovulation_estimate": "Ovulation estimée",
   "calendar.legend.logged_entry": "Entrée enregistrée (cœur : rapports sexuels)",
   "calendar.ovulation_icon": "Ovulation (estimation)",
   "calendar.ovulation_tentative": "Ovulation estimée. Aucune hausse de température confirmée pour l'instant.",
