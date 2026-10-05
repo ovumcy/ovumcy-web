@@ -52,17 +52,52 @@ func TestResolvePregnancyPauseLiftedByLaterCycleStart(t *testing.T) {
 	}
 }
 
-func TestResolvePregnancyPausePositiveWinsSameDayTie(t *testing.T) {
-	day := ppDay(2026, time.March, 10)
-	logs := []models.DailyLog{
-		{Date: day, IsPeriod: true, CycleStart: true, PregnancyTest: models.PregnancyTestPositive},
+// TestResolvePregnancyPauseSameDayCycleStartResumes pins the boundary the pause
+// copy promises: "log a new period to resume" must work on the day of the
+// positive test too. The same-row case is the one the product reaches (save a
+// positive, then mark the cycle start on that day); a start logged one day
+// BEFORE the test is an earlier cycle and leaves the pause on.
+func TestResolvePregnancyPauseSameDayCycleStartResumes(t *testing.T) {
+	positive := ppDay(2026, time.October, 5)
+	tests := []struct {
+		name      string
+		logs      []models.DailyLog
+		wantPause bool
+	}{
+		{
+			name: "start and positive on one row",
+			logs: []models.DailyLog{
+				{Date: positive, IsPeriod: true, CycleStart: true, PregnancyTest: models.PregnancyTestPositive},
+			},
+			wantPause: false,
+		},
+		{
+			name: "start and positive on separate rows of the same day",
+			logs: []models.DailyLog{
+				{Date: positive, PregnancyTest: models.PregnancyTestPositive},
+				{Date: positive, IsPeriod: true, CycleStart: true},
+			},
+			wantPause: false,
+		},
+		{
+			name: "start the day before the positive test",
+			logs: []models.DailyLog{
+				{Date: positive.AddDate(0, 0, -1), IsPeriod: true, CycleStart: true},
+				{Date: positive, PregnancyTest: models.PregnancyTestPositive},
+			},
+			wantPause: true,
+		},
 	}
-	date, paused := ResolvePregnancyPause(logs)
-	if !paused {
-		t.Fatal("expected pause when cycle start and positive test share a day")
-	}
-	if !date.Equal(day) {
-		t.Fatalf("expected pause date %s, got %s", day, date)
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			date, paused := ResolvePregnancyPause(testCase.logs)
+			if paused != testCase.wantPause {
+				t.Fatalf("ResolvePregnancyPause() paused = %v, want %v", paused, testCase.wantPause)
+			}
+			if paused && !date.Equal(positive) {
+				t.Fatalf("expected pause date %s, got %s", positive, date)
+			}
+		})
 	}
 }
 
@@ -228,6 +263,19 @@ func TestBuildCycleStatsFromLogsResolvesThePauseOnOneTodayBoundedTimeline(t *tes
 			}
 			if !PredictionsSuppressed(user, stats) {
 				t.Errorf("%s / %s: the pause must reach the shared suppression predicate", zone.name, surface)
+			}
+		}
+
+		// A start on the test day itself is today's resumption: it is inside the
+		// today bound and lifts the pause on every surface alike.
+		sameDay := []models.DailyLog{
+			{Date: positive.AddDate(0, 0, -26), IsPeriod: true, CycleStart: true},
+			{Date: positive, IsPeriod: true, CycleStart: true, PregnancyTest: models.PregnancyTestPositive},
+		}
+		for surface, logs := range pauseParitySurfaceLogs(sameDay, today, location) {
+			stats := BuildCycleStatsFromLogs(user, logs, now, location)
+			if stats.PregnancyPaused {
+				t.Errorf("%s / %s: a cycle start on the positive test's day must lift the pause", zone.name, surface)
 			}
 		}
 
