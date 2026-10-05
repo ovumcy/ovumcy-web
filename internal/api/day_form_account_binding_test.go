@@ -13,6 +13,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/security"
 	"gorm.io/gorm"
 )
 
@@ -24,7 +25,9 @@ const dayFormAccountWireName = "day_form_account"
 var dayFormAccountInputPattern = regexp.MustCompile(`name="day_form_account" value="([^"]*)"`)
 
 // renderedDayFormAccount fetches a page that renders a day form and returns
-// the account binding the form carries. Exactly one such field is expected.
+// the account binding its day forms carry. Every day write on the page (the
+// day form, the delete form, each cycle-start form) carries the field, and all
+// of them must carry the same value.
 func renderedDayFormAccount(t *testing.T, app *fiber.App, cookie string, path string) string {
 	t.Helper()
 
@@ -35,14 +38,32 @@ func renderedDayFormAccount(t *testing.T, app *fiber.App, cookie string, path st
 	body := mustReadBodyString(t, response.Body)
 
 	matches := dayFormAccountInputPattern.FindAllStringSubmatch(body, -1)
-	if len(matches) != 1 {
-		t.Fatalf("%s: expected exactly one day_form_account field in the day form, found %d", path, len(matches))
+	if len(matches) == 0 {
+		t.Fatalf("%s: expected a day_form_account field in the day form, found none", path)
 	}
 	value := html.UnescapeString(matches[0][1])
 	if value == "" {
 		t.Fatalf("%s: the day form rendered an empty account binding", path)
 	}
+	for _, match := range matches[1:] {
+		if other := html.UnescapeString(match[1]); other != value {
+			t.Fatalf("%s: the page's day writes carry different bindings, %q and %q", path, value, other)
+		}
+	}
 	return value
+}
+
+// bindDayWriteForTest makes request carry the account binding a page rendered
+// for userID would send, in the header the dashboard script uses. A test that
+// drives a day write as a browser page does (HTMX, or a form post accepting
+// text/html) needs it: such a write without a binding is refused.
+func bindDayWriteForTest(t *testing.T, request *http.Request, userID uint) {
+	t.Helper()
+	binding, err := security.DayFormAccountBinding([]byte(testAppSecretKey), userID)
+	if err != nil {
+		t.Fatalf("bind day write to account %d: %v", userID, err)
+	}
+	request.Header.Set("X-Ovumcy-Day-Form-Account", binding)
 }
 
 func putDayForm(t *testing.T, app *fiber.App, cookie string, day time.Time, form url.Values, htmx bool) *http.Response {

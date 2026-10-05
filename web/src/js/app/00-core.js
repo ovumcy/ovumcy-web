@@ -15,6 +15,7 @@
   var THEME_COLOR_DARK = "#18141f";
   var TIMEZONE_COOKIE_NAME = "ovumcy_tz";
   var TIMEZONE_HEADER_NAME = "X-Ovumcy-Timezone";
+  var DAY_FORM_ACCOUNT_HEADER_NAME = "X-Ovumcy-Day-Form-Account";
   var TIMEZONE_COOKIE_MAX_AGE_SECONDS = 31536000;
 
   function getEventTarget(event) {
