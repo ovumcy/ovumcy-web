@@ -125,14 +125,15 @@ function fireChange(node) {
   node.dispatchEvent(new node.ownerDocument.defaultView.Event("change", { bubbles: true }));
 }
 
-// The keepalive flush the bundle installs for page unload reaches the same
-// runner the 2 s debounce does, so a test can get at the request without
-// sitting out the debounce. What it cannot do is invent a request the runner
-// would not make: an untouched form is still skipped, which is exactly the rail
-// below. With a save already open it takes the other branch and sends the
-// newest body itself — the subject of the in-flight test further down.
+// The keepalive flush the bundle runs when the page is really going away
+// (`pagehide`) reaches the same runner the 2 s debounce does, so a test can get
+// at the request without sitting out the debounce. What it cannot do is invent
+// a request the runner would not make: an untouched form is still skipped,
+// which is exactly the rail below. With a save already open it takes the other
+// branch and sends the newest body itself — the subject of the in-flight test
+// further down.
 function flushAutosave(window) {
-  window.dispatchEvent(new window.Event("beforeunload"));
+  window.dispatchEvent(new window.Event("pagehide"));
 }
 
 function settle() {
@@ -308,14 +309,69 @@ test("an edit made while a save is in flight still reaches the server on unload"
       "the newest journal value is what the server must end up holding"
     );
 
-    // A cancelled navigation fires beforeunload again; the same body must not
-    // be sent a second time.
+    // A page restored from the back/forward cache fires pagehide again on its
+    // next leave; the same body must not be sent a second time.
     flushAutosave(dom.window);
     await settle();
     assert.equal(calls.length, 2, "the unload flush sends a given version at most once");
 
     settleAll();
     await settle();
+  } finally {
+    dom.window.close();
+  }
+});
+
+// The journal form carries hx-put, so an htmx submit can be open on the wire
+// while the owner keeps typing. Two writers at unload — the htmx body re-sent
+// beside the newer form body — are two unordered PUTs, and the older one can
+// land last. One request goes out, and it carries what the form holds now.
+test("an htmx save still open with a newer edit behind it leaves as one request carrying the edit", async () => {
+  const recorder = { value: null };
+  const dom = await loadDOMWithScript(APP_BUNDLE, {
+    html: dashboardPage({ entryExists: true, notes: "" }),
+    beforeRun: (window) => {
+      recorder.value = installDeferredFetchRecorder(window);
+    },
+  });
+  const { calls } = recorder.value;
+  try {
+    const journal = form(dom.window);
+    const notes = dom.window.document.querySelector("#today-notes");
+    notes.value = "what the htmx save carries";
+    notes.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    journal.dispatchEvent(
+      new dom.window.CustomEvent("htmx:beforeSend", {
+        bubbles: true,
+        detail: {
+          requestConfig: {
+            elt: journal,
+            verb: "put",
+            path: `/api/v1/days/${TODAY}`,
+            headers: { "HX-Request": "true", "X-CSRF-Token": "unit-test-token" },
+            formData: new dom.window.FormData(journal),
+          },
+        },
+      })
+    );
+
+    notes.value = "newer edit typed while it was open";
+    notes.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+
+    const leaving = new dom.window.Event("beforeunload", { cancelable: true });
+    dom.window.dispatchEvent(leaving);
+    dom.window.dispatchEvent(new dom.window.Event("pagehide"));
+    await settle();
+
+    const puts = calls.filter((call) => call.init.method === "PUT");
+    assert.equal(puts.length, 1, "exactly one unload writer per form: two unordered PUTs let the older land last");
+    assert.equal(puts[0].url, `/api/v1/days/${TODAY}`);
+    assert.equal(puts[0].init.keepalive, true);
+    assert.ok(
+      bodyOf(puts[0]).includes(formValue("notes", "newer edit typed while it was open")),
+      "the journal autosaves, so the newest value typed is the one owed"
+    );
+    assert.equal(leaving.defaultPrevented, true, "leaving while the htmx save is open asks first");
   } finally {
     dom.window.close();
   }

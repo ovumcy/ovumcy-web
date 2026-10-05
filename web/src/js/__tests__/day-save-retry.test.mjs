@@ -134,7 +134,7 @@ async function loadDashboardWithFailingSave(outcome) {
 async function attemptDashboardSave(window) {
   const notes = window.document.querySelector("#today-notes");
   notes.dispatchEvent(new window.Event("input", { bubbles: true }));
-  window.dispatchEvent(new window.Event("beforeunload"));
+  window.dispatchEvent(new window.Event("pagehide"));
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
@@ -402,9 +402,12 @@ test("an htmx-reported failure on the dashboard form renders the same notice", a
 });
 
 // An explicit Save goes out on htmx's XMLHttpRequest, which the browser cancels
-// with the page. Leaving while it is open hands the very body that request
-// carries to a keepalive request — once — and asks before going.
-test("a calendar save still on the wire is re-sent with keepalive on unload", async () => {
+// with the page. Leaving while it is open asks first and sends nothing yet: an
+// owner who cancels and stays must not have an older body on the wire,
+// unordered against the saves they make next. Only once the page is really
+// going (`pagehide`) does the very body that request carries leave on a
+// keepalive request — once.
+test("a calendar save still on the wire is re-sent with keepalive only once the leave is confirmed", async () => {
   const calls = [];
   const dom = await loadDOMWithScript(APP_BUNDLE, {
     html: PAGE,
@@ -419,6 +422,9 @@ test("a calendar save still on the wire is re-sent with keepalive on unload", as
     const event = new dom.window.Event("beforeunload", { cancelable: true });
     dom.window.dispatchEvent(event);
     return event.defaultPrevented;
+  };
+  const pageHide = () => {
+    dom.window.dispatchEvent(new dom.window.Event("pagehide"));
   };
   try {
     const form = dayEditorForm(dom.window);
@@ -435,6 +441,12 @@ test("a calendar save still on the wire is re-sent with keepalive on unload", as
     form.querySelector("#calendar-notes").value = "typed after Save";
 
     assert.equal(leave(), true, "leaving while the save is open asks first");
+    assert.equal(calls.length, 0, "nothing is sent before the owner answers the leave prompt");
+
+    // The owner cancelled and stayed; the next leave goes through.
+    assert.equal(leave(), true);
+    assert.equal(calls.length, 0, "a cancelled leave sends nothing");
+    pageHide();
     assert.equal(calls.length, 1, "the open save is re-sent on a request that outlives the page");
     assert.equal(calls[0].url, "/api/v1/days/2026-08-11");
     assert.equal(calls[0].init.method, "PUT");
@@ -444,9 +456,14 @@ test("a calendar save still on the wire is re-sent with keepalive on unload", as
       String(calls[0].init.body).includes(new URLSearchParams([["notes", TYPED_NOTE]]).toString()),
       "the re-sent body is the one the open request carries"
     );
+    assert.ok(
+      !String(calls[0].init.body).includes("typed+after+Save"),
+      "an edit typed after Save and never saved is not sent behind the owner's back"
+    );
 
-    assert.equal(leave(), true);
-    assert.equal(calls.length, 1, "a cancelled navigation does not send the same save twice");
+    // A page restored from the back/forward cache fires pagehide again.
+    pageHide();
+    assert.equal(calls.length, 1, "the same save is not sent twice");
 
     fireOnForm(dom.window, "htmx:afterRequest", { xhr: {} });
     assert.equal(leave(), false, "a finished save leaves nothing to re-send or warn about");

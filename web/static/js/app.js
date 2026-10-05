@@ -4081,57 +4081,98 @@
     return runDashboardAutosave(form, "undo");
   }
 
+  function isDashboardSaveForm(form) {
+    return !!(form && form.matches && form.matches("[data-dashboard-save-form]"));
+  }
+
+  // One request that outlives the page. Nothing is sent from `beforeunload`:
+  // it fires before the owner answers the leave prompt, and a body sent from a
+  // page that then stays is on the wire unordered against every save made
+  // after it — an older body landing last reverts a newer commit. Every unload
+  // write goes out from `pagehide`, which fires only once the page is really
+  // going (a cancelled leave never reaches it).
+  function sendKeepaliveOnPageHide(request) {
+    window.fetch(request.url, {
+      method: request.method,
+      credentials: "same-origin",
+      keepalive: true,
+      headers: request.headers,
+      body: request.body
+    }).catch(function () {
+      // The page is leaving; there is no surface left to report to.
+    });
+  }
+
   // The page going away is the last chance the newest journal value gets, and
   // the ordinary runner cannot take it: while a save is open it hands back that
   // pending promise, which carries the older body. An edit made in that window
   // bumps the version and queues nothing — the only thing that would ever send
-  // it is the re-arm in the runner's `finally`, a 2 s timer no unload survives
-  // (and one that would go out without `keepalive` besides). So a newer version
-  // leaves on its own keepalive request, beside the one already on the wire.
+  // it is the re-arm in the runner's `finally`, a 2 s timer no unload survives.
+  // So a newer version leaves on its own keepalive request.
+  //
+  // This is the dashboard form's ONLY unload writer. The form carries hx-put,
+  // so an htmx submit (Enter in a field) can be open too, carrying the form as
+  // it stood when it went out; that XMLHttpRequest dies with the page. What
+  // goes out in its place is the form as it stands now — the journal autosaves,
+  // so the newest value typed is the one owed — on one request, never the htmx
+  // snapshot beside it: two unordered writes let the older one land last.
   //
   // The day upsert is idempotent, so a version this flush already sent is not
-  // taken off the dirty ledger: should the navigation be cancelled, the normal
-  // path re-sending the same body costs nothing, while clearing dirty here
-  // against a request whose outcome nobody will see could lose the edit twice.
-  function flushDashboardAutosaveBeforeUnload(form) {
+  // taken off the dirty ledger: should the page come back from the
+  // back/forward cache, the normal path re-sending the same body costs
+  // nothing, while clearing dirty here against a request whose outcome nobody
+  // will see could lose the edit twice.
+  function flushDashboardAutosaveOnPageHide(form) {
+    var htmxSave;
     var version;
     var endpoint;
+    var request;
 
-    if (!form || form.dataset.autosaveDirty !== "true") {
+    if (!form) {
       return;
     }
-    if (!form.__ovumcyAutosaveInFlight) {
+    htmxSave = form.__ovumcyDaySaveInFlight || null;
+    if (form.dataset.autosaveDirty !== "true" && !htmxSave) {
+      return;
+    }
+    if (!htmxSave && !form.__ovumcyAutosaveInFlight) {
       runDashboardAutosave(form);
       return;
     }
 
     version = form.__ovumcyAutosaveVersion || 0;
-    // The open request already carries this edit, and it is a keepalive one:
+    // The open autosave already carries this edit, and it is a keepalive one:
     // it outlives the page on its own.
-    if (version === (form.__ovumcyAutosaveInFlightVersion || 0)) {
+    if (form.__ovumcyAutosaveInFlight && version === (form.__ovumcyAutosaveInFlightVersion || 0)) {
       return;
     }
-    // beforeunload fires again on every cancelled navigation: send once.
-    if (version === (form.__ovumcyAutosaveUnloadFlushedVersion || 0)) {
-      return;
-    }
-    // The same refusal the ordinary runner makes: a body it would not send is
-    // not one to smuggle out on the unload path.
-    if (!validateTemperatureInputs(form, false)) {
+    // pagehide fires again after a back/forward-cache restore: send once.
+    if (form.__ovumcyAutosaveUnloadFlushedVersion === version) {
       return;
     }
 
-    endpoint = dashboardAutosaveEndpoint(form);
+    // The same refusal the ordinary runner makes: a body it would not send is
+    // not one to smuggle out on the unload path. The open htmx request's body
+    // was accepted for sending, so it is the newest one left to keep.
+    if (validateTemperatureInputs(form, false)) {
+      endpoint = dashboardAutosaveEndpoint(form);
+      request = {
+        method: endpoint.method,
+        url: endpoint.url,
+        headers: dashboardRequestHeaders(),
+        body: buildDashboardAutosaveBody(form).toString()
+      };
+    } else if (htmxSave) {
+      request = htmxSave;
+    } else {
+      return;
+    }
+
     form.__ovumcyAutosaveUnloadFlushedVersion = version;
-    window.fetch(endpoint.url, {
-      method: endpoint.method,
-      credentials: "same-origin",
-      keepalive: true,
-      headers: dashboardRequestHeaders(),
-      body: buildDashboardAutosaveBody(form).toString()
-    }).catch(function () {
-      // The page is leaving; there is no surface left to report to.
-    });
+    if (htmxSave) {
+      htmxSave.resent = true;
+    }
+    sendKeepaliveOnPageHide(request);
   }
 
   function bindDashboardAutosaveBeforeUnload() {
@@ -4142,19 +4183,24 @@
       document.body.dataset.dashboardAutosaveBeforeUnloadBound = "1";
     }
 
+    // Decides the prompt, sends nothing: the owner may yet stay.
     window.addEventListener("beforeunload", function (event) {
       var forms = document.querySelectorAll("[data-dashboard-save-form]");
       var saving = false;
       for (var index = 0; index < forms.length; index++) {
-        // Read before the flush: a save the page was already waiting on is the
-        // one the owner saw start, and the flush may open one of its own.
-        if (forms[index].__ovumcyAutosaveInFlight) {
+        if (forms[index].__ovumcyAutosaveInFlight || forms[index].__ovumcyDaySaveInFlight) {
           saving = true;
         }
-        flushDashboardAutosaveBeforeUnload(forms[index]);
       }
       if (saving) {
         warnBeforeLeavingDuringSave(event);
+      }
+    });
+
+    window.addEventListener("pagehide", function () {
+      var forms = document.querySelectorAll("[data-dashboard-save-form]");
+      for (var index = 0; index < forms.length; index++) {
+        flushDashboardAutosaveOnPageHide(forms[index]);
       }
     });
   }
@@ -4201,25 +4247,31 @@
     }
   }
 
-  function resendDaySaveBeforeUnload(form) {
+  // What the calendar owner expects kept is the explicit Save they pressed —
+  // the noted body, never an edit typed after it and not saved.
+  function resendDaySaveOnPageHide(form) {
     var pending = form.__ovumcyDaySaveInFlight;
-    if (!pending) {
-      return false;
+    // pagehide fires again after a back/forward-cache restore: send once.
+    if (!pending || pending.resent) {
+      return;
     }
-    // beforeunload fires again on every cancelled navigation: send once.
-    if (!pending.resent) {
-      pending.resent = true;
-      window.fetch(pending.url, {
-        method: pending.method,
-        credentials: "same-origin",
-        keepalive: true,
-        headers: pending.headers,
-        body: pending.body
-      }).catch(function () {
-        // The page is leaving; there is no surface left to report to.
-      });
+    pending.resent = true;
+    sendKeepaliveOnPageHide(pending);
+  }
+
+  // Every day-save form gets exactly one unload writer. The dashboard form
+  // matches the selector too (it carries hx-put), but its own pagehide flush
+  // owns it — it sends the newer of the htmx body and the form — so this guard
+  // only notes its htmx request and leaves the writing alone.
+  function daySaveFormsOwnedByUnloadGuard() {
+    var forms = document.querySelectorAll(DAY_SAVE_FORM_SELECTOR);
+    var owned = [];
+    for (var index = 0; index < forms.length; index++) {
+      if (!isDashboardSaveForm(forms[index])) {
+        owned.push(forms[index]);
+      }
     }
-    return true;
+    return owned;
   }
 
   function bindDaySaveUnloadGuard() {
@@ -4230,16 +4282,20 @@
 
     document.body.addEventListener("htmx:beforeSend", rememberDaySaveInFlight);
     document.body.addEventListener("htmx:afterRequest", forgetDaySaveInFlight);
+    // Decides the prompt, sends nothing: the owner may yet stay.
     window.addEventListener("beforeunload", function (event) {
-      var forms = document.querySelectorAll(DAY_SAVE_FORM_SELECTOR);
-      var saving = false;
+      var forms = daySaveFormsOwnedByUnloadGuard();
       for (var index = 0; index < forms.length; index++) {
-        if (resendDaySaveBeforeUnload(forms[index])) {
-          saving = true;
+        if (forms[index].__ovumcyDaySaveInFlight) {
+          warnBeforeLeavingDuringSave(event);
+          return;
         }
       }
-      if (saving) {
-        warnBeforeLeavingDuringSave(event);
+    });
+    window.addEventListener("pagehide", function () {
+      var forms = daySaveFormsOwnedByUnloadGuard();
+      for (var index = 0; index < forms.length; index++) {
+        resendDaySaveOnPageHide(forms[index]);
       }
     });
   }
