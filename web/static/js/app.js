@@ -3689,6 +3689,16 @@
     );
   }
 
+  function syncRestoredPregnancyTestFields(form) {
+    var fields = form.querySelectorAll("[data-pregnancy-test]");
+    var checked;
+
+    for (var index = 0; index < fields.length; index++) {
+      checked = fields[index].querySelector("input[name='pregnancy_test']:checked");
+      syncPregnancyTestField(fields[index], !!checked && checked.value !== "none");
+    }
+  }
+
   function restoreDashboardFormState(form, entries) {
     var selected = {};
     var index;
@@ -3715,6 +3725,11 @@
       }
       control.value = values.length > 0 ? values[0] : "";
     }
+
+    // Restoring a radio does not fire change, so the pregnancy-test field's own
+    // wording and Remove button would keep describing the value that was just
+    // undone. Re-derive each from the radio that is checked now.
+    syncRestoredPregnancyTestFields(form);
 
     root = typeof form.closest === "function" ? form.closest("[data-dashboard-editor]") : null;
     root = root || form;
@@ -3859,8 +3874,8 @@
   // block that appears or disappears is placed after the nearest block before it.
   // The disclaimer is static and listed only as that anchor.
   var DASHBOARD_PREGNANCY_ALWAYS_PRESENT = [
-    "[data-dashboard-cycle-day]",
-    "[data-dashboard-status-line]"
+    { selector: "[data-dashboard-cycle-day]", inPlace: false },
+    { selector: "[data-dashboard-status-line]", inPlace: true }
   ];
   var DASHBOARD_PREGNANCY_ORDERED = [
     { selector: "[data-dashboard-cycle-ribbon]", anchorOnly: false },
@@ -3889,16 +3904,141 @@
     }
   }
 
+  // A node taken out of a fetched page arrives with its entrance animation
+  // class: left on, the block would fade in again as if the page had loaded.
+  function importDashboardNode(node) {
+    var clone = document.importNode(node, true);
+    var revealed;
+
+    if (clone.classList) {
+      clone.classList.remove("reveal");
+    }
+    if (typeof clone.querySelectorAll === "function") {
+      revealed = clone.querySelectorAll(".reveal");
+      for (var index = 0; index < revealed.length; index++) {
+        revealed[index].classList.remove("reveal");
+      }
+    }
+    return clone;
+  }
+
+  function dashboardSwappableSelectors() {
+    var selectors = DASHBOARD_PREGNANCY_ALWAYS_PRESENT.map(function (block) {
+      return block.selector;
+    });
+    DASHBOARD_PREGNANCY_ORDERED.forEach(function (block) {
+      if (!block.anchorOnly) {
+        selectors.push(block.selector);
+      }
+    });
+    return selectors;
+  }
+
+  // What the swap is about to replace may hold the keyboard focus (a link in
+  // the warnings block); the replaced node takes focus with it to the body.
+  // Remember which block held it and what the focused element was, by its href
+  // or its data-* hooks, so the equivalent element in the new block can have it.
+  function captureDashboardBlockFocus(header) {
+    var active = document.activeElement;
+    var selectors = dashboardSwappableSelectors();
+    var block;
+    var hooks = [];
+
+    if (!active || active === document.body || !header.contains(active)) {
+      return null;
+    }
+    for (var index = 0; index < selectors.length; index++) {
+      block = header.querySelector(selectors[index]);
+      if (!block || !block.contains(active)) {
+        continue;
+      }
+      if (block !== active) {
+        for (var attrIndex = 0; attrIndex < active.attributes.length; attrIndex++) {
+          if (active.attributes[attrIndex].name.indexOf("data-") === 0) {
+            hooks.push(active.attributes[attrIndex].name);
+          }
+        }
+      }
+      return {
+        selector: selectors[index],
+        tag: active.tagName,
+        href: block === active ? null : active.getAttribute("href"),
+        hooks: hooks
+      };
+    }
+    return null;
+  }
+
+  function equivalentDashboardFocusTarget(block, saved) {
+    var candidates = block.querySelectorAll("*");
+    var candidate;
+
+    for (var index = 0; index < candidates.length; index++) {
+      candidate = candidates[index];
+      if (candidate.tagName !== saved.tag) {
+        continue;
+      }
+      if (saved.href !== null && candidate.getAttribute("href") === saved.href) {
+        return candidate;
+      }
+      for (var hookIndex = 0; hookIndex < saved.hooks.length; hookIndex++) {
+        if (candidate.hasAttribute(saved.hooks[hookIndex])) {
+          return candidate;
+        }
+      }
+    }
+    return null;
+  }
+
+  // Focus follows the owner's place: the same link, or the same hook, in the
+  // new block. With no equivalent, the block itself takes it (tabindex -1 only
+  // here, so it is focusable by script and never a tab stop); a block the
+  // server dropped hands it to the status line, which is always there.
+  function restoreDashboardBlockFocus(header, saved) {
+    var block;
+    var target;
+
+    if (!saved) {
+      return;
+    }
+    block = header.querySelector(saved.selector) || header.querySelector("[data-dashboard-status-line]");
+    if (!block) {
+      return;
+    }
+    target = block.matches(saved.selector) ? equivalentDashboardFocusTarget(block, saved) : null;
+    if (!target) {
+      block.setAttribute("tabindex", "-1");
+      target = block;
+    }
+    if (typeof target.focus === "function") {
+      target.focus();
+    }
+  }
+
   function swapDashboardPregnancyBlocks(header, nextHeader) {
     var previous = null;
+    var savedFocus = captureDashboardBlockFocus(header);
 
     syncDashboardDataAttributes(header, nextHeader);
 
-    DASHBOARD_PREGNANCY_ALWAYS_PRESENT.forEach(function (selector) {
-      var existing = header.querySelector(selector);
-      var fresh = nextHeader.querySelector(selector);
-      if (existing && fresh) {
-        existing.replaceWith(document.importNode(fresh, true));
+    // The status line is a live region: it keeps its node and takes the new
+    // content, because a region that is itself inserted is not announced.
+    DASHBOARD_PREGNANCY_ALWAYS_PRESENT.forEach(function (block) {
+      var existing = header.querySelector(block.selector);
+      var fresh = nextHeader.querySelector(block.selector);
+      if (!existing || !fresh) {
+        return;
+      }
+      if (!block.inPlace) {
+        existing.replaceWith(importDashboardNode(fresh));
+        return;
+      }
+      syncDashboardDataAttributes(existing, fresh);
+      while (existing.firstChild) {
+        existing.removeChild(existing.firstChild);
+      }
+      for (var child = fresh.firstChild; child; child = child.nextSibling) {
+        existing.appendChild(importDashboardNode(child));
       }
     });
 
@@ -3909,7 +4049,7 @@
 
       if (!block.anchorOnly) {
         if (fresh) {
-          clone = document.importNode(fresh, true);
+          clone = importDashboardNode(fresh);
           if (existing) {
             existing.replaceWith(clone);
           } else if (previous) {
@@ -3925,6 +4065,8 @@
       }
       previous = existing || previous;
     });
+
+    restoreDashboardBlockFocus(header, savedFocus);
   }
 
   // The status header is computed server-side from the saved days, and a

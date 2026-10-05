@@ -26,8 +26,10 @@
           <span class="dashboard-cycle-lead-day" data-dashboard-cycle-day>{{if gt .Stats.CurrentCycleDay 0}}{{if .CycleDataStale}}~{{end}}{{.Stats.CurrentCycleDay}}{{else}}{{.NoDataLabel}}{{end}}</span>
         </p>
 
-        {{/* The status line is re-fetched and swapped after a pregnancy-result save. */}}
-        <p class="dashboard-status-line" data-dashboard-status-line>
+        {{/* The status line is re-fetched after a pregnancy-result save and its content
+             replaced inside this node, which is a live region so the change is announced.
+             It is present from first paint, so nothing is announced on load. */}}
+        <p class="dashboard-status-line" data-dashboard-status-line aria-live="polite">
           <span class="dashboard-status-item">
             <span aria-hidden="true">{{template "icon" (phaseIcon $phase)}}</span>
             <span>{{phaseLabel .Messages $phase}}</span>

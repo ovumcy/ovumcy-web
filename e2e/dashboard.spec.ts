@@ -506,7 +506,7 @@ test.describe('Dashboard: today editor', () => {
     // The group offers the two results and nothing else — the unset value rides
     // a hidden carrier, which is not in the accessibility tree.
     await expect(field.getByRole('radio')).toHaveCount(2);
-    await expect(field.locator('[data-pregnancy-test-remove]')).toHaveCount(0);
+    await expect(field.locator('[data-pregnancy-test-remove]')).toBeHidden();
 
     await saveToday(page, async () => {
       await field.locator('[data-pregnancy-test-option="negative"]').click();
@@ -529,6 +529,8 @@ test.describe('Dashboard: today editor', () => {
       await remove.click();
     });
     await expect(savedField).toHaveAttribute('data-pregnancy-test-state', 'absent');
+    await expect(remove).toBeHidden();
+    await expect(savedField.locator('[data-pregnancy-test-empty]')).toBeVisible();
 
     await page.reload();
     await expect(page.locator('input[name="pregnancy_test"][value="negative"]')).not.toBeChecked();
