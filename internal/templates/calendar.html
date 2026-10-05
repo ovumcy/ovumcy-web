@@ -51,7 +51,7 @@
         <span class="legend-item"><span class="legend-swatch legend-swatch-overlap-period-fertile" aria-hidden="true"></span>{{t .Messages "calendar.legend.predicted_period_in_fertility"}}</span>
         {{/* The dash exists only for owners who track temperature: it marks a
              projection no temperature shift has confirmed yet, and the grid
-             never draws it without BBT data. Everyone else gets the solid dot
+             never draws it with BBT tracking off. Everyone else gets the solid dot
              alone, so the legend promises no mark the grid cannot show. */}}
         {{if .CurrentUser.TrackBBT}}
         <span class="legend-item"><span class="calendar-ovulation-dot" aria-hidden="true"></span><span class="calendar-ovulation-dash" aria-hidden="true"></span>{{t .Messages "calendar.legend.ovulation_group"}}</span>
