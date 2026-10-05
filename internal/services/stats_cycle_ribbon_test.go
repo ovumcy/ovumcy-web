@@ -61,7 +61,7 @@ func TestBuildStatsCycleRibbonWaitsForTwoCompletedCycles(t *testing.T) {
 
 	single := buildStatsCycleRibbon(
 		statscycleribbonOwner(false),
-		CycleStats{LutealPhase: 14},
+		CycleStats{LutealPhase: 14, CompletedCycleCount: 3},
 		logs,
 		buildCompletedCycleSpans(logs, time.UTC),
 	)
@@ -72,7 +72,7 @@ func TestBuildStatsCycleRibbonWaitsForTwoCompletedCycles(t *testing.T) {
 	logs = append(logs, statscycleribbonCycle(t, "2026-02-26", 5)...)
 	pair := buildStatsCycleRibbon(
 		statscycleribbonOwner(false),
-		CycleStats{LutealPhase: 14},
+		CycleStats{LutealPhase: 14, CompletedCycleCount: 3},
 		logs,
 		buildCompletedCycleSpans(logs, time.UTC),
 	)
@@ -91,7 +91,7 @@ func TestBuildStatsCycleRibbonSharesOneAxisAcrossRows(t *testing.T) {
 	logs := statscycleribbonHistory(t)
 	ribbon := buildStatsCycleRibbon(
 		statscycleribbonOwner(false),
-		CycleStats{LutealPhase: 14},
+		CycleStats{LutealPhase: 14, CompletedCycleCount: 3},
 		logs,
 		buildCompletedCycleSpans(logs, time.UTC),
 	)
@@ -141,7 +141,7 @@ func TestBuildStatsCycleRibbonKeepsOnlyTheMostRecentCycles(t *testing.T) {
 
 	ribbon := buildStatsCycleRibbon(
 		statscycleribbonOwner(false),
-		CycleStats{LutealPhase: 14},
+		CycleStats{LutealPhase: 14, CompletedCycleCount: 3},
 		logs,
 		buildCompletedCycleSpans(logs, time.UTC),
 	)
@@ -164,7 +164,7 @@ func TestBuildStatsCycleRibbonDrawsObservedPeriodDaysWithoutInferredPhases(t *te
 	logs := statscycleribbonHistory(t)
 	ribbon := buildStatsCycleRibbon(
 		statscycleribbonOwner(false),
-		CycleStats{LutealPhase: 14},
+		CycleStats{LutealPhase: 14, CompletedCycleCount: 3},
 		logs,
 		buildCompletedCycleSpans(logs, time.UTC),
 	)
@@ -201,7 +201,7 @@ func TestBuildStatsCycleRibbonInfersPhasesOnlyWhenTheOwnerAsked(t *testing.T) {
 	logs := statscycleribbonHistory(t)
 	ribbon := buildStatsCycleRibbon(
 		statscycleribbonOwner(true),
-		CycleStats{LutealPhase: 14},
+		CycleStats{LutealPhase: 14, CompletedCycleCount: 3},
 		logs,
 		buildCompletedCycleSpans(logs, time.UTC),
 	)
@@ -264,7 +264,7 @@ func TestStatsCycleRibbonAxisDaysClampsAWildCycle(t *testing.T) {
 func TestBuildStatsCycleRibbonRefusesAnEmptyAxis(t *testing.T) {
 	ribbon := buildStatsCycleRibbon(
 		statscycleribbonOwner(false),
-		CycleStats{LutealPhase: 14},
+		CycleStats{LutealPhase: 14, CompletedCycleCount: 3},
 		nil,
 		[]completedCycleSpan{{CycleLength: 0}, {CycleLength: 0}},
 	)
@@ -308,7 +308,7 @@ func TestBuildStatsCycleRibbonMarksRecordedDays(t *testing.T) {
 
 	ribbon := buildStatsCycleRibbon(
 		statscycleribbonOwner(false),
-		CycleStats{LutealPhase: 14},
+		CycleStats{LutealPhase: 14, CompletedCycleCount: 3},
 		logs,
 		buildCompletedCycleSpans(logs, time.UTC),
 	)
@@ -378,7 +378,7 @@ func TestBuildStatsCycleRibbonSuppressesInferredFertilityInUnpredictableMode(t *
 
 	predicting := buildStatsCycleRibbon(
 		statscycleribbonOwner(true),
-		CycleStats{LutealPhase: 14},
+		CycleStats{LutealPhase: 14, CompletedCycleCount: 3},
 		logs,
 		spans,
 	)
@@ -391,7 +391,7 @@ func TestBuildStatsCycleRibbonSuppressesInferredFertilityInUnpredictableMode(t *
 	owner.UnpredictableCycle = true
 	ribbon := buildStatsCycleRibbon(
 		owner,
-		CycleStats{LutealPhase: 14},
+		CycleStats{LutealPhase: 14, CompletedCycleCount: 3},
 		logs,
 		spans,
 	)
@@ -429,13 +429,13 @@ func TestBuildStatsCycleRibbonSuppressesInferredFertilityOnPregnancyPauseAndOver
 		name  string
 		stats CycleStats
 	}{
-		{"pregnancy pause", CycleStats{LutealPhase: 14, PregnancyPaused: true, CurrentCycleDay: 10}},
+		{"pregnancy pause", CycleStats{LutealPhase: 14, CompletedCycleCount: 3, PregnancyPaused: true, CurrentCycleDay: 10}},
 		// 40 is past the 28-day reference (onboarding length) plus the one-week grace.
-		{"overdue cycle", CycleStats{LutealPhase: 14, CurrentCycleDay: 40}},
+		{"overdue cycle", CycleStats{LutealPhase: 14, CompletedCycleCount: 3, CurrentCycleDay: 40}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			open := buildStatsCycleRibbon(statscycleribbonOwner(true), CycleStats{LutealPhase: 14, CurrentCycleDay: 10}, logs, spans)
+			open := buildStatsCycleRibbon(statscycleribbonOwner(true), CycleStats{LutealPhase: 14, CompletedCycleCount: 3, CurrentCycleDay: 10}, logs, spans)
 			fertile, peak, ovulation := statscycleribbonInferredFertility(open)
 			if fertile == 0 || peak == 0 || ovulation == 0 {
 				t.Fatalf("anchor: gate open must shade fertile=%d peak=%d ovulation=%d", fertile, peak, ovulation)
@@ -474,7 +474,7 @@ func TestBuildStatsCycleRibbonFirstCycleGateIsTheTwoCycleMinimum(t *testing.T) {
 		t.Fatalf("fixture must hold exactly one completed cycle, got %d", len(spans))
 	}
 
-	ribbon := buildStatsCycleRibbon(statscycleribbonOwner(true), CycleStats{LutealPhase: 14}, logs, spans)
+	ribbon := buildStatsCycleRibbon(statscycleribbonOwner(true), CycleStats{LutealPhase: 14, CompletedCycleCount: 3}, logs, spans)
 	if ribbon.Visible || len(ribbon.Rows) != 0 {
 		t.Fatalf("one completed cycle draws nothing: visible=%v rows=%d", ribbon.Visible, len(ribbon.Rows))
 	}
@@ -546,7 +546,7 @@ func TestBuildStatsCycleRibbonSuppressesAClampedOvulationEstimate(t *testing.T) 
 
 	ribbon := buildStatsCycleRibbon(
 		statscycleribbonOwner(true),
-		CycleStats{LutealPhase: 14},
+		CycleStats{LutealPhase: 14, CompletedCycleCount: 3},
 		logs,
 		buildCompletedCycleSpans(logs, time.UTC),
 	)
@@ -607,7 +607,7 @@ func TestBuildStatsCycleRibbonNeverMarksAPeakOutsideTheOvulationPhase(t *testing
 
 	ribbon := buildStatsCycleRibbon(
 		statscycleribbonOwner(true),
-		CycleStats{LutealPhase: 14},
+		CycleStats{LutealPhase: 14, CompletedCycleCount: 3},
 		logs,
 		buildCompletedCycleSpans(logs, time.UTC),
 	)
@@ -640,7 +640,7 @@ func TestBuildStatsCycleRibbonNeverMarksAPeakOutsideTheOvulationPhase(t *testing
 func TestBuildStatsCycleRibbonFlagsARowTheAxisCannotHold(t *testing.T) {
 	within := buildStatsCycleRibbon(
 		statscycleribbonOwner(false),
-		CycleStats{LutealPhase: 14},
+		CycleStats{LutealPhase: 14, CompletedCycleCount: 3},
 		nil,
 		[]completedCycleSpan{
 			{Start: statscycleribbonDay(t, "2026-01-01"), CycleLength: 30, PeriodLength: 5},
@@ -658,7 +658,7 @@ func TestBuildStatsCycleRibbonFlagsARowTheAxisCannotHold(t *testing.T) {
 
 	beyond := buildStatsCycleRibbon(
 		statscycleribbonOwner(false),
-		CycleStats{LutealPhase: 14},
+		CycleStats{LutealPhase: 14, CompletedCycleCount: 3},
 		nil,
 		[]completedCycleSpan{
 			{Start: statscycleribbonDay(t, "2026-01-01"), CycleLength: statsCycleRibbonMaxAxisDays + 15, PeriodLength: 5},

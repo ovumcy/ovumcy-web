@@ -90,18 +90,17 @@ func buildStatsCycleRibbon(user *models.User, stats CycleStats, logs []models.Da
 		return StatsCycleRibbon{}
 	}
 
-	// Inferred phases need BOTH the owner's preference and the medical-safety
-	// suppression gate open. Everything the phase axis adds to a row — the
-	// fertile window, the peak day, the ovulation cell and the luteal span that
-	// is only located relative to it — is PredictCycleWindow applied to a past
-	// cycle, i.e. the same cycle math the account has told the product not to
-	// trust. The calendar settles that reading: its historical-phase pass
-	// (appendHistoricalCycles) runs below buildCalendarPredictionMaps' early
-	// return on PredictionsSuppressed, so inferred history is not exempt there
-	// and must not be exempt here. The gate is the shared predicate, never a
-	// hand-picked disjunct, so a fourth suppression signal reaches this surface
-	// with the others.
-	showPhases := user != nil && user.ShowHistoricalPhases && !PredictionsSuppressed(user, stats)
+	// Inferred phases need BOTH the owner's preference and the fertility gate
+	// open. Everything the phase axis adds to a row — the fertile window, the
+	// peak day, the ovulation cell and the luteal span that is only located
+	// relative to it — is PredictCycleWindow applied to a past cycle, i.e. cycle
+	// math that one or two observed lengths (or an unpredictable, paused,
+	// overdue or irregular-thin account) cannot back. So it reads the same
+	// fertility predicate as every other fertility surface, and the calendar's
+	// historical-phase pass (appendHistoricalCycles) sits behind the same gate.
+	// The gate is the shared predicate, never a hand-picked disjunct, so a new
+	// suppression signal reaches this surface with the others.
+	showPhases := user != nil && user.ShowHistoricalPhases && !FertilityProjectionSuppressed(user, stats)
 	luteal := ResolveLutealPhase(stats.LutealPhase)
 	loggedByDay := statsCycleRibbonLoggedDays(logs)
 

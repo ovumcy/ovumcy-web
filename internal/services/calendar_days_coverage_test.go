@@ -370,6 +370,7 @@ func TestCalendarDaysHistoricalCycleLen28Days(t *testing.T) {
 		AverageCycleLength:  28,
 		AveragePeriodLength: 5,
 		LutealPhase:         14,
+		CompletedCycleCount: 3,
 		LastPeriodStart:     time.Date(2026, time.January, 29, 0, 0, 0, 0, time.UTC),
 	}
 	user := &models.User{ShowHistoricalPhases: true}
@@ -405,6 +406,7 @@ func TestCalendarDaysHistoricalPreFertileEndIsOneDayBeforeFertilityStart(t *test
 		AverageCycleLength:  28,
 		AveragePeriodLength: 5,
 		LutealPhase:         14,
+		CompletedCycleCount: 3,
 		LastPeriodStart:     time.Date(2026, time.January, 29, 0, 0, 0, 0, time.UTC),
 	}
 	user := &models.User{ShowHistoricalPhases: true}
