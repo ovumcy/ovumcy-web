@@ -2043,6 +2043,14 @@
     }
     notice.appendChild(text);
 
+    if (messageKey === ACCOUNT_CHANGED_NOTICE_KEY) {
+      // The form was rendered for another account than the one now signed in:
+      // no retry can land it, so the notice offers none, and no sign-in link
+      // either. The entry stays in the form, untouched.
+      target.replaceChildren(notice);
+      return true;
+    }
+
     var retry = document.createElement("button");
     // Explicitly type="button": the status container sits inside the form, and
     // a default submit button here would fire a second save on every click that
@@ -2074,6 +2082,12 @@
   // account, and nothing from the entry is written anywhere to survive the trip.
   var SESSION_EXPIRED_NOTICE_KEY = "common.error.unauthorized";
   var SIGN_IN_PATH = "/login";
+
+  // If the account signed in from the other tab is not the one this form was
+  // rendered for, the server refuses the retry (409) rather than write this
+  // entry into that account; the form carries an opaque binding to the account
+  // that rendered it.
+  var ACCOUNT_CHANGED_NOTICE_KEY = "daylog.save_account_changed";
 
   function daySaveSignInLink(form) {
     var link = document.createElement("a");

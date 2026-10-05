@@ -326,6 +326,7 @@
         data-day-save-sign-in-label="{{t .Messages "daylog.save_sign_in"}}">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <input type="hidden" name="_method" value="PUT">
+        <input type="hidden" name="day_form_account" value="{{.DayFormAccount}}">
         <input type="hidden" name="ack_period_tip" value="false" data-period-tip-ack>
 
         {{/* Two one-line rows became one: the jump shortcuts and the period

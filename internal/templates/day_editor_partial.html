@@ -26,6 +26,7 @@
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
     <input type="hidden" name="_method" value="PUT">
     <input type="hidden" name="source" value="calendar">
+    <input type="hidden" name="day_form_account" value="{{.DayFormAccount}}">
     <input type="hidden" name="ack_period_tip" value="false" data-period-tip-ack>
 
     <label class="period-toggle" data-binary-toggle data-active="{{if .Log.IsPeriod}}true{{else}}false{{end}}">

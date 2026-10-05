@@ -521,6 +521,7 @@
   "daylog.save_failed": "No se pudo guardar: revisa tu conexión. Tu registro sigue aquí.",
   "daylog.save_retry": "Reintentar",
   "daylog.save_sign_in": "Iniciar sesión en una pestaña nueva",
+  "daylog.save_account_changed": "Ahora has iniciado sesión con otra cuenta. Este registro no se ha guardado.",
   "calendar.title": "Calendario",
   "calendar.prev": "Anterior",
   "calendar.next": "Siguiente",

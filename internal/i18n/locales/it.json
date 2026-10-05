@@ -521,6 +521,7 @@
   "daylog.save_failed": "Non è stato possibile salvare: controlla la connessione. Il tuo inserimento è ancora qui.",
   "daylog.save_retry": "Riprova",
   "daylog.save_sign_in": "Accedi in una nuova scheda",
+  "daylog.save_account_changed": "Ora hai effettuato l'accesso con un altro account. Questo inserimento non è stato salvato.",
   "calendar.title": "Calendario",
   "calendar.prev": "Prec",
   "calendar.next": "Succ",

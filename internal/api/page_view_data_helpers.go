@@ -17,6 +17,10 @@ func (handler *Handler) buildDashboardViewData(ctx context.Context, user *models
 		return nil, err
 	}
 	bbtView := buildBBTFieldViewData(messages, user.TemperatureUnit)
+	formAccount, err := handler.dayFormAccountBinding(user)
+	if err != nil {
+		return nil, err // codecov:ignore -- NewHandler refuses an empty secret and a signed-in user has a non-zero id
+	}
 
 	data := fiber.Map{
 		"Title":                                 localizedPageTitle(messages, "meta.title.dashboard", "Ovumcy | Dashboard"),
@@ -109,6 +113,7 @@ func (handler *Handler) buildDashboardViewData(ctx context.Context, user *models
 		"UsageGoalSummaryKey":                   services.UsageGoalSummaryTranslationKey(user.UsageGoal),
 		"UsageGoalAlternatives":                 services.AlternativeUsageGoals(user.UsageGoal),
 		"IsOwner":                               viewData.IsOwner,
+		"DayFormAccount":                        formAccount,
 	}
 	return data, nil
 }
@@ -119,6 +124,10 @@ func (handler *Handler) buildDayEditorPartialData(ctx context.Context, user *mod
 		return nil, err
 	}
 	bbtView := buildBBTFieldViewData(messages, user.TemperatureUnit)
+	formAccount, err := handler.dayFormAccountBinding(user)
+	if err != nil {
+		return nil, err // codecov:ignore -- NewHandler refuses an empty secret and a signed-in user has a non-zero id
+	}
 
 	payload := fiber.Map{
 		"Date":                                  viewData.Date,
@@ -160,6 +169,7 @@ func (handler *Handler) buildDayEditorPartialData(ctx context.Context, user *mod
 		"ShowSpottingCycleWarning":              viewData.ShowSpottingCycleWarning,
 		"EditMode":                              editMode,
 		"IsOwner":                               viewData.IsOwner,
+		"DayFormAccount":                        formAccount,
 	}
 	return payload, nil
 }
