@@ -321,6 +321,45 @@ test("an edit made while a save is in flight still reaches the server on unload"
   }
 });
 
+// The save the debounce opens is the one the owner watched start ("Saving…").
+// A reload or a closed tab while it is still on the wire must not cancel it:
+// the request itself is a keepalive one, and the page asks before leaving.
+test("a save the debounce put on the wire outlives the page, and leaving asks first", async () => {
+  const recorder = { value: null };
+  const dom = await loadDOMWithScript(APP_BUNDLE, {
+    html: dashboardPage({ entryExists: true, notes: "" }),
+    beforeRun: (window) => {
+      recorder.value = installDeferredFetchRecorder(window);
+    },
+  });
+  const { calls, settleAll } = recorder.value;
+  try {
+    const notes = dom.window.document.querySelector("#today-notes");
+    notes.value = "edit the debounce sends";
+    notes.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 2200));
+
+    assert.equal(calls.length, 1, "the debounce sends the edit");
+    assert.equal(calls[0].init.keepalive, true, "the ordinary autosave must outlive the page");
+    assert.ok(bodyOf(calls[0]).includes(formValue("notes", "edit the debounce sends")));
+
+    const leaving = new dom.window.Event("beforeunload", { cancelable: true });
+    dom.window.dispatchEvent(leaving);
+    await settle();
+    assert.equal(leaving.defaultPrevented, true, "leaving while a save is open asks first");
+    assert.equal(calls.length, 1, "the open keepalive request already carries the edit");
+
+    settleAll();
+    await settle();
+
+    const settled = new dom.window.Event("beforeunload", { cancelable: true });
+    dom.window.dispatchEvent(settled);
+    assert.equal(settled.defaultPrevented, false, "a page with no save open leaves without a prompt");
+  } finally {
+    dom.window.close();
+  }
+});
+
 test("the undo snapshot lives in memory only — never in client storage", async () => {
   // The hard boundary, restated for the dashboard: a day entry is health data,
   // and nothing about it may outlive the page in a client store.

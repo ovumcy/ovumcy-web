@@ -6,6 +6,7 @@ import {
   type Page,
 } from './support/fixtures';
 import {
+  apiOriginHeader,
   completeOnboardingIfPresent,
   continueFromRecoveryCode,
   createCredentials,
@@ -168,6 +169,56 @@ async function expectDayEntryStillTyped(form: Locator, note: string): Promise<vo
 }
 
 test.describe('day-entry save resilience', () => {
+  test('a reload while the save is still on the wire keeps the entry', async ({ page }) => {
+    // Registration, the editor round-trip and a read-back poll in one test.
+    test.slow();
+    const todayISO = await registerOwnerOnCalendar(page, 'day-save-inflight-reload');
+    const targetISO = shiftISODate(todayISO, -24);
+    const note = 'left the page mid-save';
+
+    // Hold the explicit Save, so the reload lands while it is undelivered —
+    // a slow uplink, made deterministic.
+    let releaseSave = (): void => {};
+    const saveReleased = new Promise<void>((resolve) => {
+      releaseSave = resolve;
+    });
+    await page.route(`**/api/v1/days/${targetISO}`, async (route) => {
+      if (route.request().method() !== 'PUT') {
+        await route.fallback();
+        return;
+      }
+      await saveReleased;
+      // A request the reload cancelled cannot be continued; that is the loss
+      // the read-back below reports.
+      await route.continue().catch(() => undefined);
+    });
+    const dialogs: string[] = [];
+    page.on('dialog', (dialog) => {
+      dialogs.push(dialog.type());
+      void dialog.accept();
+    });
+
+    const form = await openCalendarDayEditor(page, targetISO);
+    await fillDayEntry(form, note);
+    await attemptDayEditorSave(page, targetISO, form);
+    await expect(form.locator('button[data-save-button]')).toBeDisabled();
+
+    await page.reload();
+    releaseSave();
+
+    // Read back what the server holds, not what a page renders.
+    await expect.poll(async () => {
+      const response = await page.request.get(`/api/v1/days/${targetISO}`, {
+        headers: { Accept: 'application/json', ...apiOriginHeader(page) },
+      });
+      if (!response.ok()) {
+        return `HTTP ${response.status()}`;
+      }
+      return ((await response.json()) as { notes?: string }).notes;
+    }, { message: 'the entry saved before the reload', timeout: 10000 }).toBe(note);
+    expect(dialogs, 'leaving while the save is open asks first').toContain('beforeunload');
+  });
+
   test('a rejected save keeps the typed entry and no save is announced', async ({ browserErrors, page }) => {
     const todayISO = await registerOwnerOnCalendar(page, 'day-save-rejected');
     const targetISO = shiftISODate(todayISO, -20);

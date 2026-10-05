@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from './support/fixtures';
 import {
+  apiOriginHeader,
   completeOnboardingIfPresent,
   continueFromRecoveryCode,
   createCredentials,
@@ -989,5 +990,61 @@ test.describe('Dashboard: today editor', () => {
       await replacementPage.reload();
       return replacementPage.locator('#today-notes').inputValue();
     }, { timeout: 5000 }).toBe(noteText);
+  });
+
+  test('a reload while the autosave is still on the wire keeps the edit', async ({ page }) => {
+    // Registration, the 2 s debounce and a read-back poll in one test.
+    test.slow();
+    await registerOwnerOnDashboard(page, 'dashboard-autosave-inflight-reload');
+
+    const noteText = `dashboard-inflight-${Date.now()}`;
+
+    // Hold the save the debounce opens, so the reload lands while it is still
+    // undelivered — a slow uplink, made deterministic.
+    let releaseSave = (): void => {};
+    const saveReleased = new Promise<void>((resolve) => {
+      releaseSave = resolve;
+    });
+    await page.route(/\/api\/v1\/days\/\d{4}-\d{2}-\d{2}(?:\?.*)?$/, async (route) => {
+      if (route.request().method() !== 'PUT') {
+        await route.fallback();
+        return;
+      }
+      await saveReleased;
+      // A request the reload cancelled cannot be continued; that is the loss
+      // the read-back below reports.
+      await route.continue().catch(() => undefined);
+    });
+    const dialogs: string[] = [];
+    page.on('dialog', (dialog) => {
+      dialogs.push(dialog.type());
+      void dialog.accept();
+    });
+
+    await openTodayNotes(page);
+    const heldSave = page.waitForRequest(
+      (candidate) => candidate.method() === 'PUT' && candidate.url().includes('/api/v1/days/')
+    );
+    await page.locator('#today-notes').fill(noteText);
+    const dayPath = new URL((await heldSave).url()).pathname;
+    await expect(page.locator('[data-dashboard-autosave-indicator]')).toHaveAttribute(
+      'data-autosave-state',
+      'saving'
+    );
+
+    await page.reload();
+    releaseSave();
+
+    // Read back what the server holds, not what a page renders.
+    await expect.poll(async () => {
+      const response = await page.request.get(dayPath, {
+        headers: { Accept: 'application/json', ...apiOriginHeader(page) },
+      });
+      if (!response.ok()) {
+        return `HTTP ${response.status()}`;
+      }
+      return ((await response.json()) as { notes?: string }).notes;
+    }, { message: 'the edit saved before the reload', timeout: 10000 }).toBe(noteText);
+    expect(dialogs, 'leaving while the save is open asks first').toContain('beforeunload');
   });
 });
