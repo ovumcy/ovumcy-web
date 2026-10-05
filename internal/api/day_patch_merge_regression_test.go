@@ -225,6 +225,29 @@ func TestPatchDayFormBodyChangesOnlyThePostedFields(t *testing.T) {
 	}
 }
 
+// TestPatchDayFormNeverReadsAFieldFromTheQueryString: a form write's fields
+// come from the body alone. A field only the URL names is not part of the
+// write — it neither names a field nor supplies a value — and a URL value
+// never overrides the one the body posts.
+func TestPatchDayFormNeverReadsAFieldFromTheQueryString(t *testing.T) {
+	fixture := newPatchMergeFixture(t, "patch-merge-query@example.com")
+
+	request := httptest.NewRequest(http.MethodPatch, fixture.path+"?notes=from-the-url&is_period=false&mood=1", strings.NewReader("mood=4"))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("HX-Request", "true")
+	request.Header.Set("Cookie", fixture.authCookie)
+	response := mustAppResponse(t, fixture.app, request)
+	assertStatusCode(t, response, http.StatusOK)
+
+	saved := fixture.stored(t)
+	if saved.Mood != 4 {
+		t.Fatalf("expected the body's mood, not the URL's, got %d", saved.Mood)
+	}
+	if saved.Notes != "cycle start notes" || !saved.IsPeriod || !saved.CycleStart {
+		t.Fatalf("expected fields only the URL names left as stored, got notes=%q is_period=%v cycle_start=%v", saved.Notes, saved.IsPeriod, saved.CycleStart)
+	}
+}
+
 // TestPatchDayAcknowledgesThePeriodTipOnAStoredPeriodDay: the period tip is
 // acknowledged on the day as written. A partial write that leaves is_period
 // out of the body still saves a period day here, so its ack_period_tip counts.

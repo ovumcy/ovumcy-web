@@ -10,6 +10,9 @@
   rules as `PUT`. Two concurrent `PATCH` requests on the same day that name different fields both
   keep their field, on PostgreSQL as on SQLite, including when the day had no entry yet. An
   `ack_period_tip` sent with a `PATCH` that leaves `is_period` out counts when the saved day is a
-  period day. A field the account hides is never changed through a form body. `PUT` is unchanged
-  and stays a full replace; `docs/openapi.yaml` now warns about this and points clients that write
-  only some fields at `PATCH`. The bundled UI still saves with `PUT`.
+  period day. A field the account hides is never changed through a form body. A form-encoded day
+  write, `PUT` or `PATCH`, reads its fields from the request body only, never from the URL query
+  string. `PUT` stays a full replace; `docs/openapi.yaml` now warns about this and points clients
+  that write only some fields at `PATCH`. The bundled UI still saves with `PUT`. On PostgreSQL, a
+  `PUT`, a manual cycle-start mark or the period autofill that runs at the same time as another
+  write of the same day no longer reverts that write's fields, a field the account hides included.

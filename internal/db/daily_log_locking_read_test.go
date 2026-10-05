@@ -183,6 +183,158 @@ func TestConcurrentDayPatchesBothLandOnSQLite(t *testing.T) {
 	}
 }
 
+// lockingReadUsers is the settings source for the dry-run day writes: a
+// dry-run database returns no user row, and the writes below need settings
+// that let them run to their day saves.
+type lockingReadUsers struct{}
+
+func (lockingReadUsers) LoadSettingsByID(context.Context, uint) (models.User, error) {
+	return models.User{PeriodLength: 5, AutoPeriodFill: true}, nil
+}
+
+func (lockingReadUsers) UpdateByID(context.Context, uint, map[string]any) error { return nil }
+
+// captureDayWriteReads runs write against a PostgreSQL dry-run database whose
+// single-day reads each answer with a stored period day, so every write runs
+// on to its save, and returns the SQL of each single-day read it made.
+func captureDayWriteReads(t *testing.T, write func(*services.DayService) error) []string {
+	t.Helper()
+	database, err := gorm.Open(postgres.New(postgres.Config{
+		DSN: "host=127.0.0.1 port=1 user=ovumcy dbname=ovumcy sslmode=disable",
+	}), &gorm.Config{DryRun: true, DisableAutomaticPing: true, SkipDefaultTransaction: true})
+	if err != nil {
+		t.Fatalf("open dry-run postgres: %v", err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, err := database.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+	var reads []string
+	if err := database.Callback().Query().After("gorm:query").Register("test:capture_day_write_reads", func(tx *gorm.DB) {
+		row, single := tx.Statement.Dest.(*models.DailyLog)
+		if !single {
+			return
+		}
+		reads = append(reads, tx.Statement.SQL.String())
+		*row = models.DailyLog{ID: 1, UserID: 7, Date: time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC), IsPeriod: true}
+		tx.RowsAffected = 1
+	}); err != nil {
+		t.Fatalf("register capture callback: %v", err)
+	}
+	service := services.NewDayServiceWithTx(NewDailyLogRepository(database), lockingReadUsers{}, nil)
+	if err := write(service); err != nil {
+		t.Fatalf("dry-run day write: %v", err)
+	}
+	return reads
+}
+
+// TestEveryMergedDayReadLocksTheRowOnPostgres: each write that saves a day row
+// it read, or builds its values from one, reads that row with SELECT … FOR
+// UPDATE — the full write (PUT) and its hidden-field preservation, the manual
+// cycle-start mark, and the period autofill and its clearing. A plain read
+// there lets the write revert a concurrent write of the same day committed
+// after the read.
+func TestEveryMergedDayReadLocksTheRowOnPostgres(t *testing.T) {
+	day := time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC)
+	writes := map[string]func(*services.DayService) error{
+		"full day write": func(service *services.DayService) error {
+			_, err := service.UpsertDayEntryWithAutoFillAt(context.Background(), 7, day,
+				services.DayEntryInput{IsPeriod: true, Flow: models.FlowLight, Mood: 3, PreserveNotes: true}, day, time.UTC)
+			return err
+		},
+		"manual cycle-start mark": func(service *services.DayService) error {
+			return service.MarkCycleStartManually(context.Background(), 7, day, day, time.UTC, services.ManualCycleStartOptions{})
+		},
+		"period autofill": func(service *services.DayService) error {
+			return service.AutoFillFollowingPeriodDays(context.Background(), 7, day, 3, models.FlowLight, day.AddDate(0, 0, 5), time.UTC)
+		},
+		"autofill clearing": func(service *services.DayService) error {
+			return service.ClearAutoFilledPeriodNeighbors(context.Background(), 7, day, 3, models.FlowLight, time.UTC)
+		},
+	}
+	for name, write := range writes {
+		t.Run(name, func(t *testing.T) {
+			reads := captureDayWriteReads(t, write)
+			if len(reads) == 0 {
+				t.Fatal("expected the write to read the day it saves")
+			}
+			for _, read := range reads {
+				if !strings.HasSuffix(strings.TrimSpace(read), "FOR UPDATE") {
+					t.Fatalf("expected every day read this write merges onto to lock the row, got %q", read)
+				}
+			}
+		})
+	}
+}
+
+// TestPutAfterAConcurrentPatchKeepsTheHiddenFieldOnPostgres: a full write
+// (PUT) from an account that hides the notes field preserves the stored notes.
+// When a partial write (PATCH) changing those notes is still open as the PUT
+// reads, the PUT must wait and preserve the notes that PATCH leaves — a plain
+// read hands it the old notes, and its write reverts the PATCH.
+func TestPutAfterAConcurrentPatchKeepsTheHiddenFieldOnPostgres(t *testing.T) {
+	database := openPostgresForMigrationBootstrapTest(t, startPostgresTestConfig(t))
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	repos := NewRepositories(database)
+	userID := createDailyLogTestUser(t, database, "put-after-patch@example.com")
+	day := time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC)
+	if err := repos.DailyLogs.Create(ctx, &models.DailyLog{UserID: userID, Date: day, Mood: 1, Notes: "before"}); err != nil {
+		t.Fatalf("seed day: %v", err)
+	}
+
+	patchHeld := make(chan struct{})
+	releasePatch := make(chan struct{})
+	var completed atomic.Int32
+	runner := func(ctx context.Context, fn func(services.DayLogRepository) error) error {
+		return repos.DailyLogs.WithinTransaction(ctx, func(tx *DailyLogRepository) error {
+			if err := fn(tx); err != nil {
+				return err
+			}
+			if completed.Add(1) == 1 {
+				close(patchHeld)
+				<-releasePatch
+			}
+			return nil
+		})
+	}
+	service := services.NewDayServiceWithTx(repos.DailyLogs, repos.Users, runner)
+
+	var wait sync.WaitGroup
+	var patchErr, putErr error
+	wait.Go(func() {
+		_, patchErr = service.PatchDayEntryWithAutoFillAt(ctx, userID, day,
+			services.DayEntryInput{Notes: "after"}, services.DayEntryFields{Notes: true}, time.Now(), time.UTC)
+	})
+	select {
+	case <-patchHeld:
+	case <-ctx.Done():
+		t.Fatalf("partial write never reached its commit: %v", patchErr)
+	}
+	wait.Go(func() {
+		_, putErr = service.UpsertDayEntryWithAutoFillAt(ctx, userID, day,
+			services.DayEntryInput{Flow: models.FlowNone, Mood: 3, PreserveNotes: true}, time.Now(), time.UTC)
+	})
+	// Long enough for the full write to reach its read; with the lock it waits
+	// there for the partial write's commit.
+	time.Sleep(300 * time.Millisecond)
+	close(releasePatch)
+	wait.Wait()
+
+	if patchErr != nil || putErr != nil {
+		t.Fatalf("expected both writes to succeed, got patch: %v, put: %v", patchErr, putErr)
+	}
+	stored, found, err := repos.DailyLogs.FindByUserAndDayRange(ctx, userID, day, day.AddDate(0, 0, 1))
+	if err != nil || !found {
+		t.Fatalf("load day: found=%v err=%v", found, err)
+	}
+	if stored.Mood != 3 || stored.Notes != "after" {
+		t.Fatalf("expected the PUT's mood and the PATCH's hidden notes (mood=3, notes=%q), got mood=%d notes=%q: the full write reverted the partial one", "after", stored.Mood, stored.Notes)
+	}
+}
+
 // TestDailyLogCreateReportsADuplicateDayAsAUniqueConstraintError pins the
 // signal the partial write retries on: a second insert of the same owner's day
 // is a UniqueConstraintError, not an anonymous failure.

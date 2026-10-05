@@ -114,8 +114,10 @@ func TestPatchDayEntryRefusesWhenTheStoredDayCannotBeRead(t *testing.T) {
 
 // TestPatchDayEntryMergesOntoTheLockingRead pins which read the merge depends
 // on: the locking one, so a concurrent partial write of the same day waits for
-// this one instead of merging onto the same old row. A full write keeps its
-// plain read.
+// this one instead of merging onto the same old row. The write's own update
+// reads the day through the lock as well (the row is already held by then),
+// and a full write, which writes back the stored columns it does not state,
+// reads through it too.
 func TestPatchDayEntryMergesOntoTheLockingRead(t *testing.T) {
 	logs := newDayLogRepositoryStub()
 	service := NewDayService(logs, &dayUserRepositoryStub{})
@@ -126,16 +128,16 @@ func TestPatchDayEntryMergesOntoTheLockingRead(t *testing.T) {
 		DayEntryInput{Mood: 3}, DayEntryFields{Mood: true}, time.UTC); err != nil {
 		t.Fatalf("PatchDayEntryWithAutoFill() unexpected error: %v", err)
 	}
-	if logs.lockingReads != 1 {
-		t.Fatalf("expected the partial write to merge onto one locking read, got %d", logs.lockingReads)
+	if logs.lockingReads != 2 {
+		t.Fatalf("expected the partial write's merge and its update to read through the lock, got %d locking reads", logs.lockingReads)
 	}
 
 	if _, err := service.UpsertDayEntryWithAutoFill(context.Background(), 10, day,
 		DayEntryInput{IsPeriod: true, Flow: models.FlowLight}, time.UTC); err != nil {
 		t.Fatalf("UpsertDayEntryWithAutoFill() unexpected error: %v", err)
 	}
-	if logs.lockingReads != 1 {
-		t.Fatalf("expected the full write to keep its plain read, got %d locking reads", logs.lockingReads)
+	if logs.lockingReads != 3 {
+		t.Fatalf("expected the full write to read the day it updates through the lock, got %d locking reads in all", logs.lockingReads)
 	}
 }
 
@@ -193,7 +195,9 @@ func TestPatchDayEntryRetriesOntoTheDayAConcurrentWriteCreated(t *testing.T) {
 	if stored.Mood != 4 || stored.Notes != "mine" {
 		t.Fatalf("expected the stored day to hold both writes, got mood=%d notes=%q", stored.Mood, stored.Notes)
 	}
-	if logs.creates != 1 || logs.lockingReads != 2 {
+	// Each of the two transactions reads the day through the lock twice: the
+	// merge, then the write's own update-or-insert decision.
+	if logs.creates != 1 || logs.lockingReads != 4 {
 		t.Fatalf("expected one refused insert, then one re-read that updates, got creates=%d locking reads=%d", logs.creates, logs.lockingReads)
 	}
 }
