@@ -132,8 +132,12 @@
   function syncPregnancyTestField(field, recorded) {
     var remove = field.querySelector("[data-pregnancy-test-remove]");
     field.setAttribute("data-pregnancy-test-state", recorded ? "recorded" : "absent");
+    var empty = field.querySelector("[data-pregnancy-test-empty]");
     if (remove) {
       setNodeHidden(remove, !recorded);
+    }
+    if (empty) {
+      setNodeHidden(empty, recorded);
     }
   }
 
@@ -149,6 +153,12 @@
     }
     carrier.checked = true;
     syncPregnancyTestField(field, false);
+    // The button the owner just pressed is now hidden, and focus on a hidden
+    // control falls back to the page body. It lands on the first result: the
+    // control the removal hands the field back to.
+    if (radios.length > 0 && typeof radios[0].focus === "function") {
+      radios[0].focus();
+    }
     carrier.dispatchEvent(new Event("change", { bubbles: true }));
   }
 

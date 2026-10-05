@@ -255,6 +255,73 @@
     return endpoint;
   }
 
+  var dashboardStatusRefreshToken = 0;
+
+  function dashboardStateValue(state, name) {
+    var entries = state ? state.entries : [];
+    for (var index = 0; index < entries.length; index++) {
+      if (entries[index][0] === name) {
+        return entries[index][1];
+      }
+    }
+    return "";
+  }
+
+  // The status header (cycle day, next period, reminder banner, warnings) is
+  // computed server-side from the saved days, and a pregnancy-test result is
+  // one of the inputs: a positive result pauses the next-period estimate, and
+  // removing it resumes it. The journal itself updates as the owner clicks, so
+  // only the header is fetched again — the dashboard page already answers for
+  // it, and swapping just that block leaves the form (and focus) untouched.
+  // Newest request wins; a failed refresh leaves the header as it was, since the
+  // save itself already succeeded.
+  function refreshDashboardStatusHeader() {
+    var current = document.querySelector("[data-dashboard-shell]");
+    var headers;
+    var token;
+
+    if (!current || typeof window.fetch !== "function" || typeof window.DOMParser !== "function") {
+      return Promise.resolve(false);
+    }
+
+    dashboardStatusRefreshToken += 1;
+    token = dashboardStatusRefreshToken;
+    headers = dashboardRequestHeaders();
+    delete headers["Content-Type"];
+    delete headers["HX-Request"];
+    headers.Accept = "text/html";
+
+    return window.fetch(window.location.pathname + window.location.search, {
+      method: "GET",
+      credentials: "same-origin",
+      headers: headers
+    }).then(function (response) {
+      return response.ok ? response.text() : "";
+    }).then(function (text) {
+      var next;
+      var latest;
+      var revealed;
+
+      if (!text || dashboardStatusRefreshToken !== token) {
+        return false;
+      }
+      next = new window.DOMParser().parseFromString(text, "text/html").querySelector("[data-dashboard-shell]");
+      latest = document.querySelector("[data-dashboard-shell]");
+      if (!next || !latest) {
+        return false;
+      }
+      // The entrance animation belongs to the first paint, not to a refresh.
+      revealed = next.querySelectorAll(".reveal");
+      for (var index = 0; index < revealed.length; index++) {
+        revealed[index].classList.remove("reveal");
+      }
+      latest.replaceWith(document.importNode(next, true));
+      return true;
+    }).catch(function () {
+      return false;
+    });
+  }
+
   function runDashboardAutosave(form, mode) {
     var requestVersion;
     var endpoint;
@@ -334,6 +401,9 @@
       form.__ovumcyPersistedState = sentState;
       form.__ovumcyAutosaveFailed = false;
       setDashboardAutosaveIndicator(form, "saved");
+      if (previousState && dashboardStateValue(sentState, "pregnancy_test") !== dashboardStateValue(previousState, "pregnancy_test")) {
+        refreshDashboardStatusHeader();
+      }
       return true;
     }).catch(function () {
       failDashboardAutosave(form, "");

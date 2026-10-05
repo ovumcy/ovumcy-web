@@ -213,14 +213,15 @@
     {{template "pregnancy_test_option" (dict "Messages" .Messages "SelectedPregnancyTest" .SelectedPregnancyTest "Value" "positive" "Compact" .Compact)}}
   </div>
   <input type="radio" name="pregnancy_test" value="none" data-pregnancy-test-unset {{if not $recorded}}checked {{end}}hidden>
-  {{if $recorded}}
+  {{/* Both are always rendered and one is hidden: the field flips between
+       "recorded" and "absent" in the browser after an autosave, and a branch the
+       server rendered away would leave nothing to show. */}}
   <button
     type="button"
     class="btn-secondary btn-compact"
     data-pregnancy-test-remove
-    data-action-weight="secondary">{{t .Messages "dashboard.pregnancy_test.remove"}}</button>
-  {{else}}
-  <p class="journal-muted text-sm" data-pregnancy-test-empty>{{t .Messages "dashboard.pregnancy_test.absent"}}</p>
-  {{end}}
+    data-action-weight="secondary"
+    {{if not $recorded}}hidden{{end}}>{{t .Messages "dashboard.pregnancy_test.remove"}}</button>
+  <p class="journal-muted text-sm" data-pregnancy-test-empty{{if $recorded}} hidden{{end}}>{{t .Messages "dashboard.pregnancy_test.absent"}}</p>
 </div>
 {{end}}
