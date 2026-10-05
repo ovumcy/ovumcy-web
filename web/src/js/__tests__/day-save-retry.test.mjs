@@ -401,6 +401,61 @@ test("an htmx-reported failure on the dashboard form renders the same notice", a
   }
 });
 
+// An explicit Save goes out on htmx's XMLHttpRequest, which the browser cancels
+// with the page. Leaving while it is open hands the very body that request
+// carries to a keepalive request — once — and asks before going.
+test("a calendar save still on the wire is re-sent with keepalive on unload", async () => {
+  const calls = [];
+  const dom = await loadDOMWithScript(APP_BUNDLE, {
+    html: PAGE,
+    beforeRun: (window) => {
+      window.fetch = (url, init) => {
+        calls.push({ url: String(url), init: init || {} });
+        return Promise.resolve({ ok: true, status: 200, headers: { get: () => null } });
+      };
+    },
+  });
+  const leave = () => {
+    const event = new dom.window.Event("beforeunload", { cancelable: true });
+    dom.window.dispatchEvent(event);
+    return event.defaultPrevented;
+  };
+  try {
+    const form = dayEditorForm(dom.window);
+    fireOnForm(dom.window, "htmx:beforeSend", {
+      requestConfig: {
+        elt: form,
+        verb: "put",
+        path: "/api/v1/days/2026-08-11",
+        headers: { "HX-Request": "true", "X-CSRF-Token": "unit-test-token" },
+        formData: new dom.window.FormData(form),
+      },
+    });
+    // What the request carries is what goes out again, not a later edit.
+    form.querySelector("#calendar-notes").value = "typed after Save";
+
+    assert.equal(leave(), true, "leaving while the save is open asks first");
+    assert.equal(calls.length, 1, "the open save is re-sent on a request that outlives the page");
+    assert.equal(calls[0].url, "/api/v1/days/2026-08-11");
+    assert.equal(calls[0].init.method, "PUT");
+    assert.equal(calls[0].init.keepalive, true);
+    assert.equal(calls[0].init.headers["X-CSRF-Token"], "unit-test-token");
+    assert.ok(
+      String(calls[0].init.body).includes(new URLSearchParams([["notes", TYPED_NOTE]]).toString()),
+      "the re-sent body is the one the open request carries"
+    );
+
+    assert.equal(leave(), true);
+    assert.equal(calls.length, 1, "a cancelled navigation does not send the same save twice");
+
+    fireOnForm(dom.window, "htmx:afterRequest", { xhr: {} });
+    assert.equal(leave(), false, "a finished save leaves nothing to re-send or warn about");
+    assert.equal(calls.length, 1);
+  } finally {
+    dom.window.close();
+  }
+});
+
 test("a failed save writes no draft to client storage", async () => {
   // The hard boundary: the form surviving in the DOM is the whole mechanism.
   // If a future "helpful" draft cache lands, this test is the one that says no.

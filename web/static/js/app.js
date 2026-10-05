@@ -3825,7 +3825,7 @@
     return endpoint;
   }
 
-  function runDashboardAutosave(form, keepalive, mode) {
+  function runDashboardAutosave(form, mode) {
     var requestVersion;
     var endpoint;
     var url;
@@ -3867,10 +3867,16 @@
     // flush has to know whether the open request already carries the newest
     // body or an older one.
     form.__ovumcyAutosaveInFlightVersion = requestVersion;
+    // Every save rides a keepalive request, not only the unload flush: a save
+    // the debounce already put on the wire is one the owner has seen start, and
+    // a reload or a closed tab must not cancel it. One request carries the
+    // edit; nothing is re-sent behind it. The body stays well inside the
+    // browser's 64 KiB keepalive budget — the note is capped at 2000
+    // characters, under 18 KiB URL-encoded.
     form.__ovumcyAutosaveInFlight = window.fetch(url, {
       method: method,
       credentials: "same-origin",
-      keepalive: !!keepalive,
+      keepalive: true,
       headers: headers,
       body: body.toString()
     }).then(function (response) {
@@ -3907,7 +3913,7 @@
       form.__ovumcyAutosaveInFlightVersion = 0;
       if (form.dataset.autosaveDirty === "true" && !form.__ovumcyAutosaveFailed) {
         form.__ovumcyAutosaveTimer = window.setTimeout(function () {
-          runDashboardAutosave(form, false);
+          runDashboardAutosave(form);
         }, 2000);
       }
     });
@@ -3940,7 +3946,7 @@
       window.clearTimeout(form.__ovumcyAutosaveTimer);
     }
     form.__ovumcyAutosaveTimer = window.setTimeout(function () {
-      runDashboardAutosave(form, false);
+      runDashboardAutosave(form);
     }, 2000);
   }
 
@@ -3992,7 +3998,7 @@
     clearDashboardAutosaveTimers(form);
     form.__ovumcyAutosaveFailed = false;
     form.dataset.autosaveDirty = "true";
-    return runDashboardAutosave(form, false);
+    return runDashboardAutosave(form);
   }
 
   window.__ovumcyRetryDashboardAutosave = retryDashboardAutosave;
@@ -4010,6 +4016,8 @@
     form.__ovumcyAutosaveInFlight = window.fetch(url, {
       method: "DELETE",
       credentials: "same-origin",
+      // Started is started: like every autosave, the undo outlives the page.
+      keepalive: true,
       headers: dashboardRequestHeaders()
     }).then(function (response) {
       if (!response.ok) {
@@ -4070,7 +4078,7 @@
     form.__ovumcyAutosaveFailed = false;
     // Same path, same status surface: an undo that fails is reported exactly
     // like a save that fails.
-    return runDashboardAutosave(form, false, "undo");
+    return runDashboardAutosave(form, "undo");
   }
 
   // The page going away is the last chance the newest journal value gets, and
@@ -4093,12 +4101,13 @@
       return;
     }
     if (!form.__ovumcyAutosaveInFlight) {
-      runDashboardAutosave(form, true);
+      runDashboardAutosave(form);
       return;
     }
 
     version = form.__ovumcyAutosaveVersion || 0;
-    // The open request already carries this edit.
+    // The open request already carries this edit, and it is a keepalive one:
+    // it outlives the page on its own.
     if (version === (form.__ovumcyAutosaveInFlightVersion || 0)) {
       return;
     }
@@ -4133,10 +4142,104 @@
       document.body.dataset.dashboardAutosaveBeforeUnloadBound = "1";
     }
 
-    window.addEventListener("beforeunload", function () {
+    window.addEventListener("beforeunload", function (event) {
       var forms = document.querySelectorAll("[data-dashboard-save-form]");
+      var saving = false;
       for (var index = 0; index < forms.length; index++) {
+        // Read before the flush: a save the page was already waiting on is the
+        // one the owner saw start, and the flush may open one of its own.
+        if (forms[index].__ovumcyAutosaveInFlight) {
+          saving = true;
+        }
         flushDashboardAutosaveBeforeUnload(forms[index]);
+      }
+      if (saving) {
+        warnBeforeLeavingDuringSave(event);
+      }
+    });
+  }
+
+  // The keepalive request is what keeps the edit; the browser's own leave
+  // prompt is the second rail, for whatever the network does to a request
+  // that has to outlive its page.
+  function warnBeforeLeavingDuringSave(event) {
+    event.preventDefault();
+    event.returnValue = "";
+  }
+
+  // An explicit Save goes out through htmx on an XMLHttpRequest, which the
+  // browser cancels with the page. The body that request carries is noted
+  // when it is sent, so the unload path can hand that same body — not
+  // whatever the form holds by then — to a keepalive request that outlives
+  // the page. The day upsert is a full-form, idempotent PUT: should the
+  // original also land, the second write changes nothing.
+  function rememberDaySaveInFlight(event) {
+    var form = dayEditorFormFromEvent(event);
+    var config = event && event.detail ? event.detail.requestConfig : null;
+    var verb;
+
+    if (!form || !config || config.elt !== form) {
+      return;
+    }
+    verb = String(config.verb || "").toUpperCase();
+    if (!verb || verb === "GET") {
+      return;
+    }
+    form.__ovumcyDaySaveInFlight = {
+      method: verb,
+      url: String(config.path || ""),
+      headers: Object.assign({}, config.headers || {}),
+      body: new URLSearchParams(config.formData).toString(),
+      resent: false
+    };
+  }
+
+  function forgetDaySaveInFlight(event) {
+    var form = dayEditorFormFromEvent(event);
+    if (form) {
+      form.__ovumcyDaySaveInFlight = null;
+    }
+  }
+
+  function resendDaySaveBeforeUnload(form) {
+    var pending = form.__ovumcyDaySaveInFlight;
+    if (!pending) {
+      return false;
+    }
+    // beforeunload fires again on every cancelled navigation: send once.
+    if (!pending.resent) {
+      pending.resent = true;
+      window.fetch(pending.url, {
+        method: pending.method,
+        credentials: "same-origin",
+        keepalive: true,
+        headers: pending.headers,
+        body: pending.body
+      }).catch(function () {
+        // The page is leaving; there is no surface left to report to.
+      });
+    }
+    return true;
+  }
+
+  function bindDaySaveUnloadGuard() {
+    if (!document.body || document.body.dataset.daySaveUnloadGuardBound === "1") {
+      return;
+    }
+    document.body.dataset.daySaveUnloadGuardBound = "1";
+
+    document.body.addEventListener("htmx:beforeSend", rememberDaySaveInFlight);
+    document.body.addEventListener("htmx:afterRequest", forgetDaySaveInFlight);
+    window.addEventListener("beforeunload", function (event) {
+      var forms = document.querySelectorAll(DAY_SAVE_FORM_SELECTOR);
+      var saving = false;
+      for (var index = 0; index < forms.length; index++) {
+        if (resendDaySaveBeforeUnload(forms[index])) {
+          saving = true;
+        }
+      }
+      if (saving) {
+        warnBeforeLeavingDuringSave(event);
       }
     });
   }
@@ -4252,6 +4355,8 @@
       revealOnceTips(form);
       syncDayEditorForm(form);
     }
+
+    bindDaySaveUnloadGuard();
   }
 
   function syncSettingsCycleForm(root) {
