@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"strings"
 	"time"
 
@@ -14,8 +15,8 @@ import (
 // settings forms for reminders, interface, tracking, symptoms, the account,
 // the second factor, and the erasure and egress sections. A refusal there
 // would otherwise paint the JSON envelope as the page, so apiError answers the
-// localized status fragment with a link back instead — same status, same key.
-// No cookie rides on it, the flash included. The one refusal that is not
+// localized message with a link back instead, as a page in the shared layout —
+// same status, same key. No cookie rides on it, the flash included. The one refusal that is not
 // answered as that page is a request with no session (isSignedOutRefusal): it
 // is sent to /login with the sign-in notice in the flash.
 //
@@ -66,6 +67,47 @@ func plainPageFormBackPath(c fiber.Ctx) (string, bool) {
 		return dayFormBackPath(c, rest), true
 	}
 	return "", false
+}
+
+// pageFormRefusalTemplate is the page sendPageFormRefusalPage renders into the
+// shared layout.
+const pageFormRefusalTemplate = "page_form_refusal"
+
+// sendPageFormRefusalPage answers a page-form refusal as a full page: the shared
+// layout, with <html lang> set to the request's language, around the localized
+// message, its stable key and the link back to `back`. Status and key come from
+// spec, exactly as on the bare fragment it replaces.
+//
+// The page does not need a session and shows nothing of one: it renders with no
+// CurrentUser, so the layout draws its signed-out header — no navigation, no
+// account chip, no timezone script — whichever request reached here. The CSRF
+// token the layout reads is the one the middleware already put in the context,
+// if any; rendering mints none and sets no cookie. The rendered address is the
+// back path, never the request's own: the request's path is the API route, which
+// the language switch would send the browser to and the privacy link carry.
+//
+// Should the page fail to render, the bare fragment carries the same refusal
+// rather than a template error mapped back into this branch.
+func (handler *Handler) sendPageFormRefusalPage(c fiber.Ctx, spec APIErrorSpec, back string) error {
+	tmpl, ok := handler.templates[pageFormRefusalTemplate]
+	if !ok {
+		return sendStatusFragmentWithBackLink(c, spec, back)
+	}
+	message, flashKey := localizedStatusError(c, spec)
+	payload := handler.withTemplateDefaults(c, fiber.Map{
+		"Title":          localizedPageTitle(currentMessages(c), "app.name", "Ovumcy"),
+		"CurrentPath":    back,
+		"RefusalMessage": message,
+		"RefusalKey":     flashKey,
+		"BackPath":       back,
+	})
+	var output bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&output, "base", payload); err != nil {
+		return sendStatusFragmentWithBackLink(c, spec, back)
+	}
+	c.Status(spec.Status)
+	c.Type("html", "utf-8")
+	return c.Send(output.Bytes())
 }
 
 // dayFormBackPath is the page a day form was posted from: the calendar day when

@@ -16,6 +16,7 @@ var pageTemplates = []string{
 	"auth_2fa",
 	"not_found",
 	"privacy",
+	pageFormRefusalTemplate,
 }
 
 var partialTemplateFiles = []string{

@@ -1,0 +1,12 @@
+{{define "content"}}
+{{/* The refusal of a form posted without JavaScript: the localized message, its
+     stable key, and the one way back to the page hosting the form. Rendered with
+     no CurrentUser whatever the session, so the layout around it shows the
+     signed-out header and nothing of the account. */}}
+<section class="mx-auto max-w-3xl" data-page-form-refusal>
+  <div class="card p-7 sm:p-10 space-y-5">
+    <div class="status-error" data-flash-key="{{.RefusalKey}}" data-flash-status="error">{{.RefusalMessage}}</div>
+    <p><a href="{{.BackPath}}" class="btn-secondary">{{t .Messages "common.back"}}</a></p>
+  </div>
+</section>
+{{end}}

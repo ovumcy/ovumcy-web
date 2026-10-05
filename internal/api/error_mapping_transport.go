@@ -49,9 +49,10 @@ import (
 // arms below like every other route.
 //
 // A plain HTML POST of one of the in-app forms (plainPageFormBackPath) answers
-// a refusal as a page with a link back to the form, except when the session is
-// gone: then it is a 303 to /login with the sign-in notice in the flash, the
-// way a page navigation without a session already lands there.
+// a refusal as a full page in the shared layout, with a link back to the form
+// (sendPageFormRefusalPage), except when the session is gone: then it is a 303
+// to /login with the sign-in notice in the flash, the way a page navigation
+// without a session already lands there.
 //
 // Both markup arms resolve the request's locale catalogue via
 // ensureRequestMessages before rendering: a mapped rejection can be produced
@@ -79,7 +80,7 @@ func (handler *Handler) apiError(c fiber.Ctx, spec APIErrorSpec) error {
 			return handler.redirectSignedOutRefusal(c, spec)
 		}
 		handler.ensureRequestMessages(c)
-		return sendStatusFragmentWithBackLink(c, spec, back)
+		return handler.sendPageFormRefusalPage(c, spec, back)
 	}
 	if responseFormat(c) == httpx.ResponseFormatHTMX {
 		handler.ensureRequestMessages(c)
@@ -119,8 +120,15 @@ func apiErrorEnvelope(spec APIErrorSpec) fiber.Map {
 // fragment: the localized message plus the stable key next to it, so a test or
 // a Playwright spec asserts the key and never the copy.
 func localizedStatusErrorMarkup(c fiber.Ctx, spec APIErrorSpec) string {
+	return httpx.StatusErrorMarkup(localizedStatusError(c, spec))
+}
+
+// localizedStatusError resolves the text and the stable key the status-error
+// markup shows for spec, whichever carrier renders it: the fragment above or
+// the page-form refusal page.
+func localizedStatusError(c fiber.Ctx, spec APIErrorSpec) (message string, flashKey string) {
 	rendered := spec.Key
-	flashKey := spec.Key
+	flashKey = spec.Key
 	if key := services.AuthErrorTranslationKey(spec.Key); key != "" {
 		flashKey = key
 		if localized, translated := lookupMessage(currentMessages(c), key); translated {
@@ -129,7 +137,7 @@ func localizedStatusErrorMarkup(c fiber.Ctx, spec APIErrorSpec) string {
 	} else if localized, translated := lookupMessage(currentMessages(c), spec.Key); translated {
 		rendered = localized
 	}
-	return httpx.StatusErrorMarkup(rendered, flashKey)
+	return rendered, flashKey
 }
 
 // respondPageFormStatusFragment answers one mapped spec as the shared localized
