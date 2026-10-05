@@ -473,7 +473,7 @@ func TestEveryDayAndCycleRefusalHasLocalizedCopyInEveryLocale(t *testing.T) {
 			return true
 		})
 	}
-	for _, root := range []string{"UpsertDay", "resolveUpsertDayRequest", "DeleteDay", "UpdateCycleSettings", "updateUsageGoalOnly"} {
+	for _, root := range []string{"UpsertDay", "PatchDay", "resolveUpsertDayRequest", "DeleteDay", "UpdateCycleSettings", "updateUsageGoalOnly"} {
 		fn, ok := handlerMethods[root]
 		if !ok {
 			t.Fatalf("handler method %s not found: the walk lost its root", root)

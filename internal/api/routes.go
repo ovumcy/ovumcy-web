@@ -128,6 +128,7 @@ func registerV1APIRoutes(app *fiber.App, handler *Handler) {
 	days.Head("/:date", handler.OwnerOnly, handler.CheckDayExists)
 	days.Get("/:date", handler.OwnerOnly, handler.GetDay)
 	days.Put("/:date", handler.OwnerOnly, handler.UpsertDay)
+	days.Patch("/:date", handler.OwnerOnly, handler.PatchDay)
 	days.Delete("/:date", handler.OwnerOnly, handler.DeleteDay)
 	days.Post("/:date/cycle-start", handler.OwnerOnly, handler.MarkCycleStart)
 

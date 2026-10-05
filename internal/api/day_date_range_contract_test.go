@@ -86,6 +86,7 @@ func TestDayRoutesRefuseAnOutOfRangeDate(t *testing.T) {
 		"HEAD /api/v1/days/:date":             "",
 		"GET /api/v1/days/:date":              "",
 		"PUT /api/v1/days/:date":              `{}`,
+		"PATCH /api/v1/days/:date":            `{}`,
 		"DELETE /api/v1/days/:date":           "",
 		"POST /api/v1/days/:date/cycle-start": "",
 		"GET /calendar/day/:date":             "",

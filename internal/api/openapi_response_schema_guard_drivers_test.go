@@ -223,6 +223,13 @@ func openAPIResponseSchemaGuardTable() []openAPIResponseSchemaGuardEntry {
 				"symptom_ids": []uint{symptomID},
 			})
 		}},
+		{operation: "PATCH /api/v1/days/{date}", drive: func(t *testing.T) (int, []byte) {
+			owner := newSchemaGuardOwner(t)
+			owner.seedDay(t, schemaGuardDay(2))
+			return owner.send(t, http.MethodPatch, "/api/v1/days/"+schemaGuardDay(2), map[string]any{
+				"mood": 3,
+			})
+		}},
 		{operation: "DELETE /api/v1/days/{date}", drive: func(t *testing.T) (int, []byte) {
 			// Without `source` a programmatic delete answers 204 and no body;
 			// the JSON arm is the browser selector's.
