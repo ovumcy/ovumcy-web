@@ -18,8 +18,18 @@ import (
 func (handler *Handler) AuthRequired(c fiber.Ctx) error {
 	user, err := handler.authenticateRequest(c)
 	if err != nil {
+		// A fault is not a refusal: the session may be live, so neither the
+		// sign-in redirect nor the "not signed in" notice may answer it.
+		if errors.Is(err, errAuthSessionUnresolved) {
+			return handler.respondGlobalMappedError(c, transportErrorSpecForStatus(fiber.StatusInternalServerError))
+		}
 		if errors.Is(err, services.ErrAuthUnsupportedRole) {
 			spec := authWebSignInUnavailableErrorSpec()
+			// The session cookie is already cleared, so the refusal page's link
+			// back to the form would only bounce off this gate with no notice.
+			if _, ok := plainPageFormBackPath(c); ok {
+				return handler.redirectSignedOutRefusal(c, spec)
+			}
 			if strings.HasPrefix(httpx.RoutingNormalizedPath(c.Path()), "/api/") || acceptsJSON(c) {
 				return handler.respondGlobalMappedError(c, spec)
 			}
