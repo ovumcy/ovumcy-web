@@ -72,6 +72,19 @@ func TestLateCycleNoticeStateMatrix(t *testing.T) {
 			expectDays: 5,
 		},
 		{
+			// Stale, not overdue, past the recorded maximum: the excess branch is
+			// reachable before the gate, beside a next-period estimate still on the
+			// page, so it states the measured excess and claims no pause
+			// (TestLateCycleNoticePastTheMaximumBeforeTheGateClaimsNoPause pins the tier).
+			name:       "stale, not overdue, past the recorded maximum states the excess and claims no pause",
+			user:       &models.User{Role: models.RoleOwner, CycleLength: 28},
+			stats:      lateCycleStats(today, 32, 3, 28, 28, 30),
+			expectKey:  LateCycleBeyondRangeKey,
+			expectTone: LateCycleToneWarning,
+			expectForm: LateCycleFormCount,
+			expectDays: 2,
+		},
+		{
 			name:       "first day past the expected range on a thin history claims no range",
 			user:       &models.User{Role: models.RoleOwner, CycleLength: 28},
 			stats:      lateCycleStats(today, 29, 1, 28, 28, 28),
@@ -200,6 +213,31 @@ func TestLateCycleNoticeStateMatrix(t *testing.T) {
 				t.Errorf("expected %d day(s) of excess, got %d", testCase.expectDays, notice.Days)
 			}
 		})
+	}
+}
+
+// TestLateCycleNoticePastTheMaximumBeforeTheGateClaimsNoPause pins the tier
+// of the matrix row above: the cycle is out of date and past its recorded
+// maximum, the overdue gate has not fired, and the next-period estimate is
+// still published. The notice there may not use either paused wording — the
+// whole-projection one would contradict the date on the page.
+func TestLateCycleNoticePastTheMaximumBeforeTheGateClaimsNoPause(t *testing.T) {
+	today := time.Date(2026, 3, 20, 0, 0, 0, 0, time.UTC)
+	user := &models.User{Role: models.RoleOwner, CycleLength: 28}
+	stats := lateCycleStats(today, 32, 3, 28, 28, 30)
+
+	cycleContext := BuildDashboardCycleContext(user, nil, stats, today, time.UTC)
+	if !cycleContext.CycleDataStale || cycleContext.CycleDayWarning || PredictionsSuppressed(user, stats) || !cycleContext.FertilitySuppressed {
+		t.Fatalf("fixture: stale=%v overdue=%v predictions suppressed=%v fertility suppressed=%v; want out of date, not overdue, next period published, fertility withheld",
+			cycleContext.CycleDataStale, cycleContext.CycleDayWarning, PredictionsSuppressed(user, stats), cycleContext.FertilitySuppressed)
+	}
+	if stats.CurrentCycleDay <= stats.MaxCycleLength {
+		t.Fatalf("fixture: cycle day %d must be past the recorded maximum %d", stats.CurrentCycleDay, stats.MaxCycleLength)
+	}
+
+	notice := cycleContext.LateCycle
+	if !notice.Visible || notice.MessageKey == LateCyclePredictionsPausedKey {
+		t.Fatalf("notice visible=%v key %q: before the overdue gate the next-period estimate is on the page, so the notice may not say predictions are paused", notice.Visible, notice.MessageKey)
 	}
 }
 

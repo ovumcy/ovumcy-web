@@ -71,6 +71,86 @@ func TestCalendarAndStatsRenderTheLateCycleNoticeFromTheFirstOutOfDateDay(t *tes
 	}
 }
 
+// collectHTMLNodesWithAttr returns every element under root carrying attr.
+func collectHTMLNodesWithAttr(root *html.Node, attr string) []*html.Node {
+	var nodes []*html.Node
+	var walk func(*html.Node)
+	walk = func(node *html.Node) {
+		if node.Type == html.ElementNode {
+			for _, candidate := range node.Attr {
+				if candidate.Key == attr {
+					nodes = append(nodes, node)
+					break
+				}
+			}
+		}
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			walk(child)
+		}
+	}
+	walk(root)
+	return nodes
+}
+
+func htmlNodeIsInside(node *html.Node, ancestor *html.Node) bool {
+	for parent := node.Parent; parent != nil; parent = parent.Parent {
+		if parent == ancestor {
+			return true
+		}
+	}
+	return false
+}
+
+// TestStatsShowsOneLongCycleCardWhileTheRunningCycleIsLate: an account whose
+// recent completed cycles all ran past 45 days carries the stats page's
+// long-pattern note; once the running cycle is late the shared late-cycle
+// notice stands too. The page shows ONE long-cycle card in that state — the
+// late notice leading it, the pattern sentence kept inside the same card —
+// in the out-of-date band and once overdue alike, and the standalone pattern
+// card again only while the cycle is not late.
+func TestStatsShowsOneLongCycleCardWhileTheRunningCycleIsLate(t *testing.T) {
+	for _, testCase := range []struct {
+		name     string
+		cycleDay int
+		late     bool
+	}{
+		{name: "inside the reference length", cycleDay: 50, late: false},
+		{name: "out of date", cycleDay: 52, late: true},
+		{name: "overdue", cycleDay: 60, late: true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
+			user, authCookie, today := newStatsOverviewOwner(t, app, database, "stats-one-long-cycle-card@example.com")
+			current := testCase.cycleDay - 1
+			seedStatsOverviewCycleHistory(t, database, user, today, current+150, current+100, current+50, current)
+			updateStatsOverviewUser(t, database, user, map[string]any{
+				"last_period_start": services.AddCalendarDays(today, -current, time.UTC),
+			})
+
+			document := fetchLateCycleNoticePage(t, app, authCookie, "/stats")
+			lateNotices := collectHTMLNodesWithAttr(document, "data-late-cycle-key")
+			patternNotes := collectHTMLNodesWithAttr(document, "data-stats-long-cycle-notice")
+			lateCards := collectHTMLNodesWithAttr(document, "data-stats-late-cycle")
+			if len(patternNotes) != 1 {
+				t.Fatalf("cycle day %d: %d long-pattern notes, want exactly 1 — the fixture's three 50-day cycles carry it in every state", testCase.cycleDay, len(patternNotes))
+			}
+
+			if !testCase.late {
+				if len(lateNotices) != 0 || len(lateCards) != 0 {
+					t.Fatalf("cycle day %d: %d late notices in %d cards before the cycle is late", testCase.cycleDay, len(lateNotices), len(lateCards))
+				}
+				return
+			}
+			if len(lateCards) != 1 || len(lateNotices) != 1 {
+				t.Fatalf("cycle day %d: %d late-cycle cards holding %d late notices, want one of each", testCase.cycleDay, len(lateCards), len(lateNotices))
+			}
+			if !htmlNodeIsInside(lateNotices[0], lateCards[0]) || !htmlNodeIsInside(patternNotes[0], lateCards[0]) {
+				t.Fatalf("cycle day %d: the late notice and the long-pattern note must share one card, not stand as two long-cycle messages", testCase.cycleDay)
+			}
+		})
+	}
+}
+
 // TestCalendarAndStatsRenderNoLateCycleNoticeOnTheReferenceDay is the boundary
 // below it: on day L the running cycle has not passed its reference length,
 // nothing is withheld, and neither page says the cycle is late.

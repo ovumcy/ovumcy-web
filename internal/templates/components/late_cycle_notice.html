@@ -2,7 +2,9 @@
 {{/* The dashboard's late-cycle notice on the calendar and stats pages: the same
      LateCycleNotice the dashboard renders, read off the one cycle context, so a
      withheld fertile window is explained in the same words on every owner page.
-     Called with the page data; reads .LateCycle, .Messages and .Lang. */}}
+     Called with the page data; reads .LateCycle, .Messages and .Lang. Both call
+     sites gate on .LateCycle.Visible around their own layout wrapper in the same
+     shape; the gate below keeps a bare call from rendering an empty notice. */}}
 {{if .LateCycle.Visible}}
 <p
   class="text-sm {{if eq .LateCycle.Tone "warning"}}warning-amber{{else}}journal-muted{{end}}"

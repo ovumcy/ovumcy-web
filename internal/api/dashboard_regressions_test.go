@@ -80,16 +80,18 @@ func TestDashboardAndCalendarExposeAccessibleBBTInputs(t *testing.T) {
 	}
 }
 
-func TestDashboardStaleCycleWarningIncludesSettingsCTAAndEstimatedPhase(t *testing.T) {
+// TestDashboardStaleBandKeepsTheUpdateCycleDataCTABesideTheLateNotice: from
+// L+1 the late-cycle notice stands in the warnings slot the amber stale hint
+// used to hold, so the hint never renders beside it. Its call to action — bring
+// the last period start up to date — must survive the swap: the settings link
+// and the log-a-cycle-start action stand beside the notice.
+func TestDashboardStaleBandKeepsTheUpdateCycleDataCTABesideTheLateNotice(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "dashboard-stale-ui@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
 	// Cycle day 31 against a 28-day reference: past the reference (stale) but
-	// inside the seven-day grace window, so the late-cycle notice — which now
-	// outranks the stale hint, see
-	// TestDashboardLateCycleNoticeOutranksTheStaleHintAndClaimsNoInventedRange —
-	// stays silent and this test still observes the state it names.
+	// inside the seven-day grace window — out of date, not overdue.
 	lastPeriodStart := services.DateAtLocation(time.Now().UTC(), time.UTC).AddDate(0, 0, -30)
 	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
 		"cycle_length":      28,
@@ -119,14 +121,23 @@ func TestDashboardStaleCycleWarningIncludesSettingsCTAAndEstimatedPhase(t *testi
 	if warnings == nil {
 		t.Fatal("expected dashboard cycle warning container when baseline is stale")
 	}
-	if dashboardElementByDataAttr(warnings, "data-dashboard-stale-warning") == nil {
-		t.Fatal("expected stale cycle warning element inside the warning container")
+	if dashboardElementByDataAttr(warnings, "data-dashboard-cycle-day-warning") == nil {
+		t.Fatal("expected the late-cycle notice inside the warning container from L+1")
+	}
+	if dashboardElementByDataAttr(warnings, "data-dashboard-stale-warning") != nil {
+		t.Fatal("expected the late-cycle notice to stand in the stale hint's slot, not beside it")
 	}
 	settingsCTA := htmlFindElement(warnings, func(node *html.Node) bool {
 		return node.Type == html.ElementNode && node.Data == "a" && htmlAttr(node, "href") == "/settings#settings-cycle"
 	})
 	if settingsCTA == nil {
-		t.Fatal("expected stale cycle warning to include direct settings CTA")
+		t.Fatal("expected the stale band to keep the direct settings CTA beside the late-cycle notice")
+	}
+	cycleStartAction := htmlFindElement(warnings, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlAttr(node, "data-late-cycle-action") == "cycle-start"
+	})
+	if cycleStartAction == nil {
+		t.Fatal("expected the stale band to offer logging the new cycle start beside the late-cycle notice")
 	}
 
 	header := dashboardElementByDataAttr(document, "data-dashboard-status-header")

@@ -11,4 +11,6 @@
   `reasons` enum of the overview response; a client that branches on the reasons should accept it.
   An ovulation day the owner's own temperatures confirmed is still shown. The plain-words late-cycle
   notice now appears from that same first day instead of a week later, and it is shown on the
-  calendar and stats pages as well as on the dashboard.
+  calendar and stats pages as well as on the dashboard. On the stats page it shares one card with
+  the existing note about recent cycles longer than 45 days instead of standing beside it, and the
+  `cycle_data_stale` flag and reason now always change on the same day.

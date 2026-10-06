@@ -477,10 +477,12 @@ func DashboardCycleDataLooksStale(lastPeriodStart time.Time, today time.Time, re
 }
 
 // DashboardCycleDayLooksStale is the one comparison behind the out-of-date
-// verdict: a cycle day past the reference length, with no grace. Both the
-// anchor-and-today form above and the fertility signal
-// (DashboardCyclePastReferenceLength) read it, so the banner and the withheld
-// fertility half cannot start on different days.
+// verdict: a cycle day past the reference length, with no grace. The page
+// verdict and the fertility signal are one function
+// (dashboardCycleDataStale returns DashboardCyclePastReferenceLength), so the
+// banner and the withheld fertility half cannot start on different days; the
+// anchor-and-today form above answers the same comparison for a caller holding
+// only a start date.
 func DashboardCycleDayLooksStale(currentDay int, referenceLength int) bool {
 	if currentDay <= 0 || referenceLength <= 0 {
 		return false
@@ -520,11 +522,17 @@ func DashboardCycleStaleAnchor(user *models.User, stats CycleStats, today time.T
 // never measures a longer length than this one (dashboardCycleOverdueLength), so
 // the days on which the banner stands beside a published date number seven at
 // most, as they always did.
-func dashboardCycleDataStale(user *models.User, stats CycleStats, today time.Time, location *time.Location) bool {
-	if stats.PregnancyPaused || DashboardPredictionDisabled(user) {
-		return false
-	}
-	return DashboardCycleDataLooksStale(DashboardCycleStaleAnchor(user, stats, today, location), today, DashboardCycleReferenceLength(user, stats))
+//
+// It IS the fertility signal (DashboardCyclePastReferenceLength), read off the
+// cycle day the stats carry — never re-measured from an anchor and a today of
+// its own. Measured separately, the two parted wherever the anchor and the
+// stats did: stats with no LastPeriodStart fell back to the user's stored start
+// and called the data out of date while the cycle day (0) withheld nothing, and
+// stats built on one day read against another today raised the flag a day
+// before the reason and the late notice. One payload then published
+// `cycle_data_stale` beside a fertility half it had not withheld.
+func dashboardCycleDataStale(user *models.User, stats CycleStats) bool {
+	return DashboardCyclePastReferenceLength(user, stats)
 }
 
 // dashboardPredictionRegularSpan returns the half-width, in days, of the
@@ -724,7 +732,7 @@ func BuildDashboardCycleContext(user *models.User, logs []models.DailyLog, stats
 	// owner's own temperatures named, not a projection, and it is still named
 	// beside the paused estimate (ConfirmedOvulationWithheld).
 	cycleDayWarning := DashboardCycleOverdue(user, stats)
-	cycleDataStale := dashboardCycleDataStale(user, stats, today, location)
+	cycleDataStale := dashboardCycleDataStale(user, stats)
 	display := buildDashboardPredictionDisplay(user, logs, stats, today, location)
 
 	return DashboardCycleContext{
