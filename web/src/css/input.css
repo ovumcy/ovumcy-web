@@ -1032,19 +1032,18 @@
      track/card instead of a phase fill. In the dark theme that track is
      itself near-black, where a black stripe measured 1.20-1.22:1 (A11Y-2) —
      overridden below for exactly that combination.
-     Every other combination keeps the black stripe. Two are measured by the
-     dark-mode e2e spec (menstrual for the hatch above, 'beyond' for this
-     gradient — the only two this fixture's variance produces); the rest
-     (follicular/ovulation/luteal, either theme) are not directly exercised by
-     that fixture, but rest on the same lightness ladder the phase family's own
-     comment documents (all four phase fills sit within a similar mid-lightness
-     band in both themes, none near-black) rather than being assumed contrast-
-     safe by inspection alone: the spec now measures every DISTINCT phase a
-     flag is actually painted over, not one fixed cell, so a future fixture
-     change that puts the start window on a different phase is measured too,
-     and reddens here if that phase's fill turns out to sit close enough to
-     black to fail. */
+     Every other combination keeps a black stripe, but not one alpha for both
+     themes: the dark ladder's recessive fills (follicular, luteal, withheld)
+     sit low enough that 0.65/0.55 black measured 2.50-3.02:1 over them
+     (luteal 2.49:1 in the e2e, WEB-285). The dark gradient is 0.80/0.75:
+     worst stop menstrual 5.81, follicular 3.47, ovulation 7.73, luteal 3.28,
+     withheld 3.34:1. Light keeps 0.65/0.55 (worst stop ovulation 3.05:1). The
+     dark-mode e2e measures every DISTINCT phase a flag is painted over and
+     pins luteal + start-window by name. */
   --ribbon-fill-start-window: linear-gradient(180deg, rgb(0 0 0 / 0.65) 0%, rgb(0 0 0 / 0.55) 100%);
+  :root[data-theme='dark'] & {
+    --ribbon-fill-start-window: linear-gradient(180deg, rgb(0 0 0 / 0.8) 0%, rgb(0 0 0 / 0.75) 100%);
+  }
   &[data-start-window='true'] {
     background-image: var(--ribbon-fill-start-window);
   }
