@@ -13,9 +13,14 @@ type credentialsInput struct {
 // the period toggle; it is read from the form body only and stays out of the
 // published v1 JSON body (`json:"-"`), which keeps marking a cycle start over
 // JSON the dedicated POST /api/v1/days/:date/cycle-start endpoint's job.
+// PeriodFromStoredStart is form-only the same way: the hidden
+// period_from_stored_start field a day form posts when its period tick came
+// from the stored onboarding start on a date without a row, so un-ticking it
+// withdraws that start (services.DayEntryInput.PeriodFromStoredStart).
 type dayPayload struct {
-	IsPeriod          bool `json:"is_period"`
-	ConfirmCycleStart bool `json:"-"`
+	IsPeriod              bool `json:"is_period"`
+	ConfirmCycleStart     bool `json:"-"`
+	PeriodFromStoredStart bool `json:"-"`
 
 	Flow            string   `json:"flow"`
 	Mood            int      `json:"mood"`

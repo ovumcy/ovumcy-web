@@ -187,6 +187,7 @@ func buildUpsertDayEntryInput(payload dayPayload, cleanSymptomIDs []uint, hidden
 	return services.DayEntryInput{
 		IsPeriod:              payload.IsPeriod,
 		ConfirmCycleStart:     payload.ConfirmCycleStart,
+		PeriodFromStoredStart: payload.PeriodFromStoredStart,
 		Flow:                  payload.Flow,
 		Mood:                  payload.Mood,
 		SexActivity:           payload.SexActivity,
