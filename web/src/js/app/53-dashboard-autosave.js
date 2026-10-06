@@ -237,8 +237,12 @@
       return;
     }
     // A neutral status only says the day was saved, which the journal's own
-    // indicator has already said; the dashboard does not say it twice.
+    // indicator has already said; the dashboard does not say it twice. It also
+    // says nothing about the earlier save, so whatever that one left in the
+    // region — the persistent pregnancy-pause sentence included, which no timer
+    // ever clears — is withdrawn: the region reflects the latest save.
     if (status.kind === "neutral") {
+      withdrawSuccessStatus(target);
       return;
     }
     node = document.createElement("div");

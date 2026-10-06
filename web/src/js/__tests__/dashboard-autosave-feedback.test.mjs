@@ -441,3 +441,143 @@ for (const order of ["the refresh lands after the sentence", "the refresh lands 
     }
   });
 }
+
+// --- A later save withdraws the earlier answer -------------------------------
+//
+// The status region reflects the LATEST successful save. A persistent sentence
+// is cleared by no timer, so when the next save answers neutral — the owner
+// corrected the test to negative, or pressed Undo — nothing but that save
+// itself can take the "predictions are paused" sentence down. A routine or
+// persistent answer replaces what is there, as before.
+
+// Each fetch answers with the next body of the queue; the last one repeats.
+async function loadDashboardWithAnswers(bodies, html) {
+  const queue = bodies.slice();
+  return loadDOMWithScript(APP_BUNDLE, {
+    html: html || dashboardPage(),
+    beforeRun: (window) => {
+      installRecordedTimers(window);
+      window.fetch = () => {
+        const body = queue.length > 1 ? queue.shift() : queue[0];
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: () => null },
+          text: () => Promise.resolve(body),
+        });
+      };
+    },
+  });
+}
+
+async function saveNegativeTest(window) {
+  const negative = window.document.querySelector("input[name='pregnancy_test'][value='negative']");
+  negative.checked = true;
+  negative.dispatchEvent(new window.Event("change", { bubbles: true }));
+  window.dispatchEvent(new window.Event("pagehide"));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+test("a neutral save after a positive test withdraws the safety sentence", async () => {
+  const dom = await loadDashboardWithAnswers([
+    kindFragment(escapeHTML(PAUSED_SENTENCE), "persistent"),
+    kindFragment("Saved.", "neutral"),
+  ]);
+  try {
+    await savePositiveTest(dom.window);
+    assert.ok(saveStatus(dom.window).querySelector(".status-ok"), "the safety sentence is shown after the positive test");
+
+    await saveNegativeTest(dom.window);
+    assert.equal(
+      saveStatus(dom.window).querySelector(".status-ok"),
+      null,
+      "the corrected test answers neutral, so the earlier safety sentence must not outlive it"
+    );
+    assert.equal(saveStatus(dom.window).childNodes.length, 0, "and nothing new is shown in its place");
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("a neutral save withdraws a routine status and its pending clear", async () => {
+  const dom = await loadDashboardWithAnswers([
+    kindFragment(escapeHTML(SELF_CARE_SENTENCE), ""),
+    kindFragment("Saved.", "neutral"),
+  ]);
+  try {
+    await savePositiveTest(dom.window);
+    assert.ok(saveStatus(dom.window).querySelector(".status-ok"), "the routine line is shown");
+    const pending = () =>
+      dom.window.__statusTimers.filter((timer) => !timer.done && timer.delay === TOAST_VISIBLE_MS).length;
+    assert.equal(pending(), 1, "the routine line has a clear scheduled");
+
+    await saveNegativeTest(dom.window);
+    assert.equal(saveStatus(dom.window).childNodes.length, 0, "the earlier line is withdrawn");
+    assert.equal(pending(), 0, "its clear timer is cancelled with it");
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("a neutral save withdraws a persistent status an htmx swap left in the region", async () => {
+  const dom = await loadDashboardWithAnswers([kindFragment("Saved.", "neutral")]);
+  try {
+    // What an Enter-submit leaves behind: the swapped-in persistent fragment.
+    saveStatus(dom.window).innerHTML = kindFragment(escapeHTML(PAUSED_SENTENCE), "persistent");
+    assert.ok(saveStatus(dom.window).querySelector(".status-ok"));
+
+    await savePositiveTest(dom.window);
+    assert.equal(saveStatus(dom.window).querySelector(".status-ok"), null);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("a later persistent answer replaces an earlier routine one", async () => {
+  const dom = await loadDashboardWithAnswers([
+    kindFragment(escapeHTML(SELF_CARE_SENTENCE), ""),
+    kindFragment(escapeHTML(PAUSED_SENTENCE), "persistent"),
+  ]);
+  try {
+    await saveNegativeTest(dom.window);
+    await savePositiveTest(dom.window);
+    const messages = saveStatus(dom.window).querySelectorAll(".status-ok .toast-message");
+    assert.equal(messages.length, 1, "one status stands in the region");
+    assert.equal(messages[0].textContent, PAUSED_SENTENCE);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("Undo whose answer is neutral withdraws the safety sentence", async () => {
+  const html = dashboardPage()
+    .replace('data-today-entry-exists="false"', 'data-today-entry-exists="true" data-autosave-undo="Undo"')
+    .replace('value="negative">', 'value="negative" checked>');
+  const dom = await loadDashboardWithAnswers(
+    [kindFragment(escapeHTML(PAUSED_SENTENCE), "persistent"), kindFragment("Saved.", "neutral")],
+    html
+  );
+  try {
+    await savePositiveTest(dom.window);
+    assert.ok(saveStatus(dom.window).querySelector(".status-ok"), "the safety sentence is shown after the positive test");
+
+    const undo = dom.window.document.querySelector("[data-dashboard-autosave-undo]");
+    assert.ok(undo, "the save offers Undo");
+    undo.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.equal(
+      dom.window.document.querySelector("input[name='pregnancy_test'][value='negative']").checked,
+      true,
+      "the undo restored the earlier answer"
+    );
+    assert.equal(
+      saveStatus(dom.window).querySelector(".status-ok"),
+      null,
+      "the undone test answers neutral, so the safety sentence must not outlive it"
+    );
+  } finally {
+    dom.window.close();
+  }
+});

@@ -242,6 +242,24 @@
     successStatusClearTimers.set(successNode, timer);
   }
 
+  // Take down the success status a region holds, with its pending clear: a later
+  // save whose answer says nothing new must not leave an earlier answer standing.
+  // A failure notice in the same region is not a success status and stays.
+  function withdrawSuccessStatus(target) {
+    var successNode = target && target.querySelector ? target.querySelector(".status-ok") : null;
+    var timer;
+    while (successNode) {
+      timer = successStatusClearTimers.get(successNode);
+      if (timer) {
+        window.clearTimeout(timer);
+        successStatusClearTimers.delete(successNode);
+      }
+      successNode.remove();
+      successNode = target.querySelector(".status-ok");
+    }
+    clearStatusTargetIfEmpty(target);
+  }
+
   // The message each island last raised, remembered by the island's id. The node
   // is not stable: a card that replaces itself brings a NEW island element on
   // every swap, so a key stored on the element resets exactly when the repeat it
