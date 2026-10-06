@@ -807,10 +807,10 @@ func (service *DayService) AutoFillFollowingPeriodDays(ctx context.Context, user
 		location = time.UTC
 	}
 
-	today := DateAtLocation(now, location)
+	lastDay := periodFillLastDay(startDay, periodLength, now, location)
 	for offset := 1; offset < periodLength; offset++ {
 		targetDay := AddCalendarDays(startDay, offset, location)
-		if !today.IsZero() && targetDay.After(today) {
+		if targetDay.After(lastDay) {
 			break
 		}
 		entry, err := service.fetchLogByDateForUpdate(ctx, userID, targetDay, location)
@@ -851,6 +851,21 @@ func (service *DayService) AutoFillFollowingPeriodDays(ctx context.Context, user
 	}
 
 	return nil
+}
+
+// periodFillLastDay is the last day a period auto-fill starting on startDay may
+// write, as a midnight in location: the period's own last day, or the owner's
+// local today when that comes first. A fill never records a period day the owner
+// has not reached yet. Both auto-fills — the one behind a logged period start and
+// the one behind onboarding completion — take their bound from here, so the two
+// cannot drift apart.
+func periodFillLastDay(startDay time.Time, periodLength int, now time.Time, location *time.Location) time.Time {
+	lastDay := AddCalendarDays(startDay, periodLength-1, location)
+	today := DateAtLocation(now, location)
+	if !today.IsZero() && lastDay.After(today) {
+		return today
+	}
+	return lastDay
 }
 
 func (service *DayService) hasPeriodInRecentDays(ctx context.Context, userID uint, day time.Time, lookbackDays int, location *time.Location) (bool, error) {

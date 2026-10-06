@@ -53,10 +53,14 @@ func TestOnboardingFlowCompletesWithOngoingPeriodRangeAndFlowNone(t *testing.T) 
 	if updatedUser.LastPeriodStart.Format("2006-01-02") != stepDateRaw {
 		t.Fatalf("expected last period start %s, got %s", stepDateRaw, updatedUser.LastPeriodStart.Format("2006-01-02"))
 	}
-	for offset := range 5 {
+	// The period is still in progress: it is recorded from the start through
+	// today, and the two days of it the owner has not reached are not stored.
+	for offset := range 3 {
 		day := stepDate.AddDate(0, 0, offset)
 		assertOnboardingPeriodLogForDay(t, database, updatedUser.ID, day)
 	}
-
 	assertOnboardingPeriodLogForDay(t, database, updatedUser.ID, today)
+	for offset := 1; offset <= 2; offset++ {
+		assertNoOnboardingLogForDay(t, database, updatedUser.ID, today.AddDate(0, 0, offset))
+	}
 }

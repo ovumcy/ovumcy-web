@@ -23,7 +23,7 @@ type OnboardingUserRepository interface {
 	FindByID(ctx context.Context, userID uint) (models.User, error)
 	SaveOnboardingStep1(ctx context.Context, userID uint, start time.Time) error
 	SaveOnboardingStep2(ctx context.Context, userID uint, cycleLength int, periodLength int, autoPeriodFill bool, irregularCycle bool, usageGoal string) error
-	CompleteOnboarding(ctx context.Context, userID uint, startDay time.Time, periodLength int, autoPeriodFill bool) error
+	CompleteOnboarding(ctx context.Context, userID uint, startDay time.Time, fillEndDay time.Time, autoPeriodFill bool) error
 }
 
 type OnboardingService struct {
@@ -107,7 +107,7 @@ func (service *OnboardingService) ParseAndNormalizeStep2Input(cycleRaw string, p
 	return safeCycleLength, safePeriodLength, autoPeriodFill, irregularCycle, NormalizeUsageGoal(usageGoal), nil
 }
 
-func (service *OnboardingService) CompleteOnboardingForUser(ctx context.Context, userID uint, location *time.Location) (time.Time, error) {
+func (service *OnboardingService) CompleteOnboardingForUser(ctx context.Context, userID uint, now time.Time, location *time.Location) (time.Time, error) {
 	current, err := service.users.FindByID(ctx, userID)
 	if err != nil {
 		return time.Time{}, err
@@ -118,7 +118,13 @@ func (service *OnboardingService) CompleteOnboardingForUser(ctx context.Context,
 
 	startDay := CalendarDay(*current.LastPeriodStart, time.UTC)
 	_, periodLength := SanitizeOnboardingCycleAndPeriod(current.CycleLength, current.PeriodLength)
-	if err := service.users.CompleteOnboarding(ctx, userID, startDay, periodLength, current.AutoPeriodFill); err != nil {
+	// The seeded period stops at the owner's local today, on the same bound as
+	// the day auto-fill: a period still in progress is recorded only through the
+	// day the owner has reached, never ahead of it. The bound is resolved in the
+	// owner's location and handed over as the UTC-midnight calendar day the
+	// repository iterates.
+	fillEndDay := CalendarDay(periodFillLastDay(startDay, periodLength, now, location), time.UTC)
+	if err := service.users.CompleteOnboarding(ctx, userID, startDay, fillEndDay, current.AutoPeriodFill); err != nil {
 		return time.Time{}, err
 	}
 	return startDay, nil

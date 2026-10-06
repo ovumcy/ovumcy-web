@@ -30,7 +30,7 @@ func (handler *Handler) OnboardingComplete(c fiber.Ctx) error {
 			return handler.failMutation(c, onboardingCompleteMutation, onboardingFinishErrorSpec()) // codecov:ignore -- unreachable: ValidateOnboardingCompletionEligibility returns only the two sentinels above or nil.
 		}
 	}
-	_, err := handler.onboardingSvc.CompleteOnboardingForUser(c.Context(), user.ID, handler.requestLocationFromOnboardingForm(c)) // codecov:ignore -- onboarding completion covered by the e2e onboarding flow
+	_, err := handler.onboardingSvc.CompleteOnboardingForUser(c.Context(), user.ID, handler.clockNow(), handler.requestLocationFromOnboardingForm(c)) // codecov:ignore -- onboarding completion covered by the e2e onboarding flow
 	if err != nil {
 		// codecov:ignore:start -- defensive: eligibility (incl. steps-required) is validated above
 		// against the request user before CompleteOnboardingForUser re-reads the row, so this
