@@ -381,7 +381,6 @@
   "dashboard.late_cycle.fertility_paused": "Dieser Zyklus hat die Länge, auf der Ihre Vorhersagen beruhen, bereits überschritten. Das fruchtbare Fenster und die Eisprung-Schätzung kehren zurück, sobald Sie einen neuen Zyklus eintragen.",
   "dashboard.late_cycle.no_personal_range": "Vorerst nur der Zyklustag – für einen persönlichen Bereich sind mehr abgeschlossene Zyklen nötig.",
   "dashboard.late_cycle.actions": "Sie können eintragen:",
-  "dashboard.cycle_day_stale_hint": "Die Zyklusdaten könnten veraltet sein. Aktualisieren Sie das Startdatum Ihrer letzten Periode.",
   "dashboard.phase_estimated": "Phase wird wegen veralteter Basisdaten nur geschätzt angezeigt.",
   "dashboard.next_period": "Nächste Periode",
   "dashboard.next_period_start_window": "%s — %s (Startfenster)",

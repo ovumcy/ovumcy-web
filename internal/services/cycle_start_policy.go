@@ -124,9 +124,10 @@ func potentialImplantationGapDays(user *models.User, logs []models.DailyLog, tar
 	// ovulation this hint counts from everywhere else; the pause is resolved
 	// here because BuildCycleStats alone never sets it. Past the overdue
 	// verdict a bleed logged is a late period, not a bleed a week after a known
-	// ovulation. Where the median sits above the mean (28/60/60) the gate
-	// answers on day 57 while the projected ovulation, placed from the median,
-	// still leaves days 57-58 inside the implantation gap.
+	// ovulation. Where the median sits above the mean (28/60/60) the projected
+	// ovulation is placed from the median, so the gap days 52-58 would still
+	// count from it; the gate already answers from day 50 (reference + 1), so
+	// the whole gap sits behind it.
 	//
 	// The fourth signal is the first-cycle floor, and it is the reason the gate
 	// runs BEFORE any length is resolved: with fewer than two recorded cycle

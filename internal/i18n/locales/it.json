@@ -381,7 +381,6 @@
   "dashboard.late_cycle.fertility_paused": "Questo ciclo ha già superato la durata su cui si basano le tue previsioni. La finestra fertile e la stima dell'ovulazione torneranno quando registrerai un nuovo ciclo.",
   "dashboard.late_cycle.no_personal_range": "Per ora solo il giorno del ciclo: un intervallo personale richiede più cicli completati.",
   "dashboard.late_cycle.actions": "Puoi registrare:",
-  "dashboard.cycle_day_stale_hint": "I dati del ciclo potrebbero essere obsoleti. Aggiorna la data di inizio dell'ultimo periodo.",
   "dashboard.phase_estimated": "Fase mostrata come stima a causa di baseline obsoleta.",
   "dashboard.next_period": "Prossimo periodo",
   "dashboard.next_period_start_window": "%s — %s (finestra di inizio)",

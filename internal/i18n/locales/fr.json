@@ -518,7 +518,6 @@
   "dashboard.late_cycle.fertility_paused": "Ce cycle a déjà dépassé la durée sur laquelle reposent vos prédictions. La fenêtre fertile et l'estimation de l'ovulation reviendront quand vous noterez un nouveau cycle.",
   "dashboard.late_cycle.no_personal_range": "Pour l'instant, seulement le jour du cycle : une plage personnelle demande plus de cycles terminés.",
   "dashboard.late_cycle.actions": "Vous pouvez noter :",
-  "dashboard.cycle_day_stale_hint": "Les données du cycle peuvent être obsolètes. Mettez à jour la date de début de vos dernières règles.",
   "dashboard.phase_estimated": "Phase affichée à titre d'estimation en raison de valeurs de référence obsolètes.",
   "dashboard.next_period": "Prochaines règles",
   "dashboard.next_period_start_window": "%s — %s (fenêtre de début)",

@@ -81,10 +81,10 @@ func TestDashboardAndCalendarExposeAccessibleBBTInputs(t *testing.T) {
 }
 
 // TestDashboardStaleBandKeepsTheUpdateCycleDataCTABesideTheLateNotice: from
-// L+1 the late-cycle notice stands in the warnings slot the amber stale hint
-// used to hold, so the hint never renders beside it. Its call to action — bring
-// the last period start up to date — must survive the swap: the settings link
-// and the log-a-cycle-start action stand beside the notice.
+// L+1 the late-cycle notice is the only text the warnings block holds for an
+// out-of-date cycle. The call to action — bring the last period start up to
+// date — must stand beside it: the settings link and the log-a-cycle-start
+// action.
 func TestDashboardStaleBandKeepsTheUpdateCycleDataCTABesideTheLateNotice(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "dashboard-stale-ui@example.com", "StrongPass1", true)
@@ -123,9 +123,6 @@ func TestDashboardStaleBandKeepsTheUpdateCycleDataCTABesideTheLateNotice(t *test
 	}
 	if dashboardElementByDataAttr(warnings, "data-dashboard-cycle-day-warning") == nil {
 		t.Fatal("expected the late-cycle notice inside the warning container from L+1")
-	}
-	if dashboardElementByDataAttr(warnings, "data-dashboard-stale-warning") != nil {
-		t.Fatal("expected the late-cycle notice to stand in the stale hint's slot, not beside it")
 	}
 	settingsCTA := htmlFindElement(warnings, func(node *html.Node) bool {
 		return node.Type == html.ElementNode && node.Data == "a" && htmlAttr(node, "href") == "/settings#settings-cycle"
@@ -215,9 +212,6 @@ func dashboardLateCycleNotice(t *testing.T, app *fiber.App, authCookie string) (
 	warnings := dashboardElementByDataAttr(document, "data-dashboard-cycle-warnings")
 	if warnings == nil {
 		t.Fatal("expected the dashboard cycle warning container on a cycle past its expected end")
-	}
-	if dashboardElementByDataAttr(warnings, "data-dashboard-stale-warning") != nil {
-		t.Fatal("expected the late-cycle notice to replace the stale hint, not to render beside it")
 	}
 	notice := dashboardElementByDataAttr(warnings, "data-dashboard-cycle-day-warning")
 	if notice == nil {
