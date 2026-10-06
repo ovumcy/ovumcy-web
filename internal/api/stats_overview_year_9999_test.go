@@ -105,7 +105,9 @@ func TestStatsOverviewAnswersProjectionsPastYear9999AsNull(t *testing.T) {
 		wantFertility string
 	}{
 		{name: "whole projection past the year", lastStart: time.Date(9999, 12, 20, 0, 0, 0, 0, time.UTC), wantFertility: "unknown"},
-		{name: "ovulation inside the year", lastStart: time.Date(9999, 12, 10, 0, 0, 0, 0, time.UTC), wantOvulation: "9999-12-23", wantFertility: "outside_estimated_window"},
+		// The ovulation is today, not yet behind it, so no surface rolls it into
+		// the next cycle (whose day would fall past the year).
+		{name: "ovulation inside the year", lastStart: time.Date(9999, 12, 17, 0, 0, 0, 0, time.UTC), wantOvulation: "9999-12-30", wantFertility: "fertile"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
