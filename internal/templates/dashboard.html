@@ -324,6 +324,7 @@
         data-dashboard-save-form
         data-dashboard-date="{{.Today}}"
         data-today-entry-exists="{{if .TodayEntryExists}}true{{else}}false{{end}}"
+        data-today-period-from-stored-start="{{if .TodayPeriodFromStoredStart}}true{{else}}false{{end}}"
         data-autosave-clear-url="/api/v1/days/{{.Today}}?source=dashboard"
         data-autosave-saving="{{t .Messages "dashboard.autosave_saving"}}"
         data-autosave-saved="{{t .Messages "dashboard.autosave_saved"}}"

@@ -3707,10 +3707,15 @@
     if (!form || form.__ovumcyPersistedState) {
       return;
     }
-    // What the server rendered is, by definition, what the server holds.
+    // What the server rendered is, by definition, what the server holds. A day
+    // with no saved entry can still render its period ticked from the stored
+    // onboarding start; that day is not empty, so undoing back to it must
+    // re-send the tick (with its hidden marker) rather than DELETE the day:
+    // a delete withdraws the stored start.
     form.__ovumcyPersistedState = dashboardFormState(
       form,
-      form.getAttribute("data-today-entry-exists") !== "true"
+      form.getAttribute("data-today-entry-exists") !== "true" &&
+        form.getAttribute("data-today-period-from-stored-start") !== "true"
     );
   }
 
