@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -154,18 +155,58 @@ func TestCalendarPaintsTheOnboardingStartAsRecorded(t *testing.T) {
 	}
 }
 
+func TestCycleBoundariesMergesADayLoggedTwice(t *testing.T) {
+	ctx := BoundaryContext{Today: boundaryDay(time.October, 5)}
+	entry := func(day int, flow string) models.DailyLog {
+		return models.DailyLog{Date: boundaryDay(time.September, day), IsPeriod: true, Flow: flow}
+	}
+
+	// A spotting entry beside a bleeding one on the same date is a bleeding day,
+	// so with the next day it makes a two-day run.
+	assertBoundaries(t, []models.DailyLog{entry(1, models.FlowSpotting), entry(1, models.FlowMedium), entry(2, models.FlowMedium)}, ctx, "2026-09-01")
+	// Two spotting entries stay spotting: the next day is a lone day, weeks ago.
+	assertBoundaries(t, []models.DailyLog{entry(1, models.FlowSpotting), entry(1, models.FlowSpotting), entry(2, models.FlowMedium)}, ctx)
+
+	// A mark on either entry is the day's mark.
+	marked := entry(10, models.FlowMedium)
+	marked.CycleStart = true
+	assertBoundaries(t, []models.DailyLog{entry(10, models.FlowMedium), marked}, ctx, "2026-09-10")
+	// So is an uncertain mark, which withholds the run it sits in.
+	uncertain := marked
+	uncertain.IsUncertain = true
+	assertBoundaries(t, []models.DailyLog{entry(10, models.FlowMedium), uncertain, entry(11, models.FlowMedium)}, ctx)
+}
+
 type onboardingImportUsers struct {
-	user    models.User
-	updates []map[string]any
+	user      models.User
+	updates   []map[string]any
+	loadErr   error
+	updateErr error
 }
 
 func (users *onboardingImportUsers) LoadSettingsByID(context.Context, uint) (models.User, error) {
-	return users.user, nil
+	return users.user, users.loadErr
 }
 
 func (users *onboardingImportUsers) UpdateByID(_ context.Context, _ uint, updates map[string]any) error {
 	users.updates = append(users.updates, updates)
-	return nil
+	return users.updateErr
+}
+
+func TestImportRestoreOfTheOnboardingStartReportsAStorageFailure(t *testing.T) {
+	now := time.Date(2026, time.October, 5, 12, 0, 0, 0, time.UTC)
+	for name, users := range map[string]*onboardingImportUsers{
+		"settings read fails": {loadErr: errors.New("settings read failed")},
+		"write fails":         {updateErr: errors.New("write failed")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			service := &ImportService{users: users}
+			err := service.restoreOnboardingStart(context.Background(), 1, json.RawMessage(`"2026-09-14"`), now, time.UTC)
+			if !errors.Is(err, ErrImportWriteFailed) {
+				t.Fatalf("err = %v, want ErrImportWriteFailed", err)
+			}
+		})
+	}
 }
 
 func TestImportRestoresTheOnboardingStartOnlyWhereTheAccountHasNone(t *testing.T) {
