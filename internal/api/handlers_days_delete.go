@@ -1,8 +1,6 @@
 package api
 
 import (
-	"strings"
-
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
@@ -29,7 +27,7 @@ func (handler *Handler) DeleteDay(c fiber.Ctx) error {
 
 	handler.logMutationSuccess(c, dayDeleteMutation)
 
-	source := strings.ToLower(strings.TrimSpace(c.Query("source")))
+	source := dayFormSource(c)
 	if isHTMX(c) {
 		c.Set("HX-Trigger", "calendar-day-updated")
 		switch source {
