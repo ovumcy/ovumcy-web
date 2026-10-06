@@ -40,7 +40,7 @@ var dayPanelProjectionCycleStarts = []string{"2026-01-01", "2026-01-29", "2026-0
 // reach the same spelling.
 var dayPanelProjectionWords = []string{
 	"predict", "fertil", "ovulat", "luteal", "follic", "phase", "estimat", "next_period",
-	"stale", "outdated", "out_of_date", "overdue", "late_cycle", "suppress",
+	"stale", "out_of_date", "overdue", "late_cycle", "suppress",
 }
 
 // dayPanelAllowedCopyKeys are panel strings that name a projection word and are

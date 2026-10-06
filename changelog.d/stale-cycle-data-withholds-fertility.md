@@ -1,8 +1,9 @@
 ### Fixed
 
 - **Ovulation and fertile-window estimates are now withheld once the running cycle is past its usual
-  length.** From the first day past the account's reference cycle length — the day the pages
-  already said "Cycle data may be outdated" — the dashboard, the calendar grid,
+  length.** From the first day past the account's reference cycle length — the day the dashboard
+  said "Cycle data may be outdated", a hint the late-cycle notice now replaces — the dashboard, the
+  calendar grid,
   `GET /api/v1/stats/overview`, the calendar feed and the "ovulation soon" webhook reminder used to
   keep naming an ovulation date and drawing a fertile window for a next cycle whose start was never
   logged. That half of the projection is now withheld on every surface until a new period is

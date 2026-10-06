@@ -432,9 +432,10 @@ func TestLongCycleGateWithholdsTheFertileSaveMessage(t *testing.T) {
 
 // TestLongCycleGateWithholdsTheImplantationHint covers the manual cycle-start
 // policy, which counts from the closing cycle's projected ovulation. A 28/60/60
-// history projects that ovulation from its median (cycle day 46) while its gate
-// answers from the mean on day 57, so the hint's six-to-twelve-day gap reached
-// two days the gate had already withheld.
+// history projects that ovulation from its median (cycle day 46), so the hint's
+// six-to-twelve-day gap falls on days 52 to 58, while the gate withholds from
+// day 50, the reference length plus one. A gate read from the mean (day 57)
+// once let the gap reach two days the gate had already withheld.
 //
 // The 28/60/60 history pins the withheld side: every gap day sits behind the
 // gate. A steady 28-day history pins the offered side, so the hint is shown to

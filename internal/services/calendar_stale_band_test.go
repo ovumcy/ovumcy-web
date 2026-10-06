@@ -17,7 +17,7 @@ import (
 // (DashboardCyclePastReferenceLength) — while the projected period days stay,
 // on the grid as on the other pages, until the overdue gate withholds them too.
 // An ovulation drawn here would belong to a cycle chained from a start nobody
-// logged, beside pages already saying the data may be outdated.
+// logged, beside the late-cycle notice the same pages show from that day.
 //
 // The history is three 28-day cycles and a running one from 2026-03-26, so the
 // reference length is 28 and cycle day 30 (2026-04-24) is out of date yet short of

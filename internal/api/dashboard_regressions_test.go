@@ -220,13 +220,13 @@ func dashboardLateCycleNotice(t *testing.T, app *fiber.App, authCookie string) (
 	return notice, dashboardElementByDataAttr(warnings, "data-dashboard-late-cycle-actions")
 }
 
-// TestDashboardLateCycleNoticeOutranksTheStaleHintAndClaimsNoInventedRange is
+// TestDashboardLateCycleNoticeClaimsNoInventedRange is
 // the design-item-38 render regression for the insufficient-history half of the
 // late-cycle matrix. An account whose only cycle input is the onboarding
 // baseline has no completed cycle to compare against, so the notice must select
 // the no-personal-range key: the "usual range" it would otherwise cite is the
 // settings value, not a measurement.
-func TestDashboardLateCycleNoticeOutranksTheStaleHintAndClaimsNoInventedRange(t *testing.T) {
+func TestDashboardLateCycleNoticeClaimsNoInventedRange(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "dashboard-late-cycle-no-history@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
