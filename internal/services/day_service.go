@@ -347,10 +347,18 @@ type DayEntryFields struct {
 // full write's are (NormalizeDayEntryInput), and the derived rules apply to
 // the merged day — a stated is_period=false still clears flow and the cycle
 // start, the same way a full write does.
+//
+// PeriodFromStoredStart is an answer about the period, so it travels only with
+// a stated is_period. A partial write that leaves is_period out says nothing
+// about the period — on a date without a row the merged day reads "no period"
+// only because the zero row does — so it never withdraws the stored onboarding
+// start, even when a form posts the hidden marker beside an unchecked box
+// (which a partial write reads as "not stated", never as an un-tick).
 func mergeDayEntryPatch(existing models.DailyLog, patch DayEntryInput, fields DayEntryFields) DayEntryInput {
 	merged := patch
 	if !fields.IsPeriod {
 		merged.IsPeriod = existing.IsPeriod
+		merged.PeriodFromStoredStart = false
 	}
 	if !fields.Flow {
 		merged.Flow = NormalizeDayFlow(existing.Flow)

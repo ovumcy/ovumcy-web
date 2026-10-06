@@ -19,7 +19,9 @@
   without auto-fill), the day editor and the dashboard's Today form show its period ticked, and
   un-ticking it in either form withdraws the start the same way. Saving a mood with the box still
   ticked, adding only a mood or a symptom to a non-period entry on that date, or a JSON save of that
-  date without the period leaves the start in place.
+  date without the period leaves the start in place. A partial save (`PATCH`) that leaves the period
+  out never withdraws the start; one that states no period over the start's period day withdraws it
+  like a full save.
 - **Moving the last period start in Settings takes the auto-filled days along.** Onboarding with
   auto-fill writes the first days of the period; under the new rule they form a cycle start of their
   own, so moving the start left a phantom short cycle behind and kept the dashboard on the old date.
