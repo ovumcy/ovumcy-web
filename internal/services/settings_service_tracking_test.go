@@ -124,6 +124,14 @@ func (stub *stubSettingsTrackingUserRepo) UpdateDisplayName(context.Context, uin
 	return nil
 }
 
+// UpdateCycleSettingsMovingPeriodStart records the column half exactly as
+// UpdateByID does: a save that moves the start writes the same columns.
+func (stub *stubSettingsTrackingUserRepo) UpdateCycleSettingsMovingPeriodStart(_ context.Context, userID uint, updates map[string]any, _ models.PeriodStartMove) error {
+	stub.updatedUserID = userID
+	stub.updates = updates
+	return stub.updateErr
+}
+
 func (stub *stubSettingsTrackingUserRepo) UpdateUserTimezone(context.Context, uint, string) error {
 	return nil
 }

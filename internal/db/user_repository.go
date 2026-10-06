@@ -1548,6 +1548,75 @@ func (repo *UserRepository) UpdateByID(ctx context.Context, userID uint, updates
 	return query.Updates(updates).Error
 }
 
+// UpdateCycleSettingsMovingPeriodStart writes the cycle-settings columns and
+// carries out move in the same transaction, so a moved start never lands
+// without the day logs that follow it, nor the reverse. Every day-log read and
+// write is scoped to userID. Clearable is evaluated on the rows read inside the
+// transaction, so a day edited after the service planned the move is judged as
+// it now stands.
+func (repo *UserRepository) UpdateCycleSettingsMovingPeriodStart(ctx context.Context, userID uint, updates map[string]any, move models.PeriodStartMove) error {
+	if err := requireUserOwnerID(userID); err != nil {
+		return err
+	}
+	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, day := range move.ClearDays {
+			var entries []models.DailyLog
+			if err := tx.Where("user_id = ? AND date >= ? AND date < ?", userID, day, day.AddDate(0, 0, 1)).Find(&entries).Error; err != nil {
+				return err
+			}
+			for _, entry := range entries {
+				if move.Clearable == nil || !move.Clearable(entry) {
+					continue
+				}
+				if err := tx.Where("id = ? AND user_id = ?", entry.ID, userID).Delete(&models.DailyLog{}).Error; err != nil {
+					return err
+				}
+			}
+		}
+		for _, day := range move.FillDays {
+			var count int64
+			if err := tx.Model(&models.DailyLog{}).Where("user_id = ? AND date >= ? AND date < ?", userID, day, day.AddDate(0, 0, 1)).Count(&count).Error; err != nil {
+				return err
+			}
+			if count > 0 {
+				continue
+			}
+			entry := bareOnboardingPeriodDay(userID, day)
+			if err := tx.Create(&entry).Error; err != nil {
+				return err
+			}
+		}
+		if !move.MarkDay.IsZero() {
+			if err := tx.Model(&models.DailyLog{}).
+				Where("user_id = ? AND date >= ? AND date < ? AND is_period = ?", userID, move.MarkDay, move.MarkDay.AddDate(0, 0, 1), false).
+				Update("is_period", true).Error; err != nil {
+				return err
+			}
+		}
+
+		query, err := scopedUserUpdateTx(tx, userID)
+		if err != nil {
+			return err // codecov:ignore -- unreachable: requireUserOwnerID above already refused a zero userID before this transaction started
+		}
+		return query.Updates(updates).Error
+	})
+}
+
+// bareOnboardingPeriodDay is the row onboarding's auto-fill writes for a day
+// that has none: a period day carrying no other signal.
+func bareOnboardingPeriodDay(userID uint, day time.Time) models.DailyLog {
+	return models.DailyLog{
+		UserID:        userID,
+		Date:          day,
+		IsPeriod:      true,
+		Flow:          models.FlowNone,
+		SexActivity:   models.SexActivityNone,
+		CervicalMucus: models.CervicalMucusNone,
+		PregnancyTest: models.PregnancyTestNone,
+		SymptomIDs:    []uint{},
+	}
+}
+
 func (repo *UserRepository) LoadSettingsByID(ctx context.Context, userID uint) (models.User, error) {
 	var user models.User
 	if err := repo.database.WithContext(ctx).
@@ -1854,16 +1923,7 @@ func (repo *UserRepository) CompleteOnboarding(ctx context.Context, userID uint,
 					Order("date DESC, id DESC").
 					First(&entry)
 				if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-					entry = models.DailyLog{
-						UserID:        userID,
-						Date:          dayStart,
-						IsPeriod:      true,
-						Flow:          models.FlowNone,
-						SexActivity:   models.SexActivityNone,
-						CervicalMucus: models.CervicalMucusNone,
-						PregnancyTest: models.PregnancyTestNone,
-						SymptomIDs:    []uint{},
-					}
+					entry = bareOnboardingPeriodDay(userID, dayStart)
 					if err := tx.Create(&entry).Error; err != nil {
 						return err
 					}

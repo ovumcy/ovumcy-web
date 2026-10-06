@@ -313,7 +313,104 @@ func (service *SettingsService) SaveCycleSettings(ctx context.Context, userID ui
 		// question rather than a domain one.
 		return nil
 	}
+	if settings.LastPeriodStartSet && settings.LastPeriodStart != nil {
+		stored, err := service.users.LoadSettingsByID(ctx, userID)
+		if err != nil {
+			return err
+		}
+		if move, moved := planPeriodStartMove(stored, settings); moved {
+			mover, ok := service.users.(periodStartMover)
+			if !ok {
+				// Never a columns-only save: the start would move without its
+				// days, which is the phantom cycle this path exists to prevent.
+				return errPeriodStartMoveUnsupported
+			}
+			return mover.UpdateCycleSettingsMovingPeriodStart(ctx, userID, updates, move)
+		}
+	}
 	return service.users.UpdateByID(ctx, userID, updates)
+}
+
+var errPeriodStartMoveUnsupported = errors.New("settings repository cannot move the period start with its days")
+
+// periodStartMover is the repository half of a Settings start move: the
+// settings columns and the day-log move in one transaction. The production
+// user repository implements it (pinned by a compile-time assertion in the
+// service's integration test); a repository without it refuses the move.
+type periodStartMover interface {
+	UpdateCycleSettingsMovingPeriodStart(ctx context.Context, userID uint, updates map[string]any, move models.PeriodStartMove) error
+}
+
+// planPeriodStartMove decides what a new last_period_start does to the day
+// logs. Onboarding with auto-fill wrote the old start's period days as plain
+// period days, and the cycle-boundary rule counts such a run as a cycle start
+// of its own: left in place after the start moved, it is a phantom cycle (a
+// start moved earlier by under a cycle length leaves a cycle of a few days,
+// and the dashboard stays anchored on the old date). So the days the old
+// start's fill wrote are removed, each only while IsAutoFilledPeriodCandidate
+// still calls it untouched — a day the owner edited stays — and the new start
+// gets what onboarding would write for it under the owner's auto-fill setting
+// and period length (as this save leaves them). Existing rows in the new range
+// are never rewritten, except that a non-period row on the new start day
+// becomes a period day: a logged non-period day withdraws the stored start as
+// a boundary, and the date just saved is the owner's newer word about it.
+//
+// The old range is cleared only while the stored auto-fill setting is on: with
+// it off, onboarding wrote no days there, and a bare period day in that range
+// is the owner's own toggle. Clearing the start (nil) moves nothing.
+func planPeriodStartMove(stored models.User, settings CycleSettingsUpdate) (models.PeriodStartMove, bool) {
+	newStart := dateOnly(*settings.LastPeriodStart)
+	oldStart := time.Time{}
+	if stored.LastPeriodStart != nil && !stored.LastPeriodStart.IsZero() {
+		oldStart = dateOnly(*stored.LastPeriodStart)
+	}
+	if oldStart.Equal(newStart) {
+		return models.PeriodStartMove{}, false
+	}
+
+	autoFill := stored.AutoPeriodFill
+	if settings.Present.AutoPeriodFill {
+		autoFill = settings.AutoPeriodFill
+	}
+	newLength := stored.PeriodLength
+	if settings.Present.PeriodLength {
+		newLength = settings.PeriodLength
+	}
+
+	move := models.PeriodStartMove{
+		MarkDay: newStart,
+		Clearable: func(entry models.DailyLog) bool {
+			// Onboarding writes flow none, so no flow is the fill's own.
+			return IsAutoFilledPeriodCandidate(entry, "")
+		},
+	}
+	filled := make(map[string]bool)
+	if autoFill {
+		for offset := range periodFillLength(newLength) {
+			day := newStart.AddDate(0, 0, offset)
+			move.FillDays = append(move.FillDays, day)
+			filled[CalendarDayKey(day)] = true
+		}
+	}
+	if !oldStart.IsZero() && stored.AutoPeriodFill {
+		for offset := range periodFillLength(stored.PeriodLength) {
+			day := oldStart.AddDate(0, 0, offset)
+			if day.Equal(newStart) || filled[CalendarDayKey(day)] {
+				continue
+			}
+			move.ClearDays = append(move.ClearDays, day)
+		}
+	}
+	return move, true
+}
+
+// periodFillLength is the number of days an auto-fill writes for a stored
+// period length, the default where none valid is stored.
+func periodFillLength(periodLength int) int {
+	if IsValidOnboardingPeriodLength(periodLength) {
+		return periodLength
+	}
+	return models.DefaultPeriodLength
 }
 
 // SaveUsageGoal persists ONLY users.usage_goal, scoped to userID, and returns
