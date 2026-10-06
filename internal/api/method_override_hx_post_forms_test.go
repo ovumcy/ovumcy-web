@@ -307,9 +307,10 @@ func TestNoJSCycleStartShowsTheImplantationCautionBeforeTheMark(t *testing.T) {
 			t.Parallel()
 			ctx := newSettingsSecurityTestContext(t, "nojs-implantation-"+strings.ReplaceAll(strings.ReplaceAll(name, " ", "-"), ",", "")+"@example.com")
 			// Same shape as TestMarkCycleStartImplantationWarningSetsEncodedNoticeWithKey:
-			// two starts 28 days apart put today 6-12 days past the projected ovulation.
+			// starts 28 days apart put today 6-12 days past the projected ovulation;
+			// four of them give the three completed cycles that projection needs.
 			day, _ := utcToday()
-			for _, daysAgo := range []int{50, 22} {
+			for _, daysAgo := range []int{106, 78, 50, 22} {
 				if err := ctx.database.Create(&models.DailyLog{UserID: ctx.user.ID, Date: day.AddDate(0, 0, -daysAgo), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium}).Error; err != nil {
 					t.Fatalf("seed cycle start %d days back: %v", daysAgo, err)
 				}

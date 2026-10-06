@@ -258,13 +258,18 @@ test.describe('Theme mode', () => {
     // one: onboarding's MinDate is 60 days back, and the cycle-start API has no
     // past bound, so the older anchors are backfilled through it. The ovulation
     // phase is withheld until three cycles have closed, so the oldest anchor is
-    // there to make the third one.
+    // there to make the third one. Its length is 44 days, the median of the
+    // 44, 58 and 30 day cycles: the projected cycle length stays 44, exactly as
+    // when the two cycles of 58 and 30 days gave a median of (58 + 30) / 2, so
+    // the phase layout of the ribbon is the one this fixture was measured on. A
+    // different third length would move the median and, with it, which phase
+    // each cell lands on.
     await registerAndOnboardWithStartDaysAgo(page, 'theme-dark-ribbon', 60);
     const today = isoToday();
     // The most recent anchor is 2 days back — inside the default 5-day period —
     // so today sits before the period's own end and the ribbon still has
     // predicted-flow days (day > today, day <= period length) left to draw.
-    for (const offset of [-120, -90, -32, -2]) {
+    for (const offset of [-134, -90, -32, -2]) {
       await markCycleStartViaAPI(page, shiftISODate(today, offset));
     }
 
@@ -280,10 +285,10 @@ test.describe('Theme mode', () => {
 
     // The phase axis this fixture renders, stated explicitly rather than left
     // implicit in the four toHaveCount(1) checks below: the seeded offsets
-    // (-120, -90, -32, -2) decide it, and moving any of them — the -2 was moved from
+    // (-134, -90, -32, -2) decide it, and moving any of them — the -2 was moved from
     // -6 to give the overlay assertions a predicted-flow day to measure — can
     // shrink or shift a phase card's day range. 'beyond' is here too: this
-    // account's three completed cycles (30, 58 and 30 days) are irregular enough
+    // account's three completed cycles (44, 58 and 30 days) are irregular enough
     // that the predicted start window reaches past the reference cycle length,
     // which is what gives the start-window overlay a transparent-fill cell to
     // paint over. A future fixture edit that makes any of these five stop

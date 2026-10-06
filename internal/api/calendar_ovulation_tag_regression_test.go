@@ -105,9 +105,9 @@ func TestCalendarLegendPromisesTheOvulationDashOnlyToOwnersWhoTrackTemperature(t
 			}).Error; err != nil {
 				t.Fatalf("update user cycle settings: %v", err)
 			}
-			// One completed cycle clears the first-cycle floor, so the running
-			// cycle's ovulation is projected (see the fixture above).
-			for _, cycleStart := range []time.Time{periodStart.AddDate(0, 0, -28), periodStart} {
+			// Three completed cycles clear the floor under which no ovulation is
+			// projected, so the running cycle's ovulation is projected.
+			for _, cycleStart := range []time.Time{periodStart.AddDate(0, 0, -84), periodStart.AddDate(0, 0, -56), periodStart.AddDate(0, 0, -28), periodStart} {
 				for offset := range 5 {
 					if err := database.Create(&models.DailyLog{
 						UserID:   user.ID,
