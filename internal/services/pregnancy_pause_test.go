@@ -244,6 +244,36 @@ func TestResolvePregnancyPauseReadsTheCycleBoundaryRule(t *testing.T) {
 	}
 }
 
+// TestALoneBleedingDayTodayKeepsThePregnancyPause: a single medium-flow day
+// dated today or yesterday opens a cycle only while the period may still be
+// running, so it must not lift a pause — the pause would come back the next day
+// and predictions and notifications would flicker. A two-day run does lift it.
+func TestALoneBleedingDayTodayKeepsThePregnancyPause(t *testing.T) {
+	positive := ppDay(2026, time.March, 1)
+	today := positive.AddDate(0, 0, 20)
+	now := today.Add(12 * time.Hour)
+	user := &models.User{Role: models.RoleOwner, CycleLength: 28, PeriodLength: 5}
+
+	for _, lone := range []time.Time{today, today.AddDate(0, 0, -1)} {
+		logs := []models.DailyLog{
+			{Date: positive, PregnancyTest: models.PregnancyTestPositive},
+			{Date: lone, IsPeriod: true, Flow: models.FlowMedium},
+		}
+		if !BuildCycleStatsFromLogs(user, logs, now, time.UTC).PregnancyPaused {
+			t.Fatalf("PregnancyPaused = false with one bleeding day on %s after a positive test, want the pause kept", lone.Format("2006-01-02"))
+		}
+	}
+
+	run := []models.DailyLog{
+		{Date: positive, PregnancyTest: models.PregnancyTestPositive},
+		{Date: today.AddDate(0, 0, -1), IsPeriod: true, Flow: models.FlowMedium},
+		{Date: today, IsPeriod: true, Flow: models.FlowMedium},
+	}
+	if BuildCycleStatsFromLogs(user, run, now, time.UTC).PregnancyPaused {
+		t.Fatal("PregnancyPaused = true after a two-day bleed, want the pause lifted")
+	}
+}
+
 // pauseParitySurfaceLogs names the log set each surface used to hand the shared
 // derivation. ResolvePregnancyPause compares two dates out of whatever set it is
 // given, and an explicit mark opens a cycle whatever its date — so before the bound moved into

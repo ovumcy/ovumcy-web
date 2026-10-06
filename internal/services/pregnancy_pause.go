@@ -19,6 +19,13 @@ import (
 // positive result wins ties. Stored dates are canonical UTC-midnight (migration
 // 019 + DailyLog.BeforeSave), and both sides are compared as calendar days.
 //
+// The rule runs without ctx.Today: a lone bleeding day dated today or yesterday
+// opens a cycle elsewhere only while the period may still be running, and a
+// pause lifted on it would come back the day after when no second day follows —
+// predictions and outbound notifications would resume for a pregnant owner for
+// a day and then stop again. Only a marked start or a two-day run lifts the
+// pause. Today still drops an onboarding start dated after it.
+//
 // The ovumcy-app resolvePregnancyPause still reads the raw flag; the two need
 // the same rule for parity.
 func ResolvePregnancyPause(logs []models.DailyLog, ctx BoundaryContext) (time.Time, bool) {
@@ -35,7 +42,7 @@ func ResolvePregnancyPause(logs []models.DailyLog, ctx BoundaryContext) (time.Ti
 		return time.Time{}, false
 	}
 
-	starts := CycleBoundaries(logs, ctx)
+	starts := CycleBoundaries(logs, BoundaryContext{OnboardingStart: OnboardingBoundaryDay(ctx)})
 	if len(starts) > 0 && CalendarDaysBetween(dateOnly(latestPositive), starts[len(starts)-1]) > 0 {
 		return time.Time{}, false
 	}
