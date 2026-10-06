@@ -59,18 +59,18 @@ func TestStatsPageRendersRichInsightsAndBBTChart(t *testing.T) {
 	}
 
 	logs := []models.DailyLog{
-		{UserID: user.ID, Date: period1Start, IsPeriod: true},
+		{UserID: user.ID, Date: period1Start, IsPeriod: true, CycleStart: true},
 		{UserID: user.ID, Date: period1Start.AddDate(0, 0, 1), CycleFactorKeys: []string{models.CycleFactorStress}, SymptomIDs: []uint{symptomByName["Headache"]}},
 		{UserID: user.ID, Date: period1Start.AddDate(0, 0, 4), SymptomIDs: []uint{symptomByName["Cramps"]}},
-		{UserID: user.ID, Date: period2Start, IsPeriod: true},
+		{UserID: user.ID, Date: period2Start, IsPeriod: true, CycleStart: true},
 		{UserID: user.ID, Date: period2Start.AddDate(0, 0, 1), CycleFactorKeys: []string{models.CycleFactorTravel}, SymptomIDs: []uint{symptomByName["Headache"]}},
 		{UserID: user.ID, Date: period2Start.AddDate(0, 0, 4), SymptomIDs: []uint{symptomByName["Cramps"]}},
-		{UserID: user.ID, Date: period3Start, IsPeriod: true},
+		{UserID: user.ID, Date: period3Start, IsPeriod: true, CycleStart: true},
 		{UserID: user.ID, Date: period3Start.AddDate(0, 0, 1), SymptomIDs: []uint{symptomByName["Headache"]}},
 		{UserID: user.ID, Date: period3Start.AddDate(0, 0, 2), CycleFactorKeys: []string{models.CycleFactorStress}, SymptomIDs: []uint{symptomByName["Headache"]}},
 		{UserID: user.ID, Date: period3Start.AddDate(0, 0, 4), SymptomIDs: []uint{symptomByName["Cramps"]}},
 		{UserID: user.ID, Date: period3Start.AddDate(0, 0, 6), SymptomIDs: []uint{symptomByName["Acne"]}},
-		{UserID: user.ID, Date: currentCycleStart, IsPeriod: true, BBT: new(36.40)},
+		{UserID: user.ID, Date: currentCycleStart, IsPeriod: true, CycleStart: true, BBT: new(36.40)},
 		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, 1), BBT: new(36.45)},
 		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, 2), BBT: new(36.50)},
 		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, 3), BBT: new(36.42)},
@@ -236,7 +236,7 @@ func TestStatsPageRendersHistoryStatements(t *testing.T) {
 
 	logs := make([]models.DailyLog, 0, len(starts)*2)
 	for index, start := range starts {
-		logs = append(logs, models.DailyLog{UserID: user.ID, Date: start, IsPeriod: true, Flow: models.FlowMedium})
+		logs = append(logs, models.DailyLog{UserID: user.ID, Date: start, IsPeriod: true, CycleStart: true, Flow: models.FlowMedium})
 		if index == len(starts)-1 {
 			continue
 		}
@@ -342,10 +342,10 @@ func renderStatsInsightsPage(t *testing.T, email string, unpredictableCycle bool
 	today := services.DateAtLocation(time.Now().In(time.UTC), time.UTC)
 	currentCycleStart := today.AddDate(0, 0, -8)
 	logs := []models.DailyLog{
-		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, -84), IsPeriod: true, Flow: models.FlowMedium},
-		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, -56), IsPeriod: true, Flow: models.FlowMedium},
-		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, -28), IsPeriod: true, Flow: models.FlowMedium},
-		{UserID: user.ID, Date: currentCycleStart, IsPeriod: true, Flow: models.FlowMedium},
+		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, -84), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, -56), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, -28), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+		{UserID: user.ID, Date: currentCycleStart, IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
 	}
 	if err := database.Create(&logs).Error; err != nil {
 		t.Fatalf("create period logs: %v", err)

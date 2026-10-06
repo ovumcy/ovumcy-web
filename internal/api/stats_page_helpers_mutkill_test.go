@@ -174,10 +174,10 @@ func TestBuildStatsPageDataCycleLabelPatternMutKill(t *testing.T) {
 		return parsed
 	}
 	periodLogs := []models.DailyLog{
-		{Date: day("2026-01-01"), IsPeriod: true},
-		{Date: day("2026-01-29"), IsPeriod: true},
-		{Date: day("2026-02-26"), IsPeriod: true},
-		{Date: day("2026-03-26"), IsPeriod: true},
+		{Date: day("2026-01-01"), IsPeriod: true, CycleStart: true},
+		{Date: day("2026-01-29"), IsPeriod: true, CycleStart: true},
+		{Date: day("2026-02-26"), IsPeriod: true, CycleStart: true},
+		{Date: day("2026-03-26"), IsPeriod: true, CycleStart: true},
 	}
 	handler := &Handler{statsService: services.NewStatsService(
 		&mutkillStatsDayReader{logsForRange: periodLogs, logsForAll: []models.DailyLog{{ID: 1}}},

@@ -110,7 +110,7 @@ func statsBodyForCycleGaps(t *testing.T, email string, gaps []int) string {
 
 	logs := make([]models.DailyLog, 0, len(starts))
 	for _, start := range starts {
-		logs = append(logs, models.DailyLog{UserID: user.ID, Date: start, IsPeriod: true})
+		logs = append(logs, models.DailyLog{UserID: user.ID, Date: start, IsPeriod: true, CycleStart: true})
 	}
 	if err := database.Create(&logs).Error; err != nil {
 		t.Fatalf("seed period logs: %v", err)

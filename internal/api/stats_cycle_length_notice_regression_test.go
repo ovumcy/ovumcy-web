@@ -38,7 +38,7 @@ func statsBodyForCyclePattern(t *testing.T, email string, gapDays int, cycleCoun
 		if i == 0 {
 			latestStart = start
 		}
-		logs = append(logs, models.DailyLog{UserID: user.ID, Date: start, IsPeriod: true})
+		logs = append(logs, models.DailyLog{UserID: user.ID, Date: start, IsPeriod: true, CycleStart: true})
 	}
 	if err := database.Create(&logs).Error; err != nil {
 		t.Fatalf("seed period logs: %v", err)
@@ -77,9 +77,9 @@ func statsBodyForCycleAnchorAge(t *testing.T, email string, startedDaysAgo int, 
 	start := today.AddDate(0, 0, -startedDaysAgo)
 
 	logs := []models.DailyLog{
-		{UserID: user.ID, Date: start.AddDate(0, 0, -2*gapDays), IsPeriod: true},
-		{UserID: user.ID, Date: start.AddDate(0, 0, -gapDays), IsPeriod: true},
-		{UserID: user.ID, Date: start, IsPeriod: true},
+		{UserID: user.ID, Date: start.AddDate(0, 0, -2*gapDays), IsPeriod: true, CycleStart: true},
+		{UserID: user.ID, Date: start.AddDate(0, 0, -gapDays), IsPeriod: true, CycleStart: true},
+		{UserID: user.ID, Date: start, IsPeriod: true, CycleStart: true},
 	}
 	if err := database.Create(&logs).Error; err != nil {
 		t.Fatalf("seed period logs: %v", err)
