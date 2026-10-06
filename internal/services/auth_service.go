@@ -538,8 +538,11 @@ func (service *AuthService) ResolveAuthSession(ctx context.Context, secretKey []
 		return nil, nil, err
 	}
 
-	user, err := service.users.FindByID(ctx, claims.UserID)
+	user, found, err := service.users.FindByIDOptional(ctx, claims.UserID)
 	if err != nil {
+		return nil, nil, fmt.Errorf("%w: %w", ErrAuthSessionLookupFailed, err)
+	}
+	if !found {
 		return nil, nil, ErrAuthInvalidCreds
 	}
 	if user.MustChangePassword {

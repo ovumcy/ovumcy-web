@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -9,6 +10,11 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
+
+// errAuthSessionUnresolved marks a failure to resolve the session that is not
+// a verdict on it (a storage fault, an unrecognized error): the cookie stays,
+// and AuthRequired answers 5xx instead of treating the caller as signed out.
+var errAuthSessionUnresolved = errors.New("auth session unresolved")
 
 func (handler *Handler) authenticateRequest(c fiber.Ctx) (*models.User, error) {
 	rawToken := strings.TrimSpace(c.Cookies(authCookieName))
@@ -62,7 +68,7 @@ func (handler *Handler) authenticateRequest(c fiber.Ctx) (*models.User, error) {
 			return nil, errors.New("invalid token")
 		default:
 			handler.logSecurityEvent(c, "auth.session", "failure", securityEventField("reason", "token resolve failed"))
-			return nil, err
+			return nil, fmt.Errorf("%w: %w", errAuthSessionUnresolved, err)
 		}
 	}
 
