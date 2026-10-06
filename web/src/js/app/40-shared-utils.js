@@ -436,8 +436,12 @@
   window.__ovumcyBindLocalizedDateFields = bindLocalizedDateFields;
   window.__ovumcyGetDateFieldController = getLocalizedDateFieldController;
 
+  // Counts in the unit the field's `maxlength` enforces: UTF-16 code units, so
+  // an emoji outside the Basic Multilingual Plane counts as two. Counting code
+  // points instead let the counter read half full on a field the browser had
+  // already stopped accepting.
   function fieldCharacterLength(value) {
-    return Array.from(String(value || "")).length;
+    return String(value || "").length;
   }
 
   function getRecoveryCodeText(refs) {
