@@ -337,11 +337,8 @@ func TestDayFeedbackReadsTheDashboardsHistoryWindow(t *testing.T) {
 				}
 				// Control: a history the dashboard does project must reach the message,
 				// so a message that went silent for everyone would not pass the
-				// comparison above on two empty lists. The control is the steady
-				// history: the old-short-cycles row has a single completed cycle inside
-				// the dashboard's window, below the three-cycle floor, so the dashboard
-				// rightly projects no window for it and the two empty lists agree.
-				isControl := !testCase.wantPaused && !testCase.wholeHistoryPaused
+				// comparison above on two empty lists.
+				isControl := !testCase.wantPaused
 				if isControl && len(fromDashboard) == 0 {
 					t.Fatal("fixture: the dashboard projects no window over the swept days")
 				}
