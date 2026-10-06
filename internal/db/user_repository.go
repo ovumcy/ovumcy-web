@@ -1551,28 +1551,28 @@ func (repo *UserRepository) UpdateByID(ctx context.Context, userID uint, updates
 // UpdateCycleSettingsMovingPeriodStart writes the cycle-settings columns and
 // carries out move in the same transaction, so a moved start never lands
 // without the day logs that follow it, nor the reverse. Every day-log read and
-// write is scoped to userID. Clearable is evaluated on the rows read inside the
+// write is scoped to userID. ClearRows is evaluated on the rows read inside the
 // transaction, so a day edited after the service planned the move is judged as
-// it now stands.
+// it now stands. The fill rows share one creation stamp, the cohort a later
+// move recognises them by.
 func (repo *UserRepository) UpdateCycleSettingsMovingPeriodStart(ctx context.Context, userID uint, updates map[string]any, move models.PeriodStartMove) error {
 	if err := requireUserOwnerID(userID); err != nil {
 		return err
 	}
 	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		for _, day := range move.ClearDays {
+		if move.ClearRows != nil && !move.ClearFrom.IsZero() {
 			var entries []models.DailyLog
-			if err := tx.Where("user_id = ? AND date >= ? AND date < ?", userID, day, day.AddDate(0, 0, 1)).Find(&entries).Error; err != nil {
+			if err := tx.Where("user_id = ? AND date >= ? AND date < ?", userID, move.ClearFrom, move.ClearTo).
+				Order("date ASC, id ASC").Find(&entries).Error; err != nil {
 				return err
 			}
-			for _, entry := range entries {
-				if move.Clearable == nil || !move.Clearable(entry) {
-					continue
-				}
+			for _, entry := range move.ClearRows(entries) {
 				if err := tx.Where("id = ? AND user_id = ?", entry.ID, userID).Delete(&models.DailyLog{}).Error; err != nil {
 					return err
 				}
 			}
 		}
+		stamp := time.Now().UTC()
 		for _, day := range move.FillDays {
 			var count int64
 			if err := tx.Model(&models.DailyLog{}).Where("user_id = ? AND date >= ? AND date < ?", userID, day, day.AddDate(0, 0, 1)).Count(&count).Error; err != nil {
@@ -1581,7 +1581,7 @@ func (repo *UserRepository) UpdateCycleSettingsMovingPeriodStart(ctx context.Con
 			if count > 0 {
 				continue
 			}
-			entry := bareOnboardingPeriodDay(userID, day)
+			entry := bareOnboardingPeriodDay(userID, day, stamp)
 			if err := tx.Create(&entry).Error; err != nil {
 				return err
 			}
@@ -1603,11 +1603,15 @@ func (repo *UserRepository) UpdateCycleSettingsMovingPeriodStart(ctx context.Con
 }
 
 // bareOnboardingPeriodDay is the row onboarding's auto-fill writes for a day
-// that has none: a period day carrying no other signal.
-func bareOnboardingPeriodDay(userID uint, day time.Time) models.DailyLog {
+// that has none: a period day carrying no other signal. Every row of one fill
+// carries the same createdAt, so the rows that write produced stay one
+// recognisable cohort — a day the owner ticked by hand later has its own.
+func bareOnboardingPeriodDay(userID uint, day time.Time, createdAt time.Time) models.DailyLog {
 	return models.DailyLog{
 		UserID:        userID,
 		Date:          day,
+		CreatedAt:     createdAt,
+		UpdatedAt:     createdAt,
 		IsPeriod:      true,
 		Flow:          models.FlowNone,
 		SexActivity:   models.SexActivityNone,
@@ -1913,6 +1917,7 @@ func (repo *UserRepository) CompleteOnboarding(ctx context.Context, userID uint,
 
 	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if autoPeriodFill {
+			stamp := time.Now().UTC()
 			for cursor := startDay; !cursor.After(fillEndDay); cursor = cursor.AddDate(0, 0, 1) {
 				dayStart := cursor
 				dayEnd := dayStart.AddDate(0, 0, 1)
@@ -1923,7 +1928,7 @@ func (repo *UserRepository) CompleteOnboarding(ctx context.Context, userID uint,
 					Order("date DESC, id DESC").
 					First(&entry)
 				if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-					entry = bareOnboardingPeriodDay(userID, dayStart)
+					entry = bareOnboardingPeriodDay(userID, dayStart, stamp)
 					if err := tx.Create(&entry).Error; err != nil {
 						return err
 					}
