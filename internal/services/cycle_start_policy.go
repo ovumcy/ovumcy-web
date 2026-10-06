@@ -114,7 +114,8 @@ func ResolveManualCycleStartPolicy(user *models.User, logs []models.DailyLog, da
 
 func potentialImplantationGapDays(user *models.User, logs []models.DailyLog, targetDay time.Time, previousStart time.Time) (int, bool) {
 	filtered := filterLogsNotAfter(logs, AddCalendarDays(targetDay, -1, targetDay.Location()))
-	stats := BuildCycleStats(filtered, targetDay.Add(-time.Second), BoundaryContextFor(user, time.Time{}))
+	boundaryCtx := BoundaryContextFor(user, time.Time{})
+	stats := BuildCycleStats(filtered, targetDay.Add(-time.Second), boundaryCtx)
 
 	// The hint is read off the closing cycle's PROJECTED ovulation, so it may
 	// only be offered where every other surface would still publish that
@@ -138,7 +139,7 @@ func potentialImplantationGapDays(user *models.User, logs []models.DailyLog, tar
 	// length is always the account's own median.
 	gateStats := stats
 	gateStats.CurrentCycleDay = CalendarDaysBetween(previousStart, targetDay) + 1
-	if _, paused := ResolvePregnancyPause(filtered); paused {
+	if _, paused := ResolvePregnancyPause(filtered, boundaryCtx); paused {
 		gateStats.PregnancyPaused = true
 	}
 	if FertilityProjectionSuppressed(user, gateStats) {

@@ -10,32 +10,33 @@ import (
 // because a positive pregnancy test is the user's most recent fertility
 // signal, returning the date of that latest positive test when paused.
 //
-// Pause is active when a positive pregnancy test exists and no cycle start (a
-// day flagged both IsPeriod and CycleStart) is logged strictly after it. A
-// cycle start on the same calendar day as the positive test does not lift the
-// pause — the positive result wins ties. Stored dates are canonical
-// UTC-midnight (migration 019 + DailyLog.BeforeSave), so time.Time comparison
-// is calendar-day exact. Mirrors the ovumcy-app resolvePregnancyPause rule.
-func ResolvePregnancyPause(logs []models.DailyLog) (time.Time, bool) {
+// Pause is active when a positive pregnancy test exists and no cycle starts
+// strictly after it. "A cycle starts" is CycleBoundaries' answer over the same
+// logs and context, never a raw IsPeriod+CycleStart flag: an unmarked bleeding
+// run that the rule counts lifts the pause, while a spotting day or an
+// uncertain mark — which open no cycle anywhere else — does not. A boundary on
+// the same calendar day as the positive test does not lift the pause — the
+// positive result wins ties. Stored dates are canonical UTC-midnight (migration
+// 019 + DailyLog.BeforeSave), and both sides are compared as calendar days.
+//
+// The ovumcy-app resolvePregnancyPause still reads the raw flag; the two need
+// the same rule for parity.
+func ResolvePregnancyPause(logs []models.DailyLog, ctx BoundaryContext) (time.Time, bool) {
 	var latestPositive time.Time
-	var latestCycleStart time.Time
 	for _, logEntry := range logs {
-		if logEntry.PregnancyTest == models.PregnancyTestPositive {
-			if latestPositive.IsZero() || logEntry.Date.After(latestPositive) {
-				latestPositive = logEntry.Date
-			}
+		if logEntry.PregnancyTest != models.PregnancyTestPositive {
+			continue
 		}
-		if logEntry.IsPeriod && logEntry.CycleStart {
-			if latestCycleStart.IsZero() || logEntry.Date.After(latestCycleStart) {
-				latestCycleStart = logEntry.Date
-			}
+		if latestPositive.IsZero() || logEntry.Date.After(latestPositive) {
+			latestPositive = logEntry.Date
 		}
 	}
-
 	if latestPositive.IsZero() {
 		return time.Time{}, false
 	}
-	if !latestCycleStart.IsZero() && latestCycleStart.After(latestPositive) {
+
+	starts := CycleBoundaries(logs, ctx)
+	if len(starts) > 0 && CalendarDaysBetween(dateOnly(latestPositive), starts[len(starts)-1]) > 0 {
 		return time.Time{}, false
 	}
 	return latestPositive, true
