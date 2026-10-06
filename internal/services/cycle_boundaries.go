@@ -125,6 +125,27 @@ func CycleBoundaries(logs []models.DailyLog, ctx BoundaryContext) []time.Time {
 	return starts
 }
 
+// newestBoundaryOpensClusterOf reports whether the newest cycle boundary over
+// logs (under ctx, so the onboarding start joins the grouping as in
+// CycleBoundaries) is the one opened by the period cluster that holds day. It is
+// false when no cluster opens a cycle, and when the newest cycle starts in a
+// later cluster than day's.
+func newestBoundaryOpensClusterOf(logs []models.DailyLog, ctx BoundaryContext, day time.Time) bool {
+	days := periodDaysOf(logs)
+	if onboarding := OnboardingBoundaryDay(ctx); !onboarding.IsZero() {
+		days = insertPeriodDay(days, periodDay{day: onboarding, explicit: true})
+	}
+	clusters := clusterPeriodDays(days)
+	day = dateOnly(day)
+	for index := len(clusters) - 1; index >= 0; index-- {
+		if _, opens := clusters[index].boundary(ctx.Today); !opens {
+			continue
+		}
+		return !day.Before(clusters[index].Start) && !day.After(clusters[index].End)
+	}
+	return false
+}
+
 // latestBoundaryOnOrBefore is the newest boundary dated on or before day, zero
 // when there is none.
 func latestBoundaryOnOrBefore(starts []time.Time, day time.Time) time.Time {

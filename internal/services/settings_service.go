@@ -116,6 +116,22 @@ type SettingsService struct {
 	// of silently removing the control.
 	reauthPolicy    *AuthAttemptPolicy
 	reauthSecretKey []byte
+	// dayLogs reads the owner's day logs for a Settings start move: the old
+	// start's fill days are removed only while the old start still opens the
+	// newest cycle. Without it a move fills the new start and removes nothing.
+	dayLogs SettingsDayLogReader
+}
+
+// SettingsDayLogReader is the day-log read a Settings start move needs; the
+// day service provides it.
+type SettingsDayLogReader interface {
+	FetchAllLogsForUser(ctx context.Context, userID uint) ([]models.DailyLog, error)
+}
+
+// AttachDayLogReader wires the day-log read a Settings start move consults
+// before it removes the old start's fill days. Call it from bootstrap.
+func (service *SettingsService) AttachDayLogReader(reader SettingsDayLogReader) {
+	service.dayLogs = reader
 }
 
 func NewSettingsService(users SettingsUserRepository) *SettingsService {
@@ -318,7 +334,11 @@ func (service *SettingsService) SaveCycleSettings(ctx context.Context, userID ui
 		if err != nil {
 			return err
 		}
-		if move, moved := planPeriodStartMove(stored, settings); moved {
+		clearOld, err := service.oldStartFillIsClearable(ctx, userID, stored, *settings.LastPeriodStart)
+		if err != nil {
+			return err
+		}
+		if move, moved := planPeriodStartMove(stored, settings, clearOld); moved {
 			mover, ok := service.users.(periodStartMover)
 			if !ok {
 				// Never a columns-only save: the start would move without its
@@ -352,13 +372,14 @@ type periodStartMover interface {
 // gets what onboarding would write for it under the owner's auto-fill setting
 // and period length (as this save leaves them). Existing rows in the new range
 // are never rewritten, except that a non-period row on the new start day
-// becomes a period day: a logged non-period day withdraws the stored start as
-// a boundary, and the date just saved is the owner's newer word about it.
+// becomes a period day: the date just saved is the owner's period start.
 //
-// The old range is cleared only while the stored auto-fill setting is on: with
-// it off, onboarding wrote no days there, and a bare period day in that range
-// is the owner's own toggle. Clearing the start (nil) moves nothing.
-func planPeriodStartMove(stored models.User, settings CycleSettingsUpdate) (models.PeriodStartMove, bool) {
+// The old range is cleared only when clearOld holds (oldStartFillIsClearable:
+// the old start still opens the newest cycle, and the new one corrects it
+// rather than starting a later cycle) and the stored auto-fill setting is on:
+// with it off, onboarding wrote no days there, and a bare period day in that
+// range is the owner's own toggle. Clearing the start (nil) moves nothing.
+func planPeriodStartMove(stored models.User, settings CycleSettingsUpdate, clearOld bool) (models.PeriodStartMove, bool) {
 	newStart := dateOnly(*settings.LastPeriodStart)
 	oldStart := time.Time{}
 	if stored.LastPeriodStart != nil && !stored.LastPeriodStart.IsZero() {
@@ -392,7 +413,7 @@ func planPeriodStartMove(stored models.User, settings CycleSettingsUpdate) (mode
 			filled[CalendarDayKey(day)] = true
 		}
 	}
-	if !oldStart.IsZero() && stored.AutoPeriodFill {
+	if clearOld && !oldStart.IsZero() && stored.AutoPeriodFill {
 		for offset := range periodFillLength(stored.PeriodLength) {
 			day := oldStart.AddDate(0, 0, offset)
 			if day.Equal(newStart) || filled[CalendarDayKey(day)] {
@@ -402,6 +423,37 @@ func planPeriodStartMove(stored models.User, settings CycleSettingsUpdate) (mode
 		}
 	}
 	return move, true
+}
+
+// oldStartFillIsClearable reports whether a Settings move from the stored start
+// to newStart may remove the old start's fill days. Both must hold:
+//   - the newest cycle boundary over the owner's logs (under the stored
+//     context) is the one the old start's period cluster opens — once a later
+//     cycle is logged, the old start is history, not a date being corrected;
+//   - newStart is earlier than the old start, or later by fewer than
+//     MinOnboardingCycleLength days — a start a full shortest cycle later is a
+//     new period, and the old one stays recorded.
+//
+// Without a day-log reader the first cannot be established, so nothing is
+// removed.
+func (service *SettingsService) oldStartFillIsClearable(ctx context.Context, userID uint, stored models.User, newStart time.Time) (bool, error) {
+	if stored.LastPeriodStart == nil || stored.LastPeriodStart.IsZero() {
+		return false, nil
+	}
+	oldStart := dateOnly(*stored.LastPeriodStart)
+	newStart = dateOnly(newStart)
+	if !newStart.Before(oldStart) && CalendarDaysBetween(oldStart, newStart) >= MinOnboardingCycleLength {
+		return false, nil
+	}
+	if service.dayLogs == nil {
+		return false, nil
+	}
+	logs, err := service.dayLogs.FetchAllLogsForUser(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	today := DateAtLocation(time.Now(), resolveOwnerLocation(stored.Timezone, time.UTC))
+	return newestBoundaryOpensClusterOf(logs, BoundaryContextFor(&stored, today), oldStart), nil
 }
 
 // periodFillLength is the number of days an auto-fill writes for a stored
