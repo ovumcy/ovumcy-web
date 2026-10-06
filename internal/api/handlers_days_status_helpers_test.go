@@ -182,3 +182,51 @@ func TestSendDaySaveStatusPatternSelection(t *testing.T) {
 		t.Fatalf("expected translated saved_at verb to be formatted in, got %q", translatedBody)
 	}
 }
+
+// TestSendDaySaveStatusDeclaresTheMessageKind pins the kind marker the client
+// reads instead of the localized copy: the pregnancy-pause sentence carries
+// red-flag guidance and is declared persistent (never cleared on a timer), the
+// bare confirmations are declared neutral (the dashboard does not repeat what
+// its own indicator says), and a routine line declares no kind at all.
+func TestSendDaySaveStatusDeclaresTheMessageKind(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name       string
+		messageKey string
+		wantOpen   string
+	}{
+		{"pregnancy pause is persistent", "dashboard.save_message_pregnancy_paused", `<div class="status-ok" data-status-kind="persistent">`},
+		{"neutral line is neutral", "dashboard.save_message_neutral", `<div class="status-ok" data-status-kind="neutral">`},
+		{"bare saved-at confirmation is neutral", "", `<div class="status-ok" data-status-kind="neutral">`},
+		{"self-care declares no kind", "dashboard.save_message_self_care", `<div class="status-ok">`},
+		{"fertile declares no kind", "dashboard.save_message_fertile", `<div class="status-ok">`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			handler := &Handler{}
+			app := fiber.New()
+			app.Get("/*", func(c fiber.Ctx) error {
+				return handler.sendDaySaveStatus(c, tc.messageKey)
+			})
+			response, err := app.Test(httptest.NewRequest(http.MethodGet, "/dashboard", nil), testConfigNoTimeout)
+			if err != nil {
+				t.Fatalf("sendDaySaveStatus request failed: %v", err)
+			}
+			defer func() { _ = response.Body.Close() }()
+			raw, err := io.ReadAll(response.Body)
+			if err != nil {
+				t.Fatalf("read sendDaySaveStatus body: %v", err)
+			}
+			body := string(raw)
+			if !strings.HasPrefix(body, tc.wantOpen) {
+				t.Fatalf("expected the status to open with %q, got %q", tc.wantOpen, body)
+			}
+			if strings.Count(body, "data-status-kind") > 1 {
+				t.Fatalf("expected at most one kind marker, got %q", body)
+			}
+		})
+	}
+}

@@ -216,6 +216,13 @@
       successStatusClearTimers.delete(successNode);
     }
 
+    // A status the server declares persistent carries safety guidance — the
+    // prediction pause with its red-flag line — and stays until the owner
+    // dismisses it. The server states the kind; nothing here reads the copy.
+    if (successNode.getAttribute("data-status-kind") === "persistent") {
+      return;
+    }
+
     var timer = window.setTimeout(function () {
       if (!target.contains(successNode)) {
         successStatusClearTimers.delete(successNode);
