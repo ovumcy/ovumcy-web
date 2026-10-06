@@ -2115,6 +2115,10 @@
   // entry into that account; the form carries an opaque binding to the account
   // that rendered it.
   var ACCOUNT_CHANGED_NOTICE_KEY = "daylog.save_account_changed";
+  // The read-side counterpart: the calendar's fetch of a day (or of its grid)
+  // from a page rendered for another account is refused with its own copy,
+  // since nothing was being saved.
+  var OPEN_ACCOUNT_CHANGED_NOTICE_KEY = "daylog.open_account_changed";
 
   // The retry above reads the CSRF token from the page at send time, and the
   // sign-in happens in another tab. The token cookie is not rotated by signing
@@ -2245,7 +2249,7 @@
     }
     var xhr = event && event.detail ? event.detail.xhr : null;
     var refusal = parseServerStatusError(xhr && typeof xhr.responseText === "string" ? xhr.responseText : "");
-    if (!refusal || refusal.key !== ACCOUNT_CHANGED_NOTICE_KEY) {
+    if (!refusal || (refusal.key !== OPEN_ACCOUNT_CHANGED_NOTICE_KEY && refusal.key !== ACCOUNT_CHANGED_NOTICE_KEY)) {
       return false;
     }
 

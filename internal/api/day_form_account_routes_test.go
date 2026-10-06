@@ -38,6 +38,28 @@ func assertAccountChangedRefusal(t *testing.T, label string, response *http.Resp
 	return body
 }
 
+// openAccountChangedKey is the key a READ refused for another account renders:
+// its copy says the day cannot be opened, not that an entry was not saved.
+const openAccountChangedKey = "daylog.open_account_changed"
+
+// assertOpenAccountChangedRefusal is assertAccountChangedRefusal for the
+// calendar's reads: the same 409, with the read's own reason and never the
+// write's.
+func assertOpenAccountChangedRefusal(t *testing.T, label string, response *http.Response) string {
+	t.Helper()
+	body := mustReadBodyString(t, response.Body)
+	if response.StatusCode != http.StatusConflict {
+		t.Fatalf("%s: must be refused 409, got %d %q", label, response.StatusCode, body)
+	}
+	if !strings.Contains(body, openAccountChangedKey) {
+		t.Fatalf("%s: the 409 must carry the %s reason, got %q", label, openAccountChangedKey, body)
+	}
+	if strings.Contains(body, accountChangedKey) {
+		t.Fatalf("%s: a refused read must not claim an entry was not saved (%s), got %q", label, accountChangedKey, body)
+	}
+	return body
+}
+
 // dayWriteRoutes enumerates every state-changing route under /api/v1/days from
 // the router itself, so a write route added later is held to the binding
 // without anyone listing it here.
