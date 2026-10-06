@@ -231,10 +231,10 @@ func (handler *Handler) respondUpsertDaySuccess(c fiber.Ctx, day time.Time, entr
 	if dayFormNavigation(c) {
 		// A day form submitted without JavaScript: send the browser back to the
 		// page the form was on. The calendar editor names itself with
-		// source=calendar, a hidden field (FormValue reads the query string
+		// source=calendar, a hidden field (dayFormSource reads the query string
 		// first, so the ?source= DeleteDay uses works here too); the dashboard
 		// form is the default.
-		if c.FormValue("source") == "calendar" {
+		if dayFormSource(c) == "calendar" {
 			return redirectOrJSON(c, calendarDayPath(day))
 		}
 		return redirectOrJSON(c, "/dashboard")
@@ -313,7 +313,7 @@ func (handler *Handler) MarkCycleStart(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ok": true})
 	}
 
-	if c.Query("source") == "calendar" {
+	if dayFormSource(c) == "calendar" {
 		return redirectOrJSON(c, calendarDayPath(day))
 	}
 	return redirectOrJSON(c, "/dashboard")
