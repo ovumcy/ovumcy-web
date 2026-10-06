@@ -231,7 +231,7 @@ func PublishedOverviewStats(user *models.User, logs []models.DailyLog, stats Cyc
 	if wasConfirmed {
 		published.OvulationDate = confirmedDay
 	}
-	followUpcomingPrediction(&published, user, resolved, suppression, wasConfirmed, today, location)
+	followUpcomingPrediction(&published, user, resolved, logs, suppression, wasConfirmed, today, location)
 	confirmedOvulation := wasConfirmed && sameDay(published.OvulationDate, confirmedDay)
 	return published, suppression, confirmedOvulation
 }
@@ -265,7 +265,13 @@ func PublishedOverviewStats(user *models.User, logs []models.DailyLog, stats Cyc
 // own per-cycle helper (projectedCycleWindow), so the grid and the API cannot
 // shade two windows around one day; where the day did not move, the running
 // cycle's window stands as published.
-func followUpcomingPrediction(published *CycleStats, user *models.User, resolved CycleStats, suppression PredictionSuppression, wasConfirmed bool, today time.Time, location *time.Location) {
+//
+// The fertility status and the phase PublishedStats left were read against the
+// RUNNING cycle's window, so once the window moves they are read again against
+// the one published here (reconcileMovedWindow): the status says whether today
+// falls inside the window the same response reports, never inside one it no
+// longer names.
+func followUpcomingPrediction(published *CycleStats, user *models.User, resolved CycleStats, logs []models.DailyLog, suppression PredictionSuppression, wasConfirmed bool, today time.Time, location *time.Location) {
 	cycleLength := DashboardProjectionCycleLength(user, resolved)
 	prediction := DashboardUpcomingPredictions(resolved, user, today, cycleLength)
 	if !suppression.PredictionsSuppressed {
@@ -291,12 +297,53 @@ func followUpcomingPrediction(published *CycleStats, user *models.User, resolved
 	// its window goes with it, as clearUnspellableCycleWindow does for the
 	// running cycle's.
 	window, ok := projectedCycleWindowOn(resolved.LastPeriodStart, prediction.OvulationDate, cycleLength, resolved.LutealPhase, location)
-	if !ok {
+	if ok {
+		published.FertilityWindowStart = locationDateOrZero(window.FertilityWindowStart, location)
+		published.FertilityWindowEnd = locationDateOrZero(window.FertilityWindowEnd, location)
+	} else {
 		published.FertilityWindowStart, published.FertilityWindowEnd = time.Time{}, time.Time{}
-		return
 	}
-	published.FertilityWindowStart = locationDateOrZero(window.FertilityWindowStart, location)
-	published.FertilityWindowEnd = locationDateOrZero(window.FertilityWindowEnd, location)
+	reconcileMovedWindow(published, logs, today, location)
+}
+
+// reconcileMovedWindow re-reads the fertility status and the phase against the
+// window followUpcomingPrediction just published in place of the running
+// cycle's.
+//
+// The status is resolved against the published window (setFertilityStatus), so
+// a rolled window that covers today is "fertile" and one that does not is
+// "outside_estimated_window"; a null window answers "unknown", with no basis,
+// whatever day stands beside it. Out-of-date data withholds it as PublishedStats
+// does, the moved window being no more current than the running one.
+//
+// The phase keeps the running cycle's answer while a day is published: the roll
+// only happens once that cycle's ovulation is behind today, and "luteal" is the
+// phase the dashboard names for it, the rolled day ahead notwithstanding. Two
+// cases cannot keep it. Beside a null ovulation day it takes the null-ovulation
+// treatment, recomputed from the published fields exactly as PublishedStats does
+// under suppression, so it names only recorded or projected bleeding, or
+// "unknown". And on a day the published window calls fertile, "luteal" would deny
+// the ovulation that window still places ahead of today, so no phase is named
+// there, the rule ovulationTimingUndetermined applies to the running window; a
+// day recorded as bleeding stays "menstrual". Out-of-date data answers "unknown"
+// last, as PublishedStats does.
+func reconcileMovedWindow(published *CycleStats, logs []models.DailyLog, today time.Time, location *time.Location) {
+	windowPublished := !published.OvulationDate.IsZero() && !published.FertilityWindowStart.IsZero() && !published.FertilityWindowEnd.IsZero()
+	if windowPublished {
+		setFertilityStatus(published, today, FertilityBasisProjection)
+	} else {
+		withholdFertilityStatus(published)
+	}
+	switch {
+	case published.OvulationDate.IsZero():
+		published.CurrentPhase = DetectCurrentPhase(*published, logs, today, location)
+	case published.CurrentPhase == "luteal" && published.CurrentFertility == FertilityStatusFertile:
+		published.CurrentPhase = "unknown"
+	}
+	if published.CycleDataStale {
+		withholdFertilityStatus(published)
+		published.CurrentPhase = "unknown"
+	}
 }
 
 // projectedCycleWindowOn is the window of the projected cycle, chained from

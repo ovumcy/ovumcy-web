@@ -16,6 +16,11 @@ import (
 // publishing 09-20, flagged exact. Cycle day 22 is the same divergence before the
 // cycle has reached its own length; cycle day 29 is the reported case, where the
 // next period that closes the running cycle is today.
+//
+// The status is read against the rolled window, which covers neither day, and
+// the phase stays the running cycle's "luteal", the dashboard's; on cycle day 29
+// the data is out of date (past the 28-day reference length), so both are
+// withheld there whatever the window says.
 func TestPublishedOverviewFollowsTheUpcomingPredictionThePagesRender(t *testing.T) {
 	for _, testCase := range []struct {
 		name            string
@@ -23,9 +28,14 @@ func TestPublishedOverviewFollowsTheUpcomingPredictionThePagesRender(t *testing.
 		wantNextPeriod  string
 		wantOvulation   string
 		wantWindowStart string
+		wantFertility   string
+		wantBasis       string
+		wantPhase       string
 	}{
-		{name: "cycle day 22", today: "2026-09-28", wantNextPeriod: "2026-10-05", wantOvulation: "2026-10-18", wantWindowStart: "2026-10-13"},
-		{name: "cycle day 29", today: "2026-10-05", wantNextPeriod: "2026-10-05", wantOvulation: "2026-10-18", wantWindowStart: "2026-10-13"},
+		{name: "cycle day 22", today: "2026-09-28", wantNextPeriod: "2026-10-05", wantOvulation: "2026-10-18", wantWindowStart: "2026-10-13",
+			wantFertility: FertilityStatusOutsideEstimatedWindow, wantBasis: FertilityBasisProjection, wantPhase: "luteal"},
+		{name: "cycle day 29", today: "2026-10-05", wantNextPeriod: "2026-10-05", wantOvulation: "2026-10-18", wantWindowStart: "2026-10-13",
+			wantFertility: FertilityStatusUnknown, wantBasis: "", wantPhase: "unknown"},
 	} {
 		for _, zoneName := range []string{"UTC", "America/New_York", "Pacific/Auckland"} {
 			t.Run(testCase.name+"/"+zoneName, func(t *testing.T) {
@@ -56,6 +66,7 @@ func TestPublishedOverviewFollowsTheUpcomingPredictionThePagesRender(t *testing.
 				if got := CalendarDayKey(published.FertilityWindowEnd); got != testCase.wantOvulation {
 					t.Errorf("fertility_window_end = %s, want %s", got, testCase.wantOvulation)
 				}
+				assertPublishedStatusAndPhase(t, published, testCase.wantFertility, testCase.wantBasis, testCase.wantPhase)
 
 				// The dashboard header names the same two days.
 				dashboard := BuildDashboardCycleContext(user, logs, stats, today, location)
@@ -94,7 +105,8 @@ func TestPublishedOverviewFollowsTheUpcomingPredictionThePagesRender(t *testing.
 // 9999-12-30 the running cycle's ovulation (9999-12-23) is behind today and the
 // cycle it rolls into ovulates in year 10000, which no surface spells. The
 // dashboard names no ovulation there, so the overview publishes neither the
-// passed day nor a window for it.
+// passed day nor a window for it — and with the window gone, no status read
+// against it and no phase that compares today with the day it withholds.
 func TestPublishedOverviewDropsAPassedOvulationWhoseRollFallsPastTheYear(t *testing.T) {
 	user := &models.User{Role: models.RoleOwner, CycleLength: 28, PeriodLength: 5, LutealPhase: 14}
 	logs := cycleStartLogs(t, "9999-09-17", "9999-10-15", "9999-11-12", "9999-12-10")
@@ -115,6 +127,58 @@ func TestPublishedOverviewDropsAPassedOvulationWhoseRollFallsPastTheYear(t *test
 	}
 	if dashboard := BuildDashboardCycleContext(user, logs, stats, today, time.UTC); !dashboard.DisplayOvulationDate.IsZero() {
 		t.Fatalf("fixture: the dashboard names ovulation %s", CalendarDayKey(dashboard.DisplayOvulationDate))
+	}
+	// Cycle day 21, nothing logged: the running window would have answered
+	// "outside_estimated_window" and "luteal".
+	assertPublishedStatusAndPhase(t, published, FertilityStatusUnknown, "", "unknown")
+}
+
+// TestPublishedOverviewReadsTheStatusAgainstTheRolledWindow: completed cycles
+// of 24, 24, 24, 40 and 40 days (median 24, mean about 30), the running cycle
+// from 06-02, today 06-30, cycle day 29 — before the 30-day reference length,
+// so the data is not out of date. The running ovulation (06-11) is behind
+// today, and the pages roll it to 07-05 with the window 06-30..07-05, which
+// covers today. The status published beside that window is "fertile" against
+// it, not "outside_estimated_window" against the running cycle's 06-06..06-11,
+// and no phase is named: "luteal" would deny the ovulation the same response
+// places five days ahead.
+func TestPublishedOverviewReadsTheStatusAgainstTheRolledWindow(t *testing.T) {
+	user := &models.User{Role: models.RoleOwner, CycleLength: 28, PeriodLength: 5, LutealPhase: 14, UsageGoal: models.UsageGoalTrying}
+	logs := cycleStartLogs(t, "2026-01-01", "2026-01-25", "2026-02-18", "2026-03-14", "2026-04-23", "2026-06-02")
+	now := localNoon(mustParseDay(t, "2026-06-30"), time.UTC)
+	today := DateAtLocation(now, time.UTC)
+	stats := BuildCycleStatsFromLogs(user, logs, now, time.UTC)
+	if got := CalendarDayKey(stats.OvulationDate); got != "2026-06-11" || stats.CurrentFertility != FertilityStatusOutsideEstimatedWindow {
+		t.Fatalf("fixture: the running cycle's ovulation = %s status %q, want 2026-06-11 outside its window", got, stats.CurrentFertility)
+	}
+
+	published, suppression, confirmed := PublishedOverviewStats(user, logs, stats, today, time.UTC)
+	if suppression.PredictionsSuppressed || suppression.FertilitySuppressed || confirmed || published.CycleDataStale {
+		t.Fatalf("fixture: suppression %+v confirmed %v stale %v, want a published, current projection", suppression, confirmed, published.CycleDataStale)
+	}
+	if got := CalendarDayKey(published.OvulationDate); got != "2026-07-05" {
+		t.Fatalf("ovulation_date = %s, want the rolled 2026-07-05", got)
+	}
+	if start, end := CalendarDayKey(published.FertilityWindowStart), CalendarDayKey(published.FertilityWindowEnd); start != "2026-06-30" || end != "2026-07-05" {
+		t.Fatalf("window = %s..%s, want 2026-06-30..2026-07-05", start, end)
+	}
+	assertPublishedStatusAndPhase(t, published, FertilityStatusFertile, FertilityBasisProjection, "unknown")
+	assertCalendarShadesExactlyThePublishedWindow(t, user, logs, stats, published, now, time.UTC)
+}
+
+// assertPublishedStatusAndPhase checks the three fields read against the
+// published window: the fertility status, the window it names as its basis, and
+// the phase.
+func assertPublishedStatusAndPhase(t *testing.T, published CycleStats, wantFertility string, wantBasis string, wantPhase string) {
+	t.Helper()
+	if published.CurrentFertility != wantFertility {
+		t.Errorf("current_fertility = %q, want %q", published.CurrentFertility, wantFertility)
+	}
+	if published.FertilityBasis != wantBasis {
+		t.Errorf("fertility_basis = %q, want %q", published.FertilityBasis, wantBasis)
+	}
+	if published.CurrentPhase != wantPhase {
+		t.Errorf("current_phase = %q, want %q", published.CurrentPhase, wantPhase)
 	}
 }
 
@@ -273,6 +337,12 @@ func TestPublishedOverviewClearsTheWindowWhereTheProjectionPlacesNoOvulation(t *
 		t.Errorf("ovulation %s window %s..%s, want all absent beside ovulation_impossible",
 			CalendarDayKey(published.OvulationDate), CalendarDayKey(published.FertilityWindowStart), CalendarDayKey(published.FertilityWindowEnd))
 	}
+	// Today (cycle day 10) lies inside the running window the stats carried, so
+	// "fertile" and "follicular" stood until the window went.
+	if stats.CurrentFertility != FertilityStatusFertile {
+		t.Fatalf("fixture: the running cycle's status = %q, want fertile", stats.CurrentFertility)
+	}
+	assertPublishedStatusAndPhase(t, published, FertilityStatusUnknown, "", "unknown")
 }
 
 // TestPublishedOverviewTakesTheNextPeriodFromTheUpcomingPrediction: the stats
