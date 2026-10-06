@@ -11,11 +11,12 @@ import (
 // TestLanguageSwitchRefusalPageFiltersItsOwnAddressQuery submits the language
 // switch the way a page that is not ours would — no CSRF token, a `next` path
 // carrying an address the app never asked for — and reads the refusal page's
-// layout: the switcher's hidden `next` and the footer's privacy link render the
-// page's own address, and that address goes through the same query allowlist
-// every other page's does. A `next` query outside it never reaches either; an
-// allowlisted parameter of the right shape still does, so the check cannot pass
-// on a layout that renders neither.
+// layout: the footer's privacy link renders the page's own address, and that
+// address goes through the same query allowlist every other page's does. A
+// `next` query outside it never reaches the layout; an allowlisted parameter of
+// the right shape still does, so the check cannot pass on a layout that renders
+// no address at all. The switcher, the other reader of that address, is absent
+// here: the CSRF refusal left it no token to post (WEB-293).
 func TestLanguageSwitchRefusalPageFiltersItsOwnAddressQuery(t *testing.T) {
 	t.Parallel()
 
@@ -40,8 +41,8 @@ func TestLanguageSwitchRefusalPageFiltersItsOwnAddressQuery(t *testing.T) {
 	}
 
 	const want = "/?month=2026-01"
-	if !strings.Contains(layout, `name="next" value="`+want+`"`) {
-		t.Fatalf("the switcher's hidden next is not the filtered address %q: %s", want, layout)
+	if strings.Contains(layout, `action="/lang"`) {
+		t.Fatalf("the CSRF refusal page offers a language switch with no token to post: %s", layout)
 	}
 	_, privacy, found := strings.Cut(layout, `href="/privacy?back=`)
 	privacy, _, closed = strings.Cut(privacy, `"`)
