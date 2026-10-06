@@ -490,11 +490,11 @@ test.describe('Stats: history statements', () => {
 });
 
 test.describe('Stats: cycle range', () => {
-  test('two completed cycles of different lengths populate the cycle range stat card', async ({
+  test('three completed cycles of different lengths populate the cycle range stat card', async ({
     page,
   }) => {
-    // Two cycle starts after onboarding -> two completed cycles of distinct
-    // lengths (20 and 25 days nominally). populateObservedCycleStats fills
+    // One cycle start before onboarding's and two after it -> three completed
+    // cycles (20, 20 and 25 days nominally). populateObservedCycleStats fills
     // MinCycleLength / MaxCycleLength from cycleLengths(observedStarts), and
     // the Range card prints stats.cycle_range_summary when MinCycleLength>0.
     await registerAndOnboardWithStartDaysAgo(page, 'stats-cycle-range', 60);
