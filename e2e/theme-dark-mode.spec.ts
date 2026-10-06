@@ -411,6 +411,9 @@ test.describe('Theme mode', () => {
     // lowest-lightness phase the overlay can sit on (WEB-285: 2.49:1 before the
     // dark gradient was deepened). The test above measures whichever phases
     // its fixture happens to put the window on; this one pins the pair by name.
+    // Three closed cycles of 44, 58 and 30 days: the projection stays at the
+    // 44-day median while the 30-58 spread opens a start window wide enough to
+    // reach back over the late luteal days of the running cycle.
     await registerAndOnboardWithStartDaysAgo(page, 'theme-dark-luteal-window', 60);
     const today = isoToday();
     for (const offset of [-134, -90, -32, -2]) {
@@ -430,13 +433,16 @@ test.describe('Theme mode', () => {
       'this fixture must put the start window on a luteal cell, or nothing below is measured'
     ).toHaveCount(1);
 
-    const contrast = await measureOverlayContrast(
-      lutealWindowCell,
-      'cycle ribbon data-start-window overlay, phase=luteal (dark)'
-    );
-    expect(contrast.worstRatio, describeContrast(contrast)).toBeGreaterThanOrEqual(
-      WCAG_AA_GRAPHIC_CONTRAST
-    );
+    for (const theme of ['dark', 'light'] as const) {
+      await applyTheme(page, theme);
+      const contrast = await measureOverlayContrast(
+        lutealWindowCell,
+        `cycle ribbon data-start-window overlay, phase=luteal (${theme})`
+      );
+      expect(contrast.worstRatio, describeContrast(contrast)).toBeGreaterThanOrEqual(
+        WCAG_AA_GRAPHIC_CONTRAST
+      );
+    }
 
     await logoutViaAPI(page);
   });
