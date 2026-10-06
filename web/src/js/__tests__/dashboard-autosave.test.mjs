@@ -22,7 +22,10 @@ const TODAY = "2026-08-12";
 const SAVED_LABEL = "Saved";
 const UNDO_LABEL = "Undo";
 
-function dashboardPage({ entryExists = false, notes = "" } = {}) {
+function dashboardPage({ entryExists = false, notes = "", periodFromStoredStart = false } = {}) {
+  const storedStartMarker = periodFromStoredStart
+    ? `<input type="hidden" name="period_from_stored_start" value="true">`
+    : "";
   return `<!doctype html><html><head><meta name="csrf-token" content="unit-test-token"></head><body>
   <div data-dashboard-editor>
     <form
@@ -33,6 +36,7 @@ function dashboardPage({ entryExists = false, notes = "" } = {}) {
       data-dashboard-save-form
       data-dashboard-date="${TODAY}"
       data-today-entry-exists="${entryExists ? "true" : "false"}"
+      data-today-period-from-stored-start="${periodFromStoredStart ? "true" : "false"}"
       data-autosave-clear-url="/api/v1/days/${TODAY}?source=dashboard"
       data-autosave-saving="Saving..."
       data-autosave-saved="${SAVED_LABEL}"
@@ -41,8 +45,9 @@ function dashboardPage({ entryExists = false, notes = "" } = {}) {
       data-day-save-failed-text="Couldn't save. Your entry is still here."
       data-day-save-retry-label="Try again">
       <input type="hidden" name="csrf_token" value="unit-test-token">
-      <label class="period-toggle" data-binary-toggle data-active="false">
-        <input type="checkbox" name="is_period" value="true" data-period-toggle data-binary-toggle-input>
+      ${storedStartMarker}
+      <label class="period-toggle" data-binary-toggle data-active="${periodFromStoredStart ? "true" : "false"}">
+        <input type="checkbox" name="is_period" value="true" data-period-toggle data-binary-toggle-input${periodFromStoredStart ? " checked" : ""}>
       </label>
       <input type="radio" name="mood" value="4">
       <input type="checkbox" name="symptom_ids" value="7">
@@ -264,6 +269,44 @@ test("undoing the first save of an empty day clears it instead of writing an emp
     assert.equal(calls()[1].init.method, "DELETE", "an empty day is an absent entry, not an empty one");
     assert.equal(calls()[1].url, `/api/v1/days/${TODAY}?source=dashboard`);
     assert.equal(toggle.checked, false, "the screen goes back with it");
+  } finally {
+    dom.window.close();
+  }
+});
+
+// A day with no saved entry whose period is ticked from the stored onboarding
+// start is not an empty day. Undoing the first save back to it must re-send the
+// tick and its hidden marker: a DELETE would withdraw the stored start.
+test("undoing the first save of a day ticked from the stored start re-sends the tick instead of clearing the day", async () => {
+  const { dom, calls } = await loadDashboard({ entryExists: false, periodFromStoredStart: true });
+  try {
+    const mood = dom.window.document.querySelector("input[name='mood'][value='4']");
+    mood.checked = true;
+    fireChange(mood);
+    flushAutosave(dom.window);
+    await settle();
+
+    assert.equal(calls().length, 1);
+    undoButton(dom.window).dispatchEvent(
+      new dom.window.MouseEvent("click", { bubbles: true, cancelable: true })
+    );
+    await settle();
+
+    assert.equal(calls().length, 2, "the undo goes out");
+    assert.equal(
+      calls()[1].init.method,
+      "PUT",
+      "a day ticked from the stored start is not cleared by an undo"
+    );
+    assert.equal(calls()[1].url, `/api/v1/days/${TODAY}`);
+    const undoBody = bodyOf(calls()[1]);
+    assert.ok(undoBody.includes(formValue("is_period", "true")), "the restored tick travels");
+    assert.ok(
+      undoBody.includes(formValue("period_from_stored_start", "true")),
+      "the tick still says it came from the stored start"
+    );
+    assert.equal(undoBody.includes("mood=4"), false, "the undone mood is gone from the wire");
+    assert.equal(mood.checked, false, "and from the screen");
   } finally {
     dom.window.close();
   }
