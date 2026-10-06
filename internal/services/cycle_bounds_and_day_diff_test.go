@@ -49,12 +49,12 @@ func TestCycleLengthsCountsCalendarDaysAcrossADSTTransition(t *testing.T) {
 	}
 }
 
-// TestDetectCycleStartsGapIsACalendarDayGap pins the gap arithmetic in
-// DetectCycleStarts. Both operands pass through dateOnly first, so this is a
+// TestCycleBoundariesGapIsACalendarDayGap pins the gap arithmetic in
+// CycleBoundaries. Both operands pass through dateOnly first, so this is a
 // characterization: it holds before and after the switch to CalendarDaysBetween
 // and exists so the replacement cannot quietly change the off-by-one (`- 1`,
 // the count of days BETWEEN two period days) while it changes the instrument.
-func TestDetectCycleStartsGapIsACalendarDayGap(t *testing.T) {
+func TestCycleBoundariesGapIsACalendarDayGap(t *testing.T) {
 	t.Parallel()
 
 	day := func(month time.Month, dayOfMonth int) time.Time {
@@ -79,7 +79,7 @@ func TestDetectCycleStartsGapIsACalendarDayGap(t *testing.T) {
 
 			logs := periodLogsOn(day(time.March, 1), testCase.secondDay)
 			if got := len(CycleBoundaries(logs, BoundaryContext{})); got != testCase.wantStarts {
-				t.Errorf("DetectCycleStarts found %d start(s), want %d", got, testCase.wantStarts)
+				t.Errorf("CycleBoundaries found %d start(s), want %d", got, testCase.wantStarts)
 			}
 		})
 	}

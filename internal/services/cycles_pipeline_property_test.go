@@ -14,7 +14,7 @@ import (
 //
 // Where cycles_property_test.go pins the algebra of the leaf functions
 // (ResolveLutealPhase, CalcOvulationDay, PredictCycleWindow), this file drives
-// the *whole* pipeline — DetectCycleStarts -> BuildCycleStats -> the predicted
+// the *whole* pipeline — CycleBoundaries -> BuildCycleStats -> the predicted
 // window — over thousands of synthetic-but-plausible cycle histories, plus the
 // day-service auto-fill/clear side effects and the date helpers. A privacy-first
 // tracker has no real user data to mine; this generator substitutes for it.
@@ -177,7 +177,7 @@ func isMidnightUTC(d time.Time) bool {
 
 // Invariant 1: every detected start is a period day; starts are strictly
 // increasing; the number of starts never exceeds the number of period days.
-func TestPipeline_DetectCycleStarts_BasicShape(t *testing.T) {
+func TestPipeline_CycleBoundaries_BasicShape(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		hist := drawCycleHistory(t)
 		starts := CycleBoundaries(hist.logs, BoundaryContext{})

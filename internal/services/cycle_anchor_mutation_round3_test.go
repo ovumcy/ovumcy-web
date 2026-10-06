@@ -9,8 +9,7 @@ import (
 
 // TestMR3Cycles_LatestExplicitCycleStartNilLocation targets
 // cycle_anchor.go:25 `if location == nil` (NEGATION) in
-// latestExplicitCycleStartBeforeOrOn (reached via the exported
-// LatestCycleStartAnchorBeforeOrOn). A nil location must not panic and must fall
+// LatestCycleStartAnchorBeforeOrOn. A nil location must not panic and must fall
 // back to UTC, returning the explicit cycle start. Under the NEGATION mutation
 // (`location != nil`), a nil location is left nil and CalendarDay / DateAtLocation
 // downstream would receive nil — exercised here to ensure correct fallback.

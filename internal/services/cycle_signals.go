@@ -107,7 +107,7 @@ func InferUserLutealPhase(logs []models.DailyLog, location *time.Location, ctx B
 //
 // The today bound lives HERE, not in each writer's fetch. The column summarizes
 // OBSERVED cycles, and manualCycleStartFutureDays lets an owner record a cycle
-// start up to two days ahead; ObservedCycleStarts takes such a start as the
+// start up to two days ahead; CycleBoundaries takes such a start as the
 // boundary of the last observed cycle, so an unbounded read derives the column
 // from a day that has not happened yet. Bounding one writer would be worse than
 // bounding none: the boot recompute would correct the column and the next day

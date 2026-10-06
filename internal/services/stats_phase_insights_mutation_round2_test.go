@@ -21,7 +21,7 @@ import (
 // TestStatsPhaseInsightsBuildContextsExcludesShortOvulationlessCycles kills
 // the CONDITIONALS_BOUNDARY mutant at line 74 (ovulationDay <= 0 -> < 0).
 func TestStatsPhaseInsightsBuildContextsExcludesShortOvulationlessCycles(t *testing.T) {
-	// Period days chosen so DetectCycleStarts (new start when a period day is
+	// Period days chosen so CycleBoundaries (new start when a period day is
 	// >= 6 calendar days after the previous one) yields five starts and thus four
 	// completed cycles:
 	//   Jan 1 -> Jan 7  : length 6  -> CalcOvulationDay(6,14)=0  -> must be skipped

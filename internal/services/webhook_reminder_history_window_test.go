@@ -24,7 +24,7 @@ import (
 // last old start and the first recent one is itself counted as a cycle length.
 
 // historyWindowCase builds an owner history from cycle starts counted back from
-// today. The starts are what DetectCycleStarts reads, so the spans between them
+// today. The starts are what CycleBoundaries reads, so the spans between them
 // are the observed cycle lengths.
 type historyWindowCase struct {
 	name string

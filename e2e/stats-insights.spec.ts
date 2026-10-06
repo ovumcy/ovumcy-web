@@ -200,7 +200,7 @@ test.describe('Stats: BBT chart', () => {
     // Same HasInsights gate as the chart test, but the current cycle starts
     // at today-14 so it can host nine consecutive BBT samples (cycle days
     // 6..14). markCycleStartViaAPI also sets CycleStart=true (not just
-    // is_period) so latestExplicitCycleStartBeforeOrOn picks the day up and
+    // is_period) so LatestCycleStartAnchorBeforeOrOn picks the day up and
     // stats.LastPeriodStart actually anchors to today-14 instead of remaining
     // on the onboarding date. Default period_length=5 means the auto-period
     // -fill range for the current cycle is cycle days 1..5 = today-14..
