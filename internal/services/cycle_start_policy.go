@@ -236,7 +236,9 @@ func findCompetingCycleStart(logs []models.DailyLog, day time.Time, location *ti
 
 	conflict := time.Time{}
 	for _, logEntry := range logs {
-		if !logEntry.CycleStart {
+		// Only a mark the boundary rule reads competes: a mark on a non-period,
+		// spotting or uncertain day opens no cycle, so it is nothing to replace.
+		if !logEntry.CycleStart || !logEntry.IsPeriod || logEntry.IsUncertain || isSpottingDay(logEntry) {
 			continue
 		}
 
