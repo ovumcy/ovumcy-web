@@ -211,16 +211,15 @@ test.describe('Calendar page', () => {
 
     const legend = page.locator('[data-calendar-legend]');
     await expect(legend).toBeVisible();
-    await expect(legend.locator('.legend-swatch-period')).toHaveCount(1);
-    await expect(legend.locator('.legend-swatch-predicted')).toHaveCount(1);
-    await expect(legend.locator('.legend-swatch-start-window')).toHaveCount(1);
-    await expect(legend.locator('.legend-swatch-fertile')).toHaveCount(1);
-    await expect(legend.locator('.legend-swatch-overlap-period-fertile')).toHaveCount(1);
     await expect(legend.locator('.legend-swatch-today')).toHaveCount(1);
-    // Eight concepts, not the ten CSS states the grid happens to have. The
-    // overlap earns an entry of its own because it is a fill the reader cannot
-    // decode from the two it is made of.
-    await expect(legend.locator('.legend-item')).toHaveCount(8);
+    // A fresh owner has no completed cycle, so the grid draws no fertile window,
+    // start window, overlap or ovulation mark, and the legend lists none of them.
+    // The legend lists concepts, not the CSS states the grid happens to have, and
+    // only the ones the grid draws for this view.
+    await expect(legend.locator('.legend-swatch-start-window')).toHaveCount(0);
+    await expect(legend.locator('.legend-swatch-fertile')).toHaveCount(0);
+    await expect(legend.locator('.legend-swatch-overlap-period-fertile')).toHaveCount(0);
+    await expect(legend.locator('.calendar-ovulation-dot')).toHaveCount(0);
 
     // The legend is above the first day cell, so it is on screen while the
     // month is being read.
@@ -230,22 +229,9 @@ test.describe('Calendar page', () => {
     expect(firstCellBox).not.toBeNull();
     expect(legendBox!.y).toBeLessThan(firstCellBox!.y);
 
-    const ovulationDot = legend.locator('.calendar-ovulation-dot');
-    const tentativeOvulation = legend.locator('.calendar-ovulation-dash');
-    await expect(ovulationDot).toHaveCount(1);
     // A fresh owner does not track temperature, and the dash only ever marks a
     // projection awaiting a temperature shift, so the legend must not draw it.
-    await expect(tentativeOvulation).toHaveCount(0);
-
-    const styles = await ovulationDot.evaluate((node) => {
-      const computed = window.getComputedStyle(node);
-      return {
-        width: parseFloat(computed.width || '0'),
-        boxShadow: computed.boxShadow || '',
-      };
-    });
-    expect(styles.width).toBeGreaterThanOrEqual(12);
-    expect(styles.boxShadow).not.toBe('none');
+    await expect(legend.locator('.calendar-ovulation-dash')).toHaveCount(0);
   });
 
   test('the band/window overlap paints a fill neither of its two parents paints', async ({

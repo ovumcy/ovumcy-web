@@ -41,8 +41,8 @@
     <p class="journal-subtitle">{{t .Messages "stats.empty_title"}}</p>
     <p class="journal-muted text-sm">{{if eq .CompletedCycleCount 0}}{{t .Messages "stats.empty_body_zero"}}{{else}}{{t .Messages "stats.empty_body_one"}}{{end}}</p>
     <div class="space-y-2">
-      <progress class="stats-progress-meter" value="{{.CompletedCycleCount}}" max="2">{{printf (t .Messages "stats.completed_cycles_progress") .CompletedCycleCount}}</progress>
-      <p class="journal-muted text-xs">{{printf (t .Messages "stats.completed_cycles_progress") .CompletedCycleCount}}</p>
+      <progress class="stats-progress-meter" value="{{.CompletedCycleCount}}" max="{{.InsightCyclesRequired}}">{{printf (t .Messages "stats.completed_cycles_progress") .CompletedCycleCount .InsightCyclesRequired}}</progress>
+      <p class="journal-muted text-xs">{{printf (t .Messages "stats.completed_cycles_progress") .CompletedCycleCount .InsightCyclesRequired}}</p>
       <p class="journal-muted text-xs">{{t .Messages "stats.empty_progress_hint"}}</p>
     </div>
   </section>

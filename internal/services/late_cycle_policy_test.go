@@ -88,9 +88,17 @@ func TestLateCycleNoticeStateMatrix(t *testing.T) {
 			expectForm: LateCycleFormPlain,
 		},
 		{
-			name:       "two completed cycles reach the reliability threshold and may compare",
+			name:       "two completed cycles are still below the reliability threshold",
 			user:       &models.User{Role: models.RoleOwner, CycleLength: 27},
 			stats:      lateCycleStats(today, 35, 2, 27, 26, 28),
+			expectKey:  LateCycleNoPersonalRangeKey,
+			expectTone: LateCycleToneNeutral,
+			expectForm: LateCycleFormPlain,
+		},
+		{
+			name:       "three completed cycles reach the reliability threshold and may compare",
+			user:       &models.User{Role: models.RoleOwner, CycleLength: 27},
+			stats:      lateCycleStats(today, 35, 3, 27, 26, 28),
 			expectKey:  LateCycleBeyondRangeKey,
 			expectTone: LateCycleToneWarning,
 			expectForm: LateCycleFormCount,

@@ -20,6 +20,7 @@ func TestStatsPageViewServicePredictionExplanationSecondaryAbsentWhenHintKeysEmp
 	// is false. Under the original guard the secondary explanation must stay
 	// absent; the boundary mutant (>0 -> >=0) would surface it.
 	logs := []models.DailyLog{
+		{Date: mustParseStatsServiceDay(t, "2025-12-04"), IsPeriod: true},
 		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
 		{Date: mustParseStatsServiceDay(t, "2026-01-10"), CycleFactorKeys: []string{models.CycleFactorStress}},
 		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true},
@@ -56,6 +57,7 @@ func TestStatsPageViewServiceHasRecentCycleFactorsFalseWhenOnlyOldCycleFactorsEx
 	// is empty so HasRecentCycleFactors must be false. The boundary mutant on
 	// line 149 (>0 -> >=0) would force it true.
 	logs := []models.DailyLog{
+		{Date: mustParseStatsServiceDay(t, "2025-12-04"), IsPeriod: true},
 		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
 		{Date: mustParseStatsServiceDay(t, "2026-01-10"), CycleFactorKeys: []string{models.CycleFactorStress}},
 		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true},
@@ -91,6 +93,7 @@ func TestStatsPageViewServiceHasCycleFactorPatternSummariesFalseWhenFactorsOnlyI
 	// PatternSummaries are empty. HasCycleFactorPatternSummaries must be false;
 	// the boundary mutant on line 150 (>0 -> >=0) would force it true.
 	logs := []models.DailyLog{
+		{Date: mustParseStatsServiceDay(t, "2025-12-04"), IsPeriod: true},
 		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
 		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true},
 		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true},
@@ -125,6 +128,7 @@ func TestStatsPageViewServiceHasRecentFactorCyclesFalseWhenFactorsOnlyInOngoingC
 	// snapshots -> RecentCycles are empty. HasRecentFactorCycles must be false;
 	// the boundary mutant on line 151 (>0 -> >=0) would force it true.
 	logs := []models.DailyLog{
+		{Date: mustParseStatsServiceDay(t, "2025-12-04"), IsPeriod: true},
 		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
 		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true},
 		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true},
@@ -158,6 +162,7 @@ func TestStatsPageViewServiceHasPredictionFactorHintFalseWhenOnlyOldCycleFactors
 	// recent-window factors) is empty so HasPredictionFactorHint must be false.
 	// The boundary mutant on line 152 (>0 -> >=0) would force it true.
 	logs := []models.DailyLog{
+		{Date: mustParseStatsServiceDay(t, "2025-12-04"), IsPeriod: true},
 		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
 		{Date: mustParseStatsServiceDay(t, "2026-01-10"), CycleFactorKeys: []string{models.CycleFactorStress}},
 		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true},
@@ -184,12 +189,12 @@ func TestStatsPageViewServiceHasPredictionFactorHintFalseWhenOnlyOldCycleFactors
 	}
 }
 
-func TestStatsPageViewServicePredictionReliabilityShownAtExactlyTwoCompletedCycles(t *testing.T) {
-	// Exactly two completed cycles (three period starts 28 days apart) for a
-	// predictable owner. statsMinimumInsightsCycles is 2, so CompletedCycleCount
-	// (2) is NOT < 2: reliability must be shown with an uncapped sample count of
-	// 2. The boundary mutant on line 261 (< -> <=) would early-return, hiding it.
-	logs := statspageviewserviceCovLogsWithNCompletedCycles(t, 2)
+func TestStatsPageViewServicePredictionReliabilityShownAtExactlyThreeCompletedCycles(t *testing.T) {
+	// Exactly three completed cycles (four period starts 28 days apart) for a
+	// predictable owner. statsMinimumInsightsCycles is 3, so CompletedCycleCount
+	// (3) is NOT < 3: reliability must be shown with an uncapped sample count of
+	// 3. The boundary mutant on line 261 (< -> <=) would early-return, hiding it.
+	logs := statspageviewserviceCovLogsWithNCompletedCycles(t, 3)
 	service := NewStatsService(&stubStatsDayReader{logsForRange: logs}, &stubStatsSymptomReader{})
 	now := logs[len(logs)-1].Date.AddDate(0, 0, 5)
 
@@ -200,13 +205,13 @@ func TestStatsPageViewServicePredictionReliabilityShownAtExactlyTwoCompletedCycl
 	if err != nil {
 		t.Fatalf("BuildStatsPageViewData() unexpected error: %v", err)
 	}
-	if viewData.Flags.CompletedCycleCount != 2 {
-		t.Fatalf("precondition failed: expected CompletedCycleCount=2, got %d", viewData.Flags.CompletedCycleCount)
+	if viewData.Flags.CompletedCycleCount != 3 {
+		t.Fatalf("precondition failed: expected CompletedCycleCount=3, got %d", viewData.Flags.CompletedCycleCount)
 	}
 	if !viewData.ShowPredictionReliability {
-		t.Fatalf("expected ShowPredictionReliability=true at exactly statsMinimumInsightsCycles (2) completed cycles")
+		t.Fatalf("expected ShowPredictionReliability=true at exactly statsMinimumInsightsCycles (3) completed cycles")
 	}
-	if viewData.PredictionSampleCount != 2 {
-		t.Fatalf("expected PredictionSampleCount=2 at exactly two completed cycles, got %d", viewData.PredictionSampleCount)
+	if viewData.PredictionSampleCount != 3 {
+		t.Fatalf("expected PredictionSampleCount=3 at exactly three completed cycles, got %d", viewData.PredictionSampleCount)
 	}
 }

@@ -512,8 +512,7 @@ func appendPredictedWindow(preFertileMap map[string]bool, fertilityEdgeMap map[s
 // can mark a projected ovulation day as not yet confirmed by a temperature
 // shift. It is the owner-level half of the gate appendCurrentCycleBBTSignal
 // applies (the other half is the recorded cycle anchor, a property of the
-// data, not of the owner), and the calendar legend asks it too, so the legend
-// promises the dash exactly when the grid can draw it.
+// data, not of the owner).
 func CalendarCanDrawTentativeOvulation(user *models.User) bool {
 	return user != nil && user.TrackBBT
 }

@@ -119,6 +119,7 @@ func TestBuildStatsPageViewDataBuildsRecentCycleFactorContextForVariablePatterns
 
 func TestBuildStatsPageViewDataKeepsRecentBaselineWhenOlderCycleStartsExist(t *testing.T) {
 	logs := []models.DailyLog{
+		{Date: mustParseStatsServiceDay(t, "2025-12-02"), IsPeriod: true, CycleStart: true},
 		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
 		{Date: mustParseStatsServiceDay(t, "2026-01-03"), CycleFactorKeys: []string{models.CycleFactorStress}},
 		{Date: mustParseStatsServiceDay(t, "2026-01-25"), IsPeriod: true, CycleStart: true},
@@ -144,12 +145,14 @@ func TestBuildStatsPageViewDataKeepsRecentBaselineWhenOlderCycleStartsExist(t *t
 	if !viewData.HasCycleFactorPatternSummaries || !viewData.HasRecentFactorCycles || !viewData.HasPredictionFactorHint {
 		t.Fatalf("expected richer factor explanations to remain available, got %#v", viewData)
 	}
-	if !viewData.HasPredictionExplanationPrimary || viewData.PredictionExplanationPrimaryKey != "prediction.explainer.irregular_sparse" {
-		t.Fatalf("expected sparse irregular explanation to stay available with the newer baseline, got %#v", viewData)
+	// Three completed cycles is where the factor context opens and where the sparse
+	// irregular explanation ends, so the primary explanation is the range one.
+	if !viewData.HasPredictionExplanationPrimary || viewData.PredictionExplanationPrimaryKey != "prediction.explainer.irregular_ranges" {
+		t.Fatalf("expected the irregular range explanation to stay available with the newer baseline, got key %q", viewData.PredictionExplanationPrimaryKey)
 	}
 }
 
-func TestBuildStatsPageViewDataKeepsInsightsHiddenUntilSecondCompletedCycle(t *testing.T) {
+func TestBuildStatsPageViewDataKeepsInsightsHiddenUntilThirdCompletedCycle(t *testing.T) {
 	logs := []models.DailyLog{
 		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
 		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true},
@@ -167,8 +170,8 @@ func TestBuildStatsPageViewDataKeepsInsightsHiddenUntilSecondCompletedCycle(t *t
 	if viewData.ShowPredictionReliability {
 		t.Fatalf("expected ShowPredictionReliability=false before base insights unlock")
 	}
-	if viewData.Flags.InsightProgress != 50 {
-		t.Fatalf("expected InsightProgress=50, got %d", viewData.Flags.InsightProgress)
+	if viewData.Flags.InsightProgress != 33 {
+		t.Fatalf("expected InsightProgress=33, got %d", viewData.Flags.InsightProgress)
 	}
 }
 
@@ -582,14 +585,7 @@ func TestBuildStatsPageViewDataPairsTheReliabilityLabelAndHint(t *testing.T) {
 		wantHintKey     string
 	}{
 		{
-			name:            "irregular mode at the basic-insights floor stays early",
-			completedCycles: 2,
-			irregularMode:   true,
-			wantLabelKey:    "stats.reliability.early",
-			wantHintKey:     "stats.reliability.hint",
-		},
-		{
-			name:            "irregular mode at the pattern minimum turns variable",
+			name:            "irregular mode at the basic-insights floor, which is the pattern minimum, turns variable",
 			completedCycles: 3,
 			irregularMode:   true,
 			wantLabelKey:    "stats.reliability.variable",

@@ -128,22 +128,26 @@ func TestStatsServiceBuildFlagsHasTrendDataFalseAtZero(t *testing.T) {
 
 // TestStatsServiceBuildFlagsHasInsightsTrueAtExactMinimum verifies that
 // HasInsights is true when completedCycleCount equals statsMinimumInsightsCycles
-// (which is 2).  A mutant changing ">=" to ">" on line 105 would set this false.
+// (which is 3).  A mutant changing ">=" to ">" on line 105 would set this false.
 func TestStatsServiceBuildFlagsHasInsightsTrueAtExactMinimum(t *testing.T) {
 	svc := NewStatsService(&stubStatsDayReader{}, &stubStatsSymptomReader{})
 	user := &models.User{Role: models.RoleOwner, CycleLength: 28}
 	now := mustParseStatsServiceDay(t, "2026-04-10")
 
-	// Three period-start logs produce exactly 2 completed cycles.
+	// Four period-start logs produce exactly 3 completed cycles.
 	logs := []models.DailyLog{
 		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
 		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true},
 		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-03-26"), IsPeriod: true},
 	}
-	flags := svc.BuildFlags(user, logs, CycleStats{}, now, time.UTC, 2)
+	flags := svc.BuildFlags(user, logs, CycleStats{}, now, time.UTC, 3)
 
 	if !flags.HasInsights {
-		t.Fatalf("expected HasInsights=true when completedCycleCount==statsMinimumInsightsCycles(2), got false; completedCycleCount=%d", flags.CompletedCycleCount)
+		t.Fatalf("expected HasInsights=true when completedCycleCount==statsMinimumInsightsCycles(3), got false; completedCycleCount=%d", flags.CompletedCycleCount)
+	}
+	if flags.InsightCyclesRequired != 3 {
+		t.Fatalf("expected InsightCyclesRequired=3, got %d", flags.InsightCyclesRequired)
 	}
 }
 
@@ -194,19 +198,20 @@ func TestStatsServiceStatsInsightProgressZeroCompletedCycles(t *testing.T) {
 // which is fine numerically but tests a different code path; the real concern is
 // the one-below edge: progress=99 must NOT be capped to 100.
 func TestStatsServiceStatsInsightProgressAtExactHundred(t *testing.T) {
-	// statsMinimumInsightsCycles = 2; completedCycleCount = 2 → progress = 2*100/2 = 100.
+	// statsMinimumInsightsCycles = 3; completedCycleCount = 3 → progress = 3*100/3 = 100.
 	// Should return 100 (not capped, just equal).
 	svc := NewStatsService(&stubStatsDayReader{}, &stubStatsSymptomReader{})
 	user := &models.User{Role: models.RoleOwner, CycleLength: 28}
 	now := mustParseStatsServiceDay(t, "2026-04-10")
 
-	// Three period logs → exactly 2 completed cycles.
+	// Four period logs → exactly 3 completed cycles.
 	logs := []models.DailyLog{
 		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
 		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true},
 		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-03-26"), IsPeriod: true},
 	}
-	flags := svc.BuildFlags(user, logs, CycleStats{}, now, time.UTC, 2)
+	flags := svc.BuildFlags(user, logs, CycleStats{}, now, time.UTC, 3)
 
 	if flags.InsightProgress != 100 {
 		t.Fatalf("expected InsightProgress=100 for completedCycleCount==statsMinimumInsightsCycles, got %d", flags.InsightProgress)
@@ -215,8 +220,8 @@ func TestStatsServiceStatsInsightProgressAtExactHundred(t *testing.T) {
 
 // TestStatsServiceStatsInsightProgressBelowHundredNotCapped verifies that a
 // progress value below 100 is returned as-is without being capped.
-// Concretely completedCycleCount=1, statsMinimumInsightsCycles=2: 1*100/2=50.
-// If the "progress > 100" guard were changed to "> 0", 50 would be capped to 100.
+// Concretely completedCycleCount=1, statsMinimumInsightsCycles=3: 1*100/3=33.
+// If the "progress > 100" guard were changed to "> 0", 33 would be capped to 100.
 func TestStatsServiceStatsInsightProgressBelowHundredNotCapped(t *testing.T) {
 	svc := NewStatsService(&stubStatsDayReader{}, &stubStatsSymptomReader{})
 	user := &models.User{Role: models.RoleOwner, CycleLength: 28}
@@ -229,7 +234,7 @@ func TestStatsServiceStatsInsightProgressBelowHundredNotCapped(t *testing.T) {
 	}
 	flags := svc.BuildFlags(user, logs, CycleStats{}, now, time.UTC, 1)
 
-	if flags.InsightProgress != 50 {
-		t.Fatalf("expected InsightProgress=50 for one completed cycle, got %d", flags.InsightProgress)
+	if flags.InsightProgress != 33 {
+		t.Fatalf("expected InsightProgress=33 for one completed cycle, got %d", flags.InsightProgress)
 	}
 }
