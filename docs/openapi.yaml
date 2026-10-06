@@ -1023,9 +1023,17 @@ components:
             Phase taxonomy. "Fertile" is a status, never a phase — see
             `current_fertility`. The phase is the axis orthogonal to fertility,
             but three of its values are not: `follicular`, `ovulation` and
-            `luteal` are decided by comparing today against `ovulation_date`, so
-            naming one of them beside a null `ovulation_date` would spell out the
-            very day that null withholds. The field is therefore reported in
+            `luteal` are decided by comparing today against the running cycle's
+            projected (or confirmed) ovulation day, so naming one of them beside
+            a null `ovulation_date` would spell out the very day that null
+            withholds. That day is `ovulation_date` until it is behind today;
+            from then on `ovulation_date` names the next cycle's day (see
+            `ovulation_date`) while the phase stays the running cycle's, so
+            `luteal` stands beside an `ovulation_date` still ahead, as on the
+            dashboard. On a day the next cycle's fertile window already covers,
+            where `current_fertility` is `fertile`, it is `unknown` instead:
+            `luteal` would deny the ovulation that window places ahead of
+            today. The field is therefore reported in
             every state, and it carries only `menstrual` — read off recorded or
             projected bleeding — or `unknown` whenever `ovulation_date` is null,
             and whenever `suppression.fertility` is true, even beside a

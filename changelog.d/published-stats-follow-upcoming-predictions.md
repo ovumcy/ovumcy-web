@@ -5,6 +5,10 @@
   `.ics` feed rolled it to the next cycle while the API kept naming the passed day, flagged exact,
   with the fertile window around it. `ovulation_date`, `ovulation_exact`, `ovulation_impossible`,
   `fertility_window_start`/`fertility_window_end` and `next_period_start` now come from the same
-  projection the pages use, so the API names the same days they do. In irregular-cycle mode, where
+  projection the pages use, so the API names the same days they do. `current_fertility` and
+  `fertility_basis` are read against that published window: `unknown` (basis null) when the rolled
+  day falls past 9999-12-31 or cannot be placed, and `fertile` when the rolled window already
+  covers today. `current_phase` is then `unknown` beside a null `ovulation_date` (or `menstrual`
+  on bleeding) and on a day the rolled window calls fertile. In irregular-cycle mode, where
   the dashboard shows the running cycle's ovulation range, the API keeps that cycle's day and
   widened window. A BBT-confirmed ovulation and every suppression rule are unchanged.
