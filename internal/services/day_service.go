@@ -222,7 +222,7 @@ func (service *DayService) UpsertDayEntry(ctx context.Context, userID uint, dayS
 	}
 
 	if found {
-		previous := priorDayState{IsPeriod: entry.IsPeriod, Flow: entry.Flow}
+		previous := priorDayState{IsPeriod: entry.IsPeriod, Flow: entry.Flow, Found: true}
 		payload = mergePreservedDayEntryInput(entry, payload)
 		entry.IsPeriod = payload.IsPeriod
 		if !payload.IsPeriod {
@@ -270,9 +270,11 @@ func (service *DayService) UpsertDayEntry(ctx context.Context, userID uint, dayS
 
 // priorDayState is the part of a day the auto-fill side effects read from
 // before the write: whether it was a period day and the flow it carried.
+// Found reports whether the day had a row at all.
 type priorDayState struct {
 	IsPeriod bool
 	Flow     string
+	Found    bool
 }
 
 // errDayEntryCreatedConcurrently is the create failure in which the day had no
@@ -474,7 +476,10 @@ func (service *DayService) applyDayWriteAndAutoFill(ctx context.Context, userID 
 	if err != nil {
 		return models.DailyLog{}, err
 	}
-	if previous.IsPeriod && !normalized.IsPeriod {
+	// The day editor shows the period ticked on a stored onboarding start that
+	// has no row (BuildDayEditorViewData), so a first save of that date without
+	// the period is the same un-tick as one over a stored period day.
+	if !normalized.IsPeriod && (previous.IsPeriod || !previous.Found) {
 		if err := service.withdrawOnboardingStartOn(ctx, userID, dayStart); err != nil {
 			return models.DailyLog{}, err
 		}
@@ -493,14 +498,14 @@ type lastPeriodStartClearer interface {
 	ClearLastPeriodStartOn(ctx context.Context, userID uint, dayStart time.Time) error
 }
 
-// withdrawOnboardingStartOn handles the explicit un-mark: a save that turned a
-// period day into a non-period day on the date of the stored onboarding start
-// (users.last_period_start) clears that start, so the boundary it inserts is
-// gone with the period day. Only that transition withdraws it — a day logged
-// without a period on the start date (a mood, a symptom) leaves the start in
-// place, since onboarding already recorded the period there. dayStart is the
-// canonical UTC-midnight key of the owner's calendar day, the shape the stored
-// start has.
+// withdrawOnboardingStartOn handles the explicit un-mark on the date of the
+// stored onboarding start (users.last_period_start): a save that turned a
+// period day into a non-period day — or saved a day without a row, which the
+// editor shows ticked there, without the period — and a delete of the day both
+// clear that start, so the boundary it inserts is gone with the period day. A
+// save that only adds to an existing non-period row on the start date (a mood,
+// a symptom) leaves the start in place. dayStart is the canonical UTC-midnight
+// key of the owner's calendar day, the shape the stored start has.
 func (service *DayService) withdrawOnboardingStartOn(ctx context.Context, userID uint, dayStart time.Time) error {
 	if clearer, ok := service.logs.(lastPeriodStartClearer); ok {
 		if err := clearer.ClearLastPeriodStartOn(ctx, userID, dayStart); err != nil {
@@ -657,8 +662,22 @@ func (service *DayService) ClearAutoFilledPeriodNeighbors(ctx context.Context, u
 	return nil
 }
 
+// DeleteDayEntry removes the day's row and, when the day is the stored
+// onboarding start, withdraws that start in the same transaction: deleting the
+// day is an un-mark like un-ticking its period, and a start left behind would
+// keep the calendar painting a period day the owner just removed.
 func (service *DayService) DeleteDayEntry(ctx context.Context, userID uint, day time.Time, location *time.Location) error {
-	if err := service.DeleteDailyLogByDate(ctx, userID, day, location); err != nil {
+	if location == nil {
+		location = time.UTC
+	}
+	dayStart, _ := DayRange(day, location)
+	if err := service.withinTransaction(ctx, func(txLogs DayLogRepository) error {
+		txService := &DayService{logs: txLogs, users: service.users}
+		if err := txService.DeleteDailyLogByDate(ctx, userID, day, location); err != nil {
+			return err
+		}
+		return txService.withdrawOnboardingStartOn(ctx, userID, dayStart)
+	}); err != nil {
 		return ErrDeleteDayFailed
 	}
 	// DeleteDayEntry carries no instant of its own — the transport never needed

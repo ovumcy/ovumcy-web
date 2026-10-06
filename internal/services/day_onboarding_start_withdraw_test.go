@@ -96,3 +96,72 @@ func TestUntickingAnotherPeriodDayKeepsTheOnboardingStart(t *testing.T) {
 		t.Fatalf("boundaries = %v, want 2026-09-14 first", boundaries)
 	}
 }
+
+func withdrawCalendarPaintsPeriod(stored models.User, logs []models.DailyLog, dateString string) bool {
+	now := time.Date(2026, time.October, 5, 12, 0, 0, 0, time.UTC)
+	stats := BuildCycleStatsFromLogs(&stored, logs, now, time.UTC)
+	for _, state := range BuildCalendarDayStates(&stored, startMoveDay(time.September, 1), logs, stats, now, time.UTC) {
+		if state.DateString == dateString && state.IsPeriod {
+			return true
+		}
+	}
+	return false
+}
+
+// TestDeletingTheOnboardingStartDayWithdrawsTheStart: deleting the day (DELETE
+// /api/v1/days/:date) is an un-mark like un-ticking its period, so the stored
+// start goes with the row and the calendar stops painting the day. Deleting
+// another day of the fill keeps the start.
+func TestDeletingTheOnboardingStartDayWithdrawsTheStart(t *testing.T) {
+	service, repositories, userID := withdrawFixture(t, "withdraw-delete@example.com", true)
+	if err := service.DeleteDayEntry(context.Background(), userID, startMoveDay(time.September, 16), time.UTC); err != nil {
+		t.Fatalf("delete 09-16: %v", err)
+	}
+	if stored, _ := withdrawReload(t, repositories, userID); stored.LastPeriodStart == nil {
+		t.Fatal("deleting a later fill day cleared last_period_start, want it kept")
+	}
+
+	if err := service.DeleteDayEntry(context.Background(), userID, startMoveDay(time.September, 14), time.UTC); err != nil {
+		t.Fatalf("delete 09-14: %v", err)
+	}
+	stored, logs := withdrawReload(t, repositories, userID)
+	if stored.LastPeriodStart != nil {
+		t.Fatalf("last_period_start = %v after deleting its day, want it cleared", stored.LastPeriodStart)
+	}
+	if withdrawCalendarPaintsPeriod(stored, logs, "2026-09-14") {
+		t.Fatal("the calendar still paints the deleted onboarding day as a period day")
+	}
+}
+
+// TestTheDayEditorTicksAStoredStartWithoutARow: with auto-fill off onboarding
+// writes no day, yet the calendar paints the start. The editor shows the period
+// ticked there, and saving the day with it unticked withdraws the start.
+func TestTheDayEditorTicksAStoredStartWithoutARow(t *testing.T) {
+	service, repositories, userID := withdrawFixture(t, "withdraw-no-row@example.com", false)
+	day := startMoveDay(time.September, 14)
+	stored, _ := withdrawReload(t, repositories, userID)
+	stored.ID = userID
+	now := time.Date(2026, time.October, 5, 12, 0, 0, 0, time.UTC)
+
+	editor := NewDashboardViewService(&stubDashboardStatsProvider{}, &stubDashboardViewerProvider{}, &stubDashboardDayStateProvider{})
+	view, err := editor.BuildDayEditorViewData(context.Background(), &stored, "en", day, now, time.UTC)
+	if err != nil {
+		t.Fatalf("BuildDayEditorViewData: %v", err)
+	}
+	if !view.Log.IsPeriod {
+		t.Fatal("the day editor shows the period unticked on a stored start the calendar paints")
+	}
+	other, err := editor.BuildDayEditorViewData(context.Background(), &stored, "en", day.AddDate(0, 0, 1), now, time.UTC)
+	if err != nil || other.Log.IsPeriod {
+		t.Fatalf("the day after the start shows the period ticked (err=%v): only the start's own date is", err)
+	}
+
+	withdrawSave(t, service, userID, day, DayEntryInput{IsPeriod: false, Flow: models.FlowNone, Mood: 3})
+	stored, logs := withdrawReload(t, repositories, userID)
+	if stored.LastPeriodStart != nil {
+		t.Fatalf("last_period_start = %v after the editor's un-tick, want it cleared", stored.LastPeriodStart)
+	}
+	if withdrawCalendarPaintsPeriod(stored, logs, "2026-09-14") {
+		t.Fatal("the calendar still paints the un-ticked onboarding day as a period day")
+	}
+}
