@@ -155,32 +155,30 @@ func TestCalendarPaintsTheOnboardingStartAsRecorded(t *testing.T) {
 	}
 }
 
-// TestCycleBoundariesSkipsAnUnmarkedOnboardingDay pins the un-mark: a log on
-// the onboarding date that is not a period day withdraws the stored start as a
-// boundary, while a period log there keeps it.
-func TestCycleBoundariesSkipsAnUnmarkedOnboardingDay(t *testing.T) {
-	onboarding := BoundaryContext{Today: boundaryDay(time.October, 5), OnboardingStart: boundaryDay(time.September, 14)}
-	unmarked := []models.DailyLog{{Date: boundaryDay(time.September, 14), IsPeriod: false, Mood: 3}}
-	assertBoundaries(t, unmarked, onboarding)
-	marked := []models.DailyLog{{Date: boundaryDay(time.September, 14), IsPeriod: true, Mood: 3}}
-	assertBoundaries(t, marked, onboarding, "2026-09-14")
-}
-
-// TestCalendarLeavesAnUnmarkedOnboardingDayUnmarked: the grid draws a logged
-// non-period entry on the onboarding date as it is, never as a period day.
-func TestCalendarLeavesAnUnmarkedOnboardingDayUnmarked(t *testing.T) {
+// TestAMoodLoggedOnTheOnboardingDayKeepsItsBoundary: onboarding with auto-fill
+// off writes no day log, so the first entry the owner logs on the start date may
+// well carry no period (a mood). That entry is not an un-mark — only un-ticking
+// a period day clears the stored start — so the start stays the anchor and the
+// grid still draws its day as recorded, mood included.
+func TestAMoodLoggedOnTheOnboardingDayKeepsItsBoundary(t *testing.T) {
 	now := time.Date(2026, time.October, 5, 12, 0, 0, 0, time.UTC)
 	user := boundaryOwner(boundaryDay(time.September, 14))
+	user.AutoPeriodFill = false
 	logs := []models.DailyLog{{Date: boundaryDay(time.September, 14), IsPeriod: false, Mood: 3}}
+
+	assertBoundaries(t, logs, BoundaryContextFor(user, boundaryDay(time.October, 5)), "2026-09-14")
 	stats := BuildCycleStatsFromLogs(user, logs, now, time.UTC)
+	if got := DashboardCycleStaleAnchor(user, stats, boundaryDay(time.October, 5), time.UTC); got.Format("2006-01-02") != "2026-09-14" {
+		t.Fatalf("anchor = %v, want 2026-09-14", got)
+	}
 	found := false
 	for _, state := range BuildCalendarDayStates(user, boundaryDay(time.September, 1), logs, stats, now, time.UTC) {
 		if state.DateString != "2026-09-14" {
 			continue
 		}
 		found = true
-		if state.IsPeriod {
-			t.Fatal("the calendar painted an un-marked onboarding day as a period day")
+		if !state.IsPeriod || !state.HasData {
+			t.Fatalf("onboarding day with a mood: IsPeriod=%v HasData=%v, want a recorded period cell that keeps its entry", state.IsPeriod, state.HasData)
 		}
 	}
 	if !found {
