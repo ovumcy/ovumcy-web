@@ -318,6 +318,23 @@ test.describe('Calendar page', () => {
         'repeating-linear-gradient'
       );
     }
+
+    // The same owner draws a projected ovulation on day 8 of the next cycle, so
+    // its month is the view where the legend owes the dot, at a size the reader
+    // can find and with the ring that sets it off from the fills.
+    await page.goto(`/calendar?month=${shiftISODate(today, 21).slice(0, 7)}`);
+    await expect(page.locator('button[data-day] .calendar-ovulation-dot').first()).toBeVisible();
+    const ovulationDot = legend.locator('.calendar-ovulation-dot');
+    await expect(ovulationDot).toHaveCount(1);
+    const dotStyles = await ovulationDot.evaluate((node) => {
+      const computed = window.getComputedStyle(node);
+      return {
+        width: parseFloat(computed.width || '0'),
+        boxShadow: computed.boxShadow || '',
+      };
+    });
+    expect(dotStyles.width).toBeGreaterThanOrEqual(12);
+    expect(dotStyles.boxShadow).not.toBe('none');
   });
 
   test('mobile calendar keeps the legend scrollable above the bottom tabbar', async ({ page }) => {
