@@ -14,6 +14,37 @@ const (
 	daySaveMessagePregnancyPaused = "dashboard.save_message_pregnancy_paused"
 )
 
+// DaySaveMessageKind is what a day-save sentence is beyond its words, so the
+// surfaces that show it decide by the kind and never by matching translated
+// copy.
+type DaySaveMessageKind int
+
+const (
+	// DaySaveMessageRoutine is a line about the day (self-care, fertile): shown,
+	// and it clears itself.
+	DaySaveMessageRoutine DaySaveMessageKind = iota
+	// DaySaveMessageConfirmation says only that the day was saved. A surface
+	// with its own save indicator does not repeat it.
+	DaySaveMessageConfirmation
+	// DaySaveMessageSafety carries red-flag guidance (the pregnancy pause): it
+	// stays until the owner dismisses it.
+	DaySaveMessageSafety
+)
+
+// ClassifyDaySaveMessage names the kind of the sentence a day save answers
+// with. An empty key is a save for which no sentence was resolved: the caller
+// answers with the bare timestamped confirmation, so it is a confirmation too.
+func ClassifyDaySaveMessage(messageKey string) DaySaveMessageKind {
+	switch messageKey {
+	case daySaveMessagePregnancyPaused:
+		return DaySaveMessageSafety
+	case daySaveMessageNeutral, "":
+		return DaySaveMessageConfirmation
+	default:
+		return DaySaveMessageRoutine
+	}
+}
+
 type DayFeedbackState struct {
 	MessageKey               string
 	ShowSpottingCycleWarning bool

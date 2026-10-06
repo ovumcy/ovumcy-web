@@ -75,5 +75,20 @@ func (handler *Handler) sendDaySaveStatus(c fiber.Ctx, messageKey string) error 
 	if patternKey == "common.saved_at" {
 		message = fmt.Sprintf(pattern, timestamp)
 	}
-	return sendHTMLFragment(c, htmxDismissibleSuccessStatusMarkup(currentMessages(c), message))
+	markup := httpx.DismissibleStatusOKMarkupOfKind(message, localizedStatusDismissLabel(currentMessages(c)), daySaveStatusKind(messageKey))
+	return sendHTMLFragment(c, markup)
+}
+
+// daySaveStatusKind renders the services-level kind of a day-save sentence as
+// the status kind the client reads: the safety line is persistent, the bare
+// confirmation neutral, and a routine line declares nothing.
+func daySaveStatusKind(messageKey string) string {
+	switch services.ClassifyDaySaveMessage(messageKey) {
+	case services.DaySaveMessageSafety:
+		return httpx.StatusKindPersistent
+	case services.DaySaveMessageConfirmation:
+		return httpx.StatusKindNeutral
+	default:
+		return ""
+	}
 }

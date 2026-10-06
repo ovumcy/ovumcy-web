@@ -208,28 +208,47 @@
   // calendar editor's swap does. Only the TEXT is adopted: the fragment is
   // parsed, never assigned as markup, and the node is rebuilt by the shared
   // dismissible-status helper, so markup in a response renders as characters.
-  // The sentence is the server's; nothing here composes copy.
+  // The sentence is the server's; nothing here composes copy. Its kind is the
+  // server's too, read from data-status-kind, never inferred from the words.
   function parseServerStatusSuccess(responseText) {
     var doc;
+    var status;
     var node;
     if (!responseText || responseText.indexOf("status-ok") === -1 || typeof DOMParser !== "function") {
-      return "";
+      return null;
     }
     doc = new DOMParser().parseFromString(responseText, "text/html");
-    node = doc.querySelector(".status-ok .toast-message") || doc.querySelector(".status-ok");
-    return node ? String(node.textContent || "").trim() : "";
+    status = doc.querySelector(".status-ok");
+    if (!status) {
+      return null;
+    }
+    node = status.querySelector(".toast-message") || status;
+    return {
+      message: String(node.textContent || "").trim(),
+      kind: String(status.getAttribute("data-status-kind") || "")
+    };
   }
 
   function renderDashboardSaveFeedback(form, responseText) {
     var target = form && form.querySelector ? form.querySelector(".save-status") : null;
-    var message = parseServerStatusSuccess(String(responseText || ""));
+    var status = parseServerStatusSuccess(String(responseText || ""));
     var node;
-    if (!target || !message) {
+    if (!target || !status || !status.message) {
+      return;
+    }
+    // A neutral status only says the day was saved, which the journal's own
+    // indicator has already said; the dashboard does not say it twice.
+    if (status.kind === "neutral") {
       return;
     }
     node = document.createElement("div");
     node.className = "status-ok";
-    node.textContent = message;
+    // The rebuilt node keeps a persistent kind, so the shared clear scheduler
+    // leaves the safety sentence up until it is dismissed.
+    if (status.kind === "persistent") {
+      node.setAttribute("data-status-kind", "persistent");
+    }
+    node.textContent = status.message;
     target.replaceChildren(node);
     scheduleClearSuccessStatus(target);
   }

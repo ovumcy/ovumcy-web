@@ -165,3 +165,171 @@ test("markup in the feedback renders as text, never as elements", async () => {
     }
   }
 });
+
+// --- The status's kind -------------------------------------------------------
+//
+// The server declares what kind of sentence it sent in data-status-kind, and the
+// client decides by that marker alone, never by the words: a neutral line only
+// says the day was saved, which the journal's own indicator already says; the
+// pregnancy-pause line carries red-flag guidance and stays until dismissed, on
+// the dashboard and in the calendar editor alike; a routine line clears itself.
+
+const TOAST_VISIBLE_MS = 5200;
+const TOAST_EXIT_MS = 220;
+const SELF_CARE_SENTENCE = "Saved. Take care of yourself today.";
+
+function kindFragment(escapedMessage, kind) {
+  return statusOKFragment(escapedMessage).replace(
+    '<div class="status-ok">',
+    kind ? `<div class="status-ok" data-status-kind="${kind}">` : '<div class="status-ok">'
+  );
+}
+
+// Every window timer is recorded and none runs on its own; elapseStatusClear
+// runs only the status clear and its exit step, as the 5.2 s visible window and
+// the exit animation would. The autosave's own debounce stays parked.
+function installRecordedTimers(window) {
+  const timers = [];
+  window.setTimeout = (fn, delay) => {
+    timers.push({ fn, delay: Number(delay) || 0, done: false });
+    return timers.length;
+  };
+  window.clearTimeout = (id) => {
+    if (timers[id - 1]) {
+      timers[id - 1].done = true;
+    }
+  };
+  window.__statusTimers = timers;
+}
+
+function elapseStatusClear(window) {
+  let ran = 0;
+  for (let round = 0; round < 5; round += 1) {
+    const due = window.__statusTimers.filter(
+      (timer) => !timer.done && (timer.delay === TOAST_VISIBLE_MS || timer.delay === TOAST_EXIT_MS)
+    );
+    if (due.length === 0) {
+      break;
+    }
+    for (const timer of due) {
+      timer.done = true;
+      timer.fn();
+      ran += 1;
+    }
+  }
+  return ran;
+}
+
+async function loadDashboardWithTimers(responseBody) {
+  const dom = await loadDOMWithScript(APP_BUNDLE, {
+    html: dashboardPage(),
+    beforeRun: (window) => {
+      installRecordedTimers(window);
+      window.fetch = () =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: () => null },
+          text: () => Promise.resolve(responseBody),
+        });
+    },
+  });
+  return dom;
+}
+
+test("a neutral save adds nothing to the dashboard status region", async () => {
+  const dom = await loadDashboardWithTimers(kindFragment("Saved.", "neutral"));
+  try {
+    await savePositiveTest(dom.window);
+
+    assert.equal(
+      dom.window.document.querySelector("[data-dashboard-autosave-indicator]").getAttribute("data-autosave-state"),
+      "saved",
+      "the journal's own indicator reports the save"
+    );
+    assert.equal(
+      saveStatus(dom.window).childNodes.length,
+      0,
+      "the neutral line repeats the indicator, so the dashboard does not show it"
+    );
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("the pregnancy-pause sentence stays on the dashboard after the clear timer elapses", async () => {
+  const dom = await loadDashboardWithTimers(kindFragment(escapeHTML(PAUSED_SENTENCE), "persistent"));
+  try {
+    await savePositiveTest(dom.window);
+    elapseStatusClear(dom.window);
+
+    const message = saveStatus(dom.window).querySelector(".status-ok .toast-message");
+    assert.ok(message, "the safety sentence must survive the auto-clear window");
+    assert.equal(message.textContent, PAUSED_SENTENCE);
+
+    saveStatus(dom.window).querySelector("[data-dismiss-status]").click();
+    assert.equal(saveStatus(dom.window).querySelector(".status-ok"), null, "the owner can still dismiss it");
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("a self-care line on the dashboard clears itself", async () => {
+  const dom = await loadDashboardWithTimers(kindFragment(escapeHTML(SELF_CARE_SENTENCE), ""));
+  try {
+    await savePositiveTest(dom.window);
+    assert.equal(
+      saveStatus(dom.window).querySelector(".status-ok .toast-message").textContent,
+      SELF_CARE_SENTENCE,
+      "a routine line is shown"
+    );
+
+    assert.ok(elapseStatusClear(dom.window) > 0, "the clear was scheduled");
+    assert.equal(saveStatus(dom.window).querySelector(".status-ok"), null, "a routine line clears on its timer");
+  } finally {
+    dom.window.close();
+  }
+});
+
+const CALENDAR_PAGE = `<!doctype html><html><head></head><body>
+  <form hx-put="/api/v1/days/2026-08-11" hx-target="#calendar-save-status" data-save-feedback data-day-editor-form data-day-editor-date="2026-08-11">
+    <button type="submit" data-save-button>Save</button>
+    <div id="calendar-save-status" class="save-status" aria-live="polite"></div>
+  </form>
+</body></html>`;
+
+// The calendar editor's save is an htmx swap of the same fragment into its
+// status region, cleared by the same shared scheduler on afterSwap.
+async function swapIntoCalendarEditor(fragment) {
+  const dom = await loadDOMWithScript(APP_BUNDLE, { html: CALENDAR_PAGE, beforeRun: installRecordedTimers });
+  const target = dom.window.document.querySelector("#calendar-save-status");
+  target.innerHTML = fragment;
+  target.dispatchEvent(new dom.window.CustomEvent("htmx:afterSwap", { bubbles: true, detail: { target } }));
+  target.dispatchEvent(new dom.window.CustomEvent("htmx:afterSettle", { bubbles: true, detail: { target } }));
+  return { dom, target };
+}
+
+test("the calendar editor keeps a persistent status after the clear timer elapses", async () => {
+  const { dom, target } = await swapIntoCalendarEditor(kindFragment(escapeHTML(PAUSED_SENTENCE), "persistent"));
+  try {
+    elapseStatusClear(dom.window);
+    const message = target.querySelector(".status-ok .toast-message");
+    assert.ok(message, "the safety sentence must survive the auto-clear window in the calendar editor");
+    assert.equal(message.textContent, PAUSED_SENTENCE);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("the calendar editor still shows the neutral line and clears a routine status", async () => {
+  for (const kind of ["neutral", ""]) {
+    const { dom, target } = await swapIntoCalendarEditor(kindFragment("Saved.", kind));
+    try {
+      assert.equal(target.querySelector(".status-ok .toast-message").textContent, "Saved.");
+      assert.ok(elapseStatusClear(dom.window) > 0, "the clear was scheduled");
+      assert.equal(target.querySelector(".status-ok"), null, `a ${kind || "routine"} status clears on its timer`);
+    } finally {
+      dom.window.close();
+    }
+  }
+});

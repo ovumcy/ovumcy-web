@@ -5,4 +5,8 @@
   the day never appeared — including, after a positive pregnancy test, that predictions are paused
   and that bleeding, pain or dizziness mean seeking medical care promptly. The sentence now appears
   in the journal's status line after each save, the same way the calendar editor shows it, rendered
-  as text.
+  as text. A plain "Saved." is not repeated there, since the journal's own indicator already says
+  it.
+- **The pregnancy-pause sentence stays until it is dismissed.** On the dashboard and in the calendar
+  editor, the save sentence that carries the red-flag guidance no longer disappears after a few
+  seconds; it stays until closed. Other save sentences still clear themselves.

@@ -1,6 +1,9 @@
 package httpx
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestStatusErrorMarkupEscapesHTML(t *testing.T) {
 	got := StatusErrorMarkup(`<script>alert("x")</script>`, "")
@@ -23,6 +26,20 @@ func TestDismissibleStatusOKMarkupEscapesHTML(t *testing.T) {
 	want := `<div class="status-ok"><div class="toast-body"><span class="toast-message-wrap"><span class="toast-icon" aria-hidden="true">✓</span><span class="toast-message">&lt;b&gt;Saved&lt;/b&gt;</span></span><button type="button" class="toast-close" data-dismiss-status aria-label="&lt;script&gt;alert(&#34;x&#34;)&lt;/script&gt;">×</button></div></div>`
 	if got != want {
 		t.Fatalf("unexpected markup: got %q want %q", got, want)
+	}
+}
+
+func TestDismissibleStatusOKMarkupOfKindDeclaresAndEscapesTheKind(t *testing.T) {
+	if got, want := DismissibleStatusOKMarkupOfKind("Saved.", "Close", ""), DismissibleStatusOKMarkup("Saved.", "Close"); got != want {
+		t.Fatalf("an empty kind must declare nothing: got %q want %q", got, want)
+	}
+	got := DismissibleStatusOKMarkupOfKind("Saved.", "Close", StatusKindPersistent)
+	if want := `<div class="status-ok" data-status-kind="persistent"><div class="toast-body">`; !strings.HasPrefix(got, want) {
+		t.Fatalf("unexpected kind markup: got %q want prefix %q", got, want)
+	}
+	escaped := DismissibleStatusOKMarkupOfKind("Saved.", "Close", `x" onclick="y`)
+	if want := `<div class="status-ok" data-status-kind="x&#34; onclick=&#34;y">`; !strings.HasPrefix(escaped, want) {
+		t.Fatalf("the kind must be attribute-escaped: got %q", escaped)
 	}
 }
 
