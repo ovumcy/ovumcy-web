@@ -660,6 +660,8 @@
   "daylog.title": "Journal quotidien",
   "daylog.save_failed": "Enregistrement impossible — vérifiez votre connexion. Votre saisie est toujours là.",
   "daylog.save_retry": "Réessayer",
+  "daylog.save_sign_in": "Se connecter dans un nouvel onglet",
+  "daylog.save_account_changed": "Vous êtes maintenant connecté(e) à un autre compte. Cette saisie n'a pas été enregistrée.",
 
   "calendar.title": "Calendrier",
   "calendar.prev": "Précédent",

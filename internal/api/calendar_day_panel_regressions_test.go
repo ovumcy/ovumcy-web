@@ -306,6 +306,7 @@ func TestCalendarDayEditorPregnancyTestRemovalClearsTheSavedResult(t *testing.T)
 	saveRequest.Header.Set("HX-Request", "true")
 	saveRequest.Header.Set("Accept-Language", "en")
 	saveRequest.Header.Set("Cookie", authCookie)
+	bindDayWriteForTest(t, saveRequest, user.ID)
 
 	saveResponse := mustAppResponse(t, app, saveRequest)
 	assertStatusCode(t, saveResponse, http.StatusOK)
@@ -391,6 +392,7 @@ func TestCalendarDayPanelEditModePreservesAndSavesPeriodToggle(t *testing.T) {
 	saveRequest.Header.Set("HX-Request", "true")
 	saveRequest.Header.Set("Accept-Language", "en")
 	saveRequest.Header.Set("Cookie", authCookie)
+	bindDayWriteForTest(t, saveRequest, user.ID)
 
 	saveResponse, err := app.Test(saveRequest, testConfigNoTimeout)
 	if err != nil {
@@ -494,6 +496,7 @@ func TestDayEditorSaveCarriesTheInlineCycleStartAnswer(t *testing.T) {
 		request.Header.Set("HX-Request", "true")
 		request.Header.Set("Accept-Language", "en")
 		request.Header.Set("Cookie", joinCookieHeader(authCookie, timezoneCookieName+"=UTC"))
+		bindDayWriteForTest(t, request, user.ID)
 		request.Header.Set(timezoneHeaderName, "UTC")
 
 		response := mustAppResponse(t, app, request)
@@ -623,6 +626,7 @@ func TestDeleteDayWithHTMXReturnsRefreshedDayEditorPartial(t *testing.T) {
 
 	request := httptest.NewRequest(http.MethodDelete, "/api/v1/days/2026-02-17", nil)
 	request.Header.Set("Cookie", authCookie)
+	bindDayWriteForTest(t, request, user.ID)
 	request.Header.Set("HX-Request", "true")
 	response := mustAppResponse(t, app, request)
 	if response.StatusCode != http.StatusOK {

@@ -139,6 +139,7 @@ var authErrorTranslationKeys = map[string]string{ // #nosec G101 -- false positi
 	"invalid symptom ids":                             "dashboard.error.invalid_day_entry",
 	"invalid flow value":                              "dashboard.error.invalid_day_entry",
 	"invalid cycle factor values":                     "dashboard.error.invalid_day_entry",
+	"day form account changed":                        "daylog.save_account_changed",
 	"failed to load day":                              "common.error.internal_error",
 	"failed to create day":                            "common.error.internal_error",
 	"failed to update day":                            "common.error.internal_error",

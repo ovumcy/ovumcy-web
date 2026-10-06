@@ -57,6 +57,7 @@ func TestCycleStartSavedWithoutTimezoneRendersOnLocalDayInNegativeOffset(t *test
 	cycleStartRequest.Header.Set("HX-Request", "true")
 	cycleStartRequest.Header.Set("Accept-Language", "en")
 	cycleStartRequest.Header.Set("Cookie", authCookie)
+	bindDayWriteForTest(t, cycleStartRequest, user.ID)
 	// Intentionally omit X-Ovumcy-Timezone and ovumcy_tz cookie.
 
 	cycleStartResponse := mustAppResponse(t, app, cycleStartRequest)

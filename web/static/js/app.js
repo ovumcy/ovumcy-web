@@ -15,6 +15,7 @@
   var THEME_COLOR_DARK = "#18141f";
   var TIMEZONE_COOKIE_NAME = "ovumcy_tz";
   var TIMEZONE_HEADER_NAME = "X-Ovumcy-Timezone";
+  var DAY_FORM_ACCOUNT_HEADER_NAME = "X-Ovumcy-Day-Form-Account";
   var TIMEZONE_COOKIE_MAX_AGE_SECONDS = 31536000;
 
   function getEventTarget(event) {
@@ -2043,6 +2044,14 @@
     }
     notice.appendChild(text);
 
+    if (messageKey === ACCOUNT_CHANGED_NOTICE_KEY) {
+      // The form was rendered for another account than the one now signed in:
+      // no retry can land it, so the notice offers none, and no sign-in link
+      // either. The entry stays in the form, untouched.
+      target.replaceChildren(notice);
+      return true;
+    }
+
     var retry = document.createElement("button");
     // Explicitly type="button": the status container sits inside the form, and
     // a default submit button here would fire a second save on every click that
@@ -2051,10 +2060,45 @@
     retry.className = "status-notice-action";
     retry.setAttribute("data-day-save-retry", "true");
     retry.textContent = form.getAttribute("data-day-save-retry-label") || "Try again";
+
+    if (messageKey === SESSION_EXPIRED_NOTICE_KEY) {
+      notice.appendChild(daySaveSignInLink(form));
+    }
     notice.appendChild(retry);
 
     target.replaceChildren(notice);
     return true;
+  }
+
+  // A save refused because the session is gone cannot be fixed by retrying in
+  // place, and signing in again in THIS tab navigates away from the only copy
+  // of the entry. So the refusal offers the sign-in page in a new tab: the entry
+  // stays in this page's form, the new tab sets a fresh session cookie, and the
+  // retry beside the link then resubmits the same form under it. The CSRF token
+  // the retry sends is read from the page at send time and survives the
+  // sign-in — the token cookie is not rotated by authentication — so the retry
+  // is not refused for a stale token.
+  //
+  // The link is a fixed same-origin path carrying nothing from the entry or the
+  // account, and nothing from the entry is written anywhere to survive the trip.
+  var SESSION_EXPIRED_NOTICE_KEY = "common.error.unauthorized";
+  var SIGN_IN_PATH = "/login";
+
+  // If the account signed in from the other tab is not the one this form was
+  // rendered for, the server refuses the retry (409) rather than write this
+  // entry into that account; the form carries an opaque binding to the account
+  // that rendered it.
+  var ACCOUNT_CHANGED_NOTICE_KEY = "daylog.save_account_changed";
+
+  function daySaveSignInLink(form) {
+    var link = document.createElement("a");
+    link.className = "status-notice-action";
+    link.href = SIGN_IN_PATH;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.setAttribute("data-day-save-sign-in", "true");
+    link.textContent = form.getAttribute("data-day-save-sign-in-label") || "Sign in in a new tab";
+    return link;
   }
 
   function renderDaySaveUnreachable(form) {
@@ -3784,7 +3828,7 @@
     return new URLSearchParams(new FormData(form));
   }
 
-  function dashboardRequestHeaders() {
+  function dashboardRequestHeaders(form) {
     var headers = {
       "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
       "HX-Request": "true"
@@ -3797,6 +3841,13 @@
     }
     if (timezone) {
       headers[TIMEZONE_HEADER_NAME] = timezone;
+    }
+    // The account the page was rendered for rides on every request, the
+    // body-less undo DELETE included: the server refuses a day write from a
+    // page rendered for another account, and one that names no account at all.
+    var account = form && form.querySelector ? form.querySelector('input[name="day_form_account"]') : null;
+    if (account) {
+      headers[DAY_FORM_ACCOUNT_HEADER_NAME] = account.value || "";
     }
     return headers;
   }
@@ -4167,7 +4218,7 @@
     endpoint = dashboardAutosaveEndpoint(form);
     method = endpoint.method;
     url = endpoint.url;
-    headers = dashboardRequestHeaders();
+    headers = dashboardRequestHeaders(form);
     body = buildDashboardAutosaveBody(form);
     // What is on the wire is what the server will hold: snapshot it here, and
     // promote it to "persisted" only once the server has said yes.
@@ -4331,7 +4382,7 @@
       credentials: "same-origin",
       // Started is started: like every autosave, the undo outlives the page.
       keepalive: true,
-      headers: dashboardRequestHeaders()
+      headers: dashboardRequestHeaders(form)
     }).then(function (response) {
       if (!response.ok) {
         return response.text().catch(function () {
@@ -4472,7 +4523,7 @@
       request = {
         method: endpoint.method,
         url: endpoint.url,
-        headers: dashboardRequestHeaders(),
+        headers: dashboardRequestHeaders(form),
         body: buildDashboardAutosaveBody(form).toString()
       };
     } else if (htmxSave) {

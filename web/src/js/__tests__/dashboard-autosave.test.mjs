@@ -21,6 +21,10 @@ const APP_BUNDLE = readAppBundle();
 const TODAY = "2026-08-12";
 const SAVED_LABEL = "Saved";
 const UNDO_LABEL = "Undo";
+// The account binding the page renders; the server refuses a day write from a
+// rendered page that does not carry it, the body-less undo DELETE included.
+const ACCOUNT_BINDING = "unit-test-account-binding";
+const ACCOUNT_HEADER = "X-Ovumcy-Day-Form-Account";
 
 function dashboardPage({ entryExists = false, notes = "" } = {}) {
   return `<!doctype html><html><head><meta name="csrf-token" content="unit-test-token"></head><body>
@@ -41,6 +45,7 @@ function dashboardPage({ entryExists = false, notes = "" } = {}) {
       data-day-save-failed-text="Couldn't save. Your entry is still here."
       data-day-save-retry-label="Try again">
       <input type="hidden" name="csrf_token" value="unit-test-token">
+      <input type="hidden" name="day_form_account" value="${ACCOUNT_BINDING}">
       <label class="period-toggle" data-binary-toggle data-active="false">
         <input type="checkbox" name="is_period" value="true" data-period-toggle data-binary-toggle-input>
       </label>
@@ -263,6 +268,13 @@ test("undoing the first save of an empty day clears it instead of writing an emp
     assert.equal(calls().length, 2);
     assert.equal(calls()[1].init.method, "DELETE", "an empty day is an absent entry, not an empty one");
     assert.equal(calls()[1].url, `/api/v1/days/${TODAY}?source=dashboard`);
+    assert.equal(calls()[1].init.body, undefined, "the undo DELETE sends no body");
+    assert.equal(
+      calls()[1].init.headers[ACCOUNT_HEADER],
+      ACCOUNT_BINDING,
+      "the body-less undo must name the account the page was rendered for in a header"
+    );
+    assert.equal(calls()[0].init.headers[ACCOUNT_HEADER], ACCOUNT_BINDING, "the save carries the same binding");
     assert.equal(toggle.checked, false, "the screen goes back with it");
   } finally {
     dom.window.close();
@@ -304,6 +316,7 @@ test("an edit made while a save is in flight still reaches the server on unload"
     assert.equal(flushed.url, `/api/v1/days/${TODAY}`);
     assert.equal(flushed.init.method, "PUT");
     assert.equal(flushed.init.keepalive, true, "an unload request must outlive the page");
+    assert.equal(flushed.init.headers[ACCOUNT_HEADER], ACCOUNT_BINDING, "the unload flush names the account the page was rendered for");
     assert.ok(
       bodyOf(flushed).includes(formValue("notes", "newer edit before navigation")),
       "the newest journal value is what the server must end up holding"
@@ -367,6 +380,7 @@ test("an htmx save still open with a newer edit behind it leaves as one request 
     assert.equal(puts.length, 1, "exactly one unload writer per form: two unordered PUTs let the older land last");
     assert.equal(puts[0].url, `/api/v1/days/${TODAY}`);
     assert.equal(puts[0].init.keepalive, true);
+    assert.equal(puts[0].init.headers[ACCOUNT_HEADER], ACCOUNT_BINDING, "the unload writer names the account the page was rendered for");
     assert.ok(
       bodyOf(puts[0]).includes(formValue("notes", "newer edit typed while it was open")),
       "the journal autosaves, so the newest value typed is the one owed"

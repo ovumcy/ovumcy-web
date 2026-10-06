@@ -520,6 +520,8 @@
   "daylog.title": "Daily log",
   "daylog.save_failed": "Couldn't save — check your connection. Your entry is still here.",
   "daylog.save_retry": "Try again",
+  "daylog.save_sign_in": "Sign in in a new tab",
+  "daylog.save_account_changed": "You're now signed in to a different account. This entry was not saved.",
   "calendar.title": "Calendar",
   "calendar.prev": "Prev",
   "calendar.next": "Next",

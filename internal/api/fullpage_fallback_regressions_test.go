@@ -463,6 +463,7 @@ func TestDaySaveSpottingWarningSetsEncodedNotice(t *testing.T) {
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
+	bindDayWriteForTest(t, request, user.ID)
 
 	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
@@ -522,6 +523,7 @@ func TestDaySaveLongPeriodWarningSetsEncodedNoticeWithKey(t *testing.T) {
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
+	bindDayWriteForTest(t, request, user.ID)
 
 	response := mustAppResponse(t, app, request)
 	defer func() { _ = response.Body.Close() }()
@@ -569,6 +571,7 @@ func TestMarkCycleStartImplantationWarningSetsEncodedNoticeWithKey(t *testing.T)
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
+	bindDayWriteForTest(t, request, user.ID)
 
 	response := mustAppResponse(t, app, request)
 	defer func() { _ = response.Body.Close() }()

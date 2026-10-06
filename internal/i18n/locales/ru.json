@@ -523,6 +523,8 @@
   "daylog.title": "Дневная запись",
   "daylog.save_failed": "Не удалось сохранить — проверьте подключение. Запись осталась на месте.",
   "daylog.save_retry": "Повторить",
+  "daylog.save_sign_in": "Войти в новой вкладке",
+  "daylog.save_account_changed": "Сейчас выполнен вход в другую учётную запись. Эта запись не сохранена.",
   "calendar.title": "Календарь",
   "calendar.prev": "Назад",
   "calendar.next": "Вперёд",

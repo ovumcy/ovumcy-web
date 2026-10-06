@@ -315,6 +315,7 @@ func TestDayWriteRefusalsKeepTheirStatusAndEnvelopeForOtherClients(t *testing.T)
 			cookie += "; " + ctx.csrfCookie.Name + "=" + ctx.csrfCookie.Value
 		}
 		request.Header.Set("Cookie", cookie)
+		bindDayWriteForTest(t, request, ctx.user.ID)
 		for key, value := range headers {
 			request.Header.Set(key, value)
 		}

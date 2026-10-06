@@ -21,10 +21,12 @@
     data-day-editor-form
     data-day-editor-date="{{.DateString}}"
     data-day-save-failed-text="{{t .Messages "daylog.save_failed"}}"
-    data-day-save-retry-label="{{t .Messages "daylog.save_retry"}}">
+    data-day-save-retry-label="{{t .Messages "daylog.save_retry"}}"
+    data-day-save-sign-in-label="{{t .Messages "daylog.save_sign_in"}}">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
     <input type="hidden" name="_method" value="PUT">
     <input type="hidden" name="source" value="calendar">
+    <input type="hidden" name="day_form_account" value="{{.DayFormAccount}}">
     <input type="hidden" name="ack_period_tip" value="false" data-period-tip-ack>
 
     <label class="period-toggle" data-binary-toggle data-active="{{if .Log.IsPeriod}}true{{else}}false{{end}}">
@@ -134,6 +136,7 @@
     "Messages" .Messages
     "Lang" .Lang
     "CSRFToken" .CSRFToken
+    "DayFormAccount" .DayFormAccount
     "Surface" "calendar"
     "Endpoint" (printf "/api/v1/days/%s/cycle-start?source=calendar" .DateString)
     "Target" "#calendar-save-status"
@@ -173,6 +176,7 @@
       data-day-delete-date="{{.DateString}}">
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
       <input type="hidden" name="_method" value="DELETE">
+      <input type="hidden" name="day_form_account" value="{{.DayFormAccount}}">
       {{/* hx-confirm needs JavaScript; without it, this required box is the confirmation. Scripts drop it. */}}
       <label class="journal-muted text-sm" data-nojs-only><input type="checkbox" required data-day-delete-nojs-confirm> {{t .Messages "confirm.delete_entry"}}</label>
       <button type="submit" class="danger-link" data-day-delete-button>{{t .Messages "calendar.delete_entry"}}</button>
@@ -189,6 +193,7 @@
         "Messages" .Messages
         "Lang" .Lang
         "CSRFToken" .CSRFToken
+        "DayFormAccount" .DayFormAccount
         "Surface" "calendar"
         "Endpoint" (printf "/api/v1/days/%s/cycle-start?source=calendar" .DateString)
         "Target" "#day-editor"
@@ -224,6 +229,7 @@
           "Messages" .Messages
           "Lang" .Lang
           "CSRFToken" .CSRFToken
+          "DayFormAccount" .DayFormAccount
           "Surface" "calendar"
           "Endpoint" (printf "/api/v1/days/%s/cycle-start?source=calendar" .DateString)
           "Target" "#day-editor"

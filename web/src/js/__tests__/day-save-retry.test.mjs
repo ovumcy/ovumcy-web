@@ -428,6 +428,11 @@ test("a calendar save still on the wire is re-sent with keepalive only once the 
   };
   try {
     const form = dayEditorForm(dom.window);
+    const binding = dom.window.document.createElement("input");
+    binding.type = "hidden";
+    binding.name = "day_form_account";
+    binding.value = "unit-test-unload-binding";
+    form.insertBefore(binding, form.firstChild);
     fireOnForm(dom.window, "htmx:beforeSend", {
       requestConfig: {
         elt: form,
@@ -456,6 +461,11 @@ test("a calendar save still on the wire is re-sent with keepalive only once the 
       String(calls[0].init.body).includes(new URLSearchParams([["notes", TYPED_NOTE]]).toString()),
       "the re-sent body is the one the open request carries"
     );
+    assert.deepEqual(
+      new URLSearchParams(String(calls[0].init.body)).getAll("day_form_account"),
+      ["unit-test-unload-binding"],
+      "the re-sent body still names the account the form was rendered for, or the server refuses it"
+    );
     assert.ok(
       !String(calls[0].init.body).includes("typed+after+Save"),
       "an edit typed after Save and never saved is not sent behind the owner's back"
@@ -468,6 +478,120 @@ test("a calendar save still on the wire is re-sent with keepalive only once the 
     fireOnForm(dom.window, "htmx:afterRequest", { xhr: {} });
     assert.equal(leave(), false, "a finished save leaves nothing to re-send or warn about");
     assert.equal(calls.length, 1);
+  } finally {
+    dom.window.close();
+  }
+});
+
+// A session that ended while the owner was typing answers the save with the
+// auth guard's 401 fragment. Retrying in place cannot fix that, and signing in
+// in this tab would navigate away from the only copy of the entry, so the
+// notice offers the sign-in page in a NEW tab and keeps the retry beside it.
+const SESSION_EXPIRED_KEY = "common.error.unauthorized";
+const SESSION_EXPIRED_FRAGMENT = `<div class="status-error" data-flash-key="${SESSION_EXPIRED_KEY}" data-flash-status="error">Vous n'êtes pas connecté.</div>`;
+const SIGN_IN_LABEL = "Se connecter dans un nouvel onglet";
+
+function withSignInLabel(html) {
+  return html.replaceAll(
+    `data-day-save-retry-label="${RETRY_LABEL}"`,
+    `data-day-save-retry-label="${RETRY_LABEL}" data-day-save-sign-in-label="${SIGN_IN_LABEL}"`
+  );
+}
+
+function assertSignInLink(notice, surface) {
+  const link = notice.querySelector("a[data-day-save-sign-in]");
+  assert.ok(link, `${surface}: a session-expired refusal must offer a way to sign in`);
+  assert.equal(link.getAttribute("href"), "/login", `${surface}: the link is the fixed same-origin sign-in path`);
+  assert.equal(link.getAttribute("target"), "_blank", `${surface}: signing in here would navigate away from the entry`);
+  assert.equal(link.getAttribute("rel"), "noopener", `${surface}: the sign-in tab gets no handle on this page`);
+  assert.equal(link.textContent, SIGN_IN_LABEL, `${surface}: the link reads the localized label the template supplied`);
+  assert.ok(notice.querySelector("[data-day-save-retry]"), `${surface}: the retry stays beside the link`);
+}
+
+function assertNothingStored(window) {
+  for (const storage of [window.localStorage, window.sessionStorage]) {
+    assert.equal(storage.length, 0, "nothing may be stashed client-side to survive the sign-in");
+  }
+  assert.equal(window.document.cookie, "", "nothing may be stashed in a cookie either");
+}
+
+test("a session-expired calendar save offers sign-in in a new tab and keeps the entry", async () => {
+  const dom = await loadDOMWithScript(APP_BUNDLE, { html: withSignInLabel(PAGE) });
+  try {
+    fireOnForm(dom.window, "htmx:responseError", {
+      target: dom.window.document.getElementById("calendar-save-status"),
+      xhr: { status: 401, responseText: SESSION_EXPIRED_FRAGMENT },
+    });
+
+    const notice = failureNotice(dom.window);
+    assert.ok(notice);
+    assertSignInLink(notice, "calendar");
+    assertEntryIntact(dom.window);
+    assertNothingStored(dom.window);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("a session-expired autosave offers sign-in, and the retry after it re-sends the entry", async () => {
+  const failing = await loadDashboardWithFailingSave("ok");
+  const { dom, calls } = failing;
+  try {
+    // The fixture's fetch answers the 401 with the auth guard's fragment.
+    dom.window.fetch = (url, init) => {
+      calls.push({ url: String(url), init: init || {} });
+      return Promise.resolve({
+        ok: false,
+        status: 401,
+        headers: { get: () => null },
+        text: () => Promise.resolve(SESSION_EXPIRED_FRAGMENT),
+      });
+    };
+    dashboardSaveForm(dom.window).setAttribute("data-day-save-sign-in-label", SIGN_IN_LABEL);
+    await attemptDashboardSave(dom.window);
+
+    const notice = dashboardFailureNotice(dom.window);
+    assert.ok(notice, "the 401 renders the failure notice");
+    assertSignInLink(notice, "dashboard");
+    assertDashboardEntryIntact(dom.window);
+    assertNothingStored(dom.window);
+
+    // Signed in again in the other tab: the same page's retry now lands, with
+    // the entry on screen and the CSRF token the page holds.
+    dom.window.fetch = (url, init) => {
+      calls.push({ url: String(url), init: init || {} });
+      return Promise.resolve({ ok: true, status: 200, headers: { get: () => null }, text: () => Promise.resolve("") });
+    };
+    const before = calls.length;
+    notice
+      .querySelector("[data-day-save-retry]")
+      .dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true, cancelable: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.ok(calls.length > before, "the retry sends the entry again");
+    const retried = calls[calls.length - 1];
+    assert.ok(String(retried.init.body || "").includes(new URLSearchParams([["notes", TYPED_NOTE]]).toString()));
+    assert.equal(retried.init.headers["X-CSRF-Token"], "unit-test-token");
+    assert.equal(dashboardFailureNotice(dom.window), null, "a landed save clears the notice");
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("only a session-expired refusal offers the sign-in link", async () => {
+  const dom = await loadDOMWithScript(APP_BUNDLE, { html: withSignInLabel(PAGE) });
+  try {
+    fireOnForm(dom.window, "htmx:responseError", {
+      target: dom.window.document.getElementById("calendar-save-status"),
+      xhr: {
+        responseText:
+          '<div class="status-error" data-flash-key="error.invalid_payload">That temperature is out of range.</div>',
+      },
+    });
+    assert.equal(failureNotice(dom.window).querySelector("[data-day-save-sign-in]"), null);
+
+    fireOnForm(dom.window, "htmx:sendError", { xhr: {} });
+    assert.equal(failureNotice(dom.window).querySelector("[data-day-save-sign-in]"), null);
   } finally {
     dom.window.close();
   }
@@ -493,6 +617,74 @@ test("a failed save writes no draft to client storage", async () => {
         );
       }
     }
+  } finally {
+    dom.window.close();
+  }
+});
+
+// If the account signed in from the other tab is not the one the form was
+// rendered for, the server refuses the save with 409 rather than write the
+// entry into that account. Retrying cannot land it and signing in again is not
+// what is missing, so the notice offers neither — and the entry stays put.
+const ACCOUNT_CHANGED_KEY = "daylog.save_account_changed";
+const ACCOUNT_CHANGED_TEXT = "You're now signed in to a different account. This entry was not saved.";
+const ACCOUNT_CHANGED_FRAGMENT = `<div class="status-error" data-flash-key="${ACCOUNT_CHANGED_KEY}" data-flash-status="error">${ACCOUNT_CHANGED_TEXT}</div>`;
+const FORM_ACCOUNT = "opaque-binding-of-the-rendering-account";
+
+function assertAccountChangedNotice(notice, surface) {
+  assert.ok(notice, `${surface}: the 409 renders a notice`);
+  assert.equal(notice.textContent, ACCOUNT_CHANGED_TEXT, `${surface}: the notice reads the server's localized copy`);
+  assert.equal(notice.querySelector("[data-day-save-retry]"), null, `${surface}: a retry cannot land, so none is offered`);
+  assert.equal(notice.querySelector("[data-day-save-sign-in]"), null, `${surface}: signing in is not what is missing`);
+}
+
+test("a calendar save refused for another account offers no retry and keeps the entry", async () => {
+  const dom = await loadDOMWithScript(APP_BUNDLE, { html: withSignInLabel(PAGE) });
+  try {
+    fireOnForm(dom.window, "htmx:responseError", {
+      target: dom.window.document.getElementById("calendar-save-status"),
+      xhr: { status: 409, responseText: ACCOUNT_CHANGED_FRAGMENT },
+    });
+
+    assertAccountChangedNotice(failureNotice(dom.window), "calendar");
+    assertEntryIntact(dom.window);
+    assertNothingStored(dom.window);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("a dashboard save carries the form's account binding and a 409 for another account offers no retry", async () => {
+  const failing = await loadDashboardWithFailingSave("ok");
+  const { dom, calls } = failing;
+  try {
+    const form = dashboardSaveForm(dom.window);
+    form.setAttribute("data-day-save-sign-in-label", SIGN_IN_LABEL);
+    const binding = dom.window.document.createElement("input");
+    binding.type = "hidden";
+    binding.name = "day_form_account";
+    binding.value = FORM_ACCOUNT;
+    form.insertBefore(binding, form.firstChild);
+
+    dom.window.fetch = (url, init) => {
+      calls.push({ url: String(url), init: init || {} });
+      return Promise.resolve({
+        ok: false,
+        status: 409,
+        headers: { get: () => null },
+        text: () => Promise.resolve(ACCOUNT_CHANGED_FRAGMENT),
+      });
+    };
+    const before = calls.length;
+    await attemptDashboardSave(dom.window);
+
+    assert.ok(calls.length > before, "the save went out");
+    const sent = new URLSearchParams(String(calls[calls.length - 1].init.body || ""));
+    assert.deepEqual(sent.getAll("day_form_account"), [FORM_ACCOUNT], "the body names the account the form was rendered for");
+
+    assertAccountChangedNotice(dashboardFailureNotice(dom.window), "dashboard");
+    assertDashboardEntryIntact(dom.window);
+    assertNothingStored(dom.window);
   } finally {
     dom.window.close();
   }
