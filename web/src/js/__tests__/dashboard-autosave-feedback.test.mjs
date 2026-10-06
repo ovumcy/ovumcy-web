@@ -333,3 +333,111 @@ test("the calendar editor still shows the neutral line and clears a routine stat
     }
   }
 });
+
+// --- The header refresh after a pregnancy result -----------------------------
+//
+// A changed pregnancy result also fetches the dashboard again and swaps the
+// pregnancy-dependent blocks of the status header in place. That refresh and
+// the save's own sentence travel separately, and either may land first; the
+// sentence lives in the journal's status region, outside the swapped blocks, so
+// it must be on the page — and stay until dismissed — whichever answer arrives
+// last.
+
+const STALE_BANNER = "Period likely today";
+const PAUSED_BANNER = "Next period estimate paused";
+
+function statusHeader(banner) {
+  return `<section data-dashboard-shell>
+    <section data-dashboard-status-header>
+      <p data-dashboard-status-line aria-live="polite">${banner}</p>
+      <div data-dashboard-cycle-ribbon></div>
+      <p data-dashboard-reminder-banner>${banner}</p>
+      <p data-dashboard-prediction-disclaimer>Not medical advice</p>
+    </section>
+  </section>`;
+}
+
+function deferred() {
+  let resolve;
+  const promise = new Promise((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+async function settleRounds() {
+  for (let round = 0; round < 4; round += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+}
+
+async function loadDashboardWithHeaderRefresh() {
+  const saveBody = deferred();
+  const pageBody = deferred();
+  const calls = [];
+  const dom = await loadDOMWithScript(APP_BUNDLE, {
+    html: dashboardPage().replace("<body>", `<body>${statusHeader(STALE_BANNER)}`),
+    url: "https://ovumcy.test/dashboard",
+    beforeRun: (window) => {
+      installRecordedTimers(window);
+      window.fetch = (url, init) => {
+        const method = (init && init.method) || "GET";
+        calls.push({ url: String(url), method });
+        const body = method === "GET" ? pageBody : saveBody;
+        return Promise.resolve({ ok: true, status: 200, headers: { get: () => null }, text: () => body.promise });
+      };
+    },
+  });
+  return { dom, calls, saveBody, pageBody };
+}
+
+for (const order of ["the refresh lands after the sentence", "the refresh lands before the sentence"]) {
+  test(`the safety sentence survives the header refresh when ${order}`, async () => {
+    const { dom, calls, saveBody, pageBody } = await loadDashboardWithHeaderRefresh();
+    const document = dom.window.document;
+    const sentence = () => saveStatus(dom.window).querySelector(".status-ok .toast-message");
+    const freshPage = `<!doctype html><html><body>${statusHeader(PAUSED_BANNER)}</body></html>`;
+    try {
+      await savePositiveTest(dom.window);
+      assert.deepEqual(
+        calls.map((call) => call.method),
+        ["PUT", "GET"],
+        "the positive result is saved and the header is fetched again"
+      );
+
+      if (order === "the refresh lands after the sentence") {
+        saveBody.resolve(kindFragment(escapeHTML(PAUSED_SENTENCE), "persistent"));
+        await settleRounds();
+        assert.ok(sentence(), "the sentence is shown before the refresh lands");
+        pageBody.resolve(freshPage);
+      } else {
+        pageBody.resolve(freshPage);
+        await settleRounds();
+        assert.equal(
+          document.querySelector("[data-dashboard-reminder-banner]").textContent,
+          PAUSED_BANNER,
+          "the header is refreshed before the sentence lands"
+        );
+        saveBody.resolve(kindFragment(escapeHTML(PAUSED_SENTENCE), "persistent"));
+      }
+      await settleRounds();
+
+      assert.equal(
+        document.querySelector("[data-dashboard-reminder-banner]").textContent,
+        PAUSED_BANNER,
+        "the refresh swapped the pregnancy-dependent blocks"
+      );
+      assert.ok(document.contains(saveStatus(dom.window)), "the journal's status region is still on the page");
+      assert.ok(sentence(), "the safety sentence is still shown after the refresh");
+      assert.equal(sentence().textContent, PAUSED_SENTENCE);
+
+      elapseStatusClear(dom.window);
+      assert.ok(sentence(), "the safety sentence outlasts the auto-clear window after the refresh");
+
+      saveStatus(dom.window).querySelector("[data-dismiss-status]").click();
+      assert.equal(saveStatus(dom.window).querySelector(".status-ok"), null, "the owner can still dismiss it");
+    } finally {
+      dom.window.close();
+    }
+  });
+}
