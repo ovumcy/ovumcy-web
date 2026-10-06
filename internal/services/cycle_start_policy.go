@@ -181,10 +181,6 @@ func potentialImplantationGapDays(user *models.User, logs []models.DailyLog, tar
 	return 0, false
 }
 
-func LatestCycleStartAnchorBeforeOrOn(user *models.User, logs []models.DailyLog, day time.Time, location *time.Location) time.Time {
-	return cycleStartAnchorBeforeOrOn(user, logs, day, location)
-}
-
 func ShouldSuggestManualCycleStart(user *models.User, logs []models.DailyLog, logEntry models.DailyLog, day time.Time, now time.Time, location *time.Location) bool {
 	return logEntry.IsPeriod && cycleStartGapSuggestsNewCycle(user, logs, logEntry, day, now, location)
 }

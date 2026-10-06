@@ -129,18 +129,6 @@ func (repo *DailyLogRepository) ListByUserDayRange(ctx context.Context, userID u
 	return logs, nil
 }
 
-func (repo *DailyLogRepository) ListPeriodDays(ctx context.Context, userID uint) ([]models.DailyLog, error) {
-	logs := make([]models.DailyLog, 0)
-	if err := repo.database.WithContext(ctx).
-		Select("date", "is_period", "cycle_start", "is_uncertain").
-		Where("user_id = ? AND is_period = ?", userID, true).
-		Order("date ASC").
-		Find(&logs).Error; err != nil {
-		return nil, err
-	}
-	return logs, nil
-}
-
 func (repo *DailyLogRepository) FindByUserAndDayRange(ctx context.Context, userID uint, dayStart time.Time, dayEnd time.Time) (models.DailyLog, bool, error) {
 	return findDailyLogInDayRange(repo.database.WithContext(ctx), userID, dayStart, dayEnd)
 }
