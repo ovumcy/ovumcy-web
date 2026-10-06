@@ -78,13 +78,17 @@ func BuildCalendarDayStates(user *models.User, monthStart time.Time, logs []mode
 	latestLogByDate, hasDataMap := buildCalendarLogMaps(logs)
 	// The owner's onboarding start is a recorded cycle boundary, so the grid
 	// draws its day as recorded (CycleBoundaries is the one rule that says so)
-	// instead of leaving it to the projection or to a blank cell. Only an
-	// unlogged day is painted: a logged entry draws itself, and one that is not
-	// a period day is the owner's un-mark, which the rule honours too.
-	if onboardingDay := OnboardingBoundaryDay(logs, BoundaryContextFor(user, DateAtLocation(now, location))); !onboardingDay.IsZero() {
+	// instead of leaving it to the projection or to a blank cell. A day logged
+	// there without a period (a mood, a symptom) is still painted as recorded:
+	// un-ticking the period on that day clears the stored start itself, so a
+	// start that is still stored is still the owner's.
+	if onboardingDay := OnboardingBoundaryDay(BoundaryContextFor(user, DateAtLocation(now, location))); !onboardingDay.IsZero() {
 		key := CalendarDayKey(onboardingDay)
-		if _, logged := latestLogByDate[key]; !logged {
-			latestLogByDate[key] = models.DailyLog{Date: onboardingDay, IsPeriod: true}
+		entry := latestLogByDate[key]
+		if !entry.IsPeriod {
+			entry.Date = onboardingDay
+			entry.IsPeriod = true
+			latestLogByDate[key] = entry
 		}
 	}
 	// The projection bound keeps the request-local shape it has always had:

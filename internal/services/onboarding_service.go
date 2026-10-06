@@ -178,8 +178,12 @@ func ClampOnboardingPeriodLength(value int) int {
 	return value
 }
 
+// MinOnboardingCycleLength is the shortest cycle length onboarding and Settings
+// accept.
+const MinOnboardingCycleLength = 15
+
 func IsValidOnboardingCycleLength(value int) bool {
-	return value >= 15 && value <= 90
+	return value >= MinOnboardingCycleLength && value <= 90
 }
 
 func IsValidOnboardingPeriodLength(value int) bool {

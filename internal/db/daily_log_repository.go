@@ -256,6 +256,20 @@ func (repo *DailyLogRepository) DeleteByUserAndDayRange(ctx context.Context, use
 	return repo.database.WithContext(ctx).Where("user_id = ? AND date >= ? AND date < ?", userID, dayStart, dayEnd).Delete(&models.DailyLog{}).Error
 }
 
+// ClearLastPeriodStartOn clears users.last_period_start for userID when it
+// falls on the calendar day starting at dayStart (a canonical UTC midnight),
+// and leaves it alone otherwise. It runs on this repository's handle, so inside
+// WithinTransaction it commits or rolls back with the day write that un-marked
+// the day. A zero userID is refused, never a reason to skip the scope.
+func (repo *DailyLogRepository) ClearLastPeriodStartOn(ctx context.Context, userID uint, dayStart time.Time) error {
+	if userID == 0 {
+		return errors.New("user id is required")
+	}
+	return repo.database.WithContext(ctx).Model(&models.User{}).
+		Where("id = ? AND last_period_start >= ? AND last_period_start < ?", userID, dayStart, dayStart.AddDate(0, 0, 1)).
+		Update("last_period_start", nil).Error
+}
+
 // UpdateSymptomIDs updates only the symptom_ids column, scoped by user_id so the
 // write can only touch a row whose user_id matches the entry's own UserID
 // (defense-in-depth, mirroring Save and the read/delete methods).

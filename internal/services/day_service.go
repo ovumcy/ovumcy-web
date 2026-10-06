@@ -474,11 +474,55 @@ func (service *DayService) applyDayWriteAndAutoFill(ctx context.Context, userID 
 	if err != nil {
 		return models.DailyLog{}, err
 	}
+	if previous.IsPeriod && !normalized.IsPeriod {
+		if err := service.withdrawOnboardingStartOn(ctx, userID, dayStart); err != nil {
+			return models.DailyLog{}, err
+		}
+	}
 	if err := service.applyPeriodAutoFillSideEffects(ctx, userID, dayStart, normalized, previous, now, location); err != nil {
 		return models.DailyLog{}, err
 	}
 	return entry, nil
 }
+
+// lastPeriodStartClearer is the day-log repository's write of the one users
+// column a day save may change: the stored onboarding start. The production
+// repository implements it on its transaction handle (pinned by a compile-time
+// assertion in the day service's integration test).
+type lastPeriodStartClearer interface {
+	ClearLastPeriodStartOn(ctx context.Context, userID uint, dayStart time.Time) error
+}
+
+// withdrawOnboardingStartOn handles the explicit un-mark: a save that turned a
+// period day into a non-period day on the date of the stored onboarding start
+// (users.last_period_start) clears that start, so the boundary it inserts is
+// gone with the period day. Only that transition withdraws it — a day logged
+// without a period on the start date (a mood, a symptom) leaves the start in
+// place, since onboarding already recorded the period there. dayStart is the
+// canonical UTC-midnight key of the owner's calendar day, the shape the stored
+// start has.
+func (service *DayService) withdrawOnboardingStartOn(ctx context.Context, userID uint, dayStart time.Time) error {
+	if clearer, ok := service.logs.(lastPeriodStartClearer); ok {
+		if err := clearer.ClearLastPeriodStartOn(ctx, userID, dayStart); err != nil {
+			return ErrDayEntryUpdateFailed
+		}
+		return nil
+	}
+	// A repository without the transactional write refuses when there is a
+	// start to withdraw, as the Settings start mover does: clearing it through
+	// the user repository would commit outside the day write's transaction, and
+	// leaving it would keep a boundary the owner just un-marked.
+	stored, err := service.users.LoadSettingsByID(ctx, userID)
+	if err != nil {
+		return ErrDayEntryLoadFailed
+	}
+	if stored.LastPeriodStart == nil || !dateOnly(*stored.LastPeriodStart).Equal(dateOnly(dayStart)) {
+		return nil
+	}
+	return errLastPeriodStartClearUnsupported
+}
+
+var errLastPeriodStartClearUnsupported = errors.New("day log repository cannot withdraw the onboarding start with the day write")
 
 // applyConfirmedCycleStart marks the day the owner just saved as a cycle start,
 // but only when the same policy that raised the inline question still holds for

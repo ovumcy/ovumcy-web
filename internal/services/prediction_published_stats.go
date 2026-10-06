@@ -77,7 +77,7 @@ func PublishedStats(user *models.User, stats CycleStats, logs []models.DailyLog,
 	// be answered from fields the clearing below has already emptied.
 	suppression := ResolvePredictionSuppression(user, stats)
 	// The pages' out-of-date verdict, from the helper both pages call.
-	cycleDataStale := dashboardCycleDataStale(user, logs, stats, today, location)
+	cycleDataStale := dashboardCycleDataStale(user, stats, today, location)
 
 	// The two predicates clear different sets because they answer different
 	// questions: FertilityProjectionSuppressed also covers the zero-cycles floor,
