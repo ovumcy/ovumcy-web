@@ -14,4 +14,6 @@
   than rendered with the page, sends the account it was rendered for on every request from inside
   it: a calendar tab left open while another account signs in answers the day fetch and the grid
   refresh with the same refusal instead of showing that account's day. JSON API clients that do
-  not send the binding are unaffected.
+  not send the binding are unaffected. If the page's security token went stale while the owner
+  was signing in (it idled out, or the server restarted), the refused retry re-reads it from the
+  page and the next retry saves, instead of being refused until the page is reloaded.

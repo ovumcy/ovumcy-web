@@ -2102,7 +2102,8 @@
   // retry beside the link then resubmits the same form under it. The CSRF token
   // the retry sends is read from the page at send time and survives the
   // sign-in — the token cookie is not rotated by authentication — so the retry
-  // is not refused for a stale token.
+  // is not refused for a stale token; if the token did go stale meanwhile,
+  // refreshCSRFToken below replaces it.
   //
   // The link is a fixed same-origin path carrying nothing from the entry or the
   // account, and nothing from the entry is written anywhere to survive the trip.
@@ -2114,6 +2115,112 @@
   // entry into that account; the form carries an opaque binding to the account
   // that rendered it.
   var ACCOUNT_CHANGED_NOTICE_KEY = "daylog.save_account_changed";
+
+  // The retry above reads the CSRF token from the page at send time, and the
+  // sign-in happens in another tab. The token cookie is not rotated by signing
+  // in, but it can be gone by then: the server forgets a token after an hour
+  // without a request carrying it, and a restart forgets every one. The other
+  // tab's first page load then mints a new token and cookie, and this tab's
+  // <meta> keeps the old one for good — every retry and every later autosave
+  // would be refused 403 until a reload, which discards the entry.
+  //
+  // So a refused day write (403) re-reads the token from the page the owner is
+  // already on: a plain same-origin GET of the current path, which the server
+  // answers with the token its cookie holds. Only the <meta> content (and the
+  // hidden token inputs that mirror it) is adopted, after a shape check, and
+  // only from a same-origin response; nothing else from the response enters the
+  // page. The write is never re-sent from here — the owner's Retry is the only
+  // thing that sends it again — and a refresh that fails leaves the notice and
+  // the entry exactly as they were.
+  var CSRF_TOKEN_SHAPE = /^[A-Za-z0-9._~+/=-]{8,512}$/;
+  var csrfRefreshPending = null;
+
+  function csrfTokenFromPage(text) {
+    if (!text || typeof DOMParser !== "function") {
+      return "";
+    }
+    var meta = new DOMParser().parseFromString(text, "text/html").querySelector('meta[name="csrf-token"]');
+    var token = meta ? String(meta.getAttribute("content") || "").trim() : "";
+    return CSRF_TOKEN_SHAPE.test(token) ? token : "";
+  }
+
+  function responseIsSameOrigin(response) {
+    if (!response || !response.url) {
+      return true;
+    }
+    try {
+      return new URL(response.url, window.location.href).origin === window.location.origin;
+    } catch {
+      return false;
+    }
+  }
+
+  function adoptCSRFToken(token) {
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    if (!meta) {
+      return false;
+    }
+    meta.setAttribute("content", token);
+    document.querySelectorAll('input[type="hidden"][name="csrf_token"]').forEach(function (input) {
+      input.value = token;
+    });
+    return true;
+  }
+
+  // One refresh at a time: a second refused write while one is in flight shares
+  // it. Resolves true only when the page's token was replaced.
+  function refreshCSRFToken() {
+    if (csrfRefreshPending) {
+      return csrfRefreshPending;
+    }
+    if (typeof window.fetch !== "function") {
+      return Promise.resolve(false);
+    }
+
+    var pending = Promise.resolve().then(function () {
+      return window.fetch(window.location.pathname, {
+        method: "GET",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { Accept: "text/html" }
+      });
+    }).then(function (response) {
+      if (!response || !response.ok || !responseIsSameOrigin(response) || typeof response.text !== "function") {
+        return "";
+      }
+      return response.text();
+    }).then(function (text) {
+      var token = csrfTokenFromPage(text);
+      return token ? adoptCSRFToken(token) : false;
+    }).catch(function () {
+      return false;
+    }).then(function (refreshed) {
+      if (csrfRefreshPending === pending) {
+        csrfRefreshPending = null;
+      }
+      return refreshed;
+    });
+    csrfRefreshPending = pending;
+    return pending;
+  }
+
+  // The refusal is detected by status alone: the 403 body is whatever the
+  // transport layer rendered and carries no key a client may branch on. The
+  // notice is rendered before the refresh settles, so the owner is never made
+  // to wait for it; a Retry pressed in the meantime waits for it instead.
+  function noteDayWriteRefusal(status) {
+    if (Number(status) === 403) {
+      refreshCSRFToken();
+    }
+  }
+
+  function afterCSRFRefresh(action) {
+    if (csrfRefreshPending) {
+      csrfRefreshPending.then(action);
+      return;
+    }
+    action();
+  }
 
   function daySaveSignInLink(form) {
     var link = document.createElement("a");
@@ -2176,6 +2283,14 @@
   }
 
   function retryDaySave(form) {
+    // A retry pressed while the token refresh after a 403 is still in flight
+    // waits for it, so the resubmit carries the fresh token.
+    afterCSRFRefresh(function () {
+      resubmitDaySave(form);
+    });
+  }
+
+  function resubmitDaySave(form) {
     // Resubmit the very same form node. Nothing was copied anywhere, so the
     // retry carries exactly what is on screen.
     //
@@ -2196,6 +2311,16 @@
     if (saveButton) {
       saveButton.click();
     }
+  }
+
+  // A day write that is not the editor's own form — the delete control, a
+  // cycle-start form — still sends the page's token, so its 403 refreshes it too.
+  var DAY_WRITE_PATH = /\/api\/(?:v1\/)?days\//;
+
+  function isDayWriteRequest(event) {
+    var info = event && event.detail ? event.detail.pathInfo : null;
+    var path = info && typeof info.requestPath === "string" ? info.requestPath : "";
+    return DAY_WRITE_PATH.test(path);
   }
 
   function initHTMXHooks() {
@@ -2310,6 +2435,10 @@
       var target = event && event.detail ? event.detail.target : null;
       var form = getSaveFeedbackFormFromEvent(event);
       var dayForm = dayEditorFormFromEvent(event);
+
+      if (dayForm || isDayWriteRequest(event)) {
+        noteDayWriteRefusal(event && event.detail && event.detail.xhr ? event.detail.xhr.status : 0);
+      }
 
       if (!dayForm && renderDayEditorAccountRefusal(target, event)) {
         return;
@@ -3988,7 +4117,11 @@
   // it leaves every typed value exactly where it is. Nothing is retried behind
   // the owner's back — the runner stops until they press retry or type again,
   // so an unreachable instance is not hammered every two seconds.
-  function failDashboardAutosave(form, responseText) {
+  //
+  // A 403 is the CSRF token this page holds having gone stale (see
+  // refreshCSRFToken): the notice is rendered first, and the token is
+  // re-read behind it so the retry the notice offers carries a valid one.
+  function failDashboardAutosave(form, responseText, status) {
     var parsed = parseServerStatusError(String(responseText || ""));
     var message = parsed ? String(parsed.text || "").trim() : "";
 
@@ -3996,9 +4129,10 @@
     setDashboardAutosaveIndicator(form, "error");
     if (message) {
       renderDaySaveFailure(form, message, "rejected", parsed.key);
-      return;
+    } else {
+      renderDaySaveUnreachable(form);
     }
-    renderDaySaveUnreachable(form);
+    noteDayWriteRefusal(status);
   }
 
   // Pick the HTTP verb from whichever hx-* attribute the form uses so the
@@ -4368,7 +4502,7 @@
         return response.text().catch(function () {
           return "";
         }).then(function (text) {
-          failDashboardAutosave(form, text);
+          failDashboardAutosave(form, text, response.status);
           return false;
         });
       }
@@ -4514,7 +4648,7 @@
         return response.text().catch(function () {
           return "";
         }).then(function (text) {
-          failDashboardAutosave(form, text);
+          failDashboardAutosave(form, text, response.status);
           return false;
         });
       }

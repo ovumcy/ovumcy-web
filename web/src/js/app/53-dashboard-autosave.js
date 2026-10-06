@@ -307,7 +307,11 @@
   // it leaves every typed value exactly where it is. Nothing is retried behind
   // the owner's back — the runner stops until they press retry or type again,
   // so an unreachable instance is not hammered every two seconds.
-  function failDashboardAutosave(form, responseText) {
+  //
+  // A 403 is the CSRF token this page holds having gone stale (see
+  // refreshCSRFToken): the notice is rendered first, and the token is
+  // re-read behind it so the retry the notice offers carries a valid one.
+  function failDashboardAutosave(form, responseText, status) {
     var parsed = parseServerStatusError(String(responseText || ""));
     var message = parsed ? String(parsed.text || "").trim() : "";
 
@@ -315,9 +319,10 @@
     setDashboardAutosaveIndicator(form, "error");
     if (message) {
       renderDaySaveFailure(form, message, "rejected", parsed.key);
-      return;
+    } else {
+      renderDaySaveUnreachable(form);
     }
-    renderDaySaveUnreachable(form);
+    noteDayWriteRefusal(status);
   }
 
   // Pick the HTTP verb from whichever hx-* attribute the form uses so the
@@ -687,7 +692,7 @@
         return response.text().catch(function () {
           return "";
         }).then(function (text) {
-          failDashboardAutosave(form, text);
+          failDashboardAutosave(form, text, response.status);
           return false;
         });
       }
@@ -833,7 +838,7 @@
         return response.text().catch(function () {
           return "";
         }).then(function (text) {
-          failDashboardAutosave(form, text);
+          failDashboardAutosave(form, text, response.status);
           return false;
         });
       }
