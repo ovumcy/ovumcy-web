@@ -150,6 +150,12 @@ func BuildDashboardCycleHero(user *models.User, stats CycleStats, cycleContext D
 	if !fertilitySuppressed && stats.CurrentPhase == "unknown" && ovulationTimingUndetermined(stats, input.Today) {
 		currentPhase = "unknown"
 	}
+	// Once the ovulation has rolled, the header names the phase the JSON overview
+	// reads against the rolled window, not one off this ribbon's running-cycle
+	// geometry: the two disagreed on exactly the days the window moved.
+	if cycleContext.MovedWindow.Reconciled {
+		currentPhase = cycleContext.MovedWindow.CurrentPhase
+	}
 	phaseCards := dashboardCycleHeroPhaseCards(currentPhase, periodLength, ovulationDay, cycleLength, fertilitySuppressed, undeterminedEnd)
 
 	startWindow := dashboardCycleHeroStartWindow(cycleContext, cycleStart)
