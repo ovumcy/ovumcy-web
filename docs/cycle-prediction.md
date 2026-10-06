@@ -55,12 +55,15 @@ for those periods; marking each such day as a cycle start restores them.
 The start date stored at onboarding (the last period start) is a boundary of its
 own. It joins the grouping as a marked, non-spotting day, so a logged episode it
 falls inside or adjoins yields one start, not two. A start dated in the future is
-ignored, and so is one whose date carries a logged day that is not a period day:
-that log is the owner's newer word about the date. Moving the start in Settings
-removes the days the old start's auto-fill wrote, each only while it still
-carries nothing the owner entered, and writes the new start's days as onboarding
-would — otherwise the old fill would remain a boundary of its own and leave a
-phantom short cycle. An export over a requested range omits the stored start when
+ignored. Un-ticking the period on the start date clears the stored start; a day
+logged there without a period (a mood, a symptom) leaves it in place. Moving the
+start in Settings writes the new start's days as onboarding would. When the move
+corrects the old date — the old start still opens the newest cycle and the new
+one is earlier, or less than a shortest cycle (15 days) later — it also removes
+the days the old start's auto-fill wrote, each only while it still carries
+nothing the owner entered; otherwise the old fill would remain a boundary of its
+own and leave a phantom short cycle. A later move keeps the old days as history.
+An export over a requested range omits the stored start when
 it lies outside that range.
 
 The pregnancy pause reads the same rule: a positive test pauses predictions until

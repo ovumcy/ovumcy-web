@@ -13,16 +13,18 @@
   day without marking it, those periods no longer count as cycles: the completed-cycle count, the cycle
   lengths and the predictions built on them shrink. To restore them, open each such day and mark it as
   a cycle start (or log the second day of that period).
-- **Un-marking the onboarding day withdraws it.** A day logged on the onboarding start date that is
-  not a period day now withdraws that start as a cycle boundary, and the calendar no longer paints it
-  as a period day.
+- **Un-ticking the period on the onboarding day withdraws it.** Turning a period day into a
+  non-period day on the onboarding start date clears that start, so it no longer opens a cycle and the
+  calendar no longer paints it. Logging only a mood or a symptom on that date leaves the start in place.
 - **Moving the last period start in Settings takes the auto-filled days along.** Onboarding with
   auto-fill writes the first days of the period; under the new rule they form a cycle start of their
   own, so moving the start left a phantom short cycle behind and kept the dashboard on the old date.
-  Saving a new start now removes the old start's auto-filled days that you have not edited (a day
-  carrying anything you entered stays), writes the new start's days the way onboarding would under your
-  auto-fill setting and period length, and marks the new start day as a period day if it was logged
-  without one. Clearing the start moves nothing.
+  Saving a new start now writes the new start's days the way onboarding would under your auto-fill
+  setting and period length, and marks the new start day as a period day if it was logged without one.
+  It removes the old start's auto-filled days that you have not edited (a day carrying anything you
+  entered stays) only when the save corrects the old date: the old start still opens your newest
+  cycle, and the new one is earlier or less than a shortest cycle (15 days) later. Otherwise the old
+  days stay recorded. Clearing the start moves nothing.
 - **The pregnancy pause lifts on a cycle start the rule counts.** A positive test pauses predictions
   until a cycle starts after it. "A cycle starts" is now the same rule as everywhere else: an unmarked
   two-day bleed after the test lifts the pause, while a spotting day or an uncertain mark does not. A
