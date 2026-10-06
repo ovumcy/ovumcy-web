@@ -252,38 +252,64 @@ func PublishedOverviewStats(user *models.User, logs []models.DailyLog, stats Cyc
 // and the calendar marker alike, so under a confirmation the ovulation half —
 // day, window, flags — stays the confirmed one and only the next period follows.
 //
-// The fertile window moves with the day it ends on. DashboardUpcomingPredictions
-// names the day only, and the shift it applied is a whole number of cycle
-// lengths from the running cycle's start, so the window is the model's own
-// window for that rolled start — the one the calendar shades around the rolled
-// ovulation. Where the day did not move, the running cycle's window stands as
-// published, the irregular-mode widening included.
+// In irregular range mode the header names no single day: it shows the RUNNING
+// cycle's ovulation range, [ovulation(shortest), ovulation(longest)], and never
+// rolls it (ResolveProjectionRanges reads the running cycle's start), while the
+// calendar keeps shading that cycle's widened window. The ovulation half then
+// stays the running cycle's as published — the median day and the widened
+// window, whose last day is the range's — rather than a rolled median window no
+// page names for this account.
+//
+// The fertile window moves with the day it ends on. It is the window of the
+// projected cycle that ovulates on the rolled day, run through the calendar's
+// own per-cycle helper (projectedCycleWindow), so the grid and the API cannot
+// shade two windows around one day; where the day did not move, the running
+// cycle's window stands as published.
 func followUpcomingPrediction(published *CycleStats, user *models.User, resolved CycleStats, suppression PredictionSuppression, wasConfirmed bool, today time.Time, location *time.Location) {
 	cycleLength := DashboardProjectionCycleLength(user, resolved)
 	prediction := DashboardUpcomingPredictions(resolved, user, today, cycleLength)
 	if !suppression.PredictionsSuppressed {
 		published.NextPeriodStart = locationDateOrZero(prediction.NextPeriodStart, location)
 	}
-	// A running cycle with no ovulation to publish has no day to roll from: the
-	// shift below is measured from it, and the projection only ever names a day
-	// where the running cycle's own arithmetic does.
+	// A running cycle with no ovulation to publish has nothing to roll: the
+	// projection only ever names a day where the running cycle's own arithmetic
+	// does.
 	if suppression.FertilitySuppressed || wasConfirmed || resolved.OvulationDate.IsZero() {
 		return
 	}
-	shift := CalendarDaysBetween(resolved.OvulationDate, prediction.OvulationDate)
+	if ResolveProjectionRanges(user, resolved, prediction.NextPeriodStart, location).OvulationUseRange {
+		return
+	}
+	moved := !sameDay(resolved.OvulationDate, prediction.OvulationDate)
 	published.OvulationDate = locationDateOrZero(prediction.OvulationDate, location)
 	published.OvulationExact = prediction.OvulationExact
 	published.OvulationImpossible = prediction.OvulationImpossible
-	// A rolled day past 9999-12-31 is absent, and its window goes with it, as
-	// clearUnspellableCycleWindow does for the running cycle's.
-	if published.OvulationDate.IsZero() {
+	if !moved {
+		return
+	}
+	// A day the projection cannot place, or one past 9999-12-31, is absent, and
+	// its window goes with it, as clearUnspellableCycleWindow does for the
+	// running cycle's.
+	window, ok := projectedCycleWindowOn(resolved.LastPeriodStart, prediction.OvulationDate, cycleLength, resolved.LutealPhase, location)
+	if !ok {
 		published.FertilityWindowStart, published.FertilityWindowEnd = time.Time{}, time.Time{}
 		return
 	}
-	if shift == 0 {
-		return
-	}
-	window := PredictCycleWindow(AddCalendarDays(resolved.LastPeriodStart, shift, location), cycleLength, resolved.LutealPhase)
 	published.FertilityWindowStart = locationDateOrZero(window.FertilityWindowStart, location)
 	published.FertilityWindowEnd = locationDateOrZero(window.FertilityWindowEnd, location)
+}
+
+// projectedCycleWindowOn is the window of the projected cycle, chained from
+// lastPeriodStart in steps of cycleLength, that ovulates on ovulation. The step
+// is measured between ovulation days computed with the SAME length and luteal
+// phase, never from the stats' own ovulation day: a day derived from another
+// length would put the shift off a whole number of cycles and the window off
+// the day it must end on.
+func projectedCycleWindowOn(lastPeriodStart time.Time, ovulation time.Time, cycleLength int, lutealPhase int, location *time.Location) (CycleWindowPrediction, bool) {
+	running := PredictCycleWindow(lastPeriodStart, cycleLength, lutealPhase)
+	if ovulation.IsZero() || !running.Calculable {
+		return CycleWindowPrediction{}, false
+	}
+	shift := CalendarDaysBetween(running.OvulationDate, ovulation)
+	return projectedCycleWindow(AddCalendarDays(lastPeriodStart, shift, location), cycleLength, lutealPhase)
 }

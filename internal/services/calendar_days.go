@@ -423,6 +423,20 @@ func appendFertilityWindow(fertilityEdgeMap map[string]bool, fertilityPeakMap ma
 // only thing standing between a month value and an unbounded chain.
 const maxProjectedCyclesInGrid = 4000
 
+// projectedCycleWindow is the window the grid shades for one projected cycle
+// starting on cycleStart, or false where it shades none: no placeable ovulation,
+// or one past 9999-12-31, which is withheld as a whole exactly as the current
+// cycle's window is (clearUnspellableCycleWindow). The JSON overview publishes
+// the window of a rolled ovulation through this same helper, so the API and the
+// grid cannot name two windows around one projected day.
+func projectedCycleWindow(cycleStart time.Time, cycleLength int, lutealPhase int) (CycleWindowPrediction, bool) {
+	window := PredictCycleWindow(cycleStart, cycleLength, ResolveLutealPhase(lutealPhase))
+	if !window.Calculable || projectedDay(window.OvulationDate).IsZero() {
+		return CycleWindowPrediction{}, false
+	}
+	return window, true
+}
+
 // appendPredictedCycles chains the projected cycles across the visible grid.
 // includeFertility is false in the first-cycle tier: the chained period days
 // still descend from a recorded anchor, while the window inside each of them
@@ -516,13 +530,8 @@ func appendPredictedPeriod(predictedPeriodMap map[string]bool, cycleStart time.T
 }
 
 func appendPredictedWindow(preFertileMap map[string]bool, fertilityEdgeMap map[string]bool, fertilityPeakMap map[string]bool, ovulationMap map[string]bool, cycleStart time.Time, predictedCycleLength int, predictedPeriodLength int, lutealPhase int, location *time.Location) {
-	window := PredictCycleWindow(cycleStart, predictedCycleLength, ResolveLutealPhase(lutealPhase))
-	if !window.Calculable {
-		return
-	}
-	// Withheld as a whole once its ovulation falls after 9999-12-31, exactly
-	// as the current cycle's window is (clearUnspellableCycleWindow).
-	if projectedDay(window.OvulationDate).IsZero() {
+	window, ok := projectedCycleWindow(cycleStart, predictedCycleLength, lutealPhase)
+	if !ok {
 		return
 	}
 
