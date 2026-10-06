@@ -16,9 +16,10 @@
 - **Un-ticking the period on the onboarding day withdraws it.** Turning a period day into a
   non-period day on the onboarding start date, or deleting that day, clears that start, so it no
   longer opens a cycle and the calendar no longer paints it. When the start day has no entry (onboarding
-  without auto-fill), the day editor shows its period ticked, and saving it unticked withdraws the
-  start the same way. Adding only a mood or a symptom to a non-period entry on that date leaves the
-  start in place.
+  without auto-fill), the day editor and the dashboard's Today form show its period ticked, and
+  un-ticking it in either form withdraws the start the same way. Saving a mood with the box still
+  ticked, adding only a mood or a symptom to a non-period entry on that date, or a JSON save of that
+  date without the period leaves the start in place.
 - **Moving the last period start in Settings takes the auto-filled days along.** Onboarding with
   auto-fill writes the first days of the period; under the new rule they form a cycle start of their
   own, so moving the start left a phantom short cycle behind and kept the dashboard on the old date.
@@ -26,11 +27,12 @@
   setting and period length, and marks the new start day as a period day if it was logged without one.
   It removes old days only while auto-fill is on in your stored settings, and only when the save
   corrects the old date: the old start still opens your newest cycle, and the new one is earlier or
-  less than a shortest cycle (15 days) later. Even then it removes only the run of days onboarding's
-  fill wrote in one go, from the old start up to the first day that is missing, that you edited, or
-  that you ticked yourself; a period day you ticked by hand is never deleted, whatever the auto-fill
-  setting or period length was when you ticked it. Otherwise the old days stay recorded. Clearing the
-  start moves nothing.
+  less than a shortest cycle (15 days) later. Even then it removes only a fill written as one cohort
+  of at least two days: the run onboarding's fill wrote in one go, from the old start up to the first
+  day that is missing, that you edited, or that you ticked yourself. A period day you ticked by hand is
+  never deleted, whatever the auto-fill setting or period length was when you ticked it, and a period
+  length of 1 is never cleared. Installs onboarded before this release keep their old days on a move,
+  as they did before. Otherwise the old days stay recorded. Clearing the start moves nothing.
 - **The pregnancy pause lifts on a cycle start the rule counts.** A positive test pauses predictions
   until a cycle starts after it. "A cycle starts" is now the same rule as everywhere else, without
   the today-or-yesterday allowance: a marked start or an unmarked two-day bleed after the test lifts
