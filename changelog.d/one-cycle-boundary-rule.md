@@ -14,21 +14,28 @@
   lengths and the predictions built on them shrink. To restore them, open each such day and mark it as
   a cycle start (or log the second day of that period).
 - **Un-ticking the period on the onboarding day withdraws it.** Turning a period day into a
-  non-period day on the onboarding start date clears that start, so it no longer opens a cycle and the
-  calendar no longer paints it. Logging only a mood or a symptom on that date leaves the start in place.
+  non-period day on the onboarding start date, or deleting that day, clears that start, so it no
+  longer opens a cycle and the calendar no longer paints it. When the start day has no entry (onboarding
+  without auto-fill), the day editor shows its period ticked, and saving it unticked withdraws the
+  start the same way. Adding only a mood or a symptom to a non-period entry on that date leaves the
+  start in place.
 - **Moving the last period start in Settings takes the auto-filled days along.** Onboarding with
   auto-fill writes the first days of the period; under the new rule they form a cycle start of their
   own, so moving the start left a phantom short cycle behind and kept the dashboard on the old date.
   Saving a new start now writes the new start's days the way onboarding would under your auto-fill
   setting and period length, and marks the new start day as a period day if it was logged without one.
-  It removes the old start's auto-filled days that you have not edited (a day carrying anything you
-  entered stays) only when the save corrects the old date: the old start still opens your newest
-  cycle, and the new one is earlier or less than a shortest cycle (15 days) later. Otherwise the old
-  days stay recorded. Clearing the start moves nothing.
+  It removes old days only while auto-fill is on in your stored settings, and only when the save
+  corrects the old date: the old start still opens your newest cycle, and the new one is earlier or
+  less than a shortest cycle (15 days) later. Even then it removes only the run of days onboarding's
+  fill wrote in one go, from the old start up to the first day that is missing, that you edited, or
+  that you ticked yourself; a period day you ticked by hand is never deleted, whatever the auto-fill
+  setting or period length was when you ticked it. Otherwise the old days stay recorded. Clearing the
+  start moves nothing.
 - **The pregnancy pause lifts on a cycle start the rule counts.** A positive test pauses predictions
-  until a cycle starts after it. "A cycle starts" is now the same rule as everywhere else: an unmarked
-  two-day bleed after the test lifts the pause, while a spotting day or an uncertain mark does not. A
-  start on the day of the positive test still keeps the pause.
+  until a cycle starts after it. "A cycle starts" is now the same rule as everywhere else, without
+  the today-or-yesterday allowance: a marked start or an unmarked two-day bleed after the test lifts
+  the pause, while a single bleeding day (even today's), a spotting day or an uncertain mark does not.
+  A start on the day of the positive test still keeps the pause.
 - **The JSON export carries the onboarding start, and the CSV marks it.** The JSON export gains an
   optional top-level `last_period_start` (`YYYY-MM-DD`), absent when the account has none and also
   absent when the date lies outside a requested export range; the CSV marks `Cycle start` on that date,

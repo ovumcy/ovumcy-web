@@ -55,20 +55,27 @@ for those periods; marking each such day as a cycle start restores them.
 The start date stored at onboarding (the last period start) is a boundary of its
 own. It joins the grouping as a marked, non-spotting day, so a logged episode it
 falls inside or adjoins yields one start, not two. A start dated in the future is
-ignored. Un-ticking the period on the start date clears the stored start; a day
-logged there without a period (a mood, a symptom) leaves it in place. Moving the
-start in Settings writes the new start's days as onboarding would. When the move
-corrects the old date — the old start still opens the newest cycle and the new
-one is earlier, or less than a shortest cycle (15 days) later — it also removes
-the days the old start's auto-fill wrote, each only while it still carries
-nothing the owner entered; otherwise the old fill would remain a boundary of its
-own and leave a phantom short cycle. A later move keeps the old days as history.
+ignored. Un-ticking the period on the start date, or deleting that day, clears
+the stored start. A start day with no entry shows its period ticked in the day
+editor, and saving it unticked clears the start too; adding a mood or a symptom
+to a non-period entry there leaves it in place. Moving the start in Settings
+writes the new start's days as onboarding would. When auto-fill is on in the
+stored settings and the move corrects the old date — the old start still opens
+the newest cycle and the new one is earlier, or less than a shortest cycle (15
+days) later — it also removes the days the old start's fill wrote: the run from
+the old start that one fill write produced, stopping at the first day that is
+missing, carries anything the owner entered, or was written by another save (a
+period day ticked by hand is never removed). Otherwise the old fill would remain
+a boundary of its own and leave a phantom short cycle. A later move keeps the old
+days as history.
 An export over a requested range omits the stored start when
 it lies outside that range.
 
-The pregnancy pause reads the same rule: a positive test pauses predictions until
-a boundary falls on a later calendar day, so an unmarked two-day bleed lifts it
-while a spotting day or an uncertain mark does not.
+The pregnancy pause reads the same rule without the today-or-yesterday
+allowance: a positive test pauses predictions until a boundary falls on a later
+calendar day, so a marked start or an unmarked two-day bleed lifts it, while a
+single bleeding day (even one dated today), a spotting day or an uncertain mark
+does not.
 
 ## The model
 
