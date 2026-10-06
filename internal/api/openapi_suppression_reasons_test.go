@@ -1,11 +1,14 @@
 package api
 
 import (
+	"go/constant"
+	"go/types"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
+
+	"golang.org/x/tools/go/packages"
 
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
@@ -14,11 +17,11 @@ import (
 // enum, and a client branches on those strings. A reason the service can emit but
 // the spec never lists is a value the client was promised could not exist; a
 // listed value no constant produces is a branch that never fires. The check runs
-// both ways, reads the constants out of their declaration file (a hand-written
+// both ways, resolves the constants through the type checker (a hand-written
 // list here would be the shape that hides the next reason), and is anchored to
 // the compiler so a scan that silently stops matching cannot pass as an empty set.
 func TestOpenAPISuppressionReasonEnumMatchesTheServiceConstants(t *testing.T) {
-	declared := declaredSuppressionReasons(t, filepath.Join("..", "services", "dashboard_cycle.go"))
+	declared := declaredSuppressionReasons(t)
 	published := openAPIPublishedSuppressionReasons(t, filepath.Join("..", "..", "docs", "openapi.yaml"))
 
 	for _, anchor := range []services.SuppressionReason{
@@ -26,7 +29,7 @@ func TestOpenAPISuppressionReasonEnumMatchesTheServiceConstants(t *testing.T) {
 		services.SuppressionReasonAwaitingMoreCycles,
 	} {
 		if _, ok := declared[string(anchor)]; !ok {
-			t.Fatalf("reason scan did not find %q in dashboard_cycle.go; the scan, not the spec, is broken", anchor)
+			t.Fatalf("reason scan did not find %q among the SuppressionReason constants; the scan, not the spec, is broken", anchor)
 		}
 		if _, ok := published[string(anchor)]; !ok {
 			t.Fatalf("enum scan did not find %q in docs/openapi.yaml StatsOverviewSuppression.reasons", anchor)
@@ -43,16 +46,32 @@ func TestOpenAPISuppressionReasonEnumMatchesTheServiceConstants(t *testing.T) {
 	}
 }
 
-func declaredSuppressionReasons(t *testing.T, sourcePath string) map[string]struct{} {
+// declaredSuppressionReasons type-checks the services package and takes the value
+// of every package-level constant whose declared type is SuppressionReason, found
+// through the type checker rather than by the shape of the declaration text: a
+// constant spelled in a group, through an expression, or in another file of the
+// package is still one.
+func declaredSuppressionReasons(t *testing.T) map[string]struct{} {
 	t.Helper()
-	data, err := os.ReadFile(sourcePath)
-	if err != nil {
-		t.Fatalf("read %s: %v", sourcePath, err)
+	loaded, err := packages.Load(&packages.Config{
+		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo,
+		Dir:  filepath.Join("..", ".."),
+	}, "./internal/services")
+	if err != nil || len(loaded) != 1 || len(loaded[0].Errors) > 0 {
+		t.Fatalf("type-check internal/services: %v (%d packages)", err, len(loaded))
 	}
-	declaration := regexp.MustCompile(`SuppressionReason\w+\s+SuppressionReason\s*=\s*"([^"]+)"`)
+	scope := loaded[0].Types.Scope()
 	reasons := make(map[string]struct{})
-	for _, match := range declaration.FindAllStringSubmatch(string(data), -1) {
-		reasons[match[1]] = struct{}{}
+	for _, name := range scope.Names() {
+		object, ok := scope.Lookup(name).(*types.Const)
+		if !ok {
+			continue
+		}
+		named, ok := object.Type().(*types.Named)
+		if !ok || named.Obj().Name() != "SuppressionReason" || named.Obj().Pkg() != loaded[0].Types {
+			continue
+		}
+		reasons[constant.StringVal(object.Val())] = struct{}{}
 	}
 	return reasons
 }
