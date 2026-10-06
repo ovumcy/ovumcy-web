@@ -211,8 +211,11 @@ func TestPublishedStatsWithholdsPhaseAndStatusOnOutOfDateData(t *testing.T) {
 
 	published, suppression, _ := PublishedOverviewStats(user, logs, stats, today, time.UTC)
 
-	if suppression.PredictionsSuppressed || suppression.FertilitySuppressed || len(suppression.Reasons) != 0 {
-		t.Fatalf("suppression = %+v — staleness is not a suppression signal", suppression)
+	// Staleness withholds the fertility half (from L+1) and never the whole
+	// projection: the next-period dates stay until the overdue gate.
+	if suppression.PredictionsSuppressed || !suppression.FertilitySuppressed ||
+		len(suppression.Reasons) != 1 || suppression.Reasons[0] != SuppressionReasonCycleDataStale {
+		t.Fatalf("suppression = %+v — staleness must withhold the fertility half alone, under its own reason", suppression)
 	}
 	if !published.CycleDataStale {
 		t.Fatal("CycleDataStale = false, want the pages' verdict")

@@ -10,23 +10,21 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
-// TestCalendarGridKeepsProjectingInTheOutOfDateBand pins a DECISION, not an
-// oversight: between the account's reference cycle length and the overdue gate
-// (a further week) the dashboard, /stats and the JSON API print "unknown" for the
-// phase and the fertility status and show the out-of-date banner, while the
-// calendar grid keeps drawing the projected days. The out-of-date verdict
-// withholds the phase and the status and nothing else (PublishedStats), the grid
-// shows no phase or status, and the projected dates it does draw sit beside the
-// same dates the other pages still publish. Moving the verdict into the grid is a
-// separate product decision; this test turns it from an unpinned omission into a
-// stated one.
+// TestCalendarGridKeepsTheNextPeriodButNoFertileDayInTheOutOfDateBand pins a
+// DECISION: between the account's reference cycle length and the overdue gate
+// (a further week) the fertility half of the projection is withheld on every
+// surface — the out-of-date band is a fertility suppression signal
+// (DashboardCyclePastReferenceLength) — while the projected period days stay,
+// on the grid as on the other pages, until the overdue gate withholds them too.
+// An ovulation drawn here would belong to a cycle chained from a start nobody
+// logged, beside pages already saying the data may be outdated.
 //
 // The history is three 28-day cycles and a running one from 2026-03-26, so the
 // reference length is 28 and cycle day 30 (2026-04-24) is out of date yet short of
 // the overdue gate (day 36). The next period was due on 2026-04-23, and the
 // cycle chained after it starts on 2026-05-21 — a day still AHEAD of today, which
 // is the one a suppression that spared only the past would withhold.
-func TestCalendarGridKeepsProjectingInTheOutOfDateBand(t *testing.T) {
+func TestCalendarGridKeepsTheNextPeriodButNoFertileDayInTheOutOfDateBand(t *testing.T) {
 	user := dayFeedbackParityUser(64)
 	logs := cycleStartLogs(t, "2026-01-01", "2026-01-29", "2026-02-26", "2026-03-26")
 
@@ -41,12 +39,16 @@ func TestCalendarGridKeepsProjectingInTheOutOfDateBand(t *testing.T) {
 		if !published.CycleDataStale {
 			t.Fatal("fixture: cycle day 30 must carry the out-of-date verdict")
 		}
-		if PredictionsSuppressed(user, stats) || verdict.PredictionsSuppressed || verdict.FertilitySuppressed {
-			t.Fatal("fixture: cycle day 30 must be out of date without being suppressed")
+		if PredictionsSuppressed(user, stats) || verdict.PredictionsSuppressed {
+			t.Fatal("fixture: cycle day 30 must be out of date without the overdue gate firing")
+		}
+		if !verdict.FertilitySuppressed {
+			t.Fatal("the out-of-date band must withhold the fertility half")
 		}
 
 		predicted := map[string]bool{}
 		ovulation := 0
+		fertile := 0
 		for _, monthStart := range []time.Time{
 			time.Date(2026, time.April, 1, 0, 0, 0, 0, location),
 			time.Date(2026, time.May, 1, 0, 0, 0, 0, location),
@@ -61,6 +63,9 @@ func TestCalendarGridKeepsProjectingInTheOutOfDateBand(t *testing.T) {
 				if day.IsOvulation && day.Date.After(today) {
 					ovulation++
 				}
+				if day.IsFertility && day.Date.After(today) {
+					fertile++
+				}
 			}
 		}
 		for _, want := range []string{"2026-04-23", "2026-05-21"} {
@@ -68,8 +73,8 @@ func TestCalendarGridKeepsProjectingInTheOutOfDateBand(t *testing.T) {
 				t.Fatalf("the grid keeps drawing the projected period start %s while the data is out of date; predicted days: %v", want, predicted)
 			}
 		}
-		if ovulation == 0 {
-			t.Fatal("the grid keeps drawing a projected ovulation day ahead of today while the data is out of date")
+		if ovulation != 0 || fertile != 0 {
+			t.Fatalf("the grid drew %d projected ovulation and %d fertile day(s) ahead of today while the data is out of date", ovulation, fertile)
 		}
 	})
 }

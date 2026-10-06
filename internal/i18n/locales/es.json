@@ -378,6 +378,7 @@
   "dashboard.late_cycle.beyond_range.one": "Este ciclo es %d día más largo que tu rango habitual.",
   "dashboard.late_cycle.beyond_range.other": "Este ciclo es %d días más largo que tu rango habitual.",
   "dashboard.late_cycle.predictions_paused": "Este ciclo ya superó la duración en la que se basan tus predicciones. Las predicciones volverán cuando registres un nuevo ciclo.",
+  "dashboard.late_cycle.fertility_paused": "Este ciclo ya superó la duración en la que se basan tus predicciones. La ventana fértil y la estimación de la ovulación volverán cuando registres un nuevo ciclo.",
   "dashboard.late_cycle.no_personal_range": "Por ahora solo el día del ciclo: un rango personal necesita más ciclos completados.",
   "dashboard.late_cycle.actions": "Puedes registrar:",
   "dashboard.cycle_day_stale_hint": "Los datos del ciclo pueden estar desactualizados. Actualiza la fecha de inicio del último periodo.",

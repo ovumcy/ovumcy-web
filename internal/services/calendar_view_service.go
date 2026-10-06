@@ -36,6 +36,7 @@ type CalendarPageViewData struct {
 	PredictionExplanationSecondaryKey string
 	HasPredictionExplanationPrimary   bool
 	HasPredictionExplanationSecondary bool
+	LateCycle                         LateCycleNotice
 	IsOwner                           bool
 	CanDrawTentativeOvulation         bool
 }
@@ -94,5 +95,8 @@ func (service *CalendarViewService) BuildCalendarPageViewData(ctx context.Contex
 		HasPredictionExplanationSecondary: predictionExplanation.SecondaryKey != "",
 		IsOwner:                           IsOwnerUser(user),
 		CanDrawTentativeOvulation:         CalendarCanDrawTentativeOvulation(user),
+		// The dashboard's late-cycle notice, read off the same cycle context:
+		// the three owner pages state a late cycle in one set of words.
+		LateCycle: cycleContext.LateCycle,
 	}, nil
 }

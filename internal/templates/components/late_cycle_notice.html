@@ -1,0 +1,18 @@
+{{define "late_cycle_notice"}}
+{{/* The dashboard's late-cycle notice on the calendar and stats pages: the same
+     LateCycleNotice the dashboard renders, read off the one cycle context, so a
+     withheld fertile window is explained in the same words on every owner page.
+     Called with the page data; reads .LateCycle, .Messages and .Lang. */}}
+{{if .LateCycle.Visible}}
+<p
+  class="text-sm {{if eq .LateCycle.Tone "warning"}}warning-amber{{else}}journal-muted{{end}}"
+  data-late-cycle-key="{{.LateCycle.MessageKey}}"
+  data-late-cycle-tone="{{.LateCycle.Tone}}">
+  {{- if eq .LateCycle.Form "count" -}}
+  {{printf (tn .Messages .Lang .LateCycle.MessageKey .LateCycle.Days) .LateCycle.Days}}
+  {{- else -}}
+  {{t .Messages .LateCycle.MessageKey}}
+  {{- end -}}
+</p>
+{{end}}
+{{end}}

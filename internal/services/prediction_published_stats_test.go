@@ -69,6 +69,16 @@ func publishedStatsCases() []publishedStatsCase {
 	overdue := publishedStatsBase()
 	// Past the account's own reference length (28) by more than a week.
 	overdue.CurrentCycleDay = 40
+	// The overdue gate reads the shorter length (median 28, so day 36 on);
+	// the out-of-date band reads the average-first reference. Lifting the mean
+	// to 40 keeps day 40 inside the reference, so this case turns on the
+	// overdue signal alone — on an ordinary history day 40 is out of date too.
+	overdue.AverageCycleLength = 40
+
+	// L+1 on the unsuppressed base: the out-of-date band, before the overdue
+	// gate (28 + 7) has fired.
+	outOfDate := publishedStatsBase()
+	outOfDate.CurrentCycleDay = 29
 
 	paused := publishedStatsBase()
 	paused.PregnancyPaused = true
@@ -143,6 +153,19 @@ func publishedStatsCases() []publishedStatsCase {
 			reason:            SuppressionReasonAwaitingMoreCycles,
 			user:              &models.User{},
 			stats:             twoCycles,
+			wantPredictions:   false,
+			wantFertility:     true,
+			wantNextPeriodSet: true,
+		},
+		{
+			// From L+1 the rolled ovulation belongs to a cycle whose start was
+			// never logged: the fertility half goes, the next period — the end of
+			// the running cycle — stays until the overdue gate.
+			name:              "running cycle past its reference length, before the overdue gate",
+			signal:            "DashboardCyclePastReferenceLength",
+			reason:            SuppressionReasonCycleDataStale,
+			user:              &models.User{},
+			stats:             outOfDate,
 			wantPredictions:   false,
 			wantFertility:     true,
 			wantNextPeriodSet: true,

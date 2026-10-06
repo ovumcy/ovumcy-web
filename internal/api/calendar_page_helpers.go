@@ -32,6 +32,7 @@ func (handler *Handler) buildCalendarViewData(ctx context.Context, user *models.
 		"PredictionExplanationSecondaryKey": viewData.PredictionExplanationSecondaryKey,
 		"HasPredictionExplanationPrimary":   viewData.HasPredictionExplanationPrimary,
 		"HasPredictionExplanationSecondary": viewData.HasPredictionExplanationSecondary,
+		"LateCycle":                         viewData.LateCycle,
 		"IsOwner":                           viewData.IsOwner,
 		"CanDrawTentativeOvulation":         viewData.CanDrawTentativeOvulation,
 	}

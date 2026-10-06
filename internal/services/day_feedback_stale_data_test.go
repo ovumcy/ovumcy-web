@@ -60,9 +60,12 @@ func TestDayFeedbackIsNeutralInsideTheWindowOnceTheCycleDataIsStale(t *testing.T
 		if got := resolveDaySaveMessageKey(user, saved, saved, published, suppression); got != daySaveMessageNeutral {
 			t.Fatalf("a same-day save inside the window on a stale cycle resolves to %q, want the neutral message", got)
 		}
-		published.CycleDataStale = false
-		if got := resolveDaySaveMessageKey(user, saved, saved, published, suppression); got != daySaveMessageFertile {
-			t.Fatalf("with the staleness cleared the same save resolves to %q, want the fertile message", got)
+		// The out-of-date band now also withholds the fertility half, and the
+		// published window with it, so a staleness-cleared copy of the published
+		// stats no longer isolates the staleness branch: the neutral answer is
+		// held by both verdicts, and the fertility one is asserted here.
+		if !suppression.FertilitySuppressed {
+			t.Fatal("the out-of-date band must withhold the fertility half")
 		}
 	})
 }

@@ -51,16 +51,33 @@ func TestLateCycleNoticeStateMatrix(t *testing.T) {
 			expectVisible: false,
 		},
 		{
-			name:          "first day past the expected range stays silent",
-			user:          &models.User{Role: models.RoleOwner, CycleLength: 28},
-			stats:         lateCycleStats(today, 29, 4, 28, 27, 30),
-			expectVisible: false,
+			// L+1: the out-of-date band withholds the fertility half from here,
+			// so the notice stands from here. Still inside the recorded maximum
+			// and before the overdue gate, the next-period estimate is on the
+			// page, so the copy says only the fertility half waits.
+			name:       "first day past the expected range states that the fertility half waits",
+			user:       &models.User{Role: models.RoleOwner, CycleLength: 28},
+			stats:      lateCycleStats(today, 29, 4, 28, 27, 30),
+			expectKey:  LateCycleFertilityPausedKey,
+			expectTone: LateCycleToneNeutral,
+			expectForm: LateCycleFormPlain,
 		},
 		{
-			name:          "seven days past the expected range is still inside the grace window",
-			user:          &models.User{Role: models.RoleOwner, CycleLength: 28},
-			stats:         lateCycleStats(today, 35, 4, 28, 27, 30),
-			expectVisible: false,
+			name:       "seven days past the expected range, before the overdue gate, states the measured excess",
+			user:       &models.User{Role: models.RoleOwner, CycleLength: 28},
+			stats:      lateCycleStats(today, 35, 4, 28, 27, 30),
+			expectKey:  LateCycleBeyondRangeKey,
+			expectTone: LateCycleToneWarning,
+			expectForm: LateCycleFormCount,
+			expectDays: 5,
+		},
+		{
+			name:       "first day past the expected range on a thin history claims no range",
+			user:       &models.User{Role: models.RoleOwner, CycleLength: 28},
+			stats:      lateCycleStats(today, 29, 1, 28, 28, 28),
+			expectKey:  LateCycleNoPersonalRangeKey,
+			expectTone: LateCycleToneNeutral,
+			expectForm: LateCycleFormPlain,
 		},
 		{
 			name:       "day 35 with four completed cycles states the measured excess",
@@ -197,7 +214,7 @@ func TestLateCycleNoticeReadsTheSameReliabilitySignalAsStats(t *testing.T) {
 
 	for completedCycles := range 5 {
 		stats := lateCycleStats(today, 40, completedCycles, 27, 26, 30)
-		notice := BuildLateCycleNotice(user, stats, true)
+		notice := BuildLateCycleNotice(user, stats, true, true)
 
 		_, _, _, _, statsCardVisible := buildStatsPredictionReliability(
 			user,
@@ -236,6 +253,7 @@ func TestLateCycleNoticeCopyExistsInEveryLocale(t *testing.T) {
 		for _, key := range []string{
 			LateCycleNoPersonalRangeKey,
 			LateCyclePredictionsPausedKey,
+			LateCycleFertilityPausedKey,
 			"dashboard.late_cycle.actions",
 		} {
 			if messages[key] == "" {
