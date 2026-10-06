@@ -44,9 +44,11 @@ func boundaryContextForStart(lastPeriodStart *time.Time, today time.Time) Bounda
 // a cycle boundary (a UTC-midnight date-only value), zero when it is absent or
 // dated after Today. It is the single reading of users.last_period_start — the
 // boundary rule, the calendar's recorded cell and the out-of-date anchor all
-// read it here. A day logged on that date without a period does not withdraw
-// it: onboarding already recorded the period there. The owner withdraws it by
-// un-ticking the period on that day, which clears the stored start itself.
+// read it here. Adding a mood or a symptom to a non-period row on that date
+// does not withdraw it: onboarding already recorded the period there. The owner
+// withdraws it by un-ticking the period on that day (the day editor shows it
+// ticked when the day has no row) or by deleting the day; either write clears
+// the stored start in its own transaction.
 func OnboardingBoundaryDay(ctx BoundaryContext) time.Time {
 	if ctx.OnboardingStart.IsZero() {
 		return time.Time{}

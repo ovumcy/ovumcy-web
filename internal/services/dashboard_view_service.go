@@ -399,6 +399,7 @@ func (service *DashboardViewService) BuildDayEditorViewData(ctx context.Context,
 	if err != nil {
 		return DayEditorViewData{}, fmt.Errorf("%w: %v", ErrDashboardViewLoadDayLog, err)
 	}
+	logEntry = withOnboardingStartTicked(user, logEntry, day, now, location)
 	logs, err := service.entryContextLogs(ctx, user, symptoms)
 	if err != nil {
 		return DayEditorViewData{}, err
@@ -442,6 +443,24 @@ func (service *DashboardViewService) BuildDayEditorViewData(ctx context.Context,
 		ShowSpottingCycleWarning:   shouldShowSpottingCycleWarning(logs, logEntry, day, location),
 		IsOwner:                    IsOwnerUser(user),
 	}, nil
+}
+
+// withOnboardingStartTicked shows the period ticked on the stored onboarding
+// start when the day has no row: onboarding with auto-fill off records the
+// start without writing a day, and the calendar paints that day as a period
+// day (BuildCalendarDayStates). The editor showing it unticked would leave the
+// owner nothing to un-tick; saving it unticked withdraws the start
+// (DayService.applyDayWriteAndAutoFill).
+func withOnboardingStartTicked(user *models.User, logEntry models.DailyLog, day time.Time, now time.Time, location *time.Location) models.DailyLog {
+	if logEntry.ID != 0 {
+		return logEntry
+	}
+	onboardingDay := OnboardingBoundaryDay(BoundaryContextFor(user, DateAtLocation(now, location)))
+	if onboardingDay.IsZero() || CalendarDayKey(onboardingDay) != CalendarDayKey(day) {
+		return logEntry
+	}
+	logEntry.IsPeriod = true
+	return logEntry
 }
 
 func requiresEntryContextLogs(user *models.User, symptoms []models.SymptomType) bool {
