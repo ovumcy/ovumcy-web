@@ -15,6 +15,10 @@ func (handler *Handler) buildCalendarViewData(ctx context.Context, user *models.
 	}
 
 	days := handler.buildCalendarDays(viewData.DayStates)
+	formAccount, err := handler.dayFormAccountBinding(user)
+	if err != nil {
+		return nil, err // codecov:ignore -- NewHandler refuses an empty secret and a signed-in user has a non-zero id
+	}
 
 	data := fiber.Map{
 		"Title":                             localizedPageTitle(messages, "meta.title.calendar", "Ovumcy | Calendar"),
@@ -34,6 +38,7 @@ func (handler *Handler) buildCalendarViewData(ctx context.Context, user *models.
 		"HasPredictionExplanationSecondary": viewData.HasPredictionExplanationSecondary,
 		"IsOwner":                           viewData.IsOwner,
 		"CanDrawTentativeOvulation":         viewData.CanDrawTentativeOvulation,
+		"DayFormAccount":                    formAccount,
 	}
 	return data, nil
 }

@@ -31,6 +31,9 @@ func TestDayPanelAndReadRouteShowTheInvalidDayCopyForAMalformedDate(t *testing.T
 			request := httptest.NewRequest(http.MethodGet, path, nil)
 			request.Header.Set("Cookie", authCookie)
 			request.Header.Set("HX-Request", "true")
+			// The day panel is fetched from a calendar page, which names the
+			// account it was rendered for on every request.
+			bindDayWriteForTest(t, request, user.ID)
 
 			response, err := app.Test(request, testConfigNoTimeout)
 			if err != nil {

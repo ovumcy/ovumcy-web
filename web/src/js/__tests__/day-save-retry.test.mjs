@@ -689,3 +689,54 @@ test("a dashboard save carries the form's account binding and a 409 for another 
     dom.window.close();
   }
 });
+
+// The calendar page fetches its day editor. A fetch the server refuses because
+// another account signed in since the page was rendered is not swapped by htmx,
+// so the editor area must show the refusal itself rather than stay blank.
+test("a refused day editor fetch shows the account-changed notice in the editor area", async () => {
+  const page = `<!doctype html><html><body>
+    <aside id="day-editor"><div class="calendar-day-skeleton" aria-hidden="true"></div></aside>
+  </body></html>`;
+  const dom = await loadDOMWithScript(APP_BUNDLE, { html: page });
+  try {
+    const editor = dom.window.document.getElementById("day-editor");
+    editor.dispatchEvent(
+      new dom.window.CustomEvent("htmx:responseError", {
+        detail: { target: editor, xhr: { status: 409, responseText: ACCOUNT_CHANGED_FRAGMENT } },
+        bubbles: true,
+      })
+    );
+
+    const notice = editor.querySelector("[data-day-editor-refused]");
+    assert.ok(notice, "the editor area renders the refusal");
+    assert.equal(notice.textContent, ACCOUNT_CHANGED_TEXT);
+    assert.equal(notice.querySelector("[data-notice-key]").getAttribute("data-notice-key"), ACCOUNT_CHANGED_KEY);
+    assert.equal(editor.querySelector(".calendar-day-skeleton"), null, "the skeleton gives way to the notice");
+    assert.equal(notice.querySelector("[data-day-save-retry]"), null);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("a day editor fetch that fails for another reason is left to the generic handling", async () => {
+  const page = `<!doctype html><html><body>
+    <aside id="day-editor"><p id="kept">editor</p></aside>
+  </body></html>`;
+  const dom = await loadDOMWithScript(APP_BUNDLE, { html: page });
+  try {
+    const editor = dom.window.document.getElementById("day-editor");
+    editor.dispatchEvent(
+      new dom.window.CustomEvent("htmx:responseError", {
+        detail: {
+          target: editor,
+          xhr: { status: 400, responseText: '<div class="status-error" data-flash-key="error.invalid_payload">bad</div>' },
+        },
+        bubbles: true,
+      })
+    );
+    assert.equal(editor.querySelector("[data-day-editor-refused]"), null);
+    assert.ok(editor.querySelector("#kept"), "the editor is not replaced by a refusal it did not earn");
+  } finally {
+    dom.window.close();
+  }
+});

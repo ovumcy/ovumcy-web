@@ -468,6 +468,34 @@
     return link;
   }
 
+  // The calendar fetches its day editor, and every request from the page names
+  // the account the page was rendered for. When another account has signed in
+  // since, the server refuses the fetch (or a control inside the editor) with
+  // the same account-changed key a refused save carries. htmx swaps no error
+  // response, so without this the editor area would stay blank, or keep the
+  // skeleton, with no word on why. Only the message TEXT is adopted.
+  function renderDayEditorAccountRefusal(target, event) {
+    if (!target || target.id !== "day-editor") {
+      return false;
+    }
+    var xhr = event && event.detail ? event.detail.xhr : null;
+    var refusal = parseServerStatusError(xhr && typeof xhr.responseText === "string" ? xhr.responseText : "");
+    if (!refusal || refusal.key !== ACCOUNT_CHANGED_NOTICE_KEY) {
+      return false;
+    }
+
+    var notice = document.createElement("div");
+    notice.className = "status-notice";
+    notice.setAttribute("data-day-editor-refused", "account-changed");
+    var text = document.createElement("span");
+    text.className = "status-notice-message";
+    text.setAttribute("data-notice-key", refusal.key);
+    text.textContent = String(refusal.text || "").trim();
+    notice.appendChild(text);
+    target.replaceChildren(notice);
+    return true;
+  }
+
   function renderDaySaveUnreachable(form) {
     return renderDaySaveFailure(
       form,
@@ -624,6 +652,10 @@
       var target = event && event.detail ? event.detail.target : null;
       var form = getSaveFeedbackFormFromEvent(event);
       var dayForm = dayEditorFormFromEvent(event);
+
+      if (!dayForm && renderDayEditorAccountRefusal(target, event)) {
+        return;
+      }
 
       if (dayForm) {
         // The server answered, but not with a save. Keep its own message when

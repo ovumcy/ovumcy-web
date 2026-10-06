@@ -41,6 +41,9 @@ func TestCalendarInvalidMonthHTMXRedirectsToCurrentMonth(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/calendar?month=0000-00", nil)
 	request.Header.Set("Cookie", authCookie)
 	request.Header.Set("HX-Request", "true")
+	// The grid refresh is an HTMX read from inside the calendar page, which
+	// names the account it was rendered for on every request.
+	bindDayWriteForTest(t, request, user.ID)
 
 	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {

@@ -66,6 +66,35 @@ func (handler *Handler) RefuseDayFormFromAnotherAccount(kind healthMutationKind)
 	}
 }
 
+// RefuseDayFormPageFromAnotherAccount guards the reads a page makes of the day
+// editor it hosts. The calendar page renders no day write itself: its editor is
+// fetched from /calendar/day/:date by HTMX, and its grid refreshes from
+// /calendar, each time from whichever account is signed in at that moment. The
+// page therefore carries ITS binding on every request made from inside it
+// (hx-headers on the calendar view), and this middleware refuses a read whose
+// binding names another account: the stale tab must not show the second
+// account's day, nor mint a form bound to that account for a save to follow.
+//
+// An HTMX read with no binding is refused like a write is (the page lost its
+// header). A request that is not HTMX and carries none — opening the URL
+// directly, or the no-JavaScript day form — is answered: the response renders
+// its own data and its own binding for the account now signed in, so nothing
+// from another account's page is in play.
+func (handler *Handler) RefuseDayFormPageFromAnotherAccount(c fiber.Ctx) error {
+	user, ok := currentUser(c)
+	if !ok {
+		return c.Next() // codecov:ignore -- AuthRequired precedes this on every route that mounts it
+	}
+	presented := c.Request().Header.PeekAll(dayFormAccountHeader)
+	if len(presented) == 0 && !isHTMX(c) {
+		return c.Next()
+	}
+	if len(presented) == 0 || !dayFormRenderedForAccount(handler.secretKey, user, presented) {
+		return handler.respondMappedError(c, dayFormAccountChangedErrorSpec())
+	}
+	return c.Next()
+}
+
 // presentedDayFormAccountBindings collects every copy of the binding the
 // request carries, from every source a client can send it in.
 func presentedDayFormAccountBindings(c fiber.Ctx) [][]byte {

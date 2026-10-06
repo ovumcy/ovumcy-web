@@ -20,6 +20,24 @@ import (
 
 const dayFormAccountWireHeader = "X-Ovumcy-Day-Form-Account"
 
+// accountChangedKey is the stable key a refusal for another account renders,
+// spelled out so a 409 from any other cause cannot satisfy these tests.
+const accountChangedKey = "daylog.save_account_changed"
+
+// assertAccountChangedRefusal requires response to be the 409 the account
+// binding answers with, by status AND by its reason.
+func assertAccountChangedRefusal(t *testing.T, label string, response *http.Response) string {
+	t.Helper()
+	body := mustReadBodyString(t, response.Body)
+	if response.StatusCode != http.StatusConflict {
+		t.Fatalf("%s: must be refused 409, got %d %q", label, response.StatusCode, body)
+	}
+	if !strings.Contains(body, accountChangedKey) {
+		t.Fatalf("%s: the 409 must carry the %s reason, got %q", label, accountChangedKey, body)
+	}
+	return body
+}
+
 // dayWriteRoutes enumerates every state-changing route under /api/v1/days from
 // the router itself, so a write route added later is held to the binding
 // without anyone listing it here.
@@ -111,23 +129,31 @@ func TestEveryDayWriteRouteRefusesAPageFromAnotherAccount(t *testing.T) {
 	base := time.Date(2026, time.May, 4, 0, 0, 0, 0, time.UTC)
 
 	for index, route := range dayWriteRoutes(t, fixture.app) {
-		day := base.AddDate(0, 0, 2*index)
+		// Wide enough apart that the positive control's cycle start, which
+		// fills the days after it, cannot reach the next route's seeded days.
+		day := base.AddDate(0, 0, 14*index)
 		absentDay := day.AddDate(0, 0, 1)
+		controlDay := day.AddDate(0, 0, 2)
 		seedDayForTest(t, fixture.database, fixture.second.ID, day, 2, "second account's own note")
 		seedDayForTest(t, fixture.database, fixture.second.ID, absentDay, 2, "second account's own note")
 
 		name := route.Method + " " + route.Path
 		response := mustAppResponse(t, fixture.app, dayWriteRequest(route, day, fixture.secondCookie, url.Values{dayFormAccountWireName: {fixture.firstBinding}}, true))
-		if response.StatusCode != http.StatusConflict {
-			t.Fatalf("%s: a page rendered for another account must be refused 409, got %d", name, response.StatusCode)
-		}
+		assertAccountChangedRefusal(t, name+" with a binding of another account", response)
 		assertDayUntouched(t, fixture.database, fixture.second.ID, day, 2, "second account's own note")
 
 		response = mustAppResponse(t, fixture.app, dayWriteRequest(route, absentDay, fixture.secondCookie, nil, true))
-		if response.StatusCode != http.StatusConflict {
-			t.Fatalf("%s: an HTMX write without any binding must be refused 409, got %d", name, response.StatusCode)
-		}
+		assertAccountChangedRefusal(t, name+" with no binding", response)
 		assertDayUntouched(t, fixture.database, fixture.second.ID, absentDay, 2, "second account's own note")
+
+		// Positive control: the same request under the right binding is not
+		// refused for the account. Its outcome may still be a conflict of
+		// another kind (a cycle-start on a day that cannot start one), so the
+		// assertion is on the reason, not on the status alone.
+		response = mustAppResponse(t, fixture.app, dayWriteRequest(route, controlDay, fixture.secondCookie, url.Values{dayFormAccountWireName: {fixture.secondBinding}}, true))
+		if body := mustReadBodyString(t, response.Body); strings.Contains(body, accountChangedKey) {
+			t.Fatalf("%s: the account's own binding must not be refused for the account, got %d %q", name, response.StatusCode, body)
+		}
 	}
 }
 
@@ -282,7 +308,10 @@ func TestEveryRenderedDayWriteCarriesTheAccountBinding(t *testing.T) {
 			}
 		})
 	}
-	for _, hook := range []string{"data-dashboard-save-form", "data-dashboard-clear-button", "data-day-delete-form", "data-cycle-start-confirm-form"} {
+	// data-day-editor-form is the calendar editor's own save form, named like
+	// its siblings: a hook that is not required here would fall back to the
+	// tag name and could vanish without this walk noticing.
+	for _, hook := range []string{"data-dashboard-save-form", "data-dashboard-clear-button", "data-day-editor-form", "data-day-delete-form", "data-cycle-start-confirm-form"} {
 		if found[hook] == 0 {
 			t.Fatalf("the markup walk found no %s element — it resolved %v", hook, found)
 		}
@@ -311,7 +340,7 @@ func walkDayWriteElements(node, form *html.Node, visit func(element, form *html.
 func dayWriteElementHook(element *html.Node) string {
 	for _, attribute := range element.Attr {
 		switch attribute.Key {
-		case "data-dashboard-save-form", "data-dashboard-clear-button", "data-day-delete-form", "data-cycle-start-confirm-form", "data-day-save-form":
+		case "data-dashboard-save-form", "data-dashboard-clear-button", "data-day-delete-form", "data-cycle-start-confirm-form", "data-day-editor-form":
 			return attribute.Key
 		}
 	}
