@@ -57,17 +57,24 @@ own. It joins the grouping as a marked, non-spotting day, so a logged episode it
 falls inside or adjoins yields one start, not two. A start dated in the future is
 ignored. Un-ticking the period on the start date, or deleting that day, clears
 the stored start. A start day with no entry shows its period ticked in the day
-editor, and saving it unticked clears the start too; adding a mood or a symptom
-to a non-period entry there leaves it in place. Moving the start in Settings
+editor and in the dashboard's Today form, and each form posts a hidden field
+saying the tick came from the stored start; saving either form unticked clears
+the start too. Saving it with the box still ticked, adding a mood or a symptom
+to a non-period entry there, or a JSON write of that date without the period
+(which never showed the tick) leaves it in place. Moving the start in Settings
 writes the new start's days as onboarding would. When auto-fill is on in the
 stored settings and the move corrects the old date — the old start still opens
 the newest cycle and the new one is earlier, or less than a shortest cycle (15
 days) later — it also removes the days the old start's fill wrote: the run from
 the old start that one fill write produced, stopping at the first day that is
-missing, carries anything the owner entered, or was written by another save (a
-period day ticked by hand is never removed). Otherwise the old fill would remain
-a boundary of its own and leave a phantom short cycle. A later move keeps the old
-days as history.
+missing, carries anything the owner entered, or was written by another save.
+Only a fill written as one cohort of at least two days is removed: unless the
+old start and the day after it share one write, nothing goes. So a period day
+ticked by hand is never removed, a period length of 1 is never cleared, and an
+install onboarded before this release (whose fill carries a stamp per day)
+keeps its old days on a move, as it did before. Otherwise the old fill would
+remain a boundary of its own and leave a phantom short cycle. A later move keeps
+the old days as history.
 An export over a requested range omits the stored start when
 it lies outside that range.
 
