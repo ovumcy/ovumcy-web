@@ -395,6 +395,16 @@ the "show historical phases" setting.
 The next-period estimate survives this floor, with its own estimate qualifier —
 its anchor is a date the owner actually recorded.
 
+The same fertility half is withheld, on the same surfaces, once the running cycle
+has passed its reference length (the average-first length the out-of-date-data
+notice measures, with no grace): from cycle day L+1 the ovulation the model would
+name belongs to a next cycle anchored on a start nobody logged. The wire reason is
+`cycle_data_stale`, beside the `cycle_data_stale` flag of the same name, and the
+phase and fertility status read "unknown". The next-period estimate stays until the
+overdue gate below withholds it, and the plain-words late-cycle notice stands from
+the same day on the dashboard, the calendar and the statistics page. Neither applies
+in unpredictable-cycle mode or a pregnancy pause, which already withhold everything.
+
 Three further signals withhold **every** projected date, the next period included,
 on every one of those surfaces: unpredictable-cycle mode (the settings toggle
 "My cycle is unpredictable"), a pregnancy pause, and a cycle overdue past its own
@@ -417,7 +427,9 @@ to cycle day 67 while the out-of-date-data notice, which reads the average with 
 week of grace, has stood since day 50. Taking the shorter length withholds no later
 than either statistic would, keeps the days on which that notice stands beside a
 published date to seven at most, and settles the merged span without ruling on
-which spans still count as a cycle. The late-cycle notice follows the same length;
+which spans still count as a cycle. The late-cycle notice stands from the first
+out-of-date day (see the early-cycles section above) and, where the gate's shorter
+length answers first, from the gate;
 the dashboard's cycle ribbon is not drawn at all past the gate, because its axis
 length, its start window and its "today" marker are all projection output. The
 out-of-date-data notice keeps the displayed reference length. Nothing recorded is

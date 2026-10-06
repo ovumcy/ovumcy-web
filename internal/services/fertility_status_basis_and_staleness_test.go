@@ -226,9 +226,15 @@ func TestPublishedStatsWithholdsPhaseAndStatusOnOutOfDateData(t *testing.T) {
 	if published.CurrentPhase != "unknown" {
 		t.Fatalf("phase = %q, want unknown on out-of-date data", published.CurrentPhase)
 	}
-	// The dates stay, as they do on the pages beside the out-of-date banner.
-	if published.NextPeriodStart.IsZero() || published.OvulationDate.IsZero() || published.FertilityWindowStart.IsZero() {
-		t.Fatal("a projected date was withheld — staleness withholds the phase and the status only")
+	// The next period stays, as it does on the pages beside the out-of-date
+	// banner: it is the running cycle's own end. The ovulation and the fertile
+	// window go — they belong to a next cycle whose start nobody logged.
+	if published.NextPeriodStart.IsZero() {
+		t.Fatal("next period withheld — staleness withholds the fertility half only, the next period stays until the overdue gate")
+	}
+	if !published.OvulationDate.IsZero() || !published.FertilityWindowStart.IsZero() || !published.FertilityWindowEnd.IsZero() {
+		t.Fatalf("ovulation %s window %s..%s published on out-of-date data, want the fertility half withheld from L+1",
+			CalendarDayKey(published.OvulationDate), CalendarDayKey(published.FertilityWindowStart), CalendarDayKey(published.FertilityWindowEnd))
 	}
 }
 

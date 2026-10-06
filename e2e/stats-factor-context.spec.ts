@@ -161,9 +161,16 @@ test.describe('Stats factor context', () => {
 
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
+    // From the first out-of-date day the plain-words late-cycle notice stands in
+    // the block in place of the stale hint; with no completed cycle it names no
+    // range.
     const cycleWarnings = page.locator('[data-dashboard-cycle-warnings]');
     await expect(cycleWarnings).toBeVisible();
-    await expect(cycleWarnings.locator('[data-dashboard-stale-warning]')).toBeVisible();
+    await expect(cycleWarnings.locator('[data-dashboard-cycle-day-warning]')).toHaveAttribute(
+      'data-late-cycle-key',
+      'dashboard.late_cycle.no_personal_range'
+    );
+    await expect(cycleWarnings.locator('[data-dashboard-stale-warning]')).toHaveCount(0);
     await expect(cycleWarnings.locator('a[href="/settings#settings-cycle"]')).toBeVisible();
   });
 });

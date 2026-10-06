@@ -784,8 +784,15 @@ test.describe('Calendar page', () => {
     // ovulation on the 14th) sits mid-month and is inside that month's grid on
     // every run date — unlike a window anchored relative to today, which can
     // fall past the grid's trailing edge at a month's end.
-    const monthISO = (await todayISOFromBrowser(page)).slice(0, 7);
-    await registerAndOnboardOnDate(page, 'calendar-fertile-tiers', `${monthISO}-01`);
+    // On the 29th-31st day 1 would put the running cycle past its 28-day
+    // reference, where the fertile window is withheld on every surface, so the
+    // anchor moves up to keep today on cycle day 28 at most; it is then the 4th
+    // at the latest, and the window still ends by the 17th.
+    const todayISO = await todayISOFromBrowser(page);
+    const monthISO = todayISO.slice(0, 7);
+    const anchorDay = Math.max(1, Number(todayISO.slice(8, 10)) - 27);
+    const anchorISO = `${monthISO}-${String(anchorDay).padStart(2, '0')}`;
+    await registerAndOnboardOnDate(page, 'calendar-fertile-tiers', anchorISO);
 
     // The fertile window is withheld until three cycles have been observed, so
     // the three cycles before this one are logged as well, 28 days apart — the
@@ -793,7 +800,6 @@ test.describe('Calendar page', () => {
     // exactly as described above. Three of them, none counted from the anchor:
     // on a run date that IS the 1st, the anchor itself has not closed a cycle yet,
     // and the three before it have.
-    const anchorISO = `${monthISO}-01`;
     await markCycleStart(page, shiftISODate(anchorISO, -84));
     await markCycleStart(page, shiftISODate(anchorISO, -56));
     await markCycleStart(page, shiftISODate(anchorISO, -28));
