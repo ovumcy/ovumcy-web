@@ -10,5 +10,8 @@
   carries an opaque binding to the account that rendered it, and a write whose binding names
   another account — or a write from a page that carries none — answers 409. A page left open
   while another account signs in elsewhere in the same browser can therefore no longer save,
-  delete or mark a cycle start in that account. JSON API clients that do not send the binding are
-  unaffected.
+  delete or mark a cycle start in that account. The calendar, whose day editor is fetched rather
+  than rendered with the page, sends the account it was rendered for on every request from inside
+  it: a calendar tab left open while another account signs in answers the day fetch and the grid
+  refresh with the same refusal instead of showing that account's day. JSON API clients that do
+  not send the binding are unaffected.

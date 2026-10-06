@@ -21,9 +21,16 @@
     </div>
   </div>
 
+  {{/* The day editor is fetched from /calendar/day/:date, so no day write is
+       rendered here. This header puts the account this page was rendered for on
+       every request made from inside it — day buttons, the editor loader, the
+       grid refresh and each write from the fetched editor — so a request that
+       reaches the server under another account's session is refused. It sits
+       on the view, outside what the grid refresh swaps. */}}
   <div
     class="grid gap-6 lg:grid-cols-[2fr_1fr]"
     data-calendar-view
+    hx-headers='{"X-Ovumcy-Day-Form-Account": "{{.DayFormAccount}}"}'
     data-usage-goal="{{.CurrentUser.UsageGoal}}"
     data-selected-date="{{.SelectedDate}}">
     <div

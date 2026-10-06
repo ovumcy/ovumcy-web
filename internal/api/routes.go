@@ -190,8 +190,8 @@ func registerPageRoutes(app *fiber.App, handler *Handler) {
 	app.Get("/onboarding", handler.AuthRequired, handler.ShowOnboarding)
 	app.Get("/", handler.AuthRequired, handler.ShowDashboard)
 	app.Get("/dashboard", handler.AuthRequired, handler.ShowDashboard)
-	app.Get("/calendar", handler.AuthRequired, handler.ShowCalendar)
-	app.Get("/calendar/day/:date", handler.AuthRequired, handler.CalendarDayPanel)
+	app.Get("/calendar", handler.AuthRequired, handler.RefuseDayFormPageFromAnotherAccount, handler.ShowCalendar)
+	app.Get("/calendar/day/:date", handler.AuthRequired, handler.RefuseDayFormPageFromAnotherAccount, handler.CalendarDayPanel)
 	// Calendar (.ics) feed: authenticated by the path token ALONE (no cookie),
 	// so it is deliberately NOT behind AuthRequired/OwnerOnly. Shaped as
 	// ":token.ics" so the token binds as a clean :token param that
