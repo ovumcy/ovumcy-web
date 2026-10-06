@@ -71,12 +71,16 @@ func historyWindowCases() []historyWindowCase {
 			wholeHistoryPaused: false,
 		},
 		{
-			// The reverse: old 18-day cycles drag the whole-history median down to
-			// 18, so the notify pass saw an overdue cycle and stayed silent while the
-			// dashboard, reading one 30-day recent cycle, projected the period three
-			// days out.
+			// The reverse: old 18-day cycles reach the whole-history statistics through
+			// the six-length tail (two of them, and a bridging span of several hundred
+			// days that only the unbounded history counts), so its median is 24 and the
+			// notify pass saw cycle day 32 as overdue and stayed silent. The dashboard
+			// reads the three completed cycles inside its window (18, 30, 30 days),
+			// whose median and mean both hold the next period inside the cycle, and
+			// projected it two days out. Three completed cycles is the floor under
+			// which the dashboard projects nothing at all.
 			name:               "old short cycles pause a recent history the dashboard still projects",
-			startsAgo:          append(historyWindowEveryNthDay(872, 18, 800), 57, 27),
+			startsAgo:          append(historyWindowEveryNthDay(872, 18, 800), 109, 91, 61, 31),
 			wantPaused:         false,
 			wholeHistoryPaused: true,
 		},
