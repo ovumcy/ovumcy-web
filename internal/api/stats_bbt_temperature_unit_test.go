@@ -109,12 +109,12 @@ func renderStatsBBTUnitPage(t *testing.T, unit string) *html.Node {
 	// one, six low readings whose highest is the day-3 control, then three days
 	// above it: the detector confirms the shift with the control as coverline.
 	logs := []models.DailyLog{
-		{UserID: user.ID, Date: cycleStart.AddDate(0, 0, -56), IsPeriod: true},
-		{UserID: user.ID, Date: cycleStart.AddDate(0, 0, -28), IsPeriod: true},
+		{UserID: user.ID, Date: cycleStart.AddDate(0, 0, -56), IsPeriod: true, CycleStart: true},
+		{UserID: user.ID, Date: cycleStart.AddDate(0, 0, -28), IsPeriod: true, CycleStart: true},
 	}
 	readings := map[int]float64{0: 36.30, 1: 36.40, 2: 36.50, 3: 36.35, 4: 36.45, 5: 36.40, 6: 36.70, 7: 36.75, 8: 36.80}
 	for offset, reading := range readings {
-		log := models.DailyLog{UserID: user.ID, Date: cycleStart.AddDate(0, 0, offset), IsPeriod: offset == 0, BBT: new(reading)}
+		log := models.DailyLog{UserID: user.ID, Date: cycleStart.AddDate(0, 0, offset), IsPeriod: offset == 0, CycleStart: offset == 0, BBT: new(reading)}
 		logs = append(logs, log)
 	}
 	if err := database.Create(&logs).Error; err != nil {

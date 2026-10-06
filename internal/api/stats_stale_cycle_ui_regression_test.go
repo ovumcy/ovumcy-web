@@ -82,11 +82,12 @@ func renderStatsPageWithStaleCycleData(t *testing.T) *html.Node {
 	return renderStatsPageForCycleAnchorAge(t, "stats-stale-ui@example.com", 60)
 }
 
-// renderStatsPageForCycleAnchorAge seeds three period starts 30 days apart, the
-// most recent of them startedDaysAgo back, and renders /stats. Three starts are
-// two completed cycles, which is what unlocks the insights grid; with both
-// cycles the same length the reference length is that length, so the caller
-// controls staleness purely through the age of the latest anchor.
+// renderStatsPageForCycleAnchorAge seeds four explicit period starts 30 days
+// apart, the most recent of them startedDaysAgo back, and renders /stats. Four
+// starts are three completed cycles: past the two that unlock the insights grid
+// and at the floor the fertility predictions need; with every cycle the same
+// length the reference length is that length, so the caller controls staleness
+// purely through the age of the latest anchor.
 func renderStatsPageForCycleAnchorAge(t *testing.T, email string, startedDaysAgo int) *html.Node {
 	t.Helper()
 
@@ -97,10 +98,10 @@ func renderStatsPageForCycleAnchorAge(t *testing.T, email string, startedDaysAgo
 	const cycleLength = 30
 	lastPeriodStart := services.DateAtLocation(time.Now().UTC(), time.UTC).AddDate(0, 0, -startedDaysAgo)
 	logs := []models.DailyLog{
-		{UserID: user.ID, Date: lastPeriodStart.AddDate(0, 0, -3*cycleLength), IsPeriod: true},
-		{UserID: user.ID, Date: lastPeriodStart.AddDate(0, 0, -2*cycleLength), IsPeriod: true},
-		{UserID: user.ID, Date: lastPeriodStart.AddDate(0, 0, -cycleLength), IsPeriod: true},
-		{UserID: user.ID, Date: lastPeriodStart, IsPeriod: true},
+		{UserID: user.ID, Date: lastPeriodStart.AddDate(0, 0, -3*cycleLength), IsPeriod: true, CycleStart: true},
+		{UserID: user.ID, Date: lastPeriodStart.AddDate(0, 0, -2*cycleLength), IsPeriod: true, CycleStart: true},
+		{UserID: user.ID, Date: lastPeriodStart.AddDate(0, 0, -cycleLength), IsPeriod: true, CycleStart: true},
+		{UserID: user.ID, Date: lastPeriodStart, IsPeriod: true, CycleStart: true},
 	}
 	if err := database.Create(&logs).Error; err != nil {
 		t.Fatalf("seed period logs: %v", err)
