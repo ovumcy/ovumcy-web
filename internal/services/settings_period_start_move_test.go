@@ -96,7 +96,9 @@ func TestSettingsStartMoveLeavesNoPhantomCycle(t *testing.T) {
 }
 
 // TestSettingsStartMoveKeepsADayTheOwnerTouched: a fill day the owner edited is
-// the owner's data, not the fill's, and survives the move.
+// the owner's data, not the fill's, and survives the move. The clear walks from
+// the old start and stops there, as un-ticking an auto-filled period does: the
+// fill day before it goes, the days after it stay.
 func TestSettingsStartMoveKeepsADayTheOwnerTouched(t *testing.T) {
 	touched := startMoveDay(time.October, 4)
 	_, logs := startMoveFixture(t, "start-move-touched@example.com", func(t *testing.T, repositories *db.Repositories, userID uint) {
@@ -117,8 +119,13 @@ func TestSettingsStartMoveKeepsADayTheOwnerTouched(t *testing.T) {
 		switch day {
 		case "2026-10-04":
 			kept = &logs[index]
-		case "2026-10-03", "2026-10-05", "2026-10-06", "2026-10-07":
-			t.Errorf("untouched fill day %s survived the move", day)
+		case "2026-10-03":
+			t.Errorf("untouched fill day %s, before the touched one, survived the move", day)
+		}
+	}
+	for _, day := range []string{"2026-10-05", "2026-10-06", "2026-10-07"} {
+		if !startMoveHasPeriodDay(logs, day) {
+			t.Errorf("fill day %s past the touched one was deleted: the clear must stop at the first day the owner edited", day)
 		}
 	}
 	if kept == nil || kept.Mood != 3 || !kept.IsPeriod {

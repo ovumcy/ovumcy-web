@@ -367,14 +367,13 @@ type periodStartMover interface {
 // of its own: left in place after the start moved, it is a phantom cycle (a
 // start moved earlier by under a cycle length leaves a cycle of a few days,
 // and the dashboard stays anchored on the old date). So the days the old
-// start's fill wrote are removed, each only while IsAutoFilledPeriodCandidate
-// still calls it untouched — a day the owner edited stays — and the new start
-// gets what onboarding would write for it under the owner's auto-fill setting
-// and period length (as this save leaves them). Existing rows in the new range
-// are never rewritten, except that a non-period row on the new start day
-// becomes a period day: the date just saved is the owner's period start.
+// start's fill wrote are removed — only those (oldStartFillRun) — and the new
+// start gets what onboarding would write for it under the owner's auto-fill
+// setting and period length (as this save leaves them). Existing rows in the
+// new range are never rewritten, except that a non-period row on the new start
+// day becomes a period day: the date just saved is the owner's period start.
 //
-// The old range is cleared only when clearOld holds (oldStartFillIsClearable:
+// The old range is considered only when clearOld holds (oldStartFillIsClearable:
 // the old start still opens the newest cycle, and the new one corrects it
 // rather than starting a later cycle) and the stored auto-fill setting is on:
 // with it off, onboarding wrote no days there, and a bare period day in that
@@ -398,31 +397,66 @@ func planPeriodStartMove(stored models.User, settings CycleSettingsUpdate, clear
 		newLength = settings.PeriodLength
 	}
 
-	move := models.PeriodStartMove{
-		MarkDay: newStart,
-		Clearable: func(entry models.DailyLog) bool {
-			// Onboarding writes flow none, so no flow is the fill's own.
-			return IsAutoFilledPeriodCandidate(entry, "")
-		},
-	}
-	filled := make(map[string]bool)
+	move := models.PeriodStartMove{MarkDay: newStart}
+	keep := map[string]bool{CalendarDayKey(newStart): true}
 	if autoFill {
 		for offset := range periodFillLength(newLength) {
 			day := newStart.AddDate(0, 0, offset)
 			move.FillDays = append(move.FillDays, day)
-			filled[CalendarDayKey(day)] = true
+			keep[CalendarDayKey(day)] = true
 		}
 	}
 	if clearOld && !oldStart.IsZero() && stored.AutoPeriodFill {
-		for offset := range periodFillLength(stored.PeriodLength) {
-			day := oldStart.AddDate(0, 0, offset)
-			if day.Equal(newStart) || filled[CalendarDayKey(day)] {
-				continue
-			}
-			move.ClearDays = append(move.ClearDays, day)
+		span := periodFillLength(stored.PeriodLength)
+		move.ClearFrom = oldStart
+		move.ClearTo = oldStart.AddDate(0, 0, span)
+		move.ClearRows = func(entries []models.DailyLog) []models.DailyLog {
+			return oldStartFillRun(entries, oldStart, span, keep)
 		}
 	}
 	return move, true
+}
+
+// oldStartFillRun picks, out of the rows dated in the old start's fill range,
+// the ones that fill wrote and nothing else. It walks from the old start day by
+// day, the walk ClearAutoFilledPeriodNeighbors makes, and stops at the first
+// day that
+//   - has no row (a gap: the fill wrote every day of its range),
+//   - is not an IsAutoFilledPeriodCandidate (a day the owner edited; onboarding
+//     writes flow none, so no flow is the fill's own), or
+//   - was created by another write than the old start's row: one fill writes
+//     its days with one creation stamp, so a bare period day the owner ticked
+//     by hand — before or after turning auto-fill on, or past a period length
+//     changed since onboarding — is never mistaken for the fill.
+//
+// A day in keep (the new start and its fill range) is walked over but not
+// returned: the move would write it again.
+func oldStartFillRun(entries []models.DailyLog, oldStart time.Time, span int, keep map[string]bool) []models.DailyLog {
+	byDay := make(map[string]models.DailyLog, len(entries))
+	for _, entry := range entries {
+		key := CalendarDayKey(dateOnly(entry.Date))
+		if _, seen := byDay[key]; !seen {
+			byDay[key] = entry
+		}
+	}
+	var cohort time.Time
+	var run []models.DailyLog
+	for offset := range span {
+		key := CalendarDayKey(oldStart.AddDate(0, 0, offset))
+		entry, found := byDay[key]
+		if !found || !IsAutoFilledPeriodCandidate(entry, "") {
+			break
+		}
+		if offset == 0 {
+			cohort = entry.CreatedAt
+		} else if !entry.CreatedAt.Equal(cohort) {
+			break
+		}
+		if !keep[key] {
+			run = append(run, entry)
+		}
+	}
+	return run
 }
 
 // oldStartFillIsClearable reports whether a Settings move from the stored start
