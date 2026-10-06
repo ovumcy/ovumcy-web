@@ -1150,7 +1150,12 @@ components:
             confirmed the current cycle's ovulation, in which case this is the
             day inferred from the owner's own temperature shift — an inference
             from a recorded signal, never a measurement of the ovulation itself
-            — and the same day the calendar and dashboard show. A confirmed
+            — and the same day the calendar and dashboard show. A projected
+            day is never one already behind today: once the running cycle's
+            projected ovulation has passed, this is the next cycle's, the day
+            the dashboard, the calendar and the `.ics` feed name, and
+            `fertility_window_start`/`fertility_window_end` are that cycle's
+            median window. A confirmed
             date may fall on or after `next_period_start`: a late shift outlives
             the projected next start, which stays a projection and is not
             recomputed from the confirmed day. Null when `suppression.fertility`
