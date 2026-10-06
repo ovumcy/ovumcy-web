@@ -12,7 +12,7 @@ func ppDay(year int, month time.Month, day int) time.Time {
 }
 
 func TestResolvePregnancyPauseNoLogs(t *testing.T) {
-	if _, paused := ResolvePregnancyPause(nil); paused {
+	if _, paused := ResolvePregnancyPause(nil, BoundaryContext{}); paused {
 		t.Fatal("expected no pause for empty logs")
 	}
 }
@@ -22,7 +22,7 @@ func TestResolvePregnancyPauseNoPositiveTest(t *testing.T) {
 		{Date: ppDay(2026, time.March, 1), PregnancyTest: models.PregnancyTestNegative},
 		{Date: ppDay(2026, time.March, 2), IsPeriod: true, CycleStart: true},
 	}
-	if _, paused := ResolvePregnancyPause(logs); paused {
+	if _, paused := ResolvePregnancyPause(logs, BoundaryContext{}); paused {
 		t.Fatal("expected no pause without a positive test")
 	}
 }
@@ -33,7 +33,7 @@ func TestResolvePregnancyPausePositiveWithoutLaterCycleStart(t *testing.T) {
 		{Date: ppDay(2026, time.March, 1), IsPeriod: true, CycleStart: true},
 		{Date: positive, PregnancyTest: models.PregnancyTestPositive},
 	}
-	date, paused := ResolvePregnancyPause(logs)
+	date, paused := ResolvePregnancyPause(logs, BoundaryContext{})
 	if !paused {
 		t.Fatal("expected pause when positive test has no later cycle start")
 	}
@@ -47,7 +47,7 @@ func TestResolvePregnancyPauseLiftedByLaterCycleStart(t *testing.T) {
 		{Date: ppDay(2026, time.March, 10), PregnancyTest: models.PregnancyTestPositive},
 		{Date: ppDay(2026, time.April, 5), IsPeriod: true, CycleStart: true},
 	}
-	if _, paused := ResolvePregnancyPause(logs); paused {
+	if _, paused := ResolvePregnancyPause(logs, BoundaryContext{}); paused {
 		t.Fatal("expected no pause when a cycle start follows the positive test")
 	}
 }
@@ -98,7 +98,7 @@ func TestResolvePregnancyPauseSameDayCycleStartKeepsThePause(t *testing.T) {
 	}
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
-			date, paused := ResolvePregnancyPause(testCase.logs)
+			date, paused := ResolvePregnancyPause(testCase.logs, BoundaryContext{})
 			if paused != testCase.wantPause {
 				t.Fatalf("ResolvePregnancyPause() paused = %v, want %v", paused, testCase.wantPause)
 			}
@@ -115,7 +115,7 @@ func TestResolvePregnancyPauseUsesLatestPositive(t *testing.T) {
 		{Date: ppDay(2026, time.March, 5), PregnancyTest: models.PregnancyTestPositive},
 		{Date: latest, PregnancyTest: models.PregnancyTestPositive},
 	}
-	date, paused := ResolvePregnancyPause(logs)
+	date, paused := ResolvePregnancyPause(logs, BoundaryContext{})
 	if !paused {
 		t.Fatal("expected pause")
 	}
@@ -179,7 +179,7 @@ func TestResolvePregnancyPauseIsIndependentOfLogOrder(t *testing.T) {
 	for _, testCase := range tests {
 		for _, order := range orders {
 			t.Run(testCase.name+" "+order.name, func(t *testing.T) {
-				date, paused := ResolvePregnancyPause(order.reorder(append([]models.DailyLog{}, testCase.logs...)))
+				date, paused := ResolvePregnancyPause(order.reorder(append([]models.DailyLog{}, testCase.logs...)), BoundaryContext{})
 				if paused != testCase.wantPause {
 					t.Fatalf("ResolvePregnancyPause() paused = %v, want %v", paused, testCase.wantPause)
 				}
@@ -208,14 +208,45 @@ func TestResolvePregnancyPauseIgnoresCycleStartWithoutPeriod(t *testing.T) {
 		{Date: positive, PregnancyTest: models.PregnancyTestPositive},
 		{Date: ppDay(2026, time.April, 1), IsPeriod: false, CycleStart: true},
 	}
-	if _, paused := ResolvePregnancyPause(logs); !paused {
+	if _, paused := ResolvePregnancyPause(logs, BoundaryContext{}); !paused {
 		t.Fatal("expected pause: a cycle-start flag without a period day must not lift it")
 	}
 }
 
+// TestResolvePregnancyPauseReadsTheCycleBoundaryRule pins the lift to
+// CycleBoundaries rather than to the raw IsPeriod+CycleStart flag: a two-day
+// unmarked bleed after the positive test is a new cycle and lifts the pause,
+// while a marked spotting day, an uncertain mark and a lone unmarked day the
+// rule ignores do not.
+func TestResolvePregnancyPauseReadsTheCycleBoundaryRule(t *testing.T) {
+	positive := ppDay(2026, time.March, 10)
+	ctx := BoundaryContext{Today: ppDay(2026, time.April, 20)}
+	test := models.DailyLog{Date: positive, PregnancyTest: models.PregnancyTestPositive}
+
+	unmarkedRun := []models.DailyLog{test,
+		{Date: ppDay(2026, time.April, 5), IsPeriod: true, Flow: models.FlowMedium},
+		{Date: ppDay(2026, time.April, 6), IsPeriod: true, Flow: models.FlowMedium},
+	}
+	if _, paused := ResolvePregnancyPause(unmarkedRun, ctx); paused {
+		t.Error("an unmarked two-day bleed after the positive test is a new cycle, yet the pause held")
+	}
+
+	for name, day := range map[string]models.DailyLog{
+		"marked spotting":       {Date: ppDay(2026, time.April, 5), IsPeriod: true, CycleStart: true, Flow: models.FlowSpotting},
+		"uncertain mark":        {Date: ppDay(2026, time.April, 5), IsPeriod: true, CycleStart: true, IsUncertain: true, Flow: models.FlowMedium},
+		"lone unmarked bleed":   {Date: ppDay(2026, time.April, 5), IsPeriod: true, Flow: models.FlowMedium},
+		"spotting-symptom mark": {Date: ppDay(2026, time.April, 5), IsPeriod: true, CycleStart: true, HasSpottingSymptom: true},
+	} {
+		date, paused := ResolvePregnancyPause([]models.DailyLog{test, day}, ctx)
+		if !paused || !date.Equal(positive) {
+			t.Errorf("%s after the positive test: paused=%v date=%s, want the pause on %s", name, paused, date, positive)
+		}
+	}
+}
+
 // pauseParitySurfaceLogs names the log set each surface used to hand the shared
-// derivation. ResolvePregnancyPause itself has no today — it compares two dates
-// out of whatever set it is given — so before the bound moved into
+// derivation. ResolvePregnancyPause compares two dates out of whatever set it is
+// given, and an explicit mark opens a cycle whatever its date — so before the bound moved into
 // BuildCycleStatsFromLogs the verdict was a property of the CALLER's fetch, not
 // of the owner's data. The dashboard and the .ics feed were correct by accident
 // of pre-bounding; the webhook notify pass passes the whole stored history.

@@ -81,8 +81,9 @@ func (service *StatsService) BuildCycleStatsForRange(ctx context.Context, user *
 // BuildCycleStats bounded its own input (cycles.go, filterLogsNotAfter); the
 // baseline and the pregnancy pause were handed the raw set, so a day logged
 // ahead of today reached two of the three. ResolvePregnancyPause is where that
-// cost something: it lifts a pause on ANY cycle start later than the positive
-// test and has no today of its own, while manualCycleStartFutureDays lets an
+// cost something: it lifts a pause on ANY cycle boundary later than the
+// positive test, and an explicit mark opens one whatever its date, while
+// manualCycleStartFutureDays lets an
 // owner record a start two days ahead. The surfaces that looked safe were safe
 // by accident — the dashboard and the .ics feed pre-bound the set they pass
 // (FilterLogsByDateRange, the fetched range), and the webhook notify pass, the
@@ -95,9 +96,10 @@ func (service *StatsService) BuildCycleStatsForRange(ctx context.Context, user *
 // front of is not one.
 func BuildCycleStatsFromLogs(user *models.User, logs []models.DailyLog, now time.Time, location *time.Location) CycleStats {
 	logs = filterLogsNotAfter(logs, DateAtLocation(now, location))
-	stats := BuildCycleStats(logs, now, BoundaryContextFor(user, DateAtLocation(now, location)))
+	boundaryCtx := BoundaryContextFor(user, DateAtLocation(now, location))
+	stats := BuildCycleStats(logs, now, boundaryCtx)
 	stats = ApplyUserCycleBaseline(user, logs, stats, now, location)
-	if _, paused := ResolvePregnancyPause(logs); paused {
+	if _, paused := ResolvePregnancyPause(logs, boundaryCtx); paused {
 		stats.PregnancyPaused = true
 	}
 	return stats
