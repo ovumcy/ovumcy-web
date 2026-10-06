@@ -192,6 +192,10 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 	// surfaces cannot drift apart on what a suppressed tier is allowed to carry.
 	// Every builder above still reads the uncleared stats.
 	confirmedStats, publishedStats, _ := ConfirmedAndPublishedStats(user, logs, stats, today, location)
+	// Once the running cycle's ovulation has rolled, today's status and phase are
+	// the ones the JSON overview reads against the rolled window; the hero takes
+	// the same phase from the context.
+	publishedStats = cycleContext.MovedWindow.ApplyTo(publishedStats)
 
 	return DashboardViewData{
 		Stats:                             publishedStats,

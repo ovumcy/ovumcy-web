@@ -138,11 +138,12 @@ func PublishedStats(user *models.User, stats CycleStats, logs []models.DailyLog,
 // It returns all three halves because the callers need different ones: the
 // dashboard and the stats page feed the confirmed, uncleared stats to their
 // builders and publish the cleared copy, while the day-save message reads only
-// the cleared copy and the verdict. The dashboard, the stats page and the day-save
-// feedback all call it, so "which window does this surface call fertile" has one
-// answer and the save toast cannot name a day the dashboard header does not. The
-// JSON API's PublishedOverviewStats below runs through the same step, through
-// confirmedAndPublishedStats, which also reports whether a shift was confirmed.
+// the cleared copy and the verdict. The dashboard and the stats page call it,
+// and the day-save feedback and the JSON API's PublishedOverviewStats below run
+// through the same step, through confirmedAndPublishedStats, which also reports
+// whether a shift was confirmed — so "which window does this surface call
+// fertile" has one answer and the save toast cannot name a day the dashboard
+// header does not.
 func ConfirmedAndPublishedStats(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (CycleStats, CycleStats, PredictionSuppression) {
 	confirmed, published, suppression, _ := confirmedAndPublishedStats(user, logs, stats, today, location)
 	return confirmed, published, suppression
@@ -211,6 +212,16 @@ func confirmedAndPublishedStats(user *models.User, logs []models.DailyLog, stats
 // DashboardUpcomingPredictions (followUpcomingPrediction), so a running cycle
 // whose ovulation is already behind today publishes the day the pages roll to.
 func PublishedOverviewStats(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (CycleStats, PredictionSuppression, bool) {
+	published, suppression, confirmedOvulation, _ := publishedOverviewStats(user, logs, stats, today, location)
+	return published, suppression, confirmedOvulation
+}
+
+// publishedOverviewStats is PublishedOverviewStats plus whether the fertility
+// status and the phase were read again against a window that moved
+// (reconcileMovedWindow). The dashboard context takes that verdict from here, so
+// the owner pages and the JSON API re-read today on the same days and with the
+// same rule.
+func publishedOverviewStats(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (CycleStats, PredictionSuppression, bool, bool) {
 	resolved, published, suppression, wasConfirmed := confirmedAndPublishedStats(user, logs, stats, today, location)
 	confirmedDay := resolved.OvulationDate
 	// The day comes back whenever the confirmation stood: whether it may be
@@ -231,9 +242,9 @@ func PublishedOverviewStats(user *models.User, logs []models.DailyLog, stats Cyc
 	if wasConfirmed {
 		published.OvulationDate = confirmedDay
 	}
-	followUpcomingPrediction(&published, user, resolved, logs, suppression, wasConfirmed, today, location)
+	reconciled := followUpcomingPrediction(&published, user, resolved, logs, suppression, wasConfirmed, today, location)
 	confirmedOvulation := wasConfirmed && sameDay(published.OvulationDate, confirmedDay)
-	return published, suppression, confirmedOvulation
+	return published, suppression, confirmedOvulation, reconciled
 }
 
 // followUpcomingPrediction puts the published next period and ovulation on the
@@ -270,8 +281,8 @@ func PublishedOverviewStats(user *models.User, logs []models.DailyLog, stats Cyc
 // RUNNING cycle's window, so once the window moves they are read again against
 // the one published here (reconcileMovedWindow): the status says whether today
 // falls inside the window the same response reports, never inside one it no
-// longer names.
-func followUpcomingPrediction(published *CycleStats, user *models.User, resolved CycleStats, logs []models.DailyLog, suppression PredictionSuppression, wasConfirmed bool, today time.Time, location *time.Location) {
+// longer names. It reports whether that second reading ran.
+func followUpcomingPrediction(published *CycleStats, user *models.User, resolved CycleStats, logs []models.DailyLog, suppression PredictionSuppression, wasConfirmed bool, today time.Time, location *time.Location) bool {
 	cycleLength := DashboardProjectionCycleLength(user, resolved)
 	prediction := DashboardUpcomingPredictions(resolved, user, today, cycleLength)
 	if !suppression.PredictionsSuppressed {
@@ -281,17 +292,17 @@ func followUpcomingPrediction(published *CycleStats, user *models.User, resolved
 	// projection only ever names a day where the running cycle's own arithmetic
 	// does.
 	if suppression.FertilitySuppressed || wasConfirmed || resolved.OvulationDate.IsZero() {
-		return
+		return false
 	}
 	if ResolveProjectionRanges(user, resolved, prediction.NextPeriodStart, location).OvulationUseRange {
-		return
+		return false
 	}
 	moved := !sameDay(resolved.OvulationDate, prediction.OvulationDate)
 	published.OvulationDate = locationDateOrZero(prediction.OvulationDate, location)
 	published.OvulationExact = prediction.OvulationExact
 	published.OvulationImpossible = prediction.OvulationImpossible
 	if !moved {
-		return
+		return false
 	}
 	// A day the projection cannot place, or one past 9999-12-31, is absent, and
 	// its window goes with it, as clearUnspellableCycleWindow does for the
@@ -304,6 +315,7 @@ func followUpcomingPrediction(published *CycleStats, user *models.User, resolved
 		published.FertilityWindowStart, published.FertilityWindowEnd = time.Time{}, time.Time{}
 	}
 	reconcileMovedWindow(published, logs, today, location)
+	return true
 }
 
 // reconcileMovedWindow re-reads the fertility status and the phase against the
