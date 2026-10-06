@@ -128,12 +128,12 @@ func TestStaleCalendarPageCannotReadOrWriteAnotherAccountsDay(t *testing.T) {
 
 	t.Run("a fetch or grid refresh from a page of another account is refused and shows nothing", func(t *testing.T) {
 		for _, path := range []string{dayPath, dayPath + "?mode=edit", "/calendar?month=2026-06"} {
-			body := assertAccountChangedRefusal(t, "GET "+path, get(t, path, fixture.secondCookie, []string{fixture.firstBinding}, true))
+			body := assertOpenAccountChangedRefusal(t, "GET "+path, get(t, path, fixture.secondCookie, []string{fixture.firstBinding}, true))
 			if strings.Contains(body, privateNote) {
 				t.Fatalf("GET %s: the refusal leaks the second account's day: %q", path, body)
 			}
 			// A copy that is valid beside a copy that is not cannot mask it.
-			assertAccountChangedRefusal(t, "GET "+path+" with two copies", get(t, path, fixture.secondCookie, []string{fixture.secondBinding, fixture.firstBinding}, true))
+			assertOpenAccountChangedRefusal(t, "GET "+path+" with two copies", get(t, path, fixture.secondCookie, []string{fixture.secondBinding, fixture.firstBinding}, true))
 		}
 	})
 
@@ -147,8 +147,8 @@ func TestStaleCalendarPageCannotReadOrWriteAnotherAccountsDay(t *testing.T) {
 	})
 
 	t.Run("an HTMX read that names no account is refused, a direct navigation is answered", func(t *testing.T) {
-		assertAccountChangedRefusal(t, "HTMX GET "+dayPath, get(t, dayPath, fixture.secondCookie, nil, true))
-		assertAccountChangedRefusal(t, "HTMX GET /calendar", get(t, "/calendar", fixture.secondCookie, nil, true))
+		assertOpenAccountChangedRefusal(t, "HTMX GET "+dayPath, get(t, dayPath, fixture.secondCookie, nil, true))
+		assertOpenAccountChangedRefusal(t, "HTMX GET /calendar", get(t, "/calendar", fixture.secondCookie, nil, true))
 		// Opened by URL, or by the no-JavaScript form: the response renders its
 		// own data and its own binding for the account signed in now.
 		assertStatusCode(t, get(t, dayPath+"?mode=edit", fixture.secondCookie, nil, false), http.StatusOK)

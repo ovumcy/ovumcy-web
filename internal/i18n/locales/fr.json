@@ -664,6 +664,7 @@
   "daylog.save_retry": "Réessayer",
   "daylog.save_sign_in": "Se connecter dans un nouvel onglet",
   "daylog.save_account_changed": "Vous êtes maintenant connecté(e) à un autre compte. Cette saisie n'a pas été enregistrée.",
+  "daylog.open_account_changed": "Impossible d'ouvrir ce jour : vous êtes maintenant connecté(e) à un autre compte. Rechargez la page.",
 
   "calendar.title": "Calendrier",
   "calendar.prev": "Précédent",

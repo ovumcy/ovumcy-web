@@ -524,6 +524,7 @@
   "daylog.save_retry": "Erneut versuchen",
   "daylog.save_sign_in": "In neuem Tab anmelden",
   "daylog.save_account_changed": "Sie sind jetzt bei einem anderen Konto angemeldet. Dieser Eintrag wurde nicht gespeichert.",
+  "daylog.open_account_changed": "Dieser Tag kann nicht geöffnet werden: Sie sind jetzt bei einem anderen Konto angemeldet. Laden Sie die Seite neu.",
   "calendar.title": "Kalender",
   "calendar.prev": "Zurück",
   "calendar.next": "Weiter",

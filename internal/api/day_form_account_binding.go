@@ -37,6 +37,15 @@ func dayFormAccountChangedErrorSpec() APIErrorSpec {
 	return globalErrorSpec(fiber.StatusConflict, APIErrorCategoryConflict, "day form account changed")
 }
 
+// dayFormPageAccountChangedErrorSpec is the same refusal for a READ: the day
+// editor or grid a page fetched is not served to a page rendered for another
+// account. It carries its own message, and so its own copy, because nothing is
+// being saved ("This entry was not saved" would be wrong) and the way out is to
+// reload.
+func dayFormPageAccountChangedErrorSpec() APIErrorSpec {
+	return globalErrorSpec(fiber.StatusConflict, APIErrorCategoryConflict, "day form page account changed")
+}
+
 // dayFormAccountBinding is the value the day forms render for user.
 func (handler *Handler) dayFormAccountBinding(user *models.User) (string, error) {
 	return security.DayFormAccountBinding(handler.secretKey, user.ID)
@@ -90,7 +99,7 @@ func (handler *Handler) RefuseDayFormPageFromAnotherAccount(c fiber.Ctx) error {
 		return c.Next()
 	}
 	if len(presented) == 0 || !dayFormRenderedForAccount(handler.secretKey, user, presented) {
-		return handler.respondMappedError(c, dayFormAccountChangedErrorSpec())
+		return handler.respondMappedError(c, dayFormPageAccountChangedErrorSpec())
 	}
 	return c.Next()
 }

@@ -693,30 +693,42 @@ test("a dashboard save carries the form's account binding and a 409 for another 
 // The calendar page fetches its day editor. A fetch the server refuses because
 // another account signed in since the page was rendered is not swapped by htmx,
 // so the editor area must show the refusal itself rather than stay blank.
-test("a refused day editor fetch shows the account-changed notice in the editor area", async () => {
-  const page = `<!doctype html><html><body>
+// The fetch is a read, so the server answers it with its own copy (the day
+// cannot be opened); a control inside the editor is a write and keeps the
+// save copy. The editor area renders either.
+const OPEN_ACCOUNT_CHANGED_KEY = "daylog.open_account_changed";
+const OPEN_ACCOUNT_CHANGED_TEXT = "This day can't be opened: you're now signed in to a different account. Reload the page.";
+const OPEN_ACCOUNT_CHANGED_FRAGMENT = `<div class="status-error" data-flash-key="${OPEN_ACCOUNT_CHANGED_KEY}" data-flash-status="error">${OPEN_ACCOUNT_CHANGED_TEXT}</div>`;
+
+for (const [surface, fragment, key, text] of [
+  ["a refused day editor fetch", OPEN_ACCOUNT_CHANGED_FRAGMENT, OPEN_ACCOUNT_CHANGED_KEY, OPEN_ACCOUNT_CHANGED_TEXT],
+  ["a refused write control inside the editor", ACCOUNT_CHANGED_FRAGMENT, ACCOUNT_CHANGED_KEY, ACCOUNT_CHANGED_TEXT],
+]) {
+  test(`${surface} shows the account-changed notice in the editor area`, async () => {
+    const page = `<!doctype html><html><body>
     <aside id="day-editor"><div class="calendar-day-skeleton" aria-hidden="true"></div></aside>
   </body></html>`;
-  const dom = await loadDOMWithScript(APP_BUNDLE, { html: page });
-  try {
-    const editor = dom.window.document.getElementById("day-editor");
-    editor.dispatchEvent(
-      new dom.window.CustomEvent("htmx:responseError", {
-        detail: { target: editor, xhr: { status: 409, responseText: ACCOUNT_CHANGED_FRAGMENT } },
-        bubbles: true,
-      })
-    );
+    const dom = await loadDOMWithScript(APP_BUNDLE, { html: page });
+    try {
+      const editor = dom.window.document.getElementById("day-editor");
+      editor.dispatchEvent(
+        new dom.window.CustomEvent("htmx:responseError", {
+          detail: { target: editor, xhr: { status: 409, responseText: fragment } },
+          bubbles: true,
+        })
+      );
 
-    const notice = editor.querySelector("[data-day-editor-refused]");
-    assert.ok(notice, "the editor area renders the refusal");
-    assert.equal(notice.textContent, ACCOUNT_CHANGED_TEXT);
-    assert.equal(notice.querySelector("[data-notice-key]").getAttribute("data-notice-key"), ACCOUNT_CHANGED_KEY);
-    assert.equal(editor.querySelector(".calendar-day-skeleton"), null, "the skeleton gives way to the notice");
-    assert.equal(notice.querySelector("[data-day-save-retry]"), null);
-  } finally {
-    dom.window.close();
-  }
-});
+      const notice = editor.querySelector("[data-day-editor-refused]");
+      assert.ok(notice, "the editor area renders the refusal");
+      assert.equal(notice.textContent, text);
+      assert.equal(notice.querySelector("[data-notice-key]").getAttribute("data-notice-key"), key);
+      assert.equal(editor.querySelector(".calendar-day-skeleton"), null, "the skeleton gives way to the notice");
+      assert.equal(notice.querySelector("[data-day-save-retry]"), null);
+    } finally {
+      dom.window.close();
+    }
+  });
+}
 
 test("a day editor fetch that fails for another reason is left to the generic handling", async () => {
   const page = `<!doctype html><html><body>

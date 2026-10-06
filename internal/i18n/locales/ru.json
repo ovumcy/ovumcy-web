@@ -527,6 +527,7 @@
   "daylog.save_retry": "Повторить",
   "daylog.save_sign_in": "Войти в новой вкладке",
   "daylog.save_account_changed": "Сейчас выполнен вход в другую учётную запись. Эта запись не сохранена.",
+  "daylog.open_account_changed": "Не удаётся открыть этот день: сейчас выполнен вход в другую учётную запись. Перезагрузите страницу.",
   "calendar.title": "Календарь",
   "calendar.prev": "Назад",
   "calendar.next": "Вперёд",
