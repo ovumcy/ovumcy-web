@@ -159,15 +159,17 @@ func TestPutDayStoresTheLastAcceptedDate(t *testing.T) {
 	user := createOnboardingTestUser(t, database, "day-date-range-put@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
+	// A mood, not a period: a period is an observation and is refused past
+	// today+2, while the date range itself is what this test pins.
 	for _, date := range []string{"1900-01-01", "9999-12-30"} {
 		path := "/api/v1/days/" + date
-		status, raw := sendDayRequest(t, app, http.MethodPut, path, authCookie, "", `{"is_period":true}`)
+		status, raw := sendDayRequest(t, app, http.MethodPut, path, authCookie, "", `{"mood":3}`)
 		if status != http.StatusOK {
 			t.Fatalf("PUT %s: status %d, want 200 (%s)", path, status, raw)
 		}
 		day := getDayForTest(t, app, path, authCookie, "")
-		if day.ID == 0 || day.Date != date || !day.IsPeriod {
-			t.Errorf("GET %s after PUT: id %d date %q is_period %t, want the stored period day", path, day.ID, day.Date, day.IsPeriod)
+		if day.ID == 0 || day.Date != date || day.Mood != 3 {
+			t.Errorf("GET %s after PUT: id %d date %q mood %d, want the stored day", path, day.ID, day.Date, day.Mood)
 		}
 	}
 }

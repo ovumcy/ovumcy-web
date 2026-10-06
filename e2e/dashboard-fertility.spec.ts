@@ -141,8 +141,10 @@ test.describe('Dashboard: fertility badge', () => {
   }) => {
     // Register and onboard. The default onboarding helper sets
     // last_period_start to today-3 and period_length=5, so auto_period_fill
-    // creates 5 period days [today-3 .. today+1]. Extending the streak past
-    // 8 requires saving four more consecutive period days (today+2 .. +5).
+    // creates period days from today-3 up to at most today+1. A period cannot
+    // be recorded past today+2, and the streak is counted backward from the
+    // saved day, so the run is first extended backward to today-6 and the
+    // threshold is then crossed by saving forward up to today+2.
     const credentials = createCredentials('long-period-warning');
     await registerOwnerViaUI(page, credentials);
     await expectInlineRegisterRecoveryStep(page);
@@ -176,18 +178,18 @@ test.describe('Dashboard: fertility badge', () => {
       });
     }
 
-    // Days +2 .. +4 bring the streak from 5 (auto-filled) up to 8. None of
-    // these saves should emit the long-period warning notice yet (the
-    // threshold is `> 8`).
-    for (const offset of [2, 3, 4]) {
+    // Days -6 .. -4 extend the run backward, and day +1 brings the streak
+    // counted from it to 8 (-6 .. +1). None of these saves may emit the
+    // long-period warning yet (the threshold is `> 8`).
+    for (const offset of [-6, -5, -4, 1]) {
       const response = await savePeriodDay(shiftISO(today, offset));
       expect(response.status(), `save offset ${offset} status`).toBeLessThan(400);
-      expect(response.headers()['x-ovumcy-notice'] ?? '').toBe('');
+      expect(response.headers()['x-ovumcy-notice-key'] ?? '').not.toBe('dashboard.long_period_warning');
     }
 
-    // Day +5 crosses the threshold; the response carries the localized
+    // Day +2 crosses the threshold; the response carries the localized
     // warning copy URL-encoded in X-Ovumcy-Notice.
-    const ninthDay = shiftISO(today, 5);
+    const ninthDay = shiftISO(today, 2);
     const ninthResponse = await savePeriodDay(ninthDay);
     expect(ninthResponse.status()).toBeLessThan(400);
     // Which warning fired is asserted through the companion key header, so the
@@ -204,8 +206,10 @@ test.describe('Dashboard: fertility badge', () => {
 
     // The acknowledgement persists user.LongPeriodWarnedAt; a follow-up save
     // in the same cycle does NOT re-emit the warning. This is the "shown
-    // once" half of the audit invariant.
-    const followUpResponse = await savePeriodDay(shiftISO(today, 6));
+    // once" half of the audit invariant. Re-saving day +2 counts the same
+    // 9-day streak from the same start, so only the acknowledgement keeps it
+    // silent.
+    const followUpResponse = await savePeriodDay(ninthDay);
     expect(followUpResponse.status()).toBeLessThan(400);
     expect(followUpResponse.headers()['x-ovumcy-notice'] ?? '').toBe('');
   });
