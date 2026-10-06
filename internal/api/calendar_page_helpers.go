@@ -38,7 +38,7 @@ func (handler *Handler) buildCalendarViewData(ctx context.Context, user *models.
 		"HasPredictionExplanationSecondary": viewData.HasPredictionExplanationSecondary,
 		"LateCycle":                         viewData.LateCycle,
 		"IsOwner":                           viewData.IsOwner,
-		"CanDrawTentativeOvulation":         viewData.CanDrawTentativeOvulation,
+		"CalendarLegend":                    viewData.Legend,
 		"DayFormAccount":                    formAccount,
 	}
 	return data, nil

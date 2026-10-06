@@ -44,12 +44,12 @@ test.describe('Stats factor context', () => {
     await expect(dashboardExplainer).toContainText(localeText('en', SPARSE_EXPLAINER_KEY));
     await expect(page.locator('[data-dashboard-factor-hint]')).toHaveCount(0);
 
+    // Two completed cycles are below the insights tier (three), so the stats page
+    // holds its empty state and shows no explainer yet.
     await page.goto('/stats');
     await expect(page).toHaveURL(/\/stats$/);
-    await expect(page.locator('[data-stats-prediction-explainer]')).toHaveAttribute(
-      'data-explainer-key',
-      SPARSE_EXPLAINER_KEY
-    );
+    await expect(page.locator('[data-stats-empty-state]')).toBeVisible();
+    await expect(page.locator('[data-stats-prediction-explainer]')).toHaveCount(0);
 
     await page.goto(`/calendar?month=${today.slice(0, 7)}&day=${today}`);
     await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${today.slice(0, 7)}&day=${today}`));
