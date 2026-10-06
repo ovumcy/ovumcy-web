@@ -15,7 +15,7 @@ func boundaryDay(month time.Month, day int) time.Time {
 
 func boundaryPeriodRun(start time.Time, length int, flow string) []models.DailyLog {
 	logs := make([]models.DailyLog, 0, length)
-	for offset := 0; offset < length; offset++ {
+	for offset := range length {
 		logs = append(logs, models.DailyLog{Date: start.AddDate(0, 0, offset), IsPeriod: true, Flow: flow})
 	}
 	return logs
