@@ -254,3 +254,96 @@ func TestMergeDayEntryPatchCarriesStoredValuesNormalized(t *testing.T) {
 		t.Fatalf("expected a stored legacy value not to refuse a write that does not touch it, got %v", err)
 	}
 }
+
+// The auto-fill clear behind unchecking a period start runs on the partial
+// write too, and it reads the anchor's flow from the stored row, not from the
+// merged day: a hand-logged flow on a following day survives, a stored legacy
+// spelling of the propagated flow still reads as the fill's own value, and a
+// fill whose anchor was edited after it is kept.
+func TestPatchUncheckingAnAutoFilledAnchorAppliesTheClearFlowRules(t *testing.T) {
+	anchor := time.Date(2026, time.September, 7, 0, 0, 0, 0, time.UTC)
+	now := anchor.AddDate(0, 0, 14) // every fill day is in the past
+	type patchStep struct {
+		day    time.Time
+		input  DayEntryInput
+		fields DayEntryFields
+	}
+	for _, tc := range []struct {
+		name        string
+		anchorFlow  string
+		afterFill   func(logs *dayLogRepositoryStub)
+		steps       []patchStep
+		wantCleared []string
+		wantKept    map[string]string
+	}{
+		{
+			name:       "hand-logged flow on a following day",
+			anchorFlow: models.FlowMedium,
+			steps: []patchStep{
+				{day: anchor.AddDate(0, 0, 2), input: DayEntryInput{Flow: models.FlowHeavy}, fields: DayEntryFields{Flow: true}},
+			},
+			wantCleared: []string{"2026-09-08"},
+			wantKept:    map[string]string{"2026-09-09": models.FlowHeavy, "2026-09-10": models.FlowMedium, "2026-09-11": models.FlowMedium},
+		},
+		{
+			name:       "anchor flow stored in a legacy spelling",
+			anchorFlow: models.FlowMedium,
+			afterFill: func(logs *dayLogRepositoryStub) {
+				stored := logs.entries["2026-09-07"]
+				stored.Flow = " MEDIUM "
+				logs.entries["2026-09-07"] = stored
+			},
+			wantCleared: []string{"2026-09-08", "2026-09-09", "2026-09-10", "2026-09-11"},
+		},
+		{
+			name:       "anchor flow edited after the fill",
+			anchorFlow: models.FlowLight,
+			steps: []patchStep{
+				{day: anchor, input: DayEntryInput{Flow: models.FlowHeavy}, fields: DayEntryFields{Flow: true}},
+			},
+			wantKept: map[string]string{"2026-09-08": models.FlowLight, "2026-09-09": models.FlowLight, "2026-09-10": models.FlowLight, "2026-09-11": models.FlowLight},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			logs := newDayLogRepositoryStub()
+			service := NewDayService(logs, &dayUserRepositoryStub{settings: models.User{PeriodLength: 5, AutoPeriodFill: true}})
+			ctx := context.Background()
+
+			if _, err := service.PatchDayEntryWithAutoFillAt(ctx, 10, anchor,
+				DayEntryInput{IsPeriod: true, Flow: tc.anchorFlow}, DayEntryFields{IsPeriod: true, Flow: true}, now, time.UTC); err != nil {
+				t.Fatalf("log the anchor: %v", err)
+			}
+			for _, key := range []string{"2026-09-08", "2026-09-09", "2026-09-10", "2026-09-11"} {
+				if !logs.entries[key].IsPeriod {
+					t.Fatalf("precondition: %s should be an auto-filled period day", key)
+				}
+			}
+			if tc.afterFill != nil {
+				tc.afterFill(logs)
+			}
+			for _, step := range tc.steps {
+				if _, err := service.PatchDayEntryWithAutoFillAt(ctx, 10, step.day, step.input, step.fields, now, time.UTC); err != nil {
+					t.Fatalf("patch %s: %v", logs.dayKey(step.day), err)
+				}
+			}
+			if _, err := service.PatchDayEntryWithAutoFillAt(ctx, 10, anchor,
+				DayEntryInput{IsPeriod: false}, DayEntryFields{IsPeriod: true}, now, time.UTC); err != nil {
+				t.Fatalf("uncheck the anchor: %v", err)
+			}
+
+			if logs.entries["2026-09-07"].IsPeriod {
+				t.Fatal("the unchecked anchor must be off")
+			}
+			for _, key := range tc.wantCleared {
+				if entry := logs.entries[key]; entry.IsPeriod || entry.Flow != models.FlowNone {
+					t.Fatalf("expected %s cleared, got IsPeriod=%t Flow=%q", key, entry.IsPeriod, entry.Flow)
+				}
+			}
+			for key, flow := range tc.wantKept {
+				if entry := logs.entries[key]; !entry.IsPeriod || entry.Flow != flow {
+					t.Fatalf("expected %s kept as a %q period day, got IsPeriod=%t Flow=%q", key, flow, entry.IsPeriod, entry.Flow)
+				}
+			}
+		})
+	}
+}
