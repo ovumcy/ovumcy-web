@@ -87,7 +87,7 @@ func TestFloorWithholdsProjectionsOnlyAndPastCyclesKeepTheirInferredShading(t *t
 				t.Fatalf("the current cycle's projection: %d marked cells, want projected=%v", currentMarks, testCase.wantCurrentProject)
 			}
 
-			ribbon := buildStatsCycleRibbon(user, stats, logs, buildCompletedCycleSpans(logs, location))
+			ribbon := buildStatsCycleRibbon(user, stats, logs, buildCompletedCycleSpans(logs, location, BoundaryContextFor(user, today)))
 			fertile, peak, ovulation := statscycleribbonInferredFertility(ribbon)
 			if !ribbon.Visible || !ribbon.ShowPhases || fertile == 0 || peak == 0 || ovulation == 0 {
 				t.Fatalf("the stats ribbon must keep its inferred phases: visible=%v phases=%v fertile=%d peak=%d ovulation=%d", ribbon.Visible, ribbon.ShowPhases, fertile, peak, ovulation)
