@@ -21,6 +21,34 @@ func TestLatestCycleStartAnchorBeforeOrOnPrefersMoreRecentSettingsBaseline(t *te
 	}
 }
 
+// TestFindCompetingCycleStartIgnoresMarksTheRuleIgnores: a mark on a spotting,
+// uncertain or non-period day inside the episode opens no cycle under
+// CycleBoundaries, so the day form must not ask the owner to replace it.
+func TestFindCompetingCycleStartIgnoresMarksTheRuleIgnores(t *testing.T) {
+	// The marked day sits between two period days, so it is inside the
+	// episode's bounds whatever it carries.
+	marked := mustParseCycleStartPolicyDay(t, "2026-09-03")
+	target := mustParseCycleStartPolicyDay(t, "2026-09-04")
+	run := []models.DailyLog{
+		{Date: mustParseCycleStartPolicyDay(t, "2026-09-02"), IsPeriod: true, Flow: models.FlowMedium},
+		{Date: target, IsPeriod: true, Flow: models.FlowMedium},
+	}
+	for name, mark := range map[string]models.DailyLog{
+		"spotting flow":    {Date: marked, IsPeriod: true, CycleStart: true, Flow: models.FlowSpotting},
+		"spotting symptom": {Date: marked, IsPeriod: true, CycleStart: true, HasSpottingSymptom: true},
+		"uncertain":        {Date: marked, IsPeriod: true, CycleStart: true, IsUncertain: true, Flow: models.FlowMedium},
+		"not a period day": {Date: marked, IsPeriod: false, CycleStart: true},
+	} {
+		if conflict := findCompetingCycleStart(append([]models.DailyLog{mark}, run...), target, time.UTC); !conflict.IsZero() {
+			t.Errorf("%s mark reported as a competing start on %s", name, conflict.Format("2006-01-02"))
+		}
+	}
+	counted := models.DailyLog{Date: marked, IsPeriod: true, CycleStart: true, Flow: models.FlowLight}
+	if conflict := findCompetingCycleStart(append([]models.DailyLog{counted}, run...), target, time.UTC); conflict.Format("2006-01-02") != "2026-09-03" {
+		t.Fatalf("control: a counted mark must compete, got %v", conflict)
+	}
+}
+
 func TestShouldSuggestManualCycleStartUsesMostRecentKnownAnchor(t *testing.T) {
 	userLastPeriod := mustParseCycleStartPolicyDay(t, "2026-03-13")
 	user := &models.User{LastPeriodStart: &userLastPeriod}
