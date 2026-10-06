@@ -345,7 +345,15 @@ func (service *SettingsService) SaveCycleSettings(ctx context.Context, userID ui
 				// days, which is the phantom cycle this path exists to prevent.
 				return errPeriodStartMoveUnsupported
 			}
-			return mover.UpdateCycleSettingsMovingPeriodStart(ctx, userID, updates, move)
+			// The mover gets a copy: the map UpdateByID receives below is then
+			// handed to no other call, so its key set stays the literal one built
+			// above, which TestNoUpdateByIDCallerPassesPasswordHashWithoutABump
+			// proves free of password_hash.
+			columns := make(map[string]any, len(updates))
+			for column, value := range updates {
+				columns[column] = value
+			}
+			return mover.UpdateCycleSettingsMovingPeriodStart(ctx, userID, columns, move)
 		}
 	}
 	return service.users.UpdateByID(ctx, userID, updates)
