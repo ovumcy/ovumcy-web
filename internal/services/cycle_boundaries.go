@@ -41,10 +41,13 @@ func boundaryContextForStart(lastPeriodStart *time.Time, today time.Time) Bounda
 }
 
 // OnboardingBoundaryDay is the calendar day the owner's stored start occupies as
-// a cycle boundary (a UTC-midnight date-only value), zero when it is absent or
-// dated after Today. It is the single reading of users.last_period_start the
-// calendar uses to paint that day as recorded.
-func OnboardingBoundaryDay(ctx BoundaryContext) time.Time {
+// a cycle boundary (a UTC-midnight date-only value). It is zero when the start
+// is absent, dated after Today, or un-marked: a day logged on that date that is
+// not a period day is the owner's newer word about it, so the stored start no
+// longer opens a cycle there. It is the single reading of
+// users.last_period_start — the boundary rule, the calendar's recorded cell and
+// the out-of-date anchor all read it here.
+func OnboardingBoundaryDay(logs []models.DailyLog, ctx BoundaryContext) time.Time {
 	if ctx.OnboardingStart.IsZero() {
 		return time.Time{}
 	}
@@ -52,7 +55,26 @@ func OnboardingBoundaryDay(ctx BoundaryContext) time.Time {
 	if !ctx.Today.IsZero() && CalendarDaysBetween(ctx.Today, day) > 0 {
 		return time.Time{}
 	}
+	if dayLoggedWithoutPeriod(logs, day) {
+		return time.Time{}
+	}
 	return day
+}
+
+// dayLoggedWithoutPeriod reports whether day carries a log and none of its
+// entries is a period day.
+func dayLoggedWithoutPeriod(logs []models.DailyLog, day time.Time) bool {
+	logged := false
+	for _, logEntry := range logs {
+		if !dateOnly(logEntry.Date).Equal(day) {
+			continue
+		}
+		if logEntry.IsPeriod {
+			return false
+		}
+		logged = true
+	}
+	return logged
 }
 
 // periodDay is one calendar day that counts toward a bleeding episode.
@@ -108,7 +130,7 @@ func isSpottingDay(logEntry models.DailyLog) bool {
 // cycle, and is not clipped to Today: callers bound the logs they pass.
 func CycleBoundaries(logs []models.DailyLog, ctx BoundaryContext) []time.Time {
 	days := periodDaysOf(logs)
-	if onboarding := OnboardingBoundaryDay(ctx); !onboarding.IsZero() {
+	if onboarding := OnboardingBoundaryDay(logs, ctx); !onboarding.IsZero() {
 		days = insertPeriodDay(days, periodDay{day: onboarding, explicit: true})
 	}
 

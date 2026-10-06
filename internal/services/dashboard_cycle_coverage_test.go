@@ -171,8 +171,28 @@ func TestDashboardCycleDataLooksStaleBoundary(t *testing.T) {
 // Mutations targeting user==nil check, user.LastPeriodStart==nil, or IsZero().
 // ---------------------------------------------------------------------------
 
+// TestDashboardCycleStaleAnchorDropsTheOnboardingStartTheRuleDrops pins the
+// fallback to the boundary rule's reading of the stored start: one dated after
+// the owner's today, or un-marked by a non-period log on its day, is no anchor
+// here either.
+func TestDashboardCycleStaleAnchorDropsTheOnboardingStartTheRuleDrops(t *testing.T) {
+	today := mustParseDashboardDay(t, "2026-10-06")
+	future := mustParseDashboardDay(t, "2026-10-08")
+	if anchor := DashboardCycleStaleAnchor(&models.User{LastPeriodStart: &future}, nil, CycleStats{}, today, time.UTC); !anchor.IsZero() {
+		t.Fatalf("a start after today anchored the out-of-date verdict at %s", anchor.Format("2006-01-02"))
+	}
+	past := mustParseDashboardDay(t, "2026-09-10")
+	unmarked := []models.DailyLog{{Date: past, IsPeriod: false, Mood: 3}}
+	if anchor := DashboardCycleStaleAnchor(&models.User{LastPeriodStart: &past}, unmarked, CycleStats{}, today, time.UTC); !anchor.IsZero() {
+		t.Fatalf("an un-marked start anchored the out-of-date verdict at %s", anchor.Format("2006-01-02"))
+	}
+	if anchor := DashboardCycleStaleAnchor(&models.User{LastPeriodStart: &past}, nil, CycleStats{}, today, time.UTC); anchor.Format("2006-01-02") != "2026-09-10" {
+		t.Fatalf("fixture: an unlogged past start must anchor, got %v", anchor)
+	}
+}
+
 func TestDashboardCycleStaleAnchorNilUserWithEmptyStatsReturnsZero(t *testing.T) {
-	anchor := DashboardCycleStaleAnchor(nil, CycleStats{}, time.UTC)
+	anchor := DashboardCycleStaleAnchor(nil, nil, CycleStats{}, time.Time{}, time.UTC)
 	if !anchor.IsZero() {
 		t.Fatalf("expected zero time for nil user and empty stats, got %v", anchor)
 	}
@@ -180,7 +200,7 @@ func TestDashboardCycleStaleAnchorNilUserWithEmptyStatsReturnsZero(t *testing.T)
 
 func TestDashboardCycleStaleAnchorNonNilUserNilLastPeriodStartReturnsZero(t *testing.T) {
 	user := &models.User{LastPeriodStart: nil}
-	anchor := DashboardCycleStaleAnchor(user, CycleStats{}, time.UTC)
+	anchor := DashboardCycleStaleAnchor(user, nil, CycleStats{}, time.Time{}, time.UTC)
 	if !anchor.IsZero() {
 		t.Fatalf("expected zero time when user.LastPeriodStart is nil, got %v", anchor)
 	}
@@ -189,7 +209,7 @@ func TestDashboardCycleStaleAnchorNonNilUserNilLastPeriodStartReturnsZero(t *tes
 func TestDashboardCycleStaleAnchorUserLastPeriodStartUsedWhenStatsEmpty(t *testing.T) {
 	lps := mustParseDashboardDay(t, "2026-02-15")
 	user := &models.User{LastPeriodStart: &lps}
-	anchor := DashboardCycleStaleAnchor(user, CycleStats{}, time.UTC)
+	anchor := DashboardCycleStaleAnchor(user, nil, CycleStats{}, time.Time{}, time.UTC)
 	if got := anchor.Format("2006-01-02"); got != "2026-02-15" {
 		t.Fatalf("expected 2026-02-15 from user.LastPeriodStart, got %s", got)
 	}

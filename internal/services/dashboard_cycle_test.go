@@ -22,7 +22,7 @@ func TestDashboardCycleStaleAnchorPrefersStatsBaseline(t *testing.T) {
 	user := &models.User{LastPeriodStart: &userBaseline}
 	stats := CycleStats{LastPeriodStart: statsBaseline}
 
-	anchor := DashboardCycleStaleAnchor(user, stats, time.UTC)
+	anchor := DashboardCycleStaleAnchor(user, nil, stats, time.Time{}, time.UTC)
 	if anchor.Format("2006-01-02") != "2026-02-20" {
 		t.Fatalf("expected stats baseline date, got %s", anchor.Format("2006-01-02"))
 	}

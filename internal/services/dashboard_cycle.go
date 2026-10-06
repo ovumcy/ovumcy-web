@@ -446,13 +446,17 @@ func DashboardCycleDataLooksStale(lastPeriodStart time.Time, today time.Time, re
 	return rawCycleDay > referenceLength
 }
 
-func DashboardCycleStaleAnchor(user *models.User, stats CycleStats, location *time.Location) time.Time {
+// DashboardCycleStaleAnchor is the start the out-of-date verdict measures from.
+// today is the owner's local today: the fallback reads the stored onboarding
+// start through the boundary rule's own reading, so a start dated after today,
+// or one the owner un-marked in logs, is dropped here as everywhere else.
+func DashboardCycleStaleAnchor(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) time.Time {
 	if !stats.LastPeriodStart.IsZero() {
 		return CalendarDay(stats.LastPeriodStart, location)
 	}
 	// Stats carry no anchor: the stored onboarding start is the only boundary
 	// left, read through the boundary rule's own reading of it.
-	if day := OnboardingBoundaryDay(BoundaryContextFor(user, time.Time{})); !day.IsZero() {
+	if day := OnboardingBoundaryDay(logs, BoundaryContextFor(user, today)); !day.IsZero() {
 		return CalendarDay(day, location)
 	}
 	return time.Time{}
@@ -474,11 +478,11 @@ func DashboardCycleStaleAnchor(user *models.User, stats CycleStats, location *ti
 // never measures a longer length than this one (dashboardCycleOverdueLength), so
 // the days on which the banner stands beside a published date number seven at
 // most, as they always did.
-func dashboardCycleDataStale(user *models.User, stats CycleStats, today time.Time, location *time.Location) bool {
+func dashboardCycleDataStale(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) bool {
 	if stats.PregnancyPaused || DashboardPredictionDisabled(user) {
 		return false
 	}
-	return DashboardCycleDataLooksStale(DashboardCycleStaleAnchor(user, stats, location), today, DashboardCycleReferenceLength(user, stats))
+	return DashboardCycleDataLooksStale(DashboardCycleStaleAnchor(user, logs, stats, today, location), today, DashboardCycleReferenceLength(user, stats))
 }
 
 // dashboardPredictionRegularSpan returns the half-width, in days, of the
@@ -676,7 +680,7 @@ func BuildDashboardCycleContext(user *models.User, logs []models.DailyLog, stats
 	// owner's own temperatures named, not a projection, and it is still named
 	// beside the paused estimate (ConfirmedOvulationWithheld).
 	cycleDayWarning := DashboardCycleOverdue(user, stats)
-	cycleDataStale := dashboardCycleDataStale(user, stats, today, location)
+	cycleDataStale := dashboardCycleDataStale(user, logs, stats, today, location)
 	display := buildDashboardPredictionDisplay(user, logs, stats, today, location)
 
 	return DashboardCycleContext{
