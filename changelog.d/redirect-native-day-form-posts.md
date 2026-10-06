@@ -11,3 +11,6 @@ and in the interface language. The same holds for a refused sign-in, registratio
 password-recovery or two-factor form and a refused language switch: the same
 status, message and link back, shown as a full page instead of a bare fragment.
 htmx requests and JSON API clients keep their status and the same body as before.
+Every such page carries the app's usual security headers, including the refusal of
+a form body over the upload limit, and a return address longer than 2048 bytes is
+dropped for the default destination rather than echoed back.
