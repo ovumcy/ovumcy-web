@@ -354,6 +354,10 @@ func (stub *stubSettingsUserRepo) UpdateByID(context.Context, uint, map[string]a
 	return nil
 }
 
+func (stub *stubSettingsUserRepo) UpdateCycleSettingsMovingPeriodStart(context.Context, uint, map[string]any, models.PeriodStartMove) error {
+	return nil
+}
+
 func (stub *stubSettingsUserRepo) LoadSettingsByID(context.Context, uint) (models.User, error) {
 	return models.User{}, nil
 }
