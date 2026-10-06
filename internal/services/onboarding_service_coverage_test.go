@@ -358,7 +358,7 @@ func TestOnboardingServiceCompleteOnboardingForUserPropagatesRepoFindError(t *te
 	repo := &stubOnboardingRepo{findErr: sentinel}
 	svc := NewOnboardingService(repo)
 
-	_, err := svc.CompleteOnboardingForUser(context.Background(), 1, time.UTC)
+	_, err := svc.CompleteOnboardingForUser(context.Background(), 1, time.Now(), time.UTC)
 	if !errors.Is(err, sentinel) {
 		t.Fatalf("expected sentinel error from FindByID, got %v", err)
 	}

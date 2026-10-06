@@ -140,8 +140,8 @@ test.describe('Dashboard: fertility badge', () => {
     page,
   }) => {
     // Register and onboard. The default onboarding helper sets
-    // last_period_start to today-3 and period_length=5, so auto_period_fill
-    // creates period days from today-3 up to at most today+1. A period cannot
+    // last_period_start to today-3 and period_length=5; auto_period_fill stops
+    // at today, so it creates period days today-3 .. today. A period cannot
     // be recorded past today+2, and the streak is counted backward from the
     // saved day, so the run is first extended backward to today-6 and the
     // threshold is then crossed by saving forward up to today+2.

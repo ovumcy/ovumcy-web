@@ -82,7 +82,7 @@ func (handler *Handler) OnboardingStep2(c fiber.Ctx) error {
 	if err != nil {
 		return handler.failMutation(c, onboardingCycleMutation, onboardingSaveStepErrorSpec())
 	}
-	if _, err := handler.onboardingSvc.CompleteOnboardingForUser(c.Context(), user.ID, location); err != nil {
+	if _, err := handler.onboardingSvc.CompleteOnboardingForUser(c.Context(), user.ID, handler.clockNow(), location); err != nil {
 		if errors.Is(err, services.ErrOnboardingStepsRequired) {
 			// The step-2 columns are persisted at this point; only the completion
 			// (which seeds the first period's day entries) did not run, so the

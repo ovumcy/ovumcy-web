@@ -41,7 +41,7 @@ func TestOnboardingServiceScopesEveryWriteToTheCallingOwner(t *testing.T) {
 	if _, _, err := service.SaveStep2(context.Background(), ownerB.ID, 31, 6, true, true, models.UsageGoalAvoid); err != nil {
 		t.Fatalf("SaveStep2() unexpected error: %v", err)
 	}
-	startDay, err := service.CompleteOnboardingForUser(context.Background(), ownerB.ID, time.UTC)
+	startDay, err := service.CompleteOnboardingForUser(context.Background(), ownerB.ID, time.Now(), time.UTC)
 	if err != nil {
 		t.Fatalf("CompleteOnboardingForUser() unexpected error: %v", err)
 	}

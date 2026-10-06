@@ -16,13 +16,13 @@ import (
 const onboardingFixtureUserID = uint(42)
 
 type stubOnboardingRepo struct {
-	user              models.User
-	findErr           error
-	completeErr       error
-	completeCalled    bool
-	completeStartDay  time.Time
-	completePeriodLen int
-	completeAutoFill  bool
+	user               models.User
+	findErr            error
+	completeErr        error
+	completeCalled     bool
+	completeStartDay   time.Time
+	completeFillEndDay time.Time
+	completeAutoFill   bool
 	// The four ids below record which owner each call was scoped to. The stub
 	// serves a single embedded user, so no other assertion in this file can
 	// observe the service resolving or writing the wrong account. Every method
@@ -55,11 +55,11 @@ func (stub *stubOnboardingRepo) SaveOnboardingStep2(_ context.Context, userID ui
 	return nil
 }
 
-func (stub *stubOnboardingRepo) CompleteOnboarding(ctx context.Context, userID uint, startDay time.Time, periodLength int, autoPeriodFill bool) error {
+func (stub *stubOnboardingRepo) CompleteOnboarding(ctx context.Context, userID uint, startDay time.Time, fillEndDay time.Time, autoPeriodFill bool) error {
 	stub.completeCalled = true
 	stub.completeUserID = userID
 	stub.completeStartDay = startDay
-	stub.completePeriodLen = periodLength
+	stub.completeFillEndDay = fillEndDay
 	stub.completeAutoFill = autoPeriodFill
 	return stub.completeErr
 }
@@ -75,7 +75,7 @@ func TestCompleteOnboardingForUserRequiresStep1Date(t *testing.T) {
 	repo := &stubOnboardingRepo{user: models.User{}}
 	service := NewOnboardingService(repo)
 
-	_, err := service.CompleteOnboardingForUser(context.Background(), onboardingFixtureUserID, time.UTC)
+	_, err := service.CompleteOnboardingForUser(context.Background(), onboardingFixtureUserID, time.Now(), time.UTC)
 	if !errors.Is(err, ErrOnboardingStepsRequired) {
 		t.Fatalf("expected ErrOnboardingStepsRequired, got %v", err)
 	}
@@ -120,7 +120,9 @@ func TestCompleteOnboardingForUserNormalizesDateAndPeriod(t *testing.T) {
 	}
 	service := NewOnboardingService(repo)
 
-	startDay, err := service.CompleteOnboardingForUser(context.Background(), onboardingFixtureUserID, location)
+	// Well past the period's end, so the fill bound is the sanitized length.
+	now := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+	startDay, err := service.CompleteOnboardingForUser(context.Background(), onboardingFixtureUserID, now, location)
 	if err != nil {
 		t.Fatalf("CompleteOnboardingForUser() unexpected error: %v", err)
 	}
@@ -133,8 +135,11 @@ func TestCompleteOnboardingForUserNormalizesDateAndPeriod(t *testing.T) {
 	if repo.completeUserID != onboardingFixtureUserID {
 		t.Fatalf("expected completion to be written for owner %d, got %d", onboardingFixtureUserID, repo.completeUserID)
 	}
-	if repo.completePeriodLen != 12 {
-		t.Fatalf("expected sanitized period length 12, got %d", repo.completePeriodLen)
+	// Sanitized period length 12 from 2026-02-10: the fill ends on 2026-02-21,
+	// handed over as the UTC midnight the repository iterates.
+	wantFillEnd := time.Date(2026, 2, 21, 0, 0, 0, 0, time.UTC)
+	if !repo.completeFillEndDay.Equal(wantFillEnd) || repo.completeFillEndDay.Location() != time.UTC {
+		t.Fatalf("expected fill end %s (sanitized period length 12), got %s", wantFillEnd.Format(time.RFC3339), repo.completeFillEndDay.Format(time.RFC3339))
 	}
 	if !repo.completeAutoFill {
 		t.Fatal("expected auto_period_fill to be forwarded to onboarding completion")

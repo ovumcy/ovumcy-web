@@ -123,7 +123,8 @@ func TestUserRepositoryCreateUserWithSymptomsRollsBackOnSeedFailure(t *testing.T
 func TestUserRepositoryCompleteOnboardingRefusesZeroOwner(t *testing.T) {
 	repo := openRegistrationRepositoryForTest(t)
 
-	err := repo.CompleteOnboarding(context.Background(), 0, time.Now().UTC(), 5, false)
+	today := time.Now().UTC()
+	err := repo.CompleteOnboarding(context.Background(), 0, today, today.AddDate(0, 0, 4), false)
 	if !errors.Is(err, ErrUserOwnerRequired) {
 		t.Fatalf("expected ErrUserOwnerRequired, got %v", err)
 	}
@@ -143,7 +144,7 @@ func TestUserRepositoryCompleteOnboardingMarksAnExistingDayAsPeriod(t *testing.T
 	ctx := context.Background()
 	ownerID, startDay, dayID := seedOnboardingOwnerWithExistingDay(t, repo)
 
-	if err := repo.CompleteOnboarding(ctx, ownerID, startDay, 1, true); err != nil {
+	if err := repo.CompleteOnboarding(ctx, ownerID, startDay, startDay, true); err != nil {
 		t.Fatalf("complete onboarding: %v", err)
 	}
 
@@ -174,7 +175,7 @@ func TestUserRepositoryCompleteOnboardingUpdateIsScopedByOwner(t *testing.T) {
 		t.Fatalf("register update callback: %v", err)
 	}
 
-	if err := repo.CompleteOnboarding(context.Background(), ownerID, startDay, 1, true); err != nil {
+	if err := repo.CompleteOnboarding(context.Background(), ownerID, startDay, startDay, true); err != nil {
 		t.Fatalf("complete onboarding: %v", err)
 	}
 

@@ -1828,7 +1828,12 @@ func (repo *UserRepository) DeleteAccountAndRelatedData(ctx context.Context, use
 	return nil
 }
 
-func (repo *UserRepository) CompleteOnboarding(ctx context.Context, userID uint, startDay time.Time, periodLength int, autoPeriodFill bool) error {
+// CompleteOnboarding records the onboarding baseline and, when autoPeriodFill
+// is on, marks startDay through fillEndDay (both inclusive, UTC-midnight
+// calendar days) as period days. The caller decides fillEndDay — the period's
+// last day or the owner's local today, whichever comes first — so the bound by
+// today is not computed here; an end before startDay writes no day at all.
+func (repo *UserRepository) CompleteOnboarding(ctx context.Context, userID uint, startDay time.Time, fillEndDay time.Time, autoPeriodFill bool) error {
 	// Checked up front, before any DailyLog write runs inside the
 	// transaction below: letting a zero id reach those writes first would
 	// create owner-less daily-log rows before the users UPDATE ever refused
@@ -1836,17 +1841,10 @@ func (repo *UserRepository) CompleteOnboarding(ctx context.Context, userID uint,
 	if err := requireUserOwnerID(userID); err != nil {
 		return err
 	}
-	if periodLength <= 0 {
-		return errors.New("invalid period length")
-	}
-	endDay := startDay.AddDate(0, 0, periodLength-1)
-	if endDay.Before(startDay) {
-		return errors.New("invalid onboarding range")
-	}
 
 	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if autoPeriodFill {
-			for cursor := startDay; !cursor.After(endDay); cursor = cursor.AddDate(0, 0, 1) {
+			for cursor := startDay; !cursor.After(fillEndDay); cursor = cursor.AddDate(0, 0, 1) {
 				dayStart := cursor
 				dayEnd := dayStart.AddDate(0, 0, 1)
 
