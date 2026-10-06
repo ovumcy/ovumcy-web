@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -95,6 +96,33 @@ func TestExportImportRoundTripKeepsTheOnboardingStartAndTheDayCount(t *testing.T
 	}
 	if legacy.LastPeriodStart != nil {
 		t.Fatalf("legacy import set last_period_start = %v, want none", legacy.LastPeriodStart)
+	}
+}
+
+// failingSettingsUsers is the real users repository with its settings read
+// broken, so the restore of the onboarding start is the step that fails.
+type failingSettingsUsers struct {
+	DayUserRepository
+}
+
+func (failingSettingsUsers) LoadSettingsByID(context.Context, uint) (models.User, error) {
+	return models.User{}, errors.New("settings read failed")
+}
+
+// TestImportJSONReportsAFailedOnboardingStartRestore: a restore that cannot put
+// the onboarding start back reports a write failure instead of a success whose
+// account quietly lacks a cycle boundary.
+func TestImportJSONReportsAFailedOnboardingStartRestore(t *testing.T) {
+	_, database := newDayServiceIntegration(t)
+	repositories := db.NewRepositories(database)
+	symptomService := NewSymptomService(repositories.Symptoms)
+	working := newImportServiceIntegration(t, database, symptomService)
+	service := NewImportService(working.logs, failingSettingsUsers{DayUserRepository: repositories.Users}, symptomService, working.runInTx)
+
+	target := createDayServiceTestUser(t, database, "onboarding-restore-failure@example.com")
+	payload := []byte(`{"last_period_start":"2026-03-01","entries":[{"date":"2026-03-20","period":true,"flow":"medium","cycle_factors":[]}]}`)
+	if _, err := service.ImportJSON(context.Background(), target.ID, payload, time.UTC); !errors.Is(err, ErrImportWriteFailed) {
+		t.Fatalf("ImportJSON err = %v, want ErrImportWriteFailed", err)
 	}
 }
 
