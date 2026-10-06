@@ -4585,6 +4585,9 @@
           runDashboardAutosave(form);
         }, 2000);
       }
+      // An edit that held the page across midnight has landed on the day the
+      // page shows; with nothing left outstanding, move to the new day.
+      reloadDashboardOnNewDay();
     });
 
     return form.__ovumcyAutosaveInFlight;
@@ -4844,6 +4847,77 @@
     sendKeepaliveOnPageHide(request);
   }
 
+  // The dashboard is today's page: every day URL on it — the autosave PUT, the
+  // clear and undo DELETEs, the cycle-start toggle — names the date the server
+  // rendered it for. Left open across the owner's midnight, it would go on
+  // writing the new day's entries into yesterday with nothing on screen saying
+  // so. The local date the page opened on is noted, and once the clock has
+  // moved past it the page reloads, which re-renders every one of those URLs
+  // for the new day at once.
+  //
+  // The reload waits for anything outstanding: an edit that is dirty, on the
+  // wire or refused stays on screen, is saved to the day the page shows, and
+  // the reload follows that save. Typed text is never dropped for it.
+  var DASHBOARD_DAY_CHECK_INTERVAL_MS = 60000;
+  var dashboardOpenedOnDay = "";
+  var dashboardDayReloadStarted = false;
+
+  // The browser's own zone is the one the timezone header and cookie report,
+  // so the server's "today" for this page moves when this key does. Only a
+  // change is read, never a comparison with the rendered date.
+  function dashboardLocalDayKey() {
+    var now = new Date();
+    return String(now.getFullYear()) + "-" + String(now.getMonth() + 1) + "-" + String(now.getDate());
+  }
+
+  function dashboardHoldsOutstandingWork() {
+    var forms = document.querySelectorAll("[data-dashboard-save-form]");
+    for (var index = 0; index < forms.length; index++) {
+      var form = forms[index];
+      if (
+        form.dataset.autosaveDirty === "true" ||
+        form.__ovumcyAutosaveInFlight ||
+        form.__ovumcyDaySaveInFlight ||
+        form.__ovumcyAutosaveFailed
+      ) {
+        return true;
+      }
+    }
+    // Any other request on the page (cycle start, clear today) is still
+    // running while htmx keeps its request class on the element.
+    return !!document.querySelector(".htmx-request");
+  }
+
+  function reloadDashboardOnNewDay() {
+    if (dashboardDayReloadStarted || !dashboardOpenedOnDay) {
+      return false;
+    }
+    if (dashboardLocalDayKey() === dashboardOpenedOnDay || dashboardHoldsOutstandingWork()) {
+      return false;
+    }
+    dashboardDayReloadStarted = true;
+    window.location.reload();
+    return true;
+  }
+
+  function bindDashboardDayRollover() {
+    if (dashboardOpenedOnDay) {
+      return;
+    }
+    dashboardOpenedOnDay = dashboardLocalDayKey();
+
+    // A page in view is checked on a clock; a page coming back from the
+    // background, a sleeping laptop or the back/forward cache is checked the
+    // moment it is shown again.
+    window.setInterval(reloadDashboardOnNewDay, DASHBOARD_DAY_CHECK_INTERVAL_MS);
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState !== "hidden") {
+        reloadDashboardOnNewDay();
+      }
+    });
+    window.addEventListener("pageshow", reloadDashboardOnNewDay);
+  }
+
   function bindDashboardAutosaveBeforeUnload() {
     if (document.body && document.body.dataset.dashboardAutosaveBeforeUnloadBound === "1") {
       return;
@@ -5026,6 +5100,12 @@
             clearDashboardAutosaveTimers(this);
           });
         }
+
+        // Reaching for a field is the last moment the page can move to the
+        // new day before something is typed into the old one.
+        root.addEventListener("focusin", function () {
+          reloadDashboardOnNewDay();
+        });
       }
 
       bindNoteDisclosures(root);
@@ -5037,6 +5117,9 @@
       setDashboardAutosaveIndicator(form, "idle");
     }
 
+    if (roots.length > 0) {
+      bindDashboardDayRollover();
+    }
     bindDashboardAutosaveBeforeUnload();
   }
 
