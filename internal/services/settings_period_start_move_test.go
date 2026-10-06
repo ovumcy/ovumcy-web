@@ -98,18 +98,20 @@ func TestSettingsStartMoveLeavesNoPhantomCycle(t *testing.T) {
 // TestSettingsStartMoveKeepsADayTheOwnerTouched: a fill day the owner edited is
 // the owner's data, not the fill's, and survives the move. The clear walks from
 // the old start and stops there, as un-ticking an auto-filled period does: the
-// fill day before it goes, the days after it stay.
+// fill days before it go, the days after it stay. The touched day is the third
+// of the fill: the two before it are the cohort the move needs to see before it
+// clears anything (oldStartFillRun).
 func TestSettingsStartMoveKeepsADayTheOwnerTouched(t *testing.T) {
-	touched := startMoveDay(time.October, 4)
+	touched := startMoveDay(time.October, 5)
 	_, logs := startMoveFixture(t, "start-move-touched@example.com", func(t *testing.T, repositories *db.Repositories, userID uint) {
 		t.Helper()
 		entry, found, err := repositories.DailyLogs.FindByUserAndDayRange(context.Background(), userID, touched, touched.AddDate(0, 0, 1))
 		if err != nil || !found {
-			t.Fatalf("fixture: onboarding wrote no 10-04 row (found=%v err=%v)", found, err)
+			t.Fatalf("fixture: onboarding wrote no 10-05 row (found=%v err=%v)", found, err)
 		}
 		entry.Mood = 3
 		if err := repositories.DailyLogs.Save(context.Background(), &entry); err != nil {
-			t.Fatalf("touch 10-04: %v", err)
+			t.Fatalf("touch 10-05: %v", err)
 		}
 	})
 
@@ -117,13 +119,13 @@ func TestSettingsStartMoveKeepsADayTheOwnerTouched(t *testing.T) {
 	for index := range logs {
 		day := logs[index].Date.UTC().Format("2006-01-02")
 		switch day {
-		case "2026-10-04":
+		case "2026-10-05":
 			kept = &logs[index]
-		case "2026-10-03":
+		case "2026-10-03", "2026-10-04":
 			t.Errorf("untouched fill day %s, before the touched one, survived the move", day)
 		}
 	}
-	for _, day := range []string{"2026-10-05", "2026-10-06", "2026-10-07"} {
+	for _, day := range []string{"2026-10-06", "2026-10-07"} {
 		if !startMoveHasPeriodDay(logs, day) {
 			t.Errorf("fill day %s past the touched one was deleted: the clear must stop at the first day the owner edited", day)
 		}

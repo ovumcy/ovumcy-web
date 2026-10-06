@@ -437,6 +437,13 @@ func planPeriodStartMove(stored models.User, settings CycleSettingsUpdate, clear
 //     by hand — before or after turning auto-fill on, or past a period length
 //     changed since onboarding — is never mistaken for the fill.
 //
+// A cohort is only proven by two rows sharing the stamp: unless the old start
+// and the day after it are both walked, nothing is returned. One bare period
+// row alone is indistinguishable from a hand tick on the start date, and fills
+// written before one write stamped its whole range carry a distinct stamp per
+// row — both are left in place. A period length of 1 is therefore never
+// cleared.
+//
 // A day in keep (the new start and its fill range) is walked over but not
 // returned: the move would write it again.
 func oldStartFillRun(entries []models.DailyLog, oldStart time.Time, span int, keep map[string]bool) []models.DailyLog {
@@ -449,6 +456,7 @@ func oldStartFillRun(entries []models.DailyLog, oldStart time.Time, span int, ke
 	}
 	var cohort time.Time
 	var run []models.DailyLog
+	walked := 0
 	for offset := range span {
 		key := CalendarDayKey(oldStart.AddDate(0, 0, offset))
 		entry, found := byDay[key]
@@ -460,9 +468,13 @@ func oldStartFillRun(entries []models.DailyLog, oldStart time.Time, span int, ke
 		} else if !entry.CreatedAt.Equal(cohort) {
 			break
 		}
+		walked++
 		if !keep[key] {
 			run = append(run, entry)
 		}
+	}
+	if walked < 2 {
+		return nil
 	}
 	return run
 }
