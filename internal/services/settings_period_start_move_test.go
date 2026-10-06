@@ -23,6 +23,14 @@ func startMoveDay(month time.Month, day int) time.Time {
 // 2026-09-06 in Settings. It returns the reloaded owner and logs.
 func startMoveFixture(t *testing.T, email string, touch func(*testing.T, *db.Repositories, uint)) (models.User, []models.DailyLog) {
 	t.Helper()
+	return startMoveFixtureAt(t, email, startMoveDay(time.October, 3), startMoveDay(time.September, 6), touch)
+}
+
+// startMoveFixtureAt is startMoveFixture with the onboarding and the new start
+// chosen by the caller. The settings service reads the logs through the day
+// service, as bootstrap wires it.
+func startMoveFixtureAt(t *testing.T, email string, onboarded time.Time, moved time.Time, touch func(*testing.T, *db.Repositories, uint)) (models.User, []models.DailyLog) {
+	t.Helper()
 	ctx := context.Background()
 	_, database := newDayServiceIntegration(t)
 	repositories := db.NewRepositories(database)
@@ -30,16 +38,17 @@ func startMoveFixture(t *testing.T, email string, touch func(*testing.T, *db.Rep
 	if err := repositories.Users.UpdateByID(ctx, user.ID, map[string]any{"auto_period_fill": true}); err != nil {
 		t.Fatalf("enable auto-fill: %v", err)
 	}
-	if err := repositories.Users.CompleteOnboarding(ctx, user.ID, startMoveDay(time.October, 3), startMoveDay(time.October, 7), true); err != nil {
+	if err := repositories.Users.CompleteOnboarding(ctx, user.ID, onboarded, onboarded.AddDate(0, 0, 4), true); err != nil {
 		t.Fatalf("complete onboarding: %v", err)
 	}
 	if touch != nil {
 		touch(t, repositories, user.ID)
 	}
 
-	moved := startMoveDay(time.September, 6)
 	update := CycleSettingsUpdate{LastPeriodStartSet: true, LastPeriodStart: &moved}
-	if err := NewSettingsService(repositories.Users).SaveCycleSettings(ctx, user.ID, update); err != nil {
+	settings := NewSettingsService(repositories.Users)
+	settings.AttachDayLogReader(NewDayService(repositories.DailyLogs, repositories.Users))
+	if err := settings.SaveCycleSettings(ctx, user.ID, update); err != nil {
 		t.Fatalf("SaveCycleSettings: %v", err)
 	}
 
@@ -114,5 +123,59 @@ func TestSettingsStartMoveKeepsADayTheOwnerTouched(t *testing.T) {
 	}
 	if kept == nil || kept.Mood != 3 || !kept.IsPeriod {
 		t.Fatalf("the touched day did not survive as the owner left it: %+v (logged %v)", kept, startMoveLoggedDays(logs))
+	}
+}
+
+func startMoveHasPeriodDay(logs []models.DailyLog, day string) bool {
+	for _, logEntry := range logs {
+		if logEntry.Date.UTC().Format("2006-01-02") == day && logEntry.IsPeriod {
+			return true
+		}
+	}
+	return false
+}
+
+// TestSettingsStartMoveAShortestCycleLaterKeepsTheOldDays: a start moved later
+// by at least the shortest cycle onboarding accepts is a new period, not a
+// correction of the old one, so the old start's fill days stay recorded. One
+// day short of that bound is still a correction and takes them along.
+func TestSettingsStartMoveAShortestCycleLaterKeepsTheOldDays(t *testing.T) {
+	onboarded := startMoveDay(time.September, 6)
+	later := onboarded.AddDate(0, 0, MinOnboardingCycleLength)
+	stored, logs := startMoveFixtureAt(t, "start-move-later@example.com", onboarded, later, nil)
+	if stored.LastPeriodStart == nil || !stored.LastPeriodStart.Equal(later) {
+		t.Fatalf("stored start = %v, want %s", stored.LastPeriodStart, later.Format("2006-01-02"))
+	}
+	for _, day := range []string{"2026-09-06", "2026-09-10", "2026-09-21"} {
+		if !startMoveHasPeriodDay(logs, day) {
+			t.Fatalf("period day %s missing after a move a shortest cycle later: logged %v", day, startMoveLoggedDays(logs))
+		}
+	}
+
+	_, logs = startMoveFixtureAt(t, "start-move-later-short@example.com", onboarded, later.AddDate(0, 0, -1), nil)
+	if startMoveHasPeriodDay(logs, "2026-09-06") {
+		t.Fatalf("a move one day short of the bound kept the old start's fill: logged %v", startMoveLoggedDays(logs))
+	}
+}
+
+// TestSettingsStartMoveKeepsTheOldDaysOnceALaterCycleIsLogged: once the owner
+// logged a cycle after the old start, the old start no longer opens the newest
+// cycle; moving it rewrites history the later cycle is measured from, so its
+// fill days stay.
+func TestSettingsStartMoveKeepsTheOldDaysOnceALaterCycleIsLogged(t *testing.T) {
+	onboarded := startMoveDay(time.September, 6)
+	_, logs := startMoveFixtureAt(t, "start-move-later-cycle@example.com", onboarded, startMoveDay(time.September, 1), func(t *testing.T, repositories *db.Repositories, userID uint) {
+		t.Helper()
+		for _, day := range []time.Time{startMoveDay(time.October, 1), startMoveDay(time.October, 2)} {
+			entry := models.DailyLog{UserID: userID, Date: day, IsPeriod: true, Flow: models.FlowMedium}
+			if err := repositories.DailyLogs.Create(context.Background(), &entry); err != nil {
+				t.Fatalf("log %s: %v", day.Format("2006-01-02"), err)
+			}
+		}
+	})
+	for _, day := range []string{"2026-09-01", "2026-09-06", "2026-09-10", "2026-10-01"} {
+		if !startMoveHasPeriodDay(logs, day) {
+			t.Fatalf("period day %s missing after the move: logged %v", day, startMoveLoggedDays(logs))
+		}
 	}
 }

@@ -146,6 +146,9 @@ func BuildDependencies(repositories *db.Repositories, secretKey []byte, i18nMana
 	exportService := services.NewExportService(dayService, symptomService)
 	importService := services.NewImportService(dailyLogs, repositories.Users, symptomService, dayLogTxRunner)
 	settingsService := services.NewSettingsService(repositories.Users)
+	// A Settings start move removes the old start's fill days only while the
+	// owner's logs still show it opening the newest cycle.
+	settingsService.AttachDayLogReader(dayService)
 	// Attach the shared limiter and the secret key so the re-auth budget keys on
 	// (client, account) like the other auth policies rather than on the client
 	// alone. The budget itself is not operator-tunable: unlike the edge limiters
