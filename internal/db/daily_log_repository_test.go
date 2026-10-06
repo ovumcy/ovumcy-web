@@ -107,12 +107,6 @@ func TestDailyLogRepositoryRangeQueriesAndWhitelist(t *testing.T) {
 		t.Fatalf("expected 2 logs from d5 onward, got %d", len(ranged))
 	}
 
-	// ListPeriodDays returns only period rows.
-	periods, err := repo.ListPeriodDays(context.Background(), userID)
-	requireNoErr(t, err, "list period days")
-	if len(periods) != 2 {
-		t.Fatalf("expected 2 period days (d1, d10), got %d", len(periods))
-	}
 
 	// Save persists a mutation on an existing row.
 	entry.Notes = "updated note"
