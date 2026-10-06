@@ -25,6 +25,10 @@
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
     <input type="hidden" name="_method" value="PUT">
     <input type="hidden" name="source" value="calendar">
+    {{/* The period box below is ticked from the stored onboarding start, not
+         from a saved row: posting this back lets an un-tick withdraw that start
+         while a save that keeps the tick, or adds a mood, leaves it. */}}
+    {{if .PeriodFromStoredStart}}<input type="hidden" name="period_from_stored_start" value="true">{{end}}
     <input type="hidden" name="ack_period_tip" value="false" data-period-tip-ack>
 
     <label class="period-toggle" data-binary-toggle data-active="{{if .Log.IsPeriod}}true{{else}}false{{end}}">

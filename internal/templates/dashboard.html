@@ -333,6 +333,10 @@
         data-day-save-retry-label="{{t .Messages "daylog.save_retry"}}">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <input type="hidden" name="_method" value="PUT">
+        {{/* The period toggle is ticked from the stored onboarding start, not
+             from a saved row: posting this back (autosave included) lets an
+             un-tick withdraw that start while a mood-only save leaves it. */}}
+        {{if .TodayPeriodFromStoredStart}}<input type="hidden" name="period_from_stored_start" value="true">{{end}}
         <input type="hidden" name="ack_period_tip" value="false" data-period-tip-ack>
 
         {{/* Two one-line rows became one: the jump shortcuts and the period

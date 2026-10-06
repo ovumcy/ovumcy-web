@@ -80,10 +80,12 @@ func BuildCalendarDayStates(user *models.User, monthStart time.Time, logs []mode
 	// draws its day as recorded (CycleBoundaries is the one rule that says so)
 	// instead of leaving it to the projection or to a blank cell. A day logged
 	// there without a period (a mood, a symptom) is still painted as recorded:
-	// every un-mark of that day — un-ticking its period (the editor shows it
-	// ticked when the day has no row), or deleting the day — clears the stored
-	// start in the same write, so a start that is still stored is still the
-	// owner's.
+	// every un-mark of that day — un-ticking its period in the day editor or
+	// the dashboard's Today form (both show it ticked when the day has no row
+	// and post a hidden field saying so), or deleting the day — clears the
+	// stored start in the same write, so a start that is still stored is still
+	// the owner's. A write that never showed that tick (a mood-only JSON PUT)
+	// is not an un-mark.
 	if onboardingDay := OnboardingBoundaryDay(BoundaryContextFor(user, DateAtLocation(now, location))); !onboardingDay.IsZero() {
 		key := CalendarDayKey(onboardingDay)
 		entry := latestLogByDate[key]

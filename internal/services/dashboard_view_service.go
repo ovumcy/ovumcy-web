@@ -53,6 +53,12 @@ type DashboardViewService struct {
 // nothing rather than the raw classification. Every builder in
 // BuildDashboardViewData still reads the uncleared stats, because each applies
 // its own suppression rule to them.
+//
+// TodayEntry is what the owner's Today form shows: TodayLog with the period
+// ticked on a row-less stored onboarding start (withOnboardingStartTicked), and
+// TodayPeriodFromStoredStart says that tick came from the stored start, so the
+// form posts it back. TodayHasData, TodayEntryExists and every other reader
+// keep the stored row, TodayLog.
 type DashboardViewData struct {
 	Stats                             CycleStats
 	CycleContext                      DashboardCycleContext
@@ -63,6 +69,8 @@ type DashboardViewData struct {
 	YesterdayMonth                    string
 	FormattedDate                     string
 	TodayLog                          models.DailyLog
+	TodayEntry                        models.DailyLog
+	TodayPeriodFromStoredStart        bool
 	TodayHasData                      bool
 	TodayEntryExists                  bool
 	Symptoms                          []models.SymptomType
@@ -99,12 +107,17 @@ type DashboardViewData struct {
 	IsOwner                           bool
 }
 
+// DayEditorViewData is everything the day editor renders. PeriodFromStoredStart
+// says Log.IsPeriod is ticked only because the date is the stored onboarding
+// start without a row (withOnboardingStartTicked); the editor form posts it
+// back, so un-ticking the period withdraws that start.
 type DayEditorViewData struct {
 	Date                       time.Time
 	DateString                 string
 	DateLabel                  string
 	IsFutureDate               bool
 	Log                        models.DailyLog
+	PeriodFromStoredStart      bool
 	Symptoms                   []models.SymptomType
 	PrimarySymptoms            []models.SymptomType
 	ExtraSymptoms              []models.SymptomType
@@ -139,6 +152,12 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 	todayLog, symptoms, err := service.viewer.FetchDayLogForViewer(ctx, user, today, location)
 	if err != nil {
 		return DashboardViewData{}, fmt.Errorf("%w: %v", ErrDashboardViewLoadTodayLog, err)
+	}
+	// Only the owner's Today form shows the stored start's tick; the
+	// read-only summary and every computation below read the stored row.
+	todayEntry, todayPeriodFromStoredStart := todayLog, false
+	if IsOwnerUser(user) {
+		todayEntry, todayPeriodFromStoredStart = withOnboardingStartTicked(user, todayLog, today, now, location)
 	}
 
 	stats, logs, err := service.buildDashboardStats(ctx, user, symptoms, today, now, location)
@@ -203,6 +222,8 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 		YesterdayMonth:                    yesterday.Format("2006-01"),
 		FormattedDate:                     LocalizedDashboardDate(language, today),
 		TodayLog:                          todayLog,
+		TodayEntry:                        todayEntry,
+		TodayPeriodFromStoredStart:        todayPeriodFromStoredStart,
 		TodayHasData:                      DayHasData(todayLog),
 		TodayEntryExists:                  todayLog.ID != 0,
 		Symptoms:                          rankedSymptoms,
@@ -399,7 +420,7 @@ func (service *DashboardViewService) BuildDayEditorViewData(ctx context.Context,
 	if err != nil {
 		return DayEditorViewData{}, fmt.Errorf("%w: %v", ErrDashboardViewLoadDayLog, err)
 	}
-	logEntry = withOnboardingStartTicked(user, logEntry, day, now, location)
+	logEntry, periodFromStoredStart := withOnboardingStartTicked(user, logEntry, day, now, location)
 	logs, err := service.entryContextLogs(ctx, user, symptoms)
 	if err != nil {
 		return DayEditorViewData{}, err
@@ -424,6 +445,7 @@ func (service *DashboardViewService) BuildDayEditorViewData(ctx context.Context,
 		DateLabel:                  LocalizedDateLabel(language, day),
 		IsFutureDate:               isFutureDate,
 		Log:                        logEntry,
+		PeriodFromStoredStart:      periodFromStoredStart,
 		Symptoms:                   rankedSymptoms,
 		PrimarySymptoms:            primarySymptoms,
 		ExtraSymptoms:              extraSymptoms,
@@ -448,19 +470,23 @@ func (service *DashboardViewService) BuildDayEditorViewData(ctx context.Context,
 // withOnboardingStartTicked shows the period ticked on the stored onboarding
 // start when the day has no row: onboarding with auto-fill off records the
 // start without writing a day, and the calendar paints that day as a period
-// day (BuildCalendarDayStates). The editor showing it unticked would leave the
-// owner nothing to un-tick; saving it unticked withdraws the start
-// (DayService.applyDayWriteAndAutoFill).
-func withOnboardingStartTicked(user *models.User, logEntry models.DailyLog, day time.Time, now time.Time, location *time.Location) models.DailyLog {
+// day (BuildCalendarDayStates). A form showing it unticked would leave the
+// owner nothing to un-tick. The second result reports that the tick came from
+// the stored start: the day editor and the dashboard's Today form post it back
+// as a hidden field (DayEntryInput.PeriodFromStoredStart), and only a save
+// carrying it that un-ticks the period withdraws the start
+// (DayService.applyDayWriteAndAutoFill) — a save that keeps the tick, or a
+// write that never showed it, leaves the start in place.
+func withOnboardingStartTicked(user *models.User, logEntry models.DailyLog, day time.Time, now time.Time, location *time.Location) (models.DailyLog, bool) {
 	if logEntry.ID != 0 {
-		return logEntry
+		return logEntry, false
 	}
 	onboardingDay := OnboardingBoundaryDay(BoundaryContextFor(user, DateAtLocation(now, location)))
 	if onboardingDay.IsZero() || CalendarDayKey(onboardingDay) != CalendarDayKey(day) {
-		return logEntry
+		return logEntry, false
 	}
 	logEntry.IsPeriod = true
-	return logEntry
+	return logEntry, true
 }
 
 func requiresEntryContextLogs(user *models.User, symptoms []models.SymptomType) bool {

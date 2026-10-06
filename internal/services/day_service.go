@@ -37,7 +37,16 @@ type DayEntryInput struct {
 	// It is set only for an explicit yes: an untouched control writes nothing.
 	// The write below re-checks the policy that raised the question, so an
 	// answer for a day the question was never asked on marks nothing.
-	ConfirmCycleStart     bool
+	ConfirmCycleStart bool
+	// PeriodFromStoredStart says the form showed the period ticked only
+	// because the date is the stored onboarding start and has no row
+	// (withOnboardingStartTicked); the day forms post it as a hidden field next
+	// to that tick. Saving such a form without the period is the owner
+	// un-ticking the start, so the write withdraws it. Without the field a
+	// write of a row-less day carries no answer about the period at all (a
+	// mood-only JSON PUT), and the start stays. Form transport only: the JSON
+	// body has no key for it.
+	PeriodFromStoredStart bool
 	PreserveSexActivity   bool
 	PreserveBBT           bool
 	PreserveCervicalMucus bool
@@ -476,10 +485,12 @@ func (service *DayService) applyDayWriteAndAutoFill(ctx context.Context, userID 
 	if err != nil {
 		return models.DailyLog{}, err
 	}
-	// The day editor shows the period ticked on a stored onboarding start that
-	// has no row (BuildDayEditorViewData), so a first save of that date without
-	// the period is the same un-tick as one over a stored period day.
-	if !normalized.IsPeriod && (previous.IsPeriod || !previous.Found) {
+	// The day forms show the period ticked on a stored onboarding start that
+	// has no row and say so in a hidden field (PeriodFromStoredStart), so a
+	// save of that form without the period is the same un-tick as one over a
+	// stored period day. Row absence alone is not that signal: a write that
+	// never showed the tick (a mood-only JSON PUT) keeps the start.
+	if !normalized.IsPeriod && (previous.IsPeriod || (!previous.Found && normalized.PeriodFromStoredStart)) {
 		if err := service.withdrawOnboardingStartOn(ctx, userID, dayStart); err != nil {
 			return models.DailyLog{}, err
 		}
@@ -500,11 +511,14 @@ type lastPeriodStartClearer interface {
 
 // withdrawOnboardingStartOn handles the explicit un-mark on the date of the
 // stored onboarding start (users.last_period_start): a save that turned a
-// period day into a non-period day — or saved a day without a row, which the
-// editor shows ticked there, without the period — and a delete of the day both
-// clear that start, so the boundary it inserts is gone with the period day. A
-// save that only adds to an existing non-period row on the start date (a mood,
-// a symptom) leaves the start in place. dayStart is the canonical UTC-midnight
+// period day into a non-period day — or un-ticked the period a day form showed
+// ticked from the stored start on a date without a row (the form posts
+// PeriodFromStoredStart beside that tick) — and a delete of the day both clear
+// that start, so the boundary it inserts is gone with the period day. A save
+// that keeps the period ticked, one that only adds to an existing non-period
+// row on the start date (a mood, a symptom), and a write of a row-less start
+// date that carries no form tick (a mood-only JSON PUT) leave the start in
+// place. dayStart is the canonical UTC-midnight
 // key of the owner's calendar day, the shape the stored start has.
 func (service *DayService) withdrawOnboardingStartOn(ctx context.Context, userID uint, dayStart time.Time) error {
 	if clearer, ok := service.logs.(lastPeriodStartClearer); ok {

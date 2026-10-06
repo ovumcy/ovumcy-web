@@ -151,12 +151,25 @@ func TestTheDayEditorTicksAStoredStartWithoutARow(t *testing.T) {
 	if !view.Log.IsPeriod {
 		t.Fatal("the day editor shows the period unticked on a stored start the calendar paints")
 	}
+	if !view.PeriodFromStoredStart {
+		t.Fatal("the day editor does not say its period tick came from the stored start")
+	}
 	other, err := editor.BuildDayEditorViewData(context.Background(), &stored, "en", day.AddDate(0, 0, 1), now, time.UTC)
-	if err != nil || other.Log.IsPeriod {
+	if err != nil || other.Log.IsPeriod || other.PeriodFromStoredStart {
 		t.Fatalf("the day after the start shows the period ticked (err=%v): only the start's own date is", err)
 	}
 
+	// A write of the date that never showed the tick carries no field: a mood
+	// alone is not an un-mark.
 	withdrawSave(t, service, userID, day, DayEntryInput{IsPeriod: false, Flow: models.FlowNone, Mood: 3})
+	if kept, _ := withdrawReload(t, repositories, userID); kept.LastPeriodStart == nil {
+		t.Fatal("a mood-only write without the form's stored-start field withdrew the start")
+	}
+	if err := repositories.DailyLogs.DeleteByUserAndDayRange(context.Background(), userID, day, day.AddDate(0, 0, 1)); err != nil {
+		t.Fatalf("reset the start date's row: %v", err)
+	}
+
+	withdrawSave(t, service, userID, day, DayEntryInput{IsPeriod: false, Flow: models.FlowNone, Mood: 3, PeriodFromStoredStart: true})
 	stored, logs := withdrawReload(t, repositories, userID)
 	if stored.LastPeriodStart != nil {
 		t.Fatalf("last_period_start = %v after the editor's un-tick, want it cleared", stored.LastPeriodStart)

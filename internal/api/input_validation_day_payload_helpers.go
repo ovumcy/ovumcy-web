@@ -42,6 +42,7 @@ func parseDayPayload(c fiber.Ctx, user *models.User, formBody bool, hidden prese
 		var err error
 		payload.IsPeriod = services.ParseBoolLike(formBodyValue(c, "is_period"))
 		payload.ConfirmCycleStart = services.ParseBoolLike(formBodyValue(c, "cycle_start"))
+		payload.PeriodFromStoredStart = services.ParseBoolLike(formBodyValue(c, "period_from_stored_start"))
 		payload.Flow = strings.ToLower(strings.TrimSpace(formBodyValue(c, "flow")))
 		payload.Mood, err = parseOptionalFormInt(formBodyValue(c, "mood"))
 		if err != nil {
