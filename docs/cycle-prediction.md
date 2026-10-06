@@ -48,12 +48,24 @@ mark wins over the run. Spotting never opens a cycle, even when marked: a day
 whose flow is spotting, or whose only bleeding signal is the Spotting symptom
 with no flow chosen. A lone bleeding day that qualifies under none of the above
 starts no cycle and does not split the cycle around it. An episode whose only
-mark is "uncertain" is held back the same way.
+mark is "uncertain" is held back the same way. A history that records each
+period as a single unmarked day older than yesterday therefore holds no cycles
+for those periods; marking each such day as a cycle start restores them.
 
 The start date stored at onboarding (the last period start) is a boundary of its
 own. It joins the grouping as a marked, non-spotting day, so a logged episode it
 falls inside or adjoins yields one start, not two. A start dated in the future is
-ignored.
+ignored, and so is one whose date carries a logged day that is not a period day:
+that log is the owner's newer word about the date. Moving the start in Settings
+removes the days the old start's auto-fill wrote, each only while it still
+carries nothing the owner entered, and writes the new start's days as onboarding
+would — otherwise the old fill would remain a boundary of its own and leave a
+phantom short cycle. An export over a requested range omits the stored start when
+it lies outside that range.
+
+The pregnancy pause reads the same rule: a positive test pauses predictions until
+a boundary falls on a later calendar day, so an unmarked two-day bleed lifts it
+while a spotting day or an uncertain mark does not.
 
 ## The model
 
