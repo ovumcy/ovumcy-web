@@ -89,7 +89,7 @@ func TestCycleDataStaleVerdictIsOneAcrossDashboardStatsPageAndAPI(t *testing.T) 
 				today := DateAtLocation(now, location)
 				stats := BuildCycleStatsFromLogs(user, logs, now, location)
 
-				raw := DashboardCycleDataLooksStale(DashboardCycleStaleAnchor(user, stats, location), today, DashboardCycleReferenceLength(user, stats))
+				raw := DashboardCycleDataLooksStale(DashboardCycleStaleAnchor(user, logs, stats, today, location), today, DashboardCycleReferenceLength(user, stats))
 				if raw != testCase.rawStale {
 					t.Fatalf("fixture: the length check alone says stale=%v, want %v", raw, testCase.rawStale)
 				}

@@ -155,6 +155,39 @@ func TestCalendarPaintsTheOnboardingStartAsRecorded(t *testing.T) {
 	}
 }
 
+// TestCycleBoundariesSkipsAnUnmarkedOnboardingDay pins the un-mark: a log on
+// the onboarding date that is not a period day withdraws the stored start as a
+// boundary, while a period log there keeps it.
+func TestCycleBoundariesSkipsAnUnmarkedOnboardingDay(t *testing.T) {
+	onboarding := BoundaryContext{Today: boundaryDay(time.October, 5), OnboardingStart: boundaryDay(time.September, 14)}
+	unmarked := []models.DailyLog{{Date: boundaryDay(time.September, 14), IsPeriod: false, Mood: 3}}
+	assertBoundaries(t, unmarked, onboarding)
+	marked := []models.DailyLog{{Date: boundaryDay(time.September, 14), IsPeriod: true, Mood: 3}}
+	assertBoundaries(t, marked, onboarding, "2026-09-14")
+}
+
+// TestCalendarLeavesAnUnmarkedOnboardingDayUnmarked: the grid draws a logged
+// non-period entry on the onboarding date as it is, never as a period day.
+func TestCalendarLeavesAnUnmarkedOnboardingDayUnmarked(t *testing.T) {
+	now := time.Date(2026, time.October, 5, 12, 0, 0, 0, time.UTC)
+	user := boundaryOwner(boundaryDay(time.September, 14))
+	logs := []models.DailyLog{{Date: boundaryDay(time.September, 14), IsPeriod: false, Mood: 3}}
+	stats := BuildCycleStatsFromLogs(user, logs, now, time.UTC)
+	found := false
+	for _, state := range BuildCalendarDayStates(user, boundaryDay(time.September, 1), logs, stats, now, time.UTC) {
+		if state.DateString != "2026-09-14" {
+			continue
+		}
+		found = true
+		if state.IsPeriod {
+			t.Fatal("the calendar painted an un-marked onboarding day as a period day")
+		}
+	}
+	if !found {
+		t.Fatal("fixture: the grid holds no 2026-09-14 cell")
+	}
+}
+
 func TestCycleBoundariesMergesADayLoggedTwice(t *testing.T) {
 	ctx := BoundaryContext{Today: boundaryDay(time.October, 5)}
 	entry := func(day int, flow string) models.DailyLog {

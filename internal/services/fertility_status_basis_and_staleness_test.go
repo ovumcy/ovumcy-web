@@ -261,7 +261,7 @@ func TestOutOfDateVerdictFollowsThePagesInAPause(t *testing.T) {
 	if !stats.PregnancyPaused {
 		t.Fatal("fixture: the positive test must pause predictions")
 	}
-	if !DashboardCycleDataLooksStale(DashboardCycleStaleAnchor(user, stats, time.UTC), today, DashboardCycleReferenceLength(user, stats)) {
+	if !DashboardCycleDataLooksStale(DashboardCycleStaleAnchor(user, logs, stats, today, time.UTC), today, DashboardCycleReferenceLength(user, stats)) {
 		t.Fatal("fixture: the anchor must be past the reference length, or the pause decides nothing here")
 	}
 
