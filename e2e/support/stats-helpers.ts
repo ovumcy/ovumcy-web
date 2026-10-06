@@ -171,7 +171,7 @@ export async function markCycleStart(page: Page, isoDate: string): Promise<void>
  *
  * The endpoint sets `IsPeriod=true` AND `CycleStart=true` on the day, then runs
  * auto-period-fill. The explicit flag is the point: it is what
- * `latestExplicitCycleStartBeforeOrOn` picks up, where a plain `is_period` day
+ * `LatestCycleStartAnchorBeforeOrOn` picks up, where a plain `is_period` day
  * upsert would leave `stats.LastPeriodStart` anchored to the `user.LastPeriodStart`
  * onboarding wrote.
  *

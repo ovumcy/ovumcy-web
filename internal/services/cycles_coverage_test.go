@@ -143,14 +143,14 @@ func TestCycles_PredictCycleWindow_ZeroCycleLength(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------
-// L168 – DetectCycleStarts gap calculation: the -1 matters
+// L168 – CycleBoundaries gap calculation: the -1 matters
 // --------------------------------------------------------------------------
 
-// TestCycles_DetectCycleStarts_GapBoundary pins that a gap of exactly 4
+// TestCycles_CycleBoundaries_GapBoundary pins that a gap of exactly 4
 // calendar days between consecutive period-logged days (which yields gapDays=3
 // after the -1 subtraction) does NOT start a new cycle, while a gap of 6
 // calendar days (gapDays=5) does.
-func TestCycles_DetectCycleStarts_GapBoundary(t *testing.T) {
+func TestCycles_CycleBoundaries_GapBoundary(t *testing.T) {
 	// Gap of exactly 5 calendar days: day.Sub(prev) = 5 days → gapDays = 4 → no new start.
 	logs5 := []models.DailyLog{
 		cyclesCovPeriodLog(t, "2026-01-01"),

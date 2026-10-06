@@ -64,7 +64,7 @@ func TestStatsPhaseInsightsBuildContextsBuildsContextsForTwoStarts(t *testing.T)
 // ---------------------------------------------------------------------------
 // Line 63: cycleLength <= 0 — skip zero-length cycles
 //
-// DOCUMENTED UNREACHABLE (equivalent mutant): DetectCycleStarts normalizes each
+// DOCUMENTED UNREACHABLE (equivalent mutant): CycleBoundaries normalizes each
 // start to its calendar day (dateOnly) and only records a new start when the gap
 // exceeds 5 days, so two consecutive starts are always several calendar days
 // apart and CalendarDaysBetween yields a strictly positive cycleLength. The
@@ -137,7 +137,7 @@ func TestStatsPhaseInsightsMenstrualPhaseUsesDefaultPeriodLength(t *testing.T) {
 // phase classification.
 func TestStatsPhaseInsightsBuildContextsSkipsTooShortCycle(t *testing.T) {
 	// A 3-day cycle is below the minimum required for a valid ovulation day.
-	// DetectCycleStarts needs IsPeriod=true. We'll build three starts but
+	// CycleBoundaries needs IsPeriod=true. We'll build three starts but
 	// the first two have a 3-day gap, the second-third have a 28-day gap.
 	logs := []models.DailyLog{
 		{Date: statsphaseinsightsCovDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},

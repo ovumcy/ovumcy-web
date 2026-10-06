@@ -41,7 +41,7 @@ func TestApplyUserCycleBaseline_NoHistoryDoesNotClobberProvidedMedianWhenUserCyc
 		PeriodLength:    5,
 		LastPeriodStart: &lp, // anchors a non-zero stats.LastPeriodStart so projection runs
 	}
-	// Single period day: DetectCycleStarts yields 1 start => CycleLengths()==nil
+	// Single period day: CycleBoundaries yields at most 1 start => CycleLengths()==nil
 	// => hasObservedCycleLengths==false (line 50 branch executes).
 	logs := []models.DailyLog{
 		{Date: mustParseBaselineDay(t, "2026-03-01"), IsPeriod: true, Flow: models.FlowMedium},

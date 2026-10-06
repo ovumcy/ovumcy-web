@@ -428,7 +428,7 @@ func TestLutealPhaseRecomputeReportsAMarkerItCouldNotWrite(t *testing.T) {
 
 // ---------------------------------------------------------------------------
 // The pass reads OBSERVED history, and manualCycleStartFutureDays lets an owner
-// record a cycle start up to two days ahead. ObservedCycleStarts takes such a
+// record a cycle start up to two days ahead. CycleBoundaries takes such a
 // start as the boundary of the last observed cycle, so an unbounded read
 // derives the cached column from a day that has not happened yet — while the
 // display path re-infers over a today-bounded window. The two then disagree by

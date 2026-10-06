@@ -32,21 +32,18 @@ func mr3cycCluster(logs []models.DailyLog, start time.Time, days int, cycleStart
 	return logs
 }
 
-// TestMR3Cycles_ObservedStartsNotOverwrittenByDetected targets
-// cycles.go:64 `if len(observedStarts) == 0 { observedStarts = detectedStarts }`
-// (CONDITIONALS_NEGATION). Three clusters are logged; the middle cluster is an
-// explicit-but-uncertain cycle start, which ObservedCycleStarts deliberately
-// skips while DetectCycleStarts includes it. The observed list is therefore
-// non-empty (2 starts -> 1 completed cycle) and must NOT be overwritten by the
-// detected list (3 starts -> 2 completed cycles). Under the `!=` mutation the
-// non-empty observed list is wrongly replaced by the detected list and the
-// completed-cycle count / median diverge.
+// TestMR3Cycles_ObservedStartsNotOverwrittenByDetected pins that an uncertain
+// cycle-start mark opens no cycle. Three clusters are logged; the middle cluster
+// is an explicit-but-uncertain cycle start, which CycleBoundaries deliberately
+// does not treat as a boundary. The start list is therefore 2 starts -> 1
+// completed cycle, not 3 starts -> 2 completed cycles; if the uncertain cluster
+// were counted, the completed-cycle count / median would diverge.
 func TestMR3Cycles_ObservedStartsNotOverwrittenByDetected(t *testing.T) {
 	logs := []models.DailyLog{}
 	// Cluster A: regular start on Jan 1.
 	logs = mr3cycCluster(logs, mr3cycDay(2026, time.January, 1), 4, false, false)
 	// Cluster B: ~30 days later, explicit cycle start but UNCERTAIN -> skipped
-	// by ObservedCycleStarts, included by DetectCycleStarts.
+	// by CycleBoundaries (an uncertain mark opens no cycle).
 	logs = mr3cycCluster(logs, mr3cycDay(2026, time.January, 31), 4, true, true)
 	// Cluster C: another ~30 days later, regular start.
 	logs = mr3cycCluster(logs, mr3cycDay(2026, time.March, 2), 4, false, false)

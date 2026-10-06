@@ -164,8 +164,8 @@ func TestPublishedStatsClearsLutealPhasePersonalisedUnderFertilitySuppression(t 
 
 // TestLutealPhasePersonalisedStaysFalseWhenTheInferredValueNeverLandsOnLastPeriodStart
 // pins the gap between the two conditions the flag used to conflate.
-// InferUserLutealPhase needs only ObservedCycleStarts, which accepts a period
-// cluster with no CycleStart flag; ApplyUserCycleBaseline's projection needs an
+// InferUserLutealPhase needs only CycleBoundaries, which accepts a period
+// cluster with no CycleStart flag (two consecutive period days); ApplyUserCycleBaseline's projection needs an
 // anchor — a flagged start or user.LastPeriodStart — and writes the inferred
 // value into stats.LutealPhase only past that anchor. An owner who logs periods
 // without ever flagging a start therefore gets a successful inference and no

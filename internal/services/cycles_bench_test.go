@@ -38,7 +38,7 @@ func BenchmarkBuildCycleStats(b *testing.B) {
 	}
 }
 
-func BenchmarkDetectCycleStarts(b *testing.B) {
+func BenchmarkCycleBoundaries(b *testing.B) {
 	logs := benchCycleLogs(24)
 	b.ReportAllocs()
 	b.ResetTimer()

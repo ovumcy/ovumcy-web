@@ -7,7 +7,7 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
-func TestDetectCycleStarts(t *testing.T) {
+func TestCycleBoundaries(t *testing.T) {
 	logs := []models.DailyLog{
 		makeLog(t, "2025-01-01", true),
 		makeLog(t, "2025-01-02", true),

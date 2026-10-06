@@ -143,7 +143,7 @@ func TestStatsCycleInsightsBuildCompletedCycleSpansPeriodLengthDefaultsWhenZero(
 	// IsPeriod=true. Looking at buildCycles: it counts consecutive IsPeriod days
 	// starting at 'start'. If the start log itself is IsPeriod=true, periodLength>=1.
 	// Only when IsPeriod is false at the start does it stay 0.
-	// ObservedCycleStarts uses period clusters so start days always have IsPeriod.
+	// CycleBoundaries uses period clusters so start days always have IsPeriod.
 	// The actual PeriodLength recorded in detectedCycle is therefore always >= 1.
 	// This means line 55 ("if periodLength <= 0") is a defensive guard for future
 	// code and is currently unreachable — marking as equivalent below.

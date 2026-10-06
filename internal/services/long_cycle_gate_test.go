@@ -33,7 +33,7 @@ func longCycleGateUser() *models.User {
 }
 
 // longCycleGateLogs writes one explicit cycle start per offset, counted from
-// base. The starts are what DetectCycleStarts reads, so the spans between them
+// base. The starts are what CycleBoundaries reads, so the spans between them
 // are the observed cycle lengths.
 func longCycleGateLogs(base time.Time, offsets []int) []models.DailyLog {
 	logs := make([]models.DailyLog, 0, len(offsets))
