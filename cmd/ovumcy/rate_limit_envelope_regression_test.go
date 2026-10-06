@@ -377,8 +377,11 @@ func TestEveryRateLimiterAnswersABrowserWithoutRawJSON(t *testing.T) {
 				if response.StatusCode != http.StatusTooManyRequests {
 					t.Fatalf("%s browser refusal: status = %d, want 429", surface.name, response.StatusCode)
 				}
-				if contentType := response.Header.Get("Content-Type"); !strings.Contains(contentType, fiber.MIMETextHTML) {
+				if contentType := response.Header.Get("Content-Type"); !strings.HasPrefix(contentType, fiber.MIMETextHTML) {
 					t.Fatalf("%s browser refusal content type = %q, want text/html — markup labelled text/plain renders as tags", surface.name, contentType)
+				}
+				if strings.TrimSpace(response.Header.Get("Retry-After")) == "" {
+					t.Fatalf("%s browser refusal answered without a Retry-After header", surface.name)
 				}
 				if strings.Contains(body, `"error_detail"`) {
 					t.Fatalf("%s painted the JSON envelope into a full-page navigation: %q", surface.name, body)
@@ -395,7 +398,11 @@ func TestEveryRateLimiterAnswersABrowserWithoutRawJSON(t *testing.T) {
 				// the shared layout, its lang, and the link back to `/`, which a
 				// form with no `next` field resolves to.
 				requireNativeFormRefusalPage(t, surface.name, body, "en", "common.error.too_many_requests", "/")
-				requireOnlyCSRFCookie(t, surface.name, response)
+				// The limiter answers ahead of the CSRF middleware, so not even
+				// its cookie may ride on the refusal.
+				for _, cookie := range response.Cookies() {
+					t.Errorf("%s: the rate-limited refusal page set the cookie %q", surface.name, cookie.Name)
+				}
 			}
 		})
 	}

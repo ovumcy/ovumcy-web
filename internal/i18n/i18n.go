@@ -3,6 +3,7 @@ package i18n
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"path"
 	"sort"
 	"strings"
@@ -28,6 +29,7 @@ var requiredLocales = []string{LangDE, LangEN, LangES, LangRU, LangFR, LangIT}
 type Manager struct {
 	defaultLanguage string
 	locales         map[string]map[string]string
+	merged          map[string]map[string]string
 	supported       []string
 }
 
@@ -77,6 +79,7 @@ func NewManager(defaultLanguage string) (*Manager, error) {
 
 	sort.Strings(manager.supported)
 	manager.defaultLanguage = manager.NormalizeLanguage(defaultLanguage)
+	manager.mergeCatalogues()
 	return manager, nil
 }
 
@@ -129,19 +132,24 @@ func (manager *Manager) DetectFromAcceptLanguage(raw string) string {
 	return manager.defaultLanguage
 }
 
+// Messages returns the language's catalogue overlaid on the default one. The
+// map is built once at boot and shared by every caller, so it is read-only: a
+// request that is refused (a rate-limited page, say) must not pay for a fresh
+// copy of every catalogue entry.
 func (manager *Manager) Messages(language string) map[string]string {
-	defaultMessages := manager.locales[manager.defaultLanguage]
-	targetLanguage := manager.NormalizeLanguage(language)
-	targetMessages := manager.locales[targetLanguage]
+	return manager.merged[manager.NormalizeLanguage(language)]
+}
 
-	result := make(map[string]string, len(defaultMessages)+len(targetMessages))
-	for key, value := range defaultMessages {
-		result[key] = value
+func (manager *Manager) mergeCatalogues() {
+	manager.merged = make(map[string]map[string]string, len(manager.supported)+1)
+	defaultMessages := manager.locales[manager.defaultLanguage]
+	for _, language := range append([]string{manager.defaultLanguage}, manager.supported...) {
+		targetMessages := manager.locales[language]
+		result := make(map[string]string, len(defaultMessages)+len(targetMessages))
+		maps.Copy(result, defaultMessages)
+		maps.Copy(result, targetMessages)
+		manager.merged[language] = result
 	}
-	for key, value := range targetMessages {
-		result[key] = value
-	}
-	return result
 }
 
 func (manager *Manager) isSupported(language string) bool {
