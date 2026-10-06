@@ -280,6 +280,18 @@ func TestLanguageSwitchOversizedBodyAnswersLocalizedRefusal(t *testing.T) {
 		if strings.Contains(body, ">request_too_large<") || strings.Contains(body, ">common.back<") {
 			t.Fatalf("plain nav: raw machine key leaked as visible text: %q", body)
 		}
+		// securityHeadersMiddleware is not mounted here, as it never runs on the
+		// early path: the full refusal page must carry the headers on its own.
+		for name, want := range map[string]string{
+			headerContentSecurityPolicy: contentSecurityPolicyDefault,
+			headerXFrameOptions:         xFrameOptionsDeny,
+			headerXContentTypeOptions:   xContentTypeOptionsNoSniff,
+			"Cache-Control":             "no-store",
+		} {
+			if got := response.Header.Get(name); got != want {
+				t.Errorf("plain nav: %s = %q, want %q", name, got, want)
+			}
+		}
 	})
 
 	t.Run("htmx request", func(t *testing.T) {

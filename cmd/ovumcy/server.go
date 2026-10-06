@@ -170,8 +170,15 @@ func fiberConfig(proxy proxySettings, handler *api.Handler) fiber.Config {
 // parse path, and the pre-routing rejections that used to be the only mapped
 // ones (413, 431) are simply the two the framework raises most visibly. See
 // docs/SECURITY_INVARIANTS.md for the surrounding transport invariants.
+//
+// The same pre-routing path means securityHeadersMiddleware never ran, yet a
+// body-limit 413 on a plain form route renders the full refusal page — scripts,
+// forms, the CSRF meta tag — so the handler stamps the security headers itself.
+// HSTS is left to the routed responses: this constructor has no runtime config,
+// and the policy a browser already holds does not depend on one refused request.
 func newOvumcyErrorHandler(handler *api.Handler) fiber.ErrorHandler {
 	return func(c fiber.Ctx, err error) error {
+		setSecurityHeaders(c, false)
 		var fiberErr *fiber.Error
 		if !errors.As(err, &fiberErr) {
 			return handler.RespondTransportError(c, fiber.StatusInternalServerError)
@@ -370,19 +377,23 @@ func newRequestLogger(output io.Writer) fiber.Handler {
 
 func securityHeadersMiddleware(enableStrictTransportSecurity bool) fiber.Handler {
 	return func(c fiber.Ctx) error {
-		c.Set(headerXContentTypeOptions, xContentTypeOptionsNoSniff)
-		c.Set(headerReferrerPolicy, referrerPolicyStrictOrigin)
-		c.Set(headerPermissionsPolicy, permissionsPolicyDefault)
-		c.Set(headerCrossOriginOpenerPolicy, crossOriginOpenerPolicyDefault)
-		c.Set(headerXFrameOptions, xFrameOptionsDeny)
-		c.Set(headerContentSecurityPolicy, contentSecurityPolicyDefault)
-		if enableStrictTransportSecurity {
-			c.Set(headerStrictTransportSecurity, strictTransportSecurityDefault)
-		}
-		if !strings.HasPrefix(c.Path(), "/static") {
-			c.Set("Cache-Control", "no-store")
-		}
+		setSecurityHeaders(c, enableStrictTransportSecurity)
 		return c.Next()
+	}
+}
+
+func setSecurityHeaders(c fiber.Ctx, enableStrictTransportSecurity bool) {
+	c.Set(headerXContentTypeOptions, xContentTypeOptionsNoSniff)
+	c.Set(headerReferrerPolicy, referrerPolicyStrictOrigin)
+	c.Set(headerPermissionsPolicy, permissionsPolicyDefault)
+	c.Set(headerCrossOriginOpenerPolicy, crossOriginOpenerPolicyDefault)
+	c.Set(headerXFrameOptions, xFrameOptionsDeny)
+	c.Set(headerContentSecurityPolicy, contentSecurityPolicyDefault)
+	if enableStrictTransportSecurity {
+		c.Set(headerStrictTransportSecurity, strictTransportSecurityDefault)
+	}
+	if !strings.HasPrefix(c.Path(), "/static") {
+		c.Set("Cache-Control", "no-store")
 	}
 }
 

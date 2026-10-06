@@ -6,9 +6,16 @@ import (
 	"time"
 )
 
+// maxRedirectPathBytes bounds a sanitized redirect path. Every accepted value is
+// echoed back — into a Location or HX-Redirect header, and on a refused language
+// switch several times into the rendered page — so an unbounded one turns a
+// single unauthenticated form post into a multiple of its body in response work.
+// No in-app address comes near the bound.
+const maxRedirectPathBytes = 2048
+
 func SanitizeRedirectPath(raw string, fallback string) string {
 	candidate := strings.TrimSpace(raw)
-	if candidate == "" {
+	if candidate == "" || len(candidate) > maxRedirectPathBytes {
 		return fallback
 	}
 	// Reject CR/LF so a crafted next-path can never split a Location or
