@@ -405,6 +405,42 @@ test.describe('Theme mode', () => {
     await logoutViaAPI(page);
   });
 
+  test('dark theme keeps the start window readable over a luteal ribbon cell', async ({ page }) => {
+    // The start window follows the projected next period, so for most owners
+    // it lands on late luteal days. The recessive dark luteal fill is the
+    // lowest-lightness phase the overlay can sit on (WEB-285: 2.49:1 before the
+    // dark gradient was deepened). The test above measures whichever phases
+    // its fixture happens to put the window on; this one pins the pair by name.
+    await registerAndOnboardWithStartDaysAgo(page, 'theme-dark-luteal-window', 60);
+    const today = isoToday();
+    for (const offset of [-134, -90, -32, -2]) {
+      await markCycleStartViaAPI(page, shiftISODate(today, offset));
+    }
+
+    await applyTheme(page, 'dark');
+    await page.goto('/dashboard');
+    await expect(page).toHaveURL(/\/dashboard$/);
+
+    const header = await expectDashboardStatusHeader(page);
+    const lutealWindowCell = header
+      .locator('[data-cycle-ribbon-day][data-start-window="true"][data-phase="luteal"]')
+      .first();
+    await expect(
+      lutealWindowCell,
+      'this fixture must put the start window on a luteal cell, or nothing below is measured'
+    ).toHaveCount(1);
+
+    const contrast = await measureOverlayContrast(
+      lutealWindowCell,
+      'cycle ribbon data-start-window overlay, phase=luteal (dark)'
+    );
+    expect(contrast.worstRatio, describeContrast(contrast)).toBeGreaterThanOrEqual(
+      WCAG_AA_GRAPHIC_CONTRAST
+    );
+
+    await logoutViaAPI(page);
+  });
+
   test('the system theme option follows prefers-color-scheme live', async ({ page }) => {
     await registerAndReachDashboard(page, 'theme-system');
     await page.emulateMedia({ colorScheme: 'light' });
