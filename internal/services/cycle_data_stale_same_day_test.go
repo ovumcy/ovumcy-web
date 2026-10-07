@@ -97,7 +97,7 @@ func TestStaleBandSignalsAgreeWhereTheAnchorAndTheStatsPart(t *testing.T) {
 		stats := BuildCycleStatsFromLogs(user, logs, builtOn, time.UTC)
 		readOn := mustParseDay(t, "2026-06-28")
 		if stats.CurrentCycleDay != 28 ||
-			!DashboardCycleDataLooksStale(DashboardCycleStaleAnchor(user, stats, readOn, time.UTC), readOn,DashboardCycleReferenceLength(user, stats)) {
+			!DashboardCycleDataLooksStale(DashboardCycleStaleAnchor(user, stats, readOn, time.UTC), readOn, DashboardCycleReferenceLength(user, stats)) {
 			t.Fatalf("fixture: stats on cycle day %d must read as out of date only when measured against the later today", stats.CurrentCycleDay)
 		}
 
