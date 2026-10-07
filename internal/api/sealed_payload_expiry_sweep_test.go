@@ -478,6 +478,13 @@ func (sealedSweepAuthRepo) FindByID(context.Context, uint) (models.User, error) 
 	}, nil
 }
 
+// FindByIDOptional is the lookup ResolveAuthSession reads; it answers the same
+// account, found.
+func (repo sealedSweepAuthRepo) FindByIDOptional(ctx context.Context, userID uint) (models.User, bool, error) {
+	user, err := repo.FindByID(ctx, userID)
+	return user, true, err
+}
+
 // mintSealedCookieForSweep runs the probe's production mint on a real request
 // and returns the sealed value the client would receive.
 func mintSealedCookieForSweep(t *testing.T, handler *Handler, name string, probe sealedCookieExpiryProbe) string {
