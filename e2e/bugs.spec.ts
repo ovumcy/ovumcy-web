@@ -359,13 +359,15 @@ test.describe('Bug regressions', () => {
       // Pin onboardingDate to the 5th of a stable month so the +0..+4 window walked
       // below stays inside one calendar month — otherwise the loop crosses a month
       // boundary on early-month days and the rendered ?month=YYYY-MM grid has no
-      // buttons for the spillover days. Falls back to the 5th of the prior month
-      // when today's day-of-month is < 5 so the date stays in the past (onboarding
-      // step1 rejects future dates).
+      // buttons for the spillover days. The whole window must also lie on or
+      // before today: the auto-fill never records a period day the owner has not
+      // reached, so a window running past today leaves its future cells unmarked
+      // even with the toggle on. Falls back to the 5th of the prior month until
+      // today reaches the 9th.
       const todayISO = await browserLocalISODate(page);
       const [todayYear, todayMonth, todayDay] = todayISO.split('-').map((part) => Number(part));
       const monthAnchor =
-        todayDay >= 5 ? new Date(todayYear, todayMonth - 1, 5) : new Date(todayYear, todayMonth - 2, 5);
+        todayDay >= 9 ? new Date(todayYear, todayMonth - 1, 5) : new Date(todayYear, todayMonth - 2, 5);
       const onboardingDate = `${monthAnchor.getFullYear()}-${String(monthAnchor.getMonth() + 1).padStart(2, '0')}-05`;
 
       await onboardOwnerWithAutoPeriodFill(page, 'bug01-onboarding-no-autofill', onboardingDate, false);
