@@ -194,13 +194,13 @@ func TestPositivePregnancyTestNeverRewritesTheUsageGoal(t *testing.T) {
 	service := NewDayService(logs, users)
 
 	day := time.Date(2026, time.March, 12, 0, 0, 0, 0, time.UTC)
-	entry, err := service.UpsertDayEntryWithAutoFill(context.Background(), 4, day, DayEntryInput{
+	entry, err := service.UpsertDayEntryWithAutoFillAt(context.Background(), 4, day, DayEntryInput{
 		Flow:          models.FlowNone,
 		Mood:          MinDayMood,
 		PregnancyTest: models.PregnancyTestPositive,
-	}, time.UTC)
+	}, time.Now(), time.UTC)
 	if err != nil {
-		t.Fatalf("UpsertDayEntryWithAutoFill: %v", err)
+		t.Fatalf("UpsertDayEntryWithAutoFillAt: %v", err)
 	}
 	// Positive anchor: the write really happened, so the absence below is about
 	// the goal and not about a path that never ran.

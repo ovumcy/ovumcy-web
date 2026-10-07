@@ -99,7 +99,7 @@ func (handler *Handler) UpsertDay(c fiber.Ctx) error {
 
 // PatchDay is the partial day write (PATCH): only the fields the body names
 // change, and every other field — the cycle start included — keeps its
-// stored value. The merge is the services layer's (PatchDayEntryWithAutoFill);
+// stored value. The merge is the services layer's (PatchDayEntryWithAutoFillAt);
 // this handler only reports which fields arrived. Validation, ownership and
 // the answer are UpsertDay's, and it audits under the same action.
 func (handler *Handler) PatchDay(c fiber.Ctx) error {

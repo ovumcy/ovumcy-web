@@ -41,10 +41,10 @@ func TestPatchDayEntryChangesOnlyTheNamedField(t *testing.T) {
 	day := time.Date(2026, time.September, 7, 0, 0, 0, 0, time.UTC)
 	seedPatchCycleStartDay(t, logs, day)
 
-	saved, err := service.PatchDayEntryWithAutoFill(context.Background(), 10, day,
-		DayEntryInput{Mood: 3}, DayEntryFields{Mood: true}, time.UTC)
+	saved, err := service.PatchDayEntryWithAutoFillAt(context.Background(), 10, day,
+		DayEntryInput{Mood: 3}, DayEntryFields{Mood: true}, time.Now(), time.UTC)
 	if err != nil {
-		t.Fatalf("PatchDayEntryWithAutoFill() unexpected error: %v", err)
+		t.Fatalf("PatchDayEntryWithAutoFillAt() unexpected error: %v", err)
 	}
 
 	if saved.Mood != 3 {
@@ -70,10 +70,10 @@ func TestPatchDayEntryStatingNoPeriodClearsTheFieldsThatFollowFromIt(t *testing.
 	day := time.Date(2026, time.September, 7, 0, 0, 0, 0, time.UTC)
 	seedPatchCycleStartDay(t, logs, day)
 
-	saved, err := service.PatchDayEntryWithAutoFill(context.Background(), 10, day,
-		DayEntryInput{IsPeriod: false}, DayEntryFields{IsPeriod: true}, time.UTC)
+	saved, err := service.PatchDayEntryWithAutoFillAt(context.Background(), 10, day,
+		DayEntryInput{IsPeriod: false}, DayEntryFields{IsPeriod: true}, time.Now(), time.UTC)
 	if err != nil {
-		t.Fatalf("PatchDayEntryWithAutoFill() unexpected error: %v", err)
+		t.Fatalf("PatchDayEntryWithAutoFillAt() unexpected error: %v", err)
 	}
 	if saved.IsPeriod || saved.CycleStart || saved.Flow != models.FlowNone {
 		t.Fatalf("expected is_period=false to clear cycle start and flow as a full write does, got is_period=%v cycle_start=%v flow=%q", saved.IsPeriod, saved.CycleStart, saved.Flow)
@@ -89,8 +89,8 @@ func TestPatchDayEntryRefusesAnInvalidStatedValueAndKeepsTheDay(t *testing.T) {
 	day := time.Date(2026, time.September, 7, 0, 0, 0, 0, time.UTC)
 	seedPatchCycleStartDay(t, logs, day)
 
-	_, err := service.PatchDayEntryWithAutoFill(context.Background(), 10, day,
-		DayEntryInput{Mood: MaxDayMood + 1}, DayEntryFields{Mood: true}, nil)
+	_, err := service.PatchDayEntryWithAutoFillAt(context.Background(), 10, day,
+		DayEntryInput{Mood: MaxDayMood + 1}, DayEntryFields{Mood: true}, time.Now(), nil)
 	if !errors.Is(err, ErrInvalidDayMood) {
 		t.Fatalf("expected ErrInvalidDayMood, got %v", err)
 	}
@@ -105,8 +105,8 @@ func TestPatchDayEntryRefusesWhenTheStoredDayCannotBeRead(t *testing.T) {
 	day := time.Date(2026, time.September, 7, 0, 0, 0, 0, time.UTC)
 	logs.findErrByDay[logs.dayKey(day)] = errors.New("read error")
 
-	_, err := service.PatchDayEntryWithAutoFill(context.Background(), 10, day,
-		DayEntryInput{Mood: 3}, DayEntryFields{Mood: true}, time.UTC)
+	_, err := service.PatchDayEntryWithAutoFillAt(context.Background(), 10, day,
+		DayEntryInput{Mood: 3}, DayEntryFields{Mood: true}, time.Now(), time.UTC)
 	if !errors.Is(err, ErrDayEntryLoadFailed) {
 		t.Fatalf("expected ErrDayEntryLoadFailed, got %v", err)
 	}
@@ -124,17 +124,17 @@ func TestPatchDayEntryMergesOntoTheLockingRead(t *testing.T) {
 	day := time.Date(2026, time.September, 7, 0, 0, 0, 0, time.UTC)
 	seedPatchCycleStartDay(t, logs, day)
 
-	if _, err := service.PatchDayEntryWithAutoFill(context.Background(), 10, day,
-		DayEntryInput{Mood: 3}, DayEntryFields{Mood: true}, time.UTC); err != nil {
-		t.Fatalf("PatchDayEntryWithAutoFill() unexpected error: %v", err)
+	if _, err := service.PatchDayEntryWithAutoFillAt(context.Background(), 10, day,
+		DayEntryInput{Mood: 3}, DayEntryFields{Mood: true}, time.Now(), time.UTC); err != nil {
+		t.Fatalf("PatchDayEntryWithAutoFillAt() unexpected error: %v", err)
 	}
 	if logs.lockingReads != 2 {
 		t.Fatalf("expected the partial write's merge and its update to read through the lock, got %d locking reads", logs.lockingReads)
 	}
 
-	if _, err := service.UpsertDayEntryWithAutoFill(context.Background(), 10, day,
-		DayEntryInput{IsPeriod: true, Flow: models.FlowLight}, time.UTC); err != nil {
-		t.Fatalf("UpsertDayEntryWithAutoFill() unexpected error: %v", err)
+	if _, err := service.UpsertDayEntryWithAutoFillAt(context.Background(), 10, day,
+		DayEntryInput{IsPeriod: true, Flow: models.FlowLight}, time.Now(), time.UTC); err != nil {
+		t.Fatalf("UpsertDayEntryWithAutoFillAt() unexpected error: %v", err)
 	}
 	if logs.lockingReads != 3 {
 		t.Fatalf("expected the full write to read the day it updates through the lock, got %d locking reads in all", logs.lockingReads)
@@ -183,8 +183,8 @@ func TestPatchDayEntryRetriesOntoTheDayAConcurrentWriteCreated(t *testing.T) {
 	}
 	service := NewDayService(logs, &dayUserRepositoryStub{})
 
-	saved, err := service.PatchDayEntryWithAutoFill(context.Background(), 10, day,
-		DayEntryInput{Notes: "mine"}, DayEntryFields{Notes: true}, time.UTC)
+	saved, err := service.PatchDayEntryWithAutoFillAt(context.Background(), 10, day,
+		DayEntryInput{Notes: "mine"}, DayEntryFields{Notes: true}, time.Now(), time.UTC)
 	if err != nil {
 		t.Fatalf("expected the losing first write to retry onto the winner's row, got %v", err)
 	}
@@ -207,8 +207,8 @@ func TestPatchDayEntryRetriesARefusedInsertOnlyOnce(t *testing.T) {
 	logs := &racingCreateDayLogStub{dayLogRepositoryStub: newDayLogRepositoryStub(), refuseAlways: true}
 	service := NewDayService(logs, &dayUserRepositoryStub{})
 
-	_, err := service.PatchDayEntryWithAutoFill(context.Background(), 10, day,
-		DayEntryInput{Notes: "mine"}, DayEntryFields{Notes: true}, time.UTC)
+	_, err := service.PatchDayEntryWithAutoFillAt(context.Background(), 10, day,
+		DayEntryInput{Notes: "mine"}, DayEntryFields{Notes: true}, time.Now(), time.UTC)
 	if !errors.Is(err, ErrDayEntryCreateFailed) {
 		t.Fatalf("expected a second refusal to answer as ErrDayEntryCreateFailed, got %v", err)
 	}
@@ -222,7 +222,7 @@ func TestUpsertDayEntryDoesNotRetryARefusedInsert(t *testing.T) {
 	logs := &racingCreateDayLogStub{dayLogRepositoryStub: newDayLogRepositoryStub(), refuseAlways: true}
 	service := NewDayService(logs, &dayUserRepositoryStub{})
 
-	_, err := service.UpsertDayEntryWithAutoFill(context.Background(), 10, day, DayEntryInput{Flow: models.FlowNone, Notes: "mine"}, time.UTC)
+	_, err := service.UpsertDayEntryWithAutoFillAt(context.Background(), 10, day, DayEntryInput{Flow: models.FlowNone, Notes: "mine"}, time.Now(), time.UTC)
 	if !errors.Is(err, ErrDayEntryCreateFailed) {
 		t.Fatalf("expected a refused full-write insert to stay ErrDayEntryCreateFailed, got %v", err)
 	}
