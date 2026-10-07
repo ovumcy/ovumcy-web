@@ -132,7 +132,7 @@ func periodRunLogs(t *testing.T, start string, days int) []models.DailyLog {
 	t.Helper()
 	first := mustParseDay(t, start)
 	logs := make([]models.DailyLog, 0, days)
-	for offset := 0; offset < days; offset++ {
+	for offset := range days {
 		logs = append(logs, models.DailyLog{
 			Date:       first.AddDate(0, 0, offset),
 			IsPeriod:   true,
