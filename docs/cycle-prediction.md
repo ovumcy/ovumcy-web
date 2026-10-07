@@ -62,7 +62,8 @@ saying the tick came from the stored start; saving either form unticked clears
 the start too. Saving it with the box still ticked, adding a mood or a symptom
 to a non-period entry there, or a JSON write of that date without the period
 (which never showed the tick) leaves it in place. Moving the start in Settings
-writes the new start's days as onboarding would. When auto-fill is on in the
+writes the new start's days as onboarding would, through the period's last day
+or the owner's local today, whichever comes first. When auto-fill is on in the
 stored settings and the move corrects the old date — the old start still opens
 the newest cycle and the new one is earlier, or less than a shortest cycle (15
 days) later — it also removes the days the old start's fill wrote: the run from
@@ -70,7 +71,8 @@ the old start that one fill write produced, stopping at the first day that is
 missing, carries anything the owner entered, or was written by another save.
 Only a fill written as one cohort of at least two days is removed: unless the
 old start and the day after it share one write, nothing goes. So a period day
-ticked by hand is never removed, a period length of 1 is never cleared, and an
+ticked by hand is never removed, a period length of 1 is never cleared, an
+onboarding completed on its own start day wrote that one day only and keeps it, and an
 install onboarded before this release (whose fill carries a stamp per day)
 keeps its old days on a move, as it did before. Otherwise the old fill would
 remain a boundary of its own and leave a phantom short cycle. A later move keeps
