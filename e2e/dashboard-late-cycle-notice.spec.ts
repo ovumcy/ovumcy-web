@@ -84,13 +84,13 @@ function lateCycleNotice(page: Page) {
 
 test.describe('Dashboard late-cycle notice', () => {
   test('a cycle past the recorded range names the measured excess in days', async ({ page }) => {
-    // Cycle starts today-116, today-88, today-60 (the onboarding anchor): two
-    // completed cycles of 28 days each, which is both the minimum for a personal
-    // range and the range itself (min = max = 28). The running cycle is on day 61
-    // — past the 28-day reference plus a week, and past the recorded maximum — so
-    // the policy reports the excess with the amber tone.
+    // Cycle starts today-144, today-116, today-88, today-60 (the onboarding
+    // anchor): three completed cycles of 28 days each, which is both the minimum
+    // for a personal range and the range itself (min = max = 28). The running
+    // cycle is on day 61 — past the 28-day reference plus a week, and past the
+    // recorded maximum — so the policy reports the excess with the amber tone.
     const anchorISO = await registerAndOnboardWithStartDaysAgo(page, 'late-cycle-beyond', 60);
-    for (const offset of [-56, -28]) {
+    for (const offset of [-84, -56, -28]) {
       await markCycleStartViaAPI(page, shiftISODate(anchorISO, offset));
     }
 
@@ -121,14 +121,15 @@ test.describe('Dashboard late-cycle notice', () => {
   });
 
   test('a long cycle still inside the recorded range says predictions are paused, not that it is in range', async ({ page }) => {
-    // Cycle starts today-113, today-88, today-43 (the onboarding anchor):
-    // completed cycles of 25 and 45 days, so the average reference is 35 and the
-    // recorded range is 25..45. The running cycle is on day 44 — past 35 + 7, so
+    // Cycle starts today-148, today-113, today-88, today-43 (the onboarding
+    // anchor): completed cycles of 35, 25 and 45 days — the three a personal range
+    // needs — so the reference is 35 (mean and median alike) and the recorded
+    // range is 25..45. The running cycle is on day 44 — past 35 + 7, so
     // the overdue gate fires and withholds the projection. The notice states that
     // fact rather than comparing against a recorded maximum, which an unlogged
     // period can inflate (3×28 + 300 would otherwise read "inside 28 to 300").
     const anchorISO = await registerAndOnboardWithStartDaysAgo(page, 'late-cycle-within', 43);
-    for (const offset of [-70, -45]) {
+    for (const offset of [-105, -70, -45]) {
       await markCycleStartViaAPI(page, shiftISODate(anchorISO, offset));
     }
 
