@@ -131,12 +131,18 @@ func dayFormBackPath(c fiber.Ctx, date string) string {
 // dayFormSource reads the query, then the body field only of a form
 // MethodOverride has already parsed into PostArgs (urlencoded, no
 // Content-Encoding). A limiter refusal reaches here ahead of CSRF and the body
-// cap, so no other body — multipart, compressed — is parsed for a link.
+// cap, so no other body — multipart, compressed — is parsed for a link. It is
+// the one reading of `source` for the success redirects and the refusal's back
+// link alike, so the two cannot name different pages for one request.
 func dayFormSource(c fiber.Ctx) string {
-	if source := c.Query("source"); source != "" || !arrivedAsOverriddenFormPost(c) {
+	if source := normalizeDayFormSource(c.Query("source")); source != "" || !arrivedAsOverriddenFormPost(c) {
 		return source
 	}
-	return string(c.Request().PostArgs().Peek("source"))
+	return normalizeDayFormSource(string(c.Request().PostArgs().Peek("source")))
+}
+
+func normalizeDayFormSource(source string) string {
+	return strings.ToLower(strings.TrimSpace(source))
 }
 
 // settingsFormBackPath is the one place that maps a settings-page form route

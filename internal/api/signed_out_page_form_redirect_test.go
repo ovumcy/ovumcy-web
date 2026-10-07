@@ -200,6 +200,45 @@ func TestEveryNoJSPageFormRouteSendsASignedOutBrowserToSignIn(t *testing.T) {
 	if !seen[http.MethodPut+" /api/v1/days/:date"] {
 		t.Fatalf("the walk never reached PUT /api/v1/days/:date; reached %v", seen)
 	}
+
+	// The walk above only covers routes the predicate admits; a form the
+	// predicate omits would be skipped silently. So every form the templates
+	// post without JavaScript to /api/v1/ must be admitted by it — or be a
+	// signed-out auth form, which the auth-form page answers and which has no
+	// session to lose (WEB-291).
+	authProbe := fiber.New()
+	authProbe.All("/*", func(c fiber.Ctx) error {
+		return c.SendString(strconv.FormatBool(isPlainAuthFormPageNavigation(c)))
+	})
+	authForm := func(target string) bool {
+		request := httptest.NewRequest(http.MethodPost, target, strings.NewReader(""))
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		request.Header.Set("Accept", noJSBrowserAccept)
+		response := mustAppResponse(t, authProbe, request)
+		defer func() { _ = response.Body.Close() }()
+		return mustReadBodyString(t, response.Body) == "true"
+	}
+	expected := map[string]bool{}
+	for _, form := range noJSAPIFormsInTemplates(t) {
+		route, ok := registeredRouteForTemplateForm(ctx.app.GetRoutes(true), form)
+		if !ok {
+			t.Errorf("%s: form %s %q resolves to no registered route", form.file, form.verb, form.action)
+			continue
+		}
+		name := route.Method + " " + route.Path
+		if route.Method == http.MethodPost && authForm(concreteRoutePath(route, iso)) {
+			continue
+		}
+		expected[name] = true
+		if !seen[name] {
+			t.Errorf("%s: form %s posts without JavaScript, but plainPageFormBackPath does not admit it", form.file, name)
+		}
+	}
+	for _, name := range []string{http.MethodPut + " /api/v1/days/:date", http.MethodPost + " /api/v1/days/:date/cycle-start"} {
+		if !expected[name] {
+			t.Errorf("the template scan never found %s; found %v", name, expected)
+		}
+	}
 }
 
 func mustLocaleMessages(t *testing.T, lang string) map[string]string {
