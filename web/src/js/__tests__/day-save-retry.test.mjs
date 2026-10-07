@@ -730,6 +730,37 @@ for (const [surface, fragment, key, text] of [
   });
 }
 
+// The grid refresh after a save is the same read. Refused, it leaves the grid
+// as it was rendered and says so above it, once, however often it is refused.
+test("a refused calendar grid refresh keeps the grid and leads it with the notice", async () => {
+  const page = `<!doctype html><html><body>
+    <section id="calendar-grid-panel"><div id="grid">the month as rendered</div></section>
+  </body></html>`;
+  const dom = await loadDOMWithScript(APP_BUNDLE, { html: page });
+  try {
+    const panel = dom.window.document.getElementById("calendar-grid-panel");
+    const refuse = () =>
+      panel.dispatchEvent(
+        new dom.window.CustomEvent("htmx:responseError", {
+          detail: { target: panel, xhr: { status: 409, responseText: OPEN_ACCOUNT_CHANGED_FRAGMENT } },
+          bubbles: true,
+        })
+      );
+    refuse();
+    refuse();
+
+    const notices = panel.querySelectorAll("[data-calendar-grid-refused]");
+    assert.equal(notices.length, 1, "one notice, however often the refresh is refused");
+    assert.equal(panel.firstElementChild, notices[0], "the notice leads the grid");
+    assert.equal(notices[0].getAttribute("role"), "status");
+    assert.equal(notices[0].textContent, OPEN_ACCOUNT_CHANGED_TEXT);
+    assert.equal(notices[0].querySelector("[data-notice-key]").getAttribute("data-notice-key"), OPEN_ACCOUNT_CHANGED_KEY);
+    assert.ok(panel.querySelector("#grid"), "the grid stays as it was rendered");
+  } finally {
+    dom.window.close();
+  }
+});
+
 test("a day editor fetch that fails for another reason is left to the generic handling", async () => {
   const page = `<!doctype html><html><body>
     <aside id="day-editor"><p id="kept">editor</p></aside>

@@ -308,7 +308,7 @@
   // the owner's back — the runner stops until they press retry or type again,
   // so an unreachable instance is not hammered every two seconds.
   //
-  // A 403 is the CSRF token this page holds having gone stale (see
+  // A 403 from the CSRF check is the token this page holds having gone stale (see
   // refreshCSRFToken): the notice is rendered first, and the token is
   // re-read behind it so the retry the notice offers carries a valid one.
   function failDashboardAutosave(form, responseText, status) {
@@ -322,7 +322,7 @@
     } else {
       renderDaySaveUnreachable(form);
     }
-    noteDayWriteRefusal(status);
+    noteDayWriteRefusal(status, parsed ? parsed.key : "");
   }
 
   // Pick the HTTP verb from whichever hx-* attribute the form uses so the

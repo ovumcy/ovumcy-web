@@ -22,6 +22,7 @@ const TYPED_NOTE = "cramps since the afternoon";
 const FORBIDDEN_FRAGMENT =
   '<div class="status-error" data-flash-key="common.error.forbidden">That action was refused. Reload the page and try again.</div>';
 const OWN_BINDING = "binding-of-the-rendering-account";
+const REFUSED_TEXT = "This save was refused. Your entry is still here — try again.";
 
 const PAGE = `<!doctype html><html><head><meta name="csrf-token" content="${STALE_TOKEN}"></head><body>
   <form
@@ -30,6 +31,7 @@ const PAGE = `<!doctype html><html><head><meta name="csrf-token" content="${STAL
     data-day-editor-form
     data-day-editor-date="2026-08-11"
     data-day-save-failed-text="Couldn't save."
+    data-day-save-refused-text="${REFUSED_TEXT}"
     data-day-save-retry-label="Try again">
     <input type="hidden" name="csrf_token" value="${STALE_TOKEN}">
     <input type="hidden" name="day_form_account" value="${OWN_BINDING}">
@@ -237,6 +239,7 @@ test("a refresh that fails changes nothing", async () => {
     "a token of the wrong shape": () => Promise.resolve(okPage(pageWithToken('x"><script>1</script>'))),
     "an off-origin answer": () =>
       Promise.resolve(okPage(pageWithToken(FRESH_TOKEN), "https://elsewhere.example/calendar")),
+    "an answer that names no origin": () => Promise.resolve(okPage(pageWithToken(FRESH_TOKEN), "")),
     "an unreadable body": () => Promise.resolve({ ...okPage(""), text: () => Promise.reject(new Error("aborted")) }),
   };
 
@@ -259,10 +262,11 @@ test("a refresh that fails changes nothing", async () => {
   }
 });
 
-test("a 403 without a recognisable body still gets its Retry and one refresh", async () => {
+test("a 403 that is not the CSRF refusal gets its Retry and no refresh", async () => {
   const bodies = {
     "plain text": "Forbidden",
     "empty body": "",
+    "owner access required": '<div class="status-error" data-flash-key="common.error.owner_access_required">Nope.</div>',
     "an error block under another key": '<div class="status-error" data-flash-key="something.else">Nope.</div>',
     "an error block with no key": '<div class="status-error">Nope.</div>',
     "no body at all": undefined,
@@ -276,11 +280,26 @@ test("a 403 without a recognisable body still gets its Retry and one refresh", a
 
       assert.ok(notice(dom.window), `${name}: a failure notice is rendered`);
       assert.ok(notice(dom.window).querySelector("[data-day-save-retry]"), `${name}: with a Retry`);
-      assert.equal(calls.length, 1, `${name}: one refresh`);
-      assert.equal(currentToken(dom.window), FRESH_TOKEN, `${name}: the token is replaced`);
+      assert.equal(calls.length, 0, `${name}: a fresh token cannot fix it, so no page is fetched`);
+      assert.equal(currentToken(dom.window), STALE_TOKEN, `${name}: the token is left as it was`);
     } finally {
       dom.window.close();
     }
+  }
+});
+
+test("the CSRF refusal is worded for the Retry beside it, not for a reload", async () => {
+  const { dom } = await load(() => Promise.resolve(okPage(pageWithToken(FRESH_TOKEN))));
+  try {
+    fireResponseError(dom.window, { status: 403, responseText: FORBIDDEN_FRAGMENT });
+    await flush();
+
+    const message = notice(dom.window).querySelector(".status-notice-message");
+    assert.equal(message.textContent, REFUSED_TEXT);
+    assert.doesNotMatch(message.textContent, /reload/i);
+    assert.ok(notice(dom.window).querySelector("[data-day-save-retry]"));
+  } finally {
+    dom.window.close();
   }
 });
 
@@ -306,7 +325,7 @@ test("a 403 on another day write control refreshes too, and one off the day rout
     const fire = (requestPath) =>
       other.dispatchEvent(
         new dom.window.CustomEvent("htmx:responseError", {
-          detail: { xhr: { status: 403, responseText: "" }, target: other, pathInfo: { requestPath } },
+          detail: { xhr: { status: 403, responseText: FORBIDDEN_FRAGMENT }, target: other, pathInfo: { requestPath } },
           bubbles: true,
         })
       );

@@ -398,6 +398,12 @@
     if (!target || !message) {
       return false;
     }
+    if (messageKey === CSRF_REFUSED_NOTICE_KEY) {
+      // The transport's own copy tells the owner to reload, which discards the
+      // entry. The token is re-read behind this notice instead
+      // (refreshCSRFToken), so the Retry beside it is the way out.
+      message = form.getAttribute("data-day-save-refused-text") || message;
+    }
 
     var notice = document.createElement("div");
     notice.className = "status-notice";
@@ -470,8 +476,8 @@
   // <meta> keeps the old one for good — every retry and every later autosave
   // would be refused 403 until a reload, which discards the entry.
   //
-  // So a refused day write (403) re-reads the token from the page the owner is
-  // already on: a plain same-origin GET of the current path, which the server
+  // So a day write refused by the CSRF check re-reads the token from the page
+  // the owner is already on: a plain same-origin GET of the current path, which the server
   // answers with the token its cookie holds. Only the <meta> content (and the
   // hidden token inputs that mirror it) is adopted, after a shape check, and
   // only from a same-origin response; nothing else from the response enters the
@@ -480,6 +486,12 @@
   // the entry exactly as they were.
   var CSRF_TOKEN_SHAPE = /^[A-Za-z0-9._~+/=-]{8,512}$/;
   var csrfRefreshPending = null;
+
+  // The CSRF check answers a bare 403, which the transport renders under this
+  // key; every other 403 a day route can give (owner access, onboarding, a
+  // required password change) carries a key of its own, and a reload of the
+  // token cannot help any of them.
+  var CSRF_REFUSED_NOTICE_KEY = "common.error.forbidden";
 
   function csrfTokenFromPage(text) {
     if (!text || typeof DOMParser !== "function") {
@@ -490,9 +502,10 @@
     return CSRF_TOKEN_SHAPE.test(token) ? token : "";
   }
 
+  // An answer that does not say where it came from is not taken as same-origin.
   function responseIsSameOrigin(response) {
     if (!response || !response.url) {
-      return true;
+      return false;
     }
     try {
       return new URL(response.url, window.location.href).origin === window.location.origin;
@@ -550,12 +563,13 @@
     return pending;
   }
 
-  // The refusal is detected by status alone: the 403 body is whatever the
-  // transport layer rendered and carries no key a client may branch on. The
-  // notice is rendered before the refresh settles, so the owner is never made
-  // to wait for it; a Retry pressed in the meantime waits for it instead.
-  function noteDayWriteRefusal(status) {
-    if (Number(status) === 403) {
+  // Only the CSRF refusal refreshes: a 403 under any other key, or with a body
+  // that names none, is not one a fresh token can fix, and refreshing on it
+  // would fetch a whole page on every such refusal. The notice is rendered
+  // before the refresh settles, so the owner is never made to wait for it; a
+  // Retry pressed in the meantime waits for it instead.
+  function noteDayWriteRefusal(status, refusalKey) {
+    if (Number(status) === 403 && refusalKey === CSRF_REFUSED_NOTICE_KEY) {
       refreshCSRFToken();
     }
   }
@@ -585,8 +599,13 @@
   // the same account-changed key a refused save carries. htmx swaps no error
   // response, so without this the editor area would stay blank, or keep the
   // skeleton, with no word on why. Only the message TEXT is adopted.
-  function renderDayEditorAccountRefusal(target, event) {
-    if (!target || target.id !== "day-editor") {
+  //
+  // The grid refresh after a save is refused the same way. The grid it would
+  // have replaced stays on screen as rendered, so the notice leads it rather
+  // than replacing it, and announces itself: nothing the owner is looking at
+  // changed.
+  function renderCalendarAccountRefusal(target, event) {
+    if (!target || (target.id !== "day-editor" && target.id !== "calendar-grid-panel")) {
       return false;
     }
     var xhr = event && event.detail ? event.detail.xhr : null;
@@ -597,13 +616,25 @@
 
     var notice = document.createElement("div");
     notice.className = "status-notice";
-    notice.setAttribute("data-day-editor-refused", "account-changed");
     var text = document.createElement("span");
     text.className = "status-notice-message";
     text.setAttribute("data-notice-key", refusal.key);
     text.textContent = String(refusal.text || "").trim();
     notice.appendChild(text);
-    target.replaceChildren(notice);
+
+    if (target.id === "day-editor") {
+      notice.setAttribute("data-day-editor-refused", "account-changed");
+      target.replaceChildren(notice);
+      return true;
+    }
+
+    notice.setAttribute("data-calendar-grid-refused", "account-changed");
+    notice.setAttribute("role", "status");
+    var previous = target.querySelector("[data-calendar-grid-refused]");
+    if (previous) {
+      previous.remove();
+    }
+    target.prepend(notice);
     return true;
   }
 
@@ -782,11 +813,16 @@
       var form = getSaveFeedbackFormFromEvent(event);
       var dayForm = dayEditorFormFromEvent(event);
 
+      var dayXHR = event && event.detail ? event.detail.xhr : null;
+      var serverError = parseServerStatusError(
+        dayXHR && typeof dayXHR.responseText === "string" ? dayXHR.responseText : ""
+      );
+
       if (dayForm || isDayWriteRequest(event)) {
-        noteDayWriteRefusal(event && event.detail && event.detail.xhr ? event.detail.xhr.status : 0);
+        noteDayWriteRefusal(dayXHR ? dayXHR.status : 0, serverError ? serverError.key : "");
       }
 
-      if (!dayForm && renderDayEditorAccountRefusal(target, event)) {
+      if (!dayForm && renderCalendarAccountRefusal(target, event)) {
         return;
       }
 
@@ -795,10 +831,6 @@
         // it sent one — it is more specific than any generic copy — and fall
         // back to the neutral "could not save" line otherwise. Either way the
         // owner gets the retry, and the typed entry is left alone.
-        var dayXHR = event.detail ? event.detail.xhr : null;
-        var serverError = parseServerStatusError(
-          dayXHR && typeof dayXHR.responseText === "string" ? dayXHR.responseText : ""
-        );
         var serverMessage = serverError ? String(serverError.text || "").trim() : "";
         var rendered = serverMessage
           ? renderDaySaveFailure(dayForm, serverMessage, "rejected", serverError.key)

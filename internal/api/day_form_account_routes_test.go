@@ -127,7 +127,12 @@ type dayFormAccountFixture struct {
 
 func newDayFormAccountFixture(t *testing.T, prefix string) dayFormAccountFixture {
 	t.Helper()
-	app, database := newOnboardingTestApp(t)
+	return newDayFormAccountFixtureWithOptions(t, prefix, onboardingTestAppOptions{})
+}
+
+func newDayFormAccountFixtureWithOptions(t *testing.T, prefix string, options onboardingTestAppOptions) dayFormAccountFixture {
+	t.Helper()
+	app, database := newOnboardingTestAppWithOptions(t, options)
 	first := createOnboardingTestUser(t, database, prefix+"-first@example.com", "StrongPass1", true)
 	second := createOnboardingTestUser(t, database, prefix+"-second@example.com", "StrongPass1", true)
 	fixture := dayFormAccountFixture{app: app, database: database, first: first, second: second}
@@ -158,6 +163,7 @@ func TestEveryDayWriteRouteRefusesAPageFromAnotherAccount(t *testing.T) {
 		controlDay := day.AddDate(0, 0, 2)
 		seedDayForTest(t, fixture.database, fixture.second.ID, day, 2, "second account's own note")
 		seedDayForTest(t, fixture.database, fixture.second.ID, absentDay, 2, "second account's own note")
+		seedDayForTest(t, fixture.database, fixture.second.ID, controlDay, 2, "second account's own note")
 
 		name := route.Method + " " + route.Path
 		response := mustAppResponse(t, fixture.app, dayWriteRequest(route, day, fixture.secondCookie, url.Values{dayFormAccountWireName: {fixture.firstBinding}}, true))
@@ -168,13 +174,20 @@ func TestEveryDayWriteRouteRefusesAPageFromAnotherAccount(t *testing.T) {
 		assertAccountChangedRefusal(t, name+" with no binding", response)
 		assertDayUntouched(t, fixture.database, fixture.second.ID, absentDay, 2, "second account's own note")
 
-		// Positive control: the same request under the right binding is not
-		// refused for the account. Its outcome may still be a conflict of
-		// another kind (a cycle-start on a day that cannot start one), so the
-		// assertion is on the reason, not on the status alone.
+		// Positive control: the same request under the right binding reaches the
+		// handler and writes. Any refusal before the handler — this guard, the
+		// CSRF check, the owner guard — answers 4xx and leaves the seeded day
+		// as it was, so both are asserted: an early refusal of any kind fails.
 		response = mustAppResponse(t, fixture.app, dayWriteRequest(route, controlDay, fixture.secondCookie, url.Values{dayFormAccountWireName: {fixture.secondBinding}}, true))
-		if body := mustReadBodyString(t, response.Body); strings.Contains(body, accountChangedKey) {
-			t.Fatalf("%s: the account's own binding must not be refused for the account, got %d %q", name, response.StatusCode, body)
+		if body := mustReadBodyString(t, response.Body); response.StatusCode >= 300 {
+			t.Fatalf("%s: the account's own binding must reach the handler and succeed, got %d %q", name, response.StatusCode, body)
+		}
+		control, err := fetchLogByDateForTest(fixture.database, fixture.second.ID, controlDay, time.UTC)
+		if err != nil {
+			t.Fatalf("%s: load the control day: %v", name, err)
+		}
+		if control.Mood == 2 && control.Notes == "second account's own note" && !control.CycleStart {
+			t.Fatalf("%s: the account's own binding must reach the handler, but the control day is unchanged", name)
 		}
 	}
 }

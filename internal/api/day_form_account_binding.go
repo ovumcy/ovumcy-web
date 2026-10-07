@@ -64,16 +64,17 @@ func (handler *Handler) RefuseDayFormFromAnotherAccount(kind healthMutationKind)
 		if !ok {
 			return handler.failDayMutation(c, kind, unauthorizedErrorSpec()) // codecov:ignore -- OwnerOnly precedes this on every route that mounts it
 		}
-		presented := presentedDayFormAccountBindings(c)
-		if len(presented) == 0 && dayWriteFromRenderedPage(c) {
-			return handler.failDayMutation(c, kind, dayFormAccountChangedErrorSpec())
-		}
-		if !dayFormRenderedForAccount(handler.secretKey, user, presented) {
+		if dayFormBindingRefused(handler.secretKey, user, presentedDayFormAccountBindings(c), dayWriteFromRenderedPage(c)) {
 			return handler.failDayMutation(c, kind, dayFormAccountChangedErrorSpec())
 		}
 		return c.Next()
 	}
 }
+
+// dayFormPageReadAction is the audit action of a refused day-editor read. The
+// read changes nothing and carries nothing out, so it is in neither health
+// domain; like the owner-only guard, it records an access refusal.
+const dayFormPageReadAction = "access.day_form_page"
 
 // RefuseDayFormPageFromAnotherAccount guards the reads a page makes of the day
 // editor it hosts. The calendar page renders no day write itself: its editor is
@@ -94,14 +95,27 @@ func (handler *Handler) RefuseDayFormPageFromAnotherAccount(c fiber.Ctx) error {
 	if !ok {
 		return c.Next() // codecov:ignore -- AuthRequired precedes this on every route that mounts it
 	}
-	presented := c.Request().Header.PeekAll(dayFormAccountHeader)
-	if len(presented) == 0 && !isHTMX(c) {
-		return c.Next()
-	}
-	if len(presented) == 0 || !dayFormRenderedForAccount(handler.secretKey, user, presented) {
-		return handler.respondMappedError(c, dayFormPageAccountChangedErrorSpec())
+	if dayFormBindingRefused(handler.secretKey, user, c.Request().Header.PeekAll(dayFormAccountHeader), isHTMX(c)) {
+		spec := dayFormPageAccountChangedErrorSpec()
+		handler.logSecurityError(c, dayFormPageReadAction, spec)
+		return handler.respondMappedError(c, spec)
 	}
 	return c.Next()
+}
+
+// dayFormBindingRefused is the one rule both guards apply: a request from a
+// rendered page must carry a binding, and every binding presented must name
+// user. A request that did not come from a rendered page may carry none.
+func dayFormBindingRefused(secretKey []byte, user *models.User, presented [][]byte, fromRenderedPage bool) bool {
+	if len(presented) == 0 {
+		return fromRenderedPage
+	}
+	for _, value := range presented {
+		if !security.DayFormAccountBindingMatches(secretKey, user.ID, string(value)) {
+			return true
+		}
+	}
+	return false
 }
 
 // presentedDayFormAccountBindings collects every copy of the binding the
@@ -139,16 +153,4 @@ func dayWriteFromRenderedPage(c fiber.Ctx) bool {
 	contentType := strings.ToLower(c.Get(fiber.HeaderContentType))
 	formBody := strings.HasPrefix(contentType, fiber.MIMEApplicationForm) || strings.HasPrefix(contentType, fiber.MIMEMultipartForm)
 	return formBody && strings.Contains(strings.ToLower(c.Get(fiber.HeaderAccept)), "text/html")
-}
-
-// dayFormRenderedForAccount reports whether every presented binding names
-// user. It is called with no binding only for a request that did not come from
-// a rendered page.
-func dayFormRenderedForAccount(secretKey []byte, user *models.User, presented [][]byte) bool {
-	for _, value := range presented {
-		if !security.DayFormAccountBindingMatches(secretKey, user.ID, string(value)) {
-			return false
-		}
-	}
-	return true
 }
