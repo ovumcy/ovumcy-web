@@ -75,7 +75,20 @@ const (
 	minPlaceableCycleLength = minLutealPhaseDays + minOvulationCycleDay
 )
 
+// runningPeriodRule is what deciding whether the running cycle's period has
+// ended needs: the owner's local calendar day and the account's configured
+// period length. Its zero value decides nothing, and the running period is
+// then averaged as before (the bare BuildCycleStats path, which has no owner).
+type runningPeriodRule struct {
+	today        time.Time
+	periodLength int
+}
+
 func BuildCycleStats(logs []models.DailyLog, now time.Time) CycleStats {
+	return buildCycleStats(logs, now, runningPeriodRule{})
+}
+
+func buildCycleStats(logs []models.DailyLog, now time.Time, rule runningPeriodRule) CycleStats {
 	stats := CycleStats{CurrentPhase: "unknown", CurrentFertility: FertilityStatusUnknown}
 	today := dateOnly(now)
 	sorted := sortDailyLogs(filterLogsNotAfter(logs, today))
@@ -95,6 +108,15 @@ func BuildCycleStats(logs []models.DailyLog, now time.Time) CycleStats {
 
 	cycles := buildCycles(observedStarts, sorted)
 	populateObservedCycleStats(&stats, cycleLengths(observedStarts), cycles)
+	if !runningPeriodHasEnded(cycles, sorted, rule) {
+		// A period still running is as long as the owner has logged it so far:
+		// one day on the day it is marked, and stopped at today by the
+		// onboarding fill. Averaging that in shortens every projected period.
+		// With no other period left the average is 0, as for an account with no
+		// period observed: no cycle has completed then, so applyObservedBaseline
+		// puts the configured length there.
+		stats.AveragePeriodLength = averageInts(recentPositivePeriodLengths(cycles[:len(cycles)-1], cyclePredictionWindow))
+	}
 	stats.LastPeriodStart = detectedStarts[len(detectedStarts)-1]
 	stats.LutealPhase = defaultLutealPhaseDays
 	applyPredictedCycleStats(&stats)
@@ -400,6 +422,29 @@ func populateObservedCycleStats(stats *CycleStats, lengths []int, cycles []detec
 	if completedCycleCount > 0 && len(cycles) >= completedCycleCount {
 		stats.LastPeriodLength = cycles[completedCycleCount-1].PeriodLength
 	}
+}
+
+// runningPeriodHasEnded reports whether the period of the running cycle — the
+// last one in cycles — may be averaged: a non-period day is logged after its
+// last period day, or the owner's today is past its start plus the configured
+// period length minus one. logs is bounded at today, so a non-period day found
+// here lies inside the running cycle. A zero rule answers true, keeping the
+// running period in the average.
+func runningPeriodHasEnded(cycles []detectedCycle, logs []models.DailyLog, rule runningPeriodRule) bool {
+	if len(cycles) == 0 || rule.today.IsZero() || rule.periodLength <= 0 {
+		return true
+	}
+	running := cycles[len(cycles)-1]
+	if CalendarDaysBetween(running.Start, rule.today) >= rule.periodLength {
+		return true
+	}
+	lastPeriodDay := dateOnly(running.Start).AddDate(0, 0, running.PeriodLength-1)
+	for _, logEntry := range logs {
+		if !logEntry.IsPeriod && CalendarDaysBetween(lastPeriodDay, logEntry.Date) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func recentPositivePeriodLengths(cycles []detectedCycle, limit int) []int {
