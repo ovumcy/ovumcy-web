@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -171,4 +172,29 @@ func TestStaleCalendarPageCannotReadOrWriteAnotherAccountsDay(t *testing.T) {
 			assertDayUntouched(t, fixture.database, fixture.second.ID, writeDay, 2, "second account's own note")
 		}
 	})
+}
+
+// TestRefusedCalendarReadIsAudited holds the read refusal to the record the
+// write refusal leaves: a stale tab probing another account's days is an
+// access attempt an incident review must be able to see. Not parallel: the
+// audit stream is the process-wide log writer.
+func TestRefusedCalendarReadIsAudited(t *testing.T) {
+	fixture := newDayFormAccountFixtureWithOptions(t, "stale-calendar-audit", onboardingTestAppOptions{auditLogEnabled: true})
+
+	for _, path := range []string{"/calendar/day/2026-06-08", "/calendar?month=2026-06"} {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		request.Header.Set("Cookie", fixture.secondCookie)
+		request.Header.Set("HX-Request", "true")
+		request.Header.Set(dayFormAccountWireHeader, fixture.firstBinding)
+
+		response, logOutput := captureAuditedRequest(t, fixture.app, request)
+		assertOpenAccountChangedRefusal(t, "GET "+path, response)
+		line := securityEventLine(t, logOutput, dayFormPageReadAction, "denied")
+		if !strings.Contains(line, `reason="day form page account changed"`) {
+			t.Fatalf("GET %s: the refusal must be audited with its reason, got %q", path, line)
+		}
+		if !strings.Contains(line, fmt.Sprintf("user_id=%q", fmt.Sprint(fixture.second.ID))) {
+			t.Fatalf("GET %s: the refusal must name the account it was refused under, got %q", path, line)
+		}
+	}
 }
