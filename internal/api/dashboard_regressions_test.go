@@ -80,16 +80,18 @@ func TestDashboardAndCalendarExposeAccessibleBBTInputs(t *testing.T) {
 	}
 }
 
-func TestDashboardStaleCycleWarningIncludesSettingsCTAAndEstimatedPhase(t *testing.T) {
+// TestDashboardStaleBandKeepsTheUpdateCycleDataCTABesideTheLateNotice: from
+// L+1 the late-cycle notice is the only text the warnings block holds for an
+// out-of-date cycle. The call to action — bring the last period start up to
+// date — must stand beside it: the settings link and the log-a-cycle-start
+// action.
+func TestDashboardStaleBandKeepsTheUpdateCycleDataCTABesideTheLateNotice(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "dashboard-stale-ui@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
 	// Cycle day 31 against a 28-day reference: past the reference (stale) but
-	// inside the seven-day grace window, so the late-cycle notice — which now
-	// outranks the stale hint, see
-	// TestDashboardLateCycleNoticeOutranksTheStaleHintAndClaimsNoInventedRange —
-	// stays silent and this test still observes the state it names.
+	// inside the seven-day grace window — out of date, not overdue.
 	lastPeriodStart := services.DateAtLocation(time.Now().UTC(), time.UTC).AddDate(0, 0, -30)
 	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
 		"cycle_length":      28,
@@ -119,14 +121,20 @@ func TestDashboardStaleCycleWarningIncludesSettingsCTAAndEstimatedPhase(t *testi
 	if warnings == nil {
 		t.Fatal("expected dashboard cycle warning container when baseline is stale")
 	}
-	if dashboardElementByDataAttr(warnings, "data-dashboard-stale-warning") == nil {
-		t.Fatal("expected stale cycle warning element inside the warning container")
+	if dashboardElementByDataAttr(warnings, "data-dashboard-cycle-day-warning") == nil {
+		t.Fatal("expected the late-cycle notice inside the warning container from L+1")
 	}
 	settingsCTA := htmlFindElement(warnings, func(node *html.Node) bool {
 		return node.Type == html.ElementNode && node.Data == "a" && htmlAttr(node, "href") == "/settings#settings-cycle"
 	})
 	if settingsCTA == nil {
-		t.Fatal("expected stale cycle warning to include direct settings CTA")
+		t.Fatal("expected the stale band to keep the direct settings CTA beside the late-cycle notice")
+	}
+	cycleStartAction := htmlFindElement(warnings, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlAttr(node, "data-late-cycle-action") == "cycle-start"
+	})
+	if cycleStartAction == nil {
+		t.Fatal("expected the stale band to offer logging the new cycle start beside the late-cycle notice")
 	}
 
 	header := dashboardElementByDataAttr(document, "data-dashboard-status-header")
@@ -205,9 +213,6 @@ func dashboardLateCycleNotice(t *testing.T, app *fiber.App, authCookie string) (
 	if warnings == nil {
 		t.Fatal("expected the dashboard cycle warning container on a cycle past its expected end")
 	}
-	if dashboardElementByDataAttr(warnings, "data-dashboard-stale-warning") != nil {
-		t.Fatal("expected the late-cycle notice to replace the stale hint, not to render beside it")
-	}
 	notice := dashboardElementByDataAttr(warnings, "data-dashboard-cycle-day-warning")
 	if notice == nil {
 		t.Fatal("expected the late-cycle notice inside the warning container")
@@ -215,13 +220,13 @@ func dashboardLateCycleNotice(t *testing.T, app *fiber.App, authCookie string) (
 	return notice, dashboardElementByDataAttr(warnings, "data-dashboard-late-cycle-actions")
 }
 
-// TestDashboardLateCycleNoticeOutranksTheStaleHintAndClaimsNoInventedRange is
+// TestDashboardLateCycleNoticeClaimsNoInventedRange is
 // the design-item-38 render regression for the insufficient-history half of the
 // late-cycle matrix. An account whose only cycle input is the onboarding
 // baseline has no completed cycle to compare against, so the notice must select
 // the no-personal-range key: the "usual range" it would otherwise cite is the
 // settings value, not a measurement.
-func TestDashboardLateCycleNoticeOutranksTheStaleHintAndClaimsNoInventedRange(t *testing.T) {
+func TestDashboardLateCycleNoticeClaimsNoInventedRange(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "dashboard-late-cycle-no-history@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")

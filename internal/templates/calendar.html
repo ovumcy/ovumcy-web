@@ -116,6 +116,12 @@
         {{end}}
       </div>
 
+      {{if .LateCycle.Visible}}
+      <div class="mt-4">
+        {{template "late_cycle_notice" .}}
+      </div>
+      {{end}}
+
       {{if or .HasPredictionExplanationPrimary .HasPredictionExplanationSecondary}}
       <div class="mt-4 space-y-2" data-calendar-prediction-explainer data-explainer-primary-key="{{.PredictionExplanationPrimaryKey}}" data-explainer-secondary-key="{{.PredictionExplanationSecondaryKey}}">
         {{if .HasPredictionExplanationPrimary}}

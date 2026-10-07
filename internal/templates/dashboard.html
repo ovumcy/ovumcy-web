@@ -241,8 +241,6 @@
           {{t .Messages .LateCycle.MessageKey}}
           {{- end -}}
         </p>
-        {{else if .CycleDataStale}}
-        <p class="warning-amber" data-dashboard-stale-warning>{{t .Messages "dashboard.cycle_day_stale_hint"}}</p>
         {{end}}
         {{if or .NextPeriodInPast .OvulationInPast}}
         <p class="warning-amber" data-dashboard-prediction-past>{{t .Messages "dashboard.prediction_in_past"}}</p>

@@ -13,7 +13,16 @@
   <div class="card-quiet text-sm journal-muted" data-stats-short-cycle-notice>{{t .Messages "stats.short_cycle_notice"}}</div>
   {{end}}
 
-  {{if .ShowLongCycleNotice}}
+  {{/* One long-cycle card per state: while the running cycle is late the shared
+       late-cycle notice leads it, and the recent-cycles pattern sentence (a
+       different fact — completed cycles past 45 days) rides in the same card
+       rather than standing as a second long-cycle message beside it. */}}
+  {{if .LateCycle.Visible}}
+  <div class="card-quiet text-sm space-y-2" data-stats-late-cycle>
+    {{template "late_cycle_notice" .}}
+    {{if .ShowLongCycleNotice}}<p class="journal-muted" data-stats-long-cycle-notice>{{t .Messages "stats.long_cycle_notice"}}</p>{{end}}
+  </div>
+  {{else if .ShowLongCycleNotice}}
   <div class="card-quiet text-sm journal-muted" data-stats-long-cycle-notice>{{t .Messages "stats.long_cycle_notice"}}</div>
   {{end}}
 

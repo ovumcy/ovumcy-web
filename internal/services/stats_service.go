@@ -173,7 +173,7 @@ func (service *StatsService) BuildFlags(user *models.User, logs []models.DailyLo
 		HasTrendData:         trendPointCount > 0,
 		HasInsights:          completedCycleCount >= statsMinimumInsightsCycles,
 		HasReliableTrend:     trendPointCount >= statsReliableTrendCycles,
-		CycleDataStale:       dashboardCycleDataStale(user, stats, today, location),
+		CycleDataStale:       dashboardCycleDataStale(user, stats),
 		CompletedCycleCount:  completedCycleCount,
 		InsightProgress:      statsInsightProgress(completedCycleCount),
 	}

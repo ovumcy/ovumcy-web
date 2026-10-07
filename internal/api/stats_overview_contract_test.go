@@ -57,8 +57,9 @@ type statsOverviewState struct {
 	// takes t.Parallel.
 	wantsFertilityHook bool
 	// wantCycleDataStale is the pages' out-of-date verdict for this state. It
-	// withholds the phase and the status and no date, so a state carrying it
-	// alone publishes its projection while answering "unknown" for both.
+	// withholds the phase, the status and the fertility half, never the next
+	// period, so a state carrying it alone publishes the next period while
+	// answering "unknown" for both.
 	wantCycleDataStale bool
 	// wantCurrentFertility is the status the state publishes; empty means
 	// "unknown", the answer of every withholding state.
@@ -196,11 +197,12 @@ func statsOverviewStates() []statsOverviewState {
 		},
 		{
 			// Out of date, not yet overdue: three 28-day cycles and cycle day 31.
-			// The overdue gate needs a day past 35, so nothing is suppressed and
-			// every projected date is published — the next period and the window
-			// already behind today — while both pages print phase and fertility
-			// as unknown. The API published "luteal" and a categorical status
-			// read against a window the cycle had already outrun.
+			// The overdue gate needs a day past 35, so the next period is still
+			// published, while from L+1 the fertility half is withheld under its
+			// own reason — the ovulation the model would name belongs to a next
+			// cycle whose start nobody logged — and both pages print phase and
+			// fertility as unknown. The API once published "luteal", a status and
+			// a window the cycle had already outrun.
 			name:    "data out of date before the cycle is overdue",
 			history: []int{114, 86, 58, 30},
 			seed: func(t *testing.T, database *gorm.DB, user models.User, today time.Time) {
@@ -210,9 +212,9 @@ func statsOverviewStates() []statsOverviewState {
 					"last_period_start": services.AddCalendarDays(today, -30, time.UTC),
 				})
 			},
-			wantReasons:        nil,
+			wantReasons:        []string{"cycle_data_stale"},
 			wantPredictions:    false,
-			wantFertility:      false,
+			wantFertility:      true,
 			wantNextPeriodSet:  true,
 			wantsFertilityHook: true,
 			wantCycleDataStale: true,

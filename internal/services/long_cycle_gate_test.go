@@ -432,41 +432,66 @@ func TestLongCycleGateWithholdsTheFertileSaveMessage(t *testing.T) {
 
 // TestLongCycleGateWithholdsTheImplantationHint covers the manual cycle-start
 // policy, which counts from the closing cycle's projected ovulation. A 28/60/60
-// history projects that ovulation from its median (cycle day 46) while its gate
-// answers from the mean on day 57, so the hint's six-to-twelve-day gap reached
-// two days the gate had already withheld.
+// history projects that ovulation from its median (cycle day 46), so the hint's
+// six-to-twelve-day gap falls on days 52 to 58, while the gate withholds from
+// day 50, the reference length plus one. A gate read from the mean (day 57)
+// once let the gap reach two days the gate had already withheld.
+//
+// The 28/60/60 history pins the withheld side: every gap day sits behind the
+// gate. A steady 28-day history pins the offered side, so the hint is shown to
+// be live inside the window rather than switched off everywhere.
 func TestLongCycleGateWithholdsTheImplantationHint(t *testing.T) {
 	base := time.Date(2025, time.January, 1, 0, 0, 0, 0, time.UTC)
 	user := longCycleGateUser()
-	logs := longCycleGateLogs(base, []int{0, 28, 88, 148})
-	lastStart := base.AddDate(0, 0, 148)
 
-	offeredInside, overdueInGap := 0, 0
-	for cycleDay := 40; cycleDay <= 70; cycleDay++ {
-		day := lastStart.AddDate(0, 0, cycleDay-1)
-		stats := BuildCycleStats(filterLogsNotAfter(logs, day.AddDate(0, 0, -1)), day.Add(-time.Second), BoundaryContext{})
-		stats.CurrentCycleDay = cycleDay
-		overdue := DashboardCycleOverdue(user, stats)
-		window := PredictCycleWindow(lastStart, DashboardProjectionCycleLength(user, stats), stats.LutealPhase)
-		gap := CalendarDaysBetween(window.OvulationDate, day)
-		inGap := gap >= 6 && gap <= 12
+	for _, tc := range []struct {
+		name             string
+		startOffsets     []int
+		firstDay         int
+		lastDay          int
+		wantOverdueInGap int
+		wantOfferedInGap int
+	}{
+		// From the mean (day 50) the out-of-date band withholds the projected
+		// ovulation on every surface, a week before the overdue verdict, so the
+		// whole six-to-twelve-day gap (days 52-58) sits behind the gate.
+		{"28/60/60 history, the gap sits behind the gate", []int{0, 28, 88, 148}, 40, 70, 7, 0},
+		// Ovulation on cycle day 14 puts the gap on days 20-26, inside the gate.
+		{"steady 28-day history, the gap sits inside the gate", []int{0, 28, 56, 84, 112}, 10, 40, 0, 7},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			logs := longCycleGateLogs(base, tc.startOffsets)
+			lastStart := base.AddDate(0, 0, tc.startOffsets[len(tc.startOffsets)-1])
 
-		policy := ResolveManualCycleStartPolicy(user, logs, day, day, time.UTC)
-		if overdue && policy.PotentialImplantation {
-			t.Fatalf("cycle day %d is past the gate, yet the implantation hint counts %d days from a withheld ovulation", cycleDay, policy.ImplantationGapDays)
-		}
-		if !overdue && policy.PotentialImplantation != inGap {
-			t.Fatalf("cycle day %d inside the gate: hint = %t, want %t (gap %d)", cycleDay, policy.PotentialImplantation, inGap, gap)
-		}
-		if inGap && overdue {
-			overdueInGap++
-		}
-		if inGap && !overdue {
-			offeredInside++
-		}
-	}
-	if overdueInGap != 2 || offeredInside == 0 {
-		t.Fatalf("scenario setup: %d gap days past the gate, %d inside it — this history no longer straddles the gate", overdueInGap, offeredInside)
+			offeredInside, overdueInGap := 0, 0
+			for cycleDay := tc.firstDay; cycleDay <= tc.lastDay; cycleDay++ {
+				day := lastStart.AddDate(0, 0, cycleDay-1)
+				stats := BuildCycleStats(filterLogsNotAfter(logs, day.AddDate(0, 0, -1)), day.Add(-time.Second), BoundaryContext{})
+				stats.CurrentCycleDay = cycleDay
+				// The gate is the whole fertility gate, not one of its signals.
+				withheld := FertilityProjectionSuppressed(user, stats)
+				window := PredictCycleWindow(lastStart, DashboardProjectionCycleLength(user, stats), stats.LutealPhase)
+				gap := CalendarDaysBetween(window.OvulationDate, day)
+				inGap := gap >= 6 && gap <= 12
+
+				policy := ResolveManualCycleStartPolicy(user, logs, day, day, time.UTC)
+				if withheld && policy.PotentialImplantation {
+					t.Fatalf("cycle day %d is past the gate, yet the implantation hint counts %d days from a withheld ovulation", cycleDay, policy.ImplantationGapDays)
+				}
+				if !withheld && policy.PotentialImplantation != inGap {
+					t.Fatalf("cycle day %d inside the gate: hint = %t, want %t (gap %d)", cycleDay, policy.PotentialImplantation, inGap, gap)
+				}
+				if inGap && withheld {
+					overdueInGap++
+				}
+				if inGap && !withheld {
+					offeredInside++
+				}
+			}
+			if overdueInGap != tc.wantOverdueInGap || offeredInside != tc.wantOfferedInGap {
+				t.Fatalf("scenario setup: %d gap days past the gate, %d inside it — want %d and %d", overdueInGap, offeredInside, tc.wantOverdueInGap, tc.wantOfferedInGap)
+			}
+		})
 	}
 }
 

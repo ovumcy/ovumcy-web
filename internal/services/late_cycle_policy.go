@@ -12,9 +12,15 @@ import "github.com/ovumcy/ovumcy-web/internal/models"
 // important one: an account with no completed cycles has no "usual range" to
 // be compared against, and inventing one at the most anxious moment in the
 // product is worse than saying nothing.
+//
+// LateCycleFertilityPausedKey is the paused wording for the band between the
+// out-of-date verdict and the overdue gate: there only the fertility half is
+// withheld and the next-period estimate is still on the page, so the copy may
+// not say that predictions as a whole wait for a new period.
 const (
 	LateCycleBeyondRangeKey       = "dashboard.late_cycle.beyond_range"
 	LateCyclePredictionsPausedKey = "dashboard.late_cycle.predictions_paused"
+	LateCycleFertilityPausedKey   = "dashboard.late_cycle.fertility_paused"
 	LateCycleNoPersonalRangeKey   = "dashboard.late_cycle.no_personal_range"
 )
 
@@ -56,12 +62,22 @@ func HasPersonalCycleRange(user *models.User, completedCycleCount int) bool {
 	return completedCycleCount >= statsMinimumInsightsCycles && !DashboardPredictionDisabled(user)
 }
 
-// BuildLateCycleNotice selects the late-cycle message for a cycle the dashboard
-// already considers long. cycleDayLooksLong is not a generic "looks long"
-// check widened here: the one production caller (BuildDashboardCycleContext)
-// passes it DashboardCycleOverdue's own verdict, so every branch below this
-// function's first return already knows the overdue gate has fired and every
-// projected date on the page is withheld.
+// BuildLateCycleNotice selects the late-cycle message for a cycle the owner
+// pages already consider long. The one production caller
+// (BuildDashboardCycleContext) passes two verdicts it resolved itself and this
+// function re-derives neither: cycleDataStale is the out-of-date verdict
+// (dashboardCycleDataStale — the running cycle is past the displayed reference
+// length, from L+1), and cycleOverdue is DashboardCycleOverdue's. The notice
+// stands from the FIRST of the two: from L+1 the fertility half is withheld on
+// every surface (DashboardCyclePastReferenceLength), and a withheld value with
+// nothing beside it explaining why is a blank slot. Before the overdue gate the
+// next-period estimate is still shown, so the paused branch words only the
+// fertility half as waiting (LateCycleFertilityPausedKey); once the gate has
+// fired every projected date on the page is withheld and the wording covers
+// them all.
+//
+// The dashboard, the calendar and the stats page all read this notice off the
+// one cycle context, so the three never disagree on whether it stands.
 //
 // That is why the excess-days branch below no longer compares against
 // stats.MaxCycleLength to decide between a reassurance and a warning: the
@@ -77,8 +93,8 @@ func HasPersonalCycleRange(user *models.User, completedCycleCount int) bool {
 // paused pregnancy never reach here: both return early from
 // BuildDashboardCycleContext with the zero notice, so the recorded-facts-only
 // surfaces stay silent.
-func BuildLateCycleNotice(user *models.User, stats CycleStats, cycleDayLooksLong bool) LateCycleNotice {
-	if !cycleDayLooksLong || stats.CurrentCycleDay <= 0 {
+func BuildLateCycleNotice(user *models.User, stats CycleStats, cycleDataStale bool, cycleOverdue bool) LateCycleNotice {
+	if (!cycleDataStale && !cycleOverdue) || stats.CurrentCycleDay <= 0 {
 		return LateCycleNotice{}
 	}
 
@@ -93,9 +109,13 @@ func BuildLateCycleNotice(user *models.User, stats CycleStats, cycleDayLooksLong
 
 	excessDays := stats.CurrentCycleDay - stats.MaxCycleLength
 	if excessDays <= 0 {
+		pausedKey := LateCycleFertilityPausedKey
+		if cycleOverdue {
+			pausedKey = LateCyclePredictionsPausedKey
+		}
 		return LateCycleNotice{
 			Visible:    true,
-			MessageKey: LateCyclePredictionsPausedKey,
+			MessageKey: pausedKey,
 			Tone:       LateCycleToneNeutral,
 			Form:       LateCycleFormPlain,
 		}

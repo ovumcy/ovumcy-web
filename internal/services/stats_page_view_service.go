@@ -45,6 +45,7 @@ type StatsPageViewData struct {
 	PredictionExplanationSecondaryKey string
 	HasPredictionExplanationPrimary   bool
 	HasPredictionExplanationSecondary bool
+	LateCycle                         LateCycleNotice
 	RecentCycleFactors                []StatsCycleFactorContextItem
 	CycleFactorPatternSummaries       []StatsCycleFactorPatternSummary
 	RecentFactorCycles                []StatsCycleFactorRecentCycleSummary
@@ -179,6 +180,7 @@ func (service *StatsService) BuildStatsPageViewData(ctx context.Context, user *m
 		PredictionExplanationSecondaryKey:   predictionExplanation.SecondaryKey,
 		HasPredictionExplanationPrimary:     predictionExplanation.PrimaryKey != "",
 		HasPredictionExplanationSecondary:   predictionExplanation.SecondaryKey != "",
+		LateCycle:                           cycleContext.LateCycle,
 		RecentCycleFactors:                  cycleFactorExplanation.RecentFactors,
 		CycleFactorPatternSummaries:         cycleFactorExplanation.PatternSummaries,
 		RecentFactorCycles:                  cycleFactorExplanation.RecentCycles,

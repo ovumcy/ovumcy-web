@@ -40,7 +40,7 @@ var dayPanelProjectionCycleStarts = []string{"2026-01-01", "2026-01-29", "2026-0
 // reach the same spelling.
 var dayPanelProjectionWords = []string{
 	"predict", "fertil", "ovulat", "luteal", "follic", "phase", "estimat", "next_period",
-	"stale", "outdated", "out_of_date", "overdue", "late_cycle", "suppress",
+	"stale", "out_of_date", "overdue", "late_cycle", "suppress",
 }
 
 // dayPanelAllowedCopyKeys are panel strings that name a projection word and are
@@ -59,7 +59,7 @@ type dayPanelProjectionBand struct {
 }
 
 var dayPanelProjectionBands = []dayPanelProjectionBand{
-	{name: "out of date", now: time.Date(2026, time.April, 24, 12, 0, 0, 0, time.UTC), cycleDay: 30, dashboardCopyKey: "dashboard.cycle_day_stale_hint"},
+	{name: "out of date", now: time.Date(2026, time.April, 24, 12, 0, 0, 0, time.UTC), cycleDay: 30, dashboardCopyKey: "dashboard.late_cycle.beyond_range.other"},
 	{name: "overdue", now: time.Date(2026, time.May, 4, 12, 0, 0, 0, time.UTC), cycleDay: 40, wantOverdue: true, dashboardCopyKey: "dashboard.late_cycle.beyond_range.other"},
 }
 
@@ -140,8 +140,12 @@ func assertDayPanelProjectionBand(t *testing.T, band dayPanelProjectionBand, use
 		}
 		return stats
 	}
-	if !published.CycleDataStale || overdue || verdict.PredictionsSuppressed || verdict.FertilitySuppressed {
-		t.Fatalf("fixture: %s must be out of date without being suppressed, stale %v verdict %+v", band.name, published.CycleDataStale, verdict)
+	// From L+1 the out-of-date band withholds the fertility half and keeps the
+	// next-period estimate: fertility-suppressed for that reason alone, never
+	// suppressed as a whole.
+	if !published.CycleDataStale || overdue || verdict.PredictionsSuppressed || !verdict.FertilitySuppressed ||
+		!slices.Equal(verdict.Reasons, []services.SuppressionReason{services.SuppressionReasonCycleDataStale}) {
+		t.Fatalf("fixture: %s must be out of date with only the fertility half withheld, stale %v verdict %+v", band.name, published.CycleDataStale, verdict)
 	}
 	return stats
 }

@@ -1272,8 +1272,11 @@ components:
               - irregular_needs_more_cycles
               - awaiting_first_cycle
               - awaiting_more_cycles
+              - cycle_data_stale
           # awaiting_first_cycle: no completed cycle yet. awaiting_more_cycles:
-          # a regular-mode account with one or two completed cycles. Both
+          # a regular-mode account with one or two completed cycles.
+          # cycle_data_stale: the running cycle is past its reference length
+          # (the cycle_data_stale flag), before the overdue cut-off. All three
           # withhold the fertility half only; the next-period estimate stays.
       additionalProperties: false
 

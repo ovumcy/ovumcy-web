@@ -54,6 +54,14 @@ func confirmedVerdictRows() []confirmedVerdictRow {
 			*today = AddCalendarDays(*today, 23, time.UTC)
 			*stats = atToday(*stats, *today)
 		}},
+		// The out-of-date band withholds the PROJECTED fertility half from L+1;
+		// a day the temperatures confirmed is not a projection and outlives it,
+		// as it outlives the overdue gate a week later.
+		{signal: "DashboardCyclePastReferenceLength", wantKept: true, suppress: func(_ *models.User, stats *CycleStats, today *time.Time) {
+			// Cycle day 29 of a 28-day model: past 28, short of 28 + 7.
+			*today = AddCalendarDays(*today, 15, time.UTC)
+			*stats = atToday(*stats, *today)
+		}},
 	}
 }
 
