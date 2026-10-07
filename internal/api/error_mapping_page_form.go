@@ -106,6 +106,10 @@ func (handler *Handler) sendPageFormRefusalPage(c fiber.Ctx, spec APIErrorSpec, 
 		"RefusalMessage": message,
 		"RefusalKey":     flashKey,
 		"BackPath":       back,
+		// A refusal from the CSRF check or from a limiter running ahead of it
+		// carries no token, and a language switch posting none is refused
+		// again: the page offers the back link alone.
+		"HideLanguageSwitch": csrfToken(c) == "",
 	})
 	var output bytes.Buffer
 	if err := tmpl.ExecuteTemplate(&output, "base", payload); err != nil {

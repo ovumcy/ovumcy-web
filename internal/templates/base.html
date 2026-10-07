@@ -48,7 +48,7 @@
         </a>
 
         <div class="flex min-w-0 items-center gap-3">
-          {{if or (not .CurrentUser) .HideNavigation}}
+          {{if and (or (not .CurrentUser) .HideNavigation) (not .HideLanguageSwitch)}}
           <form action="/lang" method="post" class="lang-switch" aria-label="{{t .Messages "lang.switch"}}" data-language-switch-form>
             <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
             <input type="hidden" name="next" value="{{.CurrentPath}}">
