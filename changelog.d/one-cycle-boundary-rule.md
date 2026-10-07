@@ -26,7 +26,8 @@
   auto-fill writes the first days of the period; under the new rule they form a cycle start of their
   own, so moving the start left a phantom short cycle behind and kept the dashboard on the old date.
   Saving a new start now writes the new start's days the way onboarding would under your auto-fill
-  setting and period length, and marks the new start day as a period day if it was logged without one.
+  setting and period length, stopping at today like onboarding's own fill, and marks the new start
+  day as a period day if it was logged without one.
   It removes old days only while auto-fill is on in your stored settings, and only when the save
   corrects the old date: the old start still opens your newest cycle, and the new one is earlier or
   less than a shortest cycle (15 days) later. Even then it removes only a fill written as one cohort

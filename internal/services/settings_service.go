@@ -105,6 +105,13 @@ type CycleSettingsUpdate struct {
 	UsageGoal          string
 	LastPeriodStartSet bool
 	LastPeriodStart    *time.Time
+	// now and location are the request clock and the owner's time zone the start
+	// date was validated against (ValidateCycleSettings sets both). A start
+	// move's fill stops at the owner's local today taken from them, on the bound
+	// periodFillLastDay holds for every period auto-fill. An update built by hand
+	// carries a zero clock, which periodFillLastDay reads as "no today known".
+	now      time.Time
+	location *time.Location
 }
 
 type SettingsService struct {
@@ -377,7 +384,11 @@ type periodStartMover interface {
 // and the dashboard stays anchored on the old date). So the days the old
 // start's fill wrote are removed — only those (oldStartFillRun) — and the new
 // start gets what onboarding would write for it under the owner's auto-fill
-// setting and period length (as this save leaves them). Existing rows in the
+// setting and period length (as this save leaves them): the period's days up to
+// its last day or the owner's local today, whichever comes first
+// (periodFillLastDay), so a start moved to a recent date stores no day the
+// owner has not reached. Only the days actually filled, and the new start, are
+// spared from the old range's clear. Existing rows in the
 // new range are never rewritten, except that a non-period row on the new start
 // day becomes a period day: the date just saved is the owner's period start.
 //
@@ -408,8 +419,15 @@ func planPeriodStartMove(stored models.User, settings CycleSettingsUpdate, clear
 	move := models.PeriodStartMove{MarkDay: newStart}
 	keep := map[string]bool{CalendarDayKey(newStart): true}
 	if autoFill {
+		// Resolved in the owner's location and handed over as the UTC-midnight
+		// calendar day the stored dates carry, exactly as onboarding completion
+		// bounds its fill.
+		lastDay := CalendarDay(periodFillLastDay(newStart, periodFillLength(newLength), settings.now, settings.location), time.UTC)
 		for offset := range periodFillLength(newLength) {
 			day := newStart.AddDate(0, 0, offset)
+			if day.After(lastDay) {
+				break
+			}
 			move.FillDays = append(move.FillDays, day)
 			keep[CalendarDayKey(day)] = true
 		}

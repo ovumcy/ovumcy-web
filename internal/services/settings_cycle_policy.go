@@ -196,6 +196,10 @@ func (service *SettingsService) ValidateCycleSettings(input CycleSettingsValidat
 	// calendar day (see day_utils.go on the two shapes).
 	canonical := CalendarDay(parsedDay, time.UTC)
 	update.LastPeriodStart = &canonical
+	// The start move's fill is bounded by the same today the date was just
+	// checked against.
+	update.now = now
+	update.location = location
 	return update, nil
 }
 
