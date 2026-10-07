@@ -35,6 +35,18 @@ func ApplyUserCycleBaseline(user *models.User, logs []models.DailyLog, stats Cyc
 	return stats
 }
 
+// ownerRunningPeriodRule hands the stats derivation the owner's today and the
+// configured period length (the same value the baseline falls back to), so the
+// running cycle's period stays out of AveragePeriodLength until it has ended.
+// Accounts the baseline does not apply to get the zero rule.
+func ownerRunningPeriodRule(user *models.User, today time.Time) runningPeriodRule {
+	if user == nil || user.Role != models.RoleOwner {
+		return runningPeriodRule{}
+	}
+	_, periodLength, _ := resolveUserCycleLengths(user)
+	return runningPeriodRule{today: today, periodLength: periodLength}
+}
+
 func resolveUserCycleLengths(user *models.User) (int, int, int) {
 	cycleLength := 0
 	if IsValidOnboardingCycleLength(user.CycleLength) {
