@@ -17,6 +17,10 @@ var (
 	ErrAuthSessionTokenExpired       = errors.New("auth session token expired")
 	ErrAuthSessionTokenInvalidUserID = errors.New("auth session token invalid user id")
 	ErrAuthSessionTokenRevoked       = errors.New("auth session token revoked")
+	// ErrAuthSessionLookupFailed is a storage fault while resolving a well-formed
+	// token: it says nothing about the session, so the caller must not treat it
+	// as a refusal that ends one.
+	ErrAuthSessionLookupFailed = errors.New("auth session lookup failed")
 )
 
 type AuthSessionClaims struct {
