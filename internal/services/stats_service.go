@@ -28,9 +28,9 @@ const (
 	// statsMinimumInsightsCycles is the basic-insights tier: the number of
 	// COMPLETED cycles below which the stats page has nothing to compare.
 	//
-	// It is the number of completed cycles the dashboard asks for before it
-	// shows a range, so the two surfaces never tell the reader different counts.
-	statsMinimumInsightsCycles = 3
+	// It is the dashboard's fertility floor itself, never a second literal of
+	// the same number, so the two surfaces never tell the reader different counts.
+	statsMinimumInsightsCycles = fertilityMinimumCycles
 	// statsReliableTrendCycles is how many TREND POINTS the cycle-length chart
 	// needs before HasReliableTrend calls its shape reliable. It is not the
 	// pattern minimum: trend points are the trimmed series BuildTrend returns

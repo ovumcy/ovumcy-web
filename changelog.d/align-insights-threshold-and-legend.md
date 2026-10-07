@@ -7,6 +7,6 @@
   sentence explaining why predictions are held back now shows above that waiting state too, so an
   irregular-mode account with one or two cycles still reads it. The late-cycle notice compares
   against a personal range, and the dashboard's cycle-factor hint appears, from three completed
-  cycles as well. The
-  calendar legend used to list every projected state to every account, including accounts whose grid
-  drew none of them; it now shows an entry only when the month on screen carries that state.
+  cycles as well. The calendar legend used to list every projected state to every account, including
+  accounts whose grid drew none of them; it now shows an entry only when the month on screen carries
+  that state.
