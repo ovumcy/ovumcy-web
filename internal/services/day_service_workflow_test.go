@@ -271,10 +271,10 @@ func TestUpsertDayEntryWithAutoFillReReadsItsOwnWriteFromAnOffsetZone(t *testing
 	zone := time.FixedZone("test+03", 3*60*60)
 	day := time.Date(2026, time.March, 10, 9, 30, 0, 0, zone)
 
-	saved, err := service.UpsertDayEntryWithAutoFill(context.Background(), 10, day,
-		DayEntryInput{Flow: models.FlowNone, Notes: "saved from +03"}, zone)
+	saved, err := service.UpsertDayEntryWithAutoFillAt(context.Background(), 10, day,
+		DayEntryInput{Flow: models.FlowNone, Notes: "saved from +03"}, time.Now(), zone)
 	if err != nil {
-		t.Fatalf("UpsertDayEntryWithAutoFill() unexpected error: %v", err)
+		t.Fatalf("UpsertDayEntryWithAutoFillAt() unexpected error: %v", err)
 	}
 	if want := time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC); !saved.Date.Equal(want) {
 		t.Fatalf("expected the stored day to be anchored at %s, got %s", want, saved.Date)
@@ -294,7 +294,7 @@ func TestUpsertDayEntryWithAutoFillNormalizesNonPeriodInput(t *testing.T) {
 	users := &dayUserRepositoryStub{}
 	service := NewDayService(logs, users)
 
-	entry, err := service.UpsertDayEntryWithAutoFill(context.Background(),
+	entry, err := service.UpsertDayEntryWithAutoFillAt(context.Background(),
 		10,
 		time.Date(2026, time.February, 20, 12, 0, 0, 0, time.UTC),
 		DayEntryInput{
@@ -303,10 +303,11 @@ func TestUpsertDayEntryWithAutoFillNormalizesNonPeriodInput(t *testing.T) {
 			SymptomIDs: []uint{5, 6},
 			Notes:      strings.Repeat("x", MaxDayNotesLength+11),
 		},
+		time.Now(),
 		time.UTC,
 	)
 	if err != nil {
-		t.Fatalf("UpsertDayEntryWithAutoFill() unexpected error: %v", err)
+		t.Fatalf("UpsertDayEntryWithAutoFillAt() unexpected error: %v", err)
 	}
 	if entry.Flow != models.FlowNone {
 		t.Fatalf("expected non-period flow normalized to %q, got %q", models.FlowNone, entry.Flow)
@@ -582,13 +583,14 @@ func TestUpsertDayEntryWithAutoFillReturnsTypedLoadError(t *testing.T) {
 	users := &dayUserRepositoryStub{loadErr: errors.New("load settings failed")}
 	service := NewDayService(logs, users)
 
-	_, err := service.UpsertDayEntryWithAutoFill(context.Background(),
+	_, err := service.UpsertDayEntryWithAutoFillAt(context.Background(),
 		10,
 		time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC),
 		DayEntryInput{
 			IsPeriod: true,
 			Flow:     models.FlowLight,
 		},
+		time.Now(),
 		time.UTC,
 	)
 	if !errors.Is(err, ErrDayAutoFillLoadFailed) {
@@ -607,13 +609,14 @@ func TestUpsertDayEntryWithAutoFillReturnsTypedAutofillDecisionError(t *testing.
 	}
 	service := NewDayService(logs, users)
 
-	_, err := service.UpsertDayEntryWithAutoFill(context.Background(),
+	_, err := service.UpsertDayEntryWithAutoFillAt(context.Background(),
 		10,
 		time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC),
 		DayEntryInput{
 			IsPeriod: true,
 			Flow:     models.FlowLight,
 		},
+		time.Now(),
 		time.UTC,
 	)
 	if !errors.Is(err, ErrDayAutoFillCheckFailed) {
@@ -632,13 +635,14 @@ func TestUpsertDayEntryWithAutoFillReturnsTypedAutofillApplyError(t *testing.T) 
 	}
 	service := NewDayService(logs, users)
 
-	_, err := service.UpsertDayEntryWithAutoFill(context.Background(),
+	_, err := service.UpsertDayEntryWithAutoFillAt(context.Background(),
 		10,
 		time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC),
 		DayEntryInput{
 			IsPeriod: true,
 			Flow:     models.FlowLight,
 		},
+		time.Now(),
 		time.UTC,
 	)
 	if !errors.Is(err, ErrDayAutoFillApplyFailed) {
@@ -661,17 +665,18 @@ func TestUpsertDayEntryWithAutoFillClearsCycleStartWhenPeriodIsRemoved(t *testin
 		Flow:       models.FlowHeavy,
 	}
 
-	entry, err := service.UpsertDayEntryWithAutoFill(context.Background(),
+	entry, err := service.UpsertDayEntryWithAutoFillAt(context.Background(),
 		10,
 		existingDay,
 		DayEntryInput{
 			IsPeriod: false,
 			Flow:     models.FlowNone,
 		},
+		time.Now(),
 		time.UTC,
 	)
 	if err != nil {
-		t.Fatalf("UpsertDayEntryWithAutoFill() unexpected error: %v", err)
+		t.Fatalf("UpsertDayEntryWithAutoFillAt() unexpected error: %v", err)
 	}
 	if entry.CycleStart {
 		t.Fatalf("expected cycle_start to be cleared when period is removed")

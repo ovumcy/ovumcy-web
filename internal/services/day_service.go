@@ -307,7 +307,7 @@ func mergePreservedDayEntryInput(existing models.DailyLog, payload DayEntryInput
 }
 
 // DayEntryFields names the day fields one partial write states. A field it
-// does not name is not that write's subject: PatchDayEntryWithAutoFill keeps
+// does not name is not that write's subject: PatchDayEntryWithAutoFillAt keeps
 // its stored value, so an absent field never clears anything.
 //
 // The cycle-start flag is deliberately not a member. It is not a value a
@@ -377,10 +377,6 @@ func mergeDayEntryPatch(existing models.DailyLog, patch DayEntryInput, fields Da
 	return merged
 }
 
-func (service *DayService) UpsertDayEntryWithAutoFill(ctx context.Context, userID uint, day time.Time, payload DayEntryInput, location *time.Location) (models.DailyLog, error) {
-	return service.UpsertDayEntryWithAutoFillAt(ctx, userID, day, payload, time.Now(), location)
-}
-
 func (service *DayService) UpsertDayEntryWithAutoFillAt(ctx context.Context, userID uint, day time.Time, payload DayEntryInput, now time.Time, location *time.Location) (models.DailyLog, error) {
 	if location == nil {
 		location = time.UTC
@@ -397,15 +393,11 @@ func (service *DayService) UpsertDayEntryWithAutoFillAt(ctx context.Context, use
 	})
 }
 
-// PatchDayEntryWithAutoFill is the partial day write: only the fields named
+// PatchDayEntryWithAutoFillAt is the partial day write: only the fields named
 // in fields change, and every other field keeps its stored value
 // (mergeDayEntryPatch). The merge reads the stored row inside the same
 // transaction as the write, so the day it merges onto is the day it replaces;
 // a per-field precondition on the stored values belongs in that same step.
-func (service *DayService) PatchDayEntryWithAutoFill(ctx context.Context, userID uint, day time.Time, patch DayEntryInput, fields DayEntryFields, location *time.Location) (models.DailyLog, error) {
-	return service.PatchDayEntryWithAutoFillAt(ctx, userID, day, patch, fields, time.Now(), location)
-}
-
 func (service *DayService) PatchDayEntryWithAutoFillAt(ctx context.Context, userID uint, day time.Time, patch DayEntryInput, fields DayEntryFields, now time.Time, location *time.Location) (models.DailyLog, error) {
 	if location == nil {
 		location = time.UTC
