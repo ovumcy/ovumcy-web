@@ -58,6 +58,16 @@ func TestMapDayUpsertError(t *testing.T) {
 			want: globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid cycle start day"),
 		},
 		{
+			name: "period recorded past the cycle-start bound",
+			err:  services.ErrDayPeriodDateInvalid,
+			want: globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid cycle start day"),
+		},
+		{
+			name: "pregnancy test recorded past the cycle-start bound",
+			err:  services.ErrDayPregnancyTestDateInvalid,
+			want: globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid pregnancy test day"),
+		},
+		{
 			name: "invalid flow",
 			err:  services.ErrInvalidDayFlow,
 			want: globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid flow value"),

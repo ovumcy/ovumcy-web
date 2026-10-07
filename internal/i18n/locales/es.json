@@ -479,6 +479,7 @@
   "dashboard.bbt_range_error": "Introduce un valor entre %s y %s %s.",
   "dashboard.error.invalid_cervical_mucus": "Selecciona un valor válido de moco cervical.",
   "dashboard.error.invalid_pregnancy_test": "Selecciona un valor válido de test de embarazo.",
+  "dashboard.error.invalid_pregnancy_test_date": "Solo puedes registrar un resultado de test de embarazo en días pasados o como máximo 2 días por delante.",
   "dashboard.error.invalid_day_entry": "Este día o alguno de sus valores no es válido. Revisa la fecha y lo que has introducido e inténtalo de nuevo.",
   "dashboard.pregnancy_test": "Test de embarazo",
   "dashboard.pregnancy_test.none": "Sin test",
