@@ -163,6 +163,10 @@ func (service *StatsService) BuildStatsPageViewData(ctx context.Context, user *m
 	// while the grid and the chart name the confirmed day.
 	today := DateAtLocation(now, location)
 	_, publishedStats, _ := ConfirmedAndPublishedStats(user, baseData.logs, baseData.stats, today, location)
+	// The phase card names today's phase and fertility status, so once the
+	// ovulation has rolled it reads them against the rolled window, as the
+	// dashboard and the JSON overview do.
+	publishedStats = cycleContext.MovedWindow.ApplyTo(publishedStats)
 
 	return StatsPageViewData{
 		Stats:                               publishedStats,

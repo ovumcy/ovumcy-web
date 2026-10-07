@@ -67,6 +67,54 @@ type DashboardCycleContext struct {
 	FertilitySuppressed        bool
 	NextPeriodInPast           bool
 	OvulationInPast            bool
+	// MovedWindow is today's fertility status and phase as the JSON overview
+	// publishes them once the running cycle's ovulation is behind today and the
+	// window has rolled forward. Set only on those days; see
+	// dashboardMovedWindowVerdict.
+	MovedWindow DashboardMovedWindowVerdict
+}
+
+// DashboardMovedWindowVerdict is the fertility status, its basis and the phase
+// read against the rolled window (reconcileMovedWindow). Reconciled is false on
+// every day the window did not move, and then the other fields are empty.
+type DashboardMovedWindowVerdict struct {
+	Reconciled       bool
+	CurrentFertility string
+	FertilityBasis   string
+	CurrentPhase     string
+}
+
+// dashboardMovedWindowVerdict asks the overview's own publication path whether
+// it re-read today against a moved window, and takes the answer it gave. The
+// dashboard and the stats page used to read the status off the running cycle's
+// window and the phase off the hero ribbon, so on the days the ovulation had
+// rolled the header said "luteal, outside the estimated window" while the API
+// and the calendar called today fertile — and, past 9999-12-31, kept naming a
+// status for a window no surface publishes. Taking the verdict from the same
+// call rather than re-deriving the roll keeps the pages on the API's days.
+func dashboardMovedWindowVerdict(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) DashboardMovedWindowVerdict {
+	published, _, _, reconciled := publishedOverviewStats(user, logs, stats, today, location)
+	if !reconciled {
+		return DashboardMovedWindowVerdict{}
+	}
+	return DashboardMovedWindowVerdict{
+		Reconciled:       true,
+		CurrentFertility: published.CurrentFertility,
+		FertilityBasis:   published.FertilityBasis,
+		CurrentPhase:     published.CurrentPhase,
+	}
+}
+
+// ApplyTo puts the verdict on a published copy of the stats; on a day the
+// window did not move it returns the copy unchanged.
+func (verdict DashboardMovedWindowVerdict) ApplyTo(stats CycleStats) CycleStats {
+	if !verdict.Reconciled {
+		return stats
+	}
+	stats.CurrentFertility = verdict.CurrentFertility
+	stats.FertilityBasis = verdict.FertilityBasis
+	stats.CurrentPhase = verdict.CurrentPhase
+	return stats
 }
 
 type dashboardPredictionDisplay struct {
@@ -710,6 +758,7 @@ func BuildDashboardCycleContext(user *models.User, logs []models.DailyLog, stats
 		FertilitySuppressed:         fertilitySuppressed,
 		NextPeriodInPast:            dashboardNextPeriodInPast(display, today),
 		OvulationInPast:             dashboardOvulationInPast(display, today),
+		MovedWindow:                 dashboardMovedWindowVerdict(user, logs, stats, today, location),
 	}
 }
 

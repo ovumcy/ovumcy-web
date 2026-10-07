@@ -73,8 +73,14 @@ func (service *DayService) ResolveDayFeedback(ctx context.Context, user *models.
 	// dashboard did not shade and stayed silent on days it did. The two warnings
 	// below keep the full set on purpose — each asks about the day being edited,
 	// not about what the account's timeline supports today.
+	//
+	// The window is the one the JSON overview publishes (PublishedOverviewStats):
+	// once the running cycle's ovulation is behind today it is the rolled window,
+	// the one the calendar shades and the dashboard reads today's status against,
+	// so the toast cannot call today fertile where the header does not, or the
+	// other way round.
 	stats := BuildCycleStatsFromLogs(user, FilterLogsToStatsHistory(logs, today, location), now, location)
-	_, published, suppression := ConfirmedAndPublishedStats(user, logs, stats, today, location)
+	published, suppression, _ := PublishedOverviewStats(user, logs, stats, today, location)
 	entry, err := service.FetchLogByDate(ctx, user.ID, day, location)
 	if err != nil {
 		return DayFeedbackState{}, err

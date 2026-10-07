@@ -105,7 +105,12 @@ func TestStatsOverviewAnswersProjectionsPastYear9999AsNull(t *testing.T) {
 		wantFertility string
 	}{
 		{name: "whole projection past the year", lastStart: time.Date(9999, 12, 20, 0, 0, 0, 0, time.UTC), wantFertility: "unknown"},
-		{name: "ovulation inside the year", lastStart: time.Date(9999, 12, 10, 0, 0, 0, 0, time.UTC), wantOvulation: "9999-12-23", wantFertility: "outside_estimated_window"},
+		// The running cycle's ovulation (9999-12-23) is behind today, and the
+		// cycle every page rolls it into ovulates past the year: no day, no
+		// window, and so no status read against one.
+		{name: "passed ovulation rolled past the year", lastStart: time.Date(9999, 12, 10, 0, 0, 0, 0, time.UTC), wantFertility: "unknown"},
+		// The ovulation is today, not yet behind it, so no surface rolls it.
+		{name: "ovulation inside the year", lastStart: time.Date(9999, 12, 17, 0, 0, 0, 0, time.UTC), wantOvulation: "9999-12-30", wantFertility: "fertile"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
