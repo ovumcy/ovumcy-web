@@ -20,6 +20,11 @@ var onboardingFillNow = time.Date(2026, time.March, 20, 12, 0, 0, 0, time.UTC)
 // as period days for the owner, in date order.
 func onboardWithPeriodFill(t *testing.T, startDay time.Time, now time.Time, location *time.Location) []string {
 	t.Helper()
+	return onboardWithAutoPeriodFill(t, startDay, now, location, true)
+}
+
+func onboardWithAutoPeriodFill(t *testing.T, startDay time.Time, now time.Time, location *time.Location, autoPeriodFill bool) []string {
+	t.Helper()
 
 	database := newTwoOwnerIntegrationDatabase(t, "ovumcy-onboarding-fill-bound")
 	service := NewOnboardingService(db.NewRepositories(database).Users)
@@ -31,7 +36,7 @@ func onboardWithPeriodFill(t *testing.T, startDay time.Time, now time.Time, loca
 	if err := service.SaveStep1(ctx, owner.ID, startDay); err != nil {
 		t.Fatalf("SaveStep1() unexpected error: %v", err)
 	}
-	if _, _, err := service.SaveStep2(ctx, owner.ID, 28, 5, true, false, models.UsageGoalHealth); err != nil {
+	if _, _, err := service.SaveStep2(ctx, owner.ID, 28, 5, autoPeriodFill, false, models.UsageGoalHealth); err != nil {
 		t.Fatalf("SaveStep2() unexpected error: %v", err)
 	}
 	if _, err := service.CompleteOnboardingForUser(ctx, owner.ID, now, location); err != nil {
@@ -132,4 +137,20 @@ func TestOnboardingCompletesWithoutFillWhenTheStartIsAfterTheOwnersToday(t *test
 	start := time.Date(2026, time.March, 21, 0, 0, 0, 0, time.UTC)
 	got := onboardWithPeriodFill(t, start, onboardingFillNow, time.UTC)
 	requirePeriodDays(t, got)
+}
+
+// TestOnboardingWithAutoFillOffWritesNoPeriodDay holds the toggle-off branch on
+// the new bound: whether the period is still running or already over, an owner
+// who switched auto-fill off gets no seeded day, and onboarding still completes
+// on the step-1 date.
+func TestOnboardingWithAutoFillOffWritesNoPeriodDay(t *testing.T) {
+	for _, start := range []time.Time{
+		time.Date(2026, time.March, 18, 0, 0, 0, 0, time.UTC),
+		time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC),
+	} {
+		t.Run(start.Format("2006-01-02"), func(t *testing.T) {
+			got := onboardWithAutoPeriodFill(t, start, onboardingFillNow, time.UTC, false)
+			requirePeriodDays(t, got)
+		})
+	}
 }
