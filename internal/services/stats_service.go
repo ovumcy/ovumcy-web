@@ -95,9 +95,10 @@ func (service *StatsService) BuildCycleStatsForRange(ctx context.Context, user *
 // call sites: suppression is the floor, and a floor one surface stands a day in
 // front of is not one.
 func BuildCycleStatsFromLogs(user *models.User, logs []models.DailyLog, now time.Time, location *time.Location) CycleStats {
-	logs = filterLogsNotAfter(logs, DateAtLocation(now, location))
-	boundaryCtx := BoundaryContextFor(user, DateAtLocation(now, location))
-	stats := BuildCycleStats(logs, now, boundaryCtx)
+	today := DateAtLocation(now, location)
+	logs = filterLogsNotAfter(logs, today)
+	boundaryCtx := BoundaryContextFor(user, today)
+	stats := buildCycleStats(logs, now, boundaryCtx, ownerRunningPeriodRule(user, today))
 	stats = ApplyUserCycleBaseline(user, logs, stats, now, location)
 	if _, paused := ResolvePregnancyPause(logs, boundaryCtx); paused {
 		stats.PregnancyPaused = true
