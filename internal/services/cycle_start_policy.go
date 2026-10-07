@@ -45,11 +45,18 @@ func IsAllowedManualCycleStartDate(day time.Time, now time.Time, location *time.
 	return !day.After(manualCycleStartMaxDate(now, location))
 }
 
-// ErrDayObservationDateInvalid refuses a day write that records a period or a
-// pregnancy-test result on a day past the bound a cycle start may be marked on.
-// It wraps ErrManualCycleStartDateInvalid, so every transport answers it with
-// the cycle-start refusal and its localized message.
-var ErrDayObservationDateInvalid = fmt.Errorf("%w: a period or pregnancy test recorded past the cycle-start bound", ErrManualCycleStartDateInvalid)
+// ErrDayPeriodDateInvalid refuses a day write that records a period on a day
+// past the bound a cycle start may be marked on. It wraps
+// ErrManualCycleStartDateInvalid, so every transport answers it with the
+// cycle-start refusal and its localized message: a period turned on is the
+// start of bleeding, the question that refusal already answers.
+var ErrDayPeriodDateInvalid = fmt.Errorf("%w: a period recorded past the cycle-start bound", ErrManualCycleStartDateInvalid)
+
+// ErrDayPregnancyTestDateInvalid refuses a day write that records a
+// pregnancy-test result past the same bound. It deliberately does not wrap
+// ErrManualCycleStartDateInvalid: the write names no cycle start, so it carries
+// a refusal and a message of its own.
+var ErrDayPregnancyTestDateInvalid = errors.New("pregnancy test date invalid")
 
 // validateDayObservationDate decides whether a day write may store payload over
 // stored on day. A period and a pregnancy-test result are observations, so a
@@ -60,6 +67,10 @@ var ErrDayObservationDateInvalid = fmt.Errorf("%w: a period or pregnancy test re
 // leaves both as stored — a partial write not naming them, a full write
 // re-stating them — and one that clears them go through, so an entry stored
 // ahead of the bound before it existed stays as stored and stays editable.
+//
+// The refusal names what the write records: ErrDayPeriodDateInvalid when it
+// turns the period on (also when it records a test result beside it), else
+// ErrDayPregnancyTestDateInvalid.
 //
 // It runs inside UpsertDayEntry, against the row the write locked, so every
 // writer of a day inherits it. day is the canonical UTC-midnight write key.
@@ -73,7 +84,10 @@ func validateDayObservationDate(stored models.DailyLog, payload DayEntryInput, d
 	if IsAllowedManualCycleStartDate(CalendarDay(day, location), now, location) {
 		return nil
 	}
-	return ErrDayObservationDateInvalid
+	if recordsPeriod {
+		return ErrDayPeriodDateInvalid
+	}
+	return ErrDayPregnancyTestDateInvalid
 }
 
 func ResolveManualCycleStartPolicy(user *models.User, logs []models.DailyLog, day time.Time, now time.Time, location *time.Location) ManualCycleStartPolicy {

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"html/template"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -13,12 +14,20 @@ import (
 )
 
 // WEB-246: a period and a pregnancy-test result are observations, so every day
-// write — PUT, PATCH and the day form posted without JavaScript — refuses one
-// recorded past the bound a cycle start may be marked on (today+2), with the
-// cycle-start refusal and its localized copy. The bound is the services
-// layer's; these pin that every transport answers it the same way.
+// write — PUT, PATCH, the HTMX day form and the day form posted without
+// JavaScript — refuses one recorded past the bound a cycle start may be marked
+// on (today+2). A period is refused with the cycle-start refusal and its
+// localized copy; a pregnancy-test result with a refusal and copy of its own,
+// since the write names no cycle start. The bound and the choice of refusal
+// are the services layer's; these pin that every transport answers it the
+// same way.
 
-const invalidCycleStartDayErrorKey = "invalid cycle start day"
+const (
+	invalidCycleStartDayErrorKey       = "invalid cycle start day"
+	invalidPregnancyTestDayErrorKey    = "invalid pregnancy test day"
+	invalidCycleStartDateMessageKey    = "dashboard.error.invalid_cycle_start_date"
+	invalidPregnancyTestDateMessageKey = "dashboard.error.invalid_pregnancy_test_date"
+)
 
 func observationBoundDays(now time.Time) (time.Time, time.Time) {
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
@@ -42,14 +51,16 @@ func TestDayWritesRefuseAnObservationPastTheCycleStartBound(t *testing.T) {
 	lastAccepted, firstRefused := observationBoundDays(now)
 
 	cases := []struct {
-		name   string
-		method string
-		body   string
+		name    string
+		method  string
+		body    string
+		wantKey string
 	}{
-		{name: "put period", method: http.MethodPut, body: `{"is_period":true,"flow":"none","symptom_ids":[],"notes":""}`},
-		{name: "put pregnancy test", method: http.MethodPut, body: `{"is_period":false,"flow":"none","pregnancy_test":"positive","symptom_ids":[],"notes":""}`},
-		{name: "patch period", method: http.MethodPatch, body: `{"is_period":true}`},
-		{name: "patch pregnancy test", method: http.MethodPatch, body: `{"pregnancy_test":"negative"}`},
+		{name: "put period", method: http.MethodPut, body: `{"is_period":true,"flow":"none","symptom_ids":[],"notes":""}`, wantKey: invalidCycleStartDayErrorKey},
+		{name: "put pregnancy test", method: http.MethodPut, body: `{"is_period":false,"flow":"none","pregnancy_test":"positive","symptom_ids":[],"notes":""}`, wantKey: invalidPregnancyTestDayErrorKey},
+		{name: "put period and pregnancy test", method: http.MethodPut, body: `{"is_period":true,"flow":"none","pregnancy_test":"positive","symptom_ids":[],"notes":""}`, wantKey: invalidCycleStartDayErrorKey},
+		{name: "patch period", method: http.MethodPatch, body: `{"is_period":true}`, wantKey: invalidCycleStartDayErrorKey},
+		{name: "patch pregnancy test", method: http.MethodPatch, body: `{"pregnancy_test":"negative"}`, wantKey: invalidPregnancyTestDayErrorKey},
 	}
 	for index, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -64,8 +75,8 @@ func TestDayWritesRefuseAnObservationPastTheCycleStartBound(t *testing.T) {
 
 			refused := sendObservationDayWrite(t, app, authCookie, c.method, firstRefused, c.body)
 			assertStatusCode(t, refused, http.StatusBadRequest)
-			if got := readAPIError(t, refused.Body); got != invalidCycleStartDayErrorKey {
-				t.Fatalf("expected the cycle-start refusal %q, got %q", invalidCycleStartDayErrorKey, got)
+			if got := readAPIError(t, refused.Body); got != c.wantKey {
+				t.Fatalf("expected the refusal %q, got %q", c.wantKey, got)
 			}
 			entry, err := fetchLogByDateForTest(database, user.ID, firstRefused, time.UTC)
 			if err != nil {
@@ -109,21 +120,80 @@ func TestDayWriteWithoutAnObservationPassesPastTheBound(t *testing.T) {
 	}
 }
 
-// TestNoJSDayFormRefusesAnObservationPastTheBoundWithTheCycleStartCopy posts
-// the calendar day form as a browser without JavaScript does: the refusal is
-// the 422 page carrying the localized cycle-start copy.
-func TestNoJSDayFormRefusesAnObservationPastTheBoundWithTheCycleStartCopy(t *testing.T) {
+// observationRefusalCases are the day-form refusals past the bound, each with
+// the catalogue key whose copy it must carry.
+func observationRefusalCases() map[string]struct {
+	typed      url.Values
+	messageKey string
+} {
+	return map[string]struct {
+		typed      url.Values
+		messageKey string
+	}{
+		"period":         {typed: url.Values{"is_period": {"true"}}, messageKey: invalidCycleStartDateMessageKey},
+		"pregnancy test": {typed: url.Values{"pregnancy_test": {"positive"}}, messageKey: invalidPregnancyTestDateMessageKey},
+	}
+}
+
+// TestHTMXDayFormRefusesAnObservationPastTheBoundWithItsOwnCopy sends the day
+// form as the editor does with JavaScript: the refusal is the status fragment,
+// and its data-flash-key names the catalogue key of what the write recorded.
+func TestHTMXDayFormRefusesAnObservationPastTheBoundWithItsOwnCopy(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	_, firstRefused := observationBoundDays(now)
+
+	for name, c := range observationRefusalCases() {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{now: func() time.Time { return now }})
+			user := createOnboardingTestUser(t, database, "observation-bound-htmx-"+strings.ReplaceAll(name, " ", "-")+"@example.com", "StrongPass1", true)
+			authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+			form := url.Values{"flow": {models.FlowNone}}
+			for field, values := range c.typed {
+				form[field] = values
+			}
+			request := httptest.NewRequest(http.MethodPut, "/api/v1/days/"+firstRefused.Format("2006-01-02"), strings.NewReader(form.Encode()))
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			request.Header.Set("HX-Request", "true")
+			request.Header.Set("Accept-Language", "en")
+			request.Header.Set("Cookie", authCookie)
+
+			response := mustAppResponse(t, app, request)
+			assertStatusCode(t, response, http.StatusBadRequest)
+			body := mustReadBodyString(t, response.Body)
+			root := mustParseHTMLDocument(t, body)
+			if htmlFlashByKey(root, c.messageKey) == nil {
+				t.Fatalf("expected the HTMX refusal to carry flash key %q, got %s", c.messageKey, body)
+			}
+			if message := englishCopy(t, c.messageKey); !strings.Contains(body, template.HTMLEscapeString(message)) {
+				t.Fatalf("expected the HTMX refusal to carry the copy %q, got %s", message, body)
+			}
+			entry, err := fetchLogByDateForTest(database, user.ID, firstRefused, time.UTC)
+			if err != nil {
+				t.Fatalf("load day: %v", err)
+			}
+			if entry.ID != 0 {
+				t.Fatalf("the refused write stored an entry: %+v", entry)
+			}
+		})
+	}
+}
+
+// TestNoJSDayFormRefusesAnObservationPastTheBoundWithItsOwnCopy posts the
+// calendar day form as a browser without JavaScript does: the refusal is the
+// 422 page carrying the localized copy of what the write recorded — the
+// cycle-start copy for a period, the pregnancy-test copy for a test result.
+func TestNoJSDayFormRefusesAnObservationPastTheBoundWithItsOwnCopy(t *testing.T) {
 	t.Parallel()
 
 	now := time.Now().UTC()
 	_, firstRefused := observationBoundDays(now)
 	iso := firstRefused.Format("2006-01-02")
-	message := englishCopy(t, "dashboard.error.invalid_cycle_start_date")
 
-	for name, typed := range map[string]url.Values{
-		"period":         {"is_period": {"true"}},
-		"pregnancy test": {"pregnancy_test": {"positive"}},
-	} {
+	for name, c := range observationRefusalCases() {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			ctx := newSettingsSecurityTestContextWithOptions(t, "observation-bound-form-"+strings.ReplaceAll(name, " ", "-")+"@example.com", onboardingTestAppOptions{
@@ -133,8 +203,8 @@ func TestNoJSDayFormRefusesAnObservationPastTheBoundWithTheCycleStartCopy(t *tes
 			})
 			form := renderNoJSForm(t, ctx.app, "/calendar/day/"+iso+"?mode=edit", authCookieMap(t, ctx.authCookie), formWithFlag("data-day-editor-form"))
 
-			response := form.submit(t, ctx.app, typed)
-			assertRefusalPageCarrying(t, response, http.StatusUnprocessableEntity, message, calendarLanding(iso))
+			response := form.submit(t, ctx.app, c.typed)
+			assertRefusalPageCarrying(t, response, http.StatusUnprocessableEntity, englishCopy(t, c.messageKey), calendarLanding(iso))
 			entry, err := fetchLogByDateForTest(ctx.database, ctx.user.ID, firstRefused, time.UTC)
 			if err != nil {
 				t.Fatalf("load day: %v", err)

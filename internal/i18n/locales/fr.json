@@ -618,6 +618,7 @@
   "dashboard.bbt_range_error": "Saisissez une valeur comprise entre %s et %s %s.",
   "dashboard.error.invalid_cervical_mucus": "Sélectionnez une valeur de glaire cervicale valide.",
   "dashboard.error.invalid_pregnancy_test": "Sélectionnez une valeur de test de grossesse valide.",
+  "dashboard.error.invalid_pregnancy_test_date": "Un résultat de test de grossesse ne peut être enregistré que pour les jours passés et au maximum 2 jours à l'avance.",
   "dashboard.error.invalid_day_entry": "Ce jour ou l'une de ses valeurs n'est pas valide. Vérifiez la date et ce que vous avez saisi, puis réessayez.",
   "dashboard.pregnancy_test": "Test de grossesse",
   "dashboard.pregnancy_test.none": "Pas de test",

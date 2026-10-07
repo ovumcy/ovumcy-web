@@ -25,6 +25,8 @@ func mapDayUpsertError(err error) APIErrorSpec {
 	switch {
 	case errors.Is(err, services.ErrManualCycleStartDateInvalid):
 		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid cycle start day")
+	case errors.Is(err, services.ErrDayPregnancyTestDateInvalid):
+		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid pregnancy test day")
 	case errors.Is(err, services.ErrManualCycleStartReplaceRequired):
 		return globalErrorSpec(fiber.StatusConflict, APIErrorCategoryConflict, "cycle start replace required")
 	case errors.Is(err, services.ErrManualCycleStartConfirmationNeeded):

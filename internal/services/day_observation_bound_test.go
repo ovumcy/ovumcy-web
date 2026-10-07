@@ -12,8 +12,9 @@ import (
 
 // WEB-246: a period and a pregnancy-test result are observations, so a day
 // write that records one is held to the bound a cycle start is — today plus
-// manualCycleStartFutureDays in the owner's zone — and refused past it with the
-// cycle-start refusal. A write that records neither goes through, and an entry
+// manualCycleStartFutureDays in the owner's zone — and refused past it: a period
+// with the cycle-start refusal, a test result alone with the pregnancy-test
+// refusal. A write that records neither goes through, and an entry
 // already stored past the bound stays as stored.
 
 // observationBoundClock is late evening eight hours behind UTC: the owner's
@@ -49,11 +50,15 @@ func fullDay(input DayEntryInput) DayEntryInput {
 type observationWrite struct {
 	name  string
 	write func(service *DayService, day time.Time, now time.Time, location *time.Location) error
+	// recordsPeriod selects the refusal past the bound: a write turning the
+	// period on is refused as a cycle start, one recording only a test result
+	// with the pregnancy-test refusal.
+	recordsPeriod bool
 }
 
 func observationWrites() []observationWrite {
 	return []observationWrite{
-		{name: "full write records a period", write: func(service *DayService, day time.Time, now time.Time, location *time.Location) error {
+		{name: "full write records a period", recordsPeriod: true, write: func(service *DayService, day time.Time, now time.Time, location *time.Location) error {
 			_, err := service.UpsertDayEntryWithAutoFillAt(context.Background(), 10, day, fullDay(DayEntryInput{IsPeriod: true}), now, location)
 			return err
 		}},
@@ -61,7 +66,11 @@ func observationWrites() []observationWrite {
 			_, err := service.UpsertDayEntryWithAutoFillAt(context.Background(), 10, day, fullDay(DayEntryInput{PregnancyTest: models.PregnancyTestPositive}), now, location)
 			return err
 		}},
-		{name: "partial write records a period", write: func(service *DayService, day time.Time, now time.Time, location *time.Location) error {
+		{name: "full write records a period and a pregnancy test", recordsPeriod: true, write: func(service *DayService, day time.Time, now time.Time, location *time.Location) error {
+			_, err := service.UpsertDayEntryWithAutoFillAt(context.Background(), 10, day, fullDay(DayEntryInput{IsPeriod: true, PregnancyTest: models.PregnancyTestPositive}), now, location)
+			return err
+		}},
+		{name: "partial write records a period", recordsPeriod: true, write: func(service *DayService, day time.Time, now time.Time, location *time.Location) error {
 			_, err := service.PatchDayEntryWithAutoFillAt(context.Background(), 10, day, DayEntryInput{IsPeriod: true}, DayEntryFields{IsPeriod: true}, now, location)
 			return err
 		}},
@@ -69,6 +78,24 @@ func observationWrites() []observationWrite {
 			_, err := service.PatchDayEntryWithAutoFillAt(context.Background(), 10, day, DayEntryInput{PregnancyTest: models.PregnancyTestNegative}, DayEntryFields{PregnancyTest: true}, now, location)
 			return err
 		}},
+	}
+}
+
+// assertObservationRefusal pins which refusal a write past the bound carries.
+// A period is the cycle-start refusal (ErrManualCycleStartDateInvalid, whose
+// copy names the cycle start); a test result alone is the pregnancy-test
+// refusal, which must not be mistaken for the cycle-start one — the transport
+// maps by errors.Is, so a wrapped cycle-start sentinel would show its copy.
+func assertObservationRefusal(t *testing.T, err error, recordsPeriod bool) {
+	t.Helper()
+	if recordsPeriod {
+		if !errors.Is(err, ErrDayPeriodDateInvalid) || !errors.Is(err, ErrManualCycleStartDateInvalid) || errors.Is(err, ErrDayPregnancyTestDateInvalid) {
+			t.Fatalf("a period past the bound must be refused with the cycle-start refusal, got %v", err)
+		}
+		return
+	}
+	if !errors.Is(err, ErrDayPregnancyTestDateInvalid) || errors.Is(err, ErrManualCycleStartDateInvalid) {
+		t.Fatalf("a pregnancy test past the bound must be refused with its own refusal, not the cycle-start one, got %v", err)
 	}
 }
 
@@ -90,10 +117,7 @@ func TestDayWriteRecordingAnObservationIsHeldToTheCycleStartBound(t *testing.T) 
 			logs := newDayLogRepositoryStub()
 			service := NewDayService(logs, &dayUserRepositoryStub{})
 			day := observationDay(location, 9)
-			err := write.write(service, day, now, location)
-			if !errors.Is(err, ErrDayObservationDateInvalid) || !errors.Is(err, ErrManualCycleStartDateInvalid) {
-				t.Fatalf("a write on today+3 must be refused with the cycle-start refusal, got %v", err)
-			}
+			assertObservationRefusal(t, write.write(service, day, now, location), write.recordsPeriod)
 			if len(logs.entries) != 0 {
 				t.Fatalf("the refused write stored %v", logs.entries)
 			}
@@ -177,12 +201,14 @@ func TestRefusedObservationLeavesTheStoredFutureEntryUntouched(t *testing.T) {
 	ctx := context.Background()
 
 	cases := map[string]struct {
-		isPeriod bool
-		test     string
-		write    func(service *DayService) error
+		isPeriod      bool
+		test          string
+		recordsPeriod bool
+		write         func(service *DayService) error
 	}{
 		"full write turning the period on": {
-			test: models.PregnancyTestNone,
+			test:          models.PregnancyTestNone,
+			recordsPeriod: true,
 			write: func(service *DayService) error {
 				_, err := service.UpsertDayEntryWithAutoFillAt(ctx, 10, day, fullDay(DayEntryInput{IsPeriod: true, Notes: "overwritten"}), now, location)
 				return err
@@ -202,9 +228,7 @@ func TestRefusedObservationLeavesTheStoredFutureEntryUntouched(t *testing.T) {
 			logs := newDayLogRepositoryStub()
 			stored := seedStoredFutureDay(logs, c.isPeriod, c.test)
 			service := NewDayService(logs, &dayUserRepositoryStub{})
-			if err := c.write(service); !errors.Is(err, ErrDayObservationDateInvalid) {
-				t.Fatalf("expected the observation refusal, got %v", err)
-			}
+			assertObservationRefusal(t, c.write(service), c.recordsPeriod)
 			if got := logs.entries["2026-10-16"]; !reflect.DeepEqual(got, stored) {
 				t.Fatalf("the refused write changed the stored entry:\n got %+v\nwant %+v", got, stored)
 			}
