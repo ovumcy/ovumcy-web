@@ -57,14 +57,14 @@ func statsBodyForCyclePattern(t *testing.T, email string, gapDays int, cycleCoun
 	return mustReadBodyString(t, response.Body)
 }
 
-// statsBodyForCycleAnchorAge seeds three period starts gapDays apart, the most
+// statsBodyForCycleAnchorAge seeds four period starts gapDays apart, the most
 // recent of them startedDaysAgo days back, and renders /stats.
 //
-// Three rather than one because the note under test lives on the current-phase
+// Four rather than one because the note under test lives on the current-phase
 // card, and the whole card grid is replaced by the empty state until the
-// account has the two completed cycles that unlock insights. With both cycles
-// the same length, the reference length is that length, so the caller controls
-// staleness purely through the age of the latest anchor.
+// account has the three completed cycles that unlock insights. With all three
+// cycles the same length, the reference length is that length, so the caller
+// controls staleness purely through the age of the latest anchor.
 func statsBodyForCycleAnchorAge(t *testing.T, email string, startedDaysAgo int, gapDays int) string {
 	t.Helper()
 
@@ -77,6 +77,7 @@ func statsBodyForCycleAnchorAge(t *testing.T, email string, startedDaysAgo int, 
 	start := today.AddDate(0, 0, -startedDaysAgo)
 
 	logs := []models.DailyLog{
+		{UserID: user.ID, Date: start.AddDate(0, 0, -3*gapDays), IsPeriod: true},
 		{UserID: user.ID, Date: start.AddDate(0, 0, -2*gapDays), IsPeriod: true},
 		{UserID: user.ID, Date: start.AddDate(0, 0, -gapDays), IsPeriod: true},
 		{UserID: user.ID, Date: start, IsPeriod: true},

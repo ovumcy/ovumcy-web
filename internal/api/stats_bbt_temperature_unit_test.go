@@ -105,10 +105,11 @@ func renderStatsBBTUnitPage(t *testing.T, unit string) *html.Node {
 		t.Fatalf("update user settings: %v", err)
 	}
 
-	// Two completed cycles take the page past its empty state. In the current
+	// Three completed cycles take the page past its empty state. In the current
 	// one, six low readings whose highest is the day-3 control, then three days
 	// above it: the detector confirms the shift with the control as coverline.
 	logs := []models.DailyLog{
+		{UserID: user.ID, Date: cycleStart.AddDate(0, 0, -84), IsPeriod: true},
 		{UserID: user.ID, Date: cycleStart.AddDate(0, 0, -56), IsPeriod: true},
 		{UserID: user.ID, Date: cycleStart.AddDate(0, 0, -28), IsPeriod: true},
 	}

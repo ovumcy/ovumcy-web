@@ -27,7 +27,10 @@ const statsOverviewWindowYears = 2
 const (
 	// statsMinimumInsightsCycles is the basic-insights tier: the number of
 	// COMPLETED cycles below which the stats page has nothing to compare.
-	statsMinimumInsightsCycles = 2
+	//
+	// It is the dashboard's fertility floor itself, never a second literal of
+	// the same number, so the two surfaces never tell the reader different counts.
+	statsMinimumInsightsCycles = fertilityMinimumCycles
 	// statsReliableTrendCycles is how many TREND POINTS the cycle-length chart
 	// needs before HasReliableTrend calls its shape reliable. It is not the
 	// pattern minimum: trend points are the trimmed series BuildTrend returns
@@ -47,6 +50,10 @@ type StatsFlags struct {
 	CycleDataStale       bool
 	CompletedCycleCount  int
 	InsightProgress      int
+	// InsightCyclesRequired is the completed-cycle count the insights tier waits
+	// for, carried so the empty state's progress bar and its "n / N" line read
+	// the threshold the gate itself uses instead of a second literal.
+	InsightCyclesRequired int
 }
 
 func NewStatsService(days StatsDayReader, symptoms StatsSymptomReader) *StatsService {
@@ -166,13 +173,14 @@ func (service *StatsService) BuildFlags(user *models.User, logs []models.DailyLo
 	today := DateAtLocation(now, location)
 
 	return StatsFlags{
-		HasObservedCycleData: observedCycleCount > 0,
-		HasTrendData:         trendPointCount > 0,
-		HasInsights:          completedCycleCount >= statsMinimumInsightsCycles,
-		HasReliableTrend:     trendPointCount >= statsReliableTrendCycles,
-		CycleDataStale:       dashboardCycleDataStale(user, stats, today, location),
-		CompletedCycleCount:  completedCycleCount,
-		InsightProgress:      statsInsightProgress(completedCycleCount),
+		HasObservedCycleData:  observedCycleCount > 0,
+		HasTrendData:          trendPointCount > 0,
+		HasInsights:           completedCycleCount >= statsMinimumInsightsCycles,
+		HasReliableTrend:      trendPointCount >= statsReliableTrendCycles,
+		CycleDataStale:        dashboardCycleDataStale(user, stats, today, location),
+		CompletedCycleCount:   completedCycleCount,
+		InsightProgress:       statsInsightProgress(completedCycleCount),
+		InsightCyclesRequired: statsMinimumInsightsCycles,
 	}
 }
 

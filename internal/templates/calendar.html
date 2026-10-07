@@ -41,28 +41,40 @@
       {{/* The legend leads the grid: it explains an encoding the reader is
            about to use, so it has to be on screen while the month is. The
            entries are concepts, not CSS states — each swatch paints exactly
-           what the matching day cell paints. */}}
+           what the matching day cell paints. Each one is listed only when the
+           service says the grid draws it for this view (CalendarLegend), so a
+           legend never promises a mark the grid withholds; the dash marks a
+           projection no temperature shift has confirmed yet. */}}
+      {{if .CalendarLegend.Any}}
       <div class="calendar-legend mobile-safe-target mb-3 flex flex-wrap items-center gap-x-3 gap-y-1.5" data-calendar-legend>
+        {{if .CalendarLegend.PeriodRecorded}}
         <span class="legend-item"><span class="legend-swatch legend-swatch-period" aria-hidden="true"></span>{{t .Messages "calendar.legend.period_recorded"}}</span>
-        {{if not .CurrentUser.UnpredictableCycle}}
+        {{end}}
+        {{if .CalendarLegend.PredictedPeriod}}
         <span class="legend-item"><span class="legend-swatch legend-swatch-predicted" aria-hidden="true"></span>{{t .Messages "calendar.legend.predicted_period"}}</span>
+        {{end}}
+        {{if .CalendarLegend.StartWindow}}
         <span class="legend-item"><span class="legend-swatch legend-swatch-start-window" aria-hidden="true"></span>{{t .Messages "calendar.legend.start_window"}}</span>
+        {{end}}
+        {{if .CalendarLegend.Fertility}}
         <span class="legend-item"><span class="legend-swatch legend-swatch-fertile" aria-hidden="true"></span>{{t .Messages "calendar.legend.fertility"}}</span>
+        {{end}}
+        {{if .CalendarLegend.PredictedPeriodInFertility}}
         <span class="legend-item"><span class="legend-swatch legend-swatch-overlap-period-fertile" aria-hidden="true"></span>{{t .Messages "calendar.legend.predicted_period_in_fertility"}}</span>
-        {{/* The dash marks a projection no temperature shift has confirmed yet,
-             and the grid draws it only where the service says it can
-             (CanDrawTentativeOvulation, the gate the grid itself applies).
-             Everyone else gets the solid dot alone, so the legend promises no
-             mark the grid cannot show. */}}
-        {{if .CanDrawTentativeOvulation}}
+        {{end}}
+        {{if .CalendarLegend.OvulationTentative}}
         <span class="legend-item"><span class="calendar-ovulation-dot" aria-hidden="true"></span><span class="calendar-ovulation-dash" aria-hidden="true"></span>{{t .Messages "calendar.legend.ovulation_group"}}</span>
-        {{else}}
+        {{else if .CalendarLegend.OvulationEstimate}}
         <span class="legend-item"><span class="calendar-ovulation-dot" aria-hidden="true"></span>{{t .Messages "calendar.legend.ovulation_estimate"}}</span>
         {{end}}
-        {{end}}
+        {{if .CalendarLegend.Today}}
         <span class="legend-item"><span class="legend-swatch legend-swatch-today" aria-hidden="true"></span>{{t .Messages "calendar.tag.today"}}</span>
+        {{end}}
+        {{if .CalendarLegend.LoggedEntry}}
         <span class="legend-item"><span class="calendar-data-marker" aria-hidden="true"></span><span class="calendar-sex-marker" aria-hidden="true">{{template "icon" "heart"}}</span>{{t .Messages "calendar.legend.logged_entry"}}</span>
+        {{end}}
       </div>
+      {{end}}
 
       <div class="mb-2 grid grid-cols-7 gap-1 text-center text-xs font-semibold uppercase tracking-wide journal-muted sm:mb-3 sm:gap-2">
         {{range .WeekdayKeys}}<span>{{t $.Messages .}}</span>{{end}}

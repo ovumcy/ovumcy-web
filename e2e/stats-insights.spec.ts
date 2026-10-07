@@ -63,19 +63,20 @@ test.describe('Stats: BBT chart', () => {
     // Two layered gates make this test non-trivial:
     //
     //   1. /stats hides every insight (the BBT section included) behind
-    //      `HasInsights = completedCycleCount >= 2`, computed by
-    //      CompletedCycleTrendLengths. So at least three cycle starts must
+    //      `HasInsights = completedCycleCount >= 3`, computed by
+    //      CompletedCycleTrendLengths. So at least four cycle starts must
     //      exist before today.
     //   2. buildCurrentCycleBBTSeries requires >= 5 BBT points inside
     //      [cycleStart..today], so the current (third) cycle has to be
     //      old enough to fit five sample days.
     //
-    // Onboard with start_date=today-60 (cycle 1), then seed period days at
-    // today-30 (cycle 2 start) and today-7 (cycle 3 start, the current
-    // cycle). Layer the BBT samples on today-5..today.
+    // Onboard with start_date=today-60, then seed period days at today-90
+    // (the oldest start), today-30 (cycle 3 start) and today-7 (cycle 4 start,
+    // the current cycle). Layer the BBT samples on today-5..today.
     await registerAndOnboardWithStartDaysAgo(page, 'stats-bbt-chart', 60);
     const today = isoToday();
 
+    await savePeriodDay(page, shiftISODate(today, -90));
     await savePeriodDay(page, shiftISODate(today, -30));
     await savePeriodDay(page, shiftISODate(today, -7));
 
@@ -238,6 +239,7 @@ test.describe('Stats: BBT chart', () => {
     });
     expect(trackingResponse.status()).toBeLessThan(400);
 
+    await markCycleStartViaAPI(page, shiftISODate(today, -90));
     await markCycleStartViaAPI(page, shiftISODate(today, -30));
     await markCycleStartViaAPI(page, shiftISODate(today, -14));
 
@@ -488,16 +490,19 @@ test.describe('Stats: history statements', () => {
 });
 
 test.describe('Stats: cycle range', () => {
-  test('two completed cycles of different lengths populate the cycle range stat card', async ({
+  test('three completed cycles of different lengths populate the cycle range stat card', async ({
     page,
   }) => {
-    // Two cycle starts after onboarding -> two completed cycles of distinct
-    // lengths (20 and 25 days nominally). populateObservedCycleStats fills
+    // One cycle start before onboarding's and two after it -> three completed
+    // cycles (20, 20 and 25 days nominally). populateObservedCycleStats fills
     // MinCycleLength / MaxCycleLength from cycleLengths(observedStarts), and
     // the Range card prints stats.cycle_range_summary when MinCycleLength>0.
     await registerAndOnboardWithStartDaysAgo(page, 'stats-cycle-range', 60);
     const today = isoToday();
 
+    // The -80 start is the third completed cycle the insights tier waits for; its
+    // 20-day length sits inside the 20-25 range, so the range stays 20 to 25.
+    await markCycleStartViaAPI(page, shiftISODate(today, -80));
     await markCycleStartViaAPI(page, shiftISODate(today, -40));
     await markCycleStartViaAPI(page, shiftISODate(today, -15));
 

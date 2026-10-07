@@ -262,7 +262,7 @@ func TestDashboardLateCycleNoticeOutranksTheStaleHintAndClaimsNoInventedRange(t 
 
 // TestDashboardLateCycleNoticeStatesTheMeasuredExcessOnceHistoryExists is the
 // paired positive: the same surface, the same hooks, but an account that owns
-// two completed cycles — which is exactly the threshold the stats
+// three completed cycles — which is exactly the threshold the stats
 // prediction-reliability card uses — so the notice may state a measured excess.
 func TestDashboardLateCycleNoticeStatesTheMeasuredExcessOnceHistoryExists(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
@@ -275,10 +275,10 @@ func TestDashboardLateCycleNoticeStatesTheMeasuredExcessOnceHistoryExists(t *tes
 	}).Error; err != nil {
 		t.Fatalf("update user cycle context: %v", err)
 	}
-	// Two completed 28-day cycles, then a running cycle on day 41 — past the
+	// Three completed 28-day cycles, then a running cycle on day 41 — past the
 	// 28-day reference plus the seven-day grace window, and past the observed
 	// maximum of 28 days by 13.
-	for _, offsetDays := range []int{-96, -68, -40} {
+	for _, offsetDays := range []int{-124, -96, -68, -40} {
 		start := services.DateAtLocation(time.Now().UTC(), time.UTC).AddDate(0, 0, offsetDays)
 		if err := database.Create(&models.DailyLog{
 			UserID:     user.ID,

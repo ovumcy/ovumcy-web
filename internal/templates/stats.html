@@ -17,6 +17,13 @@
   <div class="card-quiet text-sm journal-muted" data-stats-long-cycle-notice>{{t .Messages "stats.long_cycle_notice"}}</div>
   {{end}}
 
+  {{/* The explainer says why predictions are withheld, and the thin-history
+       tiers it names (irregular sparse, awaiting more cycles) sit below the
+       insights threshold, so it renders outside that gate. */}}
+  {{if .HasPredictionExplanationPrimary}}
+  <div class="card-quiet text-sm journal-muted" data-stats-prediction-explainer data-explainer-key="{{.PredictionExplanationPrimaryKey}}">{{t .Messages .PredictionExplanationPrimaryKey}}</div>
+  {{end}}
+
   {{if not .HasInsights}}
   <section class="card p-4 sm:p-5 space-y-4" data-stats-empty-state data-stats-completed-cycles="{{.CompletedCycleCount}}">
     <div class="stats-empty-hero" aria-hidden="true">
@@ -41,17 +48,14 @@
     <p class="journal-subtitle">{{t .Messages "stats.empty_title"}}</p>
     <p class="journal-muted text-sm">{{if eq .CompletedCycleCount 0}}{{t .Messages "stats.empty_body_zero"}}{{else}}{{t .Messages "stats.empty_body_one"}}{{end}}</p>
     <div class="space-y-2">
-      <progress class="stats-progress-meter" value="{{.CompletedCycleCount}}" max="2">{{printf (t .Messages "stats.completed_cycles_progress") .CompletedCycleCount}}</progress>
-      <p class="journal-muted text-xs">{{printf (t .Messages "stats.completed_cycles_progress") .CompletedCycleCount}}</p>
+      <progress class="stats-progress-meter" value="{{.CompletedCycleCount}}" max="{{.InsightCyclesRequired}}">{{printf (t .Messages "stats.completed_cycles_progress") .CompletedCycleCount .InsightCyclesRequired}}</progress>
+      <p class="journal-muted text-xs">{{printf (t .Messages "stats.completed_cycles_progress") .CompletedCycleCount .InsightCyclesRequired}}</p>
       <p class="journal-muted text-xs">{{t .Messages "stats.empty_progress_hint"}}</p>
     </div>
   </section>
   {{else}}
     {{if lt .TrendPointCount 3}}
     <div class="card-quiet text-sm journal-muted">{{t .Messages "stats.data_notice"}}</div>
-    {{end}}
-    {{if .HasPredictionExplanationPrimary}}
-    <div class="card-quiet text-sm journal-muted" data-stats-prediction-explainer data-explainer-key="{{.PredictionExplanationPrimaryKey}}">{{t .Messages .PredictionExplanationPrimaryKey}}</div>
     {{end}}
     {{if .ShowPredictionReliability}}
     <div class="card-quiet text-sm space-y-1" data-prediction-reliability="{{.PredictionReliabilityLabelKey}}">

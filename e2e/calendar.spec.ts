@@ -12,7 +12,12 @@ import { applyTheme } from './support/contrast-helpers';
 import { saveSettingsLanguage } from './support/language-helpers';
 import { expectElementAboveMobileTabbar } from './support/mobile-layout-helpers';
 import { ensureNotesFieldVisible } from './support/note-helpers';
-import { markCycleStart, openCalendarDayEditor, saveDayEditorForm } from './support/stats-helpers';
+import {
+  markCycleStart,
+  markCycleStartViaAPI,
+  openCalendarDayEditor,
+  saveDayEditorForm,
+} from './support/stats-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 import { checkStyledControl } from './support/form-helpers';
 import { selectOnboardingStartDate } from './support/onboarding-helpers';
@@ -211,16 +216,15 @@ test.describe('Calendar page', () => {
 
     const legend = page.locator('[data-calendar-legend]');
     await expect(legend).toBeVisible();
-    await expect(legend.locator('.legend-swatch-period')).toHaveCount(1);
-    await expect(legend.locator('.legend-swatch-predicted')).toHaveCount(1);
-    await expect(legend.locator('.legend-swatch-start-window')).toHaveCount(1);
-    await expect(legend.locator('.legend-swatch-fertile')).toHaveCount(1);
-    await expect(legend.locator('.legend-swatch-overlap-period-fertile')).toHaveCount(1);
     await expect(legend.locator('.legend-swatch-today')).toHaveCount(1);
-    // Eight concepts, not the ten CSS states the grid happens to have. The
-    // overlap earns an entry of its own because it is a fill the reader cannot
-    // decode from the two it is made of.
-    await expect(legend.locator('.legend-item')).toHaveCount(8);
+    // A fresh owner has no completed cycle, so the grid draws no fertile window,
+    // start window, overlap or ovulation mark, and the legend lists none of them.
+    // The legend lists concepts, not the CSS states the grid happens to have, and
+    // only the ones the grid draws for this view.
+    await expect(legend.locator('.legend-swatch-start-window')).toHaveCount(0);
+    await expect(legend.locator('.legend-swatch-fertile')).toHaveCount(0);
+    await expect(legend.locator('.legend-swatch-overlap-period-fertile')).toHaveCount(0);
+    await expect(legend.locator('.calendar-ovulation-dot')).toHaveCount(0);
 
     // The legend is above the first day cell, so it is on screen while the
     // month is being read.
@@ -230,22 +234,9 @@ test.describe('Calendar page', () => {
     expect(firstCellBox).not.toBeNull();
     expect(legendBox!.y).toBeLessThan(firstCellBox!.y);
 
-    const ovulationDot = legend.locator('.calendar-ovulation-dot');
-    const tentativeOvulation = legend.locator('.calendar-ovulation-dash');
-    await expect(ovulationDot).toHaveCount(1);
     // A fresh owner does not track temperature, and the dash only ever marks a
     // projection awaiting a temperature shift, so the legend must not draw it.
-    await expect(tentativeOvulation).toHaveCount(0);
-
-    const styles = await ovulationDot.evaluate((node) => {
-      const computed = window.getComputedStyle(node);
-      return {
-        width: parseFloat(computed.width || '0'),
-        boxShadow: computed.boxShadow || '',
-      };
-    });
-    expect(styles.width).toBeGreaterThanOrEqual(12);
-    expect(styles.boxShadow).not.toBe('none');
+    await expect(legend.locator('.calendar-ovulation-dash')).toHaveCount(0);
   });
 
   test('the band/window overlap paints a fill neither of its two parents paints', async ({
@@ -257,13 +248,42 @@ test.describe('Calendar page', () => {
     // fill, one of the two facts silently disappears from the month, which is
     // the defect this state exists to close. The legend swatches are the
     // measurable form of that: each paints exactly the fill its cell paints,
-    // from the same token, and all three are on screen on every calendar render
-    // without any cycle data having to line up.
+    // from the same token. The legend lists only the states the grid draws, so
+    // the owner is seeded to draw all three: three completed 21-day cycles with
+    // a 10-day period put the projected band of the next cycle over its own
+    // fertile window, and the month holding the middle of that overlap is shown.
     //
     // Both layers are read, not just background-color: the projected fill is a
     // gradient over no colour at all, so on background-color alone two states
     // that share nothing would compare equal.
+    test.slow();
     await registerOwnerOnCalendar(page, 'calendar-overlap-fill');
+
+    const csrf = (await page.locator('meta[name="csrf-token"]').getAttribute('content')) ?? '';
+    const geometry = await page.request.patch('/api/v1/users/current/cycle', {
+      headers: { ...apiOriginHeader(page), 'X-CSRF-Token': csrf, 'Content-Type': 'application/json' },
+      data: {
+        cycle_length: 21,
+        period_length: 10,
+        auto_period_fill: true,
+        irregular_cycle: false,
+        unpredictable_cycle: false,
+        age_group: '',
+        usage_goal: 'health',
+      },
+    });
+    expect(geometry.status(), 'patch the 21/10 cycle geometry').toBeLessThan(400);
+
+    const today = await todayISOFromBrowser(page);
+    for (const offset of [-70, -49, -28, -7]) {
+      await markCycleStartViaAPI(page, shiftISODate(today, offset));
+    }
+    // The next start is projected at today+14; ovulation on its cycle day 8
+    // clamps the band to +14..+20 inside the window +16..+21, so +18 is an
+    // overlap day whatever month boundary the run date puts around it.
+    const overlapISO = shiftISODate(today, 18);
+    await page.goto(`/calendar?month=${overlapISO.slice(0, 7)}`);
+    await expect(page.locator('.calendar-cell-overlap-period-fertile').first()).toBeVisible();
 
     const legend = page.locator('[data-calendar-legend]');
     const swatches = {
@@ -298,6 +318,23 @@ test.describe('Calendar page', () => {
         'repeating-linear-gradient'
       );
     }
+
+    // The same owner draws a projected ovulation on day 8 of the next cycle, so
+    // its month is the view where the legend owes the dot, at a size the reader
+    // can find and with the ring that sets it off from the fills.
+    await page.goto(`/calendar?month=${shiftISODate(today, 21).slice(0, 7)}`);
+    await expect(page.locator('button[data-day] .calendar-ovulation-dot').first()).toBeVisible();
+    const ovulationDot = legend.locator('.calendar-ovulation-dot');
+    await expect(ovulationDot).toHaveCount(1);
+    const dotStyles = await ovulationDot.evaluate((node) => {
+      const computed = window.getComputedStyle(node);
+      return {
+        width: parseFloat(computed.width || '0'),
+        boxShadow: computed.boxShadow || '',
+      };
+    });
+    expect(dotStyles.width).toBeGreaterThanOrEqual(12);
+    expect(dotStyles.boxShadow).not.toBe('none');
   });
 
   test('mobile calendar keeps the legend scrollable above the bottom tabbar', async ({ page }) => {

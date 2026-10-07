@@ -5,6 +5,7 @@ import { displayDatesIn, fillDateField } from './support/date-field-helpers';
 import { localeText } from './support/locale-helpers';
 import {
   markCycleStart,
+  markCycleStartViaAPI,
   registerOwnerAndEnableIrregularMode,
   saveCycleFactorOnDay,
   shiftISODate,
@@ -44,8 +45,11 @@ test.describe('Stats factor context', () => {
     await expect(dashboardExplainer).toContainText(localeText('en', SPARSE_EXPLAINER_KEY));
     await expect(page.locator('[data-dashboard-factor-hint]')).toHaveCount(0);
 
+    // Two completed cycles are below the insights tier (three), so the stats page
+    // holds its empty state; the explainer still says why, outside that gate.
     await page.goto('/stats');
     await expect(page).toHaveURL(/\/stats$/);
+    await expect(page.locator('[data-stats-empty-state]')).toBeVisible();
     await expect(page.locator('[data-stats-prediction-explainer]')).toHaveAttribute(
       'data-explainer-key',
       SPARSE_EXPLAINER_KEY
@@ -62,9 +66,11 @@ test.describe('Stats factor context', () => {
 
     // Positive anchor for the count-0 assertion above: the hint hook is alive
     // for this very owner once a cycle factor exists inside the 90-day context
-    // window. Without it the absent hint proves nothing — a hook that never
-    // renders reads exactly the same way.
+    // window and a third completed cycle reaches the insights tier the factor
+    // context shares. Without it the absent hint proves nothing — a hook that
+    // never renders reads exactly the same way.
     await saveCycleFactorOnDay(page, shiftISODate(cycleStarts[1], 2), 'stress');
+    await markCycleStartViaAPI(page, shiftISODate(today, -84));
 
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);

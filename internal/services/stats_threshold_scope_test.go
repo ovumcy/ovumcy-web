@@ -7,20 +7,20 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
-// The stats page carries three sample-size thresholds that are all 3 or 2
-// today, and reading them as one number is the mistake this test exists to
-// stop:
+// The stats page carries three sample-size thresholds that are all 3 today,
+// and reading them as one number is the mistake this test exists to stop:
 //
-//   - statsMinimumInsightsCycles (2) — the basic-insights tier, counted in
-//     completed cycles;
+//   - statsMinimumInsightsCycles (3) — the basic-insights tier, counted in
+//     completed cycles and the count the dashboard asks for before it shows a
+//     range;
 //   - minimumPhaseInsightCycles (3) — the pattern minimum, counted in completed
 //     cycles, gating every surface that claims a pattern rather than a single
 //     observation, the cycle-length trend sentence included;
 //   - statsReliableTrendCycles (3) — counted in trend POINTS, gating the
 //     chart's reliability flag alone.
 //
-// The two 3s answer different questions about different quantities, so they are
-// kept as two names rather than collapsed into one. That is only safe while a
+// The three 3s answer different questions about different quantities, so they
+// are kept as three names rather than collapsed into one. That is only safe while a
 // change to either is visible: each surface below is driven at its own boundary
 // through its own entry point, never by reading a constant back, so moving one
 // threshold reddens exactly the surfaces it governs and names them.
@@ -78,22 +78,24 @@ func TestStatsThresholdsAreNamedPerSurface(t *testing.T) {
 			t.Error("three trend points were not called a reliable trend: the reliability flag counts trend points and its threshold moved")
 		}
 		// The same call answers the basic-insights tier, which is the third
-		// threshold and the one that is NOT 3 — proof that the surfaces here are
-		// read independently rather than through one shared number.
+		// threshold and counts completed cycles, not trend points.
 		if !at.HasInsights {
-			t.Error("three completed cycles did not reach the basic-insights tier, which unlocks at two")
+			t.Error("three completed cycles did not reach the basic-insights tier, which unlocks at three")
 		}
 	})
 
-	t.Run("the basic-insights tier unlocks below the pattern minimum", func(t *testing.T) {
-		below := service.BuildFlags(owner, statsThresholdCycleLogs(t, []string{"2026-01-01", "2026-01-29"}), CycleStats{}, now, time.UTC, 0)
-		at := service.BuildFlags(owner, belowPattern, CycleStats{}, now, time.UTC, 0)
+	t.Run("the basic-insights tier unlocks at three completed cycles, the count the dashboard asks for", func(t *testing.T) {
+		below := service.BuildFlags(owner, belowPattern, CycleStats{}, now, time.UTC, 0)
+		at := service.BuildFlags(owner, atPattern, CycleStats{}, now, time.UTC, 0)
 
 		if below.HasInsights {
-			t.Error("one completed cycle reached the basic-insights tier, which unlocks at two")
+			t.Error("two completed cycles reached the basic-insights tier, which unlocks at three: the stats page and the dashboard would name different counts")
 		}
 		if !at.HasInsights {
-			t.Error("two completed cycles did not reach the basic-insights tier: the tier moved, or it is now expressed through the pattern minimum")
+			t.Error("three completed cycles did not reach the basic-insights tier: the tier moved")
+		}
+		if at.InsightCyclesRequired != irregularRangeMinimumCycles {
+			t.Errorf("the insights tier waits for %d cycles but the dashboard asks for %d: the two surfaces name different counts", at.InsightCyclesRequired, irregularRangeMinimumCycles)
 		}
 	})
 }

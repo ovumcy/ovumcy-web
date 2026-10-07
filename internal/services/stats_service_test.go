@@ -248,7 +248,7 @@ func TestBuildTrendAndFlags(t *testing.T) {
 	}
 }
 
-func TestBuildFlagsKeepsInsightsLockedUntilTwoCompletedCycles(t *testing.T) {
+func TestBuildFlagsKeepsInsightsLockedUntilThreeCompletedCycles(t *testing.T) {
 	logs := []models.DailyLog{
 		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
 		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true},
@@ -270,13 +270,13 @@ func TestBuildFlagsKeepsInsightsLockedUntilTwoCompletedCycles(t *testing.T) {
 		t.Fatalf("expected HasTrendData=true")
 	}
 	if flags.HasInsights {
-		t.Fatalf("expected HasInsights=false until two completed cycles")
+		t.Fatalf("expected HasInsights=false until three completed cycles")
 	}
 	if flags.CompletedCycleCount != 1 {
 		t.Fatalf("expected CompletedCycleCount=1, got %d", flags.CompletedCycleCount)
 	}
-	if flags.InsightProgress != 50 {
-		t.Fatalf("expected InsightProgress=50, got %d", flags.InsightProgress)
+	if flags.InsightProgress != 33 {
+		t.Fatalf("expected InsightProgress=33, got %d", flags.InsightProgress)
 	}
 	if flags.HasReliableTrend {
 		t.Fatalf("expected HasReliableTrend=false for one trend point")

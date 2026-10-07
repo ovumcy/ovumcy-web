@@ -106,14 +106,16 @@ func statsOverviewStates() []statsOverviewState {
 			// Two completed cycles in regular mode: the fertility half is withheld
 			// under its own reason and the next period stays published — not the
 			// irregular tier's reason, and not the zero-cycle one.
-			name:               "regular mode with fewer than three completed cycles",
-			history:            []int{62, 34, 6},
-			seed:               func(*testing.T, *gorm.DB, models.User, time.Time) {},
-			wantReasons:        []string{"awaiting_more_cycles"},
-			wantPredictions:    false,
-			wantFertility:      true,
-			wantNextPeriodSet:  true,
-			wantsFertilityHook: true,
+			name:              "regular mode with fewer than three completed cycles",
+			history:           []int{62, 34, 6},
+			seed:              func(*testing.T, *gorm.DB, models.User, time.Time) {},
+			wantReasons:       []string{"awaiting_more_cycles"},
+			wantPredictions:   false,
+			wantFertility:     true,
+			wantNextPeriodSet: true,
+			// Two completed cycles are below the insights tier, so the page renders
+			// its empty state instead of the cards.
+			wantsFertilityHook: false,
 		},
 		{
 			// Two completed cycles in irregular mode: the dashboard says "needs more
@@ -126,9 +128,9 @@ func statsOverviewStates() []statsOverviewState {
 			wantReasons:     []string{"irregular_needs_more_cycles"},
 			wantPredictions: true,
 			wantFertility:   true,
-			// Not a facts-only tier: the page renders its status and answers
-			// "unknown", like the overdue tier.
-			wantsFertilityHook: true,
+			// Two completed cycles are below the insights tier, so the page renders
+			// its empty state instead of the cards.
+			wantsFertilityHook: false,
 		},
 		{
 			name:    "unpredictable cycle mode",
@@ -147,7 +149,7 @@ func statsOverviewStates() []statsOverviewState {
 			// The history is itself overdue: the anchor is the latest recorded
 			// start, so a recent one would end the state this case is about.
 			name:    "cycle overdue past its own reference length",
-			history: []int{90, 62, 45},
+			history: []int{107, 90, 62, 45},
 			seed: func(t *testing.T, database *gorm.DB, user models.User, today time.Time) {
 				updateStatsOverviewUser(t, database, user, map[string]any{
 					"last_period_start": services.AddCalendarDays(today, -45, time.UTC),
@@ -160,7 +162,7 @@ func statsOverviewStates() []statsOverviewState {
 			// renders a status, so it is where the two surfaces must agree on the
 			// value rather than both on silence.
 			wantsFertilityHook: true,
-			// Cycle day 46 against a 23-day reference (17 and 28): out of date too.
+			// Cycle day 46 against a 17-day median (17, 28 and 17): out of date too.
 			wantCycleDataStale: true,
 		},
 		{
