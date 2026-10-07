@@ -68,7 +68,7 @@ async function registerAndSetEggwhiteToday(
   const [request] = await Promise.all([
     page.waitForRequest(
       (candidate) =>
-        candidate.method() === 'PUT' && candidate.url().includes(`/api/v1/days/${today}`),
+        candidate.method() === 'PATCH' && candidate.url().includes(`/api/v1/days/${today}`),
     ),
     dayForm.evaluate((node) => {
       if (node instanceof HTMLFormElement) {
@@ -77,8 +77,8 @@ async function registerAndSetEggwhiteToday(
     }),
   ]);
   const response = await request.response();
-  expect(response, `expected a response for PUT /api/v1/days/${today}`).not.toBeNull();
-  expect(response!.ok(), `PUT /api/v1/days/${today} failed with ${response!.status()}`).toBeTruthy();
+  expect(response, `expected a response for PATCH /api/v1/days/${today}`).not.toBeNull();
+  expect(response!.ok(), `PATCH /api/v1/days/${today} failed with ${response!.status()}`).toBeTruthy();
   // The caller navigates straight to /dashboard next; let the
   // calendar-day-updated grid refresh + editor re-lazy-load cascade settle
   // first so that navigation doesn't race an in-flight server request

@@ -133,11 +133,11 @@ async function waitForDashboardAutosave(
   // returned promise afterward, so the request listener below must be
   // registered synchronously (no prior await) — matching the original.
   const request = await page.waitForRequest((candidate) => {
-    return candidate.method() === 'PUT' && candidate.url().includes(path);
+    return candidate.method() === 'PATCH' && candidate.url().includes(path);
   });
   const response = await request.response();
-  expect(response, `expected a response for PUT ${path}`).not.toBeNull();
-  expect(response!.ok(), `PUT ${path} failed with ${response!.status()}`).toBeTruthy();
+  expect(response, `expected a response for PATCH ${path}`).not.toBeNull();
+  expect(response!.ok(), `PATCH ${path} failed with ${response!.status()}`).toBeTruthy();
   if (options?.expectIndicator === false) {
     return;
   }
@@ -829,12 +829,12 @@ test.describe('Dashboard: today editor', () => {
     // same path — bind to its own request, not to the page settling.
     const [undoRequest] = await Promise.all([
       page.waitForRequest(
-        (candidate) => candidate.method() === 'PUT' && candidate.url().includes(savePath),
+        (candidate) => candidate.method() === 'PATCH' && candidate.url().includes(savePath),
       ),
       indicator.locator('[data-dashboard-autosave-undo]').click(),
     ]);
     const undoResponse = await undoRequest.response();
-    expect(undoResponse, `expected a response for PUT ${savePath}`).not.toBeNull();
+    expect(undoResponse, `expected a response for PATCH ${savePath}`).not.toBeNull();
     expect(undoResponse!.ok(), `the undo failed with ${undoResponse!.status()}`).toBeTruthy();
     expect(undoRequest.postData() ?? '').toContain(`notes=${firstNote}`);
 
@@ -1008,7 +1008,7 @@ test.describe('Dashboard: today editor', () => {
       releaseSave = resolve;
     });
     await page.route(/\/api\/v1\/days\/\d{4}-\d{2}-\d{2}(?:\?.*)?$/, async (route) => {
-      if (route.request().method() !== 'PUT') {
+      if (route.request().method() !== 'PATCH') {
         await route.fallback();
         return;
       }
@@ -1025,7 +1025,7 @@ test.describe('Dashboard: today editor', () => {
 
     await openTodayNotes(page);
     const heldSave = page.waitForRequest(
-      (candidate) => candidate.method() === 'PUT' && candidate.url().includes('/api/v1/days/')
+      (candidate) => candidate.method() === 'PATCH' && candidate.url().includes('/api/v1/days/')
     );
     await page.locator('#today-notes').fill(noteText);
     const dayPath = new URL((await heldSave).url()).pathname;

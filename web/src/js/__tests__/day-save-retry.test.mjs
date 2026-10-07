@@ -58,7 +58,7 @@ const DASHBOARD_PAGE = `<!doctype html><html><head><meta name="csrf-token" conte
       data-day-save-retry-label="${RETRY_LABEL}">
       <input type="hidden" name="csrf_token" value="unit-test-token">
       <input type="checkbox" name="is_period" value="true" checked>
-      <textarea id="today-notes" name="notes" data-dashboard-notes>${TYPED_NOTE}</textarea>
+      <textarea id="today-notes" name="notes" data-dashboard-notes></textarea>
       <div id="save-status" class="save-status" aria-live="polite"></div>
       <div class="dashboard-autosave-indicator" data-dashboard-autosave-indicator data-autosave-state="idle" aria-live="polite"></div>
     </form>
@@ -133,6 +133,9 @@ async function loadDashboardWithFailingSave(outcome) {
 // is reached without sitting out the debounce.
 async function attemptDashboardSave(window) {
   const notes = window.document.querySelector("#today-notes");
+  // Typed, not rendered: a save carries only what changed since the page read
+  // the day.
+  notes.value = TYPED_NOTE;
   notes.dispatchEvent(new window.Event("input", { bubbles: true }));
   window.dispatchEvent(new window.Event("pagehide"));
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -341,7 +344,7 @@ test("the dashboard retry re-enters the autosave with what is on screen", async 
     assert.equal(calls.length, 2, "the retry sends the entry again, once");
     const retried = calls[calls.length - 1];
     assert.equal(retried.url, `/api/v1/days/${DASHBOARD_DATE}`);
-    assert.equal(retried.init.method, "PUT");
+    assert.equal(retried.init.method, "PATCH");
     assert.ok(
       String(retried.init.body || "").includes(
         new URLSearchParams([["notes", TYPED_NOTE]]).toString()
@@ -380,6 +383,7 @@ test("an htmx-reported failure on the dashboard form renders the same notice", a
   // path) must land on the same surface rather than the generic error block.
   const dom = await loadDOMWithScript(APP_BUNDLE, { html: DASHBOARD_PAGE });
   try {
+    dom.window.document.querySelector("#today-notes").value = TYPED_NOTE;
     dashboardSaveForm(dom.window).dispatchEvent(
       new dom.window.CustomEvent("htmx:sendError", { detail: { xhr: {} }, bubbles: true })
     );

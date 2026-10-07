@@ -90,7 +90,7 @@ test.describe('Dashboard: period tip once', () => {
     await expect(tipCopy).toBeHidden();
 
     // Toggle period ON inside the autosave-bound dashboard editor and wait
-    // for the autosave PUT. The native input is wrapped by a styled
+    // for the autosave PATCH. The native input is wrapped by a styled
     // .period-toggle label; ordinary label clicks misbehave in this
     // configuration (the live .checked property flips back unchecked even
     // after the label fires its delegated handlers). Set the property and
@@ -99,12 +99,12 @@ test.describe('Dashboard: period tip once', () => {
     const periodInput = page.locator('input[data-period-toggle]').first();
     const todayPath = await page.locator('[data-dashboard-save-form]').first().getAttribute('hx-put');
     expect(todayPath).toMatch(/^\/api\/v1\/days\/\d{4}-\d{2}-\d{2}$/);
-    // Bind to the autosave's own request, scoped to today's PUT, rather than
-    // any matching response: the previous regex matched a PUT to ANY date,
+    // Bind to the autosave's own request, scoped to today's PATCH, rather than
+    // any matching response: the previous regex matched a PATCH to ANY date,
     // which could resolve on a still-in-flight unrelated request under load
     // (see saveDayEditorForm in calendar-autofill-clear.spec.ts).
     const autosaveRequestPromise = page.waitForRequest(
-      (candidate) => candidate.method() === 'PUT' && candidate.url().includes(String(todayPath)),
+      (candidate) => candidate.method() === 'PATCH' && candidate.url().includes(String(todayPath)),
     );
     await periodInput.evaluate((node) => {
       if (node instanceof HTMLInputElement) {
@@ -117,10 +117,10 @@ test.describe('Dashboard: period tip once', () => {
     await expect(tipCopy).toContainText(localeText('en', 'dashboard.period_tip_once'));
     const autosaveRequest = await autosaveRequestPromise;
     const autosaveResponse = await autosaveRequest.response();
-    expect(autosaveResponse, `expected a response for PUT ${todayPath}`).not.toBeNull();
+    expect(autosaveResponse, `expected a response for PATCH ${todayPath}`).not.toBeNull();
     expect(
       autosaveResponse!.ok(),
-      `PUT ${todayPath} failed with ${autosaveResponse!.status()}`
+      `PATCH ${todayPath} failed with ${autosaveResponse!.status()}`
     ).toBeTruthy();
 
     await page.reload();

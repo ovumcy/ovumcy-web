@@ -397,7 +397,7 @@ test("a refused dashboard autosave refreshes the token, then Retry sends it", as
 
     assert.deepEqual(
       calls.map((call) => call.init.method),
-      ["PUT", "GET"],
+      ["PATCH", "GET"],
       "one refused write, then one token refresh, and no automatic re-send"
     );
     assert.equal(calls[0].init.headers["X-CSRF-Token"], STALE_TOKEN);
@@ -409,7 +409,7 @@ test("a refused dashboard autosave refreshes the token, then Retry sends it", as
     await flush();
 
     assert.equal(calls.length, 3);
-    assert.equal(calls[2].init.method, "PUT");
+    assert.equal(calls[2].init.method, "PATCH");
     assert.equal(calls[2].init.headers["X-CSRF-Token"], FRESH_TOKEN, "the retry carries the refreshed token");
     assert.equal(
       calls[2].init.headers["X-Ovumcy-Day-Form-Account"],

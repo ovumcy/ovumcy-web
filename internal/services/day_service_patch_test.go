@@ -42,7 +42,7 @@ func TestPatchDayEntryChangesOnlyTheNamedField(t *testing.T) {
 	seedPatchCycleStartDay(t, logs, day)
 
 	saved, err := service.PatchDayEntryWithAutoFillAt(context.Background(), 10, day,
-		DayEntryInput{Mood: 3}, DayEntryFields{Mood: true}, time.Now(), time.UTC)
+		DayEntryInput{Mood: 3}, DayEntryFields{Mood: true}, DayEntryBase{}, time.Now(), time.UTC)
 	if err != nil {
 		t.Fatalf("PatchDayEntryWithAutoFillAt() unexpected error: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestPatchDayEntryStatingNoPeriodClearsTheFieldsThatFollowFromIt(t *testing.
 	seedPatchCycleStartDay(t, logs, day)
 
 	saved, err := service.PatchDayEntryWithAutoFillAt(context.Background(), 10, day,
-		DayEntryInput{IsPeriod: false}, DayEntryFields{IsPeriod: true}, time.Now(), time.UTC)
+		DayEntryInput{IsPeriod: false}, DayEntryFields{IsPeriod: true}, DayEntryBase{}, time.Now(), time.UTC)
 	if err != nil {
 		t.Fatalf("PatchDayEntryWithAutoFillAt() unexpected error: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestPatchDayEntryRefusesAnInvalidStatedValueAndKeepsTheDay(t *testing.T) {
 	seedPatchCycleStartDay(t, logs, day)
 
 	_, err := service.PatchDayEntryWithAutoFillAt(context.Background(), 10, day,
-		DayEntryInput{Mood: MaxDayMood + 1}, DayEntryFields{Mood: true}, time.Now(), nil)
+		DayEntryInput{Mood: MaxDayMood + 1}, DayEntryFields{Mood: true}, DayEntryBase{}, time.Now(), nil)
 	if !errors.Is(err, ErrInvalidDayMood) {
 		t.Fatalf("expected ErrInvalidDayMood, got %v", err)
 	}
@@ -106,7 +106,7 @@ func TestPatchDayEntryRefusesWhenTheStoredDayCannotBeRead(t *testing.T) {
 	logs.findErrByDay[logs.dayKey(day)] = errors.New("read error")
 
 	_, err := service.PatchDayEntryWithAutoFillAt(context.Background(), 10, day,
-		DayEntryInput{Mood: 3}, DayEntryFields{Mood: true}, time.Now(), time.UTC)
+		DayEntryInput{Mood: 3}, DayEntryFields{Mood: true}, DayEntryBase{}, time.Now(), time.UTC)
 	if !errors.Is(err, ErrDayEntryLoadFailed) {
 		t.Fatalf("expected ErrDayEntryLoadFailed, got %v", err)
 	}
@@ -125,7 +125,7 @@ func TestPatchDayEntryMergesOntoTheLockingRead(t *testing.T) {
 	seedPatchCycleStartDay(t, logs, day)
 
 	if _, err := service.PatchDayEntryWithAutoFillAt(context.Background(), 10, day,
-		DayEntryInput{Mood: 3}, DayEntryFields{Mood: true}, time.Now(), time.UTC); err != nil {
+		DayEntryInput{Mood: 3}, DayEntryFields{Mood: true}, DayEntryBase{}, time.Now(), time.UTC); err != nil {
 		t.Fatalf("PatchDayEntryWithAutoFillAt() unexpected error: %v", err)
 	}
 	if logs.lockingReads != 2 {
@@ -184,7 +184,7 @@ func TestPatchDayEntryRetriesOntoTheDayAConcurrentWriteCreated(t *testing.T) {
 	service := NewDayService(logs, &dayUserRepositoryStub{})
 
 	saved, err := service.PatchDayEntryWithAutoFillAt(context.Background(), 10, day,
-		DayEntryInput{Notes: "mine"}, DayEntryFields{Notes: true}, time.Now(), time.UTC)
+		DayEntryInput{Notes: "mine"}, DayEntryFields{Notes: true}, DayEntryBase{}, time.Now(), time.UTC)
 	if err != nil {
 		t.Fatalf("expected the losing first write to retry onto the winner's row, got %v", err)
 	}
@@ -208,7 +208,7 @@ func TestPatchDayEntryRetriesARefusedInsertOnlyOnce(t *testing.T) {
 	service := NewDayService(logs, &dayUserRepositoryStub{})
 
 	_, err := service.PatchDayEntryWithAutoFillAt(context.Background(), 10, day,
-		DayEntryInput{Notes: "mine"}, DayEntryFields{Notes: true}, time.Now(), time.UTC)
+		DayEntryInput{Notes: "mine"}, DayEntryFields{Notes: true}, DayEntryBase{}, time.Now(), time.UTC)
 	if !errors.Is(err, ErrDayEntryCreateFailed) {
 		t.Fatalf("expected a second refusal to answer as ErrDayEntryCreateFailed, got %v", err)
 	}
@@ -310,7 +310,7 @@ func TestPatchUncheckingAnAutoFilledAnchorAppliesTheClearFlowRules(t *testing.T)
 			ctx := context.Background()
 
 			if _, err := service.PatchDayEntryWithAutoFillAt(ctx, 10, anchor,
-				DayEntryInput{IsPeriod: true, Flow: tc.anchorFlow}, DayEntryFields{IsPeriod: true, Flow: true}, now, time.UTC); err != nil {
+				DayEntryInput{IsPeriod: true, Flow: tc.anchorFlow}, DayEntryFields{IsPeriod: true, Flow: true}, DayEntryBase{}, now, time.UTC); err != nil {
 				t.Fatalf("log the anchor: %v", err)
 			}
 			for _, key := range []string{"2026-09-08", "2026-09-09", "2026-09-10", "2026-09-11"} {
@@ -322,12 +322,12 @@ func TestPatchUncheckingAnAutoFilledAnchorAppliesTheClearFlowRules(t *testing.T)
 				tc.afterFill(logs)
 			}
 			for _, step := range tc.steps {
-				if _, err := service.PatchDayEntryWithAutoFillAt(ctx, 10, step.day, step.input, step.fields, now, time.UTC); err != nil {
+				if _, err := service.PatchDayEntryWithAutoFillAt(ctx, 10, step.day, step.input, step.fields, DayEntryBase{}, now, time.UTC); err != nil {
 					t.Fatalf("patch %s: %v", logs.dayKey(step.day), err)
 				}
 			}
 			if _, err := service.PatchDayEntryWithAutoFillAt(ctx, 10, anchor,
-				DayEntryInput{IsPeriod: false}, DayEntryFields{IsPeriod: true}, now, time.UTC); err != nil {
+				DayEntryInput{IsPeriod: false}, DayEntryFields{IsPeriod: true}, DayEntryBase{}, now, time.UTC); err != nil {
 				t.Fatalf("uncheck the anchor: %v", err)
 			}
 

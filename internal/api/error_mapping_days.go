@@ -31,6 +31,8 @@ func mapDayUpsertError(err error) APIErrorSpec {
 		return globalErrorSpec(fiber.StatusConflict, APIErrorCategoryConflict, "cycle start replace required")
 	case errors.Is(err, services.ErrManualCycleStartConfirmationNeeded):
 		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "cycle start confirmation required")
+	case errors.Is(err, services.ErrDayEntryConflict):
+		return globalErrorSpec(fiber.StatusConflict, APIErrorCategoryConflict, "day changed elsewhere")
 	case errors.Is(err, services.ErrInvalidDayFlow):
 		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid flow value")
 	case errors.Is(err, services.ErrInvalidDayMood):

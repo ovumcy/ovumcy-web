@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
+	"slices"
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
@@ -396,6 +398,97 @@ func mergeDayEntryPatch(existing models.DailyLog, patch DayEntryInput, fields Da
 	return merged
 }
 
+// ErrDayEntryConflict refuses a partial write that would replace a field
+// another write changed after this writer read it: for a field the write names,
+// the stored value is neither the value the writer based its edit on nor the
+// value it writes. Nothing is written.
+var ErrDayEntryConflict = errors.New("day entry changed concurrently")
+
+// DayEntryBase is what a partial write based its edit on: for each field named
+// in Fields, the value the writer saw stored when it made the edit (the value
+// its page was rendered with, or what its last accepted save left). A field
+// written without a base is written unconditionally, as before.
+type DayEntryBase struct {
+	Values DayEntryInput
+	Fields DayEntryFields
+}
+
+// dayEntryPatchConflicts reports whether written — the normalized day the
+// patch leaves behind — would replace a field changed by another writer. Only
+// a field the write names AND bases can conflict: a field it does not name is
+// kept as stored (mergeDayEntryPatch), so it overwrites nothing. A field whose
+// stored value already equals the written value is no conflict either, which
+// keeps an idempotent re-send of a committed write from being refused. Stored
+// and base values are compared in the normalized form a stored value is
+// merged in, so a legacy spelling on disk or in the base is not a change.
+func dayEntryPatchConflicts(existing models.DailyLog, written DayEntryInput, fields DayEntryFields, base DayEntryBase) bool {
+	stored := normalizedStoredDayEntry(existing)
+	based := normalizedStoredDayEntry(dayLogFromEntryInput(base.Values))
+	conflicts := func(named bool, hasBase bool, equal func(a DayEntryInput, b DayEntryInput) bool) bool {
+		return named && hasBase && !equal(stored, based) && !equal(stored, written)
+	}
+	return conflicts(fields.IsPeriod, base.Fields.IsPeriod, func(a, b DayEntryInput) bool { return a.IsPeriod == b.IsPeriod }) ||
+		conflicts(fields.Flow, base.Fields.Flow, func(a, b DayEntryInput) bool { return a.Flow == b.Flow }) ||
+		conflicts(fields.Mood, base.Fields.Mood, func(a, b DayEntryInput) bool { return a.Mood == b.Mood }) ||
+		conflicts(fields.SexActivity, base.Fields.SexActivity, func(a, b DayEntryInput) bool { return a.SexActivity == b.SexActivity }) ||
+		conflicts(fields.BBT, base.Fields.BBT, func(a, b DayEntryInput) bool { return sameStoredDayBBT(a.BBT, b.BBT) }) ||
+		conflicts(fields.CervicalMucus, base.Fields.CervicalMucus, func(a, b DayEntryInput) bool { return a.CervicalMucus == b.CervicalMucus }) ||
+		conflicts(fields.PregnancyTest, base.Fields.PregnancyTest, func(a, b DayEntryInput) bool { return a.PregnancyTest == b.PregnancyTest }) ||
+		conflicts(fields.CycleFactorKeys, base.Fields.CycleFactorKeys, func(a, b DayEntryInput) bool { return slices.Equal(a.CycleFactorKeys, b.CycleFactorKeys) }) ||
+		conflicts(fields.Notes, base.Fields.Notes, func(a, b DayEntryInput) bool { return a.Notes == b.Notes }) ||
+		conflicts(fields.SymptomIDs, base.Fields.SymptomIDs, func(a, b DayEntryInput) bool { return sameDaySymptomIDSet(a.SymptomIDs, b.SymptomIDs) })
+}
+
+// normalizedStoredDayEntry is a stored day in the form a partial write merges
+// it in: the merge of a write that names nothing.
+func normalizedStoredDayEntry(log models.DailyLog) DayEntryInput {
+	return mergeDayEntryPatch(log, DayEntryInput{}, DayEntryFields{})
+}
+
+// dayLogFromEntryInput carries a base's values into the stored shape, so the
+// base is normalized by exactly the rules the stored row is.
+func dayLogFromEntryInput(input DayEntryInput) models.DailyLog {
+	return models.DailyLog{
+		IsPeriod:        input.IsPeriod,
+		Flow:            input.Flow,
+		Mood:            input.Mood,
+		SexActivity:     input.SexActivity,
+		BBT:             input.BBT,
+		CervicalMucus:   input.CervicalMucus,
+		PregnancyTest:   input.PregnancyTest,
+		CycleFactorKeys: input.CycleFactorKeys,
+		Notes:           input.Notes,
+		SymptomIDs:      input.SymptomIDs,
+	}
+}
+
+// dayBBTBaseTolerance is how far a temperature the page rendered can sit from
+// the stored value it shows. The day forms render two decimals in the
+// account's unit (FormatDayBBTForInput), so a base read back off the page is
+// off by up to half a display step: 0.005 °C, or about 0.0028 °C for a
+// Fahrenheit account. The stored grid is finer than either.
+const dayBBTBaseTolerance = 0.006
+
+// sameStoredDayBBT compares two temperatures at the precision the page shows
+// them: a value one rendering apart is the same reading, not a change made
+// elsewhere.
+func sameStoredDayBBT(a *float64, b *float64) bool {
+	a, b = normalizeStoredDayBBT(a), normalizeStoredDayBBT(b)
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return math.Abs(*a-*b) < dayBBTBaseTolerance
+}
+
+// sameDaySymptomIDSet compares two symptom selections as sets: the order a
+// checkbox group posts its members in says nothing about the day.
+func sameDaySymptomIDSet(a []uint, b []uint) bool {
+	sortedA, sortedB := slices.Clone(a), slices.Clone(b)
+	slices.Sort(sortedA)
+	slices.Sort(sortedB)
+	return slices.Equal(slices.Compact(sortedA), slices.Compact(sortedB))
+}
+
 func (service *DayService) UpsertDayEntryWithAutoFillAt(ctx context.Context, userID uint, day time.Time, payload DayEntryInput, now time.Time, location *time.Location) (models.DailyLog, error) {
 	if location == nil {
 		location = time.UTC
@@ -415,9 +508,11 @@ func (service *DayService) UpsertDayEntryWithAutoFillAt(ctx context.Context, use
 // PatchDayEntryWithAutoFillAt is the partial day write: only the fields named
 // in fields change, and every other field keeps its stored value
 // (mergeDayEntryPatch). The merge reads the stored row inside the same
-// transaction as the write, so the day it merges onto is the day it replaces;
-// a per-field precondition on the stored values belongs in that same step.
-func (service *DayService) PatchDayEntryWithAutoFillAt(ctx context.Context, userID uint, day time.Time, patch DayEntryInput, fields DayEntryFields, now time.Time, location *time.Location) (models.DailyLog, error) {
+// transaction as the write, so the day it merges onto is the day it replaces,
+// and the per-field precondition on the stored values runs in that same step:
+// a named field whose stored value moved off its base to a third value refuses
+// the whole write with ErrDayEntryConflict (dayEntryPatchConflicts).
+func (service *DayService) PatchDayEntryWithAutoFillAt(ctx context.Context, userID uint, day time.Time, patch DayEntryInput, fields DayEntryFields, base DayEntryBase, now time.Time, location *time.Location) (models.DailyLog, error) {
 	if location == nil {
 		location = time.UTC
 	}
@@ -435,7 +530,14 @@ func (service *DayService) PatchDayEntryWithAutoFillAt(ctx context.Context, user
 		if !found {
 			existing = models.DailyLog{}
 		}
-		return NormalizeDayEntryInput(mergeDayEntryPatch(existing, patch, fields))
+		written, err := NormalizeDayEntryInput(mergeDayEntryPatch(existing, patch, fields))
+		if err != nil {
+			return DayEntryInput{}, err
+		}
+		if dayEntryPatchConflicts(existing, written, fields, base) {
+			return DayEntryInput{}, ErrDayEntryConflict
+		}
+		return written, nil
 	}
 	entry, err := service.writeDayEntryWithAutoFill(ctx, userID, dayStart, now, location, resolve)
 	if errors.Is(err, errDayEntryCreatedConcurrently) {

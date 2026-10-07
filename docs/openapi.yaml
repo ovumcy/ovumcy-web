@@ -791,6 +791,26 @@ components:
           minLength: 8
       additionalProperties: false
 
+    DayPatchPayload:
+      type: object
+      description: |
+        The `PATCH` body: any member of `DayPayload`, with the same keys, types and
+        rules, and for each a `base_<key>` member of the same type — the value the
+        edit was based on, read with the same rules (a temperature in the account's
+        unit). A base is compared, never written; the write is refused with `409`
+        only for a field it carries AND bases whose stored value is neither the
+        base nor the value written.
+      properties:
+        base_is_period: { type: boolean }
+        base_flow: { type: string }
+        base_mood: { type: integer }
+        base_sex_activity: { type: string }
+        base_bbt: { type: [number, 'null'] }
+        base_cervical_mucus: { type: string }
+        base_pregnancy_test: { type: string }
+        base_cycle_factor_keys: { type: array, items: { type: string } }
+        base_symptom_ids: { type: array, items: { type: integer, minimum: 0 } }
+        base_notes: { type: string }
     DayPayload:
       type: object
       description: |
@@ -2623,11 +2643,19 @@ paths:
         period flag, the flow and the cycle start as stored. Values are
         validated and refused exactly as under `PUT`, and the answer is the
         same: the whole day as persisted.
+
+        A field may carry its base — `base_<key>`, the value the edit was
+        based on — and the write is then conditional on it, field by field
+        (the `409`). A field sent without a base is written unconditionally.
+        The day forms of the web interface send this request as a form body
+        with the same keys, naming only the fields the owner changed, each
+        with its base, and `is_period=false` explicitly when the period is
+        turned off: a form body cannot clear a field by leaving it out.
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/DayPayload' }
+            schema: { $ref: '#/components/schemas/DayPatchPayload' }
       responses:
         '200':
           description: Persisted entry, after the merge.
@@ -2665,6 +2693,25 @@ paths:
           content:
             text/html:
               schema: { type: string }
+        '409':
+          description: |
+            A field the body sends with a `base_<key>` was changed by another writer since that
+            base was read: its stored value is neither the base nor the value the body writes.
+            Nothing is written, and the error key is `day changed elsewhere` (category
+            `conflict`). Three cases never refuse the write: a field sent without a base, a
+            field the body does not carry, and a stored value already equal to the value the
+            body writes (a re-sent write that already landed). An HTMX caller gets the
+            localized status fragment instead, keyed `daylog.save_conflict`. A request from a
+            rendered day form whose account binding names another account is refused with the
+            same status and the key `day form account changed`.
+          content:
+            text/html:
+              schema: { type: string }
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "day changed elsewhere"
+                error_detail: { key: "day changed elsewhere", category: "conflict", target: "global" }
         '429': { $ref: '#/components/responses/RateLimited' }
     delete:
       tags: [days]

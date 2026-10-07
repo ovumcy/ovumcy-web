@@ -193,7 +193,7 @@ test("one changed control saves, and carries no value for the controls left alon
     assert.equal(calls().length, 1, "one touched control, one save");
     const call = calls()[0];
     assert.equal(call.url, `/api/v1/days/${TODAY}`);
-    assert.equal(call.init.method, "PUT");
+    assert.equal(call.init.method, "PATCH", "the autosave states only what changed");
 
     const body = bodyOf(call);
     assert.ok(body.includes("mood=4"), "the control the owner touched travels");
@@ -236,15 +236,16 @@ test("a saved day offers one step back, and taking it restores what the server h
     await settle();
 
     assert.equal(calls().length, 2, "the undo saves through the same path");
-    const undoBody = bodyOf(calls()[1]);
-    assert.ok(
-      undoBody.includes(formValue("notes", "slept well")),
-      "the undo sends the state the server held before the save"
+    const undoBody = new URLSearchParams(bodyOf(calls()[1]));
+    assert.deepEqual(
+      undoBody.getAll("notes"),
+      ["slept well"],
+      "the undo sends the state the server held before the save, and only that"
     );
-    assert.equal(
-      undoBody.includes(formValue("notes", "slept badly")),
-      false,
-      "the undone value is gone from the wire"
+    assert.deepEqual(
+      undoBody.getAll("base_notes"),
+      ["slept badly"],
+      "the undone value travels only as the base the undo replaces"
     );
     assert.equal(notes.value, "slept well", "and from the screen");
 
@@ -287,9 +288,11 @@ test("undoing the first save of an empty day clears it instead of writing an emp
 });
 
 // A day with no saved entry whose period is ticked from the stored onboarding
-// start is not an empty day. Undoing the first save back to it must re-send the
-// tick and its hidden marker: a DELETE would withdraw the stored start.
-test("undoing the first save of a day ticked from the stored start re-sends the tick instead of clearing the day", async () => {
+// start is not an empty day. Undoing the first save back to it must not DELETE
+// the day — a delete withdraws the stored start — and it names only the undone
+// field: the server reads the row-less start as ticked, so the tick it never
+// names stays.
+test("undoing the first save of a day ticked from the stored start keeps the tick instead of clearing the day", async () => {
   const { dom, calls } = await loadDashboard({ entryExists: false, periodFromStoredStart: true });
   try {
     const mood = dom.window.document.querySelector("input[name='mood'][value='4']");
@@ -307,17 +310,13 @@ test("undoing the first save of a day ticked from the stored start re-sends the 
     assert.equal(calls().length, 2, "the undo goes out");
     assert.equal(
       calls()[1].init.method,
-      "PUT",
+      "PATCH",
       "a day ticked from the stored start is not cleared by an undo"
     );
     assert.equal(calls()[1].url, `/api/v1/days/${TODAY}`);
     const undoBody = bodyOf(calls()[1]);
-    assert.ok(undoBody.includes(formValue("is_period", "true")), "the restored tick travels");
-    assert.ok(
-      undoBody.includes(formValue("period_from_stored_start", "true")),
-      "the tick still says it came from the stored start"
-    );
-    assert.equal(undoBody.includes("mood=4"), false, "the undone mood is gone from the wire");
+    assert.equal(undoBody.includes(formValue("is_period", "false")), false, "the undo never un-ticks the start");
+    assert.equal(new URLSearchParams(undoBody).get("mood"), "", "the undone mood is cleared by name");
     assert.equal(mood.checked, false, "and from the screen");
   } finally {
     dom.window.close();
@@ -357,7 +356,13 @@ test("an edit made while a save is in flight still reaches the server on unload"
     assert.equal(calls.length, 2, "the edit made during the open save is sent on its own request");
     const flushed = calls[1];
     assert.equal(flushed.url, `/api/v1/days/${TODAY}`);
-    assert.equal(flushed.init.method, "PUT");
+    assert.equal(flushed.init.method, "PATCH");
+    const flushedBody = new URLSearchParams(bodyOf(flushed));
+    assert.equal(
+      flushedBody.has("base_notes"),
+      false,
+      "a field the open save is writing leaves without a base: whichever lands first, the newer value is owed"
+    );
     assert.equal(flushed.init.keepalive, true, "an unload request must outlive the page");
     assert.equal(flushed.init.headers[ACCOUNT_HEADER], ACCOUNT_BINDING, "the unload flush names the account the page was rendered for");
     assert.ok(
@@ -419,7 +424,7 @@ test("an htmx save still open with a newer edit behind it leaves as one request 
     dom.window.dispatchEvent(new dom.window.Event("pagehide"));
     await settle();
 
-    const puts = calls.filter((call) => call.init.method === "PUT");
+    const puts = calls.filter((call) => call.init.method === "PATCH");
     assert.equal(puts.length, 1, "exactly one unload writer per form: two unordered PUTs let the older land last");
     assert.equal(puts[0].url, `/api/v1/days/${TODAY}`);
     assert.equal(puts[0].init.keepalive, true);

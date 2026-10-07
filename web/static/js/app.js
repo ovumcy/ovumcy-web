@@ -2075,6 +2075,17 @@
     }
     notice.appendChild(text);
 
+    if (messageKey === DAY_SAVE_CONFLICT_NOTICE_KEY) {
+      // Another device changed a field this save changes too. A retry of the
+      // same save would be refused again; the owner chooses whose value the
+      // day keeps instead, and the entry stays in the form until then.
+      notice.setAttribute("data-day-save-conflict", "true");
+      notice.appendChild(daySaveConflictChoice(form, "mine", "data-day-conflict-keep-label", "Keep mine"));
+      notice.appendChild(daySaveConflictChoice(form, "theirs", "data-day-conflict-take-label", "Take theirs"));
+      target.replaceChildren(notice);
+      return true;
+    }
+
     if (messageKey === ACCOUNT_CHANGED_NOTICE_KEY) {
       // The form was rendered for another account than the one now signed in:
       // no retry can land it, so the notice offers none, and no sign-in link
@@ -2238,6 +2249,21 @@
       return;
     }
     action();
+  }
+
+  // A day save refused (409) because a field it changes was changed on another
+  // device since this page read it.
+  var DAY_SAVE_CONFLICT_NOTICE_KEY = "daylog.save_conflict";
+
+  function daySaveConflictChoice(form, choice, labelAttribute, fallback) {
+    var button = document.createElement("button");
+    // type="button" for the same reason as the retry: the notice sits inside
+    // the form.
+    button.type = "button";
+    button.className = "status-notice-action";
+    button.setAttribute("data-day-conflict-choice", choice);
+    button.textContent = form.getAttribute(labelAttribute) || fallback;
+    return button;
   }
 
   function daySaveSignInLink(form) {
@@ -2480,6 +2506,16 @@
 
       event.preventDefault();
       retryDaySave(form);
+    });
+
+    document.body.addEventListener("click", function (event) {
+      var choiceButton = closestFromEvent(event, "[data-day-conflict-choice]");
+      var form = choiceButton ? choiceButton.closest("form[data-day-editor-form], form[data-dashboard-save-form]") : null;
+      if (!form || typeof window.__ovumcyResolveDaySaveConflict !== "function") {
+        return;
+      }
+      event.preventDefault();
+      window.__ovumcyResolveDaySaveConflict(form, choiceButton.getAttribute("data-day-conflict-choice"));
     });
 
     document.body.addEventListener("htmx:responseError", function (event) {
@@ -4137,8 +4173,16 @@
     });
   }
 
-  function buildDashboardAutosaveBody(form) {
-    return new URLSearchParams(new FormData(form));
+  // A save states only the fields that differ from what the server is known to
+  // hold, each beside that base (dayPatchEntries). unbasedNames are the fields
+  // an own save still on the wire is writing: their base is not known yet.
+  function buildDashboardAutosaveBody(form, unbasedNames) {
+    var entries = [];
+    captureDashboardPersistedState(form);
+    new window.FormData(form).forEach(function (value, name) {
+      entries.push([name, String(value)]);
+    });
+    return new URLSearchParams(dayPatchEntries(entries, form.__ovumcyPersistedState.entries, unbasedNames));
   }
 
   function dashboardRequestHeaders(form) {
@@ -4215,6 +4259,11 @@
         endpoint.url = String(hxValue).trim();
         break;
       }
+    }
+    // The form's hx-put is the full write a submit without this script sends;
+    // the script sends only what changed, which is the partial write.
+    if (endpoint.method === "PUT") {
+      endpoint.method = "PATCH";
     }
     return endpoint;
   }
@@ -4561,8 +4610,9 @@
 
     // Which edit is on the wire, readable from outside this call: the unload
     // flush has to know whether the open request already carries the newest
-    // body or an older one.
+    // body or an older one, and which fields it is writing.
     form.__ovumcyAutosaveInFlightVersion = requestVersion;
+    form.__ovumcyAutosaveInFlightState = sentState;
     // Every save rides a keepalive request, not only the unload flush: a save
     // the debounce already put on the wire is one the owner has seen start, and
     // a reload or a closed tab must not cancel it. One request carries the
@@ -4613,6 +4663,7 @@
     }).finally(function () {
       form.__ovumcyAutosaveInFlight = null;
       form.__ovumcyAutosaveInFlightVersion = 0;
+      form.__ovumcyAutosaveInFlightState = null;
       if (form.dataset.autosaveDirty === "true" && !form.__ovumcyAutosaveFailed) {
         form.__ovumcyAutosaveTimer = window.setTimeout(function () {
           runDashboardAutosave(form);
@@ -4822,11 +4873,28 @@
   // so the newest value typed is the one owed — on one request, never the htmx
   // snapshot beside it: two unordered writes let the older one land last.
   //
-  // The day upsert is idempotent, so a version this flush already sent is not
+  // The day write is idempotent, so a version this flush already sent is not
   // taken off the dirty ledger: should the page come back from the
   // back/forward cache, the normal path re-sending the same body costs
   // nothing, while clearing dirty here against a request whose outcome nobody
   // will see could lose the edit twice.
+  //
+  // The open request and this one are unordered. A field the open request is
+  // writing leaves here without a base: whichever lands first, this newer
+  // value is the one owed, and the older request — whose base the newer write
+  // no longer matches — is the one the server refuses.
+  function dashboardUnloadUnbasedNames(form, htmxSave) {
+    var base = form.__ovumcyPersistedState ? form.__ovumcyPersistedState.entries : [];
+    var names = [];
+    if (form.__ovumcyAutosaveInFlight && form.__ovumcyAutosaveInFlightState) {
+      names = names.concat(changedDayFieldNames(form.__ovumcyAutosaveInFlightState.entries, base));
+    }
+    if (htmxSave && form.__ovumcyDayPatchSentEntries) {
+      names = names.concat(changedDayFieldNames(form.__ovumcyDayPatchSentEntries, base));
+    }
+    return names;
+  }
+
   function flushDashboardAutosaveOnPageHide(form) {
     var htmxSave;
     var version;
@@ -4865,7 +4933,7 @@
         method: endpoint.method,
         url: endpoint.url,
         headers: dashboardRequestHeaders(form),
-        body: buildDashboardAutosaveBody(form).toString()
+        body: buildDashboardAutosaveBody(form, dashboardUnloadUnbasedNames(form, htmxSave)).toString()
       };
     } else if (htmxSave) {
       request = htmxSave;
@@ -5058,13 +5126,292 @@
     return owned;
   }
 
+  // ---- The partial day write ------------------------------------------------
+  //
+  // A day form sends only the fields the owner changed, each beside the value
+  // the edit was based on (base_<field>): what the page was rendered with, or
+  // what the last accepted save left. The server keeps every field a save does
+  // not name, so a change made on another device to another field survives,
+  // and it refuses the save (409) only when a field the save names was changed
+  // there too. The day fields are whatever the form posts: every name below is
+  // the exception, never the rule.
+  var DAY_PATCH_BASE_PREFIX = "base_";
+  // Not day fields: they ride along on every save exactly as the form holds
+  // them.
+  var DAY_PATCH_PASSTHROUGH = ["csrf_token", "day_form_account", "source", "ack_period_tip", "cycle_start"];
+  // The method override names the full write a submit without this script
+  // posts; the partial write carries none.
+  var DAY_PATCH_DROPPED = ["_method"];
+  // An unchecked checkbox posts nothing, and a field a partial write leaves
+  // out keeps its stored value: turning the period off is sent as an explicit
+  // false, never inferred from absence.
+  var DAY_PATCH_EXPLICIT_FALSE = ["is_period"];
+
+  function groupDayEntries(entries) {
+    var grouped = { values: {}, order: [] };
+    (entries || []).forEach(function (entry) {
+      if (!Object.prototype.hasOwnProperty.call(grouped.values, entry[0])) {
+        grouped.values[entry[0]] = [];
+        grouped.order.push(entry[0]);
+      }
+      grouped.values[entry[0]].push(entry[1]);
+    });
+    return grouped;
+  }
+
+  // A checkbox group posts its members in markup order; the set is the value.
+  function sameDayValues(left, right) {
+    var a = (left || []).slice().sort();
+    var b = (right || []).slice().sort();
+    if (a.length !== b.length) {
+      return false;
+    }
+    for (var index = 0; index < a.length; index++) {
+      if (a[index] !== b[index]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  function isDayFieldName(name) {
+    return DAY_PATCH_PASSTHROUGH.indexOf(name) === -1 && DAY_PATCH_DROPPED.indexOf(name) === -1;
+  }
+
+  function dayFieldNamesOf(current, base) {
+    var names = current.order.slice();
+    base.order.forEach(function (name) {
+      if (names.indexOf(name) === -1) {
+        names.push(name);
+      }
+    });
+    return names.filter(isDayFieldName);
+  }
+
+  function changedDayFieldNames(currentEntries, baseEntries) {
+    var current = groupDayEntries(currentEntries);
+    var base = groupDayEntries(baseEntries);
+    return dayFieldNamesOf(current, base).filter(function (name) {
+      return !sameDayValues(current.values[name], base.values[name]);
+    });
+  }
+
+  // A field with no value left (an emptied group, a cleared radio) is still
+  // named, so the write clears it instead of keeping what is stored.
+  function pushDayPatchField(out, key, field, values) {
+    if (values && values.length > 0) {
+      values.forEach(function (value) {
+        out.push([key, value]);
+      });
+      return;
+    }
+    out.push([key, DAY_PATCH_EXPLICIT_FALSE.indexOf(field) !== -1 ? "false" : ""]);
+  }
+
+  function dayPatchEntries(currentEntries, baseEntries, unbasedNames) {
+    var current = groupDayEntries(currentEntries);
+    var base = groupDayEntries(baseEntries);
+    var changed = changedDayFieldNames(currentEntries, baseEntries);
+    var out = [];
+
+    current.order.forEach(function (name) {
+      if (DAY_PATCH_PASSTHROUGH.indexOf(name) !== -1) {
+        current.values[name].forEach(function (value) {
+          out.push([name, value]);
+        });
+      }
+    });
+    changed.forEach(function (name) {
+      pushDayPatchField(out, name, name, current.values[name]);
+      if (!unbasedNames || unbasedNames.indexOf(name) === -1) {
+        pushDayPatchField(out, DAY_PATCH_BASE_PREFIX + name, name, base.values[name]);
+      }
+    });
+    return out;
+  }
+
+  // What the server is known to hold for this form: the dashboard's persisted
+  // state (which its undo also reads), or the editor's own record.
+  function dayFormBaseEntries(form) {
+    if (isDashboardSaveForm(form)) {
+      captureDashboardPersistedState(form);
+      return form.__ovumcyPersistedState.entries;
+    }
+    if (!form.__ovumcyDayBaseEntries) {
+      form.__ovumcyDayBaseEntries = dashboardFormEntries(form);
+    }
+    return form.__ovumcyDayBaseEntries;
+  }
+
+  function setDayFormBase(form, entries, empty) {
+    if (isDashboardSaveForm(form)) {
+      form.__ovumcyPersistedState = { entries: entries, empty: !!empty };
+      return;
+    }
+    form.__ovumcyDayBaseEntries = entries;
+  }
+
+  // A day form submitted through htmx (the calendar's Save, Enter in a
+  // journal field) carries hx-put; it goes out as the partial write instead.
+  // The request config's formData is replaced as well as its parameters, so
+  // the unload guard notes the body that was actually sent.
+  function convertDaySaveToPatch(event) {
+    var detail = event ? event.detail : null;
+    var form = detail ? detail.elt : null;
+    var sent = [];
+    var formData;
+    var parameters = {};
+
+    if (!form || !form.matches || !form.matches(DAY_SAVE_FORM_SELECTOR)) {
+      return;
+    }
+    if (String(detail.verb || "").toLowerCase() !== "put" || !detail.formData || typeof detail.formData.forEach !== "function") {
+      return;
+    }
+    detail.formData.forEach(function (value, name) {
+      sent.push([name, String(value)]);
+    });
+    formData = new window.FormData();
+    dayPatchEntries(sent, dayFormBaseEntries(form)).forEach(function (entry) {
+      formData.append(entry[0], entry[1]);
+      if (Object.prototype.hasOwnProperty.call(parameters, entry[0])) {
+        parameters[entry[0]] = [].concat(parameters[entry[0]], entry[1]);
+      } else {
+        parameters[entry[0]] = entry[1];
+      }
+    });
+    detail.verb = "patch";
+    detail.formData = formData;
+    detail.parameters = parameters;
+    form.__ovumcyDayPatchSentEntries = sent.filter(function (entry) {
+      return entry[0] !== "csrf_token";
+    });
+  }
+
+  // An accepted save is the new base: the next edit is based on what it left.
+  function promoteDaySaveBase(event) {
+    var form = dayEditorFormFromEvent(event);
+    var detail = event ? event.detail : null;
+    if (!form || !form.__ovumcyDayPatchSentEntries) {
+      return;
+    }
+    if (detail && detail.successful) {
+      setDayFormBase(form, form.__ovumcyDayPatchSentEntries, false);
+    }
+    form.__ovumcyDayPatchSentEntries = null;
+  }
+
+  function restoreDayFormEntries(form, entries) {
+    restoreDashboardFormState(form, entries);
+    if (form.matches && form.matches("[data-day-editor-form]")) {
+      syncDayEditorForm(form);
+    }
+  }
+
+  // The owner's answer to a refused save. The day is read again as the server
+  // renders it now. A field this edit did not change takes the stored value; a
+  // field both sides changed takes the owner's choice; a field only this edit
+  // changed stays. The stored day becomes the new base, so "keep mine"
+  // re-sends against it and wins, while "take theirs" leaves only this edit's
+  // other changes to send.
+  function applyDaySaveConflictChoice(form, freshForm, choice) {
+    var freshEntries = dashboardFormEntries(freshForm);
+    var currentEntries = dashboardFormEntries(form);
+    var base = groupDayEntries(dayFormBaseEntries(form));
+    var current = groupDayEntries(currentEntries);
+    var theirs = groupDayEntries(freshEntries);
+    var merged = [];
+
+    current.order.forEach(function (name) {
+      if (!isDayFieldName(name)) {
+        current.values[name].forEach(function (value) {
+          merged.push([name, value]);
+        });
+      }
+    });
+    dayFieldNamesOf(current, theirs).concat(dayFieldNamesOf(base, base)).forEach(function (name, index, names) {
+      var mineChanged;
+      var theirsChanged;
+      var picked;
+      if (names.indexOf(name) !== index) {
+        return;
+      }
+      mineChanged = !sameDayValues(current.values[name], base.values[name]);
+      theirsChanged = !sameDayValues(theirs.values[name], base.values[name]);
+      picked = !mineChanged || (theirsChanged && choice === "theirs") ? theirs.values[name] : current.values[name];
+      (picked || []).forEach(function (value) {
+        merged.push([name, value]);
+      });
+    });
+
+    restoreDayFormEntries(form, merged);
+    setDayFormBase(form, freshEntries, freshForm.getAttribute("data-today-entry-exists") === "false");
+    clearDashboardSaveNotice(form);
+    return changedDayFieldNames(dashboardFormEntries(form), freshEntries).length > 0;
+  }
+
+  function resolveDaySaveConflict(form, choice) {
+    var url = String(form.getAttribute("data-day-conflict-refresh-url") || "").trim();
+    var selector = isDashboardSaveForm(form) ? "[data-dashboard-save-form]" : "[data-day-editor-form]";
+    var headers = dashboardRequestHeaders(form);
+
+    if (!url || typeof window.fetch !== "function" || typeof window.DOMParser !== "function") {
+      return Promise.resolve(false);
+    }
+    delete headers["Content-Type"];
+    headers.Accept = "text/html";
+
+    return window.fetch(url, {
+      method: "GET",
+      credentials: "same-origin",
+      headers: headers
+    }).then(function (response) {
+      return response.ok ? response.text() : "";
+    }).then(function (text) {
+      var fresh = text ? new window.DOMParser().parseFromString(text, "text/html").querySelector(selector) : null;
+      var unsaved;
+      // The day the page shows is the day the answer is about: a page left
+      // open past midnight reads another day's form, and nothing is merged.
+      if (!fresh || fresh.getAttribute("hx-put") !== form.getAttribute("hx-put")) {
+        renderDaySaveUnreachable(form);
+        return false;
+      }
+      unsaved = applyDaySaveConflictChoice(form, fresh, choice);
+      if (isDashboardSaveForm(form)) {
+        form.__ovumcyAutosaveUndo = null;
+        if (unsaved) {
+          return retryDashboardAutosave(form);
+        }
+        clearDashboardAutosaveTimers(form);
+        delete form.dataset.autosaveDirty;
+        form.__ovumcyAutosaveFailed = false;
+        setDashboardAutosaveIndicator(form, "idle");
+        return true;
+      }
+      // The calendar saves on an explicit press: keeping one's own version is
+      // that press, repeated against the new base; taking theirs leaves any
+      // other change in the form for the owner's own Save.
+      if (choice === "mine" && unsaved) {
+        retryDaySave(form);
+      }
+      return true;
+    }).catch(function () {
+      renderDaySaveUnreachable(form);
+      return false;
+    });
+  }
+
+  window.__ovumcyResolveDaySaveConflict = resolveDaySaveConflict;
+
   function bindDaySaveUnloadGuard() {
     if (!document.body || document.body.dataset.daySaveUnloadGuardBound === "1") {
       return;
     }
     document.body.dataset.daySaveUnloadGuardBound = "1";
 
+    document.body.addEventListener("htmx:configRequest", convertDaySaveToPatch);
     document.body.addEventListener("htmx:beforeSend", rememberDaySaveInFlight);
+    document.body.addEventListener("htmx:afterRequest", promoteDaySaveBase);
     document.body.addEventListener("htmx:afterRequest", forgetDaySaveInFlight);
     // Decides the prompt, sends nothing: the owner may yet stay.
     window.addEventListener("beforeunload", function (event) {
@@ -5210,6 +5557,8 @@
       bindAutosizeNoteFields(form);
       revealOnceTips(form);
       syncDayEditorForm(form);
+      // What the editor was rendered with is the base its first save states.
+      dayFormBaseEntries(form);
     }
 
     bindDaySaveUnloadGuard();

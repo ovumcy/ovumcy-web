@@ -73,7 +73,7 @@ const htmxRefusalLogFor = (path: string): RegExp =>
   new RegExp(`^console\\.error: Response Status Error Code \\d+ from ${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
 
 /**
- * Routes the day-entry PUT for one date. The outcome is switchable so a single
+ * Routes the day-entry PATCH for one date. The outcome is switchable so a single
  * test can fail a save, fail its retry, and then let the retry through — the
  * three phases of the flow under test — without re-registering the route.
  */
@@ -87,7 +87,7 @@ async function interceptDayPUT(
   // already the behaviour under test.
   browserErrors.allow(
     htmxRefusalLogFor(`/api/v1/days/${isoDate}`),
-    `this test forces PUT /api/v1/days/${isoDate} to be refused, and htmx logging that refusal is the behaviour under test`
+    `this test forces PATCH /api/v1/days/${isoDate} to be refused, and htmx logging that refusal is the behaviour under test`
   );
 
   let outcome: SaveOutcome = 'server-error';
@@ -95,7 +95,7 @@ async function interceptDayPUT(
   let dropTolerated = false;
 
   await page.route(`**/api/v1/days/${isoDate}`, async (route) => {
-    if (route.request().method() !== 'PUT') {
+    if (route.request().method() !== 'PATCH') {
       await route.fallback();
       return;
     }
@@ -126,7 +126,7 @@ async function interceptDayPUT(
       if (next === 'network-failure' && !dropTolerated) {
         browserErrors.allow(
           HTMX_CONNECTION_DROP_LOG,
-          `this test aborts PUT /api/v1/days/${isoDate}, and htmx logging the dropped connection is the behaviour under test`
+          `this test aborts PATCH /api/v1/days/${isoDate}, and htmx logging the dropped connection is the behaviour under test`
         );
         dropTolerated = true;
       }
@@ -186,7 +186,7 @@ test.describe('day-entry save resilience', () => {
       releaseSave = resolve;
     });
     await page.route(`**/api/v1/days/${targetISO}`, async (route) => {
-      if (route.request().method() !== 'PUT') {
+      if (route.request().method() !== 'PATCH') {
         await route.fallback();
         return;
       }
@@ -251,7 +251,7 @@ test.describe('day-entry save resilience', () => {
     const [retryRequest] = await Promise.all([
       page.waitForRequest(
         (candidate) =>
-          candidate.method() === 'PUT' && candidate.url().includes(`/api/v1/days/${targetISO}`),
+          candidate.method() === 'PATCH' && candidate.url().includes(`/api/v1/days/${targetISO}`),
       ),
       page.locator(RETRY_BUTTON).click(),
     ]);
@@ -296,7 +296,7 @@ test.describe('day-entry save resilience', () => {
     const [retryRequest] = await Promise.all([
       page.waitForRequest(
         (candidate) =>
-          candidate.method() === 'PUT' && candidate.url().includes(`/api/v1/days/${targetISO}`),
+          candidate.method() === 'PATCH' && candidate.url().includes(`/api/v1/days/${targetISO}`),
       ),
       page.locator(RETRY_BUTTON).click(),
     ]);
@@ -412,7 +412,7 @@ test.describe('dashboard autosave resilience', () => {
     // itself is what schedules the save.
     const failedRequest = page.waitForRequest(
       (candidate) =>
-        candidate.method() === 'PUT' && candidate.url().includes(`/api/v1/days/${todayISO}`),
+        candidate.method() === 'PATCH' && candidate.url().includes(`/api/v1/days/${todayISO}`),
     );
     await notes.fill(note);
     await failedRequest;
@@ -439,7 +439,7 @@ test.describe('dashboard autosave resilience', () => {
     const [retryRequest] = await Promise.all([
       page.waitForRequest(
         (candidate) =>
-          candidate.method() === 'PUT' && candidate.url().includes(`/api/v1/days/${todayISO}`),
+          candidate.method() === 'PATCH' && candidate.url().includes(`/api/v1/days/${todayISO}`),
       ),
       retry.click(),
     ]);
@@ -576,7 +576,7 @@ test.describe('a day save refused for an ended session', () => {
     const note = 'migraine depuis ce matin';
     const notes = await ensureNotesFieldVisible(page, '#today-notes');
     const refused = page.waitForResponse(
-      (response) => response.request().method() === 'PUT' && response.url().includes(`/api/v1/days/${todayISO}`)
+      (response) => response.request().method() === 'PATCH' && response.url().includes(`/api/v1/days/${todayISO}`)
     );
     await notes.fill(note);
     await page.locator('label.choice-option:has(input[name="mood"][value="4"]) .chip-round').click();
@@ -598,7 +598,7 @@ test.describe('a day save refused for an ended session', () => {
 
     const [retryResponse] = await Promise.all([
       page.waitForResponse(
-        (response) => response.request().method() === 'PUT' && response.url().includes(`/api/v1/days/${todayISO}`)
+        (response) => response.request().method() === 'PATCH' && response.url().includes(`/api/v1/days/${todayISO}`)
       ),
       notice.locator('[data-day-save-retry]').click(),
     ]);
@@ -630,7 +630,7 @@ test.describe('a day save refused for an ended session', () => {
     const targetISO = shiftISODate(String(await todayButton.getAttribute('data-day')), -20);
     browserErrors.allow(
       htmxRefusalLogFor(`/api/v1/days/${targetISO}`),
-      `this test revokes the session before PUT /api/v1/days/${targetISO}, and htmx logging that 401 is the behaviour under test`
+      `this test revokes the session before PATCH /api/v1/days/${targetISO}, and htmx logging that 401 is the behaviour under test`
     );
 
     const form = await openCalendarDayEditor(page, targetISO);
@@ -639,7 +639,7 @@ test.describe('a day save refused for an ended session', () => {
     const note = 'Kopfschmerzen seit dem Morgen';
     await fillDayEntry(form, note);
     const refused = page.waitForResponse(
-      (response) => response.request().method() === 'PUT' && response.url().includes(`/api/v1/days/${targetISO}`)
+      (response) => response.request().method() === 'PATCH' && response.url().includes(`/api/v1/days/${targetISO}`)
     );
     await attemptDayEditorSave(page, targetISO, form);
     expect((await refused).status(), 'the revoked session must be refused by the auth guard').toBe(401);
@@ -657,7 +657,7 @@ test.describe('a day save refused for an ended session', () => {
 
     const [retryResponse] = await Promise.all([
       page.waitForResponse(
-        (response) => response.request().method() === 'PUT' && response.url().includes(`/api/v1/days/${targetISO}`)
+        (response) => response.request().method() === 'PATCH' && response.url().includes(`/api/v1/days/${targetISO}`)
       ),
       page.locator(RETRY_BUTTON).click(),
     ]);
@@ -713,7 +713,7 @@ test.describe('a day save refused for an ended session', () => {
     const note = 'first account private note';
     const notes = await ensureNotesFieldVisible(page, '#today-notes');
     const refused = page.waitForResponse(
-      (response) => response.request().method() === 'PUT' && response.url().includes(`/api/v1/days/${todayISO}`)
+      (response) => response.request().method() === 'PATCH' && response.url().includes(`/api/v1/days/${todayISO}`)
     );
     await notes.fill(note);
     expect((await refused).status(), 'the revoked session must be refused by the auth guard').toBe(401);
@@ -727,10 +727,10 @@ test.describe('a day save refused for an ended session', () => {
 
     const [retryRequest, retryResponse] = await Promise.all([
       page.waitForRequest(
-        (request) => request.method() === 'PUT' && request.url().includes(`/api/v1/days/${todayISO}`)
+        (request) => request.method() === 'PATCH' && request.url().includes(`/api/v1/days/${todayISO}`)
       ),
       page.waitForResponse(
-        (response) => response.request().method() === 'PUT' && response.url().includes(`/api/v1/days/${todayISO}`)
+        (response) => response.request().method() === 'PATCH' && response.url().includes(`/api/v1/days/${todayISO}`)
       ),
       notice.locator('[data-day-save-retry]').click(),
     ]);

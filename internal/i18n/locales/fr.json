@@ -673,6 +673,9 @@
   "daylog.save_account_changed": "Vous êtes maintenant connecté(e) à un autre compte. Cette saisie n'a pas été enregistrée.",
   "daylog.open_account_changed": "Impossible d'ouvrir ce jour : vous êtes maintenant connecté(e) à un autre compte. Rechargez la page.",
   "settings.error.account_changed": "Vous êtes maintenant connecté(e) à un autre compte. Cette modification n'a pas été enregistrée. Rechargez la page.",
+  "daylog.save_conflict": "Ce jour a été modifié sur un autre appareil. Votre modification n'a pas été enregistrée.",
+  "daylog.conflict_keep_mine": "Garder la mienne",
+  "daylog.conflict_take_theirs": "Prendre l'autre",
 
   "calendar.title": "Calendrier",
   "calendar.prev": "Précédent",

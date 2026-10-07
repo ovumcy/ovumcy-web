@@ -19,6 +19,9 @@ type upsertDayRequest struct {
 	// fields names what a partial write (PatchDay) states; a full write
 	// (UpsertDay) states every field and leaves it zero.
 	fields services.DayEntryFields
+	// base is what a partial write based its edit on, for the fields it sends
+	// a base for (parseDayPayloadBase); a full write has none.
+	base services.DayEntryBase
 }
 
 // preservedDayFields names the day fields a request must leave to the value
@@ -99,9 +102,11 @@ func (handler *Handler) UpsertDay(c fiber.Ctx) error {
 
 // PatchDay is the partial day write (PATCH): only the fields the body names
 // change, and every other field — the cycle start included — keeps its
-// stored value. The merge is the services layer's (PatchDayEntryWithAutoFillAt);
-// this handler only reports which fields arrived. Validation, ownership and
-// the answer are UpsertDay's, and it audits under the same action.
+// stored value. The merge, and the refusal of a field changed elsewhere since
+// the base the body sent for it, are the services layer's
+// (PatchDayEntryWithAutoFillAt); this handler only reports which fields and
+// bases arrived. Validation, ownership and the answer are UpsertDay's, and it
+// audits under the same action.
 func (handler *Handler) PatchDay(c fiber.Ctx) error {
 	request, spec, ok := handler.resolveUpsertDayRequest(c, true)
 	if !ok {
@@ -114,6 +119,7 @@ func (handler *Handler) PatchDay(c fiber.Ctx) error {
 		request.day,
 		buildUpsertDayEntryInput(request.payload, request.cleanSymptomIDs, request.hidden),
 		request.fields,
+		request.base,
 		handler.clockNow().In(request.location),
 		request.location,
 	)
@@ -160,10 +166,22 @@ func (handler *Handler) resolveUpsertDayRequest(c fiber.Ctx, partial bool) (upse
 	// before fasthttp parses the body, so the presence checks see what they
 	// read.
 	var fields services.DayEntryFields
+	var base services.DayEntryBase
 	if partial {
 		fields, err = parseDayPayloadFields(c, formBody, hidden)
 		if err != nil {
 			return upsertDayRequest{}, invalidPayloadErrorSpec(), false // codecov:ignore -- the bind above already decoded this body with the same decoder; a RawMessage target refuses nothing it accepted
+		}
+		basePayload, baseFields, err := parseDayPayloadBase(c, user, formBody, hidden)
+		if err != nil {
+			return upsertDayRequest{}, invalidPayloadErrorSpec(), false
+		}
+		// A base is compared, never written: its symptom ids are taken as
+		// sent rather than validated against the account's symptoms, since a
+		// symptom deleted since the page rendered is exactly what it may name.
+		base = services.DayEntryBase{
+			Values: buildUpsertDayEntryInput(basePayload, basePayload.SymptomIDs, preservedDayFields{}),
+			Fields: baseFields,
 		}
 	}
 
@@ -180,6 +198,7 @@ func (handler *Handler) resolveUpsertDayRequest(c fiber.Ctx, partial bool) (upse
 		cleanSymptomIDs: cleanIDs,
 		hidden:          hidden,
 		fields:          fields,
+		base:            base,
 	}, APIErrorSpec{}, true
 }
 

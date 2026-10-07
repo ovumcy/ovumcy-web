@@ -402,7 +402,7 @@ for (const order of ["the refresh lands after the sentence", "the refresh lands 
       await savePositiveTest(dom.window);
       assert.deepEqual(
         calls.map((call) => call.method),
-        ["PUT", "GET"],
+        ["PATCH", "GET"],
         "the positive result is saved and the header is fetched again"
       );
 

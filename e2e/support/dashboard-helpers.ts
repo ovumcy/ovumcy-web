@@ -29,7 +29,7 @@ export async function dashboardTodayISO(page: Page): Promise<string> {
  * autosave's own request (`waitForRequest` → `request.response()`), never to
  * page state. `edit` must therefore contain field interactions only — no
  * navigation, and nothing that idles longer than the debounce, or the runner
- * would send a first PUT mid-way through it.
+ * would send a first PATCH mid-way through it.
  *
  * The settle assertion afterwards is the second half: the runner drops the
  * dirty flag only once the server has answered, so a form that still carries it
@@ -43,7 +43,7 @@ export async function saveDashboardEntry(
 ): Promise<string> {
   const path = options?.savePath ?? (await dashboardTodayPath(page));
   const matchesSave = (candidate: Request) =>
-    candidate.method() === 'PUT' && candidate.url().includes(path);
+    candidate.method() === 'PATCH' && candidate.url().includes(path);
 
   const sent: Request[] = [];
   const record = (candidate: Request) => {
@@ -65,8 +65,8 @@ export async function saveDashboardEntry(
     // its data back from a save that was refused.
     for (const request of sent) {
       const response = await request.response();
-      expect(response, `expected a response for PUT ${path}`).not.toBeNull();
-      expect(response!.ok(), `PUT ${path} failed with ${response!.status()}`).toBeTruthy();
+      expect(response, `expected a response for PATCH ${path}`).not.toBeNull();
+      expect(response!.ok(), `PATCH ${path} failed with ${response!.status()}`).toBeTruthy();
     }
   } finally {
     page.off('request', record);

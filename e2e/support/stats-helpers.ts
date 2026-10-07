@@ -233,39 +233,39 @@ export async function openCalendarDayEditor(page: Page, isoDate: string): Promis
 }
 
 export async function saveDayEditorForm(page: Page, isoDate: string, form: Locator): Promise<void> {
-  // Bind the wait to the request this click issues, not to any PUT response for
+  // Bind the wait to the request this click issues, not to any PATCH response for
   // the date. waitForResponse would resolve on the first matching response to
   // arrive after registration — under CPU contention a still-in-flight earlier
-  // PUT's response can land inside this window and satisfy the predicate before
+  // PATCH's response can land inside this window and satisfy the predicate before
   // the actual save lands. The `request` event only fires for requests issued
-  // after registration, so this captures exactly the click's PUT; awaiting that
+  // after registration, so this captures exactly the click's PATCH; awaiting that
   // request's own response then blocks until this save has truly committed.
   const [request] = await Promise.all([
     page.waitForRequest(
       (candidate) =>
-        candidate.method() === 'PUT' && candidate.url().includes(`/api/v1/days/${isoDate}`),
+        candidate.method() === 'PATCH' && candidate.url().includes(`/api/v1/days/${isoDate}`),
     ),
     form.locator('button[data-save-button]').click(),
   ]);
   const response = await request.response();
-  expect(response, `expected a response for PUT /api/v1/days/${isoDate}`).not.toBeNull();
-  expect(response!.ok(), `PUT /api/v1/days/${isoDate} failed with ${response!.status()}`).toBeTruthy();
+  expect(response, `expected a response for PATCH /api/v1/days/${isoDate}`).not.toBeNull();
+  expect(response!.ok(), `PATCH /api/v1/days/${isoDate} failed with ${response!.status()}`).toBeTruthy();
 
-  // The PUT response only means the write committed. Its htmx afterSwap then
+  // The PATCH response only means the write committed. Its htmx afterSwap then
   // fires `calendar-day-updated`, which reloads the whole calendar grid
   // (GET /calendar) and re-lazy-loads the day editor — a cascade that outlives
   // this click. If the caller navigates (openCalendarDayEditor → page.goto)
   // while that cascade is still hitting the server, the next page's own
   // hx-trigger="load" editor fetch competes with it and, under CPU contention,
   // can miss the 5s visibility window. A bare click followed by page.goto is
-  // worse still: the navigation aborts a PUT that has not committed yet and the
+  // worse still: the navigation aborts a PATCH that has not committed yet and the
   // save is silently lost. Let the app go quiescent first so the save is fully
   // settled — not just committed — before returning.
   await page.waitForLoadState('networkidle');
 }
 
 /**
- * Clicks the day-editor save button and returns the PUT it issued, WITHOUT
+ * Clicks the day-editor save button and returns the PATCH it issued, WITHOUT
  * asserting that the save succeeded.
  *
  * `saveDayEditorForm` above is the helper every ordinary save goes through: it
@@ -276,7 +276,7 @@ export async function saveDayEditorForm(page: Page, isoDate: string, form: Locat
  * the caller. It deliberately does not settle the network: an intercepted save
  * fires no `calendar-day-updated` cascade, and `networkidle` would only add a
  * timeout. Never follow it with `page.goto`: a navigation would abort the
- * in-flight PUT, which is the data loss the save helpers exist to prevent.
+ * in-flight PATCH, which is the data loss the save helpers exist to prevent.
  */
 export async function attemptDayEditorSave(
   page: Page,
@@ -286,7 +286,7 @@ export async function attemptDayEditorSave(
   const [request] = await Promise.all([
     page.waitForRequest(
       (candidate) =>
-        candidate.method() === 'PUT' && candidate.url().includes(`/api/v1/days/${isoDate}`),
+        candidate.method() === 'PATCH' && candidate.url().includes(`/api/v1/days/${isoDate}`),
     ),
     form.locator('button[data-save-button]').click(),
   ]);
@@ -306,7 +306,7 @@ export async function saveCycleFactorOnDay(
   const [request] = await Promise.all([
     page.waitForRequest(
       (candidate) =>
-        candidate.method() === 'PUT' && candidate.url().includes(`/api/v1/days/${isoDate}`),
+        candidate.method() === 'PATCH' && candidate.url().includes(`/api/v1/days/${isoDate}`),
     ),
     form.evaluate((node) => {
       if (node instanceof HTMLFormElement) {
@@ -315,8 +315,8 @@ export async function saveCycleFactorOnDay(
     }),
   ]);
   const response = await request.response();
-  expect(response, `expected a response for PUT /api/v1/days/${isoDate}`).not.toBeNull();
-  expect(response!.ok(), `PUT /api/v1/days/${isoDate} failed with ${response!.status()}`).toBeTruthy();
+  expect(response, `expected a response for PATCH /api/v1/days/${isoDate}`).not.toBeNull();
+  expect(response!.ok(), `PATCH /api/v1/days/${isoDate} failed with ${response!.status()}`).toBeTruthy();
   // Let the calendar-day-updated grid refresh + editor re-lazy-load cascade
   // settle before the reopen below re-navigates (see saveDayEditorForm).
   await page.waitForLoadState('networkidle');
@@ -356,7 +356,7 @@ export async function saveBBTOnDay(page: Page, isoDate: string, value: string): 
   const [request] = await Promise.all([
     page.waitForRequest(
       (candidate) =>
-        candidate.method() === 'PUT' && candidate.url().includes(`/api/v1/days/${isoDate}`),
+        candidate.method() === 'PATCH' && candidate.url().includes(`/api/v1/days/${isoDate}`),
     ),
     form.evaluate((node) => {
       if (node instanceof HTMLFormElement) {
@@ -365,8 +365,8 @@ export async function saveBBTOnDay(page: Page, isoDate: string, value: string): 
     }),
   ]);
   const response = await request.response();
-  expect(response, `expected a response for PUT /api/v1/days/${isoDate}`).not.toBeNull();
-  expect(response!.ok(), `PUT /api/v1/days/${isoDate} failed with ${response!.status()}`).toBeTruthy();
+  expect(response, `expected a response for PATCH /api/v1/days/${isoDate}`).not.toBeNull();
+  expect(response!.ok(), `PATCH /api/v1/days/${isoDate} failed with ${response!.status()}`).toBeTruthy();
   // Let the calendar-day-updated grid refresh + editor re-lazy-load cascade
   // settle before the reopen below re-navigates (see saveDayEditorForm).
   await page.waitForLoadState('networkidle');

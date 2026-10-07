@@ -201,7 +201,7 @@ function assertFieldReads(document, recorded) {
 }
 
 const gets = (calls) => calls().filter((call) => (call.init.method || "GET") === "GET");
-const puts = (calls) => calls().filter((call) => call.init.method === "PUT");
+const puts = (calls) => calls().filter((call) => call.init.method === "PATCH");
 
 test("picking a result offers Remove and drops the empty wording, with no reload", async () => {
   const { dom } = await loadDashboard();

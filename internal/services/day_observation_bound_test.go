@@ -71,11 +71,11 @@ func observationWrites() []observationWrite {
 			return err
 		}},
 		{name: "partial write records a period", recordsPeriod: true, write: func(service *DayService, day time.Time, now time.Time, location *time.Location) error {
-			_, err := service.PatchDayEntryWithAutoFillAt(context.Background(), 10, day, DayEntryInput{IsPeriod: true}, DayEntryFields{IsPeriod: true}, now, location)
+			_, err := service.PatchDayEntryWithAutoFillAt(context.Background(), 10, day, DayEntryInput{IsPeriod: true}, DayEntryFields{IsPeriod: true}, DayEntryBase{}, now, location)
 			return err
 		}},
 		{name: "partial write records a pregnancy test", write: func(service *DayService, day time.Time, now time.Time, location *time.Location) error {
-			_, err := service.PatchDayEntryWithAutoFillAt(context.Background(), 10, day, DayEntryInput{PregnancyTest: models.PregnancyTestNegative}, DayEntryFields{PregnancyTest: true}, now, location)
+			_, err := service.PatchDayEntryWithAutoFillAt(context.Background(), 10, day, DayEntryInput{PregnancyTest: models.PregnancyTestNegative}, DayEntryFields{PregnancyTest: true}, DayEntryBase{}, now, location)
 			return err
 		}},
 	}
@@ -161,7 +161,7 @@ func TestDayWriteRecordingNoObservationPassesPastTheBound(t *testing.T) {
 		logs := newDayLogRepositoryStub()
 		seedStoredFutureDay(logs, true, models.PregnancyTestPositive)
 		service := NewDayService(logs, &dayUserRepositoryStub{})
-		saved, err := service.PatchDayEntryWithAutoFillAt(ctx, 10, day, DayEntryInput{Notes: "edited"}, DayEntryFields{Notes: true}, now, location)
+		saved, err := service.PatchDayEntryWithAutoFillAt(ctx, 10, day, DayEntryInput{Notes: "edited"}, DayEntryFields{Notes: true}, DayEntryBase{}, now, location)
 		if err != nil || !saved.IsPeriod || saved.PregnancyTest != models.PregnancyTestPositive || saved.Notes != "edited" {
 			t.Fatalf("a write naming neither field must go through and keep both, got %+v, %v", saved, err)
 		}
@@ -179,7 +179,7 @@ func TestDayWriteRecordingNoObservationPassesPastTheBound(t *testing.T) {
 		logs := newDayLogRepositoryStub()
 		seedStoredFutureDay(logs, false, models.PregnancyTestPositive)
 		service := NewDayService(logs, &dayUserRepositoryStub{})
-		saved, err := service.PatchDayEntryWithAutoFillAt(ctx, 10, day, DayEntryInput{PregnancyTest: models.PregnancyTestNone}, DayEntryFields{PregnancyTest: true}, now, location)
+		saved, err := service.PatchDayEntryWithAutoFillAt(ctx, 10, day, DayEntryInput{PregnancyTest: models.PregnancyTestNone}, DayEntryFields{PregnancyTest: true}, DayEntryBase{}, now, location)
 		if err != nil || saved.PregnancyTest != models.PregnancyTestNone {
 			t.Fatalf("clearing a test past the bound must go through, got %+v, %v", saved, err)
 		}
@@ -218,7 +218,7 @@ func TestRefusedObservationLeavesTheStoredFutureEntryUntouched(t *testing.T) {
 			isPeriod: true,
 			test:     models.PregnancyTestPositive,
 			write: func(service *DayService) error {
-				_, err := service.PatchDayEntryWithAutoFillAt(ctx, 10, day, DayEntryInput{PregnancyTest: models.PregnancyTestNegative}, DayEntryFields{PregnancyTest: true}, now, location)
+				_, err := service.PatchDayEntryWithAutoFillAt(ctx, 10, day, DayEntryInput{PregnancyTest: models.PregnancyTestNegative}, DayEntryFields{PregnancyTest: true}, DayEntryBase{}, now, location)
 				return err
 			},
 		},

@@ -449,22 +449,22 @@ test.describe('Calendar page', () => {
     await dayEditorForm.locator('input[name="is_period"]').check();
     await openCalendarNotes(dayEditorForm);
     await dayEditorForm.locator('#calendar-notes').fill(noteText);
-    // Bind the wait to this click's own PUT and let the htmx cascade it triggers
+    // Bind the wait to this click's own PATCH and let the htmx cascade it triggers
     // settle, so the entry is committed — not merely submitted — before the
     // delete flow starts (same reasoning as saveDayEditorForm in
     // calendar-autofill-clear.spec.ts).
     const [saveRequest] = await Promise.all([
       page.waitForRequest(
         (candidate) =>
-          candidate.method() === 'PUT' && candidate.url().includes(`/api/v1/days/${pastISO}`)
+          candidate.method() === 'PATCH' && candidate.url().includes(`/api/v1/days/${pastISO}`)
       ),
       dayEditorForm.locator('button[data-save-button]').click(),
     ]);
     const saveResponse = await saveRequest.response();
-    expect(saveResponse, `expected a response for PUT /api/v1/days/${pastISO}`).not.toBeNull();
+    expect(saveResponse, `expected a response for PATCH /api/v1/days/${pastISO}`).not.toBeNull();
     expect(
       saveResponse!.ok(),
-      `PUT /api/v1/days/${pastISO} failed with ${saveResponse!.status()}`
+      `PATCH /api/v1/days/${pastISO} failed with ${saveResponse!.status()}`
     ).toBeTruthy();
     await page.waitForLoadState('networkidle');
 
@@ -911,15 +911,15 @@ test.describe('Calendar page', () => {
     const [saveRequest] = await Promise.all([
       page.waitForRequest(
         (candidate) =>
-          candidate.method() === 'PUT' && candidate.url().includes(`/api/v1/days/${tomorrowISO}`),
+          candidate.method() === 'PATCH' && candidate.url().includes(`/api/v1/days/${tomorrowISO}`),
       ),
       dayEditorForm.locator('button[data-save-button]').click(),
     ]);
     const saveResponse = await saveRequest.response();
-    expect(saveResponse, `expected a response for PUT /api/v1/days/${tomorrowISO}`).not.toBeNull();
+    expect(saveResponse, `expected a response for PATCH /api/v1/days/${tomorrowISO}`).not.toBeNull();
     expect(
       saveResponse!.ok(),
-      `PUT /api/v1/days/${tomorrowISO} failed with ${saveResponse!.status()}`
+      `PATCH /api/v1/days/${tomorrowISO} failed with ${saveResponse!.status()}`
     ).toBeTruthy();
 
     // Reload the summary (non-edit) view for tomorrow. It now renders the

@@ -123,7 +123,7 @@ func assertConcurrentDayPatchesBothLand(t *testing.T, database *gorm.DB, seedExi
 	var moodErr, notesErr error
 	wait.Go(func() {
 		_, moodErr = service.PatchDayEntryWithAutoFillAt(ctx, userID, day,
-			services.DayEntryInput{Mood: 3}, services.DayEntryFields{Mood: true}, time.Now(), time.UTC)
+			services.DayEntryInput{Mood: 3}, services.DayEntryFields{Mood: true}, services.DayEntryBase{}, time.Now(), time.UTC)
 	})
 	select {
 	case <-firstHeld:
@@ -132,7 +132,7 @@ func assertConcurrentDayPatchesBothLand(t *testing.T, database *gorm.DB, seedExi
 	}
 	wait.Go(func() {
 		_, notesErr = service.PatchDayEntryWithAutoFillAt(ctx, userID, day,
-			services.DayEntryInput{Notes: "after"}, services.DayEntryFields{Notes: true}, time.Now(), time.UTC)
+			services.DayEntryInput{Notes: "after"}, services.DayEntryFields{Notes: true}, services.DayEntryBase{}, time.Now(), time.UTC)
 	})
 	// Long enough for the second write to reach its read; with the lock it
 	// waits there for the first commit.
@@ -306,7 +306,7 @@ func TestPutAfterAConcurrentPatchKeepsTheHiddenFieldOnPostgres(t *testing.T) {
 	var patchErr, putErr error
 	wait.Go(func() {
 		_, patchErr = service.PatchDayEntryWithAutoFillAt(ctx, userID, day,
-			services.DayEntryInput{Notes: "after"}, services.DayEntryFields{Notes: true}, time.Now(), time.UTC)
+			services.DayEntryInput{Notes: "after"}, services.DayEntryFields{Notes: true}, services.DayEntryBase{}, time.Now(), time.UTC)
 	})
 	select {
 	case <-patchHeld:

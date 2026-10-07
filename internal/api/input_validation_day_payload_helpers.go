@@ -9,6 +9,12 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
+// dayBaseKeyPrefix marks the base a partial write sends beside its values: for
+// a field it changes, base_<field> carries the value the edit was based on —
+// what the page was rendered with — under the same encoding as the field
+// itself (base_is_period, base_mood, base_symptom_ids, …), on either transport.
+const dayBaseKeyPrefix = "base_"
+
 // parseDayPayload reads one day write off the wire. A field named in hidden is
 // not read at all in the form branch: the account keeps it out of the day form,
 // so whatever arrives under that name is not this write's subject.
@@ -27,6 +33,27 @@ import (
 // TestParseDayPayloadSkipsEveryFieldTheAccountHides,
 // TestUpsertDayDoesNotReadAHiddenTemperatureField.
 func parseDayPayload(c fiber.Ctx, user *models.User, formBody bool, hidden preservedDayFields) (dayPayload, error) {
+	return parseDayPayloadUnderPrefix(c, user, formBody, hidden, "")
+}
+
+// parseDayPayloadBase reads the base of a partial write: every day field again,
+// under its key prefixed with dayBaseKeyPrefix, by the same reader as the values
+// — so a base is decoded, unit-converted and skipped for a hidden field exactly
+// as its value is, and a field added to the payload gains a base with it. The
+// fields it reports are the ones the body sends a base for.
+func parseDayPayloadBase(c fiber.Ctx, user *models.User, formBody bool, hidden preservedDayFields) (dayPayload, services.DayEntryFields, error) {
+	payload, err := parseDayPayloadUnderPrefix(c, user, formBody, hidden, dayBaseKeyPrefix)
+	if err != nil {
+		return dayPayload{}, services.DayEntryFields{}, err
+	}
+	fields, err := parseDayPayloadFieldsUnderPrefix(c, formBody, hidden, dayBaseKeyPrefix)
+	if err != nil {
+		return dayPayload{}, services.DayEntryFields{}, err // codecov:ignore -- the payload read above decoded the same prefixed members with the same decoder; a RawMessage target refuses nothing it accepted
+	}
+	return payload, fields, nil
+}
+
+func parseDayPayloadUnderPrefix(c fiber.Ctx, user *models.User, formBody bool, hidden preservedDayFields, prefix string) (dayPayload, error) {
 	payload := dayPayload{Flow: models.FlowNone, SymptomIDs: []uint{}}
 	temperatureUnit := services.DefaultTemperatureUnit
 	if user != nil {
@@ -34,32 +61,32 @@ func parseDayPayload(c fiber.Ctx, user *models.User, formBody bool, hidden prese
 	}
 
 	if !formBody {
-		if err := c.Bind().Body(&payload); err != nil {
+		if err := bindDayJSONUnderPrefix(c, prefix, &payload); err != nil {
 			return payload, err
 		}
 		payload.BBT = services.ConvertDayBBTToStorage(payload.BBT, temperatureUnit)
 	} else {
 		var err error
-		payload.IsPeriod = services.ParseBoolLike(formBodyValue(c, "is_period"))
-		payload.ConfirmCycleStart = services.ParseBoolLike(formBodyValue(c, "cycle_start"))
-		payload.PeriodFromStoredStart = services.ParseBoolLike(formBodyValue(c, "period_from_stored_start"))
-		payload.Flow = strings.ToLower(strings.TrimSpace(formBodyValue(c, "flow")))
-		payload.Mood, err = parseOptionalFormInt(formBodyValue(c, "mood"))
+		payload.IsPeriod = services.ParseBoolLike(formBodyValue(c, prefix+"is_period"))
+		payload.ConfirmCycleStart = services.ParseBoolLike(formBodyValue(c, prefix+"cycle_start"))
+		payload.PeriodFromStoredStart = services.ParseBoolLike(formBodyValue(c, prefix+"period_from_stored_start"))
+		payload.Flow = strings.ToLower(strings.TrimSpace(formBodyValue(c, prefix+"flow")))
+		payload.Mood, err = parseOptionalFormInt(formBodyValue(c, prefix+"mood"))
 		if err != nil {
 			return payload, err
 		}
 		if !hidden.SexActivity {
-			payload.SexActivity = strings.ToLower(strings.TrimSpace(formBodyValue(c, "sex_activity")))
+			payload.SexActivity = strings.ToLower(strings.TrimSpace(formBodyValue(c, prefix+"sex_activity")))
 		}
 		if !hidden.CervicalMucus {
-			payload.CervicalMucus = strings.ToLower(strings.TrimSpace(formBodyValue(c, "cervical_mucus")))
+			payload.CervicalMucus = strings.ToLower(strings.TrimSpace(formBodyValue(c, prefix+"cervical_mucus")))
 		}
-		payload.PregnancyTest = strings.ToLower(strings.TrimSpace(formBodyValue(c, "pregnancy_test")))
+		payload.PregnancyTest = strings.ToLower(strings.TrimSpace(formBodyValue(c, prefix+"pregnancy_test")))
 		if !hidden.Notes {
-			payload.Notes = strings.TrimSpace(formBodyValue(c, "notes"))
+			payload.Notes = strings.TrimSpace(formBodyValue(c, prefix+"notes"))
 		}
 		if !hidden.BBT {
-			payload.BBT, err = services.ParseDayBBTRawWithUnit(formBodyValue(c, "bbt"), temperatureUnit)
+			payload.BBT, err = services.ParseDayBBTRawWithUnit(formBodyValue(c, prefix+"bbt"), temperatureUnit)
 			if err != nil {
 				return payload, err
 			}
@@ -70,7 +97,7 @@ func parseDayPayload(c fiber.Ctx, user *models.User, formBody bool, hidden prese
 		// checkbox group is posted with. That is intent, not the oversight
 		// mood carried — pinned by
 		// TestParseDayPayloadIgnoresOutOfRangeSymptomIDs.
-		symptomRaw := c.RequestCtx().PostArgs().PeekMulti("symptom_ids")
+		symptomRaw := c.RequestCtx().PostArgs().PeekMulti(prefix + "symptom_ids")
 		for _, value := range symptomRaw {
 			parsed, err := parseRequestUint(string(value))
 			if err == nil {
@@ -79,7 +106,7 @@ func parseDayPayload(c fiber.Ctx, user *models.User, formBody bool, hidden prese
 		}
 
 		if !hidden.CycleFactors {
-			cycleFactorRaw := c.RequestCtx().PostArgs().PeekMulti("cycle_factor_keys")
+			cycleFactorRaw := c.RequestCtx().PostArgs().PeekMulti(prefix + "cycle_factor_keys")
 			for _, value := range cycleFactorRaw {
 				payload.CycleFactorKeys = append(payload.CycleFactorKeys, string(value))
 			}
@@ -96,6 +123,37 @@ func parseDayPayload(c fiber.Ctx, user *models.User, formBody bool, hidden prese
 	payload.Notes = strings.TrimSpace(payload.Notes)
 
 	return payload, nil
+}
+
+// bindDayJSONUnderPrefix decodes a JSON day body into target. With no prefix it
+// is the ordinary bind; with one, only the members whose key carries it are
+// decoded, under the key with the prefix removed, so base_mood is read exactly
+// as mood is.
+func bindDayJSONUnderPrefix(c fiber.Ctx, prefix string, target any) error {
+	if prefix == "" {
+		return c.Bind().Body(target)
+	}
+	body, err := dayJSONMembersUnderPrefix(c.Body(), prefix)
+	if err != nil {
+		return err
+	}
+	return c.App().Config().JSONDecoder(body, target)
+}
+
+// dayJSONMembersUnderPrefix re-encodes the members of a JSON object whose key
+// starts with prefix, under the key without it.
+func dayJSONMembersUnderPrefix(body []byte, prefix string) ([]byte, error) {
+	var members map[string]json.RawMessage
+	if err := json.Unmarshal(body, &members); err != nil {
+		return nil, err
+	}
+	selected := make(map[string]json.RawMessage, len(members))
+	for key, value := range members {
+		if name, found := strings.CutPrefix(key, prefix); found {
+			selected[name] = value
+		}
+	}
+	return json.Marshal(selected)
 }
 
 // dayPayloadPresence decodes which day fields a JSON body names. It is decoded
@@ -121,18 +179,30 @@ type dayPayloadPresence struct {
 // A form body names the fields it posts, read from the same sources
 // parseDayPayload reads each one from; form encoding cannot tell an omitted
 // field from an empty one, so a posted empty field clears it, and an unchecked
-// checkbox, which posts nothing, changes nothing. A field the account hides is
-// never named, for the reason parseDayPayload never reads it: the day form does
-// not speak for it, so the stored value stands.
+// checkbox, which posts nothing, changes nothing — which is why the day forms
+// post is_period=false explicitly to turn a period off. A field the account
+// hides is never named, for the reason parseDayPayload never reads it: the day
+// form does not speak for it, so the stored value stands.
 func parseDayPayloadFields(c fiber.Ctx, formBody bool, hidden preservedDayFields) (services.DayEntryFields, error) {
+	return parseDayPayloadFieldsUnderPrefix(c, formBody, hidden, "")
+}
+
+func parseDayPayloadFieldsUnderPrefix(c fiber.Ctx, formBody bool, hidden preservedDayFields, prefix string) (services.DayEntryFields, error) {
 	if !formBody {
 		var presence dayPayloadPresence
-		// The bind in parseDayPayload has already decoded this body with the
-		// same decoder into a stricter target, and a RawMessage refuses no
-		// value that target accepted; the refusal is kept so that a decoder
-		// change fails closed instead of reading every field as absent.
+		// The payload read has already decoded these members with the same
+		// decoder into a stricter target, and a RawMessage refuses no value
+		// that target accepted; the refusal is kept so that a decoder change
+		// fails closed instead of reading every field as absent.
 		// codecov:ignore:start
-		if err := c.App().Config().JSONDecoder(c.Body(), &presence); err != nil {
+		body := c.Body()
+		if prefix != "" {
+			var err error
+			if body, err = dayJSONMembersUnderPrefix(body, prefix); err != nil {
+				return services.DayEntryFields{}, err
+			}
+		}
+		if err := c.App().Config().JSONDecoder(body, &presence); err != nil {
 			return services.DayEntryFields{}, err
 		}
 		// codecov:ignore:end
@@ -152,16 +222,16 @@ func parseDayPayloadFields(c fiber.Ctx, formBody bool, hidden preservedDayFields
 
 	postArgs := c.RequestCtx().PostArgs()
 	return services.DayEntryFields{
-		IsPeriod:        formValuePresent(c, "is_period"),
-		Flow:            formValuePresent(c, "flow"),
-		Mood:            formValuePresent(c, "mood"),
-		SexActivity:     !hidden.SexActivity && formValuePresent(c, "sex_activity"),
-		BBT:             !hidden.BBT && formValuePresent(c, "bbt"),
-		CervicalMucus:   !hidden.CervicalMucus && formValuePresent(c, "cervical_mucus"),
-		PregnancyTest:   formValuePresent(c, "pregnancy_test"),
-		CycleFactorKeys: !hidden.CycleFactors && postArgs.Has("cycle_factor_keys"),
-		SymptomIDs:      postArgs.Has("symptom_ids"),
-		Notes:           !hidden.Notes && formValuePresent(c, "notes"),
+		IsPeriod:        formValuePresent(c, prefix+"is_period"),
+		Flow:            formValuePresent(c, prefix+"flow"),
+		Mood:            formValuePresent(c, prefix+"mood"),
+		SexActivity:     !hidden.SexActivity && formValuePresent(c, prefix+"sex_activity"),
+		BBT:             !hidden.BBT && formValuePresent(c, prefix+"bbt"),
+		CervicalMucus:   !hidden.CervicalMucus && formValuePresent(c, prefix+"cervical_mucus"),
+		PregnancyTest:   formValuePresent(c, prefix+"pregnancy_test"),
+		CycleFactorKeys: !hidden.CycleFactors && postArgs.Has(prefix+"cycle_factor_keys"),
+		SymptomIDs:      postArgs.Has(prefix + "symptom_ids"),
+		Notes:           !hidden.Notes && formValuePresent(c, prefix+"notes"),
 	}, nil
 }
 

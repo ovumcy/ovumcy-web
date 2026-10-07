@@ -417,6 +417,17 @@
     }
     notice.appendChild(text);
 
+    if (messageKey === DAY_SAVE_CONFLICT_NOTICE_KEY) {
+      // Another device changed a field this save changes too. A retry of the
+      // same save would be refused again; the owner chooses whose value the
+      // day keeps instead, and the entry stays in the form until then.
+      notice.setAttribute("data-day-save-conflict", "true");
+      notice.appendChild(daySaveConflictChoice(form, "mine", "data-day-conflict-keep-label", "Keep mine"));
+      notice.appendChild(daySaveConflictChoice(form, "theirs", "data-day-conflict-take-label", "Take theirs"));
+      target.replaceChildren(notice);
+      return true;
+    }
+
     if (messageKey === ACCOUNT_CHANGED_NOTICE_KEY) {
       // The form was rendered for another account than the one now signed in:
       // no retry can land it, so the notice offers none, and no sign-in link
@@ -580,6 +591,21 @@
       return;
     }
     action();
+  }
+
+  // A day save refused (409) because a field it changes was changed on another
+  // device since this page read it.
+  var DAY_SAVE_CONFLICT_NOTICE_KEY = "daylog.save_conflict";
+
+  function daySaveConflictChoice(form, choice, labelAttribute, fallback) {
+    var button = document.createElement("button");
+    // type="button" for the same reason as the retry: the notice sits inside
+    // the form.
+    button.type = "button";
+    button.className = "status-notice-action";
+    button.setAttribute("data-day-conflict-choice", choice);
+    button.textContent = form.getAttribute(labelAttribute) || fallback;
+    return button;
   }
 
   function daySaveSignInLink(form) {
@@ -822,6 +848,16 @@
 
       event.preventDefault();
       retryDaySave(form);
+    });
+
+    document.body.addEventListener("click", function (event) {
+      var choiceButton = closestFromEvent(event, "[data-day-conflict-choice]");
+      var form = choiceButton ? choiceButton.closest("form[data-day-editor-form], form[data-dashboard-save-form]") : null;
+      if (!form || typeof window.__ovumcyResolveDaySaveConflict !== "function") {
+        return;
+      }
+      event.preventDefault();
+      window.__ovumcyResolveDaySaveConflict(form, choiceButton.getAttribute("data-day-conflict-choice"));
     });
 
     document.body.addEventListener("htmx:responseError", function (event) {
