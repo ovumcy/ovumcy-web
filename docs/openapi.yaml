@@ -1023,9 +1023,17 @@ components:
             Phase taxonomy. "Fertile" is a status, never a phase — see
             `current_fertility`. The phase is the axis orthogonal to fertility,
             but three of its values are not: `follicular`, `ovulation` and
-            `luteal` are decided by comparing today against `ovulation_date`, so
-            naming one of them beside a null `ovulation_date` would spell out the
-            very day that null withholds. The field is therefore reported in
+            `luteal` are decided by comparing today against the running cycle's
+            projected (or confirmed) ovulation day, so naming one of them beside
+            a null `ovulation_date` would spell out the very day that null
+            withholds. That day is `ovulation_date` until it is behind today;
+            from then on `ovulation_date` names the next cycle's day (see
+            `ovulation_date`) while the phase stays the running cycle's, so
+            `luteal` stands beside an `ovulation_date` still ahead, as on the
+            dashboard. On a day the next cycle's fertile window already covers,
+            where `current_fertility` is `fertile`, it is `unknown` instead:
+            `luteal` would deny the ovulation that window places ahead of
+            today. The field is therefore reported in
             every state, and it carries only `menstrual` — read off recorded or
             projected bleeding — or `unknown` whenever `ovulation_date` is null,
             and whenever `suppression.fertility` is true, even beside a
@@ -1150,7 +1158,15 @@ components:
             confirmed the current cycle's ovulation, in which case this is the
             day inferred from the owner's own temperature shift — an inference
             from a recorded signal, never a measurement of the ovulation itself
-            — and the same day the calendar and dashboard show. A confirmed
+            — and the same day the calendar and dashboard show. Once the
+            running cycle's projected ovulation has passed, this is the next
+            cycle's, the day the dashboard, the calendar and the `.ics` feed
+            name, and `fertility_window_start`/`fertility_window_end` are that
+            cycle's median window. The one exception is irregular-cycle mode
+            where the dashboard shows an ovulation range: that range belongs to
+            the running cycle and is not rolled, so this stays the running
+            cycle's median day and the window stays its widened window, which
+            ends on the range's last day. A confirmed
             date may fall on or after `next_period_start`: a late shift outlives
             the projected next start, which stays a projection and is not
             recomputed from the confirmed day. Null when `suppression.fertility`
