@@ -110,10 +110,13 @@ func buildCycleStats(logs []models.DailyLog, now time.Time, ctx BoundaryContext,
 		// A period still running is as long as the owner has logged it so far:
 		// one day on the day it is marked, and stopped at today by the
 		// onboarding fill. Averaging that in shortens every projected period.
-		// With no other period left the average is 0, as for an account with no
-		// period observed: no cycle has completed then, so applyObservedBaseline
-		// puts the configured length there.
+		// With no other period left the configured length stands in: a cycle
+		// bounded only by the onboarding start completes without a period day,
+		// and applyObservedBaseline writes no length once a cycle has completed.
 		stats.AveragePeriodLength = averageInts(recentPositivePeriodLengths(cycles[:len(cycles)-1], cyclePredictionWindow))
+		if stats.AveragePeriodLength == 0 {
+			stats.AveragePeriodLength = float64(rule.periodLength)
+		}
 	}
 	stats.LastPeriodStart = starts[len(starts)-1]
 	stats.LutealPhase = defaultLutealPhaseDays

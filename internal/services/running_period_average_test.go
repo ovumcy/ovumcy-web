@@ -115,6 +115,23 @@ func TestAveragePeriodLengthLeavesOutARunningPeriodUntilItEnds(t *testing.T) {
 	}
 }
 
+// TestRunningPeriodFallsBackToTheConfiguredLengthAfterAPeriodlessCycle covers a
+// completed cycle bounded only by the stored onboarding start, with no period
+// day logged: a cycle length is observed, so the baseline leaves the average
+// alone, and the running period must not leave it at zero.
+func TestRunningPeriodFallsBackToTheConfiguredLengthAfterAPeriodlessCycle(t *testing.T) {
+	onboardingStart := mustParseDay(t, "2026-01-29")
+	user := &models.User{Role: models.RoleOwner, CycleLength: 28, PeriodLength: 6, LastPeriodStart: &onboardingStart}
+
+	stats := BuildCycleStatsFromLogs(user, periodRunLogs(t, "2026-02-26", 1), utcNoon(t, "2026-02-26"), time.UTC)
+	if stats.CompletedCycleCount != 1 {
+		t.Fatalf("CompletedCycleCount = %d, want 1: the fixture no longer builds a periodless completed cycle", stats.CompletedCycleCount)
+	}
+	if stats.AveragePeriodLength != 6 {
+		t.Fatalf("AveragePeriodLength = %.4f, want 6", stats.AveragePeriodLength)
+	}
+}
+
 // TestBareCycleStatsKeepsTheRunningPeriod pins the other side of the rule: the
 // stats built without an owner have no configured length to decide "ended"
 // with, and average the running period exactly as before.
