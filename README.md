@@ -69,7 +69,7 @@ docker compose up -d
 
 Then open `http://127.0.0.1:8080`.
 
-The compose file pulls the latest tagged release, `ghcr.io/ovumcy/ovumcy-web:v1.9.2`, from GHCR; no GitHub login is needed, and `pull_policy: always` keeps the tag fresh on every restart. The same image is mirrored to Docker Hub as `docker.io/ovumcy/ovumcy-web` under the same tags and at the same digest. To run a different tag, set `OVUMCY_IMAGE` in `.env` or on the command line:
+The compose file pulls the latest tagged release, `ghcr.io/ovumcy/ovumcy-web:v1.9.2`, from GHCR; no GitHub login is needed, and `pull_policy: always` keeps the tag fresh on every restart. The same image is mirrored to Docker Hub as `docker.io/ovumcy/ovumcy-web` under the same tags and at the same digest. Tagged releases from `v0.7.1` onward are published this way; older tags exist on neither registry. To run a different tag, set `OVUMCY_IMAGE` in `.env` or on the command line:
 
 ```bash
 OVUMCY_IMAGE=ghcr.io/ovumcy/ovumcy-web:v1.9.2 docker compose up -d
@@ -85,6 +85,7 @@ For production-style setups:
 
 > **Upgrading an existing install to v2.0.0 or later? Take the new compose file first.** The new image expects the `ovumcy_fence` volume at `/app/fence`, and the new compose files forward `.env` keys an older copy silently ignored (`REGISTRATION_MODE` among them), so values already sitting in `.env` take effect at the first start. Follow the [Safe Upgrade Procedure](docs/self-hosted.md#safe-upgrade-procedure).
 
+<a id="verify-the-image"></a>
 <details>
 <summary><strong>Verify the image before running it (recommended)</strong></summary>
 
@@ -118,6 +119,7 @@ docker buildx imagetools inspect ghcr.io/ovumcy/ovumcy-web:v1.9.2 --format '{{ .
 
 </details>
 
+<a id="manual"></a>
 ### From source
 
 A binary started this way listens on `PORT` (default `8080`) on every interface; `HOST_BIND_ADDRESS` has no effect outside compose. On a machine other hosts can reach, block the port with a firewall.
@@ -155,6 +157,8 @@ $env:SECRET_KEY_FILE = "C:\\path\\to\\ovumcy-secret.txt"
 go run ./cmd/ovumcy
 ```
 
+<a id="demo"></a>
+<a id="screenshots"></a>
 ## Demo and Screenshots
 
 <p align="center">
@@ -184,12 +188,14 @@ go run ./cmd/ovumcy
   </tr>
   <tr>
     <td><img src="docs/screenshots/register.jpg" alt="Ovumcy registration screen"></td>
-    <td><img src="docs/screenshots/install-prompt.png" alt="Ovumcy mobile install prompt"></td>
+    <td align="center"><img src="docs/screenshots/install-prompt.png" alt="Ovumcy mobile install prompt" width="300"></td>
   </tr>
 </table>
 
 The privacy-safe hero demo asset pack, including the mobile install prompt capture contract, lives in [docs/hero-demo.md](docs/hero-demo.md).
 
+<a id="why-ovumcy-exists"></a>
+<a id="how-ovumcy-is-different"></a>
 ## Why Ovumcy
 
 Most cycle tracking apps start by asking you to sign up for a cloud account, then lean on analytics and third-party services you never really see.
@@ -277,7 +283,7 @@ All six are full first-party UI localizations. Operators set the instance defaul
 - First-party cookies only; see [docs/security/cryptography.md](docs/security/cryptography.md#cookies) for the full inventory and attributes.
 - Data stays on infrastructure you control: SQLite by default, Postgres through the official example stacks.
 - Automated security checks cover CodeQL, gosec, Trivy filesystem/container scans, and CycloneDX SBOM generation in GitHub Actions.
-- Every published image is signed and attested; see [Verify the image](#quick-start) above.
+- Every published image is signed and attested; see [Verify the image](#verify-the-image) under Quick Start.
 
 The security documentation index, the threat model, and the test-enforcement matrix are in [SECURITY.md](SECURITY.md). If you found a security issue, see its [Reporting a Vulnerability](SECURITY.md#reporting-a-vulnerability) section.
 
@@ -339,7 +345,7 @@ TRUSTED_PROXIES=127.0.0.1,::1
 
 The essentials:
 
-- Always set a strong secret through `SECRET_KEY` or `SECRET_KEY_FILE`. `SECRET_KEY_FILE` must be a path the running process can read — inside the container, for Docker deployments — and `SECRET_KEY` wins if both are set.
+- Always set a strong secret through `SECRET_KEY` or `SECRET_KEY_FILE`; the file path must be readable by the running process, which for Docker means a path inside the container.
 - `DEFAULT_LANGUAGE` accepts `en`, `ru`, `es`, `fr`, `de`, and `it`.
 - `REGISTRATION_MODE` is `open` or `closed`; use `closed` for pre-provisioned or otherwise operator-restricted internet-facing instances where self-service sign-up must stay disabled.
 - Set `COOKIE_SECURE=true` when serving over HTTPS, and enable `TRUST_PROXY_ENABLED` only behind a trusted reverse proxy.
@@ -354,6 +360,7 @@ Beyond the essentials:
 - **OIDC / SSO** (`OIDC_*`): optional, `hybrid` or `oidc_only` login modes, requires HTTPS plus `COOKIE_SECURE=true`. A verified email claim matching an existing local account does **not** link automatically; linking needs a password-confirmed step-up or the operator CLI. Setup, the account-linking contract, and the provider compatibility matrix (Keycloak, authentik, Authelia, Pocket ID, Dex, ZITADEL): [docs/oidc.md](docs/oidc.md).
 - **Deployment, reverse proxies, backups, restores, upgrades, Postgres:** [docs/self-hosted.md](docs/self-hosted.md).
 
+<a id="tech-stack"></a>
 ## Architecture
 
 ```text
@@ -403,9 +410,11 @@ go run ./cmd/ovumcy repair symptom-names
 
 Running the CLI against the shell-free container, and which subcommands need the server's restore fence: [docs/self-hosted.md](docs/self-hosted.md#running-the-operator-cli-against-the-container).
 
+<a id="clients-and-deployment-models"></a>
 ## Related Projects
 
-- [`ovumcy-web`](https://github.com/ovumcy/ovumcy-web) — this repository: the self-hosted all-in-one web application and server. Choose it for one server with a browser UI reachable from any device.
+This repository is the self-hosted all-in-one web application and server: one server, a browser UI reachable from any device. Two sibling projects cover the other shapes:
+
 - [`ovumcy-app`](https://github.com/ovumcy/ovumcy-app) — the local-first mobile client for iOS and Android. Choose it for an on-device experience.
 - [`ovumcy-sync-community`](https://github.com/ovumcy/ovumcy-sync-community) — optional self-hosted encrypted sync for the mobile app. Add it only when the app needs self-hosted backup, restore, or multi-device sync.
 
@@ -443,6 +452,7 @@ the full quality and security approach.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). For bugs and feature requests, open a [GitHub issue](https://github.com/ovumcy/ovumcy-web/issues).
 
+<a id="roadmap"></a>
 ## Releases
 
 - Latest tagged release: `v1.9.2`.
