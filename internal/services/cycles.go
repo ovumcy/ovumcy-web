@@ -106,7 +106,7 @@ func buildCycleStats(logs []models.DailyLog, now time.Time, ctx BoundaryContext,
 
 	cycles := buildCycles(starts, sorted)
 	populateObservedCycleStats(&stats, cycleLengths(starts), cycles)
-	if !runningPeriodHasEnded(cycles, sorted, rule) {
+	if !runningPeriodHasEnded(cycles, rule) {
 		// A period still running is as long as the owner has logged it so far:
 		// one day on the day it is marked, and stopped at today by the
 		// onboarding fill. Averaging that in shortens every projected period.
@@ -296,26 +296,17 @@ func populateObservedCycleStats(stats *CycleStats, lengths []int, cycles []detec
 }
 
 // runningPeriodHasEnded reports whether the period of the running cycle — the
-// last one in cycles — may be averaged: a non-period day is logged after its
-// last period day, or the owner's today is past its start plus the configured
-// period length minus one. logs is bounded at today, so a non-period day found
-// here lies inside the running cycle. A zero rule answers true, keeping the
-// running period in the average.
-func runningPeriodHasEnded(cycles []detectedCycle, logs []models.DailyLog, rule runningPeriodRule) bool {
+// last one in cycles — may be averaged: the owner's today is past its start
+// plus the configured period length minus one. A logged non-period day does not
+// end it: a mood- or notes-only save writes is_period=false too, and nothing
+// stored tells it apart from a day the owner un-ticked. A zero rule answers
+// true, keeping the running period in the average.
+func runningPeriodHasEnded(cycles []detectedCycle, rule runningPeriodRule) bool {
 	if len(cycles) == 0 || rule.today.IsZero() || rule.periodLength <= 0 {
 		return true
 	}
 	running := cycles[len(cycles)-1]
-	if CalendarDaysBetween(running.Start, rule.today) >= rule.periodLength {
-		return true
-	}
-	lastPeriodDay := dateOnly(running.Start).AddDate(0, 0, running.PeriodLength-1)
-	for _, logEntry := range logs {
-		if !logEntry.IsPeriod && CalendarDaysBetween(lastPeriodDay, logEntry.Date) > 0 {
-			return true
-		}
-	}
-	return false
+	return CalendarDaysBetween(running.Start, rule.today) >= rule.periodLength
 }
 
 func recentPositivePeriodLengths(cycles []detectedCycle, limit int) []int {

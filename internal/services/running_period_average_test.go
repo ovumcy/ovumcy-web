@@ -11,9 +11,9 @@ import (
 // TestAveragePeriodLengthLeavesOutARunningPeriodUntilItEnds pins WEB-288: the
 // running cycle's period is as long as the owner has logged it so far — one day
 // on the day it is marked, and stopped at today by the onboarding fill — so it
-// stays out of AveragePeriodLength until it has ended. Ended means a non-period
-// day is logged after its last period day, or the owner's local today is past
-// start + configured period length - 1.
+// stays out of AveragePeriodLength until it has ended. Ended means the owner's
+// local today is past start + configured period length - 1; a logged
+// non-period day does not end it (WEB-298).
 //
 // The configured period length is 6, so the running period that starts on
 // 2026-02-26 runs through 2026-03-03 and is counted from 2026-03-04. The
@@ -54,11 +54,12 @@ func TestAveragePeriodLengthLeavesOutARunningPeriodUntilItEnds(t *testing.T) {
 			want: 11.0 / 3,
 		},
 		{
-			name: "a non-period day logged after the last period day counts it",
-			logs: append(append(completed(), periodRunLogs(t, "2026-02-26", 2)...),
-				models.DailyLog{Date: mustParseDay(t, "2026-02-28")}),
+			// A mood- or notes-only save before period is ticked writes this row.
+			name: "a non-period day logged after the last period day does not end it",
+			logs: append(append(completed(), periodRunLogs(t, "2026-02-26", 1)...),
+				models.DailyLog{Date: mustParseDay(t, "2026-02-27"), Mood: 3}),
 			now:  utcNoon(t, "2026-02-28"),
-			want: 4,
+			want: 5,
 		},
 		{
 			name: "a non-period day logged before the run does not end it",
