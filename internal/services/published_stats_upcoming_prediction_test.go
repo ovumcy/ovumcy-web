@@ -138,6 +138,23 @@ func TestPublishedOverviewPublishesNoOvulationOnceTheCycleIsLate(t *testing.T) {
 	}
 }
 
+// TestReconcileMovedWindowWithholdsStatusAndPhaseOnOutOfDateData pins the
+// backstop no caller reaches today (out-of-date data suppresses the fertility
+// half before any roll): handed a rolled window that covers today on
+// out-of-date data, it still answers "unknown" for both, as PublishedStats does.
+func TestReconcileMovedWindowWithholdsStatusAndPhaseOnOutOfDateData(t *testing.T) {
+	today := mustParseDay(t, "2026-10-15")
+	published := CycleStats{
+		OvulationDate:        mustParseDay(t, "2026-10-18"),
+		FertilityWindowStart: mustParseDay(t, "2026-10-13"),
+		FertilityWindowEnd:   mustParseDay(t, "2026-10-18"),
+		CurrentPhase:         "luteal",
+		CycleDataStale:       true,
+	}
+	reconcileMovedWindow(&published, nil, today, time.UTC)
+	assertPublishedStatusAndPhase(t, published, FertilityStatusUnknown, "", "unknown")
+}
+
 // TestPublishedOverviewDropsAPassedOvulationWhoseRollFallsPastTheYear: on
 // 9999-12-30 the running cycle's ovulation (9999-12-23) is behind today and the
 // cycle it rolls into ovulates in year 10000, which no surface spells. The

@@ -241,9 +241,11 @@ func PublishedOverviewStats(user *models.User, logs []models.DailyLog, stats Cyc
 // webhook pass all read: DashboardUpcomingPredictions. The stats carry the
 // RUNNING cycle's window, and once its ovulation is behind today every one of
 // those surfaces rolls the ovulation a whole cycle forward while the JSON API
-// went on publishing the passed day — on cycle day 29 of a 28-day history an
-// ovulation two weeks old, flagged exact, beside an "Ovulation: around" two weeks
-// ahead on the dashboard. Taking the values off the same function, rather than
+// went on publishing the passed day — on cycle day 22 of a 28-day history an
+// ovulation eight days old, flagged exact, beside an "Ovulation: around" twenty
+// days ahead on the dashboard. From cycle day 29 the data is out of date and the
+// fertility half is suppressed, so there is nothing to roll; the next period
+// still follows. Taking the values off the same function, rather than
 // re-deriving the roll here, is what keeps the API on every day the pages name.
 //
 // It writes only what PublishedStats left standing: a value a suppression tier
@@ -314,7 +316,9 @@ func followUpcomingPrediction(published *CycleStats, user *models.User, resolved
 // a rolled window that covers today is "fertile" and one that does not is
 // "outside_estimated_window"; a null window answers "unknown", with no basis,
 // whatever day stands beside it. Out-of-date data withholds it as PublishedStats
-// does, the moved window being no more current than the running one.
+// does. The caller never reaches here on out-of-date data today — that verdict
+// suppresses the fertility half before any roll — so the check is a backstop
+// against the two verdicts drifting apart, not a live branch.
 //
 // The phase keeps the running cycle's answer while a day is published: the roll
 // only happens once that cycle's ovulation is behind today, and "luteal" is the

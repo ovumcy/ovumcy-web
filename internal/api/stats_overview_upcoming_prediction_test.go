@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -64,6 +65,18 @@ func TestStatsOverviewNamesTheOvulationTheDashboardRendersOnceItHasPassed(t *tes
 				}
 				if payload.NextPeriodStart == nil || *payload.NextPeriodStart != nextPeriod.Format(statsOverviewDateLayout) {
 					t.Errorf("next_period_start = %v, want %s", statsOverviewTextOrNull(payload.NextPeriodStart), nextPeriod.Format(statsOverviewDateLayout))
+				}
+				// The rendered page names neither the passed ovulation nor the
+				// rolled one, and the same next period.
+				document := fetchStatsOverviewDashboardDocument(t, app, authCookie)
+				if got, want := dashboardElementTextByDataAttr(t, document, "data-dashboard-next-period"), services.LocalizedDateDisplay("en", nextPeriod); !strings.Contains(got, want) {
+					t.Errorf("dashboard next-period slot = %q, want %q", got, want)
+				}
+				page := normalizeHTMLText(htmlNodeText(document))
+				for _, offset := range []int{-15, 13} {
+					if day := services.LocalizedDateDisplay("en", services.AddCalendarDays(today, offset, time.UTC)); regexp.MustCompile(`\b` + regexp.QuoteMeta(day) + `\b`).MatchString(page) {
+						t.Errorf("the dashboard names %s, an ovulation day the late cycle withholds", day)
+					}
 				}
 				return
 			}
