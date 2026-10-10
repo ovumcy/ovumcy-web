@@ -254,15 +254,15 @@ func TestCalendarDayPanelPayloadCarriesNoProjectionSignal(t *testing.T) {
 // key names a projection word, keyed by that translation key. A printf verb
 // matches any run of text, so a count or a date filled in still matches. Each
 // word must name a translation key or English string, a PredictionSuppression
-// field or the overdue suppression reason, so no word in the list can read as a
-// check while matching nothing.
+// field or the overdue or out-of-date suppression reason, so no word in the list
+// can read as a check while matching nothing.
 func dayPanelProjectionCopy(t *testing.T) map[string]*regexp.Regexp {
 	t.Helper()
 	manager, err := i18n.NewManager("en")
 	if err != nil {
 		t.Fatalf("init i18n: %v", err)
 	}
-	anchors := []string{string(services.SuppressionReasonCycleOverdue)}
+	anchors := []string{string(services.SuppressionReasonCycleOverdue), string(services.SuppressionReasonCycleDataStale)}
 	verdict := reflect.TypeOf(services.PredictionSuppression{})
 	for i := range verdict.NumField() {
 		anchors = append(anchors, verdict.Field(i).Name)
