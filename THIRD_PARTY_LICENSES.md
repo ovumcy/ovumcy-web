@@ -57,7 +57,7 @@ file, so a row can name a subpackage (`golang.org/x/net/idna`) or appear beside 
 | `github.com/valyala/fasthttp/reuseport` | MIT | [license text](https://github.com/valyala/fasthttp/blob/v1.74.0/reuseport/LICENSE) |
 | `github.com/valyala/fasthttp` | MIT | [license text](https://github.com/valyala/fasthttp/blob/v1.74.0/LICENSE) |
 | `golang.org/x/crypto` | BSD-3-Clause | [license text](https://cs.opensource.google/go/x/crypto/+/v0.57.0:LICENSE) |
-| `golang.org/x/net/idna` | BSD-3-Clause | [license text](https://cs.opensource.google/go/x/net/+/v0.59.0:LICENSE) |
+| `golang.org/x/net/idna` | BSD-3-Clause | [license text](https://cs.opensource.google/go/x/net/+/v0.60.0:LICENSE) |
 | `golang.org/x/oauth2` | BSD-3-Clause | [license text](https://cs.opensource.google/go/x/oauth2/+/v0.37.0:LICENSE) |
 | `golang.org/x/sync/semaphore` | BSD-3-Clause | [license text](https://cs.opensource.google/go/x/sync/+/v0.23.0:LICENSE) |
 | `golang.org/x/sys` | BSD-3-Clause | [license text](https://cs.opensource.google/go/x/sys/+/v0.48.0:LICENSE) |

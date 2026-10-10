@@ -24,7 +24,7 @@
   <a href="https://github.com/ovumcy/ovumcy-web/commits/main"><img src="https://img.shields.io/github/last-commit/ovumcy/ovumcy-web" alt="Last Commit"></a>
   <a href="https://www.gnu.org/licenses/agpl-3.0"><img src="https://img.shields.io/badge/License-AGPL%20v3-blue.svg" alt="License: AGPL v3"></a>
   <a href="https://pkg.go.dev/github.com/ovumcy/ovumcy-web"><img src="https://pkg.go.dev/badge/github.com/ovumcy/ovumcy-web.svg" alt="Go Reference"></a>
-  <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.27.1+-00ADD8?logo=go" alt="Go Version"></a>
+  <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.27.2+-00ADD8?logo=go" alt="Go Version"></a>
   <a href="https://github.com/ovumcy/ovumcy-web/actions/workflows/docker-image.yml"><img src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker" alt="Docker"></a>
   <a href="https://github.com/ovumcy/ovumcy-web/pkgs/container/ovumcy-web"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fovumcy%2Fovumcy-web%2Fbadges%2Fpulls.json&logo=docker" alt="Docker pulls"></a>
   <a href="https://hub.docker.com/r/ovumcy/ovumcy-web"><img src="https://img.shields.io/docker/pulls/ovumcy/ovumcy-web" alt="Docker Pulls"></a>
@@ -340,7 +340,7 @@ A binary started this way listens on `PORT` (default `8080`) on every interface;
 
 Requirements:
 
-- Go 1.27.1+
+- Go 1.27.2+
 - Node.js 22+
 
 ```bash
