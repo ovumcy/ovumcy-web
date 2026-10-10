@@ -60,10 +60,13 @@ func noJSAPIFormsInTemplates(t *testing.T) []templateFormRoute {
 	var forms []templateFormRoute
 	for path, source := range sources {
 		component, parameterised := parameterisedFormComponents[path]
-		var invocation, endpoint *regexp.Regexp
+		var mention, invocation, endpoint *regexp.Regexp
 		if parameterised {
-			// An invocation runs from `{{template "name"` to the `}}` closing its dict.
-			invocation = regexp.MustCompile(`(?s)\{\{\s*template\s+"` + regexp.QuoteMeta(component.define) + `"\s*\(dict.*?\)\s*\}\}`)
+			// A mention is any `{{template "name"`; an invocation is one that also
+			// closes its dict, so a mention that is not an invocation is a shape
+			// the scan cannot read.
+			mention = regexp.MustCompile(`\{\{-?\s*template\s+"` + regexp.QuoteMeta(component.define) + `"`)
+			invocation = regexp.MustCompile(`(?s)\{\{-?\s*template\s+"` + regexp.QuoteMeta(component.define) + `"\s*\(dict.*?\)\s*-?\}\}`)
 			endpoint = regexp.MustCompile(`"` + regexp.QuoteMeta(component.key) + `"\s+\(printf\s+"([^"]+)"`)
 		}
 		for _, form := range postFormsInTemplate(path, source) {
@@ -73,8 +76,14 @@ func noJSAPIFormsInTemplates(t *testing.T) []templateFormRoute {
 			}
 			// Every invocation must resolve to a literal printf path: one passing
 			// the endpoint any other way would otherwise be skipped silently.
+			mentions := 0
 			for callerPath, caller := range sources {
-				for _, call := range invocation.FindAllString(caller, -1) {
+				found := invocation.FindAllString(caller, -1)
+				if want := len(mention.FindAllString(caller, -1)); want != len(found) {
+					t.Errorf("%s: %d mentions of %q but %d readable invocations, so the scan would skip a route", callerPath, want, component.define, len(found))
+				}
+				mentions += len(found)
+				for _, call := range found {
 					match := endpoint.FindStringSubmatch(call)
 					if match == nil {
 						t.Errorf("%s: an invocation of %q passes no literal printf %q, so the scan cannot name its route", callerPath, component.define, component.key)
@@ -83,6 +92,9 @@ func noJSAPIFormsInTemplates(t *testing.T) []templateFormRoute {
 					action, _, _ := strings.Cut(strings.ReplaceAll(match[1], "%s", templateFormPlaceholder), "?")
 					forms = append(forms, templateFormRoute{file: path, verb: form.verb, action: action})
 				}
+			}
+			if mentions == 0 {
+				t.Errorf("%s: no template invokes %q, so the scan cannot name its route", path, component.define)
 			}
 		}
 	}
