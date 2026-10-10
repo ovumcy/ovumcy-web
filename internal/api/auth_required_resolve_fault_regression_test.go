@@ -116,3 +116,44 @@ func TestAuthRequiredSendsAnUnsupportedRoleNoJSFormToSignIn(t *testing.T) {
 	}
 	t.Fatal("the redirect to /login carries no flash notice")
 }
+
+// TestErasureStepupCallbackFlashesAStorageFaultToSettings (WEB-290): the
+// callback authenticates the session itself, and its browser is back from the
+// identity provider, so a lookup fault is a settings flash — not a mismatch
+// refusal, not a 5xx envelope — and the auth cookie stays.
+func TestErasureStepupCallbackFlashesAStorageFaultToSettings(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "settings-erasure-session-fault@example.com")
+	fixture.oidcStub.reauthErr = nil
+
+	startResponse := postErasureStepupStart(t, fixture, "/api/v1/users/current/data-wipe/step-up")
+	defer func() { _ = startResponse.Body.Close() }()
+	stepupCookie := readStepupCookie(t, startResponse)
+	state := extractStepupCallbackState(t, fixture)
+
+	sqlDB, err := fixture.database.DB()
+	if err != nil {
+		t.Fatalf("open sql db: %v", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("close sql db: %v", err)
+	}
+
+	response := postOIDCStepupCallback(t, fixture, stepupCookie, state, "callback-code")
+	defer func() { _ = response.Body.Close() }()
+	assertStatusCode(t, response, http.StatusSeeOther)
+	if location := response.Header.Get("Location"); location != "/settings" {
+		t.Fatalf("Location %q, want /settings", location)
+	}
+	flashCookie := responseCookie(response.Cookies(), flashCookieName)
+	if flashCookie == nil || strings.TrimSpace(flashCookie.Value) == "" {
+		t.Fatal("expected a flash cookie carrying the fault")
+	}
+	if got, want := decodeFlashCookieForTest(t, flashCookie.Value).SettingsError, settingsSessionFaultErrorSpec().Key; got != want {
+		t.Fatalf("flash SettingsError = %q, want %q", got, want)
+	}
+	if cookie := responseCookie(response.Cookies(), authCookieName); cookie != nil {
+		t.Fatalf("a storage fault set the cookie %q", authCookieName)
+	}
+}
