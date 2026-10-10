@@ -96,13 +96,15 @@ func TestTopUpFillsFromTheOnboardingStartThatHasNoRow(t *testing.T) {
 func TestTopUpFillsOnlyBehindTheLastPeriodDayBeforeTheMarkedOne(t *testing.T) {
 	service, logs, _ := newTopUpService(true, 7)
 	seedTopUpRow(logs, 10, models.DailyLog{IsPeriod: true, Flow: models.FlowMedium})
-	seedTopUpRow(logs, 11, models.DailyLog{IsPeriod: true, Flow: models.FlowMedium})
+	seedTopUpRow(logs, 12, models.DailyLog{IsPeriod: true, Flow: models.FlowMedium})
 
 	markTopUpPeriodDay(t, service, 14, 14)
 
-	requireTopUpPeriodRow(t, logs, 12)
+	// Only the 13th lies behind the 14th and after the last period day (the
+	// 12th); the 11th has no row either but sits before that period day.
 	requireTopUpPeriodRow(t, logs, 13)
-	if logs.saveCalls[topUpKey(10)] != 0 || logs.saveCalls[topUpKey(11)] != 0 {
+	requireTopUpNoRow(t, logs, 11)
+	if logs.saveCalls[topUpKey(10)] != 0 || logs.saveCalls[topUpKey(12)] != 0 {
 		t.Fatalf("expected the days before the gap to stay untouched, saves: %v", logs.saveCalls)
 	}
 }
