@@ -28,8 +28,13 @@ var templateFormActionPattern = regexp.MustCompile(`(?s)\{\{.*?\}\}`)
 // parameterisedFormComponents names each form component whose action is a
 // template parameter, by the dict key its callers fill. The scan resolves the
 // component to every literal path a caller passes under that key.
-var parameterisedFormComponents = map[string]string{
-	"components/cycle_start_form.html": "Endpoint",
+var parameterisedFormComponents = map[string]parameterisedFormComponent{
+	"components/cycle_start_form.html": {define: "cycle_start_form", key: "Endpoint"},
+}
+
+type parameterisedFormComponent struct {
+	define string
+	key    string
 }
 
 // noJSAPIFormsInTemplates returns every method="post" form whose action is
@@ -54,23 +59,30 @@ func noJSAPIFormsInTemplates(t *testing.T) []templateFormRoute {
 
 	var forms []templateFormRoute
 	for path, source := range sources {
+		component, parameterised := parameterisedFormComponents[path]
+		var invocation, endpoint *regexp.Regexp
+		if parameterised {
+			// An invocation runs from `{{template "name"` to the `}}` closing its dict.
+			invocation = regexp.MustCompile(`(?s)\{\{\s*template\s+"` + regexp.QuoteMeta(component.define) + `"\s*\(dict.*?\)\s*\}\}`)
+			endpoint = regexp.MustCompile(`"` + regexp.QuoteMeta(component.key) + `"\s+\(printf\s+"([^"]+)"`)
+		}
 		for _, form := range postFormsInTemplate(path, source) {
-			key, parameterised := parameterisedFormComponents[path]
 			if !parameterised || form.action != templateFormPlaceholder {
 				forms = append(forms, form)
 				continue
 			}
-			callers := regexp.MustCompile(`"` + regexp.QuoteMeta(key) + `"\s+\(printf\s+"([^"]+)"`)
-			expanded := 0
-			for _, caller := range sources {
-				for _, match := range callers.FindAllStringSubmatch(caller, -1) {
+			// Every invocation must resolve to a literal printf path: one passing
+			// the endpoint any other way would otherwise be skipped silently.
+			for callerPath, caller := range sources {
+				for _, call := range invocation.FindAllString(caller, -1) {
+					match := endpoint.FindStringSubmatch(call)
+					if match == nil {
+						t.Errorf("%s: an invocation of %q passes no literal printf %q, so the scan cannot name its route", callerPath, component.define, component.key)
+						continue
+					}
 					action, _, _ := strings.Cut(strings.ReplaceAll(match[1], "%s", templateFormPlaceholder), "?")
 					forms = append(forms, templateFormRoute{file: path, verb: form.verb, action: action})
-					expanded++
 				}
-			}
-			if expanded == 0 {
-				t.Errorf("%s: no template passes %q to this component, so the scan cannot name its route", path, key)
 			}
 		}
 	}

@@ -12,7 +12,8 @@ import (
 // redirect and the refusal's back link read `source` through one function, so a
 // request spelling it in another case or with padding lands on the same page
 // either way — it used to reach the calendar on success and the dashboard on
-// refusal.
+// refusal. The name travels in the query or, for a form MethodOverride
+// rewrote, in the urlencoded body field the calendar editor posts.
 func TestNoJSDayFormSourceNamesOnePageForSuccessAndRefusal(t *testing.T) {
 	t.Parallel()
 
@@ -25,38 +26,57 @@ func TestNoJSDayFormSourceNamesOnePageForSuccessAndRefusal(t *testing.T) {
 		"day save":    {path: func(iso string) string { return "/api/v1/days/" + iso }, fields: url.Values{"_method": {"PUT"}, "is_period": {"true"}}},
 		"cycle start": {path: func(iso string) string { return "/api/v1/days/" + iso + "/cycle-start" }, fields: url.Values{}},
 	}
+	type outcome struct {
+		label   string
+		refused bool
+	}
+	outcomes := []outcome{{"accepted", false}, {"refused", true}}
 	for name, c := range cases {
-		for _, refused := range []bool{false, true} {
-			label := name + map[bool]string{false: ", accepted", true: ", refused"}[refused]
-			t.Run(label, func(t *testing.T) {
-				t.Parallel()
-				ctx := newRefusalPageContext(t, "source-parity-"+strings.NewReplacer(" ", "-", ",", "").Replace(label)+"@example.com")
-				_, iso := noJSDay()
-				body := url.Values{}
-				for key, values := range c.fields {
-					body[key] = values
-				}
-				body.Set("csrf_token", ctx.csrfToken)
-				if refused {
-					body.Set("csrf_token", "not-the-token")
-				}
-				request := httptest.NewRequest(http.MethodPost, c.path(iso)+"?source=%20Calendar%20", strings.NewReader(body.Encode()))
-				request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-				request.Header.Set("Accept", noJSBrowserAccept)
-				request.Header.Set("Accept-Language", "en")
-				request.Header.Set("Cookie", ctx.authCookie+"; "+ctx.csrfCookie.Name+"="+ctx.csrfCookie.Value)
-				response := mustAppResponse(t, ctx.app, request)
+		// The body field is read only for a form MethodOverride rewrote.
+		_, overridden := c.fields["_method"]
+		for _, sourceIn := range []string{"query", "body"} {
+			if sourceIn == "body" && !overridden {
+				continue
+			}
+			for _, o := range outcomes {
+				refused := o.refused
+				label := name + ", " + sourceIn + ", " + o.label
+				t.Run(label, func(t *testing.T) {
+					t.Parallel()
+					ctx := newRefusalPageContext(t, "source-parity-"+strings.NewReplacer(" ", "-", ",", "").Replace(label)+"@example.com")
+					_, iso := noJSDay()
+					body := url.Values{}
+					for key, values := range c.fields {
+						body[key] = values
+					}
+					body.Set("csrf_token", ctx.csrfToken)
+					if refused {
+						body.Set("csrf_token", "not-the-token")
+					}
+					target := c.path(iso)
+					if sourceIn == "query" {
+						target += "?source=%20Calendar%20"
+					} else {
+						body.Set("source", " Calendar ")
+					}
+					request := httptest.NewRequest(http.MethodPost, target, strings.NewReader(body.Encode()))
+					request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+					request.Header.Set("Accept", noJSBrowserAccept)
+					request.Header.Set("Accept-Language", "en")
+					request.Header.Set("Cookie", ctx.authCookie+"; "+ctx.csrfCookie.Name+"="+ctx.csrfCookie.Value)
+					response := mustAppResponse(t, ctx.app, request)
 
-				if refused {
-					assertRefusalPageCarrying(t, response, http.StatusForbidden, forbidden, calendarLanding(iso))
-					return
-				}
-				defer func() { _ = response.Body.Close() }()
-				assertStatusCode(t, response, http.StatusSeeOther)
-				if location := response.Header.Get("Location"); location != calendarLanding(iso) {
-					t.Fatalf("Location %q, want %q", location, calendarLanding(iso))
-				}
-			})
+					if refused {
+						assertRefusalPageCarrying(t, response, http.StatusForbidden, forbidden, calendarLanding(iso))
+						return
+					}
+					defer func() { _ = response.Body.Close() }()
+					assertStatusCode(t, response, http.StatusSeeOther)
+					if location := response.Header.Get("Location"); location != calendarLanding(iso) {
+						t.Fatalf("Location %q, want %q", location, calendarLanding(iso))
+					}
+				})
+			}
 		}
 	}
 }
