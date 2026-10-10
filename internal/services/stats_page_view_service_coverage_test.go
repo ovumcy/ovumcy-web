@@ -272,7 +272,7 @@ func TestStatsPageViewServicePredictionDisabledReflectsUnpredictableCycleFlag(t 
 // ---------------------------------------------------------------------------
 
 func TestStatsPageViewServicePredictionReliabilityHiddenForUnpredictableOwnerWithEnoughCycles(t *testing.T) {
-	// 3 completed cycles is enough for statsMinimumInsightsCycles (2), but
+	// 3 completed cycles meets statsMinimumInsightsCycles (3), but
 	// UnpredictableCycle=true must suppress reliability display.
 	logs := statspageviewserviceCovLogsWithNCompletedCycles(t, 3)
 	service := NewStatsService(&stubStatsDayReader{logsForRange: logs}, &stubStatsSymptomReader{})
