@@ -69,7 +69,7 @@ docker compose up -d
 
 Then open `http://127.0.0.1:8080`.
 
-The compose file pulls the latest tagged release, `ghcr.io/ovumcy/ovumcy-web:v1.9.2`, from GHCR; no GitHub login is needed, and `pull_policy: always` keeps the tag fresh on every restart. The same image is mirrored to Docker Hub as `docker.io/ovumcy/ovumcy-web` under the same tags and at the same digest. Tagged releases from `v0.7.1` onward are published this way; older tags exist on neither registry. To run a different tag, set `OVUMCY_IMAGE` in `.env` or on the command line:
+The compose file pulls the latest tagged release, `ghcr.io/ovumcy/ovumcy-web:v1.9.2`, from GHCR; no GitHub login is needed, and `pull_policy: always` keeps the tag fresh on every restart. The same image is mirrored to Docker Hub as `docker.io/ovumcy/ovumcy-web` under the same tags and at the same digest. Tagged releases from `v0.7.1` onward publish under these names. To run a different tag, set `OVUMCY_IMAGE` in `.env` or on the command line:
 
 ```bash
 OVUMCY_IMAGE=ghcr.io/ovumcy/ovumcy-web:v1.9.2 docker compose up -d
@@ -85,7 +85,7 @@ For production-style setups:
 
 > **Upgrading an existing install to v2.0.0 or later? Take the new compose file first.** The new image expects the `ovumcy_fence` volume at `/app/fence`, and the new compose files forward `.env` keys an older copy silently ignored (`REGISTRATION_MODE` among them), so values already sitting in `.env` take effect at the first start. Follow the [Safe Upgrade Procedure](docs/self-hosted.md#safe-upgrade-procedure).
 
-<a id="verify-the-image"></a>
+<a id="verify-the-image" name="verify-the-image"></a>
 <details>
 <summary><strong>Verify the image before running it (recommended)</strong></summary>
 
@@ -119,7 +119,7 @@ docker buildx imagetools inspect ghcr.io/ovumcy/ovumcy-web:v1.9.2 --format '{{ .
 
 </details>
 
-<a id="manual"></a>
+<a id="manual" name="manual"></a>
 ### From source
 
 A binary started this way listens on `PORT` (default `8080`) on every interface; `HOST_BIND_ADDRESS` has no effect outside compose. On a machine other hosts can reach, block the port with a firewall.
@@ -157,8 +157,8 @@ $env:SECRET_KEY_FILE = "C:\\path\\to\\ovumcy-secret.txt"
 go run ./cmd/ovumcy
 ```
 
-<a id="demo"></a>
-<a id="screenshots"></a>
+<a id="demo" name="demo"></a>
+<a id="screenshots" name="screenshots"></a>
 ## Demo and Screenshots
 
 <p align="center">
@@ -194,8 +194,8 @@ go run ./cmd/ovumcy
 
 The privacy-safe hero demo asset pack, including the mobile install prompt capture contract, lives in [docs/hero-demo.md](docs/hero-demo.md).
 
-<a id="why-ovumcy-exists"></a>
-<a id="how-ovumcy-is-different"></a>
+<a id="why-ovumcy-exists" name="why-ovumcy-exists"></a>
+<a id="how-ovumcy-is-different" name="how-ovumcy-is-different"></a>
 ## Why Ovumcy
 
 Most cycle tracking apps start by asking you to sign up for a cloud account, then lean on analytics and third-party services you never really see.
@@ -360,7 +360,7 @@ Beyond the essentials:
 - **OIDC / SSO** (`OIDC_*`): optional, `hybrid` or `oidc_only` login modes, requires HTTPS plus `COOKIE_SECURE=true`. A verified email claim matching an existing local account does **not** link automatically; linking needs a password-confirmed step-up or the operator CLI. Setup, the account-linking contract, and the provider compatibility matrix (Keycloak, authentik, Authelia, Pocket ID, Dex, ZITADEL): [docs/oidc.md](docs/oidc.md).
 - **Deployment, reverse proxies, backups, restores, upgrades, Postgres:** [docs/self-hosted.md](docs/self-hosted.md).
 
-<a id="tech-stack"></a>
+<a id="tech-stack" name="tech-stack"></a>
 ## Architecture
 
 ```text
@@ -410,7 +410,7 @@ go run ./cmd/ovumcy repair symptom-names
 
 Running the CLI against the shell-free container, and which subcommands need the server's restore fence: [docs/self-hosted.md](docs/self-hosted.md#running-the-operator-cli-against-the-container).
 
-<a id="clients-and-deployment-models"></a>
+<a id="clients-and-deployment-models" name="clients-and-deployment-models"></a>
 ## Related Projects
 
 This repository is the self-hosted all-in-one web application and server: one server, a browser UI reachable from any device. Two sibling projects cover the other shapes:
@@ -452,7 +452,7 @@ the full quality and security approach.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). For bugs and feature requests, open a [GitHub issue](https://github.com/ovumcy/ovumcy-web/issues).
 
-<a id="roadmap"></a>
+<a id="roadmap" name="roadmap"></a>
 ## Releases
 
 - Latest tagged release: `v1.9.2`.
