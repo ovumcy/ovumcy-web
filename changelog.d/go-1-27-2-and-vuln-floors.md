@@ -14,3 +14,7 @@
   1.27.2 writes export data v5, which the x/tools their latest releases pin cannot read; a shared
   `go-install-on-xtools` action builds each pinned tool in a throwaway module that lifts x/tools,
   and the cache key and the restored-binary checks name that version too.
+- **`source-map-js` lifted to 1.2.2 in the lockfile**, closing CVE-2026-93749 (HIGH). The package
+  is a transitive dev-only dependency of the CSS build and of `jsdom`, not part of any shipped
+  artifact. It lands with the Go bump because the required `trivy-fs` check scans both
+  `go.mod` and `package-lock.json`: neither fix passes it alone.
