@@ -172,7 +172,7 @@ func (handler *Handler) completeErasureStepupReauth(c fiber.Ctx, state oidcStepu
 	// to be the account the flow was started for.
 	user, err := handler.authenticateRequest(c)
 	if errors.Is(err, errAuthSessionUnresolved) {
-		return handler.respondSessionFault(c)
+		return handler.redirectSettingsRefusal(c, settingsSessionFaultErrorSpec())
 	}
 	if err != nil || user == nil || user.ID != state.UserID {
 		spec := settingsOIDCReauthMismatchErrorSpec()

@@ -65,6 +65,14 @@ func settingsOIDCReauthAuthTimeMissingErrorSpec() APIErrorSpec {
 	return settingsFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "oidc reauth auth_time missing")
 }
 
+// settingsSessionFaultErrorSpec is the step-up callbacks' answer to a session
+// lookup that failed in storage: the browser is back from the identity provider
+// and needs a page, so the fault rides the settings flash instead of a 5xx
+// envelope, and is not worded as a mismatch the session never had.
+func settingsSessionFaultErrorSpec() APIErrorSpec {
+	return settingsFormErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "internal_error")
+}
+
 func settingsOIDCReauthMismatchErrorSpec() APIErrorSpec {
 	return settingsFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "oidc reauth identity mismatch")
 }

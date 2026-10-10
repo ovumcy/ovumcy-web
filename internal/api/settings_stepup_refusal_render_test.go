@@ -237,6 +237,7 @@ var inlineStepupRefusalSpecs = map[string]func() APIErrorSpec{
 	"authOIDCUnavailableErrorSpec":                 authOIDCUnavailableErrorSpec,
 	"settingsOIDCReauthMismatchErrorSpec":          settingsOIDCReauthMismatchErrorSpec,
 	"settingsErasureNeedsAccountPasswordErrorSpec": settingsErasureNeedsAccountPasswordErrorSpec,
+	"settingsSessionFaultErrorSpec":                settingsSessionFaultErrorSpec,
 }
 
 // inlineStepupSessionHelperSpecs is inlineStepupRefusalSpecs's counterpart for

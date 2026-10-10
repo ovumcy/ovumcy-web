@@ -168,7 +168,7 @@ func (handler *Handler) completeLocalPasswordSetupReauth(c fiber.Ctx, state oidc
 	// the current session from the auth cookie ourselves.
 	user, err := handler.authenticateRequest(c)
 	if errors.Is(err, errAuthSessionUnresolved) {
-		return handler.respondSessionFault(c)
+		return handler.redirectSettingsRefusal(c, settingsSessionFaultErrorSpec())
 	}
 	if err != nil || user == nil || user.ID != state.UserID {
 		spec := settingsOIDCReauthMismatchErrorSpec()
