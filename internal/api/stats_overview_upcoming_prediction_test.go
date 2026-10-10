@@ -15,9 +15,11 @@ import (
 // trying-to-conceive owner with three completed 28-day cycles, on a day the
 // running cycle's ovulation is already behind. The dashboard rolls that
 // ovulation a cycle forward; the overview used to publish the passed day,
-// flagged exact. Cycle day 29 is the reported case — the period that closes the
-// running cycle is due today — and cycle day 22 the same divergence before the
-// cycle has reached its own length.
+// flagged exact. Cycle day 22 is that divergence before the cycle has reached
+// its own length. Cycle day 29 is the reported case — the period that closes the
+// running cycle is due today — where the data is out of date, so the overview
+// and the header name no ovulation at all, neither the passed day nor the rolled
+// one (its header half: TestPublishedOverviewPublishesNoOvulationOnceTheCycleIsLate).
 func TestStatsOverviewNamesTheOvulationTheDashboardRendersOnceItHasPassed(t *testing.T) {
 	for _, testCase := range []struct {
 		cycleDay int
@@ -25,9 +27,10 @@ func TestStatsOverviewNamesTheOvulationTheDashboardRendersOnceItHasPassed(t *tes
 		// running cycle, the ovulation is day 14 of the cycle after it.
 		nextPeriodIn int
 		ovulationIn  int
+		late         bool
 	}{
 		{cycleDay: 22, nextPeriodIn: 7, ovulationIn: 20},
-		{cycleDay: 29, nextPeriodIn: 0, ovulationIn: 13},
+		{cycleDay: 29, nextPeriodIn: 0, late: true},
 	} {
 		t.Run(fmt.Sprintf("cycle day %d", testCase.cycleDay), func(t *testing.T) {
 			app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
@@ -44,11 +47,26 @@ func TestStatsOverviewNamesTheOvulationTheDashboardRendersOnceItHasPassed(t *tes
 			if payload.CurrentCycleDay != testCase.cycleDay {
 				t.Fatalf("fixture: current_cycle_day = %d, want %d", payload.CurrentCycleDay, testCase.cycleDay)
 			}
-			if payload.Suppression.Predictions || payload.Suppression.Fertility {
-				t.Fatalf("fixture: suppression = %+v, want the projection published", payload.Suppression)
+			if payload.Suppression.Predictions || payload.Suppression.Fertility != testCase.late {
+				t.Fatalf("fixture: suppression = %+v, want fertility withheld = %v", payload.Suppression, testCase.late)
 			}
 
 			nextPeriod := services.AddCalendarDays(today, testCase.nextPeriodIn, time.UTC)
+			if testCase.late {
+				for name, value := range map[string]*string{
+					"ovulation_date":         payload.OvulationDate,
+					"fertility_window_start": payload.FertilityWindowStart,
+					"fertility_window_end":   payload.FertilityWindowEnd,
+				} {
+					if value != nil {
+						t.Errorf("%s = %s, want null — the cycle is late", name, *value)
+					}
+				}
+				if payload.NextPeriodStart == nil || *payload.NextPeriodStart != nextPeriod.Format(statsOverviewDateLayout) {
+					t.Errorf("next_period_start = %v, want %s", statsOverviewTextOrNull(payload.NextPeriodStart), nextPeriod.Format(statsOverviewDateLayout))
+				}
+				return
+			}
 			ovulation := services.AddCalendarDays(today, testCase.ovulationIn, time.UTC)
 			for name, pair := range map[string][2]*string{
 				"next_period_start":      {payload.NextPeriodStart, new(nextPeriod.Format(statsOverviewDateLayout))},

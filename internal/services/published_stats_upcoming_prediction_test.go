@@ -1,6 +1,7 @@
 package services
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -13,14 +14,12 @@ import (
 // with three completed 28-day cycles (period starts 06-15, 07-13, 08-10, 09-07):
 // the running cycle's ovulation is 09-20, and every page rolls it a cycle
 // forward to 10-18 with the window 10-13..10-18, while the overview went on
-// publishing 09-20, flagged exact. Cycle day 22 is the same divergence before the
-// cycle has reached its own length; cycle day 29 is the reported case, where the
-// next period that closes the running cycle is today.
+// publishing 09-20, flagged exact. Cycle day 22 is that divergence before the
+// cycle has reached its own length; the reported case, cycle day 29, is pinned
+// by TestPublishedOverviewPublishesNoOvulationOnceTheCycleIsLate.
 //
-// The status is read against the rolled window, which covers neither day, and
-// the phase stays the running cycle's "luteal", the dashboard's; on cycle day 29
-// the data is out of date (past the 28-day reference length), so both are
-// withheld there whatever the window says.
+// The status is read against the rolled window, which does not cover today, and
+// the phase stays the running cycle's "luteal", the dashboard's.
 func TestPublishedOverviewFollowsTheUpcomingPredictionThePagesRender(t *testing.T) {
 	for _, testCase := range []struct {
 		name            string
@@ -34,8 +33,6 @@ func TestPublishedOverviewFollowsTheUpcomingPredictionThePagesRender(t *testing.
 	}{
 		{name: "cycle day 22", today: "2026-09-28", wantNextPeriod: "2026-10-05", wantOvulation: "2026-10-18", wantWindowStart: "2026-10-13",
 			wantFertility: FertilityStatusOutsideEstimatedWindow, wantBasis: FertilityBasisProjection, wantPhase: "luteal"},
-		{name: "cycle day 29", today: "2026-10-05", wantNextPeriod: "2026-10-05", wantOvulation: "2026-10-18", wantWindowStart: "2026-10-13",
-			wantFertility: FertilityStatusUnknown, wantBasis: "", wantPhase: "unknown"},
 	} {
 		for _, zoneName := range []string{"UTC", "America/New_York", "Pacific/Auckland"} {
 			t.Run(testCase.name+"/"+zoneName, func(t *testing.T) {
@@ -98,6 +95,46 @@ func TestPublishedOverviewFollowsTheUpcomingPredictionThePagesRender(t *testing.
 				}
 			})
 		}
+	}
+}
+
+// TestPublishedOverviewPublishesNoOvulationOnceTheCycleIsLate: the reported
+// case — the same owner on cycle day 29 (10-05), the day the next period was
+// due. The running cycle is past its 28-day reference length, so the fertility
+// half is withheld as out of date: the overview publishes neither the passed
+// 09-20 nor the rolled 10-18, on the same verdict that withholds it from the
+// dashboard. The next period stays published, the day the header names.
+func TestPublishedOverviewPublishesNoOvulationOnceTheCycleIsLate(t *testing.T) {
+	for _, zoneName := range []string{"UTC", "America/New_York", "Pacific/Auckland"} {
+		t.Run(zoneName, func(t *testing.T) {
+			location := calendarDayComparisonZone(t, zoneName)
+			user := &models.User{Role: models.RoleOwner, CycleLength: 28, PeriodLength: 5, UsageGoal: models.UsageGoalTrying}
+			logs := cycleStartLogs(t, "2026-06-15", "2026-07-13", "2026-08-10", "2026-09-07")
+			now := localNoon(mustParseDay(t, "2026-10-05"), location)
+			today := DateAtLocation(now, location)
+			stats := BuildCycleStatsFromLogs(user, logs, now, location)
+
+			published, suppression, confirmed := PublishedOverviewStats(user, logs, stats, today, location)
+			if suppression.PredictionsSuppressed || !suppression.FertilitySuppressed || !slices.Contains(suppression.Reasons, SuppressionReasonCycleDataStale) || confirmed {
+				t.Fatalf("fixture: suppression %+v confirmed %v, want the fertility half withheld as out of date", suppression, confirmed)
+			}
+			if !published.OvulationDate.IsZero() || !published.FertilityWindowStart.IsZero() || !published.FertilityWindowEnd.IsZero() {
+				t.Errorf("ovulation %s window %s..%s, want all absent",
+					CalendarDayKey(published.OvulationDate), CalendarDayKey(published.FertilityWindowStart), CalendarDayKey(published.FertilityWindowEnd))
+			}
+			if got := CalendarDayKey(published.NextPeriodStart); got != "2026-10-05" {
+				t.Errorf("next_period_start = %s, want 2026-10-05", got)
+			}
+			assertPublishedStatusAndPhase(t, published, FertilityStatusUnknown, "", "unknown")
+
+			dashboard := BuildDashboardCycleContext(user, logs, stats, today, location)
+			if !dashboard.FertilitySuppressed {
+				t.Errorf("the dashboard keeps the fertility half that the overview withholds")
+			}
+			if got, want := CalendarDayKey(published.NextPeriodStart), CalendarDayKey(dashboard.DisplayNextPeriodStart); got != want {
+				t.Errorf("next_period_start = %s, dashboard header = %s", got, want)
+			}
+		})
 	}
 }
 
