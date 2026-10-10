@@ -16,6 +16,12 @@ import (
 // and AuthRequired answers 5xx instead of treating the caller as signed out.
 var errAuthSessionUnresolved = errors.New("auth session unresolved")
 
+// respondSessionFault answers an errAuthSessionUnresolved: every caller that
+// reads the session itself must give a fault this answer, not its refusal.
+func (handler *Handler) respondSessionFault(c fiber.Ctx) error {
+	return handler.respondGlobalMappedError(c, transportErrorSpecForStatus(fiber.StatusInternalServerError))
+}
+
 func (handler *Handler) authenticateRequest(c fiber.Ctx) (*models.User, error) {
 	rawToken := strings.TrimSpace(c.Cookies(authCookieName))
 	if rawToken == "" {
@@ -66,9 +72,12 @@ func (handler *Handler) authenticateRequest(c fiber.Ctx) (*models.User, error) {
 			handler.clearAuthCookie(c)
 			handler.logSecurityEvent(c, "auth.session", "denied", securityEventField("reason", "invalid token"))
 			return nil, errors.New("invalid token")
-		default:
+		case errors.Is(err, services.ErrAuthSessionLookupFailed):
 			handler.logSecurityEvent(c, "auth.session", "failure", securityEventField("reason", "token resolve failed"))
 			return nil, fmt.Errorf("%w: %w", errAuthSessionUnresolved, err)
+		default:
+			handler.logSecurityEvent(c, "auth.session", "failure", securityEventField("reason", "token resolve failed"))
+			return nil, err
 		}
 	}
 

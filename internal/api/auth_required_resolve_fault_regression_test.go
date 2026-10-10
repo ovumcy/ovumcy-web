@@ -60,6 +60,31 @@ func TestAuthRequiredAnswersAStorageFaultAsAServerError(t *testing.T) {
 	}
 }
 
+// TestRecoveryCodePageAnswersAStorageFaultAsAServerError (WEB-290): the page
+// reads the session itself, so a fault must not send a live session to /login.
+func TestRecoveryCodePageAnswersAStorageFaultAsAServerError(t *testing.T) {
+	t.Parallel()
+
+	ctx := newRefusalPageContext(t, "resolve-fault-recovery-page@example.com")
+	sqlDB, err := ctx.database.DB()
+	if err != nil {
+		t.Fatalf("open sql db: %v", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("close sql db: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/recovery-code", nil)
+	request.Header.Set("Accept", noJSBrowserAccept)
+	request.Header.Set("Cookie", ctx.authCookie)
+	response := mustAppResponse(t, ctx.app, request)
+	defer func() { _ = response.Body.Close() }()
+	assertStatusCode(t, response, http.StatusInternalServerError)
+	if location := response.Header.Get("Location"); location != "" {
+		t.Fatalf("Location %q, want none", location)
+	}
+}
+
 // TestAuthRequiredSendsAnUnsupportedRoleNoJSFormToSignIn (WEB-290): the gate
 // clears the session of an account whose role the web surface does not serve,
 // so the refusal page's link back to the form would bounce off the gate with

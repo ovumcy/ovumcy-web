@@ -21,7 +21,7 @@ func (handler *Handler) AuthRequired(c fiber.Ctx) error {
 		// A fault is not a refusal: the session may be live, so neither the
 		// sign-in redirect nor the "not signed in" notice may answer it.
 		if errors.Is(err, errAuthSessionUnresolved) {
-			return handler.respondGlobalMappedError(c, transportErrorSpecForStatus(fiber.StatusInternalServerError))
+			return handler.respondSessionFault(c)
 		}
 		if errors.Is(err, services.ErrAuthUnsupportedRole) {
 			spec := authWebSignInUnavailableErrorSpec()

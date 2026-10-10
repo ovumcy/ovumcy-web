@@ -126,6 +126,9 @@ func (handler *Handler) completeOIDCIdentityLinkStepup(c fiber.Ctx, state oidcSt
 	// for unauthenticated visitors), so resolve the session here and require it
 	// to be the same account that started the step-up.
 	user, err := handler.authenticateRequest(c)
+	if errors.Is(err, errAuthSessionUnresolved) {
+		return handler.respondSessionFault(c)
+	}
 	if err != nil || user == nil || user.ID != state.UserID {
 		spec := settingsOIDCReauthMismatchErrorSpec()
 		handler.logSecurityError(c, oidcIdentityLinkStepupAction, spec)
