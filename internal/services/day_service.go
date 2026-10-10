@@ -601,17 +601,18 @@ func (service *DayService) applyPeriodAutoFillSideEffects(ctx context.Context, u
 }
 
 func (service *DayService) autoFillNewPeriodAnchor(ctx context.Context, userID uint, dayStart time.Time, wasPeriod bool, autoPeriodFillEnabled bool, periodLength int, flow string, now time.Time, location *time.Location) error {
+	// The decision to fill forward reads the days before this one, so it is taken
+	// before the catch-up behind this day writes any of them.
 	shouldAutoFill, err := service.ShouldAutoFillPeriodDays(ctx, userID, dayStart, wasPeriod, autoPeriodFillEnabled, periodLength, location)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrDayAutoFillCheckFailed, err)
 	}
-	if !shouldAutoFill {
-		return nil
+	if shouldAutoFill {
+		if err := service.AutoFillFollowingPeriodDays(ctx, userID, dayStart, periodLength, flow, now, location); err != nil {
+			return fmt.Errorf("%w: %v", ErrDayAutoFillApplyFailed, err)
+		}
 	}
-	if err := service.AutoFillFollowingPeriodDays(ctx, userID, dayStart, periodLength, flow, now, location); err != nil {
-		return fmt.Errorf("%w: %v", ErrDayAutoFillApplyFailed, err)
-	}
-	return nil
+	return service.topUpRunningPeriodGap(ctx, userID, dayStart, wasPeriod, autoPeriodFillEnabled, flow, now, location)
 }
 
 func (service *DayService) clearAutoFilledNeighborsIfBare(ctx context.Context, userID uint, dayStart time.Time, periodLength int, propagatedFlow string, location *time.Location) error {
@@ -911,17 +912,7 @@ func (service *DayService) AutoFillFollowingPeriodDays(ctx context.Context, user
 			continue
 		}
 
-		newEntry := models.DailyLog{
-			UserID:          userID,
-			Date:            targetDay,
-			IsPeriod:        true,
-			Flow:            flow,
-			SexActivity:     models.SexActivityNone,
-			CervicalMucus:   models.CervicalMucusNone,
-			PregnancyTest:   models.PregnancyTestNone,
-			CycleFactorKeys: []string{},
-			SymptomIDs:      []uint{},
-		}
+		newEntry := newAutoFilledPeriodEntry(userID, targetDay, flow)
 		if err := service.logs.Create(ctx, &newEntry); err != nil {
 			return err
 		}
