@@ -141,9 +141,9 @@ func (manager *Manager) Messages(language string) map[string]string {
 }
 
 func (manager *Manager) mergeCatalogues() {
-	manager.merged = make(map[string]map[string]string, len(manager.supported)+1)
+	manager.merged = make(map[string]map[string]string, len(manager.supported))
 	defaultMessages := manager.locales[manager.defaultLanguage]
-	for _, language := range append([]string{manager.defaultLanguage}, manager.supported...) {
+	for _, language := range manager.supported {
 		targetMessages := manager.locales[language]
 		result := make(map[string]string, len(defaultMessages)+len(targetMessages))
 		maps.Copy(result, defaultMessages)
