@@ -1,0 +1,44 @@
+name: Go install on a pinned x/tools
+description: >
+  Install a Go analysis tool at its pinned version, built against a pinned
+  golang.org/x/tools instead of the one its own go.mod names.
+
+  An analyser reads the standard library's compiled export data through x/tools,
+  and a toolchain can move that format inside a PATCH release: Go 1.27.2 writes
+  export data v5, while staticcheck v0.8.1, gosec v2.29.0 and golangci-lint
+  v2.13.2 — the latest of each — were built on x/tools that reads up to v4 and
+  fail on every package. `go install <pkg>@<version>` cannot override a
+  dependency, so the tool is built inside a throwaway module whose go.mod lifts
+  x/tools; every module is still verified against the checksum database.
+
+inputs:
+  package:
+    description: Command package path, e.g. honnef.co/go/tools/cmd/staticcheck.
+    required: true
+  version:
+    description: The tool's pinned version. Pass the caller's env value so the pin stays in one place.
+    required: true
+  xtools-version:
+    description: The golang.org/x/tools version to build against.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Build and install
+      shell: bash
+      env:
+        PKG: ${{ inputs.package }}
+        VERSION: ${{ inputs.version }}
+        XTOOLS_VERSION: ${{ inputs.xtools-version }}
+      run: |
+        set -euo pipefail
+        mod="$(mktemp -d "$RUNNER_TEMP/go-install-XXXXXX")"
+        go -C "$mod" mod init build
+        go -C "$mod" get "$PKG@$VERSION" "golang.org/x/tools@$XTOOLS_VERSION"
+        go -C "$mod" install "$PKG"
+        # go get resolves a conflict between the two pins by moving one of them,
+        # silently; both must come out as asked.
+        built="$(go version -m "${GOBIN:-$(go env GOPATH)/bin}/$(basename "$PKG")")"
+        printf '%s\n' "$built" | awk '$1=="dep" && $2=="golang.org/x/tools" {print $3}' | grep -Fx "$XTOOLS_VERSION"
+        printf '%s\n' "$built" | awk -v pkg="$PKG" '$1=="mod" && index(pkg "/", $2 "/")==1 {print $3}' | grep -Fx "$VERSION"

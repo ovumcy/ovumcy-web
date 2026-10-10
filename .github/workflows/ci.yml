@@ -370,6 +370,10 @@ jobs:
       DEADCODE_VERSION: v0.49.0
       # git SHA for v2.13.2: 27774aaf853a4fd21f1dd5e69439459dc1b26e68 (verified via go list -m -json)
       GOLANGCI_LINT_VERSION: v2.13.2
+      # git SHA for golang.org/x/tools v0.51.0: ea2f152dc35325e4b9b639583972375972350a84 (verified via go list -m -json)
+      # staticcheck and golangci-lint are built against this x/tools, not their
+      # own: see .github/actions/go-install-on-xtools.
+      ANALYSIS_XTOOLS_VERSION: v0.51.0
       # git SHA for v1.7.12: 914e7df21a07ef503a81201c76d2b11c789d3fca (verified via go list -m -json)
       ACTIONLINT_VERSION: v1.7.12
       # git SHA for v1.6.0: 5348b744d0983d85713295ea08a20cca1654a45e (verified via go list -m -json)
@@ -468,7 +472,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/go/bin
-          key: ${{ runner.os }}-gotools-go${{ steps.setup-go.outputs.go-version }}-staticcheck${{ env.STATICCHECK_VERSION }}-deadcode${{ env.DEADCODE_VERSION }}-golangcilint${{ env.GOLANGCI_LINT_VERSION }}-actionlint${{ env.ACTIONLINT_VERSION }}
+          key: ${{ runner.os }}-gotools-go${{ steps.setup-go.outputs.go-version }}-staticcheck${{ env.STATICCHECK_VERSION }}-deadcode${{ env.DEADCODE_VERSION }}-golangcilint${{ env.GOLANGCI_LINT_VERSION }}-xtools${{ env.ANALYSIS_XTOOLS_VERSION }}-actionlint${{ env.ACTIONLINT_VERSION }}
 
       - name: Verify the restored binaries are the pinned versions
         # A cache hit is only as good as its key, and a key that quietly stopped
@@ -490,10 +494,17 @@ jobs:
           "$bin/golangci-lint" --version | grep -F "version ${GOLANGCI_LINT_VERSION#v} "
           "$bin/actionlint" -version | grep -Fx "$ACTIONLINT_VERSION"
           test -x "$bin/deadcode"
+          for tool in staticcheck golangci-lint; do
+            go version -m "$bin/$tool" | awk '$1=="dep" && $2=="golang.org/x/tools" {print $3}' | grep -Fx "$ANALYSIS_XTOOLS_VERSION"
+          done
 
       - name: Install staticcheck
         if: steps.go-tools.outputs.cache-hit != 'true'
-        run: go install "honnef.co/go/tools/cmd/staticcheck@$STATICCHECK_VERSION"
+        uses: ./.github/actions/go-install-on-xtools
+        with:
+          package: honnef.co/go/tools/cmd/staticcheck
+          version: ${{ env.STATICCHECK_VERSION }}
+          xtools-version: ${{ env.ANALYSIS_XTOOLS_VERSION }}
 
       # The Go wildcards in this job are scoped to our module's package trees
       # (cmd, internal, migrations, scripts, web) instead of ./... — this job
@@ -566,7 +577,11 @@ jobs:
 
       - name: Install golangci-lint
         if: steps.go-tools.outputs.cache-hit != 'true'
-        run: go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$GOLANGCI_LINT_VERSION"
+        uses: ./.github/actions/go-install-on-xtools
+        with:
+          package: github.com/golangci/golangci-lint/v2/cmd/golangci-lint
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          xtools-version: ${{ env.ANALYSIS_XTOOLS_VERSION }}
 
       - name: Install actionlint
         if: steps.go-tools.outputs.cache-hit != 'true'
