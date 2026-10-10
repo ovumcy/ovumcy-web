@@ -7,9 +7,3 @@
   (GO-2026-6617 / CVE-2026-78669), a crafted-request denial of service in `net/http`
   (CVE-2026-78667) and a `crypto/tls` denial of service (CVE-2026-97031). The server's listener
   and the outbound OIDC transport both reach the HTTP/2 path. The final runtime stage is unchanged.
-
-### Internal
-
-- **`source-map-js` lifted to 1.2.2 in the lockfile**, closing CVE-2026-93749 (HIGH) and turning
-  the required `trivy-fs` check green again. The package is a transitive dev-only dependency of
-  the CSS build and of `jsdom`, not part of any shipped artifact.
