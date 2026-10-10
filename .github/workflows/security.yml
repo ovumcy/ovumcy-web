@@ -15,6 +15,9 @@ env:
   # drift from the install line (see "Cache Go tool binaries" in ci.yml).
   # git SHA for v2.29.0: deb54465fea23d19a77f037e11e6589021f8501d (verified via go list -m -json)
   GOSEC_VERSION: v2.29.0
+  # git SHA for golang.org/x/tools v0.51.0: ea2f152dc35325e4b9b639583972375972350a84 (verified via go list -m -json)
+  # gosec is built against this x/tools, not its own: see .github/actions/go-install-on-xtools.
+  ANALYSIS_XTOOLS_VERSION: v0.51.0
   # git SHA for v1.3.0: 0782b76014f15f24e22a438f30f308df42899ba1 (verified via go list -m -json)
   GOVULNCHECK_VERSION: v1.3.0
 
@@ -234,7 +237,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .bin
-          key: ${{ runner.os }}-gotools-go${{ steps.setup-go.outputs.go-version }}-gosec${{ env.GOSEC_VERSION }}
+          key: ${{ runner.os }}-gotools-go${{ steps.setup-go.outputs.go-version }}-gosec${{ env.GOSEC_VERSION }}-xtools${{ env.ANALYSIS_XTOOLS_VERSION }}
 
       - name: Verify the restored binary is the pinned version
         # go version -m reads the embedded module version regardless of
@@ -244,7 +247,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          installed="$(go version -m "$GOBIN/gosec" | awk '$1=="mod" && $2=="github.com/securego/gosec/v2" {print $3}')"
+          built="$(go version -m "$GOBIN/gosec")"
+          printf '%s\n' "$built" | awk '$1=="dep" && $2=="golang.org/x/tools" {print $3}' | grep -Fx "$ANALYSIS_XTOOLS_VERSION"
+          installed="$(printf '%s\n' "$built" | awk '$1=="mod" && $2=="github.com/securego/gosec/v2" {print $3}')"
           if [ "$installed" != "$GOSEC_VERSION" ]; then
             echo "::error::cached gosec is ${installed:-<none>}, expected $GOSEC_VERSION"
             exit 1
@@ -252,7 +257,11 @@ jobs:
 
       - name: Install gosec
         if: steps.gosec-cache.outputs.cache-hit != 'true'
-        run: go install "github.com/securego/gosec/v2/cmd/gosec@$GOSEC_VERSION"
+        uses: ./.github/actions/go-install-on-xtools
+        with:
+          package: github.com/securego/gosec/v2/cmd/gosec
+          version: ${{ env.GOSEC_VERSION }}
+          xtools-version: ${{ env.ANALYSIS_XTOOLS_VERSION }}
 
       - name: Prepare security artifact directory
         run: mkdir -p .tmp/security
