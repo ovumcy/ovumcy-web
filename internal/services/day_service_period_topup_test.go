@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -280,28 +281,70 @@ func TestRunningPeriodGapDaysAnswersNothingWithoutAnyPeriodDay(t *testing.T) {
 	}
 }
 
-func TestTopUpSurfacesAFailedRowWriteAsAnAutoFillError(t *testing.T) {
-	service, logs, _ := newTopUpService(true, 5)
-	seedTopUpRow(logs, 10, models.DailyLog{IsPeriod: true, Flow: models.FlowMedium})
-	logs.createErrByDay[topUpKey(11)] = context.DeadlineExceeded
+func TestTopUpSurfacesItsFailuresAsAutoFillErrors(t *testing.T) {
+	cases := []struct {
+		name    string
+		arrange func(logs *dayLogRepositoryStub, users *dayUserRepositoryStub)
+		want    error
+	}{
+		{
+			name: "a failed row create",
+			arrange: func(logs *dayLogRepositoryStub, _ *dayUserRepositoryStub) {
+				logs.createErrByDay[topUpKey(12)] = context.DeadlineExceeded
+			},
+			want: ErrDayAutoFillApplyFailed,
+		},
+		{
+			// The 11th lies outside the three-day lookback of the forward-fill
+			// decision, so only the catch-up's own locking read reaches it.
+			name: "a failed locking read of a gap day",
+			arrange: func(logs *dayLogRepositoryStub, _ *dayUserRepositoryStub) {
+				logs.findErrByDay[topUpKey(11)] = context.DeadlineExceeded
+			},
+			want: ErrDayAutoFillApplyFailed,
+		},
+		{
+			name: "a failed history read",
+			arrange: func(logs *dayLogRepositoryStub, _ *dayUserRepositoryStub) {
+				logs.listErr = context.DeadlineExceeded
+			},
+			want: ErrDayAutoFillCheckFailed,
+		},
+		{
+			name: "a failed settings read after the fill settings loaded",
+			arrange: func(_ *dayLogRepositoryStub, users *dayUserRepositoryStub) {
+				users.loadErr = context.DeadlineExceeded
+				users.loadErrFromCall = 2
+			},
+			want: ErrDayAutoFillCheckFailed,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			service, logs, users := newTopUpService(true, 7)
+			seedTopUpRow(logs, 10, models.DailyLog{IsPeriod: true, Flow: models.FlowMedium})
+			tc.arrange(logs, users)
 
-	now := time.Date(2026, time.February, 13, 12, 0, 0, 0, time.UTC)
-	_, err := service.UpsertDayEntryWithAutoFillAt(context.Background(), topUpOwnerID, topUpDay(13),
-		DayEntryInput{IsPeriod: true, Flow: models.FlowMedium}, now, time.UTC)
-	if err == nil {
-		t.Fatal("expected the failed gap write to fail the day write")
+			now := time.Date(2026, time.February, 15, 12, 0, 0, 0, time.UTC)
+			_, err := service.UpsertDayEntryWithAutoFillAt(context.Background(), topUpOwnerID, topUpDay(15),
+				DayEntryInput{IsPeriod: true, Flow: models.FlowMedium}, now, time.UTC)
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("expected %v, got %v", tc.want, err)
+			}
+		})
 	}
 }
 
-func TestTopUpSurfacesAFailedHistoryReadAsAnAutoFillError(t *testing.T) {
+func TestTopUpReadsAMissingLocationAsUTC(t *testing.T) {
 	service, logs, _ := newTopUpService(true, 5)
 	seedTopUpRow(logs, 10, models.DailyLog{IsPeriod: true, Flow: models.FlowMedium})
-	logs.listErr = context.DeadlineExceeded
+	seedTopUpRow(logs, 13, models.DailyLog{IsPeriod: true, Flow: models.FlowMedium})
 
 	now := time.Date(2026, time.February, 13, 12, 0, 0, 0, time.UTC)
-	_, err := service.UpsertDayEntryWithAutoFillAt(context.Background(), topUpOwnerID, topUpDay(13),
-		DayEntryInput{IsPeriod: true, Flow: models.FlowMedium}, now, time.UTC)
-	if err == nil {
-		t.Fatal("expected the failed history read to fail the day write")
+	if err := service.topUpRunningPeriodGap(context.Background(), topUpOwnerID, topUpDay(13), false, true, models.FlowMedium, now, nil); err != nil {
+		t.Fatalf("topUpRunningPeriodGap: %v", err)
 	}
+
+	requireTopUpPeriodRow(t, logs, 11)
+	requireTopUpPeriodRow(t, logs, 12)
 }
