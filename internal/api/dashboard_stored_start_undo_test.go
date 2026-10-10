@@ -28,7 +28,7 @@ func TestTheDashboardTellsItsUndoATodayTickedFromAStoredStartIsNotEmpty(t *testi
 		t.Fatal("the stored start's tick made the dashboard report a saved row")
 	}
 
-	putDayForm(t, app, authCookie, today.Format("2006-01-02"), formPostedAsRendered(t, form, url.Values{"mood": {"3"}}))
+	putRenderedDayForm(t, app, authCookie, today.Format("2006-01-02"), formPostedAsRendered(t, form, url.Values{"mood": {"3"}}))
 	saved := renderedDayForm(t, app, authCookie, "/dashboard", "data-dashboard-save-form")
 	if !strings.Contains(saved, noTickFromStoredStartAttr) {
 		t.Fatal("the dashboard still credits the stored start with a tick a saved row now holds")
@@ -42,8 +42,8 @@ func TestUndoingADashboardMoodSaveOnAStoredStartKeepsIt(t *testing.T) {
 	app, database, user, authCookie, today := storedStartFormFixture(t, "stored-start-dashboard-undo-mood@example.com")
 	form := renderedDayForm(t, app, authCookie, "/dashboard", "data-dashboard-save-form")
 	dateISO := today.Format("2006-01-02")
-	putDayForm(t, app, authCookie, dateISO, formPostedAsRendered(t, form, url.Values{"mood": {"3"}}))
-	putDayForm(t, app, authCookie, dateISO, formPostedAsRendered(t, form, nil))
+	putRenderedDayForm(t, app, authCookie, dateISO, formPostedAsRendered(t, form, url.Values{"mood": {"3"}}))
+	putRenderedDayForm(t, app, authCookie, dateISO, formPostedAsRendered(t, form, nil))
 	if storedStartAfterSave(t, database, user.ID) == nil {
 		t.Fatal("undoing a mood save on the stored start's day withdrew the stored onboarding start")
 	}
@@ -59,12 +59,12 @@ func TestUndoingADashboardUntickOfAStoredStartRestoresThePeriodDay(t *testing.T)
 	dateISO := today.Format("2006-01-02")
 	unticked := formPostedAsRendered(t, form, nil)
 	unticked.Del("is_period")
-	putDayForm(t, app, authCookie, dateISO, unticked)
+	putRenderedDayForm(t, app, authCookie, dateISO, unticked)
 	if storedStartAfterSave(t, database, user.ID) != nil {
 		t.Fatal("precondition: the form's un-tick did not withdraw the stored start")
 	}
 
-	putDayForm(t, app, authCookie, dateISO, formPostedAsRendered(t, form, nil))
+	putRenderedDayForm(t, app, authCookie, dateISO, formPostedAsRendered(t, form, nil))
 	var periodRows int64
 	if err := database.Model(&models.DailyLog{}).Where("user_id = ? AND is_period = ?", user.ID, true).Count(&periodRows).Error; err != nil {
 		t.Fatalf("count period rows: %v", err)

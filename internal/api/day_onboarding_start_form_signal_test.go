@@ -11,6 +11,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
+	"golang.org/x/net/html"
 	"gorm.io/gorm"
 )
 
@@ -49,6 +50,7 @@ func renderedDayForm(t *testing.T, app *fiber.App, authCookie, path, marker stri
 	request := httptest.NewRequest(http.MethodGet, path, nil)
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("HX-Request", "true")
+	request.Header.Set(dayFormAccountHeader, renderedDayFormAccount(t, app, authCookie, "/dashboard"))
 	request.Header.Set("Cookie", authCookie)
 	response := mustAppResponse(t, app, request)
 	assertStatusCode(t, response, http.StatusOK)
@@ -75,8 +77,8 @@ func formPeriodToggleChecked(t *testing.T, form string) bool {
 const storedStartFieldMarkup = `<input type="hidden" name="period_from_stored_start" value="true">`
 
 // formPostedAsRendered is what the browser posts for the form as rendered, plus
-// the owner's own edits: the period box as shown and the hidden field when
-// rendered.
+// the owner's own edits: the period box as shown, the hidden field when
+// rendered, and the page's account binding.
 func formPostedAsRendered(t *testing.T, form string, edits url.Values) url.Values {
 	t.Helper()
 	values := url.Values{}
@@ -86,13 +88,22 @@ func formPostedAsRendered(t *testing.T, form string, edits url.Values) url.Value
 	if strings.Contains(form, storedStartFieldMarkup) {
 		values.Set("period_from_stored_start", "true")
 	}
+	parsed, err := html.Parse(strings.NewReader(form))
+	if err != nil {
+		t.Fatalf("parse rendered day form: %v", err)
+	}
+	binding, ok := hiddenFieldValue(parsed, dayFormAccountField)
+	if !ok {
+		t.Fatal("the rendered day form carries no account binding")
+	}
+	values.Set(dayFormAccountField, binding)
 	for key, value := range edits {
 		values[key] = value
 	}
 	return values
 }
 
-func putDayForm(t *testing.T, app *fiber.App, authCookie, dateISO string, form url.Values) {
+func putRenderedDayForm(t *testing.T, app *fiber.App, authCookie, dateISO string, form url.Values) {
 	t.Helper()
 	request := httptest.NewRequest(http.MethodPut, "/api/v1/days/"+dateISO, strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -130,7 +141,7 @@ func TestTheDashboardTicksAStoredStartAndPostsWhereTheTickCameFrom(t *testing.T)
 func TestADashboardMoodSaveKeepsARowlessStoredStart(t *testing.T) {
 	app, database, user, authCookie, today := storedStartFormFixture(t, "stored-start-dashboard-mood@example.com")
 	form := renderedDayForm(t, app, authCookie, "/dashboard", "data-dashboard-save-form")
-	putDayForm(t, app, authCookie, today.Format("2006-01-02"), formPostedAsRendered(t, form, url.Values{"mood": {"3"}}))
+	putRenderedDayForm(t, app, authCookie, today.Format("2006-01-02"), formPostedAsRendered(t, form, url.Values{"mood": {"3"}}))
 	if storedStartAfterSave(t, database, user.ID) == nil {
 		t.Fatal("a mood save from the dashboard cleared the stored onboarding start dated today")
 	}
@@ -166,7 +177,7 @@ func TestUntickingAStoredStartInEitherFormWithdrawsIt(t *testing.T) {
 			}
 			posted := formPostedAsRendered(t, form, url.Values{"mood": {"3"}})
 			posted.Del("is_period")
-			putDayForm(t, app, authCookie, today.Format("2006-01-02"), posted)
+			putRenderedDayForm(t, app, authCookie, today.Format("2006-01-02"), posted)
 			if stored := storedStartAfterSave(t, database, user.ID); stored != nil {
 				t.Fatalf("last_period_start = %v after the %s un-tick, want it withdrawn", stored, surface.name)
 			}
