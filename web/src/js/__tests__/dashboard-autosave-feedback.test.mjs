@@ -32,6 +32,7 @@ function dashboardPage() {
       data-day-save-failed-text="Couldn't save. Your entry is still here."
       data-day-save-retry-label="Try again">
       <input type="hidden" name="csrf_token" value="unit-test-token">
+      <input type="hidden" name="day_form_account" value="page-account-binding">
       <input type="radio" name="pregnancy_test" value="negative">
       <input type="radio" name="pregnancy_test" value="positive">
       <div id="save-status" class="save-status" aria-live="polite"></div>
@@ -396,7 +397,7 @@ for (const order of ["the refresh lands after the sentence", "the refresh lands 
     const { dom, calls, saveBody, pageBody } = await loadDashboardWithHeaderRefresh();
     const document = dom.window.document;
     const sentence = () => saveStatus(dom.window).querySelector(".status-ok .toast-message");
-    const freshPage = `<!doctype html><html><body>${statusHeader(PAUSED_BANNER)}</body></html>`;
+    const freshPage = `<!doctype html><html><body>${statusHeader(PAUSED_BANNER)}<form data-dashboard-save-form><input type="hidden" name="day_form_account" value="page-account-binding"></form></body></html>`;
     try {
       await savePositiveTest(dom.window);
       assert.deepEqual(

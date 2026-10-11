@@ -597,6 +597,14 @@
   // dependent blocks above are swapped: the form, its focus and the goal chip
   // stay as they are. Newest request wins; a failed refresh leaves the header as
   // it was, since the save itself already succeeded.
+  // The binding the page's day form carries names the account the page was
+  // rendered for. A page fetched after another account signed in carries that
+  // account's binding; one carrying none is not this page's either.
+  function dashboardPageAccountBinding(root) {
+    var input = root ? root.querySelector("[data-dashboard-save-form] input[name='day_form_account']") : null;
+    return input ? String(input.value || "") : "";
+  }
+
   function refreshDashboardStatusHeader() {
     var current = document.querySelector("[data-dashboard-status-header]");
     var headers;
@@ -620,13 +628,22 @@
     }).then(function (response) {
       return response.ok ? response.text() : "";
     }).then(function (text) {
+      var fetched;
+      var binding;
       var next;
       var latest;
 
       if (!text || dashboardStatusRefreshToken !== token) {
         return false;
       }
-      next = new window.DOMParser().parseFromString(text, "text/html").querySelector("[data-dashboard-status-header]");
+      fetched = new window.DOMParser().parseFromString(text, "text/html");
+      // The GET runs under whichever account holds the cookie now. A header
+      // rendered for another account is never painted into this page.
+      binding = dashboardPageAccountBinding(document);
+      if (!binding || dashboardPageAccountBinding(fetched) !== binding) {
+        return false;
+      }
+      next = fetched.querySelector("[data-dashboard-status-header]");
       latest = document.querySelector("[data-dashboard-status-header]");
       if (!next || !latest) {
         return false;

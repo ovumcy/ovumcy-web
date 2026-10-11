@@ -15,6 +15,7 @@ import { readAppBundle, loadDOMWithScript } from "./_helpers.mjs";
 const APP_BUNDLE = readAppBundle();
 
 const TODAY = "2026-08-12";
+const ACCOUNT_BINDING = "page-account-binding";
 const STALE_HEADER = "Period likely today";
 const FRESH_HEADER = "Next period estimate paused";
 
@@ -98,6 +99,7 @@ function dashboardPage({ shellHTML = STALE_SHELL, recorded = false, entryExists 
       data-autosave-saved="Saved"
       data-autosave-undo="Undo">
       <input type="hidden" name="csrf_token" value="unit-test-token">
+      <input type="hidden" name="day_form_account" value="${ACCOUNT_BINDING}">
       <input type="radio" name="mood" value="4">
       <div data-pregnancy-test data-pregnancy-test-state="${recorded ? "recorded" : "absent"}">
         <label><input type="radio" name="pregnancy_test" value="negative"${checked("negative")}></label>
@@ -117,8 +119,13 @@ function okResponse(text) {
   return { ok: true, status: 200, headers: { get: () => null }, text: () => Promise.resolve(text) };
 }
 
-function pageOf(shellHTML) {
-  return `<!doctype html><html><body>${shellHTML}</body></html>`;
+// The fetched page carries the binding of the account that holds the cookie
+// when it is rendered; by default that is still the page's own account.
+function pageOf(shellHTML, binding = ACCOUNT_BINDING) {
+  const form = binding === null
+    ? ""
+    : `<form data-dashboard-save-form><input type="hidden" name="day_form_account" value="${binding}"></form>`;
+  return `<!doctype html><html><body>${shellHTML}${form}</body></html>`;
 }
 
 // Answers the day save with 200 and the dashboard page with a header that has
@@ -590,3 +597,35 @@ test("when two refreshes overlap, the newest answer wins even if the older one l
     dom.window.close();
   }
 });
+
+// The refresh GETs the dashboard under whichever account holds the cookie at
+// that moment. If another account signed in since this page was rendered, the
+// fetched header is that account's, and it must not be painted into this page.
+for (const [why, binding] of [
+  ["another account's binding", "another-account-binding"],
+  ["no binding at all", null],
+]) {
+  test(`a refreshed page carrying ${why} leaves the header as it was`, async () => {
+    const { dom, calls } = await loadDashboard({
+      install: (window, recorded) => {
+        window.fetch = (url, init) => {
+          const request = { url: String(url), init: init || {} };
+          recorded.push(request);
+          const isGet = (request.init.method || "GET") === "GET";
+          return Promise.resolve(okResponse(isGet ? pageOf(FRESH_SHELL, binding) : ""));
+        };
+      },
+    });
+    try {
+      const document = dom.window.document;
+      pick(document, "positive");
+      await saveNow(dom.window);
+      await settleAll();
+
+      assert.equal(gets(calls).length, 1, "the refresh was made, so its answer is what is refused");
+      assert.equal(bannerText(document), STALE_HEADER, "the other account's header is not shown");
+    } finally {
+      dom.window.close();
+    }
+  });
+}
