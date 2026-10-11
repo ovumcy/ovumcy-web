@@ -165,7 +165,7 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 		return DashboardViewData{}, err
 	}
 
-	cycleContext := BuildDashboardCycleContext(user, logs, stats, today, location).WithMovedWindow(user, logs, stats, today, location)
+	cycleContext := BuildDashboardCycleContext(user, logs, stats, today, location)
 	cycleFactorExplanation, hasCycleFactorExplanation := buildStatsCycleFactorExplanation(user, logs, stats, now, location)
 	selectedSymptomID, rankedSymptoms, primarySymptoms, extraSymptoms, cycleStart, err := service.buildPickerViewState(
 		user,
@@ -207,14 +207,13 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 	// line above already resolves through, so this changes WHICH window is shown
 	// and never whether one is shown at all.
 	//
-	// The same helper the stats page and the day-save message go through, so the
-	// surfaces cannot drift apart on what a suppressed tier is allowed to carry.
-	// Every builder above still reads the uncleared stats.
-	confirmedStats, publishedStats, _ := ConfirmedAndPublishedStats(user, logs, stats, today, location)
-	// Once the running cycle's ovulation has rolled, today's status and phase are
-	// the ones the JSON overview reads against the rolled window; the hero takes
-	// the same phase from the context.
-	publishedStats = cycleContext.MovedWindow.ApplyTo(publishedStats)
+	// The same publication the JSON overview, the stats page and the day-save
+	// message go through, so the surfaces cannot drift apart on what a suppressed
+	// tier is allowed to carry, nor on the window today is read against once the
+	// running cycle's ovulation has rolled. Every builder above still reads the
+	// uncleared stats; the hero takes the rolled reading's phase from the context.
+	confirmedStats, publishedStats, movedWindow := ConfirmedAndOverviewStats(user, logs, stats, today, location)
+	cycleContext.MovedWindow = movedWindow
 
 	return DashboardViewData{
 		Stats:                             publishedStats,

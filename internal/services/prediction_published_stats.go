@@ -212,16 +212,28 @@ func confirmedAndPublishedStats(user *models.User, logs []models.DailyLog, stats
 // DashboardUpcomingPredictions (followUpcomingPrediction), so a running cycle
 // whose ovulation is already behind today publishes the day the pages roll to.
 func PublishedOverviewStats(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (CycleStats, PredictionSuppression, bool) {
-	published, suppression, confirmedOvulation, _ := publishedOverviewStats(user, logs, stats, today, location)
+	_, published, suppression, confirmedOvulation, _ := publishedOverviewStats(user, logs, stats, today, location)
 	return published, suppression, confirmedOvulation
 }
 
-// publishedOverviewStats is PublishedOverviewStats plus whether the fertility
-// status and the phase were read again against a window that moved
-// (reconcileMovedWindow). The dashboard context takes that verdict from here, so
-// the owner pages and the JSON API re-read today on the same days and with the
-// same rule.
-func publishedOverviewStats(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (CycleStats, PredictionSuppression, bool, bool) {
+// ConfirmedAndOverviewStats is the owner pages' half of the same publication:
+// the confirmed, uncleared stats their builders read, the copy
+// PublishedOverviewStats publishes, and whether that copy re-read today against
+// a window that moved. The dashboard and the stats page publish the overview's
+// copy itself rather than patching their own, so no field the roll moves can be
+// left behind on one surface.
+func ConfirmedAndOverviewStats(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (CycleStats, CycleStats, DashboardMovedWindowVerdict) {
+	resolved, published, _, _, reconciled := publishedOverviewStats(user, logs, stats, today, location)
+	if !reconciled {
+		return resolved, published, DashboardMovedWindowVerdict{}
+	}
+	return resolved, published, DashboardMovedWindowVerdict{Reconciled: true, CurrentPhase: published.CurrentPhase}
+}
+
+// publishedOverviewStats is PublishedOverviewStats plus the confirmed stats it
+// published from and whether the fertility status and the phase were read again
+// against a window that moved (reconcileMovedWindow).
+func publishedOverviewStats(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (CycleStats, CycleStats, PredictionSuppression, bool, bool) {
 	resolved, published, suppression, wasConfirmed := confirmedAndPublishedStats(user, logs, stats, today, location)
 	confirmedDay := resolved.OvulationDate
 	// The day comes back whenever the confirmation stood: whether it may be
@@ -244,7 +256,7 @@ func publishedOverviewStats(user *models.User, logs []models.DailyLog, stats Cyc
 	}
 	reconciled := followUpcomingPrediction(&published, user, resolved, logs, suppression, wasConfirmed, today, location)
 	confirmedOvulation := wasConfirmed && sameDay(published.OvulationDate, confirmedDay)
-	return published, suppression, confirmedOvulation, reconciled
+	return resolved, published, suppression, confirmedOvulation, reconciled
 }
 
 // followUpcomingPrediction puts the published next period and ovulation on the

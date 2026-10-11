@@ -59,7 +59,7 @@ func TestRolledWindowAheadOfTodayKeepsTheDashboardAndTheSaveMessageOnTheOverview
 	stats := BuildCycleStatsFromLogs(user, FilterLogsToStatsHistory(logs, today, time.UTC), now, time.UTC)
 
 	published, suppression, _ := PublishedOverviewStats(user, logs, stats, today, time.UTC)
-	if suppression.FertilitySuppressed || !dashboardMovedWindowVerdict(user, logs, stats, today, time.UTC).Reconciled {
+	if _, _, moved := ConfirmedAndOverviewStats(user, logs, stats, today, time.UTC); suppression.FertilitySuppressed || !moved.Reconciled {
 		t.Fatalf("fixture: suppression %+v; want the window rolled and published", suppression)
 	}
 	if published.FertilityWindowStart.IsZero() || CalendarDaysBetween(today, published.FertilityWindowStart) <= 0 {
@@ -100,7 +100,7 @@ func TestRolledWindowPastYear9999LeavesTheDashboardAndTheSaveMessageWithoutAWind
 	stats := BuildCycleStatsFromLogs(user, FilterLogsToStatsHistory(logs, today, time.UTC), now, time.UTC)
 
 	published, _, _ := PublishedOverviewStats(user, logs, stats, today, time.UTC)
-	if !dashboardMovedWindowVerdict(user, logs, stats, today, time.UTC).Reconciled {
+	if _, _, moved := ConfirmedAndOverviewStats(user, logs, stats, today, time.UTC); !moved.Reconciled {
 		t.Fatal("fixture: want the ovulation rolled past the year")
 	}
 	if !published.FertilityWindowStart.IsZero() || published.CurrentFertility != FertilityStatusUnknown {
@@ -132,6 +132,9 @@ func assertDashboardStatsOnTheOverview(t *testing.T, got CycleStats, overview Cy
 	t.Helper()
 	if got.CurrentFertility != overview.CurrentFertility || got.CurrentPhase != overview.CurrentPhase {
 		t.Errorf("dashboard fertility/phase = %q/%q, overview %q/%q", got.CurrentFertility, got.CurrentPhase, overview.CurrentFertility, overview.CurrentPhase)
+	}
+	if !sameDay(got.NextPeriodStart, overview.NextPeriodStart) {
+		t.Errorf("dashboard next period %s, overview %s", CalendarDayKey(got.NextPeriodStart), CalendarDayKey(overview.NextPeriodStart))
 	}
 	if !sameDay(got.FertilityWindowStart, overview.FertilityWindowStart) || !sameDay(got.FertilityWindowEnd, overview.FertilityWindowEnd) || !sameDay(got.OvulationDate, overview.OvulationDate) {
 		t.Errorf("dashboard window %s..%s ovulation %s, overview %s..%s ovulation %s",

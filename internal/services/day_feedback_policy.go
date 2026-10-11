@@ -124,7 +124,7 @@ func (service *DayService) AcknowledgeLongPeriodWarning(ctx context.Context, use
 // ResolveDayFeedback, dereferences user.ID before it gets here, so a nil user
 // panics there rather than reaching a guard in this package. It reads the
 // PUBLISHED stats and the verdict that came with them
-// (ConfirmedAndPublishedStats), never stats it derived itself: the fertile line
+// (PublishedOverviewStats), never stats it derived itself: the fertile line
 // may only name a window the dashboard would show. `today` is the owner's
 // calendar day, in the same location-midnight shape as `day`.
 func resolveDaySaveMessageKey(user *models.User, day time.Time, today time.Time, stats CycleStats, suppression PredictionSuppression) string {

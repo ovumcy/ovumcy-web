@@ -67,80 +67,23 @@ type DashboardCycleContext struct {
 	FertilitySuppressed        bool
 	NextPeriodInPast           bool
 	OvulationInPast            bool
-	// MovedWindow is the window, the ovulation day, today's fertility status and
-	// the phase as the JSON overview publishes them once the running cycle's
-	// ovulation is behind today and the window has rolled forward. Only the
-	// dashboard and the stats page publish today's status, so only they resolve
-	// it (WithMovedWindow); BuildDashboardCycleContext leaves it unreconciled.
+	// MovedWindow is set by the dashboard from ConfirmedAndOverviewStats, the
+	// call it publishes its stats from; BuildDashboardCycleContext leaves it
+	// unreconciled.
 	MovedWindow DashboardMovedWindowVerdict
 }
 
-// DashboardMovedWindowVerdict is the rolled window and the fertility status, its
-// basis and the phase read against it (reconcileMovedWindow). Reconciled is
-// false on every day the window did not move, and then the other fields are
-// empty.
+// DashboardMovedWindowVerdict says whether the published stats re-read today
+// against a window that rolled forward (reconcileMovedWindow), and the phase
+// that reading named. The dashboard and the stats page used to read the status
+// off the running cycle's window and the phase off the hero ribbon, so on the
+// days the ovulation had rolled the header said "luteal, outside the estimated
+// window" while the API and the calendar called today fertile — and, past
+// 9999-12-31, kept naming a status for a window no surface publishes. The hero
+// takes the phase from here so its header names the published one.
 type DashboardMovedWindowVerdict struct {
-	Reconciled           bool
-	OvulationDate        time.Time
-	OvulationExact       bool
-	OvulationImpossible  bool
-	FertilityWindowStart time.Time
-	FertilityWindowEnd   time.Time
-	CurrentFertility     string
-	FertilityBasis       string
-	CurrentPhase         string
-}
-
-// WithMovedWindow resolves MovedWindow through the overview's own publication
-// path.
-func (cycleContext DashboardCycleContext) WithMovedWindow(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) DashboardCycleContext {
-	cycleContext.MovedWindow = dashboardMovedWindowVerdict(user, logs, stats, today, location)
-	return cycleContext
-}
-
-// dashboardMovedWindowVerdict asks the overview's own publication path whether
-// it re-read today against a moved window, and takes the answer it gave. The
-// dashboard and the stats page used to read the status off the running cycle's
-// window and the phase off the hero ribbon, so on the days the ovulation had
-// rolled the header said "luteal, outside the estimated window" while the API
-// and the calendar called today fertile — and, past 9999-12-31, kept naming a
-// status for a window no surface publishes. Taking the verdict from the same
-// call rather than re-deriving the roll keeps the pages on the API's days.
-func dashboardMovedWindowVerdict(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) DashboardMovedWindowVerdict {
-	published, _, _, reconciled := publishedOverviewStats(user, logs, stats, today, location)
-	if !reconciled {
-		return DashboardMovedWindowVerdict{}
-	}
-	return DashboardMovedWindowVerdict{
-		Reconciled:           true,
-		OvulationDate:        published.OvulationDate,
-		OvulationExact:       published.OvulationExact,
-		OvulationImpossible:  published.OvulationImpossible,
-		FertilityWindowStart: published.FertilityWindowStart,
-		FertilityWindowEnd:   published.FertilityWindowEnd,
-		CurrentFertility:     published.CurrentFertility,
-		FertilityBasis:       published.FertilityBasis,
-		CurrentPhase:         published.CurrentPhase,
-	}
-}
-
-// ApplyTo puts the verdict on a published copy of the stats; on a day the
-// window did not move it returns the copy unchanged. The window and the
-// ovulation day travel with the status read against them, so the copy never
-// calls today fertile beside a window that does not hold it.
-func (verdict DashboardMovedWindowVerdict) ApplyTo(stats CycleStats) CycleStats {
-	if !verdict.Reconciled {
-		return stats
-	}
-	stats.OvulationDate = verdict.OvulationDate
-	stats.OvulationExact = verdict.OvulationExact
-	stats.OvulationImpossible = verdict.OvulationImpossible
-	stats.FertilityWindowStart = verdict.FertilityWindowStart
-	stats.FertilityWindowEnd = verdict.FertilityWindowEnd
-	stats.CurrentFertility = verdict.CurrentFertility
-	stats.FertilityBasis = verdict.FertilityBasis
-	stats.CurrentPhase = verdict.CurrentPhase
-	return stats
+	Reconciled   bool
+	CurrentPhase string
 }
 
 type dashboardPredictionDisplay struct {

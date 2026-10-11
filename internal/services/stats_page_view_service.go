@@ -139,7 +139,7 @@ func (service *StatsService) BuildStatsPageViewData(ctx context.Context, user *m
 	showShortCycleNotice := shouldShowStatsShortCycleNotice(user, completedCycleLengths)
 	showLongCycleNotice := shouldShowStatsLongCycleNotice(user, completedCycleLengths)
 	showPerimenopauseHint := shouldShowStatsPerimenopauseHint(user)
-	cycleContext := BuildDashboardCycleContext(user, baseData.logs, baseData.stats, DateAtLocation(now, location), location).WithMovedWindow(user, baseData.logs, baseData.stats, DateAtLocation(now, location), location)
+	cycleContext := BuildDashboardCycleContext(user, baseData.logs, baseData.stats, DateAtLocation(now, location), location)
 	// The stats phase card reads the suppression the cycle context already
 	// resolved, not DashboardPredictionDisabled(user) on its own: the
 	// unpredictable-cycle setting is one signal among several, and a pregnancy
@@ -163,11 +163,10 @@ func (service *StatsService) BuildStatsPageViewData(ctx context.Context, user *m
 	// confirm, so this page's fertile-window card cannot name the projection
 	// while the grid and the chart name the confirmed day.
 	today := DateAtLocation(now, location)
-	_, publishedStats, _ := ConfirmedAndPublishedStats(user, baseData.logs, baseData.stats, today, location)
 	// The phase card names today's phase and fertility status, so once the
-	// ovulation has rolled it reads them against the rolled window, as the
-	// dashboard and the JSON overview do.
-	publishedStats = cycleContext.MovedWindow.ApplyTo(publishedStats)
+	// ovulation has rolled it reads them against the rolled window: the page
+	// publishes the overview's own copy, as the dashboard does.
+	_, publishedStats, _ := ConfirmedAndOverviewStats(user, baseData.logs, baseData.stats, today, location)
 
 	return StatsPageViewData{
 		Stats:                               publishedStats,
