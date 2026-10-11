@@ -133,8 +133,9 @@ func PublishedStats(user *models.User, stats CycleStats, logs []models.DailyLog,
 // temperatures confirm outranks the projection (ResolveConfirmedCycleStats), and
 // only then are the values the display policy refuses cleared (PublishedStats).
 // The order is the point — the confirmed window is what the suppression tiers
-// then keep or withhold. The fourth result is the "a thermal shift was confirmed" bit of
-// ResolveConfirmedCycleStats, for the one surface that publishes it.
+// then keep or withhold. The fourth result is the "a thermal shift was
+// confirmed" bit of ResolveConfirmedCycleStats, for the one surface that
+// publishes it.
 func confirmedAndPublishedStats(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (CycleStats, CycleStats, PredictionSuppression, bool) {
 	confirmed, wasConfirmed := ResolveConfirmedCycleStats(user, logs, stats, today, location)
 	published, suppression := PublishedStats(user, confirmed, logs, today, location)
