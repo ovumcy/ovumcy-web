@@ -414,10 +414,10 @@ test("the calendar editor's delete control, which has no status area, still says
 test("an error answer is parsed once, whichever branch shows it", async () => {
   const { dom } = await load(() => Promise.resolve(okPage(pageWithToken(FRESH_TOKEN))), { html: CONTROL_PAGE });
   try {
-    // The harness delivers DOMContentLoaded twice, so the handler is registered
-    // more than once; calibrate on how many times one refusal reaches it (each
-    // run of the handler toasts a CSRF refusal that has no status area), then
-    // require exactly one parse per run.
+    // Calibrate on how many times one refusal reaches the handler rather than
+    // assuming the harness registers it once (each run of the handler toasts a
+    // CSRF refusal that has no status area), then require exactly one parse per
+    // run.
     refuseControl(dom.window, "delete", dom.window.document.getElementById("day-editor"), {
       status: 403,
       responseText: FORBIDDEN_FRAGMENT,
