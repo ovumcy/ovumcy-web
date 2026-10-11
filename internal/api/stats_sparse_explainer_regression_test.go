@@ -34,9 +34,9 @@ func TestStatsPageExplainsTheIrregularSparseTierBelowTheInsightsThreshold(t *tes
 	}
 
 	logs := []models.DailyLog{
-		{UserID: user.ID, Date: firstStart, IsPeriod: true},
-		{UserID: user.ID, Date: previousStart, IsPeriod: true},
-		{UserID: user.ID, Date: currentCycleStart, IsPeriod: true},
+		{UserID: user.ID, Date: firstStart, IsPeriod: true, CycleStart: true},
+		{UserID: user.ID, Date: previousStart, IsPeriod: true, CycleStart: true},
+		{UserID: user.ID, Date: currentCycleStart, IsPeriod: true, CycleStart: true},
 	}
 	if err := database.Create(&logs).Error; err != nil {
 		t.Fatalf("create stats logs: %v", err)
