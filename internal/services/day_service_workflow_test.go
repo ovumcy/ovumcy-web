@@ -31,8 +31,6 @@ type dayLogRepositoryStub struct {
 	// rangeErr fails every ListByUserRange, the bounded history read the period
 	// catch-up makes.
 	rangeErr error
-	// deleteErr fails every DeleteByUserAndDayRange.
-	deleteErr error
 	// lockingReads counts FindByUserAndDayRangeForUpdate calls, the read a
 	// merging write must take so a concurrent merge waits for it.
 	lockingReads int
@@ -192,9 +190,6 @@ func (stub *dayLogRepositoryStub) Save(ctx context.Context, entry *models.DailyL
 }
 
 func (stub *dayLogRepositoryStub) DeleteByUserAndDayRange(ctx context.Context, userID uint, dayStart time.Time, dayEnd time.Time) error {
-	if stub.deleteErr != nil {
-		return stub.deleteErr
-	}
 	for key, entry := range stub.entries {
 		if entry.UserID != userID {
 			continue

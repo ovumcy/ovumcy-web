@@ -597,10 +597,7 @@ func (service *DayService) applyPeriodAutoFillSideEffects(ctx context.Context, u
 	if !autoPeriodFillEnabled {
 		return nil
 	}
-	if err := service.clearAutoFilledNeighborsIfBare(ctx, userID, dayStart, periodLength, previous.Flow, location); err != nil {
-		return err
-	}
-	return service.undoRunningPeriodGap(ctx, userID, dayStart, periodLength, previous.Flow, now, location)
+	return service.clearAutoFilledNeighborsIfBare(ctx, userID, dayStart, periodLength, previous.Flow, location)
 }
 
 func (service *DayService) autoFillNewPeriodAnchor(ctx context.Context, userID uint, dayStart time.Time, wasPeriod bool, autoPeriodFillEnabled bool, periodLength int, flow string, now time.Time, location *time.Location) error {
