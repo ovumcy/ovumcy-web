@@ -105,7 +105,7 @@ func submitSettingsRefusalForm(t *testing.T, ctx settingsSecurityTestContext, c 
 func TestNoJSDangerAndEgressFormsAnswerAPreHandlerRefusalAsAPage(t *testing.T) {
 	t.Parallel()
 
-	forbidden := englishCopy(t, "common.error.forbidden")
+	forbidden := englishCopy(t, "common.error.csrf_refused")
 	for name, c := range settingsRefusalCases() {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -136,7 +136,7 @@ func TestNoJSSettingsRefusalLinkIgnoresWhatTheRequestCarries(t *testing.T) {
 	for name, c := range settingsRefusalCases() {
 		t.Run(name, func(t *testing.T) {
 			c.action += hostile
-			assertRefusalPageCarrying(t, submitSettingsRefusalForm(t, ctx, c, true, false), http.StatusForbidden, englishCopy(t, "common.error.forbidden"), "/settings")
+			assertRefusalPageCarrying(t, submitSettingsRefusalForm(t, ctx, c, true, false), http.StatusForbidden, englishCopy(t, "common.error.csrf_refused"), "/settings")
 		})
 	}
 }

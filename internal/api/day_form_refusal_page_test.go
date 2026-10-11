@@ -119,9 +119,9 @@ func TestNoJSPageFormRefusalSpeaksTheRequestLanguage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("init i18n manager: %v", err)
 	}
-	forbidden := strings.TrimSpace(manager.Messages(i18n.LangRU)["common.error.forbidden"])
-	if forbidden == "" || forbidden == englishCopy(t, "common.error.forbidden") {
-		t.Fatalf("locale ru has no copy of its own for common.error.forbidden: %q", forbidden)
+	forbidden := strings.TrimSpace(manager.Messages(i18n.LangRU)["common.error.csrf_refused"])
+	if forbidden == "" || forbidden == englishCopy(t, "common.error.csrf_refused") {
+		t.Fatalf("locale ru has no copy of its own for common.error.csrf_refused: %q", forbidden)
 	}
 	body := mustReadBodyString(t, response.Body)
 	if strings.Contains(body, ctx.user.Email) || strings.Contains(body, `action="/logout"`) {
@@ -188,7 +188,7 @@ func dayFormRefusalCases() map[string]dayFormRefusalCase {
 func TestNoJSDayAndCycleFormsAnswerAPreHandlerRefusalAsAPage(t *testing.T) {
 	t.Parallel()
 
-	forbidden := englishCopy(t, "common.error.forbidden")
+	forbidden := englishCopy(t, "common.error.csrf_refused")
 	for name, c := range dayFormRefusalCases() {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -280,7 +280,7 @@ func TestNoJSDayFormRefusalLinkIgnoresWhatTheRequestCarries(t *testing.T) {
 	t.Parallel()
 
 	invalidEntry := englishCopy(t, "dashboard.error.invalid_day_entry")
-	forbidden := englishCopy(t, "common.error.forbidden")
+	forbidden := englishCopy(t, "common.error.csrf_refused")
 	cases := map[string]struct {
 		action string
 		typed  url.Values
@@ -429,11 +429,11 @@ func TestDayWriteRefusalsKeepTheirStatusAndEnvelopeForOtherClients(t *testing.T)
 	})
 	t.Run("real PUT without a token, browser Accept", func(t *testing.T) {
 		response := send(http.MethodPut, form, "application/x-www-form-urlencoded", map[string]string{"Accept": noJSBrowserAccept}, false)
-		assertJSONError(t, response, http.StatusForbidden, "forbidden")
+		assertJSONError(t, response, http.StatusForbidden, "csrf_refused")
 	})
 	t.Run("real DELETE without a token, browser Accept", func(t *testing.T) {
 		response := send(http.MethodDelete, "", "application/x-www-form-urlencoded", map[string]string{"Accept": noJSBrowserAccept}, false)
-		assertJSONError(t, response, http.StatusForbidden, "forbidden")
+		assertJSONError(t, response, http.StatusForbidden, "csrf_refused")
 	})
 }
 

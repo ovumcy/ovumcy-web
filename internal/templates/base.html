@@ -32,6 +32,7 @@
   data-confirm-delete="{{t .Messages "confirm.yes"}}"
   data-toast-close="{{t .Messages "common.close"}}"
   data-request-failed="{{t .Messages "common.error.request_failed"}}"
+  data-csrf-refused="{{t .Messages "common.error.csrf_refused"}}"
   data-period-tip-message="{{t .Messages "dashboard.period_tip_once"}}"
   data-period-tip-pending="{{if and .CurrentUser (not .CurrentUser.ShownPeriodTip)}}true{{else}}false{{end}}"
   {{if .CurrentUser}}data-persisted-timezone="{{.CurrentUser.Timezone}}"{{end}}>

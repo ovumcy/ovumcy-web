@@ -228,7 +228,11 @@ func TestRefusedCalendarReadIsAudited(t *testing.T) {
 				assertStatusCode(t, response, http.StatusConflict)
 			}
 			line := securityEventLine(t, logOutput, dayFormPageReadAction, "denied")
-			if !strings.Contains(line, `reason="day form page account changed"`) {
+			wantReason := "day form page account changed"
+			if strings.HasPrefix(tc.path, "/calendar?") {
+				wantReason = "day form grid account changed"
+			}
+			if !strings.Contains(line, `reason="`+wantReason+`"`) {
 				t.Fatalf("%s: the refusal must be audited with its reason, got %q", label, line)
 			}
 			if !strings.Contains(line, fmt.Sprintf("user_id=%q", fmt.Sprint(fixture.second.ID))) {

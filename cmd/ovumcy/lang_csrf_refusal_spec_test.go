@@ -164,21 +164,21 @@ func TestOpenAPILanguageSwitchDeclaresTheCSRFRefusalItAnswers(t *testing.T) {
 			if client.fragment {
 				if !strings.HasPrefix(contentType, fiber.MIMETextHTML) || json.Valid(body) ||
 					!strings.Contains(string(body), `class="status-error"`) ||
-					!strings.Contains(string(body), `data-flash-key="common.error.forbidden"`) {
+					!strings.Contains(string(body), `data-flash-key="common.error.csrf_refused"`) {
 					t.Errorf("%s: answered 403 as %q (%q), want the text/html status fragment carrying the forbidden key", where, contentType, body)
 				}
 				// A plain navigation gets the whole refusal page (WEB-264): the
 				// shared layout in the request's language, and a way back to where
 				// the form was, which an idle token must leave the owner.
 				if client.headers["HX-Request"] == "" {
-					requireNativeFormRefusalPage(t, where, string(body), "en", "common.error.forbidden", "/calendar")
+					requireNativeFormRefusalPage(t, where, string(body), "en", "common.error.csrf_refused", "/calendar")
 				}
 				continue
 			}
 			if !strings.HasPrefix(contentType, fiber.MIMEApplicationJSON) {
 				t.Fatalf("%s: answered 403 as %q (%q), want the JSON envelope", where, contentType, body)
 			}
-			assertTransportErrorEnvelope(t, body, "forbidden", "forbidden")
+			assertTransportErrorEnvelope(t, body, "csrf_refused", "forbidden")
 			envelopeSeen = true
 		}
 	}
@@ -188,8 +188,8 @@ func TestOpenAPILanguageSwitchDeclaresTheCSRFRefusalItAnswers(t *testing.T) {
 
 	for _, want := range []string{
 		"schema: { $ref: '#/components/schemas/ApiError' }",
-		`error: "forbidden"`,
-		fmt.Sprintf("error_detail: { key: %q, category: %q, target: %q }", "forbidden", "forbidden", "global"),
+		`error: "csrf_refused"`,
+		fmt.Sprintf("error_detail: { key: %q, category: %q, target: %q }", "csrf_refused", "forbidden", "global"),
 	} {
 		requireOpenAPILine(t, forbidden, want)
 	}

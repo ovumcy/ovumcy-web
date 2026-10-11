@@ -19,7 +19,9 @@ const STALE_TOKEN = "stale-token-0000000000";
 const FRESH_TOKEN = "fresh-token-1111111111";
 const PAGE_URL = "https://ovumcy.test/calendar";
 const TYPED_NOTE = "cramps since the afternoon";
-const FORBIDDEN_FRAGMENT =
+const CSRF_COPY = "That action was refused. Please try again.";
+const FORBIDDEN_FRAGMENT = `<div class="status-error" data-flash-key="common.error.csrf_refused">${CSRF_COPY}</div>`;
+const SHARED_FORBIDDEN_FRAGMENT =
   '<div class="status-error" data-flash-key="common.error.forbidden">That action was refused. Reload the page and try again.</div>';
 const OWN_BINDING = "binding-of-the-rendering-account";
 const REFUSED_TEXT = "This save was refused. Your entry is still here — try again.";
@@ -264,12 +266,9 @@ test("a refresh that fails changes nothing", async () => {
 
 test("a 403 that is not the CSRF refusal gets its Retry and no refresh", async () => {
   const bodies = {
-    "plain text": "Forbidden",
-    "empty body": "",
     "owner access required": '<div class="status-error" data-flash-key="common.error.owner_access_required">Nope.</div>',
+    "the shared forbidden key": SHARED_FORBIDDEN_FRAGMENT,
     "an error block under another key": '<div class="status-error" data-flash-key="something.else">Nope.</div>',
-    "an error block with no key": '<div class="status-error">Nope.</div>',
-    "no body at all": undefined,
   };
 
   for (const [name, responseText] of Object.entries(bodies)) {
@@ -285,6 +284,166 @@ test("a 403 that is not the CSRF refusal gets its Retry and no refresh", async (
     } finally {
       dom.window.close();
     }
+  }
+});
+
+// A proxy's own 403 page names no key. The server was reached, so the notice
+// must not say the connection is down, and the token may be the stale one.
+test("a 403 whose body names no key is the CSRF refusal: token refreshed, refusal copy, Retry", async () => {
+  const bodies = {
+    "plain text": "Forbidden",
+    "a proxy's html page": "<html><body><h1>403 Forbidden</h1><p>blocked by the gateway</p></body></html>",
+    "empty body": "",
+    "an error block with no key": '<div class="status-error">Nope.</div>',
+    "no body at all": undefined,
+  };
+
+  for (const [name, responseText] of Object.entries(bodies)) {
+    const { dom, calls } = await load(() => Promise.resolve(okPage(pageWithToken(FRESH_TOKEN))));
+    try {
+      fireResponseError(dom.window, { status: 403, responseText });
+      await flush();
+
+      const message = notice(dom.window).querySelector(".status-notice-message");
+      assert.equal(message.textContent, REFUSED_TEXT, `${name}: the refusal copy, not the connection copy`);
+      assert.doesNotMatch(message.textContent, /couldn't save/i, `${name}`);
+      assert.equal(message.getAttribute("data-notice-key"), "common.error.csrf_refused", name);
+      assert.ok(notice(dom.window).querySelector("[data-day-save-retry]"), `${name}: with a Retry`);
+      assert.equal(calls.length, 1, `${name}: the token is refreshed anyway`);
+      assert.equal(currentToken(dom.window), FRESH_TOKEN, name);
+      assert.equal(dayForm(dom.window).querySelector("#calendar-notes").value, TYPED_NOTE, `${name}: entry intact`);
+    } finally {
+      dom.window.close();
+    }
+  }
+});
+
+test("a dashboard autosave refused by a keyless 403 shows the refusal copy and refreshes the token", async () => {
+  const { dom, calls } = await load(
+    (url, init) =>
+      init.method === "GET"
+        ? Promise.resolve(okPage(pageWithToken(FRESH_TOKEN)))
+        : Promise.resolve({
+            ok: false,
+            status: 403,
+            headers: { get: () => null },
+            text: () => Promise.resolve("<html>403 Forbidden</html>"),
+          }),
+    { html: DASHBOARD_PAGE.replace('data-day-save-retry-label="Try again">', 'data-day-save-retry-label="Try again" data-day-save-refused-text="' + REFUSED_TEXT + '">') }
+  );
+  try {
+    dom.window.document.querySelector("#today-notes").dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    dom.window.dispatchEvent(new dom.window.Event("pagehide"));
+    await flush();
+    await flush();
+
+    const message = dom.window.document.querySelector("#save-status [data-day-save-failed] .status-notice-message");
+    assert.equal(message.textContent, REFUSED_TEXT);
+    assert.deepEqual(
+      calls.map((call) => call.init.method),
+      ["PUT", "GET"]
+    );
+    assert.equal(currentToken(dom.window), FRESH_TOKEN);
+  } finally {
+    dom.window.close();
+  }
+});
+
+// The delete and cycle-start controls are not the day form: they show the
+// server's CSRF copy (or the page's own when the answer named none), never the
+// shared forbidden copy that tells the owner to reload.
+const CONTROL_PAGE = `<!doctype html><html><head><meta name="csrf-token" content="${STALE_TOKEN}"></head>
+  <body data-csrf-refused="${CSRF_COPY}">
+    <div id="dashboard-status" class="save-status" aria-live="polite"></div>
+    <form id="cycle-start" hx-post="/api/v1/days/2026-08-12/cycle-start?source=dashboard" hx-target="#dashboard-status" data-cycle-start-confirm-form></form>
+    <aside id="day-editor"><form id="delete" hx-delete="/api/v1/days/2026-08-12?source=calendar" hx-target="#day-editor" data-day-delete-form></form></aside>
+  </body></html>`;
+
+function refuseControl(window, id, target, xhr) {
+  window.document.getElementById(id).dispatchEvent(
+    new window.CustomEvent("htmx:responseError", {
+      detail: { xhr, target, pathInfo: { requestPath: "/api/v1/days/2026-08-12" } },
+      bubbles: true,
+    })
+  );
+}
+
+test("the cycle-start control shows the CSRF copy beside it, from the server or from the page", async () => {
+  for (const [name, responseText] of Object.entries({ "the server's fragment": FORBIDDEN_FRAGMENT, "a keyless proxy page": "<html>403</html>" })) {
+    const { dom, calls } = await load(() => Promise.resolve(okPage(pageWithToken(FRESH_TOKEN))), { html: CONTROL_PAGE });
+    try {
+      refuseControl(dom.window, "cycle-start", dom.window.document.getElementById("dashboard-status"), { status: 403, responseText });
+      await flush();
+
+      const shown = dom.window.document.querySelector("#dashboard-status .status-error");
+      assert.equal(shown.textContent, CSRF_COPY, name);
+      assert.doesNotMatch(shown.textContent, /reload/i, name);
+      assert.equal(calls.length, 1, `${name}: the token is refreshed so the retry can land`);
+      assert.equal(currentToken(dom.window), FRESH_TOKEN, name);
+    } finally {
+      dom.window.close();
+    }
+  }
+});
+
+test("the calendar editor's delete control, which has no status area, still says so", async () => {
+  const { dom, calls } = await load(() => Promise.resolve(okPage(pageWithToken(FRESH_TOKEN))), { html: CONTROL_PAGE });
+  try {
+    const editor = dom.window.document.getElementById("day-editor");
+    refuseControl(dom.window, "delete", editor, { status: 403, responseText: FORBIDDEN_FRAGMENT });
+    await flush();
+
+    const toast = dom.window.document.querySelector(".toast-stack .toast-message");
+    assert.ok(toast, "the refusal is announced through the toast stack");
+    assert.equal(toast.textContent, CSRF_COPY);
+    assert.ok(editor.querySelector("#delete"), "the editor is left as it was");
+    assert.equal(calls.length, 1);
+    assert.equal(currentToken(dom.window), FRESH_TOKEN);
+
+    // A refusal that is not the CSRF one keeps the old behaviour: no toast.
+    dom.window.document.querySelector(".toast-stack").replaceChildren();
+    refuseControl(dom.window, "delete", editor, { status: 403, responseText: SHARED_FORBIDDEN_FRAGMENT });
+    await flush();
+    assert.equal(dom.window.document.querySelector(".toast-stack .toast-message"), null);
+    assert.equal(calls.length, 1, "and no further refresh");
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("an error answer is parsed once, whichever branch shows it", async () => {
+  const { dom } = await load(() => Promise.resolve(okPage(pageWithToken(FRESH_TOKEN))), { html: CONTROL_PAGE });
+  try {
+    // The harness delivers DOMContentLoaded twice, so the handler is registered
+    // more than once; calibrate on how many times one refusal reaches it (each
+    // run of the handler toasts a CSRF refusal that has no status area), then
+    // require exactly one parse per run.
+    refuseControl(dom.window, "delete", dom.window.document.getElementById("day-editor"), {
+      status: 403,
+      responseText: FORBIDDEN_FRAGMENT,
+    });
+    const runs = dom.window.document.querySelectorAll(".toast-stack .toast-message").length;
+    assert.ok(runs >= 1);
+
+    const prototype = dom.window.DOMParser.prototype;
+    const original = prototype.parseFromString;
+    let parses = 0;
+    prototype.parseFromString = function (...args) {
+      parses += 1;
+      return original.apply(this, args);
+    };
+    try {
+      refuseControl(dom.window, "cycle-start", dom.window.document.getElementById("dashboard-status"), {
+        status: 422,
+        responseText: '<div class="status-error" data-flash-key="error.invalid_payload">Check the form.</div>',
+      });
+    } finally {
+      prototype.parseFromString = original;
+    }
+    assert.equal(dom.window.document.querySelector("#dashboard-status .status-error").textContent, "Check the form.");
+    assert.equal(parses, runs, "one parse per run of the handler, not one per branch that reads the answer");
+  } finally {
+    dom.window.close();
   }
 });
 
@@ -317,24 +476,26 @@ test("only a 403 triggers a refresh", async () => {
   }
 });
 
-test("a 403 on another day write control refreshes too, and one off the day routes does not", async () => {
+test("a CSRF 403 on any htmx control refreshes the token, and another 403 does not", async () => {
   const { dom, calls } = await load(() => Promise.resolve(okPage(pageWithToken(FRESH_TOKEN))));
   try {
     const other = dom.window.document.createElement("button");
     dom.window.document.body.appendChild(other);
-    const fire = (requestPath) =>
+    const fire = (requestPath, responseText) =>
       other.dispatchEvent(
         new dom.window.CustomEvent("htmx:responseError", {
-          detail: { xhr: { status: 403, responseText: FORBIDDEN_FRAGMENT }, target: other, pathInfo: { requestPath } },
+          detail: { xhr: { status: 403, responseText }, target: other, pathInfo: { requestPath } },
           bubbles: true,
         })
       );
 
-    fire("/api/v1/sessions/current");
+    fire("/api/v1/sessions/current", SHARED_FORBIDDEN_FRAGMENT);
     await flush();
-    assert.equal(calls.length, 0, "a refusal off the day routes is not this recovery's business");
+    assert.equal(calls.length, 0, "a refusal under the shared forbidden key is not a stale token");
 
-    fire("/api/v1/days/2026-08-11");
+    // Every surface that shows the CSRF copy tells the owner to try again, so
+    // every one of them re-reads the token: a settings form is no exception.
+    fire("/api/v1/users/current/profile", FORBIDDEN_FRAGMENT);
     await flush();
     assert.equal(calls.length, 1);
     assert.equal(currentToken(dom.window), FRESH_TOKEN);

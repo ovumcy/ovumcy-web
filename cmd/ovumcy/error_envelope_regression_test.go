@@ -129,7 +129,9 @@ func TestCSRFDenialAnswersThroughTheEnvelope(t *testing.T) {
 		if strings.TrimSpace(string(body)) == "Forbidden" {
 			t.Fatalf("csrf denial answered with fiber's bare text: %q", body)
 		}
-		assertTransportErrorEnvelope(t, body, "forbidden", "forbidden")
+		// The CSRF refusal answers under a key of its own, not the 403 the role
+		// guards share, so a client can tell a stale token from a forbidden account.
+		assertTransportErrorEnvelope(t, body, "csrf_refused", "forbidden")
 	})
 
 	// A plain browser form post (no HX-Request, Accept: text/html) to a plain
@@ -152,7 +154,7 @@ func TestCSRFDenialAnswersThroughTheEnvelope(t *testing.T) {
 		contentType := response.Header.Get(fiber.HeaderContentType)
 		if !strings.HasPrefix(contentType, fiber.MIMETextHTML) ||
 			!strings.Contains(string(body), `class="status-error"`) ||
-			!strings.Contains(string(body), `data-flash-key="common.error.forbidden"`) {
+			!strings.Contains(string(body), `data-flash-key="common.error.csrf_refused"`) {
 			t.Fatalf("expected the shared page-form status fragment, got %q (%q)", contentType, body)
 		}
 	})
@@ -173,7 +175,7 @@ func TestCSRFDenialAnswersThroughTheEnvelope(t *testing.T) {
 		}
 		// The stable key rides next to the localized copy, so the assertion never
 		// has to pin the copy itself.
-		if !strings.Contains(body, `data-flash-key="common.error.forbidden"`) {
+		if !strings.Contains(body, `data-flash-key="common.error.csrf_refused"`) {
 			t.Fatalf("expected the stable flash key on the HTMX csrf fragment, got %q", body)
 		}
 	})
@@ -205,7 +207,7 @@ func TestCSRFDenialOnLogoutStaysEnveloped(t *testing.T) {
 			if response.StatusCode != http.StatusForbidden {
 				t.Fatalf("status = %d, want 403", response.StatusCode)
 			}
-			assertTransportErrorEnvelope(t, mustReadAll(t, response), "forbidden", "forbidden")
+			assertTransportErrorEnvelope(t, mustReadAll(t, response), "csrf_refused", "forbidden")
 		})
 	}
 }
@@ -261,12 +263,12 @@ func TestCSRFDenialOnPlainAuthFormPagesAnswersTheFragment(t *testing.T) {
 				contentType := response.Header.Get(fiber.HeaderContentType)
 				if !strings.HasPrefix(contentType, fiber.MIMETextHTML) ||
 					!strings.Contains(string(body), `class="status-error"`) ||
-					!strings.Contains(string(body), `data-flash-key="common.error.forbidden"`) {
+					!strings.Contains(string(body), `data-flash-key="common.error.csrf_refused"`) {
 					t.Fatalf("%s: expected the shared page-form status fragment, got %q (%q)", route.name, contentType, body)
 				}
 				// The whole refusal page (WEB-264), its one link back to the
 				// form's own page, and no cookie beyond the CSRF middleware's own.
-				requireNativeFormRefusalPage(t, route.name, string(body), "en", "common.error.forbidden", route.back)
+				requireNativeFormRefusalPage(t, route.name, string(body), "en", "common.error.csrf_refused", route.back)
 				requireOnlyCSRFCookie(t, route.name, response)
 			})
 
@@ -277,7 +279,7 @@ func TestCSRFDenialOnPlainAuthFormPagesAnswersTheFragment(t *testing.T) {
 				if response.StatusCode != http.StatusForbidden {
 					t.Fatalf("status = %d, want 403", response.StatusCode)
 				}
-				assertTransportErrorEnvelope(t, mustReadAll(t, response), "forbidden", "forbidden")
+				assertTransportErrorEnvelope(t, mustReadAll(t, response), "csrf_refused", "forbidden")
 			})
 
 			t.Run("htmx flow", func(t *testing.T) {
@@ -288,7 +290,7 @@ func TestCSRFDenialOnPlainAuthFormPagesAnswersTheFragment(t *testing.T) {
 					t.Fatalf("status = %d, want 403", response.StatusCode)
 				}
 				body := string(mustReadAll(t, response))
-				if !strings.Contains(body, `class="status-error"`) || !strings.Contains(body, `data-flash-key="common.error.forbidden"`) {
+				if !strings.Contains(body, `class="status-error"`) || !strings.Contains(body, `data-flash-key="common.error.csrf_refused"`) {
 					t.Fatalf("%s: expected the shared status-error fragment for an HTMX flow, got %q", route.name, body)
 				}
 				// The bare HTMX status-error fragment (apiError's HTMX arm, via

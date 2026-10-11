@@ -179,6 +179,12 @@ func fiberConfig(proxy proxySettings, handler *api.Handler) fiber.Config {
 func newOvumcyErrorHandler(handler *api.Handler) fiber.ErrorHandler {
 	return func(c fiber.Ctx, err error) error {
 		setSecurityHeaders(c, false)
+		// The CSRF check's refusal is a 403 like the role guards', but it answers
+		// under a key of its own so a client can tell a stale token from a
+		// forbidden account.
+		if errors.Is(err, api.ErrCSRFRefused) {
+			return handler.RespondCSRFRefused(c)
+		}
 		var fiberErr *fiber.Error
 		if !errors.As(err, &fiberErr) {
 			return handler.RespondTransportError(c, fiber.StatusInternalServerError)
@@ -442,7 +448,7 @@ func csrfMiddlewareConfig(cookieSecure bool, handler *api.Handler) csrf.Config {
 				Key:   "reason",
 				Value: api.CSRFFailureReason(err),
 			})
-			return fiber.ErrForbidden
+			return api.ErrCSRFRefused
 		},
 	}
 }

@@ -746,9 +746,9 @@ func TestTransportErrorSpecForStatusIsTotal(t *testing.T) {
 // answers through the SAME negotiation as every mapped domain error rather than
 // a second, transport-only format: the JSON envelope with error + error_detail
 // for an API client, the shared status-error fragment carrying the stable key
-// for an HTMX flow. 403 stands in for the whole table — it is the status the
-// CSRF middleware raises on every mutating route, and the one that used to reach
-// the client as fiber's bare "Forbidden".
+// for an HTMX flow. 403 stands in for the whole table — the status the role
+// guards raise, which used to reach the client as fiber's bare "Forbidden". The
+// CSRF check's own 403 answers under its own key (TestCSRFRefusalAnswersUnderItsOwnKey).
 func TestRespondTransportErrorNegotiatesFormat(t *testing.T) {
 	t.Parallel()
 
@@ -833,6 +833,9 @@ func transportErrorSpecsOnTheUserSurface() []APIErrorSpec {
 		add(transportErrorSpecForStatus(status))
 	}
 	add(requestTimeoutErrorSpec())
+	// Like request_timeout, the CSRF refusal shares its status (403) with a table
+	// entry, so the status walk above never reaches its key.
+	add(csrfRefusedErrorSpec())
 
 	return specs
 }
