@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -69,5 +70,22 @@ func TestPatchDayEntryLeavesARowlessDayOffTheStoredStartUnticked(t *testing.T) {
 	}
 	if saved.IsPeriod {
 		t.Fatal("a row-less day other than the stored start must not gain a period")
+	}
+}
+
+// Without the stored start the row-less day cannot be read as the forms render
+// it, so the write is refused rather than merged onto a guess.
+func TestPatchDayEntryRefusesARowlessDayWhenTheStoredStartCannotBeRead(t *testing.T) {
+	day := time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC)
+	logs := newDayLogRepositoryStub()
+	service := NewDayService(logs, &dayUserRepositoryStub{loadErr: errors.New("driver: database is locked")})
+
+	_, err := service.PatchDayEntryWithAutoFillAt(context.Background(), 7, day,
+		DayEntryInput{Mood: 4}, DayEntryFields{Mood: true}, DayEntryBase{}, day.Add(12*time.Hour), time.UTC)
+	if !errors.Is(err, ErrDayEntryLoadFailed) {
+		t.Fatalf("expected ErrDayEntryLoadFailed, got %v", err)
+	}
+	if len(logs.entries) != 0 {
+		t.Fatalf("a refused write must store nothing, got %v", logs.entries)
 	}
 }
