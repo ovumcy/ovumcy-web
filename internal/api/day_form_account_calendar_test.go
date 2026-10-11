@@ -181,20 +181,48 @@ func TestStaleCalendarPageCannotReadOrWriteAnotherAccountsDay(t *testing.T) {
 func TestRefusedCalendarReadIsAudited(t *testing.T) {
 	fixture := newDayFormAccountFixtureWithOptions(t, "stale-calendar-audit", onboardingTestAppOptions{auditLogEnabled: true})
 
-	for _, path := range []string{"/calendar/day/2026-06-08", "/calendar?month=2026-06"} {
-		request := httptest.NewRequest(http.MethodGet, path, nil)
+	cases := []struct {
+		name    string
+		path    string
+		htmx    bool
+		binding string // page-binding header value; empty sends no header
+		refused bool
+	}{
+		{name: "day editor read from a page of another account", path: "/calendar/day/2026-06-08", htmx: true, binding: fixture.firstBinding, refused: true},
+		{name: "grid read from a page of another account", path: "/calendar?month=2026-06", htmx: true, binding: fixture.firstBinding, refused: true},
+		{name: "HTMX day editor read with no page binding", path: "/calendar/day/2026-06-08", htmx: true, refused: true},
+		{name: "HTMX grid read with no page binding", path: "/calendar?month=2026-06", htmx: true, refused: true},
+		{name: "direct navigation to the day editor", path: "/calendar/day/2026-06-08?mode=edit"},
+		{name: "direct navigation to the grid", path: "/calendar?month=2026-06"},
+	}
+	for _, tc := range cases {
+		request := httptest.NewRequest(http.MethodGet, tc.path, nil)
 		request.Header.Set("Cookie", fixture.secondCookie)
-		request.Header.Set("HX-Request", "true")
-		request.Header.Set(dayFormAccountWireHeader, fixture.firstBinding)
+		if tc.htmx {
+			request.Header.Set("HX-Request", "true")
+		}
+		if tc.binding != "" {
+			request.Header.Set(dayFormAccountWireHeader, tc.binding)
+		}
 
 		response, logOutput := captureAuditedRequest(t, fixture.app, request)
-		assertOpenAccountChangedRefusal(t, "GET "+path, response)
+		label := tc.name + ": GET " + tc.path
+		if !tc.refused {
+			// A request that is not from a rendered page is answered, and an
+			// answered read leaves no access-refusal record.
+			assertStatusCode(t, response, http.StatusOK)
+			if strings.Contains(logOutput, fmt.Sprintf("action=%q", dayFormPageReadAction)) {
+				t.Fatalf("%s: an answered read must write no %s record, got %q", label, dayFormPageReadAction, logOutput)
+			}
+			continue
+		}
+		assertOpenAccountChangedRefusal(t, label, response)
 		line := securityEventLine(t, logOutput, dayFormPageReadAction, "denied")
 		if !strings.Contains(line, `reason="day form page account changed"`) {
-			t.Fatalf("GET %s: the refusal must be audited with its reason, got %q", path, line)
+			t.Fatalf("%s: the refusal must be audited with its reason, got %q", label, line)
 		}
 		if !strings.Contains(line, fmt.Sprintf("user_id=%q", fmt.Sprint(fixture.second.ID))) {
-			t.Fatalf("GET %s: the refusal must name the account it was refused under, got %q", path, line)
+			t.Fatalf("%s: the refusal must name the account it was refused under, got %q", label, line)
 		}
 	}
 }
