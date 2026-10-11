@@ -51,14 +51,35 @@
     });
   }
 
+  // The stable key of a refused restore. Every API refusal answers the shared
+  // envelope {error, error_detail: {key, ...}}: the structured key is read
+  // first and the top-level legacy string second.
+  function errorKeyFromPayload(payload) {
+    if (!payload || typeof payload !== "object") {
+      return "";
+    }
+    var detail = payload.error_detail;
+    if (detail && typeof detail.key === "string" && detail.key) {
+      return detail.key;
+    }
+    return typeof payload.error === "string" ? payload.error : "";
+  }
+
+  // Each refusal with copy of its own. request_too_large is the body-size cap
+  // answering before the handler runs; it is the same condition to the person
+  // as the entry-count cap, so it shares the message.
   function messageForErrorKey(context, key) {
-    if (key === "invalid import file") {
-      return context.invalidFileMessage;
+    switch (key) {
+      case "invalid import file":
+        return context.invalidFileMessage;
+      case "import file too large":
+      case "request_too_large":
+        return context.tooLargeMessage;
+      case "settings form account changed":
+        return context.accountChangedMessage;
+      default:
+        return context.failedMessage;
     }
-    if (key === "import file too large") {
-      return context.tooLargeMessage;
-    }
-    return context.failedMessage;
   }
 
   function createImportHandler(context) {
@@ -103,9 +124,8 @@
         }
 
         if (!response.ok) {
-          var errorKey = payload && typeof payload.key === "string" ? payload.key : "";
           if (typeof window.showToast === "function") {
-            window.showToast(messageForErrorKey(context, errorKey), "error");
+            window.showToast(messageForErrorKey(context, errorKeyFromPayload(payload)), "error");
           }
           return;
         }
@@ -156,7 +176,12 @@
     emptyMessage: readTextAttribute(section, "data-import-empty", "Choose a file to restore."),
     failedMessage: readTextAttribute(section, "data-import-failed", "Restore failed. Please try again."),
     invalidFileMessage: readTextAttribute(section, "data-import-invalid-file", "This file isn't a valid Ovumcy export."),
-    tooLargeMessage: readTextAttribute(section, "data-import-too-large", "That file is too large to import.")
+    tooLargeMessage: readTextAttribute(section, "data-import-too-large", "That file is too large to import."),
+    accountChangedMessage: readTextAttribute(
+      section,
+      "data-import-account-changed",
+      "You're now signed in to a different account. This change was not saved. Reload the page."
+    )
   };
 
   form.addEventListener("submit", createImportHandler(context));
