@@ -138,6 +138,73 @@ func TestPublishedOverviewPublishesNoOvulationOnceTheCycleIsLate(t *testing.T) {
 	}
 }
 
+// TestPublishedOverviewWithholdsTheRolledWindowOnEveryOutOfDateDay drives the
+// whole out-of-date band, from the day after the reference length to the last day
+// before the overdue gate withholds the next period too, for two histories: one
+// whose median and reference agree, and a right-skewed one whose reference sits
+// above its median. On every one of those days the running cycle's ovulation is
+// behind today, so a response that stopped withholding the fertility half would
+// roll it a cycle forward and read the status and phase against the rolled window.
+// The overview must publish none of that: no ovulation, no window, "unknown" for
+// the status and the phase, and the next period the running cycle is waiting on.
+//
+// This is the end-to-end half of the stale arm in reconcileMovedWindow: the arm
+// itself cannot be reached from here, because the out-of-date verdict and the
+// fertility gate are one predicate and the roll returns before the reconcile
+// whenever the gate holds. What this test catches is that predicate drifting
+// apart, which would publish a rolled ovulation and window on out-of-date data.
+func TestPublishedOverviewWithholdsTheRolledWindowOnEveryOutOfDateDay(t *testing.T) {
+	for _, history := range []struct {
+		name   string
+		starts []string
+		// The date the running cycle began; cycle day N is this plus N-1 days.
+		runningStart string
+	}{
+		{name: "28-day history", starts: []string{"2026-06-15", "2026-07-13", "2026-08-10", "2026-09-07"}, runningStart: "2026-09-07"},
+		{name: "right-skewed history", starts: []string{"2026-05-04", "2026-05-31", "2026-06-28", "2026-07-26", "2026-08-23", "2026-09-28"}, runningStart: "2026-09-28"},
+	} {
+		t.Run(history.name, func(t *testing.T) {
+			user := &models.User{Role: models.RoleOwner, CycleLength: 28, PeriodLength: 5, UsageGoal: models.UsageGoalTrying}
+			logs := cycleStartLogs(t, history.starts...)
+			runningStart := mustParseDay(t, history.runningStart)
+
+			exercised := 0
+			for cycleDay := 1; cycleDay <= 60; cycleDay++ {
+				now := localNoon(AddCalendarDays(runningStart, cycleDay-1, time.UTC), time.UTC)
+				today := DateAtLocation(now, time.UTC)
+				stats := BuildCycleStatsFromLogs(user, logs, now, time.UTC)
+				if !DashboardCyclePastReferenceLength(user, stats) || DashboardCycleOverdue(user, stats) {
+					continue
+				}
+				exercised++
+				if stats.CurrentCycleDay != cycleDay || stats.OvulationDate.IsZero() || !stats.OvulationDate.Before(today) {
+					t.Fatalf("cycle day %d: fixture: stats day %d ovulation %s, want the running cycle's ovulation behind today",
+						cycleDay, stats.CurrentCycleDay, CalendarDayKey(stats.OvulationDate))
+				}
+
+				published, suppression, confirmed := PublishedOverviewStats(user, logs, stats, today, time.UTC)
+				if suppression.PredictionsSuppressed || !suppression.FertilitySuppressed || !slices.Contains(suppression.Reasons, SuppressionReasonCycleDataStale) || confirmed || !published.CycleDataStale {
+					t.Errorf("cycle day %d: suppression %+v confirmed %v stale %v, want the fertility half withheld as out of date",
+						cycleDay, suppression, confirmed, published.CycleDataStale)
+				}
+				if !published.OvulationDate.IsZero() || !published.FertilityWindowStart.IsZero() || !published.FertilityWindowEnd.IsZero() || published.OvulationExact {
+					t.Errorf("cycle day %d: ovulation %s window %s..%s exact %v, want all absent — a rolled window on out-of-date data",
+						cycleDay, CalendarDayKey(published.OvulationDate), CalendarDayKey(published.FertilityWindowStart), CalendarDayKey(published.FertilityWindowEnd), published.OvulationExact)
+				}
+				if published.NextPeriodStart.IsZero() {
+					t.Errorf("cycle day %d: next_period_start absent, want the running cycle's own end", cycleDay)
+				}
+				assertPublishedStatusAndPhase(t, published, FertilityStatusUnknown, "", "unknown")
+			}
+			// Anti-vacuity: the band is not empty — a history whose band never opens
+			// would leave the loop above measuring nothing.
+			if exercised == 0 {
+				t.Fatal("no cycle day of the fixture fell in the out-of-date band")
+			}
+		})
+	}
+}
+
 // TestReconcileMovedWindowWithholdsStatusAndPhaseOnOutOfDateData pins the
 // backstop no caller reaches today (out-of-date data suppresses the fertility
 // half before any roll): handed a rolled window that covers today on
