@@ -276,6 +276,39 @@ func TestTopUpIgnoresALongChainTheBoundedReadCutsShort(t *testing.T) {
 	requireTopUpNoRow(t, logs, 12, 13)
 }
 
+func TestTopUpCountsTheEpisodeFromBeforeASpottingTailTheBoundedReadCutsShort(t *testing.T) {
+	// The episode started heavy and ran on as spotting up to the light 10th: the
+	// 12th is past a five-day period. The first history read starts on the 2nd,
+	// where only spotting precedes the 10th, which must not pass for the
+	// episode's start. A tail from the -20th outruns one widened read as well.
+	for _, heavyDay := range []int{1, -20} {
+		service, logs, _ := newTopUpService(true, 5)
+		seedTopUpRow(logs, heavyDay, models.DailyLog{IsPeriod: true, Flow: models.FlowHeavy})
+		for day := heavyDay + 1; day <= 9; day++ {
+			seedTopUpRow(logs, day, models.DailyLog{IsPeriod: true, Flow: models.FlowSpotting})
+		}
+		seedTopUpRow(logs, 10, models.DailyLog{IsPeriod: true, Flow: models.FlowLight})
+
+		markTopUpPeriodDay(t, service, 12, 12)
+
+		requireTopUpNoRow(t, logs, 11)
+	}
+}
+
+func TestTopUpStillCountsAnEpisodeFromItsFirstDayAfterSpotting(t *testing.T) {
+	// Spotting from the 1st opens nothing: the episode starts heavy on the 8th
+	// and the 10th is its third day, so the 9th is filled.
+	service, logs, _ := newTopUpService(true, 5)
+	for day := 1; day <= 7; day++ {
+		seedTopUpRow(logs, day, models.DailyLog{IsPeriod: true, Flow: models.FlowSpotting})
+	}
+	seedTopUpRow(logs, 8, models.DailyLog{IsPeriod: true, Flow: models.FlowHeavy})
+
+	markTopUpPeriodDay(t, service, 10, 10)
+
+	requireTopUpPeriodRow(t, logs, 9)
+}
+
 func TestRunningPeriodGapDaysCountsFromTheEpisodesExplicitStart(t *testing.T) {
 	logs := []models.DailyLog{
 		{UserID: topUpOwnerID, Date: topUpDay(8), IsPeriod: true},

@@ -24,10 +24,11 @@ type runningPeriodWindow struct {
 // nothing unless the fill is on, the day was not already a period day and the
 // configured length leaves room for a second day. Only the stored onboarding
 // start is read from the settings: the length is the caller's, already resolved.
-// The history read is bounded to the days that can decide the answer: a cluster
-// reaching further back than periodLength plus the cluster gap cannot start
-// within periodLength days of dayStart, so the first period day inside that span
-// already is past the window whenever the real start lies before it.
+// The history read starts periodLength plus the cluster gap before dayStart and
+// reaches further back while the running episode may continue before the read's
+// first day. A cut episode cannot simply be read from its first day inside the
+// read: spotting does not open an episode, so a light day after a long spotting
+// tail would pass for the start of an episode that began heavy before the tail.
 func (service *DayService) planRunningPeriod(ctx context.Context, userID uint, dayStart time.Time, wasPeriod bool, autoPeriodFillEnabled bool, periodLength int, now time.Time, location *time.Location) (runningPeriodWindow, error) {
 	if !autoPeriodFillEnabled || wasPeriod || periodLength <= 1 {
 		return runningPeriodWindow{}, nil
@@ -39,11 +40,17 @@ func (service *DayService) planRunningPeriod(ctx context.Context, userID uint, d
 	day := CalendarDay(dayStart, location)
 	today := DateAtLocation(now, location)
 	from := AddCalendarDays(day, -(periodLength + periodClusterGapDays), location)
-	logs, err := service.FetchLogsForUser(ctx, userID, from, today, location)
-	if err != nil {
-		return runningPeriodWindow{}, err
+	for {
+		logs, err := service.FetchLogsForUser(ctx, userID, from, today, location)
+		if err != nil {
+			return runningPeriodWindow{}, err
+		}
+		running, ok := runningEpisodeOf(&userSettings, logs, today)
+		if !ok || CalendarDaysBetween(from, running.Start) >= periodClusterGapDays {
+			return runningPeriodWindowFor(&userSettings, logs, day, periodLength, now, location), nil
+		}
+		from = AddCalendarDays(running.Start, -(periodLength + periodClusterGapDays), location)
 	}
-	return runningPeriodWindowFor(&userSettings, logs, day, periodLength, now, location), nil
 }
 
 // fillRunningPeriodGap is the period auto-fill's catch-up for a period the
@@ -90,17 +97,10 @@ func (service *DayService) fillRunningPeriodGap(ctx context.Context, userID uint
 // bounds the window only and is never read as where a cycle starts. The returned
 // days still have to be checked for a row at write time.
 func runningPeriodWindowFor(user *models.User, logs []models.DailyLog, day time.Time, periodLength int, now time.Time, location *time.Location) runningPeriodWindow {
-	today := DateAtLocation(now, location)
-	days := periodDaysOf(filterLogsNotAfter(logs, today))
-	if onboarding := OnboardingBoundaryDay(BoundaryContextFor(user, today)); !onboarding.IsZero() {
-		days = insertPeriodDay(days, periodDay{day: onboarding, explicit: true})
-	}
-	clusters := clusterPeriodDays(days)
-	if len(clusters) == 0 {
+	running, ok := runningEpisodeOf(user, logs, DateAtLocation(now, location))
+	if !ok {
 		return runningPeriodWindow{}
 	}
-
-	running := clusters[len(clusters)-1]
 	if CalendarDaysBetween(running.Start, day) < 0 || CalendarDaysBetween(day, running.End) < 0 {
 		return runningPeriodWindow{}
 	}
@@ -129,6 +129,20 @@ func runningPeriodWindowFor(user *models.User, logs []models.DailyLog, day time.
 		lastDay: AddCalendarDays(start, periodLength-1, location),
 		gap:     gap,
 	}
+}
+
+// runningEpisodeOf is the newest bleeding episode up to today, the onboarding
+// start counted as an explicit period day. It is false without any period day.
+func runningEpisodeOf(user *models.User, logs []models.DailyLog, today time.Time) (periodCluster, bool) {
+	days := periodDaysOf(filterLogsNotAfter(logs, today))
+	if onboarding := OnboardingBoundaryDay(BoundaryContextFor(user, today)); !onboarding.IsZero() {
+		days = insertPeriodDay(days, periodDay{day: onboarding, explicit: true})
+	}
+	clusters := clusterPeriodDays(days)
+	if len(clusters) == 0 {
+		return periodCluster{}, false
+	}
+	return clusters[len(clusters)-1], true
 }
 
 // firstEpisodeDay is the day the window counts the episode from: the first
