@@ -217,7 +217,7 @@
 
       {{if .HasPredictionExplanationPrimary}}
       {{/* The explainer is re-fetched and swapped after a pregnancy-result save. */}}
-      <p class="journal-muted text-sm" data-dashboard-prediction-explainer data-explainer-key="{{.PredictionExplanationPrimaryKey}}">{{explanationText .Messages .Lang .PredictionExplanationPrimaryKey .PredictionExplanationPrimaryCount}}</p>
+      <p class="journal-muted text-sm" data-dashboard-prediction-explainer data-explainer-key="{{.PredictionExplanationPrimaryKey}}">{{if gt .PredictionExplanationPrimaryCount 0}}{{printf (tn .Messages .Lang .PredictionExplanationPrimaryKey .PredictionExplanationPrimaryCount) .PredictionExplanationPrimaryCount}}{{else}}{{t .Messages .PredictionExplanationPrimaryKey}}{{end}}</p>
       {{end}}
 
       {{if and .IsOwner .ShowReminderBanner}}

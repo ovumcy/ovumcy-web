@@ -34,7 +34,6 @@ type StatsPageViewData struct {
 	Stats                             CycleStats
 	ChartData                         StatsChartViewData
 	ChartBaseline                     int
-	TrendPointCount                   int
 	Flags                             StatsFlags
 	PredictionSampleCount             int
 	PredictionSampleUsesRecentWindow  bool
@@ -94,12 +93,11 @@ type StatsPageViewData struct {
 }
 
 type statsPageBaseData struct {
-	stats           CycleStats
-	logs            []models.DailyLog
-	chartData       StatsChartViewData
-	chartBaseline   int
-	trendPointCount int
-	flags           StatsFlags
+	stats         CycleStats
+	logs          []models.DailyLog
+	chartData     StatsChartViewData
+	chartBaseline int
+	flags         StatsFlags
 }
 
 type statsOwnerInsightsViewData struct {
@@ -174,7 +172,6 @@ func (service *StatsService) BuildStatsPageViewData(ctx context.Context, user *m
 		Stats:                               publishedStats,
 		ChartData:                           baseData.chartData,
 		ChartBaseline:                       baseData.chartBaseline,
-		TrendPointCount:                     baseData.trendPointCount,
 		Flags:                               baseData.flags,
 		PredictionSampleCount:               predictionSampleCount,
 		PredictionSampleUsesRecentWindow:    predictionSampleUsesRecentWindow,
@@ -232,12 +229,11 @@ func (service *StatsService) buildStatsPageBaseData(ctx context.Context, user *m
 	trendPointCount := len(lengths)
 
 	return statsPageBaseData{
-		stats:           stats,
-		logs:            logs,
-		chartData:       buildStatsChartViewData(cycleLabelPattern, lengths, baselineCycleLength),
-		chartBaseline:   baselineCycleLength,
-		trendPointCount: trendPointCount,
-		flags:           service.BuildFlags(user, stats, trendPointCount),
+		stats:         stats,
+		logs:          logs,
+		chartData:     buildStatsChartViewData(cycleLabelPattern, lengths, baselineCycleLength),
+		chartBaseline: baselineCycleLength,
+		flags:         service.BuildFlags(user, stats, trendPointCount),
 	}, nil
 }
 

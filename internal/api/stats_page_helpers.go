@@ -189,7 +189,6 @@ func (handler *Handler) buildStatsPageData(ctx context.Context, user *models.Use
 		"Stats":                               viewData.Stats,
 		"ChartData":                           mapStatsChartData(viewData.ChartData),
 		"ChartBaseline":                       viewData.ChartBaseline,
-		"TrendPointCount":                     viewData.TrendPointCount,
 		"HasObservedCycleData":                viewData.Flags.HasObservedCycleData,
 		"HasTrendData":                        viewData.Flags.HasTrendData,
 		"HasInsights":                         viewData.Flags.HasInsights,

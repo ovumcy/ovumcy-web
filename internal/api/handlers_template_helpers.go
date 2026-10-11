@@ -24,8 +24,7 @@ func newTemplateFuncMap() template.FuncMap {
 		"phaseIcon": services.PhaseIcon,
 		// The completed-cycle floor the threshold sentences name through %d: one
 		// source for every page.
-		"cycleFloor":      services.FertilityMinimumCycles,
-		"explanationText": translateExplanation,
+		"cycleFloor": services.FertilityMinimumCycles,
 		"flowLabel": func(messages map[string]string, flow string) string {
 			return translateMessage(messages, services.FlowTranslationKey(flow))
 		},

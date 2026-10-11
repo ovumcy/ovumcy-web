@@ -248,8 +248,8 @@ func assertOwnerTrendIdentity(t *testing.T, viewData StatsPageViewData) {
 	if !viewData.IsOwner {
 		t.Fatalf("expected IsOwner=true")
 	}
-	if viewData.TrendPointCount != 2 {
-		t.Fatalf("expected TrendPointCount=2, got %d", viewData.TrendPointCount)
+	if !viewData.Flags.HasTrendData || viewData.Flags.HasReliableTrend {
+		t.Fatalf("expected a trend of two points to be data but not a reliable trend, got %#v", viewData.Flags)
 	}
 }
 

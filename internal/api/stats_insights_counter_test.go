@@ -126,10 +126,18 @@ func TestEveryOwnerPageRendersTheExplainerWithTheFloorTheServiceResolved(t *test
 	}
 	messages := manager.Messages(i18n.LangEN)
 	floor := services.FertilityMinimumCycles()
-	counted := strings.ReplaceAll(i18n.TranslatePlural(messages, i18n.LangEN, awaitingMoreCyclesExplainerKey, floor), "%d", fmt.Sprint(floor))
-	if !strings.Contains(counted, fmt.Sprint(floor)) {
-		t.Fatalf("expected sentence %q does not name the floor %d", counted, floor)
+	// The expected sentence is the catalogue's own value for the plural category
+	// a floor of three selects in English, read by its key, with the number put
+	// in: it does not go through the lookup the page uses. A floor of one would
+	// select ".one", so the pinned category is refused rather than guessed.
+	if floor == 1 {
+		t.Fatalf("the floor is %d, which selects the .one form; this test pins the .other form and must name .one instead", floor)
 	}
+	otherForm, ok := messages[awaitingMoreCyclesExplainerKey+".other"]
+	if !ok || !strings.Contains(otherForm, "%d") {
+		t.Fatalf("the English .other form of %s is %q; want a sentence carrying %%d", awaitingMoreCyclesExplainerKey, otherForm)
+	}
+	counted := strings.Replace(otherForm, "%d", fmt.Sprint(floor), 1)
 
 	pages := []struct {
 		path         string

@@ -1,11 +1,9 @@
 package api
 
 import (
-	"strconv"
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
-	"github.com/ovumcy/ovumcy-web/internal/i18n"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
@@ -37,18 +35,6 @@ func translateMessage(messages map[string]string, key string) string {
 		return value
 	}
 	return key
-}
-
-// translateExplanation renders a prediction-explainer sentence. The service
-// resolved the number the sentence names (0 when it names none), so a counted
-// sentence takes its plural form and its %d here and every other sentence
-// renders as written. The explainer's one verb is %d, which the cycle-floor
-// catalogue test pins in every language.
-func translateExplanation(messages map[string]string, language string, key string, count int) string {
-	if count <= 0 {
-		return translateMessage(messages, key)
-	}
-	return strings.ReplaceAll(i18n.TranslatePlural(messages, language, key, count), "%d", strconv.Itoa(count))
 }
 
 func currentLanguage(c fiber.Ctx) string {
