@@ -33,9 +33,11 @@ import (
 //     function becomes a source itself).
 //   - A call through an anonymous interface type that *Manager implements and
 //     that declares Messages, wherever the type expression appears.
-//   - The taint of a variable ends after a statement of the function body's own
-//     top level that reassigns it a fresh map (m = maps.Clone(m), a literal,
-//     make); a write before that statement is still flagged.
+//   - The taint of a variable or parameter of a function ends, inside that
+//     function, after a statement of its body's own top level that reassigns it
+//     a fresh map (m = maps.Clone(m), a literal, make) — unless the variable is
+//     assigned anything else afterwards. A write before that statement, or to a
+//     package-level variable, is still flagged.
 //   - Write shapes: m[k] = v, m[k] op= v, m[k]++ , delete, clear, and
 //     maps.Copy / maps.Insert / maps.DeleteFunc with the map as the first
 //     argument. maps.Clone and copying FROM the shared map are reads.
@@ -47,8 +49,7 @@ import (
 // and written after being read back; a map reaching a write through a closure
 // variable captured from another package function's result tuple; a map from a
 // multi-value assignment (`m, ok := f()`); range variables; a fresh-map
-// reassignment inside a branch or loop, which does not end the taint; an
-// interface type declared inside a function body; a write through a
+// reassignment inside a branch or loop, which does not end the taint; a write through a
 // function value (not a declared function) that received the map; reflection;
 // an unsafe or cgo write; and any package outside cmd, internal, migrations,
 // scripts and web. Test files are not swept. The fiber locals slot that
@@ -191,17 +192,23 @@ func scanSharedMessagesWrites(units []typedUnit, roots map[*types.Func]bool) *me
 	}
 	tainted := map[types.Object]bool{}
 
-	// cleaned maps a variable to the end of the first statement, at the top
-	// level of a function body (so it runs before everything after it), that
-	// reassigns it a fresh map. Uses after that point are no longer the shared map.
-	cleaned := map[types.Object]token.Pos{}
+	// cleaned maps a variable to the span, from the end of the first statement
+	// at the top level of a function body (so it runs before everything after
+	// it) that reassigns it a fresh map to the end of that body, in which its
+	// uses are no longer the shared map. Only a variable or parameter of that
+	// function qualifies (a package-level one is read by other functions), and
+	// any later assignment of something other than a fresh map cancels it.
+	type cleanedSpan struct{ from, to token.Pos }
+	cleaned := map[types.Object]cleanedSpan{}
 	for _, unit := range units {
+		info := unit.info
 		for _, file := range unit.files {
 			for _, declaration := range file.Decls {
 				function, ok := declaration.(*ast.FuncDecl)
 				if !ok || function.Body == nil {
 					continue
 				}
+				local := map[types.Object]cleanedSpan{}
 				for _, statement := range function.Body.List {
 					assign, ok := statement.(*ast.AssignStmt)
 					if !ok || assign.Tok != token.ASSIGN || len(assign.Lhs) != len(assign.Rhs) {
@@ -209,13 +216,40 @@ func scanSharedMessagesWrites(units []typedUnit, roots map[*types.Func]bool) *me
 					}
 					for index, left := range assign.Lhs {
 						identifier, ok := unparen(left).(*ast.Ident)
-						if !ok || !isFreshMap(unit.info, assign.Rhs[index]) {
+						if !ok || !isFreshMap(info, assign.Rhs[index]) {
 							continue
 						}
-						if object := unit.info.Uses[identifier]; object != nil && cleaned[object] == 0 {
-							cleaned[object] = assign.End()
+						object := info.Uses[identifier]
+						if object == nil || object.Pos() < function.Pos() || object.Pos() >= function.End() {
+							continue
+						}
+						if _, seen := local[object]; !seen {
+							local[object] = cleanedSpan{from: assign.End(), to: function.Body.End()}
 						}
 					}
+				}
+				if len(local) == 0 {
+					continue
+				}
+				ast.Inspect(function.Body, func(node ast.Node) bool {
+					assign, ok := node.(*ast.AssignStmt)
+					if !ok {
+						return true
+					}
+					for index, left := range assign.Lhs {
+						identifier, ok := unparen(left).(*ast.Ident)
+						if !ok {
+							continue
+						}
+						span, found := local[info.Uses[identifier]]
+						if found && assign.Pos() >= span.from && (len(assign.Lhs) != len(assign.Rhs) || !isFreshMap(info, assign.Rhs[index])) {
+							delete(local, info.Uses[identifier])
+						}
+					}
+					return true
+				})
+				for object, span := range local {
+					cleaned[object] = span
 				}
 			}
 		}
@@ -234,7 +268,7 @@ func scanSharedMessagesWrites(units []typedUnit, roots map[*types.Func]bool) *me
 			}
 		case *ast.Ident:
 			object := info.Uses[typed]
-			if end := cleaned[object]; end != 0 && typed.Pos() > end {
+			if span, ok := cleaned[object]; ok && typed.Pos() > span.from && typed.Pos() < span.to {
 				return false
 			}
 			return tainted[object]
@@ -538,6 +572,21 @@ func WriteThenCloneReassign(c ctx) {
 	m = maps.Clone(m)
 }
 
+func RetaintAfterCloneReassign(c ctx) {
+	m := currentMessages(c)
+	m = maps.Clone(m)
+	m = currentMessages(c)
+	m["k"] = "v"
+}
+
+var packageMap map[string]string
+
+func SetPackageMap(c ctx) { packageMap = currentMessages(c) }
+
+func CloneReassignPackageMap() { packageMap = maps.Clone(packageMap) }
+
+func WritePackageMap() { packageMap["k"] = "v" }
+
 func CloneReassignInBranch(c ctx, ok bool) {
 	m := currentMessages(c)
 	if ok {
@@ -615,7 +664,7 @@ func TestSharedMessagesGuardRecognisesItsOwnFixtures(t *testing.T) {
 		"WriteConverted", "WriteInClosure", "WriteAnonymousInterface",
 		// A fresh-map reassignment ends the taint only for what follows it, and
 		// only from the top level of the body.
-		"WriteThenCloneReassign", "CloneReassignInBranch",
+		"WriteThenCloneReassign", "CloneReassignInBranch", "RetaintAfterCloneReassign", "WritePackageMap",
 		// The write itself sits in writeThrough, reached through a tainted argument.
 		"writeThrough",
 		// The write sits in the caller of a function that returns the shared map.
@@ -626,7 +675,7 @@ func TestSharedMessagesGuardRecognisesItsOwnFixtures(t *testing.T) {
 			t.Errorf("the guard flagged %q %d time(s), want 1; findings:\n  %s", name, flagged["fixture."+name], describeMessagesFindings(scan.findings))
 		}
 	}
-	for _, name := range []string{"ReadOnly", "CopyFromShared", "CloneThenWrite", "UnrelatedLocal", "WriteParam", "wrapped", "currentMessages", "CloneReassign", "CloneReassignThenAlias", "CloneReassignParam", "PassToCloneReassignParam"} {
+	for _, name := range []string{"ReadOnly", "CopyFromShared", "CloneThenWrite", "UnrelatedLocal", "WriteParam", "wrapped", "currentMessages", "CloneReassign", "CloneReassignThenAlias", "CloneReassignParam", "PassToCloneReassignParam", "SetPackageMap", "CloneReassignPackageMap"} {
 		if flagged["fixture."+name] != 0 {
 			t.Errorf("the guard flagged the innocent %q; findings:\n  %s", name, describeMessagesFindings(scan.findings))
 		}
