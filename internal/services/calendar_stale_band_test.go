@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -76,6 +77,114 @@ func TestCalendarGridKeepsTheNextPeriodButNoFertileDayInTheOutOfDateBand(t *test
 		if ovulation != 0 || fertile != 0 {
 			t.Fatalf("the grid drew %d projected ovulation and %d fertile day(s) ahead of today while the data is out of date", ovulation, fertile)
 		}
+	})
+}
+
+// TestConfirmedOvulationSurvivesTheOutOfDateBandOnEverySurface pins the other half
+// of the decision above: the out-of-date band withholds the fertility PROJECTION,
+// and a day the owner's own temperatures confirmed is not a projection. The gate
+// that lets such a day through (ConfirmedOvulationWithheld) is the fertility gate
+// without the staleness signal, so on the same history as the grid test above
+// (three 28-day cycles, the running one from 2026-03-26, cycle day 30 on
+// 2026-04-24) a thermal shift on days 14-16 names ovulation on cycle day 13,
+// 2026-04-07, and every surface keeps that one day:
+//   - the grid carries a solid marker on it and no other ovulation marker, tentative
+//     or solid, and no fertile, peak, edge or pre-fertile day anywhere from the
+//     cycle start on;
+//   - the dashboard names it as confirmed;
+//   - the overview publishes it as confirmed, with no window and an unknown status
+//     (the window and status derived from a day stay behind the fertility gate).
+//
+// The projected ovulation, 2026-04-08, is a day later: a surface that fell back to
+// the projection instead of the shift would be told apart.
+func TestConfirmedOvulationSurvivesTheOutOfDateBandOnEverySurface(t *testing.T) {
+	user := dayFeedbackParityUser(72)
+	logs := cycleStartLogs(t, "2026-01-01", "2026-01-29", "2026-02-26", "2026-03-26")
+	lastStart := mustParseDay(t, "2026-03-26")
+	for cycleDay := 8; cycleDay <= 20; cycleDay++ {
+		reading := 36.20
+		if cycleDay >= 14 {
+			reading = 36.50
+		}
+		logs = append(logs, models.DailyLog{Date: AddCalendarDays(lastStart, cycleDay-1, time.UTC), BBT: &reading})
+	}
+	const wantKey, projectedKey = "2026-04-07", "2026-04-08"
+
+	forEachParityZone(t, func(t *testing.T, location *time.Location) {
+		now := localNoon(mustParseDay(t, "2026-04-24"), location)
+		today := DateAtLocation(now, location)
+		stats := ApplyUserCycleBaseline(user, logs, BuildCycleStatsFromLogs(user, logs, now, location), today, location)
+
+		// Fixtures: out of date by the fertility signal alone, so the markers below
+		// come from the confirmed day and not from a gate that was never closed.
+		if stats.CurrentCycleDay != 30 || !DashboardCyclePastReferenceLength(user, stats) || !FertilityProjectionSuppressed(user, stats) {
+			t.Fatalf("fixture: cycle day %d, past reference %t, fertility suppressed %t, want cycle day 30 out of date",
+				stats.CurrentCycleDay, DashboardCyclePastReferenceLength(user, stats), FertilityProjectionSuppressed(user, stats))
+		}
+		if PredictionsSuppressed(user, stats) || DashboardCycleOverdue(user, stats) {
+			t.Fatal("fixture: cycle day 30 must be out of date without the overdue gate firing")
+		}
+		if got := CalendarDayKey(stats.OvulationDate); got != projectedKey {
+			t.Fatalf("fixture: the projected ovulation = %s, want %s", got, projectedKey)
+		}
+		confirmed, ok := ConfirmedCurrentCycleOvulation(user, logs, stats, today, location)
+		if !ok || CalendarDayKey(confirmed) != wantKey {
+			t.Fatalf("resolver: confirmed %s (ok=%t), want %s", CalendarDayKey(confirmed), ok, wantKey)
+		}
+
+		// The grid: one solid marker on the confirmed day, nothing fertile.
+		var solid, tentative, fertileDays []string
+		for _, monthStart := range []time.Time{
+			time.Date(2026, time.March, 1, 0, 0, 0, 0, location),
+			time.Date(2026, time.April, 1, 0, 0, 0, 0, location),
+			time.Date(2026, time.May, 1, 0, 0, 0, 0, location),
+		} {
+			for _, day := range BuildCalendarDayStates(user, monthStart, logs, stats, now, location) {
+				if !day.InMonth || CalendarDay(day.Date, location).Before(lastStart) {
+					continue
+				}
+				if day.IsOvulation {
+					solid = append(solid, day.DateString)
+				}
+				if day.IsTentativeOvulation {
+					tentative = append(tentative, day.DateString)
+				}
+				if day.IsFertility || day.IsFertilityPeak || day.IsFertilityEdge || day.IsPreFertile || day.IsPredictedFertileOverlap {
+					fertileDays = append(fertileDays, day.DateString)
+				}
+			}
+		}
+		if !slices.Equal(solid, []string{wantKey}) || len(tentative) != 0 {
+			t.Errorf("calendar: solid %v, tentative %v, want the confirmed %s alone", solid, tentative, wantKey)
+		}
+		if len(fertileDays) != 0 {
+			t.Errorf("calendar: fertile, peak, edge or pre-fertile days %v on out-of-date data, want none", fertileDays)
+		}
+
+		// The dashboard.
+		cycleContext := BuildDashboardCycleContext(user, logs, stats, today, location)
+		if !cycleContext.FertilitySuppressed || CalendarDayKey(cycleContext.DisplayOvulationDate) != wantKey || !cycleContext.DisplayOvulationConfirmed {
+			t.Errorf("dashboard: fertility suppressed %t, ovulation %q, confirmed %t, want the confirmed %s beside a suppressed projection",
+				cycleContext.FertilitySuppressed, CalendarDayKey(cycleContext.DisplayOvulationDate), cycleContext.DisplayOvulationConfirmed, wantKey)
+		}
+
+		// The overview.
+		published, suppression, confirmedOvulation := PublishedOverviewStats(user, logs, stats, today, location)
+		if suppression.PredictionsSuppressed || !suppression.FertilitySuppressed || !slices.Contains(suppression.Reasons, SuppressionReasonCycleDataStale) {
+			t.Errorf("API: suppression %+v, want the fertility half withheld as out of date and nothing more", suppression)
+		}
+		if CalendarDayKey(published.OvulationDate) != wantKey || !confirmedOvulation {
+			t.Errorf("API: ovulation %q confirmed %t, want the confirmed %s", CalendarDayKey(published.OvulationDate), confirmedOvulation, wantKey)
+		}
+		if !published.FertilityWindowStart.IsZero() || !published.FertilityWindowEnd.IsZero() {
+			t.Errorf("API: window %s..%s, want none — the window derived from the confirmed day stays withheld",
+				CalendarDayKey(published.FertilityWindowStart), CalendarDayKey(published.FertilityWindowEnd))
+		}
+		if !published.CycleDataStale || published.NextPeriodStart.IsZero() {
+			t.Errorf("API: stale %t, next period %q, want the out-of-date verdict beside the running cycle's own next period",
+				published.CycleDataStale, CalendarDayKey(published.NextPeriodStart))
+		}
+		assertPublishedStatusAndPhase(t, published, FertilityStatusUnknown, "", "unknown")
 	})
 }
 
