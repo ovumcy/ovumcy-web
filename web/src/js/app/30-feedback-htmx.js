@@ -598,7 +598,10 @@
   // since, the server refuses the fetch (or a control inside the editor) with
   // the same account-changed key a refused save carries. htmx swaps no error
   // response, so without this the editor area would stay blank, or keep the
-  // skeleton, with no word on why. Only the message TEXT is adopted.
+  // skeleton, with no word on why. Only the message TEXT is adopted. An editor
+  // already open stays: a refused control or day switch must not take the
+  // entry typed into it, so the notice leads the editor; only a skeleton or a
+  // blank area gives way to the notice.
   //
   // The grid refresh after a save is refused the same way. The grid it would
   // have replaced stays on screen as rendered, so the notice leads it rather
@@ -624,7 +627,15 @@
 
     if (target.id === "day-editor") {
       notice.setAttribute("data-day-editor-refused", "account-changed");
-      target.replaceChildren(notice);
+      var previousNotice = target.querySelector("[data-day-editor-refused]");
+      if (previousNotice) {
+        previousNotice.remove();
+      }
+      if (target.querySelector("[data-day-editor-form]")) {
+        target.prepend(notice);
+      } else {
+        target.replaceChildren(notice);
+      }
       return true;
     }
 

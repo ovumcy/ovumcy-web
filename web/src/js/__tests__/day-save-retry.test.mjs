@@ -730,6 +730,37 @@ for (const [surface, fragment, key, text] of [
   });
 }
 
+// A control inside an open editor (cycle start, delete) targets the whole
+// editor. Refused, it must not take the entry typed into the editor with it.
+test("a refused control inside an open editor keeps the typed entry and leads it with the notice", async () => {
+  const page = `<!doctype html><html><body>
+    <aside id="day-editor"><form data-day-editor-form><textarea name="notes">typed, not saved</textarea></form>
+      <button type="button" id="cycle-start" hx-post="/api/v1/days/2026-08-12/cycle-start" hx-target="#day-editor">start</button></aside>
+  </body></html>`;
+  const dom = await loadDOMWithScript(APP_BUNDLE, { html: page });
+  try {
+    const editor = dom.window.document.getElementById("day-editor");
+    const control = dom.window.document.getElementById("cycle-start");
+    const refuse = () =>
+      control.dispatchEvent(
+        new dom.window.CustomEvent("htmx:responseError", {
+          detail: { target: editor, elt: control, xhr: { status: 409, responseText: ACCOUNT_CHANGED_FRAGMENT } },
+          bubbles: true,
+        })
+      );
+    refuse();
+    refuse();
+
+    const notices = editor.querySelectorAll("[data-day-editor-refused]");
+    assert.equal(notices.length, 1, "one notice, however often the control is refused");
+    assert.equal(editor.firstElementChild, notices[0], "the notice leads the editor");
+    assert.equal(notices[0].textContent, ACCOUNT_CHANGED_TEXT);
+    assert.equal(editor.querySelector("textarea[name=notes]").value, "typed, not saved", "the typed entry stays");
+  } finally {
+    dom.window.close();
+  }
+});
+
 // The grid refresh after a save is the same read. Refused, it leaves the grid
 // as it was rendered and says so above it, once, however often it is refused.
 test("a refused calendar grid refresh keeps the grid and leads it with the notice", async () => {
