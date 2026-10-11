@@ -192,37 +192,48 @@ func TestRefusedCalendarReadIsAudited(t *testing.T) {
 		{name: "grid read from a page of another account", path: "/calendar?month=2026-06", htmx: true, binding: fixture.firstBinding, refused: true},
 		{name: "HTMX day editor read with no page binding", path: "/calendar/day/2026-06-08", htmx: true, refused: true},
 		{name: "HTMX grid read with no page binding", path: "/calendar?month=2026-06", htmx: true, refused: true},
+		// A binding that names another account is refused whether or not the
+		// request is HTMX: only the absence of a binding depends on it.
+		{name: "non-HTMX day editor read from a page of another account", path: "/calendar/day/2026-06-08?mode=edit", binding: fixture.firstBinding, refused: true},
+		{name: "non-HTMX grid read from a page of another account", path: "/calendar?month=2026-06", binding: fixture.firstBinding, refused: true},
 		{name: "direct navigation to the day editor", path: "/calendar/day/2026-06-08?mode=edit"},
 		{name: "direct navigation to the grid", path: "/calendar?month=2026-06"},
 	}
 	for _, tc := range cases {
-		request := httptest.NewRequest(http.MethodGet, tc.path, nil)
-		request.Header.Set("Cookie", fixture.secondCookie)
-		if tc.htmx {
-			request.Header.Set("HX-Request", "true")
-		}
-		if tc.binding != "" {
-			request.Header.Set(dayFormAccountWireHeader, tc.binding)
-		}
-
-		response, logOutput := captureAuditedRequest(t, fixture.app, request)
-		label := tc.name + ": GET " + tc.path
-		if !tc.refused {
-			// A request that is not from a rendered page is answered, and an
-			// answered read leaves no access-refusal record.
-			assertStatusCode(t, response, http.StatusOK)
-			if strings.Contains(logOutput, fmt.Sprintf("action=%q", dayFormPageReadAction)) {
-				t.Fatalf("%s: an answered read must write no %s record, got %q", label, dayFormPageReadAction, logOutput)
+		t.Run(tc.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			request.Header.Set("Cookie", fixture.secondCookie)
+			if tc.htmx {
+				request.Header.Set("HX-Request", "true")
 			}
-			continue
-		}
-		assertOpenAccountChangedRefusal(t, label, response)
-		line := securityEventLine(t, logOutput, dayFormPageReadAction, "denied")
-		if !strings.Contains(line, `reason="day form page account changed"`) {
-			t.Fatalf("%s: the refusal must be audited with its reason, got %q", label, line)
-		}
-		if !strings.Contains(line, fmt.Sprintf("user_id=%q", fmt.Sprint(fixture.second.ID))) {
-			t.Fatalf("%s: the refusal must name the account it was refused under, got %q", label, line)
-		}
+			if tc.binding != "" {
+				request.Header.Set(dayFormAccountWireHeader, tc.binding)
+			}
+
+			response, logOutput := captureAuditedRequest(t, fixture.app, request)
+			label := "GET " + tc.path
+			if !tc.refused {
+				// A request that is not from a rendered page is answered, and an
+				// answered read leaves no access-refusal record.
+				assertStatusCode(t, response, http.StatusOK)
+				if strings.Contains(logOutput, fmt.Sprintf("action=%q", dayFormPageReadAction)) {
+					t.Fatalf("%s: an answered read must write no %s record, got %q", label, dayFormPageReadAction, logOutput)
+				}
+				return
+			}
+			if tc.htmx {
+				assertOpenAccountChangedRefusal(t, label, response)
+			} else {
+				// A non-HTMX caller gets the JSON refusal, whose key is the error message.
+				assertStatusCode(t, response, http.StatusConflict)
+			}
+			line := securityEventLine(t, logOutput, dayFormPageReadAction, "denied")
+			if !strings.Contains(line, `reason="day form page account changed"`) {
+				t.Fatalf("%s: the refusal must be audited with its reason, got %q", label, line)
+			}
+			if !strings.Contains(line, fmt.Sprintf("user_id=%q", fmt.Sprint(fixture.second.ID))) {
+				t.Fatalf("%s: the refusal must name the account it was refused under, got %q", label, line)
+			}
+		})
 	}
 }
