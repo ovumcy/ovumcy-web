@@ -1,0 +1,12 @@
+{{define "prediction_explainer_primary"}}
+{{- /* The primary prediction-explainer sentence on the dashboard, calendar and
+     stats pages. Called with the page data; reads .PredictionExplanationPrimaryKey,
+     .PredictionExplanationPrimaryCount, .Messages and .Lang. The service resolves
+     the count (0 for a sentence that names no number), so no page decides per key
+     whether the sentence takes one. */ -}}
+{{- if gt .PredictionExplanationPrimaryCount 0 -}}
+{{printf (tn .Messages .Lang .PredictionExplanationPrimaryKey .PredictionExplanationPrimaryCount) .PredictionExplanationPrimaryCount}}
+{{- else -}}
+{{t .Messages .PredictionExplanationPrimaryKey}}
+{{- end -}}
+{{end}}

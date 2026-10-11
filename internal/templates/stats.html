@@ -30,7 +30,7 @@
        tiers it names (irregular sparse, awaiting more cycles) sit below the
        insights threshold, so it renders outside that gate. */}}
   {{if .HasPredictionExplanationPrimary}}
-  <div class="card-quiet text-sm journal-muted" data-stats-prediction-explainer data-explainer-key="{{.PredictionExplanationPrimaryKey}}">{{if gt .PredictionExplanationPrimaryCount 0}}{{printf (tn .Messages .Lang .PredictionExplanationPrimaryKey .PredictionExplanationPrimaryCount) .PredictionExplanationPrimaryCount}}{{else}}{{t .Messages .PredictionExplanationPrimaryKey}}{{end}}</div>
+  <div class="card-quiet text-sm journal-muted" data-stats-prediction-explainer data-explainer-key="{{.PredictionExplanationPrimaryKey}}">{{template "prediction_explainer_primary" .}}</div>
   {{end}}
 
   {{if not .HasInsights}}
