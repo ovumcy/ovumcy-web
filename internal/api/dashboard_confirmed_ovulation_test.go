@@ -281,6 +281,44 @@ func TestDashboardNamesTheConfirmedDayForTheThinHistoryCohort(t *testing.T) {
 // while the recorded shift still names today-3.
 const overdueConfirmedShiftDaysPastProjection = 4
 
+// outOfDateConfirmedShiftDaysPastProjection opens the same cycle on cycle day
+// 30: past the 28-day reference, so the out-of-date band withholds the fertility
+// projection, and short of the overdue gate, so the next period is not paused.
+const outOfDateConfirmedShiftDaysPastProjection = -2
+
+// TestDashboardNamesAConfirmedOvulationInTheOutOfDateBand is the rendered half
+// of the out-of-date band's confirmed-day pin: the projected ovulation
+// (today-1) is withheld with the rest of the fertility projection, and the
+// ovulation slot still names the day the temperatures named (today-3), beside
+// the disclaimer, while the next-period estimate is not paused.
+func TestDashboardNamesAConfirmedOvulationInTheOutOfDateBand(t *testing.T) {
+	app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
+	user := createOnboardingTestUser(t, database, "dashboard-stale-shift@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	today := services.DateAtLocation(time.Now().In(time.UTC), time.UTC)
+	updateStatsOverviewUser(t, database, user, map[string]any{"track_bbt": true, "usage_goal": models.UsageGoalTrying})
+	confirmedDay, projectedDay := seedLateThermalShiftCycle(t, database, user, today, outOfDateConfirmedShiftDaysPastProjection)
+
+	_, payload := fetchStatsOverview(t, app, authCookie)
+	if payload.Suppression.Predictions || !payload.Suppression.Fertility || !payload.CycleDataStale {
+		t.Fatalf("fixture anchor: suppression = %+v, stale = %t; want the out-of-date band without the overdue gate", payload.Suppression, payload.CycleDataStale)
+	}
+
+	slot, document := dashboardOvulationSlotText(t, app, authCookie)
+	if dashboardElementByDataAttr(document, "data-dashboard-next-period-paused") != nil {
+		t.Fatal("the next-period estimate is paused short of the overdue gate")
+	}
+	if want := services.LocalizedDateDisplay("en", confirmedDay); !strings.Contains(slot, want) {
+		t.Fatalf("the ovulation slot = %q, want the BBT-confirmed %q in the out-of-date band", slot, want)
+	}
+	if projected := services.LocalizedDateDisplay("en", projectedDay); strings.Contains(slot, projected) {
+		t.Fatalf("the ovulation slot = %q names the withheld projection %q", slot, projected)
+	}
+	if dashboardElementByDataAttr(document, "data-dashboard-prediction-disclaimer") == nil {
+		t.Fatal("the confirmed day rendered without the medical disclaimer")
+	}
+}
+
 // TestDashboardNamesAConfirmedOvulationBesideAPausedEstimate reads the rendered
 // status line of an overdue account whose temperatures confirmed this cycle's
 // ovulation. The next-period estimate is paused; the ovulation slot still names

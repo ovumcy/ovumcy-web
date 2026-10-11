@@ -19,6 +19,7 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 	"golang.org/x/net/html"
+	"golang.org/x/tools/go/packages"
 	"gorm.io/gorm"
 )
 
@@ -308,15 +309,21 @@ func dayPanelProjectionCopy(t *testing.T) map[string]*regexp.Regexp {
 // the value the compiled constant carries and must itself name a projection word,
 // because the "stale" word of the day-panel check is anchored on it. A sweep that
 // found the type but resolved the wrong constants, or none, fails there.
+//
+// Only the services package is loaded, not the whole tree the reachability
+// barrier type-checks: this test is the one run alone after a catalogue edit.
 func suppressionReasonConstants(t *testing.T) map[string]string {
 	t.Helper()
 
-	evidence := loadTreeEvidence(t)
-	servicesPackage := evidence.packageByPath(modulePath + "/internal/services")
-	if servicesPackage == nil || servicesPackage.Types == nil {
-		t.Fatalf("anchor: the sweep did not type-check %s/internal/services", modulePath)
+	root, err := moduleRootForBarrier()
+	if err != nil {
+		t.Fatalf("anchor: locating the module root: %v", err)
 	}
-	scope := servicesPackage.Types.Scope()
+	loaded, err := packages.Load(&packages.Config{Mode: packages.NeedName | packages.NeedTypes, Dir: root}, "./internal/services")
+	if err != nil || len(loaded) != 1 || len(loaded[0].Errors) > 0 || loaded[0].Types == nil {
+		t.Fatalf("anchor: type-checking %s/internal/services: %v %v", modulePath, err, loaded)
+	}
+	scope := loaded[0].Types.Scope()
 	reasonType, ok := scope.Lookup("SuppressionReason").(*types.TypeName)
 	if !ok {
 		t.Fatal("anchor: the services package declares no SuppressionReason type")
