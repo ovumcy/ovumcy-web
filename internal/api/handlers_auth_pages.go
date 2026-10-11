@@ -150,7 +150,7 @@ func (handler *Handler) ShowRegisterPage(c fiber.Ctx) error {
 
 func (handler *Handler) ShowRecoveryCodePage(c fiber.Ctx) error {
 	user, err := handler.authenticateRequest(c)
-	if errors.Is(err, errAuthSessionUnresolved) {
+	if errors.Is(err, services.ErrAuthSessionLookupFailed) {
 		return handler.respondSessionFault(c)
 	}
 	if err != nil {

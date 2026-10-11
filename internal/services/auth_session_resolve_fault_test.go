@@ -19,11 +19,12 @@ func TestResolveAuthSessionTellsAStorageFaultFromAMissingAccount(t *testing.T) {
 	storageFault := errors.New("database is locked")
 
 	cases := map[string]struct {
-		repo    *stubAuthUserRepo
-		want    error
-		notWant error
+		repo      *stubAuthUserRepo
+		want      error
+		notWant   error
+		wantWraps error
 	}{
-		"storage fault":   {repo: &stubAuthUserRepo{findByIDOptionalErr: storageFault}, want: ErrAuthSessionLookupFailed, notWant: ErrAuthInvalidCreds},
+		"storage fault":   {repo: &stubAuthUserRepo{findByIDOptionalErr: storageFault}, want: ErrAuthSessionLookupFailed, notWant: ErrAuthInvalidCreds, wantWraps: storageFault},
 		"missing account": {repo: &stubAuthUserRepo{}, want: ErrAuthInvalidCreds, notWant: ErrAuthSessionLookupFailed},
 	}
 	for name, c := range cases {
@@ -37,8 +38,8 @@ func TestResolveAuthSessionTellsAStorageFaultFromAMissingAccount(t *testing.T) {
 			if !errors.Is(err, c.want) || errors.Is(err, c.notWant) {
 				t.Fatalf("ResolveAuthSession() error = %v, want %v and not %v", err, c.want, c.notWant)
 			}
-			if name == "storage fault" && !errors.Is(err, storageFault) {
-				t.Fatalf("ResolveAuthSession() error = %v, want it to wrap the storage fault", err)
+			if c.wantWraps != nil && !errors.Is(err, c.wantWraps) {
+				t.Fatalf("ResolveAuthSession() error = %v, want it to wrap %v", err, c.wantWraps)
 			}
 		})
 	}

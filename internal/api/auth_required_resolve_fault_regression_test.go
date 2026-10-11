@@ -117,41 +117,17 @@ func TestAuthRequiredSendsAnUnsupportedRoleNoJSFormToSignIn(t *testing.T) {
 	t.Fatal("the redirect to /login carries no flash notice")
 }
 
-// TestErasureStepupCallbackFlashesAStorageFaultToSettings (WEB-290): the
-// callback authenticates the session itself, and its browser is back from the
-// identity provider, so a lookup fault is a settings flash — not a mismatch
-// refusal, not a 5xx envelope — and the auth cookie stays.
-func TestErasureStepupCallbackFlashesAStorageFaultToSettings(t *testing.T) {
-	t.Parallel()
-
-	fixture := newOIDCStepupFixture(t, "settings-erasure-session-fault@example.com")
-	fixture.oidcStub.reauthErr = nil
-
-	startResponse := postErasureStepupStart(t, fixture, "/api/v1/users/current/data-wipe/step-up")
-	defer func() { _ = startResponse.Body.Close() }()
-	stepupCookie := readStepupCookie(t, startResponse)
-	state := extractStepupCallbackState(t, fixture)
-
-	sqlDB, err := fixture.database.DB()
-	if err != nil {
-		t.Fatalf("open sql db: %v", err)
-	}
-	if err := sqlDB.Close(); err != nil {
-		t.Fatalf("close sql db: %v", err)
-	}
-
-	response := postOIDCStepupCallback(t, fixture, stepupCookie, state, "callback-code")
-	defer func() { _ = response.Body.Close() }()
-	assertStepupCallbackFaultFlash(t, response)
-}
-
-// TestStepupCallbacksFlashAStorageFaultToSettings (WEB-290) is the erasure
-// test's counterpart for the other two callbacks that authenticate the session
-// themselves: local-password setup and identity link.
+// TestStepupCallbacksFlashAStorageFaultToSettings (WEB-290): each callback
+// authenticates the session itself, and its browser is back from the identity
+// provider, so a lookup fault is a settings flash — not a mismatch refusal, not
+// a 5xx envelope — and the auth cookie stays.
 func TestStepupCallbacksFlashAStorageFaultToSettings(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]func(t *testing.T, fixture *oidcStepupFixture) *http.Response{
+		"erasure": func(t *testing.T, fixture *oidcStepupFixture) *http.Response {
+			return postErasureStepupStart(t, fixture, "/api/v1/users/current/data-wipe/step-up")
+		},
 		"local password setup": func(t *testing.T, fixture *oidcStepupFixture) *http.Response {
 			return fixture.postStart(t, "NewStrongPass1", "NewStrongPass1")
 		},

@@ -2,7 +2,6 @@ package api
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -11,13 +10,9 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-// errAuthSessionUnresolved marks a failure to resolve the session that is not
-// a verdict on it (a storage fault, an unrecognized error): the cookie stays,
-// and AuthRequired answers 5xx instead of treating the caller as signed out.
-var errAuthSessionUnresolved = errors.New("auth session unresolved")
-
-// respondSessionFault answers an errAuthSessionUnresolved: every caller that
-// reads the session itself must give a fault this answer, not its refusal.
+// respondSessionFault answers a services.ErrAuthSessionLookupFailed: every
+// caller that reads the session itself must give a fault this answer, not its
+// refusal.
 func (handler *Handler) respondSessionFault(c fiber.Ctx) error {
 	return handler.respondGlobalMappedError(c, transportErrorSpecForStatus(fiber.StatusInternalServerError))
 }
@@ -72,10 +67,10 @@ func (handler *Handler) authenticateRequest(c fiber.Ctx) (*models.User, error) {
 			handler.clearAuthCookie(c)
 			handler.logSecurityEvent(c, "auth.session", "denied", securityEventField("reason", "invalid token"))
 			return nil, errors.New("invalid token")
-		case errors.Is(err, services.ErrAuthSessionLookupFailed):
-			handler.logSecurityEvent(c, "auth.session", "failure", securityEventField("reason", "token resolve failed"))
-			return nil, fmt.Errorf("%w: %w", errAuthSessionUnresolved, err)
 		default:
+			// Includes services.ErrAuthSessionLookupFailed (a storage fault): the
+			// error comes back as it is, the cookie stays, and the caller tells a
+			// fault from a refusal with errors.Is.
 			handler.logSecurityEvent(c, "auth.session", "failure", securityEventField("reason", "token resolve failed"))
 			return nil, err
 		}

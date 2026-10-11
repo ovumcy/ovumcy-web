@@ -171,7 +171,7 @@ func (handler *Handler) completeErasureStepupReauth(c fiber.Ctx, state oidcStepu
 	// for unauthenticated visitors), so resolve the session here and require it
 	// to be the account the flow was started for.
 	user, err := handler.authenticateRequest(c)
-	if errors.Is(err, errAuthSessionUnresolved) {
+	if errors.Is(err, services.ErrAuthSessionLookupFailed) {
 		return handler.redirectSettingsRefusal(c, settingsSessionFaultErrorSpec())
 	}
 	if err != nil || user == nil || user.ID != state.UserID {

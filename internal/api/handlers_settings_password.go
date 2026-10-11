@@ -167,7 +167,7 @@ func (handler *Handler) completeLocalPasswordSetupReauth(c fiber.Ctx, state oidc
 	// login path needs to work for unauthenticated visitors), so we resolve
 	// the current session from the auth cookie ourselves.
 	user, err := handler.authenticateRequest(c)
-	if errors.Is(err, errAuthSessionUnresolved) {
+	if errors.Is(err, services.ErrAuthSessionLookupFailed) {
 		return handler.redirectSettingsRefusal(c, settingsSessionFaultErrorSpec())
 	}
 	if err != nil || user == nil || user.ID != state.UserID {

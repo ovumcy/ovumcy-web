@@ -20,21 +20,18 @@ func (handler *Handler) AuthRequired(c fiber.Ctx) error {
 	if err != nil {
 		// A fault is not a refusal: the session may be live, so neither the
 		// sign-in redirect nor the "not signed in" notice may answer it.
-		if errors.Is(err, errAuthSessionUnresolved) {
+		if errors.Is(err, services.ErrAuthSessionLookupFailed) {
 			return handler.respondSessionFault(c)
 		}
 		if errors.Is(err, services.ErrAuthUnsupportedRole) {
 			spec := authWebSignInUnavailableErrorSpec()
-			// The session cookie is already cleared, so the refusal page's link
-			// back to the form would only bounce off this gate with no notice.
-			if _, ok := plainPageFormBackPath(c); ok {
+			// The session cookie is already cleared, so a no-JS form's refusal page
+			// would link back to a form that only bounces off this gate with no
+			// notice: that browser goes straight to the sign-in page.
+			if _, plainForm := plainPageFormBackPath(c); plainForm || !(strings.HasPrefix(httpx.RoutingNormalizedPath(c.Path()), "/api/") || acceptsJSON(c)) {
 				return handler.redirectSignedOutRefusal(c, spec)
 			}
-			if strings.HasPrefix(httpx.RoutingNormalizedPath(c.Path()), "/api/") || acceptsJSON(c) {
-				return handler.respondGlobalMappedError(c, spec)
-			}
-			handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-			return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
+			return handler.respondGlobalMappedError(c, spec)
 		}
 		if strings.HasPrefix(httpx.RoutingNormalizedPath(c.Path()), "/api/") || acceptsJSON(c) {
 			return handler.respondGlobalMappedError(c, unauthorizedErrorSpec())
