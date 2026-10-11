@@ -2291,6 +2291,11 @@
       }
       if (target.querySelector("[data-day-editor-form]")) {
         target.prepend(notice);
+        // The refused controls sit at the editor's foot; on a long editor the
+        // notice above it would land out of view.
+        if (typeof notice.scrollIntoView === "function") {
+          notice.scrollIntoView({ block: "nearest" });
+        }
       } else {
         target.replaceChildren(notice);
       }
