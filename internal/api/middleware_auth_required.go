@@ -28,10 +28,12 @@ func (handler *Handler) AuthRequired(c fiber.Ctx) error {
 			// The session cookie is already cleared, so a no-JS form's refusal page
 			// would link back to a form that only bounces off this gate with no
 			// notice: that browser goes straight to the sign-in page.
-			if _, plainForm := plainPageFormBackPath(c); plainForm || !(strings.HasPrefix(httpx.RoutingNormalizedPath(c.Path()), "/api/") || acceptsJSON(c)) {
-				return handler.redirectSignedOutRefusal(c, spec)
+			_, plainForm := plainPageFormBackPath(c)
+			apiRequest := strings.HasPrefix(httpx.RoutingNormalizedPath(c.Path()), "/api/") || acceptsJSON(c)
+			if apiRequest && !plainForm {
+				return handler.respondGlobalMappedError(c, spec)
 			}
-			return handler.respondGlobalMappedError(c, spec)
+			return handler.redirectSignedOutRefusal(c, spec)
 		}
 		if strings.HasPrefix(httpx.RoutingNormalizedPath(c.Path()), "/api/") || acceptsJSON(c) {
 			return handler.respondGlobalMappedError(c, unauthorizedErrorSpec())
