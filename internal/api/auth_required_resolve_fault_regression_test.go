@@ -142,6 +142,50 @@ func TestErasureStepupCallbackFlashesAStorageFaultToSettings(t *testing.T) {
 
 	response := postOIDCStepupCallback(t, fixture, stepupCookie, state, "callback-code")
 	defer func() { _ = response.Body.Close() }()
+	assertStepupCallbackFaultFlash(t, response)
+}
+
+// TestStepupCallbacksFlashAStorageFaultToSettings (WEB-290) is the erasure
+// test's counterpart for the other two callbacks that authenticate the session
+// themselves: local-password setup and identity link.
+func TestStepupCallbacksFlashAStorageFaultToSettings(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]func(t *testing.T, fixture *oidcStepupFixture) *http.Response{
+		"local password setup": func(t *testing.T, fixture *oidcStepupFixture) *http.Response {
+			return fixture.postStart(t, "NewStrongPass1", "NewStrongPass1")
+		},
+		"identity link": postOIDCIdentityLinkStepupStart,
+	}
+	for name, start := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			fixture := newOIDCStepupFixture(t, "stepup-session-fault-"+strings.ReplaceAll(name, " ", "-")+"@example.com")
+			fixture.oidcStub.reauthErr = nil
+
+			startResponse := start(t, fixture)
+			defer func() { _ = startResponse.Body.Close() }()
+			stepupCookie := readStepupCookie(t, startResponse)
+			state := extractStepupCallbackState(t, fixture)
+
+			sqlDB, err := fixture.database.DB()
+			if err != nil {
+				t.Fatalf("open sql db: %v", err)
+			}
+			if err := sqlDB.Close(); err != nil {
+				t.Fatalf("close sql db: %v", err)
+			}
+
+			response := postOIDCStepupCallback(t, fixture, stepupCookie, state, "callback-code")
+			defer func() { _ = response.Body.Close() }()
+			assertStepupCallbackFaultFlash(t, response)
+		})
+	}
+}
+
+func assertStepupCallbackFaultFlash(t *testing.T, response *http.Response) {
+	t.Helper()
 	assertStatusCode(t, response, http.StatusSeeOther)
 	if location := response.Header.Get("Location"); location != "/settings" {
 		t.Fatalf("Location %q, want /settings", location)
