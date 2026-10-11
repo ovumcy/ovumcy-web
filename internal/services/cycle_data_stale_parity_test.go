@@ -98,7 +98,7 @@ func TestCycleDataStaleVerdictIsOneAcrossDashboardStatsPageAndAPI(t *testing.T) 
 				}
 
 				dashboard := BuildDashboardCycleContext(user, logs, stats, today, location).CycleDataStale
-				statsPage := service.BuildFlags(user, logs, stats, now, location, 0).CycleDataStale
+				statsPage := service.BuildFlags(user, stats, 0).CycleDataStale
 				published, _, _ := PublishedOverviewStats(user, logs, stats, today, location)
 
 				if dashboard != testCase.want || statsPage != testCase.want || published.CycleDataStale != testCase.want {

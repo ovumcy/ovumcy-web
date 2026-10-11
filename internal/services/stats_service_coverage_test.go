@@ -87,20 +87,26 @@ func TestStatsServiceTrimTrailingCycleTrendLengthsExactEquality(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Lines 103-106 — BuildFlags field-boundary conditions
+// BuildFlags field-boundary conditions
 // ---------------------------------------------------------------------------
 
 // statsserviceCovEmptyLogs is a shared empty log slice for flag boundary tests.
 var statsserviceCovEmptyLogs []models.DailyLog
 
+// statsserviceCovFlags derives the flags the way the stats page does: the
+// cycle stats come out of the logs, and the flags read the count off them.
+func statsserviceCovFlags(t *testing.T, logs []models.DailyLog, now time.Time, trendPointCount int) StatsFlags {
+	t.Helper()
+	svc := NewStatsService(&stubStatsDayReader{}, &stubStatsSymptomReader{})
+	user := &models.User{Role: models.RoleOwner, CycleLength: 28}
+	return svc.BuildFlags(user, BuildCycleStatsFromLogs(user, logs, now, time.UTC), trendPointCount)
+}
+
 // TestStatsServiceBuildFlagsHasObservedCycleDataFalseAtZero verifies that
 // HasObservedCycleData is false when there are no logs at all.
 // A mutant changing "> 0" to ">= 0" would set this true even with zero cycles.
 func TestStatsServiceBuildFlagsHasObservedCycleDataFalseAtZero(t *testing.T) {
-	svc := NewStatsService(&stubStatsDayReader{}, &stubStatsSymptomReader{})
-	user := &models.User{Role: models.RoleOwner, CycleLength: 28}
-	now := mustParseStatsServiceDay(t, "2026-05-01")
-	flags := svc.BuildFlags(user, statsserviceCovEmptyLogs, CycleStats{}, now, time.UTC, 0)
+	flags := statsserviceCovFlags(t, statsserviceCovEmptyLogs, mustParseStatsServiceDay(t, "2026-05-01"), 0)
 
 	if flags.HasObservedCycleData {
 		t.Fatal("expected HasObservedCycleData=false for empty logs, got true")
@@ -109,31 +115,28 @@ func TestStatsServiceBuildFlagsHasObservedCycleDataFalseAtZero(t *testing.T) {
 
 // TestStatsServiceBuildFlagsHasTrendDataFalseAtZero verifies that HasTrendData
 // is false when trendPointCount == 0.
-// A mutant changing "> 0" to ">= 0" on line 104 would set this true.
+// A mutant changing "> 0" to ">= 0" would set this true.
 func TestStatsServiceBuildFlagsHasTrendDataFalseAtZero(t *testing.T) {
-	svc := NewStatsService(&stubStatsDayReader{}, &stubStatsSymptomReader{})
-	user := &models.User{Role: models.RoleOwner, CycleLength: 28}
-	now := mustParseStatsServiceDay(t, "2026-05-01")
-	// Two-period logs ensure observedCycleCount > 0, but we pass trendPointCount=0.
+	// A completed cycle exists, but we pass trendPointCount=0.
 	logs := []models.DailyLog{
 		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
 		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true},
 	}
-	flags := svc.BuildFlags(user, logs, CycleStats{}, now, time.UTC, 0)
+	flags := statsserviceCovFlags(t, logs, mustParseStatsServiceDay(t, "2026-05-01"), 0)
 
 	if flags.HasTrendData {
 		t.Fatal("expected HasTrendData=false for trendPointCount=0, got true")
 	}
+	if !flags.HasObservedCycleData {
+		t.Fatal("expected HasObservedCycleData=true for one completed cycle, got false")
+	}
 }
 
 // TestStatsServiceBuildFlagsHasInsightsTrueAtExactMinimum verifies that
-// HasInsights is true when completedCycleCount equals statsMinimumInsightsCycles
-// (which is 3).  A mutant changing ">=" to ">" on line 105 would set this false.
+// HasInsights is true when the completed-cycle count equals
+// statsMinimumInsightsCycles (which is 3).  A mutant changing ">=" to ">" would
+// set this false.
 func TestStatsServiceBuildFlagsHasInsightsTrueAtExactMinimum(t *testing.T) {
-	svc := NewStatsService(&stubStatsDayReader{}, &stubStatsSymptomReader{})
-	user := &models.User{Role: models.RoleOwner, CycleLength: 28}
-	now := mustParseStatsServiceDay(t, "2026-04-10")
-
 	// Four period-start logs produce exactly 3 completed cycles.
 	logs := []models.DailyLog{
 		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
@@ -141,7 +144,7 @@ func TestStatsServiceBuildFlagsHasInsightsTrueAtExactMinimum(t *testing.T) {
 		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true, CycleStart: true},
 		{Date: mustParseStatsServiceDay(t, "2026-03-26"), IsPeriod: true, CycleStart: true},
 	}
-	flags := svc.BuildFlags(user, logs, CycleStats{}, now, time.UTC, 3)
+	flags := statsserviceCovFlags(t, logs, mustParseStatsServiceDay(t, "2026-04-10"), 3)
 
 	if !flags.HasInsights {
 		t.Fatalf("expected HasInsights=true when completedCycleCount==statsMinimumInsightsCycles(3), got false; completedCycleCount=%d", flags.CompletedCycleCount)
@@ -153,88 +156,32 @@ func TestStatsServiceBuildFlagsHasInsightsTrueAtExactMinimum(t *testing.T) {
 
 // TestStatsServiceBuildFlagsHasReliableTrendTrueAtExactMinimum verifies that
 // HasReliableTrend is true when trendPointCount equals statsReliableTrendCycles
-// (which is 3).  A mutant changing ">=" to ">" on line 106 would set this false.
+// (which is 3).  A mutant changing ">=" to ">" would set this false.
 func TestStatsServiceBuildFlagsHasReliableTrendTrueAtExactMinimum(t *testing.T) {
-	svc := NewStatsService(&stubStatsDayReader{}, &stubStatsSymptomReader{})
-	user := &models.User{Role: models.RoleOwner, CycleLength: 28}
-	now := mustParseStatsServiceDay(t, "2026-05-01")
-
-	flags := svc.BuildFlags(user, statsserviceCovEmptyLogs, CycleStats{}, now, time.UTC, 3 /* trendPointCount == statsReliableTrendCycles */)
+	flags := statsserviceCovFlags(t, statsserviceCovEmptyLogs, mustParseStatsServiceDay(t, "2026-05-01"), 3 /* trendPointCount == statsReliableTrendCycles */)
 
 	if !flags.HasReliableTrend {
 		t.Fatal("expected HasReliableTrend=true when trendPointCount==statsReliableTrendCycles(3), got false")
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Lines 114 & 119 — statsInsightProgress boundary conditions
-// ---------------------------------------------------------------------------
-
-// TestStatsServiceStatsInsightProgressZeroCompletedCycles verifies that
-// InsightProgress is 0 when completedCycleCount is 0.
-// A mutant changing "<= 0" to "< 0" on line 114 would skip the guard and
-// produce 0*100/2 = 0 anyway — but the concrete branch is still untested,
-// so we confirm the return value AND that completedCycleCount=0 produces 0.
-func TestStatsServiceStatsInsightProgressZeroCompletedCycles(t *testing.T) {
+// TestStatsServiceBuildFlagsCountsWhatTheStatsCount pins the one counter: the
+// flags take the completed-cycle count from the CycleStats they are handed, the
+// counter the dashboard's fertility floor reads, and from nothing else.
+func TestStatsServiceBuildFlagsCountsWhatTheStatsCount(t *testing.T) {
 	svc := NewStatsService(&stubStatsDayReader{}, &stubStatsSymptomReader{})
 	user := &models.User{Role: models.RoleOwner, CycleLength: 28}
-	now := mustParseStatsServiceDay(t, "2026-05-01")
 
-	// Empty logs → completedCycleCount = 0.
-	flags := svc.BuildFlags(user, statsserviceCovEmptyLogs, CycleStats{}, now, time.UTC, 0)
-
-	if flags.InsightProgress != 0 {
-		t.Fatalf("expected InsightProgress=0 for zero completed cycles, got %d", flags.InsightProgress)
-	}
-	if flags.CompletedCycleCount != 0 {
-		t.Fatalf("expected CompletedCycleCount=0 for empty logs, got %d", flags.CompletedCycleCount)
-	}
-}
-
-// TestStatsServiceStatsInsightProgressAtExactHundred verifies that when
-// progress equals 100 exactly, the function returns 100 and does NOT fall into
-// the "progress > 100 → 100" branch.  A mutant changing "> 100" to ">= 100" on
-// line 119 would incorrectly force the return-100 path even when progress==100,
-// which is fine numerically but tests a different code path; the real concern is
-// the one-below edge: progress=99 must NOT be capped to 100.
-func TestStatsServiceStatsInsightProgressAtExactHundred(t *testing.T) {
-	// statsMinimumInsightsCycles = 3; completedCycleCount = 3 → progress = 3*100/3 = 100.
-	// Should return 100 (not capped, just equal).
-	svc := NewStatsService(&stubStatsDayReader{}, &stubStatsSymptomReader{})
-	user := &models.User{Role: models.RoleOwner, CycleLength: 28}
-	now := mustParseStatsServiceDay(t, "2026-04-10")
-
-	// Four period logs → exactly 3 completed cycles.
-	logs := []models.DailyLog{
-		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
-		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true},
-		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true, CycleStart: true},
-		{Date: mustParseStatsServiceDay(t, "2026-03-26"), IsPeriod: true, CycleStart: true},
-	}
-	flags := svc.BuildFlags(user, logs, CycleStats{}, now, time.UTC, 3)
-
-	if flags.InsightProgress != 100 {
-		t.Fatalf("expected InsightProgress=100 for completedCycleCount==statsMinimumInsightsCycles, got %d", flags.InsightProgress)
-	}
-}
-
-// TestStatsServiceStatsInsightProgressBelowHundredNotCapped verifies that a
-// progress value below 100 is returned as-is without being capped.
-// Concretely completedCycleCount=1, statsMinimumInsightsCycles=3: 1*100/3=33.
-// If the "progress > 100" guard were changed to "> 0", 33 would be capped to 100.
-func TestStatsServiceStatsInsightProgressBelowHundredNotCapped(t *testing.T) {
-	svc := NewStatsService(&stubStatsDayReader{}, &stubStatsSymptomReader{})
-	user := &models.User{Role: models.RoleOwner, CycleLength: 28}
-	now := mustParseStatsServiceDay(t, "2026-03-01")
-
-	// Two period logs → exactly 1 completed cycle.
-	logs := []models.DailyLog{
-		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
-		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true},
-	}
-	flags := svc.BuildFlags(user, logs, CycleStats{}, now, time.UTC, 1)
-
-	if flags.InsightProgress != 33 {
-		t.Fatalf("expected InsightProgress=33 for one completed cycle, got %d", flags.InsightProgress)
+	for _, count := range []int{0, 2, 3, 5} {
+		flags := svc.BuildFlags(user, CycleStats{CompletedCycleCount: count}, 0)
+		if flags.CompletedCycleCount != count {
+			t.Errorf("CompletedCycleCount = %d, want %d", flags.CompletedCycleCount, count)
+		}
+		if want := count >= fertilityMinimumCycles; flags.HasInsights != want {
+			t.Errorf("HasInsights at %d completed cycles = %v, want %v", count, flags.HasInsights, want)
+		}
+		if want := count > 0; flags.HasObservedCycleData != want {
+			t.Errorf("HasObservedCycleData at %d completed cycles = %v, want %v", count, flags.HasObservedCycleData, want)
+		}
 	}
 }

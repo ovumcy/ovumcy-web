@@ -73,7 +73,7 @@
                   {{/* No date: the irregular thin-history tier is withheld on
                        every surface, and a caption beside a date is not a
                        substitute for withholding it. */}}
-                  {{t .Messages "dashboard.next_period_need_cycles"}}
+                  {{printf (t .Messages "dashboard.next_period_need_cycles") cycleFloor}}
                 {{else if .DisplayNextPeriodPrompt}}
                   {{t .Messages "dashboard.next_period_prompt"}}
                 {{else if .DisplayNextPeriodStart.IsZero}}
@@ -109,7 +109,7 @@
                      and a caption here would be the two surfaces disagreeing
                      again. */}}
                 {{else if and .DisplayOvulationNeedsData (not .DisplayOvulationConfirmed)}}
-                  {{t .Messages "dashboard.ovulation_need_cycles"}}
+                  {{printf (t .Messages "dashboard.ovulation_need_cycles") cycleFloor}}
                 {{else if .DisplayOvulationDate.IsZero}}
                   {{.NoDataLabel}}
                 {{else}}
@@ -140,7 +140,7 @@
             <span
               class="dashboard-status-item journal-muted"
               data-dashboard-more-cycles-bridge
-              data-more-cycles-bridge-key="dashboard.fertile_window_after_three_cycles">{{t .Messages "dashboard.fertile_window_after_three_cycles"}}</span>
+              data-more-cycles-bridge-key="dashboard.fertile_window_after_three_cycles">{{printf (t .Messages "dashboard.fertile_window_after_three_cycles") cycleFloor}}</span>
             {{end}}
             {{if .CycleHero.Approximate}}
             <span class="dashboard-status-separator" aria-hidden="true">·</span>
@@ -215,7 +215,7 @@
 
       {{if .HasPredictionExplanationPrimary}}
       {{/* The explainer is re-fetched and swapped after a pregnancy-result save. */}}
-      <p class="journal-muted text-sm" data-dashboard-prediction-explainer data-explainer-key="{{.PredictionExplanationPrimaryKey}}">{{t .Messages .PredictionExplanationPrimaryKey}}</p>
+      <p class="journal-muted text-sm" data-dashboard-prediction-explainer data-explainer-key="{{.PredictionExplanationPrimaryKey}}">{{if explainerNamesCycleFloor .PredictionExplanationPrimaryKey}}{{printf (t .Messages .PredictionExplanationPrimaryKey) cycleFloor}}{{else}}{{t .Messages .PredictionExplanationPrimaryKey}}{{end}}</p>
       {{end}}
 
       {{if and .IsOwner .ShowReminderBanner}}

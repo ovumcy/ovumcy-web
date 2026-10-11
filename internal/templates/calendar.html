@@ -144,7 +144,7 @@
       {{if or .HasPredictionExplanationPrimary .HasPredictionExplanationSecondary}}
       <div class="mt-4 space-y-2" data-calendar-prediction-explainer data-explainer-primary-key="{{.PredictionExplanationPrimaryKey}}" data-explainer-secondary-key="{{.PredictionExplanationSecondaryKey}}">
         {{if .HasPredictionExplanationPrimary}}
-        <p class="journal-muted text-sm">{{t .Messages .PredictionExplanationPrimaryKey}}</p>
+        <p class="journal-muted text-sm">{{if explainerNamesCycleFloor .PredictionExplanationPrimaryKey}}{{printf (t .Messages .PredictionExplanationPrimaryKey) cycleFloor}}{{else}}{{t .Messages .PredictionExplanationPrimaryKey}}{{end}}</p>
         {{end}}
         {{if .HasPredictionExplanationSecondary}}
         <p class="journal-muted text-sm">{{t .Messages .PredictionExplanationSecondaryKey}}</p>

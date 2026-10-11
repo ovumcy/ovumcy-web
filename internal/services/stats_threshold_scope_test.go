@@ -68,8 +68,9 @@ func TestStatsThresholdsAreNamedPerSurface(t *testing.T) {
 	})
 
 	t.Run("the trend reliability flag counts trend points, not cycles", func(t *testing.T) {
-		below := service.BuildFlags(owner, atPattern, CycleStats{}, now, time.UTC, 2)
-		at := service.BuildFlags(owner, atPattern, CycleStats{}, now, time.UTC, 3)
+		atStats := BuildCycleStatsFromLogs(owner, atPattern, now, time.UTC)
+		below := service.BuildFlags(owner, atStats, 2)
+		at := service.BuildFlags(owner, atStats, 3)
 
 		if below.HasReliableTrend {
 			t.Error("two trend points were called a reliable trend: the reliability flag counts trend points and its threshold moved")
@@ -85,8 +86,8 @@ func TestStatsThresholdsAreNamedPerSurface(t *testing.T) {
 	})
 
 	t.Run("the basic-insights tier unlocks at three completed cycles, the count the dashboard asks for", func(t *testing.T) {
-		below := service.BuildFlags(owner, belowPattern, CycleStats{}, now, time.UTC, 0)
-		at := service.BuildFlags(owner, atPattern, CycleStats{}, now, time.UTC, 0)
+		below := service.BuildFlags(owner, BuildCycleStatsFromLogs(owner, belowPattern, now, time.UTC), 0)
+		at := service.BuildFlags(owner, BuildCycleStatsFromLogs(owner, atPattern, now, time.UTC), 0)
 
 		if below.HasInsights {
 			t.Error("two completed cycles reached the basic-insights tier, which unlocks at three: the stats page and the dashboard would name different counts")

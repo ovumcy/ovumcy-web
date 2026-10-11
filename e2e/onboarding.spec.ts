@@ -11,7 +11,7 @@ import {
   registerOwnerViaUI,
 } from './support/auth-helpers';
 import { switchPublicLanguage } from './support/language-helpers';
-import { localeText } from './support/locale-helpers';
+import { CYCLE_FLOOR, localeText, localeTextWithCount } from './support/locale-helpers';
 import { assertNoHorizontalOverflow } from './support/mobile-layout-helpers';
 import { applyTheme, expectTextContrastAA } from './support/contrast-helpers';
 import {
@@ -519,7 +519,9 @@ test.describe('Onboarding flow', () => {
     // catalogue rather than re-typed here. Equality, not containment: the
     // state names no date beside the note (the webhook and the feed send none).
     const nextPeriodText = await dashboardNextPeriodText(page);
-    expect(nextPeriodText).toBe(localeText('en', 'dashboard.next_period_need_cycles'));
+    expect(nextPeriodText).toBe(
+      localeTextWithCount('en', 'dashboard.next_period_need_cycles', CYCLE_FLOOR)
+    );
     await expect(page.locator('[data-dashboard-prediction-explainer]')).toHaveAttribute(
       'data-explainer-key',
       'prediction.explainer.irregular_sparse'

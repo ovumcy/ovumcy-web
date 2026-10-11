@@ -124,10 +124,11 @@ func (service *StatsService) BuildStatsPageViewData(ctx context.Context, user *m
 	symptomCounts := buildStatsSymptomCountViewData(language, frequencies)
 	boundaryCtx := BoundaryContextFor(user, DateAtLocation(now, location))
 	phaseMoodInsights, hasPhaseMoodInsights := service.BuildPhaseMoodInsights(user, baseData.logs, location, boundaryCtx)
-	// The one traversal that yields the completed-cycle lengths feeds every
-	// consumer below, including the statements section, so the tiers there are
-	// read off StatsFlags.CompletedCycleCount's own source rather than a
-	// second count of the same thing.
+	// The completed-cycle LENGTHS feed the statements section and the short- and
+	// long-cycle notes below: they are the same series the trend chart draws, and
+	// those consumers read values out of it. Whether the insights are unlocked is
+	// a different question, answered off StatsFlags.CompletedCycleCount — the
+	// dashboard's own counter — never off this slice's length.
 	completedCycleLengths := CompletedCycleTrendLengths(baseData.logs, now, location, boundaryCtx)
 	ownerInsights, err := service.buildOwnerStatsInsights(ctx, user, language, baseData.stats, baseData.logs, completedCycleLengths, now, location)
 	if err != nil {
@@ -156,6 +157,7 @@ func (service *StatsService) BuildStatsPageViewData(ctx context.Context, user *m
 	predictionSampleCount, predictionSampleUsesRecentWindow, predictionReliabilityLabelKey, predictionReliabilityHintKey, showPredictionReliability := buildStatsPredictionReliability(user, baseData.flags, baseData.stats)
 	cycleFactorExplanation, hasCycleFactorExplanation := buildStatsCycleFactorExplanation(user, baseData.logs, baseData.stats, now, location)
 	predictionExplanation := BuildOwnerPredictionExplanation(user, cycleContext, hasCycleFactorExplanation && len(cycleFactorExplanation.HintFactorKeys) > 0)
+	predictionExplanation = withoutExplanationRestatedByLateCycle(predictionExplanation, cycleContext.LateCycle)
 	// The one adapter every projection surface publishes through, so /stats and
 	// the JSON API cannot drift apart on what a suppressed tier may carry — and,
 	// ahead of it, the one resolver that moves the ovulation day, the fertile
@@ -231,7 +233,7 @@ func (service *StatsService) buildStatsPageBaseData(ctx context.Context, user *m
 		chartData:       buildStatsChartViewData(cycleLabelPattern, lengths, baselineCycleLength),
 		chartBaseline:   baselineCycleLength,
 		trendPointCount: trendPointCount,
-		flags:           service.BuildFlags(user, logs, stats, now, location, trendPointCount),
+		flags:           service.BuildFlags(user, stats, trendPointCount),
 	}, nil
 }
 

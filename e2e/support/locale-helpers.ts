@@ -54,6 +54,18 @@ export function localeText(locale: Locale, key: string): string {
   return value;
 }
 
+/**
+ * The completed-cycle floor the app's threshold sentences name. The catalogues
+ * carry it as `%d` and the server prints it from one constant, so a spec that
+ * compares rendered text fills the same placeholder here.
+ */
+export const CYCLE_FLOOR = 3;
+
+/** `localeText` with the `%d` of a count-bearing sentence filled in. */
+export function localeTextWithCount(locale: Locale, key: string, count: number): string {
+  return localeText(locale, key).replace('%d', String(count));
+}
+
 /** The rendered string for one key in every supported locale, keyed by locale. */
 export function localeTextByLocale(key: string): Record<Locale, string> {
   const table = {} as Record<Locale, string>;

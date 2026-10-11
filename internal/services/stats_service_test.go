@@ -229,8 +229,8 @@ func TestBuildTrendAndFlags(t *testing.T) {
 		t.Fatalf("expected baseline 28, got %d", baseline)
 	}
 
-	stats := CycleStats{LastPeriodStart: mustParseStatsServiceDay(t, "2026-03-26")}
-	flags := service.BuildFlags(user, logs, stats, now, time.UTC, len(lengths))
+	stats := BuildCycleStatsFromLogs(user, logs, now, time.UTC)
+	flags := service.BuildFlags(user, stats, len(lengths))
 	if !flags.HasObservedCycleData || !flags.HasTrendData {
 		t.Fatalf("expected observed and trend data flags true, got %#v", flags)
 	}
@@ -239,9 +239,6 @@ func TestBuildTrendAndFlags(t *testing.T) {
 	}
 	if flags.CompletedCycleCount != 3 {
 		t.Fatalf("expected CompletedCycleCount=3, got %d", flags.CompletedCycleCount)
-	}
-	if flags.InsightProgress != 100 {
-		t.Fatalf("expected InsightProgress=100, got %d", flags.InsightProgress)
 	}
 	if flags.HasReliableTrend {
 		t.Fatalf("expected HasReliableTrend=false for two trend points")
@@ -257,11 +254,8 @@ func TestBuildFlagsKeepsInsightsLockedUntilThreeCompletedCycles(t *testing.T) {
 	user := &models.User{Role: models.RoleOwner, CycleLength: 28}
 	now := mustParseStatsServiceDay(t, "2026-02-10")
 
-	stats := CycleStats{
-		LastPeriodStart:    mustParseStatsServiceDay(t, "2026-01-29"),
-		AverageCycleLength: 28,
-	}
-	flags := service.BuildFlags(user, logs, stats, now, time.UTC, 1)
+	stats := BuildCycleStatsFromLogs(user, logs, now, time.UTC)
+	flags := service.BuildFlags(user, stats, 1)
 
 	if !flags.HasObservedCycleData {
 		t.Fatalf("expected HasObservedCycleData=true")
@@ -274,9 +268,6 @@ func TestBuildFlagsKeepsInsightsLockedUntilThreeCompletedCycles(t *testing.T) {
 	}
 	if flags.CompletedCycleCount != 1 {
 		t.Fatalf("expected CompletedCycleCount=1, got %d", flags.CompletedCycleCount)
-	}
-	if flags.InsightProgress != 33 {
-		t.Fatalf("expected InsightProgress=33, got %d", flags.InsightProgress)
 	}
 	if flags.HasReliableTrend {
 		t.Fatalf("expected HasReliableTrend=false for one trend point")

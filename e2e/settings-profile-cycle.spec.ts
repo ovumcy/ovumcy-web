@@ -22,7 +22,7 @@ import {
   expectConfirmDialogCaptions,
   mutatingRequestsDuring,
 } from './support/confirm-dialog-helpers';
-import { localeText } from './support/locale-helpers';
+import { CYCLE_FLOOR, localeText, localeTextWithCount } from './support/locale-helpers';
 
 // The duplicate-name rejection is asserted on three surfaces in this file (the
 // create form twice, an archived row once). Source it once from the catalogue
@@ -339,7 +339,9 @@ test.describe('Settings: profile and cycle', () => {
     // mode renders the needs-more-cycles note alone — no date, no range:
     // dashboardNeedsNextPeriodData short-circuits before the range is applied.
     const nextPeriodText = await dashboardNextPeriodText(page);
-    expect(nextPeriodText).toBe(localeText('en', 'dashboard.next_period_need_cycles'));
+    expect(nextPeriodText).toBe(
+      localeTextWithCount('en', 'dashboard.next_period_need_cycles', CYCLE_FLOOR)
+    );
     // Sparse irregular mode, asserted on the explainer key rather than by
     // forbidding the exact-date separator this state must not render.
     await expect(page.locator('[data-dashboard-prediction-explainer]')).toHaveAttribute(

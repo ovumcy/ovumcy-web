@@ -2,7 +2,7 @@ import { expect, test } from './support/fixtures';
 import { logoutViaAPI } from './support/auth-helpers';
 import { dashboardNextPeriodText } from './support/dashboard-helpers';
 import { displayDatesIn } from './support/date-field-helpers';
-import { localeText } from './support/locale-helpers';
+import { CYCLE_FLOOR, localeText, localeTextWithCount } from './support/locale-helpers';
 import {
   markCycleStart,
   markCycleStartViaAPI,
@@ -38,11 +38,13 @@ test.describe('Stats factor context', () => {
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
     expect(await dashboardNextPeriodText(page)).toContain(
-      localeText('en', 'dashboard.next_period_need_cycles')
+      localeTextWithCount('en', 'dashboard.next_period_need_cycles', CYCLE_FLOOR)
     );
     const dashboardExplainer = page.locator('[data-dashboard-prediction-explainer]');
     await expect(dashboardExplainer).toHaveAttribute('data-explainer-key', SPARSE_EXPLAINER_KEY);
-    await expect(dashboardExplainer).toContainText(localeText('en', SPARSE_EXPLAINER_KEY));
+    await expect(dashboardExplainer).toContainText(
+      localeTextWithCount('en', SPARSE_EXPLAINER_KEY, CYCLE_FLOOR)
+    );
     await expect(page.locator('[data-dashboard-factor-hint]')).toHaveCount(0);
 
     // Two completed cycles are below the insights tier (three), so the stats page

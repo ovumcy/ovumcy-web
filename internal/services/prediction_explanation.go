@@ -7,6 +7,35 @@ type PredictionExplanation struct {
 	SecondaryKey string
 }
 
+// The explainer keys whose sentence names the completed-cycle floor. The two
+// are also the whole set PredictionExplanationNamesCycleFloor answers for.
+const (
+	predictionExplainerIrregularSparseKey    = "prediction.explainer.irregular_sparse"
+	predictionExplainerAwaitingMoreCyclesKey = "prediction.explainer.awaiting_more_cycles"
+)
+
+// PredictionExplanationNamesCycleFloor reports whether the explainer sentence
+// under key carries the completed-cycle floor as its one %d. The templates ask
+// it before formatting, so a key that takes no argument is never handed one.
+func PredictionExplanationNamesCycleFloor(key string) bool {
+	return key == predictionExplainerIrregularSparseKey || key == predictionExplainerAwaitingMoreCyclesKey
+}
+
+// withoutExplanationRestatedByLateCycle drops the awaiting-more-cycles explainer
+// when the late-cycle card above it already says the same thing. A cycle that
+// runs late on one or two completed cycles has no personal range yet, and the
+// card's no-personal-range sentence ("a personal range needs more completed
+// cycles") and the explainer ("fertile details wait for N completed cycles")
+// are one fact told twice. The card carries the information that is specific to
+// the moment, so it stays; an account whose cycle is not late keeps the
+// explainer, which is then the only place the floor is named.
+func withoutExplanationRestatedByLateCycle(explanation PredictionExplanation, lateCycle LateCycleNotice) PredictionExplanation {
+	if explanation.PrimaryKey == predictionExplainerAwaitingMoreCyclesKey && lateCycle.Visible && lateCycle.MessageKey == LateCycleNoPersonalRangeKey {
+		explanation.PrimaryKey = ""
+	}
+	return explanation
+}
+
 func BuildOwnerPredictionExplanation(user *models.User, cycleContext DashboardCycleContext, hasFactorHint bool) PredictionExplanation {
 	if !IsOwnerUser(user) {
 		return PredictionExplanation{}
@@ -26,7 +55,7 @@ func predictionExplanationPrimaryKey(user *models.User, cycleContext DashboardCy
 	case cycleContext.PredictionDisabled:
 		return "prediction.explainer.unpredictable"
 	case user != nil && user.IrregularCycle && (cycleContext.DisplayNextPeriodNeedsData || cycleContext.DisplayOvulationNeedsData):
-		return "prediction.explainer.irregular_sparse"
+		return predictionExplainerIrregularSparseKey
 	case user != nil && user.IrregularCycle && (cycleContext.DisplayNextPeriodUseRange || cycleContext.DisplayOvulationUseRange):
 		return "prediction.explainer.irregular_ranges"
 	// The first-cycle floor is what makes the cycle ribbon go quiet past the
@@ -43,7 +72,7 @@ func predictionExplanationPrimaryKey(user *models.User, cycleContext DashboardCy
 	// floor counts to. Irregular owners never carry it (their sparse branch
 	// above answers first, and the context flag excludes them).
 	case cycleContext.AwaitingMoreCycles:
-		return "prediction.explainer.awaiting_more_cycles"
+		return predictionExplainerAwaitingMoreCyclesKey
 	// A regular owner with at least one completed cycle behind them gets no
 	// explainer even when the prediction renders as a range: the range is the
 	// affordance, and since wave 2 the next-period line names the quantity it

@@ -196,7 +196,6 @@ func (handler *Handler) buildStatsPageData(ctx context.Context, user *models.Use
 		"HasReliableTrend":                    viewData.Flags.HasReliableTrend,
 		"CycleDataStale":                      viewData.Flags.CycleDataStale,
 		"CompletedCycleCount":                 viewData.Flags.CompletedCycleCount,
-		"InsightProgress":                     viewData.Flags.InsightProgress,
 		"InsightCyclesRequired":               viewData.Flags.InsightCyclesRequired,
 		"PredictionSampleCount":               viewData.PredictionSampleCount,
 		"PredictionSampleUsesRecentWindow":    viewData.PredictionSampleUsesRecentWindow,

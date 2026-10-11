@@ -30,7 +30,7 @@
        tiers it names (irregular sparse, awaiting more cycles) sit below the
        insights threshold, so it renders outside that gate. */}}
   {{if .HasPredictionExplanationPrimary}}
-  <div class="card-quiet text-sm journal-muted" data-stats-prediction-explainer data-explainer-key="{{.PredictionExplanationPrimaryKey}}">{{t .Messages .PredictionExplanationPrimaryKey}}</div>
+  <div class="card-quiet text-sm journal-muted" data-stats-prediction-explainer data-explainer-key="{{.PredictionExplanationPrimaryKey}}">{{if explainerNamesCycleFloor .PredictionExplanationPrimaryKey}}{{printf (t .Messages .PredictionExplanationPrimaryKey) cycleFloor}}{{else}}{{t .Messages .PredictionExplanationPrimaryKey}}{{end}}</div>
   {{end}}
 
   {{if not .HasInsights}}
@@ -55,11 +55,11 @@
       </div>
     </div>
     <p class="journal-subtitle">{{t .Messages "stats.empty_title"}}</p>
-    <p class="journal-muted text-sm">{{if eq .CompletedCycleCount 0}}{{t .Messages "stats.empty_body_zero"}}{{else}}{{t .Messages "stats.empty_body_one"}}{{end}}</p>
+    <p class="journal-muted text-sm">{{if eq .CompletedCycleCount 0}}{{printf (t .Messages "stats.empty_body_zero") .InsightCyclesRequired}}{{else}}{{printf (t .Messages "stats.empty_body_one") .InsightCyclesRequired}}{{end}}</p>
     <div class="space-y-2">
       <progress class="stats-progress-meter" value="{{.CompletedCycleCount}}" max="{{.InsightCyclesRequired}}">{{printf (t .Messages "stats.completed_cycles_progress") .CompletedCycleCount .InsightCyclesRequired}}</progress>
       <p class="journal-muted text-xs">{{printf (t .Messages "stats.completed_cycles_progress") .CompletedCycleCount .InsightCyclesRequired}}</p>
-      <p class="journal-muted text-xs">{{t .Messages "stats.empty_progress_hint"}}</p>
+      <p class="journal-muted text-xs">{{printf (t .Messages "stats.empty_progress_hint") .InsightCyclesRequired}}</p>
     </div>
   </section>
   {{else}}

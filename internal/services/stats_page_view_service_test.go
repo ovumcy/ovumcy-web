@@ -172,8 +172,8 @@ func TestBuildStatsPageViewDataKeepsInsightsHiddenUntilThirdCompletedCycle(t *te
 	if viewData.ShowPredictionReliability {
 		t.Fatalf("expected ShowPredictionReliability=false before base insights unlock")
 	}
-	if viewData.Flags.InsightProgress != 33 {
-		t.Fatalf("expected InsightProgress=33, got %d", viewData.Flags.InsightProgress)
+	if viewData.Flags.CompletedCycleCount != 1 {
+		t.Fatalf("expected CompletedCycleCount=1, got %d", viewData.Flags.CompletedCycleCount)
 	}
 }
 

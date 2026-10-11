@@ -63,9 +63,9 @@ test.describe('Stats: BBT chart', () => {
     // Two layered gates make this test non-trivial:
     //
     //   1. /stats hides every insight (the BBT section included) behind
-    //      `HasInsights = completedCycleCount >= 3`, computed by
-    //      CompletedCycleTrendLengths. So at least four cycle starts must
-    //      exist before today.
+    //      `HasInsights = completedCycleCount >= 3`, counted off the cycle
+    //      stats the dashboard's fertility floor reads. So at least four
+    //      cycle starts must exist.
     //   2. buildCurrentCycleBBTSeries requires >= 5 BBT points inside
     //      [cycleStart..today], so the current (third) cycle has to be
     //      old enough to fit five sample days.

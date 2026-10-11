@@ -49,7 +49,6 @@ type StatsFlags struct {
 	HasReliableTrend     bool
 	CycleDataStale       bool
 	CompletedCycleCount  int
-	InsightProgress      int
 	// InsightCyclesRequired is the completed-cycle count the insights tier waits
 	// for, carried so the empty state's progress bar and its "n / N" line read
 	// the threshold the gate itself uses instead of a second literal.
@@ -170,34 +169,30 @@ func (service *StatsService) BuildTrend(user *models.User, logs []models.DailyLo
 	return lengths, int(averageInts(lengths) + 0.5)
 }
 
-func (service *StatsService) BuildFlags(user *models.User, logs []models.DailyLog, stats CycleStats, now time.Time, location *time.Location, trendPointCount int) StatsFlags {
-	today := DateAtLocation(now, location)
-	boundaryCtx := BoundaryContextFor(user, today)
-	observedCycleCount := len(CycleLengths(logs, boundaryCtx))
-	completedCycleCount := len(CompletedCycleTrendLengths(logs, now, location, boundaryCtx))
+// BuildFlags reads the completed-cycle count off stats.CompletedCycleCount, the
+// counter the dashboard's fertility floor reads, so the insights gate, the
+// "n / N" progress line and the observed-data flag all count what the dashboard
+// counts. Only the trend chart keeps its own series (trendPointCount): that
+// series is the chart's points, never a gate.
+func (service *StatsService) BuildFlags(user *models.User, stats CycleStats, trendPointCount int) StatsFlags {
+	completedCycleCount := stats.CompletedCycleCount
 
 	return StatsFlags{
-		HasObservedCycleData:  observedCycleCount > 0,
+		HasObservedCycleData:  completedCycleCount > 0,
 		HasTrendData:          trendPointCount > 0,
 		HasInsights:           completedCycleCount >= statsMinimumInsightsCycles,
 		HasReliableTrend:      trendPointCount >= statsReliableTrendCycles,
 		CycleDataStale:        dashboardCycleDataStale(user, stats),
 		CompletedCycleCount:   completedCycleCount,
-		InsightProgress:       statsInsightProgress(completedCycleCount),
 		InsightCyclesRequired: statsMinimumInsightsCycles,
 	}
 }
 
-func statsInsightProgress(completedCycleCount int) int {
-	if completedCycleCount <= 0 {
-		return 0
-	}
-
-	progress := completedCycleCount * 100 / statsMinimumInsightsCycles
-	if progress > 100 {
-		return 100
-	}
-	return progress
+// FertilityMinimumCycles is the completed-cycle count every threshold sentence
+// in the catalogues names. Templates feed it to those sentences through %d, so
+// no translation embeds the number.
+func FertilityMinimumCycles() int {
+	return fertilityMinimumCycles
 }
 
 func (service *StatsService) BuildSymptomFrequenciesForUser(ctx context.Context, user *models.User) ([]SymptomFrequency, error) {
