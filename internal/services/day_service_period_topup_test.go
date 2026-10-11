@@ -386,3 +386,26 @@ func TestTopUpReadsAMissingLocationAsUTC(t *testing.T) {
 	requireTopUpPeriodRow(t, logs, 11)
 	requireTopUpPeriodRow(t, logs, 12)
 }
+
+// Nothing records which rows a tick created, so un-ticking a day never removes
+// the days behind it: four days ticked by hand, the fourth un-ticked, leaves the
+// second and third as the owner ticked them.
+func TestUnTickLeavesTheDaysBehindItAsTheyAre(t *testing.T) {
+	service, logs, _ := newTopUpService(true, 5)
+	for _, day := range []int{10, 11, 12, 13} {
+		seedTopUpRow(logs, day, models.DailyLog{IsPeriod: true, Flow: models.FlowMedium})
+	}
+
+	now := time.Date(2026, time.February, 13, 12, 0, 0, 0, time.UTC)
+	if _, err := service.UpsertDayEntryWithAutoFillAt(context.Background(), topUpOwnerID, topUpDay(13),
+		DayEntryInput{IsPeriod: false, Flow: models.FlowNone}, now, time.UTC); err != nil {
+		t.Fatalf("un-tick: %v", err)
+	}
+
+	for _, day := range []int{10, 11, 12} {
+		requireTopUpPeriodRow(t, logs, day)
+	}
+	if row := logs.entries[topUpKey(13)]; row.IsPeriod {
+		t.Fatalf("expected the un-ticked day to be a non-period row, got %#v", row)
+	}
+}
