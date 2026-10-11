@@ -9,6 +9,10 @@
   the same field, the save is refused with `409` (`day changed elsewhere`) and the page offers
   "Keep mine" or "Take theirs". A stored value already equal to the value being written is not a
   conflict, so a re-sent save that already landed still succeeds. `PUT` is unchanged.
+- **A partial save on the onboarding start day keeps its period tick.** A `PATCH` to a date with no
+  saved entry that holds the stored onboarding start reads that day as the period day the pages
+  show: a save that leaves `is_period` out records the period beside the changed field instead of
+  a non-period entry, and an explicit `is_period=false` withdraws the start.
 
 ### Added
 

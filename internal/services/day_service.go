@@ -512,6 +512,11 @@ func (service *DayService) UpsertDayEntryWithAutoFillAt(ctx context.Context, use
 // and the per-field precondition on the stored values runs in that same step:
 // a named field whose stored value moved off its base to a third value refuses
 // the whole write with ErrDayEntryConflict (dayEntryPatchConflicts).
+//
+// A day without a row on the stored onboarding start is the period day the
+// forms render ticked (withOnboardingStartTicked), so the merge and the
+// precondition read it as one: a write that leaves is_period out keeps the
+// tick the owner saw, and one that states is_period=false un-ticks the start.
 func (service *DayService) PatchDayEntryWithAutoFillAt(ctx context.Context, userID uint, day time.Time, patch DayEntryInput, fields DayEntryFields, base DayEntryBase, now time.Time, location *time.Location) (models.DailyLog, error) {
 	if location == nil {
 		location = time.UTC
@@ -527,8 +532,15 @@ func (service *DayService) PatchDayEntryWithAutoFillAt(ctx context.Context, user
 		if err != nil {
 			return DayEntryInput{}, ErrDayEntryLoadFailed
 		}
+		tickedFromStart := false
 		if !found {
 			existing = models.DailyLog{}
+			user, loadErr := service.users.LoadSettingsByID(ctx, userID)
+			if loadErr != nil {
+				return DayEntryInput{}, ErrDayEntryLoadFailed
+			}
+			tickedFromStart = onboardingStartTicks(&user, dayStart, now, location)
+			existing.IsPeriod = tickedFromStart
 		}
 		written, err := NormalizeDayEntryInput(mergeDayEntryPatch(existing, patch, fields))
 		if err != nil {
@@ -536,6 +548,9 @@ func (service *DayService) PatchDayEntryWithAutoFillAt(ctx context.Context, user
 		}
 		if dayEntryPatchConflicts(existing, written, fields, base) {
 			return DayEntryInput{}, ErrDayEntryConflict
+		}
+		if tickedFromStart && fields.IsPeriod && !written.IsPeriod {
+			written.PeriodFromStoredStart = true
 		}
 		return written, nil
 	}

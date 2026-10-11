@@ -484,17 +484,22 @@ func (service *DashboardViewService) BuildDayEditorViewData(ctx context.Context,
 // as a hidden field (DayEntryInput.PeriodFromStoredStart), and only a save
 // carrying it that un-ticks the period withdraws the start
 // (DayService.applyDayWriteAndAutoFill) — a save that keeps the tick, or a
-// write that never showed it, leaves the start in place.
+// write that never showed it, leaves the start in place. A partial write reads
+// a row-less day through the same predicate (onboardingStartTicks), so the base
+// a form sends back for that tick is the day the server compares it with.
 func withOnboardingStartTicked(user *models.User, logEntry models.DailyLog, day time.Time, now time.Time, location *time.Location) (models.DailyLog, bool) {
-	if logEntry.ID != 0 {
-		return logEntry, false
-	}
-	onboardingDay := OnboardingBoundaryDay(BoundaryContextFor(user, DateAtLocation(now, location)))
-	if onboardingDay.IsZero() || CalendarDayKey(onboardingDay) != CalendarDayKey(day) {
+	if logEntry.ID != 0 || !onboardingStartTicks(user, day, now, location) {
 		return logEntry, false
 	}
 	logEntry.IsPeriod = true
 	return logEntry, true
+}
+
+// onboardingStartTicks reports whether day, when it has no row, shows its
+// period ticked from the stored onboarding start.
+func onboardingStartTicks(user *models.User, day time.Time, now time.Time, location *time.Location) bool {
+	onboardingDay := OnboardingBoundaryDay(BoundaryContextFor(user, DateAtLocation(now, location)))
+	return !onboardingDay.IsZero() && CalendarDayKey(onboardingDay) == CalendarDayKey(day)
 }
 
 func requiresEntryContextLogs(user *models.User, symptoms []models.SymptomType) bool {
