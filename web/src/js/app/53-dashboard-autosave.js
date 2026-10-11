@@ -327,7 +327,8 @@
   // refreshCSRFToken): the notice is rendered first, and the token is
   // re-read behind it so the retry the notice offers carries a valid one.
   function failDashboardAutosave(form, responseText, status) {
-    var parsed = parseServerStatusError(String(responseText || ""));
+    var refusal = readServerRefusal(status, responseText);
+    var parsed = refusal.error;
     var message = parsed ? String(parsed.text || "").trim() : "";
 
     form.__ovumcyAutosaveFailed = true;
@@ -337,7 +338,7 @@
     } else {
       renderDaySaveUnreachable(form);
     }
-    noteDayWriteRefusal(status, parsed ? parsed.key : "");
+    refreshAfterCSRFRefusal(refusal);
   }
 
   // Pick the HTTP verb from whichever hx-* attribute the form uses so the

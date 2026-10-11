@@ -361,9 +361,9 @@ func TestEveryNoJSPostFormActionAnswersARefusalAsAPage(t *testing.T) {
 	app.Use(MethodOverride(handler))
 	app.Use(handler.LanguageMiddleware)
 	app.All("/*", func(c fiber.Ctx) error {
-		// A CSRF refusal raises fiber.ErrForbidden; the app's ErrorHandler answers
-		// it through RespondTransportError — the path a stale-token form takes.
-		return handler.RespondTransportError(c, fiber.StatusForbidden)
+		// A CSRF refusal raises ErrCSRFRefused; the app's ErrorHandler answers it
+		// through RespondCSRFRefused — the path a stale-token form takes.
+		return handler.RespondCSRFRefused(c)
 	})
 	answersAPage := func(form plainPostForm) (bool, string) {
 		var body io.Reader

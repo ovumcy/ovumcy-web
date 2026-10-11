@@ -2133,10 +2133,12 @@
   // entry into that account; the form carries an opaque binding to the account
   // that rendered it.
   var ACCOUNT_CHANGED_NOTICE_KEY = "daylog.save_account_changed";
-  // The read-side counterpart: the calendar's fetch of a day (or of its grid)
-  // from a page rendered for another account is refused with its own copy,
-  // since nothing was being saved.
+  // The read-side counterpart: the calendar's fetch of a day from a page
+  // rendered for another account is refused with its own copy, since nothing
+  // was being saved, and so is the refresh of its grid, with another: the grid
+  // on screen stays as it was rendered, and nothing is being opened.
   var OPEN_ACCOUNT_CHANGED_NOTICE_KEY = "daylog.open_account_changed";
+  var GRID_ACCOUNT_CHANGED_NOTICE_KEY = "daylog.grid_account_changed";
 
   // The retry above reads the CSRF token from the page at send time, and the
   // sign-in happens in another tab. The token cookie is not rotated by signing
@@ -2146,7 +2148,7 @@
   // <meta> keeps the old one for good — every retry and every later autosave
   // would be refused 403 until a reload, which discards the entry.
   //
-  // So a day write refused by the CSRF check re-reads the token from the page
+  // So a write refused by the CSRF check re-reads the token from the page
   // the owner is already on: a plain same-origin GET of the current path, which the server
   // answers with the token its cookie holds. Only the <meta> content (and the
   // hidden token inputs that mirror it) is adopted, after a shape check, and
@@ -2157,11 +2159,37 @@
   var CSRF_TOKEN_SHAPE = /^[A-Za-z0-9._~+/=-]{8,512}$/;
   var csrfRefreshPending = null;
 
-  // The CSRF check answers a bare 403, which the transport renders under this
-  // key; every other 403 a day route can give (owner access, onboarding, a
-  // required password change) carries a key of its own, and a reload of the
-  // token cannot help any of them.
-  var CSRF_REFUSED_NOTICE_KEY = "common.error.forbidden";
+  // The CSRF check answers a 403 under a key of its own; every other 403 the
+  // app gives (owner access, onboarding, a required password change, the shared
+  // forbidden) carries a different key, and a fresh token cannot help any of
+  // them.
+  var CSRF_REFUSED_NOTICE_KEY = "common.error.csrf_refused";
+
+  // A 403 that names no key at all did not come from the app, whose every
+  // refusal is keyed: it is a proxy's or a firewall's own page standing in front
+  // of it. The token may be stale behind it all the same, and the server was
+  // reached, so it is treated as the CSRF refusal — token refreshed, refusal
+  // copy shown — rather than as an unreachable server. The copy comes from the
+  // page (body data-csrf-refused), since no fragment carried it.
+  function isCSRFRefusal(status, refusalKey) {
+    return Number(status) === 403 && (!refusalKey || refusalKey === CSRF_REFUSED_NOTICE_KEY);
+  }
+
+  function csrfRefusalCopy() {
+    return document.body.getAttribute("data-csrf-refused") || "That action was refused. Please try again.";
+  }
+
+  // What an error answer says, parsed once. A CSRF refusal that carried no key
+  // is given the CSRF key and copy here, so every surface renders it as the
+  // refusal it is.
+  function readServerRefusal(status, responseText) {
+    var error = parseServerStatusError(typeof responseText === "string" ? responseText : "");
+    var csrf = isCSRFRefusal(status, error ? error.key : "");
+    if (csrf && (!error || !error.key)) {
+      error = { text: csrfRefusalCopy(), key: CSRF_REFUSED_NOTICE_KEY };
+    }
+    return { error: error, csrf: csrf };
+  }
 
   function csrfTokenFromPage(text) {
     if (!text || typeof DOMParser !== "function") {
@@ -2233,13 +2261,15 @@
     return pending;
   }
 
-  // Only the CSRF refusal refreshes: a 403 under any other key, or with a body
-  // that names none, is not one a fresh token can fix, and refreshing on it
-  // would fetch a whole page on every such refusal. The notice is rendered
-  // before the refresh settles, so the owner is never made to wait for it; a
-  // Retry pressed in the meantime waits for it instead.
-  function noteDayWriteRefusal(status, refusalKey) {
-    if (Number(status) === 403 && refusalKey === CSRF_REFUSED_NOTICE_KEY) {
+  // Only the CSRF refusal refreshes: a 403 under any other key is not one a
+  // fresh token can fix, and refreshing on it would fetch a whole page on every
+  // such refusal. Every surface that shows the CSRF refusal tells the owner to
+  // try again, so every one of them re-reads the token here, not only the day
+  // writes. The notice is rendered before the refresh settles, so the owner is
+  // never made to wait for it; a Retry pressed in the meantime waits for it
+  // instead.
+  function refreshAfterCSRFRefusal(refusal) {
+    if (refusal && refusal.csrf) {
       refreshCSRFToken();
     }
   }
@@ -2278,6 +2308,19 @@
     return link;
   }
 
+  // The calendar page renders an empty live region of its own, outside every
+  // swap. A refusal's text is written into it: text changing inside a region
+  // that already exists is announced, a node arriving with role="status" is not.
+  function announceCalendarRefusal(message) {
+    var region = document.querySelector("[data-calendar-refusal-announcer]");
+    if (!region || !message) {
+      return;
+    }
+    // Emptied first so a refusal repeating the previous text is still a change.
+    region.textContent = "";
+    region.textContent = message;
+  }
+
   // The calendar fetches its day editor, and every request from the page names
   // the account the page was rendered for. When another account has signed in
   // since, the server refuses the fetch (or a control inside the editor) with
@@ -2290,15 +2333,23 @@
   //
   // The grid refresh after a save is refused the same way. The grid it would
   // have replaced stays on screen as rendered, so the notice leads it rather
-  // than replacing it, and announces itself: nothing the owner is looking at
-  // changed.
-  function renderCalendarAccountRefusal(target, event) {
+  // than replacing it, and is announced: nothing the owner is looking at
+  // changed. A notice inserted as a new node is not announced by a screen
+  // reader, so the text is also written into the page's own live region, which
+  // exists before it changes.
+  //
+  // refusal is the parsed answer (parseServerStatusError), read once by the
+  // caller.
+  function renderCalendarAccountRefusal(target, refusal) {
     if (!target || (target.id !== "day-editor" && target.id !== "calendar-grid-panel")) {
       return false;
     }
-    var xhr = event && event.detail ? event.detail.xhr : null;
-    var refusal = parseServerStatusError(xhr && typeof xhr.responseText === "string" ? xhr.responseText : "");
-    if (!refusal || (refusal.key !== OPEN_ACCOUNT_CHANGED_NOTICE_KEY && refusal.key !== ACCOUNT_CHANGED_NOTICE_KEY)) {
+    if (
+      !refusal ||
+      (refusal.key !== OPEN_ACCOUNT_CHANGED_NOTICE_KEY &&
+        refusal.key !== GRID_ACCOUNT_CHANGED_NOTICE_KEY &&
+        refusal.key !== ACCOUNT_CHANGED_NOTICE_KEY)
+    ) {
       return false;
     }
 
@@ -2309,6 +2360,7 @@
     text.setAttribute("data-notice-key", refusal.key);
     text.textContent = String(refusal.text || "").trim();
     notice.appendChild(text);
+    announceCalendarRefusal(text.textContent);
 
     if (target.id === "day-editor") {
       notice.setAttribute("data-day-editor-refused", "account-changed");
@@ -2330,7 +2382,6 @@
     }
 
     notice.setAttribute("data-calendar-grid-refused", "account-changed");
-    notice.setAttribute("role", "status");
     var previous = target.querySelector("[data-calendar-grid-refused]");
     if (previous) {
       previous.remove();
@@ -2389,16 +2440,6 @@
     if (saveButton) {
       saveButton.click();
     }
-  }
-
-  // A day write that is not the editor's own form — the delete control, a
-  // cycle-start form — still sends the page's token, so its 403 refreshes it too.
-  var DAY_WRITE_PATH = /\/api\/(?:v1\/)?days\//;
-
-  function isDayWriteRequest(event) {
-    var info = event && event.detail ? event.detail.pathInfo : null;
-    var path = info && typeof info.requestPath === "string" ? info.requestPath : "";
-    return DAY_WRITE_PATH.test(path);
   }
 
   function initHTMXHooks() {
@@ -2524,16 +2565,13 @@
       var form = getSaveFeedbackFormFromEvent(event);
       var dayForm = dayEditorFormFromEvent(event);
 
-      var dayXHR = event && event.detail ? event.detail.xhr : null;
-      var serverError = parseServerStatusError(
-        dayXHR && typeof dayXHR.responseText === "string" ? dayXHR.responseText : ""
-      );
+      // The body is read once; every branch below reuses this result.
+      var xhr = event && event.detail ? event.detail.xhr : null;
+      var refusal = readServerRefusal(xhr ? xhr.status : 0, xhr ? xhr.responseText : "");
+      var serverError = refusal.error;
+      refreshAfterCSRFRefusal(refusal);
 
-      if (dayForm || isDayWriteRequest(event)) {
-        noteDayWriteRefusal(dayXHR ? dayXHR.status : 0, serverError ? serverError.key : "");
-      }
-
-      if (!dayForm && renderCalendarAccountRefusal(target, event)) {
+      if (!dayForm && renderCalendarAccountRefusal(target, serverError)) {
         return;
       }
 
@@ -2552,21 +2590,24 @@
       }
       target = statusContainerFor(target);
       if (!target) {
+        // A control with no status area of its own (the calendar editor's delete
+        // and cycle-start controls, whose target is the editor itself) would
+        // otherwise leave a refused write without a word.
+        if (refusal.csrf && serverError && typeof window.showToast === "function") {
+          window.showToast(String(serverError.text || "").trim(), "error");
+        }
         if (form && form.matches && form.matches("[data-dashboard-save-form]") && typeof window.__ovumcyFinalizeDashboardManualSave === "function") {
           window.__ovumcyFinalizeDashboardManualSave(form);
         }
         return;
       }
 
-      var xhr = event.detail.xhr;
-      var responseText = xhr && typeof xhr.responseText === "string" ? xhr.responseText : "";
-      var parsedError = parseServerStatusError(responseText);
-      if (parsedError) {
+      if (serverError) {
         // Safe-by-construction swap: only the parsed fragment's text is
         // adopted (see parseServerStatusError).
         var safeContainer = document.createElement("div");
         safeContainer.className = "status-error";
-        safeContainer.textContent = parsedError.text;
+        safeContainer.textContent = serverError.text;
         target.replaceChildren(safeContainer);
         return;
       }
@@ -4230,7 +4271,8 @@
   // refreshCSRFToken): the notice is rendered first, and the token is
   // re-read behind it so the retry the notice offers carries a valid one.
   function failDashboardAutosave(form, responseText, status) {
-    var parsed = parseServerStatusError(String(responseText || ""));
+    var refusal = readServerRefusal(status, responseText);
+    var parsed = refusal.error;
     var message = parsed ? String(parsed.text || "").trim() : "";
 
     form.__ovumcyAutosaveFailed = true;
@@ -4240,7 +4282,7 @@
     } else {
       renderDaySaveUnreachable(form);
     }
-    noteDayWriteRefusal(status, parsed ? parsed.key : "");
+    refreshAfterCSRFRefusal(refusal);
   }
 
   // Pick the HTTP verb from whichever hx-* attribute the form uses so the

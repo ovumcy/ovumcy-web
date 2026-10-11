@@ -138,6 +138,9 @@ func newOnboardingTestAppWithOptions(t *testing.T, options onboardingTestAppOpti
 	appConfig := fiber.Config{BodyLimit: options.bodyLimit}
 	if options.envelopeTransportErrors {
 		appConfig.ErrorHandler = func(c fiber.Ctx, err error) error {
+			if errors.Is(err, ErrCSRFRefused) {
+				return handler.RespondCSRFRefused(c)
+			}
 			var fiberErr *fiber.Error
 			if errors.As(err, &fiberErr) {
 				return handler.RespondTransportError(c, fiberErr.Code)
@@ -265,7 +268,7 @@ func testCSRFMiddlewareConfig(cookieSecure bool, handler *Handler) csrf.Config {
 				Key:   "reason",
 				Value: CSRFFailureReason(err),
 			})
-			return fiber.ErrForbidden
+			return ErrCSRFRefused
 		},
 	}
 }

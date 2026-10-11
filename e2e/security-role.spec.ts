@@ -142,7 +142,7 @@ test.describe('Security and role-based access', () => {
       maxRedirects: 0,
     });
     expect(logoutNoCsrf.status()).toBe(403);
-    await expectMappedErrorEnvelope(logoutNoCsrf, 'forbidden');
+    await expectMappedErrorEnvelope(logoutNoCsrf, 'csrf_refused');
 
     const clearNoCsrf = await page.request.post('/api/v1/users/current/data-wipe', {
       headers: apiOriginHeader(page),
@@ -150,7 +150,7 @@ test.describe('Security and role-based access', () => {
       maxRedirects: 0,
     });
     expect(clearNoCsrf.status()).toBe(403);
-    await expectMappedErrorEnvelope(clearNoCsrf, 'forbidden');
+    await expectMappedErrorEnvelope(clearNoCsrf, 'csrf_refused');
 
     // /api/v1/exports/* is GET-only on the v1 surface; CSRF only gates
     // state-changing methods, so an export without CSRF returns 200, not 403.

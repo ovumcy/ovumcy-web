@@ -121,7 +121,7 @@ func accountFormEmail(prefix string, name string) string {
 func TestNoJSAccountAndTwoFactorFormsAnswerAPreHandlerRefusalAsAPage(t *testing.T) {
 	t.Parallel()
 
-	forbidden := englishCopy(t, "common.error.forbidden")
+	forbidden := englishCopy(t, "common.error.csrf_refused")
 	for name, c := range accountFormRefusalCases() {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -140,7 +140,7 @@ func TestNoJSAccountAndTwoFactorFormsAnswerAPreHandlerRefusalAsAPage(t *testing.
 func TestNoJSIdentityUnlinkRefusalLinkIgnoresTheIdentityInTheAction(t *testing.T) {
 	t.Parallel()
 
-	forbidden := englishCopy(t, "common.error.forbidden")
+	forbidden := englishCopy(t, "common.error.csrf_refused")
 	c := accountFormRefusalCases()["identity unlink"]
 	for name, action := range map[string]string{
 		"markup in the id":    "/api/v1/users/current/oidc/identities/%22%3E%3Cscript%3Ealert(1)%3E",
@@ -262,8 +262,8 @@ func TestAccountFormRefusalsKeepTheirEnvelopeForOtherClients(t *testing.T) {
 		if contentType := response.Header.Get("Content-Type"); !strings.HasPrefix(contentType, "application/json") {
 			t.Fatalf("Content-Type %q, want JSON", contentType)
 		}
-		if body := mustReadBodyString(t, response.Body); !strings.Contains(body, `"error":"forbidden"`) {
-			t.Fatalf("body %s lacks the forbidden envelope", body)
+		if body := mustReadBodyString(t, response.Body); !strings.Contains(body, `"error":"csrf_refused"`) {
+			t.Fatalf("body %s lacks the CSRF refusal envelope", body)
 		}
 	}
 

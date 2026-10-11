@@ -27,6 +27,13 @@
        grid refresh and each write from the fetched editor — so a request that
        reaches the server under another account's session is refused. It sits
        on the view, outside what the grid refresh swaps. */}}
+  {{/* A refusal notice painted into the grid or the editor is inserted into a
+       node that did not exist a moment earlier, which a screen reader does not
+       announce. This region is rendered with the page and outside everything a
+       swap replaces, so the refusal text is written into something already
+       being watched. */}}
+  <div class="sr-only" role="status" aria-live="polite" data-calendar-refusal-announcer></div>
+
   <div
     class="grid gap-6 lg:grid-cols-[2fr_1fr]"
     data-calendar-view

@@ -59,6 +59,14 @@ func (handler *Handler) dayFormBinder() *security.DayFormAccountBinder {
 	return handler.dayFormBinderCached
 }
 
+// dayFormGridAccountChangedErrorSpec is the same refusal for the calendar GRID's
+// refresh. The grid the owner is looking at stays on screen as rendered, so
+// "this day can't be opened" would describe nothing she did; its own message,
+// and so its own copy, says the calendar is out of date.
+func dayFormGridAccountChangedErrorSpec() APIErrorSpec {
+	return globalErrorSpec(fiber.StatusConflict, APIErrorCategoryConflict, "day form grid account changed")
+}
+
 // dayFormAccountBinding is the value the day forms render for user.
 func (handler *Handler) dayFormAccountBinding(user *models.User) (string, error) {
 	return handler.dayFormBinder().Binding(user.ID)
@@ -135,12 +143,24 @@ const dayFormPageReadAction = "access.day_form_page"
 // its own data and its own binding for the account now signed in, so nothing
 // from another account's page is in play.
 func (handler *Handler) RefuseDayFormPageFromAnotherAccount(c fiber.Ctx) error {
+	return handler.refuseDayFormReadFromAnotherAccount(c, dayFormPageAccountChangedErrorSpec())
+}
+
+// RefuseCalendarGridFromAnotherAccount is RefuseDayFormPageFromAnotherAccount
+// for the grid refresh (GET /calendar): the rule, the binding and the audit
+// record are the same, the answer carries the grid's own message.
+func (handler *Handler) RefuseCalendarGridFromAnotherAccount(c fiber.Ctx) error {
+	return handler.refuseDayFormReadFromAnotherAccount(c, dayFormGridAccountChangedErrorSpec())
+}
+
+// refuseDayFormReadFromAnotherAccount is the rule and the audit record of every
+// read that carries a day-form binding; only the answered spec differs.
+func (handler *Handler) refuseDayFormReadFromAnotherAccount(c fiber.Ctx, spec APIErrorSpec) error {
 	user, ok := currentUser(c)
 	if !ok {
 		return c.Next() // codecov:ignore -- AuthRequired precedes this on every route that mounts it
 	}
 	if dayFormBindingRefused(handler.dayFormBinder(), user, c.Request().Header.PeekAll(dayFormAccountHeader), isHTMX(c)) {
-		spec := dayFormPageAccountChangedErrorSpec()
 		handler.logSecurityError(c, dayFormPageReadAction, spec)
 		return handler.respondMappedError(c, spec)
 	}

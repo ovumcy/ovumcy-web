@@ -42,17 +42,29 @@ func assertAccountChangedRefusal(t *testing.T, label string, response *http.Resp
 // its copy says the day cannot be opened, not that an entry was not saved.
 const openAccountChangedKey = "daylog.open_account_changed"
 
+// gridAccountChangedKey is the key a refused grid refresh renders: its own copy,
+// since the grid on screen stays and nothing is being opened.
+const gridAccountChangedKey = "daylog.grid_account_changed"
+
 // assertOpenAccountChangedRefusal is assertAccountChangedRefusal for the
 // calendar's reads: the same 409, with the read's own reason and never the
-// write's.
+// write's. The grid refresh (GET /calendar) answers under the grid's key, the
+// day editor's fetch under the open key, and neither under the other's.
 func assertOpenAccountChangedRefusal(t *testing.T, label string, response *http.Response) string {
 	t.Helper()
 	body := mustReadBodyString(t, response.Body)
 	if response.StatusCode != http.StatusConflict {
 		t.Fatalf("%s: must be refused 409, got %d %q", label, response.StatusCode, body)
 	}
-	if !strings.Contains(body, openAccountChangedKey) {
-		t.Fatalf("%s: the 409 must carry the %s reason, got %q", label, openAccountChangedKey, body)
+	wantKey, otherKey := openAccountChangedKey, gridAccountChangedKey
+	if strings.Contains(label, "/calendar") && !strings.Contains(label, "/calendar/day/") {
+		wantKey, otherKey = gridAccountChangedKey, openAccountChangedKey
+	}
+	if !strings.Contains(body, wantKey) {
+		t.Fatalf("%s: the 409 must carry the %s reason, got %q", label, wantKey, body)
+	}
+	if strings.Contains(body, otherKey) {
+		t.Fatalf("%s: the 409 must not carry the other surface's %s copy, got %q", label, otherKey, body)
 	}
 	if strings.Contains(body, accountChangedKey) {
 		t.Fatalf("%s: a refused read must not claim an entry was not saved (%s), got %q", label, accountChangedKey, body)

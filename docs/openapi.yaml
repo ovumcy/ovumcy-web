@@ -184,7 +184,7 @@ components:
             error: "unauthorized"
             error_detail: { key: "unauthorized", category: "unauthorized", target: "global" }
     Forbidden:
-      description: Session is valid but the caller lacks the required role (typically owner-only) or CSRF validation failed.
+      description: Session is valid but the caller lacks the required role (typically owner-only), keyed `forbidden`. A CSRF validation failure is the same status and category under the key `csrf_refused`.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ApiError' }
@@ -299,7 +299,8 @@ components:
 
           * `400` — `bad_request`
           * `401` — `unauthorized`
-          * `403` — `forbidden` (this is the key a CSRF failure carries)
+          * `403` — `forbidden`, or `csrf_refused` when the CSRF check was the
+            one that refused (both carry category `forbidden`)
           * `404` — `not found`
           * `405` — `method_not_allowed`
           * `413` — `request_too_large` (body past the 16 MiB limit: wire size,
@@ -1874,7 +1875,7 @@ paths:
             subdomain included, or over HTTPS with no `Origin`, a missing or foreign `Referer`;
             or a malformed `Sec-Fetch-Site`. The refusal comes from the CSRF middleware before the
             handler runs, so no `ovumcy_lang` cookie is set and nothing is stored on the
-            account. It carries the shared `forbidden` key rather than a key of this route's
+            account. It carries the `csrf_refused` key rather than a key of this route's
             own.
 
             A caller that asks for JSON gets the JSON envelope below: one whose `Accept`
@@ -1891,8 +1892,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
               example:
-                error: "forbidden"
-                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
+                error: "csrf_refused"
+                error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
         '500':
           description: |
             The request carries a live owner session and a shipped language code, and storing
@@ -1975,7 +1976,7 @@ paths:
 
             A CSRF refusal (no token; a token that does not match the `ovumcy_csrf` cookie, or one
             the server no longer holds; a foreign `Origin`/`Referer`) is a separate cause reached
-            before the handler runs, so it carries the shared `forbidden` key instead. A caller
+            before the handler runs, so it carries the `csrf_refused` key instead. A caller
             that asks for JSON gets the JSON envelope; a plain form submission that asks for
             neither gets the shared localized status fragment as `text/html` (WEB-84) — the same
             shape `POST /lang` documents above — instead of the raw envelope.
@@ -1993,8 +1994,8 @@ paths:
                 csrfDenied:
                   summary: CSRF refusal
                   value:
-                    error: "forbidden"
-                    error_detail: { key: "forbidden", category: "forbidden", target: "global" }
+                    error: "csrf_refused"
+                    error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
         '429':
           $ref: '#/components/responses/RateLimited'
           description: |
@@ -2057,7 +2058,7 @@ paths:
 
             A CSRF refusal (no token; a token that does not match the `ovumcy_csrf` cookie, or one
             the server no longer holds; a foreign `Origin`/`Referer`) is a separate cause reached
-            before the handler runs, so it carries the shared `forbidden` key instead. A caller
+            before the handler runs, so it carries the `csrf_refused` key instead. A caller
             that asks for JSON gets the JSON envelope; a plain form submission that asks for
             neither gets the shared localized status fragment as `text/html` (WEB-84) — the same
             shape `POST /lang` documents above — instead of the raw envelope.
@@ -2075,8 +2076,8 @@ paths:
                 csrfDenied:
                   summary: CSRF refusal
                   value:
-                    error: "forbidden"
-                    error_detail: { key: "forbidden", category: "forbidden", target: "global" }
+                    error: "csrf_refused"
+                    error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
         '429':
           $ref: '#/components/responses/RateLimited'
           description: |
@@ -2124,7 +2125,7 @@ paths:
           description: |
             A CSRF refusal (no token; a token that does not match the `ovumcy_csrf` cookie, or one
             the server no longer holds; a foreign `Origin`/`Referer`) reached before the handler
-            runs, carrying the shared `forbidden` key. A caller that asks for JSON gets the JSON
+            runs, carrying the `csrf_refused` key. A caller that asks for JSON gets the JSON
             envelope below; a plain form submission that asks for neither gets the shared
             localized status fragment as `text/html` (WEB-84) — the same shape `POST /lang`
             documents above — instead of the raw envelope.
@@ -2134,8 +2135,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
               example:
-                error: "forbidden"
-                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
+                error: "csrf_refused"
+                error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
         '429':
           description: |
             Rate limit exceeded (per-account TOTP budget: 5 attempts / 15 min, key
@@ -2243,7 +2244,7 @@ paths:
 
             A CSRF refusal (no token; a token that does not match the `ovumcy_csrf` cookie, or one
             the server no longer holds; a foreign `Origin`/`Referer`) is a separate cause reached
-            before the handler runs, so it carries the shared `forbidden` key instead. A caller
+            before the handler runs, so it carries the `csrf_refused` key instead. A caller
             that asks for JSON gets the JSON envelope; a plain form submission that asks for
             neither gets the shared localized status fragment as `text/html` (WEB-84) — the same
             shape `POST /lang` documents above — instead of the raw envelope.
@@ -2261,8 +2262,8 @@ paths:
                 csrfDenied:
                   summary: CSRF refusal
                   value:
-                    error: "forbidden"
-                    error_detail: { key: "forbidden", category: "forbidden", target: "global" }
+                    error: "csrf_refused"
+                    error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
         '429':
           $ref: '#/components/responses/RateLimited'
           description: |
@@ -2329,7 +2330,7 @@ paths:
 
             A CSRF refusal (no token; a token that does not match the `ovumcy_csrf` cookie, or one
             the server no longer holds; a foreign `Origin`/`Referer`) is a separate cause reached
-            before the handler runs, so it carries the shared `forbidden` key instead. A caller
+            before the handler runs, so it carries the `csrf_refused` key instead. A caller
             that asks for JSON gets the JSON envelope; a plain form submission that asks for
             neither gets the shared localized status fragment as `text/html` (WEB-84) — the same
             shape `POST /lang` documents above — instead of the raw envelope.
@@ -2347,8 +2348,8 @@ paths:
                 csrfDenied:
                   summary: CSRF refusal
                   value:
-                    error: "forbidden"
-                    error_detail: { key: "forbidden", category: "forbidden", target: "global" }
+                    error: "csrf_refused"
+                    error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
         '429':
           $ref: '#/components/responses/RateLimited'
           description: |
@@ -2596,7 +2597,7 @@ paths:
         '403':
           description: |
             The caller is not the owner, or the request was refused before the handler runs
-            (CSRF) with the shared `forbidden` key.
+            (CSRF) with the `csrf_refused` key.
 
             A caller that asks for JSON gets the JSON envelope. A browser form submitted without
             JavaScript — a `POST` carrying the hidden `_method=PUT` field, with an `Accept` that
@@ -2611,8 +2612,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
               example:
-                error: "forbidden"
-                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
+                error: "csrf_refused"
+                error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
         '400': { $ref: '#/components/responses/ValidationError' }
         '422':
           description: |
@@ -2666,7 +2667,7 @@ paths:
         '403':
           description: |
             The caller is not the owner, or the request was refused before the handler runs
-            (CSRF) with the shared `forbidden` key.
+            (CSRF) with the `csrf_refused` key.
 
             A caller that asks for JSON gets the JSON envelope. A browser form submitted without
             JavaScript — a `POST` carrying the hidden `_method=PATCH` field, with an `Accept`
@@ -2680,8 +2681,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
               example:
-                error: "forbidden"
-                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
+                error: "csrf_refused"
+                error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
         '400': { $ref: '#/components/responses/ValidationError' }
         '422':
           description: |
@@ -2738,7 +2739,7 @@ paths:
         '403':
           description: |
             The caller is not the owner, or the request was refused before the handler runs
-            (CSRF) with the shared `forbidden` key.
+            (CSRF) with the `csrf_refused` key.
 
             A caller that asks for JSON gets the JSON envelope. A browser form submitted without
             JavaScript — a `POST` carrying the hidden `_method=DELETE` field, with an `Accept`
@@ -2752,8 +2753,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
               example:
-                error: "forbidden"
-                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
+                error: "csrf_refused"
+                error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
         '400': { $ref: '#/components/responses/ValidationError' }
         '422':
           description: |
@@ -3127,7 +3128,7 @@ paths:
         '403':
           description: |
             The caller is not the owner, or the request was refused before the handler runs
-            (CSRF) with the shared `forbidden` key.
+            (CSRF) with the `csrf_refused` key.
 
             A caller that asks for JSON gets the JSON envelope. A browser form submitted without
             JavaScript — a `POST` carrying the hidden `_method=DELETE` field, with an `Accept`
@@ -3140,8 +3141,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
               example:
-                error: "forbidden"
-                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
+                error: "csrf_refused"
+                error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
 
   /api/v1/users/current/profile:
     patch:
@@ -3162,7 +3163,7 @@ paths:
         '403':
           description: |
             The caller is not the owner, or the request was refused before the handler runs
-            (CSRF) with the shared `forbidden` key.
+            (CSRF) with the `csrf_refused` key.
 
             A caller that asks for JSON gets the JSON envelope. A browser form submitted without
             JavaScript — a `POST` carrying the hidden `_method=PATCH` field, with an `Accept`
@@ -3175,8 +3176,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
               example:
-                error: "forbidden"
-                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
+                error: "csrf_refused"
+                error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
         '400': { $ref: '#/components/responses/ValidationError' }
         '429': { $ref: '#/components/responses/RateLimited' }
 
@@ -3316,7 +3317,7 @@ paths:
         '403':
           description: |
             The caller is not the owner, or the request was refused before the handler runs
-            (CSRF) with the shared `forbidden` key.
+            (CSRF) with the `csrf_refused` key.
 
             A caller that asks for JSON gets the JSON envelope. A browser form submitted without
             JavaScript, with an `Accept` that names `text/html`, gets the shared localized status
@@ -3328,8 +3329,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
               example:
-                error: "forbidden"
-                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
+                error: "csrf_refused"
+                error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
         '429': { $ref: '#/components/responses/RateLimited' }
         '500':
           description: |
@@ -3371,7 +3372,7 @@ paths:
         '403':
           description: |
             The caller is not the owner, or the request was refused before the handler runs
-            (CSRF) with the shared `forbidden` key.
+            (CSRF) with the `csrf_refused` key.
 
             A caller that asks for JSON gets the JSON envelope. A browser form submitted without
             JavaScript — a `POST` carrying the hidden `_method=DELETE` field, with an `Accept`
@@ -3384,8 +3385,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
               example:
-                error: "forbidden"
-                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
+                error: "csrf_refused"
+                error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
         '500':
           description: Persistence failed. Carries no endpoint.
           content:
@@ -3426,7 +3427,7 @@ paths:
         '403':
           description: |
             The caller is not the owner, or the request was refused before the handler runs
-            (CSRF) with the shared `forbidden` key.
+            (CSRF) with the `csrf_refused` key.
 
             A caller that asks for JSON gets the JSON envelope. A browser form submitted without
             JavaScript, with an `Accept` that names `text/html`, gets the shared localized status
@@ -3438,8 +3439,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
               example:
-                error: "forbidden"
-                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
+                error: "csrf_refused"
+                error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
         '500':
           description: Token generation or persistence failed. Carries no token.
           content:
@@ -3467,7 +3468,7 @@ paths:
         '403':
           description: |
             The caller is not the owner, or the request was refused before the handler runs
-            (CSRF) with the shared `forbidden` key.
+            (CSRF) with the `csrf_refused` key.
 
             A caller that asks for JSON gets the JSON envelope. A browser form submitted without
             JavaScript — a `POST` carrying the hidden `_method=DELETE` field, with an `Accept`
@@ -3480,8 +3481,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
               example:
-                error: "forbidden"
-                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
+                error: "csrf_refused"
+                error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
         '500':
           description: Persistence failed. Carries no token.
           content:
@@ -3517,7 +3518,7 @@ paths:
         '403':
           description: |
             The caller is not the owner, or the request was refused before the handler runs
-            (CSRF) with the shared `forbidden` key.
+            (CSRF) with the `csrf_refused` key.
 
             A caller that asks for JSON gets the JSON envelope. A browser form submitted without
             JavaScript, with an `Accept` that names `text/html`, gets the shared localized status
@@ -3529,8 +3530,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
               example:
-                error: "forbidden"
-                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
+                error: "csrf_refused"
+                error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
         '500':
           description: Token generation or persistence failed. Carries no token.
           content:
@@ -3566,7 +3567,7 @@ paths:
         '403':
           description: |
             The caller is not the owner, or the request was refused before the handler runs
-            (CSRF) with the shared `forbidden` key.
+            (CSRF) with the `csrf_refused` key.
 
             A caller that asks for JSON gets the JSON envelope. A browser form submitted without
             JavaScript — a `POST` carrying the hidden `_method=PATCH` field, with an `Accept`
@@ -3581,8 +3582,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
               example:
-                error: "forbidden"
-                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
+                error: "csrf_refused"
+                error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
         '400': { $ref: '#/components/responses/ValidationError' }
         '429': { $ref: '#/components/responses/RateLimited' }
 
@@ -3652,7 +3653,7 @@ paths:
         '403':
           description: |
             OIDC re-auth required for OIDC-only accounts, or the request was refused before the
-            handler runs (CSRF) with the shared `forbidden` key.
+            handler runs (CSRF) with the `csrf_refused` key.
 
             A browser form submitted without JavaScript — a `POST` carrying the hidden
             `_method=PUT` field, with an `Accept` that names `text/html` — and refused before the
@@ -3704,7 +3705,7 @@ paths:
         '403':
           description: |
             The caller is not the owner, or the request was refused before the handler runs
-            (CSRF) with the shared `forbidden` key.
+            (CSRF) with the `csrf_refused` key.
 
             A caller that asks for JSON gets the JSON envelope. A browser form submitted without
             JavaScript — a `POST` with an `Accept` that names `text/html` — and refused before
@@ -3717,8 +3718,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
               example:
-                error: "forbidden"
-                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
+                error: "csrf_refused"
+                error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
         '400': { $ref: '#/components/responses/ValidationError' }
         '429': { $ref: '#/components/responses/RateLimited' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
@@ -3756,7 +3757,7 @@ paths:
         '403':
           description: |
             The caller is not the owner, or the request was refused before the handler runs
-            (CSRF) with the shared `forbidden` key.
+            (CSRF) with the `csrf_refused` key.
 
             A caller that asks for JSON gets the JSON envelope. A browser form submitted without
             JavaScript, with an `Accept` that names `text/html`, gets the shared localized status
@@ -3768,8 +3769,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
               example:
-                error: "forbidden"
-                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
+                error: "csrf_refused"
+                error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
         '400':
           description: The account has a local password, so this flow does not apply; the erasure is confirmed with that password instead.
           content:
@@ -3808,7 +3809,7 @@ paths:
         '403':
           description: |
             The caller is not the owner, or the request was refused before the handler runs
-            (CSRF) with the shared `forbidden` key.
+            (CSRF) with the `csrf_refused` key.
 
             A caller that asks for JSON gets the JSON envelope. A browser form submitted without
             JavaScript, with an `Accept` that names `text/html`, gets the shared localized status
@@ -3820,8 +3821,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
               example:
-                error: "forbidden"
-                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
+                error: "csrf_refused"
+                error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
         '400':
           description: The account has a local password, so this flow does not apply; the erasure is confirmed with that password instead.
           content:
@@ -3883,7 +3884,7 @@ paths:
         '403':
           description: |
             The caller is not the owner, or the request was refused before the handler runs
-            (CSRF) with the shared `forbidden` key.
+            (CSRF) with the `csrf_refused` key.
 
             A caller that asks for JSON gets the JSON envelope. A browser form submitted without
             JavaScript — a `POST` with an `Accept` that names `text/html` — gets the shared
@@ -3898,8 +3899,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
               example:
-                error: "forbidden"
-                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
+                error: "csrf_refused"
+                error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
         '429': { $ref: '#/components/responses/RateLimited' }
         '503':
           description: SSO is disabled or the provider is unreachable, so the linking re-authentication cannot be started. Retryable once the provider is back.
@@ -3947,7 +3948,7 @@ paths:
           description: |
             The caller is not the owner, the account's last way in would go
             (`local password required`), or the request was refused before the handler runs
-            (CSRF) with the shared `forbidden` key.
+            (CSRF) with the `csrf_refused` key.
 
             A caller that asks for JSON gets the JSON envelope. A browser form submitted without
             JavaScript — a `POST` carrying the hidden `_method=DELETE` field, with an `Accept`
@@ -3963,8 +3964,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
               example:
-                error: "forbidden"
-                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
+                error: "csrf_refused"
+                error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
         '404': { $ref: '#/components/responses/NotFound' }
         '429': { $ref: '#/components/responses/RateLimited' }
         '503':
@@ -4012,7 +4013,7 @@ paths:
         '403':
           description: |
             The caller is not the owner, or the request was refused before the handler runs
-            (CSRF) with the shared `forbidden` key.
+            (CSRF) with the `csrf_refused` key.
 
             A caller that asks for JSON gets the JSON envelope. A browser form submitted without
             JavaScript — a `POST` with an `Accept` that names `text/html` — gets the shared
@@ -4027,8 +4028,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
               example:
-                error: "forbidden"
-                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
+                error: "csrf_refused"
+                error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
         '400': { $ref: '#/components/responses/ValidationError' }
         '429': { $ref: '#/components/responses/RateLimited' }
 
@@ -4081,7 +4082,7 @@ paths:
         '403':
           description: |
             The caller is not the owner, or the request was refused before the handler runs
-            (CSRF) with the shared `forbidden` key.
+            (CSRF) with the `csrf_refused` key.
 
             A caller that asks for JSON gets the JSON envelope. A browser form submitted without
             JavaScript — a `POST` carrying the hidden `_method=PUT` field, with an `Accept` that
@@ -4097,8 +4098,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
               example:
-                error: "forbidden"
-                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
+                error: "csrf_refused"
+                error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
         '400':
           description: The current password is missing, or the body carrying it fails to bind.
           content:
@@ -4157,7 +4158,7 @@ paths:
         '403':
           description: |
             The caller is not the owner, or the request was refused before the handler runs
-            (CSRF) with the shared `forbidden` key.
+            (CSRF) with the `csrf_refused` key.
 
             A caller that asks for JSON gets the JSON envelope. A browser form submitted without
             JavaScript — a `POST` carrying the hidden `_method=DELETE` field, with an `Accept`
@@ -4174,8 +4175,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
               example:
-                error: "forbidden"
-                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
+                error: "csrf_refused"
+                error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
         '400': { $ref: '#/components/responses/ValidationError' }
         '429': { $ref: '#/components/responses/RateLimited' }
 
@@ -4226,7 +4227,7 @@ paths:
         '403':
           description: |
             The caller is not the owner, or the request was refused before the handler runs
-            (CSRF) with the shared `forbidden` key.
+            (CSRF) with the `csrf_refused` key.
 
             A caller that asks for JSON gets the JSON envelope. A browser form submitted without
             JavaScript, with an `Accept` that names `text/html`, gets the shared localized status
@@ -4238,7 +4239,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
               example:
-                error: "forbidden"
-                error_detail: { key: "forbidden", category: "forbidden", target: "global" }
+                error: "csrf_refused"
+                error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
         '400': { $ref: '#/components/responses/ValidationError' }
         '429': { $ref: '#/components/responses/RateLimited' }

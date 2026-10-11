@@ -49,6 +49,35 @@ func CSRFTokenExtractor() extractors.Extractor {
 	})
 }
 
+// csrfRefusedErrorKey is the stable spec key of a request the CSRF middleware
+// refused. It is its own key, not the shared `forbidden` one: a 403 also comes
+// from the role and onboarding guards, and a client that must tell "the page's
+// token is stale, fetch a fresh one and retry" from "this account may not do
+// that" cannot do it from the status or from a key the two share.
+const csrfRefusedErrorKey = "csrf_refused"
+
+// ErrCSRFRefused is what the CSRF middleware's ErrorHandler returns. It is still
+// a 403 *fiber.Error carrying the framework's own "Forbidden" text, so an error
+// handler that does not know it answers exactly what it answered before; the
+// application's own handlers recognise it with
+// errors.Is and answer RespondCSRFRefused instead.
+var ErrCSRFRefused = fiber.NewError(fiber.StatusForbidden)
+
+// csrfRefusedErrorSpec is the 403 the CSRF check answers. Global like every
+// pre-handler transport rejection: no form field is at fault, and the category
+// stays `forbidden` so a client that branches on status plus category is
+// unaffected by the key.
+func csrfRefusedErrorSpec() APIErrorSpec {
+	return globalErrorSpec(fiber.StatusForbidden, APIErrorCategoryForbidden, csrfRefusedErrorKey)
+}
+
+// RespondCSRFRefused renders that 403 through the same content-negotiated
+// formatting as every other mapped error. Exported because the middleware that
+// detects the condition is mounted in the composition root.
+func (handler *Handler) RespondCSRFRefused(c fiber.Ctx) error {
+	return handler.apiError(c, csrfRefusedErrorSpec())
+}
+
 // CSRFFailureReason maps the error returned by the CSRF middleware into a
 // stable, log-safe reason key. Only the documented sentinel errors carry a
 // meaningful classification; anything else is collapsed to "csrf rejected"

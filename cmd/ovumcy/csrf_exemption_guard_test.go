@@ -286,7 +286,7 @@ func TestCSRFDeniesEveryMutatingRouteWithoutToken(t *testing.T) {
 			if strings.TrimSpace(string(body)) == "Forbidden" {
 				t.Fatalf("%s answered the CSRF refusal with fiber's bare text; the mapped envelope is app-wide", key)
 			}
-			assertTransportErrorEnvelope(t, body, "forbidden", "forbidden")
+			assertTransportErrorEnvelope(t, body, "csrf_refused", "forbidden")
 		})
 		covered++
 	}

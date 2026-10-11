@@ -852,17 +852,24 @@ test("an editor fetch refused for another reason scrolls nothing", async () => {
 
 // The grid refresh after a save is the same read. Refused, it leaves the grid
 // as it was rendered and says so above it, once, however often it is refused.
+// The grid has its own copy: the grid on screen stays, and nothing is being opened.
+const GRID_ACCOUNT_CHANGED_KEY = "daylog.grid_account_changed";
+const GRID_ACCOUNT_CHANGED_TEXT = "This calendar is out of date: you're now signed in to a different account. Reload the page.";
+const GRID_ACCOUNT_CHANGED_FRAGMENT = `<div class="status-error" data-flash-key="${GRID_ACCOUNT_CHANGED_KEY}" data-flash-status="error">${GRID_ACCOUNT_CHANGED_TEXT}</div>`;
+
 test("a refused calendar grid refresh keeps the grid and leads it with the notice", async () => {
   const page = `<!doctype html><html><body>
+    <div class="sr-only" role="status" aria-live="polite" data-calendar-refusal-announcer></div>
     <section id="calendar-grid-panel"><div id="grid">the month as rendered</div></section>
   </body></html>`;
   const dom = await loadDOMWithScript(APP_BUNDLE, { html: page });
   try {
     const panel = dom.window.document.getElementById("calendar-grid-panel");
+    const announcer = dom.window.document.querySelector("[data-calendar-refusal-announcer]");
     const refuse = () =>
       panel.dispatchEvent(
         new dom.window.CustomEvent("htmx:responseError", {
-          detail: { target: panel, xhr: { status: 409, responseText: OPEN_ACCOUNT_CHANGED_FRAGMENT } },
+          detail: { target: panel, xhr: { status: 409, responseText: GRID_ACCOUNT_CHANGED_FRAGMENT } },
           bubbles: true,
         })
       );
@@ -872,10 +879,58 @@ test("a refused calendar grid refresh keeps the grid and leads it with the notic
     const notices = panel.querySelectorAll("[data-calendar-grid-refused]");
     assert.equal(notices.length, 1, "one notice, however often the refresh is refused");
     assert.equal(panel.firstElementChild, notices[0], "the notice leads the grid");
-    assert.equal(notices[0].getAttribute("role"), "status");
-    assert.equal(notices[0].textContent, OPEN_ACCOUNT_CHANGED_TEXT);
-    assert.equal(notices[0].querySelector("[data-notice-key]").getAttribute("data-notice-key"), OPEN_ACCOUNT_CHANGED_KEY);
+    assert.equal(notices[0].textContent, GRID_ACCOUNT_CHANGED_TEXT);
+    assert.notEqual(notices[0].textContent, OPEN_ACCOUNT_CHANGED_TEXT, "not the day editor's copy");
+    assert.equal(notices[0].querySelector("[data-notice-key]").getAttribute("data-notice-key"), GRID_ACCOUNT_CHANGED_KEY);
     assert.ok(panel.querySelector("#grid"), "the grid stays as it was rendered");
+
+    // The announcement goes through the region the page already carried; the
+    // node created for the notice claims no live role of its own.
+    assert.equal(notices[0].getAttribute("role"), null);
+    assert.equal(notices[0].querySelector("[role]"), null);
+    assert.equal(announcer, dom.window.document.querySelector("[data-calendar-refusal-announcer]"), "the same node, not a replacement");
+    assert.equal(announcer.getAttribute("role"), "status");
+    assert.equal(announcer.textContent, GRID_ACCOUNT_CHANGED_TEXT);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("a refused editor fetch is announced through the page's live region too", async () => {
+  const page = `<!doctype html><html><body>
+    <div class="sr-only" role="status" aria-live="polite" data-calendar-refusal-announcer></div>
+    <aside id="day-editor"><div class="calendar-day-skeleton"></div></aside>
+  </body></html>`;
+  const dom = await loadDOMWithScript(APP_BUNDLE, { html: page });
+  try {
+    const editor = dom.window.document.getElementById("day-editor");
+    editor.dispatchEvent(
+      new dom.window.CustomEvent("htmx:responseError", {
+        detail: { target: editor, xhr: { status: 409, responseText: OPEN_ACCOUNT_CHANGED_FRAGMENT } },
+        bubbles: true,
+      })
+    );
+    assert.equal(dom.window.document.querySelector("[data-calendar-refusal-announcer]").textContent, OPEN_ACCOUNT_CHANGED_TEXT);
+    assert.equal(editor.querySelector("[data-day-editor-refused]").getAttribute("role"), null);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("without the page's live region the notice is still shown", async () => {
+  const page = `<!doctype html><html><body>
+    <section id="calendar-grid-panel"><div id="grid">the month as rendered</div></section>
+  </body></html>`;
+  const dom = await loadDOMWithScript(APP_BUNDLE, { html: page });
+  try {
+    const panel = dom.window.document.getElementById("calendar-grid-panel");
+    panel.dispatchEvent(
+      new dom.window.CustomEvent("htmx:responseError", {
+        detail: { target: panel, xhr: { status: 409, responseText: GRID_ACCOUNT_CHANGED_FRAGMENT } },
+        bubbles: true,
+      })
+    );
+    assert.equal(panel.querySelector("[data-calendar-grid-refused]").textContent, GRID_ACCOUNT_CHANGED_TEXT);
   } finally {
     dom.window.close();
   }

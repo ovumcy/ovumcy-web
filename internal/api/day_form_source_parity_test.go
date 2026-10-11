@@ -19,7 +19,7 @@ import (
 func TestNoJSDayFormSourceNamesOnePageForSuccessAndRefusal(t *testing.T) {
 	t.Parallel()
 
-	forbidden := englishCopy(t, "common.error.forbidden")
+	forbidden := englishCopy(t, "common.error.csrf_refused")
 	cases := map[string]struct {
 		path   func(iso string) string
 		fields url.Values
