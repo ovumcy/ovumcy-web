@@ -107,7 +107,7 @@ function captureIntervals(window, intervals) {
   };
 }
 
-async function loadDashboard({ fetchOk = true } = {}) {
+async function loadDashboard({ fetchOk = true, openedAt = BEFORE_MIDNIGHT, sinceNavigationStartMs = null } = {}) {
   const reloads = [];
   const calls = [];
   const intervals = [];
@@ -115,7 +115,10 @@ async function loadDashboard({ fetchOk = true } = {}) {
     html: dashboardPage(),
     url: "https://ovumcy.test/dashboard",
     beforeRun: (window) => {
-      installClock(window, BEFORE_MIDNIGHT);
+      installClock(window, openedAt);
+      if (sinceNavigationStartMs !== null) {
+        window.performance.now = () => sinceNavigationStartMs;
+      }
       installReloadRecorder(window, reloads);
       installFetchRecorder(window, calls, { ok: fetchOk });
       captureIntervals(window, intervals);
@@ -239,5 +242,30 @@ test("a request still in flight elsewhere on the page holds the reload", async (
   pageBecomesVisible(dom.window);
   await settle();
   assert.equal(reloads.length, 1, "the reload goes ahead once the request has finished");
+  dom.window.close();
+});
+
+test("a page whose navigation began before midnight reloads even if its script ran after", async () => {
+  const justAfterMidnight = new Date(2026, 7, 13, 0, 0, 0, 400).getTime();
+  const { dom, reloads } = await loadDashboard({ openedAt: justAfterMidnight, sinceNavigationStartMs: 900 });
+  pageBecomesVisible(dom.window);
+  await settle();
+
+  assert.equal(reloads.length, 1, "the server may have rendered yesterday: the page must move once");
+  dom.window.close();
+});
+
+test("typing into a field focused before midnight reloads instead of writing into yesterday", async () => {
+  const { dom, reloads, calls } = await loadDashboard();
+  setClock(dom.window, AFTER_MIDNIGHT);
+  const notes = dom.window.document.querySelector("[data-dashboard-notes]");
+  const keystroke = new dom.window.InputEvent("beforeinput", { bubbles: true, cancelable: true, inputType: "insertText", data: "a" });
+  notes.dispatchEvent(keystroke);
+  await settle();
+
+  assert.equal(reloads.length, 1);
+  assert.equal(keystroke.defaultPrevented, true, "the keystroke must not land on the old day's page");
+  assert.equal(saveForm(dom.window).dataset.autosaveDirty, undefined);
+  assert.deepEqual(calls, []);
   dom.window.close();
 });

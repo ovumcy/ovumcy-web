@@ -4865,9 +4865,17 @@
   // The browser's own zone is the one the timezone header and cookie report,
   // so the server's "today" for this page moves when this key does. Only a
   // change is read, never a comparison with the rendered date.
-  function dashboardLocalDayKey() {
-    var now = new Date();
+  function dashboardLocalDayKey(at) {
+    var now = typeof at === "number" ? new Date(at) : new Date();
     return String(now.getFullYear()) + "-" + String(now.getMonth() + 1) + "-" + String(now.getDate());
+  }
+
+  // The page's day is keyed at the moment its navigation started, before the
+  // server rendered it, so a render that straddles midnight costs at most one
+  // extra reload instead of a page that shows yesterday and never moves.
+  function dashboardNavigationStartDayKey() {
+    var elapsed = window.performance && typeof window.performance.now === "function" ? window.performance.now() : 0;
+    return dashboardLocalDayKey(Date.now() - elapsed);
   }
 
   function dashboardHoldsOutstandingWork() {
@@ -4904,7 +4912,7 @@
     if (dashboardOpenedOnDay) {
       return;
     }
-    dashboardOpenedOnDay = dashboardLocalDayKey();
+    dashboardOpenedOnDay = dashboardNavigationStartDayKey();
 
     // A page in view is checked on a clock; a page coming back from the
     // background, a sleeping laptop or the back/forward cache is checked the
@@ -5105,6 +5113,13 @@
         // new day before something is typed into the old one.
         root.addEventListener("focusin", function () {
           reloadDashboardOnNewDay();
+        });
+        // A field already focused before midnight gets no focusin: the first
+        // keystroke after it is held back and the page moves instead.
+        root.addEventListener("beforeinput", function (event) {
+          if (reloadDashboardOnNewDay()) {
+            event.preventDefault();
+          }
         });
       }
 
