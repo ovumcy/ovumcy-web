@@ -3,7 +3,6 @@ package api
 import (
 	"fmt"
 	"go/ast"
-	"go/importer"
 	"go/parser"
 	"go/token"
 	"go/types"
@@ -32,6 +31,11 @@ import (
 //     call site passes a tainted map for that parameter.
 //   - A write to the result of a function that returns a tainted map (such a
 //     function becomes a source itself).
+//   - A call through an anonymous interface type that *Manager implements and
+//     that declares Messages, wherever the type expression appears.
+//   - The taint of a variable ends after a statement of the function body's own
+//     top level that reassigns it a fresh map (m = maps.Clone(m), a literal,
+//     make); a write before that statement is still flagged.
 //   - Write shapes: m[k] = v, m[k] op= v, m[k]++ , delete, clear, and
 //     maps.Copy / maps.Insert / maps.DeleteFunc with the map as the first
 //     argument. maps.Clone and copying FROM the shared map are reads.
@@ -42,7 +46,9 @@ import (
 // it: a map stored in a struct field, slice, map value, channel or interface{}
 // and written after being read back; a map reaching a write through a closure
 // variable captured from another package function's result tuple; a map from a
-// multi-value assignment (`m, ok := f()`); range variables; a write through a
+// multi-value assignment (`m, ok := f()`); range variables; a fresh-map
+// reassignment inside a branch or loop, which does not end the taint; an
+// interface type declared inside a function body; a write through a
 // function value (not a declared function) that received the map; reflection;
 // an unsafe or cgo write; and any package outside cmd, internal, migrations,
 // scripts and web. Test files are not swept. The fiber locals slot that
@@ -66,8 +72,8 @@ type messagesWriteFinding struct {
 type messagesScan struct {
 	findings []messagesWriteFinding
 	// sourceCalls records "<package>.<enclosing func> -> <callee name>" for every
-	// call to a ROOT source (not a derived one), so the live sweep can assert
-	// that known production call sites were really seen.
+	// call to a source, root or derived, so the live sweep can assert that known
+	// production call sites were really seen.
 	sourceCalls map[string]bool
 	// sources is the final set, roots plus derived (functions returning a
 	// shared map).
@@ -76,8 +82,9 @@ type messagesScan struct {
 
 // sharedMessagesRoots resolves the root sources from declarations: the Manager
 // method, every interface method that *Manager implements and that is named
-// like it, and the extra functions the caller names.
-func sharedMessagesRoots(manager *types.Named, scopes []*types.Scope, extra []*types.Func) map[*types.Func]bool {
+// like it (declared types, and unnamed interface types written inline), and the
+// extra functions the caller names.
+func sharedMessagesRoots(manager *types.Named, scopes []*types.Scope, infos []*types.Info, extra []*types.Func) map[*types.Func]bool {
 	roots := map[*types.Func]bool{}
 	for index := range manager.NumMethods() {
 		if method := manager.Method(index); method.Name() == "Messages" {
@@ -85,20 +92,29 @@ func sharedMessagesRoots(manager *types.Named, scopes []*types.Scope, extra []*t
 		}
 	}
 	pointer := types.NewPointer(manager)
+	addInterface := func(iface *types.Interface) {
+		if !types.Implements(pointer, iface) {
+			return
+		}
+		for index := range iface.NumMethods() {
+			if method := iface.Method(index); method.Name() == "Messages" {
+				roots[method] = true
+			}
+		}
+	}
 	for _, scope := range scopes {
 		for _, name := range scope.Names() {
-			typeName, ok := scope.Lookup(name).(*types.TypeName)
-			if !ok {
-				continue
-			}
-			iface, ok := typeName.Type().Underlying().(*types.Interface)
-			if !ok || !types.Implements(pointer, iface) {
-				continue
-			}
-			for index := range iface.NumMethods() {
-				if method := iface.Method(index); method.Name() == "Messages" {
-					roots[method] = true
+			if typeName, ok := scope.Lookup(name).(*types.TypeName); ok {
+				if iface, ok := typeName.Type().Underlying().(*types.Interface); ok {
+					addInterface(iface)
 				}
+			}
+		}
+	}
+	for _, info := range infos {
+		for _, recorded := range info.Types {
+			if iface, ok := recorded.Type.(*types.Interface); ok && recorded.IsType() {
+				addInterface(iface)
 			}
 		}
 	}
@@ -152,12 +168,58 @@ func enclosingName(info *types.Info, declaration *ast.FuncDecl) string {
 	return function.Pkg().Name() + "." + name
 }
 
+// isFreshMap reports an expression that yields a map nobody else holds.
+func isFreshMap(info *types.Info, expression ast.Expr) bool {
+	switch typed := unparen(expression).(type) {
+	case *ast.CompositeLit:
+		return true
+	case *ast.CallExpr:
+		switch callee := calleeObject(info, typed).(type) {
+		case *types.Builtin:
+			return callee.Name() == "make"
+		case *types.Func:
+			return callee.Pkg() != nil && callee.Pkg().Path() == "maps" && callee.Name() == "Clone"
+		}
+	}
+	return false
+}
+
 func scanSharedMessagesWrites(units []typedUnit, roots map[*types.Func]bool) *messagesScan {
 	scan := &messagesScan{sourceCalls: map[string]bool{}, sources: map[*types.Func]bool{}}
 	for function := range roots {
 		scan.sources[function] = true
 	}
 	tainted := map[types.Object]bool{}
+
+	// cleaned maps a variable to the end of the first statement, at the top
+	// level of a function body (so it runs before everything after it), that
+	// reassigns it a fresh map. Uses after that point are no longer the shared map.
+	cleaned := map[types.Object]token.Pos{}
+	for _, unit := range units {
+		for _, file := range unit.files {
+			for _, declaration := range file.Decls {
+				function, ok := declaration.(*ast.FuncDecl)
+				if !ok || function.Body == nil {
+					continue
+				}
+				for _, statement := range function.Body.List {
+					assign, ok := statement.(*ast.AssignStmt)
+					if !ok || assign.Tok != token.ASSIGN || len(assign.Lhs) != len(assign.Rhs) {
+						continue
+					}
+					for index, left := range assign.Lhs {
+						identifier, ok := unparen(left).(*ast.Ident)
+						if !ok || !isFreshMap(unit.info, assign.Rhs[index]) {
+							continue
+						}
+						if object := unit.info.Uses[identifier]; object != nil && cleaned[object] == 0 {
+							cleaned[object] = assign.End()
+						}
+					}
+				}
+			}
+		}
+	}
 
 	var isTainted func(info *types.Info, expression ast.Expr) bool
 	isTainted = func(info *types.Info, expression ast.Expr) bool {
@@ -171,7 +233,11 @@ func scanSharedMessagesWrites(units []typedUnit, roots map[*types.Func]bool) *me
 				return isTainted(info, typed.Args[0])
 			}
 		case *ast.Ident:
-			return tainted[info.Uses[typed]]
+			object := info.Uses[typed]
+			if end := cleaned[object]; end != 0 && typed.Pos() > end {
+				return false
+			}
+			return tainted[object]
 		}
 		return false
 	}
@@ -297,10 +363,8 @@ func scanSharedMessagesWrites(units []typedUnit, roots map[*types.Func]bool) *me
 					case *ast.IncDecStmt:
 						indexWrite(typed.X, enclosing, "increment or decrement of an index")
 					case *ast.CallExpr:
-						if root := calleeFunc(info, typed); root != nil && roots[root] {
-							scan.sourceCalls[enclosing+" -> "+root.Name()] = true
-						} else if derived := calleeFunc(info, typed); derived != nil && scan.sources[derived] {
-							scan.sourceCalls[enclosing+" -> "+derived.Name()] = true
+						if source := calleeFunc(info, typed); source != nil && scan.sources[source] {
+							scan.sourceCalls[enclosing+" -> "+source.Name()] = true
 						}
 						if len(typed.Args) == 0 || !isTainted(info, typed.Args[0]) {
 							break
@@ -352,12 +416,14 @@ func TestNoProductionCodeWritesToTheSharedMessagesMap(t *testing.T) {
 	}
 
 	var scopes []*types.Scope
+	var infos []*types.Info
 	var units []typedUnit
 	for _, pkg := range evidence.packages {
 		scopes = append(scopes, pkg.Types.Scope())
+		infos = append(infos, pkg.TypesInfo)
 		units = append(units, typedUnit{fset: pkg.Fset, files: pkg.Syntax, info: pkg.TypesInfo})
 	}
-	roots := sharedMessagesRoots(manager, scopes, []*types.Func{current})
+	roots := sharedMessagesRoots(manager, scopes, infos, []*types.Func{current})
 	scan := scanSharedMessagesWrites(units, roots)
 
 	// Anti-vacuity: known production call sites, by name. A sweep that stopped
@@ -437,7 +503,73 @@ func UnrelatedLocal() {
 	local := map[string]string{}
 	local["k"] = "v"
 }
+
+type holder struct {
+	source interface {
+		Messages(language string) map[string]string
+	}
+}
+
+func WriteAnonymousInterface(h holder) { h.source.Messages("en")["k"] = "v" }
+
+func CloneReassign(c ctx) {
+	m := currentMessages(c)
+	m = maps.Clone(m)
+	m["k"] = "v"
+}
+
+func CloneReassignThenAlias(c ctx) {
+	m := currentMessages(c)
+	m = maps.Clone(m)
+	b := m
+	b["k"] = "v"
+}
+
+func CloneReassignParam(m map[string]string) {
+	m = maps.Clone(m)
+	m["k"] = "v"
+}
+
+func PassToCloneReassignParam(c ctx) { CloneReassignParam(currentMessages(c)) }
+
+func WriteThenCloneReassign(c ctx) {
+	m := currentMessages(c)
+	m["k"] = "v"
+	m = maps.Clone(m)
+}
+
+func CloneReassignInBranch(c ctx, ok bool) {
+	m := currentMessages(c)
+	if ok {
+		m = maps.Clone(m)
+	}
+	m["k"] = "v"
+}
 `
+
+// mapsStub is the part of package maps the fixture calls, type-checked from
+// source so the self-test needs neither GOROOT sources nor build-cache export data.
+const mapsStub = `package maps
+
+func Clone[M ~map[K]V, K comparable, V any](m M) M { panic("stub") }
+
+func Copy[M1 ~map[K]V, M2 ~map[K]V, K comparable, V any](dst M1, src M2) { panic("stub") }
+
+func All[M ~map[K]V, K comparable, V any](m M) func(yield func(K, V) bool) { panic("stub") }
+
+func Insert[M ~map[K]V, K comparable, V any](m M, seq func(yield func(K, V) bool)) { panic("stub") }
+
+func DeleteFunc[M ~map[K]V, K comparable, V any](m M, del func(K, V) bool) { panic("stub") }
+`
+
+type stubImporter map[string]*types.Package
+
+func (importer stubImporter) Import(path string) (*types.Package, error) {
+	if pkg, ok := importer[path]; ok {
+		return pkg, nil
+	}
+	return nil, fmt.Errorf("the fixture imports %q, which the stub importer does not provide", path)
+}
 
 // TestSharedMessagesGuardRecognisesItsOwnFixtures anchors the guard on source
 // it owns: every write shape must be flagged in its own function, and none of
@@ -453,7 +585,15 @@ func TestSharedMessagesGuardRecognisesItsOwnFixtures(t *testing.T) {
 		Uses:  map[*ast.Ident]types.Object{},
 		Types: map[ast.Expr]types.TypeAndValue{},
 	}
-	config := types.Config{Importer: importer.ForCompiler(fset, "source", nil)}
+	stubFile, err := parser.ParseFile(fset, "maps.go", mapsStub, 0)
+	if err != nil {
+		t.Fatalf("parsing the maps stub: %v", err)
+	}
+	mapsPackage, err := (&types.Config{}).Check("maps", fset, []*ast.File{stubFile}, nil)
+	if err != nil {
+		t.Fatalf("type-checking the maps stub: %v", err)
+	}
+	config := types.Config{Importer: stubImporter{"maps": mapsPackage}}
 	pkg, err := config.Check("fixture", fset, []*ast.File{file}, info)
 	if err != nil {
 		t.Fatalf("type-checking the fixture: %v", err)
@@ -461,7 +601,7 @@ func TestSharedMessagesGuardRecognisesItsOwnFixtures(t *testing.T) {
 
 	manager := pkg.Scope().Lookup("Manager").Type().(*types.Named)
 	current := pkg.Scope().Lookup("currentMessages").(*types.Func)
-	roots := sharedMessagesRoots(manager, []*types.Scope{pkg.Scope()}, []*types.Func{current})
+	roots := sharedMessagesRoots(manager, []*types.Scope{pkg.Scope()}, []*types.Info{info}, []*types.Func{current})
 	scan := scanSharedMessagesWrites([]typedUnit{{fset: fset, files: []*ast.File{file}, info: info}}, roots)
 
 	flagged := map[string]int{}
@@ -472,7 +612,10 @@ func TestSharedMessagesGuardRecognisesItsOwnFixtures(t *testing.T) {
 	wantFlagged := []string{
 		"WriteIndexDirect", "WriteIndexCurrent", "WriteOpAssign", "WriteDelete", "WriteClear",
 		"WriteMapsCopy", "WriteMapsInsert", "WriteMapsDeleteFunc", "WriteAlias", "WriteVarDecl",
-		"WriteConverted", "WriteInClosure",
+		"WriteConverted", "WriteInClosure", "WriteAnonymousInterface",
+		// A fresh-map reassignment ends the taint only for what follows it, and
+		// only from the top level of the body.
+		"WriteThenCloneReassign", "CloneReassignInBranch",
 		// The write itself sits in writeThrough, reached through a tainted argument.
 		"writeThrough",
 		// The write sits in the caller of a function that returns the shared map.
@@ -483,7 +626,7 @@ func TestSharedMessagesGuardRecognisesItsOwnFixtures(t *testing.T) {
 			t.Errorf("the guard flagged %q %d time(s), want 1; findings:\n  %s", name, flagged["fixture."+name], describeMessagesFindings(scan.findings))
 		}
 	}
-	for _, name := range []string{"ReadOnly", "CopyFromShared", "CloneThenWrite", "UnrelatedLocal", "WriteParam", "wrapped", "currentMessages"} {
+	for _, name := range []string{"ReadOnly", "CopyFromShared", "CloneThenWrite", "UnrelatedLocal", "WriteParam", "wrapped", "currentMessages", "CloneReassign", "CloneReassignThenAlias", "CloneReassignParam", "PassToCloneReassignParam"} {
 		if flagged["fixture."+name] != 0 {
 			t.Errorf("the guard flagged the innocent %q; findings:\n  %s", name, describeMessagesFindings(scan.findings))
 		}
