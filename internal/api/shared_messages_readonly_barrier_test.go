@@ -49,7 +49,9 @@ import (
 // and written after being read back; a map reaching a write through a closure
 // variable captured from another package function's result tuple; a map from a
 // multi-value assignment (`m, ok := f()`); range variables; a fresh-map
-// reassignment inside a branch or loop, which does not end the taint; a write through a
+// reassignment inside a branch or loop, which does not end the taint; a closure
+// defined before a fresh-map reassignment that re-taints the variable and is
+// called after it; a write through a
 // function value (not a declared function) that received the map; reflection;
 // an unsafe or cgo write; and any package outside cmd, internal, migrations,
 // scripts and web. Test files are not swept. The fiber locals slot that
