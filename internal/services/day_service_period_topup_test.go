@@ -386,3 +386,166 @@ func TestTopUpReadsAMissingLocationAsUTC(t *testing.T) {
 	requireTopUpPeriodRow(t, logs, 11)
 	requireTopUpPeriodRow(t, logs, 12)
 }
+
+func TestAutoFillFollowingPeriodDaysTurnsAnEmptyNonPeriodRowIntoAPeriodDay(t *testing.T) {
+	service, logs, _ := newTopUpService(true, 3)
+	seedTopUpRow(logs, 11, models.DailyLog{Flow: models.FlowNone})
+	now := time.Date(2026, time.February, 13, 12, 0, 0, 0, time.UTC)
+
+	if err := service.AutoFillFollowingPeriodDays(context.Background(), topUpOwnerID, topUpDay(10), 3, models.FlowMedium, now, time.UTC); err != nil {
+		t.Fatalf("AutoFillFollowingPeriodDays: %v", err)
+	}
+
+	requireTopUpPeriodRow(t, logs, 11)
+	requireTopUpPeriodRow(t, logs, 12)
+}
+
+func unmarkTopUpPeriodDay(service *DayService, day int, today int) error {
+	now := time.Date(2026, time.February, today, 12, 0, 0, 0, time.UTC)
+	_, err := service.UpsertDayEntryWithAutoFillAt(context.Background(), topUpOwnerID, topUpDay(day),
+		DayEntryInput{IsPeriod: false, Flow: models.FlowNone}, now, time.UTC)
+	return err
+}
+
+func TestUnTickRestoresTheGapItsTickFilled(t *testing.T) {
+	service, logs, _ := newTopUpService(true, 5)
+	seedTopUpRow(logs, 10, models.DailyLog{IsPeriod: true, Flow: models.FlowMedium})
+
+	markTopUpPeriodDay(t, service, 13, 13)
+	requireTopUpPeriodRow(t, logs, 11)
+	requireTopUpPeriodRow(t, logs, 12)
+
+	if err := unmarkTopUpPeriodDay(service, 13, 13); err != nil {
+		t.Fatalf("un-tick: %v", err)
+	}
+
+	requireTopUpNoRow(t, logs, 11, 12)
+	// The period's first day is never taken for part of the gap, though it is a
+	// bare row of the same flow.
+	requireTopUpPeriodRow(t, logs, 10)
+	if row := logs.entries[topUpKey(13)]; row.IsPeriod {
+		t.Fatalf("expected the un-ticked day to stay a non-period row, got %#v", row)
+	}
+}
+
+func TestUnTickKeepsAGapRowTheOwnerAddedDataTo(t *testing.T) {
+	service, logs, _ := newTopUpService(true, 5)
+	seedTopUpRow(logs, 10, models.DailyLog{IsPeriod: true, Flow: models.FlowMedium})
+	markTopUpPeriodDay(t, service, 13, 13)
+
+	withMood := logs.entries[topUpKey(11)]
+	withMood.Mood = 3
+	logs.entries[topUpKey(11)] = withMood
+
+	if err := unmarkTopUpPeriodDay(service, 13, 13); err != nil {
+		t.Fatalf("un-tick: %v", err)
+	}
+
+	requireTopUpNoRow(t, logs, 12)
+	if row := logs.entries[topUpKey(11)]; !row.IsPeriod || row.Mood != 3 {
+		t.Fatalf("expected the row with a mood to survive as it was, got %#v", row)
+	}
+}
+
+func TestUnTickOfADayThatCausedNoTopUpRemovesNothingBehindIt(t *testing.T) {
+	service, logs, _ := newTopUpService(true, 5)
+	seedTopUpRow(logs, 10, models.DailyLog{IsPeriod: true, Flow: models.FlowMedium})
+	seedTopUpRow(logs, 12, models.DailyLog{IsPeriod: true, Flow: models.FlowMedium, Mood: 4})
+
+	markTopUpPeriodDay(t, service, 13, 13)
+	if err := unmarkTopUpPeriodDay(service, 13, 13); err != nil {
+		t.Fatalf("un-tick: %v", err)
+	}
+
+	requireTopUpNoRow(t, logs, 11)
+	if row := logs.entries[topUpKey(12)]; !row.IsPeriod || row.Mood != 4 {
+		t.Fatalf("expected the day behind to stay as saved, got %#v", row)
+	}
+}
+
+func TestUnTickRemovesNothingWhenAutoFillIsOffOrTheDayIsPastTheWindow(t *testing.T) {
+	cases := []struct {
+		name         string
+		autoFill     bool
+		periodLength int
+	}{
+		{name: "auto-fill off", autoFill: false, periodLength: 5},
+		{name: "day beyond the period length", autoFill: true, periodLength: 3},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			service, logs, _ := newTopUpService(tc.autoFill, tc.periodLength)
+			for _, day := range []int{10, 11, 12} {
+				seedTopUpRow(logs, day, models.DailyLog{IsPeriod: true, Flow: models.FlowMedium})
+			}
+			seedTopUpRow(logs, 13, models.DailyLog{IsPeriod: true, Flow: models.FlowMedium})
+
+			if err := unmarkTopUpPeriodDay(service, 13, 13); err != nil {
+				t.Fatalf("un-tick: %v", err)
+			}
+
+			for _, day := range []int{10, 11, 12} {
+				requireTopUpPeriodRow(t, logs, day)
+			}
+		})
+	}
+}
+
+func TestUndoRunningPeriodGapReadsAMissingLocationAsUTCAndSkipsASingleDayPeriod(t *testing.T) {
+	service, logs, _ := newTopUpService(true, 5)
+	for _, day := range []int{10, 11, 12} {
+		seedTopUpRow(logs, day, models.DailyLog{IsPeriod: true, Flow: models.FlowMedium})
+	}
+	seedTopUpRow(logs, 13, models.DailyLog{IsPeriod: false})
+	now := time.Date(2026, time.February, 13, 12, 0, 0, 0, time.UTC)
+
+	if err := service.undoRunningPeriodGap(context.Background(), topUpOwnerID, topUpDay(13), 1, models.FlowMedium, now, nil); err != nil {
+		t.Fatalf("undoRunningPeriodGap: %v", err)
+	}
+	requireTopUpPeriodRow(t, logs, 11)
+
+	if err := service.undoRunningPeriodGap(context.Background(), topUpOwnerID, topUpDay(13), 5, models.FlowMedium, now, nil); err != nil {
+		t.Fatalf("undoRunningPeriodGap: %v", err)
+	}
+	requireTopUpNoRow(t, logs, 11, 12)
+	requireTopUpPeriodRow(t, logs, 10)
+}
+
+func TestUnTickSurfacesItsFailuresAsAutoFillErrors(t *testing.T) {
+	cases := []struct {
+		name    string
+		arrange func(logs *dayLogRepositoryStub)
+		want    error
+	}{
+		{
+			name:    "a failed history read",
+			arrange: func(logs *dayLogRepositoryStub) { logs.rangeErr = context.DeadlineExceeded },
+			want:    ErrDayAutoFillCheckFailed,
+		},
+		{
+			// The 11th is read only by the walk back: the forward clear looks at
+			// the day before the un-ticked one alone.
+			name:    "a failed locking read behind the day",
+			arrange: func(logs *dayLogRepositoryStub) { logs.findErrByDay[topUpKey(11)] = context.DeadlineExceeded },
+			want:    ErrDayAutoFillApplyFailed,
+		},
+		{
+			name:    "a failed row delete",
+			arrange: func(logs *dayLogRepositoryStub) { logs.deleteErr = context.DeadlineExceeded },
+			want:    ErrDayAutoFillApplyFailed,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			service, logs, _ := newTopUpService(true, 5)
+			for _, day := range []int{10, 11, 12, 13} {
+				seedTopUpRow(logs, day, models.DailyLog{IsPeriod: true, Flow: models.FlowMedium})
+			}
+			tc.arrange(logs)
+
+			if err := unmarkTopUpPeriodDay(service, 13, 13); !errors.Is(err, tc.want) {
+				t.Fatalf("expected %v, got %v", tc.want, err)
+			}
+		})
+	}
+}

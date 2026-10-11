@@ -90,6 +90,16 @@ test.describe('calendar auto-fill catch-up inside the running period', () => {
       await expectPeriodTick(page, gapISO, true);
     }
     await expectPeriodTick(page, todayISO, true);
+
+    // Un-ticking today takes the days its tick filled with it.
+    const todayForm = await openCalendarDayEditor(page, todayISO);
+    await todayForm.locator('input[name="is_period"]').uncheck();
+    await saveDayEditorForm(page, todayISO, todayForm);
+
+    for (const gapISO of gapISOs) {
+      await expectPeriodTick(page, gapISO, false);
+    }
+    await expectPeriodTick(page, todayISO, false);
   });
 
   test('a day the owner left un-ticked inside the gap is not refilled', async ({ page }) => {
