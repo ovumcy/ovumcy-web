@@ -88,6 +88,18 @@ func isSpottingDay(logEntry models.DailyLog) bool {
 	return logEntry.HasSpottingSymptom && flow == models.FlowNone
 }
 
+// periodClustersWithOnboarding groups the period days of logs into clusters
+// with the onboarding start (when ctx carries one) joined as an explicit
+// non-spotting day. It does not bound the logs: a caller that must ignore days
+// after today filters them first.
+func periodClustersWithOnboarding(logs []models.DailyLog, ctx BoundaryContext) []periodCluster {
+	days := periodDaysOf(logs)
+	if onboarding := OnboardingBoundaryDay(ctx); !onboarding.IsZero() {
+		days = insertPeriodDay(days, periodDay{day: onboarding, explicit: true})
+	}
+	return clusterPeriodDays(days)
+}
+
 // CycleBoundaries is the one function that says where cycles start. Every
 // consumer of a cycle start — the completed-cycle count and lengths, the
 // last-period-start and dashboard anchor, the calendar's recorded start, the
@@ -114,12 +126,7 @@ func isSpottingDay(logEntry models.DailyLog) bool {
 // yields one start, not two. The result is ascending, one UTC-midnight date per
 // cycle, and is not clipped to Today: callers bound the logs they pass.
 func CycleBoundaries(logs []models.DailyLog, ctx BoundaryContext) []time.Time {
-	days := periodDaysOf(logs)
-	if onboarding := OnboardingBoundaryDay(ctx); !onboarding.IsZero() {
-		days = insertPeriodDay(days, periodDay{day: onboarding, explicit: true})
-	}
-
-	clusters := clusterPeriodDays(days)
+	clusters := periodClustersWithOnboarding(logs, ctx)
 	starts := make([]time.Time, 0, len(clusters))
 	for _, cluster := range clusters {
 		if start, opens := cluster.boundary(ctx.Today); opens {
@@ -135,11 +142,7 @@ func CycleBoundaries(logs []models.DailyLog, ctx BoundaryContext) []time.Time {
 // false when no cluster opens a cycle, and when the newest cycle starts in a
 // later cluster than day's.
 func newestBoundaryOpensClusterOf(logs []models.DailyLog, ctx BoundaryContext, day time.Time) bool {
-	days := periodDaysOf(logs)
-	if onboarding := OnboardingBoundaryDay(ctx); !onboarding.IsZero() {
-		days = insertPeriodDay(days, periodDay{day: onboarding, explicit: true})
-	}
-	clusters := clusterPeriodDays(days)
+	clusters := periodClustersWithOnboarding(logs, ctx)
 	day = dateOnly(day)
 	for index := len(clusters) - 1; index >= 0; index-- {
 		if _, opens := clusters[index].boundary(ctx.Today); !opens {

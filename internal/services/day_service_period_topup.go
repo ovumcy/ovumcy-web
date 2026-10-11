@@ -152,11 +152,7 @@ func (running periodCluster) windowFor(day time.Time, periodLength int, location
 // runningEpisodeOf is the newest bleeding episode up to today, the onboarding
 // start counted as an explicit period day. It is false without any period day.
 func runningEpisodeOf(user *models.User, logs []models.DailyLog, today time.Time) (periodCluster, bool) {
-	days := periodDaysOf(filterLogsNotAfter(logs, today))
-	if onboarding := OnboardingBoundaryDay(BoundaryContextFor(user, today)); !onboarding.IsZero() {
-		days = insertPeriodDay(days, periodDay{day: onboarding, explicit: true})
-	}
-	clusters := clusterPeriodDays(days)
+	clusters := periodClustersWithOnboarding(filterLogsNotAfter(logs, today), BoundaryContextFor(user, today))
 	if len(clusters) == 0 {
 		return periodCluster{}, false
 	}
