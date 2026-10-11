@@ -29,6 +29,8 @@ type runningPeriodWindow struct {
 // first day. A cut episode cannot simply be read from its first day inside the
 // read: spotting does not open an episode, so a light day after a long spotting
 // tail would pass for the start of an episode that began heavy before the tail.
+// Reading further back only moves the start earlier, so a window that does not
+// match is final.
 func (service *DayService) planRunningPeriod(ctx context.Context, userID uint, dayStart time.Time, wasPeriod bool, autoPeriodFillEnabled bool, periodLength int, now time.Time, location *time.Location) (runningPeriodWindow, error) {
 	if !autoPeriodFillEnabled || wasPeriod || periodLength <= 1 {
 		return runningPeriodWindow{}, nil
@@ -45,9 +47,13 @@ func (service *DayService) planRunningPeriod(ctx context.Context, userID uint, d
 		if err != nil {
 			return runningPeriodWindow{}, err
 		}
-		running, ok := runningEpisodeOf(&userSettings, logs, today)
-		if !ok || CalendarDaysBetween(from, running.Start) >= periodClusterGapDays {
-			return runningPeriodWindowFor(&userSettings, logs, day, periodLength, now, location), nil
+		window := runningPeriodWindowFor(&userSettings, logs, day, periodLength, now, location)
+		if !window.matched {
+			return window, nil
+		}
+		running, _ := runningEpisodeOf(&userSettings, logs, today)
+		if CalendarDaysBetween(from, running.Start) >= periodClusterGapDays {
+			return window, nil
 		}
 		from = AddCalendarDays(running.Start, -(periodLength + periodClusterGapDays), location)
 	}

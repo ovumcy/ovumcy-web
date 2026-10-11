@@ -295,6 +295,21 @@ func TestTopUpCountsTheEpisodeFromBeforeASpottingTailTheBoundedReadCutsShort(t *
 	}
 }
 
+func TestTopUpKeepsAnExplicitStartAfterASpottingTailTheBoundedReadCutsShort(t *testing.T) {
+	// The cycle-start mark on the 10th outranks the heavy 1st before the tail, so
+	// the 12th is the period's third day however far back the read reaches.
+	service, logs, _ := newTopUpService(true, 5)
+	seedTopUpRow(logs, 1, models.DailyLog{IsPeriod: true, Flow: models.FlowHeavy})
+	for day := 2; day <= 9; day++ {
+		seedTopUpRow(logs, day, models.DailyLog{IsPeriod: true, Flow: models.FlowSpotting})
+	}
+	seedTopUpRow(logs, 10, models.DailyLog{IsPeriod: true, Flow: models.FlowLight, CycleStart: true})
+
+	markTopUpPeriodDay(t, service, 12, 12)
+
+	requireTopUpPeriodRow(t, logs, 11)
+}
+
 func TestTopUpStillCountsAnEpisodeFromItsFirstDayAfterSpotting(t *testing.T) {
 	// Spotting from the 1st opens nothing: the episode starts heavy on the 8th
 	// and the 10th is its third day, so the 9th is filled.
