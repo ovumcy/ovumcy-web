@@ -3,6 +3,7 @@ package services
 import (
 	"io/fs"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"text/template/parse"
@@ -127,7 +128,9 @@ func statsOvulationReads(path string, source string, statsName string, dateName 
 			case *parse.TemplateNode:
 				// The named partial runs with the pipeline's value as its dot.
 				if typed.Pipe != nil {
-					violations = append(violations, rebindsStats(path, typed.Pipe, statsName)...)
+					for _, found := range rebindsStats(path, typed.Pipe, statsName) {
+						violations = append(violations, found+" (to template "+strconv.Quote(typed.Name)+")")
+					}
 				}
 			}
 		})
