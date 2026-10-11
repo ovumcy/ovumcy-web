@@ -324,6 +324,7 @@ func TestImportJSONHTMXSuccessReturnsStatusMarkup(t *testing.T) {
 	ctx := newSettingsSecurityTestContext(t, "import-htmx@example.com")
 	request := newImportRequest(ctx, `{"entries":[{"date":"2026-07-01","period":true,"flow":"medium","cycle_factors":[]}]}`, true)
 	request.Header.Set("HX-Request", "true")
+	bindDayWriteForTest(t, request, ctx.user.ID)
 
 	response, err := ctx.app.Test(request, testConfigNoTimeout)
 	if err != nil {

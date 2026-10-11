@@ -945,6 +945,7 @@ func TestHTMXFragmentsAreServedAsHTML(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			request := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.form))
+			bindDayWriteForTest(t, request, user.ID)
 			if tc.form != "" {
 				request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			}

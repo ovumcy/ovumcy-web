@@ -527,6 +527,7 @@
   "daylog.save_sign_in": "Accedi in una nuova scheda",
   "daylog.save_account_changed": "Ora hai effettuato l'accesso con un altro account. Questo inserimento non è stato salvato.",
   "daylog.open_account_changed": "Impossibile aprire questo giorno: ora hai effettuato l'accesso con un altro account. Ricarica la pagina.",
+  "settings.error.account_changed": "Ora hai effettuato l'accesso con un altro account. Questa modifica non è stata salvata. Ricarica la pagina.",
   "calendar.title": "Calendario",
   "calendar.prev": "Prec",
   "calendar.next": "Succ",

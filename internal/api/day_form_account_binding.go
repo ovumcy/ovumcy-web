@@ -11,10 +11,12 @@ import (
 
 // dayFormAccountField is the hidden field every rendered day write carries
 // (the dashboard journal, the calendar day editor, both delete controls and
-// every cycle-start form): an opaque binding to the account that rendered the
-// page (security.DayFormAccountBinding). dayFormAccountHeader carries the same
-// value for a client request that sends no form body (the dashboard autosave's
-// undo is a DELETE with headers only).
+// every cycle-start form), and every settings write guarded by
+// RefuseSettingsFormFromAnotherAccount: an opaque binding to the account that
+// rendered the page (security.DayFormAccountBinding). dayFormAccountHeader
+// carries the same value for a client request that sends no form body (the
+// dashboard autosave's undo is a DELETE with headers only; the settings restore
+// sends the export file itself as its body).
 //
 // The binding exists because a day write refused for an expired session offers
 // sign-in in a new tab and then a retry of the same form, and because any page
@@ -51,6 +53,15 @@ func (handler *Handler) dayFormAccountBinding(user *models.User) (string, error)
 	return security.DayFormAccountBinding(handler.secretKey, user.ID)
 }
 
+// settingsFormAccountChangedErrorSpec is the same refusal for a settings write
+// a page hosts — the cycle settings form, the dashboard's usage-goal switch and
+// the settings restore. It carries its own message, and so its own copy,
+// because what was refused is a change to the account's settings or a restore,
+// not a day entry.
+func settingsFormAccountChangedErrorSpec() APIErrorSpec {
+	return globalErrorSpec(fiber.StatusConflict, APIErrorCategoryConflict, "settings form account changed")
+}
+
 // RefuseDayFormFromAnotherAccount returns the middleware every day write route
 // mounts after OwnerOnly, refusing as kind. Every binding the request carries —
 // each urlencoded body value, each multipart value and each header value, the
@@ -59,13 +70,35 @@ func (handler *Handler) dayFormAccountBinding(user *models.User) (string, error)
 // mismatching one. No binding at all passes only for a request that did not
 // come from a rendered page.
 func (handler *Handler) RefuseDayFormFromAnotherAccount(kind healthMutationKind) fiber.Handler {
+	return handler.refuseFormFromAnotherAccount(dayFormAccountChangedErrorSpec(), func(c fiber.Ctx, spec APIErrorSpec) error {
+		return handler.failDayMutation(c, kind, spec)
+	})
+}
+
+// RefuseSettingsFormFromAnotherAccount is the same guard for the settings
+// writes a rendered page hosts outside the day forms: PATCH
+// /api/v1/users/current/cycle (the settings cycle form and the dashboard's
+// usage-goal switch) and POST /api/v1/imports/json (the settings restore,
+// which sends the binding in the header). The rule and the binding are the day
+// forms' own; the refusal is recorded under the route's own audit kind and
+// answered with the settings copy.
+func (handler *Handler) RefuseSettingsFormFromAnotherAccount(kind healthMutationKind) fiber.Handler {
+	return handler.refuseFormFromAnotherAccount(settingsFormAccountChangedErrorSpec(), func(c fiber.Ctx, spec APIErrorSpec) error {
+		return handler.failMutation(c, kind, spec)
+	})
+}
+
+// refuseFormFromAnotherAccount is the one middleware body both guards share:
+// refused answers a request whose bindings fail dayFormBindingRefused, through
+// fail, the route's own audited error path.
+func (handler *Handler) refuseFormFromAnotherAccount(refused APIErrorSpec, fail func(c fiber.Ctx, spec APIErrorSpec) error) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		user, ok := currentUser(c)
 		if !ok {
-			return handler.failDayMutation(c, kind, unauthorizedErrorSpec()) // codecov:ignore -- OwnerOnly precedes this on every route that mounts it
+			return fail(c, unauthorizedErrorSpec()) // codecov:ignore -- OwnerOnly precedes this on every route that mounts it
 		}
 		if dayFormBindingRefused(handler.secretKey, user, presentedDayFormAccountBindings(c), dayWriteFromRenderedPage(c)) {
-			return handler.failDayMutation(c, kind, dayFormAccountChangedErrorSpec())
+			return fail(c, refused)
 		}
 		return c.Next()
 	}

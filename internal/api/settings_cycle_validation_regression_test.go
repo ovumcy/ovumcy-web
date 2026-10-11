@@ -63,6 +63,7 @@ func assertSettingsCycleStatusError(t *testing.T, app *fiber.App, authCookie str
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Cookie", authCookie)
+	request.Header.Set(dayFormAccountWireHeader, renderedDayFormAccount(t, app, authCookie, "/settings"))
 
 	response := mustAppResponse(t, app, request)
 	assertStatusCode(t, response, http.StatusOK)

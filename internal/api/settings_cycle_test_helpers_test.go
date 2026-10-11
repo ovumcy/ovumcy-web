@@ -28,6 +28,7 @@ func submitSettingsCycleUpdate(t *testing.T, app *fiber.App, authCookie string, 
 		cookieHeader = joinCookieHeader(authCookie, cookiePair(csrfCookie))
 	}
 	request.Header.Set("Cookie", cookieHeader)
+	request.Header.Set(dayFormAccountWireHeader, renderedDayFormAccount(t, app, authCookie, "/settings"))
 
 	response := mustAppResponse(t, app, request)
 	assertStatusCode(t, response, http.StatusOK)

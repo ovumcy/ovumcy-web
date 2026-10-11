@@ -89,7 +89,7 @@ func registerV1APIRoutes(app *fiber.App, handler *Handler) {
 	usersCurrent.Post("/calendar-feed/rotate", handler.OwnerOnly, handler.RotateCalendarFeed)
 	usersCurrent.Delete("/calendar-feed", handler.OwnerOnly, handler.RevokeCalendarFeed)
 	usersCurrent.Post("/timezone", handler.OwnerOnly, handler.UpdateTimezone)
-	usersCurrent.Patch("/cycle", handler.OwnerOnly, handler.UpdateCycleSettings)
+	usersCurrent.Patch("/cycle", handler.OwnerOnly, handler.RefuseSettingsFormFromAnotherAccount(cycleSettingsMutation), handler.UpdateCycleSettings)
 	usersCurrent.Patch("/reminders", handler.OwnerOnly, handler.UpdateReminderSettings)
 	usersCurrent.Put("/password", handler.OwnerOnly, handler.ChangePassword)
 	usersCurrent.Post("/password/step-up", handler.OwnerOnly, handler.StartLocalPasswordSetupReauth)
@@ -148,7 +148,7 @@ func registerV1APIRoutes(app *fiber.App, handler *Handler) {
 	exports.Get("/json", handler.ExportJSON)
 
 	imports := v1.Group("/imports", handler.AuthRequired)
-	imports.Post("/json", handler.OwnerOnly, handler.ImportJSON)
+	imports.Post("/json", handler.OwnerOnly, handler.RefuseSettingsFormFromAnotherAccount(dayImportMutation), handler.ImportJSON)
 }
 
 func registerPageRoutes(app *fiber.App, handler *Handler) {

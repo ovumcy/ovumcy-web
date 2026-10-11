@@ -30,9 +30,17 @@ func (handler *Handler) buildSettingsViewData(c fiber.Ctx, user *models.User, fl
 
 	*user = viewData.CurrentUser
 
+	// The cycle settings form and the restore carry the rendering account's
+	// binding (RefuseSettingsFormFromAnotherAccount guards both routes).
+	formAccount, err := handler.dayFormAccountBinding(user)
+	if err != nil {
+		return nil, err // codecov:ignore -- NewHandler refuses an empty secret and a signed-in user has a non-zero id
+	}
+
 	data := fiber.Map{
-		"Title":       localizedPageTitle(messages, "meta.title.settings", "Ovumcy | Settings"),
-		"CurrentUser": user,
+		"Title":          localizedPageTitle(messages, "meta.title.settings", "Ovumcy | Settings"),
+		"CurrentUser":    user,
+		"DayFormAccount": formAccount,
 		// OIDCEnabled gates the "link an OIDC identity" card (issue #701): the
 		// step-up it starts (StartOIDCIdentityLinkStepup) refuses immediately
 		// when the provider is disabled, so hiding the control when it can only

@@ -2,6 +2,11 @@
   "use strict";
 
   var IMPORT_ENDPOINT = "/api/v1/imports/json";
+  // The binding of the account that rendered this page. It is sent on every
+  // restore, empty or not: the server refuses a restore whose binding names
+  // another account, and this request (JSON, not HTMX) would otherwise read as
+  // a client that renders no page and be let through without one.
+  var ACCOUNT_BINDING_HEADER = "X-Ovumcy-Day-Form-Account";
 
   function readTextAttribute(node, name, fallback) {
     return node.getAttribute(name) || fallback;
@@ -77,14 +82,16 @@
 
       try {
         var fileText = await readFileAsText(file);
+        var headers = {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "X-CSRF-Token": context.token
+        };
+        headers[ACCOUNT_BINDING_HEADER] = context.accountBinding;
         var response = await fetch(IMPORT_ENDPOINT, {
           method: "POST",
           credentials: "same-origin",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-            "X-CSRF-Token": context.token
-          },
+          headers: headers,
           body: fileText
         });
 
@@ -144,6 +151,7 @@
     fileInput: fileInput,
     submitButton: submitButton,
     token: csrfToken(section),
+    accountBinding: String(section.getAttribute("data-import-account") || "").trim(),
     successTemplate: readTextAttribute(section, "data-import-success-template", "Restored %d days (%d already present, %d ignored)."),
     emptyMessage: readTextAttribute(section, "data-import-empty", "Choose a file to restore."),
     failedMessage: readTextAttribute(section, "data-import-failed", "Restore failed. Please try again."),

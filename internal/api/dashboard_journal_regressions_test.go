@@ -200,8 +200,9 @@ func TestDashboardOffersAQuickUsageGoalSwitchForOwner(t *testing.T) {
 			names = append(names, htmlAttr(field, "name"))
 		}
 		sort.Strings(names)
-		// _method is the no-JS transport field, not a cycle member.
-		if !reflect.DeepEqual(names, []string{"_method", "csrf_token", "usage_goal"}) {
+		// _method is the no-JS transport field and day_form_account the page's
+		// account binding; neither is a cycle member.
+		if !reflect.DeepEqual(names, []string{"_method", "csrf_token", "day_form_account", "usage_goal"}) {
 			t.Fatalf("expected the quick switch to submit only the goal, got fields %v", names)
 		}
 	}

@@ -81,6 +81,7 @@ func TestSettingsCycleUsesRequestTimezoneForLastPeriodStartValidation(t *testing
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Cookie", joinCookieHeader(authCookie, timezoneCookieName+"="+timezoneName))
 	request.Header.Set(timezoneHeaderName, timezoneName)
+	bindDayWriteForTest(t, request, user.ID)
 
 	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
@@ -198,8 +199,11 @@ func TestSettingsCycleGoalOnlyPatchWritesNothingButTheGoal(t *testing.T) {
 	authCookie := loginAndExtractAuthCookieWithCSRF(t, app, user.Email, "StrongPass1")
 	csrfCookie, csrfToken := loadSettingsCSRFContext(t, app, authCookie)
 
+	// The switch's form carries the page's account binding beside the goal; it
+	// is not a cycle member, so the patch stays goal-only.
+	binding := renderedDayFormAccount(t, app, authCookie, "/dashboard")
 	goalOnly := func(token string) *http.Request {
-		form := url.Values{"usage_goal": {models.UsageGoalAvoid}}
+		form := url.Values{"usage_goal": {models.UsageGoalAvoid}, dayFormAccountWireName: {binding}}
 		if strings.TrimSpace(token) != "" {
 			form.Set("csrf_token", token)
 		}

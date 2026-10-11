@@ -527,6 +527,7 @@
   "daylog.save_sign_in": "Iniciar sesión en una pestaña nueva",
   "daylog.save_account_changed": "Ahora has iniciado sesión con otra cuenta. Este registro no se ha guardado.",
   "daylog.open_account_changed": "No se puede abrir este día: ahora has iniciado sesión con otra cuenta. Recarga la página.",
+  "settings.error.account_changed": "Ahora has iniciado sesión con otra cuenta. Este cambio no se ha guardado. Recarga la página.",
   "calendar.title": "Calendario",
   "calendar.prev": "Anterior",
   "calendar.next": "Siguiente",
