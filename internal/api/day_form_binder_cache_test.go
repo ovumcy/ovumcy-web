@@ -10,7 +10,8 @@ func TestHandlerDerivesTheDayFormBindingKeyOnce(t *testing.T) {
 	t.Parallel()
 
 	handler := &Handler{secretKey: []byte("day-form-binder-cache-secret-0123456789")}
-	if handler.dayFormBinder() != handler.dayFormBinder() {
+	first, second := handler.dayFormBinder(), handler.dayFormBinder()
+	if first != second {
 		t.Fatal("a handler must reuse one binder, not derive the key on every call")
 	}
 
