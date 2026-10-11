@@ -761,6 +761,104 @@ test("a refused control inside an open editor keeps the typed entry and leads it
   }
 });
 
+// jsdom has no scrollIntoView, and the shipped code only scrolls when the
+// element offers one, so these tests give the window a recording stub for the
+// length of one run and put the window back as they found it.
+async function withScrollIntoViewRecorded(page, run) {
+  const dom = await loadDOMWithScript(APP_BUNDLE, { html: page });
+  const proto = dom.window.Element.prototype;
+  const hadOwn = Object.prototype.hasOwnProperty.call(proto, "scrollIntoView");
+  const original = proto.scrollIntoView;
+  const scrolls = [];
+  proto.scrollIntoView = function (arg) {
+    scrolls.push({ element: this, arg });
+  };
+  try {
+    await run(dom.window, scrolls);
+  } finally {
+    if (hadOwn) {
+      proto.scrollIntoView = original;
+    } else {
+      delete proto.scrollIntoView;
+    }
+    dom.window.close();
+  }
+}
+
+function refuseOn(window, target, fragment, elt) {
+  target.dispatchEvent(
+    new window.CustomEvent("htmx:responseError", {
+      detail: { target, elt, xhr: { status: 409, responseText: fragment } },
+      bubbles: true,
+    })
+  );
+}
+
+for (const [surface, fragment] of [
+  ["a refused control", ACCOUNT_CHANGED_FRAGMENT],
+  ["a refused day switch", OPEN_ACCOUNT_CHANGED_FRAGMENT],
+]) {
+  test(`${surface} inside an open editor scrolls its notice into view`, async () => {
+    const page = `<!doctype html><html><body>
+    <aside id="day-editor"><form data-day-editor-form><textarea name="notes">typed, not saved</textarea></form></aside>
+  </body></html>`;
+    await withScrollIntoViewRecorded(page, (window, scrolls) => {
+      const editor = window.document.getElementById("day-editor");
+      refuseOn(window, editor, fragment);
+
+      const notice = editor.querySelector("[data-day-editor-refused]");
+      assert.ok(notice, "the editor leads with the notice");
+      // The harness delivers the ready event twice, so the handler may run
+      // twice per refusal; each run scrolls the notice it just rendered.
+      assert.ok(scrolls.length >= 1, "the notice is scrolled into view");
+      for (const scroll of scrolls) {
+        assert.ok(scroll.element.hasAttribute("data-day-editor-refused"), "what is scrolled is a notice, not the editor or the form");
+        assert.deepEqual({ ...scroll.arg }, { block: "nearest" }, "scrolled only as far as needed");
+      }
+      assert.equal(scrolls[scrolls.length - 1].element, notice, "the notice left on screen is the one scrolled last");
+    });
+  });
+}
+
+test("an editor that is a skeleton gives way to the notice without scrolling", async () => {
+  const page = `<!doctype html><html><body>
+    <aside id="day-editor"><div class="calendar-day-skeleton" aria-hidden="true"></div></aside>
+  </body></html>`;
+  await withScrollIntoViewRecorded(page, (window, scrolls) => {
+    const editor = window.document.getElementById("day-editor");
+    refuseOn(window, editor, OPEN_ACCOUNT_CHANGED_FRAGMENT);
+
+    assert.ok(editor.querySelector("[data-day-editor-refused]"), "the notice is rendered");
+    assert.equal(scrolls.length, 0, "a notice that replaces the editor is already where the owner looks");
+  });
+});
+
+test("a refused calendar grid refresh shows its notice without scrolling", async () => {
+  const page = `<!doctype html><html><body>
+    <section id="calendar-grid-panel"><div id="grid">the month as rendered</div></section>
+  </body></html>`;
+  await withScrollIntoViewRecorded(page, (window, scrolls) => {
+    const panel = window.document.getElementById("calendar-grid-panel");
+    refuseOn(window, panel, OPEN_ACCOUNT_CHANGED_FRAGMENT);
+
+    assert.ok(panel.querySelector("[data-calendar-grid-refused]"), "the notice is rendered");
+    assert.equal(scrolls.length, 0, "the grid notice leads a grid that stays on screen");
+  });
+});
+
+test("an editor fetch refused for another reason scrolls nothing", async () => {
+  const page = `<!doctype html><html><body>
+    <aside id="day-editor"><form data-day-editor-form><textarea name="notes">typed</textarea></form></aside>
+  </body></html>`;
+  await withScrollIntoViewRecorded(page, (window, scrolls) => {
+    const editor = window.document.getElementById("day-editor");
+    refuseOn(window, editor, '<div class="status-error" data-flash-key="error.invalid_payload">bad</div>');
+
+    assert.equal(editor.querySelector("[data-day-editor-refused]"), null, "no account-changed notice");
+    assert.equal(scrolls.length, 0, "nothing to bring into view");
+  });
+});
+
 // The grid refresh after a save is the same read. Refused, it leaves the grid
 // as it was rendered and says so above it, once, however often it is refused.
 test("a refused calendar grid refresh keeps the grid and leads it with the notice", async () => {
