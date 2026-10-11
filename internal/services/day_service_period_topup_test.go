@@ -310,6 +310,23 @@ func TestTopUpKeepsAnExplicitStartAfterASpottingTailTheBoundedReadCutsShort(t *t
 	requireTopUpPeriodRow(t, logs, 11)
 }
 
+func TestTopUpCountsTheEpisodeFromAnOnboardingStartBeforeTheBoundedRead(t *testing.T) {
+	// The onboarding start on the 1st has no row and lies before the first read
+	// (from the 2nd); it still anchors the episode behind the spotting tail, so
+	// the 12th is past a five-day period.
+	service, logs, users := newTopUpService(true, 5)
+	start := topUpDay(1)
+	users.settings.LastPeriodStart = &start
+	for day := 2; day <= 9; day++ {
+		seedTopUpRow(logs, day, models.DailyLog{IsPeriod: true, Flow: models.FlowSpotting})
+	}
+	seedTopUpRow(logs, 10, models.DailyLog{IsPeriod: true, Flow: models.FlowLight})
+
+	markTopUpPeriodDay(t, service, 12, 12)
+
+	requireTopUpNoRow(t, logs, 11)
+}
+
 func TestTopUpStillCountsAnEpisodeFromItsFirstDayAfterSpotting(t *testing.T) {
 	// Spotting from the 1st opens nothing: the episode starts heavy on the 8th
 	// and the 10th is its third day, so the 9th is filled.

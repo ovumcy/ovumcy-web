@@ -42,20 +42,26 @@ func (service *DayService) planRunningPeriod(ctx context.Context, userID uint, d
 	day := CalendarDay(dayStart, location)
 	today := DateAtLocation(now, location)
 	from := AddCalendarDays(day, -(periodLength + periodClusterGapDays), location)
+	logs, err := service.FetchLogsForUser(ctx, userID, from, today, location)
+	if err != nil {
+		return runningPeriodWindow{}, err
+	}
 	for {
-		logs, err := service.FetchLogsForUser(ctx, userID, from, today, location)
+		running, ok := runningEpisodeOf(&userSettings, logs, today)
+		if !ok {
+			return runningPeriodWindow{}, nil
+		}
+		window := running.windowFor(day, periodLength, location)
+		if !window.matched || CalendarDaysBetween(from, running.Start) >= periodClusterGapDays {
+			return window, nil
+		}
+		earlier := AddCalendarDays(running.Start, -(periodLength + periodClusterGapDays), location)
+		prefix, err := service.FetchLogsForUser(ctx, userID, earlier, AddCalendarDays(from, -1, location), location)
 		if err != nil {
 			return runningPeriodWindow{}, err
 		}
-		window := runningPeriodWindowFor(&userSettings, logs, day, periodLength, now, location)
-		if !window.matched {
-			return window, nil
-		}
-		running, _ := runningEpisodeOf(&userSettings, logs, today)
-		if CalendarDaysBetween(from, running.Start) >= periodClusterGapDays {
-			return window, nil
-		}
-		from = AddCalendarDays(running.Start, -(periodLength + periodClusterGapDays), location)
+		logs = append(prefix, logs...)
+		from = earlier
 	}
 }
 
@@ -107,6 +113,12 @@ func runningPeriodWindowFor(user *models.User, logs []models.DailyLog, day time.
 	if !ok {
 		return runningPeriodWindow{}
 	}
+	return running.windowFor(day, periodLength, location)
+}
+
+// windowFor is runningPeriodWindowFor over an episode already resolved as the
+// running one.
+func (running periodCluster) windowFor(day time.Time, periodLength int, location *time.Location) runningPeriodWindow {
 	if CalendarDaysBetween(running.Start, day) < 0 || CalendarDaysBetween(day, running.End) < 0 {
 		return runningPeriodWindow{}
 	}
