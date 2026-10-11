@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createWriteStream, existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import net from "node:net";
 import { createRequire } from "node:module";
 import { finished } from "node:stream/promises";
@@ -16,6 +16,9 @@ import { startLocalHTTPSProxy, startLocalOIDCProvider } from "./e2e-runtime.mjs"
 const CONTAINER_READY_TIMEOUT_MS = 60_000;
 const SHUTDOWN_TIMEOUT_MS = 5_000;
 const REDACTED = "[REDACTED]";
+// Lines of the app log echoed into the job output when the app dies before it
+// answers its readiness probe; the log file itself is not a CI artifact.
+const APP_LOG_TAIL_LINES = 80;
 
 // How long to wait for the app (`go run ./cmd/ovumcy`) to answer its
 // readiness probe after spawn. On the Postgres lane this window covers the Go
@@ -194,6 +197,24 @@ function redactSensitiveText(value) {
   text = text.replace(/(postgres(?:ql)?:\/\/[^:\s]+:)([^@/\s]+)(@)/gi, `$1${REDACTED}$3`);
 
   return text;
+}
+
+async function printAppLogTail(appLogPath) {
+  let content;
+  try {
+    content = await readFile(appLogPath, "utf8");
+  } catch {
+    console.error(`[e2e] app log unreadable: ${appLogPath}`);
+    return;
+  }
+
+  const lines = content.split(/\r?\n/);
+  while (lines.length > 0 && lines[lines.length - 1] === "") {
+    lines.pop();
+  }
+  const tail = lines.slice(-APP_LOG_TAIL_LINES);
+  console.error(`[e2e] last ${tail.length} line(s) of ${appLogPath}:`);
+  console.error(redactSensitiveText(tail.join("\n")));
 }
 
 function formatFailedCommand(command, args) {
@@ -689,8 +710,14 @@ async function main() {
   appProcess.stdout.pipe(appLogStream);
   appProcess.stderr.pipe(appLogStream);
 
+  let appExitedBeforeReady = false;
   try {
-    await waitForServer(`${appURL}/login`, appProcess, appReadyTimeoutMs);
+    try {
+      await waitForServer(`${appURL}/login`, appProcess, appReadyTimeoutMs);
+    } catch (error) {
+      appExitedBeforeReady = appProcess.exitCode !== null;
+      throw error;
+    }
 
     const playwrightArgs = [playwrightCLIPath, "test"];
     if (workerOverride !== null && !hasWorkersArg(passthrough)) {
@@ -713,6 +740,9 @@ async function main() {
     appProcess.stderr.unpipe(appLogStream);
     appLogStream.end();
     await finished(appLogStream);
+    if (appExitedBeforeReady) {
+      await printAppLogTail(appLogPath);
+    }
     if (localOIDCProvider) {
       await localOIDCProvider.close().catch(() => {});
     }
