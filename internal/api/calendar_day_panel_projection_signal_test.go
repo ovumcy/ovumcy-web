@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"fmt"
+	"go/constant"
+	"go/types"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -254,15 +256,15 @@ func TestCalendarDayPanelPayloadCarriesNoProjectionSignal(t *testing.T) {
 // key names a projection word, keyed by that translation key. A printf verb
 // matches any run of text, so a count or a date filled in still matches. Each
 // word must name a translation key or English string, a PredictionSuppression
-// field or the overdue or out-of-date suppression reason, so no word in the list
-// can read as a check while matching nothing.
+// field or a suppression reason, so no word in the list can read as a check
+// while matching nothing.
 func dayPanelProjectionCopy(t *testing.T) map[string]*regexp.Regexp {
 	t.Helper()
 	manager, err := i18n.NewManager("en")
 	if err != nil {
 		t.Fatalf("init i18n: %v", err)
 	}
-	anchors := []string{string(services.SuppressionReasonCycleOverdue), string(services.SuppressionReasonCycleDataStale)}
+	anchors := slices.Collect(maps.Values(suppressionReasonConstants(t)))
 	verdict := reflect.TypeOf(services.PredictionSuppression{})
 	for i := range verdict.NumField() {
 		anchors = append(anchors, verdict.Field(i).Name)
@@ -289,10 +291,54 @@ func dayPanelProjectionCopy(t *testing.T) map[string]*regexp.Regexp {
 		if !slices.ContainsFunc(anchors, func(name string) bool {
 			return strings.Contains(dayPanelNormalize(name), word)
 		}) {
-			t.Fatalf("anchor: no translation key or string, verdict field or overdue reason names %q", word)
+			t.Fatalf("anchor: no translation key or string, verdict field or suppression reason names %q", word)
 		}
 	}
 	return copyByKey
+}
+
+// suppressionReasonConstants returns every constant of type
+// services.SuppressionReason, name to value, resolved by declaration: the
+// services package is type-checked with go/packages and its scope is walked for
+// constants whose type is the SuppressionReason type itself. A reason added later
+// is anchored without being listed here, and a hand-written list cannot drift
+// from the declarations it stands for.
+//
+// The load-bearing member is SuppressionReasonCycleDataStale: it must resolve to
+// the value the compiled constant carries and must itself name a projection word,
+// because the "stale" word of the day-panel check is anchored on it. A sweep that
+// found the type but resolved the wrong constants, or none, fails there.
+func suppressionReasonConstants(t *testing.T) map[string]string {
+	t.Helper()
+
+	evidence := loadTreeEvidence(t)
+	servicesPackage := evidence.packageByPath(modulePath + "/internal/services")
+	if servicesPackage == nil || servicesPackage.Types == nil {
+		t.Fatalf("anchor: the sweep did not type-check %s/internal/services", modulePath)
+	}
+	scope := servicesPackage.Types.Scope()
+	reasonType, ok := scope.Lookup("SuppressionReason").(*types.TypeName)
+	if !ok {
+		t.Fatal("anchor: the services package declares no SuppressionReason type")
+	}
+
+	reasons := map[string]string{}
+	for _, name := range scope.Names() {
+		constantObject, ok := scope.Lookup(name).(*types.Const)
+		if !ok || !types.Identical(constantObject.Type(), reasonType.Type()) {
+			continue
+		}
+		reasons[name] = constant.StringVal(constantObject.Val())
+	}
+
+	const loadBearing = "SuppressionReasonCycleDataStale"
+	if got, ok := reasons[loadBearing]; !ok || got != string(services.SuppressionReasonCycleDataStale) {
+		t.Fatalf("anchor: %s resolved to %q (found: %v), want %q", loadBearing, got, ok, services.SuppressionReasonCycleDataStale)
+	}
+	if dayPanelNamesProjection(reasons[loadBearing]) == "" {
+		t.Fatalf("anchor: %s = %q names no projection word", loadBearing, reasons[loadBearing])
+	}
+	return reasons
 }
 
 // dayPanelHTMLProjectionHits lists every attribute name or value, text node and
