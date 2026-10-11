@@ -601,18 +601,28 @@ func (service *DayService) applyPeriodAutoFillSideEffects(ctx context.Context, u
 }
 
 func (service *DayService) autoFillNewPeriodAnchor(ctx context.Context, userID uint, dayStart time.Time, wasPeriod bool, autoPeriodFillEnabled bool, periodLength int, flow string, now time.Time, location *time.Location) error {
-	// The decision to fill forward reads the days before this one, so it is taken
-	// before the catch-up behind this day writes any of them.
+	if location == nil {
+		location = time.UTC
+	}
+	// Both reads happen before either fill writes: the decision to fill forward
+	// reads the days before this one, which the catch-up behind it then fills.
 	shouldAutoFill, err := service.ShouldAutoFillPeriodDays(ctx, userID, dayStart, wasPeriod, autoPeriodFillEnabled, periodLength, location)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrDayAutoFillCheckFailed, err)
 	}
+	window, err := service.planRunningPeriod(ctx, userID, dayStart, wasPeriod, autoPeriodFillEnabled, periodLength, now, location)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrDayAutoFillCheckFailed, err)
+	}
 	if shouldAutoFill {
-		if err := service.AutoFillFollowingPeriodDays(ctx, userID, dayStart, periodLength, flow, now, location); err != nil {
+		// A day inside the running period continues it: the forward fill stops at
+		// that period's own last day, not periodLength days after this one. A zero
+		// lastDay (the day starts a period of its own) leaves the fill unbounded.
+		if err := service.autoFillFollowingPeriodDaysThrough(ctx, userID, dayStart, periodLength, flow, now, window.lastDay, location); err != nil {
 			return fmt.Errorf("%w: %v", ErrDayAutoFillApplyFailed, err)
 		}
 	}
-	return service.topUpRunningPeriodGap(ctx, userID, dayStart, wasPeriod, autoPeriodFillEnabled, flow, now, location)
+	return service.fillRunningPeriodGap(ctx, userID, window, flow, location)
 }
 
 func (service *DayService) clearAutoFilledNeighborsIfBare(ctx context.Context, userID uint, dayStart time.Time, periodLength int, propagatedFlow string, location *time.Location) error {
@@ -878,6 +888,13 @@ func (service *DayService) ShouldAutoFillPeriodDays(ctx context.Context, userID 
 }
 
 func (service *DayService) AutoFillFollowingPeriodDays(ctx context.Context, userID uint, startDay time.Time, periodLength int, flow string, now time.Time, location *time.Location) error {
+	return service.autoFillFollowingPeriodDaysThrough(ctx, userID, startDay, periodLength, flow, now, time.Time{}, location)
+}
+
+// autoFillFollowingPeriodDaysThrough is AutoFillFollowingPeriodDays with an
+// optional extra last day (a midnight in location, zero for none) that the fill
+// does not pass, on top of the period's own length and the owner's today.
+func (service *DayService) autoFillFollowingPeriodDaysThrough(ctx context.Context, userID uint, startDay time.Time, periodLength int, flow string, now time.Time, throughDay time.Time, location *time.Location) error {
 	if periodLength <= 1 {
 		return nil
 	}
@@ -886,6 +903,9 @@ func (service *DayService) AutoFillFollowingPeriodDays(ctx context.Context, user
 	}
 
 	lastDay := periodFillLastDay(startDay, periodLength, now, location)
+	if !throughDay.IsZero() && CalendarDaysBetween(throughDay, lastDay) > 0 {
+		lastDay = throughDay
+	}
 	for offset := 1; offset < periodLength; offset++ {
 		targetDay := AddCalendarDays(startDay, offset, location)
 		if targetDay.After(lastDay) {

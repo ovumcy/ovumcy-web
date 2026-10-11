@@ -229,18 +229,51 @@ func TestTopUpDoesNotRefillAfterAReSaveOfAPeriodDay(t *testing.T) {
 	requireTopUpNoRow(t, logs, 11, 12)
 }
 
-func TestTopUpDoesNotChangeTheForwardFillDecision(t *testing.T) {
+func TestTopUpCapsTheForwardFillAtTheRunningPeriodsLastDay(t *testing.T) {
 	// Four clear days before the 15th is outside the 3-day lookback, so the
-	// existing fill also runs from the 15th; the catch-up must not make its
-	// "previous day is a period day" check refuse. Window of 7: offset 5 < 7.
+	// ordinary fill also runs from the 15th. The 15th continues the period that
+	// started on the 10th, whose seven days end on the 16th: the fill may not
+	// carry it on to the 21st, and with today the 17th it may not pass the 16th.
+	for _, today := range []int{17, 21} {
+		service, logs, _ := newTopUpService(true, 7)
+		seedTopUpRow(logs, 10, models.DailyLog{IsPeriod: true, Flow: models.FlowMedium})
+
+		markTopUpPeriodDay(t, service, 15, today)
+
+		for _, day := range []int{11, 12, 13, 14, 15, 16} {
+			requireTopUpPeriodRow(t, logs, day)
+		}
+		requireTopUpNoRow(t, logs, 17, 18, 19, 20, 21)
+	}
+}
+
+func TestTopUpLeavesTheForwardFillOfANewPeriodUnbounded(t *testing.T) {
+	// The 20th is nine days after the last period day: a period of its own, not
+	// a continuation, so it fills its seven days (through today, the 24th).
 	service, logs, _ := newTopUpService(true, 7)
 	seedTopUpRow(logs, 10, models.DailyLog{IsPeriod: true, Flow: models.FlowMedium})
 
-	markTopUpPeriodDay(t, service, 15, 17)
+	markTopUpPeriodDay(t, service, 20, 24)
 
-	for _, day := range []int{11, 12, 13, 14, 15, 16, 17} {
+	for _, day := range []int{20, 21, 22, 23, 24} {
 		requireTopUpPeriodRow(t, logs, day)
 	}
+	requireTopUpNoRow(t, logs, 11, 19)
+}
+
+func TestTopUpIgnoresALongChainTheBoundedReadCutsShort(t *testing.T) {
+	// A period logged every fourth day for a month reads as one episode that
+	// started long ago. The history read starts only periodLength plus the cluster
+	// gap before the marked day, and the first row inside it must not pass for the
+	// episode's start.
+	service, logs, _ := newTopUpService(true, 5)
+	for _, day := range []int{-21, -17, -13, -9, -5, -1, 3, 7, 11} {
+		seedTopUpRow(logs, day, models.DailyLog{IsPeriod: true, Flow: models.FlowMedium})
+	}
+
+	markTopUpPeriodDay(t, service, 14, 14)
+
+	requireTopUpNoRow(t, logs, 12, 13)
 }
 
 func TestRunningPeriodGapDaysCountsFromTheEpisodesExplicitStart(t *testing.T) {
@@ -251,16 +284,19 @@ func TestRunningPeriodGapDaysCountsFromTheEpisodesExplicitStart(t *testing.T) {
 	}
 	now := time.Date(2026, time.February, 13, 12, 0, 0, 0, time.UTC)
 
-	got := runningPeriodGapDays(&models.User{}, logs, topUpDay(13), 5, now, time.UTC)
-	if len(got) != 2 || !got[0].Equal(topUpDay(11)) || !got[1].Equal(topUpDay(12)) {
-		t.Fatalf("expected the 11th and 12th counted from the explicit start on the 10th, got %v", got)
+	got := runningPeriodWindowFor(&models.User{}, logs, topUpDay(13), 5, now, time.UTC)
+	if !got.matched || len(got.gap) != 2 || !got.gap[0].Equal(topUpDay(11)) || !got.gap[1].Equal(topUpDay(12)) {
+		t.Fatalf("expected the 11th and 12th counted from the explicit start on the 10th, got %+v", got)
+	}
+	if want := topUpDay(14); !got.lastDay.Equal(want) {
+		t.Fatalf("expected the period to end on %s, got %s", want, got.lastDay)
 	}
 
 	// Without the explicit mark the episode starts on the 8th and the 13th is
 	// five days in: outside a five-day window.
 	logs[1].CycleStart = false
-	if got := runningPeriodGapDays(&models.User{}, logs, topUpDay(13), 5, now, time.UTC); len(got) != 0 {
-		t.Fatalf("expected nothing past the window counted from the 8th, got %v", got)
+	if got := runningPeriodWindowFor(&models.User{}, logs, topUpDay(13), 5, now, time.UTC); got.matched || len(got.gap) != 0 {
+		t.Fatalf("expected nothing past the window counted from the 8th, got %+v", got)
 	}
 }
 
@@ -271,15 +307,15 @@ func TestRunningPeriodGapDaysIgnoresAnEpisodeOfSpottingOnly(t *testing.T) {
 	}
 	now := time.Date(2026, time.February, 13, 12, 0, 0, 0, time.UTC)
 
-	if got := runningPeriodGapDays(&models.User{}, logs, topUpDay(13), 5, now, time.UTC); len(got) != 0 {
-		t.Fatalf("expected spotting alone to open no window, got %v", got)
+	if got := runningPeriodWindowFor(&models.User{}, logs, topUpDay(13), 5, now, time.UTC); got.matched {
+		t.Fatalf("expected spotting alone to open no window, got %+v", got)
 	}
 }
 
 func TestRunningPeriodGapDaysAnswersNothingWithoutAnyPeriodDay(t *testing.T) {
 	now := time.Date(2026, time.February, 13, 12, 0, 0, 0, time.UTC)
-	if got := runningPeriodGapDays(&models.User{}, nil, topUpDay(13), 5, now, time.UTC); len(got) != 0 {
-		t.Fatalf("expected nothing without period days, got %v", got)
+	if got := runningPeriodWindowFor(&models.User{}, nil, topUpDay(13), 5, now, time.UTC); got.matched {
+		t.Fatalf("expected nothing without period days, got %+v", got)
 	}
 }
 
@@ -308,7 +344,7 @@ func TestTopUpSurfacesItsFailuresAsAutoFillErrors(t *testing.T) {
 		{
 			name: "a failed history read",
 			arrange: func(logs *dayLogRepositoryStub, _ *dayUserRepositoryStub) {
-				logs.listErr = context.DeadlineExceeded
+				logs.rangeErr = context.DeadlineExceeded
 			},
 			want: ErrDayAutoFillCheckFailed,
 		},
@@ -343,8 +379,8 @@ func TestTopUpReadsAMissingLocationAsUTC(t *testing.T) {
 	seedTopUpRow(logs, 13, models.DailyLog{IsPeriod: true, Flow: models.FlowMedium})
 
 	now := time.Date(2026, time.February, 13, 12, 0, 0, 0, time.UTC)
-	if err := service.topUpRunningPeriodGap(context.Background(), topUpOwnerID, topUpDay(13), false, true, models.FlowMedium, now, nil); err != nil {
-		t.Fatalf("topUpRunningPeriodGap: %v", err)
+	if err := service.autoFillNewPeriodAnchor(context.Background(), topUpOwnerID, topUpDay(13), false, true, 5, models.FlowMedium, now, nil); err != nil {
+		t.Fatalf("autoFillNewPeriodAnchor: %v", err)
 	}
 
 	requireTopUpPeriodRow(t, logs, 11)
