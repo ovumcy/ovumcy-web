@@ -79,7 +79,7 @@ type messagesScan struct {
 // like it, and the extra functions the caller names.
 func sharedMessagesRoots(manager *types.Named, scopes []*types.Scope, extra []*types.Func) map[*types.Func]bool {
 	roots := map[*types.Func]bool{}
-	for index := 0; index < manager.NumMethods(); index++ {
+	for index := range manager.NumMethods() {
 		if method := manager.Method(index); method.Name() == "Messages" {
 			roots[method] = true
 		}
@@ -95,7 +95,7 @@ func sharedMessagesRoots(manager *types.Named, scopes []*types.Scope, extra []*t
 			if !ok || !types.Implements(pointer, iface) {
 				continue
 			}
-			for index := 0; index < iface.NumMethods(); index++ {
+			for index := range iface.NumMethods() {
 				if method := iface.Method(index); method.Name() == "Messages" {
 					roots[method] = true
 				}
