@@ -48,9 +48,20 @@ func dayFormPageAccountChangedErrorSpec() APIErrorSpec {
 	return globalErrorSpec(fiber.StatusConflict, APIErrorCategoryConflict, "day form page account changed")
 }
 
+// dayFormBinder is the handler's binding minter and checker. The key derived
+// from the secret is computed on first use and kept (a Handler may be built as a
+// bare literal, as the cookie codec's is); sync.Once keeps that first use
+// race-free under concurrent requests.
+func (handler *Handler) dayFormBinder() *security.DayFormAccountBinder {
+	handler.dayFormBinderOnce.Do(func() {
+		handler.dayFormBinderCached = security.NewDayFormAccountBinder(handler.secretKey)
+	})
+	return handler.dayFormBinderCached
+}
+
 // dayFormAccountBinding is the value the day forms render for user.
 func (handler *Handler) dayFormAccountBinding(user *models.User) (string, error) {
-	return security.DayFormAccountBinding(handler.secretKey, user.ID)
+	return handler.dayFormBinder().Binding(user.ID)
 }
 
 // settingsFormAccountChangedErrorSpec is the same refusal for a settings write
@@ -97,7 +108,7 @@ func (handler *Handler) refuseFormFromAnotherAccount(refused APIErrorSpec, fail 
 		if !ok {
 			return fail(c, unauthorizedErrorSpec()) // codecov:ignore -- OwnerOnly precedes this on every route that mounts it
 		}
-		if dayFormBindingRefused(handler.secretKey, user, presentedDayFormAccountBindings(c), dayWriteFromRenderedPage(c)) {
+		if dayFormBindingRefused(handler.dayFormBinder(), user, presentedDayFormAccountBindings(c), dayWriteFromRenderedPage(c)) {
 			return fail(c, refused)
 		}
 		return c.Next()
@@ -128,7 +139,7 @@ func (handler *Handler) RefuseDayFormPageFromAnotherAccount(c fiber.Ctx) error {
 	if !ok {
 		return c.Next() // codecov:ignore -- AuthRequired precedes this on every route that mounts it
 	}
-	if dayFormBindingRefused(handler.secretKey, user, c.Request().Header.PeekAll(dayFormAccountHeader), isHTMX(c)) {
+	if dayFormBindingRefused(handler.dayFormBinder(), user, c.Request().Header.PeekAll(dayFormAccountHeader), isHTMX(c)) {
 		spec := dayFormPageAccountChangedErrorSpec()
 		handler.logSecurityError(c, dayFormPageReadAction, spec)
 		return handler.respondMappedError(c, spec)
@@ -139,12 +150,12 @@ func (handler *Handler) RefuseDayFormPageFromAnotherAccount(c fiber.Ctx) error {
 // dayFormBindingRefused is the one rule both guards apply: a request from a
 // rendered page must carry a binding, and every binding presented must name
 // user. A request that did not come from a rendered page may carry none.
-func dayFormBindingRefused(secretKey []byte, user *models.User, presented [][]byte, fromRenderedPage bool) bool {
+func dayFormBindingRefused(binder *security.DayFormAccountBinder, user *models.User, presented [][]byte, fromRenderedPage bool) bool {
 	if len(presented) == 0 {
 		return fromRenderedPage
 	}
 	for _, value := range presented {
-		if !security.DayFormAccountBindingMatches(secretKey, user.ID, string(value)) {
+		if !binder.Matches(user.ID, string(value)) {
 			return true
 		}
 	}

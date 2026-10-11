@@ -25,30 +25,60 @@ const DayFormAccountKeyLabel = "ovumcy.day-form-account.v1" // #nosec G101 -- pu
 
 var ErrDayFormAccountIDRequired = errors.New("day form account: account id required")
 
-// DayFormAccountBinding returns the opaque value a day form carries for userID.
-// A zero id is refused rather than bound: no account has it, and a binding
-// minted for it would be a value every unauthenticated render could share.
-func DayFormAccountBinding(secretKey []byte, userID uint) (string, error) {
+// DayFormAccountBinder mints and checks day-form account bindings under a key
+// derived from SECRET_KEY once, at construction, rather than on every render
+// and every write. The derived key is never written after construction, and
+// every call builds its own HMAC from it, so one binder is safe to share
+// across concurrent requests.
+type DayFormAccountBinder struct {
+	key    []byte
+	keyErr error
+}
+
+// NewDayFormAccountBinder derives the binding key from secretKey. A secret that
+// yields no key is kept as the binder's error: every Binding call then returns
+// it and every Matches call refuses, exactly as the per-call derivation did.
+func NewDayFormAccountBinder(secretKey []byte) *DayFormAccountBinder {
+	key, err := DeriveTokenSigningKey(secretKey, DayFormAccountKeyLabel)
+	return &DayFormAccountBinder{key: key, keyErr: err}
+}
+
+// Binding returns the opaque value a day form carries for userID. A zero id is
+// refused rather than bound: no account has it, and a binding minted for it
+// would be a value every unauthenticated render could share.
+func (binder *DayFormAccountBinder) Binding(userID uint) (string, error) {
 	if userID == 0 {
 		return "", ErrDayFormAccountIDRequired
 	}
-	key, err := DeriveTokenSigningKey(secretKey, DayFormAccountKeyLabel)
-	if err != nil {
-		return "", err
+	if binder.keyErr != nil {
+		return "", binder.keyErr
 	}
-	mac := hmac.New(sha256.New, key)
+	mac := hmac.New(sha256.New, binder.key)
 	_, _ = mac.Write([]byte(strconv.FormatUint(uint64(userID), 10)))
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
 }
 
-// DayFormAccountBindingMatches reports whether presented is the binding of
-// userID, comparing in constant time. A zero id, a key that cannot be derived
-// or an empty presented value never match: an operand that is missing is a
-// mismatch, never a reason to skip the comparison.
-func DayFormAccountBindingMatches(secretKey []byte, userID uint, presented string) bool {
-	expected, err := DayFormAccountBinding(secretKey, userID)
+// Matches reports whether presented is the binding of userID, comparing in
+// constant time. A zero id, a key that cannot be derived or an empty presented
+// value never match: an operand that is missing is a mismatch, never a reason
+// to skip the comparison.
+func (binder *DayFormAccountBinder) Matches(userID uint, presented string) bool {
+	expected, err := binder.Binding(userID)
 	if err != nil || presented == "" {
 		return false
 	}
 	return hmac.Equal([]byte(expected), []byte(presented))
+}
+
+// DayFormAccountBinding is the one-shot form of DayFormAccountBinder.Binding: it
+// derives the key for this call alone. A long-lived caller builds a binder once
+// instead.
+func DayFormAccountBinding(secretKey []byte, userID uint) (string, error) {
+	return NewDayFormAccountBinder(secretKey).Binding(userID)
+}
+
+// DayFormAccountBindingMatches is the one-shot form of
+// DayFormAccountBinder.Matches.
+func DayFormAccountBindingMatches(secretKey []byte, userID uint, presented string) bool {
+	return NewDayFormAccountBinder(secretKey).Matches(userID, presented)
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/ovumcy/ovumcy-web/internal/apideps"
 	"github.com/ovumcy/ovumcy-web/internal/i18n"
+	"github.com/ovumcy/ovumcy-web/internal/security"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
@@ -24,6 +25,8 @@ type Handler struct {
 	cookieCodecOnce      sync.Once
 	cookieCodecCached    *secureCookieCodec
 	cookieCodecErr       error
+	dayFormBinderOnce    sync.Once
+	dayFormBinderCached  *security.DayFormAccountBinder
 	location             *time.Location
 	cookieSecure         bool
 	i18n                 *i18n.Manager
