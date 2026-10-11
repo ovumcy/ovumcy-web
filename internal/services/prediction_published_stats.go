@@ -128,15 +128,12 @@ func PublishedStats(user *models.User, stats CycleStats, logs []models.DailyLog,
 	return stats, suppression
 }
 
-// confirmedAndPublishedStats is the two-step gate every owner surface that names
-// a fertile window runs its derived stats through: a thermal shift the owner's
-// own temperatures confirm outranks the projection (ResolveConfirmedCycleStats),
-// and only then are the values the display policy refuses cleared
-// (PublishedStats). The order is the point — the confirmed window is what the
-// suppression tiers then keep or withhold. Its one production caller is
-// publishedOverviewStats, behind the JSON API, the day-save feedback and the two
-// owner pages, so "which window does this surface call fertile" has one answer.
-// The fourth result is the "a thermal shift was confirmed" bit of
+// confirmedAndPublishedStats is the two-step gate a surface that names a fertile
+// window runs its derived stats through: a thermal shift the owner's own
+// temperatures confirm outranks the projection (ResolveConfirmedCycleStats), and
+// only then are the values the display policy refuses cleared (PublishedStats).
+// The order is the point — the confirmed window is what the suppression tiers
+// then keep or withhold. The fourth result is the "a thermal shift was confirmed" bit of
 // ResolveConfirmedCycleStats, for the one surface that publishes it.
 func confirmedAndPublishedStats(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (CycleStats, CycleStats, PredictionSuppression, bool) {
 	confirmed, wasConfirmed := ResolveConfirmedCycleStats(user, logs, stats, today, location)

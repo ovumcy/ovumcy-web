@@ -153,9 +153,13 @@ func BuildDashboardCycleHero(user *models.User, stats CycleStats, cycleContext D
 	// Once the ovulation has rolled, the header names the phase the JSON overview
 	// reads against the rolled window, not one off this ribbon's running-cycle
 	// geometry: the two disagreed on exactly the days the window moved. The cards
-	// follow the header (which one is current) while the ribbon cells keep the
-	// running cycle's geometry, so today's cell can sit in a card other than the
-	// highlighted one, or in none highlighted: the accepted split.
+	// are built from that header phase, so the card flagged IsCurrent follows it,
+	// while the ribbon cells keep the running cycle's geometry (a cell takes its
+	// phase from the card whose day range holds it), so today's cell can sit in a
+	// card other than the flagged one, or in none flagged: the accepted split.
+	// IsCurrent has no production reader today — no template renders PhaseCards
+	// and the cell mapping reads only the day ranges — so the flag is data the
+	// hero carries, not a highlight any page draws; only tests read it.
 	if cycleContext.MovedWindow.Reconciled {
 		currentPhase = cycleContext.MovedWindow.CurrentPhase
 	}
