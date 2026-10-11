@@ -66,16 +66,22 @@ func TestStatsOverviewNamesTheOvulationTheDashboardRendersOnceItHasPassed(t *tes
 				if payload.NextPeriodStart == nil || *payload.NextPeriodStart != nextPeriod.Format(statsOverviewDateLayout) {
 					t.Errorf("next_period_start = %v, want %s", statsOverviewTextOrNull(payload.NextPeriodStart), nextPeriod.Format(statsOverviewDateLayout))
 				}
-				// The rendered page names neither the passed ovulation nor the
-				// rolled one, and the same next period.
+				// The rendered header names neither the passed ovulation nor the
+				// rolled one, and the page names the same next period.
 				document := fetchStatsOverviewDashboardDocument(t, app, authCookie)
 				if got, want := dashboardElementTextByDataAttr(t, document, "data-dashboard-next-period"), services.LocalizedDateDisplay("en", nextPeriod); !strings.Contains(got, want) {
 					t.Errorf("dashboard next-period slot = %q, want %q", got, want)
 				}
-				page := normalizeHTMLText(htmlNodeText(document))
+				// The scan is scoped to the header element and fails when it is
+				// absent, so narrowing the scope cannot turn the check vacuous.
+				headerNode := dashboardElementByDataAttr(document, "data-dashboard-status-header")
+				if headerNode == nil {
+					t.Fatal("expected the dashboard status header (data-dashboard-status-header)")
+				}
+				header := normalizeHTMLText(htmlNodeText(headerNode))
 				for _, offset := range []int{-15, 13} {
-					if day := services.LocalizedDateDisplay("en", services.AddCalendarDays(today, offset, time.UTC)); regexp.MustCompile(`\b` + regexp.QuoteMeta(day) + `\b`).MatchString(page) {
-						t.Errorf("the dashboard names %s, an ovulation day the late cycle withholds", day)
+					if day := services.LocalizedDateDisplay("en", services.AddCalendarDays(today, offset, time.UTC)); regexp.MustCompile(`\b` + regexp.QuoteMeta(day) + `\b`).MatchString(header) {
+						t.Errorf("the dashboard header names %s, an ovulation day the late cycle withholds", day)
 					}
 				}
 				return
