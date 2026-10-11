@@ -1443,7 +1443,14 @@
     });
 
     restoreDayFormEntries(form, merged);
-    setDayFormBase(form, freshEntries, freshForm.getAttribute("data-today-entry-exists") === "false");
+    // Empty by the rule captureDashboardPersistedState reads the render with: a
+    // day ticked from the stored start is not empty, so no undo DELETEs it.
+    setDayFormBase(
+      form,
+      freshEntries,
+      freshForm.getAttribute("data-today-entry-exists") === "false" &&
+        freshForm.getAttribute("data-today-period-from-stored-start") !== "true"
+    );
     clearDashboardSaveNotice(form);
     return changedDayFieldNames(dashboardFormEntries(form), freshEntries).length > 0;
   }

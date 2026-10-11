@@ -15,12 +15,13 @@ const CONFLICT_TEXT = "Ce jour a été modifié sur un autre appareil.";
 const KEEP_LABEL = "Garder la mienne";
 const TAKE_LABEL = "Prendre l'autre";
 
-function journalForm({ period = true, mood = "", notes = "" } = {}) {
+function journalForm({ period = true, mood = "", notes = "", entryExists = true, fromStoredStart = false } = {}) {
   return `<form
       hx-put="/api/v1/days/${TODAY}"
       data-save-feedback
       data-dashboard-save-form
-      data-today-entry-exists="true"
+      data-today-entry-exists="${entryExists}"
+      data-today-period-from-stored-start="${fromStoredStart}"
       data-autosave-saved="Saved"
       data-day-save-retry-label="Try again"
       data-day-conflict-refresh-url="/dashboard"
@@ -174,6 +175,30 @@ test("take theirs loads the stored value and sends nothing more", async () => {
     assert.equal(patches(calls).length, 1, "nothing is left to save");
     assert.equal(dom.window.document.querySelector("[data-day-save-conflict]"), null, "the notice is answered");
     assert.equal(dom.window.document.querySelector("[data-dashboard-save-form]").dataset.autosaveDirty, undefined);
+  } finally {
+    dom.window.close();
+  }
+});
+
+// The stored day the answer reads may be a row-less stored onboarding start,
+// rendered ticked. It is not an empty day: an undo back to it must never
+// DELETE the day, which would withdraw the start.
+test("a stored start read back after a conflict is not taken for an empty day", async () => {
+  const { dom } = await loadJournal({
+    formOptions: { notes: "rendered" },
+    patchAnswers: [{ status: 409, text: CONFLICT_FRAGMENT }],
+    freshPage: freshDashboard({ entryExists: false, fromStoredStart: true }),
+  });
+  try {
+    await editNotes(dom.window, "mine");
+    dom.window.document
+      .querySelector("[data-day-conflict-choice='theirs']")
+      .dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true, cancelable: true }));
+    await settle();
+    await settle();
+
+    const form = dom.window.document.querySelector("[data-dashboard-save-form]");
+    assert.equal(form.__ovumcyPersistedState.empty, false);
   } finally {
     dom.window.close();
   }
