@@ -150,6 +150,11 @@ func (manager *Manager) mergeCatalogues() {
 		maps.Copy(result, targetMessages)
 		manager.merged[language] = result
 	}
+	// An unsupported default normalizes to "", which no catalogue carries; the
+	// per-call copy this replaced answered it with an empty, writable map.
+	if _, ok := manager.merged[manager.defaultLanguage]; !ok {
+		manager.merged[manager.defaultLanguage] = map[string]string{}
+	}
 }
 
 func (manager *Manager) isSupported(language string) bool {

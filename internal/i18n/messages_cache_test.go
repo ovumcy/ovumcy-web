@@ -33,4 +33,20 @@ func TestMessagesServesTheMergedCatalogueWithoutCopying(t *testing.T) {
 	if fallback := manager.Messages("xx"); len(fallback) != len(manager.locales[LangEN]) {
 		t.Fatalf("Messages(xx) has %d keys, want the default catalogue's %d", len(fallback), len(manager.locales[LangEN]))
 	}
+	if reflect.ValueOf(manager.Messages("xx")).Pointer() != reflect.ValueOf(manager.Messages(LangEN)).Pointer() {
+		t.Fatal("Messages(xx) is not the default language's own map")
+	}
+}
+
+// TestMessagesForAnUnsupportedDefaultIsNeverNil (WEB-289): the per-call copy
+// answered with a writable empty map when the configured default is not
+// shipped; the cached lookup must not hand back nil.
+func TestMessagesForAnUnsupportedDefaultIsNeverNil(t *testing.T) {
+	manager, err := NewManager("xx")
+	if err != nil {
+		t.Fatalf("init i18n manager: %v", err)
+	}
+	if messages := manager.Messages("xx"); messages == nil {
+		t.Fatal("Messages(xx) is nil under an unsupported default")
+	}
 }
