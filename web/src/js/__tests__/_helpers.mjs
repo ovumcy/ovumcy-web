@@ -175,6 +175,20 @@ export async function loadDOMWithScript(scriptSource, { html, url, beforeRun } =
     beforeRun(dom.window);
   }
 
+  // jsdom dispatches its own (trusted) DOMContentLoaded after the synchronous
+  // one below, which would run every bundle initialiser twice where a browser
+  // runs it once. The synchronous dispatch stands in for it, so jsdom's is
+  // dropped; a test that re-dispatches the event to model a reload still can.
+  dom.window.addEventListener(
+    "DOMContentLoaded",
+    (event) => {
+      if (event.isTrusted) {
+        event.stopImmediatePropagation();
+      }
+    },
+    true
+  );
+
   // Eval the script in the jsdom realm so it sees jsdom's document/window.
   dom.window.eval(scriptSource);
 

@@ -808,14 +808,9 @@ for (const [surface, fragment] of [
 
       const notice = editor.querySelector("[data-day-editor-refused]");
       assert.ok(notice, "the editor leads with the notice");
-      // The harness delivers the ready event twice, so the handler may run
-      // twice per refusal; each run scrolls the notice it just rendered.
-      assert.ok(scrolls.length >= 1, "the notice is scrolled into view");
-      for (const scroll of scrolls) {
-        assert.ok(scroll.element.hasAttribute("data-day-editor-refused"), "what is scrolled is a notice, not the editor or the form");
-        assert.deepEqual({ ...scroll.arg }, { block: "nearest" }, "scrolled only as far as needed");
-      }
-      assert.equal(scrolls[scrolls.length - 1].element, notice, "the notice left on screen is the one scrolled last");
+      assert.equal(scrolls.length, 1, "the notice is scrolled into view once");
+      assert.equal(scrolls[0].element, notice, "what is scrolled is the notice, not the editor or the form");
+      assert.deepEqual({ ...scrolls[0].arg }, { block: "nearest" }, "scrolled only as far as needed");
     });
   });
 }
