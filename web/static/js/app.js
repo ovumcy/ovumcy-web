@@ -2086,10 +2086,11 @@
       return true;
     }
 
-    if (messageKey === ACCOUNT_CHANGED_NOTICE_KEY) {
+    if (messageKey === ACCOUNT_CHANGED_NOTICE_KEY || messageKey === OPEN_ACCOUNT_CHANGED_NOTICE_KEY) {
       // The form was rendered for another account than the one now signed in:
       // no retry can land it, so the notice offers none, and no sign-in link
-      // either. The entry stays in the form, untouched.
+      // either. The entry stays in the form, untouched. The read-side key is the
+      // dashboard's header refresh, refused for the same reason.
       target.replaceChildren(notice);
       return true;
     }
@@ -4512,8 +4513,8 @@
   // pregnancy-test result is one of the inputs. The journal itself updates as
   // the owner clicks, so the dashboard page is fetched again and only the
   // dependent blocks above are swapped: the form, its focus and the goal chip
-  // stay as they are. Newest request wins; a failed refresh leaves the header as
-  // it was, since the save itself already succeeded.
+  // stay as they are. Newest request wins; a refresh that fails for any other
+  // reason leaves the header as it was, since the save itself already succeeded.
   // The binding the page's day form carries names the account the page was
   // rendered for. A page fetched after another account signed in carries that
   // account's binding; one carrying none is not this page's either.
@@ -4522,10 +4523,41 @@
     return input ? String(input.value || "") : "";
   }
 
+  // The refresh names the account its answer is meant for, and the server
+  // refuses it with this key when another account holds the session by now,
+  // sending none of that account's page. The key rides the JSON envelope the
+  // refusal answers with, as no HTMX request asked for a fragment.
+  var DASHBOARD_PAGE_ACCOUNT_REFUSAL = "day form page account changed";
+
+  function dashboardRefusalIsAccountChange(body) {
+    var parsed;
+    try {
+      parsed = JSON.parse(String(body || ""));
+    } catch {
+      return false;
+    }
+    return !!parsed && parsed.error === DASHBOARD_PAGE_ACCOUNT_REFUSAL;
+  }
+
+  // The header this page shows could not be refreshed because the session now
+  // belongs to another account. Nothing is painted, and the owner is told why in
+  // the journal's own status area, in place of a refresh that would otherwise
+  // just never come. The entry the owner typed stays where it is.
+  function noteDashboardRefreshAccountChanged() {
+    var form = document.querySelector("[data-dashboard-save-form]");
+    var message = form ? String(form.getAttribute("data-day-open-refused-text") || "").trim() : "";
+
+    if (message) {
+      renderDaySaveFailure(form, message, "rejected", OPEN_ACCOUNT_CHANGED_NOTICE_KEY);
+    }
+    return false;
+  }
+
   function refreshDashboardStatusHeader() {
     var current = document.querySelector("[data-dashboard-status-header]");
     var headers;
     var token;
+    var pageBinding;
 
     if (!current || typeof window.fetch !== "function" || typeof window.DOMParser !== "function") {
       return Promise.resolve(false);
@@ -4537,28 +4569,57 @@
     delete headers["Content-Type"];
     delete headers["HX-Request"];
     headers.Accept = "text/html";
+    // Only this request carries the binding on a GET of the dashboard: plain
+    // navigation sends none and is answered as ever.
+    pageBinding = dashboardPageAccountBinding(document);
+    if (pageBinding) {
+      headers[DAY_FORM_ACCOUNT_HEADER_NAME] = pageBinding;
+    }
 
     return window.fetch(window.location.pathname + window.location.search, {
       method: "GET",
       credentials: "same-origin",
       headers: headers
     }).then(function (response) {
-      return response.ok ? response.text() : "";
-    }).then(function (text) {
+      if (response.ok) {
+        return response.text().then(function (text) {
+          return { text: text, refused: false };
+        });
+      }
+      if (response.status === 409 && typeof response.text === "function") {
+        return response.text().then(function (body) {
+          return { text: "", refused: dashboardRefusalIsAccountChange(body) };
+        });
+      }
+      return { text: "", refused: false };
+    }).then(function (result) {
+      var text = result.text;
       var fetched;
       var binding;
+      var fetchedBinding;
       var next;
       var latest;
 
-      if (!text || dashboardStatusRefreshToken !== token) {
+      if (dashboardStatusRefreshToken !== token) {
+        return false;
+      }
+      if (result.refused) {
+        return noteDashboardRefreshAccountChanged();
+      }
+      if (!text) {
         return false;
       }
       fetched = new window.DOMParser().parseFromString(text, "text/html");
-      // The GET runs under whichever account holds the cookie now. A header
-      // rendered for another account is never painted into this page.
+      // The GET runs under whichever account holds the cookie now; the server
+      // refuses it when that is not this page's, and this comparison holds the
+      // line if it ever answers anyway. A header rendered for another account is
+      // never painted into this page. A page that names no account at all (the
+      // sign-in page, after the session ended) is not a change of account and
+      // stays quiet.
       binding = dashboardPageAccountBinding(document);
-      if (!binding || dashboardPageAccountBinding(fetched) !== binding) {
-        return false;
+      fetchedBinding = dashboardPageAccountBinding(fetched);
+      if (!binding || fetchedBinding !== binding) {
+        return fetchedBinding && binding ? noteDashboardRefreshAccountChanged() : false;
       }
       next = fetched.querySelector("[data-dashboard-status-header]");
       latest = document.querySelector("[data-dashboard-status-header]");

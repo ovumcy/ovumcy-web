@@ -428,10 +428,11 @@
       return true;
     }
 
-    if (messageKey === ACCOUNT_CHANGED_NOTICE_KEY) {
+    if (messageKey === ACCOUNT_CHANGED_NOTICE_KEY || messageKey === OPEN_ACCOUNT_CHANGED_NOTICE_KEY) {
       // The form was rendered for another account than the one now signed in:
       // no retry can land it, so the notice offers none, and no sign-in link
-      // either. The entry stays in the form, untouched.
+      // either. The entry stays in the form, untouched. The read-side key is the
+      // dashboard's header refresh, refused for the same reason.
       target.replaceChildren(notice);
       return true;
     }

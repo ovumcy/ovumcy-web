@@ -16,6 +16,7 @@ const APP_BUNDLE = readAppBundle();
 
 const TODAY = "2026-08-12";
 const ACCOUNT_BINDING = "page-account-binding";
+const OPEN_REFUSED_TEXT = "This day can't be opened: you're now signed in to a different account. Reload the page.";
 const STALE_HEADER = "Period likely today";
 const FRESH_HEADER = "Next period estimate paused";
 
@@ -97,7 +98,8 @@ function dashboardPage({ shellHTML = STALE_SHELL, recorded = false, entryExists 
       data-today-entry-exists="${entryExists}"
       data-autosave-saving="Saving..."
       data-autosave-saved="Saved"
-      data-autosave-undo="Undo">
+      data-autosave-undo="Undo"
+      data-day-open-refused-text="${OPEN_REFUSED_TEXT}">
       <input type="hidden" name="csrf_token" value="unit-test-token">
       <input type="hidden" name="day_form_account" value="${ACCOUNT_BINDING}">
       <input type="radio" name="mood" value="4">
@@ -128,15 +130,39 @@ function pageOf(shellHTML, binding = ACCOUNT_BINDING) {
   return `<!doctype html><html><body>${shellHTML}${form}</body></html>`;
 }
 
+function refusedResponse(status, body) {
+  return { ok: false, status, headers: { get: () => null }, text: () => Promise.resolve(body) };
+}
+
+// The refusal the server answers a refresh with when another account holds the
+// session: the day form page's JSON envelope, with none of that account's page.
+const PAGE_ACCOUNT_REFUSAL = JSON.stringify({
+  error: "day form page account changed",
+  error_detail: { key: "day form page account changed", category: "conflict", target: "global" },
+});
+
 // Answers the day save with 200 and the dashboard page with a header that has
-// moved on, recording every request in order.
-function recorderFor(freshShell) {
+// moved on, recording every request in order. binding is the account the
+// fetched page was rendered for (null: a page that names none).
+function recorderFor(freshShell, binding = ACCOUNT_BINDING) {
   return (window, calls) => {
     window.fetch = (url, init) => {
       const request = { url: String(url), init: init || {} };
       calls.push(request);
       const isGet = (request.init.method || "GET") === "GET";
-      return Promise.resolve(okResponse(isGet ? pageOf(freshShell) : ""));
+      return Promise.resolve(okResponse(isGet ? pageOf(freshShell, binding) : ""));
+    };
+  };
+}
+
+// Answers the day save with 200 and the dashboard refresh with response.
+function refreshAnsweredWith(response) {
+  return (window, calls) => {
+    window.fetch = (url, init) => {
+      const request = { url: String(url), init: init || {} };
+      calls.push(request);
+      const isGet = (request.init.method || "GET") === "GET";
+      return Promise.resolve(isGet ? response : okResponse(""));
     };
   };
 }
@@ -601,21 +627,90 @@ test("when two refreshes overlap, the newest answer wins even if the older one l
 // The refresh GETs the dashboard under whichever account holds the cookie at
 // that moment. If another account signed in since this page was rendered, the
 // fetched header is that account's, and it must not be painted into this page.
-for (const [why, binding] of [
-  ["another account's binding", "another-account-binding"],
-  ["no binding at all", null],
+function refreshNotice(document) {
+  return document.querySelector(".save-status [data-day-save-failed]");
+}
+
+function assertAccountChangedNotice(document) {
+  const notice = refreshNotice(document);
+  assert.ok(notice, "the owner is told the refresh did not come");
+  const message = notice.querySelector("[data-notice-key]");
+  assert.equal(message.getAttribute("data-notice-key"), "daylog.open_account_changed");
+  assert.equal(message.textContent, OPEN_REFUSED_TEXT);
+  assert.equal(notice.querySelector("[data-day-save-retry]"), null, "no retry: nothing was being saved");
+  assert.equal(notice.querySelector("[data-day-save-sign-in]"), null, "no sign-in link either");
+}
+
+test("the refresh names the page's own account on the request and nothing else about it changes", async () => {
+  const { dom, calls } = await loadDashboard();
+  try {
+    pick(dom.window.document, "positive");
+    await saveNow(dom.window);
+    await settleAll();
+
+    const refresh = gets(calls)[0];
+    assert.equal(refresh.url, "/dashboard");
+    assert.equal(refresh.init.headers["X-Ovumcy-Day-Form-Account"], ACCOUNT_BINDING);
+    assert.equal(refresh.init.headers.Accept, "text/html");
+    assert.equal("HX-Request" in refresh.init.headers, false, "a plain page fetch, not an HTMX request");
+    assert.equal(refreshNotice(dom.window.document), null, "an answered refresh shows no notice");
+    assert.equal(bannerText(dom.window.document), FRESH_HEADER);
+  } finally {
+    dom.window.close();
+  }
+});
+
+// The refresh GETs the dashboard under whichever account holds the cookie at
+// that moment. If another account signed in since this page was rendered, the
+// server refuses the request (the binding it carries names another account),
+// and the tab says so instead of dropping the refresh in silence.
+test("a refresh the server refuses for another account shows the account-changed notice and keeps the header", async () => {
+  const { dom, calls } = await loadDashboard({
+    install: refreshAnsweredWith(refusedResponse(409, PAGE_ACCOUNT_REFUSAL)),
+  });
+  try {
+    const document = dom.window.document;
+    pick(document, "positive");
+    await saveNow(dom.window);
+    await settleAll();
+
+    assert.equal(gets(calls).length, 1, "the refresh was made, so its refusal is what is shown");
+    assert.equal(bannerText(document), STALE_HEADER, "nothing from the refused answer is shown");
+    assertAccountChangedNotice(document);
+  } finally {
+    dom.window.close();
+  }
+});
+
+// The server's refusal is the first layer; the comparison of the bindings in
+// the page that comes back is the second, and shows the same notice.
+test("a refreshed page carrying another account's binding shows the account-changed notice and keeps the header", async () => {
+  const { dom, calls } = await loadDashboard({ install: recorderFor(FRESH_SHELL, "another-account-binding") });
+  try {
+    const document = dom.window.document;
+    pick(document, "positive");
+    await saveNow(dom.window);
+    await settleAll();
+
+    assert.equal(gets(calls).length, 1, "the refresh was made, so its answer is what is refused");
+    assert.equal(bannerText(document), STALE_HEADER, "the other account's header is not shown");
+    assertAccountChangedNotice(document);
+  } finally {
+    dom.window.close();
+  }
+});
+
+// Anything else that goes wrong leaves the header as it was and says nothing:
+// the save itself landed, and a page that names no account (the sign-in page
+// after the session ended) is no change of account.
+for (const [why, install] of [
+  ["no binding at all", recorderFor(FRESH_SHELL, null)],
+  ["a 409 that is not the account refusal", refreshAnsweredWith(refusedResponse(409, '{"error":"conflict"}'))],
+  ["a 409 with a body that is not JSON", refreshAnsweredWith(refusedResponse(409, "<p>conflict</p>"))],
+  ["a server error", refreshAnsweredWith(refusedResponse(500, PAGE_ACCOUNT_REFUSAL))],
 ]) {
-  test(`a refreshed page carrying ${why} leaves the header as it was`, async () => {
-    const { dom, calls } = await loadDashboard({
-      install: (window, recorded) => {
-        window.fetch = (url, init) => {
-          const request = { url: String(url), init: init || {} };
-          recorded.push(request);
-          const isGet = (request.init.method || "GET") === "GET";
-          return Promise.resolve(okResponse(isGet ? pageOf(FRESH_SHELL, binding) : ""));
-        };
-      },
-    });
+  test(`a refresh answered with ${why} leaves the header as it was and shows no notice`, async () => {
+    const { dom, calls } = await loadDashboard({ install });
     try {
       const document = dom.window.document;
       pick(document, "positive");
@@ -623,9 +718,43 @@ for (const [why, binding] of [
       await settleAll();
 
       assert.equal(gets(calls).length, 1, "the refresh was made, so its answer is what is refused");
-      assert.equal(bannerText(document), STALE_HEADER, "the other account's header is not shown");
+      assert.equal(bannerText(document), STALE_HEADER);
+      assert.equal(refreshNotice(document), null);
     } finally {
       dom.window.close();
     }
   });
 }
+
+test("a refusal that arrives after a newer refresh was sent is not shown", async () => {
+  const pending = [];
+  const install = (window, calls) => {
+    window.fetch = (url, init) => {
+      const request = { url: String(url), init: init || {} };
+      calls.push(request);
+      if ((request.init.method || "GET") !== "GET") {
+        return Promise.resolve(okResponse(""));
+      }
+      return new Promise((resolve) => pending.push(resolve));
+    };
+  };
+  const { dom } = await loadDashboard({ install });
+  try {
+    const document = dom.window.document;
+    pick(document, "positive");
+    await saveNow(dom.window);
+    pick(document, "negative");
+    await saveNow(dom.window);
+    assert.equal(pending.length, 2);
+
+    pending[0](refusedResponse(409, PAGE_ACCOUNT_REFUSAL));
+    await settleAll();
+    assert.equal(refreshNotice(document), null, "the older answer is stale, refusal included");
+
+    pending[1](refusedResponse(409, PAGE_ACCOUNT_REFUSAL));
+    await settleAll();
+    assertAccountChangedNotice(document);
+  } finally {
+    dom.window.close();
+  }
+});

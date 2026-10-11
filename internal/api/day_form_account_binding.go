@@ -147,6 +147,28 @@ func (handler *Handler) RefuseDayFormPageFromAnotherAccount(c fiber.Ctx) error {
 	return c.Next()
 }
 
+// RefuseBoundDashboardReadFromAnotherAccount guards the dashboard page for the
+// one client that names its account on it: after a save, the journal fetches
+// the page again and paints its status header into the page it already shows
+// (refreshDashboardStatusHeader), and that fetch carries the binding of the
+// page it will be painted into. Under another account the page it asks for is
+// that account's, and the refusal keeps it from crossing the network to a stale
+// tab at all; the tab's own comparison of the two bindings stays as a second
+// layer.
+//
+// Only a request that carries the binding is judged, by the rule and with the
+// refusal and audit record of RefuseDayFormPageFromAnotherAccount. Opening the
+// page by its URL, a reload, a link, a form's GET and an HTMX boost carry none
+// and are answered exactly as before: unlike the calendar's fetches, the
+// dashboard is also the page the browser navigates to, so a missing binding
+// is not evidence of a page that lost its header.
+func (handler *Handler) RefuseBoundDashboardReadFromAnotherAccount(c fiber.Ctx) error {
+	if len(c.Request().Header.PeekAll(dayFormAccountHeader)) == 0 {
+		return c.Next()
+	}
+	return handler.RefuseDayFormPageFromAnotherAccount(c)
+}
+
 // dayFormBindingRefused is the one rule both guards apply: a request from a
 // rendered page must carry a binding, and every binding presented must name
 // user. A request that did not come from a rendered page may carry none.
