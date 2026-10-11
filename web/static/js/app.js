@@ -4004,15 +4004,17 @@
     if (!form || form.__ovumcyPersistedState) {
       return;
     }
-    // What the server rendered is, by definition, what the server holds. A day
-    // with no saved entry can still render its period ticked from the stored
-    // onboarding start; that day is not empty, so undoing back to it must
-    // re-send the tick (with its hidden marker) rather than DELETE the day:
-    // a delete withdraws the stored start.
-    form.__ovumcyPersistedState = dashboardFormState(
-      form,
+    // What the server rendered is, by definition, what the server holds.
+    form.__ovumcyPersistedState = dashboardFormState(form, dashboardRenderIsEmpty(form));
+  }
+
+  // A day with no saved entry can still render its period ticked from the
+  // stored onboarding start; that day is not empty, so undoing back to it must
+  // never DELETE the day: a delete withdraws the stored start.
+  function dashboardRenderIsEmpty(form) {
+    return (
       form.getAttribute("data-today-entry-exists") !== "true" &&
-        form.getAttribute("data-today-period-from-stored-start") !== "true"
+      form.getAttribute("data-today-period-from-stored-start") !== "true"
     );
   }
 
@@ -5345,14 +5347,7 @@
     });
 
     restoreDayFormEntries(form, merged);
-    // Empty by the rule captureDashboardPersistedState reads the render with: a
-    // day ticked from the stored start is not empty, so no undo DELETEs it.
-    setDayFormBase(
-      form,
-      freshEntries,
-      freshForm.getAttribute("data-today-entry-exists") === "false" &&
-        freshForm.getAttribute("data-today-period-from-stored-start") !== "true"
-    );
+    setDayFormBase(form, freshEntries, dashboardRenderIsEmpty(freshForm));
     clearDashboardSaveNotice(form);
     return changedDayFieldNames(dashboardFormEntries(form), freshEntries).length > 0;
   }
