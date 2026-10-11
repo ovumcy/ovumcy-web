@@ -438,6 +438,38 @@ func TestTopUpSurfacesItsFailuresAsAutoFillErrors(t *testing.T) {
 	}
 }
 
+// earlyRangeFailingLogs fails a history read that reaches before failBefore,
+// which only the top-up's widened read does in the spotting-tail shape.
+type earlyRangeFailingLogs struct {
+	*dayLogRepositoryStub
+	failBefore time.Time
+}
+
+func (logs earlyRangeFailingLogs) ListByUserRange(ctx context.Context, userID uint, fromStart *time.Time, toEnd *time.Time) ([]models.DailyLog, error) {
+	if fromStart != nil && fromStart.Before(logs.failBefore) {
+		return nil, context.DeadlineExceeded
+	}
+	return logs.dayLogRepositoryStub.ListByUserRange(ctx, userID, fromStart, toEnd)
+}
+
+func TestTopUpSurfacesAFailedWidenedReadAsACheckFailure(t *testing.T) {
+	_, logs, users := newTopUpService(true, 5)
+	seedTopUpRow(logs, 1, models.DailyLog{IsPeriod: true, Flow: models.FlowHeavy})
+	for day := 2; day <= 9; day++ {
+		seedTopUpRow(logs, day, models.DailyLog{IsPeriod: true, Flow: models.FlowSpotting})
+	}
+	seedTopUpRow(logs, 10, models.DailyLog{IsPeriod: true, Flow: models.FlowLight})
+	service := NewDayService(earlyRangeFailingLogs{dayLogRepositoryStub: logs, failBefore: topUpDay(2)}, users)
+
+	now := time.Date(2026, time.February, 12, 12, 0, 0, 0, time.UTC)
+	_, err := service.UpsertDayEntryWithAutoFillAt(context.Background(), topUpOwnerID, topUpDay(12),
+		DayEntryInput{IsPeriod: true, Flow: models.FlowMedium}, now, time.UTC)
+	if !errors.Is(err, ErrDayAutoFillCheckFailed) {
+		t.Fatalf("expected %v, got %v", ErrDayAutoFillCheckFailed, err)
+	}
+	requireTopUpNoRow(t, logs, 11)
+}
+
 func TestTopUpReadsAMissingLocationAsUTC(t *testing.T) {
 	service, logs, _ := newTopUpService(true, 5)
 	seedTopUpRow(logs, 10, models.DailyLog{IsPeriod: true, Flow: models.FlowMedium})
