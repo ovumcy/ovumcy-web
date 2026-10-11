@@ -99,6 +99,7 @@ type DashboardViewData struct {
 	ShowCycleStartQuestion            bool
 	ShowSpottingCycleWarning          bool
 	PredictionExplanationPrimaryKey   string
+	PredictionExplanationPrimaryCount int
 	PredictionExplanationSecondaryKey string
 	HasPredictionExplanationPrimary   bool
 	HasPredictionExplanationSecondary bool
@@ -255,6 +256,7 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 		ShowCycleStartQuestion:            cycleStart.AskQuestion,
 		ShowSpottingCycleWarning:          showSpottingCycleWarning,
 		PredictionExplanationPrimaryKey:   predictionExplanation.PrimaryKey,
+		PredictionExplanationPrimaryCount: predictionExplanation.PrimaryCount,
 		PredictionExplanationSecondaryKey: predictionExplanation.SecondaryKey,
 		HasPredictionExplanationPrimary:   predictionExplanation.PrimaryKey != "",
 		HasPredictionExplanationSecondary: predictionExplanation.SecondaryKey != "",

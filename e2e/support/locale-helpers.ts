@@ -61,9 +61,16 @@ export function localeText(locale: Locale, key: string): string {
  */
 export const CYCLE_FLOOR = 3;
 
-/** `localeText` with the `%d` of a count-bearing sentence filled in. */
+/**
+ * `localeText` with the `%d` of a count-bearing sentence filled in. A count
+ * sentence is a plural family (`key.one`, `key.other`, ru `key.few`/`key.many`);
+ * `Intl.PluralRules` picks the same category the server's CLDR rules do for a
+ * whole number, and a key with no such variant is read as a plain value.
+ */
 export function localeTextWithCount(locale: Locale, key: string, count: number): string {
-  return localeText(locale, key).replace('%d', String(count));
+  const variant = `${key}.${new Intl.PluralRules(locale).select(count)}`;
+  const resolved = variant in catalogue(locale) ? variant : key;
+  return localeText(locale, resolved).replace('%d', String(count));
 }
 
 /** The rendered string for one key in every supported locale, keyed by locale. */

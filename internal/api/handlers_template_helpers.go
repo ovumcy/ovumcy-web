@@ -22,10 +22,10 @@ func newTemplateFuncMap() template.FuncMap {
 			return translateMessage(messages, services.PhaseTranslationKey(phase))
 		},
 		"phaseIcon": services.PhaseIcon,
-		// The completed-cycle floor the threshold sentences name through %d, and
-		// the answer to which explainer keys carry it: one source for every page.
-		"cycleFloor":               services.FertilityMinimumCycles,
-		"explainerNamesCycleFloor": services.PredictionExplanationNamesCycleFloor,
+		// The completed-cycle floor the threshold sentences name through %d: one
+		// source for every page.
+		"cycleFloor":      services.FertilityMinimumCycles,
+		"explanationText": translateExplanation,
 		"flowLabel": func(messages map[string]string, flow string) string {
 			return translateMessage(messages, services.FlowTranslationKey(flow))
 		},

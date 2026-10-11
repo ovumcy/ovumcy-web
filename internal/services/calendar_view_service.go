@@ -33,6 +33,7 @@ type CalendarPageViewData struct {
 	TodayISO                          string
 	Stats                             CycleStats
 	PredictionExplanationPrimaryKey   string
+	PredictionExplanationPrimaryCount int
 	PredictionExplanationSecondaryKey string
 	HasPredictionExplanationPrimary   bool
 	HasPredictionExplanationSecondary bool
@@ -90,6 +91,7 @@ func (service *CalendarViewService) BuildCalendarPageViewData(ctx context.Contex
 		TodayISO:                          DateAtLocation(now, location).Format("2006-01-02"),
 		Stats:                             stats,
 		PredictionExplanationPrimaryKey:   predictionExplanation.PrimaryKey,
+		PredictionExplanationPrimaryCount: predictionExplanation.PrimaryCount,
 		PredictionExplanationSecondaryKey: predictionExplanation.SecondaryKey,
 		HasPredictionExplanationPrimary:   predictionExplanation.PrimaryKey != "",
 		HasPredictionExplanationSecondary: predictionExplanation.SecondaryKey != "",

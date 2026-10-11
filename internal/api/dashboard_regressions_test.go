@@ -628,7 +628,7 @@ func TestDashboardHeaderWithholdsFertilityUntilThreeCompletedCycles(t *testing.T
 				t.Fatalf("expected the more-cycles bridge line=%v, got %v", testCase.wantMoreBridge, got)
 			}
 			if moreBridge != nil {
-				if got := htmlAttr(moreBridge, "data-more-cycles-bridge-key"); got != "dashboard.fertile_window_after_three_cycles" {
+				if got := htmlAttr(moreBridge, "data-more-cycles-bridge-key"); got != "dashboard.fertile_window_after_cycle_floor" {
 					t.Fatalf("expected the more-cycles bridge line to name its copy key, got %q", got)
 				}
 			}

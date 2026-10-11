@@ -42,6 +42,7 @@ type StatsPageViewData struct {
 	PredictionReliabilityHintKey      string
 	ShowPredictionReliability         bool
 	PredictionExplanationPrimaryKey   string
+	PredictionExplanationPrimaryCount int
 	PredictionExplanationSecondaryKey string
 	HasPredictionExplanationPrimary   bool
 	HasPredictionExplanationSecondary bool
@@ -181,6 +182,7 @@ func (service *StatsService) BuildStatsPageViewData(ctx context.Context, user *m
 		PredictionReliabilityHintKey:        predictionReliabilityHintKey,
 		ShowPredictionReliability:           showPredictionReliability,
 		PredictionExplanationPrimaryKey:     predictionExplanation.PrimaryKey,
+		PredictionExplanationPrimaryCount:   predictionExplanation.PrimaryCount,
 		PredictionExplanationSecondaryKey:   predictionExplanation.SecondaryKey,
 		HasPredictionExplanationPrimary:     predictionExplanation.PrimaryKey != "",
 		HasPredictionExplanationSecondary:   predictionExplanation.SecondaryKey != "",

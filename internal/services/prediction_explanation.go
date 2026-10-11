@@ -2,23 +2,30 @@ package services
 
 import "github.com/ovumcy/ovumcy-web/internal/models"
 
+// PrimaryCount is the number the primary sentence names through its one %d,
+// and also what selects its plural form; 0 means the sentence takes no number.
+// It is resolved here once, so no page decides per key whether to format.
 type PredictionExplanation struct {
 	PrimaryKey   string
+	PrimaryCount int
 	SecondaryKey string
 }
 
-// The explainer keys whose sentence names the completed-cycle floor. The two
-// are also the whole set PredictionExplanationNamesCycleFloor answers for.
+// The explainer keys whose sentence names the completed-cycle floor.
 const (
 	predictionExplainerIrregularSparseKey    = "prediction.explainer.irregular_sparse"
 	predictionExplainerAwaitingMoreCyclesKey = "prediction.explainer.awaiting_more_cycles"
 )
 
-// PredictionExplanationNamesCycleFloor reports whether the explainer sentence
-// under key carries the completed-cycle floor as its one %d. The templates ask
-// it before formatting, so a key that takes no argument is never handed one.
-func PredictionExplanationNamesCycleFloor(key string) bool {
-	return key == predictionExplainerIrregularSparseKey || key == predictionExplainerAwaitingMoreCyclesKey
+// predictionExplanationPrimaryCount is the completed-cycle floor for a sentence
+// that names it, 0 for one that takes no number.
+func predictionExplanationPrimaryCount(primaryKey string) int {
+	switch primaryKey {
+	case predictionExplainerIrregularSparseKey, predictionExplainerAwaitingMoreCyclesKey:
+		return FertilityMinimumCycles()
+	default:
+		return 0
+	}
 }
 
 // withoutExplanationRestatedByLateCycle drops the awaiting-more-cycles explainer
@@ -34,6 +41,7 @@ func PredictionExplanationNamesCycleFloor(key string) bool {
 func withoutExplanationRestatedByLateCycle(explanation PredictionExplanation, lateCycle LateCycleNotice) PredictionExplanation {
 	if explanation.PrimaryKey == predictionExplainerAwaitingMoreCyclesKey && lateCycle.Visible && lateCycle.MessageKey == LateCycleNoPersonalRangeKey {
 		explanation.PrimaryKey = ""
+		explanation.PrimaryCount = 0
 	}
 	return explanation
 }
@@ -43,8 +51,10 @@ func BuildOwnerPredictionExplanation(user *models.User, cycleContext DashboardCy
 		return PredictionExplanation{}
 	}
 
+	primaryKey := predictionExplanationPrimaryKey(user, cycleContext)
 	explanation := PredictionExplanation{
-		PrimaryKey:   predictionExplanationPrimaryKey(user, cycleContext),
+		PrimaryKey:   primaryKey,
+		PrimaryCount: predictionExplanationPrimaryCount(primaryKey),
 		SecondaryKey: predictionExplanationSecondaryKey(cycleContext, hasFactorHint),
 	}
 	return withoutExplanationRestatedByLateCycle(explanation, cycleContext.LateCycle)

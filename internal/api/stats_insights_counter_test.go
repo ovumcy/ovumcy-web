@@ -115,6 +115,66 @@ func TestStatsLateCycleCardReplacesTheAwaitingMoreCyclesExplainer(t *testing.T) 
 	}
 }
 
+// TestEveryOwnerPageRendersTheExplainerWithTheFloorTheServiceResolved holds the
+// dashboard, the calendar and the stats page to one rendering: a floor-naming
+// explainer prints the floor in the plural form the floor selects, and one that
+// names no number renders exactly as the catalogue wrote it.
+func TestEveryOwnerPageRendersTheExplainerWithTheFloorTheServiceResolved(t *testing.T) {
+	manager, err := i18n.NewManager(i18n.LangEN)
+	if err != nil {
+		t.Fatalf("building the locale manager: %v", err)
+	}
+	messages := manager.Messages(i18n.LangEN)
+	floor := services.FertilityMinimumCycles()
+	counted := strings.ReplaceAll(i18n.TranslatePlural(messages, i18n.LangEN, awaitingMoreCyclesExplainerKey, floor), "%d", fmt.Sprint(floor))
+	if !strings.Contains(counted, fmt.Sprint(floor)) {
+		t.Fatalf("expected sentence %q does not name the floor %d", counted, floor)
+	}
+
+	pages := []struct {
+		path         string
+		explainerTag string
+		keyAttribute string
+	}{
+		{path: "/stats", explainerTag: "data-stats-prediction-explainer", keyAttribute: "data-explainer-key"},
+		{path: "/calendar", explainerTag: "data-calendar-prediction-explainer", keyAttribute: "data-explainer-primary-key"},
+		{path: "/dashboard", explainerTag: "data-dashboard-prediction-explainer", keyAttribute: "data-explainer-key"},
+	}
+	for _, testCase := range []struct {
+		name    string
+		columns map[string]any
+		wantKey string
+		want    string
+	}{
+		{name: "floor-naming key", columns: map[string]any{}, wantKey: awaitingMoreCyclesExplainerKey, want: counted},
+		{name: "key that names no number", columns: map[string]any{"unpredictable_cycle": true}, wantKey: "prediction.explainer.unpredictable", want: messages["prediction.explainer.unpredictable"]},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
+			user, authCookie, today := newStatsOverviewOwner(t, app, database, "explainer-floor-"+strings.ReplaceAll(testCase.name, " ", "-")+"@example.com")
+			seedStatsOverviewCycleHistory(t, database, user, today, 66, 38, 10)
+			columns := map[string]any{"last_period_start": services.AddCalendarDays(today, -10, time.UTC)}
+			for column, value := range testCase.columns {
+				columns[column] = value
+			}
+			updateStatsOverviewUser(t, database, user, columns)
+
+			for _, page := range pages {
+				explainer := findHTMLNodeWithAttr(fetchLateCycleNoticePage(t, app, authCookie, page.path), page.explainerTag)
+				if explainer == nil {
+					t.Fatalf("%s renders no explainer", page.path)
+				}
+				if got := htmlAttr(explainer, page.keyAttribute); got != testCase.wantKey {
+					t.Fatalf("%s explainer key = %q, want %q", page.path, got, testCase.wantKey)
+				}
+				if got := strings.TrimSpace(htmlNodeText(explainer)); !strings.Contains(got, testCase.want) {
+					t.Fatalf("%s explainer text = %q, want it to contain %q", page.path, got, testCase.want)
+				}
+			}
+		})
+	}
+}
+
 // TestCycleFloorSentencesRenderTheFloorInEveryLanguage renders the stats empty
 // state and the dashboard of an account on two completed cycles in each
 // supported language. Each carries sentences that take the floor through %d; a

@@ -73,7 +73,7 @@
                   {{/* No date: the irregular thin-history tier is withheld on
                        every surface, and a caption beside a date is not a
                        substitute for withholding it. */}}
-                  {{printf (t .Messages "dashboard.next_period_need_cycles") cycleFloor}}
+                  {{printf (tn .Messages .Lang "dashboard.next_period_need_cycles" cycleFloor) cycleFloor}}
                 {{else if .DisplayNextPeriodPrompt}}
                   {{t .Messages "dashboard.next_period_prompt"}}
                 {{else if .DisplayNextPeriodStart.IsZero}}
@@ -109,7 +109,7 @@
                      and a caption here would be the two surfaces disagreeing
                      again. */}}
                 {{else if and .DisplayOvulationNeedsData (not .DisplayOvulationConfirmed)}}
-                  {{printf (t .Messages "dashboard.ovulation_need_cycles") cycleFloor}}
+                  {{printf (tn .Messages .Lang "dashboard.ovulation_need_cycles" cycleFloor) cycleFloor}}
                 {{else if .DisplayOvulationDate.IsZero}}
                   {{.NoDataLabel}}
                 {{else}}
@@ -134,13 +134,14 @@
               data-dashboard-first-cycle-bridge
               data-first-cycle-bridge-key="dashboard.fertile_window_after_first_cycle">{{t .Messages "dashboard.fertile_window_after_first_cycle"}}</span>
             {{else if .ShowMoreCyclesBridge}}
-            {{/* The same slot for one or two completed cycles: the window is
-                 still withheld, and the line says it arrives after the third. */}}
+            {{/* The same slot below the completed-cycle floor: the window is
+                 still withheld, and the line says it arrives once the
+                 completed-cycle floor is reached. */}}
             <span class="dashboard-status-separator" aria-hidden="true">·</span>
             <span
               class="dashboard-status-item journal-muted"
               data-dashboard-more-cycles-bridge
-              data-more-cycles-bridge-key="dashboard.fertile_window_after_three_cycles">{{printf (t .Messages "dashboard.fertile_window_after_three_cycles") cycleFloor}}</span>
+              data-more-cycles-bridge-key="dashboard.fertile_window_after_cycle_floor">{{printf (tn .Messages .Lang "dashboard.fertile_window_after_cycle_floor" cycleFloor) cycleFloor}}</span>
             {{end}}
             {{if .CycleHero.Approximate}}
             <span class="dashboard-status-separator" aria-hidden="true">·</span>
@@ -216,7 +217,7 @@
 
       {{if .HasPredictionExplanationPrimary}}
       {{/* The explainer is re-fetched and swapped after a pregnancy-result save. */}}
-      <p class="journal-muted text-sm" data-dashboard-prediction-explainer data-explainer-key="{{.PredictionExplanationPrimaryKey}}">{{if explainerNamesCycleFloor .PredictionExplanationPrimaryKey}}{{printf (t .Messages .PredictionExplanationPrimaryKey) cycleFloor}}{{else}}{{t .Messages .PredictionExplanationPrimaryKey}}{{end}}</p>
+      <p class="journal-muted text-sm" data-dashboard-prediction-explainer data-explainer-key="{{.PredictionExplanationPrimaryKey}}">{{explanationText .Messages .Lang .PredictionExplanationPrimaryKey .PredictionExplanationPrimaryCount}}</p>
       {{end}}
 
       {{if and .IsOwner .ShowReminderBanner}}

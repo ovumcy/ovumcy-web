@@ -33,12 +33,17 @@ func shippedCatalogues(t *testing.T) map[string]map[string]string {
 // itself is a second copy of that constant in six files, and it goes on telling
 // the owner "3" the day the constant moves.
 
-// cycleFloorSentenceKeys are the sentences whose one %d is the floor. They are
-// declared here because the verb-sequence half of this barrier needs to know
-// which values must carry the verb; the literal half below enumerates every key
-// of every catalogue and has no list to fall out of date.
+// cycleFloorSentenceKeys are the plural bases of the sentences whose one %d is
+// the floor. They are declared here because the verb-sequence half of this
+// barrier needs to know which values must carry the verb; the literal half
+// below enumerates every key of every catalogue and has no list to fall out of
+// date.
+//
+// Each is a plural family in every language, never a single fixed-form value: a
+// number-agreeing sentence ("нужно %d цикла") is right for one range of floors
+// and wrong for the rest, so the form follows the number the page prints.
 var cycleFloorSentenceKeys = []string{
-	"dashboard.fertile_window_after_three_cycles",
+	"dashboard.fertile_window_after_cycle_floor",
 	"dashboard.next_period_need_cycles",
 	"dashboard.ovulation_need_cycles",
 	"prediction.explainer.awaiting_more_cycles",
@@ -82,19 +87,25 @@ func TestCycleFloorSentencesTakeTheFloorThroughOnePercentD(t *testing.T) {
 		t.Fatalf("read %d catalogues, want all six", len(catalogues))
 	}
 	for language, messages := range catalogues {
-		for _, key := range cycleFloorSentenceKeys {
-			value, ok := messages[key]
-			if !ok {
-				t.Errorf("%s has no value for %s", language, key)
-				continue
+		for _, base := range cycleFloorSentenceKeys {
+			if _, fixed := messages[base]; fixed {
+				t.Errorf("%s carries %s as one fixed-form value; a floor sentence is a plural family", language, base)
 			}
-			verbs, err := formatVerbsOf(value)
-			if err != nil {
-				t.Errorf("%s %s: %v", language, key, err)
-				continue
-			}
-			if len(verbs) != 1 || verbs[0] != "%d" {
-				t.Errorf("%s %s: format verbs %v, want exactly [%%d] (value %q)", language, key, verbs, value)
+			for _, category := range i18n.PluralCategories(language) {
+				key := base + "." + category
+				value, ok := messages[key]
+				if !ok {
+					t.Errorf("%s has no value for %s", language, key)
+					continue
+				}
+				verbs, err := formatVerbsOf(value)
+				if err != nil {
+					t.Errorf("%s %s: %v", language, key, err)
+					continue
+				}
+				if len(verbs) != 1 || verbs[0] != "%d" {
+					t.Errorf("%s %s: format verbs %v, want exactly [%%d] (value %q)", language, key, verbs, value)
+				}
 			}
 		}
 	}
