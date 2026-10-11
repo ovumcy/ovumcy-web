@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/ovumcy/ovumcy-web/internal/security"
 )
 
 // TestNoJSDayFormSourceNamesOnePageForSuccessAndRefusal (WEB-291): the success
@@ -50,6 +52,13 @@ func TestNoJSDayFormSourceNamesOnePageForSuccessAndRefusal(t *testing.T) {
 						body[key] = values
 					}
 					body.Set("csrf_token", ctx.csrfToken)
+					// A rendered day form carries the binding to its account; without it
+					// the write is refused 409 before the redirect under test.
+					binding, err := security.DayFormAccountBinding([]byte(testAppSecretKey), ctx.user.ID)
+					if err != nil {
+						t.Fatalf("day form account binding: %v", err)
+					}
+					body.Set(dayFormAccountField, binding)
 					if refused {
 						body.Set("csrf_token", "not-the-token")
 					}
