@@ -169,9 +169,9 @@ test("a tap opens the readout and it can be dismissed by pointer or Escape", asy
 test("a chart without the hover opt-in grows no readout, and a re-render replaces it", async () => {
   const chart = await hoverChart();
 
-  // jsdom delivers DOMContentLoaded twice, so the chart has already been drawn
-  // more than once by the time the test runs. drawChart clears the container
+  // A second ready event draws the chart again. drawChart clears the container
   // before every pass, so the readout is replaced rather than stacked.
+  chart.window.document.dispatchEvent(new chart.window.Event("DOMContentLoaded", { bubbles: true }));
   assert.equal(
     chart.container.querySelectorAll("[data-chart-tooltip]").length,
     1,

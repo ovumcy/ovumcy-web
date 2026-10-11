@@ -241,12 +241,7 @@ test("the retry resubmits the same form node with the same values", async () => 
 
     retry.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true, cancelable: true }));
 
-    // Not an exact count: this harness delivers DOMContentLoaded twice (jsdom's
-    // own plus the one _helpers.mjs dispatches), so every listener the bundle
-    // installs on document ready is registered twice here. "Exactly one PUT per
-    // retry" is pinned in the browser instead —
-    // e2e/calendar-save-resilience.spec.ts counts the intercepted attempts.
-    assert.ok(submissions > 0, "the retry resubmits the form");
+    assert.equal(submissions, 1, "the retry resubmits the form once");
     assert.equal(submittedNote, TYPED_NOTE, "the retry carries what is on screen, unchanged");
     assertEntryIntact(dom.window);
   } finally {
@@ -343,10 +338,7 @@ test("the dashboard retry re-enters the autosave with what is on screen", async 
       .dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true, cancelable: true }));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    // Not an exact count: this harness delivers DOMContentLoaded twice, so the
-    // click can reach more than one copy of the same listener. "Exactly one PUT
-    // per retry" is pinned in the browser instead.
-    assert.ok(calls.length > 1, "the retry sends the entry again");
+    assert.equal(calls.length, 2, "the retry sends the entry again, once");
     const retried = calls[calls.length - 1];
     assert.equal(retried.url, `/api/v1/days/${DASHBOARD_DATE}`);
     assert.equal(retried.init.method, "PUT");
