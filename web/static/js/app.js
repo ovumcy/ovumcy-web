@@ -1568,6 +1568,14 @@
     return String(body.getAttribute("data-persisted-timezone") || "").trim();
   }
 
+  function accountBindingFromBody() {
+    var body = document.body;
+    if (!body || typeof body.getAttribute !== "function") {
+      return "";
+    }
+    return String(body.getAttribute("data-account-binding") || "").trim();
+  }
+
   function markTimezoneSynced(value) {
     try {
       window.sessionStorage.setItem(TIMEZONE_SYNC_STORAGE_KEY, value);
@@ -1627,14 +1635,23 @@
     var body = new URLSearchParams();
     body.set("timezone", detected);
 
+    // The write names the account the page was rendered for. The sync runs when
+    // a page loads, but a page restored from the back-forward cache or a tab
+    // session keeps the account it was rendered for after another one signs in,
+    // and the zone decides which calendar day that second account's predictions
+    // and reminders land on. The header is always sent: a layout that lost the
+    // attribute is refused by the server rather than syncing unbound.
+    var headers = {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "X-CSRF-Token": token,
+      "X-Requested-With": "XMLHttpRequest"
+    };
+    headers[DAY_FORM_ACCOUNT_HEADER_NAME] = accountBindingFromBody();
+
     window.fetch(TIMEZONE_SYNC_URL, {
       method: "POST",
       credentials: "same-origin",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "X-CSRF-Token": token,
-        "X-Requested-With": "XMLHttpRequest"
-      },
+      headers: headers,
       body: body.toString()
     }).then(function (response) {
       if (response && response.ok) {

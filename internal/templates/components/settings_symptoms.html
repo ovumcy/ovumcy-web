@@ -48,6 +48,7 @@
     class="settings-symptom-form"
     data-symptom-edit-form>
     <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+    <input type="hidden" name="day_form_account" value="{{$.DayFormAccount}}">
     <input type="hidden" name="_method" value="PATCH">
 
     <div class="settings-symptom-grid">
@@ -95,6 +96,7 @@
       hx-confirm="{{t $.Messages "settings.symptoms.confirm_hide"}}"
       data-confirm-accept="{{t $.Messages "settings.symptoms.hide"}}">
       <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+      <input type="hidden" name="day_form_account" value="{{$.DayFormAccount}}">
       <input type="hidden" name="_method" value="DELETE">
       <button type="submit" class="btn-secondary">{{t $.Messages "settings.symptoms.hide"}}</button>
     </form>
@@ -106,6 +108,7 @@
       hx-target="#settings-symptoms"
       hx-swap="outerHTML">
       <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+      <input type="hidden" name="day_form_account" value="{{$.DayFormAccount}}">
       <button type="submit" class="btn-secondary">{{t $.Messages "settings.symptoms.restore"}}</button>
     </form>
     {{end}}
@@ -131,6 +134,7 @@
     class="settings-symptom-form"
     data-symptom-create-form>
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input type="hidden" name="day_form_account" value="{{.DayFormAccount}}">
 
     <div class="settings-symptom-grid">
       <div class="settings-symptom-field settings-symptom-name-field">
@@ -177,6 +181,7 @@
         {{template "settings_custom_symptom_card" (dict
           "Messages" $.Messages
           "CSRFToken" $.CSRFToken
+          "DayFormAccount" $.DayFormAccount
           "Symptom" .Symptom
           "FormName" .FormName
           "FormIcon" .FormIcon
@@ -209,6 +214,7 @@
         {{template "settings_custom_symptom_card" (dict
           "Messages" $.Messages
           "CSRFToken" $.CSRFToken
+          "DayFormAccount" $.DayFormAccount
           "Symptom" .Symptom
           "FormName" .FormName
           "FormIcon" .FormIcon

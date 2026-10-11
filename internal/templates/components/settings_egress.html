@@ -63,6 +63,7 @@
         data-settings-webhook-form
         data-save-feedback>
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="day_form_account" value="{{.DayFormAccount}}">
 
         <div class="space-y-2">
           <label class="field-label" for="settings-webhook-url">{{t .Messages "settings.webhook.url_label"}}</label>
@@ -143,6 +144,7 @@
           data-confirm-accept="{{t .Messages "settings.egress.webhook.remove"}}"
           data-settings-webhook-remove>
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <input type="hidden" name="day_form_account" value="{{.DayFormAccount}}">
           {{/* Without JavaScript this form POSTs to its action, which is the
                SAVE endpoint - the DELETE verb is htmx's alone. The flag makes
                that fallback perform the removal it is labelled with, instead of
@@ -197,6 +199,7 @@
           data-confirm-accept="{{t .Messages "settings.calendar_feed.rotate"}}"
           data-settings-calendar-feed-rotate>
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <input type="hidden" name="day_form_account" value="{{.DayFormAccount}}">
           <button type="submit" class="btn-secondary">{{t .Messages "settings.calendar_feed.rotate"}}</button>
         </form>
 
@@ -210,6 +213,7 @@
           data-confirm-accept="{{t .Messages "settings.calendar_feed.revoke"}}"
           data-settings-calendar-feed-revoke>
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <input type="hidden" name="day_form_account" value="{{.DayFormAccount}}">
           <input type="hidden" name="_method" value="DELETE">
           <button type="submit" class="btn-secondary">{{t .Messages "settings.calendar_feed.revoke"}}</button>
         </form>
@@ -222,6 +226,7 @@
           hx-swap="outerHTML"
           data-settings-calendar-feed-generate>
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <input type="hidden" name="day_form_account" value="{{.DayFormAccount}}">
           <button type="submit" class="btn-secondary">{{t .Messages "settings.calendar_feed.generate"}}</button>
         </form>
         {{end}}

@@ -42,10 +42,11 @@ function captureFetch(window, { ok = true } = {}) {
 // data-persisted-timezone attribute entirely (the auth/anonymous case — the
 // base layout renders it only for a signed-in owner); a string value renders it
 // (an empty string models a brand-new owner with no stored zone yet).
-function pageWithPersistedTz(persisted, { csrf = "csrf-token-abc-123" } = {}) {
+function pageWithPersistedTz(persisted, { csrf = "csrf-token-abc-123", binding = null } = {}) {
   const csrfMeta = csrf === null ? "" : `<meta name="csrf-token" content="${csrf}">`;
   const persistedAttr = persisted === null ? "" : ` data-persisted-timezone="${persisted}"`;
-  return `<!doctype html><html><head>${csrfMeta}</head><body${persistedAttr}></body></html>`;
+  const bindingAttr = binding === null ? "" : ` data-account-binding="${binding}"`;
+  return `<!doctype html><html><head>${csrfMeta}</head><body${persistedAttr}${bindingAttr}></body></html>`;
 }
 
 // flushMicrotasks lets the fetch promise .then/.catch chain settle.
@@ -88,6 +89,47 @@ test("posts the detected timezone with the CSRF header when it differs from the 
     assert.equal(calls[0].options.headers["X-CSRF-Token"], "csrf-token-abc-123", "the CSRF token must ride on the sync POST");
     assert.match(calls[0].options.body, /timezone=Europe%2FBelgrade/, "the detected IANA zone must be in the form body");
     assert.equal(calls[0].options.credentials, "same-origin");
+  } finally {
+    dom.window.close();
+  }
+});
+
+// The write names the account the page was rendered for, so a page kept open
+// after another account signed in is refused by the server instead of syncing
+// the browser's zone onto the second account.
+test("sends the rendering account's binding in the header on the sync POST", async () => {
+  const dom = await loadDOMWithScript(APP_BUNDLE, {
+    html: pageWithPersistedTz("America/Toronto", { binding: "binding-of-the-rendering-account" }),
+    beforeRun: stubTimezone("Europe/Belgrade"),
+  });
+  const calls = captureFetch(dom.window);
+  try {
+    dom.window.document.dispatchEvent(new dom.window.Event("DOMContentLoaded", { bubbles: true }));
+    await flushMicrotasks();
+
+    assert.equal(calls.length, 1, "expected exactly one sync POST");
+    assert.equal(calls[0].options.headers["X-Ovumcy-Day-Form-Account"], "binding-of-the-rendering-account");
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("still sends the binding header, empty, from a page that lost the attribute", async () => {
+  const dom = await loadDOMWithScript(APP_BUNDLE, {
+    html: pageWithPersistedTz("America/Toronto"),
+    beforeRun: stubTimezone("Europe/Belgrade"),
+  });
+  const calls = captureFetch(dom.window);
+  try {
+    dom.window.document.dispatchEvent(new dom.window.Event("DOMContentLoaded", { bubbles: true }));
+    await flushMicrotasks();
+
+    assert.equal(calls.length, 1, "expected exactly one sync POST");
+    assert.equal(
+      calls[0].options.headers["X-Ovumcy-Day-Form-Account"],
+      "",
+      "an empty header names no account, so the server refuses it rather than the sync going out unbound"
+    );
   } finally {
     dom.window.close();
   }

@@ -94,6 +94,14 @@ func (handler *Handler) withTemplateDefaults(c fiber.Ctx, data fiber.Map) fiber.
 		data["CSRFToken"] = csrfToken(c)
 	}
 
+	// Every page and fragment rendered for a signed-in account names it: the
+	// settings and onboarding forms carry the binding as a hidden field, and the
+	// layout hands it to the one script that writes without a form. A page that
+	// already set its own (the day forms compute theirs) keeps it.
+	if _, ok := data["DayFormAccount"]; !ok {
+		data["DayFormAccount"] = handler.renderedAccountBinding(c, data)
+	}
+
 	if _, ok := data["AssetVersion"]; !ok {
 		data["AssetVersion"] = handler.assetVersion
 	}

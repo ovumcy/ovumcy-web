@@ -41,6 +41,7 @@
         autocomplete="off"
         class="space-y-4">
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="day_form_account" value="{{.DayFormAccount}}">
       <input type="hidden" name="client_timezone" value="" data-onboarding-timezone-field>
 
         <p class="field-label" id="last-period-start-label">{{t .Messages "onboarding.step1.field"}}</p>
@@ -109,6 +110,7 @@
         autocomplete="off"
         class="space-y-6">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="day_form_account" value="{{.DayFormAccount}}">
         <input type="hidden" name="client_timezone" value="" data-onboarding-timezone-field>
 
         <div class="space-y-2">

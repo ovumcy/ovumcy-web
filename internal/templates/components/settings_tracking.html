@@ -22,6 +22,7 @@
       data-save-feedback>
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
       <input type="hidden" name="_method" value="PATCH">
+      <input type="hidden" name="day_form_account" value="{{.DayFormAccount}}">
 
       {{/* No helper line under these five toggles. Each one used to carry two
            sentences: the first restated its own label (under "Show BBT field",

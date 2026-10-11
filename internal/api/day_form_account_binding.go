@@ -86,17 +86,56 @@ func (handler *Handler) RefuseDayFormFromAnotherAccount(kind healthMutationKind)
 	})
 }
 
-// RefuseSettingsFormFromAnotherAccount is the same guard for the settings
-// writes a rendered page hosts outside the day forms: PATCH
-// /api/v1/users/current/cycle (the settings cycle form and the dashboard's
-// usage-goal switch) and POST /api/v1/imports/json (the settings restore,
-// which sends the binding in the header). The rule and the binding are the day
-// forms' own; the refusal is recorded under the route's own audit kind and
-// answered with the settings copy.
+// RefuseSettingsFormFromAnotherAccount is the same guard for the settings and
+// onboarding writes a rendered page hosts outside the day forms: every
+// /api/v1/users/current settings write, the symptom writes, the onboarding
+// steps, and POST /api/v1/imports/json (the settings restore, which sends the
+// binding in the header). The rule and the binding are the day forms' own; the
+// refusal is recorded under the route's own audit kind and answered with the
+// settings copy.
 func (handler *Handler) RefuseSettingsFormFromAnotherAccount(kind healthMutationKind) fiber.Handler {
 	return handler.refuseFormFromAnotherAccount(settingsFormAccountChangedErrorSpec(), func(c fiber.Ctx, spec APIErrorSpec) error {
 		return handler.failMutation(c, kind, spec)
 	})
+}
+
+// RefuseAccountSettingsFormFromAnotherAccount is
+// RefuseSettingsFormFromAnotherAccount for a route whose audit kind is an
+// account-record mutation, which the compiler keeps out of the health-data
+// stream.
+func (handler *Handler) RefuseAccountSettingsFormFromAnotherAccount(kind accountMutationKind) fiber.Handler {
+	return handler.refuseFormFromAnotherAccount(settingsFormAccountChangedErrorSpec(), func(c fiber.Ctx, spec APIErrorSpec) error {
+		return handler.failAccountMutation(c, kind, spec)
+	})
+}
+
+// RefuseUnauditedSettingsFormFromAnotherAccount is the same guard for the one
+// settings write that records no audit event at all, success or refusal
+// (PATCH /api/v1/users/current/interface): the refusal is answered the way its
+// handler answers every other failure, with no line of its own.
+func (handler *Handler) RefuseUnauditedSettingsFormFromAnotherAccount() fiber.Handler {
+	return handler.refuseFormFromAnotherAccount(settingsFormAccountChangedErrorSpec(), func(c fiber.Ctx, spec APIErrorSpec) error {
+		return handler.respondMappedError(c, spec)
+	})
+}
+
+// renderedAccountBinding is the binding a page or fragment rendered now carries
+// for the account it is rendered for: the CurrentUser the page names, or else
+// the session's own account (a settings fragment names none). Empty when no
+// account is signed in, which no write form is rendered for.
+func (handler *Handler) renderedAccountBinding(c fiber.Ctx, data fiber.Map) string {
+	user, _ := data["CurrentUser"].(*models.User)
+	if user == nil {
+		user, _ = currentUser(c)
+	}
+	if user == nil || user.ID == 0 {
+		return ""
+	}
+	binding, err := handler.dayFormAccountBinding(user)
+	if err != nil {
+		return "" // codecov:ignore -- NewHandler refuses an empty secret and the id is non-zero here
+	}
+	return binding
 }
 
 // refuseFormFromAnotherAccount is the one middleware body both guards share:

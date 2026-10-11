@@ -192,6 +192,7 @@
       data-save-feedback>
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
       <input type="hidden" name="_method" value="PATCH">
+      <input type="hidden" name="day_form_account" value="{{.DayFormAccount}}">
 
       {{/* One number, so one row: the label, the field and its own save sit on
            the same line instead of stacking four blocks deep. */}}
