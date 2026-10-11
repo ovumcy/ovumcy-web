@@ -52,7 +52,10 @@ type DashboardViewService struct {
 // the data behind it move together, so a partial that forgets the gate renders
 // nothing rather than the raw classification. Every builder in
 // BuildDashboardViewData still reads the uncleared stats, because each applies
-// its own suppression rule to them.
+// its own suppression rule to them. Stats.OvulationDate keeps a confirmed day
+// even under the fertility gate (the overview's put-back), so no template may
+// read it: the page names the day from DisplayOvulationDate, which the gate
+// decides (TestNoTemplateReadsTheDashboardStatsOvulationDate).
 //
 // TodayEntry is what the owner's Today form shows: TodayLog with the period
 // ticked on a row-less stored onboarding start (withOnboardingStartTicked), and

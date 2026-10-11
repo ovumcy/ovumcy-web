@@ -52,7 +52,7 @@ func TestDayFeedbackIsNeutralInsideTheWindowOnceTheCycleDataIsStale(t *testing.T
 		today := DateAtLocation(localNoon(stale, location), location)
 		staleLogs := FilterLogsToStatsHistory(logs, today, location)
 		stats := BuildCycleStatsFromLogs(user, staleLogs, localNoon(stale, location), location)
-		_, published, suppression := ConfirmedAndPublishedStats(user, logs, stats, today, location)
+		_, published, suppression, _ := confirmedAndPublishedStats(user, logs, stats, today, location)
 		saved := DateAtLocation(savedDay, location)
 		if !published.CycleDataStale {
 			t.Fatal("fixture: the published stats of cycle day 30 must carry the out-of-date verdict")
@@ -89,12 +89,12 @@ func TestDayFeedbackIsNeutralInsideTheWindowOnceTheCycleIsOverdue(t *testing.T) 
 	forEachParityZone(t, func(t *testing.T, location *time.Location) {
 		freshToday := DateAtLocation(localNoon(savedDay, location), location)
 		freshStats := BuildCycleStatsFromLogs(user, FilterLogsToStatsHistory(logs, freshToday, location), localNoon(savedDay, location), location)
-		_, fresh, freshVerdict := ConfirmedAndPublishedStats(user, logs, freshStats, freshToday, location)
+		_, fresh, freshVerdict, _ := confirmedAndPublishedStats(user, logs, freshStats, freshToday, location)
 
 		overdueDay := mustParseDay(t, "2026-05-04") // cycle day 40
 		overdueToday := DateAtLocation(localNoon(overdueDay, location), location)
 		overdueStats := BuildCycleStatsFromLogs(user, FilterLogsToStatsHistory(logs, overdueToday, location), localNoon(overdueDay, location), location)
-		_, _, overdueVerdict := ConfirmedAndPublishedStats(user, logs, overdueStats, overdueToday, location)
+		_, _, overdueVerdict, _ := confirmedAndPublishedStats(user, logs, overdueStats, overdueToday, location)
 
 		if !overdueVerdict.FertilitySuppressed || !PredictionsSuppressed(user, overdueStats) {
 			t.Fatal("fixture: cycle day 40 must be overdue and suppress the fertility half")

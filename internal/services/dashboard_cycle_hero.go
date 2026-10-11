@@ -152,7 +152,10 @@ func BuildDashboardCycleHero(user *models.User, stats CycleStats, cycleContext D
 	}
 	// Once the ovulation has rolled, the header names the phase the JSON overview
 	// reads against the rolled window, not one off this ribbon's running-cycle
-	// geometry: the two disagreed on exactly the days the window moved.
+	// geometry: the two disagreed on exactly the days the window moved. The cards
+	// follow the header (which one is current) while the ribbon cells keep the
+	// running cycle's geometry, so today's cell can sit in a card other than the
+	// highlighted one, or in none highlighted: the accepted split.
 	if cycleContext.MovedWindow.Reconciled {
 		currentPhase = cycleContext.MovedWindow.CurrentPhase
 	}

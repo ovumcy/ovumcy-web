@@ -96,6 +96,54 @@ func TestDashboardAndStatsPageReadTodayAgainstTheRolledWindowLikeTheOverview(t *
 	}
 }
 
+// On a rolled day the hero header names the phase the overview publishes
+// (MovedWindow.CurrentPhase), so the dashboard and the JSON overview speak of one
+// phase, while the ribbon's day cells keep mapping the RUNNING cycle: the
+// 24-24-24-40-40 history on cycle day 29 prints "unknown" in the header and
+// "luteal" on today's cell, which sits in the running cycle's luteal span. That
+// split is accepted — the ribbon draws the cycle that is running, the header
+// answers the day. Which phase card is marked current follows the header, and is
+// pinned beside the card breakdown (TestRolledWindowHeaderNamesTheOverviewPhaseAndMarksNoOtherCardCurrent).
+func TestDashboardHeaderNamesTheOverviewPhaseWhileTheRibbonKeepsTheRunningCycle(t *testing.T) {
+	now := time.Date(2026, time.June, 15, 12, 0, 0, 0, time.UTC)
+	app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{now: func() time.Time { return now }})
+	user := createOnboardingTestUserAt(t, database, "rolled-window-ribbon@example.com", "StrongPass1", true, now.AddDate(-1, 0, 0))
+	today := services.DateAtLocation(now, time.UTC)
+	updateStatsOverviewUser(t, database, user, map[string]any{"luteal_phase": 14})
+	seedStatsOverviewCycleHistory(t, database, user, today, 180, 156, 132, 108, 68, 28)
+	authCookie := issueAuthCookieForUser(t, user)
+
+	_, payload := fetchStatsOverview(t, app, authCookie)
+	if payload.CurrentPhase != "unknown" {
+		t.Fatalf("fixture: overview current_phase = %q, want %q on a rolled day", payload.CurrentPhase, "unknown")
+	}
+
+	document := fetchStatsOverviewDashboardDocument(t, app, authCookie)
+	header := findHTMLNodeWithAttr(document, "data-dashboard-status-header")
+	if header == nil {
+		t.Fatal("the dashboard rendered no status header")
+	}
+	if rendered := htmlAttr(header, "data-dashboard-phase"); rendered != payload.CurrentPhase {
+		t.Errorf("dashboard header phase = %q, overview current_phase = %q, want one phase on both", rendered, payload.CurrentPhase)
+	}
+
+	var todayCell *html.Node
+	for _, cell := range collectHTMLNodesWithAttr(document, "data-cycle-ribbon-day") {
+		if htmlAttr(cell, "data-today") == "true" {
+			todayCell = cell
+		}
+	}
+	if todayCell == nil {
+		t.Fatal("the dashboard ribbon rendered no cell for today")
+	}
+	if day := htmlAttr(todayCell, "data-cycle-ribbon-day"); day != "29" {
+		t.Errorf("today's ribbon cell is day %q, want 29", day)
+	}
+	if rendered := htmlAttr(todayCell, "data-phase"); rendered != "luteal" {
+		t.Errorf("today's ribbon cell phase = %q, want %q: the ribbon maps the running cycle", rendered, "luteal")
+	}
+}
+
 func fetchRolledWindowStatsPageDocument(t *testing.T, app *fiber.App, authCookie string) *html.Node {
 	t.Helper()
 

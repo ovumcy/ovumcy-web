@@ -67,9 +67,11 @@ type DashboardCycleContext struct {
 	FertilitySuppressed        bool
 	NextPeriodInPast           bool
 	OvulationInPast            bool
-	// MovedWindow is set by the dashboard from ConfirmedAndOverviewStats, the
-	// call it publishes its stats from; BuildDashboardCycleContext leaves it
-	// unreconciled.
+	// MovedWindow is set by each page that builds this context and publishes
+	// its stats from ConfirmedAndOverviewStats (the dashboard and the stats
+	// page); BuildDashboardCycleContext leaves it unreconciled. Only the
+	// dashboard hero reads it today. The calendar builds the context without
+	// it: it publishes no overview copy and renders no hero.
 	MovedWindow DashboardMovedWindowVerdict
 }
 

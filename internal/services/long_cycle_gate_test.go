@@ -418,7 +418,7 @@ func TestLongCycleGateWithholdsTheFertileSaveMessage(t *testing.T) {
 			if first, last := CalendarDaysBetween(lastStart, stats.FertilityWindowStart)+1, CalendarDaysBetween(lastStart, stats.FertilityWindowEnd)+1; first != 9 || last != 14 {
 				t.Fatalf("scenario setup: window on cycle days %d-%d, want 9-14", first, last)
 			}
-			_, published, suppression := ConfirmedAndPublishedStats(user, logs, stats, today, time.UTC)
+			_, published, suppression, _ := confirmedAndPublishedStats(user, logs, stats, today, time.UTC)
 			for day := stats.FertilityWindowStart; !day.After(stats.FertilityWindowEnd); day = day.AddDate(0, 0, 1) {
 				// The day is saved on itself ("today" = the day): a backfilled day never
 				// gets the fertile line, so only the gate under test may withhold it here.

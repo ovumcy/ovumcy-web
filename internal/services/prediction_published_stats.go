@@ -128,29 +128,15 @@ func PublishedStats(user *models.User, stats CycleStats, logs []models.DailyLog,
 	return stats, suppression
 }
 
-// ConfirmedAndPublishedStats is the two-step gate the owner surfaces that name a
-// fertile window run their derived stats through: a thermal shift the owner's own
-// temperatures confirm outranks the projection (ResolveConfirmedCycleStats), and
-// only then are the values the display policy refuses cleared (PublishedStats).
-// The order is the point — the confirmed window is what the suppression tiers
-// then keep or withhold.
-//
-// It returns all three halves because the callers need different ones: the
-// dashboard and the stats page feed the confirmed, uncleared stats to their
-// builders and publish the cleared copy, while the day-save message reads only
-// the cleared copy and the verdict. The dashboard and the stats page call it,
-// and the day-save feedback and the JSON API's PublishedOverviewStats below run
-// through the same step, through confirmedAndPublishedStats, which also reports
-// whether a shift was confirmed — so "which window does this surface call
-// fertile" has one answer and the save toast cannot name a day the dashboard
-// header does not.
-func ConfirmedAndPublishedStats(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (CycleStats, CycleStats, PredictionSuppression) {
-	confirmed, published, suppression, _ := confirmedAndPublishedStats(user, logs, stats, today, location)
-	return confirmed, published, suppression
-}
-
-// confirmedAndPublishedStats is the one implementation of the ordering. The
-// fourth result is the "a thermal shift was confirmed" bit of
+// confirmedAndPublishedStats is the two-step gate every owner surface that names
+// a fertile window runs its derived stats through: a thermal shift the owner's
+// own temperatures confirm outranks the projection (ResolveConfirmedCycleStats),
+// and only then are the values the display policy refuses cleared
+// (PublishedStats). The order is the point — the confirmed window is what the
+// suppression tiers then keep or withhold. Its one production caller is
+// publishedOverviewStats, behind the JSON API, the day-save feedback and the two
+// owner pages, so "which window does this surface call fertile" has one answer.
+// The fourth result is the "a thermal shift was confirmed" bit of
 // ResolveConfirmedCycleStats, for the one surface that publishes it.
 func confirmedAndPublishedStats(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (CycleStats, CycleStats, PredictionSuppression, bool) {
 	confirmed, wasConfirmed := ResolveConfirmedCycleStats(user, logs, stats, today, location)
@@ -212,8 +198,8 @@ func confirmedAndPublishedStats(user *models.User, logs []models.DailyLog, stats
 // DashboardUpcomingPredictions (followUpcomingPrediction), so a running cycle
 // whose ovulation is already behind today publishes the day the pages roll to.
 func PublishedOverviewStats(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (CycleStats, PredictionSuppression, bool) {
-	_, published, suppression, confirmedOvulation, _ := publishedOverviewStats(user, logs, stats, today, location)
-	return published, suppression, confirmedOvulation
+	overview := publishedOverviewStats(user, logs, stats, today, location)
+	return overview.published, overview.suppression, overview.confirmedOvulation
 }
 
 // ConfirmedAndOverviewStats is the owner pages' half of the same publication:
@@ -223,17 +209,33 @@ func PublishedOverviewStats(user *models.User, logs []models.DailyLog, stats Cyc
 // copy itself rather than patching their own, so no field the roll moves can be
 // left behind on one surface.
 func ConfirmedAndOverviewStats(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (CycleStats, CycleStats, DashboardMovedWindowVerdict) {
-	resolved, published, _, _, reconciled := publishedOverviewStats(user, logs, stats, today, location)
-	if !reconciled {
-		return resolved, published, DashboardMovedWindowVerdict{}
+	overview := publishedOverviewStats(user, logs, stats, today, location)
+	if !overview.reconciled {
+		return overview.resolved, overview.published, DashboardMovedWindowVerdict{}
 	}
-	return resolved, published, DashboardMovedWindowVerdict{Reconciled: true, CurrentPhase: published.CurrentPhase}
+	return overview.resolved, overview.published, DashboardMovedWindowVerdict{Reconciled: true, CurrentPhase: overview.published.CurrentPhase}
+}
+
+// publishedOverview is what publishedOverviewStats resolves: named fields, since
+// two of the five are bools that a positional return would let a caller swap.
+type publishedOverview struct {
+	// resolved is the confirmed, uncleared stats the copy below was published from.
+	resolved  CycleStats
+	published CycleStats
+	// suppression is the verdict that cleared published.
+	suppression PredictionSuppression
+	// confirmedOvulation says published.OvulationDate is a day the owner's own
+	// thermal shift confirms.
+	confirmedOvulation bool
+	// reconciled says the fertility status and the phase were read again against
+	// a window that moved (reconcileMovedWindow).
+	reconciled bool
 }
 
 // publishedOverviewStats is PublishedOverviewStats plus the confirmed stats it
-// published from and whether the fertility status and the phase were read again
-// against a window that moved (reconcileMovedWindow).
-func publishedOverviewStats(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) (CycleStats, CycleStats, PredictionSuppression, bool, bool) {
+// published from and whether the status and the phase were read again against a
+// window that moved.
+func publishedOverviewStats(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) publishedOverview {
 	resolved, published, suppression, wasConfirmed := confirmedAndPublishedStats(user, logs, stats, today, location)
 	confirmedDay := resolved.OvulationDate
 	// The day comes back whenever the confirmation stood: whether it may be
@@ -256,7 +258,13 @@ func publishedOverviewStats(user *models.User, logs []models.DailyLog, stats Cyc
 	}
 	reconciled := followUpcomingPrediction(&published, user, resolved, logs, suppression, wasConfirmed, today, location)
 	confirmedOvulation := wasConfirmed && sameDay(published.OvulationDate, confirmedDay)
-	return resolved, published, suppression, confirmedOvulation, reconciled
+	return publishedOverview{
+		resolved:           resolved,
+		published:          published,
+		suppression:        suppression,
+		confirmedOvulation: confirmedOvulation,
+		reconciled:         reconciled,
+	}
 }
 
 // followUpcomingPrediction puts the published next period and ovulation on the
