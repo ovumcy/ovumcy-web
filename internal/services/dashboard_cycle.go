@@ -67,21 +67,35 @@ type DashboardCycleContext struct {
 	FertilitySuppressed        bool
 	NextPeriodInPast           bool
 	OvulationInPast            bool
-	// MovedWindow is today's fertility status and phase as the JSON overview
-	// publishes them once the running cycle's ovulation is behind today and the
-	// window has rolled forward. Set only on those days; see
-	// dashboardMovedWindowVerdict.
+	// MovedWindow is the window, the ovulation day, today's fertility status and
+	// the phase as the JSON overview publishes them once the running cycle's
+	// ovulation is behind today and the window has rolled forward. Only the
+	// dashboard and the stats page publish today's status, so only they resolve
+	// it (WithMovedWindow); BuildDashboardCycleContext leaves it unreconciled.
 	MovedWindow DashboardMovedWindowVerdict
 }
 
-// DashboardMovedWindowVerdict is the fertility status, its basis and the phase
-// read against the rolled window (reconcileMovedWindow). Reconciled is false on
-// every day the window did not move, and then the other fields are empty.
+// DashboardMovedWindowVerdict is the rolled window and the fertility status, its
+// basis and the phase read against it (reconcileMovedWindow). Reconciled is
+// false on every day the window did not move, and then the other fields are
+// empty.
 type DashboardMovedWindowVerdict struct {
-	Reconciled       bool
-	CurrentFertility string
-	FertilityBasis   string
-	CurrentPhase     string
+	Reconciled           bool
+	OvulationDate        time.Time
+	OvulationExact       bool
+	OvulationImpossible  bool
+	FertilityWindowStart time.Time
+	FertilityWindowEnd   time.Time
+	CurrentFertility     string
+	FertilityBasis       string
+	CurrentPhase         string
+}
+
+// WithMovedWindow resolves MovedWindow through the overview's own publication
+// path.
+func (cycleContext DashboardCycleContext) WithMovedWindow(user *models.User, logs []models.DailyLog, stats CycleStats, today time.Time, location *time.Location) DashboardCycleContext {
+	cycleContext.MovedWindow = dashboardMovedWindowVerdict(user, logs, stats, today, location)
+	return cycleContext
 }
 
 // dashboardMovedWindowVerdict asks the overview's own publication path whether
@@ -98,19 +112,31 @@ func dashboardMovedWindowVerdict(user *models.User, logs []models.DailyLog, stat
 		return DashboardMovedWindowVerdict{}
 	}
 	return DashboardMovedWindowVerdict{
-		Reconciled:       true,
-		CurrentFertility: published.CurrentFertility,
-		FertilityBasis:   published.FertilityBasis,
-		CurrentPhase:     published.CurrentPhase,
+		Reconciled:           true,
+		OvulationDate:        published.OvulationDate,
+		OvulationExact:       published.OvulationExact,
+		OvulationImpossible:  published.OvulationImpossible,
+		FertilityWindowStart: published.FertilityWindowStart,
+		FertilityWindowEnd:   published.FertilityWindowEnd,
+		CurrentFertility:     published.CurrentFertility,
+		FertilityBasis:       published.FertilityBasis,
+		CurrentPhase:         published.CurrentPhase,
 	}
 }
 
 // ApplyTo puts the verdict on a published copy of the stats; on a day the
-// window did not move it returns the copy unchanged.
+// window did not move it returns the copy unchanged. The window and the
+// ovulation day travel with the status read against them, so the copy never
+// calls today fertile beside a window that does not hold it.
 func (verdict DashboardMovedWindowVerdict) ApplyTo(stats CycleStats) CycleStats {
 	if !verdict.Reconciled {
 		return stats
 	}
+	stats.OvulationDate = verdict.OvulationDate
+	stats.OvulationExact = verdict.OvulationExact
+	stats.OvulationImpossible = verdict.OvulationImpossible
+	stats.FertilityWindowStart = verdict.FertilityWindowStart
+	stats.FertilityWindowEnd = verdict.FertilityWindowEnd
 	stats.CurrentFertility = verdict.CurrentFertility
 	stats.FertilityBasis = verdict.FertilityBasis
 	stats.CurrentPhase = verdict.CurrentPhase
@@ -810,7 +836,6 @@ func BuildDashboardCycleContext(user *models.User, logs []models.DailyLog, stats
 		FertilitySuppressed:         fertilitySuppressed,
 		NextPeriodInPast:            dashboardNextPeriodInPast(display, today),
 		OvulationInPast:             dashboardOvulationInPast(display, today),
-		MovedWindow:                 dashboardMovedWindowVerdict(user, logs, stats, today, location),
 	}
 }
 
