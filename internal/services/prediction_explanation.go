@@ -28,7 +28,9 @@ func PredictionExplanationNamesCycleFloor(key string) bool {
 // cycles") and the explainer ("fertile details wait for N completed cycles")
 // are one fact told twice. The card carries the information that is specific to
 // the moment, so it stays; an account whose cycle is not late keeps the
-// explainer, which is then the only place the floor is named.
+// explainer, which is then the only place the floor is named. The dashboard,
+// the calendar and the stats page all render that card from the same context,
+// so the drop lives in BuildOwnerPredictionExplanation, not in one page.
 func withoutExplanationRestatedByLateCycle(explanation PredictionExplanation, lateCycle LateCycleNotice) PredictionExplanation {
 	if explanation.PrimaryKey == predictionExplainerAwaitingMoreCyclesKey && lateCycle.Visible && lateCycle.MessageKey == LateCycleNoPersonalRangeKey {
 		explanation.PrimaryKey = ""
@@ -45,7 +47,7 @@ func BuildOwnerPredictionExplanation(user *models.User, cycleContext DashboardCy
 		PrimaryKey:   predictionExplanationPrimaryKey(user, cycleContext),
 		SecondaryKey: predictionExplanationSecondaryKey(cycleContext, hasFactorHint),
 	}
-	return explanation
+	return withoutExplanationRestatedByLateCycle(explanation, cycleContext.LateCycle)
 }
 
 func predictionExplanationPrimaryKey(user *models.User, cycleContext DashboardCycleContext) string {

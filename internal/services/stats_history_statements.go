@@ -65,9 +65,9 @@ type StatsStatement struct {
 // from CompletedCycleTrendLengths — the series the trend chart draws, read here
 // for its values. It is a statement window, not the insights gate: that gate is
 // StatsFlags.CompletedCycleCount, and this slice's length decides only whether
-// this one sentence has a trend to describe. On an odd window the middle cycle belongs to neither half and is
-// dropped, which keeps the two halves the same size and the difference
-// symmetric.
+// this one sentence has a trend to describe. On an odd window the middle cycle
+// belongs to neither half and is dropped, which keeps the two halves the same
+// size and the difference symmetric.
 func buildCycleLengthTrendStatement(completedCycleLengths []int) (StatsStatement, bool) {
 	window := statsStatementTrendWindow(completedCycleLengths)
 	if len(window) < minimumPhaseInsightCycles {

@@ -9,7 +9,7 @@
   hint on `/stats`, the "waiting for more cycles" and irregular-mode explainers on the dashboard,
   calendar and stats page, and the dashboard's next-period, ovulation and fertile-window captions
   take the number from the one threshold constant, in all six languages.
-- **A late cycle on one or two completed cycles no longer repeats itself on `/stats`.** The
-  late-cycle card ("a personal range needs more completed cycles") now stands alone; the
-  "fertile details wait for 3 completed cycles" explainer beneath it is shown only while the cycle is
-  not late.
+- **A late cycle on one or two completed cycles no longer repeats itself.** On the dashboard, the
+  calendar and `/stats`, the late-cycle card ("a personal range needs more completed cycles") now
+  stands alone; the "fertile details wait for 3 completed cycles" explainer beneath it is shown only
+  while the cycle is not late.

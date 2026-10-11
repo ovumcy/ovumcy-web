@@ -157,7 +157,6 @@ func (service *StatsService) BuildStatsPageViewData(ctx context.Context, user *m
 	predictionSampleCount, predictionSampleUsesRecentWindow, predictionReliabilityLabelKey, predictionReliabilityHintKey, showPredictionReliability := buildStatsPredictionReliability(user, baseData.flags, baseData.stats)
 	cycleFactorExplanation, hasCycleFactorExplanation := buildStatsCycleFactorExplanation(user, baseData.logs, baseData.stats, now, location)
 	predictionExplanation := BuildOwnerPredictionExplanation(user, cycleContext, hasCycleFactorExplanation && len(cycleFactorExplanation.HintFactorKeys) > 0)
-	predictionExplanation = withoutExplanationRestatedByLateCycle(predictionExplanation, cycleContext.LateCycle)
 	// The one adapter every projection surface publishes through, so /stats and
 	// the JSON API cannot drift apart on what a suppressed tier may carry — and,
 	// ahead of it, the one resolver that moves the ovulation day, the fertile

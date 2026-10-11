@@ -61,8 +61,19 @@ func TestStatsInsightsGateCountsCompletedCyclesLikeTheDashboard(t *testing.T) {
 // completed cycles the late-cycle card says a personal range needs more
 // completed cycles, and the explainer under it says fertile details wait for N
 // of them — one fact twice. The card stays while the cycle is late; the
-// explainer is the only place the floor is named while it is not.
+// explainer is the only place the floor is named while it is not. The
+// dashboard, the calendar and the stats page render both from one context, so
+// each is held to the same answer.
 func TestStatsLateCycleCardReplacesTheAwaitingMoreCyclesExplainer(t *testing.T) {
+	pages := []struct {
+		path         string
+		explainerTag string
+		explainerKey string
+	}{
+		{path: "/stats", explainerTag: "data-stats-prediction-explainer", explainerKey: "data-explainer-key"},
+		{path: "/calendar", explainerTag: "data-calendar-prediction-explainer", explainerKey: "data-explainer-primary-key"},
+		{path: "/dashboard", explainerTag: "data-dashboard-prediction-explainer", explainerKey: "data-explainer-key"},
+	}
 	for index, testCase := range []struct {
 		name          string
 		cycleDay      int
@@ -81,24 +92,23 @@ func TestStatsLateCycleCardReplacesTheAwaitingMoreCyclesExplainer(t *testing.T) 
 				"last_period_start": services.AddCalendarDays(today, -current, time.UTC),
 			})
 
-			document := fetchLateCycleNoticePage(t, app, authCookie, "/stats")
-			lateCard := findHTMLNodeWithAttr(document, "data-stats-late-cycle")
-			if (lateCard != nil) != testCase.wantLateCard {
-				t.Fatalf("late-cycle card present = %v, want %v on cycle day %d", lateCard != nil, testCase.wantLateCard, testCase.cycleDay)
-			}
-			if lateCard != nil {
+			for _, page := range pages {
+				document := fetchLateCycleNoticePage(t, app, authCookie, page.path)
 				notice := findHTMLNodeWithAttr(document, "data-late-cycle-key")
-				if notice == nil || htmlAttr(notice, "data-late-cycle-key") != services.LateCycleNoPersonalRangeKey {
-					t.Fatalf("late card on two completed cycles must be the no-personal-range variant, got %v", notice)
+				if (notice != nil) != testCase.wantLateCard {
+					t.Fatalf("%s: late-cycle card present = %v, want %v on cycle day %d", page.path, notice != nil, testCase.wantLateCard, testCase.cycleDay)
 				}
-			}
-			explainer := findHTMLNodeWithAttr(document, "data-stats-prediction-explainer")
-			if (explainer != nil) != testCase.wantExplainer {
-				t.Fatalf("awaiting-more-cycles explainer present = %v, want %v on cycle day %d", explainer != nil, testCase.wantExplainer, testCase.cycleDay)
-			}
-			if explainer != nil {
-				if got := htmlAttr(explainer, "data-explainer-key"); got != awaitingMoreCyclesExplainerKey {
-					t.Fatalf("explainer key = %q, want %q", got, awaitingMoreCyclesExplainerKey)
+				if notice != nil && htmlAttr(notice, "data-late-cycle-key") != services.LateCycleNoPersonalRangeKey {
+					t.Fatalf("%s: late card on two completed cycles = %q, want the no-personal-range variant", page.path, htmlAttr(notice, "data-late-cycle-key"))
+				}
+				explainer := findHTMLNodeWithAttr(document, page.explainerTag)
+				if (explainer != nil) != testCase.wantExplainer {
+					t.Fatalf("%s: awaiting-more-cycles explainer present = %v, want %v on cycle day %d", page.path, explainer != nil, testCase.wantExplainer, testCase.cycleDay)
+				}
+				if explainer != nil {
+					if got := htmlAttr(explainer, page.explainerKey); got != awaitingMoreCyclesExplainerKey {
+						t.Fatalf("%s: explainer key = %q, want %q", page.path, got, awaitingMoreCyclesExplainerKey)
+					}
 				}
 			}
 		})
