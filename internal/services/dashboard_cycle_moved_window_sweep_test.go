@@ -198,7 +198,7 @@ func loadMovedWindowTree(t *testing.T) *movedWindowTree {
 	if !ok {
 		t.Fatal("DashboardCycleContext is not a struct")
 	}
-	for index := 0; index < contextStruct.NumFields(); index++ {
+	for index := range contextStruct.NumFields() {
 		if contextStruct.Field(index).Name() == "MovedWindow" {
 			tree.field = contextStruct.Field(index)
 		}
