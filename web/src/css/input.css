@@ -5248,3 +5248,185 @@
   max-width: 100%;
   min-width: 0;
 }
+
+/* Forced colours (a Windows contrast theme). The browser repaints every
+   foreground, background and border in the reader's two or three system
+   colours and drops box-shadows and gradients, so any state carried by a fill,
+   a shadow or a border COLOUR collapses into "an empty box with a line round
+   it": the period toggle lost its thumb, the logged dot vanished, and period,
+   fertile and plain days became the same cell. What survives the repaint is
+   geometry — border width and style, outlines, text — so each state is
+   restated here in geometry.
+
+   These rules sit outside every cascade layer on purpose. An unlayered rule
+   outranks the layered utilities whatever their specificity, so no dark-theme
+   variant or base class can tie with one of these and silently win.
+
+   Two surfaces keep their palette instead (forced-color-adjust: none): the
+   cycle ribbon and the cycle stack are pictures with an accessible name of
+   their own, hold no text, and their phase colours ARE the data — repainting
+   them leaves nothing to read. */
+@media (forced-colors: active) {
+  .dashboard-cycle-ribbon,
+  .stats-cycle-stack-band {
+    forced-color-adjust: none;
+  }
+
+  /* The toggle is a picture of a switch drawn with fills, so it draws itself
+     in system colours: off is a hollow track with a CanvasText thumb at the
+     start, on is a Highlight track with the thumb moved across. */
+  .period-toggle input {
+    forced-color-adjust: none;
+    border-color: CanvasText;
+    background: Canvas;
+  }
+
+  .period-toggle input::after {
+    background: CanvasText;
+    box-shadow: none;
+  }
+
+  .period-toggle input:checked {
+    border-color: Highlight;
+    background: Highlight;
+  }
+
+  .period-toggle input:checked::after {
+    background: HighlightText;
+  }
+
+  .period-toggle input:focus-visible {
+    outline-color: CanvasText;
+  }
+
+  /* The record marks are solid dots and dashes with no text to recolour. */
+  .calendar-data-marker,
+  .calendar-ovulation-dash {
+    forced-color-adjust: none;
+    background: CanvasText;
+    box-shadow: none;
+  }
+
+  /* One border shape per day state, and the legend swatch beside it draws the
+     same shape, so the key still explains the grid:
+       recorded period          thick solid
+       predicted period         dashed
+       period start window      dotted
+       fertile window           double
+       predicted in fertile     dashed, with a dashed inner ring
+                                (dotted with a dotted ring in the start window)
+     The swatches grow so a double border and an inner ring stay legible. */
+  .legend-swatch {
+    width: 1.25rem;
+    height: 1.25rem;
+    border-color: CanvasText;
+  }
+
+  .calendar-cell-period,
+  .legend-swatch-period {
+    border-style: solid;
+    border-width: 3px;
+  }
+
+  .calendar-cell-predicted,
+  .legend-swatch-predicted {
+    border-style: dashed;
+    border-width: 2px;
+  }
+
+  .calendar-cell-start-window,
+  .legend-swatch-start-window {
+    border-style: dotted;
+    border-width: 2px;
+  }
+
+  .calendar-cell-fertile,
+  .legend-swatch-fertile {
+    border-style: double;
+    border-width: 4px;
+  }
+
+  .calendar-cell-overlap-period-fertile,
+  .legend-swatch-overlap-period-fertile {
+    border-style: dashed;
+    border-width: 2px;
+    outline: 1px dashed CanvasText;
+    outline-offset: -6px;
+  }
+
+  .legend-swatch-overlap-period-fertile {
+    outline-offset: -5px;
+  }
+
+  .calendar-cell-overlap-period-fertile.calendar-cell-overlap-start-window {
+    border-style: dotted;
+    outline-style: dotted;
+  }
+
+  /* Today and the selected day were shadow rings. Both move outside the cell
+     as outlines that differ in colour AND width; today also underlines its
+     day number, so it stays marked on a selected cell and on a phone, where
+     the today pill is hidden. */
+  .calendar-cell-today,
+  .legend-swatch-today {
+    outline: 2px solid CanvasText;
+    outline-offset: 2px;
+  }
+
+  .legend-swatch-today {
+    outline-offset: 1px;
+  }
+
+  .calendar-cell-today .calendar-day-number {
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 2px;
+  }
+
+  .calendar-cell.selected,
+  .calendar-cell:focus-visible {
+    outline: 3px solid Highlight;
+    outline-offset: 2px;
+  }
+}
+
+/* Paper. The interface chrome (header, tab bar, toasts, the install offer)
+   has nothing to say on a printed page, and the fixed tab bar would print over
+   the content. The ink and surface tokens flip to black on white in either
+   theme, so a dark-theme page does not print pale text, and the elevation
+   tokens go flat — a shadow on paper is a grey smear. Unlayered for the same
+   reason as the forced-colours block above. */
+@media print {
+  :root,
+  :root[data-theme='dark'] {
+    color-scheme: light;
+    --bg-primary: #ffffff;
+    --bg-card: #ffffff;
+    --bg-soft: #ffffff;
+    --bg-soft-strong: #ffffff;
+    --surface-tint: #ffffff;
+    --surface-elevated: #ffffff;
+    --surface-quiet: #ffffff;
+    --text-primary: #000000;
+    --text-muted: #333333;
+    --bg-glow-1: transparent;
+    --bg-glow-2: transparent;
+    --bg-stripes: transparent;
+    --elevation-1: 0 0 #0000;
+    --elevation-2: 0 0 #0000;
+    --elevation-3: 0 0 #0000;
+  }
+
+  body {
+    background: #ffffff;
+    color: #000000;
+  }
+
+  .skip-link,
+  .paper-header,
+  .mobile-tabbar,
+  .toast-stack,
+  .mobile-install-offer {
+    display: none;
+  }
+}

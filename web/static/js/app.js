@@ -4004,13 +4004,20 @@
     return target;
   }
 
+  // Every programmatic scroll asks here whether it may animate, so a jump the
+  // reader triggers and a jump the URL triggers honour the same preference: a
+  // reader who asked for reduced motion gets the instant jump from both.
+  function scrollIntoViewOptions(block) {
+    var reduceMotion = Boolean(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    return reduceMotion ? { block: block } : { block: block, behavior: "smooth" };
+  }
+
   function scrollToHashTarget() {
     var target = revealHashTarget(window.location.hash);
-    var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (!target || typeof target.scrollIntoView !== "function") {
       return;
     }
-    target.scrollIntoView(reduceMotion ? { block: "start" } : { block: "start", behavior: "smooth" });
+    target.scrollIntoView(scrollIntoViewOptions("start"));
   }
 
   function bindHashDisclosureReveals() {
@@ -4055,7 +4062,7 @@
       target.focus();
     }
     if (typeof section.scrollIntoView === "function") {
-      section.scrollIntoView({ block: "center", behavior: "smooth" });
+      section.scrollIntoView(scrollIntoViewOptions("center"));
     }
     showQuickFocus(section);
   }
