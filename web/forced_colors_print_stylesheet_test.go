@@ -1,6 +1,10 @@
 package staticassets
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -59,6 +63,142 @@ func TestForcedColorsBlockRestatesEveryBackgroundOnlyState(t *testing.T) {
 			t.Errorf("the forced-colors %s rule lacks %s (%s): %s", want.selector, want.declaration, want.why, rule)
 		}
 	}
+}
+
+// Under forced colours only geometry tells one day from another, so every
+// state the cell ladder can emit needs a shape of its own. Two states
+// (pre-fertile and tentative ovulation) are dashed from their base rules, so
+// a block that restated only the states it knew by name left both reading as a
+// predicted PERIOD day: a fertility-tier day must never read as a period day.
+//
+// The set is read from the ladder itself, never listed here, so a state added
+// to it without a forced-colours shape turns this red.
+func TestForcedColorsGivesEveryLadderStateItsOwnShape(t *testing.T) {
+	t.Parallel()
+
+	ladder := ladderCellClasses(t)
+
+	// Classes the ladder emits that are not a day STATE of their own.
+	notStates := map[string]string{
+		"calendar-cell-out":                  "dims an out-of-month day; it rides on whichever state the day has",
+		"calendar-cell-today":                "a ring and an underlined number on top of the state, restated by its own rule",
+		"calendar-cell-fertile-peak":         "a colour refinement of the fertile state, which owns the shape",
+		"calendar-cell-fertile-edge":         "a colour refinement of the fertile state, which owns the shape",
+		"calendar-cell-overlap-start-window": "a dotted variant of the overlap state, pinned beside it by the restated-states test",
+	}
+	// Anti-vacuity: the states this test exists for, by name.
+	for _, name := range []string{
+		"calendar-cell-period",
+		"calendar-cell-predicted",
+		"calendar-cell-start-window",
+		"calendar-cell-fertile",
+		"calendar-cell-overlap-period-fertile",
+		"calendar-cell-pre-fertile",
+		"calendar-cell-ovulation-tentative",
+	} {
+		if !ladder[name] {
+			t.Fatalf("the cell ladder no longer emits %s; the shape check would pass without it", name)
+		}
+	}
+	for name, why := range notStates {
+		if !ladder[name] {
+			t.Errorf("%s is excluded as a non-state (%s) but the ladder does not emit it; drop the stale exclusion", name, why)
+		}
+	}
+
+	block, _, found := cutAtRule(servedStylesheet(t), "@media (forced-colors:active){")
+	if !found {
+		t.Fatal("the served stylesheet has no forced-colors block")
+	}
+
+	// The plain day: the base cell's 1px solid line, no outline.
+	seen := map[string]string{"solid|1px|": "a plain day"}
+	for name := range ladder {
+		if _, skip := notStates[name]; skip {
+			continue
+		}
+		decls, ok := forcedColorsRuleFor(block, "."+name)
+		if !ok {
+			t.Errorf("the forced-colors block has no rule for .%s; it keeps whatever its base rule draws, which may be another state's shape", name)
+			continue
+		}
+		style, width := decls["border-style"], decls["border-width"]
+		if style == "" || width == "" {
+			t.Errorf(".%s declares border-style %q and border-width %q under forced colours; both must be explicit, or the missing half is inherited from the base rule", name, style, width)
+			continue
+		}
+		shape := style + "|" + width + "|" + decls["outline"]
+		if other, dup := seen[shape]; dup {
+			t.Errorf(".%s draws the same shape (%s) as %s under forced colours; the two days read as one", name, shape, other)
+			continue
+		}
+		seen[shape] = "." + name
+	}
+}
+
+// ladderCellClasses parses the cell ladder and returns every calendar-cell-*
+// class a rung appends to the cell's class string.
+func ladderCellClasses(t *testing.T) map[string]bool {
+	t.Helper()
+	file, err := parser.ParseFile(token.NewFileSet(), "../internal/api/calendar_days_view_helpers.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse the cell ladder: %v", err)
+	}
+	classes := map[string]bool{}
+	ast.Inspect(file, func(node ast.Node) bool {
+		fn, ok := node.(*ast.FuncDecl)
+		if !ok || fn.Name.Name != "buildCalendarDays" {
+			return true
+		}
+		ast.Inspect(fn, func(inner ast.Node) bool {
+			assign, ok := inner.(*ast.AssignStmt)
+			if !ok || assign.Tok != token.ADD_ASSIGN || len(assign.Lhs) != 1 || len(assign.Rhs) != 1 {
+				return true
+			}
+			target, ok := assign.Lhs[0].(*ast.Ident)
+			literal, isLiteral := assign.Rhs[0].(*ast.BasicLit)
+			if !ok || target.Name != "cellClass" || !isLiteral || literal.Kind != token.STRING {
+				return true
+			}
+			value, err := strconv.Unquote(literal.Value)
+			if err != nil {
+				t.Fatalf("unquote %s: %v", literal.Value, err)
+			}
+			for _, class := range strings.Fields(value) {
+				if strings.HasPrefix(class, "calendar-cell-") {
+					classes[class] = true
+				}
+			}
+			return true
+		})
+		return false
+	})
+	return classes
+}
+
+// forcedColorsRuleFor returns the declarations of the block's rule whose
+// selector list holds exactly selector as one item (so the compound
+// ".a.b" selector is not mistaken for ".a").
+func forcedColorsRuleFor(block string, selector string) (map[string]string, bool) {
+	for _, rule := range strings.Split(block, "}") {
+		head, body, ok := strings.Cut(rule, "{")
+		if !ok {
+			continue
+		}
+		for _, item := range strings.Split(head, ",") {
+			if strings.TrimSpace(item) != selector {
+				continue
+			}
+			decls := map[string]string{}
+			for _, decl := range strings.Split(body, ";") {
+				if property, value, ok := strings.Cut(decl, ":"); ok {
+					decls[strings.TrimSpace(property)] = strings.TrimSpace(value)
+				}
+			}
+			return decls, true
+		}
+	}
+	return nil, false
 }
 
 // The fixed tab bar printed over the page content and a dark-theme page
