@@ -16,7 +16,7 @@ import {
   registerOwnerViaUI,
 } from './support/auth-helpers';
 import { assertNoHorizontalOverflow } from './support/mobile-layout-helpers';
-import { openCalendarDayEditor } from './support/stats-helpers';
+import { expectNoHtmxRequestInFlight, openCalendarDayEditor } from './support/stats-helpers';
 import {
   cancelConfirmDialog,
   expectConfirmDialogCaptions,
@@ -649,7 +649,7 @@ test.describe('Settings: profile and cycle', () => {
     await goalChoice('avoid_pregnancy').click();
     await cycleForm.locator('button[data-save-button]').click();
     await expect(page.locator('#settings-cycle-status .status-ok')).toBeVisible();
-    await page.waitForLoadState('networkidle');
+    await expectNoHtmxRequestInFlight(page);
 
     await page.reload();
     await expect(page).toHaveURL(/\/settings$/);

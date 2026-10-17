@@ -18,14 +18,16 @@ import {
   registerOwnerViaUI,
 } from './support/auth-helpers';
 import { expectTextContrastAA } from './support/contrast-helpers';
-import { dashboardTodayISO } from './support/dashboard-helpers';
+import { dashboardTodayISO, pinDashboardClock } from './support/dashboard-helpers';
 import { saveSettingsLanguage } from './support/language-helpers';
 import { localeText, type Locale } from './support/locale-helpers';
 import { ensureNotesFieldVisible } from './support/note-helpers';
 import {
   attemptDayEditorSave,
   openCalendarDayEditor,
+  settleCalendarGridRefresh,
   shiftISODate,
+  watchCalendarGridRefresh,
 } from './support/stats-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 
@@ -293,6 +295,7 @@ test.describe('day-entry save resilience', () => {
     // Requirement: the retry resubmits the SAME form state. Let it through and
     // assert the server received exactly what is on screen.
     interceptor.set('allow');
+    const gridRefresh = watchCalendarGridRefresh(page);
     const [retryRequest] = await Promise.all([
       page.waitForRequest(
         (candidate) =>
@@ -316,7 +319,7 @@ test.describe('day-entry save resilience', () => {
     // holding it is replaced within a few frames. The durable proof that this
     // attempt — and only this attempt — was the one that landed is reading the
     // entry back from the server below.
-    await page.waitForLoadState('networkidle');
+    await settleCalendarGridRefresh(page, gridRefresh);
     await page.unroute(`**/api/v1/days/${targetISO}`);
     const reopened = await openCalendarDayEditor(page, targetISO);
     await expect(reopened.locator('#calendar-notes')).toHaveValue(note);
@@ -391,6 +394,7 @@ async function registerOwnerOnDashboard(page: Page, prefix: string): Promise<str
   await completeOnboardingIfPresent(page);
   await setRequestTimezoneFromBrowser(page);
 
+  await pinDashboardClock(page);
   await page.goto('/dashboard');
   await expect(page).toHaveURL(/\/dashboard$/);
   return dashboardTodayISO(page);
@@ -567,6 +571,7 @@ test.describe('a day save refused for an ended session', () => {
     await setRequestTimezoneFromBrowser(page);
     await page.goto('/settings');
     await saveSettingsLanguage(page, 'fr');
+    await pinDashboardClock(page);
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
     const todayISO = await dashboardTodayISO(page);
@@ -655,6 +660,7 @@ test.describe('a day save refused for an ended session', () => {
     expect(await csrfCookieValue(page)).toBe(csrfBefore);
     await expectDayEntryStillTyped(form, note);
 
+    const gridRefresh = watchCalendarGridRefresh(page);
     const [retryResponse] = await Promise.all([
       page.waitForResponse(
         (response) => response.request().method() === 'PATCH' && response.url().includes(`/api/v1/days/${targetISO}`)
@@ -663,7 +669,7 @@ test.describe('a day save refused for an ended session', () => {
     ]);
     expect(retryResponse.ok(), `the retry after signing in failed with ${retryResponse.status()}`).toBeTruthy();
 
-    await page.waitForLoadState('networkidle');
+    await settleCalendarGridRefresh(page, gridRefresh);
     const reopened = await openCalendarDayEditor(page, targetISO);
     await expect(reopened.locator('#calendar-notes')).toHaveValue(note);
   });
@@ -704,6 +710,7 @@ test.describe('a day save refused for an ended session', () => {
     await continueFromRecoveryCode(page);
     await completeOnboardingIfPresent(page);
     await setRequestTimezoneFromBrowser(page);
+    await pinDashboardClock(page);
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
     const todayISO = await dashboardTodayISO(page);

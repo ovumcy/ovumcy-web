@@ -21,6 +21,31 @@ export async function dashboardTodayISO(page: Page): Promise<string> {
   return (await dashboardTodayPath(page)).replace('/api/v1/days/', '');
 }
 
+const pinnedClockPages = new WeakSet<Page>();
+
+/**
+ * Freezes the page's clock at the moment of the call, once per page.
+ *
+ * The dashboard reloads itself onto the new day the first time its autosave
+ * settles after the browser's local midnight (`reloadDashboardOnNewDay`). That
+ * is right for an owner and wrong for a spec that crosses midnight between two
+ * saves: the reload replaces the page the spec is holding, and the control it
+ * waits on is gone (WEB-321, an undo that vanished at 00:00:01). Pinning makes
+ * the page's `Date` stand still, so the rollover check never sees a new day;
+ * timers keep running, so the autosave debounce still fires. Call it BEFORE the
+ * navigation that opens the dashboard: the day the page opened on is recorded
+ * at load, and the pin carries into every later load of the same context.
+ * `saveDashboardEntry` also calls it, for a spec that reached the dashboard on
+ * its own path.
+ */
+export async function pinDashboardClock(page: Page): Promise<void> {
+  if (pinnedClockPages.has(page)) {
+    return;
+  }
+  pinnedClockPages.add(page);
+  await page.clock.setFixedTime(new Date());
+}
+
 /**
  * Makes the changes in `edit` and waits for the autosave they trigger.
  *
@@ -41,6 +66,7 @@ export async function saveDashboardEntry(
   edit: () => Promise<void>,
   options?: { savePath?: string }
 ): Promise<string> {
+  await pinDashboardClock(page);
   const path = options?.savePath ?? (await dashboardTodayPath(page));
   const matchesSave = (candidate: Request) =>
     candidate.method() === 'PATCH' && candidate.url().includes(path);

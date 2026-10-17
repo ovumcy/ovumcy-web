@@ -17,6 +17,10 @@ import {
   markCycleStartViaAPI,
   openCalendarDayEditor,
   saveDayEditorForm,
+  settleCalendarGridRefresh,
+  settleDayEditorLoad,
+  watchCalendarGridRefresh,
+  watchDayEditorLoad,
 } from './support/stats-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 import { checkStyledControl } from './support/form-helpers';
@@ -453,6 +457,7 @@ test.describe('Calendar page', () => {
     // settle, so the entry is committed — not merely submitted — before the
     // delete flow starts (same reasoning as saveDayEditorForm in
     // calendar-autofill-clear.spec.ts).
+    const gridRefresh = watchCalendarGridRefresh(page);
     const [saveRequest] = await Promise.all([
       page.waitForRequest(
         (candidate) =>
@@ -466,7 +471,7 @@ test.describe('Calendar page', () => {
       saveResponse!.ok(),
       `PATCH /api/v1/days/${pastISO} failed with ${saveResponse!.status()}`
     ).toBeTruthy();
-    await page.waitForLoadState('networkidle');
+    await settleCalendarGridRefresh(page, gridRefresh);
 
     const deleteForm = page.locator(`[data-day-delete-form][data-day-delete-date="${pastISO}"]`);
     const isDayMutation = (pathname: string) => pathname.endsWith(`/api/v1/days/${pastISO}`);
@@ -616,6 +621,9 @@ test.describe('Calendar page', () => {
     await manualStartButton.click();
     await expect(page.locator('#confirm-modal')).toBeVisible();
 
+    // The accepted start answers with HX-Refresh: the reloaded page lazy-loads
+    // the selected day's editor, which the next click must not race.
+    const editorLoad = watchDayEditorLoad(page, tomorrowISO);
     const [cycleStartRequest] = await Promise.all([
       page.waitForRequest((candidate) => {
         return (
@@ -631,7 +639,7 @@ test.describe('Calendar page', () => {
       `expected a response for POST /api/v1/days/${tomorrowISO}/cycle-start?source=calendar`
     ).not.toBeNull();
     expect(cycleStartResponse!.status()).toBeLessThan(400);
-    await page.waitForLoadState('networkidle');
+    await settleDayEditorLoad(page, editorLoad);
 
     await page.locator(`[data-day-editor-open="${tomorrowISO}"]`).first().click();
     const dayEditorForm = page.locator(`[data-day-editor-form][data-day-editor-date="${tomorrowISO}"]`);
