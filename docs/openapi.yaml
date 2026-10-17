@@ -1804,11 +1804,14 @@ paths:
       summary: Set UI language preference.
       description: |
         Writes the `ovumcy_lang` cookie for the chosen language. Public, no session required.
-        When the request does carry a valid session, the language is also stored on the account
+        When the request carries a valid session and the form's `day_form_account` binding names
+        that session's account, the language is also stored on the account
         (`users.interface_language`, the same column `PATCH /api/v1/users/current/interface`
         writes), so a later session issue re-serves the switched language instead of reverting
-        the cookie to the stored one. The response is the same either way, unless that account
-        write fails (`500`).
+        the cookie to the stored one. Without that binding, or with one that names another
+        account, only the cookie changes: the page was rendered for nobody, or for an account
+        that is no longer the signed-in one. The response is the same in every case, unless an
+        account write fails (`500`).
 
         This path is outside `/api`, so the `/api` rate limit does not reach it; it carries a
         per-IP limit of its own, sized like the `/api` budget, and answers `429` once it is spent.
@@ -1832,6 +1835,13 @@ paths:
                     other code the server does not ship falls back to the instance's default
                     language.
                 csrf_token: { type: string }
+                day_form_account:
+                  type: string
+                  description: |
+                    Optional opaque binding to the account the page was rendered for, which the
+                    signed-in pages carry in the switcher's hidden field. It decides only whether
+                    the choice is also stored on the signed-in account (see above); it never
+                    refuses the request.
                 next:
                   type: string
                   description: Optional same-origin path to return to; anything else falls back to `/`.
@@ -1895,10 +1905,12 @@ paths:
                 error_detail: { key: "forbidden", category: "forbidden", target: "global" }
         '500':
           description: |
-            The request carries a live owner session and a shipped language code, and storing
+            The request carries a live owner session, the binding of that session's account and a
+            shipped language code, and storing
             that language on the account failed. The switch is reported as failed rather than
             kept as a cookie-only change: no `ovumcy_lang` cookie is set. A caller with no
-            session, or one that sends a code the server does not ship, never reaches the
+            session or none of its account's binding, or one that sends a code the server does
+            not ship, never reaches the
             account write and never gets this answer.
 
             Any other fault while answering the request, such as a recovered panic, is a `500`
