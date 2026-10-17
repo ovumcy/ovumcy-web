@@ -685,8 +685,9 @@
     delete headers["Content-Type"];
     delete headers["HX-Request"];
     headers.Accept = "text/html";
-    // Only this request carries the binding on a GET of the dashboard: plain
-    // navigation sends none and is answered as ever.
+    // A GET of the dashboard carries the binding only from the script (this
+    // refresh and a conflict choice's reload): plain navigation sends none and
+    // is answered as ever.
     pageBinding = dashboardPageAccountBinding(document);
     if (pageBinding) {
       headers[DAY_FORM_ACCOUNT_HEADER_NAME] = pageBinding;

@@ -148,13 +148,14 @@ func (handler *Handler) RefuseDayFormPageFromAnotherAccount(c fiber.Ctx) error {
 }
 
 // RefuseBoundDashboardReadFromAnotherAccount guards the dashboard page for the
-// one client that names its account on it: after a save, the journal fetches
-// the page again and paints its status header into the page it already shows
-// (refreshDashboardStatusHeader), and that fetch carries the binding of the
-// page it will be painted into. Under another account the page it asks for is
+// clients that name their account on it: after a save, the journal fetches the
+// page again and paints its status header into the page it already shows
+// (refreshDashboardStatusHeader), and a day-save conflict's keep-mine or
+// take-theirs fetches it to merge the stored day into the open form
+// (resolveDaySaveConflict). Each fetch carries the binding of the page it will
+// be painted or merged into. Under another account the page it asks for is
 // that account's, and the refusal keeps it from crossing the network to a stale
-// tab at all; the tab's own comparison of the two bindings stays as a second
-// layer.
+// tab at all; the tab's own checks stay as a second layer.
 //
 // Only a request that carries the binding is judged, by the rule and with the
 // refusal and audit record of RefuseDayFormPageFromAnotherAccount. Opening the
